@@ -4,9 +4,9 @@ expression: "export_svg(\"Graphics[{Circle[]}, ImageSize -> Large]\")"
 ---
 <svg width="576" height="576" viewBox="0 0 576 576" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_576x576"><rect x="0" y="0" width="576.00" height="576.00"/></clipPath>
+<clipPath id="plotClip_575x574"><rect x="0" y="0" width="575.00" height="574.08"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_576x576)">
-<ellipse cx="288.00" cy="288.00" rx="276.48" ry="276.48" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
+<g clip-path="url(#plotClip_575x574)">
+<ellipse cx="287.50" cy="287.04" rx="276.00" ry="276.00" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
 </g>
 </svg>

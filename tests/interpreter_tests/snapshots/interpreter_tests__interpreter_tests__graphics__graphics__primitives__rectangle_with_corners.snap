@@ -2,11 +2,11 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Rectangle[{0, 0}, {2, 3}]}]\")"
 ---
-<svg width="292" height="432" viewBox="0 0 292 432" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="293" height="432" viewBox="0 0 293 432" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_292x432"><rect x="0" y="0" width="292.00" height="432.00"/></clipPath>
+<clipPath id="plotClip_292x431"><rect x="0" y="0" width="291.53" height="431.00"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_292x432)">
-<rect x="5.89" y="5.84" width="280.22" height="420.32" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_292x431)">
+<rect x="5.83" y="5.60" width="279.87" height="419.81" fill="rgb(0,0,0)"/>
 </g>
 </svg>

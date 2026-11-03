@@ -1595,15 +1595,14 @@ mod tests {
       .expect("interpret should succeed");
       assert!(svg.contains(">Btm</text>"), "bottom label missing: {svg}");
       assert!(svg.contains(">Top</text>"), "top label missing: {svg}");
-      // Left is rotated -90, right is rotated +90.
-      assert!(
-        svg.contains("rotate(-90") && svg.contains(">Lft</text>"),
-        "left label missing/not rotated: {svg}"
-      );
-      assert!(
-        svg.contains("rotate(90") && svg.contains(">Rgt</text>"),
-        "right label missing/not rotated: {svg}"
-      );
+      // Both side labels read upwards (rotated -90), as in WL.
+      let rotated = |label: &str| {
+        svg.lines().any(|l| {
+          l.contains("rotate(-90") && l.contains(&format!(">{label}</text>"))
+        })
+      };
+      assert!(rotated("Lft"), "left label missing/not rotated: {svg}");
+      assert!(rotated("Rgt"), "right label missing/not rotated: {svg}");
     }
 
     #[test]
@@ -1815,22 +1814,23 @@ mod tests {
           GridLines -> {{0, 0.5}, {-0.5}}], "SVG"]"#,
       )
       .expect("interpret should succeed");
-      // Full-span grid lines: vertical lines run y=0..360, horizontals x=0..360
-      // (frame ticks only span ~5px, so they don't match).
+      // Full-span grid lines: vertical lines run the 334.76 px height of
+      // the drawing area, horizontals its 335.30 px width (frame ticks only
+      // span 5 px, so they don't match).
       let verticals = svg
         .lines()
-        .filter(|l| l.contains("y1=\"0\"") && l.contains("y2=\"360.00\""))
+        .filter(|l| l.contains("y1=\"0\"") && l.contains("y2=\"334.76\""))
         .count();
       let horizontals = svg
         .lines()
-        .filter(|l| l.contains("x1=\"0\"") && l.contains("x2=\"360.00\""))
+        .filter(|l| l.contains("x1=\"0\"") && l.contains("x2=\"335.30\""))
         .count();
       assert_eq!(verticals, 2, "expected 2 vertical grid lines: {svg}");
       assert_eq!(horizontals, 1, "expected 1 horizontal grid line: {svg}");
-      // x=0 maps to the horizontal center (180 of 360).
+      // x=0 maps to the horizontal center (167.65 of 335.30).
       assert!(
         svg
-          .contains("<line x1=\"180.00\" y1=\"0\" x2=\"180.00\" y2=\"360.00\""),
+          .contains("<line x1=\"167.65\" y1=\"0\" x2=\"167.65\" y2=\"334.76\""),
         "vertical grid line at x=0 missing: {svg}"
       );
     }
@@ -4133,7 +4133,7 @@ mod tests {
       (x.parse().unwrap(), y.parse().unwrap())
     }
 
-    const FRAME: &str = "PlotRange -> {{0, 1}, {0, 1}}, PlotRangePadding -> None, ImageSize -> 100";
+    const FRAME: &str = "PlotRange -> {{0, 1}, {0, 1}}, PlotRangePadding -> None, ImagePadding -> None, ImageSize -> 100";
 
     #[test]
     fn open_spline_starts_on_its_first_control_point() {

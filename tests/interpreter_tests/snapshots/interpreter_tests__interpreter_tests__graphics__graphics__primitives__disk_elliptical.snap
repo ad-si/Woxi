@@ -2,14 +2,14 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[Table[Disk[{3 n, 0}, {n/4, 2 - n/4}], {n, 4}]]\")"
 ---
-<svg width="360" height="132" viewBox="0 0 360 132" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="133" viewBox="0 0 360 133" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x132"><rect x="0" y="0" width="360.00" height="132.00"/></clipPath>
+<clipPath id="plotClip_359x131"><rect x="0" y="0" width="359.00" height="131.47"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x132)">
-<ellipse cx="16.14" cy="66.00" rx="8.40" ry="58.82" fill="rgb(0,0,0)"/>
-<ellipse cx="116.98" cy="66.00" rx="16.81" ry="50.42" fill="rgb(0,0,0)"/>
-<ellipse cx="217.81" cy="66.00" rx="25.21" ry="42.02" fill="rgb(0,0,0)"/>
-<ellipse cx="318.65" cy="66.00" rx="33.61" ry="33.61" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_359x131)">
+<ellipse cx="15.59" cy="65.73" rx="8.41" ry="58.84" fill="rgb(0,0,0)"/>
+<ellipse cx="116.46" cy="65.73" rx="16.81" ry="50.44" fill="rgb(0,0,0)"/>
+<ellipse cx="217.33" cy="65.73" rx="25.22" ry="42.03" fill="rgb(0,0,0)"/>
+<ellipse cx="318.20" cy="65.73" rx="33.62" ry="33.62" fill="rgb(0,0,0)"/>
 </g>
 </svg>

@@ -2,11 +2,11 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Disk[{0, 0}, 1, {0, Pi}]}]\")"
 ---
-<svg width="360" height="187" viewBox="0 0 360 187" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="188" viewBox="0 0 360 188" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x187"><rect x="0" y="0" width="360.00" height="187.00"/></clipPath>
+<clipPath id="plotClip_359x186"><rect x="0" y="0" width="359.00" height="186.11"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x187)">
-<path d="M 180.00,179.81 L 352.62,179.81 A 172.62,172.62 0 0 0 7.38,179.81 Z" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_359x186)">
+<path d="M 179.50,179.21 L 351.82,179.21 A 172.32,172.32 0 0 0 7.18,179.21 Z" fill="rgb(0,0,0)"/>
 </g>
 </svg>

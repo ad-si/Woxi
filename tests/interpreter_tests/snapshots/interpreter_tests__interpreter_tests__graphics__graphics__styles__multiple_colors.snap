@@ -4,10 +4,10 @@ expression: "export_svg(\"Graphics[{Red, Disk[], Blue, Circle[{2, 0}, 0.5]}]\")"
 ---
 <svg width="360" height="212" viewBox="0 0 360 212" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x212"><rect x="0" y="0" width="360.00" height="212.00"/></clipPath>
+<clipPath id="plotClip_359x211"><rect x="0" y="0" width="359.00" height="210.72"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x212)">
-<ellipse cx="105.94" cy="106.00" rx="98.74" ry="98.74" fill="rgb(255,0,0)"/>
-<ellipse cx="303.43" cy="106.00" rx="49.37" ry="49.37" fill="none" stroke="rgb(0,0,255)" stroke-width="1.00"/>
+<g clip-path="url(#plotClip_359x211)">
+<ellipse cx="105.65" cy="105.36" rx="98.47" ry="98.47" fill="rgb(255,0,0)"/>
+<ellipse cx="302.59" cy="105.36" rx="49.23" ry="49.23" fill="none" stroke="rgb(0,0,255)" stroke-width="1.00"/>
 </g>
 </svg>

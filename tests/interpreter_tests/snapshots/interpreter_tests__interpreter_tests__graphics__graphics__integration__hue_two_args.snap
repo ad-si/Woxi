@@ -4,43 +4,43 @@ expression: "export_svg(\"Graphics[Table[{Hue[h, s], Disk[{12h, 8s}]}, {h, 0, 1,
 ---
 <svg width="360" height="261" viewBox="0 0 360 261" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x261"><rect x="0" y="0" width="360.00" height="261.00"/></clipPath>
+<clipPath id="plotClip_359x260"><rect x="0" y="0" width="359.00" height="259.96"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x261)">
-<ellipse cx="32.03" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="32.03" cy="179.82" rx="24.66" ry="24.66" fill="rgb(255,191,191)"/>
-<ellipse cx="32.03" cy="130.50" rx="24.66" ry="24.66" fill="rgb(255,128,128)"/>
-<ellipse cx="32.03" cy="81.18" rx="24.66" ry="24.66" fill="rgb(255,64,64)"/>
-<ellipse cx="32.03" cy="31.85" rx="24.66" ry="24.66" fill="rgb(255,0,0)"/>
-<ellipse cx="81.35" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="81.35" cy="179.82" rx="24.66" ry="24.66" fill="rgb(255,255,191)"/>
-<ellipse cx="81.35" cy="130.50" rx="24.66" ry="24.66" fill="rgb(255,255,128)"/>
-<ellipse cx="81.35" cy="81.18" rx="24.66" ry="24.66" fill="rgb(255,255,64)"/>
-<ellipse cx="81.35" cy="31.85" rx="24.66" ry="24.66" fill="rgb(255,255,0)"/>
-<ellipse cx="130.68" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="130.68" cy="179.82" rx="24.66" ry="24.66" fill="rgb(191,255,191)"/>
-<ellipse cx="130.68" cy="130.50" rx="24.66" ry="24.66" fill="rgb(128,255,128)"/>
-<ellipse cx="130.68" cy="81.18" rx="24.66" ry="24.66" fill="rgb(64,255,64)"/>
-<ellipse cx="130.68" cy="31.85" rx="24.66" ry="24.66" fill="rgb(0,255,0)"/>
-<ellipse cx="180.00" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="180.00" cy="179.82" rx="24.66" ry="24.66" fill="rgb(191,255,255)"/>
-<ellipse cx="180.00" cy="130.50" rx="24.66" ry="24.66" fill="rgb(128,255,255)"/>
-<ellipse cx="180.00" cy="81.18" rx="24.66" ry="24.66" fill="rgb(64,255,255)"/>
-<ellipse cx="180.00" cy="31.85" rx="24.66" ry="24.66" fill="rgb(0,255,255)"/>
-<ellipse cx="229.32" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="229.32" cy="179.82" rx="24.66" ry="24.66" fill="rgb(191,191,255)"/>
-<ellipse cx="229.32" cy="130.50" rx="24.66" ry="24.66" fill="rgb(128,128,255)"/>
-<ellipse cx="229.32" cy="81.18" rx="24.66" ry="24.66" fill="rgb(64,64,255)"/>
-<ellipse cx="229.32" cy="31.85" rx="24.66" ry="24.66" fill="rgb(0,0,255)"/>
-<ellipse cx="278.65" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="278.65" cy="179.82" rx="24.66" ry="24.66" fill="rgb(255,191,255)"/>
-<ellipse cx="278.65" cy="130.50" rx="24.66" ry="24.66" fill="rgb(255,128,255)"/>
-<ellipse cx="278.65" cy="81.18" rx="24.66" ry="24.66" fill="rgb(255,64,255)"/>
-<ellipse cx="278.65" cy="31.85" rx="24.66" ry="24.66" fill="rgb(255,0,255)"/>
-<ellipse cx="327.97" cy="229.15" rx="24.66" ry="24.66" fill="rgb(255,255,255)"/>
-<ellipse cx="327.97" cy="179.82" rx="24.66" ry="24.66" fill="rgb(255,191,191)"/>
-<ellipse cx="327.97" cy="130.50" rx="24.66" ry="24.66" fill="rgb(255,128,128)"/>
-<ellipse cx="327.97" cy="81.18" rx="24.66" ry="24.66" fill="rgb(255,64,64)"/>
-<ellipse cx="327.97" cy="31.85" rx="24.66" ry="24.66" fill="rgb(255,0,0)"/>
+<g clip-path="url(#plotClip_359x260)">
+<ellipse cx="31.80" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="31.80" cy="179.21" rx="24.62" ry="24.62" fill="rgb(255,191,191)"/>
+<ellipse cx="31.80" cy="129.98" rx="24.62" ry="24.62" fill="rgb(255,128,128)"/>
+<ellipse cx="31.80" cy="80.74" rx="24.62" ry="24.62" fill="rgb(255,64,64)"/>
+<ellipse cx="31.80" cy="31.51" rx="24.62" ry="24.62" fill="rgb(255,0,0)"/>
+<ellipse cx="81.03" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="81.03" cy="179.21" rx="24.62" ry="24.62" fill="rgb(255,255,191)"/>
+<ellipse cx="81.03" cy="129.98" rx="24.62" ry="24.62" fill="rgb(255,255,128)"/>
+<ellipse cx="81.03" cy="80.74" rx="24.62" ry="24.62" fill="rgb(255,255,64)"/>
+<ellipse cx="81.03" cy="31.51" rx="24.62" ry="24.62" fill="rgb(255,255,0)"/>
+<ellipse cx="130.27" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="130.27" cy="179.21" rx="24.62" ry="24.62" fill="rgb(191,255,191)"/>
+<ellipse cx="130.27" cy="129.98" rx="24.62" ry="24.62" fill="rgb(128,255,128)"/>
+<ellipse cx="130.27" cy="80.74" rx="24.62" ry="24.62" fill="rgb(64,255,64)"/>
+<ellipse cx="130.27" cy="31.51" rx="24.62" ry="24.62" fill="rgb(0,255,0)"/>
+<ellipse cx="179.50" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="179.50" cy="179.21" rx="24.62" ry="24.62" fill="rgb(191,255,255)"/>
+<ellipse cx="179.50" cy="129.98" rx="24.62" ry="24.62" fill="rgb(128,255,255)"/>
+<ellipse cx="179.50" cy="80.74" rx="24.62" ry="24.62" fill="rgb(64,255,255)"/>
+<ellipse cx="179.50" cy="31.51" rx="24.62" ry="24.62" fill="rgb(0,255,255)"/>
+<ellipse cx="228.73" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="228.73" cy="179.21" rx="24.62" ry="24.62" fill="rgb(191,191,255)"/>
+<ellipse cx="228.73" cy="129.98" rx="24.62" ry="24.62" fill="rgb(128,128,255)"/>
+<ellipse cx="228.73" cy="80.74" rx="24.62" ry="24.62" fill="rgb(64,64,255)"/>
+<ellipse cx="228.73" cy="31.51" rx="24.62" ry="24.62" fill="rgb(0,0,255)"/>
+<ellipse cx="277.97" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="277.97" cy="179.21" rx="24.62" ry="24.62" fill="rgb(255,191,255)"/>
+<ellipse cx="277.97" cy="129.98" rx="24.62" ry="24.62" fill="rgb(255,128,255)"/>
+<ellipse cx="277.97" cy="80.74" rx="24.62" ry="24.62" fill="rgb(255,64,255)"/>
+<ellipse cx="277.97" cy="31.51" rx="24.62" ry="24.62" fill="rgb(255,0,255)"/>
+<ellipse cx="327.20" cy="228.45" rx="24.62" ry="24.62" fill="rgb(255,255,255)"/>
+<ellipse cx="327.20" cy="179.21" rx="24.62" ry="24.62" fill="rgb(255,191,191)"/>
+<ellipse cx="327.20" cy="129.98" rx="24.62" ry="24.62" fill="rgb(255,128,128)"/>
+<ellipse cx="327.20" cy="80.74" rx="24.62" ry="24.62" fill="rgb(255,64,64)"/>
+<ellipse cx="327.20" cy="31.51" rx="24.62" ry="24.62" fill="rgb(255,0,0)"/>
 </g>
 </svg>

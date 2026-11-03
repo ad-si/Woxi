@@ -1416,11 +1416,10 @@ mod interpreter_tests {
     .unwrap();
     let arrowed_height = svg_root_height(&arrowed);
 
-    // WL keeps the height exactly (227 for both); Woxi draws the replaced
-    // picture with the Graphics renderer, which sizes a picture with axes
-    // a little differently (see conformance_gaps.md), so allow 5%.
+    // WL keeps the height exactly (227 for both), though Woxi draws the
+    // replaced picture with the Graphics renderer.
     assert!(
-      (arrowed_height - baseline_height).abs() < baseline_height * 0.05,
+      arrowed_height == baseline_height,
       "Line -> Arrow replacement changed the plot's height: {arrowed_height} \
        vs baseline {baseline_height}"
     );
@@ -1450,7 +1449,7 @@ mod interpreter_tests {
     clear_state();
     let title_font = |label: &str| -> f64 {
       let svg = interpret(&format!(
-        "ExportString[Plot[x, {{x, 0, 1}}, ImageSize -> {{500, 250}}, \
+        "ExportString[Plot[x, {{x, 0, 1}}, ImageSize -> {{300, 150}}, \
            PlotLabel -> {label}], \"SVG\"]"
       ))
       .unwrap();
@@ -2540,7 +2539,8 @@ mod interpreter_tests {
     );
     assert!(
       svg.contains("first")
-        && svg.contains("dy=\"18\">")
+        // 1.25 line heights of the 12 pt title apart.
+        && svg.contains("dy=\"16.76\">")
         && svg.contains("second"),
       "PlotLabel must stack the Column items on separate lines:\n{svg}"
     );
@@ -3444,7 +3444,7 @@ mod interpreter_tests {
     .unwrap();
     assert!(!svg.contains(">1.2<"), "axes must stop at 1: {svg}");
     assert!(
-      svg.contains("translate(80,85)"),
+      svg.contains("translate(80.00,85.00)"),
       "square plot centred: {svg:.300}"
     );
   }
@@ -3785,7 +3785,9 @@ mod interpreter_tests {
     )
     .unwrap();
     assert!(
-      svg.contains("<text x=\"72.00\" y=\"72.00\""),
+      // The middle of the 143 px drawing area (a bare picture keeps a
+      // point on its right and bottom).
+      svg.contains("<text x=\"71.50\" y=\"71.50\""),
       "label not centred: {svg}"
     );
   }
@@ -4307,7 +4309,7 @@ mod interpreter_tests {
     // landed at the exact same on-screen position regardless of direction.
     clear_state();
     let svg = interpret(
-      "ExportString[Graphics[{Text[\"Q\", {0, 0}, {-1, 0}, {1, 0}], Text[\"Q\", {0, 0}, {-1, 0}, {0, 1}]}, ImageSize -> {100, 100}, PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"]",
+      "ExportString[Graphics[{Text[\"Q\", {0, 0}, {-1, 0}, {1, 0}], Text[\"Q\", {0, 0}, {-1, 0}, {0, 1}]}, ImageSize -> {100, 100}, PlotRange -> {{-1, 1}, {-1, 1}}, ImagePadding -> None], \"SVG\"]",
     )
     .unwrap();
     // Direction {1, 0} (pointing right, unrotated baseline): offset -1
@@ -4339,11 +4341,11 @@ mod interpreter_tests {
     // instead of the asymmetric range actually requested.
     clear_state();
     let plain = interpret(
-      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> {{-5, 5}, {-2, 8}}], \"SVG\"]",
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> {{-5, 5}, {-2, 8}}, ImagePadding -> None], \"SVG\"]",
     )
     .unwrap();
     let dynamic = interpret(
-      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> Dynamic[{{-5, 5}, {-2, 8}}]], \"SVG\"]",
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> Dynamic[{{-5, 5}, {-2, 8}}], ImagePadding -> None], \"SVG\"]",
     )
     .unwrap();
     assert_eq!(
@@ -4991,7 +4993,7 @@ mod interpreter_tests {
   fn test_axes_label_shrinks_to_fit_image_padding() {
     // An x `AxesLabel` sits right of the axis; when `ImagePadding` leaves
     // less room than the label needs it must shrink instead of running
-    // past the canvas edge, while a roomy padding keeps the 14px size (140 in the 10x-scaled SVG).
+    // past the canvas edge, while a roomy padding keeps the 10 pt size (100 in the 10x-scaled SVG).
     clear_state();
     let tight = interpret(
       "ExportString[Plot[x, {x, 0, 1}, ImageSize -> 400, \
@@ -5004,7 +5006,7 @@ mod interpreter_tests {
       .find(|l| l.contains(">a long axis label"))
       .expect("x label drawn");
     assert!(
-      !label_tag.contains("font-size=\"140\""),
+      !label_tag.contains("font-size=\"100\""),
       "label wider than the right padding must shrink: {label_tag}"
     );
 
@@ -5020,7 +5022,7 @@ mod interpreter_tests {
       .find(|l| l.contains(">a long axis label"))
       .expect("x label drawn");
     assert!(
-      label_tag.contains("font-size=\"140\""),
+      label_tag.contains("font-size=\"100\""),
       "label that fits keeps its size: {label_tag}"
     );
   }
@@ -5099,7 +5101,9 @@ mod interpreter_tests {
       .expect("svg must declare a height");
     let mut found_x_tick = false;
     for line in svg.lines() {
-      if !line.contains("dominant-baseline=\"hanging\"") {
+      // The x tick labels: centred on their ticks.
+      if !line.starts_with("<text") || !line.contains("text-anchor=\"middle\"")
+      {
         continue;
       }
       let y: f64 = line
@@ -5109,9 +5113,10 @@ mod interpreter_tests {
         .and_then(|s| s.parse().ok())
         .expect("tick text must declare y");
       found_x_tick = true;
+      // `y` is the baseline; Arial's descent at 10 pt is 2.1 pt.
       assert!(
-        y + 14.0 <= height,
-        "x-axis tick label at y={y} (font-size 14) must fit within the \
+        y + 2.1 <= height,
+        "x-axis tick label at y={y} (font-size 10) must fit within the \
          svg's own height={height}, not be clipped off the bottom: {svg}"
       );
     }

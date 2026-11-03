@@ -3816,9 +3816,10 @@ mod high_level_functions {
       let svg =
         interpret("ExportString[Graphics[Disk[], Frame -> True], \"SVG\"]")
           .unwrap();
-      // Should have a translate for margins
+      // The frame's left padding (its y tick labels plus 3 pt) and the
+      // half point above it, as in WL 15.
       assert!(
-        svg.contains("translate(50,10)"),
+        svg.contains("translate(23.20,0.50)"),
         "Frame should offset for margin: {svg}"
       );
     }
@@ -4099,7 +4100,8 @@ mod high_level_functions {
       );
       assert!((y1 - y2).abs() < 1e-3, "no vertical shift: {svg}");
       assert!(
-        (x2 - x1 - 1.5 * w1).abs() < 1e-2,
+        // (Coordinates are written to 0.01 px.)
+        (x2 - x1 - 1.5 * w1).abs() < 0.03,
         "shift must be 3 units (= 1.5 widths): {svg}"
       );
     }

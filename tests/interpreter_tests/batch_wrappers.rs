@@ -1585,17 +1585,18 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn graph_plot_honours_plot_range_with_vertex_coordinates() {
     // With an explicit PlotRange the vertices keep their place in the
-    // window instead of being stretched to fill it.
+    // window instead of being stretched to fill it (the 359 px drawing
+    // area a bare picture leaves, a point short on its right and bottom).
     let svg = interpret(
       "ExportString[GraphPlot[{1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 0}}, PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains("cx=\"180.00\" cy=\"180.00\""), "{svg}");
+    assert!(svg.contains("cx=\"179.50\" cy=\"179.50\""), "{svg}");
     let full = interpret(
       "ExportString[GraphPlot[{1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 0}}], \"SVG\"]",
     )
     .unwrap();
-    assert!(!full.contains("cx=\"180.00\" cy=\"180.00\""), "{full}");
+    assert!(!full.contains("cx=\"179.50\" cy=\"179.50\""), "{full}");
   }
   #[test]
   fn graph_plot_edge_rendering_arrow_setback_uses_caller_units() {

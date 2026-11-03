@@ -4,12 +4,12 @@ expression: "export_svg(\"Graphics[Raster[{{0, 1}, {1, 0}}, {{0, 2}, {2, 0}}]]\"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
+<clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x360)">
-<rect x="7.20" y="180.00" width="172.80" height="172.80" fill="rgb(255,255,255)"/>
-<rect x="180.00" y="180.00" width="172.80" height="172.80" fill="rgb(0,0,0)"/>
-<rect x="7.20" y="7.20" width="172.80" height="172.80" fill="rgb(0,0,0)"/>
-<rect x="180.00" y="7.20" width="172.80" height="172.80" fill="rgb(255,255,255)"/>
+<g clip-path="url(#plotClip_359x358)">
+<rect x="7.18" y="179.21" width="172.32" height="172.32" fill="rgb(255,255,255)"/>
+<rect x="179.50" y="179.21" width="172.32" height="172.32" fill="rgb(0,0,0)"/>
+<rect x="7.18" y="6.89" width="172.32" height="172.32" fill="rgb(0,0,0)"/>
+<rect x="179.50" y="6.89" width="172.32" height="172.32" fill="rgb(255,255,255)"/>
 </g>
 </svg>

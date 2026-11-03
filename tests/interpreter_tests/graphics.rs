@@ -1428,8 +1428,10 @@ mod graphics {
         .0
         .to_string();
       assert!(
-        nested.contains("width=\"50.00\"")
-          && nested.contains("height=\"50.00\""),
+        // The drawing area is 199 x 99: a bare picture keeps a point on
+        // its right and bottom.
+        nested.contains("width=\"49.75\"")
+          && nested.contains("height=\"49.50\""),
         "a quarter of the width, half of the height: {nested}"
       );
     }
@@ -1461,7 +1463,7 @@ mod graphics {
         "an inset keeps its own size: {nested}"
       );
       assert!(
-        nested.contains("x=\"250.00\"") && nested.contains("y=\"240.00\""),
+        nested.contains("x=\"249.25\"") && nested.contains("y=\"238.82\""),
         "and sits at the scaled anchor: {nested}"
       );
     }
@@ -1511,15 +1513,16 @@ mod graphics {
         .expect("a nested picture")
         .0
         .to_string();
-      // 4 data units of the (padded) plot range on a 600px canvas.
+      // 4 data units of the (padded) plot range on the 598px wide drawing
+      // area its frame leaves.
       assert!(
-        nested.contains("width=\"213.33\""),
+        nested.contains("width=\"212.67\""),
         "the plot is sized in the enclosing coordinates: {nested}"
       );
       // The plot's own (0, 0) lands on the anchor {3, -2}: the plot centre
       // sits half its width right of it.
       assert!(
-        nested.contains("x=\"326.67\""),
+        nested.contains("x=\"326.08\""),
         "the plot's origin lands on the anchor: {nested}"
       );
     }
@@ -1557,16 +1560,16 @@ mod graphics {
           "{pos}: the image must be embedded: {svg}"
         );
       }
-      // The picture is half the 360px canvas wide; its corner, not its
-      // centre, sits on the anchor.
+      // The picture is half the 359px drawing area wide; its corner, not
+      // its centre, sits on the anchor.
       assert!(
-        corner("{Left, Top}").contains("<svg x=\"-180.00\" y=\"-180.00\"")
+        corner("{Left, Top}").contains("<svg x=\"-179.50\" y=\"-179.50\"")
       );
       assert!(
-        corner("{Right, Bottom}").contains("<svg x=\"180.00\" y=\"180.00\"")
+        corner("{Right, Bottom}").contains("<svg x=\"179.50\" y=\"179.50\"")
       );
       assert!(
-        corner("{Center, Center}").contains("<svg x=\"90.00\" y=\"90.00\"")
+        corner("{Center, Center}").contains("<svg x=\"89.75\" y=\"89.75\"")
       );
     }
 
@@ -2177,7 +2180,9 @@ mod graphics {
         let rest = &svg[i + "stroke-dasharray=\"".len()..];
         Some(rest.split('"').next().unwrap().to_string())
       };
-      assert_eq!(dasharray("Dashing[{0.05, 0.05}]"), Some("18.0,18.0".into()));
+      // A fraction of the 359px wide drawing area (a bare picture keeps a
+      // point on its right).
+      assert_eq!(dasharray("Dashing[{0.05, 0.05}]"), Some("17.9,17.9".into()));
       assert_eq!(dasharray("AbsoluteDashing[{4, 6}]"), Some("4.0,6.0".into()));
       // A one-element list is left as-is (SVG auto-doubles an odd-length
       // dasharray), matching how the plain `Dashing[{2}]` list branch works.
@@ -3200,7 +3205,8 @@ mod graphics {
         .unwrap();
       let x = attr(text, "x");
       let font = attr(text, "font-size");
-      let half = "a very long label".len() as f64 * 0.5 * font / 2.0;
+      // The padding measures the label in Arial: 0.43 em per character.
+      let half = "a very long label".len() as f64 * 0.43 * font / 2.0;
       assert!(x + half <= width, "label reaches {} of {width}", x + half);
     }
 
@@ -3316,8 +3322,9 @@ mod graphics {
         .and_then(|v| v.split(',').next())
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
-      // Right-anchored at x, the 5-character label needs ~40px to its left.
-      assert!(offset + x >= 40.0, "label ends at x = {offset} + {x}");
+      // Right-anchored at x, the label needs its width (24.5 pt in Arial)
+      // to its left.
+      assert!(offset + x >= 24.4, "label ends at x = {offset} + {x}");
     }
 
     #[test]
@@ -3457,10 +3464,11 @@ mod graphics {
         svg.contains("clip-path"),
         "the primitives must be clipped to the drawing area: {svg}"
       );
-      // No frame/axes means the drawing area is the whole 360x360 canvas.
+      // No frame/axes means the drawing area is the whole canvas but the
+      // point a bare picture keeps on its right and bottom.
       assert!(
         svg.contains(
-          "<rect x=\"0\" y=\"0\" width=\"360.00\" height=\"360.00\"/>"
+          "<rect x=\"0\" y=\"0\" width=\"359.00\" height=\"359.00\"/>"
         ),
         "the clip rect must match the drawing area: {svg}"
       );
@@ -3469,7 +3477,7 @@ mod graphics {
       // maps outside the canvas; only the `<g clip-path>` around it stops
       // it from being drawn there.
       assert!(
-        svg.contains("720.00,-360.00"),
+        svg.contains("718.00,-359.00"),
         "the unclipped endpoint should still be present in the geometry: {svg}"
       );
     }
@@ -3602,8 +3610,8 @@ mod graphics {
            PlotRange -> {{0, 2}, {0, 2}}, ImageSize -> {200, 200}]",
         );
         assert!(
-          svg.contains("rx=\"20.00\" ry=\"20.00\""),
-          "expected a 20px round disk, got {svg}"
+          svg.contains("rx=\"19.90\" ry=\"19.90\""),
+          "expected a 19.9px round disk (a tenth of the drawing width), got {svg}"
         );
       }
 
@@ -3803,10 +3811,10 @@ mod graphics {
     fn axes_true() {
       let svg = export_svg("Graphics[Circle[], Axes -> True]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"180.00\" x2=\"360.00\" y2=\"180.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
       ));
       assert!(svg.contains(
-        "<line x1=\"180.00\" y1=\"0.00\" x2=\"180.00\" y2=\"360.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
       ));
       assert!(svg.matches("<line ").count() > 2);
       assert!(svg.contains("<text "));
@@ -3817,10 +3825,10 @@ mod graphics {
     fn axes_list_x_only() {
       let svg = export_svg("Graphics[Circle[], Axes -> {True, False}]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"180.00\" x2=\"360.00\" y2=\"180.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
       ));
       assert!(!svg.contains(
-        "<line x1=\"180.00\" y1=\"0.00\" x2=\"180.00\" y2=\"360.00\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
       ));
       assert!(svg.matches("<line ").count() > 1);
       assert!(svg.contains("<text "));
@@ -9693,12 +9701,22 @@ mod plot3d {
       assert!(ticked.contains("<text"), "the default draws tick labels");
       // The border itself stays.
       assert!(plain.contains("fill=\"none\""), "the frame must remain");
-      // No label gutter is reserved, so the image is smaller.
-      assert!(plain.contains("width=\"380\""), "unexpected size: {plain}");
+      // Both are 360 wide; without the label gutters the plain box keeps
+      // a larger drawing area, so it is taller.
+      let height = |svg: &str| -> f64 {
+        svg
+          .split("height=\"")
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      assert!(plain.contains("width=\"360\""), "unexpected size: {plain}");
       assert!(
-        ticked.contains("width=\"420\""),
+        ticked.contains("width=\"360\""),
         "unexpected size: {ticked}"
       );
+      assert!(height(&plain) > height(&ticked), "{plain}\n{ticked}");
     }
 
     // `Frame -> False` on a density or contour plot leaves out the box and
@@ -10569,9 +10587,10 @@ mod plot3d {
       }
       // Absolute means absolute: the same dot at twice the image size.
       assert_eq!(radius(&dot("AbsolutePointSize[6]", 400)), 3.0);
-      // A fraction still follows the width.
-      assert_eq!(radius(&dot("PointSize[0.05]", 200)), 5.0);
-      assert_eq!(radius(&dot("PointSize[0.05]", 400)), 10.0);
+      // A fraction still follows the width of the drawing area (199 of the
+      // 200 px: a bare picture keeps a point on its right).
+      assert!((radius(&dot("PointSize[0.05]", 200)) - 4.975).abs() < 0.01);
+      assert!((radius(&dot("PointSize[0.05]", 400)) - 9.975).abs() < 0.01);
       // The named sizes are absolute too: 1, 2, 4.5 and 7 pixels across.
       for (name, r) in [
         ("Tiny", 0.5),
@@ -11012,7 +11031,8 @@ mod plot3d {
       let state = text_tag("state");
       let state_x = margin_left + attr(&state, "x");
       assert!(
-        state_x + "state".len() as f64 * 7.0 < canvas_w,
+        // Arial at 10 pt, as the padding measures it: ~0.43 em a letter.
+        state_x + "state".len() as f64 * 4.3 < canvas_w,
         "x AxesLabel overflows the canvas ({state_x} on a {canvas_w} wide \
          canvas): {state}"
       );
@@ -11021,7 +11041,7 @@ mod plot3d {
       let visits = text_tag("visits");
       let visits_x = margin_left + attr(&visits, "x");
       assert!(
-        visits_x - "visits".len() as f64 * 7.0 / 2.0 > 0.0,
+        visits_x - "visits".len() as f64 * 4.3 / 2.0 > 0.0,
         "y AxesLabel overflows the canvas' left edge ({visits_x}): {visits}"
       );
       assert!(canvas_h > 0.0, "sanity: canvas has a height");
@@ -11354,14 +11374,14 @@ mod plot3d {
       let narrow = y_label_x("\"y\"", "y<");
       let wide = y_label_x("{aaa, bbb, ccc, ddd, eee}", "{aaa,");
       // The narrow label fits centred on the axis; the wide one has to slide
-      // right so its left half stays on the canvas. At 14 px over a 25
-      // character label that is well past 900 render units.
+      // right so its left half stays on the canvas. At 10 pt over a 25
+      // character label that is well past 600 render units.
       assert!(
         wide > narrow,
         "wide y label must slide right: {wide} vs {narrow}"
       );
       assert!(
-        wide > 900.0,
+        wide > 600.0,
         "wide y label must clear the left edge: {wide}"
       );
     }
@@ -11782,8 +11802,9 @@ mod plot3d {
       let svg = export_svg("ListPlot[{{2, 5}, {3, 6}, {4, 8}}]");
       let (left, top, right, bottom) = plot_area(&svg);
       let (x, y) = axes_crossing(&svg);
-      let expected_x = left + (right - left) * 0.02 / 1.04;
-      let expected_y = bottom - (bottom - top) * 0.05 / 1.10;
+      // `Scaled[0.02]` / `Scaled[0.05]` of the padded span.
+      let expected_x = left + (right - left) * 0.02;
+      let expected_y = bottom - (bottom - top) * 0.05;
       assert!(
         (x - expected_x).abs() < 1.5,
         "y axis at {x}, not {expected_x}"
@@ -15059,7 +15080,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // (y grows downwards).
       let at = |body: &str| {
         let svg = export_svg(&format!(
-          "Graphics[{body}, PlotRange -> {{{{-4, 4}}, {{-4, 4}}}}]"
+          "Graphics[{body}, PlotRange -> {{{{-4, 4}}, {{-4, 4}}}}, \
+           ImagePadding -> None]"
         ));
         svg
           .split("points=\"")
@@ -15126,7 +15148,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg(
         "Graphics[GeometricTransformation[Style[Text[\"A\", {0, 0}], 40], \
          {{{1, 1}, {0, 1.5}}, {1, 0}}], \
-         PlotRange -> {{-4, 4}, {-4, 4}}]",
+         PlotRange -> {{-4, 4}, {-4, 4}}, ImagePadding -> None]",
       );
       assert!(svg.contains("x=\"225.00\" y=\"180.00\""), "{svg}");
       assert!(
@@ -18071,8 +18093,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .lines()
         // The two full-length axis lines, not their tick marks.
         .filter(|l| {
-          (l.contains("x1=\"0.00\"") && l.contains("x2=\"360.00\""))
-            || (l.contains("y1=\"0.00\"") && l.contains("y2=\"360.00\""))
+          let attr = |name: &str| -> f64 {
+            l.split(&format!(" {name}=\""))
+              .nth(1)
+              .and_then(|v| v.split('"').next())
+              .and_then(|v| v.parse().ok())
+              .unwrap_or(-1.0)
+          };
+          l.starts_with("<line")
+            && ((attr("x1") == 0.0 && attr("x2") > 300.0)
+              || (attr("y1") == 0.0 && attr("y2") > 300.0))
         })
         .map(str::to_string)
         .collect()
@@ -18867,7 +18897,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .expect("an x tick labelled -1.0")
         .parse()
         .expect("a numeric x attribute");
-      assert!(x > 0.0, "the -1.0 label starts at x={x}, still clipped");
+      // The label is centred on its tick at the left end of the axis; the
+      // padding left of the drawing area holds its left half (11.9 pt
+      // wide in Arial).
+      let offset: f64 = svg
+        .split("translate(")
+        .nth(1)
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+      assert!(
+        offset + x - 5.9 >= 0.0,
+        "the -1 label starts at x={offset} + {x} - 5.9, still clipped"
+      );
     }
 
     #[test]
@@ -27200,7 +27242,7 @@ mod regular_polygon {
     // The first vertex sits at angle 0, i.e. on the right-hand edge.
     assert_eq!(
       interpret(
-        "StringContainsQ[ExportString[Graphics[RegularPolygon[{0, 0}, {1, 0}, 4], PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"], \"<polygon points=\\\"360.00,180.00\"]"
+        "StringContainsQ[ExportString[Graphics[RegularPolygon[{0, 0}, {1, 0}, 4], PlotRange -> {{-1, 1}, {-1, 1}}, ImagePadding -> None], \"SVG\"], \"<polygon points=\\\"360.00,180.00\"]"
       )
       .unwrap(),
       "True"
@@ -39018,8 +39060,10 @@ mod color_data_gradients {
        ImageSize -> 100], \"SVG\"]",
     )
     .unwrap();
+    // A 99 x 12.4 drawing area plus the point a bare picture keeps below
+    // it, rounded up.
     assert!(
-      svg.contains("width=\"100\" height=\"13\""),
+      svg.contains("width=\"100\" height=\"14\""),
       "resized swatch: {svg}"
     );
   }
@@ -39038,7 +39082,8 @@ mod color_data_gradients {
        ImageSize -> 100}], \"SVG\"]",
     ] {
       let svg = interpret(code).unwrap();
-      assert!(svg.contains("width=\"100\" height=\"13\""), "{code}: {svg}");
+      // (wolframscript: 100 x 17; see conformance_gaps.md.)
+      assert!(svg.contains("width=\"100\" height=\"14\""), "{code}: {svg}");
     }
     // An explicit `ImageSize -> {w, h}` names the height and keeps it.
     assert!(
@@ -40108,12 +40153,15 @@ mod demonstration_plot_layout {
        ImageSize -> {200, 200}, ImagePadding -> {{25, 25}, {25, 25}}]",
     );
     assert!(
-      svg.contains("translate(25,25)"),
+      // (The drawing area is a hair shorter than wide — the y range is
+      // padded by 0.02 of the x span, the x range by 1/48 — and sits
+      // centred.)
+      svg.contains("translate(25.00,25.12)"),
       "the drawing area starts at the named padding: {svg:.400}"
     );
     // 200 wide less 25 either side, and the same vertically.
     assert!(
-      svg.contains("width=\"150.00\" height=\"150.00\""),
+      svg.contains("width=\"150.00\" height=\"149.76\""),
       "the padding leaves a 150x150 frame: {svg:.600}"
     );
     // An uneven spec puts a different amount on each side.
@@ -40122,11 +40170,11 @@ mod demonstration_plot_layout {
        ImageSize -> {200, 200}, ImagePadding -> {{40, 10}, {30, 20}}]",
     );
     assert!(
-      svg.contains("translate(40,20)"),
+      svg.contains("translate(40.00,20.12)"),
       "left padding offsets across, top padding down: {svg:.400}"
     );
     assert!(
-      svg.contains("width=\"150.00\" height=\"150.00\""),
+      svg.contains("width=\"150.00\" height=\"149.76\""),
       "200 less 40+10 across and 30+20 down: {svg:.600}"
     );
     // A bare number pads all four sides alike.
@@ -40135,7 +40183,7 @@ mod demonstration_plot_layout {
        ImageSize -> {200, 200}, ImagePadding -> 30]",
     );
     assert!(
-      svg.contains("translate(30,30)"),
+      svg.contains("translate(30.00,30."),
       "a single padding applies to every side: {svg:.400}"
     );
   }
@@ -40228,7 +40276,7 @@ fn an_axis_through_the_middle_needs_no_gutter() {
      PlotRange -> {{-3, 3}, {-3, 3}}, ImageSize -> {400, 400}]",
   );
   assert!(
-    centred.contains("translate(6,"),
+    centred.contains("translate(7."),
     "axes through the middle keep the small padding: {centred}"
   );
   // With the range wholly positive the y axis sits at the left edge and its
@@ -40238,7 +40286,7 @@ fn an_axis_through_the_middle_needs_no_gutter() {
      PlotRange -> {{1, 3}, {1, 3}}, ImageSize -> {400, 400}]",
   );
   assert!(
-    left_edge.contains("translate(50,"),
+    left_edge.contains("translate(16.90,"),
     "an axis at the edge still gets its gutter: {left_edge}"
   );
 }
@@ -40428,8 +40476,10 @@ fn the_default_stroke_is_one_pixel_at_every_size() {
     "Graphics[{Thickness[0.05], Line[{{1, 1}, {1, 5}}]}, \
      PlotRange -> {{0, 3}, {0, 6}}, ImageSize -> 200]",
   );
+  // A fraction of the 199 px wide drawing area (a bare picture keeps a
+  // point on its right).
   assert!(
-    relative.contains("stroke-width=\"10.00\""),
+    relative.contains("stroke-width=\"9.95\""),
     "Thickness is a fraction of the width: {relative}"
   );
 }
@@ -40614,7 +40664,8 @@ fn test_geometric_transformation_reflects_the_drawn_line() {
   clear_state();
   let svg = export_svg(
     "Graphics[GeometricTransformation[Line[{{0, 0}, {2, 0}}], \
-     ReflectionTransform[{-1, 1}]], PlotRange -> {{-1, 3}, {-1, 3}}]",
+     ReflectionTransform[{-1, 1}]], PlotRange -> {{-1, 3}, {-1, 3}}, \
+     ImagePadding -> None]",
   );
   assert!(
     svg.contains("90.00,270.00 90.00,90.00"),
@@ -41111,9 +41162,12 @@ mod grid_text_in_graphics {
       };
       (num(" width"), num(" height"))
     };
-    // A symmetric range gives a square drawing area, however lopsided the curve is.
-    assert_eq!(size("10"), (300, 294));
-    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 97));
+    // A symmetric range gives a square drawing area, however lopsided the
+    // curve is. (wolframscript: 300 x 300 and 300 x 88 — it keeps the
+    // plot's `PlotRangePadding` under the explicit range, so the tick
+    // labels at its ends need no padding; see conformance_gaps.md.)
+    assert_eq!(size("10"), (300, 297));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 94));
   }
 
   #[test]
@@ -42522,7 +42576,7 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   );
   assert!(
     svg.contains(
-      "<rect x=\"66.58\" y=\"0.00\" width=\"416.84\" height=\"396.00\"/>"
+      "<rect x=\"66.61\" y=\"0.00\" width=\"415.79\" height=\"395.00\"/>"
     ),
     "{svg}"
   );
@@ -42932,7 +42986,8 @@ mod list_plot_frame {
       "ExportString[Graphics[Circle[], ImageSize -> {200, 200}, PlotLabel -> \"Hi\"], \"SVG\"]",
     )
     .unwrap();
-    assert!(short.contains("font-size=\"16\""));
+    // WL 15's 12 pt title.
+    assert!(short.contains("font-size=\"12\""));
   }
 }
 
@@ -45096,7 +45151,9 @@ mod show_array_plot_sizing {
     )
     .unwrap();
     assert!(
-      svg.contains("<svg width=\"500\" height=\"400\""),
+      // As wolframscript: the drawing area plus the point a bare picture
+      // keeps below it.
+      svg.contains("<svg width=\"500\" height=\"401\""),
       "Got: {svg}"
     );
   }
@@ -45109,7 +45166,7 @@ mod show_array_plot_sizing {
     )
     .unwrap();
     assert!(
-      svg.contains("<svg width=\"300\" height=\"150\""),
+      svg.contains("<svg width=\"300\" height=\"151\""),
       "Got: {svg}"
     );
   }
@@ -45282,7 +45339,8 @@ mod wl_table_layout {
         format!("{{{{{g}}}, {{{g}}}}}"),
         "width=\"350\" height=\"700\"",
       ),
-      (format!("{{{{{r}, {r}}}}}"), "width=\"600\" height=\"170\""),
+      // (wolframscript: 600 x 165.)
+      (format!("{{{{{r}, {r}}}}}"), "width=\"600\" height=\"171\""),
     ] {
       let svg = export_svg(&format!("GraphicsGrid[{grid}]"));
       assert!(svg.starts_with(&format!("<svg {size}")), "{grid}: {svg}");
@@ -45293,7 +45351,8 @@ mod wl_table_layout {
     // A row of narrow pictures is only as wide as they are on their own.
     let tall = "Graphics[Rectangle[{0, 0}, {1, 4}]]";
     let svg = export_svg(&format!("GraphicsGrid[{{{{{tall}, {tall}}}}}]"));
-    assert!(svg.starts_with("<svg width=\"222\""), "{svg}");
+    // (wolframscript: 225 x 414.)
+    assert!(svg.starts_with("<svg width=\"226\""), "{svg}");
   }
 
   #[test]
@@ -45484,9 +45543,11 @@ mod wl_table_layout {
 
   #[test]
   fn graphics_margin_and_axis_tick_steps() {
-    // A margin of 2% of the width all round: a unit disk is 345.6 across.
+    // A margin of 1/48 of the range across (and 0.02 of it up and down)
+    // inside the 359 px drawing area: a unit disk is 344.64 across, as in
+    // wolframscript's export.
     let svg = export_svg("Graphics[Disk[]]");
-    assert!(svg.contains("rx=\"172.80\" ry=\"172.80\""), "{svg}");
+    assert!(svg.contains("rx=\"172.32\" ry=\"172.32\""), "{svg}");
     // Automatic axis ticks take the largest 1/2/5 step that still fits four
     // steps: spans 1–1.5 → 0.2, 2–3.5 → 0.5, 4–7 → 1, 8–10 → 2.
     for (r, first) in [(1.5, "0.2"), (3.5, "0.5"), (7.0, "1"), (8.0, "2")] {
@@ -45509,7 +45570,7 @@ mod wl_table_layout {
     for (rect, size) in [
       ("{1, 1}", "width=\"360\" height=\"360\""),
       ("{1, 1.2}", "width=\"360\" height=\"429\""),
-      ("{1, 2}", "width=\"220\" height=\"432\""),
+      ("{1, 2}", "width=\"222\" height=\"432\""),
     ] {
       let svg = export_svg(&format!("Graphics[Rectangle[{{0, 0}}, {rect}]]"));
       assert!(svg.starts_with(&format!("<svg {size}")), "{rect}: {svg}");
@@ -45518,7 +45579,7 @@ mod wl_table_layout {
     let svg =
       export_svg("Graphics[Rectangle[{0, 0}, {1, 2}], ImageSize -> 100]");
     assert!(
-      svg.starts_with("<svg width=\"100\" height=\"196\""),
+      svg.starts_with("<svg width=\"100\" height=\"195\""),
       "{svg}"
     );
   }
@@ -45544,8 +45605,12 @@ mod list_plot_wl15_ranges {
     (x0, x1): (f64, f64),
     (y0, y1): (f64, f64),
   ) -> String {
-    let (xs, ys) = (x1 - x0, y1 - y0);
     let pad = |v: f64| if v == 0.0 { 0.02 } else { 0.05 };
+    // `Scaled[s]` is that fraction of the padded span.
+    let (xs, ys) = (
+      (x1 - x0) / (1.0 - 2.0 * 0.02),
+      (y1 - y0) / (1.0 - pad(y0) - pad(y1)),
+    );
     format!(
       "{head}[{data}, PlotRange -> {{{{{}, {}}}, {{{}, {}}}}}, AxesOrigin -> {{{x0}, {y0}}}]",
       x0 - 0.02 * xs,

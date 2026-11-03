@@ -4,10 +4,10 @@ expression: "export_svg(\"Graphics[{Arrow[{{0, 0}, {2, 0}}, {0.5, 0.5}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
+<clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x360)">
-<polyline points="93.60,180.00 266.40,180.00" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polygon points="266.40,180.00 252.00,184.03 252.00,175.97" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_359x358)">
+<polyline points="93.34,179.21 265.66,179.21" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polygon points="265.66,179.21 251.30,183.23 251.30,175.19" fill="rgb(0,0,0)"/>
 </g>
 </svg>

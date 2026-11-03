@@ -9146,10 +9146,10 @@ mod graph_background {
     )
     .unwrap();
     assert!(svg.contains(
-      "<circle cx=\"72.00\" cy=\"180.00\" r=\"2.16\" fill=\"rgb(255,0,0)\"/>"
+      "<circle cx=\"71.80\" cy=\"179.50\" r=\"2.15\" fill=\"rgb(255,0,0)\"/>"
     ));
     assert!(svg.contains(
-      "<circle cx=\"288.00\" cy=\"180.00\" r=\"2.16\" fill=\"rgb(0,0,255)\"/>"
+      "<circle cx=\"287.20\" cy=\"179.50\" r=\"2.15\" fill=\"rgb(0,0,255)\"/>"
     ));
     let red = svg.find("rgb(255,0,0)").unwrap();
     let blue = svg.find("rgb(0,0,255)").unwrap();

@@ -4,9 +4,9 @@ expression: "export_svg(\"Graphics[{Directive[Red, Thickness[0.01]], Line[{{0, 0
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
+<clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x360)">
-<polyline points="7.20,352.80 352.80,7.20" fill="none" stroke="rgb(255,0,0)" stroke-width="3.60" stroke-linejoin="round" stroke-linecap="butt"/>
+<g clip-path="url(#plotClip_359x358)">
+<polyline points="7.18,351.53 351.82,6.89" fill="none" stroke="rgb(255,0,0)" stroke-width="3.59" stroke-linejoin="round" stroke-linecap="butt"/>
 </g>
 </svg>

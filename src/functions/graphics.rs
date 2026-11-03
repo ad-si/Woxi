@@ -732,7 +732,11 @@ impl BBox {
       if dx < 1e-10 {
         dx = dy;
       }
-      dy = dx;
+      // `Scaled[0.02]` of the padded width on the x axis is 1/48 of the
+      // span; the y axis gets 0.02 of the (unpadded) x span — Wolfram's
+      // `Graphics[Rectangle[{0, 0}, {1, 3}]]` is padded by 1/48 across and
+      // 1/50 up and down.
+      dy = dx * 0.96;
     }
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
@@ -753,6 +757,11 @@ impl BBox {
     self.y_max - self.y_min
   }
 }
+
+use crate::functions::plot_padding::{
+  AXES_LABEL_GAP_X, AXES_LABEL_GAP_Y, FRAME_LABEL_GAP, LABEL_FONT, TICK_FONT,
+  TICK_LABEL_GAP, TITLE_FONT, ascent, descent, line_height, line_pitch,
+};
 
 // ── Primitives ───────────────────────────────────────────────────────────
 
@@ -8803,7 +8812,8 @@ fn clamp_tick_label_x(
   svg_w: f64,
   margins: (f64, f64),
 ) -> f64 {
-  let half = label.chars().count() as f64 * 14.0 * 0.6 / 2.0;
+  let half =
+    crate::functions::plot_padding::tick_label_width(label, TICK_FONT) / 2.0;
   let (left, right) = margins;
   let lo = -left + half;
   let hi = svg_w + right - half;
@@ -8876,6 +8886,12 @@ impl AxisLineStyle {
       None => format!("stroke=\"{theme_stroke}\" stroke-width=\"{width}\""),
     }
   }
+}
+
+/// From the vertical centre of a line of text at `size` points to its
+/// baseline.
+fn centre_to_baseline(size: f64) -> f64 {
+  ascent(size) - line_height(size) / 2.0
 }
 
 fn render_axes(
@@ -8954,9 +8970,10 @@ fn render_axes(
       // to clear the margin, the way Wolfram's image padding keeps the
       // outermost labels whole.
       let x = clamp_tick_label_x(x, &label, svg_w, x_margins);
+      // The top of the label 3 pt below the axis.
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{label}</text>\n",
-        axis_y_px + 6.0,
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+        axis_y_px + TICK_LABEL_GAP + ascent(TICK_FONT),
       ));
     }
   }
@@ -8986,9 +9003,11 @@ fn render_axes(
       if axes.0 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
+      // 3 pt left of the axis, centred on the tick.
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"14\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{label}</text>\n",
-        axis_x_px - 6.0,
+        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
+        axis_x_px - TICK_LABEL_GAP,
+        y + centre_to_baseline(TICK_FONT),
       ));
     }
   }
@@ -9001,14 +9020,14 @@ fn render_axes(
       if let Some((_, h)) = axes_label_picture_size(x_label) {
         svg.push_str(&format!(
           "<g transform=\"translate({:.2},{:.2})\">{x_label}</g>\n",
-          svg_w + 8.0,
+          svg_w + AXES_LABEL_GAP_X,
           axis_y_px - h / 2.0,
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"start\" dominant-baseline=\"middle\">{x_label}</text>\n",
-          svg_w + 8.0,
-          axis_y_px,
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
+          svg_w + AXES_LABEL_GAP_X,
+          axis_y_px + centre_to_baseline(LABEL_FONT),
         ));
       }
     }
@@ -9017,11 +9036,12 @@ fn render_axes(
         svg.push_str(&format!(
           "<g transform=\"translate({:.2},{:.2})\">{y_label}</g>\n",
           axis_x_px - w / 2.0,
-          -8.0 - h,
+          -AXES_LABEL_GAP_Y - h,
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"-8.00\" fill=\"{theme_label_fill}\" font-size=\"14\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+          -AXES_LABEL_GAP_Y - descent(LABEL_FONT),
         ));
       }
     }
@@ -9153,6 +9173,135 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
   }
 }
 
+/// What a `Graphics` draws around its drawing area, for the automatic
+/// `ImagePadding` (see [`crate::functions::plot_padding`]): the frame's or
+/// the axes' tick labels — the same ticks [`render_frame`] and
+/// [`render_axes`] draw — the frame and axes labels, and the title band.
+#[allow(clippy::too_many_arguments)]
+fn graphics_decorations(
+  bb: &BBox,
+  axes: (bool, bool),
+  origin: (Option<f64>, Option<f64>),
+  ticks: (&TickSpec, &TickSpec),
+  frame: Option<(&[EdgeTicks; 4], &[Option<Vec<(f64, String)>>; 4])>,
+  frame_label: Option<&(String, String, String, String)>,
+  axes_label: Option<&(String, String)>,
+  title_lines: usize,
+) -> crate::functions::plot_padding::Decorations {
+  use crate::functions::plot_padding::{
+    Decorations, LabelBox, block_height, text_width, tick_label_width,
+  };
+  let frac_x = |v: f64| (v - bb.x_min) / (bb.x_max - bb.x_min);
+  let frac_y = |v: f64| (v - bb.y_min) / (bb.y_max - bb.y_min);
+  let label_box = |frac: f64, label: &str| LabelBox {
+    frac,
+    width: tick_label_width(label, TICK_FONT),
+    height: line_height(TICK_FONT),
+  };
+  let auto_labels = |lo: f64, hi: f64| {
+    let ticks = generate_ticks(lo, hi, 4);
+    let step = tick_sequence_step(&ticks);
+    ticks
+      .into_iter()
+      .map(|v| (v, svg_escape(&format_tick_in_sequence(v, step))))
+      .collect::<Vec<_>>()
+  };
+  // A text label's size, or a picture label's own.
+  let measure = |markup: &str| {
+    axes_label_picture_size(markup).unwrap_or_else(|| {
+      (text_width(markup, LABEL_FONT), line_height(LABEL_FONT))
+    })
+  };
+  let axis_x_data = origin.0.unwrap_or(if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
+    0.0
+  } else {
+    bb.x_min
+  });
+  let axis_y_data = origin.1.unwrap_or(if bb.y_min <= 0.0 && 0.0 <= bb.y_max {
+    0.0
+  } else {
+    bb.y_min
+  });
+  let mut d = Decorations {
+    title: block_height(title_lines, TITLE_FONT),
+    ..Default::default()
+  };
+  if let Some((modes, lists)) = frame {
+    d.frame = true;
+    for edge in 0..4 {
+      if modes[edge] != EdgeTicks::Labels {
+        continue;
+      }
+      let horizontal = edge % 2 == 0;
+      let listed = lists[edge].clone().unwrap_or_else(|| {
+        if horizontal {
+          auto_labels(bb.x_min, bb.x_max)
+        } else {
+          auto_labels(bb.y_min, bb.y_max)
+        }
+      });
+      d.frame_ticks[edge] = listed
+        .iter()
+        .filter(|(_, l)| !l.is_empty())
+        .map(|(v, l)| {
+          label_box(if horizontal { frac_x(*v) } else { frac_y(*v) }, l)
+        })
+        .filter(|b| b.frac.is_finite())
+        .collect();
+    }
+    if let Some((b, l, t, r)) = frame_label {
+      let text = |s: &String| {
+        (!s.is_empty()).then(|| {
+          axes_label_picture_size(s)
+            .map_or(block_height(1, LABEL_FONT), |(_, h)| h)
+        })
+      };
+      d.frame_labels = [text(b), text(l), text(t), text(r)];
+    }
+  } else if axes.0 || axes.1 {
+    d.axes = axes;
+    d.origin = (
+      frac_x(axis_x_data).clamp(0.0, 1.0),
+      frac_y(axis_y_data).clamp(0.0, 1.0),
+    );
+    let axis = |spec: &TickSpec,
+                lo: f64,
+                hi: f64,
+                frac: &dyn Fn(f64) -> f64,
+                other: bool| {
+      let entries = axis_ticks(spec, lo, hi);
+      let step = tick_sequence_step(
+        &entries.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+      );
+      entries
+        .into_iter()
+        // The two axes cross at the origin, so only one of them labels it.
+        .filter(|(t, _)| !(other && t.abs() < step.unwrap_or(1.0) * 1e-6))
+        .map(|(t, l)| {
+          let l =
+            l.unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
+          (frac(t), l)
+        })
+        .filter(|(f, l)| f.is_finite() && !l.is_empty())
+        .map(|(f, l)| label_box(f, &l))
+        .collect::<Vec<_>>()
+    };
+    if axes.0 {
+      d.axis_ticks.0 = axis(ticks.0, bb.x_min, bb.x_max, &frac_x, axes.1);
+    }
+    if axes.1 {
+      d.axis_ticks.1 = axis(ticks.1, bb.y_min, bb.y_max, &frac_y, axes.0);
+    }
+    if let Some((x, y)) = axes_label {
+      d.axes_labels = (
+        (axes.0 && !x.is_empty()).then(|| measure(x)),
+        (axes.1 && !y.is_empty()).then(|| measure(y)),
+      );
+    }
+  }
+  d
+}
+
 /// Render the requested frame edges around the plot area with their tick
 /// marks and labels.
 fn render_frame(
@@ -9217,9 +9366,16 @@ fn render_frame(
   };
 
   // Horizontal edges (bottom = 0, top = 2): ticks run along x.
-  for (i, y_lo, y_hi, anchor_y, baseline) in [
-    (0usize, svg_h - 5.0, svg_h, svg_h + 4.0, "hanging"),
-    (2usize, 0.0, 5.0, -4.0, "auto"),
+  // Labels 3 pt outside their edge: below the bottom one (their top),
+  // above the top one (their bottom).
+  for (i, y_lo, y_hi, anchor_y) in [
+    (
+      0usize,
+      svg_h - 5.0,
+      svg_h,
+      svg_h + TICK_LABEL_GAP + ascent(TICK_FONT),
+    ),
+    (2usize, 0.0, 5.0, -TICK_LABEL_GAP - descent(TICK_FONT)),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
@@ -9243,7 +9399,7 @@ fn render_frame(
       ));
       if ticks[i] == EdgeTicks::Labels {
         svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"{baseline}\">{label}</text>\n",
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         ));
       }
     }
@@ -9251,8 +9407,8 @@ fn render_frame(
 
   // Vertical edges (left = 1, right = 3): ticks run along y.
   for (i, x_lo, x_hi, anchor_x, anchor) in [
-    (1usize, 0.0, 5.0, -4.0, "end"),
-    (3usize, svg_w - 5.0, svg_w, svg_w + 4.0, "start"),
+    (1usize, 0.0, 5.0, -TICK_LABEL_GAP, "end"),
+    (3usize, svg_w - 5.0, svg_w, svg_w + TICK_LABEL_GAP, "start"),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
@@ -9276,7 +9432,8 @@ fn render_frame(
       ));
       if ticks[i] == EdgeTicks::Labels {
         svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\">{label}</text>\n",
+          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
+          y + centre_to_baseline(TICK_FONT),
         ));
       }
     }
@@ -11732,6 +11889,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
+  // The data's own shape, before the drawing size rounds it.
+  let data_aspect_exact = bb.height() / bb.width();
   // Adjust aspect ratio to match data unless explicitly set via ImageSize -> {w, h}
   if !explicit_height {
     let data_aspect = bb.height() / bb.width();
@@ -11741,12 +11900,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // A picture of automatic size that is taller than 1.2 times its width is
   // drawn 1.2 × 360 tall instead, narrowing to keep its shape.
+  let mut capped_tall = false;
   if !explicit_size {
     let max_h = (1.2 * svg_width as f64).round();
     if svg_height as f64 > max_h {
       let aspect = svg_height as f64 / svg_width as f64;
       svg_height = max_h as u32;
       svg_width = ((max_h / aspect).round() as u32).max(1);
+      capped_tall = true;
     }
   }
 
@@ -11775,12 +11936,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !aspect_ratio_full
     && (axes.0 || axes.1 || frame_edges.iter().any(|&e| e));
   if !aspect_ratio_full && !fit_frame_to_data {
-    expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
+    // The data's exact shape, not the one a whole-pixel height rounds to.
+    let ratio = if aspect_ratio.is_none()
+      && !explicit_height
+      && data_aspect_exact.is_finite()
+      && data_aspect_exact > 0.0
+    {
+      1.0 / data_aspect_exact
+    } else {
+      svg_w / svg_h
+    };
+    expand_bbox_to_aspect(&mut bb, ratio);
   }
 
-  // Compute margins for axis/frame tick labels. A PlotLabel reserves an
-  // extra strip above the drawing area for its centered title text.
-  // Without tick labels the frame needs no gutter, just room for its stroke.
+  // The room around the drawing area. Without `ImagePadding` it follows the
+  // Wolfram front end's rules for what the frame, the axes and their labels
+  // need (see `plot_padding`); a bare picture only reserves its `PlotLabel`.
   let frame = frame_edges.iter().any(|&e| e);
   // Only an edge that is drawn can carry tick marks or labels.
   for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {
@@ -11788,144 +11959,60 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       *mode = EdgeTicks::None;
     }
   }
-  let edge_labelled = |i: usize| frame_tick_modes[i] == EdgeTicks::Labels;
-  let frame_gutter_bottom = edge_labelled(0);
-  let frame_gutter_left = edge_labelled(1);
-  let frame_gutter_right = edge_labelled(3);
-  let has_bottom_caption =
-    frame_label.as_ref().is_some_and(|(b, ..)| !b.is_empty());
-  let has_left_caption =
-    frame_label.as_ref().is_some_and(|(_, l, ..)| !l.is_empty());
-  let has_top_caption = frame_label
-    .as_ref()
-    .is_some_and(|(_, _, t, _)| !t.is_empty());
-  let has_right_caption = frame_label
-    .as_ref()
-    .is_some_and(|(_, _, _, r)| !r.is_empty());
-  // An axis whose range spans zero is drawn through the middle of the
-  // picture and carries its tick labels there too, so it needs no gutter
-  // beside the drawing area — only the small padding Wolfram leaves all
-  // round. Reserving the full gutter for one pushed the drawing hard
-  // against the opposite edge and clipped whatever sat at the far side.
-  // The comparison is strict: a range that only *touches* zero (e.g. a
-  // histogram's `{0, 5.2}` y range) draws its axis flush with the picture's
-  // own edge, not through its middle, so the tick labels still need the
-  // full outside gutter — the 6px "interior" gutter left them with no room
-  // to draw in and they were clipped off entirely.
-  // An axis only just inside the range — e.g. at a data edge of 0 that the
-  // range padding moved off the picture's edge — sits too close to it for
-  // its labels, so it still takes the outside gutter.
-  let well_inside =
-    |lo: f64, hi: f64| lo < 0.0 && 0.0 < hi && -lo / (hi - lo) >= 0.1;
-  let y_axis_interior = axes.1 && well_inside(bb.x_min, bb.x_max);
-  let x_axis_interior = axes.0 && well_inside(bb.y_min, bb.y_max);
-  // An AxesLabel sits at the end of its axis (Wolfram's placement), so
-  // the x label needs room to the right and the y label room above. The
-  // label arrives as SVG markup (plain text, or with sub/superscript
-  // tspans from `Style[…]`); approximate its rendered width from its
-  // visible character count at the same 14px sans-serif size it draws
-  // with, so a longer label reserves more room instead of overflowing a
-  // fixed gutter and getting clipped by the canvas edge.
-  fn axis_label_width(markup: &str) -> f64 {
-    if let Some((w, _)) = axes_label_picture_size(markup) {
-      return w;
-    }
-    let mut visible_chars = 0usize;
-    let mut in_tag = false;
-    for c in markup.chars() {
-      match c {
-        '<' => in_tag = true,
-        '>' => in_tag = false,
-        _ if !in_tag => visible_chars += 1,
-        _ => {}
-      }
-    }
-    visible_chars as f64 * 7.5
-  }
-  let has_x_axis_label =
-    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
-  let has_y_axis_label =
-    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
-  let x_axis_label_width = axes_label
-    .as_ref()
-    .map_or(0.0, |(x, _)| axis_label_width(x));
-  let y_axis_label_width = axes_label
-    .as_ref()
-    .map_or(0.0, |(_, y)| axis_label_width(y));
-  let y_axis_label_height = axes_label
-    .as_ref()
-    .and_then(|(_, y)| axes_label_picture_size(y))
-    .map_or(0.0, |(_, h)| h + 8.0);
-  let margin_left: f64 = if frame_gutter_left || (axes.1 && !y_axis_interior) {
-    50.0
-  } else if frame {
-    10.0
-  } else if y_axis_interior {
-    6.0
+  let decorations = graphics_decorations(
+    &bb,
+    axes,
+    axes_origin,
+    (&ticks_x, &ticks_y),
+    frame.then_some((&frame_tick_modes, &frame_tick_lists)),
+    frame_label.as_ref(),
+    axes_label.as_ref(),
+    plot_label.as_ref().map_or(0, Vec::len),
+  );
+  // The shape of the drawing area: what the data (or `AspectRatio`) asks
+  // for, unless `ImageSize -> {w, h}` fixed the height outright.
+  let drawing_aspect = if aspect_ratio.is_none()
+    && !explicit_height
+    && data_aspect_exact.is_finite()
+    && data_aspect_exact > 0.0
+  {
+    data_aspect_exact
   } else {
-    0.0
-  } + if has_left_caption { 20.0 } else { 0.0 }
-    // The y-axis label is centred on the axis, so half its width bleeds
-    // left of it and needs its own room instead of running off the edge.
-    + if has_y_axis_label {
-      y_axis_label_width / 2.0
-    } else {
-      0.0
-    };
-  let margin_bottom: f64 =
-    if frame_gutter_bottom || (axes.0 && !x_axis_interior) {
-      25.0
-    } else if frame {
-      10.0
-    } else if x_axis_interior {
-      6.0
-    } else {
-      0.0
-    } + if has_bottom_caption { 20.0 } else { 0.0 };
-  let margin_right: f64 = if frame_gutter_right {
-    50.0
-  } else if frame {
-    10.0
-  } else if y_axis_interior {
-    // Balance the padding an interior y axis leaves on the left, so the
-    // drawing area sits centred instead of running off the right edge.
-    6.0
-  } else {
-    0.0
-  } + if has_x_axis_label {
-    x_axis_label_width + 8.0
-  } else {
-    0.0
-  } + if has_right_caption { 20.0 } else { 0.0 };
-  // A multi-line title (a `Grid`/`Column` label) claims one further line
-  // height per extra row on top of the single-line strip.
-  let label_strip: f64 = match &plot_label {
-    Some(lines) => 26.0 + 18.0 * (lines.len().saturating_sub(1)) as f64,
-    None => 0.0,
+    svg_h / svg_w
   };
-  let margin_top: f64 = if frame { 10.0 } else { 0.0 }
-    + label_strip
-    + if has_y_axis_label {
-      y_axis_label_height.max(20.0)
-    } else {
-      0.0
-    }
-    + if has_top_caption { 20.0 } else { 0.0 };
-  // `ImagePadding` states the room around the drawing area outright, so it
-  // replaces the margins the frame and its labels would otherwise claim
-  // (Wolfram draws the tick labels inside that padding).
+  let fixed_h =
+    ((explicit_size && size_names_height) || capped_tall).then_some(svg_h);
+  let pad = decorations.solve(svg_w, |w| match fixed_h {
+    Some(h) => (h - 16.0).min(w * drawing_aspect),
+    None => w * drawing_aspect,
+  });
   let (margin_left, margin_right, margin_bottom, margin_top) =
     match image_padding {
+      // `ImagePadding` states the room around the drawing area outright, so
+      // it replaces the automatic margins (Wolfram draws the tick labels
+      // inside that padding).
       Some([left, right, bottom, top]) => (left, right, bottom, top),
-      None => (margin_left, margin_right, margin_bottom, margin_top),
+      // A bare picture keeps one point on its right and bottom, unless a
+      // `PlotLabel` sits above it.
+      None if !frame && !axes.0 && !axes.1 && pad.title == 0.0 => {
+        (0.0, 1.0, 1.0, 0.0)
+      }
+      None => (pad.left, pad.right, pad.bottom, pad.above()),
     };
-  // The size asked for is the whole picture, so the drawing area is what
-  // is left of it once the axes and their labels have taken their room.
+  // The size asked for is the whole picture (an automatic one is 360 wide
+  // too), so the drawing area is what is left of it once the axes and
+  // their labels have taken their room.
   let (mut margin_left, mut margin_right, mut margin_bottom, mut margin_top) =
     (margin_left, margin_right, margin_bottom, margin_top);
-  let (svg_w, svg_h) = if explicit_size {
+  let (svg_w, svg_h) = {
     let w = (svg_w - margin_left - margin_right).max(1.0);
     match aspect_ratio {
+      // A tall picture capped at 1.2 times the default width keeps that
+      // height; its width follows.
+      _ if capped_tall => {
+        let h = (svg_h - margin_bottom - margin_top).max(1.0);
+        (h / drawing_aspect, h)
+      }
       // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
       // only a minimum: the drawing area keeps its `AspectRatio` inside
       // what the padding leaves, and the room left over is split evenly
@@ -11947,18 +12034,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `AspectRatio -> r` shapes the drawing area itself, not the whole
       // picture, so the height follows from the width left over after the
       // margins (unless `ImageSize -> {w, h}` fixed the height outright).
-      Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
+      Some(r) if !size_names_height => (w, (w * r).max(1.0)),
       // A width alone keeps the data's shape, so the height follows from
       // the width left over after the margins rather than losing the
       // margins' height from a height fitted to the full width (which
       // padded the plot range until the shapes agreed again).
       None if !size_names_height && !aspect_ratio_full => {
-        (w, (w * svg_h / svg_w).round().max(1.0))
+        (w, (w * drawing_aspect).max(1.0))
       }
+      _ if !explicit_size => (w, (w * drawing_aspect).max(1.0)),
       _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
     }
-  } else {
-    (svg_w, svg_h)
   };
   let (mut margin_left, mut margin_right) = (margin_left, margin_right);
   let (mut margin_bottom, mut margin_top) = (margin_bottom, margin_top);
@@ -11982,11 +12068,29 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The margins took room from one side only, so the drawing area is no
   // longer the shape the data was fitted to; fit it again or circles come
   // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`).
-  if explicit_size && !aspect_ratio_full {
+  if !aspect_ratio_full {
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
   let total_width = svg_w + margin_left + margin_right;
-  let total_height = svg_h + margin_bottom + margin_top;
+  let total_width = if capped_tall {
+    (total_width - 4e-3).ceil()
+  } else {
+    total_width
+  };
+  // Wolfram rounds a height that follows from the width up to a whole
+  // point, the spare fraction left below the picture.
+  let total_height = if size_names_height {
+    svg_h + margin_bottom + margin_top
+  } else {
+    crate::functions::plot_padding::image_height(
+      svg_h,
+      &crate::functions::plot_padding::Padding {
+        bottom: margin_bottom,
+        top: margin_top,
+        ..Default::default()
+      },
+    )
+  };
 
   let mut svg = String::with_capacity(4096);
 
@@ -12118,31 +12222,41 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .max()
       .unwrap_or(0);
     let label_font = if widest == 0 {
-      16.0
+      TITLE_FONT
     } else {
-      (16.0_f64).min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
+      TITLE_FONT.min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
+    };
+    // The band at the top of the picture, above the padding.
+    let title_top = match image_padding {
+      Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
+      None => 0.0,
     };
     svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+      "<text x=\"{cx:.1}\" y=\"{:.2}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"{}\" \
        xml:space=\"preserve\">",
+      title_top + ascent(label_font),
       label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb),
     ));
     for (i, line) in lines.iter().enumerate() {
       if i == 0 {
         svg.push_str(line);
       } else {
-        svg.push_str(&format!("<tspan x=\"{cx:.1}\" dy=\"18\">{line}</tspan>"));
+        svg.push_str(&format!(
+          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{line}</tspan>",
+          line_pitch(label_font)
+        ));
       }
     }
     svg.push_str("</text>\n");
   }
 
   // Offset the drawing area so axes/frame labels fit in the margins
-  let has_margin = margin_left > 0.0 || margin_bottom > 0.0 || margin_top > 0.0;
+  // Only room left of or above the drawing area moves it.
+  let has_margin = margin_left > 0.0 || margin_top > 0.0;
   if has_margin {
     svg.push_str(&format!(
-      "<g transform=\"translate({margin_left:.0},{margin_top:.0})\">\n"
+      "<g transform=\"translate({margin_left:.2},{margin_top:.2})\">\n"
     ));
   }
 
@@ -12243,36 +12357,42 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Frame captions: the bottom/top ones centred outside their edge, the
-  // left/right ones rotated along theirs.
+  // left/right ones rotated along theirs, 6 pt beyond the edge's tick
+  // labels.
   if let Some((bottom, left, top, right)) = &frame_label {
+    let room =
+      |edge: usize| decorations.frame_tick_room(edge) + FRAME_LABEL_GAP;
     if !bottom.is_empty() {
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
         svg_w / 2.0,
-        svg_h + margin_bottom - 6.0,
+        svg_h + room(0) + ascent(LABEL_FONT),
         frame_label_fill,
       ));
     }
     if !left.is_empty() {
-      let lx = -(margin_left - 12.0);
+      // Rotated counterclockwise the glyphs rise to the left of the
+      // baseline.
+      let lx = -(room(1) + line_height(LABEL_FONT)) + ascent(LABEL_FONT);
       let ly = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{frame_label_fill}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{frame_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
       ));
     }
     if !top.is_empty() {
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
         svg_w / 2.0,
-        -(margin_top - 12.0),
+        -room(2) - descent(LABEL_FONT),
         frame_label_fill,
       ));
     }
     if !right.is_empty() {
-      let rx = svg_w + margin_right - 12.0;
+      // Reading upwards like the left one.
+      let rx = svg_w + room(3) + ascent(LABEL_FONT);
       let ry = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{frame_label_fill}\" font-size=\"12\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{frame_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
       ));
     }
   }
@@ -16984,7 +17104,7 @@ fn expand_bbox_to_aspect(bb: &mut BBox, aspect: f64) {
 }
 
 /// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
-fn option_name(expr: &Expr) -> Option<&str> {
+pub(crate) fn option_name(expr: &Expr) -> Option<&str> {
   if let Expr::Identifier(name) = expr {
     Some(name.as_str())
   } else {
@@ -17365,6 +17485,15 @@ pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
 /// the recorded size is missing or invalid.
 pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
   let ratio = image_size.1 as f64 / image_size.0 as f64;
+  // The placeholder height a plot records when no height was asked for:
+  // its plotting area took the default 1/GoldenRatio.
+  let placeholder = (image_size.0 as f64
+    * crate::functions::plot::DEFAULT_HEIGHT as f64
+    / crate::functions::plot::DEFAULT_WIDTH as f64)
+    .round();
+  if image_size.1 as f64 == placeholder {
+    return 1.0 / std::f64::consts::GOLDEN_RATIO;
+  }
   if ratio.is_finite() && ratio > 0.0 {
     ratio
   } else {

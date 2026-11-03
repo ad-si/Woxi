@@ -4,73 +4,73 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {-0.5, 0.5}]\"
 ---
 <svg width="360" height="214" viewBox="0 0 3600 2140" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2140" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="420,1070 482,822 543,578 605,342 666,118 672,100 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="1676,100 1713,229 1774,459 1836,699 1897,946 1959,1194 2020,1441 2082,1681 2143,1911 2180,2039 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="3184,2039 3190,2022 3251,1798 3313,1562 3374,1318 3436,1070 "/>
-<line x1="358.0" y1="1070.0" x2="3500.0" y2="1070.0" stroke="#666" stroke-width="5"/>
-<line x1="516.9" y1="1070.0" x2="516.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="612.9" y1="1070.0" x2="612.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="708.9" y1="1070.0" x2="708.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="804.9" y1="1070.0" x2="804.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="996.9" y1="1070.0" x2="996.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1092.9" y1="1070.0" x2="1092.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1188.9" y1="1070.0" x2="1188.9" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1285.0" y1="1070.0" x2="1285.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1477.0" y1="1070.0" x2="1477.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1573.0" y1="1070.0" x2="1573.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1669.0" y1="1070.0" x2="1669.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1765.0" y1="1070.0" x2="1765.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="1957.0" y1="1070.0" x2="1957.0" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2053.1" y1="1070.0" x2="2053.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2149.1" y1="1070.0" x2="2149.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2245.1" y1="1070.0" x2="2245.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2437.1" y1="1070.0" x2="2437.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2533.1" y1="1070.0" x2="2533.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2629.1" y1="1070.0" x2="2629.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2725.1" y1="1070.0" x2="2725.1" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="2917.2" y1="1070.0" x2="2917.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="3013.2" y1="1070.0" x2="3013.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="3109.2" y1="1070.0" x2="3109.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="3205.2" y1="1070.0" x2="3205.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="3397.2" y1="1070.0" x2="3397.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="3493.2" y1="1070.0" x2="3493.2" y2="1046.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1070.0" x2="420.8" y2="1030.0" stroke="#666" stroke-width="5"/>
-<line x1="900.9" y1="1070.0" x2="900.9" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="900.9" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1</text>
-<line x1="1381.0" y1="1070.0" x2="1381.0" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="1381.0" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2</text>
-<line x1="1861.0" y1="1070.0" x2="1861.0" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="1861.0" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3</text>
-<line x1="2341.1" y1="1070.0" x2="2341.1" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="2341.1" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">4</text>
-<line x1="2821.2" y1="1070.0" x2="2821.2" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="2821.2" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">5</text>
-<line x1="3301.2" y1="1070.0" x2="3301.2" y2="1030.0" stroke="#666" stroke-width="5"/>
-<text x="3301.2" y="1190.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">6</text>
-<line x1="420.8" y1="100.0" x2="420.8" y2="2040.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="2040.0" x2="444.8" y2="2040.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1943.0" x2="444.8" y2="1943.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1749.0" x2="444.8" y2="1749.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1652.0" x2="444.8" y2="1652.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1555.0" x2="444.8" y2="1555.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1361.0" x2="444.8" y2="1361.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1264.0" x2="444.8" y2="1264.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1167.0" x2="444.8" y2="1167.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="973.0" x2="444.8" y2="973.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="876.0" x2="444.8" y2="876.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="779.0" x2="444.8" y2="779.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="585.0" x2="444.8" y2="585.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="488.0" x2="444.8" y2="488.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="391.0" x2="444.8" y2="391.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="197.0" x2="444.8" y2="197.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="100.0" x2="444.8" y2="100.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="1846.0" x2="460.8" y2="1846.0" stroke="#666" stroke-width="5"/>
-<text x="373.6" y="1882.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">-0.4</text>
-<line x1="420.8" y1="1458.0" x2="460.8" y2="1458.0" stroke="#666" stroke-width="5"/>
-<text x="373.6" y="1494.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">-0.2</text>
-<line x1="420.8" y1="1070.0" x2="460.8" y2="1070.0" stroke="#666" stroke-width="5"/>
-<line x1="420.8" y1="682.0" x2="460.8" y2="682.0" stroke="#666" stroke-width="5"/>
-<text x="373.6" y="718.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">0.2</text>
-<line x1="420.8" y1="294.0" x2="460.8" y2="294.0" stroke="#666" stroke-width="5"/>
-<text x="373.6" y="330.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">0.4</text>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="232,1062 299,792 366,526 433,269 500,25 506,5 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="1599,5 1639,145 1706,396 1773,658 1840,927 1907,1197 1974,1466 2041,1728 2108,1979 2148,2118 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="3241,2118 3247,2099 3314,1855 3381,1598 3448,1332 3515,1062 "/>
+<line x1="164.0" y1="1062.0" x2="3585.0" y2="1062.0" stroke="#666" stroke-width="5"/>
+<line x1="337.0" y1="1062.0" x2="337.0" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="441.5" y1="1062.0" x2="441.5" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="546.0" y1="1062.0" x2="546.0" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="650.6" y1="1062.0" x2="650.6" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="859.6" y1="1062.0" x2="859.6" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="964.2" y1="1062.0" x2="964.2" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1068.7" y1="1062.0" x2="1068.7" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1173.3" y1="1062.0" x2="1173.3" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1382.3" y1="1062.0" x2="1382.3" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1486.9" y1="1062.0" x2="1486.9" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1591.4" y1="1062.0" x2="1591.4" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1696.0" y1="1062.0" x2="1696.0" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="1905.0" y1="1062.0" x2="1905.0" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2009.6" y1="1062.0" x2="2009.6" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2114.1" y1="1062.0" x2="2114.1" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2218.6" y1="1062.0" x2="2218.6" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2427.7" y1="1062.0" x2="2427.7" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2532.3" y1="1062.0" x2="2532.3" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2636.8" y1="1062.0" x2="2636.8" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2741.3" y1="1062.0" x2="2741.3" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="2950.4" y1="1062.0" x2="2950.4" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="3054.9" y1="1062.0" x2="3054.9" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="3159.5" y1="1062.0" x2="3159.5" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="3264.0" y1="1062.0" x2="3264.0" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="3473.1" y1="1062.0" x2="3473.1" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="3577.6" y1="1062.0" x2="3577.6" y2="1038.0" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1062.0" x2="232.4" y2="1022.0" stroke="#666" stroke-width="5"/>
+<line x1="755.1" y1="1062.0" x2="755.1" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="755.1" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
+<line x1="1277.8" y1="1062.0" x2="1277.8" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="1277.8" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<line x1="1800.5" y1="1062.0" x2="1800.5" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="1800.5" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
+<line x1="2323.2" y1="1062.0" x2="2323.2" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="2323.2" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
+<line x1="2845.9" y1="1062.0" x2="2845.9" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="2845.9" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
+<line x1="3368.6" y1="1062.0" x2="3368.6" y2="1022.0" stroke="#666" stroke-width="5"/>
+<text x="3368.6" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
+<line x1="232.4" y1="5.0" x2="232.4" y2="2119.0" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="2119.0" x2="256.4" y2="2119.0" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="2013.3" x2="256.4" y2="2013.3" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1801.9" x2="256.4" y2="1801.9" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1696.2" x2="256.4" y2="1696.2" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1590.5" x2="256.4" y2="1590.5" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1379.1" x2="256.4" y2="1379.1" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1273.4" x2="256.4" y2="1273.4" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1167.7" x2="256.4" y2="1167.7" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="956.3" x2="256.4" y2="956.3" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="850.6" x2="256.4" y2="850.6" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="744.9" x2="256.4" y2="744.9" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="533.5" x2="256.4" y2="533.5" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="427.8" x2="256.4" y2="427.8" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="322.1" x2="256.4" y2="322.1" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="110.7" x2="256.4" y2="110.7" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="5.0" x2="256.4" y2="5.0" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1907.6" x2="272.4" y2="1907.6" stroke="#666" stroke-width="5"/>
+<text x="202.4" y="1942.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.4</text>
+<line x1="232.4" y1="1484.8" x2="272.4" y2="1484.8" stroke="#666" stroke-width="5"/>
+<text x="202.4" y="1519.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.2</text>
+<line x1="232.4" y1="1062.0" x2="272.4" y2="1062.0" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="639.2" x2="272.4" y2="639.2" stroke="#666" stroke-width="5"/>
+<text x="202.4" y="673.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.2</text>
+<line x1="232.4" y1="216.4" x2="272.4" y2="216.4" stroke="#666" stroke-width="5"/>
+<text x="202.4" y="251.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.4</text>
 </svg>

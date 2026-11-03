@@ -4,24 +4,24 @@ expression: "export_svg(\"Graphics[Raster[Table[Mod[i, j]/3, {i, 4}, {j, 4}] // 
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
+<clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x360)">
-<rect x="7.20" y="266.40" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="93.60" y="266.40" width="86.40" height="86.40" fill="rgb(85,85,85)"/>
-<rect x="180.00" y="266.40" width="86.40" height="86.40" fill="rgb(85,85,85)"/>
-<rect x="266.40" y="266.40" width="86.40" height="86.40" fill="rgb(85,85,85)"/>
-<rect x="7.20" y="180.00" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="93.60" y="180.00" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="180.00" y="180.00" width="86.40" height="86.40" fill="rgb(170,170,170)"/>
-<rect x="266.40" y="180.00" width="86.40" height="86.40" fill="rgb(170,170,170)"/>
-<rect x="7.20" y="93.60" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="93.60" y="93.60" width="86.40" height="86.40" fill="rgb(85,85,85)"/>
-<rect x="180.00" y="93.60" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="266.40" y="93.60" width="86.40" height="86.40" fill="rgb(255,255,255)"/>
-<rect x="7.20" y="7.20" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="93.60" y="7.20" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
-<rect x="180.00" y="7.20" width="86.40" height="86.40" fill="rgb(85,85,85)"/>
-<rect x="266.40" y="7.20" width="86.40" height="86.40" fill="rgb(0,0,0)"/>
+<g clip-path="url(#plotClip_359x358)">
+<rect x="7.18" y="265.37" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="93.34" y="265.37" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
+<rect x="179.50" y="265.37" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
+<rect x="265.66" y="265.37" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
+<rect x="7.18" y="179.21" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="93.34" y="179.21" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="179.50" y="179.21" width="86.16" height="86.16" fill="rgb(170,170,170)"/>
+<rect x="265.66" y="179.21" width="86.16" height="86.16" fill="rgb(170,170,170)"/>
+<rect x="7.18" y="93.05" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="93.34" y="93.05" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
+<rect x="179.50" y="93.05" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="265.66" y="93.05" width="86.16" height="86.16" fill="rgb(255,255,255)"/>
+<rect x="7.18" y="6.89" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="93.34" y="6.89" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
+<rect x="179.50" y="6.89" width="86.16" height="86.16" fill="rgb(85,85,85)"/>
+<rect x="265.66" y="6.89" width="86.16" height="86.16" fill="rgb(0,0,0)"/>
 </g>
 </svg>

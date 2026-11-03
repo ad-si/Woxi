@@ -3186,6 +3186,31 @@ fn apply_replace_all_ast_impl(
             )),
           ));
         }
+        // The plot's own defaults that `source.options` (only the options
+        // it was given) leaves out: its axes, and the padded range it drew.
+        let named = |n: &str| {
+          source.options.iter().any(|o| {
+            matches!(o, Expr::Rule { pattern, .. }
+              if crate::functions::graphics::option_name(pattern) == Some(n))
+          })
+        };
+        if !*is_3d {
+          if !named("Axes") && !named("Frame") {
+            opts.push(rule_expr(id_expr("Axes"), id_expr("True")));
+          }
+          if !named("PlotRange") && !named("PlotRangePadding") {
+            let pair = |(a, b): (f64, f64)| {
+              Expr::List(vec![Expr::Real(a), Expr::Real(b)].into())
+            };
+            opts.push(rule_expr(
+              id_expr("PlotRange"),
+              Expr::List(
+                vec![pair(source.x_range), pair(source.y_range)].into(),
+              ),
+            ));
+            opts.push(rule_expr(id_expr("PlotRangePadding"), id_expr("None")));
+          }
+        }
         Some(call(
           if *is_3d { "Graphics3D" } else { "Graphics" },
           std::iter::once(Expr::List(
