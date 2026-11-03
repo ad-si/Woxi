@@ -45315,8 +45315,45 @@ mod wl_table_layout {
     let svg =
       interpret("ExportString[TraditionalForm[HoldForm[a == 1/b]], \"SVG\"]")
         .unwrap();
-    assert!(svg.contains("translate(12.7,6.5)"), "{svg}");
-    assert!(svg.contains("<line x1=\"0\" y1=\"14.0\""), "{svg}");
+    assert!(svg.contains("translate(12.7,10.1)"), "{svg}");
+    assert!(svg.contains("<line x1=\"0\" y1=\"17.7\""), "{svg}");
+  }
+
+  #[test]
+  fn traditional_form_top_level_fraction_is_full_size() {
+    // Wolfram sets a top-level fraction at the surrounding size; only a
+    // nested one (here the inner 1/b) shrinks to 0.75.
+    let svg =
+      interpret("ExportString[TraditionalForm[HoldForm[1/b]], \"SVG\"]")
+        .unwrap();
+    assert_eq!(svg.matches("font-size=\"14.0\"").count(), 2, "{svg}");
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[a/(1 + 1/b)]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"14.0\""), "{svg}");
+    assert_eq!(svg.matches("font-size=\"10.5\"").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn traditional_form_superscript_raise_and_exponential_e() {
+    // A superscript's baseline is 0.39 em above a text base's, and `E` is
+    // drawn as an upright `e` (the embedded fonts have no `ℯ`).
+    let svg =
+      interpret("ExportString[TraditionalForm[HoldForm[E^x]], \"SVG\"]")
+        .unwrap();
+    assert!(
+      svg.contains(
+        "<text x=\"0\" y=\"11.2\" font-family=\"Atkinson Hyperlegible Mono, \
+         monospace\" font-size=\"14.0\" stroke=\"none\" \
+         xml:space=\"preserve\">e</text>"
+      ),
+      "{svg}"
+    );
+    assert!(!svg.contains('\u{212F}'), "{svg}");
+    // The script's top would sit at 11.2 - 0.39 * 14 - 7.84 = -2.1 above
+    // the base's, so the base moves down by 2.1 and the script stays at 0.
+    assert!(svg.contains("translate(0.0,2.1)"), "{svg}");
   }
 
   #[test]

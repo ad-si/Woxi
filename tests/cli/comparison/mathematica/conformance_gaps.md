@@ -5244,10 +5244,11 @@ Found comparing `Export[…, "SVG"]` of both engines:
 - A subscript inside a `Style`d run (nested `<tspan>`s under
   `dominant-baseline="central"`) is drawn raised, like a superscript, when
   resvg rasterizes the SVG; a plain one (`BaseForm` cells) is lowered.
-- `TraditionalForm` fractions are always set at 0.75 of the font; Wolfram
-  sets a top-level fraction at full size and only nested ones (in a grid, a
-  script) smaller. `ℯ` is drawn as an italic serif letter rather than the
-  double-struck one, and superscripts of `ℯ` come out too large.
+- `TraditionalForm` (box layout): `ℯ` is a plain upright `e` (the embedded
+  fonts have no double-struck one); operators inside scripts and nested
+  fractions keep their full spacing where Wolfram sets them tight
+  (`n=0` under a `∑`, `1+x` in a matrix fraction); an implicit product's
+  space is a full monospace advance, wider than Wolfram's.
 
 
 ## Images

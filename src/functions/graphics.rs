@@ -12743,11 +12743,18 @@ impl BoxLayout {
     // variable (`ⅆx` renders as if it read "ddx"). Map each to its plain
     // letter; `is_math_italic_atom` below then italicizes the lone letter,
     // giving the same look without depending on that glyph.
+    // `E` reaches the typesetter as `\[ExponentialE]` (U+F74D), which the
+    // SVG escaping turns into `ℯ` (U+212F) — a glyph the embedded fonts
+    // lack, so a fallback serif italic script e was drawn. Wolfram draws
+    // its exponential e as an upright double-struck `e`; the plain upright
+    // letter is the nearest glyph the embedded font has.
+    let upright_e = s == "\u{F74D}";
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
+        '\u{F74D}' => 'e',
         other => italic_letter_for_math_glyph(other).unwrap_or(other),
       })
       .collect();
@@ -12762,7 +12769,7 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if is_math_italic_atom(s) {
+    let style_attr = if is_math_italic_atom(s) && !upright_e {
       " font-style=\"italic\""
     } else {
       ""
@@ -12788,6 +12795,27 @@ impl BoxLayout {
       self.elements
     )
   }
+}
+
+thread_local! {
+  /// How deeply the box being laid out sits inside fractions, scripts and
+  /// grid cells — Wolfram's `ScriptLevel` as far as fractions care: a
+  /// fraction at level 0 is set at the surrounding size, a nested one (in a
+  /// fraction, a script or a grid) at 0.75 of it.
+  static BOX_SCRIPT_LEVEL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
+fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
+  struct Restore;
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_SCRIPT_LEVEL.with(|l| l.set(l.get().saturating_sub(1)));
+    }
+  }
+  BOX_SCRIPT_LEVEL.with(|l| l.set(l.get() + 1));
+  let _restore = Restore;
+  layout_box(expr, font_size)
 }
 
 /// Recursively lay out a box expression into a `BoxLayout`.
@@ -12974,8 +13002,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
       // FractionBox: numerator above line above denominator
       "FractionBox" if args.len() == 2 => {
-        let num = layout_box(&args[0], font_size * 0.75);
-        let den = layout_box(&args[1], font_size * 0.75);
+        let scale = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+          1.0
+        } else {
+          0.75
+        };
+        let num = layout_box_nested(&args[0], font_size * scale);
+        let den = layout_box_nested(&args[1], font_size * scale);
         let frac_w = num.width.max(den.width) + 4.0;
         let gap = 3.0;
         let line_thickness = 0.8;
@@ -13012,10 +13045,18 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SuperscriptBox: base with raised exponent
       "SuperscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
-        let sup = layout_box(&args[1], font_size * 0.7);
-        // Superscript top aligns with top of base
-        let sup_y = 0.0;
-        let base_y = sup.height * 0.4; // base shifted down so sup overlaps top
+        let sup = layout_box_nested(&args[1], font_size * 0.7);
+        // Wolfram raises a superscript's baseline 0.39 em above a text
+        // base's; a taller base (a fraction, a parenthesized sum) lifts it
+        // by as much as the base rises above a text line (ascent 0.8 em).
+        let raise =
+          0.39 * font_size + (base.baseline - 0.8 * font_size).max(0.0);
+        let sup_top = base.baseline - raise - sup.baseline;
+        let (base_y, sup_y) = if sup_top >= 0.0 {
+          (0.0, sup_top)
+        } else {
+          (-sup_top, 0.0)
+        };
         let elements = format!(
           "{}{}",
           base.translate(0.0, base_y),
@@ -13023,7 +13064,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         );
         BoxLayout {
           width: base.width + sup.width,
-          height: (base_y + base.height).max(sup.height),
+          height: (base_y + base.height).max(sup_y + sup.height),
           baseline: base_y + base.baseline,
           elements,
         }
@@ -13032,7 +13073,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SubscriptBox: base with lowered subscript
       "SubscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
-        let sub = layout_box(&args[1], font_size * 0.7);
+        let sub = layout_box_nested(&args[1], font_size * 0.7);
         let sub_y = base.height * 0.4;
         let elements = format!(
           "{}{}",
@@ -13050,8 +13091,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // SubsuperscriptBox: base with both
       "SubsuperscriptBox" if args.len() == 3 => {
         let base = layout_box(&args[0], font_size);
-        let sub = layout_box(&args[1], font_size * 0.7);
-        let sup = layout_box(&args[2], font_size * 0.7);
+        let sub = layout_box_nested(&args[1], font_size * 0.7);
+        let sup = layout_box_nested(&args[2], font_size * 0.7);
         // A large-operator base (∫) carries its limits like a display
         // integral: the upper bound at the top-right tip and the lower bound
         // at the bottom, nudged left to sit under the slanted stem (the sign's
@@ -13129,7 +13170,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now
       "OverscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
-        let over = layout_box(&args[1], font_size * 0.7);
+        let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
           "{}{}",
@@ -13145,7 +13186,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
-        let under = layout_box(&args[1], font_size * 0.7);
+        let under = layout_box_nested(&args[1], font_size * 0.7);
         let under_y = base.height;
         let elements = format!(
           "{}{}",
@@ -13161,8 +13202,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderoverscriptBox" if args.len() >= 3 => {
         let base = layout_box(&args[0], font_size);
-        let under = layout_box(&args[1], font_size * 0.7);
-        let over = layout_box(&args[2], font_size * 0.7);
+        let under = layout_box_nested(&args[1], font_size * 0.7);
+        let over = layout_box_nested(&args[2], font_size * 0.7);
         let base_y = over.height;
         let under_y = base_y + base.height;
         let w = base.width.max(under.width).max(over.width);
@@ -13295,9 +13336,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             .iter()
             .map(|row| {
               if let Expr::List(cells) = row {
-                cells.iter().map(|c| layout_box(c, font_size)).collect()
+                cells
+                  .iter()
+                  .map(|c| layout_box_nested(c, font_size))
+                  .collect()
               } else {
-                vec![layout_box(row, font_size)]
+                vec![layout_box_nested(row, font_size)]
               }
             })
             .collect();
