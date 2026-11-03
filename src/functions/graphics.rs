@@ -214,7 +214,7 @@ pub struct ThemeColors {
 }
 
 const LIGHT_THEME: ThemeColors = ThemeColors {
-  text_primary: "#333",
+  text_primary: "black",
   text_secondary: "#555",
   text_muted: "#888",
   stroke_default: "black",

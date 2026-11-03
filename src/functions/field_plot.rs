@@ -7131,7 +7131,12 @@ fn frame_ticked_svg(
   let (mt, mb) = (side(&ticks.top, false), side(&ticks.bottom, false));
   let (w, h) = (width as f64, height as f64);
   let (total_w, total_h) = ((w + ml + mr).ceil(), (h + mt + mb).ceil());
-  let fill_default = crate::functions::graphics::theme().text_primary;
+  // Wolfram draws these frame tick labels in `GrayLevel[0.25]`.
+  let fill_default = if crate::is_dark_mode() {
+    crate::functions::graphics::theme().text_primary
+  } else {
+    "rgb(64,64,64)"
+  };
   let label = |t: &FrameTickLabel, x: f64, y: f64, anchor: &str| {
     let fill = t
       .style

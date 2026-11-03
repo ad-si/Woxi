@@ -11045,4 +11045,16 @@ mod rasterized_text {
     let drop: i64 = lows.parse().unwrap();
     assert!(drop >= 5, "subscript drop {drop} px");
   }
+
+  #[test]
+  fn table_text_is_black() {
+    // Wolfram draws TableForm/Grid text black, not dark gray.
+    clear_state();
+    let svg = interpret("ExportString[TableForm[{{a, b}}], \"SVG\"]").unwrap();
+    assert!(svg.contains("fill=\"black\""), "{svg}");
+    assert!(!svg.contains("#333"), "{svg}");
+    // The embedded variable font declares its weight range, so a browser
+    // draws bold from the `wght` axis.
+    assert!(svg.contains("font-weight: 200 800;"));
+  }
 }

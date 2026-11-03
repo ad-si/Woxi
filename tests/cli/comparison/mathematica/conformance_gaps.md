@@ -5237,8 +5237,10 @@ Found comparing `Export[…, "SVG"]` of both engines:
   pictures of different shapes gets one shared height in Wolfram; Woxi
   keeps each cell's own shape. Cells of a wide `Graphics` are slightly
   taller in Woxi (600 x 170 for two `2:1` rectangles; Wolfram 600 x 165).
-- `TableForm`/`Grid` text is `#333` in Woxi, black in Wolfram; a
-  `TableHeadings` rule adds 1 pt to the gap it sits in only in Wolfram.
+- A `TableHeadings` rule adds 1 pt to the gap it sits in only in Wolfram.
+- Table and typeset text is 14 pt in Woxi, 13 pt in Wolfram, so every
+  table is about 8% larger (the row pitch, 1.33 em, and the column gaps
+  are the same in em).
 - A subscript inside a `Style`d run (nested `<tspan>`s under
   `dominant-baseline="central"`) is drawn raised, like a superscript, when
   resvg rasterizes the SVG; a plain one (`BaseForm` cells) is lowered.
