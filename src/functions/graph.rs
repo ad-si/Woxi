@@ -100,6 +100,9 @@ pub(crate) fn build_ungraph(
 struct RenderEdgeData {
   directed: bool,
   label: Option<String>,
+  /// Fraction along the edge (source to target) at which the label sits,
+  /// from `Labeled[edge, Placed[label, fraction]]`; the middle otherwise.
+  label_at: Option<f64>,
   color: Option<Color>,
 }
 
@@ -144,6 +147,7 @@ fn build_render_graph(
           RenderEdgeData {
             directed,
             label: label.clone(),
+            label_at: edge_label_fraction(e),
             color,
           },
         );
@@ -1281,11 +1285,12 @@ fn graph_render(
 
     // Edge label
     if let Some(lbl) = &edge_data.label {
-      let mx = if si == di { x1 } else { f64::midpoint(x1, x2) };
+      let t = edge_data.label_at.unwrap_or(0.5);
+      let mx = if si == di { x1 } else { x1 + t * (x2 - x1) };
       let my = if si == di {
         y1 + vertex_radius * 2.0 + vertex_radius * 1.8 * 1.5
       } else {
-        f64::midpoint(y1, y2)
+        y1 + t * (y2 - y1)
       };
       // Force labels to black so they don't inherit the edge color.
       primitives.push(call(
@@ -2404,6 +2409,50 @@ pub(crate) fn snap_coord(v: f64) -> f64 {
   v
 }
 
+/// The text of an edge label: strings as they are, `Placed[label, pos]`
+/// looked through, anything else in its formatted output form (so
+/// `NumberForm[x, 3]` shows as the rounded number).
+fn edge_label_text(label: &Expr) -> String {
+  match label {
+    Expr::String(s) => s.clone(),
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      edge_label_text(&args[0])
+    }
+    other => {
+      let shown = crate::evaluator::evaluate_expr_to_expr(
+        &crate::helpers::call1("ToString", other.clone()),
+      );
+      match &shown {
+        Ok(Expr::String(s)) => s.clone(),
+        _ => expr_to_output(other),
+      }
+    }
+  }
+}
+
+/// The numeric position of a `Labeled[edge, Placed[label, pos]]` label
+/// along the edge, if it has one.
+fn edge_label_fraction(mut e: &Expr) -> Option<f64> {
+  while let Expr::FunctionCall { name, args } = e {
+    match name.as_str() {
+      "Labeled" if args.len() == 2 => {
+        if let Expr::FunctionCall { name: p, args: pa } = &args[1]
+          && p == "Placed"
+          && pa.len() == 2
+        {
+          return crate::functions::graphics::expr_to_f64(&pa[1]);
+        }
+        e = &args[0];
+      }
+      "Style" if args.len() >= 2 => e = &args[0],
+      _ => break,
+    }
+  }
+  None
+}
+
 /// Peel off `Labeled[..., label]` and `Style[..., directives...]` wrappers,
 /// in any nesting order, returning the innermost expression along with the
 /// first label and first color directive encountered.
@@ -2418,10 +2467,7 @@ pub(crate) fn unwrap_edge_wrappers(
         if name == "Labeled" && args.len() == 2 =>
       {
         if label.is_none() {
-          label = Some(match &args[1] {
-            Expr::String(s) => s.clone(),
-            other => expr_to_output(other),
-          });
+          label = Some(edge_label_text(&args[1]));
         }
         expr = &args[0];
       }

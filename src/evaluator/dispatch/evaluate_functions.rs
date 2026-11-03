@@ -6105,9 +6105,17 @@ fn evaluate_function_call_ast_inner(
       // a Rule (a -> b, becomes DirectedEdge), a DirectedEdge, or an
       // UndirectedEdge (possibly wrapped in Labeled). Mixed lists are
       // supported — Wolfram accepts them too.
-      let all_edge_like = edges
-        .iter()
-        .all(|e| matches!(e, Expr::Rule { .. }) || is_graph_edge(e));
+      let is_rule_edge = |e: &Expr| match e {
+        Expr::Rule { .. } => true,
+        Expr::FunctionCall { name, args } => {
+          name == "Labeled"
+            && args.len() == 2
+            && matches!(&args[0], Expr::Rule { .. })
+        }
+        _ => false,
+      };
+      let all_edge_like =
+        edges.iter().all(|e| is_rule_edge(e) || is_graph_edge(e));
       if all_edge_like && !edges.is_empty() {
         let mut vertex_set: Vec<Expr> = Vec::new();
         let mut out_edges: Vec<Expr> = Vec::with_capacity(edges.len());
@@ -6129,6 +6137,22 @@ fn evaluate_function_call_ast_inner(
             push_vertex(&src, &mut vertex_set);
             push_vertex(&dst, &mut vertex_set);
             out_edges.push(call("DirectedEdge", vec![src, dst]));
+          } else if let Expr::FunctionCall { name, args } = e
+            && name == "Labeled"
+            && let Expr::Rule {
+              pattern,
+              replacement,
+            } = &args[0]
+          {
+            // `Labeled[a -> b, label]`: a labeled directed edge.
+            let src = (**pattern).clone();
+            let dst = (**replacement).clone();
+            push_vertex(&src, &mut vertex_set);
+            push_vertex(&dst, &mut vertex_set);
+            out_edges.push(call(
+              "Labeled",
+              vec![call("DirectedEdge", vec![src, dst]), args[1].clone()],
+            ));
           } else {
             if let Some((src, dst)) = edge_vertices(e) {
               push_vertex(src, &mut vertex_set);
