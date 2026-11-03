@@ -4908,8 +4908,9 @@ mod interpreter_tests {
          AxesLabel -> {Re[Z], -Im[Z]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">Re[Z]</text>"), "missing x label: {svg}");
-    assert!(svg.contains(">-Im[Z]</text>"), "missing y label: {svg}");
+    // A graphic's labels are set in TraditionalForm: round brackets.
+    assert!(svg.contains(">Re(Z)</text>"), "missing x label: {svg}");
+    assert!(svg.contains(">-Im(Z)</text>"), "missing y label: {svg}");
   }
 
   #[test]

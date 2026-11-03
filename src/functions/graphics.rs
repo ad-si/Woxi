@@ -16695,6 +16695,29 @@ pub fn traditional_label(e: &Expr) -> String {
   }
 }
 
+/// A label that applies a function the label typesetter has no notation
+/// for (`Sin[x]`, `Re[Z]`), set the way a graphic's `TraditionalForm` sets
+/// it: the traditional name, if any, applied in round brackets (`sin(x)`,
+/// `Re(Z)`). `None` for anything else, including a head with its own
+/// notation (`Subscript`, `Sqrt`, `Row`, …).
+pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.is_empty() {
+    return None;
+  }
+  let parts: Vec<String> = args.iter().map(expr_to_svg_markup).collect();
+  let generic = format!("{}[{}]", svg_escape(name), parts.join(", "));
+  if expr_to_svg_markup(expr) != generic {
+    return None;
+  }
+  let head =
+    crate::evaluator::dispatch::complex_and_special::tf_known_func(name)
+      .map_or_else(|| svg_escape(name), str::to_string);
+  Some(format!("{head}({})", parts.join(", ")))
+}
+
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
   if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));

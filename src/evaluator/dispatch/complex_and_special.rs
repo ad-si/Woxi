@@ -5019,6 +5019,10 @@ const TF_FUNCTION_NAMES: &[(&str, &str)] = &[
   ("Sinh", "sinh"),
   ("Cosh", "cosh"),
   ("Tanh", "tanh"),
+  ("Coth", "coth"),
+  ("Sech", "sech"),
+  ("Csch", "csch"),
+  ("Sinc", "sinc"),
   ("ArcSin", "arcsin"),
   ("ArcCos", "arccos"),
   ("ArcTan", "arctan"),
@@ -5033,13 +5037,18 @@ const TF_FUNCTION_NAMES: &[(&str, &str)] = &[
   ("Mod", "mod"),
   ("Gcd", "gcd"),
   ("Lcm", "lcm"),
+  ("Arg", "arg"),
+  ("Erf", "erf"),
+  ("Erfc", "erfc"),
+  ("Haversine", "hav"),
+  ("Gudermannian", "gd"),
   ("Gamma", "\u{0393}"), // Γ
   ("Zeta", "\u{03B6}"),  // ζ
 ];
 
 /// TraditionalForm display name for a well-known function (lowercase roman),
 /// or `None` if the head should be shown verbatim.
-fn tf_known_func(name: &str) -> Option<&'static str> {
+pub(crate) fn tf_known_func(name: &str) -> Option<&'static str> {
   TF_FUNCTION_NAMES
     .iter()
     .find(|(function, _)| *function == name)

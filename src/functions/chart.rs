@@ -558,7 +558,14 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
     // plot with its OutputForm text, matching wolframscript.
     other => {
-      let (markup, extra_lines) = markup_and_extra_lines(other);
+      // A graphic's `FormatType` is `TraditionalForm`: `PlotLabel ->
+      // Sin[x]` reads `sin(x)`.
+      let (markup, extra_lines) =
+        match crate::functions::graphics::traditional_application_markup(other)
+        {
+          Some(markup) => (markup, Vec::new()),
+          None => markup_and_extra_lines(other),
+        };
       let text = stacked_visible_text(&markup, &extra_lines);
       if text.is_empty() {
         None
@@ -1100,15 +1107,19 @@ fn applied_label(e: &Expr) -> Option<String> {
     {
       (name.clone(), &args[..])
     }
-    // A built-in head stays in StandardForm bracket notation (`Re[Z]`,
-    // `Sin[x]`), with its arguments set as labels so
-    // `Sin[Subscript[k, 1] x]` reads `Sin[k₁ x]`.
+    // A graphic's `FormatType` is `TraditionalForm`, so a built-in head
+    // is applied in round brackets under its traditional name (`Re(Z)`,
+    // `sin(x)`), with its arguments set as labels so
+    // `Sin[Subscript[k, 1] x]` reads `sin(k₁ x)`.
     // (Each argument is labelled once: testing them first and labelling
     // them again doubled the work at every level of a nested label.)
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       let parts: Vec<String> =
         args.iter().map(expr_to_label).collect::<Option<Vec<_>>>()?;
-      return Some(format!("{name}[{}]", parts.join(", ")));
+      let head =
+        crate::evaluator::dispatch::complex_and_special::tf_known_func(name)
+          .unwrap_or(name.as_str());
+      return Some(format!("{head}({})", parts.join(", ")));
     }
     _ => return None,
   };

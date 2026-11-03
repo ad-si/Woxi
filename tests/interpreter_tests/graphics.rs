@@ -11948,6 +11948,22 @@ mod plot3d {
       assert!(label_ys.len() > 1, "entries wrap onto several rows: {svg}");
     }
 
+    /// A graphic's `FormatType` is `TraditionalForm`: legend entries,
+    /// axes labels and the plot label set a function application under its
+    /// traditional name in round brackets (`sin(x)`, `sinc(x)`), not in
+    /// StandardForm (`Sin[x]`).
+    #[test]
+    fn plot_labels_use_traditional_function_notation() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {Sin[x], Cos[x]}, \
+         AxesLabel -> {x, Sinc[x]}, PlotLabel -> Sin[x]]",
+      );
+      assert!(svg.contains(">sinc(x)</text>"), "{svg}");
+      assert_eq!(svg.matches(">sin(x)</text>").count(), 2, "{svg}");
+      assert!(svg.contains(">cos(x)</text>"), "{svg}");
+      assert!(!svg.contains("Sin["), "{svg}");
+    }
+
     #[test]
     fn plot_legends_typeset_expressions() {
       let svg = export_svg(
@@ -11955,8 +11971,8 @@ mod plot3d {
          {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x], \
           Cos[Subscript[a, 3]], a < b}]",
       );
-      assert!(svg.contains("v₁ == Sin[x k₁] k₂"), "{svg}");
-      assert!(svg.contains("Cos[a₃]"), "{svg}");
+      assert!(svg.contains("v₁ == sin(x k₁) k₂"), "{svg}");
+      assert!(svg.contains("cos(a₃)"), "{svg}");
       assert!(svg.contains("a &lt; b"), "{svg}");
       assert!(!svg.contains("Subscript["), "{svg}");
     }
@@ -16137,7 +16153,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let start = std::time::Instant::now();
       let svg =
         export_svg("BarChart[{1, 2}, ChartLabels -> {Nest[Sin, x, 28], y}]");
-      assert!(svg.contains("Sin[Sin["));
+      assert!(svg.contains("sin(sin("));
       assert!(start.elapsed().as_secs() < 5);
     }
 
