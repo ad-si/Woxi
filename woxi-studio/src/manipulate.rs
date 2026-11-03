@@ -5615,4 +5615,24 @@ mod mapped_layout_tests {
     assert!(dump.contains("7 units per tick"), "{dump}");
     assert!(!dump.contains("StringForm"), "{dump}");
   }
+
+  /// A `Text@Style[Grid[…], size]` caption holding `Switch`/`If` rows and a
+  /// `NumberForm` amount shows the values for the current control settings,
+  /// not the unevaluated held source.
+  #[test]
+  fn styled_text_grid_caption_evaluates_held_branches() {
+    let node = build_manipulate_display(
+      r#"Pane[Text@Style[Grid[{
+        {Row[{"mode ", Style[Switch[m, 1, "low", 2, "high"], Bold]}]},
+        {Row[{"total ", Style[NumberForm[N[k*3/2], {7, 2}], Bold]}]}
+      }, Alignment -> Center], 17], {300, 100}]"#,
+      &[
+        ("m".to_string(), "2".to_string()),
+        ("k".to_string(), "100".to_string()),
+      ],
+    );
+    let dump = format!("{node:?}");
+    assert!(dump.contains("high") && dump.contains("150.00"), "{dump}");
+    assert!(!dump.contains("Switch"), "{dump}");
+  }
 }
