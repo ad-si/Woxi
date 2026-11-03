@@ -39410,12 +39410,24 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   if matches!(
     expr,
     Expr::FunctionCall { name, .. } if name == "Text" || name == "TraditionalForm"
-  ) && let Ok(svg) = grid_svg_with_gaps(
-    &[Expr::List(
-      vec![Expr::List(vec![expr.clone()].into())].into(),
-    )],
-    &[],
-  ) {
+  ) && let Ok(svg) = {
+    // Held constructs inside the caption (`Switch[v, …]`, `If[…]`) must see
+    // the current control values before the cell is typeset.
+    let scoped = if bindings.is_empty() {
+      None
+    } else {
+      eval_display_in_scope(expr, bindings)
+    };
+    grid_svg_with_gaps(
+      &[Expr::List(
+        vec![Expr::List(
+          vec![scoped.unwrap_or_else(|| expr.clone())].into(),
+        )]
+        .into(),
+      )],
+      &[],
+    )
+  } {
     return DisplayNode::Static {
       svg: Some(svg),
       text: String::new(),
