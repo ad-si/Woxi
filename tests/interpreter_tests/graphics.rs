@@ -18469,6 +18469,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// An infinite `Plot` range is drawn over WL's compact coordinate
+    /// u = (√(1 + (x/5)²) - 1)/(x/5): the axis runs -1..1, labelled -∞, -20,
+    /// …, 20, ∞ at the original values' positions.
+    #[test]
+    fn plot_infinite_range_uses_wolfram_compactification() {
+      let svg = export_svg("Plot[Sinc[x], {x, -Infinity, Infinity}]");
+      for label in ["-\u{221E}", "-20", "-5", "2", "10", "\u{221E}"] {
+        assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+      }
+      let x_of = |label: &str| -> f64 {
+        let i = svg.find(&format!(">{label}</text>")).unwrap();
+        let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+        tag
+          .split(" x=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      // 10 sits at u = (√5 - 1)/2 ≈ 0.618 of the half-axis from 0 to ∞.
+      let (ten, inf) = (x_of("10"), x_of("\u{221E}"));
+      let centre = (x_of("-\u{221E}") + inf) / 2.0;
+      let frac = (ten - centre) / (inf - centre);
+      assert!((frac - 0.618).abs() < 0.01, "{frac}");
+    }
+
     /// With `Frame -> True` a graphic's axes are bare lines (the frame
     /// carries the ticks), and a two-parameter `ParametricPlot` is framed
     /// by default (WL 15).

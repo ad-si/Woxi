@@ -13331,53 +13331,81 @@ pub(crate) fn apply_common_plot_option(
 
 /// Build the compactifying substitution `Tan[Pi*inner/2]`, the bijection
 /// used to fold an infinite plot range into a finite display coordinate.
-fn tan_compactify(inner: Expr) -> Expr {
-  call1("Tan", div2(times2(id_expr("Pi"), inner), Expr::Integer(2)))
+/// Wolfram's compactification of an infinite plot range: the display
+/// coordinate u = (√(1 + s²) - 1)/s with s = x/5, which takes the real line
+/// onto (-1, 1) (u = tan(θ/2) for s = tan θ).
+fn infinite_range_coordinate(x: f64) -> f64 {
+  if x.is_infinite() {
+    return x.signum();
+  }
+  let s = x / 5.0;
+  if s == 0.0 {
+    0.0
+  } else {
+    ((1.0 + s * s).sqrt() - 1.0) / s
+  }
 }
 
 /// Given the (possibly infinite) raw endpoints of a `Plot` range, return the
 /// finite display range plus, when an endpoint is infinite, a substitution
 /// `var -> g(var)` mapping the finite display coordinate back onto the real
-/// line. This mirrors Wolfram, which plots e.g. `{x, -Infinity, Infinity}`
-/// over the compact display range `{-1, 1}`.
-///
-/// - `{-Infinity, Infinity}` -> `[-1, 1]`,   `x = Tan[Pi u/2]`
-/// - `{a, Infinity}`         -> `[a, a+1]`,  `x = a + Tan[Pi (u-a)/2]`
-/// - `{-Infinity, b}`        -> `[b-1, b]`,  `x = b - Tan[Pi (b-u)/2]`
+/// line. This mirrors Wolfram, which plots `{x, -Infinity, Infinity}` over
+/// the compact display range `{-1, 1}` with `x = 10 u/(1 - u²)` (see
+/// [`infinite_range_coordinate`]); a finite end maps to its own u.
 pub(crate) fn compactify_plot_range(
   var: &str,
   raw_min: f64,
   raw_max: f64,
 ) -> Result<(f64, f64, Option<Expr>), InterpreterError> {
-  let min_inf = raw_min == f64::NEG_INFINITY;
-  let max_inf = raw_max == f64::INFINITY;
-  let u = || id_expr(var);
-  match (min_inf, max_inf) {
-    (false, false) => {
-      if !raw_min.is_finite() || !raw_max.is_finite() {
-        return Err(InterpreterError::EvaluationError(
-          "Plot: range endpoints must be finite or ±Infinity".into(),
-        ));
-      }
-      Ok((raw_min, raw_max, None))
-    }
-    // {-Infinity, Infinity}: x = Tan[Pi u/2] over u in [-1, 1]
-    (true, true) => Ok((-1.0, 1.0, Some(tan_compactify(u())))),
-    // {a, Infinity}: x = a + Tan[Pi (u-a)/2] over u in [a, a+1]
-    (false, true) => {
-      let a = raw_min;
-      let inner = minus2(u(), Expr::Real(a));
-      let transform = plus2(Expr::Real(a), tan_compactify(inner));
-      Ok((a, a + 1.0, Some(transform)))
-    }
-    // {-Infinity, b}: x = b - Tan[Pi (b-u)/2] over u in [b-1, b]
-    (true, false) => {
-      let b = raw_max;
-      let inner = minus2(Expr::Real(b), u());
-      let transform = minus2(Expr::Real(b), tan_compactify(inner));
-      Ok((b - 1.0, b, Some(transform)))
+  if raw_min.is_nan() || raw_max.is_nan() {
+    return Err(InterpreterError::EvaluationError(
+      "Plot: range endpoints must be finite or ±Infinity".into(),
+    ));
+  }
+  if raw_min.is_finite() && raw_max.is_finite() {
+    return Ok((raw_min, raw_max, None));
+  }
+  let transform = crate::syntax::string_to_expr(&format!(
+    "10 {var}/(1 - {var}^2)"
+  ))
+  .map_err(|_| {
+    InterpreterError::EvaluationError("Plot: cannot compactify range".into())
+  })?;
+  Ok((
+    infinite_range_coordinate(raw_min),
+    infinite_range_coordinate(raw_max),
+    Some(transform),
+  ))
+}
+
+/// The ticks Wolfram puts on a compactified (infinite) x range from `lo` to
+/// `hi` (original values, either may be infinite): 0, ±2, ±5, ±10, ±20 (and
+/// 50 on a one-sided range) at their display coordinates, and ∞ at an
+/// infinite end.
+pub(crate) fn infinite_range_ticks(lo: f64, hi: f64) -> Vec<(f64, String)> {
+  let one_sided = lo.is_finite() || hi.is_finite();
+  let values: &[f64] = if one_sided {
+    &[2.0, 5.0, 10.0, 20.0, 50.0]
+  } else {
+    &[2.0, 5.0, 10.0, 20.0]
+  };
+  let mut ticks = Vec::new();
+  if lo == f64::NEG_INFINITY {
+    ticks.push((-1.0, "-\u{221E}".to_string()));
+  }
+  let mut finite: Vec<f64> = values.iter().map(|v| -v).collect();
+  finite.reverse();
+  finite.push(0.0);
+  finite.extend_from_slice(values);
+  for v in finite {
+    if v >= lo && v <= hi {
+      ticks.push((infinite_range_coordinate(v), format_tick_with_step(v, 1.0)));
     }
   }
+  if hi == f64::INFINITY {
+    ticks.push((1.0, "\u{221E}".to_string()));
+  }
+  ticks
 }
 
 /// Returns true if `expr` textually references the identifier `var`. Used by
@@ -13911,6 +13939,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })?;
       let (x_min, x_max, transform) =
         compactify_plot_range(&var, raw_min, raw_max)?;
+      // The compactified axis is labelled with original values.
+      if transform.is_some() && plot_opts.ticks_x.is_none() {
+        plot_opts.ticks_x = Some(infinite_range_ticks(raw_min, raw_max));
+      }
       (var, x_min, x_max, transform)
     }
     _ => {
