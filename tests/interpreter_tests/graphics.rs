@@ -27489,6 +27489,34 @@ mod rule_plot {
     );
   }
 
+  // One inset per rule (the cell, an arrow, the block) between light grey
+  // rules; the insets keep their plot range's aspect.
+  #[test]
+  fn substitution_system_insets() {
+    assert_eq!(
+      interpret(
+        "g = RulePlot[SubstitutionSystem[{1 -> {{1, 0, 1}, {0, 1, 0}, {1, 0, 1}}, 0 -> {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}}]]; \
+         {Cases[g, Inset[_, p_, _, s_] :> {p, s}, Infinity], Cases[g, (PlotRange -> r_) :> r, Infinity, 1], Cases[g, Rectangle[{2, 1}, _], Infinity]}"
+      )
+      .unwrap(),
+      "{{{{0.875, 1/2}, {1.75, 1}}, {{2.625, 1/2}, {1.75, 1}}}, {{{-3/2, 11/2}, {-3/2, 5/2}}}, {Rectangle[{2, 1}, {3, 2}], Rectangle[{2, 1}, {3, 2}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RulePlot[SubstitutionSystem[{1 -> {{1, 2}, {0, 1}}, 0 -> {{0, 0}, {0, 0}}, 2 -> {{2, 2}, {1, 0}}}]], _GrayLevel, Infinity] // Union"
+      )
+      .unwrap(),
+      "{GrayLevel[0], GrayLevel[1/2], GrayLevel[0.8], GrayLevel[1], GrayLevel[-1 + GoldenRatio]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RulePlot[SubstitutionSystem[{1 -> {1, 0}, 0 -> {0, 1}}]], Inset[_, p_, _, s_] :> {p, s}, Infinity]"
+      )
+      .unwrap(),
+      "{{{0.46153846153846156, 1/2}, {0.9230769230769231, 1}}, {{1.3846153846153846, 1/2}, {0.9230769230769231, 1}}}"
+    );
+  }
+
   #[test]
   fn head_is_graphics() {
     assert_eq!(

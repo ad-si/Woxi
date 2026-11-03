@@ -14252,27 +14252,88 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     content.push(empty());
   }
 
-  let has_opt = |name: &str| {
-    graphics_opts.iter().any(|o| {
-      matches!(o, Expr::Rule { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
-    })
-  };
   let mut g_args = vec![Expr::List(content.into())];
-  g_args.extend(graphics_opts.iter().cloned());
-  if !has_opt("Axes") {
-    g_args.push(crate::helpers::rule_expr(
-      Expr::Identifier("Axes".into()),
-      Expr::Identifier("True".into()),
-    ));
+  g_args.extend(discrete_plot3d_options(&graphics_opts)?);
+  // Drawn from the spliced options; the symbolic form keeps them as one
+  // list, as wolframscript's plots do.
+  let mut result = evaluate_expr_to_expr(&call("Graphics3D", g_args))?;
+  if let Expr::Graphics {
+    structure: Some(structure),
+    ..
+  } = &mut result
+  {
+    let listed = crate::plot_option_list(structure.as_ref().clone());
+    **structure = listed;
   }
-  if !has_opt("BoxRatios") {
-    g_args.push(crate::helpers::rule_expr(
-      Expr::Identifier("BoxRatios".into()),
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(1), num(0.4)].into()),
-    ));
-  }
-  evaluate_expr_to_expr(&call("Graphics3D", g_args))
+  Ok(result)
+}
+
+/// The option list wolframscript gives a `DiscretePlot3D`: its defaults
+/// overridden by the call's options, sorted by name (an `Axes -> False`,
+/// `Graphics3D`'s own default, left out), after `DisplayFunction` and
+/// `PlotInteractivity`.
+fn discrete_plot3d_options(
+  user: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  const DEFAULTS: &str = "{Axes -> True, AxesOrigin -> {Automatic, Automatic, Automatic}, \
+    BoxRatios -> {1, 1, 0.4}, FaceGridsStyle -> Automatic, Lighting -> \"Neutral\", \
+    Method -> {\"AxisPadding\" -> Scaled[0.02], \"DefaultBoundaryStyle\" -> Automatic, \
+    \"DefaultGraphicsInteraction\" -> {\"Version\" -> 1.2, \"TrackMousePosition\" -> {True, False}, \
+    \"Effects\" -> {\"Highlight\" -> {\"ratio\" -> 2}, \"HighlightPoint\" -> {\"ratio\" -> 2}, \
+    \"Droplines\" -> {\"freeformCursorMode\" -> True, \"placement\" -> {\"x\" -> \"All\", \"y\" -> \"None\"}}}}, \
+    \"DefaultPlotStyle\" -> {Directive[RGBColor[0.216, 0.5399999999999999, 0.7200000000000001]], \
+    Directive[RGBColor[0.855, 0.5643, 0.12824999999999998]], Directive[RGBColor[0.40950000000000003, 0.63, 0.189]], \
+    Directive[RGBColor[0.8302733999999999, 0.3470634, 0.18826110000000001]], Directive[RGBColor[0.5202, 0.459, 0.765]], \
+    Directive[RGBColor[0.6948711, 0.3883986, 0.0921483]], Directive[RGBColor[0., 0.5399999999999999, 0.5399999999999999]], \
+    Directive[RGBColor[0.81, 0.324, 0.6156]], Directive[RGBColor[0.504, 0.63, 0.]], \
+    Directive[RGBColor[0.81, 0.48600000000000004, 0.]], Directive[RGBColor[0.5265, 0.53784, 0.81]], \
+    Directive[RGBColor[0.81, 0.405, 0.405]], Directive[RGBColor[0.6868968045630529, 0.7356961929631408, 0.]], \
+    Directive[RGBColor[0.7699169222533763, 0.22396846246495172, 0.7500648486553696]], \
+    Directive[RGBColor[0.029675541072283953, 0.6657047774225529, 0.4812300940726962]]}, \
+    \"DomainPadding\" -> Scaled[0.02], \"RangePadding\" -> Scaled[0.05], \"RelieveDPZFighting\" -> True, \
+    \"SpherePoints\" -> 10, \"TubePoints\" -> 10}, Ticks -> {Automatic, Automatic, Automatic}}";
+  let key = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let parsed = crate::syntax::string_to_expr(DEFAULTS)?;
+  let Expr::List(defaults) = &parsed else {
+    return Ok(user.to_vec());
+  };
+  let mut merged: Vec<Expr> = defaults
+    .iter()
+    .filter(|d| !user.iter().any(|u| key(u) == key(d)))
+    .cloned()
+    .collect();
+  merged.extend(user.iter().cloned());
+  merged.retain(|o| {
+    !(key(o).as_deref() == Some("Axes")
+      && matches!(o, Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")))
+  });
+  merged.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::canonical_cmp(
+      &key(a).map_or(Expr::Integer(0), Expr::Identifier),
+      &key(b).map_or(Expr::Integer(0), Expr::Identifier),
+    )
+  });
+  let mut out = vec![
+    crate::helpers::rule_expr(
+      Expr::Identifier("DisplayFunction".into()),
+      Expr::Identifier("Identity".into()),
+    ),
+    Expr::RuleDelayed {
+      pattern: Box::new(Expr::Identifier("PlotInteractivity".into())),
+      replacement: Box::new(Expr::Identifier("$PlotInteractivity".into())),
+    },
+  ];
+  out.extend(merged);
+  Ok(out)
 }
 
 /// Split a `PlotStyle` value into the `Tube[…]` directive it carries (as
