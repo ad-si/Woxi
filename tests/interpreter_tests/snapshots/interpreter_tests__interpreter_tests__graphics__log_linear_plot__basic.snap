@@ -41,25 +41,48 @@ expression: "export_svg(\"LogLinearPlot[Log[x], {x, 1, 1000}]\")"
 <line x1="3500.0" y1="1995.1" x2="3500.0" y2="1955.1" stroke="#666" stroke-width="5"/>
 <text x="3500.0" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1000</text>
 <line x1="230.0" y1="100.0" x2="230.0" y2="2068.0" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="2047.9" x2="254.0" y2="2047.9" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1942.4" x2="254.0" y2="1942.4" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1889.6" x2="254.0" y2="1889.6" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1836.8" x2="254.0" y2="1836.8" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1784.1" x2="254.0" y2="1784.1" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1678.6" x2="254.0" y2="1678.6" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1625.8" x2="254.0" y2="1625.8" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1573.0" x2="254.0" y2="1573.0" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1520.3" x2="254.0" y2="1520.3" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1414.8" x2="254.0" y2="1414.8" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1362.0" x2="254.0" y2="1362.0" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1309.2" x2="254.0" y2="1309.2" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1256.5" x2="254.0" y2="1256.5" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1151.0" x2="254.0" y2="1151.0" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1098.2" x2="254.0" y2="1098.2" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1045.5" x2="254.0" y2="1045.5" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="992.7" x2="254.0" y2="992.7" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="887.2" x2="254.0" y2="887.2" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="834.4" x2="254.0" y2="834.4" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="781.7" x2="254.0" y2="781.7" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="728.9" x2="254.0" y2="728.9" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="623.4" x2="254.0" y2="623.4" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="570.6" x2="254.0" y2="570.6" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="517.9" x2="254.0" y2="517.9" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="465.1" x2="254.0" y2="465.1" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="359.6" x2="254.0" y2="359.6" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="306.8" x2="254.0" y2="306.8" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="254.1" x2="254.0" y2="254.1" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="201.3" x2="254.0" y2="201.3" stroke="#666" stroke-width="5"/>
 <line x1="230.0" y1="1995.1" x2="270.0" y2="1995.1" stroke="#666" stroke-width="5"/>
+<line x1="230.0" y1="1731.3" x2="270.0" y2="1731.3" stroke="#666" stroke-width="5"/>
+<text x="182.8" y="1768.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1</text>
 <line x1="230.0" y1="1467.5" x2="270.0" y2="1467.5" stroke="#666" stroke-width="5"/>
 <text x="182.8" y="1504.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2</text>
+<line x1="230.0" y1="1203.7" x2="270.0" y2="1203.7" stroke="#666" stroke-width="5"/>
+<text x="182.8" y="1240.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3</text>
 <line x1="230.0" y1="939.9" x2="270.0" y2="939.9" stroke="#666" stroke-width="5"/>
 <text x="182.8" y="976.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">4</text>
+<line x1="230.0" y1="676.1" x2="270.0" y2="676.1" stroke="#666" stroke-width="5"/>
+<text x="182.8" y="712.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">5</text>
 <line x1="230.0" y1="412.3" x2="270.0" y2="412.3" stroke="#666" stroke-width="5"/>
 <text x="182.8" y="449.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">6</text>
+<line x1="230.0" y1="148.6" x2="270.0" y2="148.6" stroke="#666" stroke-width="5"/>
+<text x="182.8" y="185.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">7</text>
 </svg>

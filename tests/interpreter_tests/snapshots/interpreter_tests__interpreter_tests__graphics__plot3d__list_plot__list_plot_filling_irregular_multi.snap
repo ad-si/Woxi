@@ -938,24 +938,43 @@ expression: "export_svg(\"ListPlot[{Sort@First@Last[Reap[Plot[Sin[x], {x, 0, 2 P
 <circle cx="3438" cy="194" r="13" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
 <circle cx="3438" cy="194" r="13" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
 <line x1="360.0" y1="1125.0" x2="3500.0" y2="1125.0" stroke="#666" stroke-width="5"/>
+<line x1="516.5" y1="1125.0" x2="516.5" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="612.6" y1="1125.0" x2="612.6" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="708.7" y1="1125.0" x2="708.7" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="804.8" y1="1125.0" x2="804.8" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="997.0" y1="1125.0" x2="997.0" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="1093.1" y1="1125.0" x2="1093.1" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="1189.2" y1="1125.0" x2="1189.2" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="1285.3" y1="1125.0" x2="1285.3" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="1477.5" y1="1125.0" x2="1477.5" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="1573.6" y1="1125.0" x2="1573.6" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="1669.8" y1="1125.0" x2="1669.8" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="1765.9" y1="1125.0" x2="1765.9" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="1958.1" y1="1125.0" x2="1958.1" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="2054.2" y1="1125.0" x2="2054.2" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="2150.3" y1="1125.0" x2="2150.3" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="2246.4" y1="1125.0" x2="2246.4" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="2438.6" y1="1125.0" x2="2438.6" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="2534.7" y1="1125.0" x2="2534.7" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="2630.8" y1="1125.0" x2="2630.8" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="2726.9" y1="1125.0" x2="2726.9" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="2919.1" y1="1125.0" x2="2919.1" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="3015.2" y1="1125.0" x2="3015.2" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="3111.3" y1="1125.0" x2="3111.3" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="3207.4" y1="1125.0" x2="3207.4" y2="1101.0" stroke="#666" stroke-width="5"/>
+<line x1="3399.6" y1="1125.0" x2="3399.6" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="3495.7" y1="1125.0" x2="3495.7" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="420.4" y1="1125.0" x2="420.4" y2="1085.0" stroke="#666" stroke-width="5"/>
+<line x1="900.9" y1="1125.0" x2="900.9" y2="1085.0" stroke="#666" stroke-width="5"/>
+<text x="900.9" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1</text>
 <line x1="1381.4" y1="1125.0" x2="1381.4" y2="1085.0" stroke="#666" stroke-width="5"/>
 <text x="1381.4" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2</text>
+<line x1="1862.0" y1="1125.0" x2="1862.0" y2="1085.0" stroke="#666" stroke-width="5"/>
+<text x="1862.0" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3</text>
 <line x1="2342.5" y1="1125.0" x2="2342.5" y2="1085.0" stroke="#666" stroke-width="5"/>
 <text x="2342.5" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">4</text>
+<line x1="2823.0" y1="1125.0" x2="2823.0" y2="1085.0" stroke="#666" stroke-width="5"/>
+<text x="2823.0" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">5</text>
 <line x1="3303.5" y1="1125.0" x2="3303.5" y2="1085.0" stroke="#666" stroke-width="5"/>
 <text x="3303.5" y="1245.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">6</text>
 <line x1="420.4" y1="100.0" x2="420.4" y2="2150.0" stroke="#666" stroke-width="5"/>

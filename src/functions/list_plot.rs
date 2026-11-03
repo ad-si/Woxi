@@ -660,6 +660,23 @@ fn data_arg(args: &[Expr], parsed: &ParsedOptions) -> Expr {
     .unwrap_or_else(|| args[0].clone())
 }
 
+/// Whether the point labels of the data argument are callouts — pulled
+/// away from their points along leader lines — rather than plain labels
+/// beside them: `Callout[pt, label]` entries and the `data -> labels` form
+/// are; `Labeled[pt, label]` entries are not.
+fn labels_are_callouts(data: &Expr) -> bool {
+  fn has_callout(e: &Expr, depth: usize) -> bool {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "Callout" => true,
+      Expr::List(items) if depth > 0 => {
+        items.iter().any(|item| has_callout(item, depth - 1))
+      }
+      _ => false,
+    }
+  }
+  matches!(data, Expr::Rule { .. }) || has_callout(data, 2)
+}
+
 /// If `expr` is `Labeled[content, label, ...]`, return the content and the
 /// label rendered as display text.
 fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
@@ -1800,8 +1817,10 @@ fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
+  let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  parsed.opts.point_label_callouts = labels_are_callouts(&data);
   let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&data_arg(args, &parsed), true)?;
+    parse_list_data_err_labeled(&data, true)?;
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels);
@@ -2215,7 +2234,7 @@ fn log_plot_result(
     ranges.0,
     ranges.1,
     (opts.svg_width, opts.svg_height),
-    &[false],
+    &[!parsed.joined],
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
@@ -2227,6 +2246,19 @@ fn log_plot_result(
     &opts.plot_markers,
   );
   crate::graphics_result_with_source(svg, source)
+}
+
+/// Draw the series of a log list plot as points unless `Joined -> True`
+/// asked for lines — `ListLogPlot` and its siblings scatter by default, as
+/// `ListPlot` does, with the same automatic dot size.
+fn points_unless_joined(
+  parsed: &mut ParsedOptions,
+  series: &[Vec<(f64, f64)>],
+) {
+  if !parsed.joined && parsed.opts.joined_per_series.is_none() {
+    parsed.opts.joined_per_series = Some(vec![false]);
+  }
+  parsed.opts.default_point_size = Some(list_plot_point_size(series));
 }
 
 /// ListLogPlot: y-axis is log10 scale
@@ -2242,9 +2274,15 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
     .collect();
 
+  points_unless_joined(&mut parsed, &filtered);
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
     return render_panel_layout(
-      &filtered, &filtered, &labels, &parsed, false, false,
+      &filtered,
+      &filtered,
+      &labels,
+      &parsed,
+      !parsed.joined,
+      false,
     );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
@@ -2281,9 +2319,15 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  points_unless_joined(&mut parsed, &filtered);
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
     return render_panel_layout(
-      &filtered, &filtered, &labels, &parsed, false, false,
+      &filtered,
+      &filtered,
+      &labels,
+      &parsed,
+      !parsed.joined,
+      false,
     );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
@@ -2315,9 +2359,15 @@ pub fn list_log_linear_plot_ast(
     .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
     .collect();
 
+  points_unless_joined(&mut parsed, &filtered);
   if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
     return render_panel_layout(
-      &filtered, &filtered, &labels, &parsed, false, false,
+      &filtered,
+      &filtered,
+      &labels,
+      &parsed,
+      !parsed.joined,
+      false,
     );
   }
   let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);

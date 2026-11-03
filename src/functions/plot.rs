@@ -919,8 +919,7 @@ fn clip_segments_to_x_range(
 }
 
 /// Compute a "nice" major tick step given the axis range and desired label
-/// count. [`AXIS_TICK_TARGET`] is the count the Wolfram Language divides a
-/// plot axis into.
+/// count. The automatic ticks of a plot axis use [`axis_tick_step`].
 pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
   let raw = range / target_labels as f64;
   let mag = 10_f64.powf(raw.abs().log10().floor());
@@ -941,12 +940,46 @@ pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
   nice * mag
 }
 
+/// The major tick step of an automatic axis spanning `range` (the plotted,
+/// padded span): the smallest of 1, 2 and 5 × 10^k that cuts it into fewer
+/// than 8 intervals, as the WL 15 front end picks them for `Ticks ->
+/// Automatic` (`AbsoluteOptions[g, Ticks]` shows them; independent of the
+/// image size). So 0..7.5 steps by 1, 0..8 by 2 and 0..16 by 5.
+pub(crate) fn axis_tick_step(range: f64) -> f64 {
+  let range = range.abs();
+  if !(range.is_finite() && range > 0.0) {
+    return 1.0;
+  }
+  let mut mag = 10_f64.powf((range / 8.0).log10().floor());
+  loop {
+    for m in [1.0, 2.0, 5.0] {
+      let step = m * mag;
+      if range / step < 8.0 * (1.0 - 1e-12) {
+        return step;
+      }
+    }
+    mag *= 10.0;
+  }
+}
+
+/// How many minor intervals split the interval between two automatic major
+/// ticks `major` apart: 4 for a step of 2 × 10^k, 5 otherwise (WL 15).
+pub(crate) fn minor_tick_divisions(major: f64) -> usize {
+  let mantissa = major / 10_f64.powf(major.abs().log10().floor());
+  if (mantissa - 2.0).abs() < 1e-6 { 4 } else { 5 }
+}
+
+/// The minor tick spacing between automatic majors `major` apart.
+pub(crate) fn minor_tick_step(major: f64) -> f64 {
+  major / minor_tick_divisions(major) as f64
+}
+
 /// Widest major y-axis tick label, in characters. Used to position the rotated
 /// y-axis/frame label just left of the tick column instead of at the far edge
 /// of the (fixed-width) gutter — so narrow ticks (e.g. single digits) don't
 /// leave a large gap.
 fn max_y_tick_label_chars(y_min: f64, y_max: f64) -> usize {
-  let step = nice_step(y_max - y_min, AXIS_TICK_TARGET);
+  let step = axis_tick_step(y_max - y_min);
   if step <= 0.0 || !step.is_finite() {
     return 3;
   }
@@ -1682,7 +1715,7 @@ fn inject_top_right_frame(
     && x_major > 0.0
     && x_max > x_min
   {
-    let x_minor = x_major / 5.0;
+    let x_minor = minor_tick_step(x_major);
     let eps = x_minor.abs() * 1e-6;
     let mut v = (x_min / x_minor).ceil() * x_minor;
     let max_steps = ((x_max - x_min) / x_minor).abs() as usize + 8;
@@ -1710,7 +1743,7 @@ fn inject_top_right_frame(
     && y_major > 0.0
     && y_max > y_min
   {
-    let y_minor = y_major / 5.0;
+    let y_minor = minor_tick_step(y_major);
     let eps = y_minor.abs() * 1e-6;
     let mut v = (y_min / y_minor).ceil() * y_minor;
     let max_steps = ((y_max - y_min) / y_minor).abs() as usize + 8;
@@ -1741,7 +1774,7 @@ fn inject_top_right_frame(
 /// Tick marks on all four edges of a framed plot, pointing into the plot
 /// area as Wolfram draws them: a major tick at every multiple of the axis'
 /// `major_step` (where the labels sit on the bottom and left edges) and
-/// four minor ticks between neighbouring majors.
+/// the minor ticks of [`minor_tick_divisions`] between neighbouring majors.
 ///
 /// `x_axis` / `y_axis` each supply `(min, max, major_step)`; `None` leaves
 /// that axis without automatic ticks (e.g. it has explicit `Ticks`).
@@ -1759,12 +1792,18 @@ fn inject_inward_frame_ticks(
     if !(major > 0.0 && max > min) {
       return Vec::new();
     }
-    let minor = major / 5.0;
+    let divisions = minor_tick_divisions(major) as i64;
+    let minor = major / divisions as f64;
     let eps = 1e-6;
     let first = (min / minor - eps).ceil() as i64;
     let last = (max / minor + eps).floor() as i64;
     (first..=last)
-      .map(|k| ((k as f64 * minor - min) / (max - min), k % 5 == 0))
+      .map(|k| {
+        (
+          (k as f64 * minor - min) / (max - min),
+          k.rem_euclid(divisions) == 0,
+        )
+      })
       .collect()
   };
   let mut svg = String::new();
@@ -2582,6 +2621,10 @@ pub(crate) struct PlotOptions {
   /// as `LabelingFunction` (`Above`, `Below`, `Left`, `Right`, `Center`).
   /// `None` keeps the automatic above-right placement.
   pub point_label_position: Option<String>,
+  /// The point labels are callouts (`Callout[pt, label]`, `data -> labels`):
+  /// pulled away from their points along leader lines, and dropped where
+  /// they find no free place.
+  pub point_label_callouts: bool,
   /// Stacked mode (StackedListPlot): fill each series down to the previous
   /// series' curve instead of to a constant baseline, producing opaque
   /// stacked bands. The `all_points` passed in are the cumulative curves.
@@ -2771,6 +2814,7 @@ impl Default for PlotOptions {
       plot_labels: Vec::new(),
       point_labels: Vec::new(),
       point_label_position: None,
+      point_label_callouts: false,
       log_x: false,
       log_y: false,
       stacked: false,
@@ -4214,13 +4258,13 @@ fn generate_svg_with_options(
           let xmaj = if date_axis {
             nice_date_step(x_max - x_min)
           } else {
-            nice_step(x_max - x_min, AXIS_TICK_TARGET)
+            axis_tick_step(x_max - x_min)
           };
-          let ymaj = nice_step(y_max - y_min, AXIS_TICK_TARGET);
+          let ymaj = axis_tick_step(y_max - y_min);
           x_major = xmaj;
           y_major = ymaj;
-          let x_minor = if date_axis { xmaj } else { xmaj / 5.0 };
-          let y_minor = ymaj / 5.0;
+          let x_minor = if date_axis { xmaj } else { minor_tick_step(xmaj) };
+          let y_minor = minor_tick_step(ymaj);
           x_labels_count = if !tick_axis_x || date_axis || has_explicit_x_ticks
           {
             0
@@ -4317,11 +4361,6 @@ fn generate_svg_with_options(
         // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
         let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
         // Automatic grid lines follow the ticks drawn on the axes.
-        let grid_tick_target = if origin_axes {
-          ORIGIN_AXIS_TICK_TARGET
-        } else {
-          AXIS_TICK_TARGET
-        };
 
         // Horizontal (y) grid lines.
         let y_grid = resolve_grid_lines(
@@ -4329,7 +4368,7 @@ fn generate_svg_with_options(
           opts.grid_lines_y,
           y_min,
           y_max,
-          nice_step(y_max - y_min, grid_tick_target),
+          axis_tick_step(y_max - y_min),
           opts.grid_lines_style.as_ref(),
         );
         if !log_y {
@@ -4373,7 +4412,7 @@ fn generate_svg_with_options(
           if date_axis {
             nice_date_step(x_max - x_min)
           } else {
-            nice_step(x_max - x_min, grid_tick_target)
+            axis_tick_step(x_max - x_min)
           },
           opts.grid_lines_style.as_ref(),
         );
@@ -4609,6 +4648,19 @@ fn generate_svg_with_options(
             resolve_series_joined(opts.joined_per_series.as_deref(), series_idx);
 
           if !series_joined {
+            // Capped error bars sit under the points of a scatter series.
+            if opts.interval_markers == IntervalMarkers::Fences
+              && let Some(bars) = opts.error_bars.get(series_idx)
+            {
+              draw_error_bars(
+                &mut chart,
+                points,
+                bars,
+                color,
+                x_max - x_min,
+                y_max - y_min,
+              )?;
+            }
             let marker_size =
               series_point_radius(opts, series_idx, render_width);
             draw_scatter_series(
@@ -4701,7 +4753,8 @@ fn generate_svg_with_options(
           // Error bars from Around data values, on top of the line. They
           // are parallel to the original data points, which may differ from
           // the drawn curve (InterpolationOrder).
-          if opts.interval_markers == IntervalMarkers::Fences
+          if series_joined
+            && opts.interval_markers == IntervalMarkers::Fences
             && let Some(bars) = opts.error_bars.get(series_idx)
           {
             let anchor = opts
@@ -4721,7 +4774,7 @@ fn generate_svg_with_options(
 
           // Draw mesh dots: at every curve point for Mesh -> All, at the
           // original data points for Mesh -> Full.
-          if opts.mesh != Mesh::None {
+          if series_joined && opts.mesh != Mesh::None {
             let counted;
             let mesh_src: &[(f64, f64)] = match opts.mesh {
               Mesh::Full => opts
@@ -4765,8 +4818,10 @@ fn generate_svg_with_options(
           }
 
           // `PlotMarkers` glyphs sit on the data points of a joined plot,
-          // over the line, exactly as the scatter renderer draws them.
-          if let Some(marker) = series_marker(&opts.plot_markers, series_idx) {
+          // over the line (a scatter series drew them as its points).
+          if series_joined
+            && let Some(marker) = series_marker(&opts.plot_markers, series_idx)
+          {
             let marker_src: &[(f64, f64)] = opts
               .data_points
               .get(series_idx)
@@ -4814,7 +4869,7 @@ fn generate_svg_with_options(
       if !labelled || hi <= lo || !(hi - lo).is_finite() {
         return Vec::new();
       }
-      let minor = nice_step(hi - lo, AXIS_TICK_TARGET) / 5.0;
+      let minor = minor_tick_step(axis_tick_step(hi - lo));
       let first = (lo / minor - 1e-9).ceil() as i64;
       let last = (hi / minor + 1e-9).floor() as i64;
       (first..=last)
@@ -4927,13 +4982,13 @@ fn generate_svg_with_options(
     );
     let auto_x = opts.ticks_x.is_none() && !opts.log_x && !opts.date_axis;
     let auto_y = opts.ticks_y.is_none() && !opts.log_y;
+    let x_axis = auto_x.then(|| (x_min, x_max, axis_tick_step(x_max - x_min)));
+    let y_axis = auto_y.then(|| (y_min, y_max, axis_tick_step(y_max - y_min)));
     inject_inward_frame_ticks(
       &mut buf,
       area,
-      auto_x
-        .then(|| (x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET))),
-      auto_y
-        .then(|| (y_min, y_max, nice_step(y_max - y_min, AXIS_TICK_TARGET))),
+      x_axis,
+      y_axis,
       (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
       sf,
       &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
@@ -5301,9 +5356,100 @@ fn inject_plot_labels(
   buf.insert_str(insert_pos, &label_svg);
 }
 
-/// Inject per-point labels (from `Labeled[y, label]` data entries) into a
-/// finished SVG buffer as text next to each labeled point. `plot_area` is
-/// the drawing region in render-space pixels: (left, top, width, height).
+/// Font size of a point label (`Labeled` / `Callout` data entries), in
+/// display pixels.
+const POINT_LABEL_FONT: f64 = 10.5;
+
+/// An axis-aligned box in render space: (left, top, right, bottom).
+type LabelBox = (f64, f64, f64, f64);
+
+fn boxes_overlap(a: LabelBox, b: LabelBox) -> bool {
+  a.0 < b.2 && b.0 < a.2 && a.1 < b.3 && b.1 < a.3
+}
+
+/// Where a point label goes: its text box, and for a callout the leader
+/// line (render-space points) from the point to the box.
+struct LabelPlacement {
+  bbox: LabelBox,
+  leader: Vec<(f64, f64)>,
+}
+
+/// The candidate placements of a `w` × `h` label for the point `(px, py)`,
+/// in the order they are tried, all in render space (`sf` units per
+/// printer's point, y down; `dot` is the radius of the point's dot). A
+/// plain label sits just beside its dot, first above right; a callout is pulled away along a leader that leaves the
+/// point at an angle, bends and ends in a short horizontal run at the label
+/// — the geometry WL 15's `Callout` draws: the leader starts 3 pt out, bends
+/// 8 pt out, runs 2 pt on and the label box (with 2.5 pt / 1 pt margins)
+/// follows.
+fn label_candidates(
+  (px, py): (f64, f64),
+  (w, h): (f64, f64),
+  (sf, dot): (f64, f64),
+  callout: bool,
+) -> Vec<LabelPlacement> {
+  if !callout {
+    let dx = w / 2.0 + dot + 1.0 * sf;
+    let dy = h * 0.55;
+    let up = h / 2.0 + dot + 1.0 * sf;
+    return [
+      (dx, -dy),
+      (-dx, -dy),
+      (dx, dy),
+      (-dx, dy),
+      (0.0, -up),
+      (0.0, up),
+    ]
+    .into_iter()
+    .map(|(cx, cy)| LabelPlacement {
+      bbox: (
+        px + cx - w / 2.0,
+        py + cy - h / 2.0,
+        px + cx + w / 2.0,
+        py + cy + h / 2.0,
+      ),
+      leader: Vec::new(),
+    })
+    .collect();
+  }
+  let (bw, bh) = (w + 5.0 * sf, h + 2.0 * sf);
+  [45.0f64, 135.0, -45.0, -135.0, 0.0, 180.0, 90.0, -90.0]
+    .into_iter()
+    .map(|deg| {
+      let (sin, cos) = deg.to_radians().sin_cos();
+      let at = |r: f64| (px + r * sf * cos, py - r * sf * sin);
+      let start = at(3.0);
+      let elbow = at(8.0);
+      let side = if cos.abs() < 1e-9 { 0.0 } else { cos.signum() };
+      let (leader, bbox) = if side == 0.0 {
+        // Straight up or down: the box sits centred on the leader's end.
+        let top = if sin > 0.0 { elbow.1 - bh } else { elbow.1 };
+        (
+          vec![start, elbow],
+          (elbow.0 - bw / 2.0, top, elbow.0 + bw / 2.0, top + bh),
+        )
+      } else {
+        let end = (elbow.0 + side * 2.0 * sf, elbow.1);
+        let left = if side > 0.0 { end.0 } else { end.0 - bw };
+        (
+          vec![start, elbow, end],
+          (left, end.1 - bh / 2.0, left + bw, end.1 + bh / 2.0),
+        )
+      };
+      LabelPlacement { bbox, leader }
+    })
+    .collect()
+}
+
+/// Inject per-point labels (from `Labeled[y, label]` / `Callout[pt, label]`
+/// data entries) into a finished SVG buffer. `plot_area` is the drawing
+/// region in render-space pixels: (left, top, width, height).
+///
+/// Labels are placed one after another where they cover neither an
+/// already placed label nor another data point and stay inside the plot area,
+/// trying the positions of [`label_candidates`] in turn. A callout that
+/// finds no free place is dropped, as WL drops the callouts of crowded
+/// points; a plain label then keeps its first position.
 fn inject_point_labels(
   buf: &mut String,
   opts: &PlotOptions,
@@ -5323,12 +5469,38 @@ fn inject_point_labels(
   let (y_min, y_max) = y_range;
   let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
   let sf = RESOLUTION_SCALE as f64;
-  let font_size = sf * 16.0;
+  let font_size = sf * POINT_LABEL_FONT;
   let (_, _, _, _, text_fill) = plot_theme();
+  let render_width = opts.svg_width * RESOLUTION_SCALE;
 
   let Some(insert_pos) = buf.rfind("</svg>") else {
     return;
   };
+  let to_px = |(x, y): (f64, f64)| {
+    (
+      plot_x0 + (x - x_min) / (x_max - x_min) * plot_w,
+      plot_top + plot_h * (1.0 - (y - y_min) / (y_max - y_min)),
+    )
+  };
+  // Every drawn data point, as a box a label must not cover.
+  let point_boxes: Vec<LabelBox> = (0..all_points.len())
+    .flat_map(|i| {
+      let r = series_point_radius(opts, i, render_width) as f64 + sf;
+      opts
+        .data_points
+        .get(i)
+        .or_else(|| all_points.get(i))
+        .into_iter()
+        .flatten()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .map(|&p| {
+          let (px, py) = to_px(p);
+          (px - r, py - r, px + r, py + r)
+        })
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let mut placed: Vec<LabelBox> = Vec::new();
   let mut label_svg = String::new();
 
   for (series_idx, labels) in opts.point_labels.iter().enumerate() {
@@ -5346,33 +5518,82 @@ fn inject_point_labels(
       if !(data_x.is_finite() && data_y.is_finite()) {
         continue;
       }
-      let frac_x = (data_x - x_min) / (x_max - x_min);
-      let frac_y = (data_y - y_min) / (y_max - y_min);
-      let px = plot_x0 + frac_x * plot_w;
-      let py = plot_top + plot_h * (1.0 - frac_y);
-      // A named position puts the label on that side of the point; the
-      // automatic placement is above-right, flipping to above-left near the
-      // right edge so it stays inside the plot area.
-      let gap = sf * 6.0;
-      let (label_px, label_py, anchor) = match opts
-        .point_label_position
-        .as_deref()
-      {
-        Some("Above" | "Top") => (px, py - gap, "middle"),
-        Some("Below" | "Bottom") => (px, py + gap + font_size * 0.75, "middle"),
-        Some("Left") => (px - gap, py + font_size * 0.35, "end"),
-        Some("Right") => (px + gap, py + font_size * 0.35, "start"),
-        Some("Center") => (px, py + font_size * 0.35, "middle"),
-        _ if frac_x > 0.92 => (px - sf * 4.0, py - sf * 8.0, "end"),
-        _ => (px + sf * 4.0, py - sf * 8.0, "start"),
+      let (px, py) = to_px((data_x, data_y));
+      let text = crate::functions::graphics::box_string_to_svg(label_text);
+      // A named position puts the label on that side of the point.
+      if let Some(pos) = opts.point_label_position.as_deref() {
+        let gap = sf * 6.0;
+        let (label_px, label_py, anchor) = match pos {
+          "Above" | "Top" => (px, py - gap, "middle"),
+          "Below" | "Bottom" => (px, py + gap + font_size * 0.75, "middle"),
+          "Left" => (px - gap, py + font_size * 0.35, "end"),
+          "Right" => (px + gap, py + font_size * 0.35, "start"),
+          _ => (px, py + font_size * 0.35, "middle"),
+        };
+        label_svg.push_str(&format!(
+          "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{text_fill}\" text-anchor=\"{anchor}\">{text}</text>\n"
+        ));
+        continue;
+      }
+      let w = label_text.chars().count() as f64 * font_size * 0.6;
+      let h = font_size;
+      let own = (px - sf, py - sf, px + sf, py + sf);
+      let free = |b: LabelBox| {
+        b.0 >= plot_x0
+          && b.1 >= plot_top
+          && b.2 <= plot_x0 + plot_w
+          && b.3 <= plot_top + plot_h
+          && !placed.iter().any(|&p| boxes_overlap(p, b))
+          && !point_boxes
+            .iter()
+            .any(|&p| !boxes_overlap(p, own) && boxes_overlap(p, b))
       };
-      // Keep the label inside the image when the point sits near the top.
-      let label_py = label_py.max(font_size);
+      let dot = series_point_radius(opts, series_idx, render_width) as f64;
+      let candidates = label_candidates(
+        (px, py),
+        (w, h),
+        (sf, dot),
+        opts.point_label_callouts,
+      );
+      let choice = match candidates.iter().position(|c| free(c.bbox)) {
+        Some(i) => &candidates[i],
+        None if opts.point_label_callouts => continue,
+        None => &candidates[0],
+      };
+      placed.push(choice.bbox);
+      let (cx, cy) = (
+        f64::midpoint(choice.bbox.0, choice.bbox.2),
+        f64::midpoint(choice.bbox.1, choice.bbox.3),
+      );
+      if !choice.leader.is_empty() {
+        let path: String = choice
+          .leader
+          .iter()
+          .map(|(x, y)| format!("{x:.1},{y:.1}"))
+          .collect::<Vec<_>>()
+          .join(" ");
+        let (b0, b1, b2, b3) = choice.bbox;
+        label_svg.push_str(&format!(
+          "<polyline points=\"{path}\" fill=\"none\" stroke=\"#FFFFFF\" \
+           stroke-opacity=\"0.667\" stroke-width=\"{:.0}\" \
+           stroke-linejoin=\"round\"/>\n\
+           <polyline points=\"{path}\" fill=\"none\" stroke=\"#AAAAAA\" \
+           stroke-width=\"{:.1}\" stroke-linejoin=\"round\"/>\n\
+           <rect x=\"{b0:.1}\" y=\"{b1:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
+           fill=\"#FFFFFF\" fill-opacity=\"0.667\"/>\n",
+          4.0 * sf,
+          1.25 * sf,
+          b2 - b0,
+          b3 - b1,
+        ));
+      }
       label_svg.push_str(&format!(
-        "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{text_fill}\" text-anchor=\"{anchor}\">{}</text>\n",
-        crate::functions::graphics::box_string_to_svg(label_text)
+        "<text x=\"{cx:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
+         font-size=\"{font_size:.0}\" fill=\"{text_fill}\" \
+         text-anchor=\"middle\">{text}</text>\n",
+        cy + font_size * 0.35,
       ));
     }
   }
@@ -5747,590 +5968,18 @@ fn series_dashing(plot_style: &[SeriesStyle], idx: usize) -> Option<Vec<f64>> {
   style.dashing.clone()
 }
 
-/// Generate SVG for a scatter plot with full option support (including PlotStyle).
+/// Generate SVG for a scatter plot: the line renderer with every series
+/// drawn as unjoined points, so axes, frames, ticks and overlays of a
+/// scatter plot never drift from those of a line plot.
 pub(crate) fn generate_scatter_svg_with_options(
   all_series: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
-  let opts = &*with_automatic_aspect(opts, x_range, y_range);
-  let (x_min, x_max) = x_range;
-  let (y_min, y_max) = y_range;
-  let svg_width = opts.svg_width;
-  let mut svg_height = opts.svg_height;
-  let full_width = opts.full_width;
-  let render_width = svg_width * RESOLUTION_SCALE;
-  let mut render_height = svg_height * RESOLUTION_SCALE;
-
-  // The scatter layout uses fixed margins — `margin(10*s)` on every side plus
-  // the left/bottom label areas — unless `ImagePadding` states them outright.
-  let sf = RESOLUTION_SCALE as f64;
-  // A `PlotLabel` and a y `AxesLabel` stack above the plot area, and an x
-  // `AxesLabel` runs past the right end of its axis — each needs its room
-  // reserved, as in the line renderer.
-  let has_plot_label = opts
-    .plot_label
-    .as_ref()
-    .is_some_and(|sl| !sl.text.is_empty());
-  let axes_label_x = opts
-    .axes_label
-    .as_ref()
-    .map(|(x, _)| x.as_str())
-    .filter(|x| !x.is_empty() && opts.axes.0);
-  let has_y_axes_label = opts
-    .axes_label
-    .as_ref()
-    .is_some_and(|(_, y)| !y.is_empty() && opts.axes.1);
-  let margin_top = 10.0 * sf
-    + if has_plot_label { 25.0 * sf } else { 0.0 }
-    + plot_label_extra_lines(opts.plot_label.as_ref()) as f64 * 20.0 * sf
-    + if has_y_axes_label { 20.0 * sf } else { 0.0 };
-  let margin_right = 10.0 * sf
-    + axes_label_x.map_or(0.0, |label| {
-      8.0 * sf
-        + crate::functions::graphics::box_string_visible_len(label) as f64
-          * 0.62
-          * sf
-          * 14.0
-    });
-  let (margin_left, margin_bottom) = (10.0 * sf, 10.0 * sf);
-  // As in the line renderer, an unframed plot draws its axes itself,
-  // crossing at the `AxesOrigin`, and only reserves gutters for the part of
-  // their tick labels the plotting area does not hold.
-  let (show_x_axis, show_y_axis) = opts.axes;
-  let show_ticks = opts.ticks_visible();
-  let origin_axes = !opts.frame && (show_x_axis || show_y_axis);
-  let x_scale = AxisScale {
-    min: x_min,
-    max: x_max,
-    log: false,
-  };
-  let y_scale = AxisScale {
-    min: y_min,
-    max: y_max,
-    log: false,
-  };
-  let x_ticks = AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref());
-  let y_ticks = AxisTicks::new(y_scale, false, opts.ticks_y.as_ref());
-  let origin = opts.axes_origin_point(x_scale, y_scale);
-  let (y_label_area, x_label_area) = if origin_axes {
-    let y_room = if show_y_axis && show_ticks {
-      y_tick_label_room(&y_ticks) * sf
-    } else {
-      0.0
-    };
-    let x_room = if show_x_axis && show_ticks {
-      x_tick_label_room(&x_ticks) * sf
-    } else {
-      0.0
-    };
-    let plot_w_est =
-      (render_width as f64 - margin_left - margin_right - y_room).max(1.0);
-    let y_area = label_gutter(y_room, x_scale.frac(origin.0), plot_w_est);
-    let plot_h_est = match opts.aspect_ratio {
-      Some(ar) => {
-        (render_width as f64 - margin_left - margin_right - y_area) * ar
-      }
-      None => render_height as f64 - margin_top - margin_bottom - x_room,
-    }
-    .max(1.0);
-    (
-      y_area,
-      label_gutter(x_room, y_scale.frac(origin.1), plot_h_est),
-    )
-  } else {
-    (65.0 * sf, 40.0 * sf)
-  };
-
-  // AspectRatio sizes the plotting area (the data frame), not the whole image.
-  // Derive the total height so the frame has the requested height/width ratio.
-  // With `ImagePadding` the padding replaces the margins, so the area spans
-  // the width the padding leaves and the height follows from the ratio.
-  if let Some(ar) = opts.aspect_ratio {
-    let (plot_w, extra_h) = match opts.image_padding {
-      Some([pad_left, pad_right, pad_bottom, pad_top]) => (
-        render_width as f64 - (pad_left + pad_right) * sf,
-        (pad_bottom + pad_top) * sf,
-      ),
-      None => (
-        render_width as f64 - margin_left - margin_right - y_label_area,
-        margin_top + margin_bottom + x_label_area,
-      ),
-    };
-    if plot_w > 0.0 && ar > 0.0 {
-      let target_render_h = plot_w * ar + extra_h;
-      svg_height =
-        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
-      render_height = svg_height * RESOLUTION_SCALE;
-    }
-  }
-
-  let (
-    margin_top,
-    margin_right,
-    margin_left,
-    margin_bottom,
-    y_label_area,
-    x_label_area,
-  ) = match opts.image_padding {
-    Some(padding) => {
-      let m = padded_margins(
-        padding,
-        (render_width, render_height),
-        opts.aspect_ratio,
-        sf,
-      );
-      (
-        m.top as f64 + stacked_title_room(opts.plot_label.as_ref(), sf) as f64,
-        m.right as f64,
-        0.0,
-        0.0,
-        m.left as f64,
-        m.bottom as f64,
-      )
-    }
-    None => (
-      margin_top,
-      margin_right,
-      margin_left,
-      margin_bottom,
-      y_label_area,
-      x_label_area,
-    ),
-  };
-
-  let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
-  // `FrameStyle` recolours the frame, its tick marks and its tick labels.
-  let (dark_gray, frame_width) = frame_paint(opts, theme_gray);
-  // `FrameTicksStyle` recolours the tick labels without touching the frame.
-  let tick_text_color =
-    opts
-      .tick_label_style
-      .and_then(|s| s.color)
-      .map_or(dark_gray, |c| {
-        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        RGBColor(byte(c.r), byte(c.g), byte(c.b))
-      });
-  // Background -> color replaces the theme background for the whole image.
-  let bg_color = opts.background.unwrap_or(theme_bg);
-
-  // Dashed grid lines can't be drawn through plotters, so they are collected
-  // here and emitted as `stroke-dasharray` polylines once the chart is done.
-  let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
-
-  let mut buf = String::new();
-  {
-    let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
-      .into_drawing_area();
-    root
-      .fill(&bg_color)
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-
-    let s = RESOLUTION_SCALE as i32;
-    let tick = MINOR_TICK_LEN * s;
-
-    let mut chart = ChartBuilder::on(&root)
-      .margin_top(margin_top.round() as u32)
-      .margin_right(margin_right.round() as u32)
-      .margin_bottom(margin_bottom.round() as u32)
-      .margin_left(margin_left.round() as u32)
-      .x_label_area_size(x_label_area.round() as u32)
-      .y_label_area_size(y_label_area.round() as u32)
-      .build_cartesian_2d(x_min..x_max, y_min..y_max)
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-
-    let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    let x_minor_step = x_major / 5.0;
-    let y_minor_step = y_major / 5.0;
-    // `Axes -> False` hides the axis line, its ticks and its labels — as in
-    // the line renderer, a framed plot still labels its frame edges.
-    let (tick_axis_x, tick_axis_y) = if opts.frame {
-      (true, true)
-    } else {
-      (show_x_axis, show_y_axis)
-    };
-    // An axis given explicit `Ticks` draws them itself, after the chart.
-    let x_tick_count = if opts.ticks_x.is_some() || !tick_axis_x {
-      0
-    } else {
-      ((x_max - x_min) / x_minor_step).round() as usize + 1
-    };
-    let y_tick_count = if opts.ticks_y.is_some() || !tick_axis_y {
-      0
-    } else {
-      ((y_max - y_min) / y_minor_step).round() as usize + 1
-    };
-    let axis_style = if opts.frame || show_x_axis || show_y_axis {
-      dark_gray.stroke_width(RESOLUTION_SCALE)
-    } else {
-      ShapeStyle::from(&bg_color).stroke_width(0)
-    };
-
-    // Unframed axes are drawn by `origin_axes_svg` once the chart is done.
-    if !origin_axes {
-      chart
-        .configure_mesh()
-        .disable_mesh()
-        .x_labels(x_tick_count)
-        .y_labels(y_tick_count)
-        .x_label_formatter(&move |v: &f64| {
-          if is_major_tick(*v, x_major) {
-            format_tick_with_step(*v, x_major)
-          } else {
-            String::new()
-          }
-        })
-        .y_label_formatter(&move |v: &f64| {
-          if is_major_tick(*v, y_major) {
-            format_tick_with_step(*v, y_major)
-          } else {
-            String::new()
-          }
-        })
-        .axis_style(axis_style)
-        .label_style(
-          (
-            "sans-serif",
-            opts
-              .tick_label_style
-              .and_then(|s| s.font_size)
-              .map_or(RESOLUTION_SCALE as f64 * 18.0, |pt| {
-                RESOLUTION_SCALE as f64 * pt
-              }),
-          )
-            .into_font()
-            .color(&tick_text_color),
-        )
-        .set_tick_mark_size(
-          LabelAreaPosition::Left,
-          if tick_axis_y { tick } else { 0 },
-        )
-        .set_tick_mark_size(
-          LabelAreaPosition::Bottom,
-          if tick_axis_x { tick } else { 0 },
-        )
-        .draw()
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-
-    // A framed plot closes its plotting area on all four sides, as in the
-    // line renderer; the mesh above only draws the left and bottom edges.
-    if opts.frame {
-      let frame_style = dark_gray.stroke_width(frame_width);
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![
-            (x_min, y_min),
-            (x_max, y_min),
-            (x_max, y_max),
-            (x_min, y_max),
-            (x_min, y_min),
-          ],
-          frame_style,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-
-    // Grid lines, drawn before the points so they sit behind the data.
-    // Same rules as the line renderer: explicit positions beat the evenly
-    // spaced automatic ones, dashed lines are deferred to stroke-dasharray
-    // overlays emitted at the end.
-    {
-      // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
-      let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
-      let y_grid = resolve_grid_lines(
-        &opts.grid_y_lines,
-        opts.grid_lines_y,
-        y_min,
-        y_max,
-        y_major,
-        opts.grid_lines_style.as_ref(),
-      );
-      let y_tol = (y_max - y_min).abs() * 1e-9;
-      for (gy, style) in &y_grid {
-        if *gy < y_min - y_tol || *gy > y_max + y_tol {
-          continue;
-        }
-        let (rgb, stroke_w, dash) = grid_line_props(style);
-        if let Some(dashes) = dash {
-          dashed_overlays.push(DashedOverlay {
-            color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
-            opacity: 1.0,
-            stroke_w,
-            dashes,
-            points: vec![(x_min, *gy), (x_max, *gy)],
-          });
-          continue;
-        }
-        let shape = match rgb {
-          Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
-          None => grid_color.stroke_width(stroke_w),
-        };
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(x_min, *gy), (x_max, *gy)],
-            shape,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
-
-      let x_grid = resolve_grid_lines(
-        &opts.grid_x_lines,
-        opts.grid_lines_x,
-        x_min,
-        x_max,
-        x_major,
-        opts.grid_lines_style.as_ref(),
-      );
-      let x_tol = (x_max - x_min).abs() * 1e-9;
-      for (gx, style) in &x_grid {
-        if *gx < x_min - x_tol || *gx > x_max + x_tol {
-          continue;
-        }
-        let (rgb, stroke_w, dash) = grid_line_props(style);
-        if let Some(dashes) = dash {
-          dashed_overlays.push(DashedOverlay {
-            color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
-            opacity: 1.0,
-            stroke_w,
-            dashes,
-            points: vec![(*gx, y_min), (*gx, y_max)],
-          });
-          continue;
-        }
-        let shape = match rgb {
-          Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
-          None => grid_color.stroke_width(stroke_w),
-        };
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(*gx, y_min), (*gx, y_max)],
-            shape,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
-    }
-
-    // Draw scatter points using plotters Circle markers
-    for (series_idx, points) in all_series.iter().enumerate() {
-      let marker_size = series_point_radius(opts, series_idx, render_width);
-      let (r, g, b) = series_color(&opts.plot_style, series_idx);
-      let color = RGBColor(r, g, b);
-
-      // Uncertainty intervals from Around data values, under the point
-      // markers: capped error bars by default, one filled band per series
-      // for `IntervalMarkers -> "Bands"`.
-      if let Some(bars) = opts.error_bars.get(series_idx) {
-        match opts.interval_markers {
-          IntervalMarkers::Fences => draw_error_bars(
-            &mut chart,
-            points,
-            bars,
-            color,
-            x_max - x_min,
-            y_max - y_min,
-          )?,
-          IntervalMarkers::Bands => {
-            draw_interval_band(&mut chart, points, bars, color)?;
-          }
-          IntervalMarkers::None => {}
-        }
-      }
-
-      draw_scatter_series(
-        &mut chart,
-        all_series,
-        series_idx,
-        opts,
-        (r, g, b),
-        marker_size,
-        (x_min, x_max),
-        y_min,
-        y_max,
-      )?;
-    }
-
-    root
-      .present()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-  }
-
-  rewrite_svg_header(
-    &mut buf,
-    svg_width,
-    svg_height,
-    render_width,
-    render_height,
-    full_width,
-  );
-
-  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
-  let plot_x0 = margin_left + y_label_area;
-  let plot_y0 = margin_top;
-  let plot_w = render_width as f64 - margin_left - margin_right - y_label_area;
-  let plot_h = render_height as f64 - margin_top - margin_bottom - x_label_area;
-
-  // Deferred dashed grid lines, as single stroke-dasharray polylines.
-  if !dashed_overlays.is_empty()
-    && let Some(pos) = buf.rfind("</svg>")
-  {
-    let overlay_svg = render_dash_overlays(
-      &dashed_overlays,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      render_width as f64,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      false,
-      false,
-    );
-    buf.insert_str(pos, &overlay_svg);
-  }
-
-  if origin_axes {
-    let axes_svg = origin_axes_svg(&OriginAxes {
-      area: (plot_x0, plot_y0, plot_w, plot_h),
-      x: x_scale,
-      y: y_scale,
-      origin,
-      show: (show_x_axis, show_y_axis),
-      ticks: show_ticks.then_some((&x_ticks, &y_ticks)),
-      sf,
-      axis_color: label_fill,
-      label_fill,
-      axes_style: &opts.axes_style,
-      ticks_style: &opts.ticks_style,
-    });
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &axes_svg);
-    }
-  }
-
-  // Prolog primitives sit under the points and Epilog primitives over them,
-  // as in the line renderer.
-  inject_prolog(
-    &mut buf,
-    opts,
-    (plot_x0, plot_y0, plot_w, plot_h),
-    (x_min, x_max, y_min, y_max),
-    sf,
-  );
-  inject_epilog(
-    &mut buf,
-    opts,
-    (plot_x0, plot_y0, plot_w, plot_h),
-    (x_min, x_max, y_min, y_max),
-    sf,
-  );
-  if opts.frame && show_ticks {
-    // As in the line renderer: an axis carrying explicit `Ticks` marks only
-    // the positions it names, so its automatic majors get no extension.
-    let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    inject_major_tick_extensions(
-      &mut buf,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      opts.ticks_x.is_none().then_some((x_min, x_max, x_major)),
-      opts.ticks_y.is_none().then_some((y_min, y_max, y_major)),
-      MINOR_TICK_LEN as f64 * sf,
-      MAJOR_TICK_LEN as f64 * sf,
-      sf,
-      label_fill,
-    );
-  }
-
-  // Callout/Labeled series labels (same plot area as the tick pass above).
-  {
-    inject_callout_labels(
-      &mut buf,
-      opts,
-      all_series,
-      (x_min, x_max),
-      (y_min, y_max),
-      (plot_x0, plot_y0, plot_w, plot_h),
-    );
-    inject_plot_labels(
-      &mut buf,
-      opts,
-      all_series,
-      (x_min, x_max),
-      (y_min, y_max),
-      (plot_x0, plot_y0, plot_w, plot_h),
-    );
-    inject_point_labels(
-      &mut buf,
-      opts,
-      all_series,
-      (x_min, x_max),
-      (y_min, y_max),
-      (plot_x0, plot_y0, plot_w, plot_h),
-    );
-  }
-
-  inject_legend(&mut buf, opts);
-
-  // FrameLabel / AxesLabel / PlotLabel, placed exactly as the line renderer
-  // places them.
-  if let Some(pos) = buf.rfind("</svg>") {
-    let labels = plot_labels_svg(
-      opts,
-      (plot_x0, plot_y0, plot_w, plot_h),
-      (x_min, x_max, y_min, y_max),
-      margin_left,
-      sf,
-      label_fill,
-      title_default_fill,
-      render_width as f64,
-    );
-    if !labels.is_empty() {
-      buf.insert_str(pos, &labels);
-    }
-  }
-
-  // Explicit `Ticks` on a frame: mark and label exactly the positions
-  // asked for, in the same place the automatic ones would sit. (The origin
-  // axes draw their own.)
-  if !origin_axes && (opts.ticks_x.is_some() || opts.ticks_y.is_some()) {
-    let ticks_svg = explicit_ticks_svg(
-      opts.ticks_x.as_ref(),
-      opts.ticks_y.as_ref(),
-      (plot_x0, plot_y0, plot_w, plot_h),
-      (x_min, x_max, y_min, y_max),
-      RESOLUTION_SCALE as f64,
-      label_fill,
-    );
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &ticks_svg);
-    }
-  }
-  if opts.ticks_top.is_some() || opts.ticks_right.is_some() {
-    let ticks_svg = explicit_opposite_ticks_svg(
-      opts.ticks_top.as_ref(),
-      opts.ticks_right.as_ref(),
-      (plot_x0, plot_y0, plot_w, plot_h),
-      (x_min, x_max, y_min, y_max),
-      RESOLUTION_SCALE as f64,
-      label_fill,
-    );
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &ticks_svg);
-    }
-  }
-
-  Ok(buf)
+  let mut opts = opts.clone();
+  opts.joined_per_series = Some(vec![false]);
+  generate_svg_with_filling(all_series, x_range, y_range, &opts)
 }
 
 /// Render a merged `PlotSource` (from `Show`).
@@ -6817,8 +6466,8 @@ pub(crate) fn generate_bar_svg(
       })?;
 
     let y_span = y_max - y_min;
-    let y_major = nice_step(y_span, AXIS_TICK_TARGET);
-    let y_minor_step = y_major / 5.0;
+    let y_major = axis_tick_step(y_span);
+    let y_minor_step = minor_tick_step(y_major);
     let y_tick_count = (y_span / y_minor_step).round() as usize + 1;
 
     chart
@@ -6964,11 +6613,7 @@ pub(crate) fn generate_bar_svg(
     plot_w,
     plot_h,
     None,
-    show_ticks.then_some((
-      y_min,
-      y_max,
-      nice_step(y_max - y_min, AXIS_TICK_TARGET),
-    )),
+    show_ticks.then_some((y_min, y_max, axis_tick_step(y_max - y_min))),
     MINOR_TICK_LEN as f64 * sf,
     MAJOR_TICK_LEN as f64 * sf,
     sf,
@@ -7503,7 +7148,7 @@ pub(crate) fn generate_horizontal_bar_svg(
   ));
 
   // Value-axis ticks along the bottom.
-  let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
+  let x_major = axis_tick_step(x_max - x_min);
   if x_major > 0.0 {
     let tick_len = MAJOR_TICK_LEN as f64 * sf;
     let start = (x_min / x_major).ceil() * x_major;
@@ -8038,10 +7683,10 @@ pub(crate) fn generate_bubble_chart_svg(
         InterpreterError::EvaluationError(format!("BubbleChart: {e}"))
       })?;
 
-    let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    let x_minor_step = x_major / 5.0;
-    let y_minor_step = y_major / 5.0;
+    let x_major = axis_tick_step(x_max - x_min);
+    let y_major = axis_tick_step(y_max - y_min);
+    let x_minor_step = minor_tick_step(x_major);
+    let y_minor_step = minor_tick_step(y_major);
     let x_tick_count = ((x_max - x_min) / x_minor_step).round() as usize + 1;
     let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
@@ -8182,8 +7827,8 @@ pub(crate) fn generate_bubble_chart_svg(
     render_height as f64 - margin_top - 10.0 * sf - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
-  let x_major_step = nice_step(x_max - x_min, AXIS_TICK_TARGET);
-  let y_major_step = nice_step(y_max - y_min, AXIS_TICK_TARGET);
+  let x_major_step = axis_tick_step(x_max - x_min);
+  let y_major_step = axis_tick_step(y_max - y_min);
 
   inject_major_tick_extensions(
     &mut buf,
@@ -9070,10 +8715,10 @@ pub(crate) fn generate_histogram_svg(
         InterpreterError::EvaluationError(format!("Histogram: {e}"))
       })?;
 
-    let x_major = nice_step(x_hi - x_lo, AXIS_TICK_TARGET);
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    let x_minor_step = x_major / 5.0;
-    let y_minor_step = y_major / 5.0;
+    let x_major = axis_tick_step(x_hi - x_lo);
+    let y_major = axis_tick_step(y_max - y_min);
+    let x_minor_step = minor_tick_step(x_major);
+    let y_minor_step = minor_tick_step(y_major);
     // `Ticks -> None` suppresses automatic ticks on both axes outright. An
     // axis given explicit `Ticks` draws its own marks/labels at exactly the
     // positions asked for (after the mesh below), so plotters' automatic
@@ -9223,8 +8868,8 @@ pub(crate) fn generate_histogram_svg(
   // so the automatic majors must not be extended over it; `Ticks -> None`
   // suppresses this on both axes.
   {
-    let x_major = nice_step(x_hi - x_lo, AXIS_TICK_TARGET);
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
+    let x_major = axis_tick_step(x_hi - x_lo);
+    let y_major = axis_tick_step(y_max - y_min);
     inject_major_tick_extensions(
       &mut buf,
       plot_x0,
@@ -9588,8 +9233,8 @@ pub(crate) fn generate_axes_only_opts(
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
       .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
 
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
-    let y_minor_step = y_major / 5.0;
+    let y_major = axis_tick_step(y_max - y_min);
+    let y_minor_step = minor_tick_step(y_major);
     let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
 
     let hide_x = margins.is_some_and(|m| m.hide_x_ticks);
@@ -9600,8 +9245,8 @@ pub(crate) fn generate_axes_only_opts(
       // Custom x ticks are drawn manually further down, so plotters' own
       // x-axis ticks are suppressed in that mode as well.
       let no_x = hide_x || x_tick_positions.is_some();
-      let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
-      let x_minor_step = x_major / 5.0;
+      let x_major = axis_tick_step(x_max - x_min);
+      let x_minor_step = minor_tick_step(x_major);
       let x_tick_count = if no_x {
         0
       } else {
@@ -9686,9 +9331,9 @@ pub(crate) fn generate_axes_only_opts(
   let hide_x = margins.is_some_and(|m| m.hide_x_ticks);
   let hide_y = margins.is_some_and(|m| m.hide_y_ticks);
   if !(hide_x && hide_y) {
-    let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
+    let y_major = axis_tick_step(y_max - y_min);
     let x_axis_ext = if x_tick_positions.is_none() && !hide_x {
-      Some((x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET)))
+      Some((x_min, x_max, axis_tick_step(x_max - x_min)))
     } else {
       None
     };
@@ -10389,13 +10034,10 @@ fn series_marker(
 /// Draw one series of scattered points onto an already-built chart:
 /// fill-target stem lines (mirroring the fill a joined curve would get from
 /// `Filling`), then either the series' `PlotMarkers` glyph or, lacking one,
-/// the default round dot — the two are mutually exclusive, exactly as
-/// `generate_scatter_svg_with_options` draws an all-points `ListPlot`. This
-/// is the single implementation both that renderer and a `ListPlot[…,
-/// Joined -> {…, False, …}]` series inside the line renderer
-/// (`generate_svg_with_options`) call, so the two never drift into drawing
-/// a series' points differently (e.g. a default circle *and* a glyph on
-/// top of it).
+/// the default round dot — the two are mutually exclusive. The line
+/// renderer (`generate_svg_with_options`) draws every unjoined series with
+/// it, an all-points `ListPlot` (`generate_scatter_svg_with_options`) as well
+/// as a `Joined -> {…, False, …}` series among joined ones.
 #[allow(clippy::too_many_arguments)]
 fn draw_scatter_series<DB, CT>(
   chart: &mut plotters::prelude::ChartContext<DB, CT>,
@@ -11055,19 +10697,6 @@ pub(crate) struct PaddedMargins {
 /// Wolfram's default plot `AspectRatio`: 1/GoldenRatio, the height/width of
 /// the plotting area when nothing else fixes it.
 pub(crate) const DEFAULT_ASPECT_RATIO: f64 = 0.618_033_988_749_895;
-
-/// How many intervals the Wolfram Language aims to divide a plot axis into
-/// when placing automatic ticks. Verified against `Charting`ScaledTicks` over
-/// a range of axis spans: with this target and [`nice_step`]'s multipliers,
-/// Woxi picks the same step Wolfram does.
-pub(crate) const AXIS_TICK_TARGET: usize = 6;
-
-/// The tick target of the axes an unframed plot draws through its
-/// `AxesOrigin`. Plot and ListPlot axes take finer steps than
-/// `Charting`ScaledTicks` with 6: a 0..2 Pi axis is labelled 1, 2, …, 6
-/// (step 1, not 2), 0..3.5 every 0.5, 0..13 every 2 — exactly
-/// `Charting`ScaledTicks` with a target of 7.
-pub(crate) const ORIGIN_AXIS_TICK_TARGET: usize = 7;
 
 /// Lay out the plotting area inside an image with `ImagePadding`.
 ///

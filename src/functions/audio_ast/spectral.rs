@@ -313,10 +313,7 @@ fn raster_svg(
   let font = "font-family=\"sans-serif\" font-size=\"10\"";
   // X ticks
   if x_max > 0.0 {
-    let step = crate::functions::plot::nice_step(
-      x_max,
-      crate::functions::plot::AXIS_TICK_TARGET,
-    );
+    let step = crate::functions::plot::axis_tick_step(x_max);
     let mut t = 0.0;
     while t <= x_max * 1.0001 {
       let x = left + t / x_max * pw;
@@ -333,10 +330,7 @@ fn raster_svg(
   }
   // Y ticks
   if y_max > 0.0 {
-    let step = crate::functions::plot::nice_step(
-      y_max,
-      crate::functions::plot::AXIS_TICK_TARGET,
-    );
+    let step = crate::functions::plot::axis_tick_step(y_max);
     let mut t = 0.0;
     while t <= y_max * 1.0001 {
       let y = top + ph - t / y_max * ph;

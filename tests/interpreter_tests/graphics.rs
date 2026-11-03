@@ -12133,9 +12133,9 @@ mod plot3d {
       );
     }
 
-    /// The Wolfram Language divides an axis into about six intervals, and
-    /// counts 2.5 among its "nice" step multipliers. Verified against
-    /// `Charting`ScaledTicks` over a spread of axis spans.
+    /// WL 15 steps an automatic axis by the smallest of 1, 2, 5 × 10^k that
+    /// cuts it into fewer than 8 intervals. Verified against wolframscript's
+    /// `AbsoluteOptions[…, Ticks]` over a spread of axis spans.
     #[test]
     fn tick_steps_match_the_wolfram_language() {
       let step_of = |range: &str, expected: &[&str]| {
@@ -12145,9 +12145,12 @@ mod plot3d {
         )));
         assert_eq!(labels, expected, "for {range}");
       };
+      step_of("{0, 15}", &["14", "12", "10", "8", "6", "4", "2", "0"]);
+      step_of("{0, 16}", &["15", "10", "5", "0"]);
+      step_of("{0, 4}", &["4", "3", "2", "1", "0"]);
       step_of(
-        "{0, 15}",
-        &["15.0", "12.5", "10.0", "7.5", "5.0", "2.5", "0.0"],
+        "{0, 3.9}",
+        &["3.5", "3.0", "2.5", "2.0", "1.5", "1.0", "0.5", "0.0"],
       );
       step_of("{0, 6}", &["6", "5", "4", "3", "2", "1", "0"]);
       step_of("{0, 12}", &["12", "10", "8", "6", "4", "2", "0"]);
@@ -15980,7 +15983,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // <text>\n{value}\n</text> element, so look for the value between a
       // `>` and a newline. At least one of the data-range integers should
       // appear as a tick.
-      let has_tick_label = ["1", "2", "3", "4", "5"]
+      let has_tick_label = ["1.0", "2.0", "3.0", "4.0", "5.0"]
         .iter()
         .any(|t| svg.contains(&format!(">\n{t}\n</text>")));
       assert!(
@@ -16878,10 +16881,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// `Ticks -> False` drops the y-axis tick labels like `Ticks -> None`.
     #[test]
     fn bar_chart_ticks_false() {
+      // WL 15 steps the 0..3 value axis by 0.5.
       let with = export_svg("BarChart[{1, 2, 3}]");
       let without = export_svg("BarChart[{1, 2, 3}, Ticks -> False]");
-      assert!(with.contains(">\n2\n"));
-      assert!(!without.contains(">\n2\n"));
+      assert!(with.contains(">\n2.0\n"));
+      assert!(!without.contains(">\n2.0\n"));
     }
 
     /// `Epilog` primitives are drawn over a bar chart, in chart coordinates.
@@ -45262,6 +45266,57 @@ mod list_plot_wl15_ranges {
       let svg = export_svg(&format!("ListPlot[Range[{n}]]"));
       assert_eq!(dot_radius(&svg), r, "n = {n}");
     }
+  }
+
+  #[test]
+  fn framed_plot_labels_its_last_major_tick() {
+    // x spans -0.08..4.08: plotters' own key points stop at 3.8.
+    let svg = export_svg("ListPlot[{2, 3, 4, 6}, Frame -> True]");
+    assert!(
+      svg.contains(">\n4\n</text>") || svg.contains(">4</text>"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn scatter_and_line_renderers_draw_the_same_frame() {
+    // A scatter plot is drawn by the line renderer with every series
+    // unjoined, so it gets the same inward frame ticks on all four edges.
+    let scatter = export_svg("ListPlot[{2, 3, 4, 6}, Frame -> True]");
+    let joined = export_svg("ListLinePlot[{2, 3, 4, 6}, Frame -> True]");
+    let lines = |svg: &str| svg.matches("<line").count();
+    assert_eq!(lines(&scatter), lines(&joined));
+  }
+
+  #[test]
+  fn list_log_plots_draw_points_unless_joined() {
+    for head in ["ListLogPlot", "ListLogLogPlot", "ListLogLinearPlot"] {
+      let points = export_svg(&format!("{head}[{{1, 10, 100}}]"));
+      assert_eq!(points.matches("<circle").count(), 3, "{head}: {points}");
+      let joined =
+        export_svg(&format!("{head}[{{1, 10, 100}}, Joined -> True]"));
+      assert_eq!(joined.matches("<circle").count(), 0, "{head}: {joined}");
+    }
+  }
+
+  #[test]
+  fn callouts_get_leaders_and_crowded_ones_are_dropped() {
+    // 40 callouts on a 4×10 grid of points cannot all find room.
+    let svg = export_svg(
+      "ListPlot[Flatten[Table[Callout[{i, j}, i j], {i, 4}, {j, 10}], 1]]",
+    );
+    let leaders = svg.matches("stroke=\"#AAAAAA\"").count();
+    let labels = svg.matches("fill-opacity=\"0.667\"").count();
+    assert!(leaders > 0 && leaders == labels, "{svg}");
+    assert!(leaders < 40, "crowded callouts must be dropped: {leaders}");
+    // Plain `Labeled` points keep every label and draw no leader.
+    let svg =
+      export_svg("ListPlot[{Labeled[{1, 2}, \"a\"], Labeled[{2, 3}, \"b\"]}]");
+    assert_eq!(svg.matches("stroke=\"#AAAAAA\"").count(), 0);
+    assert!(
+      svg.contains(">a</text>") && svg.contains(">b</text>"),
+      "{svg}"
+    );
   }
 
   #[test]
