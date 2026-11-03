@@ -475,6 +475,17 @@ mod series_end_labels {
   }
 
   #[test]
+  fn plot_labels_hang_off_leaders_in_traditional_form() {
+    let svg = svg_of(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabels -> {\"sine\", None}]",
+    );
+    assert!(svg.contains(">sine</text>"));
+    assert_eq!(svg.matches("fill=\"none\" stroke=\"#AAAAAA\"").count(), 1);
+    let svg = svg_of("Plot[x^2, {x, 0, 1}, PlotLabels -> {x^2}]");
+    assert!(svg.contains("baseline-shift=\"super\""), "{svg}");
+  }
+
+  #[test]
   fn a_positioned_callout_keeps_its_place() {
     // `Callout[data, label, Above]` is not moved to the series end.
     let svg = svg_of("ListPlot[Callout[{1, 3, 2}, \"top\", Above]]");

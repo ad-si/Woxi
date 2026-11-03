@@ -4012,14 +4012,14 @@ fn generate_svg_with_options(
         .map(|l| crate::functions::graphics::box_string_visible_len(l))
         .max()
         .unwrap_or(0);
-      let leader = if opts.plot_label_leaders.iter().any(|&l| l) {
-        PLOT_LABEL_LEADER * sf
+      // The gap to the label (past a callout leader) and the label, set at
+      // 11 pt, plus a little room behind it.
+      let gap = if opts.plot_label_leaders.iter().any(|&l| l) {
+        (5.5 + PLOT_LABEL_LEADER) * sf
       } else {
-        0.0
+        6.0 * sf
       };
-      // The labels are set at 11 pt.
-      (10.0 * sf + 8.0 * sf + leader + widest as f64 * 0.6 * sf * 11.0).round()
-        as u32
+      (gap + 4.0 * sf + widest as f64 * 0.55 * sf * 11.0).round() as u32
     } else {
       0
     },
@@ -11728,7 +11728,11 @@ pub(crate) fn apply_common_plot_option(
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
     }
-    "PlotLabels" => plot_opts.plot_labels = parse_plot_labels(replacement),
+    // WL 15 hangs `PlotLabels` off the curve ends on callout leaders.
+    "PlotLabels" => {
+      plot_opts.plot_labels = parse_plot_labels(replacement);
+      plot_opts.plot_label_leaders = vec![true; plot_opts.plot_labels.len()];
+    }
     "PlotLegends" => {
       let (labels, _, _, position) = parse_plot_legends(replacement);
       plot_opts.legend_position = position;
