@@ -18469,6 +18469,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `WorkingPrecision -> p` samples at `p` digits: `Sin[x + 10^20]` is a
+    /// sine wave, not machine precision's constant.
+    #[test]
+    fn plot_working_precision_samples_at_that_precision() {
+      let ys = |code: &str| -> Vec<i64> {
+        let svg = export_svg(code);
+        let pts = svg
+          .split("points=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .to_string();
+        pts
+          .split_whitespace()
+          .map(|p| p.split(',').nth(1).unwrap().parse().unwrap())
+          .collect()
+      };
+      let precise =
+        ys("Plot[Sin[x + 10^20], {x, 0, 2 Pi}, WorkingPrecision -> 20]");
+      let spread =
+        precise.iter().max().unwrap() - precise.iter().min().unwrap();
+      assert!(spread > 1000, "{precise:?}");
+    }
+
     /// An infinite `Plot` range is drawn over WL's compact coordinate
     /// u = (√(1 + (x/5)²) - 1)/(x/5): the axis runs -1..1, labelled -∞, -20,
     /// …, 20, ∞ at the original values' positions.

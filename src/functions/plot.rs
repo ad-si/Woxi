@@ -465,7 +465,42 @@ fn compiled_body(
   compiled
 }
 
+/// `$MachinePrecision`, in decimal digits.
+const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
+
+thread_local! {
+  /// `WorkingPrecision -> p` of the `Plot` being sampled: each sample point
+  /// enters the body as a `p`-digit number instead of a machine real.
+  static PLOT_WORKING_PRECISION: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Sets the sampling precision for the lifetime of the guard.
+struct WorkingPrecisionGuard(Option<f64>);
+
+impl WorkingPrecisionGuard {
+  fn set(p: Option<f64>) -> Self {
+    Self(PLOT_WORKING_PRECISION.with(|c| c.replace(p)))
+  }
+}
+
+impl Drop for WorkingPrecisionGuard {
+  fn drop(&mut self) {
+    PLOT_WORKING_PRECISION.with(|c| c.set(self.0));
+  }
+}
+
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
+  if let Some(p) = PLOT_WORKING_PRECISION.with(std::cell::Cell::get) {
+    let point = evaluate_expr_to_expr(&call(
+      "SetPrecision",
+      vec![Expr::Real(x), Expr::Real(p)],
+    ))
+    .ok()?;
+    let value =
+      evaluate_expr_to_expr(&substitute_var(body, var, &point)).ok()?;
+    return try_eval_to_f64_lenient(&value);
+  }
   if let Some(c) = compiled_body(body, &[var.to_string()]) {
     let v = c.eval(&[x]);
     if v.is_finite() {
@@ -13828,6 +13863,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ScalingFunctions -> {sx, sy}`: the plot is drawn in the scaled
   // coordinates of each scaled axis.
   let mut scaling: (Option<Scaling>, Option<Scaling>) = (None, None);
+  // `WorkingPrecision -> p` above machine precision.
+  let mut working_precision: Option<f64> = None;
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
@@ -13874,6 +13911,13 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         scaling = Scaling::parse_option(&value).unwrap_or((None, None));
         continue;
       }
+      if name == "WorkingPrecision" {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.clone());
+        working_precision = try_eval_to_f64(&value)
+          .filter(|p| p.is_finite() && *p > MACHINE_PRECISION_DIGITS);
+        continue;
+      }
       if name == "RegionFunction" {
         // `RegionFunction -> (True &)` is the default: every point drawn.
         let always = matches!(replacement,
@@ -13898,6 +13942,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
   let plot_range_y_all = overrides.y_all;
+  let _precision = WorkingPrecisionGuard::set(working_precision);
 
   // Apply AspectRatio to the plotting area (not the whole image); the total
   // height is derived in generate_svg_with_options once margins are known.
