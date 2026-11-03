@@ -130,11 +130,77 @@ mod operator_and_extra_forms {
   fn permutation_matrix_size() {
     assert_eq!(
       interpret("PermutationMatrix[Cycles[{{1, 3}}], 4]").unwrap(),
-      "{{0, 0, 1, 0}, {0, 1, 0, 0}, {1, 0, 0, 0}, {0, 0, 0, 1}}"
+      "PermutationMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {Cycles[{{1, 3}}], Infinity}]]"
     );
     assert_eq!(
+      interpret("Normal[PermutationMatrix[Cycles[{{1, 3}}], 4]]").unwrap(),
+      "{{0, 0, 1, 0}, {0, 1, 0, 0}, {1, 0, 0, 0}, {0, 0, 0, 1}}"
+    );
+    // A size is only taken with a Cycles object.
+    assert_eq!(
       interpret("PermutationMatrix[{2, 1}, 3]").unwrap(),
+      "PermutationMatrix[{2, 1}, 3]"
+    );
+    assert_eq!(
+      interpret("PermutationMatrix[Cycles[{{1, 3}}], 2]").unwrap(),
+      "PermutationMatrix[Cycles[{{1, 3}}], 2]"
+    );
+  }
+
+  #[test]
+  fn permutation_matrix_is_structured() {
+    assert_eq!(
+      interpret("PermutationMatrix[{3, 1, 2}]").unwrap(),
+      "PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {Cycles[{{1, 3, 2}}], Infinity}]]"
+    );
+    assert_eq!(
+      interpret("PermutationMatrix[Cycles[{}]]").unwrap(),
+      "PermutationMatrix[StructuredArray`StructuredData[{1, 1}, \
+       {Cycles[{}], Infinity}]]"
+    );
+    assert_eq!(
+      interpret("PermutationMatrix[{2, 1, 3}, TargetStructure -> \"Dense\"]")
+        .unwrap(),
       "{{0, 1, 0}, {1, 0, 0}, {0, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn permutation_matrix_algebra_stays_structured() {
+    assert_eq!(
+      interpret("Inverse[PermutationMatrix[{2, 3, 1}]]").unwrap(),
+      "PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {Cycles[{{1, 3, 2}}], Infinity}]]"
+    );
+    assert_eq!(
+      interpret("Transpose[PermutationMatrix[{2, 3, 1}]]").unwrap(),
+      "PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {Cycles[{{1, 3, 2}}], Infinity}]]"
+    );
+    assert_eq!(
+      interpret("MatrixPower[PermutationMatrix[{2, 3, 1}], 2]").unwrap(),
+      "PermutationMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {Cycles[{{1, 3, 2}}], Infinity}]]"
+    );
+  }
+
+  #[test]
+  fn permutation_matrix_computes_as_its_matrix() {
+    assert_eq!(
+      interpret("PermutationMatrix[{2, 3, 1}] . {a, b, c}").unwrap(),
+      "{b, c, a}"
+    );
+    assert_eq!(interpret("Det[PermutationMatrix[{2, 3, 1}]]").unwrap(), "1");
+    assert_eq!(interpret("Tr[PermutationMatrix[{2, 3, 1}]]").unwrap(), "0");
+    assert_eq!(
+      interpret("MatrixQ[PermutationMatrix[{2, 3, 1}]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("PermutationMatrix[{2, 3, 1}] + 1").unwrap(),
+      "{{1, 2, 1}, {1, 1, 2}, {2, 1, 1}}"
     );
   }
 

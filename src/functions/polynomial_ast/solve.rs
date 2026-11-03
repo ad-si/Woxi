@@ -1203,52 +1203,37 @@ fn try_nsolve_quadratic(
     }
   }
 
-  let a = coeffs_f64[2];
-  let b = coeffs_f64[1];
-  let c = coeffs_f64[0];
-  let disc = b * b - 4.0 * a * c;
-
   let make_rule = |val: Expr| -> Expr {
     Expr::List(vec![rule_expr(Expr::Identifier(var.clone()), val)].into())
   };
 
-  if disc >= 0.0 {
-    let sqrt_disc = disc.sqrt();
-    // Kahan's method: compute the well-conditioned root first,
-    // then use Vieta's formula (c/q) for the other root.
-    // This avoids cancellation when -b and sqrt(disc) nearly cancel.
-    let q = if b >= 0.0 {
-      -0.5 * (b + sqrt_disc)
+  let (a, b, c) = (coeffs_f64[2], coeffs_f64[1], coeffs_f64[0]);
+  let mut roots = match machine_quadratic_roots(a, b, c) {
+    Some(roots) => roots,
+    // Both roots 0 (`q` vanishes).
+    None if a != 0.0 && b == 0.0 && c == 0.0 => vec![(0.0, 0.0); 2],
+    None => return None,
+  };
+  roots.sort_by(|x, y| {
+    x.0
+      .partial_cmp(&y.0)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(x.1.partial_cmp(&y.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  let value = |(re, im): (f64, f64)| -> Expr {
+    if im == 0.0 {
+      Expr::Real(re)
     } else {
-      -0.5 * (b - sqrt_disc)
-    };
-    let r1 = q / a;
-    let r2 = if q.abs() > 0.0 { c / q } else { r1 };
-    let mut roots = [r1, r2];
-    roots.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(Ok(Expr::List(
-      vec![
-        make_rule(Expr::Real(roots[0])),
-        make_rule(Expr::Real(roots[1])),
-      ]
-      .into(),
-    )))
-  } else {
-    let sqrt_neg_disc = (-disc).sqrt();
-    let re = -b / (2.0 * a);
-    let im = sqrt_neg_disc / (2.0 * a);
-    let c1 = crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(-im.abs())],
-    )
-    .unwrap_or(Expr::Real(re));
-    let c2 = crate::evaluator::evaluate_function_call_ast(
-      "Complex",
-      &[Expr::Real(re), Expr::Real(im.abs())],
-    )
-    .unwrap_or(Expr::Real(re));
-    Some(Ok(Expr::List(vec![make_rule(c1), make_rule(c2)].into())))
-  }
+      crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      )
+      .unwrap_or(Expr::Real(re))
+    }
+  };
+  Some(Ok(Expr::List(
+    roots.into_iter().map(|r| make_rule(value(r))).collect(),
+  )))
 }
 
 /// `NSolve[a x^n + c == 0, x]` for n >= 3 — the roots on a circle.
@@ -1712,7 +1697,8 @@ pub fn roots_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Roots[eqn, var, opts]` with the options `Modulus`, `Multiplicity`,
-/// `Cubics` and `Quartics`. Any other option leaves the call unevaluated.
+/// `Cubics` and `Quartics`; any other option is ignored, as wolframscript
+/// does.
 fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::expr_form::rule_parts;
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
@@ -1730,6 +1716,11 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
         multiplicity = Some(*k as usize);
       }
       ("Multiplicity", Expr::Identifier(i)) if i == "Infinity" => {}
+      ("Multiplicity", other) => crate::emit_message(&format!(
+        "Roots::mult: The value of the option Multiplicity -> {} is not a \
+         positive integer.",
+        crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+      )),
       // EquatedTo -> e writes each root as e == root (Null: the variable).
       ("EquatedTo", Expr::Identifier(n)) if n == "Null" => {}
       ("EquatedTo", e) => equated_to = Some(e.clone()),
@@ -1740,7 +1731,10 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radical_degrees.push(if name == "Cubics" { 3 } else { 4 });
         }
       }
-      _ => return Ok(unevaluated("Roots", args)),
+      ("Modulus" | "Cubics" | "Quartics", _) => {
+        return Ok(unevaluated("Roots", args));
+      }
+      _ => {}
     }
   }
 
@@ -1779,25 +1773,13 @@ fn roots_with_options(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // At most `k` copies of each repeated root.
+  // `Multiplicity -> k` scales every root's multiplicity by `k`: each
+  // occurrence is listed `k` times.
   if let Some(k) = multiplicity {
-    let mut kept: Vec<(Expr, usize)> = Vec::new();
-    conditions.retain(|c| {
-      match kept
-        .iter_mut()
-        .find(|(e, _)| crate::evaluator::pattern_matching::expr_equal(e, c))
-      {
-        Some((_, n)) if *n >= k => false,
-        Some((_, n)) => {
-          *n += 1;
-          true
-        }
-        None => {
-          kept.push((c.clone(), 1));
-          true
-        }
-      }
-    });
+    conditions = conditions
+      .into_iter()
+      .flat_map(|c| std::iter::repeat_n(c, k))
+      .collect();
   }
 
   if let Some(lhs) = equated_to {
@@ -1991,6 +1973,30 @@ fn polynomial_f64_coefficients(poly: &Expr, var: &str) -> Option<Vec<f64>> {
   Some(coeffs)
 }
 
+/// The roots of `a x^2 + b x + c` the way wolframscript computes them for
+/// machine coefficients: the cancellation-free form `q = -(b + sgn(b)
+/// Sqrt[b^2 - 4 a c])/2`, roots `q/a` and `c/q` (so `x^2 - 2.` gives
+/// `-1.4142135623730951` and `1.414213562373095`), and `-b/(2 a) ± …i` for a
+/// negative discriminant. `None` when `q` vanishes (both roots 0, left to
+/// the general solver).
+fn machine_quadratic_roots(a: f64, b: f64, c: f64) -> Option<Vec<(f64, f64)>> {
+  let disc = b * b - 4.0 * a * c;
+  if !disc.is_finite() || a == 0.0 {
+    return None;
+  }
+  if disc < 0.0 {
+    let re = -b / (2.0 * a);
+    let im = (-disc).sqrt() / (2.0 * a);
+    return Some(vec![(re, -im.abs()), (re, im.abs())]);
+  }
+  let d = disc.sqrt();
+  let q = -(b + if b < 0.0 { -d } else { d }) / 2.0;
+  if q == 0.0 {
+    return None;
+  }
+  Some(vec![(q / a, 0.0), (c / q, 0.0)])
+}
+
 /// Find all roots of polynomial (coeffs[i] is coefficient of x^i) using
 /// the Durand-Kerner (Weierstrass) method on complex doubles.
 pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
@@ -2092,6 +2098,57 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
 
   crate::functions::math_ast::polish_and_pair_roots(coeffs, &mut roots);
   roots
+}
+
+/// The rules of a conjunction, one list per branch of the disjunctions it
+/// holds (a `Sequence` of them when there are several).
+fn and_to_rules(input: &Expr, collect: &dyn Fn(&Expr) -> Vec<Expr>) -> Expr {
+  fn dnf(e: &Expr) -> Vec<Vec<Expr>> {
+    let (is_and, parts): (bool, Vec<Expr>) = match e {
+      Expr::FunctionCall { name, args } if name == "And" || name == "Or" => {
+        (name == "And", args.to_vec())
+      }
+      Expr::BinaryOp {
+        op: op @ (BinaryOperator::And | BinaryOperator::Or),
+        left,
+        right,
+      } => (
+        matches!(op, BinaryOperator::And),
+        vec![*left.clone(), *right.clone()],
+      ),
+      _ => return vec![vec![e.clone()]],
+    };
+    if is_and {
+      parts.iter().fold(vec![Vec::new()], |acc, p| {
+        let mut out = Vec::new();
+        for a in &acc {
+          for b in dnf(p) {
+            out.push(a.iter().chain(b.iter()).cloned().collect());
+          }
+        }
+        out
+      })
+    } else {
+      parts.iter().flat_map(dnf).collect()
+    }
+  }
+  let branches = dnf(input);
+  let lists: Vec<Expr> = branches
+    .iter()
+    .map(|conj| {
+      Expr::List(conj.iter().flat_map(collect).collect::<Vec<_>>().into())
+    })
+    .collect();
+  if lists.len() == 1 {
+    return lists.into_iter().next().unwrap();
+  }
+  call(
+    "Sequence",
+    lists
+      .into_iter()
+      .filter(|l| matches!(l, Expr::List(items) if !items.is_empty()))
+      .collect(),
+  )
 }
 
 /// ToRules[eqns] — converts logical combinations of equations to lists of rules.
@@ -2208,19 +2265,17 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       Ok(call("Sequence", result))
     }
-    // And[x == a, y == b] → {x -> a, y -> b}
+    // And[x == a, y == b] → {x -> a, y -> b}; a disjunction inside is
+    // distributed first: `(x == 0 || x == 1) && y == x^2` gives
+    // `{x -> 0, y -> x^2}`, `{x -> 1, y -> x^2}`.
     Expr::FunctionCall { name, .. } if name == "And" => {
-      let rules = collect_and_rules(input);
-      Ok(Expr::List(rules.into()))
+      Ok(and_to_rules(input, &collect_and_rules))
     }
     // BinaryOp::And tree (used by reduce_multi_var_and for single solution)
     Expr::BinaryOp {
       op: BinaryOperator::And,
       ..
-    } => {
-      let rules = collect_and_rules(input);
-      Ok(Expr::List(rules.into()))
-    }
+    } => Ok(and_to_rules(input, &collect_and_rules)),
     // Single equation: x == a → {x -> a}
     Expr::Comparison { .. } => {
       let rules = collect_and_rules(input);
@@ -2970,6 +3025,127 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let previous = crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
+    .with(|f| f.replace(false));
+  let result = solve_ast_inner(args);
+  crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
+    .with(|f| f.set(previous));
+  result
+}
+
+fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A quadratic with machine coefficients is solved numerically, exactly as
+  // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
+  if args.len() == 2
+    && crate::functions::math_ast::contains_inexact_real(&args[0])
+    && let Some(result) = try_nsolve_quadratic(args)
+  {
+    return result;
+  }
+  let result = solve_ast_core(args)?;
+  Ok(split_radicand_content(result))
+}
+
+/// The integer content of a sum under a square root comes out of it in a
+/// solution, as wolframscript writes `Sqrt[45 - 20 x^2]` there:
+/// `Sqrt[5]*Sqrt[9 - 4*x^2]`.
+fn split_radicand_content(expr: Expr) -> Expr {
+  fn is_half(e: &Expr) -> bool {
+    matches!(e, Expr::FunctionCall { name: r, args: ra }
+      if r == "Rational"
+        && matches!(ra.as_slice(), [Expr::Integer(1), Expr::Integer(2)]))
+  }
+  fn radicand(e: &Expr) -> Option<&Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Sqrt" && args.len() == 1 =>
+      {
+        Some(&args[0])
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 && is_half(&args[1]) =>
+      {
+        Some(&args[0])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if is_half(right) => Some(left.as_ref()),
+      _ => None,
+    }
+  }
+  fn gcd(a: i128, b: i128) -> i128 {
+    if b == 0 { a } else { gcd(b, a % b) }
+  }
+  // The gcd of the integer coefficients of a sum, when every term has one.
+  fn content(sum: &Expr) -> Option<i128> {
+    let terms = crate::functions::polynomial_ast::collect_additive_terms(sum);
+    if terms.len() < 2 {
+      return None;
+    }
+    let mut g: i128 = 0;
+    for t in &terms {
+      let c = match t {
+        Expr::Integer(n) => *n,
+        Expr::FunctionCall { name, args } if name == "Times" => {
+          match args.first() {
+            Some(Expr::Integer(n)) => *n,
+            _ => 1,
+          }
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left,
+          ..
+        } => match left.as_ref() {
+          Expr::Integer(n) => *n,
+          _ => 1,
+        },
+        _ => 1,
+      };
+      g = gcd(g, c.abs());
+    }
+    (g > 1).then_some(g)
+  }
+  fn walk(e: &Expr) -> Expr {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = e
+    {
+      return Expr::Rule {
+        pattern: pattern.clone(),
+        replacement: Box::new(walk(replacement)),
+      };
+    }
+    let rebuilt = crate::syntax::map_children(e, &walk);
+    if let Some(r) = radicand(&rebuilt)
+      && let Some(c) = content(r)
+      && let Ok(rest) = crate::evaluator::evaluate_function_call_ast(
+        "Expand",
+        &[times2(r.clone(), make_rational(1, c))],
+      )
+      && let Ok(split) = crate::evaluator::evaluate_expr_to_expr(&times2(
+        call1("Sqrt", Expr::Integer(c)),
+        call1("Sqrt", rest),
+      ))
+    {
+      return split;
+    }
+    rebuilt
+  }
+  let text = crate::syntax::expr_to_string(&expr);
+  if !text.contains("Sqrt[") && !text.contains("^(1/2)") {
+    return expr;
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&walk(&expr)) {
+    Ok(e) => e,
+    Err(_) => expr,
+  }
+}
+
+fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(expanded) = args.first().and_then(expand_region_membership) {
     let mut normalized = args.to_vec();
     normalized[0] = expanded;
@@ -3512,6 +3688,14 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     return Ok(Expr::List(solutions.into()));
+  }
+  // `a b^t == c d^t` with a symbolic base: wolframscript divides through
+  // and takes logarithms of `(a/c) b^t/d^t == 1`, giving
+  // `t -> -(Log[a/c]/(Log[b] - Log[d]))`.
+  if let [eq, Expr::Identifier(var)] = args
+    && let Some(solution) = solve_two_exponential_terms(eq, var)
+  {
+    return solution;
   }
   // `a b^t == c d^t`: the exponentials of one product combine into a single
   // power, `(b/d)^t`, which the exponential solver inverts.
@@ -4285,6 +4469,105 @@ fn or_operands(e: &Expr) -> Option<Vec<Expr>> {
 /// Rewrites every product holding two or more powers `b^(c var)` (bases
 /// free of `var`, exponents proportional to it) into one power
 /// `(b1^c1 b2^c2 …)^var`, evaluated. `None` when no product has two.
+/// `a b^t == c d^t` (also written `a b^t - c d^t == 0`), each side one
+/// coefficient free of `t` times one power with exponent exactly `t`, and
+/// at least one base symbolic: `{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}`.
+/// `None` for any other shape (two numeric bases take the combined-power
+/// route below).
+fn solve_two_exponential_terms(
+  eq: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = eq
+  else {
+    return None;
+  };
+  if operands.len() != 2 || operators[0] != ComparisonOp::Equal {
+    return None;
+  }
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  // The two terms: either side one each, or `lhs - rhs` a two-term sum.
+  let (left, right) = if matches!(&operands[1], Expr::Integer(0)) {
+    let Expr::FunctionCall { name, args } = &operands[0] else {
+      return None;
+    };
+    if name != "Plus" || args.len() != 2 {
+      return None;
+    }
+    (
+      args[0].clone(),
+      eval(times2(Expr::Integer(-1), args[1].clone()))?,
+    )
+  } else {
+    (operands[0].clone(), operands[1].clone())
+  };
+  // `(coefficient, base)` of `coefficient * base^var`.
+  let split = |term: &Expr| -> Option<(Expr, Expr)> {
+    let factors = match term {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let mut base = None;
+    let mut coeff = Vec::new();
+    for f in factors {
+      let power = match &f {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          Some((args[0].clone(), args[1].clone()))
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => Some((*left.clone(), *right.clone())),
+        _ => None,
+      };
+      match &power {
+        Some((b, Expr::Identifier(e)))
+          if e == var && is_constant_wrt(b, var) =>
+        {
+          if base.replace(b.clone()).is_some() {
+            return None;
+          }
+        }
+        _ if is_constant_wrt(&f, var) => coeff.push(f),
+        _ => return None,
+      }
+    }
+    let coeff = match coeff.len() {
+      0 => Expr::Integer(1),
+      1 => coeff.remove(0),
+      _ => times(coeff),
+    };
+    Some((coeff, base?))
+  };
+  let (a, b) = split(&left)?;
+  let (c, d) = split(&right)?;
+  let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+  if numeric(&b) && numeric(&d) {
+    return None;
+  }
+  let value = eval(times(vec![
+    Expr::Integer(-1),
+    call1("Log", times2(a, pow(c, Expr::Integer(-1)))),
+    pow(
+      plus(vec![
+        call1("Log", b),
+        times2(Expr::Integer(-1), call1("Log", d)),
+      ]),
+      Expr::Integer(-1),
+    ),
+  ]))?;
+  report_inverse_function_use();
+  Some(Ok(Expr::List(
+    vec![Expr::List(vec![rule_expr(id_expr(var), value)].into())].into(),
+  )))
+}
+
 fn combine_exponential_factors(expr: &Expr, var: &str) -> Option<Expr> {
   // `exponent = c var + d` with `c`, `d` free of `var`: `(c, d)`.
   fn affine(exponent: &Expr, var: &str) -> Option<(Expr, Expr)> {
@@ -7284,9 +7567,50 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         simplify(evaled2)
       };
       let num1 = eval_expr(minus2(neg_b.clone(), sqrt_disc.clone()));
-      let sol1 = eval_expr(solve_divide(&num1, &two_a));
       let num2 = eval_expr(plus2(neg_b, sqrt_disc));
-      let sol2 = eval_expr(solve_divide(&num2, &two_a));
+      // A factor common to every term of the numerator and to 2a cancels:
+      // `x^2 - 2 a x + b` has roots `a ± Sqrt[a^2 - b]`, not
+      // `(2*a ± 2*Sqrt[a^2 - b])/2`.
+      let common = |num: &Expr| -> i128 {
+        let Some(den) = (match &two_a {
+          Expr::Integer(d) => Some(d.abs()),
+          _ => None,
+        }) else {
+          return 1;
+        };
+        let mut g = den;
+        for t in crate::functions::polynomial_ast::collect_additive_terms(num) {
+          let c = match &t {
+            Expr::Integer(n) => *n,
+            Expr::FunctionCall { name, args } if name == "Times" => {
+              match args.first() {
+                Some(Expr::Integer(n)) => *n,
+                _ => 1,
+              }
+            }
+            _ => 1,
+          };
+          let (mut a, mut b) = (g, c.abs());
+          while b != 0 {
+            (a, b) = (b, a % b);
+          }
+          g = a;
+        }
+        g
+      };
+      let divide = |num: &Expr| -> Expr {
+        let quotient = solve_divide(num, &two_a);
+        if common(num) > 1
+          && let Ok(cancelled) = super::cancel_ast(std::slice::from_ref(
+            &eval_expr(quotient.clone()),
+          ))
+        {
+          return cancelled;
+        }
+        eval_expr(quotient)
+      };
+      let sol1 = divide(&num1);
+      let sol2 = divide(&num2);
       // Wolfram convention: negative root first. When the leading coefficient
       // is negative, dividing by 2a flips the root order, so swap.
       let leading_negative = match a {
@@ -12919,6 +13243,39 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(root_degree_message(args));
   }
+  // Symbolic coefficients: the polynomial collected in #1, and two
+  // arguments, as wolframscript keeps it —
+  // `Root[c + (-(b*d) + a*e)*#1 + (-a - e)*#1^2 + #1^3 & , 1]`.
+  {
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&expanded_poly, &mut vars);
+    vars.remove(var_name);
+    vars.remove("I");
+    if !vars.is_empty()
+      && matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3)
+    {
+      let collected = crate::evaluator::evaluate_function_call_ast(
+        "Collect",
+        &[expanded_poly.clone(), id_expr(var_name)],
+      )?;
+      let body = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(
+          &collected,
+          var_name,
+          &Expr::Slot(1),
+        ),
+      )?;
+      return Ok(unevaluated(
+        "Root",
+        &[
+          Expr::Function {
+            body: Box::new(body),
+          },
+          Expr::Integer(k),
+        ],
+      ));
+    }
+  }
   let factor_degree = |factor: &Expr| -> Option<i128> {
     let base = match factor {
       Expr::BinaryOp {
@@ -13807,14 +14164,28 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut x = x0;
   let mut previous: Option<f64> = None;
   let mut converged = false;
+  // A step of a unit or two in the last place means the iterate has settled
+  // as far as machine arithmetic can take it: an AccuracyGoal past what the
+  // residual's rounding noise allows (`AccuracyGoal -> 30` on a function of
+  // size ~1) is then met as well as it can be, which wolframscript accepts
+  // without FindRoot::cvmit.
+  let settled = |x: f64, p: f64, fx: f64| {
+    (x - p).abs() <= 2.0 * f64::EPSILON * x.abs()
+      && fx.abs()
+        <= 10f64.powf(
+          -crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS
+            / 2.0,
+        )
+  };
 
   for _ in 0..max_iter {
     let fx = find_root_eval_at(&func, &var, x)?;
     let goal_met = match previous {
       None => fx == 0.0,
       Some(p) => {
-        (x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
-          && fx.abs() <= accuracy_tol
+        ((x - p).abs() <= accuracy_tol.max(x.abs() * precision_tol)
+          && fx.abs() <= accuracy_tol)
+          || settled(x, p, fx)
       }
     };
     if goal_met {
@@ -14213,8 +14584,15 @@ fn find_root_goal_tolerances(opts: &[Expr]) -> (f64, f64) {
       .and_then(|e| crate::evaluator::evaluate_expr_to_expr(e).ok());
     match &value {
       Some(Expr::Identifier(i)) if i == "Infinity" => 0.0,
-      Some(e) => crate::functions::math_ast::try_eval_to_f64(e)
-        .map_or(automatic, |g| 10f64.powf(-g)),
+      // A goal beyond the machine working precision cannot be met; the
+      // search is held to the precision it actually works in instead.
+      Some(e) => {
+        crate::functions::math_ast::try_eval_to_f64(e).map_or(automatic, |g| {
+          10f64.powf(-g.min(
+            crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS,
+          ))
+        })
+      }
       None => automatic,
     }
   };

@@ -344,6 +344,34 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A `ColorProfileData` color space has to hold an ICC profile, which
+  // starts with a 128-byte header; anything shorter is no profile, and the
+  // image is no image.
+  if let Some(profile) = args[opt_start..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorSpace") => {
+      match replacement.as_ref() {
+        p @ Expr::FunctionCall { name, .. } if name == "ColorProfileData" => {
+          Some(p)
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  }) && !icc_profile_plausible(profile)
+  {
+    let shown = crate::syntax::expr_to_output(profile);
+    crate::emit_message(&format!(
+      "ColorProfileData::iccinv: Invalid ColorProfileData object {shown}."
+    ));
+    crate::emit_message(&format!(
+      "Image::imgcstype: {shown} is an invalid color space specification."
+    ));
+    return Ok(unevaluated());
+  }
+
   // `Interleaving -> False` gives the data channel-first, `{c, h, w}`:
   // transpose it to the interleaved `{h, w, c}` layout and build from that.
   let interleaving_false = |o: &Expr| {
@@ -620,6 +648,32 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data: Arc::new(data),
     image_type: requested_type.unwrap_or(ImageType::Real32),
   })
+}
+
+/// Whether `ColorProfileData[icc, space, pcs]` could hold an ICC profile:
+/// its bytes are at least the 128-byte profile header long and carry the
+/// header's `acsp` signature at offset 36.
+fn icc_profile_plausible(profile: &Expr) -> bool {
+  let Expr::FunctionCall { args, .. } = profile else {
+    return false;
+  };
+  let bytes = match args.first() {
+    Some(Expr::FunctionCall { name, args: na })
+      if (name == "NumericArray" || name == "ByteArray") && !na.is_empty() =>
+    {
+      &na[0]
+    }
+    Some(other) => other,
+    None => return false,
+  };
+  let Expr::List(items) = bytes else {
+    return false;
+  };
+  items.len() >= 128
+    && items[36..40]
+      .iter()
+      .zip(b"acsp")
+      .all(|(b, c)| matches!(b, Expr::Integer(v) if *v == i128::from(*c)))
 }
 
 /// The color space named by a `ColorSpace -> …` option among `opts`: a
@@ -4245,6 +4299,7 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     } => match pattern.as_ref() {
       Expr::Identifier(k) if k == "Method" => {
         is_str(replacement, "Canny")
+          || is_str(replacement, "Sobel")
           || matches!(replacement.as_ref(), Expr::Identifier(a) if a == "Automatic")
       }
       p if is_str(p, "StraightEdges") => {
@@ -4311,39 +4366,115 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  let (dx, dy) = plane_gradient(
-    &gray,
-    w,
-    h,
-    gaussian_axis_from_radius(rows),
-    gaussian_axis_from_radius(columns),
+  let sobel = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method")
+        && is_str(replacement, "Sobel"))
+  });
+  let axis_kernels = |radius: f64| {
+    if sobel {
+      GradientKernels::sobel(radius.ceil().max(1.0) as usize)
+    } else {
+      GradientKernels::gaussian(gaussian_axis_from_radius(radius))
+    }
+  };
+  // The gradient of the image grown by one replicated pixel on each side:
+  // non-maximum suppression samples the magnitude up to a pixel outside
+  // the image, where wolframscript uses the gradient of the padded image.
+  let (pw, ph) = (w + 2, h + 2);
+  let padded: Vec<f64> = (0..ph * pw)
+    .map(|i| {
+      let (py, px) = (i / pw, i % pw);
+      gray
+        [py.saturating_sub(1).min(h - 1) * w + px.saturating_sub(1).min(w - 1)]
+    })
+    .collect();
+  let (pdx, pdy) = plane_gradient(
+    &padded,
+    pw,
+    ph,
+    &axis_kernels(rows),
+    &axis_kernels(columns),
   );
-  let magnitudes: Vec<f64> = (0..w * h).map(|i| dx[i].hypot(dy[i])).collect();
+  let padded_magnitudes: Vec<f64> =
+    (0..pw * ph).map(|i| pdx[i].hypot(pdy[i])).collect();
+  let inner = |y: usize, x: usize| (y + 1) * pw + x + 1;
+  let magnitudes: Vec<f64> = (0..w * h)
+    .map(|i| padded_magnitudes[inner(i / w, i % w)])
+    .collect();
 
   let threshold =
     user_threshold.unwrap_or_else(|| cluster_variance_threshold(&magnitudes));
 
-  // Non-maximum suppression thins each ridge to one pixel: keep a pixel
-  // only if neither neighbour along the quantized gradient direction is
-  // stronger.
-  let clamp_y = |y: i32| y.clamp(0, h as i32 - 1) as usize;
-  let clamp_x = |x: i32| x.clamp(0, w as i32 - 1) as usize;
-  let mut result = vec![0.0_f64; w * h];
+  // Non-maximum suppression thins each ridge to one pixel: a pixel stays
+  // when the magnitude one pixel ahead and one behind along the gradient
+  // (interpolated bilinearly) is no larger.
+  let sample = |yf: f64, xf: f64| {
+    let at = |y: i64, x: i64| {
+      padded_magnitudes[y.clamp(0, ph as i64 - 1) as usize * pw
+        + x.clamp(0, pw as i64 - 1) as usize]
+    };
+    let (y0, x0) = (yf.floor(), xf.floor());
+    let (fy, fx) = (yf - y0, xf - x0);
+    let (y0, x0) = (y0 as i64, x0 as i64);
+    at(y0, x0) * (1.0 - fy) * (1.0 - fx)
+      + at(y0 + 1, x0) * fy * (1.0 - fx)
+      + at(y0, x0 + 1) * (1.0 - fy) * fx
+      + at(y0 + 1, x0 + 1) * fy * fx
+  };
+  let mut ridge = vec![false; w * h];
   for y in 0..h {
     for x in 0..w {
-      let index = y * w + x;
-      let magnitude = magnitudes[index];
-      if magnitude <= 0.0 || magnitude < threshold {
+      let at = inner(y, x);
+      let magnitude = padded_magnitudes[at];
+      if magnitude <= 0.0 {
         continue;
       }
-      let (step_y, step_x) =
-        quantize_gradient_direction(dy[index].atan2(dx[index]));
-      let ahead =
-        magnitudes[clamp_y(y as i32 + step_y) * w + clamp_x(x as i32 + step_x)];
-      let behind =
-        magnitudes[clamp_y(y as i32 - step_y) * w + clamp_x(x as i32 - step_x)];
-      if magnitude >= ahead && magnitude >= behind {
-        result[index] = 1.0;
+      let (ux, uy) = (pdx[at] / magnitude, pdy[at] / magnitude);
+      let (cy, cx) = ((y + 1) as f64, (x + 1) as f64);
+      ridge[y * w + x] = magnitude >= sample(cy + uy, cx + ux)
+        && magnitude >= sample(cy - uy, cx - ux);
+    }
+  }
+
+  // A connected (8-neighbour) run of ridge pixels is an edge when its
+  // strongest pixel reaches the threshold; the whole run is kept.
+  let mut result = vec![0.0_f64; w * h];
+  let mut seen = vec![false; w * h];
+  for start in 0..w * h {
+    if !ridge[start] || seen[start] {
+      continue;
+    }
+    seen[start] = true;
+    let mut run = vec![start];
+    let mut next = 0;
+    while next < run.len() {
+      let (y, x) = ((run[next] / w) as i64, (run[next] % w) as i64);
+      next += 1;
+      for (dy, dx) in [
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+        (0, -1),
+        (0, 1),
+        (1, -1),
+        (1, 0),
+        (1, 1),
+      ] {
+        let (ny, nx) = (y + dy, x + dx);
+        if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+          continue;
+        }
+        let n = ny as usize * w + nx as usize;
+        if ridge[n] && !seen[n] {
+          seen[n] = true;
+          run.push(n);
+        }
+      }
+    }
+    if run.iter().any(|&i| magnitudes[i] >= threshold) {
+      for i in run {
+        result[i] = 1.0;
       }
     }
   }
@@ -4365,22 +4496,6 @@ fn cluster_variance_threshold(values: &[f64]) -> f64 {
   match otsu_threshold(values, ImageType::Real64, false) {
     Some(t) => crate::functions::math_ast::try_eval_to_f64(&t).unwrap_or(0.0),
     None => values.first().map_or(0.0, |v| v.max(0.0)),
-  }
-}
-
-/// Quantize gradient direction to one of 4 axes and return (dy, dx) neighbor offset.
-fn quantize_gradient_direction(angle: f64) -> (i32, i32) {
-  use std::f64::consts::PI;
-  // Normalize angle to [0, π) — we only care about the axis, not the sign
-  let a = ((angle % PI) + PI) % PI;
-  if !(PI / 8.0..7.0 * PI / 8.0).contains(&a) {
-    (0, 1) // horizontal edge → compare left/right
-  } else if a < 3.0 * PI / 8.0 {
-    (1, 1) // 45° diagonal
-  } else if a < 5.0 * PI / 8.0 {
-    (1, 0) // vertical edge → compare up/down
-  } else {
-    (-1, 1) // 135° diagonal
   }
 }
 
@@ -4791,6 +4906,13 @@ pub(crate) fn color_directive_to_rgb(
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
+  // The channels packed in one list (`RGBColor[{r, g, b}]`) are the same
+  // color.
+  if let [Expr::List(channels)] = args.as_slice()
+    && !channels.is_empty()
+  {
+    return color_directive_to_rgb(&call(name, channels.to_vec()));
+  }
   let to_f = |x: &Expr| -> Option<f64> {
     crate::functions::math_ast::try_eval_to_f64(x)
   };
@@ -6140,11 +6262,21 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// at the boundaries), matching wolframscript's `GradientFilter[list, 1]`
 /// output for purely numeric input. Larger radii or non-list inputs stay
 /// symbolic.
-pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let unevaluated = || unevaluated("GradientFilter", args);
+pub fn gradient_filter_ast(
+  all_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("GradientFilter", all_args);
+  let option_start = all_args
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(all_args.len());
+  let (args, opts) = all_args.split_at(option_start);
   if args.len() != 2 {
     return Ok(unevaluated());
   }
+  let Some(sobel) = gradient_method_is_sobel(opts) else {
+    return Ok(unevaluated());
+  };
 
   // 1D list input with radius 1: use the original central-difference
   // path (matches wolframscript's GradientFilter[{...}, 1] output).
@@ -6154,6 +6286,7 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .filter(|v| *v >= 0.0)
       .map(|v| v as usize),
   ) && r == 1
+    && !sobel
     // Restrict to flat numeric lists (not nested-list matrices, which
     // need the 2D path further down).
     && !elems.iter().any(|e| matches!(e, Expr::List(_)))
@@ -6235,8 +6368,17 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut out: Vec<f64> = vec![0.0; data.len()];
     for c_idx in 0..ch {
       let plane: Vec<f64> = (0..w * h).map(|i| data[i * ch + c_idx]).collect();
-      let axis = GaussianAxis { radius, sigma };
-      let (dx, dy) = plane_gradient(&plane, w, h, axis, axis);
+      let kernels = if sobel {
+        // The Sobel kernel's half-width is the radius rounded up.
+        let r = match &args[1] {
+          Expr::Real(f) => f.ceil() as usize,
+          _ => radius,
+        };
+        GradientKernels::sobel(r)
+      } else {
+        GradientKernels::gaussian(GaussianAxis { radius, sigma })
+      };
+      let (dx, dy) = plane_gradient(&plane, w, h, &kernels, &kernels);
       for i in 0..w * h {
         out[i * ch + c_idx] = dx[i].hypot(dy[i]);
       }
@@ -6255,6 +6397,36 @@ pub fn gradient_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated())
 }
 
+/// Read a gradient's `Method` option: `Some(true)` for `"Sobel"`,
+/// `Some(false)` for the default derivative of Gaussian, `None` for
+/// anything else (left unevaluated).
+fn gradient_method_is_sobel(opts: &[Expr]) -> Option<bool> {
+  let mut sobel = false;
+  for o in opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = o
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Method") {
+      return None;
+    }
+    match replacement.as_ref() {
+      Expr::String(m) if m == "Sobel" => sobel = true,
+      Expr::String(m) if m == "Canny" || m == "Gaussian" => sobel = false,
+      Expr::Identifier(a) if a == "Automatic" => sobel = false,
+      _ => return None,
+    }
+  }
+  Some(sobel)
+}
+
 /// The two partial derivatives of one image plane, smoothed by the
 /// discrete Gaussian of half-width `radius` and standard deviation
 /// `sigma`: `dx = D ⊛_x (T ⊛_y plane)` and `dy = D ⊛_y (T ⊛_x plane)`,
@@ -6265,13 +6437,13 @@ fn plane_gradient(
   plane: &[f64],
   w: usize,
   h: usize,
-  vertical: GaussianAxis,
-  horizontal: GaussianAxis,
+  vertical: &GradientKernels,
+  horizontal: &GradientKernels,
 ) -> (Vec<f64>, Vec<f64>) {
-  let smooth_rows = gaussian_filter_kernel(horizontal.radius, horizontal.sigma);
-  let smooth_columns = gaussian_filter_kernel(vertical.radius, vertical.sigma);
-  let derivative_rows = gradient_filter_derivative_kernel(&smooth_rows);
-  let derivative_columns = gradient_filter_derivative_kernel(&smooth_columns);
+  let (smooth_rows, derivative_rows) =
+    (&horizontal.smooth, &horizontal.derivative);
+  let (smooth_columns, derivative_columns) =
+    (&vertical.smooth, &vertical.derivative);
   let along_rows = |source: &[f64], kernel: &[f64]| {
     let mut out = vec![0.0; w * h];
     for y in 0..h {
@@ -6295,9 +6467,52 @@ fn plane_gradient(
     out
   };
   (
-    along_rows(&along_columns(plane, &smooth_columns), &derivative_rows),
-    along_columns(&along_rows(plane, &smooth_rows), &derivative_columns),
+    along_rows(&along_columns(plane, smooth_columns), derivative_rows),
+    along_columns(&along_rows(plane, smooth_rows), derivative_columns),
   )
+}
+
+/// The smoothing and derivative kernels a gradient uses along one axis.
+struct GradientKernels {
+  smooth: Vec<f64>,
+  derivative: Vec<f64>,
+}
+
+impl GradientKernels {
+  /// The discrete Gaussian and its derivative (`GradientFilter`'s default).
+  fn gaussian(axis: GaussianAxis) -> Self {
+    let smooth = gaussian_filter_kernel(axis.radius, axis.sigma);
+    let derivative = gradient_filter_derivative_kernel(&smooth);
+    GradientKernels { smooth, derivative }
+  }
+
+  /// `Method -> "Sobel"` of half-width `r`: the binomial smoothing kernel
+  /// `Binomial[2r, k]/2^(2r)` and the difference of the order `2r-1`
+  /// binomial (`{1, 0, -1}/2` for `r = 1`, `{1, 2, 0, -2, -1}/8` for
+  /// `r = 2`), so a unit ramp has slope 1.
+  fn sobel(radius: usize) -> Self {
+    let radius = radius.max(1);
+    let binomial = |n: usize| -> Vec<f64> {
+      let mut row = vec![1.0_f64];
+      for _ in 0..n {
+        let mut next = vec![0.0; row.len() + 1];
+        for (i, v) in row.iter().enumerate() {
+          next[i] += v / 2.0;
+          next[i + 1] += v / 2.0;
+        }
+        row = next;
+      }
+      row
+    };
+    let smooth = binomial(2 * radius);
+    let b = binomial(2 * radius - 1);
+    let derivative = (0..=2 * radius)
+      .map(|i| {
+        b.get(i).copied().unwrap_or(0.0) - if i == 0 { 0.0 } else { b[i - 1] }
+      })
+      .collect();
+    GradientKernels { smooth, derivative }
+  }
 }
 
 /// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The
@@ -8978,74 +9193,112 @@ pub fn watershed_components_ast(
   let n = w * h;
   // `labels`: 0 = unlabeled, -1 = watershed line, otherwise the basin.
   let mut labels = vec![0i64; n];
-  match args.get(1) {
-    Some(Expr::List(rows)) => {
-      let parsed: Option<Vec<i64>> = (rows.len() == h)
-        .then(|| {
-          rows
-            .iter()
-            .map(|row| match row {
-              Expr::List(cells) if cells.len() == w => cells
-                .iter()
-                .map(|c| match c {
-                  Expr::Integer(v) if *v >= 0 => i64::try_from(*v).ok(),
-                  _ => None,
-                })
-                .collect::<Option<Vec<i64>>>(),
-              _ => None,
-            })
-            .collect::<Option<Vec<Vec<i64>>>>()
-            .map(|r| r.into_iter().flatten().collect())
+  if let Some(markers) = args.get(1) {
+    // Markers: an image of the same size (its nonzero pixels) or a list of
+    // `{x, y}` pixel positions (y counted from the bottom). Each connected
+    // group of marked pixels seeds one basin, numbered in reading order.
+    let mut marked = vec![false; n];
+    let positions: Option<Vec<(f64, f64)>> = match markers {
+      Expr::List(items) => items
+        .iter()
+        .map(|p| match p {
+          Expr::List(xy) if xy.len() == 2 => Some((
+            crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+            crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+          )),
+          _ => None,
         })
-        .flatten();
-      match parsed {
-        Some(markers) => labels = markers,
-        None => return Ok(unevaluated()),
-      }
-    }
-    Some(_) => return Ok(unevaluated()),
-    None => {
-      let mut next = 0i64;
-      let mut seen = vec![false; n];
-      for start in 0..n {
-        if seen[start] {
-          continue;
+        .collect(),
+      _ => None,
+    };
+    if let Some(positions) = positions {
+      for (x, y) in positions {
+        let (col, row) = (x.round() as i64 - 1, h as i64 - y.round() as i64);
+        if (0..w as i64).contains(&col) && (0..h as i64).contains(&row) {
+          marked[row as usize * w + col as usize] = true;
         }
-        let level = gray[start];
-        let mut plateau = vec![start];
-        seen[start] = true;
-        let mut is_minimum = true;
-        let mut k = 0;
-        while k < plateau.len() {
-          let (y, x) = (plateau[k] / w, plateau[k] % w);
-          k += 1;
-          for dy in -1i64..=1 {
-            for dx in -1i64..=1 {
-              let ny = y as i64 + dy;
-              let nx = x as i64 + dx;
-              if (dy == 0 && dx == 0)
-                || ny < 0
-                || nx < 0
-                || ny >= h as i64
-                || nx >= w as i64
-              {
-                continue;
-              }
-              let j = ny as usize * w + nx as usize;
-              if gray[j] < level {
-                is_minimum = false;
-              } else if gray[j] == level && !seen[j] {
-                seen[j] = true;
-                plateau.push(j);
-              }
+      }
+    } else if let Some((mw, mh, plane)) = image_gray_plane(markers)
+      && (mw, mh) == (w, h)
+    {
+      for (k, v) in plane.iter().enumerate() {
+        marked[k] = *v != 0.0;
+      }
+    } else {
+      crate::emit_message(&format!(
+        "WatershedComponents::mkinv: Expecting either an image or graphics \
+           with dimensions {{{w}, {h}}} or a list of positions to specify \
+           markers instead of {}.",
+        expr_to_string(markers)
+      ));
+      return Ok(unevaluated());
+    }
+    let mut next = 0i64;
+    for start in 0..n {
+      if !marked[start] || labels[start] != 0 {
+        continue;
+      }
+      next += 1;
+      labels[start] = next;
+      let mut stack = vec![start];
+      while let Some(p) = stack.pop() {
+        let (y, x) = ((p / w) as i64, (p % w) as i64);
+        for dy in -1i64..=1 {
+          for dx in -1i64..=1 {
+            let (ny, nx) = (y + dy, x + dx);
+            if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+              continue;
+            }
+            let q = ny as usize * w + nx as usize;
+            if marked[q] && labels[q] == 0 {
+              labels[q] = next;
+              stack.push(q);
             }
           }
         }
-        if is_minimum {
-          next += 1;
-          for &p in &plateau {
-            labels[p] = next;
+      }
+    }
+  } else {
+    let mut next = 0i64;
+    let mut seen = vec![false; n];
+    for start in 0..n {
+      if seen[start] {
+        continue;
+      }
+      let level = gray[start];
+      let mut plateau = vec![start];
+      seen[start] = true;
+      let mut is_minimum = true;
+      let mut k = 0;
+      while k < plateau.len() {
+        let (y, x) = (plateau[k] / w, plateau[k] % w);
+        k += 1;
+        for dy in -1i64..=1 {
+          for dx in -1i64..=1 {
+            let ny = y as i64 + dy;
+            let nx = x as i64 + dx;
+            if (dy == 0 && dx == 0)
+              || ny < 0
+              || nx < 0
+              || ny >= h as i64
+              || nx >= w as i64
+            {
+              continue;
+            }
+            let j = ny as usize * w + nx as usize;
+            if gray[j] < level {
+              is_minimum = false;
+            } else if gray[j] == level && !seen[j] {
+              seen[j] = true;
+              plateau.push(j);
+            }
           }
+        }
+      }
+      if is_minimum {
+        next += 1;
+        for &p in &plateau {
+          labels[p] = next;
         }
       }
     }
@@ -9177,50 +9430,106 @@ pub fn morphological_graph_ast(
     .map(|&(sx, sy, c)| (sx / c as f64, sy / c as f64))
     .collect();
 
-  // The arcs are the chains of the remaining skeleton pixels; each joins the
-  // vertices it touches.
+  // The arcs are the chains of the remaining skeleton pixels, traced from
+  // each vertex along unvisited arc pixels to the vertex they reach; the
+  // number of steps is the edge's weight. (Two arms leaving one branch
+  // point can touch diagonally, so they are traced, not merged.)
   let on_arc: Vec<bool> = (0..w * h)
     .map(|i| skeleton[i] && !is_vertex_pixel[i])
     .collect();
-  let arc_of = connected_components(&on_arc, w, h);
-  let arc_count = arc_of.iter().flatten().max().map_or(0, |l| l + 1);
-  let mut touching: Vec<std::collections::BTreeSet<usize>> =
-    vec![std::collections::BTreeSet::default(); arc_count];
-  let mut first_pixel = vec![usize::MAX; arc_count];
-  for i in 0..w * h {
-    let Some(arc) = arc_of[i] else { continue };
-    first_pixel[arc] = first_pixel[arc].min(i);
-    for dy in -1i64..=1 {
-      for dx in -1i64..=1 {
-        let ny = (i / w) as i64 + dy;
-        let nx = (i % w) as i64 + dx;
-        if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
-          continue;
+  let neighbours = |i: usize| -> Vec<usize> {
+    let (y, x) = ((i / w) as i64, (i % w) as i64);
+    let mut out = Vec::with_capacity(8);
+    // Orthogonal neighbours first: a chain steps along them when it can.
+    for (dy, dx) in [
+      (-1, 0),
+      (0, -1),
+      (0, 1),
+      (1, 0),
+      (-1, -1),
+      (-1, 1),
+      (1, -1),
+      (1, 1),
+    ] {
+      let (ny, nx) = (y + dy, x + dx);
+      if ny >= 0 && nx >= 0 && ny < h as i64 && nx < w as i64 {
+        out.push(ny as usize * w + nx as usize);
+      }
+    }
+    out
+  };
+  let mut visited = vec![false; w * h];
+  let mut weighted: std::collections::BTreeMap<(usize, usize), i128> =
+    std::collections::BTreeMap::new();
+  for start in 0..w * h {
+    let Some(from) = vertex_of[start] else {
+      continue;
+    };
+    for first in neighbours(start) {
+      if let Some(to) = vertex_of[first] {
+        // Two vertices side by side.
+        if to != from {
+          weighted.entry((from.min(to), from.max(to))).or_insert(1);
         }
-        if let Some(v) = vertex_of[ny as usize * w + nx as usize] {
-          touching[arc].insert(v);
+        continue;
+      }
+      if !on_arc[first] || visited[first] {
+        continue;
+      }
+      visited[first] = true;
+      let (mut prev, mut cur, mut steps) = (start, first, 1i128);
+      loop {
+        let next = neighbours(cur);
+        if let Some(&end) = next
+          .iter()
+          .find(|&&n| n != prev && n != start && vertex_of[n].is_some())
+        {
+          let to = vertex_of[end].unwrap();
+          if to != from || steps > 1 {
+            weighted
+              .entry((from.min(to), from.max(to)))
+              .or_insert(steps + 1);
+          }
+          break;
         }
+        let Some(&step) = next.iter().find(|&&n| on_arc[n] && !visited[n])
+        else {
+          break;
+        };
+        visited[step] = true;
+        prev = cur;
+        cur = step;
+        steps += 1;
       }
     }
   }
-  let mut edges = std::collections::BTreeSet::new();
-  for (arc, vertices) in touching.iter().enumerate() {
-    if vertices.is_empty() {
-      // A closed loop: its one vertex is the loop's first pixel.
-      let i = first_pixel[arc];
+  // A closed loop without any branch point: its one vertex is the loop's
+  // first pixel.
+  for i in 0..w * h {
+    if on_arc[i] && !visited[i] {
       coordinates
         .push(((i % w) as f64 + 0.5, h as f64 - ((i / w) as f64 + 0.5)));
       vertex_count += 1;
-      continue;
-    }
-    let vs: Vec<usize> = vertices.iter().copied().collect();
-    for (a, &u) in vs.iter().enumerate() {
-      for &v in &vs[a + 1..] {
-        edges.insert((u, v));
+      let mut stack = vec![i];
+      visited[i] = true;
+      while let Some(p) = stack.pop() {
+        for n in neighbours(p) {
+          if on_arc[n] && !visited[n] {
+            visited[n] = true;
+            stack.push(n);
+          }
+        }
       }
     }
   }
+  let edges: Vec<(usize, usize)> = weighted.keys().copied().collect();
+  let weights: Vec<Expr> =
+    weighted.values().map(|&s| Expr::Integer(s)).collect();
 
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
   let mut graph_args = vec![
     Expr::List(
       (1..=vertex_count as i128)
@@ -9242,17 +9551,20 @@ pub fn morphological_graph_ast(
         .collect::<Vec<_>>()
         .into(),
     ),
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier("VertexCoordinates".to_string())),
-      replacement: Box::new(Expr::List(
-        coordinates
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect::<Vec<_>>()
-          .into(),
-      )),
-    },
   ];
+  if !weights.is_empty() {
+    graph_args.push(rule("EdgeWeight", Expr::List(weights.into())));
+  }
+  graph_args.push(rule(
+    "VertexCoordinates",
+    Expr::List(
+      coordinates
+        .iter()
+        .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+  ));
   graph_args.extend(args[1..].iter().cloned());
   crate::evaluator::evaluate_function_call_ast("Graph", &graph_args)
 }
@@ -13164,7 +13476,8 @@ pub fn constant_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data: Vec<f64> = pixel.iter().cycle().take(len).copied().collect();
 
   Ok(Expr::Image {
-    color_space: None,
+    // A constant color image is tagged RGB; a gray level stays Automatic.
+    color_space: (channels >= 3).then_some("RGB"),
     display_size: None,
     width: w,
     height: h,
@@ -13947,21 +14260,33 @@ pub fn crossing_detect_ast(
   all_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CrossingDetect", all_args));
-  // CornerNeighbors -> False (or None) uses only the 4 edge neighbors.
+  // CornerNeighbors -> False uses only the 4 edge neighbors. None marks
+  // the cells between the elements instead: each (2 × 2 block, or pair in
+  // one dimension) holding both a positive and a negative value, so the
+  // result is one smaller along every axis.
   let mut corners = true;
+  let mut cells = false;
   let mut n_args = all_args.len();
   while n_args > 1
     && let Some((Expr::Identifier(opt), value, _)) =
       crate::functions::expr_form::rule_parts(&all_args[n_args - 1])
   {
     if opt != "CornerNeighbors" {
+      crate::emit_message(&format!(
+        "CrossingDetect::optx: Unknown option {opt} in {}.",
+        crate::syntax::format_expr(
+          &crate::helpers::unevaluated("CrossingDetect", all_args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
       return unevaluated();
     }
-    corners = match value {
-      Expr::Identifier(v) if v == "True" || v == "Automatic" => true,
-      Expr::Identifier(v) if v == "False" || v == "None" => false,
+    match value {
+      Expr::Identifier(v) if v == "True" || v == "Automatic" => corners = true,
+      Expr::Identifier(v) if v == "False" => corners = false,
+      Expr::Identifier(v) if v == "None" => cells = true,
       _ => return unevaluated(),
-    };
+    }
     n_args -= 1;
   }
   let args = &all_args[..n_args];
@@ -13976,7 +14301,32 @@ pub fn crossing_detect_ast(
     },
   };
   let zeroed = |v: f64| if v.abs() < delta { 0.0 } else { v };
+  let cell_crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    let h = grid.len();
+    let w = grid.first().map_or(0, std::vec::Vec::len);
+    // A single row's cells are its adjacent pairs.
+    let (rows, row_span) = if h == 1 { (1, 0) } else { (h - 1, 1) };
+    let cols = w.saturating_sub(1);
+    let mut out = vec![vec![0i128; cols]; rows];
+    for r in 0..rows {
+      for c in 0..cols {
+        let (mut pos, mut neg) = (false, false);
+        for rr in r..=r + row_span {
+          for cc in c..=c + 1 {
+            let v = zeroed(grid[rr][cc]);
+            pos |= v > 0.0;
+            neg |= v < 0.0;
+          }
+        }
+        out[r][c] = i128::from(pos && neg);
+      }
+    }
+    out
+  };
   let crossings = |grid: &Vec<Vec<f64>>| -> Vec<Vec<i128>> {
+    if cells {
+      return cell_crossings(grid);
+    }
     let h = grid.len();
     let w = grid.first().map_or(0, std::vec::Vec::len);
     let mut out = vec![vec![0i128; w]; h];
@@ -14024,11 +14374,13 @@ pub fn crossing_detect_ast(
         .iter()
         .flat_map(|row| row.iter().map(|&b| b as f64))
         .collect();
+      let out_h = marked.len() as u32;
+      let out_w = marked.first().map_or(0, std::vec::Vec::len) as u32;
       Ok(Expr::Image {
         color_space: None,
         display_size: None,
-        width: *width,
-        height: *height,
+        width: out_w,
+        height: out_h,
         channels: 1,
         data: std::sync::Arc::new(out),
         image_type: ImageType::Bit,
@@ -15056,11 +15408,482 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
-/// HighlightImage[img, marks] — `img` with graphics `marks` drawn over it.
-/// The marks live in image pixel coordinates (origin bottom-left); the result
-/// is a new image the size of `img`. Display options such as `ImageSize` do
-/// not change the pixels and are ignored.
+/// A pixel position `{x, y}` in a `HighlightImage` mark list.
+fn highlight_pixel_pair(e: &Expr) -> bool {
+  matches!(e, Expr::List(xy) if xy.len() == 2
+    && xy.iter().all(|c| crate::functions::math_ast::try_eval_to_f64(c).is_some()))
+}
+
+fn is_color_directive(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if matches!(name.as_str(),
+    "RGBColor" | "GrayLevel" | "Hue" | "CMYKColor" | "LABColor" | "LCHColor"
+      | "LUVColor" | "XYZColor"))
+}
+
+/// One `HighlightImage` mark as wolframscript writes it into the overlay:
+/// curves get `Opacity[1]`, a color also colors the edges, `ImageMarker`
+/// becomes an inset glyph. The items it produces are spliced into the
+/// enclosing list. `None` for a mark that is drawn as a mask (an image).
+fn highlight_mark(mark: &Expr) -> Option<Vec<Expr>> {
+  let opaque =
+    |e: Expr| Expr::List(vec![call1("Opacity", Expr::Integer(1)), e].into());
+  Some(match mark {
+    Expr::Image { .. } => return None,
+    _ if is_color_directive(mark) => {
+      vec![mark.clone(), call1("EdgeForm", mark.clone())]
+    }
+    _ if highlight_pixel_pair(mark) => {
+      vec![opaque(call1("Point", mark.clone()))]
+    }
+    Expr::List(items) => {
+      let mut out = Vec::new();
+      for item in items {
+        out.extend(highlight_mark(item)?);
+      }
+      vec![Expr::List(out.into())]
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Point" | "Line" | "Circle" | "Arrow")
+        && !args.is_empty() =>
+    {
+      vec![opaque(mark.clone())]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut inner = highlight_mark(&args[0])?;
+      let body = if inner.len() == 1 {
+        inner.remove(0)
+      } else {
+        Expr::List(inner.into())
+      };
+      let mut styles = Vec::new();
+      for st in &args[1..] {
+        if is_color_directive(st) {
+          styles.push(st.clone());
+          styles.push(call1("EdgeForm", st.clone()));
+        } else {
+          styles.push(st.clone());
+        }
+      }
+      vec![call("Style", vec![body, Expr::List(styles.into())])]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "ImageMarker" && !args.is_empty() =>
+    {
+      let points = &args[0];
+      match args.get(1) {
+        Some(g @ Expr::FunctionCall { name: gname, .. })
+          if gname == "Graphics" =>
+        {
+          let pts: Vec<Expr> = if highlight_pixel_pair(points) {
+            vec![points.clone()]
+          } else if let Expr::List(ps) = points {
+            ps.to_vec()
+          } else {
+            return Some(vec![mark.clone()]);
+          };
+          let pair = |a: i128, b: i128| {
+            Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+          };
+          vec![call(
+            "GeometricTransformation",
+            vec![
+              call(
+                "Inset",
+                vec![
+                  g.clone(),
+                  pair(0, 0),
+                  id_expr("Center"),
+                  id_expr("Automatic"),
+                  pair(1, 0),
+                ],
+              ),
+              Expr::List(
+                pts
+                  .into_iter()
+                  .map(|p| Expr::List(vec![p].into()))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            ],
+          )]
+        }
+        shape => {
+          let glyph = match shape {
+            Some(Expr::String(s)) if s == "Circle" => image_marker_glyph(true),
+            None => image_marker_glyph(false),
+            _ => return Some(vec![mark.clone()]),
+          };
+          let at = |p: &Expr| {
+            call(
+              "Inset",
+              vec![
+                glyph.clone(),
+                p.clone(),
+                id_expr("Center"),
+                call1("Scaled", Expr::Integer(5)),
+                Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+              ],
+            )
+          };
+          if highlight_pixel_pair(points) {
+            vec![at(points)]
+          } else if let Expr::List(ps) = points {
+            ps.iter().map(at).collect()
+          } else {
+            vec![mark.clone()]
+          }
+        }
+      }
+    }
+    _ => vec![mark.clone()],
+  })
+}
+
+/// The default `ImageMarker` glyphs: a cross hair, or a ring.
+fn image_marker_glyph(ring: bool) -> Expr {
+  let int_pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let offset = |d: (i128, i128), p: (i128, i128)| {
+    call("Offset", vec![int_pair(d.0, d.1), int_pair(p.0, p.1)])
+  };
+  let line = |pts: Vec<Expr>| call1("Line", Expr::List(pts.into()));
+  let black = call1("GrayLevel", Expr::Integer(0));
+  let white = call1("GrayLevel", Expr::Integer(1));
+  let (prims, antialias) = if ring {
+    (
+      vec![
+        black,
+        call1("Circle", offset((0, -1), (0, 0))),
+        white,
+        call1("Circle", int_pair(0, 0)),
+      ],
+      "True",
+    )
+  } else {
+    (
+      vec![
+        black,
+        line(vec![offset((0, -1), (-1, 0)), offset((0, -1), (1, 0))]),
+        line(vec![offset((1, 0), (0, 1)), offset((1, 0), (0, -1))]),
+        white,
+        line(vec![int_pair(-1, 0), int_pair(1, 0)]),
+        line(vec![int_pair(0, 1), int_pair(0, -1)]),
+      ],
+      "False",
+    )
+  };
+  call(
+    "Style",
+    vec![
+      call1("Graphics", Expr::List(prims.into())),
+      rule_expr(id_expr("Antialiasing"), id_expr(antialias)),
+    ],
+  )
+}
+
+/// The options `HighlightImage` passes on to the `Graphics` it returns.
+const HIGHLIGHT_IMAGE_OPTIONS: &[&str] = &[
+  "AlignmentPoint",
+  "AspectRatio",
+  "Axes",
+  "AxesLabel",
+  "AxesOrigin",
+  "AxesStyle",
+  "Background",
+  "BaselinePosition",
+  "BaseStyle",
+  "ColorOutput",
+  "ContentSelectable",
+  "CoordinatesToolOptions",
+  "DataRange",
+  "DisplayFunction",
+  "Epilog",
+  "FormatType",
+  "Frame",
+  "FrameLabel",
+  "FrameStyle",
+  "FrameTicks",
+  "FrameTicksStyle",
+  "GridLines",
+  "GridLinesStyle",
+  "ImageLabels",
+  "ImageLegends",
+  "ImageMargins",
+  "ImagePadding",
+  "ImageSize",
+  "ImageSizeRaw",
+  "LabelStyle",
+  "Method",
+  "PlotInteractivity",
+  "PlotLabel",
+  "PlotRange",
+  "PlotRangeClipping",
+  "PlotRangePadding",
+  "PlotRegion",
+  "PreserveImageOptions",
+  "Prolog",
+  "RotateLabel",
+  "Ticks",
+  "TicksStyle",
+];
+
+/// HighlightImage[img, marks, style, opts] — the `Graphics` wolframscript
+/// builds: the image as an RGB byte inset spanning `{{0, w}, {0, h}}`, the
+/// marks over it in pixel coordinates, and a magenta default style
+/// (`"HighlightColor"` changes it). A string `style` gives the image an
+/// alpha channel and unfilled faces; `"Darken"`/`"Lighten"`/`"Remove"`
+/// also change its pixels.
 pub fn highlight_image_ast(
+  args: &[Expr],
+  eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("HighlightImage", args));
+  let Some(Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  }) = args.first()
+  else {
+    return echo();
+  };
+  let is_opt =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args[1..].iter().take_while(|a| !is_opt(a)).collect();
+  let opts: Vec<&Expr> = args[1 + positional.len()..].iter().collect();
+  let Some(marks) = positional.first() else {
+    return echo();
+  };
+  let style = positional.get(1);
+  let mut color = call(
+    "RGBColor",
+    vec![Expr::Integer(1), Expr::Integer(0), Expr::Integer(1)],
+  );
+  let mut user_opts = Vec::new();
+  let mut own_method = false;
+  for o in &opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = o
+    else {
+      return echo();
+    };
+    match pattern.as_ref() {
+      Expr::String(k) if k == "HighlightColor" => {
+        color = (**replacement).clone();
+      }
+      // A `Method` replaces the default one and leaves faces unset.
+      Expr::Identifier(k) if k == "Method" => own_method = true,
+      Expr::Identifier(k) | Expr::String(k)
+        if HIGHLIGHT_IMAGE_OPTIONS.contains(&k.as_str()) =>
+      {
+        user_opts.push((*o).clone());
+      }
+      _ => {
+        crate::emit_message(&format!(
+          "HighlightImage::optx: Unknown option {} in {}.",
+          crate::syntax::format_expr(pattern, crate::syntax::ExprForm::Output),
+          crate::syntax::format_expr(
+            &unevaluated("HighlightImage", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return echo();
+      }
+    }
+  }
+  // Marks drawn as a mask have no symbolic overlay here; draw them into
+  // the pixels instead.
+  let top_items: Option<Vec<Expr>> = if highlight_pixel_pair(marks) {
+    Some(vec![
+      call1("Opacity", Expr::Integer(1)),
+      call1("Point", (*marks).clone()),
+    ])
+  } else {
+    match marks {
+      Expr::List(items)
+        if !items.is_empty() && items.iter().all(highlight_pixel_pair) =>
+      {
+        Some(vec![Expr::List(
+          vec![
+            call1("Opacity", Expr::Integer(1)),
+            call1("Point", (*marks).clone()),
+          ]
+          .into(),
+        )])
+      }
+      Expr::List(items)
+        if items
+          .iter()
+          .all(|i| !matches!(i, Expr::List(_)) || highlight_pixel_pair(i)) =>
+      {
+        let mut out = Vec::new();
+        let mut ok = true;
+        for i in items {
+          match highlight_mark(i) {
+            Some(v) => out.extend(v),
+            None => ok = false,
+          }
+        }
+        ok.then_some(out)
+      }
+      _ => highlight_mark(marks),
+    }
+  };
+  let Some(items) = top_items else {
+    return highlight_image_raster(args, eval_fn);
+  };
+
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  // Any style argument gives the image an alpha channel and unfilled faces.
+  let string_style = style.is_some();
+  let style_name = match style {
+    Some(Expr::String(s)) => s.as_str(),
+    _ => "",
+  };
+  // Byte values round half to even, as wolframscript's conversion does.
+  let even = |x: f64| -> i128 { x.round_ties_even() as i128 };
+  let mut rows = Vec::with_capacity(h);
+  for y in 0..h {
+    let mut row = Vec::with_capacity(w);
+    for x in 0..w {
+      let base = (y * w + x) * ch;
+      let (rgb, alpha): ([f64; 3], Option<f64>) = match ch {
+        1 => ([data[base]; 3], None),
+        2 => ([data[base]; 3], Some(data[base + 1])),
+        3 => ([data[base], data[base + 1], data[base + 2]], None),
+        _ => (
+          [data[base], data[base + 1], data[base + 2]],
+          Some(data[base + 3]),
+        ),
+      };
+      let mut px: Vec<i128> = rgb
+        .iter()
+        .map(|v| even(v.clamp(0.0, 1.0) * 255.0))
+        .collect();
+      let mut a = alpha.map(|v| even(v.clamp(0.0, 1.0) * 255.0));
+      if string_style {
+        a = a.or(Some(255));
+        match style_name {
+          "Darken" => px = px.iter().map(|&v| even(v as f64 * 0.3)).collect(),
+          "Lighten" => {
+            px = px.iter().map(|&v| even(v as f64 * 0.3 + 178.5)).collect();
+          }
+          "Remove" => {
+            px = vec![0, 0, 0];
+            a = Some(0);
+          }
+          _ => {}
+        }
+      }
+      if let Some(a) = a {
+        px.push(a);
+      }
+      row.push(Expr::List(
+        px.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+      ));
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  let inset_image = eval_fn(&call(
+    "Image",
+    vec![
+      Expr::List(rows.into()),
+      Expr::String("Byte".into()),
+      rule_expr(id_expr("ColorSpace"), Expr::String("RGB".into())),
+    ],
+  ))?;
+  let int_pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let mut content = vec![call(
+    "Style",
+    vec![
+      call(
+        "Inset",
+        vec![
+          inset_image,
+          int_pair(0, 0),
+          int_pair(0, 0),
+          int_pair(w as i128, h as i128),
+        ],
+      ),
+      rule_expr(id_expr("Selectable"), id_expr("False")),
+    ],
+  )];
+  let color_style = own_method;
+  if color_style {
+    content.push(call0("FaceForm"));
+  }
+  content.extend(items);
+  let rule = |k: &str, v: Expr| rule_expr(id_expr(k), v);
+  let method = rule(
+    "Method",
+    Expr::List(
+      vec![
+        id_expr("Automatic"),
+        rule_expr(Expr::String("GridLinesInFront".into()), id_expr("True")),
+      ]
+      .into(),
+    ),
+  );
+  let mut options = user_opts;
+  if color_style {
+    options.push(method.clone());
+  }
+  options.push(rule(
+    "PlotRange",
+    Expr::List(vec![int_pair(0, w as i128), int_pair(0, h as i128)].into()),
+  ));
+  options.push(rule("PlotRangePadding", id_expr("None")));
+  options.push(rule(
+    "ImageSizeRaw",
+    Expr::List(vec![Expr::Real(w as f64), Expr::Real(h as f64)].into()),
+  ));
+  if !color_style {
+    options.push(method);
+  }
+  let face_opacity = if string_style {
+    Expr::Integer(0)
+  } else {
+    Expr::Real(0.2)
+  };
+  options.push(rule(
+    "DefaultBaseStyle",
+    Expr::List(
+      vec![
+        Expr::String("Graphics".into()),
+        color.clone(),
+        call1("FaceForm", call1("Opacity", face_opacity)),
+        call1("Thickness", Expr::Real(0.006)),
+        call1("PointSize", Expr::Real(0.018)),
+        call1(
+          "EdgeForm",
+          Expr::List(vec![call1("Thickness", Expr::Real(0.004)), color].into()),
+        ),
+      ]
+      .into(),
+    ),
+  ));
+  Ok(call(
+    "Graphics",
+    vec![Expr::List(content.into()), Expr::List(options.into())],
+  ))
+}
+
+/// HighlightImage with a mask image: the marks are drawn into a copy of the
+/// image's pixels.
+fn highlight_image_raster(
   args: &[Expr],
   eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {
@@ -15421,8 +16244,12 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     ends.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let pt =
       |p: (f64, f64)| Expr::List(vec![Expr::Real(p.0), Expr::Real(p.1)].into());
-    lines.push(Expr::List(
-      vec![pt(ends[0]), pt(ends[ends.len() - 1])].into(),
+    // Each found line is a `Line` primitive, as in wolframscript.
+    lines.push(call(
+      "Line",
+      vec![Expr::List(
+        vec![pt(ends[0]), pt(ends[ends.len() - 1])].into(),
+      )],
     ));
   }
   Ok(Expr::List(lines.into()))

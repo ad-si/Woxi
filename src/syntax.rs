@@ -1516,6 +1516,17 @@ pub(crate) fn contains_inexact(expr: &Expr) -> bool {
     || expr_children(expr).into_iter().any(contains_inexact)
 }
 
+/// Whether the symbol `name` occurs anywhere in `expr`, heads included.
+pub(crate) fn mentions_symbol(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::FunctionCall { name: head, .. } if head == name => true,
+    _ => expr_children(expr)
+      .into_iter()
+      .any(|child| mentions_symbol(child, name)),
+  }
+}
+
 /// Rebuild an expression with `f` applied to each direct child, for every
 /// node kind [`expr_children`] lists children of; atoms are returned as-is.
 pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
@@ -2513,7 +2524,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         {
           return Expr::BigFloat(
             shift_decimal_point(&s[..idx], exponent),
-            crate::functions::math_ast::numerical::MACHINE_PRECISION_DIGITS,
+            crate::functions::math_ast::numerical::MACHINE_OVERFLOW_PRECISION,
           );
         }
         Expr::Real(value)
@@ -8801,19 +8812,12 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
   if !neg_exp {
     return false;
   }
-  // Check if base contains any identifiers (symbolic, not purely numeric)
-  fn has_identifier(e: &Expr) -> bool {
-    match e {
-      Expr::Identifier(_) => true,
-      Expr::FunctionCall { args, .. } => args.iter().any(has_identifier),
-      Expr::BinaryOp { left, right, .. } => {
-        has_identifier(left) || has_identifier(right)
-      }
-      Expr::UnaryOp { operand, .. } => has_identifier(operand),
-      _ => false,
-    }
-  }
-  has_identifier(base)
+  // Any base that is not itself a number: `-x^(-3)`, `-E^(-3)`,
+  // `-(1 + Sqrt[2])^(-2)` (wolframscript writes none of them as `-(1/…)`).
+  !matches!(
+    base,
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) | Expr::BigFloat(..)
+  ) && !matches!(base, Expr::FunctionCall { name, .. } if name == "Rational" || name == "Complex")
 }
 
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
@@ -9676,6 +9680,7 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "StringJoin" if args.len() >= 2 => Some(30),
       "CompoundExpression" if args.len() >= 2 => Some(1),
       "Power" if args.len() == 2 => Some(48),
+      "PermutationProduct" if args.len() >= 2 => Some(46),
       _ => None,
     },
     _ => None,
@@ -9868,7 +9873,17 @@ fn is_bare_pattern(e: &Expr) -> bool {
 /// as `(a + b) + c`. After a `-` it is a value change, not just a shape one:
 /// printing `Plus[a, -(b + c)]` as `a - b + c` drops the sign of `c`.
 fn plus_term_needs_parens(e: &Expr) -> bool {
-  is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p <= 30)
+  is_bare_pattern(e)
+    || is_prefix_plus_minus(e)
+    || printed_infix_precedence(e).is_some_and(|p| p <= 30)
+}
+
+/// The prefix `±a` / `∓a`. wolframscript brackets it as the operand of any
+/// arithmetic operator — `x + (±a)`, `2*(±a)`, `-(±a)`, `(±a)^(±b)` — though
+/// not as a function argument or list element (`f[±a]`, `{±a}`).
+fn is_prefix_plus_minus(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if args.len() == 1 && matches!(name.as_str(), "PlusMinus" | "MinusPlus"))
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -10158,6 +10173,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // bare `CompoundExpr` that falls through to this OutputForm renderer
       // from within genuine InputForm, `in_true_input_form()`, which must
       // stay re-parseable for Woxi Studio's Manipulate re-evaluation.)
+      if is_output
+        && !in_true_input_form()
+        && name == "Image3D"
+        && matches!(args.first(), Some(Expr::List(_)))
+      {
+        return "-Image3D-".to_string();
+      }
       if is_output
         && !in_true_input_form()
         && !args.is_empty()
@@ -10620,20 +10642,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // that e.g. `Initialization :> (d[t_] := ...)` renders with the
         // parentheses required to disambiguate operator precedence.
         let rhs_str = fmt(&args[1]);
-        let rhs_final = match &args[1] {
-          Expr::FunctionCall { name: n, args: a }
-            if matches!(
-              n.as_str(),
-              "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-            ) && a.len() == 2 =>
-          {
-            format!("({rhs_str})")
-          }
-          // `&` binds looser than `:>`, so a pure function needs parens.
-          Expr::Function { .. } => format!("({rhs_str})"),
-          _ => rhs_str,
+        let rhs_final = if binds_looser_than_rule(&args[1]) {
+          format!("({rhs_str})")
+        } else {
+          rhs_str
         };
-        return format!("{} :> {}", fmt(&args[0]), rhs_final);
+        let lhs_str = fmt(&args[0]);
+        let lhs_final = if rule_lhs_needs_parens(&args[0]) {
+          format!("({lhs_str})")
+        } else {
+          lhs_str
+        };
+        return format!("{lhs_final} :> {rhs_final}");
       }
       if name == "Set" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -11004,6 +11024,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           })
           .collect();
         return parts.join(" \u{F3DA} ");
+      }
+      if name == "PermutationProduct" && args.len() >= 2 {
+        return permutation_product_text(args, &fmt);
       }
       // CenterDot[a, b, ...] displays as a · b · ...
       if name == "CenterDot" && args.len() >= 2 {
@@ -12181,19 +12204,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     }
                   }
                 };
-                // Wolfram parenthesises a subtracted prefix MinusPlus so the
-                // leading `-` doesn't fuse with the `∓`: a - MinusPlus[b] → a - (∓b).
-                let pos_term_str = fmt_plus_term(&pos_term);
-                let pos_term_str = if matches!(
-                  &pos_term,
-                  Expr::FunctionCall { name: n, args: a }
-                    if n == "MinusPlus" && a.len() == 1
-                ) {
-                  format!("({pos_term_str})")
-                } else {
-                  pos_term_str
-                };
-                result.push_str(&pos_term_str);
+                // A subtracted prefix MinusPlus is bracketed by
+                // `fmt_plus_term` (`plus_term_needs_parens`):
+                // a - MinusPlus[b] → a - (∓b).
+                result.push_str(&fmt_plus_term(&pos_term));
               } else {
                 result.push_str(" + ");
                 result.push_str(&fmt(arg));
@@ -12950,6 +12964,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
       let needs_right_parens = (is_multiplicative && is_additive(right))
+        // `(±a)^(±b)`: a prefix `±` is bracketed as any arithmetic operand.
+        || (matches!(
+          op,
+          BinaryOperator::Power
+            | BinaryOperator::Times
+            | BinaryOperator::Divide
+            | BinaryOperator::Plus
+            | BinaryOperator::Minus
+        ) && is_prefix_plus_minus(right))
         || (matches!(op, BinaryOperator::Divide)
           && is_right_multiplicative(right))
         || (matches!(op, BinaryOperator::Power)
@@ -13231,14 +13254,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Parenthesize the LHS when it is itself a rule (`->` is
       // right-associative, so `(a -> b) -> c` must keep its parentheses) or a
       // pure function (`&` binds looser than `->`, so `(f & ) -> x`).
-      let lhs = match pattern.as_ref() {
-        Expr::Rule { .. }
-        | Expr::RuleDelayed { .. }
-        | Expr::Function { .. } => {
-          format!("({})", fmt(pattern))
-        }
-        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
-        _ => fmt(pattern),
+      let lhs = if rule_lhs_needs_parens(pattern) {
+        format!("({})", fmt(pattern))
+      } else {
+        fmt(pattern)
       };
       // Parenthesize RHS if it's a pure function (& has low precedence) or a
       // `;`-sequence (CompoundExpression binds looser than every operator,
@@ -13259,14 +13278,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     } => {
       // Parenthesize the LHS when it is itself a rule or a pure function
       // (see Expr::Rule).
-      let lhs = match pattern.as_ref() {
-        Expr::Rule { .. }
-        | Expr::RuleDelayed { .. }
-        | Expr::Function { .. } => {
-          format!("({})", fmt(pattern))
-        }
-        _ if is_replace_operator(pattern) => format!("({})", fmt(pattern)),
-        _ => fmt(pattern),
+      let lhs = if rule_lhs_needs_parens(pattern) {
+        format!("({})", fmt(pattern))
+      } else {
+        fmt(pattern)
       };
       // Parenthesize RHS if it's an assignment so the := operator is
       // correctly disambiguated from the :> operator visually, or if it's a
@@ -13276,20 +13291,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // 2)` for a multi-statement event handler action would silently lose
       // its later statements from the rule).
       let rhs_str = fmt(replacement);
-      let rhs_final = match replacement.as_ref() {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        r if assignment_rhs_needs_parens(r) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        // `&` binds looser than `:>`.
-        Expr::Function { .. } => format!("({rhs_str})"),
-        _ => rhs_str,
+      let rhs_final = if binds_looser_than_rule(replacement) {
+        format!("({rhs_str})")
+      } else {
+        rhs_str
       };
       format!("{lhs} :> {rhs_final}")
     }
@@ -14012,23 +14017,10 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       c if c == BOX_OPEN => escaped.push_str("\\("),
       c if c == BOX_SEP => escaped.push_str("\\*"),
       c if c == BOX_CLOSE => escaped.push_str("\\)"),
-      '\\' if i + 1 < chars.len() => match chars[i + 1] {
-        // \[Name] named character sequences — preserve as-is
-        '[' => {
-          escaped.push_str("\\[");
-          i += 2;
-          continue;
-        }
-        // Any other backslash (including a run of backslashes) — escape each
-        // one individually, so `\\` becomes `\\\\` like wolframscript.
-        _ => {
-          escaped.push_str("\\\\");
-        }
-      },
-      '\\' => {
-        // Trailing backslash
-        escaped.push_str("\\\\");
-      }
+      // Every backslash is escaped, `\[Name]` text included: the string
+      // holding the six characters `\[Pi]` is `"\\[Pi]"`, as in
+      // wolframscript (a named character itself is stored as its code point).
+      '\\' => escaped.push_str("\\\\"),
       '"' => escaped.push_str("\\\""),
       '\n' => escaped.push_str("\\n"),
       '\t' => escaped.push_str("\\t"),
@@ -14053,16 +14045,22 @@ fn is_replace_operator(e: &Expr) -> bool {
 /// it is itself a rule (`->` is right-associative, so `(a -> b) -> c` must
 /// keep its parentheses).
 fn input_form_rule_lhs(e: &Expr) -> String {
-  match e {
-    // A nested rule keeps its parens (`->` is right-associative) and a pure
-    // function is parenthesised because `&` binds looser than `->`/`:>`
-    // (`(#1 & ) -> x`), matching wolframscript.
-    Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::Function { .. } => {
-      format!("({})", expr_to_input_form(e))
-    }
-    _ if is_replace_operator(e) => format!("({})", expr_to_input_form(e)),
-    _ => expr_to_input_form(e),
+  if rule_lhs_needs_parens(e) {
+    format!("({})", expr_to_input_form(e))
+  } else {
+    expr_to_input_form(e)
   }
+}
+
+/// Whether the left side of `->`/`:>` needs parentheses: a nested rule
+/// (the arrows are right-associative), and everything that binds looser
+/// than a rule — a pure function (`(#1 & ) -> x`), a `;`-sequence
+/// (`(a; b) :> c`), an assignment, a replacement — as in wolframscript.
+fn rule_lhs_needs_parens(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+    || matches!(e, Expr::FunctionCall { name, args }
+      if args.len() == 2 && matches!(name.as_str(), "Rule" | "RuleDelayed"))
+    || binds_looser_than_rule(e)
 }
 
 /// Parenthesize a rule's RHS when it is a pure function, since `&` binds
@@ -14217,6 +14215,27 @@ impl Drop for TrueInputFormGuard {
 /// (TensorProduct/CircleTimes, precedence 36) and so must be parenthesised when
 /// used as an operand, matching wolframscript (`TensorProduct[a + b, c]` →
 /// `(a + b) ⊗ c`). Tighter-binding operands (Power, Dot, …) stay bare.
+/// `a \u{F3DE} b \u{F3DE} …` for `PermutationProduct` (precedence 520,
+/// between `**` and `^`): an operand that binds looser — a sum, a product,
+/// a dot or tensor product, a negation, a rule — is parenthesized.
+fn permutation_product_text(
+  args: &[Expr],
+  fmt: &dyn Fn(&Expr) -> String,
+) -> String {
+  args
+    .iter()
+    .map(|a| {
+      let s = fmt(a);
+      let looser = ring_operand_needs_parens(a)
+        || printed_infix_precedence(a).is_some_and(|p| p < 46)
+        || matches!(a, Expr::FunctionCall { name, args }
+          if args.len() >= 2 && matches!(name.as_str(), "TensorProduct" | "PermutationProduct"));
+      if looser { format!("({s})") } else { s }
+    })
+    .collect::<Vec<_>>()
+    .join(" \u{F3DE} ")
+}
+
 fn ring_operand_needs_parens(e: &Expr) -> bool {
   match e {
     Expr::BinaryOp { op, .. } => matches!(
@@ -14255,14 +14274,18 @@ fn negate_neg_numeric_coeff(e: &Expr) -> Option<Expr> {
       Some(Expr::BigInteger(-n))
     }
     Expr::FunctionCall { name, args }
-      if name == "Rational"
-        && args.len() == 2
-        && matches!(&args[0], Expr::Integer(n) if *n < 0) =>
+      if name == "Rational" && args.len() == 2 =>
     {
-      if let Expr::Integer(n) = &args[0] {
-        Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
-      } else {
-        None
+      match &args[0] {
+        Expr::Integer(n) if *n < 0 => {
+          Some(call("Rational", vec![Expr::Integer(-n), args[1].clone()]))
+        }
+        // A numerator past i128 is a BigInteger: `-(10^40/3)`.
+        Expr::BigInteger(n) if n.sign() == Sign::Minus => Some(call(
+          "Rational",
+          vec![Expr::BigInteger(-n), args[1].clone()],
+        )),
+        _ => None,
       }
     }
     _ => None,
@@ -14292,11 +14315,7 @@ fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
 /// not `0.05 - x /. sol`, which re-parses as `(0.05 - x) /. sol`.
 fn input_form_subtracted_term(term: &Expr) -> String {
   let s = expr_to_input_form(term);
-  if matches!(
-    term,
-    Expr::FunctionCall { name, args } if name == "MinusPlus" && args.len() == 1
-  ) || plus_term_needs_parens(term)
-  {
+  if plus_term_needs_parens(term) {
     format!("({s})")
   } else {
     s
@@ -14387,6 +14406,94 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
   })
 }
 
+/// `Image3D[data, type?, opts…]` written the way wolframscript stores the
+/// volume: the voxels as a `NumericArray` of the image type (machine
+/// `Real32` unless given), then the type, the other options, `ColorSpace`
+/// and `Interleaving`.
+fn image3d_input_form(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(_) = &args[0] else {
+    return None;
+  };
+  let (image_type, rest) = match args.get(1) {
+    Some(Expr::String(t)) => (t.as_str(), &args[2..]),
+    _ => ("Real32", &args[1..]),
+  };
+  let array_type = match image_type {
+    "Byte" => "UnsignedInteger8",
+    "Bit16" => "UnsignedInteger16",
+    "Real32" => "Real32",
+    "Real64" | "Real" => "Real64",
+    _ => return None,
+  };
+  fn depth(e: &Expr) -> usize {
+    match e {
+      Expr::List(items) => 1 + items.first().map_or(0, depth),
+      _ => 0,
+    }
+  }
+  let interleaved = match depth(&args[0]) {
+    3 => false,
+    4 => true,
+    _ => return None,
+  };
+  fn voxels(e: &Expr, kind: &str) -> Option<String> {
+    if let Expr::List(items) = e {
+      let parts: Option<Vec<String>> =
+        items.iter().map(|i| voxels(i, kind)).collect();
+      Some(format!("{{{}}}", parts?.join(", ")))
+    } else {
+      let v = crate::functions::math_ast::try_eval_to_f64(e)?;
+      match kind {
+        "UnsignedInteger8" | "UnsignedInteger16" => {
+          if v.fract() != 0.0 {
+            return None;
+          }
+          Some(format!("{}", v as i64))
+        }
+        "Real32" => Some(expr_to_input_form(&Expr::Real(v as f32 as f64))),
+        _ => Some(expr_to_input_form(&Expr::Real(v))),
+      }
+    }
+  }
+  let data = voxels(&args[0], array_type)?;
+  let option_name = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let mut parts = vec![
+    format!("NumericArray[{data}, \"{array_type}\"]"),
+    format!("\"{image_type}\""),
+  ];
+  let mut color_space = "Automatic".to_string();
+  for opt in rest {
+    let name = option_name(opt)?;
+    match (name.as_str(), opt) {
+      ("ColorSpace", Expr::Rule { replacement, .. }) => {
+        color_space = expr_to_input_form(replacement);
+      }
+      ("Interleaving", _) => {}
+      _ => parts.push(expr_to_input_form(opt)),
+    }
+  }
+  parts.push(format!("ColorSpace -> {color_space}"));
+  parts.push(format!(
+    "Interleaving -> {}",
+    if interleaved { "True" } else { "None" }
+  ));
+  Some(format!("Image3D[{}]", parts.join(", ")))
+}
+
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
 
@@ -14396,6 +14503,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   // it the two InputForm renderers disagree.
   if let Some(rewritten) = operator_call_node(expr) {
     return expr_to_input_form(&rewritten);
+  }
+  if let Some(text) = image3d_input_form(expr) {
+    return text;
+  }
+  if let Some(graph) = crate::functions::graph::graph_display_form(expr) {
+    return expr_to_input_form(&graph);
   }
   // Parenthesisation is decided by inspecting the direct children, so those
   // checks have to see the operator node rather than the call spelling.
@@ -14539,39 +14652,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       // `(cond :> a = 1); b = 2` without parens (the Demonstrations idiom
       // `"event" :> (a = 1; b = 2)` for a multi-statement action would
       // silently lose its later statements once re-parsed).
-      let rhs_str = expr_to_input_form(replacement);
-      let rhs_final = match replacement.as_ref() {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        _ => rhs_str,
-      };
+      let rhs_final = input_form_rule_rhs(replacement);
       format!("{} :> {}", input_form_rule_lhs(pattern), rhs_final)
     }
     Expr::FunctionCall { name, args }
       if name == "RuleDelayed" && args.len() == 2 =>
     {
-      let rhs_str = expr_to_input_form(&args[1]);
-      let rhs_final = match &args[1] {
-        Expr::FunctionCall { name: n, args: a }
-          if matches!(
-            n.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          ) && a.len() == 2 =>
-        {
-          format!("({rhs_str})")
-        }
-        Expr::Function { .. } | Expr::CompoundExpr(_) => format!("({rhs_str})"),
-        r if is_replace_operator(r) => format!("({rhs_str})"),
-        _ => rhs_str,
-      };
+      let rhs_final = input_form_rule_rhs(&args[1]);
       format!("{} :> {}", input_form_rule_lhs(&args[0]), rhs_final)
     }
     // Equivalent renders in functional form in InputForm: `Equivalent[a, b]`
@@ -14601,6 +14688,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         })
         .collect::<Vec<_>>()
         .join(" \u{F3DA} ")
+    }
+    // PermutationProduct[a, b, …] prints infix with U+F3DE in every form,
+    // FullForm included, as wolframscript does.
+    Expr::FunctionCall { name, args }
+      if name == "PermutationProduct" && args.len() >= 2 =>
+    {
+      permutation_product_text(args, &expr_to_input_form)
     }
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
       format!(
@@ -15634,7 +15728,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // Image: produce NumericArray InputForm
     Expr::Image {
       color_space,
-      display_size: _,
+      display_size,
       width,
       height,
       channels,
@@ -15688,8 +15782,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
       let array_data = format!("{{{}}}", rows.join(", "));
 
+      // An explicit ImageSize is one of the image's options.
+      let image_size = match display_size {
+        Some((dw, _)) => format!(", ImageSize -> {dw}"),
+        None => String::new(),
+      };
       format!(
-        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{image_type_str}\", ColorSpace -> {color_space}, Interleaving -> {interleaving}]"
+        "Image[NumericArray[{array_data}, \"{type_str}\"], \"{image_type_str}\", ColorSpace -> {color_space}{image_size}, Interleaving -> {interleaving}]"
       )
     }
 
@@ -18685,6 +18784,7 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
     // `!`, `&`, …) and a bare pattern: `2*(a -> 1)`, `2*(a_)`.
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
     || is_bare_pattern(e)
+    || is_prefix_plus_minus(e)
 }
 
 /// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),
@@ -18735,6 +18835,11 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
     ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
     ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
     ("List", _) => Some(Expr::List(args.clone())),
+    // `Function[body]` is the long form of `body &`: `Hold[Function[x + 1]]`
+    // prints as `Hold[x + 1 & ]`.
+    ("Function", 1) => Some(Expr::Function {
+      body: Box::new(args[0].clone()),
+    }),
     ("Rule", 2) => Some(rule_expr(args[0].clone(), args[1].clone())),
     ("RuleDelayed", 2) => {
       Some(rule_delayed_expr(args[0].clone(), args[1].clone()))
@@ -18751,7 +18856,7 @@ fn is_infix_display_call(e: &Expr) -> bool {
       "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
         | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
         | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual" | "Dot"
-        | "PlusMinus" | "MinusPlus"
+        | "PlusMinus" | "MinusPlus" | "PermutationProduct"
     ))
     // The prefix `±a` binds looser than `^` as well: `(±a)^2`.
     || (args.len() == 1 && matches!(name.as_str(), "PlusMinus" | "MinusPlus")))

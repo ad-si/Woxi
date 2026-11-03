@@ -929,7 +929,9 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(now());
   }
 
-  // AbsoluteTime[date, TimeZone -> tz] reads the date in zone tz.
+  // AbsoluteTime[date, TimeZone -> tz] takes the date in $TimeZone and
+  // counts the seconds on the clock of zone tz: 3 hours more for zone 3
+  // than for zone 0.
   if let [date, opt] = args
     && let Some((Expr::Identifier(o), zone, _)) =
       crate::functions::expr_form::rule_parts(opt)
@@ -950,7 +952,7 @@ pub fn absolute_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     else {
       return unevaluated();
     };
-    let shifted = seconds - (offset - local) * 3600.0;
+    let shifted = seconds + (offset - local) * 3600.0;
     return Ok(
       if matches!(absolute, Expr::Integer(_)) && shifted.fract() == 0.0 {
         Expr::Integer(shifted as i128)
@@ -1789,6 +1791,7 @@ fn parse_increments(delta: &Expr) -> Option<Vec<(f64, String)>> {
 fn date_plus_with_time(
   components: &[f64],
   increments: &[(f64, String)],
+  real_seconds: bool,
 ) -> Expr {
   let get = |i: usize| components.get(i).copied().unwrap_or(0.0);
   let mut y = components[0] as i64;
@@ -1828,14 +1831,41 @@ fn date_plus_with_time(
       absolute_days_to_date(date_to_absolute_days(y, m, d) + carry as i64);
   }
   let whole = secs.floor() as i64;
-  make_date_list(
-    y,
-    m,
-    d,
-    whole / 3600,
-    whole % 3600 / 60,
-    secs - (whole / 60 * 60) as f64,
-  )
+  let (hour, minute) = (whole / 3600, whole % 3600 / 60);
+  let second = secs - (whole / 60 * 60) as f64;
+  // The result is as long as the date it was given, and longer only as far
+  // as the clock fields that came out nonzero (`{2026, 12, 31}` plus 25
+  // hours is `{2027, 1, 1, 1}`, plus 24 hours stays `{2027, 1, 1}`). A
+  // fractional clock field in the date spreads over the full date list.
+  let fractional_clock = components.iter().skip(3).any(|c| c.fract() != 0.0);
+  let mut len = if fractional_clock {
+    6
+  } else {
+    components.len().max(3)
+  };
+  if second != 0.0 {
+    len = 6;
+  } else if minute != 0 {
+    len = len.max(5);
+  } else if hour != 0 {
+    len = len.max(4);
+  }
+  // Seconds stay exact unless the date carried inexact seconds or the sum
+  // has a fractional second.
+  let seconds = if real_seconds || second.fract() != 0.0 {
+    Expr::Real(second)
+  } else {
+    Expr::Integer(second as i128)
+  };
+  let fields = [
+    Expr::Integer(y as i128),
+    Expr::Integer(m as i128),
+    Expr::Integer(d as i128),
+    Expr::Integer(hour as i128),
+    Expr::Integer(minute as i128),
+    seconds,
+  ];
+  Expr::List(fields[..len].to_vec().into())
 }
 
 pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1909,6 +1939,32 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let input_len = components.len();
 
+  // Seconds stay inexact when the date had inexact seconds or an inexact
+  // number of seconds is added: `{2., "Second"}` gives `2.`, while
+  // `{0.5, "Minute"}` is an exact 30 seconds.
+  fn real_seconds_increment(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => match items.as_slice() {
+        [Expr::Real(_), Expr::String(u) | Expr::Identifier(u)] => {
+          u.starts_with("Second")
+        }
+        _ => items.iter().any(real_seconds_increment),
+      },
+      Expr::FunctionCall { name, args } if name == "Quantity" => {
+        matches!(args.as_slice(), [Expr::Real(_), Expr::String(u)]
+          if u.starts_with("Second"))
+      }
+      _ => false,
+    }
+  }
+  let date_list = match &date_arg {
+    Expr::FunctionCall { name, args } if name == "DateObject" => args.first(),
+    other => Some(other),
+  };
+  let real_seconds = matches!(date_list, Some(Expr::List(items))
+    if matches!(items.get(5), Some(Expr::Real(_))))
+    || real_seconds_increment(&delta_arg);
+
   // A date with a clock time, or an increment in hours, minutes or seconds,
   // moves through the time of day too.
   if !input_is_date_object
@@ -1918,7 +1974,20 @@ pub fn date_plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .any(|(n, unit)| is_sub_day_unit(unit) || n.fract() != 0.0))
   {
-    return Ok(date_plus_with_time(&components, &increments));
+    return Ok(date_plus_with_time(&components, &increments, real_seconds));
+  }
+  // A DateObject with a clock time (an "Instant") moves through the time
+  // of day as well and keeps its granularity, calendar and time zone.
+  if input_is_date_object
+    && components.len() > 3
+    && let Some(increments) = parse_increments(&delta_arg)
+    && let Expr::FunctionCall { args: dargs, .. } = &date_arg
+    && let moved @ Expr::List(_) =
+      date_plus_with_time(&components, &increments, real_seconds)
+  {
+    let mut new_args = vec![moved];
+    new_args.extend(dargs.iter().skip(1).cloned());
+    return Ok(call("DateObject", new_args));
   }
 
   // Calculate total days to add
@@ -5044,38 +5113,45 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Clock[]`, `Clock[tmax]`, `Clock[{tmin, tmax}]`, `Clock[{tmin, tmax, dt}]`,
-/// each optionally followed by a period in seconds (default 1): the value of
-/// a variable that cycles from `tmin` to `tmax` as session time passes.
-/// Returns `None` (stays unevaluated) when a limit or the period is not a
-/// number.
+/// each optionally followed by a period. Outside `Dynamic` a clock does not
+/// tick: like wolframscript, the kernel answers its starting value `tmin`,
+/// exactly as written (`Clock[{2, 5}, 3]` is 2, `Clock[{a, b}]` is `a`). The
+/// period — by default `tmax - tmin` — has to be a finite positive number,
+/// else `Clock::period` is reported (the value is still `tmin`). An iterator
+/// of the wrong length reports `Clock::vals` and stays unevaluated.
 pub fn clock_ast(args: &[Expr]) -> Option<Expr> {
-  use crate::functions::graphics::expr_to_f64;
-  let (tmin, tmax, dt) = match args.first() {
-    None => (0.0, 1.0, None),
+  let (tmin, tmax) = match args.first() {
+    None => (Expr::Integer(0), Expr::Integer(1)),
     Some(Expr::List(items)) if items.len() == 2 || items.len() == 3 => {
-      let dt = match items.get(2) {
-        Some(d) => Some(expr_to_f64(d)?),
-        None => None,
-      };
-      (expr_to_f64(&items[0])?, expr_to_f64(&items[1])?, dt)
+      (items[0].clone(), items[1].clone())
     }
-    Some(Expr::List(_)) => return None,
-    Some(max) => (0.0, expr_to_f64(max)?, None),
+    Some(spec @ Expr::List(_)) => {
+      crate::emit_message(&format!(
+        "Clock::vals: Clock called with illegal iterator values, {}.",
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output)
+      ));
+      return None;
+    }
+    Some(max) => (Expr::Integer(0), max.clone()),
   };
   let period = match args.get(1) {
-    Some(p) => expr_to_f64(p)?,
-    None => 1.0,
+    Some(p) => p.clone(),
+    None => crate::functions::math_ast::plus_ast(&[
+      tmax,
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), tmin.clone()])
+        .ok()?,
+    ])
+    .ok()?,
   };
-  // `partial_cmp` so NaN is rejected too.
-  let positive =
-    |x: f64| x.partial_cmp(&0.0) == Some(std::cmp::Ordering::Greater);
-  if !positive(period) || dt.is_some_and(|d| !positive(d)) {
-    return None;
+  let numeric =
+    crate::evaluator::evaluate_function_call_ast("N", &[period]).ok()?;
+  let finite_positive = matches!(&numeric, Expr::Real(x) if x.is_finite() && *x > 0.0)
+    || matches!(&numeric, Expr::Integer(n) if *n > 0);
+  if !finite_positive {
+    crate::emit_message(&format!(
+      "Clock::period: Clock period {} is not a finite positive number.",
+      crate::syntax::format_expr(&numeric, crate::syntax::ExprForm::Output)
+    ));
   }
-  let phase = (crate::session_time() / period).fract();
-  let mut value = tmin + (tmax - tmin) * phase;
-  if let Some(d) = dt {
-    value = tmin + ((value - tmin) / d).floor() * d;
-  }
-  Some(Expr::Real(value))
+  Some(tmin)
 }

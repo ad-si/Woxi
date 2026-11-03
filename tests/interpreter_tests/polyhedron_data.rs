@@ -132,17 +132,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Icosahedron", "VertexCoordinates"]"#)
         .unwrap(),
-      "{{0, 0, -Sqrt[5/8 + Sqrt[5]/8]}, {0, 0, Sqrt[5/8 + Sqrt[5]/8]}, \
-       {-Sqrt[1/2 + 1/(2*Sqrt[5])], 0, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {Sqrt[1/2 + 1/(2*Sqrt[5])], 0, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {Sqrt[1/4 + 1/(2*Sqrt[5])], -1/2, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {Sqrt[1/4 + 1/(2*Sqrt[5])], 1/2, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {-Sqrt[1/4 + 1/(2*Sqrt[5])], -1/2, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {-Sqrt[1/4 + 1/(2*Sqrt[5])], 1/2, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {-Sqrt[1/8 - 1/(8*Sqrt[5])], (-1 - Sqrt[5])/4, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {-Sqrt[1/8 - 1/(8*Sqrt[5])], (1 + Sqrt[5])/4, -Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {Sqrt[1/8 - 1/(8*Sqrt[5])], (-1 - Sqrt[5])/4, Sqrt[1/8 + 1/(8*Sqrt[5])]}, \
-       {Sqrt[1/8 - 1/(8*Sqrt[5])], (1 + Sqrt[5])/4, Sqrt[1/8 + 1/(8*Sqrt[5])]}}"
+      "{{0, 0, -5/Sqrt[50 - 10*Sqrt[5]]}, {0, 0, 5/Sqrt[50 - 10*Sqrt[5]]}, {-Sqrt[2/(5 - Sqrt[5])], 0, -(1/Sqrt[10 - 2*Sqrt[5]])}, {Sqrt[2/(5 - Sqrt[5])], 0, 1/Sqrt[10 - 2*Sqrt[5]]}, {(1 + Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), -1/2, -(1/Sqrt[10 - 2*Sqrt[5]])}, {(1 + Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), 1/2, -(1/Sqrt[10 - 2*Sqrt[5]])}, {(-1 - Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), -1/2, 1/Sqrt[10 - 2*Sqrt[5]]}, {(-1 - Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), 1/2, 1/Sqrt[10 - 2*Sqrt[5]]}, {(1 - Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), -1/2*Sqrt[(5 + Sqrt[5])/(5 - Sqrt[5])], -(1/Sqrt[10 - 2*Sqrt[5]])}, {(1 - Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), Sqrt[(5 + Sqrt[5])/(5 - Sqrt[5])]/2, -(1/Sqrt[10 - 2*Sqrt[5]])}, {(-1 + Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), -1/2*Sqrt[(5 + Sqrt[5])/(5 - Sqrt[5])], 1/Sqrt[10 - 2*Sqrt[5]]}, {(-1 + Sqrt[5])/(2*Sqrt[10 - 2*Sqrt[5]]), Sqrt[(5 + Sqrt[5])/(5 - Sqrt[5])]/2, 1/Sqrt[10 - 2*Sqrt[5]]}}"
     );
   }
 
@@ -479,18 +469,22 @@ mod polyhedron_data_tests {
       interpret("PolyhedronData[] === PolyhedronData[All]").unwrap(),
       "True"
     );
+    // A position or a span names no class: an empty list.
     assert_eq!(
       interpret("PolyhedronData[;;28] === Take[PolyhedronData[All], 28]")
         .unwrap(),
-      "True"
+      "False"
     );
     assert_eq!(
       interpret("PolyhedronData[3] === PolyhedronData[All][[3]]").unwrap(),
-      "True"
+      "False"
     );
     assert_eq!(
-      interpret("PolyhedronData[100000]").unwrap(),
-      "PolyhedronData[100000]"
+      interpret(
+        "{PolyhedronData[100000], PolyhedronData[3], PolyhedronData[;;3]}"
+      )
+      .unwrap(),
+      "{{}, {}, {}}"
     );
     // A union with a class stays a flat list of entities, as the Studio's
     // `Control` over such a list needs.
@@ -659,7 +653,9 @@ mod polyhedron_data_tests {
                {f, faces}]]"#
       )
       .unwrap(),
-      "{1000000, 1618034}"
+      // (The faces start at a vertex of either diagonal, so the ratio comes
+      // out as GoldenRatio or its inverse.)
+      "{618034, 1000000, 1618034}"
     );
     // Nonconvex, but still isohedral: every face plane sits at the same
     // distance from the center, so a well-defined insphere exists even
@@ -991,7 +987,7 @@ mod polyhedron_data_tests {
              "FaceIndices"]]"#
       )
       .unwrap(),
-      "{{3, 8}, {4, 18}}"
+      "{{4, 18}, {3, 8}}"
     );
     // All vertices sit at the same distance from the center (they are
     // vertex-transitive), matching the exact "Circumradius".

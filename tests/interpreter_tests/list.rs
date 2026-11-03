@@ -14972,7 +14972,43 @@ mod sparse_array_list_ops {
          Normal[DiagonalMatrix[{-1., -1.}] + s + Transpose[Conjugate[s]]]"
       )
       .unwrap(),
-      "{{-1., 1. + 1.*I}, {1. - 1.*I, -1.}}"
+      "{{-1. + 0.*I, 1. + 1.*I}, {1. - 1.*I, -1. + 0.*I}}"
+    );
+  }
+
+  // A sum of sparse arrays of machine numbers is packed: the stored values
+  // and the background share the widest number type.
+  #[test]
+  fn sparse_sum_packs_machine_numbers() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 2} -> 1. + I}, {2, 2}]; s + Transpose[Conjugate[s]]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0. + 0.*I, {1, {{0, 1, 2}, {{2}, {1}}}, \
+       {1. + 1.*I, 1. - 1.*I}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SparseArray[{{1, 2} -> 1.}, {2, 2}] + SparseArray[{{1, 1} -> 3}, {2, 2}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 2, 2}, {{1}, {2}}}, {3., 1.}}]"
+    );
+    assert_eq!(
+      interpret(
+        "SparseArray[{{1, 2} -> 1}, {2, 2}] + SparseArray[{{1, 1} -> 3}, {2, 2}]"
+      )
+      .unwrap(),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 2, 2}, {{1}, {2}}}, {3, 1}}]"
+    );
+    // A dense list with one sparse array is not packed.
+    assert_eq!(
+      interpret(
+        "Normal[DiagonalMatrix[{-1., -1.}] + SparseArray[{{1, 2} -> 1. + I}, {2, 2}]]"
+      )
+      .unwrap(),
+      "{{-1., 1. + 1.*I}, {0., -1.}}"
     );
   }
 
@@ -15489,13 +15525,22 @@ mod list_convolve {
     );
   }
 
-  // Machine numbers take a direct path with the evaluator's exactness:
-  // 0 times a real is an exact 0, and an all-exact window stays exact.
+  // A list of numbers holding a machine number is packed: all of its
+  // entries are machine numbers, so every output is one too.
   #[test]
-  fn machine_entries_keep_exact_terms() {
+  fn machine_entries_pack_the_list() {
     assert_eq!(
       interpret("ListConvolve[{1, 2}, {0., 0, 1}]").unwrap(),
-      "{0., 1}"
+      "{0., 1.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2}, {0, 0, 1}]").unwrap(),
+      "{0., 1.}"
+    );
+    // A symbolic entry keeps the list unpacked.
+    assert_eq!(
+      interpret("ListConvolve[{1, 2}, {x, 0., 1}]").unwrap(),
+      "{0. + 2*x, 1.}"
     );
     assert_eq!(
       interpret("ListCorrelate[{0, 0.5}, {1, 2, 3}]").unwrap(),
@@ -25049,9 +25094,16 @@ mod shared_own_value_lists {
 
   #[test]
   fn self_append_assignment_leaves_other_targets_alone() {
-    // Not a list yet: `Append` reports its own error.
-    assert_eq!(interpret("ys = Append[ys, 1]; Head[ys]").unwrap(), "Append");
-    // Appending a different symbol is an ordinary assignment.
+    // Not a list yet: `Append` reports its own error and `ys` is left holding
+    // `Append[ys, 1]`, which re-reads `ys` without end on the next lookup.
+    assert_eq!(
+      interpret("ys = Append[ys, 1]; Head[ys]").unwrap(),
+      "TerminatedEvaluation[RecursionLimit]"
+    );
+  }
+
+  #[test]
+  fn appending_another_symbol_is_an_ordinary_assignment() {
     assert_eq!(
       interpret("a = {1}; b = {2}; a = Append[b, 3]; {a, b}").unwrap(),
       "{{2, 3}, {2}}"

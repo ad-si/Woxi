@@ -204,11 +204,16 @@ mod qr_decomposition_full {
     );
   }
 
+  // q is completed with an orthonormal basis of the columns' complement.
   #[test]
-  fn exact_tall_matrix_is_not_completed() {
+  fn exact_tall_matrix_is_completed() {
     assert_eq!(
       interpret("QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}, Full]").unwrap(),
-      "QRDecomposition[{{1, 2}, {3, 4}, {5, 6}}, Full]"
+      "{{{1/Sqrt[35], 3/Sqrt[35], Sqrt[5/7]}, {13/Sqrt[210], 2*Sqrt[2/105], -Sqrt[5/42]}, {1/Sqrt[6], -Sqrt[2/3], 1/Sqrt[6]}}, {{Sqrt[35], 44/Sqrt[35]}, {0, 2*Sqrt[6/35]}, {0, 0}}}"
+    );
+    assert_eq!(
+      interpret("QRDecomposition[{{1, 2}, {2, 4}, {5, 6}}, Full]").unwrap(),
+      "{{{1/Sqrt[30], Sqrt[2/15], Sqrt[5/6]}, {1/Sqrt[6], Sqrt[2/3], -(1/Sqrt[6])}, {-2/Sqrt[5], 1/Sqrt[5], 0}}, {{Sqrt[30], 4*Sqrt[10/3]}, {0, 2*Sqrt[2/3]}, {0, 0}}}"
     );
   }
 }
@@ -257,14 +262,15 @@ mod decomposition_target_structure {
     }
   }
 
+  // LU's factors are structured already.
   #[test]
-  fn structured_targets_stay_unevaluated() {
+  fn structured_target_of_lu_is_the_plain_decomposition() {
     assert_eq!(
       interpret(
         "LUDecomposition[{{1, 2}, {3, 4}}, TargetStructure -> \"Structured\"]"
       )
       .unwrap(),
-      "LUDecomposition[{{1, 2}, {3, 4}}, TargetStructure -> Structured]"
+      "{LowerTriangularMatrix[StructuredArray`StructuredData[{2, 2}, {{1, 0}, {3, 1}}]], UpperTriangularMatrix[StructuredArray`StructuredData[{2, 2}, {{1, 2}, {0, -2}}]], PermutationMatrix[StructuredArray`StructuredData[{2, 2}, {Cycles[{}], Infinity}]], 0}"
     );
   }
 }

@@ -3956,9 +3956,34 @@ mod apart {
     );
     assert_eq!(
       interpret("Apart[(x - a) (x - b)]").unwrap(),
-      "a*b - a*x - b*x + x^2"
+      "a*b - (a + b)*x + x^2"
     );
     assert_eq!(interpret("Apart[x]").unwrap(), "x");
+  }
+
+  // Collected by powers of the variable, each coefficient factored.
+  #[test]
+  fn apart_collects_polynomials_in_the_variable() {
+    assert_eq!(
+      interpret("Apart[(x - a) (x - b) (x - c)]").unwrap(),
+      "-(a*b*c) + (a*b + a*c + b*c)*x - (a + b + c)*x^2 + x^3"
+    );
+    assert_eq!(
+      interpret("Apart[2 (x + 1) (x + 3) + a x]").unwrap(),
+      "6 + (8 + a)*x + 2*x^2"
+    );
+    assert_eq!(
+      interpret("Apart[a - b + (b - a) x]").unwrap(),
+      "a - b - (a - b)*x"
+    );
+    assert_eq!(
+      interpret("Apart[(x - a) (y - b)]").unwrap(),
+      "b*(a - x) - (a - x)*y"
+    );
+    assert_eq!(
+      interpret("Apart[(x - a) (y - b), x]").unwrap(),
+      "a*(b - y) - x*(b - y)"
+    );
   }
 
   #[test]
@@ -5336,7 +5361,7 @@ mod solve {
     assert_eq!(
       interpret("Solve[Sqrt[(x-1)^2 + y^2] + Sqrt[(x+1)^2 + y^2] == 3, y]")
         .unwrap(),
-      "{{y -> -1/6*Sqrt[45 - 20*x^2]}, {y -> Sqrt[45 - 20*x^2]/6}}"
+      "{{y -> -1/6*(Sqrt[5]*Sqrt[9 - 4*x^2])}, {y -> (Sqrt[5]*Sqrt[9 - 4*x^2])/6}}"
     );
     assert_eq!(
       interpret("Solve[Sqrt[x^2 + 1] + Sqrt[x^2 + 4] == 3, x]").unwrap(),
@@ -6621,7 +6646,7 @@ y^2]^3)) y}, {x, y}]; \
         "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]"
       )
       .unwrap(),
-      "{{x -> 2., y -> -0.7320508075688772}, {x -> 2., y -> 2.732050807568877}}"
+      "{{x -> 2., y -> -0.7320508075688773}, {x -> 2., y -> 2.732050807568877}}"
     );
   }
 
@@ -10338,7 +10363,7 @@ mod nsolve {
       )
       .unwrap(),
       "{{x -> 1.7055408794701485, y -> -0.8090169943749475}, \
-       {x -> -0.16669911088252198, y -> -0.8090169943749475}}"
+       {x -> -0.166699110882522, y -> -0.8090169943749475}}"
     );
   }
 
@@ -23052,10 +23077,64 @@ mod sum_with_symbolic_bounds_and_step {
   use super::*;
 
   #[test]
-  fn stepped_symbolic_bounds_are_not_an_error() {
+  fn stepped_symbolic_bounds_run_to_the_floor_of_the_trip_count() {
     assert_eq!(
       interpret("Sum[k^i, {i, 0, n, 2}]").unwrap(),
-      "Sum[k^i, {i, 0, n, 2}]"
+      "(-1 + k^(2 + 2*Floor[n/2]))/(-1 + k^2)"
+    );
+    assert_eq!(
+      interpret("Sum[i, {i, 0, n, 2}]").unwrap(),
+      "Floor[n/2]*(1 + Floor[n/2])"
+    );
+    assert_eq!(
+      interpret("Sum[i^2, {i, 1, n, 2}]").unwrap(),
+      "((1 + Floor[(-1 + n)/2])*(1 + 2*Floor[(-1 + n)/2])*(3 + 2*Floor[(-1 + n)/2]))/3"
+    );
+  }
+
+  #[test]
+  fn stepped_symbolic_bounds_are_not_an_error() {
+    assert_eq!(
+      interpret("Sum[f[i], {i, 1, n, 2}]").unwrap(),
+      "Sum[f[i], {i, 1, n, 2}]"
+    );
+  }
+
+  #[test]
+  fn geometric_sum_with_offset_exponent() {
+    assert_eq!(
+      interpret("Sum[k^(1 + 3 j), {j, 0, m}]").unwrap(),
+      "(k*(-1 + k^(3 + 3*m)))/(-1 + k^3)"
+    );
+    assert_eq!(
+      interpret("Sum[k^(3 j), {j, 0, Floor[m]}]").unwrap(),
+      "(-1 + k^(3 + 3*Floor[m]))/(-1 + k^3)"
+    );
+  }
+
+  #[test]
+  fn polynomial_sum_from_any_integer_lower_bound() {
+    assert_eq!(
+      interpret("Sum[j^2, {j, 0, m}]").unwrap(),
+      "(m*(1 + m)*(1 + 2*m))/6"
+    );
+    assert_eq!(
+      interpret("Sum[j + 1, {j, 0, m}]").unwrap(),
+      "((1 + m)*(2 + m))/2"
+    );
+    assert_eq!(
+      interpret("Sum[j^2 + j, {j, 1, m}]").unwrap(),
+      "(m*(1 + m)*(2 + m))/3"
+    );
+    assert_eq!(interpret("Sum[j + 1, {j, 1, m}]").unwrap(), "(3*m + m^2)/2");
+    assert_eq!(interpret("Sum[j, {j, 2, m}]").unwrap(), "(-2 + m + m^2)/2");
+    assert_eq!(
+      interpret("Sum[j, {j, -1, m}]").unwrap(),
+      "-1 + (m*(1 + m))/2"
+    );
+    assert_eq!(
+      interpret("Sum[j^2 + 1, {j, -2, m}]").unwrap(),
+      "7 + ((1 + m)*(6 + m + 2*m^2))/6"
     );
   }
 
@@ -23698,11 +23777,22 @@ mod reduce_vanishing_coefficient_branch {
     // must not re-solve through that value (it gave x == f[x] solutions).
     assert_eq!(
       interpret(
+        "Round[Sort[N[{x, y} /. Solve[{(1 - x) (x + y) - 4 x == 0, \
+         (1 - y) (x + y) - y == 0}, {x, y}]] 10^6]]"
+      )
+      .unwrap(),
+      "{{-4737034, 1434259}, {0, 0}, {70368, 232408}}"
+    );
+    // Reduce keeps y as a polynomial in x, which ToRules leaves alone.
+    assert_eq!(
+      interpret(
         "Round[Sort[N[{x, y} /. {ToRules[Reduce[{(1 - x) (x + y) - 4 x == 0, \
          (1 - y) (x + y) - y == 0}, {x, y}]]}] 10^6]]"
       )
       .unwrap(),
-      "{{-4737034, 1434259}, {0, 0}, {70368, 232408}}"
+      "{{-4737034, Round[250000.*x*(13. + 3.*x)]}, \
+       {0, Round[250000.*x*(13. + 3.*x)]}, \
+       {70368, Round[250000.*x*(13. + 3.*x)]}}"
     );
     assert_eq!(
       interpret(
@@ -24099,11 +24189,19 @@ mod solve_exponentials {
   fn two_exponentials() {
     assert_eq!(
       interpret("Solve[a b^t == c d^t, t]").unwrap(),
-      "{{t -> Log[c/a]/Log[b/d]}}"
+      "{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}"
     );
     assert_eq!(
       interpret("Solve[a b^t - c d^t == 0, t]").unwrap(),
-      "{{t -> Log[c/a]/Log[b/d]}}"
+      "{{t -> -(Log[a/c]/(Log[b] - Log[d]))}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 b^t == 3 d^t, t]").unwrap(),
+      "{{t -> Log[3/2]/(Log[b] - Log[d])}}"
+    );
+    assert_eq!(
+      interpret("Solve[b^t == c d^t, t]").unwrap(),
+      "{{t -> -(Log[c^(-1)]/(Log[b] - Log[d]))}}"
     );
     assert_eq!(
       interpret(
@@ -24132,7 +24230,26 @@ mod reduce_chained_equality {
   fn chain_of_three() {
     assert_eq!(
       interpret("Reduce[{3 - b - c == 6 b/5 == 2 c}]").unwrap(),
-      "b == 15/14 && c == 9/14"
+      "c == 9/14 && b == 15/14"
+    );
+  }
+
+  // Unnamed variables: conjuncts sharing variables group in order of first
+  // appearance, each group in reverse canonical order.
+  #[test]
+  fn default_variable_order() {
+    assert_eq!(interpret("Reduce[x + y == 1]").unwrap(), "x == 1 - y");
+    assert_eq!(
+      interpret("Reduce[{a + b == 2, a - b == 0, c == 1}]").unwrap(),
+      "b == 1 && a == 1 && c == 1"
+    );
+    assert_eq!(
+      interpret("Reduce[{z == 2, x + y == 1}]").unwrap(),
+      "z == 2 && x == 1 - y"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + y + z == 1, x - y == 0, z == 2 x}]").unwrap(),
+      "z == 1/2 && y == 1/4 && x == 1/4"
     );
   }
 }
@@ -25120,5 +25237,179 @@ mod find_root_block_semantics {
     .unwrap();
     assert!(r.result.starts_with("{k -> 6."), "{}", r.result);
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+}
+
+// The quadratic formula cancels a factor common to the numerator and 2a.
+mod solve_quadratic_common_factor {
+  use super::*;
+
+  #[test]
+  fn common_factor_cancels() {
+    assert_eq!(
+      interpret("Solve[x^2 - 2 a x - 3 b == 0, x]").unwrap(),
+      "{{x -> a - Sqrt[a^2 + 3*b]}, {x -> a + Sqrt[a^2 + 3*b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 + 4 a x + b == 0, x]").unwrap(),
+      "{{x -> -2*a - Sqrt[4*a^2 - b]}, {x -> -2*a + Sqrt[4*a^2 - b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[4 x^2 - 8 x + 1 == 0, x]").unwrap(),
+      "{{x -> (2 - Sqrt[3])/2}, {x -> (2 + Sqrt[3])/2}}"
+    );
+  }
+}
+
+// The integer content of a radicand comes out of the square root.
+mod solve_radicand_content {
+  use super::*;
+
+  #[test]
+  fn content_leaves_the_radical() {
+    assert_eq!(
+      interpret("Solve[y^2 == 45 - 20 x^2, y]").unwrap(),
+      "{{y -> -(Sqrt[5]*Sqrt[9 - 4*x^2])}, {y -> Sqrt[5]*Sqrt[9 - 4*x^2]}}"
+    );
+    assert_eq!(
+      interpret("Solve[x^2 == 6 a + 9 b, x]").unwrap(),
+      "{{x -> -(Sqrt[3]*Sqrt[2*a + 3*b])}, {x -> Sqrt[3]*Sqrt[2*a + 3*b]}}"
+    );
+    assert_eq!(
+      interpret("Solve[2 x^2 + 4 a x + b == 0, x]").unwrap(),
+      "{{x -> (-2*a - Sqrt[2]*Sqrt[2*a^2 - b])/2}, {x -> (-2*a + Sqrt[2]*Sqrt[2*a^2 - b])/2}}"
+    );
+  }
+}
+
+// Reduce of a two-variable polynomial system in shape position keeps the
+// second variable as a polynomial in the first; the roots are in canonical
+// order and a solved linear value is in its square-free factored form.
+mod reduce_shape_position_and_root_order {
+  use super::*;
+
+  #[test]
+  fn second_variable_as_polynomial_in_first() {
+    assert_eq!(
+      interpret(
+        "Reduce[{(1 - x) (x + y) - 4 x == 0, (1 - y) (x + y) - y == 0}, {x, y}]"
+      )
+      .unwrap(),
+      "(x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3) && \
+       y == (x*(13 + 3*x))/4"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 1, x == y}, {x, y}]").unwrap(),
+      "(x == -(1/Sqrt[2]) || x == 1/Sqrt[2]) && y == x"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 5, x y == 2}, {x, y}]").unwrap(),
+      "(x == -2 || x == -1 || x == 1 || x == 2) && y == (5*x - x^3)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y == 1, x^2 + 2 y == 3}, {x, y}]").unwrap(),
+      "(x == -I || x == I) && y == 2"
+    );
+    assert_eq!(
+      interpret("Reduce[{y^2 == x, x == 4}, {x, y}]").unwrap(),
+      "x == 4 && (y == -2 || y == 2)"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y^2 == 1, x == y}, {x, y}, Reals]").unwrap(),
+      "(x == -(1/Sqrt[2]) || x == 1/Sqrt[2]) && y == x"
+    );
+    assert_eq!(
+      interpret("Reduce[{x^2 + y == 1, x^2 + 2 y == 3}, {x, y}, Reals]")
+        .unwrap(),
+      "False"
+    );
+    // A product equation still splits into branches.
+    assert_eq!(
+      interpret("Reduce[{x y == 0, x + y == 1}, {x, y}]").unwrap(),
+      "(x == 0 && y == 1) || (x == 1 && y == 0)"
+    );
+    // Solve gives the values.
+    assert_eq!(
+      interpret("Solve[{x^2 + y^2 == 1, x == y}, {x, y}]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn to_rules_distributes_a_disjunction() {
+    assert_eq!(
+      interpret("{ToRules[(x == 0 || x == 1) && y == x^2 + 1]}").unwrap(),
+      "{{x -> 0, y -> 1 + x^2}, {x -> 1, y -> 1 + x^2}}"
+    );
+    assert_eq!(
+      interpret("{ToRules[x == 4 && (y == -2 || y == 2)]}").unwrap(),
+      "{{x -> 4, y -> -2}, {x -> 4, y -> 2}}"
+    );
+  }
+
+  #[test]
+  fn roots_in_canonical_order() {
+    assert_eq!(
+      interpret("Reduce[-x + 14 x^2 + 3 x^3 == 0, x]").unwrap(),
+      "x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3"
+    );
+    assert_eq!(
+      interpret("Reduce[1 - 3 x + x^2 == 0, x]").unwrap(),
+      "x == (3 - Sqrt[5])/2 || x == (3 + Sqrt[5])/2"
+    );
+    assert_eq!(
+      interpret("Reduce[(x^2 + 1) (x - 3) == 0, x]").unwrap(),
+      "x == -I || x == I || x == 3"
+    );
+    assert_eq!(
+      interpret("Reduce[(x^2 - 2) (x - 5) == 0, x]").unwrap(),
+      "x == 5 || x == -Sqrt[2] || x == Sqrt[2]"
+    );
+    assert_eq!(
+      interpret("Reduce[-x + x^4 == 0, x]").unwrap(),
+      "x == 0 || x == 1 || x == -(-1)^(1/3) || x == (-1)^(2/3)"
+    );
+  }
+
+  #[test]
+  fn linear_value_square_free_form() {
+    assert_eq!(
+      interpret("Reduce[2 y == x^2 + x, y]").unwrap(),
+      "y == (x*(1 + x))/2"
+    );
+    assert_eq!(
+      interpret("Reduce[y == x^2 - x, y]").unwrap(),
+      "y == (-1 + x)*x"
+    );
+    assert_eq!(
+      interpret("Reduce[2 y == x^2 - 1, y]").unwrap(),
+      "y == (-1 + x^2)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[3 y == x^2 + 2 x + 1, y]").unwrap(),
+      "y == (1 + x)^2/3"
+    );
+    assert_eq!(
+      interpret("Reduce[2 y == 5 x - x^3, y]").unwrap(),
+      "y == (5*x - x^3)/2"
+    );
+    assert_eq!(
+      interpret("Reduce[y + x^2 + x == 0, y]").unwrap(),
+      "y == -x - x^2"
+    );
+    // A symbolic denominator must not vanish.
+    assert_eq!(
+      interpret("Reduce[2 y == a/b + 1, y]").unwrap(),
+      "b != 0 && y == (a + b)/(2*b)"
+    );
+    assert_eq!(
+      interpret("Reduce[y == 1/x + 1/(x+1), y]").unwrap(),
+      "x*(1 + x) != 0 && y == (1 + 2*x)/(x*(1 + x))"
+    );
+    // Not linear: the radical is no coefficient.
+    assert_eq!(
+      interpret("Reduce[-4 + Sqrt[x] + x == 0, x]").unwrap(),
+      "x == (9 - Sqrt[17])/2"
+    );
   }
 }

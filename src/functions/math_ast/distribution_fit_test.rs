@@ -934,6 +934,13 @@ pub fn named_fit_test_ast(
   if !(2..=3).contains(&args.len()) || !TEST_NAMES.contains(&test) {
     return Ok(unevaluated(head, all_args));
   }
+  // Two samples: the two-sample Kolmogorov–Smirnov test.
+  if head == "KolmogorovSmirnovTest"
+    && matches!(&args[1], Expr::List(_))
+    && let Some(result) = two_sample_kolmogorov_smirnov(args)
+  {
+    return Ok(result);
+  }
   let property = match args.get(2) {
     None => str_expr("PValue"),
     Some(Expr::String(p)) => str_expr(p),
@@ -948,5 +955,129 @@ pub fn named_fit_test_ast(
       unevaluated(head, all_args)
     }
     _ => result,
+  })
+}
+
+/// `KolmogorovSmirnovTest[data1, data2(, property)]` for two samples of
+/// numbers: the statistic `D = sup |F1 - F2|` of the two empirical
+/// distribution functions and its exact permutation p-value
+/// `P(D >= d)`. The null distribution counts the lattice paths through the
+/// pooled sample that keep `|i/n - j/m| < d` at the end of every block of
+/// tied values, as wolframscript does (`{1, 2, 3}` against `{2, 3, 4}`
+/// gives 1.). The properties "PValue" (default) and "TestStatistic", or a
+/// list of them, are answered; anything else is left to the caller.
+fn two_sample_kolmogorov_smirnov(args: &[Expr]) -> Option<Expr> {
+  use num_bigint::BigUint;
+  use num_traits::{ToPrimitive, Zero};
+  let sample = |e: &Expr| -> Option<Vec<f64>> {
+    let Expr::List(items) = e else { return None };
+    let v: Vec<f64> =
+      items.iter().map(try_eval_to_f64).collect::<Option<_>>()?;
+    (!v.is_empty() && v.iter().all(|x| x.is_finite())).then_some(v)
+  };
+  let (mut x, mut y) = (sample(&args[0])?, sample(&args[1])?);
+  let names: Vec<String> = match args.get(2) {
+    None => vec!["PValue".to_string()],
+    Some(Expr::String(p)) => vec![p.clone()],
+    Some(Expr::List(items)) => items
+      .iter()
+      .map(|i| match i {
+        Expr::String(p) => Some(p.clone()),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    Some(_) => return None,
+  };
+  if names.iter().any(|n| n != "PValue" && n != "TestStatistic") {
+    return None;
+  }
+  x.sort_by(f64::total_cmp);
+  y.sort_by(f64::total_cmp);
+  let (n, m) = (x.len(), y.len());
+  // D over the distinct pooled values, as the integer i m - j n against
+  // the common denominator n m.
+  let mut pooled: Vec<f64> = x.iter().chain(&y).copied().collect();
+  pooled.sort_by(f64::total_cmp);
+  let (mut i, mut j) = (0usize, 0usize);
+  let mut d_num: i128 = 0;
+  let mut d_float: f64 = 0.0;
+  for (k, v) in pooled.iter().enumerate() {
+    if k + 1 < pooled.len() && pooled[k + 1] == *v {
+      continue;
+    }
+    while i < n && x[i] <= *v {
+      i += 1;
+    }
+    while j < m && y[j] <= *v {
+      j += 1;
+    }
+    d_num = d_num.max((i as i128 * m as i128 - j as i128 * n as i128).abs());
+    // Each step of an empirical distribution function is 1/n.
+    d_float = d_float
+      .max((i as f64 * (1.0 / n as f64) - j as f64 * (1.0 / m as f64)).abs());
+  }
+  // The ends of the blocks of tied values in the pooled order.
+  let mut block_end = vec![false; n + m + 1];
+  for k in 1..=n + m {
+    block_end[k] = k == n + m || pooled[k] != pooled[k - 1];
+  }
+  let mut paths = vec![vec![BigUint::zero(); m + 1]; n + 1];
+  for a in 0..=n {
+    for b in 0..=m {
+      if a == 0 && b == 0 {
+        paths[a][b] = BigUint::from(1u8);
+        continue;
+      }
+      if block_end[a + b]
+        && (a as i128 * m as i128 - b as i128 * n as i128).abs() >= d_num
+      {
+        continue;
+      }
+      let mut count = BigUint::zero();
+      if a > 0 {
+        count += &paths[a - 1][b];
+      }
+      if b > 0 {
+        count += &paths[a][b - 1];
+      }
+      paths[a][b] = count;
+    }
+  }
+  // C(n + m, n) paths in all.
+  let mut total = BigUint::from(1u8);
+  for k in 0..n {
+    total = total * BigUint::from(m + 1 + k) / BigUint::from(k + 1);
+  }
+  let exceed = &total - &paths[n][m];
+  // exceed / total as a double, from a 128-bit quotient.
+  let p_value = if exceed.is_zero() {
+    0.0
+  } else {
+    let k = 128 + total.bits() as usize - exceed.bits() as usize;
+    let q = (&exceed << k) / &total;
+    q.to_f64()? * 2f64.powi(-(k as i32))
+  };
+  let exact = [&args[0], &args[1]].iter().all(|e| match e {
+    Expr::List(items) => items.iter().all(|v| {
+      matches!(v, Expr::Integer(_) | Expr::BigInteger(_))
+        || matches!(v, Expr::FunctionCall { name, .. } if name == "Rational")
+    }),
+    _ => false,
+  });
+  let statistic = if exact {
+    crate::functions::math_ast::make_rational(d_num, n as i128 * m as i128)
+  } else {
+    Expr::Real(d_float)
+  };
+  let value = |name: &str| {
+    if name == "PValue" {
+      Expr::Real(p_value)
+    } else {
+      statistic.clone()
+    }
+  };
+  Some(match args.get(2) {
+    Some(Expr::List(_)) => Expr::List(names.iter().map(|n| value(n)).collect()),
+    _ => value(&names[0]),
   })
 }

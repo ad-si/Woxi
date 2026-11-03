@@ -1886,8 +1886,15 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn rule_plot() {
-    // RulePlot now returns a Graphics placeholder.
-    assert_eq!(interpret("RulePlot[x]").unwrap(), "-Graphics-");
+    // Only a system (CellularAutomaton[…], SubstitutionSystem[…], …) is
+    // plotted; anything else stays unevaluated.
+    assert_eq!(interpret("RulePlot[x]").unwrap(), "RulePlot[x]");
+    assert_eq!(interpret("RulePlot[30]").unwrap(), "RulePlot[30]");
+    assert_eq!(
+      interpret("Head[RulePlot[SubstitutionSystem[{\"A\" -> \"AB\"}]]]")
+        .unwrap(),
+      "Graphics"
+    );
   }
   #[test]
   fn mathieu_group_m11() {
@@ -6974,7 +6981,7 @@ mod batch_unevaluated_wrappers_2 {
     );
     assert_eq!(interpret("PermutationSupport[{2, 1}]").unwrap(), "{1, 2}");
     assert_eq!(
-      interpret("PermutationMatrix[{2, 1}]").unwrap(),
+      interpret("Normal[PermutationMatrix[{2, 1}]]").unwrap(),
       "{{0, 1}, {1, 0}}"
     );
     assert_eq!(interpret("PermutationOrder[{}]").unwrap(), "1");
@@ -9113,7 +9120,7 @@ mod batch_unevaluated_wrappers_2 {
     // {2, 1, 4} is not a permutation of {1, 2, 3}.
     assert_eq!(
       interpret("PermutationProduct[{2, 1, 4}, {1, 3, 2}]").unwrap(),
-      "PermutationProduct[{2, 1, 4}, {1, 3, 2}]"
+      "{2, 1, 4} \u{F3DE} {1, 3, 2}"
     );
   }
 

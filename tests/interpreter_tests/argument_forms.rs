@@ -181,6 +181,86 @@ mod matrix_power_vector {
       interpret("MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]").unwrap(),
       "MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]"
     );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1}, {0, 1}}, n, {1, 2}]").unwrap(),
+      "{1 + 2*n, 2}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {0, 2}}, n, {x, y}]").unwrap(),
+      "{2^n*x + 2^(-1 + n)*n*y, 2^n*y}"
+    );
+  }
+}
+
+mod matrix_power_symbolic_exponent {
+  use super::*;
+
+  #[test]
+  fn jordan_blocks() {
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1}, {0, 1}}, n]").unwrap(),
+      "{{1, n}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {0, 2}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n}, {0, 2^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 1, 0}, {0, 1, 1}, {0, 0, 1}}, n]").unwrap(),
+      "{{1, n, ((-1 + n)*n)/2}, {0, 1, n}, {0, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1, 0}, {0, 2, 1}, {0, 0, 2}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n, 2^(-3 + n)*(-1 + n)*n}, {0, 2^n, 2^(-1 + n)*n}, \
+       {0, 0, 2^n}}"
+    );
+  }
+
+  #[test]
+  fn defective_entries_are_factored() {
+    assert_eq!(
+      interpret("MatrixPower[{{3, 1}, {-1, 1}}, n]").unwrap(),
+      "{{2^(-1 + n)*(2 + n), 2^(-1 + n)*n}, {-(2^(-1 + n)*n), \
+       -(2^(-1 + n)*(-2 + n))}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1, 1}, {0, 2, 1}, {0, 0, 3}}, n]").unwrap(),
+      "{{2^n, 2^(-1 + n)*n, (-2^(2 + n) + 4*3^n - 2^n*n)/2}, \
+       {0, 2^n, -2^n + 3^n}, {0, 0, 3^n}}"
+    );
+  }
+
+  #[test]
+  fn diagonalizable_rational_eigenvalues() {
+    assert_eq!(
+      interpret("MatrixPower[{{2, 1}, {1, 2}}, n]").unwrap(),
+      "{{1/2 + 3^n/2, -1/2 + 3^n/2}, {-1/2 + 3^n/2, 1/2 + 3^n/2}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1, 2, 3}, {0, 4, 5}, {0, 0, 6}}, n]").unwrap(),
+      "{{1, -2/3 + 2^(1 + 2*n)/3, 1/15 - (5*2^(2*n))/3 + (2^(3 + n)*3^n)/5}, \
+       {0, 4^n, -5*2^(-1 + 2*n) + 5*2^(-1 + n)*3^n}, {0, 0, 6^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{1/3, 1}, {0, 2/3}}, n]").unwrap(),
+      "{{3^(-n), -3^(1 - n) + 2^n*3^(1 - n)}, {0, (2/3)^n}}"
+    );
+  }
+
+  #[test]
+  fn symbolic_upper_triangular() {
+    assert_eq!(
+      interpret("MatrixPower[{{a, b}, {0, d}}, n]").unwrap(),
+      "{{a^n, (a^n*b)/(a - d) - (b*d^n)/(a - d)}, {0, d^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{a, 1}, {0, a}}, n]").unwrap(),
+      "{{a^n, a^(-1 + n)*n}, {0, a^n}}"
+    );
+    assert_eq!(
+      interpret("MatrixPower[{{k, 1}, {0, k}}, n]").unwrap(),
+      "{{k^n, k^(-1 + n)*n}, {0, k^n}}"
+    );
   }
 }
 
@@ -347,11 +427,23 @@ mod random_color_templates {
          Flatten[c[[All, 2 ;; 3]] /. RGBColor -> List]]}"
       )
       .unwrap(),
-      "{4, {1}, True}"
+      "{4, {1.}, True}"
     );
     assert_eq!(
       interpret("Dimensions[RandomColor[Hue[_, 1, 1], {2, 3}]]").unwrap(),
       "{2, 3}"
+    );
+  }
+
+  #[test]
+  fn fixed_components_are_machine_numbers() {
+    assert_eq!(
+      interpret("RandomColor[Hue[1/2, _, 1]][[{1, 3}]]").unwrap(),
+      "Hue[0.5, 1.]"
+    );
+    assert_eq!(
+      interpret("RandomColor[RGBColor[x, _, _]]").unwrap(),
+      "RandomColor[RGBColor[x, _, _]]"
     );
   }
 }
@@ -409,7 +501,15 @@ mod dsolve_one_argument {
     );
     assert_eq!(
       interpret("DSolveValue[y''[x] + y[x] == 0]").unwrap(),
-      "C[1]*Cos[x] + C[2]*Sin[x]"
+      "DSolveValue[y[x] + Derivative[2][y][x] == 0]"
+    );
+  }
+
+  #[test]
+  fn dsolve_value_needs_three_arguments() {
+    assert_eq!(
+      interpret("DSolveValue[y'[x] == y[x], y]").unwrap(),
+      "DSolveValue[Derivative[1][y][x] == y[x], y]"
     );
   }
 }
@@ -442,10 +542,34 @@ mod date_plus_one_argument {
   use super::*;
 
   #[test]
-  fn days_after_today() {
+  fn days_after_now_as_a_date_list() {
     assert_eq!(
-      interpret("DatePlus[3] == DatePlus[Today, 3]").unwrap(),
+      interpret(
+        "Take[DatePlus[3], 3] == Take[DateList[DatePlus[Today, 3]], 3]"
+      )
+      .unwrap(),
       "True"
+    );
+    assert_eq!(interpret("Length[DatePlus[3]]").unwrap(), "6");
+  }
+
+  #[test]
+  fn a_duration_after_now_is_an_instant() {
+    assert_eq!(
+      interpret("DatePlus[{3, \"Week\"}][\"Granularity\"]").unwrap(),
+      "Instant"
+    );
+  }
+
+  #[test]
+  fn an_instant_moves_through_the_time_of_day() {
+    assert_eq!(
+      interpret(
+        "DatePlus[DateObject[{2026, 11, 2, 19, 37, 14.5}, \"Instant\", \
+         \"Gregorian\", 0.], {3, \"Hour\"}]"
+      )
+      .unwrap(),
+      "DateObject[{2026, 11, 2, 22, 37, 14.5}, Instant, Gregorian, 0.]"
     );
   }
 }
@@ -458,7 +582,46 @@ mod nielsen_polylog {
     assert_eq!(interpret("PolyLog[n, 1, z]").unwrap(), "PolyLog[1 + n, z]");
     assert_eq!(interpret("PolyLog[2, 1, z]").unwrap(), "PolyLog[3, z]");
     assert_eq!(interpret("PolyLog[0, 2, z]").unwrap(), "Log[1 - z]^2/2");
-    assert_eq!(interpret("PolyLog[1, 3, z]").unwrap(), "PolyLog[1, 3, z]");
+    assert_eq!(
+      interpret("PolyLog[1, 3, z]").unwrap(),
+      "Pi^4/90 - (Log[1 - z]^3*Log[z])/6 - (Log[1 - z]^2*PolyLog[2, 1 - z])/2 \
+       + Log[1 - z]*PolyLog[3, 1 - z] - PolyLog[4, 1 - z]"
+    );
+  }
+
+  #[test]
+  fn n_one_in_terms_of_polylogs_of_one_minus_z() {
+    assert_eq!(
+      interpret("PolyLog[1, 2, z]").unwrap(),
+      "(Log[1 - z]^2*Log[z])/2 + Log[1 - z]*PolyLog[2, 1 - z] - \
+       PolyLog[3, 1 - z] + Zeta[3]"
+    );
+    assert_eq!(interpret("PolyLog[1, 2, 1]").unwrap(), "Zeta[3]");
+    assert_eq!(interpret("PolyLog[2, 2, 0]").unwrap(), "0");
+  }
+
+  #[test]
+  fn n_zero_with_a_symbolic_p() {
+    assert_eq!(
+      interpret("PolyLog[0, p, z]").unwrap(),
+      "(-Log[1 - z])^p/Gamma[1 + p]"
+    );
+  }
+
+  #[test]
+  fn negative_n_by_differentiation() {
+    assert_eq!(
+      interpret("PolyLog[-1, 2, z]").unwrap(),
+      "-((z*Log[1 - z])/(1 - z))"
+    );
+    assert_eq!(
+      interpret("PolyLog[-1, 3, z]").unwrap(),
+      "(z*Log[1 - z]^2)/(2*(1 - z))"
+    );
+    assert_eq!(
+      interpret("PolyLog[-2, 2, z]").unwrap(),
+      "z^2/(1 - z)^2 - (z*Log[1 - z])/(1 - z) - (z^2*Log[1 - z])/(1 - z)^2"
+    );
   }
 
   #[test]
@@ -525,7 +688,30 @@ mod multivariate_step_functions {
     assert_eq!(interpret("UnitBox[0, 1/4]").unwrap(), "1");
     assert_eq!(interpret("UnitTriangle[1/2, 1/4]").unwrap(), "3/8");
     assert_eq!(interpret("HeavisideLambda[0, 1/2]").unwrap(), "1/2");
-    assert_eq!(interpret("UnitBox[x, 0]").unwrap(), "UnitBox[x, 0]");
+    assert_eq!(interpret("UnitBox[x, 0]").unwrap(), "UnitBox[x]");
+  }
+
+  #[test]
+  fn numeric_arguments_split_off_as_factors() {
+    assert_eq!(interpret("UnitBox[x, 1]").unwrap(), "0");
+    assert_eq!(interpret("UnitBox[x, y, 0]").unwrap(), "UnitBox[x, y]");
+    assert_eq!(interpret("UnitBox[x, y]").unwrap(), "UnitBox[x, y]");
+    assert_eq!(
+      interpret("UnitTriangle[x, 1/2]").unwrap(),
+      "UnitTriangle[x]/2"
+    );
+    assert_eq!(
+      interpret("HeavisidePi[x, 1/2]").unwrap(),
+      "HeavisidePi[1/2]*HeavisidePi[x]"
+    );
+    assert_eq!(
+      interpret("HeavisideLambda[x, 1/2]").unwrap(),
+      "HeavisideLambda[x]/2"
+    );
+    assert_eq!(
+      interpret("UnitBox[x, 2 + I]").unwrap(),
+      "UnitBox[2 + I]*UnitBox[x]"
+    );
   }
 
   #[test]
@@ -548,15 +734,48 @@ mod divisor_sigma_general_order {
   fn symbolic_and_rational_orders() {
     assert_eq!(
       interpret("DivisorSigma[k, 30]").unwrap(),
-      "1 + 2^k + 3^k + 5^k + 6^k + 10^k + 15^k + 30^k"
+      "((-1 + 2^(2*k))*(-1 + 3^(2*k))*(-1 + 5^(2*k)))/((-1 + 2^k)*(-1 + 3^k)*(-1 + 5^k))"
     );
     assert_eq!(
       interpret("DivisorSigma[1/2, 12]").unwrap(),
-      "3 + Sqrt[2] + 3*Sqrt[3] + Sqrt[6]"
+      "(2*(-1 + 2*Sqrt[2]))/((-1 + Sqrt[2])*(-1 + Sqrt[3]))"
     );
     assert_eq!(
       interpret("DivisorSigma[k, n]").unwrap(),
       "DivisorSigma[k, n]"
+    );
+  }
+
+  #[test]
+  fn multiplicative_formula_over_prime_powers() {
+    assert_eq!(interpret("DivisorSigma[k, 1]").unwrap(), "1");
+    assert_eq!(
+      interpret("DivisorSigma[k, 8]").unwrap(),
+      "(-1 + 2^(4*k))/(-1 + 2^k)"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[k, -6]").unwrap(),
+      "((-1 + 2^(2*k))*(-1 + 3^(2*k)))/((-1 + 2^k)*(-1 + 3^k))"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[-1/2, 6]").unwrap(),
+      "1/(3*(-1 + 1/Sqrt[2])*(-1 + 1/Sqrt[3]))"
+    );
+  }
+
+  #[test]
+  fn machine_real_order() {
+    assert_eq!(
+      interpret("DivisorSigma[0.5, 12]").unwrap(),
+      "12.059855727862907"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[2.5, 8]").unwrap(),
+      "219.67619023324863"
+    );
+    assert_eq!(
+      interpret("DivisorSigma[0.5, 30]").unwrap(),
+      "21.344308671652403"
     );
   }
 }
@@ -628,10 +847,20 @@ mod inverse_erf_two_arguments {
   #[test]
   fn generalized_inverse() {
     assert_eq!(
-      interpret("InverseErf[0.4, 0.2] - InverseErf[0.2 + Erf[0.4]]").unwrap(),
-      "0."
+      interpret(
+        "Abs[InverseErf[0.4, 0.2] - InverseErf[0.2 + Erf[0.4]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
     );
-    assert_eq!(interpret("InverseErf[a, Erf[a, z]]").unwrap(), "z");
+    assert_eq!(
+      interpret("InverseErf[a, Erf[a, z]]").unwrap(),
+      "InverseErf[a, Erf[a, z]]"
+    );
+    assert_eq!(
+      interpret("InverseErf[0, Erf[0, z]]").unwrap(),
+      "InverseErf[Erf[z]]"
+    );
     assert_eq!(interpret("InverseErf[0, s]").unwrap(), "InverseErf[s]");
   }
 }
@@ -667,13 +896,24 @@ mod parent_directory_levels {
 
   #[test]
   fn several_levels_up() {
+    assert_eq!(interpret("ParentDirectory[\"/usr/bin\", 2]").unwrap(), "/");
+    assert_eq!(interpret("ParentDirectory[\"/usr/bin\", 5]").unwrap(), "/");
+    // A File gives the parent as a string.
+    assert_eq!(
+      interpret("ParentDirectory[File[\"/usr/bin\"]]").unwrap(),
+      "/usr"
+    );
+  }
+
+  #[test]
+  fn the_directory_must_exist() {
     assert_eq!(
       interpret("ParentDirectory[\"/a/b/c/d\", 2]").unwrap(),
-      "/a/b"
+      "ParentDirectory[/a/b/c/d, 2]"
     );
     assert_eq!(
-      interpret("ParentDirectory[File[\"/a/b/c\"], 2]").unwrap(),
-      "File[/a]"
+      interpret("ParentDirectory[\"/usr/bin\", 0]").unwrap(),
+      "ParentDirectory[/usr/bin, 0]"
     );
   }
 }
@@ -709,24 +949,80 @@ mod uncompress_wrapper {
   }
 }
 
-mod group_support_and_orbits {
+mod group_orbits_without_domain {
   use super::*;
 
   #[test]
-  fn support_of_the_generators() {
+  fn group_support_is_not_a_system_function() {
     assert_eq!(
       interpret(
         "GroupSupport[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
       )
       .unwrap(),
-      "{1, 2, 3, 4, 7}"
+      "GroupSupport[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
     );
+  }
+
+  #[test]
+  fn fixed_points_up_to_the_largest_moved_point() {
     assert_eq!(
       interpret(
         "GroupOrbits[PermutationGroup[{Cycles[{{1, 4}}], Cycles[{{2, 3, 7}}]}]]"
       )
       .unwrap(),
-      "{{1, 4}, {2, 3, 7}}"
+      "{{1, 4}, {2, 3, 7}, {5}, {6}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[PermutationGroup[{Cycles[{{2, 4}}]}]]").unwrap(),
+      "{{1}, {2, 4}, {3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[SymmetricGroup[3]]").unwrap(),
+      "{{1, 2, 3}}"
+    );
+    assert_eq!(
+      interpret("GroupOrbits[PermutationGroup[{}]]").unwrap(),
+      "{}"
+    );
+  }
+}
+
+mod times_absorbs_into_rational_bases {
+  use super::*;
+
+  #[test]
+  fn shared_primes_split_the_base() {
+    assert_eq!(interpret("3*(2/3)^n").unwrap(), "2^n*3^(1 - n)");
+    assert_eq!(interpret("2*(2/3)^n").unwrap(), "2^(1 + n)/3^n");
+    assert_eq!(interpret("(3/2)^n*2").unwrap(), "2^(1 - n)*3^n");
+    assert_eq!(interpret("(4/9)^n*3").unwrap(), "3^(1 - 2*n)*4^n");
+    assert_eq!(interpret("5*(2/3)^n").unwrap(), "5*(2/3)^n");
+  }
+}
+
+mod call_patterns_match_operator_nodes {
+  use super::*;
+
+  #[test]
+  fn power_and_plus_under_condition_and_hold() {
+    assert_eq!(
+      interpret("MatchQ[2^n, Power[b_, x_] /; !FreeQ[x, n]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[a + b], Hold[Plus[x_, y_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Hold[a^b], Hold[Power[x_, y_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[2^n + 2^(n - 1) n, Power[b_, x_] /; !FreeQ[x, n], {0, Infinity}]"
+      )
+      .unwrap(),
+      "{2^n, 2^(-1 + n)}"
     );
   }
 }

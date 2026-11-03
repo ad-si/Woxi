@@ -448,7 +448,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Downsample" => Some((2, 3)),
     "Drop" => Some((1, 3)),
     "DSolve" => Some((1, usize::MAX)),
-    "DSolveValue" => Some((1, usize::MAX)),
+    "DSolveValue" => Some((3, usize::MAX)),
     // Dt[f], Dt[f, x], Dt[f, {x, n}] and the multiple total derivative
     // Dt[f, x1, x2, …] — any number of differentiation specs is allowed.
     "Dt" => Some((1, usize::MAX)),
@@ -666,7 +666,6 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "GroupBy" => Some((1, 3)),
     "GroupElements" => Some((1, 2)),
     "GroupOrbits" => Some((1, 2)),
-    "GroupSupport" => Some((1, 1)),
     "GroupElementQ" => Some((2, 2)),
     "GroupElementPosition" => Some((2, 2)),
     "GroupMultiplicationTable" => Some((1, 1)),

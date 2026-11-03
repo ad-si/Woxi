@@ -116,20 +116,33 @@ pub fn dispatch_complex_and_special(
       });
     }
     // UnitBox[x1, x2, …] (likewise UnitTriangle, HeavisidePi and
-    // HeavisideLambda) is the product of the one-variable functions; it
-    // evaluates once every factor is a number.
+    // HeavisideLambda) is the product of the one-variable functions. Every
+    // numeric argument is split off as its own one-variable factor
+    // (`UnitTriangle[x, 1/2]` is `UnitTriangle[x]/2`, `HeavisidePi[x, 1/2]`
+    // is `HeavisidePi[1/2] HeavisidePi[x]`); the symbolic arguments stay
+    // together in one call.
     "UnitBox" | "UnitTriangle" | "HeavisidePi" | "HeavisideLambda"
       if args.len() > 1 =>
     {
-      let mut factors = Vec::with_capacity(args.len());
-      for x in args {
+      let (numeric, symbolic): (Vec<&Expr>, Vec<&Expr>) = args
+        .iter()
+        .partition(|x| crate::functions::predicate_ast::is_numeric_q(x));
+      if numeric.is_empty() {
+        return Some(Ok(unevaluated(name, args)));
+      }
+      let mut factors = Vec::with_capacity(numeric.len() + 1);
+      for x in numeric {
         match crate::evaluator::evaluate_function_call_ast(
           name,
           std::slice::from_ref(x),
         ) {
-          Ok(Expr::FunctionCall { name: ref h, .. }) if h == name => {
-            return Some(Ok(unevaluated(name, args)));
-          }
+          Ok(v) => factors.push(v),
+          Err(e) => return Some(Err(e)),
+        }
+      }
+      if !symbolic.is_empty() {
+        let rest: Vec<Expr> = symbolic.into_iter().cloned().collect();
+        match crate::evaluator::evaluate_function_call_ast(name, &rest) {
           Ok(v) => factors.push(v),
           Err(e) => return Some(Err(e)),
         }
@@ -1561,25 +1574,48 @@ pub fn dispatch_complex_and_special(
           .unwrap_or_else(|| unevaluated(name, args)),
       ));
     }
-    // Area[…, opts] and Volume[…, opts]: the goals and precision options
-    // (AccuracyGoal, PrecisionGoal, WorkingPrecision, PerformanceGoal,
-    // Assumptions) steer only how a numerical answer is found, so an exact
-    // measure is the same with or without them.
+    // Area[…, opts] and Volume[…, opts]: AccuracyGoal, PerformanceGoal and
+    // Assumptions leave an exact measure exact. A PrecisionGoal (an integer)
+    // asks for the measure to that many digits, and so does a
+    // WorkingPrecision when there is no PrecisionGoal (`Volume[Ball[],
+    // PrecisionGoal -> 5]` is `4.18879…`5.`, MachinePrecision gives a machine
+    // number). Any other PrecisionGoal leaves the call unevaluated.
     "Area" | "Volume"
       if args.len() > 1
         && matches!(args.last(), Some(Expr::Rule { pattern, .. })
           if matches!(pattern.as_ref(), Expr::Identifier(_))) =>
     {
-      let (positional, _) = super::split_trailing_options(args);
+      let (positional, opts) = super::split_trailing_options(args);
       if positional.is_empty() {
         return Some(Ok(unevaluated(name, args)));
       }
+      let option =
+        |key: &str| opts.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+      let is_default = |v: &Expr| matches!(v, Expr::Identifier(n) if n == "Automatic" || n == "Infinity");
+      let digits = match (option("PrecisionGoal"), option("WorkingPrecision")) {
+        (Some(goal @ Expr::Integer(_)), _) => Some(goal),
+        (Some(goal), _) if !is_default(&goal) => {
+          return Some(Ok(unevaluated(name, args)));
+        }
+        (_, Some(p @ (Expr::Integer(_) | Expr::Real(_)))) => Some(p),
+        (_, Some(m @ Expr::Identifier(_))) if matches!(&m, Expr::Identifier(n) if n == "MachinePrecision") => {
+          Some(m)
+        }
+        _ => None,
+      };
       let result =
         crate::evaluator::evaluate_function_call_ast(name, positional);
       return Some(match result {
         Ok(Expr::FunctionCall { name: ref head, .. }) if head == name => {
           Ok(unevaluated(name, args))
         }
+        Ok(measure) => match digits {
+          Some(Expr::Identifier(_)) => {
+            evaluate_expr_to_expr(&call1("N", measure))
+          }
+          Some(p) => evaluate_expr_to_expr(&call("N", vec![measure, p])),
+          None => Ok(measure),
+        },
         other => other,
       });
     }
@@ -3860,6 +3896,13 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
 }
 
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
+  // A number format around a `Style` typesets as the style around the
+  // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
+  if let Some(styled) =
+    crate::functions::graphics::hoist_style_out_of_number_form(expr)
+  {
+    return expr_to_box_form(&styled);
+  }
   // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
   // delivered as `Expr::Postfix { expr, func }` rather than being
   // normalised to `FunctionCall { name: f, args: [expr] }`. The
@@ -4383,6 +4426,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       if args.len() > 1 {
         let mut items = vec![inner];
         items.extend(args[1..].iter().cloned());
+        // The style survives being read back in, as wolframscript marks it:
+        // `ToBoxes[Style[x, Red]]` is `StyleBox["x", RGBColor[1, 0, 0],
+        // StripOnInput -> False]`.
+        if !items[1..].iter().any(is_strip_on_input_rule) {
+          items.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
+        }
         call("StyleBox", items)
       } else {
         inner
@@ -4988,6 +5037,19 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
       call(name, args)
     }
     _ => boxes.clone(),
+  }
+}
+
+/// `StripOnInput -> …`, as a rule node or a `Rule[…]` call.
+fn is_strip_on_input_rule(e: &Expr) -> bool {
+  match e {
+    Expr::Rule { pattern, .. } => {
+      matches!(pattern.as_ref(), Expr::Identifier(n) if n == "StripOnInput")
+    }
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      matches!(&args[0], Expr::Identifier(n) if n == "StripOnInput")
+    }
+    _ => false,
   }
 }
 
@@ -5742,28 +5804,40 @@ fn tf_comparison_glyph(head: &str) -> Option<&'static str> {
   })
 }
 
-/// `a ∧ b ∧ …` / `a ∨ b ∨ …`. `And` binds tighter than `Or`, so an `Or`
-/// operand of an `And` is parenthesized (`(x ≤ -1 ∨ x ≥ 2) ∧ x ≥ -4`).
-fn tf_logic(is_and: bool, operands: &[Expr]) -> Expr {
-  let is_or = |e: &Expr| {
-    matches!(
-      e,
+/// `a ∧ b ∧ …`, `a ∨ b ∨ …` and `a ⊻ b ⊻ …`. Any operand that is itself a
+/// different one of these is parenthesized, whichever binds tighter
+/// (`(x ≤ -1 ∨ x ≥ 2) ∧ x ≥ -4`, `a < b ∨ (c < d ∧ e < f)`), as wolframscript
+/// typesets them.
+fn tf_logic(head: &str, operands: &[Expr]) -> Expr {
+  let logic_head = |e: &Expr| -> Option<&'static str> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        ..
+      } => Some("And"),
       Expr::BinaryOp {
         op: BinaryOperator::Or,
         ..
+      } => Some("Or"),
+      Expr::FunctionCall { name, args } if args.len() > 1 => {
+        ["And", "Or", "Xor"].into_iter().find(|h| h == name)
       }
-    ) || matches!(e, Expr::FunctionCall { name, args } if name == "Or" && args.len() > 1)
+      _ => None,
+    }
   };
-  let glyph = if is_and { "\u{2227}" } else { "\u{2228}" };
+  let glyph = match head {
+    "And" => "\u{2227}",
+    "Or" => "\u{2228}",
+    _ => "\u{22BB}",
+  };
   let mut parts = Vec::new();
   for (i, operand) in operands.iter().enumerate() {
     if i > 0 {
       parts.push(tf_string(glyph));
     }
-    parts.push(if is_and && is_or(operand) {
-      tf_parens(tf(operand))
-    } else {
-      tf(operand)
+    parts.push(match logic_head(operand) {
+      Some(inner) if inner != head => tf_parens(tf(operand)),
+      _ => tf(operand),
     });
   }
   tf_row(parts)
@@ -5771,7 +5845,7 @@ fn tf_logic(is_and: bool, operands: &[Expr]) -> Expr {
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
-    "And" | "Or" if args.len() > 1 => tf_logic(name == "And", args),
+    "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
       if args.len() >= 5
@@ -6295,7 +6369,14 @@ fn tf(expr: &Expr) -> Expr {
     Expr::BinaryOp {
       op: op @ (BinaryOperator::And | BinaryOperator::Or),
       ..
-    } => tf_logic(matches!(op, BinaryOperator::And), &flatten_binop(expr, *op)),
+    } => tf_logic(
+      if matches!(op, BinaryOperator::And) {
+        "And"
+      } else {
+        "Or"
+      },
+      &flatten_binop(expr, *op),
+    ),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,

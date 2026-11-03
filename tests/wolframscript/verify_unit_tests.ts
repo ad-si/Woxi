@@ -15,6 +15,7 @@ import {
 } from "fs";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname } from "path";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -318,6 +319,19 @@ function extractTestCases(filePath: string): TestCase[] {
   }
 
   return cases;
+}
+
+/** Spell every non-ASCII character of WL code as its `\:XXXX` (or, past the
+ * BMP, `\|XXXXXX`) escape; everything else is left as written. */
+function escapeNonAscii(s: string): string {
+  let result = "";
+  for (const ch of s) {
+    const code = ch.codePointAt(0)!;
+    if (code <= 127) result += ch;
+    else if (code <= 0xffff) result += "\\:" + code.toString(16).padStart(4, "0");
+    else result += "\\|" + code.toString(16).padStart(6, "0");
+  }
+  return result;
 }
 
 /** Escape a string for embedding inside a Wolfram Language string literal.
@@ -714,7 +728,11 @@ function buildWolframScript(
   }
 
   lines.push('Print["DONE"]');
-  return lines.join(";\n");
+  // `wolframscript -code` mangles non-ASCII input (`λ` arrives as `Î»`, and
+  // `»` is a syntax error), so the program spells every non-ASCII character
+  // as a `\:XXXX` / `\|XXXXXX` escape, which WL reads as the same character
+  // both in code and inside string literals.
+  return escapeNonAscii(lines.join(";\n"));
 }
 
 function listRustFiles(dir: string): string[] {
@@ -791,6 +809,12 @@ const APPROX_MATCH = new Set([
 // neighbours in conformance_gaps.md — or where both engines iterate to a
 // root and stop in different places.
 const NEAR_MATCH = new Set([
+  // BarChart's layout is reproduced from wolframscript's numbers, but its bar
+  // edges and extents come out an ulp or two away (see "Chart functions:
+  // symbolic primitives").
+  'BarChart[<|"a" -> 1, "b" -> 2, "c" -> 5, "d" -> 3|>]',
+  "g = BarChart[{3, 1/2}]; {Cases[g, Point[p_] :> p, Infinity], Cases[g, Rectangle[{a_, _}, {b_, h_}, ___] :> {a, b, h}, Infinity], Cases[g, Tooltip[_, Style[v_, _]] :> v, Infinity], Cases[g, {{} ..}, Infinity]}",
+  "Table[First[Cases[BarChart[Range[n]], Rectangle[{a_, _}, _, ___] :> a, Infinity]], {n, {12, 40, 60}}]",
   "PolyGamma[-7.7]",
   "PolyGamma[2, 0.3]",
   "PolyGamma[1.46]",
@@ -805,8 +829,55 @@ const NEAR_MATCH = new Set([
   // Woxi projects onto the circle exactly; wolframscript's iterative
   // minimisation stops ~3e-10 short.
   "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]",
-  // 1 - Sqrt[3] rounded at the last digit (…772 against …773).
-  "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]",
+  // wolframscript's FFT round-off: 6.249999999999998 for the exact 6.25.
+  "PeriodogramArray[{1, 2, 3, 1, 4}, 2]",
+  // wolframscript evaluates through Exp/LogGamma: 27647.99999999983 for
+  // the exact 4^4 3^3 2^2 = 27648 (and 0.9999999999999999 for 1).
+  "Hyperfactorial[4.]",
+  "Hyperfactorial[0.]",
+  // SphericalBesselJ[2, -5.] = 0.13473121008512521879…: Woxi's …523 is the
+  // correctly rounded double, wolframscript's …52 one unit below.
+  "SphericalHankelH1[2, -5.]",
+  // Woxi projects exactly; wolframscript's orthogonalization leaves
+  // 0.9999999999999997, 1.9999999999999996.
+  "Projection[{1., 2., 3.}, {{1., 1., 0.}, {0., 1., 0.}}]",
+  // (n x)/(n - 2) at 53.2, 1.04: wolframscript's internal evaluation order
+  // gives 1.0806250000000002, the formula itself 1.080625 in both.
+  "Mean[InverseChiSquareDistribution[53.2, 1.04]]",
+  // wolframscript takes Log10 of the number two ways (…175 and …18), so the
+  // accuracy it reports is -10.000000000000004 for the requested -10.
+  "Accuracy[N[Exp[100], {Infinity, -10}]]",
+  // Iterated or least-squares machine results (Solve/NSolve roots, simplex
+  // and optimizer stopping points, fits, linear solves, the software
+  // bignum arithmetic of an overflow) that differ from wolframscript's in
+  // the last digits only; see "Machine results that differ in the last
+  // digits" in conformance_gaps.md.
+  "Chop[z /. Solve[(0. + 0.*I) + 2.*z + (0. - 4.4*^-16*I)*z - 3.*z^2 + z^3 == 0, z], 10^-12]",
+  "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers, Reals}]",
+  "LinearProgramming[{1, 1}, {{3, 2}}, {7}, 0, {Integers}]",
+  "FindMaximum[{-(x - 1)^2 - (y - 2)^2, x >= 0 && y >= 0}, {x, 5}, {y, 5}]",
+  "NSolve[{(0.5 x2/(1 + x2) - 0.25) x1 == 0, (3 - x2) - x2 x1/(1 + x2) == 0}, {x1, x2}]",
+  "Quiet[Solve[{x y == 1.5, x + y == 3}, {x, y}]]",
+  "(10.^400 + 10.^400) / 10.^399 // N",
+  "1.5^3000 / 1.5^2999 // N",
+  "(3. E^(29248./10.) + 2. E^(29240./10.)) / (3. E^(29248./10.)) // N",
+  "3.5`50 + Sqrt[5]",
+  "Sqrt[Abs[2.75`3. - 5]]",
+  "NIntegrate[I x, {x, 0, 1}]",
+  "th = 0.3; NIntegrate[th^2, {th, 0, 1}]",
+  "Eigenvalues[N[{{1, 2}, {-3, 1}}]]",
+  "LinearSolve[{{1., 2}, {3, 4}, {5, 6}}, {3, 7, 11}]",
+  "LinearSolve[{{1., 1, 0}, {2, 2, 0}}, {1, 2}]",
+  "Chop[LinearSolve[{{2., 1.}, {1., 2.}}, Method -> \"Cholesky\"][{1., 2.}]]",
+  "g = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}]; FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a g, {a}, g]",
+  "FindFit[{{1, 2}, {2, 4.1}, {3, 6}}, a f[1], {a}, f[1]]",
+  "GeneralizedLinearModelFit[{{1, 2}, {2, 4}, {3, 6}}, x, x][4]",
+  "NonlinearModelFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x][\"BestFitParameters\"]",
+  "FindFit[{{0, 1}, {1, 3}, {2, 5}, {3, 7.1}}, {a x + b}, {a, b}, x]",
+  "QPochhammer[0.3 I, 0.5]",
+  "QPochhammer[0.3 + 0.2 I, 0.5 I]",
+  "ToString[{Erfc[1.], Erfc[2.5], Erfc[1.1630871536766743], InverseErf[0.9], InverseErfc[0.1], InverseErfc[1.9]}, InputForm]",
+  "RecurrenceTable[{y[n + 1] + z[n + 1] == y[n] - 3 z[n] + 7, y[n] + 2 z[n] == 1, y[0] == 0.5, z[0] == 0.25}, {y, z}, {n, 0, 2}]",
 ]);
 
 /**
@@ -874,6 +945,23 @@ function runWolframBatch(
   timeoutMs = 300_000
 ): string {
   const wolframProgram = buildWolframScript(batch);
+  // A program past the OS argument limit (Woxi's 1.2 MB InputForm of a
+  // ContourPlot3D, embedded as the expected value) makes the spawn fail with
+  // E2BIG, so a large one is handed over in a file. `-code` itself reads its
+  // argument with ToExpression, so `ToExpression[ReadString[…]]` reads the
+  // file as the same single input; the program is ASCII (every non-ASCII
+  // character is escaped), so the file's charset cannot mangle it.
+  const MAX_INLINE_PROGRAM = 200_000;
+  let programFile: string | undefined;
+  let codeArg = wolframProgram;
+  if (wolframProgram.length > MAX_INLINE_PROGRAM) {
+    programFile = join(
+      tmpdir(),
+      `woxi-verify-${process.pid}-${batch[0]?.idx ?? 0}.wl`
+    );
+    writeFileSync(programFile, wolframProgram, "ascii");
+    codeArg = `ToExpression[ReadString[${JSON.stringify(programFile)}]]`;
+  }
   // spawnSync (rather than execSync) so wolframscript's stderr is captured
   // instead of forwarded straight to our own stderr. Wolfram's bundled
   // libraries write diagnostics there that are not test failures — e.g. qhull's
@@ -881,7 +969,7 @@ function runWolframBatch(
   // DelaunayMesh inputs — and they would otherwise bury the progress output.
   // The captured text is still reported whenever a batch actually fails.
   const res = spawnSync(
-    `wolframscript -charset UTF8 -code ${shellQuoteForExec(wolframProgram)}`,
+    `wolframscript -charset UTF8 -code ${shellQuoteForExec(codeArg)}`,
     {
       shell: true,
       encoding: "utf-8",
@@ -890,6 +978,7 @@ function runWolframBatch(
       killSignal: "SIGKILL", // SIGTERM is ignored by wolframscript during computation
     }
   );
+  if (programFile) unlinkSync(programFile);
   lastWolframStderr = res.stderr ?? "";
   if (res.error) {
     const err: any = new Error(res.error.message || "wolframscript batch failed");
@@ -1136,6 +1225,9 @@ function main() {
     /\bTimelinePlot\[/,     // Complex Graphics output, implementation-specific rendering
     /\bAngularGauge\[/,     // Complex Graphics output, implementation-specific rendering
     /\bHorizontalGauge\[/,  // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bVerticalGauge\[/,    // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bThermometerGauge\[/, // Same gauge family as AngularGauge — full tick/label Graphics
+    /\bClockGauge\[/,       // Same gauge family as AngularGauge — full tick/label Graphics
     /\bSmoothDensityHistogram\[/, // Complex Graphics output, implementation-specific rendering
     /\bServiceConnect\[/,   // Network-dependent Failure result
     /\bNetGraph\[/,         // Neural network internals differ between implementations
@@ -1534,11 +1626,6 @@ function main() {
     // Equivalent[a, False]: Woxi renders as `Not[a]`, Wolfram as prefix `!a`.
     // Semantically identical.
     "Equivalent[a, False]",
-    // ParentDirectory: Wolfram only evaluates when the directory actually
-    // exists on disk; Woxi does pure string manipulation. Unit tests rely
-    // on the string-manipulation form with synthetic paths like /a/b/c.
-    "ParentDirectory[\"/a/b/c\"]",
-    "ParentDirectory[\"a/b/c\"]",
     // E^(a+I*Pi): Woxi preserves symbolic form (no over-simplification) but
     // Plus ordering differs — Woxi emits `E^(I*Pi + a)`, Wolfram emits
     // `E^(a + I*Pi)`. Semantic fix lives in arithmetic.rs; surface ordering
@@ -2038,6 +2125,11 @@ function main() {
     // sum of terms (I*Sqrt[3]+ArcSin[2]/2) that doesn't match WL's single
     // fraction; the design deliberately leaves out-of-domain cases unevaluated.
     "Integrate[Sqrt[1 - x^2], {x, 0, 2}]",
+    // WL answers with four terms in Cos[1/2], Sin[1/2] and powers of
+    // (Cos[1/2] + I Sin[1/2])/(Cos[1/2] - I Sin[1/2]) — an artifact of its
+    // exponential rewrite, not a closed form (see the DiscreteAsymptotic
+    // entry in conformance_gaps.md); Woxi leaves it unevaluated.
+    "DiscreteAsymptotic[Sin[n], n -> Infinity]",
     // Sum[1/(2 n - 1), ...]: a divergent harmonic sum both engines echo
     // unevaluated; only the held body's Plus ordering differs (Woxi 2*n - 1 vs
     // WL -1 + 2*n). Woxi's standalone canonical order matches WL, but held
@@ -2245,11 +2337,6 @@ function main() {
     // Same core ordering gap as the `Log[E^(a + 3 I)]` entry above.
     "ComplexExpand[E^(I*ArcSin[1/3])]",
 
-    // PermutationMatrix returns a StructuredArray in Wolfram
-    // (`PermutationMatrix[StructuredArray`StructuredData[…]]`); Woxi returns
-    // the dense matrix, exactly as for Symmetrize / CrossMatrix above.
-    "PermutationMatrix[{2, 1}]",
-
     // NDSolve results that are *printed* rather than sampled: Wolfram shows
     // its internal solver state (the {5, 7, 1, {52}, …} header, the adaptive
     // step grid and a Developer`PackedArrayForm coefficient block) where Woxi
@@ -2273,6 +2360,7 @@ function main() {
     // a deliberate choice, documented at the `dynamic_module_scoping` tests.
     "DynamicModule[{x = 2}, x^2]",
     "DynamicModule[{a}, a = 3; a + 1]",
+    "DynamicModule[{a = 1}, a + 1, SaveDefinitions -> True]",
     "x = 1; DynamicModule[{x = 5}, x] + x",
     "f[] := x; DynamicModule[{x = 3}, f[]]",
 
@@ -2415,6 +2503,11 @@ function main() {
     "Hold[{1, 2}?f]",
     'Graph[{UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[3, 1]}, VertexLabels -> {1 -> "one"}]',
 
+    // Batch artifact: an earlier case in the same wolframscript session
+    // loads GraphUtilities`, so the "not loaded" probe sees the package
+    // (run alone, wolframscript agrees with Woxi).
+    "{Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]], Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]], Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]]}",
+
     // Plot internals: Woxi builds its plots with its own primitive layout
     // (see the three-renderers note), so the sampling grid, the wrapper
     // heads (GraphicsComplex / Annotation / Legended) and where a style
@@ -2473,6 +2566,8 @@ function main() {
     // bisects the whole batch down to this one case, ten kernel starts
     // deep, before writing it off.
     "$RecursionLimit = 40; b[n_] := b[n - 1] + b[n - 2] + b[n - 3]; b[1]",
+    // The same termination, from a value that re-reads its own symbol.
+    "ys = Append[ys, 1]; Head[ys]",
 
     // Socket failure model: wolframscript answers every operation on an
     // unusable socket with a Failure["SocketsLink", …] carrying the live
@@ -2517,6 +2612,202 @@ function main() {
     // scale (twice the pixels on a Retina Mac, with a minimum height), see
     // "HighlightImage returns the image at its own size".
     "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}",
+    // Apart / ApartSquareFree with Modulus: WL mixes partial fractions taken
+    // over the rationals with coefficients reduced mod p in a way no model
+    // reproduces (see "Apart with Modulus" in conformance_gaps.md).
+    "Apart[1/(x^2 + x), Modulus -> 3]",
+    "ApartSquareFree[(1 - x^2)/(x^4 + 2 x^2 + 1), Modulus -> 2]",
+    // BooleanMaxterms/BooleanMinterms without variables return a
+    // BooleanFunction whose InputForm is WL's internal BDD encoding
+    // ("BDD" -> {…}); Woxi leaves the call unevaluated.
+    "BooleanMaxterms[{{0, 1, 1}}]",
+    // Symbolic MatrixPower of a matrix with radical eigenvalues: WL's
+    // sign normalization of the eigenvector factors is not decoded (see
+    // "Symbolic MatrixPower with irrational or complex eigenvalues").
+    "MatrixPower[{{a, b}, {c, d}}, n, {1, 0}]",
+    // ConstantImage with options: WL appends Magnification -> Automatic to
+    // the image's options; Woxi's Image has no magnification slot (the
+    // ColorSpace and ImageSize parts are tested with Options).
+    "ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, ImageSize -> 100]",
+    // Graph layouts: WL's spring-electrical and layered layouts (and its
+    // GraphicsComplex output with curved self-loops) are not reproduced
+    // coordinate for coordinate.
+    "GraphPlot[{1 -> 4, 1 -> 5, 2 -> 3, 2 -> 5, 3 -> 5, 4 -> 5, 5 -> 5}]",
+    "LayeredGraphPlot[PetersenGraph[]]",
+    "LayeredGraphPlot[{1 -> 2, 1 -> 3, 2 -> 3, 1 -> 4, 2 -> 4, 1 -> 5}, Left]",
+    // CountryData: WL's curated data (finer outlines and its own
+    // coordinate scale for the shapes, full official names, entity lists for
+    // the groups) against Woxi's bundled 1:110m outlines and names.
+    "Map[Length, CountryData[\"Belgium\", \"SchematicCoordinates\"]] === {Length[CountryData[\"Belgium\", \"Polygon\"][[1]]]}",
+    "w = CountryData[\"World\", \"SchematicCoordinates\"]; a = CountryData[\"Antarctica\", \"SchematicCoordinates\"]; {Head[w], Length[w] > 100, MatchQ[w[[1, 1]], {_Real, _Real}], Max[a[[All, All, 1]] /. l_List :> Max[l]] < -60}",
+    "pts = Flatten[CountryData[\"Egypt\", {\"Shape\", {\"Equirectangular\", {0, 0}}}][[1, All, 1]], 1]; {0.4 < Min[pts[[All, 1]]] < 0.5, 0.45 < Max[pts[[All, 1]]] < 0.65}",
+    "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Equirectangular\", {0, 180}}}][[1, All, 1]], 1]; {Max[Abs[pts[[All, 1]]]] <= Pi, Min[pts[[All, 1]]] < -3.1, Max[pts[[All, 1]]] > 3.1}",
+    "pts = Flatten[CountryData[\"World\", {\"Shape\", {\"Orthographic\", {0, 0}}}][[1, All, 1]], 1]; Max[Norm /@ pts] <= 1.0000001",
+    "MemberQ[CountryData[\"EU\"], \"CzechRepublic\"]",
+    "CountryData[\"Italy\", \"FullName\"]",
+    "CountryData[\"CzechRepublic\", \"FullName\"]",
+    "CountryData[\"Italy\", \"Polygon\"] === CountryData[\"Italy\", \"SchematicPolygon\"]",
+
+    // The cases below are catalogued under "Unit-test conformance sweep
+    // (misc cluster, 2026-11)" in conformance_gaps.md.
+    // Audio`Waveform is Woxi's stand-in for the sound player of a
+    // Demonstration notebook; a plain kernel has no definition for it.
+    "Length[First[Audio`Waveform[Audio`Square, 440., 0.1, Overtones -> 5, SampleRate -> 65536]]]",
+    "Take[First[Audio`Waveform[Audio`Triangle, 1., 1., SampleRate -> 8]], 8]",
+    // Before their first use the plot functions are autoload stubs in
+    // wolframscript ({Protected, ReadProtected}); once loaded they are
+    // HoldAll, which is what Woxi reports (same story as ParallelDo).
+    "Attributes[{Plot, DensityPlot3D, BodePlot, ListPlot}]",
+    // Same story: a fresh kernel gives Woxi's {Listable, NumericFunction,
+    // Protected}; ReadProtected appears once an earlier case in the batch
+    // has loaded the function's definitions.
+    "Attributes[Hypergeometric0F1Regularized]",
+    // A bare `∑`/`∏` glyph is WL's prefix Sum/Product operator, so
+    // `Hold[∑]` is a syntax error there; Woxi reads it as a symbol so the
+    // Demonstrations that use the glyph only for display load.
+    "Head[Hold[∑]]",
+    "Head[Hold[∏]]",
+    "Hold[Subscript[∑, i = 1]]",
+    // Stored objects in an older internal form, from Demonstration
+    // notebooks: Woxi evaluates them, wolframscript 14 rejects them.
+    'z = TemporalData[EventSeries, {{{3.5, 4.5, 6.}}, {{0, 2, 1}}, 1}]; {z["Values"], z["Times"]}',
+    'TemporalData[EventSeries, {{{1, 2, 3}}, {{10, 14, 2}}, 1}]["Times"]',
+    "ci = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {Round[x], 2}], Evaluate]; cr = CompiledFunction[{Blank[Real]}, {{3, 0, 0}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x}, {x, 1}], Evaluate]; {ci[2.4], cr[2.4]}",
+    "cf = CompiledFunction[{Blank[Real], Blank[Integer]}, {{3, 0, 0}, {2, 0, 0}, {3, 0, 1}}, {0, 2, 3, 0, 0}, {{1}}, Function[{x, n}, NestList[#/3 &, x, n]], Evaluate]; cf[1/2, 3]",
+    // A version-10 serialized CompiledFunction with rank-1 arguments:
+    // wolframscript 15's kernel crashes on it every time ("The product
+    // exited for an unknown reason"), so the case never reports.
+    "f = CompiledFunction[{10, 10.1, 5848}, {{Blank[Real], 1}, {Blank[Real], 1}}, {{3, 1, 0}}, {{0., {3, 0, 4}}}, {0, 3, 5, 0, 5}, {{1}}, Function[{a, b}, Cross[{-Part[a, 2] + Part[b, 2], Part[a, 1] - Part[b, 1], 0.}, a/Norm[a]], Listable], Evaluate]; {f[{{1., 0., 0.}, {0., 1., 0.}}, {0., 0.}], f[{1., 0., 0.}, {0., 0.}]}",
+    "f = NearestFunction[1, {3, 1}, 1, {1, 2, 3}, Automatic, Hold[Nearest[{1, 2, 3} -> {a, b, c}]]]; {f[2.2], f[2.6, 2]}",
+    // ExampleData content is generated (see "ExampleData content is
+    // generated by design"): a TimeSeries rather than TemporalData, and the
+    // 494BUS bandwidth is the generated matrix's.
+    'Head[ExampleData[{"Statistics", "AirlinePassengerMiles"}, "TimeSeries"]]',
+    'm = ExampleData[{"Matrix", "494BUS"}]; Max[Abs[Subtract @@@ m["NonzeroPositions"]]]',
+    // Woxi's word list is English only.
+    'DictionaryWordQ["pomme", Language -> "French"]',
+    // wolframscript holds stream 3 for its own output file, so its first
+    // StringToStream is InputStream[String, 4] where a kernel's is 3.
+    'ReadList[StringToStream["a b"], Word, Foo -> 1]',
+    // TraditionalForm templates (see "TraditionalForm boxes are written out
+    // inline instead of as TemplateBoxes").
+    'ToBoxes[TraditionalForm[Subsuperscript[q, 1, "*"]]]',
+    // TreePlot's Graphics internals: wolframscript draws the legacy
+    // GraphPlot picture (a GraphicsComplex with Hue directives and a disk
+    // radius from its own heuristics); Woxi lays the tree out its own way.
+    "TreePlot[{1 -> 2, 2 -> 3}, Top]",
+    "TreePlot[{1 -> 2, 2 -> 3}]",
+    // Bare package names read on a line after the package was loaded: the
+    // harness joins the setup and the case into one line, where they would
+    // be read before the Get runs.
+    "{Context[ClusterFlatten], Context[Linkage]}",
+    // Image[Graphics[…]] and SetAlphaChannel[Graphics[…], …] rasterize
+    // through the front end at the display's scale (twice the pixels on a
+    // Retina Mac), see "Rasterizing a Graphics depends on the display scale".
+    "ImageDimensions[Image[Graphics[{White, Disk[]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {{246, 246}, {246, 246}}, Background -> Black]]]",
+    "m = Image[{{1, 0}, {1, 1}}]; {ImageData[AlphaChannel[SetAlphaChannel[Image[Table[0.5, {3}, {4}]], m]]], ImageData[AlphaChannel[SetAlphaChannel[m, Image[{{1, 0.5, 0}, {0.25, 0.75, 0.5}, {1, 1, 1}}]]]], ImageDimensions[SetAlphaChannel[Graphics[Disk[]], m]]}",
+    // Adaptive sampling and the nesting of the 3D plot primitives are not
+    // decoded (see "3D plots sample and nest differently"); likewise the
+    // ParametricPlot / ComplexRegionPlot region meshes, ComplexPlot3D's grid
+    // (just inside the range) with its Legended wrapper, and textured
+    // surfaces (see "Plot parts nest differently").
+    "ParametricPlot[{(v + u)*Cos[u], (v + u)*Sin[u]}, {u, 0, 2*Pi}, {v, 0, 5}, PlotStyle -> {Opacity[1], Texture[Image[{{{0.5, 0.5, 0.5}, {0.6, 0.6, 0.6}}, {{0.7, 0.7, 0.7}, {0.8, 0.8, 0.8}}}]]}]",
+    "gc = SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, PlotPoints -> 5, TextureCoordinateFunction -> ({#5, 1 - #4} &), PlotStyle -> Directive[Texture[Image[{{0, 1}, {1, 0}}]]]][[1]]; {Length[Cases[gc[[2]], _Texture]], Length[gc[[3]][[2]]] == Length[gc[[1]]]}",
+    "Block[{conv = 2, dis = -3, icos = 1, sep = 0}, v = PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"]; h1a = SphericalPlot3D[Norm[v[[2]]], {theta, 0, VectorAngle[v[[2]], v[[4]]]}, {phi, 0, (2 Pi)/5}, RegionFunction -> ({#1, #2, #3} . v[[4]] \\[Cross] v[[12]] > 0 &), MaxRecursion -> 0, PlotPoints -> conv, Mesh -> None, BoundaryStyle -> Black][[1]]; h1 = Translate[h1a, dis Mean[v[[{2, 4, 12}]]]]; h2 = Rotate[h1, -(1/5) (2 Pi), v[[4]]]; h3 = Translate[(Rotate[{h1, h2}, (2 Pi #1)/5, {0, 0, 1}] &) /@ Range[5], {0, 0, sep}]; h4 = {RGBColor[0.3, 1, 0.8], Rotate[h3, Pi, {0, 1, 0}]}; Graphics3D[{{RGBColor[0.9, 1, 0.5], PolyhedronData[\"Icosahedron\", \"Insphere\"]}, {Scale[GraphicsComplex[PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"], Line[PolyhedronData[\"Icosahedron\", \"EdgeIndices\"]]], icos {1, 1, 1}, {0, 0, 0}]}, {RGBColor[0.7, 1, 1], h3}, h4}, Boxed -> False, SphericalRegion -> True, ViewAngle -> 0.09, ViewPoint -> {3.2, -10, 5.2}, PlotRange -> 1.7, ImageSize -> 380]]",
+    "ListPlot3D[{{1,2,3},{4,5,6},{7,8,9}}]",
+    "ComplexRegionPlot[Abs[z] <= 1, {z, -1 - I, 1 + I}]",
+    "ComplexRegionPlot[{Re[z^2] < 1, Im[z^2] < 1}, {z, 2}]",
+    "ComplexPlot3D[Sin[z], {z, -Pi - 2*I, Pi + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[z^3, {z, -3 - 3*I, 3 + 3*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[AiryAi[z], {z, -2 - 2*I, 2 + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[WeberE[2, z], {z, -2 - 2*I, 2 + 2*I}, PlotLegends -> Automatic]",
+    "ComplexPlot3D[HermiteH[1/2, z], {z, -1 - I, 1 + I}, PlotLegends -> Automatic]",
+    "w[x_] := Piecewise[{{{Sin[x], x}, x > 0.5}, {{x, -1}, x <= 0.5}}]; p = First[Cases[ParametricPlot3D[With[{temp = w[t]}, Flatten@{AngleVector[{temp[[1]], t}], temp[[2]] + 1}], {t, 0, 1}], Line[q_] :> q, Infinity]]; {First[p], Last[p]}",
+    "Max[ParametricPlot3D[{u, v, 0}, {u, 0, 2}, {v, 0, u}, PlotPoints -> 5][[1, 1]][[All, 2]]]",
+    "pts = First[RevolutionPlot3D[2, {t, 1, 3}, {th, 0, 2 Pi}, RevolutionAxis -> {1, 0, 0}]][[1]]; {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 2]]], 0.01]}",
+    "Length[Cases[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}], Line[p_] :> p, Infinity][[1]]]",
+    "Length[Cases[ParametricPlot3D[{t, 0, 0}, {t, 0, 1}, PlotRange -> {{0, 0.5}, {-1, 1}, {-1, 1}}][[1]], _Line]]",
+    "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), ColorFunctionScaling -> False, PlotPoints -> 4]; Take[p[[1, 2]], {2, 3}]",
+    "p = ParametricPlot3D[{3 Cos[t], 3 Sin[t], u}, {t, 0, 2 Pi}, {u, 5, 9}, ColorFunction -> (RGBColor[#4, #5, #3] &), PlotPoints -> 3]; Cases[p[[1, 2]], RGBColor[r_, g_, b_] /; 0 <= r <= 1 && 0 <= g <= 1 && 0 <= b <= 1, Infinity] // Length",
+    "ListPlot3D[{{0,0,0},{1,0,1},{0,1,2},{1,1,3}}]",
+    "ListPlot3D[{{1,2,3},{4,5,6}}, Mesh -> None]",
+    "g = ContourPlot3D[(x^2 + y^2 + z^2 + 0.9991)^2 == 4 (x^2 + z^2), {x, -1.2, 1.2}, {y, -3., 3.}, {z, -3., 3.}, PlotPoints -> 20]; c = First[g]; {Head[c], Length[c[[1]]] > 0, Length[c[[3, 2]]] == Length[c[[1]]], c[[3, 1]]}",
+    "c = First[ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Contours -> {0.25, 0.64}, PlotPoints -> 10]]; tris = Cases[c[[2]], Polygon[t_] :> t, Infinity]; {Length[tris], 3 Total[Length /@ tris] > 2 Length[c[[1]]], Max[Flatten[tris]] == Length[c[[1]]]}",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}, Contours -> 5, Mesh -> None]",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]",
+    "ContourPlot3D[x^2 + y^2 - z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, ContourStyle -> Opacity[0.4]]",
+    "pts = First[RevolutionPlot3D[2, {t, 1, 3}, RevolutionAxis -> {1, 0, 0}]][[1]]; {Round[Min[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 1]]], 0.01], Round[Max[pts[[All, 2]]], 0.01], Round[Max[pts[[All, 3]]], 0.01]}",
+    "First[RevolutionPlot3D[t, {t, 1, 3}, RevolutionAxis -> {0, 0, 1}]] === First[RevolutionPlot3D[t, {t, 1, 3}]]",
+    // Plot's adaptive sampler starts a hair inside the endpoints, so its
+    // y range is 0.99999995… rather than 1 (see "`Plot` samples just inside
+    // the interval's ends").
+    "PlotRange[Plot[x^2, {x, 0, 1}]]",
+    // wolframscript never runs a Manipulate's (Synchronous)Initialization,
+    // Woxi does (see "`Manipulate`'s `Initialization` is not scoped").
+    "Manipulate[x + q, {x, 0, 1}, SynchronousInitialization :> {q = 5}]; q",
+    // ImageLines' Hough-transform peak picking is not decoded: WL reports
+    // several near-duplicate lines per stroke (see "ImageLines finds other
+    // lines").
+    "Round[First /@ ImageLines[Image[Table[If[x == 10 || y == 5, 1, 0], {y, 20}, {x, 30}]]], 0.01]",
+    "Round[First /@ ImageLines[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]], 0.01]",
+    // NSolve/N[Solve] of a numeric system: wolframscript orders (and for
+    // the restricted three-body system repeats) the roots its homotopy
+    // continuation finds; Woxi sorts the distinct roots. See "NSolve root
+    // order and multiplicity" in conformance_gaps.md.
+    "s = NSolve[{11.464832350802919 == Sqrt[x^2 + (y - 3.5)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2], 12.476647545814785 == Sqrt[(x - 6.)^2 + (y + 4.)^2] + Sqrt[(x + 5.)^2 + (y + 5.)^2]}, {x, y}]; Round[{x, y} /. s, 0.001]",
+    "mu = 0.1; s = NSolve[{-x == -((1 - mu) (x + mu)/Sqrt[(x + mu)^2 + y^2]^3) + (-mu) (x - 1 + mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3, -y == (-((1 - mu)/Sqrt[(x + mu)^2 + y^2]^3 - (-mu)/Sqrt[(x - 1 + mu)^2 + y^2]^3)) y}, {x, y}]; {Length[s], Sort[Round[{x, y} /. s, 0.001]]}",
+    "r = Rationalize[#, 0] &; s = N[Solve[{x^2 + (r[-0.532088886237956] - y)^2 == r[0.4679111137620437], (r[0.5652579374235682] - x)^2 + (r[-0.32635182233306964] - y)^2 == r[0.05643698595227112]}, {x, y}]]; Round[10^6 {x, y} /. s]",
+    // FindInstance picks a point by an internal heuristic (1027, -1075).
+    "FindInstance[x > 1000, x]",
+    "FindInstance[x < -1000, x]",
+    // The optimizer stops 5*10^-7 short in L, which Round makes visible.
+    "Round[10^6 {#[[1]], {L, a} /. #[[2]]} &[FindMaximum[{100 a Exp[-a^2/2] + Exp[-(L - 52)^2/100], a > 0 && L >= 45}, {{L, 45}, {a, 0.05}}]]]",
+    // Arbitrary-precision complex parts and overflowing machine products
+    // follow wolframscript's internal bignum error tracking (per-part
+    // precisions, General::munfl and 0. for an exact 1); see "Software
+    // arithmetic past the machine range" in conformance_gaps.md.
+    "{N[(2 + I)^5, 20], N[(1 + I)^(-2), 20]}",
+    "1.*^200 * 1.*^200 / (1.*^300 * 1.*^100) // N",
+    // wolframscript's machine closed form for the integral cancels away
+    // eight digits (-6.3*10^-8 off); Woxi's value is exact to the last digit.
+    "Chop[Integrate[Sqrt[6.5 - 0.18*h + 0.002*h^2], {h, 0, 40}] - 78.81253032630696]",
+    // A DifferentialEquations`InterpolatingFunctionAnatomy` function, which
+    // wolframscript only knows after Needs; Woxi provides it built in.
+    "InterpolatingFunctionDomain[Interpolation[{{1}, {4}, {9}}]]",
+    // A difference of symbolic order takes wolframscript minutes, past the
+    // batch timeout (the forms were checked one by one).
+    "DifferenceDelta[i^2, {i, n}]",
+    "DifferenceDelta[i, {i, n}]",
+    "DifferenceDelta[i^2, {i, n, h}]",
+    // NDSolve / NDEigensystem / FEM / FindFit numerics: wolframscript's
+    // methods meet the asserted tolerances differently (or, for the DAE,
+    // fail); see "NDSolve accuracy and step control" in conformance_gaps.md.
+    "eqns = {50 (1 - 100 r^2) D[ca[z, r], z] == D[r D[ca[z, r], r], r]/(10^9 r) - 2500 Exp[-721.674/T[z, r]] ca[z, r], 50 (1 - 100 r^2) D[cb[z, r], z] == D[r D[cb[z, r], r], r]/(10^9 r) + 2500 Exp[-721.674/T[z, r]] ca[z, r] - 2500 Exp[-1202.79/T[z, r]] cb[z, r], 3.75 (1 - 100 r^2) D[T[z, r], z] == 0.1 D[r D[T[z, r], r], r]/r + 25000 Exp[-721.674/T[z, r]] ca[z, r] + 25000 Exp[-1202.79/T[z, r]] cb[z, r], D[Tx[z, r], z] == -5 (Tx[z, r] - T[z, r]), T[0, r] == 350., Tx[0, r] == 350., ca[0, r] == 1, cb[0, r] == 0., (D[ca[z, r], r] /. r -> 10^-6) == 0, (D[ca[z, r], r] /. r -> 0.1) == 0, (D[cb[z, r], r] /. r -> 10^-6) == 0, (D[cb[z, r], r] /. r -> 0.1) == 0, (D[T[z, r], r] /. r -> 10^-6) == 0, 0.1 (D[T[z, r], r] /. r -> 0.1) == -5 (T[z, 0.1] - Tx[z, 0.1])}; {tr, tx, a, b, cc0} = NDSolveValue[eqns, {T, Tx, ca, cb, cc}, {z, 0, 1}, {r, 10^-6, 0.1}]; {Abs[tr[0.405, 0.015] - 385.463] < 0.05, cc0}",
+    "k = 2 Pi/10.; s = NDSolve[{I D[u[t, x], t] + D[u[t, x], x, x] == 0, u[0, x] == E^(I k x), u[t, -5.] == u[t, 5.]}, u, {t, 0, 2}, {x, -5., 5.}]; (Abs[u[1.5, 0.7] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4",
+    "k = 2 Pi/10.; s = NDSolve[{I D[u[x, t], t] + D[u[x, t], x, x] == 0, u[x, 0] == E^(I k x), u[-5., t] == u[5., t]}, u, {x, -5., 5.}, {t, 0, 2}]; (Abs[u[0.7, 1.5] - E^(I (k 0.7 - k^2 1.5))] /. First[s]) < 10^-4",
+    "data = Table[{t, Exp[-1.3 t^1.2]}, {t, 0, 3, 0.25}]; f[a_?NumericQ, b_?NumericQ][t_?NumericQ] := Exp[-a t^b]; {a, b} /. FindFit[data, f[a, b][t], {{a, 1.0, 2.0}, {b, 1.5, 2.0}}, t] // Chop[# - {1.3, 1.2}, 10^-6] &",
+    "e = {x1'[t] == -x1[t] + 0.1 z2[t], x2'[t] == -2 x2[t] + 0.1 z1[t], z1[t] + Exp[z1[t]] == 2 + x1[t], z2[t]^3 + z2[t] == 3 + x2[t], x1[0] == 1, x2[0] == 2}; s1 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 12, PrecisionGoal -> 12]; s2 = NDSolve[e, {x1, x2, z1, z2}, {t, 0, 2}, AccuracyGoal -> 3, PrecisionGoal -> 3]; {Length[(x1 /. s2[[1]])[[2]]] < Length[(x1 /. s1[[1]])[[2]]] / 2, Abs[(x1[2] /. s2[[1]]) - 0.2446458436321119] < 10^-3, Abs[(x1[2] /. s1[[1]]) - 0.2446458436321119] < 10^-7}",
+    "s = NDSolve[{x'[t] == -x[t] + w[t], u[t] + 100 (w[t] - x[t]) == 0, (1 - u[t])^1.5 == w[t] + x[t]/10, x[0] == 0.5}, {x, u, w}, {t, 0, 3}]; Max[Abs[({x[3], u[3], w[3]} /. First[s]) - {0.4899212327677134, 0.34055710629697045, 0.4865156617047437}]] < 10^-6",
+    "{v, f} = NDEigensystem[{-Derivative[2][u][x], DirichletCondition[u[x] == 0, True]}, u[x], {x, 0, Pi}, 3]; {Round[v, 10.^-4], Round[Table[g /. x -> 0.3, {g, f}], 10.^-3]}",
+    "Round[NDEigenvalues[(0.9*x^2 + 0.5*x^4)*u[x] - Derivative[2][u][x]/2, u[x], {x, -3.5, 3.5}, 3], 10.^-3]",
+    // A large sparse system: wolframscript's iterative solver leaves a
+    // residual above 10^-12.
+    "n = 60; idx[i_, j_] := (i - 1) n + j; rules = Flatten[Table[{{idx[i, j], idx[i, j]} -> 4.1, If[i > 1, {idx[i, j], idx[i - 1, j]} -> -1., Nothing], If[i < n, {idx[i, j], idx[i + 1, j]} -> -1.2, Nothing], If[j > 1, {idx[i, j], idx[i, j - 1]} -> -0.9, Nothing], If[j < n, {idx[i, j], idx[i, j + 1]} -> -1., Nothing]}, {i, n}, {j, n}]]; perm = Mod[37 Range[n^2], n^2] + 1; rules = rules /. ({r_, c_} -> v_) :> ({perm[[r]], c} -> v); A = SparseArray[rules, {n^2, n^2}]; b = N[Table[Sin[k], {k, n^2}]][[perm]]; x = LinearSolve[A, b]; {Length[x], Max[Abs[A . x - b]] < 10^-12}",
+    // A rounding tie at 10^-6 decided by the last bit of the ANOVA sum.
+    "lm = LinearModelFit[{{1, 2, 2.}, {2, 1, 3.5}, {3, 5, 7.}, {4, 3, 8.}, {5, 5, 9.}}, {x, y}, {x, y}]; e = lm[\"ANOVATableEntries\"]; {e[[All, 1]], Round[e[[All, 2]], 10^-6], Round[lm[\"ANOVATableFStatistics\"], 10^-6]}",
+    // "IndependentVariables" is not a FittedModel property in
+    // wolframscript (FittedModel::elmntav, the internal association
+    // printed back).
+    "fm = LinearModelFit[{{1, 2, 3}, {2, 3, 5}, {3, 5, 6}, {4, 4, 9}}, {Subscript[x, 1], Subscript[x, 1] Subscript[x, 2]}, {Subscript[x, 1], Subscript[x, 2]}]; {Rationalize[fm[\"BestFitParameters\"], 10^-6], fm[\"IndependentVariables\"], Rationalize[fm[2, 3], 10^-6]}",
+    // N of the last convergent hits $MaxExtraPrecision in wolframscript,
+    // whose fuzzy zero then fails the < 10^-70 test.
+    "c = Convergents[ContinuedFraction[N[Sqrt[13], 80]]]; {Take[c, 3], Abs[N[Last[c] - Sqrt[13], 20]] < 10^-70}",
+    // A symbolic axis: wolframscript's general rotation formula carries
+    // Conjugate and Abs of every component, unsimplified.
+    "RotationMatrix[t, {a, 1, 0}]",
+    // Root[{f, x0}] keeps an ~20-digit x0 in wolframscript (catalogued under
+    // "Transcendental Root[{f, x0}] objects").
+    "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}",
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

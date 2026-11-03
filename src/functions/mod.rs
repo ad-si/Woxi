@@ -28,6 +28,7 @@ pub mod code_parser;
 pub mod color_blend;
 pub mod combinatorica_graph;
 pub mod compile_vm;
+pub mod computational_geometry;
 pub mod confirm_ast;
 pub mod control_flow_ast;
 pub mod control_systems;

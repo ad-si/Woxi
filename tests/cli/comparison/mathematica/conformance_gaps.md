@@ -300,11 +300,11 @@ Smaller TraditionalForm typesetter differences, all in representation:
   `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
   renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
-### `ToBoxes` in StandardForm drops StyleBox and held TagBox
+### `ToBoxes` in StandardForm drops a held TagBox
 
-`ToBoxes[Style[x, Red]]` is `"x"` where wolframscript gives
-`StyleBox["x", RGBColor[1, 0, 0], StripOnInput -> False]`. The TraditionalForm
-builder learned both; the StandardForm one has not.
+The TraditionalForm builder keeps a held `TagBox`; the StandardForm one does
+not. (`ToBoxes[Style[x, Red]]` is `StyleBox["x", RGBColor[1, 0, 0],
+StripOnInput -> False]` in both, as in wolframscript.)
 
 ### StandardForm boxes: inline exponent fractions, `I`, logical operands of a sum
 
@@ -344,12 +344,11 @@ because it makes the two layers disagree with each other.
 
 ## Canonical ordering of Plus and Times
 
-### `Rescale[x, {a, b}, {c, d}]` orders its two terms the other way
+### A rational multiple of a sum is ordered against a product by its own rule
 
-The reference page gives
-`-((-(b c) + a d)/(-a + b)) + ((-c + d) x)/(-a + b)`; Woxi builds the same sum
-but prints the `x` term first. The values at numbers (`Rescale[0, {a, b}, {c, d}]`)
-match.
+`Rescale[x, {-1, 1}, {a, b}]` is `((-a + b)*x)/2 + (a + b)/2` in Woxi and
+`(a + b)/2 + ((-a + b)*x)/2` in wolframscript. (Terms over a common power of a
+sum, `-(a/(-a + b)) + x/(-a + b)`, follow `Order` and conform.)
 
 ### A coefficient times a sum of calls sorts before a lone call
 
@@ -1191,10 +1190,33 @@ woxi eval 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red
 # {200, 100}
 ```
 
-wolframscript rasterizes the highlighted picture through the front end, at
-the display's scale — twice the pixels on a Retina Mac — and with a minimum
-height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
-pixels. **Not reproducible** across machines.
+`HighlightImage` returns a `Graphics` (the image as an inset with the
+marks over it) in both. Measuring it rasterizes that picture: wolframscript
+does so through the front end at the display's scale (twice the pixels on a
+Retina Mac) and with a minimum height (`{20, 10}` becomes `{40, 33}`), Woxi
+at the image's own size. **Not reproducible** across machines.
+
+A mask image as the mark (`HighlightImage[img, mask]`) is drawn into the
+pixels and returned as an `Image`. wolframscript outlines the mask instead,
+as a `GraphicsComplex` holding a `FilledCurve`. Its contour order has not
+been decoded.
+
+### Radicals of the reciprocal of a negative numeric sum
+
+`Sqrt[1/(-1 - Sqrt[2])]` gives `I/Sqrt[1 + Sqrt[2]]` in both. The other
+forms do not match yet:
+
+```sh
+wolframscript -code '{1/(-1 - Sqrt[2]), (1/(-1 - Sqrt[2]))^(1/3), Sqrt[2/(-1 - Sqrt[2])]}'
+# {-(1 + Sqrt[2])^(-1), (-(1 + Sqrt[2])^(-1))^(1/3), I*Sqrt[2/(1 + Sqrt[2])]}
+woxi eval '{1/(-1 - Sqrt[2]), (1/(-1 - Sqrt[2]))^(1/3), Sqrt[2/(-1 - Sqrt[2])]}'
+# {(-1 - Sqrt[2])^(-1), ((-1 - Sqrt[2])^(-1))^(1/3), (I*Sqrt[2])/Sqrt[1 + Sqrt[2]]}
+```
+
+wolframscript takes the sign out of the reciprocal of a numeric sum whose
+leading term is negative, and keeps a rational factor under the root. A
+symbolic sum keeps its sign (`(-1 - x)^(-1)` stays). Woxi keeps the sign
+inside the numeric sum and splits the rational factor off.
 
 ### Exact generalized eigenvectors are scaled differently
 
@@ -2966,10 +2988,12 @@ Neville theta values are 1–2 ULP off wolframscript on some points.
 ### Mathieu functions
 
 `MathieuC[1, 2, 0.5]` is `0.26 + 1.17 I` in WL — the Mathieu functions are
-complex for a general characteristic value. Woxi's `MathieuS` returns a wrong
-**real** value, having confused the order-versus-characteristic convention.
-A correct fix needs a full Floquet implementation (continued fractions for the
-characteristic exponent plus Fourier coefficients).
+complex for a characteristic value in an unstable region (a complex
+characteristic exponent). Woxi returns a **real** value there. For a stable
+`(a, q)` with a non-integer exponent Woxi takes wolframscript's Floquet
+normalisation (unit-norm Fourier coefficients) and agrees; for an integer
+exponent (the periodic `ce`/`se`) it keeps the `y(0) = 1` / `y'(0) = √a`
+scaling.
 
 ### `SphericalHarmonicY` numericizes exact angles
 
@@ -3441,6 +3465,23 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### Endless rewrites stop at `$RecursionLimit`, not `$IterationLimit`
+
+```sh
+wolframscript -code 'a := b; b := a; a'           # $IterationLimit::itlim … TerminatedEvaluation[IterationLimit]
+woxi eval 'a := b; b := a; a'                     # $RecursionLimit::reclim … TerminatedEvaluation[RecursionLimit]
+wolframscript -code 'f[x_] := f[x + 1]; f[1]'     # $IterationLimit::itlim (4096 rewrites)
+woxi eval 'f[x_] := f[x + 1]; f[1]'               # $RecursionLimit::reclim
+```
+
+WL counts an expression rewritten into a new one in place (a symbol
+whose value is another symbol, a call whose rule returns another call
+at the top) against `$IterationLimit`; only a rewrite nested inside a
+subexpression (`x = x + 1`, `z = {z}`) goes against `$RecursionLimit`.
+Woxi has only the recursion limit in general (`$IterationLimit` is honoured
+for a few rules that rewrite to themselves), so both kinds end with
+`RecursionLimit`.
+
 ### SameQ of reals nested more than 256 levels deep
 
 ```sh
@@ -3830,6 +3871,14 @@ producing a `StudentTDistribution` over a *list* of degrees of freedom.
 
 Woxi returns its version *string* (`v0.3.0-46-g…`) rather than a number, so
 `ToString[$VersionNumber]` and any `$VersionNumber >= 9` test break.
+
+### `Animate` with an option it does not know
+
+`Animate[…]` evaluates to wolframscript's `Manipulate` (animator controls,
+sorted options, the `"Animate"` defaults). An unknown option
+(`Appearance -> None`, `ImageSize -> 100`) is dropped with
+`Animate::unknop` in both. wolframscript also prints three
+`OptionValue::nodef` messages first, which Woxi does not.
 
 ### `Manipulate`'s `Initialization` is not scoped
 
@@ -4848,18 +4897,80 @@ Woxi makes 10000 every time. The pictures look alike, but an expensive body
 ### Plot parts nest differently
 
 wolframscript wraps curves in `GraphicsComplex` / `Annotation` where Woxi emits
-plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid;
-`Graph[…, opts]` echoes its options unwrapped where wolframscript wraps them in
-a list.
+plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid.
 
-### Chart functions have no symbolic primitive list at all
+### 3D plots sample and nest differently
 
-`PieChart`, `BarChart` and friends render straight to SVG, so unlike `Plot`
-they expose no `Graphics[{…}]` to index into: `Head[PieChart[{0.3, 0.7}][[1]]]`
-is `Part` in Woxi (the `Part` stays unapplied on the opaque graphic) against
-`List` in wolframscript, and a `/.` rule that matches nothing leaves the whole
-expression alone rather than rewriting inside it. Making the charts symbolic
-means routing them through the `Graphics` layer the plots use.
+`ParametricPlot3D`, `ListPlot3D`, `ContourPlot3D` and `RevolutionPlot3D`
+draw the same surfaces, but the primitive tree differs from wolframscript's:
+
+- `ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]` has 201 line points in
+  Woxi and 284 in wolframscript (adaptive refinement). A curve clipped away
+  by `PlotRange` still leaves a `Line` in Woxi.
+- wolframscript wraps the surface's `GraphicsComplex` in a list and colours a
+  `ColorFunction` surface with `VertexColors`, so `p[[1, 2]]` is not a list
+  of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
+- `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
+  triangulation in wolframscript; Woxi draws one polygon over the points.
+- `RevolutionPlot3D` samples a hair inside the parameter range
+  (`1.0000001428…`), and an explicit `RevolutionAxis -> {0, 0, 1}` gives a
+  different (rotated) mesh than the default axis.
+
+The adaptive samplers are not decoded, so these cases are skip-listed.
+
+### `Plot` samples just inside the interval's ends
+
+wolframscript's first and last samples sit about `1*^-6` of the range inside
+`{x, 0, 1}`, so `PlotRange[Plot[x^2, {x, 0, 1}]]` gives
+`{{0., 1.}, {0., 0.9999999591836739}}`. Woxi samples the ends themselves and
+gives `{{0., 1.}, {0., 1.}}`.
+
+### Rasterizing a `Graphics` depends on the display scale
+
+`Image[Graphics[…, ImageSize -> {{246, 246}, {246, 246}}]]` is 492 × 492
+pixels in wolframscript on a Retina Mac (the front end renders at the
+display's scale), and `SetAlphaChannel[Graphics[…], mask]` is rasterized the
+same way. Woxi rasterizes at the requested size. **Not reproducible** across
+machines (compare "HighlightImage returns the image at its own size").
+
+### Chart functions: symbolic primitives
+
+`PieChart`, `BarChart` and friends return `Graphics[{…}]`, but only some
+reproduce wolframscript's primitive tree:
+
+- `RectangleChart`, ``BarCharts`GeneralizedBarChart``, `PairedBarChart` and
+  `PairedHistogram` use one
+  ``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]`` per bar, at
+  wolframscript's positions. The paired charts' axes, ticks and options are
+  not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
+  largest count between its halves. wolframscript's gap is a little smaller
+  and not proportional: `15/67` for a largest count of 3, `85/163` for 5.
+- `BarChart` of one plain dataset (a list or association of numbers, no
+  options) builds wolframscript's tree. Its bar edges and extents are
+  computed from the decoded layout and can be an ulp or two off
+  wolframscript's (the harness compares them with `NEAR_MATCH`). The layout
+  has three bar-width stretches (up to 9 bars, 10–33, 34–45) and touching
+  bars from 46 on. Those boundaries were read off wolframscript, not
+  derived. A chart with several datasets or with options still emits plain
+  `{RGBColor[…], Rectangle[…]}` pairs.
+- `RectangleChart3D` boxes are `GraphicsComplex` polygons at wolframscript's
+  corners, above an invisible base plate. The faces carry a plain colour
+  instead of wolframscript's `VertexColors` shading (and its
+  `LightDarkSwitched` pairs), and the scaled backdrop polygons, face grids
+  and options are missing.
+- `RectangleChart` `Callout` labels sit 19 printer points past the bar,
+  or 20 when the label has an ascender. That rule is read off a few labels
+  (wolframscript measures the text). Woxi draws the leader curves and the
+  `Offset` text at their base points, so the label can fall outside the
+  plot range.
+- `BulletGauge` builds wolframscript's tree. Two details differ: a
+  reference marker's matrix entry (`-0.07499999999999996`) changes in its
+  last digits with the marker position in wolframscript, and the series
+  colours from the third series on drift in the last digit. The colours
+  are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
+  Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
+  draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
+  scale's tick marks have no length.
 
 ### `PointSize` in `PlotStyle` and `ListPlot`'s `PlotLabel`
 
@@ -6536,8 +6647,7 @@ its fill/line colors. The same holds for `ColorData[7, k]` and
 Demonstration colors its triangle, discs and background with them). The
 schemes' values could not be checked against a real kernel. `ColorData[8][k]`
 (the row backgrounds of the `Grid` in the `The Perfect Venn Diagram`
-Demonstration's plot title) is in the same state. `ComputationalGeometry`ConvexHull` starts its index list at the
-leftmost corner, which is likewise unverified.
+Demonstration's plot title) is in the same state.
 
 
 ## Text width of `Row`/`Grid` captions is overestimated
@@ -6570,8 +6680,10 @@ unevaluated.
 `Sum[k^i, {i, q h, 0, -q}]` is re-indexed to `Sum[k^(h q - q i), {i, 0, h}]`
 but not summed in closed form (the kernel gives `(-1 + k^(q + h q))/(-1 +
 k^q)`). Applying a definition stored from it to numbers evaluates correctly.
-Steps that do not divide a symbolic span (`Sum[k^i, {i, 0, n, 2}]`) stay
-unevaluated.
+A concrete step that does not divide a symbolic span runs to
+`Floor[(n - a)/s]` (`Sum[k^i, {i, 0, n, 2}]` matches); with a step of 3
+from 1 wolframscript writes the top power as `k^(3*(1 + Floor[(-1 + n)/3]))`
+where Woxi expands it to `k^(3 + 3*Floor[(-1 + n)/3])`.
 
 ## Automatically sized `Graphics` in a `Row` inside a fixed `Pane`
 
@@ -6593,9 +6705,44 @@ printed form of the result differs.
 
 ## HighlightMesh draws no highlighting
 
-`HighlightMesh[mesh, spec]` evaluates to the bare mesh. wolframscript also
-highlights the cells `spec` names and, for `Labeled[0, "Index"]`, writes each
-vertex's index next to it; Woxi draws neither.
+`HighlightMesh[mesh, spec]` returns the mesh with the `Properties ->
+{{d, Default} -> MeshCellHighlight | MeshCellLabel -> …}` option
+wolframscript adds, but Woxi draws a `MeshRegion` as text, so neither the
+highlighted cells nor the vertex indices of `Labeled[0, "Index"]` appear in
+the picture. wolframscript's echo also normalises the mesh itself (machine
+coordinates, `{Polygon[…]}` cells), which Woxi does not.
+
+## ``ComputationalGeometry`VoronoiDiagram`` of machine points: last digits
+
+Woxi ports the package's divide-and-conquer Delaunay and its circumcenter
+formula, so exact input gives wolframscript's result exactly and the index
+lists always match. With machine coordinates a vertex whose circumcenter
+involves cancellation can differ in the last few digits:
+
+```sh
+# Needs["ComputationalGeometry`"]; First[VoronoiDiagram[{{0.1,0.3},{1.7,0.2},{0.9,1.3},{1.1,2.9},{2.3,1.7}}]][[1]]
+# wolframscript: {-1.5185185185185164, 2.4148148148148145}
+# woxi:          {-1.518518518518515, 2.414814814814813}
+```
+
+The kernel's `Dot`/`Det` round differently (probably fused multiply-adds).
+
+## `ImageLines` finds other lines
+
+Woxi's Hough transform reports one line per straight stroke. wolframscript
+reports several near-duplicate lines for each: on a 20 × 20 image with one
+diagonal it returns ten lines, Woxi one. The peak picking is not decoded, so
+the two `Round[First /@ ImageLines[…]]` cases are skip-listed.
+
+Decoded so far, from the lines wolframscript returns for w × h images: the
+accumulator has `Round[d] - 1` distance bins over the diagonal `d`, centred
+on the image centre, and `2 Round[π d/(4√2)] + 1` angle bins at
+`(k + 1/2) π/n`. A single 20-pixel column comes back as 12 lines with
+normals between 150° and 24°. Most of them are not local maxima of a plain
+vote count under any pixel-centre or rounding convention tried, so the
+voting itself (weights, prior edge detection or smoothing) is still unknown.
+`MaxFeatures -> 1` returns the default list's second line, so the list is
+not ordered by strength either.
 
 ## `PolyhedronData` covers only a subset of the polyhedron entities
 
@@ -6605,12 +6752,20 @@ Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
 give `PolyhedronData::notent`, so notebooks that offer them in a menu
 (such as polyhedron projection demonstrations) fail on those entries.
 
-### EdgeDetect only implements `Method -> "Canny"`
+### EdgeDetect: `"ShenCastan"`, `"StraightEdges"` and the default threshold
 
-`EdgeDetect[image, r, t, Method -> m, "StraightEdges" -> s]` accepts the
-options, but only `Method -> "Canny"` (or `Automatic`) with
-`"StraightEdges" -> 0` is computed. The `"ShenCastan"` and `"Sobel"` methods
-and non-zero `"StraightEdges"` leave the call unevaluated.
+`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are computed;
+`"ShenCastan"` and a non-zero `"StraightEdges"` leave the call unevaluated.
+
+With an explicit threshold `t` the result matches wolframscript pixel for
+pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
+with a bilinear comparison one pixel ahead and behind along the gradient,
+then keep each 8-connected ridge whose strongest pixel reaches `t`. The
+*default* threshold is not `FindThreshold[GradientFilter[img, r]]`,
+which Woxi uses. On the same images the effective default lies between
+0.9 and 1.07 times that value, and no `FindThreshold` method or histogram
+convention tried reproduces it. Woxi agrees on 29 of 36 such images; the
+others differ by one weak ridge run.
 
 
 ## `Solve` of a nonlinear numeric system returns spurious solutions first
@@ -6653,15 +6808,6 @@ Above 12 points Woxi uses iterated 2-opt/Or-opt local search. On random
 instances the tour comes within about 0.4% of WL's length and is sometimes
 shorter. `FindShortestTour[graph]` returns the cheapest Hamiltonian cycle along
 the graph's edges (or `{}`); it has not been compared against WL.
-
-### `RectangleChart` spacing and 3D layout are approximations
-
-The default gap between rectangles in WL drifts slightly with the number of
-rectangles: 0.098 for two, 0.097 for three, and 0.096 within datasets when
-there are several. Woxi uses a fixed 0.0975. Woxi also renders neither WL's
-hover tooltips nor the `"RoundingRadius"` option. `RectangleChart3D` stacks
-plain cuboids from y = 0 and leaves out WL's shaded base plate, face grids,
-`ViewPoint -> {2, -10, 2}` and box ratios.
 
 ### Grid `Interpolation` in two or more dimensions differs in the last digit
 
@@ -7251,9 +7397,6 @@ These reference-page examples still time out or diverge in Woxi:
   expression node).
 - `FiniteField` is not implemented, so `MatrixPower`/`LinearSolve` over
   `FiniteField[29, 4]` stay symbolic.
-- `PermutationMatrix[perm]` returns a dense matrix where wolframscript
-  returns a sparse `StructuredArray`, so `ByteCount` of a large one is slow
-  and large.
 - `NSolve`/`Solve`/`FindInstance` with `MaxRoots` on degree-10^6 polynomials,
   real-root isolation of sparse degree-10^6 polynomials over `Reals`, the
   slow `FindInstance` examples, `Resolve[Exists[…], Integers]` of a
@@ -7544,10 +7687,6 @@ Linux they come last.
 - `N[-GoldenRatio + 2 GoldenRatio/(2 + GoldenRatio) + GoldenRatio^2/(2 +
   GoldenRatio), 30]` (an exact zero) is `0``79.09` with `N::meprec` in
   wolframscript; Woxi answers a tiny nonzero `-4.68…`30.*^-97`.
-- `EllipticE`/`EllipticF` of a complex amplitude past the real branch lose
-  digits: `N[EllipticE[ArcSin[Sqrt[3/2]], 2/3]]` is `1.26118382064276 -
-  0.3036020376753771*I`, wolframscript `1.2611859497426054… -
-  0.30360162808571534…*I`.
 - Linear `Solve` results keep common factors wolframscript cancels:
   `Solve[{(x - 1) 2 + (y - 2) Pi == 0, x == 1 + t, y == 1 + 2 t}, {x, y, t}]`
   gives `x -> (2*Pi + 3*Pi^2)/(2*(Pi + Pi^2))` (wolframscript
@@ -7576,3 +7715,259 @@ Linux they come last.
 - `FindArgMin[…, Method -> "Newton"]` on a diverging start
   (QuantumMotionOfTwoParticles…) ends at a different point than
   wolframscript and takes ~1.5 s per call (wolframscript 15 ms).
+
+## Argument-form sweep conformance (C_args, 2026-11)
+
+### Apart with Modulus
+
+`Apart[1/(x^2 + x), Modulus -> 3]` is `x^(-1) - (1 + x)^(-1)` in WL, while
+Woxi reduces the partial-fraction coefficients mod 3 (`x^(-1) + 2/(1 + x)`).
+WL reduces the numerator and denominator mod p and factors the denominator
+mod p (`Apart[1/(x^2 + 1), Modulus -> 2]` is `(1 + x)^(-2)`), but then mixes
+rational and reduced coefficients: `Apart[1/(x^2 - 1), Modulus -> 5]` is
+`1/(3*(1 + x)) - 1/(3*(4 + x))` (unreduced thirds) while
+`Apart[2/(x (x + 1)^2), Modulus -> 3]` is `2/x + (1 + x)^(-2) + (1 + x)^(-1)`
+(reduced) and `Apart[(x^3 + 2)/(x^2 (x^2 + 1)), Modulus -> 5]` is
+`1/(3*x^2) + (2 + x)^(-1)` (one term unreduced, one reduced). Denominators
+of distinct linear factors seem to keep rational coefficients, but no rule
+covers all probes. `ApartSquareFree[(1 - x^2)/(x^4 + 2 x^2 + 1),
+Modulus -> 2]` is `(1 + x^2)^(-1)` (WL treats `1 + x^4` as `(1 + x^2)^2`
+there; Woxi gives the equal `(1 + x)^(-2)`).
+
+### BooleanMaxterms / BooleanMinterms without variables
+
+`BooleanMaxterms[{{0, 1, 1}}]` (and `BooleanFunction[k, n]`) evaluate to a
+`BooleanFunction` whose InputForm is WL's internal BDD encoding,
+`BooleanFunction["BDD" -> {3, 0, 2, 1, 1, 1, 3, 2, 1, -1}]`; Woxi leaves the
+call unevaluated. **Not reproducible** without WL's BDD node numbering.
+
+### `ConstantImage[…, opts]` adds `Magnification -> Automatic`
+
+`ConstantImage[RGBColor[0, 0.5, 1], {50, 50}, ImageSize -> 100]` lists
+`ColorSpace -> "RGB", ImageSize -> 100, Interleaving -> True,
+Magnification -> Automatic` in WL; Woxi prints the first three (its `Image`
+has no magnification slot). `ImageSize -> Small` (a named size) is not kept.
+
+### Gauges and graph layouts
+
+`ClockGauge`, `ThermometerGauge` and `VerticalGauge` (like `AngularGauge`
+and `HorizontalGauge`) return WL's internal styled gauge Graphics
+(`LightDarkSwitched`, nested `Style`, `Scaled` ticks); Woxi draws its own
+primitives, so their Graphics expressions and `Cases` over them differ.
+`GraphPlot` and `LayeredGraphPlot` coordinates come from WL's
+spring-electrical and layered layouts and are **not reproducible** point
+for point.
+
+### CountryData curated data
+
+WL 15's `CountryData["EU"]` lists `Entity["Country", …]` objects (Woxi:
+names), `CountryData["Italy", "FullName"]` is the official
+`"Italian Republic"` (Woxi: the common name), and the shape and polygon
+properties come from WL's finer outlines with its own nesting, so tests over
+their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ. These
+need WL's curated country data.
+
+### Symbolic `MatrixPower` with irrational or complex eigenvalues
+
+`MatrixPower[m, n]` for a symbolic `n` is written as `s . J^n . s^-1` and
+matches WL for upper-triangular matrices and rational matrices with
+rational nonzero eigenvalues. Matrices with radical or complex eigenvalues
+(`{{1, 2}, {3, 4}}`, `{{a, b}, {c, d}}`, `{{0, 1}, {-1, 0}}`) and a zero
+eigenvalue (WL writes `DiscreteDelta[n]`, `0^n`) stay unevaluated. Probes:
+WL's result for numeric radical eigenvalues equals
+`Cancel /@ (s . D^n . (Cancel /@ Inverse[s]))` with its own `JordanDecomposition`
+`s`, but for symbolic radicals (`{{a, b}, {c, d}}`, `{{1, 2}, {3, x}}`)
+it is `s . D^n . (Cancel /@ Inverse[s])` without the outer `Cancel` (the
+outer one flips the sign of `-a + d - Sqrt[…]` factors that WL keeps);
+which case applies is not decoded, and Woxi's `Inverse`/`Cancel` of
+radical expressions, its symbolic eigenvectors and its `I^n` products
+(`I/2 I^n` stays separate in WL) differ from WL's anyway.
+
+## Unit-test conformance sweep (misc cluster, 2026-11)
+
+Divergences the unit-test cross-check (`verify_unit_tests.ts`) found and
+that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
+(`NEAR_MATCH`), with the reason.
+
+- **Stored objects in an older internal form still evaluate.** A
+  Demonstration notebook saved by an older version stores
+  `TemporalData[EventSeries, {{values}, {{t0, t1, dt}}, 1}]`,
+  version-less `CompiledFunction[{Blank[Real]}, …, Function[…], Evaluate]`
+  dumps and raw `NearestFunction[1, {n, 1}, …, Hold[Nearest[…]]]` objects.
+  wolframscript 14 rejects all three (`TemporalData::invstrct`, or the call
+  stays unevaluated); Woxi evaluates them so the notebooks run. Deliberate.
+- **`Audio`Waveform`** is defined in Woxi as the sound player of the "Sounds
+  of Waveforms" Demonstration; a plain kernel has no definition (and with
+  ``Needs["Audio`"]`` the legacy package rejects `Audio`Square`).
+- **Plot attributes before the first plot.** `Attributes[Plot]` is
+  `{Protected, ReadProtected}` on a cold wolframscript kernel (an autoload
+  stub) and `{HoldAll, Protected, ReadProtected}` once any plot has been
+  drawn; Woxi reports the loaded attributes. Same non-determinism as
+  `Attributes[ParallelDo]`.
+- **`SmoothKernelDistribution`** follows wolframscript's stored grid
+  density (512 points from `min - 5 h` to `max + 5 h`, linearly binned data,
+  kernel cut at `5 h`, trapezoid-normalized, linear in between; Variance is
+  the trapezoid one plus `δ^2/3`). Two things remain: the Gaussian
+  `Variance` differs from wolframscript's in the tenth digit
+  (`1.3056733890928802` against `1.3056733885323657`; the Epanechnikov one
+  agrees to the last bit), and the `"Rectangular"` kernel, which
+  wolframscript stores as an adaptively sampled step function (90 points
+  for `{1., 2., 3.5}`, bandwidth 0.7, its support cut at the data's
+  ends), keeps Woxi's exact kernel sum.
+- **`DictionaryWordQ[w, Language -> l]`**: Woxi's word list is English only.
+- **Stream numbers.** wolframscript keeps stream 3 open for its own output
+  file, so its first `StringToStream` is `InputStream[String, 4]`; a kernel's
+  (and Woxi's) is 3.
+- **`TreePlot`** returns the legacy GraphPlot drawing in wolframscript
+  (`GraphicsComplex`, `Hue` directives, a disk radius from its own size
+  heuristics, the graph center as the default root); Woxi draws its own tree
+  layout. Not compared: Graphics internals.
+- **Last-digit values** (`NEAR_MATCH`): `PeriodogramArray` (FFT round-off,
+  `6.249999999999998` for 6.25), `Hyperfactorial[4.]`
+  (`27647.99999999983`), `SphericalHankelH1[2, -5.]` (Woxi's real part is
+  the correctly rounded `SphericalBesselJ`), `Projection` onto a list of
+  machine vectors, `Mean[InverseChiSquareDistribution[53.2, 1.04]]`,
+  `Accuracy[N[Exp[100], {Infinity, -10}]]` (wolframscript's two Log10s
+  disagree in the last bit) and the spline peaks of
+  `FindPeaks[…, InterpolationOrder -> 2 | 3]` (same positions; the values at
+  a list end come out as `2.000000000000001` in wolframscript).
+- **Two-sample `KolmogorovSmirnovTest`** p-values are exact rationals
+  rounded once; wolframscript's own evaluation is off by one unit in the
+  last place for some samples (`Range[60]` against `Range[5, 70]`:
+  `0.3653150154290672`, the exact value rounds to `…725`).
+
+## Machine results that differ in the last digits
+
+Iterated and least-squares machine results agree with wolframscript to
+within a few units in the last place but not bit for bit: `Solve`/`NSolve`
+roots (`2.999999999999999` against `3.`), `LinearProgramming` with integer
+variables (`0.49999999999999956`), constrained `FindMaximum` stopping points
+(`1.0000000026163025`), `NIntegrate` (`0.5000000000000006`), `LinearSolve`
+least-squares and minimum-norm solutions, `FindFit`, `NonlinearModelFit`,
+`GeneralizedLinearModelFit`, machine `Eigenvalues`, `QPochhammer`, `Erfc` and
+`InverseErf`, and a `RecurrenceTable` solved for its leading terms
+(`72.49999999999999`). The conformance harness compares these with
+`NEAR_MATCH` (relative 10^-8). Where a rounding step magnifies the difference
+(`Round[…, 10^-6]` of an ANOVA sum on a tie, the `L` of a bounded
+`FindMaximum` rounded to 10^-6) the cases are skipped.
+
+## Software arithmetic past the machine range
+
+Machine arithmetic that overflows continues as arbitrary-precision numbers.
+Woxi computes those exactly from the machine operands and tags them with
+wolframscript's precision (`15.954589770191005`, or 52 bits for an integer
+power); wolframscript's software arithmetic carries its own rounding:
+`(10.^400 + 10.^400)/10.^399` is `19.999999999999925` and
+`1.5^3000/1.5^2999` is `1.5000000000000002` (Woxi `20.` and `1.5`), and
+`1.*^200 1.*^200/(1.*^300 1.*^100) // N` underflows with `General::munfl`
+to `0.` (Woxi `1.`). `N[(2 + I)^5, 20]` gives the two parts of a complex
+number different precisions (``-38.`19.98…``, ``41.`20.02…``) where Woxi
+keeps 20 for both.
+
+## `NSolve` root order and multiplicity
+
+For a numeric polynomial system wolframscript lists the roots in the order
+its homotopy continuation finds them (`{{-5.557, -5.59}, {0.365, -1.6}}`)
+and, for the restricted three-body equilibrium system, repeats roots of
+higher multiplicity (8 solutions where Woxi gives the 5 distinct ones). Woxi
+sorts the distinct roots.
+
+## `FindInstance` picks other witnesses
+
+`FindInstance[x > 1000, x]` is `{{x -> 1027}}` and
+`FindInstance[x < -1000, x]` is `{{x -> -1075}}` in wolframscript (an
+internal heuristic); Woxi gives the nearest integers `1001` and `-1001`.
+
+## `NDSolve` accuracy and step control
+
+Several assertions about `NDSolve`, `NDEigensystem` and `NDEigenvalues`
+results hold for Woxi's solvers but not for wolframscript's: the
+cylindrical reactor PDE system, the periodic Schrödinger equation
+(`Abs[u - exact] < 10^-4`), the step count of an index-1 DAE at
+`AccuracyGoal -> 3` versus 12, a DAE with a `(1 - u)^1.5` constraint (which
+wolframscript does not solve at all), the FEM eigenvalues of `-u''`
+(`4.0001`, `9.0006` against Woxi's `4.`, `9.`) and of an anharmonic
+oscillator (`2.633`, `4.781` against `2.632`, `4.777`), a `FindFit` with a
+`NumericQ`-guarded model (wolframscript lands `10^-5` off), and a large
+sparse `LinearSolve` whose residual stays above `10^-12` in wolframscript.
+
+## `DSolve` particular solutions and constants
+
+- Variation of parameters needs wolframscript's integrals of trigonometric
+  products, which depend on how the integrand is scaled:
+  `Integrate[Cos[x] Sin[2 x], x]` is `-1/2*Cos[x] - Cos[3*x]/6` but
+  `Integrate[Cos[x] Sin[2 x]/2, x]` is `-1/3*Cos[x]^3`, and
+  `Integrate[Sin[x] Cos[3 x], x]` is `Cos[x]^2/2 - Cos[4*x]/8` (Woxi
+  `Cos[2*x]/4 - Cos[4*x]/8`). So `y'' + 4 y == Cos[x]` gives
+  `(4*Cos[x]^3*Cos[2*x] + …)/12` there and `(3*Cos[x]*Cos[2*x] +
+  Cos[2*x]*Cos[3*x] + …)/12` in Woxi (equal values), and likewise the
+  initial value problem with `Sin[x]` forcing.
+- Euler equations (`x^2 y'' + x y' - y == 0`, `x^2 y'' + y == 0`) and other
+  variable-coefficient equations that are not exact
+  (`x y'' + 2 y' + x y == 0`) stay unevaluated, and so does a system that
+  reduces to one (`{y' == 2 z, z' == -y/(2 x^2)}`). wolframscript labels the
+  constants of some Euler solutions in its own way
+  (`x^2*C[2]*Cos[3*Log[x]] + x^2*C[1]*Sin[3*Log[x]]`,
+  `C[1]/x^2 + (2*C[2]*Log[x])/x^2`).
+- A boundary-value solution over a denominator built from powers of `E` has
+  its signs normalized differently: `{y'' == y, y[0] == 1, y[1] == 0}` is
+  `-((-E^2 + E^(2*x))/(E^x*(-1 + E^2)))` in wolframscript and
+  `-((E^2 - E^(2*x))/(E^x*(1 - E^2)))` in Woxi, the sign rule of `Together`
+  for such numerators (`Together[E^(2 - x) - E^x]` is
+  `-((-E^2 + E^(2*x))/E^x)` there).
+
+## `Reduce` of polynomial systems outside shape position
+
+Systems whose Gröbner basis is `{g(x), a y - q(x)}` are answered as
+`(x == … || …) && y == q(x)`, as in wolframscript. Other shapes differ:
+`{x^2 + y^2 == 1, x^2 - y^2 == 0}` is `((x == -(1/Sqrt[2]) || x ==
+1/Sqrt[2]) && y == -x) || (… && y == x)` there (the second equation factored
+into branches) where Woxi lists the four points; `{x^2 == 1, y^2 == 4}`
+enumerates the points with `y` first; a parametric system
+(`{x^2 + y^2 == 1, x + y == a}`) keeps `y == a - x` there. A solved linear
+value that is not a polynomial is expanded in wolframscript
+(`Reduce[3 y == Sin[x] + 1, y]` is `y == 1/3 + Sin[x]/3`; Woxi
+`y == (1 + Sin[x])/3`).
+
+## Remaining symbolic forms
+
+- `Eigenvectors` of an exact numeric 3×3 matrix with `Root` eigenvalues:
+  wolframscript writes each component as its own `Root` object
+  (`{Root[9 - 44*#1 + 30*#1^2 + 33*#1^3 & , 2, 0], …}`), Woxi as a
+  rational function of the eigenvalue. Radical eigenvectors are normalized
+  differently too (`{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}`: `-((-15 -
+  Sqrt[33])/(33 + 7*Sqrt[33]))` against `(15 + Sqrt[33])/(33 +
+  7*Sqrt[33])`; `{{1, 1, 0}, {1, 2, 1}, {0, 1, 3}}`: `{-1, -1, 1}` against
+  `{1, 1, -1}`).
+- `MeijerG` closed forms cover one pole series (`G^{1,0}_{0,1}`,
+  `G^{1,1}_{1,1}`, `G^{1,0}_{0,2}`) of a symbol, with `r = n` or `r = 1/n`.
+  A compound argument (`MeijerG[{{}, {}}, {{a}, {b}}, x^2]`, wolframscript
+  `x^(-a + b)*(x^2)^(a + (a - b)/2 + (-a + b)/2)*BesselJ[a - b, 2*x]`) or
+  other `r` stay unevaluated, and `G^{1,1}_{1,1}` with `r = 2` orders its
+  factors `z^(b/2)*(1 + Sqrt[z])^(-1 + a - b)` where wolframscript has
+  `(1 + Sqrt[z])^(-1 + a - b)*z^(b/2)` (the Times order of a power of a
+  symbol against a power of a sum holding its root).
+- `DiscreteAsymptotic[Sin[n], n -> Infinity]` stays unevaluated;
+  wolframscript returns one exponential branch written in `Cos[1/2]` and
+  `Sin[1/2]`. Of the `Log` and `Exp` forms of factorials only `n!`,
+  `Gamma[n]` and `Gamma[n + 1]` (times constants and exponentials) are
+  reproduced: `Log[(2 n)!]`, `Log[Gamma[2 n]]`, `Sqrt[n!]` and `n! + 1`
+  (`1 + (n^(1/2 + n)*Sqrt[2*Pi])/E^n` there) differ, as does
+  `DiscreteAsymptotic[Gamma[n + 1], n -> Infinity]`
+  (`E^(-1 - n)*(1 + n)^(1/2 + n)*Sqrt[2*Pi]`). `Log[n! 2^n]` comes out
+  right up to the product `2^n*Sqrt[2*Pi]`, which wolframscript writes
+  `2^(1/2 + n)*Sqrt[Pi]` (and `3^n Sqrt[6]` as `Sqrt[2]*3^(1/2 + n)`).
+- Indefinite integrals of `p(x) Sqrt[q(x)]` for a quadratic `q` stay
+  unevaluated. wolframscript's forms vary with the radicand:
+  `(x*Sqrt[1 + x^2] + ArcSinh[x])/2`, but
+  `(x*Sqrt[4 + x^2])/2 + 2*ArcTanh[x/Sqrt[4 + x^2]]`,
+  `(x*Sqrt[2 - 3*x^2])/2 + ArcTan[x/Sqrt[2/3 - x^2]]/Sqrt[3]`,
+  `((1 + x)*Sqrt[2 + 2*x + x^2])/2 - Log[-1 - x + Sqrt[2 + 2*x + x^2]]/2`
+  and `(Sqrt[1 + x^2]*(x + 2*x^3))/8 - ArcTanh[x/Sqrt[1 + x^2]]/8`; the
+  definite `Integrate[Sqrt[1 - x^2], {x, 0, 2}]` is
+  `((2*I)*Sqrt[3] + ArcSin[2])/2` there (Woxi leaves it unevaluated) and
+  `Integrate[Sqrt[1 + x^2], {x, 0, 1}]` is `(Sqrt[2] + ArcSinh[1])/2`
+  (Woxi `1/Sqrt[2] + ArcSinh[1]/2`).
+- `RotationMatrix[t, {a, 1, 0}]` with a symbolic component stays
+  unevaluated (wolframscript's general formula carries `Conjugate` of every
+  component).

@@ -1796,6 +1796,62 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   Some((num_evaluated, Expr::Integer(lcm_d)))
 }
 
+/// A product holding a raw quotient node (`-(E^z/(-1 + 2*z))` as Together
+/// can build it), rebuilt in canonical form so its factors are visible.
+fn canonical_quotient_product(e: &Expr) -> Option<Expr> {
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = e
+  {
+    let product = Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), operand.as_ref().clone()].into(),
+    };
+    return Some(canonical_quotient_product(&product).unwrap_or(product));
+  }
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Times"
+    || !args.iter().any(|f| {
+      matches!(
+        f,
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          ..
+        }
+      ) || matches!(f, Expr::FunctionCall { name, .. } if name == "Times")
+    })
+  {
+    return None;
+  }
+  let mut flat = Vec::new();
+  for f in args {
+    match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        flat.push(left.as_ref().clone());
+        flat.push(Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![right.as_ref().clone(), Expr::Integer(-1)].into(),
+        });
+      }
+      Expr::FunctionCall { name, args: inner } if name == "Times" => {
+        flat.extend(inner.iter().cloned());
+      }
+      other => flat.push(other.clone()),
+    }
+  }
+  Some(Expr::FunctionCall {
+    name: "Times".to_string(),
+    args: flat.into(),
+  })
+}
+
 /// Numerator[x] - Returns the numerator of a rational expression
 pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -1808,6 +1864,11 @@ pub fn numerator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let trig_option = args.len() == 2 && is_trig_true_option(&args[1]);
   if trig_option && let Some(n) = numerator_trig(&args[0]) {
     return Ok(n);
+  }
+  if let Some(flat) = canonical_quotient_product(&args[0]) {
+    let mut rest = args.to_vec();
+    rest[0] = flat;
+    return numerator_ast(&rest);
   }
   // Exact complex rational: combine to common denominator and return the
   // integer (or Complex integer) numerator, e.g. 3/7 + I/11 → 33 + 7 I.
@@ -1896,6 +1957,11 @@ pub fn denominator_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Optional Trig -> True option enables denominator extraction
   // for top-level Tan/Cot/Sec/Csc and their hyperbolic counterparts.
+  if let Some(flat) = canonical_quotient_product(&args[0]) {
+    let mut rest = args.to_vec();
+    rest[0] = flat;
+    return denominator_ast(&rest);
+  }
   let trig_option = args.len() == 2 && is_trig_true_option(&args[1]);
   if trig_option && let Some(d) = denominator_trig(&args[0]) {
     return Ok(d);

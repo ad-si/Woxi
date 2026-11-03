@@ -787,10 +787,22 @@ mod rescale {
       .unwrap(),
       "{20, 24, 8}"
     );
-    // A symbolic value or bound stays unevaluated.
+    // A symbolic value gives the line through the two bounds.
     assert_eq!(
       interpret("Rescale[x, {Log[2], Log[4]}]").unwrap(),
-      "Rescale[x, {Log[2], Log[4]}]"
+      "x/(-Log[2] + Log[4]) - Log[2]/(-Log[2] + Log[4])"
+    );
+  }
+
+  #[test]
+  fn rescale_symbolic_value_with_numeric_bounds() {
+    assert_eq!(
+      interpret(
+        "{Rescale[Pi, {1, 2}], Rescale[x, {2, 4}, {10, 20}], \
+         Rescale[2 x, {1, 3}], Rescale[x, {1., 3}], Rescale[a, {b, a}]}"
+      )
+      .unwrap(),
+      "{-1 + Pi, 5*x, -1/2 + x, -0.5 + 0.5*x, 1}"
     );
   }
 
@@ -5181,10 +5193,33 @@ mod distribution_fit_test {
       .unwrap(),
       "{0.2387562635567651, 0.2387562635567651, True}"
     );
-    // A two-sample test is not implemented and stays unevaluated.
+  }
+
+  // Two samples: the exact permutation p-value of the two-sample statistic,
+  // ties counted at the end of each block of equal values (wolframscript).
+  #[test]
+  fn two_sample_kolmogorov_smirnov() {
     assert_eq!(
       interpret("KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]").unwrap(),
-      "KolmogorovSmirnovTest[{1, 2, 3}, {2, 3, 4}]"
+      "1."
+    );
+    assert_eq!(
+      interpret(
+        "{KolmogorovSmirnovTest[{1, 2, 3, 4, 5}, {3, 4, 5, 6, 7, 8}], \
+         KolmogorovSmirnovTest[{1, 2, 2, 3}, {2, 2, 4, 5}], \
+         KolmogorovSmirnovTest[Range[10], Range[11, 20]]}"
+      )
+      .unwrap(),
+      "{0.24675324675324675, 0.42857142857142855, 0.00001082508822446903}"
+    );
+    assert_eq!(
+      interpret(
+        "{KolmogorovSmirnovTest[Range[30], Range[10, 45], \"TestStatistic\"], \
+         KolmogorovSmirnovTest[{1., 2.5, 3, 4.2}, {0.5, 1.5, 2, 3.3, 7}, \
+         {\"TestStatistic\", \"PValue\"}]}"
+      )
+      .unwrap(),
+      "{5/12, {0.3500000000000001, 0.873015873015873}}"
     );
   }
 
@@ -5374,10 +5409,11 @@ mod hypothesis_testing_legacy_package {
   }
 
   #[test]
+  // wolframscript defines MeanCI only once the package is loaded.
   fn mean_ci_default_level_is_ninety_five_percent() {
     clear_state();
     assert_eq!(
-      interpret("Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}], 10^-6]")
+      interpret("Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}], 10^-6]")
         .unwrap(),
       "{249241/1000000, 5000759/1000000}"
     );
@@ -5388,7 +5424,7 @@ mod hypothesis_testing_legacy_package {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+        "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          ConfidenceLevel -> 0.9], 10^-6]"
       )
       .unwrap(),
@@ -5401,7 +5437,7 @@ mod hypothesis_testing_legacy_package {
     clear_state();
     assert_eq!(
       interpret(
-        "Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
+        "Needs[\"HypothesisTesting`\"]; Round[HypothesisTesting`MeanCI[{1, 2, 3, 9/2}, \
          KnownVariance -> 2], 10^-6]"
       )
       .unwrap(),
@@ -5413,7 +5449,7 @@ mod hypothesis_testing_legacy_package {
   fn mean_ci_matrix_gives_one_interval_per_column() {
     clear_state();
     assert_eq!(
-      interpret("Length[HypothesisTesting`MeanCI[{{1, 2}, {3, 5}, {4, 9}}]]")
+      interpret("Needs[\"HypothesisTesting`\"]; Length[HypothesisTesting`MeanCI[{{1, 2}, {3, 5}, {4, 9}}]]")
         .unwrap(),
       "2"
     );
@@ -10984,15 +11020,23 @@ mod random_function_simulation {
       .unwrap(),
       "{50, True, 1, {}}"
     );
-    // A deterministic chain alternates between its states; the start time
-    // may be nonzero.
+    // A deterministic chain alternates between its states. The process
+    // starts at time 0, so a later window sees it already moved on.
     assert_eq!(
       interpret(
         "RandomFunction[DiscreteMarkovProcess[2, {{0, 1}, {1, 0}}], {1, 5}]\
          [\"Path\"]"
       )
       .unwrap(),
-      "{{1, 2}, {2, 1}, {3, 2}, {4, 1}, {5, 2}}"
+      "{{1, 1}, {2, 2}, {3, 1}, {4, 2}, {5, 1}}"
+    );
+    assert_eq!(
+      interpret(
+        "RandomFunction[DiscreteMarkovProcess[2, {{0, 1}, {1, 0}}], {3, 6}]\
+         [\"Path\"]"
+      )
+      .unwrap(),
+      "{{3, 1}, {4, 2}, {5, 1}, {6, 2}}"
     );
     // The same seed reproduces the same realization.
     assert_eq!(
@@ -11947,10 +11991,28 @@ mod count_level_pruning {
     assert_eq!(
       interpret(
         "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
-         KendallTauTest[x, y, \"PValue\"] == KendallTauTest[x, y, PValue]"
+         KendallTauTest[x, y, \"PValue\"] == KendallTauTest[x, y]"
       )
       .unwrap(),
       "True"
+    );
+    assert_eq!(
+      interpret(
+        "x = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10.}; y = {2, 1, 4, 3, 6, 5, 8, 7, 10, 9.}; \
+         KendallTauTest[x, y, {\"PValue\", \"TestStatistic\"}] == \
+         {KendallTauTest[x, y], KendallTau[x, y]}"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A property is a string: the symbol `PValue` is not one.
+  #[test]
+  fn kendall_tau_test_symbol_property_is_invalid() {
+    assert_eq!(
+      interpret("KendallTauTest[{1, 2, 3}, {1, 3, 2}, PValue]").unwrap(),
+      "KendallTauTest[{1, 2, 3}, {1, 3, 2}, PValue]"
     );
   }
 }
@@ -11958,9 +12020,10 @@ mod count_level_pruning {
 mod smooth_kernel_distribution {
   use super::*;
 
-  // The kernel density estimate itself (wolframscript bins it, so its
-  // values agree to about six digits): Gaussian by default, other kernels
-  // scaled to unit variance, Silverman's bandwidth when none is given.
+  // wolframscript's grid density: the data linearly binned onto 512 points
+  // from min - 5 h to max + 5 h, convolved with the kernel, linear between
+  // the points. Gaussian by default, Silverman's bandwidth when none is
+  // given.
   #[test]
   fn density_distribution_and_moments() {
     assert_eq!(
@@ -11971,7 +12034,38 @@ mod smooth_kernel_distribution {
          1.5], PDF[SmoothKernelDistribution[{1., 2., 3.5, 4.2, 7.}], 1.5]}]"
       )
       .unwrap(),
-      "{32272, 33334, 216667, 130556, 35777, 14975}"
+      "{32272, 33334, 216667, 130567, 35774, 14974}"
+    );
+  }
+
+  #[test]
+  fn grid_density_values() {
+    assert_eq!(
+      interpret(
+        "d = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; \
+         Round[10^12 {PDF[d, 1.5], CDF[d, 4.7], Mean[d], PDF[d, -1.]}]"
+      )
+      .unwrap(),
+      "{322717217822, 997264590656, 2166666665818, 89383908}"
+    );
+    // Outside the grid the density is 0 and the distribution is 0 or 1.
+    assert_eq!(
+      interpret(
+        "d = SmoothKernelDistribution[{1., 2., 3.5}, 0.5]; \
+         {PDF[d, 7.], CDF[d, -2.], CDF[d, 8.]}"
+      )
+      .unwrap(),
+      "{0., 0., 1.}"
+    );
+    // The triangular and biweight kernels live on [-1, 1].
+    assert_eq!(
+      interpret(
+        "Round[10^10 {PDF[SmoothKernelDistribution[{1., 2., 3.5}, 0.7, \
+         \"Triangular\"], 2.2], PDF[SmoothKernelDistribution[{1., 2., 3.5}, \
+         0.7, \"Biweight\"], 2.2]}]"
+      )
+      .unwrap(),
+      "{3400816729, 3764185650}"
     );
   }
 }
@@ -12034,6 +12128,8 @@ mod hypothesis_testing_intervals_and_p_values {
 mod hierarchical_clustering_package {
   use super::*;
 
+  // Symbols are read when their line is: on the line that loads the
+  // package, a bare `ClusterFlatten` is still `Global`ClusterFlatten`.
   #[test]
   fn agglomerate_and_flatten() {
     assert_eq!(
@@ -12045,8 +12141,35 @@ mod hierarchical_clustering_package {
       )
       .unwrap(),
       "{Cluster[Cluster[Cluster[1, 4, 1, 1, 1], 2, Sqrt[5], 2, 1], 3, Sqrt[61], 3, 1], \
-       {1, 4, 2, 3}, Cluster[Cluster[Cluster[{1, 2}, {1, 3}, 1, 1, 1], {3, 4}, 5, 2, 1], \
-       {9, 9}, 61, 3, 1]}"
+       Global`ClusterFlatten[Cluster[Cluster[Cluster[1, 4, 1, 1, 1], 2, Sqrt[5], 2, 1], \
+       3, Sqrt[61], 3, 1]], Global`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]}"
+    );
+  }
+
+  #[test]
+  fn qualified_names_on_the_loading_line() {
+    assert_eq!(
+      interpret(
+        "Get[\"HierarchicalClustering`\"]; \
+         c = HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}} -> \
+         {1, 2, 3, 4}, DistanceFunction -> EuclideanDistance]; \
+         {HierarchicalClustering`ClusterFlatten[c], \
+         HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]}"
+      )
+      .unwrap(),
+      "{{1, 4, 2, 3}, Cluster[Cluster[Cluster[{1, 2}, {1, 3}, 1, 1, 1], {3, 4}, 5, 2, \
+       1], {9, 9}, 61, 3, 1]}"
+    );
+  }
+
+  // Once the package is loaded, its bare names read as its symbols.
+  #[test]
+  fn bare_names_after_loading() {
+    clear_state();
+    interpret("Get[\"HierarchicalClustering`\"]").unwrap();
+    assert_eq!(
+      interpret("{Context[ClusterFlatten], Context[Linkage]}").unwrap(),
+      "{HierarchicalClustering`, HierarchicalClustering`}"
     );
   }
 
@@ -12057,8 +12180,10 @@ mod hierarchical_clustering_package {
     assert_eq!(
       interpret(
         "Get[\"HierarchicalClustering`\"]; \
-         heights[c_] := Cases[c, Cluster[_, _, d_, __] :> d, {0, Infinity}]; \
-         Table[Sort[heights[Agglomerate[{1, 2, 4, 10, 11, 20}, Linkage -> l]]], \
+         heights[c_] := Cases[c, HierarchicalClustering`Cluster[_, _, d_, __] :> d, \
+         {0, Infinity}]; \
+         Table[Sort[heights[HierarchicalClustering`Agglomerate[{1, 2, 4, 10, 11, 20}, \
+         HierarchicalClustering`Linkage -> l]]], \
          {l, {\"Single\", \"Complete\", \"Average\", \"WeightedAverage\", \
          \"Centroid\", \"Median\", \"Ward\"}}]"
       )
@@ -12074,7 +12199,8 @@ mod hierarchical_clustering_package {
     assert_eq!(
       interpret(
         "Get[\"HierarchicalClustering`\"]; \
-         Cases[DendrogramPlot[Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]], \
+         Cases[HierarchicalClustering`DendrogramPlot[\
+         HierarchicalClustering`Agglomerate[{{1, 2}, {3, 4}, {9, 9}, {1, 3}}]], \
          _Line, Infinity]"
       )
       .unwrap(),

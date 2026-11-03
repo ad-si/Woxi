@@ -38,9 +38,19 @@ pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
     vec![],
   );
+  let previous = REDUCE_PRESENTATION.with(|f| f.replace(true));
   let result = reduce_ast_unquieted(args);
+  REDUCE_PRESENTATION.with(|f| f.set(previous));
   crate::pop_quiet_filter();
   result
+}
+
+thread_local! {
+  /// Set while a `Reduce[…]` call is being answered (and cleared again by
+  /// a `Solve` inside it): only `Reduce` presents a shape-position system
+  /// as `(x == … || …) && y == q(x)`; `Solve` needs the values.
+  pub static REDUCE_PRESENTATION: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
 }
 
 fn reduce_ast_unquieted(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -234,9 +244,7 @@ fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let vars = if let Some(spec) = args.get(1) {
     extract_reduce_vars(spec)
   } else {
-    let mut own = Vec::new();
-    constraint_variables(expr, &mut own);
-    own
+    default_reduce_variables(expr)
   };
   if vars.is_empty() {
     return Ok(unevaluated("Reduce", args));
@@ -828,6 +836,69 @@ fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
   }
 }
 
+/// The variables `Reduce[expr]` eliminates when none are named, in
+/// wolframscript's order: the conjuncts that share variables form groups,
+/// taken in the order they first appear, and within a group the variables go
+/// in reverse canonical order — so the alphabetically last one is free and
+/// the first is solved for last: `Reduce[x + y == 1]` is `x == 1 - y`,
+/// `Reduce[{a + b == 2, a - b == 0, c == 1}]` is
+/// `b == 1 && a == 1 && c == 1`.
+fn default_reduce_variables(expr: &Expr) -> Vec<String> {
+  fn conjuncts(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| conjuncts(i, out)),
+      Expr::FunctionCall { name, args } if name == "And" => {
+        args.iter().for_each(|i| conjuncts(i, out));
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        conjuncts(left, out);
+        conjuncts(right, out);
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut parts = Vec::new();
+  conjuncts(expr, &mut parts);
+  let mut groups: Vec<Vec<String>> = Vec::new();
+  for part in &parts {
+    let mut vars = Vec::new();
+    constraint_variables(part, &mut vars);
+    if vars.is_empty() {
+      continue;
+    }
+    // Merge every group this conjunct touches into the first of them.
+    let touched: Vec<usize> = (0..groups.len())
+      .filter(|&g| groups[g].iter().any(|v| vars.contains(v)))
+      .collect();
+    match touched.first() {
+      None => groups.push(vars),
+      Some(&first) => {
+        for &g in touched[1..].iter().rev() {
+          let moved = groups.remove(g);
+          groups[first].extend(moved);
+        }
+        groups[first].extend(vars);
+      }
+    }
+  }
+  let mut ordered = Vec::new();
+  for mut group in groups {
+    group.sort_by(|a, b| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(
+        &Expr::Identifier(b.clone()),
+        &Expr::Identifier(a.clone()),
+      )
+    });
+    group.dedup();
+    ordered.extend(group);
+  }
+  ordered
+}
+
 /// The free variables of a constraint, in the order they first appear.
 ///
 /// These are the variables `Reduce` falls back to when the caller's list
@@ -1325,6 +1396,116 @@ fn try_reduce_linear_parametric(
   Ok(Some(or_results(&degenerate, &solution)))
 }
 
+/// The solution `var == value` of `c1 var + c0 == 0` with a number `c1`
+/// and `c0` a rational function of other symbols, `value` in
+/// [`linear_solution_form`] and guarded by its denominator. `None` for any
+/// other equation.
+fn linear_numeric_solution(
+  expanded: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  if crate::syntax::contains_inexact(expanded) {
+    return Ok(None);
+  }
+  let var_expr = id_expr(var);
+  // `-4 + Sqrt[x] + x` has exponent 1 in x but is no linear equation.
+  if !matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[expanded.clone(), var_expr.clone()],
+    )?,
+    Expr::Identifier(ref t) if t == "True"
+  ) {
+    return Ok(None);
+  }
+  let degree = crate::functions::polynomial_ast::exponent_ast(&[
+    expanded.clone(),
+    var_expr.clone(),
+  ])?;
+  if !matches!(degree, Expr::Integer(1)) {
+    return Ok(None);
+  }
+  let coefficient = |k: i128| {
+    crate::functions::polynomial_ast::coefficient_ast(&[
+      expanded.clone(),
+      var_expr.clone(),
+      Expr::Integer(k),
+    ])
+  };
+  let (c1, c0) = (coefficient(1)?, coefficient(0)?);
+  if !is_reduce_number(&c1) || !is_constant_wrt(&c0, var) {
+    return Ok(None);
+  }
+  // Only a rational function of plain symbols (`(1 + Sin[x])/3` is
+  // written `1/3 + Sin[x]/3`).
+  let variables = crate::evaluator::evaluate_function_call_ast(
+    "Variables",
+    std::slice::from_ref(&c0),
+  )?;
+  let Expr::List(ref vs) = variables else {
+    return Ok(None);
+  };
+  if vs.iter().any(|v| !matches!(v, Expr::Identifier(_))) {
+    return Ok(None);
+  }
+  let value =
+    crate::evaluator::evaluate_expr_to_expr(&div2(negate_expr(&c0), c1))?;
+  let value = linear_solution_form(&value);
+  // A symbolic denominator must not vanish: `b != 0 && y == (a + b)/(2*b)`.
+  let den = crate::evaluator::evaluate_function_call_ast(
+    "Denominator",
+    std::slice::from_ref(&value),
+  )?;
+  let symbolic: Vec<Expr> =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(&den)
+      .into_iter()
+      .filter(|f| !crate::functions::predicate_ast::is_numeric_q(f))
+      .collect();
+  let equality = make_equality(&id_expr(var), &value);
+  if symbolic.is_empty() {
+    return Ok(Some(equality));
+  }
+  let condition = make_comparison(
+    &crate::evaluator::evaluate_expr_to_expr(&times(symbolic))?,
+    &Expr::Integer(0),
+    CompOp::NotEqual,
+  );
+  Ok(Some(and2(condition, equality)))
+}
+
+/// A solved value as wolframscript's `Reduce` writes it: over one
+/// denominator, the numerator in its square-free factorization unless that
+/// starts with a minus sign — `y == (x*(1 + x))/2`, `y == (-1 + x)*x`,
+/// `y == (1 + x)^2/3`, but `y == (-1 + x^2)/2`, `y == (5*x - x^3)/2`,
+/// `y == -x - x^2`.
+pub fn linear_solution_form(value: &Expr) -> Expr {
+  use crate::evaluator::evaluate_function_call_ast as call_fn;
+  let Ok(together) = call_fn("Together", std::slice::from_ref(value)) else {
+    return value.clone();
+  };
+  let (Ok(num), Ok(den)) = (
+    call_fn("Numerator", std::slice::from_ref(&together)),
+    call_fn("Denominator", std::slice::from_ref(&together)),
+  ) else {
+    return together;
+  };
+  let Ok(factored) = call_fn("FactorSquareFree", std::slice::from_ref(&num))
+  else {
+    return together;
+  };
+  let factored_text = crate::syntax::expr_to_string(&factored);
+  if factored_text.starts_with('-')
+    || factored_text == crate::syntax::expr_to_string(&num)
+  {
+    return together;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&times(vec![
+    factored,
+    pow(den, Expr::Integer(-1)),
+  ]))
+  .unwrap_or(together)
+}
+
 /// Whether `e` is an explicit number literal (integer, real, or rational).
 fn is_reduce_number(e: &Expr) -> bool {
   matches!(
@@ -1393,6 +1574,11 @@ fn reduce_equation(
   if let Some(result) = try_reduce_linear_parametric(&expanded, var, domain)? {
     return Ok(result);
   }
+  if domain.is_none()
+    && let Some(solved) = linear_numeric_solution(&expanded, var)?
+  {
+    return Ok(solved);
+  }
 
   // Use the Solve infrastructure to find roots
   let eq_expr = Expr::Comparison {
@@ -1440,7 +1626,7 @@ fn reduce_equation(
     }
 
     // Sort equalities for canonical output
-    equalities.sort_by(compare_exprs);
+    equalities.sort_by(compare_root_equalities);
 
     // Deduplicate
     equalities.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
@@ -1467,7 +1653,7 @@ fn reduce_equation(
       }
     }
     if !all_equalities.is_empty() {
-      all_equalities.sort_by(compare_exprs);
+      all_equalities.sort_by(compare_root_equalities);
       all_equalities.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
       return Ok(build_or(all_equalities));
     }
@@ -1482,6 +1668,23 @@ fn reduce_equation(
       vec![make_equality(lhs, rhs), id_expr(var)]
     },
   ))
+}
+
+/// Root equalities `x == r` in the order wolframscript lists them: by the
+/// canonical order of the roots, as `Sort` has it — numbers first, then
+/// `-Sqrt[2] < Sqrt[2] < -Sqrt[3]`, `0 < (-7 - 2*Sqrt[13])/3 < (-7 +
+/// 2*Sqrt[13])/3`, `-I < I < 3`. Other shapes keep the expression order.
+fn compare_root_equalities(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  let root = |e: &Expr| -> Option<Expr> {
+    let (_, rhs, op) = extract_comparison(e)?;
+    matches!(op, CompOp::Equal).then_some(rhs)
+  };
+  match (root(a), root(b)) {
+    (Some(ra), Some(rb)) => {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(&ra, &rb)
+    }
+    _ => compare_exprs(a, b),
+  }
 }
 
 /// Reduce a != b for variable var.
@@ -2544,7 +2747,7 @@ fn reduce_and(
     }
   } else {
     // Multi-variable And: try to solve equations for each variable
-    return reduce_multi_var_and(&constraints, vars, domain);
+    return reduce_multi_var_and_presented(&constraints, vars, domain);
   }
 
   // Fallback: reduce each side and combine
@@ -2867,7 +3070,7 @@ fn reduce_multi_var(
   let mut constraints = Vec::new();
   collect_and_constraints(expr, &mut constraints);
 
-  reduce_multi_var_and(&constraints, vars, domain)
+  reduce_multi_var_and_presented(&constraints, vars, domain)
 }
 
 /// An affine combination of the free integer parameters `C[1], ..., C[n]`:
@@ -3390,6 +3593,30 @@ fn try_reduce_linear_diophantine(
 }
 
 /// Solve a multi-variable system by sequential elimination.
+/// [`reduce_multi_var_and`] as `Reduce` presents it: a two-variable
+/// polynomial system in shape position keeps the second variable as a
+/// polynomial in the first (see [`reduce_shape_position_system`]). `Solve`
+/// calls [`reduce_multi_var_and`] itself, whose branches carry values.
+fn reduce_multi_var_and_presented(
+  constraints: &[Expr],
+  vars: &[String],
+  domain: Option<&str>,
+) -> Result<Expr, InterpreterError> {
+  // A product equation splits into branches first (`{x y == 0, x + y ==
+  // 1}` is `(x == 0 && y == 1) || (x == 1 && y == 0)`).
+  if matches!(domain, None | Some("Reals"))
+    && REDUCE_PRESENTATION.with(std::cell::Cell::get)
+    && !constraints
+      .iter()
+      .any(|c| zero_product_factors(c, vars).is_some())
+    && let Some(result) =
+      reduce_shape_position_system(constraints, vars, domain)?
+  {
+    return Ok(result);
+  }
+  reduce_multi_var_and(constraints, vars, domain)
+}
+
 pub fn reduce_multi_var_and(
   constraints: &[Expr],
   vars: &[String],
@@ -3554,6 +3781,158 @@ fn reduce_with_vanishing(
   let mut degenerate = constraints.to_vec();
   degenerate.push(make_equality(d, &Expr::Integer(0)));
   reduce_multi_var_and_inner(&degenerate, vars, domain)
+}
+
+/// A nonlinear system of polynomial equations in two variables `{x, y}`
+/// with exact numeric coefficients whose lexicographic Gröbner basis
+/// (`y > x`) is `{g(x), a y - q(x)}` with a number `a` — the second
+/// variable a polynomial in the first — is written that way, as
+/// wolframscript's `Reduce` does:
+/// `(x == 0 || x == (-7 - 2*Sqrt[13])/3 || x == (-7 + 2*Sqrt[13])/3) &&
+/// y == (x*(13 + 3*x))/4`. `None` for any other system.
+fn reduce_shape_position_system(
+  constraints: &[Expr],
+  vars: &[String],
+  domain: Option<&str>,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as call_fn;
+  let [x, y] = vars else {
+    return Ok(None);
+  };
+  let var_list = Expr::List(vec![id_expr(x), id_expr(y)].into());
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(t) if t == "True");
+  let mut polys: Vec<Expr> = Vec::with_capacity(constraints.len());
+  let mut nonlinear = false;
+  for c in constraints {
+    let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(c) else {
+      return Ok(None);
+    };
+    let p = expand_and_combine(&minus2(lhs, rhs));
+    if crate::syntax::contains_inexact(&p) {
+      return Ok(None);
+    }
+    let Expr::List(ref vs) = call_fn("Variables", std::slice::from_ref(&p))?
+    else {
+      return Ok(None);
+    };
+    if vs
+      .iter()
+      .any(|v| !matches!(v, Expr::Identifier(n) if n == x || n == y))
+      || !is_true(&call_fn("PolynomialQ", &[p.clone(), var_list.clone()])?)
+    {
+      return Ok(None);
+    }
+    // The total degree (`x*y` is quadratic): the degree in t of the
+    // equation with x -> t x, y -> t y.
+    if let Expr::Integer(d) = call_fn(
+      "Exponent",
+      &[
+        crate::evaluator::evaluate_expr_to_expr(
+          &crate::syntax::substitute_variable(
+            &crate::syntax::substitute_variable(
+              &p,
+              x,
+              &times(vec![id_expr("$woxiT"), id_expr(x)]),
+            ),
+            y,
+            &times(vec![id_expr("$woxiT"), id_expr(y)]),
+          ),
+        )?,
+        id_expr("$woxiT"),
+      ],
+    )? && d > 1
+    {
+      nonlinear = true;
+    }
+    polys.push(p);
+  }
+  if !nonlinear {
+    return Ok(None);
+  }
+  let basis = call_fn(
+    "GroebnerBasis",
+    &[
+      Expr::List(polys.into()),
+      Expr::List(vec![id_expr(y), id_expr(x)].into()),
+    ],
+  )?;
+  let Expr::List(ref elements) = basis else {
+    return Ok(None);
+  };
+  let [g, h] = elements.as_slice() else {
+    return Ok(None);
+  };
+  let (g, h) = if contains_var(g, y) { (h, g) } else { (g, h) };
+  if contains_var(g, y) || !contains_var(g, x) || !contains_var(h, y) {
+    return Ok(None);
+  }
+  // g = x - c pins x; the second variable's values follow from h(c, y):
+  // `x == 4 && (y == -2 || y == 2)`.
+  if matches!(
+    call_fn("Exponent", &[g.clone(), id_expr(x)])?,
+    Expr::Integer(1)
+  ) {
+    let x_part = reduce_expr(
+      &make_equality(g, &Expr::Integer(0)),
+      std::slice::from_ref(x),
+      domain,
+    )?;
+    let Some((_, c, CompOp::Equal)) = extract_comparison(&x_part) else {
+      return Ok(None);
+    };
+    let pinned = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(h, x, &c),
+    )?;
+    let y_part = reduce_expr(
+      &make_equality(&pinned, &Expr::Integer(0)),
+      std::slice::from_ref(y),
+      domain,
+    )?;
+    return Ok(Some(and_results(&x_part, &y_part)));
+  }
+  // h = a y - q(x) with a number a.
+  if !matches!(
+    call_fn("Exponent", &[h.clone(), id_expr(y)])?,
+    Expr::Integer(1)
+  ) {
+    return Ok(None);
+  }
+  let a = call_fn("Coefficient", &[h.clone(), id_expr(y), Expr::Integer(1)])?;
+  if !is_reduce_number(&a) {
+    return Ok(None);
+  }
+  let x_part = reduce_expr(
+    &make_equality(g, &Expr::Integer(0)),
+    std::slice::from_ref(x),
+    domain,
+  )?;
+  // Roots that are `Root` objects each head their own branch, with the
+  // second variable as the expanded polynomial in the first:
+  // `(x == Root[…, 1] && y == c0 + c1*x + …) || …`.
+  let x_roots = collect_or_terms(&x_part);
+  if x_roots
+    .iter()
+    .any(|r| crate::syntax::expr_to_string(r).contains("Root["))
+  {
+    let q = call_fn(
+      "Expand",
+      &[crate::evaluator::evaluate_expr_to_expr(&times(vec![
+        Expr::Integer(-1),
+        call_fn("Coefficient", &[h.clone(), id_expr(y), Expr::Integer(0)])?,
+        pow(a, Expr::Integer(-1)),
+      ]))?],
+    )?;
+    let y_part = make_equality(&id_expr(y), &q);
+    return Ok(Some(build_or(
+      x_roots.iter().map(|r| and_results(r, &y_part)).collect(),
+    )));
+  }
+  let y_part = reduce_expr(
+    &make_equality(h, &Expr::Integer(0)),
+    std::slice::from_ref(y),
+    domain,
+  )?;
+  Ok(Some(and_results(&x_part, &y_part)))
 }
 
 fn reduce_multi_var_and_inner(

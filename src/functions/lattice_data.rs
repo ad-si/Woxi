@@ -4,19 +4,82 @@
 
 use super::*;
 
-/// Canonical lattice name for a user-given name or alias.
+/// The lattices Woxi has data for.
 fn canonical_name(name: &str) -> Option<&'static str> {
   match name {
-    "SimpleCubic" | "SC" | "Cubic" | "CubicPrimitive" => Some("SimpleCubic"),
-    "BodyCenteredCubic" | "BCC" | "CubicBodyCentered" => {
-      Some("BodyCenteredCubic")
-    }
-    "FaceCenteredCubic" | "FCC" | "CubicFaceCentered" => {
-      Some("FaceCenteredCubic")
-    }
+    "SimpleCubic" => Some("SimpleCubic"),
+    "BodyCenteredCubic" => Some("BodyCenteredCubic"),
+    "FaceCenteredCubic" => Some("FaceCenteredCubic"),
     _ => None,
   }
 }
+
+/// Every entity wolframscript's `LatticeData[]` lists.
+const ENTITIES: [&str; 21] = [
+  "BaseCenteredMonoclinic",
+  "BaseCenteredOrthorhombic",
+  "BodyCenteredCubic",
+  "BodyCenteredOrthorhombic",
+  "CenteredTetragonal",
+  "CoxeterTodd",
+  "FaceCenteredCubic",
+  "FaceCenteredOrthorhombic",
+  "HexagonalClosePacking",
+  "HexagonalLattice",
+  "KorkineZolotarev",
+  "Leech",
+  "SimpleCubic",
+  "SimpleHexagonal",
+  "SimpleMonoclinic",
+  "SimpleOrthorhombic",
+  "SimpleTetragonal",
+  "SimpleTriclinic",
+  "SimpleTrigonal",
+  "SquareLattice",
+  "TetrahedralPacking",
+];
+
+/// Every property wolframscript's `LatticeData["Properties"]` lists.
+const PROPERTIES: [&str; 38] = [
+  "AlternateNames",
+  "AutomorphismGroupOrder",
+  "Basis",
+  "CenterDensity",
+  "Classes",
+  "CoveringRadius",
+  "CoxeterNumber",
+  "Density",
+  "Determinant",
+  "Dimension",
+  "Dual",
+  "Even",
+  "Extremal",
+  "GeneratorMatrix",
+  "Genus",
+  "GlueVectors",
+  "GramMatrix",
+  "HermiteInvariant",
+  "Image",
+  "Integral",
+  "KissingNumber",
+  "MinimalNorm",
+  "MinimalVectors",
+  "ModularNumber",
+  "Name",
+  "Nonextremal",
+  "Nonintegral",
+  "Nonunimodular",
+  "Notation",
+  "Odd",
+  "PackingRadius",
+  "QuadraticForm",
+  "RadialFunction",
+  "StandardName",
+  "ThetaSeriesFunction",
+  "Thickness",
+  "Unimodular",
+  "Volume",
+];
 
 /// Lattice points of the conventional cubic cell, in unit-cell coordinates.
 fn cell_points(lattice: &str) -> Vec<[f64; 3]> {
@@ -76,12 +139,34 @@ fn unit_cell_image(lattice: &str) -> Result<Expr, InterpreterError> {
 
 pub fn lattice_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("LatticeData", args));
+  match args {
+    [] => {
+      return Ok(Expr::List(
+        ENTITIES
+          .iter()
+          .map(|e| Expr::String(e.to_string()))
+          .collect(),
+      ));
+    }
+    [Expr::String(p)] if p == "Properties" => {
+      return Ok(Expr::List(
+        PROPERTIES
+          .iter()
+          .map(|e| Expr::String(e.to_string()))
+          .collect(),
+      ));
+    }
+    _ => {}
+  }
   let Some(Expr::String(name)) = args.first() else {
     return unevaluated();
   };
-  let Some(lattice) = canonical_name(name) else {
+  if !ENTITIES.contains(&name.as_str()) {
+    crate::emit_message(&format!(
+      "LatticeData::notent: {name} is not a known entity, class or tag for LatticeData. Use LatticeData[] for a list of entities."
+    ));
     return unevaluated();
-  };
+  }
   let prop = match args.get(1) {
     None => "Image",
     Some(Expr::String(p)) => p.as_str(),
@@ -90,13 +175,17 @@ pub fn lattice_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() > 2 {
     return unevaluated();
   }
+  if !PROPERTIES.contains(&prop) {
+    crate::emit_message(&format!(
+      "LatticeData::notprop: {prop} is not a known property for LatticeData. Use LatticeData[\"Properties\"] for a list of properties."
+    ));
+    return unevaluated();
+  }
+  let Some(lattice) = canonical_name(name) else {
+    return unevaluated();
+  };
   match prop {
     "Image" => unit_cell_image(lattice),
-    "CoordinationNumber" => Ok(Expr::Integer(match lattice {
-      "SimpleCubic" => 6,
-      "BodyCenteredCubic" => 8,
-      _ => 12,
-    })),
     "Name" => Ok(Expr::String(lattice.to_string())),
     // Generating vectors, as wolframscript lists them (the simple cubic
     // identity as a SparseArray).
@@ -108,19 +197,6 @@ pub fn lattice_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       crate::evaluator::evaluate_expr_to_expr(
         &crate::functions::string_ast::parse_program_to_expr(src)?,
-      )
-    }
-    "LatticePoints" | "UnitCellPoints" => {
-      let src = format!(
-        "{{{}}}",
-        cell_points(lattice)
-          .iter()
-          .map(|p| format!("{{{:?},{:?},{:?}}}", p[0], p[1], p[2]))
-          .collect::<Vec<_>>()
-          .join(", ")
-      );
-      crate::evaluator::evaluate_expr_to_expr(
-        &crate::functions::string_ast::parse_program_to_expr(&src)?,
       )
     }
     _ => unevaluated(),

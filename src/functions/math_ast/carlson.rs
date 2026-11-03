@@ -158,6 +158,66 @@ pub(crate) fn carlson_rf_complex(x: C, y: C, z: C) -> C {
   cdiv(poly, csqrt(ave))
 }
 
+/// Complex R_D(x, y, z) by Carlson's duplication, the recurrence of the real
+/// kernel in complex arithmetic (principal square roots), iterated until the
+/// del variables are small enough for the fifth-order series to reach double
+/// precision.
+pub(crate) fn carlson_rd_complex(x: C, y: C, z: C) -> C {
+  const ERRTOL: f64 = 1.0e-4;
+  const C1: f64 = 3.0 / 14.0;
+  const C2: f64 = 1.0 / 6.0;
+  const C3: f64 = 9.0 / 22.0;
+  const C4: f64 = 3.0 / 26.0;
+  const C5: f64 = 0.25 * C3;
+  const C6: f64 = 1.5 * C4;
+  let (mut xt, mut yt, mut zt) = (x, y, z);
+  let mut sum = (0.0, 0.0);
+  let mut fac = 1.0;
+  let (mut delx, mut dely, mut delz, mut ave);
+  let mut iter = 0;
+  loop {
+    let sqrtx = csqrt(xt);
+    let sqrty = csqrt(yt);
+    let sqrtz = csqrt(zt);
+    let alamb = cadd(cmul(sqrtx, cadd(sqrty, sqrtz)), cmul(sqrty, sqrtz));
+    sum = cadd(sum, cdiv((fac, 0.0), cmul(sqrtz, cadd(zt, alamb))));
+    fac *= 0.25;
+    xt = cscale(cadd(xt, alamb), 0.25);
+    yt = cscale(cadd(yt, alamb), 0.25);
+    zt = cscale(cadd(zt, alamb), 0.25);
+    ave = cscale(cadd(cadd(xt, yt), cscale(zt, 3.0)), 0.2);
+    delx = cdiv(csub(ave, xt), ave);
+    dely = cdiv(csub(ave, yt), ave);
+    delz = cdiv(csub(ave, zt), ave);
+    iter += 1;
+    if cabs(delx).max(cabs(dely)).max(cabs(delz)) <= ERRTOL || iter >= 100 {
+      break;
+    }
+  }
+  let ea = cmul(delx, dely);
+  let eb = cmul(delz, delz);
+  let ec = csub(ea, eb);
+  let ed = csub(ea, cscale(eb, 6.0));
+  let ee = cadd(ed, cscale(ec, 2.0));
+  // 1 + ed (-C1 + C5 ed - C6 delz ee) + delz (C2 ee + delz (-C3 ec + delz C4 ea))
+  let t1 = cmul(
+    ed,
+    csub(cadd((-C1, 0.0), cscale(ed, C5)), cscale(cmul(delz, ee), C6)),
+  );
+  let t2 = cmul(
+    delz,
+    cadd(
+      cscale(ee, C2),
+      cmul(delz, cadd(cscale(ec, -C3), cscale(cmul(delz, ea), C4))),
+    ),
+  );
+  let series = cadd(cadd((1.0, 0.0), t1), t2);
+  cadd(
+    cscale(sum, 3.0),
+    cdiv(cscale(series, fac), cmul(ave, csqrt(ave))),
+  )
+}
+
 /// R_D(x, y, z) — symmetric elliptic integral of the second kind (R_J with the
 /// last two arguments equal: R_D(x, y, z) = R_J(x, y, z, z)).
 pub(crate) fn carlson_rd(x: f64, y: f64, z: f64) -> f64 {

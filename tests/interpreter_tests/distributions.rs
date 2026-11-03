@@ -9525,7 +9525,11 @@ mod gaussian_matrix_ensembles {
   fn constructors_stay_inert() {
     assert_eq!(
       interpret("GaussianOrthogonalMatrixDistribution[3]").unwrap(),
-      "GaussianOrthogonalMatrixDistribution[3]"
+      "GaussianOrthogonalMatrixDistribution[1, 3]"
+    );
+    assert_eq!(
+      interpret("GaussianUnitaryMatrixDistribution[n]").unwrap(),
+      "GaussianUnitaryMatrixDistribution[1, n]"
     );
     assert_eq!(
       interpret("GaussianUnitaryMatrixDistribution[2, 3]").unwrap(),

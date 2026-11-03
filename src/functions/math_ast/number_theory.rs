@@ -4354,28 +4354,90 @@ pub fn divisor_sigma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The order may be negative. Since divisors pair as d <-> n/d,
   //   DivisorSigma[-p, n] = sum_{d|n} d^{-p} = sigma_p(n) / n^p  (a rational).
-  // Any other order (symbolic, rational, real) is the explicit sum
-  // of d^k over the divisors of an integer n.
+  // Any other order k (symbolic, rational, real, complex) is the
+  // multiplicative formula over the prime factorization n = Π p^e:
+  //   Π (p^((e+1) k) - 1) / (p^k - 1).
   let Some(order) = expr_to_i128(&args[0]) else {
     let n = match &args[1] {
       Expr::Integer(n) if *n != 0 => Expr::Integer(n.abs()),
-      Expr::BigInteger(_) => args[1].clone(),
+      Expr::BigInteger(b) => bigint_to_expr(b.abs()),
       _ => return Ok(unevaluated("DivisorSigma", args)),
     };
-    let divisors =
-      crate::evaluator::evaluate_function_call_ast("Divisors", &[n])?;
-    let Expr::List(ds) = &divisors else {
+    let factors =
+      crate::evaluator::evaluate_function_call_ast("FactorInteger", &[n])?;
+    let Expr::List(pairs) = &factors else {
       return Ok(unevaluated("DivisorSigma", args));
     };
-    let terms: Vec<Expr> = ds
-      .iter()
-      .map(|d| Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![d.clone(), args[0].clone()].into(),
-      })
-      .collect();
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    let k = &args[0];
+    // A machine-real order is evaluated the way wolframscript does it:
+    // x = p^k once, then x^(e+1) by repeated squaring, one quotient per
+    // prime multiplied in turn.
+    if let Expr::Real(kf) = k {
+      let mut value = 1.0_f64;
+      for pair in pairs {
+        let Expr::List(pe) = pair else {
+          return Ok(unevaluated("DivisorSigma", args));
+        };
+        let (Some(p), Some(e)) = (
+          pe.first().and_then(expr_to_i128),
+          pe.get(1).and_then(expr_to_i128),
+        ) else {
+          return Ok(unevaluated("DivisorSigma", args));
+        };
+        if p == 1 {
+          continue;
+        }
+        let x = (p as f64).powf(*kf);
+        let Ok(e1) = i32::try_from(e + 1) else {
+          return Ok(unevaluated("DivisorSigma", args));
+        };
+        value *= if x == 1.0 {
+          // Order 0: the quotient's limit, the number of prime powers.
+          e1 as f64
+        } else {
+          (x.powi(e1) - 1.0) / (x - 1.0)
+        };
+      }
+      return Ok(Expr::Real(value));
+    }
+    let power = |p: &Expr, exponent: Expr| Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![p.clone(), exponent].into(),
+    };
+    let minus_one_plus = |e: Expr| Expr::FunctionCall {
       name: "Plus".to_string(),
+      args: vec![Expr::Integer(-1), e].into(),
+    };
+    let mut terms = Vec::new();
+    for pair in pairs {
+      let Expr::List(pe) = pair else {
+        return Ok(unevaluated("DivisorSigma", args));
+      };
+      let [p, e] = &pe[..] else {
+        return Ok(unevaluated("DivisorSigma", args));
+      };
+      if matches!(p, Expr::Integer(1)) {
+        continue;
+      }
+      let e1 = crate::evaluator::evaluate_function_call_ast(
+        "Plus",
+        &[e.clone(), Expr::Integer(1)],
+      )?;
+      let top_exponent = Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: vec![e1, k.clone()].into(),
+      };
+      terms.push(minus_one_plus(power(p, top_exponent)));
+      terms.push(power(
+        &minus_one_plus(power(p, k.clone())),
+        Expr::Integer(-1),
+      ));
+    }
+    if terms.is_empty() {
+      return Ok(Expr::Integer(1));
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
       args: terms.into(),
     });
   };

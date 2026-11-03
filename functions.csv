@@ -1497,7 +1497,6 @@ Thumbnail,"Thumbnail image wrapper",✅,pure,7.0,1475
 Ellipsoid,"Ellipsoid geometric region",✅,pure,10.0,1476
 TransformedRegion,"Apply transformation to a geometric region",✅,pure,10.0,1477
 GroupOrbits,"Orbits of a group action",✅,pure,8.0,1480
-GroupSupport,"Points moved by some element of a permutation group",✅,pure,8.0,
 RegionBounds,"Bounding box of a region",✅,pure,10.0,1480
 SawtoothWave,"Periodic sawtooth wave function",✅,pure,7.0,1480
 DigitBlock,"Option for the NumberForm family giving the digits per block; the separators a full field would carry also widen a padded field",✅,pure,1.0,1481
@@ -3039,7 +3038,7 @@ MissingDataMethod,"",,,9.0,3059
 NoncentralChiSquareDistribution,"Noncentral chi-square distribution (moments and parity-cased PDF)",✅,pure,6.0,3059
 StationaryWaveletPacketTransform,"Undecimated full-tree wavelet packet transform",✅,pure,8.0,3059
 ZTest,"One-sample z-test p-value (known or estimated variance)",✅,pure,8.0,3059
-BioSequence,"",🚫,,12.2,3070
+BioSequence,"Represents a DNA or RNA or peptide sequence which the String functions accept",🚧,pure,12.2,3070
 CorrelationDistance,"1 minus Pearson correlation between vectors",✅,none,6.0,3070
 FoldWhileList,"Fold while a test holds returning every intermediate result",✅,pure,12.2,3070
 GeoHistogram,"Geographic density histogram shading hexagonal or rectangular or triangular map tiles by count",✅,pure,11.0,3070

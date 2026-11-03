@@ -510,6 +510,10 @@ pub fn is_atomic_object(expr: &Expr) -> bool {
 /// `Part` cannot reach inside.
 pub fn is_fully_atomic_object(expr: &Expr) -> bool {
   match expr {
+    Expr::Image { .. } => true,
+    Expr::FunctionCall { name, args } if name == "Image3D" => {
+      matches!(args.first(), Some(Expr::List(_)))
+    }
     Expr::FunctionCall { name, args } if name == "Tree" => is_tree_object(args),
     Expr::FunctionCall { name, args }
       if name == "MeshRegion" || name == "BoundaryMeshRegion" =>

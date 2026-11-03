@@ -7052,7 +7052,39 @@ mod comparison_patterns {
          MatchQ[a < b <= c, Inequality[_, Less, __]]}"
       )
       .unwrap(),
-      "{True, True, True, True, True}"
+      // `Inequality[_, Less, __]` evaluates to `_ < __` before matching.
+      "{True, True, True, True, False}"
+    );
+  }
+
+  // A held pattern is a compound: `_Symbol` matches the `t` of `t_`, not
+  // `t_` itself.
+  #[test]
+  fn a_held_pattern_is_not_a_symbol() {
+    assert_eq!(
+      interpret("Cases[Hold[f[t_, u__, v_Integer]], _Symbol, Infinity]")
+        .unwrap(),
+      "{t, u, v, Integer}"
+    );
+    assert_eq!(
+      interpret(
+        "{MatchQ[Unevaluated[x_], _Symbol], MatchQ[Unevaluated[x_], _Pattern]}"
+      )
+      .unwrap(),
+      "{False, True}"
+    );
+  }
+
+  #[test]
+  fn single_comparison_inequality_evaluates() {
+    assert_eq!(
+      interpret(
+        "{Inequality[a, Less, b], Inequality[a, Unequal, b], \
+         Inequality[a, SameQ, b], Inequality[1, Less, 2], \
+         Inequality[a, foo, b], MatchQ[a < b, Inequality[_, Less, _]]}"
+      )
+      .unwrap(),
+      "{a < b, a != b, False, True, Inequality[a, foo, b], True}"
     );
   }
 

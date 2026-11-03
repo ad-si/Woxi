@@ -5385,7 +5385,7 @@ mod graph_of_a_graph {
         r#"g = CycleGraph[4]; h = Graph[g, VertexLabels -> "Name"]; {Head[h], VertexCount[h], EdgeCount[h], Options[h, VertexLabels], h === g}"#
       )
       .unwrap(),
-      "{Graph, 4, 4, {VertexLabels -> Name}, False}"
+      "{Graph, 4, 4, {VertexLabels -> {Name}}, False}"
     );
     // A repeated option replaces the old value; others are kept
     assert_eq!(
@@ -5393,11 +5393,27 @@ mod graph_of_a_graph {
         r#"Options[Graph[Graph[{1 <-> 2}, VertexLabels -> "Name", EdgeStyle -> Red], VertexLabels -> None]]"#
       )
       .unwrap(),
-      "{EdgeStyle -> RGBColor[1, 0, 0], VertexLabels -> None}"
+      "{EdgeStyle -> {RGBColor[1, 0, 0]}, GraphLayout -> {Dimension -> 2}, VertexLabels -> {None}}"
     );
     assert_eq!(
       interpret("g = CycleGraph[4]; Graph[g] === g").unwrap(),
       "True"
+    );
+  }
+
+  // A graph re-made with options records its layout's dimension (with the
+  // old layout as "VertexLayout"); DirectedGraph does too, UndirectedGraph
+  // and SimpleGraph do not. One value for every vertex is a one-element
+  // list.
+  #[test]
+  fn regraphed_layout_and_listed_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Options[Graph[Graph[{1 <-> 2}, GraphLayout -> \"SpringEmbedding\"], ImageSize -> 100]], Options[Graph[Graph[{1 -> 2}], ImageSize -> 100]], Options[UndirectedGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2]], Options[SimpleGraph[Graph[{1 -> 2}], VertexSize -> 2]], Options[Graph[{1 <-> 2}, VertexStyle -> Red, VertexLabels -> {1 -> \"a\"}]]}"
+      )
+      .unwrap(),
+      "{{GraphLayout -> {Dimension -> 2, VertexLayout -> SpringEmbedding}, ImageSize -> 100}, {GraphLayout -> {Dimension -> 2}, ImageSize -> 100}, {VertexSize -> {2}}, {GraphLayout -> {Dimension -> 2}, VertexSize -> {2}}, {VertexSize -> {2}}, {VertexLabels -> {1 -> a}, VertexStyle -> {RGBColor[1, 0, 0]}}}"
     );
   }
 }
@@ -8912,36 +8928,30 @@ mod find_shortest_tour {
 mod graph_coordinates_3d {
   use super::*;
 
+  // Until the package is loaded the names have no definitions.
   #[test]
-  fn one_position_per_vertex() {
+  fn unloaded_package_stays_unevaluated() {
     assert_eq!(
       interpret(
-        "Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]"
+        "{Dimensions[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]], Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]], Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]]}"
       )
       .unwrap(),
-      "{4, 3}"
+      "{{1}, {1}, Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3}]]}"
     );
   }
 
+  // Loaded, the package reads the coordinates from a `GraphPlot` option
+  // that `GraphPlot` no longer sets: what comes back is the option's name
+  // (and {} for an empty graph), as in wolframscript.
   #[test]
-  fn planar_coordinates_are_pairs() {
+  fn loaded_package_reads_a_vanished_option() {
     assert_eq!(
       interpret(
-        "Dimensions[GraphUtilities`GraphCoordinates[{a -> b, b -> c, c -> a}]]"
+        "Needs[\"GraphUtilities`\"]\n\
+         {GraphCoordinates[{a -> b, b -> c, c -> a}], GraphCoordinates3D[{1 -> 2, 2 -> 3}], GraphCoordinates[{}]}"
       )
       .unwrap(),
-      "{3, 2}"
-    );
-  }
-
-  #[test]
-  fn coordinates_fit_the_unit_cube() {
-    assert_eq!(
-      interpret(
-        "Max[Abs[GraphUtilities`GraphCoordinates3D[{1 -> 2, 2 -> 3, 3 -> 1, 3 -> 4}]]]"
-      )
-      .unwrap(),
-      "1."
+      "{VertexCoordinateRules, VertexCoordinateRules, {}}"
     );
   }
 
@@ -8953,14 +8963,16 @@ mod graph_coordinates_3d {
     );
   }
 
+  // Every edge is a tube between two vertex indices (sorted pairs), every
+  // vertex a sphere, inside one GraphicsComplex.
   #[test]
   fn graph_plot_3d_draws_every_edge() {
     assert_eq!(
       interpret(
-        "Length[Cases[GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1}][[1]], _Line, Infinity]]"
+        "g = GraphPlot3D[{1 -> 2, 2 -> 3, 3 -> 1}][[1]]; {Length[Cases[g, _Line, Infinity]], Head[g], Cases[g, Tube[e_] :> e, Infinity], Length[Cases[g, _Sphere, Infinity]], Cases[g, _Hue, Infinity]}"
       )
       .unwrap(),
-      "3"
+      "{0, GraphicsComplex, {{{1, 2}, {1, 3}, {2, 3}}}, 3, {Hue[0.6, 0.2, 0.8], Hue[0.6, 0.6, 1]}}"
     );
   }
 
@@ -9016,7 +9028,7 @@ mod simple_graph {
          Options[DirectedGraph[Graph[{1 <-> 2}], VertexSize -> 2], VertexSize]}"
       )
       .unwrap(),
-      "{Graph, {VertexSize -> 3}, {VertexSize -> 2}}"
+      "{Graph, {VertexSize -> {3}}, {VertexSize -> {2}}}"
     );
   }
 }

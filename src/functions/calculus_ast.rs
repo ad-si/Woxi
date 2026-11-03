@@ -368,13 +368,38 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => false,
     }
   }
+  // A purely numeric denominator (`(-3 (1 - z)^2)/2`) has nothing to cancel
+  // against; cancelling would only rewrite the factors' signs
+  // (`(-1 + z)^2`), which D does not do.
   if matches!(&den, Expr::Integer(1)) || has_symbolic_exponent(&result) {
-    Ok(result)
-  } else {
-    Ok(
-      crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result),
-    )
+    return Ok(result);
   }
+  if matches!(&den, Expr::Integer(_) | Expr::BigInteger(_)) {
+    return crate::evaluator::evaluate_expr_to_expr(&result);
+  }
+  let cancelled =
+    crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result);
+  // A cancellation that leaves the denominator as it was up to a number
+  // has cancelled nothing; it would only have moved a sign into a factor
+  // (`-1/(6 (1 - z))` as `1/(6 (-1 + z))`).
+  let (_, cancelled_den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&cancelled);
+  if expr_to_string(&cancelled_den) != expr_to_string(&den)
+    && let Ok(ratio) = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Together",
+      call(
+        "Times",
+        vec![
+          den.clone(),
+          call("Power", vec![cancelled_den, Expr::Integer(-1)]),
+        ],
+      ),
+    ))
+    && crate::functions::predicate_ast::is_numeric_q(&ratio)
+  {
+    return Ok(result);
+  }
+  Ok(cancelled)
 }
 
 /// Recursively replace every occurrence of `target` in `expr` with `replacement`.
@@ -569,6 +594,116 @@ fn contains_interpolating_function(expr: &Expr) -> bool {
   }
 }
 
+/// `Integrate[f[x], {x, lo, hi}]` for an interpolation `f` of exact data
+/// between exact limits inside its domain: the interpolant is a polynomial
+/// of the interpolation order between consecutive nodes, so each piece is
+/// integrated exactly through the polynomial it agrees with at order + 1
+/// equally spaced points — wolframscript gives the exact `3`, not `3.`, for
+/// the linear interpolant of `{{0, 0}, {1, 2}, {2, 2}}` over `{x, 0, 2}`.
+fn exact_interpolation_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::functions::math_ast::try_eval_to_f64;
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let Expr::CurriedCall { func, args } = integrand else {
+    return Ok(None);
+  };
+  let (Expr::FunctionCall { name, args: fargs }, [Expr::Identifier(v)]) =
+    (func.as_ref(), args.as_slice())
+  else {
+    return Ok(None);
+  };
+  if name != "InterpolatingFunction" || v != var || fargs.len() != 3 {
+    return Ok(None);
+  }
+  let (Expr::List(rows), Expr::Integer(order)) = (&fargs[1], &fargs[2]) else {
+    return Ok(None);
+  };
+  let exact = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let mut nodes = Vec::with_capacity(rows.len());
+  for row in rows {
+    let Expr::List(pair) = row else {
+      return Ok(None);
+    };
+    let [x, y] = pair.as_slice() else {
+      return Ok(None);
+    };
+    if !exact(x) || !exact(y) {
+      return Ok(None);
+    }
+    nodes.push(x.clone());
+  }
+  if !exact(lo) || !exact(hi) || nodes.len() < 2 || *order < 1 {
+    return Ok(None);
+  }
+  // The pieces' polynomial degree, as the interpolant reduces it.
+  let degree = (*order).min(nodes.len() as i128 - 1);
+  let (Some(lo_f), Some(hi_f)) = (try_eval_to_f64(lo), try_eval_to_f64(hi))
+  else {
+    return Ok(None);
+  };
+  let node_f: Vec<f64> = nodes.iter().filter_map(try_eval_to_f64).collect();
+  let (first, last) = (node_f[0], node_f[node_f.len() - 1]);
+  let (a_f, b_f) = (lo_f.min(hi_f), lo_f.max(hi_f));
+  if a_f < first || b_f > last {
+    return Ok(None);
+  }
+  let (a, b) = if lo_f <= hi_f { (lo, hi) } else { (hi, lo) };
+  // Breakpoints: a, the nodes strictly inside (a, b), b.
+  let mut breaks = vec![a.clone()];
+  for (x, xf) in nodes.iter().zip(&node_f) {
+    if *xf > a_f && *xf < b_f {
+      breaks.push(x.clone());
+    }
+  }
+  breaks.push(b.clone());
+  let t = Expr::Identifier("$woxiInterpolationT".to_string());
+  let mut pieces = Vec::new();
+  for w in breaks.windows(2) {
+    let (p, q) = (&w[0], &w[1]);
+    let mut points = Vec::new();
+    for k in 0..=degree {
+      let x = eval(&plus(vec![
+        p.clone(),
+        times(vec![
+          make_rational(k, degree),
+          plus(vec![q.clone(), times(vec![Expr::Integer(-1), p.clone()])]),
+        ]),
+      ]))?;
+      let y = eval(&Expr::CurriedCall {
+        func: func.clone(),
+        args: vec![x.clone()],
+      })?;
+      if !exact(&y) {
+        return Ok(None);
+      }
+      points.push(Expr::List(vec![x, y].into()));
+    }
+    let poly = eval(&call(
+      "InterpolatingPolynomial",
+      vec![Expr::List(points.into()), t.clone()],
+    ))?;
+    pieces.push(call(
+      "Integrate",
+      vec![
+        poly,
+        Expr::List(vec![t.clone(), p.clone(), q.clone()].into()),
+      ],
+    ));
+  }
+  let mut total = eval(&plus(pieces))?;
+  if lo_f > hi_f {
+    total = eval(&times(vec![Expr::Integer(-1), total]))?;
+  }
+  Ok(exact(&total).then_some(total))
+}
+
 pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -657,6 +792,11 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && crate::functions::math_ast::try_eval_to_f64(lo).is_some()
       && crate::functions::math_ast::try_eval_to_f64(hi).is_some()
     {
+      if let Some(exact) =
+        exact_interpolation_integral(&args[0], &var_name, lo, hi)?
+      {
+        return Ok(exact);
+      }
       return nintegrate_ast(args);
     }
 
@@ -869,10 +1009,37 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A constant multiple of a sum is integrated term by term with the
+  // constant distributed, as wolframscript does: `∫ 2 (x + Sin[x]) dx` is
+  // `x^2 - 2*Cos[x]`, `∫ (3 Sin[x] - Cos[x])/10 dx` is
+  // `(-3*Cos[x])/10 - Sin[x]/10` (also inside a sum of terms).
+  let integrand = match &args[0] {
+    Expr::FunctionCall { name, args: terms } if name == "Plus" => {
+      let mut changed = false;
+      let terms: Vec<Expr> = terms
+        .iter()
+        .map(|t| match distribute_constant_over_sum(t, &var_name) {
+          Some(d) => {
+            changed = true;
+            d
+          }
+          None => t.clone(),
+        })
+        .collect();
+      if changed {
+        crate::evaluator::evaluate_expr_to_expr(&plus(terms))
+          .unwrap_or_else(|_| args[0].clone())
+      } else {
+        args[0].clone()
+      }
+    }
+    other => distribute_constant_over_sum(other, &var_name)
+      .unwrap_or_else(|| other.clone()),
+  };
   // Integrate the expression; a product of a sum (`Sin[x] (Cos[x] + Sin[x])`)
   // that no rule matches directly is retried with the integrand distributed
   // into a sum of terms.
-  let integral = integrate(&args[0], &var_name).or_else(|| {
+  let integral = integrate(&integrand, &var_name).or_else(|| {
     let expanded = crate::evaluator::evaluate_function_call_ast(
       "Expand",
       std::slice::from_ref(&args[0]),
@@ -890,6 +1057,8 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let simplified = simplify(result);
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&simplified)
         .unwrap_or(simplified);
+      let evaluated = factor_exponential_antiderivative(&evaluated, &var_name)
+        .unwrap_or(evaluated);
       Ok(
         factor_logarithmic_antiderivative(&evaluated, &var_name)
           .unwrap_or(evaluated),
@@ -897,6 +1066,111 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     None => Ok(unevaluated("Integrate", args)),
   }
+}
+
+/// `c*(t1 + t2 + …)` with every factor but the sum free of `var` and the
+/// sum not a polynomial in `var`, as the evaluated sum `c*t1 + c*t2 + …`.
+/// `None` for any other shape.
+fn distribute_constant_over_sum(expr: &Expr, var: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Times" {
+    return None;
+  }
+  let is_sum =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Plus");
+  let (sums, consts): (Vec<&Expr>, Vec<&Expr>) =
+    args.iter().partition(|f| is_sum(f));
+  let [sum] = sums.as_slice() else {
+    return None;
+  };
+  if consts.is_empty() || consts.iter().any(|c| expr_depends_on_var(c, var)) {
+    return None;
+  }
+  let Expr::FunctionCall { args: terms, .. } = sum else {
+    return None;
+  };
+  // A polynomial keeps the constant outside: `∫ (x + x^2)/2 dx` is
+  // `(x^2/2 + x^3/3)/2`.
+  if matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[(*sum).clone(), Expr::Identifier(var.to_string())],
+    ),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  ) {
+    return None;
+  }
+  let distributed = Expr::FunctionCall {
+    name: "Plus".to_string(),
+    args: terms
+      .iter()
+      .map(|t| {
+        let mut fs: Vec<Expr> = consts.iter().map(|c| (*c).clone()).collect();
+        fs.push(t.clone());
+        times(fs)
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&distributed).ok()
+}
+
+/// A sum of antiderivative terms that all carry the same exponential of the
+/// variable is factored, as wolframscript writes it:
+/// `∫ E^x (Cos[x] + Sin[x]) dx` is `E^x*Sin[x]`, `∫ E^x (Cos[x] + 2 Sin[x])
+/// dx` is `-1/2*(E^x*(Cos[x] - 3*Sin[x]))`. `None` when the terms do not
+/// share one.
+fn factor_exponential_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
+  let Expr::FunctionCall { name, args: terms } = expr else {
+    return None;
+  };
+  if name != "Plus" || terms.len() < 2 {
+    return None;
+  }
+  let exponentials = |t: &Expr| -> Vec<String> {
+    let factors = match t {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    factors
+      .iter()
+      .filter(|f| {
+        let (base, exp) = match f {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            (&args[0], &args[1])
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Power,
+            left,
+            right,
+          } => (left.as_ref(), right.as_ref()),
+          _ => return false,
+        };
+        (matches!(base, Expr::Constant(c) if c == "E")
+          || matches!(base, Expr::Identifier(c) if c == "E"))
+          && !is_constant_wrt(exp, var)
+      })
+      .map(expr_to_string)
+      .collect()
+  };
+  let first = exponentials(&terms[0]);
+  let shared: Vec<String> = first
+    .into_iter()
+    .filter(|e| terms.iter().all(|t| exponentials(t).contains(e)))
+    .collect();
+  if shared.is_empty() {
+    return None;
+  }
+  let factored =
+    crate::functions::polynomial_ast::factor_ast(std::slice::from_ref(expr))
+      .ok()?;
+  let shown = expr_to_string(&factored);
+  (shown != expr_to_string(expr) && shared.iter().all(|e| shown.contains(e)))
+    .then_some(factored)
 }
 
 /// An antiderivative of `x^n Log[x]^m` comes out of integration by parts as a
@@ -2343,10 +2617,156 @@ fn differentiate_piecewise(
     ));
   }
   let d_default = differentiate(&default, var)?;
+  let d_pairs: Option<Vec<(Expr, Expr)>> = diffed
+    .iter()
+    .map(|p| match p {
+      Expr::List(pv) if pv.len() == 2 => Some((
+        crate::evaluator::evaluate_expr_to_expr(&pv[0]).ok()?,
+        pv[1].clone(),
+      )),
+      _ => None,
+    })
+    .collect();
+  // Conditions in the variable keep their pieces (`D[Max[a, x], x]` is
+  // `Piecewise[{{0, a - x >= 0}}, 1]`); otherwise the derivative takes the
+  // canonical form.
+  if let Some(d_pairs) = d_pairs
+    && pairs.iter().all(|(_, c)| is_constant_wrt(c, var))
+    && let Ok(d_default) = crate::evaluator::evaluate_expr_to_expr(&d_default)
+    && let Some(canonical) = canonical_piecewise(&d_pairs, &d_default)?
+  {
+    return Ok(canonical);
+  }
   crate::evaluator::evaluate_expr_to_expr(&call(
     "Piecewise",
     vec![Expr::List(diffed.into()), d_default],
   ))
+}
+
+/// The canonical form `PiecewiseExpand` gives a `Piecewise`: the conditions
+/// made disjoint (each piece holds where the earlier ones do not), the value
+/// `0` — or else the canonically greatest value — taken as the default, and
+/// the other pieces in canonical order of their values. wolframscript:
+/// `PiecewiseExpand[Piecewise[{{2 x, y < 1}}, 3]]` is
+/// `Piecewise[{{3, y >= 1}}, 2*x]`, and `D` of a `Piecewise` comes out in
+/// this form. `None` for shapes this does not cover (an `Or` condition, a
+/// value repeated).
+pub(crate) fn canonical_piecewise(
+  pairs: &[(Expr, Expr)],
+  default: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  if pairs.is_empty() {
+    return Ok(None);
+  }
+  let has_or = |e: &Expr| {
+    let s = crate::syntax::expr_to_string(e);
+    s.contains("||") || s.contains("Or[")
+  };
+  let nested =
+    |e: &Expr| crate::syntax::expr_to_string(e).contains("Piecewise[");
+  if pairs.iter().any(|(v, c)| has_or(c) || nested(v)) || nested(default) {
+    return Ok(None);
+  }
+  // The single variable all conditions are inequalities in, if any.
+  let mut vars: Vec<String> = Vec::new();
+  for (_, c) in pairs {
+    let Some(sides) = piecewise_condition_sides(c) else {
+      return Ok(None);
+    };
+    let Ok(Expr::List(ref vs)) = crate::evaluator::evaluate_function_call_ast(
+      "Variables",
+      &[Expr::List(sides.into())],
+    ) else {
+      return Ok(None);
+    };
+    for v in vs {
+      let Expr::Identifier(name) = v else {
+        return Ok(None);
+      };
+      if !vars.contains(name) {
+        vars.push(name.clone());
+      }
+    }
+  }
+  let region = |parts: Vec<Expr>| -> Result<Expr, InterpreterError> {
+    let conj = if parts.len() == 1 {
+      parts[0].clone()
+    } else {
+      call("And", parts)
+    };
+    if let [v] = vars.as_slice() {
+      eval(&call(
+        "Reduce",
+        vec![conj, Expr::Identifier(v.clone()), id_expr("Reals")],
+      ))
+    } else {
+      eval(&conj)
+    }
+  };
+  let negations = |upto: usize| -> Vec<Expr> {
+    pairs[..upto]
+      .iter()
+      .map(|(_, c)| call1("Not", c.clone()))
+      .collect()
+  };
+  let mut pieces: Vec<(Expr, Expr)> = Vec::new();
+  for (i, (value, cond)) in pairs.iter().enumerate() {
+    let r = if i == 0 {
+      cond.clone()
+    } else {
+      let mut parts = negations(i);
+      parts.push(cond.clone());
+      region(parts)?
+    };
+    if matches!(&r, Expr::Identifier(f) if f == "False") {
+      continue;
+    }
+    pieces.push((value.clone(), r));
+  }
+  let default_region = region(negations(pairs.len()))?;
+  if !matches!(&default_region, Expr::Identifier(f) if f == "False") {
+    pieces.push((default.clone(), default_region));
+  }
+  if pieces.is_empty() {
+    return Ok(None);
+  }
+  for (i, (a, _)) in pieces.iter().enumerate() {
+    for (b, _) in &pieces[i + 1..] {
+      if crate::evaluator::pattern_matching::expr_equal(a, b) {
+        return Ok(None);
+      }
+    }
+  }
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let new_default = pieces
+    .iter()
+    .position(|(v, _)| matches!(v, Expr::Integer(0)))
+    .unwrap_or_else(|| {
+      (0..pieces.len())
+        .max_by(|&i, &j| canonical_cmp(&pieces[i].0, &pieces[j].0))
+        .unwrap()
+    });
+  let (default_value, _) = pieces.remove(new_default);
+  pieces.sort_by(|a, b| canonical_cmp(&a.0, &b.0));
+  let list: Vec<Expr> = pieces
+    .into_iter()
+    .map(|(v, r)| Expr::List(vec![v, r].into()))
+    .collect();
+  Ok(Some(eval(&call(
+    "Piecewise",
+    vec![Expr::List(list.into()), default_value],
+  ))?))
+}
+
+/// The operands of the comparisons in a piecewise condition, for reading
+/// off its variables.
+fn piecewise_condition_sides(cond: &Expr) -> Option<Vec<Expr>> {
+  let mut sides = Vec::new();
+  if !piecewise_condition_comparisons(cond, &mut sides) {
+    return None;
+  }
+  Some(sides.into_iter().flat_map(|(a, b)| [a, b]).collect())
 }
 
 /// The atomic comparisons of a condition built with `And`/`Or`/`Not`, or
@@ -5951,6 +6371,41 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   let coeff = try_match_linear_arg(arg, var)?;
   let is_sin = name == "Sin";
 
+  // An odd power of a cosine is a polynomial in the sine (u = Sin[a x]),
+  // as wolframscript writes it: `∫ Cos[x]^5 dx` is
+  // `Sin[x] - (2*Sin[x]^3)/3 + Sin[x]^5/5`. (Odd powers of a sine keep the
+  // multiple-angle form below, as they do there.)
+  if !is_sin && n % 2 != 0 {
+    let m = n / 2;
+    let sine = Expr::FunctionCall {
+      name: "Sin".to_string(),
+      args: vec![arg.clone()].into(),
+    };
+    let terms: Vec<Expr> = (0..=m)
+      .map(|k| {
+        let c = crate::functions::binomial_coeff(m, k)
+          * if k % 2 == 0 { 1 } else { -1 };
+        times(vec![
+          crate::functions::math_ast::make_rational(c, 2 * k + 1),
+          pow2(sine.clone(), Expr::Integer(2 * k + 1)),
+        ])
+      })
+      .collect();
+    let sum = times(vec![
+      pow2(coeff.clone(), Expr::Integer(-1)),
+      Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      },
+    ]);
+    let distributed = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&sum),
+    )
+    .ok()?;
+    return Some(distributed);
+  }
+
   // Build the Chebyshev expansion terms and integrate each
   let mut terms: Vec<Expr> = Vec::new();
   let m = n / 2;
@@ -6688,10 +7143,10 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
   ))
   .ok()?;
   if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
-    // (a·x)^p with a symbolic p: x (a·x)^p/(p+1). A numeric p is left to
+    // (a·x)^p with a symbolic p, or a negative a (the power keeps the sign
+    // with the variable, `(-x)^(3/2)`): x (a·x)^p/(p+1), as wolframscript
+    // gives `((-p)^(3/2)*p)/(5/2)`. A numeric p with a positive a is left to
     // the power rules, which split the constant factor out.
-    // A negative constant cannot be split out of a fractional power, so
-    // `(-2 x)^(3/2)` takes the general `base^(p+1)/(a (p+1))` form below.
     let negative_coefficient = match &a {
       Expr::Integer(n) => *n < 0,
       Expr::Real(f) => *f < 0.0,
@@ -6703,7 +7158,7 @@ fn try_integrate_linear_power(expr: &Expr, var: &str) -> Option<Expr> {
     if numeric_exponent && !negative_coefficient {
       return None;
     }
-    if !numeric_exponent {
+    if !matches!(exponent_plus_one, Expr::Integer(0)) {
       return crate::evaluator::evaluate_expr_to_expr(&div2(
         times2(var_expr, expr.clone()),
         exponent_plus_one,
@@ -6737,6 +7192,7 @@ fn try_integrate_monomial_times_negative_power(
   let mut constants: Vec<Expr> = Vec::new();
   let mut k_total: i128 = 0;
   let mut scaled: Option<(Expr, Expr, Expr)> = None; // (base, a, q)
+  let mut symbolic_q = false;
   for f in &factors {
     if is_constant_wrt(f, var) {
       constants.push(f.clone());
@@ -6764,9 +7220,10 @@ fn try_integrate_monomial_times_negative_power(
       let numeric_q = matches!(q, Expr::Integer(_) | Expr::Real(_))
         || matches!(q, Expr::FunctionCall { name, args }
           if name == "Rational" && args.len() == 2);
-      if scaled.is_some() || !numeric_q || contains_var(q, var) {
+      if scaled.is_some() || contains_var(q, var) {
         return None;
       }
+      symbolic_q = !numeric_q;
       let a = extract_linear_coefficient(base, var)?;
       let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
         base.clone(),
@@ -6791,14 +7248,44 @@ fn try_integrate_monomial_times_negative_power(
   if k_total == 0 {
     return None;
   }
-  // c · (a·x)^(k+q) / a^k, then integrate the single power.
-  let merged = pow2(
-    base,
+  // A symbolic exponent: an odd k gives x^(k+1) (a x)^q/(q + k + 1), as
+  // wolframscript gives `((-p)^n*p^2)/(2 + n)` for `p (-p)^n`; an even k
+  // merges into the power like a numeric one (`((-p)^(2 + n)*p)/(3 + n)`).
+  if symbolic_q && k_total % 2 == 1 {
+    let result = div2(
+      times(vec![
+        times(constants),
+        pow2(id_expr(var), Expr::Integer(k_total + 1)),
+        pow2(base, q.clone()),
+      ]),
+      plus2(q, Expr::Integer(k_total + 1)),
+    );
+    return crate::evaluator::evaluate_expr_to_expr(&result).ok();
+  }
+  // c · (a·x)^(k+q) / a^k, then integrate the single power. wolframscript
+  // writes an even k like the bare power, `x (a x)^r/(r + 1)`
+  // (`((-p)^(7/2)*p)/(9/2)`), and an odd one as `(a x)^(r + 1)/(a (r + 1))`
+  // (`(-p)^(7/2)/(7/2)` for `p (-p)^(3/2)`).
+  let r =
     crate::evaluator::evaluate_expr_to_expr(&plus2(q, Expr::Integer(k_total)))
-      .ok()?,
-  );
-  let scale = div2(times(constants), pow2(a, Expr::Integer(k_total)));
-  let inner = try_integrate_linear_power(&merged, var)?;
+      .ok()?;
+  let merged = pow2(base.clone(), r.clone());
+  let scale = div2(times(constants), pow2(a.clone(), Expr::Integer(k_total)));
+  let inner = if k_total % 2 == 1 {
+    let r_plus_1 =
+      crate::evaluator::evaluate_expr_to_expr(&plus2(r, Expr::Integer(1)))
+        .ok()?;
+    if matches!(r_plus_1, Expr::Integer(0)) {
+      return None;
+    }
+    crate::evaluator::evaluate_expr_to_expr(&div2(
+      pow2(base, r_plus_1.clone()),
+      times2(a, r_plus_1),
+    ))
+    .ok()?
+  } else {
+    try_integrate_linear_power(&merged, var)?
+  };
   crate::evaluator::evaluate_expr_to_expr(&times2(scale, inner)).ok()
 }
 
@@ -21691,6 +22178,79 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(if fully_reduced { expanded } else { canceled })
 }
 
+/// Δ_h^n p(x) for a polynomial `p` and a symbolic order `n`, as
+/// wolframscript writes it: `Σ_k (-1)^k C(n, k) p(x + h (n - k))` with
+/// `p(x + h n - h k)` expanded in `k` and each `Σ_k (-1)^k C(n, k) k^j` as
+/// a hypergeometric value — `HypergeometricPFQ[{-n}, {}, 1]` for `j = 0`,
+/// `-n HypergeometricPFQ[{2, …, 2, 1 - n}, {1, …, 1}, 1]` (`j - 1` twos and
+/// ones) otherwise. `None` unless `p` is a polynomial in `x`.
+fn symbolic_order_polynomial_delta(
+  expr: &Expr,
+  var: &str,
+  n: &Expr,
+  h: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as call_fn;
+  let x = Expr::Identifier(var.to_string());
+  if !matches!(
+    call_fn("PolynomialQ", &[expr.clone(), x.clone()])?,
+    Expr::Identifier(ref t) if t == "True"
+  ) || !crate::functions::polynomial_ast::contains_var(expr, var)
+  {
+    return Ok(None);
+  }
+  let k_name = "\u{2620}delta\u{2620}";
+  let k = Expr::Identifier(k_name.to_string());
+  let shift = plus(vec![
+    x.clone(),
+    times(vec![
+      h.clone(),
+      plus(vec![n.clone(), times(vec![Expr::Integer(-1), k.clone()])]),
+    ]),
+  ]);
+  let shifted = call_fn(
+    "Expand",
+    &[crate::syntax::substitute_variable(expr, var, &shift)],
+  )?;
+  let Expr::List(ref coeffs) = call_fn("CoefficientList", &[shifted, k])?
+  else {
+    return Ok(None);
+  };
+  let one = Expr::Integer(1);
+  let one_minus_n =
+    plus(vec![one.clone(), times(vec![Expr::Integer(-1), n.clone()])]);
+  let mut terms = Vec::with_capacity(coeffs.len());
+  for (j, c) in coeffs.iter().enumerate() {
+    let sum = if j == 0 {
+      call(
+        "HypergeometricPFQ",
+        vec![
+          Expr::List(vec![times(vec![Expr::Integer(-1), n.clone()])].into()),
+          Expr::List(vec![].into()),
+          one.clone(),
+        ],
+      )
+    } else {
+      let mut upper = vec![Expr::Integer(2); j - 1];
+      upper.push(one_minus_n.clone());
+      times(vec![
+        Expr::Integer(-1),
+        n.clone(),
+        call(
+          "HypergeometricPFQ",
+          vec![
+            Expr::List(upper.into()),
+            Expr::List(vec![one.clone(); j - 1].into()),
+            one.clone(),
+          ],
+        ),
+      ])
+    };
+    terms.push(times(vec![c.clone(), sum]));
+  }
+  Ok(Some(call_fn("Expand", &[plus(terms)])?))
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h
@@ -21730,6 +22290,14 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 )
               {
                 return crate::evaluator::evaluate_expr_to_expr(&result);
+              }
+              if let Some(result) = symbolic_order_polynomial_delta(
+                expr,
+                var.as_str(),
+                &items[1],
+                &h,
+              )? {
+                return Ok(result);
               }
               return Ok(unevaluated("DifferenceDelta", args));
             }
@@ -22823,6 +23391,15 @@ fn rational_function_series(f: &Expr, var: &str, order: i128) -> Option<Expr> {
   let first = c.iter().position(|v| !v.0.is_zero());
   let to_expr =
     |q: &Q| crate::functions::math_ast::make_rational_expr(&q.0, &q.1);
+  // With no term up to the order, the remainder starts at the function's
+  // own leading power when that is higher: `Series[x^3/(1 - x), {x, 0, 1}]`
+  // is `SeriesData[x, 0, {}, 3, 3, 1]`.
+  let mut order = order;
+  if first.is_none()
+    && let Some(lead) = num.iter().position(|v| !v.0.is_zero())
+  {
+    order = order.max(lead as i128 - valuation as i128 - 1);
+  }
   let (nmin, list): (i128, Vec<Expr>) = match first {
     Some(i) => {
       let last = c.iter().rposition(|v| !v.0.is_zero())?;

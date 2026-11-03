@@ -19,6 +19,61 @@ fn flatten_plus(expr: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
+/// A polynomial "apart" in `var`: multiplied out and collected by powers of
+/// `var`, each coefficient factored, and a coefficient that is a bare sum with
+/// a negative leading term written as minus the opposite sum — wolframscript's
+/// `Apart[(x - a) (x - b)]` is `a*b - (a + b)*x + x^2`, and
+/// `Apart[(x - a) (y - b)]` is `b*(a - x) - (a - x)*y`.
+fn apart_polynomial_in(
+  poly: &Expr,
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(poly))?;
+  let Expr::List(ref coeffs) =
+    coefficient_list_ast(&[expanded, Expr::Identifier(var.to_string())])?
+  else {
+    return Ok(None);
+  };
+  let mut terms = Vec::with_capacity(coeffs.len());
+  for (k, c) in coeffs.iter().enumerate() {
+    if matches!(c, Expr::Integer(0)) {
+      continue;
+    }
+    let mut coeff = factor_ast(std::slice::from_ref(c))?;
+    let is_bare_sum =
+      matches!(&coeff, Expr::FunctionCall { name, .. } if name == "Plus");
+    let mut negated = false;
+    if is_bare_sum && crate::syntax::expr_to_string(&coeff).starts_with('-') {
+      let opposite = crate::evaluator::evaluate_expr_to_expr(
+        &expand_and_combine(&times_ast(&[Expr::Integer(-1), coeff.clone()])?),
+      )?;
+      if !crate::syntax::expr_to_string(&opposite).starts_with('-') {
+        coeff = opposite;
+        negated = true;
+      }
+    }
+    let mut factors = Vec::new();
+    if negated {
+      factors.push(Expr::Integer(-1));
+    }
+    factors.push(coeff);
+    if k > 0 {
+      factors.push(crate::evaluator::evaluate_expr_to_expr(
+        &crate::helpers::pow2(
+          Expr::Identifier(var.to_string()),
+          Expr::Integer(k as i128),
+        ),
+      )?);
+    }
+    terms.push(times_ast(&factors)?);
+  }
+  if terms.is_empty() {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  Ok(Some(crate::functions::math_ast::plus_ast(&terms)?))
+}
+
 /// Apart[expr] - Partial fraction decomposition
 pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -54,6 +109,16 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .all(|v| super::polynomial_q::is_polynomial(&args[0], v))
     {
+      let main_var = match args.get(1) {
+        Some(Expr::Identifier(v)) => Some(v.clone()),
+        Some(_) => None,
+        None => vars.iter().max().cloned(),
+      };
+      if let Some(v) = main_var
+        && let Some(collected) = apart_polynomial_in(&args[0], &v)?
+      {
+        return Ok(collected);
+      }
       return crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(
         &args[0],
       ));

@@ -620,6 +620,9 @@ pub fn render_full_form(expr: &Expr) -> String {
   if let Expr::String(s) = expr {
     return format!("\"{}\"", crate::syntax::escape_string_for_input_form(s));
   }
+  if let Some(graph) = crate::functions::graph::graph_display_form(expr) {
+    return render_full_form(&graph);
+  }
 
   match decompose_expr(expr) {
     ExprForm::Atom(label) => label,

@@ -38,12 +38,67 @@ mod difference_delta_symbolic_order {
   #[test]
   fn non_exponential_symbolic_order_stays_unevaluated() {
     assert_eq!(
-      interpret("DifferenceDelta[i^2, {i, n}]").unwrap(),
-      "DifferenceDelta[i^2, {i, n}]"
-    );
-    assert_eq!(
       interpret("DifferenceDelta[a^i^2, {i, n}]").unwrap(),
       "DifferenceDelta[a^i^2, {i, n}]"
+    );
+  }
+}
+
+// A polynomial's difference of symbolic order is a sum of hypergeometric
+// values Σ_k (-1)^k C(n, k) k^j.
+mod difference_delta_symbolic_order_polynomial {
+  use super::*;
+
+  #[test]
+  fn square() {
+    assert_eq!(
+      interpret("DifferenceDelta[i^2, {i, n}]").unwrap(),
+      "2*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       2*n^2*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i^2*HypergeometricPFQ[{-n}, {}, 1] + \
+       2*i*n*HypergeometricPFQ[{-n}, {}, 1] + \
+       n^2*HypergeometricPFQ[{-n}, {}, 1] - \
+       n*HypergeometricPFQ[{2, 1 - n}, {1}, 1]"
+    );
+  }
+
+  #[test]
+  fn linear() {
+    assert_eq!(
+      interpret("DifferenceDelta[i, {i, n}]").unwrap(),
+      "n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i*HypergeometricPFQ[{-n}, {}, 1] + n*HypergeometricPFQ[{-n}, {}, 1]"
+    );
+  }
+
+  #[test]
+  fn square_with_step() {
+    assert_eq!(
+      interpret("DifferenceDelta[i^2, {i, n, h}]").unwrap(),
+      "2*h*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       2*h^2*n^2*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i^2*HypergeometricPFQ[{-n}, {}, 1] + \
+       2*h*i*n*HypergeometricPFQ[{-n}, {}, 1] + \
+       h^2*n^2*HypergeometricPFQ[{-n}, {}, 1] - \
+       h^2*n*HypergeometricPFQ[{2, 1 - n}, {1}, 1]"
+    );
+  }
+
+  // 1F0 at 1 is 0^(-a): left alone for a symbolic a.
+  #[test]
+  fn hypergeometric_1f0_at_one() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-n}, {}, 1]").unwrap(),
+      "HypergeometricPFQ[{-n}, {}, 1]"
+    );
+    assert_eq!(interpret("HypergeometricPFQ[{-3}, {}, 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("HypergeometricPFQ[{3}, {}, 1]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-n}, {}, z]").unwrap(),
+      "(1 - z)^n"
     );
   }
 }
@@ -94,23 +149,61 @@ mod dsolve_systems {
     );
   }
 
+  // A constant-coefficient system with a symbolic coefficient is solved
+  // exactly, through the eigen-projectors of its matrix.
+  #[test]
+  fn symbolic_coefficient_system() {
+    assert_eq!(
+      interpret("DSolve[{y'[x] == a y[x] + z[x], z'[x] == y[x]}, {y, z}, x]")
+        .unwrap(),
+      "{{y -> Function[{x}, ((-(a*E^(((a - Sqrt[4 + a^2])*x)/2)) + \
+       Sqrt[4 + a^2]*E^(((a - Sqrt[4 + a^2])*x)/2) + \
+       a*E^(((a + Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a + Sqrt[4 + a^2])*x)/2))*C[1])/(2*Sqrt[4 + a^2]) - \
+       ((E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       E^(((a + Sqrt[4 + a^2])*x)/2))*C[2])/Sqrt[4 + a^2]], \
+       z -> Function[{x}, -(((E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       E^(((a + Sqrt[4 + a^2])*x)/2))*C[1])/Sqrt[4 + a^2]) + \
+       ((a*E^(((a - Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a - Sqrt[4 + a^2])*x)/2) - \
+       a*E^(((a + Sqrt[4 + a^2])*x)/2) + \
+       Sqrt[4 + a^2]*E^(((a + Sqrt[4 + a^2])*x)/2))*C[2])/(2*Sqrt[4 + a^2])]}}"
+    );
+  }
+
   // A system the solvers cannot handle stays unevaluated instead of
   // aborting with "cannot convert … to a numeric value".
   #[test]
   fn unsupported_system_stays_unevaluated() {
     assert_eq!(
-      interpret("DSolve[{y'[x] == a y[x] + z[x], z'[x] == y[x]}, {y, z}, x]")
-        .unwrap(),
-      "DSolve[{Derivative[1][y][x] == a*y[x] + z[x], \
-       Derivative[1][z][x] == y[x]}, {y, z}, x]"
+      interpret(
+        "DSolveValue[{y'[x] == y[x]^2 z[x], z'[x] == Sin[y[x]]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "DSolveValue[{Derivative[1][y][x] == y[x]^2*z[x], \
+       Derivative[1][z][x] == Sin[y[x]]}, {y[x], z[x]}, x]"
     );
+  }
+
+  // A pair {u' == c v, v' == p(x) v + q(x) u} is reduced to one
+  // second-order equation in u; v is u'/c collected over the constants.
+  #[test]
+  fn variable_coefficient_pair_by_elimination() {
     assert_eq!(
       interpret(
         "DSolveValue[{y'[x] == x y[x] + z[x], z'[x] == y[x]}, {y[x], z[x]}, x]"
       )
       .unwrap(),
-      "DSolveValue[{Derivative[1][y][x] == x*y[x] + z[x], \
-       Derivative[1][z][x] == y[x]}, {y[x], z[x]}, x]"
+      "{E^(x^2/2)*x*C[2] + C[1]*(1 + E^(x^2/2)*Sqrt[Pi/2]*x*Erf[x/Sqrt[2]]), \
+       E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]]}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[x] == z[x], z'[x] == x z[x] + y[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]], \
+       E^(x^2/2)*x*C[2] + C[1]*(1 + E^(x^2/2)*Sqrt[Pi/2]*x*Erf[x/Sqrt[2]])}"
     );
   }
 }
@@ -304,11 +397,37 @@ mod function_domain_several_variables {
     assert_eq!(interpret("FunctionDomain[x + y, {x, y}]").unwrap(), "True");
   }
 
+  // Radicands and logarithm arguments are polynomial conditions too.
   #[test]
-  fn other_restrictions_stay_unevaluated() {
+  fn radicals_and_logarithms() {
     assert_eq!(
       interpret("FunctionDomain[Sqrt[x - y], {x, y}]").unwrap(),
-      "FunctionDomain[Sqrt[x - y], {x, y}]"
+      "x - y >= 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Log[x + y], {x, y}]").unwrap(),
+      "x + y > 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Sqrt[x] + Sqrt[y], {x, y}]").unwrap(),
+      "x >= 0 && y >= 0"
+    );
+    assert_eq!(
+      interpret("FunctionDomain[Sqrt[1 - x^2 - y^2], {x, y}]").unwrap(),
+      "x^2 + y^2 <= 1"
+    );
+  }
+
+  #[test]
+  fn arcsine_bounds() {
+    assert_eq!(
+      interpret("ToString[FunctionDomain[ArcSin[x - y], {x, y}], InputForm]")
+        .unwrap(),
+      "Inequality[-1, LessEqual, x - y, LessEqual, 1]"
+    );
+    assert_eq!(
+      interpret("ToString[FunctionDomain[ArcSin[x], x], InputForm]").unwrap(),
+      "Inequality[-1, LessEqual, x, LessEqual, 1]"
     );
   }
 }

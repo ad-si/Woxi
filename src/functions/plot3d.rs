@@ -13944,6 +13944,29 @@ fn discrete_body_style(body: &Expr) -> (Expr, Option<Expr>) {
 /// `{i, min, max}`, `{i, min, max, step}`, `{i, {values…}}` — and the second
 /// may depend on the first. The plot is built as a `Graphics3D` of those
 /// primitives, so the ordinary 3D renderer draws it.
+/// `DiscretePlot3D` iterators need numeric bounds — one may not depend on
+/// the other (`DiscretePlot3D::iterb`). The unevaluated call when a bound
+/// is not a number.
+pub fn discrete_plot3d_bad_iterator(args: &[Expr]) -> Option<Expr> {
+  for spec in &args[1..3] {
+    if let Expr::List(items) = spec
+      && items.len() > 1
+      && items[1..].iter().any(|b| {
+        try_eval_to_f64(b).is_none()
+          && !matches!(b, Expr::List(vals)
+            if vals.iter().all(|v| try_eval_to_f64(v).is_some()))
+      })
+    {
+      crate::emit_message(&format!(
+        "DiscretePlot3D::iterb: Iterator {} does not have appropriate bounds.",
+        crate::syntax::expr_to_output(spec)
+      ));
+      return Some(unevaluated("DiscretePlot3D", args));
+    }
+  }
+  None
+}
+
 pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The functions, each with the style its own `Style` wrapper gives it; a
   // `Style` around the whole list styles every function without one.
@@ -13983,7 +14006,8 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut extent: Option<([f64; 4], bool)> = None;
-  let mut filling: Option<Expr> = Some(Expr::Identifier("Bottom".into()));
+  // Stems (and bars) reach down to the xy-plane by default.
+  let mut filling: Option<Expr> = Some(Expr::Identifier("Axis".into()));
   let mut style_items: Vec<Expr> = Vec::new();
   let mut graphics_opts: Vec<Expr> = Vec::new();
   for opt in &args[3..] {
@@ -14085,84 +14109,231 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let num = |v: f64| Expr::Real(v);
   let triple =
     |x: f64, y: f64, z: f64| Expr::List(vec![num(x), num(y), num(z)].into());
+  // wolframscript's DiscretePlot3D palette.
+  const DISCRETE_COLORS: [(f64, f64, f64); 4] = [
+    (0.216, 0.5399999999999999, 0.7200000000000001),
+    (0.855, 0.5643, 0.12824999999999998),
+    (0.40950000000000003, 0.63, 0.189),
+    (0.8302733999999999, 0.3470634, 0.18826110000000001),
+  ];
+  // A function's own `Style` does not change its palette colour: it wraps
+  // its points (and, as wolframscript does it, every function's stems take
+  // the last such style).
+  let own_styles: Vec<Option<Expr>> =
+    bodies.iter().map(|(_, own)| own.clone()).collect();
+  let stem_style = own_styles.iter().rev().find_map(Clone::clone);
+  let colors: Vec<Expr> = (0..datasets.len())
+    .map(|k| {
+      if extent.is_some()
+        && let Some(own) = &bodies[k].1
+      {
+        own.clone()
+      } else if style_items.is_empty() {
+        let (r, g, b) = DISCRETE_COLORS[k % DISCRETE_COLORS.len()];
+        call("RGBColor", vec![num(r), num(g), num(b)])
+      } else {
+        style_items[k % style_items.len()].clone()
+      }
+    })
+    .collect();
   let mut content: Vec<Expr> = Vec::new();
-  for (k, pts) in datasets.iter().enumerate() {
-    let color = if let Some(own) = &bodies[k].1 {
-      own.clone()
-    } else if style_items.is_empty() {
-      let (r, g, b) = PLOT_COLORS[k % PLOT_COLORS.len()];
-      call(
-        "RGBColor",
-        vec![
-          num(r as f64 / 255.0),
-          num(g as f64 / 255.0),
-          num(b as f64 / 255.0),
-        ],
-      )
-    } else {
-      style_items[k % style_items.len()].clone()
-    };
-    let mut group = vec![color];
-    if let Some([xl, xr, yl, yr]) = extent {
+  if let Some([xl, xr, yl, yr]) = extent {
+    // Bars: from each value down to the filling level.
+    for (k, pts) in datasets.iter().enumerate() {
+      let mut group = vec![colors[k].clone()];
       group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
+      let bottom = base.unwrap_or(0.0);
       for &(x, y, z) in pts {
-        let bottom = base.unwrap_or(z_min);
-        let (lo, hi) = if z >= bottom {
-          (bottom, z)
-        } else {
-          (z, bottom)
-        };
         group.push(call(
           "Cuboid",
-          vec![triple(x - xl, y - yl, lo), triple(x + xr, y + yr, hi)],
+          vec![triple(x - xl, y - yl, z), triple(x + xr, y + yr, bottom)],
         ));
       }
-    } else {
-      group.push(call1("PointSize", num(0.012)));
-      group.push(call1(
-        "Point",
-        Expr::List(pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect()),
-      ));
-      if let Some(bottom) = base {
-        let stems: Vec<Expr> = pts
-          .iter()
-          .map(|&(x, y, z)| {
-            Expr::List(vec![triple(x, y, bottom), triple(x, y, z)].into())
-          })
-          .collect();
-        group.push(Expr::List(
+      content.push(Expr::List(group.into()));
+    }
+  } else {
+    // As wolframscript groups them: the stems of every function (those
+    // reaching up to the filling level apart from those reaching above
+    // it), then each function's points.
+    let point_size = || call1("PointSize", num(0.019444444444444445));
+    let style = |k: usize, opacity: bool| {
+      let mut d = Vec::new();
+      if opacity {
+        d.push(call1("Opacity", num(0.5)));
+      }
+      d.push(point_size());
+      d.push(colors[k].clone());
+      call("Directive", d)
+    };
+    let vertex_colors =
+      || crate::helpers::rule_expr(id_expr("VertexColors"), id_expr("None"));
+    let mut stems = Vec::with_capacity(datasets.len());
+    if let Some(bottom) = base {
+      for (k, pts) in datasets.iter().enumerate() {
+        let stem = |&(x, y, z): &(f64, f64, f64)| {
+          Expr::List(vec![triple(x, y, z), triple(x, y, bottom)].into())
+        };
+        let low: Vec<Expr> =
+          pts.iter().filter(|p| p.2 <= bottom).map(stem).collect();
+        let high: Vec<Expr> =
+          pts.iter().filter(|p| p.2 > bottom).map(stem).collect();
+        let line = |segments: Vec<Expr>| {
+          let line =
+            call("Line", vec![Expr::List(segments.into()), vertex_colors()]);
+          let line = match &stem_style {
+            Some(st) => call("Style", vec![line, st.clone()]),
+            None => line,
+          };
+          Expr::List(vec![style(k, true), line].into())
+        };
+        stems.push(Expr::List(
           vec![
-            call1("Opacity", num(0.5)),
-            call1("Line", Expr::List(stems.into())),
+            style(k, false),
+            Expr::List(
+              vec![Expr::List(vec![line(low), line(high)].into())].into(),
+            ),
           ]
           .into(),
         ));
       }
+    } else {
+      // Without filling the stems' place holds Null.
+      stems.push(id_expr("Null"));
     }
-    content.push(Expr::List(group.into()));
+    let empty = || Expr::List(vec![].into());
+    let points: Vec<Expr> = datasets
+      .iter()
+      .enumerate()
+      .map(|(k, pts)| {
+        Expr::List(
+          vec![
+            call1("EdgeForm", call1("Opacity", num(0.5))),
+            style(k, false),
+            {
+              let group = Expr::List(
+                vec![
+                  empty(),
+                  empty(),
+                  call1(
+                    "Point",
+                    Expr::List(
+                      pts.iter().map(|&(x, y, z)| triple(x, y, z)).collect(),
+                    ),
+                  ),
+                  empty(),
+                ]
+                .into(),
+              );
+              match &own_styles[k] {
+                Some(st) => call("Style", vec![group, st.clone()]),
+                None => group,
+              }
+            },
+          ]
+          .into(),
+        )
+      })
+      .collect();
+    content.push(Expr::List(
+      vec![
+        call(
+          "Directive",
+          vec![
+            call1("CapForm", Expr::String("Butt".into())),
+            call1("EdgeForm", call1("Directive", call1("Opacity", num(0.5)))),
+          ],
+        ),
+        Expr::List(stems.into()),
+        Expr::List(points.into()),
+      ]
+      .into(),
+    ));
+    content.push(empty());
+    content.push(empty());
   }
 
-  let has_opt = |name: &str| {
-    graphics_opts.iter().any(|o| {
-      matches!(o, Expr::Rule { pattern, .. }
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
-    })
-  };
   let mut g_args = vec![Expr::List(content.into())];
-  g_args.extend(graphics_opts.iter().cloned());
-  if !has_opt("Axes") {
-    g_args.push(crate::helpers::rule_expr(
-      Expr::Identifier("Axes".into()),
-      Expr::Identifier("True".into()),
-    ));
+  g_args.extend(discrete_plot3d_options(&graphics_opts)?);
+  // Drawn from the spliced options; the symbolic form keeps them as one
+  // list, as wolframscript's plots do.
+  let mut result = evaluate_expr_to_expr(&call("Graphics3D", g_args))?;
+  if let Expr::Graphics {
+    structure: Some(structure),
+    ..
+  } = &mut result
+  {
+    let listed = crate::plot_option_list(structure.as_ref().clone());
+    **structure = listed;
   }
-  if !has_opt("BoxRatios") {
-    g_args.push(crate::helpers::rule_expr(
-      Expr::Identifier("BoxRatios".into()),
-      Expr::List(vec![Expr::Integer(1), Expr::Integer(1), num(0.4)].into()),
-    ));
-  }
-  evaluate_expr_to_expr(&call("Graphics3D", g_args))
+  Ok(result)
+}
+
+/// The option list wolframscript gives a `DiscretePlot3D`: its defaults
+/// overridden by the call's options, sorted by name (an `Axes -> False`,
+/// `Graphics3D`'s own default, left out), after `DisplayFunction` and
+/// `PlotInteractivity`.
+fn discrete_plot3d_options(
+  user: &[Expr],
+) -> Result<Vec<Expr>, InterpreterError> {
+  const DEFAULTS: &str = "{Axes -> True, AxesOrigin -> {Automatic, Automatic, Automatic}, \
+    BoxRatios -> {1, 1, 0.4}, FaceGridsStyle -> Automatic, Lighting -> \"Neutral\", \
+    Method -> {\"AxisPadding\" -> Scaled[0.02], \"DefaultBoundaryStyle\" -> Automatic, \
+    \"DefaultGraphicsInteraction\" -> {\"Version\" -> 1.2, \"TrackMousePosition\" -> {True, False}, \
+    \"Effects\" -> {\"Highlight\" -> {\"ratio\" -> 2}, \"HighlightPoint\" -> {\"ratio\" -> 2}, \
+    \"Droplines\" -> {\"freeformCursorMode\" -> True, \"placement\" -> {\"x\" -> \"All\", \"y\" -> \"None\"}}}}, \
+    \"DefaultPlotStyle\" -> {Directive[RGBColor[0.216, 0.5399999999999999, 0.7200000000000001]], \
+    Directive[RGBColor[0.855, 0.5643, 0.12824999999999998]], Directive[RGBColor[0.40950000000000003, 0.63, 0.189]], \
+    Directive[RGBColor[0.8302733999999999, 0.3470634, 0.18826110000000001]], Directive[RGBColor[0.5202, 0.459, 0.765]], \
+    Directive[RGBColor[0.6948711, 0.3883986, 0.0921483]], Directive[RGBColor[0., 0.5399999999999999, 0.5399999999999999]], \
+    Directive[RGBColor[0.81, 0.324, 0.6156]], Directive[RGBColor[0.504, 0.63, 0.]], \
+    Directive[RGBColor[0.81, 0.48600000000000004, 0.]], Directive[RGBColor[0.5265, 0.53784, 0.81]], \
+    Directive[RGBColor[0.81, 0.405, 0.405]], Directive[RGBColor[0.6868968045630529, 0.7356961929631408, 0.]], \
+    Directive[RGBColor[0.7699169222533763, 0.22396846246495172, 0.7500648486553696]], \
+    Directive[RGBColor[0.029675541072283953, 0.6657047774225529, 0.4812300940726962]]}, \
+    \"DomainPadding\" -> Scaled[0.02], \"RangePadding\" -> Scaled[0.05], \"RelieveDPZFighting\" -> True, \
+    \"SpherePoints\" -> 10, \"TubePoints\" -> 10}, Ticks -> {Automatic, Automatic, Automatic}}";
+  let key = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let parsed = crate::syntax::string_to_expr(DEFAULTS)?;
+  let Expr::List(defaults) = &parsed else {
+    return Ok(user.to_vec());
+  };
+  let mut merged: Vec<Expr> = defaults
+    .iter()
+    .filter(|d| !user.iter().any(|u| key(u) == key(d)))
+    .cloned()
+    .collect();
+  merged.extend(user.iter().cloned());
+  merged.retain(|o| {
+    !(key(o).as_deref() == Some("Axes")
+      && matches!(o, Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False")))
+  });
+  merged.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::canonical_cmp(
+      &key(a).map_or(Expr::Integer(0), Expr::Identifier),
+      &key(b).map_or(Expr::Integer(0), Expr::Identifier),
+    )
+  });
+  let mut out = vec![
+    crate::helpers::rule_expr(
+      Expr::Identifier("DisplayFunction".into()),
+      Expr::Identifier("Identity".into()),
+    ),
+    Expr::RuleDelayed {
+      pattern: Box::new(Expr::Identifier("PlotInteractivity".into())),
+      replacement: Box::new(Expr::Identifier("$PlotInteractivity".into())),
+    },
+  ];
+  out.extend(merged);
+  Ok(out)
 }
 
 /// Split a `PlotStyle` value into the `Tube[…]` directive it carries (as

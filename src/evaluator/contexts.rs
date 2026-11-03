@@ -354,7 +354,14 @@ pub fn resolve(name: &str) -> String {
     // `` `a`b `` is `Global`a`b`.
     return match name.strip_prefix('`') {
       Some(relative) if is_user_symbol(name) => format!("Global`{relative}"),
-      _ => name.to_string(),
+      _ => {
+        // A name that spells its context out exists from the moment it is
+        // read — before anything on its line runs — so a package opened
+        // later on that line finds it (`BeginPackage["Foo`"]; …;
+        // EndPackage[]; ToExpression["Int"] === Foo`Int`).
+        note_qualified_symbol(name);
+        name.to_string()
+      }
     };
   }
   if !is_user_symbol(name) {
@@ -408,8 +415,21 @@ pub fn resolve_existing(name: &str) -> String {
 /// as the same symbol, its full name otherwise. `P`pub` prints as `pub`
 /// while `P`` is on `$ContextPath`, and as `P`pub` once it is not.
 pub fn display_name(full_name: &str) -> String {
+  // A `Global`` symbol is stored under its short name, which is how it
+  // prints — unless reading that name back now finds another context's
+  // symbol: `ClusterFlatten` read on the line that loads
+  // `HierarchicalClustering`` prints as `Global`ClusterFlatten`.
+  if !full_name.contains('`') {
+    if contexts_active()
+      && is_user_symbol(full_name)
+      && resolve_existing(full_name) != full_name
+    {
+      return format!("Global`{full_name}");
+    }
+    return full_name.to_string();
+  }
   // A context name (`System``) is not a symbol: it has no short name.
-  if !full_name.contains('`') || full_name.ends_with('`') {
+  if full_name.ends_with('`') {
     return full_name.to_string();
   }
   let bare = short_name(full_name);

@@ -507,18 +507,6 @@ fn c_cos(a: C64) -> C64 {
   (a.0.cos() * a.1.cosh(), -a.0.sin() * a.1.sinh())
 }
 
-fn c_sqrt(a: C64) -> C64 {
-  let r = a.0.hypot(a.1);
-  let re = f64::midpoint(r, a.0).sqrt();
-  let im = ((r - a.0) / 2.0).sqrt();
-  (re, if a.1 < 0.0 { -im } else { im })
-}
-
-fn c_recip(a: C64) -> C64 {
-  let d = a.0 * a.0 + a.1 * a.1;
-  (a.0 / d, -a.1 / d)
-}
-
 /// K(m) = R_F(0, 1 - m, 1) for complex m.
 pub(crate) fn elliptic_k_c64(m: C64) -> C64 {
   carlson_rf_complex((0.0, 0.0), (1.0 - m.0, -m.1), (1.0, 0.0))
@@ -553,46 +541,49 @@ pub(crate) fn elliptic_f_c64(phi: C64, m: C64) -> C64 {
   (f.0 + 2.0 * k * kk.0, f.1 + 2.0 * k * kk.1)
 }
 
-/// E(phi, m) for complex phi and m: integrates Sqrt[1 - m Sin[t]^2] along
-/// the straight segment from 0 to phi.
+/// E(phi, m) for complex phi and m, in Carlson form on the same principal
+/// branch as `elliptic_f_c64`:
+/// `Sin[r] R_F(c², Δ, 1) - (m/3) Sin[r]^3 R_D(c², Δ, 1) + 2 k E(m)` with
+/// `Δ = 1 - m Sin[r]^2` and `phi = r + k Pi`. (A quadrature along the
+/// segment lost six digits at the branch point of the integrand.)
 fn elliptic_e_complex(phi: C64, m: C64) -> C64 {
-  elliptic_segment_integral(phi, m, false)
-}
-
-/// Integrates `Sqrt[1 - m Sin[t]^2]` (or its reciprocal) along the straight
-/// segment from 0 to phi (Simpson's rule). The square root branch is
-/// followed continuously so the path may leave the real axis.
-fn elliptic_segment_integral(phi: C64, m: C64, reciprocal: bool) -> C64 {
-  let n = 2000usize;
-  let mut prev: Option<C64> = None;
-  let mut f = |t: f64| -> C64 {
-    let s = c_sin((phi.0 * t, phi.1 * t));
-    let s2 = c_mul(s, s);
-    let ms2 = c_mul(m, s2);
-    let mut root = c_sqrt((1.0 - ms2.0, -ms2.1));
-    if let Some(p) = prev {
-      let flipped = (-root.0, -root.1);
-      let dist = |a: C64| (a.0 - p.0).hypot(a.1 - p.1);
-      if dist(flipped) < dist(root) {
-        root = flipped;
-      }
-    }
-    prev = Some(root);
-    if reciprocal { c_recip(root) } else { root }
-  };
-  let h = 1.0 / n as f64;
-  let mut sum = f(0.0);
-  for i in 1..n {
-    let w = if i % 2 == 0 { 2.0 } else { 4.0 };
-    let v = f(i as f64 * h);
-    sum.0 += w * v.0;
-    sum.1 += w * v.1;
+  use crate::functions::math_ast::carlson::carlson_rd_complex;
+  if phi.0 == 0.0 && phi.1 == 0.0 {
+    return (0.0, 0.0);
   }
-  let last = f(1.0);
-  sum.0 += last.0;
-  sum.1 += last.1;
-  let scale = h / 3.0;
-  c_mul((sum.0 * scale, sum.1 * scale), phi)
+  let pi = std::f64::consts::PI;
+  let k = if phi.0.abs() > std::f64::consts::FRAC_PI_2 {
+    (phi.0 / pi).round()
+  } else {
+    0.0
+  };
+  let r = (phi.0 - k * pi, phi.1);
+  let s = c_sin(r);
+  let c = c_cos(r);
+  let s2 = c_mul(s, s);
+  let ms2 = c_mul(m, s2);
+  let delta = (1.0 - ms2.0, -ms2.1);
+  let c2 = c_mul(c, c);
+  let rf = carlson_rf_complex(c2, delta, (1.0, 0.0));
+  let rd = carlson_rd_complex(c2, delta, (1.0, 0.0));
+  let s3 = c_mul(s2, s);
+  let m_s3_third = c_mul((m.0 / 3.0, m.1 / 3.0), s3);
+  let e = c_mul(s, rf);
+  let corr = c_mul(m_s3_third, rd);
+  let value = (e.0 - corr.0, e.1 - corr.1);
+  if k == 0.0 {
+    return value;
+  }
+  // Complete E(m) = R_F(0, 1 - m, 1) - (m/3) R_D(0, 1 - m, 1).
+  let one_minus_m = (1.0 - m.0, -m.1);
+  let rf0 = carlson_rf_complex((0.0, 0.0), one_minus_m, (1.0, 0.0));
+  let rd0 = carlson_rd_complex((0.0, 0.0), one_minus_m, (1.0, 0.0));
+  let rd_term = c_mul((m.0 / 3.0, m.1 / 3.0), rd0);
+  let complete = (rf0.0 - rd_term.0, rf0.1 - rd_term.1);
+  (
+    value.0 + 2.0 * k * complete.0,
+    value.1 + 2.0 * k * complete.1,
+  )
 }
 
 /// F(phi, m) = Sin[r] R_F(Cos[r]^2, 1 - m Sin[r]^2, 1) + 2 k K(m).
@@ -762,12 +753,33 @@ pub fn elliptic_theta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z = &args[1];
 
   // theta1 is odd in z and antiperiodic with period Pi, so
-  // theta1(k Pi, q) = 0 exactly for every integer k and any q.
-  // (A machine nome keeps the numeric path, as before.)
-  if a_val == 1
-    && (is_expr_zero(z)
-      || (!expr_is_inexact(q) && is_integer_multiple_of_pi(z)))
-  {
+  // theta1(k Pi, q) = 0 for every integer k inside the unit disk |q| < 1,
+  // where the series converges. An exact numeric nome is decided there
+  // (outside it the call stays); for a symbolic nome wolframscript gives
+  // `ConditionalExpression[0, Abs[q] < 1]` at z = 0 and keeps the call
+  // at the other multiples of Pi. (A machine nome keeps the numeric path.)
+  if a_val == 1 && !expr_is_inexact(q) && is_integer_multiple_of_pi(z) {
+    let modulus = crate::functions::math_ast::try_extract_complex_f64(q)
+      .map(|(re, im)| re.hypot(im));
+    match modulus {
+      Some(m) if m < 1.0 => return Ok(Expr::Integer(0)),
+      Some(_) => return Ok(unevaluated("EllipticTheta", args)),
+      None if is_expr_zero(z) => {
+        return Ok(call(
+          "ConditionalExpression",
+          vec![
+            Expr::Integer(0),
+            Expr::Comparison {
+              operands: vec![call1("Abs", q.clone()), Expr::Integer(1)],
+              operators: vec![ComparisonOp::Less],
+            },
+          ],
+        ));
+      }
+      None => return Ok(unevaluated("EllipticTheta", args)),
+    }
+  }
+  if a_val == 1 && is_expr_zero(z) && !expr_is_inexact(q) {
     return Ok(Expr::Integer(0));
   }
 

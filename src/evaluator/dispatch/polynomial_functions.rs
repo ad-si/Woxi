@@ -98,9 +98,7 @@ pub fn dispatch_polynomial_functions(
     "Expand" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::expand_ast(args));
     }
-    // Decompose[poly, x, Modulus -> p]: the decomposition of poly reduced
-    // modulo p, with each component reduced as well. A decomposition that
-    // does not survive the reduction leaves the reduced polynomial whole.
+    // Decompose[poly, x, Modulus -> p]: the decomposition over GF(p).
     "Decompose"
       if args.len() == 3
         && let Some(p) =
@@ -111,55 +109,18 @@ pub fn dispatch_polynomial_functions(
       if p == 0 {
         return dispatch_polynomial_functions(name, &args[..2]);
       }
-      let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
-      let reduce =
-        |e: Expr| eval(call("PolynomialMod", vec![e, Expr::Integer(p)]));
-      let reduced = match reduce(args[0].clone()) {
-        Ok(r) => r,
-        Err(e) => return Some(Err(e)),
-      };
-      let whole = Expr::List(vec![reduced.clone()].into());
-      let parts =
-        match eval(call("Decompose", vec![reduced.clone(), args[1].clone()])) {
-          Ok(Expr::List(ref parts)) => parts.to_vec(),
-          Ok(_) => return Some(Ok(unevaluated(name, args))),
-          Err(e) => return Some(Err(e)),
-        };
-      let Ok(parts) =
-        parts.into_iter().map(reduce).collect::<Result<Vec<_>, _>>()
-      else {
-        return Some(Ok(whole));
-      };
-      // Every component must still have degree at least 2, and composing
-      // them must give back the reduced polynomial.
-      let degree_ok = parts.iter().all(|q| {
-        matches!(
-          eval(call("Exponent", vec![q.clone(), args[1].clone()])),
-          Ok(Expr::Integer(d)) if d >= 2
-        )
-      });
-      let mut composed = args[1].clone();
-      for q in parts.iter().rev() {
-        composed = call(
-          "ReplaceAll",
-          vec![
-            q.clone(),
-            Expr::Rule {
-              pattern: Box::new(args[1].clone()),
-              replacement: Box::new(composed),
-            },
-          ],
-        );
+      let prime =
+        p > 1 && (2..p).take_while(|d| d * d <= p).all(|d| p % d != 0);
+      if !prime {
+        crate::emit_message(&format!(
+          "Decompose::modp: The value of the option Modulus -> {p} should be \
+           a prime number or zero."
+        ));
+        return Some(Ok(unevaluated(name, args)));
       }
-      let same = matches!(
-        reduce(call("Subtract", vec![call1("Expand", composed), reduced])),
-        Ok(Expr::Integer(0))
-      );
-      return Some(Ok(if degree_ok && same {
-        Expr::List(parts.into())
-      } else {
-        whole
-      }));
+      return Some(crate::functions::polynomial_ast::decompose_modulo(
+        &args[0], &args[1], p,
+      ));
     }
     "Decompose" if args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::decompose_ast(args));
@@ -218,8 +179,8 @@ pub fn dispatch_polynomial_functions(
         args,
       ));
     }
-    // FactorSquareFreeList[poly, Modulus -> p]: the factorization modulo p,
-    // with the irreducible factors of each multiplicity multiplied together.
+    // FactorSquareFreeList[poly, Modulus -> p]: the square-free
+    // factorization modulo p (see `factor_square_free_list_mod`).
     "FactorSquareFreeList"
       if args.len() == 2
         && matches!(&args[1], Expr::Rule { pattern, replacement }
@@ -239,49 +200,11 @@ pub fn dispatch_polynomial_functions(
           ),
         );
       }
-      let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
-      let factors = match eval(call("FactorList", args.to_vec())) {
-        Ok(f) => f,
-        Err(e) => return Some(Err(e)),
-      };
-      let Expr::List(pairs) = &factors else {
-        return Some(Ok(unevaluated(name, args)));
-      };
-      let mut constant = Expr::Integer(1);
-      let mut by_exponent: Vec<(i128, Vec<Expr>)> = Vec::new();
-      for (i, pair) in pairs.iter().enumerate() {
-        let Expr::List(fe) = pair else {
-          return Some(Ok(unevaluated(name, args)));
-        };
-        let (Some(f), Some(Expr::Integer(k))) = (fe.first(), fe.get(1)) else {
-          return Some(Ok(unevaluated(name, args)));
-        };
-        if i == 0 && matches!(f, Expr::Integer(_)) {
-          constant = f.clone();
-          continue;
-        }
-        match by_exponent.iter_mut().find(|(e, _)| e == k) {
-          Some((_, fs)) => fs.push(f.clone()),
-          None => by_exponent.push((*k, vec![f.clone()])),
-        }
-      }
-      by_exponent.sort_by_key(|(k, _)| *k);
-      let mut out = vec![Expr::List(vec![constant, Expr::Integer(1)].into())];
-      for (k, fs) in by_exponent {
-        let product = if fs.len() == 1 {
-          fs[0].clone()
-        } else {
-          match eval(call(
-            "PolynomialMod",
-            vec![call1("Expand", call("Times", fs)), Expr::Integer(*p)],
-          )) {
-            Ok(e) => e,
-            Err(e) => return Some(Err(e)),
-          }
-        };
-        out.push(Expr::List(vec![product, Expr::Integer(k)].into()));
-      }
-      return Some(Ok(Expr::List(out.into())));
+      return Some(
+        factor_square_free_list_mod(&args[0], *p).map(|r| {
+          r.unwrap_or_else(|| unevaluated(name, args))
+        }),
+      );
     }
     "FactorSquareFreeList" if args.len() == 1 => {
       return Some(
@@ -2340,4 +2263,126 @@ fn solve_domain_name(name: &str) -> bool {
       | "NonNegativeIntegers"
       | "NonPositiveIntegers"
   )
+}
+
+/// `FactorSquareFreeList[poly, Modulus -> p]` for a prime-or-not modulus
+/// p > 0. An explicit product keeps its factors: each base is decomposed on
+/// its own, its multiplicities scaled by the exponent, and factors that
+/// coincide modulo p are merged. Within one expanded polynomial, the
+/// irreducible factors of each multiplicity are multiplied together, except
+/// that a bare variable (the monomial part) is listed on its own. The
+/// factors are listed in canonical order after the constant. `None` when
+/// the factorization does not decompose.
+fn factor_square_free_list_mod(
+  poly: &Expr,
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let modulus = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("Modulus".to_string())),
+    replacement: Box::new(Expr::Integer(p)),
+  };
+  // The (base, exponent) factors of an explicit product.
+  let bases: Vec<(Expr, i128)> = match poly {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      let mut out = Vec::with_capacity(args.len());
+      for f in args {
+        match f {
+          Expr::FunctionCall { name, args: pe }
+            if name == "Power" && pe.len() == 2 =>
+          {
+            match &pe[1] {
+              Expr::Integer(k) if *k > 0 => out.push((pe[0].clone(), *k)),
+              _ => return Ok(None),
+            }
+          }
+          other => out.push((other.clone(), 1)),
+        }
+      }
+      out
+    }
+    Expr::FunctionCall { name, args: pe }
+      if name == "Power"
+        && pe.len() == 2
+        && matches!(&pe[1], Expr::Integer(k) if *k > 0) =>
+    {
+      let Expr::Integer(k) = &pe[1] else {
+        unreachable!()
+      };
+      vec![(pe[0].clone(), *k)]
+    }
+    other => vec![(other.clone(), 1)],
+  };
+  let mut constant = Expr::Integer(1);
+  let mut entries: Vec<(Expr, i128)> = Vec::new();
+  let add_entry = |entries: &mut Vec<(Expr, i128)>, f: Expr, k: i128| {
+    let key = crate::syntax::expr_to_string(&f);
+    match entries
+      .iter_mut()
+      .find(|(g, _)| crate::syntax::expr_to_string(g) == key)
+    {
+      Some((_, m)) => *m += k,
+      None => entries.push((f, k)),
+    }
+  };
+  for (base, exponent) in bases {
+    let factors = eval(call("FactorList", vec![base, modulus.clone()]))?;
+    let Expr::List(pairs) = &factors else {
+      return Ok(None);
+    };
+    let mut by_multiplicity: Vec<(i128, Vec<Expr>)> = Vec::new();
+    for (i, pair) in pairs.iter().enumerate() {
+      let Expr::List(fe) = pair else {
+        return Ok(None);
+      };
+      let (Some(f), Some(Expr::Integer(k))) = (fe.first(), fe.get(1)) else {
+        return Ok(None);
+      };
+      if i == 0 && crate::functions::predicate_ast::is_numeric_q(f) {
+        let c =
+          eval(call("Power", vec![f.clone(), Expr::Integer(k * exponent)]))?;
+        constant = eval(call(
+          "Mod",
+          vec![call("Times", vec![constant, c]), Expr::Integer(p)],
+        ))?;
+        continue;
+      }
+      if matches!(f, Expr::Identifier(_)) {
+        add_entry(&mut entries, f.clone(), k * exponent);
+        continue;
+      }
+      match by_multiplicity.iter_mut().find(|(m, _)| m == k) {
+        Some((_, fs)) => fs.push(f.clone()),
+        None => by_multiplicity.push((*k, vec![f.clone()])),
+      }
+    }
+    for (k, fs) in by_multiplicity {
+      let product = if fs.len() == 1 {
+        fs[0].clone()
+      } else {
+        eval(call(
+          "PolynomialMod",
+          vec![call1("Expand", call("Times", fs)), Expr::Integer(p)],
+        ))?
+      };
+      add_entry(&mut entries, product, k * exponent);
+    }
+  }
+  let listed: Vec<Expr> = entries
+    .into_iter()
+    .map(|(f, k)| Expr::List(vec![f, Expr::Integer(k)].into()))
+    .collect();
+  let sorted = eval(call(
+    "SortBy",
+    vec![
+      Expr::List(listed.into()),
+      Expr::Identifier("First".to_string()),
+    ],
+  ))?;
+  let Expr::List(sorted) = &sorted else {
+    return Ok(None);
+  };
+  let mut out = vec![Expr::List(vec![constant, Expr::Integer(1)].into())];
+  out.extend(sorted.iter().cloned());
+  Ok(Some(Expr::List(out.into())))
 }

@@ -35,26 +35,63 @@ mod take_list_levels {
   fn splits_successive_levels() {
     assert_eq!(
       interpret("TakeList[Partition[Range[25], 5], {2, 3}, {3, 2}]").unwrap(),
-      "{{{{1, 2, 3}, {4, 5}}, {{6, 7, 8}, {9, 10}}}, \
-       {{{11, 12, 13}, {14, 15}}, {{16, 17, 18}, {19, 20}}, \
-       {{21, 22, 23}, {24, 25}}}}"
+      "{{{{1, 2, 3}, {6, 7, 8}}, {{4, 5}, {9, 10}}}, \
+       {{{11, 12, 13}, {16, 17, 18}, {21, 22, 23}}, \
+       {{14, 15}, {19, 20}, {24, 25}}}}"
     );
     assert_eq!(
       interpret("TakeList[{{1, 2}, {3, 4}}, {1, 1}, {1, 1}]").unwrap(),
-      "{{{{1}, {2}}}, {{{3}, {4}}}}"
+      "{{{{1}}, {{2}}}, {{{3}}, {{4}}}}"
+    );
+    assert_eq!(
+      interpret("TakeList[Partition[Range[8], 4], {1, 1}, {2, 2}]").unwrap(),
+      "{{{{1, 2}}, {{3, 4}}}, {{{5, 6}}, {{7, 8}}}}"
+    );
+  }
+
+  #[test]
+  fn three_levels() {
+    assert_eq!(
+      interpret(
+        "TakeList[Partition[Partition[Range[8], 2], 2], {1, 1}, {1, 1}, {1, 1}]"
+      )
+      .unwrap(),
+      "{{{{{{1}}}, {{{2}}}}, {{{{3}}}, {{{4}}}}}, \
+       {{{{{5}}}, {{{6}}}}, {{{{7}}}, {{{8}}}}}}"
+    );
+  }
+
+  #[test]
+  fn too_deep_a_specification_stays_unevaluated() {
+    assert_eq!(
+      interpret("TakeList[Range[3], {1, 1}, {1}]").unwrap(),
+      "TakeList[{1, 2, 3}, {1, 1}, {1}]"
     );
   }
 }
 
-mod digit_sum_powers {
+mod digit_sum_digit_count {
   use super::*;
 
   #[test]
-  fn sums_kth_powers_of_digits() {
-    assert_eq!(interpret("DigitSum[6345354, 10, 4]").unwrap(), "3220");
-    assert_eq!(interpret("DigitSum[153, 10, 3]").unwrap(), "153");
-    assert_eq!(interpret("DigitSum[10, 2, 2]").unwrap(), "2");
-    assert_eq!(interpret("DigitSum[1234, 10, 1]").unwrap(), "10");
+  fn sums_the_first_k_digits() {
+    assert_eq!(interpret("DigitSum[6345354, 10, 4]").unwrap(), "18");
+    assert_eq!(interpret("DigitSum[153, 10, 3]").unwrap(), "9");
+    assert_eq!(interpret("DigitSum[10, 2, 2]").unwrap(), "1");
+    assert_eq!(interpret("DigitSum[1234, 10, 1]").unwrap(), "1");
+    assert_eq!(interpret("DigitSum[1234, 2, 3]").unwrap(), "1");
+  }
+
+  #[test]
+  fn negative_k_sums_the_last_digits() {
+    assert_eq!(interpret("DigitSum[1234, 10, -2]").unwrap(), "7");
+    assert_eq!(interpret("DigitSum[-1234, 10, 2]").unwrap(), "3");
+  }
+
+  #[test]
+  fn k_beyond_the_length_or_zero() {
+    assert_eq!(interpret("DigitSum[1234, 10, 10]").unwrap(), "10");
+    assert_eq!(interpret("DigitSum[1234, 10, 0]").unwrap(), "0");
   }
 }
 
@@ -151,18 +188,16 @@ mod linear_algebra_options {
       interpret("RotationMatrix[Pi/2, TargetStructure -> \"Dense\"]").unwrap(),
       "{{0, -1}, {1, 0}}"
     );
-    assert_eq!(
-      interpret(
-        "Normal[RotationMatrix[Pi/2, TargetStructure -> \"Sparse\"]] == \
-         RotationMatrix[Pi/2]"
-      )
-      .unwrap(),
-      "True"
-    );
+    // A rotation matrix has no sparse (or generic structured) form.
     assert_eq!(
       interpret("Head[RotationMatrix[Pi/2, TargetStructure -> \"Sparse\"]]")
         .unwrap(),
-      "SparseArray"
+      "RotationMatrix"
+    );
+    assert_eq!(
+      interpret("RotationMatrix[Pi/2, TargetStructure -> \"Structured\"]")
+        .unwrap(),
+      "RotationMatrix[Pi/2, TargetStructure -> Structured]"
     );
   }
 
@@ -362,7 +397,7 @@ mod alignment_options {
         r#"SmithWatermanSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 1]"#
       )
       .unwrap(),
-      "5."
+      "4."
     );
     assert_eq!(
       interpret(
@@ -383,11 +418,55 @@ mod alignment_options {
         r#"NeedlemanWunschSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 1]"#
       )
       .unwrap(),
-      "5."
+      "4."
     );
     assert_eq!(
       interpret(
         r#"NeedlemanWunschSimilarity["ABCDEF", "abcdef", IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "6."
+    );
+  }
+
+  #[test]
+  fn gap_penalty_is_the_cost_of_opening_a_gap() {
+    // A run of L gap characters costs GapPenalty + L.
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCDEF", "ABCxxDEF", GapPenalty -> 1]"#
+      )
+      .unwrap(),
+      "3."
+    );
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCDEF", "ABCxDEF", GapPenalty -> 0.5]"#
+      )
+      .unwrap(),
+      "4.5"
+    );
+    assert_eq!(
+      interpret(
+        r#"NeedlemanWunschSimilarity["ABCD", "ABxCD", GapPenalty -> 2]"#
+      )
+      .unwrap(),
+      "1."
+    );
+    assert_eq!(
+      interpret(
+        r#"NeedlemanWunschSimilarity["ABC", "ABCDE", GapPenalty -> 2]"#
+      )
+      .unwrap(),
+      "-1."
+    );
+  }
+
+  #[test]
+  fn similarity_rules_with_patterns() {
+    assert_eq!(
+      interpret(
+        r#"SmithWatermanSimilarity["ABCD", "ABxCD", GapPenalty -> 1, SimilarityRules -> {{a_, a_} -> 2, {_, _} -> -1}]"#
       )
       .unwrap(),
       "6."
@@ -462,7 +541,7 @@ mod crossing_detect_corners {
         "CrossingDetect[{1, -.2, -1, 1}, CornerNeighbors -> None] // Normal"
       )
       .unwrap(),
-      "{1, 0, 0, 1}"
+      "{1, 0, 1}"
     );
     // Only a diagonal neighbor is negative: no crossing without corners.
     assert_eq!(
@@ -475,6 +554,41 @@ mod crossing_detect_corners {
     assert_eq!(
       interpret("Normal[CrossingDetect[{{1, 0}, {0, -1}}]]").unwrap(),
       "{{1, 0}, {0, 0}}"
+    );
+  }
+
+  #[test]
+  fn corner_neighbors_none_marks_the_cells_between() {
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{1, 2, -1, 3, 4, -5}, CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{0, 1, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{{1, -1, 1}, {1, 1, 1}, {-1, 1, 1}}, \
+         CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {1, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[CrossingDetect[{1, 2, -1, 3, 4, -5}, 1.5, \
+         CornerNeighbors -> None]]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn unknown_option_stays() {
+    assert_eq!(
+      interpret("CrossingDetect[{1, -1}, Foo -> None]").unwrap(),
+      "CrossingDetect[{1, -1}, Foo -> None]"
     );
   }
 }

@@ -9,7 +9,14 @@ mod set_attributes {
       interpret("Attributes[{Plot, DensityPlot3D, BodePlot, ListPlot}]")
         .unwrap(),
       "{{HoldAll, Protected, ReadProtected}, {HoldAll, Protected, ReadProtected}, \
-     {HoldAll, Protected, ReadProtected}, {Protected}}"
+     {HoldAll, Protected, ReadProtected}, {Protected, ReadProtected}}"
+    );
+    // The list plots and charts are ReadProtected too.
+    assert_eq!(
+      interpret("Attributes /@ {ListLinePlot, BarChart, Histogram, PieChart}")
+        .unwrap(),
+      "{{Protected, ReadProtected}, {Protected, ReadProtected}, \
+     {Protected, ReadProtected}, {Protected, ReadProtected}}"
     );
     // The body of a plot is not evaluated with its variables free, even where
     // the plot is not drawn yet.

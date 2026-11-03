@@ -2626,15 +2626,55 @@ pub fn kendall_tau_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return unevaluated();
   }
+  // A property is named by a string (or a list of strings): a symbol such
+  // as `PValue` is not one (`KendallTauTest::invprp`).
   if let Some(prop) = args.get(2) {
-    let name = match prop {
-      Expr::String(s) => s.as_str(),
-      Expr::Identifier(s) => s.as_str(),
-      _ => return unevaluated(),
+    let names: Option<Vec<&str>> = match prop {
+      Expr::String(s) => Some(vec![s.as_str()]),
+      Expr::List(items) => items
+        .iter()
+        .map(|it| match it {
+          Expr::String(s) => Some(s.as_str()),
+          _ => None,
+        })
+        .collect(),
+      _ => None,
     };
-    if name != "PValue" {
+    let Some(names) = names else {
+      crate::emit_message(&format!(
+        "KendallTauTest::invprp: The argument {} is not a valid property. \
+         Specify \"Properties\" to obtain a list of valid properties.",
+        crate::syntax::format_expr(prop, crate::syntax::ExprForm::Output)
+      ));
+      return unevaluated();
+    };
+    if names
+      .iter()
+      .any(|n| !matches!(*n, "PValue" | "TestStatistic"))
+    {
       return unevaluated();
     }
+    let base = kendall_tau_test_ast(&args[..2])?;
+    if !matches!(base, Expr::Real(_)) {
+      return unevaluated();
+    }
+    let value = |n: &str| -> Result<Expr, InterpreterError> {
+      if n == "PValue" {
+        Ok(base.clone())
+      } else {
+        kendall_tau_ast(&args[..2])
+      }
+    };
+    return match prop {
+      Expr::List(_) => Ok(Expr::List(
+        names
+          .iter()
+          .map(|n| value(n))
+          .collect::<Result<Vec<_>, _>>()?
+          .into(),
+      )),
+      _ => value(names[0]),
+    };
   }
   let (Expr::List(x), Expr::List(y)) = (&args[0], &args[1]) else {
     return unevaluated();

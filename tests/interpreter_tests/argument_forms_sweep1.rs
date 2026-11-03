@@ -82,7 +82,7 @@ mod target_structure {
     assert_eq!(
       interpret("VandermondeMatrix[{1, 1, 4}, TargetStructure -> \"Dense\"]")
         .unwrap(),
-      "{{1, 1, 1}, {1, 1, 1}, {1, 4, 16}}"
+      "{{1, 1, 1}, {0, 1, 2}, {1, 4, 16}}"
     );
     assert_eq!(
       interpret("DiagonalMatrix[{1, 2}, TargetStructure -> \"Dense\"]")
@@ -92,19 +92,29 @@ mod target_structure {
   }
 
   #[test]
-  fn sparse_wraps_in_sparse_array() {
+  fn structured_matrices_have_no_sparse_form() {
     assert_eq!(
-      interpret(
-        "Normal[ToeplitzMatrix[{1, 2}, TargetStructure -> \"Sparse\"]] == \
-         ToeplitzMatrix[{1, 2}]"
-      )
-      .unwrap(),
-      "True"
+      interpret("ToeplitzMatrix[{1, 2}, TargetStructure -> \"Sparse\"]")
+        .unwrap(),
+      "ToeplitzMatrix[{1, 2}, TargetStructure -> Sparse]"
     );
     assert_eq!(
       interpret("Head[HankelMatrix[2, TargetStructure -> \"Sparse\"]]")
         .unwrap(),
+      "HankelMatrix"
+    );
+    assert_eq!(
+      interpret("Head[DiagonalMatrix[{1, 2}, TargetStructure -> \"Sparse\"]]")
+        .unwrap(),
       "SparseArray"
+    );
+  }
+
+  #[test]
+  fn unknown_target_structure_stays() {
+    assert_eq!(
+      interpret("IdentityMatrix[2, TargetStructure -> \"Foo\"]").unwrap(),
+      "IdentityMatrix[2, TargetStructure -> Foo]"
     );
   }
 }
@@ -113,13 +123,75 @@ mod vandermonde_columns {
   use super::*;
 
   #[test]
+  fn structured_in_leja_order() {
+    assert_eq!(
+      interpret("VandermondeMatrix[{1, -1, 2, 5}]").unwrap(),
+      "VandermondeMatrix[StructuredArray`StructuredData[{4, 4}, \
+       {{5, -1, 2, 1}, {4, 2, 3, 1}, {1, 1, 1, 1}, False}]]"
+    );
+    assert_eq!(
+      interpret("VandermondeMatrix[{0.5, 2, -2}]").unwrap(),
+      "VandermondeMatrix[StructuredArray`StructuredData[{3, 3}, \
+       {{-2., 2., 0.5}, {3, 2, 1}, {1, 1, 1}, False}]]"
+    );
+    assert_eq!(
+      interpret("VandermondeMatrix[{1, 2, 2, 3, 3, 3}]").unwrap(),
+      "VandermondeMatrix[StructuredArray`StructuredData[{6, 6}, \
+       {{3, 3, 3, 1, 2, 2}, {4, 5, 6, 1, 2, 3}, {3, 1, 2}, False}]]"
+    );
+  }
+
+  #[test]
+  fn repeated_nodes_give_derivative_rows() {
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{1, 2, 1, 2}]]").unwrap(),
+      "{{1, 1, 1, 1}, {1, 2, 4, 8}, {0, 1, 2, 3}, {0, 1, 4, 12}}"
+    );
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{a, a, b}]]").unwrap(),
+      "{{1, a, a^2}, {0, 1, 2*a}, {1, b, b^2}}"
+    );
+  }
+
+  #[test]
+  fn computes_as_its_matrix() {
+    assert_eq!(interpret("Det[VandermondeMatrix[{1, 2, 4}]]").unwrap(), "6");
+    assert_eq!(
+      interpret("{1, 2} . VandermondeMatrix[{1, 2}]").unwrap(),
+      "{3, 5}"
+    );
+    assert_eq!(
+      interpret("VandermondeMatrix[{1, 2}][[2]]").unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn zero_columns_is_an_error() {
+    assert_eq!(
+      interpret("VandermondeMatrix[{1, 2}, 0]").unwrap(),
+      "VandermondeMatrix[{1, 2}, 0]"
+    );
+  }
+
+  #[test]
   fn given_number_of_columns() {
     assert_eq!(
       interpret("VandermondeMatrix[{0, 1/2, 1}, 4]").unwrap(),
+      "VandermondeMatrix[StructuredArray`StructuredData[{3, 4}, \
+       {{1, 0, 1/2}, {2, 3, 1}, {1, 1, 1}, False}]]"
+    );
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{0, 1/2, 1}, 4]]").unwrap(),
       "{{1, 0, 0, 0}, {1, 1/2, 1/4, 1/8}, {1, 1, 1, 1}}"
     );
     assert_eq!(
       interpret("VandermondeMatrix[{a, b, c}, 2]").unwrap(),
+      "VandermondeMatrix[StructuredArray`StructuredData[{3, 2}, \
+       {{a, b, c}, {1, 2, 3}, {1, 1, 1}, False}]]"
+    );
+    assert_eq!(
+      interpret("Normal[VandermondeMatrix[{a, b, c}, 2]]").unwrap(),
       "{{1, a}, {1, b}, {1, c}}"
     );
     assert_eq!(
@@ -294,7 +366,14 @@ mod string_template_options {
         "StringTemplate[\"`a` + `b`\", InsertionFunction -> (#^2 &)][<|\"a\" -> 2, \"b\" -> 3|>]"
       )
       .unwrap(),
-      "4 + 9"
+      "StringJoin[4,  + , 9]"
+    );
+    assert_eq!(
+      interpret(
+        "StringTemplate[\"`a``b`\", InsertionFunction -> ToString][<|\"a\" -> 2, \"b\" -> 3|>]"
+      )
+      .unwrap(),
+      "23"
     );
   }
 

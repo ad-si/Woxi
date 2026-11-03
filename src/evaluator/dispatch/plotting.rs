@@ -444,20 +444,33 @@ pub fn dispatch_plotting(
       Some(quiet_plot(|| crate::functions::plot::plot_ast(args)))
     }
     // RulePlot[CellularAutomaton[rule]] draws each neighborhood and its
-    // result. Other objects (substitution rules, …) still produce an empty
-    // Graphics placeholder so the expected `-Graphics-` output renders,
-    // matching wolframscript.
-    "RulePlot" if !args.is_empty() => Some(quiet_plot(|| {
-      if let Some(result) =
-        crate::functions::rule_plot::rule_plot_graphics(args)
-      {
-        return result;
-      }
-      crate::functions::graphics::show_ast(&[call1(
-        "Graphics",
-        Expr::List(vec![].into()),
-      )])
-    })),
+    // result. The other systems (substitution systems, Turing machines)
+    // still produce an empty Graphics placeholder so the expected
+    // `-Graphics-` output renders; anything that is not a system
+    // (`RulePlot[x]`, a bare rule number) stays unevaluated, as in WL.
+    "RulePlot"
+      if matches!(args.first(), Some(Expr::FunctionCall { name, .. })
+      if matches!(
+        name.as_str(),
+        "CellularAutomaton"
+          | "SubstitutionSystem"
+          | "TuringMachine"
+          | "MultiwaySystem"
+      )) =>
+    {
+      Some(quiet_plot(|| {
+        if let Some(result) =
+          crate::functions::rule_plot::rule_plot_graphics(args)
+        {
+          return result;
+        }
+        crate::functions::graphics::show_ast(&[call1(
+          "Graphics",
+          Expr::List(vec![].into()),
+        )])
+      }))
+    }
+    "RulePlot" if !args.is_empty() => Some(Ok(unevaluated(name, args))),
     // ReImPlot[f, {x, xmin, xmax}, opts...] plots Re[f] and Im[f] on the
     // same axes. We forward to Plot[{Re[f], Im[f]}, …]. When f is a list,
     // splat the real and imaginary parts across all entries. Falls through
@@ -493,6 +506,16 @@ pub fn dispatch_plotting(
     // specs preserved. A non-list variable spec emits a Manipulate::vsform
     // message but the expression is still returned unchanged.
     "Manipulate" => Some(crate::functions::graphics::manipulate_ast(args)),
+    // Animate is a Manipulate with animator controls (wolframscript
+    // evaluates it to one).
+    "Animate" => crate::functions::graphics::animate_to_manipulate(args).map(
+      |m| match &m {
+        Expr::FunctionCall { args, .. } => {
+          crate::functions::graphics::manipulate_ast(args)
+        }
+        _ => Ok(m),
+      },
+    ),
     // Control holds its argument (see core_eval.rs) and echoes itself back
     // with the variable spec's bounds evaluated. Playground / Studio detect
     // the held Control[…] and render an interactive control widget.
@@ -621,9 +644,14 @@ pub fn dispatch_plotting(
     "DiscretePlot" if args.len() >= 2 => Some(quiet_plot(|| {
       crate::functions::list_plot::discrete_plot_ast(args)
     })),
-    "DiscretePlot3D" if args.len() >= 3 => Some(quiet_plot(|| {
-      crate::functions::plot3d::discrete_plot3d_ast(args)
-    })),
+    "DiscretePlot3D" if args.len() >= 3 => Some(
+      match crate::functions::plot3d::discrete_plot3d_bad_iterator(args) {
+        Some(unevaluated) => Ok(unevaluated),
+        None => {
+          quiet_plot(|| crate::functions::plot3d::discrete_plot3d_ast(args))
+        }
+      },
+    ),
     "ListLinePlot" if !args.is_empty() => {
       // Match wolframscript: if the first argument doesn't evaluate
       // to a List, emit `ListLinePlot::lpn` (outside Quiet) and

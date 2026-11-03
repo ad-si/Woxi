@@ -3618,7 +3618,13 @@ mod interpreter_tests {
     clear_state();
     assert_eq!(
       interpret("Solve[-1.5*x^2 - 2*x + 3 == 0, x]").unwrap(),
-      "{{x -> -2.2301385866078096}, {x -> 0.8968052532744766}}"
+      "{{x -> -2.23013858660781}, {x -> 0.8968052532744765}}"
+    );
+    // Machine roots come from the cancellation-free formula, q/a and c/q,
+    // as in wolframscript.
+    assert_eq!(
+      interpret("Solve[x^2 - 2. == 0, x]").unwrap(),
+      "{{x -> -1.4142135623730951}, {x -> 1.414213562373095}}"
     );
     assert_eq!(
       interpret("Solve[-3/2*x^2 - 2*x + 3 == 0, x]").unwrap(),
@@ -3929,7 +3935,12 @@ mod interpreter_tests {
       interpret("Hold[Subscript[∑, i = 1]]").unwrap(),
       "Hold[Subscript[∑, i = 1]]"
     );
+  }
+
+  #[test]
+  fn test_sum_and_product_unaffected_by_the_glyph_symbols() {
     // The real `Sum`/`Product` functions (ASCII names) are unaffected.
+    clear_state();
     assert_eq!(interpret("Sum[i, {i, 1, 4}]").unwrap(), "10");
     assert_eq!(interpret("Product[i, {i, 1, 4}]").unwrap(), "24");
   }
@@ -6597,7 +6608,7 @@ mod interpreter_tests {
       // guide. In script mode these stay unevaluated as their canonical form
       // (they only become interactive objects inside a notebook), so they
       // must not emit a spurious "not yet implemented" warning.
-      ("Animate[x, {x, 0, 1}]", "Animate[x, {x, 0, 1}]"),
+      ("Animate[x]", "Animate[x]"),
       ("Animator[0]", "Animator[0]"),
       ("ListAnimate[{1, 2, 3}]", "ListAnimate[{1, 2, 3}]"),
       (

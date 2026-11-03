@@ -756,7 +756,8 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // by the explicit name-match in core_eval.rs), not via the
     // attribute. Adding HoldAll here would diverge from `Attributes[
     // Manipulate]` in wolframscript without changing semantics.
-    "Manipulate" | "Convert`TeX`ExpressionToTeX" => {
+    // Animate likewise (it evaluates to a Manipulate).
+    "Manipulate" | "Animate" | "Convert`TeX`ExpressionToTeX" => {
       A::Protected | A::ReadProtected
     }
     // Control: Protected (matches wolframscript). Like Manipulate it holds
@@ -788,7 +789,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // wolframscript). Most are also held by name in `core_eval.rs`; the
     // attribute keeps the ones Woxi does not draw yet from evaluating their
     // body with the plot variables free.
-    "Plot" | "Animate" | "AbsArgPlot" | "BodePlot"
+    "Plot" | "AbsArgPlot" | "BodePlot"
     | "ComplexContourPlot" | "ComplexPlot" | "ComplexPlot3D"
     | "ComplexRegionPlot" | "ComplexStreamPlot" | "ComplexVectorPlot"
     | "ContourPlot" | "ContourPlot3D" | "DensityPlot" | "DensityPlot3D"
@@ -894,6 +895,15 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "MatrixForm"
     | "Show"
     | "ListPlot3D"
+    // The list plots and charts are ReadProtected, like the function plots.
+    | "ListPlot"
+    | "ListLinePlot"
+    | "ListLogPlot"
+    | "ListContourPlot"
+    | "ListDensityPlot"
+    | "BarChart"
+    | "Histogram"
+    | "PieChart"
     | "Input"
     | "SeriesData"
     | "RunThrough"

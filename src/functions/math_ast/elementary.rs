@@ -818,6 +818,43 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return sqrt_ast(&[u_args[0].clone()]);
   }
+  // The root of the reciprocal of a positive number is the reciprocal of
+  // its root (`Sqrt[1/(5 - Sqrt[5])]` → `1/Sqrt[5 - Sqrt[5]]`), as
+  // `power_two` does for any rational exponent.
+  let reciprocal_of = match &args[0] {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => Some(left.as_ref()),
+    Expr::FunctionCall { name, args: pa }
+      if name == "Power"
+        && pa.len() == 2
+        && matches!(&pa[1], Expr::Integer(-1)) =>
+    {
+      Some(&pa[0])
+    }
+    _ => None,
+  };
+  if let Some(b) = reciprocal_of
+    && matches!(b, Expr::FunctionCall { name, .. } if name == "Plus")
+    && let Some(v) = crate::functions::math_ast::try_eval_to_f64(b)
+    && v != 0.0
+  {
+    let minus_half = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
+    };
+    if v > 0.0 {
+      return crate::functions::math_ast::power_two(b, &minus_half);
+    }
+    // A negative sum: `Sqrt[1/(1 - Sqrt[2])]` is `I/Sqrt[-1 + Sqrt[2]]`.
+    let negated = times_ast(&[Expr::Integer(-1), b.clone()])?;
+    if matches!(&negated, Expr::FunctionCall { name, .. } if name == "Plus") {
+      let root = crate::functions::math_ast::power_two(&negated, &minus_half)?;
+      return times_ast(&[Expr::Identifier("I".into()), root]);
+    }
+  }
   // A Gaussian rational with a Gaussian rational root, e.g. `Sqrt[2 I]`.
   if let Some(result) = try_sqrt_gaussian(&args[0]) {
     return Ok(result);
@@ -1177,7 +1214,16 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           times_ast(&inside)?
         };
-        let sqrt_part = make_sqrt(inside_expr);
+        // A lone reciprocal of a numeric sum is rooted on its own
+        // (`Sqrt[4/(1 + Sqrt[2])]` → `2/Sqrt[1 + Sqrt[2]]`).
+        let sqrt_part = if inside.is_empty()
+          && matches!(&inside_expr, Expr::BinaryOp { op: BinaryOperator::Power, right, .. }
+            if matches!(right.as_ref(), Expr::Integer(-1)))
+        {
+          sqrt_ast(&[inside_expr])?
+        } else {
+          make_sqrt(inside_expr)
+        };
         times_ast(&[outside_expr, sqrt_part])
       }
     }

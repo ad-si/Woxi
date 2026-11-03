@@ -1025,6 +1025,17 @@ fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
+  // `Scaled[{dx, dy}, {x, y}]` is `{x, y}` moved by a fraction of the plot
+  // range, which is not known while primitives are collected; the gauges
+  // use it only for short tick offsets, so it stands for its base point.
+  // `Offset[{dx, dy}, {x, y}]` is likewise its base point moved by screen
+  // points; the charts' bars use a zero shift.
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Scaled" || name == "Offset")
+    && args.len() == 2
+  {
+    return expr_to_point(&args[1]);
+  }
   // A point is usually already a `{x, y}` literal, but it can also be an
   // arithmetic expression that only reduces to one at evaluation time (e.g.
   // an arrow tip computed as `base + vector`) — evaluate first so those
@@ -2712,6 +2723,21 @@ fn collect_primitives(
         "HalfLine" if !args.is_empty() => {
           parse_infinite_line(args, style, prims, true);
         }
+        // `ConicHullRegion[p, {v}]` with one direction is the ray from `p`
+        // along `v`.
+        "ConicHullRegion"
+          if args.len() == 2
+            && matches!(&args[1], Expr::List(vs) if vs.len() == 1) =>
+        {
+          if let Expr::List(vs) = &args[1] {
+            parse_infinite_line(
+              &[args[0].clone(), vs[0].clone()],
+              style,
+              prims,
+              true,
+            );
+          }
+        }
         // Rotate[g, θ] rotates g by θ radians counterclockwise about the
         // center of its bounding box; Rotate[g, {u, v}] by the angle that
         // carries the direction u onto the direction v; Rotate[g, θ, {x, y}] about the point
@@ -2901,6 +2927,12 @@ fn collect_primitives(
         // only while the pointer is over it, so a static picture must not
         // draw it as well.
         "Mouseover" if !args.is_empty() => {
+          collect_primitives(&args[0], style, prims, errors);
+        }
+        // The charts' interaction wrappers (`StatusArea[g, text]`, the
+        // highlight-on-hover `Charting`DelayedMouseEffect[g, effect]`) draw
+        // `g` as it is.
+        "StatusArea" | "Charting`DelayedMouseEffect" if !args.is_empty() => {
           collect_primitives(&args[0], style, prims, errors);
         }
         // `Locator[pt]` / `Locator[Dynamic[pt, …], appearance]`: a marker
@@ -4510,6 +4542,9 @@ fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
 }
 
 fn graphics_text_content(expr: &Expr) -> String {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return graphics_text_content(&styled);
+  }
   match expr {
     // A `Dynamic[x]` inside text reads as the value `x` currently has.
     Expr::FunctionCall { name, args } if name == "Dynamic" && args.len() == 1 => {
@@ -11223,6 +11258,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut frame_ticks_style: Option<Expr> = None;
   let mut label_style: Option<Expr> = None;
   let mut base_style: Option<Expr> = None;
+  let mut default_base_style: Option<Expr> = None;
+  // `ImageSizeRaw -> {w, h}`: the size a picture is shown at when no
+  // `ImageSize` says otherwise (`HighlightImage` sets it to the image's).
+  let mut image_size_raw: Option<Expr> = None;
   // `AxesOrigin -> {x, y}`: where the axes cross.
   let mut axes_origin: (Option<f64>, Option<f64>) = (None, None);
   // When true, skip uniform scaling so x and y axes scale independently
@@ -11412,6 +11451,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FrameTicksStyle" => frame_ticks_style = Some(replacement.clone()),
         "LabelStyle" => label_style = Some(replacement.clone()),
         "BaseStyle" => base_style = Some(replacement.clone()),
+        "DefaultBaseStyle" => default_base_style = Some(replacement.clone()),
+        "ImageSizeRaw" => image_size_raw = Some(replacement.clone()),
         "AxesOrigin" => {
           axes_origin = crate::functions::plot::parse_axes_origin(replacement);
         }
@@ -11438,6 +11479,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  if !explicit_size
+    && let Some(raw) = &image_size_raw
+    && let Some((w, h, fw)) =
+      parse_image_size(raw, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+  {
+    explicit_size = true;
+    explicit_height = true;
+    size_names_height = true;
+    svg_width = w;
+    svg_height = h;
+    full_width = fw;
+  }
+
   // The height an `AspectRatio` asks for follows from the *final* width, so it
   // is worked out once the whole option list has been read: options mean the
   // same thing in either order, and `Graphics[…, AspectRatio -> 1/8,
@@ -11450,9 +11504,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     explicit_height = true;
   }
 
-  // Collect primitives. `BaseStyle` directives are in force before any of
-  // the drawing's own.
+  // Collect primitives. `DefaultBaseStyle` and then `BaseStyle` directives
+  // are in force before any of the drawing's own.
   let mut style = StyleState::default();
+  if let Some(base) = &default_base_style {
+    apply_directive(base, &mut style);
+  }
   if let Some(base) = &base_style {
     apply_directive(base, &mut style);
   }
@@ -13806,6 +13863,9 @@ fn is_stacked_block(expr: &Expr) -> bool {
 /// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
 /// further. Everything else is a single line.
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return expr_to_svg_markup_lines(&styled);
+  }
   // `Framed[content]`/`Highlighted[content]` draws no box in a running
   // line of text (see this function's own single-line sibling below) — but
   // as a whole item inside a `Column`, the same reasoning that lets a
@@ -14035,7 +14095,50 @@ fn shorten_for_display(expr: &Expr, lines: f64) -> Expr {
   Expr::String(format!("{head}<<{omitted}>>{tail}"))
 }
 
+/// A number format around a `Style` typesets as the style around the
+/// formatted number: `NumberForm[Style[x, Red], {4, 2}]` draws `x` to two
+/// decimals in red. `None` for anything else.
+pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if !matches!(
+    name.as_str(),
+    "NumberForm"
+      | "PaddedForm"
+      | "AccountingForm"
+      | "ScientificForm"
+      | "EngineeringForm"
+  ) {
+    return None;
+  }
+  let Some(Expr::FunctionCall {
+    name: style,
+    args: style_args,
+  }) = args.first()
+  else {
+    return None;
+  };
+  if style != "Style" || style_args.is_empty() {
+    return None;
+  }
+  let mut form_args = vec![style_args[0].clone()];
+  form_args.extend(args[1..].iter().cloned());
+  let mut styled = vec![Expr::FunctionCall {
+    name: name.clone(),
+    args: form_args.into(),
+  }];
+  styled.extend(style_args[1..].iter().cloned());
+  Some(Expr::FunctionCall {
+    name: "Style".to_string(),
+    args: styled.into(),
+  })
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
+  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+    return expr_to_svg_markup(&styled);
+  }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
   // `Print`/OutputForm in a script, which show the literal wrapper because
@@ -17325,7 +17428,137 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Legended", vec![shown, legend]))
 }
 
+/// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
+/// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
+/// otherwise the
+/// primitives — a single graphic's own, or a list of each graphic's — with
+/// one list of options, `Show`'s own followed by the first graphic's (a
+/// later graphic's options are dropped). A symbol or number among the
+/// graphics cannot be combined (`Show::gcomb`) and leaves `Show`
+/// unevaluated. Returns None for anything else (plots, images, meshes),
+/// which the general merge handles.
+fn show_symbolic_graphics(args: &[Expr], original: &[Expr]) -> Option<Expr> {
+  // A symbol can still stand for a graphic (Show's arguments can reach it
+  // unevaluated); only one without a value is no graphic at all.
+  fn resolve_arg(a: &Expr) -> Expr {
+    match a {
+      Expr::Identifier(_) => {
+        evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+      }
+      Expr::FunctionCall { name, .. } if name == "Graphics" => {
+        evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone())
+      }
+      _ => a.clone(),
+    }
+  }
+  let resolved: Vec<Expr> = args.iter().map(resolve_arg).collect();
+  let original: Vec<Expr> = original
+    .iter()
+    .map(|a| match a {
+      Expr::List(items) => Expr::List(items.iter().map(resolve_arg).collect()),
+      other => resolve_arg(other),
+    })
+    .collect();
+  let original = original.as_slice();
+  if resolved.iter().zip(args).any(|(r, a)| {
+    matches!(a, Expr::Identifier(_)) && matches!(r, Expr::List(_))
+  }) {
+    return None;
+  }
+  let args = resolved.as_slice();
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let (graphics, own_options): (Vec<&Expr>, Vec<&Expr>) = {
+    let mut graphics = Vec::new();
+    let mut options = Vec::new();
+    for arg in args {
+      match arg {
+        Expr::List(items) if items.iter().all(is_option) => {
+          options.extend(items.iter());
+        }
+        _ if is_option(arg) => options.push(arg),
+        _ => graphics.push(arg),
+      }
+    }
+    (graphics, options)
+  };
+  if graphics.is_empty() {
+    return None;
+  }
+  let not_graphics = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Identifier(_)
+        | Expr::Integer(_)
+        | Expr::Real(_)
+        | Expr::BigInteger(_)
+        | Expr::String(_)
+    ) && !matches!(e, Expr::Identifier(s) if s == "Null")
+  };
+  if graphics.iter().any(|g| not_graphics(g)) {
+    if let [single] = graphics.as_slice() {
+      let head = match single {
+        Expr::Identifier(_) => "Symbol",
+        Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
+        Expr::Real(_) => "Real",
+        _ => "String",
+      };
+      crate::emit_message(&format!(
+        "Show::gtype: {head} is not a type of graphics."
+      ));
+    } else {
+      crate::emit_message(&format!(
+        "Show::gcomb: Could not combine the graphics objects in {}.",
+        crate::syntax::expr_to_output(&unevaluated("Show", original))
+      ));
+    }
+    return Some(unevaluated("Show", original));
+  }
+  let head = match graphics[0] {
+    Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      name.as_str()
+    }
+    _ => return None,
+  };
+  let mut prims = Vec::with_capacity(graphics.len());
+  let mut first_options: Vec<Expr> = Vec::new();
+  for (i, g) in graphics.iter().enumerate() {
+    let Expr::FunctionCall { name, args: gargs } = g else {
+      return None;
+    };
+    if name != head || gargs.is_empty() || wraps_rendered_graphic(&gargs[0]) {
+      return None;
+    }
+    prims.push(gargs[0].clone());
+    if i == 0 {
+      for opt in gargs.iter().skip(1) {
+        match opt {
+          Expr::List(items) => first_options.extend(items.iter().cloned()),
+          other => first_options.push(other.clone()),
+        }
+      }
+    }
+  }
+  if graphics.len() == 1 && own_options.is_empty() && first_options.is_empty() {
+    return Some(graphics[0].clone());
+  }
+  let content = if prims.len() == 1 {
+    prims.pop().unwrap()
+  } else {
+    Expr::List(prims.into())
+  };
+  let options: Vec<Expr> = own_options
+    .into_iter()
+    .cloned()
+    .chain(first_options)
+    .collect();
+  Some(call(head, vec![content, Expr::List(options.into())]))
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
   let mut merged_options: Vec<Expr> = Vec::new();
   let mut is_3d = false;
@@ -17374,6 +17607,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     args
   };
+
+  if let Some(result) = show_symbolic_graphics(args, original_args) {
+    return Ok(result);
+  }
 
   // `Show[image, opts…]` — a raster Image argument passes through: Show
   // of an image just displays it (sizing options like `ImageSize -> 100`
@@ -18703,9 +18940,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     }
     // A bare `Animate[…]` cell draws its first frame (see
     // `animate_snapshot_svg`), the same as when it sits inside a `Pane`.
-    Expr::FunctionCall { name, args }
-      if name == "Animate" && args.len() >= 2 =>
-    {
+    Expr::FunctionCall { name, args } if is_animate_call(name, args) => {
       animate_snapshot_svg(args)?
     }
     // A bare `Button[label, action]` cell (a Demonstration's clickable
@@ -27848,6 +28083,214 @@ fn is_initialization_option(pattern: &Expr, replacement: &Expr) -> bool {
 /// expression is not a well-formed Manipulate/Animate (e.g. `Manipulate[]`,
 /// `Manipulate[expr]`, or a spec that isn't a list). In those cases the caller
 /// should fall back to the standard text/graphics output path.
+/// The options of `Animate` (wolframscript's `Options[Animate]`).
+const ANIMATE_OPTIONS: &[&str] = &[
+  "Alignment",
+  "AnimationDirection",
+  "AnimationRate",
+  "AnimationRepetitions",
+  "AnimationRunning",
+  "AnimationRunTime",
+  "AnimationTimeIndex",
+  "AppearanceElements",
+  "AutoAction",
+  "AutorunSequencing",
+  "BaselinePosition",
+  "BaseStyle",
+  "Bookmarks",
+  "ContentSize",
+  "ContinuousAction",
+  "ControlAlignment",
+  "ControllerLinking",
+  "ControllerMethod",
+  "ControllerPath",
+  "ControlPlacement",
+  "ControlType",
+  "DefaultBaseStyle",
+  "DefaultDuration",
+  "DefaultLabelStyle",
+  "Deinitialization",
+  "Deployed",
+  "DisplayAllSteps",
+  "Evaluator",
+  "ExcludedContexts",
+  "Exclusions",
+  "Frame",
+  "FrameLabel",
+  "FrameMargins",
+  "ImageMargins",
+  "IncludedContexts",
+  "InterpolationOrder",
+  "Initialization",
+  "LabelStyle",
+  "LocalizeVariables",
+  "Method",
+  "Paneled",
+  "PausedTime",
+  "PreserveImageOptions",
+  "RefreshRate",
+  "RotateLabel",
+  "SaveDefinitions",
+  "ShrinkingDelay",
+  "SynchronousInitialization",
+  "SynchronousUpdating",
+  "TouchscreenAutoZoom",
+  "TouchscreenControlPlacement",
+  "TrackedSymbols",
+  "UndoTrackedVariables",
+  "UnsavedVariables",
+  "UntrackedVariables",
+];
+
+/// `Animate` options that belong to each animated control: wolframscript
+/// moves them into every control spec.
+const ANIMATOR_CONTROL_OPTIONS: [&str; 10] = [
+  "AnimationDirection",
+  "AnimationRate",
+  "AnimationRepetitions",
+  "AnimationRunning",
+  "AnimationRunTime",
+  "AnimationTimeIndex",
+  "DefaultDuration",
+  "DisplayAllSteps",
+  "PausedTime",
+  "RefreshRate",
+];
+
+fn rule_option_name(opt: &Expr) -> Option<&str> {
+  match opt {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(s) | Expr::String(s) => Some(s.as_str()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `Animate[body, spec, …, opts]` is the `Manipulate` wolframscript turns it
+/// into: every control spec gets the animator options and the four
+/// animator buttons, the other options are sorted, and the animation
+/// defaults (`ControlType -> Animator`, …) follow them. `None` when the
+/// call has no control spec.
+pub fn animate_to_manipulate(args: &[Expr]) -> Option<Expr> {
+  let (body, rest) = args.split_first()?;
+  let mut specs: Vec<Expr> = Vec::new();
+  let mut control_opts: Vec<Expr> = Vec::new();
+  let mut widget_opts: Vec<Expr> = Vec::new();
+  let mut appearance = None;
+  let value_of = |name: &str, opts: &[Expr]| -> Option<Expr> {
+    opts.iter().rev().find_map(|o| match o {
+      Expr::Rule { replacement, .. }
+      | Expr::RuleDelayed { replacement, .. }
+        if rule_option_name(o) == Some(name) =>
+      {
+        Some((**replacement).clone())
+      }
+      _ => None,
+    })
+  };
+  for arg in rest {
+    match rule_option_name(arg) {
+      Some(name) if ANIMATOR_CONTROL_OPTIONS.contains(&name) => {
+        control_opts.push(arg.clone());
+      }
+      Some("AppearanceElements") => appearance = Some(arg.clone()),
+      Some(name) if ANIMATE_OPTIONS.contains(&name) => {
+        widget_opts.push(arg.clone());
+      }
+      Some(_) => crate::emit_message(&format!(
+        "Animate::unknop: {} is not a recognized option.",
+        crate::syntax::expr_to_string(arg)
+      )),
+      None => specs.push(arg.clone()),
+    }
+  }
+  if !specs.iter().any(|s| matches!(s, Expr::List(_))) {
+    return None;
+  }
+  let buttons = Expr::Rule {
+    pattern: Box::new(id_expr("AppearanceElements")),
+    replacement: Box::new(Expr::List(
+      [
+        "ProgressSlider",
+        "PlayPauseButton",
+        "FasterSlowerButtons",
+        "DirectionButton",
+      ]
+      .iter()
+      .map(|s| Expr::String((*s).to_string()))
+      .collect::<Vec<_>>()
+      .into(),
+    )),
+  };
+  let mut out = vec![body.clone()];
+  for spec in specs {
+    out.push(match &spec {
+      Expr::List(items) => {
+        let mut items = items.to_vec();
+        items.extend(control_opts.iter().cloned());
+        items.push(buttons.clone());
+        Expr::List(items.into())
+      }
+      _ => spec,
+    });
+  }
+  widget_opts
+    .sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(id_expr(k)),
+    replacement: Box::new(v),
+  };
+  let control_type = value_of("ControlType", &widget_opts)
+    .unwrap_or_else(|| id_expr("Animator"));
+  let synchronous = value_of("SynchronousUpdating", &widget_opts)
+    .unwrap_or_else(|| id_expr("True"));
+  let shrinking =
+    value_of("ShrinkingDelay", &widget_opts).map_or(Expr::Real(10.0), |v| {
+      evaluate_expr_to_expr(&call1("N", v)).unwrap_or_else(|_| Expr::Real(10.0))
+    });
+  let appearance = match &appearance {
+    Some(
+      Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. },
+    ) => (**replacement).clone(),
+    _ => id_expr("None"),
+  };
+  out.extend(widget_opts);
+  out.push(rule("ControlType", control_type));
+  out.push(rule("AppearanceElements", appearance));
+  out.push(rule("DefaultBaseStyle", Expr::String("Animate".into())));
+  out.push(rule(
+    "DefaultLabelStyle",
+    Expr::String("AnimateLabel".into()),
+  ));
+  out.push(rule("SynchronousUpdating", synchronous));
+  out.push(rule("ShrinkingDelay", shrinking));
+  Some(Expr::FunctionCall {
+    name: "Manipulate".into(),
+    args: out.into(),
+  })
+}
+
+/// Whether a `Manipulate[…]` is an evaluated `Animate[…]` (see
+/// `animate_to_manipulate`), which the front ends draw as an animation.
+pub fn is_animate_manipulate(args: &[Expr]) -> bool {
+  args.iter().skip(1).any(|a| {
+    rule_option_name(a) == Some("DefaultBaseStyle")
+      && matches!(a, Expr::Rule { replacement, .. }
+        if matches!(replacement.as_ref(), Expr::String(s) if s == "Animate"))
+  })
+}
+
+/// The head a front end should treat a call as: an evaluated `Animate` is a
+/// `Manipulate` carrying `DefaultBaseStyle -> "Animate"`.
+pub fn is_animate_call(name: &str, args: &[Expr]) -> bool {
+  args.len() >= 2
+    && (name == "Animate"
+      || (name == "Manipulate" && is_animate_manipulate(args)))
+}
+
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let expr = peel_manipulate_wrapper(expr);
   let Expr::FunctionCall { name, args } = expr else {
@@ -27856,7 +28299,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   if (name != "Manipulate" && name != "Animate") || args.len() < 2 {
     return None;
   }
-  let mut animated = name == "Animate";
+  let mut animated = is_animate_call(name, args);
   let mut animation_running = true;
 
   // A Manipulate whose body is itself an `Animate[…]` (the Demonstrations

@@ -1022,6 +1022,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     "FrameBox",
     "ButtonBox",
     "CheckboxBox",
+    "ColorSetterBox",
   ] {
     if !s.starts_with(head) {
       continue;
@@ -1338,6 +1339,13 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // it is a string (`CheckboxBox[False, {False, "Mathematics"}]` →
       // `☐ Mathematics`).
       "CheckboxBox" if !args.is_empty() => render_checkbox(&args, true),
+      // An inline colour control reads back as the control it displays:
+      // `MakeExpression[ColorSetterBox[c, "SwatchSpectrum"]]` is
+      // `ColorSlider[c]` (The 2001 CSO Mortality Tables Demonstration stores
+      // `Setting[ColorSetterBox[…]]` as its background colour).
+      "ColorSetterBox" if !args.is_empty() => {
+        format!("ColorSlider[{}]", args[0].trim())
+      }
       // `GridBox[{{r11, r12, …}, {r21, …}, …}, opts…]` → the raw rows as a
       // list literal. The rows themselves may contain box expressions, so
       // recurse into each cell.
@@ -7938,6 +7946,16 @@ Cell["Chapter 2", "Chapter"]
       "[x]"
     );
     assert!(stored_output_checkbox_text("{{1, 2}, {3, 4}}").is_none());
+  }
+
+  #[test]
+  fn test_extract_cell_content_color_setter_box_reads_as_color_slider() {
+    assert_eq!(
+      extract_cell_content(
+        r#"BoxData[RowBox[{"Setting", "[", ColorSetterBox[RGBColor[0.5, 0.5, 0.5], "SwatchSpectrum"], "]"}]]"#
+      ),
+      "Setting[ColorSlider[RGBColor[0.5, 0.5, 0.5]]]"
+    );
   }
 
   #[test]

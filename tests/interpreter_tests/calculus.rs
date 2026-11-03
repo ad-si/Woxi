@@ -2164,13 +2164,44 @@ mod differentiate_piecewise {
     );
   }
 
+  // PiecewiseExpand makes the conditions disjoint, takes 0 or else the
+  // greatest value as the default and sorts the other pieces by value.
+  #[test]
+  fn piecewise_expand_canonical_form() {
+    assert_eq!(
+      interpret(
+        "PiecewiseExpand[Piecewise[{{2 x, y < 1}, {3 x^2, y > 3}}, 3]]"
+      )
+      .unwrap(),
+      "Piecewise[{{3, Inequality[1, LessEqual, y, LessEqual, 3]}, {2*x, y < 1}}, 3*x^2]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x^2, a < 1}, {x, b < 1}}, 1]]")
+        .unwrap(),
+      "Piecewise[{{1, a >= 1 && b >= 1}, {x, a >= 1 && b < 1}}, x^2]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x, x > 0}}, -x]]").unwrap(),
+      "Piecewise[{{-x, x <= 0}}, x]"
+    );
+    assert_eq!(
+      interpret("PiecewiseExpand[Piecewise[{{x, a < 1}, {x^2, b < 1}}, 0]]")
+        .unwrap(),
+      "Piecewise[{{x, a < 1}, {x^2, a >= 1 && b < 1}}, 0]"
+    );
+  }
+
   // Conditions independent of the differentiation variable have no boundary
   // points, so the default is differentiated too.
   #[test]
   fn conditions_free_of_variable() {
     assert_eq!(
       interpret("D[Piecewise[{{x^2, y < 1}}, 3 x], x]").unwrap(),
-      "Piecewise[{{2*x, y < 1}}, 3]"
+      "Piecewise[{{3, y >= 1}}, 2*x]"
+    );
+    assert_eq!(
+      interpret("D[Piecewise[{{x^2, y < 1}, {x^3, y < 2}}, 3 x], x]").unwrap(),
+      "Piecewise[{{3, y >= 2}, {2*x, y < 1}}, 3*x^2]"
     );
     assert_eq!(
       interpret("D[Piecewise[{{a x, y < 1}}], x]").unwrap(),
@@ -8786,7 +8817,7 @@ mod dsolve {
         "sol = y[t] /. First[DSolve[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]]; {sol /. {t -> 0, k -> 3/2}, N[(D[sol, t] - k (60 - sol + 15 Sin[2 Pi t])) /. {t -> 7/10, k -> 3/2}] < 10^-9}"
       )
       .unwrap(),
-      "{60 - (45*Pi)/(9/4 + 4*Pi^2) - (10*(9/4 - (9*Pi)/2 + 4*Pi^2))/(9/4 + 4*Pi^2), True}"
+      "{(5*(45/2 + 40*Pi^2))/(9/4 + 4*Pi^2), True}"
     );
   }
 
@@ -10088,7 +10119,23 @@ mod ndsolve {
          {i, 1, 4}, {j, 1, 4}], 1]]; {f[2.5, 3.5], f[2, 3]}"
       )
       .unwrap(),
-      "{8.75 - 1.*I, 6. - 1.*I}"
+      "{8.75 - 1.*I, 6 - I}"
+    );
+    // Exact complex data interpolates exactly at an exact point.
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Flatten[Table[{i, j, i*j + I*(i - j)}, \
+         {i, 1, 4}, {j, 1, 4}], 1]]; {f[2., 3], f[5/2, 7/2]}"
+      )
+      .unwrap(),
+      "{6. - 1.*I, 35/4 - I}"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{1, 2}, {2, 3 + I}, {3, 2}}]; {f[2], f[2.], f[3/2]}"
+      )
+      .unwrap(),
+      "{3 + I, 3. + 1.*I, 11/4 + (3*I)/4}"
     );
     // Polynomial data is reproduced exactly by the order-3 local fit, so the
     // partial derivatives match the analytic ones.
@@ -23008,8 +23055,8 @@ mod kernel_format_interpolating_function {
 
   #[test]
   fn zero_imaginary_values_read_as_real() {
-    // Data fitted as complex is saved as `x + 0. I`; it applies like the
-    // real data it is.
+    // Data fitted as complex is saved as `x + 0. I`, and its values stay
+    // complex, as in wolframscript.
     assert_eq!(
       interpret(
         "InterpolatingFunction[{{0., 4.}}, {3, 3, 0, {4}, {2}, 0, 0, 0, 0}, \
@@ -23017,7 +23064,7 @@ mod kernel_format_interpolating_function {
          {1. + 0. I, 3. + 0. I, 2. + 0. I, 6. + 0. I}}, {Automatic}][3]"
       )
       .unwrap(),
-      "4."
+      "4. + 0.*I"
     );
   }
 
@@ -23147,7 +23194,7 @@ mod integrate_negative_scaled_power {
   fn fractional_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[(-2 p)^(3/2), p]").unwrap(),
-      "-1/5*(-2*p)^(5/2)"
+      "(4*Sqrt[2]*(-p)^(3/2)*p)/5"
     );
   }
 
@@ -23155,7 +23202,33 @@ mod integrate_negative_scaled_power {
   fn monomial_times_fractional_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[p^2 (-2 p)^(3/2), p]").unwrap(),
-      "-1/36*(-2*p)^(9/2)"
+      "(4*Sqrt[2]*(-p)^(7/2)*p)/9"
+    );
+  }
+
+  // `(-x)^r` integrates to `x (-x)^r/(r + 1)`; an odd power of x in front
+  // merges into the standard form, an even one into the `x` form.
+  #[test]
+  fn powers_of_the_negated_variable() {
+    assert_eq!(
+      interpret("Integrate[(-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(3/2)*p)/5"
+    );
+    assert_eq!(
+      interpret("Integrate[p (-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(7/2))/7"
+    );
+    assert_eq!(
+      interpret("Integrate[p^4 (-p)^(3/2), p]").unwrap(),
+      "(2*(-p)^(11/2)*p)/13"
+    );
+    assert_eq!(
+      interpret("Integrate[p (-p)^n, p]").unwrap(),
+      "((-p)^n*p^2)/(2 + n)"
+    );
+    assert_eq!(
+      interpret("Integrate[p^2 (-p)^n, p]").unwrap(),
+      "((-p)^(2 + n)*p)/(3 + n)"
     );
   }
 
@@ -23163,7 +23236,7 @@ mod integrate_negative_scaled_power {
   fn linear_factor_times_power_of_negative_multiple() {
     assert_eq!(
       interpret("Integrate[p (-3 p)^(5/2), p]").unwrap(),
-      "(2*(-3*p)^(9/2))/81"
+      "2*Sqrt[3]*(-p)^(9/2)"
     );
   }
 
@@ -24073,7 +24146,15 @@ mod interpolation_symbolic_values {
          InterpolationOrder -> 1][2.5]"
       )
       .unwrap(),
-      "0.5*b + 0.5*c"
+      "0.5*(b - c) + c"
+    );
+    assert_eq!(
+      interpret(
+        "Interpolation[{{1, a}, {2, b}, {3, c}, {5, d}}, \
+         InterpolationOrder -> 1][5/2]"
+      )
+      .unwrap(),
+      "(b - c)/2 + c"
     );
     assert_eq!(
       interpret(
@@ -24154,10 +24235,16 @@ mod inverse_function_of_a_definition {
         .unwrap(),
       "r"
     );
-    // Two rules: no single formula to invert.
+    // A value for one argument does not hide the general rule.
     assert_eq!(
       interpret("h[0] = 1; h[x_] := 2 x; InverseFunction[h]").unwrap(),
-      "InverseFunction[h]"
+      "#1/2 & "
+    );
+    // A rule for a restricted pattern is passed over too.
+    assert_eq!(
+      interpret("k[x_Integer] := 2 x; k[x_] := 3 x; InverseFunction[k]")
+        .unwrap(),
+      "#1/3 & "
     );
   }
 }
@@ -24332,7 +24419,7 @@ mod dsolve_sinusoidal_forcing_sum {
   fn first_order_part_missing() {
     assert_eq!(
       interpret("DSolve[y''[x] + y'[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
-      "{{y[x] -> C[1]/E^x + C[2] - Cos[x]}}"
+      "{{y[x] -> -(C[1]/E^x) + C[2] - Cos[x]}}"
     );
   }
 
@@ -24340,7 +24427,7 @@ mod dsolve_sinusoidal_forcing_sum {
   fn resonant_sum() {
     assert_eq!(
       interpret("DSolve[y''[x] + y[x] == Cos[x] + Sin[x], y[x], x]").unwrap(),
-      "{{y[x] -> (Cos[x] - x*Cos[x] + x*Sin[x])/2 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+      "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x] + (-2*x*Cos[x] + 2*Cos[x]^3 + 2*x*Sin[x] - 2*Cos[x]^2*Sin[x] + Cos[x]*Sin[2*x] + Sin[x]*Sin[2*x])/4}}"
     );
   }
 
@@ -24349,7 +24436,7 @@ mod dsolve_sinusoidal_forcing_sum {
     assert_eq!(
       interpret("DSolve[y''[x] + y[x] == 3 Sin[2 x] + Cos[2 x], y[x], x]")
         .unwrap(),
-      "{{y[x] -> (-Cos[2*x] - 3*Sin[2*x])/3 + C[1]*Cos[x] + C[2]*Sin[x]}}"
+      "{{y[x] -> C[1]*Cos[x] + C[2]*Sin[x] + (-3*Cos[x]^2 + Cos[x]*Cos[3*x] - 18*Cos[x]*Sin[x] - 3*Cos[3*x]*Sin[x] + 3*Sin[x]^2 + 3*Cos[x]*Sin[3*x] + Sin[x]*Sin[3*x])/6}}"
     );
   }
 }
@@ -24379,11 +24466,46 @@ mod ndsolve_vector_unknown_with_matrix_product {
 mod integrate_interpolating_function {
   use super::*;
 
+  // Exact data between exact limits integrates exactly, piece by piece.
   #[test]
-  fn definite_integral_is_numeric() {
+  fn definite_integral_of_exact_data_is_exact() {
     assert_eq!(
       interpret(
         "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 2}]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}, {3, 5}}]; Integrate[f[x], {x, 0, 3}]"
+      )
+      .unwrap(),
+      "51/8"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}, {3, 5}}]; Integrate[f[x], {x, 3, 0}]"
+      )
+      .unwrap(),
+      "-51/8"
+    );
+  }
+
+  #[test]
+  fn definite_integral_is_numeric_for_inexact_input() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
+         Integrate[f[x], {x, 0, 0.5}]"
+      )
+      .unwrap(),
+      "0.25"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0.}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
          Integrate[f[x], {x, 0, 2}]"
       )
       .unwrap(),
@@ -24392,14 +24514,14 @@ mod integrate_interpolating_function {
   }
 
   #[test]
-  fn sum_of_piecewise_integrals_is_numeric() {
+  fn sum_of_piecewise_integrals_is_exact() {
     assert_eq!(
       interpret(
         "f = Interpolation[{{0, 0}, {1, 2}, {2, 2}}, InterpolationOrder -> 1]; \
          Integrate[f[x], {x, 0, 1}] + Integrate[f[x], {x, 1, 2}]"
       )
       .unwrap(),
-      "3."
+      "3"
     );
   }
 
@@ -24425,7 +24547,7 @@ mod integrate_interpolating_function {
         "f = u /. First@First@FullSimplify[DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]]; f[x]"
       )
       .unwrap(),
-      "3 - 2/x"
+      "(-2 + 3*x)/x"
     );
   }
 }
@@ -24892,7 +25014,7 @@ mod fourier_sequence_transform {
     assert_eq!(
       interpret("FourierSequenceTransform[If[Abs[n] <= 1, 1, 0]/3, n, w]")
         .unwrap(),
-      "1/3 + 1/(3*E^(I*w)) + E^(I*w)/3"
+      "(1 + E^(I*w) + E^((2*I)*w))/(3*E^(I*w))"
     );
   }
 
@@ -24902,6 +25024,13 @@ mod fourier_sequence_transform {
     assert_eq!(
       interpret("FourierSequenceTransform[KroneckerDelta[n - 2], n, w]")
         .unwrap(),
+      "E^((-2*I)*w)"
+    );
+    assert_eq!(
+      interpret(
+        "FourierSequenceTransform[KroneckerDelta[n - 2], n, w, FourierParameters -> {1, -1}]"
+      )
+      .unwrap(),
       "E^((2*I)*w)"
     );
   }
@@ -24914,7 +25043,7 @@ mod fourier_sequence_transform {
         "FourierSequenceTransform[Boole[0 <= n <= 2], n, w, FourierParameters -> {0, 1}]"
       )
       .unwrap(),
-      "(1 + E^(I*w) + E^((2*I)*w))/Sqrt[2*Pi]"
+      "(1 + E^(I*w) + E^((2*I)*w))/(E^((2*I)*w)*Sqrt[2*Pi])"
     );
   }
 
@@ -25943,5 +26072,277 @@ mod series_rational_function {
     ] {
       assert_eq!(interpret(input).unwrap(), expected, "{input}");
     }
+  }
+}
+
+// D keeps the signs of the factors it produced: a rational coefficient is
+// not cancelled into the denominator (`(-1 + z)` for `(1 - z)`).
+mod d_keeps_factor_signs {
+  use super::*;
+
+  #[test]
+  fn numeric_denominator() {
+    assert_eq!(interpret("D[(1 - z)^3/6, z]").unwrap(), "-1/2*(1 - z)^2");
+    assert_eq!(
+      interpret("D[x (1 - z)^3/6, z]").unwrap(),
+      "-1/2*(x*(1 - z)^2)"
+    );
+  }
+
+  #[test]
+  fn nothing_to_cancel() {
+    assert_eq!(interpret("D[Log[1 - z]/6, z]").unwrap(), "-1/6*1/(1 - z)");
+    assert_eq!(
+      interpret("D[Log[1 - z]^3/7, z]").unwrap(),
+      "(-3*Log[1 - z]^2)/(7*(1 - z))"
+    );
+    assert_eq!(
+      interpret("D[-Log[1 - z]^3/6, z]").unwrap(),
+      "Log[1 - z]^2/(2*(1 - z))"
+    );
+  }
+}
+
+mod integrate_constant_multiples_and_odd_cosines {
+  use super::*;
+
+  // A constant multiple of a non-polynomial sum is integrated with the
+  // constant distributed; a polynomial keeps it outside.
+  #[test]
+  fn constant_multiple_of_sum() {
+    assert_eq!(
+      interpret("Integrate[(3 Sin[x] - Cos[x])/10, x]").unwrap(),
+      "(-3*Cos[x])/10 - Sin[x]/10"
+    );
+    assert_eq!(
+      interpret("Integrate[2 (x + Sin[x]), x]").unwrap(),
+      "x^2 - 2*Cos[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[a (Sin[x] + Cos[x]), x]").unwrap(),
+      "-(a*Cos[x]) + a*Sin[x]"
+    );
+    assert_eq!(
+      interpret("Integrate[C[1]/E^(3 x) + (-Cos[x] + 3 Sin[x])/10, x]")
+        .unwrap(),
+      "-1/3*C[1]/E^(3*x) - (3*Cos[x])/10 - Sin[x]/10"
+    );
+    assert_eq!(
+      interpret("Integrate[(x + x^2)/2, x]").unwrap(),
+      "(x^2/2 + x^3/3)/2"
+    );
+  }
+
+  #[test]
+  fn odd_cosine_power_is_polynomial_in_sine() {
+    assert_eq!(
+      interpret("Integrate[Cos[x]^5, x]").unwrap(),
+      "Sin[x] - (2*Sin[x]^3)/3 + Sin[x]^5/5"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[2 x]^3, x]").unwrap(),
+      "Sin[2*x]/2 - Sin[2*x]^3/6"
+    );
+    assert_eq!(
+      interpret("Integrate[Cos[b x]^3, x]").unwrap(),
+      "Sin[b*x]/b - Sin[b*x]^3/(3*b)"
+    );
+    assert_eq!(
+      interpret("Integrate[a Cos[x]^3, x]").unwrap(),
+      "a*(Sin[x] - Sin[x]^3/3)"
+    );
+    // Odd sine powers keep the multiple-angle form.
+    assert_eq!(
+      interpret("Integrate[Sin[x]^3, x]").unwrap(),
+      "(-3*Cos[x])/4 + Cos[3*x]/12"
+    );
+  }
+
+  #[test]
+  fn exponential_antiderivative_is_factored() {
+    assert_eq!(
+      interpret("Integrate[E^x (x^2 + 1), x]").unwrap(),
+      "E^x*(3 - 2*x + x^2)"
+    );
+    assert_eq!(
+      interpret("Integrate[E^(2 x) (x + 3), x]").unwrap(),
+      "E^(2*x)*(5/4 + x/2)"
+    );
+  }
+
+  // An exponent sum with negative terms puts them in the denominator.
+  #[test]
+  fn together_splits_exponent_with_negative_terms() {
+    assert_eq!(
+      interpret("Together[E^(1 - x) + 1]").unwrap(),
+      "(E + E^x)/E^x"
+    );
+    assert_eq!(
+      interpret("Together[E^(x - y) + 1]").unwrap(),
+      "(E^x + E^y)/E^y"
+    );
+    assert_eq!(
+      interpret("Together[2^(1 - x) + 1]").unwrap(),
+      "(2 + 2^x)/2^x"
+    );
+    assert_eq!(
+      interpret("Together[x^(a - 2 b) + 1]").unwrap(),
+      "(x^a + x^(2*b))/x^(2*b)"
+    );
+    assert_eq!(
+      interpret("Together[E^(x/2 - 1/2) + 1]").unwrap(),
+      "(Sqrt[E] + E^(x/2))/Sqrt[E]"
+    );
+    assert_eq!(
+      interpret("Together[5 c^(-1 + n) + d]").unwrap(),
+      "(5*c^n + c*d)/c"
+    );
+  }
+
+  #[test]
+  fn together_pulls_out_common_exponential() {
+    assert_eq!(
+      interpret("Together[E^x/(1 + x) + E^x x]").unwrap(),
+      "(E^x*(1 + x + x^2))/(1 + x)"
+    );
+    assert_eq!(
+      interpret("Together[a E^(2 x) + b E^(2 x)/x]").unwrap(),
+      "(E^(2*x)*(b + a*x))/x"
+    );
+  }
+}
+
+mod dsolve_wolfram_forms {
+  use super::*;
+
+  // Exact systems whose matrix has irrational eigenvalues are solved
+  // exactly (they used to come out in machine numbers).
+  #[test]
+  fn irrational_eigenvalue_systems_stay_exact() {
+    assert_eq!(
+      interpret(
+        "DSolve[{y'[x] == y[x] + 2 z[x], z'[x] == 3 y[x] + z[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{{y[x] -> (E^(x - Sqrt[6]*x)*(1 + E^(2*Sqrt[6]*x))*C[1])/2 + \
+       (E^(x - Sqrt[6]*x)*(-1 + E^(2*Sqrt[6]*x))*C[2])/Sqrt[6], \
+       z[x] -> (Sqrt[3/2]*E^(x - Sqrt[6]*x)*(-1 + E^(2*Sqrt[6]*x))*C[1])/2 + \
+       (E^(x - Sqrt[6]*x)*(1 + E^(2*Sqrt[6]*x))*C[2])/2}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[x] == y[x] + z[x], z'[x] == y[x]}, {y[x], z[x]}, x]"
+      )
+      .unwrap(),
+      "{(E^(x/2 - (Sqrt[5]*x)/2)*(5 - Sqrt[5] + 5*E^(Sqrt[5]*x) + \
+       Sqrt[5]*E^(Sqrt[5]*x))*C[1])/10 + (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-1 + E^(Sqrt[5]*x))*C[2])/Sqrt[5], (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-1 + E^(Sqrt[5]*x))*C[1])/Sqrt[5] - (E^(x/2 - (Sqrt[5]*x)/2)*\
+       (-5 - Sqrt[5] - 5*E^(Sqrt[5]*x) + Sqrt[5]*E^(Sqrt[5]*x))*C[2])/10}"
+    );
+  }
+
+  // Without a y term the equation is first order in y'.
+  #[test]
+  fn reduction_of_order_without_unknown() {
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y'[x] == x^2, y[x], x]").unwrap(),
+      "2*x - x^2 + x^3/3 - C[1]/E^x + C[2]"
+    );
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + 3 y'[x] == Sin[x], y[x], x]").unwrap(),
+      "-1/3*C[1]/E^(3*x) + C[2] - (3*Cos[x])/10 - Sin[x]/10"
+    );
+  }
+
+  // An exact equation a2 y'' + a1 y' + a0 y == 0 (a0 - a1' + a2'' == 0)
+  // integrates once to a first-order one.
+  #[test]
+  fn exact_second_order_equation() {
+    assert_eq!(
+      interpret("DSolveValue[z''[x] == x z'[x] + z[x], z[x], x]").unwrap(),
+      "E^(x^2/2)*C[2] + E^(x^2/2)*Sqrt[Pi/2]*C[1]*Erf[x/Sqrt[2]]"
+    );
+  }
+
+  // Complex characteristic roots with a non-polynomial forcing keep the raw
+  // variation-of-parameters form.
+  #[test]
+  fn variation_of_parameters_forms() {
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y[x] == Tan[x], y[x], x]").unwrap(),
+      "-(ArcTanh[Sin[x]]*Cos[x]) + C[1]*Cos[x] + C[2]*Sin[x]"
+    );
+    assert_eq!(
+      interpret("DSolveValue[y''[x] + y[x] == E^x, y[x], x]").unwrap(),
+      "C[1]*Cos[x] + C[2]*Sin[x] + (E^x*(Cos[x]^2 + Sin[x]^2))/2"
+    );
+  }
+
+  // A solution fixed by conditions, of any order, comes out as one
+  // quotient.
+  #[test]
+  fn conditioned_solution_single_quotient() {
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 2, -2 u'[x]/u''[x] == x}, u, x]")
+        .unwrap(),
+      "{{u -> Function[{x}, (-2 + 3*x)/x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 2, -3 u'[x]/u''[x] == x}, u, x]")
+        .unwrap(),
+      "{{u -> Function[{x}, (-4 + 7*x^2)/(3*x^2)]}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] == y[x], y[0] == 1, y'[0] == 0}, y[x], x]"
+      )
+      .unwrap(),
+      "(1 + E^(2*x))/(2*E^x)"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] == -y'[x]/x, y[1] == 1, y[2] == 3}, y[x], x]"
+      )
+      .unwrap(),
+      "(Log[2] + 2*Log[x])/Log[2]"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y''[x] + 3 y'[x] + 2 y[x] == 0, y[0] == 1, y'[0] == 0}, y[x], x]"
+      )
+      .unwrap(),
+      "(-1 + 2*E^x)/E^(2*x)"
+    );
+    assert_eq!(
+      interpret("DSolve[{u[1] == 1, u[2] == 3, u''[x] == 2}, u, x]").unwrap(),
+      "{{u -> Function[{x}, 1 - x + x^2]}}"
+    );
+  }
+
+  // A first-order initial value problem comes out as one quotient.
+  #[test]
+  fn first_order_ivp_single_quotient() {
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[t] == 2 (3 - y[t] + Sin[t]), y[0] == 1}, y[t], t]"
+      )
+      .unwrap(),
+      "-1/5*(8 - 15*E^(2*t) + 2*E^(2*t)*Cos[t] - 4*E^(2*t)*Sin[t])/E^(2*t)"
+    );
+    assert_eq!(
+      interpret(
+        "DSolveValue[{y'[t] == k (60 - y[t] + 15 Sin[2 Pi t]), y[0] == 50}, y[t], t]"
+      )
+      .unwrap(),
+      "(5*(-2*k^2 + 12*E^(k*t)*k^2 + 6*k*Pi - 8*Pi^2 + 48*E^(k*t)*Pi^2 - \
+       6*E^(k*t)*k*Pi*Cos[2*Pi*t] + 3*E^(k*t)*k^2*Sin[2*Pi*t]))/\
+       (E^(k*t)*(k^2 + 4*Pi^2))"
+    );
+    assert_eq!(
+      interpret("DSolveValue[{y'[t] == -y[t] + t, y[0] == a}, y[t], t]")
+        .unwrap(),
+      "(1 + a - E^t + E^t*t)/E^t"
+    );
   }
 }

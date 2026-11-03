@@ -1008,51 +1008,34 @@ pub fn dispatch_math_functions(
     "GroupElements" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::math_ast::group_elements_ast(args));
     }
-    // GroupSupport[group] — the points moved by some generator of the group.
-    "GroupSupport" if args.len() == 1 => {
+    // GroupOrbits[group] — the orbits of the points 1 … n, where n is the
+    // largest point moved by a generator (fixed points are orbits of their
+    // own).
+    "GroupOrbits" if args.len() == 1 => {
       let gens = match crate::evaluator::evaluate_function_call_ast(
         "GroupGenerators",
         args,
       ) {
         Ok(Expr::List(ref gens)) => gens.to_vec(),
-        Ok(_) => return Some(Ok(unevaluated("GroupSupport", args))),
+        Ok(_) => return Some(Ok(unevaluated("GroupOrbits", args))),
         Err(e) => return Some(Err(e)),
       };
-      let supports = match gens
-        .iter()
-        .map(|g| {
-          crate::evaluator::evaluate_function_call_ast(
-            "PermutationSupport",
-            std::slice::from_ref(g),
-          )
-        })
-        .collect::<Result<Vec<_>, _>>()
-      {
-        Ok(s) => s,
-        Err(e) => return Some(Err(e)),
-      };
-      if !supports.iter().all(|s| matches!(s, Expr::List(_))) {
-        return Some(Ok(unevaluated("GroupSupport", args)));
+      let mut max = 0_i128;
+      for g in &gens {
+        match crate::evaluator::evaluate_function_call_ast(
+          "PermutationMax",
+          std::slice::from_ref(g),
+        ) {
+          Ok(Expr::Integer(m)) => max = max.max(m),
+          Ok(_) => return Some(Ok(unevaluated("GroupOrbits", args))),
+          Err(e) => return Some(Err(e)),
+        }
       }
-      return Some(crate::evaluator::evaluate_function_call_ast(
-        "Union", &supports,
-      ));
-    }
-    // GroupOrbits[group] — the orbits of the points of the group's support.
-    "GroupOrbits" if args.len() == 1 => {
-      return Some(
-        crate::evaluator::evaluate_function_call_ast(
-          "GroupSupport",
-          &args[..1],
-        )
-        .and_then(|support| match support {
-          Expr::List(_) => crate::functions::math_ast::group_orbits_ast(&[
-            args[0].clone(),
-            support,
-          ]),
-          _ => Ok(unevaluated("GroupOrbits", args)),
-        }),
-      );
+      let domain = Expr::List((1..=max).map(Expr::Integer).collect());
+      return Some(crate::functions::math_ast::group_orbits_ast(&[
+        args[0].clone(),
+        domain,
+      ]));
     }
     "GroupOrbits" if args.len() == 2 => {
       return Some(crate::functions::math_ast::group_orbits_ast(args));
@@ -1692,6 +1675,9 @@ pub fn dispatch_math_functions(
             ),
           ],
         )));
+      }
+      if let Some(result) = nielsen_polylog_closed_form(args) {
+        return Some(result);
       }
       return Some(Ok(unevaluated("PolyLog", args)));
     }
@@ -2704,14 +2690,8 @@ pub fn dispatch_math_functions(
       if matches!(&args[0], Expr::Integer(0)) {
         return Some(crate::functions::math_ast::inverse_erf_ast(&args[1..]));
       }
-      // InverseErf[a, Erf[a, z]] is z.
-      if let Expr::FunctionCall { name: e, args: ea } = &args[1]
-        && e == "Erf"
-        && ea.len() == 2
-        && expr_to_string(&ea[0]) == expr_to_string(&args[0])
-      {
-        return Some(Ok(ea[1].clone()));
-      }
+      // InverseErf[a, Erf[a, z]] stays as it is: z is only one of its
+      // values when z is complex, so WL does not simplify it.
       let inexact = args.iter().any(|a| matches!(a, Expr::Real(_)));
       let numeric = args
         .iter()
@@ -8051,23 +8031,28 @@ fn apply_to_sides(relation: &Expr, value: &Expr, op: &str) -> Option<Expr> {
 
 /// Swap the direction of every inequality operator of a relation.
 fn reverse_inequality(relation: Expr) -> Expr {
+  // wolframscript keeps the operators and swaps the sides:
+  // `DivideSides[x > 1, -2]` is `-1/2 > -1/2 x`, not `-1/2 x < -1/2`. An
+  // equation (no ordering operator) keeps its sides.
   match &relation {
     Expr::Comparison {
       operands,
       operators,
-    } => Expr::Comparison {
-      operands: operands.clone(),
-      operators: operators
-        .iter()
-        .map(|op| match *op {
-          ComparisonOp::Less => ComparisonOp::Greater,
-          ComparisonOp::Greater => ComparisonOp::Less,
-          ComparisonOp::LessEqual => ComparisonOp::GreaterEqual,
-          ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
-          other => other,
-        })
-        .collect(),
-    },
+    } if operators.iter().any(|op| {
+      matches!(
+        op,
+        ComparisonOp::Less
+          | ComparisonOp::Greater
+          | ComparisonOp::LessEqual
+          | ComparisonOp::GreaterEqual
+      )
+    }) =>
+    {
+      Expr::Comparison {
+        operands: operands.iter().rev().cloned().collect(),
+        operators: operators.iter().rev().copied().collect(),
+      }
+    }
     _ => relation,
   }
 }
@@ -8752,4 +8737,123 @@ fn odd_function_rewrite(
     "Times",
     &[Expr::Integer(-1), inner],
   ))
+}
+
+/// Closed forms of the Nielsen polylogarithm `PolyLog[n, p, z]` that WL
+/// writes out: the value 0 at z = 0, `(-Log[1 - z])^p / Gamma[1 + p]` for
+/// n = 0 and a symbolic p, ζ(p + 1) at z = 1 and, for a symbolic z, the
+/// `PolyLog[k, 1 - z]` expansion for n = 1 and an integer p ≥ 2,
+///   Zeta[p + 1] + (-1)^p Log[1 - z]^p Log[z] / p!
+///     + Σ_{k=0}^{p-1} (-1)^(k+1) Log[1 - z]^k PolyLog[p + 1 - k, 1 - z] / k!,
+/// and, for a negative integer n, `z D[PolyLog[n + 1, p, z], z]` expanded
+/// (S_{n-1,p}(z) = z S'_{n,p}(z)). `None` for every other call.
+fn nielsen_polylog_closed_form(
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
+  let (n, p, z) = (&args[0], &args[1], &args[2]);
+  if matches!(z, Expr::Integer(0)) {
+    return Some(Ok(Expr::Integer(0)));
+  }
+  let one_minus_z = call(
+    "Plus",
+    vec![
+      Expr::Integer(1),
+      call("Times", vec![Expr::Integer(-1), z.clone()]),
+    ],
+  );
+  let log = call1("Log", one_minus_z.clone());
+  match (n, p) {
+    (Expr::Integer(0), p)
+      if !matches!(p, Expr::Integer(_))
+        && !crate::functions::predicate_ast::is_numeric_q(p) =>
+    {
+      Some(eval(call(
+        "Times",
+        vec![
+          call(
+            "Power",
+            vec![call("Times", vec![Expr::Integer(-1), log]), p.clone()],
+          ),
+          call(
+            "Power",
+            vec![
+              call1("Gamma", call("Plus", vec![Expr::Integer(1), p.clone()])),
+              Expr::Integer(-1),
+            ],
+          ),
+        ],
+      )))
+    }
+    // S_{1,p}(1) = ζ(p + 1).
+    (Expr::Integer(1), Expr::Integer(p))
+      if *p >= 2 && matches!(z, Expr::Integer(1)) =>
+    {
+      Some(eval(call1("Zeta", Expr::Integer(p + 1))))
+    }
+    (Expr::Integer(1), Expr::Integer(p))
+      if *p >= 2
+        && *p <= 64
+        && !crate::functions::predicate_ast::is_numeric_q(z) =>
+    {
+      let p = *p;
+      let sign = |k: i128| Expr::Integer(if k % 2 == 0 { 1 } else { -1 });
+      let factorial = |k: i128| -> i128 { (1..=k).product() };
+      let mut terms = vec![
+        call1("Zeta", Expr::Integer(p + 1)),
+        call(
+          "Times",
+          vec![
+            sign(p),
+            call(
+              "Rational",
+              vec![Expr::Integer(1), Expr::Integer(factorial(p))],
+            ),
+            call("Power", vec![log.clone(), Expr::Integer(p)]),
+            call1("Log", z.clone()),
+          ],
+        ),
+      ];
+      for k in 0..p {
+        terms.push(call(
+          "Times",
+          vec![
+            sign(k + 1),
+            call(
+              "Rational",
+              vec![Expr::Integer(1), Expr::Integer(factorial(k))],
+            ),
+            call("Power", vec![log.clone(), Expr::Integer(k)]),
+            call(
+              "PolyLog",
+              vec![Expr::Integer(p + 1 - k), one_minus_z.clone()],
+            ),
+          ],
+        ));
+      }
+      Some(eval(call("Plus", terms)))
+    }
+    (Expr::Integer(n), Expr::Integer(p)) if *n < 0 && *n >= -16 && *p >= 1 => {
+      let var = match z {
+        Expr::Identifier(_) => z.clone(),
+        _ => return None,
+      };
+      let inner = match eval(call(
+        "PolyLog",
+        vec![Expr::Integer(n + 1), Expr::Integer(*p), var.clone()],
+      )) {
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
+      };
+      if matches!(&inner, Expr::FunctionCall { name, args } if name == "PolyLog" && args.len() == 3)
+      {
+        return None;
+      }
+      Some(eval(call1(
+        "Expand",
+        call("Times", vec![var.clone(), call("D", vec![inner, var])]),
+      )))
+    }
+    _ => None,
+  }
 }

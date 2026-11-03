@@ -87,6 +87,10 @@ impl Seq {
   /// A sequence of the same type (and annotations) with other letters.
   fn with_letters(&self, letters: String) -> Expr {
     let mut args = vec![Expr::String(self.kind.clone()), Expr::String(letters)];
+    if self.extra.is_empty() {
+      // The canonical form always carries the (empty) annotation list.
+      args.push(Expr::List(Vec::new().into()));
+    }
     args.extend(self.extra.iter().cloned());
     Expr::FunctionCall {
       name: "BioSequence".to_string(),
@@ -269,6 +273,9 @@ pub fn dispatch_biosequence_string(
   if name == "StringJoin" {
     return string_join(args);
   }
+  if name == "BioSequence" {
+    return construct(args).map(Ok);
+  }
   let seq = Seq::from_expr(args.first()?)?;
   if let Some(linear_type) = seq.kind.strip_prefix("Circular") {
     let table = alphabet(linear_type)?;
@@ -289,22 +296,94 @@ pub fn dispatch_biosequence_string(
   Some(delegate(name, new_args)?.map(|r| seq.rewrap(&r)))
 }
 
-/// `StringJoin` of BioSequences of one linear type.
+/// Whether `kind` is a sequence type the constructor canonicalizes.
+fn known_type(kind: &str) -> bool {
+  matches!(
+    kind.strip_prefix("Circular").unwrap_or(kind),
+    "DNA" | "RNA" | "Peptide"
+  )
+}
+
+/// Evaluate the `BioSequence` constructor. A sequence of a known type is
+/// canonicalized to `BioSequence[type, "LETTERS", {}]`: the letters are
+/// upper-cased, the nucleotide wildcard `X` becomes `N` and the peptide
+/// stop `*` becomes `.`; an integer length gives that many wildcards, and a
+/// bare letter string is a DNA sequence (RNA when it has a `U` and no `T`).
+/// `None` leaves the call as it is (the canonical form included).
+fn construct(args: &[Expr]) -> Option<Expr> {
+  let (kind, body) = match args {
+    [Expr::String(s)] => {
+      let upper = s.to_uppercase();
+      let kind = if upper.contains('U') && !upper.contains('T') {
+        "RNA"
+      } else {
+        "DNA"
+      };
+      (kind.to_string(), &args[0])
+    }
+    [Expr::String(kind), body] if known_type(kind) => (kind.clone(), body),
+    _ => return None,
+  };
+  let linear = kind.strip_prefix("Circular").unwrap_or(&kind);
+  let peptide = linear == "Peptide";
+  let letters: String = match body {
+    Expr::String(s) => s
+      .to_uppercase()
+      .chars()
+      .map(|c| match c {
+        'X' if !peptide => 'N',
+        '*' if peptide => '.',
+        c => c,
+      })
+      .collect(),
+    Expr::Integer(n) if *n >= 0 => {
+      let wildcard = if peptide { "X" } else { "N" };
+      wildcard.repeat(usize::try_from(*n).ok()?)
+    }
+    _ => return None,
+  };
+  Some(Expr::FunctionCall {
+    name: "BioSequence".to_string(),
+    args: vec![
+      Expr::String(kind),
+      Expr::String(letters),
+      Expr::List(Vec::new().into()),
+    ]
+    .into(),
+  })
+}
+
+/// `StringJoin` of BioSequences of one linear type. Mixed types are an
+/// error (`BioSequence::NonMatchingTypes`, `$Failed`).
 fn string_join(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   let mut first: Option<Seq> = None;
   let mut joined = String::new();
+  let mut kinds: Vec<String> = Vec::new();
   for arg in args {
     let seq = Seq::from_expr(arg)?;
     alphabet(&seq.kind)?;
-    if !seq.extra.is_empty()
-      || first.as_ref().is_some_and(|f| f.kind != seq.kind)
-    {
-      return None;
+    if !kinds.contains(&seq.kind) {
+      kinds.push(seq.kind.clone());
     }
     joined.push_str(&seq.letters);
     first.get_or_insert(seq);
   }
-  Some(Ok(first?.with_letters(joined)))
+  if kinds.len() > 1 {
+    crate::emit_message(&format!(
+      "BioSequence::NonMatchingTypes: Matching types are needed for \
+       StringJoin but received {}.",
+      kinds.join(", ")
+    ));
+    return Some(Ok(Expr::Identifier("$Failed".to_string())));
+  }
+  // The joined sequence drops the parts' annotations.
+  let first = first?;
+  let seq = Seq {
+    kind: first.kind,
+    letters: String::new(),
+    extra: Vec::new(),
+  };
+  Some(Ok(seq.with_letters(joined)))
 }
 
 /// A reversed range `{i, j}` with `j < i` on a circular sequence of

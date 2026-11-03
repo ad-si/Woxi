@@ -137,6 +137,14 @@ fn is_exact_rational(expr: &Expr) -> bool {
 /// `$MachinePrecision`: the decimal digits of a machine real.
 pub(crate) const MACHINE_PRECISION_DIGITS: f64 = 15.954589770191003;
 
+/// The precision of a machine computation that left the machine range and
+/// carries on as an arbitrary-precision number: the 53 bits of the machine
+/// mantissa, converted the way wolframscript converts bits to digits
+/// (`53/Log2[10]`), which lands one unit in the last place above
+/// `$MachinePrecision` — `Precision[1.*^400]` is `15.954589770191005`.
+pub(crate) const MACHINE_OVERFLOW_PRECISION: f64 =
+  53.0 / std::f64::consts::LOG2_10;
+
 /// Recursively convert an expression to numeric (Real) form
 pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
   let value = n_eval_machine(expr)?;
@@ -605,6 +613,7 @@ pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
 pub fn machine_power_out_of_range(
   a: f64,
   b: f64,
+  integer_exponent: bool,
 ) -> Option<Result<Expr, InterpreterError>> {
   use astro_float::{BigFloat, RoundingMode};
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
@@ -616,8 +625,14 @@ pub fn machine_power_out_of_range(
     return None;
   }
   let rm = RoundingMode::ToEven;
-  let result_prec =
-    MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10();
+  // An exact integer power of a machine real keeps all but one bit of the
+  // mantissa (`Precision[10.^400]` is `15.653559774527023`, 52 bits); an
+  // inexact exponent loses the digits `b ln a` amplifies its error by.
+  let result_prec = if integer_exponent {
+    52.0 / std::f64::consts::LOG2_10
+  } else {
+    MACHINE_PRECISION_DIGITS - (b * a.ln()).abs().max(1.0).log10()
+  };
   let bits = nominal_bits(MACHINE_PRECISION_DIGITS.ceil() as usize);
   let computed = with_astro_consts(|cc| {
     let base = BigFloat::from_f64(a, bits);
@@ -1932,7 +1947,7 @@ fn n_eval_beyond_machine_range(expr: &Expr) -> Option<Expr> {
   match &value {
     Expr::BigFloat(digits, _) => match digits.parse::<f64>() {
       Ok(f) if f.is_finite() => Some(Expr::Real(f)),
-      _ => n_eval_arbitrary(expr, MACHINE_PRECISION_DIGITS).ok(),
+      _ => n_eval_arbitrary(expr, MACHINE_OVERFLOW_PRECISION).ok(),
     },
     Expr::Real(f) if f.is_finite() => Some(value),
     _ => None,
@@ -3572,24 +3587,27 @@ fn rescale_symbolic_numeric_list(
   rebuild(&args[0], min_e, &span)
 }
 
-/// Rescale with symbolic (or complex) bounds, in the forms wolframscript
-/// gives: `Rescale[x, {a, b}]` is `(x - a)/(b - a)` (so `Rescale[0, {a, b}]`
-/// is `-(a/(-a + b))` and `Rescale[a, {b, a}]` is 1), and
-/// `Rescale[x, {a, b}, {c, d}]` is the line
-/// `-(a d - b c)/(b - a) + (d - c) x/(b - a)`.
+/// Rescale with a symbolic value or symbolic (or complex) bounds, in the
+/// form wolframscript gives: the line
+/// `((d - c) x)/(b - a) - (a d - b c)/(b - a)`, where `Rescale[x, {a, b}]`
+/// is the `{c, d} = {0, 1}` case (`-(a/(-a + b)) + x/(-a + b)`). A value that
+/// is literally one of the bounds maps straight to its end of the target
+/// (`Rescale[a, {b, a}]` is 1).
 fn rescale_symbolic(
   x: &Expr,
   a: &Expr,
   b: &Expr,
   target: Option<(&Expr, &Expr)>,
 ) -> Result<Expr, InterpreterError> {
+  let (zero, one) = (Expr::Integer(0), Expr::Integer(1));
+  let (c, d) = target.unwrap_or((&zero, &one));
+  if crate::functions::boolean_ast::same_q_pair(x, a) {
+    return Ok(c.clone());
+  }
+  if crate::functions::boolean_ast::same_q_pair(x, b) {
+    return Ok(d.clone());
+  }
   let inv_span = pow(plus(vec![b.clone(), neg(a.clone())]), Expr::Integer(-1));
-  let Some((c, d)) = target else {
-    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
-      plus(vec![x.clone(), neg(a.clone())]),
-      inv_span,
-    ]));
-  };
   let constant = times(vec![
     Expr::Integer(-1),
     plus(vec![
@@ -3715,23 +3733,21 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (args.len() == 3).then_some((ymin, ymax)),
     );
   }
-  let literal_bounds = bounds.iter().all(|b| is_numeric_literal(b));
-  if !literal_bounds && try_eval_to_f64(&args[0]).is_none() {
-    return unevaluated();
-  }
   let xmin_n = try_eval_to_f64(&range[0]).unwrap();
   let xmax_n = try_eval_to_f64(&range[1]).unwrap();
   if (xmax_n - xmin_n).abs() < f64::EPSILON {
     return unevaluated();
   }
-  // For a non-literal x (a symbol or constant like Pi), only xmin == 0 is
-  // safe: with a nonzero xmin wolframscript distributes the offset
-  // (10 + 5 (x - 2) -> 5 x) in a way Woxi's evaluator leaves factored.
-  if literal_bounds
-    && !is_numeric_literal(&args[0])
-    && xmin_n.abs() >= f64::EPSILON
-  {
-    return unevaluated();
+  // A value that is not a number literal (a symbol, a sum, a constant like
+  // Pi) gets the line form, which distributes the offset the way
+  // wolframscript does (`Rescale[x, {2, 4}, {10, 20}]` is `5 x`).
+  if !is_numeric_literal(&args[0]) {
+    return rescale_symbolic(
+      &args[0],
+      &range[0],
+      &range[1],
+      (args.len() == 3).then_some((ymin, ymax)),
+    );
   }
 
   // Build and evaluate  ymin + (x - xmin) * (ymax - ymin) / (xmax - xmin).
@@ -7642,9 +7658,11 @@ pub fn list_fourier_sequence_transform_ast(
 }
 
 /// FourierSequenceTransform[f, n, omega] — discrete-time Fourier transform of a
-/// sequence with finite support, `Sum[f E^(I b n omega), n]` scaled by
-/// `Sqrt[Abs[b]/(2 Pi)^(1 - a)]` for `FourierParameters -> {a, b}`.
-/// Sequences whose support is not finite stay unevaluated.
+/// sequence with finite support, `Sum[f E^(-I b n omega), n]` scaled by
+/// `Sqrt[Abs[b]/(2 Pi)^(1 - a)]` for `FourierParameters -> {a, b}` (the
+/// kernel ListFourierSequenceTransform uses too: `KroneckerDelta[n - 2]`
+/// transforms to `E^((-2*I)*w)`), over a common denominator as wolframscript
+/// prints it. Sequences whose support is not finite stay unevaluated.
 pub fn fourier_sequence_transform_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -7691,14 +7709,20 @@ pub fn fourier_sequence_transform_ast(
     .into_iter()
     .map(|(k, v)| {
       let exponent =
-        times(vec![Expr::Integer(b * k), id_expr("I"), omega.clone()]);
+        times(vec![Expr::Integer(-b * k), id_expr("I"), omega.clone()]);
       times2(v, pow2(id_expr("E"), exponent))
     })
     .collect();
   if terms.is_empty() {
     return Ok(Expr::Integer(0));
   }
-  let mut sum = plus(terms);
+  let mut sum = if terms.len() == 1 {
+    terms.into_iter().next().unwrap()
+  } else {
+    crate::functions::polynomial_ast::together_ast(&[evaluate_expr_to_expr(
+      &plus(terms),
+    )?])?
+  };
   if a != 1 || b.abs() != 1 {
     // Sqrt[Abs[b]/(2 Pi)^(1 - a)]
     let scale = pow2(
