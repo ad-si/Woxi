@@ -11554,9 +11554,9 @@ mod plot3d {
     }
 
     #[test]
-    fn plot_points_default_500() {
-      // PlotPoints -> 500 is the same as default
-      let svg_500 = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 500]");
+    fn plot_points_default_50() {
+      // WL's default is PlotPoints -> 50 (refined adaptively from there).
+      let svg_500 = export_svg("Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 50]");
       let svg_default = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
       assert_eq!(svg_500, svg_default);
     }

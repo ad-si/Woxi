@@ -4,7 +4,7 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {{0.5, 2}, {-0
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="419,143 429,133 467,100 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="419,143 445,120 468,100 "/>
 <line x1="419.0" y1="1125.0" x2="3500.0" y2="1125.0" stroke="#666" stroke-width="5"/>
 <line x1="521.7" y1="1125.0" x2="521.7" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="624.4" y1="1125.0" x2="624.4" y2="1101.0" stroke="#666" stroke-width="5"/>

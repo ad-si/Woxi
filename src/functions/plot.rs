@@ -536,6 +536,7 @@ fn adaptive_sample(
   x_max: f64,
   initial_n: usize,
   max_total: usize,
+  max_depth: usize,
   monitor: Option<&Expr>,
 ) -> Vec<(f64, f64)> {
   // Evaluate one sample, firing the `EvaluationMonitor :> expr` hook (with
@@ -553,13 +554,36 @@ fn adaptive_sample(
   let step = (x_max - x_min) / (initial_n - 1) as f64;
   let mut points: Vec<(f64, f64)> = (0..initial_n)
     .map(|i| {
-      let x = x_min + i as f64 * step;
+      // The last sample sits exactly on `x_max`, not a rounding error away.
+      let x = if i + 1 == initial_n {
+        x_max
+      } else {
+        x_min + i as f64 * step
+      };
       (x, sample(x))
     })
     .collect();
 
-  // Adaptive refinement passes
-  let max_depth = 6;
+  // A bend smaller than ~1/1000 of the curve's height is invisible: the
+  // relative test below alone keeps halving the near-flat stretches around
+  // every extremum. The height is the 5th..95th percentile spread of the
+  // initial samples, so a pole does not flatten the rest of the curve.
+  let visible_bend = {
+    let mut ys: Vec<f64> = points
+      .iter()
+      .map(|p| p.1)
+      .filter(|y| y.is_finite())
+      .collect();
+    ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    if ys.len() >= 2 {
+      let at = |q: f64| ys[((ys.len() - 1) as f64 * q).round() as usize];
+      (at(0.95) - at(0.05)) * 1e-3
+    } else {
+      0.0
+    }
+  };
+
+  // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
     if points.len() >= max_total {
       break;
@@ -580,8 +604,9 @@ fn adaptive_sample(
       }
 
       let needs_refine = if !y0.is_finite() || !y1.is_finite() {
-        // Refine near discontinuities to find the boundary
-        true
+        // Refine where the curve starts or stops existing to find the
+        // boundary; a stretch with no values at all has nothing to find.
+        y0.is_finite() || y1.is_finite()
       } else if i + 2 < points.len() {
         // Check curvature using three consecutive points
         let (x2, y2) = points[i + 2];
@@ -590,8 +615,8 @@ fn adaptive_sample(
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
           let y_range = (y2 - y0).abs().max(1e-10);
-          let deviation = (y1 - y_interp).abs() / y_range;
-          deviation > 0.05
+          let bend = (y1 - y_interp).abs();
+          bend / y_range > 0.05 && bend > visible_bend
         } else {
           true
         }
@@ -607,8 +632,8 @@ fn adaptive_sample(
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
           let y_range = (y1 - ym1).abs().max(1e-10);
-          let deviation = (y0 - y_interp).abs() / y_range;
-          deviation > 0.05
+          let bend = (y0 - y_interp).abs();
+          bend / y_range > 0.05 && bend > visible_bend
         } else {
           true
         }
@@ -2502,6 +2527,9 @@ pub(crate) struct PlotOptions {
   pub ticks_right: Option<Vec<(f64, String)>>,
   /// Number of sample points for Plot[] (default: NUM_SAMPLES)
   pub plot_points: usize,
+  /// `MaxRecursion -> n`: how many times the adaptive sampler may halve an
+  /// interval of the initial `PlotPoints` grid (WL's default is 6).
+  pub max_recursion: usize,
   /// Legend labels for each series (empty = no legend)
   pub plot_legends: Vec<String>,
   /// Position of the legend (Right, Top, Bottom)
@@ -2714,6 +2742,7 @@ impl Default for PlotOptions {
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
+      max_recursion: 6,
       plot_legends: Vec::new(),
       legend_position: LegendPosition::default(),
       grid_lines_y: false,
@@ -11355,6 +11384,15 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.aspect_full = true;
       }
     }
+    "MaxRecursion" => {
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      if let Expr::Integer(n) = val
+        && n >= 0
+      {
+        plot_opts.max_recursion = (n as usize).min(15);
+      }
+    }
     "PlotPoints" => {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
@@ -11956,8 +11994,26 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Adaptive sampling: start with initial points, then refine where needed
-  let initial_samples = plot_opts.plot_points.clamp(2, 200);
-  let max_total = plot_opts.plot_points.max(500);
+  // WL starts from `PlotPoints -> 50` when none is given.
+  // (Only the option name is read: evaluating the values here would fire
+  // an `EvaluationMonitor :> Sow[…]` with the variable still symbolic.)
+  let plot_points_given = args[2..].iter().any(|o| {
+    matches!(
+      o,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotPoints")
+    )
+  });
+  let initial_samples = if plot_points_given {
+    plot_opts.plot_points.clamp(2, 1000)
+  } else {
+    50
+  };
+  // Each recursion level may at most double the samples; WL's default
+  // (50 points, MaxRecursion 6) ends with up to ~2500 on a rapidly
+  // oscillating curve such as `Sin[30 Sin[x]]`.
+  let max_depth = plot_opts.max_recursion;
+  let max_total = initial_samples << max_depth.min(6);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
   let excluded = crate::functions::parametric_plot::exclusion_roots(
     &args[2..],
@@ -11974,6 +12030,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       x_max,
       initial_samples,
       max_total,
+      max_depth,
       monitor.as_ref(),
     );
     all_points.push(break_at_exclusions(

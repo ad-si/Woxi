@@ -297,3 +297,69 @@ mod list_polar_plot {
     assert_eq!(polyline_points(&svg, "#3D99CC").len(), 4, "{svg}");
   }
 }
+
+mod sampling {
+  use super::*;
+
+  fn evaluations(plot: &str) -> i64 {
+    interpret(&format!("Length[Reap[{plot}][[2, 1]]]"))
+      .unwrap()
+      .parse()
+      .unwrap()
+  }
+
+  // WL starts from 50 points; `MaxRecursion -> 0` keeps exactly those.
+  #[test]
+  fn max_recursion_zero_keeps_the_initial_points() {
+    assert_eq!(
+      evaluations(
+        "Plot[Sin[1/x], {x, 0.001, 0.1}, MaxRecursion -> 0, \
+         EvaluationMonitor :> Sow[x]]"
+      ),
+      50
+    );
+    let more = evaluations(
+      "Plot[Sin[1/x], {x, 0.001, 0.1}, MaxRecursion -> 3, \
+       EvaluationMonitor :> Sow[x]]",
+    );
+    let most = evaluations(
+      "Plot[Sin[1/x], {x, 0.001, 0.1}, EvaluationMonitor :> Sow[x]]",
+    );
+    assert!(50 < more && more < most, "{more} {most}");
+  }
+
+  // A rapidly oscillating curve is refined until its peaks are reached
+  // (it used to stop at a 500-point budget, cutting most peaks short).
+  #[test]
+  fn rapid_oscillation_reaches_its_peaks() {
+    let svg = svg_of("Plot[Sin[30 Sin[x]], {x, 0, 10}]");
+    let pts = polyline_points(&svg, "#3D99CC");
+    // The extrema of the curve in SVG y (down) and the count of local
+    // maxima that come within 2 % of the top.
+    let top = pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+    let bottom = pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let near_top = |y: f64| y < top + (bottom - top) * 0.02;
+    let peaks = pts
+      .windows(3)
+      .filter(|w| w[1].1 <= w[0].1 && w[1].1 <= w[2].1 && w[1].1 < w[0].1)
+      .collect::<Vec<_>>();
+    // (At x = Pi/2 and 5 Pi/2 the curve has genuine low maxima, Sin[30] =
+    // -0.988, in its lower half; every maximum in the upper half is a 1.)
+    let upper_half = |y: f64| y < (top + bottom) / 2.0;
+    let short = peaks
+      .iter()
+      .filter(|w| upper_half(w[1].1) && !near_top(w[1].1))
+      .count();
+    assert!(peaks.len() > 30, "{} peaks", peaks.len());
+    assert_eq!(short, 0, "{short} of {} peaks fall short", peaks.len());
+  }
+
+  // Where the function has no real value at all there is no boundary to
+  // look for, so the sampler does not keep halving those intervals.
+  #[test]
+  fn no_refinement_where_the_curve_does_not_exist() {
+    let n =
+      evaluations("Plot[Sqrt[x], {x, -10, 1}, EvaluationMonitor :> Sow[x]]");
+    assert!(n < 150, "{n} evaluations");
+  }
+}
