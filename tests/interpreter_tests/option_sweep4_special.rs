@@ -106,6 +106,27 @@ mod arbitrary_precision_n {
   }
 
   #[test]
+  fn q_pochhammer_infinite_arbitrary_precision() {
+    // (a; q)_∞ keeps the requested precision, also for negative q and for
+    // the one-argument Euler function (q; q)_∞.
+    assert_digits(
+      "N[QPochhammer[1/20, 1/3], 25]",
+      "0.9263981522216428283670360",
+      "25.",
+    );
+    assert_digits(
+      "N[QPochhammer[1/5], 25]",
+      "0.7603327958712324201014882",
+      "25.",
+    );
+    assert_digits(
+      "N[QPochhammer[-1/5, -1/7], 25]",
+      "1.169875072680474734138106",
+      "25.",
+    );
+  }
+
+  #[test]
   fn harmonic_number_non_integer_index() {
     assert_digits(
       "N[HarmonicNumber[5/2, 2], 30]",
