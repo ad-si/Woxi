@@ -141,6 +141,22 @@ mod n_arbitrary_precision {
     );
   }
 
+  // `N[machineReal, p]` with p below machine precision lowers the precision
+  // (the digits shown are rounded); above it the machine Real is unchanged.
+  #[test]
+  fn n_machine_real_lowered_to_low_precision() {
+    assert_eq!(
+      interpret("ToString[N[3.95408163265306, 4]]").unwrap(),
+      "3.954"
+    );
+    assert_eq!(
+      interpret("ToString[N[{1.23456789, 2.5}, 3]]").unwrap(),
+      "{1.23, 2.5}"
+    );
+    assert_eq!(interpret("Precision[N[1.23456789, 4]]").unwrap(), "4.");
+    assert_eq!(interpret("N[1.5, 20]").unwrap(), "1.5");
+  }
+
   // Regression (mathics test_evaluators.py:29, F[1.2, 2/9]):
   // `N[F[1.2, 2/9], $MachinePrecision]` previously expanded `1.2` to
   // its 50-digit binary-exact decimal expansion inside the

@@ -1975,8 +1975,18 @@ pub fn n_eval_arbitrary(
   let prec_usize = precision.floor().max(1.0) as usize;
 
   // Machine-precision Reals already live at MachinePrecision and cannot be
-  // promoted by N — wolframscript returns the Real unchanged.
-  if let Expr::Real(_) = expr {
+  // promoted by N — wolframscript returns the Real unchanged. A precision
+  // below machine precision does lower it: `N[3.95408163, 4]` is `3.954`.
+  // A Real that already prints within the requested digits (`N[1.5, 5]`)
+  // stays as it is.
+  if let Expr::Real(x) = expr
+    && (precision >= MACHINE_PRECISION_DIGITS
+      || !x.is_finite()
+      || *x == 0.0
+      || format!("{:.*e}", precision.floor().max(1.0) as usize - 1, x)
+        .parse::<f64>()
+        .is_ok_and(|rounded| rounded == *x))
+  {
     return Ok(expr.clone());
   }
 
@@ -2110,6 +2120,9 @@ fn n_eval_arbitrary_partial(
     Expr::FunctionCall { .. }
       if let Some(value) = user_n_value(expr, Some(precision))? =>
     {
+      if matches!(value, Expr::Real(_)) {
+        return Ok(value);
+      }
       n_eval_arbitrary(&value, precision)
     }
     Expr::FunctionCall { name, args } => {
@@ -2200,6 +2213,9 @@ fn n_eval_arbitrary_partial(
     // like `N[sym, _]` (Blank[]) or `N[sym, x_]` (Pattern[x, Blank[]]),
     // which match every requested precision.
     Expr::Identifier(_) => match user_n_value(expr, Some(precision))? {
+      // A machine Real the rule supplies is the user's own value (the
+      // `p_` bound by `N[a, p_] := p` arrives as one): keep it as is.
+      Some(value @ Expr::Real(_)) => Ok(value),
       Some(value) => n_eval_arbitrary(&value, precision),
       None => Ok(expr.clone()),
     },

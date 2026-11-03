@@ -1638,7 +1638,8 @@ fn evaluate_function_call_ast_inner(
     "RandomPermutation"
       if combinatorica_active()
         && args.len() == 1
-        && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+        && (matches!(&args[0], Expr::Integer(n) if *n >= 0)
+          || matches!(&args[0], Expr::List(_))) =>
     {
       "Combinatorica`RandomPermutation"
     }

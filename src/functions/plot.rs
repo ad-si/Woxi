@@ -693,6 +693,205 @@ fn break_at_exclusions(
   points
 }
 
+/// Whether `RegionFunction -> region` accepts the curve point `(x, y)`:
+/// `region[x, y]` evaluates to `True`.
+fn region_function_allows(region: &Expr, x: f64, y: f64) -> bool {
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
+}
+
+/// Keep only the stretches of a sampled curve that `RegionFunction ->
+/// region` accepts. Rejected samples become gaps (`NaN`), and each boundary
+/// between an accepted and a rejected sample is located by bisection so the
+/// drawn pieces end where the region does, not at the last sample inside.
+fn clip_to_region_function(
+  points: Vec<(f64, f64)>,
+  func_body: &Expr,
+  var_name: &str,
+  region: &Expr,
+) -> Vec<(f64, f64)> {
+  let inside: Vec<bool> = points
+    .iter()
+    .map(|&(x, y)| y.is_finite() && region_function_allows(region, x, y))
+    .collect();
+  let mut out = Vec::with_capacity(points.len() + 8);
+  for (i, &(x, y)) in points.iter().enumerate() {
+    if i > 0 && inside[i] != inside[i - 1] {
+      let (x_prev, y_prev) = points[i - 1];
+      if y_prev.is_finite() && y.is_finite() {
+        // Bisect towards the boundary between the two samples.
+        let (mut a, mut b) = (x_prev, x);
+        let a_inside = inside[i - 1];
+        for _ in 0..30 {
+          let m = f64::midpoint(a, b);
+          let ym =
+            evaluate_at_point(func_body, var_name, m).unwrap_or(f64::NAN);
+          let m_inside =
+            ym.is_finite() && region_function_allows(region, m, ym);
+          if m_inside == a_inside {
+            a = m;
+          } else {
+            b = m;
+          }
+        }
+        let edge = if a_inside { a } else { b };
+        let y_edge =
+          evaluate_at_point(func_body, var_name, edge).unwrap_or(f64::NAN);
+        if a_inside {
+          out.push((edge, y_edge));
+          out.push((f64::midpoint(a, b), f64::NAN));
+        } else {
+          out.push((f64::midpoint(a, b), f64::NAN));
+          out.push((edge, y_edge));
+        }
+      } else if !inside[i] {
+        out.push((x, f64::NAN));
+      }
+    }
+    out.push(if inside[i] { (x, y) } else { (x, f64::NAN) });
+  }
+  out
+}
+
+/// The y extent of the drawn (finite) points of every curve; with
+/// `keep_outliers` unset, extreme values are fenced off as
+/// [`sampled_y_range`] does.
+fn drawn_y_range(
+  curves: &[Vec<(f64, f64)>],
+  keep_outliers: bool,
+) -> (f64, f64) {
+  let mut ys: Vec<f64> = curves
+    .iter()
+    .flatten()
+    .map(|&(_, y)| y)
+    .filter(|y| y.is_finite())
+    .collect();
+  if ys.is_empty() {
+    return (-1.0, 1.0);
+  }
+  ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let n = ys.len();
+  if keep_outliers || n < 4 {
+    return (ys[0], ys[n - 1]);
+  }
+  let (q1, q3) = (ys[n / 4], ys[3 * n / 4]);
+  let iqr = q3 - q1;
+  if iqr < 1e-10 {
+    return (ys[0], ys[n - 1]);
+  }
+  let (lo, hi) = (q1 - 3.0 * iqr, q3 + 3.0 * iqr);
+  let kept: Vec<f64> =
+    ys.iter().copied().filter(|&y| y >= lo && y <= hi).collect();
+  (kept[0], kept[kept.len() - 1])
+}
+
+/// Whether `Exclusions` leaves the automatic exclusions on: the option is
+/// absent, `Automatic`, or a list that includes `Automatic`.
+fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
+  let value = options.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Exclusions") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  });
+  let is_auto = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "Automatic");
+  match value {
+    None => true,
+    Some(Expr::List(items)) => items.iter().any(is_auto),
+    Some(v) => is_auto(v),
+  }
+}
+
+/// Whether `body` contains a function that jumps between constant (or
+/// separately continuous) pieces, whose discontinuities `Exclusions ->
+/// Automatic` breaks the curve at.
+fn has_step_function(body: &Expr) -> bool {
+  const STEP_HEADS: [&str; 13] = [
+    "Floor",
+    "Ceiling",
+    "Round",
+    "IntegerPart",
+    "FractionalPart",
+    "Mod",
+    "Quotient",
+    "Sign",
+    "UnitStep",
+    "HeavisideTheta",
+    "Boole",
+    "SquareWave",
+    "SawtoothWave",
+  ];
+  if matches!(body, Expr::FunctionCall { name, .. } if STEP_HEADS.contains(&name.as_str()))
+  {
+    return true;
+  }
+  crate::syntax::expr_children(body)
+    .into_iter()
+    .any(has_step_function)
+}
+
+/// The x positions where the sampled curve `points` of `body` jumps: each
+/// pair of neighbouring samples with different values is bisected towards
+/// the larger change, and a gap that stays open once the interval has
+/// shrunk to nothing is a discontinuity (a continuous stretch closes up).
+fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
+  let finite: Vec<f64> = points
+    .iter()
+    .map(|&(_, y)| y)
+    .filter(|y| y.is_finite())
+    .collect();
+  let span = finite.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+    - finite.iter().copied().fold(f64::INFINITY, f64::min);
+  let tolerance = 1e-6 * span.abs().max(1.0);
+  let mut jumps: Vec<f64> = Vec::new();
+  for pair in points.windows(2) {
+    let ((mut a, mut ya), (mut b, mut yb)) = (pair[0], pair[1]);
+    if !(ya.is_finite() && yb.is_finite()) || (yb - ya).abs() <= tolerance {
+      continue;
+    }
+    for _ in 0..60 {
+      let m = f64::midpoint(a, b);
+      if m <= a || m >= b {
+        break;
+      }
+      let Some(ym) = evaluate_at_point(body, var, m).filter(|v| v.is_finite())
+      else {
+        break;
+      };
+      if (ym - ya).abs() >= (yb - ym).abs() {
+        b = m;
+        yb = ym;
+      } else {
+        a = m;
+        ya = ym;
+      }
+    }
+    if (yb - ya).abs() > tolerance {
+      let x = f64::midpoint(a, b);
+      if jumps
+        .last()
+        .is_none_or(|&last| (x - last).abs() > 1e-9 * (b.abs().max(1.0)))
+      {
+        jumps.push(x);
+      }
+    }
+  }
+  jumps
+}
+
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
 fn plot_range_requests_all_y(value: &Expr) -> bool {
@@ -2488,6 +2687,20 @@ pub(crate) enum GridSide {
 }
 
 /// Position for plot legends
+/// The marker shape a legend draws beside each label: whatever the series
+/// itself looks like (`Automatic` — the `PlotLegends -> {labels}` form), or
+/// the one an explicit `LineLegend` / `SwatchLegend` / `PointLegend` asks
+/// for.
+#[derive(Clone, Copy, PartialEq, Default)]
+pub(crate) enum LegendMarkerKind {
+  #[default]
+  Automatic,
+  Line,
+  Swatch,
+  Point,
+}
+
+/// Position for plot legends
 #[derive(Clone, Copy, PartialEq, Default)]
 pub(crate) enum LegendPosition {
   #[default]
@@ -2578,6 +2791,12 @@ pub(crate) struct PlotOptions {
   pub legend_series: Vec<usize>,
   /// Position of the legend (Right, Top, Bottom)
   pub legend_position: LegendPosition,
+  /// The marker shape of an explicit `LineLegend` / `SwatchLegend` /
+  /// `PointLegend` legend.
+  pub legend_marker_kind: LegendMarkerKind,
+  /// The per-entry colors an explicit `XLegend[{styles}, {labels}]` gives,
+  /// which replace the series colors (`None` = the series color).
+  pub legend_colors: Vec<Option<(u8, u8, u8)>>,
   /// Show evenly spaced horizontal grid lines (automatic).
   pub grid_lines_y: bool,
   /// Show evenly spaced vertical grid lines (automatic).
@@ -2600,6 +2819,10 @@ pub(crate) struct PlotOptions {
   /// (left, right, bottom, top): `Frame -> {{True, False}, {True, False}}`
   /// draws only the left and bottom ones.
   pub frame_edges: FrameEdges,
+  /// Frame edges whose line and tick marks a transparent `FrameStyle`
+  /// leaves undrawn while their tick labels stay (the `"Business"` theme's
+  /// left edge). They still count as part of the frame for its padding.
+  pub frame_hidden_edges: FrameEdges,
   /// `FrameTicks -> None | False`: a framed plot keeps its border but loses
   /// the tick marks and labels on it.
   pub frame_ticks: bool,
@@ -2819,6 +3042,8 @@ impl Default for PlotOptions {
       plot_legends: Vec::new(),
       legend_series: Vec::new(),
       legend_position: LegendPosition::default(),
+      legend_marker_kind: LegendMarkerKind::default(),
+      legend_colors: Vec::new(),
       grid_lines_y: false,
       grid_lines_x: false,
       grid_x_lines: Vec::new(),
@@ -2826,6 +3051,7 @@ impl Default for PlotOptions {
       grid_lines_style: None,
       frame: false,
       frame_edges: FrameEdges::ALL,
+      frame_hidden_edges: FrameEdges::NONE,
       grid_interior: None,
       frame_ticks: true,
       evaluated: false,
@@ -3267,21 +3493,25 @@ pub(crate) fn explicit_ticks_svg(
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
   sf: f64,
   label_fill: &str,
+  hidden_edges: FrameEdges,
+  tick_font_pt: f64,
 ) -> String {
   let mut out = String::new();
   let axis_y = plot_y0 + plot_h;
   let tick_len = sf * 5.0;
-  let tick_font = sf * 13.0;
+  let tick_font = sf * tick_font_pt;
   if let Some(ticks) = ticks_x {
     for (pos, label) in ticks {
       if *pos < x_min || *pos > x_max || x_max <= x_min {
         continue;
       }
       let px = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
-      out.push_str(&format!(
-        "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
-        axis_y - tick_len,
-      ));
+      if !hidden_edges.bottom {
+        out.push_str(&format!(
+          "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+          axis_y - tick_len,
+        ));
+      }
       out.push_str(&format!(
         "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_y + tick_font,
@@ -3295,10 +3525,12 @@ pub(crate) fn explicit_ticks_svg(
         continue;
       }
       let py = plot_y0 + plot_h - (pos - y_min) / (y_max - y_min) * plot_h;
-      out.push_str(&format!(
-        "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
-        plot_x0 + tick_len,
-      ));
+      if !hidden_edges.left {
+        out.push_str(&format!(
+          "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
+          plot_x0 + tick_len,
+        ));
+      }
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
         plot_x0 - tick_len,
@@ -3318,10 +3550,11 @@ pub(crate) fn explicit_opposite_ticks_svg(
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
   sf: f64,
   label_fill: &str,
+  tick_font_pt: f64,
 ) -> String {
   let mut out = String::new();
   let tick_len = sf * 5.0;
-  let tick_font = sf * 13.0;
+  let tick_font = sf * tick_font_pt;
   if let Some(ticks) = ticks_top {
     for (pos, label) in ticks {
       if *pos < x_min || *pos > x_max || x_max <= x_min {
@@ -4456,7 +4689,7 @@ fn generate_svg_with_options(
         // Draw the frame's borders (all four unless `Frame` names edges).
         if opts.frame {
           let frame_style = dark_gray.stroke_width(frame_width);
-          let edges = opts.frame_edges;
+          let edges = opts.frame_edges.without(opts.frame_hidden_edges);
           if edges == FrameEdges::ALL {
             chart
               .draw_series(std::iter::once(PathElement::new(
@@ -5050,7 +5283,7 @@ fn generate_svg_with_options(
       (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
       sf,
       &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
-      opts.frame_edges,
+      opts.frame_edges.without(opts.frame_hidden_edges),
     );
   }
 
@@ -5145,6 +5378,8 @@ fn generate_svg_with_options(
         log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
         sf,
         label_fill,
+        opts.frame_hidden_edges,
+        crate::functions::plot_padding::plot_tick_font(opts),
       );
       labels_svg.push_str(&explicit_opposite_ticks_svg(
         explicit_ticks_in_axis_space(opts.ticks_top.as_ref(), opts.log_x)
@@ -5155,6 +5390,7 @@ fn generate_svg_with_options(
         log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
         sf,
         label_fill,
+        crate::functions::plot_padding::plot_tick_font(opts),
       ));
 
       let top_pad = match opts.image_padding {
@@ -8387,6 +8623,7 @@ fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
 /// drawn as points (a list plot's `PointLegend`).
 fn legend_swatch_svg(
   opts: &PlotOptions,
+  entry: usize,
   si: usize,
   x: f64,
   y: f64,
@@ -8394,8 +8631,35 @@ fn legend_swatch_svg(
   dash_scale: f64,
 ) -> String {
   let sf = RESOLUTION_SCALE as f64;
-  let (r, g, b) = series_color(&opts.plot_style, si);
-  if !resolve_series_joined(opts.joined_per_series.as_deref(), si) {
+  let (r, g, b) = opts
+    .legend_colors
+    .get(entry)
+    .copied()
+    .flatten()
+    .unwrap_or_else(|| series_color(&opts.plot_style, si));
+  let as_points = match opts.legend_marker_kind {
+    LegendMarkerKind::Swatch => {
+      // A filled square, its right edge where a line swatch would end.
+      let side = sf * 10.0;
+      return format!(
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{side:.1}\" \
+         height=\"{side:.1}\" fill=\"rgb({r},{g},{b})\" \
+         stroke=\"rgb({},{},{})\" stroke-width=\"{:.1}\"/>\n",
+        x + swatch_len - side,
+        y - side / 2.0,
+        (r as f64 * 0.67) as u8,
+        (g as f64 * 0.67) as u8,
+        (b as f64 * 0.67) as u8,
+        sf * 0.5,
+      );
+    }
+    LegendMarkerKind::Point => true,
+    LegendMarkerKind::Line => false,
+    LegendMarkerKind::Automatic => {
+      !resolve_series_joined(opts.joined_per_series.as_deref(), si)
+    }
+  };
+  if as_points {
     return format!(
       "<circle cx=\"{:.1}\" cy=\"{y:.1}\" r=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
       x + swatch_len / 2.0,
@@ -8548,7 +8812,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             let label = &opts.plot_legends[i];
             let si = opts.legend_series.get(i).copied().unwrap_or(i);
             legend_svg.push_str(&legend_swatch_svg(
-              opts, si, cursor_x, legend_y, swatch_len, dash_scale,
+              opts, i, si, cursor_x, legend_y, swatch_len, dash_scale,
             ));
 
             // Text label
@@ -8633,7 +8897,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           let si = opts.legend_series.get(i).copied().unwrap_or(i);
           let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
           legend_svg.push_str(&legend_swatch_svg(
-            opts, si, legend_x, y, swatch_len, dash_scale,
+            opts, i, si, legend_x, y, swatch_len, dash_scale,
           ));
 
           let text_x = legend_x + swatch_len + swatch_gap;
@@ -9201,6 +9465,8 @@ pub(crate) fn generate_histogram_svg(
       (x_lo, x_hi, y_min, y_max),
       sf,
       label_fill,
+      crate::functions::plot::FrameEdges::NONE,
+      CHART_LABEL_FONT,
     );
     let axis_y = plot_y0 + plot_h;
 
@@ -10022,7 +10288,7 @@ pub(crate) fn series_color_expr(
 }
 
 /// Apply a style directive expression to a SeriesStyle.
-fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
+pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   // Try as a color first
   if let Some(c) = parse_color(expr) {
     // A translucent colour (`Transparent`, `RGBColor[r, g, b, a]`) fades the
@@ -11346,6 +11612,22 @@ impl FrameEdges {
     bottom: true,
     top: true,
   };
+  pub(crate) const NONE: Self = Self {
+    left: false,
+    right: false,
+    bottom: false,
+    top: false,
+  };
+
+  /// These edges minus the ones in `hidden`.
+  pub(crate) fn without(self, hidden: Self) -> Self {
+    Self {
+      left: self.left && !hidden.left,
+      right: self.right && !hidden.right,
+      bottom: self.bottom && !hidden.bottom,
+      top: self.top && !hidden.top,
+    }
+  }
 }
 
 /// The edges a `Frame` value draws: all of them for `True | All`, the
@@ -11404,11 +11686,14 @@ pub(crate) fn hide_transparent_frame_edges(
     && lr.len() == 2
     && bt.len() == 2
   {
-    let edges = &mut opts.frame_edges;
-    edges.left &= !hidden(&lr[0]);
-    edges.right &= !hidden(&lr[1]);
-    edges.bottom &= !hidden(&bt[0]);
-    edges.top &= !hidden(&bt[1]);
+    // The edge stays part of the frame — its tick labels keep their room —
+    // only its line and tick marks go.
+    opts.frame_hidden_edges = FrameEdges {
+      left: hidden(&lr[0]),
+      right: hidden(&lr[1]),
+      bottom: hidden(&bt[0]),
+      top: hidden(&bt[1]),
+    };
   }
 }
 
@@ -11616,6 +11901,57 @@ pub(crate) fn parse_plot_legends(
   }
 }
 
+/// The marker shape and explicit per-entry colors of a `PlotLegends`
+/// value: `SwatchLegend[{Blue, Red}, {"a", "b"}]` draws blue and red squares
+/// whatever the series look like, `SwatchLegend[{"a", "b"}]` squares in the
+/// series colors, and a plain label list markers matching the series.
+pub(crate) fn parse_legend_markers(
+  value: &Expr,
+) -> (LegendMarkerKind, Vec<Option<(u8, u8, u8)>>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let val = match &val {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      args[0].clone()
+    }
+    _ => val,
+  };
+  let Expr::FunctionCall { name, args } = &val else {
+    return (LegendMarkerKind::Automatic, Vec::new());
+  };
+  let kind = match name.as_str() {
+    "LineLegend" => LegendMarkerKind::Line,
+    "SwatchLegend" => LegendMarkerKind::Swatch,
+    "PointLegend" => LegendMarkerKind::Point,
+    _ => return (LegendMarkerKind::Automatic, Vec::new()),
+  };
+  // Only the two-list `XLegend[{styles}, {labels}]` form carries styles.
+  let colors = match (args.first(), args.get(1)) {
+    (Some(Expr::List(styles)), Some(Expr::List(_))) => {
+      styles.iter().map(legend_style_color).collect()
+    }
+    _ => Vec::new(),
+  };
+  (kind, colors)
+}
+
+/// The color a legend style (`Red`, `Directive[Thick, Red]`, `{Red}`)
+/// draws its marker in.
+fn legend_style_color(style: &Expr) -> Option<(u8, u8, u8)> {
+  if let Some(c) = crate::functions::graphics::parse_color(style) {
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    return Some((ch(c.r), ch(c.g), ch(c.b)));
+  }
+  match style {
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().rev().find_map(legend_style_color)
+    }
+    Expr::List(items) => items.iter().rev().find_map(legend_style_color),
+    _ => None,
+  }
+}
+
 /// Whether `Callout[data, label, pos…]` sits at its automatic place, the
 /// end of its curve or dataset (no position, or `Automatic`).
 pub(crate) fn callout_at_series_end(callout_args: &[Expr]) -> bool {
@@ -11630,15 +11966,40 @@ pub(crate) fn callout_at_series_end(callout_args: &[Expr]) -> bool {
 /// curve; `None` and `Automatic` entries leave their curve unlabeled.
 fn parse_plot_labels(value: &Expr) -> Vec<Option<String>> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
-  let label = |item: &Expr| match item {
-    Expr::Identifier(s) if s == "None" || s == "Automatic" => None,
-    other => Some(crate::functions::graphics::traditional_label(other)),
-  };
+  fn label(item: &Expr) -> Option<String> {
+    match item {
+      Expr::Identifier(s) if s == "None" || s == "Automatic" => None,
+      // `Callout[l, pos…]` / `Placed[l, pos]` label the curve with `l`.
+      Expr::FunctionCall { name, args }
+        if (name == "Callout" || name == "Placed") && !args.is_empty() =>
+      {
+        label(&args[0])
+      }
+      other => Some(crate::functions::graphics::traditional_label(other)),
+    }
+  }
   match &val {
     Expr::List(items) => items.iter().map(label).collect(),
+    // `Callout[{l1, l2, …}, pos…]` / `Placed[{l1, l2, …}, pos]` label every
+    // curve with its own entry.
+    Expr::FunctionCall { name, args }
+      if (name == "Callout" || name == "Placed")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      parse_plot_labels(&args[0])
+    }
+    // Filled in from the curves' expressions by the plot itself.
     Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
+    Expr::String(s) if s == "Expressions" => Vec::new(),
     other => vec![label(other)],
   }
+}
+
+/// Whether a `PlotLabels` value labels each curve with its own expression:
+/// `Automatic` and `"Expressions"`.
+fn plot_labels_from_expressions(value: &Expr) -> bool {
+  matches!(value, Expr::Identifier(s) if s == "Automatic")
+    || matches!(value, Expr::String(s) if s == "Expressions")
 }
 
 /// Parse a `Background -> color` option value into a plotters fill color.
@@ -11809,6 +12170,9 @@ pub(crate) fn apply_common_plot_option(
       let (labels, _, _, position) = parse_plot_legends(replacement);
       plot_opts.legend_position = position;
       plot_opts.plot_legends = labels;
+      let (kind, colors) = parse_legend_markers(replacement);
+      plot_opts.legend_marker_kind = kind;
+      plot_opts.legend_colors = colors;
     }
     "AxesStyle" => plot_opts.axes_style = parse_axis_pair_styles(replacement),
     "TicksStyle" => {
@@ -12171,9 +12535,15 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
+  // `PlotLabels -> Automatic | "Expressions"`: each curve is labelled with
+  // its expression.
+  let mut labels_expressions = false;
   // `EvaluationMonitor :> expr` — evaluated (with the plot variable bound)
   // at every sampled point, e.g. to `Sow` the sample locations.
   let mut monitor: Option<Expr> = None;
+  // `RegionFunction -> f`: only the stretches of the curve where
+  // `f[x, y]` is True are drawn.
+  let mut region_function: Option<Expr> = None;
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
@@ -12207,6 +12577,23 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (_, auto, expressions, _) = parse_plot_legends(replacement);
         legends_automatic |= auto;
         legends_expressions |= expressions;
+      }
+      if name == "PlotLabels" {
+        labels_expressions = plot_labels_from_expressions(replacement);
+      }
+      if name == "RegionFunction" {
+        // `RegionFunction -> (True &)` is the default: every point drawn.
+        let always = matches!(replacement,
+          Expr::Function { body } if matches!(body.as_ref(), Expr::Identifier(t) if t == "True"));
+        if !always {
+          // Evaluated once, so `Function[{x, y}, Evaluate[D[f, x] > 0]]`
+          // is called with its derivative already worked out.
+          region_function = Some(
+            evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.clone()),
+          );
+        }
+        continue;
       }
       apply_common_plot_option(
         name,
@@ -12399,13 +12786,25 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.plot_labels = end_labels;
   }
 
-  // Fill automatic legends from expression strings
+  // Fill automatic legends from expression strings; `"Expressions"` sets
+  // them in TraditionalForm, as WL does.
   if (legends_automatic || legends_expressions)
     && plot_opts.plot_legends.is_empty()
   {
     for b in &bodies {
-      plot_opts.plot_legends.push(expr_to_output(b));
+      plot_opts.plot_legends.push(if legends_expressions {
+        crate::functions::graphics::traditional_label(b)
+      } else {
+        expr_to_output(b)
+      });
     }
+  }
+  if labels_expressions && plot_opts.plot_labels.is_empty() {
+    plot_opts.plot_labels = bodies
+      .iter()
+      .map(|b| Some(crate::functions::graphics::traditional_label(b)))
+      .collect();
+    plot_opts.plot_label_leaders = vec![true; bodies.len()];
   }
 
   // Adaptive sampling: start with initial points, then refine where needed
@@ -12436,6 +12835,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x_min,
     x_max,
   );
+  let auto_exclusions = automatic_exclusions_enabled(&args[2..]);
 
   for func_body in &bodies {
     let points = adaptive_sample(
@@ -12448,13 +12848,25 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       max_depth,
       monitor.as_ref(),
     );
-    all_points.push(break_at_exclusions(
+    // `Exclusions -> Automatic` breaks the curve where a step function in
+    // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
+    let mut excluded_here = excluded.clone();
+    if auto_exclusions && has_step_function(func_body) {
+      excluded_here.extend(jump_points(&points, func_body, &var_name));
+    }
+    let points = break_at_exclusions(
       points,
       func_body,
       &var_name,
-      &excluded,
+      &excluded_here,
       x_max - x_min,
-    ));
+    );
+    all_points.push(match &region_function {
+      Some(region) => {
+        clip_to_region_function(points, func_body, &var_name, region)
+      }
+      None => points,
+    });
   }
 
   // A `PlotStyle` list applied to a single curve is one combined directive
@@ -12467,8 +12879,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Compute Y range using robust outlier exclusion on uniform samples —
   // unless `PlotRange -> All` asked for every sampled value to be shown.
-  let (y_data_min, y_data_max) =
-    sampled_y_range(&bodies, &var_name, x_min, x_max, plot_range_y_all);
+  let (y_data_min, y_data_max) = match &region_function {
+    // Only the drawn stretches count towards the automatic range.
+    Some(_) => drawn_y_range(&all_points, plot_range_y_all),
+    None => sampled_y_range(&bodies, &var_name, x_min, x_max, plot_range_y_all),
+  };
 
   // Check if we have any plottable data
   let has_finite = all_points
@@ -12744,7 +13159,11 @@ fn log_scale_plot_ast(
     && plot_opts.plot_legends.is_empty()
   {
     for b in &bodies {
-      plot_opts.plot_legends.push(expr_to_output(b));
+      plot_opts.plot_legends.push(if legends_expressions {
+        crate::functions::graphics::traditional_label(b)
+      } else {
+        expr_to_output(b)
+      });
     }
   }
 

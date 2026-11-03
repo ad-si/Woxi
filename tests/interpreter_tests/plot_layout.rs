@@ -679,7 +679,7 @@ mod panel_layout {
        PlotStyle -> {Red, Green}]",
     );
     assert!(!svg.contains("#FF0000"));
-    assert_ne!(polyline_points(&svg, "#00FF00").len(), 0);
+    assert_ne!(polyline_points(&svg, "#00FF00"), [] as [(f64, f64); 0]);
   }
 
   #[test]
