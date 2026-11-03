@@ -1100,31 +1100,8 @@ fn value_to_color(v: f64, v_min: f64, v_max: f64) -> (u8, u8, u8) {
 /// Default density / contour gradient: dark blue → azure → teal → green →
 /// yellow, approximating Mathematica's default DensityPlot color scheme.
 fn density_gradient(t: f64) -> (u8, u8, u8) {
-  const STOPS: [(f64, f64, f64); 8] = [
-    (53.0, 42.0, 160.0),
-    (28.0, 83.0, 217.0),
-    (22.0, 128.0, 224.0),
-    (15.0, 168.0, 200.0),
-    (62.0, 192.0, 152.0),
-    (140.0, 199.0, 96.0),
-    (219.0, 194.0, 67.0),
-    (252.0, 232.0, 38.0),
-  ];
-  let t = if t.is_finite() {
-    t.clamp(0.0, 1.0)
-  } else {
-    0.5
-  };
-  let x = t * (STOPS.len() - 1) as f64;
-  let i = (x.floor() as usize).min(STOPS.len() - 2);
-  let f = x - i as f64;
-  let a = STOPS[i];
-  let b = STOPS[i + 1];
-  (
-    (a.0 + (b.0 - a.0) * f).round() as u8,
-    (a.1 + (b.1 - a.1) * f).round() as u8,
-    (a.2 + (b.2 - a.2) * f).round() as u8,
-  )
+  let t = if t.is_finite() { t } else { 0.5 };
+  crate::functions::plot::wl14_default_density_gradient(t)
 }
 
 /// Map a scaled value t in [0,1] through the plot's color function:

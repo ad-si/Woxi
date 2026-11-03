@@ -19605,14 +19605,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let (w, h) = img.dimensions();
       let top_right = img.get_pixel(w - 1, 0);
       let bottom_left = img.get_pixel(0, h - 1);
-      // Value 1 (top right) maps to the bright yellow end of the default
-      // gradient, value 0 to dark blue.
+      // Value 1 (top right) maps to the cream end of the default gradient,
+      // value 0 to dark purple (compared on the green channel).
       assert!(
-        top_right[0] > 200,
+        top_right[1] > 200,
         "expected a bright pixel at the top right, got {top_right:?}"
       );
+      // Regression: the default gradient was a blue-to-yellow ramp; WL's
+      // "WL14DefaultDensityGradient" starts at RGB (102, 13, 102).
+      for (got, want) in bottom_left.0.iter().zip([102u8, 13, 102]) {
+        assert!(got.abs_diff(want) <= 3, "{bottom_left:?}");
+      }
       assert!(
-        bottom_left[0] < 100,
+        bottom_left[1] < 100,
         "expected a dark pixel at the bottom left, got {bottom_left:?}"
       );
     }
@@ -19639,8 +19644,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let (w, h) = img.dimensions();
       let left = img.get_pixel(w * 45 / 100, h / 2);
       let right = img.get_pixel(w * 55 / 100, h / 2);
-      assert!(left[0] < 100, "expected a dark cell left of the border");
-      assert!(right[0] > 200, "expected a bright cell right of the border");
+      assert!(left[1] < 100, "expected a dark cell left of the border");
+      assert!(right[1] > 200, "expected a bright cell right of the border");
     }
   }
 
