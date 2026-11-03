@@ -1935,6 +1935,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  source.plot_range = opts.grid_interior;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &opts.plot_markers,
@@ -2136,6 +2137,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parsed.opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  source.plot_range = parsed.opts.grid_interior;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &parsed.opts.plot_markers,
@@ -2237,6 +2239,7 @@ fn log_plot_result(
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
   source.log_y = opts.log_y;
   crate::functions::plot::apply_markers_to_source(

@@ -171,6 +171,10 @@ pub struct PlotSource {
   /// The series stay in data space; the renderer scales them.
   pub log_x: bool,
   pub log_y: bool,
+  /// The automatic `PlotRange` WL reports for the plot (`PlotRange[g]`,
+  /// `AbsoluteOptions`): the range before `PlotRangePadding`, where
+  /// `x_range`/`y_range` are the padded ones drawn. `None` = those.
+  pub plot_range: Option<((f64, f64), (f64, f64))>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging

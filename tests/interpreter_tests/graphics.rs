@@ -9327,6 +9327,9 @@ mod plot3d {
     // `AspectRatio -> Automatic` takes the plotted ranges' own proportions
     // (here a 300 x 300 square); it used to be ignored, leaving the default
     // golden-ratio frame that stretched square canvases.
+    /// The ranges are the drawn ones: the x range keeps its automatic
+    /// padding of 1/48 per side, so a 300 x 300 range is a bit wider than
+    /// square (346 high in 360, as in WL, where `AspectRatio -> 1` is 361).
     #[test]
     fn aspect_ratio_automatic_follows_plot_ranges() {
       let auto = export_svg(
@@ -9338,19 +9341,33 @@ mod plot3d {
       let default = export_svg(
         "Plot[x, {x, 0, 300}, PlotRange -> {0, 300}, Axes -> False]",
       );
-      assert_eq!(auto, square);
+      assert!(auto.starts_with("<svg width=\"360\" height=\"346\""));
+      assert_ne!(auto, square);
       assert_ne!(auto, default);
     }
 
     #[test]
     fn aspect_ratio_automatic_wide_range_is_flat() {
-      let auto = export_svg(
+      let height = |code: &str| -> u32 {
+        let svg = export_svg(code);
+        svg
+          .split("height=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let auto = height(
         "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> Automatic]",
       );
-      let tenth = export_svg(
+      let tenth = height(
         "Plot[x, {x, 0, 100}, PlotRange -> {0, 10}, AspectRatio -> 1/10]",
       );
-      assert_eq!(auto, tenth);
+      // 10 / (100 · 50/48): a hair flatter than 1/10 (WL: 55 vs 56).
+      assert_eq!(auto + 1, tenth);
     }
 
     // `ListPlot` draws through the scatter renderer and a `Show` of plots
@@ -11758,19 +11775,26 @@ mod plot3d {
       );
     }
 
-    /// An all-positive curve has its x axis at its lowest value, inside the
+    /// An all-positive curve has its axes at its lowest values, inside the
     /// padding, not at the padded edge — `Plot[x, {x, 2, 10}]` crosses at
     /// `{2, 2}`.
     #[test]
     fn plot_axis_touches_the_lowest_point_of_the_curve() {
       let svg = export_svg("Plot[x, {x, 2, 10}]");
-      let (left, top, _, bottom) = plot_area(&svg);
+      let (left, top, right, bottom) = plot_area(&svg);
       let (x, y) = axes_crossing(&svg);
-      assert_eq!(x, left);
-      assert!(y < bottom - 1.0, "x axis must sit above the padding: {y}");
-      // 2 is the lowest of 2..10 shown over a range padded by 4% of 8.
-      let expected = bottom - (bottom - top) * 0.32 / 8.64;
-      assert!((y - expected).abs() < 1.0, "x axis at {y}, not {expected}");
+      // `PlotRangePadding -> {{Scaled[0.02], …}, {Scaled[0.05], …}}`: the
+      // padding is that fraction of the padded span.
+      let expected_x = left + (right - left) * 0.02;
+      let expected_y = bottom - (bottom - top) * 0.05;
+      assert!(
+        (x - expected_x).abs() < 1.0,
+        "y axis at {x}, not {expected_x}"
+      );
+      assert!(
+        (y - expected_y).abs() < 1.0,
+        "x axis at {y}, not {expected_y}"
+      );
     }
 
     /// `AxesOrigin -> {x, y}` places the crossing explicitly.
@@ -26506,6 +26530,16 @@ mod blend {
     assert_eq!(
       interpret("PlotRange[Plot[x^2, {x, 0, 1}]]").unwrap(),
       "{{0., 1.}, {0., 1.}}"
+    );
+    // The reported range is the unpadded one, for list plots too.
+    assert_eq!(
+      interpret(
+        "{PlotRange[ListPlot[Range[10]]], PlotRange[Plot[x, {x, 2, 10}]], \
+         PlotRange[ListLinePlot[{3, 5, 4}]]}"
+      )
+      .unwrap(),
+      "{{{0., 10.}, {0., 10.}}, {{2., 10.}, {2., 10.}}, {{0., 3.}, \
+       {2.888888888888889, 5.}}}"
     );
     assert_eq!(
       interpret(
@@ -42515,10 +42549,13 @@ fn plot_filling_covers_domain_where_curve_leaves_plot_range() {
     .collect();
   let max_x = xs.iter().copied().fold(f64::MIN, f64::max);
   let min_x = xs.iter().copied().fold(f64::MAX, f64::min);
-  // Right of the visible curve (x > 8) the whole height is filled.
+  // Right of the visible curve (x > 8) the whole height is filled, up to
+  // the end of the domain, x = 13, which sits 2% of the area inside its
+  // right edge (the automatic `PlotRangePadding` of x).
+  let domain_end = right - (right - left) * 0.02;
   assert!(
-    (max_x - right).abs() < 1.5,
-    "fill ends at {max_x}, area at {right}"
+    (max_x - domain_end).abs() < 1.5,
+    "fill ends at {max_x}, domain at {domain_end}"
   );
   assert!(
     min_x < left + (right - left) * 0.45,

@@ -1138,16 +1138,6 @@ fn region_mesh_spec(opt_args: &[Expr]) -> Option<RegionMesh> {
   })
 }
 
-/// The colour cycle `Plot`-family functions assign to successive curves.
-const REGION_COLORS: [(f64, f64, f64); 6] = [
-  (0.24, 0.6, 0.8),
-  (0.88, 0.58, 0.17),
-  (0.56, 0.69, 0.20),
-  (0.85, 0.32, 0.10),
-  (0.42, 0.28, 0.61),
-  (0.56, 0.69, 0.80),
-];
-
 /// Whether `region` (a `RegionFunction -> f` value, called as
 /// `f[x, y, u, v]`) accepts the point.
 fn parametric_region_allows(
@@ -1427,7 +1417,8 @@ fn parametric_region_layer(
           group.push(shade);
           group.push(call1("Opacity", Expr::Real(1.0)));
         } else {
-          let (r, g, b) = REGION_COLORS[layer % REGION_COLORS.len()];
+          let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB
+            [layer % crate::functions::plot::PLOT_COLORS_RGB.len()];
           group.push(call(
             "RGBColor",
             vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
@@ -1499,9 +1490,11 @@ fn parametric_region_layer(
     .plot_style
     .get(layer)
     .and_then(|s| s.color.as_ref())
-    .map_or(REGION_COLORS[layer % REGION_COLORS.len()], |c| {
-      (c.r, c.g, c.b)
-    });
+    .map_or(
+      crate::functions::plot::PLOT_COLORS_RGB
+        [layer % crate::functions::plot::PLOT_COLORS_RGB.len()],
+      |c| (c.r, c.g, c.b),
+    );
   let color = call(
     "RGBColor",
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],

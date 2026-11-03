@@ -5761,6 +5761,7 @@ pub(crate) fn build_plot_source(
     options,
     log_x: false,
     log_y: false,
+    plot_range: None,
   }
 }
 
@@ -8695,6 +8696,7 @@ pub(crate) fn histogram_plot_source(
     options: Vec::new(),
     log_x: false,
     log_y: false,
+    plot_range: None,
   })
 }
 
@@ -12295,24 +12297,32 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (y_data_min, y_data_max) =
     include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1);
 
-  // Add 4% padding to the auto-computed y range
-  let y_range = y_data_max - y_data_min;
-  let padding = if y_range.abs() < f64::EPSILON {
+  // WL 15 pads an automatic range by `PlotRangePadding -> {{Scaled[0.02],
+  // …}, {Scaled[0.05], …}}`: that fraction of the padded span, i.e. 1/48
+  // of the x span and 1/18 of the y span on each side. An explicit
+  // `PlotRange` is not padded.
+  let y_span = y_data_max - y_data_min;
+  let padding = if y_span.abs() < f64::EPSILON {
     1.0
   } else {
-    y_range * 0.04
+    y_span / 18.0
   };
   let y_auto_min = y_data_min - padding;
   let y_auto_max = y_data_max + padding;
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
+  let x_padding = (x_max - x_min) / 48.0;
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
-  let (x_display_min, x_display_max) = plot_range_x.unwrap_or((x_min, x_max));
+  let (x_display_min, x_display_max) =
+    plot_range_x.unwrap_or((x_min - x_padding, x_max + x_padding));
   let (y_display_min, y_display_max) =
     plot_range_y.unwrap_or((y_auto_min, y_auto_max));
-  // The axis of an all-positive curve touches its lowest point, inside the
+  // The axes of an all-positive curve touch its lowest point, inside the
   // padding, as in Wolfram.
+  if plot_range_x.is_none() {
+    plot_opts.axes_origin_low.0 = Some(x_min);
+  }
   if plot_range_y.is_none() {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
@@ -12326,18 +12336,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
 
   // Generate GraphicsBox expression for .nb export
-  let rgb_values = [
-    "0.24, 0.6, 0.8",
-    "0.88, 0.58, 0.17",
-    "0.56, 0.69, 0.20",
-    "0.85, 0.32, 0.10",
-    "0.42, 0.28, 0.61",
-    "0.56, 0.69, 0.80",
-  ];
   let mut box_elements = Vec::new();
   for (i, points) in all_points.iter().enumerate() {
-    let rgb = rgb_values[i % rgb_values.len()];
-    box_elements.push(format!("RGBColor[{rgb}]"));
+    let (r, g, b) = PLOT_COLORS_RGB[i % PLOT_COLORS_RGB.len()];
+    box_elements.push(format!("RGBColor[{r}, {g}, {b}]"));
     box_elements.push("AbsoluteThickness[2]".to_string());
     box_elements.push("Opacity[1.]".to_string());
     let segments = split_into_segments(points);
@@ -12358,6 +12360,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
+  source.plot_range = Some((
+    plot_range_x.unwrap_or((x_min, x_max)),
+    plot_range_y.unwrap_or((y_data_min, y_data_max)),
+  ));
   // `build_plot_source` only knows the single global `Filling` mode; a
   // per-series `Filling -> {i -> spec, …}` rule list is resolved here
   // instead, so `source.series[i].filling` (which `Part`/`First` reads to

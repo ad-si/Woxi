@@ -3141,6 +3141,7 @@ fn contour_plot_equations(
     options: source_options,
     log_x: false,
     log_y: false,
+    plot_range: None,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {

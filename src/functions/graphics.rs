@@ -18047,6 +18047,20 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       options: merged_options.clone(),
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
+      // The reported range of the merged plot spans those of its parts.
+      plot_range: plot_sources
+        .iter()
+        .map(|s| s.plot_range)
+        .try_fold(None, |acc: Option<((f64, f64), (f64, f64))>, r| {
+          let ((x0, x1), (y0, y1)) = r?;
+          Some(Some(acc.map_or(
+            ((x0, x1), (y0, y1)),
+            |((a0, a1), (b0, b1))| {
+              ((a0.min(x0), a1.max(x1)), (b0.min(y0), b1.max(y1)))
+            },
+          )))
+        })
+        .flatten(),
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;
@@ -42084,6 +42098,9 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
         Some(acc.map_or((y, y), |(lo, hi)| (lo.min(y), hi.max(y))))
       });
       let (ex, ey) = explicit.unwrap_or((None, None));
+      if let Some((px, py)) = source.plot_range {
+        return Some((ex.unwrap_or(px), ey.unwrap_or(py)));
+      }
       Some((
         ex.unwrap_or(source.x_range),
         ey.or(data_y).unwrap_or(source.y_range),
