@@ -88,7 +88,7 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <line x1="168.7" y1="112.7" x2="208.7" y2="112.7" stroke="#666" stroke-width="5"/>
 <text x="139.0" y="147.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
 <circle cx="3750.0" cy="1023.0" r="25.0" fill="rgb(61,153,204)"/>
-<text x="3910.0" y="1072.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Series A</text>
+<text x="3910.0" y="1072.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#000000">Series A</text>
 <circle cx="3750.0" cy="1247.0" r="25.0" fill="rgb(242,160,36)"/>
-<text x="3910.0" y="1296.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Series B</text>
+<text x="3910.0" y="1296.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#000000">Series B</text>
 </svg>

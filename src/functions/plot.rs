@@ -3041,6 +3041,11 @@ pub(crate) enum LegendPosition {
   Right,
   Top,
   Bottom,
+  /// `Placed[…, Before | Left]`: beside the plot on the left.
+  Left,
+  /// `Placed[…, {x, y}]`: inside the image, centred at this scaled
+  /// position (fractions of its width and height, from the bottom left).
+  Inside(f64, f64),
 }
 
 /// How `Around` uncertainty intervals are drawn (IntervalMarkers option):
@@ -3135,6 +3140,13 @@ pub(crate) struct PlotOptions {
   /// The per-entry colors an explicit `XLegend[{styles}, {labels}]` gives,
   /// which replace the series colors (`None` = the series color).
   pub legend_colors: Vec<Option<(u8, u8, u8)>>,
+  /// `PlotLegends -> Automatic`: the plot names its series itself.
+  pub legend_automatic: bool,
+  /// `PlotLegends -> "Placeholder"`: each entry is a numbered placeholder
+  /// box (a list plot's `Automatic` legend, too).
+  pub legend_placeholders: bool,
+  /// `LegendFunction -> Frame`: the legend is framed.
+  pub legend_frame: bool,
   /// Show evenly spaced horizontal grid lines (automatic).
   pub grid_lines_y: bool,
   /// Show evenly spaced vertical grid lines (automatic).
@@ -3186,8 +3198,14 @@ pub(crate) struct PlotOptions {
   /// `ScalingFunctions` (positions scaled, labels original), which replace
   /// its automatic ticks: `(x, y)`.
   pub scaled_ticks: (Option<AxisTicks>, Option<AxisTicks>),
-  /// Callout labels for each series (None = no callout for that series)
-  pub callout_labels: Vec<Option<String>>,
+  /// Curve labels placed along their curves rather than at their ends
+  /// (`Labeled[f, l, pos]`, `Callout[f, l, pos]`, `PlotLabels ->
+  /// Placed[…, pos]`).
+  pub curve_label_specs:
+    Vec<crate::functions::plot_curve_labels::CurveLabelSpec>,
+  /// `Highlighted[f, Placed["Ball" | "Dropline" | "XSlice" | "YSlice",
+  /// pos]]`: the static highlights drawn on the curves.
+  pub placed_highlights: Vec<crate::functions::plot_highlight::PlacedHighlight>,
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
   /// each curve (None = that curve is unlabeled).
   pub plot_labels: Vec<Option<String>>,
@@ -3196,6 +3214,9 @@ pub(crate) struct PlotOptions {
   /// rather than sitting right after the last point (`PlotLabels`,
   /// `Labeled`).
   pub plot_label_leaders: Vec<bool>,
+  /// `PlotLabels -> Automatic`: the datasets' own names (association keys)
+  /// label them, at their ends off leader lines.
+  pub plot_labels_automatic: bool,
   /// Per-point labels from `Labeled[y, label]` data entries, parallel to
   /// each series' points (None = no label for that point). Empty when no
   /// point is labeled.
@@ -3450,6 +3471,9 @@ impl Default for PlotOptions {
       legend_position: LegendPosition::default(),
       legend_marker_kind: LegendMarkerKind::default(),
       legend_colors: Vec::new(),
+      legend_automatic: false,
+      legend_placeholders: false,
+      legend_frame: false,
       grid_lines_y: false,
       grid_lines_x: false,
       grid_x_lines: Vec::new(),
@@ -3472,9 +3496,11 @@ impl Default for PlotOptions {
       frame_label_bottom_graphic: None,
       frame_label_top_graphic: None,
       date_axis: false,
-      callout_labels: Vec::new(),
+      curve_label_specs: Vec::new(),
+      placed_highlights: Vec::new(),
       plot_labels: Vec::new(),
       plot_label_leaders: Vec::new(),
+      plot_labels_automatic: false,
       point_labels: Vec::new(),
       point_label_position: None,
       point_label_callouts: false,
@@ -6194,6 +6220,14 @@ fn generate_svg_with_options(
       - margin_top_f
       - margin_bottom_f
       - x_label_area as f64;
+    inject_placed_highlights(
+      &mut buf,
+      opts,
+      all_points,
+      (x_min, x_max),
+      (y_min, y_max),
+      (plot_x0, margin_top_f, plot_w, plot_h),
+    );
     inject_callout_labels(
       &mut buf,
       opts,
@@ -6220,14 +6254,73 @@ fn generate_svg_with_options(
     );
   }
 
-  inject_legend(&mut buf, opts);
+  // `"Placeholder"` (and a list plot's `Automatic`, whose series have no
+  // names) numbers the series.
+  if opts.plot_legends.is_empty()
+    && (opts.legend_placeholders || opts.legend_automatic)
+    && !all_points.is_empty()
+  {
+    let mut numbered = opts.clone();
+    numbered.plot_legends = placeholder_legends(all_points.len());
+    numbered.legend_placeholders = true;
+    inject_legend(&mut buf, &numbered);
+  } else {
+    inject_legend(&mut buf, opts);
+  }
 
   Ok(buf)
 }
 
-/// Inject Callout/Labeled series labels into a finished SVG buffer as a text
-/// annotation near each labeled series. `plot_area` is the drawing region in
-/// render-space pixels: (left, top, width, height).
+/// Inject the static `Highlighted[f, Placed[effect, pos]]` highlights into a
+/// finished SVG buffer. `plot_area` is the drawing region in render-space
+/// pixels: (left, top, width, height).
+fn inject_placed_highlights(
+  buf: &mut String,
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  plot_area: (f64, f64, f64, f64),
+) {
+  if opts.placed_highlights.is_empty() {
+    return;
+  }
+  let Some(insert_pos) = buf.rfind("</svg>") else {
+    return;
+  };
+  let (x_min, x_max) = x_range;
+  let (y_min, y_max) = y_range;
+  let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
+  let to_px = |(x, y): (f64, f64)| {
+    (
+      plot_x0 + (x - x_min) / (x_max - x_min) * plot_w,
+      plot_top + plot_h * (1.0 - (y - y_min) / (y_max - y_min)),
+    )
+  };
+  let axis = |(min, max): (f64, f64)| crate::functions::plot_axes::AxisScale {
+    min,
+    max,
+    log: false,
+  };
+  let origin = opts.axes_origin_point(axis(x_range), axis(y_range));
+  let svg = crate::functions::plot_highlight::highlights_svg(
+    &opts.placed_highlights,
+    all_points,
+    |i| series_color(&opts.plot_style, i),
+    to_px,
+    RESOLUTION_SCALE as f64,
+    origin,
+    // The values are rounded to the data range, inside the padding.
+    opts.unpadded_range.unwrap_or((x_range, y_range)),
+    plot_area,
+  );
+  buf.insert_str(insert_pos, &svg);
+}
+
+/// Inject the labels placed along their curves (`Labeled[f, l, pos]`,
+/// `Callout[f, l, pos]`, placed `PlotLabels`) into a finished SVG buffer.
+/// `plot_area` is the drawing region in render-space pixels: (left, top,
+/// width, height).
 fn inject_callout_labels(
   buf: &mut String,
   opts: &PlotOptions,
@@ -6236,73 +6329,43 @@ fn inject_callout_labels(
   y_range: (f64, f64),
   plot_area: (f64, f64, f64, f64),
 ) {
-  if opts.callout_labels.is_empty()
-    || !opts.callout_labels.iter().any(std::option::Option::is_some)
-  {
+  if opts.curve_label_specs.is_empty() {
     return;
   }
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let (plot_x0, plot_top, plot_w, plot_h) = plot_area;
   let sf = RESOLUTION_SCALE as f64;
-  let callout_font_size = sf * 16.0;
-
   let Some(insert_pos) = buf.rfind("</svg>") else {
     return;
   };
-  let mut callout_svg = String::new();
-
-  for (series_idx, label) in opts.callout_labels.iter().enumerate() {
-    let Some(label_text) = label else { continue };
-    if series_idx >= all_points.len() {
-      continue;
-    }
-    let points = &all_points[series_idx];
-
-    // Find a good label point: pick the point closest to 2/3 of x range
-    let target_x = x_min + (x_max - x_min) * 2.0 / 3.0;
-    let best = points
-      .iter()
-      .filter(|(x, y)| x.is_finite() && y.is_finite())
-      .min_by(|a, b| {
-        (a.0 - target_x)
-          .abs()
-          .partial_cmp(&(b.0 - target_x).abs())
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
-
-    let Some(&(data_x, data_y)) = best else {
-      continue;
-    };
-
-    // Convert data coordinates to SVG pixel coordinates
-    let frac_x = (data_x - x_min) / (x_max - x_min);
-    let frac_y = (data_y - y_min) / (y_max - y_min);
-    let px = plot_x0 + frac_x * plot_w;
-    let py = plot_top + plot_h * (1.0 - frac_y);
-
-    // Label offset: place text above the curve point
-    let label_px = px + sf * 5.0;
-    let label_py = py - sf * 12.0;
-
-    // Draw a small line from the curve point to the label
-    let (r, g, b) = series_color(&opts.plot_style, series_idx);
-    let color_str = format!("rgb({r},{g},{b})");
-
-    callout_svg.push_str(&format!(
-      "<line x1=\"{px:.1}\" y1=\"{py:.1}\" x2=\"{label_px:.1}\" y2=\"{label_py:.1}\" \
-       stroke=\"{color_str}\" stroke-width=\"{sw}\" />\n",
-      sw = sf * 1.0,
-    ));
-    callout_svg.push_str(&format!(
-      "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
-       font-family=\"sans-serif\" font-size=\"{callout_font_size:.0}\" \
-       fill=\"{color_str}\" dominant-baseline=\"auto\">{}</text>\n",
-      crate::functions::graphics::box_string_to_svg(label_text)
-    ));
-  }
-
-  buf.insert_str(insert_pos, &callout_svg);
+  let curves = if opts.data_points.is_empty() {
+    all_points
+  } else {
+    &opts.data_points
+  };
+  let scale = crate::functions::plot_curve_labels::LabelScale {
+    kx: plot_w / sf / (x_max - x_min),
+    ky: plot_h / sf / (y_max - y_min),
+    x_range,
+    y_range,
+  };
+  let placed = crate::functions::plot_curve_labels::layout_curve_labels(
+    &opts.curve_label_specs,
+    curves,
+    scale,
+  );
+  let to_px = |(x, y): (f64, f64)| {
+    (
+      plot_x0 + (x - x_min) / (x_max - x_min) * plot_w,
+      plot_top + plot_h * (1.0 - (y - y_min) / (y_max - y_min)),
+    )
+  };
+  let (_, _, _, _, text_fill) = plot_theme();
+  let svg = crate::functions::plot_curve_labels::curve_labels_svg(
+    &placed, to_px, sf, text_fill,
+  );
+  buf.insert_str(insert_pos, &svg);
 }
 
 /// Inject `PlotLabels` into a finished SVG buffer: each label sits just past
@@ -6495,6 +6558,70 @@ fn label_candidates(
     .collect()
 }
 
+/// The index in [`label_candidates`] of the callout placement a named
+/// position (`LabelingFunction -> Above`, …) asks for.
+fn named_callout_candidate(pos: &str) -> Option<usize> {
+  match pos {
+    "Above" | "Top" => Some(6),
+    "Below" | "Bottom" => Some(7),
+    "Right" => Some(4),
+    "Left" => Some(5),
+    _ => None,
+  }
+}
+
+/// The boxes (in points, y up, relative to their points) the point labels
+/// take at their first-choice places, paired with their points: what the
+/// plot range is widened for, as WL makes room for the labels.
+pub(crate) fn point_label_boxes(
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+) -> Vec<((f64, f64), (f64, f64, f64, f64))> {
+  let sf = RESOLUTION_SCALE as f64;
+  let render_width = opts.svg_width * RESOLUTION_SCALE;
+  let mut out = Vec::new();
+  for (series_idx, labels) in opts.point_labels.iter().enumerate() {
+    let Some(points) = opts
+      .data_points
+      .get(series_idx)
+      .or_else(|| all_points.get(series_idx))
+    else {
+      continue;
+    };
+    let dot = series_point_radius(opts, series_idx, render_width) as f64 / sf;
+    for (&p, label) in points.iter().zip(labels) {
+      let Some(text) = label else { continue };
+      if !(p.0.is_finite() && p.1.is_finite()) {
+        continue;
+      }
+      let w = plot_padding::text_width(
+        &crate::functions::graphics::box_string_to_svg(text),
+        POINT_LABEL_FONT,
+      );
+      let h = POINT_LABEL_FONT;
+      let candidates = label_candidates(
+        (0.0, 0.0),
+        (w, h),
+        (1.0, dot),
+        opts.point_label_callouts,
+      );
+      let named = if opts.point_label_callouts {
+        opts
+          .point_label_position
+          .as_deref()
+          .and_then(named_callout_candidate)
+      } else {
+        None
+      };
+      if let Some(c) = candidates.get(named.unwrap_or(0)) {
+        let (l, t, r, b) = c.bbox;
+        out.push((p, (l, -b, r, -t)));
+      }
+    }
+  }
+  out
+}
+
 /// Inject per-point labels (from `Labeled[y, label]` / `Callout[pt, label]`
 /// data entries) into a finished SVG buffer. `plot_area` is the drawing
 /// region in render-space pixels: (left, top, width, height).
@@ -6574,8 +6701,11 @@ fn inject_point_labels(
       }
       let (px, py) = to_px((data_x, data_y));
       let text = crate::functions::graphics::box_string_to_svg(label_text);
-      // A named position puts the label on that side of the point.
-      if let Some(pos) = opts.point_label_position.as_deref() {
+      // A named position puts the label on that side of the point; a
+      // callout's leader runs straight out that way.
+      if let Some(pos) = opts.point_label_position.as_deref()
+        && !opts.point_label_callouts
+      {
         let gap = sf * 6.0;
         let (label_px, label_py, anchor) = match pos {
           "Above" | "Top" => (px, py - gap, "middle"),
@@ -6591,7 +6721,7 @@ fn inject_point_labels(
         ));
         continue;
       }
-      let w = label_text.chars().count() as f64 * font_size * 0.6;
+      let w = plot_padding::text_width(&text, font_size);
       let h = font_size;
       let own = (px - sf, py - sf, px + sf, py + sf);
       let free = |b: LabelBox| {
@@ -6611,10 +6741,17 @@ fn inject_point_labels(
         (sf, dot),
         opts.point_label_callouts,
       );
-      let choice = match candidates.iter().position(|c| free(c.bbox)) {
+      let named = opts
+        .point_label_position
+        .as_deref()
+        .and_then(named_callout_candidate);
+      let choice = match named {
         Some(i) => &candidates[i],
-        None if opts.point_label_callouts => continue,
-        None => &candidates[0],
+        None => match candidates.iter().position(|c| free(c.bbox)) {
+          Some(i) => &candidates[i],
+          None if opts.point_label_callouts => continue,
+          None => &candidates[0],
+        },
       };
       placed.push(choice.bbox);
       let (cx, cy) = (
@@ -9432,8 +9569,13 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   }
 
   let sf = RESOLUTION_SCALE as f64;
-  let (_bg_color, _dark_gray, _light_gray, label_fill, _title_fill) =
-    plot_theme();
+  // Legend labels are black (the title colour in dark mode), not the gray
+  // of the tick labels.
+  let label_fill = if crate::is_dark_mode() {
+    plot_theme().4
+  } else {
+    "#000000"
+  };
 
   let font_size = sf * 14.0;
   let line_height = font_size * 1.6;
@@ -9469,11 +9611,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         .plot_legends
         .iter()
         .map(|s| {
-          swatch_len
-            + swatch_gap
-            + crate::functions::graphics::box_string_visible_len(s) as f64
-              * font_size
-              * 0.55
+          swatch_len + swatch_gap + legend_label_width(opts, s, font_size)
         })
         .collect();
       let entry_spacing = legend_padding;
@@ -9554,17 +9692,9 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
               opts, i, si, cursor_x, legend_y, swatch_len, dash_scale,
             ));
 
-            // Text label
             let text_x = cursor_x + swatch_len + swatch_gap;
-            let text_y = legend_y + font_size * 0.35;
-            legend_svg.push_str(&format!(
-              "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\">{}</text>\n",
-              crate::functions::graphics::box_string_to_svg_scaled(
-                label,
-                RESOLUTION_SCALE as f64
-              ),
+            legend_svg.push_str(&legend_label_svg(
+              opts, label, text_x, legend_y, font_size, label_fill,
             ));
 
             cursor_x += entry_widths[i] + entry_spacing;
@@ -9574,63 +9704,95 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         buf.insert_str(insert_pos, &legend_svg);
       }
     }
-    LegendPosition::Right => {
-      // Original right-side legend behavior
+    LegendPosition::Right
+    | LegendPosition::Left
+    | LegendPosition::Inside(..) => {
+      // A column of entries beside the plot (widening the image) or, when
+      // placed at a point, over it.
       let max_text_width = opts
         .plot_legends
         .iter()
-        .map(|s| {
-          crate::functions::graphics::box_string_visible_len(s) as f64
-            * font_size
-            * 0.55
-        })
+        .map(|s| legend_label_width(opts, s, font_size))
         .fold(0.0_f64, f64::max);
       let legend_width =
         swatch_len + swatch_gap + max_text_width + legend_padding;
+      let beside = !matches!(opts.legend_position, LegendPosition::Inside(..));
+      let new_vb_w = if beside { vb_w + legend_width } else { vb_w };
 
-      let new_vb_w = vb_w + legend_width;
+      if beside {
+        // Update viewBox width
+        let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
+        let new_vb =
+          format!("viewBox=\"0 0 {} {}\"", new_vb_w as u32, vb_h as u32);
+        *buf = buf.replacen(&old_vb, &new_vb, 1);
 
-      // Update viewBox width
-      let old_vb = format!("viewBox=\"0 0 {} {}\"", vb_w as u32, vb_h as u32);
-      let new_vb =
-        format!("viewBox=\"0 0 {} {}\"", new_vb_w as u32, vb_h as u32);
-      *buf = buf.replacen(&old_vb, &new_vb, 1);
+        // Update width attribute if present (non-full-width)
+        let w_re = regex::Regex::new(r#"width="(\d+)""#).unwrap();
+        if let Some(caps) = w_re.captures(&buf.clone()) {
+          let old_w: u32 = caps[1].parse().unwrap_or(0);
+          if old_w > 0 {
+            let render_w = vb_w as u32;
+            let render_new_w = new_vb_w as u32;
+            let new_display_w = (old_w as f64 * render_new_w as f64
+              / render_w as f64)
+              .round() as u32;
+            let old_attr = format!("width=\"{old_w}\"");
+            let new_attr = format!("width=\"{new_display_w}\"");
+            *buf = buf.replacen(&old_attr, &new_attr, 1);
 
-      // Update width attribute if present (non-full-width)
-      let w_re = regex::Regex::new(r#"width="(\d+)""#).unwrap();
-      if let Some(caps) = w_re.captures(&buf.clone()) {
-        let old_w: u32 = caps[1].parse().unwrap_or(0);
-        if old_w > 0 {
-          let render_w = vb_w as u32;
-          let render_new_w = new_vb_w as u32;
-          let new_display_w = (old_w as f64 * render_new_w as f64
-            / render_w as f64)
-            .round() as u32;
-          let old_attr = format!("width=\"{old_w}\"");
-          let new_attr = format!("width=\"{new_display_w}\"");
-          *buf = buf.replacen(&old_attr, &new_attr, 1);
-
-          let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
-          if let Some(hcaps) = h_re.captures(&buf.clone()) {
-            let old_h: u32 = hcaps[1].parse().unwrap_or(0);
-            if old_h > 0 {
-              let new_display_h =
-                (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
-              let old_hattr = format!("height=\"{old_h}\"");
-              let new_hattr = format!("height=\"{new_display_h}\"");
-              *buf = buf.replacen(&old_hattr, &new_hattr, 1);
+            let h_re = regex::Regex::new(r#"height="(\d+)""#).unwrap();
+            if let Some(hcaps) = h_re.captures(&buf.clone()) {
+              let old_h: u32 = hcaps[1].parse().unwrap_or(0);
+              if old_h > 0 {
+                let new_display_h =
+                  (new_display_w as f64 * vb_h / new_vb_w).round() as u32;
+                let old_hattr = format!("height=\"{old_h}\"");
+                let new_hattr = format!("height=\"{new_display_h}\"");
+                *buf = buf.replacen(&old_hattr, &new_hattr, 1);
+              }
             }
           }
+        }
+      }
+      // A legend on the left shifts the plot right.
+      if opts.legend_position == LegendPosition::Left
+        && let Some(svg_tag_end) = buf.find('>')
+      {
+        let shift_open =
+          format!("<g transform=\"translate({},0)\">", legend_width as u32);
+        buf.insert_str(svg_tag_end + 1, &shift_open);
+        if let Some(close_pos) = buf.rfind("</svg>") {
+          buf.insert_str(close_pos, "</g>");
         }
       }
 
       // Insert legend elements before </svg>
       if let Some(insert_pos) = buf.rfind("</svg>") {
         let mut legend_svg = String::new();
-        let legend_x = vb_w + legend_padding * 0.5;
         let n = opts.plot_legends.len();
         let legend_total_h = n as f64 * line_height;
-        let legend_y0 = (vb_h - legend_total_h) / 2.0;
+        let (legend_x, legend_y0) = match opts.legend_position {
+          LegendPosition::Left => {
+            (legend_padding * 0.5, (vb_h - legend_total_h) / 2.0)
+          }
+          LegendPosition::Inside(fx, fy) => (
+            fx * vb_w - (legend_width - legend_padding) / 2.0,
+            (1.0 - fy) * vb_h - legend_total_h / 2.0,
+          ),
+          _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
+        };
+        if opts.legend_frame {
+          legend_svg.push_str(&format!(
+            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" \
+             height=\"{:.1}\" rx=\"{:.1}\" fill=\"none\" stroke=\"#000000\" \
+             stroke-width=\"{sf:.1}\"/>\n",
+            legend_x - 4.0 * sf,
+            legend_y0 - 2.0 * sf,
+            legend_width - legend_padding + 8.0 * sf,
+            legend_total_h + 4.0 * sf,
+            4.0 * sf,
+          ));
+        }
 
         for (i, label) in opts.plot_legends.iter().enumerate() {
           let si = opts.legend_series.get(i).copied().unwrap_or(i);
@@ -9638,17 +9800,9 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           legend_svg.push_str(&legend_swatch_svg(
             opts, i, si, legend_x, y, swatch_len, dash_scale,
           ));
-
           let text_x = legend_x + swatch_len + swatch_gap;
-          let text_y = y + font_size * 0.35;
-          legend_svg.push_str(&format!(
-            "<text x=\"{text_x:.1}\" y=\"{text_y:.1}\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-             fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg_scaled(
-              label,
-              RESOLUTION_SCALE as f64
-            ),
+          legend_svg.push_str(&legend_label_svg(
+            opts, label, text_x, y, font_size, label_fill,
           ));
         }
 
@@ -9656,6 +9810,59 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
       }
     }
   }
+}
+
+/// The width of a legend entry's label at `font_size` (render units).
+fn legend_label_width(opts: &PlotOptions, label: &str, font_size: f64) -> f64 {
+  let text = crate::functions::graphics::box_string_visible_len(label) as f64
+    * font_size
+    * 0.55;
+  if opts.legend_placeholders {
+    text + 6.0 * RESOLUTION_SCALE as f64
+  } else {
+    text
+  }
+}
+
+/// A legend entry's label, starting at `x` and centred vertically on `y`:
+/// its text, or for a `"Placeholder"` legend its number in italics on a
+/// pale yellow box with a dotted golden edge.
+fn legend_label_svg(
+  opts: &PlotOptions,
+  label: &str,
+  x: f64,
+  y: f64,
+  font_size: f64,
+  fill: &str,
+) -> String {
+  let sf = RESOLUTION_SCALE as f64;
+  let text_y = y + font_size * 0.35;
+  if opts.legend_placeholders {
+    let w = legend_label_width(opts, label, font_size);
+    let h = font_size * 1.3;
+    return format!(
+      "<rect x=\"{x:.1}\" y=\"{:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" \
+       fill=\"rgb(255,245,173)\" stroke=\"rgb(222,177,0)\" \
+       stroke-width=\"{:.1}\" stroke-dasharray=\"{:.1},{:.1}\"/>\n\
+       <text x=\"{:.1}\" y=\"{text_y:.1}\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" font-style=\"italic\" \
+       fill=\"rgb(158,119,55)\" text-anchor=\"middle\">{label}</text>\n",
+      y - h / 2.0,
+      sf * 0.5,
+      sf,
+      sf * 4.0,
+      x + w / 2.0,
+    );
+  }
+  format!(
+    "<text x=\"{x:.1}\" y=\"{text_y:.1}\" \
+     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+     fill=\"{fill}\">{}</text>\n",
+    crate::functions::graphics::box_string_to_svg_scaled(
+      label,
+      RESOLUTION_SCALE as f64
+    ),
+  )
 }
 
 /// Generate SVG for a histogram using plotters.
@@ -12915,8 +13122,18 @@ pub(crate) fn parse_plot_legends(
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
+        "Before" | "Left" => LegendPosition::Left,
         _ => LegendPosition::Right,
       },
+      Expr::List(xy) if xy.len() == 2 => {
+        match (
+          crate::functions::graphics::expr_to_f64(&xy[0]),
+          crate::functions::graphics::expr_to_f64(&xy[1]),
+        ) {
+          (Some(x), Some(y)) => LegendPosition::Inside(x, y),
+          _ => LegendPosition::Right,
+        }
+      }
       _ => LegendPosition::Right,
     };
     let (labels, auto, expressions, _) = parse_plot_legends(&args[0]);
@@ -12934,16 +13151,32 @@ pub(crate) fn parse_plot_legends(
       Some(second @ Expr::List(_)) => second,
       _ => first,
     };
-    if matches!(labels, Expr::List(_)) {
+    // A list of labels, or `Automatic` / `"Expressions"` /
+    // `"Placeholder"` for the plot to fill in.
+    if !matches!(labels, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
       return parse_plot_legends(labels);
     }
+  }
+
+  // `<|"Lists" -> {l1, l2, …}|>` names the datasets of a list plot.
+  if let Expr::Association(pairs) = &val
+    && let Some((_, lists)) = pairs
+      .iter()
+      .find(|(k, _)| matches!(k, Expr::String(s) if s == "Lists"))
+  {
+    return parse_plot_legends(lists);
   }
 
   match &val {
     Expr::Identifier(s) if s == "Automatic" => {
       (Vec::new(), true, false, LegendPosition::Right)
     }
+    // `"Placeholder"` entries are numbered by the plot (see
+    // `legend_placeholders`).
     Expr::Identifier(s) if s == "None" => {
+      (Vec::new(), false, false, LegendPosition::Right)
+    }
+    Expr::String(s) if s == "Placeholder" => {
       (Vec::new(), false, false, LegendPosition::Right)
     }
     Expr::String(s) if s == "Expressions" => {
@@ -12962,6 +13195,44 @@ pub(crate) fn parse_plot_legends(
     Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
     _ => (Vec::new(), false, false, LegendPosition::Right),
   }
+}
+
+/// What a `PlotLegends` value asks of the plot beyond its labels:
+/// `"Placeholder"` entries, `Automatic` ones, and `LegendFunction -> Frame`
+/// around an `XLegend[…]`.
+fn legend_flags(value: &Expr) -> (bool, bool, bool) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      legend_flags(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "LineLegend" | "SwatchLegend" | "PointLegend"
+      ) =>
+    {
+      let framed = args.iter().any(|a| {
+        matches!(a, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LegendFunction")
+            && matches!(replacement.as_ref(), Expr::Identifier(f) if f == "Frame" || f == "Framed"))
+      });
+      let (placeholders, automatic, _) =
+        args.first().map_or((false, false, false), legend_flags);
+      (placeholders, automatic, framed)
+    }
+    Expr::String(s) if s == "Placeholder" => (true, false, false),
+    Expr::Identifier(s) if s == "Automatic" => (false, true, false),
+    _ => (false, false, false),
+  }
+}
+
+/// The numbered placeholder entries of a `"Placeholder"` legend for `n`
+/// series.
+pub(crate) fn placeholder_legends(n: usize) -> Vec<String> {
+  (1..=n).map(|i| i.to_string()).collect()
 }
 
 /// The marker shape and explicit per-entry colors of a `PlotLegends`
@@ -13015,46 +13286,204 @@ fn legend_style_color(style: &Expr) -> Option<(u8, u8, u8)> {
   }
 }
 
-/// Whether `Callout[data, label, pos…]` sits at its automatic place, the
-/// end of its curve or dataset (no position, or `Automatic`).
-pub(crate) fn callout_at_series_end(callout_args: &[Expr]) -> bool {
-  match callout_args.get(2) {
-    None => true,
-    Some(Expr::Identifier(p)) => p == "Automatic",
-    Some(_) => false,
-  }
-}
+/// One curve's `PlotLabels` entry: its text, the position a `Placed[l, pos]`
+/// / `Callout[l, pos]` gives it (`None`: the automatic place at the curve's
+/// end) and whether it is a callout.
+pub(crate) type PlotLabelEntry = (String, Option<Expr>, bool);
 
 /// Parse a `PlotLabels -> {l1, l2, …}` value into one optional label per
 /// curve; `None` and `Automatic` entries leave their curve unlabeled.
-fn parse_plot_labels(value: &Expr) -> Vec<Option<String>> {
+/// `Placed[{l1, …}, pos]` / `Callout[{l1, …}, pos]` give every entry that
+/// position, and `<|"Lists" -> {l1, …}|>` names the datasets of a list plot.
+fn parse_plot_label_entries(value: &Expr) -> Vec<Option<PlotLabelEntry>> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
-  fn label(item: &Expr) -> Option<String> {
+  fn entry(
+    item: &Expr,
+    pos: Option<&Expr>,
+    callout: bool,
+  ) -> Option<PlotLabelEntry> {
     match item {
       Expr::Identifier(s) if s == "None" || s == "Automatic" => None,
       // `Callout[l, pos…]` / `Placed[l, pos]` label the curve with `l`.
       Expr::FunctionCall { name, args }
         if (name == "Callout" || name == "Placed") && !args.is_empty() =>
       {
-        label(&args[0])
+        entry(&args[0], args.get(1).or(pos), name == "Callout" || callout)
       }
-      other => Some(crate::functions::graphics::traditional_label(other)),
+      other => Some((
+        crate::functions::graphics::traditional_label(other),
+        pos.cloned(),
+        callout,
+      )),
     }
   }
   match &val {
-    Expr::List(items) => items.iter().map(label).collect(),
-    // `Callout[{l1, l2, …}, pos…]` / `Placed[{l1, l2, …}, pos]` label every
-    // curve with its own entry.
+    Expr::List(items) => items.iter().map(|i| entry(i, None, false)).collect(),
     Expr::FunctionCall { name, args }
       if (name == "Callout" || name == "Placed")
         && matches!(args.first(), Some(Expr::List(_))) =>
     {
-      parse_plot_labels(&args[0])
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!("checked above")
+      };
+      items
+        .iter()
+        .map(|i| entry(i, args.get(1), name == "Callout"))
+        .collect()
     }
+    Expr::Association(pairs) => pairs
+      .iter()
+      .find(|(k, _)| matches!(k, Expr::String(s) if s == "Lists"))
+      .map(|(_, v)| parse_plot_label_entries(v))
+      .unwrap_or_default(),
     // Filled in from the curves' expressions by the plot itself.
     Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
     Expr::String(s) if s == "Expressions" => Vec::new(),
-    other => vec![label(other)],
+    other => vec![entry(other, None, false)],
+  }
+}
+
+/// Split the per-curve `entries` of `PlotLabels` (or of the curves'
+/// `Labeled` / `Callout` wrappers) into the labels at the curve ends and
+/// the ones placed along their curves; `end_leaders` says whether the end
+/// labels hang off leader lines.
+pub(crate) fn apply_curve_label_entries(
+  opts: &mut PlotOptions,
+  entries: &[Option<PlotLabelEntry>],
+  end_leaders: Option<bool>,
+) {
+  let mut ends = Vec::with_capacity(entries.len());
+  let mut leaders = Vec::with_capacity(entries.len());
+  for (series, e) in entries.iter().enumerate() {
+    if let Some(spec) = e.as_ref().and_then(|e| placed_label_spec(series, e)) {
+      opts.curve_label_specs.push(spec);
+      ends.push(None);
+      leaders.push(false);
+    } else {
+      ends.push(e.as_ref().map(|(t, _, _)| t.clone()));
+      leaders.push(end_leaders.unwrap_or(e.as_ref().is_some_and(|x| x.2)));
+    }
+  }
+  if ends.iter().any(Option::is_some) {
+    opts.plot_labels = ends;
+    opts.plot_label_leaders = leaders;
+  }
+}
+
+/// The placed label of series `series` for a label entry with an explicit
+/// position; `None` at the automatic place, the curve's end.
+pub(crate) fn placed_label_spec(
+  series: usize,
+  (text, pos, callout): &PlotLabelEntry,
+) -> Option<crate::functions::plot_curve_labels::CurveLabelSpec> {
+  let (at, side) =
+    crate::functions::plot_curve_labels::parse_label_position(pos.as_ref()?)?;
+  Some(crate::functions::plot_curve_labels::CurveLabelSpec {
+    series,
+    text: text.clone(),
+    at,
+    side,
+    callout: *callout,
+  })
+}
+
+/// What the presentation wrappers around one curve ask for.
+#[derive(Default)]
+pub(crate) struct CurveWrappers {
+  /// `Labeled[f, l, pos…]` / `Callout[f, l, pos…]` labels, in order.
+  pub labels: Vec<PlotLabelEntry>,
+  /// `Legended[f, l]`: the curve's legend entry.
+  pub legend: Option<Expr>,
+  /// `Highlighted[f, spec]`: how the curve is highlighted.
+  pub highlight: Option<Expr>,
+}
+
+/// Peel the presentation wrappers off a curve (or dataset), recording what
+/// each asks for, and return the curve itself.
+pub(crate) fn peel_curve_wrappers<'a>(
+  mut e: &'a Expr,
+  w: &mut CurveWrappers,
+) -> &'a Expr {
+  while let Expr::FunctionCall { name, args } = e {
+    if args.is_empty() {
+      break;
+    }
+    match name.as_str() {
+      "Tooltip" => {}
+      "Highlighted" => {
+        if let Some(spec) = args.get(1) {
+          w.highlight.get_or_insert_with(|| spec.clone());
+        }
+      }
+      "Legended" => {
+        if let Some(l) = args.get(1) {
+          w.legend.get_or_insert_with(|| l.clone());
+        }
+      }
+      "Labeled" | "Callout" if args.len() >= 2 => {
+        let callout = name == "Callout";
+        let label = crate::functions::graphics::traditional_label;
+        // The position may name a variable of an enclosing `Table`.
+        let pos = args
+          .get(2)
+          .map(|p| evaluate_expr_to_expr(p).unwrap_or_else(|_| p.clone()));
+        match (&args[1], pos.as_ref()) {
+          // `Labeled[f, {l1, l2, …}, {p1, p2, …}]`: one label per position.
+          (Expr::List(ls), Some(Expr::List(ps)))
+            if ls.len() == ps.len()
+              && !ls.is_empty()
+              && crate::functions::plot_curve_labels::parse_label_position(
+                &Expr::List(ps.clone()),
+              )
+              .is_none_or(|_| ls.len() != 2) =>
+          {
+            for (l, p) in ls.iter().zip(ps.iter()) {
+              w.labels.push((label(l), Some(p.clone()), callout));
+            }
+          }
+          (l, pos) => w.labels.push((label(l), pos.cloned(), callout)),
+        }
+      }
+      "Callout" => {}
+      _ => break,
+    }
+    e = &args[0];
+  }
+  e
+}
+
+/// Give the curves wrapped in `Legended[f, l]` a legend of their own
+/// (`entries` pairs each curve's index with its `l`); `Placed[l, pos]`
+/// places the legend.
+pub(crate) fn apply_legended_entries(
+  opts: &mut PlotOptions,
+  entries: &[(usize, Expr)],
+) {
+  let mut labels = Vec::new();
+  let mut series = Vec::new();
+  for (i, legend) in entries {
+    let wrapped = match legend {
+      Expr::FunctionCall { name, args: p }
+        if name == "Placed" && p.len() == 2 =>
+      {
+        Expr::FunctionCall {
+          name: "Placed".into(),
+          args: vec![Expr::List(vec![p[0].clone()].into()), p[1].clone()]
+            .into(),
+        }
+      }
+      label => Expr::List(vec![label.clone()].into()),
+    };
+    let (mut entry, _, _, position) = parse_plot_legends(&wrapped);
+    if let Some(label) = entry.pop() {
+      labels.push(label);
+      series.push(*i);
+      opts.legend_position = position;
+    }
+  }
+  if !labels.is_empty() {
+    opts.plot_legends = labels;
+    opts.legend_series = series;
   }
 }
 
@@ -13238,10 +13667,15 @@ pub(crate) fn apply_common_plot_option(
     "Background" => {
       plot_opts.background = parse_background_option(replacement);
     }
-    // WL 15 hangs `PlotLabels` off the curve ends on callout leaders.
+    // WL 15 hangs `PlotLabels` at the curve ends off callout leaders;
+    // placed ones go where they are placed.
     "PlotLabels" => {
-      plot_opts.plot_labels = parse_plot_labels(replacement);
-      plot_opts.plot_label_leaders = vec![true; plot_opts.plot_labels.len()];
+      plot_opts.plot_labels = Vec::new();
+      plot_opts.curve_label_specs.clear();
+      plot_opts.plot_labels_automatic =
+        matches!(replacement, Expr::Identifier(a) if a == "Automatic");
+      let entries = parse_plot_label_entries(replacement);
+      apply_curve_label_entries(plot_opts, &entries, Some(true));
     }
     "PlotLegends" => {
       let (labels, _, _, position) = parse_plot_legends(replacement);
@@ -13250,6 +13684,10 @@ pub(crate) fn apply_common_plot_option(
       let (kind, colors) = parse_legend_markers(replacement);
       plot_opts.legend_marker_kind = kind;
       plot_opts.legend_colors = colors;
+      let (placeholders, automatic, frame) = legend_flags(replacement);
+      plot_opts.legend_placeholders = placeholders;
+      plot_opts.legend_automatic = automatic;
+      plot_opts.legend_frame = frame;
     }
     "AxesStyle" => plot_opts.axes_style = parse_axis_pair_styles(replacement),
     "TicksStyle" => {
@@ -13453,31 +13891,6 @@ pub(crate) fn expr_mentions_var(expr: &Expr, var: &str) -> bool {
   let sentinel = id_expr("$WoxiPlotVarProbe$");
   let replaced = crate::syntax::substitute_variable(expr, var, &sentinel);
   !crate::evaluator::pattern_matching::expr_equal(&replaced, expr)
-}
-
-/// Peel presentation wrappers (`Highlighted`, `Tooltip`, `Legended`,
-/// `Labeled`) off a plot body, returning the inner plottable expression. These
-/// heads annotate a curve — a highlight marker, a hover tooltip, a legend
-/// entry, an inline label — but the function actually sampled is always their
-/// first argument. The wrappers may enclose either a single function or a whole
-/// list of them (e.g. `Highlighted[{Sin[x], Cos[x]}, …]`), so peeling happens
-/// both before and after the body is split into individual curves. Callout is
-/// intentionally left for the dedicated per-curve handling that records its
-/// label.
-fn peel_plot_wrappers(mut e: &Expr) -> &Expr {
-  while let Expr::FunctionCall { name, args } = e {
-    if !args.is_empty()
-      && matches!(
-        name.as_str(),
-        "Highlighted" | "Tooltip" | "Legended" | "Labeled"
-      )
-    {
-      e = &args[0];
-    } else {
-      break;
-    }
-  }
-  e
 }
 
 /// Evaluate a plot body once with `var` kept symbolic, so assigned symbols
@@ -14068,7 +14481,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Peel a presentation wrapper that encloses the whole plot spec so that a
   // list inside it (e.g. `Highlighted[{Sin[x], Cos[x]}, …]`) is split into
   // individual curves below rather than sampled as one non-numeric expression.
-  let body = peel_plot_wrappers(body);
+  // A wrapper around a single curve stays for the per-curve handling
+  // below, which keeps what it asks for (a label, a legend entry, …).
+  let mut whole_wrappers = CurveWrappers::default();
+  let peeled = peel_curve_wrappers(body, &mut whole_wrappers);
+  let body = if matches!(peeled, Expr::List(_)) {
+    peeled
+  } else {
+    whole_wrappers.highlight = None;
+    body
+  };
 
   // `Plot[Table[f[i, x], {i, …}], …]` names its curves only after the
   // generator runs; expand it so each element becomes its own curve
@@ -14115,51 +14537,52 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut raw_bodies: Vec<&Expr> = Vec::new();
   flatten_plot_bodies(body, &mut raw_bodies);
 
-  // Unwrap Callout[expr, label] wrappers, storing labels. Other presentation
-  // wrappers (Highlighted/Tooltip/Legended/Labeled) around a single curve are
-  // peeled first so their inner function is what gets sampled.
+  // Peel each curve's presentation wrappers (Callout/Labeled/Legended/
+  // Highlighted/Tooltip), keeping what they ask for, so the inner function
+  // is what gets sampled.
   let mut bodies: Vec<&Expr> = Vec::with_capacity(raw_bodies.len());
-  let mut end_labels: Vec<Option<String>> = Vec::new();
-  for b in &raw_bodies {
-    let b = peel_plot_wrappers(b);
-    if let Expr::FunctionCall { name, args: cargs } = b
-      && name == "Callout"
-      && cargs.len() >= 2
-    {
-      bodies.push(&cargs[0]);
-      let label = crate::functions::graphics::traditional_label(&cargs[1]);
-      // At its automatic place a curve's callout hangs off the curve's end.
-      if callout_at_series_end(cargs) {
-        end_labels.push(Some(label));
-        plot_opts.callout_labels.push(None);
-      } else {
-        end_labels.push(None);
-        plot_opts.callout_labels.push(Some(label));
-      }
-    } else {
-      bodies.push(b);
-      end_labels.push(None);
-      plot_opts.callout_labels.push(None);
+  let mut label_entries: Vec<Option<PlotLabelEntry>> = Vec::new();
+  let mut extra_specs = Vec::new();
+  let mut legended: Vec<(usize, Expr)> = Vec::new();
+  for (i, b) in raw_bodies.iter().enumerate() {
+    let mut wrappers = CurveWrappers::default();
+    bodies.push(peel_curve_wrappers(b, &mut wrappers));
+    // A curve's first label goes in the per-curve slot (at its end or
+    // placed); further ones (`Labeled[f, {l1, l2}, {p1, p2}]`) are placed.
+    let mut labels = wrappers.labels.into_iter();
+    label_entries.push(labels.next());
+    extra_specs.extend(labels.filter_map(|e| placed_label_spec(i, &e)));
+    if let Some(legend) = wrappers.legend {
+      legended.push((i, legend));
     }
+    plot_opts
+      .placed_highlights
+      .extend(wrappers.highlight.and_then(|spec| {
+        crate::functions::plot_highlight::parse_placed_highlight(&spec, Some(i))
+      }));
   }
-  if plot_opts.plot_labels.is_empty() && end_labels.iter().any(Option::is_some)
+  plot_opts
+    .placed_highlights
+    .extend(whole_wrappers.highlight.and_then(|spec| {
+      crate::functions::plot_highlight::parse_placed_highlight(&spec, None)
+    }));
+  if plot_opts.plot_labels.is_empty() && plot_opts.curve_label_specs.is_empty()
   {
-    plot_opts.plot_label_leaders =
-      end_labels.iter().map(Option::is_some).collect();
-    plot_opts.plot_labels = end_labels;
+    apply_curve_label_entries(&mut plot_opts, &label_entries, None);
+    plot_opts.curve_label_specs.extend(extra_specs);
+  }
+  if plot_opts.plot_legends.is_empty() && !legends_automatic {
+    apply_legended_entries(&mut plot_opts, &legended);
   }
 
-  // Fill automatic legends from expression strings; `"Expressions"` sets
-  // them in TraditionalForm, as WL does.
-  if (legends_automatic || legends_expressions)
-    && plot_opts.plot_legends.is_empty()
-  {
+  // `"Expressions"` names the legend entries by the curves, set in
+  // TraditionalForm as WL does; `Automatic` numbers them with placeholders
+  // (filled in by the renderer).
+  if legends_expressions && plot_opts.plot_legends.is_empty() {
     for b in &bodies {
-      plot_opts.plot_legends.push(if legends_expressions {
-        crate::functions::graphics::traditional_label(b)
-      } else {
-        expr_to_output(b)
-      });
+      plot_opts
+        .plot_legends
+        .push(crate::functions::graphics::traditional_label(b));
     }
   }
   if labels_expressions && plot_opts.plot_labels.is_empty() {
@@ -14349,8 +14772,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
   let (x_display_min, x_display_max) =
     plot_range_x.unwrap_or((x_min - x_padding, x_max + x_padding));
-  let (y_display_min, y_display_max) =
-    plot_range_y.unwrap_or((y_auto_min, y_auto_max));
+  let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
+    // Labels placed above or below their curves get room inside the
+    // plot range, as WL widens the automatic `PlotRangePadding`.
+    crate::functions::plot_curve_labels::widen_y_range(
+      &plot_opts.curve_label_specs,
+      &all_points,
+      (x_display_min, x_display_max),
+      (y_auto_min, y_auto_max),
+      estimated_plot_area(&plot_opts),
+    )
+  });
   // The axes of an all-positive curve touch its lowest point, inside the
   // padding, as in Wolfram.
   if plot_range_x.is_none() {
@@ -14414,8 +14846,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (x_display_min, x_display_max),
       (y_display_min, y_display_max),
       |i, mut opts| {
-        opts.callout_labels =
-          vec![plot_opts.callout_labels.get(i).cloned().flatten()];
+        opts.curve_label_specs =
+          crate::functions::plot_curve_labels::panel_specs(
+            &plot_opts.curve_label_specs,
+            i,
+          );
         generate_svg_with_filling(
           std::slice::from_ref(&all_points[i]),
           (x_display_min, x_display_max),
@@ -14489,6 +14924,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Return -Graphics- as the text representation
   Ok(crate::graphics_result_with_source(svg, source))
+}
+
+/// The size, in points, a plot's plotting area will roughly have: the image
+/// width less the usual tick-label padding, at the plot's aspect ratio.
+pub(crate) fn estimated_plot_area(opts: &PlotOptions) -> (f64, f64) {
+  let w = (opts.svg_width as f64 - 25.0).max(10.0);
+  let ratio = opts.aspect_ratio.unwrap_or(1.0 / 1.618_033_988_749_895);
+  (w, w * ratio)
 }
 
 /// LogLogPlot[f, {x, xmin, xmax}] — plot f with log-scaled x and y axes.

@@ -5000,17 +5000,13 @@ fewer than 8 intervals of the padded range, as `AbsoluteOptions[g, Ticks]`
 reports them), open markers, the Marketing/Business/Web/Detailed/Scientific/
 Minimal/Grid/Frame themes and callout leaders. Still different:
 
-- WL widens the `PlotRange` so point labels and callouts fit
-  (`ListPlot[data -> labels]` reaches y = 12.7 for data up to 10); Woxi keeps
-  the data range and drops callouts that do not fit inside it. The callout
-  positions themselves come from a greedy search, not WL's optimiser, so
-  the subset shown and the leader directions differ.
-- `Callout[series, label, pos]` with an explicit position (`Above`, an x
-  value, …) is still drawn at 2/3 of the x range in the series color; WL
-  puts `Above` over the series maximum (widening the `PlotRange` for it)
-  and an x value at that x, in black on a gray leader. Series-end labels
-  that crowd each other are spread apart evenly, where WL's leaders bend
-  by their own optimiser.
+- The plot range is widened until every point label fits at its first
+  choice of place; WL's `PlotRangePadding` for labels comes out a little
+  larger (`Scaled[0.0809] + extent/250 pt` fits its numbers), so Woxi's
+  range ends short of WL's next tick. The callout positions come from a
+  greedy search, not WL's optimiser, so the leader directions differ.
+- Series-end labels that crowd each other are spread apart evenly, where
+  WL's leaders bend by their own optimiser.
 - A `Legended` dataset of `ListPlot` draws its legend entry, but the
   result is a `Graphics`, not WL's `Legended[Graphics[…],
   Placed[PointLegend[…], After]]`.
@@ -5291,12 +5287,25 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   automatic `PlotRange`, cutting off the second plot's data outside it.
 - The automatic `PlotRange` of `ListPlot` keeps every point; Wolfram drops
   outliers (`ListPlot[{0, 1, 2, 3, 100, 5, 6, 7}]` shows about 0–16).
-- `PlotLegends -> Automatic` labels the legend with the curves'
-  expressions; Wolfram shows numbered `Placeholder` boxes, and
-  `Placeholder[…]` itself has no display form.
-- `Labeled[f, label, pos]` / `Callout[f, label, pos]` inside `Plot` and
-  `ListPlot` ignore `pos`; `PlotLabels -> Placed[{…}, pos]` and per-curve
-  `Callout[label, pos]` draw the labels at the curve ends.
+- `Placeholder[…]` itself has no display form (the numbered placeholder
+  boxes of `PlotLegends -> Automatic | "Placeholder"` are drawn).
+- `Labeled[f, label, pos]` without a side (`3`, `Scaled[s]`) puts the
+  label above or below the curve point, a step along a sloping curve; WL's
+  own search lands a few points away (`Labeled[Sin[x], "sin(x)", 3]`: WL
+  shifts the box 2.5 pt right). WL sizes the `PlotRangePadding` for an
+  `Above` / `Below` label slightly larger than Woxi.
+- Per-point `Labeled[pt, label, pos]` in `ListPlot` data ignores `pos`.
+- `Highlighted[f, Placed["Ball" | "Dropline", x]]`: WL 15 labels the
+  callout `Rotate[x, y, 0]` (x turned by y radians), which Woxi copies; its
+  box width (39 pt for "2"/"0.45", 56 pt for "2.5"/"2500") follows no rule
+  found, Woxi sizes it as both numbers plus 11 pt.
+- `LabelingSize -> w`: WL leaves every label to a tooltip (even ones
+  narrower than `w`, and all of them at `w = 1000`) and truncates some with
+  front-end-only `TruncateStringToWidth`; Woxi drops the labels wider than
+  `w` points.
+- `PlotLayout` panels of labeled datasets (`ListPlot[{Labeled[d1, "a"],
+  Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centres each label at the
+  top of its panel; Woxi draws it as the panel's end label.
 - Graphics `PlotMarkers` (`PlotMarkers -> {{Graphics[…], size}, …}`) and
   `PlotMarkers -> Automatic` shapes draw the default dot.
 - Point-level `Style[point, …]` in `ListPlot` data is not applied (a styled

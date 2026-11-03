@@ -487,10 +487,12 @@ mod series_end_labels {
 
   #[test]
   fn a_positioned_callout_keeps_its_place() {
-    // `Callout[data, label, Above]` is not moved to the series end.
+    // `Callout[data, label, Above]` is not moved to the series end: it
+    // hangs above the highest point on one gray leader (no end leader).
     let svg = svg_of("ListPlot[Callout[{1, 3, 2}, \"top\", Above]]");
     assert!(svg.contains(">top</text>"));
-    assert_eq!(svg.matches("fill=\"none\" stroke=\"#AAAAAA\"").count(), 0);
+    assert_eq!(svg.matches("<polyline points=").count(), 0);
+    assert_eq!(svg.matches("fill=\"none\" stroke=\"#AAAAAA\"").count(), 1);
   }
 }
 

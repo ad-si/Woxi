@@ -356,7 +356,9 @@ fn canonicalize_element(e: &Expr) -> Expr {
       match name.as_str() {
         "Callout" if args.len() >= 2 => call(
           "Labeled",
-          vec![canonicalize_element(&args[0]), args[1].clone()],
+          std::iter::once(canonicalize_element(&args[0]))
+            .chain(args[1..].iter().cloned())
+            .collect(),
         ),
         "Callout" => canonicalize_element(&args[0]),
         _ => e.clone(),
@@ -404,10 +406,9 @@ fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
       match name.as_str() {
         "Callout" if args.len() >= 2 => call(
           "Labeled",
-          vec![
-            canonicalize_plot_data(&args[0], keys_label_points),
-            args[1].clone(),
-          ],
+          std::iter::once(canonicalize_plot_data(&args[0], keys_label_points))
+            .chain(args[1..].iter().cloned())
+            .collect(),
         ),
         "Callout" => canonicalize_plot_data(&args[0], keys_label_points),
         "WeightedData" => {
@@ -966,6 +967,12 @@ struct ParsedOptions {
   plot_range_all: (bool, bool),
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
   hide_point_labels: bool,
+  /// `LabelingFunction -> f`: every point labelled `f[{x, y}, {i, j}]` (its
+  /// coordinates, and its dataset's and its own index).
+  labeling_function: Option<Expr>,
+  /// `LabelingSize -> w`: a label wider than `w` points is left to a
+  /// tooltip rather than drawn.
+  labeling_size: Option<f64>,
   /// `InterpolationOrder -> n` for joined curves: 0 draws piecewise-constant
   /// steps, 1 straight lines, >= 2 a smooth interpolated curve. `None`
   /// (option absent or `-> None`) keeps the default straight lines.
@@ -1129,7 +1136,19 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           {
             // A bare position places every point label on that side.
             opts.point_label_position = Some(pos.clone());
+          } else if matches!(
+            replacement,
+            Expr::Function { .. } | Expr::NamedFunction { .. }
+          ) || matches!(replacement, Expr::FunctionCall { name, .. } if name == "Function")
+          {
+            out.labeling_function = Some(replacement.clone());
           }
+        }
+        "LabelingSize" => {
+          out.labeling_size = crate::functions::graphics::expr_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.clone()),
+          );
         }
         "PlotLabel" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -1578,7 +1597,35 @@ fn list_plot_ranges(
     opts.curve_clip_y =
       Some(crate::functions::plot::include_filling_levels(opts, y));
   }
+  // Labels placed above or below their datasets get room inside the range.
+  let y_padded = if explicit_y {
+    y_padded
+  } else {
+    crate::functions::plot_curve_labels::widen_y_range(
+      &opts.curve_label_specs,
+      all_series,
+      x,
+      y_padded,
+      crate::functions::plot::estimated_plot_area(opts),
+    )
+  };
   (x, y_padded)
+}
+
+/// Widen the automatic ranges so the point labels fit at their first-choice
+/// places, as WL makes room for them. `data` are the labelled points (the
+/// labels run parallel to them).
+fn widen_for_point_labels(
+  opts: &PlotOptions,
+  data: &[Vec<(f64, f64)>],
+  (x, y): ((f64, f64), (f64, f64)),
+) -> ((f64, f64), (f64, f64)) {
+  crate::functions::plot_curve_labels::widen_for_boxes(
+    &crate::functions::plot::point_label_boxes(opts, data),
+    x,
+    y,
+    crate::functions::plot::estimated_plot_area(opts),
+  )
 }
 
 /// The automatic `PointSize` of a list plot's dots comes in steps, from 7
@@ -1722,7 +1769,15 @@ fn render_panel_layout(
     x_range,
     y_range,
     |idx, mut opts| {
-      opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
+      opts.curve_label_specs = crate::functions::plot_curve_labels::panel_specs(
+        &parsed.opts.curve_label_specs,
+        idx,
+      );
+      if !opts.plot_labels.is_empty() {
+        opts.plot_labels = vec![labels.get(idx).cloned().flatten()];
+        opts.plot_label_leaders =
+          vec![parsed.opts.plot_label_leaders.get(idx) == Some(&true)];
+      }
       // Keep only this panel's error bars and data-point anchors (they are
       // indexed by series).
       opts.error_bars = match parsed.opts.error_bars.get(idx) {
@@ -1943,20 +1998,15 @@ fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
   }
 }
 
-/// How a dataset's own label is drawn: `Labeled[data, l]` right after the
-/// dataset's last point, `Callout[data, l]` there too but off a leader
-/// line; `None` for a callout with an explicit position.
-fn dataset_label_kind(e: &Expr) -> Option<bool> {
+/// The position and kind of a dataset's own label: `Labeled[data, l,
+/// pos]` / `Callout[data, l, pos]` (`pos` absent at the automatic place,
+/// the dataset's end) and whether it is a callout.
+fn dataset_label_kind(e: &Expr) -> Option<(Option<Expr>, bool)> {
   match e {
     Expr::FunctionCall { name, args }
-      if name == "Labeled" && args.len() == 2 =>
+      if (name == "Labeled" || name == "Callout") && args.len() >= 2 =>
     {
-      Some(false)
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Callout" && args.len() >= 2 =>
-    {
-      crate::functions::plot::callout_at_series_end(args).then_some(true)
+      Some((args.get(2).cloned(), name == "Callout"))
     }
     _ => None,
   }
@@ -1964,40 +2014,98 @@ fn dataset_label_kind(e: &Expr) -> Option<bool> {
 
 /// Attach the dataset labels of `Labeled` / `Callout` wrappers in the
 /// (evaluated) data `data`: those at their automatic place go to the
-/// series' end (`plot_labels`), the others are drawn as callouts. Explicit
-/// `PlotLabels` or callout labels win.
+/// series' end (`plot_labels`), a callout's off a leader line, the others
+/// where their position puts them. Explicit `PlotLabels` win.
 fn apply_dataset_labels(
   opts: &mut PlotOptions,
   labels: &[Option<String>],
   data: &Expr,
 ) {
   if !labels.iter().any(std::option::Option::is_some)
-    || !opts.callout_labels.is_empty()
+    || !opts.plot_labels.is_empty()
+    || !opts.curve_label_specs.is_empty()
   {
     return;
   }
   let data = evaluate_expr_to_expr(data).unwrap_or_else(|_| data.clone());
-  let kinds: Vec<Option<bool>> = match &data {
-    Expr::List(items) => items.iter().map(dataset_label_kind).collect(),
+  let kinds: Vec<Option<(Option<Expr>, bool)>> = match &data {
+    Expr::List(items) if items.len() == labels.len() => {
+      items.iter().map(dataset_label_kind).collect()
+    }
     whole => vec![dataset_label_kind(whole); labels.len()],
   };
-  let at_end = |i: usize| kinds.get(i).copied().flatten();
-  if opts.plot_labels.is_empty() && labels.len() == kinds.len() {
-    opts.plot_labels = labels
-      .iter()
-      .enumerate()
-      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_some()))
-      .collect();
-    opts.plot_label_leaders =
-      (0..labels.len()).map(|i| at_end(i) == Some(true)).collect();
-    opts.callout_labels = labels
-      .iter()
-      .enumerate()
-      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_none()))
-      .collect();
-  } else {
-    opts.callout_labels = labels.to_vec();
+  let entries: Vec<_> = labels
+    .iter()
+    .zip(kinds)
+    .map(|(label, kind)| {
+      let (pos, callout) = kind.unwrap_or((None, false));
+      label.clone().map(|l| (l, pos, callout))
+    })
+    .collect();
+  let end_leaders = opts.plot_labels_automatic.then_some(true);
+  crate::functions::plot::apply_curve_label_entries(
+    opts,
+    &entries,
+    end_leaders,
+  );
+}
+
+/// The point labels drawn: none with `LabelingFunction -> None`, those a
+/// `LabelingFunction -> f` makes (as callouts), and none wider than a
+/// `LabelingSize`.
+fn resolve_point_labels(
+  parsed: &mut ParsedOptions,
+  point_labels: Vec<Vec<Option<String>>>,
+  all_series: &[Vec<(f64, f64)>],
+) -> Vec<Vec<Option<String>>> {
+  if parsed.hide_point_labels {
+    return Vec::new();
   }
+  let mut labels = match &parsed.labeling_function {
+    Some(f) => {
+      parsed.opts.point_label_callouts = true;
+      all_series
+        .iter()
+        .enumerate()
+        .map(|(i, series)| {
+          series
+            .iter()
+            .enumerate()
+            .map(|(j, &(x, y))| {
+              let call = Expr::CurriedCall {
+                func: Box::new(f.clone()),
+                args: vec![
+                  Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+                  Expr::List(
+                    vec![
+                      Expr::Integer(i as i128 + 1),
+                      Expr::Integer(j as i128 + 1),
+                    ]
+                    .into(),
+                  ),
+                ],
+              };
+              match &evaluate_expr_to_expr(&call).ok()? {
+                Expr::Identifier(n) if n == "None" || n == "Null" => None,
+                label => Some(label_string(label)),
+              }
+            })
+            .collect()
+        })
+        .collect()
+    }
+    None => point_labels,
+  };
+  if let Some(max_w) = parsed.labeling_size {
+    for label in labels.iter_mut().flatten() {
+      if label.as_ref().is_some_and(|l| {
+        crate::functions::plot_padding::text_width(l, 10.0) > max_w
+      }) {
+        *label = None;
+      }
+    }
+  }
+  labels
 }
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
@@ -2096,11 +2204,8 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.point_labels = if parsed.hide_point_labels {
-    Vec::new()
-  } else {
-    point_labels
-  };
+  parsed.opts.point_labels =
+    resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
   parsed.opts.point_colors = styled_point_colors(&data, &all_series);
 
@@ -2173,6 +2278,8 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &scaling,
     &mut parsed.opts,
   );
+  let (x_range, y_range) =
+    widen_for_point_labels(&parsed.opts, &draw_series, (x_range, y_range));
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let (x_range, y_range) = finish_list_scaling(
     &scaling,
@@ -2341,11 +2448,8 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.point_labels = if parsed.hide_point_labels {
-    Vec::new()
-  } else {
-    point_labels
-  };
+  parsed.opts.point_labels =
+    resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
 
   // ListLinePlot always joins, so InterpolationOrder always reshapes the
@@ -2385,6 +2489,8 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &scaling,
     &mut parsed.opts,
   );
+  let (x_range, y_range) =
+    widen_for_point_labels(&parsed.opts, &draw_series, (x_range, y_range));
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   let (x_range, y_range) = finish_list_scaling(
     &scaling,

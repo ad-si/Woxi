@@ -12054,15 +12054,10 @@ mod plot3d {
       let svg = export_svg(
         "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]",
       );
-      // Automatic legends should use expression strings
-      assert!(
-        svg.contains("Sin[x]"),
-        "Automatic legend should contain Sin[x]"
-      );
-      assert!(
-        svg.contains("Cos[x]"),
-        "Automatic legend should contain Cos[x]"
-      );
+      // WL 15 numbers the entries with placeholders:
+      // `LineLegend[…, {Placeholder[1], Placeholder[2]}]`.
+      assert!(svg.contains(">1</text>") && svg.contains(">2</text>"));
+      assert!(!svg.contains("Sin[x]"));
     }
 
     #[test]
@@ -46347,9 +46342,9 @@ mod list_plot_wl15_ranges {
   }
 
   #[test]
-  fn callouts_get_leaders_and_crowded_ones_are_dropped() {
-    // 40 callouts on a 4×10 grid of points cannot all find room in a
-    // small picture.
+  fn callouts_get_leaders_and_room_in_the_range() {
+    // 40 callouts on a 4×10 grid of points: once the range is widened for
+    // the labels, WL 15 finds room for all of them.
     let svg = export_svg(
       "ListPlot[Flatten[Table[Callout[{i, j}, i j], {i, 4}, {j, 10}], 1], \
        ImageSize -> 250]",
@@ -46357,7 +46352,7 @@ mod list_plot_wl15_ranges {
     let leaders = svg.matches("stroke=\"#AAAAAA\"").count();
     let labels = svg.matches("fill-opacity=\"0.667\"").count();
     assert!(leaders > 0 && leaders == labels, "{svg}");
-    assert!(leaders < 40, "crowded callouts must be dropped: {leaders}");
+    assert_eq!(leaders, 40);
     // Plain `Labeled` points keep every label and draw no leader.
     let svg =
       export_svg("ListPlot[{Labeled[{1, 2}, \"a\"], Labeled[{2, 3}, \"b\"]}]");
@@ -47261,5 +47256,319 @@ mod frame_ticks_per_edge {
     assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#FF0000");
     let svg = list_plot("LabelStyle -> Green, FrameTicksStyle -> Red");
     assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#FF0000");
+  }
+}
+
+// `Labeled` / `Callout` placed along a curve, `Legended`, placed
+// `Highlighted` effects, `PlotLabels` placement, `PlotLegends` placement
+// and placeholders, and list-plot `LabelingFunction` (WL 15 reference
+// pages, side-by-side graphics comparison).
+mod curve_labels_and_legends {
+  use super::*;
+
+  /// The y tick values of a plot.
+  fn y_ticks(svg: &str) -> Vec<f64> {
+    y_tick_labels(svg)
+      .iter()
+      .filter_map(|l| l.replace('\u{2212}', "-").parse().ok())
+      .collect()
+  }
+
+  fn top_tick(svg: &str) -> f64 {
+    y_ticks(svg).into_iter().fold(f64::MIN, f64::max)
+  }
+
+  #[test]
+  fn callout_at_a_position_hangs_a_black_label_off_a_gray_leader() {
+    for pos in ["Above", "2", "Scaled[0.5]"] {
+      let svg = export_svg(&format!(
+        "Plot[Callout[n^Sin[n], \"label\", {pos}], {{n, 1, 10}}]"
+      ));
+      assert!(svg.contains(">label</text>"), "{pos}");
+      // One leader on a white halo; the label is not in the series colour.
+      assert_eq!(svg.matches("<path d=\"M").count(), 2, "{pos}");
+      assert!(svg.contains("stroke=\"#AAAAAA\""), "{pos}");
+      assert!(!svg.contains("fill=\"rgb(61,153,204)\">label"), "{pos}");
+    }
+  }
+
+  #[test]
+  fn callout_above_widens_the_plot_range() {
+    let plain = export_svg("Plot[n^Sin[n], {n, 1, 10}]");
+    let svg =
+      export_svg("Plot[Callout[n^Sin[n], \"label\", Above], {n, 1, 10}]");
+    assert!(top_tick(&svg) > top_tick(&plain), "{:?}", y_ticks(&svg));
+  }
+
+  #[test]
+  fn labeled_curves_draw_their_labels() {
+    for spec in [
+      "Labeled[Sin[x], \"sin(x)\", 3]",
+      "Labeled[Sin[x], \"sin(x)\", Scaled[0.25]]",
+      "Labeled[Sin[x], \"sin(x)\", {Scaled[0.25], Above}]",
+      "Labeled[Sin[x], \"sin(x)\", Before]",
+      "Labeled[Sin[x], \"sin(x)\", After]",
+    ] {
+      let svg = export_svg(&format!("Plot[{spec}, {{x, 0, 2 Pi}}]"));
+      assert_eq!(svg.matches(">sin(x)</text>").count(), 1, "{spec}");
+      assert!(!svg.contains("stroke=\"#AAAAAA\""), "{spec}: no leader");
+    }
+  }
+
+  #[test]
+  fn labeled_above_and_below_widen_the_range() {
+    let plain = export_svg("Plot[Cos[x], {x, 0, 2 Pi}]");
+    let above = export_svg("Plot[Labeled[Cos[x], \"c\", Above], {x, 0, 2 Pi}]");
+    let below = export_svg("Plot[Labeled[Cos[x], \"c\", Below], {x, 0, 2 Pi}]");
+    // Where the tick label `v` sits, from the top of the image.
+    let tick_y = |s: &str, v: &str| -> f64 {
+      s.split(&format!(">{v}</text>"))
+        .next()
+        .and_then(|t| t.rsplit("<text").next())
+        .and_then(|t| t.split(" y=\"").nth(1))
+        .and_then(|t| t.split('"').next())
+        .and_then(|t| t.parse().ok())
+        .unwrap()
+    };
+    // Room above the curve's top pushes the 1.0 tick down; room below it
+    // pulls the -1.0 tick up.
+    assert!(tick_y(&above, "1.0") > tick_y(&plain, "1.0") + 50.0);
+    assert!(tick_y(&below, "-1.0") < tick_y(&plain, "-1.0") - 50.0);
+  }
+
+  #[test]
+  fn labeled_position_from_an_enclosing_table() {
+    let svg = export_svg(
+      "First[Table[Plot[Labeled[Cos[x], \"c\", p], {x, 0, 2 Pi}], {p, {Below}}]]",
+    );
+    assert!(svg.contains(">c</text>"));
+  }
+
+  #[test]
+  fn labeled_with_several_labels_and_positions() {
+    let svg = export_svg(
+      "Plot[Labeled[x^4 - 25 x^2 + 20 x + 15, {\"abs max\", \"abs min\", \
+       \"rel max\", \"rel min\"}, {Above, Below, 0.5, 3.5}], {x, -5, 5}]",
+    );
+    for l in ["abs max", "abs min", "rel max", "rel min"] {
+      assert!(svg.contains(&format!(">{l}</text>")), "{l}");
+    }
+  }
+
+  #[test]
+  fn labeled_without_position_labels_the_curve_end() {
+    let svg = export_svg(
+      "Plot[Evaluate@Table[Labeled[x^n, \"p\" <> ToString[n]], {n, 1, 2}], \
+       {x, 0, 1}]",
+    );
+    assert!(svg.contains(">p1</text>") && svg.contains(">p2</text>"));
+    assert!(!svg.contains("stroke=\"#AAAAAA\""));
+  }
+
+  #[test]
+  fn legended_curve_gets_a_legend() {
+    let svg =
+      export_svg("Plot[{Sin[x], Legended[Cos[x], \"average\"]}, {x, 0, 2 Pi}]");
+    assert!(svg.contains(">average</text>"));
+    let below = export_svg(
+      "Plot[{Sin[x], Legended[Cos[x], Placed[\"average\", Below]]}, \
+       {x, 0, 2 Pi}]",
+    );
+    assert!(below.contains(">average</text>"));
+  }
+
+  #[test]
+  fn legend_labels_are_black() {
+    let svg = export_svg(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, PlotLegends -> {\"a\", \"b\"}]",
+    );
+    assert!(svg.contains("fill=\"#000000\">a</text>"));
+  }
+
+  #[test]
+  fn highlighted_ball_draws_marker_and_value_bubble() {
+    let svg =
+      export_svg("Plot[Highlighted[Sinc[x], Placed[\"Ball\", 2]], {x, 0, 10}]");
+    // White halo and series-coloured dot.
+    assert!(svg.contains("fill=\"#FFFFFF\"/>"));
+    assert!(svg.contains("fill=\"rgb(61,153,204)\"/>"));
+    // The bubble in a pale tint of the curve colour, edged in it.
+    assert!(
+      svg.contains("fill=\"rgb(226,240,247)\" stroke=\"rgb(61,153,204)\"")
+    );
+    // WL 15 shows `Rotate[x, y, 0]`: x rotated by y (0.45) radians.
+    assert!(svg.contains("rotate(-25.78"), "{svg}");
+    assert!(svg.contains(">2</text>"));
+    let multi = export_svg(
+      "Plot[Highlighted[Sinc[x], Placed[\"Ball\", {{2}, {7}}]], {x, 0, 10}]",
+    );
+    assert_eq!(multi.matches("<polygon").count(), 2);
+  }
+
+  #[test]
+  fn highlighted_slices_and_droplines() {
+    let x = export_svg(
+      "Plot[Highlighted[{Sin[x] + x, Cos[x] + x}, Placed[\"XSlice\", 6]], \
+       {x, 0, 10}]",
+    );
+    assert!(x.contains(">5.72</text>") && x.contains(">6.96</text>"));
+    let y = export_svg(
+      "Plot[Highlighted[{Sin[x] + x, Cos[x] + x}, Placed[\"YSlice\", 6]], \
+       {x, 0, 10}]",
+    );
+    assert!(y.contains(">5.38</text>") && y.contains(">6.14</text>"));
+    let d = export_svg(
+      "Plot[Highlighted[Sin[x] + x, Placed[\"Dropline\", 7]], {x, 0, 10}]",
+    );
+    assert_eq!(d.matches("stroke=\"#B3B3B3\"").count(), 2);
+  }
+
+  #[test]
+  fn plot_labels_placed_and_callout() {
+    let placed = export_svg(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, \
+       PlotLabels -> Placed[{\"sine\", \"cosine\"}, Above]]",
+    );
+    assert!(
+      placed.contains(">sine</text>") && placed.contains(">cosine</text>")
+    );
+    assert!(!placed.contains("stroke=\"#AAAAAA\""));
+    let callout = export_svg(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLabels -> \
+       {Callout[\"sin\", {Scaled[0.25], Above}], \
+       Callout[\"cos\", {Scaled[0.5], Below}]}]",
+    );
+    assert_eq!(callout.matches("stroke=\"#AAAAAA\"").count(), 2);
+  }
+
+  #[test]
+  fn list_plot_plot_labels_association_and_automatic_keys() {
+    let svg = export_svg(
+      "ListPlot[{Sin[Range[0, 2 Pi, 0.1]], Cos[Range[0, 2 Pi, 0.1]]}, \
+       PlotLabels -> <|\"Lists\" -> {\"sine\", \"cosine\"}|>]",
+    );
+    assert!(svg.contains(">sine</text>") && svg.contains(">cosine</text>"));
+    assert!(!svg.contains("Lists"));
+    let keys = export_svg(
+      "ListPlot[<|\"fibonacci\" -> Fibonacci[Range[10]], \"primes\" -> \
+       Prime[Range[10]]|>, PlotLabels -> Automatic, PlotLegends -> None]",
+    );
+    assert!(keys.contains(">fibonacci</text>"));
+    // At the dataset ends, off leaders.
+    assert_eq!(keys.matches("stroke=\"#AAAAAA\"").count(), 2);
+  }
+
+  #[test]
+  fn placeholder_legends_number_the_series() {
+    for (head, opt) in [
+      ("Plot[{Sin[x], Cos[x]}, {x, 0, 10}", "\"Placeholder\""),
+      ("ListPlot[{Sqrt[Range[40]], Log[Range[40]]}", "Automatic"),
+    ] {
+      let svg = export_svg(&format!("{head}, PlotLegends -> {opt}]"));
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,245,173)\"").count(),
+        2,
+        "{head}"
+      );
+      assert!(svg.contains(">1</text>") && svg.contains(">2</text>"));
+      assert!(!svg.contains(">Placeholder<"));
+    }
+  }
+
+  #[test]
+  fn legend_placement_inside_before_and_framed() {
+    let view_box = |s: &str| {
+      s.split("viewBox=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .unwrap()
+        .to_string()
+    };
+    let plain = export_svg("ListPlot[{Sqrt[Range[40]], Log[Range[40]]}]");
+    let inside = export_svg(
+      "ListPlot[{Sqrt[Range[40]], Log[Range[40]]}, \
+       PlotLegends -> Placed[{\"sqrt\", \"log\"}, {0.85, 0.25}]]",
+    );
+    // An inside legend keeps the image size.
+    assert_eq!(view_box(&plain), view_box(&inside));
+    assert!(inside.contains(">sqrt</text>"));
+    let before = export_svg(
+      "ListPlot[{Sqrt[Range[40]], Log[Range[40]]}, \
+       PlotLegends -> Placed[{\"sqrt\", \"log\"}, Before]]",
+    );
+    assert!(before.contains("<g transform=\"translate("));
+    let framed = export_svg(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 10}, \
+       PlotLegends -> LineLegend[\"Expressions\", LegendFunction -> Frame]]",
+    );
+    assert!(framed.contains(" rx=\""));
+    assert!(framed.contains("sin"));
+    let assoc = export_svg(
+      "ListPlot[{Sqrt[Range[40]], Log[Range[40]]}, \
+       PlotLegends -> <|\"Lists\" -> {\"sqrt\", \"log\"}|>]",
+    );
+    assert!(assoc.contains(">sqrt</text>") && assoc.contains(">log</text>"));
+  }
+
+  #[test]
+  fn labeling_function_labels_every_point() {
+    let idx = export_svg(
+      "ListPlot[{1, 1, 2, 3, 5, 8} -> {\"a\", \"b\", \"c\", \"d\", \"e\", \
+       \"f\"}, LabelingFunction -> (#2 &)]",
+    );
+    assert!(idx.contains(">{1, 1}</text>") && idx.contains(">{1, 6}</text>"));
+    let pts =
+      export_svg("ListPlot[Prime[Range[10]], LabelingFunction -> (#1 &)]");
+    assert!(pts.contains(">{10., 29.}</text>"));
+  }
+
+  #[test]
+  fn labeling_size_leaves_long_labels_to_tooltips() {
+    let svg = export_svg(
+      "ListPlot[{1, 1, 2} -> {\"healthfulness\", \"obstreperous\", \"a\"}, \
+       LabelingSize -> 30]",
+    );
+    assert!(!svg.contains(">healthfulness</text>"));
+    assert!(svg.contains(">a</text>"));
+  }
+
+  #[test]
+  fn point_labels_widen_the_range_and_get_leaders_above() {
+    let plain = export_svg("ListPlot[{2, 3, 5, 7, 11, 13, 17}]");
+    let svg = export_svg(
+      "ListPlot[{2, 3, 5, 7, 11, 13, 17} -> {\"a\", \"b\", \"c\", \"d\", \
+       \"e\", \"f\", \"g\"}, LabelingFunction -> Above]",
+    );
+    let view_h = |s: &str| -> f64 {
+      s.split("viewBox=\"0 0 ")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.split(' ').nth(1))
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+    };
+    // The labels' room comes out of the range, not the image.
+    assert_eq!(view_h(&plain), view_h(&svg));
+    assert_eq!(svg.matches("stroke=\"#AAAAAA\"").count(), 7);
+    // The topmost label stays inside the image.
+    let g_y: f64 = svg
+      .split(">g</text>")
+      .next()
+      .and_then(|s| s.rsplit(" y=\"").next())
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(g_y > 0.0, "{g_y}");
+  }
+
+  #[test]
+  fn list_plot_callout_above_and_at_x() {
+    for pos in ["Above", "5"] {
+      let svg = export_svg(&format!(
+        "ListPlot[Callout[Table[n^Sin[n], {{n, 1, 10, 0.25}}], \"label\", {pos}]]"
+      ));
+      assert!(svg.contains(">label</text>"), "{pos}");
+      assert_eq!(svg.matches("<path d=\"M").count(), 2, "{pos}");
+    }
   }
 }

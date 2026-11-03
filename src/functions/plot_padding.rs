@@ -451,6 +451,9 @@ pub(crate) struct Decorations {
   pub title: f64,
   /// Width of the widest of the `PlotLabels` beside the curve ends.
   pub curve_labels: Option<f64>,
+  /// Room the labels placed before / after their curves take left and
+  /// right of the plotting area.
+  pub side_labels: (f64, f64),
 }
 
 /// The padding around the plotting area, in points.
@@ -531,6 +534,8 @@ impl Decorations {
     if let Some(lw) = self.curve_labels {
       reach(R, PLOT_LABELS_GAP + lw + PLOT_LABELS_TAIL);
     }
+    reach(L, self.side_labels.0);
+    reach(R, self.side_labels.1);
     let (ox, oy) = (self.origin.0 * w, self.origin.1 * h);
     if self.axes.0 {
       for b in &self.axis_ticks.0 {
@@ -838,6 +843,8 @@ pub(crate) fn plot_decorations(
     .flatten()
     .map(|l| label_width(l, label_font))
     .reduce(f64::max);
+  d.side_labels =
+    crate::functions::plot_curve_labels::side_room(&opts.curve_label_specs);
   if let Some((lx, ly)) = &opts.axes_label
     && !frame
   {
