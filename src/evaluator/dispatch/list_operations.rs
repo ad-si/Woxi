@@ -2018,9 +2018,33 @@ pub fn dispatch_list_operations(
     if matches!(&normal, Expr::List(_)) {
       let mut new_args = args.to_vec();
       new_args[0] = normal;
+      // A SparseArray operand that is spliced in as an element stands for
+      // the list it represents, so `Append[vector, sparseRow]` is a ragged
+      // list rather than a vector holding an opaque object.
+      for a in new_args.iter_mut().skip(1) {
+        if matches!(&*a, Expr::FunctionCall { name: h, .. } if h == "SparseArray")
+          && let Ok(n @ Expr::List(_)) =
+            crate::evaluator::evaluate_function_call_ast(
+              "Normal",
+              std::slice::from_ref(&*a),
+            )
+        {
+          *a = n;
+        }
+      }
       let result = dispatch_list_operations(name, &new_args)?;
       return Some(result.and_then(|r| {
-        if matches!(&r, Expr::List(_)) {
+        // Only a full array goes back to sparse storage; a ragged result
+        // (a row appended to a vector, say) stays the plain list it is.
+        let is_array = matches!(&r, Expr::List(_))
+          && matches!(
+            crate::evaluator::evaluate_function_call_ast(
+              "ArrayQ",
+              std::slice::from_ref(&r),
+            ),
+            Ok(Expr::Identifier(ref t)) if t == "True"
+          );
+        if is_array {
           crate::evaluator::evaluate_function_call_ast("SparseArray", &[r])
         } else {
           Ok(r)

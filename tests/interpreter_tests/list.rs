@@ -15386,6 +15386,50 @@ mod sparse_array_list_ops {
       "SparseArray"
     );
   }
+
+  // Appending a row to a sparse vector gives a ragged list, never a
+  // vector holding an opaque SparseArray; stitching quadrants of a sparse
+  // array together row by row therefore yields the full array.
+  #[test]
+  fn append_sparse_row_to_sparse_vector() {
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{{1, 1} -> 1, {2, 2} -> 2, {3, 3} -> 3, {4, 4} -> 4}, {4, 4}]; \
+         q = s[[1 ;; 2, 1 ;; 2]]; r = s[[3 ;; 4, 3 ;; 4]]; \
+         MapIndexed[Flatten[Append[q[[First[#2]]], #]] &, r]"
+      )
+      .unwrap(),
+      "{{1, 0, 3, 0}, {0, 2, 0, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{1 -> 1}, 2]; Normal[Append[s, SparseArray[{2 -> 7}, 3]]]"
+      )
+      .unwrap(),
+      "{1, 0, {0, 7, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "s = SparseArray[{1 -> 1}, 2]; Head[Append[s, SparseArray[{2 -> 7}, 3]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
+  // A symbol holding an array of `re + 0.*I` numbers (`z Conjugate[z]`) is
+  // read back unchanged.
+  #[test]
+  fn machine_complex_with_zero_imaginary_part_array_lookup() {
+    assert_eq!(
+      interpret(
+        "f = Fourier[{{1., 2., 4.}, {3., 5., 1.}, {2., 0., 7.}}]; p = f Conjugate[f]; \
+         {p === f Conjugate[f], Union[Head /@ Flatten[p]], Length[p]}"
+      )
+      .unwrap(),
+      "{True, {Complex}, 3}"
+    );
+  }
 }
 
 mod position_index {
