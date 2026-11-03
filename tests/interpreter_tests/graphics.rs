@@ -44990,6 +44990,26 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn traditional_form_determinant_grid_spacing_and_bars() {
+    // GridBox: columns 0.8 em apart and centred, rows 1.33 em apart; the
+    // determinant bars are hairlines set 0.45 em off the grid, stopping
+    // 0.12 em short of its top and bottom.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[Det[{{a, bb}, {c, d}}]]], \"SVG\"]",
+    )
+    .unwrap();
+    for part in [
+      "translate(20.0,0.0)",
+      "translate(24.5,18.6)",
+      "<line x1=\"2.10\" y1=\"3.64\" x2=\"2.10\" y2=\"33.60\" \
+       stroke=\"currentColor\" stroke-width=\"0.53\"/>",
+      "translate(10.5,2.0)",
+    ] {
+      assert!(svg.contains(part), "missing {part}: {svg}");
+    }
+  }
+
+  #[test]
   fn tall_graphics_of_automatic_size_are_capped_at_432() {
     // Wolfram draws an automatically sized picture at most 1.2 × 360 tall,
     // narrowing it to keep its shape.

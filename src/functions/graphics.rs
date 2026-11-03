@@ -12454,6 +12454,8 @@ fn render_stretchy_delim(
   inner_ascent: f64,
   inner_descent: f64,
   font_size: f64,
+  around_grid: bool,
+  closing: bool,
 ) -> BoxLayout {
   let pad = font_size * 0.14;
   let h = inner_ascent + inner_descent + pad * 2.0;
@@ -12466,10 +12468,26 @@ fn render_stretchy_delim(
     '{' | '}' => (font_size * 0.28, font_size * 0.08),
     _ => (font_size * 0.30, font_size * 0.08), // ( )
   };
-  let w = body_w + bearing * 2.0;
+  let mut w = body_w + bearing * 2.0;
   let x0 = bearing;
   let x1 = bearing + body_w;
   let path = match kind {
+    // Determinant bars around a grid are hairlines that stop short of the
+    // grid's top and bottom by 0.12 em, set off from it by 0.45 em.
+    '|' if around_grid => {
+      let (y1, y2) = (pad + font_size * 0.12, h - pad - font_size * 0.12);
+      let sw = (font_size * 0.038).max(0.5);
+      let gap = font_size * 0.45;
+      let cx = if closing {
+        gap + f64::midpoint(x0, x1)
+      } else {
+        f64::midpoint(x0, x1)
+      };
+      w += gap;
+      format!(
+        "<line x1=\"{cx:.2}\" y1=\"{y1:.2}\" x2=\"{cx:.2}\" y2=\"{y2:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+      )
+    }
     '|' => {
       let cx = f64::midpoint(x0, x1);
       format!(
@@ -12852,17 +12870,24 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             // glyphs so ordinary parenthesized expressions are unaffected.
             if inner_ascent + inner_descent > natural * 1.5 {
               let last = children.len() - 1;
+              let around_grid = items.len() == 3
+                && matches!(&items[1], Expr::FunctionCall { name, .. }
+                  if name == "GridBox");
               children[0] = render_stretchy_delim(
                 o,
                 inner_ascent,
                 inner_descent,
                 font_size,
+                around_grid,
+                false,
               );
               children[last] = render_stretchy_delim(
                 c,
                 inner_ascent,
                 inner_descent,
                 font_size,
+                around_grid,
+                true,
               );
             }
           }
@@ -13226,8 +13251,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // GridBox
       "GridBox" if !args.is_empty() => {
         if let Expr::List(rows) = &args[0] {
-          let gap_x = ch;
-          let gap_y = font_size * 0.4;
+          // Wolfram's default ColumnSpacings -> 1 is 0.8 em; RowSpacings ->
+          // 1 adds 0.4 em to a 0.93 em line, a row pitch of 1.33 em.
+          let gap_x = font_size * 0.8;
+          let gap_y = font_size * 0.28;
           let laid_out: Vec<Vec<BoxLayout>> = rows
             .iter()
             .map(|row| {
@@ -13276,8 +13303,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             let mut x = 0.0;
             for (ci, cell) in row.iter().enumerate() {
               let dy = row_bl - cell.baseline;
-              elements.push_str(&cell.translate(x, y + dy));
-              x += col_widths.get(ci).unwrap_or(&0.0) + gap_x;
+              // Columns are centred (ColumnAlignments -> Center).
+              let col_w = *col_widths.get(ci).unwrap_or(&0.0);
+              let dx = (col_w - cell.width) / 2.0;
+              elements.push_str(&cell.translate(x + dx, y + dy));
+              x += col_w + gap_x;
             }
             y += row_h + gap_y;
           }
