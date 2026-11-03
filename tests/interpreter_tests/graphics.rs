@@ -4717,16 +4717,19 @@ mod plot3d {
       let svg = export_svg(
         "Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, ImageSize -> Large]",
       );
-      assert!(svg.contains("width=\"480\""));
-      assert!(svg.contains("height=\"480\""));
+      // WL 15's `Large` is 576 wide (WL draws it 452 high; Woxi's 3D
+      // picture stays square).
+      assert!(svg.contains("width=\"576\""));
+      assert!(svg.contains("height=\"576\""));
     }
 
     #[test]
     fn image_size_small() {
       let svg =
         export_svg("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, ImageSize -> Small]");
-      assert!(svg.contains("width=\"200\""));
-      assert!(svg.contains("height=\"200\""));
+      // WL 15's `Small` is 180 wide.
+      assert!(svg.contains("width=\"180\""));
+      assert!(svg.contains("height=\"180\""));
     }
 
     #[test]
@@ -12085,15 +12088,21 @@ mod plot3d {
     fn plot_frame_draws_the_boxed_frame() {
       // The frame is a closed four-sided polyline around the plot area,
       // which the plain axes of `Frame -> False` never draw.
-      let frame = "750,1749 3499,1749 3499,100 750,100 750,1749";
+      let has_box = |svg: &str| {
+        svg.split("points=\"").skip(1).any(|rest| {
+          let pts: Vec<&str> =
+            rest.split('"').next().unwrap().split_whitespace().collect();
+          pts.len() == 5 && pts[0] == pts[4]
+        })
+      };
       assert!(
-        export_svg("Plot[Sin[x], {x, 0, 6}, Frame -> True]").contains(frame),
+        has_box(&export_svg("Plot[Sin[x], {x, 0, 6}, Frame -> True]")),
         "Frame -> True must draw the frame"
       );
-      assert!(
-        !export_svg("Plot[Sin[x], {x, 0, 6}, Frame -> False]").contains(frame)
-      );
-      assert!(!export_svg("Plot[Sin[x], {x, 0, 6}]").contains(frame));
+      assert!(!has_box(&export_svg(
+        "Plot[Sin[x], {x, 0, 6}, Frame -> False]"
+      )));
+      assert!(!has_box(&export_svg("Plot[Sin[x], {x, 0, 6}]")));
     }
 
     /// `ImagePadding` is a *minimum* per side: the plotting area is as large
@@ -27196,13 +27205,15 @@ mod log_log_plot {
   #[test]
   fn decade_bounds_are_labelled() {
     let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
-    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own).
-    let bottom = svg
+    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own). They
+    // are the centred labels of the lowest row.
+    let ys: Vec<f64> = svg
       .lines()
-      .filter(|l| {
-        l.contains("text-anchor=\"middle\"") && l.contains("y=\"1938")
-      })
-      .count();
+      .filter(|l| l.contains("text-anchor=\"middle\""))
+      .filter_map(|l| l.split(" y=\"").nth(1)?.split('"').next()?.parse().ok())
+      .collect();
+    let lowest = ys.iter().copied().fold(f64::MIN, f64::max);
+    let bottom = ys.iter().filter(|y| (**y - lowest).abs() < 0.5).count();
     assert_eq!(bottom, 3, "{svg}");
   }
 }
@@ -45343,9 +45354,11 @@ mod list_plot_wl15_ranges {
 
   #[test]
   fn callouts_get_leaders_and_crowded_ones_are_dropped() {
-    // 40 callouts on a 4×10 grid of points cannot all find room.
+    // 40 callouts on a 4×10 grid of points cannot all find room in a
+    // small picture.
     let svg = export_svg(
-      "ListPlot[Flatten[Table[Callout[{i, j}, i j], {i, 4}, {j, 10}], 1]]",
+      "ListPlot[Flatten[Table[Callout[{i, j}, i j], {i, 4}, {j, 10}], 1], \
+       ImageSize -> 250]",
     );
     let leaders = svg.matches("stroke=\"#AAAAAA\"").count();
     let labels = svg.matches("fill-opacity=\"0.667\"").count();
@@ -45528,6 +45541,93 @@ mod shared_plot_theme {
       .unwrap(),
       "{{RGBColor[1, 0, 0]}, {Hue[0.3]}, {GrayLevel[0.5]}, \
        {RGBColor[1, 0, 0]}, {RGBColor[0.655728, 0.8, 0.]}}"
+    );
+  }
+}
+
+mod plot_area_aspect {
+  use super::*;
+
+  /// The frame's (width, height) in render units: the closed five-point
+  /// polyline around the plotting area.
+  fn frame_size(svg: &str) -> (f64, f64) {
+    let pts: Vec<(f64, f64)> = svg
+      .split("points=\"")
+      .skip(1)
+      .map(|rest| {
+        rest
+          .split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect::<Vec<(f64, f64)>>()
+      })
+      .find(|p| p.len() == 5 && p[0] == p[4])
+      .expect("a frame");
+    let xs = pts.iter().map(|p| p.0);
+    let ys = pts.iter().map(|p| p.1);
+    (
+      xs.clone().fold(f64::MIN, f64::max) - xs.fold(f64::MAX, f64::min),
+      ys.clone().fold(f64::MIN, f64::max) - ys.fold(f64::MAX, f64::min),
+    )
+  }
+
+  /// The default `AspectRatio -> 1/GoldenRatio` shapes the plotting area,
+  /// and the picture grows to hold the labels around it (WL: 360 x 230),
+  /// instead of squeezing the frame into a fixed 225-high image.
+  #[test]
+  fn frame_labels_add_height_instead_of_flattening_the_frame() {
+    let svg = export_svg(
+      "Plot[Cos[x], {x, 0, 2 Pi}, Frame -> True, \
+       FrameLabel -> {\"x axis\", \"y axis\"}]",
+    );
+    let (w, h) = frame_size(&svg);
+    assert!(
+      (h / w - 0.618_034).abs() < 0.01,
+      "frame {w} x {h} is not 1/GoldenRatio"
+    );
+  }
+
+  /// Without labels the picture is the area plus its tick room: 360 x 214
+  /// for an unframed plot, 600 x 365 at `ImageSize -> 600`, as in WL.
+  #[test]
+  fn the_image_height_follows_the_plot_area() {
+    let head = |code: &str| {
+      let svg = export_svg(code);
+      svg.lines().next().unwrap()[..30].to_string()
+    };
+    assert!(
+      head("Plot[Sin[x], {x, 0, 6}]")
+        .starts_with("<svg width=\"360\" height=\"214\"")
+    );
+    assert!(
+      head("Plot[Sin[x], {x, 0, 6}, ImageSize -> 600]")
+        .starts_with("<svg width=\"600\" height=\"365\"")
+    );
+  }
+
+  /// WL 15's named sizes: `Small` is 180 wide and `Large` 576.
+  #[test]
+  fn named_image_sizes_are_wl15s() {
+    let head = |code: &str| {
+      let svg = export_svg(code);
+      svg.lines().next().unwrap()[..30].to_string()
+    };
+    assert!(
+      head("Plot[Sin[x], {x, 0, 6}, ImageSize -> Small]")
+        .starts_with("<svg width=\"180\" height=\"101\"")
+    );
+    assert!(
+      head("Plot[Sin[x], {x, 0, 6}, ImageSize -> Large]")
+        .starts_with("<svg width=\"576\" height=\"350\"")
+    );
+    assert!(
+      head("Graphics[Disk[], ImageSize -> Large]")
+        .starts_with("<svg width=\"576\"")
     );
   }
 }

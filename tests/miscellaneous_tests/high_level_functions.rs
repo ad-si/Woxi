@@ -7434,14 +7434,14 @@ mod high_level_functions {
 
     #[test]
     fn test_geographics_named_imagesize() {
-      // Named sizes work like in other plots (`Large` is 480 wide).
+      // Named sizes work like in other plots (`Large` is 576 wide).
       let svg = interpret(
         "ExportString[GeoGraphics[{GeoMarker[GeoPosition[{0, 0}]]}, \
          ImageSize -> Large, GeoRange -> \"World\"], \"SVG\"]",
       )
       .unwrap();
-      assert!(svg.contains("width=\"480\""), "Large not honored");
-      assert!(svg.contains("height=\"240\""), "height not derived");
+      assert!(svg.contains("width=\"576\""), "Large not honored");
+      assert!(svg.contains("height=\"288\""), "height not derived");
     }
 
     #[test]

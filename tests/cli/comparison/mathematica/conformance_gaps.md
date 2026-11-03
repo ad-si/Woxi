@@ -7646,6 +7646,19 @@ Found comparing the graphics-tests renders (2026-11):
 
 Found comparing the graphics-tests renders (2026-11):
 
+- The plotting area takes the `AspectRatio` and the picture height follows
+  from it, as in WL, but Woxi's gutters are a few pixels larger, so its
+  pictures come out slightly taller (360 wide): framed `Plot` 230 vs WL 223,
+  with `FrameLabel` 254 vs 230, with `PlotLabel` 239 vs 227, `ListPlot` 238
+  vs 232, `ListLinePlot`/`DateListPlot` 230 vs 227, `ImageSize -> Tiny` 52
+  vs 55. An unframed `Plot` matches (214).
+- A `Graphics` with `Axes -> True` sizes its picture from the whole image,
+  not the plotting area: `Graphics[Line[{{0, -1}, {10, 1}}], Axes -> True,
+  AspectRatio -> 1/GoldenRatio, ImageSize -> 380]` is 380 x 210 (WL 227), and
+  a `Plot` turned into one by `/. Line -> Arrow` grows from 227 to 238.
+- `Plot3D` and the other 3D plots stay square at a named size (`ImageSize
+  -> Large` is 576 x 576; WL 576 x 452).
+
 - The automatic tick step rule is unknown for log axes over more than 6
   decades (WL labels every 2nd decade over 8, every 3rd over 9,
   every 4th over 12 and 20) and for `ListPolarPlot`, whose x axis over 3.4

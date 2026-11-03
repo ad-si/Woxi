@@ -2,11 +2,11 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Circle[]}, ImageSize -> Large]\")"
 ---
-<svg width="480" height="480" viewBox="0 0 480 480" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="576" height="576" viewBox="0 0 576 576" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_480x480"><rect x="0" y="0" width="480.00" height="480.00"/></clipPath>
+<clipPath id="plotClip_576x576"><rect x="0" y="0" width="576.00" height="576.00"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_480x480)">
-<ellipse cx="240.00" cy="240.00" rx="230.40" ry="230.40" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
+<g clip-path="url(#plotClip_576x576)">
+<ellipse cx="288.00" cy="288.00" rx="276.48" ry="276.48" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
 </g>
 </svg>

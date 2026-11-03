@@ -4235,7 +4235,9 @@ fn generate_svg_with_options(
         ((target_render_w / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_width = svg_width * RESOLUTION_SCALE;
     }
-  } else if let Some(ar) = opts.aspect_ratio
+  } else if let Some(ar) = opts
+    .aspect_ratio
+    .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
     && opts.image_padding.is_none()
   {
     let plot_w = (render_width as f64)
@@ -9747,11 +9749,12 @@ pub(crate) fn parse_image_size(
       }
     }
     Expr::Identifier(name) => {
+      // WL 15's named widths (`ImageSize -> Small` is 180, `Large` 576).
       let base_w = match name.as_str() {
         "Tiny" => 100,
-        "Small" => 200,
+        "Small" => 180,
         "Medium" => def_w,
-        "Large" => 480,
+        "Large" => 576,
         "Full" => 720,
         _ => return None,
       };

@@ -101,19 +101,9 @@ fn apply_ranges_and_aspect(
     // derived in generate_svg_with_options once margins are known.
     plot_opts.aspect_ratio = Some(ar);
   } else {
-    // Adjust aspect ratio to match the displayed data (circles stay round).
-    let data_w = x_range.1 - x_range.0;
-    let data_h = y_range.1 - y_range.0;
-    if data_w > 0.0 && data_h > 0.0 {
-      let data_aspect = data_h / data_w;
-      if data_aspect.is_finite() {
-        plot_opts.svg_height =
-          (plot_opts.svg_width as f64 * data_aspect).round() as u32;
-        plot_opts.svg_height = plot_opts
-          .svg_height
-          .clamp(1, crate::functions::plot::MAX_SVG_DIMENSION);
-      }
-    }
+    // `AspectRatio -> Automatic`, the default here: the plotting area takes
+    // the proportions of the displayed ranges (circles stay round).
+    plot_opts.aspect_automatic = true;
   }
   (x_range, y_range)
 }
@@ -871,7 +861,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // with other graphics (re-rendering the curves as Line primitives). The
   // style goes with them: a curve merged by `Show` keeps the colour and
   // weight `PlotStyle` gave it, as it does when drawn on its own.
-  let mut options = crate::functions::plot::explicit_options(args);
+  let mut options = source_options(args);
   let (points, styles) = match &colored_runs {
     Some((runs, styles)) => {
       options.retain(|o| {
@@ -1819,9 +1809,27 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[false],
     plot_opts.filling,
     plot_opts.filling_style,
-    crate::functions::plot::explicit_options(args),
+    source_options(args),
   );
   Ok(crate::graphics_result_with_source(svg, source))
+}
+
+/// The options a parametric plot keeps with its curves: the explicit ones
+/// plus `AspectRatio -> Automatic`, its default (WL lists it among the
+/// plot's options too), so a `Show` re-render keeps the plot's shape.
+fn source_options(args: &[Expr]) -> Vec<Expr> {
+  let mut options = crate::functions::plot::explicit_options(args);
+  let has_aspect = options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
+  });
+  if !has_aspect {
+    options.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+      replacement: Box::new(Expr::Identifier("Automatic".to_string())),
+    });
+  }
+  options
 }
 
 /// Compute x/y ranges from point data with 4% padding.
