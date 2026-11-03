@@ -25704,6 +25704,26 @@ mod combinatorica_random_graph {
   }
 
   #[test]
+  fn combinatorica_boolean_algebra() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Table[{M[BooleanAlgebra[n]], V[BooleanAlgebra[n]]}, {n, 1, 5}]"
+      )
+      .unwrap(),
+      "{{1, 2}, {4, 4}, {12, 8}, {32, 16}, {80, 32}}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         ConnectedQ[BooleanAlgebra[4]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn combinatorica_graph_constructors() {
     assert_eq!(
       interpret(

@@ -7956,3 +7956,10 @@ value that is not a polynomial is expanded in wolframscript
 - `RotationMatrix[t, {a, 1, 0}]` with a symbolic component stays
   unevaluated (wolframscript's general formula carries `Conjugate` of every
   component).
+
+## `Combinatorica`BooleanAlgebra` vertex order and coordinates (unverified)
+
+`BooleanAlgebra[n]` is built as the Hasse diagram of the subsets of an n-set
+(vertex `k` = subset with the bits of `k - 1`, one row per subset size).
+Vertex/edge counts and connectivity are exact, but the edge ordering and the
+embedding coordinates were not compared against `wolframscript`.

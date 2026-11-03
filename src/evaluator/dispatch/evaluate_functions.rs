@@ -1584,6 +1584,7 @@ fn evaluate_function_call_ast_inner(
     // defined.)
     "CompleteGraph" | "GridGraph" | "InduceSubgraph" | "ListGraphs"
     | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
+    | "BooleanAlgebra"
       if combinatorica_active() =>
     {
       match name {
@@ -1593,6 +1594,7 @@ fn evaluate_function_call_ast_inner(
         "ListGraphs" => "Combinatorica`ListGraphs",
         "CodeToLabeledTree" => "Combinatorica`CodeToLabeledTree",
         "RadialEmbedding" => "Combinatorica`RadialEmbedding",
+        "BooleanAlgebra" => "Combinatorica`BooleanAlgebra",
         _ => "Combinatorica`ConnectedQ",
       }
     }

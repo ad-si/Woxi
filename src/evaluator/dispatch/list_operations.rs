@@ -3435,6 +3435,7 @@ pub fn dispatch_list_operations(
     | "Combinatorica`DeleteEdges"
     | "Combinatorica`CompleteGraph"
     | "Combinatorica`GridGraph"
+    | "Combinatorica`BooleanAlgebra"
     | "Combinatorica`InduceSubgraph"
     | "Combinatorica`ListGraphs"
     | "Combinatorica`CodeToLabeledTree"
