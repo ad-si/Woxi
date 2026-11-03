@@ -2711,6 +2711,31 @@ fn collect_primitives(
         "JoinedCurve" if !args.is_empty() => {
           collect_primitives(&args[0], style, prims, errors);
         }
+        // AxisObject[curve, {min, max}, opts…] draws `curve` as an axis; its
+        // stroke follows BaseStyle and then AxisStyle (the latter wins).
+        "AxisObject" if !args.is_empty() => {
+          let saved = style.clone();
+          for key in ["BaseStyle", "AxisStyle"] {
+            for opt in &args[1..] {
+              if let Expr::Rule {
+                pattern,
+                replacement,
+              } = opt
+                && matches!(pattern.as_ref(), Expr::Identifier(n) if n == key)
+              {
+                let directives: Vec<Expr> = match replacement.as_ref() {
+                  Expr::List(items) => items.to_vec(),
+                  other => vec![other.clone()],
+                };
+                for d in style_directives_in_application_order(&directives) {
+                  apply_directive(d, style);
+                }
+              }
+            }
+          }
+          collect_primitives(&args[0], style, prims, errors);
+          *style = saved;
+        }
         "HalfPlane" => {
           parse_half_plane(args, style, prims);
         }
@@ -17635,8 +17660,30 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &evaled_first
       }
     };
-    if matches!(first_ref, Expr::Image { .. }) {
-      return Ok(first_ref.clone());
+    if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      color_space,
+      display_size,
+    } = first_ref
+    {
+      // `Show[image, ImageSize -> …]` displays the same pixels at the
+      // requested size, exactly as `Image[data, ImageSize -> …]` does.
+      let display_size =
+        crate::functions::image_ast::image_size_option(rest, *width, *height)
+          .or(*display_size);
+      return Ok(Expr::Image {
+        width: *width,
+        height: *height,
+        channels: *channels,
+        data: data.clone(),
+        image_type: *image_type,
+        color_space: *color_space,
+        display_size,
+      });
     }
   }
 
@@ -39363,12 +39410,24 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   if matches!(
     expr,
     Expr::FunctionCall { name, .. } if name == "Text" || name == "TraditionalForm"
-  ) && let Ok(svg) = grid_svg_with_gaps(
-    &[Expr::List(
-      vec![Expr::List(vec![expr.clone()].into())].into(),
-    )],
-    &[],
-  ) {
+  ) && let Ok(svg) = {
+    // Held constructs inside the caption (`Switch[v, …]`, `If[…]`) must see
+    // the current control values before the cell is typeset.
+    let scoped = if bindings.is_empty() {
+      None
+    } else {
+      eval_display_in_scope(expr, bindings)
+    };
+    grid_svg_with_gaps(
+      &[Expr::List(
+        vec![Expr::List(
+          vec![scoped.unwrap_or_else(|| expr.clone())].into(),
+        )]
+        .into(),
+      )],
+      &[],
+    )
+  } {
     return DisplayNode::Static {
       svg: Some(svg),
       text: String::new(),

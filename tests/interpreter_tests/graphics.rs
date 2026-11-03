@@ -38530,6 +38530,24 @@ mod color_data_gradients {
     );
   }
 
+  /// `ColorData[name, "Name"]` is the gradient's own name, so a picker
+  /// built from `ColorData["Gradients"]` gets a label for every choice.
+  #[test]
+  fn gradient_name_property() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"Rainbow\", \"Name\"]").unwrap(),
+      "Rainbow"
+    );
+    assert_eq!(
+      interpret(
+        "And @@ (ColorData[#, \"Name\"] === # & /@ ColorData[\"Gradients\"])"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn show_resizes_the_swatch() {
     clear_state();

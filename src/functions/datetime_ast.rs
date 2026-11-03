@@ -1809,13 +1809,23 @@ fn date_plus_with_time(
   for (n, unit) in increments {
     let lower = unit.to_ascii_lowercase();
     let seconds = match lower.trim_end_matches('s') {
-      "year" => {
-        (y, m, d) = add_months_clamped(y, m, d, (*n as i64) * 12);
-        continue;
-      }
-      "month" => {
-        (y, m, d) = add_months_clamped(y, m, d, *n as i64);
-        continue;
+      "year" | "month" => {
+        let per_unit = if lower.starts_with("year") { 12 } else { 1 };
+        let whole_units = n.trunc() as i64;
+        let fraction = n - n.trunc();
+        (y, m, d) = add_months_clamped(y, m, d, whole_units * per_unit);
+        if fraction == 0.0 {
+          continue;
+        }
+        // A fractional year or month covers that fraction of the span
+        // from the current date to the same date one unit later (or
+        // earlier, for a negative fraction).
+        let step = if fraction < 0.0 { -per_unit } else { per_unit };
+        let (ny, nm, nd) = add_months_clamped(y, m, d, step);
+        let span = (date_to_absolute_days(ny, nm, nd)
+          - date_to_absolute_days(y, m, d))
+        .abs() as f64;
+        fraction * span * 86400.0
       }
       "week" => n * 604800.0,
       "day" => n * 86400.0,
