@@ -7568,30 +7568,33 @@ pub(crate) fn wl_default_vector_density_gradient(t: f64) -> (u8, u8, u8) {
 /// blended like `wl_default_vector_gradient` (stops from its
 /// `"BlendArgument"`).
 pub(crate) fn wl14_default_density_gradient(t: f64) -> (u8, u8, u8) {
-  const LAB_STOPS: [(f64, f64, f64); 4] = [
-    (
-      0.237_457_745_487_449_5,
-      0.450_232_647_967_430_1,
-      -0.293_447_589_199_095_75,
-    ),
-    (
-      0.482_888_916_109_297_85,
-      0.701_950_950_198_408_9,
-      0.158_500_850_335_412_4,
-    ),
-    (
-      0.722_668_012_769_495_8,
-      0.378_364_291_527_790_7,
-      0.481_303_807_080_506_7,
-    ),
-    (
-      0.973_524_122_975_542_1,
-      -0.052_490_183_706_616_07,
-      0.319_941_429_729_375_45,
-    ),
-  ];
-  lab_blend(&LAB_STOPS, t)
+  lab_blend(&WL14_DENSITY_LAB_STOPS, t)
 }
+
+/// The `LABColor` stops of `"WL14DefaultDensityGradient"`, as
+/// `ColorData["WL14DefaultDensityGradient", "BlendArgument"]` gives them.
+pub(crate) const WL14_DENSITY_LAB_STOPS: [(f64, f64, f64); 4] = [
+  (
+    0.237_457_745_487_449_5,
+    0.450_232_647_967_430_1,
+    -0.293_447_589_199_095_75,
+  ),
+  (
+    0.482_888_916_109_297_85,
+    0.701_950_950_198_408_9,
+    0.158_500_850_335_412_4,
+  ),
+  (
+    0.722_668_012_769_495_8,
+    0.378_364_291_527_790_7,
+    0.481_303_807_080_506_7,
+  ),
+  (
+    0.973_524_122_975_542_1,
+    -0.052_490_183_706_616_07,
+    0.319_941_429_729_375_45,
+  ),
+];
 
 /// `MatrixPlot`'s default color function (the `"DefaultColorFunction"` of
 /// `Charting`ResolvePlotTheme[Automatic, MatrixPlot]`): a LAB blend from

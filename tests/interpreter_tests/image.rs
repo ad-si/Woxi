@@ -8435,6 +8435,44 @@ mod color_data_gradients {
     );
   }
 
+  // Regression: `ColorData["WL14DefaultDensityGradient"]`, the default
+  // colour function of DensityPlot and ContourPlot, was unknown. It is a
+  // `"ThemeGradients"` LAB blend of the four stops its `"BlendArgument"`
+  // lists (wolframscript's values).
+  #[test]
+  fn color_data_wl14_default_density_gradient() {
+    clear_state();
+    assert_eq!(
+      interpret("InputForm[ColorData[\"WL14DefaultDensityGradient\"]]")
+        .unwrap(),
+      "InputForm[ColorDataFunction[WL14DefaultDensityGradient, \
+       ThemeGradients, {0, 1}, \
+       Blend[\"WL14DefaultDensityGradient\", #1] & ]]"
+    );
+    assert_eq!(
+      interpret(
+        "InputForm[ColorData[\"WL14DefaultDensityGradient\", \"BlendArgument\"]]"
+      )
+      .unwrap(),
+      "InputForm[{LABColor[0.2374577454874495, 0.4502326479674301, \
+       -0.29344758919909575], LABColor[0.48288891610929785, \
+       0.7019509501984089, 0.1585008503354124], LABColor[0.7226680127694958, \
+       0.3783642915277907, 0.4813038070805067], LABColor[0.9735241229755421, \
+       -0.05249018370661607, 0.31994142972937545]}]"
+    );
+    // Its colour at t is the blend of the stops, however it is asked for.
+    assert_eq!(
+      interpret(
+        "g = \"WL14DefaultDensityGradient\"; \
+         c = Blend[ColorData[g, \"BlendArgument\"], 0.3]; \
+         {Head[c], c === ColorData[g][0.3] === ColorData[g, 0.3] === \
+          Blend[g, 0.3], ColorData[g, \"Name\"], ColorData[g, \"Range\"]}"
+      )
+      .unwrap(),
+      "{LABColor, True, WL14 default density gradient, {0, 1}}"
+    );
+  }
+
   // `ColorData["HTML", name]` is the CSS colour of that name — the scheme a
   // Demonstrations palette reaches for. Regression: it stayed unevaluated
   // and reported the head as unimplemented.

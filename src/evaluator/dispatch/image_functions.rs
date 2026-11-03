@@ -86,6 +86,45 @@ fn gradient_color_function(scheme: &str) -> Expr {
   )
 }
 
+/// The `LABColor` stops of a gradient of the plot themes (`ColorData`
+/// class `"ThemeGradients"`), as its `"BlendArgument"` lists them.
+pub(crate) fn theme_gradient_stops(name: &str) -> Option<Expr> {
+  let stops: &[(f64, f64, f64)] = match name {
+    "WL14DefaultDensityGradient" => {
+      &crate::functions::plot::WL14_DENSITY_LAB_STOPS
+    }
+    _ => return None,
+  };
+  Some(Expr::List(
+    stops
+      .iter()
+      .map(|&(l, a, b)| {
+        call(
+          "LABColor",
+          vec![Expr::Real(l), Expr::Real(a), Expr::Real(b)],
+        )
+      })
+      .collect(),
+  ))
+}
+
+/// `ColorDataFunction[name, "ThemeGradients", {0, 1}, Blend[name, #1] &]`,
+/// what `ColorData[name]` gives for a theme gradient.
+fn theme_gradient_color_function(scheme: &str) -> Expr {
+  let blend = Expr::Function {
+    body: Box::new(call("Blend", vec![str_expr(scheme), Expr::Slot(1)])),
+  };
+  call(
+    "ColorDataFunction",
+    vec![
+      str_expr(scheme),
+      str_expr("ThemeGradients"),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+      blend,
+    ],
+  )
+}
+
 /// The color function of a reversed named gradient,
 /// `ColorData[{scheme, "Reverse"}]`:
 ///   `ColorDataFunction[scheme, "Gradients", {0, 1},
@@ -1483,6 +1522,45 @@ pub fn dispatch_image_functions(
           vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
         )));
       }
+      // A theme gradient (`"WL14DefaultDensityGradient"`, the plots'
+      // default colour function): its properties, and its colour at t as
+      // the `LABColor` blend of its stops.
+      if let Expr::String(scheme) = &args[0]
+        && let Some(stops) = theme_gradient_stops(scheme)
+      {
+        match &args[1] {
+          Expr::String(p) if p == "BlendArgument" => return Some(Ok(stops)),
+          Expr::String(p) if p == "ColorFunction" => {
+            return Some(Ok(theme_gradient_color_function(scheme)));
+          }
+          // WL spells the name out (`"WL14 default density gradient"`).
+          Expr::String(p) if p == "Name" && scheme.starts_with("WL14") => {
+            let words = scheme["WL14".len()..].chars().fold(
+              String::from("WL14"),
+              |mut s, c| {
+                if c.is_ascii_uppercase() {
+                  s.push(' ');
+                }
+                s.push(c.to_ascii_lowercase());
+                s
+              },
+            );
+            return Some(Ok(Expr::String(words)));
+          }
+          Expr::String(p) if p == "Range" => {
+            return Some(Ok(Expr::List(
+              vec![Expr::Integer(0), Expr::Integer(1)].into(),
+            )));
+          }
+          Expr::String(_) => {}
+          t => {
+            return Some(crate::evaluator::evaluate_function_call_ast(
+              "Blend",
+              &[stops, t.clone()],
+            ));
+          }
+        }
+      }
       // ColorData[name, t]: sample the named gradient at parameter t
       // (clamped to [0, 1]), and ColorData[name, "Image"]: a horizontal
       // gradient strip image (the swatch Wolfram shows in gradient
@@ -1655,6 +1733,11 @@ pub fn dispatch_image_functions(
         && crate::functions::chart::named_color_scheme(scheme).is_some()
       {
         return Some(Ok(gradient_color_function(scheme)));
+      }
+      if let Expr::String(scheme) = &args[0]
+        && theme_gradient_stops(scheme).is_some()
+      {
+        return Some(Ok(theme_gradient_color_function(scheme)));
       }
       // ColorData[{"scheme", {min, max}}]: the gradient over a custom range.
       if let Expr::List(items) = &args[0]

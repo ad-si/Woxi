@@ -7631,8 +7631,10 @@ Found comparing the graphics-tests renders (2026-11):
 - `MatrixPlot`'s `FrameTicks` labels are strings (`{11.5, "1"}`) where
   wolframscript has integers, and the `Raster` colors are 8-bit quantized
   (wolframscript gives the exact blend).
-- `ColorData["WL14DefaultDensityGradient"]` (and its `"BlendArgument"`) is
-  unknown, although the plots use it as their default color function.
+- `ColorData["WL14DefaultDensityGradient"][0.3]` (a `Blend` of its
+  `LABColor` stops) differs from wolframscript in the last digit of one
+  channel (`0.11330600638196153` vs `…156`): `Blend`'s interpolation
+  arithmetic is not WL's.
 - `WaveletMatrixPlot`'s coefficient layout and scaling differ:
   wolframscript scales symmetrically about 0 over coefficients that Woxi's
   pyramid does not reproduce.

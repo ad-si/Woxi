@@ -13738,6 +13738,13 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
     ));
   }
+  // A theme gradient blends its `LABColor` stops.
+  if let Expr::String(scheme) = &args[0]
+    && let Some(stops) = super::image_functions::theme_gradient_stops(scheme)
+    && let Expr::List(stops) = &stops
+  {
+    return crate::functions::color_blend::blend_color_list(stops, args.get(1));
+  }
   let colors = match &args[0] {
     Expr::List(items) if items.len() >= 2 => items,
     _ => return None,
