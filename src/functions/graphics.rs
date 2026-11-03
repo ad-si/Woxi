@@ -1025,6 +1025,15 @@ fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
+  // `Scaled[{dx, dy}, {x, y}]` is `{x, y}` moved by a fraction of the plot
+  // range, which is not known while primitives are collected; the gauges
+  // use it only for short tick offsets, so it stands for its base point.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Scaled"
+    && args.len() == 2
+  {
+    return expr_to_point(&args[1]);
+  }
   // A point is usually already a `{x, y}` literal, but it can also be an
   // arithmetic expression that only reduces to one at evaluation time (e.g.
   // an arrow tip computed as `base + vector`) — evaluate first so those
