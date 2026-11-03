@@ -7697,8 +7697,13 @@ Found comparing the graphics-tests renders (2026-11):
 - `Plot[…, ColorFunction -> f, PlotLegends -> Automatic]` gives no
   `BarLegend` (wolframscript: `BarLegend[{f, roundedMinMax[…]}]`); an
   explicit `PlotLegends -> BarLegend[…]` is drawn.
-- Woxi's own SVG rasterizer (`Export[…png, Import[svg]]`) shows thin seams
-  between abutting opaque polygons that other renderers (rsvg) do not.
+- Woxi's own SVG rasterizer (`Export[…png, Import[svg]]`) anti-aliases
+  each polygon on its own, so abutting opaque polygons show thin seams.
+  A function plot's `ColorFunction` curve and fill are now one element
+  each, painted with a horizontal gradient through the vertex colors
+  (Wolfram's `VertexColors`); a `ColorFunction` curve whose x does not
+  increase (a parametric or unsorted list curve) is still drawn as one
+  piece per color run.
 
 ## Parameter sweep 5 (long tail, batch 2): known divergences and unverified forms
 

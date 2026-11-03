@@ -4305,6 +4305,7 @@ fn generate_svg_with_options(
   // dash). Skipped for log axes, which keep the per-dash fallback because the
   // coordinate transform is non-linear.
   let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
+  let mut cf_gradients: Vec<ColorFunctionGradient> = Vec::new();
 
   let mut buf = String::new();
   {
@@ -4654,6 +4655,19 @@ fn generate_svg_with_options(
                       .filter(|_| series_filling_style(opts, series_idx).is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
+                        Some(cf) if let Some(stops) = color_function_gradient_stops(
+                          segment,
+                          cf,
+                          opts.color_function_scaling,
+                          color_scale_ranges,
+                          opts.log_x,
+                        ) => {
+                          let sentinel =
+                            color_function_gradient_sentinel(cf_gradients.len());
+                          cf_gradients.push(ColorFunctionGradient { sentinel, stops });
+                          let (sr, sg, sb) = sentinel;
+                          vec![(RGBColor(sr, sg, sb).mix(1.0), segment.clone())]
+                        }
                         Some(cf) => {
                           let runs = color_function_runs(
                             segment,
@@ -4873,6 +4887,27 @@ fn generate_svg_with_options(
               }
             } else if let Some(cf) = &opts.color_function {
               for segment in &segments {
+                if let Some(stops) = color_function_gradient_stops(
+                  segment,
+                  cf,
+                  opts.color_function_scaling,
+                  color_scale_ranges,
+                  opts.log_x,
+                ) {
+                  let sentinel =
+                    color_function_gradient_sentinel(cf_gradients.len());
+                  cf_gradients.push(ColorFunctionGradient { sentinel, stops });
+                  let (sr, sg, sb) = sentinel;
+                  chart
+                    .draw_series(LineSeries::new(
+                      segment.iter().copied(),
+                      RGBColor(sr, sg, sb).stroke_width(stroke_w),
+                    ))
+                    .map_err(|e| {
+                      InterpreterError::EvaluationError(format!("Plot: {e}"))
+                    })?;
+                  continue;
+                }
                 for (run_color, run) in color_function_runs(
                   segment,
                   cf,
@@ -5084,6 +5119,7 @@ fn generate_svg_with_options(
   );
 
   inject_drop_shadows(&mut buf, &opts.plot_style, all_points.len());
+  apply_color_function_gradients(&mut buf, &cf_gradients);
 
   // Emit deferred dashed series as single stroke-dasharray polylines (on top
   // of the plot content, just before </svg>).
@@ -6087,6 +6123,121 @@ fn color_function_runs(
     }
   }
   runs
+}
+
+/// A `ColorFunction`-colored curve or fill area of a function plot. It is
+/// drawn as one element in a placeholder color, which
+/// [`apply_color_function_gradients`] then turns into a horizontal
+/// `linearGradient` through the colors at the curve's vertices — Wolfram's
+/// `VertexColors` shading. Drawing it as one piece per color run instead
+/// banded the fill and left anti-aliasing seams and notches where the
+/// pieces (and the curve's butt-capped strokes) met.
+struct ColorFunctionGradient {
+  sentinel: (u8, u8, u8),
+  /// `(offset, color)` stops, offsets 0..1 along the segment's x extent.
+  stops: Vec<(f64, (u8, u8, u8))>,
+}
+
+/// The gradient stops of a `ColorFunction` segment, colored at its
+/// vertices. `None` unless x strictly increases along the segment (a
+/// function plot), where a horizontal gradient is exact.
+fn color_function_gradient_stops(
+  segment: &[(f64, f64)],
+  cf: &Expr,
+  scaling: bool,
+  ranges: (f64, f64, f64, f64),
+  log_x: bool,
+) -> Option<Vec<(f64, (u8, u8, u8))>> {
+  if segment.len() < 2 || segment.windows(2).any(|w| w[1].0 <= w[0].0) {
+    return None;
+  }
+  let t = |x: f64| if log_x { x.log10() } else { x };
+  let (t0, t1) = (t(segment[0].0), t(segment[segment.len() - 1].0));
+  if !(t1 > t0) {
+    return None;
+  }
+  Some(
+    segment
+      .iter()
+      .map(|&p| {
+        let c = color_function_rgb(cf, scaling, p, ranges).unwrap_or((0, 0, 0));
+        ((t(p.0) - t0) / (t1 - t0), c)
+      })
+      .collect(),
+  )
+}
+
+/// The placeholder color of the `k`-th gradient element of a plot.
+fn color_function_gradient_sentinel(k: usize) -> (u8, u8, u8) {
+  (0x01, ((k >> 8) & 0xff) as u8, (k & 0xff) as u8)
+}
+
+/// Replace each placeholder-colored element of `buf` by the same element
+/// painted with its horizontal gradient (see [`ColorFunctionGradient`]).
+fn apply_color_function_gradients(
+  buf: &mut String,
+  gradients: &[ColorFunctionGradient],
+) {
+  use std::hash::{Hash, Hasher};
+  for g in gradients {
+    let (r, gg, b) = g.sentinel;
+    let needle = format!("=\"#{r:02X}{gg:02X}{b:02X}\"");
+    let mut search_from = 0;
+    while let Some(rel) = buf[search_from..].find(&needle) {
+      let at = search_from + rel;
+      let Some(start) = buf[..at].rfind('<') else {
+        break;
+      };
+      let Some(end_rel) = buf[at..].find('>') else {
+        break;
+      };
+      let end = at + end_rel + 1;
+      let element = buf[start..end].to_string();
+      let xs: Vec<f64> = element
+        .split("points=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .map(|pts| {
+          pts
+            .split_whitespace()
+            .filter_map(|xy| xy.split(',').next()?.parse::<f64>().ok())
+            .collect()
+        })
+        .unwrap_or_default();
+      let (x1, x2) = xs
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
+          (a.min(x), b.max(x))
+        });
+      if !(x2 > x1) {
+        search_from = end;
+        continue;
+      }
+      let mut hasher = std::collections::hash_map::DefaultHasher::new();
+      element.hash(&mut hasher);
+      for (o, c) in &g.stops {
+        o.to_bits().hash(&mut hasher);
+        c.hash(&mut hasher);
+      }
+      let id = format!("cfgrad{:016x}", hasher.finish());
+      let stops: String = g
+        .stops
+        .iter()
+        .map(|(o, (cr, cg, cb))| {
+          format!(
+            "<stop offset=\"{o:.6}\" stop-color=\"#{cr:02X}{cg:02X}{cb:02X}\"/>"
+          )
+        })
+        .collect();
+      let replaced = format!(
+        "<defs><linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" \
+         x1=\"{x1}\" y1=\"0\" x2=\"{x2}\" y2=\"0\">{stops}</linearGradient></defs>{}",
+        element.replacen(&needle, &format!("=\"url(#{id})\""), 1)
+      );
+      buf.replace_range(start..end, &replaced);
+      search_from = start + replaced.len();
+    }
+  }
 }
 
 fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {

@@ -4753,8 +4753,11 @@ mod interpreter_tests {
          ColorFunctionScaling -> False], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
-    assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+    // The curve is one polyline stroked with a gradient through the
+    // colors at its vertices (Wolfram's `VertexColors`).
+    assert!(svg.contains("stop-color=\"#FF0000\""), "{svg}");
+    assert!(svg.contains("stop-color=\"#0000FF\""), "{svg}");
+    assert!(svg.contains("stroke=\"url(#cfgrad"), "{svg}");
     assert!(!svg.contains("stroke=\"#5E81B5\""), "{svg}");
 
     // A one-parameter function sees the x coordinate rescaled to 0..1.
@@ -4764,8 +4767,8 @@ mod interpreter_tests {
          ColorFunction -> Function[t, If[t < 0.5, Red, Blue]]], \"SVG\"]",
     )
     .unwrap();
-    assert!(scaled.contains("stroke=\"#FF0000\""), "{scaled}");
-    assert!(scaled.contains("stroke=\"#0000FF\""), "{scaled}");
+    assert!(scaled.contains("stop-color=\"#FF0000\""), "{scaled}");
+    assert!(scaled.contains("stop-color=\"#0000FF\""), "{scaled}");
   }
 
   #[test]

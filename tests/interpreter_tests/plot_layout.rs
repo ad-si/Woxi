@@ -169,7 +169,7 @@ mod color_function_filling {
     svg
       .split('<')
       .filter(|t| t.starts_with("polygon ") || t.starts_with("path "))
-      .filter(|t| t.contains("fill=\"#") && !t.contains("fill=\"none\""))
+      .filter(|t| t.contains("fill=\"#") || t.contains("fill=\"url(#"))
       .filter_map(|t| {
         let key = "opacity=\"";
         let start = t.find(key)? + key.len();
@@ -216,7 +216,7 @@ mod color_function_filling {
       "Plot[Sin[x], {x, 0, 2 Pi}, ColorFunction -> Function[{x, y}, Hue[y]]]",
     );
     let reddest_blue = svg
-      .split("stroke=\"#FF00")
+      .split("stop-color=\"#FF00")
       .skip(1)
       .filter_map(|rest| u8::from_str_radix(rest.get(..2)?, 16).ok())
       .min()

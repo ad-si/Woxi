@@ -19568,11 +19568,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !svg.contains("stroke=\"#000000\" stroke-width=\"20\""),
         "{svg}"
       );
-      // y = 0 starts at Hue[0.75] (violet), y = 1 ends at Hue[0] (red).
+      // y = 0 starts at Hue[0.75] (violet), y = 1 ends at Hue[0] (red):
+      // the curve's gradient runs through the colors at its vertices.
       let strokes: Vec<&str> = svg
-        .split("<polyline")
-        .filter(|p| p.contains("stroke-width=\"20\""))
-        .filter_map(|p| p.split("stroke=\"").nth(1)?.split('"').next())
+        .split("stop-color=\"")
+        .skip(1)
+        .filter_map(|p| p.split('"').next())
         .collect();
       assert!(strokes.len() > 2, "{svg}");
       assert_ne!(strokes.first(), strokes.last(), "{svg}");
@@ -42267,13 +42268,20 @@ mod static_dynamic_controls {
       "ExportString[Plot[Sin[x] + 2, {x, 0, 7}, ColorFunction -> (ColorData[\"VisibleSpectrum\", \"ColorFunction\"][# 100] &), ColorFunctionScaling -> False, Filling -> Axis], \"SVG\"]",
     )
     .unwrap();
-    // The fill is split into several differently tinted polygons.
+    // The fill is painted with a gradient through the curve's colors.
+    assert!(
+      svg.contains("<polygon opacity=\"1\" fill=\"url(#cfgrad"),
+      "{svg}"
+    );
     let fills: std::collections::HashSet<&str> = svg
-      .split("<polygon")
+      .split("stop-color=\"")
       .skip(1)
-      .filter_map(|p| p.split("fill=\"").nth(1)?.split('"').next())
+      .filter_map(|p| p.split('"').next())
       .collect();
-    assert!(fills.len() > 3, "expected tinted fill runs, got {fills:?}");
+    assert!(
+      fills.len() > 3,
+      "expected tinted fill colors, got {fills:?}"
+    );
   }
 
   #[test]
