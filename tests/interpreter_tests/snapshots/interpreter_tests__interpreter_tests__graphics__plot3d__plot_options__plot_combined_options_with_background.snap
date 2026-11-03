@@ -4,18 +4,18 @@ expression: "export_svg(r#\"Plot[Sin[x], {x, 0, 4 Pi}, PlotRange -> {-2, 2}, Asp
 ---
 <svg width="360" height="150" viewBox="0 0 3600 1500" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="1500" opacity="1" fill="#FFFFD9" stroke="none"/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="81,1431 3459,1431 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="81,1150 3459,1150 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="81,869 3459,869 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="81,588 3459,588 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="81,306 3459,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="148,1431 148,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="664,1431 664,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="1180,1431 1180,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="1696,1431 1696,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="2213,1431 2213,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="2729,1431 2729,306 "/>
-<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="3245,1431 3245,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="81,1431 3459,1431 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="81,1150 3459,1150 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="81,869 3459,869 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="81,588 3459,588 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="81,306 3459,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="148,1431 148,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="664,1431 664,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="1180,1431 1180,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="1696,1431 1696,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="2213,1431 2213,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="2729,1431 2729,306 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="2" points="3245,1431 3245,306 "/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="148,869 214,798 280,731 314,701 347,673 380,649 396,638 413,628 429,620 446,612 462,605 479,599 487,597 496,595 504,593 512,591 520,590 529,589 537,588 545,588 553,588 562,588 570,588 578,589 587,590 595,591 603,593 611,595 628,599 644,605 661,612 678,620 711,638 744,661 810,716 876,780 942,851 1008,923 1075,991 1108,1022 1141,1051 1174,1077 1207,1100 1224,1110 1240,1118 1257,1126 1273,1133 1290,1139 1298,1141 1306,1143 1315,1145 1323,1147 1331,1148 1339,1149 1348,1150 1356,1150 1364,1150 1372,1150 1381,1150 1389,1149 1397,1148 1406,1147 1414,1145 1422,1143 1439,1139 1455,1133 1472,1126 1488,1118 1505,1110 1538,1089 1604,1037 1670,975 1736,905 1803,833 1869,763 1935,701 1968,673 2001,649 2018,638 2034,628 2051,620 2067,612 2084,605 2100,599 2109,597 2117,595 2125,593 2133,591 2142,590 2150,589 2158,588 2167,588 2175,588 2183,588 2191,588 2200,589 2208,590 2216,591 2224,593 2233,595 2249,599 2266,605 2282,612 2299,620 2332,638 2365,661 2398,687 2464,747 2531,815 2597,887 2663,958 2729,1022 2762,1051 2795,1077 2828,1100 2845,1110 2861,1118 2878,1126 2895,1133 2911,1139 2919,1141 2928,1143 2936,1145 2944,1147 2952,1148 2961,1149 2969,1150 2977,1150 2986,1150 2994,1150 3002,1150 3010,1149 3019,1148 3027,1147 3035,1145 3043,1143 3060,1139 3077,1133 3093,1126 3110,1118 3126,1110 3159,1089 3192,1065 3259,1007 3325,940 3391,869 "/>
 <line x1="81.0" y1="869.0" x2="3460.0" y2="869.0" stroke="#666" stroke-width="5"/>
 <line x1="277.6" y1="869.0" x2="277.6" y2="845.0" stroke="#666" stroke-width="5"/>

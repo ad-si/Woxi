@@ -62,13 +62,13 @@ expression: "export_svg(\"ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Top]\")"
 <line x1="85.4" y1="33.2" x2="109.4" y2="33.2" stroke="#666" stroke-width="5"/>
 <line x1="85.4" y1="2167.9" x2="125.4" y2="2167.9" stroke="#666" stroke-width="5"/>
 <line x1="85.4" y1="1757.4" x2="125.4" y2="1757.4" stroke="#666" stroke-width="5"/>
-<text x="55.4" y="1792.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
+<text x="57.6" y="1792.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
 <line x1="85.4" y1="1346.9" x2="125.4" y2="1346.9" stroke="#666" stroke-width="5"/>
-<text x="55.4" y="1381.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="57.6" y="1381.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
 <line x1="85.4" y1="936.4" x2="125.4" y2="936.4" stroke="#666" stroke-width="5"/>
-<text x="55.4" y="971.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
+<text x="57.6" y="971.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
 <line x1="85.4" y1="525.9" x2="125.4" y2="525.9" stroke="#666" stroke-width="5"/>
-<text x="55.4" y="560.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
+<text x="57.6" y="560.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
 <line x1="85.4" y1="115.3" x2="125.4" y2="115.3" stroke="#666" stroke-width="5"/>
-<text x="55.4" y="150.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
+<text x="57.6" y="150.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
 </svg>

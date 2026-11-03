@@ -35,8 +35,8 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 <text x="2843.2" y="2268.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
 <line x1="3515.0" y1="2168.0" x2="3515.0" y2="2118.0" stroke="#666" stroke-width="10.0"/>
 <text x="3515.0" y="2268.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
-<text x="36.0" y="2124.7" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="36.0" y="1454.2" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
-<text x="36.0" y="783.7" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
-<text x="36.0" y="113.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
+<text x="58.8" y="2124.7" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
+<text x="58.8" y="1454.2" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
+<text x="58.8" y="783.7" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
+<text x="58.8" y="113.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
 </svg>

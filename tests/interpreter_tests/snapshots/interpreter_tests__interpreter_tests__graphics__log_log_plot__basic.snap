@@ -68,11 +68,11 @@ expression: "export_svg(\"LogLogPlot[x^2, {x, 1, 100}]\")"
 <line x1="252.8" y1="131.3" x2="276.8" y2="131.3" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="1995.2" x2="292.8" y2="1995.2" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="1523.9" x2="292.8" y2="1523.9" stroke="#666" stroke-width="5"/>
-<text x="222.8" y="1558.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<text x="231.6" y="1558.5" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="252.8" y1="1052.5" x2="292.8" y2="1052.5" stroke="#666" stroke-width="5"/>
-<text x="222.8" y="1087.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
+<text x="231.6" y="1087.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
 <line x1="252.8" y1="581.1" x2="292.8" y2="581.1" stroke="#666" stroke-width="5"/>
-<text x="222.8" y="615.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
+<text x="231.6" y="615.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
 <line x1="252.8" y1="109.7" x2="292.8" y2="109.7" stroke="#666" stroke-width="5"/>
 <text x="222.8" y="144.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10<tspan baseline-shift="super" font-size="70%">4</tspan></text>
 </svg>

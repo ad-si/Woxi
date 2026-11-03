@@ -319,6 +319,7 @@ mod charts {
       framed
         .split("<polyline")
         .skip(1)
+        .map(|p| p.split("/>").next().unwrap_or(p))
         .any(|p| p.contains(RED_HEX) && p.matches(',').count() == 5),
       "{framed}"
     );

@@ -100,10 +100,10 @@ expression: "export_svg(r#\"ListLinePlot[Prime[Range[1, 25]], PlotTheme -> \"Bus
 <text x="2866.7" y="2205.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
 <line x1="3517.2" y1="2105.0" x2="3517.2" y2="2055.0" stroke="#666" stroke-width="10.0"/>
 <text x="3517.2" y="2205.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">25</text>
-<text x="147.0" y="2063.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
-<text x="147.0" y="1661.6" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
-<text x="147.0" y="1260.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">40</text>
-<text x="147.0" y="858.5" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">60</text>
-<text x="147.0" y="457.0" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">80</text>
-<text x="147.0" y="55.5" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
+<text x="166.8" y="2063.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
+<text x="166.8" y="1661.6" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
+<text x="166.8" y="1260.1" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">40</text>
+<text x="166.8" y="858.5" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">60</text>
+<text x="166.8" y="457.0" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">80</text>
+<text x="166.8" y="55.5" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
 </svg>

@@ -279,6 +279,9 @@ pub(crate) struct OriginAxes<'a> {
   pub axes_style: &'a [Option<SeriesStyle>; 2],
   /// `TicksStyle` of the x and the y axis: the tick marks and tick labels.
   pub ticks_style: &'a [Option<SeriesStyle>; 2],
+  /// Keep the y label that sits on the x axis (a chart's `0`), which a
+  /// plot drops.
+  pub keep_y_label_on_x_axis: bool,
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -377,7 +380,10 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         }
         line(&mut svg, &mark, (axis_x, y, axis_x + major_len, y));
         // The label would sit on the horizontal axis.
-        if a.show.0 && (y - axis_y).abs() < font * 0.6 {
+        if a.show.0
+          && !a.keep_y_label_on_x_axis
+          && (y - axis_y).abs() < font * 0.6
+        {
           continue;
         }
         svg.push_str(&format!(

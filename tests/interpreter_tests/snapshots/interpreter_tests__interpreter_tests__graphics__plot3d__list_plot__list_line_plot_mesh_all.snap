@@ -70,15 +70,15 @@ expression: "export_svg(\"ListLinePlot[{1, 2, 3, 2, 1}, Mesh -> All]\")"
 <line x1="168.7" y1="45.9" x2="192.7" y2="45.9" stroke="#666" stroke-width="5"/>
 <line x1="168.7" y1="2115.9" x2="208.7" y2="2115.9" stroke="#666" stroke-width="5"/>
 <line x1="168.7" y1="1782.0" x2="208.7" y2="1782.0" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="1816.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
+<text x="139.0" y="1816.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
 <line x1="168.7" y1="1448.2" x2="208.7" y2="1448.2" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="1482.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="139.0" y="1482.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
 <line x1="168.7" y1="1114.3" x2="208.7" y2="1114.3" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="1149.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
+<text x="139.0" y="1149.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.5</text>
 <line x1="168.7" y1="780.4" x2="208.7" y2="780.4" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="815.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
+<text x="139.0" y="815.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.0</text>
 <line x1="168.7" y1="446.6" x2="208.7" y2="446.6" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="481.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
+<text x="139.0" y="481.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
 <line x1="168.7" y1="112.7" x2="208.7" y2="112.7" stroke="#666" stroke-width="5"/>
-<text x="138.7" y="147.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
+<text x="139.0" y="147.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
 </svg>

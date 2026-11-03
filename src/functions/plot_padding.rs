@@ -103,6 +103,19 @@ const TICK_MINUS_EM: f64 = 0.63027;
 /// (`10 000`), in em.
 const DIGIT_BLOCK_GAP_EM: f64 = 285.0 / 2048.0;
 
+/// Advance widths of the printable ASCII characters in Atkinson Hyperlegible
+/// Next (weight 400), the face `Export` embeds for every SVG text, in
+/// 1/1000 em.
+const ATKINSON_ASCII: [u16; 95] = [
+  280, 286, 301, 651, 592, 919, 731, 160, 299, 299, 485, 606, 210, 362, 210,
+  387, 648, 407, 548, 576, 614, 588, 598, 510, 615, 595, 210, 210, 553, 628,
+  553, 480, 778, 626, 613, 645, 669, 569, 552, 694, 694, 392, 512, 631, 541,
+  824, 693, 714, 592, 724, 614, 592, 558, 690, 593, 856, 623, 575, 607, 317,
+  387, 344, 552, 372, 243, 525, 566, 485, 564, 538, 314, 558, 550, 252, 245,
+  492, 262, 845, 550, 548, 566, 574, 349, 471, 326, 540, 461, 684, 481, 449,
+  460, 344, 237, 344, 555,
+];
+
 fn char_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ARIAL_ASCII[c as usize - 0x20] as f64 / 2048.0,
@@ -111,6 +124,35 @@ fn char_width_em(c: char) -> f64 {
     // Narrow combining marks and zero-width characters.
     '\u{200B}'..='\u{200D}' | '\u{2061}'..='\u{2063}' => 0.0,
     _ => 1139.0 / 2048.0,
+  }
+}
+
+/// Left side bearings of the printable ASCII characters in Atkinson
+/// Hyperlegible Next (weight 400), in 1/1000 em: the blank the glyph leaves
+/// before its ink.
+const ATKINSON_ASCII_LSB: [i16; 95] = [
+  0, 78, 40, 36, 38, 36, 59, 40, 55, 35, 70, 55, 40, 35, 40, 20, 60, 35, 29,
+  44, 38, 59, 65, 15, 60, 57, 40, 40, 40, 66, 40, 30, 44, 10, 78, 44, 78, 78,
+  78, 44, 78, 55, 15, 78, 78, 78, 78, 44, 78, 44, 78, 38, 10, 76, 12, 18, 10,
+  0, 44, 78, 20, 60, 53, -2, 40, 31, 72, 36, 36, 36, 15, 36, 72, 25, -61, 72,
+  68, 72, 72, 36, 72, 36, 72, 31, 20, 70, 10, 15, 10, 10, 40, 38, 78, 34, 41,
+];
+
+fn atkinson_lsb_em(c: char) -> f64 {
+  match c {
+    ' '..='~' => ATKINSON_ASCII_LSB[c as usize - 0x20] as f64 / 1000.0,
+    '\u{2212}' | '\u{00D7}' => 0.055,
+    _ => 0.0,
+  }
+}
+
+/// Width of `c` in the face the exported SVG actually draws with.
+fn atkinson_width_em(c: char) -> f64 {
+  match c {
+    ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
+    '\u{2212}' => 0.606,
+    '\u{00D7}' => 0.532,
+    _ => char_width_em(c),
   }
 }
 
@@ -209,6 +251,170 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
     em += ((int_digits - 1) / 3) as f64 * DIGIT_BLOCK_GAP_EM;
   }
   em * size
+}
+
+/// The horizontal ink of a one-line text in the face exported graphics draw
+/// with (Atkinson Hyperlegible Next): from the ink of its first glyph to the
+/// end of its advance, as `(lead, width)` at `size`, `lead` being the blank
+/// before the first glyph's ink.
+fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
+  let chars = visible_chars(markup);
+  let lead = chars.first().map_or(0.0, |&c| atkinson_lsb_em(c));
+  let width = chars.iter().copied().map(atkinson_width_em).sum::<f64>();
+  (lead * size, width * size)
+}
+
+/// Shift every label of a flat plot SVG that would run past the left or
+/// right edge of its `viewBox` back inside it.
+///
+/// The automatic padding is laid out in the Arial metrics the Wolfram front
+/// end uses, so a plot's geometry matches wolframscript's; but the text is
+/// drawn in Atkinson Hyperlegible, whose digits are wider (`0` is 0.648 em
+/// against Arial's 0.556 em). A y tick label that exactly fills its room in
+/// Arial would lose its first digit at the image edge. Only `<text>` outside
+/// any transformed group is considered, and only its single `x`.
+pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
+  use std::borrow::Cow;
+  let Some(width) = svg_canvas_width(svg) else {
+    return Cow::Borrowed(svg);
+  };
+  // Every unrotated top-level label: where its `x` value sits, the value,
+  // its anchor, and how far it must move to stay inside.
+  struct Label {
+    at: usize,
+    len: usize,
+    x: f64,
+    anchor: u8,
+    shift: f64,
+  }
+  let mut labels: Vec<Label> = Vec::new();
+  // One entry per open `<g>`: whether it carries a transform.
+  let mut groups: Vec<bool> = Vec::new();
+  let mut pos = 0usize;
+  while let Some(rel) = svg[pos..].find('<') {
+    let start = pos + rel;
+    let Some(tag_end) = svg[start..].find('>').map(|e| start + e + 1) else {
+      break;
+    };
+    let tag = &svg[start..tag_end];
+    pos = tag_end;
+    let is_group = tag.starts_with("<g")
+      && tag
+        .as_bytes()
+        .get(2)
+        .is_none_or(|b| !b.is_ascii_alphanumeric());
+    if is_group {
+      if !tag.ends_with("/>") {
+        groups.push(tag.contains("transform="));
+      }
+      continue;
+    }
+    if tag.starts_with("</g") {
+      groups.pop();
+      continue;
+    }
+    if !tag.starts_with("<text") || tag.ends_with("/>") {
+      continue;
+    }
+    let Some(close) = svg[tag_end..].find("</text>").map(|c| tag_end + c)
+    else {
+      continue;
+    };
+    pos = close;
+    let content = svg[tag_end..close].trim();
+    if groups.iter().any(|&t| t)
+      || tag.contains("transform=")
+      || content.contains('<')
+      || content.contains('\n')
+    {
+      continue;
+    }
+    let Some((x_at, len, x)) = attr_number(tag, "x") else {
+      continue;
+    };
+    let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
+    let (lead, w) = exported_text_extent(content, size);
+    if w <= 0.0 || w - lead > width {
+      continue;
+    }
+    let (anchor, left) = if tag.contains("text-anchor=\"end\"") {
+      (2, x - w)
+    } else if tag.contains("text-anchor=\"middle\"") {
+      (1, x - w / 2.0)
+    } else {
+      (0, x)
+    };
+    let ink_left = left + lead;
+    let shift = if ink_left < 0.0 {
+      -ink_left
+    } else if left + w > width {
+      (width - (left + w)).max(-ink_left)
+    } else {
+      0.0
+    };
+    labels.push(Label {
+      at: start + x_at,
+      len,
+      x,
+      anchor,
+      shift,
+    });
+  }
+  if labels.iter().all(|l| l.shift == 0.0) {
+    return Cow::Borrowed(svg);
+  }
+  // A column of right-aligned labels (the y tick labels) moves as one, so
+  // it stays aligned.
+  let column_shift = |l: &Label| {
+    if l.anchor != 2 || l.shift < 0.0 {
+      return l.shift;
+    }
+    labels
+      .iter()
+      .filter(|o| o.anchor == 2 && (o.x - l.x).abs() < 1e-6)
+      .map(|o| o.shift)
+      .fold(0.0, f64::max)
+  };
+  let mut out = String::with_capacity(svg.len());
+  let mut copied = 0usize;
+  for l in &labels {
+    let shift = column_shift(l);
+    if shift == 0.0 {
+      continue;
+    }
+    out.push_str(&svg[copied..l.at]);
+    out.push_str(&format!("{:.1}", l.x + shift));
+    copied = l.at + l.len;
+  }
+  out.push_str(&svg[copied..]);
+  Cow::Owned(out)
+}
+
+/// The width of the outermost `<svg>`'s `viewBox` (else its `width`).
+fn svg_canvas_width(svg: &str) -> Option<f64> {
+  let open = svg.find("<svg")?;
+  let tag = &svg[open..open + svg[open..].find('>')?];
+  if let Some(i) = tag.find("viewBox=\"") {
+    let v = &tag[i + 9..];
+    let v = &v[..v.find('"')?];
+    return v
+      .split([' ', ','])
+      .filter(|t| !t.is_empty())
+      .nth(2)?
+      .parse()
+      .ok();
+  }
+  attr_number(tag, "width").map(|(_, _, w)| w)
+}
+
+/// A numeric attribute of a tag: the byte offset and length of its value
+/// within `tag`, and the value.
+fn attr_number(tag: &str, name: &str) -> Option<(usize, usize, f64)> {
+  let pat = format!(" {name}=\"");
+  let at = tag.find(&pat)? + pat.len();
+  let len = tag[at..].find('"')?;
+  let value = tag[at..at + len].trim().parse().ok()?;
+  Some((at, len, value))
 }
 
 /// A tick label: where its tick falls along the axis (0 at the low end,
@@ -631,6 +837,37 @@ mod tests {
     // `10 000`: a thin space between the digit blocks.
     assert!((tick_label_width("10000", 10.0) - 29.199).abs() < 1e-3);
     assert!((text_width("time", 10.0) - 18.892).abs() < 1e-3);
+  }
+
+  #[test]
+  fn labels_running_off_the_canvas_are_pulled_back_in() {
+    // `0.08` right-aligned 19.5 pt from the left edge: Arial's width, but
+    // Atkinson's ink reaches 20.61 pt left of the anchor.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"19.5\" y=\"9\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert!(out.contains("x=\"20.6\""), "{out}");
+    // The column of y labels moves together, so it stays right-aligned.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"19.5\" y=\"9\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text><text \
+               x=\"19.5\" y=\"29\" text-anchor=\"end\" font-size=\"10\">\
+               0.10</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert_eq!(out.matches("x=\"20.6\"").count(), 2, "{out}");
+    // A centred label overhanging the right edge moves left.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"398\" y=\"9\" \
+               text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert!(out.contains("x=\"391.5\""), "{out}");
+    // Labels already inside, and labels in a transformed group, stay.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"30\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text>\
+               <g transform=\"translate(50,0)\"><text x=\"1\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text></g></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
   }
 
   fn frame_sin() -> Decorations {

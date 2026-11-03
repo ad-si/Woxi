@@ -58,13 +58,13 @@ expression: "export_svg(\"ListLinePlot[{{{1, 1}, {2, 4}, {3, 9}, {4, 16}, {5, 25
 <line x1="141.3" y1="32.8" x2="165.3" y2="32.8" stroke="#666" stroke-width="5"/>
 <line x1="141.3" y1="2133.6" x2="181.3" y2="2133.6" stroke="#666" stroke-width="5"/>
 <line x1="141.3" y1="1729.6" x2="181.3" y2="1729.6" stroke="#666" stroke-width="5"/>
-<text x="111.3" y="1764.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
+<text x="116.7" y="1764.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
 <line x1="141.3" y1="1325.6" x2="181.3" y2="1325.6" stroke="#666" stroke-width="5"/>
-<text x="111.3" y="1360.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<text x="116.7" y="1360.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="141.3" y1="921.6" x2="181.3" y2="921.6" stroke="#666" stroke-width="5"/>
-<text x="111.3" y="956.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">15</text>
+<text x="116.7" y="956.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">15</text>
 <line x1="141.3" y1="517.6" x2="181.3" y2="517.6" stroke="#666" stroke-width="5"/>
-<text x="111.3" y="552.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
+<text x="116.7" y="552.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
 <line x1="141.3" y1="113.6" x2="181.3" y2="113.6" stroke="#666" stroke-width="5"/>
-<text x="111.3" y="148.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">25</text>
+<text x="116.7" y="148.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">25</text>
 </svg>

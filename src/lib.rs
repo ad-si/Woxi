@@ -1319,8 +1319,19 @@ pub fn capture_graphics(svg: &str) {
   });
 }
 
+/// A 2D graphic's SVG with every label that would run off the canvas in
+/// the exported face pulled back inside (see
+/// `plot_padding::keep_text_in_view`).
+fn text_in_view(svg: String) -> String {
+  match functions::plot_padding::keep_text_in_view(&svg) {
+    std::borrow::Cow::Borrowed(_) => svg,
+    std::borrow::Cow::Owned(s) => s,
+  }
+}
+
 /// Capture SVG and return an Expr::Graphics carrying the SVG data.
 pub fn graphics_result(svg: String) -> syntax::Expr {
+  let svg = text_in_view(svg);
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,
@@ -1334,6 +1345,7 @@ pub fn graphics_result(svg: String) -> syntax::Expr {
 /// Like `graphics_result` but reports `head` (e.g. `GeoGraphics`) from `Head`
 /// instead of the default `Graphics`. The SVG renders identically.
 fn graphics_result_with_head(svg: String, head: &str) -> syntax::Expr {
+  let svg = text_in_view(svg);
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,
@@ -1351,6 +1363,7 @@ pub fn graphics_result_with_source(
   svg: String,
   source: syntax::PlotSource,
 ) -> syntax::Expr {
+  let svg = text_in_view(svg);
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,
@@ -1382,6 +1395,7 @@ pub fn graphics_result_with_structure(
   svg: String,
   structure: syntax::Expr,
 ) -> syntax::Expr {
+  let svg = text_in_view(svg);
   capture_graphics(&svg);
   syntax::Expr::Graphics {
     svg,

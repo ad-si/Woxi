@@ -12079,6 +12079,57 @@ mod plot3d {
       ));
     }
 
+    /// WL 15 strokes unstyled grid lines 0.2 pt wide (2 render units);
+    /// a full point made them read as dark rules.
+    #[test]
+    fn plot_grid_lines_are_hairlines() {
+      let svg = export_svg("Plot[x, {x, 0, 1}, GridLines -> Automatic]");
+      let grid: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.contains("stroke=\"#808080\""))
+        .collect();
+      assert!(!grid.is_empty(), "{svg}");
+      assert!(
+        grid.iter().all(|l| l.contains("stroke-width=\"2\"")),
+        "{svg}"
+      );
+      // An explicit thickness still wins.
+      let thick = export_svg(
+        "Plot[x, {x, 0, 1}, GridLines -> Automatic, \
+         GridLinesStyle -> AbsoluteThickness[1]]",
+      );
+      assert!(thick.contains("stroke-width=\"10\""), "{thick}");
+    }
+
+    /// A y tick label whose Atkinson glyphs are wider than the Arial room
+    /// the padding leaves (`0.08`: 0.648 em zeros) is moved in from the
+    /// image edge, the whole column together.
+    #[test]
+    fn y_tick_labels_stay_inside_the_image() {
+      let svg = export_svg(
+        "ListPlot[Table[{k, PDF[BinomialDistribution[50, 0.3], k]}, \
+         {k, 0, 40}], Filling -> Axis]",
+      );
+      let xs: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.contains("text-anchor=\"end\"") && l.contains(">0.0"))
+        .map(|l| {
+          l.split("x=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+        })
+        .collect();
+      assert!(!xs.is_empty(), "{svg}");
+      // `0.08` is 212.1 units wide with a 6-unit lead-in bearing.
+      assert!(xs.iter().all(|&x| x >= 206.0), "{xs:?}");
+      assert!(xs.windows(2).all(|w| w[0] == w[1]), "{xs:?}");
+    }
+
     #[test]
     fn plot_grid_lines_y_only() {
       insta::assert_snapshot!(export_svg(
@@ -15314,6 +15365,58 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("BarChart[{1, 2, 3}]"));
     }
 
+    /// The value axis is drawn like a `Plot` axis: tick marks pointing
+    /// into the chart (right of the axis), minor marks between the
+    /// labelled ones, the `0` labelled; the bars' outer edges get marks
+    /// hanging 6 pt below the x axis. Regression: plotters' outward marks
+    /// ran into the labels and the edge marks were missing.
+    #[test]
+    fn bar_chart_axes_point_inward() {
+      let svg = export_svg("BarChart[{5, 3, 8, 2, 6}]");
+      let lines: Vec<(f64, f64, f64, f64)> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .map(|l| {
+          let a = |n: &str| -> f64 {
+            l.split(&format!(" {n}=\""))
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .parse()
+              .unwrap()
+          };
+          (a("x1"), a("y1"), a("x2"), a("y2"))
+        })
+        .collect();
+      // The y axis: the vertical line furthest left.
+      let axis_x = lines
+        .iter()
+        .filter(|(x1, _, x2, _)| x1 == x2)
+        .map(|l| l.0)
+        .fold(f64::INFINITY, f64::min);
+      let y_marks: Vec<_> = lines
+        .iter()
+        .filter(|(x1, y1, x2, y2)| *x1 == axis_x && y1 == y2 && x2 - x1 < 50.0)
+        .collect();
+      // 0..8 by 2 with three minors between: 17 marks, all to the right.
+      assert_eq!(y_marks.len(), 17, "{svg}");
+      assert!(y_marks.iter().all(|(_, _, x2, _)| *x2 > axis_x));
+      assert!(svg.contains(">0</text>"), "{svg}");
+      // Two marks hang below the x axis at the outer bar edges.
+      let x_axis_y = lines
+        .iter()
+        .filter(|(_, y1, _, y2)| y1 == y2)
+        .map(|l| l.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+      let below = lines
+        .iter()
+        .filter(|(x1, y1, x2, y2)| x1 == x2 && *y1 == x_axis_y && *y2 > *y1)
+        .count();
+      assert_eq!(below, 2, "{svg}");
+    }
+
     /// Distinct left edges and bottom/top extents of the bar rectangles
     /// (every `<rect>` after the background).
     fn bar_rects(svg: &str) -> Vec<(i64, i64, i64)> {
@@ -15620,6 +15723,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("Histogram[{1, 2, 2, 3, 3, 3}]"));
     }
 
+    /// Histogram's axes point into the chart like `Plot`'s, and its range
+    /// is padded the way WL 15's `PlotRangePadding` pads it, so the y axis
+    /// stands clear of the first bin. Regression: the axis sat on the first
+    /// bar's edge, with outward marks and a 65 pt label gutter.
+    #[test]
+    fn histogram_axes_point_inward_and_clear_the_bars() {
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 6, 6, 7}]",
+      );
+      let attr = |l: &str, n: &str| -> f64 {
+        l.split(&format!(" {n}=\""))
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let verticals: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+        .collect();
+      let axis = verticals
+        .iter()
+        .max_by(|a, b| {
+          let len = |l: &&&str| (attr(l, "y2") - attr(l, "y1")).abs();
+          len(a).total_cmp(&len(b))
+        })
+        .unwrap();
+      let axis_x = attr(axis, "x1");
+      let first_bar_x = svg
+        .lines()
+        .filter(|l| l.contains("<rect") && l.contains("FFD540"))
+        .map(|l| attr(l, "x"))
+        .fold(f64::INFINITY, f64::min);
+      assert!(first_bar_x - axis_x > 30.0, "{axis_x} {first_bar_x}");
+      // Every y tick mark runs right of the axis.
+      let y_marks: Vec<&str> = svg
+        .lines()
+        .filter(|l| {
+          l.starts_with("<line")
+            && attr(l, "y1") == attr(l, "y2")
+            && attr(l, "x1") == axis_x
+        })
+        .collect();
+      assert!(!y_marks.is_empty());
+      assert!(y_marks.iter().all(|l| attr(l, "x2") > axis_x), "{svg}");
+      for label in ["0", "4", "1", "7"] {
+        assert!(svg.contains(&format!(">{label}</text>")), "{label}");
+      }
+    }
+
     #[test]
     fn histogram_bins_like_histogram_list() {
       // Regression: Histogram had its own automatic binning (Sturges bins
@@ -15813,7 +15969,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Histogram[{1, 2, 2, 3, 3, 3}, PlotRange -> {{0, 10}, {0, 8}}]",
       );
       assert!(
-        svg.contains("\n10\n"),
+        svg.contains(">10</text>"),
         "expected a major tick label at extended x = 10"
       );
     }
@@ -16897,19 +17053,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "{plain}"
       );
       for label in ["0", "2", "4", "6", "8"] {
-        assert!(plain.contains(&format!(">\n{label}\n</text>")), "{label}");
+        assert!(plain.contains(&format!(">{label}</text>")), "{label}");
       }
-      assert!(!plain.contains(">\n7\n</text>"));
+      assert!(!plain.contains(">7</text>"));
       let labelled = export_svg(
         "BarChart[{3, 7, 1, 5}, ChartLabels -> {\"a\", \"b\", \"c\", \"d\"}, \
          PlotLabel -> \"Styled bar chart\"]",
       );
       assert!(
-        labelled.contains("<svg width=\"360\" height=\"248\""),
+        labelled.contains("<svg width=\"360\" height=\"244\""),
         "{labelled}"
       );
       for label in 1..=7 {
-        assert!(labelled.contains(&format!(">\n{label}\n</text>")));
+        assert!(labelled.contains(&format!(">{label}</text>")));
       }
     }
 
@@ -16923,7 +17079,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // With y in {0, 250}, the label "250" must appear (default y_max
       // for Prime[1..20] would be 71 * 1.1, so "250" is proof the
       // override applied).
-      assert!(svg.contains(">\n250\n"), "y-axis should reach 250");
+      assert!(svg.contains(">250</text>"), "y-axis should reach 250");
 
       // Collect bar rect x positions (filled bars have the default
       // series color #FFD540).
@@ -16938,26 +17094,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .collect();
       assert_eq!(bar_xs.len(), 20, "expected 20 bars");
 
-      // Plot area left edge ~356, right edge ~3560 (width ~3204: the y
-      // label area only holds the "250" labels). With x ∈ [0, 50] in chart
-      // coordinates (bar i centred at i + 1), bar i spans [i + 0.6,
-      // i + 1.4], so the first bar starts at ~356 + 0.6/50 * 3204 ≈ 394
-      // and the last (i=19) at ~356 + 19.6/50 * 3204 ≈ 1612 — i.e. the
+      // Plot area left edge ~197 (the y axis: the "250" labels plus their
+      // 3 pt gap), right edge ~3517 (width ~3320). With x ∈ [0, 50] in
+      // chart coordinates (bar i centred at i + 1), bar i spans [i + 0.6,
+      // i + 1.4], so the first bar starts at ~197 + 0.6/50 * 3320 ≈ 235
+      // and the last (i=19) at ~197 + 19.6/50 * 3320 ≈ 1498 — i.e. the
       // bars only cover ~38% of the plot width.
       assert!(
-        (bar_xs[0] - 394.0).abs() < 5.0,
-        "first bar x {} should be near 394",
+        (bar_xs[0] - 235.0).abs() < 5.0,
+        "first bar x {} should be near 235",
         bar_xs[0]
       );
       assert!(
-        (bar_xs[19] - 1612.0).abs() < 5.0,
-        "last bar x {} should be near 1612",
+        (bar_xs[19] - 1498.0).abs() < 5.0,
+        "last bar x {} should be near 1498",
         bar_xs[19]
       );
 
       // Bar heights follow the y override: Prime[20]=71 at y=250 should
-      // occupy 71/250 of the plot height (~1980 px: the plot area's width
-      // over GoldenRatio) ≈ 562 px.
+      // occupy 71/250 of the plot height (~2052 px: the plot area's width
+      // over GoldenRatio) ≈ 581 px.
       let last_bar_line = svg
         .lines()
         .rfind(|l| l.contains("fill=\"#FFD540\"") && l.contains("<rect"))
@@ -16971,8 +17127,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .unwrap();
       let last_h: f64 = h_str.parse().unwrap();
       assert!(
-        (last_h - 562.0).abs() < 5.0,
-        "last bar height {last_h} should be near 562"
+        (last_h - 581.0).abs() < 5.0,
+        "last bar height {last_h} should be near 581"
       );
     }
 
@@ -16995,8 +17151,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // WL 15 steps the 0..3 value axis by 0.5.
       let with = export_svg("BarChart[{1, 2, 3}]");
       let without = export_svg("BarChart[{1, 2, 3}, Ticks -> False]");
-      assert!(with.contains(">\n2.0\n"));
-      assert!(!without.contains(">\n2.0\n"));
+      assert!(with.contains(">2.0</text>"));
+      assert!(!without.contains(">2.0</text>"));
     }
 
     /// `Epilog` primitives are drawn over a bar chart, in chart coordinates.
@@ -17016,7 +17172,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn bar_chart_plot_range_y_only() {
       let svg = export_svg("BarChart[{1, 2, 3}, PlotRange -> {0, 10}]");
       // y=10 tick label must appear.
-      assert!(svg.contains(">\n10\n"), "y-axis should reach 10");
+      assert!(svg.contains(">10</text>"), "y-axis should reach 10");
       // The three bars still fill the whole plot width.
       let bar_xs: Vec<f64> = svg
         .lines()
@@ -18074,6 +18230,48 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         styled.matches("<line").count() > gridless.matches("<line").count(),
         "GridLines -> Automatic must add grid lines"
       );
+    }
+
+    /// Wolfram draws a graphic's axes in front of its primitives, with
+    /// tick marks pointing into the picture (up from the x axis, right of
+    /// the y axis) and unlabelled minor marks between the labelled ones.
+    /// Regression: a `Disk` hid the axes, and the marks were crosses.
+    #[test]
+    fn graphics_axes_sit_in_front_with_inward_ticks() {
+      let svg = export_svg(
+        "Graphics[{Blue, Disk[]}, Axes -> True, \
+         PlotRange -> {{-2, 2}, {-2, 2}}]",
+      );
+      let disk = svg.find("<ellipse").or_else(|| svg.find("<circle"));
+      let first_axis = svg.find("<line");
+      assert!(disk.is_some() && first_axis.is_some(), "{svg}");
+      assert!(first_axis > disk, "axes must follow the disk: {svg}");
+      let attr = |l: &str, n: &str| -> f64 {
+        l.split(&format!(" {n}=\""))
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let marks: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line"))
+        .filter(|l| {
+          let (x1, y1, x2, y2) =
+            (attr(l, "x1"), attr(l, "y1"), attr(l, "x2"), attr(l, "y2"));
+          (x1 - x2).abs() + (y1 - y2).abs() < 10.0
+        })
+        .collect();
+      // -2..2 by 1 on each axis, with four minors per step: 21 marks each.
+      assert_eq!(marks.len(), 42, "{svg}");
+      for l in &marks {
+        let (x1, y1, x2, y2) =
+          (attr(l, "x1"), attr(l, "y1"), attr(l, "x2"), attr(l, "y2"));
+        assert!(y2 < y1 || x2 > x1, "outward mark {l}");
+      }
     }
 
     /// `AxesStyle` restyles the axis lines: a thickness alone keeps the

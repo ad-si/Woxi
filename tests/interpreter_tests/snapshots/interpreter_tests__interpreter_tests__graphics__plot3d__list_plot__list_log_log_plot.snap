@@ -49,13 +49,13 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <line x1="252.2" y1="180.2" x2="276.2" y2="180.2" stroke="#666" stroke-width="5"/>
 <line x1="252.2" y1="129.5" x2="276.2" y2="129.5" stroke="#666" stroke-width="5"/>
 <line x1="252.2" y1="2064.8" x2="292.2" y2="2064.8" stroke="#666" stroke-width="5"/>
-<text x="222.2" y="2099.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<text x="231.6" y="2099.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="252.2" y1="1372.6" x2="292.2" y2="1372.6" stroke="#666" stroke-width="5"/>
-<text x="222.2" y="1407.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">50</text>
+<text x="231.6" y="1407.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">50</text>
 <line x1="252.2" y1="1074.5" x2="292.2" y2="1074.5" stroke="#666" stroke-width="5"/>
-<text x="222.2" y="1109.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
+<text x="231.6" y="1109.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
 <line x1="252.2" y1="382.3" x2="292.2" y2="382.3" stroke="#666" stroke-width="5"/>
-<text x="222.2" y="417.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">500</text>
+<text x="231.6" y="417.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">500</text>
 <line x1="252.2" y1="84.2" x2="292.2" y2="84.2" stroke="#666" stroke-width="5"/>
-<text x="222.2" y="118.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
+<text x="231.6" y="118.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
 </svg>

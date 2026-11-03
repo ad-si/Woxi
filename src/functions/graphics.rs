@@ -8802,6 +8802,35 @@ fn axis_ticks(
   }
 }
 
+/// Length of a labelled axis tick mark, in points.
+const AXIS_MAJOR_TICK: f64 = 4.0;
+/// Length of an unlabelled axis tick mark, in points.
+const AXIS_MINOR_TICK: f64 = 2.4;
+
+/// The unlabelled marks between automatic ticks: a fifth of the step (a
+/// quarter for steps of 2 × 10^k), as Wolfram subdivides them. Explicit
+/// `Ticks` carry no minor marks.
+fn axis_minor_ticks(spec: &TickSpec, min: f64, max: f64) -> Vec<f64> {
+  if !matches!(spec, TickSpec::Automatic) {
+    return Vec::new();
+  }
+  let major = nice_tick_step(min, max, 4);
+  if !(major.is_finite() && major > 0.0) {
+    return Vec::new();
+  }
+  let divisions = crate::functions::plot::minor_tick_divisions(major) as i64;
+  let minor = major / divisions as f64;
+  let first = (min / minor - 1e-9).ceil() as i64;
+  let last = (max / minor + 1e-9).floor() as i64;
+  if last - first > 10_000 {
+    return Vec::new();
+  }
+  (first..=last)
+    .filter(|i| i.rem_euclid(divisions) != 0)
+    .map(|i| i as f64 * minor)
+    .collect()
+}
+
 /// Horizontal centre for a bottom-axis tick label, shifted inwards when
 /// centring it on the tick would push part of the text outside the picture.
 /// `margins` is the room available left of `0` and right of `svg_w`; the
@@ -8945,6 +8974,15 @@ fn render_axes(
     ));
     let mark = ticks_style.0.stroke_attrs(axis_stroke);
     let tick_label_fill = tick_fill(&ticks_style.0);
+    for t in axis_minor_ticks(ticks.0, bb.x_min, bb.x_max) {
+      let x = coord_x(t, bb, svg_w);
+      if x.is_finite() {
+        svg.push_str(&format!(
+          "<line x1=\"{x:.2}\" y1=\"{axis_y_px:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" {mark}/>\n",
+          axis_y_px - AXIS_MINOR_TICK
+        ));
+      }
+    }
     let entries = axis_ticks(ticks.0, bb.x_min, bb.x_max);
     let step =
       tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
@@ -8953,10 +8991,10 @@ fn render_axes(
       if !x.is_finite() {
         continue;
       }
+      // Marks point into the picture: up from the x axis.
       svg.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" {mark}/>\n",
-        axis_y_px - 4.0,
-        axis_y_px + 4.0
+        "<line x1=\"{x:.2}\" y1=\"{axis_y_px:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" {mark}/>\n",
+        axis_y_px - AXIS_MAJOR_TICK
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
@@ -8985,6 +9023,15 @@ fn render_axes(
     ));
     let mark = ticks_style.1.stroke_attrs(axis_stroke);
     let tick_label_fill = tick_fill(&ticks_style.1);
+    for t in axis_minor_ticks(ticks.1, bb.y_min, bb.y_max) {
+      let y = coord_y(t, bb, svg_h);
+      if y.is_finite() {
+        svg.push_str(&format!(
+          "<line x1=\"{axis_x_px:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" {mark}/>\n",
+          axis_x_px + AXIS_MINOR_TICK
+        ));
+      }
+    }
     let entries = axis_ticks(ticks.1, bb.y_min, bb.y_max);
     let step =
       tick_sequence_step(&entries.iter().map(|(t, _)| *t).collect::<Vec<_>>());
@@ -8993,10 +9040,10 @@ fn render_axes(
       if !y.is_finite() {
         continue;
       }
+      // Right from the y axis.
       svg.push_str(&format!(
-        "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" {mark}/>\n",
-        axis_x_px - 4.0,
-        axis_x_px + 4.0
+        "<line x1=\"{axis_x_px:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" {mark}/>\n",
+        axis_x_px + AXIS_MAJOR_TICK
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
@@ -12297,25 +12344,6 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  render_axes(
-    &mut svg,
-    axes,
-    &bb,
-    svg_w,
-    svg_h,
-    axes_label.as_ref(),
-    (&ticks_x, &ticks_y),
-    (margin_left, margin_right),
-    axes_style.as_ref().map_or_else(Default::default, |spec| {
-      AxisLineStyle::parse_pair(spec, &bb, svg_w)
-    }),
-    ticks_style
-      .as_ref()
-      .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
-    axes_origin,
-    label_color,
-  );
-
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
   // shadow (overlapping shadows stack, giving the depth effect). The whole
@@ -12338,6 +12366,26 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   svg.push_str("</g>\n");
+
+  // The axes sit in front of the primitives, as Wolfram draws them.
+  render_axes(
+    &mut svg,
+    axes,
+    &bb,
+    svg_w,
+    svg_h,
+    axes_label.as_ref(),
+    (&ticks_x, &ticks_y),
+    (margin_left, margin_right),
+    axes_style.as_ref().map_or_else(Default::default, |spec| {
+      AxisLineStyle::parse_pair(spec, &bb, svg_w)
+    }),
+    ticks_style
+      .as_ref()
+      .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
+    axes_origin,
+    label_color,
+  );
 
   if frame {
     render_frame(

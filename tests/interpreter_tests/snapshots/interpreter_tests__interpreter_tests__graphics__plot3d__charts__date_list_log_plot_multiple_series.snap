@@ -44,15 +44,15 @@ expression: "export_svg(\"DateListLogPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 10
 <line x1="252.0" y1="110.4" x2="276.0" y2="110.4" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1988.7" x2="292.0" y2="1988.7" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1544.3" x2="292.0" y2="1544.3" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="1579.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
+<text x="231.6" y="1579.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
 <line x1="252.0" y1="1352.9" x2="292.0" y2="1352.9" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="1387.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<text x="231.6" y="1387.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="252.0" y1="908.5" x2="292.0" y2="908.5" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="943.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">50</text>
+<text x="231.6" y="943.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">50</text>
 <line x1="252.0" y1="717.1" x2="292.0" y2="717.1" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="751.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
+<text x="231.6" y="751.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
 <line x1="252.0" y1="272.7" x2="292.0" y2="272.7" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="307.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">500</text>
+<text x="231.6" y="307.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">500</text>
 <line x1="252.0" y1="81.3" x2="292.0" y2="81.3" stroke="#666" stroke-width="5"/>
-<text x="222.0" y="116.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
+<text x="231.6" y="116.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1000</text>
 </svg>

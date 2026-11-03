@@ -3217,10 +3217,12 @@ pub(crate) const PLOT_COLORS_RGB: [(f64, f64, f64); 15] = [
 ];
 
 /// Font size of chart labels (`ChartLabels`, axes and frame labels) in the
-/// bar, bubble and histogram renderers, in display pixels.
-const CHART_LABEL_FONT: f64 = 13.0;
-/// Font size of a chart's `PlotLabel`, in display pixels.
-const CHART_TITLE_FONT: f64 = 15.0;
+/// bar, bubble and histogram renderers,
+/// in display pixels (WL 15: the tick-label size).
+const CHART_LABEL_FONT: f64 = 10.0;
+/// Font size of a chart's `PlotLabel`, in display pixels (WL 15's
+/// `PlotLabel` size).
+const CHART_TITLE_FONT: f64 = 12.0;
 
 /// `PLOT_COLORS_RGB` quantized to 8-bit channels for the SVG renderers.
 pub(crate) const PLOT_COLORS: [(u8, u8, u8); 15] = {
@@ -3388,6 +3390,8 @@ fn render_dash_overlays(
 /// look of the solid grid lines (`rgb(102,102,102)` at 50% opacity over a white
 /// background), since dash overlays carry no opacity.
 const DEFAULT_GRID_DASH_RGB: (u8, u8, u8) = (179, 179, 179);
+/// Width of a grid line without an explicit thickness, in points.
+const DEFAULT_GRID_THICKNESS: f64 = 0.2;
 
 /// Resolve one axis' grid-line positions into `(position, style)` pairs.
 ///
@@ -3449,7 +3453,10 @@ fn grid_line_props(
   });
   let stroke_w = match style.thickness {
     Some(t) => ((t * RESOLUTION_SCALE as f64).round() as u32).max(1),
-    None => RESOLUTION_SCALE,
+    // WL 15 strokes grid lines 0.2 pt wide unless a thickness is given.
+    None => {
+      ((DEFAULT_GRID_THICKNESS * RESOLUTION_SCALE as f64).round() as u32).max(1)
+    }
   };
   (rgb, stroke_w, style.dashing.clone())
 }
@@ -5312,6 +5319,7 @@ fn generate_svg_with_options(
       label_fill,
       axes_style: &opts.axes_style,
       ticks_style: &opts.ticks_style,
+      keep_y_label_on_x_axis: false,
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -6771,9 +6779,6 @@ pub(crate) fn bar_group_gap(bar_spacing: Option<f64>) -> f64 {
 /// The bare margin left of and below a vertical bar chart's label areas,
 /// in display points (WL 15's automatic `ImagePadding` hugs the labels).
 const BAR_SIDE_MARGIN: f64 = 2.0;
-/// The size plotters draws the y tick labels of a bar chart at (it renders
-/// a size smaller than an SVG `font-size` of the same value).
-const BAR_TICK_FONT: f64 = 13.0;
 
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -6861,8 +6866,15 @@ pub(crate) fn generate_bar_svg(
   let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
   // WL 15 leaves only the room the labels take: half a point above the
   // plotting area, a strip for a `PlotLabel`.
-  let top_margin = if has_plot_label { 20 * s } else { 4 * s }
-    + plot_label_extra_lines(plot_label) as i32 * 20 * s
+  // Half a point above the plotting area (whose own `Scaled[0.05]`
+  // headroom tops the tallest bar), more for value labels above the bars.
+  let top_margin = if has_plot_label {
+    14 * s
+  } else if has_value_labels {
+    4 * s
+  } else {
+    s / 2
+  } + plot_label_extra_lines(plot_label) as i32 * 20 * s
     + if axes_label_y.is_some() { 20 * s } else { 0 };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   // Only content drawn below the axis consumes bottom margin. Chart labels do
@@ -6876,7 +6888,7 @@ pub(crate) fn generate_bar_svg(
     bottom_extra += if has_rotated_labels {
       50.0 * sf
     } else {
-      12.0 * sf
+      10.0 * sf
     };
   }
   if has_value_labels {
@@ -6892,24 +6904,26 @@ pub(crate) fn generate_bar_svg(
     bottom_extra += 24.0 * sf;
   }
   // The bars' group ticks hang 6 points below the axis.
-  let x_label_area = 7 * RESOLUTION_SCALE + bottom_extra as u32;
-  // The y tick labels, right-aligned beside their tick marks: as wide as
-  // the widest label (WL's 0.556 em digits) plus the tick and a gap.
+  let x_label_area = (5.5 * sf) as u32 + bottom_extra as u32;
+  // The y axis and its ticks, drawn the way an unframed `Plot` draws them
+  // (`plot_axes::origin_axes_svg`): marks pointing into the chart, labels
+  // right-aligned 3 pt left of the axis.
+  let y_scale = crate::functions::plot_axes::AxisScale {
+    min: y_min,
+    max: y_max,
+    log: false,
+  };
+  let y_ticks =
+    crate::functions::plot_axes::AxisTicks::new(y_scale, false, None);
+  // The y tick labels need their own width plus the gap to the axis.
   let y_label_area = if show_ticks {
-    let y_major = axis_tick_step(y_max - y_min);
-    let widest = {
-      let first = (y_min / y_major - 1e-9).ceil() as i64;
-      let last = (y_max / y_major + 1e-9).floor() as i64;
-      (first..=last)
-        .map(|k| format_tick_with_step(k as f64 * y_major, y_major))
-        .map(|l| {
-          l.chars()
-            .map(|c| if c == '.' { 0.278 } else { 0.556 })
-            .sum::<f64>()
-        })
-        .fold(0.0, f64::max)
-    };
-    ((widest * BAR_TICK_FONT + 12.0) * sf) as u32
+    let widest = y_ticks
+      .majors
+      .iter()
+      .map(|(_, l)| plot_padding::tick_label_width(l, plot_padding::TICK_FONT))
+      .fold(0.0, f64::max);
+    (((widest + plot_padding::TICK_LABEL_GAP) * sf - BAR_SIDE_MARGIN * sf)
+      .max(2.0 * sf)) as u32
   } else {
     4 * RESOLUTION_SCALE
   };
@@ -6927,8 +6941,15 @@ pub(crate) fn generate_bar_svg(
         * sf
         * 18.0
   }) as u32;
+  // WL runs the x axis 2% of the plotting width past the last bar slot
+  // and keeps 1.5 pt beyond that: r = 1.5 + 0.02 (W - left - r).
+  let axis_overrun = |left: f64| {
+    let r = (1.5 * sf + 0.02 * (render_width as f64 - left)) / 1.02;
+    r - 1.5 * sf
+  };
+  let x_axis_overrun = axis_overrun(BAR_SIDE_MARGIN * sf + y_label_area as f64);
   let legend_margin_right = if chart_legends.is_empty() || row_legend {
-    4 * s as u32
+    (x_axis_overrun + 1.5 * sf) as u32
   } else {
     chart_legend_column_width(chart_legends, sf) as u32
   };
@@ -6949,12 +6970,6 @@ pub(crate) fn generate_bar_svg(
   }
   // `AxesStyle` recolours the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
-  let axis_line = if look.axes {
-    // A hairline, like WL 15's chart axes.
-    axis_color.stroke_width(look.axes_width.unwrap_or(RESOLUTION_SCALE / 2))
-  } else {
-    ShapeStyle::from(&bg_color).stroke_width(0)
-  };
 
   let mut buf = String::new();
   {
@@ -6963,8 +6978,6 @@ pub(crate) fn generate_bar_svg(
     root.fill(&bg_color).map_err(|e| {
       InterpreterError::EvaluationError(format!("BarChart: {e}"))
     })?;
-
-    let tick = MINOR_TICK_LEN * s;
 
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
@@ -6978,41 +6991,7 @@ pub(crate) fn generate_bar_svg(
         InterpreterError::EvaluationError(format!("BarChart: {e}"))
       })?;
 
-    let y_span = y_max - y_min;
-    let y_major = axis_tick_step(y_span);
-    let y_minor_step = minor_tick_step(y_major);
-    let y_tick_count = (y_span / y_minor_step).round() as usize + 1;
-
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(0) // no x ticks for bar chart
-      .y_labels(if show_ticks { y_tick_count } else { 0 })
-      .y_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
-        } else {
-          String::new()
-        }
-      })
-      .axis_style(axis_line)
-      // Tick labels are typeset smaller than in-chart labels, matching
-      // wolframscript's proportionally small default axis ticks.
-      .label_style(
-        ("sans-serif", sf * BAR_TICK_FONT)
-          .into_font()
-          .color(&axis_color),
-      )
-      .set_tick_mark_size(
-        LabelAreaPosition::Left,
-        if show_ticks { tick } else { 0 },
-      )
-      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
-      .draw()
-      .map_err(|e| {
-        InterpreterError::EvaluationError(format!("BarChart: {e}"))
-      })?;
-
+    // The axes are drawn after the bars (see `origin_axes_svg` below).
     // Draw bars as plotters Rectangle elements
     let gap = bar_group_gap(look.bar_spacing);
     for (gi, group) in groups.iter().enumerate() {
@@ -7124,20 +7103,83 @@ pub(crate) fn generate_bar_svg(
     - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
-  // Extend labeled (major) y ticks. BarChart has no x ticks.
-  inject_major_tick_extensions(
-    &mut buf,
-    plot_x0,
-    plot_y0,
-    plot_w,
-    plot_h,
-    None,
-    show_ticks.then_some((y_min, y_max, axis_tick_step(y_max - y_min))),
-    MINOR_TICK_LEN as f64 * sf,
-    MAJOR_TICK_LEN as f64 * sf,
-    sf,
-    label_fill,
-  );
+  if look.axes {
+    let axis_hex = format!(
+      "#{:02X}{:02X}{:02X}",
+      axis_color.0, axis_color.1, axis_color.2
+    );
+    let axis_style = SeriesStyle {
+      thickness: look.axes_width.map(|w| w as f64 / sf),
+      ..Default::default()
+    };
+    let axes_style = [Some(axis_style.clone()), Some(axis_style)];
+    let x_scale = crate::functions::plot_axes::AxisScale {
+      min: x_min,
+      max: x_max,
+      log: false,
+    };
+    let no_x_ticks = crate::functions::plot_axes::AxisTicks::default();
+    let x_axis_end = if chart_legends.is_empty() || row_legend {
+      plot_x0 + plot_w + x_axis_overrun
+    } else {
+      plot_x0 + plot_w
+    };
+    let origin = (x_min, y_scale.origin(None, None));
+    let mut axes_svg = crate::functions::plot_axes::origin_axes_svg(
+      &crate::functions::plot_axes::OriginAxes {
+        area: (plot_x0, plot_y0, plot_w, plot_h),
+        x: x_scale,
+        y: y_scale,
+        origin,
+        show: (true, true),
+        ticks: show_ticks.then_some((&no_x_ticks, &y_ticks)),
+        sf,
+        axis_color: &axis_hex,
+        label_fill: if look.axes_color.is_some() {
+          &axis_hex
+        } else {
+          label_fill
+        },
+        axes_style: &axes_style,
+        ticks_style: &[None, None],
+        keep_y_label_on_x_axis: true,
+      },
+    );
+    let axis_y = plot_y0 + plot_h - y_scale.frac(origin.1) * plot_h;
+    let stroke = (look.axes_width.unwrap_or(RESOLUTION_SCALE / 2)) as f64;
+    if x_axis_end > plot_x0 + plot_w {
+      axes_svg.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{axis_y:.1}\" x2=\"{x_axis_end:.1}\" \
+         y2=\"{axis_y:.1}\" stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+        plot_x0 + plot_w
+      ));
+    }
+    // The x axis carries no labels, only marks hanging below it at the
+    // outer edges of the bars (6 pt) and, between labelled bars, at both
+    // edges of each gap (4 pt).
+    if show_ticks && n > 0 {
+      let gap = bar_group_gap(look.bar_spacing);
+      let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
+      let mut mark = |x: f64, len: f64| {
+        axes_svg.push_str(&format!(
+          "<line x1=\"{x:.1}\" y1=\"{axis_y:.1}\" x2=\"{x:.1}\" \
+           y2=\"{:.1}\" stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+          axis_y + len * sf
+        ));
+      };
+      mark(px(gap), 6.0);
+      mark(px(n as f64 - gap), 6.0);
+      if has_chart_labels {
+        for gi in 1..n {
+          mark(px(gi as f64 - gap), 4.0);
+          mark(px(gi as f64 + gap), 4.0);
+        }
+      }
+    }
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &axes_svg);
+    }
+  }
 
   // WL 15 sets chart labels at the tick-label size and the PlotLabel a
   // little larger.
@@ -9179,13 +9221,21 @@ pub(crate) fn generate_histogram_svg(
     .fold(0.0_f64, f64::max);
   let max_height = if max_height > 0.0 { max_height } else { 1.0 };
 
-  // Explicit PlotRange overrides the auto-computed extents (10% headroom
-  // above the tallest bar, bins spanning exactly the edge range).
-  let (y_min, y_max) = opts.plot_range_y.unwrap_or((0.0, max_height * 1.1));
+  // Explicit PlotRange overrides the auto-computed extents: the bins and
+  // 0..tallest bar, padded as WL 15's
+  // `PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02],
+  // Scaled[0.05]}}` pads them (fractions of the padded span).
+  let scaled_pad = |lo: f64, hi: f64, below: f64, above: f64| {
+    let span = (hi - lo) / (1.0 - below - above);
+    (lo - below * span, hi + above * span)
+  };
+  let (y_min, y_max) = opts
+    .plot_range_y
+    .unwrap_or_else(|| scaled_pad(0.0, max_height, 0.02, 0.05));
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
-  let (x_lo, x_hi) = opts
-    .plot_range_x
-    .unwrap_or((bin_edges[0], bin_edges[num_bins]));
+  let (x_lo, x_hi) = opts.plot_range_x.unwrap_or_else(|| {
+    scaled_pad(bin_edges[0], bin_edges[num_bins], 0.02, 0.02)
+  });
   let x_hi = if x_hi <= x_lo { x_lo + 1.0 } else { x_hi };
 
   let s = RESOLUTION_SCALE as i32;
@@ -9209,12 +9259,68 @@ pub(crate) fn generate_histogram_svg(
     .filter(|x| !x.is_empty());
   let has_y_axes_label =
     opts.axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
-  let top_margin = if has_plot_label { 35 * s } else { 10 * s }
+  let top_margin = if has_plot_label { 35 * s } else { 6 * s }
     + plot_label_extra_lines(opts.plot_label.as_ref()) as i32 * 20 * s
     + if has_y_axes_label { 20 * s } else { 0 };
   let bottom_extra = if has_x_frame_label { 24.0 * sf } else { 0.0 };
-  let x_label_area = 40 * RESOLUTION_SCALE + bottom_extra as u32;
-  let y_label_area = 65 * RESOLUTION_SCALE;
+  let has_y_frame_label = opts
+    .frame_label
+    .as_ref()
+    .is_some_and(|(_, y)| !y.is_empty());
+  // The axes are drawn the way an unframed `Plot` draws them
+  // (`plot_axes::origin_axes_svg`): marks pointing into the chart, the x
+  // labels 3 pt below the axis and the y labels 3 pt left of it.
+  let x_scale = crate::functions::plot_axes::AxisScale {
+    min: x_lo,
+    max: x_hi,
+    log: false,
+  };
+  let y_scale = crate::functions::plot_axes::AxisScale {
+    min: y_min,
+    max: y_max,
+    log: false,
+  };
+  let x_ticks = crate::functions::plot_axes::AxisTicks::new(
+    x_scale,
+    false,
+    opts.ticks_x.as_ref(),
+  );
+  let y_ticks = crate::functions::plot_axes::AxisTicks::new(
+    y_scale,
+    false,
+    opts.ticks_y.as_ref(),
+  );
+  let tick_room = |ticks: &crate::functions::plot_axes::AxisTicks| {
+    ticks
+      .majors
+      .iter()
+      .map(|(_, l)| plot_padding::tick_label_width(l, plot_padding::TICK_FONT))
+      .fold(0.0, f64::max)
+  };
+  let x_label_area = if opts.ticks {
+    ((plot_padding::TICK_LABEL_GAP
+      + plot_padding::line_height(plot_padding::TICK_FONT))
+      * sf) as u32
+  } else {
+    0
+  } + bottom_extra as u32;
+  let y_label_area = if opts.ticks {
+    ((tick_room(&y_ticks) + plot_padding::TICK_LABEL_GAP) * sf) as u32
+  } else {
+    0
+  } + if has_y_frame_label {
+    (24.0 * sf) as u32
+  } else {
+    0
+  };
+  // The last x label may hang past the right end of the axis.
+  let x_overhang = x_ticks
+    .majors
+    .last()
+    .filter(|_| opts.ticks)
+    .map_or(0.0, |(_, l)| {
+      plot_padding::tick_label_width(l, plot_padding::TICK_FONT) / 2.0
+    });
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
     // The label is drawn at `font_size`; ~0.62 em per character covers the
     // proportional font with a little slack.
@@ -9231,8 +9337,11 @@ pub(crate) fn generate_histogram_svg(
   } else {
     chart_legend_column_width(&opts.chart_legends, sf) as u32
   };
-  let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
+  let (bg_color, _dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
+
+  let side_margin = 2.0 * sf;
+  let right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
 
   let mut buf = String::new();
   {
@@ -9242,69 +9351,16 @@ pub(crate) fn generate_histogram_svg(
       InterpreterError::EvaluationError(format!("Histogram: {e}"))
     })?;
 
-    let tick = MINOR_TICK_LEN * s;
-
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
       .margin_right(
-        10 * s as u32 + axes_label_margin_right + legend_margin_right,
+        right_margin + axes_label_margin_right + legend_margin_right,
       )
-      .margin_bottom(10 * s as u32)
-      .margin_left(10 * s as u32)
+      .margin_bottom(side_margin as u32)
+      .margin_left(side_margin as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_lo..x_hi, y_min..y_max)
-      .map_err(|e| {
-        InterpreterError::EvaluationError(format!("Histogram: {e}"))
-      })?;
-
-    let x_major = axis_tick_step(x_hi - x_lo);
-    let y_major = axis_tick_step(y_max - y_min);
-    let x_minor_step = minor_tick_step(x_major);
-    let y_minor_step = minor_tick_step(y_major);
-    // `Ticks -> None` suppresses automatic ticks on both axes outright. An
-    // axis given explicit `Ticks` draws its own marks/labels at exactly the
-    // positions asked for (after the mesh below), so plotters' automatic
-    // ones on that axis are suppressed here too.
-    let x_tick_count = if !opts.ticks || opts.ticks_x.is_some() {
-      0
-    } else {
-      ((x_hi - x_lo) / x_minor_step).round() as usize + 1
-    };
-    let y_tick_count = if !opts.ticks || opts.ticks_y.is_some() {
-      0
-    } else {
-      ((y_max - y_min) / y_minor_step).round() as usize + 1
-    };
-
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(x_tick_count)
-      .y_labels(y_tick_count)
-      .x_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
-        } else {
-          String::new()
-        }
-      })
-      .y_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
-        } else {
-          String::new()
-        }
-      })
-      .axis_style(dark_gray.stroke_width(RESOLUTION_SCALE))
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
-          .into_font()
-          .color(&dark_gray),
-      )
-      .set_tick_mark_size(LabelAreaPosition::Left, tick)
-      .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
-      .draw()
       .map_err(|e| {
         InterpreterError::EvaluationError(format!("Histogram: {e}"))
       })?;
@@ -9394,38 +9450,40 @@ pub(crate) fn generate_histogram_svg(
   );
 
   // Plot area coordinates (kept in sync with the ChartBuilder margins above).
-  let margin_left = 10.0 * sf;
+  let margin_left = side_margin;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = top_margin as f64;
   let plot_w = render_width as f64
     - margin_left
-    - 10.0 * sf
+    - right_margin as f64
     - axes_label_margin_right as f64
     - legend_margin_right as f64
     - y_label_area as f64;
-  let plot_h =
-    render_height as f64 - top_margin as f64 - 10.0 * sf - x_label_area as f64;
+  let plot_h = render_height as f64
+    - top_margin as f64
+    - side_margin
+    - x_label_area as f64;
 
-  // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
-  // An axis given explicit `Ticks` draws its own marks/labels below instead,
-  // so the automatic majors must not be extended over it; `Ticks -> None`
-  // suppresses this on both axes.
   {
-    let x_major = axis_tick_step(x_hi - x_lo);
-    let y_major = axis_tick_step(y_max - y_min);
-    inject_major_tick_extensions(
-      &mut buf,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      (opts.ticks && opts.ticks_x.is_none()).then_some((x_lo, x_hi, x_major)),
-      (opts.ticks && opts.ticks_y.is_none()).then_some((y_min, y_max, y_major)),
-      MINOR_TICK_LEN as f64 * sf,
-      MAJOR_TICK_LEN as f64 * sf,
-      sf,
-      label_fill,
+    let axes_svg = crate::functions::plot_axes::origin_axes_svg(
+      &crate::functions::plot_axes::OriginAxes {
+        area: (plot_x0, plot_y0, plot_w, plot_h),
+        x: x_scale,
+        y: y_scale,
+        origin: (x_lo, y_scale.origin(None, None)),
+        show: (true, true),
+        ticks: opts.ticks.then_some((&x_ticks, &y_ticks)),
+        sf,
+        axis_color: label_fill,
+        label_fill,
+        axes_style: &[None, None],
+        ticks_style: &[None, None],
+        keep_y_label_on_x_axis: true,
+      },
     );
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &axes_svg);
+    }
   }
 
   // `Epilog` primitives are written in the histogram's data coordinates.
@@ -9458,16 +9516,7 @@ pub(crate) fn generate_histogram_svg(
   let font_size = sf * CHART_LABEL_FONT;
   let title_font_size = sf * CHART_TITLE_FONT;
   if let Some(insert_pos) = buf.rfind("</svg>") {
-    let mut labels_svg = explicit_ticks_svg(
-      opts.ticks_x.as_ref(),
-      opts.ticks_y.as_ref(),
-      (plot_x0, plot_y0, plot_w, plot_h),
-      (x_lo, x_hi, y_min, y_max),
-      sf,
-      label_fill,
-      crate::functions::plot::FrameEdges::NONE,
-      CHART_LABEL_FONT,
-    );
+    let mut labels_svg = String::new();
     let axis_y = plot_y0 + plot_h;
 
     // FrameLabel: centred outside the bottom/left edge.
