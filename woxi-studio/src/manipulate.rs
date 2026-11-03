@@ -2078,6 +2078,35 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+  /// A puzzle generator initialised with `Needs["Combinatorica`"]` shuffles
+  /// rows with the bare `RandomPermutation[Range[d]]`; the package version
+  /// must evaluate it, so the stored puzzle holds numbers rather than
+  /// unevaluated calls that warn on every re-render.
+  #[test]
+  fn combinatorica_random_permutation_in_initialization_evaluates() {
+    let code = r#"Manipulate[
+      If[new, "press", wr[[1]]],
+      {{new, True}, ControlType -> None},
+      {{d, 3}, {3, 4}},
+      Button["go", wr = Quiet[mk[d]]; new = False],
+      {{wr, Graphics[Disk[]]}, ControlType -> None},
+      Initialization :> (Quiet[Needs["Combinatorica`"]];
+        mk[k_] := {Graphics[Text[Table[RandomPermutation[Range[k]], {k}], {0, 0}]]})]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.apply_button_action("wr = Quiet[mk[d]]; new = False");
+    let wr = state
+      .bindings()
+      .into_iter()
+      .find(|(n, _)| n == "wr")
+      .expect("wr binding")
+      .1;
+    assert!(!wr.contains("RandomPermutation"), "unevaluated: {wr}");
+    let render = state.check_render().expect("render");
+    assert!(render.warnings.is_empty(), "{:?}", render.warnings);
+  }
   /// A variable driven by a custom control (a `With[…, Row[{Button[…]}]]`,
   /// which has no widget of its own) is still bound when the `Dynamic[…]`
   /// the body returns is shown, after the body itself has finished

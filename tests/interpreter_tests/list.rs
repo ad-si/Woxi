@@ -11974,6 +11974,29 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_random_permutation_of_a_list_after_needs() {
+    // With the package loaded, the bare name shuffles a list too (a
+    // sudoku generator builds its rows this way); it must not stay
+    // unevaluated.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Sort[RandomPermutation[{a, b, c, d}]]"
+      )
+      .unwrap(),
+      "{a, b, c, d}"
+    );
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Table[Sort[RandomPermutation[Range[3]]], {2}]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {1, 2, 3}}"
+    );
+  }
+
+  #[test]
   fn combinatorica_random_k_subset_keeps_order_and_size() {
     assert_eq!(
       interpret(
