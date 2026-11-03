@@ -5168,11 +5168,6 @@ cylinder (`{x, -3, 3}, {y, -2, 2}`) has 17 at its upstream edge. Its seeding
 algorithm is not recoverable from the output, so Woxi's default sits between
 the two, and `StreamPoints` settings keep Wolfram's proportions to it.
 
-### `DensityPlot` ignores `AspectRatio`
-
-`DensityPlot[x, {x, 0, 10}, {y, 0, 1}, AspectRatio -> 0.3]` is drawn square
-in Woxi; Wolfram draws it 0.3 times as tall as wide.
-
 ### Plot argument forms from the reference pages that are still missing
 
 Found by the round-4 parameter sweep of the plot reference pages; the
@@ -7627,12 +7622,12 @@ Found comparing the graphics-tests renders (2026-11):
   every 1 (`nice_step` with `AXIS_TICK_TARGET`).
 - `ListPlot3D` draws no default mesh; wolframscript rules one line per
   data row and column.
-- `ContourPlot[Sin[x] Sin[y], {x, 0, 2 Pi}, {y, 0, 2 Pi}]` draws no
-  contour along the zero level (`x = Pi`, `y = Pi`), which wolframscript
-  shows.
-- Density and contour plots leave no `PlotRangePadding` between the
-  shading and the frame, and label their frame ticks on two edges only
-  (wolframscript marks all four).
+- Density and contour plots follow WL 15's frame layout (2% padding,
+  ticks on all four edges, label-sized `ImagePadding`), but where a
+  contour runs exactly through grid nodes at the domain's edge
+  (`Sin[x] Sin[y]` at `x = Pi`, `y = 2 Pi`) the last cell holds a short
+  diagonal instead of WL's straight end. WL's faint triangulation mesh
+  (`GrayLevel[0.5, 0.4]` edges of its adaptive mesh) is not drawn.
 - `MatrixPlot`'s `FrameTicks` labels are strings (`{11.5, "1"}`) where
   wolframscript has integers, and the `Raster` colors are 8-bit quantized
   (wolframscript gives the exact blend).
@@ -7674,7 +7669,9 @@ Found comparing the graphics-tests renders (2026-11):
 - `Plot[…, ImageSize -> Scaled[s]]` inside a `Pane` is drawn at that
   width with Woxi's usual small-plot layout: its tick labels crowd, where
   WL keeps the full-size fonts and leaves out the minor ticks.
-- `PlotLegends -> BarLegend[…]` with a `ColorFunction` draws no legend.
+- `Plot[…, ColorFunction -> f, PlotLegends -> Automatic]` gives no
+  `BarLegend` (wolframscript: `BarLegend[{f, roundedMinMax[…]}]`); an
+  explicit `PlotLegends -> BarLegend[…]` is drawn.
 - Woxi's own SVG rasterizer (`Export[…png, Import[svg]]`) shows thin seams
   between abutting opaque polygons that other renderers (rsvg) do not.
 

@@ -304,6 +304,50 @@ fn log_scaled_plot(
   Some((head, rest))
 }
 
+/// `PlotLegends -> BarLegend[…]` on a plot gives `Legended[plot,
+/// Placed[BarLegend[…], After]]`, as in Wolfram: the plot is drawn without
+/// the option and the colour bar set beside it by `Legended`, so every plot
+/// shares the one `BarLegend` renderer.
+fn with_bar_legend(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if !(name.ends_with("Plot") || name.ends_with("Plot3D")) {
+    return None;
+  }
+  let pos = args.iter().position(|a| {
+    matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends"))
+  })?;
+  let (Expr::Rule { replacement, .. } | Expr::RuleDelayed { replacement, .. }) =
+    &args[pos]
+  else {
+    return None;
+  };
+  let legend = match replacement.as_ref() {
+    e @ Expr::FunctionCall { name, .. } if name == "BarLegend" => e.clone(),
+    // A legend kept in a variable (`PlotLegends -> leg`) of a held plot.
+    Expr::Identifier(_) => {
+      let e = crate::evaluator::evaluate_expr_to_expr(replacement).ok()?;
+      if !matches!(&e, Expr::FunctionCall { name, .. } if name == "BarLegend") {
+        return None;
+      }
+      e
+    }
+    _ => return None,
+  };
+  let mut rest = args.to_vec();
+  rest.remove(pos);
+  Some(
+    crate::evaluator::evaluate_function_call_ast(name, &rest).map(|plot| {
+      call(
+        "Legended",
+        vec![plot, call("Placed", vec![legend, id_expr("After")])],
+      )
+    }),
+  )
+}
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
@@ -418,6 +462,9 @@ pub fn dispatch_plotting(
     return Some(crate::evaluator::evaluate_function_call_ast(
       head, &rewritten,
     ));
+  }
+  if let Some(result) = with_bar_legend(name, args) {
+    return Some(result);
   }
   match name {
     #[cfg(not(target_arch = "wasm32"))]

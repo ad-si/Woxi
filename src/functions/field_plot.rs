@@ -15,10 +15,13 @@ use crate::functions::plot::{
 const FIELD_GRID: usize = 100;
 const VECTOR_GRID: usize = 15;
 
-/// Default look of a contour line, used unless `ContourStyle` says otherwise.
-/// The weight is scaled by `render_width / 1000` when it is emitted.
-const CONTOUR_LINE_COLOR: &str = "#404040";
-const CONTOUR_LINE_WEIGHT: f64 = 2.5;
+/// Default look of a contour line, used unless `ContourStyle` says
+/// otherwise: WL's `Directive[GrayLevel[0], Opacity[0.5]]`, 1 point wide.
+const CONTOUR_LINE_COLOR: &str = "#000000";
+const CONTOUR_LINE_OPACITY: f64 = 0.5;
+const CONTOUR_LINE_WEIGHT: f64 = 1.0;
+/// Width of the curve of a `ContourPlot[lhs == rhs, …]` equation, in points.
+const EQUATION_CURVE_WEIGHT: f64 = 2.0;
 
 /// Evaluate a boolean condition at (x, y) - returns true/false
 fn evaluate_condition(
@@ -285,6 +288,10 @@ struct DensityContourOptions {
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
+  /// `AspectRatio` of the frame (1 unless given).
+  aspect_ratio: f64,
+  /// `ImageSize -> {w, h}` fixes the picture's height too.
+  explicit_height: bool,
   color_function: Option<String>,
   /// `ColorFunction -> f` for an `f` that isn't a recognized named gradient
   /// (a pure function, a user-defined symbol, …): applied per-cell via the
@@ -463,17 +470,25 @@ fn parse_density_contour_options(
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
         && matches!(replacement.as_ref(), Expr::List(_)))
   });
-  if !explicit_size_pair {
-    for opt in &args[start..] {
-      if let Expr::Rule {
-        pattern,
-        replacement,
-      } = opt
-        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio")
-      {
-        let value = evaluate_expr_to_expr(replacement)
-          .unwrap_or_else(|_| replacement.as_ref().clone());
-        if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
+  let explicit_height = args[start..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(wh)
+          if wh.len() == 2 && try_eval_to_f64(&wh[1]).is_some()))
+  });
+  let mut aspect_ratio = 1.0;
+  for opt in &args[start..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio")
+    {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+      if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
+        aspect_ratio = r;
+        if !explicit_size_pair {
           svg_height = ((svg_width as f64 * r).round() as u32).max(1);
         }
       }
@@ -639,6 +654,8 @@ fn parse_density_contour_options(
     svg_width,
     svg_height,
     full_width,
+    aspect_ratio,
+    explicit_height,
     color_function,
     color_function_expr,
     color_function_scaling,
@@ -680,92 +697,394 @@ fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
 }
 
 impl DensityContourOptions {
-  /// Whether a `FrameLabel` was given for the bottom or the left edge —
-  /// the two that need room reserved outside the plotting area.
-  fn has_outer_frame_labels(&self) -> bool {
-    !self.frame_labels.bottom.is_empty() || !self.frame_labels.left.is_empty()
-  }
-
-  /// The stroke colour and weight for contour lines: whatever
-  /// `ContourStyle` asked for, otherwise the default thin dark grey.
+  /// The stroke colour, weight and extra SVG attributes (its opacity) of
+  /// the contour lines: whatever `ContourStyle` asked for, otherwise WL's
+  /// default `Directive[GrayLevel[0], Opacity[0.5]]` at 1 point (opaque
+  /// without shading).
   ///
   /// `render_contour_lines_styled` scales its weight by
   /// `render_width / 1000`, so a thickness given in display pixels
   /// converts by the picture's own width.
-  fn contour_stroke(&self) -> (String, f64) {
+  fn contour_stroke(&self) -> (String, f64, String) {
     self.contour_stroke_for(self.contour_style.as_ref())
   }
 
+  /// [`Self::contour_stroke`] for a given style.
   fn contour_stroke_for(
     &self,
     style: Option<&crate::functions::plot::SeriesStyle>,
-  ) -> (String, f64) {
+  ) -> (String, f64, String) {
+    let points = |t: f64| t * 1000.0 / self.svg_width.max(1) as f64;
+    let opacity_attr = |o: f64| {
+      if o < 1.0 {
+        format!(" stroke-opacity=\"{o}\"")
+      } else {
+        String::new()
+      }
+    };
+    // Over shading the default line is translucent; on a blank plot
+    // (`ContourShading -> False`) it is solid black.
+    let default_opacity = if self.contour_shading {
+      CONTOUR_LINE_OPACITY
+    } else {
+      1.0
+    };
     let Some(style) = style else {
-      return (CONTOUR_LINE_COLOR.to_string(), CONTOUR_LINE_WEIGHT);
+      return (
+        CONTOUR_LINE_COLOR.to_string(),
+        points(CONTOUR_LINE_WEIGHT),
+        opacity_attr(default_opacity),
+      );
     };
     let color = style.color.map_or_else(
       || CONTOUR_LINE_COLOR.to_string(),
       super::graphics::Color::to_svg_rgb,
     );
-    let weight = match style.thickness {
-      Some(t) if self.svg_width > 0 => t * 1000.0 / self.svg_width as f64,
-      _ => CONTOUR_LINE_WEIGHT,
-    };
-    (color, weight)
+    let weight = points(style.thickness.unwrap_or(CONTOUR_LINE_WEIGHT));
+    // A style without a colour keeps the default's translucency.
+    let opacity = style.opacity.unwrap_or(if style.color.is_some() {
+      1.0
+    } else {
+      default_opacity
+    });
+    (color, weight, opacity_attr(opacity))
   }
 }
 
-/// Axes for a field plot, with room reserved outside the plotting area for
-/// whatever `FrameLabel` asks to be written there.
+/// `PlotRangePadding -> Scaled[0.02]` of the density and contour plots: each
+/// side of the frame lies this fraction of the padded span beyond the data.
+const FIELD_RANGE_PADDING: f64 = 0.02;
+/// Font size of the frame tick labels, in printer points (WL 15).
+const FRAME_TICK_FONT: f64 = 10.0;
+/// Gap between a left tick label's end and the frame.
+const FRAME_TICK_LABEL_GAP: f64 = 3.0;
+/// Height of a tick label's box; half of it may overhang the frame's end.
+const FRAME_TICK_LABEL_BOX: f64 = 11.171875;
+/// The bottom `ImagePadding` that holds the x tick labels.
+const FRAME_X_LABEL_ROOM: f64 = 15.171875;
+/// Distance from the frame to the baseline of an x tick label.
+const FRAME_X_LABEL_BASELINE: f64 = 12.05;
+/// Room a `FrameLabel` adds outside its edge (WL 15: 17.17 points).
+const FRAME_LABEL_ROOM: f64 = 17.171875;
+/// Lengths of the major and minor frame tick marks.
+const FRAME_MAJOR_TICK: f64 = 4.0;
+const FRAME_MINOR_TICK: f64 = 2.4;
+/// Stroke width of the frame and its tick marks (`GrayLevel[0.4]`).
+const FRAME_STROKE: f64 = 0.5;
+
+/// The advance of a frame tick label at [`FRAME_TICK_FONT`], with WL's
+/// metrics (its sans-serif digits are 0.556 em, the point 0.278 em and the
+/// minus 0.63 em), so the `ImagePadding` follows the labels as in WL.
+fn frame_tick_label_width(label: &str) -> f64 {
+  let em: f64 = label
+    .chars()
+    .map(|c| match c {
+      '.' | ',' => 0.278,
+      '-' | '\u{2212}' => 0.63,
+      _ => 0.556,
+    })
+    .sum();
+  em * FRAME_TICK_FONT
+}
+
+/// Where a framed density or contour plot puts things, in display points:
+/// the picture size, the frame rectangle and the ticks along its edges.
+struct FieldFrameLayout {
+  height: f64,
+  /// `(x0, y0, w, h)` of the frame, `y0` measured down from the top.
+  frame: (f64, f64, f64, f64),
+  /// The padded ranges the frame spans.
+  x_span: (f64, f64),
+  y_span: (f64, f64),
+  x_ticks: crate::functions::plot_axes::AxisTicks,
+  y_ticks: crate::functions::plot_axes::AxisTicks,
+}
+
+impl FieldFrameLayout {
+  /// The data rectangle inside the frame (`PlotRangePadding` in from it),
+  /// at render resolution.
+  fn data_rect(&self, sf: f64) -> (f64, f64, f64, f64) {
+    let (fx, fy, fw, fh) = self.frame;
+    let (px, py) = (fw * FIELD_RANGE_PADDING, fh * FIELD_RANGE_PADDING);
+    (
+      (fx + px) * sf,
+      (fy + py) * sf,
+      (fw - 2.0 * px) * sf,
+      (fh - 2.0 * py) * sf,
+    )
+  }
+}
+
+/// WL 15's layout of a density or contour plot: the frame lies
+/// `Scaled[0.02]` outside the data on every side, carries tick marks on all
+/// four edges and labels on the bottom and left ones, and the automatic
+/// `ImagePadding` is just the room those labels take (0.5 / 1.5 points
+/// otherwise). The frame takes the `AspectRatio` (1 by default) and the
+/// picture's height follows from it.
+fn field_frame_layout(
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  opts: &DensityContourOptions,
+) -> FieldFrameLayout {
+  use crate::functions::plot_axes::{AxisScale, AxisTicks};
+  let pad = |lo: f64, hi: f64| {
+    let p = (hi - lo) * FIELD_RANGE_PADDING / (1.0 - 2.0 * FIELD_RANGE_PADDING);
+    (lo - p, hi + p)
+  };
+  let x_span = pad(x_min, x_max);
+  let y_span = pad(y_min, y_max);
+  let ticks = |(min, max): (f64, f64), shown: bool| {
+    if shown {
+      AxisTicks::new(
+        AxisScale {
+          min,
+          max,
+          log: false,
+        },
+        false,
+        None,
+      )
+    } else {
+      AxisTicks::default()
+    }
+  };
+  let x_ticks = ticks(x_span, opts.frame && opts.frame_ticks.0);
+  let y_ticks = ticks(y_span, opts.frame && opts.frame_ticks.1);
+  let widest = |t: &AxisTicks| {
+    t.majors
+      .iter()
+      .map(|(_, l)| frame_tick_label_width(l))
+      .fold(0.0, f64::max)
+  };
+  let x_labels = !x_ticks.majors.is_empty();
+  let y_labels = !y_ticks.majors.is_empty();
+  let labels = &opts.frame_labels;
+  let mut left = if y_labels {
+    widest(&y_ticks) + FRAME_TICK_LABEL_GAP
+  } else {
+    0.5
+  };
+  let mut bottom = if x_labels { FRAME_X_LABEL_ROOM } else { 1.5 };
+  let mut top = 0.5;
+  let mut right = 1.5;
+  if !labels.left.is_empty() {
+    left += FRAME_LABEL_ROOM;
+  }
+  if !labels.bottom.is_empty() {
+    bottom += FRAME_LABEL_ROOM;
+  }
+  if !labels.top.is_empty() {
+    top += FRAME_LABEL_ROOM;
+  }
+  if !labels.right.is_empty() {
+    right += FRAME_LABEL_ROOM;
+  }
+  // A `PlotLabel` sits in its own strip above the padding (drawn at 14
+  // points by `inject_field_plot_label`).
+  let title = opts
+    .plot_label
+    .as_ref()
+    .map_or(0.0, |(_, size)| size.unwrap_or(14.0) * 1.35);
+  let width = opts.svg_width as f64;
+  let aspect = opts.aspect_ratio;
+  // The last x label is centred on its tick and the top y label on its own,
+  // so either may reach past the frame's end; the padding then grows by
+  // the overhang (from WL: `ImageSize -> 200` gives a right padding of 4.4).
+  let last_x_half = x_ticks
+    .majors
+    .last()
+    .map_or(0.0, |(_, l)| frame_tick_label_width(l) / 2.0);
+  let last_x_frac = x_ticks
+    .majors
+    .last()
+    .map_or(0.0, |(v, _)| (x_span.1 - v) / (x_span.1 - x_span.0));
+  let top_y_frac = y_ticks
+    .majors
+    .last()
+    .map_or(1.0, |(v, _)| (y_span.1 - v) / (y_span.1 - y_span.0));
+  let frame_size = |left: f64, right: f64, top: f64, bottom: f64| {
+    let avail_w = (width - left - right).max(1.0);
+    if opts.explicit_height {
+      let avail_h = (opts.svg_height as f64 - top - bottom - title).max(1.0);
+      (avail_w.min(avail_h / aspect), avail_h.min(avail_w * aspect))
+    } else {
+      (avail_w, avail_w * aspect)
+    }
+  };
+  for _ in 0..2 {
+    let (fw, fh) = frame_size(left, right, top, bottom);
+    if x_labels {
+      right = right.max(last_x_half - last_x_frac * fw + 1.0);
+    }
+    if y_labels {
+      top = top.max(FRAME_TICK_LABEL_BOX / 2.0 - top_y_frac * fh);
+    }
+  }
+  let (fw, fh) = frame_size(left, right, top, bottom);
+  let height = if opts.explicit_height {
+    opts.svg_height as f64
+  } else {
+    fh + top + bottom + title
+  };
+  // A frame narrower than the room it was given (an explicit height) is
+  // centred in it.
+  let x0 = left + ((width - left - right) - fw).max(0.0) / 2.0;
+  let y0 = top + title + ((height - top - bottom - title) - fh).max(0.0) / 2.0;
+  FieldFrameLayout {
+    height,
+    frame: (x0, y0, fw, fh),
+    x_span,
+    y_span,
+    x_ticks,
+    y_ticks,
+  }
+}
+
+/// The blank canvas of a density or contour plot laid out the WL 15 way
+/// ([`field_frame_layout`]); the frame itself is drawn last, by
+/// [`push_field_frame`]. `opts.svg_height` becomes the picture's height.
 fn field_plot_axes(
   x_range: (f64, f64),
   y_range: (f64, f64),
-  opts: &DensityContourOptions,
+  opts: &mut DensityContourOptions,
 ) -> Result<crate::functions::plot::PlotArea, InterpreterError> {
-  let needs_margins = opts.has_outer_frame_labels()
-    || opts.plot_label.is_some()
-    || opts.frame_ticks != (true, true);
-  let margins = needs_margins.then_some({
-    let top_margin = match &opts.plot_label {
-      Some((_, size)) => {
-        ((size.unwrap_or(14.0) * 2.0).round() as u32) * RESOLUTION_SCALE
-      }
-      None => 10 * RESOLUTION_SCALE,
-    };
-    // Without tick labels only a `FrameLabel` still needs room outside.
-    let (x_ticks, y_ticks) = opts.frame_ticks;
-    let outer = opts.has_outer_frame_labels();
-    // On a small `ImageSize` the full tick-label areas would swallow the
-    // plot (or even go negative), so they never take more than 40% of it.
-    let x_label_area = if x_ticks || outer {
-      ((40 + 24) * RESOLUTION_SCALE)
-        .min(opts.svg_height * RESOLUTION_SCALE * 2 / 5)
-    } else {
-      0
-    };
-    let y_label_area = if y_ticks || outer {
-      ((65 + 20) * RESOLUTION_SCALE)
-        .min(opts.svg_width * RESOLUTION_SCALE * 2 / 5)
-    } else {
-      0
-    };
-    crate::functions::plot::MarginOverrides {
-      top_margin,
-      x_label_area,
-      y_label_area,
-      hide_x_ticks: !opts.frame_ticks.0,
-      hide_y_ticks: !opts.frame_ticks.1,
-    }
-  });
-  crate::functions::plot::generate_axes_only_opts(
-    x_range,
-    y_range,
-    opts.svg_width,
-    opts.svg_height,
+  let layout = field_frame_layout(x_range, y_range, opts);
+  let sf = f64::from(RESOLUTION_SCALE);
+  let svg_width = opts.svg_width;
+  let svg_height = (layout.height.round() as u32).max(1);
+  opts.svg_height = svg_height;
+  let (render_width, render_height) =
+    (svg_width * RESOLUTION_SCALE, svg_height * RESOLUTION_SCALE);
+  let (bg, ..) = plot_theme();
+  let mut svg = format!(
+    "<svg width=\"{render_width}\" height=\"{render_height}\" viewBox=\"0 0 {render_width} {render_height}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"0\" y=\"0\" width=\"{render_width}\" height=\"{render_height}\" opacity=\"1\" fill=\"#{:02X}{:02X}{:02X}\" stroke=\"none\"/>\n</svg>",
+    bg.0, bg.1, bg.2
+  );
+  rewrite_svg_header(
+    &mut svg,
+    svg_width,
+    svg_height,
+    render_width,
+    render_height,
     opts.full_width,
-    None,
-    margins.as_ref(),
-  )
+  );
+  let (plot_x0, plot_y0, plot_w, plot_h) = layout.data_rect(sf);
+  Ok(crate::functions::plot::PlotArea {
+    svg,
+    plot_x0,
+    plot_y0,
+    plot_w,
+    plot_h,
+    render_width,
+    x_min: x_range.0,
+    x_max: x_range.1,
+    y_min: y_range.0,
+    y_max: y_range.1,
+  })
+}
+
+/// The frame of a density or contour plot whose canvas came from
+/// [`field_plot_axes`]: a `GrayLevel[0.4]` box with tick marks pointing in
+/// on all four edges and the labels below and left of it.
+fn push_field_frame(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+) {
+  if !opts.frame {
+    return;
+  }
+  let layout = field_frame_layout(
+    (area.x_min, area.x_max),
+    (area.y_min, area.y_max),
+    opts,
+  );
+  let sf = f64::from(RESOLUTION_SCALE);
+  let (_, gray, _, label_fill, _) = plot_theme();
+  let color = format!("#{:02X}{:02X}{:02X}", gray.0, gray.1, gray.2);
+  let (fx, fy, fw, fh) = layout.frame;
+  let (fx, fy, fw, fh) = (fx * sf, fy * sf, fw * sf, fh * sf);
+  let stroke = FRAME_STROKE * sf;
+  let mut out = String::new();
+  let mut line = |x1: f64, y1: f64, x2: f64, y2: f64| {
+    out.push_str(&format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke:.1}\"/>\n"
+    ));
+  };
+  let (major, minor) = (FRAME_MAJOR_TICK * sf, FRAME_MINOR_TICK * sf);
+  let xf = |v: f64| {
+    fx + (v - layout.x_span.0) / (layout.x_span.1 - layout.x_span.0) * fw
+  };
+  let yf = |v: f64| {
+    fy + fh - (v - layout.y_span.0) / (layout.y_span.1 - layout.y_span.0) * fh
+  };
+  let x_marks = layout
+    .x_ticks
+    .majors
+    .iter()
+    .map(|(v, _)| (*v, major))
+    .chain(layout.x_ticks.minors.iter().map(|v| (*v, minor)));
+  for (v, len) in x_marks {
+    let x = xf(v);
+    line(x, fy + fh, x, fy + fh - len);
+    line(x, fy, x, fy + len);
+  }
+  let y_marks = layout
+    .y_ticks
+    .majors
+    .iter()
+    .map(|(v, _)| (*v, major))
+    .chain(layout.y_ticks.minors.iter().map(|v| (*v, minor)));
+  for (v, len) in y_marks {
+    let y = yf(v);
+    line(fx, y, fx + len, y);
+    line(fx + fw, y, fx + fw - len, y);
+  }
+  out.push_str(&format!(
+    "<rect x=\"{fx:.1}\" y=\"{fy:.1}\" width=\"{fw:.1}\" height=\"{fh:.1}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{stroke:.1}\"/>\n"
+  ));
+  let font = FRAME_TICK_FONT * sf;
+  for (v, label) in &layout.x_ticks.majors {
+    out.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+      xf(*v),
+      fy + fh + FRAME_X_LABEL_BASELINE * sf
+    ));
+  }
+  for (v, label) in &layout.y_ticks.majors {
+    out.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+      fx - FRAME_TICK_LABEL_GAP * sf,
+      yf(*v) + 0.35 * font
+    ));
+  }
+  svg.push_str(&out);
+}
+
+/// The plot area of a field plot's frame (for labels placed along it).
+fn field_frame_area(
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+) -> crate::functions::plot::PlotArea {
+  let layout = field_frame_layout(
+    (area.x_min, area.x_max),
+    (area.y_min, area.y_max),
+    opts,
+  );
+  let sf = f64::from(RESOLUTION_SCALE);
+  let (fx, fy, fw, fh) = layout.frame;
+  crate::functions::plot::PlotArea {
+    svg: String::new(),
+    plot_x0: fx * sf,
+    plot_y0: fy * sf,
+    plot_w: fw * sf,
+    plot_h: fh * sf,
+    render_width: area.render_width,
+    x_min: layout.x_span.0,
+    x_max: layout.x_span.1,
+    y_min: layout.y_span.0,
+    y_max: layout.y_span.1,
+  }
 }
 
 /// Draw a field plot's `Epilog` primitives and `FrameLabel` text over the
@@ -777,11 +1096,12 @@ fn push_field_plot_overlays(
   opts: &DensityContourOptions,
 ) {
   splice_field_plot_prolog(svg, area, &opts.prolog);
+  let frame = field_frame_area(area, opts);
   if let Some(label) = &opts.plot_label {
-    inject_field_plot_label(svg, area, label);
+    inject_field_plot_label(svg, &frame, label);
   }
   push_epilog_primitives(svg, area, &opts.epilog);
-  push_frame_labels(svg, area, &opts.frame_labels);
+  push_frame_labels(svg, &frame, &opts.frame_labels);
 }
 
 /// Draw a field plot's `Epilog` primitives over everything drawn so far
@@ -983,10 +1303,26 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
     return None;
   }
+  let option = |n: &str| {
+    args[1..].iter().find_map(|o| {
+      crate::functions::graphics::option_name_value(o)
+        .filter(|(name, _)| *name == n)
+        .map(|(_, v)| v)
+    })
+  };
+  // A colour function gets the values themselves, unless the legend says
+  // `ColorFunctionScaling -> True` (as a plot's own legend does).
+  let scaling = option("ColorFunctionScaling")
+    .is_some_and(|v| matches!(&*v, Expr::Identifier(s) if s == "True"));
+  // `LegendMarkerSize -> h` is the bar's length.
+  let bar_height = option("LegendMarkerSize")
+    .and_then(|v| try_eval_to_f64(&v))
+    .filter(|h| *h > 0.0)
+    .unwrap_or(bar_height);
   let name = color_function_scheme_name(colors);
   let color_at = |t: f64| match &name {
     Some(name) => apply_named_color_function(name, t),
-    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, true))),
+    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling))),
   };
 
   let (.., label_fill, _) = plot_theme();
@@ -1717,12 +2053,23 @@ fn marching_squares_segments(
     return segments;
   }
   let n_cj = rows - 1;
+  // A sample within rounding noise of the level is taken to lie on it, so
+  // a contour through grid nodes (`Sin[x] Sin[y] == 0` along `x = Pi`,
+  // where the samples are ±1e-16) runs straight through them instead of
+  // zigzagging with the noise's sign.
+  let scale = grid
+    .iter()
+    .flatten()
+    .filter(|v| v.is_finite())
+    .fold(level.abs(), |m, v| m.max(v.abs()));
+  let tol = scale * 1e-12;
+  let snap = |v: f64| if (v - level).abs() <= tol { level } else { v };
   for i in 0..cols - 1 {
     for j in 0..n_cj {
-      let v00 = grid[i][j];
-      let v10 = grid[i + 1][j];
-      let v01 = grid[i][j + 1];
-      let v11 = grid[i + 1][j + 1];
+      let v00 = snap(grid[i][j]);
+      let v10 = snap(grid[i + 1][j]);
+      let v01 = snap(grid[i][j + 1]);
+      let v11 = snap(grid[i + 1][j + 1]);
       if !v00.is_finite()
         || !v10.is_finite()
         || !v01.is_finite()
@@ -1751,34 +2098,58 @@ fn marching_squares_segments(
         }
       };
 
-      let sx = |fx: f64| -> f64 { plot_x0 + (i as f64 + fx) * cell_w };
-      let sy =
-        |fy: f64| -> f64 { plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h };
+      // Points in the cell's own coordinates (0..1 across, 0..1 up).
+      let bottom = (lerp(v00, v10), 0.0);
+      let top = (lerp(v01, v11), 1.0);
+      let left = (0.0, lerp(v00, v01));
+      let right = (1.0, lerp(v10, v11));
 
-      let bottom = (sx(lerp(v00, v10)), sy(0.0));
-      let top = (sx(lerp(v01, v11)), sy(1.0));
-      let left = (sx(0.0), sy(lerp(v00, v01)));
-      let right = (sx(1.0), sy(lerp(v10, v11)));
+      // The outer edges of the grid a cell point lies on, as bits.
+      let outer = |(fx, fy): (f64, f64)| -> u8 {
+        u8::from(i == 0 && fx == 0.0)
+          | (u8::from(i == cols - 2 && fx == 1.0) << 1)
+          | (u8::from(j == 0 && fy == 0.0) << 2)
+          | (u8::from(j == n_cj - 1 && fy == 1.0) << 3)
+      };
+      let to_screen = |(fx, fy): (f64, f64)| {
+        (
+          plot_x0 + (i as f64 + fx) * cell_w,
+          plot_y0 + (n_cj as f64 - (j as f64 + fy)) * cell_h,
+        )
+      };
+      // A level the samples on the domain's edge sit exactly at (`Sin[x]`
+      // at `x = 0`) would trace that edge, or cut a corner cell from one
+      // edge node to another; Wolfram draws no contour there.
+      let node = |(fx, fy): (f64, f64)| {
+        (fx == 0.0 || fx == 1.0) && (fy == 0.0 || fy == 1.0)
+      };
+      let mut push = |a: (f64, f64), b: (f64, f64)| {
+        let (oa, ob) = (outer(a), outer(b));
+        let corner_cut = oa != 0 && ob != 0 && node(a) && node(b);
+        if oa & ob == 0 && !corner_cut {
+          segments.push((to_screen(a), to_screen(b)));
+        }
+      };
 
       // Bits: 1 = v00 (bottom-left), 2 = v10 (bottom-right),
       // 4 = v01 (top-left), 8 = v11 (top-right).
       match case {
-        1 | 14 => segments.push((bottom, left)),
-        2 | 13 => segments.push((bottom, right)),
-        3 | 12 => segments.push((left, right)),
-        4 | 11 => segments.push((left, top)),
-        5 | 10 => segments.push((bottom, top)),
+        1 | 14 => push(bottom, left),
+        2 | 13 => push(bottom, right),
+        3 | 12 => push(left, right),
+        4 | 11 => push(left, top),
+        5 | 10 => push(bottom, top),
         6 => {
           // Saddle: v10 and v01 above the level
-          segments.push((bottom, right));
-          segments.push((left, top));
+          push(bottom, right);
+          push(left, top);
         }
         9 => {
           // Saddle: v00 and v11 above the level
-          segments.push((bottom, left));
-          segments.push((right, top));
+          push(bottom, left);
+          push(right, top);
         }
-        7 | 8 => segments.push((right, top)),
+        7 | 8 => push(right, top),
         _ => {}
       }
     }
@@ -2267,7 +2638,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[xvar.as_str(), yvar.as_str()],
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  let opts = parse_density_contour_options(args, 3);
+  let mut opts = parse_density_contour_options(args, 3);
 
   // Sample grid
   let mut grid = vec![vec![f64::NAN; FIELD_GRID]; FIELD_GRID];
@@ -2311,7 +2682,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   // Use plotters for axes, then overlay the density image
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -2356,15 +2727,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "",
     );
   }
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -2430,16 +2793,18 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (Some(name), None) => Expr::String(name.clone()),
     (None, None) => str_expr("WL14DefaultDensityGradient"),
   };
-  let bar = call1(
-    "BarLegend",
-    Expr::List(
-      vec![
-        colors,
-        Expr::List(vec![Expr::Real(v_min), Expr::Real(v_max)].into()),
-      ]
-      .into(),
-    ),
-  );
+  let mut bar_args = vec![Expr::List(
+    vec![
+      colors,
+      Expr::List(vec![Expr::Real(v_min), Expr::Real(v_max)].into()),
+    ]
+    .into(),
+  )];
+  // The plot's colour function takes rescaled values, and so does its bar.
+  if opts.color_function_expr.is_some() && opts.color_function_scaling {
+    bar_args.push(rule_expr(id_expr("ColorFunctionScaling"), bool_expr(true)));
+  }
+  let bar = call("BarLegend", bar_args);
   Ok(call(
     "Legended",
     vec![graphic, call("Placed", vec![bar, id_expr("After")])],
@@ -2684,7 +3049,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max, y_bounds) =
     parse_dependent_iterator(&args[2], "ContourPlot", &xvar, x_min, x_max)?;
-  let opts = parse_density_contour_options(args, 3);
+  let mut opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
 
@@ -2756,7 +3121,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // Use plotters for axes
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -2801,7 +3166,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "",
     );
   }
-  let (contour_color, contour_weight) = opts.contour_stroke();
+  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
   render_contour_lines_styled(
     &mut svg,
     &grid,
@@ -2813,7 +3178,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
-    "",
+    &contour_attrs,
   );
   if opts.boundary_style.is_some() {
     // The region's edge is the level curve halfway between the cells that
@@ -2827,7 +3192,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect()
       })
       .collect();
-    let (color, weight) = opts.contour_stroke_for(opts.boundary_style.as_ref());
+    let (color, weight, attrs) =
+      opts.contour_stroke_for(opts.boundary_style.as_ref());
     let weight = if opts
       .boundary_style
       .as_ref()
@@ -2835,7 +3201,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       weight
     } else {
-      CONTOUR_LINE_WEIGHT * 2.0
+      weight * 2.0
     };
     render_contour_lines_styled(
       &mut svg,
@@ -2848,18 +3214,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.render_width,
       &color,
       weight,
-      "",
+      &attrs,
     );
   }
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   if opts.contour_labels {
     push_contour_labels(&mut svg, &grid, &levels, &area);
@@ -2963,10 +3321,10 @@ fn contour_plot_equations(
 ) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
-  let opts = parse_density_contour_options(args, 3);
+  let mut opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -2988,17 +3346,40 @@ fn contour_plot_equations(
 
   for (body, style_index) in bodies {
     let style = opts.style_for_contour(*style_index);
-    let (contour_color, contour_weight) = opts.contour_stroke_for(style);
-    let series_color =
-      style.and_then(|s| s.color).map_or((0x40, 0x40, 0x40), |c| {
+    // An equation's curve is drawn like a `Plot` curve: the next palette
+    // colour at `AbsoluteThickness[2]`, unless `ContourStyle` says otherwise.
+    let series_color = style.and_then(|s| s.color).map_or(
+      crate::functions::plot::PLOT_COLORS
+        [*style_index % crate::functions::plot::PLOT_COLORS.len()],
+      |c| {
         (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
         )
-      });
+      },
+    );
+    let contour_color = style.and_then(|s| s.color).map_or_else(
+      || {
+        format!(
+          "#{:02X}{:02X}{:02X}",
+          series_color.0, series_color.1, series_color.2
+        )
+      },
+      super::graphics::Color::to_svg_rgb,
+    );
     let series_thickness = style.and_then(|s| s.thickness);
-    let dash = contour_dash_attr(style, area.render_width, opts.svg_width);
+    let contour_weight = series_thickness.unwrap_or(EQUATION_CURVE_WEIGHT)
+      * 1000.0
+      / opts.svg_width.max(1) as f64;
+    let dash = format!(
+      "{}{}",
+      style
+        .and_then(|s| s.opacity)
+        .filter(|o| *o < 1.0)
+        .map_or(String::new(), |o| format!(" stroke-opacity=\"{o}\"")),
+      contour_dash_attr(style, area.render_width, opts.svg_width)
+    );
     let first_series = series.len();
     let mut grid = vec![vec![f64::NAN; n]; n];
     let mut any_finite = false;
@@ -3072,15 +3453,7 @@ fn contour_plot_equations(
     series_per_body.push(first_series..series.len());
   }
 
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -3094,11 +3467,22 @@ fn contour_plot_equations(
   } else {
     Vec::new()
   };
+  let mut last_index = None;
   for ((_, style_index), range) in bodies.iter().zip(&series_per_body) {
     // A per-contour style precedes just its own function's curves.
     if !opts.contour_styles.is_empty() {
       structure_items.push(directives[style_index % directives.len()].clone());
+    } else if directives.is_empty() && last_index != Some(*style_index) {
+      // The default style, as WL spells it out.
+      structure_items.push(call(
+        "Directive",
+        vec![
+          crate::functions::plot::plot_color_expr(*style_index),
+          call1("AbsoluteThickness", Expr::Integer(2)),
+        ],
+      ));
     }
+    last_index = Some(*style_index);
     for s in &series[range.clone()] {
       let points: Vec<Expr> = s
         .points
@@ -4688,7 +5072,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let opts = parse_density_contour_options(args, 1);
+  let mut opts = parse_density_contour_options(args, 1);
   let nearest = interpolation_order_is_zero(&args[1..]);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
     parse_list_data_to_grid(rows, "ListDensityPlot", nearest);
@@ -4701,7 +5085,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -4735,15 +5119,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.color_function.as_deref(),
     opts.cf_expr(),
   );
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
@@ -5082,7 +5458,14 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   };
-  let opts = parse_density_contour_options(args, 1);
+  let mut opts = parse_density_contour_options(args, 1);
+  // ReliefPlot's frame carries no ticks unless `FrameTicks` asks for them.
+  if !args[1..].iter().any(|o| {
+    crate::functions::graphics::option_name_value(o)
+      .is_some_and(|(n, _)| n == "FrameTicks")
+  }) {
+    opts.frame_ticks = (false, false);
+  }
   let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
     parse_matrix_to_grid(rows, "ReliefPlot");
   if grid.is_empty() || !v_min.is_finite() || !v_max.is_finite() {
@@ -5139,7 +5522,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let mut area = field_plot_axes(data_range.0, data_range.1, &opts)?;
+  let mut area = field_plot_axes(data_range.0, data_range.1, &mut opts)?;
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
@@ -5217,15 +5600,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
   );
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
@@ -5536,7 +5911,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let opts = parse_density_contour_options(args, 1);
+  let mut opts = parse_density_contour_options(args, 1);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
     parse_list_data_to_grid(rows, "ListContourPlot", false);
   let ((x_min, x_max), (y_min, y_max)) =
@@ -5548,7 +5923,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -5580,7 +5955,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       opts.cf_expr(),
     );
   }
-  let (contour_color, contour_weight) = opts.contour_stroke();
+  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
   render_contour_lines_styled(
     &mut svg,
     &grid,
@@ -5592,17 +5967,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.render_width,
     &contour_color,
     contour_weight,
-    "",
+    &contour_attrs,
   );
-  if opts.frame {
-    push_frame(
-      &mut svg,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w,
-      area.plot_h,
-    );
-  }
+  push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");

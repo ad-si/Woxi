@@ -17653,15 +17653,119 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// The default contour line keeps its thin dark-grey look when no
-    /// `ContourStyle` is given.
+    /// Without a `ContourStyle`, WL 15 draws an equation's curve like a
+    /// `Plot` curve (the first palette colour, `AbsoluteThickness[2]`) and
+    /// the level curves of a function as 1 point black lines, translucent
+    /// (`Opacity[0.5]`) over the shading and solid without it.
     #[test]
     fn contour_plot_default_line_style_unchanged() {
       let svg = export_svg("ContourPlot[y == x, {x, 0, 4}, {y, 0, 4}]");
       assert!(
-        svg.contains("stroke=\"#404040\" stroke-width=\"9.0\""),
+        svg.contains("stroke=\"#3D99CC\" stroke-width=\"20.0\""),
+        "default equation stroke changed"
+      );
+      let shaded = export_svg("ContourPlot[x y, {x, 0, 4}, {y, 0, 4}]");
+      assert!(
+        shaded.contains(
+          "stroke=\"#000000\" stroke-width=\"10.0\" stroke-opacity=\"0.5\""
+        ),
         "default contour stroke changed"
       );
+      let bare = export_svg(
+        "ContourPlot[x y, {x, 0, 4}, {y, 0, 4}, ContourShading -> False]",
+      );
+      assert!(
+        bare
+          .contains("stroke=\"#000000\" stroke-width=\"10.0\" stroke-linecap"),
+        "unshaded contour stroke changed"
+      );
+    }
+
+    /// WL 15's frame of a density plot: `PlotRangePadding -> Scaled[0.02]`
+    /// between the data and the frame, `ImagePadding` just big enough for
+    /// the tick labels (`{{16.9, 1.5}, {15.17, 0.5}}` here, so the picture
+    /// is 360 x 357.27), and inward tick marks on all four edges (31 per
+    /// edge over 0..3: majors every 0.5, minors every 0.1).
+    #[test]
+    fn density_plot_frame_layout_matches_wl15() {
+      let svg = export_svg("DensityPlot[Sin[x y], {x, 0, 3}, {y, 0, 3}]");
+      assert!(svg.contains("<svg width=\"360\" height=\"357\""), "{svg}");
+      assert!(
+        svg.contains(
+          "<rect x=\"169.0\" y=\"5.0\" width=\"3416.0\" height=\"3416.0\" \
+           fill=\"none\" stroke=\"#666666\""
+        ),
+        "frame rectangle: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "<image x=\"237.3\" y=\"73.3\" width=\"3279.4\" height=\"3279.4\""
+        ),
+        "data inset by 2% of the frame: {svg}"
+      );
+      assert_eq!(svg.matches("<line").count(), 4 * 31, "{svg}");
+      for label in ["0.0", "1.5", "3.0"] {
+        assert_eq!(svg.matches(&format!(">{label}</text>")).count(), 2);
+      }
+    }
+
+    /// Regression: the zero contour of `Sin[x] Sin[y]` runs through grid
+    /// nodes whose samples are rounding noise (±1e-16), so it zigzagged
+    /// and was mostly missing, while the zero samples on the domain's edge
+    /// traced the edge. WL draws the full `x = Pi` and `y = Pi` lines and
+    /// nothing along the edge.
+    #[test]
+    fn contour_plot_draws_zero_level_through_grid_nodes() {
+      clear_state();
+      let result = interpret(
+        "g = ContourPlot[Sin[x] Sin[y], {x, 0, 2 Pi}, {y, 0, 2 Pi}]; \
+         pts = Flatten[Cases[Normal[g], Line[p_] :> p, Infinity], 1]; \
+         {MinMax[Select[pts, Abs[#[[1]] - Pi] < 10^-9 &][[All, 2]]], \
+          MinMax[Select[pts, Abs[#[[2]] - Pi] < 10^-9 &][[All, 1]]], \
+          Count[pts, {x_, _} /; x < 10^-9]}",
+      )
+      .unwrap();
+      let nums: Vec<f64> = result
+        .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+        .filter_map(|s| s.parse().ok())
+        .collect();
+      assert_eq!(nums.len(), 5, "{result}");
+      for pair in [&nums[0..2], &nums[2..4]] {
+        assert!(pair[0] < 0.1 && pair[1] > 6.1, "{result}");
+      }
+      assert!(nums[4] <= 1.0, "a contour traced the edge x = 0: {result}");
+    }
+
+    /// Regression: `PlotLegends -> BarLegend[…]` was ignored. As in WL the
+    /// plot comes back as `Legended[plot, Placed[BarLegend[…], After]]`,
+    /// also when the legend is held in a variable, and a bare BarLegend's
+    /// colour function gets the values themselves (not rescaled to 0..1).
+    #[test]
+    fn plot_legends_bar_legend_gives_legended() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "leg = BarLegend[{\"Rainbow\", {0, 1}}]; \
+           p = Plot[x, {x, 0, 1}, PlotLegends -> leg]; \
+           {Head[p], p[[2]], Head[p[[1]]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{Rainbow, {0, 1}}], After], Graphics}"
+      );
+      assert_eq!(
+        interpret(
+          "Head[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, \
+           PlotLegends -> BarLegend[\"Rainbow\"]]]"
+        )
+        .unwrap(),
+        "Legended"
+      );
+      let svg = export_svg(
+        "Legended[Graphics[Disk[]], \
+         BarLegend[{If[# > 5, Red, Blue] &, {0, 10}}]]",
+      );
+      assert!(svg.contains("rgb(255,0,0)"), "raw values reach f: {svg}");
+      assert!(svg.contains("rgb(0,0,255)"), "{svg}");
     }
 
     /// `FrameLabel` and `Epilog` reach a contour plot the same way they
@@ -18519,7 +18623,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "{plot}, Prolog -> {{Orange, Disk[{{0, 0}}, 1]}}]"
         ));
         let disk = svg.find("<ellipse").expect(&svg);
-        let axis = svg.find("<polyline").expect(&svg);
+        let axis = svg
+          .find("<polyline")
+          .or_else(|| svg.find("<line"))
+          .expect(&svg);
         assert!(disk < axis, "prolog must sit under the axes: {plot}");
       }
     }
@@ -19304,12 +19411,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "ListDensityPlot[{{1, 2, 3, 4}, {4, 5, 6, 7}}, DataRange -> {{0, 400}, {0, 2000}}]",
       );
       assert_ne!(default, ranged);
-      assert!(ranged.contains(">\n2000\n</text>"), "{ranged}");
-      assert!(!default.contains(">\n2000\n</text>"));
+      assert!(ranged.contains(">2000</text>"), "{ranged}");
+      assert!(!default.contains(">2000</text>"));
       let contour = export_svg(
         "ListContourPlot[{{1, 2, 3, 4}, {4, 5, 6, 7}}, DataRange -> {{0, 400}, {0, 2000}}]",
       );
-      assert!(contour.contains(">\n2000\n</text>"), "{contour}");
+      assert!(contour.contains(">2000</text>"), "{contour}");
     }
 
     /// Regression: the marching-squares case table used to swap the
@@ -19840,26 +19947,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod field_plot_aspect_ratio {
     use super::*;
 
-    /// `AspectRatio -> r` sets the picture's height / width for every
-    /// contour and density plot; it used to be ignored, leaving them square.
+    /// `AspectRatio -> r` shapes the frame of every contour and density
+    /// plot, and the picture's height follows from it (it used to be
+    /// ignored, leaving them square). The heights are wolframscript's
+    /// `AbsoluteOptions[g, ImageSize]` (475.16 and 133.33), rounded.
     #[test]
     fn aspect_ratio_reshapes_field_plots() {
       for (plot, height) in [
         (
           "ListContourPlot[{{0, 1}, {1, 0}}, AspectRatio -> 2, ImageSize -> 250]",
-          500,
+          475,
         ),
         (
           "ListDensityPlot[{{0, 1}, {1, 0}}, AspectRatio -> 1/2, ImageSize -> 250]",
-          125,
+          133,
         ),
         (
           "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 2, ImageSize -> 250]",
-          500,
+          475,
         ),
         (
           "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 1/2, ImageSize -> 250]",
-          125,
+          133,
         ),
       ] {
         let svg = export_svg(plot);
@@ -43717,9 +43826,12 @@ mod plots_with_nothing_to_draw {
     assert_ne!(lit, flat);
     let reversed = export_svg(&format!("{plot}, DataReversed -> True]"));
     assert_ne!(lit, reversed);
-    let ranged =
-      export_svg(&format!("{plot}, DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]"));
-    assert!(ranged.contains("-1"), "{ranged}");
+    // As in WL, the frame carries no ticks unless `FrameTicks` asks.
+    assert!(!lit.contains("<text"), "{lit}");
+    let ranged = export_svg(&format!(
+      "{plot}, DataRange -> {{{{-1, 1}}, {{-1, 1}}}}, FrameTicks -> Automatic]"
+    ));
+    assert!(ranged.contains(">-1"), "{ranged}");
   }
 
   /// `"Thermometer"` is the short spelling of `"ThermometerColors"` in a
