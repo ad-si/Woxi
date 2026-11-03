@@ -1902,15 +1902,16 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
         }
       }
       Expr::List(items) => {
-        // `{above, below}`: two plain colors fill the regions where the
-        // curve is above / below its target in different colors.
+        // `{below, above}`: two plain colors fill the regions where the
+        // curve is below / above its target in different colors
+        // (`FillingStyle -> {Red, Blue}` paints the negative lobes red).
         if let [a, b] = items.as_slice()
           && !matches!(a, Expr::FunctionCall { name, .. } if name == "Opacity")
           && !matches!(b, Expr::FunctionCall { name, .. } if name == "Opacity")
           && let (Some(ca), Some(cb)) = (parse_color(a), parse_color(b))
         {
-          fs.color = Some(color_to_rgb8(ca));
-          fs.below_color = Some(color_to_rgb8(cb));
+          fs.below_color = Some(color_to_rgb8(ca));
+          fs.color = Some(color_to_rgb8(cb));
           return;
         }
         for item in items {
@@ -3700,6 +3701,28 @@ fn generate_svg_with_options(
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
   let svg_width = opts.svg_width;
+  // `ColorFunctionScaling` rescales over the sampled data, not the padded
+  // plot range: the highest point of `Plot[Sin[x], …, ColorFunction ->
+  // Function[{x, y}, Hue[y]]]` gets `Hue[1.]`.
+  let color_scale_ranges = {
+    let (mut lo_x, mut hi_x, mut lo_y, mut hi_y) = (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    );
+    for &(x, y) in all_points.iter().flatten() {
+      if x.is_finite() && y.is_finite() {
+        (lo_x, hi_x) = (lo_x.min(x), hi_x.max(x));
+        (lo_y, hi_y) = (lo_y.min(y), hi_y.max(y));
+      }
+    }
+    if lo_x <= hi_x {
+      (lo_x, hi_x, lo_y, hi_y)
+    } else {
+      (x_min, x_max, y_min, y_max)
+    }
+  };
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let (show_x_axis, show_y_axis) = opts.axes;
@@ -4323,29 +4346,58 @@ fn generate_svg_with_options(
                       continue;
                     }
                     // With a `ColorFunction` and no explicit `FillingStyle`
-                    // color, the fill takes the curve's colors run by run.
-                    let tinted = opts.color_function.as_ref().filter(|_| {
-                      series_filling_style(opts, series_idx)
-                        .is_none_or(|fs| fs.color.is_none())
-                    });
+                    // (unset or `Automatic`), the fill takes the curve's
+                    // colors run by run at full strength (WL paints the
+                    // fill polygons with opaque `VertexColors`). Any given
+                    // `FillingStyle`, even a bare `Opacity[…]`, replaces
+                    // the color function with the plain series color.
+                    let tinted = opts
+                      .color_function
+                      .as_ref()
+                      .filter(|_| series_filling_style(opts, series_idx).is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
                         Some(cf) => color_function_runs(
                           segment,
                           cf,
                           opts.color_function_scaling,
-                          (x_min, x_max, y_min, y_max),
+                          color_scale_ranges,
                         )
                         .into_iter()
                         .map(|((cr, cg, cb), run)| {
-                          let opacity = series_filling_style(opts, series_idx)
-                            .and_then(|fs| fs.effective_opacity())
-                            .unwrap_or(0.2);
-                          (RGBColor(cr, cg, cb).mix(opacity), run)
+                          (RGBColor(cr, cg, cb).mix(1.0), run)
                         })
                         .collect(),
                         None => vec![(paint, segment.clone())],
                       };
+                    // `FillingStyle -> {below, above}`: split the area at
+                    // the reference level and paint each side in its color.
+                    let below_paint = series_filling_style(opts, series_idx)
+                      .filter(|_| tinted.is_none())
+                      .and_then(|fs| fs.below_color.map(|c| (fs, c)))
+                      .map(|(fs, (br, bg, bb))| {
+                        RGBColor(br, bg, bb)
+                          .mix(fs.effective_opacity().unwrap_or(0.2))
+                      });
+                    if let Some(bp) = below_paint {
+                      let (xa, xb) = (segment[0].0, segment[segment.len() - 1].0);
+                      let level = [(xa.min(xb), ref_y), (xa.max(xb), ref_y)];
+                      for (is_above, piece) in
+                        fill_between_polygons_by_side(segment, &level)
+                      {
+                        chart
+                          .draw_series(std::iter::once(Polygon::new(
+                            piece,
+                            if is_above { paint } else { bp },
+                          )))
+                          .map_err(|e| {
+                            InterpreterError::EvaluationError(format!(
+                              "Plot: {e}"
+                            ))
+                          })?;
+                      }
+                      continue;
+                    }
                     for (piece_paint, piece) in pieces {
                       if piece.len() < 2 {
                         continue;
@@ -4501,7 +4553,7 @@ fn generate_svg_with_options(
                   segment,
                   cf,
                   opts.color_function_scaling,
-                  (x_min, x_max, y_min, y_max),
+                  color_scale_ranges,
                 ) {
                   chart
                     .draw_series(LineSeries::new(
@@ -5351,9 +5403,18 @@ pub(crate) fn color_function_rgb(
   if let Some(name) =
     crate::functions::field_plot::color_function_scheme_name(cf)
   {
+    // A named gradient colors a curve or point by its height (WL:
+    // `ListLinePlot[{1, 3, 2, 5}, ColorFunction -> "Thermometer"]` gives
+    // its vertices the scheme at the scaled y values 0, 1/2, 1/4, 1). A
+    // caller without a y extent (a chart passes its bar values as x) is
+    // colored by x.
+    let t = if y_max > y_min {
+      scale(y, y_min, y_max)
+    } else {
+      scale(x, x_min, x_max)
+    };
     return Some(crate::functions::field_plot::apply_named_color_function(
-      &name,
-      scale(x, x_min, x_max),
+      &name, t,
     ));
   }
   let mut args = vec![Expr::Real(ax)];

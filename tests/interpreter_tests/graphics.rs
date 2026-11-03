@@ -43626,11 +43626,13 @@ mod plots_with_nothing_to_draw {
         "{short}"
       );
     }
-    // The gradient is applied, not silently dropped to grayscale.
+    // The gradient is applied, not silently dropped to grayscale, and by
+    // height: the first segment (mean y = 2, scaled 1/4) is
+    // `ColorData["ThermometerColors"][1/4]`.
     assert_eq!(
       interpret(
         "StringContainsQ[ExportString[ListLinePlot[{1, 3, 2, 5}, \
-         ColorFunction -> \"Thermometer\"], \"SVG\"], \"#6C90F0\"]"
+         ColorFunction -> \"Thermometer\"], \"SVG\"], \"#87AFF2\"]"
       )
       .unwrap(),
       "True"
