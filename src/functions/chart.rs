@@ -3372,6 +3372,11 @@ fn bar_chart_structure(
   opts: &ChartOptions,
   args: &[Expr],
 ) -> Expr {
+  if args.len() == 1
+    && let Some(tree) = plain_bar_chart_tree(&args[0])
+  {
+    return tree;
+  }
   let gap =
     crate::functions::plot::bar_group_gap(bar_chart_look(args).bar_spacing);
   let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
@@ -6857,4 +6862,104 @@ mod tests {
       Some("Pastel")
     );
   }
+}
+
+/// The left edge of the first bar of an `n`-bar chart, read off
+/// wolframscript: constant up to nine bars, then the bars narrow in two
+/// linear stretches, and from 46 bars on they touch.
+fn plain_bar_left_edge(n: usize) -> f64 {
+  let line = |n0: usize, a: f64, n1: usize, b: f64| {
+    a + (b - a) * (n - n0) as f64 / (n1 - n0) as f64
+  };
+  match n {
+    0..=9 => 0.5487982520029133,
+    10..=33 => line(10, 0.5460988028072107, 33, 0.6521260492637952),
+    34..=45 => line(34, 0.6102525182834277, 45, 0.6459224506692425),
+    _ => 0.5,
+  }
+}
+
+/// `BarChart[data]` of one plain dataset (a list or association of
+/// numbers, no options) as wolframscript builds it: an invisible `Point`
+/// pair that sets the extent, the bars as tooltip rectangles, and the axis
+/// with ticks at the outer bar edges.
+fn plain_bar_chart_tree(data: &Expr) -> Option<Expr> {
+  let values: Vec<Expr> = match data {
+    Expr::List(items) => items.to_vec(),
+    Expr::Association(pairs) => pairs.iter().map(|(_, v)| v.clone()).collect(),
+    _ => return None,
+  };
+  let n = values.len();
+  if n == 0
+    || !values.iter().all(|v| {
+      matches!(v, Expr::Integer(_) | Expr::Real(_))
+        || matches!(v, Expr::FunctionCall { name, .. } if name == "Rational")
+    })
+  {
+    return None;
+  }
+  let nums: Vec<f64> = values
+    .iter()
+    .map(|v| crate::functions::math_ast::try_eval_to_f64(v).unwrap_or(0.0))
+    .collect();
+  let src = |x: f64| crate::syntax::expr_to_source_form(&Expr::Real(x));
+  let left = plain_bar_left_edge(n);
+  let right = 2.0 - left;
+  let last_right = (n - 1) as f64 + right;
+  let span = last_right - left;
+  // Fewer than five bars are padded as though there were five.
+  let pad = 0.2 * (right - left) * 5usize.saturating_sub(n) as f64;
+  let xmin = left - 0.02 * span - pad;
+  let xmax = last_right + pad;
+  let axis_end = xmax + 0.02 * (last_right - xmin);
+  let opacity = src(0.7 - 0.007 * n as f64);
+  let style = format!(
+    "Directive[EdgeForm[Directive[Thickness[Small], Opacity[{opacity}]]], RGBColor[1., 0.835, 0.25]]"
+  );
+  let bars: Vec<String> = values
+    .iter()
+    .zip(&nums)
+    .enumerate()
+    .map(|(k, (v, y))| {
+      let v = crate::syntax::expr_to_source_form(v);
+      format!(
+        "{{{style}, Tooltip[StatusArea[Charting`DelayedMouseEffect[Rectangle[{{{}, 0.}}, {{{}, {}}}, \"RoundingRadius\" -> 0], {{\"Style\", EdgeForm[{{GrayLevel[0.5], AbsoluteThickness[1.5], Opacity[0.66]}}]}}], {v}], Style[{v}, {{}}]]}}",
+        src(k as f64 + left),
+        src(k as f64 + right),
+        src(*y)
+      )
+    })
+    .collect();
+  let tick = |x: f64| {
+    let x = src(x);
+    format!(
+      "Line[{{{{{x}, 0.}}, Offset[{{-1.102182119232618*^-15, -6.}}, {{{x}, 0.}}]}}]"
+    )
+  };
+  let slots = vec!["{}"; n + 2].join(", ");
+  let negative = nums.iter().any(|y| *y < 0.0);
+  let y_pad = if negative {
+    "Scaled[0.05]"
+  } else {
+    "Scaled[0.02]"
+  };
+  let source = format!(
+    "Graphics[{{{{Opacity[0], Point[{{{{{xmin}, 0.}}, {{{xmax}, 0.}}}}]}}, {{{{}}, {{{style}, {{{bars}}}}}, {{}}, {{}}}}, {{}}, {{}}, {{}}, {{}}, \
+     {{Style[{{Antialiasing -> False, {{Directive[Thickness[Tiny]], {{Line[{{{{{xmin}, 0.}}, {{{axis_end}, 0.}}}}]}}, Style[{{}}, \"GraphicsLabel\"]}}, \
+     Style[{{{{Directive[Thickness[Tiny]], {t0}, {t1}, {{{slots}}}}}, Style[{{}}, \"GraphicsLabel\"]}}, \"GraphicsTicks\"]}}, \"GraphicsAxes\"]}}}}, \
+     {{DisplayFunction -> Identity, PlotInteractivity :> $PlotInteractivity, DefaultBaseStyle -> {{\"PlotGraphics\", \"Graphics\"}}, \
+     AspectRatio -> GoldenRatio^(-1), Axes -> {{False, True}}, AxesLabel -> {{None, None}}, AxesOrigin -> {{{xmin}, 0.}}, \
+     CoordinatesToolOptions -> {{\"DisplayFunction\" -> ({{Identity[#1[[1]]], Identity[#1[[2]]]}} & ), \"CopiedValueFunction\" -> ({{Identity[#1[[1]]], Identity[#1[[2]]]}} & )}}, \
+     FrameLabel -> {{{{None, None}}, {{None, None}}}}, FrameTicks -> {{{{Automatic, Automatic}}, {{Automatic, Automatic}}}}, GridLines -> {{None, None}}, \
+     GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]], PlotRange -> {{{{All, All}}, {{All, All}}}}, \
+     PlotRangePadding -> {{{{Scaled[0.02], Scaled[0.02]}}, {{{y_pad}, Scaled[0.05]}}}}, Ticks -> {{None, Automatic}}}}]",
+    xmin = src(xmin),
+    xmax = src(xmax),
+    axis_end = src(axis_end),
+    bars = bars.join(", "),
+    t0 = tick(left),
+    t1 = tick(last_right),
+  );
+  let expr = crate::syntax::string_to_expr(&source).ok()?;
+  crate::evaluator::evaluate_expr_to_expr(&expr).ok()
 }

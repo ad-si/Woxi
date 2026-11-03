@@ -43969,6 +43969,35 @@ mod styled_text_and_computed_options_in_graphics_layouts {
   }
 }
 
+mod plain_bar_chart_tree {
+  use super::*;
+
+  // One plain dataset: an invisible Point pair for the extent (padded as
+  // though there were five bars), tooltip rectangles, n + 2 tick slots.
+  #[test]
+  fn extents_bars_and_slots() {
+    assert_eq!(
+      interpret(
+        "g = BarChart[{3, 1/2}]; {Cases[g, Point[p_] :> p, Infinity], Cases[g, Rectangle[{a_, _}, {b_, h_}, ___] :> {a, b, h}, Infinity], Cases[g, Tooltip[_, Style[v_, _]] :> v, Infinity], Cases[g, {{} ..}, Infinity]}"
+      )
+      .unwrap(),
+      "{{{{-0.030691915513474277, 0.}, {2.992643845593591, 0.}}}, {{0.5487982520029133, 1.4512017479970867, 3.}, {1.5487982520029133, 2.4512017479970867, 0.5}}, {3, 1/2}, {{{}, {}, {}, {}}}}"
+    );
+  }
+
+  // From ten bars on the bars narrow; from 46 on they touch.
+  #[test]
+  fn bar_width_by_count() {
+    assert_eq!(
+      interpret(
+        "Table[First[Cases[BarChart[Range[n]], Rectangle[{a_, _}, _, ___] :> a, Infinity]], {n, {12, 40, 60}}]"
+      )
+      .unwrap(),
+      "{0.5553185633686528, 0.6297088450393267, 0.5}"
+    );
+  }
+}
+
 mod generalized_bar_chart {
   use super::*;
 
