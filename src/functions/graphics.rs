@@ -32089,9 +32089,18 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // custom Grid-based control panel), not just a bare `Control`/`Button`.
       Expr::List(row) if name == "Grid" => {
         for cell in row {
-          match control_group_items(cell) {
-            Some(nested) => out.extend(nested),
-            None => out.push(layout_control_leaf(cell)),
+          // A cell like `Control[…] Spacer[8]` (implicit product) lists
+          // each factor on its own, as in a `Row` item.
+          let factors = if contains_control(cell) {
+            split_implicit_product(cell)
+          } else {
+            vec![cell.clone()]
+          };
+          for factor in &factors {
+            match control_group_items(factor) {
+              Some(nested) => out.extend(nested),
+              None => out.push(layout_control_leaf(factor)),
+            }
           }
         }
       }

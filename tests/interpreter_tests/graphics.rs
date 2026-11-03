@@ -31144,6 +31144,24 @@ mod manipulate {
     );
   }
 
+  /// A `Grid` cell written as an implicit product (`Control[…] Spacer[8]`)
+  /// still declares its control, instead of leaving the variable unbound.
+  #[test]
+  fn spec_grid_cell_implicit_product_keeps_control() {
+    let expr = interpret_to_expr(
+      "Manipulate[g, Grid[{{\"grid\", Control[{{g, 0.5, \"\"}, 0, 1, 0.1}] \
+       Spacer[8]}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a grid control panel");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(woxi::functions::ManipulateControl::name)
+      .collect();
+    assert!(names.contains(&"g"), "{names:?}");
+  }
+
   /// The two halves of a `Grid` control panel meet here: its span markers
   /// are dropped, and a Manipulate-level `ControlType -> {…}` assigns one
   /// type per *control*. A marker must therefore not consume a slot of
