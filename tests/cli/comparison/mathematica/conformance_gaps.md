@@ -1190,10 +1190,16 @@ woxi eval 'ImageDimensions[HighlightImage[ConstantImage[Black, {200, 100}], {Red
 # {200, 100}
 ```
 
-wolframscript rasterizes the highlighted picture through the front end, at
-the display's scale — twice the pixels on a Retina Mac — and with a minimum
-height (`{20, 10}` becomes `{40, 33}`). Woxi draws onto the image's own
-pixels. **Not reproducible** across machines.
+`HighlightImage` returns a `Graphics` (the image as an inset with the
+marks over it) in both. Measuring it rasterizes that picture: wolframscript
+does so through the front end at the display's scale (twice the pixels on a
+Retina Mac) and with a minimum height (`{20, 10}` becomes `{40, 33}`), Woxi
+at the image's own size. **Not reproducible** across machines.
+
+A mask image as the mark (`HighlightImage[img, mask]`) is drawn into the
+pixels and returned as an `Image`. wolframscript outlines the mask instead,
+as a `GraphicsComplex` holding a `FilledCurve`. Its contour order has not
+been decoded.
 
 ### Exact generalized eigenvectors are scaled differently
 
