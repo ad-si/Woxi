@@ -10952,4 +10952,21 @@ mod gabor {
        0.1150919326021871, 1.5739720843231968, 0.1150919326021871}",
     );
   }
+
+  // `Show[image, ImageSize -> …]` shows the image scaled to fit the
+  // bounding box (aspect ratio kept) instead of ignoring the option.
+  #[test]
+  fn show_image_honours_image_size() {
+    clear_state();
+    let sized = interpret(
+      "ExportString[Show[Image[Table[0.5, {40}, {60}]], \
+       ImageSize -> {300, 300}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(sized.contains("width='300' height='200'"), "{sized}");
+    let natural =
+      interpret("ExportString[Show[Image[Table[0.5, {40}, {60}]]], \"SVG\"]")
+        .unwrap();
+    assert!(natural.contains("width='60' height='40'"), "{natural}");
+  }
 }
