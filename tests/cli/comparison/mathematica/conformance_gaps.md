@@ -6671,9 +6671,16 @@ Woxi's Hough transform reports one line per straight stroke. wolframscript
 reports several near-duplicate lines for each: on a 20 × 20 image with one
 diagonal it returns ten lines, Woxi one. The peak picking is not decoded, so
 the two `Round[First /@ ImageLines[…]]` cases are skip-listed.
-`HighlightImage[img, {Line[…], …}]` also returns a `Graphics` in
-wolframscript (an overlay of the image and the lines) where Woxi returns an
-`Image`.
+
+Decoded so far, from the lines wolframscript returns for w × h images: the
+accumulator has `Round[d] - 1` distance bins over the diagonal `d`, centred
+on the image centre, and `2 Round[π d/(4√2)] + 1` angle bins at
+`(k + 1/2) π/n`. A single 20-pixel column comes back as 12 lines with
+normals between 150° and 24°. Most of them are not local maxima of a plain
+vote count under any pixel-centre or rounding convention tried, so the
+voting itself (weights, prior edge detection or smoothing) is still unknown.
+`MaxFeatures -> 1` returns the default list's second line, so the list is
+not ordered by strength either.
 
 ## `PolyhedronData` covers only a subset of the polyhedron entities
 
