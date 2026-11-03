@@ -45512,11 +45512,12 @@ mod wl_table_layout {
     // not on top. An explicit `{r, θ}` still puts it at θ.
     let svg = export_svg("Graphics[RegularPolygon[6]]");
     assert!(
-      svg.contains("<polygon points=\"93.60,7.35 7.20,157.00 "),
+      // The vertices wolframscript's export draws.
+      svg.contains("<polygon points=\"93.34,6.89 7.18,156.13 "),
       "{svg}"
     );
     let svg = export_svg("Graphics[RegularPolygon[{1, 0}, 6]]");
-    assert!(svg.contains("<polygon points=\"352.80,157.00 "), "{svg}");
+    assert!(svg.contains("<polygon points=\"351.82,156.13 "), "{svg}");
   }
 
   #[test]

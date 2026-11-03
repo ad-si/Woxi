@@ -4,10 +4,10 @@ expression: "export_svg(\"Graphics[{Red, RegularPolygon[4], Blue, EdgeForm[Black
 ---
 <svg width="360" height="348" viewBox="0 0 360 348" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_360x348"><rect x="0" y="0" width="360.00" height="348.00"/></clipPath>
+<clipPath id="plotClip_359x346"><rect x="0" y="0" width="359.00" height="346.04"/></clipPath>
 </defs>
-<g clip-path="url(#plotClip_360x348)">
-<polygon points="7.20,7.41 7.20,340.59 340.38,340.59 340.38,7.41" fill="rgb(255,0,0)"/>
-<polygon points="291.59,103.32 230.38,209.34 352.80,209.34" fill="rgb(0,0,255)" stroke="rgb(0,0,0)" stroke-width="1.00"/>
+<g clip-path="url(#plotClip_359x346)">
+<polygon points="7.18,6.89 7.18,339.15 339.44,339.15 339.44,6.89" fill="rgb(255,0,0)"/>
+<polygon points="290.78,102.54 229.74,208.26 351.82,208.26" fill="rgb(0,0,255)" stroke="rgb(0,0,0)" stroke-width="1.00"/>
 </g>
 </svg>

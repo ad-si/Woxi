@@ -126,7 +126,7 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 <text x="1547.5" y="2155.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Carl</text>
 <text x="2052.9" y="2155.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Marc</text>
 <text x="2558.3" y="2155.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Sven</text>
-<text x="2889.0" y="1960.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Person</text>
-<text x="284.0" y="322.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Fruits</text>
+<text x="2915.0" y="2005.1" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Person</text>
+<text x="284.0" y="294.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Fruits</text>
 <text x="1547.5" y="169.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="150" fill="#333">Fruit Consumption</text>
 </svg>

@@ -140,6 +140,6 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3}, AxesLabel -> {\"X Axis\", \"Y Ax
 <line x1="280.0" y1="805.7" x2="250.0" y2="805.7" stroke="#666" stroke-width="10"/>
 <line x1="280.0" y1="562.1" x2="250.0" y2="562.1" stroke="#666" stroke-width="10"/>
 <line x1="280.0" y1="318.6" x2="250.0" y2="318.6" stroke="#666" stroke-width="10"/>
-<text x="2889.0" y="1780.0" text-anchor="start" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">X Axis</text>
-<text x="320.0" y="162.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Y Axis</text>
+<text x="2915.0" y="1825.1" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">X Axis</text>
+<text x="320.0" y="134.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#666">Y Axis</text>
 </svg>
