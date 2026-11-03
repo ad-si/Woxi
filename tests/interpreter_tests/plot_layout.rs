@@ -255,3 +255,45 @@ mod grid_lines {
     assert!(svg.contains("stroke=\"#808080\""), "{svg}");
   }
 }
+
+mod list_polar_plot {
+  use super::*;
+
+  /// Centres of the `<circle>` data points.
+  fn circles(svg: &str) -> Vec<(f64, f64)> {
+    svg
+      .split("<circle ")
+      .skip(1)
+      .map(|tag| {
+        let attr = |name: &str| -> f64 {
+          let key = format!("{name}=\"");
+          let start = tag.find(&key).unwrap() + key.len();
+          let end = start + tag[start..].find('"').unwrap();
+          tag[start..end].parse().unwrap()
+        };
+        (attr("cx"), attr("cy"))
+      })
+      .collect()
+  }
+
+  // `{θ, r}` pairs are placed at their own angle, and the points are not
+  // joined by default (WL draws `Point`s): angles 0, Pi/2 and Pi at radius
+  // 1 are (1, 0), (0, 1) and (-1, 0).
+  #[test]
+  fn pairs_use_their_angle_and_are_points() {
+    let svg = svg_of("ListPolarPlot[{{0, 1}, {Pi/2, 1}, {Pi, 1}}]");
+    let pts = circles(&svg);
+    assert_eq!(pts.len(), 3, "{svg}");
+    assert!((pts[0].1 - pts[2].1).abs() < 1.0, "{pts:?}");
+    assert!(pts[1].1 < pts[0].1 - 100.0, "{pts:?}");
+    assert!(pts[0].0 > pts[1].0 && pts[1].0 > pts[2].0, "{pts:?}");
+  }
+
+  // `Joined -> True` draws a line instead of points.
+  #[test]
+  fn joined_draws_a_line() {
+    let svg = svg_of("ListPolarPlot[{1, 2, 3, 4}, Joined -> True]");
+    assert!(circles(&svg).is_empty(), "{svg}");
+    assert_eq!(polyline_points(&svg, "#3D99CC").len(), 4, "{svg}");
+  }
+}

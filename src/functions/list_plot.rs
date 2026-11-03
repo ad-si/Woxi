@@ -2138,26 +2138,61 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
   apply_dataset_labels(&mut parsed.opts, &labels);
 
+  // `{{θ1, r1}, …}` pairs give each point its angle; plain radii
+  // `{r1, r2, …}` are spread evenly over the circle, starting at angle 0.
+  let is_pair = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2 && !matches!(p[0], Expr::List(_)));
+  let pairs_per_series: Vec<bool> = match &args[0] {
+    Expr::List(items) if items.first().is_some_and(is_pair) => vec![true],
+    Expr::List(items) if items.iter().all(|s| matches!(s, Expr::List(_))) => {
+      items
+        .iter()
+        .map(
+          |s| matches!(s, Expr::List(pts) if pts.first().is_some_and(is_pair)),
+        )
+        .collect()
+    }
+    _ => vec![false],
+  };
   let polar_series: Vec<Vec<(f64, f64)>> = all_series
     .iter()
-    .map(|series| {
+    .enumerate()
+    .map(|(s, series)| {
       let n = series.len();
+      let pairs = pairs_per_series.get(s).copied().unwrap_or(false);
       series
         .iter()
         .enumerate()
-        .map(|(i, &(_x, r))| {
-          let theta = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+        .map(|(i, &(x, r))| {
+          let theta = if pairs {
+            x
+          } else {
+            2.0 * std::f64::consts::PI * i as f64 / n as f64
+          };
           (r * theta.cos(), r * theta.sin())
         })
         .collect()
     })
     .collect();
 
+  // A polar plot keeps one scale on both axes (`AspectRatio -> Automatic`)
+  // unless an explicit ratio is given.
+  if parsed.opts.aspect_ratio.is_none() {
+    parsed.opts.aspect_automatic = true;
+  }
   let (x_range, y_range) = compute_ranges(&polar_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&polar_series, x_range, y_range, &parsed.opts)?;
+  // Like ListPlot, the points stay unconnected unless `Joined -> True`.
+  let svg = if parsed.joined {
+    generate_svg_with_filling(&polar_series, x_range, y_range, &parsed.opts)?
+  } else {
+    generate_scatter_svg_with_options(
+      &polar_series,
+      x_range,
+      y_range,
+      &parsed.opts,
+    )?
+  };
   Ok(crate::graphics_result(svg))
 }
 
