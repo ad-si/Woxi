@@ -2079,6 +2079,11 @@ mod radical_coefficient_merge {
       interpret("{Sqrt[1/(5 - Sqrt[5])], Sqrt[4/(1 + Sqrt[2])], (4/(1 + Sqrt[2]))^(1/2), Sqrt[1/(1 + x)], Sqrt[1/(2 Pi)]}").unwrap(),
       "{1/Sqrt[5 - Sqrt[5]], 2/Sqrt[1 + Sqrt[2]], 2/Sqrt[1 + Sqrt[2]], Sqrt[(1 + x)^(-1)], 1/Sqrt[2*Pi]}"
     );
+    // A negative numeric sum takes the I outside.
+    assert_eq!(
+      interpret("{Sqrt[1/(-1 - Sqrt[2])], Sqrt[1/(1 - Sqrt[2])]}").unwrap(),
+      "{I/Sqrt[1 + Sqrt[2]], I/Sqrt[-1 + Sqrt[2]]}"
+    );
   }
 
   // A rational coefficient times a square root of a positive rational

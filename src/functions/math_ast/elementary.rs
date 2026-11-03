@@ -838,13 +838,22 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Some(b) = reciprocal_of
     && matches!(b, Expr::FunctionCall { name, .. } if name == "Plus")
-    && crate::functions::math_ast::try_eval_to_f64(b).is_some_and(|v| v > 0.0)
+    && let Some(v) = crate::functions::math_ast::try_eval_to_f64(b)
+    && v != 0.0
   {
     let minus_half = Expr::FunctionCall {
       name: "Rational".to_string(),
       args: vec![Expr::Integer(-1), Expr::Integer(2)].into(),
     };
-    return crate::functions::math_ast::power_two(b, &minus_half);
+    if v > 0.0 {
+      return crate::functions::math_ast::power_two(b, &minus_half);
+    }
+    // A negative sum: `Sqrt[1/(1 - Sqrt[2])]` is `I/Sqrt[-1 + Sqrt[2]]`.
+    let negated = times_ast(&[Expr::Integer(-1), b.clone()])?;
+    if matches!(&negated, Expr::FunctionCall { name, .. } if name == "Plus") {
+      let root = crate::functions::math_ast::power_two(&negated, &minus_half)?;
+      return times_ast(&[Expr::Identifier("I".into()), root]);
+    }
   }
   // A Gaussian rational with a Gaussian rational root, e.g. `Sqrt[2 I]`.
   if let Some(result) = try_sqrt_gaussian(&args[0]) {
