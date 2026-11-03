@@ -475,7 +475,7 @@ mod parametric_plot_3d_legended_curves {
        Legended[{Cos[u], Cos[u], 2 Sin[u]}, \"label\"], \
        {2 Cos[u], Cos[u], Sin[u]}}, {u, 0, 2 Pi}]",
     );
-    for rgb in ["94,129,181", "224,147,44", "143,176,50"] {
+    for rgb in ["61,153,204", "242,160,36", "116,179,54"] {
       assert!(
         s.contains(&format!("stroke=\"rgb({rgb})\"")),
         "curve in {rgb} missing"

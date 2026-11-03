@@ -1775,13 +1775,13 @@ mod tests {
         grid_lines.len()
       );
       // Grid lines must be solid (no dash) and render behind the data series
-      // (plotters draws the joined series line as stroke="#5E81B5").
+      // (plotters draws the joined series line as stroke="#3D99CC").
       assert!(
         grid_lines.iter().all(|l| !l.contains("stroke-dasharray")),
         "grid lines should be solid by default: {svg}"
       );
       assert!(
-        svg.find("opacity=\"0.5\"") < svg.find("#5E81B5"),
+        svg.find("opacity=\"0.5\"") < svg.find("#3D99CC"),
         "grid lines should render behind the data series: {svg}"
       );
     }

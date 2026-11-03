@@ -4,12 +4,12 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 ---
 <svg width="458" height="225" viewBox="0 0 4576 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="472" cy="1927" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1927" cy="1049" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3382" cy="171" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="472" cy="171" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="1927" cy="1049" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="3382" cy="1927" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="472" cy="1927" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1927" cy="1049" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3382" cy="171" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="472" cy="171" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="1927" cy="1049" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="3382" cy="1927" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
 <line x1="356.2" y1="1997.8" x2="3500.0" y2="1997.8" stroke="#666" stroke-width="5"/>
 <line x1="618.2" y1="1997.8" x2="618.2" y2="1973.8" stroke="#666" stroke-width="5"/>
 <line x1="763.8" y1="1997.8" x2="763.8" y2="1973.8" stroke="#666" stroke-width="5"/>
@@ -64,8 +64,8 @@ expression: "export_svg(r#\"ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotLegends -> {\"S
 <text x="309.0" y="646.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2.5</text>
 <line x1="356.2" y1="170.3" x2="396.2" y2="170.3" stroke="#666" stroke-width="5"/>
 <text x="309.0" y="207.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3.0</text>
-<line x1="3650.0" y1="1013.0" x2="3850.0" y2="1013.0" stroke="rgb(94,129,181)" stroke-width="15"/>
+<line x1="3650.0" y1="1013.0" x2="3850.0" y2="1013.0" stroke="rgb(61,153,204)" stroke-width="20"/>
 <text x="3910.0" y="1062.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Series A</text>
-<line x1="3650.0" y1="1237.0" x2="3850.0" y2="1237.0" stroke="rgb(224,147,44)" stroke-width="15"/>
+<line x1="3650.0" y1="1237.0" x2="3850.0" y2="1237.0" stroke="rgb(242,160,36)" stroke-width="20"/>
 <text x="3910.0" y="1286.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">Series B</text>
 </svg>

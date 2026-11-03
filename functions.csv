@@ -110,6 +110,17 @@ LightYellow,"Named color evaluating to RGBColor[1 1 0.85]",✅,pure,6.0,1188
 LightOrange,"Named color evaluating to RGBColor[1 0.9 0.8]",✅,pure,6.0,1551
 LightPurple,"Named color evaluating to RGBColor[0.94 0.88 0.94]",✅,pure,6.0,1838
 LightPink,"Named color evaluating to RGBColor[1 0.85 0.85]",✅,pure,6.0,1944
+StandardRed,"Named color evaluating to RGBColor[0.93 0.27 0.27]",✅,pure,14.2,
+StandardGreen,"Named color evaluating to RGBColor[0.14 0.8 0.14]",✅,pure,14.2,
+StandardBlue,"Named color evaluating to RGBColor[0.4 0.6 1]",✅,pure,14.2,
+StandardYellow,"Named color evaluating to RGBColor[1 0.75 0]",✅,pure,14.2,
+StandardOrange,"Named color evaluating to RGBColor[0.98 0.56 0.17]",✅,pure,14.2,
+StandardPurple,"Named color evaluating to RGBColor[0.8 0.3 0.8]",✅,pure,14.2,
+StandardBrown,"Named color evaluating to RGBColor[0.67 0.54 0.42]",✅,pure,14.2,
+StandardGray,"Named color evaluating to GrayLevel[0.62]",✅,pure,14.2,
+StandardPink,"Named color evaluating to RGBColor[1 0.51 0.51]",✅,pure,14.2,
+StandardCyan,"Named color evaluating to RGBColor[0 0.74 0.74]",✅,pure,14.2,
+StandardMagenta,"Named color evaluating to RGBColor[0.95 0.43 0.96]",✅,pure,14.2,
 LightBrown,"Named color evaluating to RGBColor[0.94 0.91 0.88]",✅,pure,6.0,2205
 LightCyan,"Named color evaluating to RGBColor[0.9 1 1]",✅,pure,6.0,2871
 LightMagenta,"Named color evaluating to RGBColor[1 0.9 1]",✅,pure,6.0,3176

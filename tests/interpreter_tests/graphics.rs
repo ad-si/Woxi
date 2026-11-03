@@ -4372,7 +4372,7 @@ mod graphics {
     /// Number of plotted data marks/curves, told apart from axes and ticks
     /// by the default first plot colour.
     fn curve_marks(svg: &str) -> usize {
-      svg.matches("#5E81B5").count()
+      svg.matches("#3D99CC").count()
     }
 
     #[test]
@@ -5319,7 +5319,7 @@ mod plot3d {
         );
         assert!(svg.contains(" opacity=\"0.2\""), "{svg}");
         assert!(svg.contains("fill=\"rgb("), "{svg}");
-        assert!(!svg.contains("rgb(94,129,181)"), "{svg}");
+        assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
       }
 
       #[test]
@@ -8339,7 +8339,7 @@ mod plot3d {
         "ParametricPlot[{{Sin[x], Cos[x]}, If[False, {x, x}]}, {x, 0, 3}, \
          PlotStyle -> {Thickness[0.005], {Blue, Orange}}]",
       );
-      assert!(svg.contains("stroke=\"#5E81B5\""));
+      assert!(svg.contains("stroke=\"#3D99CC\""));
       assert!(!svg.contains("stroke=\"#FF8000\""));
     }
 
@@ -8400,14 +8400,14 @@ mod plot3d {
     fn curve_default_color_is_palette() {
       let svg = export_svg("ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]");
       assert!(
-        svg.contains("stroke=\"rgb(94,129,181)\""),
+        svg.contains("stroke=\"rgb(61,153,204)\""),
         "{}",
         &svg[..300]
       );
       let svg2 = export_svg(
         "ParametricPlot3D[{{Cos[t], Sin[t], t}, {Sin[t], Cos[t], t}}, {t, 0, 6}]",
       );
-      assert!(svg2.contains("stroke=\"rgb(224,147,44)\""));
+      assert!(svg2.contains("stroke=\"rgb(242,160,36)\""));
     }
 
     /// Show[] must merge Graphics3D primitives with the line emitted
@@ -11422,7 +11422,7 @@ mod plot3d {
       // out-of-range points to produce horizontal lines.
       let svg = export_svg("Plot[x^3 - x, {x, -3, 3}, PlotRange -> {-3, 3}]");
       for line in svg.lines() {
-        if !line.contains("stroke=\"#5E81B5\"") {
+        if !line.contains("stroke=\"#3D99CC\"") {
           continue;
         }
         let pts_str = line
@@ -12019,7 +12019,7 @@ mod plot3d {
         export_svg(r#"Plot[1 - x/10, {x, 0, 6}, PlotStyle -> {Thick, Green}]"#);
       assert!(svg.contains("#00FF00"), "curve must be green: {svg}");
       assert!(
-        !svg.contains("#5E81B5"),
+        !svg.contains("#3D99CC"),
         "the default palette colour must not win: {svg}"
       );
     }
@@ -12030,7 +12030,7 @@ mod plot3d {
       let svg = export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 6}, PlotStyle -> {Thick, Green}]"#,
       );
-      assert!(svg.contains("#5E81B5"), "curve 1 keeps the default: {svg}");
+      assert!(svg.contains("#3D99CC"), "curve 1 keeps the default: {svg}");
       assert!(svg.contains("#00FF00"), "curve 2 is green: {svg}");
     }
 
@@ -12322,7 +12322,7 @@ mod plot3d {
     /// The pixel points of the first data-series polyline (plot color).
     fn series_polyline_points(svg: &str) -> Vec<(f64, f64)> {
       let start = svg
-        .find("stroke=\"#5E81B5\"")
+        .find("stroke=\"#3D99CC\"")
         .expect("data series polyline present");
       let seg = &svg[start..];
       let pts = &seg[seg.find("points=\"").expect("points attribute") + 8..];
@@ -12458,7 +12458,7 @@ mod plot3d {
         "ListPlot[{{1, 1}, {2, 2}, {3, 3}}, DataRange -> All, \
          AxesOrigin -> {0, 0}, Joined -> True]",
       );
-      for color in ["#5E81B5", "#E0932C", "#8FB032"] {
+      for color in ["#3D99CC", "#F2A024", "#74B336"] {
         assert_eq!(
           svg.matches(color).count(),
           1,
@@ -12467,9 +12467,9 @@ mod plot3d {
       }
       // Each dataset is a horizontal line: both points share their y-pixel.
       for line in svg.split("<polyline").skip(1) {
-        if !line.contains("#5E81B5")
-          && !line.contains("#E0932C")
-          && !line.contains("#8FB032")
+        if !line.contains("#3D99CC")
+          && !line.contains("#F2A024")
+          && !line.contains("#74B336")
         {
           continue;
         }
@@ -12508,7 +12508,7 @@ mod plot3d {
         x_tick_labels(&svg).iter().any(|t| t == "10"),
         "x ticks should reach 10, got: {svg}"
       );
-      assert_eq!(svg.matches("#E0932C").count(), 1, "two series expected");
+      assert_eq!(svg.matches("#F2A024").count(), 1, "two series expected");
     }
 
     // Regression: DataRange -> {xmin, xmax} has no effect on a list of
@@ -12521,7 +12521,7 @@ mod plot3d {
          DataRange -> {0, 1}]",
       );
       assert_eq!(svg.matches("<circle").count(), 25);
-      assert!(!svg.contains("#E0932C"), "single series expected");
+      assert!(!svg.contains("#F2A024"), "single series expected");
       assert!(
         x_tick_labels(&svg).iter().any(|t| t == "30"),
         "x ticks should cover the explicit 11..35 x-range, got: {svg}"
@@ -12533,7 +12533,7 @@ mod plot3d {
     fn list_plot_pairs_default_unchanged() {
       let svg = export_svg("ListPlot[{{1, 1}, {2, 2}, {3, 3}}]");
       assert_eq!(svg.matches("<circle").count(), 3);
-      assert!(!svg.contains("#E0932C"), "single series expected");
+      assert!(!svg.contains("#F2A024"), "single series expected");
     }
 
     // Regression: series of explicit coordinates with exactly two points
@@ -12544,7 +12544,7 @@ mod plot3d {
       let svg = export_svg("ListPlot[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}]");
       assert_eq!(svg.matches("<circle").count(), 4);
       assert_eq!(
-        svg.matches("#E0932C").count(),
+        svg.matches("#F2A024").count(),
         2,
         "second series gets its own color, got: {svg}"
       );
@@ -12608,7 +12608,7 @@ mod plot3d {
         "one marker per {{x, y}} point"
       );
       // A single series: every marker keeps the first palette color.
-      assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 3);
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 3);
       for label in ["a", "b", "c"] {
         assert!(
           svg.contains(&format!(">{label}</text>")),
@@ -12626,7 +12626,7 @@ mod plot3d {
          ImageSize -> 400]",
       );
       assert_eq!(svg.matches("<circle").count(), 20);
-      assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 20);
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 20);
       for n in [1, 10, 20] {
         assert!(
           svg.contains(&format!(">{n}</text>")),
@@ -12790,7 +12790,7 @@ mod plot3d {
       assert_eq!(svg.matches("<circle").count(), 4);
       // ... each with a vertical error bar plus two caps in the series
       // color (12 segments beyond the axes/tick strokes).
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 12);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 12);
     }
 
     #[test]
@@ -12800,7 +12800,7 @@ mod plot3d {
          {3, Around[5, 1]}}]",
       );
       assert_eq!(svg.matches("<circle").count(), 3);
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 9);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 9);
     }
 
     // Around in the x coordinate draws horizontal error bars.
@@ -12809,7 +12809,7 @@ mod plot3d {
       let svg =
         export_svg("ListPlot[{{Around[1, 0.1], 2}, {Around[2, 0.3], 4}}]");
       assert_eq!(svg.matches("<circle").count(), 2);
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 6);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 6);
     }
 
     // Asymmetric Around[v, {minus, plus}] and mixed exact/Around values:
@@ -12819,7 +12819,7 @@ mod plot3d {
       let svg =
         export_svg("ListPlot[{Around[3, {0.5, 1.5}], Around[4, 0.2], 5}]");
       assert_eq!(svg.matches("<circle").count(), 3);
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 6);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 6);
     }
 
     #[test]
@@ -12842,12 +12842,12 @@ mod plot3d {
       // A translucent filled band in the series color ...
       assert_eq!(
         svg
-          .matches("<polygon opacity=\"0.2\" fill=\"#5E81B5\"")
+          .matches("<polygon opacity=\"0.2\" fill=\"#3D99CC\"")
           .count(),
         1
       );
       // ... with a single outline stroke instead of the 12 bar segments.
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 1);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 1);
     }
 
     // Points without uncertainty pinch the band to the point itself but
@@ -12861,7 +12861,7 @@ mod plot3d {
       assert_eq!(svg.matches("<circle").count(), 3);
       assert_eq!(
         svg
-          .matches("<polygon opacity=\"0.2\" fill=\"#5E81B5\"")
+          .matches("<polygon opacity=\"0.2\" fill=\"#3D99CC\"")
           .count(),
         1
       );
@@ -12874,7 +12874,7 @@ mod plot3d {
         "ListPlot[{Around[2, 1], Around[3, 0.5]}, IntervalMarkers -> None]",
       );
       assert_eq!(svg.matches("<circle").count(), 2);
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 0);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 0);
     }
 
     #[test]
@@ -12885,12 +12885,12 @@ mod plot3d {
       );
       assert_eq!(
         svg
-          .matches("<polygon opacity=\"0.2\" fill=\"#5E81B5\"")
+          .matches("<polygon opacity=\"0.2\" fill=\"#3D99CC\"")
           .count(),
         1
       );
       // The band outline plus the connecting line.
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 2);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 2);
     }
 
     #[test]
@@ -12899,7 +12899,7 @@ mod plot3d {
         "ListLinePlot[{Around[1, 0.2], Around[2, 0.3], Around[1.5, 0.1]}]",
       );
       // The connecting line plus 3 bars with 2 caps each.
-      assert_eq!(svg.matches("stroke=\"#5E81B5\"").count(), 10);
+      assert_eq!(svg.matches("stroke=\"#3D99CC\"").count(), 10);
     }
 
     #[test]
@@ -12994,7 +12994,7 @@ mod plot3d {
       );
       let line = svg
         .lines()
-        .find(|l| l.contains("<polyline") && l.contains("#5E81B5"))
+        .find(|l| l.contains("<polyline") && l.contains("#3D99CC"))
         .expect("association values should be drawn as a line");
       assert_eq!(line.matches(',').count(), 6, "line through all six values");
       assert!(
@@ -13751,8 +13751,8 @@ mod plot3d {
       assert!(svg.contains(">log<"), "missing log label");
       // Panels keep successive palette colors (blue then orange), with
       // 40 points for the sqrt dataset and 41 for the log dataset.
-      assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 40);
-      assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 41);
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 40);
+      assert_eq!(svg.matches("fill=\"#F2A024\"").count(), 41);
     }
 
     /// PlotLayout -> "Column" stacks the panels vertically instead.
@@ -13809,8 +13809,8 @@ mod plot3d {
         .and_then(|s| s.parse().ok())
         .expect("root svg width");
       assert!(width > 700.0, "expected two side-by-side panels: {width}");
-      assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 3);
-      assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 3);
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 3);
+      assert_eq!(svg.matches("fill=\"#F2A024\"").count(), 3);
     }
 
     // Regression: `render_panel_layout` picked each panel's renderer from
@@ -13845,7 +13845,7 @@ mod plot3d {
         "ListPlot[{Labeled[{1, 2}, \"a\"], Labeled[{3, 4}, \"b\"]}]",
       );
       assert_eq!(svg.matches("<circle").count(), 2);
-      assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 2);
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 2);
       assert!(svg.contains(">a<"), "missing label a");
       assert!(svg.contains(">b<"), "missing label b");
     }
@@ -13866,8 +13866,8 @@ mod plot3d {
       assert!(width > 700.0, "expected two side-by-side panels: {width}");
       assert!(svg.contains("sqrt"), "missing sqrt label");
       assert!(svg.contains(">log<"), "missing log label");
-      assert!(svg.contains("stroke=\"#5E81B5\""), "missing blue line");
-      assert!(svg.contains("stroke=\"#E0932C\""), "missing orange line");
+      assert!(svg.contains("stroke=\"#3D99CC\""), "missing blue line");
+      assert!(svg.contains("stroke=\"#F2A024\""), "missing orange line");
     }
 
     /// PlotRange -> {{xmin, xmax}, {ymin, ymax}} should constrain both axes.
@@ -13882,7 +13882,7 @@ mod plot3d {
       // Find the data polyline (drawn with the default series color).
       let line = svg
         .lines()
-        .find(|l| l.contains("stroke=\"#5E81B5\"") && l.contains("points=\""))
+        .find(|l| l.contains("stroke=\"#3D99CC\"") && l.contains("points=\""))
         .expect("expected a data polyline");
       let pts_str = line
         .split("points=\"")
@@ -13943,7 +13943,7 @@ mod plot3d {
         export_svg("ListLinePlot[{1, 2, 3, 2, 1}, PlotRange -> {0, 10}]");
       let line = svg
         .lines()
-        .find(|l| l.contains("stroke=\"#5E81B5\"") && l.contains("points=\""))
+        .find(|l| l.contains("stroke=\"#3D99CC\"") && l.contains("points=\""))
         .expect("expected a data polyline");
       let pts_str = line
         .split("points=\"")
@@ -14561,7 +14561,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            Graphics[{Text[\"caption\", {0, 0}]}]}, ImageSize -> {200, 200}]",
       );
       assert!(
-        svg.contains("rgb(94,129,181)"),
+        svg.contains("rgb(61,153,204)"),
         "the shaded region must still draw: {svg}"
       );
       assert!(
@@ -14585,7 +14585,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Show[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}], \
            RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]}]",
       );
-      let fill = "rgb(94,129,181)";
+      let fill = "rgb(61,153,204)";
       let single_count = single.matches(fill).count();
       let combined_count = combined.matches(fill).count();
       assert!(
@@ -14678,8 +14678,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       // LightGray = GrayLevel[0.85] → rgb(217,217,217) → #D9D9D9.
       assert!(svg.contains("#D9D9D9"), "missing LightGray curve");
-      // `Default` keeps the palette color of series 2 (orange #E0932C).
-      assert!(svg.contains("#E0932C"), "missing default-palette curve");
+      // `Default` keeps the palette color of series 2 (orange #F2A024).
+      assert!(svg.contains("#F2A024"), "missing default-palette curve");
       // Hue[0.353, 0.78, 0.49] ≈ rgb(27,125,39) → #1B7D27.
       assert!(svg.contains("#1B7D27"), "missing Hue-colored curve");
     }
@@ -15880,7 +15880,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "expected 18 circles (9 bubbles × 2) in multi-dataset BubbleChart: {svg}"
       );
       // Each dataset gets its own color from the default palette.
-      for color in ["#5E81B5", "#8FB032", "#E0932C"] {
+      for color in ["#3D99CC", "#74B336", "#F2A024"] {
         assert!(
           svg.contains(color),
           "multi-dataset BubbleChart should use color {color}: {svg}"
@@ -16071,7 +16071,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
       // Each dataset gets its own color from the default palette —
       // assert that at least four distinct palette colors are used.
-      let distinct_colors = ["#5E81B5", "#8FB032", "#E0932C", "#D95119"];
+      let distinct_colors = ["#3D99CC", "#74B336", "#F2A024", "#EB6235"];
       for color in distinct_colors {
         assert!(
           svg.contains(color),
@@ -16715,10 +16715,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">\n250\n"), "y-axis should reach 250");
 
       // Collect bar rect x positions (filled bars have the default
-      // series color #5E81B5).
+      // series color #3D99CC).
       let bar_xs: Vec<f64> = svg
         .lines()
-        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .filter(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
         .map(|l| {
           let x_str =
             l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
@@ -16748,7 +16748,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // occupy 71/250 of the plot height (~1926 px) ≈ 547 px.
       let last_bar_line = svg
         .lines()
-        .rfind(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .rfind(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
         .unwrap();
       let h_str = last_bar_line
         .split("height=\"")
@@ -16807,7 +16807,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // The three bars still fill the whole plot width.
       let bar_xs: Vec<f64> = svg
         .lines()
-        .filter(|l| l.contains("fill=\"#5E81B5\"") && l.contains("<rect"))
+        .filter(|l| l.contains("fill=\"#3D99CC\"") && l.contains("<rect"))
         .map(|l| {
           let x_str =
             l.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
@@ -17717,7 +17717,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {3}]"
         )
         .unwrap(),
-        "{{37/100, 51/100, 71/100}, {22/25, 29/50, 17/100}}"
+        "{{6/25, 3/5, 4/5}, {19/20, 63/100, 7/50}}"
       );
       // A one-element list is a single region.
       assert_eq!(
@@ -17732,8 +17732,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}]",
       );
       assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
-      assert!(svg.contains("rgb(94,129,181)"), "{svg}");
-      assert!(svg.contains("rgb(224,147,44)"), "{svg}");
+      assert!(svg.contains("rgb(61,153,204)"), "{svg}");
+      assert!(svg.contains("rgb(242,160,36)"), "{svg}");
     }
 
     /// `RegionPlot` takes every `Graphics` option, and the caller's
@@ -19175,13 +19175,13 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          ColorFunction -> (Hue[0.75 (1 - #2)] &)]",
       );
       assert!(
-        !svg.contains("stroke=\"#000000\" stroke-width=\"15\""),
+        !svg.contains("stroke=\"#000000\" stroke-width=\"20\""),
         "{svg}"
       );
       // y = 0 starts at Hue[0.75] (violet), y = 1 ends at Hue[0] (red).
       let strokes: Vec<&str> = svg
         .split("<polyline")
-        .filter(|p| p.contains("stroke-width=\"15\""))
+        .filter(|p| p.contains("stroke-width=\"20\""))
         .filter_map(|p| p.split("stroke=\"").nth(1)?.split('"').next())
         .collect();
       assert!(strokes.len() > 2, "{svg}");
@@ -22420,7 +22420,7 @@ mod filling_style {
       "Plot[Sin[x], {x, 0, 6}, Filling -> Axis, FillingStyle -> Opacity[0.5]]",
     );
     assert!(
-      svg.contains("opacity=\"0.5\" fill=\"#5E81B5\""),
+      svg.contains("opacity=\"0.5\" fill=\"#3D99CC\""),
       "expected series-colored fill polygon at opacity 0.5"
     );
   }
@@ -29016,7 +29016,7 @@ mod number_line_plot {
     let svg = export_svg("NumberLinePlot[x > 1, {x, 0, 2}]");
     // Open circle (stroke-only, not filled) at the boundary
     assert!(
-      svg.contains("fill=\"#ffffff\" stroke=\"rgb(94,129,181)\""),
+      svg.contains("fill=\"#ffffff\" stroke=\"rgb(61,153,204)\""),
       "Expected open circle at boundary for strict inequality"
     );
     // Right-pointing arrow at domain edge
@@ -29032,7 +29032,7 @@ mod number_line_plot {
     let svg = export_svg("NumberLinePlot[x >= 5, {x, 0, 10}]");
     // Filled circle (no stroke-only pattern) at the boundary
     assert!(
-      svg.contains(r#"r="35.0" fill="rgb(94,129,181)"/>"#),
+      svg.contains(r#"r="35.0" fill="rgb(61,153,204)"/>"#),
       "Expected filled circle at boundary for inclusive inequality"
     );
     // Right-pointing arrow
@@ -29051,7 +29051,7 @@ mod number_line_plot {
       "Expected left arrow for region extending beyond domain"
     );
     assert!(
-      svg.contains("fill=\"#ffffff\" stroke=\"rgb(94,129,181)\""),
+      svg.contains("fill=\"#ffffff\" stroke=\"rgb(61,153,204)\""),
       "Expected open circle at boundary for strict inequality"
     );
   }
@@ -29065,7 +29065,7 @@ mod number_line_plot {
       "Expected left arrow for region extending beyond domain"
     );
     assert!(
-      svg.contains(r#"r="35.0" fill="rgb(94,129,181)"/>"#),
+      svg.contains(r#"r="35.0" fill="rgb(61,153,204)"/>"#),
       "Expected filled circle at boundary for inclusive inequality"
     );
   }
@@ -38351,7 +38351,7 @@ mod color_data_indexed {
     );
     let svg = export_svg("RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]");
     assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
-    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
+    assert!(svg.contains("rgb(61,153,204)"), "{svg}");
   }
 
   mod dynamic_content {
@@ -44623,5 +44623,79 @@ mod show_array_plot_sizing {
       .unwrap();
       assert!(svg.contains("baseline-shift=\"super\""), "Got: {svg}");
     }
+  }
+}
+
+/// WL 15 default plot style: the 15-color `DefaultPlotStyle` palette at
+/// `AbsoluteThickness[2]`, and the `Standard*` named colors.
+mod wl15_default_plot_style {
+  use super::*;
+
+  #[test]
+  fn plot_curves_use_the_wl15_palette_exactly() {
+    clear_state();
+    assert_eq!(
+      interpret("Cases[Plot[{x, 2 x, 3 x}, {x, 0, 1}], _RGBColor, Infinity]")
+        .unwrap(),
+      "{RGBColor[0.24, 0.6, 0.8], RGBColor[0.95, 0.627, 0.1425], \
+       RGBColor[0.455, 0.7, 0.21]}"
+    );
+  }
+
+  #[test]
+  fn list_plot_points_use_the_wl15_palette_exactly() {
+    clear_state();
+    assert_eq!(
+      interpret("Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}], _RGBColor, Infinity]")
+        .unwrap(),
+      "{RGBColor[0.24, 0.6, 0.8], RGBColor[0.95, 0.627, 0.1425]}"
+    );
+  }
+
+  #[test]
+  fn the_palette_cycles_after_fifteen_series() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = Cases[Plot[Evaluate[Table[k x, {k, 16}]], {x, 0, 1}], \
+         _RGBColor, Infinity]; {Length[c], c[[15]], c[[16]] === c[[1]]}"
+      )
+      .unwrap(),
+      "{16, RGBColor[0.032972823413648836, 0.7396719749139476, \
+       0.534700104525218], True}"
+    );
+  }
+
+  #[test]
+  fn default_curve_is_two_pixels_wide() {
+    let svg = export_svg("Plot[Sin[x], {x, 0, 6}]");
+    assert!(
+      svg.contains("stroke=\"#3D99CC\" stroke-width=\"20\""),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn standard_colors_evaluate_to_their_rgb_values() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{StandardRed, StandardGreen, StandardBlue, StandardYellow, \
+         StandardOrange, StandardPurple, StandardBrown, StandardGray, \
+         StandardPink, StandardCyan, StandardMagenta}"
+      )
+      .unwrap(),
+      "{RGBColor[0.93, 0.27, 0.27], RGBColor[0.14, 0.8, 0.14], \
+       RGBColor[0.4, 0.6, 1], RGBColor[1, 0.75, 0], RGBColor[0.98, 0.56, 0.17], \
+       RGBColor[0.8, 0.3, 0.8], RGBColor[0.67, 0.54, 0.42], GrayLevel[0.62], \
+       RGBColor[1, 0.51, 0.51], RGBColor[0, 0.74, 0.74], \
+       RGBColor[0.95, 0.43, 0.96]}"
+    );
+  }
+
+  #[test]
+  fn standard_color_draws_in_graphics() {
+    let svg = export_svg("Graphics[{StandardOrange, Disk[]}]");
+    assert!(svg.contains("rgb(250,143,43)"), "{svg}");
   }
 }

@@ -4,7 +4,7 @@ expression: "export_svg(r#\"ListLinePlot[{Labeled[1, \"start\"], 4, 9, Labeled[1
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="411,1927 1401,1576 2390,990 3380,171 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="411,1927 1401,1576 2390,990 3380,171 "/>
 <line x1="293.0" y1="1998.0" x2="3500.0" y2="1998.0" stroke="#666" stroke-width="5"/>
 <line x1="609.7" y1="1998.0" x2="609.7" y2="1974.0" stroke="#666" stroke-width="5"/>
 <line x1="807.7" y1="1998.0" x2="807.7" y2="1974.0" stroke="#666" stroke-width="5"/>

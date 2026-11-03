@@ -172,7 +172,7 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 <polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,543 3499,543 "/>
 <polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,162 3499,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1749 3499,1749 3499,100 750,100 750,1749 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 1488,925 2124,162 2760,925 3397,1688 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="851,1688 1488,925 2124,162 2760,925 3397,1688 "/>
 <line x1="851.9" y1="1750.0" x2="851.9" y2="1680.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="851.9" y1="100.0" x2="851.9" y2="170.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="979.2" y1="1750.0" x2="979.2" y2="1710.0" stroke="rgb(102,102,102)" stroke-width="10"/>

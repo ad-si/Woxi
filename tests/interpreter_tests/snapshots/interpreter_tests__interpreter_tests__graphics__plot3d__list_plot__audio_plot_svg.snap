@@ -4,8 +4,8 @@ expression: "export_svg(\"AudioPlot[Audio[{0, 0.5, 1, 0.5, 0, -0.5, -1, -0.5, 0}
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polygon opacity="0.2" fill="#5E81B5" points="423,1125 792,651 1162,176 1532,651 1902,1125 2271,1599 2641,2074 3011,1599 3380,1125 3380,1125 423,1125 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="423,1125 792,651 1162,176 1532,651 1902,1125 2271,1599 2641,2074 3011,1599 3380,1125 "/>
+<polygon opacity="0.2" fill="#3D99CC" points="423,1125 792,651 1162,176 1532,651 1902,1125 2271,1599 2641,2074 3011,1599 3380,1125 3380,1125 423,1125 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="423,1125 792,651 1162,176 1532,651 1902,1125 2271,1599 2641,2074 3011,1599 3380,1125 "/>
 <line x1="305.0" y1="1125.0" x2="3500.0" y2="1125.0" stroke="#666" stroke-width="5"/>
 <line x1="586.4" y1="1125.0" x2="586.4" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="749.5" y1="1125.0" x2="749.5" y2="1101.0" stroke="#666" stroke-width="5"/>

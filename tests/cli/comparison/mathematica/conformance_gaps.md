@@ -4839,21 +4839,6 @@ notebooks take apart with `[[1, 3]]` — are identical; only
 Loading the package also prints `General::obspkg` in wolframscript; Woxi
 loads it silently.
 
-### The default plot style is not Wolfram's
-
-Every Woxi plot draws its first curve in `#5E81B5` at 1.5 px. Wolfram draws it
-in `RGBColor[0.24, 0.6, 0.8]` = (61, 153, 204) at `AbsoluteThickness[2]`. Woxi
-is using the `ColorData[97]` palette where `Plot` has its own
-`DefaultPlotStyle`, readable from the kernel:
-
-```wolfram
-"DefaultPlotStyle" /. (Method /. Charting`ResolvePlotTheme[Automatic, Plot])
-```
-
-Woxi already writes the right values in its `.nb` `GraphicsBox` export; only
-the SVG renderer disagrees. Changing it moves 153 snapshots and about 40 inline
-colour assertions at once.
-
 ### `Graphics` with `Axes` clips its edge tick labels
 
 `Graphics[…, Axes -> True, ImageSize -> {400, 400}]` lays its plotting area out

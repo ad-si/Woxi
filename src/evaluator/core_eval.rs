@@ -957,6 +957,18 @@ pub fn named_color_expr(name: &str) -> Option<Expr> {
     "LightMagenta" => rgb_color_expr(1.0, 0.9, 1.0),
     "LightBrown" => rgb_color_expr(0.94, 0.91, 0.88),
     "LightPink" => rgb_color_expr(1.0, 0.925, 0.925),
+    // Standard colors (WL 14.2+)
+    "StandardRed" => rgb_color_expr(0.93, 0.27, 0.27),
+    "StandardGreen" => rgb_color_expr(0.14, 0.8, 0.14),
+    "StandardBlue" => rgb_color_expr(0.4, 0.6, 1.0),
+    "StandardYellow" => rgb_color_expr(1.0, 0.75, 0.0),
+    "StandardOrange" => rgb_color_expr(0.98, 0.56, 0.17),
+    "StandardPurple" => rgb_color_expr(0.8, 0.3, 0.8),
+    "StandardBrown" => rgb_color_expr(0.67, 0.54, 0.42),
+    "StandardGray" => gray_level_expr(0.62),
+    "StandardPink" => rgb_color_expr(1.0, 0.51, 0.51),
+    "StandardCyan" => rgb_color_expr(0.0, 0.74, 0.74),
+    "StandardMagenta" => rgb_color_expr(0.95, 0.43, 0.96),
     _ => return None,
   })
 }

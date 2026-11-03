@@ -114,9 +114,9 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24}, ChartLabels -> {\"Anna\", \"Ben
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,126 749,126 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1790 3499,1790 "/>
-<rect x="841" y="1470" width="733" height="319" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
-<rect x="1757" y="1214" width="734" height="575" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
-<rect x="2674" y="254" width="733" height="1535" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
+<rect x="841" y="1470" width="733" height="319" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>5</title></rect>
+<rect x="1757" y="1214" width="734" height="575" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>9</title></rect>
+<rect x="2674" y="254" width="733" height="1535" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>24</title></rect>
 <line x1="710.0" y1="1790.0" x2="680.0" y2="1790.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1469.9" x2="680.0" y2="1469.9" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1149.8" x2="680.0" y2="1149.8" stroke="#666" stroke-width="10"/>

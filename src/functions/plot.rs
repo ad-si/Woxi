@@ -2847,15 +2847,74 @@ fn draw_interval_band<
   Ok(())
 }
 
-/// Default Wolfram plot color palette (ColorData[97]).
-pub(crate) const PLOT_COLORS: [(u8, u8, u8); 6] = [
-  (0x5E, 0x81, 0xB5), // blue
-  (0xE0, 0x93, 0x2C), // orange
-  (0x8F, 0xB0, 0x32), // green
-  (0xD9, 0x51, 0x19), // red
-  (0x6B, 0x48, 0x9D), // purple
-  (0x8E, 0xB1, 0xCC), // light blue
+/// Default plot style colors of WL 15 (the `DefaultPlotStyle` of the
+/// Automatic plot theme), exactly as WL writes them into the plot's
+/// `Directive`s. The series cycle through all 15.
+pub(crate) const PLOT_COLORS_RGB: [(f64, f64, f64); 15] = [
+  (0.24, 0.6, 0.8),
+  (0.95, 0.627, 0.1425),
+  (0.455, 0.7, 0.21),
+  (0.922526, 0.385626, 0.209179),
+  (0.578, 0.51, 0.85),
+  (0.772079, 0.431554, 0.102387),
+  (0., 0.6, 0.6),
+  (0.9, 0.36, 0.684),
+  (0.56, 0.7, 0.),
+  (0.9, 0.54, 0.),
+  (0.585, 0.5976, 0.9),
+  (0.9, 0.45, 0.45),
+  (0.7632186717367254, 0.8174402144034898, 0.),
+  (0.8554632469481959, 0.24885384718327969, 0.8334053873948551),
+  (0.032972823413648836, 0.7396719749139476, 0.534700104525218),
 ];
+
+/// `PLOT_COLORS_RGB` quantized to 8-bit channels for the SVG renderers.
+pub(crate) const PLOT_COLORS: [(u8, u8, u8); 15] = {
+  let mut out = [(0u8, 0u8, 0u8); 15];
+  let mut i = 0;
+  while i < 15 {
+    let (r, g, b) = PLOT_COLORS_RGB[i];
+    out[i] = (
+      (r * 255.0 + 0.5) as u8,
+      (g * 255.0 + 0.5) as u8,
+      (b * 255.0 + 0.5) as u8,
+    );
+    i += 1;
+  }
+  out
+};
+
+/// The exact WL color of palette entry `idx` (cycling), as an `RGBColor`.
+pub(crate) fn plot_color_expr(idx: usize) -> Expr {
+  let (r, g, b) = PLOT_COLORS_RGB[idx % PLOT_COLORS_RGB.len()];
+  Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+  }
+}
+
+/// Map an 8-bit palette color back to its exact WL color expression, or
+/// `None` when it is not a palette entry (e.g. a user PlotStyle).
+pub(crate) fn palette_color_expr(rgb: (u8, u8, u8)) -> Option<Expr> {
+  PLOT_COLORS
+    .iter()
+    .position(|c| *c == rgb)
+    .map(plot_color_expr)
+}
+
+/// An 8-bit color as an `RGBColor`, written with the exact WL channel values
+/// when it is a default palette entry.
+pub(crate) fn rgb_u8_expr(rgb: (u8, u8, u8)) -> Expr {
+  palette_color_expr(rgb).unwrap_or_else(|| Expr::FunctionCall {
+    name: "RGBColor".to_string(),
+    args: vec![
+      Expr::Real(f64::from(rgb.0) / 255.0),
+      Expr::Real(f64::from(rgb.1) / 255.0),
+      Expr::Real(f64::from(rgb.2) / 255.0),
+    ]
+    .into(),
+  })
+}
 
 /// Generate SVG for a 2D plot with filling (legacy wrapper for list_plot callers).
 pub(crate) fn generate_svg_with_filling(
@@ -5406,9 +5465,10 @@ fn series_opacity(plot_style: &[SeriesStyle], idx: usize) -> f64 {
 }
 
 /// Get the line thickness (in render-space units) for a series.
-/// Default is 15 (1.5px at display size with RESOLUTION_SCALE=10).
+/// Default is 20 (2px at display size with RESOLUTION_SCALE=10).
 fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
-  let default_thickness = 15; // 1.5px * RESOLUTION_SCALE
+  // WL 15 draws plot curves with `AbsoluteThickness[2]`.
+  let default_thickness = 20; // 2px * RESOLUTION_SCALE
   if plot_style.is_empty() {
     return default_thickness;
   }
@@ -6208,14 +6268,7 @@ fn scatter_overlay_primitives(
   if finite.is_empty() {
     return Vec::new();
   }
-  let color = call(
-    "RGBColor",
-    vec![
-      Expr::Real(series.color.0 as f64 / 255.0),
-      Expr::Real(series.color.1 as f64 / 255.0),
-      Expr::Real(series.color.2 as f64 / 255.0),
-    ],
-  );
+  let color = rgb_u8_expr(series.color);
   let mut prims = vec![color];
   // Stems of a filled scatter series, drawn to the same reference level the
   // standalone scatter plot would use.

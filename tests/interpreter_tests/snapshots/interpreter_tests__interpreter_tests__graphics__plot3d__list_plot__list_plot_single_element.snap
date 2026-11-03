@@ -4,7 +4,7 @@ expression: "export_svg(\"ListPlot[{5}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="1927" cy="1049" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="1927" cy="1049" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="356.2" y1="1997.8" x2="3500.0" y2="1997.8" stroke="#666" stroke-width="5"/>
 <line x1="513.4" y1="1997.8" x2="513.4" y2="1973.8" stroke="#666" stroke-width="5"/>
 <line x1="670.6" y1="1997.8" x2="670.6" y2="1973.8" stroke="#666" stroke-width="5"/>

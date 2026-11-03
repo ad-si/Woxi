@@ -4,12 +4,12 @@ expression: "export_svg(\"DiscretePlot[Factorial[n], {n, 0, 5}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="360" cy="1980" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="964" cy="1980" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1567" cy="1965" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2171" cy="1904" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2774" cy="1631" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3378" cy="173" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="360" cy="1980" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="964" cy="1980" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1567" cy="1965" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2171" cy="1904" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2774" cy="1631" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3378" cy="173" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="239.8" y1="1996.1" x2="3500.0" y2="1996.1" stroke="#666" stroke-width="5"/>
 <line x1="239.8" y1="1996.1" x2="239.8" y2="1972.1" stroke="#666" stroke-width="5"/>
 <line x1="481.3" y1="1996.1" x2="481.3" y2="1972.1" stroke="#666" stroke-width="5"/>

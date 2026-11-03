@@ -4,9 +4,9 @@ expression: "export_svg(\"ListPlot[{1, 2, 3}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="125" viewBox="0 0 2000 1250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="2000" height="1250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="413" cy="964" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1127" cy="549" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1841" cy="134" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="413" cy="964" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1127" cy="549" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1841" cy="134" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="356.2" y1="997.8" x2="1900.0" y2="997.8" stroke="#666" stroke-width="5"/>
 <line x1="484.9" y1="997.8" x2="484.9" y2="973.8" stroke="#666" stroke-width="5"/>
 <line x1="556.4" y1="997.8" x2="556.4" y2="973.8" stroke="#666" stroke-width="5"/>

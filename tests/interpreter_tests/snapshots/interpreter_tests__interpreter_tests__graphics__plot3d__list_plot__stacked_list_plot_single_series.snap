@@ -4,8 +4,8 @@ expression: "export_svg(\"StackedListPlot[{1, 2, 3, 4}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polygon opacity="0.6" fill="#5E81B5" points="351,1535 1360,1075 2368,615 3377,156 3377,1995 2368,1995 1360,1995 351,1995 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="351,1535 1360,1075 2368,615 3377,156 "/>
+<polygon opacity="0.6" fill="#3D99CC" points="351,1535 1360,1075 2368,615 3377,156 3377,1995 2368,1995 1360,1995 351,1995 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="351,1535 1360,1075 2368,615 3377,156 "/>
 <line x1="230.0" y1="1995.2" x2="3500.0" y2="1995.2" stroke="#666" stroke-width="5"/>
 <line x1="553.0" y1="1995.2" x2="553.0" y2="1971.2" stroke="#666" stroke-width="5"/>
 <line x1="754.8" y1="1995.2" x2="754.8" y2="1971.2" stroke="#666" stroke-width="5"/>

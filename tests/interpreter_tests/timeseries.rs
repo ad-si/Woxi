@@ -284,9 +284,9 @@ mod temporal_data_constructor {
       "{MULTI} ExportString[ListLinePlot[TemporalData[{{s1, s2}}, {{t}}]], \"SVG\"]"
     ))
     .unwrap();
-    assert!(svg.contains("#5E81B5"), "first path uses the default blue");
+    assert!(svg.contains("#3D99CC"), "first path uses the default blue");
     assert!(
-      svg.contains("#E0932C"),
+      svg.contains("#F2A024"),
       "second path uses the default orange"
     );
   }

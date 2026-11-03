@@ -254,37 +254,13 @@ pub fn theme() -> &'static ThemeColors {
 }
 
 pub(crate) fn named_color(name: &str) -> Option<Color> {
-  Some(match name {
-    // Basic colors (matching Wolfram Language values)
-    "Red" => Color::new(1.0, 0.0, 0.0),
-    "Green" => Color::new(0.0, 1.0, 0.0),
-    "Blue" => Color::new(0.0, 0.0, 1.0),
-    "Black" => Color::new(0.0, 0.0, 0.0),
-    // `Transparent` is `GrayLevel[0, 0]`: black with zero alpha.
-    "Transparent" => Color::new(0.0, 0.0, 0.0).with_alpha(0.0),
-    "White" => Color::new(1.0, 1.0, 1.0),
-    "Gray" => Color::new(0.5, 0.5, 0.5),
-    "Cyan" => Color::new(0.0, 1.0, 1.0),
-    "Magenta" => Color::new(1.0, 0.0, 1.0),
-    "Yellow" => Color::new(1.0, 1.0, 0.0),
-    "Brown" => Color::new(0.6, 0.4, 0.2),
-    "Orange" => Color::new(1.0, 0.5, 0.0),
-    "Pink" => Color::new(1.0, 0.5, 0.5),
-    "Purple" => Color::new(0.5, 0.0, 0.5),
-    // Light colors (matching Wolfram Language values)
-    "LightRed" => Color::new(1.0, 0.85, 0.85),
-    "LightBlue" => Color::new(0.87, 0.94, 1.0),
-    "LightGreen" => Color::new(0.88, 1.0, 0.88),
-    "LightGray" => Color::new(0.85, 0.85, 0.85),
-    "LightOrange" => Color::new(1.0, 0.9, 0.8),
-    "LightYellow" => Color::new(1.0, 1.0, 0.85),
-    "LightPurple" => Color::new(0.94, 0.88, 0.94),
-    "LightCyan" => Color::new(0.9, 1.0, 1.0),
-    "LightMagenta" => Color::new(1.0, 0.9, 1.0),
-    "LightBrown" => Color::new(0.94, 0.91, 0.88),
-    "LightPink" => Color::new(1.0, 0.925, 0.925),
-    _ => return None,
-  })
+  // `Transparent` is `GrayLevel[0, 0]`: black with zero alpha.
+  if name == "Transparent" {
+    return Some(Color::new(0.0, 0.0, 0.0).with_alpha(0.0));
+  }
+  // The named color symbols have one canonical table, the values they
+  // evaluate to.
+  crate::evaluator::named_color_expr(name).and_then(|e| parse_color(&e))
 }
 
 // ── Style State ──────────────────────────────────────────────────────────
@@ -17228,14 +17204,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       series_prims.push(Expr::List(stems.into()));
     }
     // Color directive
-    series_prims.push(call(
-      "RGBColor",
-      vec![
-        Expr::Real(sd.color.0 as f64 / 255.0),
-        Expr::Real(sd.color.1 as f64 / 255.0),
-        Expr::Real(sd.color.2 as f64 / 255.0),
-      ],
-    ));
+    series_prims.push(crate::functions::plot::rgb_u8_expr(sd.color));
     // `Opacity[a]` from `PlotStyle`; once any series is faded, the rest
     // state their own (opaque) level so the directive can't leak onto them.
     if let Some(a) = sd

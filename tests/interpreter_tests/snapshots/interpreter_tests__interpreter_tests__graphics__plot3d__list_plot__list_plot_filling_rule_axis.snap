@@ -4,18 +4,18 @@ expression: "export_svg(\"ListPlot[{{1, 4, 9, 16}, {3, 6, 9, 12}}, Filling -> {2
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="411" cy="1881" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1401" cy="1538" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2390" cy="968" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3380" cy="169" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<polyline fill="none" opacity="0.2" stroke="#E0932C" stroke-width="10" points="411,1652 411,1995 "/>
-<polyline fill="none" opacity="0.2" stroke="#E0932C" stroke-width="10" points="1401,1310 1401,1995 "/>
-<polyline fill="none" opacity="0.2" stroke="#E0932C" stroke-width="10" points="2390,968 2390,1995 "/>
-<polyline fill="none" opacity="0.2" stroke="#E0932C" stroke-width="10" points="3380,625 3380,1995 "/>
-<circle cx="411" cy="1652" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="1401" cy="1310" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="2390" cy="968" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="3380" cy="625" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="411" cy="1881" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1401" cy="1538" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2390" cy="968" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3380" cy="169" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<polyline fill="none" opacity="0.2" stroke="#F2A024" stroke-width="10" points="411,1652 411,1995 "/>
+<polyline fill="none" opacity="0.2" stroke="#F2A024" stroke-width="10" points="1401,1310 1401,1995 "/>
+<polyline fill="none" opacity="0.2" stroke="#F2A024" stroke-width="10" points="2390,968 2390,1995 "/>
+<polyline fill="none" opacity="0.2" stroke="#F2A024" stroke-width="10" points="3380,625 3380,1995 "/>
+<circle cx="411" cy="1652" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="1401" cy="1310" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="2390" cy="968" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="3380" cy="625" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
 <line x1="293.2" y1="1994.9" x2="3500.0" y2="1994.9" stroke="#666" stroke-width="5"/>
 <line x1="610.0" y1="1994.9" x2="610.0" y2="1970.9" stroke="#666" stroke-width="5"/>
 <line x1="807.9" y1="1994.9" x2="807.9" y2="1970.9" stroke="#666" stroke-width="5"/>

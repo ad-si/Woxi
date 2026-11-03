@@ -4,10 +4,10 @@ expression: "export_svg(r#\"ListPlot[{Labeled[{{1, 1}, {2, 4}}, \"a\"], Labeled[
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="351" cy="1927" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3377" cy="171" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="351" cy="1342" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
-<circle cx="3377" cy="756" r="30" opacity="1" fill="#E0932C" stroke="none" stroke-width="1"/>
+<circle cx="351" cy="1927" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3377" cy="171" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="351" cy="1342" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
+<circle cx="3377" cy="756" r="30" opacity="1" fill="#F2A024" stroke="none" stroke-width="1"/>
 <line x1="230.2" y1="1997.8" x2="3500.0" y2="1997.8" stroke="#666" stroke-width="5"/>
 <line x1="230.2" y1="1997.8" x2="230.2" y2="1973.8" stroke="#666" stroke-width="5"/>
 <line x1="472.5" y1="1997.8" x2="472.5" y2="1973.8" stroke="#666" stroke-width="5"/>
@@ -64,8 +64,8 @@ expression: "export_svg(r#\"ListPlot[{Labeled[{{1, 1}, {2, 4}}, \"a\"], Labeled[
 <text x="183.0" y="792.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3</text>
 <line x1="230.2" y1="170.3" x2="270.2" y2="170.3" stroke="#666" stroke-width="5"/>
 <text x="183.0" y="207.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">4</text>
-<line x1="3378.9" y1="170.3" x2="3428.9" y2="50.3" stroke="rgb(94,129,181)" stroke-width="10" />
-<text x="3428.9" y="50.3" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(94,129,181)" dominant-baseline="auto">a</text>
-<line x1="3378.9" y1="756.0" x2="3428.9" y2="636.0" stroke="rgb(224,147,44)" stroke-width="10" />
-<text x="3428.9" y="636.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(224,147,44)" dominant-baseline="auto">b</text>
+<line x1="3378.9" y1="170.3" x2="3428.9" y2="50.3" stroke="rgb(61,153,204)" stroke-width="10" />
+<text x="3428.9" y="50.3" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(61,153,204)" dominant-baseline="auto">a</text>
+<line x1="3378.9" y1="756.0" x2="3428.9" y2="636.0" stroke="rgb(242,160,36)" stroke-width="10" />
+<text x="3428.9" y="636.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(242,160,36)" dominant-baseline="auto">b</text>
 </svg>

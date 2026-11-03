@@ -114,11 +114,11 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 </text>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,569 749,569 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1790 2750,1790 "/>
-<rect x="790" y="1555" width="320" height="234" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>5</title></rect>
-<rect x="1190" y="1367" width="320" height="422" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>9</title></rect>
-<rect x="1590" y="663" width="320" height="1126" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>24</title></rect>
-<rect x="1990" y="1226" width="320" height="563" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>12</title></rect>
-<rect x="2390" y="1273" width="320" height="516" opacity="1" fill="#5E81B5" stroke="#000000" stroke-width="10"><title>11</title></rect>
+<rect x="790" y="1555" width="320" height="234" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>5</title></rect>
+<rect x="1190" y="1367" width="320" height="422" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>9</title></rect>
+<rect x="1590" y="663" width="320" height="1126" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>24</title></rect>
+<rect x="1990" y="1226" width="320" height="563" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>12</title></rect>
+<rect x="2390" y="1273" width="320" height="516" opacity="1" fill="#3D99CC" stroke="#000000" stroke-width="10"><title>11</title></rect>
 <line x1="710.0" y1="1790.0" x2="680.0" y2="1790.0" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1555.2" x2="680.0" y2="1555.2" stroke="#666" stroke-width="10"/>
 <line x1="710.0" y1="1320.3" x2="680.0" y2="1320.3" stroke="#666" stroke-width="10"/>

@@ -20,8 +20,8 @@ expression: "export_svg(\"TernaryListPlot[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 
 <text x="1800.0" y="384.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">1</text>
 <text x="188.0" y="3281.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">2</text>
 <text x="3412.0" y="3281.0" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">3</text>
-<circle cx="1800.0" cy="449.0" r="30.0" fill="rgb(94,129,181)"/>
-<circle cx="240.0" cy="3151.0" r="30.0" fill="rgb(94,129,181)"/>
-<circle cx="3360.0" cy="3151.0" r="30.0" fill="rgb(94,129,181)"/>
-<circle cx="1800.0" cy="2250.3" r="30.0" fill="rgb(94,129,181)"/>
+<circle cx="1800.0" cy="449.0" r="30.0" fill="rgb(61,153,204)"/>
+<circle cx="240.0" cy="3151.0" r="30.0" fill="rgb(61,153,204)"/>
+<circle cx="3360.0" cy="3151.0" r="30.0" fill="rgb(61,153,204)"/>
+<circle cx="1800.0" cy="2250.3" r="30.0" fill="rgb(61,153,204)"/>
 </svg>

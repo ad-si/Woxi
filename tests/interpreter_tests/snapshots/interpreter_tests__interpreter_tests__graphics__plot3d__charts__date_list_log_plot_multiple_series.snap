@@ -4,8 +4,8 @@ expression: "export_svg(\"DateListLogPlot[{{{{2000, 1, 1}, 1}, {{2010, 1, 1}, 10
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="472,1995 3382,173 "/>
-<polyline fill="none" opacity="1" stroke="#E0932C" stroke-width="15" points="472,356 3382,1570 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="472,1995 3382,173 "/>
+<polyline fill="none" opacity="1" stroke="#F2A024" stroke-width="20" points="472,356 3382,1570 "/>
 <line x1="356.0" y1="1995.1" x2="3500.0" y2="1995.1" stroke="#666" stroke-width="5"/>
 <line x1="472.4" y1="1995.1" x2="472.4" y2="1955.1" stroke="#666" stroke-width="5"/>
 <line x1="1055.0" y1="1995.1" x2="1055.0" y2="1955.1" stroke="#666" stroke-width="5"/>

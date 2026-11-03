@@ -4,7 +4,7 @@ expression: "export_svg(\"ListPolarPlot[{1, 2, 3, 2, 1}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="3373,1349 3022,176 225,262 968,2074 2738,1935 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="3373,1349 3022,176 225,262 968,2074 2738,1935 "/>
 <line x1="100.0" y1="1349.0" x2="3500.0" y2="1349.0" stroke="#666" stroke-width="5"/>
 <line x1="250.8" y1="1349.0" x2="250.8" y2="1325.0" stroke="#666" stroke-width="5"/>
 <line x1="434.5" y1="1349.0" x2="434.5" y2="1325.0" stroke="#666" stroke-width="5"/>

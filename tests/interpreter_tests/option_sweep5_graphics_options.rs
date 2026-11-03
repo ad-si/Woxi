@@ -58,9 +58,10 @@ mod axes_and_ticks_style {
   fn axes_style_thickness_widens_the_axis_lines() {
     let plain = svg("Plot[Sin[x], {x, 0, 6}]");
     let thick = svg("Plot[Sin[x], {x, 0, 6}, AxesStyle -> Thick]");
-    // `Thick` is 2 display pixels: 20 render units.
-    assert_eq!(count(&plain, "stroke-width", "20"), 0);
-    assert!(count(&thick, "stroke-width", "20") > 0);
+    // `Thick` is 2 display pixels: 20 render units (the width of the
+    // default curve, which both plots draw once).
+    assert_eq!(count(&plain, "stroke-width", "20"), 1);
+    assert!(count(&thick, "stroke-width", "20") > 1);
   }
 
   #[test]
@@ -330,7 +331,7 @@ mod charts {
       let rect = s
         .split("<rect")
         .skip(1)
-        .find(|r| r.contains("#5E81B5") || r.contains("rgb(94,129,181)"))
+        .find(|r| r.contains("#3D99CC") || r.contains("rgb(61,153,204)"))
         .unwrap();
       let w = rect.split("width=\"").nth(1).unwrap();
       w[..w.find('"').unwrap()].parse().unwrap()

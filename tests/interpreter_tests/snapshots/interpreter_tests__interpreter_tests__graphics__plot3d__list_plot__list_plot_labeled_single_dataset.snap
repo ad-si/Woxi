@@ -4,9 +4,9 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="351" cy="1927" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1864" cy="1269" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3377" cy="171" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="351" cy="1927" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1864" cy="1269" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3377" cy="171" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="230.2" y1="1997.8" x2="3500.0" y2="1997.8" stroke="#666" stroke-width="5"/>
 <line x1="502.7" y1="1997.8" x2="502.7" y2="1973.8" stroke="#666" stroke-width="5"/>
 <line x1="654.1" y1="1997.8" x2="654.1" y2="1973.8" stroke="#666" stroke-width="5"/>
@@ -61,6 +61,6 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 <text x="183.0" y="866.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">6</text>
 <line x1="230.2" y1="389.9" x2="270.2" y2="389.9" stroke="#666" stroke-width="5"/>
 <text x="183.0" y="426.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">8</text>
-<line x1="1865.1" y1="1268.5" x2="1915.1" y2="1148.5" stroke="rgb(94,129,181)" stroke-width="10" />
-<text x="1915.1" y="1148.5" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(94,129,181)" dominant-baseline="auto">squares</text>
+<line x1="1865.1" y1="1268.5" x2="1915.1" y2="1148.5" stroke="rgb(61,153,204)" stroke-width="10" />
+<text x="1915.1" y="1148.5" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="160" fill="rgb(61,153,204)" dominant-baseline="auto">squares</text>
 </svg>

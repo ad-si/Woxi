@@ -103,7 +103,7 @@ expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My T
 <line x1="2000.0" y1="375.5" x2="2000.0" y2="1944.5" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="375.5" x2="2450.0" y2="375.5" stroke="#666" stroke-width="5.4"/>
 <line x1="1550.0" y1="1944.5" x2="2450.0" y2="1944.5" stroke="#666" stroke-width="5.4"/>
-<rect x="1100.0" y="669.7" width="1800.0" height="980.6" fill="rgb(94,129,181)" stroke="#666" stroke-width="5.4"/>
+<rect x="1100.0" y="669.7" width="1800.0" height="980.6" fill="rgb(61,153,204)" stroke="#666" stroke-width="5.4"/>
 <line x1="1100.0" y1="1160.0" x2="2900.0" y2="1160.0" stroke="white" stroke-width="8.1"/>
 <text x="2000.0" y="185.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333">My Title</text>
 </svg>

@@ -4,10 +4,10 @@ expression: "export_svg(\"ComplexListPlot[{1 + I, 2 - I, -1 + 2 I, -2 - 2 I}]\")
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="2586" cy="651" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3373" cy="1599" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1012" cy="176" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="225" cy="2074" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="2586" cy="651" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3373" cy="1599" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1012" cy="176" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="225" cy="2074" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="100.0" y1="1125.0" x2="3500.0" y2="1125.0" stroke="#666" stroke-width="5"/>
 <line x1="383.3" y1="1125.0" x2="383.3" y2="1101.0" stroke="#666" stroke-width="5"/>
 <line x1="540.7" y1="1125.0" x2="540.7" y2="1101.0" stroke="#666" stroke-width="5"/>

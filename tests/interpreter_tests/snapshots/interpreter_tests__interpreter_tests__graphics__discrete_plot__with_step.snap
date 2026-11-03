@@ -4,12 +4,12 @@ expression: "export_svg(\"DiscretePlot[Sin[n], {n, 0, 10, 2}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="423" cy="1251" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1014" cy="263" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="1606" cy="2074" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2197" cy="1555" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2789" cy="176" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3380" cy="1842" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="423" cy="1251" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1014" cy="263" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="1606" cy="2074" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2197" cy="1555" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2789" cy="176" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3380" cy="1842" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="305.1" y1="1251.4" x2="3500.0" y2="1251.4" stroke="#666" stroke-width="5"/>
 <line x1="305.1" y1="1251.4" x2="305.1" y2="1227.4" stroke="#666" stroke-width="5"/>
 <line x1="541.8" y1="1251.4" x2="541.8" y2="1227.4" stroke="#666" stroke-width="5"/>

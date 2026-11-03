@@ -4,10 +4,10 @@ expression: "export_svg(\"StackedListPlot[{{1, 2, 3, 4}, {2, 3, 4, 5}}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polygon opacity="0.6" fill="#5E81B5" points="351,1791 1360,1588 2368,1385 3377,1182 3377,1995 2368,1995 1360,1995 351,1995 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="351,1791 1360,1588 2368,1385 3377,1182 "/>
-<polygon opacity="0.6" fill="#E0932C" points="351,1385 1360,979 2368,572 3377,166 3377,1182 2368,1385 1360,1588 351,1791 "/>
-<polyline fill="none" opacity="1" stroke="#E0932C" stroke-width="15" points="351,1385 1360,979 2368,572 3377,166 "/>
+<polygon opacity="0.6" fill="#3D99CC" points="351,1791 1360,1588 2368,1385 3377,1182 3377,1995 2368,1995 1360,1995 351,1995 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="351,1791 1360,1588 2368,1385 3377,1182 "/>
+<polygon opacity="0.6" fill="#F2A024" points="351,1385 1360,979 2368,572 3377,166 3377,1182 2368,1385 1360,1588 351,1791 "/>
+<polyline fill="none" opacity="1" stroke="#F2A024" stroke-width="20" points="351,1385 1360,979 2368,572 3377,166 "/>
 <line x1="230.0" y1="1995.2" x2="3500.0" y2="1995.2" stroke="#666" stroke-width="5"/>
 <line x1="553.0" y1="1995.2" x2="553.0" y2="1971.2" stroke="#666" stroke-width="5"/>
 <line x1="754.8" y1="1995.2" x2="754.8" y2="1971.2" stroke="#666" stroke-width="5"/>

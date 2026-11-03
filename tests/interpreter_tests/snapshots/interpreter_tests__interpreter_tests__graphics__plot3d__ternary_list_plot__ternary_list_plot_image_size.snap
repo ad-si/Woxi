@@ -20,5 +20,5 @@ expression: "export_svg(\"TernaryListPlot[{{1, 1, 1}}, ImageSize -> 200]\")"
 <text x="1000.0" y="276.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">1</text>
 <text x="188.0" y="1788.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">2</text>
 <text x="1812.0" y="1788.2" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="130" fill="#333333">3</text>
-<circle cx="1000.0" cy="1219.4" r="30.0" fill="rgb(94,129,181)"/>
+<circle cx="1000.0" cy="1219.4" r="30.0" fill="rgb(61,153,204)"/>
 </svg>

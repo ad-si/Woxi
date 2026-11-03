@@ -4,8 +4,8 @@ expression: "export_svg(\"ListLinePlot[{1, 4, 2, 5, 3}, Filling -> Automatic]\")
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polygon opacity="0.2" fill="#5E81B5" points="351,1628 1107,526 1864,1261 2621,159 3377,893 3377,1995 351,1995 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="351,1628 1107,526 1864,1261 2621,159 3377,893 "/>
+<polygon opacity="0.2" fill="#3D99CC" points="351,1628 1107,526 1864,1261 2621,159 3377,893 3377,1995 351,1995 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="351,1628 1107,526 1864,1261 2621,159 3377,893 "/>
 <line x1="230.0" y1="1995.2" x2="3500.0" y2="1995.2" stroke="#666" stroke-width="5"/>
 <line x1="502.5" y1="1995.2" x2="502.5" y2="1971.2" stroke="#666" stroke-width="5"/>
 <line x1="653.9" y1="1995.2" x2="653.9" y2="1971.2" stroke="#666" stroke-width="5"/>
