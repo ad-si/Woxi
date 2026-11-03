@@ -1937,11 +1937,11 @@ mod unimplemented_warnings {
   #[test]
   fn known_wolfram_function_produces_warning() {
     clear_state();
-    let result = interpret_with_stdout("CityData[1, n, z]").unwrap();
-    assert_eq!(result.result, "CityData[1, n, z]");
+    let result = interpret_with_stdout("AirportData[1, n, z]").unwrap();
+    assert_eq!(result.result, "AirportData[1, n, z]");
     assert_eq!(result.warnings.len(), 1);
     assert!(result.warnings[0].contains("not yet implemented"));
-    assert!(result.warnings[0].contains("CityData["));
+    assert!(result.warnings[0].contains("AirportData["));
   }
 
   // Cell content (a control label written as a cell) is inert, as in
@@ -1993,7 +1993,7 @@ mod unimplemented_warnings {
   #[test]
   fn warning_not_in_stdout() {
     clear_state();
-    let result = interpret_with_stdout("CityData[1]").unwrap();
+    let result = interpret_with_stdout("AirportData[1]").unwrap();
     assert!(!result.stdout.contains("not yet implemented"));
     assert_ne!(result.warnings, [] as [std::string::String; 0]);
   }
@@ -2005,9 +2005,9 @@ mod unimplemented_warnings {
     // WikipediaData, which is still unimplemented, to exercise the
     // multi-call warning path.
     let result =
-      interpret_with_stdout("{CityData[1], WikipediaData[\"x\"]}").unwrap();
+      interpret_with_stdout("{AirportData[1], WikipediaData[\"x\"]}").unwrap();
     assert_eq!(result.warnings.len(), 1);
-    assert!(result.warnings[0].contains("CityData[1]"));
+    assert!(result.warnings[0].contains("AirportData[1]"));
     assert!(result.warnings[0].contains("WikipediaData[\"x\"]"));
     assert!(
       result.warnings[0].contains("are built-in Wolfram Language functions")

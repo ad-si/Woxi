@@ -23,6 +23,7 @@ pub mod calculus_ast;
 pub mod caputo_d;
 pub mod cellular_automaton_ast;
 pub mod chart;
+pub mod city_data;
 pub mod code_parser;
 pub mod color_blend;
 pub mod combinatorica_graph;

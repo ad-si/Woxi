@@ -585,7 +585,7 @@ Woxi does **not** support.
     (`Animate`, `Animator`, `ListAnimate`, `LocatorPane`, and `ClickPane` are
     supported as interactive widgets in the Playground and Studio, but
     dragging directly on a graphic — and 3D rotation — is not)
-- Curated data collections: `CityData`, `ChemicalData`, `WordData`,
+- Curated data collections: `ChemicalData`, `WordData`,
     `GraphData`, `KnotData`, `IsotopeData`, `LatticeData`,
     `ParticleData`, `DictionaryLookup`
 - Dialogs, palettes, and windows: `CreateDialog`, `CreatePalette`,
