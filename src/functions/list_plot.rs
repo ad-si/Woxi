@@ -2497,7 +2497,9 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) = compute_ranges(&polar_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  // Like ListPlot, the points stay unconnected unless `Joined -> True`.
+  // Like ListPlot, the points stay unconnected unless `Joined -> True`,
+  // with the same automatic dot size.
+  parsed.opts.default_point_size = Some(list_plot_point_size(&polar_series));
   let svg = if parsed.joined {
     generate_svg_with_filling(&polar_series, x_range, y_range, &parsed.opts)?
   } else {

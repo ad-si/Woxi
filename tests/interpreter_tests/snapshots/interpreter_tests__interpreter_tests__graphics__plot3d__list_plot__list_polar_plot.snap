@@ -4,11 +4,11 @@ expression: "export_svg(\"ListPolarPlot[{1, 2, 3, 2, 1}]\")"
 ---
 <svg width="360" height="325" viewBox="0 0 3600 3250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<circle cx="3373" cy="1958" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="3022" cy="213" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="225" cy="341" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="968" cy="3037" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
-<circle cx="2738" cy="2831" r="30" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3373" cy="1958" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="3022" cy="213" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="225" cy="341" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="968" cy="3037" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
+<circle cx="2738" cy="2831" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="100.0" y1="1958.3" x2="3500.0" y2="1958.3" stroke="#666" stroke-width="5"/>
 <line x1="250.8" y1="1958.3" x2="250.8" y2="1934.3" stroke="#666" stroke-width="5"/>
 <line x1="342.6" y1="1958.3" x2="342.6" y2="1934.3" stroke="#666" stroke-width="5"/>

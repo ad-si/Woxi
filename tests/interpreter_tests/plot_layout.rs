@@ -400,6 +400,27 @@ mod framed_axes {
   }
 }
 
+// ListPolarPlot draws its points at ListPlot's automatic size (WL 15:
+// PointSize[6 11/6000] for 63 points, PointSize[7 11/6000] for 5).
+#[test]
+fn list_polar_plot_uses_the_list_plot_point_size() {
+  let radius = |expr: &str| -> String {
+    let svg = svg_of(expr);
+    let tag = &svg[svg.find("<circle ").unwrap()..];
+    let start = tag.find(" r=\"").unwrap() + 4;
+    tag[start..start + tag[start..].find('"').unwrap()].to_string()
+  };
+  let pts = "Table[{x, Sqrt[x]}, {x, 0, 2 Pi, 0.1}]";
+  assert_eq!(
+    radius(&format!("ListPolarPlot[{pts}]")),
+    radius(&format!("ListPlot[{pts}]"))
+  );
+  assert_ne!(
+    radius("ListPolarPlot[{1, 2, 3, 2, 1}]"),
+    radius(&format!("ListPolarPlot[{pts}]"))
+  );
+}
+
 // `Callout[data, label]` on a whole curve or dataset hangs its label off a
 // horizontal gray leader at the series' end; `Labeled[data, label]` puts
 // it right after the last point; expression labels are TraditionalForm.
