@@ -8516,50 +8516,36 @@ pub(crate) fn histogram_bin_edges(
     (0.0, 1.0)
   };
 
-  match bin_spec {
-    Some(BinSpec::Width(w)) if *w > 0.0 => {
-      let w = *w;
-      // Align boundaries to multiples of the width (Wolfram convention),
-      // so `{1}` yields integer-aligned unit bins `[k w, (k+1) w)`.
-      let start = (d_min / w).floor() * w;
-      // Top edge: the first multiple of w strictly greater than d_max, so the
-      // largest sample gets its own bin (matching Wolfram — data 0..9 with
-      // width 1 yields the 10 bins [0,1),…,[9,10)).
-      let mut top = (d_max / w).floor() * w + w;
-      if top <= d_max + w * 1e-9 {
-        top += w;
-      }
-      let n_bins = (((top - start) / w).round() as usize).max(1);
-      (0..=n_bins).map(|i| start + i as f64 * w).collect()
+  // A bare bin count uses wolframscript's `userBinningN` placement,
+  // shared with `HistogramList[data, n]`.
+  if let Some(BinSpec::Count(c)) = bin_spec
+    && *c > 0
+  {
+    if let Some(bins) = crate::functions::list_helpers_ast::wl_user_binning_n(
+      all_values, *c as i128,
+    ) {
+      return bins.f64s;
     }
-    _ => {
-      // A bare bin count uses wolframscript's `userBinningN` placement,
-      // shared with `HistogramList[data, n]`.
-      if let Some(BinSpec::Count(c)) = bin_spec
-        && *c > 0
-        && let Some(bins) =
-          crate::functions::list_helpers_ast::wl_user_binning_n(
-            all_values, *c as i128,
-          )
-      {
-        return bins.f64s;
-      }
-      let num_bins = match bin_spec {
-        Some(BinSpec::Count(c)) if *c > 0 => *c,
-        _ => ((1.0 + (all_values.len().max(1) as f64).log2()).ceil() as usize)
-          .max(1),
-      };
-      let range = d_max - d_min;
-      let bin_width = if range.abs() < f64::EPSILON {
-        1.0
-      } else {
-        range / num_bins as f64
-      };
-      (0..=num_bins)
-        .map(|i| d_min + i as f64 * bin_width)
-        .collect()
-    }
+    let bin_width = if (d_max - d_min).abs() < f64::EPSILON {
+      1.0
+    } else {
+      (d_max - d_min) / *c as f64
+    };
+    return (0..=*c).map(|i| d_min + i as f64 * bin_width).collect();
   }
+  if all_values.is_empty() {
+    return vec![0.0, 1.0];
+  }
+  // Automatic bins and a bin width `{w}` are placed exactly as
+  // `HistogramList` places them.
+  let width = match bin_spec {
+    Some(BinSpec::Width(w)) if *w > 0.0 => Some(*w),
+    _ => None,
+  };
+  let (lo, hi, dx, _) =
+    crate::functions::list_helpers_ast::wl_bin_spec(all_values, width);
+  let n_bins = (((hi - lo) / dx + 1e-9).floor() as usize).max(1);
+  (0..=n_bins).map(|i| lo + i as f64 * dx).collect()
 }
 
 /// Count how many values of `values` fall into each bin defined by `edges`.
