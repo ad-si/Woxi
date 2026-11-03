@@ -4958,11 +4958,38 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   };
   if !matches!(
     inner_name,
-    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic"
+    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic" | "Labeled"
   ) {
     return expr;
   }
   let rendered = match inner_name {
+    // `Style[Labeled[content, caption, pos…], directives…]` — the directives
+    // set the font of the content and of its caption alike.
+    "Labeled" => {
+      let syntax::Expr::FunctionCall {
+        args: labeled_args, ..
+      } = &inner
+      else {
+        return expr;
+      };
+      if labeled_args.len() < 2 {
+        return expr;
+      }
+      let style_of = |e: &syntax::Expr| syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: std::iter::once(e.clone())
+          .chain(args[1..].iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      };
+      let mut new_args = labeled_args.to_vec();
+      new_args[0] = style_of(&labeled_args[0]);
+      new_args[1] = style_of(&labeled_args[1]);
+      render_labeled_if_needed(syntax::Expr::FunctionCall {
+        name: "Labeled".to_string(),
+        args: new_args.into(),
+      })
+    }
     "Column" | "Row" => {
       let Some(styled) =
         functions::graphics::style_pushed_into_layout(&inner, &args[1..])

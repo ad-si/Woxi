@@ -6255,6 +6255,24 @@ fn contains_framed_or_highlighted(expr: &Expr) -> bool {
   }
 }
 
+/// A `Column[…]` / `Row[…]` of text, looked at through the display
+/// wrappers (`Pane`, `Text`, `Style`) that merely size or style it. A
+/// caption set on one is a laid-out picture too, not a line of echo text.
+fn is_text_layout(expr: &Expr) -> bool {
+  let mut current = crate::functions::graphics::unwrap_display_wrappers(expr);
+  // A `Style[…, directives]` around the layout changes its font only.
+  while let Expr::FunctionCall { name, args } = &current
+    && crate::functions::graphics::is_style_wrapper(name)
+    && !args.is_empty()
+  {
+    current = crate::functions::graphics::unwrap_display_wrappers(&args[0]);
+  }
+  matches!(
+    current,
+    Expr::FunctionCall { ref name, .. } if name == "Column" || name == "Row"
+  )
+}
+
 /// The composed SVG of `Labeled[graphic, label, pos…]` — the label set
 /// beside the picture. `None` when the content is not a picture, so a
 /// label on plain text is left to the text renderer. (`Grid`, `Column`
@@ -6262,7 +6280,9 @@ fn contains_framed_or_highlighted(expr: &Expr) -> bool {
 pub(crate) fn labeled_display_svg(expr: &Expr) -> Option<String> {
   let is_labeled = matches!(expr, Expr::FunctionCall { name, args }
     if name == "Labeled" && args.len() >= 2
-      && (is_blank_string(&args[0]) || lays_out_a_graphic(&args[0])));
+      && (is_blank_string(&args[0])
+        || lays_out_a_graphic(&args[0])
+        || is_text_layout(&args[0])));
   is_labeled.then(|| expr_to_svg(expr))
 }
 
