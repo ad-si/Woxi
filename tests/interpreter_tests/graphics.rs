@@ -11655,7 +11655,7 @@ mod plot3d {
     fn plot_labeled_ticks_are_longer_than_unlabeled() {
       // Labelled (major) ticks are 4 px long and the unlabelled ones between
       // them 2.4 px, as Wolfram draws them. The range [0, 2 Pi] has labelled
-      // x ticks at 0, 2, 4 and 6.
+      // x ticks at 0, 1, …, 6 (WL 15 steps the axes by 1 here, not 2).
       let svg = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
       let attr = |tag: &str, name: &str| -> f64 {
         let key = format!(" {name}=\"");
@@ -11679,7 +11679,7 @@ mod plot3d {
           .filter(|(v, l)| *v == vertical && (l - len).abs() < 0.5)
           .count()
       };
-      assert_eq!(count(true, 40.0), 4, "labelled x ticks: {svg}");
+      assert_eq!(count(true, 40.0), 7, "labelled x ticks: {svg}");
       assert!(count(true, 24.0) > 4, "unlabelled x ticks: {svg}");
       assert!(count(false, 40.0) >= 3, "labelled y ticks: {svg}");
       assert!(count(false, 24.0) > 4, "unlabelled y ticks: {svg}");

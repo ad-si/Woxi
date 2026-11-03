@@ -85,6 +85,10 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 
 </text>
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="709,238 749,238 "/>
+<text x="670" y="162" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+3.0
+</text>
+<polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="709,162 749,162 "/>
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="750,1750 3499,1750 "/>
 <text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
 1
@@ -166,11 +170,15 @@ expression: "export_svg(r#\"ListLinePlot[{1, 2, 3, 2, 1}, PlotTheme -> \"Busines
 
 </text>
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="3269,1750 3269,1790 "/>
-<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,1688 3499,1688 "/>
-<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,1307 3499,1307 "/>
-<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,925 3499,925 "/>
-<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,543 3499,543 "/>
-<polyline fill="none" opacity="0.5" stroke="#666666" stroke-width="10" points="750,162 3499,162 "/>
+<text x="3397" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
+5
+</text>
+<polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="3397,1750 3397,1790 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="750,1688 3499,1688 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="750,1307 3499,1307 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="750,925 3499,925 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="750,543 3499,543 "/>
+<polyline fill="none" opacity="0.4" stroke="#808080" stroke-width="10" points="750,162 3499,162 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1749 3499,1749 3499,100 750,100 750,1749 "/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="20" points="851,1688 1488,925 2124,162 2760,925 3397,1688 "/>
 <line x1="851.9" y1="1750.0" x2="851.9" y2="1680.0" stroke="rgb(102,102,102)" stroke-width="10"/>

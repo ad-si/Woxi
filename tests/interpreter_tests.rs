@@ -6916,6 +6916,7 @@ mod interpreter_tests {
   mod julia_set_plot;
   mod lic_plot;
   mod music;
+  mod plot_layout;
   mod row;
   mod styling;
   mod volume_plots;

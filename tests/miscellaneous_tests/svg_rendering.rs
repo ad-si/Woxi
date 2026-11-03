@@ -1691,7 +1691,7 @@ mod tests {
       let count = |svg: &str| {
         svg
           .lines()
-          .filter(|l| l.contains("opacity=\"0.5\"") && l.contains("<polyline"))
+          .filter(|l| l.contains("opacity=\"0.4\"") && l.contains("<polyline"))
           .count()
       };
       assert_eq!(
@@ -1767,7 +1767,7 @@ mod tests {
       .expect("interpret should succeed");
       let grid_lines: Vec<&str> = svg
         .lines()
-        .filter(|l| l.contains("opacity=\"0.5\"") && l.contains("<polyline"))
+        .filter(|l| l.contains("opacity=\"0.4\"") && l.contains("<polyline"))
         .collect();
       assert!(
         (1..=30).contains(&grid_lines.len()),
@@ -1781,7 +1781,7 @@ mod tests {
         "grid lines should be solid by default: {svg}"
       );
       assert!(
-        svg.find("opacity=\"0.5\"") < svg.find("#3D99CC"),
+        svg.find("opacity=\"0.4\"") < svg.find("#3D99CC"),
         "grid lines should render behind the data series: {svg}"
       );
     }
@@ -1917,7 +1917,7 @@ mod tests {
       let verticals = svg
         .lines()
         .filter(|l| {
-          l.contains("opacity=\"0.5\"")
+          l.contains("opacity=\"0.4\"")
             && l.contains("<polyline")
             && !l.contains("stroke-dasharray")
         })

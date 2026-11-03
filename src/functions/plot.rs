@@ -2598,6 +2598,13 @@ pub(crate) struct PlotOptions {
   /// (`(ymax - ymin) / (xmax - xmin)`) once they are known, so one unit
   /// spans the same length on both axes.
   pub aspect_automatic: bool,
+  /// `AspectRatio -> Full`: stretch the plotting area to fill whatever
+  /// `ImageSize` gives instead of keeping the default 1/GoldenRatio.
+  pub aspect_full: bool,
+  /// Whether `ImageSize` fixed the image width / height explicitly
+  /// (`{w, h}`, `{Automatic, h}`, a bare width, …). A fixed height makes the
+  /// plot keep its `AspectRatio` inside the image instead of resizing it.
+  pub image_size_explicit: (bool, bool),
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -2745,6 +2752,8 @@ impl Default for PlotOptions {
       image_padding: None,
       aspect_ratio: None,
       aspect_automatic: false,
+      aspect_full: false,
+      image_size_explicit: (false, false),
       plot_markers: Vec::new(),
       label_style: None,
       tick_label_style: None,
@@ -3691,6 +3700,44 @@ fn with_automatic_aspect(
   }
 }
 
+/// A linear plotters axis whose tick positions are given explicitly (see
+/// the frame ticks in [`generate_svg_with_options`]); without points it
+/// falls back to plotters' own choice.
+struct FixedKeyPoints {
+  inner: plotters::coord::types::RangedCoordf64,
+  points: Vec<f64>,
+}
+
+impl FixedKeyPoints {
+  fn new(range: std::ops::Range<f64>, points: Vec<f64>) -> Self {
+    Self {
+      inner: range.into(),
+      points,
+    }
+  }
+}
+
+impl plotters::coord::ranged1d::Ranged for FixedKeyPoints {
+  type FormatOption = plotters::coord::ranged1d::DefaultFormatting;
+  type ValueType = f64;
+  fn map(&self, value: &f64, limit: (i32, i32)) -> i32 {
+    self.inner.map(value, limit)
+  }
+  fn key_points<Hint: plotters::coord::ranged1d::KeyPointHint>(
+    &self,
+    hint: Hint,
+  ) -> Vec<f64> {
+    if self.points.is_empty() {
+      self.inner.key_points(hint)
+    } else {
+      self.points.clone()
+    }
+  }
+  fn range(&self) -> std::ops::Range<f64> {
+    self.inner.range()
+  }
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
@@ -3700,7 +3747,6 @@ fn generate_svg_with_options(
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
   let (y_min, y_max) = y_range;
-  let svg_width = opts.svg_width;
   // `ColorFunctionScaling` rescales over the sampled data, not the padded
   // plot range: the highest point of `Plot[Sin[x], …, ColorFunction ->
   // Function[{x, y}, Hue[y]]]` gets `Hue[1.]`.
@@ -3723,6 +3769,7 @@ fn generate_svg_with_options(
       (x_min, x_max, y_min, y_max)
     }
   };
+  let mut svg_width = opts.svg_width;
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let (show_x_axis, show_y_axis) = opts.axes;
@@ -3735,7 +3782,7 @@ fn generate_svg_with_options(
     (show_x_axis, show_y_axis)
   };
   let show_ticks = opts.ticks_visible();
-  let render_width = svg_width * RESOLUTION_SCALE;
+  let mut render_width = svg_width * RESOLUTION_SCALE;
   let mut render_height = svg_height * RESOLUTION_SCALE;
 
   let sf = RESOLUTION_SCALE as f64;
@@ -4045,7 +4092,41 @@ fn generate_svg_with_options(
   // (rather than pre-setting svg_height from svg_width) keeps a short/wide
   // AspectRatio from collapsing the frame when fixed-size label margins would
   // otherwise consume most of the canvas.
-  if let Some(ar) = opts.aspect_ratio
+  //
+  // An explicit image height (`ImageSize -> {w, h}` or `{Automatic, h}`)
+  // is kept instead: the plotting area keeps its `AspectRatio` (the default
+  // 1/GoldenRatio when unset) inside the fixed image, centred along the
+  // axis with room to spare, and a free width follows from the height.
+  // `AspectRatio -> Full` stretches the area over the whole image.
+  let h_margins =
+    margin_left as f64 + margin_right as f64 + y_label_area as f64;
+  let v_margins =
+    top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
+  if opts.image_size_explicit.1
+    && !opts.aspect_full
+    && !full_width
+    && opts.image_padding.is_none()
+  {
+    let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
+    let avail_h = (render_height as f64 - v_margins).max(1.0);
+    if opts.image_size_explicit.0 {
+      let avail_w = (render_width as f64 - h_margins).max(1.0);
+      if avail_w * ar <= avail_h {
+        let slack = ((avail_h - avail_w * ar) / 2.0).round();
+        top_margin += slack as i32;
+        margin_bottom += slack as u32;
+      } else {
+        let slack = ((avail_w - avail_h / ar) / 2.0).round() as u32;
+        margin_left += slack;
+        margin_right += slack;
+      }
+    } else {
+      let target_render_w = avail_h / ar + h_margins;
+      svg_width =
+        ((target_render_w / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+      render_width = svg_width * RESOLUTION_SCALE;
+    }
+  } else if let Some(ar) = opts.aspect_ratio
     && opts.image_padding.is_none()
   {
     let plot_w = (render_width as f64)
@@ -4217,7 +4298,14 @@ fn generate_svg_with_options(
         // stroke-dasharray overlays (which render on top). Linear axes only —
         // log axis grid not yet supported. (WL grid lines are solid by
         // default; dashing needs an explicit style.)
-        let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+        // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
+        let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
+        // Automatic grid lines follow the ticks drawn on the axes.
+        let grid_tick_target = if origin_axes {
+          ORIGIN_AXIS_TICK_TARGET
+        } else {
+          AXIS_TICK_TARGET
+        };
 
         // Horizontal (y) grid lines.
         let y_grid = resolve_grid_lines(
@@ -4225,7 +4313,7 @@ fn generate_svg_with_options(
           opts.grid_lines_y,
           y_min,
           y_max,
-          nice_step(y_max - y_min, AXIS_TICK_TARGET),
+          nice_step(y_max - y_min, grid_tick_target),
           opts.grid_lines_style.as_ref(),
         );
         if !log_y {
@@ -4269,7 +4357,7 @@ fn generate_svg_with_options(
           if date_axis {
             nice_date_step(x_max - x_min)
           } else {
-            nice_step(x_max - x_min, AXIS_TICK_TARGET)
+            nice_step(x_max - x_min, grid_tick_target)
           },
           opts.grid_lines_style.as_ref(),
         );
@@ -4617,7 +4705,8 @@ fn generate_svg_with_options(
               }
               _ => points,
             };
-            let marker_size = 3 * RESOLUTION_SCALE;
+            // WL 15 exports curve mesh points as 3 pt dots (radius 1.5).
+            let marker_size = 15 * RESOLUTION_SCALE / 10;
             // `MeshStyle` recolours the mesh points; without it they take
             // the curve's colour.
             let mesh_color = opts
@@ -4707,10 +4796,43 @@ fn generate_svg_with_options(
       };
     }
     let err = |e| InterpreterError::EvaluationError(format!("Plot: {e}"));
+    // The frame's tick marks and labels sit on every multiple of the minor
+    // step inside the range. Plotters' own key-point search accumulates
+    // rounding error and drops the last one (`Plot[Sin[x], …, Frame ->
+    // True]` lost its `1.0` label), so the points are handed over
+    // explicitly.
+    let frame_key_points = |lo: f64, hi: f64, labelled: bool| -> Vec<f64> {
+      if !labelled || hi <= lo || !(hi - lo).is_finite() {
+        return Vec::new();
+      }
+      let minor = nice_step(hi - lo, AXIS_TICK_TARGET) / 5.0;
+      let first = (lo / minor - 1e-9).ceil() as i64;
+      let last = (hi / minor + 1e-9).floor() as i64;
+      (first..=last)
+        .map(|k| {
+          let v = k as f64 * minor;
+          if k == 0 { 0.0 } else { v }
+        })
+        .collect()
+    };
+    let frame_ticks = show_ticks && !origin_axes;
+    let x_points = frame_key_points(
+      x_min,
+      x_max,
+      frame_ticks && tick_axis_x && !opts.date_axis && opts.ticks_x.is_none(),
+    );
+    let y_points = frame_key_points(
+      y_min,
+      y_max,
+      frame_ticks && tick_axis_y && opts.ticks_y.is_none(),
+    );
     match (opts.log_x, opts.log_y) {
       (false, false) => draw_chart!(
         chart_builder!()
-          .build_cartesian_2d(x_min..x_max, y_min..y_max)
+          .build_cartesian_2d(
+            FixedKeyPoints::new(x_min..x_max, x_points),
+            FixedKeyPoints::new(y_min..y_max, y_points)
+          )
           .map_err(err)?
       ),
       (false, true) => draw_chart!(
@@ -5885,7 +6007,8 @@ pub(crate) fn generate_scatter_svg_with_options(
     // spaced automatic ones, dashed lines are deferred to stroke-dasharray
     // overlays emitted at the end.
     {
-      let grid_color = RGBColor(0x66, 0x66, 0x66).mix(0.5);
+      // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
+      let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
       let y_grid = resolve_grid_lines(
         &opts.grid_y_lines,
         opts.grid_lines_y,
@@ -9861,6 +9984,30 @@ pub(crate) fn parse_image_size(
   }
 }
 
+/// Which dimensions an `ImageSize` value fixes: `(width, height)`. A bare
+/// width or a named size fixes the width only, `{w, h}` both, and
+/// `Automatic` in either slot of the pair leaves that one free.
+fn image_size_explicit_dims(value: &Expr) -> (bool, bool) {
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let fixed = |e: &Expr| {
+    !matches!(e, Expr::Identifier(n) if n == "Automatic")
+      && !matches!(e, Expr::List(_))
+  };
+  match &value {
+    Expr::List(items) if items.len() == 2 => {
+      if items.iter().all(|e| matches!(e, Expr::List(_))) {
+        (false, false)
+      } else {
+        (fixed(&items[0]), fixed(&items[1]))
+      }
+    }
+    Expr::List(items) if items.len() == 1 => {
+      image_size_explicit_dims(&items[0])
+    }
+    _ => (true, false),
+  }
+}
+
 /// Parse a single PlotStyle element into a SeriesStyle.
 /// Handles: a color, `Thick`, `Dashed`, `Dotted`, `DotDashed`,
 /// `Directive[...]`, `{Red, Thick, Dashed}`, etc.
@@ -10823,6 +10970,13 @@ pub(crate) const DEFAULT_ASPECT_RATIO: f64 = 0.618_033_988_749_895;
 /// Woxi picks the same step Wolfram does.
 pub(crate) const AXIS_TICK_TARGET: usize = 6;
 
+/// The tick target of the axes an unframed plot draws through its
+/// `AxesOrigin`. Plot and ListPlot axes take finer steps than
+/// `Charting`ScaledTicks` with 6: a 0..2 Pi axis is labelled 1, 2, …, 6
+/// (step 1, not 2), 0..3.5 every 0.5, 0..13 every 2 — exactly
+/// `Charting`ScaledTicks` with a target of 7.
+pub(crate) const ORIGIN_AXIS_TICK_TARGET: usize = 7;
+
 /// Lay out the plotting area inside an image with `ImagePadding`.
 ///
 /// Wolfram treats the padding as a *minimum* per side: the plotting area is
@@ -11112,6 +11266,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.svg_width = w;
         plot_opts.svg_height = h;
         plot_opts.full_width = fw;
+        plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
       }
     }
     "PlotLabel" => {
@@ -11196,6 +11351,8 @@ pub(crate) fn apply_common_plot_option(
         overrides.aspect_ratio = Some(r);
       } else if matches!(&val, Expr::Identifier(s) if s == "Automatic") {
         overrides.aspect_automatic = true;
+      } else if matches!(&val, Expr::Identifier(s) if s == "Full") {
+        plot_opts.aspect_full = true;
       }
     }
     "PlotPoints" => {

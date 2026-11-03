@@ -7,8 +7,8 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  AXIS_TICK_TARGET, SeriesStyle, format_date_tick, format_tick_with_step,
-  generate_date_ticks, nice_step, style_stroke,
+  ORIGIN_AXIS_TICK_TARGET, SeriesStyle, format_date_tick,
+  format_tick_with_step, generate_date_ticks, nice_step, style_stroke,
 };
 
 /// Tick-label font size, in display pixels.
@@ -132,7 +132,7 @@ impl AxisTicks {
         minors: Vec::new(),
       };
     }
-    let major = nice_step(max - min, AXIS_TICK_TARGET);
+    let major = nice_step(max - min, ORIGIN_AXIS_TICK_TARGET);
     if !(major.is_finite() && major > 0.0) {
       return Self::default();
     }
