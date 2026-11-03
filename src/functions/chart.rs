@@ -3206,8 +3206,9 @@ pub fn paired_chart_ast(
     for k in 0..left.len().max(right.len()) {
       let y = (k + 1) as f64;
       bars.push((
-        y - 0.457,
-        y + 0.457,
+        // As wolframscript adds them up.
+        (y - 1.0) + 0.542961608775137,
+        (y - 1.0) + 1.4570383912248628,
         left.get(k).copied().unwrap_or(0.0),
         right.get(k).copied().unwrap_or(0.0),
       ));
@@ -3217,35 +3218,142 @@ pub fn paired_chart_ast(
     .iter()
     .fold(0.0f64, |m, &(_, _, l, r)| m.max(l.abs()).max(r.abs()));
   let gap = 0.075 * largest.max(f64::MIN_POSITIVE);
-  let point =
-    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-  let color = |(r, g, b): (u8, u8, u8)| {
+  let histogram = head == "PairedHistogram";
+  let offset_point = |x: f64, y: f64| {
     call(
-      "RGBColor",
+      "Offset",
       vec![
-        Expr::Real(f64::from(r) / 255.0),
-        Expr::Real(f64::from(g) / 255.0),
-        Expr::Real(f64::from(b) / 255.0),
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
       ],
     )
   };
-  let mut left_prims = vec![color(PLOT_COLORS[0])];
-  let mut right_prims = vec![color(PLOT_COLORS[1 % PLOT_COLORS.len()])];
+  // Every bar is drawn the way wolframscript's charts draw one: a
+  // highlighted rectangle under a tooltip of its value, edges fading with
+  // the number of bars.
+  let shown = bars
+    .iter()
+    .map(|&(_, _, l, r)| usize::from(l != 0.0) + usize::from(r != 0.0))
+    .sum::<usize>();
+  let style = call(
+    "Directive",
+    vec![
+      call1(
+        "EdgeForm",
+        call(
+          "Directive",
+          vec![
+            call1("Thickness", Expr::Identifier("Small".into())),
+            call1("Opacity", Expr::Real(0.7 - 0.007 * shown as f64)),
+          ],
+        ),
+      ),
+      call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(0.835), Expr::Real(0.25)],
+      ),
+    ],
+  );
+  let value_expr = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  let bar = |p0: Expr, p1: Expr, v: f64| {
+    let rect = call(
+      "Rectangle",
+      vec![
+        p0,
+        p1,
+        rule_expr(Expr::String("RoundingRadius".into()), Expr::Integer(0)),
+      ],
+    );
+    let effect = call(
+      "Charting`DelayedMouseEffect",
+      vec![
+        rect,
+        Expr::List(
+          vec![
+            Expr::String("Style".into()),
+            call1(
+              "EdgeForm",
+              Expr::List(
+                vec![
+                  call1("GrayLevel", Expr::Real(0.5)),
+                  call1("AbsoluteThickness", Expr::Real(1.5)),
+                  call1("Opacity", Expr::Real(0.66)),
+                ]
+                .into(),
+              ),
+            ),
+          ]
+          .into(),
+        ),
+      ],
+    );
+    if histogram {
+      Expr::List(
+        vec![call(
+          "Tooltip",
+          vec![
+            call(
+              "StatusArea",
+              vec![
+                Expr::List(vec![call0("Directive"), effect].into()),
+                value_expr(v),
+              ],
+            ),
+            call("Style", vec![value_expr(v), Expr::List(vec![].into())]),
+          ],
+        )]
+        .into(),
+      )
+    } else {
+      Expr::List(
+        vec![
+          style.clone(),
+          call(
+            "Tooltip",
+            vec![
+              call("StatusArea", vec![effect, value_expr(v)]),
+              call(
+                "Style",
+                vec![
+                  value_expr(v),
+                  Expr::List(vec![call0("Directive")].into()),
+                ],
+              ),
+            ],
+          ),
+        ]
+        .into(),
+      )
+    }
+  };
+  let mut left_prims = Vec::new();
+  let mut right_prims = Vec::new();
   for &(y0, y1, l, r) in &bars {
     if l != 0.0 {
-      left_prims.push(call(
-        "Rectangle",
-        vec![point(-gap - l, y0), point(-gap, y1)],
+      left_prims.push(bar(
+        offset_point(-gap - l, y0),
+        offset_point(-gap, y1),
+        l,
       ));
     }
     if r != 0.0 {
-      right_prims
-        .push(call("Rectangle", vec![point(gap, y0), point(gap + r, y1)]));
+      let (p0, p1) = if histogram {
+        (offset_point(gap + r, y0), offset_point(gap, y1))
+      } else {
+        (offset_point(gap, y0), offset_point(gap + r, y1))
+      };
+      right_prims.push(bar(p0, p1, r));
     }
   }
   let mut graphics_args = vec![Expr::List(
     vec![
-      call1("EdgeForm", call1("GrayLevel", Expr::Real(0.5))),
+      style.clone(),
       Expr::List(left_prims.into()),
       Expr::List(right_prims.into()),
     ]

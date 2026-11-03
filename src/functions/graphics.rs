@@ -1028,8 +1028,10 @@ pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
   // `Scaled[{dx, dy}, {x, y}]` is `{x, y}` moved by a fraction of the plot
   // range, which is not known while primitives are collected; the gauges
   // use it only for short tick offsets, so it stands for its base point.
+  // `Offset[{dx, dy}, {x, y}]` is likewise its base point moved by screen
+  // points; the charts' bars use a zero shift.
   if let Expr::FunctionCall { name, args } = expr
-    && name == "Scaled"
+    && (name == "Scaled" || name == "Offset")
     && args.len() == 2
   {
     return expr_to_point(&args[1]);
