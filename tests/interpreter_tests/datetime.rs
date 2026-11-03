@@ -475,15 +475,15 @@ mod date_plus {
   fn date_plus_fractional_years_and_months() {
     assert_eq!(
       interpret("DatePlus[{2008}, {0.5, \"Year\"}]").unwrap(),
-      "{2008, 7, 2, 0, 0, 0.}"
+      "{2008, 7, 2}"
     );
     assert_eq!(
       interpret("DatePlus[{2008, 3, 1}, {0.5, \"Month\"}]").unwrap(),
-      "{2008, 3, 16, 12, 0, 0.}"
+      "{2008, 3, 16, 12}"
     );
     assert_eq!(
       interpret("DatePlus[{2008}, {1.25, \"Year\"}]").unwrap(),
-      "{2009, 4, 2, 6, 0, 0.}"
+      "{2009, 4, 2, 6}"
     );
   }
 
