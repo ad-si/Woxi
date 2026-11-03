@@ -4474,17 +4474,31 @@ fn generate_svg_with_options(
                       .filter(|_| series_filling_style(opts, series_idx).is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
-                        Some(cf) => color_function_runs(
-                          segment,
-                          cf,
-                          opts.color_function_scaling,
-                          color_scale_ranges,
-                        )
-                        .into_iter()
-                        .map(|((cr, cg, cb), run)| {
-                          (RGBColor(cr, cg, cb).mix(1.0), run)
-                        })
-                        .collect(),
+                        Some(cf) => {
+                          let runs = color_function_runs(
+                            segment,
+                            cf,
+                            opts.color_function_scaling,
+                            color_scale_ranges,
+                          );
+                          // Each opaque piece reaches one step into the
+                          // next, which paints over it: abutting pieces
+                          // would leave anti-aliasing seams between them.
+                          let overlaps: Vec<Option<(f64, f64)>> = runs
+                            .iter()
+                            .skip(1)
+                            .map(|(_, next)| next.get(1).copied())
+                            .chain(std::iter::once(None))
+                            .collect();
+                          runs
+                            .into_iter()
+                            .zip(overlaps)
+                            .map(|(((cr, cg, cb), mut run), extra)| {
+                              run.extend(extra);
+                              (RGBColor(cr, cg, cb).mix(1.0), run)
+                            })
+                            .collect()
+                        }
                         None => vec![(paint, segment.clone())],
                       };
                     // `FillingStyle -> {below, above}`: split the area at
