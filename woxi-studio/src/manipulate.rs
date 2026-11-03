@@ -2107,6 +2107,46 @@ mod tests {
     let render = state.check_render().expect("render");
     assert!(render.warnings.is_empty(), "{:?}", render.warnings);
   }
+  /// A shortest-path style Manipulate that clamps its own step variable
+  /// inside the body and shows either a weighted digraph or a matrix.
+  #[test]
+  fn weighted_digraph_or_matrix_with_step_clamping() {
+    let code = r#"Manipulate[
+      If[step > Length[tot[[g]]], step = Length[tot[[g]]]];
+      Pane[
+        If[show == 0,
+          If[tot[[g, step, 2]] == Infinity && tot[[g, step, 3]] == Infinity,
+            WeightedAdjacencyGraph[First[tot[[g, step]]],
+              VertexLabels -> "Name", EdgeLabels -> "EdgeWeight",
+              EdgeLabelStyle -> Directive[Gray, 15]],
+            WeightedAdjacencyGraph[First[tot[[g, step]]],
+              VertexLabels -> "Name", EdgeLabels -> "EdgeWeight",
+              EdgeLabelStyle -> {DirectedEdge[tot[[g, step, 2]], tot[[g, step, 3]]] -> Directive[Red, 15]},
+              EdgeLabelStyle -> Directive[Gray, 15]]],
+          Style[MatrixForm[First[tot[[g, step]]]], 16]],
+        {500, 300}, Alignment -> Center],
+      {{g, 1, "graph number"}, Range[Length[gl]], PopupMenu},
+      {{show, 0, "show matrix?"}, {0, 1}, Checkbox},
+      Delimiter,
+      {{step, 1, "update number"}, 1, Length[tot[[g]]], 1},
+      Initialization :> {
+        gl = {{{Infinity, 1, Infinity}, {Infinity, Infinity, 3}, {2, Infinity, Infinity}}},
+        mk[n_] := Module[{d = gl[[n]], pre},
+          pre = {{d, Infinity, Infinity}};
+          Do[If[d[[i, j]] > d[[i, k]] + d[[k, j]],
+            d[[i, j]] = d[[i, k]] + d[[k, j]];
+            AppendTo[pre, {d, i, j}]],
+            {k, Length[d]}, {i, Length[d]}, {j, Length[d]}];
+          pre],
+        tot = Table[mk[n], {n, Length[gl]}]}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let render = state.check_render().expect("render");
+    assert!(render.warnings.is_empty(), "{:?}", render.warnings);
+    assert!(state.current_svg().is_some());
+  }
+
   /// A variable driven by a custom control (a `With[…, Row[{Button[…]}]]`,
   /// which has no widget of its own) is still bound when the `Dynamic[…]`
   /// the body returns is shown, after the body itself has finished

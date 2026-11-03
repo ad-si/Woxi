@@ -5981,9 +5981,35 @@ pub fn vertex_reach_component_ast(
 ///   directed edges in row-major order. Weights land in the Graph's
 ///   EdgeWeight option.
 pub fn weighted_adjacency_graph_ast(
-  args: &[Expr],
+  full_args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("WeightedAdjacencyGraph", args);
+  // Trailing `option -> value` rules are carried over to the `Graph`.
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let n_data = full_args.iter().take_while(|a| !is_option(a)).count();
+  let (args, options) = full_args.split_at(n_data);
+  if !options.iter().all(is_option) {
+    return Ok(unevaluated(full_args));
+  }
+  let graph = weighted_adjacency_graph_core(args, unevaluated)?;
+  match &graph {
+    Expr::FunctionCall { name, args } if name == "Graph" => {
+      let mut graph_args = args.clone();
+      graph_args.extend(options.iter().cloned());
+      Ok(Expr::FunctionCall {
+        name: name.clone(),
+        args: graph_args,
+      })
+    }
+    _ => Ok(unevaluated(full_args)),
+  }
+}
+
+fn weighted_adjacency_graph_core(
+  args: &[Expr],
+  unevaluated: impl Fn(&[Expr]) -> Expr,
+) -> Result<Expr, InterpreterError> {
   let (vertices, matrix) = match args {
     [Expr::List(m)] => (None, m),
     [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
