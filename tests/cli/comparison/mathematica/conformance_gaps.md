@@ -1201,6 +1201,23 @@ pixels and returned as an `Image`. wolframscript outlines the mask instead,
 as a `GraphicsComplex` holding a `FilledCurve`. Its contour order has not
 been decoded.
 
+### Radicals of the reciprocal of a negative numeric sum
+
+`Sqrt[1/(-1 - Sqrt[2])]` gives `I/Sqrt[1 + Sqrt[2]]` in both. The other
+forms do not match yet:
+
+```sh
+wolframscript -code '{1/(-1 - Sqrt[2]), (1/(-1 - Sqrt[2]))^(1/3), Sqrt[2/(-1 - Sqrt[2])]}'
+# {-(1 + Sqrt[2])^(-1), (-(1 + Sqrt[2])^(-1))^(1/3), I*Sqrt[2/(1 + Sqrt[2])]}
+woxi eval '{1/(-1 - Sqrt[2]), (1/(-1 - Sqrt[2]))^(1/3), Sqrt[2/(-1 - Sqrt[2])]}'
+# {(-1 - Sqrt[2])^(-1), ((-1 - Sqrt[2])^(-1))^(1/3), (I*Sqrt[2])/Sqrt[1 + Sqrt[2]]}
+```
+
+wolframscript takes the sign out of the reciprocal of a numeric sum whose
+leading term is negative, and keeps a rational factor under the root. A
+symbolic sum keeps its sign (`(-1 - x)^(-1)` stays). Woxi keeps the sign
+inside the numeric sum and splits the rational factor off.
+
 ### Exact generalized eigenvectors are scaled differently
 
 ```sh
@@ -4911,20 +4928,14 @@ reproduce wolframscript's primitive tree:
   not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
   largest count between its halves. wolframscript's gap is a little smaller
   and not proportional: `15/67` for a largest count of 3, `85/163` for 5.
-- `BarChart` (of a list or an association) emits plain
-  `{RGBColor[…], Rectangle[…]}` pairs. wolframscript draws yellow tooltip
-  rectangles from `k - 0.4512…` to `k + 0.4512…`, an invisible `Point`
-  pair that sets the extent, and the axis as `"GraphicsAxes"` styled lines.
-  What has been decoded, for n bars of one dataset:
-  - With n ≥ 5 the extent runs from `left - 0.02 (right - left)` to
-    `right`. Below 5 bars it is padded as though there were five.
-  - The axis line ends `0.02` of the extent past it.
-  - There are n + 2 empty tick-label slots.
-  - Edge opacity is `0.7 - 0.007 n`.
-  - From 10 bars on, the bar width changes with n.
-  - The bar edges themselves differ from `k ± 0.4512…` by an ulp or two
-    at some k, so no arithmetic convention tried reproduces them exactly.
-    That is why the structure was not switched over.
+- `BarChart` of one plain dataset (a list or association of numbers, no
+  options) builds wolframscript's tree. Its bar edges and extents are
+  computed from the decoded layout and can be an ulp or two off
+  wolframscript's (the harness compares them with `NEAR_MATCH`). The layout
+  has three bar-width stretches (up to 9 bars, 10–33, 34–45) and touching
+  bars from 46 on. Those boundaries were read off wolframscript, not
+  derived. A chart with several datasets or with options still emits plain
+  `{RGBColor[…], Rectangle[…]}` pairs.
 - `RectangleChart3D` boxes are `GraphicsComplex` polygons at wolframscript's
   corners, above an invisible base plate. The faces carry a plain colour
   instead of wolframscript's `VertexColors` shading (and its
