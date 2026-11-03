@@ -225,6 +225,16 @@ pub fn rectangle_chart_ast(
       ],
     )],
   );
+  let max_depth = sets
+    .iter()
+    .flatten()
+    .map(|item| item.sizes.get(1).copied().unwrap_or(0.0))
+    .fold(0.0_f64, f64::max);
+  let max_height = sets
+    .iter()
+    .flatten()
+    .map(|item| item.sizes.get(2).copied().unwrap_or(0.0))
+    .fold(0.0_f64, f64::max);
   let mut x = if multi { GROUP_INSET } else { 0.0 };
   let mut end = x;
   let mut prims = Vec::new();
@@ -243,17 +253,47 @@ pub fn rectangle_chart_ast(
         swatches.push(style.clone());
       }
       let shape = if three_d {
+        // A box is six polygons over its corners, flush with the back of
+        // the deepest box, as wolframscript draws it.
         let (d, h) = (item.sizes[1], item.sizes[2]);
+        let y0 = max_depth - d;
+        let v = |a: f64, b: f64, c: f64| {
+          Expr::List(vec![Expr::Real(a), Expr::Real(b), Expr::Real(c)].into())
+        };
+        let corners = vec![
+          v(x, y0, 0.0),
+          v(x, max_depth, 0.0),
+          v(x, max_depth, h),
+          v(x, y0, h),
+          v(x + w, y0, 0.0),
+          v(x + w, max_depth, 0.0),
+          v(x + w, max_depth, h),
+          v(x + w, y0, h),
+        ];
+        let faces = [
+          [4, 3, 2, 1],
+          [5, 6, 7, 8],
+          [2, 3, 7, 6],
+          [5, 8, 4, 1],
+          [4, 8, 7, 3],
+          [2, 6, 5, 1],
+        ]
+        .iter()
+        .map(|f| {
+          call(
+            "Polygon",
+            vec![Expr::List(
+              f.iter()
+                .map(|&i| Expr::Integer(i))
+                .collect::<Vec<_>>()
+                .into(),
+            )],
+          )
+        })
+        .collect::<Vec<_>>();
         call(
-          "Cuboid",
-          vec![
-            Expr::List(
-              vec![Expr::Real(x), Expr::Real(0.0), Expr::Real(0.0)].into(),
-            ),
-            Expr::List(
-              vec![Expr::Real(x + w), Expr::Real(d), Expr::Real(h)].into(),
-            ),
-          ],
+          "GraphicsComplex",
+          vec![Expr::List(corners.into()), Expr::List(faces.into())],
         )
       } else {
         let h = item.sizes[1];
@@ -361,6 +401,38 @@ pub fn rectangle_chart_ast(
   }
 
   let mut content = if three_d { vec![edge.clone()] } else { vec![] };
+  if three_d {
+    // The invisible base plate that sets the scene's extent.
+    let (x1, z1) = (end, max_height);
+    content.push(Expr::List(
+      vec![
+        call("Opacity", vec![Expr::Integer(0)]),
+        call("EdgeForm", vec![]),
+        call(
+          "Cuboid",
+          vec![
+            Expr::List(
+              vec![
+                Expr::Real(-0.05 * x1),
+                Expr::Real(-0.25 * max_depth),
+                Expr::Integer(0),
+              ]
+              .into(),
+            ),
+            Expr::List(
+              vec![
+                Expr::Real(x1 + 0.05 * x1),
+                Expr::Real(max_depth + 0.25 * max_depth),
+                Expr::Real(0.008 * z1),
+              ]
+              .into(),
+            ),
+          ],
+        ),
+      ]
+      .into(),
+    ));
+  }
   if let Some(b) = base_style {
     content.push(b);
   }

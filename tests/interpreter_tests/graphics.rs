@@ -43190,14 +43190,24 @@ mod rectangle_chart {
     );
   }
 
+  // The boxes are polygons over their corners, flush with the back of the
+  // deepest one; the only Cuboid is the invisible base plate.
   #[test]
-  fn three_d_chart_uses_cuboids() {
+  fn three_d_chart_boxes_and_plate() {
     assert_eq!(
       interpret(
         "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], _Cuboid, Infinity]"
       )
       .unwrap(),
-      "{Cuboid[{0., 0., 0.}, {1., 2., 3.}], Cuboid[{1.098, 0., 0.}, {3.098, 1., 1.}]}"
+      "{Cuboid[{-0.1549, -0.5, 0}, {3.2529, 2.5, 0.024}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[RectangleChart3D[{{1, 2, 3}, {2, 1, 1}}], GraphicsComplex[p_, _] :> p, Infinity]"
+      )
+      .unwrap(),
+      "{{{0., 0., 0.}, {0., 2., 0.}, {0., 2., 3.}, {0., 0., 3.}, {1., 0., 0.}, {1., 2., 0.}, {1., 2., 3.}, {1., 0., 3.}}, \
+{{1.098, 1., 0.}, {1.098, 2., 0.}, {1.098, 2., 1.}, {1.098, 1., 1.}, {3.098, 1., 0.}, {3.098, 2., 0.}, {3.098, 2., 1.}, {3.098, 1., 1.}}}"
     );
   }
 
