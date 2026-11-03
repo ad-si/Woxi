@@ -3521,7 +3521,7 @@ struct StyleState3D {
   /// points. `None` draws the default 3px dot.
   point_size: Option<f64>,
   /// `Texture[image]`: surfaces coloured by sampling this image at each
-  /// facet's texture coordinates (see [`texture_color`]).
+  /// facet's texture coordinates.
   texture: Option<std::sync::Arc<image::RgbImage>>,
   /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
   /// per corner, placing `texture` on it.
@@ -4280,26 +4280,6 @@ fn emit_textured_triangle(
     corners[0].0, corners[0].1, corners[1].0, corners[1].1, corners[2].0, corners[2].1
   ));
   true
-}
-
-/// The colour of `texture` at texture coordinates `(u, v)`: `(0, 0)` is the
-/// bottom-left corner and the image repeats outside the unit square.
-fn texture_color(
-  texture: &image::RgbImage,
-  u: f64,
-  v: f64,
-) -> Option<(u8, u8, u8)> {
-  if !u.is_finite() || !v.is_finite() {
-    return None;
-  }
-  let (w, h) = (texture.width(), texture.height());
-  if w == 0 || h == 0 {
-    return None;
-  }
-  let x = ((u.rem_euclid(1.0) * w as f64) as u32).min(w - 1);
-  let y = (((1.0 - v.rem_euclid(1.0)) * h as f64) as u32).min(h - 1);
-  let px = texture.get_pixel(x, y);
-  Some((px[0], px[1], px[2]))
 }
 
 /// The linear part of a rotation by `angle` around the axis direction `w`
@@ -13082,12 +13062,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_iterator_generic(&args[2], "SphericalPlot3D", "phi")?;
 
   // Parse options
+  // The picture's own options (`ImageSize`, `Axes`, `AxesLabel`, `Boxed`,
+  // `PlotRange`, …) are read by the `Graphics3D` renderer it is drawn with.
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
-  let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
-  let mut axes_labels: [Option<String>; 3] = [None, None, None];
   // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
   // as in Wolfram. Low values matter: Demonstrations use PlotPoints -> 2
   // with MaxRecursion -> 0 to get intentionally flat facets.
@@ -13132,12 +13111,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           );
         }
         Expr::Identifier(name) if name == "ImageSize" => {
-          if let Some((w, h, fw)) =
+          if let Some((w, h, _)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
           {
             svg_width = w;
             svg_height = h;
-            full_width = fw;
           }
         }
         Expr::Identifier(name) if name == "Mesh" => {
@@ -13146,15 +13124,6 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
-        }
-        Expr::Identifier(name) if name == "Axes" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False")
-          {
-            show_axes = false;
-          }
-        }
-        Expr::Identifier(name) if name == "AxesLabel" => {
-          axes_labels = parse_axes_labels(replacement, None);
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {
@@ -13766,6 +13735,93 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  // ── Standalone rendering: the symbolic form drawn by `Graphics3D`, so
+  // `PlotRange`, `BoxRatios` (the data's own proportions by default),
+  // `Boxed`, `Axes` and the view options behave as they do for any 3D
+  // graphic. An unstyled surface takes the next colour of WL 15's
+  // `DefaultPlotStyle`. ──
+  let unstyled =
+    plot_styles.is_empty() && color_fn.is_none() && plot_style_expr.is_none();
+  let render_items: Vec<Expr> = complexes
+    .iter()
+    .enumerate()
+    .map(|(i, complex)| {
+      if unstyled {
+        let (r, g, b) = LIST_SURFACE_COLORS[i % LIST_SURFACE_COLORS.len()];
+        Expr::List(
+          vec![
+            call(
+              "RGBColor",
+              vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+            ),
+            complex.clone(),
+          ]
+          .into(),
+        )
+      } else {
+        complex.clone()
+      }
+    })
+    .collect();
+  // The options only the plot itself reads stay behind.
+  const PLOT_ONLY_OPTIONS: &[&str] = &[
+    "PlotStyle",
+    "TextureCoordinateFunction",
+    "TextureCoordinateScaling",
+    "ColorFunction",
+    "ColorFunctionScaling",
+    "Mesh",
+    "MeshFunctions",
+    "MeshStyle",
+    "MeshShading",
+    "PlotPoints",
+    "MaxRecursion",
+    "RegionFunction",
+    "BoundaryStyle",
+    "PlotLabel",
+    "PlotLegends",
+    "PerformanceGoal",
+    "Exclusions",
+    "ExclusionsStyle",
+    "EvaluationMonitor",
+    "WorkingPrecision",
+    "Method",
+  ];
+  let option_name = |o: &Expr| {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n.to_string())
+  };
+  let mut render_args = vec![Expr::List(render_items.into())];
+  render_args.extend(
+    args[3..]
+      .iter()
+      .filter(|o| {
+        option_name(o).is_some_and(|n| !PLOT_ONLY_OPTIONS.contains(&n.as_str()))
+      })
+      .cloned(),
+  );
+  if !args[3..]
+    .iter()
+    .any(|o| option_name(o).as_deref() == Some("Axes"))
+  {
+    render_args
+      .push(rule_expr(Expr::Identifier("Axes".into()), bool_expr(true)));
+  }
+  // Evaluated like any `Graphics3D[…]`, so a held `Texture[Image[…]]`
+  // becomes the image it names.
+  let svg = match &crate::evaluator::evaluate_function_call_ast(
+    "Graphics3D",
+    &render_args,
+  )? {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    other => {
+      return Err(InterpreterError::EvaluationError(format!(
+        "SphericalPlot3D: could not render {}",
+        crate::syntax::expr_to_string(other)
+      )));
+    }
+  };
+  let svg = with_plot_label(svg, args, svg_width, svg_height);
+
   let content = if complexes.len() == 1 {
     complexes.into_iter().next().expect("one complex")
   } else {
@@ -13777,122 +13833,6 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .chain(args[3..].iter().cloned())
       .collect::<Vec<_>>(),
   );
-
-  // ── Standalone rendering (the plot's own SVG) ──
-  let camera = Camera::default();
-  // Direction from the scene towards the viewer, used to place a
-  // `Specularity` highlight from `PlotStyle`.
-  let view_dir = {
-    let (sa, ca) = camera.azimuth.sin_cos();
-    let (se, ce) = camera.elevation.sin_cos();
-    [ce * ca, ce * sa, se]
-  };
-  let mut all_triangles: Vec<Triangle> = Vec::new();
-
-  // Normalize a point to [-1,1] box
-  let normalize = |p: Point3D| -> Point3D {
-    Point3D {
-      x: ((p.x - x_min) / x_range_v) * 2.0 - 1.0,
-      y: ((p.y - y_min) / y_range_v) * 2.0 - 1.0,
-      z: ((p.z - z_min) / z_range_v) * 2.0 * Z_SCALE - Z_SCALE,
-    }
-  };
-
-  for (surface_idx, tris) in surface_tris.iter().enumerate() {
-    let style = plot_style_for_surface(&plot_styles, surface_idx);
-    for (tri_idx, tri) in tris.iter().enumerate() {
-      let [a, b, c] = *tri;
-      let na = normalize(a);
-      let nb = normalize(b);
-      let nc = normalize(c);
-
-      let avg_z = ((a.z - z_min) / z_range_v
-        + (b.z - z_min) / z_range_v
-        + (c.z - z_min) / z_range_v)
-        / 3.0;
-      let default_color = height_color(avg_z);
-      let normal = triangle_normal(na, nb, nc);
-      // A textured surface takes its colour from the image at the facet's
-      // texture coordinates instead of from its height.
-      let textured = style.and_then(|s| s.texture.as_ref()).and_then(|tex| {
-        let (theta, phi) = surface_tri_params[surface_idx][tri_idx];
-        let centroid = Point3D {
-          x: (a.x + b.x + c.x) / 3.0,
-          y: (a.y + b.y + c.y) / 3.0,
-          z: (a.z + b.z + c.z) / 3.0,
-        };
-        let (u, v) = texture_uv(centroid, theta, phi)?;
-        texture_color(tex, u, v)
-      });
-      let base_color = facet_colors[surface_idx][tri_idx].or(textured);
-      let (color, opacity) = match (style, base_color) {
-        (Some(s), Some(base)) => {
-          let mut painted = s.clone();
-          painted.color = Some(base);
-          shade_facet(default_color, Some(&painted), normal, view_dir)
-        }
-        (None, Some(base)) => {
-          let painted = StyleState3D {
-            color: Some(base),
-            ..StyleState3D::default()
-          };
-          shade_facet(default_color, Some(&painted), normal, view_dir)
-        }
-        _ => shade_facet(default_color, style, normal, view_dir),
-      };
-
-      let pa = project(na, &camera);
-      let pb = project(nb, &camera);
-      let pc = project(nc, &camera);
-      let center = Point3D {
-        x: (na.x + nb.x + nc.x) / 3.0,
-        y: (na.y + nb.y + nc.y) / 3.0,
-        z: (na.z + nb.z + nc.z) / 3.0,
-      };
-
-      all_triangles.push(Triangle {
-        boundary: [true; 3],
-        edge_color: None,
-        edge_width: None,
-        projected: [pa, pb, pc],
-        depth: depth(center, &camera),
-        color,
-        opacity,
-        texture: None,
-      });
-    }
-  }
-
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
-
-  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
-    (z_min - 0.5, z_max + 0.5)
-  } else {
-    (z_min, z_max)
-  };
-
-  let svg = generate_svg(
-    &all_triangles,
-    &[],
-    &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_axis_min, z_axis_max),
-    svg_width,
-    svg_height,
-    full_width,
-    mesh_mode,
-    show_axes,
-    [1.0, 1.0, Z_SCALE],
-    &axes_labels,
-  )?;
-  // A `PlotLabel` sets a title above the finished picture.
-  let svg = with_plot_label(svg, args, svg_width, svg_height);
-
   Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 

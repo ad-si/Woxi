@@ -4560,33 +4560,49 @@ mod plot3d {
          {{0, 0, 1}}}}}}]]{opts}]"
       ))
     };
-    // Facet fills as (red-ish, blue-ish) counts.
-    let count = |svg: &str| {
-      (
-        svg
-          .split("fill=\"rgb(")
-          .skip(1)
-          .filter(|f| f.split(')').next().is_some_and(|c| c.ends_with(",0,0")))
-          .count(),
-        svg
-          .split("fill=\"rgb(")
-          .skip(1)
-          .filter(|f| {
-            f.split(')').next().is_some_and(|c| c.starts_with("0,0,"))
-          })
-          .count(),
-      )
+    // The surface is drawn through `Graphics3D`, which paints the image
+    // itself onto each facet (clipped to it).
+    let svg = plot("");
+    assert!(svg.contains("<image"), "texture image drawn: {svg}");
+    assert!(svg.contains("<clipPath"), "{svg}");
+    // `TextureCoordinateFunction` places every facet on the image.
+    let us = |tcf: &str| {
+      clear_state();
+      interpret(&format!(
+        "g = SphericalPlot3D[1, {{t, 0, Pi}}, {{p, 0, 2 Pi}}, \
+         PlotPoints -> 4, PlotStyle -> Texture[Image[{{{{{{1, 0, 0}}, \
+         {{0, 0, 1}}}}}}]], TextureCoordinateFunction -> {tcf}]; \
+         Union[(VertexTextureCoordinates /. Cases[First[g], _Rule])[[All, 1]]]"
+      ))
+      .unwrap()
     };
-    let (red, blue) = count(&plot(""));
-    assert!(red > 100 && blue > 100, "both halves show: {red} {blue}");
-    let (red, blue) =
-      count(&plot(", TextureCoordinateFunction -> ({0.1, 0} &)"));
-    assert!(red > 100 && blue == 0, "left half only: {red} {blue}");
-    let (red, blue) =
-      count(&plot(", TextureCoordinateFunction -> ({1.9, 0} &)"));
+    assert_eq!(us("({0.1, 0} &)"), "{0.1}");
+    assert_eq!(us("({1.9, 0} &)"), "{1.9}");
+  }
+
+  /// SphericalPlot3D is drawn with the data's own proportions (WL's
+  /// `BoxRatios -> Automatic`) and honours `PlotRange`, `Boxed` and `Axes`
+  /// like any `Graphics3D`; regression: a sphere came out as a flat disc in
+  /// a box, whatever those options said.
+  #[test]
+  fn spherical_plot_draws_true_proportions_and_graphics3d_options() {
+    let plain = export_svg(
+      "SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, PlotRange -> 0.6, \
+       Boxed -> False, Axes -> None, Mesh -> None]",
+    );
+    assert_eq!(
+      plain,
+      export_svg(
+        "Graphics3D[{RGBColor[0.880722, 0.611041, 0.142051], \
+         First[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}, Mesh -> None]]}, \
+         PlotRange -> 0.6, Boxed -> False, Axes -> None]"
+      )
+    );
+    assert!(!plain.contains("<line"), "no box, no axes: {plain}");
+    // The default axes and box are drawn.
     assert!(
-      red == 0 && blue > 100,
-      "wraps to the right half: {red} {blue}"
+      export_svg("SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}]")
+        .contains("<line")
     );
   }
 

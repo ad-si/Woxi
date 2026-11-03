@@ -7622,6 +7622,12 @@ Found comparing the graphics-tests renders (2026-11):
   every 1 (`nice_step` with `AXIS_TICK_TARGET`).
 - `ListPlot3D` draws no default mesh; wolframscript rules one line per
   data row and column.
+- `SphericalPlot3D` (drawn through the `Graphics3D` renderer, in the WL 15
+  `DefaultPlotStyle` colours) draws no default mesh (`Mesh -> Automatic`
+  rules lines of constant θ and φ in wolframscript), and its orange
+  surface looks duller: WL lights it with the style's own warm ambient
+  and three directional lights plus `Specularity[White, 3]` (see
+  "Graphics3D lighting and projection").
 - Density and contour plots follow WL 15's frame layout (2% padding,
   ticks on all four edges, label-sized `ImagePadding`), but where a
   contour runs exactly through grid nodes at the domain's edge
