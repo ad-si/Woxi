@@ -60,6 +60,9 @@ struct EpilogStyle {
   /// `Arrowheads[s]`: arrowhead length as a fraction of the plot width.
   /// `None` sizes it from the stroke width.
   arrowhead: Option<f64>,
+  /// `EdgeForm[…]`: the outline drawn around filled primitives
+  /// (`Rectangle`, `Polygon`, `Disk`). `None` = no outline.
+  edge: Option<Box<EpilogStyle>>,
 }
 
 impl EpilogStyle {
@@ -78,7 +81,38 @@ impl EpilogStyle {
       point_size: 0.012,
       opacity: 1.0,
       arrowhead: None,
+      edge: None,
     }
+  }
+
+  /// Fill attributes plus the `EdgeForm` outline, when one is set.
+  fn shape_attrs(&self, area: &PlotArea) -> String {
+    let mut s = self.fill_attrs();
+    if let Some(edge) = &self.edge {
+      let mut stroke = format!(
+        " stroke=\"{}\" stroke-width=\"{:.1}\"",
+        edge.color.to_svg_rgb(),
+        (edge.thickness * area.scale).max(0.5),
+      );
+      if let Some(dashes) = &edge.dashing {
+        let parts: Vec<String> = dashes
+          .iter()
+          .map(|d| {
+            format!(
+              "{:.1}",
+              crate::functions::plot::dash_len(*d, area.w, area.scale)
+            )
+          })
+          .collect();
+        stroke.push_str(&format!(" stroke-dasharray=\"{}\"", parts.join(",")));
+      }
+      let alpha = edge.color.a * edge.opacity;
+      if alpha < 1.0 {
+        stroke.push_str(&format!(" stroke-opacity=\"{alpha:.3}\""));
+      }
+      s.push_str(&stroke);
+    }
+    s
   }
 
   fn stroke_attrs(&self, area: &PlotArea) -> String {
@@ -325,6 +359,31 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
         for a in args {
           apply_directive(a, style);
         }
+      }
+      // `EdgeForm[]` / `EdgeForm[None]` draw no outline; otherwise the
+      // directives inside describe the outline's own style.
+      "EdgeForm" => {
+        let none = args.is_empty()
+          || matches!(&args[0], Expr::Identifier(s) if s == "None");
+        style.edge = if none {
+          None
+        } else {
+          let mut edge = EpilogStyle::new();
+          edge.thickness = 0.5;
+          for a in args {
+            match a {
+              Expr::List(items) => {
+                for i in items {
+                  apply_directive(i, &mut edge);
+                }
+              }
+              other => {
+                apply_directive(other, &mut edge);
+              }
+            }
+          }
+          Some(Box::new(edge))
+        };
       }
       "Opacity" if !args.is_empty() => {
         if let Some(o) = try_eval_to_f64(&args[0]) {
@@ -666,14 +725,14 @@ fn render_item(
           py0,
           px1 - px0,
           py1 - py0,
-          style.fill_attrs(),
+          style.shape_attrs(area),
         ));
       }
       "Polygon" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
             "<polygon {} points=\"{}\"/>\n",
-            style.fill_attrs(),
+            style.shape_attrs(area),
             polyline_points(&pts, area),
           ));
         }
@@ -1034,7 +1093,7 @@ fn render_circle_like(
       out.push_str(&format!(
         "<path d=\"M {pcx:.1} {pcy:.1} L {sx:.1} {sy:.1} \
          A {prx:.1} {pry:.1} 0 {large} 0 {ex:.1} {ey:.1} Z\" {}/>\n",
-        style.fill_attrs(),
+        style.shape_attrs(area),
       ));
     } else {
       out.push_str(&format!(
@@ -1050,7 +1109,7 @@ fn render_circle_like(
     out.push_str(&format!(
       "<ellipse cx=\"{pcx:.1}\" cy=\"{pcy:.1}\" rx=\"{prx:.1}\" \
        ry=\"{pry:.1}\" {}/>\n",
-      style.fill_attrs(),
+      style.shape_attrs(area),
     ));
   } else {
     out.push_str(&format!(
