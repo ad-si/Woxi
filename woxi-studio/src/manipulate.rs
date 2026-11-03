@@ -802,6 +802,7 @@ impl ManipulateState {
       // local sized by one) stays code, so it follows saved control
       // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
+        let init = load_leading_packages(&init);
         let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
         let after = woxi::functions::graphics::read_manipulate_state(&names);
@@ -2066,6 +2067,78 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
     .collect()
 }
 
+/// Load the packages an `Initialization` reads in its leading
+/// `Get["Pkg`"]` / `Needs["Pkg`"]` statements (optionally under `Quiet`) and
+/// return the code with the package's exports spelled as bare names.
+///
+/// A Demonstration is authored in a kernel that already has the package
+/// loaded, so its saved code uses the bare export (`ConvexHull`). Woxi
+/// reads the whole Manipulate before the `Get` runs, which leaves such a
+/// name as an unrelated `Global`` symbol; rewriting `Global`Name` to `Name`
+/// once the package is loaded makes it the package's function again.
+fn load_leading_packages(init: &str) -> String {
+  let mut rewritten = init.to_string();
+  let mut rest = init.trim_start();
+  loop {
+    // `Get["Pkg`"]` or `Quiet[Get["Pkg`"]]`, then the `;` that ends it.
+    let (quiet, body) = match rest.strip_prefix("Quiet[") {
+      Some(b) => (true, b),
+      None => (false, rest),
+    };
+    let Some((ctx, after)) = ["Get[\"", "Needs[\""].iter().find_map(|head| {
+      let tail = body.strip_prefix(head)?;
+      let end = tail.find('"')?;
+      let ctx = &tail[..end];
+      let after = tail[end..].strip_prefix("\"]")?;
+      let after = if quiet {
+        after.strip_prefix(']')?
+      } else {
+        after
+      };
+      (ctx.ends_with('`')).then_some((ctx, after))
+    }) else {
+      break;
+    };
+    rest = after.trim_start();
+    rest = rest.strip_prefix(';').unwrap_or(rest).trim_start();
+    let _ = woxi::interpret(&format!("Quiet[Get[\"{ctx}\"]]"));
+    let Ok(names) = woxi::interpret(&format!("Names[\"{ctx}*\"]")) else {
+      continue;
+    };
+    for name in names
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(',')
+      .map(str::trim)
+      .filter(|n| !n.is_empty())
+    {
+      rewritten = unqualify_global_symbol(&rewritten, name);
+    }
+  }
+  rewritten
+}
+
+/// Replace every whole-symbol `` Global`name `` in `code` with `name`.
+fn unqualify_global_symbol(code: &str, name: &str) -> String {
+  let needle = format!("Global`{name}");
+  let is_name_char = |c: char| c.is_alphanumeric() || c == '$' || c == '`';
+  let mut out = String::with_capacity(code.len());
+  let mut rest = code;
+  while let Some(at) = rest.find(&needle) {
+    let before_ok = !rest[..at].chars().next_back().is_some_and(is_name_char);
+    let after = &rest[at + needle.len()..];
+    let after_ok = !after.chars().next().is_some_and(is_name_char);
+    if before_ok && after_ok {
+      out.push_str(&rest[..at]);
+      out.push_str(name);
+    } else {
+      out.push_str(&rest[..at + needle.len()]);
+    }
+    rest = after;
+  }
+  out.push_str(rest);
+  out
+}
+
 /// Format a f64 as Wolfram InputForm. Integers are rendered without a
 /// decimal point so that e.g. `n = 10` substitutes as an Integer.
 fn format_f64(v: f64) -> String {
@@ -2078,6 +2151,23 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+  /// An Initialization that loads `ComputationalGeometry`` and then uses the
+  /// bare `ConvexHull` in a helper (the whole code is one expression) must
+  /// reach the package's function, not an unrelated `Global`` symbol.
+  #[test]
+  fn initialization_package_symbols_resolve_after_get() {
+    let code = r#"Manipulate[
+      hull[pts],
+      {{n, 1}, 1, 3, 1},
+      Initialization :> (Get["ComputationalGeometry`"];
+        pts = {{0, 0}, {2, 0}, {2, 2}, {0, 2}, {1, 1}};
+        hull[p_] := Length[ConvexHull[p]])]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("4"), "{:?}", state.error);
+  }
 
   /// A puzzle generator initialised with `Needs["Combinatorica`"]` shuffles
   /// rows with the bare `RandomPermutation[Range[d]]`; the package version
