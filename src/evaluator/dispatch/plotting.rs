@@ -243,67 +243,6 @@ fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(out)
 }
 
-/// `ScalingFunctions -> "Log"` on `Plot`/`ListPlot`/`ListLinePlot` asks for
-/// the logarithmic plot of the family: the call is handed to `LogPlot`,
-/// `LogLinearPlot`, `LogLogPlot` (or their `List…` forms) without the option,
-/// so the log axes have one implementation. `"Log"` alone or `{xs, "Log"}`
-/// scales y; `{"Log", ys}` scales x. `None` everywhere just drops the option.
-fn log_scaled_plot(
-  name: &str,
-  args: &[Expr],
-) -> Option<(&'static str, Vec<Expr>)> {
-  if !matches!(name, "Plot" | "ListPlot" | "ListLinePlot") {
-    return None;
-  }
-  let pos = args.iter().position(|a| {
-    matches!(a, Expr::Rule { pattern, .. }
-      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ScalingFunctions"))
-  })?;
-  let Expr::Rule { replacement, .. } = &args[pos] else {
-    return None;
-  };
-  // `true` for a log scale, `false` for none, `None` for anything else.
-  let scale = |e: &Expr| match e {
-    Expr::String(s) if s == "Log" || s == "Log10" => Some(true),
-    Expr::Identifier(s) if s == "None" || s == "Identity" => Some(false),
-    _ => None,
-  };
-  let (log_x, log_y) = match replacement.as_ref() {
-    Expr::List(items) if items.len() == 2 => {
-      (scale(&items[0])?, scale(&items[1])?)
-    }
-    other => (false, scale(other)?),
-  };
-  let mut rest = args.to_vec();
-  rest.remove(pos);
-  let list = name != "Plot";
-  let head = match (log_x, log_y, list) {
-    (false, false, _) => {
-      return Some((
-        match name {
-          "Plot" => "Plot",
-          "ListPlot" => "ListPlot",
-          _ => "ListLinePlot",
-        },
-        rest,
-      ));
-    }
-    (false, true, false) => "LogPlot",
-    (true, false, false) => "LogLinearPlot",
-    (true, true, false) => "LogLogPlot",
-    (false, true, true) => "ListLogPlot",
-    (true, false, true) => "ListLogLinearPlot",
-    (true, true, true) => "ListLogLogPlot",
-  };
-  if name == "ListLinePlot" {
-    rest.push(Expr::Rule {
-      pattern: Box::new(id_expr("Joined")),
-      replacement: Box::new(id_expr("True")),
-    });
-  }
-  Some((head, rest))
-}
-
 /// `PlotLegends -> BarLegend[…]` on a plot gives `Legended[plot,
 /// Placed[BarLegend[…], After]]`, as in Wolfram: the plot is drawn without
 /// the option and the colour bar set beside it by `Legended`, so every plot
@@ -457,11 +396,6 @@ pub fn dispatch_plotting(
     && crate::functions::plot::degenerate_complex_corners(name, &args[1])
   {
     return Some(Ok(call(name, args.to_vec())));
-  }
-  if let Some((head, rewritten)) = log_scaled_plot(name, args) {
-    return Some(crate::evaluator::evaluate_function_call_ast(
-      head, &rewritten,
-    ));
   }
   if let Some(result) = with_bar_legend(name, args) {
     return Some(result);

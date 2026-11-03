@@ -5312,6 +5312,33 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   `Div`/`Grad`/`Laplacian` lose their variable subscript, and a product
   with a fraction factor is not merged into one fraction.
 
+### `ScalingFunctions`: remaining differences
+
+Scaled plots are the plot of the scaled function (`Plot[Log[f], …]`) with
+the ticks of `Charting`ScaledTicks`, as in Wolfram, so what still differs
+comes from elsewhere:
+
+- The automatic y range of `Plot` is Woxi's IQR fence, not Wolfram's
+  clipping: `Plot[x^2, {x, 0, 10}, ScalingFunctions -> "Log"]` reaches down
+  to about `0.01` where Wolfram stops at `0.039` (`Plot[Log[x^2], …]` is
+  clipped at `-3.25`), and `Plot[Abs[Gamma[z]], {z, -4, 8}, ScalingFunctions
+  -> "Log"]` misses the `10^5` spike at `z = -4`, which Wolfram's first
+  sample just inside the interval hits (see "`Plot` samples just inside the
+  interval's ends").
+- Wolfram's Plot range reaches out to the scaled 0 (`Plot[Exp[x], {x, 1,
+  10}, ScalingFunctions -> "Log"]` starts at `1`, `Plot[1/x^2, {x, 1, 10}]`
+  at `0`); Woxi's starts at the lowest sample.
+- On a `"Reciprocal"` axis Wolfram's x axis sits at the scaled `0` (the
+  original infinity); Woxi's at the lowest sample.
+- The x tick label at the axes' crossing is dropped even where Wolfram
+  keeps it (`ScalingFunctions -> {None, {-Log[#] &, Exp[-#] &}}` hides the
+  `0`, `{"Reverse", None}` the `0` at the right end).
+- A framed plot's scaled (non-log) axis gets the scaled tick labels but
+  plain automatic tick marks; a framed log axis has no minor tick marks on
+  its left edge.
+- Automatic `GridLines` on a scaled (non-log) axis are spaced linearly in
+  the scaled coordinate rather than at the scaled ticks.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a

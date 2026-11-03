@@ -6943,6 +6943,7 @@ mod interpreter_tests {
   mod music;
   mod plot_layout;
   mod row;
+  mod scaling_functions;
   mod styling;
   mod volume_plots;
 }

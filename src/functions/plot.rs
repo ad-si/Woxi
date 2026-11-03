@@ -10,6 +10,7 @@ use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot_axes::{
   AxisScale, AxisTicks, OriginAxes, origin_axes_svg,
 };
+use crate::functions::plot_scaling::Scaling;
 use crate::syntax::PlotMarker;
 
 /// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
@@ -1606,113 +1607,6 @@ fn nice_date_step(range_seconds: f64) -> f64 {
   }
 }
 
-/// Orientation info for placing log-axis labels.
-enum LogAxisOrientation {
-  /// Y-axis: labels placed at fixed x, varying y
-  Y { x: f64, plot_top: f64, plot_h: f64 },
-  /// X-axis: labels placed at fixed y, varying x
-  X { y: f64, plot_left: f64, plot_w: f64 },
-}
-
-/// Inject SVG `<text>` elements for log-scale axis labels with proper
-/// superscript rendering (e.g. 10 with superscript 6 instead of "1000000").
-/// Intelligently selects which powers of 10 to label based on the range.
-fn inject_log_axis_labels(
-  out: &mut String,
-  data_min: f64,
-  data_max: f64,
-  font_size: f64,
-  fill: &str,
-  orientation: &LogAxisOrientation,
-) {
-  // A log axis needs positive, finite bounds; otherwise no labels can be
-  // placed (log10 would yield NaN positions).
-  if data_min <= 0.0
-    || !data_min.is_finite()
-    || !data_max.is_finite()
-    || data_max <= data_min
-  {
-    return;
-  }
-  let log_min = data_min.log10();
-  let log_max = data_max.log10();
-  let decades = (log_max - log_min).abs();
-
-  // Choose labeling step: label every 1, 2, or 3 powers of 10
-  let step = if decades <= 8.0 {
-    1
-  } else if decades <= 16.0 {
-    2
-  } else {
-    3
-  };
-
-  // A bound that is a power of ten up to rounding (`exp(ln(0.1))` is not
-  // exactly 0.1) still gets its decade labelled.
-  const DECADE_EPS: f64 = 1e-9;
-  let exp_start = (log_min - DECADE_EPS).ceil() as i64;
-  let exp_end = (log_max + DECADE_EPS).floor() as i64;
-
-  // Align to step grid
-  let first = if exp_start % step as i64 == 0 {
-    exp_start
-  } else {
-    exp_start + (step as i64 - exp_start.rem_euclid(step as i64))
-  };
-
-  let (anchor, is_y) = match &orientation {
-    LogAxisOrientation::Y { .. } => ("end", true),
-    LogAxisOrientation::X { .. } => ("middle", false),
-  };
-
-  let mut exp = first;
-  while exp <= exp_end {
-    // Compute pixel position
-    let frac = (exp as f64 - log_min) / (log_max - log_min);
-    let pos = match &orientation {
-      LogAxisOrientation::Y {
-        plot_top, plot_h, ..
-      } => plot_top + plot_h * (1.0 - frac),
-      LogAxisOrientation::X {
-        plot_left, plot_w, ..
-      } => plot_left + plot_w * frac,
-    };
-    let (x, y) = match &orientation {
-      LogAxisOrientation::Y { x, .. } => (*x, pos),
-      LogAxisOrientation::X { y, .. } => (pos, *y),
-    };
-
-    let dy = if is_y { " dy=\"0.5ex\"" } else { "" };
-
-    if exp == 0 {
-      // 10^0 = 1
-      out.push_str(&format!(
-        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{fill}\">1</text>\n"
-      ));
-    } else if exp == 1 {
-      // 10^1 = 10
-      out.push_str(&format!(
-        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{fill}\">10</text>\n"
-      ));
-    } else {
-      // 10^n with superscript
-      let sup_size = font_size * 0.7;
-      out.push_str(&format!(
-        "<text x=\"{x:.1}\" y=\"{y:.1}\"{dy} text-anchor=\"{anchor}\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{fill}\">10<tspan baseline-shift=\"super\" \
-         font-size=\"{sup_size:.0}\">{exp}</tspan></text>\n"
-      ));
-    }
-
-    exp += step as i64;
-  }
-}
-
 /// Format a tick value, dropping the trailing ".0" for integers.
 /// The SVG for an `AxesLabel`, placed the way the Wolfram Language does: the
 /// x label just past the right end of the x axis and level with it, the y
@@ -3130,6 +3024,10 @@ pub(crate) struct PlotOptions {
   pub log_x: bool,
   /// Whether y-axis is logarithmic (data is in log10 space)
   pub log_y: bool,
+  /// The ticks of an axis drawn in the coordinates of its
+  /// `ScalingFunctions` (positions scaled, labels original), which replace
+  /// its automatic ticks: `(x, y)`.
+  pub scaled_ticks: (Option<AxisTicks>, Option<AxisTicks>),
   /// Callout labels for each series (None = no callout for that series)
   pub callout_labels: Vec<Option<String>>,
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
@@ -3401,6 +3299,7 @@ impl Default for PlotOptions {
       point_label_callouts: false,
       log_x: false,
       log_y: false,
+      scaled_ticks: (None, None),
       stacked: false,
       epilog: Vec::new(),
       prolog: Vec::new(),
@@ -3792,6 +3691,38 @@ fn resolve_grid_lines(
     pos += step;
   }
   v
+}
+
+/// The grid lines of one axis spanning `min..max`: [`resolve_grid_lines`]
+/// on a linear axis; on a log axis the explicit lines, or the automatic
+/// ones at the labelled log ticks.
+fn resolve_axis_grid_lines(
+  explicit: &[GridLine],
+  automatic: bool,
+  (min, max): (f64, f64),
+  log: bool,
+  step: f64,
+  default_style: Option<&SeriesStyle>,
+) -> Vec<(f64, SeriesStyle)> {
+  if !log || !explicit.is_empty() {
+    return resolve_grid_lines(
+      explicit,
+      automatic,
+      min,
+      max,
+      step,
+      default_style,
+    );
+  }
+  if !automatic {
+    return Vec::new();
+  }
+  let style = default_style.cloned().unwrap_or_default();
+  crate::functions::plot_scaling::log_axis_ticks(min, max)
+    .majors
+    .into_iter()
+    .map(|(p, _)| (p, style.clone()))
+    .collect()
 }
 
 /// Resolve a grid line's style into rendering properties:
@@ -4531,8 +4462,14 @@ fn generate_svg_with_options(
     max: y_max,
     log: opts.log_y,
   };
-  let x_ticks = AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref());
-  let y_ticks = AxisTicks::new(y_scale, false, opts.ticks_y.as_ref());
+  let x_ticks = opts.scaled_ticks.0.clone().unwrap_or_else(|| {
+    AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref())
+  });
+  let y_ticks = opts
+    .scaled_ticks
+    .1
+    .clone()
+    .unwrap_or_else(|| AxisTicks::new(y_scale, false, opts.ticks_y.as_ref()));
   let origin = opts.axes_origin_point(x_scale, y_scale);
   // An unframed plot draws its axes itself, crossing at the `AxesOrigin`
   // (see `plot_axes`); plotters only maps the data.
@@ -4901,23 +4838,22 @@ fn generate_svg_with_options(
         // Explicit positions (with optional per-line color/thickness/dashing)
         // take precedence over the evenly spaced automatic lines. Solid lines
         // go through plotters; dashed lines are deferred to single
-        // stroke-dasharray overlays (which render on top). Linear axes only —
-        // log axis grid not yet supported. (WL grid lines are solid by
-        // default; dashing needs an explicit style.)
+        // stroke-dasharray overlays (which render on top). (WL grid lines
+        // are solid by default; dashing needs an explicit style.)
         // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
         let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
         // Automatic grid lines follow the ticks drawn on the axes.
 
         // Horizontal (y) grid lines.
-        let y_grid = resolve_grid_lines(
+        let y_grid = resolve_axis_grid_lines(
           &opts.grid_y_lines,
           opts.grid_lines_y,
-          y_min,
-          y_max,
+          (y_min, y_max),
+          log_y,
           axis_tick_step(y_max - y_min),
           opts.grid_lines_style.as_ref(),
         );
-        if !log_y {
+        {
           let tol = (y_max - y_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
@@ -4963,11 +4899,11 @@ fn generate_svg_with_options(
         }
 
         // Vertical (x) grid lines.
-        let x_grid = resolve_grid_lines(
+        let x_grid = resolve_axis_grid_lines(
           &opts.grid_x_lines,
           opts.grid_lines_x,
-          x_min,
-          x_max,
+          (x_min, x_max),
+          log_x,
           if date_axis {
             nice_date_step(x_max - x_min)
           } else {
@@ -4975,7 +4911,7 @@ fn generate_svg_with_options(
           },
           opts.grid_lines_style.as_ref(),
         );
-        if !log_x {
+        {
           let tol = (x_max - x_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
@@ -6014,67 +5950,50 @@ fn generate_svg_with_options(
     }
   }
 
-  // Inject logarithmic axis labels with superscript formatting on a frame
-  // (the origin axes label their own decades).
+  // Label the log axes of a frame with the same `Charting`ScaledTicks`
+  // majors the unframed log axes carry (the origin axes label their own);
+  // the frame mesh draws the tick marks.
   if !origin_axes
     && ((opts.log_y && tick_axis_y && show_ticks && opts.ticks_y.is_none())
       || (opts.log_x && tick_axis_x && show_ticks && opts.ticks_x.is_none()))
   {
-    let margin_left_f = margin_left as f64;
-    let margin_right_f = margin_right as f64;
-    let margin_bottom_f = margin_bottom as f64;
-    let margin_top_f = top_margin as f64;
-    let plot_x0 = margin_left_f + y_label_area as f64;
+    let plot_x0 = margin_left as f64 + y_label_area as f64;
     let plot_w = render_width as f64
-      - margin_left_f
-      - margin_right_f
+      - margin_left as f64
+      - margin_right as f64
       - y_label_area as f64;
     let plot_h = render_height as f64
-      - margin_top_f
-      - margin_bottom_f
+      - top_margin as f64
+      - margin_bottom as f64
       - x_label_area as f64;
-    // Plotters SVG backend divides font size by 1.24
-    let font_size = sf * 18.0 / 1.24;
-    let label_color = if crate::is_dark_mode() {
-      "#999"
-    } else {
-      "#666"
+    let log_majors = |log: bool, given: bool, lo: f64, hi: f64| {
+      (log && !given)
+        .then(|| crate::functions::plot_scaling::log_axis_ticks(lo, hi).majors)
     };
-
-    if let Some(insert_pos) = buf.rfind("</svg>") {
-      let mut log_labels = String::new();
-
-      if opts.log_y && tick_axis_y && opts.ticks_y.is_none() {
-        inject_log_axis_labels(
-          &mut log_labels,
-          y_min,
-          y_max,
-          font_size,
-          label_color,
-          &LogAxisOrientation::Y {
-            x: plot_x0 - font_size * 0.55,
-            plot_top: margin_top_f,
-            plot_h,
-          },
-        );
-      }
-
-      if opts.log_x && tick_axis_x && opts.ticks_x.is_none() {
-        inject_log_axis_labels(
-          &mut log_labels,
-          x_min,
-          x_max,
-          font_size,
-          label_color,
-          &LogAxisOrientation::X {
-            y: margin_top_f + plot_h + font_size * 1.3,
-            plot_left: plot_x0,
-            plot_w,
-          },
-        );
-      }
-
-      buf.insert_str(insert_pos, &log_labels);
+    let ticks_x = log_majors(
+      opts.log_x && tick_axis_x,
+      opts.ticks_x.is_some(),
+      x_min,
+      x_max,
+    );
+    let ticks_y = log_majors(
+      opts.log_y && tick_axis_y,
+      opts.ticks_y.is_some(),
+      y_min,
+      y_max,
+    );
+    let labels = explicit_ticks_svg(
+      explicit_ticks_in_axis_space(ticks_x.as_ref(), true).as_ref(),
+      explicit_ticks_in_axis_space(ticks_y.as_ref(), true).as_ref(),
+      (plot_x0, top_margin as f64, plot_w, plot_h),
+      log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
+      sf,
+      label_fill,
+      FrameEdges::ALL,
+      crate::functions::plot_padding::plot_tick_font(opts),
+    );
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &labels);
     }
   }
 
@@ -13353,6 +13272,213 @@ pub(crate) fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
 }
 
 /// Implementation of Plot[f, {x, xmin, xmax}]
+/// The scaled counterpart of an explicit `PlotRange` side given in original
+/// coordinates. An end outside the scaling's domain (`0` on a log axis)
+/// comes back as NaN: that end stays automatic, as in the Wolfram Language.
+pub(crate) fn scale_range(
+  range: Option<(f64, f64)>,
+  scale: Option<&Scaling>,
+) -> Option<(f64, f64)> {
+  let (Some((a, b)), Some(s)) = (range, scale) else {
+    return range;
+  };
+  let increasing = match (s.forward(1.0), s.forward(2.0)) {
+    (Some(u), Some(v)) => u < v,
+    _ => true,
+  };
+  let (fa, fb) = (
+    s.forward(a.min(b)).unwrap_or(f64::NAN),
+    s.forward(a.max(b)).unwrap_or(f64::NAN),
+  );
+  Some(if increasing { (fa, fb) } else { (fb, fa) })
+}
+
+/// An explicit plot range side whose NaN ends (see [`scale_range`]) are
+/// filled in from the automatic range `auto`.
+pub(crate) fn fill_range(
+  explicit: Option<(f64, f64)>,
+  auto: (f64, f64),
+) -> Option<(f64, f64)> {
+  explicit.map(|(lo, hi)| {
+    (
+      if lo.is_nan() { auto.0 } else { lo },
+      if hi.is_nan() { auto.1 } else { hi },
+    )
+  })
+}
+
+/// Map the positions an axis' options name — its `AxesOrigin` coordinate,
+/// explicit `GridLines` and `Ticks` — through `f` (axis 0 is x, 1 is y),
+/// dropping those `f` cannot map.
+fn map_axis_options(
+  opts: &mut PlotOptions,
+  axis: usize,
+  f: &dyn Fn(f64) -> Option<f64>,
+) {
+  let map_ticks = |t: &mut Option<Vec<(f64, String)>>| {
+    if let Some(ticks) = t {
+      *ticks = ticks
+        .drain(..)
+        .filter_map(|(p, l)| Some((f(p)?, l)))
+        .collect();
+    }
+  };
+  let map_grid = |g: &mut Vec<GridLine>| {
+    g.retain_mut(|line| match f(line.pos) {
+      Some(p) => {
+        line.pos = p;
+        true
+      }
+      None => false,
+    });
+  };
+  if axis == 0 {
+    opts.axes_origin.0 = opts.axes_origin.0.and_then(f);
+    map_ticks(&mut opts.ticks_x);
+    map_ticks(&mut opts.ticks_top);
+    map_grid(&mut opts.grid_x_lines);
+  } else {
+    opts.axes_origin.1 = opts.axes_origin.1.and_then(f);
+    map_ticks(&mut opts.ticks_y);
+    map_ticks(&mut opts.ticks_right);
+    map_grid(&mut opts.grid_y_lines);
+  }
+}
+
+/// Put the options a plot was given in original coordinates into the
+/// scaled coordinates of its `ScalingFunctions`.
+pub(crate) fn scale_axis_options(
+  opts: &mut PlotOptions,
+  scaling: &(Option<Scaling>, Option<Scaling>),
+) {
+  if let Some(s) = &scaling.0 {
+    map_axis_options(opts, 0, &|v| s.forward(v));
+  }
+  if let Some(s) = &scaling.1 {
+    map_axis_options(opts, 1, &|v| s.forward(v));
+  }
+}
+
+/// `sy[f[sx⁻¹[x]]]`: what a scaled plot samples for the curve `f`.
+fn scaled_plot_body(
+  body: &Expr,
+  var: &str,
+  (sx, sy): &(Option<Scaling>, Option<Scaling>),
+) -> Expr {
+  let mut e = body.clone();
+  if let Some(sx) = sx {
+    let original = Expr::CurriedCall {
+      func: Box::new(sx.inverse_expr()),
+      args: vec![Expr::Identifier(var.to_string())],
+    };
+    e = crate::syntax::substitute_variable(&e, var, &original);
+  }
+  if let Some(sy) = sy {
+    e = Expr::CurriedCall {
+      func: Box::new(sy.forward_expr()),
+      args: vec![e],
+    };
+  }
+  e
+}
+
+/// Finish axis `axis` (0 is x, 1 is y) of a plot laid out in the scaled
+/// coordinates of `scale`, whose displayed range is `range`; returns the
+/// range to draw. A log axis goes back to original coordinates and is
+/// drawn as a native log axis, crossed by the other axis at its low end.
+/// Any other scaled axis stays scaled and is labelled with
+/// `Charting`ScaledTicks`; without a place for the original 0 it is
+/// crossed at its low end too.
+pub(crate) fn finish_scaled_axis(
+  axis: usize,
+  scale: Option<&Scaling>,
+  opts: &mut PlotOptions,
+  points: &mut [Vec<(f64, f64)>],
+  range: (f64, f64),
+  list_plot: bool,
+) -> (f64, f64) {
+  let Some(s) = scale else {
+    return range;
+  };
+  // Without a place for the original 0 the other axis crosses at the low
+  // end: where the unpadded range starts when that is at or above 0, at the
+  // padded edge otherwise (a list plot's range starts inside its padding).
+  let low = if axis == 0 {
+    opts.axes_origin_low.0
+  } else {
+    opts.axes_origin_low.1
+  };
+  let crossing = match low {
+    Some(l) if list_plot || l >= 0.0 => l,
+    _ => range.0,
+  };
+  if s.is_log() {
+    for p in points.iter_mut().flatten() {
+      if axis == 0 {
+        p.0 = p.0.exp();
+      } else {
+        p.1 = p.1.exp();
+      }
+    }
+    map_axis_options(opts, axis, &|v| Some(v.exp()));
+    if let Some((ux, uy)) = &mut opts.unpadded_range {
+      let u = if axis == 0 { ux } else { uy };
+      *u = (u.0.exp(), u.1.exp());
+    }
+    let crossing = Some(crossing.exp());
+    if axis == 0 {
+      for m in &mut opts.exclusion_marks {
+        m.x = m.x.exp();
+      }
+    } else {
+      opts.curve_clip_y = opts.curve_clip_y.map(|(a, b)| (a.exp(), b.exp()));
+      for m in &mut opts.exclusion_marks {
+        m.y_left = m.y_left.exp();
+        m.y_right = m.y_right.exp();
+      }
+    }
+    if axis == 0 {
+      opts.log_x = true;
+      opts.axes_origin_low.0 = crossing;
+    } else {
+      opts.log_y = true;
+      opts.axes_origin_low.1 = crossing;
+    }
+    return (range.0.exp(), range.1.exp());
+  }
+  let (origin, explicit) = if axis == 0 {
+    (&mut opts.axes_origin.0, opts.ticks_x.is_some())
+  } else {
+    (&mut opts.axes_origin.1, opts.ticks_y.is_some())
+  };
+  if origin.is_none() && s.zero().is_none() {
+    *origin = Some(crossing);
+  }
+  if !explicit {
+    let mut ticks = s.ticks(range.0, range.1);
+    // The tick finder also places ticks past the ends of the range.
+    let (lo, hi) = (range.0.min(range.1), range.0.max(range.1));
+    let eps = (hi - lo) * 1e-9;
+    let inside = |p: f64| p >= lo - eps && p <= hi + eps;
+    ticks.majors.retain(|(p, _)| inside(*p));
+    ticks.minors.retain(|p| inside(*p));
+    if opts.frame {
+      let majors = Some(ticks.majors.clone());
+      if axis == 0 {
+        opts.ticks_x = majors;
+      } else {
+        opts.ticks_y = majors;
+      }
+    }
+    if axis == 0 {
+      opts.scaled_ticks.0 = Some(ticks);
+    } else {
+      opts.scaled_ticks.1 = Some(ticks);
+    }
+  }
+  range
+}
+
 pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
@@ -13379,6 +13505,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `RegionFunction -> f`: only the stretches of the curve where
   // `f[x, y]` is True are drawn.
   let mut region_function: Option<Expr> = None;
+  // `ScalingFunctions -> {sx, sy}`: the plot is drawn in the scaled
+  // coordinates of each scaled axis.
+  let mut scaling: (Option<Scaling>, Option<Scaling>) = (None, None);
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
@@ -13418,6 +13547,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if name == "PlotLabels" {
         labels_expressions = plot_labels_from_expressions(replacement);
+      }
+      if name == "ScalingFunctions" {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.clone());
+        scaling = Scaling::parse_option(&value).unwrap_or((None, None));
+        continue;
       }
       if name == "RegionFunction" {
         // `RegionFunction -> (True &)` is the default: every point drawn.
@@ -13492,6 +13627,27 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+
+  // A scaled x axis is sampled evenly in its scaled coordinate.
+  if x_transform.is_some() {
+    scaling.0 = None;
+  }
+  let (x_min, x_max) = match &scaling.0 {
+    Some(sx) => match (sx.forward(x_min), sx.forward(x_max)) {
+      (Some(a), Some(b)) => (a.min(b), a.max(b)),
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Plot: the plot range is outside the domain of the x scaling".into(),
+        ));
+      }
+    },
+    None => (x_min, x_max),
+  };
+  scale_axis_options(&mut plot_opts, &scaling);
+  let (plot_range_x, plot_range_y) = (
+    scale_range(plot_range_x, scaling.0.as_ref()),
+    scale_range(plot_range_y, scaling.1.as_ref()),
+  );
 
   // When the range was infinite, substitute the compactifying map into the
   // function body so sampling the finite display coordinate covers the whole
@@ -13644,6 +13800,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
     plot_opts.plot_label_leaders = vec![true; bodies.len()];
   }
+
+  // The scaled plot is the plot of `sy[f[sx⁻¹[x]]]`.
+  let scaled_bodies: Vec<Expr>;
+  let bodies: Vec<&Expr> = if scaling.0.is_some() || scaling.1.is_some() {
+    scaled_bodies = bodies
+      .iter()
+      .map(|b| scaled_plot_body(b, &var_name, &scaling))
+      .collect();
+    scaled_bodies.iter().collect()
+  } else {
+    bodies
+  };
 
   // Adaptive sampling: start with initial points, then refine where needed
   // WL starts from `PlotPoints -> 50` when none is given.
@@ -13807,6 +13975,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_padding = (x_max - x_min) / 48.0;
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
+  let plot_range_x =
+    fill_range(plot_range_x, (x_min - x_padding, x_max + x_padding));
+  let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
   let (x_display_min, x_display_max) =
     plot_range_x.unwrap_or((x_min - x_padding, x_max + x_padding));
   let (y_display_min, y_display_max) =
@@ -13843,6 +14014,24 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  // Back from the scaled coordinates: a log axis is drawn by the native log
+  // axes, any other scaled axis keeps them and gets scaled ticks.
+  let (x_display_min, x_display_max) = finish_scaled_axis(
+    0,
+    scaling.0.as_ref(),
+    &mut plot_opts,
+    &mut all_points,
+    (x_display_min, x_display_max),
+    false,
+  );
+  let (y_display_min, y_display_max) = finish_scaled_axis(
+    1,
+    scaling.1.as_ref(),
+    &mut plot_opts,
+    &mut all_points,
+    (y_display_min, y_display_max),
+    false,
+  );
 
   // `PlotLayout -> "Row" | "Column" | …`: one panel per curve, all over
   // the same plot range.
@@ -13902,10 +14091,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
-  source.plot_range = Some((
-    plot_range_x.unwrap_or((x_min, x_max)),
-    plot_range_y.unwrap_or((y_data_min, y_data_max)),
-  ));
+  source.plot_range = plot_opts.unpadded_range;
+  source.log_x = plot_opts.log_x;
+  source.log_y = plot_opts.log_y;
   // `build_plot_source` only knows the single global `Filling` mode; a
   // per-series `Filling -> {i -> spec, …}` rule list is resolved here
   // instead, so `source.series[i].filling` (which `Part`/`First` reads to
@@ -13945,9 +14133,10 @@ pub fn log_linear_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   log_scale_plot_ast(args, true, false)
 }
 
-/// Common implementation for LogLogPlot, LogPlot, LogLinearPlot.
-/// `log_x`: whether x axis is logarithmic
-/// `log_y`: whether y axis is logarithmic
+/// LogLogPlot, LogPlot and LogLinearPlot are `Plot` with `ScalingFunctions`
+/// set to `"Log"` on their log axes, as in the Wolfram Language. The
+/// scaling goes right after the iterator, where it takes precedence over
+/// any later `ScalingFunctions` option.
 fn log_scale_plot_ast(
   args: &[Expr],
   log_x: bool,
@@ -13958,231 +14147,18 @@ fn log_scale_plot_ast(
       "Plot requires at least 2 arguments".into(),
     ));
   }
-
-  let body = &args[0];
-  let iter_spec = &args[1];
-
-  // Parse options; the shared helper covers everything the other function
-  // plotters accept (Frame, FrameLabel, Epilog, ImagePadding, …).
-  let mut plot_opts = PlotOptions::default();
-  let mut overrides = PlotRangeOverrides::default();
-  let mut legends_automatic = false;
-  let mut legends_expressions = false;
-  let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
-  plot_opts.simple_ticks = simple_ticks;
-  // A function plot samples just inside its domain: a mesh value taken at
-  // an endpoint is not marked.
-  plot_opts.mesh_open_ends = true;
-  for opt in &options {
-    if let Some((name, replacement)) =
-      crate::functions::graphics::option_name_value(opt)
-    {
-      let replacement = &*replacement;
-      // The shared reader takes explicit legend labels; `Automatic` and
-      // `"Expressions"` are filled in from the curves here.
-      if name == "PlotLegends" {
-        let (_, auto, expressions, _) = parse_plot_legends(replacement);
-        legends_automatic |= auto;
-        legends_expressions |= expressions;
-      }
-      apply_common_plot_option(
-        name,
-        replacement,
-        &mut plot_opts,
-        &mut overrides,
-      );
-    }
-  }
-  let plot_range_y = overrides.y;
-  if let Some(ar) = overrides.aspect_ratio {
-    plot_opts.aspect_ratio = Some(ar);
-  }
-  plot_opts.aspect_automatic = overrides.aspect_automatic;
-
-  // Parse iterator spec: {x, xmin, xmax}
-  let (var_name, x_min, x_max) = match iter_spec {
-    Expr::List(items) if items.len() == 3 => {
-      let var = match &items[0] {
-        Expr::Identifier(name) => name.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "Plot: iterator variable must be a symbol".into(),
-          ));
-        }
-      };
-      let x_min_expr = evaluate_expr_to_expr(&items[1])?;
-      let x_max_expr = evaluate_expr_to_expr(&items[2])?;
-      let x_min = try_eval_to_f64(&x_min_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Plot: cannot evaluate xmin to a number".into(),
-        )
-      })?;
-      let x_max = try_eval_to_f64(&x_max_expr).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Plot: cannot evaluate xmax to a number".into(),
-        )
-      })?;
-      (var, x_min, x_max)
-    }
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Plot: second argument must be {x, xmin, xmax}".into(),
-      ));
-    }
-  };
-
-  // For log x-axis, xmin and xmax must be positive
-  if log_x && (x_min <= 0.0 || x_max <= 0.0) {
-    return Err(InterpreterError::EvaluationError(
-      "LogLogPlot/LogLinearPlot: x range must be positive".into(),
-    ));
-  }
-
-  // A held generator such as `Table[f[i, x], {i, …}]` only takes list
-  // shape once evaluated; Wolfram plots one curve per element of the
-  // resulting list, so evaluate a non-list body (the plot variable stays
-  // symbolic) and use the list when there is one. Bodies that stay
-  // scalar keep their held form, so plain `Plot[f[x], …]` is unaffected.
-  let expanded_body = expand_generated_bodies(body, &var_name);
-
-  // Collect function bodies
-  let bodies: Vec<&Expr> = match expanded_body.as_ref().unwrap_or(body) {
-    Expr::List(items) => items.iter().collect(),
-    scalar => vec![scalar],
-  };
-
-  if (legends_automatic || legends_expressions)
-    && plot_opts.plot_legends.is_empty()
-  {
-    for b in &bodies {
-      plot_opts.plot_legends.push(if legends_expressions {
-        crate::functions::graphics::traditional_label(b)
-      } else {
-        expr_to_output(b)
-      });
-    }
-  }
-
-  let num_samples = plot_opts.plot_points.clamp(2, 2000);
-  let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
-
-  for func_body in &bodies {
-    let mut points = Vec::with_capacity(num_samples);
-    for i in 0..num_samples {
-      let t = i as f64 / (num_samples - 1) as f64;
-      // Sample x: log-spaced if log_x, linear otherwise
-      let x = if log_x {
-        let log_min = x_min.ln();
-        let log_max = x_max.ln();
-        (log_min + t * (log_max - log_min)).exp()
-      } else {
-        x_min + t * (x_max - x_min)
-      };
-      if let Some(y) = evaluate_at_point(func_body, &var_name, x) {
-        // Skip non-positive values on log axes (can't be plotted)
-        if (log_x && x <= 0.0) || (log_y && y <= 0.0) {
-          continue;
-        }
-        // Data stays in original space; LogCoord handles scaling
-        points.push((x, y));
-      }
-    }
-    all_points.push(points);
-  }
-
-  if all_points.len() == 1 {
-    plot_opts.plot_style =
-      collapse_style_for_single_series(&plot_opts.plot_style);
-  }
-
-  // Compute ranges
-  let finite_ys: Vec<f64> = all_points
-    .iter()
-    .flat_map(|pts| pts.iter())
-    .filter(|(_, y)| y.is_finite())
-    .map(|(_, y)| *y)
-    .collect();
-
-  if finite_ys.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
-  }
-
-  let finite_xs: Vec<f64> = all_points
-    .iter()
-    .flat_map(|pts| pts.iter())
-    .filter(|(x, _)| x.is_finite())
-    .map(|(x, _)| *x)
-    .collect();
-
-  let (x_min_display, x_max_display) = overrides.x.unwrap_or_else(|| {
-    let lo = finite_xs.iter().copied().fold(f64::INFINITY, f64::min);
-    let hi = finite_xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    if log_x {
-      let factor = ((hi / lo).ln() / 48.0).exp();
-      (lo / factor, hi * factor)
+  let axis = |log: bool| {
+    if log {
+      Expr::String("Log".to_string())
     } else {
-      let pad = (hi - lo) / 48.0;
-      (lo - pad, hi + pad)
+      Expr::Identifier("None".to_string())
     }
+  };
+  let mut scaled = args[..2].to_vec();
+  scaled.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ScalingFunctions".to_string())),
+    replacement: Box::new(Expr::List(vec![axis(log_x), axis(log_y)].into())),
   });
-  if overrides.x.is_none() {
-    plot_opts.axes_origin_low.0 = finite_xs.iter().copied().reduce(f64::min);
-  }
-  let y_data_min = finite_ys.iter().copied().fold(f64::INFINITY, f64::min);
-  let y_data_max = finite_ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-  let (y_data_min, y_data_max) = if log_y {
-    (y_data_min, y_data_max)
-  } else {
-    include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1)
-  };
-
-  // The same `PlotRangePadding` as `Plot` (1/48 of the x span and 1/18 of
-  // the y span on each side), taken in log space on a log axis.
-  let (y_auto_min, y_auto_max) = if log_y {
-    let factor = ((y_data_max / y_data_min).ln() / 18.0).exp();
-    (y_data_min / factor, y_data_max * factor)
-  } else {
-    let y_range = y_data_max - y_data_min;
-    let padding = if y_range.abs() < f64::EPSILON {
-      1.0
-    } else {
-      y_range / 18.0
-    };
-    (y_data_min - padding, y_data_max + padding)
-  };
-  let y_auto =
-    adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
-
-  let (y_display_min, y_display_max) = plot_range_y.unwrap_or(y_auto);
-  if plot_range_y.is_none() {
-    plot_opts.axes_origin_low.1 = Some(y_data_min);
-  }
-
-  plot_opts.log_x = log_x;
-  plot_opts.log_y = log_y;
-
-  let svg = generate_svg_with_filling(
-    &all_points,
-    (x_min_display, x_max_display),
-    (y_display_min, y_display_max),
-    &plot_opts,
-  )?;
-
-  // Keep the sampled curves so `Show` can merge this plot with others.
-  let mut source = build_plot_source(
-    &all_points,
-    &plot_opts.plot_style,
-    (x_min_display, x_max_display),
-    (y_display_min, y_display_max),
-    (plot_opts.svg_width, plot_opts.svg_height),
-    &[false],
-    plot_opts.filling,
-    plot_opts.filling_style,
-    explicit_options(args),
-  );
-  source.log_x = log_x;
-  source.log_y = log_y;
-  Ok(crate::graphics_result_with_source(svg, source))
+  scaled.extend_from_slice(&args[2..]);
+  plot_ast(&scaled)
 }

@@ -9,6 +9,7 @@ use crate::functions::plot::{
   generate_scatter_svg_with_options, generate_svg_with_filling,
   parse_image_size, parse_plot_style,
 };
+use crate::functions::plot_scaling::Scaling;
 use crate::functions::sound::audio_sample_rate;
 
 /// One parsed data point: coordinates plus asymmetric x/y uncertainties.
@@ -971,6 +972,8 @@ struct ParsedOptions {
   interpolation_order: Option<i128>,
   /// `DataRange -> All` / `{xmin, xmax}` (None for the Automatic default).
   data_range: Option<DataRangeSpec>,
+  /// `ScalingFunctions -> {sx, sy}` (the first one given).
+  scaling: Option<(Option<Scaling>, Option<Scaling>)>,
 }
 
 /// Parse common plot options from args[1..].
@@ -987,6 +990,11 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
     {
       let replacement = &*replacement;
       match name {
+        "ScalingFunctions" if out.scaling.is_none() => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          out.scaling = Scaling::parse_option(&value);
+        }
         "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -1292,36 +1300,19 @@ fn apply_plot_range_override(
   y_range: (f64, f64),
 ) -> ((f64, f64), (f64, f64)) {
   (
-    log_safe_range(parsed.plot_range_x, x_range, parsed.opts.log_x),
-    log_safe_range(parsed.plot_range_y, y_range, parsed.opts.log_y),
+    log_safe_range(parsed.plot_range_x, x_range),
+    log_safe_range(parsed.plot_range_y, y_range),
   )
 }
 
-/// An explicit `PlotRange` on a logarithmic axis cannot reach zero or below
-/// (`PlotRange -> {0, 1}` on a `ListLogPlot`); such a bound falls back to the
-/// automatically computed one, as the Wolfram Language does.
+/// An explicit `PlotRange` side, with the ends a scaled axis cannot reach
+/// (`PlotRange -> {0, 1}` on a log axis) left at the automatic ones, as
+/// the Wolfram Language does.
 fn log_safe_range(
   explicit: Option<(f64, f64)>,
   auto: (f64, f64),
-  log: bool,
 ) -> (f64, f64) {
-  let Some((lo, hi)) = explicit else {
-    return auto;
-  };
-  if !log {
-    return (lo, hi);
-  }
-  let lo = if lo > 0.0 || auto.0 <= 0.0 {
-    lo
-  } else {
-    auto.0
-  };
-  let hi = if hi > 0.0 || auto.1 <= 0.0 {
-    hi
-  } else {
-    auto.1
-  };
-  (lo, hi)
+  crate::functions::plot::fill_range(explicit, auto).unwrap_or(auto)
 }
 
 /// Subdivisions per data interval when sampling a smooth interpolated curve
@@ -1461,9 +1452,25 @@ fn list_axis_extent(
   max: f64,
   axis: ListAxis,
   from_zero: bool,
+  no_zero: bool,
 ) -> (f64, f64) {
   if !(min.is_finite() && max.is_finite()) {
     return (0.0, 1.0);
+  }
+  // A scaled axis without a place for 0 (log, reciprocal) is lowered by
+  // its padding twice instead: by `Scaled[0.05]` (x: `0.02`) of the data
+  // span, then by `Scaled[0.02]` of the result under the
+  // `{0.02, 0.05}` padding it then gets.
+  if no_zero {
+    if min == max {
+      return (min - 1.0, max);
+    }
+    let (first, second) = match axis {
+      ListAxis::X => (1.0 / 48.0, 1.0 / 48.0),
+      ListAxis::Y => (1.0 / 18.0, 2.0 / 93.0),
+    };
+    let lo = min - (max - min) * first;
+    return (lo - (max - lo) * second, max);
   }
   let (min, max) = if from_zero {
     (min.min(0.0), max.max(0.0))
@@ -1498,10 +1505,14 @@ fn list_axis_extent(
 /// on both ends of the x axis; on the y axis `Scaled[0.02]` at an end that is
 /// 0 and `Scaled[0.05]` elsewhere. `Scaled[s]` is that fraction of the
 /// *padded* span, so `{0, 3}` pads to `{-1/16, 3 + 1/16}`.
-fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
+fn pad_list_axis(
+  (lo, hi): (f64, f64),
+  axis: ListAxis,
+  no_zero: bool,
+) -> (f64, f64) {
   let span = hi - lo;
   let side = |v: f64| {
-    if axis == ListAxis::X || v == 0.0 {
+    if axis == ListAxis::X || v == 0.0 || (no_zero && v == lo) {
       0.02
     } else {
       0.05
@@ -1521,11 +1532,12 @@ fn list_plot_ranges(
   all_series: &[Vec<(f64, f64)>],
   implicit_x: bool,
   request: RangeRequest,
+  scaling: &(Option<Scaling>, Option<Scaling>),
   opts: &mut PlotOptions,
 ) -> ((f64, f64), (f64, f64)) {
   let (explicit_x, explicit_y) = request.explicit;
   // The points' extent, outliers clipped off an axis whose range is
-  // automatic (WL does not on a logarithmic one, which never gets here).
+  // automatic (WL does not on a logarithmic one).
   // A numeric `AxesOrigin` is part of the range, but not of the
   // distribution the outliers are told apart by.
   let bounds = |pick: fn(&(f64, f64)) -> f64, keep_outliers: bool, origin| {
@@ -1542,12 +1554,17 @@ fn list_plot_ranges(
       _ => (lo, hi),
     }
   };
+  // A scaled axis without a place for 0 (log, reciprocal) keeps its
+  // outliers, as WL's log list plots do.
+  let no_zero =
+    |s: &Option<Scaling>| s.as_ref().is_some_and(|s| s.zero().is_none());
+  let (nx, ny) = (no_zero(&scaling.0), no_zero(&scaling.1));
   let (x_min, x_max) =
-    bounds(|p| p.0, request.keep_outliers.0, opts.axes_origin.0);
+    bounds(|p| p.0, request.keep_outliers.0 || nx, opts.axes_origin.0);
   let (y_min, y_max) =
-    bounds(|p| p.1, request.keep_outliers.1, opts.axes_origin.1);
-  let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x);
-  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false);
+    bounds(|p| p.1, request.keep_outliers.1 || ny, opts.axes_origin.1);
+  let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x && !nx, nx);
+  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny);
   if !explicit_x {
     opts.axes_origin_low.0 = Some(x.0);
   }
@@ -1555,8 +1572,10 @@ fn list_plot_ranges(
     opts.axes_origin_low.1 = Some(y.0);
   }
   opts.grid_interior = (!explicit_x && !explicit_y).then_some((x, y));
-  let (x, y_padded) =
-    (pad_list_axis(x, ListAxis::X), pad_list_axis(y, ListAxis::Y));
+  let (x, y_padded) = (
+    pad_list_axis(x, ListAxis::X, nx),
+    pad_list_axis(y, ListAxis::Y, ny),
+  );
   // The range does not reach out to a filling's level: `Filling -> Axis`
   // fills to wherever the horizontal axis crosses, which is not 0 when the
   // range leaves 0 out.
@@ -1711,6 +1730,7 @@ fn render_panel_layout(
       range_series,
       implicit_x,
       parsed.explicit_range(),
+      &(None, None),
       &mut base,
     )
   };
@@ -2001,6 +2021,90 @@ fn apply_dataset_labels(
 }
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
+/// Put the data and the coordinate options of a list plot into the scaled
+/// coordinates of its `ScalingFunctions`; points outside a scaling's domain
+/// are dropped.
+fn scale_list_data(
+  scaling: &(Option<Scaling>, Option<Scaling>),
+  draw_series: &mut [Vec<(f64, f64)>],
+  range_series: &mut [Vec<(f64, f64)>],
+  parsed: &mut ParsedOptions,
+) {
+  if scaling.0.is_none() && scaling.1.is_none() {
+    return;
+  }
+  let map = |series: &mut [Vec<(f64, f64)>]| {
+    for s in series.iter_mut() {
+      *s = s
+        .iter()
+        .filter_map(|&(x, y)| {
+          let x = match &scaling.0 {
+            Some(sx) => sx.forward(x)?,
+            None => x,
+          };
+          let y = match &scaling.1 {
+            Some(sy) => sy.forward(y)?,
+            None => y,
+          };
+          Some((x, y))
+        })
+        .collect();
+    }
+  };
+  map(draw_series);
+  map(range_series);
+  parsed.plot_range_x = crate::functions::plot::scale_range(
+    parsed.plot_range_x,
+    scaling.0.as_ref(),
+  );
+  parsed.plot_range_y = crate::functions::plot::scale_range(
+    parsed.plot_range_y,
+    scaling.1.as_ref(),
+  );
+  crate::functions::plot::scale_axis_options(&mut parsed.opts, scaling);
+}
+
+/// Finish the scaled axes of a list plot (see
+/// [`crate::functions::plot::finish_scaled_axis`]). The other axis crosses a
+/// log axis where its automatic range starts, inside the padding.
+fn finish_list_scaling(
+  scaling: &(Option<Scaling>, Option<Scaling>),
+  opts: &mut PlotOptions,
+  series: &mut [Vec<(f64, f64)>],
+  (x_range, y_range): ((f64, f64), (f64, f64)),
+) -> ((f64, f64), (f64, f64)) {
+  if scaling.0.is_none() && scaling.1.is_none() {
+    return (x_range, y_range);
+  }
+  let low = opts.axes_origin_low;
+  let x = crate::functions::plot::finish_scaled_axis(
+    0,
+    scaling.0.as_ref(),
+    opts,
+    series,
+    x_range,
+    true,
+  );
+  let y = crate::functions::plot::finish_scaled_axis(
+    1,
+    scaling.1.as_ref(),
+    opts,
+    series,
+    y_range,
+    true,
+  );
+  if opts.log_x {
+    opts.axes_origin_low.0 = low.0.map(f64::exp);
+  }
+  if opts.log_y {
+    opts.axes_origin_low.1 = low.1.map(f64::exp);
+  }
+  if opts.log_x || opts.log_y {
+    opts.grid_interior = None;
+  }
+  (x, y)
+}
+
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
@@ -2079,13 +2183,23 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
+  let scaling = parsed.scaling.clone().unwrap_or((None, None));
+  let mut draw_series = draw_series;
+  scale_list_data(&scaling, &mut draw_series, &mut range_series, &mut parsed);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,
     parsed.explicit_range(),
+    &scaling,
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let (x_range, y_range) = finish_list_scaling(
+    &scaling,
+    &mut parsed.opts,
+    &mut draw_series,
+    (x_range, y_range),
+  );
   let joined = parsed.joined;
   let mut parsed = parsed;
   if draw_series.len() == 1 {
@@ -2131,6 +2245,8 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = opts.grid_interior;
+  source.log_x = opts.log_x;
+  source.log_y = opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &opts.plot_markers,
@@ -2279,13 +2395,23 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
+  let scaling = parsed.scaling.clone().unwrap_or((None, None));
+  let mut draw_series = draw_series;
+  scale_list_data(&scaling, &mut draw_series, &mut range_series, &mut parsed);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,
     parsed.explicit_range(),
+    &scaling,
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let (x_range, y_range) = finish_list_scaling(
+    &scaling,
+    &mut parsed.opts,
+    &mut draw_series,
+    (x_range, y_range),
+  );
 
   // A single curve takes a `PlotStyle` list as one combined style, as
   // `ListPlot` and `Plot` do: `{Thick, Orange}` is one thick orange line.
@@ -2312,6 +2438,8 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = parsed.opts.grid_interior;
+  source.log_x = parsed.opts.log_x;
+  source.log_y = parsed.opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &parsed.opts.plot_markers,
@@ -2356,6 +2484,7 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &cumulative,
     false,
     parsed.explicit_range(),
+    &(None, None),
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -2390,6 +2519,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &step_series,
     false,
     parsed.explicit_range(),
+    &(None, None),
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -2398,175 +2528,60 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// Wrap a log-scaled list plot's SVG together with its series, so `Show`
-/// can merge it with other graphics (an `Epilog`, a second plot) and keep
-/// the logarithmic axes instead of treating it as an opaque rendering.
-fn log_plot_result(
-  svg: String,
-  series: &[Vec<(f64, f64)>],
-  ranges: ((f64, f64), (f64, f64)),
-  parsed: &ParsedOptions,
-  args: &[Expr],
-) -> Expr {
-  let opts = &parsed.opts;
-  let mut source = build_plot_source(
-    series,
-    &opts.plot_style,
-    ranges.0,
-    ranges.1,
-    (opts.svg_width, opts.svg_height),
-    &[!parsed.joined],
-    opts.filling,
-    opts.filling_style,
-    crate::functions::plot::explicit_options(args),
-  );
-  source.plot_range = opts.grid_interior;
-  source.log_x = opts.log_x;
-  source.log_y = opts.log_y;
-  crate::functions::plot::apply_markers_to_source(
-    &mut source,
-    &opts.plot_markers,
-  );
-  crate::graphics_result_with_source(svg, source)
-}
-
-/// Draw the series of a log list plot as points unless `Joined -> True`
-/// asked for lines — `ListLogPlot` and its siblings scatter by default, as
-/// `ListPlot` does, with the same automatic dot size.
-fn points_unless_joined(
-  parsed: &mut ParsedOptions,
-  series: &[Vec<(f64, f64)>],
-) {
-  if !parsed.joined && parsed.opts.joined_per_series.is_none() {
-    parsed.opts.joined_per_series = Some(vec![false]);
-  }
-  parsed.opts.default_point_size = Some(list_plot_point_size(series));
-}
-
-/// ListLogPlot: y-axis is log10 scale
+/// `ListLogPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_y = true;
-
-  // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::Identifier("None".to_string()),
+      Expr::String("Log".to_string()),
+    ),
+  )
 }
 
-/// ListLogLogPlot: both axes log10 scale
+/// `ListLogLogPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_x = true;
-  parsed.opts.log_y = true;
-
-  // Filter non-positive values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| {
-      series
-        .iter()
-        .filter(|&&(x, y)| x > 0.0 && y > 0.0)
-        .copied()
-        .collect()
-    })
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::String("Log".to_string()),
+      Expr::String("Log".to_string()),
+    ),
+  )
 }
 
-/// ListLogLinearPlot: x-axis is log10 scale
+/// `ListLogLinearPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_x = true;
-
-  // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::String("Log".to_string()),
+      Expr::Identifier("None".to_string()),
+    ),
+  )
+}
+
+/// `ListPlot` with the `ScalingFunctions -> {x, y}` of a log list plot,
+/// ahead of any `ScalingFunctions` the call gives.
+fn log_scaled_list_plot(
+  args: &[Expr],
+  (x, y): (Expr, Expr),
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return list_plot_ast(args);
+  }
+  let mut scaled = vec![args[0].clone()];
+  scaled.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ScalingFunctions".to_string())),
+    replacement: Box::new(Expr::List(vec![x, y].into())),
+  });
+  scaled.extend_from_slice(&args[1..]);
+  list_plot_ast(&scaled)
 }
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates

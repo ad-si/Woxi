@@ -105,6 +105,7 @@ pub mod plot_epilog;
 pub mod plot_layout;
 pub mod plot_mesh;
 pub mod plot_padding;
+pub mod plot_scaling;
 pub mod polygon_boolean;
 pub mod polygon_holes;
 pub mod polyhedron_data;

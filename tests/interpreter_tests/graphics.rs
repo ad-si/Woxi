@@ -14055,7 +14055,7 @@ mod plot3d {
       );
       assert!(shown.contains("epilog"), "the epilog must be drawn");
       assert!(
-        shown.contains(">10<tspan baseline-shift=\"super\""),
+        shown.contains(">0.010</text>") && shown.contains(">100</text>"),
         "log y decades must stay labelled after Show"
       );
       assert!(!plain.contains("epilog"));
@@ -14086,11 +14086,12 @@ mod plot3d {
       let x = export_svg(
         "ListLogLogPlot[{{10, 10}, {1000, 1000}}, Frame -> True, Axes -> False]",
       );
-      assert!(x.matches("baseline-shift=\"super\"").count() >= 4);
+      // Two decades: WL labels 10, 50, 100, 500, 1000 on both edges.
+      assert_eq!(x.matches(">500</text>").count(), 2);
       let xonly = export_svg(
         "ListLogLinearPlot[{{10, 1}, {1000, 5}}, Frame -> True, Axes -> False]",
       );
-      assert!(xonly.contains("baseline-shift=\"super\""));
+      assert!(xonly.contains(">50</text>") && xonly.contains(">1000</text>"));
     }
 
     #[test]
@@ -27873,8 +27874,9 @@ mod log_log_plot {
   #[test]
   fn decade_bounds_are_labelled() {
     let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
-    // Bottom-edge labels: 10^-1, 1, 10 (the left edge has its own). They
-    // are the centred labels of the lowest row.
+    // Bottom-edge labels: 0.1, 0.5, 1, 5, 10, as `Charting`ScaledTicks`
+    // places them (the left edge has its own). They are the centred labels
+    // of the lowest row.
     let ys: Vec<f64> = svg
       .lines()
       .filter(|l| l.contains("text-anchor=\"middle\""))
@@ -27882,7 +27884,7 @@ mod log_log_plot {
       .collect();
     let lowest = ys.iter().copied().fold(f64::MIN, f64::max);
     let bottom = ys.iter().filter(|y| (**y - lowest).abs() < 0.5).count();
-    assert_eq!(bottom, 3, "{svg}");
+    assert_eq!(bottom, 5, "{svg}");
   }
 }
 
@@ -45623,14 +45625,15 @@ mod show_array_plot_sizing {
   #[test]
   fn log_plot_nonpositive_plot_range_bound_keeps_decade_labels() {
     // A zero lower PlotRange bound cannot exist on a log axis; it falls back
-    // to the automatic bound instead of dropping every y tick label.
+    // to the automatic bound instead of dropping every y tick label (WL
+    // labels 0.005 … 1 here).
     for opts in ["PlotRange -> {{1, 4}, {0, 1}}", "PlotRange -> {0, 1}"] {
       let svg = interpret(&format!(
         "ExportString[ListLogPlot[{{1, 0.1, 0.01, 0.001}}, Joined -> True, \
          Frame -> True, {opts}], \"SVG\"]"
       ))
       .unwrap();
-      assert!(svg.contains("baseline-shift=\"super\""), "Got: {svg}");
+      assert!(svg.contains(">0.010</text>"), "Got: {svg}");
     }
   }
 }
