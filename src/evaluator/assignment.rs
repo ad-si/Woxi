@@ -3715,8 +3715,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         e.borrow_mut_own_value(var_name)
           .insert(var_name.clone(), StoredValue::ExprVal(stored))
       });
+      // A value that mentions the symbol it is assigned to is out of date
+      // the moment the assignment lands, so it is not stamped: reading
+      // `x = f[x]` re-evaluates `f[x]` and recurses until $RecursionLimit,
+      // as in wolframscript.
       if let Expr::FunctionCall { args: items, .. } | Expr::List(items) =
         &rhs_value
+        && (crate::evaluator::core_eval::is_shared_inert_list(items)
+          || !crate::syntax::mentions_symbol(&rhs_value, var_name))
       {
         items.mark_evaluated(crate::epoch::current_epoch());
       }

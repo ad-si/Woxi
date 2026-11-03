@@ -1516,6 +1516,17 @@ pub(crate) fn contains_inexact(expr: &Expr) -> bool {
     || expr_children(expr).into_iter().any(contains_inexact)
 }
 
+/// Whether the symbol `name` occurs anywhere in `expr`, heads included.
+pub(crate) fn mentions_symbol(expr: &Expr, name: &str) -> bool {
+  match expr {
+    Expr::Identifier(n) => n == name,
+    Expr::FunctionCall { name: head, .. } if head == name => true,
+    _ => expr_children(expr)
+      .into_iter()
+      .any(|child| mentions_symbol(child, name)),
+  }
+}
+
 /// Rebuild an expression with `f` applied to each direct child, for every
 /// node kind [`expr_children`] lists children of; atoms are returned as-is.
 pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {

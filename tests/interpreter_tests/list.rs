@@ -25094,8 +25094,12 @@ mod shared_own_value_lists {
 
   #[test]
   fn self_append_assignment_leaves_other_targets_alone() {
-    // Not a list yet: `Append` reports its own error.
-    assert_eq!(interpret("ys = Append[ys, 1]; Head[ys]").unwrap(), "Append");
+    // Not a list yet: `Append` reports its own error and `ys` is left holding
+    // `Append[ys, 1]`, which re-reads `ys` without end on the next lookup.
+    assert_eq!(
+      interpret("ys = Append[ys, 1]; Head[ys]").unwrap(),
+      "TerminatedEvaluation[RecursionLimit]"
+    );
     // Appending a different symbol is an ordinary assignment.
     assert_eq!(
       interpret("a = {1}; b = {2}; a = Append[b, 3]; {a, b}").unwrap(),

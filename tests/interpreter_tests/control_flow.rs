@@ -4904,6 +4904,40 @@ mod recursion_limit {
     );
   }
 
+  // A symbol whose value leads back to itself is re-read until the limit, as
+  // in wolframscript — whether the value is a call, a sum, a list or a
+  // delayed value. It used to be read once and returned as stored.
+  #[test]
+  fn self_referencing_own_values_hit_the_recursion_limit() {
+    for code in [
+      "x = x + 1; Head[x]",
+      "x = f[x]; x",
+      "z = {z}; Length[z]",
+      "s = {a, s}; s",
+      "y := y + 1; y",
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(code).unwrap(),
+        "TerminatedEvaluation[RecursionLimit]",
+        "{code}"
+      );
+    }
+  }
+
+  // A delayed value written as several statements runs them on every read,
+  // so a self-reference that ends terminates normally.
+  #[test]
+  fn a_delayed_compound_value_reruns_on_each_read() {
+    clear_state();
+    assert_eq!(
+      interpret("n = 0; x := (n++; If[n < 3, x, n]); x").unwrap(),
+      "3"
+    );
+    clear_state();
+    assert_eq!(interpret("x = 5; x = x + 1; x").unwrap(), "6");
+  }
+
   // A recursion that branches used to cost an unbounded number of
   // evaluations once capped, because each sibling restarted below the
   // limit. Terminating the evaluation makes it finish immediately.

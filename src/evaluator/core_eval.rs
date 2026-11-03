@@ -39,12 +39,6 @@ fn evaluated_call_target(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 thread_local! {
-  /// Symbols currently being looked up — prevents infinite recursion when
-  /// a stored OwnValue references the same symbol (e.g. `s = {a, s}`).
-  static SYMBOLS_BEING_EVALUATED:
-    std::cell::RefCell<std::collections::HashSet<String>> =
-      std::cell::RefCell::new(std::collections::HashSet::new());
-
   /// The enclosing abort handlers, innermost last: `true` for an
   /// `AbortProtect` (which defers an `Abort[]`), `false` for a `CheckAbort`
   /// (which catches it).
@@ -155,10 +149,6 @@ fn abort_deferred() -> bool {
   ABORT_HANDLERS.with(|h| h.borrow().last() == Some(&true))
 }
 
-/// Does `expr` mention any Identifier (other than `self_name`) whose
-/// current stored OwnValue might produce a different result on
-/// re-evaluation? Used to skip wasteful re-evaluation of stored values
-/// that are already at fixpoint.
 /// Compare two operands as exact integers when both are `Integer` /
 /// `BigInteger`. f64 conversion silently rounds 1-ULP differences to
 /// a tie above ~2^53, so `2^60 < 2^60 + 1` would otherwise return
@@ -518,10 +508,16 @@ fn self_append_as_append_to(lhs: &Expr, rhs: &Expr) -> Option<Expr> {
   holds_list.then(|| call(in_place, args.to_vec()))
 }
 
+/// Might re-evaluating `expr`, the stored value of `self_name`, give a
+/// different result? A value that mentions only unbound symbols is already
+/// at its fixed point and is returned as is; one that mentions a bound
+/// symbol (`self_name` included) or is a call is evaluated again.
 pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
+    // The symbol itself counts too: `z = {z}` re-reads `z` without end, and
+    // wolframscript stops it at $RecursionLimit.
     Expr::Identifier(n) => {
-      n != self_name && ENV.with(|e| e.borrow().contains_key(n))
+      n == self_name || ENV.with(|e| e.borrow().contains_key(n))
     }
     Expr::List(items) => {
       !(items.is_shared() && is_inert_list(items))
@@ -557,6 +553,8 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // `line := lines[[i]]` reads the part afresh each time, like a call.
     Expr::Part { .. } => true,
     Expr::Comparison { .. } => true,
+    // `x := (n++; If[n < 3, x, n])` runs its statements on every read.
+    Expr::CompoundExpr(_) => true,
     // Operator forms (`x := f /@ list`, `x := expr /. rules`) are calls too.
     Expr::Map { .. }
     | Expr::Apply { .. }
@@ -1633,16 +1631,10 @@ fn evaluate_expr_to_expr_uncached(
             if !needs_reevaluation(&e, name) {
               return Ok(e);
             }
-            let already =
-              SYMBOLS_BEING_EVALUATED.with(|s| s.borrow().contains(name));
-            if already {
-              return Ok(e);
-            }
-            SYMBOLS_BEING_EVALUATED
-              .with(|s| s.borrow_mut().insert(name.clone()));
-            let result = evaluate_expr_to_expr(&e);
-            SYMBOLS_BEING_EVALUATED.with(|s| s.borrow_mut().remove(name));
-            result
+            // A value that leads back to the symbol itself (`x = x + 1`
+            // with `x` unbound, `z = {z}`) recurses until $RecursionLimit
+            // terminates the evaluation, as in wolframscript.
+            evaluate_expr_to_expr(&e)
           }
           StoredValue::Raw(val) => {
             // Parse the stored value back to Expr. If the parsed result is
@@ -1656,16 +1648,10 @@ fn evaluate_expr_to_expr_uncached(
             if !needs_reevaluation(&parsed, name) {
               return Ok(parsed);
             }
-            let already =
-              SYMBOLS_BEING_EVALUATED.with(|s| s.borrow().contains(name));
-            if already {
-              return Ok(parsed);
-            }
-            SYMBOLS_BEING_EVALUATED
-              .with(|s| s.borrow_mut().insert(name.clone()));
-            let result = evaluate_expr_to_expr(&parsed);
-            SYMBOLS_BEING_EVALUATED.with(|s| s.borrow_mut().remove(name));
-            result
+            // A value that leads back to the symbol itself (`x = x + 1`
+            // with `x` unbound, `z = {z}`) recurses until $RecursionLimit
+            // terminates the evaluation, as in wolframscript.
+            evaluate_expr_to_expr(&parsed)
           }
           StoredValue::Association(items) => {
             // Convert stored association back to Expr::Association

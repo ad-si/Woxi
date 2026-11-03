@@ -3465,6 +3465,23 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### Endless rewrites stop at `$RecursionLimit`, not `$IterationLimit`
+
+```sh
+wolframscript -code 'a := b; b := a; a'           # $IterationLimit::itlim … TerminatedEvaluation[IterationLimit]
+woxi eval 'a := b; b := a; a'                     # $RecursionLimit::reclim … TerminatedEvaluation[RecursionLimit]
+wolframscript -code 'f[x_] := f[x + 1]; f[1]'     # $IterationLimit::itlim (4096 rewrites)
+woxi eval 'f[x_] := f[x + 1]; f[1]'               # $RecursionLimit::reclim
+```
+
+WL counts an expression rewritten into a new one in place (a symbol
+whose value is another symbol, a call whose rule returns another call
+at the top) against `$IterationLimit`; only a rewrite nested inside a
+subexpression (`x = x + 1`, `z = {z}`) goes against `$RecursionLimit`.
+Woxi has only the recursion limit in general (`$IterationLimit` is honoured
+for a few rules that rewrite to themselves), so both kinds end with
+`RecursionLimit`.
+
 ### SameQ of reals nested more than 256 levels deep
 
 ```sh
