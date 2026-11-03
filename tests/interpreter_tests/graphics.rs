@@ -25166,7 +25166,8 @@ mod grid_rasterize {
     .unwrap()
     .graphics
     .expect("grid of framed panes should draw");
-    assert!(svg.contains("width=\"112\" height=\"72\""), "{svg}");
+    // WL's framed box puts the content 5 points inside its edge.
+    assert!(svg.contains("width=\"110\" height=\"70\""), "{svg}");
     assert!(!svg.contains("stroke=\"rgb(190,190,190)\""), "{svg}");
   }
 
@@ -42382,8 +42383,13 @@ fn pane_pads_small_content_to_its_fixed_box() {
   assert!(centred.contains("translate(150.0 120.0)"), "{centred}");
   let default =
     export_svg("Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}]");
-  // Without an `Alignment` the content keeps its natural canvas.
-  assert!(!default.contains("<svg width=\"400\""), "{default}");
+  // Without an `Alignment` the content sits in the top-left corner of the
+  // whole box (WL: `Pane[…, {400, 300}]` is always 400 x 300).
+  assert!(
+    default.contains("<svg width=\"400\" height=\"300\""),
+    "{default}"
+  );
+  assert!(default.contains("translate(0.0 0.0)"), "{default}");
   let right = export_svg(
     "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
      Alignment -> {Right, Bottom}]",

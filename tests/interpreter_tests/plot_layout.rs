@@ -364,6 +364,53 @@ mod sampling {
   }
 }
 
+// `ImageSize -> Full | Scaled[s]` sizes a plot from the `Pane` holding it,
+// and `Framed` draws WL's square black frame 5 points around it.
+mod pane_relative_size {
+  use super::*;
+
+  /// The `width`/`height` of the first nested `<svg>` (the framed content).
+  fn nested_size(svg: &str) -> (f64, f64) {
+    let rest = &svg[svg.find('>').unwrap()..];
+    svg_size(&rest[rest.find("<svg").unwrap()..])
+  }
+
+  #[test]
+  fn scaled_takes_that_fraction_of_the_pane_width() {
+    let svg = svg_of(
+      "Pane[Plot[Sin[x], {x, 0, 10}, ImageSize -> Scaled[0.5]], {200, 100}]",
+    );
+    // The pane is the whole box; the plot is half its width, its height
+    // following the aspect ratio (WL: 100 x 52.9), in the top-left corner.
+    assert_eq!(svg_size(&svg), (200.0, 100.0));
+    assert!(svg.contains("translate(0.0 0.0)"), "{svg}");
+    let (w, h) = nested_size(&svg);
+    assert_eq!(w, 100.0);
+    assert!((50.0..56.0).contains(&h), "{h}");
+  }
+
+  #[test]
+  fn full_fills_the_pane() {
+    let svg =
+      svg_of("Pane[Plot[Sin[x], {x, 0, 10}, ImageSize -> Full], {200, 100}]");
+    assert_eq!(svg_size(&svg), (200.0, 100.0));
+    let (w, h) = curve_extent(&svg);
+    // The curve spans (nearly) the whole pane, its aspect ratio dropped.
+    assert!(w > 1300.0 && h > 650.0, "{w} x {h}");
+  }
+
+  #[test]
+  fn framed_is_a_square_black_frame_5_points_out() {
+    let svg = svg_of("Framed[Graphics[Disk[], ImageSize -> 50]]");
+    assert_eq!(svg_size(&svg), (60.0, 60.0));
+    assert!(svg.contains("rx=\"0.0\""), "{svg}");
+    assert!(svg.contains("stroke=\"black\""), "{svg}");
+    // A Panel keeps its rounded light-gray box.
+    let panel = svg_of("Panel[Graphics[Disk[], ImageSize -> 50]]");
+    assert!(!panel.contains("stroke=\"black\""), "{panel}");
+  }
+}
+
 // `PlotLayout`: one framed panel per curve, all in the first palette color
 // over one shared plot range, ticks only along the outer edges (WL 15).
 mod panel_layout {

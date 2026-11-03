@@ -4059,19 +4059,18 @@ mod tests {
       );
     }
 
-    /// Content that already fits inside the declared box is left alone —
-    /// a `Pane` around a small picture keeps its natural (smaller) canvas
-    /// rather than being padded out to the declared size.
+    /// Content that already fits inside the declared box still takes up the
+    /// whole box, as in WL (`Rasterize` of this is 500 x 500).
     #[test]
-    fn a_pane_with_content_that_already_fits_is_not_padded_out() {
+    fn a_pane_with_content_that_already_fits_takes_the_whole_box() {
       let result = woxi::interpret_with_stdout(
         r#"Pane[Column[{Panel[Text[Style[1, 20]]]}], {500, 500}]"#,
       )
       .expect("interpret should succeed");
       let svg = result.graphics.expect("the column is a graphic");
       assert!(
-        !svg.starts_with("<svg width=\"500\" height=\"500\""),
-        "small content keeps its natural canvas, unpadded: {svg}"
+        svg.starts_with("<svg width=\"500\" height=\"500\""),
+        "small content is placed in the whole box: {svg}"
       );
     }
   }

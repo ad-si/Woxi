@@ -7669,10 +7669,9 @@ Found comparing the graphics-tests renders (2026-11):
   grid's margins (top margin 11 over one row, 2 over a column) are fitted
   to the comparisons rather than decoded. An `ImageSize` scales WL's whole
   layout (gaps and fonts grow); Woxi keeps 5 pt gaps.
-- `Plot[…, ImageSize -> Full | Scaled[s]]` inside `Pane[…, {w, h}]` does
-  not size the plot from the pane (wolframscript fills the pane width /
-  takes the fraction of it), and `Framed` draws its rounded gray frame
-  instead of wolframscript's square black one.
+- `Plot[…, ImageSize -> Scaled[s]]` inside a `Pane` is drawn at that
+  width with Woxi's usual small-plot layout: its tick labels crowd, where
+  WL keeps the full-size fonts and leaves out the minor ticks.
 - `PlotLegends -> BarLegend[…]` with a `ColorFunction` draws no legend.
 - `HankelH1[1, x]` (and the other Hankel functions) stay unevaluated for
   negative real `x`, so `ReImPlot[HankelH1[1, x], {x, -10, 10}]` leaves

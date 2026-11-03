@@ -25926,11 +25926,18 @@ fn framed_box_to_svg(
     frame_style_opt,
     Some(Expr::Identifier(n)) if n == "None"
   );
+  // `Framed` draws a square black frame; a `Panel` is the light-gray
+  // rounded box.
+  let is_panel = default_background.is_some();
   let (frame_color, stroke_width) = crate::functions::plot::style_stroke(
     frame_style_opt
       .and_then(crate::functions::plot::parse_style_directives)
       .as_ref(),
-    theme().framed_border,
+    if is_panel {
+      theme().framed_border
+    } else {
+      theme().stroke_default
+    },
     1.0,
     1.0,
   );
@@ -25950,9 +25957,15 @@ fn framed_box_to_svg(
       .find(|(k, _)| *k == key)
       .and_then(|(_, v)| expr_to_f64(v))
   };
-  // `FrameMargins -> m` pads every side by `m` points.
-  let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
-  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(3.0);
+  // `FrameMargins -> m` pads every side by `m` points (WL's automatic
+  // margins put the content 5 points inside a framed box's edge).
+  let margin: f64 =
+    numeric_option("FrameMargins").unwrap_or(if is_panel { 6.0 } else { 5.0 });
+  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(if is_panel {
+    3.0
+  } else {
+    0.0
+  });
 
   // Check if content is itself a Framed (nested) or already a Graphics
   let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
@@ -26093,9 +26106,11 @@ fn framed_box_to_svg(
     let content = &unwrap_display_wrappers(content);
     let (content_w, content_h) = pane_size.unwrap_or_else(|| {
       let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
+      // A framed line of text is one line height (1.2 em) tall in WL.
+      let line_h = if is_panel { font_size } else { font_size * 1.2 };
       (
         estimate_display_width(content) * char_width,
-        font_size + frac_extra,
+        line_h + frac_extra,
       )
     });
 
@@ -26634,13 +26649,77 @@ pub(crate) fn pane_picture_is_auto_sized(content: &Expr) -> bool {
   }
 }
 
+/// A plot sized relative to its container — `ImageSize -> Full` or
+/// `Scaled[s]` — redrawn for a `Pane[…, {width, height}]`: `Full` fills
+/// the box, `Scaled[s]` (or `Scaled[{sx, sy}]`) takes that fraction of its
+/// width (and height). `None` for anything else.
+pub(crate) fn size_plot_to_pane(
+  content: &Expr,
+  width: f64,
+  height: f64,
+) -> Option<Expr> {
+  let Expr::Graphics {
+    source: Some(source),
+    ..
+  } = content
+  else {
+    return None;
+  };
+  let size = source.options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  let mut options = Vec::new();
+  match size {
+    Expr::Identifier(n) if n == "Full" => {
+      options.push(rule(
+        "ImageSize",
+        Expr::List(vec![Expr::Real(width), Expr::Real(height)].into()),
+      ));
+      options.push(rule("AspectRatio", Expr::Identifier("Full".into())));
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::List(s) if s.len() == 2 => {
+          let (sx, sy) = (expr_to_f64(&s[0])?, expr_to_f64(&s[1])?);
+          options.push(rule(
+            "ImageSize",
+            Expr::List(
+              vec![Expr::Real(sx * width), Expr::Real(sy * height)].into(),
+            ),
+          ));
+          options.push(rule("AspectRatio", Expr::Identifier("Full".into())));
+        }
+        s => {
+          let s = expr_to_f64(s)?;
+          options.push(rule("ImageSize", Expr::Real(s * width)));
+        }
+      }
+    }
+    _ => return None,
+  }
+  let mut args = vec![content.clone()];
+  args.extend(options);
+  show_ast(&args).ok()
+}
+
 /// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
 /// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
 /// content — with no scrollbar in a static export, content past the
 /// declared edges is silently cut off rather than left to spill past them.
-/// Content that already fits inside `width`x`height` is returned
-/// unchanged, so a `Pane` around a small picture keeps its natural
-/// (smaller) canvas rather than being padded out to the declared size.
+/// Content that already fits inside `width`x`height` is placed in the box by
+/// the Pane's alignment.
 pub(crate) fn clip_svg_to_pane_box(
   svg: &str,
   width: f64,
@@ -26651,11 +26730,10 @@ pub(crate) fn clip_svg_to_pane_box(
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
-    // Content that fits keeps its natural canvas, unless the Pane states
-    // an `Alignment`: then it sits where that puts it in the whole box.
-    let Some(align) = align else {
-      return svg.to_string();
-    };
+    // Content that fits still takes up the whole box, placed where the
+    // Pane's `Alignment` puts it (top left by default), as in WL:
+    // `Pane[Graphics[…, ImageSize -> 50], {200, 100}]` is 200 x 100.
+    let align = align.unwrap_or((0.0, 0.0));
     if natural_w == width && natural_h == height {
       return svg.to_string();
     }

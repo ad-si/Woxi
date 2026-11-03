@@ -4738,6 +4738,12 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // A plot with `ImageSize -> Full | Scaled[s]` sizes itself from the box.
+  let expr = pane_box
+    .and_then(|(w, h, _, _)| {
+      functions::graphics::size_plot_to_pane(&expr, w, h)
+    })
+    .unwrap_or(expr);
   // `TraditionalForm[Column[…]]` is a layout whose items are each typeset
   // in traditional notation, not one expression to print.
   let expr = push_traditional_form_into_layout(expr);

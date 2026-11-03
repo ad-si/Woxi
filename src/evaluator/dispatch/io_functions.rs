@@ -6726,6 +6726,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // A plot with `ImageSize -> Full | Scaled[s]` sizes itself from the
+      // pane.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            crate::functions::graphics::size_plot_to_pane(
+              &args[0],
+              pane_size_component(&size[0])?,
+              pane_size_component(&size[1])?,
+            )
+          }
+          _ => None,
+        });
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => {
