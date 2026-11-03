@@ -14947,6 +14947,38 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     ]);
   }
 
+  // (1/b)^(p/q) → b^(-p/q) for a positive numeric b: `Sqrt[1/(5 - Sqrt[5])]`
+  // is `1/Sqrt[5 - Sqrt[5]]` (a symbolic b stays: `Sqrt[1/(1 + x)]`).
+  if let Expr::FunctionCall {
+    name: rname,
+    args: rargs,
+  } = exp
+    && rname == "Rational"
+    && rargs.len() == 2
+    && let Some(b) = match base {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(-1)) => Some(left.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(-1)) =>
+      {
+        Some(&args[0])
+      }
+      _ => None,
+    }
+    // Only a numeric sum: `1/Sqrt[2 Pi]`-style radicands have their own
+    // normalisation, which this flip would fight forever.
+    && matches!(b, Expr::FunctionCall { name, .. } if name == "Plus")
+    && crate::functions::math_ast::try_eval_to_f64(b).is_some_and(|v| v > 0.0)
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+  {
+    return power_two(b, &make_rational(-p, *q));
+  }
+
   // (c * rest)^(p/q) → c^(p/q) * rest^(p/q) when c is a positive numeric
   // factor (Integer ≥ 2 or positive Rational) and `rest` contains at least
   // one non-numeric factor. This matches Wolfram's behavior of pulling
@@ -15067,13 +15099,23 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         // while (2*(1 + Sqrt[2]))^(3/2) still distributes fully.
         fn is_numeric_with_sums(e: &Expr) -> bool {
           match e {
+            // A power or product of numeric sums (`1/(5 - Sqrt[5])`) is
+            // numeric too.
             Expr::FunctionCall { name, args }
-              if matches!(name.as_str(), "Plus" | "Sqrt") =>
+              if matches!(
+                name.as_str(),
+                "Plus" | "Sqrt" | "Times" | "Power"
+              ) =>
             {
               args.iter().all(is_numeric_with_sums)
             }
             Expr::BinaryOp {
               op: BinaryOperator::Plus | BinaryOperator::Minus,
+              left,
+              right,
+            } => is_numeric_with_sums(left) && is_numeric_with_sums(right),
+            Expr::BinaryOp {
+              op: BinaryOperator::Power | BinaryOperator::Times,
               left,
               right,
             } => is_numeric_with_sums(left) && is_numeric_with_sums(right),
@@ -15165,7 +15207,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
           } else {
             times(radicand_factors)
           };
-          let root = if d == 2 {
+          let lone_reciprocal = rp == 1
+            && rq == 1
+            && matches!(&radicand, Expr::BinaryOp { op: BinaryOperator::Power, right, .. }
+              if matches!(right.as_ref(), Expr::Integer(-1)));
+          let root = if lone_reciprocal {
+            // `4/(1 + Sqrt[2])` leaves `1/(1 + Sqrt[2])` under the root,
+            // which is the reciprocal of a root.
+            power_two(&radicand, exp)?
+          } else if d == 2 {
             call1("Sqrt", radicand)
           } else {
             call("Power", vec![radicand, exp.clone()])
