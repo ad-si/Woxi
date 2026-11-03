@@ -15408,11 +15408,482 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
-/// HighlightImage[img, marks] — `img` with graphics `marks` drawn over it.
-/// The marks live in image pixel coordinates (origin bottom-left); the result
-/// is a new image the size of `img`. Display options such as `ImageSize` do
-/// not change the pixels and are ignored.
+/// A pixel position `{x, y}` in a `HighlightImage` mark list.
+fn highlight_pixel_pair(e: &Expr) -> bool {
+  matches!(e, Expr::List(xy) if xy.len() == 2
+    && xy.iter().all(|c| crate::functions::math_ast::try_eval_to_f64(c).is_some()))
+}
+
+fn is_color_directive(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. } if matches!(name.as_str(),
+    "RGBColor" | "GrayLevel" | "Hue" | "CMYKColor" | "LABColor" | "LCHColor"
+      | "LUVColor" | "XYZColor"))
+}
+
+/// One `HighlightImage` mark as wolframscript writes it into the overlay:
+/// curves get `Opacity[1]`, a color also colors the edges, `ImageMarker`
+/// becomes an inset glyph. The items it produces are spliced into the
+/// enclosing list. `None` for a mark that is drawn as a mask (an image).
+fn highlight_mark(mark: &Expr) -> Option<Vec<Expr>> {
+  let opaque =
+    |e: Expr| Expr::List(vec![call1("Opacity", Expr::Integer(1)), e].into());
+  Some(match mark {
+    Expr::Image { .. } => return None,
+    _ if is_color_directive(mark) => {
+      vec![mark.clone(), call1("EdgeForm", mark.clone())]
+    }
+    _ if highlight_pixel_pair(mark) => {
+      vec![opaque(call1("Point", mark.clone()))]
+    }
+    Expr::List(items) => {
+      let mut out = Vec::new();
+      for item in items {
+        out.extend(highlight_mark(item)?);
+      }
+      vec![Expr::List(out.into())]
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Point" | "Line" | "Circle" | "Arrow")
+        && !args.is_empty() =>
+    {
+      vec![opaque(mark.clone())]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut inner = highlight_mark(&args[0])?;
+      let body = if inner.len() == 1 {
+        inner.remove(0)
+      } else {
+        Expr::List(inner.into())
+      };
+      let mut styles = Vec::new();
+      for st in &args[1..] {
+        if is_color_directive(st) {
+          styles.push(st.clone());
+          styles.push(call1("EdgeForm", st.clone()));
+        } else {
+          styles.push(st.clone());
+        }
+      }
+      vec![call("Style", vec![body, Expr::List(styles.into())])]
+    }
+    Expr::FunctionCall { name, args }
+      if name == "ImageMarker" && !args.is_empty() =>
+    {
+      let points = &args[0];
+      match args.get(1) {
+        Some(g @ Expr::FunctionCall { name: gname, .. })
+          if gname == "Graphics" =>
+        {
+          let pts: Vec<Expr> = if highlight_pixel_pair(points) {
+            vec![points.clone()]
+          } else if let Expr::List(ps) = points {
+            ps.to_vec()
+          } else {
+            return Some(vec![mark.clone()]);
+          };
+          let pair = |a: i128, b: i128| {
+            Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+          };
+          vec![call(
+            "GeometricTransformation",
+            vec![
+              call(
+                "Inset",
+                vec![
+                  g.clone(),
+                  pair(0, 0),
+                  id_expr("Center"),
+                  id_expr("Automatic"),
+                  pair(1, 0),
+                ],
+              ),
+              Expr::List(
+                pts
+                  .into_iter()
+                  .map(|p| Expr::List(vec![p].into()))
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+            ],
+          )]
+        }
+        shape => {
+          let glyph = match shape {
+            Some(Expr::String(s)) if s == "Circle" => image_marker_glyph(true),
+            None => image_marker_glyph(false),
+            _ => return Some(vec![mark.clone()]),
+          };
+          let at = |p: &Expr| {
+            call(
+              "Inset",
+              vec![
+                glyph.clone(),
+                p.clone(),
+                id_expr("Center"),
+                call1("Scaled", Expr::Integer(5)),
+                Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
+              ],
+            )
+          };
+          if highlight_pixel_pair(points) {
+            vec![at(points)]
+          } else if let Expr::List(ps) = points {
+            ps.iter().map(at).collect()
+          } else {
+            vec![mark.clone()]
+          }
+        }
+      }
+    }
+    _ => vec![mark.clone()],
+  })
+}
+
+/// The default `ImageMarker` glyphs: a cross hair, or a ring.
+fn image_marker_glyph(ring: bool) -> Expr {
+  let int_pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let offset = |d: (i128, i128), p: (i128, i128)| {
+    call("Offset", vec![int_pair(d.0, d.1), int_pair(p.0, p.1)])
+  };
+  let line = |pts: Vec<Expr>| call1("Line", Expr::List(pts.into()));
+  let black = call1("GrayLevel", Expr::Integer(0));
+  let white = call1("GrayLevel", Expr::Integer(1));
+  let (prims, antialias) = if ring {
+    (
+      vec![
+        black,
+        call1("Circle", offset((0, -1), (0, 0))),
+        white,
+        call1("Circle", int_pair(0, 0)),
+      ],
+      "True",
+    )
+  } else {
+    (
+      vec![
+        black,
+        line(vec![offset((0, -1), (-1, 0)), offset((0, -1), (1, 0))]),
+        line(vec![offset((1, 0), (0, 1)), offset((1, 0), (0, -1))]),
+        white,
+        line(vec![int_pair(-1, 0), int_pair(1, 0)]),
+        line(vec![int_pair(0, 1), int_pair(0, -1)]),
+      ],
+      "False",
+    )
+  };
+  call(
+    "Style",
+    vec![
+      call1("Graphics", Expr::List(prims.into())),
+      rule_expr(id_expr("Antialiasing"), id_expr(antialias)),
+    ],
+  )
+}
+
+/// The options `HighlightImage` passes on to the `Graphics` it returns.
+const HIGHLIGHT_IMAGE_OPTIONS: &[&str] = &[
+  "AlignmentPoint",
+  "AspectRatio",
+  "Axes",
+  "AxesLabel",
+  "AxesOrigin",
+  "AxesStyle",
+  "Background",
+  "BaselinePosition",
+  "BaseStyle",
+  "ColorOutput",
+  "ContentSelectable",
+  "CoordinatesToolOptions",
+  "DataRange",
+  "DisplayFunction",
+  "Epilog",
+  "FormatType",
+  "Frame",
+  "FrameLabel",
+  "FrameStyle",
+  "FrameTicks",
+  "FrameTicksStyle",
+  "GridLines",
+  "GridLinesStyle",
+  "ImageLabels",
+  "ImageLegends",
+  "ImageMargins",
+  "ImagePadding",
+  "ImageSize",
+  "ImageSizeRaw",
+  "LabelStyle",
+  "Method",
+  "PlotInteractivity",
+  "PlotLabel",
+  "PlotRange",
+  "PlotRangeClipping",
+  "PlotRangePadding",
+  "PlotRegion",
+  "PreserveImageOptions",
+  "Prolog",
+  "RotateLabel",
+  "Ticks",
+  "TicksStyle",
+];
+
+/// HighlightImage[img, marks, style, opts] — the `Graphics` wolframscript
+/// builds: the image as an RGB byte inset spanning `{{0, w}, {0, h}}`, the
+/// marks over it in pixel coordinates, and a magenta default style
+/// (`"HighlightColor"` changes it). A string `style` gives the image an
+/// alpha channel and unfilled faces; `"Darken"`/`"Lighten"`/`"Remove"`
+/// also change its pixels.
 pub fn highlight_image_ast(
+  args: &[Expr],
+  eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let echo = || Ok(unevaluated("HighlightImage", args));
+  let Some(Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  }) = args.first()
+  else {
+    return echo();
+  };
+  let is_opt =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args[1..].iter().take_while(|a| !is_opt(a)).collect();
+  let opts: Vec<&Expr> = args[1 + positional.len()..].iter().collect();
+  let Some(marks) = positional.first() else {
+    return echo();
+  };
+  let style = positional.get(1);
+  let mut color = call(
+    "RGBColor",
+    vec![Expr::Integer(1), Expr::Integer(0), Expr::Integer(1)],
+  );
+  let mut user_opts = Vec::new();
+  let mut own_method = false;
+  for o in &opts {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = o
+    else {
+      return echo();
+    };
+    match pattern.as_ref() {
+      Expr::String(k) if k == "HighlightColor" => {
+        color = (**replacement).clone();
+      }
+      // A `Method` replaces the default one and leaves faces unset.
+      Expr::Identifier(k) if k == "Method" => own_method = true,
+      Expr::Identifier(k) | Expr::String(k)
+        if HIGHLIGHT_IMAGE_OPTIONS.contains(&k.as_str()) =>
+      {
+        user_opts.push((*o).clone());
+      }
+      _ => {
+        crate::emit_message(&format!(
+          "HighlightImage::optx: Unknown option {} in {}.",
+          crate::syntax::format_expr(pattern, crate::syntax::ExprForm::Output),
+          crate::syntax::format_expr(
+            &unevaluated("HighlightImage", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return echo();
+      }
+    }
+  }
+  // Marks drawn as a mask have no symbolic overlay here; draw them into
+  // the pixels instead.
+  let top_items: Option<Vec<Expr>> = if highlight_pixel_pair(marks) {
+    Some(vec![
+      call1("Opacity", Expr::Integer(1)),
+      call1("Point", (*marks).clone()),
+    ])
+  } else {
+    match marks {
+      Expr::List(items)
+        if !items.is_empty() && items.iter().all(highlight_pixel_pair) =>
+      {
+        Some(vec![Expr::List(
+          vec![
+            call1("Opacity", Expr::Integer(1)),
+            call1("Point", (*marks).clone()),
+          ]
+          .into(),
+        )])
+      }
+      Expr::List(items)
+        if items
+          .iter()
+          .all(|i| !matches!(i, Expr::List(_)) || highlight_pixel_pair(i)) =>
+      {
+        let mut out = Vec::new();
+        let mut ok = true;
+        for i in items {
+          match highlight_mark(i) {
+            Some(v) => out.extend(v),
+            None => ok = false,
+          }
+        }
+        ok.then_some(out)
+      }
+      _ => highlight_mark(marks),
+    }
+  };
+  let Some(items) = top_items else {
+    return highlight_image_raster(args, eval_fn);
+  };
+
+  let (w, h, ch) = (*width as usize, *height as usize, *channels as usize);
+  // Any style argument gives the image an alpha channel and unfilled faces.
+  let string_style = style.is_some();
+  let style_name = match style {
+    Some(Expr::String(s)) => s.as_str(),
+    _ => "",
+  };
+  // Byte values round half to even, as wolframscript's conversion does.
+  let even = |x: f64| -> i128 { x.round_ties_even() as i128 };
+  let mut rows = Vec::with_capacity(h);
+  for y in 0..h {
+    let mut row = Vec::with_capacity(w);
+    for x in 0..w {
+      let base = (y * w + x) * ch;
+      let (rgb, alpha): ([f64; 3], Option<f64>) = match ch {
+        1 => ([data[base]; 3], None),
+        2 => ([data[base]; 3], Some(data[base + 1])),
+        3 => ([data[base], data[base + 1], data[base + 2]], None),
+        _ => (
+          [data[base], data[base + 1], data[base + 2]],
+          Some(data[base + 3]),
+        ),
+      };
+      let mut px: Vec<i128> = rgb
+        .iter()
+        .map(|v| even(v.clamp(0.0, 1.0) * 255.0))
+        .collect();
+      let mut a = alpha.map(|v| even(v.clamp(0.0, 1.0) * 255.0));
+      if string_style {
+        a = a.or(Some(255));
+        match style_name {
+          "Darken" => px = px.iter().map(|&v| even(v as f64 * 0.3)).collect(),
+          "Lighten" => {
+            px = px.iter().map(|&v| even(v as f64 * 0.3 + 178.5)).collect();
+          }
+          "Remove" => {
+            px = vec![0, 0, 0];
+            a = Some(0);
+          }
+          _ => {}
+        }
+      }
+      if let Some(a) = a {
+        px.push(a);
+      }
+      row.push(Expr::List(
+        px.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+      ));
+    }
+    rows.push(Expr::List(row.into()));
+  }
+  let inset_image = eval_fn(&call(
+    "Image",
+    vec![
+      Expr::List(rows.into()),
+      Expr::String("Byte".into()),
+      rule_expr(id_expr("ColorSpace"), Expr::String("RGB".into())),
+    ],
+  ))?;
+  let int_pair = |a: i128, b: i128| {
+    Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+  };
+  let mut content = vec![call(
+    "Style",
+    vec![
+      call(
+        "Inset",
+        vec![
+          inset_image,
+          int_pair(0, 0),
+          int_pair(0, 0),
+          int_pair(w as i128, h as i128),
+        ],
+      ),
+      rule_expr(id_expr("Selectable"), id_expr("False")),
+    ],
+  )];
+  let color_style = own_method;
+  if color_style {
+    content.push(call0("FaceForm"));
+  }
+  content.extend(items);
+  let rule = |k: &str, v: Expr| rule_expr(id_expr(k), v);
+  let method = rule(
+    "Method",
+    Expr::List(
+      vec![
+        id_expr("Automatic"),
+        rule_expr(Expr::String("GridLinesInFront".into()), id_expr("True")),
+      ]
+      .into(),
+    ),
+  );
+  let mut options = user_opts;
+  if color_style {
+    options.push(method.clone());
+  }
+  options.push(rule(
+    "PlotRange",
+    Expr::List(vec![int_pair(0, w as i128), int_pair(0, h as i128)].into()),
+  ));
+  options.push(rule("PlotRangePadding", id_expr("None")));
+  options.push(rule(
+    "ImageSizeRaw",
+    Expr::List(vec![Expr::Real(w as f64), Expr::Real(h as f64)].into()),
+  ));
+  if !color_style {
+    options.push(method);
+  }
+  let face_opacity = if string_style {
+    Expr::Integer(0)
+  } else {
+    Expr::Real(0.2)
+  };
+  options.push(rule(
+    "DefaultBaseStyle",
+    Expr::List(
+      vec![
+        Expr::String("Graphics".into()),
+        color.clone(),
+        call1("FaceForm", call1("Opacity", face_opacity)),
+        call1("Thickness", Expr::Real(0.006)),
+        call1("PointSize", Expr::Real(0.018)),
+        call1(
+          "EdgeForm",
+          Expr::List(vec![call1("Thickness", Expr::Real(0.004)), color].into()),
+        ),
+      ]
+      .into(),
+    ),
+  ));
+  Ok(call(
+    "Graphics",
+    vec![Expr::List(content.into()), Expr::List(options.into())],
+  ))
+}
+
+/// HighlightImage with a mask image: the marks are drawn into a copy of the
+/// image's pixels.
+fn highlight_image_raster(
   args: &[Expr],
   eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {

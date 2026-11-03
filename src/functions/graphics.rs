@@ -11247,6 +11247,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut frame_ticks_style: Option<Expr> = None;
   let mut label_style: Option<Expr> = None;
   let mut base_style: Option<Expr> = None;
+  let mut default_base_style: Option<Expr> = None;
+  // `ImageSizeRaw -> {w, h}`: the size a picture is shown at when no
+  // `ImageSize` says otherwise (`HighlightImage` sets it to the image's).
+  let mut image_size_raw: Option<Expr> = None;
   // `AxesOrigin -> {x, y}`: where the axes cross.
   let mut axes_origin: (Option<f64>, Option<f64>) = (None, None);
   // When true, skip uniform scaling so x and y axes scale independently
@@ -11436,6 +11440,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FrameTicksStyle" => frame_ticks_style = Some(replacement.clone()),
         "LabelStyle" => label_style = Some(replacement.clone()),
         "BaseStyle" => base_style = Some(replacement.clone()),
+        "DefaultBaseStyle" => default_base_style = Some(replacement.clone()),
+        "ImageSizeRaw" => image_size_raw = Some(replacement.clone()),
         "AxesOrigin" => {
           axes_origin = crate::functions::plot::parse_axes_origin(replacement);
         }
@@ -11462,6 +11468,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  if !explicit_size
+    && let Some(raw) = &image_size_raw
+    && let Some((w, h, fw)) =
+      parse_image_size(raw, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+  {
+    explicit_size = true;
+    explicit_height = true;
+    size_names_height = true;
+    svg_width = w;
+    svg_height = h;
+    full_width = fw;
+  }
+
   // The height an `AspectRatio` asks for follows from the *final* width, so it
   // is worked out once the whole option list has been read: options mean the
   // same thing in either order, and `Graphics[…, AspectRatio -> 1/8,
@@ -11474,9 +11493,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     explicit_height = true;
   }
 
-  // Collect primitives. `BaseStyle` directives are in force before any of
-  // the drawing's own.
+  // Collect primitives. `DefaultBaseStyle` and then `BaseStyle` directives
+  // are in force before any of the drawing's own.
   let mut style = StyleState::default();
+  if let Some(base) = &default_base_style {
+    apply_directive(base, &mut style);
+  }
   if let Some(base) = &base_style {
     apply_directive(base, &mut style);
   }

@@ -3463,17 +3463,52 @@ mod image_processing {
     );
   }
 
-  // HighlightImage draws marks over the image, in pixel coordinates, and
-  // returns an image of the same size.
+  // HighlightImage returns wolframscript's Graphics: the image as an RGB
+  // byte inset over {{0, w}, {0, h}}, the marks in pixel coordinates, and a
+  // magenta default style.
   #[test]
-  fn highlight_image_marker_line() {
+  fn highlight_image_graphics() {
     clear_state();
     assert_eq!(
       interpret(
-        "img = ConstantImage[Black, {20, 10}]; r = HighlightImage[img, ImageMarker[{{10, 0}, {10, 10}}, Graphics[{White, Thick, Line[{{0, 0}, {0, 10}}]}]]]; {ImageDimensions[r], ImageData[r][[5, 10]][[1]] > 0.5, ImageData[r][[5, 3]][[1]]}"
+        "ToString[InputForm[HighlightImage[Image[{{0, 1}, {1, 0}}], Point[{1, 1}]]]]"
       )
       .unwrap(),
-      "{{20, 10}, True, 0.}"
+      "Graphics[{Style[Inset[Image[NumericArray[{{{0, 0, 0}, {255, 255, 255}}, {{255, 255, 255}, {0, 0, 0}}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> \"RGB\", Interleaving -> True], {0, 0}, {0, 0}, {2, 2}], Selectable -> False], {Opacity[1], Point[{1, 1}]}}, {PlotRange -> {{0, 2}, {0, 2}}, PlotRangePadding -> None, ImageSizeRaw -> {2., 2.}, Method -> {Automatic, \"GridLinesInFront\" -> True}, DefaultBaseStyle -> {\"Graphics\", RGBColor[1, 0, 1], FaceForm[Opacity[0.2]], Thickness[0.006], PointSize[0.018], EdgeForm[{Thickness[0.004], RGBColor[1, 0, 1]}]}}]"
+    );
+    // Colors also color edges; curves are opaque; regions stay as given.
+    assert_eq!(
+      interpret(
+        "Rest[First[HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], {Red, Point[{1, 1}], Blue, Disk[{1, 1}, 1]}]]]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0], EdgeForm[RGBColor[1, 0, 0]], {Opacity[1], Point[{1, 1}]}, RGBColor[0, 0, 1], EdgeForm[RGBColor[0, 0, 1]], Disk[{1, 1}, 1]}"
+    );
+    // Pixel positions become points.
+    assert_eq!(
+      interpret(
+        "i = Image[{{0, 1, 0}, {1, 0.5, 1}}]; {Rest[First[HighlightImage[i, {2, 1}]]], Rest[First[HighlightImage[i, {{2, 1}, {1, 1}}]]]}"
+      )
+      .unwrap(),
+      "{{Opacity[1], Point[{2, 1}]}, {{Opacity[1], Point[{{2, 1}, {1, 1}}]}}}"
+    );
+    // An ImageMarker graphic is inset at each point.
+    assert_eq!(
+      interpret(
+        "ToString[Cases[HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], ImageMarker[{{1, 0}, {1, 1}}, Graphics[{White, Line[{{0, 0}, {0, 1}}]}]]], _GeometricTransformation, Infinity], InputForm]"
+      )
+      .unwrap(),
+      "{GeometricTransformation[Inset[Graphics[{GrayLevel[1], Line[{{0, 0}, {0, 1}}]}], {0, 0}, Center, Automatic, {1, 0}], {{{1, 0}}, {{1, 1}}}]}"
+    );
+    // A style gives the image an alpha channel and unfilled faces;
+    // "HighlightColor" recolors the default style.
+    assert_eq!(
+      interpret(
+        "h = HighlightImage[Image[{{0, 1, 0}, {1, 0.5, 1}}], Point[{1, 1}], \"Darken\", \"HighlightColor\" -> Green]; \
+         {ImageData[h[[1, 1, 1, 1]], \"Byte\"], Last[Last[h]]}"
+      )
+      .unwrap(),
+      "{{{{0, 0, 0, 255}, {76, 76, 76, 255}, {0, 0, 0, 255}}, {{76, 76, 76, 255}, {38, 38, 38, 255}, {76, 76, 76, 255}}}, DefaultBaseStyle -> {Graphics, RGBColor[0, 1, 0], FaceForm[Opacity[0]], Thickness[0.006], PointSize[0.018], EdgeForm[{Thickness[0.004], RGBColor[0, 1, 0]}]}}"
     );
   }
 
@@ -10195,7 +10230,7 @@ mod image_lines {
         "Head[HighlightImage[#, ImageLines[#]]] &[Image[Table[If[x == y, 1, 0], {y, 20}, {x, 20}]]]"
       )
       .unwrap(),
-      "Image"
+      "Graphics"
     );
   }
 }
