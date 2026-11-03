@@ -18469,6 +18469,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// With `Frame -> True` a graphic's axes are bare lines (the frame
+    /// carries the ticks), and a two-parameter `ParametricPlot` is framed
+    /// by default (WL 15).
+    #[test]
+    fn framed_graphics_axes_carry_no_ticks() {
+      let marks = |code: &str| {
+        export_svg(code)
+          .lines()
+          .filter(|l| l.starts_with("<text"))
+          .count()
+      };
+      // Labels -1, -0.5, 0.5, 1 on each axis without a frame.
+      assert!(marks("Graphics[Circle[], Axes -> True]") >= 8);
+      let framed =
+        export_svg("Graphics[Circle[], Axes -> True, Frame -> True]");
+      let plain = export_svg("Graphics[Circle[], Frame -> True]");
+      assert_eq!(
+        framed.matches("<text").count(),
+        plain.matches("<text").count(),
+        "{framed}"
+      );
+      let region = export_svg(
+        "ParametricPlot[{r Cos[t], r Sin[t]}, {t, 0, 2 Pi}, {r, 1, 2}]",
+      );
+      let curve = export_svg("ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]");
+      // Only the region gets the frame's closed border.
+      assert!(region.contains("fill=\"none\" stroke=\"rgb(190,190,190)\""));
+      assert!(!curve.contains("fill=\"none\" stroke=\"rgb(190,190,190)\""));
+    }
+
     /// Wolfram draws a graphic's axes in front of its primitives, with
     /// tick marks pointing into the picture (up from the x axis, right of
     /// the y axis) and unlabelled minor marks between the labelled ones.

@@ -12000,6 +12000,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram front end's rules for what the frame, the axes and their labels
   // need (see `plot_padding`); a bare picture only reserves its `PlotLabel`.
   let frame = frame_edges.iter().any(|&e| e);
+  // A framed picture's axes are bare lines: the frame carries the ticks.
+  if frame {
+    ticks_x = TickSpec::None;
+    ticks_y = TickSpec::None;
+  }
   // Only an edge that is drawn can carry tick marks or labels.
   for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {
     if !drawn {

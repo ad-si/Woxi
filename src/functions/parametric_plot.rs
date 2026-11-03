@@ -1038,9 +1038,10 @@ fn parametric_region_ast(
     )?);
   }
 
-  // Wolfram draws a ParametricPlot with axes and equally scaled ones; the
-  // caller's own options come last so they win.
+  // Wolfram draws a region ParametricPlot framed, with axes and equally
+  // scaled ones; the caller's own options come last so they win.
   let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
   graphics_args.extend(opt_args.iter().cloned());
