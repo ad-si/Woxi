@@ -5838,6 +5838,10 @@ fn generate_svg_with_options(
         - margin_bottom as f64
         - x_label_area as f64,
     );
+    let label_style_fill = opts
+      .label_style
+      .and_then(|s| s.color)
+      .map(super::graphics::Color::to_svg_rgb);
     let axes_svg = origin_axes_svg(&OriginAxes {
       area,
       x: x_scale,
@@ -5851,6 +5855,7 @@ fn generate_svg_with_options(
       axes_style: &opts.axes_style,
       ticks_style: &opts.ticks_style,
       keep_y_label_on_x_axis: false,
+      label_color: label_style_fill.as_deref(),
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -7674,6 +7679,7 @@ pub(crate) fn generate_bar_svg(
         axes_style: &axes_style,
         ticks_style: &[None, None],
         keep_y_label_on_x_axis: true,
+        label_color: None,
       },
     );
     let axis_y = plot_y0 + plot_h - y_scale.frac(origin.1) * plot_h;
@@ -10010,6 +10016,7 @@ pub(crate) fn generate_histogram_svg(
         axes_style: &[None, None],
         ticks_style: &[None, None],
         keep_y_label_on_x_axis: true,
+        label_color: None,
       },
     );
     if let Some(pos) = buf.rfind("</svg>") {

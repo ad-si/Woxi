@@ -282,6 +282,9 @@ pub(crate) struct OriginAxes<'a> {
   /// Keep the y label that sits on the x axis (a chart's `0`), which a
   /// plot drops.
   pub keep_y_label_on_x_axis: bool,
+  /// `LabelStyle`'s colour: it paints the tick labels over both
+  /// `AxesStyle` and `TicksStyle`.
+  pub label_color: Option<&'a str>,
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -316,7 +319,10 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
     let tick = a.ticks_style[i].as_ref().or(axis);
     let line = style_stroke(axis, a.axis_color, stroke, sf);
     let mark = style_stroke(tick, a.axis_color, stroke, sf);
-    let fill = style_stroke(tick, a.label_fill, stroke, sf).0;
+    let fill = a.label_color.map_or_else(
+      || style_stroke(tick, a.label_fill, stroke, sf).0,
+      str::to_string,
+    );
     (line, mark, fill)
   };
   let line = |svg: &mut String,

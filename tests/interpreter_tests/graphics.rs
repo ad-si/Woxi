@@ -11948,6 +11948,31 @@ mod plot3d {
       assert!(label_ys.len() > 1, "entries wrap onto several rows: {svg}");
     }
 
+    /// `LabelStyle`'s colour paints the tick labels over `AxesStyle` (and
+    /// `TicksStyle`), as in WL 15; the axis lines keep `AxesStyle`.
+    #[test]
+    fn label_style_colours_tick_labels_over_axes_style() {
+      let svg = export_svg(
+        "Plot[Sinc[x], {x, 0, 10}, AxesStyle -> Blue, LabelStyle -> Red, \
+         TicksStyle -> Green]",
+      );
+      let fills: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<text"))
+        .map(|l| {
+          l.split("fill=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+        })
+        .collect();
+      assert!(!fills.is_empty());
+      assert!(fills.iter().all(|f| *f == "rgb(255,0,0)"), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+    }
+
     /// A graphic's `FormatType` is `TraditionalForm`: legend entries,
     /// axes labels and the plot label set a function application under its
     /// traditional name in round brackets (`sin(x)`, `sinc(x)`), not in
