@@ -4133,12 +4133,20 @@ fn is_3d_list(items: &[syntax::Expr]) -> bool {
 pub(crate) fn tableform_grid_args(
   args: &[syntax::Expr],
 ) -> Option<(Vec<syntax::Expr>, Vec<usize>)> {
-  let data = args.first()?;
   // Skip if content contains Graphics placeholders (handled by
   // render_graphics_list_if_needed / the graphics-grid combine path).
-  if contains_graphics_placeholder(data) {
+  if contains_graphics_placeholder(args.first()?) {
     return None;
   }
+  tableform_layout_args(args)
+}
+
+/// The `Grid` arguments that lay out `TableForm[args…]`, whatever its cells
+/// hold (see `tableform_grid_args`), with the group gaps of a 3-D table.
+pub(crate) fn tableform_layout_args(
+  args: &[syntax::Expr],
+) -> Option<(Vec<syntax::Expr>, Vec<usize>)> {
+  let data = args.first()?;
   // TableDepth -> d caps how far TableForm descends into nested lists; deeper
   // lists are shown inline as literal expressions. The default (unset) lets it
   // descend as far as the structure allows (the 3D-expansion path below).
@@ -4298,7 +4306,40 @@ pub(crate) fn tableform_grid_args(
     let align = table_alignment.unwrap_or_else(|| helpers::id_expr("Left"));
     grid_args.push(helpers::rule_expr(helpers::id_expr("Alignment"), align));
   }
-  grid_args.extend(args[1..].iter().cloned());
+  // `TableSpacing -> {s1, s2}` spaces the first and second level of the
+  // table; `Automatic` (the default) is {1, 3}. The grid takes it as
+  // {row gap, column gap}, so it is swapped when TableDirections -> Row lays
+  // the first level out across the columns.
+  let is_spacing_rule = |a: &syntax::Expr| {
+    matches!(a, syntax::Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "TableSpacing"))
+  };
+  let mut spacing = [syntax::Expr::Integer(1), syntax::Expr::Integer(3)];
+  if let Some(syntax::Expr::Rule { replacement, .. }) =
+    args[1..].iter().find(|a| is_spacing_rule(a))
+  {
+    match replacement.as_ref() {
+      syntax::Expr::List(items) => {
+        for (slot, item) in spacing.iter_mut().zip(items.iter()) {
+          if matches!(item, syntax::Expr::Integer(_) | syntax::Expr::Real(_)) {
+            *slot = item.clone();
+          }
+        }
+      }
+      n @ (syntax::Expr::Integer(_) | syntax::Expr::Real(_)) => {
+        spacing = [n.clone(), n.clone()];
+      }
+      _ => {}
+    }
+  }
+  if transpose_rows {
+    spacing.swap(0, 1);
+  }
+  grid_args.extend(args[1..].iter().filter(|a| !is_spacing_rule(a)).cloned());
+  grid_args.push(helpers::rule_expr(
+    helpers::id_expr("TableSpacing"),
+    syntax::Expr::List(spacing.to_vec().into()),
+  ));
   Some((grid_args, group_gaps))
 }
 

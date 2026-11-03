@@ -19551,8 +19551,9 @@ fn grid_svg_styled_internal(
   // out keep the default gap.
   let mut col_spacings: Vec<Option<f64>> = Vec::new();
   // TableForm's TableSpacing maps directly to pixels (see the option below).
-  let mut table_pad_x: Option<f64> = None; // per-cell horizontal padding (px)
-  let mut table_row_gap: Option<f64> = None; // gap between rows (px)
+  // TableForm's `TableSpacing -> {rows, cols}`, in its own units (see the
+  // option below). Its presence marks the grid as a TableForm layout.
+  let mut table_spacing: Option<(Option<f64>, Option<f64>)> = None;
   let mut dividers_col = false; // vertical divider lines between columns
   let mut dividers_row = false; // horizontal divider lines between rows
   // `Dividers -> All` rules *every* position, the outer edges included, so
@@ -19954,10 +19955,9 @@ fn grid_svg_styled_internal(
         "TableSpacing" => {
           // TableForm's TableSpacing -> {rows, cols}: the first value is the
           // gap between rows, the second the gap between columns (the opposite
-          // order from Grid's Spacings -> {h, v}). Its units differ from
-          // Grid's ems, so map them to pixels directly rather than routing
-          // through spacings_h / spacings_v. The default column spacing is 3
-          // (→ the standard 12 px cell padding), and rows touch at spacing 1.
+          // order from Grid's Spacings -> {h, v}). Wolfram measures them in
+          // fractions of the font size — a column unit is 0.7 em and a row
+          // unit 0.4 em — and sets no margin around the table at all.
           let num = |e: &Expr| -> Option<f64> {
             match e {
               Expr::Integer(n) => Some(*n as f64),
@@ -19965,14 +19965,12 @@ fn grid_svg_styled_internal(
               _ => None,
             }
           };
-          if let Expr::List(items) = replacement.as_ref() {
-            if let Some(r) = items.first().and_then(num) {
-              table_row_gap = Some((r - 1.0).max(0.0) * 3.5);
+          table_spacing = Some(match replacement.as_ref() {
+            Expr::List(items) => {
+              (items.first().and_then(num), items.get(1).and_then(num))
             }
-            if let Some(c) = items.get(1).and_then(num) {
-              table_pad_x = Some(c * 4.0);
-            }
-          }
+            other => (num(other), None),
+          });
         }
         _ => {}
       }
@@ -20038,12 +20036,23 @@ fn grid_svg_styled_internal(
   let char_width: f64 = 8.4 * size_scale; // approximate monospace char width
   let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
+  let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
+  let is_table_form = table_spacing.is_some();
+  // TableForm: a column unit is 0.7 em (default 3). A row unit is 0.4 em on
+  // top of Wolfram's 0.927 em line, which is shorter than the
+  // `font_size + pad_y` text box every row has here (default 1).
+  let table_pad_x =
+    table_spacing.map(|(_, c)| c.unwrap_or(3.0).max(0.0) * 0.7 * font_size);
+  let table_row_gap = table_spacing.map(|(r, _)| {
+    (r.unwrap_or(1.0) * 0.4 * font_size + 0.927 * font_size
+      - (font_size + pad_y))
+      .max(0.0)
+  });
   let pad_x: f64 = match (table_pad_x, spacings_h) {
     (Some(px), _) => px, // TableSpacing → pixels directly
     (None, Some(h)) => h * char_width, // Spacings h in ems → pixel padding
     (None, None) => 12.0 * size_scale, // default horizontal padding per cell
   };
-  let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
   let row_gap: f64 = match (table_row_gap, spacings_v) {
     (Some(g), _) => g, // TableSpacing → pixels directly
     (None, Some(v)) => v * font_size, // Spacings v in ems → pixel gap
@@ -20068,8 +20077,10 @@ fn grid_svg_styled_internal(
         .map(|ems| ems * char_width)
     };
     let inner_gap = |position: usize| spacing_at(position).unwrap_or(pad_x);
+    // A TableForm has no margin outside its first and last column.
+    let edge_default = if is_table_form { 0.0 } else { pad_x / 2.0 };
     let edge_gap =
-      |position: usize| spacing_at(position).unwrap_or(pad_x / 2.0);
+      |position: usize| spacing_at(position).unwrap_or(edge_default);
     let mut left = Vec::with_capacity(num_cols);
     let mut right = Vec::with_capacity(num_cols);
     for j in 0..num_cols {
@@ -20261,7 +20272,12 @@ fn grid_svg_styled_internal(
   } else {
     0.0
   };
-  let edge_pad: f64 = if num_rows > 1 { row_gap } else { 0.0 };
+  // A TableForm has no margin above its first and below its last row.
+  let edge_pad: f64 = if num_rows > 1 && !is_table_form {
+    row_gap
+  } else {
+    0.0
+  };
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + total_gap + row_gaps_total + edge_pad;
 
@@ -20418,7 +20434,7 @@ fn grid_svg_styled_internal(
   let mut content_y_starts: Vec<f64> = Vec::with_capacity(num_rows);
   let mut divider_ys: Vec<f64> = Vec::with_capacity(num_rows + 1);
   {
-    let mut y = row_gap / 2.0;
+    let mut y = edge_pad / 2.0;
     for i in 0..=num_rows {
       divider_ys.push(y);
       if i > 0 && i < num_rows {
@@ -20525,7 +20541,16 @@ fn grid_svg_styled_internal(
       };
       // A row-spanning cell is centred over all the rows it covers.
       let last_row = (i + span_height(&rows, i, j)).min(num_rows) - 1;
-      let (cell_top, cell_bottom) = (visual_tops[i], visual_bottoms[last_row]);
+      // A TableForm has no margin outside its first and last row, so a cell
+      // is centred on its own rows rather than on the gaps around them.
+      let (cell_top, cell_bottom) = if is_table_form {
+        (
+          content_y_starts[i],
+          content_y_starts[last_row] + row_heights[last_row],
+        )
+      } else {
+        (visual_tops[i], visual_bottoms[last_row])
+      };
       let col_align = col_alignments.get(j).copied().unwrap_or(alignment_h);
       // Decimal columns anchor each cell so its decimal point lands at a shared
       // `dot_x`; the whole number is start-anchored at `dot_x - int_width`.
@@ -20565,7 +20590,15 @@ fn grid_svg_styled_internal(
       if let Some((cell_svg, nat_w, nat_h)) = grid_cell_graphic(cell)
         && let Some(parsed) = parse_svg_dimensions(&cell_svg)
       {
-        let gx = x_offset + (col_w - nat_w) / 2.0;
+        // Placed by the column's alignment, like a text cell.
+        let gx = match anchor {
+          "start" => x_offset + col_pad_left[j],
+          "end" => {
+            let span_end = (j + span_width(row, j)).min(num_cols) - 1;
+            x_offset + col_w - col_pad_right[span_end] - nat_w
+          }
+          _ => x_offset + (col_w - nat_w) / 2.0,
+        };
         let vis_h = cell_bottom - cell_top;
         let gy = cell_top + (vis_h - nat_h) / 2.0;
         svg.push_str(&format!(

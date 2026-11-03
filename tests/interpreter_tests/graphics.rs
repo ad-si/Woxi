@@ -44895,3 +44895,66 @@ mod wl15_default_plot_style {
     assert!(svg.contains("rgb(250,143,43)"), "{svg}");
   }
 }
+
+/// TableForm and GraphicsGrid are spaced the way Wolfram spaces them.
+mod wl_table_layout {
+  use super::*;
+
+  /// The numbers following each `key` in `svg`, in document order.
+  fn attr_values(svg: &str, key: &str) -> Vec<f64> {
+    svg
+      .split(key)
+      .skip(1)
+      .filter_map(|s| s.split('"').next()?.parse().ok())
+      .collect()
+  }
+
+  #[test]
+  fn tableform_columns_have_no_margin_and_a_wide_gap() {
+    // TableSpacing -> Automatic is {1, 3}: the column gap is 3 × 0.7 em
+    // (29.4 at 14 px), with nothing before the first column.
+    let svg = export_svg("TableForm[{{a, b}, {c, d}}]");
+    assert_eq!(
+      attr_values(&svg, "<text x=\""),
+      vec![0.0, 37.8, 0.0, 37.8],
+      "{svg}"
+    );
+    // An explicit column spacing scales the gap.
+    let svg = export_svg("TableForm[{{a, b}}, TableSpacing -> {1, 1}]");
+    assert_eq!(attr_values(&svg, "<text x=\""), vec![0.0, 18.2], "{svg}");
+  }
+
+  #[test]
+  fn tableform_row_direction_swaps_the_level_spacings() {
+    // With TableDirections -> Row the first level runs across, so its
+    // spacing (1) separates the columns and the second level's (3) the rows.
+    let svg = export_svg("TableForm[{{a, b}, {c, d}}, TableDirections -> Row]");
+    assert_eq!(
+      attr_values(&svg, "<text x=\""),
+      vec![0.0, 18.2, 0.0, 18.2],
+      "{svg}"
+    );
+    // Row pitch: a 16 px text box plus a gap of 3 × 0.4 em on Wolfram's
+    // 0.927 em line; the first row starts at the top edge.
+    let ys = attr_values(&svg, "\" y=\"");
+    assert_eq!(ys[0], 7.0, "{svg}");
+    assert!((ys[2] - ys[0] - 29.8).abs() < 0.2, "{svg}");
+  }
+
+  #[test]
+  fn tableform_of_graphics_follows_table_alignments() {
+    // Columns are as wide as their widest picture; TableAlignments -> Right
+    // puts each picture against the right edge of its column.
+    let svg = export_svg(
+      "TableForm[{{Graphics[Rectangle[], ImageSize -> 20]}, \
+       {Graphics[Rectangle[], ImageSize -> 50]}}, TableAlignments -> Right]",
+    );
+    assert_eq!(attr_values(&svg, "<svg x=\""), vec![30.0, 0.0], "{svg}");
+    // The default is Left, with the TableForm column gap between columns.
+    let svg = export_svg(
+      "TableForm[{{Graphics[Rectangle[], ImageSize -> 20], \
+       Graphics[Rectangle[], ImageSize -> 50]}}]",
+    );
+    assert_eq!(attr_values(&svg, "<svg x=\""), vec![0.0, 49.4], "{svg}");
+  }
+}

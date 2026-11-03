@@ -7709,17 +7709,25 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
   {
     return None;
   }
-  let grid: Vec<Vec<String>> = rows
-    .iter()
-    .map(|r| match r {
-      Expr::List(cells) => cells.iter().map(expr_to_svg).collect(),
-      _ => unreachable!(),
-    })
-    .collect();
-  if grid.iter().flatten().any(std::string::String::is_empty) {
-    return None;
+  // Each picture becomes a rendered cell, laid out by the same TableForm
+  // grid as text cells (its spacing, alignment and headings).
+  let mut rendered: Vec<Expr> = Vec::with_capacity(rows.len());
+  for r in rows {
+    let Expr::List(cells) = r else { unreachable!() };
+    let mut out = Vec::with_capacity(cells.len());
+    for cell in cells {
+      let svg = expr_to_svg(cell);
+      if svg.is_empty() {
+        return None;
+      }
+      out.push(crate::graphics_result(svg));
+    }
+    rendered.push(Expr::List(out.into()));
   }
-  crate::functions::graphics::combine_graphics_svgs(&grid)
+  let mut table_args = vec![Expr::List(rendered.into())];
+  table_args.extend(args[1..].iter().cloned());
+  let (grid_args, gaps) = crate::tableform_layout_args(&table_args)?;
+  crate::functions::graphics::grid_svg_with_gaps(&grid_args, &gaps).ok()
 }
 
 /// `TraditionalForm[{…}]` typesets a list as a parenthesized matrix, the same
