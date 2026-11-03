@@ -1504,6 +1504,11 @@ pub fn dispatch_image_functions(
         if matches!(&args[1], Expr::String(p) if p == "ColorFunction") {
           return Some(Ok(gradient_color_function(scheme)));
         }
+        // ColorData[name, "Name"]: the scheme's canonical name, which is
+        // what gradient pickers use as the label of each choice.
+        if matches!(&args[1], Expr::String(p) if p == "Name") {
+          return Some(Ok(Expr::String(scheme.clone())));
+        }
         // ColorData[name, "Range"]: the parameter interval the gradient is
         // defined over — always {0, 1} for the built-in gradients.
         if matches!(&args[1], Expr::String(p) if p == "Range") {
