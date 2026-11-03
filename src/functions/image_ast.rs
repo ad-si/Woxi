@@ -12870,9 +12870,10 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 
 /// Populate a usvg font database with the embedded fallback fonts and wire
 /// each CSS generic family to a reasonable default. This is shared by the
-/// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths so
-/// that SVGs referring to `font-family="sans-serif"` (emitted by Plot and
-/// friends) still render when no matching system font is installed.
+/// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths and by
+/// Woxi Studio's renderers, so that SVGs referring to
+/// `font-family="sans-serif"` (emitted by Plot and friends) still render
+/// when no matching system font is installed.
 ///
 /// We ship:
 /// - **Atkinson Hyperlegible Next** (OFL, variable-weight) as the
@@ -12885,13 +12886,32 @@ pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
 ///   usvg ignores font variations and draws a variable font's default
 ///   instance, which for the Mono font is ExtraLight — too thin to read
 ///   at typeset-output sizes.
+/// - Static **Bold** instances of both (`fonttools varLib.instancer
+///   wght=700`) for the same reason: usvg would otherwise draw
+///   `font-weight="bold"` text with the regular outlines.
+///
+/// All bundled Atkinson files carry an `OS/2.ySubscriptYOffset` of 400
+/// (upstream: 75). usvg lowers `baseline-shift="sub"` by exactly that
+/// metric, and 0.075 em left subscripts sitting on the baseline. Typeset
+/// text is drawn with `dominant-baseline="central"`, which usvg resolves
+/// per span, raising a 70% subscript's baseline by 0.105 em of the base
+/// font; 0.4 em of the subscript (0.28 em of the base) minus that gives
+/// the 0.17 em drop Wolfram's typesetter uses.
 ///
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
-fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
+pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
     include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Bold.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-Bold.ttf")
       .to_vec(),
   );
   fontdb.load_font_data(

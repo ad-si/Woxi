@@ -553,26 +553,10 @@ impl WoxiStudio {
           // Load the same embedded fallbacks used by the command-line
           // rasterizer/PDF exporter so that in-UI graphics render with a
           // consistent typeface even on systems with no system fonts.
-          // The Mono font is a static Regular instance: usvg would draw the
-          // variable font's ExtraLight default instance.
-          db.load_font_data(
-            include_bytes!(
-              "../../resources/AtkinsonHyperlegibleMono-Regular.ttf"
-            )
-            .to_vec(),
-          );
-          db.load_font_data(
-            include_bytes!(
-              "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
-            )
-            .to_vec(),
-          );
-          db.set_monospace_family("Atkinson Hyperlegible Mono");
-          db.set_sans_serif_family("Atkinson Hyperlegible Next");
-          db.set_serif_family("Atkinson Hyperlegible Next");
-          db.set_cursive_family("Atkinson Hyperlegible Next");
-          db.set_fantasy_family("Atkinson Hyperlegible Next");
+          // System fonts come first: loading them resets the generic
+          // family mappings the embedded set installs.
           db.load_system_fonts();
+          woxi::functions::image_ast::load_embedded_fonts(&mut db);
           Arc::new(db)
         },
         graphics_modal_cell: None,
@@ -7676,20 +7660,8 @@ fn encode_svg_as_png(
 /// Convert an SVG string to a PDF byte buffer via svg2pdf.
 fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
-  fontdb.load_font_data(
-    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
-      .to_vec(),
-  );
-  fontdb.load_font_data(
-    include_bytes!(
-      "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
-    )
-    .to_vec(),
-  );
-  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
-  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
+  woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
   let opt = svg2pdf::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
@@ -8045,22 +8017,8 @@ fn layout_pdf_cells(cells: &[PdfCell], page_width: f64) -> (String, f64) {
 /// The fonts the PDF exports draw text with.
 fn pdf_fontdb() -> std::sync::Arc<svg2pdf::usvg::fontdb::Database> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
-  fontdb.load_font_data(
-    include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
-      .to_vec(),
-  );
-  fontdb.load_font_data(
-    include_bytes!(
-      "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
-    )
-    .to_vec(),
-  );
-  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
-  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
-  fontdb.set_cursive_family("Atkinson Hyperlegible Next");
-  fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
   fontdb.load_system_fonts();
+  woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
   std::sync::Arc::new(fontdb)
 }
 

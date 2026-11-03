@@ -7806,9 +7806,13 @@ fn font_data_url(
 }
 
 /// A single `@font-face` CSS rule embedding `family` from `data_url`.
+/// Both embedded faces are variable fonts with a `wght` axis of 200–800;
+/// declaring that range (rather than `normal`) lets a browser draw
+/// `font-weight="bold"` text from the axis instead of the regular weight
+/// or a synthesized faux bold.
 fn font_face_rule(family: &str, data_url: &str) -> String {
   format!(
-    "@font-face {{ font-family: \"{family}\"; font-weight: normal; \
+    "@font-face {{ font-family: \"{family}\"; font-weight: 200 800; \
 font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
   )
 }
@@ -7926,21 +7930,7 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   // load_system_fonts() resets the generic family mappings, so our
   // set_sans_serif_family() etc. must come *after* it.
   fontdb.load_system_fonts();
-  fontdb.load_font_data(
-    include_bytes!("../../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
-      .to_vec(),
-  );
-  fontdb.load_font_data(
-    include_bytes!(
-      "../../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
-    )
-    .to_vec(),
-  );
-  fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
-  fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
-  fontdb.set_cursive_family("Atkinson Hyperlegible Next");
-  fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
+  crate::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
   let opt = svg2pdf::usvg::Options {
     fontdb: StdArc::new(fontdb),

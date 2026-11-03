@@ -11008,3 +11008,41 @@ mod gabor {
     assert!(natural.contains("width='60' height='40'"), "{natural}");
   }
 }
+
+mod rasterized_text {
+  use super::*;
+
+  #[test]
+  fn bold_text_rasterizes_bold() {
+    // usvg draws a variable font's default instance, so bold text used to
+    // come out with the regular outlines; the static Bold instances fix it.
+    clear_state();
+    let ink = |style: &str| -> f64 {
+      interpret(&format!(
+        "Total[1 - ImageData[ColorConvert[Rasterize[Style[\"MMMM\", 40{style}], \
+         ImageResolution -> 72], \"Grayscale\"]], 2]"
+      ))
+      .unwrap()
+      .parse()
+      .unwrap()
+    };
+    let (regular, bold) = (ink(""), ink(", Bold"));
+    assert!(bold > 1.25 * regular, "regular {regular}, bold {bold}");
+  }
+
+  #[test]
+  fn base_form_subscript_is_lowered() {
+    // The subscript of `BaseForm` (`baseline-shift="sub"`) reaches below
+    // the digit it follows once rasterized.
+    clear_state();
+    let lows = interpret(
+      "img = ImageData[ColorConvert[Rasterize[TableForm[{BaseForm[0, 2]}], \
+       ImageResolution -> 288], \"Grayscale\"]]; w = Last[Dimensions[img]]; \
+       low[cols_] := Max[Flatten[Position[Map[Min, img[[All, cols]]], \
+       _?(# < 0.5 &)]]]; low[Floor[w/2] + 1 ;; w] - low[1 ;; Floor[w/2]]",
+    )
+    .unwrap();
+    let drop: i64 = lows.parse().unwrap();
+    assert!(drop >= 5, "subscript drop {drop} px");
+  }
+}

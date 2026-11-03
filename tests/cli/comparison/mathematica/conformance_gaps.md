@@ -5239,10 +5239,9 @@ Found comparing `Export[…, "SVG"]` of both engines:
   taller in Woxi (600 x 170 for two `2:1` rectangles; Wolfram 600 x 165).
 - `TableForm`/`Grid` text is `#333` in Woxi, black in Wolfram; a
   `TableHeadings` rule adds 1 pt to the gap it sits in only in Wolfram.
-- `Style[…, Bold]` table text rasterizes regular: the embedded variable font
-  is declared `font-weight: normal`, so resvg (PNG export) ignores the bold.
-- `BaseForm` subscripts (`baseline-shift="sub"`) are not lowered when the
-  SVG is rasterized by resvg.
+- A subscript inside a `Style`d run (nested `<tspan>`s under
+  `dominant-baseline="central"`) is drawn raised, like a superscript, when
+  resvg rasterizes the SVG; a plain one (`BaseForm` cells) is lowered.
 - `TraditionalForm` fractions are always set at 0.75 of the font; Wolfram
   sets a top-level fraction at full size and only nested ones (in a grid, a
   script) smaller. `ℯ` is drawn as an italic serif letter rather than the
