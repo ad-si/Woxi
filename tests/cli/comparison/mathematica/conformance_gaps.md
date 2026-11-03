@@ -4975,8 +4975,6 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
   places the label at the series' end with a horizontal leader in WL;
   Woxi draws it beside the last point, and as `InputForm` text rather than
   `TraditionalForm` (`q(n)`).
-- A framed `ListPlot` (`Frame -> True`) also draws the axes inside the
-  frame in WL 15 (the gray y = 0 line); Woxi draws no axis inside a frame.
 - `PlotLegends` on a `Legended` dataset of `ListPlot` is not drawn.
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.

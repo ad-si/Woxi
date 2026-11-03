@@ -364,6 +364,42 @@ mod sampling {
   }
 }
 
+// WL 15 draws the axes of a framed plot as hairlines through the origin,
+// where the origin lies strictly inside the unpadded plot range.
+mod framed_axes {
+  use super::*;
+
+  fn axis_lines(expr: &str) -> usize {
+    svg_of(expr)
+      .matches("stroke=\"#666666\" stroke-width=\"2\" points=")
+      .count()
+  }
+
+  #[test]
+  fn both_axes_inside_the_frame() {
+    assert_eq!(axis_lines("Plot[x, {x, -1, 1}, Frame -> True]"), 2);
+  }
+
+  #[test]
+  fn an_origin_at_or_beyond_the_data_range_draws_no_axis() {
+    // y = 0 inside, x = 0 at the left end of the range: only the x axis.
+    assert_eq!(axis_lines("Plot[Cos[x], {x, 0, 2 Pi}, Frame -> True]"), 1);
+    assert_eq!(axis_lines("Plot[x + 2, {x, 1, 3}, Frame -> True]"), 0);
+    assert_eq!(
+      axis_lines("ListPlot[Table[Sin[x], {x, 0, 2 Pi, Pi/30}], Frame -> True]"),
+      1
+    );
+  }
+
+  #[test]
+  fn axes_false_draws_none() {
+    assert_eq!(
+      axis_lines("Plot[x, {x, -1, 1}, Frame -> True, Axes -> False]"),
+      0
+    );
+  }
+}
+
 // `ImageSize -> Full | Scaled[s]` sizes a plot from the `Pane` holding it,
 // and `Framed` draws WL's square black frame 5 points around it.
 mod pane_relative_size {

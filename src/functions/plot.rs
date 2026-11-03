@@ -2706,6 +2706,10 @@ pub(crate) struct PlotOptions {
   pub plot_layout: Option<crate::functions::plot_layout::PlotLayoutSpec>,
   /// The raw `ImageSize` value, which sizes a `PlotLayout` grid.
   pub image_size_value: Option<Expr>,
+  /// The plot range before its automatic padding (`Plot`); the axes of a
+  /// framed plot are drawn only where the origin lies inside it. List
+  /// plots keep theirs in `grid_interior`.
+  pub unpadded_range: Option<((f64, f64), (f64, f64))>,
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -2865,6 +2869,7 @@ impl Default for PlotOptions {
       image_size_explicit: (false, false),
       plot_layout: None,
       image_size_value: None,
+      unpadded_range: None,
       plot_markers: Vec::new(),
       default_point_size: None,
       label_style: None,
@@ -4529,6 +4534,35 @@ fn generate_svg_with_options(
                   InterpreterError::EvaluationError(format!("Plot: {e}"))
                 })?;
             }
+          }
+        }
+
+        // WL 15 keeps the axes of a framed plot: a hairline (0.2 pt) through
+        // the origin, drawn where the origin lies strictly inside the
+        // unpadded plot range.
+        if opts.frame && !log_x && !log_y {
+          let (ux, uy) = opts
+            .unpadded_range
+            .or(opts.grid_interior)
+            .unwrap_or(((x_min, x_max), (y_min, y_max)));
+          let inside = |v: f64, (a, b): (f64, f64)| {
+            let eps = (b - a).abs() * 1e-9;
+            v > a.min(b) + eps && v < a.max(b) - eps
+          };
+          let axis_style = dark_gray.stroke_width(2);
+          let ox = opts.axes_origin.0.unwrap_or(0.0);
+          let oy = opts.axes_origin.1.unwrap_or(0.0);
+          let mut lines = Vec::new();
+          if show_x_axis && inside(oy, uy) {
+            lines.push(vec![(x_min, oy), (x_max, oy)]);
+          }
+          if show_y_axis && inside(ox, ux) {
+            lines.push(vec![(ox, y_min), (ox, y_max)]);
+          }
+          for line in lines {
+            chart
+              .draw_series(std::iter::once(PathElement::new(line, axis_style)))
+              .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
           }
         }
 
@@ -12341,6 +12375,10 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if plot_range_y.is_none() {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
+  plot_opts.unpadded_range = Some((
+    plot_range_x.unwrap_or((x_min, x_max)),
+    plot_range_y.unwrap_or((y_data_min, y_data_max)),
+  ));
 
   // `PlotLayout -> "Row" | "Column" | …`: one panel per curve, all over
   // the same plot range.
