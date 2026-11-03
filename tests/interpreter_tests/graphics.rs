@@ -13211,6 +13211,69 @@ mod plot3d {
       ));
     }
 
+    /// `Around` error bars: "Fences" (the default) caps each end 3 pt to
+    /// either side, "Bars" draws the bars alone, and `IntervalMarkersStyle`
+    /// recolours them.
+    #[test]
+    fn interval_markers_bars_and_style() {
+      let count = |code: &str, colour: &str| {
+        export_svg(code)
+          .matches(&format!("stroke=\"{colour}\""))
+          .count()
+      };
+      let data = "{Around[1, 0.2], Around[2, 0.3]}";
+      assert_eq!(count(&format!("ListPlot[{data}]"), "#3D99CC"), 6);
+      assert_eq!(
+        count(
+          &format!("ListPlot[{data}, IntervalMarkers -> \"Bars\"]"),
+          "#3D99CC"
+        ),
+        2
+      );
+      assert_eq!(
+        count(
+          &format!("ListPlot[{data}, IntervalMarkersStyle -> Gray]"),
+          "#808080"
+        ),
+        6
+      );
+      // A cap spans 6 pt (60 render units).
+      let svg = export_svg(&format!("ListPlot[{data}]"));
+      let cap = svg
+        .lines()
+        .filter(|l| l.contains("#3D99CC") && l.starts_with("<polyline"))
+        .find_map(|l| {
+          let pts: Vec<f64> = l
+            .split("points=\"")
+            .nth(1)?
+            .split('"')
+            .next()?
+            .split([' ', ','])
+            .filter_map(|v| v.parse().ok())
+            .collect();
+          (pts.len() == 4 && pts[1] == pts[3]).then(|| (pts[2] - pts[0]).abs())
+        });
+      assert_eq!(cap, Some(60.0), "{svg}");
+    }
+
+    /// `DataRange -> {xmin, xmax}` lays out a dataset of plain values even
+    /// when another dataset holds `{x, y}` points, which keep their own x
+    /// (WL 15: {0, 2, 4, 6} next to the points at 0.5 and 2).
+    #[test]
+    fn data_range_spans_value_datasets_beside_point_datasets() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3, 4}, {{0.5, 1}, {2, 3}}}, DataRange -> {0, 6}]",
+      );
+      let xs: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<circle"))
+        .map(|l| l.split("cx=\"").nth(1).unwrap().split('"').next().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 6, "{svg}");
+      // The value at x = 2 and the point at x = 2 share a column.
+      assert_eq!(xs[1], xs[5], "{xs:?}");
+    }
+
     /// A list plot's filling stems take a two-colour `{below, above}`
     /// `FillingStyle` by side of the reference, and a `Dashed` style draws
     /// them dashed (WL 15: 4 pt dashes, fully opaque with a colour).

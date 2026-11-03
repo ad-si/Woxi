@@ -648,6 +648,39 @@ fn apply_data_range(data: &Expr, spec: &DataRangeSpec) -> Option<Expr> {
     ));
   }
 
+  // Several datasets of mixed shapes (`{values, {{x, y}, …}}`): an explicit
+  // span lays out each dataset of plain values, and the datasets of points
+  // keep their own coordinates.
+  let is_points = |row: &[Expr]| {
+    row
+      .iter()
+      .all(|e| matches!(e, Expr::List(p) if p.len() == 2))
+  };
+  if matches!(spec, DataRangeSpec::Span(..))
+    && items.iter().all(|it| matches!(it, Expr::List(_)))
+    && items
+      .iter()
+      .any(|it| matches!(it, Expr::List(row) if is_points(row)))
+  {
+    let mut changed = false;
+    let out: Vec<Expr> = items
+      .iter()
+      .map(|it| match it {
+        Expr::List(row)
+          if !row.is_empty()
+            && row.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          changed = true;
+          pair_up(row)
+        }
+        other => other.clone(),
+      })
+      .collect();
+    if changed {
+      return Some(Expr::List(out.into()));
+    }
+  }
+
   None
 }
 
@@ -1170,15 +1203,27 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.image_padding =
             crate::functions::plot::parse_image_padding(replacement);
         }
+        "IntervalMarkersStyle" => {
+          opts.interval_markers_color =
+            crate::functions::plot::parse_style_directives(replacement)
+              .and_then(|st| st.color)
+              .map(|c| {
+                let (r, g, b) = crate::functions::plot::color_to_rgb8(c);
+                plotters::style::RGBColor(r, g, b)
+              });
+        }
         "ClippingStyle" => {
           opts.clipping_style =
             crate::functions::plot::parse_clipping_style(replacement);
         }
-        // "Fences" (capped error bars) is the default; "Bars" renders with
-        // the same bar geometry. None hides the uncertainty intervals.
+        // "Fences" (capped error bars) is the default; "Bars" drops the
+        // caps. None hides the uncertainty intervals.
         "IntervalMarkers" => match replacement {
           Expr::String(s) if s == "Bands" => {
             opts.interval_markers = IntervalMarkers::Bands;
+          }
+          Expr::String(s) if s == "Bars" => {
+            opts.interval_markers = IntervalMarkers::Bars;
           }
           Expr::Identifier(v) if v == "None" => {
             opts.interval_markers = IntervalMarkers::None;

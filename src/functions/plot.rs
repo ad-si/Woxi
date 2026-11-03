@@ -2461,7 +2461,7 @@ pub(crate) fn parse_filling_style(replacement: &Expr) -> Option<FillStyle> {
 }
 
 /// Convert a parsed `Color` (float channels) to 8-bit RGB.
-fn color_to_rgb8(c: WoxiColor) -> (u8, u8, u8) {
+pub(crate) fn color_to_rgb8(c: WoxiColor) -> (u8, u8, u8) {
   (
     (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
     (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -3000,6 +3000,8 @@ pub(crate) enum IntervalMarkers {
   /// Error bars with end caps ("Fences", the default).
   #[default]
   Fences,
+  /// `"Bars"`: the bars without their caps.
+  Bars,
   /// One filled band per series covering the y-uncertainty intervals.
   Bands,
   /// `IntervalMarkers -> None`: uncertainties are not drawn.
@@ -3169,6 +3171,9 @@ pub(crate) struct PlotOptions {
   pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
   /// How the `error_bars` uncertainties are rendered.
   pub interval_markers: IntervalMarkers,
+  /// `IntervalMarkersStyle -> colour`: the colour of the uncertainty bars
+  /// (else the series colour).
+  pub interval_markers_color: Option<RGBColor>,
   /// The original data points per series when the drawn curve differs from
   /// the data (e.g. `InterpolationOrder` step/spline curves). Anchors
   /// `Mesh -> Full` dots, error bars, and per-point labels. Empty when the
@@ -3401,6 +3406,7 @@ impl Default for PlotOptions {
       clip_overlays: true,
       error_bars: Vec::new(),
       interval_markers: IntervalMarkers::default(),
+      interval_markers_color: None,
       data_points: Vec::new(),
       background: None,
       image_padding: None,
@@ -3451,35 +3457,52 @@ fn draw_error_bars<
   points: &[(f64, f64)],
   bars: &[((f64, f64), (f64, f64))],
   color: RGBColor,
-  x_span: f64,
-  y_span: f64,
+  caps: bool,
 ) -> Result<(), InterpreterError> {
-  // Cap half-lengths: a small fixed fraction of the plotted span.
-  let cap_x = x_span * 0.012;
-  let cap_y = y_span * 0.012;
+  // WL 15 caps each end with a mark 3 pt to either side of the bar.
+  let cap = (3.0 * RESOLUTION_SCALE as f64).round() as i32;
   let style = color.stroke_width(RESOLUTION_SCALE);
-  let mut segments: Vec<[(f64, f64); 2]> = Vec::new();
+  let err = |e: plotters::drawing::DrawingAreaErrorKind<DB::ErrorType>| {
+    InterpreterError::EvaluationError(format!("Plot: {e}"))
+  };
   for (&(x, y), &(dx, dy)) in points.iter().zip(bars) {
     if !(x.is_finite() && y.is_finite()) {
       continue;
     }
     if dy.0 > 0.0 || dy.1 > 0.0 {
       let (lo, hi) = (y - dy.0, y + dy.1);
-      segments.push([(x, lo), (x, hi)]);
-      segments.push([(x - cap_x, lo), (x + cap_x, lo)]);
-      segments.push([(x - cap_x, hi), (x + cap_x, hi)]);
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(x, lo), (x, hi)],
+          style,
+        )))
+        .map_err(err)?;
+      if caps {
+        chart
+          .draw_series([lo, hi].into_iter().map(|end| {
+            EmptyElement::at((x, end))
+              + PathElement::new(vec![(-cap, 0), (cap, 0)], style)
+          }))
+          .map_err(err)?;
+      }
     }
     if dx.0 > 0.0 || dx.1 > 0.0 {
       let (lo, hi) = (x - dx.0, x + dx.1);
-      segments.push([(lo, y), (hi, y)]);
-      segments.push([(lo, y - cap_y), (lo, y + cap_y)]);
-      segments.push([(hi, y - cap_y), (hi, y + cap_y)]);
+      chart
+        .draw_series(std::iter::once(PathElement::new(
+          vec![(lo, y), (hi, y)],
+          style,
+        )))
+        .map_err(err)?;
+      if caps {
+        chart
+          .draw_series([lo, hi].into_iter().map(|end| {
+            EmptyElement::at((end, y))
+              + PathElement::new(vec![(0, -cap), (0, cap)], style)
+          }))
+          .map_err(err)?;
+      }
     }
-  }
-  for seg in segments {
-    chart
-      .draw_series(std::iter::once(PathElement::new(seg.to_vec(), style)))
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
   }
   Ok(())
 }
@@ -5368,16 +5391,17 @@ fn generate_svg_with_options(
 
           if !series_joined {
             // Capped error bars sit under the points of a scatter series.
-            if opts.interval_markers == IntervalMarkers::Fences
-              && let Some(bars) = opts.error_bars.get(series_idx)
+            if matches!(
+              opts.interval_markers,
+              IntervalMarkers::Fences | IntervalMarkers::Bars
+            ) && let Some(bars) = opts.error_bars.get(series_idx)
             {
               draw_error_bars(
                 &mut chart,
                 points,
                 bars,
-                color,
-                x_max - x_min,
-                y_max - y_min,
+                opts.interval_markers_color.unwrap_or(color),
+                opts.interval_markers == IntervalMarkers::Fences,
               )?;
             }
             let marker_size =
@@ -5533,7 +5557,10 @@ fn generate_svg_with_options(
           // are parallel to the original data points, which may differ from
           // the drawn curve (InterpolationOrder).
           if series_joined
-            && opts.interval_markers == IntervalMarkers::Fences
+            && matches!(
+              opts.interval_markers,
+              IntervalMarkers::Fences | IntervalMarkers::Bars
+            )
             && let Some(bars) = opts.error_bars.get(series_idx)
           {
             let anchor = opts
@@ -5545,9 +5572,8 @@ fn generate_svg_with_options(
               &mut chart,
               anchor,
               bars,
-              color,
-              x_max - x_min,
-              y_max - y_min,
+              opts.interval_markers_color.unwrap_or(color),
+              opts.interval_markers == IntervalMarkers::Fences,
             )?;
           }
 

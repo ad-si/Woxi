@@ -5,14 +5,14 @@ expression: "export_svg(\"ListPlot[{Around[2, 1], Around[3, 0.5], Around[5, 0.25
 <svg width="360" height="232" viewBox="0 0 3600 2320" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2320" opacity="1" fill="#FFFFFF" stroke="none"/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="1227,1777 1227,995 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="1184,1777 1270,1777 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="1184,995 1270,995 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="1197,1777 1257,1777 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="1197,995 1257,995 "/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="2370,1190 2370,800 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="2327,1190 2413,1190 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="2327,800 2413,800 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="2340,1190 2400,1190 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="2340,800 2400,800 "/>
 <polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="3512,311 3512,116 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="3469,311 3555,311 "/>
-<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="3469,116 3555,116 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="3482,311 3542,311 "/>
+<polyline fill="none" opacity="1" stroke="#3D99CC" stroke-width="10" points="3482,116 3542,116 "/>
 <circle cx="1227" cy="1386" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <circle cx="2370" cy="995" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <circle cx="3512" cy="213" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
