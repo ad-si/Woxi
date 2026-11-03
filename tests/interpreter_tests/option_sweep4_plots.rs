@@ -304,19 +304,19 @@ mod list_point_plot_3d_datasets {
        Table[-Sin[j/3], {i, 4}, {j, 4}]}]",
     );
     // 16 points per dataset, each dataset in its own colour.
-    assert_eq!(fills(&s, "68,114,196"), 16, "{s}");
-    assert_eq!(fills(&s, "237,125,49"), 16, "{s}");
+    assert_eq!(fills(&s, "55,138,184"), 16, "{s}");
+    assert_eq!(fills(&s, "218,144,33"), 16, "{s}");
   }
 
   #[test]
   fn several_point_lists_and_single_forms_still_work() {
     let s = svg("ListPointPlot3D[{{{1, 2, 3}, {2, 3, 4}}, {{0, 0, 0}}}]");
-    assert_eq!(fills(&s, "68,114,196"), 2);
-    assert_eq!(fills(&s, "237,125,49"), 1);
+    assert_eq!(fills(&s, "55,138,184"), 2);
+    assert_eq!(fills(&s, "218,144,33"), 1);
     let one = svg("ListPointPlot3D[{{1, 2, 3}, {2, 3, 4}, {3, 1, 2}}]");
-    assert_eq!(fills(&one, "68,114,196"), 3);
+    assert_eq!(fills(&one, "55,138,184"), 3);
     let matrix = svg("ListPointPlot3D[{{1, 2}, {3, 4}}]");
-    assert_eq!(fills(&matrix, "68,114,196"), 4);
+    assert_eq!(fills(&matrix, "55,138,184"), 4);
   }
 
   #[test]

@@ -387,9 +387,9 @@ mod list_line_plot_3d {
       "ListLinePlot3D[Table[Table[Sin[i j k/10.], {i, 4}, {j, 6}], {k, 2}]]",
     );
     // Two datasets → two curve colours, each drawn by four row curves.
-    assert!(s.contains("stroke=\"rgb(61,153,204)\""));
-    assert!(s.contains("stroke=\"rgb(242,160,36)\""));
-    assert!(!s.contains("stroke=\"rgb(116,179,54)\""));
+    assert!(s.contains("stroke=\"rgb(55,138,184)\""));
+    assert!(s.contains("stroke=\"rgb(218,144,33)\""));
+    assert!(!s.contains("stroke=\"rgb(104,161,48)\""));
   }
 
   #[test]

@@ -55,7 +55,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="134.7" y1="88.7" x2="134.7" y2="85.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="112.7" y1="149.2" x2="118.2" y2="143.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="194.8" y1="145.0" x2="204.8" y2="148.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="134.66" y1="115.05" x2="201.44" y2="115.49" stroke="rgb(116,179,54)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="134.66" y1="115.05" x2="201.44" y2="115.49" stroke="rgb(104,161,48)" stroke-width="2" stroke-linecap="round"/>
 <line x1="134.7" y1="85.0" x2="134.7" y2="81.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="204.8" y1="148.2" x2="214.8" y2="151.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="134.7" y1="81.3" x2="134.7" y2="77.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -88,7 +88,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="294.9" y1="177.3" x2="304.9" y2="180.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="174.7" y1="64.7" x2="184.7" y2="67.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="118.2" y1="69.5" x2="123.7" y2="63.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="201.44" y1="115.49" x2="268.22" y2="115.93" stroke="rgb(116,179,54)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="201.44" y1="115.49" x2="268.22" y2="115.93" stroke="rgb(104,161,48)" stroke-width="2" stroke-linecap="round"/>
 <line x1="79.8" y1="184.6" x2="85.3" y2="178.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="304.9" y1="180.5" x2="315.0" y2="183.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="184.7" y1="67.9" x2="194.8" y2="71.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -129,7 +129,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="52.4" y1="214.1" x2="57.9" y2="208.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="274.9" y1="97.0" x2="284.9" y2="100.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="335.0" y1="149.6" x2="335.0" y2="145.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="268.22" y1="115.93" x2="335.00" y2="116.38" stroke="rgb(116,179,54)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="268.22" y1="115.93" x2="335.00" y2="116.38" stroke="rgb(104,161,48)" stroke-width="2" stroke-linecap="round"/>
 <line x1="335.0" y1="145.9" x2="335.0" y2="142.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="284.9" y1="100.2" x2="294.9" y2="103.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="85.3" y1="104.9" x2="90.8" y2="99.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -138,7 +138,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="46.9" y1="220.0" x2="52.4" y2="214.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="294.9" y1="103.5" x2="304.9" y2="106.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="335.0" y1="138.5" x2="335.0" y2="134.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="79.83" y1="142.43" x2="146.61" y2="153.41" stroke="rgb(242,160,36)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="79.83" y1="142.43" x2="146.61" y2="153.41" stroke="rgb(218,144,33)" stroke-width="2" stroke-linecap="round"/>
 <line x1="335.0" y1="134.8" x2="335.0" y2="131.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="79.8" y1="110.8" x2="85.3" y2="104.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="304.9" y1="106.7" x2="315.0" y2="109.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -167,7 +167,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="25.0" y1="243.6" x2="35.0" y2="246.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="280.2" y1="249.2" x2="285.7" y2="243.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="239.9" x2="25.0" y2="236.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="146.61" y1="153.41" x2="213.39" y2="164.40" stroke="rgb(242,160,36)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="146.61" y1="153.41" x2="213.39" y2="164.40" stroke="rgb(218,144,33)" stroke-width="2" stroke-linecap="round"/>
 <line x1="35.0" y1="246.9" x2="45.0" y2="250.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="236.2" x2="25.0" y2="232.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="313.1" y1="140.0" x2="318.6" y2="134.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -181,7 +181,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="307.6" y1="145.9" x2="313.1" y2="140.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="46.9" y1="146.2" x2="52.4" y2="140.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="221.5" x2="25.0" y2="217.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="25.00" y1="243.62" x2="91.78" y2="254.61" stroke="rgb(61,153,204)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="25.00" y1="243.62" x2="91.78" y2="254.61" stroke="rgb(55,138,184)" stroke-width="2" stroke-linecap="round"/>
 <line x1="269.2" y1="261.0" x2="274.7" y2="255.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="65.1" y1="256.5" x2="75.1" y2="259.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="217.8" x2="25.0" y2="214.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -206,7 +206,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="30.5" y1="163.9" x2="36.0" y2="158.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="188.3" x2="25.0" y2="184.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="115.2" y1="272.7" x2="125.2" y2="275.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="213.39" y1="164.40" x2="280.17" y2="175.39" stroke="rgb(242,160,36)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="213.39" y1="164.40" x2="280.17" y2="175.39" stroke="rgb(218,144,33)" stroke-width="2" stroke-linecap="round"/>
 <line x1="252.8" y1="278.7" x2="258.2" y2="272.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="184.6" x2="25.0" y2="180.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="125.2" y1="275.9" x2="135.2" y2="279.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -218,7 +218,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="247.3" y1="284.6" x2="252.8" y2="278.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="173.5" x2="25.0" y2="169.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="145.2" y1="282.4" x2="155.2" y2="285.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="91.78" y1="254.61" x2="158.56" y2="265.60" stroke="rgb(61,153,204)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="91.78" y1="254.61" x2="158.56" y2="265.60" stroke="rgb(55,138,184)" stroke-width="2" stroke-linecap="round"/>
 <line x1="25.0" y1="169.8" x2="35.0" y2="173.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="280.2" y1="175.4" x2="285.7" y2="169.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="155.2" y1="285.6" x2="165.2" y2="288.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -246,7 +246,7 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="225.3" y1="308.2" x2="225.3" y2="304.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="105.1" y1="195.6" x2="115.2" y2="198.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="225.3" y1="304.5" x2="225.3" y2="300.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="158.56" y1="265.60" x2="225.34" y2="276.59" stroke="rgb(61,153,204)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="158.56" y1="265.60" x2="225.34" y2="276.59" stroke="rgb(55,138,184)" stroke-width="2" stroke-linecap="round"/>
 <line x1="225.3" y1="300.8" x2="225.3" y2="297.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="115.2" y1="198.9" x2="125.2" y2="202.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="252.8" y1="204.9" x2="258.2" y2="199.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>

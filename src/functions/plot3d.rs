@@ -9451,6 +9451,35 @@ fn list_plot3d_datasets(data: &Expr) -> Option<Vec<Expr>> {
 /// `ListPlot3D[{m1, m2, …}, opts]`: every dataset is plotted on its own and
 /// the surfaces are combined with `Show`, each in the colour its
 /// `PlotStyle` entry gives (cycling), or the default plot colours.
+/// The point and curve colors of `ListPointPlot3D`/`ListLinePlot3D` in
+/// WL 15 (their themes' `"DefaultPlotStyle"`): the 2D plot palette at 90%
+/// brightness.
+fn list_curve_colors_3d() -> [(u8, u8, u8); 15] {
+  let mut out = [(0u8, 0u8, 0u8); 15];
+  for (o, &(r, g, b)) in
+    out.iter_mut().zip(&crate::functions::plot::PLOT_COLORS_RGB)
+  {
+    let q = |c: f64| (0.9 * c * 255.0).round() as u8;
+    *o = (q(r), q(g), q(b));
+  }
+  out
+}
+
+/// The surface colors of `ListPlot3D` in WL 15 (the colors of its theme's
+/// `"DefaultPlotStyle"`), one per dataset.
+const LIST_SURFACE_COLORS: [(f64, f64, f64); 10] = [
+  (0.880722, 0.611041, 0.142051),
+  (0.368417, 0.506779, 0.709798),
+  (0.560181, 0.691569, 0.194885),
+  (0.922526, 0.385626, 0.209179),
+  (0.528488, 0.470624, 0.701351),
+  (0.772079, 0.431554, 0.102387),
+  (0.363898, 0.618501, 0.782349),
+  (1., 0.75, 0.),
+  (0.647624, 0.37816, 0.614037),
+  (0.571589, 0.586483, 0.),
+];
+
 fn list_plot3d_multi(
   datasets: &[Expr],
   args: &[Expr],
@@ -9478,14 +9507,10 @@ fn list_plot3d_multi(
   let mut surfaces = Vec::with_capacity(datasets.len());
   for (i, data) in datasets.iter().enumerate() {
     let style = if style_items.is_empty() {
-      let (r, g, b) = PLOT_COLORS[i % PLOT_COLORS.len()];
+      let (r, g, b) = LIST_SURFACE_COLORS[i % LIST_SURFACE_COLORS.len()];
       call(
         "RGBColor",
-        vec![
-          Expr::Real(r as f64 / 255.0),
-          Expr::Real(g as f64 / 255.0),
-          Expr::Real(b as f64 / 255.0),
-        ],
+        vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
       )
     } else {
       style_items[i % style_items.len()].clone()
@@ -9600,7 +9625,12 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(name) => {
         crate::functions::field_plot::apply_named_color_function(name, t)
       }
-      None => height_color(t),
+      // WL 15 draws a list surface in its first 3D plot style color.
+      None => {
+        let (r, g, b) = LIST_SURFACE_COLORS[0];
+        let q = |c: f64| (c * 255.0).round() as u8;
+        (q(r), q(g), q(b))
+      }
     }
   };
 
@@ -9634,7 +9664,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let num_rows = outer.len();
           let num_cols = first_row.len();
 
-          let mut grid = vec![vec![f64::NAN; num_cols]; num_rows];
+          // The grid is indexed `[x][y]`: column `j` of row `i` sits at
+          // x = j, y = i (both counted from 1), as in wolframscript.
+          let mut grid = vec![vec![f64::NAN; num_rows]; num_cols];
           for (i, row_expr) in outer.iter().enumerate() {
             if let Expr::List(row) = row_expr {
               for (j, val_expr) in row.iter().enumerate() {
@@ -9642,19 +9674,19 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   && let Some(v) = try_eval_to_f64(val_expr)
                   && v.is_finite()
                 {
-                  grid[i][j] = v;
+                  grid[j][i] = v;
                 }
               }
             }
           }
           (
             grid,
-            num_rows,
             num_cols,
-            0.0,
-            (num_cols as f64 - 1.0).max(1.0),
-            0.0,
-            (num_rows as f64 - 1.0).max(1.0),
+            num_rows,
+            1.0,
+            (num_cols as f64).max(2.0),
+            1.0,
+            (num_rows as f64).max(2.0),
           )
         }
         // Explicit 3D coordinates: {{x1,y1,z1}, {x2,y2,z2}, ...}
@@ -9977,6 +10009,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // re-render everything together under one shared camera instead.
   let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
   let mut point_exprs: Vec<Expr> = Vec::new();
+  // Grid node `[i][j]` in data coordinates (a height matrix's column and
+  // row numbers, counted from 1).
+  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
+    if n > 1 {
+      lo + k as f64 * (hi - lo) / (n - 1) as f64
+    } else {
+      lo
+    }
+  };
   for (i, row) in grid.iter().enumerate() {
     for (j, &z) in row.iter().enumerate() {
       if !z.is_finite() {
@@ -9985,8 +10026,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       index_of[i][j] = Some(point_exprs.len());
       point_exprs.push(Expr::List(
         vec![
-          Expr::Real(i as f64),
-          Expr::Real(j as f64),
+          Expr::Real(coord(i, rows, x_min, x_max)),
+          Expr::Real(coord(j, cols, y_min, y_max)),
           Expr::Real(z.clamp(z_lo, z_hi)),
         ]
         .into(),
@@ -12195,15 +12236,8 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let camera = Camera::default();
 
-  // Dataset colors (Mathematica-like palette)
-  let palette: [(u8, u8, u8); 6] = [
-    (68, 114, 196),  // blue
-    (237, 125, 49),  // orange
-    (165, 165, 165), // gray
-    (255, 192, 0),   // gold
-    (91, 155, 213),  // light blue
-    (112, 173, 71),  // green
-  ];
+  // Dataset colors: WL 15's 3D point/curve palette.
+  let palette = list_curve_colors_3d();
 
   let mut scatter_points: Vec<ScatterPoint> = Vec::new();
 
@@ -12502,7 +12536,7 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
-  let radius = 3.0;
+  let radius = 1.75;
   {
     let mut ei = 0;
     for pt in points {
@@ -12708,7 +12742,7 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut segments: Vec<LineSeg3D> = Vec::new();
 
-  let palette = crate::functions::plot::PLOT_COLORS;
+  let palette = list_curve_colors_3d();
   for (ds, &di) in datasets.iter().zip(&curve_colors) {
     let color = palette[di % palette.len()];
     for pair in ds.windows(2) {
@@ -12999,7 +13033,7 @@ fn generate_line3d_svg(
     let (sx1, sy1) = to_svg(seg.x1, seg.y1);
     let (r, g, b) = seg.color;
     svg.push_str(&format!(
-      "<line x1=\"{sx0:.2}\" y1=\"{sy0:.2}\" x2=\"{sx1:.2}\" y2=\"{sy1:.2}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>\n"
+      "<line x1=\"{sx0:.2}\" y1=\"{sy0:.2}\" x2=\"{sx1:.2}\" y2=\"{sy1:.2}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"2\" stroke-linecap=\"round\"/>\n"
     ));
   }
   while ei < sorted_edges.len() {

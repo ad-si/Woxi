@@ -22704,6 +22704,32 @@ mod list_plot_3d {
     assert_eq!(svg, flat);
   }
 
+  // Regression: a height matrix was drawn transposed (rows along x) and in
+  // 0-based index coordinates. WL puts column j of row i at x = j, y = i,
+  // both counted from 1, in its first 3D surface color.
+  #[test]
+  fn list_plot3d_matrix_columns_run_along_x() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Select[ListPlot3D[{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 1, 5}}][[1, 1]], \
+         #[[3]] > 0.5 &]"
+      )
+      .unwrap(),
+      "{{3., 3., 1.}, {4., 3., 5.}}"
+    );
+    // No height gradient: the facets are WL 15's orange (the black is the
+    // mesh).
+    assert_eq!(
+      interpret(
+        "Round[List @@@ Union[Cases[ListPlot3D[{{1, 2, 3}, {2, 3, 4}}], \
+         _RGBColor, Infinity]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.}, {0.88, 0.61, 0.14}}"
+    );
+  }
+
   #[test]
   fn list_plot3d_matrix_format() {
     clear_state();

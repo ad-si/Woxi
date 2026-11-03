@@ -145,7 +145,7 @@ expression: "export_svg(\"ListLinePlot3D[{{-1, -1, 0}, {0, 0, 1}, {1, 1, 0}}]\")
 <line x1="335.0" y1="131.1" x2="335.0" y2="127.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="302.1" y1="225.6" x2="307.6" y2="219.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="41.4" y1="225.9" x2="46.9" y2="220.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="180.00" y1="143.09" x2="335.00" y2="190.19" stroke="rgb(61,153,204)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="180.00" y1="143.09" x2="335.00" y2="190.19" stroke="rgb(55,138,184)" stroke-width="2" stroke-linecap="round"/>
 <line x1="335.0" y1="127.4" x2="335.0" y2="123.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="315.0" y1="109.9" x2="325.0" y2="113.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="335.0" y1="123.8" x2="335.0" y2="120.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
@@ -170,7 +170,7 @@ expression: "export_svg(\"ListLinePlot3D[{{-1, -1, 0}, {0, 0, 1}, {1, 1, 0}}]\")
 <line x1="25.0" y1="239.9" x2="25.0" y2="236.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="35.0" y1="246.9" x2="45.0" y2="250.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="236.2" x2="25.0" y2="232.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="25.00" y1="243.62" x2="180.00" y2="143.09" stroke="rgb(61,153,204)" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="25.00" y1="243.62" x2="180.00" y2="143.09" stroke="rgb(55,138,184)" stroke-width="2" stroke-linecap="round"/>
 <line x1="313.1" y1="140.0" x2="318.6" y2="134.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="52.4" y1="140.3" x2="57.9" y2="134.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
 <line x1="25.0" y1="232.6" x2="25.0" y2="228.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
