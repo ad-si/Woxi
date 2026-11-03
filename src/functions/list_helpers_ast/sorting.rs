@@ -567,6 +567,19 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
                 return ord;
               }
             }
+            // A sum led by another symbol than the monomial's: by those
+            // symbols (`Sort[{a, a - 2/c}]` = `{a, a - 2/c}`); the classes
+            // below only order a sum against its own leading variable.
+            (Some(ta), None)
+              if let Some(ord) = sum_lead_variable_order(ta, b) =>
+            {
+              return ord;
+            }
+            (None, Some(tb))
+              if let Some(ord) = sum_lead_variable_order(tb, a) =>
+            {
+              return ord.reverse();
+            }
             (Some(ta), None)
               if let Some(ord) = linear_sum_vs_monomial(ta, b) =>
             {
@@ -2432,7 +2445,7 @@ fn linear_sum_vs_monomial(
   }
   Some(match c.partial_cmp(&k)? {
     std::cmp::Ordering::Equal => {
-      if terms[..terms.len() - 1].iter().any(term_is_negative) {
+      if negative_constant_lower_terms(terms) {
         std::cmp::Ordering::Less
       } else {
         std::cmp::Ordering::Greater
@@ -2440,6 +2453,43 @@ fn linear_sum_vs_monomial(
     }
     other => other,
   })
+}
+
+/// A sum (its `terms`) against a monomial whose symbol differs from the
+/// symbol of the sum's leading term: the order of those two symbols.
+/// `None` when either is no plain symbol (power of one, with a number
+/// coefficient) or they agree.
+fn sum_lead_variable_order(
+  terms: &[Expr],
+  monomial: &Expr,
+) -> Option<std::cmp::Ordering> {
+  let symbol_of = |e: &Expr| -> Option<Expr> {
+    let (_, rest) = numeric_coeff_and_rest_expr(e);
+    let core = rest.unwrap_or_else(|| e.clone());
+    let base = match power_parts(&core) {
+      Some((base, exp)) => {
+        crate::functions::math_ast::try_eval_to_f64(&exp)?;
+        base
+      }
+      None => core,
+    };
+    matches!(base, Expr::Identifier(_)).then_some(base)
+  };
+  let lead = symbol_of(terms.last()?)?;
+  let other = symbol_of(monomial)?;
+  let ord = canonical_cmp(&lead, &other);
+  (ord != std::cmp::Ordering::Equal).then_some(ord)
+}
+
+/// The terms below a sum's lead are all numbers and one is negative:
+/// `-3 + x` sorts before `x`, while `-b + q` and `-3 + b + q` sort after
+/// `q` (wolframscript-verified).
+fn negative_constant_lower_terms(terms: &[Expr]) -> bool {
+  let lower = &terms[..terms.len().saturating_sub(1)];
+  lower.iter().any(term_is_negative)
+    && lower
+      .iter()
+      .all(crate::functions::predicate_ast::is_numeric_q)
 }
 
 /// Whether a sum sorts in the EARLY class — before monomials and atoms —
@@ -2460,8 +2510,7 @@ fn sum_sorts_early(terms: &[Expr]) -> bool {
     return true;
   }
   if exp == 1.0
-    && (term_is_negative(lead)
-      || terms[..terms.len() - 1].iter().any(term_is_negative))
+    && (term_is_negative(lead) || negative_constant_lower_terms(terms))
   {
     return true;
   }

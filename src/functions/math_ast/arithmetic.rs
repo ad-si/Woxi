@@ -5626,7 +5626,9 @@ fn compare_call_factors(
   let ha = plus_term_call_head(ca).unwrap_or_default();
   let hb = plus_term_call_head(cb).unwrap_or_default();
   call_head_cmp(ha, hb)
-    .then_with(|| wl_arg_order(ca, cb))
+    .then_with(|| {
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(ca, cb)
+    })
     .then_with(|| compare_call_exponents(ea, eb))
 }
 
@@ -5695,7 +5697,8 @@ fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
     (None, Some(_)) => Some(std::cmp::Ordering::Less),
     (Some(_), None) => Some(std::cmp::Ordering::Greater),
     (Some(ra), Some(rb)) => {
-      let ord = wl_arg_order(&ra, &rb);
+      let ord =
+        crate::functions::list_helpers_ast::sorting::canonical_cmp(&ra, &rb);
       (ord != std::cmp::Ordering::Equal).then_some(ord)
     }
   }

@@ -38,12 +38,59 @@ mod difference_delta_symbolic_order {
   #[test]
   fn non_exponential_symbolic_order_stays_unevaluated() {
     assert_eq!(
-      interpret("DifferenceDelta[i^2, {i, n}]").unwrap(),
-      "DifferenceDelta[i^2, {i, n}]"
-    );
-    assert_eq!(
       interpret("DifferenceDelta[a^i^2, {i, n}]").unwrap(),
       "DifferenceDelta[a^i^2, {i, n}]"
+    );
+  }
+}
+
+// A polynomial's difference of symbolic order is a sum of hypergeometric
+// values Σ_k (-1)^k C(n, k) k^j.
+mod difference_delta_symbolic_order_polynomial {
+  use super::*;
+
+  #[test]
+  fn polynomials() {
+    assert_eq!(
+      interpret("DifferenceDelta[i^2, {i, n}]").unwrap(),
+      "2*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       2*n^2*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i^2*HypergeometricPFQ[{-n}, {}, 1] + \
+       2*i*n*HypergeometricPFQ[{-n}, {}, 1] + \
+       n^2*HypergeometricPFQ[{-n}, {}, 1] - \
+       n*HypergeometricPFQ[{2, 1 - n}, {1}, 1]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[i, {i, n}]").unwrap(),
+      "n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i*HypergeometricPFQ[{-n}, {}, 1] + n*HypergeometricPFQ[{-n}, {}, 1]"
+    );
+    assert_eq!(
+      interpret("DifferenceDelta[i^2, {i, n, h}]").unwrap(),
+      "2*h*i*n*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       2*h^2*n^2*HypergeometricPFQ[{1 - n}, {}, 1] + \
+       i^2*HypergeometricPFQ[{-n}, {}, 1] + \
+       2*h*i*n*HypergeometricPFQ[{-n}, {}, 1] + \
+       h^2*n^2*HypergeometricPFQ[{-n}, {}, 1] - \
+       h^2*n*HypergeometricPFQ[{2, 1 - n}, {1}, 1]"
+    );
+  }
+
+  // 1F0 at 1 is 0^(-a): left alone for a symbolic a.
+  #[test]
+  fn hypergeometric_1f0_at_one() {
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-n}, {}, 1]").unwrap(),
+      "HypergeometricPFQ[{-n}, {}, 1]"
+    );
+    assert_eq!(interpret("HypergeometricPFQ[{-3}, {}, 1]").unwrap(), "0");
+    assert_eq!(
+      interpret("HypergeometricPFQ[{3}, {}, 1]").unwrap(),
+      "ComplexInfinity"
+    );
+    assert_eq!(
+      interpret("HypergeometricPFQ[{-n}, {}, z]").unwrap(),
+      "(1 - z)^n"
     );
   }
 }

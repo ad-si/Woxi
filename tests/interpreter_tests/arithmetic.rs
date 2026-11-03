@@ -14840,3 +14840,42 @@ mod constant_power_plus_order {
     assert_eq!(interpret("-1/Sqrt[Pi]").unwrap(), "-(1/Sqrt[Pi])");
   }
 }
+
+// Sums against symbols in canonical order, and call-led Plus terms by
+// their calls' arguments, then the rest, in canonical order.
+mod canonical_sum_and_call_led_order {
+  use super::*;
+
+  #[test]
+  fn sum_led_by_another_symbol_or_with_symbolic_lower_terms() {
+    assert_eq!(interpret("Sort[{-2/b + q, q}]").unwrap(), "{q, -2/b + q}");
+    assert_eq!(interpret("Sort[{q - b, q}]").unwrap(), "{q, -b + q}");
+    assert_eq!(
+      interpret("Sort[{q, -3 + b + q}]").unwrap(),
+      "{q, -3 + b + q}"
+    );
+    assert_eq!(
+      interpret("Sort[{1/q, -b + q}]").unwrap(),
+      "{q^(-1), -b + q}"
+    );
+    assert_eq!(interpret("Sort[{x, -3 + x}]").unwrap(), "{-3 + x, x}");
+    assert_eq!(interpret("Sort[{a, a - 2/c}]").unwrap(), "{a, a - 2/c}");
+    assert_eq!(interpret("Sort[{y, 1 + x}]").unwrap(), "{1 + x, y}");
+    assert_eq!(
+      interpret("Gamma[a] Gamma[a - 2/c] - Gamma[a - 1/c]^2").unwrap(),
+      "Gamma[a]*Gamma[a - 2/c] - Gamma[a - c^(-1)]^2"
+    );
+  }
+
+  #[test]
+  fn call_led_terms() {
+    assert_eq!(
+      interpret("a f[1 - n] + b f[-n]").unwrap(),
+      "a*f[1 - n] + b*f[-n]"
+    );
+    assert_eq!(
+      interpret("n^2 f[x] + i n f[x] + i^2 f[x]").unwrap(),
+      "i^2*f[x] + i*n*f[x] + n^2*f[x]"
+    );
+  }
+}

@@ -22178,6 +22178,79 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(if fully_reduced { expanded } else { canceled })
 }
 
+/// Δ_h^n p(x) for a polynomial `p` and a symbolic order `n`, as
+/// wolframscript writes it: `Σ_k (-1)^k C(n, k) p(x + h (n - k))` with
+/// `p(x + h n - h k)` expanded in `k` and each `Σ_k (-1)^k C(n, k) k^j` as
+/// a hypergeometric value — `HypergeometricPFQ[{-n}, {}, 1]` for `j = 0`,
+/// `-n HypergeometricPFQ[{2, …, 2, 1 - n}, {1, …, 1}, 1]` (`j - 1` twos and
+/// ones) otherwise. `None` unless `p` is a polynomial in `x`.
+fn symbolic_order_polynomial_delta(
+  expr: &Expr,
+  var: &str,
+  n: &Expr,
+  h: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::evaluator::evaluate_function_call_ast as call_fn;
+  let x = Expr::Identifier(var.to_string());
+  if !matches!(
+    call_fn("PolynomialQ", &[expr.clone(), x.clone()])?,
+    Expr::Identifier(ref t) if t == "True"
+  ) || !crate::functions::polynomial_ast::contains_var(expr, var)
+  {
+    return Ok(None);
+  }
+  let k_name = "\u{2620}delta\u{2620}";
+  let k = Expr::Identifier(k_name.to_string());
+  let shift = plus(vec![
+    x.clone(),
+    times(vec![
+      h.clone(),
+      plus(vec![n.clone(), times(vec![Expr::Integer(-1), k.clone()])]),
+    ]),
+  ]);
+  let shifted = call_fn(
+    "Expand",
+    &[crate::syntax::substitute_variable(expr, var, &shift)],
+  )?;
+  let Expr::List(ref coeffs) = call_fn("CoefficientList", &[shifted, k])?
+  else {
+    return Ok(None);
+  };
+  let one = Expr::Integer(1);
+  let one_minus_n =
+    plus(vec![one.clone(), times(vec![Expr::Integer(-1), n.clone()])]);
+  let mut terms = Vec::with_capacity(coeffs.len());
+  for (j, c) in coeffs.iter().enumerate() {
+    let sum = if j == 0 {
+      call(
+        "HypergeometricPFQ",
+        vec![
+          Expr::List(vec![times(vec![Expr::Integer(-1), n.clone()])].into()),
+          Expr::List(vec![].into()),
+          one.clone(),
+        ],
+      )
+    } else {
+      let mut upper = vec![Expr::Integer(2); j - 1];
+      upper.push(one_minus_n.clone());
+      times(vec![
+        Expr::Integer(-1),
+        n.clone(),
+        call(
+          "HypergeometricPFQ",
+          vec![
+            Expr::List(upper.into()),
+            Expr::List(vec![one.clone(); j - 1].into()),
+            one.clone(),
+          ],
+        ),
+      ])
+    };
+    terms.push(times(vec![c.clone(), sum]));
+  }
+  Ok(Some(call_fn("Expand", &[plus(terms)])?))
+}
+
 /// DifferenceDelta[f, x] = f(x+1) - f(x)
 /// DifferenceDelta[f, {x, n}] = n-th order forward difference with step 1
 /// DifferenceDelta[f, {x, n, h}] = n-th order forward difference with step h
@@ -22217,6 +22290,14 @@ pub fn difference_delta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 )
               {
                 return crate::evaluator::evaluate_expr_to_expr(&result);
+              }
+              if let Some(result) = symbolic_order_polynomial_delta(
+                expr,
+                var.as_str(),
+                &items[1],
+                &h,
+              )? {
+                return Ok(result);
               }
               return Ok(unevaluated("DifferenceDelta", args));
             }
