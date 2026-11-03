@@ -22033,6 +22033,10 @@ struct LayoutOptions {
   /// layout fills that whole rectangle instead of keeping the cells' own
   /// proportions.
   aspect_full: bool,
+  /// Half a gap of margin around the outside of the layout, and the
+  /// vertical gap resolved against the cell width — how `GraphicsGrid`
+  /// spaces its cells.
+  outer_margin: bool,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -22167,6 +22171,8 @@ struct GridLayout {
   total_width: f64,
   total_height: f64,
   v_gap: f64,
+  /// Space above the first row (`LayoutOptions::outer_margin`).
+  top_pad: f64,
 }
 
 /// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
@@ -22203,6 +22209,7 @@ fn compute_grid_layout(
         spacings_explicit: opts.spacings_explicit,
         background: opts.background,
         aspect_full: opts.aspect_full,
+        outer_margin: opts.outer_margin,
       };
       &opts_owned
     } else {
@@ -22287,8 +22294,10 @@ fn compute_grid_layout(
         SpacingSpec::Scaled(f) => (f.max(0.0), 0.0),
         SpacingSpec::Points(_) => (0.0, opts.h_spacing.to_px(0.0)),
       };
-      let cells_w = (target_w - (cols - 1.0) * fixed_gap).max(1.0);
-      cells_w / (max_nat_row_w * (1.0 + scaled_gap * (cols - 1.0) / cols))
+      // With an outer margin there are `cols` gaps in all, not `cols - 1`.
+      let gaps = if opts.outer_margin { cols } else { cols - 1.0 };
+      let cells_w = (target_w - gaps * fixed_gap).max(1.0);
+      cells_w / (max_nat_row_w * (1.0 + scaled_gap * gaps / cols))
     }
   };
 
@@ -22300,9 +22309,23 @@ fn compute_grid_layout(
     let num_nonempty = row_nat_dims.iter().filter(|(_, h)| *h > 0.0).count();
     if nat_total_h > 0.0 && num_nonempty > 0 {
       let avg_row_h = nat_total_h / num_nonempty as f64;
-      let v_gap_nat = opts.v_spacing.to_px(avg_row_h);
-      let nat_total_h_with_gaps =
-        nat_total_h + (num_nonempty as f64 - 1.0).max(0.0) * v_gap_nat;
+      // With an outer margin the gap follows the cell width, and there is
+      // one more of it (two half gaps at the edges).
+      let (v_gap_nat, gaps) = if opts.outer_margin {
+        let widths: Vec<f64> = parsed_rows
+          .iter()
+          .flatten()
+          .map(|(_, _, w, _)| *w)
+          .collect();
+        let avg_w = widths.iter().sum::<f64>() / widths.len().max(1) as f64;
+        (opts.v_spacing.to_px(avg_w), num_nonempty as f64)
+      } else {
+        (
+          opts.v_spacing.to_px(avg_row_h),
+          (num_nonempty as f64 - 1.0).max(0.0),
+        )
+      };
+      let nat_total_h_with_gaps = nat_total_h + gaps * v_gap_nat;
       let scale_h = total_h / nat_total_h_with_gaps.max(1e-6);
       // Use whichever constraint is tighter so both dimensions fit.
       scale = scale.min(scale_h);
@@ -22366,9 +22389,10 @@ fn compute_grid_layout(
       }
     }
   }
+  let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
   let col_x: Vec<f64> = col_w
     .iter()
-    .scan(0.0_f64, |x, w| {
+    .scan(left_pad, |x, w| {
       let here = *x;
       *x += w + h_gap;
       Some(here)
@@ -22423,25 +22447,48 @@ fn compute_grid_layout(
     .iter()
     .zip(col_w.iter())
     .map(|(x, w)| x + w)
-    .fold(0.0_f64, f64::max);
+    .fold(0.0_f64, f64::max)
+    + left_pad;
 
   let v_gap = if row_layouts.is_empty() {
     0.0
+  } else if opts.outer_margin {
+    // `GraphicsGrid` resolves a `Scaled` row gap against the cell width.
+    opts.v_spacing.to_px(avg_cell_w)
   } else {
     let avg_h = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
       / row_layouts.len().max(1) as f64;
     opts.v_spacing.to_px(avg_h)
   };
-  let total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
+  let mut top_pad = if opts.outer_margin { v_gap / 2.0 } else { 0.0 };
+  let mut total_height: f64 = row_layouts.iter().map(|r| r.row_h).sum::<f64>()
     + (row_layouts.iter().filter(|r| r.row_h > 0.0).count() as f64 - 1.0)
       .max(0.0)
-      * v_gap;
+      * v_gap
+    + 2.0 * top_pad;
+  let mut total_width = total_width;
+  // `GraphicsGrid[…, ImageSize -> {w, h}]` is exactly that big, the cells
+  // centred in it.
+  if opts.outer_margin
+    && let (Some(tw), Some(th)) = (opts.target_width, opts.target_height)
+  {
+    let dx = ((tw - total_width) / 2.0).max(0.0);
+    for row in &mut row_layouts {
+      for cell in &mut row.cells {
+        cell.x += dx;
+      }
+    }
+    top_pad += ((th - total_height) / 2.0).max(0.0);
+    total_width = total_width.max(tw);
+    total_height = total_height.max(th);
+  }
 
   Some(GridLayout {
     rows: row_layouts,
     total_width,
     total_height,
     v_gap,
+    top_pad,
   })
 }
 
@@ -22467,13 +22514,14 @@ fn combine_svgs_grid(
 ) -> Option<String> {
   let layout = compute_grid_layout(rows, opts)?;
 
+  // Rounding noise in the layout sums must not add a pixel.
+  let (w, h) = (
+    (layout.total_width - 1e-6).ceil() as u32,
+    (layout.total_height - 1e-6).ceil() as u32,
+  );
   let mut svg = String::with_capacity(4096);
   svg.push_str(&format!(
-    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
-    layout.total_width.ceil() as u32,
-    layout.total_height.ceil() as u32,
-    layout.total_width.ceil() as u32,
-    layout.total_height.ceil() as u32,
+    "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
   ));
   if let Some(bg) = &opts.background {
     svg.push_str(&format!(
@@ -22485,7 +22533,7 @@ fn combine_svgs_grid(
   // Track per-row vertical positions so frame lines can be drawn at
   // the correct y boundaries even when rows have different heights.
   let mut row_y_starts: Vec<f64> = Vec::with_capacity(layout.rows.len());
-  let mut y = 0.0_f64;
+  let mut y = layout.top_pad;
   for row in &layout.rows {
     if row.row_h <= 0.0 {
       row_y_starts.push(y);
@@ -22579,6 +22627,7 @@ fn default_layout_options() -> LayoutOptions {
     spacings_explicit: false,
     background: None,
     aspect_full: false,
+    outer_margin: false,
   }
 }
 
@@ -22750,6 +22799,16 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
 /// are returned unchanged so we never override user options or break
 /// unrelated calls.
 fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
+  with_default_image_size_shaped(expr, size, true)
+}
+
+/// `with_default_image_size`; `golden_cells` pins a bare `Graphics[…]` to a
+/// 1/GoldenRatio cell (see below) instead of keeping its own proportions.
+fn with_default_image_size_shaped(
+  expr: &Expr,
+  size: i128,
+  golden_cells: bool,
+) -> Expr {
   // An already-evaluated `Graphics[…]` keeps the expression it was built
   // from in `structure`, so it can still be re-rendered at a different
   // size — the whole point of collecting it into a `GraphicsRow`/`Column`/
@@ -22801,7 +22860,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
       matches!(a, Expr::Rule { pattern, .. }
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
     });
-  if name == "Graphics" && !has_aspect_ratio {
+  if golden_cells && name == "Graphics" && !has_aspect_ratio {
     let h = (size as f64 / std::f64::consts::GOLDEN_RATIO).round() as i128;
     new_args.push(rule_expr(
       id_expr("ImageSize"),
@@ -22824,6 +22883,16 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
 /// scale than its neighbours (a padded grid whose first cell is a big
 /// picture and whose other cells are tiny).
 fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
+  with_cell_image_size_shaped(expr, size, true)
+}
+
+/// `with_cell_image_size`, with `golden_cells` as in
+/// `with_default_image_size_shaped`.
+fn with_cell_image_size_shaped(
+  expr: &Expr,
+  size: i128,
+  golden_cells: bool,
+) -> Expr {
   let inner = match expr {
     Expr::Graphics {
       structure: Some(inner),
@@ -22872,7 +22941,7 @@ fn with_cell_image_size(expr: &Expr, size: i128) -> Expr {
       return call(name.as_str(), new_args);
     }
   }
-  with_default_image_size(expr, size)
+  with_default_image_size_shaped(expr, size, golden_cells)
 }
 
 /// `with_cell_image_size` for a cell that has to fill exactly `w` × `h`
@@ -23200,6 +23269,7 @@ fn render_items_at_size(
   items: &[Expr],
   per_cell_w: i128,
   per_cell_h: Option<i128>,
+  golden_cells: bool,
 ) -> Vec<String> {
   // A cell followed by `SpanFromLeft` markers is laid out across the
   // columns they occupy, so it is rendered that many cells wide.
@@ -23325,7 +23395,11 @@ fn render_items_at_size(
         Some(h) => {
           with_fixed_image_size(&target, per_cell_w * spans[item_idx], h)
         }
-        None => with_cell_image_size(&target, per_cell_w * spans[item_idx]),
+        None => with_cell_image_size_shaped(
+          &target,
+          per_cell_w * spans[item_idx],
+          golden_cells,
+        ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
@@ -23362,7 +23436,7 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let (per_cell_w, per_cell_h) =
       layout_cell_size(&opts, items.len(), 1, items.len());
-    render_items_at_size(items, per_cell_w, per_cell_h)
+    render_items_at_size(items, per_cell_w, per_cell_h, true)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -23409,7 +23483,7 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
     let (per_cell_w, per_cell_h) = layout_cell_size(&opts, 1, items.len(), 1);
-    render_items_at_size(items, per_cell_w, per_cell_h)
+    render_items_at_size(items, per_cell_w, per_cell_h, true)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;
     let items = match &list_expr {
@@ -23606,21 +23680,93 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-  let (per_cell_w, per_cell_h) =
-    layout_cell_size(&opts, max_cols, outer_items.len(), max_cols);
-  let rows: Vec<Vec<String>> = outer_items
-    .iter()
-    .map(|item| match item {
-      Expr::List(row_items) => {
-        render_items_at_size(row_items, per_cell_w, per_cell_h)
+  // Wolfram spaces a `GraphicsGrid` with half a gap of margin around it,
+  // and keeps each picture's own proportions.
+  let mut opts = opts;
+  opts.outer_margin = true;
+  // With no `ImageSize`, a row of `Graphics[…]` is as wide as those
+  // pictures are on their own, and anything else (a plot) widens it to the
+  // full 600; no wider than 600 either way, and shrunk so the grid is at
+  // most 700 tall.
+  let auto_size = opts.target_width.is_none() && !opts.aspect_full;
+  if auto_size {
+    let natural_width = |item: &Expr| -> Option<f64> {
+      let structure = match item {
+        Expr::Graphics {
+          structure: Some(inner),
+          ..
+        } => inner.as_ref(),
+        Expr::FunctionCall { .. } => item,
+        _ => &evaluate_expr_to_expr(item).ok()?,
+      };
+      let structure = match structure {
+        Expr::Graphics {
+          structure: Some(inner),
+          ..
+        } => inner.as_ref().clone(),
+        other => other.clone(),
+      };
+      if !matches!(&structure, Expr::FunctionCall { name, .. } if name == "Graphics")
+      {
+        return None;
       }
-      other => render_items_at_size(
-        std::slice::from_ref(other),
-        per_cell_w,
-        per_cell_h,
-      ),
-    })
-    .collect();
+      let evaluated = evaluate_expr_to_expr(&structure).ok()?;
+      let (w, _) = parse_svg_wh(&crate::evaluator::expr_to_svg(&evaluated));
+      (w > 0.0).then_some(w)
+    };
+    let row_width = |item: &Expr| -> f64 {
+      let cells: &[Expr] = match item {
+        Expr::List(cells) => cells,
+        other => std::slice::from_ref(other),
+      };
+      cells
+        .iter()
+        .filter(|c| !is_span_placeholder(c))
+        .map(|c| natural_width(c).unwrap_or(600.0))
+        .sum()
+    };
+    let widest = outer_items.iter().map(row_width).fold(0.0_f64, f64::max);
+    opts.target_width = Some(widest.clamp(1.0, 600.0));
+  }
+  let render_rows = |opts: &LayoutOptions| -> Vec<Vec<String>> {
+    let (mut per_cell_w, per_cell_h) =
+      layout_cell_size(opts, max_cols, outer_items.len(), max_cols);
+    // Each picture is drawn at its share of the width, the gaps around it
+    // taken out.
+    if let (Some(total), None) = (opts.target_width, per_cell_h) {
+      let cols = max_cols as f64;
+      let w = match opts.h_spacing {
+        SpacingSpec::Scaled(f) => total / (cols * (1.0 + f.max(0.0))),
+        SpacingSpec::Points(_) => {
+          (total - cols * opts.h_spacing.to_px(0.0)) / cols
+        }
+      };
+      per_cell_w = (w.round() as i128).max(1);
+    }
+    outer_items
+      .iter()
+      .map(|item| match item {
+        Expr::List(row_items) => {
+          render_items_at_size(row_items, per_cell_w, per_cell_h, false)
+        }
+        other => render_items_at_size(
+          std::slice::from_ref(other),
+          per_cell_w,
+          per_cell_h,
+          false,
+        ),
+      })
+      .collect()
+  };
+  let mut rows = render_rows(&opts);
+  if auto_size
+    && let Some(layout) = compute_grid_layout(&rows, &opts)
+    && layout.total_height > 700.0
+    && let Some(w) = opts.target_width
+  {
+    opts.target_width = Some(w * 700.0 / layout.total_height);
+    rows = render_rows(&opts);
+  }
 
   // Check if we have any SVGs at all
   if rows.iter().all(std::vec::Vec::is_empty) {

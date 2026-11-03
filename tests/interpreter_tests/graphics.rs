@@ -44959,6 +44959,37 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn graphics_grid_default_size() {
+    // 600 wide for several columns (360 for one), at most 700 tall, each
+    // picture keeping its own shape inside a Scaled[0.1] margin.
+    let g = "Graphics[Disk[]]";
+    let r = "Graphics[Rectangle[{0, 0}, {2, 1}]]";
+    for (grid, size) in [
+      (format!("{{{{{g}}}}}"), "width=\"360\" height=\"360\""),
+      (format!("{{{{{g}, {g}}}}}"), "width=\"600\" height=\"300\""),
+      (
+        format!("{{{{{g}, {g}}}, {{{g}, {g}}}}}"),
+        "width=\"600\" height=\"600\"",
+      ),
+      (
+        format!("{{{{{g}}}, {{{g}}}}}"),
+        "width=\"350\" height=\"700\"",
+      ),
+      (format!("{{{{{r}, {r}}}}}"), "width=\"600\" height=\"165\""),
+    ] {
+      let svg = export_svg(&format!("GraphicsGrid[{grid}]"));
+      assert!(svg.starts_with(&format!("<svg {size}")), "{grid}: {svg}");
+    }
+    // The cells are inset by half a gap.
+    let svg = export_svg(&format!("GraphicsGrid[{{{{{g}, {g}}}}}]"));
+    assert_eq!(attr_values(&svg, "<svg x=\""), vec![14.0, 314.0], "{svg}");
+    // A row of narrow pictures is only as wide as they are on their own.
+    let tall = "Graphics[Rectangle[{0, 0}, {1, 4}]]";
+    let svg = export_svg(&format!("GraphicsGrid[{{{{{tall}, {tall}}}}}]"));
+    assert!(svg.starts_with("<svg width=\"216\""), "{svg}");
+  }
+
+  #[test]
   fn tall_graphics_of_automatic_size_are_capped_at_432() {
     // Wolfram draws an automatically sized picture at most 1.2 × 360 tall,
     // narrowing it to keep its shape.

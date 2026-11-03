@@ -3746,9 +3746,11 @@ mod high_level_functions {
         "ExportString[GraphicsGrid[Table[Graphics@Text[i j],{i,3},{j,3}],Frame->All],\"SVG\"]",
       )
       .unwrap();
-      // Total grid width should be exactly 3 * 360 = 1080 (no gaps)
+      // The grid is its default 600 wide, the cells exactly a third of it
+      // (no gaps).
       assert!(
-        svg.contains("width=\"1080\""),
+        svg.contains("<svg width=\"600\" height=\"600\"")
+          && svg.contains("<svg x=\"200\" y=\"0\" width=\"200\""),
         "Frame -> All should yield zero default spacing: {svg}"
       );
     }
@@ -3757,7 +3759,7 @@ mod high_level_functions {
     fn test_graphics_grid_table_cells_use_per_cell_imagesize() {
       // GraphicsGrid is held by the dispatcher, so a Table[...] arg
       // is unevaluated when graphics_grid_ast runs. The implementation
-      // must still inject a per-cell ImageSize (1080/n) so each cell
+      // must still inject a per-cell ImageSize (600/n) so each cell
       // renders at a size proportional to the column count. Otherwise
       // a 10-column grid balloons to ~3600 wide and inline pixel font
       // sizes (e.g. FontSize -> 24) become illegible after viewport
@@ -3766,17 +3768,17 @@ mod high_level_functions {
         "ExportString[GraphicsGrid[Table[Graphics@Text@Style[i j,FontSize->24],{i,10},{j,10}],Frame->All],\"SVG\"]",
       )
       .unwrap();
-      // Outer SVG should be 1080-wide (10 * 108, no gaps because Frame->All).
+      // Outer SVG should be 600-wide (10 * 60, no gaps because Frame->All).
       let header_end = svg.find('\n').unwrap_or(svg.len()).min(200);
       assert!(
-        svg.contains("width=\"1080\""),
-        "10-col grid should use per-cell width 108, not natural 360: {}",
+        svg.contains("<svg width=\"600\""),
+        "10-col grid should use per-cell width 60, not natural 360: {}",
         &svg[..header_end]
       );
-      // Each cell svg should be at the per-cell width (108), not 360.
+      // Each cell svg should be at the per-cell width (60), not 360.
       assert!(
-        svg.contains("width=\"108\""),
-        "Cell SVGs should be 108px wide for 10-col grid: {}",
+        svg.contains("width=\"60\""),
+        "Cell SVGs should be 60px wide for 10-col grid: {}",
         &svg[..svg.find("</svg>").unwrap_or(svg.len()).min(400)]
       );
     }

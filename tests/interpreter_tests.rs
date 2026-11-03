@@ -4645,16 +4645,11 @@ mod interpreter_tests {
   }
 
   #[test]
-  fn test_graphics_grid_uses_golden_ratio_default_for_bare_graphics_cell() {
-    // Regression: `g1 = Graphics[...]` with an elongated bounding box (a
-    // vertical stack of shapes, say) rendered standalone at whatever tall,
-    // thin aspect its own data implied. Once dropped into a `GraphicsGrid`
-    // next to normally-proportioned panels, `GraphicsGrid` re-rendered it at
-    // the shared per-cell width but kept that same data-driven aspect
-    // instead of the classic 1/GoldenRatio a bare `Graphics[...]` panel
-    // defaults to — the resulting composite's height blew out to many times
-    // its width. A Wolfram Demonstration commonly builds one such panel as
-    // a variable and reuses it exactly this way.
+  fn test_graphics_grid_image_size_box_holds_elongated_cells() {
+    // `g1 = Graphics[...]` with an elongated bounding box (a vertical stack
+    // of shapes) keeps its own tall shape in a `GraphicsGrid`, as in
+    // wolframscript; an `ImageSize -> {w, h}` is the size of the whole grid,
+    // the cells centred in it — not a box the tall cells blow out.
     clear_state();
     let svg = interpret(
       "g1 = Graphics[{Yellow, Table[Disk[{0, n}, 0.4], {n, 0, 3, 1}]}]; \
@@ -4668,10 +4663,7 @@ mod interpreter_tests {
       svg[start..end].parse().unwrap()
     };
     let (w, h) = (grab("width"), grab("height"));
-    assert!(
-      h < w,
-      "a bare Graphics cell kept its own elongated data aspect inside GraphicsGrid: {w}x{h}"
-    );
+    assert_eq!((w, h), (400.0, 200.0), "{svg}");
   }
 
   #[test]
