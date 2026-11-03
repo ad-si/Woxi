@@ -6677,12 +6677,20 @@ Further entities (e.g. `"SquashedDodecahedron"`, the Johnson solids,
 give `PolyhedronData::notent`, so notebooks that offer them in a menu
 (such as polyhedron projection demonstrations) fail on those entries.
 
-### EdgeDetect only implements `Method -> "Canny"`
+### EdgeDetect: `"ShenCastan"`, `"StraightEdges"` and the default threshold
 
-`EdgeDetect[image, r, t, Method -> m, "StraightEdges" -> s]` accepts the
-options, but only `Method -> "Canny"` (or `Automatic`) with
-`"StraightEdges" -> 0` is computed. The `"ShenCastan"` and `"Sobel"` methods
-and non-zero `"StraightEdges"` leave the call unevaluated.
+`Method -> "Canny"` (or `Automatic`) and `Method -> "Sobel"` are computed;
+`"ShenCastan"` and a non-zero `"StraightEdges"` leave the call unevaluated.
+
+With an explicit threshold `t` the result matches wolframscript pixel for
+pixel (72 of 72 random smoothed images, both methods, r = 1, 2, 3): thin
+with a bilinear comparison one pixel ahead and behind along the gradient,
+then keep each 8-connected ridge whose strongest pixel reaches `t`. The
+*default* threshold is not `FindThreshold[GradientFilter[img, r]]`,
+which Woxi uses. On the same images the effective default lies between
+0.9 and 1.07 times that value, and no `FindThreshold` method or histogram
+convention tried reproduces it. Woxi agrees on 29 of 36 such images; the
+others differ by one weak ridge run.
 
 
 ## `Solve` of a nonlinear numeric system returns spurious solutions first
