@@ -160,9 +160,12 @@ impl AxisTicks {
     ticks
   }
 
-  /// Decades `10^k` as majors — every one, or every second/third over a
-  /// wide range — written with a superscript exponent, and the multiples
-  /// `2…9 × 10^k` between them as minors.
+  /// Log-axis ticks as `Charting`ScaledTicks[{Log, Exp}]` places them:
+  /// over up to ~1.7 decades the labelled majors are `{1, 2, 5} × 10^k`,
+  /// up to ~3.5 decades `{1, 5} × 10^k`, beyond that whole decades (every
+  /// one up to 6 decades, then every 2nd, 3rd, 4th, …). The remaining
+  /// multiples `2…9 × 10^k` are minors. Labels between `0.001` and `1000`
+  /// are written out (`5`, `50`, `0.01`); others as `10^k` / `m×10^k`.
   fn log(min: f64, max: f64) -> Self {
     let mut ticks = Self::default();
     if min <= 0.0 {
@@ -170,36 +173,43 @@ impl AxisTicks {
     }
     let (log_min, log_max) = (min.log10(), max.log10());
     let decades = log_max - log_min;
-    let step = if decades <= 8.0 {
-      1
-    } else if decades <= 16.0 {
-      2
+    let mantissas: &[i64] = if decades <= 1.7 {
+      &[1, 2, 5]
+    } else if decades <= 3.5 {
+      &[1, 5]
     } else {
+      &[1]
+    };
+    let step = if decades <= 6.0 {
+      1
+    } else if decades <= 8.0 {
+      2
+    } else if decades <= 10.0 {
       3
+    } else if decades <= 20.0 {
+      4
+    } else {
+      (decades / 5.0).ceil() as i64
     };
     let lo = log_min.floor() as i64;
     let hi = log_max.ceil() as i64;
     let contains = |v: f64| v >= min * (1.0 - 1e-9) && v <= max * (1.0 + 1e-9);
     for exp in lo..=hi {
       let decade = 10f64.powi(exp as i32);
-      if exp.rem_euclid(step) == 0 && contains(decade) {
-        let label = match exp {
-          0 => "1".to_string(),
-          1 => "10".to_string(),
-          _ => format!(
-            "10<tspan baseline-shift=\"super\" font-size=\"70%\">{exp}</tspan>"
-          ),
+      for m in 1..=9i64 {
+        let v = m as f64 * decade;
+        if !contains(v) {
+          continue;
+        }
+        let labelled = if m == 1 {
+          exp.rem_euclid(step) == 0
+        } else {
+          step == 1 && mantissas.contains(&m)
         };
-        ticks.majors.push((decade, label));
-      } else if contains(decade) {
-        ticks.minors.push(decade);
-      }
-      if step == 1 {
-        for m in 2..=9 {
-          let v = m as f64 * decade;
-          if contains(v) {
-            ticks.minors.push(v);
-          }
+        if labelled {
+          ticks.majors.push((v, log_tick_label(m, exp)));
+        } else if m == 1 || step == 1 {
+          ticks.minors.push(v);
         }
       }
     }
@@ -213,6 +223,22 @@ impl AxisTicks {
       .iter()
       .map(|(_, l)| label_width(l))
       .fold(0.0, f64::max)
+  }
+}
+
+/// The label of the log-axis tick `m × 10^exp`.
+fn log_tick_label(m: i64, exp: i64) -> String {
+  let sup = |e: i64| {
+    format!("10<tspan baseline-shift=\"super\" font-size=\"70%\">{e}</tspan>")
+  };
+  if (0..=3).contains(&exp) {
+    (m * 10i64.pow(exp as u32)).to_string()
+  } else if (-3..0).contains(&exp) {
+    format!("{:.*}", (-exp) as usize, m as f64 * 10f64.powi(exp as i32))
+  } else if m == 1 {
+    sup(exp)
+  } else {
+    format!("{m}&#215;{}", sup(exp))
   }
 }
 
@@ -440,8 +466,27 @@ mod tests {
   #[test]
   fn log_ticks_label_decades() {
     let t = AxisTicks::log(1.0, 1000.0);
+    // WL: 1, 5, 10, 50, 100, 500, 1000 over three decades.
+    let labels = |t: &AxisTicks| -> Vec<String> {
+      t.majors.iter().map(|(_, l)| l.clone()).collect()
+    };
+    assert_eq!(labels(&t), ["1", "5", "10", "50", "100", "500", "1000"]);
+    // 1, 2, 5, 10, 20 over 1..30; decimals below 1.
+    let t = AxisTicks::log(1.0, 30.0);
+    assert_eq!(labels(&t), ["1", "2", "5", "10", "20"]);
+    let t = AxisTicks::log(0.001, 1.0);
+    assert_eq!(
+      labels(&t),
+      ["0.001", "0.005", "0.01", "0.05", "0.1", "0.5", "1"]
+    );
+    // Whole decades past 3.5 decades, superscripted from 10^4 on.
+    let t = AxisTicks::log(1.0, 1e5);
     let pos: Vec<f64> = t.majors.iter().map(|(p, _)| *p).collect();
-    assert_eq!(pos, [1.0, 10.0, 100.0, 1000.0]);
-    assert!(t.majors[2].1.contains("baseline-shift"));
+    assert_eq!(pos, [1.0, 10.0, 100.0, 1000.0, 1e4, 1e5]);
+    assert_eq!(t.majors[3].1, "1000");
+    assert!(t.majors[4].1.contains("baseline-shift"));
+    // Every 2nd decade over 8 decades.
+    let t = AxisTicks::log(1.0, 1e8);
+    assert_eq!(t.majors.len(), 5);
   }
 }
