@@ -161,8 +161,8 @@ fn panel_ticks(
     return AxisTicks::new(scale, date, explicit).majors;
   }
   let span = hi - lo;
-  let mut exp = (span / 5.0).log10().floor() as i32 - 1;
-  for _ in 0..8 {
+  let first_exp = (span / 5.0).log10().floor() as i32 - 1;
+  for exp in (first_exp..).take(8) {
     let decade = 10f64.powi(exp);
     for m in [1.0, 2.0, 2.5, 5.0] {
       let step = m * decade;
@@ -183,7 +183,6 @@ fn panel_ticks(
           .collect();
       }
     }
-    exp += 1;
   }
   AxisTicks::new(scale, date, explicit).majors
 }

@@ -6029,7 +6029,7 @@ fn color_function_gradient_stops(
   }
   let t = |x: f64| if log_x { x.log10() } else { x };
   let (t0, t1) = (t(segment[0].0), t(segment[segment.len() - 1].0));
-  if !(t1 > t0) {
+  if t1.partial_cmp(&t0) != Some(std::cmp::Ordering::Greater) {
     return None;
   }
   Some(
@@ -6085,7 +6085,7 @@ fn apply_color_function_gradients(
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
           (a.min(x), b.max(x))
         });
-      if !(x2 > x1) {
+      if x2.partial_cmp(&x1) != Some(std::cmp::Ordering::Greater) {
         search_from = end;
         continue;
       }
@@ -6096,15 +6096,17 @@ fn apply_color_function_gradients(
         c.hash(&mut hasher);
       }
       let id = format!("cfgrad{:016x}", hasher.finish());
-      let stops: String = g
-        .stops
-        .iter()
-        .map(|(o, (cr, cg, cb))| {
-          format!(
+      let stops: String = g.stops.iter().fold(
+        String::new(),
+        |mut acc, (o, (cr, cg, cb))| {
+          use std::fmt::Write as _;
+          let _ = write!(
+            acc,
             "<stop offset=\"{o:.6}\" stop-color=\"#{cr:02X}{cg:02X}{cb:02X}\"/>"
-          )
-        })
-        .collect();
+          );
+          acc
+        },
+      );
       let replaced = format!(
         "<defs><linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" \
          x1=\"{x1}\" y1=\"0\" x2=\"{x2}\" y2=\"0\">{stops}</linearGradient></defs>{}",
@@ -11329,6 +11331,7 @@ pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
 
 /// The edges of a plot frame that are drawn.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct FrameEdges {
   pub left: bool,
   pub right: bool,

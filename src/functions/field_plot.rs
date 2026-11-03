@@ -947,7 +947,7 @@ fn field_plot_axes(
   x_range: (f64, f64),
   y_range: (f64, f64),
   opts: &mut DensityContourOptions,
-) -> Result<crate::functions::plot::PlotArea, InterpreterError> {
+) -> crate::functions::plot::PlotArea {
   let layout = field_frame_layout(x_range, y_range, opts);
   let sf = f64::from(RESOLUTION_SCALE);
   let svg_width = opts.svg_width;
@@ -969,7 +969,7 @@ fn field_plot_axes(
     opts.full_width,
   );
   let (plot_x0, plot_y0, plot_w, plot_h) = layout.data_rect(sf);
-  Ok(crate::functions::plot::PlotArea {
+  crate::functions::plot::PlotArea {
     svg,
     plot_x0,
     plot_y0,
@@ -980,7 +980,7 @@ fn field_plot_axes(
     x_max: x_range.1,
     y_min: y_range.0,
     y_max: y_range.1,
-  })
+  }
 }
 
 /// The frame of a density or contour plot whose canvas came from
@@ -2716,7 +2716,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   // Use plotters for axes, then overlay the density image
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -3155,7 +3155,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // Use plotters for axes
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -3358,7 +3358,7 @@ fn contour_plot_equations(
   let mut opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -5119,7 +5119,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.
@@ -5556,7 +5556,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let mut area = field_plot_axes(data_range.0, data_range.1, &mut opts)?;
+  let mut area = field_plot_axes(data_range.0, data_range.1, &mut opts);
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
@@ -5957,7 +5957,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts)?;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
   // appended once the plot's own content is drawn.

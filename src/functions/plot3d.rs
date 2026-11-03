@@ -9690,16 +9690,13 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // default height gradient when none was given (or it named a scheme Woxi
   // does not have swatches for).
   let color_at = |t: f64| -> (u8, u8, u8) {
-    match &color_function {
-      Some(name) => {
-        crate::functions::field_plot::apply_named_color_function(name, t)
-      }
+    if let Some(name) = &color_function {
+      crate::functions::field_plot::apply_named_color_function(name, t)
+    } else {
       // WL 15 draws a list surface in its first 3D plot style color.
-      None => {
-        let (r, g, b) = LIST_SURFACE_COLORS[0];
-        let q = |c: f64| (c * 255.0).round() as u8;
-        (q(r), q(g), q(b))
-      }
+      let (r, g, b) = LIST_SURFACE_COLORS[0];
+      let q = |c: f64| (c * 255.0).round() as u8;
+      (q(r), q(g), q(b))
     }
   };
 
