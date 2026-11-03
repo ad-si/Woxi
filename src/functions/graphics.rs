@@ -11651,6 +11651,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg_height = (svg_width as f64 * data_aspect).round() as u32;
     }
   }
+  // A picture of automatic size that is taller than 1.2 times its width is
+  // drawn 1.2 × 360 tall instead, narrowing to keep its shape.
+  if !explicit_size {
+    let max_h = (1.2 * svg_width as f64).round();
+    if svg_height as f64 > max_h {
+      let aspect = svg_height as f64 / svg_width as f64;
+      svg_height = max_h as u32;
+      svg_width = ((max_h / aspect).round() as u32).max(1);
+    }
+  }
 
   // Generate SVG
   let svg_w = svg_width as f64;

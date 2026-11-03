@@ -44957,4 +44957,25 @@ mod wl_table_layout {
     );
     assert_eq!(attr_values(&svg, "<svg x=\""), vec![0.0, 49.4], "{svg}");
   }
+
+  #[test]
+  fn tall_graphics_of_automatic_size_are_capped_at_432() {
+    // Wolfram draws an automatically sized picture at most 1.2 × 360 tall,
+    // narrowing it to keep its shape.
+    for (rect, size) in [
+      ("{1, 1}", "width=\"360\" height=\"360\""),
+      ("{1, 1.2}", "width=\"360\" height=\"432\""),
+      ("{1, 2}", "width=\"216\" height=\"432\""),
+    ] {
+      let svg = export_svg(&format!("Graphics[Rectangle[{{0, 0}}, {rect}]]"));
+      assert!(svg.starts_with(&format!("<svg {size}")), "{rect}: {svg}");
+    }
+    // An explicit size is kept.
+    let svg =
+      export_svg("Graphics[Rectangle[{0, 0}, {1, 2}], ImageSize -> 100]");
+    assert!(
+      svg.starts_with("<svg width=\"100\" height=\"200\""),
+      "{svg}"
+    );
+  }
 }
