@@ -2723,7 +2723,7 @@ pub enum UnitText {
 
 /// The abbreviation of a unit, as `TextString` writes it. A unit with no
 /// abbreviation of its own (Days, Percent, …) falls back to its words.
-fn unit_abbreviation(name: &str) -> Option<&'static str> {
+pub(crate) fn unit_abbreviation(name: &str) -> Option<&'static str> {
   Some(match name {
     "Meters" => "m",
     "Kilometers" => "km",

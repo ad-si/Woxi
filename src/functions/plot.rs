@@ -1527,6 +1527,162 @@ pub(crate) fn format_date_tick(seconds: f64) -> String {
   }
 }
 
+/// `FindDivisions[{a, b, dx}, n]`: about `n` nice multiples of `dx`
+/// covering `a..b`.
+fn find_divisions_with_step(a: i64, b: i64, dx: i64, n: i64) -> Vec<i64> {
+  let int = |v: i64| Expr::Integer(v as i128);
+  let res = crate::evaluator::evaluate_function_call_ast(
+    "FindDivisions",
+    &[Expr::List(vec![int(a), int(b), int(dx)].into()), int(n)],
+  );
+  match &res {
+    Ok(Expr::List(items)) => items
+      .iter()
+      .filter_map(|e| match e {
+        Expr::Integer(v) => Some(*v as i64),
+        _ => None,
+      })
+      .collect(),
+    _ => Vec::new(),
+  }
+}
+
+const MONTH_ABBR: [&str; 12] = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+  "Dec",
+];
+
+/// The automatic date ticks WL's `Charting`DateTicksFunction` puts on a
+/// date axis spanning `min..max` (AbsoluteTime seconds), as
+/// `DateListPlotDump`DateTicks[{min, max}, 6]` computes them: the time
+/// unit is the smallest of year, month, day, hour, minute, second (in
+/// units of 336 days, 28 days, …) of which the span holds more than 2 and
+/// at most 10, the ticks are `FindDivisions` of that unit's count between
+/// the range's floor and ceiling in that unit, and the labels are
+/// `"Year"`, `"MonthNameShort Year"`, `"MonthNameShort Day"`,
+/// `"M/D h am"`, `"Hour:Minute"` or `"Hour:Minute:Second"`.
+pub(crate) fn wl_date_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
+  use crate::functions::datetime_ast::{
+    absolute_seconds_to_date, date_to_absolute_seconds,
+  };
+  const N: i64 = 6;
+  let range = max - min;
+  if !(range.is_finite() && range > 0.0) {
+    return Vec::new();
+  }
+  let scalers = [2.90304e7, 2.4192e6, 86400.0, 3600.0, 60.0, 1.0];
+  let units: Vec<f64> = scalers.iter().map(|s| range / s).collect();
+  let greater: Vec<usize> = (0..6).filter(|&i| units[i] > 2.0).collect();
+  let less: Vec<usize> = (0..6).filter(|&i| units[i] <= 10.0).collect();
+  let timepos = match greater.iter().rev().find(|i| less.contains(i)) {
+    Some(&i) => i + 1,
+    None => match greater.first() {
+      Some(&i) => i + 1,
+      None => 6,
+    },
+  };
+  let (y0, m0, d0, h0, mi0, s0) = absolute_seconds_to_date(min);
+  let (y1, m1, d1, h1, mi1, s1) = absolute_seconds_to_date(max);
+  // Absolute time of a (possibly overflowing) calendar date.
+  let at = |y: i64, m: i64, d: i64, secs: f64| {
+    let mm = (m - 1).rem_euclid(12) + 1;
+    let yy = y + (m - 1).div_euclid(12);
+    date_to_absolute_seconds(yy, mm, 1, 0, 0, 0.0)
+      + (d - 1) as f64 * 86400.0
+      + secs
+  };
+  let mut ticks = Vec::new();
+  match timepos {
+    1 => {
+      let last = if (m1, d1, h1, mi1, s1) == (1, 1, 0, 0, 0.0) {
+        y1
+      } else {
+        y1 + 1
+      };
+      for y in find_divisions_with_step(y0, last, 1, N) {
+        ticks.push((at(y, 1, 1, 0.0), y.to_string()));
+      }
+    }
+    2 => {
+      let ceil_months = i64::from((d1, h1, mi1, s1) != (1, 0, 0, 0.0));
+      let len = (y1 - y0) * 12 + (m1 - m0) + ceil_months;
+      let step = match len {
+        l if l <= N => 1,
+        l if l <= 2 * N => 2,
+        l if l <= 3 * N => 3,
+        l if l <= 6 * N => 6,
+        _ => 12,
+      };
+      for v in find_divisions_with_step(m0 - 1, m0 - 1 + len, step, N) {
+        let t = at(y0, v + 1, 1, 0.0);
+        let (y, m, ..) = absolute_seconds_to_date(t);
+        ticks.push((t, format!("{} {y}", MONTH_ABBR[(m - 1) as usize])));
+      }
+    }
+    3 => {
+      let start = at(y0, m0, d0, 0.0);
+      let end_floor = at(y1, m1, d1, 0.0);
+      let end = if end_floor < max {
+        end_floor + 86400.0
+      } else {
+        end_floor
+      };
+      let len = ((end - start) / 86400.0).round() as i64;
+      let step = if len <= N.max(6) {
+        1
+      } else if len <= 2 * N {
+        2
+      } else {
+        7
+      };
+      let days: Vec<i64> = if step == 7 {
+        // Weeks start on the Monday on or before the first day.
+        let weekday = ((start / 86400.0).floor() as i64).rem_euclid(7);
+        find_divisions_with_step(0, len, 7, N)
+          .into_iter()
+          .map(|v| d0 - weekday + v)
+          .collect()
+      } else {
+        (0..=len / step).map(|k| d0 + k * step).collect()
+      };
+      for d in days {
+        let t = at(y0, m0, d, 0.0);
+        let (_, m, day, ..) = absolute_seconds_to_date(t);
+        ticks.push((t, format!("{} {day:02}", MONTH_ABBR[(m - 1) as usize])));
+      }
+    }
+    _ => {
+      let unit = scalers[timepos - 1];
+      let floor_secs = match timepos {
+        4 => h0 as f64 * 3600.0,
+        5 => h0 as f64 * 3600.0 + mi0 as f64 * 60.0,
+        _ => h0 as f64 * 3600.0 + mi0 as f64 * 60.0 + s0.floor(),
+      };
+      let start = at(y0, m0, d0, floor_secs);
+      let len = ((max - start) / unit).ceil() as i64;
+      for v in find_divisions_with_step(0, len, 1, N) {
+        let t = start + v as f64 * unit;
+        let (_, m, d, h, mi, s) = absolute_seconds_to_date(t);
+        let label = match timepos {
+          4 => {
+            let (h12, ampm) = match h {
+              0 => (12, "am"),
+              1..=11 => (h, "am"),
+              12 => (12, "pm"),
+              _ => (h - 12, "pm"),
+            };
+            format!("{m}/{d} {h12} {ampm}")
+          }
+          5 => format!("{h:02}:{mi:02}"),
+          _ => format!("{h:02}:{mi:02}:{:02}", s.floor() as i64),
+        };
+        ticks.push((t, label));
+      }
+    }
+  }
+  ticks
+}
+
 /// Date tick step specification for nice date axis ticks.
 #[derive(Clone, Copy)]
 pub(crate) enum DateStep {
@@ -3347,6 +3503,11 @@ pub(crate) struct PlotOptions {
   /// `FrameStyle` per frame edge (bottom, left, top, right): the style of
   /// the edge, its tick marks and its tick labels.
   pub frame_styles: [Option<SeriesStyle>; 4],
+  /// Coloured stretches drawn over frame edges, as (edge, from, to,
+  /// colour) with the stretch given in fractions of the edge from its
+  /// bottom/left end: the axes of `MultiaxisArrangement`, an axis shared by
+  /// several series split evenly among their colours.
+  pub frame_edge_segments: Vec<(usize, f64, f64, WoxiColor)>,
   /// `MeshStyle -> s | {s1, s2, …}`: the style of the mesh points of each
   /// mesh function (cycled). `None` entries draw them in the curve's style.
   pub mesh_styles: Vec<Option<SeriesStyle>>,
@@ -3539,6 +3700,7 @@ impl Default for PlotOptions {
       axes_style: [None, None],
       ticks_style: [None, None],
       frame_styles: [None, None, None, None],
+      frame_edge_segments: Vec::new(),
       mesh_styles: Vec::new(),
       mesh_functions: Vec::new(),
       mesh_shading: None,
@@ -5204,6 +5366,21 @@ fn generate_svg_with_options(
                 .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
             }
           }
+          for &(edge, a, b, color) in &opts.frame_edge_segments {
+            let (r, g, bl) = color_to_rgb8(color);
+            let at = |f: f64| match edge {
+              1 => (x_min, y_min + f * (y_max - y_min)),
+              3 => (x_max, y_min + f * (y_max - y_min)),
+              0 => (x_min + f * (x_max - x_min), y_min),
+              _ => (x_min + f * (x_max - x_min), y_max),
+            };
+            chart
+              .draw_series(std::iter::once(PathElement::new(
+                vec![at(a), at(b)],
+                RGBColor(r, g, bl).stroke_width(frame_paints[edge].line_width),
+              )))
+              .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+          }
         }
 
         // Fills lie beneath every curve, whichever series they belong to:
@@ -5987,6 +6164,33 @@ fn generate_svg_with_options(
         - x_label_area as f64,
     );
     let mut edges = opts.frame_tick_edges.clone();
+    // A date axis's automatic ticks are its calendar dates, labelled at
+    // the bottom and marked only at the top.
+    if opts.date_axis && opts.ticks_x.is_none() {
+      for edge in [0, 2] {
+        let labeled = match edges[edge] {
+          FrameEdgeTicks::Labeled => true,
+          FrameEdgeTicks::Marks => false,
+          _ => continue,
+        };
+        edges[edge] = FrameEdgeTicks::Explicit(
+          x_ticks
+            .majors
+            .iter()
+            .map(|(pos, label)| ExplicitTick {
+              pos: *pos,
+              label: if labeled {
+                label.clone()
+              } else {
+                String::new()
+              },
+              len: None,
+              style: None,
+            })
+            .collect(),
+        );
+      }
+    }
     for (edge, explicit) in [(0, &opts.ticks_x), (1, &opts.ticks_y)] {
       if let (FrameEdgeTicks::Labeled, Some(ticks)) = (&edges[edge], explicit) {
         edges[edge] = FrameEdgeTicks::Explicit(

@@ -47585,3 +47585,101 @@ mod curve_labels_and_legends {
     }
   }
 }
+
+mod list_plot_data_forms {
+  use super::*;
+
+  // `Interval[{lo, hi}]` values plot as uncapped bars around their
+  // midpoints (an `Around` gets end caps as well).
+  #[test]
+  fn interval_values_draw_bars_without_caps() {
+    let svg = export_svg("ListPlot[{Interval[{1, 2}], Interval[{0, 3}]}]");
+    assert_eq!(svg.matches("<circle").count(), 2);
+    assert_eq!(svg.matches("<polyline").count(), 2);
+    let svg = export_svg("ListPlot[{Around[1.5, 0.5], Around[1.5, 1.5]}]");
+    assert_eq!(svg.matches("<polyline").count(), 6);
+  }
+
+  // DateListPlot is a framed list plot with WL's date ticks: months as
+  // "Apr 2006", a 0 on the value axis, and points for `Joined -> False`.
+  #[test]
+  fn date_list_plot_values_with_start_month() {
+    let svg = export_svg(
+      "DateListPlot[{5, 11, 13, 24, 28, 31, 34, 39, 42, 47, 51, 66}, \
+       {2006, 1}, Joined -> False]",
+    );
+    for label in [">Jan 2006<", ">Apr 2006<", ">Jul 2006<", ">Oct 2006<"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+    assert!(svg.contains(">\n0\n</text>"), "missing the 0 tick");
+    assert!(!svg.contains("2006 Apr"));
+    assert_eq!(svg.matches("<circle").count(), 12);
+    let svg = export_svg("DateListPlot[{5, 11, 13, 24}, {2006, 1}]");
+    assert_eq!(svg.matches("<circle").count(), 0);
+    assert!(svg.contains("<polyline"));
+  }
+
+  // A ListPlot of a date-stamped TimeSeries labels its x axis with dates.
+  #[test]
+  fn list_plot_time_series_date_ticks() {
+    let svg = export_svg(
+      "ListPlot[TimeSeries[{4, 9, 18, 27, 34, 40, 49, 54, 64, 72}, \
+       {{2013, 1, 1}, Automatic, \"Day\"}]]",
+    );
+    for label in [">Jan 02<", ">Jan 04<", ">Jan 10<"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+    assert!(!svg.contains("10<tspan"), "raw seconds as tick labels");
+  }
+
+  // `TargetUnits` converts quantity data; `AxesLabel -> Automatic` names
+  // the unit.
+  #[test]
+  fn list_plot_quantity_units() {
+    let svg = export_svg(
+      "ListPlot[Quantity[Range[10], \"Hours\"], TargetUnits -> \"Minutes\"]",
+    );
+    assert!(svg.contains(">600<"));
+    let svg = export_svg(
+      "ListPlot[Quantity[Sqrt[Range[10]], \"Meters\"], AxesLabel -> Automatic]",
+    );
+    assert!(svg.contains(">m<"));
+  }
+
+  // `PlotLayout -> "Stacked"` sums the series; `"Percentile"` scales the
+  // sums to 100.
+  #[test]
+  fn list_plot_stacked_and_percentile_layouts() {
+    let data = "{{10, 9, 4, 3, 5, 3, 5, 5, 2, 6}, {2, 10, 5, 6, 9, 4, 9, 3, 7, 2}, \
+                {7, 8, 3, 4, 4, 2, 6, 3, 8, 7}}";
+    let svg = export_svg(&format!(
+      "ListPlot[{data}, PlotLayout -> \"Stacked\", Joined -> True]"
+    ));
+    assert!(svg.contains(">25<"));
+    let svg = export_svg(&format!(
+      "ListPlot[{data}, PlotLayout -> \"Percentile\", Joined -> True]"
+    ));
+    assert!(svg.contains(">100<"));
+    assert!(!svg.contains(">25<"));
+  }
+
+  // `MultiaxisArrangement` gives the series their own framed y axes, the
+  // left one for series 1 and 2 (to 30), the right one for series 3 (to
+  // 100), each edge drawn in its series' colours.
+  #[test]
+  fn list_plot_multiaxis_arrangement() {
+    let svg = export_svg(
+      "ListPlot[{Range[10], Prime[Range[10]], Range[10]^2}, \
+       MultiaxisArrangement -> {{1, 2}, 3}]",
+    );
+    for label in [">30<", ">25<", ">100<", ">80<"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+    for color in ["#3D99CC", "#F2A024", "#74B336"] {
+      assert!(
+        svg.matches(&format!("stroke=\"{color}\"")).count() >= 1,
+        "no {color} axis"
+      );
+    }
+  }
+}

@@ -7,8 +7,8 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  SeriesStyle, axis_tick_step, format_date_tick, format_tick_with_step,
-  generate_date_ticks, minor_tick_divisions, style_stroke,
+  SeriesStyle, axis_tick_step, format_tick_with_step, minor_tick_divisions,
+  style_stroke,
 };
 use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 
@@ -126,15 +126,10 @@ impl AxisTicks {
     }
     if date {
       return Self {
-        majors: generate_date_ticks(min, max)
+        majors: crate::functions::plot::wl_date_ticks(min, max)
           .into_iter()
-          .filter(|t| scale.contains(*t))
-          .map(|t| {
-            (
-              t,
-              crate::functions::graphics::svg_escape(&format_date_tick(t)),
-            )
-          })
+          .filter(|(t, _)| scale.contains(*t))
+          .map(|(t, label)| (t, crate::functions::graphics::svg_escape(&label)))
           .collect(),
         minors: Vec::new(),
       };

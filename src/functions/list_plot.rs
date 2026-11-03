@@ -94,7 +94,46 @@ fn eval_to_value_err(expr: &Expr) -> Option<(f64, (f64, f64))> {
     };
     return Some((v, err));
   }
+  // `Interval[{lo, hi}]` plots like an uncertainty around its midpoint
+  // (drawn without end caps, see `interval_only_data`).
+  if let Expr::FunctionCall { name, args } = &e
+    && name == "Interval"
+    && let [Expr::List(bounds)] = args.as_slice()
+    && let [lo, hi] = bounds.as_slice()
+  {
+    let (lo, hi) = (try_eval_to_f64(lo)?, try_eval_to_f64(hi)?);
+    let half = (hi - lo).abs() / 2.0;
+    return Some((f64::midpoint(lo, hi), (half, half)));
+  }
   try_eval_to_f64(&e).map(|v| (v, (0.0, 0.0)))
+}
+
+/// Whether the plot data holds `Interval` values but no `Around`: WL draws
+/// an interval as a bar without the end caps an `Around` gets.
+fn interval_only_data(data: &Expr) -> bool {
+  fn scan(e: &Expr, interval: &mut bool, around: &mut bool) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        match name.as_str() {
+          "Interval" => *interval = true,
+          "Around" => *around = true,
+          _ => {}
+        }
+        for a in args {
+          scan(a, interval, around);
+        }
+      }
+      Expr::List(items) => {
+        for a in items {
+          scan(a, interval, around);
+        }
+      }
+      _ => {}
+    }
+  }
+  let (mut interval, mut around) = (false, false);
+  scan(data, &mut interval, &mut around);
+  interval && !around
 }
 
 /// Strip the uncertainties from parsed series, leaving plain (x, y) points.
@@ -695,6 +734,300 @@ fn data_arg(args: &[Expr], parsed: &ParsedOptions) -> Expr {
     .unwrap_or_else(|| args[0].clone())
 }
 
+/// The value of option `name` among a plot's arguments, if given.
+fn option_value<'a>(args: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  args[1..].iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// `TargetUnits -> unit`: every `Quantity` of the data converted to `unit`
+/// (a quantity of another dimension is kept as it is).
+fn convert_to_target_units(data: &Expr, unit: &Expr) -> Expr {
+  match data {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      match crate::evaluator::evaluate_function_call_ast(
+        "UnitConvert",
+        &[data.clone(), unit.clone()],
+      ) {
+        Ok(q @ Expr::FunctionCall { .. }) if matches!(&q, Expr::FunctionCall { name, .. } if name == "Quantity") => {
+          q
+        }
+        _ => data.clone(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| convert_to_target_units(e, unit))
+        .collect(),
+    ),
+    _ => data.clone(),
+  }
+}
+
+/// The units of the x and y values of quantity-valued list-plot data
+/// (`{q1, q2, …}`, `{{x1, y1}, …}` or a list of such series): those of its
+/// first value or point.
+fn data_units(data: &Expr) -> (Option<String>, Option<String>) {
+  let unit = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      match &args[1] {
+        Expr::String(u) => Some(u.clone()),
+        other => Some(crate::syntax::expr_to_string(other)),
+      }
+    }
+    _ => None,
+  };
+  let Expr::List(items) = data else {
+    return (None, None);
+  };
+  match items.first() {
+    Some(Expr::List(pair))
+      if pair.len() == 2
+        && !matches!(pair[0], Expr::List(_))
+        && pair.iter().any(|e| unit(e).is_some()) =>
+    {
+      (unit(&pair[0]), unit(&pair[1]))
+    }
+    Some(Expr::List(_)) => data_units(&items[0]),
+    Some(first) => (None, unit(first)),
+    None => (None, None),
+  }
+}
+
+/// `AxesLabel -> Automatic` on quantity data: each axis labelled with the
+/// abbreviation of its unit (`QuantityForm[unit, "PlotLabel"]`).
+fn automatic_unit_axes_label(data: &Expr) -> Option<(String, String)> {
+  let (x, y) = data_units(data);
+  if x.is_none() && y.is_none() {
+    return None;
+  }
+  let label = |u: Option<String>| {
+    u.map(|u| {
+      crate::functions::quantity_ast::unit_abbreviation(&u)
+        .map(str::to_string)
+        .unwrap_or(u)
+    })
+    .unwrap_or_default()
+  };
+  Some((label(x), label(y)))
+}
+
+/// `PlotLayout -> "Stacked"` / `"Percentile"`: each series drawn on top of
+/// the ones before it — its i-th value the sum of the i-th values of it and
+/// all earlier series — and for `"Percentile"` that sum as a percentage of
+/// the total of all series.
+fn apply_stacked_layout(args: &[Expr], all_series: &mut [Vec<ErrPoint>]) {
+  let percentile = match option_value(args, "PlotLayout") {
+    Some(Expr::String(s)) if s == "Stacked" => false,
+    Some(Expr::String(s)) if s == "Percentile" => true,
+    _ => return,
+  };
+  let len = all_series.iter().map(Vec::len).max().unwrap_or(0);
+  for i in 0..len {
+    let mut sum = 0.0;
+    for series in all_series.iter_mut() {
+      if let Some(p) = series.get_mut(i) {
+        sum += p.y;
+        p.y = sum;
+      }
+    }
+    if percentile && sum != 0.0 {
+      for series in all_series.iter_mut() {
+        if let Some(p) = series.get_mut(i) {
+          p.y = p.y / sum * 100.0;
+        }
+      }
+    }
+  }
+}
+
+/// One y axis of `MultiaxisArrangement`: the series it scales and the
+/// frame edge it is drawn on (1 = left, 3 = right).
+struct MultiAxis {
+  edge: usize,
+  series: Vec<usize>,
+}
+
+/// Parse `MultiaxisArrangement -> All | {spec, …} | {Left -> specs,
+/// Right -> specs}` for `n` series. A spec is a series index (an axis of
+/// its own) or `{i, j, …}` (one axis shared by those series); a side given
+/// a flat list `{i, j}` gets one axis per index. Without sides, the last
+/// axis goes to the right and the others to the left. Only one axis per
+/// side is drawn; further ones are merged into it.
+fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
+  let value = option_value(args, "MultiaxisArrangement")?;
+  let index = |e: &Expr| match e {
+    Expr::Integer(i) if *i >= 1 && (*i as usize) <= n => Some(*i as usize - 1),
+    _ => None,
+  };
+  let group = |e: &Expr| -> Option<Vec<usize>> {
+    match e {
+      Expr::List(items) => items.iter().map(index).collect(),
+      other => index(other).map(|i| vec![i]),
+    }
+  };
+  let mut axes: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
+  match value {
+    Expr::Identifier(a) if a == "All" => {
+      axes.extend((0..n).map(|i| (None, vec![i])));
+    }
+    Expr::List(items) => {
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            let edge = match pattern.as_ref() {
+              Expr::Identifier(s) if s == "Left" => 1,
+              Expr::Identifier(s) if s == "Right" => 3,
+              _ => return None,
+            };
+            match replacement.as_ref() {
+              // `{{i, j}}`: one shared axis; `{i, j}`: one axis each.
+              Expr::List(specs) => {
+                for spec in specs {
+                  axes.push((Some(edge), group(spec)?));
+                }
+              }
+              other => axes.push((Some(edge), group(other)?)),
+            }
+          }
+          other => axes.push((None, group(other)?)),
+        }
+      }
+    }
+    _ => return None,
+  }
+  if axes.len() < 2 {
+    return None;
+  }
+  let last = axes.len() - 1;
+  let mut out: Vec<MultiAxis> = Vec::new();
+  for (k, (edge, series)) in axes.into_iter().enumerate() {
+    let edge = edge.unwrap_or(if k == last { 3 } else { 1 });
+    match out.iter_mut().find(|a| a.edge == edge) {
+      Some(axis) => axis.series.extend(series),
+      None => out.push(MultiAxis { edge, series }),
+    }
+  }
+  if out.len() < 2 {
+    return None;
+  }
+  // The left axis is the reference the others are mapped onto.
+  out.sort_by_key(|a| a.edge);
+  Some(out)
+}
+
+/// Draw the series on the y axes of `MultiaxisArrangement`: every axis
+/// gets the automatic range of its own series, each series is mapped from
+/// its axis's range onto the first (left) one's, and the frame's left and
+/// right edges carry the ticks of their axis, coloured like its series.
+fn apply_multiaxis(
+  args: &[Expr],
+  err_series: &mut [Vec<ErrPoint>],
+  opts: &mut PlotOptions,
+) {
+  let Some(axes) = parse_multiaxis(args, err_series.len()) else {
+    return;
+  };
+  let ranges: Vec<(f64, f64)> = axes
+    .iter()
+    .map(|axis| {
+      let (lo, hi) = axis
+        .series
+        .iter()
+        .flat_map(|&i| err_series[i].iter())
+        .filter(|p| p.y.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+          (lo.min(p.y - p.dy.0), hi.max(p.y + p.dy.1))
+        });
+      let extent = list_axis_extent(lo, hi, ListAxis::Y, false, false);
+      pad_list_axis(extent, ListAxis::Y, false)
+    })
+    .collect();
+  let (ref_lo, ref_hi) = ranges[0];
+  let palette = &crate::functions::plot::PLOT_COLORS_RGB;
+  let series_color = |i: usize| {
+    opts
+      .plot_style
+      .get(i)
+      .and_then(|s| s.color)
+      .unwrap_or_else(|| {
+        let (r, g, b) = palette[i % palette.len()];
+        crate::functions::graphics::Color::new(r, g, b)
+      })
+  };
+  opts.frame = true;
+  for (axis, &(lo, hi)) in axes.iter().zip(&ranges) {
+    let scale = (ref_hi - ref_lo) / (hi - lo);
+    let map = |y: f64| ref_lo + (y - lo) * scale;
+    for &i in &axis.series {
+      for p in &mut err_series[i] {
+        p.y = map(p.y);
+        p.dy = (p.dy.0 * scale, p.dy.1 * scale);
+      }
+    }
+    let ticks = crate::functions::plot_axes::AxisTicks::new(
+      crate::functions::plot_axes::AxisScale {
+        min: lo,
+        max: hi,
+        log: false,
+      },
+      false,
+      None,
+    );
+    let mut explicit: Vec<crate::functions::plot::ExplicitTick> = ticks
+      .majors
+      .iter()
+      .map(|(pos, label)| crate::functions::plot::ExplicitTick {
+        pos: map(*pos),
+        label: label.clone(),
+        len: None,
+        style: None,
+      })
+      .collect();
+    explicit.extend(ticks.minors.iter().map(|pos| {
+      crate::functions::plot::ExplicitTick {
+        pos: map(*pos),
+        label: String::new(),
+        len: Some((0.00375, 0.0)),
+        style: None,
+      }
+    }));
+    opts.frame_tick_edges[axis.edge] =
+      crate::functions::plot::FrameEdgeTicks::Explicit(explicit);
+    // A shared axis is split evenly among its series' colours, the first
+    // at the top.
+    let k = axis.series.len() as f64;
+    for (j, &i) in axis.series.iter().enumerate() {
+      let top = 1.0 - j as f64 / k;
+      opts.frame_edge_segments.push((
+        axis.edge,
+        top - 1.0 / k,
+        top,
+        series_color(i),
+      ));
+    }
+  }
+}
+
 /// Whether the point labels of the data argument are callouts — pulled
 /// away from their points along leader lines — rather than plain labels
 /// beside them: `Callout[pt, label]` entries and the `data -> labels` form
@@ -983,9 +1316,48 @@ struct ParsedOptions {
   scaling: Option<(Option<Scaling>, Option<Scaling>)>,
 }
 
+thread_local! {
+  /// Set while `DateListPlot` draws through the list-plot machinery: the
+  /// x values are AbsoluteTime seconds, labelled as dates.
+  static DATE_AXIS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with the list plots it draws labelling their x axis with dates.
+pub(crate) fn with_date_axis<T>(f: impl FnOnce() -> T) -> T {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      DATE_AXIS.with(|d| d.set(self.0));
+    }
+  }
+  let _reset = Reset(DATE_AXIS.with(|d| d.replace(true)));
+  f()
+}
+
+/// Whether list-plot data is time-stamped by dates: a `TimeSeries` /
+/// `TemporalData` (or `ts -> components`) whose first stamp is a date list
+/// or `DateObject` rather than a plain number.
+fn has_date_stamps(data: &Expr) -> bool {
+  let data = match data {
+    Expr::Rule { pattern, .. } => {
+      evaluate_expr_to_expr(pattern).unwrap_or_else(|_| *pattern.clone())
+    }
+    other => other.clone(),
+  };
+  let Some(paths) = crate::functions::timeseries_ast::temporal_paths(&data)
+  else {
+    return false;
+  };
+  paths.iter().flatten().next().is_some_and(|(t, _)| {
+    let t = evaluate_expr_to_expr(t).unwrap_or_else(|_| t.clone());
+    !matches!(t, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+  })
+}
+
 /// Parse common plot options from args[1..].
 fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
+  out.opts.date_axis = DATE_AXIS.with(std::cell::Cell::get);
   let (options, simple_ticks) = expand_plot_theme(&args[1..], true);
   let opts = &mut out.opts;
   opts.simple_ticks = simple_ticks;
@@ -1314,10 +1686,6 @@ fn log_safe_range(
   crate::functions::plot::fill_range(explicit, auto).unwrap_or(auto)
 }
 
-/// Subdivisions per data interval when sampling a smooth interpolated curve
-/// (`InterpolationOrder >= 2`).
-const SPLINE_SUBDIV: usize = 24;
-
 /// Turn one series into the staircase that zero-order interpolation draws:
 /// each value is held until the next data point, where the curve jumps
 /// vertically (the same shape ListStepPlot draws).
@@ -1332,62 +1700,106 @@ fn step_curve(series: &[(f64, f64)]) -> Vec<(f64, f64)> {
   steps
 }
 
-/// Evaluate the local Lagrange polynomial of degree `order` through the
-/// `order + 1` points of `series` centered around interval `idx` at `x`,
-/// mirroring the window used by `Interpolation` (ode_ast::lagrange_interpolate).
-fn lagrange_value(
-  series: &[(f64, f64)],
-  x: f64,
-  idx: usize,
-  order: usize,
-) -> f64 {
-  // Stencil as centered as possible on the interval [x_idx, x_idx+1],
-  // always containing both interval endpoints (mirrors
-  // ode_ast::lagrange_interpolate).
-  let n = series.len();
-  let needed = order + 1;
-  let start = idx
-    .saturating_sub((order - 1) / 2)
-    .min(n.saturating_sub(needed));
-  let window = &series[start..(start + needed).min(n)];
-  let mut result = 0.0;
-  for (i, &(xi, yi)) in window.iter().enumerate() {
-    let mut basis = 1.0;
-    for (j, &(xj, _)) in window.iter().enumerate() {
-      if j != i && (xi - xj).abs() > f64::EPSILON {
-        basis *= (x - xj) / (xi - xj);
-      }
-    }
-    result += yi * basis;
+/// The cardinal B-spline of degree `degree` on the knots `0, 1, …,
+/// degree + 1`, at `x` (Cox–de Boor recursion on uniform knots).
+fn cardinal_bspline(x: f64, degree: usize) -> f64 {
+  if x < 0.0 || x >= (degree + 1) as f64 {
+    return 0.0;
   }
-  result
+  if degree == 0 {
+    return 1.0;
+  }
+  let k = degree as f64;
+  (x * cardinal_bspline(x, degree - 1)
+    + (k + 1.0 - x) * cardinal_bspline(x - 1.0, degree - 1))
+    / k
 }
 
-/// Sample the smooth order-`order` interpolated curve through `series`
-/// (sorted by x), keeping the data points themselves on the curve.
-fn spline_curve(series: &[(f64, f64)], order: usize) -> Vec<(f64, f64)> {
-  let mut sorted = series.to_vec();
-  sorted
-    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-  let n = sorted.len();
-  let eff_order = order.min(n.saturating_sub(1));
-  if eff_order <= 1 {
-    return sorted;
-  }
-  let mut curve = Vec::with_capacity((n - 1) * SPLINE_SUBDIV + 1);
-  curve.push(sorted[0]);
-  for idx in 0..n - 1 {
-    let (x0, _) = sorted[idx];
-    let (x1, _) = sorted[idx + 1];
-    for k in 1..=SPLINE_SUBDIV {
-      let x = x0 + (x1 - x0) * k as f64 / SPLINE_SUBDIV as f64;
-      if k == SPLINE_SUBDIV {
-        curve.push(sorted[idx + 1]);
-      } else {
-        curve.push((x, lagrange_value(&sorted, x, idx, eff_order)));
+/// Solve the banded system `matrix · c = rhs` (half-bandwidth `band`,
+/// rows stored densely) by Gaussian elimination without pivoting — the
+/// B-spline collocation matrices it is used on are totally positive.
+fn solve_banded(matrix: &mut [Vec<f64>], rhs: &mut [(f64, f64)], band: usize) {
+  let n = rhs.len();
+  for col in 0..n {
+    let pivot = matrix[col][col];
+    if pivot.abs() < f64::MIN_POSITIVE {
+      continue;
+    }
+    let last = (col + band).min(n - 1);
+    for row in col + 1..=last {
+      let factor = matrix[row][col] / pivot;
+      if factor == 0.0 {
+        continue;
       }
+      for k in col..=(col + 2 * band).min(n - 1) {
+        matrix[row][k] -= factor * matrix[col][k];
+      }
+      rhs[row].0 -= factor * rhs[col].0;
+      rhs[row].1 -= factor * rhs[col].1;
     }
   }
+  for col in (0..n).rev() {
+    let (mut sx, mut sy) = rhs[col];
+    for k in col + 1..=(col + 2 * band).min(n - 1) {
+      sx -= matrix[col][k] * rhs[k].0;
+      sy -= matrix[col][k] * rhs[k].1;
+    }
+    let pivot = matrix[col][col];
+    rhs[col] = (sx / pivot, sy / pivot);
+  }
+}
+
+/// Sample the smooth order-`order` curve a joined list plot draws through
+/// `series`, as the Wolfram Language does: a uniform parametric B-spline of
+/// degree `order` in the point index, its knots at the indices (odd
+/// orders) or halfway between them (even orders), with the `order / 2`
+/// control points beyond each end equal to the end control point, and the
+/// control points solved so that the curve passes through every point at
+/// its index. Each index interval is sampled `2 ⌊1200 / (n - 1)⌋` times,
+/// clamped to `6..=26`.
+fn spline_curve(series: &[(f64, f64)], order: usize) -> Vec<(f64, f64)> {
+  let n = series.len();
+  let degree = order.min(n.saturating_sub(1));
+  if degree <= 1 {
+    return series.to_vec();
+  }
+  let pad = degree / 2;
+  let controls = n + 2 * pad;
+  // Basis `j` (control `j - pad`) starts at knot `first_knot + j`.
+  let first_knot = -(pad as f64) - (degree + 1) as f64 / 2.0;
+  let basis =
+    |j: usize, t: f64| cardinal_bspline(t - first_knot - j as f64, degree);
+  // Control `j` stands for unknown `clamp(j - pad, 0, n - 1)`.
+  let unknown =
+    |j: usize| (j as i64 - pad as i64).clamp(0, n as i64 - 1) as usize;
+  let mut matrix = vec![vec![0.0; n]; n];
+  for (i, row) in matrix.iter_mut().enumerate() {
+    for j in i..=(i + 2 * pad).min(controls - 1) {
+      row[unknown(j)] += basis(j, i as f64);
+    }
+  }
+  let mut solved = series.to_vec();
+  solve_banded(&mut matrix, &mut solved, 2 * pad);
+  let eval = |t: f64| {
+    let (mut x, mut y) = (0.0, 0.0);
+    let lo = (t - first_knot).floor() as i64 - degree as i64;
+    for j in lo.max(0)..=(lo + degree as i64).min(controls as i64 - 1) {
+      let w = basis(j as usize, t);
+      let (cx, cy) = solved[unknown(j as usize)];
+      x += w * cx;
+      y += w * cy;
+    }
+    (x, y)
+  };
+  let per = (2 * (1200 / (n - 1))).clamp(6, 26);
+  let mut curve = Vec::with_capacity((n - 1) * per + 1);
+  for idx in 0..n - 1 {
+    curve.push(series[idx]);
+    for k in 1..per {
+      curve.push(eval(idx as f64 + k as f64 / per as f64));
+    }
+  }
+  curve.push(series[n - 1]);
   curve
 }
 
@@ -1562,7 +1974,13 @@ fn list_plot_ranges(
     bounds(|p| p.0, request.keep_outliers.0 || nx, opts.axes_origin.0);
   let (y_min, y_max) =
     bounds(|p| p.1, request.keep_outliers.1 || ny, opts.axes_origin.1);
-  let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x && !nx, nx);
+  // A date axis spans just the dates (WL's DateListPlot and a ListPlot of a
+  // TimeSeries).
+  let x = if opts.date_axis && x_min < x_max {
+    (x_min, x_max)
+  } else {
+    list_axis_extent(x_min, x_max, ListAxis::X, implicit_x && !nx, nx)
+  };
   let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny);
   if !explicit_x {
     opts.axes_origin_low.0 = Some(x.0);
@@ -1628,24 +2046,83 @@ fn widen_for_point_labels(
   )
 }
 
-/// The automatic `PointSize` of a list plot's dots comes in steps, from 7
-/// for series of fewer than 50 points down to 3 from 1000 points on (the
-/// longest series decides).
+/// The automatic size (in printer's points at a 360-point-wide image) of a
+/// list plot's dots, as WL's `Charting`adaptivePointSize` picks it from the
+/// distinct points of all series: 7 for fewer than 50 points, 6, 5 and 4
+/// from 50, 100 and 250 on, 1 above 15000. In between it depends also on
+/// how clustered the points are: their data range is cut into 10 × 10
+/// bins, and the fullest bin's share over the mean share of the non-empty
+/// bins classes the data as even (below 2), clustered (above 10) or in
+/// between.
 fn point_size_steps(all_series: &[Vec<(f64, f64)>]) -> f64 {
-  let n = all_series.iter().map(Vec::len).max().unwrap_or(0);
+  let mut seen = std::collections::HashSet::new();
+  let points: Vec<(f64, f64)> = all_series
+    .iter()
+    .flatten()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .filter(|(x, y)| seen.insert((x.to_bits(), y.to_bits())))
+    .copied()
+    .collect();
+  let n = points.len();
   match n {
-    0..50 => 7.0,
-    50..100 => 6.0,
-    100..250 => 5.0,
-    250..1000 => 4.0,
-    _ => 3.0,
+    0..50 => return 7.0,
+    50..100 => return 6.0,
+    100..250 => return 5.0,
+    250..500 => return 4.0,
+    15001.. => return 1.0,
+    _ => {}
   }
+  let span = |sel: fn(&(f64, f64)) -> f64| {
+    let (lo, hi) = points
+      .iter()
+      .map(sel)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      });
+    if lo == hi {
+      (lo - 1.0, hi + 1.0)
+    } else {
+      (lo, hi)
+    }
+  };
+  let (x1, x2) = span(|p| p.0);
+  let (y1, y2) = span(|p| p.1);
+  let width = |lo: f64, hi: f64| (hi - lo + 0.0001 * (hi - lo)) / 10.0;
+  let (wx, wy) = (width(x1, x2), width(y1, y2));
+  let mut bins = [[0usize; 10]; 10];
+  for &(x, y) in &points {
+    let i = ((x - x1) / wx).floor();
+    let j = ((y - y1) / wy).floor();
+    if (0.0..10.0).contains(&i) && (0.0..10.0).contains(&j) {
+      bins[i as usize][j as usize] += 1;
+    }
+  }
+  let filled: Vec<usize> =
+    bins.iter().flatten().copied().filter(|&c| c > 0).collect();
+  let max = filled.iter().copied().max().unwrap_or(0) as f64;
+  let mean = filled.iter().sum::<usize>() as f64 / filled.len().max(1) as f64;
+  let density = max / mean;
+  let class = if density < 2.0 {
+    0
+  } else if density > 10.0 {
+    1
+  } else {
+    2
+  };
+  let table: [f64; 3] = match n {
+    ..1000 => [4.0, 4.0, 3.0],
+    ..2500 => [3.0, 3.0, 2.5],
+    ..5000 => [2.5, 2.5, 2.0],
+    ..10000 => [2.0, 2.0, 1.0],
+    _ => [2.0, 1.0, 1.0],
+  };
+  table[class]
 }
 
-/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 11/6000
-/// of the image width per step.
+/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 0.66 of
+/// the adaptive size, but at least 1, over the 360-point image width.
 fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
-  point_size_steps(all_series) * 11.0 / 6000.0
+  (0.66 * point_size_steps(all_series)).max(1.0) / 360.0
 }
 
 /// The automatic `PointSize` of a `ListLinePlot`'s mesh points: 1/360 of
@@ -2195,18 +2672,35 @@ fn finish_list_scaling(
 
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  let mut data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  if let Some(unit) = option_value(args, "TargetUnits") {
+    data = convert_to_target_units(&data, unit);
+  }
+  if matches!(option_value(args, "AxesLabel"), Some(Expr::Identifier(a)) if a == "Automatic")
+  {
+    parsed.opts.axes_label = automatic_unit_axes_label(&data);
+  }
+  if has_date_stamps(&data) {
+    parsed.opts.date_axis = true;
+  }
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
   parsed.opts.point_label_callouts = labels_are_callouts(&data);
-  let (err_series, labels, point_labels) =
+  let (mut err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, true)?;
+  apply_stacked_layout(args, &mut err_series);
+  apply_multiaxis(args, &mut err_series, &mut parsed.opts);
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels =
     resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.opts.interval_markers == IntervalMarkers::Fences
+    && interval_only_data(&data)
+  {
+    parsed.opts.interval_markers = IntervalMarkers::Bars;
+  }
   parsed.opts.point_colors = styled_point_colors(&data, &all_series);
 
   // InterpolationOrder reshapes only a joined series into a curve (0 =
@@ -2440,10 +2934,14 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Association keys don't label the points here: wolframscript draws key
   // labels for ListPlot but not for ListLinePlot.
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  if has_date_stamps(&data) {
+    parsed.opts.date_axis = true;
+  }
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
-  let (err_series, labels, point_labels) =
+  let (mut err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, false)?;
+  apply_stacked_layout(args, &mut err_series);
   let all_series = strip_errors(&err_series);
   parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
   let implicit_x = all_implicit_x(&err_series);
@@ -2451,6 +2949,11 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   parsed.opts.point_labels =
     resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.opts.interval_markers == IntervalMarkers::Fences
+    && interval_only_data(&data)
+  {
+    parsed.opts.interval_markers = IntervalMarkers::Bars;
+  }
 
   // ListLinePlot always joins, so InterpolationOrder always reshapes the
   // curve (0 = steps, >= 2 = smooth spline).
@@ -3166,4 +3669,84 @@ pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data = expr_to_string(&data),
   );
   evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn values(ys: &[f64]) -> Vec<(f64, f64)> {
+    ys.iter()
+      .enumerate()
+      .map(|(i, &y)| ((i + 1) as f64, y))
+      .collect()
+  }
+
+  fn close(a: (f64, f64), b: (f64, f64)) -> bool {
+    (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12
+  }
+
+  // The joined InterpolationOrder curve is WL's uniform parametric
+  // B-spline (values from wolframscript's ListPlot Line points).
+  #[test]
+  fn spline_curve_matches_wolfram_points() {
+    let data = values(&[1.0, 4.0, 2.0, 3.0, 10.0, 8.0, 2.0]);
+    let cubic = spline_curve(&data, 3);
+    assert_eq!(cubic.len(), 157);
+    assert!(close(cubic[1], (1.0252993839230191, 1.1112786798837362)));
+    let top = cubic.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+    assert!((top - 10.509765002305535).abs() < 1e-12, "{top}");
+    let quadratic = spline_curve(&data, 2);
+    assert!(close(quadratic[1], (1.023396301156198, 1.09145323398689)));
+    let top = quadratic.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+    assert!((top - 10.442350579300358).abs() < 1e-12, "{top}");
+    let quintic = spline_curve(&data, 5);
+    assert!(close(quintic[1], (1.0281310425380483, 1.1313604537547608)));
+    assert!(close(quintic[89], (4.433552453390919, 6.128563635638771)));
+    // The curve passes through every data point.
+    for (i, p) in data.iter().enumerate() {
+      assert!(close(cubic[26 * i], *p));
+    }
+  }
+
+  // Each index interval is sampled 2 ⌊1200 / (n - 1)⌋ times, in 6..=26.
+  #[test]
+  fn spline_curve_sample_count() {
+    for (n, per) in [(5, 26), (93, 26), (95, 24), (150, 16), (500, 6)] {
+      let ys: Vec<f64> = (0..n).map(|i| (i as f64 / 3.0).sin()).collect();
+      let data = values(&ys);
+      assert_eq!(spline_curve(&data, 3).len(), (n - 1) * per + 1, "n = {n}");
+    }
+  }
+
+  // WL's Charting`adaptivePointSize: steps by count, then by clustering.
+  #[test]
+  fn point_size_steps_follow_density() {
+    let golden = |n: usize, cube: bool| {
+      vec![
+        (1..=n)
+          .map(|i| {
+            let y = (i as f64 * 0.414214).fract();
+            (
+              (i as f64 * 0.618034).fract(),
+              if cube { y.powi(3) } else { y },
+            )
+          })
+          .collect::<Vec<_>>(),
+      ]
+    };
+    assert_eq!(point_size_steps(&golden(300, false)), 4.0);
+    assert_eq!(point_size_steps(&golden(600, false)), 4.0);
+    assert_eq!(point_size_steps(&golden(600, true)), 3.0);
+    assert_eq!(point_size_steps(&golden(1200, true)), 2.5);
+    assert_eq!(point_size_steps(&golden(3000, true)), 2.0);
+    assert_eq!(point_size_steps(&golden(6000, true)), 1.0);
+    assert_eq!(point_size_steps(&golden(6000, false)), 2.0);
+    assert_eq!(point_size_steps(&golden(20000, false)), 1.0);
+    // Duplicate points count once.
+    let a = golden(300, false).remove(0);
+    assert_eq!(point_size_steps(&[a.clone(), a.clone(), a]), 4.0);
+    // Below 1 the size stays 1/360 of the image width.
+    assert_eq!(list_plot_point_size(&golden(20000, false)), 1.0 / 360.0);
+  }
 }

@@ -7847,8 +7847,8 @@ Found comparing the graphics-tests renders (2026-11):
     `PlotRange` reaches down to 0 (`{0., 148.4}`), Woxi's starts at the
     curve's minimum 1.
   - `DateListPlot[{{{2020, 1, 1}, 1}, {{2020, 6, 1}, 3}, {{2021, 1, 1},
-    2}}]` is 227 tall (WL 221): WL's y range starts at 0 and its date
-    ticks are `Jan 2020`, `Apr`, … (Woxi `2020 Jul`, …).
+    2}}]` (unverified since DateListPlot draws through ListPlot with
+    WL's date ticks) was 227 tall (WL 221).
   - `LogPlot[Exp[x], {x, 0, 10}, Frame -> True]` is 222 tall (WL 221):
     WL's right padding is 4 pt, unexplained by the tick labels.
   - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
@@ -7970,6 +7970,25 @@ from a stated rule or needs missing machinery:
   `AugmentedSymmetricPolynomial`.
 - `LowerTriangularMatrix[SparseArray[…]]`: Wolfram's stored CSR data keeps
   the input's insertion order, which Woxi's sorted sparse arrays do not.
+
+## List plots: multiaxis, date ticks and data forms (2026-11)
+
+- `MultiaxisArrangement` draws one axis per frame side. WL stacks further
+  axes outside the frame (`All` with 3 series: two left axes;
+  `{Right -> {1, 2}, Left -> 3}`: two right axes); Woxi merges the axes of
+  a side into one shared axis.
+- Date axes (`DateListPlot`, `ListPlot` of a date-stamped `TimeSeries`)
+  have WL's major ticks and labels (`DateListPlotDump`DateTicks` with 6
+  divisions: `"Year"`, `"MonthNameShort Year"`, `"MonthNameShort Day"`, …)
+  but no minor ticks; WL marks every month / every half day between them.
+  Hour-and-finer steps are `FindDivisions` of the unit count, not WL's own
+  hour/minute tables. `ListPlot` of a `TimeSeries` uses
+  `Charting`ScaledTicks[DateScale]` in WL, which Woxi approximates with the
+  same DateTicks rules.
+- `ListPlot` data that mixes `Interval` and `Around` values draws caps on
+  every bar (WL caps only the `Around` ones); an `Interval` with several
+  ranges, or `Interval[{a, b}, {c, d}]` read as an x and a y interval, is
+  not supported.
 
 ## ListSurfacePlot3D
 

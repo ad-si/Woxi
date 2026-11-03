@@ -6480,11 +6480,31 @@ fn date_list_plot_ast_impl(
       5 => 60.0,
       _ => 1.0,
     };
+    // Years and months step by the calendar, shorter units by seconds.
+    let (y0, m0, ..) =
+      crate::functions::datetime_ast::absolute_seconds_to_date(start);
+    let calendar_step = |i: i64| {
+      let months = match granularity {
+        0 | 1 => 12 * i,
+        2 => i,
+        _ => return None,
+      };
+      let m = m0 - 1 + months;
+      Some(crate::functions::datetime_ast::date_to_absolute_seconds(
+        y0 + m.div_euclid(12),
+        m.rem_euclid(12) + 1,
+        1,
+        0,
+        0,
+        0.0,
+      ))
+    };
     let pair_items: Vec<Expr> = items
       .iter()
       .enumerate()
       .map(|(i, v)| {
-        let t = start + i as f64 * step_seconds;
+        let t =
+          calendar_step(i as i64).unwrap_or(start + i as f64 * step_seconds);
         Expr::List(vec![Expr::Real(t), v.clone()].into())
       })
       .collect();
@@ -6560,76 +6580,51 @@ fn date_list_plot_ast_impl(
     ));
   }
 
-  let chart_opts = parse_chart_options(args);
-
-  // Compute ranges across all series
-  let mut x_min = f64::INFINITY;
-  let mut x_max = f64::NEG_INFINITY;
-  let mut y_min = f64::INFINITY;
-  let mut y_max = f64::NEG_INFINITY;
-  for series in &all_series {
-    for &(x, y) in series {
-      x_min = x_min.min(x);
-      x_max = x_max.max(x);
-      y_min = y_min.min(y);
-      y_max = y_max.max(y);
+  // Drawn as a list plot of {AbsoluteTime, y} points with a date axis and
+  // DateListPlot's own defaults: a frame and joined points.
+  let data = Expr::List(
+    all_series
+      .iter()
+      .map(|series| {
+        Expr::List(
+          series
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect(),
+        )
+      })
+      .collect(),
+  );
+  let has_option = |name: &str| {
+    args[1..].iter().any(|a| {
+      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name))
+    })
+  };
+  let mut new_args = vec![data];
+  new_args.extend(
+    args[1..]
+      .iter()
+      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .cloned(),
+  );
+  for (name, value) in [("Frame", "True"), ("Joined", "True")] {
+    if !has_option(name) {
+      new_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier(name.into())),
+        replacement: Box::new(Expr::Identifier(value.into())),
+      });
     }
   }
-
-  // Compute x range with padding
-  let xp = (x_max - x_min) * 0.04;
-  let xp = if xp.abs() < f64::EPSILON { 86400.0 } else { xp };
-  let x_range_min = x_min - xp;
-  let x_range_max = x_max + xp;
-
-  // Compute y range with padding: multiplicatively in log space for
-  // DateListLogPlot (matching ListLogPlot), additively otherwise.
-  let (y_range_min, y_range_max) = if log_y {
-    let log_range = (y_max / y_min).ln();
-    let factor = if log_range.abs() < f64::EPSILON {
-      std::f64::consts::E
+  crate::functions::list_plot::with_date_axis(|| {
+    if log_y {
+      crate::functions::list_plot::list_log_plot_ast(&new_args)
     } else {
-      (log_range * 0.04).exp()
-    };
-    (y_min / factor, y_max * factor)
-  } else {
-    let yp = (y_max - y_min) * 0.04;
-    let yp = if yp.abs() < f64::EPSILON { 1.0 } else { yp };
-    (y_min - yp, y_max + yp)
-  };
-
-  // `date_axis` labels the x axis with calendar dates.
-  let mut plot_opts = crate::functions::plot::PlotOptions {
-    svg_width: chart_opts.svg_width,
-    svg_height: chart_opts.svg_height,
-    full_width: chart_opts.full_width,
-    date_axis: true,
-    log_y,
-    plot_label: chart_opts.plot_label.clone(),
-    ..Default::default()
-  };
-  for opt in &args[1..] {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends")
-    {
-      let (labels, _auto, _expressions, position) =
-        crate::functions::plot::parse_plot_legends(replacement);
-      plot_opts.plot_legends = labels;
-      plot_opts.legend_position = position;
+      crate::functions::list_plot::list_plot_ast(&new_args)
     }
-  }
-
-  let svg = crate::functions::plot::generate_svg_with_filling(
-    &all_series,
-    (x_range_min, x_range_max),
-    (y_range_min, y_range_max),
-    &plot_opts,
-  )?;
-
-  Ok(crate::graphics_result(svg))
+  })
 }
 
 /// WordCloud[{"word1", "word2", ...}] or WordCloud[{1, 2, 3, ...}]
