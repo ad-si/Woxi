@@ -5235,8 +5235,14 @@ Found comparing `Export[…, "SVG"]` of both engines:
 - `GraphicsGrid` with `ImageSize -> Automatic`: a single plot is drawn 600
   wide by Wolfram (a single `Graphics[…]` keeps its own 360), and a row of
   pictures of different shapes gets one shared height in Wolfram; Woxi
-  keeps each cell's own shape. Cells of a wide `Graphics` are slightly
-  taller in Woxi (600 x 170 for two `2:1` rectangles; Wolfram 600 x 165).
+  keeps each cell's own shape. The cell gaps are not decoded: with
+  `d = Graphics[Disk[]]` and `r = Graphics[Rectangle[{0, 0}, {2, 1}]]`
+  Wolfram gives `{{d, d}}` 600 x 300 (disks 269 across, Woxi about 262),
+  `{{r, r}}` 600 x 165 (Woxi 170), `{{r}}` 347 x 188 (Woxi 360 x 203),
+  `{{d}, {r}}` 355 x 547 (Woxi 360 x 563); with `Spacings -> 0` they agree
+  (`{{r, r}}` 600 x 156). The gap Wolfram leaves around a picture is
+  neither a fixed number of points nor a fixed fraction of the cell (about
+  17 pt of a 360 cell, 18 of 300, 15 of 200, 11 of 120).
 - A `TableHeadings` rule adds 1 pt to the gap it sits in only in Wolfram.
 - Table and typeset text is 14 pt in Woxi, 13 pt in Wolfram, so every
   table is about 8% larger (the row pitch, 1.33 em, and the column gaps
