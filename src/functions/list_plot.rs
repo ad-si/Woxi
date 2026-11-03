@@ -1757,6 +1757,53 @@ fn render_panel_layout(
   Ok(crate::graphics_result(svg))
 }
 
+/// `ListPlot[{a, Legended[b, label], …}]`: a dataset wrapped in `Legended`
+/// gets a legend entry (`Placed[label, pos]` places the legend), unless
+/// `PlotLegends` already gave one.
+fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
+  let Expr::List(items) = data else {
+    return;
+  };
+  if !opts.plot_legends.is_empty()
+    || !items
+      .iter()
+      .all(|i| matches!(i, Expr::List(_) | Expr::FunctionCall { .. }))
+  {
+    return;
+  }
+  let mut labels = Vec::new();
+  let mut series = Vec::new();
+  for (i, item) in items.iter().enumerate() {
+    if let Expr::FunctionCall { name, args } = item
+      && name == "Legended"
+      && args.len() == 2
+    {
+      let (mut entry, _, _, position) =
+        crate::functions::plot::parse_plot_legends(&match &args[1] {
+          Expr::FunctionCall { name, args: p }
+            if name == "Placed" && p.len() == 2 =>
+          {
+            Expr::FunctionCall {
+              name: "Placed".into(),
+              args: vec![Expr::List(vec![p[0].clone()].into()), p[1].clone()]
+                .into(),
+            }
+          }
+          label => Expr::List(vec![label.clone()].into()),
+        });
+      if let Some(label) = entry.pop() {
+        labels.push(label);
+        series.push(i);
+        opts.legend_position = position;
+      }
+    }
+  }
+  if !labels.is_empty() {
+    opts.plot_legends = labels;
+    opts.legend_series = series;
+  }
+}
+
 /// Attach dataset labels from `Labeled` wrappers as callout labels, unless
 /// explicit Callout labels are already present.
 fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
@@ -1771,6 +1818,7 @@ fn apply_dataset_labels(opts: &mut PlotOptions, labels: &[Option<String>]) {
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  apply_legended_datasets(&data, &mut parsed.opts);
   parsed.opts.point_label_callouts = labels_are_callouts(&data);
   let (err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, true)?;
@@ -1996,8 +2044,10 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
   // Association keys don't label the points here: wolframscript draws key
   // labels for ListPlot but not for ListLinePlot.
+  let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  apply_legended_datasets(&data, &mut parsed.opts);
   let (err_series, labels, point_labels) =
-    parse_list_data_err_labeled(&data_arg(args, &parsed), false)?;
+    parse_list_data_err_labeled(&data, false)?;
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels);

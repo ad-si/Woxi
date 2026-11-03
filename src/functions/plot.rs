@@ -2588,6 +2588,10 @@ pub(crate) struct PlotOptions {
   pub max_recursion: usize,
   /// Legend labels for each series (empty = no legend)
   pub plot_legends: Vec<String>,
+  /// The series each `plot_legends` entry stands for, when that is not
+  /// simply the entry's own index (`ListPlot[{a, Legended[b, "l"], c}]`
+  /// has one entry, for the second series).
+  pub legend_series: Vec<usize>,
   /// Position of the legend (Right, Top, Bottom)
   pub legend_position: LegendPosition,
   /// Show evenly spaced horizontal grid lines (automatic).
@@ -2824,6 +2828,7 @@ impl Default for PlotOptions {
       plot_points: NUM_SAMPLES,
       max_recursion: 6,
       plot_legends: Vec::new(),
+      legend_series: Vec::new(),
       legend_position: LegendPosition::default(),
       grid_lines_y: false,
       grid_lines_x: false,
@@ -8241,6 +8246,45 @@ fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
   (vb_w - margin_left - margin_right - y_label_area).max(vb_w * 0.5)
 }
 
+/// The legend swatch of series `si` centred vertically on `y` and starting
+/// at `x`: a short line for a joined series, the point marker for one
+/// drawn as points (a list plot's `PointLegend`).
+fn legend_swatch_svg(
+  opts: &PlotOptions,
+  si: usize,
+  x: f64,
+  y: f64,
+  swatch_len: f64,
+  dash_scale: f64,
+) -> String {
+  let sf = RESOLUTION_SCALE as f64;
+  let (r, g, b) = series_color(&opts.plot_style, si);
+  if !resolve_series_joined(opts.joined_per_series.as_deref(), si) {
+    return format!(
+      "<circle cx=\"{:.1}\" cy=\"{y:.1}\" r=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+      x + swatch_len / 2.0,
+      sf * 2.5,
+    );
+  }
+  let thickness = series_thickness(&opts.plot_style, si);
+  let dashing = series_dashing(&opts.plot_style, si);
+  let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
+  let mut dash_attr = String::new();
+  if let Some(ref pattern) = dashing {
+    let dash_vals: Vec<String> = pattern
+      .iter()
+      .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
+      .collect();
+    dash_attr = format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
+  }
+  format!(
+    "<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" \
+     stroke=\"rgb({r},{g},{b})\" stroke-width=\"{}\"{dash_attr}/>\n",
+    x + swatch_len,
+    sw as u32,
+  )
+}
+
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
 fn inject_legend(buf: &mut String, opts: &PlotOptions) {
@@ -8366,34 +8410,9 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
           for &i in row {
             let label = &opts.plot_legends[i];
-            let (r, g, b) = series_color(&opts.plot_style, i);
-            let thickness = series_thickness(&opts.plot_style, i);
-            let dashing = series_dashing(&opts.plot_style, i);
-            let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
-
-            let mut dash_attr = String::new();
-            if let Some(ref pattern) = dashing {
-              let dash_vals: Vec<String> = pattern
-                .iter()
-                .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
-                .collect();
-              dash_attr =
-                format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
-            }
-
-            // Swatch line
-            legend_svg.push_str(&format!(
-              "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-             stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
-              cursor_x,
-              legend_y,
-              cursor_x + swatch_len,
-              legend_y,
-              r,
-              g,
-              b,
-              sw as u32,
-              dash_attr,
+            let si = opts.legend_series.get(i).copied().unwrap_or(i);
+            legend_svg.push_str(&legend_swatch_svg(
+              opts, si, cursor_x, legend_y, swatch_len, dash_scale,
             ));
 
             // Text label
@@ -8475,33 +8494,10 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         let legend_y0 = (vb_h - legend_total_h) / 2.0;
 
         for (i, label) in opts.plot_legends.iter().enumerate() {
-          let (r, g, b) = series_color(&opts.plot_style, i);
-          let thickness = series_thickness(&opts.plot_style, i);
-          let dashing = series_dashing(&opts.plot_style, i);
+          let si = opts.legend_series.get(i).copied().unwrap_or(i);
           let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
-          let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
-
-          let mut dash_attr = String::new();
-          if let Some(ref pattern) = dashing {
-            let dash_vals: Vec<String> = pattern
-              .iter()
-              .map(|d| format!("{:.1}", dash_len(*d, dash_scale, sf)))
-              .collect();
-            dash_attr =
-              format!(" stroke-dasharray=\"{}\"", dash_vals.join(","));
-          }
-          legend_svg.push_str(&format!(
-            "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-             stroke=\"rgb({},{},{})\" stroke-width=\"{}\"{}/>\n",
-            legend_x,
-            y,
-            legend_x + swatch_len,
-            y,
-            r,
-            g,
-            b,
-            sw as u32,
-            dash_attr,
+          legend_svg.push_str(&legend_swatch_svg(
+            opts, si, legend_x, y, swatch_len, dash_scale,
           ));
 
           let text_x = legend_x + swatch_len + swatch_gap;

@@ -400,6 +400,46 @@ mod framed_axes {
   }
 }
 
+// `ListPlot[{a, Legended[b, label], c}]` gets a point legend with the one
+// entry, in the color of the series it names (WL: `Legended[g,
+// Placed[PointLegend[…], After]]`).
+mod legended_datasets {
+  use super::*;
+
+  #[test]
+  fn legended_dataset_gets_a_point_legend_entry() {
+    let svg = svg_of(
+      "ListPlot[{{1, 2, 1}, Legended[{2, 3, 2}, \"average\"], {3, 4, 3}}]",
+    );
+    assert!(svg.contains(">average</text>"), "{svg}");
+    // One swatch, a point in the second (orange) palette color.
+    assert_eq!(
+      svg.matches("r=\"25.0\" fill=\"rgb(242,160,36)\"/>").count(),
+      1
+    );
+    assert_eq!(svg.matches("r=\"25.0\" fill=").count(), 1);
+  }
+
+  #[test]
+  fn placed_below_puts_the_legend_under_the_plot() {
+    let right =
+      svg_size(&svg_of("ListPlot[{{1, 2}, Legended[{2, 3}, \"avg\"]}]"));
+    let below = svg_size(&svg_of(
+      "ListPlot[{{1, 2}, Legended[{2, 3}, Placed[\"avg\", Below]]}]",
+    ));
+    assert!(right.0 > 360.0, "{right:?}");
+    assert_eq!(below.0, 360.0);
+    assert!(below.1 > right.1, "{below:?} {right:?}");
+  }
+
+  #[test]
+  fn list_line_plot_legended_dataset_draws_a_line_swatch() {
+    let svg = svg_of("ListLinePlot[{{1, 2, 1}, Legended[{2, 3, 2}, \"b\"]}]");
+    assert!(svg.contains(">b</text>"), "{svg}");
+    assert!(svg.contains("stroke=\"rgb(242,160,36)\""), "{svg}");
+  }
+}
+
 // `ImageSize -> Full | Scaled[s]` sizes a plot from the `Pane` holding it,
 // and `Framed` draws WL's square black frame 5 points around it.
 mod pane_relative_size {

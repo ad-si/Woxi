@@ -4975,7 +4975,9 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
   places the label at the series' end with a horizontal leader in WL;
   Woxi draws it beside the last point, and as `InputForm` text rather than
   `TraditionalForm` (`q(n)`).
-- `PlotLegends` on a `Legended` dataset of `ListPlot` is not drawn.
+- A `Legended` dataset of `ListPlot` draws its legend entry, but the
+  result is a `Graphics`, not WL's `Legended[Graphics[…],
+  Placed[PointLegend[…], After]]`.
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.
 
