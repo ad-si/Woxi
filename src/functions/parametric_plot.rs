@@ -325,7 +325,7 @@ fn color_function_series(
   curves: &[Vec<(f64, f64)>],
   params: &[Vec<f64>],
   cf: &Expr,
-  scaling: bool,
+  scaling: (bool, bool),
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   (t_min, t_max): (f64, f64),
@@ -345,11 +345,12 @@ fn color_function_series(
         name, sx,
       );
     }
-    let args = if scaling {
-      vec![Expr::Real(sx), Expr::Real(sy), Expr::Real(st)]
-    } else {
-      vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)]
-    };
+    // `{True, False}` scales x alone; the parameter follows x.
+    let args = vec![
+      Expr::Real(if scaling.0 { sx } else { x }),
+      Expr::Real(if scaling.1 { sy } else { y }),
+      Expr::Real(if scaling.0 { st } else { t }),
+    ];
     let call = Expr::CurriedCall {
       func: Box::new(cf.clone()),
       args,
@@ -1553,7 +1554,7 @@ fn parametric_region_layer(
           name, sx,
         );
       }
-      let args = if plot_opts.color_function_scaling {
+      let args = if plot_opts.color_function_scaling.0 {
         vec![
           Expr::Real(sx),
           Expr::Real(sy),

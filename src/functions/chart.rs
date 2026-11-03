@@ -2484,7 +2484,7 @@ pub(crate) fn apply_color_function(opts: &mut ChartOptions, values: &[f64]) {
     .map(|&v| {
       crate::functions::plot::color_function_rgb(
         &cf,
-        opts.color_function_scaling,
+        (opts.color_function_scaling, opts.color_function_scaling),
         (v, 0.0),
         (lo, hi, 0.0, 0.0),
       )

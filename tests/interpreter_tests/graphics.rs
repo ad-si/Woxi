@@ -11948,6 +11948,35 @@ mod plot3d {
       assert!(label_ys.len() > 1, "entries wrap onto several rows: {svg}");
     }
 
+    /// `ColorFunctionScaling` is evaluated (so a `Table` iterator works)
+    /// and may be given per argument: `{True, False}` rescales x but hands
+    /// `f` the raw y.
+    #[test]
+    fn color_function_scaling_per_argument_and_evaluated() {
+      let last_stop = |code: &str| {
+        export_svg(code)
+          .rsplit("stop-color=\"")
+          .next()
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .to_string()
+      };
+      let raw = last_stop(
+        "Table[Plot[x, {x, 0, 1/2}, ColorFunction -> Function[{x, y}, \
+         Hue[x]], ColorFunctionScaling -> c], {c, {False}}][[1]]",
+      );
+      assert_eq!(raw, "#00FFFF");
+      // Hue[x, 1, Abs[y]] at the end of Sin[2 x] over {0, Pi/4}: x scaled
+      // to 1 (red), y raw = 1.
+      let mixed = last_stop(
+        "Plot[Sin[2 x], {x, 0, Pi/4}, ColorFunction -> Function[{x, y}, \
+         Hue[x, 1, Abs[y]]], ColorFunctionScaling -> {True, False}]",
+      );
+      assert_eq!(mixed, "#FF0000");
+    }
+
     /// `LabelStyle`'s colour paints the tick labels over `AxesStyle` (and
     /// `TicksStyle`), as in WL 15; the axis lines keep `AxesStyle`.
     #[test]

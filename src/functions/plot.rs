@@ -3037,9 +3037,10 @@ pub(crate) struct PlotOptions {
   /// `ColorFunction -> f`: colors the curve along its length by `f[x]` (or
   /// `f[x, y]` for a two-parameter function) instead of by `PlotStyle`.
   pub color_function: Option<Expr>,
-  /// `ColorFunctionScaling`: whether `f` receives coordinates rescaled to
-  /// 0..1 over the plot range (the default) or the raw values.
-  pub color_function_scaling: bool,
+  /// `ColorFunctionScaling`, per argument (x, y): whether `f` receives the
+  /// coordinate rescaled to 0..1 over the plot range (the default) or the
+  /// raw value. `{True, False}` scales only x.
+  pub color_function_scaling: (bool, bool),
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
   /// `AxesOrigin -> {x, y}`: where the axes cross. `None` coordinates
@@ -3359,7 +3360,7 @@ impl Default for PlotOptions {
       axes_label: None,
       plot_style: Vec::new(),
       color_function: None,
-      color_function_scaling: true,
+      color_function_scaling: (true, true),
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
@@ -6697,18 +6698,15 @@ pub(crate) fn collapse_style_for_single_series(
 /// 0..1 over the plot range.
 pub(crate) fn color_function_rgb(
   cf: &Expr,
-  scaling: bool,
+  scaling: (bool, bool),
   (x, y): (f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
 ) -> Option<(u8, u8, u8)> {
   let scale = |v: f64, lo: f64, hi: f64| {
     if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
   };
-  let (ax, ay) = if scaling {
-    (scale(x, x_min, x_max), scale(y, y_min, y_max))
-  } else {
-    (x, y)
-  };
+  let ax = if scaling.0 { scale(x, x_min, x_max) } else { x };
+  let ay = if scaling.1 { scale(y, y_min, y_max) } else { y };
   if let Some(name) =
     crate::functions::field_plot::color_function_scheme_name(cf)
   {
@@ -6816,7 +6814,7 @@ fn data_extents(series: &[Vec<(f64, f64)>]) -> Option<(f64, f64, f64, f64)> {
 fn color_function_runs(
   segment: &[(f64, f64)],
   cf: &Expr,
-  scaling: bool,
+  scaling: (bool, bool),
   ranges: (f64, f64, f64, f64),
 ) -> Vec<((u8, u8, u8), Vec<(f64, f64)>)> {
   let mut runs: Vec<((u8, u8, u8), Vec<(f64, f64)>)> = Vec::new();
@@ -6853,7 +6851,7 @@ struct ColorFunctionGradient {
 fn color_function_gradient_stops(
   segment: &[(f64, f64)],
   cf: &Expr,
-  scaling: bool,
+  scaling: (bool, bool),
   ranges: (f64, f64, f64, f64),
   log_x: bool,
 ) -> Option<Vec<(f64, (u8, u8, u8))>> {
@@ -12912,8 +12910,16 @@ pub(crate) fn apply_common_plot_option(
       };
     }
     "ColorFunctionScaling" => {
-      plot_opts.color_function_scaling =
-        !matches!(replacement, Expr::Identifier(v) if v == "False");
+      // Evaluated: `Table[Plot[…, ColorFunctionScaling -> cf], {cf, …}]`.
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      let on = |e: &Expr| !matches!(e, Expr::Identifier(v) if v == "False");
+      plot_opts.color_function_scaling = match &val {
+        Expr::List(items) if !items.is_empty() => {
+          (on(&items[0]), items.get(1).is_none_or(on))
+        }
+        other => (on(other), on(other)),
+      };
     }
     // Expanded into the options it stands for by `expand_plot_theme`;
     // a theme without a table changes nothing.
