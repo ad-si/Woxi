@@ -12801,8 +12801,12 @@ thread_local! {
   /// How deeply the box being laid out sits inside fractions, scripts and
   /// grid cells — Wolfram's `ScriptLevel` as far as fractions care: a
   /// fraction at level 0 is set at the surrounding size, a nested one (in a
-  /// fraction, a script or a grid) at 0.75 of it.
+  /// fraction, a script or a grid) at 0.75 of it, but never below 0.75 of
+  /// the level-0 size ([`BOX_ROOT_FONT_SIZE`]): the third tier of a
+  /// continued fraction is as large as the second.
   static BOX_SCRIPT_LEVEL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+  /// The font size of the box last laid out at script level 0.
+  static BOX_ROOT_FONT_SIZE: std::cell::Cell<f64> = const { std::cell::Cell::new(14.0) };
 }
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
@@ -12822,6 +12826,9 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 /// This is the main bottom-up tree renderer for the box language.
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
+  if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+    BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
+  }
 
   match expr {
     // A string carrying inline `\!\(\*…\)` linear syntax (a note name
@@ -13002,13 +13009,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
       // FractionBox: numerator above line above denominator
       "FractionBox" if args.len() == 2 => {
-        let scale = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
-          1.0
+        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+          font_size
         } else {
-          0.75
+          let floor = 0.75 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
+          (font_size * 0.75).max(floor).min(font_size)
         };
-        let num = layout_box_nested(&args[0], font_size * scale);
-        let den = layout_box_nested(&args[1], font_size * scale);
+        let num = layout_box_nested(&args[0], size);
+        let den = layout_box_nested(&args[1], size);
         let frac_w = num.width.max(den.width) + 4.0;
         let gap = 3.0;
         let line_thickness = 0.8;

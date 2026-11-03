@@ -45341,6 +45341,13 @@ mod wl_table_layout {
     .unwrap();
     assert!(svg.contains("font-size=\"14.0\""), "{svg}");
     assert_eq!(svg.matches("font-size=\"10.5\"").count(), 2, "{svg}");
+    // Deeper fractions stay at that 0.75: no 7.9 tier.
+    let svg = interpret(
+      "ExportString[TraditionalForm[HoldForm[1/(1 + 1/(1 + 1/b))]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("font-size=\"10.5\"").count(), 5, "{svg}");
+    assert!(!svg.contains("font-size=\"7.9\""), "{svg}");
   }
 
   #[test]
