@@ -2461,14 +2461,14 @@ mod interpreter_tests {
   #[test]
   fn test_manipulate_style_text_exponential_e_and_imaginary_i_svg() {
     // Same bug, other two Letterlike Symbols glyphs TraditionalForm
-    // typesets from this renderer: `Exp[x]` as `\[ExponentialE]^x` (ⅇ,
+    // typesets from this renderer: `E^x` as `\[ExponentialE]^x` (ⅇ,
     // U+2147) and `I` as `\[ImaginaryI]` (ⅈ, U+2148). Both must come out
     // as plain, italicized ASCII letters through the same SVG writer as
     // the DifferentialD case above.
     clear_state();
     let r = interpret_with_stdout(
       "Column[{Graphics[{Circle[{0, 0}, 1]}], \
-       Style[Text[Row[{TraditionalForm[HoldForm[Exp[x]]], \" \", \
+       Style[Text[Row[{TraditionalForm[HoldForm[E^x]], \" \", \
          TraditionalForm[HoldForm[2 + 3 I]]}]], 18]}]",
     )
     .unwrap();

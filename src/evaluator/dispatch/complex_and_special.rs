@@ -4954,6 +4954,8 @@ const TF_FUNCTION_NAMES: &[(&str, &str)] = &[
   ("ArcTan", "arctan"),
   ("Log", "log"),
   ("Log10", "log"),
+  // A held `Exp[x]` is `exp(x)`; the evaluated `E^x` is a superscript.
+  ("Exp", "exp"),
   ("Ln", "ln"),
   ("Max", "max"),
   ("Min", "min"),
@@ -5311,11 +5313,13 @@ fn tf_factor_boxed(expr: &Expr) -> Expr {
 /// TraditionalForm box of `base^exp`, with trig special-casing (`sin²(x)`)
 /// and half-integer exponents rendered as radicals.
 fn tf_power(base: &Expr, exp: &Expr) -> Expr {
-  // sin[x]^2 → sin²(x)
+  // sin[x]^2 → sin²(x), and so `sin^n(x)`, `log^2(x)`, `exp^n(x)` (a
+  // held `Exp[x]^n`).
   if let Expr::FunctionCall { name, args } = base
-    && tf_is_trig(name)
+    && (tf_is_trig(name) || matches!(name.as_str(), "Exp" | "Log"))
     && args.len() == 1
-    && matches!(exp, Expr::Integer(n) if *n > 0)
+    && (matches!(exp, Expr::Integer(n) if *n > 0)
+      || matches!(exp, Expr::Identifier(_)))
   {
     let disp = tf_known_func(name).unwrap_or(name.as_str());
     return tf_row(vec![
@@ -6054,9 +6058,6 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "Times" if args.len() >= 2 => tf_times(&unevaluated("Times", args)),
     "Plus" if args.len() >= 2 => tf_plus(&unevaluated("Plus", args)),
     "Divide" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
-    "Exp" if args.len() == 1 => {
-      tf_box("SuperscriptBox", vec![tf_string("\u{2147}"), tf(&args[0])])
-    }
     // `a ≈ b ≈ …` is written infix, like the comparison operators.
     "TildeTilde" if args.len() >= 2 => {
       let mut parts = Vec::with_capacity(args.len() * 2 - 1);

@@ -9570,7 +9570,10 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 }
 
 pub(crate) fn svg_escape(s: &str) -> String {
-  let s = crate::syntax::substitute_private_use_glyphs(s);
+  // `\[ExponentialE]` (U+F74D) would become `ℯ`, which the embedded fonts
+  // lack; Wolfram draws an upright e (see `BoxLayout::text`).
+  let s = s.replace('\u{F74D}', "e");
+  let s = crate::syntax::substitute_private_use_glyphs(&s);
   let escaped = s
     .replace('&', "&amp;")
     .replace('<', "&lt;")

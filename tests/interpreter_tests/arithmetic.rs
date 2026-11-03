@@ -7995,13 +7995,17 @@ mod cases {
     );
   }
 
-  /// A held `Exp[…]` raised to a power is parenthesised in TraditionalForm,
-  /// otherwise `(ⅇ^x)^n` reads as `ⅇ^x^n`.
+  /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
+  /// like `sin^n(x)`.
   #[test]
   fn traditional_form_power_of_exp_is_parenthesised() {
     assert_case(
       r#"ToBoxes[TraditionalForm[HoldForm[Exp[x]^n]]]"#,
-      r#"TagBox[FormBox[TagBox[SuperscriptBox[RowBox[{(, SuperscriptBox[ⅇ, x], )}], n], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{SuperscriptBox[exp, n], (, x, )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[Sin[x]^n]]]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{SuperscriptBox[sin, n], (, x, )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
   }
 

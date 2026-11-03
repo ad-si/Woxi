@@ -2827,13 +2827,12 @@ mod tests {
     fn constants_map_to_glyphs() {
       // Go through the full parser (bare `string_to_expr("Infinity")` would hit
       // an f64 fast-path and yield a Real, not the symbol).
-      let svg = tf_svg("TraditionalForm @ HoldForm[Pi + Infinity + Exp[x]]");
+      let svg = tf_svg("TraditionalForm @ HoldForm[Pi + Infinity + E^x]");
       assert!(svg.contains('\u{03C0}'), "Pi → π: {svg}");
       assert!(svg.contains('\u{221E}'), "Infinity → ∞: {svg}");
-      // `Exp`'s base glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a
-      // Letterlike Symbols codepoint most non-Mathematica fonts (this
-      // renderer's included) have no glyph for, so it typesets as an
-      // italicized plain "e" instead of the raw codepoint.
+      // `E`'s glyph is `\[ExponentialE]` — a codepoint most
+      // non-Mathematica fonts (this renderer's included) have no glyph for,
+      // so it typesets as a plain "e" instead of the raw codepoint.
       assert!(
         !svg.contains('\u{2147}'),
         "must not contain the raw U+2147 glyph: {svg}"

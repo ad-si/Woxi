@@ -45351,6 +45351,17 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn traditional_form_held_exp_is_a_function_call() {
+    // A held `Exp[…]` typesets as `exp(…)`, like `sin(…)`; only `E^x` is
+    // a superscript.
+    assert_eq!(
+      interpret("ToString[HoldForm[Exp[-x^2]], TraditionalForm]").unwrap(),
+      "DisplayForm[FormBox[TagBox[RowBox[{exp, (, RowBox[{-, \
+       SuperscriptBox[x, 2]}], )}], HoldForm], TraditionalForm]]"
+    );
+  }
+
+  #[test]
   fn traditional_form_superscript_raise_and_exponential_e() {
     // A superscript's baseline is 0.39 em above a text base's, and `E` is
     // drawn as an upright `e` (the embedded fonts have no `ℯ`).
