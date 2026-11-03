@@ -7663,16 +7663,37 @@ Found comparing the graphics-tests renders (2026-11):
 
 Found comparing the graphics-tests renders (2026-11):
 
-- The plotting area takes the `AspectRatio` and the picture height follows
-  from it, as in WL, but Woxi's gutters are a few pixels larger, so its
-  pictures come out slightly taller (360 wide): framed `Plot` 230 vs WL 223,
-  with `FrameLabel` 254 vs 230, with `PlotLabel` 239 vs 227, `ListPlot` 238
-  vs 232, `ListLinePlot`/`DateListPlot` 230 vs 227, `ImageSize -> Tiny` 52
-  vs 55. An unframed `Plot` matches (214).
-- A `Graphics` with `Axes -> True` sizes its picture from the whole image,
-  not the plotting area: `Graphics[Line[{{0, -1}, {10, 1}}], Axes -> True,
-  AspectRatio -> 1/GoldenRatio, ImageSize -> 380]` is 380 x 210 (WL 227), and
-  a `Plot` turned into one by `/. Line -> Arrow` grows from 227 to 238.
+- The automatic `ImagePadding` follows WL 15's rule (`plot_padding.rs`:
+  tick labels measured in Arial at 10 pt, 3 pt from their frame edge or
+  axis, labels 6 / 8 pt beyond, 0.5 pt minimum, one more point right and
+  below, the height rounded up), so the picture sizes of `Plot`,
+  `ListPlot`, `ListLinePlot`, `StackedListPlot`, `LogPlot`,
+  `ParametricPlot` and axed or framed `Graphics` match. Still different:
+  - `Plot[Exp[x], {x, 0, 5}]` is 220 tall (WL 219): WL's automatic
+    `PlotRange` reaches down to 0 (`{0., 148.4}`), Woxi's starts at the
+    curve's minimum 1.
+  - `DateListPlot[{{{2020, 1, 1}, 1}, {{2020, 6, 1}, 3}, {{2021, 1, 1},
+    2}}]` is 227 tall (WL 221): WL's y range starts at 0 and its date
+    ticks are `Jan 2020`, `Apr`, … (Woxi `2020 Jul`, …).
+  - `LogPlot[Exp[x], {x, 0, 10}, Frame -> True]` is 222 tall (WL 221):
+    WL's right padding is 4 pt, unexplained by the tick labels.
+  - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
+    442 wide (WL 414): the legend takes more room.
+  - Tick labels are measured as WL sets them (a minus 0.63 em wide,
+    `10 000` in digit blocks) but drawn with a hyphen and no blocks.
+  - Explicit `Ticks`/`FrameTicks` labels (`explicit_ticks_svg`) and the
+    decade labels of a framed log axis are still drawn at Woxi's old
+    sizes and offsets (13 / 14.5 px), though the padding measures them at
+    10 pt.
+  - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
+    (WL 100 x 17).
+  - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],
+    PlotRange -> 10, ImageSize -> 300]` is 300 x 297 (WL 300 x 300): WL
+    keeps the plot's `PlotRangePadding` under the explicit range, so the
+    end tick labels need no padding; with `PlotRange -> {{-1, 3}, {0, 1}}`
+    297 → 94 (WL 88).
+  - `GraphicsGrid` of two `Rectangle[{0, 0}, {2, 1}]` is 600 x 171 (WL
+    165), of two `Rectangle[{0, 0}, {1, 4}]` 226 wide (WL 225).
 - `Plot3D`, `Graphics3D` and the other 3D pictures are always square
   (360 x 360). WL's height follows the projected box: with `a` the
   height / width of the box corners under a *perspective* projection from
