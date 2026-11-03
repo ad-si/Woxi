@@ -202,12 +202,14 @@ pub fn rectangle_chart_ast(
   // `Placed[labels, pos]` / `Callout[labels, pos]` wrap the label list;
   // `Above` / `Top` put the labels over the bars instead of under them.
   let mut labels_above = false;
+  let mut callout = false;
   if let Some(Expr::FunctionCall { name, args: wargs }) = &labels
     && (name == "Placed" || name == "Callout")
     && let Some(inner) = wargs.first()
   {
-    labels_above = name == "Callout"
-      || matches!(wargs.get(1), Some(Expr::Identifier(p)) if p == "Above" || p == "Top");
+    callout = name == "Callout";
+    labels_above = matches!(wargs.get(1), Some(Expr::Identifier(p)) if p == "Above" || p == "Top")
+      || (callout && wargs.len() == 1);
     labels = Some(inner.clone());
   }
   let n_sets = sets.len();
@@ -331,6 +333,18 @@ pub fn rectangle_chart_ast(
         } else {
           (0.0, 1.5)
         };
+        if callout {
+          label_prims.extend(callout_label(
+            label,
+            (x + (x + w)) / 2.0,
+            y,
+            labels_above,
+          ));
+          flat_index += 1;
+          end = x + w;
+          x = x + w + gap;
+          continue;
+        }
         label_prims.push(call(
           "Text",
           vec![
@@ -533,4 +547,68 @@ pub fn generalized_bar_chart_ast(
   let mut graphics_args = vec![Expr::List(prims.into())];
   graphics_args.extend(options);
   evaluate_expr_to_expr(&call("Graphics", graphics_args))
+}
+
+/// A `Callout` label as wolframscript places it: the label, unrotated and
+/// opaque, a fixed number of printer points past the bar's end (19, or 20
+/// when the text rises above the x-height), with a leader curve from the
+/// bar to the label.
+fn callout_label(label: &Expr, xc: f64, y: f64, above: bool) -> Vec<Expr> {
+  let angle = if above {
+    std::f64::consts::FRAC_PI_2
+  } else {
+    3.0 * std::f64::consts::FRAC_PI_2
+  };
+  let sign = if above { 1.0 } else { -1.0 };
+  let tall = match label {
+    Expr::String(t) => t.chars().any(|c| {
+      c.is_ascii_uppercase() || c.is_ascii_digit() || "bdfhklt".contains(c)
+    }),
+    _ => true,
+  };
+  let distance = if tall { 20.0 } else { 19.0 };
+  let anchor = Expr::List(vec![Expr::Real(xc), Expr::Real(y)].into());
+  let offset = |dx: f64, dy: f64| {
+    call(
+      "Offset",
+      vec![
+        Expr::List(vec![Expr::Real(dx), Expr::Real(dy)].into()),
+        anchor.clone(),
+      ],
+    )
+  };
+  let text = call(
+    "Text",
+    vec![
+      call(
+        "Style",
+        vec![
+          call("Rotate", vec![label.clone(), Expr::Integer(0)]),
+          Expr::List(
+            vec![
+              call("Directive", vec![]),
+              call("Opacity", vec![Expr::Integer(1)]),
+            ]
+            .into(),
+          ),
+        ],
+      ),
+      offset(angle.cos() * 10.0, sign * distance),
+      Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+    ],
+  );
+  let leader = call(
+    "BSplineCurve",
+    vec![Expr::List(
+      vec![
+        offset(angle.cos() * 3.0, sign * 3.0),
+        offset(angle.cos() * 10.0, sign * 10.0),
+        offset(angle.cos() * 10.0, sign * 12.0),
+        offset(angle.cos() * 10.0, sign * 14.0),
+        offset(angle.cos() * 10.0, sign * 14.0),
+      ]
+      .into(),
+    )],
+  );
+  vec![leader, text]
 }

@@ -333,7 +333,8 @@ mod chart_labels_and_legends {
 
   #[test]
   fn rectangle_chart_callout_labels_sit_above_the_bars() {
-    // The label of the {1, 2} rectangle is anchored at its top.
+    // A callout label sits a fixed number of points above the top of its
+    // rectangle, as an Offset from the top centre.
     assert_eq!(
       interpret(
         "Cases[RectangleChart[<|\"a\" -> {1, 1}, \"b\" -> {1, 2}|>, \
@@ -341,7 +342,16 @@ mod chart_labels_and_legends {
          Text[\"b\", {_, y_}, ___] :> y, Infinity]"
       )
       .unwrap(),
-      "{2.}"
+      "{}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Cases[RectangleChart[<|\"a\" -> {1, 1}, \"b\" -> {1, 2}|>, \
+         PlotLabels -> Callout[Automatic, Above]], _Text, Infinity], InputForm]"
+      )
+      .unwrap(),
+      "{Text[Style[Rotate[\"a\", 0], {Directive[], Opacity[1]}], Offset[{6.123233995736766*^-16, 19.}, {0.5, 1.}], {0, 0}], \
+Text[Style[Rotate[\"b\", 0], {Directive[], Opacity[1]}], Offset[{6.123233995736766*^-16, 20.}, {1.5979999999999999, 2.}], {0, 0}]}"
     );
   }
 
