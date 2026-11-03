@@ -7604,6 +7604,37 @@ Found comparing the graphics-tests renders (2026-11):
 - A vertical `BarChart` with `ChartLabels` keeps a taller label area, so
   its bars are shorter than wolframscript's.
 
+## WL 15 `Plot` styling and layout: open items
+
+Found comparing the graphics-tests renders (2026-11):
+
+- Unframed `Plot`/`ListPlot` axes step like `Charting`ScaledTicks` with a
+  target of 7 (`ORIGIN_AXIS_TICK_TARGET`), which matches every axis checked
+  so far, but frames do not follow one fixed target: a framed 0..2 Pi axis
+  is labelled every 1 (target 7), a framed 0..17 axis every 5 (target 6).
+  Framed plots keep target 6. The same rule is unknown for log axes over
+  more than 6 decades (WL labels every 2nd decade over 8, every 3rd over 9,
+  every 4th over 12 and 20) and for `ListPolarPlot`, whose x axis over 3.4
+  steps by 1 while its y axis over 3.5 steps by 0.5.
+- `PlotTheme -> "Business"` (left/bottom frame without frame lines, dotted
+  y grid lines, `AbsoluteThickness[3]` curves in its own palette) and
+  `"Marketing"` (dark `Prolog` backdrop, grid lines, own palette) are not
+  implemented for `Plot`; `Charting`ResolvePlotTheme[theme, Plot]` gives
+  the full option sets.
+- `Plot[{f1, f2, …}, …, PlotLayout -> "Column" | "Row" | {"Row", n}]` is
+  ignored: wolframscript draws one framed panel per curve, all in the first
+  palette color, sharing the axis that runs along the layout.
+- `Plot[…, ImageSize -> Full | Scaled[s]]` inside `Pane[…, {w, h}]` does
+  not size the plot from the pane (wolframscript fills the pane width /
+  takes the fraction of it), and `Framed` draws its rounded gray frame
+  instead of wolframscript's square black one.
+- `PlotLegends -> BarLegend[…]` with a `ColorFunction` draws no legend.
+- `HankelH1[1, x]` (and the other Hankel functions) stay unevaluated for
+  negative real `x`, so `ReImPlot[HankelH1[1, x], {x, -10, 10}]` leaves
+  out the negative half; wolframscript evaluates them to complex numbers.
+- Woxi's own SVG rasterizer (`Export[…png, Import[svg]]`) shows thin seams
+  between abutting opaque polygons that other renderers (rsvg) do not.
+
 ## Parameter sweep 5 (long tail, batch 2): known divergences and unverified forms
 
 `HornerForm[p, {y, x}]` has the right nesting, but Woxi's canonical
