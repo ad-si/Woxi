@@ -354,6 +354,22 @@ fn qpochhammer_infinite(
   prod
 }
 
+/// `QPochhammer[a, q]` (and `QPochhammer[q]`) for real `a` and `|q| < 1`.
+fn qpochhammer_infinite_bigfloat(
+  a: &BigFloat,
+  q: &BigFloat,
+  bits: usize,
+  rm: RoundingMode,
+) -> Option<BigFloat> {
+  let wp = bits + 64;
+  let one = BigFloat::from_i32(1, wp);
+  if q.abs().cmp(&one)? >= 0 {
+    return None;
+  }
+  let prod = qpochhammer_infinite(a, q, wp, rm);
+  Some(prod.add(&BigFloat::from_i32(0, bits), bits, rm))
+}
+
 /// `QPochhammer[a, q, n]` for real arguments with `0 < q < 1` and real `n`:
 /// `(a; q)_∞ / (a q^n; q)_∞`.
 pub(crate) fn qpochhammer_bigfloat(
@@ -396,6 +412,8 @@ pub(crate) fn orthogonal_bigfloat(
     ("Fibonacci", [nu]) => fibonacci_bigfloat(nu, &one(), bits, rm, cc),
     ("Fibonacci", [nu, x]) => fibonacci_bigfloat(nu, x, bits, rm, cc),
     ("QPochhammer", [a, q, n]) => qpochhammer_bigfloat(a, q, n, bits, rm, cc),
+    ("QPochhammer", [q]) => qpochhammer_infinite_bigfloat(q, q, bits, rm),
+    ("QPochhammer", [a, q]) => qpochhammer_infinite_bigfloat(a, q, bits, rm),
     ("Hypergeometric1F1", [a, b, z]) => pfq_bigfloat(
       std::slice::from_ref(a),
       std::slice::from_ref(b),
