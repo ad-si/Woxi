@@ -4915,6 +4915,16 @@ reproduce wolframscript's primitive tree:
   `{RGBColor[…], Rectangle[…]}` pairs. wolframscript draws yellow tooltip
   rectangles from `k - 0.4512…` to `k + 0.4512…`, an invisible `Point`
   pair that sets the extent, and the axis as `"GraphicsAxes"` styled lines.
+  What has been decoded, for n bars of one dataset:
+  - With n ≥ 5 the extent runs from `left - 0.02 (right - left)` to
+    `right`. Below 5 bars it is padded as though there were five.
+  - The axis line ends `0.02` of the extent past it.
+  - There are n + 2 empty tick-label slots.
+  - Edge opacity is `0.7 - 0.007 n`.
+  - From 10 bars on, the bar width changes with n.
+  - The bar edges themselves differ from `k ± 0.4512…` by an ulp or two
+    at some k, so no arithmetic convention tried reproduces them exactly.
+    That is why the structure was not switched over.
 - `RectangleChart3D` boxes are `GraphicsComplex` polygons at wolframscript's
   corners, above an invisible base plate. The faces carry a plain colour
   instead of wolframscript's `VertexColors` shading (and its
