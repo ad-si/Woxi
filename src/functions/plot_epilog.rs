@@ -652,9 +652,12 @@ fn render_item(
         }
       }
       "Rectangle" => {
-        let (x0, y0) = args.first().and_then(point2).unwrap_or((0.0, 0.0));
+        // Either corner may be `Scaled[{sx, sy}]`: `Rectangle[Scaled[{0, 0}],
+        // Scaled[{1, 1}]]` covers the whole plot range (a theme backdrop).
+        let corner = |e: &Expr| anchor2(e, area);
+        let (x0, y0) = args.first().and_then(corner).unwrap_or((0.0, 0.0));
         let (x1, y1) =
-          args.get(1).and_then(point2).unwrap_or((x0 + 1.0, y0 + 1.0));
+          args.get(1).and_then(corner).unwrap_or((x0 + 1.0, y0 + 1.0));
         let (px0, px1) = (area.px(x0.min(x1)), area.px(x0.max(x1)));
         let (py0, py1) = (area.py(y0.max(y1)), area.py(y0.min(y1)));
         out.push_str(&format!(

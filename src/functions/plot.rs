@@ -1778,6 +1778,7 @@ fn inject_top_right_frame(
 ///
 /// `x_axis` / `y_axis` each supply `(min, max, major_step)`; `None` leaves
 /// that axis without automatic ticks (e.g. it has explicit `Ticks`).
+#[allow(clippy::too_many_arguments)]
 fn inject_inward_frame_ticks(
   buf: &mut String,
   (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
@@ -1786,6 +1787,7 @@ fn inject_inward_frame_ticks(
   (minor_len, major_len): (f64, f64),
   stroke_w: f64,
   color: &str,
+  edges: FrameEdges,
 ) {
   // The positions along one axis, as (fraction of the span, is major).
   let ticks = |(min, max, major): (f64, f64, f64)| -> Vec<(f64, bool)> {
@@ -1816,14 +1818,22 @@ fn inject_inward_frame_ticks(
   for (frac, major) in x_axis.map(ticks).unwrap_or_default() {
     let len = if major { major_len } else { minor_len };
     let x = plot_x0 + frac * plot_w;
-    line(x, bottom, x, bottom - len);
-    line(x, plot_y0, x, plot_y0 + len);
+    if edges.bottom {
+      line(x, bottom, x, bottom - len);
+    }
+    if edges.top {
+      line(x, plot_y0, x, plot_y0 + len);
+    }
   }
   for (frac, major) in y_axis.map(ticks).unwrap_or_default() {
     let len = if major { major_len } else { minor_len };
     let y = bottom - frac * plot_h;
-    line(plot_x0, y, plot_x0 + len, y);
-    line(right, y, right - len, y);
+    if edges.left {
+      line(plot_x0, y, plot_x0 + len, y);
+    }
+    if edges.right {
+      line(right, y, right - len, y);
+    }
   }
   if !svg.is_empty()
     && let Some(pos) = buf.rfind("</svg>")
@@ -2587,6 +2597,14 @@ pub(crate) struct PlotOptions {
   pub grid_lines_style: Option<SeriesStyle>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// The unpadded (x, y) plot range of a list plot: its automatic grid
+  /// lines are drawn strictly inside it, not at its ends. `None` = draw them
+  /// at every major tick of the displayed range.
+  pub grid_interior: Option<((f64, f64), (f64, f64))>,
+  /// Which edges of a frame are drawn — line and tick marks — as
+  /// (left, right, bottom, top): `Frame -> {{True, False}, {True, False}}`
+  /// draws only the left and bottom ones.
+  pub frame_edges: FrameEdges,
   /// `FrameTicks -> None | False`: a framed plot keeps its border but loses
   /// the tick marks and labels on it.
   pub frame_ticks: bool,
@@ -2797,6 +2815,8 @@ impl Default for PlotOptions {
       grid_y_lines: Vec::new(),
       grid_lines_style: None,
       frame: false,
+      frame_edges: FrameEdges::ALL,
+      grid_interior: None,
       frame_ticks: true,
       evaluated: false,
       ticks_x: None,
@@ -4373,22 +4393,35 @@ fn generate_svg_with_options(
         );
         if !log_y {
           let tol = (y_max - y_min).abs() * 1e-9;
+          // Automatic lines of a list plot keep off the ends of its
+          // unpadded range (`GridLines -> Automatic` in WL 15).
+          let interior = opts
+            .grid_interior
+            .filter(|_| opts.grid_y_lines.is_empty())
+            .map(|r| r.1);
           for (gy, style) in &y_grid {
             if *gy < y_min - tol || *gy > y_max + tol {
               continue;
             }
+            if let Some((a, b)) = interior {
+              let eps = (b - a).abs() * 1e-9;
+              if *gy <= a + eps || *gy >= b - eps {
+                continue;
+              }
+            }
             let (rgb, stroke_w, dash) = grid_line_props(style);
+            let alpha = style.opacity.unwrap_or(1.0);
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
-                opacity: 1.0,
+                opacity: alpha,
                 stroke_w,
                 dashes,
                 points: vec![(x_min, *gy), (x_max, *gy)],
               });
             } else {
               let shape = match rgb {
-                Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+                Some((r, g, b)) => RGBColor(r, g, b).mix(alpha).stroke_width(stroke_w),
                 None => grid_color.stroke_width(stroke_w),
               };
               chart
@@ -4418,22 +4451,35 @@ fn generate_svg_with_options(
         );
         if !log_x {
           let tol = (x_max - x_min).abs() * 1e-9;
+          // Automatic lines of a list plot keep off the ends of its
+          // unpadded range (`GridLines -> Automatic` in WL 15).
+          let interior = opts
+            .grid_interior
+            .filter(|_| opts.grid_x_lines.is_empty())
+            .map(|r| r.0);
           for (gx, style) in &x_grid {
             if *gx < x_min - tol || *gx > x_max + tol {
               continue;
             }
+            if let Some((a, b)) = interior {
+              let eps = (b - a).abs() * 1e-9;
+              if *gx <= a + eps || *gx >= b - eps {
+                continue;
+              }
+            }
             let (rgb, stroke_w, dash) = grid_line_props(style);
+            let alpha = style.opacity.unwrap_or(1.0);
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
-                opacity: 1.0,
+                opacity: alpha,
                 stroke_w,
                 dashes,
                 points: vec![(*gx, y_min), (*gx, y_max)],
               });
             } else {
               let shape = match rgb {
-                Some((r, g, b)) => RGBColor(r, g, b).stroke_width(stroke_w),
+                Some((r, g, b)) => RGBColor(r, g, b).mix(alpha).stroke_width(stroke_w),
                 None => grid_color.stroke_width(stroke_w),
               };
               chart
@@ -4448,21 +4494,39 @@ fn generate_svg_with_options(
           }
         }
 
-        // Draw a full frame (all four borders) when frame mode is enabled
+        // Draw the frame's borders (all four unless `Frame` names edges).
         if opts.frame {
           let frame_style = dark_gray.stroke_width(frame_width);
-          chart
-            .draw_series(std::iter::once(PathElement::new(
-              vec![
-                (x_min, y_min),
-                (x_max, y_min),
-                (x_max, y_max),
-                (x_min, y_max),
-                (x_min, y_min),
-              ],
-              frame_style,
-            )))
-            .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+          let edges = opts.frame_edges;
+          if edges == FrameEdges::ALL {
+            chart
+              .draw_series(std::iter::once(PathElement::new(
+                vec![
+                  (x_min, y_min),
+                  (x_max, y_min),
+                  (x_max, y_max),
+                  (x_min, y_max),
+                  (x_min, y_min),
+                ],
+                frame_style,
+              )))
+              .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+          }
+          for (on, from, to) in [
+            (edges.bottom, (x_min, y_min), (x_max, y_min)),
+            (edges.right, (x_max, y_min), (x_max, y_max)),
+            (edges.top, (x_max, y_max), (x_min, y_max)),
+            (edges.left, (x_min, y_max), (x_min, y_min)),
+          ] {
+            if on && edges != FrameEdges::ALL {
+              chart
+                .draw_series(std::iter::once(PathElement::new(
+                  vec![from, to],
+                  frame_style,
+                )))
+                .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+            }
+          }
         }
 
         // Fills lie beneath every curve, whichever series they belong to:
@@ -4992,6 +5056,7 @@ fn generate_svg_with_options(
       (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
       sf,
       &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
+      opts.frame_edges,
     );
   }
 
@@ -9689,7 +9754,11 @@ fn image_size_explicit_dims(value: &Expr) -> (bool, bool) {
 fn parse_one_series_style(expr: &Expr) -> SeriesStyle {
   let mut style = SeriesStyle::default();
   apply_style_directive(expr, &mut style);
-  style.from_list = matches!(expr, Expr::List(_));
+  // A `{…}` or `Directive[…]` entry is one dataset's whole style: a lone
+  // dataset given `{Directive[Red, Thick], Directive[Blue]}` takes the
+  // first, where the bare directives of `{Red, Thick}` combine.
+  style.from_list = matches!(expr, Expr::List(_))
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Directive");
   style
 }
 
@@ -9775,6 +9844,23 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           style.point_size = Some(s);
         } else if let Some(s) = try_eval_to_f64(&args[0]) {
           style.point_size = Some(-s);
+        }
+      }
+      // `AbsoluteDashing[{d1, d2, …}]`: dash lengths in printer's points,
+      // stored negative like the named (absolute) lengths of `Dashing`.
+      "AbsoluteDashing" if args.len() == 1 => {
+        let dashes: Vec<f64> = match &args[0] {
+          Expr::List(items) => items
+            .iter()
+            .filter_map(try_eval_to_f64)
+            .map(|d| -d.abs().max(0.1))
+            .collect(),
+          other => try_eval_to_f64(other)
+            .map(|d| vec![-d.abs().max(0.1); 2])
+            .unwrap_or_default(),
+        };
+        if !dashes.is_empty() {
+          style.dashing = Some(dashes);
         }
       }
       "Dashing" if !args.is_empty() => {
@@ -10761,11 +10847,134 @@ pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
   }
 }
 
+/// The edges of a plot frame that are drawn.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct FrameEdges {
+  pub left: bool,
+  pub right: bool,
+  pub bottom: bool,
+  pub top: bool,
+}
+
+impl FrameEdges {
+  pub(crate) const ALL: Self = Self {
+    left: true,
+    right: true,
+    bottom: true,
+    top: true,
+  };
+}
+
+/// The edges a `Frame` value draws: all of them for `True | All`, the
+/// named ones for `{{left, right}, {bottom, top}}` and for the older
+/// `{bottom, left, top, right}`.
+pub(crate) fn parse_frame_edges(value: &Expr) -> FrameEdges {
+  let on = |e: &Expr| parse_frame_option(e);
+  match value {
+    Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+      (Expr::List(lr), Expr::List(bt)) if lr.len() == 2 && bt.len() == 2 => {
+        FrameEdges {
+          left: on(&lr[0]),
+          right: on(&lr[1]),
+          bottom: on(&bt[0]),
+          top: on(&bt[1]),
+        }
+      }
+      _ => FrameEdges::ALL,
+    },
+    Expr::List(items) if items.len() == 4 => FrameEdges {
+      bottom: on(&items[0]),
+      left: on(&items[1]),
+      top: on(&items[2]),
+      right: on(&items[3]),
+    },
+    _ => FrameEdges::ALL,
+  }
+}
+
+/// `FrameStyle -> {{left, right}, {bottom, top}}` with an edge styled
+/// `StrokeForm[Opacity[0]]` (or `None`) leaves that edge's line and tick
+/// marks undrawn — its tick labels stay — as the `"Business"` and `"Web"`
+/// themes draw their left edge.
+pub(crate) fn hide_transparent_frame_edges(
+  value: &Expr,
+  opts: &mut PlotOptions,
+) {
+  fn hidden(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(n) => n == "None",
+      Expr::FunctionCall { name, args }
+        if name == "StrokeForm" && args.len() == 1 =>
+      {
+        matches!(&args[0], Expr::FunctionCall { name, args }
+          if name == "Opacity"
+            && args.first().and_then(try_eval_to_f64) == Some(0.0))
+      }
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().any(hidden)
+      }
+      _ => false,
+    }
+  }
+  if let Expr::List(items) = value
+    && let [Expr::List(lr), Expr::List(bt)] = items.as_slice()
+    && lr.len() == 2
+    && bt.len() == 2
+  {
+    let edges = &mut opts.frame_edges;
+    edges.left &= !hidden(&lr[0]);
+    edges.right &= !hidden(&lr[1]);
+    edges.bottom &= !hidden(&bt[0]);
+    edges.top &= !hidden(&bt[1]);
+  }
+}
+
+/// The `Charting`SimpleTicks` WL 15 plot themes label a frame with: majors
+/// only, stepped by the smallest of 1, 2, 5 × 10^k that leaves at most six
+/// of them in `min..max`, with 0 written as `0`.
+pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
+  let span = max - min;
+  if !(span.is_finite() && span > 0.0) {
+    return Vec::new();
+  }
+  let count =
+    |step: f64| ((max / step).floor() - (min / step).ceil()) as i64 + 1;
+  let mut mag = 10_f64.powf((span / 6.0).log10().floor() - 1.0);
+  let step = 'search: loop {
+    for m in [1.0, 2.0, 5.0] {
+      if count(m * mag) <= 6 {
+        break 'search m * mag;
+      }
+    }
+    mag *= 10.0;
+  };
+  let first = (min / step - 1e-9).ceil() as i64;
+  let last = (max / step + 1e-9).floor() as i64;
+  (first..=last)
+    .map(|k| {
+      let v = k as f64 * step;
+      let label = if k == 0 {
+        "0".to_string()
+      } else {
+        format_tick_with_step(v, step)
+      };
+      (if k == 0 { 0.0 } else { v }, label)
+    })
+    .collect()
+}
+
+/// Apply a `Frame` option: whether there is a frame and which of its edges
+/// are drawn.
+pub(crate) fn apply_frame_option(value: &Expr, opts: &mut PlotOptions) {
+  opts.frame = parse_frame_option(value);
+  opts.frame_edges = parse_frame_edges(value);
+}
+
 /// `Frame -> True | All` draws the boxed frame; anything else (`False`,
 /// `Automatic`, a per-edge list) leaves the plain axes.
 /// `Frame -> True | All`, or the per-edge forms `{l, r, b, t}` and
-/// `{{l, r}, {b, t}}`. Edges are not drawn individually; the frame is drawn
-/// when any edge asks for it.
+/// `{{l, r}, {b, t}}`, the frame is drawn when any edge asks for it (which
+/// edges: [`parse_frame_edges`]).
 pub(crate) fn parse_frame_option(value: &Expr) -> bool {
   match value {
     Expr::Identifier(v) => v == "True" || v == "All",
@@ -11112,7 +11321,10 @@ pub(crate) fn apply_common_plot_option(
     "TicksStyle" => {
       plot_opts.ticks_style = parse_axis_pair_styles(replacement);
     }
-    "FrameStyle" => plot_opts.frame_style = parse_style_directives(replacement),
+    "FrameStyle" => {
+      plot_opts.frame_style = parse_style_directives(replacement);
+      hide_transparent_frame_edges(replacement, plot_opts);
+    }
     "MeshStyle" => plot_opts.mesh_style = parse_style_directives(replacement),
     "Mesh" => {
       let val = evaluate_expr_to_expr(replacement)
@@ -11127,7 +11339,7 @@ pub(crate) fn apply_common_plot_option(
         _ => {}
       }
     }
-    "Frame" => plot_opts.frame = parse_frame_option(replacement),
+    "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
       let (x, y) = frame_tick_axes_visible(replacement);
       plot_opts.frame_ticks = x || y;

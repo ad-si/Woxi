@@ -40602,8 +40602,9 @@ mod cases_on_a_plot {
     );
   }
 
-  /// `Frame -> {True, True, True, True}` (and the nested per-edge form)
-  /// draws the frame, alone and when `Show` layers other graphics on top.
+  /// `Frame -> {True, True, True, True}` draws the full frame and the
+  /// nested per-edge form the named edges, alone and when `Show` layers
+  /// other graphics on top.
   #[test]
   fn per_edge_frame_option_draws_a_frame() {
     clear_state();
@@ -40613,7 +40614,12 @@ mod cases_on_a_plot {
       let listed = export_svg(&format!(
         "ListPlot[{{{{1, 2}}, {{3, 4}}}}, Frame -> {frame}]"
       ));
-      assert_eq!(listed, plain, "ListPlot Frame -> {frame}");
+      // A partial frame draws just the named edges (WL 15).
+      if frame == "{True, True, True, True}" {
+        assert_eq!(listed, plain, "ListPlot Frame -> {frame}");
+      } else {
+        assert_ne!(listed, plain, "ListPlot Frame -> {frame}");
+      }
       let shown = export_svg(&format!(
         "Show[ListPlot[{{{{1, 2}}, {{3, 4}}}}, Frame -> {frame}], \
          Graphics[{{Red, Line[{{{{2, 0}}, {{2, 4}}}}]}}]]"
@@ -45317,6 +45323,78 @@ mod list_plot_wl15_ranges {
       svg.contains(">a</text>") && svg.contains(">b</text>"),
       "{svg}"
     );
+  }
+
+  #[test]
+  fn marketing_theme_resolves_to_its_options() {
+    let svg = export_svg("ListPlot[{1, 2, 3}, PlotTheme -> \"Marketing\"]");
+    // The GrayLevel[0, 0.7] backdrop over the whole plot range.
+    assert!(
+      svg.contains("fill=\"rgb(0,0,0)\" fill-opacity=\"0.700\""),
+      "{svg}"
+    );
+    // Orange open markers: the first colour of the theme palette.
+    assert_eq!(
+      svg
+        .matches("stroke=\"#FF6600\" stroke-width=\"15\"")
+        .count(),
+      3,
+      "{svg}"
+    );
+    // Simple ticks write 0 as "0", and the grid is GrayLevel[0, 0.2].
+    assert!(svg.contains("fill=\"#666\">0</text>"), "{svg}");
+    assert!(svg.contains("opacity=\"0.2\" stroke=\"#000000\""), "{svg}");
+  }
+
+  #[test]
+  fn explicit_options_override_the_theme() {
+    let svg = export_svg(
+      "ListPlot[{1, 2, 3}, PlotTheme -> \"Marketing\", PlotMarkers -> None, \
+       PlotStyle -> Red]",
+    );
+    assert_eq!(svg.matches("stroke=\"#FF6600\"").count(), 0, "{svg}");
+    assert_eq!(svg.matches("fill=\"#FF0000\"").count(), 3, "{svg}");
+  }
+
+  #[test]
+  fn frame_draws_only_the_named_edges() {
+    // `Frame -> {{True, False}, {True, False}}`: left and bottom only, so
+    // fewer border lines and tick marks than the full frame.
+    let full = export_svg("ListLinePlot[{1, 2, 3}, Frame -> True]");
+    let two = export_svg(
+      "ListLinePlot[{1, 2, 3}, Frame -> {{True, False}, {True, False}}]",
+    );
+    let lines =
+      |svg: &str| svg.matches("<line").count() + svg.matches("<path").count();
+    assert!(lines(&two) < lines(&full), "{two}");
+    // A transparent FrameStyle hides an edge but keeps its labels.
+    let hidden = export_svg(
+      "ListLinePlot[{1, 2, 3}, Frame -> {{True, False}, {True, False}}, \
+       FrameStyle -> {{StrokeForm[Opacity[0]], None}, {Automatic, None}}]",
+    );
+    assert!(lines(&hidden) < lines(&two), "{hidden}");
+    assert!(hidden.contains(">\n2.0\n</text>"), "{hidden}");
+  }
+
+  #[test]
+  fn automatic_grid_lines_keep_off_the_range_ends() {
+    // x 0..4 (implicit), y 0..6.44: lines at x = 1, 2, 3 and y = 1..6 only.
+    let svg = export_svg(
+      "ListPlot[{2.2, 3.3, 3.6, 5.9}, GridLines -> Automatic, \
+       GridLinesStyle -> Directive[Red]]",
+    );
+    assert_eq!(svg.matches("stroke=\"#FF0000\"").count(), 3 + 5, "{svg}");
+  }
+
+  #[test]
+  fn directive_entries_of_plot_style_are_per_dataset() {
+    // A lone dataset takes the first Directive; bare directives combine.
+    let svg = export_svg(
+      "ListPlot[{1, 2}, PlotStyle -> {Directive[Red], Directive[Blue]}]",
+    );
+    assert_eq!(svg.matches("fill=\"#FF0000\"").count(), 2, "{svg}");
+    let svg = export_svg("ListPlot[{1, 2}, PlotStyle -> {Red, Blue}]");
+    assert_eq!(svg.matches("fill=\"#0000FF\"").count(), 2, "{svg}");
   }
 
   #[test]
