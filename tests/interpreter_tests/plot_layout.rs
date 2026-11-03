@@ -363,3 +363,121 @@ mod sampling {
     assert!(n < 150, "{n} evaluations");
   }
 }
+
+// `PlotLayout`: one framed panel per curve, all in the first palette color
+// over one shared plot range, ticks only along the outer edges (WL 15).
+mod panel_layout {
+  use super::*;
+
+  /// The `<rect … fill="none">` panel frames as `(x, y, w, h)`.
+  fn frames(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+    svg
+      .split("<rect ")
+      .skip(1)
+      .map(|t| &t[..t.find('>').unwrap()])
+      .filter(|t| t.contains("fill=\"none\"") && t.contains("stroke=\"#"))
+      .map(|t| {
+        let t = format!(" {t}");
+        let attr = |name: &str| -> f64 {
+          let start = t.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          let end = start + t[start..].find('"').unwrap();
+          t[start..end].parse().unwrap()
+        };
+        (attr("x"), attr("y"), attr("width"), attr("height"))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn row_is_600_wide_with_one_panel_per_curve() {
+    let svg = svg_of(
+      "Plot[{Sin[x], Sin[2 x], Sin[3 x]}, {x, 0, 10}, PlotLayout -> \"Row\"]",
+    );
+    let (w, h) = svg_size(&svg);
+    assert_eq!(w, 600.0);
+    assert!((130.0..155.0).contains(&h), "{h}");
+    let f = frames(&svg);
+    assert_eq!(f.len(), 3);
+    // Same size, one row, 5 pt apart, golden-ratio plot areas.
+    for p in &f {
+      assert!((p.1 - f[0].1).abs() < 1e-6);
+      assert!((p.2 - f[0].2).abs() < 1e-6);
+      assert!((p.3 / p.2 - 0.618).abs() < 0.01);
+    }
+    assert!((f[1].0 - (f[0].0 + f[0].2) - 5.0).abs() < 0.01);
+    // All curves in the first palette color.
+    assert!(svg.contains("#3D99CC"));
+    assert!(!svg.contains("#F2A024"));
+    // x ticks 0, 2.5, …, 10 under each panel; the second and third panels
+    // drop their "0.0", which would run into the previous panel's "10.0"
+    // (the other "0.0" is the y label).
+    assert_eq!(svg.matches(">2.5</text>").count(), 3);
+    assert_eq!(svg.matches(">0.0</text>").count(), 2);
+  }
+
+  #[test]
+  fn column_stacks_the_panels_with_x_labels_only_at_the_bottom() {
+    let svg =
+      svg_of("Plot[{Sin[x], Cos[x]}, {x, 0, 4 Pi}, PlotLayout -> \"Column\"]");
+    let (w, _) = svg_size(&svg);
+    assert_eq!(w, 360.0);
+    let f = frames(&svg);
+    assert_eq!(f.len(), 2);
+    assert!((f[0].0 - f[1].0).abs() < 1e-6);
+    assert!((f[1].1 - (f[0].1 + f[0].3) - 5.0).abs() < 0.01);
+    // y labels on both panels, x labels (0, 5, 10) once.
+    assert_eq!(svg.matches(">0.5</text>").count(), 2);
+    assert_eq!(svg.matches(">5</text>").count(), 1);
+  }
+
+  #[test]
+  fn counted_layouts() {
+    let fs = "Table[BesselJ[n, x], {n, 0, 5}], {x, -20, 20}";
+    // {"Row", 2}: two rows of three. {"Column", 4}: four columns holding
+    // 2, 2, 1, 1 panels. {"Column", UpTo[4]}: three columns of two.
+    for (layout, rows, cols) in [
+      ("{\"Row\", 2}", 2, 3),
+      ("{\"Column\", 4}", 2, 4),
+      ("{\"Column\", UpTo[4]}", 2, 3),
+    ] {
+      let svg =
+        svg_of(&format!("Plot[Evaluate[{fs}], PlotLayout -> {layout}]"));
+      let f = frames(&svg);
+      assert_eq!(f.len(), 6, "{layout}");
+      let mut xs: Vec<i64> = f.iter().map(|p| p.0.round() as i64).collect();
+      let mut ys: Vec<i64> = f.iter().map(|p| p.1.round() as i64).collect();
+      xs.sort();
+      xs.dedup();
+      ys.sort();
+      ys.dedup();
+      assert_eq!((ys.len(), xs.len()), (rows, cols), "{layout}");
+    }
+  }
+
+  #[test]
+  fn panels_take_the_plot_style_as_one_style() {
+    // WL collapses `PlotStyle -> {Red, Green}` per panel: both are green.
+    let svg = svg_of(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, PlotLayout -> \"Row\", \
+       PlotStyle -> {Red, Green}]",
+    );
+    assert!(!svg.contains("#FF0000"));
+    assert!(!polyline_points(&svg, "#00FF00").is_empty());
+  }
+
+  #[test]
+  fn list_plot_panels_share_the_plot_range() {
+    let svg = svg_of(
+      "ListPlot[{{10, 9, 4, 3, 5, 3, 5, 5, 2, 6}, {2, 10, 5, 6, 9, 4, 9, 3, \
+       7, 2}, {7, 8, 3, 4, 4, 2, 6, 3, 8, 7}}, PlotLayout -> \"Column\", \
+       Joined -> True, ImageSize -> Medium]",
+    );
+    // A named size caps the height at 1.2 times its width (432), so the
+    // column comes out narrower than 360.
+    let (w, h) = svg_size(&svg);
+    assert!(h <= 433.0 && w < 300.0, "{w} x {h}");
+    // Every panel labels 0.0 … 10.0 on its y axis.
+    assert_eq!(svg.matches(">10.0</text>").count(), 4);
+    assert_eq!(svg.matches(">7.5</text>").count(), 4);
+  }
+}

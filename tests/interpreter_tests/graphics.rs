@@ -13798,7 +13798,8 @@ mod plot3d {
     }
 
     /// Labeled datasets with PlotLayout -> "Row" render one panel per
-    /// dataset side by side, each with its own label and palette color.
+    /// dataset side by side, each with its own label, all in the first
+    /// palette color (WL 15: 600 wide).
     #[test]
     fn list_plot_labeled_row_layout() {
       let svg = export_svg(
@@ -13812,14 +13813,17 @@ mod plot3d {
         .and_then(|s| s.split('"').next())
         .and_then(|s| s.parse().ok())
         .expect("root svg width");
-      assert!(width > 700.0, "expected two side-by-side panels: {width}");
+      assert!(
+        (width - 600.0).abs() < 1.0,
+        "expected a 600 wide row: {width}"
+      );
       // Both dataset labels are drawn.
       assert!(svg.contains("sqrt"), "missing sqrt label");
       assert!(svg.contains(">log<"), "missing log label");
-      // Panels keep successive palette colors (blue then orange), with
-      // 40 points for the sqrt dataset and 41 for the log dataset.
-      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 40);
-      assert_eq!(svg.matches("fill=\"#F2A024\"").count(), 41);
+      // Both panels use the first palette color: 40 points for the sqrt
+      // dataset and 41 for the log dataset.
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 81);
+      assert_eq!(svg.matches("fill=\"#F2A024\"").count(), 0);
     }
 
     /// PlotLayout -> "Column" stacks the panels vertically instead.
@@ -13875,9 +13879,11 @@ mod plot3d {
         .and_then(|s| s.split('"').next())
         .and_then(|s| s.parse().ok())
         .expect("root svg width");
-      assert!(width > 700.0, "expected two side-by-side panels: {width}");
-      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 3);
-      assert_eq!(svg.matches("fill=\"#F2A024\"").count(), 3);
+      assert!(
+        (width - 600.0).abs() < 1.0,
+        "expected a 600 wide row: {width}"
+      );
+      assert_eq!(svg.matches("fill=\"#3D99CC\"").count(), 6);
     }
 
     // Regression: `render_panel_layout` picked each panel's renderer from
@@ -13930,11 +13936,17 @@ mod plot3d {
         .and_then(|s| s.split('"').next())
         .and_then(|s| s.parse().ok())
         .expect("root svg width");
-      assert!(width > 700.0, "expected two side-by-side panels: {width}");
+      assert!(
+        (width - 600.0).abs() < 1.0,
+        "expected a 600 wide row: {width}"
+      );
       assert!(svg.contains("sqrt"), "missing sqrt label");
       assert!(svg.contains(">log<"), "missing log label");
       assert!(svg.contains("stroke=\"#3D99CC\""), "missing blue line");
-      assert!(svg.contains("stroke=\"#F2A024\""), "missing orange line");
+      assert!(
+        !svg.contains("stroke=\"#F2A024\""),
+        "panels share one color"
+      );
     }
 
     /// PlotRange -> {{xmin, xmax}, {ymin, ymax}} should constrain both axes.

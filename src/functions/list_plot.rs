@@ -4,7 +4,7 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
   DEFAULT_HEIGHT, DEFAULT_WIDTH, FillTarget, Filling, IntervalMarkers,
-  PLOT_COLORS, PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
+  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
   apply_filling_option, build_plot_source, expand_plot_theme,
   generate_scatter_svg_with_options, generate_svg_with_filling,
   parse_image_size, parse_plot_style,
@@ -912,18 +912,6 @@ fn parse_list_data_err_labeled(
   ))
 }
 
-/// Panel arrangement from the PlotLayout option.
-#[derive(Default, Clone, Copy, PartialEq)]
-enum PanelLayout {
-  /// All datasets share one panel (the default).
-  #[default]
-  Overlaid,
-  /// One panel per dataset, side by side.
-  Row,
-  /// One panel per dataset, stacked vertically.
-  Column,
-}
-
 /// An explicit `DataRange` option value.
 enum DataRangeSpec {
   /// `DataRange -> All`: rows of a matrix are separate y-value datasets
@@ -938,7 +926,6 @@ enum DataRangeSpec {
 struct ParsedOptions {
   opts: PlotOptions,
   joined: bool,
-  layout: PanelLayout,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
@@ -977,6 +964,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.svg_width = w;
             opts.svg_height = h;
             opts.full_width = fw;
+            opts.image_size_value = Some(replacement.clone());
           }
         }
         "Joined" => match replacement {
@@ -1015,13 +1003,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           };
         }
         "PlotLayout" => {
-          if let Expr::String(layout) = replacement {
-            match layout.as_str() {
-              "Row" => out.layout = PanelLayout::Row,
-              "Column" => out.layout = PanelLayout::Column,
-              _ => {}
-            }
-          }
+          opts.plot_layout =
+            crate::functions::plot_layout::parse_plot_layout(replacement);
         }
         "AspectRatio" => {
           // Ratio (height/width) of the plotting area; the total image height
@@ -1697,32 +1680,12 @@ fn compute_ranges_scaled(
   )
 }
 
-/// Style for the panel showing series `idx`: the user-supplied style for
-/// that series if any, falling back to the default palette color the series
-/// would have had in the overlaid layout.
-fn panel_style(user_styles: &[SeriesStyle], idx: usize) -> SeriesStyle {
-  let mut style = if user_styles.is_empty() {
-    SeriesStyle::default()
-  } else {
-    user_styles[idx % user_styles.len()].clone()
-  };
-  if style.color.is_none() {
-    let (r, g, b) = PLOT_COLORS[idx % PLOT_COLORS.len()];
-    style.color = Some(crate::functions::graphics::Color::new(
-      r as f64 / 255.0,
-      g as f64 / 255.0,
-      b as f64 / 255.0,
-    ));
-  }
-  style
-}
-
-/// Render one panel per series for `PlotLayout -> "Row" / "Column"` and
-/// combine the panels into a single graphic. Each panel keeps the color its
-/// series would have had overlaid, gets its own axis ranges, and shows its
-/// dataset label (from `Labeled`) if one was given. `range_series` supplies
-/// the per-series points used for range computation (the error-bar extremes
-/// when a series carries `Around` uncertainties; otherwise `all_series`).
+/// Render one panel per series for `PlotLayout -> "Row" / "Column" / …`
+/// (see [`crate::functions::plot_layout`]). Every panel shows the plot range
+/// of all series together, and its dataset label (from `Labeled`) if one
+/// was given. `range_series` supplies the per-series points used for range
+/// computation (the error-bar extremes when a series carries `Around`
+/// uncertainties; otherwise `all_series`).
 fn render_panel_layout(
   all_series: &[Vec<(f64, f64)>],
   range_series: &[Vec<(f64, f64)>],
@@ -1731,75 +1694,67 @@ fn render_panel_layout(
   scatter: bool,
   implicit_x: bool,
 ) -> Result<Expr, InterpreterError> {
-  let mut svgs = Vec::with_capacity(all_series.len());
-  for (idx, series) in all_series.iter().enumerate() {
-    let mut opts = parsed.opts.clone();
-    opts.plot_style = vec![panel_style(&parsed.opts.plot_style, idx)];
-    opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
-    // A shared legend across separate panels would repeat per panel.
-    opts.plot_legends = Vec::new();
-    // Keep only this panel's error bars and data-point anchors (they are
-    // indexed by series).
-    opts.error_bars = match parsed.opts.error_bars.get(idx) {
-      Some(bars) => vec![bars.clone()],
-      None => Vec::new(),
-    };
-    opts.data_points = match parsed.opts.data_points.get(idx) {
-      Some(data) => vec![data.clone()],
-      None => Vec::new(),
-    };
-
-    let single = std::slice::from_ref(series);
-    let range_single =
-      range_series.get(idx).map_or(single, std::slice::from_ref);
-    let (x_range, y_range) = if opts.log_x || opts.log_y {
-      let (x_range, y_range) =
-        compute_ranges_scaled(range_single, opts.log_x, opts.log_y);
-      (x_range, adjust_y_range_for_filling_opts(&opts, y_range))
-    } else {
-      list_plot_ranges(
-        range_single,
-        implicit_x,
-        parsed.explicit_range(),
-        &mut opts,
-      )
-    };
-    let (x_range, y_range) =
-      apply_plot_range_override(parsed, x_range, y_range);
-    // `PlotLayout` splits each series into its own panel; a per-series
-    // `Joined -> {..., False, ...}` still picks that panel's renderer,
-    // cycling a shorter flags list the same way every other reader of
-    // `joined_per_series` does (see `resolve_series_joined`).
-    let scatter = if let Some(flags) = &parsed.opts.joined_per_series {
-      let joined =
-        crate::functions::plot::resolve_series_joined(Some(flags), idx);
-      // `opts` now holds this single series at index 0 (`single`, below),
-      // so its own `joined_per_series` must shrink to match — left at the
-      // original full-plot flags list, the line/scatter renderer would
-      // resolve index 0 of *that* list for every panel instead of the
-      // panel's own resolved state.
-      opts.joined_per_series = Some(vec![joined]);
-      !joined
-    } else {
-      scatter
-    };
-    let svg = if scatter {
-      generate_scatter_svg_with_options(single, x_range, y_range, &opts)?
-    } else {
-      generate_svg_with_filling(single, x_range, y_range, &opts)?
-    };
-    svgs.push(svg);
-  }
-
-  let rows: Vec<Vec<String>> = match parsed.layout {
-    PanelLayout::Column => svgs.into_iter().map(|svg| vec![svg]).collect(),
-    _ => vec![svgs],
+  let Some(layout) = parsed.opts.plot_layout else {
+    return Err(InterpreterError::EvaluationError(
+      "ListPlot: no PlotLayout to render".into(),
+    ));
   };
-  let combined = crate::functions::graphics::combine_graphics_svgs(&rows)
-    .unwrap_or_else(|| {
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
-    });
-  Ok(crate::graphics_result(combined))
+  let mut base = parsed.opts.clone();
+  let (x_range, y_range) = if base.log_x || base.log_y {
+    let (x_range, y_range) =
+      compute_ranges_scaled(range_series, base.log_x, base.log_y);
+    (x_range, adjust_y_range_for_filling_opts(&base, y_range))
+  } else {
+    let mut range_series = range_series.to_vec();
+    include_axes_origin(&mut range_series, base.axes_origin);
+    list_plot_ranges(
+      &range_series,
+      implicit_x,
+      parsed.explicit_range(),
+      &mut base,
+    )
+  };
+  let (x_range, y_range) = apply_plot_range_override(parsed, x_range, y_range);
+  let svg = crate::functions::plot_layout::render_plot_layout(
+    layout,
+    all_series.len(),
+    &base,
+    x_range,
+    y_range,
+    |idx, mut opts| {
+      opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
+      // Keep only this panel's error bars and data-point anchors (they are
+      // indexed by series).
+      opts.error_bars = match parsed.opts.error_bars.get(idx) {
+        Some(bars) => vec![bars.clone()],
+        None => Vec::new(),
+      };
+      opts.data_points = match parsed.opts.data_points.get(idx) {
+        Some(data) => vec![data.clone()],
+        None => Vec::new(),
+      };
+      // A per-series `Joined -> {..., False, ...}` still picks the panel's
+      // renderer, cycling a shorter flags list the same way every other
+      // reader of `joined_per_series` does (see `resolve_series_joined`).
+      // The panel holds its series at index 0, so its own flags list
+      // shrinks to that one resolved state.
+      let scatter = if let Some(flags) = &parsed.opts.joined_per_series {
+        let joined =
+          crate::functions::plot::resolve_series_joined(Some(flags), idx);
+        opts.joined_per_series = Some(vec![joined]);
+        !joined
+      } else {
+        scatter
+      };
+      let single = std::slice::from_ref(&all_series[idx]);
+      if scatter {
+        generate_scatter_svg_with_options(single, x_range, y_range, &opts)
+      } else {
+        generate_svg_with_filling(single, x_range, y_range, &opts)
+      }
+    },
+  )?;
+  Ok(crate::graphics_result(svg))
 }
 
 /// Attach dataset labels from `Labeled` wrappers as callout labels, unless
@@ -1872,7 +1827,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   parsed.opts.default_point_size = Some(list_plot_point_size(&draw_series));
-  if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
     include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
       &draw_series,
@@ -2070,7 +2025,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  if parsed.layout != PanelLayout::Overlaid && draw_series.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
     return render_panel_layout(
       &draw_series,
       &range_series,
@@ -2195,7 +2150,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let step_series: Vec<Vec<(f64, f64)>> =
     all_series.iter().map(|series| step_curve(series)).collect();
 
-  if parsed.layout != PanelLayout::Overlaid && step_series.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && step_series.len() > 1 {
     return render_panel_layout(
       &step_series,
       &step_series,
@@ -2276,7 +2231,7 @@ pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   points_unless_joined(&mut parsed, &filtered);
-  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
     return render_panel_layout(
       &filtered,
       &filtered,
@@ -2321,7 +2276,7 @@ pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   points_unless_joined(&mut parsed, &filtered);
-  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
     return render_panel_layout(
       &filtered,
       &filtered,
@@ -2361,7 +2316,7 @@ pub fn list_log_linear_plot_ast(
     .collect();
 
   points_unless_joined(&mut parsed, &filtered);
-  if parsed.layout != PanelLayout::Overlaid && filtered.len() > 1 {
+  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
     return render_panel_layout(
       &filtered,
       &filtered,

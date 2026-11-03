@@ -21791,6 +21791,23 @@ pub(crate) fn embed_svg_centered(
   )
 }
 
+/// An already-rendered picture stretched over the `w`×`h` rectangle whose
+/// top-left corner is (`x`, `y`) in the enclosing picture's coordinates.
+pub(crate) fn embed_svg_in_rect(
+  svg: &str,
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+) -> String {
+  let view_box = parse_svg_dimensions(svg)
+    .map_or_else(|| format!("0 0 {w} {h}"), |p| p.view_box);
+  format!(
+    "<svg x=\"{x:.2}\" y=\"{y:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"{view_box}\" preserveAspectRatio=\"none\">\n{}</svg>\n",
+    strip_svg_wrapper(svg),
+  )
+}
+
 /// Parse width, height, and viewBox from an SVG string
 fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG

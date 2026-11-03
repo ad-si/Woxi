@@ -7663,9 +7663,12 @@ Found comparing the graphics-tests renders (2026-11):
   decades (WL labels every 2nd decade over 8, every 3rd over 9,
   every 4th over 12 and 20) and for `ListPolarPlot`, whose x axis over 3.4
   steps by 1 while its y axis over 3.5 steps by 0.5.
-- `Plot[{f1, f2, …}, …, PlotLayout -> "Column" | "Row" | {"Row", n}]` is
-  ignored: wolframscript draws one framed panel per curve, all in the first
-  palette color, sharing the axis that runs along the layout.
+- `PlotLayout -> "Row" | "Column" | {…, n}` panels are drawn, not returned
+  as WL's expression (an outer `Graphics` of `Inset` panels with
+  `Charting`TicksFunction` frame ticks); `PlotLegends` is dropped, and the
+  grid's margins (top margin 11 over one row, 2 over a column) are fitted
+  to the comparisons rather than decoded. An `ImageSize` scales WL's whole
+  layout (gaps and fonts grow); Woxi keeps 5 pt gaps.
 - `Plot[…, ImageSize -> Full | Scaled[s]]` inside `Pane[…, {w, h}]` does
   not size the plot from the pane (wolframscript fills the pane width /
   takes the fraction of it), and `Framed` draws its rounded gray frame

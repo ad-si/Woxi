@@ -2701,6 +2701,11 @@ pub(crate) struct PlotOptions {
   /// (`{w, h}`, `{Automatic, h}`, a bare width, …). A fixed height makes the
   /// plot keep its `AspectRatio` inside the image instead of resizing it.
   pub image_size_explicit: (bool, bool),
+  /// `PlotLayout -> "Row" | "Column" | …`: one panel per curve
+  /// (see [`crate::functions::plot_layout`]); `None` overlays the curves.
+  pub plot_layout: Option<crate::functions::plot_layout::PlotLayoutSpec>,
+  /// The raw `ImageSize` value, which sizes a `PlotLayout` grid.
+  pub image_size_value: Option<Expr>,
   /// `PlotMarkers -> …`: the glyph each series' points are drawn with,
   /// cycled over the series. Empty = plain round points.
   pub plot_markers: Vec<Option<PlotMarker>>,
@@ -2858,6 +2863,8 @@ impl Default for PlotOptions {
       aspect_automatic: false,
       aspect_full: false,
       image_size_explicit: (false, false),
+      plot_layout: None,
+      image_size_value: None,
       plot_markers: Vec::new(),
       default_point_size: None,
       label_style: None,
@@ -11506,6 +11513,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.svg_height = h;
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
+        plot_opts.image_size_value = Some(replacement.clone());
       }
     }
     "PlotLabel" => {
@@ -11667,6 +11675,10 @@ pub(crate) fn apply_common_plot_option(
     }
     "ImagePadding" => {
       plot_opts.image_padding = parse_image_padding(replacement);
+    }
+    "PlotLayout" => {
+      plot_opts.plot_layout =
+        crate::functions::plot_layout::parse_plot_layout(replacement);
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
     "FrameTicksStyle" => {
@@ -12328,6 +12340,31 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if plot_range_y.is_none() {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
+  }
+
+  // `PlotLayout -> "Row" | "Column" | …`: one panel per curve, all over
+  // the same plot range.
+  if let Some(layout) = plot_opts.plot_layout
+    && all_points.len() > 1
+  {
+    let svg = crate::functions::plot_layout::render_plot_layout(
+      layout,
+      all_points.len(),
+      &plot_opts,
+      (x_display_min, x_display_max),
+      (y_display_min, y_display_max),
+      |i, mut opts| {
+        opts.callout_labels =
+          vec![plot_opts.callout_labels.get(i).cloned().flatten()];
+        generate_svg_with_filling(
+          std::slice::from_ref(&all_points[i]),
+          (x_display_min, x_display_max),
+          (y_display_min, y_display_max),
+          &opts,
+        )
+      },
+    )?;
+    return Ok(crate::graphics_result(svg));
   }
 
   // Generate SVG
