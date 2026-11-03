@@ -663,7 +663,7 @@ mod tests {
 
   #[test]
   fn framed_plot_padding_matches_wolfram() {
-    let ar = 1.0 / ((1.0 + 5f64.sqrt()) / 2.0);
+    let ar = 1.0 / f64::midpoint(1.0, 5f64.sqrt());
     let pad = frame_sin().solve(360.0, |w| w * ar);
     // AbsoluteOptions[…, ImagePadding] in WL 15.
     assert!((pad.left - 23.204).abs() < 1e-3, "{pad:?}");
@@ -676,7 +676,7 @@ mod tests {
 
   #[test]
   fn small_frame_pads_for_overhanging_end_labels() {
-    let ar = 1.0 / ((1.0 + 5f64.sqrt()) / 2.0);
+    let ar = 1.0 / f64::midpoint(1.0, 5f64.sqrt());
     let pad = frame_sin().solve(180.0, |w| w * ar);
     assert!((pad.right - 3.496).abs() < 2e-3, "{pad:?}");
     assert!((pad.top - 0.849).abs() < 2e-3, "{pad:?}");

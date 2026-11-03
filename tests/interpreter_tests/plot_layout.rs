@@ -345,7 +345,7 @@ mod sampling {
       .collect::<Vec<_>>();
     // (At x = Pi/2 and 5 Pi/2 the curve has genuine low maxima, Sin[30] =
     // -0.988, in its lower half; every maximum in the upper half is a 1.)
-    let upper_half = |y: f64| y < (top + bottom) / 2.0;
+    let upper_half = |y: f64| y < f64::midpoint(top, bottom);
     let short = peaks
       .iter()
       .filter(|w| upper_half(w[1].1) && !near_top(w[1].1))
@@ -663,9 +663,9 @@ mod panel_layout {
       assert_eq!(f.len(), 6, "{layout}");
       let mut xs: Vec<i64> = f.iter().map(|p| p.0.round() as i64).collect();
       let mut ys: Vec<i64> = f.iter().map(|p| p.1.round() as i64).collect();
-      xs.sort();
+      xs.sort_unstable();
       xs.dedup();
-      ys.sort();
+      ys.sort_unstable();
       ys.dedup();
       assert_eq!((ys.len(), xs.len()), (rows, cols), "{layout}");
     }

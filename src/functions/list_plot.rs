@@ -1501,7 +1501,7 @@ fn list_axis_extent(
   };
   if min == max {
     return match min {
-      v if v == 0.0 => (-1.0, 1.0),
+      0.0 => (-1.0, 1.0),
       v if v > 0.0 => (0.0, 2.0 * v),
       v => (2.0 * v, 0.0),
     };
@@ -2134,7 +2134,6 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
-  let mut range_series = range_series;
   include_axes_origin(&mut range_series, parsed.opts.axes_origin);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
