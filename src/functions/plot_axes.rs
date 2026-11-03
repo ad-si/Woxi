@@ -40,7 +40,7 @@ impl AxisScale {
     }
   }
 
-  fn contains(&self, v: f64) -> bool {
+  pub(crate) fn contains(&self, v: f64) -> bool {
     let eps = (self.max - self.min).abs() * 1e-9;
     v >= self.min - eps && v <= self.max + eps
   }

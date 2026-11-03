@@ -12409,7 +12409,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // labels.
   if let Some((bottom, left, top, right)) = &frame_label {
     let room =
-      |edge: usize| decorations.frame_tick_room(edge) + FRAME_LABEL_GAP;
+      |edge: usize| decorations.frame_tick_room(edge, 0.0) + FRAME_LABEL_GAP;
     if !bottom.is_empty() {
       svg.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",

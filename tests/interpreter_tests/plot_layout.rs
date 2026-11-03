@@ -732,6 +732,40 @@ mod automatic_image_padding {
   }
 
   #[test]
+  fn frame_ticks_pad_each_edge_they_label() {
+    let sin = "Table[Sin[x], {x, 0, 2 Pi, Pi/180}]";
+    // `All` labels the top and right edges too: the frame moves in to
+    // x = 23.2..335.8, y = 14.17..207.36.
+    let svg = svg_of(&format!(
+      "ListPlot[{sin}, Frame -> True, FrameTicks -> All]"
+    ));
+    assert_eq!(svg_size(&svg), (360.0, 223.0));
+    let frame = polyline_points(&svg, "#666666");
+    assert!(
+      frame.iter().any(|&(x, y)| x == 3357.0 && y == 142.0),
+      "{frame:?}"
+    );
+    // Only the bottom edge labelled.
+    assert_eq!(
+      size(&format!(
+        "ListPlot[{sin}, Frame -> True, FrameTicks -> {{{{None, None}}, \
+         {{Automatic, None}}}}]"
+      )),
+      (360.0, 237.0)
+    );
+    // Marks reaching 0.1 of the width out of the top edge push its labels
+    // up by as much.
+    assert_eq!(
+      size(&format!(
+        "ListPlot[{sin}, Frame -> True, FrameTicks -> {{{{Automatic, \
+         Automatic}}, {{{{{{50, a, 0.1}}, {{180, b, 0.1}}}}, {{{{50, a, \
+         {{0.2, 0.1}}}}, {{180, b, {{0.2, 0.1}}}}}}}}}}]"
+      )),
+      (360.0, 271.0)
+    );
+  }
+
+  #[test]
   fn end_labels_overhanging_a_small_frame_widen_its_padding() {
     assert_eq!(
       size("Plot[Sin[x], {x, 0, 10}, Frame -> True, ImageSize -> Small]"),

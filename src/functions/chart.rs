@@ -371,20 +371,6 @@ pub(crate) fn parse_style_directive_args(
   (bold, italic, color, font_size)
 }
 
-/// Parse a `LabelStyle -> …` option value into a text color and font size.
-/// Accepts a single style item (`Black`, `17`, `Directive[…]`) or a list of
-/// them (`{17, Black}`) — the same shapes `Style[…]`'s trailing arguments
-/// take.
-pub(crate) fn parse_label_style(expr: &Expr) -> (Option<Color>, Option<f64>) {
-  let items: Vec<Expr> = match expr {
-    Expr::List(items) => items.to_vec(),
-    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
-    other => vec![other.clone()],
-  };
-  let (_, _, color, font_size) = parse_style_directive_args(&items);
-  (color, font_size)
-}
-
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font

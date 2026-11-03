@@ -7846,10 +7846,19 @@ Found comparing the graphics-tests renders (2026-11):
     442 wide (WL 414): the legend takes more room.
   - Tick labels are measured as WL sets them (a minus 0.63 em wide,
     `10 000` in digit blocks) but drawn with a hyphen and no blocks.
-  - Explicit `Ticks`/`FrameTicks` labels (`explicit_ticks_svg`) and the
-    decade labels of a framed log axis are still drawn at Woxi's old
-    sizes and offsets (13 / 14.5 px), though the padding measures them at
-    10 pt.
+  - Explicit `Ticks` labels of an unframed plot without axes
+    (`explicit_ticks_svg`) and the decade labels of a framed log axis are
+    still drawn at Woxi's old sizes and offsets (13 / 14.5 px), though the
+    padding measures them at 10 pt. (A frame's explicit ticks are drawn by
+    `frame_ticks_svg` at WL's offsets.)
+  - `Plot[Sin[x], {x, 0, 10}, Frame -> True, FrameTicks -> All]` is 223
+    tall (WL 224): WL re-labels the frame for `All` with `0` (not `0.0`)
+    and a narrower minus, which moves its left/right padding by 0.46 pt.
+    `ListPlot` with `FrameTicks -> All` matches.
+  - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
+    in italics (TraditionalForm), and writes `-a` with a minus sign.
+  - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
+    draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
     (WL 100 x 17).
   - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],

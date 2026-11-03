@@ -438,6 +438,9 @@ pub(crate) struct Decorations {
   pub origin: (f64, f64),
   /// The tick labels of the frame's bottom/left/top/right edges.
   pub frame_ticks: [Vec<LabelBox>; 4],
+  /// How far the tick marks of each frame edge reach out of the frame, as
+  /// a fraction of the plot width; the labels sit beyond them.
+  pub frame_tick_out: [f64; 4],
   /// The tick labels of the x and y axes.
   pub axis_ticks: (Vec<LabelBox>, Vec<LabelBox>),
   /// The heights of the bottom/left/top/right `FrameLabel`s.
@@ -470,12 +473,13 @@ impl Padding {
 }
 
 impl Decorations {
-  /// Room the tick labels of frame edge `edge` take outside it (with their
-  /// gap), 0 without labels.
-  pub(crate) fn frame_tick_room(&self, edge: usize) -> f64 {
+  /// Room the tick marks and labels of frame edge `edge` take outside it
+  /// (with the labels' gap) on a plot `w` wide, 0 without either.
+  pub(crate) fn frame_tick_room(&self, edge: usize, w: f64) -> f64 {
+    let out = self.frame_tick_out[edge] * w;
     let ticks = &self.frame_ticks[edge];
     if ticks.is_empty() {
-      return 0.0;
+      return out;
     }
     let size = |b: &LabelBox| {
       if edge.is_multiple_of(2) {
@@ -484,7 +488,7 @@ impl Decorations {
         b.width
       }
     };
-    TICK_LABEL_GAP + ticks.iter().map(size).fold(0.0, f64::max)
+    out + TICK_LABEL_GAP + ticks.iter().map(size).fold(0.0, f64::max)
   }
 
   /// The extents past the left/right/bottom/top edges of a `w` × `h`
@@ -510,7 +514,7 @@ impl Decorations {
       // Edge order bottom, left, top, right; sides L R B T.
       let side_of = [B, L, T, R];
       for edge in 0..4 {
-        let mut room = self.frame_tick_room(edge);
+        let mut room = self.frame_tick_room(edge, w);
         for b in &self.frame_ticks[edge] {
           if edge % 2 == 0 {
             along_x(&mut reach, b);
@@ -610,9 +614,10 @@ pub(crate) struct LabelLayout {
 
 impl Decorations {
   /// The [`LabelLayout`] tick rooms of these decorations.
-  pub(crate) fn tick_rooms(&self) -> [f64; 4] {
+  /// `w` is the plot width, in points.
+  pub(crate) fn tick_rooms(&self, w: f64) -> [f64; 4] {
     if self.frame {
-      [0, 1, 2, 3].map(|edge| self.frame_tick_room(edge))
+      [0, 1, 2, 3].map(|edge| self.frame_tick_room(edge, w))
     } else {
       [0.0; 4]
     }
@@ -644,6 +649,14 @@ pub(crate) fn plot_tick_font(
   opts
     .tick_label_style
     .and_then(|s| s.font_size)
+    // `LabelStyle` sizes the frame's tick labels too (the origin axes draw
+    // theirs at the fixed `AXIS_TICK_FONT`).
+    .or(
+      opts
+        .label_style
+        .filter(|_| opts.frame)
+        .and_then(|s| s.font_size),
+    )
     .unwrap_or(TICK_FONT)
 }
 
@@ -742,21 +755,50 @@ pub(crate) fn plot_decorations(
   let edges = opts.frame_edges;
   if frame {
     if show_ticks {
-      if edges.bottom {
-        d.frame_ticks[0] = boxes(&x_ticks.majors, x, None);
-      }
-      if edges.left {
-        d.frame_ticks[1] = boxes(&y_ticks.majors, y, None);
-      }
-      if edges.top
-        && let Some(t) = &opts.ticks_top
-      {
-        d.frame_ticks[2] = boxes(t, x, None);
-      }
-      if edges.right
-        && let Some(t) = &opts.ticks_right
-      {
-        d.frame_ticks[3] = boxes(t, y, None);
+      use crate::functions::plot::FrameEdgeTicks;
+      let present = [edges.bottom, edges.left, edges.top, edges.right];
+      for (edge, spec) in opts.frame_tick_edges.iter().enumerate() {
+        if !present[edge] {
+          continue;
+        }
+        let horizontal = edge % 2 == 0;
+        let (scale, axis_ticks) = if horizontal {
+          (x, x_ticks)
+        } else {
+          (y, y_ticks)
+        };
+        d.frame_ticks[edge] = match spec {
+          // The bottom and left edge label what the axis ticks hold (an
+          // explicit `Ticks` list included); the far edges the automatic
+          // ticks.
+          FrameEdgeTicks::Labeled if edge < 2 => {
+            boxes(&axis_ticks.majors, scale, None)
+          }
+          FrameEdgeTicks::Labeled => boxes(
+            &crate::functions::plot_axes::AxisTicks::new(
+              scale,
+              horizontal && opts.date_axis,
+              None,
+            )
+            .majors,
+            scale,
+            None,
+          ),
+          FrameEdgeTicks::Explicit(ticks) => {
+            d.frame_tick_out[edge] = ticks
+              .iter()
+              .filter(|t| scale.contains(t.pos))
+              .filter_map(|t| t.len.map(|(_, out)| out))
+              .fold(0.0, f64::max);
+            let listed: Vec<(f64, String)> = ticks
+              .iter()
+              .filter(|t| scale.contains(t.pos))
+              .map(|t| (t.pos, t.label.clone()))
+              .collect();
+            boxes(&listed, scale, None)
+          }
+          FrameEdgeTicks::None | FrameEdgeTicks::Marks => Vec::new(),
+        };
       }
     }
   } else if show_ticks {

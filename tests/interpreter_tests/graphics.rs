@@ -42150,7 +42150,9 @@ fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
     ticks.iter().partition(|t| vertical(t));
   // x from 0 to 30 in majors of 5: 31 positions on the bottom and the top.
   assert_eq!(x_ticks.len(), 62, "{x_ticks:?}");
-  let majors = x_ticks.iter().filter(|t| len(t) > 50.0).count();
+  // Majors 4 pt long at this size, minors 0.6 of that (render units: 10
+  // per point).
+  let majors = x_ticks.iter().filter(|t| len(t) > 32.0).count();
   assert_eq!(majors, 14, "seven majors on each of two edges");
   assert_ne!(y_ticks.len(), 0, "expected y ticks");
   // Every tick starts on the frame and points into the plot area.
@@ -46298,7 +46300,7 @@ mod list_plot_wl15_ranges {
       "{svg}"
     );
     // Simple ticks write 0 as "0", and the grid is GrayLevel[0, 0.2].
-    assert!(svg.contains("fill=\"#666\">0</text>"), "{svg}");
+    assert!(svg.contains("fill=\"rgb(102,102,102)\">0</text>"), "{svg}");
     assert!(svg.contains("opacity=\"0.2\" stroke=\"#000000\""), "{svg}");
   }
 
@@ -46911,5 +46913,268 @@ mod plot_range_clipping_and_exclusions {
       "Plot[Im[Sqrt[-1 + I (y + 1)]], {y, -2, 0}, Exclusions -> None, Axes -> False]",
     );
     assert_eq!(svg.matches("<polyline").count(), 1);
+  }
+}
+
+/// `FrameTicks`, `FrameTicksStyle`, `FrameStyle` and `LabelStyle` on each
+/// edge of a framed plot, as wolframscript (WL 15) draws them.
+mod frame_ticks_per_edge {
+  use super::*;
+
+  const SIN: &str = "Table[Sin[x], {x, 0, 2 Pi, Pi/180}]";
+
+  fn list_plot(opts: &str) -> String {
+    export_svg(&format!("ListPlot[{SIN}, Frame -> True, {opts}]"))
+  }
+
+  /// `(x1, y1, x2, y2, stroke, stroke-width)` of every `<line>`.
+  fn lines(svg: &str) -> Vec<(f64, f64, f64, f64, String, f64)> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .map(|tag| {
+        let tag = &tag[..tag.find('>').unwrap()];
+        let attr = |name: &str| {
+          let start = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          let end = start + tag[start..].find('"').unwrap();
+          tag[start..end].to_string()
+        };
+        let num = |name: &str| attr(name).parse::<f64>().unwrap();
+        (
+          num("x1"),
+          num("y1"),
+          num("x2"),
+          num("y2"),
+          attr("stroke"),
+          num("stroke-width"),
+        )
+      })
+      .collect()
+  }
+
+  /// The `<text>` elements whose content is `label` (plotters writes it on
+  /// a line of its own).
+  fn texts<'a>(svg: &'a str, label: &str) -> Vec<&'a str> {
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter(|t| {
+        let open = t.find('>').unwrap();
+        let close = t.find("</text>").unwrap();
+        t[open + 1..close].trim() == label
+      })
+      .collect()
+  }
+
+  fn attr<'a>(tag: &'a str, name: &str) -> &'a str {
+    let s = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+    &tag[s..s + tag[s..].find('"').unwrap()]
+  }
+
+  #[test]
+  fn all_labels_the_top_and_right_edges_too() {
+    let svg = list_plot("FrameTicks -> All");
+    assert_eq!(texts(&svg, "350").len(), 2, "{svg}");
+    assert_eq!(texts(&svg, "0.5").len(), 2, "{svg}");
+    // The right labels start right of the frame.
+    assert!(
+      texts(&svg, "0.5")
+        .iter()
+        .any(|t| t.contains("text-anchor=\"start\"")),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn none_on_an_edge_drops_its_marks_and_labels() {
+    let svg = list_plot("FrameTicks -> {{None, None}, {Automatic, None}}");
+    assert!(texts(&svg, "0.5").is_empty(), "{svg}");
+    assert_eq!(texts(&svg, "350").len(), 1);
+    // Only the bottom edge is marked: every mark is vertical and starts on
+    // the same edge.
+    let marks = lines(&svg);
+    assert_eq!(marks.len(), 37, "0 to 360 in tens");
+    assert!(marks.iter().all(|l| l.0 == l.2 && l.1 == marks[0].1));
+  }
+
+  #[test]
+  fn explicit_lists_on_the_top_and_right_edges_are_drawn() {
+    let svg = list_plot(
+      "FrameTicks -> {{{{-1, -a}, {0, 0}, {1, a}}, {-1, 0, 1}}, \
+       {{{0, 0}, {180, b}, {360, c}}, {0, 180, 360}}}",
+    );
+    assert_eq!(texts(&svg, "180").len(), 1, "{svg}");
+    assert_eq!(texts(&svg, "360").len(), 1, "{svg}");
+    assert_eq!(texts(&svg, "b").len(), 1, "{svg}");
+    assert!(
+      texts(&svg, "1")[0].contains("text-anchor=\"start\""),
+      "{svg}"
+    );
+    // Three marks on each edge.
+    assert_eq!(lines(&svg).len(), 12, "{svg}");
+  }
+
+  #[test]
+  fn tick_lengths_are_fractions_of_the_plot_width() {
+    let svg = list_plot(
+      "FrameTicks -> {{Automatic, Automatic}, {{{50, a, 0.1}, {180, b, \
+       0.1}, {300, c, 0.1}}, {{50, a, {0.2, 0.1}}, {180, b, {0.2, 0.1}}, \
+       {300, c, {0.2, 0.1}}}}}",
+    );
+    let marks = lines(&svg);
+    let vertical: Vec<_> = marks.iter().filter(|l| l.0 == l.2).collect();
+    assert_eq!(vertical.len(), 6, "{svg}");
+    let lens: Vec<f64> = vertical.iter().map(|l| (l.3 - l.1).abs()).collect();
+    // WL: a plot 335.3 pt wide draws 0.1 of it (33.5 pt) at the bottom and
+    // 0.2 in plus 0.1 out (100.6 pt) at the top. Render units are 10/pt.
+    let short = lens.iter().copied().fold(f64::MAX, f64::min);
+    let long = lens.iter().copied().fold(0.0, f64::max);
+    assert!((short - 335.3).abs() < 3.0, "{lens:?}");
+    assert!((long - 1005.9).abs() < 9.0, "{lens:?}");
+    // The top labels clear the outward reach of the marks.
+    let top = vertical
+      .iter()
+      .map(|l| l.1.min(l.3))
+      .fold(f64::MAX, f64::min);
+    let a_y = texts(&svg, "a")
+      .iter()
+      .map(|t| attr(t, "y").parse::<f64>().unwrap())
+      .fold(f64::MAX, f64::min);
+    assert!(a_y < top - 30.0, "{a_y} vs {top}");
+  }
+
+  #[test]
+  fn automatic_tick_lengths_scale_with_the_frame() {
+    // WL: majors 0.015 √(w h) long, between 2 and 4 pt; minors 0.6 of that.
+    for (opts, major) in [
+      ("ImageSize -> 200, AspectRatio -> 1.5", 3.22),
+      ("ImageSize -> 720", 4.0),
+      ("ImageSize -> 200, AspectRatio -> 0.3", 2.0),
+    ] {
+      let svg = list_plot(opts);
+      let lens: Vec<f64> = lines(&svg)
+        .iter()
+        .map(|l| ((l.2 - l.0).abs() + (l.3 - l.1).abs()) / 10.0)
+        .collect();
+      let longest = lens.iter().copied().fold(0.0, f64::max);
+      let shortest = lens.iter().copied().fold(f64::MAX, f64::min);
+      assert!((longest - major).abs() < 0.05, "{opts}: {lens:?}");
+      assert!((shortest - 0.6 * major).abs() < 0.05, "{opts}: {lens:?}");
+    }
+  }
+
+  #[test]
+  fn a_tick_style_colours_its_mark_only() {
+    let svg = list_plot(
+      "FrameTicks -> {{Automatic, Automatic}, {{{50, a, 0.1, Red}, {180, \
+       b, 0.1, Blue}}, Automatic}}",
+    );
+    let marks = lines(&svg);
+    assert_eq!(marks.iter().filter(|l| l.4 == "rgb(255,0,0)").count(), 1);
+    assert_eq!(marks.iter().filter(|l| l.4 == "rgb(0,0,255)").count(), 1);
+    assert_eq!(attr(texts(&svg, "a")[0], "fill"), "rgb(102,102,102)");
+  }
+
+  #[test]
+  fn frame_ticks_style_paints_marks_and_labels() {
+    let svg =
+      list_plot("FrameStyle -> Red, FrameTicksStyle -> Directive[Blue, Thick]");
+    let marks = lines(&svg);
+    assert!(!marks.is_empty());
+    assert!(marks.iter().all(|l| l.4 == "rgb(0,0,255)" && l.5 == 20.0));
+    assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#0000FF");
+    // The frame keeps its own style.
+    assert!(
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn frame_ticks_style_per_edge() {
+    let svg = list_plot(
+      "FrameTicks -> All, FrameTicksStyle -> {{Purple, Blue}, {Thick, Red}}",
+    );
+    let fills = |label: &str| -> Vec<String> {
+      texts(&svg, label)
+        .iter()
+        .map(|t| attr(t, "fill").to_string())
+        .collect()
+    };
+    // Left purple, right blue; top red, bottom the default.
+    let y = fills("0.5");
+    assert!(y.contains(&"#800080".to_string()), "{y:?}");
+    assert!(y.contains(&"rgb(0,0,255)".to_string()), "{y:?}");
+    let x = fills("350");
+    assert!(x.contains(&"rgb(255,0,0)".to_string()), "{x:?}");
+    assert!(x.contains(&"#666666".to_string()), "{x:?}");
+    // The bottom marks are thick.
+    let marks = lines(&svg);
+    assert!(
+      marks
+        .iter()
+        .any(|l| l.4 == "rgb(102,102,102)" && l.5 == 20.0)
+    );
+  }
+
+  #[test]
+  fn frame_style_per_edge_and_the_axis_stays_gray() {
+    let svg = export_svg(
+      "ListPlot[Table[Sin[x], {x, 0, 2 Pi, Pi/30}], Frame -> True, \
+       FrameStyle -> {{Directive[Green, Thick], Red}, {Directive[Gray, \
+       Thick], Blue}}]",
+    );
+    assert!(
+      svg.contains("stroke=\"#00FF00\" stroke-width=\"20\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"#FF0000\" stroke-width=\"10\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"#808080\" stroke-width=\"20\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"#0000FF\" stroke-width=\"10\""),
+      "{svg}"
+    );
+    // The y = 0 axis keeps the theme gray hairline.
+    assert!(
+      svg.contains("stroke=\"#666666\" stroke-width=\"2\""),
+      "{svg}"
+    );
+    let marks = lines(&svg);
+    assert!(marks.iter().any(|l| l.4 == "rgb(0,255,0)" && l.5 == 20.0));
+    assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#00FF00");
+  }
+
+  #[test]
+  fn frame_style_colours_the_frame_not_the_axis() {
+    let svg = list_plot("Joined -> True, FrameStyle -> Directive[Red]");
+    assert!(
+      svg.contains("stroke=\"#666666\" stroke-width=\"2\""),
+      "{svg}"
+    );
+    assert!(lines(&svg).iter().all(|l| l.4 == "rgb(255,0,0)"));
+  }
+
+  #[test]
+  fn label_style_reaches_the_tick_labels() {
+    let svg = list_plot(
+      "FrameLabel -> {{x, x2}, {y, y2}}, LabelStyle -> Directive[Bold, \
+       GrayLevel[0.5]]",
+    );
+    let label = texts(&svg, "0.5")[0];
+    assert_eq!(attr(label, "fill"), "#808080");
+    assert_eq!(attr(label, "font-weight"), "bold");
+    // The frame labels are bold too.
+    assert!(svg.contains("font-weight=\"bold\" fill=\"rgb("), "{svg}");
+    // `FrameStyle` wins over `LabelStyle`, `FrameTicksStyle` over both.
+    let svg = list_plot("FrameStyle -> Red, LabelStyle -> Green");
+    assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#FF0000");
+    let svg = list_plot("LabelStyle -> Green, FrameTicksStyle -> Red");
+    assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#FF0000");
   }
 }

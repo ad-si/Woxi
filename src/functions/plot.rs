@@ -3,7 +3,7 @@ use plotters::prelude::{Color, *};
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::chart::{
-  ChartLabel, ChartOptions, LabelPosition, StyledLabel, parse_label_style,
+  ChartLabel, ChartOptions, LabelPosition, StyledLabel,
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
@@ -2130,26 +2130,56 @@ fn inject_top_right_frame(
   }
 }
 
-/// Tick marks on all four edges of a framed plot, pointing into the plot
-/// area as Wolfram draws them: a major tick at every multiple of the axis'
-/// `major_step` (where the labels sit on the bottom and left edges) and
-/// the minor ticks of [`minor_tick_divisions`] between neighbouring majors.
-///
-/// `x_axis` / `y_axis` each supply `(min, max, major_step)`; `None` leaves
-/// that axis without automatic ticks (e.g. it has explicit `Ticks`).
-#[allow(clippy::too_many_arguments)]
-fn inject_inward_frame_ticks(
-  buf: &mut String,
-  (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
-  x_axis: Option<(f64, f64, f64)>,
-  y_axis: Option<(f64, f64, f64)>,
-  (minor_len, major_len): (f64, f64),
-  stroke_w: f64,
-  color: &str,
-  edges: FrameEdges,
-) {
+/// What [`frame_ticks_svg`] draws the tick marks and labels of a framed
+/// plot from.
+pub(crate) struct FrameTicksLayout<'a> {
+  /// The plotting rectangle `(x0, y0, w, h)`, in render units.
+  pub area: (f64, f64, f64, f64),
+  /// The ranges the area maps, in axis space (natural logs on a log axis).
+  pub ranges: (f64, f64, f64, f64),
+  /// Whether the x and the y axis are logarithmic.
+  pub log: (bool, bool),
+  /// The automatic ticks of the x and the y axis, as `(min, max, major
+  /// step)`; `None` where the axis places its own (log and date axes).
+  pub auto: [Option<(f64, f64, f64)>; 2],
+  /// The automatic labels of the x and the y axis, in axis space, for a far
+  /// edge set to `All`.
+  pub auto_labels: [&'a [(f64, String)]; 2],
+  /// What each edge (bottom, left, top, right) carries.
+  pub edges: &'a [FrameEdgeTicks; 4],
+  /// The edges drawn at all, and the ones whose marks are drawn.
+  pub present: FrameEdges,
+  pub marked: FrameEdges,
+  pub paints: &'a [FrameEdgePaint; 4],
+  pub sf: f64,
+  /// Tick label font size, in points, and whether it is bold.
+  pub font: f64,
+  pub bold: bool,
+}
+
+/// The automatic major tick length of a frame `w` × `h` points large, in
+/// points: Wolfram scales it with the frame's size, between 2 and 4 pt. The
+/// minor ticks are 0.6 of it.
+pub(crate) fn frame_major_tick_len(w: f64, h: f64) -> f64 {
+  (0.015 * (w * h).max(0.0).sqrt()).clamp(2.0, 4.0)
+}
+
+/// The tick marks of every edge of a framed plot — pointing into the plot,
+/// an explicit `{plen, mlen}` one also out of it — and the tick labels the
+/// plotters mesh does not draw: those of the top and right edges and of
+/// explicit tick lists. A label sits 3 pt beyond its edge's outermost mark.
+pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
+  use plot_padding::{TICK_LABEL_GAP, ascent, line_height, line_pitch};
+  let (x0, y0, w, h) = l.area;
+  let (x_min, x_max, y_min, y_max) = l.ranges;
+  let sf = l.sf;
+  let major_len = frame_major_tick_len(w / sf, h / sf) * sf;
+  let minor_len = 0.6 * major_len;
+  let rgb = |c: RGBColor| format!("rgb({},{},{})", c.0, c.1, c.2);
+  let font = l.font * sf;
+  let weight = if l.bold { " font-weight=\"bold\"" } else { "" };
   // The positions along one axis, as (fraction of the span, is major).
-  let ticks = |(min, max, major): (f64, f64, f64)| -> Vec<(f64, bool)> {
+  let auto_ticks = |(min, max, major): (f64, f64, f64)| -> Vec<(f64, bool)> {
     if !(major > 0.0 && max > min) {
       return Vec::new();
     }
@@ -2167,38 +2197,130 @@ fn inject_inward_frame_ticks(
       })
       .collect()
   };
+  let present = [
+    l.present.bottom,
+    l.present.left,
+    l.present.top,
+    l.present.right,
+  ];
+  let marked = [l.marked.bottom, l.marked.left, l.marked.top, l.marked.right];
   let mut svg = String::new();
-  let mut line = |x1: f64, y1: f64, x2: f64, y2: f64| {
-    svg.push_str(&format!(
-      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.0}\"/>\n"
-    ));
-  };
-  let (bottom, right) = (plot_y0 + plot_h, plot_x0 + plot_w);
-  for (frac, major) in x_axis.map(ticks).unwrap_or_default() {
-    let len = if major { major_len } else { minor_len };
-    let x = plot_x0 + frac * plot_w;
-    if edges.bottom {
-      line(x, bottom, x, bottom - len);
+  for edge in 0..4 {
+    if !present[edge] {
+      continue;
     }
-    if edges.top {
-      line(x, plot_y0, x, plot_y0 + len);
+    let horizontal = edge % 2 == 0;
+    let (lo, hi, log) = if horizontal {
+      (x_min, x_max, l.log.0)
+    } else {
+      (y_min, y_max, l.log.1)
+    };
+    // Where along the edge an axis-space value falls, as a fraction.
+    let frac_of = |v: f64| (v - lo) / (hi - lo);
+    let in_range =
+      |f: f64| hi > lo && f.is_finite() && (-1e-9..=1.0 + 1e-9).contains(&f);
+    let paint = &l.paints[edge];
+    // (fraction, inward length, outward length, colour, width, label)
+    let mut ticks: Vec<(f64, f64, f64, RGBColor, f64, Option<&str>)> =
+      Vec::new();
+    match &l.edges[edge] {
+      FrameEdgeTicks::None => continue,
+      spec @ (FrameEdgeTicks::Marks | FrameEdgeTicks::Labeled) => {
+        let axis = if horizontal { l.auto[0] } else { l.auto[1] };
+        for (frac, major) in axis.map(auto_ticks).unwrap_or_default() {
+          let len = if major { major_len } else { minor_len };
+          ticks.push((frac, len, 0.0, paint.mark, paint.mark_width, None));
+        }
+        // The bottom and left labels come from the chart mesh.
+        if matches!(spec, FrameEdgeTicks::Labeled) && edge >= 2 {
+          let labels = if horizontal {
+            l.auto_labels[0]
+          } else {
+            l.auto_labels[1]
+          };
+          for (v, label) in labels {
+            let frac = frac_of(*v);
+            if in_range(frac) {
+              ticks.push((frac, 0.0, 0.0, paint.mark, 0.0, Some(label)));
+            }
+          }
+        }
+      }
+      FrameEdgeTicks::Explicit(list) => {
+        for t in list {
+          if log && t.pos <= 0.0 {
+            continue;
+          }
+          let frac = frac_of(if log { t.pos.ln() } else { t.pos });
+          if !in_range(frac) {
+            continue;
+          }
+          let (inward, outward) =
+            t.len.map_or((major_len, 0.0), |(i, o)| (i * w, o * w));
+          let style = t.style.as_ref();
+          let color = style.and_then(|s| s.color).map_or(paint.mark, |c| {
+            let (r, g, b) = color_to_rgb8(c);
+            RGBColor(r, g, b)
+          });
+          let width = style
+            .and_then(|s| s.thickness)
+            .map_or(paint.mark_width, |t| t * RESOLUTION_SCALE as f64);
+          let label = (!t.label.is_empty()).then_some(t.label.as_str());
+          ticks.push((frac, inward, outward, color, width, label));
+        }
+      }
+    }
+    // The labels clear the marks reaching furthest out.
+    let out = ticks.iter().map(|t| t.2).fold(0.0, f64::max);
+    let gap = TICK_LABEL_GAP * sf + out;
+    let fill = rgb(paint.label);
+    for &(frac, inward, outward, color, width, label) in &ticks {
+      // The edge's point, and the unit vector pointing into the plot.
+      let (px, py, nx, ny) = match edge {
+        0 => (x0 + frac * w, y0 + h, 0.0, -1.0),
+        1 => (x0, y0 + h - frac * h, 1.0, 0.0),
+        2 => (x0 + frac * w, y0, 0.0, 1.0),
+        _ => (x0 + w, y0 + h - frac * h, -1.0, 0.0),
+      };
+      if marked[edge] && inward + outward > 0.0 {
+        svg.push_str(&format!(
+          "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{width:.0}\"/>\n",
+          px - nx * outward,
+          py - ny * outward,
+          px + nx * inward,
+          py + ny * inward,
+          rgb(color),
+        ));
+      }
+      let Some(label) = label else { continue };
+      let lines = label.split('\n').count();
+      let pitch = line_pitch(l.font) * sf;
+      let text = match edge {
+        0 => format!(
+          "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
+          py + gap + ascent(l.font) * sf,
+          stacked_lines_svg(label, px, pitch),
+        ),
+        2 => format!(
+          "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{}</text>\n",
+          py - gap
+            - (line_height(l.font) - ascent(l.font)) * sf
+            - (lines - 1) as f64 * pitch,
+          stacked_lines_svg(label, px, pitch),
+        ),
+        1 => format!(
+          "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{label}</text>\n",
+          px - gap,
+        ),
+        _ => format!(
+          "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"start\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{fill}\">{label}</text>\n",
+          px + gap,
+        ),
+      };
+      svg.push_str(&text);
     }
   }
-  for (frac, major) in y_axis.map(ticks).unwrap_or_default() {
-    let len = if major { major_len } else { minor_len };
-    let y = bottom - frac * plot_h;
-    if edges.left {
-      line(plot_x0, y, plot_x0 + len, y);
-    }
-    if edges.right {
-      line(right, y, right - len, y);
-    }
-  }
-  if !svg.is_empty()
-    && let Some(pos) = buf.rfind("</svg>")
-  {
-    buf.insert_str(pos, &svg);
-  }
+  svg
 }
 
 /// Default minor (unlabeled) tick length in render-space units.
@@ -2951,9 +3073,10 @@ pub(crate) struct PlotOptions {
   /// position and the text drawn at it. `None` = the automatic ticks.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
-  /// Explicit `FrameTicks` on the top and right edge of a frame.
-  pub ticks_top: Option<Vec<(f64, String)>>,
-  pub ticks_right: Option<Vec<(f64, String)>>,
+  /// `FrameTicks`: what each frame edge (bottom, left, top, right) carries.
+  /// The labels of an explicit bottom / left list are also in `ticks_x` /
+  /// `ticks_y`.
+  pub frame_tick_edges: [FrameEdgeTicks; 4],
   /// The plot theme labels the axes without explicit ticks with
   /// `Charting`SimpleTicks` (majors only, about six) over the displayed
   /// range instead of the automatic ticks.
@@ -3143,8 +3266,11 @@ pub(crate) struct PlotOptions {
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
-  /// `FrameTicksStyle -> …`: font size / color of the tick labels alone.
+  /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
+  /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
+  /// colour and thickness of its tick marks, and the colour of its labels.
+  pub frame_ticks_styles: [Option<SeriesStyle>; 4],
   /// Set when the bottom `FrameLabel` is a `Grid[…]`/`TableForm[…]` — a
   /// picture to embed under the frame instead of the plain-text
   /// `frame_label_bottom` (which stays empty in that case).
@@ -3162,9 +3288,9 @@ pub(crate) struct PlotOptions {
   /// `TicksStyle -> s | {xs, ys}`: the style of each axis's tick marks and
   /// tick labels.
   pub ticks_style: [Option<SeriesStyle>; 2],
-  /// `FrameStyle -> s`: the style of the frame edges, their tick marks and
-  /// tick labels.
-  pub frame_style: Option<SeriesStyle>,
+  /// `FrameStyle` per frame edge (bottom, left, top, right): the style of
+  /// the edge, its tick marks and its tick labels.
+  pub frame_styles: [Option<SeriesStyle>; 4],
   /// `MeshStyle -> s | {s1, s2, …}`: the style of the mesh points of each
   /// mesh function (cycled). `None` entries draw them in the curve's style.
   pub mesh_styles: Vec<Option<SeriesStyle>>,
@@ -3221,6 +3347,27 @@ pub(crate) fn scaled_graphic_label_size(
 pub(crate) struct LabelStyleSpec {
   pub color: Option<WoxiColor>,
   pub font_size: Option<f64>,
+  pub bold: bool,
+}
+
+impl LabelStyleSpec {
+  /// Read a `LabelStyle` / `FrameTicksStyle` value; `None` when it sets
+  /// none of the colour, size and weight.
+  pub(crate) fn parse(value: &Expr) -> Option<Self> {
+    let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+    let items: Vec<Expr> = match &val {
+      Expr::List(items) => items.to_vec(),
+      Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
+      other => vec![other.clone()],
+    };
+    let (bold, _, color, font_size) =
+      crate::functions::chart::parse_style_directive_args(&items);
+    (color.is_some() || font_size.is_some() || bold).then_some(Self {
+      color,
+      font_size,
+      bold,
+    })
+  }
 }
 
 impl PlotOptions {
@@ -3281,8 +3428,7 @@ impl Default for PlotOptions {
       evaluated: false,
       ticks_x: None,
       ticks_y: None,
-      ticks_top: None,
-      ticks_right: None,
+      frame_tick_edges: FrameEdgeTicks::defaults(),
       simple_ticks: false,
       frame_label_bottom: None,
       frame_label_left: None,
@@ -3327,10 +3473,11 @@ impl Default for PlotOptions {
       point_colors: Vec::new(),
       label_style: None,
       tick_label_style: None,
+      frame_ticks_styles: [None, None, None, None],
       joined_per_series: None,
       axes_style: [None, None],
       ticks_style: [None, None],
-      frame_style: None,
+      frame_styles: [None, None, None, None],
       mesh_styles: Vec::new(),
       mesh_functions: Vec::new(),
       mesh_shading: None,
@@ -3834,57 +3981,6 @@ pub(crate) fn explicit_ticks_svg(
   out
 }
 
-/// Mark and label the explicit `FrameTicks` of the top and right frame
-/// edges: ticks point into the frame, labels sit above / right of it.
-/// Arguments as for [`explicit_ticks_svg`].
-pub(crate) fn explicit_opposite_ticks_svg(
-  ticks_top: Option<&Vec<(f64, String)>>,
-  ticks_right: Option<&Vec<(f64, String)>>,
-  (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
-  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
-  sf: f64,
-  label_fill: &str,
-  tick_font_pt: f64,
-) -> String {
-  let mut out = String::new();
-  let tick_len = sf * 5.0;
-  let tick_font = sf * tick_font_pt;
-  if let Some(ticks) = ticks_top {
-    for (pos, label) in ticks {
-      if *pos < x_min || *pos > x_max || x_max <= x_min {
-        continue;
-      }
-      let px = plot_x0 + (pos - x_min) / (x_max - x_min) * plot_w;
-      out.push_str(&format!(
-        "<line x1=\"{px:.1}\" y1=\"{plot_y0:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
-        plot_y0 + tick_len,
-      ));
-      out.push_str(&format!(
-        "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
-        plot_y0 - tick_len,
-      ));
-    }
-  }
-  if let Some(ticks) = ticks_right {
-    let edge_x = plot_x0 + plot_w;
-    for (pos, label) in ticks {
-      if *pos < y_min || *pos > y_max || y_max <= y_min {
-        continue;
-      }
-      let py = plot_y0 + plot_h - (pos - y_min) / (y_max - y_min) * plot_h;
-      out.push_str(&format!(
-        "<line x1=\"{edge_x:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
-        edge_x - tick_len,
-      ));
-      out.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"start\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
-        edge_x + tick_len,
-      ));
-    }
-  }
-  out
-}
-
 /// Core SVG generation for 2D line plots with full option support.
 /// Draw a plot's labels — `FrameLabel` on all four edges, `AxesLabel` at the
 /// ends of the axes, and the `PlotLabel` above them — into `labels_svg`.
@@ -3921,6 +4017,11 @@ pub(crate) fn plot_labels_svg(
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
+  let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
+    " font-weight=\"bold\""
+  } else {
+    ""
+  };
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let title_default_fill = title_default_fill_owned
@@ -3952,7 +4053,7 @@ pub(crate) fn plot_labels_svg(
     bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
          fill=\"{label_fill}\">{}</text>\n",
       text_svg(x_label, cx)
     ));
@@ -3991,7 +4092,7 @@ pub(crate) fn plot_labels_svg(
     let lx = box_left + ascent(label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
          fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
       text_svg(y_label, lx)
     ));
@@ -4038,7 +4139,7 @@ pub(crate) fn plot_labels_svg(
       let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
            fill=\"{label_fill}\">{}</text>\n",
         text_svg(line, cx)
       ));
@@ -4068,7 +4169,7 @@ pub(crate) fn plot_labels_svg(
     let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
          fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
       text_svg(right_label, rx)
     ));
@@ -4411,6 +4512,15 @@ fn generate_svg_with_options(
     (show_x_axis, show_y_axis)
   };
   let show_ticks = opts.ticks_visible();
+  // Which frame edges (bottom, left, top, right) carry their automatic tick
+  // labels; an unframed plot labels its axes.
+  let frame_edge_labeled: [bool; 4] = std::array::from_fn(|edge| {
+    if opts.frame {
+      matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
+    } else {
+      edge < 2
+    }
+  });
   let mut render_width = svg_width * RESOLUTION_SCALE;
   let mut render_height = svg_height * RESOLUTION_SCALE;
 
@@ -4678,17 +4788,15 @@ fn generate_svg_with_options(
   }
 
   let (theme_bg, theme_gray, _, label_fill, title_default_fill) = plot_theme();
-  // `FrameStyle` recolours the frame, its tick marks and its tick labels.
-  let (dark_gray, frame_width) = frame_paint(opts, theme_gray);
-  // `FrameTicksStyle` recolours the tick labels without touching the frame.
-  let tick_text_color =
-    opts
-      .tick_label_style
-      .and_then(|s| s.color)
-      .map_or(dark_gray, |c| {
-        let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-        RGBColor(byte(c.r), byte(c.g), byte(c.b))
-      });
+  // `FrameStyle` and `FrameTicksStyle` paint each frame edge, its tick
+  // marks and its tick labels.
+  let frame_paints = frame_edge_paints(opts, theme_gray);
+  let dark_gray = theme_gray;
+  let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
+    FontStyle::Bold
+  } else {
+    FontStyle::Normal
+  };
   // Background -> color replaces the theme background for the whole image.
   let bg_color = opts.background.unwrap_or(theme_bg);
 
@@ -4750,7 +4858,10 @@ fn generate_svg_with_options(
           y_major = ymaj;
           let x_minor = if date_axis { xmaj } else { minor_tick_step(xmaj) };
           let y_minor = minor_tick_step(ymaj);
-          x_labels_count = if !tick_axis_x || date_axis || has_explicit_x_ticks
+          x_labels_count = if !tick_axis_x
+            || date_axis
+            || has_explicit_x_ticks
+            || !frame_edge_labeled[0]
           {
             0
           } else if log_x {
@@ -4759,7 +4870,10 @@ fn generate_svg_with_options(
           } else {
             ((x_max - x_min) / x_minor).round() as usize + 1
           };
-          y_labels_count = if !tick_axis_y || has_explicit_y_ticks {
+          y_labels_count = if !tick_axis_y
+            || has_explicit_y_ticks
+            || !frame_edge_labeled[1]
+          {
             0
           } else if log_y {
             10
@@ -4819,14 +4933,20 @@ fn generate_svg_with_options(
               }
             })
             .axis_style(axis_style)
-            .label_style(
+            .x_label_style(
               (
                 "sans-serif",
                 // Plotters' SVG backend writes 1/1.24 of the size it is given.
                 frame_tick_font * sf * 1.24,
+                label_weight,
               )
                 .into_font()
-                .color(&tick_text_color),
+                .color(&frame_paints[0].label),
+            )
+            .y_label_style(
+              ("sans-serif", frame_tick_font * sf * 1.24, label_weight)
+                .into_font()
+                .color(&frame_paints[1].label),
             )
             .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
             .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
@@ -4985,11 +5105,16 @@ fn generate_svg_with_options(
           }
         }
 
-        // Draw the frame's borders (all four unless `Frame` names edges).
+        // Draw the frame's borders (all four unless `Frame` names edges),
+        // each in its own `FrameStyle`.
         if opts.frame {
-          let frame_style = dark_gray.stroke_width(frame_width);
+          let style_of = |p: &FrameEdgePaint| p.line.stroke_width(p.line_width);
           let edges = opts.frame_edges.without(opts.frame_hidden_edges);
-          if edges == FrameEdges::ALL {
+          let uniform = frame_paints
+            .iter()
+            .all(|p| (p.line, p.line_width) == (frame_paints[0].line, frame_paints[0].line_width));
+          let closed = edges == FrameEdges::ALL && uniform;
+          if closed {
             chart
               .draw_series(std::iter::once(PathElement::new(
                 vec![
@@ -4999,21 +5124,21 @@ fn generate_svg_with_options(
                   (x_min, y_max),
                   (x_min, y_min),
                 ],
-                frame_style,
+                style_of(&frame_paints[0]),
               )))
               .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
           }
-          for (on, from, to) in [
-            (edges.bottom, (x_min, y_min), (x_max, y_min)),
-            (edges.right, (x_max, y_min), (x_max, y_max)),
-            (edges.top, (x_max, y_max), (x_min, y_max)),
-            (edges.left, (x_min, y_max), (x_min, y_min)),
+          for (on, paint, from, to) in [
+            (edges.bottom, &frame_paints[0], (x_min, y_min), (x_max, y_min)),
+            (edges.right, &frame_paints[3], (x_max, y_min), (x_max, y_max)),
+            (edges.top, &frame_paints[2], (x_max, y_max), (x_min, y_max)),
+            (edges.left, &frame_paints[1], (x_min, y_max), (x_min, y_min)),
           ] {
-            if on && edges != FrameEdges::ALL {
+            if on && !closed {
               chart
                 .draw_series(std::iter::once(PathElement::new(
                   vec![from, to],
-                  frame_style,
+                  style_of(paint),
                 )))
                 .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
             }
@@ -5784,8 +5909,9 @@ fn generate_svg_with_options(
 
   // A frame carries its tick marks on all four edges, pointing inward; the
   // majors line up with the labels the chart mesh drew. Log and date axes
-  // place their own ticks, and an axis given explicit `Ticks` marks only
-  // the positions it names.
+  // place their own automatic ticks; an edge given explicit ticks (by
+  // `FrameTicks`, or the bottom and left ones by `Ticks`) marks and labels
+  // only the positions it names.
   if opts.frame && show_ticks {
     let area = (
       margin_left as f64 + y_label_area as f64,
@@ -5799,20 +5925,53 @@ fn generate_svg_with_options(
         - margin_bottom as f64
         - x_label_area as f64,
     );
-    let auto_x = opts.ticks_x.is_none() && !opts.log_x && !opts.date_axis;
-    let auto_y = opts.ticks_y.is_none() && !opts.log_y;
-    let x_axis = auto_x.then(|| (x_min, x_max, axis_tick_step(x_max - x_min)));
-    let y_axis = auto_y.then(|| (y_min, y_max, axis_tick_step(y_max - y_min)));
-    inject_inward_frame_ticks(
-      &mut buf,
+    let mut edges = opts.frame_tick_edges.clone();
+    for (edge, explicit) in [(0, &opts.ticks_x), (1, &opts.ticks_y)] {
+      if let (FrameEdgeTicks::Labeled, Some(ticks)) = (&edges[edge], explicit) {
+        edges[edge] = FrameEdgeTicks::Explicit(
+          ticks
+            .iter()
+            .map(|(pos, label)| ExplicitTick {
+              pos: *pos,
+              label: label.clone(),
+              len: None,
+              style: None,
+            })
+            .collect(),
+        );
+      }
+    }
+    let auto_x = !opts.log_x && !opts.date_axis;
+    let auto_y = !opts.log_y;
+    let far_labels = |scale: AxisScale, date: bool| {
+      explicit_ticks_in_axis_space(
+        Some(&AxisTicks::new(scale, date, None).majors),
+        scale.log,
+      )
+      .unwrap_or_default()
+    };
+    let top_labels = far_labels(x_scale, opts.date_axis);
+    let right_labels = far_labels(y_scale, false);
+    let ticks_svg = frame_ticks_svg(&FrameTicksLayout {
       area,
-      x_axis,
-      y_axis,
-      (MINOR_TICK_LEN as f64 * sf, MAJOR_TICK_LEN as f64 * sf),
+      ranges: log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
+      log: (opts.log_x, opts.log_y),
+      auto: [
+        auto_x.then(|| (x_min, x_max, axis_tick_step(x_max - x_min))),
+        auto_y.then(|| (y_min, y_max, axis_tick_step(y_max - y_min))),
+      ],
+      auto_labels: [&top_labels, &right_labels],
+      edges: &edges,
+      present: opts.frame_edges,
+      marked: opts.frame_edges.without(opts.frame_hidden_edges),
+      paints: &frame_paints,
       sf,
-      &format!("rgb({},{},{})", dark_gray.0, dark_gray.1, dark_gray.2),
-      opts.frame_edges.without(opts.frame_hidden_edges),
-    );
+      font: plot_padding::plot_tick_font(opts),
+      bold: opts.label_style.is_some_and(|s| s.bold),
+    });
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &ticks_svg);
+    }
   }
 
   if origin_axes {
@@ -5880,8 +6039,6 @@ fn generate_svg_with_options(
     || has_right_label
     || opts.ticks_x.is_some()
     || opts.ticks_y.is_some()
-    || opts.ticks_top.is_some()
-    || opts.ticks_right.is_some()
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -5896,15 +6053,16 @@ fn generate_svg_with_options(
       render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
-      // The origin axes already carry any explicit ticks.
+      // The origin axes and the frame already carry any explicit ticks.
+      let unframed = !origin_axes && !opts.frame;
       let mut labels_svg = explicit_ticks_svg(
         explicit_ticks_in_axis_space(
-          opts.ticks_x.as_ref().filter(|_| !origin_axes),
+          opts.ticks_x.as_ref().filter(|_| unframed),
           opts.log_x,
         )
         .as_ref(),
         explicit_ticks_in_axis_space(
-          opts.ticks_y.as_ref().filter(|_| !origin_axes),
+          opts.ticks_y.as_ref().filter(|_| unframed),
           opts.log_y,
         )
         .as_ref(),
@@ -5915,24 +6073,13 @@ fn generate_svg_with_options(
         opts.frame_hidden_edges,
         crate::functions::plot_padding::plot_tick_font(opts),
       );
-      labels_svg.push_str(&explicit_opposite_ticks_svg(
-        explicit_ticks_in_axis_space(opts.ticks_top.as_ref(), opts.log_x)
-          .as_ref(),
-        explicit_ticks_in_axis_space(opts.ticks_right.as_ref(), opts.log_y)
-          .as_ref(),
-        (plot_x0, margin_top, plot_w, plot_h),
-        log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
-        sf,
-        label_fill,
-        crate::functions::plot_padding::plot_tick_font(opts),
-      ));
 
       let top_pad = match opts.image_padding {
         Some([_, _, _, top]) => top,
         None => pad.top,
       };
       let layout = plot_padding::LabelLayout {
-        tick_room: decorations.tick_rooms(),
+        tick_room: decorations.tick_rooms(plot_w / sf),
         title_top: (margin_top - (top_pad + decorations.title) * sf).max(0.0),
       };
       labels_svg.push_str(&plot_labels_svg(
@@ -10201,37 +10348,64 @@ pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
   }
 }
 
-/// Explicit tick lists (`{pos, label}` entries) a `FrameTicks` value puts on
-/// the bottom and left edge, as `(bottom, left)`; they replace the automatic
-/// ticks, and an empty list leaves that edge bare. `None` for an edge that
-/// keeps its automatic ticks.
-#[allow(clippy::type_complexity)]
-pub(crate) fn frame_explicit_ticks(
-  value: &Expr,
-) -> (
-  Option<Option<Vec<(f64, String)>>>,
-  Option<Option<Vec<(f64, String)>>>,
-) {
-  let (bottom, left, _, _) = frame_tick_edge_specs(value);
-  let explicit = |spec: Option<&Expr>| match spec {
-    Some(Expr::List(l)) if l.is_empty() => Some(Some(Vec::new())),
-    Some(e @ Expr::List(_)) => parse_explicit_ticks(e).map(Some),
-    // A spec that still has to be worked out (`Table[{j, …}, {j, 0, 1, .2}]`)
-    // is read once evaluated; a bare keyword keeps the automatic ticks.
-    Some(e @ (Expr::FunctionCall { .. } | Expr::CurriedCall { .. })) => {
-      parse_explicit_ticks(e).map(Some)
-    }
-    _ => None,
-  };
-  (explicit(bottom), explicit(left))
+/// What a `FrameTicks` setting draws on one frame edge.
+#[derive(Clone, Debug)]
+pub(crate) enum FrameEdgeTicks {
+  /// No tick marks and no labels.
+  None,
+  /// The automatic tick marks, unlabelled (`Automatic` on the top and the
+  /// right edge).
+  Marks,
+  /// The automatic tick marks with their labels.
+  Labeled,
+  /// Exactly the ticks listed.
+  Explicit(Vec<ExplicitTick>),
 }
 
-/// The `(bottom, left, top, right)` edge specs of a `FrameTicks` value
-/// written as `{{l, r}, {b, t}}`, `{b, l, t, r}` or `{xspec, yspec}`; the
-/// last form only addresses the bottom and left edges.
-fn frame_tick_edge_specs(
-  value: &Expr,
-) -> (Option<&Expr>, Option<&Expr>, Option<&Expr>, Option<&Expr>) {
+impl FrameEdgeTicks {
+  /// `FrameTicks -> Automatic`: the bottom and left edges labelled, the top
+  /// and right ones marked only (bottom, left, top, right).
+  pub(crate) fn defaults() -> [Self; 4] {
+    [Self::Labeled, Self::Labeled, Self::Marks, Self::Marks]
+  }
+
+  pub(crate) fn is_none(&self) -> bool {
+    matches!(self, Self::None)
+  }
+
+  /// The ticks this edge labels with an explicit list, as `(pos, label)`.
+  pub(crate) fn explicit_labels(&self) -> Option<Vec<(f64, String)>> {
+    match self {
+      Self::Explicit(ticks) => {
+        Some(ticks.iter().map(|t| (t.pos, t.label.clone())).collect())
+      }
+      _ => None,
+    }
+  }
+}
+
+/// The `(bottom, left, top, right)` edges of a `FrameTicks` value written
+/// as `None | All | Automatic`, `{{l, r}, {b, t}}`, `{b, l, t, r}` or
+/// `{xspec, yspec}` — the last gives the bottom and top edge `xspec` and
+/// the left and right one `yspec`. `Automatic` labels the bottom and left
+/// edge and only marks the top and right one; `All` labels any edge.
+pub(crate) fn parse_frame_ticks(value: &Expr) -> [FrameEdgeTicks; 4] {
+  let one = |e: &Expr, labeled: bool| match e {
+    Expr::Identifier(v) if v == "None" || v == "False" => FrameEdgeTicks::None,
+    Expr::Identifier(v) if v == "All" => FrameEdgeTicks::Labeled,
+    Expr::List(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
+      // A spec that still has to be worked out (`Table[{j, …}, {j, 0, 1,
+      // .2}]`) is read once evaluated; one that names no ticks keeps the
+      // automatic ones.
+      match parse_explicit_tick_entries(e) {
+        Some(ticks) => FrameEdgeTicks::Explicit(ticks),
+        None if labeled => FrameEdgeTicks::Labeled,
+        None => FrameEdgeTicks::Marks,
+      }
+    }
+    _ if labeled => FrameEdgeTicks::Labeled,
+    _ => FrameEdgeTicks::Marks,
+  };
   // An edge pair holds specs, never the bare numbers / strings of a tick.
   let is_pair = |e: &Expr| match e {
     Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
@@ -10240,44 +10414,74 @@ fn frame_tick_edge_specs(
     _ => false,
   };
   match value {
-    Expr::List(items) if items.len() == 4 => (
-      Some(&items[0]),
-      Some(&items[1]),
-      Some(&items[2]),
-      Some(&items[3]),
-    ),
+    Expr::List(items) if items.len() == 4 => [
+      one(&items[0], true),
+      one(&items[1], true),
+      one(&items[2], false),
+      one(&items[3], false),
+    ],
     Expr::List(items) if items.len() == 2 && items.iter().all(is_pair) => {
       match (&items[0], &items[1]) {
-        (Expr::List(lr), Expr::List(bt)) => {
-          (bt.first(), lr.first(), bt.get(1), lr.get(1))
-        }
-        _ => (None, None, None, None),
+        (Expr::List(lr), Expr::List(bt)) => [
+          one(&bt[0], true),
+          one(&lr[0], true),
+          one(&bt[1], false),
+          one(&lr[1], false),
+        ],
+        _ => FrameEdgeTicks::defaults(),
       }
     }
+    // `{xspec, yspec}`: an explicit list labels its own edge only.
     Expr::List(items) if items.len() == 2 => {
-      (Some(&items[0]), Some(&items[1]), None, None)
+      let far = |e: &Expr| match one(e, false) {
+        FrameEdgeTicks::Explicit(_) => FrameEdgeTicks::Marks,
+        other => other,
+      };
+      [
+        one(&items[0], true),
+        one(&items[1], true),
+        far(&items[0]),
+        far(&items[1]),
+      ]
     }
-    _ => (None, None, None, None),
+    other => [
+      one(other, true),
+      one(other, true),
+      one(other, false),
+      one(other, false),
+    ],
   }
 }
 
-/// Explicit tick lists on the top and right edge of a `FrameTicks` value,
-/// as `(top, right)`; `None` for an edge without an explicit list.
-#[allow(clippy::type_complexity)]
-pub(crate) fn frame_explicit_ticks_opposite(
+/// Per frame edge `(bottom, left, top, right)`, the style a `FrameStyle` or
+/// `FrameTicksStyle` value gives it: `s` styles every edge, `{lr, bt}` the
+/// left and right edges with `lr` and the bottom and top ones with `bt`,
+/// and `{{l, r}, {b, t}}` each edge on its own.
+pub(crate) fn parse_frame_edge_styles(
   value: &Expr,
-) -> (Option<Vec<(f64, String)>>, Option<Vec<(f64, String)>>) {
-  let (_, _, top, right) = frame_tick_edge_specs(value);
-  let explicit = |spec: Option<&Expr>| match spec {
-    Some(
-      e
-      @ (Expr::List(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. }),
-    ) => parse_explicit_ticks(e),
-    _ => None,
+) -> [Option<SeriesStyle>; 4] {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let pair = |e: &Expr| match e {
+    Expr::List(p) if p.len() == 2 => {
+      (parse_style_directives(&p[0]), parse_style_directives(&p[1]))
+    }
+    other => {
+      let s = parse_style_directives(other);
+      (s.clone(), s)
+    }
   };
-  (explicit(top), explicit(right))
+  match &val {
+    Expr::List(items) if items.len() == 2 => {
+      let (l, r) = pair(&items[0]);
+      let (b, t) = pair(&items[1]);
+      [b, l, t, r]
+    }
+    other => {
+      let s = parse_style_directives(other);
+      [s.clone(), s.clone(), s.clone(), s]
+    }
+  }
 }
-
 /// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
 /// Callers can then append custom SVG elements using the coordinate transform.
 pub(crate) fn generate_axes_only(
@@ -11943,20 +12147,54 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   .then_some(style)
 }
 
-/// The colour and stroke width (render units) of a plot's frame: the theme's
-/// `gray` at one display pixel, unless `FrameStyle` sets either.
-fn frame_paint(opts: &PlotOptions, gray: RGBColor) -> (RGBColor, u32) {
-  let style = opts.frame_style.as_ref();
-  let color = style.and_then(|s| s.color).map_or(gray, |c| {
+/// How one edge of a plot's frame is painted: its line, its tick marks and
+/// its tick labels.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) struct FrameEdgePaint {
+  pub line: RGBColor,
+  /// Stroke width of the line, in render units.
+  pub line_width: u32,
+  pub mark: RGBColor,
+  /// Stroke width of the tick marks, in render units.
+  pub mark_width: f64,
+  pub label: RGBColor,
+}
+
+/// The paint of each frame edge (bottom, left, top, right). The line takes
+/// its `FrameStyle` (else the theme's `gray` at one display pixel); the
+/// tick marks their `FrameTicksStyle` over the `FrameStyle`; the labels the
+/// colour of the `FrameTicksStyle`, else of the `FrameStyle`, else of the
+/// `LabelStyle`.
+pub(crate) fn frame_edge_paints(
+  opts: &PlotOptions,
+  gray: RGBColor,
+) -> [FrameEdgePaint; 4] {
+  let rgb = |c: WoxiColor| {
     let (r, g, b) = color_to_rgb8(c);
     RGBColor(r, g, b)
-  });
-  let width = style
-    .and_then(|s| s.thickness)
-    .map_or(RESOLUTION_SCALE, |t| {
-      ((t * RESOLUTION_SCALE as f64).round() as u32).max(1)
-    });
-  (color, width)
+  };
+  let width = |t: f64| ((t * RESOLUTION_SCALE as f64).round() as u32).max(1);
+  std::array::from_fn(|edge| {
+    let frame = opts.frame_styles[edge].as_ref();
+    let ticks = opts.frame_ticks_styles[edge].as_ref();
+    let frame_color = frame.and_then(|s| s.color);
+    let tick_color = ticks.and_then(|s| s.color).or(frame_color);
+    let line_width = frame
+      .and_then(|s| s.thickness)
+      .map_or(RESOLUTION_SCALE, width);
+    FrameEdgePaint {
+      line: frame_color.map_or(gray, rgb),
+      line_width,
+      mark: tick_color.map_or(gray, rgb),
+      mark_width: ticks
+        .and_then(|s| s.thickness)
+        .or(frame.and_then(|s| s.thickness))
+        .map_or(RESOLUTION_SCALE, width) as f64,
+      label: tick_color
+        .or(opts.label_style.and_then(|s| s.color))
+        .map_or(gray, rgb),
+    }
+  })
 }
 
 /// Parse an axis style option (`AxesStyle`, `TicksStyle`) into the style of
@@ -12167,6 +12405,31 @@ fn row_holds_graphics(args: &[Expr]) -> bool {
 /// escaped, and typeset where the tick asked for something more than plain
 /// text — so [`explicit_ticks_svg`] can emit it verbatim.
 pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
+  parse_explicit_tick_entries(value)
+    .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
+}
+
+/// One entry of an explicit tick list: `pos`, `{pos, label}`, `{pos, label,
+/// len}`, `{pos, label, {plen, mlen}}` or `{pos, label, len, style}`.
+#[derive(Clone, Debug)]
+pub(crate) struct ExplicitTick {
+  pub pos: f64,
+  /// The SVG `<text>` content drawn at the tick (see
+  /// [`parse_explicit_ticks`]).
+  pub label: String,
+  /// How far the mark reaches into and out of the plot, as fractions of the
+  /// plot width; `None` gives it the automatic major tick length, inward.
+  pub len: Option<(f64, f64)>,
+  /// The mark's own style (`{pos, label, len, Red}`); it never colours the
+  /// label.
+  pub style: Option<SeriesStyle>,
+}
+
+/// The entries of an explicit tick list with their lengths and styles; see
+/// [`parse_explicit_ticks`] for how positions and labels are read.
+pub(crate) fn parse_explicit_tick_entries(
+  value: &Expr,
+) -> Option<Vec<ExplicitTick>> {
   // A spec written out as a list keeps its entries as written: a tick is
   // labelled with the expression standing at it, and `3 Pi/2` set as one
   // fraction is not the same reading as the `(3/2) Pi` it evaluates to.
@@ -12178,7 +12441,15 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
   let Expr::List(entries) = &val else {
     return None;
   };
-  let ticks: Vec<(f64, String)> = entries
+  // `len` reaches inward only (whatever its sign); `{plen, mlen}` reaches
+  // `plen` in and `mlen` out.
+  let tick_len = |e: &Expr| match e {
+    Expr::List(pm) if pm.len() == 2 => {
+      Some((try_eval_to_f64(&pm[0])?, try_eval_to_f64(&pm[1])?))
+    }
+    other => try_eval_to_f64(other).map(|l| (l.abs(), 0.0)),
+  };
+  let ticks: Vec<ExplicitTick> = entries
     .iter()
     .filter_map(|entry| match entry {
       Expr::List(pair) if pair.len() >= 2 => {
@@ -12196,12 +12467,22 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
             || crate::functions::graphics::svg_escape(&format_tick(pos)),
             |text| crate::functions::graphics::box_string_to_svg(&text),
           );
-        Some((pos, label))
+        Some(ExplicitTick {
+          pos,
+          label,
+          len: pair.get(2).and_then(tick_len),
+          style: pair.get(3).and_then(parse_style_directives),
+        })
       }
       other => {
         let other = &numeric_tick_value(other);
         let pos = tick_position(other)?;
-        Some((pos, bare_tick_label(other, pos)))
+        Some(ExplicitTick {
+          pos,
+          label: bare_tick_label(other, pos),
+          len: None,
+          style: None,
+        })
       }
     })
     .collect();
@@ -12940,7 +13221,7 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.ticks_style = parse_axis_pair_styles(replacement);
     }
     "FrameStyle" => {
-      plot_opts.frame_style = parse_style_directives(replacement);
+      plot_opts.frame_styles = parse_frame_edge_styles(replacement);
       hide_transparent_frame_edges(replacement, plot_opts);
     }
     "MeshStyle" => {
@@ -12960,18 +13241,15 @@ pub(crate) fn apply_common_plot_option(
     }
     "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
-      let (x, y) = frame_tick_axes_visible(replacement);
-      plot_opts.frame_ticks = x || y;
-      let (bottom, left) = frame_explicit_ticks(replacement);
-      if let Some(t) = bottom {
-        plot_opts.ticks_x = t;
+      let edges = parse_frame_ticks(replacement);
+      plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
+      if let Some(t) = edges[0].explicit_labels() {
+        plot_opts.ticks_x = Some(t);
       }
-      if let Some(t) = left {
-        plot_opts.ticks_y = t;
+      if let Some(t) = edges[1].explicit_labels() {
+        plot_opts.ticks_y = Some(t);
       }
-      let (top, right) = frame_explicit_ticks_opposite(replacement);
-      plot_opts.ticks_top = top;
-      plot_opts.ticks_right = right;
+      plot_opts.frame_tick_edges = edges;
     }
     "Evaluated" => {
       plot_opts.evaluated =
@@ -12986,20 +13264,11 @@ pub(crate) fn apply_common_plot_option(
     }
     "FrameLabel" => apply_frame_label_option(replacement, plot_opts),
     "FrameTicksStyle" => {
-      let val = evaluate_expr_to_expr(replacement)
-        .unwrap_or_else(|_| replacement.clone());
-      let (color, font_size) = parse_label_style(&val);
-      if color.is_some() || font_size.is_some() {
-        plot_opts.tick_label_style = Some(LabelStyleSpec { color, font_size });
-      }
+      plot_opts.tick_label_style = LabelStyleSpec::parse(replacement);
+      plot_opts.frame_ticks_styles = parse_frame_edge_styles(replacement);
     }
     "LabelStyle" => {
-      let val = evaluate_expr_to_expr(replacement)
-        .unwrap_or_else(|_| replacement.clone());
-      let (color, font_size) = parse_label_style(&val);
-      if color.is_some() || font_size.is_some() {
-        plot_opts.label_style = Some(LabelStyleSpec { color, font_size });
-      }
+      plot_opts.label_style = LabelStyleSpec::parse(replacement);
     }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" || s == "False" => {
@@ -13340,15 +13609,30 @@ fn map_axis_options(
       None => false,
     });
   };
+  // Explicit frame ticks of the edges along this axis (bottom/top for x,
+  // left/right for y).
+  let map_edge = |e: &mut FrameEdgeTicks| {
+    if let FrameEdgeTicks::Explicit(ticks) = e {
+      ticks.retain_mut(|t| match f(t.pos) {
+        Some(p) => {
+          t.pos = p;
+          true
+        }
+        None => false,
+      });
+    }
+  };
   if axis == 0 {
     opts.axes_origin.0 = opts.axes_origin.0.and_then(f);
     map_ticks(&mut opts.ticks_x);
-    map_ticks(&mut opts.ticks_top);
+    map_edge(&mut opts.frame_tick_edges[0]);
+    map_edge(&mut opts.frame_tick_edges[2]);
     map_grid(&mut opts.grid_x_lines);
   } else {
     opts.axes_origin.1 = opts.axes_origin.1.and_then(f);
     map_ticks(&mut opts.ticks_y);
-    map_ticks(&mut opts.ticks_right);
+    map_edge(&mut opts.frame_tick_edges[1]);
+    map_edge(&mut opts.frame_tick_edges[3]);
     map_grid(&mut opts.grid_y_lines);
   }
 }
