@@ -45010,6 +45010,17 @@ mod wl_table_layout {
   }
 
   #[test]
+  fn traditional_form_fraction_line_sits_on_the_math_axis() {
+    // The line of `1/b` is 0.26 em above the baseline of `a ==`, level with
+    // the middle of the `=`, not on the baseline.
+    let svg =
+      interpret("ExportString[TraditionalForm[HoldForm[a == 1/b]], \"SVG\"]")
+        .unwrap();
+    assert!(svg.contains("translate(12.7,6.5)"), "{svg}");
+    assert!(svg.contains("<line x1=\"0\" y1=\"14.0\""), "{svg}");
+  }
+
+  #[test]
   fn matrix_form_spacing_and_parentheses() {
     // MatrixForm is a TableForm with TableSpacing -> {1, 1} between hairline
     // parentheses that stop 0.12 em short of its top and bottom.

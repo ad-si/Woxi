@@ -12978,9 +12978,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let den_x = (frac_w - den.width) / 2.0;
         let den_y = line_y + line_thickness + gap;
 
-        let total_h = den_y + den.height;
-        // Baseline of the fraction = at the line (so it aligns with surrounding text)
-        let baseline = line_y;
+        // The fraction line sits on the math axis, 0.26 em above the
+        // baseline of the surrounding text (the middle of a `=` or `+`).
+        let baseline = line_y + 0.26 * font_size;
+        let total_h = (den_y + den.height).max(baseline);
 
         let elements = format!(
           "{}\
