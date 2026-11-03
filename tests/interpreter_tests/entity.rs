@@ -354,6 +354,50 @@ mod entity_store_tests {
   }
 }
 
+mod city_data_tests {
+  use super::*;
+
+  #[test]
+  fn city_coordinates_are_latitude_longitude() {
+    clear_state();
+    assert_eq!(
+      interpret("CityData[\"Frankfurt\", \"Coordinates\"]").unwrap(),
+      "{50.1167, 8.6833}"
+    );
+    assert_eq!(
+      interpret("CityData[\"Sydney\", \"Coordinates\"]").unwrap(),
+      "{-33.8833, 151.2167}"
+    );
+  }
+
+  #[test]
+  fn city_entity_and_properties() {
+    clear_state();
+    assert_eq!(
+      interpret("CityData[\"Paris\"]").unwrap(),
+      "Entity[City, {Paris, IleDeFrance, France}]"
+    );
+    assert_eq!(
+      interpret("CityData[\"paris\", \"Country\"]").unwrap(),
+      "Entity[Country, France]"
+    );
+    assert_eq!(
+      interpret("CityData[Entity[\"City\", {\"Berlin\", \"Berlin\", \"Germany\"}], \"Latitude\"]")
+        .unwrap(),
+      "52.5167"
+    );
+  }
+
+  #[test]
+  fn unknown_city_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("CityData[\"Nowhereville\", \"Coordinates\"]").unwrap(),
+      "CityData[Nowhereville, Coordinates]"
+    );
+  }
+}
+
 mod country_data_tests {
   use super::*;
 

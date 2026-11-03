@@ -2380,6 +2380,9 @@ fn evaluate_function_call_ast_inner(
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
     }
+    "CityData" => {
+      return crate::functions::city_data::city_data_ast(args);
+    }
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
     }
