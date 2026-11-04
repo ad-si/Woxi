@@ -47646,6 +47646,25 @@ mod plot_range_clipping_and_exclusions {
     );
   }
 
+  // The held `Exclusions` value is evaluated in the plot variable first,
+  // so a condition on `D[f, x]` with a defined `f` finds the maxima of f
+  // (it used to stay `D[f, 0.5]` and mark nothing).
+  #[test]
+  fn exclusions_conditions_are_evaluated_symbolically() {
+    let marks = |cond: &str| {
+      let code = format!(
+        "f = Sin[x]; Plot[f, {{x, 0, 10}}, Exclusions -> {{{{{cond}}}}}, \
+         ExclusionsStyle -> Directive[Thickness[0.02], Red]]"
+      );
+      export_svg(&code).matches("<rect ").count()
+        - export_svg("Plot[Sin[x], {x, 0, 10}]")
+          .matches("<rect ")
+          .count()
+    };
+    assert_eq!(marks("D[f, x] == 0, D[f, {x, 2}] <= 0"), 2);
+    assert_eq!(marks("D[f, x] == 0, D[f, {x, 2}] >= 0"), 1);
+  }
+
   #[test]
   fn exclusion_on_the_domain_end_drops_the_end_value() {
     // `Sin[Pi x] == 0` holds at x = 10 too: the step's value there is not

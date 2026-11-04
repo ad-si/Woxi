@@ -479,6 +479,10 @@ pub(crate) fn exclusion_roots(
   }) else {
     return Vec::new();
   };
+  // The plot holds its options: evaluate the conditions once, with the
+  // plot variable cleared, so `{D[f, x] == 0, D[f, {x, 2}] <= 0}` with a
+  // defined `f` becomes equations in `x` before they are sampled.
+  let spec = crate::functions::plot::eval_body_vars_symbolic(&spec, &[var]);
   let conditions: Vec<Expr> = match spec {
     Expr::List(ref items) => items.iter().cloned().collect(),
     other => vec![other],
