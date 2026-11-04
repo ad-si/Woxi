@@ -37601,6 +37601,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       }
       // `FormBox[boxes, form]` only records how its boxes were formatted.
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
+      // `ⅆx` — the differential operator followed by its variable, as a
+      // typeset derivative `ⅆ/ⅆx` writes it.
+      "DifferentialD" if args.len() == 1 => {
+        let mut runs = vec![LabelRun {
+          text: "\u{2146}".to_string(),
+          italic: false,
+          ..Default::default()
+        }];
+        runs.extend(manipulate_label_runs(&args[0], italic));
+        runs
+      }
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
       "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
       // `SuperscriptBox[x, "*"]` reads back as `SuperStar[x]` (and `"†"` as
@@ -37928,6 +37939,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Subsuperscript"
           | "Overscript"
           | "Underscript"
+          | "DifferentialD"
       ) || args.iter().any(contains_presentation_head)
     }
     Expr::BinaryOp { left, right, .. } => {
