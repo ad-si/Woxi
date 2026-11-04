@@ -39102,7 +39102,9 @@ fn display_expr_to_node(
       // `Style[a, Italic]^2` (a Grid header such as "a²"): the styled base
       // keeps its styling and the exponent is typeset as a superscript,
       // rather than falling through to the raw `Power[…]` source text.
-      "Power" if args.len() == 2 && is_style_call(&args[0]) => {
+      // A `HoldForm[10]^k` base (a caption's unevaluated "10 to the k")
+      // keeps its exponent the same way.
+      "Power" if args.len() == 2 && is_styled_power_base(&args[0]) => {
         styled_text_node(expr, bindings)
       }
       // A sub-/superscript leaf (e.g. a Dynamic caption assembling an
@@ -39174,7 +39176,7 @@ fn display_expr_to_node(
       op: crate::syntax::BinaryOperator::Power,
       left,
       ..
-    } if is_style_call(left) => styled_text_node(expr, bindings),
+    } if is_styled_power_base(left) => styled_text_node(expr, bindings),
     // Literal prose in a caption row.
     Expr::String(_) => styled_text_node(expr, bindings),
     // Releasing a `Dynamic[…]` hold (above) can fully evaluate its content
@@ -39241,6 +39243,13 @@ fn is_graphics_value(expr: &Expr) -> bool {
 }
 
 /// Whether `expr` is a `Style[…]`/`StyleForm[…]` call.
+/// A `Power` base whose exponent must be typeset as a superscript in a
+/// caption: a styled base, or a `HoldForm` one (`HoldForm[10]^k`).
+fn is_styled_power_base(expr: &Expr) -> bool {
+  is_style_call(expr)
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "HoldForm")
+}
+
 fn is_style_call(expr: &Expr) -> bool {
   matches!(
     expr,
@@ -41695,6 +41704,15 @@ mod manipulate_display_number_form_tests {
       }
       other => panic!("expected a styled text node, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn holdform_power_caption_keeps_superscript() {
+    // `HoldForm[10]^3` sets as "10" with a superscript 3, not as a bare "10".
+    let node =
+      build_manipulate_display("Row[{HoldForm[10]^3, \" ohms\"}]", &[]);
+    let dbg = format!("{node:?}");
+    assert!(dbg.contains('\u{b3}'), "exponent missing: {dbg}");
   }
 
   #[test]
