@@ -1880,6 +1880,47 @@ mod image_processing {
   }
 
   #[test]
+  fn image_effect_poisson_noise() {
+    clear_state();
+    // Shape is preserved; black stays black; zero amount is a no-op.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[0.5, {4}, {5}]], \
+         {\"PoissonNoise\", 0.2}]]"
+      )
+      .unwrap(),
+      "{5, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0., {2}, {2}]], \
+         {\"PoissonNoise\", 0.2}]]"
+      )
+      .unwrap(),
+      "{{0., 0.}, {0., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageEffect[Image[Table[0.5, {2}, {2}]], \
+         {\"PoissonNoise\", 0}]]"
+      )
+      .unwrap(),
+      "{{0.5, 0.5}, {0.5, 0.5}}"
+    );
+    // Values are non-negative multiples of the amount, and the mean is
+    // preserved on average.
+    assert_eq!(
+      interpret(
+        "d = Flatten[ImageData[ImageEffect[Image[Table[0.5, {40}, {40}]], \
+         {\"PoissonNoise\", 0.25}]]]; \
+         {Min[d] >= 0, Abs[Mean[d] - 0.5] < 0.1}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
   fn image_effect_salt_pepper_values() {
     clear_state();
     // Every pixel is either the original value or pure black/white.

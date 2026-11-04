@@ -2080,6 +2080,11 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// - `"Noise"` (amplitude `a`, default 0.1): adds zero-mean uniform noise
 ///   drawn from `[-a, a]` to every color channel, also unclipped.
 ///
+/// - `"PoissonNoise"` (amount `s`, default 0.1): signal-dependent shot
+///   noise. Each color channel `v` is replaced by `s·k` with
+///   `k ~ Poisson(max(v, 0)/s)`, so the variance grows with brightness
+///   (`s·v`) and the mean is preserved. The scale convention is unverified
+///   against wolframscript (see `conformance_gaps.md`).
 /// - `"Solarization"` (threshold `t`, default 0.5): color values above `t`
 ///   are inverted, the rest are kept.
 /// - `"OilPainting"` (radius `r`, default 2): each pixel takes the mean
@@ -2194,6 +2199,27 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       });
+      out
+    }
+    "PoissonNoise" => {
+      let Some(amount) = numeric_param(0, 0.1) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let amount = amount.abs();
+      let mut out = data.as_ref().clone();
+      if amount > 0.0 {
+        crate::with_rng(|rng| {
+          for pixel in out.chunks_mut(ch) {
+            for channel in pixel.iter_mut().take(color_channels) {
+              let lambda = channel.max(0.0) / amount;
+              *channel = match rand_distr::Poisson::new(lambda) {
+                Ok(dist) => rng.sample(dist) * amount,
+                Err(_) => 0.0,
+              };
+            }
+          }
+        });
+      }
       out
     }
     "Solarization" => {
