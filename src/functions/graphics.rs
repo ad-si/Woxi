@@ -9125,6 +9125,12 @@ fn emit_polygon_vertex_gradient(
     // path folds it into `effective_face_color`.
     let avg = c0.lerp(c1, 0.5).lerp(c2, 1.0 / 3.0);
     let avg = avg.with_alpha(avg.a * opacity);
+    // Blending fully opaque corners can round the alpha just below 1.
+    let avg = if avg.a > 1.0 - 1e-9 {
+      avg.with_alpha(1.0)
+    } else {
+      avg
+    };
     let (sx0, sy0) = screen(p0);
     let (sx1, sy1) = screen(p1);
     let (sx2, sy2) = screen(p2);
