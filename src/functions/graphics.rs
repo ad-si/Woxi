@@ -14978,13 +14978,24 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       result
     }
 
-    // ── Rule → pattern -> replacement ──
+    // ── Rule → pattern → replacement, RuleDelayed → pattern ⧴ replacement
+    // (typeset with the arrows, as in a Wolfram graphic) ──
     Expr::Rule {
       pattern,
       replacement,
     } => {
       format!(
-        "{} -&gt; {}",
+        "{} \u{2192} {}",
+        expr_to_svg_markup(pattern),
+        expr_to_svg_markup(replacement)
+      )
+    }
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      format!(
+        "{} \u{29F4} {}",
         expr_to_svg_markup(pattern),
         expr_to_svg_markup(replacement)
       )
@@ -14995,7 +15006,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       let parts: Vec<String> = items
         .iter()
         .map(|(k, v)| {
-          format!("{} -&gt; {}", expr_to_svg_markup(k), expr_to_svg_markup(v))
+          format!(
+            "{} \u{2192} {}",
+            expr_to_svg_markup(k),
+            expr_to_svg_markup(v)
+          )
         })
         .collect();
       format!("&lt;|{}|&gt;", parts.join(", "))

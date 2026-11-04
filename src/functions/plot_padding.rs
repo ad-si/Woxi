@@ -471,7 +471,14 @@ pub(crate) struct Decorations {
   /// Room the labels placed before / after their curves take left and
   /// right of the plotting area.
   pub side_labels: (f64, f64),
+  /// The widest tick label of each `MultiaxisArrangement` axis standing
+  /// outside the frame, left and right, in order outward.
+  pub extra_axes: [Vec<f64>; 2],
 }
+
+/// How far a `MultiaxisArrangement` axis outside the frame stands beyond
+/// the widest tick label of the axis inside it, as in wolframscript's SVGs.
+pub(crate) const MULTIAXIS_SPACING: f64 = 23.0;
 
 /// The padding around the plotting area, in points.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -511,6 +518,25 @@ impl Decorations {
     out + TICK_LABEL_GAP + ticks.iter().map(size).fold(0.0, f64::max)
   }
 
+  /// How far each extra axis of the left (`side` 0) or right (1) frame
+  /// edge stands from that edge, in points, in order outward.
+  pub(crate) fn extra_axis_offsets(&self, side: usize) -> Vec<f64> {
+    let edge = if side == 0 { 1 } else { 3 };
+    let mut inner = self.frame_ticks[edge]
+      .iter()
+      .map(|b| b.width)
+      .fold(0.0, f64::max);
+    let mut offset = 0.0;
+    self.extra_axes[side]
+      .iter()
+      .map(|&width| {
+        offset += inner + MULTIAXIS_SPACING;
+        inner = width;
+        offset
+      })
+      .collect()
+  }
+
   /// The extents past the left/right/bottom/top edges of a `w` × `h`
   /// plotting area.
   fn extents(&self, w: f64, h: f64) -> [f64; 4] {
@@ -546,6 +572,15 @@ impl Decorations {
           room += FRAME_LABEL_GAP + lh;
         }
         reach(side_of[edge], room);
+      }
+      // Each axis outside the frame takes its own labels' room beyond it.
+      for (side, reach_side) in [(0, L), (1, R)] {
+        if let (Some(&offset), Some(&width)) = (
+          self.extra_axis_offsets(side).last(),
+          self.extra_axes[side].last(),
+        ) {
+          reach(reach_side, offset + TICK_LABEL_GAP + width);
+        }
       }
     }
     if let Some(lw) = self.curve_labels {
@@ -862,6 +897,17 @@ pub(crate) fn plot_decorations(
     .reduce(f64::max);
   d.side_labels =
     crate::functions::plot_curve_labels::side_room(&opts.curve_label_specs);
+  if frame && show_ticks {
+    for axis in &opts.extra_frame_axes {
+      let width = axis
+        .ticks
+        .iter()
+        .filter(|t| y.contains(t.pos) && !t.label.is_empty())
+        .map(|t| tick_label_width(&t.label, tick_font))
+        .fold(0.0, f64::max);
+      d.extra_axes[usize::from(axis.edge == 3)].push(width);
+    }
+  }
   if let Some((lx, ly)) = &opts.axes_label
     && !frame
   {

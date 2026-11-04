@@ -3508,6 +3508,9 @@ pub(crate) struct PlotOptions {
   /// bottom/left end: the axes of `MultiaxisArrangement`, an axis shared by
   /// several series split evenly among their colours.
   pub frame_edge_segments: Vec<(usize, f64, f64, WoxiColor)>,
+  /// The `MultiaxisArrangement` axes standing outside the frame's left
+  /// and right edges, in order outward from each.
+  pub extra_frame_axes: Vec<ExtraFrameAxis>,
   /// `MeshStyle -> s | {s1, s2, …}`: the style of the mesh points of each
   /// mesh function (cycled). `None` entries draw them in the curve's style.
   pub mesh_styles: Vec<Option<SeriesStyle>>,
@@ -3701,6 +3704,7 @@ impl Default for PlotOptions {
       ticks_style: [None, None],
       frame_styles: [None, None, None, None],
       frame_edge_segments: Vec::new(),
+      extra_frame_axes: Vec::new(),
       mesh_styles: Vec::new(),
       mesh_functions: Vec::new(),
       mesh_shading: None,
@@ -6391,6 +6395,69 @@ fn generate_svg_with_options(
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &ticks_svg);
+    }
+    // The extra axes of `MultiaxisArrangement`, each a frame edge of its
+    // own moved out by its offset.
+    let mut extra_svg = String::new();
+    let offsets = [
+      decorations.extra_axis_offsets(0),
+      decorations.extra_axis_offsets(1),
+    ];
+    let mut rank = [0usize; 2];
+    for axis in &opts.extra_frame_axes {
+      let side = usize::from(axis.edge == 3);
+      let Some(&offset) = offsets[side].get(rank[side]) else {
+        continue;
+      };
+      rank[side] += 1;
+      let (x0, y0, w, h) = area;
+      let shift = if side == 0 { -offset } else { offset } * sf;
+      let mut axis_edges: [FrameEdgeTicks; 4] = [
+        FrameEdgeTicks::None,
+        FrameEdgeTicks::None,
+        FrameEdgeTicks::None,
+        FrameEdgeTicks::None,
+      ];
+      axis_edges[axis.edge] = FrameEdgeTicks::Explicit(axis.ticks.clone());
+      let only = FrameEdges {
+        bottom: false,
+        left: side == 0,
+        top: false,
+        right: side == 1,
+      };
+      extra_svg.push_str(&frame_ticks_svg(&FrameTicksLayout {
+        area: (x0 + shift, y0, w, h),
+        ranges: log_overlay_ranges(opts, (x_min, x_max, y_min, y_max)),
+        log: (opts.log_x, opts.log_y),
+        auto: [None, None],
+        auto_labels: [&[], &[]],
+        edges: &axis_edges,
+        present: only,
+        marked: only,
+        paints: &frame_paints,
+        sf,
+        font: plot_padding::plot_tick_font(opts),
+        bold: opts.label_style.is_some_and(|s| s.bold),
+      }));
+      let spine_x = if side == 0 {
+        x0 + shift
+      } else {
+        x0 + w + shift
+      };
+      for &(from, to, color) in &axis.segments {
+        let (r, g, b) = color_to_rgb8(color);
+        extra_svg.push_str(&format!(
+          "<line x1=\"{spine_x:.1}\" y1=\"{:.1}\" x2=\"{spine_x:.1}\" y2=\"{:.1}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{:.0}\"/>\n",
+          y0 + h - from * h,
+          y0 + h - to * h,
+          frame_paints[axis.edge].line_width,
+        ));
+      }
+    }
+    if !extra_svg.is_empty()
+      && let Some(pos) = buf.rfind("</svg>")
+    {
+      buf.insert_str(pos, &extra_svg);
     }
   }
 
@@ -13588,6 +13655,17 @@ fn row_holds_graphics(args: &[Expr]) -> bool {
 pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
   parse_explicit_tick_entries(value)
     .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
+}
+
+/// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
+/// parallel to the left (`edge` 1) or right (3) frame edge carrying its own
+/// ticks (in the plot's y coordinates), coloured in stretches like
+/// [`PlotOptions::frame_edge_segments`] (fractions of the height, colour).
+#[derive(Clone, Debug)]
+pub(crate) struct ExtraFrameAxis {
+  pub edge: usize,
+  pub ticks: Vec<ExplicitTick>,
+  pub segments: Vec<(f64, f64, WoxiColor)>,
 }
 
 /// One entry of an explicit tick list: `pos`, `{pos, label}`, `{pos, label,

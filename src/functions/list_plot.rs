@@ -875,9 +875,10 @@ struct MultiAxis {
 /// Parse `MultiaxisArrangement -> All | {spec, …} | {Left -> specs,
 /// Right -> specs}` for `n` series. A spec is a series index (an axis of
 /// its own) or `{i, j, …}` (one axis shared by those series); a side given
-/// a flat list `{i, j}` gets one axis per index. Without sides, the last
-/// axis goes to the right and the others to the left. Only one axis per
-/// side is drawn; further ones are merged into it.
+/// a flat list `{i, j}` gets one axis per index, listed left to right as
+/// they are drawn. `All` gives every series its own axis, the first half
+/// (rounded up) on the left; without sides, the last axis goes to the
+/// right and the others to the left. The axes come out left to right.
 fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
   let value = option_value(args, "MultiaxisArrangement")?;
   let index = |e: &Expr| match e {
@@ -893,7 +894,9 @@ fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
   let mut axes: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
   match value {
     Expr::Identifier(a) if a == "All" => {
-      axes.extend((0..n).map(|i| (None, vec![i])));
+      let left = n.div_ceil(2);
+      axes
+        .extend((0..n).map(|i| (Some(if i < left { 1 } else { 3 }), vec![i])));
     }
     Expr::List(items) => {
       for item in items {
@@ -927,18 +930,15 @@ fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
     return None;
   }
   let last = axes.len() - 1;
-  let mut out: Vec<MultiAxis> = Vec::new();
-  for (k, (edge, series)) in axes.into_iter().enumerate() {
-    let edge = edge.unwrap_or(if k == last { 3 } else { 1 });
-    match out.iter_mut().find(|a| a.edge == edge) {
-      Some(axis) => axis.series.extend(series),
-      None => out.push(MultiAxis { edge, series }),
-    }
-  }
-  if out.len() < 2 {
-    return None;
-  }
-  // The left axis is the reference the others are mapped onto.
+  let mut out: Vec<MultiAxis> = axes
+    .into_iter()
+    .enumerate()
+    .map(|(k, (edge, series))| MultiAxis {
+      edge: edge.unwrap_or(if k == last { 3 } else { 1 }),
+      series,
+    })
+    .collect();
+  // Left to right: the left axes (in their order), then the right ones.
   out.sort_by_key(|a| a.edge);
   Some(out)
 }
@@ -970,7 +970,14 @@ fn apply_multiaxis(
       pad_list_axis(extent, ListAxis::Y, false)
     })
     .collect();
-  let (ref_lo, ref_hi) = ranges[0];
+  // The axis of each side drawn on the frame edge is the one next to the
+  // plot (the last left one, the first right one); the others stand
+  // outside it, in order outward. The frame's left axis is the reference
+  // every series is mapped onto.
+  let left_frame = axes.iter().rposition(|a| a.edge == 1);
+  let right_frame = axes.iter().position(|a| a.edge == 3);
+  let reference = left_frame.or(right_frame).unwrap_or(0);
+  let (ref_lo, ref_hi) = ranges[reference];
   let palette = &crate::functions::plot::PLOT_COLORS_RGB;
   let series_color = |i: usize| {
     opts
@@ -983,7 +990,17 @@ fn apply_multiaxis(
       })
   };
   opts.frame = true;
-  for (axis, &(lo, hi)) in axes.iter().zip(&ranges) {
+  // Outward rank of each axis among those of its side (0 = the frame
+  // edge itself).
+  let rank = |k: usize| -> usize {
+    match axes[k].edge {
+      1 => left_frame.map_or(0, |f| f - k),
+      _ => right_frame.map_or(0, |f| k - f),
+    }
+  };
+  let mut extra: Vec<(usize, usize, crate::functions::plot::ExtraFrameAxis)> =
+    Vec::new();
+  for (k, (axis, &(lo, hi))) in axes.iter().zip(&ranges).enumerate() {
     let scale = (ref_hi - ref_lo) / (hi - lo);
     let map = |y: f64| ref_lo + (y - lo) * scale;
     for &i in &axis.series {
@@ -1019,21 +1036,38 @@ fn apply_multiaxis(
         style: None,
       }
     }));
-    opts.frame_tick_edges[axis.edge] =
-      crate::functions::plot::FrameEdgeTicks::Explicit(explicit);
     // A shared axis is split evenly among its series' colours, the first
     // at the top.
-    let k = axis.series.len() as f64;
-    for (j, &i) in axis.series.iter().enumerate() {
-      let top = 1.0 - j as f64 / k;
-      opts.frame_edge_segments.push((
+    let shares = axis.series.len() as f64;
+    let segments: Vec<(f64, f64, crate::functions::graphics::Color)> = axis
+      .series
+      .iter()
+      .enumerate()
+      .map(|(j, &i)| {
+        let top = 1.0 - j as f64 / shares;
+        (top - 1.0 / shares, top, series_color(i))
+      })
+      .collect();
+    if rank(k) == 0 {
+      opts.frame_tick_edges[axis.edge] =
+        crate::functions::plot::FrameEdgeTicks::Explicit(explicit);
+      for (from, to, color) in segments {
+        opts.frame_edge_segments.push((axis.edge, from, to, color));
+      }
+    } else {
+      extra.push((
         axis.edge,
-        top - 1.0 / k,
-        top,
-        series_color(i),
+        rank(k),
+        crate::functions::plot::ExtraFrameAxis {
+          edge: axis.edge,
+          ticks: explicit,
+          segments,
+        },
       ));
     }
   }
+  extra.sort_by_key(|(edge, rank, _)| (*edge, *rank));
+  opts.extra_frame_axes = extra.into_iter().map(|(_, _, a)| a).collect();
 }
 
 /// Whether the point labels of the data argument are callouts — pulled

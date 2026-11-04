@@ -14086,6 +14086,15 @@ mod plot3d {
       assert!(text.trim_start_matches(|c| c != '>').contains('x'));
     }
 
+    // A rule in a label is typeset with its arrow, as in a Wolfram graphic.
+    #[test]
+    fn plot_label_rule_typesets_arrow() {
+      let svg = export_svg("ListPlot[{1, 2}, PlotLabel -> (1 -> {2})]");
+      assert!(svg.contains("1 \u{2192} {2}"), "{svg}");
+      let svg = export_svg("ListPlot[{1, 2}, PlotLabel -> (a :> b)]");
+      assert!(svg.contains("a \u{29F4} b"));
+    }
+
     // `ListPlot[{2 -> "a", …}]`: each `datum -> label` entry is a callout
     // (it used to give an empty 0..1 frame).
     #[test]
@@ -48331,6 +48340,58 @@ mod list_plot_data_forms {
         "no {color} axis"
       );
     }
+  }
+
+  // The x of the vertical lines drawn in `rgb(r,g,b)` spanning the plot.
+  fn spine_xs(svg: &str, rgb: &str) -> Vec<f64> {
+    svg
+      .split("<line ")
+      .filter(|l| l.contains(&format!("stroke=\"rgb({rgb})\"")))
+      .filter_map(|l| {
+        let attr = |name: &str| -> Option<f64> {
+          l.split(&format!("{name}=\""))
+            .nth(1)?
+            .split('"')
+            .next()?
+            .parse()
+            .ok()
+        };
+        let (x1, x2) = (attr("x1")?, attr("x2")?);
+        let (y1, y2) = (attr("y1")?, attr("y2")?);
+        ((x1 - x2).abs() < 1e-6 && (y1 - y2).abs() > 500.0).then_some(x1)
+      })
+      .collect()
+  }
+
+  // `MultiaxisArrangement -> All` with three series: WL puts series 1 and 2
+  // left (1 outermost, its own 0–10 axis outside the frame) and series 3
+  // right, every series on its own scale.
+  #[test]
+  fn list_plot_multiaxis_all_three_axes() {
+    let svg = export_svg(
+      "ListPlot[{Range[10], Prime[Range[10]], Range[10]^2}, \
+       MultiaxisArrangement -> All]",
+    );
+    // The blue axis stands outside the frame's left edge.
+    let blue = spine_xs(&svg, "61,153,204");
+    assert_eq!(blue.len(), 1, "{svg}");
+    assert!(blue[0] > 0.0 && blue[0] < 400.0, "{blue:?}");
+    for label in [">10<", ">30<", ">100<"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+  }
+
+  // `Right -> {1, 2}`: two right axes, listed left to right (series 1 on
+  // the frame, series 2 outside it), each with its own scale.
+  #[test]
+  fn list_plot_multiaxis_two_right_axes() {
+    let svg = export_svg(
+      "ListPlot[{Range[10], Prime[Range[10]], Range[10]^2}, \
+       MultiaxisArrangement -> {Right -> {1, 2}, Left -> 3}]",
+    );
+    let orange = spine_xs(&svg, "242,160,36");
+    assert_eq!(orange.len(), 1, "{svg}");
+    assert!(orange[0] > 3300.0, "{orange:?}");
   }
 }
 
