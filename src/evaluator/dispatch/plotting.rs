@@ -750,6 +750,9 @@ pub fn dispatch_plotting(
     "ListSurfacePlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_surface_plot3d_ast(args)
     })),
+    "ListContourPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::plot3d::list_contour_plot3d_ast(args)
+    })),
     "ListPointPlot3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::plot3d::list_point_plot3d_ast(args)
     })),
@@ -1103,6 +1106,9 @@ pub fn dispatch_plotting(
     })),
     "VectorPlot3D" if args.len() >= 4 => Some(quiet_plot(|| {
       crate::functions::plot3d::vector_plot3d_ast(args)
+    })),
+    "StreamPlot3D" if args.len() >= 4 => Some(quiet_plot(|| {
+      crate::functions::plot3d::stream_plot3d_ast(args)
     })),
     "ListStreamPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::field_plot::list_stream_plot_ast(args)

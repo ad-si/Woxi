@@ -2933,6 +2933,334 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::plot3d_result_with_structure(svg, structure))
 }
 
+// ── StreamPlot3D implementation ──────────────────────────────────────
+
+/// The default `StreamColorFunction` of `StreamPlot3D`: dark blue through
+/// purple to orange, sampled from wolframscript's streamline
+/// `VertexColors` at t = 0, 1/16, …, 1.
+fn stream3d_default_color(t: f64) -> (f64, f64, f64) {
+  const STOPS: [(f64, f64, f64); 17] = [
+    (0.0, 0.0, 0.7),
+    (0.3131, 0.0527, 0.6704),
+    (0.3976, 0.0902, 0.6534),
+    (0.47, 0.1265, 0.6363),
+    (0.5354, 0.1625, 0.6187),
+    (0.5974, 0.1984, 0.6008),
+    (0.6791, 0.234, 0.5272),
+    (0.753, 0.2719, 0.45),
+    (0.8215, 0.3113, 0.3701),
+    (0.8859, 0.3519, 0.2837),
+    (0.9477, 0.3934, 0.1795),
+    (0.9979, 0.4387, 0.0133),
+    (1.0, 0.4988, 0.0),
+    (1.0, 0.5559, 0.0),
+    (1.0, 0.6105, 0.0),
+    (1.0, 0.6632, 0.0),
+    (1.0, 0.75, 0.0),
+  ];
+  let x = t.clamp(0.0, 1.0) * (STOPS.len() - 1) as f64;
+  let i = (x.floor() as usize).min(STOPS.len() - 2);
+  let f = x - i as f64;
+  let (a, b) = (STOPS[i], STOPS[i + 1]);
+  (
+    a.0 + f * (b.0 - a.0),
+    a.1 + f * (b.1 - a.1),
+    a.2 + f * (b.2 - a.2),
+  )
+}
+
+/// `StreamPlot3D[{vx, vy, vz}, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}]`:
+/// streamlines of a 3D vector field, traced both ways from a lattice of
+/// seed points until they leave the box, each coloured along its length by
+/// the field's magnitude.
+pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 4 {
+    return Err(InterpreterError::EvaluationError(
+      "StreamPlot3D requires a field and three iterators".into(),
+    ));
+  }
+  let body = match &args[0] {
+    Expr::List(items) if items.len() == 3 => args[0].clone(),
+    other => evaluate_expr_to_expr(other)?,
+  };
+  let Expr::List(components) = &body else {
+    return Err(InterpreterError::EvaluationError(
+      "StreamPlot3D: the field must be a list of three components".into(),
+    ));
+  };
+  if components.len() != 3 {
+    return Err(InterpreterError::EvaluationError(
+      "StreamPlot3D: the field must be a list of three components".into(),
+    ));
+  }
+  let (xvar, x0, x1) = parse_iterator(&args[1], "first")?;
+  let (yvar, y0, y1) = parse_iterator(&args[2], "second")?;
+  let (zvar, z0, z1) = parse_iterator(&args[3], "third")?;
+  let bounds = [(x0, x1), (y0, y1), (z0, z1)];
+  if bounds.iter().any(|(lo, hi)| hi <= lo) {
+    return Err(InterpreterError::EvaluationError(
+      "StreamPlot3D: iterator ranges must be increasing".into(),
+    ));
+  }
+  let opts = &args[4..];
+  let option = |name: &str| {
+    opts.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(replacement.as_ref())
+      }
+      _ => None,
+    })
+  };
+
+  let vars = [xvar.clone(), yvar.clone(), zvar.clone()];
+  let compiled: Vec<Option<crate::functions::polynomial_ast::solve::NumNode>> =
+    components
+      .iter()
+      .map(|c| {
+        crate::functions::polynomial_ast::solve::compile_numeric(c, &vars)
+          .filter(|n| !n.has_fallback())
+      })
+      .collect();
+  let field = |p: [f64; 3]| -> Option<[f64; 3]> {
+    if compiled.iter().all(Option::is_some) {
+      let v: Vec<f64> = compiled
+        .iter()
+        .map(|n| n.as_ref().map_or(f64::NAN, |n| n.eval(&p)))
+        .collect();
+      return v.iter().all(|c| c.is_finite()).then(|| [v[0], v[1], v[2]]);
+    }
+    evaluate_vector3d(&body, &xvar, &yvar, &zvar, p[0], p[1], p[2])
+      .map(|(a, b, c)| [a, b, c])
+  };
+
+  // `StreamPoints -> n` asks for n streamlines: a k×k×k lattice spanning
+  // the middle 80% of each side (k³ ≤ n), topped up from the lattice twice
+  // as fine by the points farthest from the lines already traced.
+  let count = match option("StreamPoints")
+    .map(|e| evaluate_expr_to_expr(e).unwrap_or(e.clone()))
+  {
+    Some(Expr::Integer(n)) if n > 0 => n as usize,
+    _ => 64,
+  };
+  let lattice = |k: usize| -> Vec<[f64; 3]> {
+    let coord = |d: usize, i: usize| {
+      let (lo, hi) = bounds[d];
+      let f = if k == 1 {
+        0.5
+      } else {
+        0.1 + 0.8 * i as f64 / (k - 1) as f64
+      };
+      lo + f * (hi - lo)
+    };
+    let mut pts = Vec::with_capacity(k * k * k);
+    for i in 0..k {
+      for j in 0..k {
+        for l in 0..k {
+          pts.push([coord(0, i), coord(1, j), coord(2, l)]);
+        }
+      }
+    }
+    pts
+  };
+  let mut k = 1;
+  while (k + 1) * (k + 1) * (k + 1) <= count {
+    k += 1;
+  }
+  let mut seeds = lattice(k);
+  seeds.truncate(count);
+  let mut extra = if seeds.len() < count {
+    lattice(2 * k)
+  } else {
+    Vec::new()
+  };
+
+  let diag = bounds
+    .iter()
+    .map(|(lo, hi)| (hi - lo) * (hi - lo))
+    .sum::<f64>()
+    .sqrt();
+  let step = diag / 150.0;
+  let inside = |p: [f64; 3]| {
+    (0..3).all(|d| {
+      let (lo, hi) = bounds[d];
+      let tol = (hi - lo) * 1e-9;
+      p[d] >= lo - tol && p[d] <= hi + tol
+    })
+  };
+  // One direction of a streamline: unit-speed RK4 steps until the line
+  // leaves the box, stalls, or has run several box diagonals.
+  let trace = |seed: [f64; 3], sign: f64| -> Vec<[f64; 3]> {
+    let dir = |p: [f64; 3]| -> Option<[f64; 3]> {
+      let v = field(p)?;
+      let n = v_len(v);
+      (n > 1e-12).then(|| v_scale(v, sign / n))
+    };
+    let mut pts = Vec::new();
+    let mut p = seed;
+    for _ in 0..(4.0 * diag / step) as usize {
+      let Some(k1) = dir(p) else { break };
+      let Some(k2) = dir(v_add(p, v_scale(k1, step / 2.0))) else {
+        break;
+      };
+      let Some(k3) = dir(v_add(p, v_scale(k2, step / 2.0))) else {
+        break;
+      };
+      let Some(k4) = dir(v_add(p, v_scale(k3, step))) else {
+        break;
+      };
+      let delta = v_scale(
+        v_add(v_add(k1, v_scale(k2, 2.0)), v_add(v_scale(k3, 2.0), k4)),
+        step / 6.0,
+      );
+      let next = v_add(p, delta);
+      if !inside(next) {
+        break;
+      }
+      // A closed orbit is traced once.
+      if pts.len() > 20 && v_len(v_sub(next, seed)) < step {
+        pts.push(next);
+        break;
+      }
+      pts.push(next);
+      p = next;
+    }
+    pts
+  };
+  let mut lines: Vec<Vec<[f64; 3]>> = Vec::new();
+  let trace_seed = |seed: [f64; 3], lines: &mut Vec<Vec<[f64; 3]>>| {
+    let mut back = trace(seed, -1.0);
+    back.reverse();
+    let seed_index = back.len();
+    back.push(seed);
+    back.extend(trace(seed, 1.0));
+    // Every few steps (counted from the seed, which stays on the line) is
+    // enough to draw the curve smoothly.
+    let n = back.len();
+    let line: Vec<[f64; 3]> = back
+      .into_iter()
+      .enumerate()
+      .filter(|(i, _)| i.abs_diff(seed_index) % 3 == 0 || *i == 0 || i + 1 == n)
+      .map(|(_, p)| p)
+      .collect();
+    if line.len() >= 2 {
+      lines.push(line);
+    }
+  };
+  for seed in &seeds {
+    trace_seed(*seed, &mut lines);
+  }
+  while lines.len() < count && !extra.is_empty() {
+    let far = |c: &[f64; 3]| {
+      lines
+        .iter()
+        .flatten()
+        .map(|p| v_len(v_sub(*p, *c)))
+        .fold(f64::INFINITY, f64::min)
+    };
+    let best = (0..extra.len())
+      .max_by(|&a, &b| far(&extra[a]).total_cmp(&far(&extra[b])))
+      .unwrap_or(0);
+    let seed = extra.swap_remove(best);
+    trace_seed(seed, &mut lines);
+  }
+
+  // Colour by magnitude, scaled over the drawn lines.
+  let magnitudes: Vec<Vec<f64>> = lines
+    .iter()
+    .map(|l| l.iter().map(|p| field(*p).map_or(0.0, v_len)).collect())
+    .collect();
+  let (m_lo, m_hi) = magnitudes
+    .iter()
+    .flatten()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &m| {
+      (lo.min(m), hi.max(m))
+    });
+  let scale = |m: f64| {
+    if m_hi > m_lo {
+      (m - m_lo) / (m_hi - m_lo)
+    } else {
+      0.5
+    }
+  };
+  let real3 = |p: &[f64; 3]| {
+    Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+  };
+  let mut content = vec![call(
+    "Directive",
+    vec![
+      call1("Thickness", id_expr("Large")),
+      call(
+        "RGBColor",
+        vec![Expr::Real(0.24), Expr::Real(0.6), Expr::Real(0.8)],
+      ),
+    ],
+  )];
+  for (line, mags) in lines.iter().zip(&magnitudes) {
+    let colors: Vec<Expr> = mags
+      .iter()
+      .map(|&m| {
+        let (r, g, b) = stream3d_default_color(scale(m));
+        call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        )
+      })
+      .collect();
+    content.push(call(
+      "Line",
+      vec![
+        Expr::List(line.iter().map(real3).collect::<Vec<_>>().into()),
+        rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
+      ],
+    ));
+  }
+
+  let mut g_args = vec![Expr::List(vec![Expr::List(content.into())].into())];
+  let passthrough = [
+    "ImageSize",
+    "PlotLabel",
+    "Boxed",
+    "Axes",
+    "AxesLabel",
+    "ViewPoint",
+    "Background",
+    "BoxRatios",
+    "PlotRange",
+  ];
+  for o in opts {
+    if let Expr::Rule { pattern, .. } = o
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if passthrough.contains(&n.as_str()))
+    {
+      g_args.push(o.clone());
+    }
+  }
+  let defaults = [
+    ("Axes", bool_expr(true)),
+    ("BoxRatios", Expr::List(vec![Expr::Integer(1); 3].into())),
+    (
+      "PlotRange",
+      Expr::List(
+        bounds
+          .iter()
+          .map(|(lo, hi)| {
+            Expr::List(vec![Expr::Real(*lo), Expr::Real(*hi)].into())
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ),
+  ];
+  for (name, value) in defaults {
+    if option(name).is_none() {
+      g_args.push(rule_expr(id_expr(name), value));
+    }
+  }
+  graphics3d_ast(&g_args)
+}
+
 // ── Graphics3D implementation ────────────────────────────────────────
 
 /// Parse a 3D point {x, y, z} from an expression.
@@ -3588,6 +3916,9 @@ struct StyleState3D {
   /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
   /// per corner, placing `texture` on it.
   texture_coords: Option<std::sync::Arc<Vec<(f64, f64)>>>,
+  /// `VertexColors` of the polygon or line being added: one RGB colour per
+  /// vertex, blended across the face (or along the line) between them.
+  vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -3611,6 +3942,7 @@ impl Default for StyleState3D {
       point_size: None,
       texture: None,
       texture_coords: None,
+      vertex_colors: None,
       font_size: None,
     }
   }
@@ -4761,6 +5093,51 @@ fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
   Some(v)
 }
 
+/// The map x ↦ c + A x taking the unit ball onto `Ellipsoid[c, spec]`:
+/// `spec` is either the semi-axis lengths `{r1, r2, r3}` (A = diag(r)) or a
+/// symmetric positive definite matrix Σ (A its Cholesky factor, A Aᵀ = Σ).
+fn ellipsoid_affine(center: &Expr, spec: &Expr) -> Option<Affine3> {
+  let c = parse_point3d(center)?;
+  let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
+  let Expr::List(rows) = &spec else {
+    return None;
+  };
+  let m = if let Some(r) = parse_point3d(&spec) {
+    if r.x <= 0.0 || r.y <= 0.0 || r.z <= 0.0 {
+      return None;
+    }
+    [[r.x, 0.0, 0.0], [0.0, r.y, 0.0], [0.0, 0.0, r.z]]
+  } else if rows.len() == 3 {
+    let mut s = [[0.0; 3]; 3];
+    for (i, row) in rows.iter().enumerate() {
+      let p = parse_point3d(row)?;
+      s[i] = [p.x, p.y, p.z];
+    }
+    let mut l = [[0.0; 3]; 3];
+    for i in 0..3 {
+      for j in 0..=i {
+        let sum: f64 = (0..j).map(|k| l[i][k] * l[j][k]).sum();
+        if i == j {
+          let d = s[i][i] - sum;
+          if d <= 0.0 {
+            return None;
+          }
+          l[i][j] = d.sqrt();
+        } else {
+          l[i][j] = (s[i][j] - sum) / l[j][j];
+        }
+      }
+    }
+    l
+  } else {
+    return None;
+  };
+  Some(Affine3 {
+    m,
+    t: [c.x, c.y, c.z],
+  })
+}
+
 /// The affine transforms a 3D `GeometricTransformation` second argument
 /// names: the `{matrix, vector}` pair a `TransformationFunction` normalizes
 /// to, a bare 3×3 matrix, the homogeneous 4×4 `TransformationFunction[…]`,
@@ -5457,6 +5834,7 @@ fn collect_3d_primitives(
         // are drawn as one filled polygon per face.
         "Hexahedron" | "Tetrahedron" | "Prism" | "Pyramid" | "Polyhedron"
         | "Cube" | "Octahedron" | "Dodecahedron" | "Icosahedron"
+        | "Simplex" | "Parallelepiped"
           if crate::functions::geometric_test_ast::polyhedron_faces(expr)
             .is_some() =>
         {
@@ -5480,10 +5858,32 @@ fn collect_3d_primitives(
             }
           }
         }
+        // A lower-dimensional `Simplex` is the point, segment or triangle
+        // its vertices span.
+        "Simplex" if args.len() == 1 => {
+          if let Expr::List(pts) = &args[0]
+            && let Some(head) = match pts.len() {
+              1 => Some("Point"),
+              2 => Some("Line"),
+              3 => Some("Triangle"),
+              _ => None,
+            }
+          {
+            let arg = if pts.len() == 1 {
+              pts[0].clone()
+            } else {
+              args[0].clone()
+            };
+            collect_3d_primitives(&call1(head, arg), style, prims);
+          }
+        }
         "Polygon" | "Triangle" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             let mut style = style.clone();
             style.texture_coords = parse_texture_coords3d(&args[1..])
+              .filter(|c| c.len() == pts.len())
+              .map(std::sync::Arc::new);
+            style.vertex_colors = complex_vertex_colors(&args[1..])
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
             let (points, holes) = if style.texture_coords.is_some() {
@@ -5535,7 +5935,27 @@ fn collect_3d_primitives(
           }
         }
         "Line" if !args.is_empty() => {
-          if let Some(pts) = parse_point3d_list(&args[0]) {
+          let vertex_colors = complex_vertex_colors(&args[1..]);
+          if let Some(pts) = parse_point3d_list(&args[0])
+            && let Some(colors) =
+              vertex_colors.filter(|c| c.len() == pts.len() && pts.len() >= 2)
+          {
+            // `VertexColors` on a line blends its colour along it: each
+            // segment is drawn in the mean of its two end colours.
+            for (w, c) in pts.windows(2).zip(colors.windows(2)) {
+              let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+              let mut seg_style = style.clone();
+              seg_style.color = Some((
+                q(f64::midpoint(c[0].0, c[1].0)),
+                q(f64::midpoint(c[0].1, c[1].1)),
+                q(f64::midpoint(c[0].2, c[1].2)),
+              ));
+              prims.push(Primitive3D::Line3D {
+                segments: vec![w.to_vec()],
+                style: seg_style,
+              });
+            }
+          } else if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Line3D {
               segments: vec![pts],
               style: style.clone(),
@@ -5756,6 +6176,60 @@ fn collect_3d_primitives(
                 style: style.clone(),
               }
             });
+          }
+        }
+        // `Ellipsoid[c, {r1, r2, r3}]` (axis-aligned semi-axes) and
+        // `Ellipsoid[c, Σ]` (the points with (x-c)·Σ⁻¹·(x-c) ≤ 1) are the
+        // unit sphere mapped through x ↦ c + A x with A Aᵀ = Σ.
+        "Ellipsoid" if args.len() == 2 => {
+          if let Some(xf) = ellipsoid_affine(&args[0], &args[1]) {
+            let mut sphere = Primitive3D::Sphere {
+              center: Point3D {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+              },
+              radius: 1.0,
+              scaled: false,
+              style: style.clone(),
+            };
+            transform_primitive3d(&mut sphere, &xf);
+            prims.push(sphere);
+          }
+        }
+        // `CapsuleShape[{p1, p2}, r]`: the points within `r` of the
+        // segment — an open cylinder with a hemisphere at each end.
+        "CapsuleShape" if args.len() == 2 => {
+          let ends_expr =
+            evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
+          let ends = match &ends_expr {
+            Expr::List(pair) if pair.len() == 2 => {
+              parse_point3d(&pair[0]).zip(parse_point3d(&pair[1]))
+            }
+            _ => None,
+          };
+          let radius = try_eval_to_f64(
+            &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
+          );
+          if let (Some((p1, p2)), Some(radius)) = (ends, radius)
+            && radius > 0.0
+          {
+            let mut tube_style = style.clone();
+            tube_style.capped = false;
+            prims.push(Primitive3D::Cylinder {
+              p1,
+              p2,
+              radius,
+              style: tube_style,
+            });
+            for center in [p1, p2] {
+              prims.push(Primitive3D::Sphere {
+                center,
+                radius,
+                scaled: false,
+                style: style.clone(),
+              });
+            }
           }
         }
         // Tube[curve], Tube[curve, r] and Tube[curve, {r1, …, rn}] — a
@@ -8529,6 +9003,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             point_size: None,
             texture: None,
             texture_coords: None,
+            vertex_colors: None,
             font_size: None,
           },
         ),
@@ -8558,6 +9033,97 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Surface3D { smooth: true, .. }
     );
     let tri_count = tris.len();
+    // A convex polygon with `VertexColors` blends the corner colours across
+    // each fan triangle (corners 0, i + 1, i + 2), drawn as a fine grid of
+    // sub-triangles each in its interpolated colour.
+    let vertex_colors = match prim {
+      Primitive3D::Polygon3D {
+        points,
+        holes,
+        style,
+      } if holes.is_empty() && holed_boundaries.is_empty() => style
+        .vertex_colors
+        .as_ref()
+        .filter(|c| c.len() == points.len() && points.len() >= 3),
+      _ => None,
+    };
+    if let Some(colors) = vertex_colors {
+      const STEPS: usize = 20;
+      for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
+        let parent_boundary = if !prim_style.edges {
+          [false; 3]
+        } else if fan_corners > 3 {
+          [i == 0, true, i + 1 == tri_count]
+        } else {
+          [true; 3]
+        };
+        let corner_colors = [colors[0], colors[i + 1], colors[i + 2]];
+        let at = |a: usize, b: usize| {
+          let (u, v) = (a as f64 / STEPS as f64, b as f64 / STEPS as f64);
+          Point3D {
+            x: v0.x + u * (v1.x - v0.x) + v * (v2.x - v0.x),
+            y: v0.y + u * (v1.y - v0.y) + v * (v2.y - v0.y),
+            z: v0.z + u * (v1.z - v0.z) + v * (v2.z - v0.z),
+          }
+        };
+        let mut push_sub = |corners: [(usize, usize); 3],
+                            boundary: [bool; 3]| {
+          let (sa, sb) = corners
+            .iter()
+            .fold((0.0, 0.0), |(x, y), &(a, b)| (x + a as f64, y + b as f64));
+          let (u, v) = (sa / (3 * STEPS) as f64, sb / (3 * STEPS) as f64);
+          let w0 = 1.0 - u - v;
+          let mix = |k: fn(&(f64, f64, f64)) -> f64| {
+            w0 * k(&corner_colors[0])
+              + u * k(&corner_colors[1])
+              + v * k(&corner_colors[2])
+          };
+          let q = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+          let mut sub_style = prim_style.clone();
+          sub_style.color =
+            Some((q(mix(|c| c.0)), q(mix(|c| c.1)), q(mix(|c| c.2))));
+          let [p0, p1, p2] = corners.map(|(a, b)| at(a, b));
+          let (color, _) = shade_facet(
+            SurfaceDefault::Plain(base_color),
+            None,
+            Some(&sub_style),
+            triangle_normal(p0, p1, p2),
+            tri_center(p0, p1, p2),
+            &scene,
+          );
+          let center = tri_center(p0, p1, p2);
+          triangle_vertices.push([p0, p1, p2]);
+          all_triangles.push(Triangle {
+            boundary,
+            edge_color: prim_style.edge_color,
+            edge_width: prim_style.edge_width,
+            projected: [p0, p1, p2].map(|p| project(p, &camera)),
+            depth: depth(center, &camera),
+            color,
+            opacity: prim_opacity,
+            texture: None,
+          });
+        };
+        for a in 0..STEPS {
+          for b in 0..STEPS - a {
+            // Upward sub-triangle: its edges lie on the parent's edges
+            // 0 (b = 0), 1 (a + b = STEPS) and 2 (a = 0) at the rim.
+            push_sub(
+              [(a, b), (a + 1, b), (a, b + 1)],
+              [
+                parent_boundary[0] && b == 0,
+                parent_boundary[1] && a + b + 1 == STEPS,
+                parent_boundary[2] && a == 0,
+              ],
+            );
+            if a + b + 2 <= STEPS {
+              push_sub([(a + 1, b), (a + 1, b + 1), (a, b + 1)], [false; 3]);
+            }
+          }
+        }
+      }
+      continue;
+    }
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
       // `EdgeForm[]` asks for faces with no outline, so every edge counts
       // as an internal cut and is stroked in the face's own colour. A
@@ -11663,6 +12229,10 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// cheaper in practice than the worst-case cube count suggests.
 const CONTOUR3D_GRID: usize = 24;
 
+/// The z half-extent of the normalized box: ContourPlot3D and
+/// ListContourPlot3D default to `BoxRatios -> {1, 1, 1}`.
+const CONTOUR3D_Z_SCALE: f64 = 1.0;
+
 /// How many times a grid cell that may hide a sheet thinner than itself is
 /// halved, and the total number of cells that may be halved per plot. Only
 /// used when the plain grid finds no surface at all.
@@ -11906,6 +12476,136 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ],
   };
 
+  contour3d_render(
+    &ContourField::Functions {
+      bodies,
+      vars: [xvar, yvar, zvar],
+    },
+    [(x_min, x_max), (y_min, y_max), (z_min, z_max)],
+    None,
+    &args[4..],
+    args,
+  )
+}
+
+/// `ListContourPlot3D[array, opts…]`: the level surfaces of a 3D array of
+/// samples. `array[[i, j, k]]` sits at x = k, y = j, z = i, counted from 0
+/// unless `DataRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` spans the grid
+/// instead. Without a `DataRange` the box is fitted to the surfaces, as
+/// Wolfram does.
+pub fn list_contour_plot3d_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  reset_scalar_3d_cache();
+  // Data that is not a 3D array leaves the call unevaluated.
+  let unevaluated = || Ok(call("ListContourPlot3D", args.to_vec()));
+  let Some(Expr::List(planes)) = args.first() else {
+    return unevaluated();
+  };
+  // data[i][j][k], i ↔ z, j ↔ y, k ↔ x.
+  let mut data: Vec<Vec<Vec<f64>>> = Vec::with_capacity(planes.len());
+  for plane in planes {
+    let Expr::List(rows) = plane else {
+      return unevaluated();
+    };
+    let mut p = Vec::with_capacity(rows.len());
+    for row in rows {
+      let Expr::List(vals) = row else {
+        return unevaluated();
+      };
+      p.push(
+        vals
+          .iter()
+          .map(|v| try_eval_to_f64(v).unwrap_or(f64::NAN))
+          .collect::<Vec<_>>(),
+      );
+    }
+    data.push(p);
+  }
+  let (nz, ny) = (data.len(), data.first().map_or(0, Vec::len));
+  let nx = data.first().and_then(|p| p.first()).map_or(0, Vec::len);
+  let rectangular = data
+    .iter()
+    .all(|p| p.len() == ny && p.iter().all(|r| r.len() == nx));
+  if !rectangular || nx < 2 || ny < 2 || nz < 2 {
+    return unevaluated();
+  }
+  let field: Vec<Vec<Vec<f64>>> = (0..nx)
+    .map(|x| {
+      (0..ny)
+        .map(|y| (0..nz).map(|z| data[z][y][x]).collect())
+        .collect()
+    })
+    .collect();
+
+  let opts = &args[1..];
+  let data_range = opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DataRange") => {
+      parse_axis_ranges(replacement)
+    }
+    _ => None,
+  });
+  let (ranges, plot_box) = match data_range {
+    Some(r) => (r, ContourBox::Explicit(r)),
+    None => (
+      [
+        (0.0, (nx - 1) as f64),
+        (0.0, (ny - 1) as f64),
+        (0.0, (nz - 1) as f64),
+      ],
+      ContourBox::FitToSurfaces,
+    ),
+  };
+  contour3d_render(
+    &ContourField::Data(field),
+    ranges,
+    Some(plot_box),
+    opts,
+    args,
+  )
+}
+
+/// Where a 3D contour plot's scalar field comes from.
+enum ContourField {
+  /// `ContourPlot3D`: one body per surface family, sampled on a grid over
+  /// the plot box (and resampled finer where a thin sheet may hide).
+  Functions {
+    bodies: Vec<Expr>,
+    vars: [String; 3],
+  },
+  /// `ListContourPlot3D`: one array of samples, indexed `[x][y][z]`, at the
+  /// corners of an even grid spanning the plot box.
+  Data(Vec<Vec<Vec<f64>>>),
+}
+
+/// The box a 3D contour plot draws when it is not the sampled region.
+#[derive(Clone, Copy)]
+enum ContourBox {
+  Explicit([(f64, f64); 3]),
+  /// The extent of the drawn surfaces (`ListContourPlot3D` without a
+  /// `DataRange`).
+  FitToSurfaces,
+}
+
+/// Draw the level surfaces of `field` over the box `ranges`. `plot_range`
+/// overrides the box the axes span (e.g. the extent of the surfaces).
+/// `opts` are the plot's options and `label_args` the arguments a
+/// `PlotLabel` is read from.
+fn contour3d_render(
+  field_source: &ContourField,
+  ranges: [(f64, f64); 3],
+  plot_range: Option<ContourBox>,
+  opts: &[Expr],
+  label_args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let [(x_min, x_max), (y_min, y_max), (z_min, z_max)] = ranges;
+  let surface_count = match &field_source {
+    ContourField::Functions { bodies, .. } => bodies.len(),
+    ContourField::Data(_) => 1,
+  };
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
@@ -11924,7 +12624,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut contour_levels: Option<Vec<f64>> = None;
   let mut background: Option<(u8, u8, u8)> = None;
 
-  for opt in &args[4..] {
+  for opt in opts {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -11947,7 +12647,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {}
         },
         Expr::Identifier(name) if name == "ContourStyle" => {
-          styles = parse_plot_style_3d(replacement, bodies.len());
+          styles = parse_plot_style_3d(replacement, surface_count);
         }
         Expr::Identifier(name) if name == "Background" => {
           background = parse_background_color(replacement).map(|c| {
@@ -11998,22 +12698,32 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let n = plot_points.map_or(CONTOUR3D_GRID, |p| p - 1);
-  let x_step = (x_max - x_min) / n as f64;
-  let y_step = (y_max - y_min) / n as f64;
-  let z_step = (z_max - z_min) / n as f64;
+  // Grid cells per axis.
+  let cells = match &field_source {
+    ContourField::Functions { .. } => {
+      let n = plot_points.map_or(CONTOUR3D_GRID, |p| p - 1);
+      [n, n, n]
+    }
+    ContourField::Data(data) => [
+      data.len().saturating_sub(1),
+      data.first().map_or(0, |p| p.len().saturating_sub(1)),
+      data
+        .first()
+        .and_then(|p| p.first())
+        .map_or(0, |r| r.len().saturating_sub(1)),
+    ],
+  };
+  let x_step = (x_max - x_min) / cells[0].max(1) as f64;
+  let y_step = (y_max - y_min) / cells[1].max(1) as f64;
+  let z_step = (z_max - z_min) / cells[2].max(1) as f64;
 
   let camera = Camera::default();
-  let scene = Scene::new(&camera, &args[4..]);
+  let scene = Scene::new(&camera, opts);
 
-  // Normalize coordinates to [-1, 1] for x,y and [-Z_SCALE, Z_SCALE] for z,
-  // matching every other 3D plot in this module.
-  let nx = |v: f64| -> f64 { (v - x_min) / (x_max - x_min) * 2.0 - 1.0 };
-  let ny = |v: f64| -> f64 { (v - y_min) / (y_max - y_min) * 2.0 - 1.0 };
-  let nz =
-    |v: f64| -> f64 { (v - z_min) / (z_max - z_min) * 2.0 * Z_SCALE - Z_SCALE };
-
-  let mut all_triangles: Vec<Triangle> = Vec::new();
+  // The surfaces' triangles in plot coordinates, with the index of the
+  // surface each belongs to. They are projected once all are known, since
+  // the box may be fitted to them.
+  let mut world_triangles: Vec<([Point3D; 3], usize)> = Vec::new();
   // The surfaces' vertices, shared between the triangles that meet at them
   // (keyed by their exact coordinates), with accumulated face normals.
   let mut points: Vec<[f64; 3]> = Vec::new();
@@ -12023,22 +12733,38 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut content: Vec<Expr> = Vec::new();
   let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
 
-  for (surf_idx, body) in bodies.iter().enumerate() {
-    let mut field = vec![vec![vec![f64::NAN; n + 1]; n + 1]; n + 1];
-    for (i, xrow) in field.iter_mut().enumerate() {
-      let xval = x_min + i as f64 * x_step;
-      for (j, yrow) in xrow.iter_mut().enumerate() {
-        let yval = y_min + j as f64 * y_step;
-        for (k, cell) in yrow.iter_mut().enumerate() {
-          let zval = z_min + k as f64 * z_step;
-          if let Some(v) =
-            evaluate_scalar_3d(body, &xvar, &yvar, &zvar, xval, yval, zval)
-          {
-            *cell = v;
+  for surf_idx in 0..surface_count {
+    // The body sampled (and, where a sheet may hide, resampled) for this
+    // surface; `None` for data, which has nothing finer to offer.
+    let body: Option<(&Expr, &[String; 3])> = match &field_source {
+      ContourField::Functions { bodies, vars } => {
+        Some((&bodies[surf_idx], vars))
+      }
+      ContourField::Data(_) => None,
+    };
+    let field = match (&field_source, body) {
+      (ContourField::Data(data), _) => data.clone(),
+      (_, Some((body, [xvar, yvar, zvar]))) => {
+        let mut field =
+          vec![vec![vec![f64::NAN; cells[2] + 1]; cells[1] + 1]; cells[0] + 1];
+        for (i, xrow) in field.iter_mut().enumerate() {
+          let xval = x_min + i as f64 * x_step;
+          for (j, yrow) in xrow.iter_mut().enumerate() {
+            let yval = y_min + j as f64 * y_step;
+            for (k, cell) in yrow.iter_mut().enumerate() {
+              let zval = z_min + k as f64 * z_step;
+              if let Some(v) =
+                evaluate_scalar_3d(body, xvar, yvar, zvar, xval, yval, zval)
+              {
+                *cell = v;
+              }
+            }
           }
         }
+        field
       }
-    }
+      _ => Vec::new(),
+    };
 
     let style = if styles.is_empty() {
       None
@@ -12073,17 +12799,17 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![0.0]
     };
 
-    let triangles_before = all_triangles.len();
+    let triangles_before = world_triangles.len();
     for refine in [false, true] {
-      if refine && all_triangles.len() > triangles_before {
+      if refine && world_triangles.len() > triangles_before {
         break;
       }
       for &level in &levels {
         // This level's triangles, as one Polygon of vertex-index triples.
         let mut level_triangles: Vec<[usize; 3]> = Vec::new();
-        for i in 0..n {
-          for j in 0..n {
-            for k in 0..n {
+        for i in 0..cells[0] {
+          for j in 0..cells[1] {
+            for k in 0..cells[2] {
               let cvals = [
                 field[i][j][k],
                 field[i + 1][j][k],
@@ -12154,39 +12880,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let mut emitted = false;
                 march_cube(&corners_world, &cvals, level, &mut |tri_world| {
                   emitted = true;
-                  let tri_norm = tri_world.map(|p| Point3D {
-                    x: nx(p.x),
-                    y: ny(p.y),
-                    z: nz(p.z),
-                  });
-                  let normal =
-                    triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
-                  let (color, opacity) = shade_facet(
-                    SurfaceDefault::Theme(surf_idx),
-                    None,
-                    style,
-                    normal,
-                    tri_center(tri_norm[0], tri_norm[1], tri_norm[2]),
-                    &scene,
-                  );
-                  let p0 = project(tri_norm[0], &camera);
-                  let p1 = project(tri_norm[1], &camera);
-                  let p2 = project(tri_norm[2], &camera);
-                  let center = Point3D {
-                    x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
-                    y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
-                    z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
-                  };
-                  all_triangles.push(Triangle {
-                    boundary: [true; 3],
-                    edge_color: style.and_then(|s| s.edge_color),
-                    edge_width: style.and_then(|s| s.edge_width),
-                    projected: [p0, p1, p2],
-                    depth: depth(center, &camera),
-                    color,
-                    opacity,
-                    texture: None,
-                  });
+                  world_triangles.push((tri_world, surf_idx));
 
                   // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
                   let wn =
@@ -12206,7 +12900,8 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   }
                   level_triangles.push(tri);
                 });
-                if refine
+                if let Some((body, [xvar, yvar, zvar])) = body
+                  && refine
                   && !emitted
                   && depth_level < CONTOUR3D_REFINE_DEPTH
                   && refinement_budget > 0
@@ -12229,7 +12924,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       for (b, row) in plane.iter_mut().enumerate() {
                         for (c, cell) in row.iter_mut().enumerate() {
                           *cell = evaluate_scalar_3d(
-                            body, &xvar, &yvar, &zvar, px[a], py[b], pz[c],
+                            body, xvar, yvar, zvar, px[a], py[b], pz[c],
                           )
                           .unwrap_or(f64::NAN);
                         }
@@ -12303,10 +12998,75 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  if all_triangles.is_empty() {
+  if world_triangles.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "ContourPlot3D: the surface has no points in the given range".into(),
     ));
+  }
+
+  // `FitToSurfaces` boxes the plot to the extent of what was drawn.
+  let plot_range = match plot_range {
+    Some(ContourBox::Explicit(r)) => r,
+    Some(ContourBox::FitToSurfaces) => {
+      let mut r = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+      for p in world_triangles.iter().flat_map(|(t, _)| t.iter()) {
+        for (d, v) in [p.x, p.y, p.z].into_iter().enumerate() {
+          r[d] = (r[d].0.min(v), r[d].1.max(v));
+        }
+      }
+      r
+    }
+    None => ranges,
+  };
+  let [(x_min_p, x_max_p), (y_min_p, y_max_p), (z_min_p, z_max_p)] = plot_range;
+  // Normalize coordinates to [-1, 1] for x and y and to the z half-extent
+  // (`CONTOUR3D_Z_SCALE`) for z.
+  let span = |lo: f64, hi: f64| if hi > lo { hi - lo } else { 1.0 };
+  let nx =
+    |v: f64| -> f64 { (v - x_min_p) / span(x_min_p, x_max_p) * 2.0 - 1.0 };
+  let ny =
+    |v: f64| -> f64 { (v - y_min_p) / span(y_min_p, y_max_p) * 2.0 - 1.0 };
+  let nz = |v: f64| -> f64 {
+    (v - z_min_p) / span(z_min_p, z_max_p) * 2.0 * CONTOUR3D_Z_SCALE
+      - CONTOUR3D_Z_SCALE
+  };
+  let mut all_triangles: Vec<Triangle> =
+    Vec::with_capacity(world_triangles.len());
+  for (tri_world, surf_idx) in &world_triangles {
+    let style = if styles.is_empty() {
+      None
+    } else {
+      Some(&styles[surf_idx % styles.len()])
+    };
+    let tri_norm = tri_world.map(|p| Point3D {
+      x: nx(p.x),
+      y: ny(p.y),
+      z: nz(p.z),
+    });
+    let normal = triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
+    let (color, opacity) = shade_facet(
+      SurfaceDefault::Theme(*surf_idx),
+      None,
+      style,
+      normal,
+      tri_center(tri_norm[0], tri_norm[1], tri_norm[2]),
+      &scene,
+    );
+    let center = Point3D {
+      x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
+      y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
+      z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
+    };
+    all_triangles.push(Triangle {
+      boundary: [true; 3],
+      edge_color: style.and_then(|s| s.edge_color),
+      edge_width: style.and_then(|s| s.edge_width),
+      projected: tri_norm.map(|p| project(p, &camera)),
+      depth: depth(center, &camera),
+      color,
+      opacity,
+      texture: None,
+    });
   }
 
   all_triangles.sort_by(|a, b| {
@@ -12319,15 +13079,15 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &all_triangles,
     &[],
     &camera,
-    (x_min, x_max),
-    (y_min, y_max),
-    (z_min, z_max),
+    (x_min_p, x_max_p),
+    (y_min_p, y_max_p),
+    (z_min_p, z_max_p),
     svg_width,
     svg_height,
     full_width,
     MeshMode::None,
     show_axes,
-    [1.0, 1.0, Z_SCALE],
+    [1.0, 1.0, CONTOUR3D_Z_SCALE],
     &[None, None, None],
   )?;
   // `Background -> colour` repaints the canvas rectangle drawn first.
@@ -12336,7 +13096,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => svg,
   };
   // A `PlotLabel` sets a title above the finished picture.
-  let svg = with_plot_label(svg, args, svg_width, svg_height);
+  let svg = with_plot_label(svg, label_args, svg_width, svg_height);
 
   let structure = {
     // The plot's own picture draws no outline on the surface triangles, so
@@ -12352,7 +13112,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     );
     let mut structure_args = vec![complex];
-    structure_args.extend(args[4..].iter().cloned());
+    structure_args.extend(opts.iter().cloned());
     let names = |opt: &str| {
       structure_args.iter().any(|o| {
         matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
@@ -12367,7 +13127,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       structure_args.push(rule_expr(
         id_expr("BoxRatios"),
         Expr::List(
-          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Integer(1)].into(),
         ),
       ));
     }

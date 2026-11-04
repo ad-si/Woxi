@@ -1215,6 +1215,32 @@ pub(crate) fn polyhedron_faces(
         )
       })
     }
+    // `Parallelepiped[p, {v1, v2, v3}]`: the hexahedron with corners
+    // p + a v1 + b v2 + c v3 for a, b, c ∈ {0, 1}.
+    "Parallelepiped" if args.len() == 2 => {
+      let p = point3(&args[0])?;
+      let v = points3(&args[1])?;
+      if v.len() != 3 {
+        return None;
+      }
+      let corner = |a: f64, b: f64, c: f64| {
+        [0, 1, 2].map(|k| p[k] + a * v[0][k] + b * v[1][k] + c * v[2][k])
+      };
+      let points = vec![
+        corner(0.0, 0.0, 0.0),
+        corner(1.0, 0.0, 0.0),
+        corner(1.0, 1.0, 0.0),
+        corner(0.0, 1.0, 0.0),
+        corner(0.0, 0.0, 1.0),
+        corner(1.0, 0.0, 1.0),
+        corner(1.0, 1.0, 1.0),
+        corner(0.0, 1.0, 1.0),
+      ];
+      Some((
+        points,
+        HEXAHEDRON_FACES.iter().map(|f| f.to_vec()).collect(),
+      ))
+    }
     "Prism" if args.len() == 1 => {
       let points = points3(&args[0])?;
       (points.len() == 6)
