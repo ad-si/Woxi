@@ -37502,7 +37502,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Graphics" | "Graphics3D" | "Image" | "Image3D" | "Graphics3DBox"
       | "GraphicsBox" | "RasterBox" => vec![],
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
-      | "Framed" | "Dynamic" | "HoldForm" | "Pane" | "Panel" => args
+      | "Framed" | "Dynamic" | "HoldForm" | "Defer" | "Pane" | "Panel" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
@@ -37921,6 +37921,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Text"
           | "Tooltip"
           | "HoldForm"
+          | "Defer"
           | "DisplayForm"
           | "TraditionalForm"
           | "Subscript"
@@ -44944,6 +44945,26 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["left side", "right"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `Defer[expr]` is display-transparent, so a choice labelled with it
+  /// shows the expression rather than the `Defer[…]` wrapper.
+  #[test]
+  fn choice_labels_see_through_defer() {
+    let control = discrete_control(
+      "Manipulate[f, \
+       {{f, 1, \"f\"}, {1 -> Defer[g[n]], 2 -> Defer[Row[{\"a\", \"b\"}]]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert!(
+          value_labels.iter().all(|l| !l.contains("Defer")),
+          "{value_labels:?}"
+        );
+        assert_eq!(value_labels[1], "ab");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
