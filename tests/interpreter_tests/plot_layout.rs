@@ -429,6 +429,7 @@ mod series_end_labels {
 
   /// `(x, y)` of the `<text>` holding exactly `label`.
   fn label_at(svg: &str, label: &str) -> (f64, f64) {
+    let svg = &super::super::graphics::without_italics(svg);
     let end = svg.find(&format!(">{label}</text>")).unwrap();
     let tag = &svg[svg[..end].rfind("<text ").unwrap()..end];
     let attr = |name: &str| -> f64 {

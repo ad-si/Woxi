@@ -218,6 +218,8 @@ pub(crate) struct OriginAxes<'a> {
   /// `LabelStyle`'s colour: it paints the tick labels over both
   /// `AxesStyle` and `TicksStyle`.
   pub label_color: Option<&'a str>,
+  /// The tick-label font size, in points (`TicksStyle -> 14`).
+  pub tick_font: f64,
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -242,14 +244,21 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   if !(axis_x.is_finite() && axis_y.is_finite()) {
     return svg;
   }
-  let font = AXIS_TICK_FONT * sf;
+  let tick_font = a.tick_font;
+  let font = tick_font * sf;
   // A hairline, like Wolfram's (a tenth of the curve's width in its SVG
   // export), so the axes recede behind the data.
   let stroke = AXIS_STROKE * sf;
   // Per axis: the line's stroke, the tick marks' stroke, and the label fill.
   let paint = |i: usize| {
     let axis = a.axes_style[i].as_ref();
-    let tick = a.ticks_style[i].as_ref().or(axis);
+    // The tick marks take the axis's style, with `TicksStyle` over it.
+    let merged = a.ticks_style[i].as_ref().map(|t| SeriesStyle {
+      color: t.color.or(axis.and_then(|s| s.color)),
+      thickness: t.thickness.or(axis.and_then(|s| s.thickness)),
+      ..t.clone()
+    });
+    let tick = merged.as_ref().or(axis);
     let line = style_stroke(axis, a.axis_color, stroke, sf);
     let mark = style_stroke(tick, a.axis_color, stroke, sf);
     let fill = a.label_color.map_or_else(
@@ -296,7 +305,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\">{label}</text>\n",
-          axis_y + (TICK_LABEL_GAP + ascent(AXIS_TICK_FONT)) * sf
+          axis_y + (TICK_LABEL_GAP + ascent(tick_font)) * sf
         ));
       }
     }
@@ -330,7 +339,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
            fill=\"{fill}\">{label}</text>\n",
           axis_x - TICK_LABEL_GAP * sf,
-          y + (ascent(AXIS_TICK_FONT) - line_height(AXIS_TICK_FONT) / 2.0) * sf
+          y + (ascent(tick_font) - line_height(tick_font) / 2.0) * sf
         ));
       }
     }

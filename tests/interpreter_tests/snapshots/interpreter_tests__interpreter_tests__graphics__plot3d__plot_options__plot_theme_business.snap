@@ -8,11 +8,11 @@ expression: "export_svg(r#\"Plot[Sin[x], {x, 0, 2 Pi}, PlotTheme -> \"Business\"
 <polyline fill="none" opacity="1" stroke="#FFFFFF" stroke-width="0" points="232,2077 3584,2077 "/>
 <polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="232,2076 3584,2076 "/>
 <polyline fill="none" opacity="1" stroke="#587DE5" stroke-width="30" points="299,1041 364,922 430,805 496,691 561,584 627,484 693,393 758,312 791,277 824,244 857,215 890,189 922,166 955,148 972,140 988,132 1005,126 1021,121 1037,117 1054,113 1070,111 1087,110 1103,109 1119,110 1136,111 1152,113 1169,117 1185,121 1202,126 1218,132 1251,148 1284,166 1316,189 1349,215 1415,277 1481,351 1546,437 1612,533 1678,637 1743,747 1809,863 1875,981 1940,1101 2006,1219 2072,1335 2137,1445 2203,1549 2269,1645 2334,1731 2400,1805 2433,1838 2466,1867 2499,1893 2531,1916 2564,1934 2581,1942 2597,1950 2613,1956 2630,1961 2646,1965 2663,1969 2679,1971 2696,1972 2712,1973 2728,1972 2745,1971 2761,1969 2778,1965 2794,1961 2810,1956 2827,1950 2860,1934 2893,1916 2925,1893 2958,1867 2991,1838 3057,1770 3122,1689 3188,1598 3254,1498 3319,1391 3385,1277 3451,1160 3516,1041 "/>
-<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="232.0,1973.4 3585.0,1973.4"/>
-<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="232.0,1507.2 3585.0,1507.2"/>
-<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="232.0,1041.0 3585.0,1041.0"/>
-<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="232.0,574.8 3585.0,574.8"/>
-<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="round" points="232.0,108.6 3585.0,108.6"/>
+<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="butt" points="232.0,1973.4 3585.0,1973.4"/>
+<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="butt" points="232.0,1507.2 3585.0,1507.2"/>
+<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="butt" points="232.0,1041.0 3585.0,1041.0"/>
+<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="butt" points="232.0,574.8 3585.0,574.8"/>
+<polyline fill="none" stroke="rgb(102,102,102)" stroke-opacity="0.5" stroke-width="10" stroke-dasharray="10.0,20.0" stroke-linecap="butt" points="232.0,108.6 3585.0,108.6"/>
 <line x1="299.1" y1="2077.0" x2="299.1" y2="2037.5" stroke="rgb(102,102,102)" stroke-width="10"/>
 <text x="299.1" y="2197.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="rgb(102,102,102)">0</text>
 <line x1="1323.7" y1="2077.0" x2="1323.7" y2="2037.5" stroke="rgb(102,102,102)" stroke-width="10"/>

@@ -6981,6 +6981,7 @@ mod interpreter_tests {
   mod lic_plot;
   mod music;
   mod plot_layout;
+  mod plot_styling;
   mod row;
   mod scaling_functions;
   mod styling;

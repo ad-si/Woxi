@@ -167,6 +167,27 @@ fn axes_crossing(svg: &str) -> (f64, f64) {
 
 /// Remove the embedded-font `<defs><style>…</style></defs>` block the exporter
 /// injects right after the opening `<svg>` tag, leaving the rest untouched.
+/// `svg` with the italic `<tspan>`s that `TraditionalForm` sets its
+/// single-letter symbols in unwrapped, so a test can match a label's text
+/// (`sin(x)`) whatever its font style.
+pub(crate) fn without_italics(svg: &str) -> String {
+  const OPEN: &str = "<tspan font-style=\"italic\">";
+  let mut out = String::with_capacity(svg.len());
+  let mut rest = svg;
+  while let Some(start) = rest.find(OPEN) {
+    out.push_str(&rest[..start]);
+    let inner = &rest[start + OPEN.len()..];
+    let Some(end) = inner.find("</tspan>") else {
+      out.push_str(&rest[start..]);
+      return out;
+    };
+    out.push_str(&inner[..end]);
+    rest = &inner[end + "</tspan>".len()..];
+  }
+  out.push_str(rest);
+  out
+}
+
 fn strip_font_style(svg: &str) -> String {
   const OPEN: &str = "\n<defs><style type=\"text/css\">";
   const CLOSE: &str = "</style></defs>";
@@ -3201,6 +3222,7 @@ mod graphics {
         "Column[{TraditionalForm[Framed[Style[Row[{Style[Row[{\"z = \", Cos[t]}], Red], \" , \", \
          Style[Row[{\"z = \", t/2}], Blue]}], 20]]], \"b\"}]",
       );
+      let svg = without_italics(&svg);
       assert!(svg.contains("cos(t)"), "{svg}");
       assert!(svg.contains("t/2"), "{svg}");
       let rect_w = |s: &str| -> f64 {
@@ -12194,11 +12216,11 @@ mod plot3d {
 
     #[test]
     fn plot_legends_expressions() {
-      let svg = export_svg(
+      let svg = without_italics(&export_svg(
         r#"Plot[{Sin[x], Sin[2 x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
-      );
+      ));
       // "Expressions" legends set the expressions in TraditionalForm, as
-      // WL does (`sin(x)`, not `Sin[x]`).
+      // WL does (`sin(x)`, not `Sin[x]`), the `x` in italics.
       assert!(svg.contains(">sin(x)<"), "legend should read sin(x)");
       assert!(svg.contains(">sin(2"), "legend should read sin(2 x)");
       assert!(!svg.contains("Sin["), "no InputForm legend text");
@@ -24857,9 +24879,9 @@ mod graphics_row {
 
   /// Regression: GraphicsRow used to clamp its total width to a fixed
   /// 360 px default, so a row of 3 plots rendered at ~54 px tall with
-  /// sub-pixel strokes and 3 px fonts. The default total width should
-  /// instead derive from the natural widths of the child graphics so
-  /// each cell gets rendered near its native size.
+  /// sub-pixel strokes and 3 px fonts. WL fits an automatically sized row
+  /// of several pictures into about 640 points (645 × 141 for this one),
+  /// each laid out at its share.
   #[test]
   fn default_width_scales_with_cell_count() {
     clear_state();
@@ -24870,9 +24892,7 @@ mod graphics_row {
     )
     .unwrap();
     let svg = result.graphics.unwrap();
-    // Outer <svg width="..."> — the width attribute should be well above
-    // the old hard-coded 360 default (the three 360-wide cells alone
-    // sum to 1080).
+    // Outer <svg width="...">: wolframscript's row is 645 wide.
     let width_str = svg
       .split_once("width=\"")
       .and_then(|(_, rest)| rest.split_once('"'))
@@ -24880,9 +24900,8 @@ mod graphics_row {
       .expect("outer <svg> should have a width attribute");
     let width: f64 = width_str.parse().expect("width should be numeric");
     assert!(
-      width >= 1000.0,
-      "expected GraphicsRow default width to scale with cell count (>=1000), \
-       got {width}"
+      (600.0..=680.0).contains(&width),
+      "expected the GraphicsRow default width near WL's 645, got {width}"
     );
     // And the combined row should not collapse to an absurdly short
     // height: each plot was natively 225 tall, NumberLinePlot pulls
@@ -24938,10 +24957,10 @@ mod graphics_row {
       "expected all 3 cells to have equal widths (natural widths match), \
        got {cell_widths:?}"
     );
+    // A third of the row's 640 points, gaps taken out.
     assert!(
-      cell_widths[0] >= 300,
-      "expected cells to render near their native 360 width, got \
-       {cell_widths:?}"
+      (180..=220).contains(&cell_widths[0]),
+      "expected cells about 200 wide, got {cell_widths:?}"
     );
   }
 
@@ -24950,7 +24969,7 @@ mod graphics_row {
   /// sub-legible (~3 px fonts for 6 plots in a row). Instead, each
   /// child should be re-rendered with `ImageSize -> per_cell_w`
   /// injected, producing smaller SVGs with text at their normal pixel
-  /// size. The total row width is then capped near 1080 px.
+  /// size. The total row width is about 640 points (WL: 652 for six).
   #[test]
   fn many_cells_rerender_at_smaller_size() {
     clear_state();
@@ -24975,11 +24994,10 @@ mod graphics_row {
       6,
       "expected 6 cells, got {cell_widths:?}"
     );
-    // Each cell should be well below the native 360 px (we re-rendered
-    // at ~180) and well above the old ~80 px scaled-down artifacts.
+    // Each cell is a sixth of the row, gaps taken out (~98 points).
     assert!(
-      cell_widths.iter().all(|w| (120..=240).contains(w)),
-      "expected cells in 120..=240 px range after re-rendering, got {cell_widths:?}"
+      cell_widths.iter().all(|w| (85..=115).contains(w)),
+      "expected cells about 98 px wide after re-rendering, got {cell_widths:?}"
     );
     // Each inner SVG should have a shrunken viewBox (Plot's internal
     // resolution scales with ImageSize), confirming it was actually
@@ -28155,9 +28173,11 @@ mod blend {
       .unwrap(),
       "{PlotRange -> {{0., 2.}, {0., 3.}}}"
     );
+    // The ends are sampled a millionth of a step inside the domain, as in
+    // WL, so the y range stops just short of 0 and 1.
     assert_eq!(
-      interpret("PlotRange[Plot[x^2, {x, 0, 1}]]").unwrap(),
-      "{{0., 1.}, {0., 1.}}"
+      interpret("Round[PlotRange[Plot[x^2, {x, 0, 1}]], 10^-6]").unwrap(),
+      "{{0, 1}, {0, 1}}"
     );
     // The reported range is the unpadded one, for list plots too.
     assert_eq!(
@@ -28166,8 +28186,8 @@ mod blend {
          PlotRange[ListLinePlot[{3, 5, 4}]]}"
       )
       .unwrap(),
-      "{{{0., 10.}, {0., 10.}}, {{2., 10.}, {2., 10.}}, {{0., 3.}, \
-       {2.888888888888889, 5.}}}"
+      "{{{0., 10.}, {0., 10.}}, {{2., 10.}, {2.000000163265306, \
+       9.999999836734695}}, {{0., 3.}, {2.888888888888889, 5.}}}"
     );
     assert_eq!(
       interpret(
@@ -37474,9 +37494,9 @@ fn callout_connector_line_present() {
 
 #[test]
 fn plot_legends_placed_top() {
-  let svg = export_svg(
+  let svg = without_italics(&export_svg(
     r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Placed["Expressions", Top]]"#,
-  );
+  ));
   assert!(svg.contains(">sin(x)<"), "Should contain the sin(x) legend");
   assert!(svg.contains(">cos(x)<"), "Should contain the cos(x) legend");
   // Top placement shifts content down via a translate group
@@ -37502,9 +37522,9 @@ fn plot_legends_placed_top_custom_labels() {
 #[test]
 fn plot_legends_expressions_right_regression() {
   // Regression test: default PlotLegends -> "Expressions" should still work (right side)
-  let svg = export_svg(
+  let svg = without_italics(&export_svg(
     r#"Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
-  );
+  ));
   assert!(svg.contains(">sin(x)<"), "Should contain the sin(x) legend");
   assert!(svg.contains(">cos(x)<"), "Should contain the cos(x) legend");
   // Right placement should NOT have a translate group for shifting content
@@ -43722,7 +43742,7 @@ fn grid_progress_indicator_cell_draws_a_bar() {
 fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
   let markup = |code: &str| {
     let expr = woxi::interpret_to_expr(code).unwrap();
-    woxi::functions::graphics::expr_to_svg_markup(&expr)
+    without_italics(&woxi::functions::graphics::expr_to_svg_markup(&expr))
   };
   let svg = markup(
     "TraditionalForm[u (1/(1 + u + v) + 1/((1 + u)^2 (u/(1 + u) + v)))]",
@@ -48107,16 +48127,16 @@ mod plot_content_regressions {
   #[test]
   fn expression_labels_are_traditional_form() {
     for labels in ["Automatic", "\"Expressions\""] {
-      let svg = export_svg(&format!(
+      let svg = without_italics(&export_svg(&format!(
         "Plot[{{Sin[x], Cos[x]}}, {{x, 0, 2 Pi}}, PlotLabels -> {labels}]"
-      ));
+      )));
       assert!(text_x(&svg, "sin(x)").is_some(), "{labels}");
       assert!(text_x(&svg, "cos(x)").is_some(), "{labels}");
       assert!(!svg.contains("Expressions"), "{labels}");
     }
-    let svg = export_svg(
+    let svg = without_italics(&export_svg(
       r#"Plot[{Sin[x], Sin[2 x]}, {x, 0, 2 Pi}, PlotLegends -> "Expressions"]"#,
-    );
+    ));
     assert!(text_x(&svg, "sin(x)").is_some());
     assert!(svg.contains(">sin(2"));
     assert!(!svg.contains("Sin["));

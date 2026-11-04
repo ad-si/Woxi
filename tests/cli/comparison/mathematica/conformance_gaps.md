@@ -8584,3 +8584,27 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   `x` rather than a separate `_` below it.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
   draws a minus sign (`−10`), and the continuous bar is 64 flat slices.
+
+## Plot styling and labelling options (graphics comparison sweep, 2026-11)
+
+- Plot labels, legends and explicit tick labels are text markup: a
+  `PlotLegends -> "Expressions"` entry such as `Abs[Exp[I w]/(1 + w^2)]`
+  reads `|(exp(i w))/(1+w^2)|` on one line, `Ticks -> {{Pi/2, 3 Pi/2}}`
+  labels read `π/2`, and `Sqrt[x]` is `√` with an SVG overline rather than
+  a vinculum joined to the sign. wolframscript typesets the stacked
+  fractions and radicals.
+- `PlotTheme -> "Monochrome"` in a list plot draws every series black but
+  without the theme's per-series `PlotMarkers` shapes.
+- `Callout[f, label, Above]` puts the label straight above its anchor with
+  a vertical leader; WL offsets it to the side along a curved leader.
+  `PlotLabels -> Automatic` leaders are straight where WL draws a dog-leg,
+  and a `Placed[label, Above]` at the first point of a curve is centred on
+  it (overlapping the y axis) where WL keeps it clear of the axis.
+- `PlotPoints -> n, MaxRecursion -> 0` samples evenly; WL jitters the
+  initial samples, so the polyline vertices differ.
+- `EvaluationMonitor` sees Woxi's own adaptive samples (close to uniform),
+  not WL's (clustered at the extrema); a `Plot` of a step function draws
+  each step only between the samples either side of a jump.
+- An automatically sized `GraphicsRow` of several pictures fits them into
+  640 points; a row of variables holding already-rendered plots is not
+  re-laid out at the cell width.

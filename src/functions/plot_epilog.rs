@@ -456,6 +456,13 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
         };
         let dashes: Vec<f64> = match &args[0] {
           Expr::List(items) => items.iter().filter_map(dash_len).collect(),
+          Expr::Identifier(s)
+            if crate::functions::graphics::named_dashing(s).is_some() =>
+          {
+            crate::functions::graphics::named_dashing(s)
+              .map(|(dash, gap)| vec![-dash, -gap])
+              .unwrap_or_default()
+          }
           other => dash_len(other).map(|d| vec![d, d]).unwrap_or_default(),
         };
         style.dashing = if dashes.is_empty() {
@@ -1003,7 +1010,30 @@ fn render_item(
           f64::midpoint(area.x_min, area.x_max),
           f64::midpoint(area.y_min, area.y_max),
         ));
-        let svg = crate::evaluator::expr_to_svg(&args[0]);
+        // An explicit `size` (a width in the plot's x units) lays the
+        // object out anew at that width; a plot is inset transparently.
+        let width = args
+          .get(3)
+          .and_then(|s| {
+            point2(s).map(|(w, _)| w).or_else(|| try_eval_to_f64(s))
+          })
+          .map(|w| area.rx(w) / area.scale);
+        let object = crate::evaluator::evaluate_expr_to_expr(&args[0])
+          .unwrap_or_else(|_| args[0].clone());
+        let relaid = width.and_then(|w| {
+          crate::functions::graphics::plot_inset_at_width(&object, w)
+        });
+        let svg = if let Some((svg, _, _)) = relaid {
+          svg
+        } else {
+          let svg = crate::evaluator::expr_to_svg(&object);
+          match &object {
+            Expr::Graphics { is_3d: false, .. } => {
+              crate::functions::graphics::strip_plot_background_plate(&svg)
+            }
+            _ => svg,
+          }
+        };
         if let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
         {
           out.push_str(&crate::functions::graphics::embed_svg_centered(
@@ -1081,18 +1111,34 @@ fn render_circle_like(
     None if args.is_empty() => (0.0, 0.0),
     None => return,
   };
-  let (r_x, r_y) = match args.get(1) {
-    None => (1.0, 1.0),
-    Some(e) => match point2(e) {
-      Some(pair) => pair,
-      None => match try_eval_to_f64(e) {
-        Some(r) => (r, r),
+  let radii =
+    |e: &Expr| point2(e).or_else(|| try_eval_to_f64(e).map(|r| (r, r)));
+  let (prx, pry) = match args.get(1) {
+    None => (area.rx(1.0), area.ry(1.0)),
+    // `Offset[r]`: a radius in printer's points, whatever the plot range.
+    Some(Expr::FunctionCall { name, args: r })
+      if name == "Offset" && r.len() == 1 =>
+    {
+      match radii(&r[0]) {
+        Some((rx, ry)) => (rx * area.scale, ry * area.scale),
         None => return,
-      },
+      }
+    }
+    // `Scaled[r]`: fractions of the plot range's width and height.
+    Some(Expr::FunctionCall { name, args: r })
+      if name == "Scaled" && r.len() == 1 =>
+    {
+      match radii(&r[0]) {
+        Some((rx, ry)) => (rx * area.w, ry * area.h),
+        None => return,
+      }
+    }
+    Some(e) => match radii(e) {
+      Some((rx, ry)) => (area.rx(rx), area.ry(ry)),
+      None => return,
     },
   };
   let (pcx, pcy) = (area.px(cx), area.py(cy));
-  let (prx, pry) = (area.rx(r_x), area.ry(r_y));
 
   // An angle range `{θ1, θ2}` renders as an elliptical arc (Circle) or a
   // pie wedge (Disk).

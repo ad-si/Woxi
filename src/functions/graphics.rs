@@ -41,6 +41,19 @@ pub(crate) fn symbolic_point_size(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// `Dashing[size]` for a named `size`: a fixed dash and a slightly longer
+/// gap, in printer's points (measured from wolframscript at several
+/// thicknesses) — not the `{size, size}` of `Dashing[{size, size}]`.
+pub(crate) fn named_dashing(size: &str) -> Option<(f64, f64)> {
+  match size {
+    "Tiny" => Some((1.0, 3.0)),
+    "Small" => Some((2.5, 4.5)),
+    "Medium" => Some((5.0, 7.0)),
+    "Large" => Some((10.0, 13.0)),
+    _ => None,
+  }
+}
+
 pub(crate) fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   if let Expr::Identifier(s) = expr {
     match s.as_str() {
@@ -943,6 +956,11 @@ enum Primitive {
     /// `size` came from `Scaled[…]`: fractions of the plot range rather
     /// than data coordinates.
     size_scaled: bool,
+    /// The plot this picture was rendered from, when it can be laid out
+    /// anew: an explicit `size` then re-renders it at that width, the way
+    /// WL lays an inset plot out at its final size (its labels and lines
+    /// keep their point sizes instead of shrinking with the picture).
+    source: Option<Box<Expr>>,
   },
   RasterPrim {
     /// rows x cols grid of RGBA colors (row 0 = bottom in Wolfram coords)
@@ -2109,16 +2127,9 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           // A named size is a fixed dash and a slightly longer gap, in
           // printer's points (measured from wolframscript at several
           // thicknesses).
-          Expr::Identifier(s)
-            if matches!(s.as_str(), "Tiny" | "Small" | "Medium" | "Large") =>
-          {
-            let (dash, gap) = match s.as_str() {
-              "Tiny" => (1.0, 3.0),
-              "Small" => (2.5, 4.5),
-              "Medium" => (5.0, 7.0),
-              _ => (10.0, 13.0),
-            };
-            style.dashing = Some(vec![-dash, -gap]);
+          Expr::Identifier(s) if named_dashing(s).is_some() => {
+            style.dashing =
+              named_dashing(s).map(|(dash, gap)| vec![-dash, -gap]);
           }
           _ => {
             if let Some(d) =
@@ -6317,6 +6328,76 @@ fn strip_default_background_plate(svg: &str) -> String {
   svg.to_string()
 }
 
+/// A rendered plot without the opaque plate its renderer paints behind
+/// it in the theme background colour.
+pub(crate) fn strip_plot_background_plate(svg: &str) -> String {
+  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  let fill = format!(
+    " fill=\"#{:02X}{:02X}{:02X}\" stroke=\"none\"/>",
+    bg.0, bg.1, bg.2
+  );
+  if let Some(start) = svg.find("<rect x=\"0\" y=\"0\" ")
+    && let Some(len) = svg[start..].find("/>")
+    && svg[start..start + len + 2].ends_with(&fill)
+    && !svg[..start].contains("<rect")
+  {
+    let mut end = start + len + 2;
+    if svg[end..].starts_with('\n') {
+      end += 1;
+    }
+    return format!("{}{}", &svg[..start], &svg[end..]);
+  }
+  strip_default_background_plate(svg)
+}
+
+/// A 2D plot (one that keeps its sampled series) laid out anew `width`
+/// points wide (`Show[g, ImageSize -> width]`), transparent unless it
+/// sets a `Background`: the picture an inset of an explicit size shows,
+/// with its natural width and height.
+pub(crate) fn plot_inset_at_width(
+  g: &Expr,
+  width: f64,
+) -> Option<(String, f64, f64)> {
+  if !width.is_finite() || width < 1.0 {
+    return None;
+  }
+  let Expr::Graphics {
+    is_3d: false,
+    source: Some(_),
+    ..
+  } = g
+  else {
+    return None;
+  };
+  let background = graphics_options(g).is_some_and(|options| {
+    options.iter().any(|o| {
+      matches!(option_name_value(o), Some((n, v)) if n == "Background"
+        && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
+    })
+  });
+  let shown = evaluate_expr_to_expr(&call(
+    "Show",
+    vec![
+      g.clone(),
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+        replacement: Box::new(Expr::Integer(width.round() as i128)),
+      },
+    ],
+  ))
+  .ok()?;
+  let Expr::Graphics { svg, .. } = &shown else {
+    return None;
+  };
+  let svg = if background {
+    svg.clone()
+  } else {
+    strip_plot_background_plate(svg)
+  };
+  let dims = parse_svg_dimensions(&svg)?;
+  Some((svg, dims.nat_w, dims.nat_h))
+}
+
 /// The numeric `{{xmin, xmax}, {ymin, ymax}}` of a graphic's `PlotRange`.
 fn numeric_plot_range(options: &[Expr]) -> Option<((f64, f64), (f64, f64))> {
   let value = options.iter().find_map(|o| {
@@ -6380,8 +6461,18 @@ fn framed_plot_inset(
     ),
     _ => (px, py),
   };
+  let background = options.iter().any(|o| {
+    matches!(option_name_value(o), Some((n, v)) if n == "Background"
+      && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
+  });
+  // WL insets a plot without a `Background` transparently.
+  let svg = if background {
+    svg.clone()
+  } else {
+    strip_plot_background_plate(svg)
+  };
   Some(Primitive::InsetGraphic {
-    svg: svg.clone(),
+    svg,
     x: cx,
     y: cy,
     w: dims.nat_w,
@@ -6389,6 +6480,7 @@ fn framed_plot_inset(
     scaled: false,
     size: Some((width, height)),
     size_scaled: false,
+    source: Some(Box::new(peel_style_wrapper(&args[0]).clone())),
   })
 }
 
@@ -6666,7 +6758,24 @@ fn inset_primitives(
     && let Some((x, y, scaled)) = anchor
   {
     let (target_w, target_h) = parse_inset_target_size(args);
-    let mut svg = svg.clone();
+    // A plot is inset transparently, and laid out anew at an explicit
+    // size (see `plot_inset_at_width`).
+    let plot = match peel_style_wrapper(&args[0]) {
+      g @ Expr::Graphics { is_3d: false, .. } => Some(g),
+      _ => None,
+    };
+    let plot_background = plot.and_then(graphics_options).is_some_and(|o| {
+      o.iter().any(|o| {
+        matches!(option_name_value(o), Some((n, v)) if n == "Background"
+          && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
+      })
+    });
+    let mut svg = if plot.is_some() && !plot_background {
+      strip_plot_background_plate(svg)
+    } else {
+      svg.clone()
+    };
+    let mut source = plot.map(|g| Box::new(g.clone()));
     let (mut w, mut h) = (dims.nat_w, dims.nat_h);
     let mut size = target_w.zip(target_h);
     // `Inset[obj, pos, {Left, Top}]` puts the object's own corner, not its
@@ -6685,6 +6794,7 @@ fn inset_primitives(
       );
       size = size.map(|(sw, sh)| (sw * kx, sh * ky));
       (w, h) = (pw, ph);
+      source = None;
     }
     return Some(vec![Primitive::InsetGraphic {
       svg,
@@ -6695,6 +6805,7 @@ fn inset_primitives(
       scaled,
       size,
       size_scaled: inset_size_is_scaled(args),
+      source,
     }]);
   }
   // `Inset[Button[label, action], pos]` — the control a puzzle
@@ -6724,6 +6835,7 @@ fn inset_primitives(
       scaled: false,
       size: None,
       size_scaled: false,
+      source: None,
     }]);
   }
   // The object: `Graphics[…]` (or its box form), a rendered graphic that
@@ -7030,6 +7142,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       scaled,
       size: None,
       size_scaled: false,
+      source: None,
     });
     return;
   }
@@ -7067,6 +7180,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         scaled,
         size: None,
         size_scaled: false,
+        source: None,
       });
       return;
     }
@@ -8316,6 +8430,7 @@ fn rotate_primitive(
       scaled,
       size,
       size_scaled,
+      source,
     } => {
       // A scaled anchor names a place in the finished frame, not a point in
       // the data, so a transform of the coordinates leaves it where it is.
@@ -8329,6 +8444,7 @@ fn rotate_primitive(
         scaled: *scaled,
         size: *size,
         size_scaled: *size_scaled,
+        source: source.clone(),
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -8645,6 +8761,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled,
       size,
       size_scaled,
+      source,
     } => Primitive::InsetGraphic {
       svg: svg.clone(),
       x: if *scaled { *x } else { x + dx },
@@ -8654,6 +8771,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled: *scaled,
       size: *size,
       size_scaled: *size_scaled,
+      source: source.clone(),
     },
     Primitive::PointSingle { x, y, style } => Primitive::PointSingle {
       x: x + dx,
@@ -8917,6 +9035,7 @@ fn scale_primitive(
       scaled,
       size,
       size_scaled,
+      source,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
       // An explicit `size` lives in data coordinates, so it scales with the
@@ -8938,6 +9057,7 @@ fn scale_primitive(
         scaled: *scaled,
         size: nsize,
         size_scaled: *size_scaled,
+        source: source.clone(),
       }
     }
     Primitive::PointSingle { x, y, style } => {
@@ -11028,6 +11148,7 @@ fn render_primitive(
       scaled,
       size,
       size_scaled,
+      source,
     } => {
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
       let (pw, ph) = match size {
@@ -11036,6 +11157,14 @@ fn render_primitive(
           (sw * svg_w / bb.width(), sh * svg_h / bb.height())
         }
         _ => (*w, *h),
+      };
+      let relaid = source
+        .as_ref()
+        .filter(|_| size.is_some())
+        .and_then(|g| plot_inset_at_width(g, pw));
+      let (svg, ph) = match &relaid {
+        Some((svg, rw, rh)) => (svg, pw * rh / rw),
+        None => (svg, ph),
       };
       out.push_str(&embed_svg_centered(
         svg,
@@ -16630,7 +16759,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "Times" if args.len() >= 2 => {
           // Times[Rational[n, d], expr] → stacked fraction n expr/d
           if args.len() == 2
-            && let Some(markup) = rational_coefficient_markup(&args[0], &args[1])
+            && let Some(markup) =
+              rational_coefficient_markup(&args[0], &args[1])
           {
             return markup;
           }
@@ -16662,28 +16792,29 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             // ambiguous `a/b c` (misreadable as `(a/b) c`). A numerator
             // reads fine unparenthesized either way (`a b/c` is `(a b)/c`
             // unambiguously), so only its own additive terms get parens.
-            let to_markup = |factors: &[Expr], force_paren_multi: bool| -> String {
-              match factors.len() {
-                0 => "1".to_string(),
-                1 => {
-                  let s = expr_to_svg_markup(&factors[0]);
-                  if is_additive_expr(&factors[0]) {
-                    format!("({s})")
-                  } else {
-                    s
+            let to_markup =
+              |factors: &[Expr], force_paren_multi: bool| -> String {
+                match factors.len() {
+                  0 => "1".to_string(),
+                  1 => {
+                    let s = expr_to_svg_markup(&factors[0]);
+                    if is_additive_expr(&factors[0]) {
+                      format!("({s})")
+                    } else {
+                      s
+                    }
+                  }
+                  _ => {
+                    let combined = unevaluated("Times", factors);
+                    let s = expr_to_svg_markup(&combined);
+                    if force_paren_multi {
+                      format!("({s})")
+                    } else {
+                      s
+                    }
                   }
                 }
-                _ => {
-                  let combined = unevaluated("Times", factors);
-                  let s = expr_to_svg_markup(&combined);
-                  if force_paren_multi {
-                    format!("({s})")
-                  } else {
-                    s
-                  }
-                }
-              }
-            };
+              };
             let num_markup = to_markup(&num_factors, false);
             let den_markup = to_markup(&den_factors, true);
             let sign = if negate { "-" } else { "" };
@@ -16963,10 +17094,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "TraditionalForm"
           if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
         {
-          boxes_to_svg(&crate::strip_number_precision_markers(
+          let boxes = crate::strip_number_precision_markers(
             &crate::evaluator::dispatch::complex_and_special::
               expr_to_box_form_traditional(&args[0]),
-          ))
+          );
+          with_single_letter_italics(|| boxes_to_svg(&boxes))
         }
 
         // Presentation wrappers display their content only.
@@ -16987,7 +17119,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // forms of `|x|` / `‖x‖` (what `\[LeftBracketingBar]x\[RightBracketingBar]`
         // in input boxes parses to); they draw as their bars around the content.
         "BracketingBar" | "DoubleBracketingBar" if args.len() == 1 => {
-          let bar = if name == "BracketingBar" { "|" } else { "\u{2016}" };
+          let bar = if name == "BracketingBar" {
+            "|"
+          } else {
+            "\u{2016}"
+          };
           format!("{bar}{}{bar}", expr_to_svg_markup(&args[0]))
         }
         // `SuperStar[x]` / `SuperDagger[x]` raise their mark: `x*`, `x†`.
@@ -17031,7 +17167,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // mean/estimate notation, x̄). `text-decoration` draws the line at
         // zero extra width, the same trick `SqrtBox`'s vinculum uses above.
         "OverBar" | "UnderBar" if args.len() == 1 => {
-          let deco = if name == "OverBar" { "overline" } else { "underline" };
+          let deco = if name == "OverBar" {
+            "overline"
+          } else {
+            "underline"
+          };
           format!(
             "<tspan text-decoration=\"{deco}\">{}</tspan>",
             expr_to_svg_markup(&args[0])
@@ -17071,8 +17211,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           let is_bar_accent = matches!(&args[1],
             Expr::String(s) if s == "_" || s == "-" || s == "\u{2013}");
           if is_bar_accent {
-            let deco =
-              if name == "Overscript" { "overline" } else { "underline" };
+            let deco = if name == "Overscript" {
+              "overline"
+            } else {
+              "underline"
+            };
             format!("<tspan text-decoration=\"{deco}\">{base_markup}</tspan>")
           } else {
             let (raise, fall) = if name == "Overscript" {
@@ -17128,7 +17271,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               if !rows.is_empty()
                 && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
         {
-          let Expr::List(rows) = &args[0] else { unreachable!() };
+          let Expr::List(rows) = &args[0] else {
+            unreachable!()
+          };
           let rendered: Vec<String> = rows
             .iter()
             .map(|r| {
@@ -17164,14 +17309,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             && matches!(&args[0], Expr::List(l) if !l.is_empty())
             && matches!(&args[1], Expr::List(l) if !l.is_empty()) =>
         {
-          let Expr::List(style_specs) = &args[0] else { unreachable!() };
-          let Expr::List(labels) = &args[1] else { unreachable!() };
-          let glyph =
-            match name.as_str() {
-              "SwatchLegend" => "\u{25A0}",
-              "PointLegend" => "\u{25CF}",
-              _ => "\u{2501}",
-            };
+          let Expr::List(style_specs) = &args[0] else {
+            unreachable!()
+          };
+          let Expr::List(labels) = &args[1] else {
+            unreachable!()
+          };
+          let glyph = match name.as_str() {
+            "SwatchLegend" => "\u{25A0}",
+            "PointLegend" => "\u{25CF}",
+            _ => "\u{2501}",
+          };
           let mut out = String::new();
           for (i, (spec, label)) in
             style_specs.iter().zip(labels.iter()).enumerate()
@@ -17226,9 +17374,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               }
               _ => None,
             };
-            let sep_markup =
-              if sep_gap.is_none() { separator.map(expr_to_svg_markup) }
-              else { None };
+            let sep_markup = if sep_gap.is_none() {
+              separator.map(expr_to_svg_markup)
+            } else {
+              None
+            };
 
             let mut out = String::new();
             let mut pending_gap = 0.0_f64;
@@ -17795,6 +17945,34 @@ fn strip_precision_marker(s: &str) -> &str {
   }
 }
 
+thread_local! {
+  /// Typesetting `TraditionalForm` boxes: a symbol spelt with a single
+  /// letter is set in italics (the front end's `SingleLetterItalics`).
+  static SINGLE_LETTER_ITALICS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`SINGLE_LETTER_ITALICS`] on, restoring it afterwards.
+fn with_single_letter_italics<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      SINGLE_LETTER_ITALICS.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(SINGLE_LETTER_ITALICS.with(|c| c.replace(true)));
+  f()
+}
+
+/// Whether a box string is a symbol spelt with one letter (`x`, `ω`, `π`),
+/// which `TraditionalForm` sets in italics; the double-struck `ⅇ`/`ⅈ`/`ⅆ`
+/// stay upright.
+fn is_single_letter_symbol(s: &str) -> bool {
+  let mut chars = s.chars();
+  matches!((chars.next(), chars.next()), (Some(c), None)
+    if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
@@ -17806,6 +17984,16 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         .strip_prefix('"')
         .and_then(|rest| rest.strip_suffix('"'))
         .unwrap_or(s);
+      // A quoted string is literal text, upright whatever the form.
+      if unquoted.len() == s.len()
+        && SINGLE_LETTER_ITALICS.with(std::cell::Cell::get)
+        && is_single_letter_symbol(unquoted)
+      {
+        return format!(
+          "<tspan font-style=\"italic\">{}</tspan>",
+          svg_escape(unquoted)
+        );
+      }
       svg_escape(unquoted)
     }
     // Identifiers can appear for fallback cases
@@ -25248,6 +25436,10 @@ fn default_layout_options() -> LayoutOptions {
 /// this gives 3 cells at native size before shrinking kicks in.
 const GRID_ROW_CAP_WIDTH: f64 = 1080.0;
 
+/// The width (points) WL fits an automatically sized `GraphicsRow` of
+/// several pictures into: two plots come out 640 wide, five 650.
+const GRAPHICS_ROW_AUTO_WIDTH: f64 = 640.0;
+
 /// Compute the per-cell pixel width for a row of `n` cells. When an
 /// explicit total width is given, divide it evenly; otherwise use the
 /// natural cell width up to `GRID_ROW_CAP_WIDTH` total.
@@ -25961,8 +26153,24 @@ pub fn graphics_row_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
       ));
     }
-    let (per_cell_w, per_cell_h) =
+    let (mut per_cell_w, per_cell_h) =
       layout_cell_size(&opts, items.len(), 1, items.len());
+    // Without an `ImageSize`, WL fits a row of several pictures, gaps
+    // included, into `GRAPHICS_ROW_AUTO_WIDTH` points; each is laid out
+    // at its share, so its labels and lines keep their own sizes.
+    let n = items.len() as f64;
+    if opts.target_width.is_none() && !opts.aspect_full && n >= 2.0 {
+      let gap = match opts.h_spacing {
+        SpacingSpec::Scaled(f) => f.max(0.0),
+        SpacingSpec::Points(_) => 0.0,
+      };
+      let fixed_gaps = match opts.h_spacing {
+        SpacingSpec::Points(_) => (n - 1.0) * opts.h_spacing.to_px(0.0),
+        SpacingSpec::Scaled(_) => 0.0,
+      };
+      let fit = (GRAPHICS_ROW_AUTO_WIDTH - fixed_gaps) / (n + (n - 1.0) * gap);
+      per_cell_w = per_cell_w.min((fit.round() as i128).max(1));
+    }
     render_items_at_size(items, per_cell_w, per_cell_h, true)
   } else {
     let list_expr = evaluate_expr_to_expr(&args[0])?;

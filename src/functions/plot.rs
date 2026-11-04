@@ -587,11 +587,16 @@ fn adaptive_sample(
 
   // Initial uniform sampling
   let step = (x_max - x_min) / (initial_n - 1) as f64;
+  // WL samples the ends a millionth of a step inside the domain, so a
+  // step function such as `Floor[x]` on `{x, 0, 5}` ends flat at 4
+  // rather than jumping to `Floor[5]` at the very end.
+  let inset = step * 1e-6;
   let mut points: Vec<(f64, f64)> = (0..initial_n)
     .map(|i| {
-      // The last sample sits exactly on `x_max`, not a rounding error away.
       let x = if i + 1 == initial_n {
-        x_max
+        x_max - inset
+      } else if i == 0 {
+        x_min + inset
       } else {
         x_min + i as f64 * step
       };
@@ -3202,6 +3207,10 @@ pub(crate) enum LegendPosition {
   /// `Placed[…, {x, y}]`: inside the image, centred at this scaled
   /// position (fractions of its width and height, from the bottom left).
   Inside(f64, f64),
+  /// `Placed[…, {Right, Top}]` and the like: inside the image, the
+  /// legend's own named point on the image's (fractions from the bottom
+  /// left, so `{1, 1}` puts it in the top right corner).
+  Aligned(f64, f64),
 }
 
 /// How `Around` uncertainty intervals are drawn (IntervalMarkers option):
@@ -3303,6 +3312,12 @@ pub(crate) struct PlotOptions {
   pub legend_placeholders: bool,
   /// `LegendFunction -> Frame`: the legend is framed.
   pub legend_frame: bool,
+  /// `LegendLabel -> title` of an `XLegend[…]`: the legend's title,
+  /// centred above a column of entries.
+  pub legend_label: Option<String>,
+  /// `BaselinePosition -> Axis`: a list or row of pictures lines this one
+  /// up on its horizontal axis rather than its centre.
+  pub baseline_axis: bool,
   /// Show evenly spaced horizontal grid lines (automatic).
   pub grid_lines_y: bool,
   /// Show evenly spaced vertical grid lines (automatic).
@@ -3642,6 +3657,8 @@ impl Default for PlotOptions {
       legend_automatic: false,
       legend_placeholders: false,
       legend_frame: false,
+      legend_label: None,
+      baseline_axis: false,
       grid_lines_y: false,
       grid_lines_x: false,
       grid_x_lines: Vec::new(),
@@ -4000,9 +4017,11 @@ fn render_dash_overlays(
       })
       .collect();
     let (r, g, b) = ov.color;
+    // WL ends every dash square (`CapForm["Butt"]`); round caps would
+    // close the short gaps of a dotted or `{6, 2}` pattern.
     svg.push_str(&format!(
       "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"round\" \
+       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"butt\" \
        points=\"{}\"/>\n",
       r,
       g,
@@ -4342,20 +4361,55 @@ pub(crate) fn plot_labels_svg(
     log: opts.log_y,
   };
   let area = (plot_x0, margin_top, plot_w, plot_h);
-  labels_svg.push_str(&axes_label_svg_at(
-    opts.axes_label.as_ref(),
+  let crossing = crate::functions::plot_axes::axes_crossing_px(
     area,
-    crate::functions::plot_axes::axes_crossing_px(
+    x_scale,
+    y_scale,
+    opts.axes_origin_point(x_scale, y_scale),
+  );
+  // Each axis label takes its axis's `AxesStyle` colour unless
+  // `LabelStyle` gives one.
+  let axis_fill = |i: usize| -> Option<String> {
+    if label_style_color.is_some() {
+      return None;
+    }
+    opts.axes_style[i].as_ref().and_then(|s| s.color).map(|c| {
+      let (r, g, b) = color_to_rgb8(c);
+      format!("rgb({r},{g},{b})")
+    })
+  };
+  if let Some((x_label, y_label)) = opts.axes_label.as_ref()
+    && (axis_fill(0).is_some() || axis_fill(1).is_some())
+  {
+    for (i, part) in [
+      (x_label.clone(), String::new()),
+      (String::new(), y_label.clone()),
+    ]
+    .iter()
+    .enumerate()
+    {
+      let fill = axis_fill(i);
+      labels_svg.push_str(&axes_label_svg_at(
+        Some(part),
+        area,
+        crossing,
+        opts.axes,
+        font_size,
+        fill.as_deref().unwrap_or(label_fill),
+        Some(canvas_width),
+      ));
+    }
+  } else {
+    labels_svg.push_str(&axes_label_svg_at(
+      opts.axes_label.as_ref(),
       area,
-      x_scale,
-      y_scale,
-      opts.axes_origin_point(x_scale, y_scale),
-    ),
-    opts.axes,
-    font_size,
-    label_fill,
-    Some(canvas_width),
-  ));
+      crossing,
+      opts.axes,
+      font_size,
+      label_fill,
+      Some(canvas_width),
+    ));
+  }
 
   // Top FrameLabel: 6 pt above the frame (and its tick labels).
   if let Some(top_label) = &opts.frame_label_top
@@ -4870,12 +4924,149 @@ impl plotters::coord::ranged1d::Ranged for FixedKeyPoints {
   }
 }
 
+/// One dimension of an `ImageSize` that caps a side with `UpTo`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SizeCap {
+  Free,
+  Fixed(u32),
+  UpTo(u32),
+}
+
+/// The two sides of an `ImageSize` value that uses `UpTo` somewhere:
+/// `UpTo[n]` caps both, `{w, h}` each side on its own. `None` for any
+/// value without `UpTo`.
+fn image_size_caps(value: &Expr) -> Option<(SizeCap, SizeCap)> {
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let number = |e: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(e)
+      .filter(|v| v.is_finite() && *v >= 1.0)
+      .map(|v| (v.round() as u32).min(MAX_SVG_DIMENSION))
+  };
+  let up_to = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "UpTo" && args.len() == 1 => {
+      number(&args[0])
+    }
+    _ => None,
+  };
+  let slot = |e: &Expr| match e {
+    Expr::Identifier(n) if n == "Automatic" => Some(SizeCap::Free),
+    _ => up_to(e)
+      .map(SizeCap::UpTo)
+      .or_else(|| number(e).map(SizeCap::Fixed)),
+  };
+  let caps = match &value {
+    Expr::List(items) if items.len() == 1 => {
+      return image_size_caps(&items[0]);
+    }
+    Expr::List(items) if items.len() == 2 => {
+      (slot(&items[0])?, slot(&items[1])?)
+    }
+    _ => {
+      let n = up_to(&value)?;
+      (SizeCap::UpTo(n), SizeCap::UpTo(n))
+    }
+  };
+  matches!(caps, (SizeCap::UpTo(_), _) | (_, SizeCap::UpTo(_))).then_some(caps)
+}
+
+/// The display size (`width`, `height` of the `<svg>` element) of a
+/// rendered plot.
+fn svg_display_size(svg: &str) -> Option<(f64, f64)> {
+  let head = &svg[..svg.find('>')?];
+  let attr = |name: &str| -> Option<f64> {
+    let start = head.find(&format!(" {name}=\""))? + name.len() + 3;
+    let rest = &head[start..];
+    rest[..rest.find('"')?]
+      .trim_end_matches("pt")
+      .trim_end_matches("px")
+      .parse()
+      .ok()
+  };
+  Some((attr("width")?, attr("height")?))
+}
+
+/// A plot whose `ImageSize` caps a side with `UpTo`: the largest picture
+/// within the caps, as WL draws it. A capped width is tried first; when
+/// the height it brings exceeds its cap (or a fixed height), the height
+/// is fixed instead, and when the width that follows exceeds its own cap
+/// both sides are fixed.
+fn generate_svg_up_to(
+  all_points: &[Vec<(f64, f64)>],
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  opts: &PlotOptions,
+  caps: (SizeCap, SizeCap),
+) -> Result<String, InterpreterError> {
+  let render = |w: Option<u32>, h: Option<u32>| {
+    let dim = |d: Option<u32>| match d {
+      Some(n) => Expr::Integer(n as i128),
+      None => Expr::Identifier("Automatic".to_string()),
+    };
+    let value = Expr::List(vec![dim(w), dim(h)].into());
+    let mut sized = opts.clone();
+    if let Some((sw, sh, _)) =
+      parse_image_size(&value, DEFAULT_WIDTH, DEFAULT_HEIGHT)
+    {
+      sized.svg_width = sw;
+      sized.svg_height = sh;
+    }
+    sized.image_size_explicit = (w.is_some(), h.is_some());
+    sized.image_size_value = Some(value);
+    generate_svg_with_options(all_points, x_range, y_range, &sized)
+  };
+  let fits = |svg: &str, w: Option<u32>, h: Option<u32>| {
+    svg_display_size(svg).is_none_or(|(sw, sh)| {
+      w.is_none_or(|w| sw <= w as f64 + 0.5)
+        && h.is_none_or(|h| sh <= h as f64 + 0.5)
+    })
+  };
+  let cap = |c: SizeCap| match c {
+    SizeCap::Free => None,
+    SizeCap::Fixed(n) | SizeCap::UpTo(n) => Some(n),
+  };
+  let (w, h) = (cap(caps.0), cap(caps.1));
+  match caps {
+    // The width leads: keep it unless the height outgrows its cap.
+    (
+      SizeCap::UpTo(_) | SizeCap::Fixed(_),
+      SizeCap::UpTo(_) | SizeCap::Free,
+    ) => {
+      let svg = render(w, None)?;
+      if fits(&svg, None, h) {
+        return Ok(svg);
+      }
+      if let SizeCap::Fixed(_) = caps.0 {
+        render(w, h)
+      } else {
+        let svg = render(None, h)?;
+        if fits(&svg, w, None) {
+          Ok(svg)
+        } else {
+          render(w, h)
+        }
+      }
+    }
+    // A fixed (or free) height with a capped width.
+    _ => {
+      let svg = render(None, h)?;
+      if fits(&svg, w, None) {
+        Ok(svg)
+      } else {
+        render(w, h)
+      }
+    }
+  }
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
+    return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
+  }
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let opts = &*with_simple_ticks(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
@@ -5348,6 +5539,15 @@ fn generate_svg_with_options(
         // are solid by default; dashing needs an explicit style.)
         // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
         let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
+        // A line coloured on its own keeps the default style's opacity,
+        // as WL's `{2, Directive[Blue, Thick]}` draws at 0.4 alpha.
+        let grid_alpha = |rgb: Option<(u8, u8, u8)>| {
+          if rgb.is_some() && opts.grid_lines_style.is_none() {
+            0.4
+          } else {
+            1.0
+          }
+        };
         // Automatic grid lines follow the ticks drawn on the axes.
 
         // Horizontal (y) grid lines.
@@ -5378,7 +5578,7 @@ fn generate_svg_with_options(
               }
             }
             let (rgb, stroke_w, dash) = grid_line_props(style);
-            let alpha = style.opacity.unwrap_or(1.0);
+            let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
@@ -5436,7 +5636,7 @@ fn generate_svg_with_options(
               }
             }
             let (rgb, stroke_w, dash) = grid_line_props(style);
-            let alpha = style.opacity.unwrap_or(1.0);
+            let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
               dashed_overlays.push(DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
@@ -6497,6 +6697,7 @@ fn generate_svg_with_options(
       ticks_style: &opts.ticks_style,
       keep_y_label_on_x_axis: false,
       label_color: label_style_fill.as_deref(),
+      tick_font: plot_padding::plot_tick_font(opts),
     });
     if let Some(pos) = buf.rfind("</svg>") {
       buf.insert_str(pos, &axes_svg);
@@ -6693,10 +6894,10 @@ fn generate_svg_with_options(
   }
 
   // `"Placeholder"` (and a list plot's `Automatic`, whose series have no
-  // names) numbers the series.
+  // names) numbers the series; a lone series gets no such legend.
   if opts.plot_legends.is_empty()
     && (opts.legend_placeholders || opts.legend_automatic)
-    && !all_points.is_empty()
+    && all_points.len() > 1
   {
     let mut numbered = opts.clone();
     numbered.plot_legends = placeholder_legends(all_points.len());
@@ -6704,6 +6905,22 @@ fn generate_svg_with_options(
     inject_legend(&mut buf, &numbered);
   } else {
     inject_legend(&mut buf, opts);
+  }
+
+  // `BaselinePosition -> Axis`: record where the x axis lies (display
+  // points from the top) for the layout that sets this picture in a line.
+  if opts.baseline_axis && show_x_axis {
+    let plot_h = render_height as f64
+      - top_margin as f64
+      - margin_bottom as f64
+      - x_label_area as f64;
+    let axis_y = top_margin as f64 + plot_h - y_scale.frac(origin.1) * plot_h;
+    if axis_y.is_finite() {
+      crate::functions::container_layout::set_baseline_attr(
+        &mut buf,
+        axis_y / sf,
+      );
+    }
   }
 
   Ok(buf)
@@ -8718,6 +8935,7 @@ pub(crate) fn generate_bar_svg(
         ticks_style: &[None, None],
         keep_y_label_on_x_axis: true,
         label_color: None,
+        tick_font: crate::functions::plot_axes::AXIS_TICK_FONT,
       },
     );
     let axis_y = plot_y0 + plot_h - y_scale.frac(origin.1) * plot_h;
@@ -10472,7 +10690,8 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
     }
     LegendPosition::Right
     | LegendPosition::Left
-    | LegendPosition::Inside(..) => {
+    | LegendPosition::Inside(..)
+    | LegendPosition::Aligned(..) => {
       // A column of entries beside the plot (widening the image) or, when
       // placed at a point, over it.
       let max_text_width = opts
@@ -10480,9 +10699,20 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
         .iter()
         .map(|s| legend_label_width(opts, s, font_size))
         .fold(0.0_f64, f64::max);
-      let legend_width =
-        swatch_len + swatch_gap + max_text_width + legend_padding;
-      let beside = !matches!(opts.legend_position, LegendPosition::Inside(..));
+      // A `LegendLabel` title takes a row of its own above the entries.
+      let title_w = opts.legend_label.as_ref().map(|t| {
+        crate::functions::graphics::box_string_visible_len(t) as f64
+          * font_size
+          * 0.55
+      });
+      let title_rows = if title_w.is_some() { 1.0 } else { 0.0 };
+      let legend_width = (swatch_len + swatch_gap + max_text_width)
+        .max(title_w.unwrap_or(0.0))
+        + legend_padding;
+      let beside = !matches!(
+        opts.legend_position,
+        LegendPosition::Inside(..) | LegendPosition::Aligned(..)
+      );
       let new_vb_w = if beside { vb_w + legend_width } else { vb_w };
 
       if beside {
@@ -10536,7 +10766,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
       if let Some(insert_pos) = buf.rfind("</svg>") {
         let mut legend_svg = String::new();
         let n = opts.plot_legends.len();
-        let legend_total_h = n as f64 * line_height;
+        let legend_total_h = (n as f64 + title_rows) * line_height;
         let (legend_x, legend_y0) = match opts.legend_position {
           LegendPosition::Left => {
             (legend_padding * 0.5, (vb_h - legend_total_h) / 2.0)
@@ -10544,6 +10774,11 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           LegendPosition::Inside(fx, fy) => (
             fx * vb_w - (legend_width - legend_padding) / 2.0,
             (1.0 - fy) * vb_h - legend_total_h / 2.0,
+          ),
+          LegendPosition::Aligned(fx, fy) => (
+            legend_padding * 0.5 + fx * (vb_w - legend_width),
+            legend_padding * 0.25
+              + (1.0 - fy) * (vb_h - legend_total_h - legend_padding * 0.5),
           ),
           _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
         };
@@ -10560,9 +10795,20 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
           ));
         }
 
+        if let (Some(title), Some(w)) = (&opts.legend_label, title_w) {
+          let x = legend_x + (legend_width - legend_padding - w) / 2.0;
+          let y = legend_y0 + line_height * 0.5 + font_size * 0.35;
+          legend_svg.push_str(&format!(
+            "<text x=\"{x:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" \
+             font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+            crate::functions::graphics::box_string_to_svg_scaled(title, sf),
+          ));
+        }
         for (i, label) in opts.plot_legends.iter().enumerate() {
           let si = opts.legend_series.get(i).copied().unwrap_or(i);
-          let y = legend_y0 + i as f64 * line_height + line_height * 0.5;
+          let y = legend_y0
+            + (i as f64 + title_rows) * line_height
+            + line_height * 0.5;
           legend_svg.push_str(&legend_swatch_svg(
             opts, i, si, legend_x, y, swatch_len, dash_scale,
           ));
@@ -11215,6 +11461,7 @@ pub(crate) fn generate_histogram_svg(
         ticks_style: &[None, None],
         keep_y_label_on_x_axis: true,
         label_color: None,
+        tick_font: crate::functions::plot_axes::AXIS_TICK_FONT,
       },
     );
     if let Some(pos) = buf.rfind("</svg>") {
@@ -12045,6 +12292,14 @@ pub(crate) fn parse_image_size(
   };
   let value = evaluated.as_ref().unwrap_or(value);
   let aspect = def_h as f64 / def_w as f64;
+  // `UpTo[n]` caps a dimension; the renderer settles the final size (see
+  // `with_up_to_image_size`), starting from the capped width.
+  if let Expr::FunctionCall { name, args } = value
+    && name == "UpTo"
+    && args.len() == 1
+  {
+    return parse_image_size(&args[0], def_w, def_h);
+  }
   match value {
     Expr::Integer(n) if *n > 0 => {
       let w = *n as u32;
@@ -12096,6 +12351,14 @@ pub(crate) fn parse_image_size(
     // how a Demonstration sizes a row of plots by height alone.
     Expr::List(items) if items.len() == 2 => {
       let dim = |e: &Expr| -> Option<Option<u32>> {
+        let e = match e {
+          Expr::FunctionCall { name, args }
+            if name == "UpTo" && args.len() == 1 =>
+          {
+            &args[0]
+          }
+          _ => e,
+        };
         match e {
           Expr::Identifier(n) if n == "Automatic" => Some(None),
           Expr::Integer(n) if *n > 0 => Some(Some(*n as u32)),
@@ -12338,20 +12601,14 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           if !dashes.is_empty() {
             style.dashing = Some(dashes);
           }
-        } else {
-          let d = match &args[0] {
-            Expr::Identifier(s) => match s.as_str() {
-              "Tiny" => Some(0.005),
-              "Small" => Some(0.01),
-              "Medium" => Some(0.02),
-              "Large" => Some(0.04),
-              _ => None,
-            },
-            _ => try_eval_to_f64(&args[0]),
-          };
-          if let Some(d) = d {
-            style.dashing = Some(vec![d, d]);
+        } else if let Expr::Identifier(s) = &args[0] {
+          if let Some((dash, gap)) =
+            crate::functions::graphics::named_dashing(s)
+          {
+            style.dashing = Some(vec![-dash, -gap]);
           }
+        } else if let Some(d) = try_eval_to_f64(&args[0]) {
+          style.dashing = Some(vec![d, d]);
         }
       }
       _ => {}
@@ -13123,6 +13380,25 @@ const SCIENTIFIC_COLORS: [&str; 15] = [
   "RGBColor[0.41497437140121635, 0.393632147507352, 0.7842993779115092]",
 ];
 
+/// The WL 15 palette of `PlotTheme -> "Detailed"`.
+const DETAILED_COLORS: [&str; 15] = [
+  "RGBColor[0.24, 0.6, 0.8]",
+  "RGBColor[0.95, 0.627, 0.1425]",
+  "RGBColor[0.455, 0.7, 0.21]",
+  "RGBColor[0.922526, 0.385626, 0.209179]",
+  "RGBColor[0.578, 0.51, 0.85]",
+  "RGBColor[0.772079, 0.431554, 0.102387]",
+  "RGBColor[0., 0.6, 0.6]",
+  "RGBColor[0.9, 0.36, 0.684]",
+  "RGBColor[0.56, 0.7, 0.]",
+  "RGBColor[0.9, 0.54, 0.]",
+  "RGBColor[0.585, 0.5976, 0.9]",
+  "RGBColor[0.9, 0.45, 0.45]",
+  "RGBColor[0.7632186717367254, 0.8174402144034898, 0.]",
+  "RGBColor[0.8554632469481959, 0.24885384718327969, 0.8334053873948551]",
+  "RGBColor[0.032972823413648836, 0.7396719749139476, 0.534700104525218]",
+];
+
 /// The options a `PlotTheme` stands for, as
 /// `Charting`ResolvePlotTheme[theme, Plot]` (or `ListPlot` for
 /// `list_plot`) resolves them in WL 15, with `DefaultPlotStyle` becoming
@@ -13144,6 +13420,45 @@ fn plot_theme_options(
       .collect();
     format!("PlotStyle -> {{{}}}", styles.join(", "))
   };
+  // The palettes of the themes whose curves keep round caps.
+  let round_palette = |colors: &[&str]| {
+    let styles: Vec<String> = colors
+      .iter()
+      .map(|c| format!("Directive[{c}, AbsoluteThickness[2]]"))
+      .collect();
+    format!("PlotStyle -> {{{}}}", styles.join(", "))
+  };
+  // `"Monochrome"`: everything in (almost) black, the curves told apart
+  // by their dashing; a list plot keeps a single black style.
+  const BLACK: &str = "RGBColor[0.00010000076130382223, \
+                       0.00010000076130382223, 0.00010000076130382223]";
+  let monochrome_style = if list_plot {
+    format!("PlotStyle -> {BLACK}")
+  } else {
+    let styles: Vec<String> = [
+      "{}",
+      "{6, 2}",
+      "{2, 2}",
+      "{6, 2, 2, 2}",
+      "{12, 2}",
+      "{12, 2, 2, 2, 2, 2}",
+      "{24, 2, 8, 2}",
+      "{24, 2, 2, 2}",
+    ]
+    .iter()
+    .map(|d| {
+      format!(
+        "Directive[{BLACK}, CapForm[\"Butt\"], AbsoluteThickness[1.6], \
+         AbsoluteDashing[{d}]]"
+      )
+    })
+    .collect();
+    format!("PlotStyle -> {{{}}}", styles.join(", "))
+  };
+  // `Plot` legends every curve of these themes by its expression, even a
+  // lone one (`AllExpressions`).
+  let all_expressions =
+    || (!list_plot).then(|| "PlotLegends -> AllExpressions".to_string());
   let dotted = "GridLinesStyle -> Directive[GrayLevel[0.4, 0.5], \
                 AbsoluteThickness[1], AbsoluteDashing[{1, 2}]]";
   let left_bottom = "Frame -> {{True, False}, {True, False}}";
@@ -13204,11 +13519,39 @@ fn plot_theme_options(
       true,
     ),
     "Detailed" => (
+      [
+        Some("Axes -> False".into()),
+        Some("Frame -> True".into()),
+        Some("GridLines -> Automatic".into()),
+        Some(dotted.into()),
+        all_expressions(),
+        Some(round_palette(&DETAILED_COLORS)),
+      ]
+      .into_iter()
+      .flatten()
+      .collect(),
+      false,
+    ),
+    "Dark" => (
       vec![
-        "Axes -> False".into(),
-        "Frame -> True".into(),
-        "GridLines -> Automatic".into(),
-        dotted.into(),
+        "FillingStyle -> Opacity[0.3]".into(),
+        "GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]".into(),
+        round_palette(&SCIENTIFIC_COLORS),
+      ],
+      false,
+    ),
+    "Monochrome" => (
+      vec![
+        format!("AxesStyle -> {BLACK}"),
+        format!("FrameStyle -> {BLACK}"),
+        format!("FrameTicksStyle -> {BLACK}"),
+        format!("TicksStyle -> {BLACK}"),
+        format!("LabelStyle -> {{{BLACK}}}"),
+        format!(
+          "GridLinesStyle -> Directive[{BLACK}, AbsoluteThickness[1], \
+           AbsoluteDashing[{{1, 2}}]]"
+        ),
+        monochrome_style,
       ],
       false,
     ),
@@ -14198,12 +14541,25 @@ pub(crate) fn parse_plot_legends(
         _ => LegendPosition::Right,
       },
       Expr::List(xy) if xy.len() == 2 => {
-        match (
+        if let (Some(x), Some(y)) = (
           crate::functions::graphics::expr_to_f64(&xy[0]),
           crate::functions::graphics::expr_to_f64(&xy[1]),
         ) {
-          (Some(x), Some(y)) => LegendPosition::Inside(x, y),
-          _ => LegendPosition::Right,
+          LegendPosition::Inside(x, y)
+        } else {
+          let named = |e: &Expr| match e {
+            Expr::Identifier(n) => match n.as_str() {
+              "Left" | "Bottom" => Some(0.0),
+              "Center" => Some(0.5),
+              "Right" | "Top" => Some(1.0),
+              _ => None,
+            },
+            _ => crate::functions::graphics::expr_to_f64(e),
+          };
+          match (named(&xy[0]), named(&xy[1])) {
+            (Some(x), Some(y)) => LegendPosition::Aligned(x, y),
+            _ => LegendPosition::Right,
+          }
         }
       }
       _ => LegendPosition::Right,
@@ -14252,6 +14608,9 @@ pub(crate) fn parse_plot_legends(
       (Vec::new(), false, false, LegendPosition::Right)
     }
     Expr::String(s) if s == "Expressions" => {
+      (Vec::new(), false, true, LegendPosition::Right)
+    }
+    Expr::Identifier(s) if s == "AllExpressions" => {
       (Vec::new(), false, true, LegendPosition::Right)
     }
     Expr::List(items) => {
@@ -14305,6 +14664,59 @@ fn legend_flags(value: &Expr) -> (bool, bool, bool) {
     Expr::String(s) if s == "Placeholder" => (true, false, false),
     Expr::Identifier(s) if s == "Automatic" => (false, true, false),
     _ => (false, false, false),
+  }
+}
+
+/// Whether a `PlotLegends` value is `AllExpressions` (possibly `Placed` or
+/// inside an `XLegend[…]`).
+fn legend_is_all_expressions(value: &Expr) -> bool {
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &value {
+    Expr::Identifier(s) => s == "AllExpressions",
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Placed" | "LineLegend" | "SwatchLegend" | "PointLegend"
+      ) =>
+    {
+      args.first().is_some_and(legend_is_all_expressions)
+    }
+    _ => false,
+  }
+}
+
+/// The `LegendLabel -> title` of a `LineLegend` / `SwatchLegend` /
+/// `PointLegend` (possibly `Placed`), as box text.
+fn legend_label(value: &Expr) -> Option<String> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      legend_label(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "LineLegend" | "SwatchLegend" | "PointLegend"
+      ) =>
+    {
+      args.iter().find_map(|a| match a {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LegendLabel")
+          && !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "None") =>
+        {
+          Some(
+            crate::functions::graphics::styled_axis_label(replacement)
+              .unwrap_or_else(|| expr_to_string(replacement)),
+          )
+        }
+        _ => None,
+      })
+    }
+    _ => None,
   }
 }
 
@@ -14675,6 +15087,10 @@ pub(crate) fn apply_common_plot_option(
     // Expanded into the options it stands for by `expand_plot_theme`;
     // a theme without a table changes nothing.
     "PlotTheme" => {}
+    "BaselinePosition" => {
+      plot_opts.baseline_axis =
+        matches!(replacement, Expr::Identifier(a) if a == "Axis");
+    }
     "GridLines" => {
       let val = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.clone());
@@ -14767,10 +15183,18 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.legend_placeholders = placeholders;
       plot_opts.legend_automatic = automatic;
       plot_opts.legend_frame = frame;
+      plot_opts.legend_label = legend_label(replacement);
     }
     "AxesStyle" => plot_opts.axes_style = parse_axis_pair_styles(replacement),
     "TicksStyle" => {
       plot_opts.ticks_style = parse_axis_pair_styles(replacement);
+      // A bare size (`TicksStyle -> Directive[Red, 14]`) sets the tick
+      // labels' font.
+      if let Some(spec) = LabelStyleSpec::parse(replacement)
+        && spec.font_size.is_some()
+      {
+        plot_opts.tick_label_style = Some(spec);
+      }
     }
     "FrameStyle" => {
       plot_opts.frame_styles = parse_frame_edge_styles(replacement);
@@ -15343,6 +15767,8 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut overrides = PlotRangeOverrides::default();
   let mut legends_automatic = false;
   let mut legends_expressions = false;
+  // `PlotLegends -> AllExpressions` legends a lone curve as well.
+  let mut legends_all_expressions = false;
   // `PlotLabels -> Automatic | "Expressions"`: each curve is labelled with
   // its expression.
   let mut labels_expressions = false;
@@ -15394,6 +15820,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let (_, auto, expressions, _) = parse_plot_legends(replacement);
         legends_automatic |= auto;
         legends_expressions |= expressions;
+        legends_all_expressions |= legend_is_all_expressions(replacement);
       }
       if name == "PlotLabels" {
         labels_expressions = plot_labels_from_expressions(replacement);
@@ -15674,7 +16101,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `"Expressions"` names the legend entries by the curves, set in
   // TraditionalForm as WL does; `Automatic` numbers them with placeholders
   // (filled in by the renderer).
-  if legends_expressions && plot_opts.plot_legends.is_empty() {
+  // A single curve gets no `"Expressions"` legend, only an
+  // `AllExpressions` one.
+  if legends_expressions
+    && plot_opts.plot_legends.is_empty()
+    && (bodies.len() > 1 || legends_all_expressions)
+  {
     for b in &bodies {
       plot_opts
         .plot_legends

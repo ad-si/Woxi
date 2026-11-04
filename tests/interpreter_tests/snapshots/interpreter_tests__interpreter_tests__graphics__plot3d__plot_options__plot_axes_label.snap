@@ -36,10 +36,10 @@ expression: "export_svg(r#\"Plot[x^2, {x, -2, 2}, AxesLabel -> {\"x\", \"y\"}]\"
 <line x1="1732.5" y1="2104.2" x2="1756.5" y2="2104.2" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="2008.1" x2="1756.5" y2="2008.1" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1912.0" x2="1756.5" y2="1912.0" stroke="#666" stroke-width="5"/>
-<line x1="1732.5" y1="1816.0" x2="1756.5" y2="1816.0" stroke="#666" stroke-width="5"/>
+<line x1="1732.5" y1="1815.9" x2="1756.5" y2="1815.9" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1623.8" x2="1756.5" y2="1623.8" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1527.7" x2="1756.5" y2="1527.7" stroke="#666" stroke-width="5"/>
-<line x1="1732.5" y1="1431.7" x2="1756.5" y2="1431.7" stroke="#666" stroke-width="5"/>
+<line x1="1732.5" y1="1431.6" x2="1756.5" y2="1431.6" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1335.6" x2="1756.5" y2="1335.6" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1143.4" x2="1756.5" y2="1143.4" stroke="#666" stroke-width="5"/>
 <line x1="1732.5" y1="1047.3" x2="1756.5" y2="1047.3" stroke="#666" stroke-width="5"/>
@@ -57,7 +57,7 @@ expression: "export_svg(r#\"Plot[x^2, {x, -2, 2}, AxesLabel -> {\"x\", \"y\"}]\"
 <text x="1702.5" y="1274.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2</text>
 <line x1="1732.5" y1="759.1" x2="1772.5" y2="759.1" stroke="#666" stroke-width="5"/>
 <text x="1702.5" y="793.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
-<line x1="1732.5" y1="278.8" x2="1772.5" y2="278.8" stroke="#666" stroke-width="5"/>
+<line x1="1732.5" y1="278.7" x2="1772.5" y2="278.7" stroke="#666" stroke-width="5"/>
 <text x="1702.5" y="313.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
 <text x="3540.0" y="2234.9" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">x</text>
 <text x="1732.5" y="90.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">y</text>

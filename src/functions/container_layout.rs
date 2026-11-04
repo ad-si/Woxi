@@ -460,7 +460,35 @@ enum Atom {
   Open,
   Close,
   Comma,
-  Picture { svg: String, w: f64, h: f64 },
+  /// `base`: how far below its top the picture's baseline lies.
+  Picture {
+    svg: String,
+    w: f64,
+    h: f64,
+    base: f64,
+  },
+}
+
+/// The attribute a picture drawn with `BaselinePosition -> Axis` carries
+/// on its `<svg>` element: its axis, in points below its top.
+const BASELINE_ATTR: &str = "data-baseline";
+
+/// Mark the picture `svg` as sitting on its line at `y` points below its
+/// top (see [`BASELINE_ATTR`]).
+pub fn set_baseline_attr(svg: &mut String, y: f64) {
+  if let Some(pos) = svg.find("<svg ") {
+    svg.insert_str(pos + 5, &format!("{BASELINE_ATTR}=\"{y:.2}\" "));
+  }
+}
+
+/// The baseline a picture's `<svg>` element records (see
+/// [`set_baseline_attr`]).
+fn baseline_attr(svg: &str) -> Option<f64> {
+  let head = &svg[..svg.find('>')?];
+  let start =
+    head.find(&format!("{BASELINE_ATTR}=\""))? + BASELINE_ATTR.len() + 2;
+  let rest = &head[start..];
+  rest[..rest.find('"')?].parse().ok()
 }
 
 impl Atom {
@@ -471,9 +499,18 @@ impl Atom {
       Atom::Picture { w, .. } => *w,
     }
   }
-  fn height(&self) -> f64 {
+  /// The extent above the line's axis (pictures centre on it unless they
+  /// name their own baseline).
+  fn above(&self) -> f64 {
     match self {
-      Atom::Picture { h, .. } => *h,
+      Atom::Picture { base, .. } => *base,
+      _ => 0.0,
+    }
+  }
+  /// The extent below the line's axis.
+  fn below(&self) -> f64 {
+    match self {
+      Atom::Picture { h, base, .. } => h - base,
       _ => 0.0,
     }
   }
@@ -483,7 +520,10 @@ fn push_atoms(cell: ListCell, out: &mut Vec<Atom>) -> Option<()> {
   match cell {
     ListCell::Picture(svg) => {
       let (w, h) = crate::functions::graphics::svg_natural_size(&svg)?;
-      out.push(Atom::Picture { svg, w, h });
+      let base = baseline_attr(&svg)
+        .filter(|b| b.is_finite() && (0.0..=h).contains(b))
+        .unwrap_or(h / 2.0);
+      out.push(Atom::Picture { svg, w, h, base });
     }
     ListCell::List(items) => {
       out.push(Atom::Open);
@@ -618,17 +658,19 @@ pub fn list_layout_svg(cells: Vec<ListCell>) -> Option<String> {
   let mut top = 0.0;
   let mut bottom: f64 = 0.0;
   for (l, line) in lines.iter().enumerate() {
-    let line_h = line.iter().map(Atom::height).fold(0.0, f64::max);
-    let axis = top + line_h / 2.0;
+    let above = line.iter().map(Atom::above).fold(0.0, f64::max);
+    let below = line.iter().map(Atom::below).fold(0.0, f64::max);
+    let line_h = above + below;
+    let axis = top + above;
     let baseline = axis + BASELINE_BELOW_AXIS;
     let mut x = if l == 0 { 0.0 } else { CONTINUATION_INDENT };
     for atom in line {
       match atom {
-        Atom::Picture { svg, w, h } => {
+        Atom::Picture { svg, w, h, base } => {
           body.push_str(&crate::functions::graphics::embed_svg_in_rect(
             svg,
             x,
-            axis - h / 2.0,
+            axis - base,
             *w,
             *h,
           ));
