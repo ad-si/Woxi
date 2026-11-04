@@ -19347,7 +19347,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            PlotStyle -> Red][[1]], _EdgeForm, Infinity]"
         )
         .unwrap(),
-        "{EdgeForm[{RGBColor[1., 0., 0.], AbsoluteThickness[1.6]}]}"
+        // The outline keeps the palette colour, as in Wolfram.
+        "{EdgeForm[{RGBColor[0.23921568627450981, 0.6, 0.8], \
+         AbsoluteThickness[1.6]}]}"
       );
       assert_eq!(
         interpret(
@@ -49679,5 +49681,41 @@ mod ranges_and_ticks {
     // middle one (angle Pi/2) halfway between them.
     let mid = xs[2];
     assert!(((lo + hi) / 2.0 - mid).abs() < 1.0, "{xs:?}");
+  }
+
+  #[test]
+  fn explicit_plot_style_keeps_the_theme_thickness() {
+    // "Business" draws 3 pt curves; an explicit PlotStyle only recolours.
+    let themed = export_svg(
+      "Plot[Sin[x], {x, 0, 1}, PlotTheme -> \"Business\", PlotStyle -> Red]",
+    );
+    assert!(themed.contains("stroke-width=\"30\""), "{themed}");
+    assert!(themed.contains("stroke=\"#FF0000\" stroke-width=\"30\""));
+    // A thickness given with the style still wins.
+    let thin = export_svg(
+      "Plot[Sin[x], {x, 0, 1}, PlotTheme -> \"Business\", \
+       PlotStyle -> Directive[Red, AbsoluteThickness[1]]]",
+    );
+    assert!(!thin.contains("stroke-width=\"30\""), "{thin}");
+  }
+
+  #[test]
+  fn region_plot_explicit_style_is_opaque_with_palette_outline() {
+    let svg = export_svg(
+      "RegionPlot[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, PlotStyle -> Red]",
+    );
+    let face = svg
+      .split("<polygon ")
+      .skip(1)
+      .find(|p| p.contains("fill=\"rgb(255,0,0)\""))
+      .expect("red face");
+    let face = face.split('>').next().unwrap();
+    assert!(!face.contains("fill-opacity"), "{face}");
+    // The outline keeps the default palette colour.
+    assert!(svg.contains("stroke=\"rgb(61,153,204)\""), "{svg}");
+    // The default face stays translucent.
+    let default =
+      export_svg("RegionPlot[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}]");
+    assert!(default.contains("fill-opacity=\"0.3"), "{default}");
   }
 }

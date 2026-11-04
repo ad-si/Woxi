@@ -13661,13 +13661,81 @@ pub(crate) fn expand_plot_theme(
   };
   let given: std::collections::HashSet<&str> =
     options.iter().filter_map(rule_option_name).collect();
-  let themed: Vec<Expr> = table
+  let table: Vec<Expr> = table
     .iter()
     .filter_map(|o| crate::syntax::string_to_expr(o).ok())
+    .collect();
+  // An explicit `PlotStyle` replaces the theme's colours but keeps the
+  // rest of its curve style (the thick butt-capped lines of "Business"):
+  // each given style is drawn over the theme's non-colour directives.
+  if given.contains("PlotStyle")
+    && let Some(base) = table.iter().find_map(theme_curve_base)
+  {
+    for opt in &mut explicit {
+      if rule_option_name(opt) == Some("PlotStyle")
+        && let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+      {
+        let over = |style: &Expr| {
+          let mut parts = base.clone();
+          parts.push(style.clone());
+          Expr::FunctionCall {
+            name: "Directive".into(),
+            args: parts.into(),
+          }
+        };
+        let styled = match replacement.as_ref() {
+          Expr::List(items) => Expr::List(items.iter().map(over).collect()),
+          other => over(other),
+        };
+        *opt = Expr::Rule {
+          pattern: pattern.clone(),
+          replacement: Box::new(styled),
+        };
+      }
+    }
+  }
+  let themed: Vec<Expr> = table
+    .into_iter()
     .filter(|o| rule_option_name(o).is_none_or(|n| !given.contains(n)))
     .collect();
   explicit.extend(themed);
   (explicit, simple_ticks)
+}
+
+/// The non-colour directives of a theme's `PlotStyle` (from its first
+/// entry): what an explicit `PlotStyle` keeps of the theme.
+fn theme_curve_base(opt: &Expr) -> Option<Vec<Expr>> {
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = opt
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") {
+    return None;
+  }
+  let Expr::List(styles) = replacement.as_ref() else {
+    return None;
+  };
+  let Some(Expr::FunctionCall { name, args }) = styles.first() else {
+    return None;
+  };
+  if name != "Directive" {
+    return None;
+  }
+  let base: Vec<Expr> = args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::FunctionCall { name, .. }
+        if matches!(name.as_str(), "RGBColor" | "Hue" | "GrayLevel"))
+    })
+    .cloned()
+    .collect();
+  (!base.is_empty()).then_some(base)
 }
 
 /// Parse a `GridLines` option value into per-axis (x, y) specifications.

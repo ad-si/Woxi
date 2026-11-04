@@ -3917,13 +3917,17 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let palette = crate::functions::plot::PLOT_COLORS;
     let style = (!plot_styles.is_empty())
       .then(|| plot_styles[k % plot_styles.len()].clone());
-    // The default outline follows the region's colour: its `PlotStyle`
-    // colour when it names one, else the palette's.
+    // The face takes the `PlotStyle` colour when it names one; the default
+    // outline keeps the palette's either way.
+    let palette_color = rgb_color(palette[k % palette.len()]);
     let color = style
       .as_ref()
       .and_then(style_color)
-      .unwrap_or_else(|| rgb_color(palette[k % palette.len()]));
-    let mut face = vec![color.clone(), call1("Opacity", Expr::Real(0.3))];
+      .unwrap_or_else(|| palette_color.clone());
+    // The default face is translucent; an explicit `PlotStyle` is drawn
+    // opaque unless it sets its own opacity.
+    let opacity = if style.is_some() { 1.0 } else { 0.3 };
+    let mut face = vec![color.clone(), call1("Opacity", Expr::Real(opacity))];
     face.extend(style);
     let edge = match &boundary_style {
       Some(Expr::Identifier(s)) if s == "None" => call0("EdgeForm"),
@@ -3931,7 +3935,8 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => call1(
         "EdgeForm",
         Expr::List(
-          vec![color, call1("AbsoluteThickness", Expr::Real(1.6))].into(),
+          vec![palette_color, call1("AbsoluteThickness", Expr::Real(1.6))]
+            .into(),
         ),
       ),
     };
