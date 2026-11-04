@@ -97,13 +97,15 @@ fn extract_grouped_values(
 }
 
 /// Numeric value of one chart data element. A Demonstration wraps values in
-/// `Tooltip[value, hint]` (or `Annotation`/`Style`) to add hover text or
+/// `Tooltip[value, hint]` (or `Annotation`/`Style`/`Labeled`) to add hover text or
 /// styling; the wrapper does not change the value that is drawn.
 fn chart_datum_value(e: &Expr) -> Option<f64> {
   match e {
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Tooltip" | "Annotation" | "Style")
-        && !args.is_empty() =>
+      if matches!(
+        name.as_str(),
+        "Tooltip" | "Annotation" | "Style" | "Labeled"
+      ) && !args.is_empty() =>
     {
       chart_datum_value(&args[0])
     }

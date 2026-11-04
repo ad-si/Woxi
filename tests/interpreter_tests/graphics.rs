@@ -17153,6 +17153,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn bar_chart_3d_labeled_values() {
+      // Labeled[value, label, pos] data elements draw as their value.
+      let svg = export_svg(
+        r#"BarChart3D[{{Labeled[3, "Q", Above], Labeled[5, "W", Above]}, {Labeled[1, "A", Above]}}]"#,
+      );
+      let polys = svg.matches("<polygon").count();
+      assert_eq!(polys, 36, "expected 3 cuboids of 12 triangles each");
+    }
+
+    #[test]
     fn bar_chart_3d_returns_graphics3d_head() {
       // Match wolframscript: Head[BarChart3D[...]] is Graphics3D
       assert_eq!(
