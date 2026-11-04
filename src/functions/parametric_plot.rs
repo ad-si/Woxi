@@ -1048,6 +1048,7 @@ fn parametric_region_ast(
   graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
+  graphics_args.push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   graphics_args.extend(opt_args.iter().cloned());
   let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
   // Keep the primitives on the rendering so `Show` can draw the region

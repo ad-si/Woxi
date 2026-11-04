@@ -3753,6 +3753,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "PlotRangePadding",
       Expr::List(vec![scaled_pad(), scaled_pad()].into()),
     ),
+    rule("PlotRangeClipping", Expr::Identifier("True".to_string())),
   ];
   let given: Vec<&str> = opts
     .iter()

@@ -390,6 +390,8 @@ struct ArrowHead {
   /// Head length as a fraction of the plot width. Negative points the head
   /// backwards along the arrow, as Wolfram's negative sizes do.
   size: f64,
+  /// `size` is in printer's points (a named size), not a fraction.
+  absolute: bool,
   /// Where the head sits on the arrow: 0 at the tail, 1 at the tip.
   position: f64,
   /// A custom head — the graphic drawn in place of the triangle.
@@ -574,11 +576,13 @@ impl Default for StyleState {
 /// The named arrowhead sizes, as a fraction of the plot width — the same
 /// units an explicit numeric size is given in.
 fn named_arrowhead_size(name: &str) -> Option<f64> {
+  // Printer's points, whatever the image size (measured from wolframscript
+  // at two widths).
   match name {
-    "Tiny" => Some(0.01),
-    "Small" => Some(0.02),
-    "Medium" => Some(0.04),
-    "Large" => Some(0.06),
+    "Tiny" => Some(4.0),
+    "Small" => Some(7.0),
+    "Medium" => Some(12.0),
+    "Large" => Some(20.0),
     _ => None,
   }
 }
@@ -586,18 +590,19 @@ fn named_arrowhead_size(name: &str) -> Option<f64> {
 /// An arrowhead size: a number, a named size, or either negated (a
 /// negative size points the head back down the arrow). `-Medium` reaches
 /// here as `Times[-1, Medium]`.
-fn arrowhead_size(expr: &Expr) -> Option<f64> {
+/// The second component tells a named (absolute) size from a fraction.
+fn arrowhead_size(expr: &Expr) -> Option<(f64, bool)> {
   if let Expr::Identifier(s) = expr {
-    return named_arrowhead_size(s);
+    return named_arrowhead_size(s).map(|v| (v, true));
   }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Times"
     && args.len() == 2
     && matches!(&args[0], Expr::Integer(-1))
   {
-    return arrowhead_size(&args[1]).map(|v| -v);
+    return arrowhead_size(&args[1]).map(|(v, a)| (-v, a));
   }
-  expr_to_f64(expr)
+  expr_to_f64(expr).map(|v| (v, false))
 }
 
 /// Parse one entry of an `Arrowheads` list: a bare size, `{size, pos}`, or
@@ -605,7 +610,8 @@ fn arrowhead_size(expr: &Expr) -> Option<f64> {
 fn parse_arrowhead(spec: &Expr, default_position: f64) -> Option<ArrowHead> {
   match spec {
     Expr::List(items) if !items.is_empty() => Some(ArrowHead {
-      size: arrowhead_size(&items[0])?,
+      size: arrowhead_size(&items[0])?.0,
+      absolute: arrowhead_size(&items[0])?.1,
       position: items
         .get(1)
         .and_then(expr_to_f64)
@@ -613,7 +619,8 @@ fn parse_arrowhead(spec: &Expr, default_position: f64) -> Option<ArrowHead> {
       graphic: items.get(2).cloned(),
     }),
     other => Some(ArrowHead {
-      size: arrowhead_size(other)?,
+      size: arrowhead_size(other)?.0,
+      absolute: arrowhead_size(other)?.1,
       position: default_position,
       graphic: None,
     }),
@@ -4728,7 +4735,7 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     // of the plot width, so it can only be placed once the plot range is
     // known.
     let head_unit = match COORD_MODE.with(std::cell::Cell::get) {
-      CoordMode::Known(f) => Some(Some(f.bb.width())),
+      CoordMode::Known(f) => Some(Some((f.bb.width(), f.w))),
       CoordMode::Pending => {
         DEFERRED_COORDS.with(|c| c.set(true));
         None
@@ -4743,12 +4750,16 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         continue;
       };
       let (x, y) = point_along_path(&pts, head.position);
-      let transform = unit.map(|width| {
+      let transform = unit.map(|(width, width_px)| {
         let eps = 1e-4;
         let (ax, ay) = point_along_path(&pts, (head.position - eps).max(0.0));
         let (bx, by) = point_along_path(&pts, (head.position + eps).min(1.0));
         let angle = (by - ay).atan2(bx - ax);
-        let s = head.size * width;
+        let s = if head.absolute {
+          head.size / width_px * width
+        } else {
+          head.size * width
+        };
         let (c, sn) = (angle.cos() * s, angle.sin() * s);
         [[c, -sn], [sn, c]]
       });
@@ -9615,6 +9626,13 @@ fn render_axes(
   // past the right edge, level with the axis, and the y label above the
   // top of the vertical axis.
   if let Some((x_label, y_label)) = axes_label {
+    // A label takes its axis's `AxesStyle` colour.
+    let label_fill_of = |st: &AxisLineStyle| {
+      st.color
+        .map_or_else(|| theme_label_fill.clone(), Color::to_svg_rgb)
+    };
+    let (x_label_fill, y_label_fill) =
+      (label_fill_of(&axes_style.0), label_fill_of(&axes_style.1));
     if axes.0 && !x_label.is_empty() {
       if let Some((_, h)) = axes_label_picture_size(x_label) {
         svg.push_str(&format!(
@@ -9624,7 +9642,7 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
           svg_w + AXES_LABEL_GAP_X,
           axis_y_px + centre_to_baseline(LABEL_FONT),
         ));
@@ -9639,7 +9657,7 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{theme_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
           -AXES_LABEL_GAP_Y - descent(LABEL_FONT),
         ));
       }
@@ -11257,7 +11275,11 @@ fn render_primitive(
               // the head's size. A vector field draws hundreds of arrows
               // barely longer than their heads, and Wolfram lets the head
               // take up nearly all of each one.
-              let px = h.size.abs() * svg_w;
+              let px = if h.absolute {
+                h.size.abs()
+              } else {
+                h.size.abs() * svg_w
+              };
               (h.position, px.max(1.0), h.size.signum())
             })
             .collect(),
@@ -11841,11 +11863,30 @@ pub(crate) struct AxisPadding {
 impl AxisPadding {
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
+  /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
+  /// `Scaled[0.2]` on both sides of a span 2 pads it to 2 / 0.6.
   pub(crate) fn resolve(&self, span: f64, automatic_frac: f64) -> (f64, f64) {
-    (
-      self.lo.resolve(span, automatic_frac),
-      self.hi.resolve(span, automatic_frac),
-    )
+    let scaled = |p: PlotPadAmount| match p {
+      PlotPadAmount::Scaled(f) => f,
+      _ => 0.0,
+    };
+    let fixed = |p: PlotPadAmount| match p {
+      PlotPadAmount::Scaled(_) => 0.0,
+      other => other.resolve(span, automatic_frac),
+    };
+    let fractions = scaled(self.lo) + scaled(self.hi);
+    if fractions <= 0.0 || fractions >= 0.95 {
+      return (
+        self.lo.resolve(span, automatic_frac),
+        self.hi.resolve(span, automatic_frac),
+      );
+    }
+    let total = (span + fixed(self.lo) + fixed(self.hi)) / (1.0 - fractions);
+    let side = |p: PlotPadAmount| match p {
+      PlotPadAmount::Scaled(f) => f * total,
+      other => fixed(other),
+    };
+    (side(self.lo), side(self.hi))
   }
 }
 
@@ -12205,6 +12246,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRangeClipping -> False`: primitives past the plot range are drawn
   // into the image's margins instead of being cut off at the frame edge.
   let mut clip_primitives = true;
+  // `PlotRangeClipping -> True` was asked for outright.
+  let mut clipping_requested = false;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -12242,6 +12285,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "PlotRangeClipping" => {
           clip_primitives =
             !matches!(replacement, Expr::Identifier(n) if n == "False");
+          clipping_requested =
+            matches!(replacement, Expr::Identifier(n) if n == "True");
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -12466,10 +12511,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
-    bb.x_min = x_min - spec.x.lo.resolve(x_span, 0.04);
-    bb.x_max = x_max + spec.x.hi.resolve(x_span, 0.04);
-    bb.y_min = y_min - spec.y.lo.resolve(y_span, 0.04);
-    bb.y_max = y_max + spec.y.hi.resolve(y_span, 0.04);
+    let (x_lo, x_hi) = spec.x.resolve(x_span, 0.04);
+    let (y_lo, y_hi) = spec.y.resolve(y_span, 0.04);
+    bb.x_min = x_min - x_lo;
+    bb.x_max = x_max + x_hi;
+    bb.y_min = y_min - y_lo;
+    bb.y_max = y_max + y_hi;
   } else {
     // Default: a margin of 2% of the picture's width all round (1/48 of
     // the horizontal span on each side, as in Wolfram); an axis
@@ -12505,8 +12552,58 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       break;
     }
     let mut grown = bb;
-    // A point's dot is likewise kept whole inside an automatic range.
+    // A point's dot is likewise kept whole inside an automatic range, and
+    // so are an arrow's heads.
     if plot_range_padding.is_none() {
+      for prim in &primitives {
+        let Primitive::ArrowPrim { points, style, .. } = prim else {
+          continue;
+        };
+        if points.len() < 2 {
+          continue;
+        }
+        let heads: Vec<(f64, f64)> = match &style.arrowheads {
+          None => vec![(1.0, 0.04)],
+          Some(specs) => specs
+            .iter()
+            .filter(|h| h.graphic.is_none())
+            .map(|h| {
+              let size = if h.absolute {
+                h.size / svg_width as f64
+              } else {
+                h.size
+              };
+              (h.position, size)
+            })
+            .collect(),
+        };
+        for (t, size) in heads {
+          let tip = point_along_path(points, t);
+          let (ax, ay) = point_along_path(points, (t - 1e-4).max(0.0));
+          let (bx, by) = point_along_path(points, (t + 1e-4).min(1.0));
+          // The direction on screen, in pixels.
+          let (dx, dy) = ((bx - ax) * kx, (by - ay) * ky);
+          let norm = (dx * dx + dy * dy).sqrt();
+          if norm <= 0.0 || !norm.is_finite() {
+            continue;
+          }
+          let len = size.abs() * svg_width as f64;
+          let (ux, uy) = (dx / norm * size.signum(), dy / norm * size.signum());
+          for (along, across) in [(1.0, 0.28), (1.0, -0.28)] {
+            let px = -ux * len * along - uy * len * across;
+            let py = -uy * len * along + ux * len * across;
+            let (x, y) = (tip.0 + px / kx, tip.1 + py / ky);
+            if plot_range_x.is_none() {
+              grown.x_min = grown.x_min.min(x);
+              grown.x_max = grown.x_max.max(x);
+            }
+            if plot_range_y.is_none() {
+              grown.y_min = grown.y_min.min(y);
+              grown.y_max = grown.y_max.max(y);
+            }
+          }
+        }
+      }
       for prim in &primitives {
         let (pts, style): (Vec<(f64, f64)>, &StyleState) = match prim {
           Primitive::PointSingle { x, y, style } => (vec![(*x, *y)], style),
@@ -13038,7 +13135,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ignores. A label wider than its picture (a lone `Text` pinned by its
   // edge) must spill past the box rather than be cut off.
   let has_explicit_range = plot_range_x.is_some() || plot_range_y.is_some();
+  // Wolfram's default (`PlotRangeClipping -> False`) cuts primitives off
+  // only at the image's edge: past a frame or axes they spill into the
+  // margins.
   let clip_primitives = clip_primitives
+    && (clipping_requested || !(frame || axes.0 || axes.1))
     && (has_explicit_range
       || !primitives
         .iter()

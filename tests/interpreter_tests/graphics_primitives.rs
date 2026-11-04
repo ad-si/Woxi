@@ -419,4 +419,81 @@ mod graphics_primitives {
     .unwrap();
     assert_eq!(corners, "{0., 1.}");
   }
+
+  #[test]
+  fn scaled_plot_range_padding_is_a_share_of_the_padded_range() {
+    // Scaled[0.2] on both sides of the span 2 pads it to 2 / 0.6: the
+    // unit disk spans 60% of the drawing width.
+    let svg = svg_of("Graphics[Disk[], PlotRangePadding -> Scaled[0.2]]");
+    let rx = attr_of(&svg, "ellipse", "rx");
+    let w = attr_of(&svg, "svg", "width");
+    assert!(close(2.0 * rx / (w - 1.0), 0.6, 0.01), "{svg}");
+  }
+
+  #[test]
+  fn primitives_spill_past_a_frame_into_the_margins() {
+    // PlotRangeClipping -> False is the default: only the image cuts.
+    let svg = svg_of(
+      "Graphics[{Red, Disk[{0, 0}, 2]}, PlotRange -> {{-1, 2}, {-1, 2}}, \
+       Frame -> True]",
+    );
+    assert!(!svg.contains("<g clip-path"), "{svg}");
+    let clipped = svg_of(
+      "Graphics[{Red, Disk[{0, 0}, 2]}, PlotRange -> {{-1, 2}, {-1, 2}}, \
+       Frame -> True, PlotRangeClipping -> True]",
+    );
+    assert!(clipped.contains("<g clip-path"), "{clipped}");
+  }
+
+  #[test]
+  fn axes_labels_take_the_axes_style_colour() {
+    let svg = svg_of(
+      "Graphics[Circle[{1, 1}, 1], Axes -> True, AxesLabel -> {\"x\", \"y\"}, \
+       AxesStyle -> {Blue, Darker[Green]}]",
+    );
+    assert!(
+      svg.contains(">x</text>") && svg.contains(">y</text>"),
+      "{svg}"
+    );
+    let x = &svg[..svg.find(">x</text>").unwrap()];
+    assert!(
+      x[x.rfind("<text").unwrap()..].contains("rgb(0,0,255)"),
+      "{svg}"
+    );
+    let y = &svg[..svg.find(">y</text>").unwrap()];
+    assert!(
+      y[y.rfind("<text").unwrap()..].contains("rgb(0,170,0)"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn named_arrowhead_sizes_are_absolute() {
+    // Large is 20 points long at any image size.
+    for width in [200, 400] {
+      let svg = svg_of(&format!(
+        "Graphics[{{Arrowheads[Large], Arrow[{{{{0, 0}}, {{3, 0}}}}]}}, \
+         ImageSize -> {width}]"
+      ));
+      let i = svg.find("<polygon points=\"").unwrap() + 17;
+      let pts: Vec<f64> = svg[i..i + svg[i..].find('"').unwrap()]
+        .split([' ', ','])
+        .map(|v| v.parse().unwrap())
+        .collect();
+      assert!(close(pts[0] - pts[2], 20.0, 0.05), "{svg}");
+    }
+  }
+
+  #[test]
+  fn arrowheads_widen_the_plot_range() {
+    // A head at the start of the arrow points past it; it is not cut off.
+    let svg =
+      svg_of("Graphics[{Arrowheads[{{0.05, 0}}], Arrow[{{0, 0}, {3, 0}}]}]");
+    let i = svg.find("<polygon points=\"").unwrap() + 17;
+    let xs: Vec<f64> = svg[i..i + svg[i..].find('"').unwrap()]
+      .split(' ')
+      .map(|p| p.split(',').next().unwrap().parse().unwrap())
+      .collect();
+    assert!(xs.iter().all(|&x| x >= -0.01), "{svg}");
+  }
 }
