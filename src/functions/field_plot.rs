@@ -6700,6 +6700,9 @@ pub fn array_plot_argument_error(head: &str, args: &[Expr]) -> Option<Expr> {
 /// Supports options: ColorRules, Mesh, ColorFunction, ImageSize, FrameLabel,
 /// Epilog.
 /// Cells can also be explicit color directives (e.g. Pink, Red).
+/// `ArrayPlot`'s default `MeshStyle`: `GrayLevel[2/3]`.
+const ARRAY_PLOT_MESH_COLOR: RGBColor = RGBColor(0xAA, 0xAA, 0xAA);
+
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -6757,6 +6760,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // cell.
   let mut ticks_with_ends = false;
   let mut frame_hidden = false;
+  // `Frame -> True` forces the border even with a mesh; the default
+  // (`Automatic`) draws it only when there is no mesh, whose outer lines
+  // already outline the grid.
+  let mut frame_forced = false;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -6848,6 +6855,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
           frame_hidden = matches!(&val, Expr::Identifier(n) if n == "False");
+          frame_forced = matches!(&val, Expr::Identifier(n) if n == "True");
         }
         "FrameTicksStyle" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -7076,10 +7084,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // Draw mesh grid lines between cells
     if mesh {
-      let mesh_color = mesh_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
+      let mesh_color = mesh_style_color.unwrap_or(ARRAY_PLOT_MESH_COLOR);
       let line_w = (s as i32).max(1);
-      // Vertical lines
-      for j in 1..n_cols {
+      // Vertical lines, including the outer edges of the grid
+      for j in 0..=n_cols {
         let x = (off_x + j as f64 * cell_w).round() as i32;
         root
           .draw(&Rectangle::new(
@@ -7096,8 +7104,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
           })?;
       }
-      // Horizontal lines
-      for i in 1..n_rows {
+      // Horizontal lines, including the outer edges of the grid
+      for i in 0..=n_rows {
         let y = (off_y + i as f64 * cell_h).round() as i32;
         root
           .draw(&Rectangle::new(
@@ -7116,21 +7124,25 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Draw border around the entire plot
-    let bw = s as i32;
-    let rw = render_width as i32;
-    let rh = render_height as i32;
-    for rect in [
-      [(0, 0), (rw, bw)],       // top
-      [(0, rh - bw), (rw, rh)], // bottom
-      [(0, 0), (bw, rh)],       // left
-      [(rw - bw, 0), (rw, rh)], // right
-    ] {
-      root
-        .draw(&Rectangle::new(rect, border_color.filled()))
-        .map_err(|e| {
-          InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
-        })?;
+    // Draw the frame around the entire plot: a 0.5 pt line centred half a
+    // point inside the picture's edge, as WL draws it.
+    if !frame_hidden && (frame_forced || !mesh) {
+      let b0 = (s as i32) / 4;
+      let b1 = (3 * s as i32) / 4;
+      let rw = render_width as i32;
+      let rh = render_height as i32;
+      for rect in [
+        [(b0, b0), (rw - b0, b1)],           // top
+        [(b0, rh - b1), (rw - b0, rh - b0)], // bottom
+        [(b0, b0), (b1, rh - b0)],           // left
+        [(rw - b1, b0), (rw - b0, rh - b0)], // right
+      ] {
+        root
+          .draw(&Rectangle::new(rect, border_color.filled()))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
+          })?;
+      }
     }
 
     root.present().map_err(|e| {
@@ -7285,7 +7297,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // cell inside the raster's own coordinates).
   let mut prims = vec![raster];
   if mesh {
-    let mesh_color = mesh_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
+    let mesh_color = mesh_style_color.unwrap_or(ARRAY_PLOT_MESH_COLOR);
     let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
     prims.push(call(
       "RGBColor",
@@ -7302,10 +7314,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let segment =
       |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
-    for j in 1..n_cols {
+    for j in 0..=n_cols {
       prims.push(segment(point(j, 0), point(j, n_rows)));
     }
-    for i in 1..n_rows {
+    for i in 0..=n_rows {
       prims.push(segment(point(0, i), point(n_cols, i)));
     }
   }

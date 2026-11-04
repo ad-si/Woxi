@@ -20162,15 +20162,48 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn array_plot_mesh_style_and_frame_style_colors() {
+      // The default mesh is GrayLevel[2/3] and, with `Frame -> Automatic`,
+      // replaces the frame (its outer lines outline the grid).
       let plain = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
-      assert!(plain.contains("#666666"));
+      assert!(plain.contains("#AAAAAA"), "{plain}");
+      assert!(!plain.contains("#666666"), "{plain}");
       let svg = export_svg(
         "ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True, MeshStyle -> Red, \
-         FrameStyle -> {Blue, Thick}]",
+         Frame -> True, FrameStyle -> {Blue, Thick}]",
       );
       assert!(svg.contains("#FF0000"), "mesh lines take MeshStyle: {svg}");
       assert!(svg.contains("#0000FF"), "border takes FrameStyle: {svg}");
       assert!(!svg.contains("#666666"));
+    }
+
+    #[test]
+    fn array_plot_frame_false_draws_no_frame() {
+      // Regression: `Frame -> False` still drew the gray border.
+      let framed = export_svg("ArrayPlot[{{0, 1}, {1, 0}}]");
+      assert_eq!(framed.matches("fill=\"#666666\"").count(), 4, "{framed}");
+      let bare = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Frame -> False]");
+      assert!(!bare.contains("#666666"), "{bare}");
+    }
+
+    #[test]
+    fn array_plot_frame_is_half_a_point_wide() {
+      // WL draws the frame as a 0.5 pt GrayLevel[0.4] line, centred half a
+      // point inside the edge (5 render units at the 10x scale).
+      let svg = export_svg("ArrayPlot[{{0, 1}, {1, 0}}]");
+      assert!(
+        svg.contains(
+          "y=\"2\" width=\"3596\" height=\"5\" opacity=\"1\" fill=\"#666666\""
+        ),
+        "{svg}"
+      );
+    }
+
+    #[test]
+    fn array_plot_mesh_includes_outer_lines() {
+      // The mesh runs along the outer edges of the grid too: 3 vertical and
+      // 3 horizontal lines for a 2x2 array.
+      let svg = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
+      assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 6, "{svg}");
     }
 
     #[test]

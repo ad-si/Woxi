@@ -17,9 +17,9 @@ expression: "export_svg(\"ArrayPlot[{{1, 0, 0, Pink}, {1, 1, 0, Pink}, {1, 0, 1,
 <rect x="936" y="1797" width="864" height="864" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="1800" y="1797" width="864" height="864" opacity="1" fill="#000000" stroke="none"/>
 <rect x="2664" y="1797" width="864" height="864" opacity="1" fill="#FF0000" stroke="none"/>
-<rect x="0" y="0" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="2720" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="0" width="10" height="2730" opacity="1" fill="#666666" stroke="none"/>
-<rect x="3590" y="0" width="10" height="2730" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="2" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="2723" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="2" width="5" height="2726" opacity="1" fill="#666666" stroke="none"/>
+<rect x="3593" y="2" width="5" height="2726" opacity="1" fill="#666666" stroke="none"/>
 </g>
 </svg>

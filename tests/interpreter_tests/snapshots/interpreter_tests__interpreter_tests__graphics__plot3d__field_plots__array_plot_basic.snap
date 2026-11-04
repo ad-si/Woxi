@@ -14,9 +14,9 @@ expression: "export_svg(\"ArrayPlot[{{0, 0.5, 1}, {1, 0.5, 0}, {0.5, 1, 0.5}}]\"
 <rect x="72" y="2370" width="1152" height="1151" opacity="1" fill="#808080" stroke="none"/>
 <rect x="1224" y="2370" width="1152" height="1151" opacity="1" fill="#000000" stroke="none"/>
 <rect x="2376" y="2370" width="1152" height="1151" opacity="1" fill="#808080" stroke="none"/>
-<rect x="0" y="0" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="3580" width="3600" height="10" opacity="1" fill="#666666" stroke="none"/>
-<rect x="0" y="0" width="10" height="3590" opacity="1" fill="#666666" stroke="none"/>
-<rect x="3590" y="0" width="10" height="3590" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="2" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="3583" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
+<rect x="2" y="2" width="5" height="3586" opacity="1" fill="#666666" stroke="none"/>
+<rect x="3593" y="2" width="5" height="3586" opacity="1" fill="#666666" stroke="none"/>
 </g>
 </svg>
