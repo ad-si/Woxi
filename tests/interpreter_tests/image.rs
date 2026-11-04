@@ -3,6 +3,51 @@ use super::*;
 mod image_core {
   use super::*;
 
+  /// The pixel size of each PNG embedded in an SVG.
+  fn embedded_png_sizes(svg: &str) -> Vec<(u32, u32)> {
+    use base64::Engine as _;
+    svg
+      .split("base64,")
+      .skip(1)
+      .filter_map(|s| s.split(['"', '\'']).next())
+      .map(|b64| {
+        let png = base64::engine::general_purpose::STANDARD
+          .decode(b64)
+          .unwrap();
+        ::image::load_from_memory(&png)
+          .unwrap()
+          .to_rgb8()
+          .dimensions()
+      })
+      .collect()
+  }
+
+  /// An image's pixels show as blocks, never smoothed, like WL: the SVG
+  /// embeds the pixels enlarged by nearest-neighbour sampling to 300 dpi of
+  /// the shown size and asks for pixelated scaling — also for images in a
+  /// `GraphicsRow` (regression: a 16 × 16 image was drawn as a smooth
+  /// gradient).
+  #[test]
+  fn image_svg_shows_pixels_as_blocks() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Image[{{0, 1}, {1, 0}}, ImageSize -> 100], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("image-rendering:pixelated"), "{svg}");
+    // 100 pt at 300 dpi is 417 pixels: 2 pixels of 209 each.
+    assert_eq!(embedded_png_sizes(&svg), vec![(418, 418)]);
+    let row = interpret(
+      "img = Image[Table[{x/15., y/15., Mod[x + y, 4]/3.}, {y, 0, 15}, {x, 0, 15}]]; \
+       ExportString[GraphicsRow[{img, img}, ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    let sizes = embedded_png_sizes(&row);
+    assert_eq!(sizes.len(), 2, "{row}");
+    assert!(sizes.iter().all(|&(w, h)| w == h && w % 16 == 0 && w >= 64));
+    assert_eq!(row.matches("image-rendering:pixelated").count(), 2, "{row}");
+  }
+
   #[test]
   fn image_constructor_grayscale() {
     clear_state();

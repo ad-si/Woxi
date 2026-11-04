@@ -12301,7 +12301,8 @@ fn render_primitive(
           let sw = (x_max - x_min) / bb.width() * svg_w;
           let sh = (y_max - y_min) / bb.height() * svg_h;
           out.push_str(&format!(
-            "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"/>\n"
+            "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"{}/>\n",
+            crate::functions::image_ast::IMAGE_RENDERING_ATTRS
           ));
           return;
         }
@@ -23482,23 +23483,17 @@ fn grid_svg_styled_internal(
           let vis_h = cell_bottom - cell_top;
           let iy = cell_top + (vis_h - draw_h) / 2.0;
 
-          // Encode image as base64 PNG
-          let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
-            *iw, *ih, *channels, data,
-          );
-          let mut buf = Vec::new();
-          dyn_img
-            .write_to(
-              &mut std::io::Cursor::new(&mut buf),
-              image::ImageFormat::Png,
-            )
-            .expect("PNG encoding failed");
-          let b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &buf,
+          // Encode image as base64 PNG, its pixels shown as blocks.
+          let b64 = crate::functions::image_ast::blocky_png_base64(
+            *iw,
+            *ih,
+            *channels,
+            data,
+            (draw_w, draw_h),
           );
           svg.push_str(&format!(
-            "<image x=\"{ix:.1}\" y=\"{iy:.1}\" width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"xMidYMid meet\"/>\n"
+            "<image x=\"{ix:.1}\" y=\"{iy:.1}\" width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"xMidYMid meet\"{}/>\n",
+            crate::functions::image_ast::IMAGE_RENDERING_ATTRS
           ));
         }
       } else {

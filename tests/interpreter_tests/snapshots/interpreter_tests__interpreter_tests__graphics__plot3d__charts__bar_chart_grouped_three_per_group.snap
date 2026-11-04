@@ -4,12 +4,12 @@ expression: "export_svg(\"BarChart[{{1, 2, 3}, {4, 5, 6}}]\")"
 ---
 <svg width="360" height="220" viewBox="0 0 3600 2200" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2200" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="256" y="1789" width="458" height="335" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
-<rect x="714" y="1454" width="457" height="670" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
-<rect x="1171" y="1119" width="457" height="1005" opacity="1" fill="#60BF00" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
-<rect x="1972" y="784" width="457" height="1340" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
-<rect x="2429" y="449" width="457" height="1675" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
-<rect x="2886" y="114" width="458" height="2010" opacity="1" fill="#60BF00" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>6</title></rect>
+<rect x="152" y="1789" width="490" height="335" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="695" y="1454" width="490" height="670" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="1238" y="1119" width="490" height="1005" opacity="1" fill="#60BF00" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
+<rect x="1940" y="784" width="490" height="1340" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
+<rect x="2483" y="449" width="490" height="1675" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
+<rect x="3026" y="114" width="490" height="2010" opacity="1" fill="#60BF00" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>6</title></rect>
 <line x1="85.0" y1="2125.0" x2="3517.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="5.0" x2="85.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="2057.9" x2="109.0" y2="2057.9" stroke="#666666" stroke-width="5"/>
@@ -52,6 +52,8 @@ expression: "export_svg(\"BarChart[{{1, 2, 3}, {4, 5, 6}}]\")"
 <line x1="85.0" y1="113.2" x2="125.0" y2="113.2" stroke="#666666" stroke-width="5"/>
 <text x="58.8" y="147.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
 <line x1="3517.0" y1="2125.0" x2="3585.6" y2="2125.0" stroke="#666666" stroke-width="5"/>
-<line x1="256.6" y1="2125.0" x2="256.6" y2="2185.0" stroke="#666666" stroke-width="5"/>
-<line x1="3345.4" y1="2125.0" x2="3345.4" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="152.3" y1="2125.0" x2="152.3" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="3517.0" y1="2125.0" x2="3517.0" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1940.7" y1="2125.0" x2="1940.7" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1728.6" y1="2125.0" x2="1728.6" y2="2185.0" stroke="#666666" stroke-width="5"/>
 </svg>

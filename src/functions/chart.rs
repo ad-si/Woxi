@@ -3562,14 +3562,24 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       "BarSpacing" => {
         // `{s, sg}` spaces bars within a group by `s` and groups by `sg`;
-        // the groups' spacing is what the layout draws.
-        let between = match &value {
-          Expr::List(items) if items.len() == 2 => &items[1],
-          other => other,
-        };
-        look.bar_spacing = match between {
+        // a scalar is `s`.
+        let amount = |e: &Expr| match e {
           Expr::Identifier(v) if v == "None" => Some(0.0),
           other => try_eval_to_f64(other),
+        };
+        look.bar_spacing = match &value {
+          Expr::List(items) if items.len() == 2 => {
+            crate::functions::plot::BarSpacing {
+              within: amount(&items[0]),
+              between: amount(&items[1]),
+              pair: true,
+            }
+          }
+          other => crate::functions::plot::BarSpacing {
+            within: amount(other),
+            between: None,
+            pair: false,
+          },
         };
       }
       "AspectRatio" => {
@@ -3831,20 +3841,23 @@ pub fn paired_chart_ast(
       right_prims.push(bar(p0, p1, r));
     }
   }
+  let extent = 1.05 * (largest + gap);
   let Some(axis) = bin_axis else {
-    let mut graphics_args = vec![Expr::List(
+    // The bars' axes: a magnitude axis under each half and, beside the
+    // gap, a value axis marked only at the ends of the bars.
+    let bottom = bars.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
+    let top = bars.iter().map(|b| b.1).fold(f64::NEG_INFINITY, f64::max);
+    let axis = PairedValueAxis::bar_ends(bottom, top);
+    let graphics_args = vec![Expr::List(
       vec![
         style.clone(),
         Expr::List(left_prims.into()),
         Expr::List(right_prims.into()),
+        axis.primitives(gap, extent, PairedLook::Bar),
       ]
       .into(),
     )];
-    graphics_args.extend(options.into_iter().cloned());
-    return crate::evaluator::evaluate_function_call_ast(
-      "Graphics",
-      &graphics_args,
-    );
+    return paired_graphics(graphics_args, &options);
   };
   // Each half is drawn in the histogram's own bar look: a translucent
   // yellow over a gray edge.
@@ -3884,7 +3897,6 @@ pub fn paired_chart_ast(
   let half = |prims: Vec<Expr>| {
     Expr::List(vec![bar_look.clone(), Expr::List(prims.into())].into())
   };
-  let extent = 1.05 * (largest + gap);
   let graphics_args = vec![Expr::List(
     vec![
       style.clone(),
@@ -4035,6 +4047,9 @@ pub(crate) enum PairedLook {
   /// labelled just right of its left edge; the magnitude axes end at the
   /// largest density.
   Smooth,
+  /// `PairedBarChart`: like `Histogram`, but the value axes are unlabelled
+  /// and marked (3 pt) only at the ends of the bars.
+  Bar,
 }
 
 /// The value axis of a paired chart, which runs vertically between its two
@@ -4063,6 +4078,23 @@ impl PairedValueAxis {
       hi,
       majors,
       minors,
+    }
+  }
+
+  /// A `PairedBarChart`'s value axis: from 4% of the bars' span below the
+  /// lowest bar (where the magnitude axes run) to the top of the highest,
+  /// marked at the two ends of the bars.
+  pub(crate) fn bar_ends(bottom: f64, top: f64) -> Self {
+    let (bottom, top) = if bottom.is_finite() && top > bottom {
+      (bottom, top)
+    } else {
+      (0.0, 1.0)
+    };
+    PairedValueAxis {
+      lo: bottom - 0.04 * (top - bottom),
+      hi: top,
+      majors: vec![(bottom, String::new()), (top, String::new())],
+      minors: Vec::new(),
     }
   }
 
@@ -4133,16 +4165,21 @@ impl PairedValueAxis {
       call1("AbsoluteThickness", Expr::Real(0.2)),
     ];
     let span = extent - gap;
-    let step = paired_magnitude_step(span);
-    let inward = if look == PairedLook::Histogram {
-      1.0
+    let step = if look == PairedLook::Bar {
+      paired_bar_magnitude_step(extent)
     } else {
-      -1.0
+      paired_magnitude_step(span)
     };
-    let label_drop = if look == PairedLook::Histogram {
-      -7.0
+    let inward = if look == PairedLook::Smooth {
+      -1.0
     } else {
+      1.0
+    };
+    let major_len = if look == PairedLook::Bar { 3.0 } else { 4.0 };
+    let label_drop = if look == PairedLook::Smooth {
       -3.0
+    } else {
+      -7.0
     };
     let (count_majors, count_minors) = paired_ticks(0.0, span, step);
     for side in [-1.0, 1.0] {
@@ -4171,7 +4208,7 @@ impl PairedValueAxis {
       for (y, len) in self
         .majors
         .iter()
-        .map(|&(y, _)| (y, 4.0))
+        .map(|&(y, _)| (y, major_len))
         .chain(self.minors.iter().map(|&y| (y, 2.5)))
       {
         prims.push(line(
@@ -4181,6 +4218,9 @@ impl PairedValueAxis {
       }
     }
     for &(y, _) in &self.majors {
+      if look == PairedLook::Bar {
+        continue;
+      }
       if look == PairedLook::Histogram {
         prims.push(label(call1("Pane", number(y)), pt(0.0, y), (0.0, 0.0)));
       } else {
@@ -4232,6 +4272,24 @@ fn paired_magnitude_step(span: f64) -> f64 {
   }
 }
 
+/// The major tick step of a `PairedBarChart`'s magnitude axes, which reach
+/// `extent` from the centre: the 1, 2, 2.5 or 5 × 10^k that cuts `extent`
+/// into closest to three intervals (read off wolframscript).
+fn paired_bar_magnitude_step(extent: f64) -> f64 {
+  if !(extent.is_finite() && extent > 0.0) {
+    return 1.0;
+  }
+  let base = 10_f64.powf(extent.log10().floor() - 1.0);
+  [1.0, 10.0, 100.0]
+    .iter()
+    .flat_map(|scale| [1.0, 2.0, 2.5, 5.0].map(|m| m * scale * base))
+    .min_by(|a, b| {
+      let off = |s: f64| (extent / s - 3.0).abs();
+      off(*a).total_cmp(&off(*b))
+    })
+    .unwrap_or(1.0)
+}
+
 /// The `step`-spaced major ticks in `lo..=hi` with their labels, and the
 /// automatic minor ticks between (and beyond) them in that range.
 fn paired_ticks(lo: f64, hi: f64, step: f64) -> (Vec<(f64, String)>, Vec<f64>) {
@@ -4272,21 +4330,14 @@ fn bar_chart_structure(
     return tree;
   }
   let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
-  let gap = crate::functions::plot::bar_group_gap(
-    bar_chart_look(args).bar_spacing,
-    if opts.layout.single_column() {
-      1
-    } else {
-      bars_per_group
-    },
-  );
+  let spacing = bar_chart_look(args).bar_spacing;
   let mut prims: Vec<Expr> = Vec::new();
   let sign = if opts.bar_origin_top { -1.0 } else { 1.0 };
   let signed: Vec<Vec<f64>> = groups
     .iter()
     .map(|g| g.iter().map(|v| sign * v).collect())
     .collect();
-  let rects = crate::functions::plot::bar_rects(&signed, opts.layout, gap);
+  let rects = crate::functions::plot::bar_rects(&signed, opts.layout, spacing);
   let decor: Vec<DatumDecor> = extract_grouped_decor(&args[0])
     .unwrap_or_default()
     .into_iter()
@@ -4613,6 +4664,137 @@ pub(crate) fn parse_sector_origin(args: &[Expr]) -> (f64, bool, f64) {
   default
 }
 
+/// WL's `"GlassSector"` shading: the saturation and brightness of the
+/// sector's colour (in HSB) are scaled by these factors at 21 evenly
+/// spaced steps from the sector's inner to its outer radius (read off the
+/// vertex colours wolframscript builds), keeping the hue.
+const GLASS_SECTOR_SATURATION: [f64; 21] = [
+  0.9426751592356689,
+  0.4758620689655173,
+  0.023529411764705913,
+  0.36274509803921573,
+  0.6860986547085203,
+  0.9438091998534722,
+  0.900990099009901,
+  0.851717032967033,
+  0.8139534883720931,
+  0.7758204633204633,
+  0.737991266375546,
+  0.70467169918815,
+  0.6707818930041154,
+  0.6407534901510806,
+  0.6078431372549021,
+  0.568627450980392,
+  0.5333333333333335,
+  0.6331443420741794,
+  0.7253218884120176,
+  0.8314554715233835,
+  0.8910256410256412,
+];
+const GLASS_SECTOR_BRIGHTNESS: [f64; 21] = [
+  0.615686274509804,
+  0.9549019607843138,
+  1.0,
+  1.0,
+  0.8745098039215686,
+  0.7666666666666666,
+  0.792156862745098,
+  0.8196078431372548,
+  0.8431372549019608,
+  0.8745098039215685,
+  0.8980392156862745,
+  0.9294117647058822,
+  0.9529411764705882,
+  0.9823529411764707,
+  1.0,
+  1.0,
+  1.0,
+  0.988235294117647,
+  0.913725490196078,
+  0.8352941176470579,
+  0.611764705882353,
+];
+
+/// The `<defs>` of a `"GlassSector"` sector's radial gradient (centred on
+/// the pie at `(cx, cy)`, the sector reaching from `r_in` to `r_out`) and
+/// its id. The id is derived from the gradient, so equal sectors share it.
+fn glass_sector_gradient(
+  (r, g, b): (u8, u8, u8),
+  (cx, cy): (f64, f64),
+  (r_in, r_out): (f64, f64),
+) -> (String, String) {
+  use std::hash::{Hash, Hasher};
+  let (h, s, v) = rgb_to_hsb(r, g, b);
+  let mut stops = String::new();
+  for (k, (sf, bf)) in GLASS_SECTOR_SATURATION
+    .iter()
+    .zip(GLASS_SECTOR_BRIGHTNESS.iter())
+    .enumerate()
+  {
+    let t = k as f64 / 20.0;
+    let offset = if r_out > 0.0 {
+      (r_in + t * (r_out - r_in)) / r_out
+    } else {
+      t
+    };
+    let (sr, sg, sb) =
+      hsb_to_rgb(h, (s * sf).clamp(0.0, 1.0), (v * bf).clamp(0.0, 1.0));
+    stops.push_str(&format!(
+      "<stop offset=\"{offset:.4}\" stop-color=\"#{sr:02X}{sg:02X}{sb:02X}\"/>"
+    ));
+  }
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  stops.hash(&mut hasher);
+  for x in [cx, cy, r_out] {
+    x.to_bits().hash(&mut hasher);
+  }
+  let id = format!("glass{:016x}", hasher.finish());
+  (
+    format!(
+      "<defs><radialGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" \
+       cx=\"{cx:.2}\" cy=\"{cy:.2}\" r=\"{r_out:.2}\">{stops}</radialGradient></defs>\n"
+    ),
+    id,
+  )
+}
+
+/// An 8-bit RGB colour as hue, saturation and brightness in `0..=1`.
+fn rgb_to_hsb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
+  let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+  let max = r.max(g).max(b);
+  let min = r.min(g).min(b);
+  let d = max - min;
+  let h = if d == 0.0 {
+    0.0
+  } else if max == r {
+    ((g - b) / d).rem_euclid(6.0) / 6.0
+  } else if max == g {
+    ((b - r) / d + 2.0) / 6.0
+  } else {
+    ((r - g) / d + 4.0) / 6.0
+  };
+  let s = if max == 0.0 { 0.0 } else { d / max };
+  (h, s, max)
+}
+
+/// Hue, saturation and brightness in `0..=1` as an 8-bit RGB colour.
+fn hsb_to_rgb(h: f64, s: f64, v: f64) -> (u8, u8, u8) {
+  let h6 = (h.rem_euclid(1.0)) * 6.0;
+  let i = h6.floor();
+  let f = h6 - i;
+  let (p, q, t) = (v * (1.0 - s), v * (1.0 - s * f), v * (1.0 - s * (1.0 - f)));
+  let (r, g, b) = match i as i32 {
+    0 => (v, t, p),
+    1 => (q, v, p),
+    2 => (p, v, t),
+    3 => (p, q, v),
+    4 => (t, p, v),
+    _ => (v, p, q),
+  };
+  let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+  (ch(r), ch(g), ch(b))
+}
+
 /// PieChart[{v1, v2, ...}] or PieChart[{{v1, v2, ...}, ...}]
 ///
 /// Flat input renders as a single pie. A list of sublists renders as
@@ -4753,49 +4935,56 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   // Label text is collected separately so it draws on top of every wedge.
   let mut labels_svg = String::new();
-  let (_, _, _, legend_fill, _) = crate::functions::plot::plot_theme();
-  let line_height = 22.0;
-  let legend_top =
-    cy - opts.chart_legends.len() as f64 * line_height / 2.0 + 5.0;
-  for (i, label) in opts.chart_legends.iter().enumerate() {
-    let color = if opts.chart_style.is_empty() {
-      CHART_COLORS[i % CHART_COLORS.len()]
-    } else {
-      let c = &opts.chart_style[i % opts.chart_style.len()];
-      (
-        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-      )
-    };
-    labels_svg.push_str(&crate::functions::plot::chart_legend_entry_svg(
-      label,
-      color,
-      (w + 4.0, legend_top + i as f64 * line_height),
-      1.0,
-      legend_fill,
-    ));
-  }
+  labels_svg.push_str(&crate::functions::plot::chart_legend_column_svg(
+    &opts.chart_legends,
+    |i| {
+      if opts.chart_style.is_empty() {
+        CHART_COLORS[i % CHART_COLORS.len()]
+      } else {
+        let c = &opts.chart_style[i % opts.chart_style.len()];
+        let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+        (ch(c.r), ch(c.g), ch(c.b))
+      }
+    },
+    w,
+    cy,
+    1.0,
+  ));
 
   // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
   // primitives like in Wolfram. Only single-ring pies have a plain `Disk`.
   let mut slice_prims: Vec<Expr> = Vec::new();
 
   let n_rings = rows.len();
-  // Split the total radius between `n_rings` equal-width rings and
-  // `n_rings - 1` inter-ring gaps. Every ring ends up with the same
-  // thickness and the outermost ring still reaches the full radius.
-  let ring_gap = if n_rings > 1 {
-    3.0_f64.min(radius / n_rings as f64 * 0.25)
-  } else {
-    0.0
-  };
-  // `SectorOrigin -> {…, r0}` leaves a hole of radius `r0` (rings being one
-  // unit wide each) in the middle.
-  let hole_radius = radius * hole / (hole + n_rings as f64);
-  let ring_width =
-    (radius - hole_radius - (n_rings.saturating_sub(1)) as f64 * ring_gap)
-      / n_rings as f64;
+  // As in WL, every ring is one unit wide, the rings are `g` units apart
+  // (`SectorSpacing -> {s, g}`, a quarter unit by default) and
+  // `SectorOrigin -> {…, r0}` leaves a hole of radius `r0` in the middle;
+  // the outermost ring reaches the full radius.
+  let ring_spacing = args[1..]
+    .iter()
+    .find_map(|o| {
+      let (name, value) = crate::functions::graphics::option_name_value(o)?;
+      if name != "SectorSpacing" {
+        return None;
+      }
+      match &*value {
+        Expr::List(items) if items.len() == 2 => try_eval_to_f64(&items[1]),
+        _ => None,
+      }
+    })
+    .filter(|g| g.is_finite() && *g >= 0.0)
+    .unwrap_or(0.25);
+  let glass = args[1..].iter().any(|o| {
+    crate::functions::graphics::option_name_value(o).is_some_and(|(n, v)| {
+      n == "ChartElementFunction"
+        && matches!(&*v, Expr::String(s) if s == "GlassSector")
+    })
+  });
+  let gaps = n_rings.saturating_sub(1) as f64;
+  let unit = radius / (hole + n_rings as f64 + gaps * ring_spacing);
+  let ring_gap = unit * ring_spacing;
+  let hole_radius = unit * hole;
+  let ring_width = unit;
 
   for (ring_idx, row) in rows.iter().enumerate() {
     let total: f64 = row.iter().sum();
@@ -4895,6 +5084,15 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
+      // `ChartElementFunction -> "GlassSector"` shades the slice radially.
+      let fill = if glass {
+        let (defs, id) =
+          glass_sector_gradient((r, g, b), (cx, cy), (r_in, r_out));
+        svg.push_str(&defs);
+        format!("url(#{id})")
+      } else {
+        format!("rgb({r},{g},{b})")
+      };
       // Slices are outlined with WL 15's `EdgeForm[GrayLevel[0, 0.5]]`.
       if r_in <= 1e-9 {
         // Innermost ring with no hole: render as a center-anchored wedge.
@@ -4904,7 +5102,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let y2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
+           fill=\"{fill}\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
         ));
       } else {
         // Outer ring: render as an annulus wedge.
@@ -4918,7 +5116,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let yo2 = cy + r_out * end_angle.sin();
         svg.push_str(&format!(
           "<path d=\"M{xi1:.2},{yi1:.2} L{xo1:.2},{yo1:.2} A{r_out:.2},{r_out:.2} 0 {large_arc},1 {xo2:.2},{yo2:.2} L{xi2:.2},{yi2:.2} A{r_in:.2},{r_in:.2} 0 {large_arc},0 {xi1:.2},{yi1:.2} Z\" \
-           fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
+           fill=\"{fill}\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
         ));
       }
 
@@ -5717,34 +5915,49 @@ pub(crate) fn with_chart_legend(
   let [w, h] = dims[..] else {
     return svg;
   };
+  // The displayed width, when the view box is in finer render units.
+  let shown_w = tag
+    .find(" width=\"")
+    .map(|i| i + " width=\"".len())
+    .and_then(|i| {
+      tag[i..]
+        .find('"')
+        .and_then(|j| tag[i..i + j].parse::<f64>().ok())
+    })
+    .filter(|v| *v > 0.0);
+  let scale = shown_w.map_or(1.0, |sw| w / sw);
+  // WL sets the legend beside the chart's image, which keeps its size.
   let legend_width =
-    crate::functions::plot::chart_legend_column_width(legends, 1.0).round();
-  let new_w = w + legend_width;
+    (crate::functions::plot::chart_legend_column_width(legends, 1.0)).round();
+  let new_w = w + legend_width * scale;
   let mut new_tag = format!(
     "{}viewBox=\"0 0 {new_w} {h}{}",
     &tag[..vb_start],
     &tag[dims_start + dims_len..]
   );
-  let old_width = format!("width=\"{w}\"");
-  if new_tag.contains(&old_width) {
-    new_tag = new_tag.replacen(&old_width, &format!("width=\"{new_w}\""), 1);
+  if let Some(sw) = shown_w {
+    let old_width = format!(" width=\"{sw}\"");
+    new_tag = new_tag.replacen(
+      &old_width,
+      &format!(" width=\"{}\"", sw + legend_width),
+      1,
+    );
   }
-  let (bg, _, _, legend_fill, _) = crate::functions::plot::plot_theme();
+  let (bg, _, _, _, _) = crate::functions::plot::plot_theme();
   let mut entries = format!(
-    "<rect x=\"{w}\" width=\"{legend_width}\" height=\"{h}\" fill=\"rgb({},{},{})\"/>\n",
-    bg.0, bg.1, bg.2
+    "<rect x=\"{w}\" width=\"{}\" height=\"{h}\" fill=\"rgb({},{},{})\"/>\n",
+    legend_width * scale,
+    bg.0,
+    bg.1,
+    bg.2
   );
-  let line_height = 22.0;
-  let top = h / 2.0 - legends.len() as f64 * line_height / 2.0 + 5.0;
-  for (i, label) in legends.iter().enumerate() {
-    entries.push_str(&crate::functions::plot::chart_legend_entry_svg(
-      label,
-      color(i),
-      (w + 4.0, top + i as f64 * line_height),
-      1.0,
-      legend_fill,
-    ));
-  }
+  entries.push_str(&crate::functions::plot::chart_legend_column_svg(
+    legends,
+    color,
+    w,
+    h / 2.0,
+    scale,
+  ));
   let body = &svg[tag_end..];
   let close = body.rfind("</svg>").unwrap_or(body.len());
   format!("{new_tag}{}{entries}{}", &body[..close], &body[close..])
@@ -7797,68 +8010,23 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Pack the word boxes on an Archimedean spiral around the origin, the
-  // heaviest word at the centre (y up).
-  const CHAR_W: f64 = 0.45; // average glyph advance in em
-  const BOX_H: f64 = 0.75; // box height in em
-  struct Placed {
-    x: f64,
-    y: f64,
-    size: f64,
-    half_w: f64,
-    half_h: f64,
-  }
-  let mut placed: Vec<Placed> = Vec::new();
-  for (word, weight) in &weighted {
-    let size = size_of(*weight);
-    let half_w = word.chars().count() as f64 * CHAR_W * size / 2.0;
-    let half_h = BOX_H * size / 2.0;
-    let mut s = 0usize;
-    loop {
-      let t = s as f64 * 0.05;
-      let (x, y) = (2.0 * t * t.cos(), 1.4 * t * t.sin());
-      let clear = placed.iter().all(|p| {
-        (x - p.x).abs() >= half_w + p.half_w
-          || (y - p.y).abs() >= half_h + p.half_h
-      });
-      if clear || s > 200_000 {
-        placed.push(Placed {
-          x,
-          y,
-          size,
-          half_w,
-          half_h,
-        });
-        break;
-      }
-      s += 1;
-    }
-  }
+  let sized: Vec<(&str, f64)> = weighted
+    .iter()
+    .map(|(w, weight)| (w.as_str(), size_of(*weight)))
+    .collect();
+  let (origins, taken) = place_cloud_words(&sized);
 
-  // The plot range hugs the boxes; the picture is `svg_width` wide.
-  let x0 = placed
-    .iter()
-    .map(|p| p.x - p.half_w)
-    .fold(f64::INFINITY, f64::min);
-  let x1 = placed
-    .iter()
-    .map(|p| p.x + p.half_w)
-    .fold(f64::NEG_INFINITY, f64::max);
-  let y0 = placed
-    .iter()
-    .map(|p| p.y - p.half_h)
-    .fold(f64::INFINITY, f64::min);
-  let y1 = placed
-    .iter()
-    .map(|p| p.y + p.half_h)
-    .fold(f64::NEG_INFINITY, f64::max);
+  // The plot range hugs the glyphs; the picture is `svg_width` wide.
+  let (x0, x1, y0, y1) = glyph_boxes_extent(taken.iter().flatten());
   let pad = 0.02 * (x1 - x0).max(y1 - y0);
   let (x0, x1, y0, y1) = (x0 - pad, x1 + pad, y0 - pad, y1 + pad);
   let scale = svg_width as f64 / (x1 - x0);
   let svg_height = ((y1 - y0) * scale).round().max(1.0) as u32;
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
-  for (rank, ((word, _), p)) in weighted.iter().zip(&placed).enumerate() {
+  for (rank, (&(word, size), &(px, py))) in
+    sized.iter().zip(&origins).enumerate()
+  {
     let color = crate::evaluator::evaluate_function_call_ast(
       "ColorData",
       &[Expr::Integer(116), Expr::Integer(rank as i128 + 1)],
@@ -7872,12 +8040,13 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (c.b * 255.0).round() as u8,
       )
     });
-    let (sx, sy) = ((p.x - x0) * scale, (y1 - p.y) * scale);
+    // The text starts at its baseline origin, in the face it was measured
+    // in (which `sans-serif` resolves to).
+    let (sx, sy) = ((px - x0) * scale, (y1 - py) * scale);
     svg.push_str(&format!(
-      "<text transform=\"translate({sx:.1},{sy:.1})\" font-size=\"{:.1}\" \
-       fill=\"rgb({r},{g},{b})\" font-family=\"'Source Sans Pro', sans-serif\" \
-       text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
-      p.size * scale,
+      "<text x=\"{sx:.2}\" y=\"{sy:.2}\" font-size=\"{:.2}\" \
+       fill=\"rgb({r},{g},{b})\" font-family=\"sans-serif\">{}</text>\n",
+      size * scale,
       html_escape(word)
     ));
   }
@@ -7885,19 +8054,145 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// The left edge of the first bar of an `n`-bar chart, read off
-/// wolframscript: constant up to nine bars, then the bars narrow in two
-/// linear stretches, and from 46 bars on they touch.
-fn plain_bar_left_edge(n: usize) -> f64 {
-  let line = |n0: usize, a: f64, n1: usize, b: f64| {
-    a + (b - a) * (n - n0) as f64 / (n1 - n0) as f64
-  };
-  match n {
-    0..=9 => 0.5487982520029133,
-    10..=33 => line(10, 0.5460988028072107, 33, 0.6521260492637952),
-    34..=45 => line(34, 0.6102525182834277, 45, 0.6459224506692425),
-    _ => 0.5,
+/// Pack the `(word, font size)`s of a word cloud on an Archimedean spiral
+/// around the origin, the first at the centre (y up). Each word is tested
+/// glyph by glyph against the glyphs already placed, using the ink boxes of
+/// the face the text is drawn in, so no two words overlap. Returns each
+/// word's baseline origin and its placed glyph boxes.
+fn place_cloud_words(
+  words: &[(&str, f64)],
+) -> (Vec<(f64, f64)>, Vec<Vec<GlyphBox>>) {
+  let mut origins = Vec::with_capacity(words.len());
+  let mut taken: Vec<Vec<GlyphBox>> = Vec::with_capacity(words.len());
+  for &(word, size) in words {
+    let boxes = word_glyph_boxes(word, size);
+    // Centre the word's ink on the spiral point.
+    let (bx0, bx1, by0, by1) = glyph_boxes_extent(boxes.iter());
+    let (ox, oy) = (-(bx0 + bx1) / 2.0, -(by0 + by1) / 2.0);
+    let mut s = 0usize;
+    loop {
+      let t = s as f64 * 0.05;
+      let (x, y) = (2.0 * t * t.cos() + ox, 1.4 * t * t.sin() + oy);
+      let clear = boxes.iter().all(|b| {
+        let b = b.shifted(x, y);
+        taken.iter().flatten().all(|o| !b.overlaps(o))
+      });
+      if clear || s > 200_000 {
+        taken.push(boxes.iter().map(|b| b.shifted(x, y)).collect());
+        origins.push((x, y));
+        break;
+      }
+      s += 1;
+    }
   }
+  (origins, taken)
+}
+
+/// The ink box of one glyph of a word cloud, in layout units (y up).
+#[derive(Clone, Copy)]
+struct GlyphBox {
+  x0: f64,
+  y0: f64,
+  x1: f64,
+  y1: f64,
+}
+
+impl GlyphBox {
+  fn shifted(self, dx: f64, dy: f64) -> Self {
+    GlyphBox {
+      x0: self.x0 + dx,
+      y0: self.y0 + dy,
+      x1: self.x1 + dx,
+      y1: self.y1 + dy,
+    }
+  }
+
+  fn overlaps(&self, other: &GlyphBox) -> bool {
+    self.x0 < other.x1
+      && other.x0 < self.x1
+      && self.y0 < other.y1
+      && other.y0 < self.y1
+  }
+}
+
+/// The bounding box `(x0, x1, y0, y1)` of a set of glyph boxes.
+fn glyph_boxes_extent<'a>(
+  boxes: impl Iterator<Item = &'a GlyphBox>,
+) -> (f64, f64, f64, f64) {
+  boxes.fold(
+    (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ),
+    |(x0, x1, y0, y1), b| {
+      (x0.min(b.x0), x1.max(b.x1), y0.min(b.y0), y1.max(b.y1))
+    },
+  )
+}
+
+/// The ink boxes of the glyphs of `word` set at `size` with its baseline
+/// starting at the origin, measured in the bundled sans-serif face
+/// (Atkinson Hyperlegible Next) that renders the text. Each box is padded
+/// by 0.06 em to absorb the renderer's kerning and antialiasing; a glyph
+/// the face lacks takes a 0.6 × 0.75 em box.
+fn word_glyph_boxes(word: &str, size: f64) -> Vec<GlyphBox> {
+  use std::sync::OnceLock;
+  static FACE: OnceLock<Option<ttf_parser::Face<'static>>> = OnceLock::new();
+  let face = FACE
+    .get_or_init(|| {
+      ttf_parser::Face::parse(
+        crate::evaluator::dispatch::io_functions::ATKINSON_NEXT_TTF,
+        0,
+      )
+      .ok()
+    })
+    .as_ref();
+  let pad = 0.06 * size;
+  let mut pen = 0.0;
+  let mut boxes = Vec::new();
+  for ch in word.chars() {
+    let glyph = face.and_then(|f| f.glyph_index(ch).map(|g| (f, g)));
+    let (advance, ink) = match glyph {
+      Some((f, g)) => {
+        let em = size / f.units_per_em() as f64;
+        let advance = f.glyph_hor_advance(g).unwrap_or(0) as f64 * em;
+        let ink = f.glyph_bounding_box(g).map(|r| {
+          (
+            r.x_min as f64 * em,
+            r.y_min as f64 * em,
+            r.x_max as f64 * em,
+            r.y_max as f64 * em,
+          )
+        });
+        (advance, ink)
+      }
+      None => (0.6 * size, Some((0.0, 0.0, 0.6 * size, 0.75 * size))),
+    };
+    if let Some((ax0, ay0, ax1, ay1)) = ink {
+      boxes.push(GlyphBox {
+        x0: pen + ax0 - pad,
+        y0: ay0 - pad,
+        x1: pen + ax1 + pad,
+        y1: ay1 + pad,
+      });
+    }
+    pen += advance;
+  }
+  if boxes.is_empty() {
+    boxes.push(GlyphBox {
+      x0: 0.0,
+      y0: 0.0,
+      x1: pen.max(0.1 * size),
+      y1: 0.75 * size,
+    });
+  }
+  boxes
+}
+
+fn plain_bar_left_edge(n: usize) -> f64 {
+  1.0 - crate::functions::plot::auto_flat_bar_width(n) / 2.0
 }
 
 /// `BarChart[data]` of one plain dataset (a list or association of
@@ -7988,6 +8283,47 @@ fn plain_bar_chart_tree(data: &Expr) -> Option<Expr> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// The words of a cloud never overlap: no glyph box of one word meets a
+  /// glyph box of another (regression: "tick" and "svg", "chart" and
+  /// "mesh" were drawn over each other).
+  #[test]
+  fn word_cloud_words_do_not_overlap() {
+    let words: Vec<(&str, f64)> = [
+      ("graphics", 70.0),
+      ("chart", 58.0),
+      ("plot", 52.0),
+      ("svg", 40.0),
+      ("vector", 40.0),
+      ("color", 34.0),
+      ("axes", 28.0),
+      ("legend", 28.0),
+      ("frame", 16.0),
+      ("mesh", 16.0),
+      ("tick", 10.0),
+    ]
+    .to_vec();
+    let (_, boxes) = place_cloud_words(&words);
+    for i in 0..boxes.len() {
+      for j in i + 1..boxes.len() {
+        for a in &boxes[i] {
+          assert!(
+            boxes[j].iter().all(|b| !a.overlaps(b)),
+            "{} overlaps {}",
+            words[i].0,
+            words[j].0
+          );
+        }
+      }
+    }
+    // The glyphs are measured: "tick" (narrow i, t) is narrower than
+    // "mesh" (wide m) at the same size.
+    let width = |w: &str| {
+      let (x0, x1, _, _) = glyph_boxes_extent(word_glyph_boxes(w, 10.0).iter());
+      x1 - x0
+    };
+    assert!(width("tick") < width("mesh"));
+  }
 
   /// Round a `Color`'s channels the same way SVG output does.
   fn rgb_u8(c: &Color) -> (u8, u8, u8) {

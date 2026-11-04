@@ -16205,6 +16205,224 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!((b[3].0 - b[2].0 - 2 * w).abs() <= 2, "{b:?}");
     }
 
+    /// Width and step of the first bars of a chart's `Graphics`, and the
+    /// gap between the first two groups of three, all in bar steps.
+    fn bar_spacing_ratios(chart: &str) -> String {
+      interpret(&format!(
+        "With[{{r = Cases[{chart}, Rectangle[{{a_, _}}, {{b_, _}}, ___] :> \
+         {{a, b}}, Infinity]}}, With[{{step = r[[2, 1]] - r[[1, 1]]}}, \
+         Round[{{(r[[1, 2]] - r[[1, 1]])/step, (r[[4, 1]] - r[[3, 2]])/step}}, \
+         0.001]]]"
+      ))
+      .unwrap()
+    }
+
+    /// `BarSpacing -> {s, sg}` separates the bars of a group by `s` bar
+    /// widths (a bar is `1/(1 + s)` of the bar step) and the groups by `sg`
+    /// bar widths, as in WL.
+    #[test]
+    fn bar_chart_spacing_within_and_between_groups() {
+      assert_eq!(
+        bar_spacing_ratios(
+          "BarChart[{{1, 2, 3}, {3, 2, 1}}, BarSpacing -> {0.5, 1}]"
+        ),
+        "{0.667, 0.667}"
+      );
+      assert_eq!(
+        bar_spacing_ratios(
+          "BarChart[{{1, 2, 3}, {3, 2, 1}}, BarSpacing -> {0, 1}]"
+        ),
+        "{1., 1.}"
+      );
+      // Automatic: bars 0.902 of their step, groups 4 bar gaps apart.
+      assert_eq!(
+        bar_spacing_ratios("BarChart[{{1, 2, 3}, {3, 2, 1}}]"),
+        "{0.902, 0.39}"
+      );
+      // A scalar spaces the bars of a group; the groups get 0.2 bar widths.
+      assert_eq!(
+        bar_spacing_ratios(
+          "BarChart[{{1, 2, 3}, {3, 2, 1}}, BarSpacing -> 0.3]"
+        ),
+        "{0.769, 0.154}"
+      );
+    }
+
+    /// The `<line>`s of a rendered chart as `(x1, y1, x2, y2)`.
+    fn svg_lines(svg: &str) -> Vec<(f64, f64, f64, f64)> {
+      svg
+        .split("<line")
+        .skip(1)
+        .map(|l| {
+          let a = |n: &str| -> f64 {
+            l.split(&format!(" {n}=\""))
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .parse()
+              .unwrap()
+          };
+          (a("x1"), a("y1"), a("x2"), a("y2"))
+        })
+        .collect()
+    }
+
+    /// A grouped bar chart marks the x axis at both sides of every group
+    /// (regression: only the outer edges of the first and last group were
+    /// marked).
+    #[test]
+    fn bar_chart_marks_both_sides_of_each_group() {
+      let svg = export_svg(
+        "BarChart[{{1, 2, 3}, {3, 2, 1}, {2, 4, 2}}, BarSpacing -> {0, 1}]",
+      );
+      let lines = svg_lines(&svg);
+      let axis_y = lines
+        .iter()
+        .filter(|(_, y1, _, y2)| y1 == y2)
+        .map(|l| l.1)
+        .fold(f64::NEG_INFINITY, f64::max);
+      let below = lines
+        .iter()
+        .filter(|(x1, y1, x2, y2)| x1 == x2 && *y1 == axis_y && *y2 > *y1)
+        .count();
+      assert_eq!(below, 6, "{svg}");
+    }
+
+    /// A framed bar chart ticks its bottom and top edges at the middle of
+    /// every bar (regression: it drew axis marks at the outer bar edges).
+    #[test]
+    fn bar_chart_frame_ticks_bar_middles() {
+      let svg = export_svg("BarChart[{5, 3, 8, 2, 6}, Frame -> True]");
+      let centres: Vec<i64> = bar_rects(&svg)
+        .iter()
+        .zip(svg.split("<rect").skip(2))
+        .map(|(b, tag)| {
+          let w: f64 = tag
+            .split(" width=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+          (b.0 as f64 + w / 2.0).round() as i64
+        })
+        .collect();
+      assert_eq!(centres.len(), 5, "{svg}");
+      let ticks: Vec<i64> = svg_lines(&svg)
+        .iter()
+        .filter(|(x1, y1, x2, y2)| x1 == x2 && (y2 - y1).abs() < 30.0)
+        .map(|l| l.0.round() as i64)
+        .collect();
+      // Bottom and top edge.
+      assert_eq!(ticks.len(), 10, "{svg}");
+      for c in &centres {
+        assert_eq!(
+          ticks.iter().filter(|t| (*t - c).abs() <= 1).count(),
+          2,
+          "{centres:?} {ticks:?}"
+        );
+      }
+    }
+
+    /// `ChartLegends` are set beside the chart, whose own size stays, with
+    /// WL's edged swatches (regression: the legend squeezed the plot and
+    /// its swatches had no border).
+    #[test]
+    fn chart_legends_sit_beside_the_chart_with_edged_swatches() {
+      let width = |svg: &str| -> f64 {
+        svg
+          .split(" width=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let height = |svg: &str| -> f64 {
+        svg
+          .split(" height=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      for (plain, legended) in [
+        (
+          "BarChart[{{1, 2}, {2, 1}}]",
+          "BarChart[{{1, 2}, {2, 1}}, ChartLegends -> {\"a\", \"b\"}]",
+        ),
+        (
+          "Histogram[{{1, 2, 2, 3}, {3, 4, 4}}, {1}]",
+          "Histogram[{{1, 2, 2, 3}, {3, 4, 4}}, {1}, ChartLegends -> {\"a\", \"b\"}]",
+        ),
+        (
+          "BubbleChart[{{{1, 2, 3}, {2, 4, 1}}, {{1, 4, 2}, {3, 3, 3}}}]",
+          "BubbleChart[{{{1, 2, 3}, {2, 4, 1}}, {{1, 4, 2}, {3, 3, 3}}}, \
+           ChartLegends -> {\"a\", \"b\"}]",
+        ),
+      ] {
+        let (p, l) = (export_svg(plain), export_svg(legended));
+        assert_eq!(height(&p), height(&l), "{legended}");
+        assert!(width(&l) > width(&p) + 20.0, "{legended}");
+        assert_eq!(l.matches("stroke-opacity=\"0.637\"").count(), 2, "{l}");
+      }
+    }
+
+    /// `PairedBarChart` draws a magnitude axis under each half, labelled
+    /// outwards from the gap.
+    #[test]
+    fn paired_bar_chart_has_magnitude_axes() {
+      assert_eq!(
+        interpret(
+          "Cases[PairedBarChart[{1, 3, 5, 4, 2}, {2, 4, 3, 5, 1}], \
+           Text[Style[t_, ___], ___] :> t, Infinity]"
+        )
+        .unwrap(),
+        "{0, 2, 4, 0, 2, 4}"
+      );
+    }
+
+    /// The rings of a multi-dataset `PieChart` are a quarter of a ring
+    /// width apart, as in WL (regression: a 3-point gap).
+    #[test]
+    fn pie_chart_rings_quarter_width_apart() {
+      let svg = export_svg("PieChart[{{1, 2, 3}, {3, 1, 2}}]");
+      let mut radii: Vec<f64> = svg
+        .split(" A")
+        .skip(1)
+        .filter_map(|s| s.split(',').next()?.parse().ok())
+        .collect();
+      radii.sort_by(f64::total_cmp);
+      radii.dedup_by(|a, b| (*a - *b).abs() < 0.05);
+      assert_eq!(radii.len(), 3, "{radii:?}");
+      let (r1, r2, r3) = (radii[0], radii[1], radii[2]);
+      assert!(((r2 - r1) / r1 - 0.25).abs() < 0.01, "{radii:?}");
+      assert!(((r3 - r2) / r1 - 1.0).abs() < 0.01, "{radii:?}");
+    }
+
+    /// `ChartElementFunction -> "GlassSector"` shades every sector with a
+    /// radial gradient of its colour.
+    #[test]
+    fn pie_chart_glass_sector_gradient() {
+      let svg = export_svg(
+        "PieChart[{3, 5, 2, 4}, ChartElementFunction -> \"GlassSector\"]",
+      );
+      assert_eq!(svg.matches("<radialGradient").count(), 4, "{svg}");
+      assert_eq!(svg.matches("fill=\"url(#glass").count(), 4, "{svg}");
+      assert!(
+        !export_svg("PieChart[{3, 5, 2, 4}]").contains("<radialGradient")
+      );
+    }
+
     /// `GridLines -> {None, Automatic}` draws a line across the plot at
     /// every value tick; `Frame -> True` mirrors the value ticks on the
     /// right edge instead of extending the x axis past the frame.
@@ -17412,10 +17630,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !svg.contains(r#"<circle cx="#) || !svg.contains(r#"opacity="0.7""#),
         "bubble circles should not carry opacity=\"0.7\": {svg}"
       );
-      // Each legend swatch should carry a black stroke so it visually
+      // Each legend swatch should carry WL's black edge so it visually
       // matches the bordered bubbles.
       let swatch_count = svg
-        .matches(r##"stroke="#000000" stroke-width="1""##)
+        .matches(r#"stroke="black" stroke-opacity="0.637""#)
         .count();
       assert!(
         swatch_count >= 4,
@@ -45532,10 +45750,16 @@ mod chart_legend_row_and_group_labels {
 
   #[test]
   fn row_legend_sits_below_the_plot_and_keeps_bars_wide() {
-    let side = first_bar_width(&export_svg(&format!("{CHART}]")));
+    let column = export_svg(&format!("{CHART}]"));
     let svg = export_svg(&format!("{CHART}, LegendAppearance -> \"Row\"]"));
-    // Without a legend column on the right the plot is wider.
-    assert!(first_bar_width(&svg) > side, "{svg}");
+    // Neither legend narrows the plot: a column is set beside the image,
+    // which widens, a row below it.
+    assert!(
+      (first_bar_width(&svg) - first_bar_width(&column)).abs() < 1.0,
+      "{svg}"
+    );
+    assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+    assert!(!column.starts_with("<svg width=\"360\""), "{column}");
     assert!(svg.contains(">first<") && svg.contains(">second<"), "{svg}");
   }
 }

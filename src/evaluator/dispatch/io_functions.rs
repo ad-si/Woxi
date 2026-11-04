@@ -7925,7 +7925,7 @@ fn styled_tableform_svg(inner: &Expr, directives: &[Expr]) -> Option<String> {
 const ATKINSON_MONO_TTF: &[u8] = include_bytes!(
   "../../../resources/AtkinsonHyperlegibleMono-VariableFont_wght.ttf"
 );
-const ATKINSON_NEXT_TTF: &[u8] = include_bytes!(
+pub(crate) const ATKINSON_NEXT_TTF: &[u8] = include_bytes!(
   "../../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
 );
 

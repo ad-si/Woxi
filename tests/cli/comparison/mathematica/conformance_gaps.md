@@ -4964,8 +4964,9 @@ reproduce wolframscript's primitive tree:
 - `RectangleChart`, ``BarCharts`GeneralizedBarChart``, `PairedBarChart` and
   `PairedHistogram` use one
   ``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]`` per bar, at
-  wolframscript's positions. The paired charts' axes, ticks and options are
-  not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
+  wolframscript's positions. The paired charts draw WL's axes and ticks,
+  but as lines in data coordinates rather than WL's `Offset` forms, and
+  their options are not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
   largest count between its halves. wolframscript's gap is a little smaller
   and not proportional: `15/67` for a largest count of 3, `85/163` for 5.
 - `BarChart` of one plain dataset (a list or association of numbers, no
@@ -5273,8 +5274,8 @@ accepted, but the picture is the same as without it.
   approximation of WL's raster), `AxesOrigin`, per-axis `Axes -> {x, y}` and
   `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list; `PlotTheme`
   other than `"Business"`.
-- `PieChart`: `PlotTheme`, `ChartElementFunction` (`"GlassSector"` draws
-  flat sectors).
+- `PieChart`: `PlotTheme`, `ChartElementFunction` other than
+  `"GlassSector"`; `SectorSpacing` only for the space between rings.
 
 ### Bar, pie and sector charts: remaining layout differences
 
@@ -5286,22 +5287,26 @@ radius), the `SectorChart` mapping, `Histogram`'s `{min, max, dx}` and
 `{"Log", n}` bins, `ScalingFunctions -> "Log"` and stacked histograms.
 Still different:
 
-- `ChartLayout -> "Percentile"`: WL pads the x range on the left as if
-  there were more groups; Woxi centres the bars. `"Overlapped"` and
-  `"Stepped"` bars are a little wider than WL's.
+- `ChartLayout -> "Stacked"` / `"Percentile"`: WL pads the x range on the
+  left as if there were more groups; Woxi starts it 2% before the first
+  bar, as for grouped bars.
 - `BarOrigin -> Top` draws no bar-edge marks on the top axis.
 - A donut (`SectorOrigin -> {Automatic, r}`) keeps the plain pie's outer
   radius; WL's fills a little more of the frame.
 - `Placed[…, "RadialCallout"]` labels: WL shrinks the pie less and bends
   the leaders; Woxi draws straight short leaders.
-- `PairedBarChart` draws no axes or tick labels (WL labels both halves with
-  magnitudes, `4 … 0 0 … 4`), and its edges are black, not gray.
-- `BubbleChart`: the plot's aspect ratio follows the data range rather than
-  WL's near-square default, tick labels are too large and the largest
-  bubble is about 0.75 of WL's radius.
-- Chart legends (`ChartLegends`) are set larger than WL's, in gray, and
-  top-aligned instead of centred on the plot.
-- `PieChart` of several datasets leaves a thinner gap between the rings.
+- `PairedBarChart`'s edges are black, not gray.
+- `BubbleChart`: tick labels are too large and the largest bubble is about
+  0.75 of WL's radius.
+- Automatic `BarSpacing` uses WL's spacing for charts of few bars (a bar
+  0.902 of its step, groups four bar gaps apart). Flat lists follow WL as
+  the bar count grows; grouped charts of many bars do not (WL narrows them,
+  for `Table[Range[5], 6]` to 0.661 of the step, and lets 8 × 6 bars
+  touch).
+- A framed grouped `BarChart`'s tick between two groups is a fixed 2.73 pt;
+  WL's is scaled (`{0.008, 0}`) and varies with the chart.
+- `PieChart` of several datasets keeps the plain pie's outer radius; WL's
+  rings fill a little more of the frame.
 - A log x axis (`Histogram[…, {"Log", n}]`) is labelled `0.05, 0.1, 0.5, …`
   where WL writes `0.010, 0.100, 1, 10`.
 - `DiscretePlot`: `ExtentSize`.

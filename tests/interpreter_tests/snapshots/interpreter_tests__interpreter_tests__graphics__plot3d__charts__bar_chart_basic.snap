@@ -4,9 +4,9 @@ expression: "export_svg(\"BarChart[{1, 2, 3}]\")"
 ---
 <svg width="360" height="215" viewBox="0 0 3600 2150" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2150" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="280" y="1420" width="893" height="654" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
-<rect x="1396" y="766" width="894" height="1308" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
-<rect x="2513" y="111" width="893" height="1963" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
+<rect x="234" y="1420" width="1021" height="654" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="1365" y="766" width="1021" height="1308" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="2497" y="111" width="1021" height="1963" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
 <line x1="169.0" y1="2075.0" x2="3519.0" y2="2075.0" stroke="#666666" stroke-width="5"/>
 <line x1="169.0" y1="5.0" x2="169.0" y2="2075.0" stroke="#666666" stroke-width="5"/>
 <line x1="169.0" y1="2009.5" x2="193.0" y2="2009.5" stroke="#666666" stroke-width="5"/>
@@ -49,6 +49,6 @@ expression: "export_svg(\"BarChart[{1, 2, 3}]\")"
 <line x1="169.0" y1="110.6" x2="209.0" y2="110.6" stroke="#666666" stroke-width="5"/>
 <text x="144.6" y="145.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
 <line x1="3519.0" y1="2075.0" x2="3586.0" y2="2075.0" stroke="#666666" stroke-width="5"/>
-<line x1="280.7" y1="2075.0" x2="280.7" y2="2135.0" stroke="#666666" stroke-width="5"/>
-<line x1="3407.3" y1="2075.0" x2="3407.3" y2="2135.0" stroke="#666666" stroke-width="5"/>
+<line x1="234.7" y1="2075.0" x2="234.7" y2="2135.0" stroke="#666666" stroke-width="5"/>
+<line x1="3519.0" y1="2075.0" x2="3519.0" y2="2135.0" stroke="#666666" stroke-width="5"/>
 </svg>
