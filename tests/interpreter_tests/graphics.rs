@@ -31137,15 +31137,97 @@ mod dendrogram {
   }
 
   #[test]
-  fn single_linkage_changes_heights() {
-    // With Single linkage the last merge happens at the plain gap
-    // distance, whereas Ward inflates it — the geometry must differ.
-    let ward = export_svg("Dendrogram[{1, 2, 5, 6, 12}]");
+  fn single_linkage_is_the_default() {
+    // `Options[Dendrogram]` has `ClusterDissimilarityFunction -> Single`;
+    // Ward inflates the later merges, so its geometry differs.
+    let default = export_svg("Dendrogram[{1, 2, 5, 6, 12}]");
     let single = export_svg(
       "Dendrogram[{1, 2, 5, 6, 12}, \
        ClusterDissimilarityFunction -> \"Single\"]",
     );
-    assert_ne!(ward, single);
+    let ward = export_svg(
+      "Dendrogram[{1, 2, 5, 6, 12}, \
+       ClusterDissimilarityFunction -> \"Ward\"]",
+    );
+    assert_eq!(default, single);
+    assert_ne!(default, ward);
+  }
+
+  /// The leaf labels' x positions, in drawing order.
+  fn leaf_label_order(svg: &str) -> Vec<String> {
+    let mut labels: Vec<(f64, String)> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .map(|t| {
+        let x: f64 = t.split('"').next().unwrap().parse().unwrap();
+        let y: f64 = t
+          .split("y=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap()
+          .parse()
+          .unwrap();
+        let label = t.split('>').nth(1).unwrap().split('<').next().unwrap();
+        // Left/right: order bottom to top.
+        (x - y, label.to_string())
+      })
+      .collect();
+    labels.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    labels.into_iter().map(|(_, l)| l).collect()
+  }
+
+  /// Regression: the default clustering was Ward, so 20 joined {10, 11}
+  /// before {1, …, 11} were complete, and the tree was drawn black.
+  #[test]
+  fn default_topology_and_style_match_wl() {
+    let svg = export_svg("Dendrogram[{1, 2, 5, 6, 10, 11, 20}]");
+    assert_eq!(
+      leaf_label_order(&svg),
+      ["1", "2", "5", "6", "10", "11", "20"]
+    );
+    assert!(
+      svg.starts_with("<svg width=\"360\" height=\"262\""),
+      "{svg}"
+    );
+    // GrayLevel[0.65] lines, black labels.
+    assert_eq!(svg.matches("stroke=\"#A6A6A6\"").count(), 6, "{svg}");
+    assert!(svg.contains("fill=\"#000000\">20</text>"), "{svg}");
+    // The root (6.90 pt from the top) joins leaf 20 (at x = 351.82 pt, tip
+    // 246.95 pt from the top) last.
+    let root = svg.lines().rfind(|l| l.starts_with("<path")).unwrap();
+    assert!(root.contains("L 3518.2 69.0 L 3518.2 2469.5\""), "{root}");
+  }
+
+  /// WL's leaf order follows its clustering slot list, which is not the
+  /// input order in general.
+  #[test]
+  fn leaf_order_matches_wl() {
+    for (data, order) in [
+      ("{0, 1, 10, 12}", vec!["0", "1", "12", "10"]),
+      ("{0, 10, 1, 12}", vec!["0", "1", "10", "12"]),
+      ("{2, 10, 1}", vec!["2", "1", "10"]),
+      ("{6, 10, 1, 3}", vec!["6", "1", "3", "10"]),
+      ("{5, 1, 4, 2, 3}", vec!["5", "1", "4", "2", "3"]),
+    ] {
+      let svg = export_svg(&format!("Dendrogram[{data}]"));
+      assert_eq!(leaf_label_order(&svg), order, "{data}");
+    }
+  }
+
+  /// Regression: `Left` put the first leaf at the top and drew a wide
+  /// picture; WL uses `AspectRatio -> 2` (432 pt tall) with the first leaf
+  /// at the bottom.
+  #[test]
+  fn left_orientation_layout() {
+    let svg = export_svg(
+      "Dendrogram[{1 -> \"a\", 2 -> \"b\", 5 -> \"c\", 6 -> \"d\", \
+       12 -> \"e\"}, Left]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"218\" height=\"432\""),
+      "{svg}"
+    );
+    assert_eq!(leaf_label_order(&svg), ["a", "b", "c", "d", "e"]);
   }
 
   #[test]

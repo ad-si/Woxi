@@ -5486,6 +5486,23 @@ y range `{0, 17.5}`).
 `1/Abs[Sqrt[x]]` much closer to the singularity (its 82.5 % quantile is
 2·10⁵, WL's 11), so the same range rule gives a far taller range.
 
+### `Dendrogram` leaf order is reconstructed, not exact
+
+Woxi orders the leaves with a model fitted to WL's output: single linkage,
+the new cluster in the first slot of the merged pair, the last slot moved
+into the second, and ties going to the last pair found. That reproduces
+sorted data and most permutations, but not every case:
+
+```sh
+wolframscript -code 'Cases[Dendrogram[{10, 12, 0, 1}], Inset[Framed[Short[l_], ___], ___] :> l, Infinity]'
+# {10, 12, 1, 0}; Woxi draws 10, 12, 0, 1
+```
+
+Equal dissimilarities between several pairs (`{6, 5, 1, 2}` → WL
+`6, 5, 2, 1`) also order differently. The plot geometry (leaf padding,
+depth, label strip) is measured from WL's default 360 pt and 432 pt
+pictures rather than derived from its `PlotRangePadding`/`ImagePadding`.
+
 
 ## Images
 

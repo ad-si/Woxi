@@ -55,10 +55,10 @@ pub fn dendrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("Dendrogram", args));
 
   let mut orientation = Orientation::Top;
-  let mut linkage = Linkage::Ward;
+  // `Options[Dendrogram]` has `ClusterDissimilarityFunction -> Single`.
+  let mut linkage = Linkage::Single;
   let mut distance_fn: Option<Expr> = None;
-  let mut svg_width = DEFAULT_WIDTH;
-  let mut svg_height = DEFAULT_HEIGHT;
+  let mut image_width: Option<u32> = None;
   let mut full_width = false;
 
   // Trailing arguments: an optional orientation plus option rules.
@@ -79,11 +79,10 @@ pub fn dendrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "ImageSize" => {
-          if let Some((w, h, fw)) =
+          if let Some((w, _, fw)) =
             parse_image_size(&value, DEFAULT_WIDTH, DEFAULT_HEIGHT)
           {
-            svg_width = w;
-            svg_height = h;
+            image_width = Some(w);
             full_width = fw;
           }
         }
@@ -120,8 +119,7 @@ pub fn dendrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &nodes,
     &labels,
     orientation,
-    svg_width,
-    svg_height,
+    image_width,
     full_width,
   );
   Ok(crate::graphics_result(svg))
@@ -162,7 +160,7 @@ fn option_rule(opt: &Expr) -> Option<(String, Expr)> {
 fn parse_linkage(value: &Expr) -> Option<Linkage> {
   let name = match value {
     Expr::String(s) => s.as_str(),
-    Expr::Identifier(s) if s == "Automatic" => return Some(Linkage::Ward),
+    Expr::Identifier(s) if s == "Automatic" => return Some(Linkage::Single),
     _ => return None,
   };
   match name {
@@ -371,21 +369,26 @@ fn agglomerate(
     }
   }
 
+  // The active clusters are kept in a slot list that WL's leaf order
+  // depends on: a merge stores the new cluster in the first slot of the
+  // pair and moves the last slot into the second one.
   let mut active: Vec<usize> = (0..n).collect();
   while active.len() > 1 {
-    // Pick the pair of active clusters with minimal dissimilarity;
-    // ties resolve to the earliest-created pair for determinism.
-    let (mut bi, mut bj) = (0, 1);
+    // Pick the pair of active clusters with minimal dissimilarity,
+    // scanning slot pairs row by row; ties resolve to the last pair found.
+    let (mut si, mut sj) = (0, 1);
     let mut best = f64::INFINITY;
-    for (pi, &i) in active.iter().enumerate() {
-      for &j in &active[(pi + 1)..] {
-        if dist[i][j] < best {
-          best = dist[i][j];
-          bi = i;
-          bj = j;
+    for pi in 0..active.len() {
+      for pj in (pi + 1)..active.len() {
+        let d = dist[active[pi]][active[pj]];
+        if d <= best {
+          best = d;
+          si = pi;
+          sj = pj;
         }
       }
     }
+    let (bi, bj) = (active[si], active[sj]);
 
     let (ni, nj) = (nodes[bi].size as f64, nodes[bj].size as f64);
     let k = nodes.len();
@@ -432,8 +435,8 @@ fn agglomerate(
       dist[m][k] = d;
     }
 
-    active.retain(|&x| x != bi && x != bj);
-    active.push(k);
+    active[si] = k;
+    active.swap_remove(sj);
   }
 
   nodes
@@ -455,51 +458,53 @@ fn est_text_width(label: &str, font_size: f64) -> f64 {
   label.chars().count() as f64 * font_size * 0.6
 }
 
-/// Theme colors: `(background, line, label)`.
+/// Theme colors: `(background, line, label)`. WL draws the tree in
+/// `GrayLevel[0.65]` with black leaf labels.
 fn theme_colors() -> (&'static str, &'static str, &'static str) {
   if crate::is_dark_mode() {
-    ("#1a1a1a", "#bbbbbb", "#999999")
+    ("#1a1a1a", "#bbbbbb", "#dddddd")
   } else {
-    ("#ffffff", "#333333", "#555555")
+    ("#ffffff", "#A6A6A6", "#000000")
   }
 }
 
-/// Render the merge tree as an SVG dendrogram.
+/// Render the merge tree as an SVG dendrogram, laid out like WL's: an
+/// `AspectRatio -> 1/Sqrt[2]` picture 360 pt wide for `Top`/`Bottom`, an
+/// `AspectRatio -> 2` picture 432 pt tall for `Left`/`Right`. The first
+/// leaf sits at the left (`Top`/`Bottom`) or at the bottom (`Left`/`Right`).
 fn render_dendrogram_svg(
   nodes: &[Node],
   labels: &[String],
   orientation: Orientation,
-  svg_width: u32,
-  svg_height: u32,
+  image_width: Option<u32>,
   full_width: bool,
 ) -> String {
   let sf = RESOLUTION_SCALE as f64;
-  let render_width = svg_width as f64 * sf;
-  let render_height = svg_height as f64 * sf;
-
   let (bg_color, line_color, label_color) = theme_colors();
-  let font_size = 11.0 * sf;
-  let label_gap = 4.0 * sf;
+  let font_size = 10.0;
 
   let root = nodes.len() - 1;
   let mut order = Vec::new();
   leaf_order(nodes, root, &mut order);
   let n_leaves = order.len();
 
-  // Abstract coordinates: `u` spreads the leaves across [0, 1] and `v`
-  // is the merge height normalised to [0, 1] (leaves at 0, root at 1).
+  // Abstract coordinates: `u` spreads the leaves across [0, 1] (first leaf
+  // at 0) and `v` is the merge height normalised to [0, 1].
   let h_max = nodes
     .iter()
     .map(|nd| nd.height)
     .fold(0.0_f64, f64::max)
     .max(f64::EPSILON);
-
   let mut u = vec![0.0_f64; nodes.len()];
   for (slot, &leaf) in order.iter().enumerate() {
-    u[leaf] = (slot as f64 + 0.5) / n_leaves as f64;
+    u[leaf] = if n_leaves > 1 {
+      slot as f64 / (n_leaves - 1) as f64
+    } else {
+      0.5
+    };
   }
-  // Internal nodes sit midway between their children (post-order walk:
-  // children always have smaller ids than their parent).
+  // Internal nodes sit midway between their children (children always
+  // have smaller ids than their parent).
   for id in 0..nodes.len() {
     if let Some((l, r)) = nodes[id].children {
       u[id] = f64::midpoint(u[l], u[r]);
@@ -507,46 +512,66 @@ fn render_dendrogram_svg(
   }
   let v: Vec<f64> = nodes.iter().map(|nd| nd.height / h_max).collect();
 
-  // Reserve space for the leaf labels on the side where they appear.
   let longest_label = labels
     .iter()
     .map(|l| est_text_width(l, font_size))
     .fold(0.0_f64, f64::max);
-  let side_pad = 10.0 * sf;
-  let label_strip = font_size * 1.4 + label_gap;
+  let vertical = matches!(orientation, Orientation::Top | Orientation::Bottom);
 
-  let (mx0, mx1, my0, my1) = match orientation {
-    // Root on top, leaves and labels at the bottom.
-    Orientation::Top => (side_pad, side_pad, side_pad, label_strip),
-    // Root at the bottom, leaves and labels on top.
-    Orientation::Bottom => (side_pad, side_pad, label_strip, side_pad),
-    // Root on the left, leaves and labels on the right.
-    Orientation::Left => (
-      side_pad,
-      (longest_label + label_gap + side_pad).min(render_width * 0.5),
-      side_pad,
-      side_pad,
-    ),
-    // Root on the right, leaves and labels on the left.
-    Orientation::Right => (
-      (longest_label + label_gap + side_pad).min(render_width * 0.5),
-      side_pad,
-      side_pad,
-      side_pad,
-    ),
-  };
-  let plot_w = (render_width - mx0 - mx1).max(1.0);
-  let plot_h = (render_height - my0 - my1).max(1.0);
+  // Picture size and the plot box (in pt): `leaf0..leaf1` along the leaf
+  // axis, `root..tip` along the height axis.
+  let (width, height, leaf0, leaf1, root_at, tip_at);
+  if vertical {
+    let w = image_width.unwrap_or(DEFAULT_WIDTH) as f64;
+    // Measured from WL's 360 pt picture: leaves from 7.18 to 351.82 pt,
+    // the root 6.90 pt below the top, the tips 240.05 pt below it and a
+    // 15.05 pt label strip under them.
+    let root_pad = 0.01917 * w;
+    let depth = 0.6668 * w;
+    let strip = 15.05;
+    width = w;
+    height = root_pad + depth + strip;
+    (leaf0, leaf1) = (0.01994 * w, w - 0.02272 * w);
+    if orientation == Orientation::Top {
+      (root_at, tip_at) = (root_pad, root_pad + depth);
+    } else {
+      (root_at, tip_at) = (height - root_pad, height - root_pad - depth);
+    }
+  } else {
+    let label_room = 1.0 + longest_label + 2.7;
+    let h = match image_width {
+      Some(w) => 2.0 * w as f64,
+      None => 432.0,
+    };
+    let leaf_pad = 0.01640 * h;
+    let root_pad = 0.00986 * h;
+    let depth = 0.4734 * h;
+    height = h;
+    width = (root_pad + depth + label_room).round();
+    // The first leaf at the bottom.
+    (leaf0, leaf1) = (h - leaf_pad, leaf_pad);
+    if orientation == Orientation::Left {
+      (root_at, tip_at) = (root_pad, root_pad + depth);
+    } else {
+      (root_at, tip_at) = (width - root_pad, width - root_pad - depth);
+    }
+  }
 
-  // Map abstract (u, v) coordinates to pixels for the chosen orientation.
+  // Map abstract (u, v) coordinates to render units.
   let to_px = |uu: f64, vv: f64| -> (f64, f64) {
-    match orientation {
-      Orientation::Top => (mx0 + uu * plot_w, my0 + (1.0 - vv) * plot_h),
-      Orientation::Bottom => (mx0 + uu * plot_w, my0 + vv * plot_h),
-      Orientation::Left => (mx0 + (1.0 - vv) * plot_w, my0 + uu * plot_h),
-      Orientation::Right => (mx0 + vv * plot_w, my0 + uu * plot_h),
+    let along = leaf0 + uu * (leaf1 - leaf0);
+    let across = tip_at + vv * (root_at - tip_at);
+    if vertical {
+      (along * sf, across * sf)
+    } else {
+      (across * sf, along * sf)
     }
   };
+
+  let svg_width = width.round().max(1.0) as u32;
+  let svg_height = height.round().max(1.0) as u32;
+  let render_width = svg_width as f64 * sf;
+  let render_height = svg_height as f64 * sf;
 
   let mut body = String::new();
   body.push_str(&format!(
@@ -554,7 +579,7 @@ fn render_dendrogram_svg(
   ));
 
   // Draw the elbow connector of every merge.
-  let stroke = 1.2 * sf;
+  let stroke = sf;
   for (id, node) in nodes.iter().enumerate() {
     let Some((l, r)) = node.children else {
       continue;
@@ -566,7 +591,7 @@ fn render_dendrogram_svg(
     body.push_str(&format!(
       "<path d=\"M {x1:.1} {y1:.1} L {x1b:.1} {y1b:.1} L {x2b:.1} {y2b:.1} L {x2:.1} {y2:.1}\" \
        fill=\"none\" stroke=\"{line_color}\" stroke-width=\"{stroke:.1}\" \
-       stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n"
+       stroke-linecap=\"square\"/>\n"
     ));
   }
 
@@ -577,20 +602,19 @@ fn render_dendrogram_svg(
       continue;
     }
     let (x, y) = to_px(u[leaf], 0.0);
-    let (lx, ly, anchor, dy) = match orientation {
-      Orientation::Top => (x, y + label_gap, "middle", "0.9em"),
-      Orientation::Bottom => (x, y - label_gap, "middle", "-0.2em"),
-      Orientation::Left => (x + label_gap, y, "start", "0.32em"),
-      Orientation::Right => (x - label_gap, y, "end", "0.32em"),
+    let (lx, ly, anchor) = match orientation {
+      Orientation::Top => (x, y + 10.05 * sf, "middle"),
+      Orientation::Bottom => (x, y - 3.0 * sf, "middle"),
+      Orientation::Left => (x + 1.0 * sf, y + 3.46 * sf, "start"),
+      Orientation::Right => (x - 1.0 * sf, y + 3.46 * sf, "end"),
     };
     body.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" dy=\"{}\" text-anchor=\"{}\" \
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"{}\" \
        font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{}\">{}</text>\n",
       lx,
       ly,
-      dy,
       anchor,
-      font_size,
+      font_size * sf,
       label_color,
       html_escape(label)
     ));
