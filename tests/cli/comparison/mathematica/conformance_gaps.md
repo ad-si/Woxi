@@ -5943,6 +5943,34 @@ WL scrambles the order of a multi-entry rule list inside an option
 (`VertexLabels -> {2 -> "b", 1 -> "a"}` for the input `{1 -> "a", 2 -> "b"}`) —
 internal hash order. Woxi keeps input order.
 
+### Graph layouts that only approximate Wolfram's
+
+- **Spring-electrical layouts** (the automatic layout of a non-tree graph
+  with more than 8 vertices, `"SpringElectricalEmbedding"`,
+  `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
+  Fruchterman–Reingold layout turned so the long axis is horizontal. WL's
+  result (e.g. the cube projection of `HypercubeGraph[3]`) is not
+  reproduced; small non-tree graphs get the circular layout instead.
+- **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): Woxi
+  walks the graph depth-first from the first vertex, taking the most
+  recently listed edge first. That matches WL for cycles, trees and most
+  small graphs, but not all (`Graph[{1 <-> 2, 1 <-> 5, 2 <-> 4, 3 <-> 6,
+  4 <-> 7, 5 <-> 8, 6 <-> 8, 7 <-> 1, 8 <-> 2}]` swaps 2 and 5), and for
+  graphs with directed edges the rotation can differ by some steps.
+- **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
+  barycentric ordering; WL's crossing minimization can pick the mirror
+  image, and WL draws long edges as splines through the layers.
+- **`"GridEmbedding"` / `"BipartiteEmbedding"` of a disconnected graph**:
+  WL packs the components separately; Woxi lays out the whole graph.
+- **`"SpiralEmbedding"` scale**: the spiral is WL's (Rakhmanov–Saff–Zhou),
+  the sphere radius only approximates WL's (`0.42 Sqrt[n]`).
+- **`Tree[…]` layout** uses a tidy tree; WL spreads leaves differently.
+- **Automatic vertex-label placement**: WL moves a `"Name"` label to a side
+  where it does not overlap edges; Woxi always places it above-right.
+- **`CommunityGraphPlot`** is not implemented.
+- **`EdgeShapeFunction` named arrow shapes** other than `"Line"`,
+  `"Arrow"` and `"CurvedArc"` (e.g. `"UnfilledArrow"`) draw the default.
+
 
 ## Knot data
 
