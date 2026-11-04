@@ -2900,8 +2900,13 @@ mod tests {
     #[test]
     fn derivative_sets_as_prime_marks() {
       // `f'` is held as `Derivative[1][f]`, and no front end shows that head:
-      // orders 1–3 typeset as prime marks on the function name.
-      for (code, primes) in [("r'", 1), ("f''", 2), ("g'''", 3)] {
+      // orders 1 and 2 typeset as prime marks on the function name; from the
+      // third on the order is a parenthesized superscript, `g⁽³⁾`.
+      let boxes = tf("g'''");
+      assert!(!boxes.contains('\u{2032}'), "no primes: {boxes}");
+      assert!(boxes.contains("\"3\""), "order 3 shown: {boxes}");
+      assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
+      for (code, primes) in [("r'", 1), ("f''", 2)] {
         let boxes = tf(code);
         assert!(
           boxes.contains(&"\u{2032}".repeat(primes)),
@@ -2993,11 +2998,169 @@ mod tests {
     }
 
     #[test]
-    fn symbolic_derivative_order_falls_back_to_the_head() {
-      // An order that is not a literal count has no prime rendering, so the
-      // generic `head(args)` form stands in rather than a wrong script.
-      let boxes = tf("Derivative[n][f]");
-      assert!(boxes.contains("Derivative"), "head shown: {boxes}");
+    fn bracket_notations_replace_the_call() {
+      for (code, glyph) in [
+        ("Floor[x]", "\u{230A}"),
+        ("Ceiling[x]", "\u{2308}"),
+        ("Norm[u + v]", "\u{2016}"),
+        ("Det[a - b]", "|"),
+        ("AngleBracket[a, b]", "\u{2329}"),
+      ] {
+        let boxes = tf(code);
+        assert!(boxes.contains(glyph), "{code} uses {glyph}: {boxes}");
+        let head = code.split('[').next().unwrap();
+        assert!(!boxes.contains(head), "{code} hides its head: {boxes}");
+      }
+      let boxes = tf("Norm[x, p]");
+      assert!(boxes.contains("SubscriptBox"), "p-norm subscript: {boxes}");
+    }
+
+    #[test]
+    fn postfix_marks_parenthesize_composite_bases() {
+      let boxes = tf("Transpose[Transpose[A]]");
+      assert!(
+        boxes.contains(&"\u{F3C7}".escape_debug().to_string()),
+        "transpose mark: {boxes}"
+      );
+      assert!(boxes.contains("\"(\""), "(Aᵀ)ᵀ: {boxes}");
+      let boxes = tf("Conjugate[z w]");
+      assert!(
+        boxes.contains("\"*\"") && boxes.contains("\"(\""),
+        "{boxes}"
+      );
+      let boxes = tf("ConjugateTranspose[A]");
+      assert!(
+        boxes.contains("\u{2020}") && !boxes.contains("\"(\""),
+        "{boxes}"
+      );
+    }
+
+    #[test]
+    fn set_and_logic_operators_are_infix_with_precedence() {
+      let boxes = tf("Intersection[Union[A, B], C]");
+      assert!(
+        boxes.contains("\u{222A}") && boxes.contains("\u{2229}"),
+        "{boxes}"
+      );
+      assert!(boxes.contains("\"(\""), "(A ∪ B) ∩ C: {boxes}");
+      let boxes = tf("Union[Intersection[A, C], B]");
+      assert!(!boxes.contains("\"(\""), "A ∩ C ∪ B: {boxes}");
+      let boxes = tf("Implies[a, Implies[b, c]]");
+      assert!(
+        boxes.contains(&"\u{F523}".escape_debug().to_string())
+          && boxes.contains("\"(\""),
+        "{boxes}"
+      );
+      for (code, glyph) in [
+        ("Element[x, A]", "\u{2208}"),
+        ("NotElement[x, A]", "\u{2209}"),
+        ("Subset[A, B]", "\u{2282}"),
+        ("Conditioned[A, B]", "\\u{f3d3}"),
+        ("VerticalSeparator[a, b]", "\\u{f432}"),
+        ("Dot[u, v]", "\".\""),
+      ] {
+        let boxes = tf(code);
+        assert!(boxes.contains(glyph), "{code}: {boxes}");
+      }
+    }
+
+    #[test]
+    fn quantifiers_subscript_their_variables() {
+      let boxes = tf("ForAll[x, x > 0, a && b]");
+      assert!(boxes.contains("\u{2200}") && boxes.contains("SubscriptBox"));
+      assert!(boxes.contains("\"(\""), "∀ (a ∧ b): {boxes}");
+      let boxes = tf("Exists[x, a < b]");
+      assert!(
+        boxes.contains("\u{2203}") && !boxes.contains("\"(\""),
+        "{boxes}"
+      );
+    }
+
+    #[test]
+    fn special_function_notations() {
+      for (code, glyph) in [
+        ("EllipticK[m]", "\"K\""),
+        ("EllipticE[m]", "\"E\""),
+        ("PolyGamma[n, z]", "\u{03C8}"),
+        ("Prime[k]", "\"p\""),
+        ("Residue[f[z], {z, a}]", "\"res\""),
+        ("LaplaceTransform[f[t], t, s]", "\u{2112}"),
+        ("Surd[x, 3]", "RadicalBox"),
+        ("DifferentialD[s]", "\u{2146}"),
+        ("ArcTan[x]", "\"tan\""),
+      ] {
+        let boxes = tf(code);
+        assert!(boxes.contains(glyph), "{code}: {boxes}");
+      }
+      let boxes = tf("Multinomial[a, b, c]");
+      assert!(boxes.contains("\";\""), "(a+b+c; a, b, c): {boxes}");
+    }
+
+    #[test]
+    fn script_bases_and_factorials_are_parenthesized() {
+      assert!(tf("DifferentialD[s]^2").contains("\"(\""), "(ⅆs)²");
+      assert!(tf("Factorial[k]^4").contains("\"(\""), "(k!)⁴");
+      assert!(tf("Factorial[4 k]").contains("\"(\""), "(4 k)!");
+      assert!(!tf("Factorial[k]").contains("\"(\""), "k!");
+      assert!(tf("Prime[k]^(-s)").contains("\"(\""), "(pₖ)⁻ˢ");
+    }
+
+    #[test]
+    fn quotient_exponent_is_linear() {
+      let boxes = tf("x^(1/p)");
+      assert!(
+        boxes.contains("\"/\"") && !boxes.contains("FractionBox"),
+        "{boxes}"
+      );
+    }
+
+    #[test]
+    fn literal_one_factor_is_dropped() {
+      let boxes = tf("a/b 1/c");
+      assert!(!boxes.contains("\"1\""), "no 1 factor: {boxes}");
+    }
+
+    #[test]
+    fn one_sided_limit_marks_its_point() {
+      let boxes = tf(r#"Limit[1/x, x -> 0, Direction -> "FromAbove"]"#);
+      assert!(boxes.contains("\"+\""), "0⁺: {boxes}");
+      let boxes = tf(r#"Limit[1/x, x -> 0, Direction -> "FromBelow"]"#);
+      assert!(boxes.contains("\"-\""), "0⁻: {boxes}");
+    }
+
+    #[test]
+    fn sum_over_condition_and_region_integral() {
+      let boxes = tf("Sum[a[n], n]");
+      assert!(boxes.contains("UnderscriptBox"), "∑ₙ: {boxes}");
+      let boxes = tf("Integrate[f[x], Element[{x, y}, R]]");
+      assert!(boxes.contains("UnderscriptBox"), "region below ∫: {boxes}");
+      assert!(!boxes.contains("\u{2146}"), "no ⅆx: {boxes}");
+    }
+
+    #[test]
+    fn piecewise_omits_the_zero_default() {
+      let boxes = tf("Piecewise[{{1, x < 0}}, 0]");
+      assert!(!boxes.contains("PiecewiseDefault"), "{boxes}");
+      let boxes = tf("Piecewise[{{1, x < 0}}, 2]");
+      assert!(boxes.contains("PiecewiseDefault"), "{boxes}");
+    }
+
+    #[test]
+    fn series_data_sets_as_its_terms_and_order() {
+      let boxes = tf("SeriesData[x, 0, {1, 0, -1/6}, 0, 3, 1]");
+      assert!(!boxes.contains("SeriesData"), "{boxes}");
+      assert!(boxes.contains("\"O\""), "order term: {boxes}");
+      assert!(boxes.contains("FractionBox"), "x²/6: {boxes}");
+    }
+
+    #[test]
+    fn symbolic_derivative_order_is_a_parenthesized_superscript() {
+      // `Derivative[n][f][a]`, the general Taylor term, sets as `f⁽ⁿ⁾(a)`.
+      let boxes = tf("Derivative[n][f][a]");
+      assert!(!boxes.contains("Derivative"), "head hidden: {boxes}");
+      assert!(boxes.contains("SuperscriptBox"), "order as script: {boxes}");
+      assert!(boxes.contains("\"n\""), "order n shown: {boxes}");
+      assert!(boxes.contains("\"a\""), "argument kept: {boxes}");
     }
 
     #[test]

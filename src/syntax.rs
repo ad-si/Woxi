@@ -356,6 +356,10 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F52B}' => "\u{2193}",              // ShortDownArrow: ↓
     '\u{F3D4}' => "\u{2194}",              // UndirectedEdge: ↔
     '\u{F3D3}' => "\u{2223}",              // Conditioned: ∣
+    '\u{F432}' => "|",                     // VerticalSeparator: |
+    '\u{F3C7}' => "T",                     // Transpose: T
+    '\u{F3C8}' => "*",                     // Conjugate: *
+    '\u{F3C9}' => "\u{2020}",              // ConjugateTranspose: †
     '\u{F3D2}' => "\u{223C}",              // Distributed: ∼
     '\u{F4A0}' => "\u{2A2F}", // Cross: ⨯
     '\u{F3DA}' => "\u{2297}",              // TensorProduct: ⊗
@@ -690,6 +694,70 @@ fn is_letterlike_symbol_char(c: char) -> bool {
       | '\u{26E2}'
       | '\u{2646}'
       | '\u{2647}'
+      | '\u{2639}'
+      | '\u{263A}'
+      | '\u{2660}'..='\u{2663}'
+      | '\u{F720}'..='\u{F729}'
+      // Every other named character Wolfram reads as part of a symbol
+      // name: signs, currency, typographic marks (`\[Prime]` is the symbol
+      // `′`), and the FrontEnd's own private-use glyphs.
+      | '\u{00A1}'..='\u{00A5}'
+      | '\u{00A7}'..='\u{00A9}'
+      | '\u{00AB}'
+      | '\u{00AD}'..='\u{00AE}'
+      | '\u{00B6}'
+      | '\u{00B8}'
+      | '\u{00BB}'
+      | '\u{00BF}'
+      | '\u{02D8}'
+      | '\u{2010}'
+      | '\u{2013}'..='\u{2014}'
+      | '\u{2020}'..='\u{2022}'
+      | '\u{2032}'..='\u{2033}'
+      | '\u{2035}'..='\u{2036}'
+      | '\u{20B9}'
+      | '\u{2118}'
+      | '\u{2122}'
+      | '\u{2127}'
+      | '\u{21B5}'
+      | '\u{2205}'
+      | '\u{221F}'
+      | '\u{2221}'..='\u{2222}'
+      | '\u{2300}'
+      | '\u{2318}'
+      | '\u{23B4}'..='\u{23B5}'
+      | '\u{2500}'
+      | '\u{2502}'
+      | '\u{25AE}'..='\u{25AF}'
+      | '\u{25B4}'
+      | '\u{25B8}'
+      | '\u{25BE}'
+      | '\u{25C2}'
+      | '\u{2611}'..='\u{2612}'
+      | '\u{2648}'..='\u{265F}'
+      | '\u{2669}'..='\u{266C}'
+      | '\u{F11D}'..='\u{F11F}'
+      | '\u{F351}'..='\u{F352}'
+      | '\u{F3A0}'
+      | '\u{F3A4}'
+      | '\u{F3AE}'..='\u{F3AF}'
+      | '\u{F3B8}'..='\u{F3BC}'
+      | '\u{F3CA}'..='\u{F3CD}'
+      | '\u{F700}'
+      | '\u{F72A}'
+      | '\u{F730}'..='\u{F731}'
+      | '\u{F749}'..='\u{F74A}'
+      | '\u{F751}'..='\u{F758}'
+      | '\u{F75F}'
+      | '\u{F763}'..='\u{F764}'
+      | '\u{F766}'
+      | '\u{F768}'..='\u{F76C}'
+      | '\u{F7BE}'..='\u{F7BF}'
+      | '\u{F7D0}'..='\u{F7D7}'
+      | '\u{F7DA}'..='\u{F7ED}'
+      | '\u{F7EF}'..='\u{F7FC}'
+      | '\u{FE35}'..='\u{FE38}'
+      | '\u{FFFD}'
   )
 }
 

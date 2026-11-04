@@ -8499,3 +8499,25 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Inset` of a nested `Graphics` with `Text`: the inner text does not scale
   with the inset.
 - `PointSize[0.004]` points come out at r 0.43 instead of 0.5 pt.
+
+## TraditionalForm typesetting leftovers (graphics comparison sweep, 2026-11)
+
+- Evaluated sums are not put in TraditionalForm's term order. wolframscript
+  writes `1 + x` as `x + 1`, `-1 + n` as `n - 1` and reorders the terms of an
+  antiderivative (`-1/6 log(x^2 - x + 1) + 1/3 log(x + 1) + tan^-1(…)/√3`); it
+  also splits a rational coefficient off a function factor inside such a sum
+  (`1/3 log(x + 1)`, but a lone `Log[x]/3` is `log(x)/3`). Held sums keep
+  their order in both. The ordering rule (not a plain reversal) is not
+  decoded.
+- A held product written without parentheses but parsed as nested binary
+  operators, `1/(2 Pi I) S f[z]/(z - a) d z`, parenthesizes the left group
+  (`(∮γ f(z)) ⅆz`): wolframscript reads it as one flat `Times`. Woxi's held
+  tree cannot tell that chain from an explicitly parenthesized `(a b/c) d`.
+- `PlotLabel -> Binomial[15, k]` is drawn as the one-line text
+  `Binomial(15, k)`; wolframscript typesets the stacked binomial. Plot labels
+  are drawn as text markup, which has no 2D boxes except fractions.
+- `Grid[{{…, StandardForm[expr]}}]` cells are text: StandardForm 2D boxes
+  (a radical over a fraction) are not laid out.
+- A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
+  wolframscript); the same sum at a `Grid` cell or `Row` item level is not
+  covered.

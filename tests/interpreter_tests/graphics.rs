@@ -43413,6 +43413,69 @@ fn grid_column_width_follows_displayed_text() {
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
 }
 
+mod traditional_form_typesetting {
+  use super::*;
+
+  fn svg_height(svg: &str) -> f64 {
+    let start = svg.find("height=\"").unwrap() + 8;
+    let end = svg[start..].find('"').unwrap();
+    svg[start..start + end].parse().unwrap()
+  }
+
+  #[test]
+  fn column_spacings_option_spaces_the_items() {
+    let tight = svg_height(&export_svg("Column[{x, y}]"));
+    let spaced = svg_height(&export_svg("Column[{x, y}, Spacings -> 1]"));
+    let positional = svg_height(&export_svg("Column[{x, y}, Left, 1]"));
+    assert!(spaced > tight + 10.0, "{spaced} vs {tight}");
+    assert_eq!(spaced, positional);
+  }
+
+  #[test]
+  fn floor_brackets_stretch_around_a_fraction() {
+    let svg = export_svg("TraditionalForm[HoldForm[Floor[n/2]]]");
+    assert!(!svg.contains("Floor"), "{svg}");
+    // The stretched bracket is a path, not the glyph.
+    assert!(svg.contains("<path"), "{svg}");
+  }
+
+  #[test]
+  fn large_operator_in_a_fraction_carries_side_limits() {
+    let inline = svg_height(&export_svg(
+      "TraditionalForm[HoldForm[Sum[x[i], {i, 1, n}]/n]]",
+    ));
+    let display = svg_height(&export_svg(
+      "TraditionalForm[HoldForm[Sum[x[i], {i, 1, n}]]]",
+    ));
+    // Limits beside a text-size sign: the numerator is no taller than the
+    // display sum with its stacked limits.
+    assert!(inline < display + 20.0, "{inline} vs {display}");
+  }
+
+  #[test]
+  fn grid_cell_fraction_is_stacked() {
+    let svg = export_svg("Grid[{{TraditionalForm[1/x]}}]");
+    assert!(!svg.contains(">1/x<"), "{svg}");
+    assert!(svg.contains("<line"), "{svg}");
+  }
+
+  #[test]
+  fn styled_traditional_formula_is_typeset() {
+    let svg = export_svg(
+      "Style[TraditionalForm[HoldForm[a^2 == Sum[1/k^2, {k, 1, n}]]], 24]",
+    );
+    assert!(svg.contains("font-size=\"24.0\""), "{svg}");
+    assert!(svg.contains("<line"), "stacked 1/k²: {svg}");
+  }
+
+  #[test]
+  fn builtin_plot_label_keeps_square_brackets() {
+    let svg = export_svg("ListPlot[{1, 2}, PlotLabel -> Hue[x]]");
+    assert!(svg.contains("Hue[x]"), "{svg}");
+    assert!(!svg.contains("Hue(x)"), "{svg}");
+  }
+}
+
 mod bracketing_bar_labels {
   use super::*;
 
@@ -43428,7 +43491,9 @@ mod bracketing_bar_labels {
   fn bracketing_bar_inside_traditional_form() {
     let svg =
       export_svg(r#"Grid[{{TraditionalForm[BracketingBar[a + b]/c]}}]"#);
-    assert!(svg.contains("|a+b|"), "{svg}");
+    // Typeset as a stacked fraction with the bars around its numerator.
+    assert!(svg.contains(">|</text>"), "{svg}");
+    assert!(svg.contains("<line"), "{svg}");
     assert!(!svg.contains("BracketingBar"), "{svg}");
   }
 

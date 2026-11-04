@@ -13579,7 +13579,8 @@ fn double_struck_tspan(letter: char) -> String {
 /// stretched to enclose tall content.
 fn stretchy_delim_kind(s: &str) -> Option<char> {
   match s {
-    "(" | ")" | "[" | "]" | "|" | "{" | "}" => s.chars().next(),
+    "(" | ")" | "[" | "]" | "|" | "{" | "}" | "\u{230A}" | "\u{230B}"
+    | "\u{2308}" | "\u{2309}" | "\u{2016}" => s.chars().next(),
     _ => None,
   }
 }
@@ -13587,7 +13588,15 @@ fn stretchy_delim_kind(s: &str) -> Option<char> {
 /// Whether `open`/`close` form a matching stretchy-delimiter pair. Braces
 /// are intentionally excluded: lists keep ordinary `{`/`}` glyphs.
 fn delim_pair_matches(open: char, close: char) -> bool {
-  matches!((open, close), ('(', ')') | ('[', ']') | ('|', '|'))
+  matches!(
+    (open, close),
+    ('(', ')')
+      | ('[', ']')
+      | ('|', '|')
+      | ('\u{230A}', '\u{230B}')
+      | ('\u{2308}', '\u{2309}')
+      | ('\u{2016}', '\u{2016}')
+  )
 }
 
 /// Horizontal space (in character advances) placed on each side of a binary
@@ -13596,9 +13605,13 @@ fn operator_space(s: &str) -> f64 {
   match s {
     "=" | "\u{2260}" | "<" | ">" | "\u{2264}" | "\u{2265}" | "\u{2261}"
     | "\u{2262}" | "\u{2192}" | "\u{29F4}" | "\u{2248}" | "\u{221D}"
-    | "\u{21D2}" | "\u{27F9}" => 0.44,
+    | "\u{21D2}" | "\u{27F9}" | "\u{F523}" | "\u{29E6}" | "\u{2208}"
+    | "\u{2209}" | "\u{220B}" | "\u{2282}" | "\u{2283}" | "\u{2286}"
+    | "\u{2287}" | "\u{2284}" | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
     "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.36,
-    "\u{2227}" | "\u{2228}" | "\u{22C5}" => 0.34,
+    "\u{2227}" | "\u{2228}" | "\u{22C5}" | "\u{222A}" | "\u{2229}"
+    | "\u{F3D3}" => 0.34,
+    "\u{F432}" => 0.2,
     _ => 0.0,
   }
 }
@@ -13622,7 +13635,10 @@ fn render_stretchy_delim(
   // Width reserved for the delimiter, plus a hair of side bearing.
   let (body_w, bearing) = match kind {
     '|' => (font_size * 0.10, font_size * 0.10),
-    '[' | ']' => (font_size * 0.22, font_size * 0.08),
+    '[' | ']' | '\u{230A}' | '\u{230B}' | '\u{2308}' | '\u{2309}' => {
+      (font_size * 0.22, font_size * 0.08)
+    }
+    '\u{2016}' => (font_size * 0.22, font_size * 0.10),
     '{' | '}' => (font_size * 0.28, font_size * 0.08),
     _ => (font_size * 0.30, font_size * 0.08), // ( )
   };
@@ -13674,6 +13690,24 @@ fn render_stretchy_delim(
     '[' => format!(
       "<path d=\"M {x1:.2} 0 L {x0:.2} 0 L {x0:.2} {h:.2} L {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
     ),
+    // Floor and ceiling brackets: a bracket with only its bottom (floor)
+    // or top (ceiling) foot.
+    '\u{230A}' => format!(
+      "<path d=\"M {x0:.2} 0 L {x0:.2} {h:.2} L {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    '\u{230B}' => format!(
+      "<path d=\"M {x1:.2} 0 L {x1:.2} {h:.2} L {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    '\u{2308}' => format!(
+      "<path d=\"M {x1:.2} 0 L {x0:.2} 0 L {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    '\u{2309}' => format!(
+      "<path d=\"M {x0:.2} 0 L {x1:.2} 0 L {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
+    // The norm's double bar.
+    '\u{2016}' => format!(
+      "<line x1=\"{x0:.2}\" y1=\"0\" x2=\"{x0:.2}\" y2=\"{h:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/><line x1=\"{x1:.2}\" y1=\"0\" x2=\"{x1:.2}\" y2=\"{h:.2}\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
+    ),
     ']' => format!(
       "<path d=\"M {x0:.2} 0 L {x1:.2} 0 L {x1:.2} {h:.2} L {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>"
     ),
@@ -13720,6 +13754,48 @@ fn render_stretchy_delim(
     height: h,
     baseline,
     elements: path,
+  }
+}
+
+/// A large operator `glyph` set inline, a little larger than the text, with
+/// its lower limit `under` (and upper limit `over`) as scripts to its right.
+fn inline_large_operator(
+  glyph: &str,
+  under: &Expr,
+  over: Option<&Expr>,
+  font_size: f64,
+) -> BoxLayout {
+  let fs = font_size * 1.15;
+  let ascent = fs * 0.78;
+  let descent = fs * 0.22;
+  let sign_w = fs * 0.62;
+  let sign = format!(
+    "<text x=\"{cx:.2}\" y=\"{ascent:.2}\" font-family=\"serif\" font-size=\"{fs:.2}\" stroke=\"none\" text-anchor=\"middle\">{}</text>",
+    svg_escape(glyph),
+    cx = sign_w / 2.0,
+  );
+  let sub = layout_box_nested(under, font_size * 0.7);
+  let sup = over.map(|o| layout_box_nested(o, font_size * 0.7));
+  let gap = font_size * 0.06;
+  // The upper limit sits on the sign's top, the lower one hangs from its
+  // foot; the sign moves down when the upper limit reaches above it.
+  let sup_h = sup.as_ref().map_or(0.0, |s| s.height);
+  let sign_y = (sup_h - ascent * 0.45).max(0.0);
+  let sub_y = sign_y + ascent + descent - sub.height * 0.55;
+  let script_x = sign_w + gap;
+  let script_w = sub.width.max(sup.as_ref().map_or(0.0, |s| s.width));
+  let mut elements = format!(
+    "<g transform=\"translate(0.0,{sign_y:.1})\">{sign}</g>{}",
+    sub.translate(script_x, sub_y)
+  );
+  if let Some(sup) = &sup {
+    elements.push_str(&sup.translate(script_x, 0.0));
+  }
+  BoxLayout {
+    width: script_x + script_w + gap,
+    height: (sub_y + sub.height).max(sign_y + ascent + descent),
+    baseline: sign_y + ascent * 0.9,
+    elements,
   }
 }
 
@@ -13822,6 +13898,32 @@ impl BoxLayout {
         elements: format!(
           "<text x=\"{cx:.2}\" y=\"{glyph_ascent:.2}\" font-family=\"serif\" font-size=\"{fs:.2}\" stroke=\"none\" text-anchor=\"middle\">{escaped}</text>",
           cx = w / 2.0,
+        ),
+      };
+    }
+    // Angle brackets (`\[LeftAngleBracket]` is the CJK-compatibility U+2329,
+    // which the embedded fonts draw as a wide ideograph-sized bracket, or not
+    // at all) are drawn as a chevron spanning the line.
+    if let Some(opening) = match s {
+      "\u{2329}" | "\u{27E8}" => Some(true),
+      "\u{232A}" | "\u{27E9}" => Some(false),
+      _ => None,
+    } {
+      let w = ch * 0.75;
+      let (tip, end) = if opening {
+        (ch * 0.2, ch * 0.6)
+      } else {
+        (ch * 0.55, ch * 0.15)
+      };
+      let (top, bottom) = (ascent * 0.1, ascent + descent * 0.9);
+      let mid = f64::midpoint(top, bottom);
+      let sw = (font_size * 0.05).max(0.6);
+      return Self {
+        width: w,
+        height,
+        baseline: ascent,
+        elements: format!(
+          "<path d=\"M {end:.2} {top:.2} L {tip:.2} {mid:.2} L {end:.2} {bottom:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\"/>"
         ),
       };
     }
@@ -13945,6 +14047,10 @@ thread_local! {
   static BOX_SCRIPT_LEVEL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
   /// The font size of the box last laid out at script level 0.
   static BOX_ROOT_FONT_SIZE: std::cell::Cell<f64> = const { std::cell::Cell::new(14.0) };
+  /// Set while typesetting an item of a `Column`/`Row`/`Grid`, which Wolfram
+  /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
+  /// the way they do inside a fraction.
+  static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
@@ -14057,10 +14163,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut open_stack: Vec<(usize, char)> = Vec::new();
         for (i, item) in items.iter().enumerate() {
           match item {
-            Expr::String(t) if t == "(" || t == "[" => {
+            Expr::String(t)
+              if matches!(t.as_str(), "(" | "[" | "\u{230A}" | "\u{2308}") =>
+            {
               open_stack.push((i, t.chars().next().unwrap()));
             }
-            Expr::String(t) if t == ")" || t == "]" => {
+            Expr::String(t)
+              if matches!(t.as_str(), ")" | "]" | "\u{230B}" | "\u{2309}") =>
+            {
               let c = t.chars().next().unwrap();
               match open_stack.pop() {
                 Some((o, kind)) if delim_pair_matches(kind, c) => {
@@ -14082,8 +14192,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           pairs.clear();
         }
         if items.len() >= 3
-          && matches!(&items[0], Expr::String(t) if t == "|")
-          && matches!(items.last(), Some(Expr::String(t)) if t == "|")
+          && matches!(&items[0], Expr::String(t) if t == "|" || t == "\u{2016}")
+          && matches!((&items[0], items.last()),
+            (Expr::String(a), Some(Expr::String(b))) if a == b)
         {
           pairs.push((0, items.len() - 1));
         }
@@ -14366,6 +14477,37 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           elements,
         }
       }
+      // A large operator inside a fraction, a script or a grid cell carries
+      // its limits beside it in text size (`∑ᵢ₌₁ⁿ`), as Wolfram's
+      // `LimitsPositioning -> Automatic` sets it; only at the top level are
+      // they stacked under and over a display-size sign.
+      "UnderscriptBox"
+        if args.len() >= 2
+          && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
+            || BOX_INLINE_LIMITS.get())
+          && matches!(&args[0], Expr::String(s) if s == "lim") =>
+      {
+        layout_box(
+          &call("SubscriptBox", vec![args[0].clone(), args[1].clone()]),
+          font_size,
+        )
+      }
+      "UnderscriptBox" | "UnderoverscriptBox"
+        if args.len() >= 2
+          && (BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) > 0
+            || BOX_INLINE_LIMITS.get())
+          && matches!(&args[0], Expr::String(s) if large_operator_scale(s).is_some()) =>
+      {
+        let Expr::String(glyph) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        let over = if name == "UnderoverscriptBox" {
+          args.get(2)
+        } else {
+          None
+        };
+        inline_large_operator(glyph, &args[1], over, font_size)
+      }
       "UnderscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
         let under = layout_box_nested(&args[1], font_size * 0.7);
@@ -14442,6 +14584,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut effective_font_size = font_size;
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
+        let mut bold = false;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -14458,6 +14601,17 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             {
               (&ra[0], &ra[1])
             }
+            // A bare number is the font size, `Bold` the weight.
+            Expr::Integer(_) | Expr::Real(_) => {
+              if let Some(sz) = expr_to_f64(opt).filter(|s| *s > 0.0) {
+                effective_font_size = sz;
+              }
+              continue;
+            }
+            Expr::Identifier(b) if b == "Bold" => {
+              bold = true;
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 font_color = Some(color);
@@ -14467,6 +14621,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
+              "FontWeight" => {
+                bold = matches!(val, Expr::Identifier(w) if w == "Bold");
+              }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
                   effective_font_size = sz;
@@ -14500,6 +14657,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           ));
         } else {
           elements.push_str(&content.elements);
+        }
+        if bold {
+          elements = format!("<g font-weight=\"bold\">{elements}</g>");
         }
         BoxLayout {
           elements,
@@ -17719,6 +17879,16 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
   if expr_to_svg_markup(expr) != generic {
     return None;
   }
+  // A built-in that is no mathematical function keeps its square brackets
+  // in TraditionalForm (`Hue[x]`, `Length[x]`), as the box typesetter
+  // writes it.
+  if crate::evaluator::dispatch::complex_and_special::tf_known_func(name)
+    .is_none()
+    && crate::evaluator::functions::is_builtin_symbol(name)
+    && !crate::functions::predicate_ast::is_numeric_function(name)
+  {
+    return None;
+  }
   let head =
     crate::evaluator::dispatch::complex_and_special::tf_known_func(name)
       .map_or_else(|| svg_escape(name), str::to_string);
@@ -20402,7 +20572,22 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
       &args[0],
     );
   let source = crate::syntax::expr_to_string(&boxes);
-  if !source.contains(crate::functions::string_ast::BOX_START)
+  // A two-dimensional box — a stacked fraction, a radical, a binomial's
+  // grid, a large operator's limits — needs the box layout; the text
+  // rendering would write it on one line.
+  let two_dimensional = [
+    "FractionBox[",
+    "SqrtBox[",
+    "RadicalBox[",
+    "GridBox[",
+    "UnderscriptBox[",
+    "UnderoverscriptBox[",
+    "OverscriptBox[",
+  ]
+  .iter()
+  .any(|head| source.contains(head));
+  if !two_dimensional
+    && !source.contains(crate::functions::string_ast::BOX_START)
     && !source.contains("\\!\\(")
   {
     return None;
@@ -26389,7 +26574,12 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "TraditionalForm"
         if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
       {
-        return form_box_svg(&args[0]);
+        // An item of a layout is set inline, so its large operators and
+        // limits carry their limits as scripts.
+        let previous = BOX_INLINE_LIMITS.replace(true);
+        let svg = form_box_svg(&args[0]);
+        BOX_INLINE_LIMITS.set(previous);
+        return svg;
       }
       // A styled layout keeps its layout, and its style: `Style[Row[{…}],
       // Bold, 20]` sets every item of the row, since a `Style` is inherited
@@ -26409,6 +26599,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
           {
             return nested_layout_svg(&inner);
+          }
+          // A styled formula, `Style[TraditionalForm[a² + b² = c²], 24]`,
+          // is typeset with the style around its boxes.
+          if let Expr::FunctionCall {
+            name: n,
+            args: inner,
+          } = &unwrapped
+            && n == "TraditionalForm"
+            && inner.len() == 1
+            && !matches!(inner[0], Expr::String(_))
+          {
+            let mut styled = vec![inner[0].clone()];
+            styled.extend(args[1..].iter().cloned());
+            return form_box_svg(&call("Style", styled));
           }
         }
         // Not a Row/Column/Grid/TextGrid to push the style into — a
@@ -26551,7 +26755,15 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   }
 
   // Parse optional spacing from third arg in ems (default: 0)
-  let spacing_ems: f64 = if args.len() >= 3 {
+  // `Spacings -> s` is the option spelling of the same spacing.
+  let spacing_option = args.get(1..).unwrap_or(&[]).iter().find_map(|o| {
+    option_kv(o)
+      .filter(|(k, _)| *k == "Spacings")
+      .and_then(|(_, v)| expr_to_f64(v))
+  });
+  let spacing_ems: f64 = if let Some(s) = spacing_option {
+    s
+  } else if args.len() >= 3 {
     match &args[2] {
       Expr::Integer(n) => *n as f64,
       Expr::Real(f) => *f,

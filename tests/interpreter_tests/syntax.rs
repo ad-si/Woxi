@@ -10586,6 +10586,18 @@ mod cases {
     assert_case(r#"Precedence[Plus]"#, r#"310."#);
   }
   #[test]
+  fn precedence_of_set_logic_and_ring_operators() {
+    assert_case(
+      r#"Precedence /@ {Union, Intersection, Element, NotElement, Subset, Conditioned, VerticalSeparator, ForAll, Exists, Cross, Divide, Conjugate, Transpose, Therefore, Distributed, TildeTilde, CircleTimes, Wedge, Diamond, MessageName}"#,
+      r#"{300., 305., 250., 250., 250., 195., 60., 240., 240., 500., 470., 670., 670., 50., 250., 290., 420., 440., 450., 750.}"#,
+    );
+  }
+  #[test]
+  fn prime_named_character_is_a_symbol() {
+    assert_case(r#"ToCharacterCode[ToString[\[Prime]]]"#, r#"{8242}"#);
+    assert_case(r#"Head[\[Prime]]"#, r#"Symbol"#);
+  }
+  #[test]
   fn precedence_2() {
     assert_case(
       r#"Precedence[Plus]; Precedence[Plus] < Precedence[Times]"#,

@@ -4893,7 +4893,10 @@ fn tf_piecewise(args: &[Expr]) -> Expr {
       _ => None,
     })
     .collect();
-  if let Some(default) = args.get(1) {
+  // The implicit default `0` is no case of its own: wolframscript only
+  // writes a `True` row for any other default.
+  if let Some(default) = args.get(1).filter(|d| !matches!(d, Expr::Integer(0)))
+  {
     rows.push(list(vec![
       tf(default),
       tf_box(
@@ -5051,6 +5054,7 @@ const TF_FUNCTION_NAMES: &[(&str, &str)] = &[
   ("Erfc", "erfc"),
   ("Haversine", "hav"),
   ("Gudermannian", "gd"),
+  ("Residue", "res"),
   ("Gamma", "\u{0393}"), // Γ
   ("Zeta", "\u{03B6}"),  // ζ
 ];
@@ -5105,6 +5109,56 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           .map_or(head.as_str(), |(function, _)| function);
         return row_box(vec![
           str_expr(head),
+          tf_string("["),
+          arg.clone(),
+          tf_string("]"),
+        ]);
+      }
+      // `tan⁻¹(x)` is the inverse function applied: `ArcTan[x]`.
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+        && let [
+          Expr::FunctionCall {
+            name: script,
+            args: script_args,
+          },
+          Expr::String(open),
+          arg,
+          Expr::String(close),
+        ] = &items[..]
+        && script == "SuperscriptBox"
+        && open == "("
+        && close == ")"
+        && let [Expr::String(base), exponent] = &script_args[..]
+        && matches!(exponent, Expr::FunctionCall { name: r, args: ra }
+          if r == "RowBox" && matches!(&ra[..], [Expr::List(e)]
+            if matches!(&e[..], [Expr::String(m), Expr::String(one)]
+              if m == "-" && one == "1")))
+        && matches!(
+          base.as_str(),
+          "sin"
+            | "cos"
+            | "tan"
+            | "cot"
+            | "sec"
+            | "csc"
+            | "sinh"
+            | "cosh"
+            | "tanh"
+            | "coth"
+            | "sech"
+            | "csch"
+        )
+      {
+        let mut chars = base.chars();
+        let head = match chars.next() {
+          Some(first) => {
+            format!("Arc{}{}", first.to_ascii_uppercase(), chars.as_str())
+          }
+          None => String::new(),
+        };
+        return row_box(vec![
+          str_expr(&head),
           tf_string("["),
           arg.clone(),
           tf_string("]"),
@@ -5463,27 +5517,57 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
     && args.len() >= 2
   {
     let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();
-    return tf_box("SubsuperscriptBox", vec![tf(&args[0]), sub, tf(exp)]);
+    return tf_box(
+      "SubsuperscriptBox",
+      vec![tf(&args[0]), sub, tf_exponent(exp)],
+    );
   }
-  let negative_number = matches!(base, Expr::Integer(n) if *n < 0)
-    || matches!(base, Expr::Real(f) if *f < 0.0);
-  let base_box = if tf_needs_paren_factor(base)
-    || negative_number
-    || matches!(
-      base,
-      Expr::BinaryOp {
-        op: BinaryOperator::Power | BinaryOperator::Divide,
-        ..
-      }
-    )
-    || matches!(base, Expr::FunctionCall { name, args } if name == "Power" || name == "Rational" || (name == "Exp" && args.len() == 1))
+  let base_box = if tf_script_needs_parens(base)
+    || tf_needs_paren_factor(base)
+    || matches!(base, Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1)
     || tf_is_big_operator(base)
   {
     tf_parens(tf(base))
   } else {
     tf(base)
   };
-  tf_box("SuperscriptBox", vec![base_box, tf(exp)])
+  tf_box("SuperscriptBox", vec![base_box, tf_exponent(exp)])
+}
+
+/// The box of an exponent. A quotient is written on one line there, `x^(a/b)`
+/// as `xᵃᐟᵇ`, rather than as a fraction stacked in script size.
+fn tf_exponent(exp: &Expr) -> Expr {
+  let is_quotient = matches!(exp, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
+    || tf_is_product_node(exp);
+  if !is_quotient {
+    return tf(exp);
+  }
+  let mut product = TfProduct::default();
+  product.collect(exp);
+  if product.denominators.is_empty() {
+    return tf(exp);
+  }
+  let group =
+    |parts: Vec<Expr>| tf_group_item(parts).unwrap_or(Expr::Integer(1));
+  let num = group(product.numerators);
+  let den = group(product.denominators);
+  let num_box = if tf_is_additive(&num) {
+    tf_parens(tf(&num))
+  } else {
+    tf(&num)
+  };
+  let den_box = if tf_is_additive(&den) || tf_is_product_node(&den) {
+    tf_parens(tf(&den))
+  } else {
+    tf(&den)
+  };
+  let mut items = Vec::new();
+  if product.negative {
+    items.push(tf_string("-"));
+  }
+  items.extend([num_box, tf_string("/"), den_box]);
+  tf_row(items)
 }
 
 fn tf_fraction(num: &Expr, den: &Expr) -> Expr {
@@ -5501,14 +5585,14 @@ fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
   if orders.is_empty() {
     return None;
   }
-  let counts: Option<Vec<i128>> = orders
-    .iter()
-    .map(|o| match o {
-      Expr::Integer(n) if *n >= 0 => Some(*n),
-      _ => None,
-    })
-    .collect();
-  let counts = counts?;
+  // A symbolic order (`Derivative[n][f]`, the general Taylor term) is as
+  // good as a number; only a negative number is no derivative to typeset.
+  if orders.iter().any(|o| {
+    matches!(o, Expr::Integer(n) if *n < 0)
+      || matches!(o, Expr::Real(_) | Expr::String(_) | Expr::List(_))
+  }) {
+    return None;
+  }
   // The differentiated function keeps the bracketing it would get as a
   // factor, so `Derivative[1][f + g]` sets as `(f + g)′`.
   let base = if tf_needs_paren_factor(func) {
@@ -5516,10 +5600,12 @@ fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
   } else {
     tf(func)
   };
-  let script = if let [n @ 1..=3] = counts.as_slice() {
+  // The first and second derivatives are primed, `f′`, `f″`; any other
+  // order is parenthesized, `f⁽³⁾`, `f⁽ⁿ⁾`, `f⁽¹˒⁰⁾`.
+  let script = if let [Expr::Integer(n @ 1..=2)] = orders {
     tf_string(&"\u{2032}".repeat(*n as usize))
   } else {
-    tf_enclosed("(", counts.iter().map(|n| tf_string(&n.to_string())), ")")
+    tf_enclosed("(", orders.iter().map(tf), ")")
   };
   Some(tf_box("SuperscriptBox", vec![base, script]))
 }
@@ -5731,6 +5817,8 @@ fn tf_times(expr: &Expr) -> Expr {
     mut numerators,
     mut denominators,
   } = product;
+  // A literal `1` factor is no factor at all: `a/b 1/c` sets as `a/(b c)`.
+  numerators.retain(|f| !matches!(f, Expr::Integer(1)));
   // Exact numeric factors lead, in their canonical order: `a Pi` is set as
   // `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`.
   numerators.sort_by_key(|f| !tf_is_numeric_constant(f));
@@ -5873,7 +5961,9 @@ fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
         _ => ops.push(tf_string(glyph)),
       }
     } else {
-      ops.push(tf_string(glyph));
+      // A bare index or a condition on the indices (`∑ₙ`, `∑_{k₁+k₂=n}`)
+      // goes under the operator.
+      ops.push(tf_box("UnderscriptBox", vec![tf_string(glyph), tf(spec)]));
     }
   }
   if ops.is_empty() {
@@ -5896,6 +5986,16 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   let mut diffs: Vec<Expr> = Vec::new();
   for spec in &args[1..] {
     match spec {
+      // An integral over a region, `{x, y} ∈ Ω`, carries the region under
+      // its sign and has no differentials.
+      Expr::FunctionCall { name, args: region }
+        if name == "Element" && region.len() == 2 =>
+      {
+        ops.push(tf_box(
+          "UnderscriptBox",
+          vec![tf_string("\u{222B}"), tf(spec)],
+        ));
+      }
       Expr::List(parts) if parts.len() == 3 => {
         ops.push(tf_box(
           "SubsuperscriptBox",
@@ -5922,16 +6022,19 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   let mut items = ops;
   items.push(tf_thin_space());
   // A sum, or an inner large operator, is parenthesised so the `ⅆx`
-  // closes this integral: `∫ (∫ f ⅆy) ⅆx`.
-  let body_needs_paren =
-    tf_is_additive(&args[0]) || tf_is_big_operator(&args[0]);
+  // closes this integral: `∫ (∫ f ⅆy) ⅆx`. Over a region there is no
+  // `ⅆx` to close it, so only a sum is.
+  let body_needs_paren = tf_is_additive(&args[0])
+    || (!diffs.is_empty() && tf_is_big_operator(&args[0]));
   if body_needs_paren {
     items.push(tf_parens(tf(&args[0])));
   } else {
     items.push(tf(&args[0]));
   }
-  items.push(tf_thin_space());
-  items.extend(diffs);
+  if !diffs.is_empty() {
+    items.push(tf_thin_space());
+    items.extend(diffs);
+  }
   tf_row(items)
 }
 
@@ -6205,6 +6308,278 @@ fn tf_logic(head: &str, operands: &[Expr]) -> Expr {
     });
   }
   tf_row(parts)
+}
+
+/// The `Precedence` of the operator `expr` is written with, which decides
+/// whether it needs parentheses as the operand of another operator. An atom
+/// or a function application (`f(x)`) binds tightest of all.
+fn tf_prec(expr: &Expr) -> f64 {
+  let of = |head: &str| {
+    crate::evaluator::dispatch::predicate_functions::precedence_value(&id_expr(
+      head,
+    ))
+  };
+  match expr {
+    Expr::BinaryOp { op, left, .. } => match op {
+      BinaryOperator::Plus | BinaryOperator::Minus if tf_is_zero(left) => {
+        of("Times")
+      }
+      BinaryOperator::Plus | BinaryOperator::Minus => of("Plus"),
+      BinaryOperator::Times | BinaryOperator::Divide => of("Times"),
+      BinaryOperator::Power => of("Power"),
+      BinaryOperator::And => of("And"),
+      BinaryOperator::Or => of("Or"),
+      BinaryOperator::StringJoin => of("StringJoin"),
+      BinaryOperator::Alternatives => of("Alternatives"),
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => of("Times"),
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      ..
+    } => of("Not"),
+    Expr::Comparison { .. } => of("Equal"),
+    Expr::Rule { .. } => of("Rule"),
+    Expr::FunctionCall { name, args } if tf_infix_glyph(name).is_some() => {
+      if args.len() >= 2 {
+        of(name)
+      } else {
+        1000.0
+      }
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Plus" if args.len() >= 2 => of("Plus"),
+      "Times" if args.len() >= 2 => of("Times"),
+      "Power" if args.len() == 2 => of("Power"),
+      "And" | "Or" | "Xor" | "Not" | "Equal" | "Unequal" | "Less"
+      | "LessEqual" | "Greater" | "GreaterEqual" | "Inequality" | "ForAll"
+      | "Exists" | "NotExists" | "Sum" | "Product" | "Integrate" | "Limit"
+      | "Factorial" | "Factorial2" => of(name),
+      _ => 1000.0,
+    },
+    _ => 1000.0,
+  }
+}
+
+/// The glyph of an operator TraditionalForm writes infix between its
+/// arguments, as wolframscript spells it in box text.
+fn tf_infix_glyph(head: &str) -> Option<&'static str> {
+  Some(match head {
+    "Union" => "\u{22C3}",
+    "Intersection" => "\u{22C2}",
+    "Element" => "\u{2208}",
+    "NotElement" => "\u{2209}",
+    "ReverseElement" => "\u{220B}",
+    "Subset" => "\u{2282}",
+    "SubsetEqual" => "\u{2286}",
+    "Superset" => "\u{2283}",
+    "SupersetEqual" => "\u{2287}",
+    "NotSubset" => "\u{2284}",
+    "NotSuperset" => "\u{2285}",
+    "NotSubsetEqual" => "\u{2288}",
+    "NotSupersetEqual" => "\u{2289}",
+    "Implies" => "\u{F523}",
+    "Equivalent" => "\u{29E6}",
+    "Conditioned" => "\u{F3D3}",
+    "VerticalSeparator" => "\u{F432}",
+    "Distributed" => "\u{F3D2}",
+    "Dot" => ".",
+    _ => return None,
+  })
+}
+
+/// Heads an operand may repeat without parentheses: `a ⋃ b ⋃ c`.
+fn tf_infix_is_associative(head: &str) -> bool {
+  matches!(
+    head,
+    "Union" | "Intersection" | "Dot" | "VerticalSeparator" | "Equivalent"
+  )
+}
+
+/// `a ⊕ b ⊕ …` for an infix operator `head`. An operand that binds no
+/// tighter than the operator is parenthesized — `(A ⋃ B) ⋂ C`,
+/// `a ⇒ (b ⇒ c)` — except a repeat of an associative operator.
+fn tf_infix(head: &str, args: &[Expr]) -> Expr {
+  let glyph = match tf_infix_glyph(head).expect("an infix head") {
+    // The n-ary `⋃`/`⋂` wolframscript spells the operators with draw as
+    // large operators; between two operands they are the binary `∪`/`∩`.
+    "\u{22C3}" if !TF_BOX_TEXT.get() => "\u{222A}",
+    "\u{22C2}" if !TF_BOX_TEXT.get() => "\u{2229}",
+    g => g,
+  };
+  let prec = tf_prec(&call(head, args.to_vec()));
+  let mut parts = Vec::with_capacity(args.len() * 2);
+  for (i, arg) in args.iter().enumerate() {
+    if i > 0 {
+      parts.push(tf_string(glyph));
+    }
+    let same_head =
+      matches!(arg, Expr::FunctionCall { name, .. } if name == head);
+    let p = tf_prec(arg);
+    let bracket =
+      p < prec || (p == prec && !(same_head && tf_infix_is_associative(head)));
+    parts.push(if bracket { tf_parens(tf(arg)) } else { tf(arg) });
+  }
+  tf_row(parts)
+}
+
+/// The base of a postfix superscript mark (`z*`, `Aᵀ`, `A†`): anything but
+/// an atom or a function application is parenthesized, `(z w)*`, `(Aᵀ)ᵀ`.
+fn tf_script_base(expr: &Expr) -> Expr {
+  if tf_script_needs_parens(expr) {
+    tf_parens(tf(expr))
+  } else {
+    tf(expr)
+  }
+}
+
+/// Whether `expr` is bracketed as the base of a script: everything that is
+/// neither an atom nor a function value, `(x y)²`, `(k!)⁴`, `(ⅆs)²`.
+fn tf_script_needs_parens(expr: &Expr) -> bool {
+  let marked = matches!(expr, Expr::FunctionCall { name, args }
+    if args.len() == 1 && matches!(name.as_str(),
+      "Conjugate" | "Transpose" | "ConjugateTranspose" | "SuperStar"
+        | "SuperDagger" | "Superscript" | "DifferentialD" | "Prime"));
+  let negative_number = matches!(expr, Expr::Integer(n) if *n < 0)
+    || matches!(expr, Expr::Real(f) if *f < 0.0)
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational");
+  tf_prec(expr) < 1000.0 || marked || negative_number
+}
+
+/// `ForAll[x, cond, body]` / `Exists[…]`: the quantifier with its variable
+/// (and condition) as a subscript, then the statement — parenthesized when
+/// it binds looser than the quantifier, `∀ₓ (a ∧ b)`.
+fn tf_quantifier(name: &str, args: &[Expr]) -> Expr {
+  let glyph = match name {
+    "ForAll" => "\u{2200}",
+    "Exists" => "\u{2203}",
+    _ => "\u{2204}",
+  };
+  let sub = match args {
+    [var, cond, _] => tf_row(vec![tf(var), tf_string(","), tf(cond)]),
+    _ => tf(&args[0]),
+  };
+  let body = args.last().expect("two or three arguments");
+  let body_box = if tf_prec(body) < tf_prec(&call(name, args.to_vec())) {
+    tf_parens(tf(body))
+  } else {
+    tf(body)
+  };
+  let mut items = vec![tf_box("SubscriptBox", vec![tf_string(glyph), sub])];
+  // The front end sets the statement off from its quantifier; the box text
+  // has no token for that gap.
+  if !TF_BOX_TEXT.get() {
+    items.push(tf_thin_space());
+  }
+  items.push(body_box);
+  tf_row(items)
+}
+
+/// `ℒₜ[f(t)](s)` and its relatives: an integral transform is a script
+/// operator applied in square brackets to the function, then to the new
+/// variable. `inverse` adds the `-1` exponent of the inverse transform.
+fn tf_integral_transform(letter: &str, inverse: bool, args: &[Expr]) -> Expr {
+  let op = if inverse {
+    tf_box(
+      "SubsuperscriptBox",
+      vec![
+        tf_string(letter),
+        tf(&args[1]),
+        tf_row(vec![tf_string("-"), tf_string("1")]),
+      ],
+    )
+  } else {
+    tf_box("SubscriptBox", vec![tf_string(letter), tf(&args[1])])
+  };
+  tf_row(vec![
+    tf_row(vec![op, tf_string("["), tf(&args[0]), tf_string("]")]),
+    tf_parens(tf(&args[2])),
+  ])
+}
+
+/// The terms of `SeriesData[x, x0, {c…}, nmin, nmax, den]` as the sum
+/// `c₀ + c₁ (x - x0) + …` followed by its order term `O((x - x0)^(nmax/den))`.
+fn tf_series_data(args: &[Expr]) -> Option<Expr> {
+  let [x, x0, Expr::List(coeffs), Expr::Integer(nmin), nmax, den] = args else {
+    return None;
+  };
+  let Expr::Integer(den) = den else {
+    return None;
+  };
+  if *den <= 0 {
+    return None;
+  }
+  let at_infinity = matches!(x0, Expr::Identifier(s) if s == "Infinity");
+  let base = if at_infinity || tf_is_zero(x0) {
+    x.clone()
+  } else {
+    unevaluated("Plus", &[x.clone(), neg1(x0.clone())])
+  };
+  let exponent = |n: i128| -> Expr {
+    let (n, d) = if at_infinity { (-n, *den) } else { (n, *den) };
+    let (mut a, mut b) = (n.abs(), d);
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    let g = a.max(1);
+    if d / g == 1 {
+      Expr::Integer(n / g)
+    } else {
+      call("Rational", vec![Expr::Integer(n / g), Expr::Integer(d / g)])
+    }
+  };
+  let power = |n: i128| -> Option<Expr> {
+    match exponent(n) {
+      Expr::Integer(0) => None,
+      Expr::Integer(1) => Some(base.clone()),
+      e => Some(unevaluated("Power", &[base.clone(), e])),
+    }
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for (k, c) in coeffs.iter().enumerate() {
+    if tf_is_zero(c) {
+      continue;
+    }
+    let term = match (power(nmin + k as i128), c) {
+      (None, c) => c.clone(),
+      (Some(p), Expr::Integer(1)) => p,
+      (Some(p), Expr::Integer(-1)) => neg1(p),
+      (Some(p), c) => unevaluated("Times", &[c.clone(), p]),
+    };
+    terms.push(term);
+  }
+  let order = match nmax {
+    Expr::Integer(n) => match power(*n) {
+      Some(p) => tf(&p),
+      None => tf_string("1"),
+    },
+    _ => return None,
+  };
+  let order_term =
+    tf_row(vec![tf_string("O"), tf_string("("), order, tf_string(")")]);
+  if terms.is_empty() {
+    return Some(order_term);
+  }
+  let mut items = if let [only] = &terms[..] {
+    vec![tf(only)]
+  } else {
+    match tf_plus(&unevaluated("Plus", &terms)) {
+      Expr::FunctionCall { ref name, ref args }
+        if name == "RowBox" && matches!(&args[..], [Expr::List(_)]) =>
+      {
+        let Expr::List(items) = &args[0] else {
+          unreachable!("guarded by the match arm")
+        };
+        items.to_vec()
+      }
+      other => vec![other],
+    }
+  };
+  items.push(tf_string("+"));
+  items.push(order_term);
+  Some(tf_row(items))
 }
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
@@ -6495,8 +6870,116 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       {
         tf_row(vec![tf_string("|"), tf_matrix_grid(rows), tf_string("|")])
       } else {
-        tf_row(vec![tf_string("det"), tf_parens(tf(&args[0]))])
+        // Any other determinant is set between the same bars: `|λ I - A|`.
+        tf_row(vec![tf_string("|"), tf(&args[0]), tf_string("|")])
       }
+    }
+    // Floor and ceiling brackets: `⌊x⌋`, `⌈x⌉`.
+    "Floor" if args.len() == 1 => {
+      tf_row(vec![tf_string("\u{230A}"), tf(&args[0]), tf_string("\u{230B}")])
+    }
+    "Ceiling" if args.len() == 1 => {
+      tf_row(vec![tf_string("\u{2308}"), tf(&args[0]), tf_string("\u{2309}")])
+    }
+    // `‖x‖`, and the p-norm `‖x‖ₚ`.
+    "Norm" if (1..=2).contains(&args.len()) => {
+      let bars = tf_row(vec![
+        tf_string("\u{2016}"),
+        tf(&args[0]),
+        tf_string("\u{2016}"),
+      ]);
+      match args.get(1) {
+        Some(p) => tf_box("SubscriptBox", vec![bars, tf(p)]),
+        None => bars,
+      }
+    }
+    // The conjugate, transpose and Hermitian adjoint are postfix marks:
+    // `z*`, `Aᵀ` (an upright `\[Transpose]`), `A†`.
+    "Conjugate" | "Transpose" | "ConjugateTranspose" if args.len() == 1 => {
+      let mark = match name {
+        "Conjugate" => "*",
+        "Transpose" => "\u{F3C7}",
+        _ => "\u{2020}",
+      };
+      tf_box("SuperscriptBox", vec![tf_script_base(&args[0]), tf_string(mark)])
+    }
+    _ if args.len() >= 2 && tf_infix_glyph(name).is_some() => {
+      tf_infix(name, args)
+    }
+    "ForAll" | "Exists" | "NotExists" if (2..=3).contains(&args.len()) => {
+      tf_quantifier(name, args)
+    }
+    // `ⅆx`, the differential an integrand is written with.
+    "DifferentialD" if args.len() == 1 => {
+      tf_row(vec![tf_string("\u{2146}"), tf(&args[0])])
+    }
+    "Surd" if args.len() == 2 => {
+      tf_box("RadicalBox", vec![tf(&args[0]), tf(&args[1])])
+    }
+    // The multinomial coefficient `(n; k₁, k₂, …)` with `n` the sum of the
+    // `kᵢ`.
+    "Multinomial" if !args.is_empty() => {
+      let total = if args.len() == 1 {
+        tf(&args[0])
+      } else {
+        tf_plus(&unevaluated("Plus", args))
+      };
+      let mut parts = vec![tf_row(vec![total, tf_string(";"), tf(&args[0])])];
+      for a in &args[1..] {
+        parts.push(tf_string(","));
+        parts.push(tf(a));
+      }
+      tf_row(vec![tf_string("("), tf_row(parts), tf_string(")")])
+    }
+    "LaplaceTransform" if args.len() == 3 => {
+      tf_integral_transform("\u{2112}", false, args)
+    }
+    "InverseLaplaceTransform" if args.len() == 3 => {
+      tf_integral_transform("\u{2112}", true, args)
+    }
+    "FourierTransform" if args.len() == 3 => {
+      tf_integral_transform("\u{2131}", false, args)
+    }
+    "InverseFourierTransform" if args.len() == 3 => {
+      tf_integral_transform("\u{2131}", true, args)
+    }
+    // Special functions with a letter of their own: `K(m)`, `E(m)`, `ψ(z)`,
+    // the polygamma `ψ⁽ⁿ⁾(z)` and the k-th prime `pₖ`.
+    "EllipticK" | "EllipticE" if args.len() == 1 => {
+      let letter = if name == "EllipticK" { "K" } else { "E" };
+      tf_applied(tf_string(letter), args)
+    }
+    "PolyGamma" if args.len() == 1 => tf_applied(tf_string("\u{03C8}"), args),
+    "PolyGamma" if args.len() == 2 => tf_applied(
+      tf_box(
+        "SuperscriptBox",
+        vec![tf_string("\u{03C8}"), tf_parens(tf(&args[0]))],
+      ),
+      &args[1..],
+    ),
+    // The inverse trigonometric and hyperbolic functions are written as the
+    // function to the power -1: `tan⁻¹(x)`, `sinh⁻¹(x)`.
+    "ArcSin" | "ArcCos" | "ArcTan" | "ArcCot" | "ArcSec" | "ArcCsc"
+    | "ArcSinh" | "ArcCosh" | "ArcTanh" | "ArcCoth" | "ArcSech" | "ArcCsch"
+      if args.len() == 1 =>
+    {
+      let base = name.strip_prefix("Arc").unwrap_or(name).to_lowercase();
+      tf_applied(
+        tf_box(
+          "SuperscriptBox",
+          vec![
+            tf_string(&base),
+            tf_row(vec![tf_string("-"), tf_string("1")]),
+          ],
+        ),
+        args,
+      )
+    }
+    "Prime" if args.len() == 1 => {
+      tf_box("SubscriptBox", vec![tf_string("p"), tf(&args[0])])
+    }
+    "SeriesData" if tf_series_data(args).is_some() => {
+      tf_series_data(args).unwrap()
     }
     // In box text a matrix is wolframscript's MatrixForm template: the
     // bracketed grid with its spacing options, word joiners inside the
@@ -6576,15 +7059,40 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     // Limit[body, x -> x0] → lim_{x→x0} body
     "Limit" if args.len() >= 2 => {
+      // A one-sided limit marks its point with the side it is approached
+      // from: `x → 0⁺` from above, `x → 0⁻` from below.
+      let side = args[2..].iter().find_map(|opt| {
+        let (key, value, _) = crate::functions::expr_form::rule_parts(opt)?;
+        if !matches!(key, Expr::Identifier(k) if k == "Direction") {
+          return None;
+        }
+        match value {
+          Expr::String(s) if s == "FromAbove" => Some("+"),
+          Expr::String(s) if s == "FromBelow" => Some("-"),
+          Expr::Integer(-1) => Some("+"),
+          Expr::Integer(1) => Some("-"),
+          Expr::UnaryOp {
+            op: UnaryOperator::Minus,
+            operand,
+          } if matches!(operand.as_ref(), Expr::Integer(1)) => Some("+"),
+          _ => None,
+        }
+      });
+      let point = |p: &Expr| match side {
+        Some(s) => tf_box("SuperscriptBox", vec![tf(p), tf_string(s)]),
+        None => tf(p),
+      };
       let sub = match &args[1] {
         Expr::Rule {
           pattern,
           replacement,
-        } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
+        } => {
+          tf_row(vec![tf(pattern), tf_string("\u{2192}"), point(replacement)])
+        }
         Expr::FunctionCall { name, args: ra }
           if name == "Rule" && ra.len() == 2 =>
         {
-          tf_row(vec![tf(&ra[0]), tf_string("\u{2192}"), tf(&ra[1])])
+          tf_row(vec![tf(&ra[0]), tf_string("\u{2192}"), point(&ra[1])])
         }
         other => tf(other),
       };
@@ -6599,7 +7107,14 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // Factorials are written postfix: Factorial[n] → n!, Factorial2[n] → n!!.
     "Factorial" | "Factorial2" if args.len() == 1 => {
       let bang = if name == "Factorial" { "!" } else { "!!" };
-      tf_row(vec![tf_factor_boxed(&args[0]), tf_string(bang)])
+      // Anything but an atom or a function value is bracketed: `(4 k)!`.
+      let operand = if tf_prec(&args[0]) <= tf_prec(&call(name, args.to_vec()))
+      {
+        tf_parens(tf(&args[0]))
+      } else {
+        tf(&args[0])
+      };
+      tf_row(vec![operand, tf_string(bang)])
     }
     // Integer sequences are a letter indexed by the term: Cₙ, Fₙ, Lₙ, Hₙ,
     // Bₙ, Eₙ — and the partition counts p(n) and q(n).
