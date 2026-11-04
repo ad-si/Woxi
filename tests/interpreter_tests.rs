@@ -6974,8 +6974,8 @@ mod interpreter_tests {
   mod container_layout;
   mod distribution_chart;
   mod graphics;
-  mod graphics_primitives;
   mod graphics3d_primitives;
+  mod graphics_primitives;
   mod image;
   mod julia_set_plot;
   mod layout_display;
