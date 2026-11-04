@@ -536,4 +536,20 @@ mod graphics_primitives {
     // 16 characters of 14-point type: about 110 points of advance.
     assert!(w > 95.0 && w < 125.0, "{w}");
   }
+
+  #[test]
+  fn vertex_color_gradient_has_no_seams() {
+    let svg = svg_of(
+      "Graphics[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}, \
+       VertexColors -> {Red, Green, Blue, Yellow}]]",
+    );
+    // Opaque facets are outlined in their own colour.
+    let facets = svg.matches("<polygon").count();
+    assert!(facets > 100, "{facets}");
+    let outlined = svg.matches("stroke-width=\"0.5\"").count();
+    assert!(
+      outlined + 1 >= facets && outlined > 100,
+      "{outlined} of {facets}"
+    );
+  }
 }

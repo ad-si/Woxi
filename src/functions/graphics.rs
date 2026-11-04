@@ -9075,13 +9075,28 @@ fn emit_polygon_vertex_gradient(
     }
     hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
   }
-  let tri = crate::functions::polygon_holes::triangulate_with_holes(
-    &all_pts,
-    &outer_indices,
-    &hole_indices,
-  );
+  // Wolfram blends a convex polygon over the fan of triangles from its
+  // first vertex; anything else is ear-clipped.
+  let convex = holes.is_empty() && points.len() >= 3 && {
+    let n = points.len();
+    let turn = |i: usize| {
+      let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
+      (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
+    };
+    let turns: Vec<f64> = (0..n).map(turn).collect();
+    turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
+  };
+  let triangles: Vec<[usize; 3]> = if convex {
+    (1..points.len() - 1).map(|i| [0, i, i + 1]).collect()
+  } else {
+    crate::functions::polygon_holes::triangulate_with_holes(
+      &all_pts,
+      &outer_indices,
+      &hole_indices,
+    )
+    .triangles
+  };
 
-  const SUBDIV: usize = 8;
   let screen =
     |(x, y): (f64, f64)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h));
   let at = |tri_p: &[(f64, f64); 3], tri_c: &[Color; 3], u: f64, v: f64| {
@@ -9113,10 +9128,15 @@ fn emit_polygon_vertex_gradient(
     let (sx0, sy0) = screen(p0);
     let (sx1, sy1) = screen(p1);
     let (sx2, sy2) = screen(p2);
+    // An opaque facet is outlined in its own colour, so the anti-aliased
+    // edges of neighbouring facets do not leave light seams between them.
     let fill_opacity = if avg.a < 1.0 {
       format!(" fill-opacity=\"{}\"", avg.a)
     } else {
-      String::new()
+      format!(
+        " stroke=\"{}\" stroke-width=\"0.5\" stroke-linejoin=\"round\"",
+        avg.to_svg_rgb()
+      )
     };
     out.push_str(&format!(
       "<polygon points=\"{sx0:.2},{sy0:.2} {sx1:.2},{sy1:.2} {sx2:.2},{sy2:.2}\" fill=\"{}\"{}/>\n",
@@ -9124,12 +9144,21 @@ fn emit_polygon_vertex_gradient(
       fill_opacity,
     ));
   };
-  for [i, j, k] in tri.triangles {
+  for [i, j, k] in triangles {
     let tri_p = [all_pts[i], all_pts[j], all_pts[k]];
     let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
-    let n = SUBDIV as f64;
-    for row in 0..SUBDIV {
-      for col in 0..(SUBDIV - row) {
+    // Facets about 4 points across, so the blend reads as smooth.
+    let longest = [(0, 1), (1, 2), (2, 0)]
+      .iter()
+      .map(|&(a, b)| {
+        let (pa, pb) = (screen(tri_p[a]), screen(tri_p[b]));
+        ((pa.0 - pb.0).powi(2) + (pa.1 - pb.1).powi(2)).sqrt()
+      })
+      .fold(0.0, f64::max);
+    let subdiv = ((longest / 4.0).ceil() as usize).clamp(8, 48);
+    let n = subdiv as f64;
+    for row in 0..subdiv {
+      for col in 0..(subdiv - row) {
         let u0 = col as f64 / n;
         let v0 = row as f64 / n;
         let u1 = (col + 1) as f64 / n;
@@ -9138,7 +9167,7 @@ fn emit_polygon_vertex_gradient(
         let (p10, c10) = at(&tri_p, &tri_c, u1, v0);
         let (p01, c01) = at(&tri_p, &tri_c, u0, v1);
         emit_tri(p00, c00, p10, c10, p01, c01);
-        if col + row < SUBDIV - 1 {
+        if col + row < subdiv - 1 {
           let (p11, c11) = at(&tri_p, &tri_c, u1, v1);
           emit_tri(p10, c10, p11, c11, p01, c01);
         }
