@@ -662,7 +662,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         .iter()
         .filter_map(|s| match s {
           LabelSegment::Graphic { h, .. } => Some(*h),
-          _ => None,
+          LabelSegment::Text(_) => None,
         })
         .fold(0.0, f64::max);
       let mut extra_lines = extra_lines;
