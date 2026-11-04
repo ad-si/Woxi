@@ -7098,11 +7098,15 @@ fn date_list_plot_ast_impl(
   // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting
   // date. Pair each y_i with start_date + i·step, where the step is
   // inferred from datespec's granularity (year, month, day, …).
+  // `DateListPlot[{{y1, …}, {z1, …}}, datespec]` pairs every dataset so.
+  let is_number = |i: &Expr| matches!(i, Expr::Integer(_) | Expr::Real(_));
+  let all_numbers = items.iter().all(is_number);
+  let all_value_lists = items.iter().all(
+    |i| matches!(i, Expr::List(values) if !values.is_empty() && values.iter().all(is_number)),
+  );
   if args.len() >= 2
     && !items.is_empty()
-    && items
-      .iter()
-      .all(|i| matches!(i, Expr::Integer(_) | Expr::Real(_)))
+    && (all_numbers || all_value_lists)
     && let Some(start) = date_expr_to_absolute_time(&args[1])
   {
     let granularity = if let Expr::List(spec_items) = &args[1] {
@@ -7137,16 +7141,33 @@ fn date_list_plot_ast_impl(
         0.0,
       ))
     };
-    let pair_items: Vec<Expr> = items
-      .iter()
-      .enumerate()
-      .map(|(i, v)| {
-        let t =
-          calendar_step(i as i64).unwrap_or(start + i as f64 * step_seconds);
-        Expr::List(vec![Expr::Real(t), v.clone()].into())
-      })
-      .collect();
-    let mut new_args = vec![Expr::List(pair_items.into())];
+    let pair_up = |values: &[Expr]| -> Expr {
+      Expr::List(
+        values
+          .iter()
+          .enumerate()
+          .map(|(i, v)| {
+            let t = calendar_step(i as i64)
+              .unwrap_or(start + i as f64 * step_seconds);
+            Expr::List(vec![Expr::Real(t), v.clone()].into())
+          })
+          .collect(),
+      )
+    };
+    let paired = if all_numbers {
+      pair_up(items)
+    } else {
+      Expr::List(
+        items
+          .iter()
+          .map(|i| match i {
+            Expr::List(values) => pair_up(values),
+            other => other.clone(),
+          })
+          .collect(),
+      )
+    };
+    let mut new_args = vec![paired];
     new_args.extend(args[2..].iter().cloned());
     return date_list_plot_ast_impl(&new_args, log_y);
   }

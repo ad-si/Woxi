@@ -2223,7 +2223,7 @@ ImageFilter,"Applies a filter function to the range-r neighbourhood of every pix
 DropoutLayer,"Represents a dropout layer in a neural network",🚫,None,11.0,2208
 RegionQ,"Geometric region predicate",✅,pure,10.0,2208
 ShearingTransform,"Shear transformation by an angle along a direction relative to a normal optionally centred at a point",✅,pure,6.0,2208
-ComplexContourPlot,"Visualization",🚫,None,12.1,2210
+ComplexContourPlot,"Contour plot of real functions of a complex variable over a region of the complex plane",✅,pure,12.1,2210
 GreenFunction,"Differential equation Green's function",🚫,None,10.4,2210
 ContinuedFractionK,"Evaluates a generalized continued fraction",✅,pure,7.0,2212
 InverseEllipticNomeQ,"Inverse of the elliptic nome giving the parameter m for a nome q",✅,pure,3.0,2212
@@ -2755,7 +2755,7 @@ MarkovProcessProperties,"",🚫,,9.0,2755
 SierpinskiMesh,"",🚫,,11.1,2755
 SubsetMap,"Map a function over a subset of a list at flat/deep/span/Part-style positions and recombine",✅,pure,12.0,2755
 XMLObject,"represents an XML object",✅,Symbolic,4.2,2755
-AbsArgPlot,"",🚫,,12.0,2762
+AbsArgPlot,"Plots the absolute value of a function colored by its argument",✅,pure,12.0,2762
 BulletGauge,"Horizontal bullet graph of values against references and qualitative ranges",✅,pure,9.0,2762
 LeftArrow,"left arrow symbol",✅,Symbolic,3.0,2762
 ReplicateLayer,"",🚫,,11.1,2762

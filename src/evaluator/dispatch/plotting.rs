@@ -161,6 +161,7 @@ const PLLD_HEADS: &[&str] = &[
   "VectorDensityPlot",
   "DensityPlot",
   "ReImPlot",
+  "AbsArgPlot",
   "LogPlot",
   "LogLinearPlot",
   "LogLogPlot",
@@ -520,6 +521,127 @@ pub fn dispatch_plotting(
           replacement: Box::new(Expr::List(styles.into())),
         });
       }
+      Some(quiet_plot(|| crate::functions::plot::plot_ast(&new_args)))
+    }
+    // ComplexContourPlot[f, {z, zmin, zmax}, opts...] is ContourPlot of f
+    // over the rectangle zmin..zmax of the complex plane, with z = x + I y.
+    // A real-valued f (or list of them, or equations) gives its level
+    // curves directly.
+    "ComplexContourPlot"
+      if args.len() >= 2
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      let Expr::List(iter) = &args[1] else {
+        unreachable!()
+      };
+      let Expr::Identifier(zvar) = &iter[0] else {
+        unreachable!()
+      };
+      let corner = |e: &Expr| {
+        let v = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+        crate::functions::math_ast::try_extract_complex_f64(&v)
+      };
+      let (Some((re0, im0)), Some((re1, im1))) =
+        (corner(&iter[1]), corner(&iter[2]))
+      else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let (xs, ys) = (
+        Expr::Identifier("ComplexContourPlot`x".into()),
+        Expr::Identifier("ComplexContourPlot`y".into()),
+      );
+      let z = Expr::FunctionCall {
+        name: "Plus".into(),
+        args: vec![
+          xs.clone(),
+          Expr::FunctionCall {
+            name: "Times".into(),
+            args: vec![Expr::Identifier("I".into()), ys.clone()].into(),
+          },
+        ]
+        .into(),
+      };
+      let body = crate::functions::plot::substitute_var(&args[0], zvar, &z);
+      let range = |v: Expr, lo: f64, hi: f64| {
+        Expr::List(vec![v, Expr::Real(lo), Expr::Real(hi)].into())
+      };
+      let mut new_args = vec![body, range(xs, re0, re1), range(ys, im0, im1)];
+      new_args.extend(args[2..].iter().cloned());
+      Some(quiet_plot(|| {
+        crate::functions::field_plot::contour_plot_ast(&new_args)
+      }))
+    }
+    // AbsArgPlot[f, {x, xmin, xmax}, opts...] plots Abs[f] coloured by
+    // Arg[f] on the cyclic "MidShiftBalancedHue" gradient (red where f is
+    // positive, cyan where it is negative), as Wolfram does: it is Plot of
+    // Abs[f] with that ColorFunction.
+    "AbsArgPlot"
+      if args.len() >= 2
+        && matches!(
+          &args[1],
+          Expr::List(items) if items.len() == 3 && matches!(&items[0], Expr::Identifier(_))
+        ) =>
+    {
+      let Expr::List(iter) = &args[1] else {
+        unreachable!()
+      };
+      let var = iter[0].clone();
+      let stops: Vec<Expr> =
+        crate::functions::field_plot::MID_SHIFT_BALANCED_HUE
+          .iter()
+          .map(|&(l, a, b)| Expr::FunctionCall {
+            name: "LABColor".into(),
+            args: vec![Expr::Real(l), Expr::Real(a), Expr::Real(b)].into(),
+          })
+          .collect();
+      let pi = Expr::Identifier("Pi".into());
+      // (Arg[f] + Pi) / (2 Pi)
+      let t = Expr::FunctionCall {
+        name: "Times".into(),
+        args: vec![
+          Expr::FunctionCall {
+            name: "Plus".into(),
+            args: vec![call1("Arg", args[0].clone()), pi.clone()].into(),
+          },
+          Expr::FunctionCall {
+            name: "Power".into(),
+            args: vec![
+              Expr::FunctionCall {
+                name: "Times".into(),
+                args: vec![Expr::Integer(2), pi].into(),
+              },
+              Expr::Integer(-1),
+            ]
+            .into(),
+          },
+        ]
+        .into(),
+      };
+      let color_function = Expr::FunctionCall {
+        name: "Function".into(),
+        args: vec![
+          Expr::List(vec![var, Expr::Identifier("AbsArgPlot`y".into())].into()),
+          Expr::FunctionCall {
+            name: "Blend".into(),
+            args: vec![Expr::List(stops.into()), t].into(),
+          },
+        ]
+        .into(),
+      };
+      let rule = |name: &str, value: Expr| Expr::Rule {
+        pattern: Box::new(Expr::Identifier(name.into())),
+        replacement: Box::new(value),
+      };
+      let mut new_args = vec![call1("Abs", args[0].clone())];
+      new_args.extend(args[1..].iter().cloned());
+      new_args.push(rule("ColorFunction", color_function));
+      new_args.push(rule(
+        "ColorFunctionScaling",
+        Expr::Identifier("False".into()),
+      ));
       Some(quiet_plot(|| crate::functions::plot::plot_ast(&new_args)))
     }
     // Manipulate holds its arguments (see core_eval.rs) and, in a text

@@ -1151,10 +1151,19 @@ fn region_mesh_spec(opt_args: &[Expr]) -> Option<RegionMesh> {
   };
   let group = |k: usize| {
     let mut directives = style(k);
+    // Wolfram's default mesh: black at 30% opacity.
     if directives.is_empty() {
-      directives.push(call1("GrayLevel", Expr::Real(0.4)));
+      directives.push(call(
+        "Directive",
+        vec![
+          call1("GrayLevel", Expr::Integer(0)),
+          call1("Opacity", Expr::Real(0.3)),
+        ],
+      ));
     }
-    Expr::List(directives.into())
+    // One directive, not a list: a list would scope the style away from
+    // the `Line` it is paired with.
+    call("Directive", directives)
   };
   Some(RegionMesh {
     lines_u,
@@ -1410,6 +1419,16 @@ fn parametric_region_layer(
       quads
     };
   let mesh = region_mesh_spec(opt_args);
+  // The faces take the `PlotStyle` colour, the palette's by default.
+  let face_rgb = plot_opts
+    .plot_style
+    .get(layer)
+    .and_then(|s| s.color.as_ref())
+    .map_or(
+      crate::functions::plot::PLOT_COLORS_RGB
+        [layer % crate::functions::plot::PLOT_COLORS_RGB.len()],
+      |c| (c.r, c.g, c.b),
+    );
   let mut quads = Vec::new();
   let mut mesh_cells: Vec<Expr> = Vec::new();
   let mut mesh_lines: Vec<Expr> = Vec::new();
@@ -1444,8 +1463,7 @@ fn parametric_region_layer(
           group.push(shade);
           group.push(call1("Opacity", Expr::Real(1.0)));
         } else {
-          let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB
-            [layer % crate::functions::plot::PLOT_COLORS_RGB.len()];
+          let (r, g, b) = face_rgb;
           group.push(call(
             "RGBColor",
             vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
@@ -1513,15 +1531,7 @@ fn parametric_region_layer(
     .map(pt_expr)
     .collect();
 
-  let (r, g, b) = plot_opts
-    .plot_style
-    .get(layer)
-    .and_then(|s| s.color.as_ref())
-    .map_or(
-      crate::functions::plot::PLOT_COLORS_RGB
-        [layer % crate::functions::plot::PLOT_COLORS_RGB.len()],
-      |c| (c.r, c.g, c.b),
-    );
+  let (r, g, b) = face_rgb;
   let color = call(
     "RGBColor",
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
@@ -1612,11 +1622,17 @@ fn parametric_region_layer(
     vec![Expr::List(face_group.into())]
   };
   items.append(&mut mesh_lines);
+  // The outline is always drawn thin in the palette colour, whatever
+  // `PlotStyle` makes of the faces, as in Wolfram.
   if border.len() > 1 {
+    let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB
+      [layer % crate::functions::plot::PLOT_COLORS_RGB.len()];
     items.push(Expr::List(
       vec![
-        color,
-        call1("AbsoluteThickness", Expr::Real(2.0)),
+        call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        ),
         call1("Line", Expr::List(border.into())),
       ]
       .into(),

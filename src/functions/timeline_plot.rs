@@ -8,16 +8,8 @@ use crate::functions::plot::{
   format_date_tick, generate_date_ticks, html_escape, parse_image_size,
 };
 
-/// Default display width of a TimelinePlot in pixels.
-const DEFAULT_TLP_WIDTH: u32 = 360;
-/// Height allotted to each stacked event row (display pixels).
-const ROW_HEIGHT: u32 = 26;
-/// Padding above the first row.
-const PADDING_TOP: u32 = 15;
-/// Padding below the axis (space for the date tick labels).
-const PADDING_BOTTOM: u32 = 30;
-/// Extra vertical space between the lowest row and the axis line.
-const AXIS_GAP: u32 = 12;
+/// Default display width of a TimelinePlot (Wolfram's `ImageSize -> 600`).
+const DEFAULT_TLP_WIDTH: u32 = 600;
 
 /// A single timeline event: either an instant (a point) or a span (interval).
 struct TimelineEvent {
@@ -25,8 +17,9 @@ struct TimelineEvent {
   start: f64,
   /// End of the event for intervals; `None` for point events.
   end: Option<f64>,
-  /// Text label rendered next to the event marker.
-  label: String,
+  /// The label drawn in a callout above the event; Wolfram labels only
+  /// events given a label (an association key, `Labeled`, `label -> date`).
+  label: Option<String>,
 }
 
 /// `TimelinePlot[{date, ...}]` — render events on a horizontal timeline.
@@ -70,7 +63,7 @@ fn parse_events(arg: &Expr) -> Vec<TimelineEvent> {
     Expr::Association(pairs) => {
       for (key, val) in pairs {
         if let Some(mut ev) = event_from_date(val) {
-          ev.label = expr_to_label(key);
+          ev.label = Some(expr_to_label(key));
           events.push(ev);
         }
       }
@@ -102,7 +95,7 @@ fn parse_one_event(item: &Expr) -> Option<TimelineEvent> {
       if name == "Labeled" && args.len() == 2 =>
     {
       let mut ev = event_from_date(&args[0])?;
-      ev.label = expr_to_label(&args[1]);
+      ev.label = Some(expr_to_label(&args[1]));
       Some(ev)
     }
     // Style[date, ...] — ignore styling, keep the underlying date.
@@ -111,13 +104,11 @@ fn parse_one_event(item: &Expr) -> Option<TimelineEvent> {
     {
       event_from_date(&args[0])
     }
-    // Tooltip[date, label] — treat the tooltip text as the label.
+    // Tooltip[date, label] — the tooltip only shows on hover.
     Expr::FunctionCall { name, args }
       if name == "Tooltip" && args.len() == 2 =>
     {
-      let mut ev = event_from_date(&args[0])?;
-      ev.label = expr_to_label(&args[1]);
-      Some(ev)
+      event_from_date(&args[0])
     }
     // label -> date (an association entry written as a Rule).
     Expr::Rule {
@@ -125,15 +116,14 @@ fn parse_one_event(item: &Expr) -> Option<TimelineEvent> {
       replacement,
     } => {
       let mut ev = event_from_date(replacement)?;
-      ev.label = expr_to_label(pattern);
+      ev.label = Some(expr_to_label(pattern));
       Some(ev)
     }
     _ => event_from_date(&evaluated),
   }
 }
 
-/// Build an event from a date-like expression, defaulting the label to the
-/// formatted date (or date range for intervals).
+/// Build an unlabelled event from a date-like expression.
 fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
   let evaluated = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
 
@@ -158,7 +148,7 @@ fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
     return Some(TimelineEvent {
       start: lo,
       end: Some(hi),
-      label: format!("{} – {}", format_date_tick(lo), format_date_tick(hi)),
+      label: None,
     });
   }
 
@@ -172,7 +162,7 @@ fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
     return Some(TimelineEvent {
       start: lo,
       end: Some(hi),
-      label: format!("{} – {}", format_date_tick(lo), format_date_tick(hi)),
+      label: None,
     });
   }
 
@@ -181,7 +171,7 @@ fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
   Some(TimelineEvent {
     start: t,
     end: None,
-    label: format_date_tick(t),
+    label: None,
   })
 }
 
@@ -220,62 +210,96 @@ fn expr_to_label(expr: &Expr) -> String {
   }
 }
 
-/// Greedily pack events into as few rows as possible so their markers and
-/// labels do not overlap horizontally. Returns the row index per event.
-fn pack_rows(
-  events: &[TimelineEvent],
-  x_to_px: impl Fn(f64) -> f64,
-  label_px_width: impl Fn(&str) -> f64,
-  marker_gap: f64,
-  row_gap: f64,
-) -> Vec<usize> {
-  // Process events left-to-right by start position for tidy packing.
-  let mut order: Vec<usize> = (0..events.len()).collect();
-  order.sort_by(|&a, &b| {
-    events[a]
-      .start
-      .partial_cmp(&events[b].start)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+/// Estimate the width, in points, of a label at `font_size` points.
+fn est_text_width(label: &str, font_size: f64) -> f64 {
+  label
+    .chars()
+    .map(|c| match c {
+      'i' | 'j' | 'l' | 't' | 'f' | 'r' | ' ' | '.' | ',' => 0.3,
+      'm' | 'w' | 'M' | 'W' => 0.85,
+      c if c.is_uppercase() => 0.68,
+      _ => 0.55,
+    })
+    .sum::<f64>()
+    * font_size
+}
 
-  let mut row_end: Vec<f64> = Vec::new();
-  let mut assignment = vec![0usize; events.len()];
-
-  for &idx in &order {
-    let ev = &events[idx];
-    let left = x_to_px(ev.start);
-    let marker_right = match ev.end {
-      Some(end) => x_to_px(end),
-      None => left,
-    };
-    let occupied_end =
-      marker_right + marker_gap + label_px_width(&ev.label) + row_gap;
-
-    // Find the first row whose content ends before this event starts.
-    let mut placed = None;
-    for (row, end) in row_end.iter_mut().enumerate() {
-      if left >= *end {
-        *end = occupied_end;
-        placed = Some(row);
-        break;
+/// `TimelinePlot`'s date ticks, as `(time, label)` for the labelled ones
+/// plus the unlabelled minor ones: month ticks (`"Mar 2020"`) a step of
+/// 1, 2, 3 or 6 months apart with a tick every month between, or year
+/// ticks over long spans; under two months the generic date ticks.
+fn timeline_ticks(x_min: f64, x_max: f64) -> (Vec<(f64, String)>, Vec<f64>) {
+  use crate::functions::datetime_ast::{
+    absolute_seconds_to_date, date_to_absolute_seconds,
+  };
+  const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+    "Nov", "Dec",
+  ];
+  let months = (x_max - x_min) / (30.44 * 86400.0);
+  if months < 2.0 {
+    let ticks = generate_date_ticks(x_min, x_max);
+    return (
+      ticks.iter().map(|&t| (t, format_date_tick(t))).collect(),
+      Vec::new(),
+    );
+  }
+  let (y0, m0, ..) = absolute_seconds_to_date(x_min);
+  let (y1, ..) = absolute_seconds_to_date(x_max);
+  if months > 36.0 {
+    // Years, a step of 1, 2, 5, 10, … apart.
+    let span = (y1 - y0 + 1) as f64;
+    let step = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]
+      .into_iter()
+      .find(|s| span / *s as f64 <= 5.0)
+      .unwrap_or(1000);
+    let mut majors = Vec::new();
+    let mut minors = Vec::new();
+    for y in y0..=y1 + 1 {
+      let t = date_to_absolute_seconds(y, 1, 1, 0, 0, 0.0);
+      if t < x_min || t > x_max {
+        continue;
+      }
+      if y.rem_euclid(step) == 0 {
+        majors.push((t, y.to_string()));
+      } else if step <= 10 {
+        minors.push(t);
       }
     }
-    let row = placed.unwrap_or_else(|| {
-      row_end.push(occupied_end);
-      row_end.len() - 1
-    });
-    assignment[idx] = row;
+    return (majors, minors);
   }
-
-  assignment
+  let step = [1, 2, 3, 6]
+    .into_iter()
+    .find(|s| months / *s as f64 <= 5.0)
+    .unwrap_or(12);
+  let mut majors = Vec::new();
+  let mut minors = Vec::new();
+  let (mut y, mut m) = (y0, m0);
+  loop {
+    let t = date_to_absolute_seconds(y, m, 1, 0, 0, 0.0);
+    if t > x_max {
+      break;
+    }
+    if t >= x_min {
+      if (m - 1).rem_euclid(step) == 0 {
+        majors.push((t, format!("{} {y}", MONTHS[(m - 1) as usize])));
+      }
+      minors.push(t);
+    }
+    m += 1;
+    if m > 12 {
+      m = 1;
+      y += 1;
+    }
+  }
+  (majors, minors)
 }
 
-/// Estimate the pixel width of a text label at the given font size.
-fn est_text_width(label: &str, font_size: f64) -> f64 {
-  label.chars().count() as f64 * font_size * 0.6
-}
-
-/// Render the complete TimelinePlot SVG.
+/// Render the complete TimelinePlot SVG, laid out as Wolfram does: each
+/// event on the lowest level where it does not run into another (a point
+/// as a dot, an interval as a thin line between open dots), a date axis
+/// along the bottom, and every label in a rounded callout box above the
+/// plot with a stem down to its event.
 fn render_timeline_svg(
   events: &[TimelineEvent],
   svg_width: u32,
@@ -283,166 +307,178 @@ fn render_timeline_svg(
 ) -> String {
   let sf = RESOLUTION_SCALE as f64;
   let render_width = svg_width * RESOLUTION_SCALE;
+  // Points per WL point at the default 600-point width.
+  let w = svg_width as f64;
 
   let (bg_color, axis_color, label_fill, event_color) = theme_colors();
-
-  let font_size = 13.0 * sf;
-  let marker_gap = 6.0 * sf;
-  let row_gap = 10.0 * sf;
-
-  // Compute the x range across all events, with a little padding.
-  let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
-  for ev in events {
-    x_min = x_min.min(ev.start);
-    x_max = x_max.max(ev.end.unwrap_or(ev.start));
-  }
-  if !x_min.is_finite() || !x_max.is_finite() {
-    x_min = 0.0;
-    x_max = 86400.0;
-  }
-  let range = x_max - x_min;
-  let pad = if range.abs() < f64::EPSILON {
-    // All events at the same instant: default to a one-year window.
-    365.25 * 86400.0
+  let halo = if crate::is_dark_mode() {
+    "#1a1a1a"
   } else {
-    range * 0.08
-  };
-  x_min -= pad;
-  x_max += pad;
-
-  // Reserve right margin large enough for the longest label so nothing clips.
-  let longest_label = events
-    .iter()
-    .map(|e| est_text_width(&e.label, font_size))
-    .fold(0.0_f64, f64::max);
-  let margin_left = 10.0 * sf;
-  let margin_right = (longest_label + marker_gap + 10.0 * sf)
-    .min(render_width as f64 * 0.5)
-    .max(20.0 * sf);
-  let plot_width = (render_width as f64 - margin_left - margin_right).max(1.0);
-
-  let x_to_px = |x: f64| -> f64 {
-    margin_left + (x - x_min) / (x_max - x_min) * plot_width
+    "#ffffff"
   };
 
-  // Pack events into rows.
-  let rows = pack_rows(
-    events,
-    x_to_px,
-    |lbl| est_text_width(lbl, font_size),
-    marker_gap,
-    row_gap,
-  );
-  let num_rows = rows.iter().copied().max().map_or(1, |m| m + 1);
+  // The axis spans the picture; the events take its middle 88%.
+  let axis_x0 = 0.5;
+  let axis_x1 = w - 1.5;
+  let (mut t_min, mut t_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for ev in events {
+    t_min = t_min.min(ev.start);
+    t_max = t_max.max(ev.end.unwrap_or(ev.start));
+  }
+  if !t_min.is_finite() || !t_max.is_finite() {
+    t_min = 0.0;
+    t_max = 86400.0;
+  }
+  if (t_max - t_min).abs() < f64::EPSILON {
+    // All events at the same instant: a one-year window around it.
+    t_min -= 182.625 * 86400.0;
+    t_max += 182.625 * 86400.0;
+  }
+  let pad = (t_max - t_min) * 0.06 / 0.88;
+  let (x_min, x_max) = (t_min - pad, t_max + pad);
+  let x_to_pt = |t: f64| -> f64 {
+    axis_x0 + (t - x_min) / (x_max - x_min) * (axis_x1 - axis_x0)
+  };
 
-  let svg_height =
-    PADDING_TOP + num_rows as u32 * ROW_HEIGHT + AXIS_GAP + PADDING_BOTTOM;
+  // Levels: in order of start, each event takes the lowest level whose
+  // events all end (with room for the dots) before it begins.
+  let mut order: Vec<usize> = (0..events.len()).collect();
+  order.sort_by(|&a, &b| events[a].start.total_cmp(&events[b].start));
+  let mut level_end: Vec<f64> = Vec::new();
+  let mut levels = vec![0usize; events.len()];
+  for &i in &order {
+    let ev = &events[i];
+    let left = x_to_pt(ev.start) - 6.0;
+    let right = x_to_pt(ev.end.unwrap_or(ev.start)) + 6.0;
+    let level = if let Some(l) = level_end.iter().position(|&end| end <= left) {
+      l
+    } else {
+      level_end.push(f64::NEG_INFINITY);
+      level_end.len() - 1
+    };
+    level_end[level] = right;
+    levels[i] = level;
+  }
+  let n_levels = level_end.len().max(1);
+
+  // The plot area (`AspectRatio -> 1/10` without labels) holds the levels
+  // at heights 1, 2, … over a range padded to `levels + 1/2` and by 5%
+  // above; labels add a band of callouts above it.
+  let labelled = events.iter().any(|e| e.label.is_some());
+  let range = (n_levels as f64 + 0.5) * 1.05;
+  let (unit, plot_top) = if labelled {
+    (16.41, 60.57)
+  } else {
+    (w / 10.0 / range, 0.0)
+  };
+  let axis_y = plot_top + unit * range;
+  let label_room = 15.171875;
+  let svg_height = (axis_y + label_room).ceil() as u32;
   let render_height = svg_height * RESOLUTION_SCALE;
-
-  let top = PADDING_TOP as f64 * sf;
-  let axis_y =
-    top + num_rows as f64 * ROW_HEIGHT as f64 * sf + AXIS_GAP as f64 * sf;
-  let row_y =
-    |row: usize| -> f64 { top + (row as f64 + 0.5) * ROW_HEIGHT as f64 * sf };
+  let level_y = |l: usize| axis_y - unit * (l + 1) as f64;
 
   let mut body = String::new();
-
-  // Background.
+  let px = |v: f64| v * sf;
   body.push_str(&format!(
     "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_color}\"/>\n"
   ));
-
-  let axis_x0 = margin_left;
-  let axis_x1 = margin_left + plot_width;
-
-  // Draw events (in original order for stable colors/z-order).
-  let marker_r = 4.0 * sf;
-  let bar_half = 3.0 * sf;
-  for (idx, ev) in events.iter().enumerate() {
-    let y = row_y(rows[idx]);
-    let x_start = x_to_px(ev.start);
-
-    // Light vertical guide from the marker down to the axis.
+  let circle = |body: &mut String, x: f64, y: f64, r: f64, fill: &str| {
     body.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-       stroke=\"{}\" stroke-width=\"{:.1}\" stroke-dasharray=\"{:.0},{:.0}\"/>\n",
-      x_start,
-      y,
-      x_start,
-      axis_y,
-      axis_color,
-      sf * 0.5,
-      sf * 2.0,
-      sf * 2.0,
+      "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" fill=\"{fill}\"/>\n",
+      px(x),
+      px(y),
+      px(r)
     ));
-
-    let label_x = if let Some(end) = ev.end {
-      // Interval: draw a rounded bar from start to end.
-      let x_end = x_to_px(end);
-      body.push_str(&format!(
-        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-         rx=\"{:.1}\" fill=\"{}\"/>\n",
-        x_start,
-        y - bar_half,
-        (x_end - x_start).max(sf),
-        bar_half * 2.0,
-        bar_half,
-        event_color,
+  };
+  let line = |body: &mut String,
+              (x1, y1): (f64, f64),
+              (x2, y2): (f64, f64),
+              width: f64,
+              stroke: &str| {
+    body.push_str(&format!(
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{stroke}\" stroke-width=\"{:.1}\"/>\n",
+        px(x1),
+        px(y1),
+        px(x2),
+        px(y2),
+        px(width)
       ));
-      x_end + marker_gap
+  };
+
+  for (i, ev) in events.iter().enumerate() {
+    let y = level_y(levels[i]);
+    let x = x_to_pt(ev.start);
+    if let Some(end) = ev.end {
+      let x_end = x_to_pt(end);
+      line(&mut body, (x, y), (x_end, y), 4.0, halo);
+      circle(&mut body, x, y, 5.0, halo);
+      circle(&mut body, x_end, y, 5.0, halo);
+      line(&mut body, (x, y), (x_end, y), 1.6, &event_color);
+      for xe in [x, x_end] {
+        circle(&mut body, xe, y, 3.5, &event_color);
+        circle(&mut body, xe, y, 2.0, halo);
+      }
     } else {
-      // Point: draw a filled circle marker.
+      circle(&mut body, x, y, 5.0, halo);
+      circle(&mut body, x, y, 3.5, &event_color);
+    }
+    // The callout: a rounded box above the plot, a stem down to the event
+    // and an arrowhead under the box.
+    if let Some(label) = &ev.label {
+      let font = 10.0;
+      let half = est_text_width(label, font) / 2.0 + 5.0;
+      let (box_top, box_bottom) = (14.43, 33.0);
+      line(&mut body, (x, box_bottom + 5.0), (x, y - 4.0), 4.0, halo);
+      line(&mut body, (x, box_bottom), (x, y - 3.0), 1.6, &event_color);
       body.push_str(&format!(
-        "<circle cx=\"{x_start:.1}\" cy=\"{y:.1}\" r=\"{marker_r:.1}\" fill=\"{event_color}\"/>\n"
+        "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{event_color}\"/>\n",
+        px(x),
+        px(box_bottom + 10.33),
+        px(x + 5.33),
+        px(box_bottom + 3.5),
+        px(x - 5.33),
+        px(box_bottom + 3.5)
       ));
-      x_start + marker_r + marker_gap
-    };
-
-    // Event label to the right of the marker, vertically centered.
-    body.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" dy=\"0.32em\" text-anchor=\"start\" \
-       font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{}\">{}</text>\n",
-      label_x,
-      y,
-      font_size,
-      label_fill,
-      html_escape(&ev.label),
-    ));
+      body.push_str(&format!(
+        "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{:.1}\" fill=\"{halo}\" stroke=\"{event_color}\" stroke-width=\"{:.1}\"/>\n",
+        px(x - half),
+        px(box_top),
+        px(2.0 * half),
+        px(box_bottom - box_top),
+        px(5.0),
+        px(1.0)
+      ));
+      body.push_str(&format!(
+        "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\">{}</text>\n",
+        px(x),
+        px(box_top + 14.46),
+        px(font),
+        html_escape(label),
+      ));
+    }
   }
 
-  // Bottom axis line.
-  body.push_str(&format!(
-    "<line x1=\"{axis_x0:.1}\" y1=\"{axis_y:.1}\" x2=\"{axis_x1:.1}\" y2=\"{axis_y:.1}\" \
-     stroke=\"{axis_color}\" stroke-width=\"{sf:.0}\"/>\n"
-  ));
-
-  // Date ticks and labels on the axis.
-  let ticks = generate_date_ticks(x_min, x_max);
-  let tick_len = 5.0 * sf;
-  let tick_font = 12.0 * sf;
-  for &t in &ticks {
-    if t < x_min || t > x_max {
-      continue;
-    }
-    let px = x_to_px(t);
+  // The date axis: a hairline across the picture with ticks pointing up,
+  // labelled below.
+  line(
+    &mut body,
+    (axis_x0, axis_y),
+    (axis_x1, axis_y),
+    0.5,
+    axis_color,
+  );
+  let (majors, minors) = timeline_ticks(x_min, x_max);
+  for t in minors.iter().copied().chain(majors.iter().map(|(t, _)| *t)) {
+    let x = x_to_pt(t);
+    line(&mut body, (x, axis_y), (x, axis_y - 3.99), 0.5, axis_color);
+  }
+  for (t, label) in &majors {
     body.push_str(&format!(
-      "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-       stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-      px,
-      axis_y,
-      px,
-      axis_y + tick_len,
-      axis_color,
-      sf
-    ));
-    body.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{}\">{}</text>\n",
-      px,
-      axis_y + tick_len + tick_font * 1.1,
-      tick_font,
-      label_fill,
-      html_escape(&format_date_tick(t)),
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\">{}</text>\n",
+      px(x_to_pt(*t)),
+      px(axis_y + 12.05),
+      px(10.0),
+      html_escape(label),
     ));
   }
 

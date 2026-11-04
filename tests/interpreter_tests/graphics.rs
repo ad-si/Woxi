@@ -30870,22 +30870,23 @@ mod timeline_plot {
       "TimelinePlot[{DateObject[{2000}], DateObject[{2005}], \
        DateObject[{2010}]}]",
     );
-    // One filled circle marker per date event.
+    // One dot (in the plot colour, on a white halo) per date event.
     assert_eq!(
-      svg.matches("<circle").count(),
+      svg.matches("fill=\"rgb(61,153,204)\"/>").count(),
       3,
       "Expected three point markers, got: {svg}"
     );
-    // Default labels are the formatted dates.
-    assert!(svg.contains(">2000<"), "Expected a 2000 label");
-    assert!(svg.contains(">2010<"), "Expected a 2010 label");
+    // Unlabelled dates get no callouts, as in Wolfram; the axis carries
+    // the years.
+    assert!(!svg.contains("rx="), "{svg}");
+    assert!(svg.contains(">2000<") && svg.contains(">2010<"), "{svg}");
   }
 
   #[test]
   fn date_list_form() {
     // Plain {y, m, d} date lists are accepted directly.
     let svg = export_svg("TimelinePlot[{{2001, 1, 1}, {2003, 6, 15}}]");
-    assert_eq!(svg.matches("<circle").count(), 2);
+    assert_eq!(svg.matches("fill=\"rgb(61,153,204)\"/>").count(), 2);
   }
 
   #[test]
@@ -30921,15 +30922,33 @@ mod timeline_plot {
 
   #[test]
   fn date_interval_bar() {
-    // DateInterval renders as a rounded bar (only the bar has rx=).
+    // Regression: an interval was drawn as a thick rounded bar. Wolfram
+    // draws a thin line between two open dots.
     let svg = export_svg(
       "TimelinePlot[{DateInterval[{DateObject[{2000}], \
        DateObject[{2005}]}]}]",
     );
+    assert!(!svg.contains("rx="), "{svg}");
     assert!(
-      svg.contains("rx="),
-      "Expected a rounded interval bar, got: {svg}"
+      svg.contains("stroke=\"rgb(61,153,204)\" stroke-width=\"16.0\""),
+      "{svg}"
     );
+    assert_eq!(svg.matches("fill=\"rgb(61,153,204)\"/>").count(), 2);
+  }
+
+  #[test]
+  fn labels_sit_in_callouts_above_the_events() {
+    // Regression: labels were set inline beside big dots with dotted drop
+    // lines. Wolfram puts each in a rounded box above the plot, with a
+    // stem down to its event, and labels the month ticks "Jan 2019".
+    let svg = export_svg(
+      "TimelinePlot[<|\"start\" -> DateObject[{2019, 1, 1}], \
+       \"release\" -> DateObject[{2020, 2, 1}]|>]",
+    );
+    assert_eq!(svg.matches("rx=").count(), 2, "{svg}");
+    assert!(svg.contains(">start<") && svg.contains(">release<"));
+    assert!(svg.contains(">Jan 2019<"), "{svg}");
+    assert!(!svg.contains("stroke-dasharray"), "{svg}");
   }
 
   #[test]
@@ -30947,7 +30966,7 @@ mod timeline_plot {
   #[test]
   fn single_event() {
     let svg = export_svg("TimelinePlot[{DateObject[{2000}]}]");
-    assert_eq!(svg.matches("<circle").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(61,153,204)\"/>").count(), 1);
   }
 
   #[test]
@@ -48698,4 +48717,200 @@ fn swatch_legend_label_in_text_cell_shows_text() {
   );
   assert!(svg.contains("A+B"), "got: {svg}");
   assert!(!svg.contains("TextCell"), "got: {svg}");
+}
+
+/// Regressions from the field-plot visual comparison against wolframscript.
+mod field_plot_conformance {
+  use super::*;
+
+  #[test]
+  fn region_plot_mesh_lines_cross_the_region() {
+    // Regression: `Mesh -> n` drew no mesh lines. Wolfram divides the
+    // region's own extent into n + 1 parts along each axis.
+    let n = interpret(
+      "Length[Cases[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2][[1]], _Line, Infinity]]",
+    )
+    .unwrap();
+    assert_eq!(n, "4");
+    let xs = interpret(
+      "Union[Round[Cases[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2][[1]], Line[{{a_, _}, {a_, _}}] :> a, Infinity], 0.01]]",
+    )
+    .unwrap();
+    assert_eq!(xs, "{-0.33, 0.33}");
+  }
+
+  #[test]
+  fn region_plot_legends_give_a_swatch_legend() {
+    // Regression: `PlotLegends -> {…}` was dropped.
+    assert_eq!(
+      interpret(
+        "Head[RegionPlot[{x^2 + y^2 < 1, (x - 1)^2 + y^2 < 1}, {x, -1.5, 2.5}, {y, -1.5, 1.5}, PlotLegends -> {\"a\", \"b\"}]]"
+      )
+      .unwrap(),
+      "Legended"
+    );
+  }
+
+  #[test]
+  fn number_line_plot_draws_a_list_of_inequalities() {
+    // Regression: a list of predicates drew only the axis.
+    let svg =
+      export_svg("NumberLinePlot[{x <= -1, -1 < x <= 2, x > 3}, {x, -4, 6}]");
+    // Two arrowheads (x <= -1 and x > 3), three runs of line.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+    assert!(svg.matches("stroke-width=\"16.0\"").count() >= 3, "{svg}");
+  }
+
+  #[test]
+  fn polar_axes_label_angles_and_radii() {
+    // Regression: the polar axes had no angular labels and the radial
+    // axis stopped at the curve. Wolfram rings the plot at the radius of
+    // the bounding box's corner (5 for this curve) and labels every π/12.
+    let svg = export_svg(
+      "PolarPlot[2 + Cos[3 t], {t, 0, 2 Pi}, PolarAxes -> True, PolarGridLines -> Automatic, Axes -> False]",
+    );
+    assert!(svg.contains(">5.<"), "{svg}");
+    assert!(svg.contains("π"), "{svg}");
+  }
+
+  #[test]
+  fn complex_plot_default_colours_are_pastel() {
+    // Regression: the default colouring was a dark saturated HSB hue.
+    // Wolfram's "MidShiftBalancedHue" of the argument is lightened
+    // towards white where |f| is large: the corner of z^2 is pale.
+    let svg = export_svg("ComplexPlot[z, {z, -2 - 2 I, 2 + 2 I}]");
+    assert!(svg.contains("<image"), "{svg}");
+  }
+
+  #[test]
+  fn complex_list_plot_numericizes_exact_values() {
+    // Regression: exact complex values such as Exp[2 Pi I/7] were dropped.
+    let n = interpret(
+      "Length[Cases[ComplexListPlot[Table[Exp[2 Pi I k/7], {k, 0, 6}]], Point[p_] :> p, Infinity][[1]]]",
+    );
+    let svg = export_svg("ComplexListPlot[Table[Exp[2 Pi I k/7], {k, 0, 6}]]");
+    assert_eq!(svg.matches("<circle").count(), 7, "{n:?} {svg}");
+  }
+
+  #[test]
+  fn contours_n_picks_rounded_levels() {
+    // Wolfram truncates (range / (n + 1)) to two significant digits and
+    // takes the first n multiples above the minimum.
+    let levels = |spec: &str| {
+      let s = interpret(&format!(
+        "Module[{{g = ContourPlot[{spec}, Contours -> 6]}}, Length[Cases[g, _Line, Infinity]] > 0]"
+      ))
+      .unwrap();
+      assert_eq!(s, "True");
+    };
+    levels("x^2 - y^2, {x, -2, 2}, {y, -2, 2}");
+    let svg = export_svg(
+      "ContourPlot[x^2 - y^2, {x, -2, 2}, {y, -2, 2}, Contours -> 6, ContourLabels -> All]",
+    );
+    for label in [">-3.3<", ">-2.2<", ">-1.1<", ">0<", ">1.1<", ">2.2<"] {
+      assert!(svg.contains(label), "{label}: {svg}");
+    }
+    assert!(!svg.contains(">3.3<"), "{svg}");
+  }
+
+  #[test]
+  fn contour_shading_list_colours_the_bands() {
+    let svg = export_svg(
+      "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, Contours -> 4, ContourShading -> {Red, Green}]",
+    );
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(0,255,0)\""), "{svg}");
+  }
+
+  #[test]
+  fn dashed_contour_style_dashes_the_lines() {
+    let svg = export_svg(
+      "ContourPlot[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, ContourShading -> None, ContourStyle -> Directive[Red, Dashed]]",
+    );
+    assert!(svg.contains("stroke-dasharray"), "{svg}");
+  }
+
+  #[test]
+  fn density_plot_mesh_is_translucent_black() {
+    let svg = export_svg(
+      "DensityPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, Mesh -> 5, PlotPoints -> 20]",
+    );
+    assert!(!svg.contains("#b0b0b0"), "{svg}");
+    assert!(svg.contains("stroke-opacity=\"0.3\""), "{svg}");
+  }
+
+  #[test]
+  fn discrete_plot_draws_stems_and_extent_steps() {
+    // Default `Filling -> Axis` stems, and `ExtentSize -> Right` steps
+    // filled down to the axis.
+    let svg = export_svg("DiscretePlot[Sin[n/2], {n, 0, 5}]");
+    assert!(svg.contains("opacity"), "{svg}");
+    assert_eq!(
+      interpret(
+        "Length[Cases[DiscretePlot[n, {n, 1, 3}, ExtentSize -> Right], _Rectangle, Infinity]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn date_list_plot_pairs_every_dataset_with_the_start_date() {
+    // Regression: two value lists with a start date plotted as one line.
+    let svg = export_svg(
+      "DateListPlot[{Table[Sin[k/3.], {k, 30}], Table[Cos[k/3.], {k, 30}]}, {2021, 1, 1}]",
+    );
+    assert!(svg.contains(">Jan 04<") || svg.contains("Jan"), "{svg}");
+    assert!(svg.matches("<polyline").count() >= 2, "{svg}");
+  }
+
+  #[test]
+  fn re_im_plot_draws_the_imaginary_part_dotted_in_the_same_colour() {
+    let svg = export_svg("ReImPlot[Sqrt[x^2 - 1], {x, -2, 2}]");
+    assert!(svg.contains("stroke-dasharray"), "{svg}");
+    assert!(!svg.contains("rgb(242,160,36)"), "{svg}");
+  }
+
+  #[test]
+  fn abs_arg_plot_and_complex_contour_plot_evaluate() {
+    assert_eq!(
+      interpret("Head[AbsArgPlot[Gamma[x], {x, -3, 3}]]").unwrap(),
+      "Graphics"
+    );
+    assert_eq!(
+      interpret(
+        "Head[ComplexContourPlot[{Re[z^2], Im[z^2]}, {z, -2 - 2 I, 2 + 2 I}, Contours -> 8]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
+  fn parametric_region_mesh_is_translucent_and_faces_take_plot_style() {
+    let s = interpret(
+      "MemberQ[ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, Mesh -> 2, PlotStyle -> LightBlue][[1]], Opacity[0.3], Infinity]",
+    )
+    .unwrap();
+    assert_eq!(s, "True");
+  }
+
+  #[test]
+  fn line_integral_convolution_raster_size() {
+    assert_eq!(
+      interpret(
+        "Dimensions[First[Cases[LineIntegralConvolutionPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, RasterSize -> 20], Raster[d_, ___] :> d, Infinity]]]"
+      )
+      .unwrap(),
+      "{20, 20, 3}"
+    );
+  }
+
+  #[test]
+  fn polar_plot_expressions_legend() {
+    let svg = export_svg(
+      "PolarPlot[{1, 1 + Cos[t]}, {t, 0, 2 Pi}, PlotLegends -> \"Expressions\"]",
+    );
+    assert!(svg.contains("cos"), "{svg}");
+  }
 }

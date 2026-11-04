@@ -127,7 +127,7 @@ pub fn line_integral_convolution_plot_ast(
   if components.len() != 2 {
     return Ok(None);
   }
-  let (w, h) = match &texture {
+  let (mut w, mut h) = match &texture {
     Some(Expr::List(t))
       if t.len() == 3 && matches!(&t[0], Expr::String(s) if s == "noise") =>
     {
@@ -175,6 +175,29 @@ pub fn line_integral_convolution_plot_ast(
       }
       Expr::Identifier(k) if k == "LineIntegralConvolutionScale" => {
         scale_px = try_eval_to_f64(&value()).filter(|s| *s >= 0.0);
+      }
+      // `RasterSize -> n` (or `{nx, ny}`) is the size of the noise raster
+      // the convolution smears, unless an explicit texture sets it.
+      Expr::Identifier(k) if k == "RasterSize" => {
+        let size = |e: &Expr| {
+          try_eval_to_f64(e)
+            .filter(|n| *n >= 2.0)
+            .map(|n| (n as usize).min(1000))
+        };
+        if texture.is_none() {
+          match &value() {
+            Expr::List(ns) if ns.len() == 2 => {
+              if let (Some(a), Some(b)) = (size(&ns[0]), size(&ns[1])) {
+                (w, h) = (a, b);
+              }
+            }
+            other => {
+              if let Some(n) = size(other) {
+                (w, h) = (n, n);
+              }
+            }
+          }
+        }
       }
       Expr::Identifier(k)
         if matches!(
@@ -317,9 +340,12 @@ pub fn line_integral_convolution_plot_ast(
             .and_then(|c| crate::functions::graphics::parse_color(&c))
             .map_or((1.0, 1.0, 1.0), |c| (c.r, c.g, c.b))
         }
+        // Wolfram's default colours the field from brown (weak) to cream
+        // (strong); `"SiennaTones"` over 0.4..0.8 of the rescaled norm
+        // follows its gradient to within a few percent.
         (None, None) => {
           let (r, g, b) =
-            apply_named_color_function("SunsetColors", 0.25 + 0.6 * scaled(n));
+            apply_named_color_function("SiennaTones", 0.4 + 0.4 * scaled(n));
           (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0)
         }
       };

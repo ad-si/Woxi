@@ -300,6 +300,8 @@ struct DensityContourOptions {
   /// `MeshFunctions -> {f1, …}`: the functions whose level curves the
   /// mesh lines are. Empty means the coordinates themselves.
   mesh_functions: Vec<Expr>,
+  /// `MeshStyle -> style`: how the mesh lines are drawn.
+  mesh_style: Option<crate::functions::plot::SeriesStyle>,
   /// `ContourStyle -> {Thick, Blue}`: how the contour lines are drawn.
   /// `None` keeps the default thin dark-grey line.
   contour_style: Option<crate::functions::plot::SeriesStyle>,
@@ -504,6 +506,7 @@ fn parse_density_contour_options(
   let mut contour_shading_colors = Vec::new();
   let mut mesh: Option<usize> = None;
   let mut mesh_functions: Vec<Expr> = Vec::new();
+  let mut mesh_style = None;
   let mut contour_style = None;
   let mut contour_styles = Vec::new();
   let mut boundary_style = None;
@@ -614,6 +617,10 @@ fn parse_density_contour_options(
             _ => {}
           }
         }
+        "MeshStyle" => {
+          mesh_style =
+            crate::functions::plot::parse_style_directives(replacement);
+        }
         "ContourStyle" => {
           contour_style =
             crate::functions::plot::parse_style_directives(replacement);
@@ -681,6 +688,7 @@ fn parse_density_contour_options(
     contour_shading_colors,
     mesh,
     mesh_functions,
+    mesh_style,
     contour_style,
     contour_styles,
     boundary_style,
@@ -726,6 +734,36 @@ impl DensityContourOptions {
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64, String) {
     self.contour_stroke_for(self.contour_style.as_ref())
+  }
+
+  /// `(color, weight, extra attributes)` of the mesh lines: `MeshStyle`, or
+  /// Wolfram's default `Directive[Opacity[0.3], GrayLevel[0]]`.
+  fn mesh_stroke(&self) -> (String, f64, String) {
+    let points = |t: f64| t * 1000.0 / self.svg_width.max(1) as f64;
+    let style = self.mesh_style.as_ref();
+    let color = style.and_then(|s| s.color).map_or_else(
+      || "#000000".to_string(),
+      super::graphics::Color::to_svg_rgb,
+    );
+    let weight = points(style.and_then(|s| s.thickness).unwrap_or(1.0));
+    let opacity = style.and_then(|s| s.opacity).unwrap_or(
+      if style.is_some_and(|s| s.color.is_some()) {
+        1.0
+      } else {
+        0.3
+      },
+    );
+    let mut attrs = if opacity < 1.0 {
+      format!(" stroke-opacity=\"{opacity}\"")
+    } else {
+      String::new()
+    };
+    attrs.push_str(&contour_dash_attr(
+      style,
+      self.svg_width * RESOLUTION_SCALE,
+      self.svg_width,
+    ));
+    (color, weight, attrs)
   }
 
   /// [`Self::contour_stroke`] for a given style.
@@ -2791,6 +2829,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_min, y_max),
     &grid,
   );
+  let (mesh_color, mesh_weight, mesh_attrs) = opts.mesh_stroke();
   for mesh_grid in &mesh_grids {
     render_contour_lines_styled(
       &mut svg,
@@ -2801,9 +2840,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_w / FIELD_GRID as f64,
       area.plot_h / FIELD_GRID as f64,
       area.render_width,
-      "#b0b0b0",
-      0.4,
-      "",
+      &mesh_color,
+      mesh_weight,
+      &mesh_attrs,
     );
   }
   push_field_frame(&mut svg, &area, &opts);
@@ -3236,6 +3275,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Mesh lines sit under the contours: they are the level curves of the
   // mesh functions (the coordinates themselves by default), so the same
   // marching squares draw them.
+  let (mesh_color, mesh_weight, mesh_attrs) = opts.mesh_stroke();
   for mesh_grid in &mesh_grids {
     render_contour_lines_styled(
       &mut svg,
@@ -3246,9 +3286,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cell_w,
       cell_h,
       area.render_width,
-      "#b0b0b0",
-      0.4,
-      "",
+      &mesh_color,
+      mesh_weight,
+      &mesh_attrs,
     );
   }
   let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
@@ -8108,7 +8148,7 @@ fn evaluate_complex_at(
 /// The LAB stops of Wolfram's cyclic `"MidShiftBalancedHue"` gradient
 /// (from `ColorData["MidShiftBalancedHue", "BlendArgument"]`): the colour
 /// `ComplexPlot` gives the argument of `f`, rescaled from `{-π, π}`.
-const MID_SHIFT_BALANCED_HUE: [(f64, f64, f64); 11] = [
+pub(crate) const MID_SHIFT_BALANCED_HUE: [(f64, f64, f64); 11] = [
   (
     0.696_834_353_860_575_7,
     -0.338_939_529_841_170_7,
