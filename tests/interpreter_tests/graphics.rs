@@ -46223,4 +46223,18 @@ mod plot_content_regressions {
     assert!(svg.contains(">sin(2"));
     assert!(!svg.contains("Sin["));
   }
+
+  /// `Show[Plot[…, PlotRange -> {y0, y1}], PolarPlot[…], …]` keeps the first
+  /// plot's domain horizontally: a later layer that runs far off (a polar
+  /// curve near a pole) must not stretch the x axis to its extent.
+  #[test]
+  fn show_plot_with_y_range_keeps_first_plot_domain() {
+    let svg = export_svg(
+      "Show[Plot[2, {x, -6, 6}, PlotRange -> {-5, 5}], \
+       PolarPlot[2 Cot[u], {u, 0.0001, 1}, PlotStyle -> Red], \
+       Graphics[{Point[{1, 1}]}]]",
+    );
+    assert!(svg.contains(">6</text>") && svg.contains(">-6</text>"));
+    assert!(!svg.contains(">5000</text>") && !svg.contains(">20000</text>"));
+  }
 }

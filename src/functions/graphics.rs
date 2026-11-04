@@ -18469,9 +18469,23 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && !is_axis_range_spec(&items[1])
           && parse_range_spec(replacement).is_some()
         {
-          **replacement = Expr::List(
-            vec![id_expr("All"), replacement.as_ref().clone()].into(),
-          );
+          // The horizontal extent is the first plot's own domain (what
+          // Wolfram reports as `Full`), so a later layer reaching far
+          // beyond it — a `PolarPlot` near a pole — cannot widen it.
+          let x_extent = match plot_sources.first() {
+            Some(ps)
+              if ps.x_range.0.is_finite()
+                && ps.x_range.1.is_finite()
+                && ps.x_range.0 < ps.x_range.1 =>
+            {
+              Expr::List(
+                vec![Expr::Real(ps.x_range.0), Expr::Real(ps.x_range.1)].into(),
+              )
+            }
+            _ => id_expr("All"),
+          };
+          **replacement =
+            Expr::List(vec![x_extent, replacement.as_ref().clone()].into());
         }
         if let Expr::Rule {
           pattern,
