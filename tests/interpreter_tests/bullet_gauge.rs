@@ -67,3 +67,15 @@ fn bars_markers_and_bands_as_fractions() {
     "{RGBColor[0.5356156238679548, 0.73, 0.1971]}"
   );
 }
+
+/// Regression: the scale's ticks and labels sit at `Scaled`/`Offset`
+/// positions, which the renderer dropped, so the SVG had no scale labels.
+#[test]
+fn bullet_gauge_draws_its_scale_labels() {
+  let svg =
+    interpret("ExportString[BulletGauge[70, 80, {0, 50, 75, 100}], \"SVG\"]")
+      .unwrap();
+  for label in ["0", "20", "40", "60", "80", "100"] {
+    assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+  }
+}
