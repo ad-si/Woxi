@@ -16101,6 +16101,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `LabelingFunction` also receives the element position (`#2`) and
+    /// `{{i, j}, {chart label}}` (`#3`). Regression: only `#1` was supplied,
+    /// so `#3[[2, 1]]` was drawn literally under every bar.
+    #[test]
+    fn bar_chart_labeling_function_gets_position_and_label() {
+      let svg = export_svg(
+        "BarChart[{3, 5}, ChartLabels -> {\"p\", \"q\"}, \
+         LabelingFunction -> (Placed[#3[[2, 1]], Center] &)]",
+      );
+      assert!(!svg.contains("#3"), "{svg}");
+      assert!(svg.matches(">p</text>").count() >= 2, "{svg}");
+      let svg = export_svg(
+        "BarChart[{3, 5}, LabelingFunction -> (Placed[#2[[2]], Center] &)]",
+      );
+      assert!(
+        svg.contains(">1</text>") && svg.contains(">2</text>"),
+        "{svg}"
+      );
+    }
+
     /// `Around[v, δ]` data draws a bar of height `v` with an error bar.
     /// Regression: the chart was empty.
     #[test]

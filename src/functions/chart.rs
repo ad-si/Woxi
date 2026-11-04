@@ -3313,8 +3313,17 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bar_labels: Vec<String> = match &opts.labeling_function {
     Some(func) => groups
       .iter()
-      .flat_map(|g| g.iter())
-      .map(|&v| apply_labeling_function(func, v).unwrap_or_default())
+      .enumerate()
+      .flat_map(|(gi, g)| g.iter().enumerate().map(move |(bi, &v)| (gi, bi, v)))
+      .enumerate()
+      .map(|(k, (gi, bi, v))| {
+        let meta = LabelMeta {
+          group: gi + 1,
+          index: bi + 1,
+          label: opts.chart_labels.get(k).map(|l| l.text.as_str()),
+        };
+        apply_labeling_function(func, v, Some(meta)).unwrap_or_default()
+      })
       .collect(),
     None => Vec::new(),
   };
@@ -3325,7 +3334,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if groups
         .iter()
         .flat_map(|g| g.iter())
-        .filter_map(|&v| labeling_function_label(func, v))
+        .filter_map(|&v| labeling_function_label(func, v, None))
         .any(|(_, pos)| pos.as_deref() == Some("Above")) =>
     {
       crate::functions::plot::BarLabelPlacement::Above
@@ -4384,8 +4393,12 @@ fn bar_chart_structure(
 /// string. Handles bare functions (`Round[#, 0.01] &`) and the `Placed[expr,
 /// position]` wrapper (the position only affects placement, which a bar
 /// chart fixes at the bar end, so only `expr` matters here).
-fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
-  labeling_function_label(func, value).map(|(text, _)| text)
+fn apply_labeling_function(
+  func: &Expr,
+  value: f64,
+  meta: Option<LabelMeta<'_>>,
+) -> Option<String> {
+  labeling_function_label(func, value, meta).map(|(text, _)| text)
 }
 
 /// Apply a `LabelingFunction` to a single value, returning the display string
@@ -4393,9 +4406,19 @@ fn apply_labeling_function(func: &Expr, value: f64) -> Option<String> {
 /// (`None` when the function returns a bare expression). The position is a
 /// string for the named chart placements (`"RadialCallout"`) and a symbol
 /// name for the symbolic ones (`Center`, `Above`).
+/// Position and chart label of one element, handed to a `LabelingFunction`
+/// as its 2nd (`{i, j}`) and 3rd (`{{i, j}, {label}}`) arguments.
+#[derive(Clone, Copy)]
+struct LabelMeta<'a> {
+  group: usize,
+  index: usize,
+  label: Option<&'a str>,
+}
+
 fn labeling_function_label(
   func: &Expr,
   value: f64,
+  meta: Option<LabelMeta<'_>>,
 ) -> Option<(String, Option<String>)> {
   // A bare position (`LabelingFunction -> Above`) labels each element
   // with its value, set at that position.
@@ -4420,11 +4443,29 @@ fn labeling_function_label(
     let f = Expr::Function {
       body: Box::new(placed),
     };
-    return labeling_function_label(&f, value);
+    return labeling_function_label(&f, value, meta);
   }
   let call = Expr::CurriedCall {
     func: Box::new(func.clone()),
-    args: vec![Expr::Real(value)],
+    args: {
+      let mut args = vec![Expr::Real(value)];
+      if let Some(m) = meta {
+        let pos = Expr::List(
+          vec![
+            Expr::Integer(m.group as i128),
+            Expr::Integer(m.index as i128),
+          ]
+          .into(),
+        );
+        let labels = m
+          .label
+          .map(|l| vec![Expr::String(l.to_string())])
+          .unwrap_or_default();
+        args.push(pos.clone());
+        args.push(Expr::List(vec![pos, Expr::List(labels.into())].into()));
+      }
+      args
+    },
   };
   let result = evaluate_expr_to_expr(&call).ok()?;
   let (inner, placement) = match &result {
@@ -4666,7 +4707,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .map(|row| {
           row
             .iter()
-            .map(|&v| labeling_function_label(func, v))
+            .map(|&v| labeling_function_label(func, v, None))
             .collect()
         })
         .collect(),
