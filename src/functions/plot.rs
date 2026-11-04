@@ -11341,21 +11341,9 @@ pub(crate) fn parse_frame_edge_styles(
     }
   }
 }
-/// Create a plotters chart with axes drawn, returning the SVG and coordinate info.
-/// Callers can then append custom SVG elements using the coordinate transform.
-pub(crate) fn generate_axes_only(
-  x_range: (f64, f64),
-  y_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
-  full_width: bool,
-) -> Result<PlotArea, InterpreterError> {
-  generate_axes_only_opts(
-    x_range, y_range, svg_width, svg_height, full_width, None, None,
-  )
-}
-
-/// Like `generate_axes_only` but with custom x-axis tick positions (tick marks only, no labels).
+/// Create a plotters chart with axes drawn, returning the SVG and coordinate
+/// info; callers can then append custom SVG elements using the coordinate
+/// transform. Optionally with custom x-axis tick positions (tick marks only, no labels).
 /// When `x_tick_positions` is `Some`, only those positions get tick marks on the x-axis.
 /// When `margins` is `Some`, overrides the default margins for top, x_label_area, and y_label_area.
 pub(crate) fn generate_axes_only_opts(

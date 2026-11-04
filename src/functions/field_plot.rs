@@ -7,9 +7,8 @@ use crate::functions::math_ast::{
   build_complex_float_expr, try_eval_to_f64, try_extract_complex_f64,
 };
 use crate::functions::plot::{
-  DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy, generate_axes_only,
-  parse_image_size, parse_iterator, plot_theme, rewrite_svg_header,
-  substitute_var,
+  DEFAULT_WIDTH, RESOLUTION_SCALE, evaluate_at_xy, parse_image_size,
+  parse_iterator, plot_theme, rewrite_svg_header, substitute_var,
 };
 
 const FIELD_GRID: usize = 100;
@@ -4397,14 +4396,32 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[xvar.as_str(), yvar.as_str()],
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
-  let epilog = parse_vector_plot_epilog(args, 3);
-  let prolog = parse_overlay_primitives(args, 3, "Prolog");
-  let plot_label = parse_field_plot_label(args, 3);
+  render_sampled_vector_plot(
+    args,
+    3,
+    (x_min, x_max),
+    (y_min, y_max),
+    &|x, y| evaluate_vector(body, &xvar, &yvar, x, y),
+  )
+}
 
-  let arrow_style = parse_vector_arrow_style(args, 3);
+/// The vector plot of the field `field_at` over the given ranges, sampled
+/// on `VectorPlot`'s grid, with the options among `args[start..]`.
+fn render_sampled_vector_plot(
+  args: &[Expr],
+  start: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+) -> Result<Expr, InterpreterError> {
+  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
+  let epilog = parse_vector_plot_epilog(args, start);
+  let prolog = parse_overlay_primitives(args, start, "Prolog");
+  let plot_label = parse_field_plot_label(args, start);
+
+  let arrow_style = parse_vector_arrow_style(args, start);
   // `VectorPoints -> n` samples n points across each axis.
-  let grid = parse_vector_points(args, 3).map_or(VECTOR_GRID, |n| n - 1);
+  let grid = parse_vector_points(args, start).map_or(VECTOR_GRID, |n| n - 1);
   let x_step = (x_max - x_min) / grid as f64;
   let y_step = (y_max - y_min) / grid as f64;
 
@@ -4415,7 +4432,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let x = x_min + i as f64 * x_step;
     for j in 0..=grid {
       let y = y_min + j as f64 * y_step;
-      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
+      if let Some((vx, vy)) = field_at(x, y) {
         let mag = (vx * vx + vy * vy).sqrt();
         max_mag = max_mag.max(mag);
         vectors.push((x, y, vx, vy, mag));
@@ -4479,99 +4496,207 @@ fn as_xy_pair(expr: &Expr) -> Option<(f64, f64)> {
   Some((x, y))
 }
 
-/// ListVectorPlot[{{{x1, y1}, {vx1, vy1}}, {{x2, y2}, {vx2, vy2}}, ...}]
+/// The `(x, y, vx, vy)` samples of the data of a `ListVectorPlot` /
+/// `ListStreamPlot`: either `{{{x, y}, {vx, vy}}, …}` or an array of
+/// vectors `{{v11, v12, …}, …}`, whose entry `v[[i, j]]` sits at
+/// `{i, j}`.
+fn parse_vector_field_data(data: &Expr) -> Vec<(f64, f64, f64, f64)> {
+  let Expr::List(rows) = data else {
+    return Vec::new();
+  };
+  let pair_row = |row: &Expr| -> Option<(f64, f64, f64, f64)> {
+    let Expr::List(pair) = row else { return None };
+    if pair.len() != 2 {
+      return None;
+    }
+    let (x, y) = as_xy_pair(&pair[0])?;
+    let (vx, vy) = as_xy_pair(&pair[1])?;
+    Some((x, y, vx, vy))
+  };
+  // `{{{x, y}, {vx, vy}}, …}` (dimensions {n, 2, 2}) pairs each
+  // position with its vector; any other n × m array holds vectors.
+  if rows.iter().all(|row| pair_row(row).is_some()) {
+    return rows.iter().filter_map(pair_row).collect();
+  }
+  let mut out = Vec::new();
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(items) = row else { continue };
+    for (j, v) in items.iter().enumerate() {
+      if let Some((vx, vy)) = as_xy_pair(v) {
+        out.push(((i + 1) as f64, (j + 1) as f64, vx, vy));
+      }
+    }
+  }
+  out
+}
+
+/// A vector field known at scattered points, interpolated linearly over
+/// their Delaunay triangulation (undefined outside the convex hull).
+struct ScatteredVectorField {
+  points: Vec<[f64; 2]>,
+  values: Vec<(f64, f64)>,
+  triangles: Vec<[usize; 3]>,
+  /// Bucket grid over the bounding box: the triangles overlapping each cell.
+  buckets: Vec<Vec<usize>>,
+  cells: usize,
+  bounds: (f64, f64, f64, f64),
+}
+
+impl ScatteredVectorField {
+  fn new(samples: &[(f64, f64, f64, f64)]) -> Option<Self> {
+    let points: Vec<[f64; 2]> = samples.iter().map(|s| [s.0, s.1]).collect();
+    let values = samples.iter().map(|s| (s.2, s.3)).collect();
+    let triangles = crate::functions::delaunay::triangulate(&points)?;
+    if triangles.is_empty() {
+      return None;
+    }
+    let bounds = points.iter().fold(
+      (
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+      ),
+      |(a, b, c, d), p| (a.min(p[0]), b.max(p[0]), c.min(p[1]), d.max(p[1])),
+    );
+    let cells = ((triangles.len() as f64).sqrt().ceil() as usize).max(1);
+    let mut field = Self {
+      points,
+      values,
+      triangles,
+      buckets: vec![Vec::new(); cells * cells],
+      cells,
+      bounds,
+    };
+    for (t, tri) in field.triangles.iter().enumerate() {
+      let (mut lo, mut hi) = ((usize::MAX, usize::MAX), (0, 0));
+      for &v in tri {
+        let c = field.cell_of(field.points[v][0], field.points[v][1]);
+        lo = (lo.0.min(c.0), lo.1.min(c.1));
+        hi = (hi.0.max(c.0), hi.1.max(c.1));
+      }
+      for i in lo.0..=hi.0 {
+        for j in lo.1..=hi.1 {
+          field.buckets[i * cells + j].push(t);
+        }
+      }
+    }
+    Some(field)
+  }
+
+  fn cell_of(&self, x: f64, y: f64) -> (usize, usize) {
+    let (x0, x1, y0, y1) = self.bounds;
+    let n = self.cells as f64;
+    let along = |v: f64, lo: f64, hi: f64| {
+      if hi > lo {
+        (((v - lo) / (hi - lo) * n).floor().max(0.0) as usize)
+          .min(self.cells - 1)
+      } else {
+        0
+      }
+    };
+    (along(x, x0, x1), along(y, y0, y1))
+  }
+
+  fn at(&self, x: f64, y: f64) -> Option<(f64, f64)> {
+    let (x0, x1, y0, y1) = self.bounds;
+    let eps = 1e-9 * ((x1 - x0) + (y1 - y0)).max(1e-300);
+    if x < x0 - eps || x > x1 + eps || y < y0 - eps || y > y1 + eps {
+      return None;
+    }
+    let (i, j) = self.cell_of(x, y);
+    for &t in &self.buckets[i * self.cells + j] {
+      let [a, b, c] = self.triangles[t];
+      let (pa, pb, pc) = (self.points[a], self.points[b], self.points[c]);
+      let det =
+        (pb[1] - pc[1]) * (pa[0] - pc[0]) + (pc[0] - pb[0]) * (pa[1] - pc[1]);
+      if det.abs() < 1e-300 {
+        continue;
+      }
+      let l1 =
+        ((pb[1] - pc[1]) * (x - pc[0]) + (pc[0] - pb[0]) * (y - pc[1])) / det;
+      let l2 =
+        ((pc[1] - pa[1]) * (x - pc[0]) + (pa[0] - pc[0]) * (y - pc[1])) / det;
+      let l3 = 1.0 - l1 - l2;
+      let tol = -1e-9;
+      if l1 >= tol && l2 >= tol && l3 >= tol {
+        let (va, vb, vc) = (self.values[a], self.values[b], self.values[c]);
+        return Some((
+          l1 * va.0 + l2 * vb.0 + l3 * vc.0,
+          l1 * va.1 + l2 * vb.1 + l3 * vc.1,
+        ));
+      }
+    }
+    None
+  }
+}
+
+/// The data range of vector-field samples, a degenerate side widened by
+/// one unit on either end so the axes aren't empty.
+fn vector_data_ranges(
+  samples: &[(f64, f64, f64, f64)],
+) -> ((f64, f64), (f64, f64)) {
+  let (mut x0, mut x1, mut y0, mut y1) = samples.iter().fold(
+    (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ),
+    |(a, b, c, d), s| (a.min(s.0), b.max(s.0), c.min(s.1), d.max(s.1)),
+  );
+  if !x0.is_finite() {
+    (x0, x1, y0, y1) = (0.0, 1.0, 0.0, 1.0);
+  }
+  if (x1 - x0).abs() < 1e-12 {
+    x0 -= 1.0;
+    x1 += 1.0;
+  }
+  if (y1 - y0).abs() < 1e-12 {
+    y0 -= 1.0;
+    y1 += 1.0;
+  }
+  ((x0, x1), (y0, y1))
+}
+
+/// ListVectorPlot[{{{x1, y1}, {vx1, vy1}}, …}] or ListVectorPlot[array]
 ///
-/// Draws arrows from literal `{position, vector}` data, rather than sampling
-/// a symbolic field over a grid the way `VectorPlot` does. This is also the
-/// modern name for the legacy `VectorFieldPlots\`ListVectorFieldPlot`, whose
-/// calls are normalized to `ListVectorPlot` before dispatch (see
-/// `evaluate_function_call_ast`) since the two take identical data.
+/// As in the Wolfram Language, the data is interpolated linearly (over
+/// its Delaunay triangulation) and the field drawn the way `VectorPlot`
+/// draws it, on a regular grid over the data's range; no arrows are drawn
+/// outside the data's convex hull.
 pub fn list_vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
-  let Expr::List(rows) = &data else {
+  let samples = parse_vector_field_data(&data);
+  if !matches!(data, Expr::List(_)) {
     return Err(InterpreterError::EvaluationError(
-      "ListVectorPlot: first argument must be a list of {position, vector} pairs"
-        .into(),
-    ));
-  };
-
-  let mut vectors = Vec::new();
-  let mut max_mag = 0.0_f64;
-  let (mut x_min, mut x_max, mut y_min, mut y_max) = (
-    f64::INFINITY,
-    f64::NEG_INFINITY,
-    f64::INFINITY,
-    f64::NEG_INFINITY,
-  );
-  for row in rows {
-    let Expr::List(pair) = row else { continue };
-    if pair.len() != 2 {
-      continue;
-    }
-    let Some((x, y)) = as_xy_pair(&pair[0]) else {
-      continue;
-    };
-    let Some((vx, vy)) = as_xy_pair(&pair[1]) else {
-      continue;
-    };
-    x_min = x_min.min(x);
-    x_max = x_max.max(x);
-    y_min = y_min.min(y);
-    y_max = y_max.max(y);
-    let mag = (vx * vx + vy * vy).sqrt();
-    max_mag = max_mag.max(mag);
-    vectors.push((x, y, vx, vy, mag));
-  }
-
-  if vectors.is_empty() || !x_min.is_finite() || !y_min.is_finite() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+      "ListVectorPlot: first argument must be vector field data".into(),
     ));
   }
-  // A single row/column of data (or all-equal coordinates) has zero span;
-  // pad it so the axes aren't degenerate.
-  if (x_max - x_min).abs() < 1e-12 {
-    x_min -= 1.0;
-    x_max += 1.0;
-  }
-  if (y_max - y_min).abs() < 1e-12 {
-    y_min -= 1.0;
-    y_max += 1.0;
-  }
+  let (x_range, y_range) = vector_data_ranges(&samples);
+  let field = ScatteredVectorField::new(&samples);
+  render_sampled_vector_plot(args, 1, x_range, y_range, &|x, y| {
+    field.as_ref().and_then(|f| f.at(x, y))
+  })
+}
 
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
-  let mut area = generate_axes_only(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-  )?;
-  let mut svg = std::mem::take(&mut area.svg);
-  if let Some(pos) = svg.rfind("</svg>") {
-    svg.truncate(pos);
+/// ListStreamPlot[{{{x1, y1}, {vx1, vy1}}, …}] or ListStreamPlot[array]
+///
+/// The data is interpolated as in `ListVectorPlot` and its streamlines are
+/// drawn the way `StreamPlot` draws them, over the data's range.
+pub fn list_stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  if !matches!(data, Expr::List(_)) {
+    return Err(InterpreterError::EvaluationError(
+      "ListStreamPlot: first argument must be vector field data".into(),
+    ));
   }
-
-  // Data points aren't laid out on a regular grid, so the arrow scale is
-  // based on the average spacing implied by the plot area and point count
-  // instead of `VectorPlot`'s fixed sampling grid.
-  let cell_size =
-    (area.plot_w * area.plot_h / vectors.len().max(1) as f64).sqrt();
-  let arrow_style = parse_vector_arrow_style(args, 1);
-  let primitives = render_vector_arrows(
-    &vectors,
-    max_mag,
-    cell_size,
-    &area,
-    &arrow_style,
-    &mut svg,
-  );
-
-  svg.push_str("</svg>");
-  Ok(crate::plot_result_with_structure(
-    svg,
-    call1("Graphics", Expr::List(primitives.into())),
-  ))
+  let samples = parse_vector_field_data(&data);
+  let (x_range, y_range) = vector_data_ranges(&samples);
+  let field = ScatteredVectorField::new(&samples);
+  render_stream_plot(args, 1, x_range, y_range, &|x, y| {
+    field.as_ref().and_then(|f| f.at(x, y))
+  })
 }
 
 /// StreamPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -4587,10 +4712,24 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[xvar.as_str(), yvar.as_str()],
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
-  let plot_label = parse_field_plot_label(args, 3);
-  let prolog = parse_overlay_primitives(args, 3, "Prolog");
-  let epilog = parse_overlay_primitives(args, 3, "Epilog");
+  render_stream_plot(args, 3, (x_min, x_max), (y_min, y_max), &|x, y| {
+    evaluate_vector(body, &xvar, &yvar, x, y)
+  })
+}
+
+/// The stream plot of the field `field_at` over the given ranges, with the
+/// options among `args[start..]`.
+fn render_stream_plot(
+  args: &[Expr],
+  start: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+) -> Result<Expr, InterpreterError> {
+  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
+  let plot_label = parse_field_plot_label(args, start);
+  let prolog = parse_overlay_primitives(args, start, "Prolog");
+  let epilog = parse_overlay_primitives(args, start, "Epilog");
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
   let margins = field_plot_label_margins(plot_label.as_ref());
@@ -4614,7 +4753,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let primitives =
-    stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
+    stream_primitives(field_at, (x_min, x_max), (y_min, y_max), &args[start..]);
   push_stream_svg(&mut svg, &primitives, &area);
 
   push_epilog_primitives(&mut svg, &area, &epilog);
@@ -4659,18 +4798,16 @@ fn rgb_color((r, g, b): (u8, u8, u8)) -> Expr {
 /// domain, as primitives in data coordinates: evenly spaced streamlines of
 /// the field `body`, each a run of arrows coloured by the flow speed, styled
 /// by the plot's `StreamPoints`, `StreamColorFunction`, `StreamStyle` and
-/// `RegionFunction` options among `args`.
+/// `RegionFunction` options among `options`.
 fn stream_primitives(
-  body: &Expr,
-  xvar: &str,
-  yvar: &str,
+  field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
-  args: &[Expr],
+  options: &[Expr],
 ) -> Vec<Expr> {
   // `StreamStyle -> color` paints every streamline alike; the default
   // cycles through the plot colours.
-  let stream_color = args.iter().skip(3).find_map(|a| match a {
+  let stream_color = options.iter().find_map(|a| match a {
     Expr::Rule {
       pattern,
       replacement,
@@ -4688,7 +4825,7 @@ fn stream_primitives(
 
   // `RegionFunction -> f` confines the streamlines: `f[x, y]` must hold at
   // every point drawn.
-  let region = args.iter().skip(3).find_map(|a| match a {
+  let region = options.iter().find_map(|a| match a {
     Expr::Rule {
       pattern,
       replacement,
@@ -4716,7 +4853,7 @@ fn stream_primitives(
   // around a cylinder — so the default sits between the two, and the named
   // and numeric settings keep Wolfram's proportions to it (`StreamPoints ->
   // n` grows as √n).
-  let lines_across = match option_rule(args, "StreamPoints") {
+  let lines_across = match option_rule(options, "StreamPoints") {
     Some(Expr::Identifier(s)) if s == "Coarse" => 11.0,
     Some(Expr::Identifier(s)) if s == "Medium" => 16.0,
     Some(Expr::Identifier(s)) if s == "Fine" => 26.0,
@@ -4729,11 +4866,7 @@ fn stream_primitives(
   // The field, sampled once over the plot and interpolated between nodes;
   // a node outside the `RegionFunction` holds no flow.
   let field = crate::functions::streamlines::SampledField::sample(
-    |x, y| {
-      in_region(x, y)
-        .then(|| evaluate_vector(body, xvar, yvar, x, y))
-        .flatten()
-    },
+    |x, y| in_region(x, y).then(|| field_at(x, y)).flatten(),
     (x_min, x_max),
     (y_min, y_max),
     64,
@@ -4786,7 +4919,7 @@ fn stream_primitives(
   // overrides a `StreamStyle` colour as in Wolfram. `StreamColorFunction ->
   // None` draws every streamline in the `StreamStyle` colour (or the first
   // plot colour); a gradient name or a function replaces the default one.
-  let color_function = option_rule(args, "StreamColorFunction");
+  let color_function = option_rule(options, "StreamColorFunction");
   let color_of = |speed: f64| -> (u8, u8, u8) {
     let t = if speed_max > speed_min {
       (speed - speed_min) / (speed_max - speed_min)
@@ -4959,8 +5092,12 @@ pub fn stream_density_plot_ast(
   );
 
   // Streamlines, drawn as in StreamPlot.
-  let primitives =
-    stream_primitives(body, &xvar, &yvar, (x_min, x_max), (y_min, y_max), args);
+  let primitives = stream_primitives(
+    &|x, y| evaluate_vector(body, &xvar, &yvar, x, y),
+    (x_min, x_max),
+    (y_min, y_max),
+    &args[3..],
+  );
   push_stream_svg(&mut svg, &primitives, &area);
 
   push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);

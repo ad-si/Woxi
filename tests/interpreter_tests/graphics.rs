@@ -14041,6 +14041,27 @@ mod plot3d {
       );
     }
 
+    // `ListPlot[{2 -> "a", …}]`: each `datum -> label` entry is a callout
+    // (it used to give an empty 0..1 frame).
+    #[test]
+    fn list_plot_rule_entries_are_callouts() {
+      let svg = export_svg(r#"ListPlot[{2 -> "a", 3 -> "b", 5 -> "c"}]"#);
+      for label in [">a<", ">b<", ">c<"] {
+        assert!(svg.contains(label), "missing {label}");
+      }
+      assert_eq!(svg.matches("<circle").count(), 3);
+    }
+
+    // Center steps are centred on their points and the markers sit on the
+    // data points, once each (not at both step ends).
+    #[test]
+    fn list_step_plot_center_markers_on_data_points() {
+      let svg = export_svg(
+        "ListStepPlot[{1, 3, 2, 5}, Center, PlotMarkers -> Automatic]",
+      );
+      assert_eq!(svg.matches("<circle").count(), 4);
+    }
+
     #[test]
     fn list_step_plot() {
       insta::assert_snapshot!(export_svg("ListStepPlot[{1, 3, 2, 4}]"));
@@ -19421,6 +19442,53 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // The array-of-vectors form puts `v[[i, j]]` at `{i, j}` and draws
+    // the interpolated field over the data range (it used to export an
+    // empty `<svg/>`).
+    #[test]
+    fn list_vector_plot_array_form_draws_arrows() {
+      let svg = export_svg(
+        "ListVectorPlot[Table[{y, -x}, {x, -2, 2, 0.4}, {y, -2, 2, 0.4}]]",
+      );
+      assert!(svg.matches("<line").count() + svg.matches("<path").count() > 50);
+      assert_eq!(
+        interpret(
+          "Length[Cases[ListVectorPlot[Table[{y, -x}, {x, -2, 2, 0.4}, \
+             {y, -2, 2, 0.4}]][[1]], _Arrow, Infinity]] > 100"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    // Too few points to interpolate (two points span no triangle): no
+    // arrows, as in the Wolfram Language.
+    #[test]
+    fn list_vector_plot_two_points_draws_nothing() {
+      assert_eq!(
+        interpret(
+          "Length[Cases[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}][[1]], \
+             _Arrow, Infinity]]"
+        )
+        .unwrap(),
+        "0"
+      );
+    }
+
+    #[test]
+    fn list_stream_plot_evaluates_to_streamlines() {
+      let code = "ListStreamPlot[Flatten[Table[{{x, y}, {y, Sin[x]}}, \
+                  {x, -3, 3, 0.5}, {y, -3, 3, 0.5}], 1]]";
+      assert_eq!(interpret(&format!("Head[{code}]")).unwrap(), "Graphics");
+      assert_eq!(
+        interpret(&format!(
+          "Length[Cases[{code}[[1]], _Arrow, Infinity]] > 10"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn list_vector_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -19439,8 +19507,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert_eq!(
         interpret(
-          "Length[Cases[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}}][[1]], \
-             _Line | _Arrow, Infinity]] > 0"
+          "Length[Cases[ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, \
+             {{0, 1}, {1, 1}}}][[1]], _Line | _Arrow, Infinity]] > 0"
         )
         .unwrap(),
         "True"

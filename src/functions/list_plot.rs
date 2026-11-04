@@ -387,10 +387,18 @@ pub fn strip_plot_data_display_wrapper(expr: &Expr) -> Expr {
 /// Strip display wrappers from a single list entry (a scalar, an `{x, y}`
 /// pair, or a nested series), recursing into inner lists so that
 /// `{1, Style[2, Red], 3}` keeps its numbers. `Callout` is kept as a
-/// `Labeled` so its label still draws.
+/// `Labeled` so its label still draws; an entry `datum -> label` is the
+/// same as `Callout[datum, label]`.
 fn canonicalize_element(e: &Expr) -> Expr {
   let e = strip_plot_data_display_wrapper(e);
   match &e {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => call(
+      "Labeled",
+      vec![canonicalize_element(pattern), replacement.as_ref().clone()],
+    ),
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
         "Callout" if args.len() >= 2 => call(
@@ -1036,6 +1044,8 @@ fn labels_are_callouts(data: &Expr) -> bool {
   fn has_callout(e: &Expr, depth: usize) -> bool {
     match e {
       Expr::FunctionCall { name, .. } if name == "Callout" => true,
+      // An entry `datum -> label` is a callout.
+      Expr::Rule { .. } if depth < 2 => true,
       Expr::List(items) if depth > 0 => {
         items.iter().any(|item| has_callout(item, depth - 1))
       }
@@ -1686,9 +1696,87 @@ fn log_safe_range(
   crate::functions::plot::fill_range(explicit, auto).unwrap_or(auto)
 }
 
+/// Where `ListStepPlot` puts each value's step relative to its data point.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum StepPosition {
+  /// The step starts at its point (the default).
+  Right,
+  /// The step ends at its point.
+  Left,
+  /// The step is centred on its point.
+  Center,
+}
+
+impl StepPosition {
+  fn parse(e: &Expr) -> Option<Self> {
+    match e {
+      Expr::Identifier(n) => match n.as_str() {
+        "Right" => Some(Self::Right),
+        "Left" => Some(Self::Left),
+        "Center" => Some(Self::Center),
+        _ => None,
+      },
+      Expr::List(items) if items.len() == 1 => Self::parse(&items[0]),
+      _ => None,
+    }
+  }
+}
+
+/// The staircase `ListStepPlot` draws through one series: each value is
+/// held over its own x interval, delimited by the neighbouring points
+/// (`Right`: up to the next point, `Left`: from the previous one,
+/// `Center`: between the midpoints). The open end steps reuse the width
+/// of the adjacent gap (half of it for `Center`); a lone point gets a
+/// unit step that lies on the opposite side, as in the Wolfram Language.
+fn positioned_step_curve(
+  series: &[(f64, f64)],
+  position: StepPosition,
+) -> Vec<(f64, f64)> {
+  let n = series.len();
+  if n == 0 {
+    return Vec::new();
+  }
+  let (x_first, x_last) = (series[0].0, series[n - 1].0);
+  let (gap_first, gap_last) = if n >= 2 {
+    (series[1].0 - x_first, x_last - series[n - 2].0)
+  } else {
+    (1.0, 1.0)
+  };
+  // The x interval of step `i`.
+  let interval = |i: usize| -> (f64, f64) {
+    let x = series[i].0;
+    let prev = if i > 0 {
+      series[i - 1].0
+    } else {
+      x - gap_first
+    };
+    let next = if i + 1 < n {
+      series[i + 1].0
+    } else {
+      x + gap_last
+    };
+    match (position, n) {
+      (StepPosition::Right, 1) => (x - 1.0, x),
+      (StepPosition::Left, 1) => (x, x + 1.0),
+      (StepPosition::Right, _) => (x, next),
+      (StepPosition::Left, _) => (prev, x),
+      (StepPosition::Center, _) => {
+        (f64::midpoint(prev, x), f64::midpoint(x, next))
+      }
+    }
+  };
+  let mut steps = Vec::with_capacity(2 * n);
+  for (i, &(_, y)) in series.iter().enumerate() {
+    let (a, b) = interval(i);
+    steps.push((a, y));
+    steps.push((b, y));
+  }
+  steps
+}
+
 /// Turn one series into the staircase that zero-order interpolation draws:
 /// each value is held until the next data point, where the curve jumps
-/// vertically (the same shape ListStepPlot draws).
+/// vertically (ListLinePlot's `InterpolationOrder -> 0`).
 fn step_curve(series: &[(f64, f64)]) -> Vec<(f64, f64)> {
   let mut steps = Vec::with_capacity(series.len() * 2);
   for (i, &(x, y)) in series.iter().enumerate() {
@@ -3090,9 +3178,18 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (all_series, labels) = parse_list_data_labeled(&data)?;
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
 
+  // `ListStepPlot[data, Left | Right | Center]` places the steps.
+  let position = args
+    .get(1)
+    .and_then(StepPosition::parse)
+    .unwrap_or(StepPosition::Right);
   // Transform each series into staircase coordinates
-  let step_series: Vec<Vec<(f64, f64)>> =
-    all_series.iter().map(|series| step_curve(series)).collect();
+  let step_series: Vec<Vec<(f64, f64)>> = all_series
+    .iter()
+    .map(|series| positioned_step_curve(series, position))
+    .collect();
+  // Markers and labels stay on the data points, not the step ends.
+  parsed.opts.data_points.clone_from(&all_series);
 
   if parsed.opts.plot_layout.is_some() && step_series.len() > 1 {
     return render_panel_layout(
@@ -3684,6 +3781,66 @@ mod tests {
 
   fn close(a: (f64, f64), b: (f64, f64)) -> bool {
     (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12
+  }
+
+  fn step_xs(series: &[(f64, f64)], position: StepPosition) -> Vec<f64> {
+    positioned_step_curve(series, position)
+      .iter()
+      .map(|p| p.0)
+      .collect()
+  }
+
+  // Step intervals as wolframscript's ListStepPlot Line points give them.
+  #[test]
+  fn step_curve_positions_match_wolfram() {
+    let data = values(&[1.0, 3.0, 2.0]);
+    assert_eq!(
+      step_xs(&data, StepPosition::Right),
+      vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0]
+    );
+    assert_eq!(
+      step_xs(&data, StepPosition::Left),
+      vec![0.0, 1.0, 1.0, 2.0, 2.0, 3.0]
+    );
+    assert_eq!(
+      step_xs(&data, StepPosition::Center),
+      vec![0.5, 1.5, 1.5, 2.5, 2.5, 3.5]
+    );
+    // Irregular x: the open end steps reuse the adjacent gap.
+    let uneven = vec![(1.0, 1.0), (2.0, 3.0), (4.0, 2.0), (7.0, 5.0)];
+    assert_eq!(
+      step_xs(&uneven, StepPosition::Right),
+      vec![1.0, 2.0, 2.0, 4.0, 4.0, 7.0, 7.0, 10.0]
+    );
+    assert_eq!(
+      step_xs(&uneven, StepPosition::Left),
+      vec![0.0, 1.0, 1.0, 2.0, 2.0, 4.0, 4.0, 7.0]
+    );
+    assert_eq!(
+      step_xs(&uneven, StepPosition::Center),
+      vec![0.5, 1.5, 1.5, 3.0, 3.0, 5.5, 5.5, 8.5]
+    );
+    // A lone point: a unit step on the side opposite the position.
+    let one = vec![(1.0, 5.0)];
+    assert_eq!(step_xs(&one, StepPosition::Right), vec![0.0, 1.0]);
+    assert_eq!(step_xs(&one, StepPosition::Left), vec![1.0, 2.0]);
+    assert_eq!(step_xs(&one, StepPosition::Center), vec![0.5, 1.5]);
+    let ys: Vec<f64> = positioned_step_curve(&data, StepPosition::Right)
+      .iter()
+      .map(|p| p.1)
+      .collect();
+    assert_eq!(ys, vec![1.0, 1.0, 3.0, 3.0, 2.0, 2.0]);
+  }
+
+  #[test]
+  fn step_position_parses_symbol_and_list() {
+    let id = |s: &str| Expr::Identifier(s.to_string());
+    assert_eq!(StepPosition::parse(&id("Left")), Some(StepPosition::Left));
+    assert_eq!(
+      StepPosition::parse(&Expr::List(vec![id("Center")].into())),
+      Some(StepPosition::Center)
+    );
+    assert_eq!(StepPosition::parse(&id("Top")), None);
   }
 
   // The joined InterpolationOrder curve is WL's uniform parametric

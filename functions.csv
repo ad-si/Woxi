@@ -2043,7 +2043,7 @@ RandomWord,"Generate random words (requires dictionary)",🚫,,10.3,2018
 NMaxValue,"Numerical maximum value optimization (numerical optimization)",✅,,7.0,2020
 UnitSimplify,"Simplify physical units (unit system)",🚫,,9.0,2020
 AirTemperatureData,"",🚫,,10.0,2024
-ListVectorPlot,"Creates a vector field plot from a list of {position vector} pairs",✅,pure,7.0,2024
+ListVectorPlot,"Creates a vector field plot from position-vector pairs or an array of vectors",✅,pure,7.0,2024
 OrderDistribution,"Order statistic distribution (sampled by RandomVariate)",✅,pure,8.0,2024
 TracePrint,"Print all sub-expressions used during an evaluation indented by depth",✅,effectful,2.0,2025
 Circumsphere,"Circumsphere of a simplex (computational geometry)",✅,pure,10.0,2026
@@ -2310,7 +2310,7 @@ DaubechiesWavelet,"Daubechies wavelet family of order n",✅,pure,8.0,2299
 HalfLine,"Geometric half-line primitive; drawn in Graphics and Graphics3D clipped to the plot range",✅,pure,10.0,2299
 PalindromeQ,"Tests if a string or list is a palindrome",✅,pure,10.3,2299
 GraphQ,"Test whether an expression is a valid Graph object",✅,1,8.0,2305
-ListStreamPlot,"stream visualization",🚫,None,7.0,2305
+ListStreamPlot,"Creates a streamline plot from vector field data (position-vector pairs or an array of vectors)",✅,pure,7.0,2305
 RandomSeeding,"random options",🚫,None,11.2,2305
 SemanticInterpretation,"natural language processing",🚫,None,10.0,2305
 ShowCellLabel,"notebook UI option",🚫,None,3.0,2305
