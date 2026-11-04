@@ -18222,6 +18222,21 @@ mod cases {
     assert_case(r#"ArgMax[-(x^2) + 4 x + 1, x]"#, r#"2"#);
   }
   #[test]
+  fn solve_product_with_sqrt_of_variable_stays_unevaluated() {
+    // A zero product holding a square root next to a transcendental factor
+    // used to re-enter Solve forever and hit $RecursionLimit.
+    assert_case(r#"Head[Solve[Sin[t] Sqrt[t + 2] == 0, t]]"#, r#"Solve"#);
+  }
+  #[test]
+  fn minimize_sqrt_of_trig_sum_finds_the_minimum() {
+    // The numeric critical-point search must sweep enough starting points
+    // to reach the true minimum, not just the first oscillation it lands on.
+    assert_case(
+      r#"First[Minimize[Sqrt[Cos[t]^2 + Sin[t]^2/4], t]]"#,
+      r#"1/2"#,
+    );
+  }
+  #[test]
   fn arg_min_unconstrained() {
     assert_case(r#"ArgMin[x^2 + 2 x + 5, x]"#, r#"-1"#);
   }
