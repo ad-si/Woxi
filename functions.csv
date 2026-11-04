@@ -142,7 +142,7 @@ Graphics,"Creates a 2D graphics object",✅,pure,1.0,72
 Transpose,"Transposes a matrix (list of lists)",✅,pure,1.0,73
 Module,"Scopes local variables with unique names",✅,pure,2.0,74
 Show,"Combines multiple graphics objects into a single display",✅,pure,1.0,75
-Entity,"Symbolic representation of a real-world entity",✅,pure,10.0,76
+Entity,"Symbolic representation of a real-world entity; built-in Planet and MinorPlanet entities answer SemimajorAxis, Eccentricity, OrbitPeriod and HelioCoordinates",✅,pure,10.0,76
 Sum,"Computes a sum over one or more ranges — accepts trailing options and gives a divergent sum a value under Regularization -> Dirichlet or Abel",✅,pure,1.0,77
 Product,"Computes the product of an expression over one or more ranges — accepts trailing options",✅,pure,1.0,376
 HoldComplete,"Holds arguments completely unevaluated",✅,pure,3.0,78

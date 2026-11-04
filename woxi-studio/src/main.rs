@@ -8683,6 +8683,30 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// self-authored, construct-equivalent example (invented names, curve
   /// formula and presets) — not any specific Demonstration's code, data or
   /// wording, which is copyrighted.
+  /// A Manipulate whose pickers hold planet `Entity` values and whose body
+  /// reads their orbital properties from the entity knowledge base must
+  /// build and draw the orbit.
+  #[test]
+  fn manipulate_with_planet_entity_picker_draws_orbit() {
+    let code = r#"Manipulate[
+      Module[{a, e, b},
+        a = QuantityMagnitude[body["SemimajorAxis"], "AstronomicalUnit"];
+        e = body["Eccentricity"];
+        b = a Sqrt[1 - e^2];
+        Graphics[Line[Table[{a Cos[t] - a e, b Sin[t]}, {t, 0, 2 Pi, 0.1}]],
+          Axes -> False]],
+      {{body, Entity["Planet", "Mars"], "body"},
+        {Entity["Planet", "Mercury"] -> "Mercury",
+         Entity["Planet", "Mars"] -> "Mars",
+         Entity["MinorPlanet", "Ceres"] -> "Ceres"}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the entity picker should build a ManipulateState");
+    assert_eq!(state.error, None, "got: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the orbit must render");
+  }
+
   #[test]
   fn demonstration_guided_switch_manipulate_combines_two_compiled_curves() {
     let code = r#"Manipulate[

@@ -552,6 +552,17 @@ fn resolve_entity_lookup(
   {
     return Ok(val);
   }
+  if matches!(type_name, "Planet" | "MinorPlanet")
+    && !is_type_registered(type_name)
+    && let Some(val) =
+      crate::functions::astronomy_ast::solar_system_body_property(
+        type_name,
+        entity_name,
+        property,
+      )
+  {
+    return Ok(val);
+  }
   if type_name == "Element"
     && !is_type_registered("Element")
     && let Some(val) =

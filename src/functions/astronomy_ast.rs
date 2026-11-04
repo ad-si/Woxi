@@ -1823,6 +1823,66 @@ pub fn astronomical_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Mean orbital elements of the minor planets the Entity knowledge base
+/// is asked about most: semi-major axis (AU) and eccentricity.
+const MINOR_PLANET_ELEMENTS: [(&str, f64, f64); 3] = [
+  ("Ceres", 2.769_165_2, 0.076_009_1),
+  ("Juno", 2.670_87, 0.256_41),
+  ("Pluto", 39.481_686_9, 0.248_807_66),
+];
+
+fn au_quantity(v: f64) -> Expr {
+  call(
+    "Quantity",
+    vec![Expr::Real(v), str_expr("AstronomicalUnit")],
+  )
+}
+
+/// Orbital properties of `Entity["Planet", name]` and
+/// `Entity["MinorPlanet", name]`: `"SemimajorAxis"`, `"Eccentricity"`,
+/// `"OrbitPeriod"` (Kepler's third law) and, for the major planets,
+/// `"HelioCoordinates"` (the two-body position now, in AU).
+pub fn solar_system_body_property(
+  type_name: &str,
+  name: &str,
+  property: &str,
+) -> Option<Expr> {
+  let (a, e) = match type_name {
+    "Planet" => {
+      let p = planet_by_name(name).filter(|p| p.name != "Pluto")?;
+      (p.a.0, p.e.0)
+    }
+    "MinorPlanet" => {
+      let (_, a, e) = MINOR_PLANET_ELEMENTS.iter().find(|m| m.0 == name)?;
+      (*a, *e)
+    }
+    _ => return None,
+  };
+  match property {
+    "SemimajorAxis" => Some(au_quantity(a)),
+    "Eccentricity" => Some(Expr::Real(e)),
+    "OrbitPeriod" => Some(call(
+      "Quantity",
+      vec![Expr::Real(a.powf(1.5)), str_expr("Years")],
+    )),
+    "HelioCoordinates" => {
+      let planet = planet_by_name(name)?;
+      let (x, y, z) =
+        planet_heliocentric_position_m(planet, jd_utc_to_jde(now_jd()));
+      let au_m = AU_KM * 1000.0;
+      Some(Expr::List(
+        vec![
+          au_quantity(x / au_m),
+          au_quantity(y / au_m),
+          au_quantity(z / au_m),
+        ]
+        .into(),
+      ))
+    }
+    _ => None,
+  }
+}
+
 // ─── Reference tests against Meeus's worked examples ────────────────
 
 #[cfg(test)]

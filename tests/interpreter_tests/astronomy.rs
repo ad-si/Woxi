@@ -386,4 +386,36 @@ mod geo_location {
        0.]]"
     );
   }
+
+  #[test]
+  fn planet_entity_orbital_properties() {
+    assert_eq!(
+      interpret(r#"Entity["Planet", "Mars"]["Eccentricity"]"#).unwrap(),
+      "0.09340065"
+    );
+    assert_eq!(
+      interpret(r#"Entity["Planet", "Mars"]["SemimajorAxis"]"#).unwrap(),
+      "Quantity[1.52367935, AstronomicalUnit]"
+    );
+    assert_eq!(
+      interpret(
+        r#"EntityValue[Entity["MinorPlanet", "Ceres"], "SemimajorAxis"]"#
+      )
+      .unwrap(),
+      "Quantity[2.7691652, AstronomicalUnit]"
+    );
+    // Kepler's third law gives the period in years.
+    assert_eq!(
+      interpret(
+        r#"Round[QuantityMagnitude[Entity["Planet", "Jupiter"]["OrbitPeriod"], "Years"], 0.1]"#
+      )
+      .unwrap(),
+      "11.9"
+    );
+    assert_eq!(
+      interpret(r#"Length[Entity["Planet", "Earth"]["HelioCoordinates"]]"#)
+        .unwrap(),
+      "3"
+    );
+  }
 }
