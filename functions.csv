@@ -3601,7 +3601,7 @@ GeoScaleBar,"",🚫,,10.0,3656
 HTTPResponse,"Symbolic HTTP response object produced by URLRead; stays unevaluated",✅,unevaluated,10.0,3656
 HilbertFilter,"",,,9.0,3656
 HoytDistribution,"Hoyt fading amplitude distribution",✅,pure,8.0,3656
-LCHColor,"",,,10.0,3656
+LCHColor,"Represents a color in the LCH color space",✅,pure,10.0,3656
 LocationEquivalenceTest,"",,,8.0,3656
 NearestFunction,"Nearest-element function object (applying it runs the Nearest it records)",✅,pure,6.0,3656
 PairedZTest,"",,,8.0,3656
@@ -3662,7 +3662,7 @@ GrammarToken,"",🚫,,10.0,3717
 ImageForestingComponents,"",🚫,,8.0,3717
 KarhunenLoeveDecomposition,"",,,8.0,3717
 KuiperTest,"Kuiper goodness-of-fit test",✅,pure,8.0,3717
-LUVColor,"",,,10.0,3717
+LUVColor,"Represents a color in the LUV color space",✅,pure,10.0,3717
 LeastSquaresFilterKernel,"",,,9.0,3717
 LessFullEqual,"Operator without built-in meaning displayed infix",✅,pure,3.0,3717
 MorphologicalEulerNumber,"Number of foreground components minus holes of a thresholded image",✅,pure,7.0,3717

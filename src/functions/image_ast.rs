@@ -4980,14 +4980,22 @@ pub(crate) fn color_directive_to_rgb(
       };
       Some((r, g, b, alpha))
     }
-    // `LABColor[l, a, b(, alpha)]` (scaled by 1/100, D50) and
+    // `LABColor[l, a, b(, alpha)]` (scaled by 1/100, D50),
+    // `LCHColor[l, c, h(, alpha)]` (its polar form, `h` in turns),
+    // `LUVColor[l, u, v(, alpha)]` (scaled by 1/100, D50) and
     // `XYZColor[x, y, z(, alpha)]` (D50), back to sRGB.
-    "LABColor" | "XYZColor" if args.len() == 3 || args.len() == 4 => {
+    "LABColor" | "LCHColor" | "LUVColor" | "XYZColor"
+      if args.len() == 3 || args.len() == 4 =>
+    {
       let (p, q, t) = (to_f(&args[0])?, to_f(&args[1])?, to_f(&args[2])?);
-      let (r, g, b) = if name == "LABColor" {
-        lab_to_srgb(p, q, t)
-      } else {
-        xyz_d50_to_srgb(p, q, t)
+      let (r, g, b) = match name.as_str() {
+        "LABColor" => lab_to_srgb(p, q, t),
+        "LCHColor" => {
+          let angle = std::f64::consts::TAU * t;
+          lab_to_srgb(p, q * angle.cos(), q * angle.sin())
+        }
+        "LUVColor" => luv_to_srgb(p, q, t),
+        _ => xyz_d50_to_srgb(p, q, t),
       };
       let alpha = if args.len() == 4 {
         Some(to_f(&args[3])?)
@@ -5222,7 +5230,9 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(call("GrayLevel", gargs));
       }
       "RGB" => {
-        let mut rargs = vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)];
+        // A color outside the sRGB gamut clips to it.
+        let clip = |c: f64| Expr::Real(c.clamp(0.0, 1.0));
+        let mut rargs = vec![clip(r), clip(g), clip(b)];
         if let Some(a) = alpha {
           rargs.push(Expr::Real(a));
         }
@@ -13731,6 +13741,29 @@ fn lab_to_srgb(l: f64, a: f64, b: f64) -> (f64, f64, f64) {
   let x = 0.9642119944211995 * lab_f_inverse(fx);
   let y = lab_f_inverse(fy);
   let z = 0.8251882845188289 * lab_f_inverse(fz);
+  xyz_d50_to_srgb(x, y, z)
+}
+
+/// Wolfram-style scaled LUV (each component divided by 100, D50 white) →
+/// sRGB.
+fn luv_to_srgb(l: f64, u: f64, v: f64) -> (f64, f64, f64) {
+  let (l, u, v) = (100.0 * l, 100.0 * u, 100.0 * v);
+  if l <= 0.0 {
+    return xyz_d50_to_srgb(0.0, 0.0, 0.0);
+  }
+  const KAPPA: f64 = 24389.0 / 27.0;
+  let y = if l > 8.0 {
+    ((l + 16.0) / 116.0).powi(3)
+  } else {
+    l / KAPPA
+  };
+  let (xn, zn) = (0.9642119944211995, 0.8251882845188289);
+  let denom = xn + 15.0 + 3.0 * zn;
+  let (un, vn) = (4.0 * xn / denom, 9.0 / denom);
+  let up = u / (13.0 * l) + un;
+  let vp = v / (13.0 * l) + vn;
+  let x = y * 9.0 * up / (4.0 * vp);
+  let z = y * (12.0 - 3.0 * up - 20.0 * vp) / (4.0 * vp);
   xyz_d50_to_srgb(x, y, z)
 }
 

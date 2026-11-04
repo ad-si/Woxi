@@ -174,7 +174,9 @@ fn region_primitives(reg: &Expr) -> Option<(Vec<Expr>, bool)> {
     // existing conversion, which brings its own edge/face styling.
     "MeshRegion" if args.len() == 2 => {
       crate::functions::graphics::mesh_region_to_graphics_prims(
-        &args[0], &args[1],
+        &args[0],
+        &args[1],
+        &[],
       )
       .map(|prims| (prims, false))
     }

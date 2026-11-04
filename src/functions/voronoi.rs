@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::*;
-use crate::functions::graphics::Color;
 
 pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
@@ -180,8 +179,11 @@ pub fn voronoi_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ordered.iter().map(|&ti| circumcenters[ti]).collect();
 
     let cell_polygon = if is_closed {
-      // Interior cell - already a closed polygon
-      cc
+      // Interior cell - already a closed polygon, but its corners may still
+      // lie past the bounding region.
+      dedup_polygon(clip_polygon_to_bbox(
+        &cc, bb_xmin, bb_xmax, bb_ymin, bb_ymax,
+      ))
     } else {
       // Hull cell - extend the two end edges to far away, then clip
       let far = dx.max(dy).max(1.0) * 100.0;
@@ -863,152 +865,6 @@ fn clip_polygon_to_bbox(
       (ax + t * (bx - ax), ymax)
     },
   )
-}
-
-/// Render a MeshRegion[vertices, {Polygon[...], ...}] as SVG.
-pub fn mesh_region_to_svg(
-  vertices_expr: &Expr,
-  primitives_expr: &Expr,
-) -> Option<String> {
-  // Parse vertices
-  let Expr::List(vertices_list) = vertices_expr else {
-    return None;
-  };
-  let mut vertices: Vec<(f64, f64)> = Vec::new();
-  for v in vertices_list {
-    if let Expr::List(coords) = v
-      && coords.len() == 2
-      && let (Some(x), Some(y)) = (
-        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
-        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
-      )
-    {
-      vertices.push((x, y));
-      continue;
-    }
-    return None;
-  }
-  if vertices.is_empty() {
-    return None;
-  }
-
-  // Parse polygons; a single cell primitive may stand without a list.
-  let single;
-  let prims = match primitives_expr {
-    Expr::List(prims) => prims.as_slice(),
-    Expr::FunctionCall { .. } => {
-      single = [primitives_expr.clone()];
-      &single[..]
-    }
-    _ => return None,
-  };
-  let mut polygons: Vec<Vec<usize>> = Vec::new(); // 0-indexed vertex indices
-  for prim in prims {
-    if let Expr::FunctionCall { name, args } = prim {
-      if name == "Polygon" && args.len() == 1 {
-        if let Expr::List(index_lists) = &args[0] {
-          for idx_list in index_lists {
-            if let Expr::List(indices) = idx_list {
-              let mut poly = Vec::new();
-              for idx in indices {
-                if let Some(i) =
-                  crate::functions::math_ast::try_eval_to_f64(idx)
-                {
-                  let i = i as usize;
-                  if i >= 1 && i <= vertices.len() {
-                    poly.push(i - 1); // Convert to 0-indexed
-                  }
-                }
-              }
-              if poly.len() >= 3 {
-                polygons.push(poly);
-              }
-            }
-          }
-        }
-      } else if name == "Line" && args.len() == 1 {
-        // Line primitives in MeshRegion (e.g., CantorMesh) — skip SVG for now
-      }
-    }
-  }
-
-  if polygons.is_empty() {
-    return None;
-  }
-
-  // Compute bounding box
-  let mut xmin = f64::INFINITY;
-  let mut xmax = f64::NEG_INFINITY;
-  let mut ymin = f64::INFINITY;
-  let mut ymax = f64::NEG_INFINITY;
-  for &(x, y) in &vertices {
-    if x < xmin {
-      xmin = x;
-    }
-    if x > xmax {
-      xmax = x;
-    }
-    if y < ymin {
-      ymin = y;
-    }
-    if y > ymax {
-      ymax = y;
-    }
-  }
-
-  let data_w = xmax - xmin;
-  let data_h = ymax - ymin;
-  let pad = data_w.max(data_h) * 0.02;
-  let xmin = xmin - pad;
-  let xmax = xmax + pad;
-  let ymin = ymin - pad;
-  let ymax = ymax + pad;
-  let data_w = xmax - xmin;
-  let data_h = ymax - ymin;
-
-  let svg_size = 360.0;
-  let (svg_w, svg_h) = if data_w > data_h {
-    (svg_size, svg_size * data_h / data_w)
-  } else {
-    (svg_size * data_w / data_h, svg_size)
-  };
-
-  let tx = |x: f64| (x - xmin) / data_w * svg_w;
-  let ty = |y: f64| (1.0 - (y - ymin) / data_h) * svg_h; // Flip y
-
-  // Default MeshRegion fill color (matches Mathematica)
-  let fill_color = Color::new(0.626, 0.836, 0.919);
-
-  let mut svg = format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\">",
-    svg_w.round() as i32,
-    svg_h.round() as i32,
-    svg_w.round() as i32,
-    svg_h.round() as i32,
-  );
-
-  // White background
-  svg.push_str(&format!(
-    "<rect width=\"{}\" height=\"{}\" fill=\"white\"/>",
-    svg_w.round() as i32,
-    svg_h.round() as i32,
-  ));
-
-  // Draw polygons
-  for poly in &polygons {
-    let points: Vec<String> = poly
-      .iter()
-      .map(|&vi| format!("{:.2},{:.2}", tx(vertices[vi].0), ty(vertices[vi].1)))
-      .collect();
-    svg.push_str(&format!(
-      "<polygon points=\"{}\" fill=\"{}\" stroke=\"rgb(100,100,100)\" stroke-width=\"1\"/>",
-      points.join(" "),
-      fill_color.to_svg_rgb(),
-    ));
-  }
-
-  svg.push_str("</svg>");
-  Some(svg)
 }
 
 /// Parse `{{xmin, xmax}, {ymin, ymax}}` into `[xmin, xmax, ymin, ymax]`.

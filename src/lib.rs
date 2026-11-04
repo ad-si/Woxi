@@ -5458,7 +5458,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
         )
         .unwrap_or(expr)
       } else if let Some(svg) =
-        functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
+        functions::graphics::mesh_region_2d_svg(&args[0], &args[1], &args[2..])
       {
         capture_graphics(&svg);
         syntax::Expr::Graphics {

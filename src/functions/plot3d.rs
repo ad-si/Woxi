@@ -6183,7 +6183,7 @@ fn bspline_curve_points(args: &[Expr]) -> Option<Vec<Point3D>> {
   });
   let degree = crate::functions::graphics::spline_degree_from_args(
     &args[1..],
-    3usize.min(control.len() - 1),
+    control.len(),
   );
   let control = if closed {
     let mut cp = control.clone();

@@ -1850,14 +1850,15 @@ mod tests {
         "per-line red dashed style not applied: {svg}"
       );
       assert!(
-        svg.contains("stroke=\"rgb(204,204,204)\""),
+        svg.contains("stroke=\"rgb(128,128,128)\" stroke-width=\"0.20\""),
         "automatic y grid lines should use the default gray: {svg}"
       );
     }
 
     #[test]
     fn graphics_grid_lines_default_solid_gray() {
-      // Without GridLinesStyle, Graphics grid lines are solid light gray.
+      // Without GridLinesStyle, Graphics grid lines are solid, thin and
+      // mid gray (0.2 points of GrayLevel[0.5], as wolframscript draws them).
       let svg = woxi::interpret(
         r#"ExportString[Graphics[Circle[], Frame -> True,
           GridLines -> Automatic], "SVG"]"#,
@@ -1865,9 +1866,9 @@ mod tests {
       .expect("interpret should succeed");
       let grid: Vec<&str> = svg
         .lines()
-        .filter(|l| l.contains("stroke=\"rgb(204,204,204)\""))
+        .filter(|l| l.contains("stroke=\"rgb(128,128,128)\""))
         .collect();
-      assert!(!grid.is_empty(), "expected light-gray grid lines: {svg}");
+      assert!(!grid.is_empty(), "expected gray grid lines: {svg}");
       assert!(
         grid.iter().all(|l| !l.contains("stroke-dasharray")),
         "default grid lines should be solid: {svg}"
@@ -2257,8 +2258,11 @@ mod tests {
         "Graphics[JoinedCurve[{Line[{{0, 0}, {1, 1}}], \
          BezierCurve[{{1, 1}, {2, 0}, {3, 1}}]}]]",
       );
-      assert!(svg.contains("<polyline"), "expected the line part: {svg}");
-      assert!(svg.contains("<path"), "expected the bezier part: {svg}");
+      // One path: the line, then the curve continuing from its end.
+      assert_eq!(svg.matches("<polyline").count(), 1, "{svg}");
+      let i = svg.find("<polyline points=\"").unwrap() + 18;
+      let points = svg[i..i + svg[i..].find('"').unwrap()].split(' ').count();
+      assert!(points > 10, "expected the bezier part: {svg}");
     }
 
     #[test]

@@ -1021,16 +1021,13 @@ fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
 }
 
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
-  // `Scaled[{dx, dy}, {x, y}]` is `{x, y}` moved by a fraction of the plot
-  // range, which is not known while primitives are collected; the gauges
-  // use it only for short tick offsets, so it stands for its base point.
-  // `Offset[{dx, dy}, {x, y}]` is likewise its base point moved by screen
-  // points; the charts' bars use a zero shift.
+  // `Scaled[…]`, `ImageScaled[…]` and `Offset[…]` coordinates depend on the
+  // final plot range and image size (see [`CoordFrame`]).
   if let Expr::FunctionCall { name, args } = expr
-    && (name == "Scaled" || name == "Offset")
-    && args.len() == 2
+    && matches!(name.as_str(), "Scaled" | "ImageScaled" | "Offset")
+    && (args.len() == 1 || args.len() == 2)
   {
-    return expr_to_point(&args[1]);
+    return deferred_coordinate(name, args);
   }
   // A point is usually already a `{x, y}` literal, but it can also be an
   // arithmetic expression that only reduces to one at evaluation time (e.g.
@@ -1050,6 +1047,122 @@ pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
   None
 }
 
+/// The final geometry of the picture being drawn, against which `Scaled`,
+/// `ImageScaled` and `Offset` coordinates are resolved: the (padded) plot
+/// range `bb` fills the drawing area of `w`×`h` points, which sits
+/// `left`/`bottom` points inside an image of `image_w`×`image_h` points.
+#[derive(Debug, Clone, Copy)]
+struct CoordFrame {
+  bb: BBox,
+  w: f64,
+  h: f64,
+  left: f64,
+  bottom: f64,
+  image_w: f64,
+  image_h: f64,
+}
+
+/// How `Scaled`/`ImageScaled`/`Offset` coordinates resolve while
+/// primitives are collected.
+#[derive(Debug, Clone, Copy)]
+enum CoordMode {
+  /// No frame will ever be known (renderers that collect once): a scaled
+  /// coordinate with a base point stands for it, one without is no point.
+  Unsupported,
+  /// The first pass of [`graphics_ast`]: the frame is not known yet, so a
+  /// coordinate without a base point is not a number (it neither draws nor
+  /// widens the plot range) and the primitives are collected again later.
+  Pending,
+  /// The second pass: the frame is known.
+  Known(CoordFrame),
+}
+
+thread_local! {
+  static COORD_MODE: std::cell::Cell<CoordMode> =
+    const { std::cell::Cell::new(CoordMode::Unsupported) };
+  /// Set when a coordinate needed the frame during a `Pending` pass.
+  static DEFERRED_COORDS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Runs `f` with `mode` in force for coordinate resolution, restoring the
+/// enclosing picture's afterwards (a nested `Inset` picture has its own).
+/// Also returns whether a coordinate needed the frame while `f` ran.
+fn with_coord_mode<T>(mode: CoordMode, f: impl FnOnce() -> T) -> (T, bool) {
+  let saved = COORD_MODE.with(|c| c.replace(mode));
+  let saved_deferred = DEFERRED_COORDS.with(|c| c.replace(false));
+  let result = f();
+  let deferred = DEFERRED_COORDS.with(std::cell::Cell::get);
+  COORD_MODE.with(|c| c.set(saved));
+  DEFERRED_COORDS.with(|c| c.set(saved_deferred));
+  (result, deferred)
+}
+
+/// `Scaled[{sx, sy}]` (fractions of the plot range), `Scaled[{dx, dy}, p]`
+/// (`p` moved by fractions of the range), `ImageScaled[{sx, sy}]`
+/// (fractions of the whole image) and `Offset[{dx, dy}, p]` (`p` moved by
+/// printer's points), resolved as [`CoordMode`] says.
+fn deferred_coordinate(name: &str, args: &[Expr]) -> Option<(f64, f64)> {
+  let base = match args.get(1) {
+    Some(p) => Some(expr_to_point(p)?),
+    None => None,
+  };
+  let (dx, dy) = expr_to_point(&args[0])?;
+  let f = match COORD_MODE.with(std::cell::Cell::get) {
+    CoordMode::Unsupported => return base,
+    CoordMode::Pending => {
+      DEFERRED_COORDS.with(|c| c.set(true));
+      return Some(base.unwrap_or((f64::NAN, f64::NAN)));
+    }
+    CoordMode::Known(f) => f,
+  };
+  let (bw, bh) = (f.bb.width(), f.bb.height());
+  Some(match (name, base) {
+    ("Scaled", None) => (f.bb.x_min + dx * bw, f.bb.y_min + dy * bh),
+    ("Scaled", Some((x, y))) => (x + dx * bw, y + dy * bh),
+    ("ImageScaled", None) => (
+      f.bb.x_min + (dx * f.image_w - f.left) / f.w * bw,
+      f.bb.y_min + (dy * f.image_h - f.bottom) / f.h * bh,
+    ),
+    ("ImageScaled", Some((x, y))) => {
+      (x + dx * f.image_w / f.w * bw, y + dy * f.image_h / f.h * bh)
+    }
+    // `Offset[{dx, dy}]` alone is a size, not a position.
+    (_, None) => return None,
+    (_, Some((x, y))) => (x + dx / f.w * bw, y + dy / f.h * bh),
+  })
+}
+
+/// A `Circle`/`Disk` radius `r` or `{rx, ry}` in data units, also as
+/// `Scaled[…]` (fractions of the plot range's width and height) or
+/// `Offset[…]` (printer's points) once the picture's frame is known.
+fn expr_to_radii(expr: &Expr) -> Option<(f64, f64)> {
+  let pair = |e: &Expr| {
+    expr_to_f64(e).map(|r| (r, r)).or_else(|| match e {
+      Expr::List(items) if items.len() == 2 => {
+        Some((expr_to_f64(&items[0])?, expr_to_f64(&items[1])?))
+      }
+      _ => None,
+    })
+  };
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Scaled" || name == "Offset")
+    && args.len() == 1
+  {
+    let (a, b) = pair(&args[0])?;
+    let CoordMode::Known(f) = COORD_MODE.with(std::cell::Cell::get) else {
+      return None;
+    };
+    let (bw, bh) = (f.bb.width(), f.bb.height());
+    return Some(if name == "Scaled" {
+      (a * bw, b * bh)
+    } else {
+      (a / f.w * bw, b / f.h * bh)
+    });
+  }
+  pair(expr)
+}
+
 /// Where a `Text`/`Inset` anchor sits, as `(x, y, scaled)`. With `scaled`
 /// set, `x`/`y` are fractions of the final plot range rather than
 /// coordinates in it: `Scaled[{0.9, 0.775}]` pins a label near the top
@@ -1060,10 +1173,15 @@ pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
 ///
 /// `ImageScaled` measures the same fractions against the image rather than
 /// the plot range; for a picture whose image *is* its plot range the two
-/// coincide, so both read as scaled here.
+/// coincide, so both read as scaled here — unless the picture's frame is
+/// (or will be) known, which resolves `ImageScaled` exactly.
 fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
+  let image_scaled_exact = !matches!(
+    COORD_MODE.with(std::cell::Cell::get),
+    CoordMode::Unsupported
+  );
   if let Expr::FunctionCall { name, args } = expr
-    && (name == "Scaled" || name == "ImageScaled")
+    && (name == "Scaled" || (name == "ImageScaled" && !image_scaled_exact))
     && args.len() == 1
     && let Some((x, y)) = expr_to_point(&args[0])
   {
@@ -1328,7 +1446,10 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
     // The other color spaces convert to sRGB (out-of-gamut channels clip,
     // as in the front end).
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "LABColor" | "XYZColor" | "CMYKColor") =>
+      if matches!(
+        name.as_str(),
+        "LABColor" | "LCHColor" | "LUVColor" | "XYZColor" | "CMYKColor"
+      ) =>
     {
       let (r, g, b, a) =
         crate::functions::image_ast::color_directive_to_rgb(expr)?;
@@ -1967,7 +2088,19 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       "FaceForm" => {
         // FaceForm[color] sets the fill color of area primitives only —
         // unlike a bare color directive, it must not recolor Text, Line
-        // or Point primitives that follow it.
+        // or Point primitives that follow it. `FaceForm[{dirs…}]` and
+        // `FaceForm[Directive[dirs…]]` hold several directives at once.
+        let flat: Vec<Expr> = args
+          .iter()
+          .flat_map(|a| match a {
+            Expr::List(items) => items.to_vec(),
+            Expr::FunctionCall { name, args: items } if name == "Directive" => {
+              items.to_vec()
+            }
+            other => vec![other.clone()],
+          })
+          .collect();
+        let args = &flat[..];
         for a in args {
           if let Expr::FunctionCall { name, args: oa } = a
             && name == "Opacity"
@@ -2763,6 +2896,17 @@ fn collect_primitives(
             other => vec![other],
           };
           for component in components {
+            if let Expr::List(curves) = component
+              && let Some(points) = joined_curve_points(curves, style)
+            {
+              prims.push(Primitive::PolygonPrim {
+                points,
+                holes: Vec::new(),
+                vertex_colors: None,
+                style: style.clone(),
+              });
+              continue;
+            }
             let before = prims.len();
             collect_primitives(component, style, prims, errors);
             let joined = matches!(component, Expr::List(_));
@@ -2820,10 +2964,54 @@ fn collect_primitives(
         "StadiumShape" => {
           parse_stadium_shape(args, style, prims);
         }
-        // JoinedCurve[{c1, c2, …}] draws its curve components as one path;
-        // stroke-rendering each component in order is visually equivalent.
+        "Annulus" if args.len() <= 3 => {
+          parse_annulus(args, style, prims);
+        }
+        // JoinedCurve[{c1, c2, …}] draws its curve components as one path
+        // (closed back to its start by `CurveClosed -> True`); a list of
+        // such lists is several paths.
         "JoinedCurve" if !args.is_empty() => {
-          collect_primitives(&args[0], style, prims, errors);
+          let closed = args[1..].iter().any(|o| {
+            option_name_value(o).is_some_and(|(n, v)| {
+              n == "CurveClosed"
+                && matches!(v.as_ref(), Expr::Identifier(b) if b == "True")
+            })
+          });
+          let components: Vec<&[Expr]> = match &args[0] {
+            Expr::List(items)
+              if !items.is_empty()
+                && items.iter().all(|i| matches!(i, Expr::List(_))) =>
+            {
+              items
+                .iter()
+                .filter_map(|i| match i {
+                  Expr::List(c) => Some(&c[..]),
+                  _ => None,
+                })
+                .collect()
+            }
+            Expr::List(items) => vec![&items[..]],
+            other => vec![std::slice::from_ref(other)],
+          };
+          for curves in components {
+            match joined_curve_points(curves, style) {
+              Some(mut points) => {
+                if closed && points.first() != points.last() {
+                  points.push(points[0]);
+                }
+                prims.push(Primitive::Line {
+                  segments: vec![points],
+                  vertex_colors: None,
+                  style: style.clone(),
+                });
+              }
+              None => {
+                for c in curves {
+                  collect_primitives(c, style, prims, errors);
+                }
+              }
+            }
+          }
         }
         // AxisObject[curve, {min, max}, opts…] draws `curve` as an axis; its
         // stroke follows BaseStyle and then AxisStyle (the latter wins).
@@ -3640,15 +3828,9 @@ fn parse_circle(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   } else {
     expr_to_point(&args[0]).unwrap_or((0.0, 0.0))
   };
-  let (rx, ry) = if args.len() >= 2 {
-    if let Some((a, b)) = expr_to_point(&args[1]) {
-      (a, b)
-    } else {
-      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
-      (r, r)
-    }
-  } else {
-    (1.0, 1.0)
+  let (rx, ry) = match args.get(1) {
+    Some(r) => expr_to_radii(r).unwrap_or((1.0, 1.0)),
+    None => (1.0, 1.0),
   };
   // Circle[center, r, {theta1, theta2}] draws only the arc over that angular
   // range (an open curve stroked on one side), not the whole circle.
@@ -3672,6 +3854,7 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if let Some(Expr::FunctionCall { name, args: r }) = args.get(1)
     && args.len() == 2
     && r.len() == 1
+    && !matches!(COORD_MODE.with(std::cell::Cell::get), CoordMode::Known(_))
   {
     let scaled = name == "Scaled";
     // `Offset[r]` / `Offset[{rx, ry}]`: a radius in screen points.
@@ -3683,7 +3866,9 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       None
     };
     let sizes = if scaled {
-      expr_to_f64(&r[0]).map(|f| (f, f))
+      expr_to_f64(&r[0])
+        .map(|f| (f, f))
+        .or_else(|| expr_to_point(&r[0]))
     } else {
       offset
     };
@@ -3699,15 +3884,9 @@ fn parse_disk(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       return;
     }
   }
-  let (rx, ry) = if args.len() >= 2 {
-    if let Some((a, b)) = expr_to_point(&args[1]) {
-      (a, b)
-    } else {
-      let r = expr_to_f64(&args[1]).unwrap_or(1.0);
-      (r, r)
-    }
-  } else {
-    (1.0, 1.0)
+  let (rx, ry) = match args.get(1) {
+    Some(r) => expr_to_radii(r).unwrap_or((1.0, 1.0)),
+    None => (1.0, 1.0),
   };
   // Disk[center, r, {angle1, angle2}] creates a sector
   if args.len() >= 3
@@ -4143,6 +4322,95 @@ fn parse_stadium_shape(
   });
 }
 
+/// Whether two non-adjacent edges of the closed outline `pts` cross.
+/// Outlines too long to check pairwise are taken to be simple.
+fn polygon_self_intersects(pts: &[(f64, f64)]) -> bool {
+  let n = pts.len();
+  if !(4..=2000).contains(&n) {
+    return false;
+  }
+  let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+    (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+  };
+  let edge = |i: usize| (pts[i], pts[(i + 1) % n]);
+  for i in 0..n {
+    let (p1, p2) = edge(i);
+    for j in i + 2..n {
+      if i == 0 && j == n - 1 {
+        continue;
+      }
+      let (q1, q2) = edge(j);
+      let d1 = cross(q1, q2, p1);
+      let d2 = cross(q1, q2, p2);
+      let d3 = cross(p1, p2, q1);
+      let d4 = cross(p1, p2, q2);
+      if d1 * d2 < 0.0 && d3 * d4 < 0.0 {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+/// `Annulus[c, {rin, rout}]` — the ring between two concentric circles —
+/// and `Annulus[c, {rin, rout}, {t1, t2}]`, its sector between the angles
+/// `t1` and `t2`. `Annulus[]` is the ring at the origin with radii 1/2 and 1.
+fn parse_annulus(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let center = match args.first() {
+    Some(c) => expr_to_point(c),
+    None => Some((0.0, 0.0)),
+  };
+  let radii = match args.get(1) {
+    Some(Expr::List(rs)) if rs.len() == 2 => {
+      expr_to_f64(&rs[0]).zip(expr_to_f64(&rs[1]))
+    }
+    Some(_) => None,
+    None => Some((0.5, 1.0)),
+  };
+  let angles = match args.get(2) {
+    Some(a) => match expr_to_point(a) {
+      Some(a) => Some(a),
+      None => return,
+    },
+    None => None,
+  };
+  let (Some((cx, cy)), Some((r_in, r_out))) = (center, radii) else {
+    return;
+  };
+  let arc = |r: f64, t1: f64, t2: f64| -> Vec<(f64, f64)> {
+    let steps = ((t2 - t1).abs() / std::f64::consts::TAU * 144.0).ceil();
+    let steps = (steps as usize).max(2);
+    (0..=steps)
+      .map(|k| {
+        let t = t1 + (t2 - t1) * k as f64 / steps as f64;
+        (cx + r * t.cos(), cy + r * t.sin())
+      })
+      .collect()
+  };
+  let (points, holes) = if let Some((t1, t2)) = angles {
+    let mut points = arc(r_out, t1, t2);
+    points.extend(arc(r_in, t2, t1));
+    (points, Vec::new())
+  } else {
+    let full = |r: f64| {
+      let mut pts = arc(r, 0.0, std::f64::consts::TAU);
+      pts.pop();
+      pts
+    };
+    (full(r_out), vec![full(r_in)])
+  };
+  prims.push(Primitive::PolygonPrim {
+    points,
+    holes,
+    vertex_colors: None,
+    style: style.clone(),
+  });
+}
+
 /// HalfPlane[{p1, p2}, w] — the half plane swept by translating the line
 /// through p1 and p2 along w. HalfPlane[p, v, w] — the same with the line
 /// given as point p and direction v.
@@ -4361,45 +4629,51 @@ fn curve_polyline(expr: &Expr, style: &StyleState) -> Option<Vec<(f64, f64)>> {
     Primitive::Line { mut segments, .. } if segments.len() == 1 => {
       Some(segments.remove(0))
     }
-    // Same segmentation the renderer strokes: a line, a quadratic, a
-    // cubic, or a chain of cubics.
+    // Same segmentation the renderer strokes: a chain of cubics.
     Primitive::BezierCurvePrim { points, .. } => {
-      let sample = |ctrl: &[(f64, f64)], t: f64| -> (f64, f64) {
-        let mut level = ctrl.to_vec();
-        while level.len() > 1 {
-          level = level
-            .windows(2)
-            .map(|w| {
-              (
-                w[0].0 + t * (w[1].0 - w[0].0),
-                w[0].1 + t * (w[1].1 - w[0].1),
-              )
-            })
-            .collect();
-        }
-        level[0]
-      };
-      const N: usize = 50;
-      let mut out = vec![points[0]];
-      let mut segs: Vec<&[(f64, f64)]> = Vec::new();
-      if points.len() <= 4 {
-        segs.push(&points);
-      } else {
-        let mut i = 0;
-        while i + 3 < points.len() {
-          segs.push(&points[i..i + 4]);
-          i += 3;
-        }
-      }
-      for seg in segs {
-        for k in 1..=N {
-          out.push(sample(seg, k as f64 / N as f64));
-        }
-      }
-      Some(out)
+      Some(sample_composite_bezier(&points, 3))
     }
     _ => None,
   }
+}
+
+/// The path of the curve components of a `JoinedCurve`/`FilledCurve`
+/// (`Line`, `BezierCurve`, `BSplineCurve`) joined end to end: every
+/// component after the first starts at the point the previous one ended on,
+/// followed by all of its own points. `None` unless every component is such
+/// a curve.
+fn joined_curve_points(
+  components: &[Expr],
+  style: &StyleState,
+) -> Option<Vec<(f64, f64)>> {
+  let mut path: Vec<(f64, f64)> = Vec::new();
+  for component in components {
+    let Expr::FunctionCall { name, args } = component else {
+      return None;
+    };
+    if args.is_empty() {
+      return None;
+    }
+    let mut args = args.to_vec();
+    if let Some(&(x, y)) = path.last() {
+      let Expr::List(pts) = &args[0] else {
+        return None;
+      };
+      let start = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      args[0] =
+        Expr::List(std::iter::once(start).chain(pts.iter().cloned()).collect());
+    }
+    let points = match name.as_str() {
+      "Line" => expr_to_point_list(&args[0])?,
+      "BezierCurve" | "BSplineCurve" => {
+        curve_polyline(&call(name, args), style)?
+      }
+      _ => return None,
+    };
+    let skip = usize::from(!path.is_empty());
+    path.extend(points.into_iter().skip(skip));
+  }
+  (path.len() >= 2).then_some(path)
 }
 
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
@@ -4448,13 +4722,36 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       (0.0, 0.0)
     };
     // A head that carries its own graphic (a label, a marker) is drawn as
-    // that graphic, centred on the point of the arrow it sits at — the
-    // renderer's triangle is only for the plain sizes.
+    // that graphic, its origin on the point of the arrow it sits at and its
+    // x axis along the arrow — the renderer's triangle is only for the
+    // plain sizes. One unit of the graphic is the head's size, a fraction
+    // of the plot width, so it can only be placed once the plot range is
+    // known.
+    let head_unit = match COORD_MODE.with(std::cell::Cell::get) {
+      CoordMode::Known(f) => Some(Some(f.bb.width())),
+      CoordMode::Pending => {
+        DEFERRED_COORDS.with(|c| c.set(true));
+        None
+      }
+      CoordMode::Unsupported => Some(None),
+    };
     for head in style.arrowheads.iter().flatten() {
       let Some(graphic) = &head.graphic else {
         continue;
       };
+      let Some(unit) = head_unit else {
+        continue;
+      };
       let (x, y) = point_along_path(&pts, head.position);
+      let transform = unit.map(|width| {
+        let eps = 1e-4;
+        let (ax, ay) = point_along_path(&pts, (head.position - eps).max(0.0));
+        let (bx, by) = point_along_path(&pts, (head.position + eps).min(1.0));
+        let angle = (by - ay).atan2(bx - ax);
+        let s = head.size * width;
+        let (c, sn) = (angle.cos() * s, angle.sin() * s);
+        [[c, -sn], [sn, c]]
+      });
       let mut inner_style = style.clone();
       inner_style.arrowheads = None;
       let mut inner = Vec::new();
@@ -4465,7 +4762,10 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         &mut Vec::new(),
       );
       for p in &inner {
-        prims.push(translate_primitive(p, x, y));
+        prims.push(match transform {
+          Some(m) => affine_primitive(p, m, (x, y)),
+          None => translate_primitive(p, x, y),
+        });
       }
     }
     prims.push(Primitive::ArrowPrim {
@@ -6567,10 +6867,51 @@ fn text_offset(spec: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// The points of a composite Bezier curve of `degree`: consecutive
+/// segments of `degree + 1` control points share their end points, and a
+/// shorter run left at the end is a Bezier curve of lower degree.
+fn sample_composite_bezier(
+  pts: &[(f64, f64)],
+  degree: usize,
+) -> Vec<(f64, f64)> {
+  let mut out = vec![pts[0]];
+  let mut start = 0;
+  while start + 1 < pts.len() {
+    let seg = &pts[start..(start + degree + 1).min(pts.len())];
+    let steps = if seg.len() == 2 { 1 } else { 48 };
+    for k in 1..=steps {
+      let t = k as f64 / steps as f64;
+      // de Casteljau
+      let mut work = seg.to_vec();
+      for level in 1..seg.len() {
+        for i in 0..seg.len() - level {
+          work[i] = (
+            work[i].0 + t * (work[i + 1].0 - work[i].0),
+            work[i].1 + t * (work[i + 1].1 - work[i].1),
+          );
+        }
+      }
+      out.push(work[0]);
+    }
+    start += seg.len() - 1;
+  }
+  out
+}
+
 fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if let Some(pts) = expr_to_point_list(&args[0])
     && pts.len() >= 2
   {
+    // `SplineDegree -> d` other than the cubic default: drawn sampled.
+    let degree = spline_degree_from_args(&args[1..], usize::MAX);
+    if degree != 3 {
+      prims.push(Primitive::Line {
+        segments: vec![sample_composite_bezier(&pts, degree)],
+        vertex_colors: None,
+        style: style.clone(),
+      });
+      return;
+    }
     prims.push(Primitive::BezierCurvePrim {
       points: pts,
       filled: false,
@@ -6696,30 +7037,38 @@ fn parse_bspline(
       )
     });
 
-    let degree = spline_degree_from_args(&args[1..], 3usize.min(pts.len() - 1));
+    let degree = spline_degree_from_args(&args[1..], pts.len());
+    // `SplineWeights -> {w1, …}`: one weight per control point, making the
+    // curve rational (a heavier point pulls the curve towards itself).
+    let weights: Option<Vec<f64>> = args[1..].iter().find_map(|a| {
+      let (name, value) = option_name_value(a)?;
+      match value.as_ref() {
+        Expr::List(ws) if name == "SplineWeights" && ws.len() == pts.len() => {
+          ws.iter().map(expr_to_f64).collect()
+        }
+        _ => None,
+      }
+    });
     // A closed spline is periodic: the leading control points wrap onto
     // the end and the knots are uniform, so no control point is
     // interpolated. `SplineKnots -> "Unclamped"` gives an open curve the
     // same uniform knots.
-    let control = if closed {
-      let mut cp = pts.clone();
-      for i in 0..degree {
-        cp.push(pts[i]);
-      }
-      cp
-    } else {
-      pts
-    };
+    let wrap = |n: usize| if closed { n + degree } else { n };
+    let control: Vec<(f64, f64)> =
+      (0..wrap(pts.len())).map(|i| pts[i % pts.len()]).collect();
+    let weights: Option<Vec<f64>> =
+      weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
     let clamped = !closed && !spline_knots_unclamped(&args[1..]);
 
     // An explicit numeric knot vector (`SplineKnots -> {u0, ..., um}`) fixes
     // the basis; it needs exactly n + degree + 1 non-decreasing knots.
-    let sampled = match spline_knots_list(&args[1..]) {
+    let basis = match spline_knots_list(&args[1..]) {
       Some(knots) if !closed && knots.len() == control.len() + degree + 1 => {
-        evaluate_bspline_with_knots(&control, degree, 200, &knots)
+        bspline_sample_weights_with_knots(control.len(), degree, 200, &knots)
       }
-      _ => evaluate_bspline(&control, degree, 200, clamped),
+      _ => bspline_sample_weights(control.len(), degree, 200, clamped),
     };
+    let sampled = combine_bspline(&control, weights.as_deref(), &basis);
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
@@ -6728,52 +7077,46 @@ fn parse_bspline(
   }
 }
 
-/// Evaluate a B-spline curve of the given `degree` on an explicit knot
-/// vector at `num_samples` evenly spaced parameters over its valid domain.
-fn evaluate_bspline_with_knots(
+/// The curve points of B-spline basis rows over `control_points`, made
+/// rational by the per-point `weights` when given.
+fn combine_bspline(
   control_points: &[(f64, f64)],
+  weights: Option<&[f64]>,
+  basis: &[Vec<f64>],
+) -> Vec<(f64, f64)> {
+  basis
+    .iter()
+    .map(|row| {
+      let (mut x, mut y, mut total) = (0.0, 0.0, 0.0);
+      for (j, (b, p)) in row.iter().zip(control_points).enumerate() {
+        let w = b * weights.map_or(1.0, |ws| ws[j]);
+        x += w * p.0;
+        y += w * p.1;
+        total += w;
+      }
+      if weights.is_some() && total != 0.0 {
+        (x / total, y / total)
+      } else {
+        (x, y)
+      }
+    })
+    .collect()
+}
+
+/// B-spline basis rows of a curve of the given `degree` on an explicit knot
+/// vector, at `num_samples` evenly spaced parameters over its valid domain.
+fn bspline_sample_weights_with_knots(
+  n: usize,
   degree: usize,
   num_samples: usize,
   knots: &[f64],
-) -> Vec<(f64, f64)> {
-  let n = control_points.len();
+) -> Vec<Vec<f64>> {
   let t_min = knots[degree];
   let t_max = knots[n];
   (0..num_samples)
     .map(|s| {
       let t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
-      let (mut x, mut y) = (0.0, 0.0);
-      for (j, p) in control_points.iter().enumerate() {
-        let b = bspline_basis(j, degree, t, knots);
-        x += b * p.0;
-        y += b * p.1;
-      }
-      (x, y)
-    })
-    .collect()
-}
-
-/// Evaluate a uniform B-spline curve of the given `degree` at `num_samples`
-/// points, with clamped (end-point interpolating) or uniform knots.
-fn evaluate_bspline(
-  control_points: &[(f64, f64)],
-  degree: usize,
-  num_samples: usize,
-  clamped: bool,
-) -> Vec<(f64, f64)> {
-  let n = control_points.len();
-  if n < 2 {
-    return control_points.to_vec();
-  }
-  bspline_sample_weights(n, degree, num_samples, clamped)
-    .iter()
-    .map(|weights| {
-      let (mut x, mut y) = (0.0, 0.0);
-      for (b, p) in weights.iter().zip(control_points) {
-        x += b * p.0;
-        y += b * p.1;
-      }
-      (x, y)
+      (0..n).map(|j| bspline_basis(j, degree, t, knots)).collect()
     })
     .collect()
 }
@@ -6853,14 +7196,11 @@ pub(crate) fn bspline_basis(i: usize, k: usize, t: f64, knots: &[f64]) -> f64 {
   term1 + term2
 }
 
-/// The B-spline degree an option list requests via `SplineDegree -> n`,
-/// clamped to `[1, max_degree]`. Wolfram's default (no option given) is
-/// `min(3, n - 1)`, i.e. `max_degree` itself since callers already clamp
-/// it to the control-point count.
-pub(crate) fn spline_degree_from_args(
-  args: &[Expr],
-  max_degree: usize,
-) -> usize {
+/// The B-spline degree an option list requests via `SplineDegree -> d`
+/// for `n` control points, clamped to `[1, n - 1]`. Wolfram's default (no
+/// option given) is `min(3, n - 1)`.
+pub(crate) fn spline_degree_from_args(args: &[Expr], n: usize) -> usize {
+  let max_degree = n.saturating_sub(1).max(1);
   let requested = args.iter().find_map(|arg| match arg {
     Expr::Rule {
       pattern,
@@ -6872,8 +7212,8 @@ pub(crate) fn spline_degree_from_args(
     _ => None,
   });
   match requested {
-    Some(n) if n >= 1.0 => (n.round() as usize).clamp(1, max_degree.max(1)),
-    _ => max_degree,
+    Some(d) if d >= 1.0 => (d.round() as usize).clamp(1, max_degree),
+    _ => max_degree.min(3),
   }
 }
 
@@ -6943,11 +7283,83 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
   };
   let scale = |v: f64| ((v - v_min) / (v_max - v_min)).clamp(0.0, 1.0);
 
+  // `ColorFunction -> f`: each cell's (scaled, unless
+  // `ColorFunctionScaling -> False`) value — or its channels, as separate
+  // arguments — is handed to `f`, whose color the pixel takes.
+  let option = |key: &str| {
+    args[1..].iter().find_map(|a| {
+      let (name, value) = option_name_value(a)?;
+      (name == key).then(|| value.into_owned())
+    })
+  };
+  let color_function = option("ColorFunction").filter(
+    |f| !matches!(f, Expr::Identifier(n) if n == "Automatic" || n == "None"),
+  );
+  let cf_scaling = !matches!(
+    option("ColorFunctionScaling").as_ref(),
+    Some(Expr::Identifier(n)) if n == "False"
+  );
+  // With an explicit `{vmin, vmax}`, a color function that is not a bare
+  // symbol (`GrayLevel`, `Hue`) is handed the values rescaled from the
+  // data's own minimum and maximum instead, as wolframscript does.
+  let explicit_range = args.get(2).is_some_and(|a| matches!(a, Expr::List(_)));
+  let data_span = if explicit_range
+    && color_function
+      .as_ref()
+      .is_some_and(|f| !matches!(f, Expr::Identifier(_)))
+  {
+    let mut lo = f64::INFINITY;
+    let mut hi = f64::NEG_INFINITY;
+    for row in rows {
+      if let Expr::List(cols) = row {
+        for v in cols.iter().filter_map(expr_to_f64) {
+          lo = lo.min(v);
+          hi = hi.max(v);
+        }
+      }
+    }
+    (hi > lo).then_some((lo, hi))
+  } else {
+    None
+  };
+  let mut cf_cache: std::collections::HashMap<Vec<u64>, Color> =
+    std::collections::HashMap::new();
+  let mut apply_cf = |f: &Expr, values: &[f64]| -> Color {
+    let values: Vec<f64> = values
+      .iter()
+      .map(|&v| match data_span {
+        _ if !cf_scaling => v,
+        Some((lo, hi)) => (v - lo) / (hi - lo),
+        None => scale(v),
+      })
+      .collect();
+    let key: Vec<u64> = values.iter().map(|v| v.to_bits()).collect();
+    *cf_cache.entry(key).or_insert_with(|| {
+      let call_args: Vec<Expr> =
+        values.iter().map(|&v| Expr::Real(v)).collect();
+      crate::functions::list_helpers_ast::apply_func_to_args(f, &call_args)
+        .ok()
+        .and_then(|c| parse_color(&c))
+        .unwrap_or(Color::new(0.0, 0.0, 0.0))
+    })
+  };
+
   let mut grid: Vec<Vec<Color>> = Vec::with_capacity(rows.len());
   for row in rows {
     let Expr::List(cols) = row else { return };
     let mut row_colors: Vec<Color> = Vec::with_capacity(cols.len());
     for cell in cols {
+      if let Some(f) = &color_function {
+        let values: Option<Vec<f64>> = match cell {
+          Expr::List(cs) => cs.iter().map(expr_to_f64).collect(),
+          other => expr_to_f64(other).map(|v| vec![v]),
+        };
+        row_colors.push(match values {
+          Some(vs) => apply_cf(f, &vs),
+          None => Color::new(0.0, 0.0, 0.0),
+        });
+        continue;
+      }
       if let Expr::List(components) = cell
         && (components.len() == 3 || components.len() == 4)
       {
@@ -8973,10 +9385,12 @@ fn clamp_tick_label_x(
 /// How `AxesStyle` draws one axis line: its stroke colour (`None` keeps
 /// the theme's axis grey, so `AxesStyle -> Thick` only thickens it) and
 /// width in pixels.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct AxisLineStyle {
   color: Option<Color>,
   width: f64,
+  /// A ` stroke-dasharray=…` attribute for a `Dashing` directive, or empty.
+  dash: String,
 }
 
 impl Default for AxisLineStyle {
@@ -8984,6 +9398,7 @@ impl Default for AxisLineStyle {
     Self {
       color: None,
       width: 1.0,
+      dash: String::new(),
     }
   }
 }
@@ -9001,6 +9416,7 @@ impl AxisLineStyle {
     Self {
       color,
       width: thickness_px(st.thickness, bb, svg_w).max(0.5),
+      dash: dash_attr(st.dashing.as_ref(), bb, svg_w),
     }
   }
 
@@ -9014,8 +9430,24 @@ impl AxisLineStyle {
       ),
       other => {
         let st = Self::from_directive(other, bb, svg_w);
-        (st, st)
+        (st.clone(), st)
       }
+    }
+  }
+
+  /// `FrameStyle -> style` styles every edge, `{xStyle, yStyle}` the
+  /// horizontal and the vertical ones, `{{left, right}, {bottom, top}}`
+  /// each. In the order bottom, left, top, right.
+  fn frame_edges(spec: &Expr, bb: &BBox, svg_w: f64) -> [Self; 4] {
+    let one = |e: &Expr| Self::from_directive(e, bb, svg_w);
+    match spec {
+      Expr::List(items) if items.len() == 2 => match (&items[0], &items[1]) {
+        (Expr::List(lr), Expr::List(bt)) if lr.len() == 2 && bt.len() == 2 => {
+          [one(&bt[0]), one(&lr[0]), one(&bt[1]), one(&lr[1])]
+        }
+        (x, y) => [one(x), one(y), one(x), one(y)],
+      },
+      other => std::array::from_fn(|_| one(other)),
     }
   }
 
@@ -9024,11 +9456,15 @@ impl AxisLineStyle {
     let width = (self.width * 100.0).round() / 100.0;
     match self.color {
       Some(c) => format!(
-        "stroke=\"{}\" stroke-width=\"{width}\"{}",
+        "stroke=\"{}\" stroke-width=\"{width}\"{}{}",
         c.to_svg_rgb(),
-        c.opacity_attr()
+        c.opacity_attr(),
+        self.dash
       ),
-      None => format!("stroke=\"{theme_stroke}\" stroke-width=\"{width}\""),
+      None => format!(
+        "stroke=\"{theme_stroke}\" stroke-width=\"{width}\"{}",
+        self.dash
+      ),
     }
   }
 }
@@ -9058,7 +9494,7 @@ fn render_axes(
   let theme_label_fill =
     label_fill.map_or_else(|| t.tick_label_fill.to_string(), Color::to_svg_rgb);
   // Tick marks and their labels follow `TicksStyle`, else `AxesStyle`.
-  let ticks_style = ticks_style.unwrap_or(axes_style);
+  let ticks_style = ticks_style.unwrap_or_else(|| axes_style.clone());
   let tick_fill = |st: &AxisLineStyle| {
     st.color
       .map_or_else(|| theme_label_fill.clone(), Color::to_svg_rgb)
@@ -9409,7 +9845,10 @@ fn graphics_decorations(
         .map(|(v, l)| {
           label_box(if horizontal { frac_x(*v) } else { frac_y(*v) }, l)
         })
-        .filter(|b| b.frac.is_finite())
+        // A mark outside the plot range is not drawn.
+        .filter(|b| {
+          b.frac.is_finite() && (-1e-9..=1.0 + 1e-9).contains(&b.frac)
+        })
         .collect();
     }
     if let Some((b, l, t, r)) = frame_label {
@@ -9475,26 +9914,39 @@ fn render_frame(
   edges: [bool; 4],
   ticks: [EdgeTicks; 4],
   explicit: &[Option<Vec<(f64, String)>>; 4],
-  frame_style: AxisLineStyle,
+  frame_styles: &[AxisLineStyle; 4],
   ticks_style: Option<AxisLineStyle>,
   label_fill: Option<Color>,
 ) {
   let t = theme();
-  // `FrameStyle` paints the edges; `FrameTicksStyle` (else the frame's own
+  // `FrameStyle` paints each edge; `FrameTicksStyle` (else the edge's own
   // style) the tick marks and their labels.
-  let frame_stroke = frame_style.stroke_attrs(t.framed_border);
-  let ticks_style = ticks_style.unwrap_or(frame_style);
-  let tick_stroke = ticks_style.stroke_attrs(t.framed_border);
-  let tick_label_fill = ticks_style
-    .color
-    .or(label_fill)
-    .map_or_else(|| t.tick_label_fill.to_string(), Color::to_svg_rgb);
+  let frame_strokes: [String; 4] =
+    std::array::from_fn(|i| frame_styles[i].stroke_attrs(t.framed_border));
+  // The marks take an edge's colour, but not its thickness or dashing.
+  let edge_ticks_styles: [AxisLineStyle; 4] = std::array::from_fn(|i| {
+    ticks_style.clone().unwrap_or_else(|| AxisLineStyle {
+      color: frame_styles[i].color,
+      ..AxisLineStyle::default()
+    })
+  });
+  let tick_strokes: [String; 4] =
+    std::array::from_fn(|i| edge_ticks_styles[i].stroke_attrs(t.framed_border));
+  let tick_label_fills: [String; 4] = std::array::from_fn(|i| {
+    edge_ticks_styles[i]
+      .color
+      .or(label_fill)
+      .map_or_else(|| t.tick_label_fill.to_string(), Color::to_svg_rgb)
+  });
 
-  // Draw the border: a single rectangle when all four edges are present,
-  // otherwise just the requested edges.
-  if edges.iter().all(|&e| e) {
+  // Draw the border: a single rectangle when all four edges are present
+  // in one style, otherwise each requested edge on its own.
+  if edges.iter().all(|&e| e)
+    && frame_strokes.iter().all(|s| *s == frame_strokes[0])
+  {
     svg.push_str(&format!(
-      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" {frame_stroke}/>\n"
+      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" {}/>\n",
+      frame_strokes[0]
     ));
   } else {
     let sides = [
@@ -9503,10 +9955,11 @@ fn render_frame(
       (0.0, 0.0, svg_w, 0.0),
       (svg_w, 0.0, svg_w, svg_h),
     ];
-    for (&(x1, y1, x2, y2), drawn) in sides.iter().zip(edges) {
+    for (i, (&(x1, y1, x2, y2), drawn)) in sides.iter().zip(edges).enumerate() {
       if drawn {
         svg.push_str(&format!(
-          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" {frame_stroke}/>\n"
+          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" {}/>\n",
+          frame_strokes[i]
         ));
       }
     }
@@ -9528,39 +9981,61 @@ fn render_frame(
     }
   };
 
+  // Tick marks point into the frame. Their length follows the frame's
+  // size: 1.5% of the geometric mean of its sides for a labelled mark
+  // (2 to 4 points), three fifths of that for an unlabelled one.
+  let major_len = (0.015 * (svg_w * svg_h).max(0.0).sqrt()).clamp(2.0, 4.0);
+  let minor_len = 0.6 * major_len;
+  // Only marks inside the plot range are drawn.
+  let in_range = |v: f64, lo: f64, hi: f64| {
+    let eps = (hi - lo).abs() * 1e-9;
+    v >= lo.min(hi) - eps && v <= lo.max(hi) + eps
+  };
+
   // Horizontal edges (bottom = 0, top = 2): ticks run along x.
   // Labels 3 pt outside their edge: below the bottom one (their top),
   // above the top one (their bottom).
-  for (i, y_lo, y_hi, anchor_y) in [
+  for (i, edge_y, inward, anchor_y) in [
     (
       0usize,
-      svg_h - 5.0,
       svg_h,
+      -1.0,
       svg_h + TICK_LABEL_GAP + ascent(TICK_FONT),
     ),
-    (2usize, 0.0, 5.0, -TICK_LABEL_GAP - descent(TICK_FONT)),
+    (2usize, 0.0, 1.0, -TICK_LABEL_GAP - descent(TICK_FONT)),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
     }
-    let listed: Vec<(f64, String)> = match &explicit[i] {
-      Some(list) => list.clone(),
-      None => x_ticks
-        .iter()
-        .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, x_step))))
-        .collect(),
+    let (tick_stroke, tick_label_fill) =
+      (&tick_strokes[i], &tick_label_fills[i]);
+    let (listed, minor): (Vec<(f64, String)>, Vec<f64>) = match &explicit[i] {
+      Some(list) => (list.clone(), Vec::new()),
+      None => (
+        x_ticks
+          .iter()
+          .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, x_step))))
+          .collect(),
+        axis_minor_ticks(&TickSpec::Automatic, bb.x_min, bb.x_max),
+      ),
     };
-    for (t_val, label) in listed {
+    let marks = listed
+      .iter()
+      .map(|(v, l)| (*v, Some(l.as_str()), major_len))
+      .chain(minor.iter().map(|&v| (v, None, minor_len)));
+    for (t_val, label, len) in marks {
       let x = coord_x(t_val, bb, svg_w);
-      if !x.is_finite() {
+      if !x.is_finite() || !in_range(t_val, bb.x_min, bb.x_max) {
         continue;
       }
       svg.push_str(&format!(
         "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" {tick_stroke}/>\n",
-        tick_coord(y_lo),
-        tick_coord(y_hi)
+        tick_coord(edge_y),
+        tick_coord(edge_y + inward * len)
       ));
-      if ticks[i] == EdgeTicks::Labels {
+      if let Some(label) = label
+        && ticks[i] == EdgeTicks::Labels
+      {
         svg.push_str(&format!(
           "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         ));
@@ -9569,31 +10044,42 @@ fn render_frame(
   }
 
   // Vertical edges (left = 1, right = 3): ticks run along y.
-  for (i, x_lo, x_hi, anchor_x, anchor) in [
-    (1usize, 0.0, 5.0, -TICK_LABEL_GAP, "end"),
-    (3usize, svg_w - 5.0, svg_w, svg_w + TICK_LABEL_GAP, "start"),
+  for (i, edge_x, inward, anchor_x, anchor) in [
+    (1usize, 0.0, 1.0, -TICK_LABEL_GAP, "end"),
+    (3usize, svg_w, -1.0, svg_w + TICK_LABEL_GAP, "start"),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
     }
-    let listed: Vec<(f64, String)> = match &explicit[i] {
-      Some(list) => list.clone(),
-      None => y_ticks
-        .iter()
-        .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, y_step))))
-        .collect(),
+    let (tick_stroke, tick_label_fill) =
+      (&tick_strokes[i], &tick_label_fills[i]);
+    let (listed, minor): (Vec<(f64, String)>, Vec<f64>) = match &explicit[i] {
+      Some(list) => (list.clone(), Vec::new()),
+      None => (
+        y_ticks
+          .iter()
+          .map(|&v| (v, svg_escape(&format_tick_in_sequence(v, y_step))))
+          .collect(),
+        axis_minor_ticks(&TickSpec::Automatic, bb.y_min, bb.y_max),
+      ),
     };
-    for (t_val, label) in listed {
+    let marks = listed
+      .iter()
+      .map(|(v, l)| (*v, Some(l.as_str()), major_len))
+      .chain(minor.iter().map(|&v| (v, None, minor_len)));
+    for (t_val, label, len) in marks {
       let y = coord_y(t_val, bb, svg_h);
-      if !y.is_finite() {
+      if !y.is_finite() || !in_range(t_val, bb.y_min, bb.y_max) {
         continue;
       }
       svg.push_str(&format!(
         "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" {tick_stroke}/>\n",
-        tick_coord(x_lo),
-        tick_coord(x_hi)
+        tick_coord(edge_x),
+        tick_coord(edge_x + inward * len)
       ));
-      if ticks[i] == EdgeTicks::Labels {
+      if let Some(label) = label
+        && ticks[i] == EdgeTicks::Labels
+      {
         svg.push_str(&format!(
           "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
           y + centre_to_baseline(TICK_FONT),
@@ -9603,11 +10089,21 @@ fn render_frame(
   }
 }
 
+/// Wolfram's grid lines: mid gray, 0.2 points wide, under whatever
+/// `GridLinesStyle` and per-line styles add.
+fn default_grid_line_style() -> StyleState {
+  StyleState {
+    color: Color::gray(0.5),
+    thickness: -0.2,
+    ..StyleState::default()
+  }
+}
+
 /// A single explicit grid-line position with an optional per-line style
-/// override (`{pos, style}` form).
+/// (`{pos, style}` form), applied on top of `GridLinesStyle`.
 struct GridLine {
   pos: f64,
-  style: Option<StyleState>,
+  style: Option<Expr>,
 }
 
 /// Per-axis grid-line specification (one side of `GridLines -> {x, y}`).
@@ -9654,11 +10150,7 @@ fn parse_grid_line(entry: &Expr) -> Option<GridLine> {
     && !pair.is_empty()
   {
     let pos = expr_to_f64(&pair[0])?;
-    let style = pair.get(1).map(|s| {
-      let mut st = StyleState::default();
-      apply_directive(s, &mut st);
-      st
-    });
+    let style = pair.get(1).cloned();
     return Some(GridLine { pos, style });
   }
   expr_to_f64(entry).map(|pos| GridLine { pos, style: None })
@@ -9666,17 +10158,25 @@ fn parse_grid_line(entry: &Expr) -> Option<GridLine> {
 
 /// Resolve a `GridSpec` to the list of (position, style) pairs to draw, using
 /// the automatic tick positions and `default_style` where appropriate.
-fn grid_positions<'a>(
-  spec: &'a GridSpec,
+fn grid_positions(
+  spec: &GridSpec,
   ticks: &[f64],
-  default_style: &'a StyleState,
-) -> Vec<(f64, &'a StyleState)> {
+  default_style: &StyleState,
+) -> Vec<(f64, StyleState)> {
   match spec {
     GridSpec::None => Vec::new(),
-    GridSpec::Automatic => ticks.iter().map(|&p| (p, default_style)).collect(),
+    GridSpec::Automatic => {
+      ticks.iter().map(|&p| (p, default_style.clone())).collect()
+    }
     GridSpec::Explicit(lines) => lines
       .iter()
-      .map(|l| (l.pos, l.style.as_ref().unwrap_or(default_style)))
+      .map(|l| {
+        let mut st = default_style.clone();
+        if let Some(d) = &l.style {
+          apply_directive(d, &mut st);
+        }
+        (l.pos, st)
+      })
       .collect(),
   }
 }
@@ -9708,7 +10208,7 @@ fn render_grid_lines(
       "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
-      thickness_px(style.thickness, bb, svg_w).max(0.5),
+      thickness_px(style.thickness, bb, svg_w),
       color.opacity_attr(),
       dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
@@ -9723,7 +10223,7 @@ fn render_grid_lines(
       "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
-      thickness_px(style.thickness, bb, svg_w).max(0.5),
+      thickness_px(style.thickness, bb, svg_w),
       color.opacity_attr(),
       dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
@@ -10206,8 +10706,12 @@ fn render_primitive(
         let x2 = scx + srx * a2.cos();
         let y2 = scy - sry * a2.sin();
         let large_arc = i32::from((a2 - a1).abs() > std::f64::consts::PI);
+        // An open arc has ends for `CapForm` to shape.
+        let cap = style.cap_form.map_or(String::new(), |c| {
+          format!(" stroke-linecap=\"{}\"", stroke_linecap_attr(Some(c)))
+        });
         out.push_str(&format!(
-          "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
+          "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}{cap}/>\n",
           color.to_svg_rgb(),
           color.opacity_attr(),
           dash,
@@ -10233,9 +10737,8 @@ fn render_primitive(
         // Fixed screen size, in points.
         (frac / svg_w * bb.width(), frac_y / svg_h * bb.height())
       } else {
-        // A circle on screen: `frac` of the width in both directions.
-        let rx = frac * bb.width();
-        (rx, rx * (bb.height() / svg_h) / (bb.width() / svg_w))
+        // Fractions of the plot range's width and height.
+        (frac * bb.width(), frac_y * bb.height())
       };
       let disk = Primitive::Disk {
         cx: *cx,
@@ -10533,8 +11036,16 @@ fn render_primitive(
           ));
         }
       } else if holes.is_empty() {
+        // Wolfram fills polygons by the even-odd rule: a pentagram's
+        // centre stays hollow. Only a self-crossing outline tells the two
+        // rules apart.
+        let rule = if polygon_self_intersects(points) {
+          " fill-rule=\"evenodd\""
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<polygon points=\"{}\" fill=\"{}\"{}{}/>\n",
+          "<polygon points=\"{}\" fill=\"{}\"{}{}{rule}/>\n",
           pts.join(" "),
           color.to_svg_rgb(),
           fill_opacity,
@@ -11865,7 +12376,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_origin = crate::functions::plot::parse_axes_origin(replacement);
         }
         "GridLinesStyle" => {
-          let mut st = StyleState::default();
+          let mut st = default_grid_line_style();
           apply_directive(replacement, &mut st);
           grid_style = Some(st);
         }
@@ -11921,9 +12432,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(base) = &base_style {
     apply_directive(base, &mut style);
   }
+  let base_collect_style = style.clone();
   let mut primitives = Vec::new();
   let mut errors: Vec<String> = Vec::new();
-  collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+  // `Scaled`/`ImageScaled`/`Offset` coordinates need the final frame, so
+  // when any turns up the primitives are collected again once it is known.
+  let ((), mut needs_frame) = with_coord_mode(CoordMode::Pending, || {
+    collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+  });
 
   // Compute bounding box
   let mut bb = BBox::empty();
@@ -11989,6 +12505,30 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       break;
     }
     let mut grown = bb;
+    // A point's dot is likewise kept whole inside an automatic range.
+    if plot_range_padding.is_none() {
+      for prim in &primitives {
+        let (pts, style): (Vec<(f64, f64)>, &StyleState) = match prim {
+          Primitive::PointSingle { x, y, style } => (vec![(*x, *y)], style),
+          Primitive::PointMulti { points, style } => (points.clone(), style),
+          _ => continue,
+        };
+        let r = point_radius(style.point_size, svg_width as f64);
+        for (x, y) in pts {
+          if !(x.is_finite() && y.is_finite()) {
+            continue;
+          }
+          if plot_range_x.is_none() {
+            grown.x_min = grown.x_min.min(x - r / kx);
+            grown.x_max = grown.x_max.max(x + r / kx);
+          }
+          if plot_range_y.is_none() {
+            grown.y_min = grown.y_min.min(y - r / ky);
+            grown.y_max = grown.y_max.max(y + r / ky);
+          }
+        }
+      }
+    }
     for prim in &primitives {
       let Primitive::TextPrim {
         text,
@@ -12032,25 +12572,27 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The plot range is settled, so the Prolog's and Epilog's own primitives
   // can join now — under and over the content respectively — without
   // having stretched the range they are placed against.
-  if let Some(under) = &prolog {
-    let mut under_prims = Vec::new();
-    collect_primitives(
-      under,
-      &mut StyleState::default(),
-      &mut under_prims,
-      &mut errors,
-    );
-    under_prims.append(&mut primitives);
-    primitives = under_prims;
-  }
-  if let Some(over) = &epilog {
-    collect_primitives(
-      over,
-      &mut StyleState::default(),
-      &mut primitives,
-      &mut errors,
-    );
-  }
+  let collect_layers = |primitives: &mut Vec<Primitive>,
+                        errors: &mut Vec<String>| {
+    if let Some(under) = &prolog {
+      let mut under_prims = Vec::new();
+      collect_primitives(
+        under,
+        &mut StyleState::default(),
+        &mut under_prims,
+        errors,
+      );
+      under_prims.append(primitives);
+      *primitives = under_prims;
+    }
+    if let Some(over) = &epilog {
+      collect_primitives(over, &mut StyleState::default(), primitives, errors);
+    }
+  };
+  let ((), layers_need_frame) = with_coord_mode(CoordMode::Pending, || {
+    collect_layers(&mut primitives, &mut errors);
+  });
+  needs_frame |= layers_need_frame;
 
   // The data's own shape, before the drawing size rounds it.
   let data_aspect_exact = bb.height() / bb.width();
@@ -12260,6 +12802,27 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
+  // The frame is settled: collect again with the scaled and offset
+  // coordinates resolved against it.
+  if needs_frame {
+    let frame = CoordFrame {
+      bb,
+      w: svg_w,
+      h: svg_h,
+      left: margin_left,
+      bottom: total_height - svg_h - margin_top,
+      image_w: total_width,
+      image_h: total_height,
+    };
+    primitives.clear();
+    errors.clear();
+    with_coord_mode(CoordMode::Known(frame), || {
+      let mut style = base_collect_style.clone();
+      collect_primitives(&content, &mut style, &mut primitives, &mut errors);
+      collect_layers(&mut primitives, &mut errors);
+    });
+  }
+
   let mut svg = String::with_capacity(4096);
 
   if full_width {
@@ -12353,15 +12916,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_color = label_style
     .as_ref()
     .and_then(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w).color);
-  let frame_line_style = frame_style
-    .as_ref()
-    .map_or_else(AxisLineStyle::default, |spec| {
-      AxisLineStyle::from_directive(spec, &bb, svg_w)
-    });
-  let frame_label_fill = frame_line_style
-    .color
-    .or(label_color)
-    .map_or_else(|| theme().tick_label_fill.to_string(), Color::to_svg_rgb);
+  let frame_edge_styles = frame_style.as_ref().map_or_else(
+    || std::array::from_fn(|_| AxisLineStyle::default()),
+    |spec| AxisLineStyle::frame_edges(spec, &bb, svg_w),
+  );
+  let frame_label_fills: [String; 4] = std::array::from_fn(|i| {
+    frame_edge_styles[i]
+      .color
+      .or(label_color)
+      .map_or_else(|| theme().tick_label_fill.to_string(), Color::to_svg_rgb)
+  });
 
   // PlotLabel: centered above the drawing area, in the reserved strip. It
   // arrives already typeset as SVG markup (sub/superscript tspans included).
@@ -12450,10 +13014,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Grid lines render behind the axes and primitives.
   if grid_x.is_active() || grid_y.is_active() {
-    let default_style = grid_style.clone().unwrap_or_else(|| StyleState {
-      color: Color::gray(0.8),
-      ..StyleState::default()
-    });
+    let default_style =
+      grid_style.clone().unwrap_or_else(default_grid_line_style);
     render_grid_lines(
       &mut svg,
       &bb,
@@ -12527,7 +13089,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       frame_edges,
       frame_tick_modes,
       &frame_tick_lists,
-      frame_line_style,
+      &frame_edge_styles,
       frame_ticks_style
         .as_ref()
         .map(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w)),
@@ -12546,7 +13108,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
         svg_w / 2.0,
         svg_h + room(0) + ascent(LABEL_FONT),
-        frame_label_fill,
+        frame_label_fills[0],
       ));
     }
     if !left.is_empty() {
@@ -12555,7 +13117,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let lx = -(room(1) + line_height(LABEL_FONT)) + ascent(LABEL_FONT);
       let ly = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{frame_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        frame_label_fills[1],
       ));
     }
     if !top.is_empty() {
@@ -12563,7 +13126,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
         svg_w / 2.0,
         -room(2) - descent(LABEL_FONT),
-        frame_label_fill,
+        frame_label_fills[2],
       ));
     }
     if !right.is_empty() {
@@ -12571,7 +13134,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let rx = svg_w + room(3) + ascent(LABEL_FONT);
       let ry = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{frame_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        frame_label_fills[3],
       ));
     }
   }
@@ -17491,6 +18055,7 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Expr {
 pub(crate) fn mesh_region_to_graphics_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  opts: &[Expr],
 ) -> Option<Vec<Expr>> {
   let Expr::List(vertices_list) = vertices_expr else {
     return None;
@@ -17540,6 +18105,14 @@ pub(crate) fn mesh_region_to_graphics_prims(
   // Add default styling
   result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
   result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
+  // `MeshCellStyle` on edges and faces.
+  let [point_style, edge_style, face_style] = mesh_cell_styles(opts);
+  if let Some(st) = edge_style {
+    result.push(call1("EdgeForm", st));
+  }
+  if let Some(st) = face_style {
+    result.push(call1("FaceForm", st));
+  }
 
   for prim in prims {
     let Expr::FunctionCall { name, args } = prim else {
@@ -17577,92 +18150,131 @@ pub(crate) fn mesh_region_to_graphics_prims(
       }
     }
   }
+  // A style on the 0-cells draws the vertices.
+  if let Some(st) = point_style {
+    let all: Vec<Expr> = vertices
+      .iter()
+      .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect();
+    result.push(Expr::List(
+      vec![st, call1("Point", Expr::List(all.into()))].into(),
+    ));
+  }
   Some(result)
+}
+
+/// A two-dimensional `MeshRegion`'s picture: its cells drawn as `Graphics`
+/// primitives, styled by its `MeshCellStyle`.
+pub(crate) fn mesh_region_2d_svg(
+  vertices_expr: &Expr,
+  primitives_expr: &Expr,
+  opts: &[Expr],
+) -> Option<String> {
+  // Only a mesh of `Polygon` cells is shown as a picture; others keep
+  // their symbolic form, as in wolframscript's text output.
+  let has_polygons = match primitives_expr {
+    Expr::List(cells) => cells.iter().any(
+      |c| matches!(c, Expr::FunctionCall { name, .. } if name == "Polygon"),
+    ),
+    Expr::FunctionCall { name, .. } => name == "Polygon",
+    _ => false,
+  };
+  if !has_polygons {
+    return None;
+  }
+  let prims =
+    mesh_region_to_graphics_prims(vertices_expr, primitives_expr, opts)?;
+  match &graphics_ast(&[Expr::List(prims.into())]).ok()? {
+    Expr::Graphics { svg, .. } => Some(svg.clone()),
+    _ => None,
+  }
 }
 
 /// Reads a mesh region's cell styles — the `Properties -> {{d, i} ->
 /// MeshCellStyle -> style, …}` a `ConvexHullMesh` normalizes its
-/// `MeshCellStyle` option into, or a raw `MeshCellStyle` option — into
-/// face/edge style directives: a style on 2-cells (faces → `FaceForm`) or
-/// 1-cells (edges → `EdgeForm`). The index component is not tracked
-/// per-cell, so one styled cell styles them all; `Automatic` defaults are
-/// ignored. Absent or unrecognized specs leave both `None`.
-pub(crate) fn mesh_cell_style_overrides(
-  opts: &[Expr],
-) -> (Option<Expr>, Option<Expr>) {
-  let mut face_style = None;
-  let mut edge_style = None;
+/// `MeshCellStyle` option into, or a raw `MeshCellStyle` option (`d ->
+/// style`, `{d, All} -> style`, `{d, i} -> style`) — into the style of the
+/// cells of each dimension `d` (0 points, 1 edges, 2 faces). The index
+/// component is not tracked per-cell, so one styled cell styles them all;
+/// `Automatic` defaults are ignored. A bare style styles the faces.
+pub(crate) fn mesh_cell_styles(opts: &[Expr]) -> [Option<Expr>; 3] {
+  let mut styles: [Option<Expr>; 3] = [None, None, None];
+  let dim_of = |key: &Expr| -> Option<usize> {
+    let d = match key {
+      Expr::List(k) if k.len() == 2 => expr_to_f64(&k[0])?,
+      other => expr_to_f64(other)?,
+    };
+    ((0.0..=2.0).contains(&d) && d.fract() == 0.0).then_some(d as usize)
+  };
   for opt in opts {
-    let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-    else {
+    let Some((name, value)) = option_name_value(opt) else {
       continue;
     };
-    if matches!(&**pattern, Expr::Identifier(n) if n == "Properties")
-      && let Expr::List(entries) = &**replacement
-    {
-      for entry in entries {
-        let Expr::Rule {
-          pattern: key,
-          replacement: prop,
-        } = entry
-        else {
-          continue;
-        };
-        let (
-          Expr::List(k),
-          Expr::Rule {
-            pattern: prop_name,
-            replacement: style,
-          },
-        ) = (&**key, &**prop)
-        else {
-          continue;
-        };
-        if k.len() != 2
-          || !matches!(&**prop_name, Expr::Identifier(n) if n == "MeshCellStyle")
-          || matches!(&**style, Expr::Identifier(a) if a == "Automatic")
-        {
-          continue;
-        }
-        match &k[0] {
-          Expr::Integer(2) => face_style = Some((**style).clone()),
-          Expr::Integer(1) => edge_style = Some((**style).clone()),
-          _ => {}
-        }
-      }
-      continue;
-    }
-    if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
-      continue;
-    }
-    match &**replacement {
-      Expr::List(rules) => {
-        for r in rules {
+    match (name, value.as_ref()) {
+      ("Properties", Expr::List(entries)) => {
+        for entry in entries {
           let Expr::Rule {
             pattern: key,
-            replacement: style,
-          } = r
+            replacement: prop,
+          } = entry
           else {
             continue;
           };
-          let Expr::List(k) = &**key else { continue };
-          if k.len() != 2 {
+          let Expr::Rule {
+            pattern: prop_name,
+            replacement: style,
+          } = &**prop
+          else {
+            continue;
+          };
+          if !matches!(&**prop_name, Expr::Identifier(n) if n == "MeshCellStyle")
+            || matches!(&**style, Expr::Identifier(a) if a == "Automatic")
+          {
             continue;
           }
-          match expr_to_f64(&k[0]) {
-            Some(2.0) => face_style = Some((**style).clone()),
-            Some(1.0) => edge_style = Some((**style).clone()),
-            _ => {}
+          if matches!(&**key, Expr::List(k) if k.len() == 2)
+            && let Some(d) = dim_of(key)
+          {
+            styles[d] = Some((**style).clone());
           }
         }
       }
-      other => face_style = Some(other.clone()),
+      ("MeshCellStyle", Expr::List(rules)) => {
+        for r in rules {
+          if let Expr::Rule {
+            pattern: key,
+            replacement: style,
+          } = r
+            && let Some(d) = dim_of(key)
+          {
+            styles[d] = Some((**style).clone());
+          }
+        }
+      }
+      (
+        "MeshCellStyle",
+        Expr::Rule {
+          pattern,
+          replacement,
+        },
+      ) => {
+        if let Some(d) = dim_of(pattern) {
+          styles[d] = Some((**replacement).clone());
+        }
+      }
+      ("MeshCellStyle", other) => styles[2] = Some(other.clone()),
+      _ => {}
     }
   }
-  (face_style, edge_style)
+  styles
+}
+
+/// The face and edge styles of [`mesh_cell_styles`].
+pub(crate) fn mesh_cell_style_overrides(
+  opts: &[Expr],
+) -> (Option<Expr>, Option<Expr>) {
+  let [_, edges, faces] = mesh_cell_styles(opts);
+  (faces, edges)
 }
 
 /// Convert 3D `MeshRegion`/`BoundaryMeshRegion` vertex/polygon data (e.g. a
@@ -18504,7 +19116,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
         } else if let Some(graphics_prims) =
-          mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
+          mesh_region_to_graphics_prims(&gargs[0], &gargs[1], &gargs[2..])
         {
           layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(Expr::List(graphics_prims.into()));

@@ -5738,14 +5738,46 @@ fn evaluate_function_call_ast_inner(
   }
 
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
-  if name == "DelaunayMesh" && args.len() == 1 {
-    return crate::functions::delaunay::delaunay_mesh_ast(args);
+  // Their options (`MeshCellStyle -> …`) are carried by the mesh region
+  // they build.
+  if name == "DelaunayMesh" || name == "VoronoiMesh" {
+    let positional = args
+      .iter()
+      .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .unwrap_or(args.len());
+    let (pos_args, opts) = args.split_at(positional);
+    let accepted = if name == "DelaunayMesh" {
+      pos_args.len() == 1
+    } else {
+      (1..=2).contains(&pos_args.len())
+    };
+    if accepted {
+      let mesh = if name == "DelaunayMesh" {
+        crate::functions::delaunay::delaunay_mesh_ast(pos_args)?
+      } else {
+        crate::functions::voronoi::voronoi_mesh_ast(pos_args)?
+      };
+      return Ok(match &mesh {
+        Expr::FunctionCall {
+          name: head,
+          args: margs,
+        } if head == "MeshRegion" && !opts.is_empty() => {
+          let mut margs = margs.to_vec();
+          margs.extend(opts.iter().cloned());
+          call(head, margs)
+        }
+        Expr::FunctionCall { name: head, .. }
+          if (head == "DelaunayMesh" || head == "VoronoiMesh")
+            && !opts.is_empty() =>
+        {
+          unevaluated(name, args)
+        }
+        _ => mesh,
+      });
+    }
   }
   if name == "DiscretizeRegion" && !args.is_empty() {
     return crate::functions::fem2d::discretize_region_ast(args);
-  }
-  if name == "VoronoiMesh" && (1..=2).contains(&args.len()) {
-    return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
   // HighlightMesh[mesh, spec, opts…] is the mesh carrying the highlights and
