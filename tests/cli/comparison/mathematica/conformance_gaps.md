@@ -5465,11 +5465,12 @@ Found comparing `Export[…, "SVG"]` of both engines:
 
 ### Automatic `Plot` range: outlier quantiles are approximate
 
-Both engines clip outliers off an automatic range with the rule of
-``Charting`CommonDump`icomputeSceneRange`` (17.5 % / 82.5 % quantiles `lo`,
+Both engines clip outliers off an automatic range with the rule of the
+internal ``Charting`CommonDump`icomputeSceneRange``
+(17.5 % / 82.5 % quantiles `lo`,
 `hi`; an extreme further than `2.5 (hi - lo)` beyond is replaced by
 `1.5 (hi - lo)` beyond). `ListPlot` matches exactly. For `Plot` the rule runs
-inside the kernel's `Visualization`Core`Plot` on its own adaptive samples;
+inside the kernel's ``Visualization`Core`Plot`` on its own adaptive samples;
 Woxi weighs its samples by the x stretch each stands for, which lands within
 about 1 % of WL's value (`Plot[Exp[x], {x, -1, 10}]`: WL 7948, Woxi ≈ 8070),
 not on it. WL also clips some curves the rule leaves alone on the continuous
