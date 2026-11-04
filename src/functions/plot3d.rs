@@ -5568,6 +5568,65 @@ fn collect_3d_primitives(
             });
           }
         }
+        // `Arrow[Tube[curve, r]]` is a solid arrow: the tube itself plus a
+        // cone head capping its far end.
+        "Arrow"
+          if matches!(args.first(), Some( Expr::FunctionCall { name: n, args: ta })
+            if n == "Tube" && !ta.is_empty()) =>
+        {
+          collect_3d_primitives(&args[0], style, prims);
+          if let Expr::FunctionCall { args: ta, .. } = &args[0] {
+            let curve = match &ta[0] {
+              Expr::FunctionCall {
+                name: n,
+                args: inner,
+              } if n == "Line" && !inner.is_empty() => inner[0].clone(),
+              other => other.clone(),
+            };
+            let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+            if let Some(pts) = parse_point3d_list(&curve)
+              && pts.len() >= 2
+            {
+              let tip = pts[pts.len() - 1];
+              let prev = pts[pts.len() - 2];
+              let radius = if let Some(r) = ta.get(1) {
+                try_eval_to_f64(&evaluate_expr_to_expr(r).unwrap_or(r.clone()))
+                  .unwrap_or(0.0)
+              } else {
+                let ext = |a: &Point3D, b: &Point3D| {
+                  ((a.x - b.x).powi(2)
+                    + (a.y - b.y).powi(2)
+                    + (a.z - b.z).powi(2))
+                  .sqrt()
+                };
+                pts
+                  .iter()
+                  .flat_map(|a| pts.iter().map(move |b| ext(a, b)))
+                  .fold(0.0f64, f64::max)
+                  / 100.0
+              };
+              let seg = ((tip.x - prev.x).powi(2)
+                + (tip.y - prev.y).powi(2)
+                + (tip.z - prev.z).powi(2))
+              .sqrt();
+              if seg > 0.0 && radius > 0.0 {
+                // Head: 6 radii long, 3 radii wide, ending at the tip.
+                let head = (6.0 * radius).min(seg);
+                let base = Point3D {
+                  x: tip.x + (prev.x - tip.x) / seg * head,
+                  y: tip.y + (prev.y - tip.y) / seg * head,
+                  z: tip.z + (prev.z - tip.z) / seg * head,
+                };
+                prims.push(Primitive3D::Cone {
+                  p1: base,
+                  p2: tip,
+                  radius: 3.0 * radius,
+                  style: style.clone(),
+                });
+              }
+            }
+          }
+        }
         "Arrow" if !args.is_empty() => {
           if let Some(pts) = parse_point3d_list(&args[0]) {
             prims.push(Primitive3D::Arrow3D {

@@ -21732,6 +21732,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: `Arrow[Tube[{p1, p2}]]` (a solid 3D arrow) drew nothing
+    /// useful because `Arrow` only accepted a plain point list. It must draw
+    /// the tube plus a cone head, so it differs from the bare tube for any
+    /// direction and radius.
+    #[test]
+    fn graphics3d_arrow_of_tube_adds_head() {
+      for (curve, r) in
+        [("{{0,0,0},{10,0,0}}", ""), ("{{0,0,0},{0,3,4}}", ", 0.2")]
+      {
+        let tube = export_svg(&format!("Graphics3D[Tube[{curve}{r}]]"));
+        let arrow = export_svg(&format!("Graphics3D[Arrow[Tube[{curve}{r}]]]"));
+        assert!(arrow.contains("<svg"));
+        assert!(arrow.len() > tube.len());
+      }
+    }
+
+    /// Regression: an argument-less `Arrow[]` in a `Graphics3D` must not
+    /// panic while checking for the `Arrow[Tube[…]]` form.
+    #[test]
+    fn graphics3d_empty_arrow_does_not_panic() {
+      assert!(export_svg("Graphics3D[Arrow[]]").contains("<svg"));
+    }
+
     #[test]
     fn graphics3d_cylinder() {
       insta::assert_snapshot!(export_svg(
