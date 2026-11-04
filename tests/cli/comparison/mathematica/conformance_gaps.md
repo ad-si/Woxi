@@ -8336,3 +8336,9 @@ value that is not a polynomial is expanded in wolframscript
 (vertex `k` = subset with the bits of `k - 1`, one row per subset size).
 Vertex/edge counts and connectivity are exact, but the edge ordering and the
 embedding coordinates were not compared against `wolframscript`.
+
+### `ImageEffect[img, {"PoissonNoise", s}]` scale convention (unverified)
+
+Woxi draws each channel `v` as `s·Poisson(v/s)` (mean preserved, variance
+`s·v`). The exact meaning of Wolfram's amount parameter could not be checked
+against `wolframscript`, so the noise magnitude may differ.
