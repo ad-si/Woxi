@@ -18,9 +18,9 @@ pub(crate) const AXIS_TICK_FONT: f64 =
 /// Stroke width of the axis lines and tick marks, in display pixels.
 const AXIS_STROKE: f64 = 0.5;
 /// Length of a labelled tick mark, in display pixels (Wolfram draws 4).
-const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
+pub(crate) const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
 /// Length of an unlabelled tick mark, in display pixels (Wolfram draws 2.4).
-const AXIS_MINOR_TICK_LEN: f64 = 2.4;
+pub(crate) const AXIS_MINOR_TICK_LEN: f64 = 2.4;
 
 /// How one axis maps data values onto its length.
 #[derive(Clone, Copy)]

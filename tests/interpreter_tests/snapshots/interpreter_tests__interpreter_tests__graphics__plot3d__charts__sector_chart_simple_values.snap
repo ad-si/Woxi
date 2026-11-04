@@ -2,9 +2,9 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"SectorChart[{1, 2, 3}]\")"
 ---
-<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="225" fill="rgb(255,255,255)"/>
-<path d="M180.00,112.50 L84.38,112.50 A95.62,95.62 0 0,1 132.19,29.69 Z" fill="rgb(255,213,64)" stroke="white" stroke-width="1"><title>{1, 1}</title></path>
-<path d="M180.00,112.50 L132.19,29.69 A95.62,95.62 0 0,1 275.62,112.50 Z" fill="rgb(0,170,242)" stroke="white" stroke-width="1"><title>{2, 1}</title></path>
-<path d="M180.00,112.50 L275.62,112.50 A95.62,95.62 0 0,1 84.38,112.50 Z" fill="rgb(96,191,0)" stroke="white" stroke-width="1"><title>{3, 1}</title></path>
+<svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="360" fill="rgb(255,255,255)"/>
+<path d="M16.36,180.00 A163.64,163.64 0 0,1 98.18,38.29 L180.00,180.00 Z" fill="rgb(255,213,64)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>{1, 1}</title></path>
+<path d="M98.18,38.29 A163.64,163.64 0 0,1 343.64,180.00 L180.00,180.00 Z" fill="rgb(0,170,242)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>{2, 1}</title></path>
+<path d="M343.64,180.00 A163.64,163.64 0 0,1 16.36,180.00 L180.00,180.00 Z" fill="rgb(96,191,0)" stroke="black" stroke-opacity="0.5" stroke-width="0.75"><title>{3, 1}</title></path>
 </svg>

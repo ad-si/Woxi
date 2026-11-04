@@ -53,6 +53,93 @@ pub(crate) const CHART_COLORS: [(u8, u8, u8); 15] = {
 fn extract_grouped_values(
   arg: &Expr,
 ) -> Result<Vec<Vec<f64>>, InterpreterError> {
+  extract_grouped(arg, chart_datum_value)
+}
+
+/// The [`DatumDecor`] of every element [`extract_grouped_values`] keeps, in
+/// the same grouping.
+fn extract_grouped_decor(
+  arg: &Expr,
+) -> Result<Vec<Vec<DatumDecor>>, InterpreterError> {
+  extract_grouped(arg, |e| chart_datum_value(e).map(|_| chart_datum_decor(e)))
+}
+
+/// What the wrappers of one chart data element add to its value:
+/// `Style[v, colour]` colours it, `Labeled[v, label]` names it and
+/// `Around[v, δ]` gives it an error interval `(low, high)`.
+#[derive(Clone, Default, Debug)]
+pub(crate) struct DatumDecor {
+  pub color: Option<Color>,
+  pub label: Option<String>,
+  pub error: Option<(f64, f64)>,
+}
+
+impl DatumDecor {
+  /// Whether any element of `decor` carries a decoration.
+  fn any(decor: &[Vec<DatumDecor>]) -> bool {
+    decor
+      .iter()
+      .flatten()
+      .any(|d| d.color.is_some() || d.label.is_some() || d.error.is_some())
+  }
+}
+
+fn chart_datum_decor(e: &Expr) -> DatumDecor {
+  let mut decor = DatumDecor::default();
+  let mut cur = e;
+  loop {
+    match cur {
+      Expr::FunctionCall { name, args }
+        if matches!(
+          name.as_str(),
+          "Tooltip" | "Annotation" | "Style" | "Labeled" | "Quantity"
+        ) && !args.is_empty() =>
+      {
+        if name == "Style" && decor.color.is_none() {
+          decor.color = args[1..].iter().find_map(|d| {
+            parse_color(d).or_else(|| {
+              crate::functions::plot::parse_style_directives(d)
+                .and_then(|s| s.color)
+                .map(|c| Color::new(c.r, c.g, c.b))
+            })
+          });
+        }
+        if name == "Labeled" && decor.label.is_none() {
+          decor.label = args.get(1).and_then(expr_to_label);
+        }
+        cur = &args[0];
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Around" && args.len() == 2 =>
+      {
+        let Some(x) = try_eval_to_f64(&args[0]) else {
+          break;
+        };
+        decor.error = match &args[1] {
+          Expr::List(d) if d.len() == 2 => {
+            match (try_eval_to_f64(&d[0]), try_eval_to_f64(&d[1])) {
+              (Some(lo), Some(hi)) => Some((x - lo, x + hi)),
+              _ => None,
+            }
+          }
+          d => try_eval_to_f64(d).map(|d| (x - d, x + d)),
+        };
+        break;
+      }
+      _ => break,
+    }
+  }
+  decor
+}
+
+/// Group a chart's data: a flat list is one group per element, a list of
+/// lists one group per sublist; `value` reads each element (elements it
+/// rejects are dropped).
+fn extract_grouped<T>(
+  arg: &Expr,
+  value: impl Fn(&Expr) -> Option<T>,
+) -> Result<Vec<Vec<T>>, InterpreterError> {
+  let chart_datum_value = value;
   let data = evaluate_expr_to_expr(arg)?;
   let Expr::List(items) = &data else {
     return Err(InterpreterError::EvaluationError(
@@ -109,9 +196,10 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
     {
       chart_datum_value(&args[0])
     }
-    // A `Quantity[magnitude, unit]` plots as its magnitude.
+    // A `Quantity[magnitude, unit]` plots as its magnitude, an
+    // `Around[value, δ]` as its value.
     Expr::FunctionCall { name, args }
-      if name == "Quantity" && args.len() == 2 =>
+      if (name == "Quantity" || name == "Around") && args.len() == 2 =>
     {
       chart_datum_value(&args[0])
     }
@@ -739,9 +827,19 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
-  /// `ChartLayout -> "Stacked"`: the bars of each group are piled on top of
-  /// one another in a single column instead of drawn side by side.
-  pub stacked: bool,
+  /// `ChartLayout -> "Stacked"` / `"Percentile"` / `"Overlapped"` /
+  /// `"Stepped"`: how the bars of each group share its slot.
+  pub layout: crate::functions::plot::BarLayout,
+  /// `BarOrigin -> Top`: bars hang down from the top.
+  pub bar_origin_top: bool,
+  /// A logarithmic value (`x`) axis — a `Histogram`'s `{"Log", …}` bins,
+  /// whose data then arrive as base-10 logarithms.
+  pub log_x: bool,
+  /// A logarithmic count (`y`) axis: `ScalingFunctions -> "Log"`.
+  pub log_y: bool,
+  /// The bars' `EdgeForm` from `ChartStyle` / `ChartBaseStyle`, as
+  /// [`chart_edge_form`] reads it.
+  pub bar_edge: Option<((u8, u8, u8), f64, f64)>,
   /// `Epilog -> {…}` graphics primitives (already evaluated), drawn over the
   /// finished chart. Coordinates are the chart's own: the first bar group is
   /// centred at `x = 1`, values run along `y`.
@@ -2413,6 +2511,19 @@ const WATERMELON_COLORS_GRADIENT: [(f64, f64, f64); 8] = [
   (0.882911, 0.359638, 0.360092),
 ];
 
+/// The chart palette of `PlotTheme -> "Business"`: wolframscript blends it
+/// across the bars (these are its colours for eight bars, `t = i/7`).
+const BUSINESS_THEME_GRADIENT: [(f64, f64, f64); 8] = [
+  (0.973, 0.6454, 0.1729),
+  (0.9498571428571428, 0.5343142857142857, 0.23538571428571428),
+  (0.9267142857142857, 0.42322857142857145, 0.29787142857142856),
+  (0.8448605714285714, 0.37637714285714285, 0.43400285714285713),
+  (0.7336514285714286, 0.36164285714285715, 0.6069571428571429),
+  (0.6238077142857144, 0.37898971428571426, 0.7489977142857143),
+  (0.5166948571428571, 0.46049885714285715, 0.8292108571428571),
+  (0.409582, 0.542008, 0.909424),
+];
+
 /// Resolve a named ChartStyle / `ColorData` color scheme to its gradient
 /// control points. Covers every name in `ColorData["Gradients"]`.
 pub(crate) fn named_color_scheme(
@@ -2536,7 +2647,10 @@ pub(crate) fn sample_named_gradient(
 /// Sample a gradient (linear `Blend` of its control points) at `n` evenly
 /// spaced parameters, returning one color per chart element. Matches
 /// wolframscript's `ChartStyle -> scheme` sampling (`t = i/(n-1)`).
-fn sample_gradient(controls: &[(f64, f64, f64)], n: usize) -> Vec<Color> {
+pub(crate) fn sample_gradient(
+  controls: &[(f64, f64, f64)],
+  n: usize,
+) -> Vec<Color> {
   if controls.is_empty() || n == 0 {
     return Vec::new();
   }
@@ -2635,7 +2749,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
-    stacked: false,
+    layout: crate::functions::plot::BarLayout::Grouped,
+    bar_origin_top: false,
+    log_x: false,
+    log_y: false,
+    bar_edge: None,
     epilog: Vec::new(),
     color_function: None,
     color_function_scaling: true,
@@ -2809,10 +2927,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         // `{xspec, yspec}` list overrides individual axes (each entry an
         // optional `{pos, label}` pair) — matching Plot's `Ticks` handling.
         "ChartLayout" => {
-          opts.stacked = matches!(
-            replacement,
-            Expr::String(s) | Expr::Identifier(s) if s == "Stacked"
-          );
+          if let Expr::String(s) | Expr::Identifier(s) = replacement {
+            opts.layout = crate::functions::plot::BarLayout::from_name(s)
+              .unwrap_or_default();
+          }
         }
         "Ticks" => match replacement {
           Expr::Identifier(s) if s == "None" || s == "False" => {
@@ -2834,6 +2952,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {
             opts.bar_origin_left = matches!(side.as_str(), "Left" | "Right");
+            opts.bar_origin_top = side == "Top";
           }
         }
         "ColorFunction" => {
@@ -2888,11 +3007,38 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               opts.chart_style_scheme = scheme_name(&val);
             }
             _ => {
-              if let Some(c) = parse_color(&val) {
+              // A `Directive[colour, EdgeForm[…], …]` colours the elements
+              // with its colour (and edges them, see `bar_edge`).
+              let color = parse_color(&val).or_else(|| match &val {
+                Expr::FunctionCall { name, args } if name == "Directive" => {
+                  args.iter().find_map(parse_color)
+                }
+                _ => None,
+              });
+              if let Some(c) = color {
                 opts.chart_style.push(c);
               }
             }
           }
+          if let Some(edge) = chart_edge_form(&val) {
+            opts.bar_edge = Some(edge);
+          }
+        }
+        "ChartBaseStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          if opts.bar_edge.is_none() {
+            opts.bar_edge = chart_edge_form(&val);
+          }
+        }
+        // `ScalingFunctions -> "Log"` (or `{xs, "Log"}`) scales the value
+        // axis logarithmically.
+        "ScalingFunctions" => {
+          let y_spec = match replacement {
+            Expr::List(items) if items.len() == 2 => &items[1],
+            other => other,
+          };
+          opts.log_y = matches!(y_spec, Expr::String(s) if s == "Log");
         }
         _ => {}
       }
@@ -3153,6 +3299,16 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     apply_color_function(&mut opts, &values);
   }
   apply_color_scheme(&mut opts, color_count);
+  // `PlotTheme -> "Business"` blends its palette across the bars.
+  if opts.chart_style.is_empty()
+    && args[1..].iter().any(|o| {
+      crate::functions::graphics::option_name_value(o).is_some_and(|(n, v)| {
+        n == "PlotTheme" && matches!(&*v, Expr::String(s) if s == "Business")
+      })
+    })
+  {
+    opts.chart_style = sample_gradient(&BUSINESS_THEME_GRADIENT, color_count);
+  }
 
   // LabelingFunction -> f produces a label drawn at each bar's end.
   let bar_labels: Vec<String> = match &opts.labeling_function {
@@ -3198,6 +3354,47 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(crate::graphics_result(svg));
   }
 
+  let mut look = bar_chart_look(args);
+  look.layout = opts.layout;
+  let decor = extract_grouped_decor(&args[0]).unwrap_or_default();
+  if DatumDecor::any(&decor) {
+    let to_u8 = |c: &Color| {
+      let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+      (ch(c.r), ch(c.g), ch(c.b))
+    };
+    let flat: Vec<&DatumDecor> = decor.iter().flatten().collect();
+    look.bar_colors =
+      flat.iter().map(|d| d.color.as_ref().map(to_u8)).collect();
+    look.error_bars = flat.iter().map(|d| d.error).collect();
+    // `Labeled[v, label]` names its bar on the category axis, as a chart
+    // label would.
+    if opts.chart_labels.is_empty() && decor.iter().all(|g| g.len() == 1) {
+      opts.chart_labels = decor
+        .iter()
+        .map(|g| ChartLabel {
+          text: g[0].label.clone().unwrap_or_default(),
+          rotation: 0.0,
+        })
+        .collect();
+      if opts.chart_labels.iter().all(|l| l.text.is_empty()) {
+        opts.chart_labels.clear();
+      }
+    }
+  }
+  // `BarOrigin -> Top` hangs the bars from the top: the values are drawn
+  // negated and the axis labels their magnitudes.
+  let groups = if opts.bar_origin_top {
+    look.value_axis_negated = true;
+    for e in look.error_bars.iter_mut().flatten() {
+      *e = (-e.1, -e.0);
+    }
+    groups
+      .iter()
+      .map(|g| g.iter().map(|v| -v).collect())
+      .collect()
+  } else {
+    groups
+  };
   let svg = generate_bar_svg(
     &groups,
     opts.svg_width,
@@ -3222,13 +3419,47 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    opts.stacked,
     opts.ticks,
     &opts.epilog,
-    &bar_chart_look(args),
+    &look,
   )?;
   let structure = bar_chart_structure(&groups, &opts, args);
   Ok(crate::plot_result_with_structure(svg, structure))
+}
+
+/// The `EdgeForm[spec]` inside a chart style (`ChartBaseStyle`,
+/// `ChartStyle`, possibly within a `Directive` or list) as the bars' edge:
+/// colour (black unless given), stroke width in render units and opacity
+/// (WL's default chart edge's unless given).
+pub(crate) fn chart_edge_form(
+  value: &Expr,
+) -> Option<((u8, u8, u8), f64, f64)> {
+  let spec = match value {
+    Expr::FunctionCall { name, args } if name == "EdgeForm" => args.first()?,
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      return args.iter().find_map(chart_edge_form);
+    }
+    Expr::List(items) => return items.iter().find_map(chart_edge_form),
+    _ => return None,
+  };
+  if matches!(spec, Expr::Identifier(s) if s == "None") {
+    return Some(((0, 0, 0), 0.0, 0.0));
+  }
+  let style = crate::functions::plot::parse_style_directives(spec);
+  let opacity = style.as_ref().and_then(|s| s.opacity);
+  let color = style.as_ref().and_then(|s| s.color).map_or((0, 0, 0), |c| {
+    let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+    (ch(c.r), ch(c.g), ch(c.b))
+  });
+  let width = style
+    .as_ref()
+    .and_then(|s| s.thickness)
+    .map_or(0.75 * RESOLUTION_SCALE as f64, |t| {
+      t * RESOLUTION_SCALE as f64
+    });
+  // The style is laid over WL's default chart edge, whose `Opacity[0.66]`
+  // stays unless the spec sets its own.
+  Some((color, width, opacity.unwrap_or(0.66)))
 }
 
 /// The `Axes`, `AxesStyle`, `Frame`, `FrameStyle`, `BarSpacing` and
@@ -3271,8 +3502,49 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
         }
       }
       "Frame" => {
-        look.frame =
-          matches!(&value, Expr::Identifier(v) if v == "True" || v == "All");
+        let on = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "True");
+        match &value {
+          // `{{left, right}, {bottom, top}}`
+          Expr::List(lr_bt)
+            if lr_bt.len() == 2
+              && lr_bt
+                .iter()
+                .all(|p| matches!(p, Expr::List(s) if s.len() == 2)) =>
+          {
+            let side = |i: usize, j: usize| match &lr_bt[i] {
+              Expr::List(s) => on(&s[j]),
+              _ => false,
+            };
+            look.frame_sides = [side(0, 0), side(0, 1), side(1, 0), side(1, 1)];
+            look.frame = look.frame_sides.iter().any(|s| *s);
+          }
+          other => {
+            look.frame =
+              matches!(other, Expr::Identifier(v) if v == "True" || v == "All");
+          }
+        }
+      }
+      // `GridLines -> {xspec, yspec}`: only the value (y) lines are drawn
+      // on a bar chart.
+      "GridLines" => {
+        let y_spec = match &value {
+          Expr::List(items) if items.len() == 2 => Some(&items[1]),
+          Expr::Identifier(v) if v == "Automatic" => Some(&value),
+          _ => None,
+        };
+        look.value_grid = y_spec
+          .filter(|s| matches!(s, Expr::Identifier(v) if v == "Automatic"))
+          .map(|_| ((128, 128, 128), 0.4, 0.5, None));
+      }
+      // `PlotTheme -> "Business"`: a left/bottom frame instead of axes,
+      // dotted value grid lines (and its own palette, see `bar_chart_ast`).
+      "PlotTheme" => {
+        if matches!(&value, Expr::String(s) if s == "Business") {
+          look.axes = false;
+          look.frame = true;
+          look.frame_sides = [true, false, true, false];
+          look.value_grid = Some(((102, 102, 102), 0.5, 1.0, Some((1.0, 2.0))));
+        }
       }
       "FrameStyle" => {
         if let Some((c, w)) = paint(&value) {
@@ -3294,6 +3566,20 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       "AspectRatio" => {
         look.aspect_ratio = try_eval_to_f64(&value).filter(|r| *r > 0.0);
+      }
+      // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
+      "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {
+        if let Some(edge) = chart_edge_form(&value)
+          && (name != "ChartBaseStyle" || look.edge.is_none())
+        {
+          look.edge = Some(edge);
+        }
+      }
+      "ChartElementFunction" => {
+        if let Expr::String(s) = &value {
+          look.element = crate::functions::plot::BarElement::from_name(s)
+            .unwrap_or_default();
+        }
       }
       _ => {}
     }
@@ -3553,16 +3839,30 @@ fn bar_chart_structure(
   {
     return tree;
   }
-  let gap =
-    crate::functions::plot::bar_group_gap(bar_chart_look(args).bar_spacing);
   let bars_per_group = groups.iter().map(Vec::len).max().unwrap_or(1);
+  let gap = crate::functions::plot::bar_group_gap(
+    bar_chart_look(args).bar_spacing,
+    if opts.layout.single_column() {
+      1
+    } else {
+      bars_per_group
+    },
+  );
   let mut prims: Vec<Expr> = Vec::new();
-  for (gi, group) in groups.iter().enumerate() {
-    let group_x0 = gi as f64 + gap + 0.5;
-    let slots = if opts.stacked { 1 } else { bars_per_group };
-    let bar_w = (1.0 - 2.0 * gap) / slots as f64;
-    let (mut up, mut down) = (0.0_f64, 0.0_f64);
-    for (bi, &val) in group.iter().enumerate() {
+  let sign = if opts.bar_origin_top { -1.0 } else { 1.0 };
+  let signed: Vec<Vec<f64>> = groups
+    .iter()
+    .map(|g| g.iter().map(|v| sign * v).collect())
+    .collect();
+  let rects = crate::functions::plot::bar_rects(&signed, opts.layout, gap);
+  let decor: Vec<DatumDecor> = extract_grouped_decor(&args[0])
+    .unwrap_or_default()
+    .into_iter()
+    .flatten()
+    .collect();
+  for (flat, rect) in rects.iter().enumerate() {
+    let (gi, bi) = (rect.group, rect.index);
+    {
       let color_idx = if bars_per_group > 1 { bi } else { gi };
       // Without ChartStyle a single flat dataset is drawn in one color.
       let default_idx = if bars_per_group > 1 || !opts.chart_legends.is_empty()
@@ -3571,24 +3871,21 @@ fn bar_chart_structure(
       } else {
         0
       };
-      let (r, g, b) = if opts.chart_style.is_empty() {
-        CHART_COLORS[default_idx % CHART_COLORS.len()]
-      } else {
-        let c = &opts.chart_style[color_idx % opts.chart_style.len()];
-        (
+      let style_color =
+        decor.get(flat).and_then(|d| d.color.as_ref()).or_else(|| {
+          (!opts.chart_style.is_empty())
+            .then(|| &opts.chart_style[color_idx % opts.chart_style.len()])
+        });
+      let (r, g, b) = match style_color {
+        None => CHART_COLORS[default_idx % CHART_COLORS.len()],
+        Some(c) => (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
+        ),
       };
-      let (x0, y0, y1) = if opts.stacked {
-        let base = if val >= 0.0 { &mut up } else { &mut down };
-        let y0 = *base;
-        *base += val;
-        (group_x0, y0, *base)
-      } else {
-        (group_x0 + bi as f64 * bar_w, 0.0, val)
-      };
+      let (x0, y0, y1) = (rect.x0 + 0.5, rect.y0, rect.y1);
+      let bar_w = rect.x1 - rect.x0;
       let point =
         |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
       prims.push(Expr::FunctionCall {
@@ -3649,6 +3946,31 @@ fn labeling_function_label(
   func: &Expr,
   value: f64,
 ) -> Option<(String, Option<String>)> {
+  // A bare position (`LabelingFunction -> Above`) labels each element
+  // with its value, set at that position.
+  if let Expr::Identifier(pos) = func
+    && matches!(
+      pos.as_str(),
+      "Above"
+        | "Below"
+        | "Center"
+        | "Top"
+        | "Bottom"
+        | "Left"
+        | "Right"
+        | "Before"
+        | "After"
+    )
+  {
+    let placed = Expr::FunctionCall {
+      name: "Placed".into(),
+      args: vec![Expr::Slot(1), Expr::Identifier(pos.clone())].into(),
+    };
+    let f = Expr::Function {
+      body: Box::new(placed),
+    };
+    return labeling_function_label(&f, value);
+  }
   let call = Expr::CurriedCall {
     func: Box::new(func.clone()),
     args: vec![Expr::Real(value)],
@@ -3751,6 +4073,54 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
   Ok(vec![row])
 }
 
+/// The `SectorOrigin` of a pie or sector chart as `(start angle,
+/// clockwise, inner radius)`. The default starts at `π` and runs clockwise;
+/// a bare angle `θ` runs counterclockwise from `θ`; `{θ, "Clockwise"}` names
+/// the direction and `{origin, r0}` adds an inner radius.
+pub(crate) fn parse_sector_origin(args: &[Expr]) -> (f64, bool, f64) {
+  let default = (std::f64::consts::PI, true, 0.0);
+  let Some(value) = args[1..].iter().find_map(|o| {
+    crate::functions::graphics::option_name_value(o)
+      .filter(|(n, _)| *n == "SectorOrigin")
+      .map(|(_, v)| evaluate_expr_to_expr(&v).unwrap_or_else(|_| (*v).clone()))
+  }) else {
+    return default;
+  };
+  // An angle spec: `Automatic`, `θ` or `{θ | Automatic, direction}`.
+  let angle_spec = |e: &Expr| -> Option<(f64, bool)> {
+    match e {
+      Expr::Identifier(s) if s == "Automatic" => Some((default.0, default.1)),
+      Expr::List(items)
+        if items.len() == 2 && matches!(&items[1], Expr::String(_)) =>
+      {
+        let Expr::String(dir) = &items[1] else {
+          return None;
+        };
+        let clockwise = dir == "Clockwise";
+        let angle = match &items[0] {
+          Expr::Identifier(s) if s == "Automatic" => default.0,
+          a => try_eval_to_f64(a)?,
+        };
+        Some((angle, clockwise))
+      }
+      a => try_eval_to_f64(a).map(|t| (t, false)),
+    }
+  };
+  if let Some((angle, cw)) = angle_spec(&value) {
+    return (angle, cw, 0.0);
+  }
+  if let Expr::List(items) = &value
+    && items.len() == 2
+    && let Some((angle, cw)) = angle_spec(&items[0])
+  {
+    let hole = try_eval_to_f64(&items[1])
+      .filter(|r| *r >= 0.0)
+      .unwrap_or(0.0);
+    return (angle, cw, hole);
+  }
+  default
+}
+
 /// PieChart[{v1, v2, ...}] or PieChart[{{v1, v2, ...}, ...}]
 ///
 /// Flat input renders as a single pie. A list of sublists renders as
@@ -3770,6 +4140,25 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let mut opts = parse_chart_options(args);
+  // `Style[v, colour]` / `Labeled[v, label]` wrappers, one per slice.
+  let decor: Vec<Vec<DatumDecor>> = {
+    let groups = extract_grouped_decor(&args[0]).unwrap_or_default();
+    if groups.iter().all(|g| g.len() == 1) && rows.len() == 1 {
+      vec![groups.into_iter().flatten().collect()]
+    } else {
+      groups
+    }
+  };
+  if opts.chart_labels.is_empty()
+    && let [row] = decor.as_slice()
+    && row.iter().any(|d| d.label.is_some())
+  {
+    opts.chart_labels = row
+      .iter()
+      .map(|d| ChartLabel::plain(d.label.clone().unwrap_or_default()))
+      .collect();
+  }
+  let (sector_origin, clockwise, hole) = parse_sector_origin(args);
   // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per slice,
   // sized to the widest ring.
   let color_count = rows.iter().map(Vec::len).max().unwrap_or(1);
@@ -3834,11 +4223,32 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   // Callout labels sit outside the pie, so the wedges give up the room the
   // text needs — the same trade wolframscript makes.
+  // `ChartLabels -> Placed[labels, "RadialOuter"]` (any named radial
+  // position) places the chart labels the way a `LabelingFunction`'s are.
+  let chart_label_placement: Option<String> = args[1..].iter().find_map(|o| {
+    let (name, value) = crate::functions::graphics::option_name_value(o)?;
+    if chart_option_alias(name) != "ChartLabels" {
+      return None;
+    }
+    match &*value {
+      Expr::FunctionCall { name, args } if name == "Placed" => {
+        match args.get(1) {
+          Some(Expr::String(p)) => Some(p.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  });
   let has_callout = slice_labels
     .iter()
     .flatten()
     .flatten()
-    .any(|(_, pos)| pos.as_deref().is_some_and(|p| p.ends_with("Callout")));
+    .any(|(_, pos)| pos.as_deref().is_some_and(|p| p.ends_with("Callout")))
+    || (chart_label_placement
+      .as_deref()
+      .is_some_and(|p| p.ends_with("Callout"))
+      && !opts.chart_labels.is_empty());
   // wolframscript leaves a margin of ~1/6 of the half-frame around the pie,
   // so the radius is ~0.82 of the half-frame (147 on a 360x360 frame).
   let radius =
@@ -3888,23 +4298,28 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     0.0
   };
+  // `SectorOrigin -> {…, r0}` leaves a hole of radius `r0` (rings being one
+  // unit wide each) in the middle.
+  let hole_radius = radius * hole / (hole + n_rings as f64);
   let ring_width =
-    (radius - (n_rings.saturating_sub(1)) as f64 * ring_gap) / n_rings as f64;
+    (radius - hole_radius - (n_rings.saturating_sub(1)) as f64 * ring_gap)
+      / n_rings as f64;
 
   for (ring_idx, row) in rows.iter().enumerate() {
     let total: f64 = row.iter().sum();
     if total <= 0.0 {
       continue;
     }
-    let r_in = ring_idx as f64 * (ring_width + ring_gap);
+    let r_in = hole_radius + ring_idx as f64 * (ring_width + ring_gap);
     let r_out = r_in + ring_width;
 
     // Slices are drawn in the order given by the value array, matching
     // wolframscript: `PieChart[{v1, v2, ...}]` lays wedges out in input
     // order (no sorting). This holds for both single- and multi-ring input.
 
-    // Start at π (negative x-axis) so the first slice sits right above it.
-    let mut start_angle = std::f64::consts::PI;
+    // The math angle where the next slice starts: by default π (the
+    // negative x-axis), running clockwise.
+    let mut math_angle = sector_origin;
     // Restart the color cycle at each ring so every row uses the same
     // palette — the rings themselves carry the "dataset" distinction.
     for i in 0..row.len() {
@@ -3912,28 +4327,44 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Color and label are keyed by the original data index `i` (not the
       // draw order), matching wolframscript: `ChartStyle -> {c1, c2, ...}`
       // and `ChartLabels -> {l1, l2, ...}` align with the input values.
-      let (r, g, b) = if opts.chart_style.is_empty() {
-        CHART_COLORS[i % CHART_COLORS.len()]
-      } else {
-        let c = &opts.chart_style[i % opts.chart_style.len()];
-        (
+      let style_color = decor
+        .get(ring_idx)
+        .and_then(|d| d.get(i))
+        .and_then(|d| d.color.as_ref())
+        .or_else(|| {
+          (!opts.chart_style.is_empty())
+            .then(|| &opts.chart_style[i % opts.chart_style.len()])
+        });
+      let (r, g, b) = match style_color {
+        None => CHART_COLORS[i % CHART_COLORS.len()],
+        Some(c) => (
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
           (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
+        ),
       };
       let sweep = 2.0 * std::f64::consts::PI * val / total;
+      let next_math_angle = if clockwise {
+        math_angle - sweep
+      } else {
+        math_angle + sweep
+      };
+      // SVG angles run clockwise (y points down); the wedge is drawn from
+      // the smaller to the larger of them.
+      let start_angle = (-math_angle).min(-next_math_angle);
       let end_angle = start_angle + sweep;
       let large_arc = i32::from(sweep > std::f64::consts::PI);
       let tooltip = opts
         .chart_labels
         .get(i)
+        .filter(|l| !l.text.is_empty())
         .map_or_else(|| format_chart_value(val), |l| l.text.clone());
 
       if n_rings == 1 {
-        // The SVG sweeps clockwise from the left, so the math angles run
-        // from `π - sweep end` up to `π - sweep start`.
-        let pi = std::f64::consts::PI;
+        let (m_lo, m_hi) = (
+          math_angle.min(next_math_angle),
+          math_angle.max(next_math_angle),
+        );
         slice_prims.push(Expr::List(
           vec![
             call(
@@ -3948,24 +4379,18 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               vec![
                 Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
                 Expr::Integer(1),
-                Expr::List(
-                  vec![
-                    Expr::Real(pi - (end_angle - pi)),
-                    Expr::Real(pi - (start_angle - pi)),
-                  ]
-                  .into(),
-                ),
+                Expr::List(vec![Expr::Real(m_lo), Expr::Real(m_hi)].into()),
               ],
             ),
           ]
           .into(),
         ));
       }
+      let label = opts.chart_labels.get(i).filter(|l| !l.text.is_empty());
       if n_rings == 1
-        && let Some(label) = opts.chart_labels.get(i)
+        && let Some(label) = label
       {
-        let mid = std::f64::consts::PI
-          - (start_angle + sweep / 2.0 - std::f64::consts::PI);
+        let mid = f64::midpoint(math_angle, next_math_angle);
         slice_prims.push(call(
           "Text",
           vec![
@@ -4005,8 +4430,20 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
-      // Draw the ChartLabels text at the wedge centroid.
-      if let Some(label) = opts.chart_labels.get(i) {
+      // Draw the ChartLabels text at its named radial position, else at
+      // the wedge centroid.
+      if let Some(label) = label
+        && let Some(placement) = chart_label_placement.as_deref()
+        && !label.text.contains('\n')
+      {
+        labels_svg.push_str(&pie_slice_label_svg(
+          &label.text,
+          Some(placement),
+          (cx, cy),
+          (r_in, r_out),
+          start_angle + sweep / 2.0,
+        ));
+      } else if let Some(label) = label {
         let mid_angle = start_angle + sweep / 2.0;
         let r_label = if r_in <= 1e-9 {
           r_out * 0.6
@@ -4061,7 +4498,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
 
-      start_angle = end_angle;
+      math_angle = next_math_angle;
     }
   }
 
@@ -5456,13 +5893,35 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .filter(|a| !matches!(a, Expr::Rule { .. }))
     .collect();
 
-  let bin_spec = positional.first().and_then(|e| parse_bin_spec(e));
+  // `{"Log", bspec}` bins the logarithms of the (positive) data by `bspec`
+  // and draws them on a logarithmic axis.
+  let log_bins = positional.first().and_then(|e| match e {
+    Expr::List(items)
+      if matches!(items.first(), Some(Expr::String(s)) if s == "Log")
+        && items.len() <= 2 =>
+    {
+      Some(items.get(1).cloned())
+    }
+    _ => None,
+  });
+  let (datasets, bin_spec) = match &log_bins {
+    Some(spec) => (
+      datasets
+        .iter()
+        .map(|d| d.iter().filter(|v| **v > 0.0).map(|v| v.log10()).collect())
+        .collect::<Vec<Vec<f64>>>(),
+      // `{"Log", n}` and `{"Log", {dx}}` bin the base-10 logarithms.
+      spec.as_ref().and_then(parse_bin_spec),
+    ),
+    None => (datasets, positional.first().and_then(|e| parse_bin_spec(e))),
+  };
   let height = positional
     .get(1)
     .and_then(|e| parse_histogram_height(e))
     .unwrap_or(HistogramHeight::Count);
 
   let mut opts = parse_chart_options(args);
+  opts.log_x = log_bins.is_some();
   let svg = generate_histogram_svg(
     &datasets,
     bin_spec.clone().as_ref(),
@@ -5518,12 +5977,21 @@ fn parse_bin_spec(arg: &Expr) -> Option<BinSpec> {
     {
       return (w > 0.0).then_some(BinSpec::Width(w));
     }
-    // {min, max, w} — width w over an explicit range: use the width and
-    // let the shared edge builder align to it.
+    // {min, max, w} — the whole bins of width w from min up to max (data
+    // outside them is not counted), as `HistogramList` places them.
     if outer.len() == 3
-      && let Some(w) = try_eval_to_f64(&outer[2])
+      && let (Some(lo), Some(hi), Some(w)) = (
+        try_eval_to_f64(&outer[0]),
+        try_eval_to_f64(&outer[1]),
+        try_eval_to_f64(&outer[2]),
+      )
     {
-      return (w > 0.0).then_some(BinSpec::Width(w));
+      if !(w > 0.0 && hi > lo) {
+        return None;
+      }
+      let n = ((hi - lo) / w + 1e-9).floor() as usize;
+      return (n >= 1)
+        .then(|| BinSpec::Edges((0..=n).map(|i| lo + i as f64 * w).collect()));
     }
     None
   } else {
@@ -6363,12 +6831,26 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let opts = parse_chart_options(args);
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
+  // Like a `PieChart`, the chart is square unless `ImageSize -> {w, h}`.
+  let explicit_dims = args[1..].iter().any(|opt| {
+    crate::functions::graphics::option_name_value(opt).is_some_and(|(n, v)| {
+      n == "ImageSize" && matches!(&*v, Expr::List(wh) if wh.len() == 2)
+    })
+  });
+  let (svg_width, svg_height, full_width) = (
+    opts.svg_width,
+    if explicit_dims {
+      opts.svg_height
+    } else {
+      opts.svg_width
+    },
+    opts.full_width,
+  );
   let w = svg_width as f64;
   let h = svg_height as f64;
   let cx = w / 2.0;
   let cy = h / 2.0;
+  let (sector_origin, clockwise, hole) = parse_sector_origin(args);
   // `Callout[labels]` / `Placed[labels, "RadialCallout"]` draw the labels
   // outside the sectors, joined to them by a leader line; the sectors
   // shrink to leave room for the text.
@@ -6386,46 +6868,47 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       },
     )
   });
-  let max_radius = (w.min(h) / 2.0)
-    * 0.85
+  // The plot range is ±(largest radius) with `Scaled[0.05]` padding on
+  // each side, so the largest sector reaches 1/1.1 of the half-frame.
+  let max_radius = (w.min(h) / 2.0) / 1.1
     * if callout_labels && !opts.chart_labels.is_empty() {
       0.72
     } else {
       1.0
     };
   let total_angle: f64 = sectors.iter().map(|s| s.0).sum();
-  let r_max = sectors.iter().map(|s| s.1).fold(0.0_f64, f64::max);
+  // A `SectorOrigin -> {…, r0}` hole adds `r0` to every radius.
+  let r_max = sectors.iter().map(|s| s.1 + hole).fold(0.0_f64, f64::max);
   let r_max = if r_max <= 0.0 { 1.0 } else { r_max };
+  let hole_r = hole / r_max * max_radius;
 
   let mut svg = svg_header(svg_width, svg_height, full_width);
 
-  // Sort sectors smallest-to-largest by their angular weight, drawn
-  // clockwise starting at π so the smallest slice sits right above the
-  // negative x-axis — same convention as PieChart.
-  let mut order: Vec<usize> = (0..sectors.len()).collect();
-  order.sort_by(|&a, &b| {
-    sectors[a]
-      .0
-      .partial_cmp(&sectors[b].0)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
-
-  let mut start_angle = std::f64::consts::PI;
+  // Sectors are laid out in data order from the `SectorOrigin` (by default
+  // π, running clockwise), as in a `PieChart`.
+  let mut math_angle = sector_origin;
   let mut colors = vec![CHART_COLORS[0]; sectors.len()];
   let mut labels_svg = String::new();
   let (_, _, _, label_fill, _) = crate::functions::plot::plot_theme();
-  for (slice_idx, &i) in order.iter().enumerate() {
+  for i in 0..sectors.len() {
     let (angle_val, radius_val) = sectors[i];
-    // A `ChartStyle` list colours the sectors in data order.
     let (r, g, b) = if opts.chart_style.is_empty() {
-      CHART_COLORS[slice_idx % CHART_COLORS.len()]
+      CHART_COLORS[i % CHART_COLORS.len()]
     } else {
       sector_color(&opts, i)
     };
     colors[i] = (r, g, b);
     let sweep = 2.0 * std::f64::consts::PI * angle_val / total_angle;
-    let sector_r = (radius_val / r_max) * max_radius;
+    let next_math_angle = if clockwise {
+      math_angle - sweep
+    } else {
+      math_angle + sweep
+    };
+    // SVG angles run clockwise (y points down).
+    let start_angle = (-math_angle).min(-next_math_angle);
     let end_angle = start_angle + sweep;
+    math_angle = next_math_angle;
+    let sector_r = hole_r + (radius_val / r_max) * max_radius;
 
     let x1 = cx + sector_r * start_angle.cos();
     let y1 = cy + sector_r * start_angle.sin();
@@ -6438,9 +6921,22 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       format_chart_value(angle_val),
       format_chart_value(radius_val)
     );
+    // The hole, if any, is cut out of the wedge (an annulus sector).
+    let inner = if hole_r > 0.0 {
+      format!(
+        "L{:.2},{:.2} A{hole_r:.2},{hole_r:.2} 0 {large_arc},0 {:.2},{:.2}",
+        cx + hole_r * end_angle.cos(),
+        cy + hole_r * end_angle.sin(),
+        cx + hole_r * start_angle.cos(),
+        cy + hole_r * start_angle.sin(),
+      )
+    } else {
+      format!("L{cx:.2},{cy:.2}")
+    };
+    // Sectors are outlined like a `PieChart`'s wedges.
     svg.push_str(&format!(
-      "<path d=\"M{cx:.2},{cy:.2} L{x1:.2},{y1:.2} A{sector_r:.2},{sector_r:.2} 0 {large_arc},1 {x2:.2},{y2:.2} Z\" \
-       fill=\"rgb({r},{g},{b})\" stroke=\"white\" stroke-width=\"1\"><title>{tooltip}</title></path>\n"
+      "<path d=\"M{x1:.2},{y1:.2} A{sector_r:.2},{sector_r:.2} 0 {large_arc},1 {x2:.2},{y2:.2} {inner} Z\" \
+       fill=\"rgb({r},{g},{b})\" stroke=\"black\" stroke-opacity=\"0.5\" stroke-width=\"0.75\"><title>{tooltip}</title></path>\n"
     ));
 
     if let Some(label) = opts.chart_labels.get(i) {
@@ -6466,8 +6962,6 @@ pub fn sector_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
       }
     }
-
-    start_angle = end_angle;
   }
 
   svg.push_str(&labels_svg);

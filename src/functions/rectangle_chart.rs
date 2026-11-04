@@ -208,6 +208,25 @@ pub fn rectangle_chart_ast(
   }
   let n_sets = sets.len();
   let multi = n_sets > 1;
+  // A named colour scheme (`ChartStyle -> "Rainbow"`) is sampled evenly,
+  // one colour per element of a dataset — the list of them then cycles
+  // like any explicit `ChartStyle` list.
+  if let Some(Expr::String(scheme)) = &chart_style
+    && let Some(controls) = crate::functions::chart::named_color_scheme(scheme)
+  {
+    let count = sets.iter().map(Vec::len).max().unwrap_or(1).max(1);
+    let colors: Vec<Expr> =
+      crate::functions::chart::sample_gradient(controls, count)
+        .into_iter()
+        .map(|c| {
+          call(
+            "RGBColor",
+            vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)],
+          )
+        })
+        .collect();
+    chart_style = Some(Expr::List(colors.into()));
+  }
   // The bars' edges fade a little with every bar.
   let edge = call(
     "EdgeForm",

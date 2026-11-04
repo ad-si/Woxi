@@ -5799,10 +5799,11 @@ fn generate_svg_with_options(
               let mut polygon: Vec<(f64, f64)> = points.to_vec();
               polygon.extend(baseline.iter().rev().copied());
               if polygon.len() >= 3 {
+                // WL fills the bands at `Opacity[0.2]`, like any `Filling`.
                 chart
                   .draw_series(std::iter::once(Polygon::new(
                     polygon,
-                    RGBColor(r, g, b).mix(0.6),
+                    RGBColor(r, g, b).mix(0.2),
                   )))
                   .map_err(|e| {
                     InterpreterError::EvaluationError(format!("Plot: {e}"))
@@ -7852,6 +7853,27 @@ pub(crate) struct BarChartLook {
   pub bar_spacing: Option<f64>,
   /// `AspectRatio -> r`: height / width of the plotting area.
   pub aspect_ratio: Option<f64>,
+  /// `ChartLayout`: how the bars of a group share its slot.
+  pub layout: BarLayout,
+  /// Per-bar colours from `Style[v, colour]` data wrappers, in drawing
+  /// order (overriding `ChartStyle` and the default palette).
+  pub bar_colors: Vec<Option<(u8, u8, u8)>>,
+  /// Per-bar error intervals `(low, high)` from `Around[v, δ]` data, in
+  /// drawing order, drawn as capped error bars at each bar's centre.
+  pub error_bars: Vec<Option<(f64, f64)>>,
+  /// `BarOrigin -> Top`: the values are drawn negated (hanging from the
+  /// top) and the value axis is labelled with their magnitudes.
+  pub value_axis_negated: bool,
+  /// The bars' `EdgeForm` (`ChartBaseStyle` / `ChartStyle`): colour,
+  /// stroke width in render units and opacity.
+  pub edge: Option<((u8, u8, u8), f64, f64)>,
+  /// `ChartElementFunction -> "FadingRectangle"` / `"GlassRectangle"`.
+  pub element: BarElement,
+  /// Which frame edges `Frame` draws: left, right, bottom, top.
+  pub frame_sides: [bool; 4],
+  /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
+  /// `(colour, opacity, width in points, dash pattern in points)`.
+  pub value_grid: Option<((u8, u8, u8), f64, f64, Option<(f64, f64)>)>,
 }
 
 impl Default for BarChartLook {
@@ -7865,16 +7887,150 @@ impl Default for BarChartLook {
       frame_width: None,
       bar_spacing: None,
       aspect_ratio: None,
+      layout: BarLayout::Grouped,
+      bar_colors: Vec::new(),
+      error_bars: Vec::new(),
+      value_axis_negated: false,
+      edge: None,
+      element: BarElement::Rectangle,
+      frame_sides: [true; 4],
+      value_grid: None,
     }
   }
 }
 
+/// The named `ChartElementFunction`s of a bar chart that shade the bars.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum BarElement {
+  #[default]
+  Rectangle,
+  /// A horizontal fade from the bar colour to a light tint of it.
+  FadingRectangle,
+  /// A glassy highlight over the bar colour.
+  GlassRectangle,
+}
+
+impl BarElement {
+  pub(crate) fn from_name(name: &str) -> Option<Self> {
+    match name {
+      "Rectangle" => Some(Self::Rectangle),
+      "FadingRectangle" => Some(Self::FadingRectangle),
+      "GlassRectangle" => Some(Self::GlassRectangle),
+      _ => None,
+    }
+  }
+}
+
+/// `ChartLayout` of a `BarChart`: how the bars of one group share its slot.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub(crate) enum BarLayout {
+  /// Side by side (the default).
+  #[default]
+  Grouped,
+  /// Piled on one another, positives up and negatives down.
+  Stacked,
+  /// Stacked and rescaled so each group totals 100.
+  Percentile,
+  /// All drawn over one another at the full group width, in order.
+  Overlapped,
+  /// Side by side, each bar starting where the previous one ended.
+  Stepped,
+}
+
+impl BarLayout {
+  pub(crate) fn from_name(name: &str) -> Option<Self> {
+    match name {
+      "Grouped" => Some(Self::Grouped),
+      "Stacked" => Some(Self::Stacked),
+      "Percentile" => Some(Self::Percentile),
+      "Overlapped" => Some(Self::Overlapped),
+      "Stepped" => Some(Self::Stepped),
+      _ => None,
+    }
+  }
+
+  /// Whether the bars of a group share one column.
+  pub(crate) fn single_column(self) -> bool {
+    matches!(self, Self::Stacked | Self::Percentile | Self::Overlapped)
+  }
+}
+
+/// One bar of a vertical bar chart: its group and index within the group,
+/// and its corners on the chart's categorical axis (group `g` spans
+/// `g..g + 1`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct BarRect {
+  pub group: usize,
+  pub index: usize,
+  pub x0: f64,
+  pub x1: f64,
+  pub y0: f64,
+  pub y1: f64,
+}
+
+/// The rectangles of a bar chart's groups under `layout`, each group
+/// leaving `gap` free on both sides. The single canonical bar layout, shared
+/// by the SVG renderer and the chart's `Graphics` structure.
+pub(crate) fn bar_rects(
+  groups: &[Vec<f64>],
+  layout: BarLayout,
+  gap: f64,
+) -> Vec<BarRect> {
+  let k = groups.iter().map(Vec::len).max().unwrap_or(1).max(1);
+  let slots = if layout.single_column() { 1 } else { k };
+  let bar_w = (1.0 - 2.0 * gap) / slots as f64;
+  let mut rects = Vec::new();
+  for (gi, group) in groups.iter().enumerate() {
+    let group_x0 = gi as f64 + gap;
+    let total: f64 = group.iter().map(|v| v.abs()).sum();
+    let (mut up, mut down, mut run) = (0.0_f64, 0.0_f64, 0.0_f64);
+    for (bi, &val) in group.iter().enumerate() {
+      let column = if layout.single_column() { 0 } else { bi };
+      let x0 = group_x0 + column as f64 * bar_w;
+      let (y0, y1) = match layout {
+        BarLayout::Grouped | BarLayout::Overlapped => (0.0, val),
+        BarLayout::Stacked | BarLayout::Percentile => {
+          let val = if layout == BarLayout::Percentile {
+            if total > 0.0 {
+              100.0 * val / total
+            } else {
+              0.0
+            }
+          } else {
+            val
+          };
+          let base = if val >= 0.0 { &mut up } else { &mut down };
+          let y0 = *base;
+          *base += val;
+          (y0, *base)
+        }
+        BarLayout::Stepped => {
+          let y0 = run;
+          run += val;
+          (y0, run)
+        }
+      };
+      rects.push(BarRect {
+        group: gi,
+        index: bi,
+        x0,
+        x1: x0 + bar_w,
+        y0,
+        y1,
+      });
+    }
+  }
+  rects
+}
+
 /// The empty margin on each side of a bar group, in units of the group's
-/// slot (one per group): 0.1 by default, else the half of the
-/// `BarSpacing -> s` space a group of width `1 / (1 + s)` leaves.
-pub(crate) fn bar_group_gap(bar_spacing: Option<f64>) -> f64 {
+/// slot (one per group): 0.1 by default, else half the `BarSpacing -> s`
+/// space between groups, which is `s` bar widths — a group of `columns`
+/// bars takes `columns / (columns + s)` of its slot.
+pub(crate) fn bar_group_gap(bar_spacing: Option<f64>, columns: usize) -> f64 {
+  let columns = columns.max(1) as f64;
   match bar_spacing {
-    Some(sp) if sp.is_finite() && sp >= 0.0 => sp / (1.0 + sp) / 2.0,
+    Some(sp) if sp.is_finite() && sp >= 0.0 => sp / (columns + sp) / 2.0,
     _ => 0.1,
   }
 }
@@ -7900,7 +8056,6 @@ pub(crate) fn generate_bar_svg(
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
   bar_label_placement: BarLabelPlacement,
-  stacked: bool,
   show_ticks: bool,
   epilog: &[Expr],
   look: &BarChartLook,
@@ -7910,6 +8065,8 @@ pub(crate) fn generate_bar_svg(
   let mut svg_height = svg_height;
 
   let n = groups.len(); // number of groups
+  let layout = look.layout;
+  let stacked = layout.single_column();
   // Bars per group across the x slot: stacked groups share a single column.
   let k = if stacked {
     1
@@ -7918,29 +8075,42 @@ pub(crate) fn generate_bar_svg(
   };
   // Palette index is by position within the group even when stacked.
   let k_colors = groups.iter().map(std::vec::Vec::len).max().unwrap_or(1);
-  // Highest drawn point of a group: its tallest bar, or the sum of the
-  // positive entries when stacked.
-  let group_top = |g: &[f64]| -> f64 {
-    if stacked {
-      g.iter().filter(|v| **v > 0.0).sum::<f64>()
-    } else {
-      g.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-    }
+  let rects = bar_rects(groups, layout, bar_group_gap(look.bar_spacing, k));
+  // Highest drawn point of a group.
+  let group_top = |gi: usize| -> f64 {
+    rects
+      .iter()
+      .filter(|r| r.group == gi)
+      .map(|r| r.y0.max(r.y1))
+      .fold(f64::NEG_INFINITY, f64::max)
   };
+  // The extent of the drawn bars and error bars.
+  let (data_lo, data_hi) = rects
+    .iter()
+    .flat_map(|r| [r.y0, r.y1])
+    .chain(look.error_bars.iter().flatten().flat_map(|&(l, h)| [l, h]))
+    .fold((0.0_f64, 0.0_f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
 
   // y-axis range: explicit PlotRange overrides the auto-computed extent,
   // which anchors at 0 and leaves WL's `Scaled[0.05]` headroom above the
   // tallest bar (5% of the padded span, whose lower `Scaled[0.02]` the
-  // axis at 0 takes up).
+  // axis at 0 takes up). With bars below 0 both ends get `Scaled[0.05]`.
   let (y_min, y_max) = if let Some((ymin, ymax)) = plot_range_y {
     (ymin, ymax)
+  } else if look.value_axis_negated {
+    // Hanging bars mirror upright ones: the axis at 0 on top.
+    let depth = -data_lo * (1.0 + 0.05 / 0.93);
+    (if depth <= 0.0 { -1.0 } else { -depth }, 0.0)
+  } else if data_lo < 0.0 {
+    let (pad_lo, pad_hi) = if data_hi > 0.0 {
+      (0.05, 0.05)
+    } else {
+      (0.05, 0.02)
+    };
+    let total = (data_hi - data_lo) / (1.0 - pad_lo - pad_hi);
+    (data_lo - pad_lo * total, data_hi + pad_hi * total)
   } else {
-    let y_max_auto = groups
-      .iter()
-      .map(|g| group_top(g))
-      .fold(f64::NEG_INFINITY, f64::max)
-      .max(0.0)
-      * (1.0 + 0.05 / 0.93);
+    let y_max_auto = data_hi * (1.0 + 0.05 / 0.93);
     let y_max_auto = if y_max_auto <= 0.0 { 1.0 } else { y_max_auto };
     (0.0, y_max_auto)
   };
@@ -7975,6 +8145,9 @@ pub(crate) fn generate_bar_svg(
     14 * s
   } else if has_value_labels {
     4 * s
+  } else if look.value_axis_negated {
+    // Room for the half of the `0` label that rises above the top axis.
+    4 * s
   } else {
     s / 2
   } + plot_label_extra_lines(plot_label) as i32 * 20 * s
@@ -7994,7 +8167,7 @@ pub(crate) fn generate_bar_svg(
       10.0 * sf
     };
   }
-  if has_value_labels {
+  if has_value_labels && bar_label_placement == BarLabelPlacement::Below {
     bottom_extra += 30.0 * sf;
   }
   // A `LegendAppearance -> "Row"` legend runs along the bottom edge.
@@ -8016,8 +8189,27 @@ pub(crate) fn generate_bar_svg(
     max: y_max,
     log: false,
   };
-  let y_ticks =
-    crate::functions::plot_axes::AxisTicks::new(y_scale, false, None);
+  let y_ticks = if look.value_axis_negated {
+    // Ticks of the mirrored (magnitude) axis, moved to the drawn values.
+    let mut t = crate::functions::plot_axes::AxisTicks::new(
+      crate::functions::plot_axes::AxisScale {
+        min: -y_max,
+        max: -y_min,
+        log: false,
+      },
+      false,
+      None,
+    );
+    for (p, _) in &mut t.majors {
+      *p = -*p;
+    }
+    for p in &mut t.minors {
+      *p = -*p;
+    }
+    t
+  } else {
+    crate::functions::plot_axes::AxisTicks::new(y_scale, false, None)
+  };
   // The y tick labels need their own width plus the gap to the axis.
   let y_label_area = if show_ticks {
     let widest = y_ticks
@@ -8096,17 +8288,12 @@ pub(crate) fn generate_bar_svg(
 
     // The axes are drawn after the bars (see `origin_axes_svg` below).
     // Draw bars as plotters Rectangle elements
-    let gap = bar_group_gap(look.bar_spacing);
-    for (gi, group) in groups.iter().enumerate() {
-      let group_x0 = gi as f64 + gap;
-      let group_x1 = (gi + 1) as f64 - gap;
-      let group_w = group_x1 - group_x0;
-      let bar_w = group_w / k as f64;
-      // Running ends of the stack: positives pile up, negatives pile down.
-      let (mut stack_up, mut stack_down) = (0.0_f64, 0.0_f64);
-
-      for (bi, &val) in group.iter().enumerate() {
-        let (br, bg, bb) = if !chart_style.is_empty() {
+    for (flat, rect) in rects.iter().enumerate() {
+      let (gi, bi) = (rect.group, rect.index);
+      {
+        let (br, bg, bb) = if let Some(Some(c)) = look.bar_colors.get(flat) {
+          *c
+        } else if !chart_style.is_empty() {
           // For grouped charts, color by bar index within group
           let color_idx = if k_colors > 1 { bi } else { gi };
           let c = &chart_style[color_idx % chart_style.len()];
@@ -8128,22 +8315,9 @@ pub(crate) fn generate_bar_svg(
           crate::functions::chart::CHART_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
-        let (x0, y0, y1) = if stacked {
-          let base = if val >= 0.0 {
-            &mut stack_up
-          } else {
-            &mut stack_down
-          };
-          let y0 = *base;
-          *base += val;
-          (group_x0, y0, *base)
-        } else {
-          (group_x0 + bi as f64 * bar_w, 0.0, val)
-        };
-        let x1 = x0 + bar_w;
         chart
           .draw_series(std::iter::once(Rectangle::new(
-            [(x0, y0), (x1, y1)],
+            [(rect.x0, rect.y0), (rect.x1, rect.y1)],
             color.filled(),
           )))
           .map_err(|e| {
@@ -8152,23 +8326,72 @@ pub(crate) fn generate_bar_svg(
       }
     }
 
-    // `Frame -> True` closes the plotting area on all four sides.
-    if look.frame {
-      let color = look.frame_color.unwrap_or(dark_gray);
+    // `Around[v, δ]` data: a capped error bar at each bar's centre.
+    for (rect, err) in rects.iter().zip(&look.error_bars) {
+      let Some((lo, hi)) = *err else { continue };
+      let cx = f64::midpoint(rect.x0, rect.x1);
+      let black = RGBColor(0, 0, 0).stroke_width(RESOLUTION_SCALE * 3 / 4);
       chart
         .draw_series(std::iter::once(PathElement::new(
-          vec![
-            (x_min, y_min),
-            (x_max, y_min),
-            (x_max, y_max),
-            (x_min, y_max),
-            (x_min, y_min),
-          ],
-          color.stroke_width(look.frame_width.unwrap_or(RESOLUTION_SCALE)),
+          vec![(cx, lo), (cx, hi)],
+          black,
         )))
         .map_err(|e| {
           InterpreterError::EvaluationError(format!("BarChart: {e}"))
         })?;
+      // The caps reach 3 points either side; in chart units that is the
+      // fraction of the plotting width 3 pt takes.
+      let cap = 3.0 * sf * (x_max - x_min)
+        / (render_width as f64
+          - (BAR_SIDE_MARGIN * sf + y_label_area as f64)
+          - legend_margin_right as f64);
+      for y in [lo, hi] {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            vec![(cx - cap, y), (cx + cap, y)],
+            black,
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("BarChart: {e}"))
+          })?;
+      }
+    }
+
+    // `Frame -> True` closes the plotting area on its `frame_sides`.
+    if look.frame {
+      let color = look.frame_color.unwrap_or(dark_gray);
+      let [left, right, bottom, top] = look.frame_sides;
+      // A full frame is one closed path, a partial one its edges.
+      let paths: Vec<Vec<(f64, f64)>> = if look.frame_sides.iter().all(|s| *s) {
+        vec![vec![
+          (x_min, y_min),
+          (x_max, y_min),
+          (x_max, y_max),
+          (x_min, y_max),
+          (x_min, y_min),
+        ]]
+      } else {
+        [
+          (left, [(x_min, y_min), (x_min, y_max)]),
+          (right, [(x_max, y_min), (x_max, y_max)]),
+          (bottom, [(x_min, y_min), (x_max, y_min)]),
+          (top, [(x_min, y_max), (x_max, y_max)]),
+        ]
+        .into_iter()
+        .filter(|(shown, _)| *shown)
+        .map(|(_, ends)| ends.to_vec())
+        .collect()
+      };
+      for path in paths {
+        chart
+          .draw_series(std::iter::once(PathElement::new(
+            path,
+            color.stroke_width(look.frame_width.unwrap_or(RESOLUTION_SCALE)),
+          )))
+          .map_err(|e| {
+            InterpreterError::EvaluationError(format!("BarChart: {e}"))
+          })?;
+      }
     }
 
     root.present().map_err(|e| {
@@ -8177,10 +8400,14 @@ pub(crate) fn generate_bar_svg(
   }
 
   add_bar_borders(&mut buf, RESOLUTION_SCALE);
+  restyle_bar_rects(&mut buf, look.edge, look.element);
 
   // Inject hover tooltips into bar rects
-  let bar_values: Vec<f64> =
-    groups.iter().flat_map(|g| g.iter().copied()).collect();
+  let sign = if look.value_axis_negated { -1.0 } else { 1.0 };
+  let bar_values: Vec<f64> = groups
+    .iter()
+    .flat_map(|g| g.iter().map(|v| sign * v))
+    .collect();
   inject_bar_tooltips(&mut buf, &bar_values);
 
   rewrite_svg_header(
@@ -8206,7 +8433,33 @@ pub(crate) fn generate_bar_svg(
     - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
 
-  if look.axes {
+  // `GridLines -> {…, Automatic}`: lines across the plot at the value
+  // ticks, behind the bars.
+  if let Some(((r, g, b), opacity, width, dash)) = look.value_grid
+    && let Some(bg_end) = buf
+      .find("<rect")
+      .and_then(|s| buf[s..].find("/>").map(|e| s + e + 2))
+  {
+    let dash_attr = dash.map_or(String::new(), |(on, off)| {
+      format!(" stroke-dasharray=\"{:.1},{:.1}\"", on * sf, off * sf)
+    });
+    let mut grid = String::new();
+    for (v, _) in &y_ticks.majors {
+      let y = plot_y0 + plot_h - y_scale.frac(*v) * plot_h;
+      grid.push_str(&format!(
+        "\n<line x1=\"{plot_x0:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" \
+         stroke=\"#{r:02X}{g:02X}{b:02X}\" stroke-opacity=\"{opacity}\" \
+         stroke-width=\"{:.1}\"{dash_attr}/>",
+        plot_x0 + plot_w,
+        width * sf
+      ));
+    }
+    buf.insert_str(bg_end, &grid);
+  }
+
+  // A frame carries the value ticks on its left edge (and mirrors them,
+  // unlabelled, on its right one) in place of the axes.
+  if look.axes || look.frame {
     let axis_hex = format!(
       "#{:02X}{:02X}{:02X}",
       axis_color.0, axis_color.1, axis_color.2
@@ -8222,12 +8475,17 @@ pub(crate) fn generate_bar_svg(
       log: false,
     };
     let no_x_ticks = crate::functions::plot_axes::AxisTicks::default();
-    let x_axis_end = if chart_legends.is_empty() || row_legend {
+    let x_axis_end = if (chart_legends.is_empty() || row_legend) && !look.frame
+    {
       plot_x0 + plot_w + x_axis_overrun
     } else {
       plot_x0 + plot_w
     };
-    let origin = (x_min, y_scale.origin(None, None));
+    let origin = if look.frame {
+      (x_min, y_min)
+    } else {
+      (x_min, y_scale.origin(None, None))
+    };
     let mut axes_svg = crate::functions::plot_axes::origin_axes_svg(
       &crate::functions::plot_axes::OriginAxes {
         area: (plot_x0, plot_y0, plot_w, plot_h),
@@ -8262,7 +8520,7 @@ pub(crate) fn generate_bar_svg(
     // outer edges of the bars (6 pt) and, between labelled bars, at both
     // edges of each gap (4 pt).
     if show_ticks && n > 0 {
-      let gap = bar_group_gap(look.bar_spacing);
+      let gap = bar_group_gap(look.bar_spacing, k);
       let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
       let mut mark = |x: f64, len: f64| {
         axes_svg.push_str(&format!(
@@ -8278,6 +8536,30 @@ pub(crate) fn generate_bar_svg(
           mark(px(gi as f64 - gap), 4.0);
           mark(px(gi as f64 + gap), 4.0);
         }
+      }
+    }
+    // The frame's right edge mirrors the value ticks, unlabelled and
+    // pointing into the plot.
+    if look.frame && look.frame_sides[1] && show_ticks {
+      let right = plot_x0 + plot_w;
+      let py = |v: f64| plot_y0 + plot_h - y_scale.frac(v) * plot_h;
+      let marks = y_ticks
+        .majors
+        .iter()
+        .map(|(v, _)| (*v, crate::functions::plot_axes::AXIS_MAJOR_TICK_LEN))
+        .chain(
+          y_ticks
+            .minors
+            .iter()
+            .map(|v| (*v, crate::functions::plot_axes::AXIS_MINOR_TICK_LEN)),
+        );
+      for (v, len) in marks {
+        let y = py(v);
+        axes_svg.push_str(&format!(
+          "<line x1=\"{right:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" \
+           stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+          right - len * sf
+        ));
       }
     }
     if let Some(pos) = buf.rfind("</svg>") {
@@ -8331,7 +8613,7 @@ pub(crate) fn generate_bar_svg(
       for (i, label) in chart_labels.iter().enumerate().take(n) {
         let cx = map_x_val(i as f64 + 0.5);
         // For Above/Center positioning, use the max value in the group
-        let group_max = group_top(&groups[i]);
+        let group_max = group_top(i);
         // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
         let svg_rotation_deg = -label.rotation.to_degrees();
         let is_rotated = svg_rotation_deg.abs() > 0.01;
@@ -8394,9 +8676,7 @@ pub(crate) fn generate_bar_svg(
     // for `Above`). `bar_labels` is a
     // flat list across all groups/bars, aligned with the bar draw order.
     if has_value_labels {
-      let gap = 0.1;
-      let bar_w = (1.0 - 2.0 * gap) / k as f64;
-      let bar_x_offset = |bi: usize| if stacked { 0 } else { bi };
+      let bar_w = (1.0 - 2.0 * bar_group_gap(look.bar_spacing, k)) / k as f64;
       // Shrink the font so the widest label fits within one bar's
       // center-to-center spacing (`1.0` chart unit between groups, `bar_w`
       // between bars in a group), preventing adjacent labels from overlapping.
@@ -8412,32 +8692,25 @@ pub(crate) fn generate_bar_svg(
       let fit_font = (spacing_px * 0.9 / (max_len as f64 * 0.6))
         .min(font_size)
         .max(font_size * 0.35);
-      let mut flat = 0usize;
-      for (gi, group) in groups.iter().enumerate() {
-        let group_x0 = gi as f64 + gap;
-        for bi in 0..group.len() {
-          let text = bar_labels.get(flat).cloned().unwrap_or_default();
-          flat += 1;
-          if text.is_empty() {
-            continue;
-          }
-          let cx =
-            map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
-          // `Placed[…, Above]` puts the label over the bar's top instead.
-          let ly =
-            if bar_label_placement == BarLabelPlacement::Above && !stacked {
-              plot_y0 + (y_max - group[bi]) / (y_max - y_min) * plot_h
-                - fit_font * 0.4
-            } else {
-              axis_y + fit_font * 1.3
-            };
-          labels_svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
-             fill=\"{label_fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(&text)
-          ));
+      for (flat, rect) in rects.iter().enumerate() {
+        let text = bar_labels.get(flat).cloned().unwrap_or_default();
+        if text.is_empty() {
+          continue;
         }
+        let cx = map_x_val(f64::midpoint(rect.x0, rect.x1));
+        // `Placed[…, Above]` puts the label over the bar's end instead.
+        let ly = if bar_label_placement == BarLabelPlacement::Above {
+          plot_y0 + (y_max - rect.y0.max(rect.y1)) / (y_max - y_min) * plot_h
+            - fit_font * 0.4
+        } else {
+          axis_y + fit_font * 1.3
+        };
+        labels_svg.push_str(&format!(
+          "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{fit_font:.0}\" \
+           fill=\"{label_fill}\">{}</text>\n",
+          crate::functions::graphics::box_string_to_svg(&text)
+        ));
       }
     }
 
@@ -8758,9 +9031,16 @@ pub(crate) fn generate_horizontal_bar_svg(
     "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_fill}\"/>\n"
   ));
 
-  // Bars. Category index 0 sits at the bottom band.
+  // Bars. Category index 0 sits at the bottom band. They are edged like a
+  // vertical chart's (see `add_bar_borders`).
+  let edge = if crate::is_dark_mode() {
+    "#555555"
+  } else {
+    "#000000"
+  };
   let band_h = plot_h / n.max(1) as f64;
-  let gap_frac = 0.2;
+  // WL leaves 0.098 of each band free (bars from 0.549 to 1.451).
+  let gap_frac = 2.0 * (0.548_798_252_002_913_3 - 0.5);
   for (gi, group) in groups.iter().enumerate() {
     let band_bottom = axis_bottom - gi as f64 * band_h;
     let band_top = band_bottom - band_h;
@@ -8795,13 +9075,16 @@ pub(crate) fn generate_horizontal_bar_svg(
       let tooltip = crate::functions::chart::format_chart_value(val);
       svg.push_str(&format!(
         "<rect x=\"{rx:.2}\" y=\"{y0:.2}\" width=\"{rwid:.2}\" height=\"{sub_h:.2}\" \
-         fill=\"rgb({r},{g},{b})\"><title>{tooltip}</title></rect>\n"
+         fill=\"rgb({r},{g},{b})\" stroke=\"{edge}\" stroke-opacity=\"0.66\" \
+         stroke-width=\"{:.2}\"><title>{tooltip}</title></rect>\n",
+        0.75 * sf
       ));
     }
   }
 
-  // Axis lines: left (categories) and bottom (values).
-  let stroke_w = sf;
+  // Axis lines: left (categories) and bottom (values), hairlines like a
+  // vertical chart's.
+  let stroke_w = sf / 2.0;
   svg.push_str(&format!(
     "<line x1=\"{plot_x0:.2}\" y1=\"{plot_y0:.2}\" x2=\"{plot_x0:.2}\" y2=\"{axis_bottom:.2}\" \
      stroke=\"{axis_stroke}\" stroke-width=\"{stroke_w:.2}\"/>\n"
@@ -10390,11 +10673,50 @@ pub(crate) fn generate_histogram_svg(
     crate::functions::chart::apply_color_function(opts, heights);
   }
   crate::functions::chart::apply_color_scheme(opts, num_bins);
-  let max_height = dataset_heights
-    .iter()
-    .flat_map(|h| h.iter().copied())
-    .fold(0.0_f64, f64::max);
-  let max_height = if max_height > 0.0 { max_height } else { 1.0 };
+  // Each bar as `(dataset, bin, bottom, top)` in drawing coordinates:
+  // overlaid from 0, or piled on the datasets before it with
+  // `ChartLayout -> "Stacked"`. On a log count axis the coordinates are the
+  // natural logarithms of the heights, the bars rising from one below the
+  // lowest nonzero bar (empty bins are not drawn).
+  let stacked = opts.layout == BarLayout::Stacked && dataset_heights.len() > 1;
+  let mut bars: Vec<(usize, usize, f64, f64)> = Vec::new();
+  let mut running = vec![0.0_f64; num_bins];
+  for (di, heights) in dataset_heights.iter().enumerate() {
+    for (i, &h) in heights.iter().enumerate() {
+      let y0 = if stacked { running[i] } else { 0.0 };
+      bars.push((di, i, y0, y0 + h));
+      if stacked {
+        running[i] += h;
+      }
+    }
+  }
+  let log_base = if opts.log_y {
+    let low = bars
+      .iter()
+      .map(|b| b.3 - b.2)
+      .filter(|h| *h > 0.0)
+      .fold(f64::INFINITY, f64::min);
+    let base = if low.is_finite() {
+      low.ln() - 1.0
+    } else {
+      -1.0
+    };
+    bars.retain(|b| b.3 > b.2);
+    for b in &mut bars {
+      b.2 = if b.2 > 0.0 { b.2.ln() } else { base };
+      b.3 = b.3.ln();
+    }
+    Some(base)
+  } else {
+    None
+  };
+  let max_height = bars.iter().map(|b| b.3).fold(f64::NEG_INFINITY, f64::max);
+  let max_height =
+    if max_height.is_finite() && max_height > log_base.unwrap_or(0.0) {
+      max_height
+    } else {
+      log_base.unwrap_or(0.0) + 1.0
+    };
 
   // Explicit PlotRange overrides the auto-computed extents: the bins and
   // 0..tallest bar, padded as WL 15's
@@ -10404,13 +10726,19 @@ pub(crate) fn generate_histogram_svg(
     let span = (hi - lo) / (1.0 - below - above);
     (lo - below * span, hi + above * span)
   };
-  let (y_min, y_max) = opts
-    .plot_range_y
-    .unwrap_or_else(|| scaled_pad(0.0, max_height, 0.02, 0.05));
+  // A `PlotRange` names values, which a log axis draws as logarithms.
+  let to_draw = |(lo, hi): (f64, f64), log: bool, ln: fn(f64) -> f64| {
+    if log { (ln(lo), ln(hi)) } else { (lo, hi) }
+  };
+  let (y_min, y_max) = opts.plot_range_y.map_or_else(
+    || scaled_pad(log_base.unwrap_or(0.0), max_height, 0.02, 0.05),
+    |r| to_draw(r, opts.log_y, f64::ln),
+  );
   let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
-  let (x_lo, x_hi) = opts.plot_range_x.unwrap_or_else(|| {
-    scaled_pad(bin_edges[0], bin_edges[num_bins], 0.02, 0.02)
-  });
+  let (x_lo, x_hi) = opts.plot_range_x.map_or_else(
+    || scaled_pad(bin_edges[0], bin_edges[num_bins], 0.02, 0.02),
+    |r| to_draw(r, opts.log_x, f64::log10),
+  );
   let x_hi = if x_hi <= x_lo { x_lo + 1.0 } else { x_hi };
 
   let s = RESOLUTION_SCALE as i32;
@@ -10445,15 +10773,33 @@ pub(crate) fn generate_histogram_svg(
   // The axes are drawn the way an unframed `Plot` draws them
   // (`plot_axes::origin_axes_svg`): marks pointing into the chart, the x
   // labels 3 pt below the axis and the y labels 3 pt left of it.
-  let x_scale = crate::functions::plot_axes::AxisScale {
-    min: x_lo,
-    max: x_hi,
-    log: false,
+  // A log axis is drawn linearly in the logarithms; its scale spans the
+  // values they stand for, which maps them to the same place.
+  let x_scale = if opts.log_x {
+    crate::functions::plot_axes::AxisScale {
+      min: 10f64.powf(x_lo),
+      max: 10f64.powf(x_hi),
+      log: true,
+    }
+  } else {
+    crate::functions::plot_axes::AxisScale {
+      min: x_lo,
+      max: x_hi,
+      log: false,
+    }
   };
-  let y_scale = crate::functions::plot_axes::AxisScale {
-    min: y_min,
-    max: y_max,
-    log: false,
+  let y_scale = if opts.log_y {
+    crate::functions::plot_axes::AxisScale {
+      min: y_min.exp(),
+      max: y_max.exp(),
+      log: true,
+    }
+  } else {
+    crate::functions::plot_axes::AxisScale {
+      min: y_min,
+      max: y_max,
+      log: false,
+    }
   };
   let x_ticks = crate::functions::plot_axes::AxisTicks::new(
     x_scale,
@@ -10563,8 +10909,8 @@ pub(crate) fn generate_histogram_svg(
         crate::functions::chart::CHART_COLORS[0]
       }
     };
-    for (di, heights) in dataset_heights.iter().enumerate() {
-      for (i, &h) in heights.iter().enumerate() {
+    for &(di, i, y0, y1) in &bars {
+      {
         let (r, g, b) = if multi {
           style_color(di)
         } else {
@@ -10575,7 +10921,7 @@ pub(crate) fn generate_histogram_svg(
         let bx1 = bin_edges[i + 1];
         // Overlaid datasets are translucent: WL 15's first chart style is
         // `RGBColor[1, 0.8, 0]` at opacity 0.8, the others their color at
-        // opacity 0.7.
+        // opacity 0.7 (stacked ones too).
         let fill: ShapeStyle = if !multi {
           color.filled()
         } else if di == 0 && opts.chart_style.is_empty() {
@@ -10585,7 +10931,7 @@ pub(crate) fn generate_histogram_svg(
         };
         chart
           .draw_series(std::iter::once(Rectangle::new(
-            [(bx0, 0.0), (bx1, h)],
+            [(bx0, y0), (bx1, y1)],
             fill,
           )))
           .map_err(|e| {
@@ -10600,17 +10946,17 @@ pub(crate) fn generate_histogram_svg(
   }
 
   add_bar_borders(&mut buf, RESOLUTION_SCALE);
+  restyle_bar_rects(&mut buf, opts.bar_edge, BarElement::Rectangle);
 
   // Inject hover tooltips with bin range and count into histogram rects.
   // Order matches the draw order above (dataset-major, then bin).
-  let hist_tooltips: Vec<String> = dataset_counts
+  let edge_value = |e: f64| if opts.log_x { 10f64.powf(e) } else { e };
+  let hist_tooltips: Vec<String> = bars
     .iter()
-    .flat_map(|counts| {
-      counts.iter().enumerate().map(|(i, &c)| {
-        let lo = format_tooltip_value(bin_edges[i]);
-        let hi = format_tooltip_value(bin_edges[i + 1]);
-        format!("[{lo}, {hi}): {c}")
-      })
+    .map(|&(di, i, _, _)| {
+      let lo = format_tooltip_value(edge_value(bin_edges[i]));
+      let hi = format_tooltip_value(edge_value(bin_edges[i + 1]));
+      format!("[{lo}, {hi}): {}", dataset_counts[di][i])
     })
     .collect();
   inject_bar_tooltips_str(&mut buf, &hist_tooltips);
@@ -10645,7 +10991,8 @@ pub(crate) fn generate_histogram_svg(
         area: (plot_x0, plot_y0, plot_w, plot_h),
         x: x_scale,
         y: y_scale,
-        origin: (x_lo, y_scale.origin(None, None)),
+        // On a log count axis the x axis runs along the bars' base.
+        origin: (x_scale.min, y_scale.origin(log_base.map(f64::exp), None)),
         show: (true, true),
         ticks: opts.ticks.then_some((&x_ticks, &y_ticks)),
         sf,
@@ -11239,6 +11586,106 @@ fn add_bar_borders(buf: &mut String, stroke_width: u32) {
     buf.truncate(after_first);
     buf.push_str(&rest);
   }
+}
+
+/// Give the bar `<rect>`s (every one after the background, as left by
+/// [`add_bar_borders`]) an explicit `EdgeForm` — `(colour, width in render
+/// units, opacity)` — and the shading of a named `ChartElementFunction`: a
+/// horizontal gradient of the bar's own colour, defined once per bar.
+pub(crate) fn restyle_bar_rects(
+  buf: &mut String,
+  edge: Option<((u8, u8, u8), f64, f64)>,
+  element: BarElement,
+) {
+  if edge.is_none() && element == BarElement::Rectangle {
+    return;
+  }
+  let default_edge = format!(
+    "stroke=\"{}\" stroke-opacity=\"0.66\" stroke-width=\"{}\"",
+    if crate::is_dark_mode() {
+      "#555555"
+    } else {
+      "#000000"
+    },
+    0.75 * RESOLUTION_SCALE as f64
+  );
+  let mut out = String::with_capacity(buf.len());
+  let mut defs = String::new();
+  let mut rest = buf.as_str();
+  let mut idx = 0usize;
+  while let Some(start) = rest.find("<rect ") {
+    let Some(len) = rest[start..].find("/>") else {
+      break;
+    };
+    out.push_str(&rest[..start]);
+    let mut tag = rest[start..start + len + 2].to_string();
+    rest = &rest[start + len + 2..];
+    if !tag.contains(&default_edge) {
+      out.push_str(&tag);
+      continue;
+    }
+    if let Some(((r, g, b), w, o)) = edge {
+      tag = tag.replace(
+        &default_edge,
+        &format!(
+          "stroke=\"#{r:02X}{g:02X}{b:02X}\" stroke-opacity=\"{o}\" stroke-width=\"{w:.1}\""
+        ),
+      );
+    }
+    if element != BarElement::Rectangle
+      && let Some(fs) = tag.find("fill=\"#")
+      && let Some(hex) = tag.get(fs + 7..fs + 13)
+      && let Ok(rgb) = u32::from_str_radix(hex, 16)
+    {
+      let c = (
+        ((rgb >> 16) & 0xFF) as f64,
+        ((rgb >> 8) & 0xFF) as f64,
+        (rgb & 0xFF) as f64,
+      );
+      // Blend the colour toward white (t > 0) or black (t < 0).
+      let tint = |t: f64| {
+        let ch = |v: f64| {
+          if t >= 0.0 {
+            v + (255.0 - v) * t
+          } else {
+            v * (1.0 + t)
+          }
+          .round() as u8
+        };
+        format!("#{:02X}{:02X}{:02X}", ch(c.0), ch(c.1), ch(c.2))
+      };
+      let stops: Vec<(f64, String)> = match element {
+        BarElement::FadingRectangle => vec![(0.0, tint(0.0)), (1.0, tint(0.7))],
+        _ => vec![
+          (0.0, tint(0.2)),
+          (0.08, tint(0.85)),
+          (0.22, tint(-0.15)),
+          (0.6, tint(0.35)),
+          (0.85, tint(0.2)),
+          (1.0, tint(-0.25)),
+        ],
+      };
+      defs.push_str(&format!(
+        "<linearGradient id=\"wxbar{idx}\" x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\">"
+      ));
+      for (off, col) in stops {
+        defs
+          .push_str(&format!("<stop offset=\"{off}\" stop-color=\"{col}\"/>"));
+      }
+      defs.push_str("</linearGradient>\n");
+      tag.replace_range(fs..fs + 14, &format!("fill=\"url(#wxbar{idx})\""));
+      idx += 1;
+    }
+    out.push_str(&tag);
+  }
+  out.push_str(rest);
+  if !defs.is_empty()
+    && let Some(open) = out.find("<svg")
+    && let Some(end) = out[open..].find('>')
+  {
+    out.insert_str(open + end + 1, &format!("\n<defs>\n{defs}</defs>"));
+  }
+  *buf = out;
 }
 
 /// Format a numeric value for tooltip display.

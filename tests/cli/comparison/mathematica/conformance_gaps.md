@@ -5264,11 +5264,44 @@ accepted, but the picture is the same as without it.
 - `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
   plot.
 - `DensityPlot`, `RegionPlot`: `FrameStyle`.
-- `Histogram`: `BarOrigin`, `ChartLayout -> "Stacked"`,
-  `LabelingFunction`; `ColorFunction` only for a single dataset.
-- `BarChart`: `ChartElementFunction`, `AxesOrigin`, per-axis `Axes ->
-  {x, y}` and `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list.
-- `PieChart`: `PlotTheme`, `ChartElementFunction`.
+- `Histogram`: `BarOrigin`, `LabelingFunction`; `ColorFunction` only for a
+  single dataset.
+- `BarChart`: `ChartElementFunction` other than `"Rectangle"`,
+  `"FadingRectangle"` and `"GlassRectangle"` (whose shading is an
+  approximation of WL's raster), `AxesOrigin`, per-axis `Axes -> {x, y}` and
+  `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list; `PlotTheme`
+  other than `"Business"`.
+- `PieChart`: `PlotTheme`, `ChartElementFunction` (`"GlassSector"` draws
+  flat sectors).
+
+### Bar, pie and sector charts: remaining layout differences
+
+Found by the graphics comparison suite (`charts/` group). Fixed: the
+`ChartLayout`s (`"Stacked"`, `"Percentile"`, `"Overlapped"`, `"Stepped"`),
+negative bars, `BarOrigin -> Top`, `Style`/`Labeled`/`Around` data wrappers,
+`LabelingFunction -> Above`, `SectorOrigin` (angle, direction, inner
+radius), the `SectorChart` mapping, `Histogram`'s `{min, max, dx}` and
+`{"Log", n}` bins, `ScalingFunctions -> "Log"` and stacked histograms.
+Still different:
+
+- `ChartLayout -> "Percentile"`: WL pads the x range on the left as if
+  there were more groups; Woxi centres the bars. `"Overlapped"` and
+  `"Stepped"` bars are a little wider than WL's.
+- `BarOrigin -> Top` draws no bar-edge marks on the top axis.
+- A donut (`SectorOrigin -> {Automatic, r}`) keeps the plain pie's outer
+  radius; WL's fills a little more of the frame.
+- `Placed[…, "RadialCallout"]` labels: WL shrinks the pie less and bends
+  the leaders; Woxi draws straight short leaders.
+- `PairedBarChart` draws no axes or tick labels (WL labels both halves with
+  magnitudes, `4 … 0 0 … 4`), and its edges are black, not gray.
+- `BubbleChart`: the plot's aspect ratio follows the data range rather than
+  WL's near-square default, tick labels are too large and the largest
+  bubble is about 0.75 of WL's radius.
+- Chart legends (`ChartLegends`) are set larger than WL's, in gray, and
+  top-aligned instead of centred on the plot.
+- `PieChart` of several datasets leaves a thinner gap between the rings.
+- A log x axis (`Histogram[…, {"Log", n}]`) is labelled `0.05, 0.1, 0.5, …`
+  where WL writes `0.010, 0.100, 1, 10`.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
 

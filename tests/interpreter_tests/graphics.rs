@@ -15757,6 +15757,189 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!((top(&b[1]) - top(&b[3])).abs() <= 1);
     }
 
+    /// `ChartLayout -> "Overlapped"` draws every bar of a group at the
+    /// group's full width, all rising from the axis.
+    #[test]
+    fn bar_chart_overlapped_layout_draws_bars_over_one_another() {
+      let b = bar_rects(&export_svg(
+        r#"BarChart[{{5, 2, 3}, {3, 4, 1}}, ChartLayout -> "Overlapped"]"#,
+      ));
+      assert_eq!(b.len(), 6);
+      assert!(b[..3].iter().all(|r| r.0 == b[0].0));
+      assert!(b[3..].iter().all(|r| r.0 == b[3].0));
+      let bottom = |r: &(i64, i64, i64)| r.1 + r.2;
+      assert!(b.iter().all(|r| (bottom(r) - bottom(&b[0])).abs() <= 1));
+    }
+
+    /// `ChartLayout -> "Percentile"` stacks each group rescaled to 100.
+    #[test]
+    fn bar_chart_percentile_layout_stacks_to_one_hundred() {
+      let svg = export_svg(
+        r#"BarChart[{{1, 2, 3}, {3, 2, 1}}, ChartLayout -> "Percentile"]"#,
+      );
+      let b = bar_rects(&svg);
+      assert_eq!(b.len(), 6);
+      // Both stacks reach the same top; the first bar is 1/6 resp. 1/2.
+      assert!((b[2].1 - b[5].1).abs() <= 1);
+      assert!((b[3].2 - 3 * b[0].2).abs() <= 2);
+      assert!(svg.contains(">100</text>"), "{svg}");
+    }
+
+    /// `ChartLayout -> "Stepped"` puts the bars side by side, each starting
+    /// where the previous one ended (a waterfall).
+    #[test]
+    fn bar_chart_stepped_layout_starts_each_bar_at_the_previous_top() {
+      let b = bar_rects(&export_svg(
+        r#"BarChart[{{1, 2, 3}}, ChartLayout -> "Stepped"]"#,
+      ));
+      assert_eq!(b.len(), 3);
+      let bottom = |r: &(i64, i64, i64)| r.1 + r.2;
+      assert!((bottom(&b[1]) - b[0].1).abs() <= 1);
+      assert!((bottom(&b[2]) - b[1].1).abs() <= 1);
+      assert!(b[0].0 < b[1].0 && b[1].0 < b[2].0);
+    }
+
+    /// Negative values hang below the axis, which the value range then
+    /// includes. Regression: they were clamped to zero-height bars.
+    #[test]
+    fn bar_chart_negative_values_extend_below_the_axis() {
+      let svg = export_svg("BarChart[{3, -2, 5, -4}]");
+      let b = bar_rects(&svg);
+      assert_eq!(b.len(), 4);
+      assert!(b.iter().all(|r| r.2 > 0), "{svg}");
+      // The negative bars start where the positive ones end (at 0).
+      assert!((b[1].1 - (b[0].1 + b[0].2)).abs() <= 1);
+      assert!(svg.contains(">-4</text>"), "{svg}");
+    }
+
+    /// `BarOrigin -> Top` hangs the bars from an axis at the top, the value
+    /// axis labelled with the magnitudes growing downwards.
+    #[test]
+    fn bar_chart_bar_origin_top_hangs_bars_from_the_top() {
+      let svg = export_svg("BarChart[{5, 3, 8}, BarOrigin -> Top]");
+      let b = bar_rects(&svg);
+      assert_eq!(b.len(), 3);
+      assert!(b.iter().all(|r| (r.1 - b[0].1).abs() <= 1), "{svg}");
+      assert!(b[2].2 > b[0].2 && b[0].2 > b[1].2);
+      assert!(svg.contains(">8</text>") && !svg.contains(">-"), "{svg}");
+    }
+
+    /// `Style[v, colour]` colours its bar and `Labeled[v, label]` names it
+    /// below the axis. Regression: both wrappers were dropped.
+    #[test]
+    fn bar_chart_style_and_labeled_data_wrappers() {
+      let svg = export_svg(
+        r#"BarChart[{Style[3, Red], Labeled[6, "peak"], 2, Labeled[1, "low", Below]}]"#,
+      );
+      assert_eq!(bar_rects(&svg).len(), 4);
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+      assert!(svg.contains(">peak</text>") && svg.contains(">low</text>"));
+    }
+
+    /// `LabelingFunction -> Above` labels every bar with its value over its
+    /// top. Regression: the labels read `Above(4.)` below the axis.
+    #[test]
+    fn bar_chart_labeling_function_position_symbol() {
+      let svg = export_svg("BarChart[{4, 7, 2}, LabelingFunction -> Above]");
+      assert!(!svg.contains("Above"), "{svg}");
+      for v in ["4", "7", "2"] {
+        assert!(svg.contains(&format!(">{v}</text>")), "{svg}");
+      }
+    }
+
+    /// `Around[v, δ]` data draws a bar of height `v` with an error bar.
+    /// Regression: the chart was empty.
+    #[test]
+    fn bar_chart_around_values_draw_error_bars() {
+      let svg = export_svg("BarChart[{Around[3, 0.5], Around[5, 1]}]");
+      assert_eq!(bar_rects(&svg).len(), 2, "{svg}");
+      // Each error bar is a vertical line and two caps.
+      assert_eq!(svg.matches("<polyline").count(), 6, "{svg}");
+      // The range takes in the top error bar (5 + 1).
+      assert!(svg.contains(">6</text>"), "{svg}");
+    }
+
+    /// `ChartBaseStyle -> EdgeForm[{Thick, Black}]` gives the bars thick
+    /// opaque black edges.
+    #[test]
+    fn bar_chart_base_style_edge_form() {
+      let svg = export_svg(
+        "BarChart[{5, 3}, ChartBaseStyle -> EdgeForm[{Thick, Black}]]",
+      );
+      assert_eq!(
+        svg
+          .matches(
+            "stroke=\"#000000\" stroke-opacity=\"0.66\" stroke-width=\"20.0\""
+          )
+          .count(),
+        2,
+        "{svg}"
+      );
+    }
+
+    /// `ChartElementFunction -> "FadingRectangle"` fills each bar with a
+    /// horizontal gradient of its colour.
+    #[test]
+    fn bar_chart_fading_rectangle_gradient() {
+      let svg = export_svg(
+        r#"BarChart[{3, 5}, ChartElementFunction -> "FadingRectangle", ChartStyle -> Blue]"#,
+      );
+      assert_eq!(svg.matches("<linearGradient").count(), 2, "{svg}");
+      assert!(svg.contains("fill=\"url(#wxbar1)\""), "{svg}");
+      assert!(svg.contains("stop-color=\"#0000FF\""), "{svg}");
+    }
+
+    /// `BarSpacing -> {0, s}` leaves `s` bar widths between groups (WL's
+    /// `{0, 1}` puts three-bar groups four widths apart).
+    #[test]
+    fn bar_chart_group_spacing_is_in_bar_widths() {
+      let b = bar_rects(&export_svg(
+        "BarChart[{{1, 2, 3}, {3, 2, 1}}, BarSpacing -> {0, 1}]",
+      ));
+      assert_eq!(b.len(), 6);
+      let w = b[1].0 - b[0].0;
+      // The gap between the groups is one bar width.
+      assert!((b[3].0 - b[2].0 - 2 * w).abs() <= 2, "{b:?}");
+    }
+
+    /// `GridLines -> {None, Automatic}` draws a line across the plot at
+    /// every value tick; `Frame -> True` mirrors the value ticks on the
+    /// right edge instead of extending the x axis past the frame.
+    #[test]
+    fn bar_chart_frame_and_value_grid_lines() {
+      let svg = export_svg(
+        "BarChart[{5, 3, 8}, Frame -> True, GridLines -> {None, Automatic}]",
+      );
+      // 0, 2, 4, 6, 8.
+      assert_eq!(svg.matches("stroke-opacity=\"0.4\"").count(), 5, "{svg}");
+      let plain = export_svg("BarChart[{5, 3, 8}, Frame -> True]");
+      assert!(!plain.contains("stroke-opacity=\"0.4\""));
+    }
+
+    /// `PlotTheme -> "Business"`: its orange-to-blue palette, a left and
+    /// bottom frame and dotted value grid lines.
+    #[test]
+    fn bar_chart_plot_theme_business() {
+      let svg = export_svg(
+        "BarChart[{{1, 2, 3}, {3, 2, 1}}, PlotTheme -> \"Business\"]",
+      );
+      assert!(svg.contains("fill=\"#F8A52C\""), "{svg}");
+      assert!(svg.contains("fill=\"#688AE8\""), "{svg}");
+      assert!(svg.contains("stroke-dasharray"), "{svg}");
+    }
+
+    /// Horizontal bars are edged like vertical ones.
+    #[test]
+    fn horizontal_bar_chart_bars_have_edges() {
+      let svg = export_svg("BarChart[{5, 3}, BarOrigin -> Left]");
+      let bars = svg
+        .split("<rect")
+        .skip(2)
+        .filter(|r| r.contains("stroke-opacity=\"0.66\""))
+        .count();
+      assert_eq!(bars, 2, "{svg}");
+    }
+
     #[test]
     fn bar_chart_ticks_none_hides_axis_tick_labels() {
       assert!(export_svg("BarChart[{1, 2, 3}]").contains("<text"));
@@ -15879,6 +16062,120 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .unwrap(),
         "2"
       );
+    }
+
+    /// `SectorOrigin -> {θ, "Clockwise"}` starts the first slice at `θ` and
+    /// runs clockwise; a bare `θ` runs counterclockwise (as wolframscript's
+    /// `Disk` angles show).
+    #[test]
+    fn pie_chart_sector_origin_angle_and_direction() {
+      assert_eq!(
+        interpret(
+          "Cases[PieChart[{1, 2, 3}, SectorOrigin -> {Pi/2, \"Clockwise\"}], \
+           Disk[_, _, a_] :> Round[a, 0.01], Infinity]"
+        )
+        .unwrap(),
+        "{{0.52, 1.57}, {-1.57, 0.52}, {-4.71, -1.57}}"
+      );
+      assert_eq!(
+        interpret(
+          "Cases[PieChart[{1, 2, 3}, SectorOrigin -> Pi/2], \
+           Disk[_, _, a_] :> Round[a, 0.01], Infinity]"
+        )
+        .unwrap(),
+        "{{1.57, 2.62}, {2.62, 4.71}, {4.71, 7.8500000000000005}}"
+      );
+    }
+
+    /// `SectorOrigin -> {Automatic, r0}` cuts a hole into the pie: every
+    /// wedge becomes an annulus sector with an inner arc.
+    #[test]
+    fn pie_chart_sector_origin_inner_radius_makes_a_donut() {
+      let svg =
+        export_svg("PieChart[{3, 5, 2}, SectorOrigin -> {Automatic, 1}]");
+      let wedges: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<path")).collect();
+      assert_eq!(wedges.len(), 3, "{svg}");
+      assert!(wedges.iter().all(|w| w.matches(" A").count() == 2), "{svg}");
+    }
+
+    /// `Style[v, colour]` colours its slice and `Labeled[v, label]` labels
+    /// it. Regression: the wrappers' styles and labels were dropped.
+    #[test]
+    fn pie_chart_style_and_labeled_data_wrappers() {
+      let svg = export_svg(
+        "PieChart[{Style[3, Red], Labeled[5, \"big\"], 2, \
+         Style[4, Darker[Green]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,170,0)\""), "{svg}");
+      assert!(svg.contains(">big</text>"), "{svg}");
+      assert_eq!(svg.matches("<path").count(), 4);
+    }
+
+    /// `ChartLabels -> Placed[labels, "RadialOuter"]` sets the labels near
+    /// the rim (0.85 of the radius), not at the wedge centroid.
+    #[test]
+    fn pie_chart_chart_labels_radial_outer() {
+      let label_x = |svg: &str| -> f64 {
+        let t = svg.split("<text").nth(1).unwrap();
+        let x = t.split("x=\"").nth(1).unwrap();
+        x[..x.find('"').unwrap()].parse().unwrap()
+      };
+      let outer = export_svg(
+        "PieChart[{1, 1}, ChartLabels -> Placed[{\"a\", \"b\"}, \"RadialOuter\"]]",
+      );
+      let plain = export_svg("PieChart[{1, 1}, ChartLabels -> {\"a\", \"b\"}]");
+      // The first slice spans the upper half; its bisector points straight
+      // up, so the label's x stays at the centre — compare the y instead.
+      let label_y = |svg: &str| -> f64 {
+        let t = svg.split("<text").nth(1).unwrap();
+        let y = t.split(" y=\"").nth(1).unwrap();
+        y[..y.find('"').unwrap()].parse().unwrap()
+      };
+      assert!((label_x(&outer) - label_x(&plain)).abs() < 1.0);
+      // Radius 147: 0.85 r above the centre vs 0.6 r.
+      assert!(
+        (label_y(&outer) - (180.0 - 0.85 * 147.0)).abs() < 1.0,
+        "{outer}"
+      );
+      assert!(
+        (label_y(&plain) - (180.0 - 0.6 * 147.0)).abs() < 1.0,
+        "{plain}"
+      );
+    }
+
+    /// `ChartStyle -> "Rainbow"` colours a `RectangleChart`'s rectangles
+    /// with the scheme sampled evenly. Regression: all were default yellow.
+    #[test]
+    fn rectangle_chart_named_color_scheme() {
+      assert_eq!(
+        interpret(
+          "Cases[RectangleChart[{{1, 2}, {2, 3}, {3, 1}}, \
+           ChartStyle -> \"Rainbow\"], RGBColor[c__] :> Round[{c}, 0.01], \
+           Infinity] // DeleteDuplicates // Length"
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
+    /// `SectorChart` lays its `{angle, radius}` sectors out in data order
+    /// from π clockwise, coloured in data order, the largest radius filling
+    /// the (square) frame.
+    #[test]
+    fn sector_chart_data_order_and_radii() {
+      let svg = export_svg("SectorChart[{{1, 3}, {2, 2}, {1, 4}, {3, 1}}]");
+      assert!(svg.contains("width=\"360\" height=\"360\""), "{svg}");
+      let wedges: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<path")).collect();
+      assert_eq!(wedges.len(), 4);
+      // The first (yellow) sector starts on the negative x axis at 3/4 of
+      // the largest radius (180 / 1.1 = 163.64).
+      assert!(wedges[0].contains("d=\"M57.27,180.00"), "{}", wedges[0]);
+      assert!(wedges[0].contains("rgb(255,213,64)"));
+      assert!(wedges[2].contains("A163.64,163.64"), "{}", wedges[2]);
+      assert!(wedges[1].contains("rgb(0,170,242)"));
     }
 
     #[test]
@@ -16157,6 +16454,82 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let bars = svg.matches("<rect").count() - 1; // minus background rect
       assert_eq!(bars, 3, "expected 3 bins from custom edges {{1, 3, 4, 6}}");
       insta::assert_snapshot!(svg);
+    }
+
+    /// `{min, max, dx}` bins only `[min, max]`: data outside is not counted
+    /// and the axis spans just those bins. Regression: only `dx` was used.
+    #[test]
+    fn histogram_min_max_width_bin_spec() {
+      let svg = export_svg(
+        "Histogram[{-3, -1.2, 0.3, 0.4, 1.9, 2.5, 3.3}, {-2, 2, 0.5}]",
+      );
+      let titles: Vec<&str> = svg
+        .split("<title>")
+        .skip(1)
+        .map(|t| t.split('<').next().unwrap())
+        .collect();
+      assert_eq!(titles.len(), 8, "{svg}");
+      assert_eq!(titles[0], "[-2, -1.5): 0");
+      assert_eq!(titles[7], "[1.5, 2): 1");
+      assert!(!svg.contains(">3</text>"), "{svg}");
+    }
+
+    /// `{"Log", n}` bins the base-10 logarithms of the data and draws them
+    /// on a logarithmic axis.
+    #[test]
+    fn histogram_log_bins() {
+      let svg =
+        export_svg("Histogram[{1, 2, 2, 3, 3, 3, 10, 100}, {\"Log\", 3}]");
+      assert!(svg.contains("<title>[1, 10): 6</title>"), "{svg}");
+      assert!(svg.contains("<title>[10, 100): 1</title>"), "{svg}");
+      assert!(svg.contains(">100</text>"), "{svg}");
+    }
+
+    /// `ScalingFunctions -> "Log"` draws the counts on a log axis: bars of
+    /// counts 1, 10 and 100 rise by equal steps, and empty bins vanish.
+    #[test]
+    fn histogram_log_count_axis() {
+      let data = "Join[{1}, ConstantArray[2, 10], ConstantArray[4, 100]]";
+      let svg = export_svg(&format!(
+        "Histogram[{data}, {{1}}, ScalingFunctions -> \"Log\"]"
+      ));
+      let b = bar_rects(&svg);
+      assert_eq!(b.len(), 3, "{svg}");
+      let bottom = |r: &(i64, i64, i64)| r.1 + r.2;
+      assert!(b.iter().all(|r| (bottom(r) - bottom(&b[0])).abs() <= 1));
+      // ln 1 → ln 10 → ln 100: equal increments above the base (ln 1 - 1).
+      let step1 = b[1].2 - b[0].2;
+      let step2 = b[2].2 - b[1].2;
+      assert!((step1 - step2).abs() <= 2, "{b:?}");
+      assert!(svg.contains(">100</text>"), "{svg}");
+    }
+
+    /// `ChartLayout -> "Stacked"` piles the datasets' bars of each bin.
+    #[test]
+    fn histogram_stacked_layout() {
+      let svg = export_svg(
+        "Histogram[{{1, 1, 2}, {1, 2, 2}}, {{0, 1.5, 3}}, \
+         ChartLayout -> \"Stacked\"]",
+      );
+      let b = bar_rects(&svg);
+      assert_eq!(b.len(), 4, "{svg}");
+      // The second dataset's first bar starts on top of the first's.
+      assert!((b[2].1 + b[2].2 - b[0].1).abs() <= 1, "{b:?}");
+    }
+
+    /// A `ChartStyle -> Directive[colour, EdgeForm[…]]` colours and edges
+    /// the bars.
+    #[test]
+    fn histogram_chart_style_directive_with_edge_form() {
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3}, ChartStyle -> \
+         Directive[Orange, EdgeForm[{Thick, Brown}]]]",
+      );
+      assert!(svg.contains("fill=\"#FF8000\""), "{svg}");
+      assert!(
+        svg.contains("stroke=\"#996633\" stroke-opacity=\"0.66\""),
+        "{svg}"
+      );
     }
 
     #[test]
