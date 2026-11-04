@@ -12908,12 +12908,16 @@ where
     let stem = vec![(x, y), (x, ref_y)];
     let drawn = match stem_dashes {
       Some((dash, gap)) => {
+        // A named dashing (`Dashed`) is absolute points, a `Dashing[{…}]`
+        // a fraction of the plot width (see `dash_len`).
         let scale = RESOLUTION_SCALE as f64;
+        let width = chart.plotting_area().dim_in_pixel().0 as f64;
+        let len = |d: f64| dash_len(d, width, scale).round().max(1.0) as u32;
         chart.draw_series(std::iter::once(
           plotters::element::DashedPathElement::new(
             stem,
-            (dash * scale).round().max(1.0) as u32,
-            (gap * scale).round().max(1.0) as u32,
+            len(dash),
+            len(gap),
             style,
           ),
         ))

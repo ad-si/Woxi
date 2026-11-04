@@ -14140,6 +14140,19 @@ mod plot3d {
       assert!(with.matches("<rect").count() > without.matches("<rect").count());
     }
 
+    // `Dashed` filling stems are 4 pt on / 4 pt off (they used to come out
+    // as thousands of 1-unit dots).
+    #[test]
+    fn list_plot_dashed_filling_stems_use_point_dashes() {
+      let svg = export_svg(
+        "ListPlot[Range[5], Filling -> Axis, \
+         FillingStyle -> Directive[Magenta, Dashed]]",
+      );
+      let dashes = svg.matches("stroke=\"#FF00FF\"").count();
+      // Stems of 1..5 over a ~200 pt tall plot: at most a few dozen dashes.
+      assert!(dashes > 5 && dashes < 120, "{dashes}");
+    }
+
     // A rule in a label is typeset with its arrow, as in a Wolfram graphic.
     #[test]
     fn plot_label_rule_typesets_arrow() {
