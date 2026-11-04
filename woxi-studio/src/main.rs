@@ -4789,6 +4789,7 @@ fn render_manipulate_widget<'a>(
         points,
         auto_create,
         derived: _,
+        single: _,
       } => {
         // A list of draggable 2D points (e.g. polygon vertices): one X/Y
         // slider pair per point, plus add/remove buttons when the spec

@@ -28086,8 +28086,15 @@ pub fn locator_binding_code(
   name: &str,
   points: &[(f64, f64)],
   derived: Option<&LocatorDerived>,
+  single: bool,
 ) -> String {
-  let points_code = format_point_list_input(points);
+  let points_code = match (single, points.first()) {
+    (true, Some((x, y))) => {
+      format!("{{{}, {}}}", format_f64_real(*x), format_f64_real(*y))
+    }
+    (true, None) => "{}".to_string(),
+    _ => format_point_list_input(points),
+  };
   let Some(d) = derived else {
     return points_code;
   };
@@ -28274,6 +28281,10 @@ pub enum ManipulateControl {
     /// names the variable that holds the points themselves. Without it the
     /// variable is bound to the point list directly.
     derived: Option<LocatorDerived>,
+    /// The variable holds one point `{x, y}` (or `{}` while none is placed)
+    /// rather than a list of points: a Locator whose starting value is `{}`
+    /// that the body later fills in with a single position.
+    single: bool,
   },
   /// A `ControlType -> Trigger` control: a play/pause button pair that
   /// sweeps its variable from `min` towards `max` in `step` increments
@@ -29917,8 +29928,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             control: c,
             enabled: enabled2,
             ..
-          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
-          {
+          }) = crate::with_scoped_globals(&initial_bindings, || {
+            parse_manipulate_control(&Expr::List(promoted.into()), &[])
+          }) {
             if let Some(cond) = enabled2 {
               control_enabled.push((c.name().to_string(), cond));
             }
@@ -30150,6 +30162,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         auto_create: false,
         label: var.clone(),
         derived: None,
+        single: false,
       });
       dynamic_locator_defaults.push((var.clone(), reset_code));
       locator_reset_vars.push(var);
@@ -34429,6 +34442,9 @@ fn locator_range(
     y_min = y_min.min(*y);
     y_max = y_max.max(*y);
   }
+  if points.is_empty() {
+    return (-1.0, 1.0, -1.0, 1.0);
+  }
   let x_pad = ((x_max - x_min) / 2.0).max(1.0);
   let y_pad = ((y_max - y_min) / 2.0).max(1.0);
   (x_min - x_pad, x_max + x_pad, y_min - y_pad, y_max + y_pad)
@@ -36246,6 +36262,7 @@ fn parse_manipulate_control(
           auto_create,
           label,
           derived: Some(derived),
+          single: false,
         },
         enabled,
         min_code: None,
@@ -36300,6 +36317,33 @@ fn parse_manipulate_control(
           auto_create,
           label,
           derived: None,
+          single: false,
+        },
+        enabled,
+        min_code: None,
+        max_code: None,
+        values_code: None,
+        animate: None,
+        tracking: tracking.clone(),
+      });
+    }
+    // `{{p, {}}, lo, hi, Locator}`: nothing is placed yet. The body (or a
+    // button) later stores one point in `p` and the user drags it, so this
+    // is a single-point Locator that starts out empty.
+    if matches!(&evaluated, Expr::List(v) if v.is_empty()) {
+      let (x_min, x_max, y_min, y_max) = locator_range(&corner_bounds, &[]);
+      return Some(ParsedControl::Visible {
+        control: ManipulateControl::Locator {
+          name,
+          points: Vec::new(),
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          auto_create: false,
+          label,
+          derived: None,
+          single: true,
         },
         enabled,
         min_code: None,
@@ -37638,10 +37682,11 @@ pub fn manipulate_initial_bindings(
         name,
         points,
         derived,
+        single,
         ..
       } => Some((
         name.clone(),
-        locator_binding_code(name, points, derived.as_ref()),
+        locator_binding_code(name, points, derived.as_ref(), *single),
       )),
       ManipulateControl::Color { name, initial, .. } => {
         Some((name.clone(), initial.clone()))
@@ -41171,7 +41216,12 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(points.len(), 2);
         let d = derived.as_ref().expect("derived callback");
         assert_eq!(
-          locator_binding_code("lv", &[(0.5, 0.0), (0.75, 0.0)], Some(d)),
+          locator_binding_code(
+            "lv",
+            &[(0.5, 0.0), (0.75, 0.0)],
+            Some(d),
+            false
+          ),
           "{0.5, 0.75}"
         );
       }

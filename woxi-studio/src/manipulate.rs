@@ -129,6 +129,9 @@ pub enum ControlState {
     /// The variable follows the dragged points through a callback instead of
     /// holding them (see `woxi::functions::graphics::LocatorDerived`).
     derived: Option<woxi::functions::graphics::LocatorDerived>,
+    /// The variable holds one point (or `{}` when none is placed), not a
+    /// list of points.
+    single: bool,
   },
   /// A `ControlType -> Trigger` control: a play/pause pair sweeping its
   /// variable from `min` towards `max` in `step` increments while the
@@ -248,11 +251,13 @@ impl ControlState {
         name,
         points,
         derived,
+        single,
         ..
       } => woxi::functions::graphics::locator_binding_code(
         name,
         points,
         derived.as_ref(),
+        *single,
       ),
       ControlState::Color { current, .. } => current.clone(),
       // Annotation and button rows bind no variable; never substituted.
@@ -359,12 +364,21 @@ impl ControlState {
       ControlState::Locator {
         derived: Some(_), ..
       } => {}
-      ControlState::Locator { points, .. } => {
-        if let Expr::List(items) = &expr
+      ControlState::Locator { points, single, .. } => {
+        if let Some(p) = as_pair(&expr) {
+          // A lone point `{x, y}` written to a single-point Locator.
+          if *single {
+            *points = vec![p];
+          }
+        } else if let Expr::List(items) = &expr
           && let Some(new_points) =
             items.iter().map(as_pair).collect::<Option<Vec<_>>>()
         {
-          *points = new_points;
+          *points = if *single {
+            new_points.into_iter().take(1).collect()
+          } else {
+            new_points
+          };
         }
       }
       ControlState::Color { current, .. } => {
@@ -2001,6 +2015,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         auto_create,
         label,
         derived,
+        single,
       } => ControlState::Locator {
         name: name.clone(),
         label: label.clone(),
@@ -2011,6 +2026,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         points: points.clone(),
         auto_create: *auto_create,
         derived: derived.clone(),
+        single: *single,
       },
       ManipulateControl::Trigger {
         name,
@@ -5663,5 +5679,44 @@ mod mapped_layout_tests {
     let dump = format!("{node:?}");
     assert!(dump.contains("high") && dump.contains("150.00"), "{dump}");
     assert!(!dump.contains("Switch"), "{dump}");
+  }
+
+  /// A drag-a-coin game keeps its piece in a hidden `Locator` that starts
+  /// as `{}` (nothing placed yet) and whose bounds are `Dynamic[…]` boxes
+  /// following another variable. The piece is only set by a button, then
+  /// dragged — so the Locator must still become a 2D control.
+  #[test]
+  fn hidden_locator_with_empty_start_and_dynamic_bounds_is_a_control() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, 1], If[pts != {}, Disk[pts, 2], {}]},
+        PlotRange -> 10],
+      {{go, 0, ""}, {1 -> "place"}, ControlType -> SetterBar},
+      {{pts, {}}, Dynamic[{-bs, -bs}], Dynamic[{bs, bs}],
+        ControlType -> Locator, Appearance -> None},
+      {{bs, 5}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.controls.iter().any(
+        |c| matches!(c, ControlState::Locator { name, .. } if name == "pts")
+      ),
+      "{:?}",
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>()
+    );
+    // The bounds follow the hidden `bs` variable.
+    assert!(matches!(
+      &state.controls[state.controls.iter().position(|c| c.name() == "pts").unwrap()],
+      ControlState::Locator { x_min, x_max, .. } if *x_min == -5.0 && *x_max == 5.0
+    ));
+    // Empty until a point is placed; then it binds a single `{x, y}`.
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "pts")
+      .unwrap();
+    assert_eq!(state.controls[idx].current_code(), "{}");
+    state.controls[idx].set_current_from_code("{-5, -5}");
+    assert_eq!(state.controls[idx].current_code(), "{-5., -5.}");
   }
 }
