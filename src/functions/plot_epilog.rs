@@ -212,6 +212,20 @@ pub(crate) fn render_overlay_svg(
 /// coordinates. `ImageScaled` measures the same fractions against the image
 /// rather than the plot range; over the plotting area the two coincide.
 fn anchor2(expr: &Expr, area: &PlotArea) -> Option<(f64, f64)> {
+  // `Offset[{dx, dy}, pos]`: `pos` moved by `{dx, dy}` printer's points.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Offset"
+    && args.len() == 2
+    && let Some((dx, dy)) = point2(&args[0])
+    && area.w > 0.0
+    && area.h > 0.0
+  {
+    let (x, y) = anchor2(&args[1], area)?;
+    return Some((
+      x + dx * area.scale * (area.x_max - area.x_min) / area.w,
+      y + dy * area.scale * (area.y_max - area.y_min) / area.h,
+    ));
+  }
   if let Expr::FunctionCall { name, args } = expr
     && (name == "Scaled" || name == "ImageScaled")
     && args.len() == 1

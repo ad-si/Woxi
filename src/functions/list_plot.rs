@@ -2372,10 +2372,46 @@ fn render_panel_layout(
         &parsed.opts.curve_label_specs,
         idx,
       );
+      // A panel shows its series' label (`PlotLabels` or a `Labeled`
+      // dataset) as a title centred inside its top edge, its baseline
+      // 11.6 pt below the frame as in wolframscript, rather than at the
+      // curve's end.
       if !opts.plot_labels.is_empty() {
-        opts.plot_labels = vec![labels.get(idx).cloned().flatten()];
-        opts.plot_label_leaders =
-          vec![parsed.opts.plot_label_leaders.get(idx) == Some(&true)];
+        let label = parsed
+          .opts
+          .plot_labels
+          .get(idx)
+          .cloned()
+          .flatten()
+          .or_else(|| labels.get(idx).cloned().flatten());
+        opts.plot_labels = Vec::new();
+        opts.plot_label_leaders = Vec::new();
+        if let Some(label) = label {
+          opts.epilog.push(call(
+            "Text",
+            vec![
+              call(
+                "Style",
+                vec![Expr::String(label), Expr::Integer(10.into())],
+              ),
+              call(
+                "Offset",
+                vec![
+                  Expr::List(
+                    vec![Expr::Integer(0.into()), Expr::Integer((-9).into())]
+                      .into(),
+                  ),
+                  call1(
+                    "Scaled",
+                    Expr::List(
+                      vec![Expr::Real(0.5), Expr::Integer(1.into())].into(),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ));
+        }
       }
       // Keep only this panel's error bars and data-point anchors (they are
       // indexed by series).

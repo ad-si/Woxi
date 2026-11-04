@@ -14086,6 +14086,47 @@ mod plot3d {
       assert!(text.trim_start_matches(|c| c != '>').contains('x'));
     }
 
+    // In a `PlotLayout`, each panel shows its dataset's `Labeled` label as
+    // a title centred inside its top (it used to sit clipped at the last
+    // point, and the second panel's was missing).
+    #[test]
+    fn plot_layout_row_labeled_datasets_title_their_panels() {
+      let svg = export_svg(
+        r#"ListPlot[{Labeled[Sqrt[Range[40]], "sqrt"],
+             Labeled[Log[Range[40, 80]], "log"]}, PlotLayout -> "Row"]"#,
+      );
+      for label in [">sqrt<", ">log<"] {
+        assert_eq!(svg.matches(label).count(), 1, "{label}: {svg}");
+      }
+      let anchor = |label: &str| -> String {
+        let at = svg.find(label).unwrap();
+        let start = svg[..at].rfind("<text").unwrap();
+        svg[start..at].to_string()
+      };
+      assert!(anchor(">sqrt<").contains("text-anchor=\"middle\""));
+    }
+
+    // `Offset[{dx, dy}, pos]` positions an epilog primitive in points from
+    // `pos`.
+    #[test]
+    fn epilog_text_offset_position() {
+      let y = |pos: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 1}}, Epilog -> Text[\"q\", {pos}]]"
+        ));
+        let at = svg.find(">q<").unwrap();
+        let start = svg[..at].rfind("<text").unwrap();
+        svg[start..at]
+          .split("y=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      let shift = y("Offset[{0, -10}, {0.5, 0.5}]") - y("{0.5, 0.5}");
+      assert!((shift - 100.0).abs() < 1.0, "{shift}");
+    }
+
     // A rule in a label is typeset with its arrow, as in a Wolfram graphic.
     #[test]
     fn plot_label_rule_typesets_arrow() {
