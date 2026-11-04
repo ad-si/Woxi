@@ -126,24 +126,6 @@ fn parse_field_plot_label(
   })
 }
 
-/// The axes margins that leave room for a field plot's `PlotLabel`, or
-/// `None` when there is no label to draw (the caller then keeps plotters'
-/// default margins). Shared by every field plot that draws its own axes
-/// with [`crate::functions::plot::generate_axes_only_opts`], so the top
-/// margin, tick-label areas, and font-size fallback all move together.
-fn field_plot_label_margins(
-  plot_label: Option<&(String, Option<f64>)>,
-) -> Option<crate::functions::plot::MarginOverrides> {
-  plot_label.map(|(_, size)| crate::functions::plot::MarginOverrides {
-    top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
-      * RESOLUTION_SCALE,
-    x_label_area: 40 * RESOLUTION_SCALE,
-    y_label_area: 65 * RESOLUTION_SCALE,
-    hide_x_ticks: false,
-    hide_y_ticks: false,
-  })
-}
-
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
 fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
   let Expr::FunctionCall { name, args } = value else {
@@ -1869,16 +1851,6 @@ fn resample_node_grid(
     }
   }
   out
-}
-
-/// Draw the frame box around the plot area (Mathematica draws density and
-/// contour plots with Frame -> True).
-fn push_frame(svg: &mut String, x0: f64, y0: f64, w: f64, h: f64) {
-  let (_, dark_gray, _, _, _) = plot_theme();
-  svg.push_str(&format!(
-    "<rect x=\"{x0:.1}\" y=\"{y0:.1}\" width=\"{w:.1}\" height=\"{h:.1}\" fill=\"none\" stroke=\"rgb({},{},{})\" stroke-width=\"{}\"/>\n",
-    dark_gray.0, dark_gray.1, dark_gray.2, RESOLUTION_SCALE
-  ));
 }
 
 /// Pick ~target contour levels at "nice" round values strictly inside
@@ -5471,10 +5443,6 @@ pub fn stream_density_plot_ast(
   // background by the scalar `s` instead of by the flow speed.
   let (body, density) =
     split_vector_and_density(spec, &xvar, &yvar, x_min, y_min);
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
-  let plot_label = parse_field_plot_label(args, 3);
-  let prolog = parse_overlay_primitives(args, 3, "Prolog");
-  let epilog = parse_overlay_primitives(args, 3, "Epilog");
 
   let grid_n = 60;
 
@@ -5501,35 +5469,23 @@ pub fn stream_density_plot_ast(
   }
   let (v_min, v_max) = robust_value_range(&mag_samples);
 
-  // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(plot_label.as_ref());
-  let area = crate::functions::plot::generate_axes_only_opts(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
-
-  let plot_x0 = area.plot_x0;
-  let plot_y0 = area.plot_y0;
-  let plot_w = area.plot_w;
-  let plot_h = area.plot_h;
-
-  let mut svg = area.svg.clone();
+  // Framed like StreamPlot, with `Scaled[0.05]` padding on every side.
+  let mut density_opts = parse_density_contour_options(args, 3);
+  density_opts.range_padding = 0.05;
+  let mut area =
+    field_plot_axes((x_min, x_max), (y_min, y_max), &mut density_opts);
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
-  splice_field_plot_prolog(&mut svg, &area, &prolog);
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
+  splice_field_plot_prolog(
+    &mut svg,
+    &area,
+    &std::mem::take(&mut density_opts.prolog),
+  );
 
   // Density background: the flow speed, on Wolfram's orange-to-yellow
   // vector density gradient unless a `ColorFunction` is given.
-  let density_opts = parse_density_contour_options(args, 3);
   let (color_function, cf_expr) = match density_opts.cf_expr() {
     Some(cf) => (density_opts.color_function.as_deref(), Some(cf)),
     None => (
@@ -5547,10 +5503,10 @@ pub fn stream_density_plot_ast(
     &mag_grid,
     v_min,
     v_max,
-    plot_x0,
-    plot_y0,
-    plot_w,
-    plot_h,
+    area.plot_x0,
+    area.plot_y0,
+    area.plot_w,
+    area.plot_h,
     color_function,
     cf_expr,
   );
@@ -5563,12 +5519,14 @@ pub fn stream_density_plot_ast(
     &args[3..],
   );
   push_field_primitives_svg(&mut svg, &primitives, &area, "streams");
-
-  push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
-  push_epilog_primitives(&mut svg, &area, &epilog);
+  push_field_frame(&mut svg, &area, &density_opts);
+  push_field_plot_overlays(&mut svg, &area, &density_opts);
 
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  Ok(crate::plot_result_with_structure(
+    svg,
+    call1("Graphics", Expr::List(primitives.into())),
+  ))
 }
 
 /// VectorDensityPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
