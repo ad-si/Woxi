@@ -3116,6 +3116,244 @@ fn evaluate_vector3d(
   None
 }
 
+/// `VectorPlot3D`'s default picture: one `Arrow[Tube[{a, b}], r]` per sample
+/// point (the cell centres of an `n`³ grid, or the given points), its
+/// length proportional to the magnitude (the longest 0.7 of a cell), drawn
+/// through `Graphics3D` with Wolfram's axes and 1 x 1 x 1 box.
+fn vector_plot3d_solid(
+  bodies: &[&Expr],
+  axes: [(&str, f64, f64); 3],
+  points: Option<&[(f64, f64, f64)]>,
+  n: usize,
+  color_function: Option<&ColorFn>,
+  opts: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let n = n.max(1);
+  let [(xv, x0, x1), (yv, y0, y1), (zv, z0, z1)] = axes;
+  let sides = [x1 - x0, y1 - y0, z1 - z0];
+  let centres: Vec<(f64, f64, f64)> = if let Some(p) = points {
+    p.to_vec()
+  } else {
+    let at =
+      |lo: f64, side: f64, i: usize| lo + side * (i as f64 + 0.5) / n as f64;
+    let mut v = Vec::with_capacity(n * n * n);
+    for i in 0..n {
+      for j in 0..n {
+        for k in 0..n {
+          v.push((
+            at(x0, sides[0], i),
+            at(y0, sides[1], j),
+            at(z0, sides[2], k),
+          ));
+        }
+      }
+    }
+    v
+  };
+  // Each sample: field index, centre, vector, magnitude.
+  let mut samples = Vec::new();
+  for (f, body) in bodies.iter().enumerate() {
+    for &(x, y, z) in &centres {
+      if let Some((a, b, c)) = evaluate_vector3d(body, xv, yv, zv, x, y, z) {
+        let m = (a * a + b * b + c * c).sqrt();
+        if m > 1e-15 {
+          samples.push((f, [x, y, z], [a, b, c], m));
+        }
+      }
+    }
+  }
+  if samples.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "VectorPlot3D: vector field produced no finite nonzero vectors".into(),
+    ));
+  }
+  let (m_lo, m_hi) = samples
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), s| {
+      (a.min(s.3), b.max(s.3))
+    });
+  // In box units each axis spans 1 (BoxRatios {1, 1, 1}), so lengths are
+  // measured on the box, then mapped back to data per axis.
+  let cell = 1.0 / n as f64;
+  let length_per = 0.7 * cell / m_hi;
+  let radius = 0.0082 * sides.iter().copied().fold(0.0_f64, f64::max);
+  let mut content = Vec::with_capacity(samples.len());
+  // What is drawn: each arrow as a hexagonal shaft and head (a light solid
+  // that keeps the picture small), in box units mapped back to the data.
+  let mut drawn = vec![call0("EdgeForm")];
+  let to_data = |q: [f64; 3]| {
+    [
+      x0 + q[0] * sides[0],
+      y0 + q[1] * sides[1],
+      z0 + q[2] * sides[2],
+    ]
+  };
+  for (f, p, v, m) in &samples {
+    let half = [0, 1, 2].map(|d| 0.5 * v[d] * length_per * sides[d]);
+    let a = [p[0] - half[0], p[1] - half[1], p[2] - half[2]];
+    let b = [p[0] + half[0], p[1] + half[1], p[2] + half[2]];
+    let t = if m_hi > m_lo {
+      (m - m_lo) / (m_hi - m_lo)
+    } else {
+      1.0
+    };
+    let (r, g, bl) = if bodies.len() > 1 {
+      crate::functions::plot::PLOT_COLORS
+        [*f % crate::functions::plot::PLOT_COLORS.len()]
+    } else if let Some(cf) = color_function {
+      cf.color(t)
+    } else {
+      crate::functions::plot::wl_default_vector_gradient(t)
+    };
+    let real3 = |q: [f64; 3]| {
+      Expr::List(q.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+    };
+    let color = call(
+      "RGBColor",
+      vec![
+        Expr::Real(f64::from(r) / 255.0),
+        Expr::Real(f64::from(g) / 255.0),
+        Expr::Real(f64::from(bl) / 255.0),
+      ],
+    );
+    {
+      // Box units: every axis spans 1.
+      let ua = [0, 1, 2].map(|d| (a[d] - [x0, y0, z0][d]) / sides[d]);
+      let ub = [0, 1, 2].map(|d| (b[d] - [x0, y0, z0][d]) / sides[d]);
+      let axis = v_sub(ub, ua);
+      let len = v_len(axis);
+      if len > 1e-12 {
+        let u = v_scale(axis, 1.0 / len);
+        let helper = if u[0].abs() < 0.9 {
+          [1.0, 0.0, 0.0]
+        } else {
+          [0.0, 1.0, 0.0]
+        };
+        let e1 = {
+          let c = v_cross(u, helper);
+          v_scale(c, 1.0 / v_len(c))
+        };
+        let e2 = v_cross(u, e1);
+        let shaft_r = 0.0082;
+        let head_len = (0.45 * len).min(0.05);
+        let head_r = 0.4 * head_len;
+        let base = v_sub(ub, v_scale(u, head_len));
+        let ring = |c: [f64; 3], rad: f64| -> Vec<[f64; 3]> {
+          (0..6)
+            .map(|k| {
+              let t = std::f64::consts::PI / 3.0 * k as f64;
+              v_add(
+                c,
+                v_add(v_scale(e1, rad * t.cos()), v_scale(e2, rad * t.sin())),
+              )
+            })
+            .collect()
+        };
+        let poly = |pts: Vec<[f64; 3]>| {
+          call1(
+            "Polygon",
+            Expr::List(
+              pts
+                .into_iter()
+                .map(|q| real3(to_data(q)))
+                .collect::<Vec<_>>()
+                .into(),
+            ),
+          )
+        };
+        let (r0, r1, rh) =
+          (ring(ua, shaft_r), ring(base, shaft_r), ring(base, head_r));
+        let mut parts = vec![color.clone()];
+        for k in 0..6 {
+          let k2 = (k + 1) % 6;
+          parts.push(poly(vec![r0[k], r0[k2], r1[k2], r1[k]]));
+          parts.push(poly(vec![rh[k], rh[k2], ub]));
+        }
+        parts.push(poly(rh.clone()));
+        parts.push(poly(r0.clone()));
+        drawn.push(Expr::List(parts.into()));
+      }
+    }
+    content.push(Expr::List(
+      vec![
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(bl) / 255.0),
+          ],
+        ),
+        call1(
+          "Arrow",
+          call(
+            "Tube",
+            vec![
+              Expr::List(vec![real3(a), real3(b)].into()),
+              Expr::Real(radius),
+            ],
+          ),
+        ),
+      ]
+      .into(),
+    ));
+  }
+  let named = |name: &str| {
+    opts.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(k) if k == name))
+    })
+  };
+  const PLOT_ONLY: &[&str] = &[
+    "VectorPoints",
+    "VectorScale",
+    "VectorStyle",
+    "VectorMarkers",
+    "ColorFunction",
+    "VectorColorFunction",
+    "PlotLegends",
+  ];
+  let mut g_args = vec![Expr::List(drawn.into())];
+  g_args.extend(opts.iter().filter(|o| {
+    !matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(k) if PLOT_ONLY.contains(&k.as_str())))
+  }).cloned());
+  if !named("Axes") {
+    g_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !named("BoxRatios") {
+    g_args.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(vec![Expr::Integer(1); 3].into()),
+    ));
+  }
+  if !named("PlotRange") {
+    g_args.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(
+        [(x0, x1), (y0, y1), (z0, z1)]
+          .iter()
+          .map(|(lo, hi)| {
+            Expr::List(vec![Expr::Real(*lo), Expr::Real(*hi)].into())
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      ),
+    ));
+  }
+  let picture = graphics3d_ast(&g_args)?;
+  let Expr::Graphics { svg, .. } = &picture else {
+    return Ok(picture);
+  };
+  // The symbolic form keeps Wolfram's `Arrow[Tube[…]]` primitives.
+  let mut structure_args = vec![Expr::List(content.into())];
+  structure_args.extend(g_args[1..].iter().cloned());
+  Ok(crate::plot3d_result_with_structure(
+    svg.clone(),
+    call("Graphics3D", structure_args),
+  ))
+}
+
 /// VectorPlot3D[{vx, vy, vz}, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
 pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 4 {
@@ -3237,6 +3475,27 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // The default look, as wolframscript draws it: solid arrows (a tube
+  // with a cone head) centred on points spread through the box, coloured
+  // by magnitude along "WL12DefaultVectorGradient", in a 1 x 1 x 1 box.
+  // Styled or tube-marked fields keep the line-arrow renderer below.
+  if vector_markers == "Arrow"
+    && vector_styles.iter().all(Option::is_none)
+    && vector_scale.is_none()
+  {
+    return vector_plot3d_solid(
+      &bodies,
+      [
+        (&xvar, x_min, x_max),
+        (&yvar, y_min, y_max),
+        (&zvar, z_min, z_max),
+      ],
+      vector_points.as_deref(),
+      vector_grid.map_or(6, |g| g + 1),
+      color_function.as_ref(),
+      &args[4..],
+    );
+  }
   let grid_n = vector_grid.unwrap_or(VECTOR3D_GRID);
   let x_step = (x_max - x_min) / grid_n as f64;
   let y_step = (y_max - y_min) / grid_n as f64;
@@ -3696,44 +3955,11 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ── StreamPlot3D implementation ──────────────────────────────────────
 
-/// The default `StreamColorFunction` of `StreamPlot3D`: dark blue through
-/// purple to orange, sampled from wolframscript's streamline
-/// `VertexColors` at t = 0, 1/16, …, 1.
-fn stream3d_default_color(t: f64) -> (f64, f64, f64) {
-  const STOPS: [(f64, f64, f64); 17] = [
-    (0.0, 0.0, 0.7),
-    (0.3131, 0.0527, 0.6704),
-    (0.3976, 0.0902, 0.6534),
-    (0.47, 0.1265, 0.6363),
-    (0.5354, 0.1625, 0.6187),
-    (0.5974, 0.1984, 0.6008),
-    (0.6791, 0.234, 0.5272),
-    (0.753, 0.2719, 0.45),
-    (0.8215, 0.3113, 0.3701),
-    (0.8859, 0.3519, 0.2837),
-    (0.9477, 0.3934, 0.1795),
-    (0.9979, 0.4387, 0.0133),
-    (1.0, 0.4988, 0.0),
-    (1.0, 0.5559, 0.0),
-    (1.0, 0.6105, 0.0),
-    (1.0, 0.6632, 0.0),
-    (1.0, 0.75, 0.0),
-  ];
-  let x = t.clamp(0.0, 1.0) * (STOPS.len() - 1) as f64;
-  let i = (x.floor() as usize).min(STOPS.len() - 2);
-  let f = x - i as f64;
-  let (a, b) = (STOPS[i], STOPS[i + 1]);
-  (
-    a.0 + f * (b.0 - a.0),
-    a.1 + f * (b.1 - a.1),
-    a.2 + f * (b.2 - a.2),
-  )
-}
-
 /// `StreamPlot3D[{vx, vy, vz}, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}]`:
 /// streamlines of a 3D vector field, traced both ways from a lattice of
 /// seed points until they leave the box, each coloured along its length by
-/// the field's magnitude.
+/// the field's magnitude ("WL12DefaultVectorGradient", the default
+/// `StreamColorFunction`, scaled over the drawn lines).
 pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 4 {
     return Err(InterpreterError::EvaluationError(
@@ -3963,10 +4189,15 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let colors: Vec<Expr> = mags
       .iter()
       .map(|&m| {
-        let (r, g, b) = stream3d_default_color(scale(m));
+        let (r, g, b) =
+          crate::functions::plot::wl_default_vector_gradient(scale(m));
         call(
           "RGBColor",
-          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
+          ],
         )
       })
       .collect();
@@ -6332,7 +6563,16 @@ fn resolve_complex_indices(
         && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
-      new_args[0] = substitute(&args[0], points);
+      // `Arrow[Tube[indices, …], …]` (how `GraphPlot3D` draws its edges)
+      // indexes the points inside the tube.
+      new_args[0] = match &args[0] {
+        Expr::FunctionCall { name: inner, .. }
+          if name == "Arrow" && matches!(inner.as_str(), "Tube" | "Line") =>
+        {
+          resolve_complex_indices(&args[0], points, colors, tex)
+        }
+        first => substitute(first, points),
+      };
       Expr::FunctionCall {
         name: name.clone(),
         args: new_args.into(),
@@ -11444,6 +11684,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotStyle`: the surface's colour (and opacity, specularity, …); empty
   // keeps the height gradient.
   let mut plot_styles: Vec<StyleState3D> = Vec::new();
+  // `MeshStyle`: the colour, opacity and thickness of the mesh lines.
+  let mut mesh_style: Option<StyleState3D> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -11482,6 +11724,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_styles = parse_plot_style_3d(replacement, 1);
+        }
+        Expr::Identifier(name) if name == "MeshStyle" => {
+          mesh_style = parse_plot_style_3d(replacement, 1).into_iter().next();
         }
         _ => {}
       }
@@ -11863,18 +12108,61 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `Mesh -> Automatic`: as in WL, 15 lines across each direction of the
   // data plus its outline, whatever the size of the data.
-  let mesh_lines = if mesh_mode == MeshMode::Default {
-    let to_box = |fi: f64, fj: f64, z: f64| Point3D {
-      x: fi / (rows - 1).max(1) as f64 * 2.0 - 1.0,
-      y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
-      z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
-    };
+  let to_box = |fi: f64, fj: f64, z: f64| Point3D {
+    x: fi / (rows - 1).max(1) as f64 * 2.0 - 1.0,
+    y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
+    z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
+  };
+  let mut mesh_lines = if mesh_mode == MeshMode::Default {
     let rows_of: Vec<Vec<f64>> =
       (0..rows).map(|i| grid[i][..cols].to_vec()).collect();
-    grid_mesh_lines(&rows_of, 15, &to_box, &camera)
+    let mut lines = grid_mesh_lines(&rows_of, 15, &to_box, &camera);
+    if let Some(style) = &mesh_style {
+      for line in &mut lines {
+        *line = styled_line_like(line, style);
+      }
+    }
+    lines
   } else {
     Vec::new()
   };
+  // `Mesh -> All` in a `MeshStyle` outlines every triangle with styled
+  // lines (the grid lines and each cell's diagonal) instead of the
+  // default dark triangle edges.
+  let mut mesh_mode = mesh_mode;
+  if mesh_mode == MeshMode::All
+    && let Some(style) = &mesh_style
+  {
+    mesh_mode = MeshMode::None;
+    let at = |i: usize, j: usize| {
+      let z = grid[i][j];
+      z.is_finite().then(|| to_box(i as f64, j as f64, z))
+    };
+    let mut push = |a: Option<Point3D>, b: Option<Point3D>| {
+      if let (Some(a), Some(b)) = (a, b) {
+        mesh_lines.push(styled_mesh_segment(
+          a,
+          b,
+          &camera,
+          Some(style),
+          ("#00000060", 0.5),
+        ));
+      }
+    };
+    for i in 0..rows {
+      for j in 0..cols {
+        if i + 1 < rows {
+          push(at(i, j), at(i + 1, j));
+        }
+        if j + 1 < cols {
+          push(at(i, j), at(i, j + 1));
+        }
+        if i + 1 < rows && j + 1 < cols {
+          push(at(i + 1, j), at(i, j + 1));
+        }
+      }
+    }
+  }
 
   let svg = generate_svg(
     &all_triangles,

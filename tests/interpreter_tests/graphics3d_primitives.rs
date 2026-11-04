@@ -654,3 +654,65 @@ mod level_surfaces {
     assert!(polygon_count(&s) > 500);
   }
 }
+
+mod fields_and_graphs {
+  use super::*;
+
+  // Solid arrows (a shaft and a head) centred on the cells of an n³ grid,
+  // coloured along "WL12DefaultVectorGradient", in a 1 x 1 x 1 box.
+  #[test]
+  fn vector_plot3d_draws_solid_arrows() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> 4]; {Length[Cases[g, Arrow[_Tube], Infinity]], \
+         BoxRatios /. Options[g]}"
+      )
+      .unwrap(),
+      "{64, {1, 1, 1}}"
+    );
+    let s = svg(
+      "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       VectorPoints -> 4]",
+    );
+    assert!(polygon_count(&s) > 64 * 10, "{s}");
+  }
+
+  // The longest streamlines end in the gradient's orange, the slowest in
+  // its dark blue.
+  #[test]
+  fn stream_plot3d_uses_the_vector_gradient() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = Flatten[Cases[StreamPlot3D[{-y, x, 0.2}, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, StreamPoints -> 10], \
+         Line[_, VertexColors -> v_] :> v, Infinity]]; \
+         {MemberQ[c, RGBColor[r_, g_, b_] /; b > 0.6 && r < 0.1], \
+         MemberQ[c, RGBColor[r_, g_, b_] /; r > 0.95 && b < 0.1]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  // A `Graph` is laid out in space: spheres for the vertices and tubes for
+  // the edges, without a box.
+  #[test]
+  fn graph_plot3d_of_a_graph() {
+    let s = svg("GraphPlot3D[HypercubeGraph[3]]");
+    assert!(polygon_count(&s) > 1000, "{s}");
+    let boxed = svg("GraphPlot3D[HypercubeGraph[3], Boxed -> True]");
+    assert_ne!(s, boxed);
+  }
+
+  #[test]
+  fn list_plot3d_mesh_style() {
+    let s = svg(
+      "ListPlot3D[Table[Cos[i/2] Sin[j/2], {i, 0, 10}, {j, 0, 10}], \
+       Mesh -> All, MeshStyle -> Blue]",
+    );
+    assert!(s.matches("stroke=\"rgb(0,0,255)\"").count() > 100, "{s}");
+  }
+}

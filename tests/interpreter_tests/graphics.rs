@@ -19587,19 +19587,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn vector_plot3d_vector_points_count() {
       // `VectorPoints -> n` samples n points across each axis: 4^3 arrows.
-      let svg = export_svg(
-        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 4]",
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, \
+           {z, -1, 1}, VectorPoints -> 4], _Arrow, Infinity]]"
+        )
+        .unwrap(),
+        "64"
       );
-      assert_eq!(svg.matches("<polygon").count(), 64);
     }
 
     #[test]
     fn vector_plot3d_color_function() {
-      let svg = export_svg(
-        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 3, ColorFunction -> Function[Blue]]",
+      // The arrows are lit solids, so the colour is read off the
+      // primitives rather than the shaded SVG.
+      assert_eq!(
+        interpret(
+          "Union[Cases[VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, \
+           {z, -1, 1}, VectorPoints -> 3, ColorFunction -> Function[Blue]], \
+           _RGBColor, Infinity]]"
+        )
+        .unwrap(),
+        "{RGBColor[0., 0., 1.]}"
       );
-      assert!(svg.contains("rgb(0,0,255)"));
-      assert!(!svg.contains("rgb(250,50,100)"));
     }
 
     #[test]
@@ -19618,9 +19628,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn vector_plot3d_multiple_fields() {
-      insta::assert_snapshot!(export_svg(
-        "VectorPlot3D[{{x, y, z}, {-y, x, 0}}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
-      ));
+      // Each field is drawn in its own plot colour.
+      assert_eq!(
+        interpret(
+          "Length[Union[Cases[VectorPlot3D[{{x, y, z}, {-y, x, 0}}, \
+           {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, VectorPoints -> 3], \
+           _RGBColor, Infinity]]]"
+        )
+        .unwrap(),
+        "2"
+      );
+      let svg = export_svg(
+        "VectorPlot3D[{{x, y, z}, {-y, x, 0}}, {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, VectorPoints -> 3]",
+      );
+      assert!(svg.matches("<polygon").count() > 100);
     }
 
     /// The arrow lines — as opposed to the box/axis lines, always drawn in
