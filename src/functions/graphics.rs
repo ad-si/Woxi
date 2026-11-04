@@ -2091,14 +2091,17 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           // to the edge colour, whichever order the two come in.
           let mut edge_opacity: Option<f64> = None;
           for a in directives {
-            if let Some(c) = parse_color(a) {
+            if let Expr::FunctionCall { name: n2, args: a2 } = a
+              && n2 == "Opacity"
+              && let Some(o) = a2.first().and_then(expr_to_f64)
+            {
+              edge_opacity = Some(o.clamp(0.0, 1.0));
+              if let Some(c) = a2.get(1).and_then(parse_color) {
+                ef.color = Some(c);
+              }
+            } else if let Some(c) = parse_color(a) {
               ef.color = Some(c);
             } else if let Expr::FunctionCall { name: n2, args: a2 } = a {
-              if n2 == "Opacity"
-                && let Some(o) = a2.first().and_then(expr_to_f64)
-              {
-                edge_opacity = Some(o.clamp(0.0, 1.0));
-              } else
               // `EdgeForm[Thin]` arrives as `EdgeForm[Thickness[Tiny]]`.
               if n2 == "Thickness" && a2.len() == 1 {
                 ef.thickness = symbolic_thickness_arg(&a2[0])

@@ -7930,6 +7930,21 @@ Found comparing the graphics-tests renders (2026-11):
   point outward (WL: inward), there is no zero baseline with the two
   group-end ticks, and the pictures come out a few points off (360 x 220
   and 360 x 248 where wolframscript has 224 and 245).
+- `BoxWhiskerChart` and `DistributionChart`'s `"Quantile"` / `"Density"`
+  elements build WL's framed `Graphics`, but the automatic `BarSpacing`
+  (box width) and the invisible range `Point` that pads the category axis
+  are fitted curves, not WL's rule: they are exact for one box and within
+  about 0.04 plot units for 2–50 boxes (WL's `x` range for 3 boxes is
+  `{0.4756, 3.5244}`, Woxi's `{0.4809, 3.5191}`). `DistributionChart`'s
+  plain violins keep their own 0.4 half-width.
+- `BoxWhiskerChart[…, "Diamond"]` draws no mean-confidence diamond (the
+  diamond's half-height, `2.674` for `{1, 2, 2, 3, 3, 3, 4, 4, 5, 9, 15}`,
+  matches no obvious `StudentTDistribution` quantile), and the element
+  list form ignores the styles given with each element
+  (`{{"Outliers", Red}}`); outliers are drawn as `Point`s where WL insets a
+  dot glyph.
+- `"Density"` samples the kernel estimate on 120 strips over the data
+  range; WL uses 248 and stops a hair inside the range.
 
 ## WL 15 `Plot` styling and layout: open items
 

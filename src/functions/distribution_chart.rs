@@ -6,6 +6,10 @@
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
+use crate::functions::box_whisker_chart::{
+  BoxSlots, Origin, bar_spacing_value, chart_frame_ticks, framed_chart_options,
+  range_point,
+};
 use crate::functions::chart::{invalid_dataset, parse_datasets};
 use crate::functions::field_plot::{
   apply_named_color_function, color_function_scheme_name,
@@ -40,7 +44,7 @@ const DEFAULT_STYLE: (f64, f64, f64) = (1.0, 0.835, 0.25);
 
 /// The fill of each of `n` datasets from a `ChartStyle` value: a named
 /// gradient sampled across the datasets, one colour, or a list cycled.
-fn chart_styles(spec: Option<&Expr>, n: usize) -> Vec<Expr> {
+pub(crate) fn chart_styles(spec: Option<&Expr>, n: usize) -> Vec<Expr> {
   let default = || {
     let (r, g, b) = DEFAULT_STYLE;
     call(
@@ -122,6 +126,137 @@ fn violin(data: &[f64], x: f64, half_width: f64, smooth: bool) -> Vec<Expr> {
   points
 }
 
+/// The RGB channels of a chart fill, `None` for a style that is not a
+/// plain colour.
+fn fill_rgb(fill: &Expr) -> Option<(f64, f64, f64)> {
+  let c = crate::functions::graphics::parse_color(fill)?;
+  Some((c.r, c.g, c.b))
+}
+
+fn rgb(r: f64, g: f64, b: f64) -> Expr {
+  call(
+    "RGBColor",
+    vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+  )
+}
+
+/// The axis-aligned rectangle spanning `(c - half, lo)`–`(c + half, hi)`.
+fn column_rectangle(
+  origin: Origin,
+  c: f64,
+  half: f64,
+  lo: f64,
+  hi: f64,
+) -> Expr {
+  let (x0, y0) = origin.coords(c - half, lo);
+  let (x1, y1) = origin.coords(c + half, hi);
+  call(
+    "Rectangle",
+    vec![pair(x0.min(x1), y0.min(y1)), pair(x0.max(x1), y0.max(y1))],
+  )
+}
+
+/// `ChartElementFunction -> "Quantile"`: a rectangle from the minimum to
+/// the maximum crossed by lines (in the fill darkened by 30%) at the
+/// quartiles and the median.
+fn quantile_column(
+  sorted: &[f64],
+  c: f64,
+  half: f64,
+  origin: Origin,
+  fill: &Expr,
+) -> Expr {
+  let n = sorted.len() as f64;
+  // `Quantile`'s default definition: the ceil(n q)-th smallest value.
+  let q = |p: f64| sorted[((n * p).ceil() as usize).clamp(1, sorted.len()) - 1];
+  let line_color = match fill_rgb(fill) {
+    Some((r, g, b)) => rgb(0.7 * r, 0.7 * g, 0.7 * b),
+    None => call("GrayLevel", vec![Expr::Real(0.35)]),
+  };
+  let mut parts = vec![column_rectangle(
+    origin,
+    c,
+    half,
+    sorted[0],
+    sorted[sorted.len() - 1],
+  )];
+  for p in [0.25, 0.5, 0.75] {
+    let v = q(p);
+    parts.push(Expr::List(
+      vec![
+        line_color.clone(),
+        call(
+          "Line",
+          vec![Expr::List(
+            vec![origin.point(c - half, v), origin.point(c + half, v)].into(),
+          )],
+        ),
+      ]
+      .into(),
+    ));
+  }
+  Expr::List(parts.into())
+}
+
+/// `ChartElementFunction -> "Density"`: a bar over the data's range whose
+/// colour fades from the fill (where the kernel density estimate peaks)
+/// to white (where it is lowest).
+fn density_column(
+  sorted: &[f64],
+  c: f64,
+  half: f64,
+  origin: Origin,
+  fill: &Expr,
+) -> Expr {
+  const STRIPS: usize = 120;
+  let (r, g, b) = fill_rgb(fill).unwrap_or((
+    DEFAULT_STYLE.0,
+    DEFAULT_STYLE.1,
+    DEFAULT_STYLE.2,
+  ));
+  let h = silverman_bandwidth(sorted);
+  let h = if h.is_finite() && h > 0.0 { h } else { 1.0 };
+  let (lo, hi) = (sorted[0], sorted[sorted.len() - 1]);
+  let (lo, hi) = if hi > lo { (lo, hi) } else { (lo - h, hi + h) };
+  let density = |y: f64| {
+    sorted
+      .iter()
+      .map(|v| (-0.5 * ((y - v) / h).powi(2)).exp())
+      .sum::<f64>()
+  };
+  let ys: Vec<f64> = (0..=STRIPS)
+    .map(|k| lo + (hi - lo) * k as f64 / STRIPS as f64)
+    .collect();
+  let mids: Vec<f64> = ys
+    .windows(2)
+    .map(|w| density(f64::midpoint(w[0], w[1])))
+    .collect();
+  let (d_min, d_max) = mids
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &d| {
+      (a.min(d), b.max(d))
+    });
+  let mut parts = vec![call("EdgeForm", vec![])];
+  for (k, d) in mids.iter().enumerate() {
+    let t = if d_max > d_min {
+      (d - d_min) / (d_max - d_min)
+    } else {
+      1.0
+    };
+    let mix = |ch: f64| 1.0 - t * (1.0 - ch);
+    parts.push(rgb(mix(r), mix(g), mix(b)));
+    // Each strip reaches halfway under the next one, so anti-aliased
+    // edges leave no hairline seams.
+    let top = if k + 2 < ys.len() {
+      f64::midpoint(ys[k + 1], ys[k + 2])
+    } else {
+      ys[k + 1]
+    };
+    parts.push(column_rectangle(origin, c, half, ys[k], top));
+  }
+  Expr::List(parts.into())
+}
+
 pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Ok(datasets) = parse_datasets(&args[0]) else {
     return Ok(invalid_dataset("DistributionChart", args));
@@ -130,6 +265,8 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut element = None;
   let mut legends = None;
   let mut labels = None;
+  let mut origin = Origin::Bottom;
+  let mut spacing = None;
   let mut graphics_opts = Vec::new();
   for opt in &args[1..] {
     match opt {
@@ -152,12 +289,18 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           Expr::Identifier(k) if k == "ChartLegends" => legends = Some(value()),
           Expr::Identifier(k) if k == "ChartLabels" => labels = Some(value()),
+          Expr::Identifier(k) if k == "BarOrigin" => {
+            if let Some(o) = Origin::parse(&value()) {
+              origin = o;
+            }
+          }
+          Expr::Identifier(k) if k == "BarSpacing" => {
+            spacing = bar_spacing_value(&value());
+          }
           Expr::Identifier(k)
             if matches!(
               k.as_str(),
-              "BarOrigin"
-                | "BarSpacing"
-                | "ChartBaseStyle"
+              "ChartBaseStyle"
                 | "ChartLayout"
                 | "LabelingFunction"
                 | "LegendAppearance"
@@ -183,6 +326,52 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     )],
   );
+  let tick_labels: Vec<Expr> = match &labels {
+    Some(Expr::List(items)) => items.to_vec(),
+    _ => Vec::new(),
+  };
+  if let Some(Expr::String(name)) = &element
+    && (name == "Quantile" || name == "Density")
+  {
+    let quantile = name == "Quantile";
+    let slots = BoxSlots::new(n, spacing, false);
+    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    let mut columns = Vec::with_capacity(n);
+    for (i, data) in datasets.iter().enumerate() {
+      let mut sorted = data.clone();
+      sorted.sort_by(f64::total_cmp);
+      lo = lo.min(sorted[0]);
+      hi = hi.max(sorted[sorted.len() - 1]);
+      let c = (i + 1) as f64;
+      let column = if quantile {
+        quantile_column(&sorted, c, slots.half, origin, &fills[i])
+      } else {
+        density_column(&sorted, c, slots.half, origin, &fills[i])
+      };
+      columns.push(Expr::List(
+        vec![
+          call("Directive", vec![edge.clone(), fills[i].clone()]),
+          column,
+        ]
+        .into(),
+      ));
+    }
+    let content = vec![
+      range_point(origin, slots.range(n), (lo, hi)),
+      Expr::List(columns.into()),
+    ];
+    let span = (hi - lo).max(0.0);
+    let ticks = chart_frame_ticks(
+      origin,
+      n,
+      &tick_labels,
+      (lo - 0.11 * span, hi + 0.11 * span),
+    );
+    let mut graphics_args = vec![Expr::List(content.into())];
+    graphics_args.extend(framed_chart_options(graphics_opts, ticks));
+    let chart = evaluate_expr_to_expr(&call("Graphics", graphics_args))?;
+    return Ok(chart_legended(chart, fills, legends.as_ref(), n));
+  }
   let mut content = Vec::with_capacity(n);
   for (i, data) in datasets.iter().enumerate() {
     let x = (i + 1) as f64;
@@ -198,10 +387,6 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // A tick (labelled by `ChartLabels`) under each violin, none on the top.
-  let tick_labels: Vec<Expr> = match &labels {
-    Some(Expr::List(items)) => items.to_vec(),
-    _ => Vec::new(),
-  };
   let bottom = Expr::List(
     (0..n)
       .map(|i| {
@@ -250,8 +435,19 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![Expr::List(content.into())];
   graphics_args.extend(options);
   let chart = evaluate_expr_to_expr(&call("Graphics", graphics_args))?;
-  match &legends {
-    Some(Expr::List(names)) if !names.is_empty() => Ok(call(
+  Ok(chart_legended(chart, fills, legends.as_ref(), n))
+}
+
+/// Wrap `chart` in a `SwatchLegend` of the dataset fills placed after it
+/// when `ChartLegends -> {name1, name2, …}` names them.
+pub(crate) fn chart_legended(
+  chart: Expr,
+  fills: Vec<Expr>,
+  legends: Option<&Expr>,
+  n: usize,
+) -> Expr {
+  match legends {
+    Some(Expr::List(names)) if !names.is_empty() => call(
       "Legended",
       vec![
         chart,
@@ -269,7 +465,7 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         ),
       ],
-    )),
-    _ => Ok(chart),
+    ),
+    _ => chart,
   }
 }

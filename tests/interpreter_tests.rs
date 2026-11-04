@@ -6967,6 +6967,7 @@ mod interpreter_tests {
   mod case_helpers;
 
   mod audio;
+  mod box_whisker_chart;
   mod bullet_gauge;
   mod cellular_automaton;
   mod column;

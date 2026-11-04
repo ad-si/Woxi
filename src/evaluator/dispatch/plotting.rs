@@ -1253,9 +1253,9 @@ pub fn dispatch_plotting(
     "DistributionChart" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::distribution_chart::distribution_chart_ast(args)
     })),
-    "BoxWhiskerChart" if !args.is_empty() => {
-      Some(crate::functions::chart::box_whisker_chart_ast(args))
-    }
+    "BoxWhiskerChart" if !args.is_empty() => Some(
+      crate::functions::box_whisker_chart::box_whisker_chart_ast(args),
+    ),
     "RectangleChart" if !args.is_empty() => Some(
       crate::functions::rectangle_chart::rectangle_chart_ast(args, false),
     ),
