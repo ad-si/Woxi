@@ -5665,3 +5665,43 @@ mod mapped_layout_tests {
     assert!(!dump.contains("Switch"), "{dump}");
   }
 }
+
+#[cfg(test)]
+mod bare_tabview_tests {
+  use super::*;
+
+  /// A `TabView` given only its panes (and styling options) keeps its chosen
+  /// tab in the front end's own tab strip. Studio has none, so the second
+  /// tab used to be unreachable; it now gets a visible tab selector.
+  /// Self-authored, construct-equivalent example.
+  #[test]
+  fn selectorless_tabview_gets_a_tab_selector() {
+    let code = r#"Manipulate[
+      TabView[{"curve" -> Plot[k x, {x, 0, 1}],
+               "table" -> Grid[{{k, k^2}}]}, LabelStyle -> {Bold}],
+      {{k, 2, "k"}, 1, 5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "tab")
+      .expect("a tab selector control");
+    match &state.controls[idx] {
+      ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["curve", "table"]);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+    assert!(state.graphics_handle.is_some(), "first tab is the plot");
+    if let ControlState::Discrete { current_index, .. } =
+      &mut state.controls[idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
+  }
+}

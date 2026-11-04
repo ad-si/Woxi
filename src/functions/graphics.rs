@@ -29035,8 +29035,105 @@ pub fn is_animate_call(name: &str, args: &[Expr]) -> bool {
       || (name == "Manipulate" && is_animate_manipulate(args)))
 }
 
+/// A `TabView[{label -> pane, …}, opts…]` written without a selector keeps
+/// its chosen tab inside the front end's own tab strip, which Woxi Studio
+/// does not have. Give every such `TabView` in a `Manipulate` body a hidden
+/// selector variable (`TabView[panes, Dynamic[tab], opts…]`) declared with
+/// `ControlType -> None`, which `extract_manipulate_spec` then promotes into
+/// a visible `SetterBar` of the tab labels — so every tab is reachable.
+/// Returns the rewritten `Manipulate` arguments, or `None` when no
+/// selector-less `TabView` (with plain, keyless panes) is present.
+fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
+  use std::cell::RefCell;
+  fn is_bare(args: &[Expr]) -> bool {
+    !args.is_empty()
+      && (args.len() == 1
+        || matches!(&args[1], Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      && tabview_panes(&args[0]).is_some_and(|items| {
+        !items.is_empty()
+          && items.iter().all(|i| tabview_pane_parts(i).0.is_none())
+      })
+  }
+  fn rewrite(
+    expr: &Expr,
+    taken: &dyn Fn(&str) -> bool,
+    added: &RefCell<Vec<(String, usize)>>,
+  ) -> Expr {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TabView"
+      && is_bare(args)
+    {
+      let count = tabview_panes(&args[0]).map_or(0, |i| i.len());
+      let mut n = added.borrow().len() + 1;
+      let mut var = if n == 1 {
+        "tab".to_string()
+      } else {
+        format!("tab{n}")
+      };
+      while taken(&var) || added.borrow().iter().any(|(v, _)| *v == var) {
+        n += 1;
+        var = format!("tab{n}");
+      }
+      added.borrow_mut().push((var.clone(), count));
+      let mut new_args = vec![
+        rewrite(&args[0], taken, added),
+        call1("Dynamic", Expr::Identifier(var)),
+      ];
+      new_args.extend(args[1..].iter().map(|a| rewrite(a, taken, added)));
+      return call("TabView", new_args);
+    }
+    crate::syntax::map_children(expr, &|e| rewrite(e, taken, added))
+  }
+  if args.len() < 2 {
+    return None;
+  }
+  let taken =
+    |v: &str| args.iter().any(|a| crate::syntax::mentions_symbol(a, v));
+  let added = RefCell::new(Vec::new());
+  let body = rewrite(&args[0], &taken, &added);
+  let added = added.into_inner();
+  if added.is_empty() {
+    return None;
+  }
+  let specs: Vec<Expr> = added
+    .iter()
+    .map(|(var, count)| {
+      Expr::List(
+        vec![
+          Expr::List(
+            vec![Expr::Identifier(var.clone()), Expr::Integer(1)].into(),
+          ),
+          Expr::List(
+            (1..=*count as i128)
+              .map(Expr::Integer)
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+          rule_expr(id_expr("ControlType"), id_expr("None")),
+        ]
+        .into(),
+      )
+    })
+    .collect();
+  let mut out = vec![body];
+  let mut rest = args[1..].to_vec();
+  let at = rest
+    .iter()
+    .position(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .unwrap_or(rest.len());
+  rest.splice(at..at, specs);
+  out.extend(rest);
+  Some(out)
+}
+
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let expr = peel_manipulate_wrapper(expr);
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Manipulate"
+    && let Some(new_args) = add_selectors_to_bare_tabviews(args)
+  {
+    return extract_manipulate_spec(&call("Manipulate", new_args));
+  }
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
