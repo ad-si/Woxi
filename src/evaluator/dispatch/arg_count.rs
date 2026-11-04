@@ -1527,7 +1527,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "VertexComponent" => Some((2, 2)),
     "VertexInComponent" => Some((2, 3)),
     "VertexOutComponent" => Some((2, 3)),
-    "WeightedAdjacencyGraph" => Some((1, 3)),
+    "WeightedAdjacencyGraph" => Some((1, usize::MAX)),
     "FindMinimumCostFlow" => Some((2, 4)),
     "NearestNeighborGraph" => Some((1, 3)),
     "NeighborhoodGraph" => Some((2, 3)),

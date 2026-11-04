@@ -6490,7 +6490,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // WeightedAdjacencyGraph[wmat] → weighted graph (Infinity = no edge)
-  if name == "WeightedAdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
+  if name == "WeightedAdjacencyGraph" && !args.is_empty() {
     return crate::functions::graph::weighted_adjacency_graph_ast(args);
   }
 
