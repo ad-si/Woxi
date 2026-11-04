@@ -594,3 +594,63 @@ mod plot3d_family {
     assert_eq!(count(&bare), 0);
   }
 }
+
+mod level_surfaces {
+  use super::*;
+
+  // Each contour level takes the next theme colour (orange, blue, green),
+  // as in wolframscript.
+  #[test]
+  fn contour_levels_take_theme_colours() {
+    let one = fills(&svg(
+      "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       Contours -> {0.5}, Mesh -> None]",
+    ));
+    let three = fills(&svg(
+      "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       Contours -> {0.2, 0.5, 0.9}, Mesh -> None]",
+    ));
+    // Blue appears only among several levels.
+    let bluish = |set: &std::collections::BTreeSet<String>| {
+      set.iter().any(|c| {
+        let v: Vec<u8> =
+          c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+        u16::from(v[2]) > u16::from(v[0]) + 40
+      })
+    };
+    assert!(!bluish(&one) && bluish(&three));
+  }
+
+  // A region of inequalities is drawn as a smooth surface, closed where it
+  // meets the box, instead of a staircase of voxels.
+  #[test]
+  fn region_plot3d_is_a_smooth_surface() {
+    let s = svg(
+      "RegionPlot3D[x^2 + y^2 + z^2 < 1 && (x - 0.8)^2 + y^2 + z^2 < 1, \
+       {x, -1, 2}, {y, -1, 1}, {z, -1, 1}]",
+    );
+    assert!(polygon_count(&s) > 500, "{s}");
+    // BoxRatios {1, 1, 1}: as tall as a cube's projection.
+    let (w, h) = size(&s);
+    assert!(h / w > 1.0, "{w} x {h}");
+  }
+
+  #[test]
+  fn region_plot3d_keeps_its_axes_labels() {
+    let s = svg(
+      "RegionPlot3D[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+       AxesLabel -> {\"alpha\", \"beta\", \"gamma\"}]",
+    );
+    assert!(s.contains("alpha") && s.contains("gamma"));
+  }
+
+  #[test]
+  fn region_signed_field_shapes() {
+    clear_state();
+    // The region is closed at the box faces: a cylinder cut by the box
+    // has flat caps facing up.
+    let s =
+      svg("RegionPlot3D[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]");
+    assert!(polygon_count(&s) > 500);
+  }
+}

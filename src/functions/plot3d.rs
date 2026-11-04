@@ -12761,6 +12761,97 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
 
+  // A region given by inequalities (combined with And/Or/Not) is drawn as
+  // the smooth level surface of a signed field that is positive inside,
+  // closed off where it meets the box — as wolframscript draws it.
+  let has_color_function = args[4..].iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction"))
+  });
+  if !has_color_function && let Some(field) = region_signed_field(body) {
+    reset_scalar_3d_cache();
+    const CELLS: usize = 24;
+    let ranges = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
+    let at = |d: usize, k: usize| {
+      let (lo, hi) = ranges[d];
+      lo + (hi - lo) * k as f64 / CELLS as f64
+    };
+    // One layer beyond each face, outside the region, so the surface
+    // closes on the face itself.
+    let n = CELLS + 3;
+    let mut grid = vec![vec![vec![f64::NAN; n]; n]; n];
+    let mut inside_any = false;
+    for (i, plane) in grid.iter_mut().enumerate() {
+      for (j, row) in plane.iter_mut().enumerate() {
+        for (k, cell) in row.iter_mut().enumerate() {
+          let pad = [i, j, k].iter().any(|&q| q == 0 || q == n - 1);
+          let [a, b, c] = [i, j, k].map(|q| q.clamp(1, n - 2) - 1);
+          let v = evaluate_scalar_3d(
+            &field,
+            &xvar,
+            &yvar,
+            &zvar,
+            at(0, a),
+            at(1, b),
+            at(2, c),
+          )
+          .unwrap_or(f64::NAN);
+          inside_any |= v > 0.0;
+          // A sample exactly on the boundary would make the surface pass
+          // through a grid vertex, leaving sliver triangles.
+          let v = if v == 0.0 { 1e-9 } else { v };
+          *cell = if pad { f64::NEG_INFINITY } else { v };
+        }
+      }
+    }
+    // The padding lies far outside every sample, so a face of the box the
+    // region reaches is crossed right at the face.
+    let reach = grid
+      .iter()
+      .flatten()
+      .flatten()
+      .filter(|v| v.is_finite())
+      .fold(0.0_f64, |m, v| m.max(v.abs()));
+    for v in grid.iter_mut().flatten().flatten() {
+      if *v == f64::NEG_INFINITY {
+        *v = -1e6 * reach.max(1e-12);
+      }
+    }
+    if inside_any {
+      // The padded grid spans one cell more on each side; the faces of the
+      // box are where the padding meets the samples.
+      let h = [0, 1, 2].map(|d| (ranges[d].1 - ranges[d].0) / CELLS as f64);
+      let padded: [(f64, f64); 3] =
+        [0, 1, 2].map(|d| (ranges[d].0 - h[d], ranges[d].1 + h[d]));
+      // Shift the outer layer onto the face: `contour3d_render` spaces the
+      // samples evenly, so the pad's huge negative value puts the crossing
+      // a hair outside the outermost real sample.
+      let mut opts: Vec<Expr> = args[4..]
+        .iter()
+        .map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
+            rule_expr(id_expr("ContourStyle"), (**replacement).clone())
+          }
+          other => other.clone(),
+        })
+        .collect();
+      opts.retain(|o| {
+        !matches!(o, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Contours"))
+      });
+      return contour3d_render(
+        &ContourField::Data(grid),
+        padded,
+        Some(ContourBox::Explicit(ranges)),
+        &opts,
+        args,
+      );
+    }
+  }
+
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
@@ -13600,6 +13691,83 @@ pub fn list_contour_plot3d_ast(
   )
 }
 
+/// A field that is positive exactly where the region condition `cond`
+/// holds (and zero on its boundary): `a < b` is `b - a`, `And` the
+/// smallest of its parts, `Or` the largest, `Not` the negative. `None` for
+/// a condition that is not built from inequalities that way.
+fn region_signed_field(cond: &Expr) -> Option<Expr> {
+  use crate::syntax::ComparisonOp;
+  let sub = |a: &Expr, b: &Expr| call("Subtract", vec![a.clone(), b.clone()]);
+  match cond {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if !operands.is_empty() && operators.len() + 1 == operands.len() => {
+      let mut parts = Vec::new();
+      for (k, op) in operators.iter().enumerate() {
+        let (a, b) = (&operands[k], &operands[k + 1]);
+        parts.push(match op {
+          ComparisonOp::Less | ComparisonOp::LessEqual => sub(b, a),
+          ComparisonOp::Greater | ComparisonOp::GreaterEqual => sub(a, b),
+          _ => return None,
+        });
+      }
+      Some(if parts.len() == 1 {
+        parts.pop()?
+      } else {
+        call("Min", parts)
+      })
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or
+      ) =>
+    {
+      let parts = vec![region_signed_field(left)?, region_signed_field(right)?];
+      Some(call(
+        if matches!(op, crate::syntax::BinaryOperator::And) {
+          "Min"
+        } else {
+          "Max"
+        },
+        parts,
+      ))
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Not,
+      operand,
+    } => Some(call("Minus", vec![region_signed_field(operand)?])),
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Less" | "LessEqual" | "Greater" | "GreaterEqual" if args.len() >= 2 => {
+        let mut parts = Vec::new();
+        for w in args.windows(2) {
+          parts.push(if name.starts_with("Less") {
+            sub(&w[1], &w[0])
+          } else {
+            sub(&w[0], &w[1])
+          });
+        }
+        Some(if parts.len() == 1 {
+          parts.pop()?
+        } else {
+          call("Min", parts)
+        })
+      }
+      "And" | "Or" if !args.is_empty() => {
+        let parts: Option<Vec<Expr>> =
+          args.iter().map(region_signed_field).collect();
+        Some(call(if name == "And" { "Min" } else { "Max" }, parts?))
+      }
+      "Not" if args.len() == 1 => {
+        Some(call("Minus", vec![region_signed_field(&args[0])?]))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 /// Where a 3D contour plot's scalar field comes from.
 enum ContourField {
   /// `ContourPlot3D`: one body per surface family, sampled on a grid over
@@ -13655,6 +13823,9 @@ fn contour3d_render(
   let mut contour_count: Option<usize> = None;
   let mut contour_levels: Option<Vec<f64>> = None;
   let mut background: Option<(u8, u8, u8)> = None;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
+  // `Mesh -> All` outlines every triangle of the surfaces.
+  let mut mesh_all = false;
 
   for opt in opts {
     if let Expr::Rule {
@@ -13701,6 +13872,13 @@ fn contour3d_render(
           {
             plot_points = Some(n as usize);
           }
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          axes_labels = parse_axes_labels(replacement, None);
+        }
+        Expr::Identifier(name) if name == "Mesh" => {
+          mesh_all =
+            matches!(replacement.as_ref(), Expr::Identifier(n) if n == "All");
         }
         Expr::Identifier(name) if name == "Contours" => {
           let resolved = evaluate_expr_to_expr(replacement)
@@ -13836,7 +14014,10 @@ fn contour3d_render(
       if refine && world_triangles.len() > triangles_before {
         break;
       }
-      for &level in &levels {
+      for (level_idx, &level) in levels.iter().enumerate() {
+        // Each level surface takes the next colour of the plot theme, as in
+        // wolframscript (orange, blue, green, …).
+        let theme_idx = surf_idx * levels.len() + level_idx;
         // This level's triangles, as one Polygon of vertex-index triples.
         let mut level_triangles: Vec<[usize; 3]> = Vec::new();
         for i in 0..cells[0] {
@@ -13912,7 +14093,7 @@ fn contour3d_render(
                 let mut emitted = false;
                 march_cube(&corners_world, &cvals, level, &mut |tri_world| {
                   emitted = true;
-                  world_triangles.push((tri_world, surf_idx));
+                  world_triangles.push((tri_world, theme_idx));
 
                   // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
                   let wn =
@@ -14090,7 +14271,7 @@ fn contour3d_render(
       z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
     };
     all_triangles.push(Triangle {
-      boundary: [true; 3],
+      boundary: [mesh_all; 3],
       edge_color: style.and_then(|s| s.edge_color),
       edge_width: style.and_then(|s| s.edge_width),
       projected: tri_norm.map(|p| project(p, &camera)),
@@ -14117,10 +14298,14 @@ fn contour3d_render(
     svg_width,
     svg_height,
     full_width,
-    MeshMode::None,
+    if mesh_all {
+      MeshMode::All
+    } else {
+      MeshMode::None
+    },
     show_axes,
     [1.0, 1.0, CONTOUR3D_Z_SCALE],
-    &[None, None, None],
+    &axes_labels,
     !image_height_is_explicit(opts),
   )?;
   // `Background -> colour` repaints the canvas rectangle drawn first.
@@ -14135,7 +14320,9 @@ fn contour3d_render(
     // The plot's own picture draws no outline on the surface triangles, so
     // the extracted primitives must not pick up the default polygon edge
     // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
-    content.insert(0, call0("EdgeForm"));
+    if !mesh_all {
+      content.insert(0, call0("EdgeForm"));
+    }
     let complex = call(
       "GraphicsComplex",
       vec![
