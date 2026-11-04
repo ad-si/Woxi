@@ -486,6 +486,10 @@ fn extract_cell_content(s: &str) -> String {
     return extract_row(s, true);
   }
 
+  if let Some(cell) = plain_text_cell_source(s) {
+    return cell;
+  }
+
   // Handle quoted strings
   extract_string_content(s)
 }
@@ -2444,6 +2448,21 @@ fn traditional_function_name(part: &str) -> Option<&'static str> {
   })
 }
 
+/// An inline text cell inside code — `TraditionalForm[Cell["A+B→C",
+/// ExpressionUUID -> …]]`, how the front end stores a typeset caption — stands
+/// for the cell expression `TextCell["A+B→C"]`; without this its text (and the
+/// cell with it) would be dropped from the code. A styled cell
+/// (`Cell[…, "InlineMath"]`) is not one: it stands for its typeset content.
+fn plain_text_cell_source(s: &str) -> Option<String> {
+  let args = positional_box_args("Cell", s)?;
+  let [text] = args.as_slice() else {
+    return None;
+  };
+  let inner = text.strip_prefix('"')?.strip_suffix('"')?;
+  let value = unescape_string(inner);
+  Some(format!("TextCell[\"{}\"]", escape_unescaped_quotes(&value)))
+}
+
 /// The cell source one element of a box row (or of a box template's slot
 /// list) stands for.
 fn box_part_source(part: &str) -> String {
@@ -2478,6 +2497,8 @@ fn box_part_source(part: &str) -> String {
     }
   } else if part.starts_with("RowBox[") {
     extract_rowbox_content(&part[7..part.len().saturating_sub(1)])
+  } else if let Some(cell) = plain_text_cell_source(part) {
+    cell
   } else if part.starts_with("Cell[") {
     // An inline cell embedded in a row (a display equation stored as
     // `RowBox[{Cell[…, "InlineMath"], ","}]`) stands for its typeset
@@ -10177,6 +10198,16 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
     let src = box_source_to_expression(boxes).expect("box source converts");
     assert!(!src.contains("ButtonBox"), "got: {src:?}");
     assert_eq!(crate::interpret(&src).unwrap(), "x");
+  }
+
+  /// An unstyled inline `Cell["text", ExpressionUUID -> …]` inside code (a
+  /// typeset legend caption) keeps its text as `TextCell["text"]` instead of
+  /// vanishing and leaving `TraditionalForm[]`.
+  #[test]
+  fn inline_text_cell_inside_code_row_keeps_its_text() {
+    let boxes = r#"RowBox[{"TraditionalForm", "[", Cell["A+B", ExpressionUUID->"1180d176"], "]"}]"#;
+    let src = box_source_to_expression(boxes).expect("box source converts");
+    assert_eq!(src, r#"TraditionalForm[TextCell["A+B"]]"#);
   }
 
   /// `ⅆx` written with an `\[InvisibleSpace]` between the glyph and the

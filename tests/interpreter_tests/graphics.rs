@@ -47940,3 +47940,14 @@ mod default_lighting {
     );
   }
 }
+
+// `TraditionalForm[TextCell["…"]]` in a legend label shows its text, not the
+// `TextCell[…]` source.
+#[test]
+fn swatch_legend_label_in_text_cell_shows_text() {
+  let svg = export_svg(
+    "Row[{SwatchLegend[{Red}, {Style[TraditionalForm[TextCell[\"A+B\"]], FontSize -> 11]}]}]",
+  );
+  assert!(svg.contains("A+B"), "got: {svg}");
+  assert!(!svg.contains("TextCell"), "got: {svg}");
+}

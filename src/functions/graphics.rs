@@ -4765,6 +4765,21 @@ fn graphics_text_content(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       graphics_text_content(&args[0])
     }
+    // `TextCell[label, …]` is a cell showing `label`, and
+    // `TraditionalForm[TextCell[label]]` shows that same text.
+    Expr::FunctionCall { name, args }
+      if name == "TextCell" && !args.is_empty() =>
+    {
+      graphics_text_content(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+          if n == "TextCell" && !a.is_empty()) =>
+    {
+      graphics_text_content(&args[0])
+    }
     // A `Framed`/`Highlighted` item inside a label sets its content; like
     // `expr_to_svg_markup_lines`, a running line of text draws no box.
     Expr::FunctionCall { name, args }
@@ -14482,7 +14497,8 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   if let Expr::FunctionCall { name, args } = expr
     && (name == "Framed"
       || name == "Highlighted"
-      || (name == "Text" && args.len() == 1))
+      || (name == "Text" && args.len() == 1)
+      || name == "TextCell")
     && !args.is_empty()
   {
     return expr_to_svg_markup_lines(&args[0]);
@@ -15368,6 +15384,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // hover in the Wolfram FrontEnd, which static SVG can't do)
         "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // `TextCell[label, …]` is a cell showing `label`; wrapped in
+        // `TraditionalForm` it shows that same text.
+        "TextCell" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+        "TraditionalForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+              if n == "TextCell" && !a.is_empty()) =>
+        {
+          expr_to_svg_markup(&args[0])
+        }
+
         // `TraditionalForm[expr]` asks for conventional mathematical
         // notation, so typeset the expression instead of printing its
         // InputForm: `Sum[…, {n, 0, ∞}]` becomes a ∑ with limits and
@@ -16031,7 +16058,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         other => estimate_display_width(other),
       },
       // Tooltip[content, tip] → width of content (tip is hover-only)
-      "Tooltip" if !args.is_empty() => estimate_display_width(&args[0]),
+      "Tooltip" | "TextCell" if !args.is_empty() => {
+        estimate_display_width(&args[0])
+      }
       // Number-display wrappers estimate the width of their *rendered* form
       // (mantissa × 10^exp, base digits, padded number) rather than the raw
       // `Head[...]` text, so table columns aren't wildly over-sized.
