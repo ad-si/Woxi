@@ -8644,8 +8644,8 @@ rule. Still open:
   `Callout` labels of `ListPlot` do not widen the range (WL makes room so
   the top label is inside), `LabelingFunction -> Above` does not pad the
   range up, and callout placement does not alternate sides as WL does.
-  `PlotLabels -> Placed[…, Above]` centres the first label on the curve
-  start instead of shifting it right into the plot and padding the range.
+  A `PlotLabels -> Placed[…, Above]` label does not pad the range either
+  (WL's y axis then runs to 1.5 for a sine).
 - `FrameTicks -> {{f, None}, {f, None}}` with a tick function and
   `PlotRangePadding -> None` on a `ListPlot`: both are ignored (the
   wolframscript reference itself errors, so the target is unclear).
