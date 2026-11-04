@@ -310,7 +310,7 @@ mod graphics_primitives {
       .collect();
     // Labelled marks 1.5% of the geometric mean of the frame's sides,
     // unlabelled ones three fifths of that.
-    let major = lens.iter().cloned().fold(0.0, f64::max);
+    let major = lens.iter().copied().fold(0.0, f64::max);
     assert!(
       lens.iter().any(|d| (d - 0.6 * major).abs() < 0.02),
       "{lens:?}"

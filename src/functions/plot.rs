@@ -5053,35 +5053,33 @@ fn generate_svg_up_to(
     SizeCap::Fixed(n) | SizeCap::UpTo(n) => Some(n),
   };
   let (w, h) = (cap(caps.0), cap(caps.1));
-  match caps {
-    // The width leads: keep it unless the height outgrows its cap.
-    (
-      SizeCap::UpTo(_) | SizeCap::Fixed(_),
-      SizeCap::UpTo(_) | SizeCap::Free,
-    ) => {
-      let svg = render(w, None)?;
-      if fits(&svg, None, h) {
-        return Ok(svg);
-      }
-      if let SizeCap::Fixed(_) = caps.0 {
-        render(w, h)
-      } else {
-        let svg = render(None, h)?;
-        if fits(&svg, w, None) {
-          Ok(svg)
-        } else {
-          render(w, h)
-        }
-      }
+  // The width leads: keep it unless the height outgrows its cap.
+  if let (
+    SizeCap::UpTo(_) | SizeCap::Fixed(_),
+    SizeCap::UpTo(_) | SizeCap::Free,
+  ) = caps
+  {
+    let svg = render(w, None)?;
+    if fits(&svg, None, h) {
+      return Ok(svg);
     }
-    // A fixed (or free) height with a capped width.
-    _ => {
+    if let SizeCap::Fixed(_) = caps.0 {
+      render(w, h)
+    } else {
       let svg = render(None, h)?;
       if fits(&svg, w, None) {
         Ok(svg)
       } else {
         render(w, h)
       }
+    }
+  } else {
+    // A fixed (or free) height with a capped width.
+    let svg = render(None, h)?;
+    if fits(&svg, w, None) {
+      Ok(svg)
+    } else {
+      render(w, h)
     }
   }
 }

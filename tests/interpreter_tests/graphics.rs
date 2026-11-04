@@ -49782,7 +49782,7 @@ mod ranges_and_ticks {
     // Angles 0 and Pi put points at both horizontal extremes, with the
     // middle one (angle Pi/2) halfway between them.
     let mid = xs[2];
-    assert!(((lo + hi) / 2.0 - mid).abs() < 1.0, "{xs:?}");
+    assert!((f64::midpoint(lo, hi) - mid).abs() < 1.0, "{xs:?}");
   }
 
   #[test]

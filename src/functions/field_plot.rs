@@ -4914,6 +4914,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// The vector plot of the field `field_at` over the given ranges, sampled
 /// on `VectorPlot`'s grid, with the options among `args[start..]`.
+#[allow(clippy::unnecessary_wraps)]
 fn render_sampled_vector_plot(
   args: &[Expr],
   start: usize,
@@ -5190,6 +5191,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The stream plot of the field `field_at` over the given ranges, with the
 /// options among `args[start..]`: framed like DensityPlot, with
 /// `Scaled[0.05]` padding on every side.
+#[allow(clippy::unnecessary_wraps)]
 fn render_stream_plot(
   args: &[Expr],
   start: usize,

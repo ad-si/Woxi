@@ -10036,6 +10036,7 @@ fn centre_to_baseline(size: f64) -> f64 {
   ascent(size) - line_height(size) / 2.0
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn render_axes(
   svg: &mut String,
   axes: (bool, bool),
@@ -10493,6 +10494,7 @@ fn graphics_decorations(
 
 /// Render the requested frame edges around the plot area with their tick
 /// marks and labels.
+#[allow(clippy::needless_pass_by_value)]
 fn render_frame(
   svg: &mut String,
   bb: &BBox,

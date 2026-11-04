@@ -2396,6 +2396,7 @@ fn layered_layout(
 
 /// The embedding a `GraphLayout` value asks for.
 #[derive(Clone, Debug, Default)]
+#[allow(clippy::struct_excessive_bools)]
 struct LayoutChoice {
   /// A layered embedding (`"LayeredEmbedding"`, `"LayeredDigraphEmbedding"`,
   /// …), stacking the vertices in layers from a root.

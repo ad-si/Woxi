@@ -285,6 +285,7 @@ pub(crate) fn framed_chart_options(
 
 /// Which marks a `bwspec` asks for.
 #[derive(Default)]
+#[allow(clippy::struct_excessive_bools)]
 struct Marks {
   basic: bool,
   mean: bool,

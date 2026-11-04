@@ -12153,7 +12153,6 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Mesh -> All` in a `MeshStyle` outlines every triangle with styled
   // lines (the grid lines and each cell's diagonal) instead of the
   // default dark triangle edges.
-  let mut mesh_mode = mesh_mode;
   if mesh_mode == MeshMode::All
     && let Some(style) = &mesh_style
   {
