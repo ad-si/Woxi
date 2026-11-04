@@ -9,6 +9,7 @@ use crate::functions::plot::{
   generate_scatter_svg_with_options, generate_svg_with_filling,
   parse_image_size, parse_plot_style,
 };
+use crate::functions::plot_scaling::Scaling;
 use crate::functions::sound::audio_sample_rate;
 
 /// One parsed data point: coordinates plus asymmetric x/y uncertainties.
@@ -93,7 +94,46 @@ fn eval_to_value_err(expr: &Expr) -> Option<(f64, (f64, f64))> {
     };
     return Some((v, err));
   }
+  // `Interval[{lo, hi}]` plots like an uncertainty around its midpoint
+  // (drawn without end caps, see `interval_only_data`).
+  if let Expr::FunctionCall { name, args } = &e
+    && name == "Interval"
+    && let [Expr::List(bounds)] = args.as_slice()
+    && let [lo, hi] = bounds.as_slice()
+  {
+    let (lo, hi) = (try_eval_to_f64(lo)?, try_eval_to_f64(hi)?);
+    let half = (hi - lo).abs() / 2.0;
+    return Some((f64::midpoint(lo, hi), (half, half)));
+  }
   try_eval_to_f64(&e).map(|v| (v, (0.0, 0.0)))
+}
+
+/// Whether the plot data holds `Interval` values but no `Around`: WL draws
+/// an interval as a bar without the end caps an `Around` gets.
+fn interval_only_data(data: &Expr) -> bool {
+  fn scan(e: &Expr, interval: &mut bool, around: &mut bool) {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        match name.as_str() {
+          "Interval" => *interval = true,
+          "Around" => *around = true,
+          _ => {}
+        }
+        for a in args {
+          scan(a, interval, around);
+        }
+      }
+      Expr::List(items) => {
+        for a in items {
+          scan(a, interval, around);
+        }
+      }
+      _ => {}
+    }
+  }
+  let (mut interval, mut around) = (false, false);
+  scan(data, &mut interval, &mut around);
+  interval && !around
 }
 
 /// Strip the uncertainties from parsed series, leaving plain (x, y) points.
@@ -355,7 +395,9 @@ fn canonicalize_element(e: &Expr) -> Expr {
       match name.as_str() {
         "Callout" if args.len() >= 2 => call(
           "Labeled",
-          vec![canonicalize_element(&args[0]), args[1].clone()],
+          std::iter::once(canonicalize_element(&args[0]))
+            .chain(args[1..].iter().cloned())
+            .collect(),
         ),
         "Callout" => canonicalize_element(&args[0]),
         _ => e.clone(),
@@ -403,10 +445,9 @@ fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
       match name.as_str() {
         "Callout" if args.len() >= 2 => call(
           "Labeled",
-          vec![
-            canonicalize_plot_data(&args[0], keys_label_points),
-            args[1].clone(),
-          ],
+          std::iter::once(canonicalize_plot_data(&args[0], keys_label_points))
+            .chain(args[1..].iter().cloned())
+            .collect(),
         ),
         "Callout" => canonicalize_plot_data(&args[0], keys_label_points),
         "WeightedData" => {
@@ -648,6 +689,39 @@ fn apply_data_range(data: &Expr, spec: &DataRangeSpec) -> Option<Expr> {
     ));
   }
 
+  // Several datasets of mixed shapes (`{values, {{x, y}, …}}`): an explicit
+  // span lays out each dataset of plain values, and the datasets of points
+  // keep their own coordinates.
+  let is_points = |row: &[Expr]| {
+    row
+      .iter()
+      .all(|e| matches!(e, Expr::List(p) if p.len() == 2))
+  };
+  if matches!(spec, DataRangeSpec::Span(..))
+    && items.iter().all(|it| matches!(it, Expr::List(_)))
+    && items
+      .iter()
+      .any(|it| matches!(it, Expr::List(row) if is_points(row)))
+  {
+    let mut changed = false;
+    let out: Vec<Expr> = items
+      .iter()
+      .map(|it| match it {
+        Expr::List(row)
+          if !row.is_empty()
+            && row.iter().all(|e| !matches!(e, Expr::List(_))) =>
+        {
+          changed = true;
+          pair_up(row)
+        }
+        other => other.clone(),
+      })
+      .collect();
+    if changed {
+      return Some(Expr::List(out.into()));
+    }
+  }
+
   None
 }
 
@@ -658,6 +732,300 @@ fn data_arg(args: &[Expr], parsed: &ParsedOptions) -> Expr {
     .as_ref()
     .and_then(|spec| apply_data_range(&args[0], spec))
     .unwrap_or_else(|| args[0].clone())
+}
+
+/// The value of option `name` among a plot's arguments, if given.
+fn option_value<'a>(args: &'a [Expr], name: &str) -> Option<&'a Expr> {
+  args[1..].iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// `TargetUnits -> unit`: every `Quantity` of the data converted to `unit`
+/// (a quantity of another dimension is kept as it is).
+fn convert_to_target_units(data: &Expr, unit: &Expr) -> Expr {
+  match data {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      match crate::evaluator::evaluate_function_call_ast(
+        "UnitConvert",
+        &[data.clone(), unit.clone()],
+      ) {
+        Ok(q @ Expr::FunctionCall { .. }) if matches!(&q, Expr::FunctionCall { name, .. } if name == "Quantity") => {
+          q
+        }
+        _ => data.clone(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| convert_to_target_units(e, unit))
+        .collect(),
+    ),
+    _ => data.clone(),
+  }
+}
+
+/// The units of the x and y values of quantity-valued list-plot data
+/// (`{q1, q2, …}`, `{{x1, y1}, …}` or a list of such series): those of its
+/// first value or point.
+fn data_units(data: &Expr) -> (Option<String>, Option<String>) {
+  let unit = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      match &args[1] {
+        Expr::String(u) => Some(u.clone()),
+        other => Some(crate::syntax::expr_to_string(other)),
+      }
+    }
+    _ => None,
+  };
+  let Expr::List(items) = data else {
+    return (None, None);
+  };
+  match items.first() {
+    Some(Expr::List(pair))
+      if pair.len() == 2
+        && !matches!(pair[0], Expr::List(_))
+        && pair.iter().any(|e| unit(e).is_some()) =>
+    {
+      (unit(&pair[0]), unit(&pair[1]))
+    }
+    Some(Expr::List(_)) => data_units(&items[0]),
+    Some(first) => (None, unit(first)),
+    None => (None, None),
+  }
+}
+
+/// `AxesLabel -> Automatic` on quantity data: each axis labelled with the
+/// abbreviation of its unit (`QuantityForm[unit, "PlotLabel"]`).
+fn automatic_unit_axes_label(data: &Expr) -> Option<(String, String)> {
+  let (x, y) = data_units(data);
+  if x.is_none() && y.is_none() {
+    return None;
+  }
+  let label = |u: Option<String>| {
+    u.map(|u| {
+      crate::functions::quantity_ast::unit_abbreviation(&u)
+        .map(str::to_string)
+        .unwrap_or(u)
+    })
+    .unwrap_or_default()
+  };
+  Some((label(x), label(y)))
+}
+
+/// `PlotLayout -> "Stacked"` / `"Percentile"`: each series drawn on top of
+/// the ones before it — its i-th value the sum of the i-th values of it and
+/// all earlier series — and for `"Percentile"` that sum as a percentage of
+/// the total of all series.
+fn apply_stacked_layout(args: &[Expr], all_series: &mut [Vec<ErrPoint>]) {
+  let percentile = match option_value(args, "PlotLayout") {
+    Some(Expr::String(s)) if s == "Stacked" => false,
+    Some(Expr::String(s)) if s == "Percentile" => true,
+    _ => return,
+  };
+  let len = all_series.iter().map(Vec::len).max().unwrap_or(0);
+  for i in 0..len {
+    let mut sum = 0.0;
+    for series in all_series.iter_mut() {
+      if let Some(p) = series.get_mut(i) {
+        sum += p.y;
+        p.y = sum;
+      }
+    }
+    if percentile && sum != 0.0 {
+      for series in all_series.iter_mut() {
+        if let Some(p) = series.get_mut(i) {
+          p.y = p.y / sum * 100.0;
+        }
+      }
+    }
+  }
+}
+
+/// One y axis of `MultiaxisArrangement`: the series it scales and the
+/// frame edge it is drawn on (1 = left, 3 = right).
+struct MultiAxis {
+  edge: usize,
+  series: Vec<usize>,
+}
+
+/// Parse `MultiaxisArrangement -> All | {spec, …} | {Left -> specs,
+/// Right -> specs}` for `n` series. A spec is a series index (an axis of
+/// its own) or `{i, j, …}` (one axis shared by those series); a side given
+/// a flat list `{i, j}` gets one axis per index. Without sides, the last
+/// axis goes to the right and the others to the left. Only one axis per
+/// side is drawn; further ones are merged into it.
+fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
+  let value = option_value(args, "MultiaxisArrangement")?;
+  let index = |e: &Expr| match e {
+    Expr::Integer(i) if *i >= 1 && (*i as usize) <= n => Some(*i as usize - 1),
+    _ => None,
+  };
+  let group = |e: &Expr| -> Option<Vec<usize>> {
+    match e {
+      Expr::List(items) => items.iter().map(index).collect(),
+      other => index(other).map(|i| vec![i]),
+    }
+  };
+  let mut axes: Vec<(Option<usize>, Vec<usize>)> = Vec::new();
+  match value {
+    Expr::Identifier(a) if a == "All" => {
+      axes.extend((0..n).map(|i| (None, vec![i])));
+    }
+    Expr::List(items) => {
+      for item in items {
+        match item {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => {
+            let edge = match pattern.as_ref() {
+              Expr::Identifier(s) if s == "Left" => 1,
+              Expr::Identifier(s) if s == "Right" => 3,
+              _ => return None,
+            };
+            match replacement.as_ref() {
+              // `{{i, j}}`: one shared axis; `{i, j}`: one axis each.
+              Expr::List(specs) => {
+                for spec in specs {
+                  axes.push((Some(edge), group(spec)?));
+                }
+              }
+              other => axes.push((Some(edge), group(other)?)),
+            }
+          }
+          other => axes.push((None, group(other)?)),
+        }
+      }
+    }
+    _ => return None,
+  }
+  if axes.len() < 2 {
+    return None;
+  }
+  let last = axes.len() - 1;
+  let mut out: Vec<MultiAxis> = Vec::new();
+  for (k, (edge, series)) in axes.into_iter().enumerate() {
+    let edge = edge.unwrap_or(if k == last { 3 } else { 1 });
+    match out.iter_mut().find(|a| a.edge == edge) {
+      Some(axis) => axis.series.extend(series),
+      None => out.push(MultiAxis { edge, series }),
+    }
+  }
+  if out.len() < 2 {
+    return None;
+  }
+  // The left axis is the reference the others are mapped onto.
+  out.sort_by_key(|a| a.edge);
+  Some(out)
+}
+
+/// Draw the series on the y axes of `MultiaxisArrangement`: every axis
+/// gets the automatic range of its own series, each series is mapped from
+/// its axis's range onto the first (left) one's, and the frame's left and
+/// right edges carry the ticks of their axis, coloured like its series.
+fn apply_multiaxis(
+  args: &[Expr],
+  err_series: &mut [Vec<ErrPoint>],
+  opts: &mut PlotOptions,
+) {
+  let Some(axes) = parse_multiaxis(args, err_series.len()) else {
+    return;
+  };
+  let ranges: Vec<(f64, f64)> = axes
+    .iter()
+    .map(|axis| {
+      let (lo, hi) = axis
+        .series
+        .iter()
+        .flat_map(|&i| err_series[i].iter())
+        .filter(|p| p.y.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+          (lo.min(p.y - p.dy.0), hi.max(p.y + p.dy.1))
+        });
+      let extent = list_axis_extent(lo, hi, ListAxis::Y, false, false);
+      pad_list_axis(extent, ListAxis::Y, false)
+    })
+    .collect();
+  let (ref_lo, ref_hi) = ranges[0];
+  let palette = &crate::functions::plot::PLOT_COLORS_RGB;
+  let series_color = |i: usize| {
+    opts
+      .plot_style
+      .get(i)
+      .and_then(|s| s.color)
+      .unwrap_or_else(|| {
+        let (r, g, b) = palette[i % palette.len()];
+        crate::functions::graphics::Color::new(r, g, b)
+      })
+  };
+  opts.frame = true;
+  for (axis, &(lo, hi)) in axes.iter().zip(&ranges) {
+    let scale = (ref_hi - ref_lo) / (hi - lo);
+    let map = |y: f64| ref_lo + (y - lo) * scale;
+    for &i in &axis.series {
+      for p in &mut err_series[i] {
+        p.y = map(p.y);
+        p.dy = (p.dy.0 * scale, p.dy.1 * scale);
+      }
+    }
+    let ticks = crate::functions::plot_axes::AxisTicks::new(
+      crate::functions::plot_axes::AxisScale {
+        min: lo,
+        max: hi,
+        log: false,
+      },
+      false,
+      None,
+    );
+    let mut explicit: Vec<crate::functions::plot::ExplicitTick> = ticks
+      .majors
+      .iter()
+      .map(|(pos, label)| crate::functions::plot::ExplicitTick {
+        pos: map(*pos),
+        label: label.clone(),
+        len: None,
+        style: None,
+      })
+      .collect();
+    explicit.extend(ticks.minors.iter().map(|pos| {
+      crate::functions::plot::ExplicitTick {
+        pos: map(*pos),
+        label: String::new(),
+        len: Some((0.00375, 0.0)),
+        style: None,
+      }
+    }));
+    opts.frame_tick_edges[axis.edge] =
+      crate::functions::plot::FrameEdgeTicks::Explicit(explicit);
+    // A shared axis is split evenly among its series' colours, the first
+    // at the top.
+    let k = axis.series.len() as f64;
+    for (j, &i) in axis.series.iter().enumerate() {
+      let top = 1.0 - j as f64 / k;
+      opts.frame_edge_segments.push((
+        axis.edge,
+        top - 1.0 / k,
+        top,
+        series_color(i),
+      ));
+    }
+  }
 }
 
 /// Whether the point labels of the data argument are callouts — pulled
@@ -927,35 +1295,85 @@ struct ParsedOptions {
   joined: bool,
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or `All` in the slot of an axis): the axis shows
+  /// every point, outliers included.
+  plot_range_all: (bool, bool),
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
   hide_point_labels: bool,
+  /// `LabelingFunction -> f`: every point labelled `f[{x, y}, {i, j}]` (its
+  /// coordinates, and its dataset's and its own index).
+  labeling_function: Option<Expr>,
+  /// `LabelingSize -> w`: a label wider than `w` points is left to a
+  /// tooltip rather than drawn.
+  labeling_size: Option<f64>,
   /// `InterpolationOrder -> n` for joined curves: 0 draws piecewise-constant
   /// steps, 1 straight lines, >= 2 a smooth interpolated curve. `None`
   /// (option absent or `-> None`) keeps the default straight lines.
   interpolation_order: Option<i128>,
   /// `DataRange -> All` / `{xmin, xmax}` (None for the Automatic default).
   data_range: Option<DataRangeSpec>,
-  /// `MeshFunctions -> {f, …}`: only the first function shades a curve.
-  mesh_function: Option<Expr>,
-  /// `Mesh -> {{v1, v2, …}, …}`: the first function's mesh values.
-  mesh_levels: Vec<f64>,
-  /// `MeshShading -> {s0, s1, …}`: the style of each region between mesh
-  /// values, in increasing order of the mesh function.
-  mesh_shading: Vec<SeriesStyle>,
+  /// `ScalingFunctions -> {sx, sy}` (the first one given).
+  scaling: Option<(Option<Scaling>, Option<Scaling>)>,
+}
+
+thread_local! {
+  /// Set while `DateListPlot` draws through the list-plot machinery: the
+  /// x values are AbsoluteTime seconds, labelled as dates.
+  static DATE_AXIS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with the list plots it draws labelling their x axis with dates.
+pub(crate) fn with_date_axis<T>(f: impl FnOnce() -> T) -> T {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      DATE_AXIS.with(|d| d.set(self.0));
+    }
+  }
+  let _reset = Reset(DATE_AXIS.with(|d| d.replace(true)));
+  f()
+}
+
+/// Whether list-plot data is time-stamped by dates: a `TimeSeries` /
+/// `TemporalData` (or `ts -> components`) whose first stamp is a date list
+/// or `DateObject` rather than a plain number.
+fn has_date_stamps(data: &Expr) -> bool {
+  let data = match data {
+    Expr::Rule { pattern, .. } => {
+      evaluate_expr_to_expr(pattern).unwrap_or_else(|_| *pattern.clone())
+    }
+    other => other.clone(),
+  };
+  let Some(paths) = crate::functions::timeseries_ast::temporal_paths(&data)
+  else {
+    return false;
+  };
+  paths.iter().flatten().next().is_some_and(|(t, _)| {
+    let t = evaluate_expr_to_expr(t).unwrap_or_else(|_| t.clone());
+    !matches!(t, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+  })
 }
 
 /// Parse common plot options from args[1..].
 fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
+  out.opts.date_axis = DATE_AXIS.with(std::cell::Cell::get);
   let (options, simple_ticks) = expand_plot_theme(&args[1..], true);
   let opts = &mut out.opts;
   opts.simple_ticks = simple_ticks;
+  // Joined data points are joined as given, also across a jump.
+  opts.join_across_jumps = true;
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
       match name {
+        "ScalingFunctions" if out.scaling.is_none() => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          out.scaling = Scaling::parse_option(&value);
+        }
         "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -985,6 +1403,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             crate::functions::plot::parse_series_plot_range(replacement);
           out.plot_range_x = rx;
           out.plot_range_y = ry;
+          out.plot_range_all =
+            crate::functions::plot::plot_range_all_axes(replacement);
         }
         "DataRange" => {
           out.data_range = match replacement {
@@ -1049,6 +1469,12 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "AxesStyle"
         | "TicksStyle"
         | "FrameStyle"
+        | "FrameTicks"
+        | "FrameTicksStyle"
+        | "LabelStyle"
+        | "Mesh"
+        | "MeshFunctions"
+        | "MeshShading"
         | "MeshStyle"
         | "PlotLabels"
         | "PlotLegends" => {
@@ -1082,17 +1508,19 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           {
             // A bare position places every point label on that side.
             opts.point_label_position = Some(pos.clone());
+          } else if matches!(
+            replacement,
+            Expr::Function { .. } | Expr::NamedFunction { .. }
+          ) || matches!(replacement, Expr::FunctionCall { name, .. } if name == "Function")
+          {
+            out.labeling_function = Some(replacement.clone());
           }
         }
-        "FrameTicksStyle" => {
-          let val = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          let (color, font_size) =
-            crate::functions::chart::parse_label_style(&val);
-          if color.is_some() || font_size.is_some() {
-            opts.tick_label_style =
-              Some(crate::functions::plot::LabelStyleSpec { color, font_size });
-          }
+        "LabelingSize" => {
+          out.labeling_size = crate::functions::graphics::expr_to_f64(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.clone()),
+          );
         }
         "PlotLabel" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -1143,19 +1571,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "Frame" => {
           crate::functions::plot::apply_frame_option(replacement, opts);
         }
-        "FrameTicks" => {
-          let (x, y) =
-            crate::functions::plot::frame_tick_axes_visible(replacement);
-          opts.frame_ticks = x || y;
-          let (bottom, left) =
-            crate::functions::plot::frame_explicit_ticks(replacement);
-          if let Some(t) = bottom {
-            opts.ticks_x = t;
-          }
-          if let Some(t) = left {
-            opts.ticks_y = t;
-          }
-        }
         "Axes" => {
           if let Some(axes) =
             crate::functions::plot::parse_axes_option(replacement)
@@ -1167,45 +1582,33 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.image_padding =
             crate::functions::plot::parse_image_padding(replacement);
         }
-        // "Fences" (capped error bars) is the default; "Bars" renders with
-        // the same bar geometry. None hides the uncertainty intervals.
+        "IntervalMarkersStyle" => {
+          opts.interval_markers_color =
+            crate::functions::plot::parse_style_directives(replacement)
+              .and_then(|st| st.color)
+              .map(|c| {
+                let (r, g, b) = crate::functions::plot::color_to_rgb8(c);
+                plotters::style::RGBColor(r, g, b)
+              });
+        }
+        "ClippingStyle" => {
+          opts.clipping_style =
+            crate::functions::plot::parse_clipping_style(replacement);
+        }
+        // "Fences" (capped error bars) is the default; "Bars" drops the
+        // caps. None hides the uncertainty intervals.
         "IntervalMarkers" => match replacement {
           Expr::String(s) if s == "Bands" => {
             opts.interval_markers = IntervalMarkers::Bands;
+          }
+          Expr::String(s) if s == "Bars" => {
+            opts.interval_markers = IntervalMarkers::Bars;
           }
           Expr::Identifier(v) if v == "None" => {
             opts.interval_markers = IntervalMarkers::None;
           }
           _ => {}
         },
-        "Mesh" => match replacement {
-          Expr::List(per_function) => {
-            if let Some(Expr::List(levels)) = per_function.first() {
-              out.mesh_levels =
-                levels.iter().filter_map(try_eval_to_f64).collect();
-              out.mesh_levels.sort_by(f64::total_cmp);
-            }
-          }
-          _ => {
-            crate::functions::plot::apply_common_plot_option(
-              name,
-              replacement,
-              opts,
-              &mut crate::functions::plot::PlotRangeOverrides::default(),
-            );
-          }
-        },
-        "MeshFunctions" => {
-          if let Expr::List(items) = replacement {
-            out.mesh_function = items.first().cloned();
-          }
-        }
-        "MeshShading" => {
-          if matches!(replacement, Expr::List(_)) {
-            out.mesh_shading =
-              crate::functions::plot::parse_plot_style(replacement);
-          }
-        }
         // `None` (the default) means straight lines, like order 1.
         "InterpolationOrder" => {
           if let Some(n) = crate::functions::math_ast::expr_to_i128(replacement)
@@ -1240,75 +1643,22 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   out
 }
 
-/// Split a polyline where `f(x, y)` crosses one of the sorted mesh `levels`,
-/// returning each piece with the index of the region (the number of levels
-/// below the function value) it lies in. Crossings are found by linear
-/// interpolation of the function between consecutive points.
-fn split_at_mesh_levels(
-  series: &[(f64, f64)],
-  f: &Expr,
-  levels: &[f64],
-) -> Vec<(usize, Vec<(f64, f64)>)> {
-  let value = |&(x, y): &(f64, f64)| -> Option<f64> {
-    let r = crate::functions::list_helpers_ast::apply_func_to_two_args(
-      f,
-      &Expr::Real(x),
-      &Expr::Real(y),
-    )
-    .ok()?;
-    try_eval_to_f64(&r)
-  };
-  let region = |v: f64| levels.iter().filter(|l| v > **l).count();
-  let mut pieces: Vec<(usize, Vec<(f64, f64)>)> = Vec::new();
-  let mut prev: Option<(f64, f64, f64)> = None;
-  for pt in series {
-    let Some(v) = value(pt) else { continue };
-    let cur = region(v);
-    if let Some((px, py, pv)) = prev {
-      let pr = region(pv);
-      if pr != cur {
-        // Mesh values crossed between the two points, in travel order.
-        let mut crossed: Vec<f64> = levels
-          .iter()
-          .copied()
-          .filter(|l| (pv.min(v)..=pv.max(v)).contains(l))
-          .collect();
-        if pv > v {
-          crossed.reverse();
-        }
-        let n = crossed.len();
-        for (k, l) in crossed.into_iter().enumerate() {
-          let t = (l - pv) / (v - pv);
-          let at = (px + t * (pt.0 - px), py + t * (pt.1 - py));
-          if let Some((_, piece)) = pieces.last_mut() {
-            piece.push(at);
-          }
-          // Each crossing steps one region up or down; the last lands on
-          // the region of the new point.
-          let next = if k + 1 == n {
-            cur
-          } else if v > pv {
-            pr + k + 1
-          } else {
-            pr.saturating_sub(k + 1)
-          };
-          pieces.push((next, vec![at]));
-        }
-      }
-    }
-    match pieces.last_mut() {
-      Some((_, piece)) => piece.push(*pt),
-      None => pieces.push((cur, vec![*pt])),
-    }
-    prev = Some((pt.0, pt.1, v));
-  }
-  pieces
+/// What `PlotRange` asks of the automatic range of each axis.
+#[derive(Clone, Copy)]
+struct RangeRequest {
+  /// The axis range is given explicitly.
+  explicit: (bool, bool),
+  /// `All`: the whole extent of the points, outliers included.
+  keep_outliers: (bool, bool),
 }
 
 impl ParsedOptions {
-  /// Whether `PlotRange` fixes the x and the y range.
-  fn explicit_range(&self) -> (bool, bool) {
-    (self.plot_range_x.is_some(), self.plot_range_y.is_some())
+  /// What `PlotRange` fixes of the x and the y range.
+  fn explicit_range(&self) -> RangeRequest {
+    RangeRequest {
+      explicit: (self.plot_range_x.is_some(), self.plot_range_y.is_some()),
+      keep_outliers: self.plot_range_all,
+    }
   }
 }
 
@@ -1321,41 +1671,20 @@ fn apply_plot_range_override(
   y_range: (f64, f64),
 ) -> ((f64, f64), (f64, f64)) {
   (
-    log_safe_range(parsed.plot_range_x, x_range, parsed.opts.log_x),
-    log_safe_range(parsed.plot_range_y, y_range, parsed.opts.log_y),
+    log_safe_range(parsed.plot_range_x, x_range),
+    log_safe_range(parsed.plot_range_y, y_range),
   )
 }
 
-/// An explicit `PlotRange` on a logarithmic axis cannot reach zero or below
-/// (`PlotRange -> {0, 1}` on a `ListLogPlot`); such a bound falls back to the
-/// automatically computed one, as the Wolfram Language does.
+/// An explicit `PlotRange` side, with the ends a scaled axis cannot reach
+/// (`PlotRange -> {0, 1}` on a log axis) left at the automatic ones, as
+/// the Wolfram Language does.
 fn log_safe_range(
   explicit: Option<(f64, f64)>,
   auto: (f64, f64),
-  log: bool,
 ) -> (f64, f64) {
-  let Some((lo, hi)) = explicit else {
-    return auto;
-  };
-  if !log {
-    return (lo, hi);
-  }
-  let lo = if lo > 0.0 || auto.0 <= 0.0 {
-    lo
-  } else {
-    auto.0
-  };
-  let hi = if hi > 0.0 || auto.1 <= 0.0 {
-    hi
-  } else {
-    auto.1
-  };
-  (lo, hi)
+  crate::functions::plot::fill_range(explicit, auto).unwrap_or(auto)
 }
-
-/// Subdivisions per data interval when sampling a smooth interpolated curve
-/// (`InterpolationOrder >= 2`).
-const SPLINE_SUBDIV: usize = 24;
 
 /// Turn one series into the staircase that zero-order interpolation draws:
 /// each value is held until the next data point, where the curve jumps
@@ -1371,62 +1700,106 @@ fn step_curve(series: &[(f64, f64)]) -> Vec<(f64, f64)> {
   steps
 }
 
-/// Evaluate the local Lagrange polynomial of degree `order` through the
-/// `order + 1` points of `series` centered around interval `idx` at `x`,
-/// mirroring the window used by `Interpolation` (ode_ast::lagrange_interpolate).
-fn lagrange_value(
-  series: &[(f64, f64)],
-  x: f64,
-  idx: usize,
-  order: usize,
-) -> f64 {
-  // Stencil as centered as possible on the interval [x_idx, x_idx+1],
-  // always containing both interval endpoints (mirrors
-  // ode_ast::lagrange_interpolate).
-  let n = series.len();
-  let needed = order + 1;
-  let start = idx
-    .saturating_sub((order - 1) / 2)
-    .min(n.saturating_sub(needed));
-  let window = &series[start..(start + needed).min(n)];
-  let mut result = 0.0;
-  for (i, &(xi, yi)) in window.iter().enumerate() {
-    let mut basis = 1.0;
-    for (j, &(xj, _)) in window.iter().enumerate() {
-      if j != i && (xi - xj).abs() > f64::EPSILON {
-        basis *= (x - xj) / (xi - xj);
-      }
-    }
-    result += yi * basis;
+/// The cardinal B-spline of degree `degree` on the knots `0, 1, …,
+/// degree + 1`, at `x` (Cox–de Boor recursion on uniform knots).
+fn cardinal_bspline(x: f64, degree: usize) -> f64 {
+  if x < 0.0 || x >= (degree + 1) as f64 {
+    return 0.0;
   }
-  result
+  if degree == 0 {
+    return 1.0;
+  }
+  let k = degree as f64;
+  (x * cardinal_bspline(x, degree - 1)
+    + (k + 1.0 - x) * cardinal_bspline(x - 1.0, degree - 1))
+    / k
 }
 
-/// Sample the smooth order-`order` interpolated curve through `series`
-/// (sorted by x), keeping the data points themselves on the curve.
-fn spline_curve(series: &[(f64, f64)], order: usize) -> Vec<(f64, f64)> {
-  let mut sorted = series.to_vec();
-  sorted
-    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-  let n = sorted.len();
-  let eff_order = order.min(n.saturating_sub(1));
-  if eff_order <= 1 {
-    return sorted;
-  }
-  let mut curve = Vec::with_capacity((n - 1) * SPLINE_SUBDIV + 1);
-  curve.push(sorted[0]);
-  for idx in 0..n - 1 {
-    let (x0, _) = sorted[idx];
-    let (x1, _) = sorted[idx + 1];
-    for k in 1..=SPLINE_SUBDIV {
-      let x = x0 + (x1 - x0) * k as f64 / SPLINE_SUBDIV as f64;
-      if k == SPLINE_SUBDIV {
-        curve.push(sorted[idx + 1]);
-      } else {
-        curve.push((x, lagrange_value(&sorted, x, idx, eff_order)));
+/// Solve the banded system `matrix · c = rhs` (half-bandwidth `band`,
+/// rows stored densely) by Gaussian elimination without pivoting — the
+/// B-spline collocation matrices it is used on are totally positive.
+fn solve_banded(matrix: &mut [Vec<f64>], rhs: &mut [(f64, f64)], band: usize) {
+  let n = rhs.len();
+  for col in 0..n {
+    let pivot = matrix[col][col];
+    if pivot.abs() < f64::MIN_POSITIVE {
+      continue;
+    }
+    let last = (col + band).min(n - 1);
+    for row in col + 1..=last {
+      let factor = matrix[row][col] / pivot;
+      if factor == 0.0 {
+        continue;
       }
+      for k in col..=(col + 2 * band).min(n - 1) {
+        matrix[row][k] -= factor * matrix[col][k];
+      }
+      rhs[row].0 -= factor * rhs[col].0;
+      rhs[row].1 -= factor * rhs[col].1;
     }
   }
+  for col in (0..n).rev() {
+    let (mut sx, mut sy) = rhs[col];
+    for k in col + 1..=(col + 2 * band).min(n - 1) {
+      sx -= matrix[col][k] * rhs[k].0;
+      sy -= matrix[col][k] * rhs[k].1;
+    }
+    let pivot = matrix[col][col];
+    rhs[col] = (sx / pivot, sy / pivot);
+  }
+}
+
+/// Sample the smooth order-`order` curve a joined list plot draws through
+/// `series`, as the Wolfram Language does: a uniform parametric B-spline of
+/// degree `order` in the point index, its knots at the indices (odd
+/// orders) or halfway between them (even orders), with the `order / 2`
+/// control points beyond each end equal to the end control point, and the
+/// control points solved so that the curve passes through every point at
+/// its index. Each index interval is sampled `2 ⌊1200 / (n - 1)⌋` times,
+/// clamped to `6..=26`.
+fn spline_curve(series: &[(f64, f64)], order: usize) -> Vec<(f64, f64)> {
+  let n = series.len();
+  let degree = order.min(n.saturating_sub(1));
+  if degree <= 1 {
+    return series.to_vec();
+  }
+  let pad = degree / 2;
+  let controls = n + 2 * pad;
+  // Basis `j` (control `j - pad`) starts at knot `first_knot + j`.
+  let first_knot = -(pad as f64) - (degree + 1) as f64 / 2.0;
+  let basis =
+    |j: usize, t: f64| cardinal_bspline(t - first_knot - j as f64, degree);
+  // Control `j` stands for unknown `clamp(j - pad, 0, n - 1)`.
+  let unknown =
+    |j: usize| (j as i64 - pad as i64).clamp(0, n as i64 - 1) as usize;
+  let mut matrix = vec![vec![0.0; n]; n];
+  for (i, row) in matrix.iter_mut().enumerate() {
+    for j in i..=(i + 2 * pad).min(controls - 1) {
+      row[unknown(j)] += basis(j, i as f64);
+    }
+  }
+  let mut solved = series.to_vec();
+  solve_banded(&mut matrix, &mut solved, 2 * pad);
+  let eval = |t: f64| {
+    let (mut x, mut y) = (0.0, 0.0);
+    let lo = (t - first_knot).floor() as i64 - degree as i64;
+    for j in lo.max(0)..=(lo + degree as i64).min(controls as i64 - 1) {
+      let w = basis(j as usize, t);
+      let (cx, cy) = solved[unknown(j as usize)];
+      x += w * cx;
+      y += w * cy;
+    }
+    (x, y)
+  };
+  let per = (2 * (1200 / (n - 1))).clamp(6, 26);
+  let mut curve = Vec::with_capacity((n - 1) * per + 1);
+  for idx in 0..n - 1 {
+    curve.push(series[idx]);
+    for k in 1..per {
+      curve.push(eval(idx as f64 + k as f64 / per as f64));
+    }
+  }
+  curve.push(series[n - 1]);
   curve
 }
 
@@ -1490,9 +1863,25 @@ fn list_axis_extent(
   max: f64,
   axis: ListAxis,
   from_zero: bool,
+  no_zero: bool,
 ) -> (f64, f64) {
   if !(min.is_finite() && max.is_finite()) {
     return (0.0, 1.0);
+  }
+  // A scaled axis without a place for 0 (log, reciprocal) is lowered by
+  // its padding twice instead: by `Scaled[0.05]` (x: `0.02`) of the data
+  // span, then by `Scaled[0.02]` of the result under the
+  // `{0.02, 0.05}` padding it then gets.
+  if no_zero {
+    if min == max {
+      return (min - 1.0, max);
+    }
+    let (first, second) = match axis {
+      ListAxis::X => (1.0 / 48.0, 1.0 / 48.0),
+      ListAxis::Y => (1.0 / 18.0, 2.0 / 93.0),
+    };
+    let lo = min - (max - min) * first;
+    return (lo - (max - lo) * second, max);
   }
   let (min, max) = if from_zero {
     (min.min(0.0), max.max(0.0))
@@ -1527,10 +1916,14 @@ fn list_axis_extent(
 /// on both ends of the x axis; on the y axis `Scaled[0.02]` at an end that is
 /// 0 and `Scaled[0.05]` elsewhere. `Scaled[s]` is that fraction of the
 /// *padded* span, so `{0, 3}` pads to `{-1/16, 3 + 1/16}`.
-fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
+fn pad_list_axis(
+  (lo, hi): (f64, f64),
+  axis: ListAxis,
+  no_zero: bool,
+) -> (f64, f64) {
   let span = hi - lo;
   let side = |v: f64| {
-    if axis == ListAxis::X || v == 0.0 {
+    if axis == ListAxis::X || v == 0.0 || (no_zero && v == lo) {
       0.02
     } else {
       0.05
@@ -1549,23 +1942,46 @@ fn pad_list_axis((lo, hi): (f64, f64), axis: ListAxis) -> (f64, f64) {
 fn list_plot_ranges(
   all_series: &[Vec<(f64, f64)>],
   implicit_x: bool,
-  (explicit_x, explicit_y): (bool, bool),
+  request: RangeRequest,
+  scaling: &(Option<Scaling>, Option<Scaling>),
   opts: &mut PlotOptions,
 ) -> ((f64, f64), (f64, f64)) {
-  let bounds = |pick: fn(&(f64, f64)) -> f64| {
-    all_series
+  let (explicit_x, explicit_y) = request.explicit;
+  // The points' extent, outliers clipped off an axis whose range is
+  // automatic (WL does not on a logarithmic one).
+  // A numeric `AxesOrigin` is part of the range, but not of the
+  // distribution the outliers are told apart by.
+  let bounds = |pick: fn(&(f64, f64)) -> f64, keep_outliers: bool, origin| {
+    let values = all_series
       .iter()
       .flatten()
-      .map(pick)
-      .filter(|v| v.is_finite())
-      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
-        (lo.min(v), hi.max(v))
-      })
+      .filter(|p| p.0.is_finite() && p.1.is_finite())
+      .map(pick);
+    let (lo, hi) =
+      crate::functions::plot::list_value_extent(values, keep_outliers)
+        .unwrap_or((f64::INFINITY, f64::NEG_INFINITY));
+    match origin {
+      Some(o) if lo <= hi => (lo.min(o), hi.max(o)),
+      _ => (lo, hi),
+    }
   };
-  let (x_min, x_max) = bounds(|p| p.0);
-  let (y_min, y_max) = bounds(|p| p.1);
-  let x = list_axis_extent(x_min, x_max, ListAxis::X, implicit_x);
-  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false);
+  // A scaled axis without a place for 0 (log, reciprocal) keeps its
+  // outliers, as WL's log list plots do.
+  let no_zero =
+    |s: &Option<Scaling>| s.as_ref().is_some_and(|s| s.zero().is_none());
+  let (nx, ny) = (no_zero(&scaling.0), no_zero(&scaling.1));
+  let (x_min, x_max) =
+    bounds(|p| p.0, request.keep_outliers.0 || nx, opts.axes_origin.0);
+  let (y_min, y_max) =
+    bounds(|p| p.1, request.keep_outliers.1 || ny, opts.axes_origin.1);
+  // A date axis spans just the dates (WL's DateListPlot and a ListPlot of a
+  // TimeSeries).
+  let x = if opts.date_axis && x_min < x_max {
+    (x_min, x_max)
+  } else {
+    list_axis_extent(x_min, x_max, ListAxis::X, implicit_x && !nx, nx)
+  };
+  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny);
   if !explicit_x {
     opts.axes_origin_low.0 = Some(x.0);
   }
@@ -1573,8 +1989,10 @@ fn list_plot_ranges(
     opts.axes_origin_low.1 = Some(y.0);
   }
   opts.grid_interior = (!explicit_x && !explicit_y).then_some((x, y));
-  let (x, y_padded) =
-    (pad_list_axis(x, ListAxis::X), pad_list_axis(y, ListAxis::Y));
+  let (x, y_padded) = (
+    pad_list_axis(x, ListAxis::X, nx),
+    pad_list_axis(y, ListAxis::Y, ny),
+  );
   // The range does not reach out to a filling's level: `Filling -> Axis`
   // fills to wherever the horizontal axis crosses, which is not 0 when the
   // range leaves 0 out.
@@ -1593,22 +2011,125 @@ fn list_plot_ranges(
       }
     }
   }
+  if !explicit_y {
+    opts.curve_clip_y =
+      Some(crate::functions::plot::include_filling_levels(opts, y));
+  }
+  // Labels placed above or below their datasets get room inside the range.
+  let y_padded = if explicit_y {
+    y_padded
+  } else {
+    crate::functions::plot_curve_labels::widen_y_range(
+      &opts.curve_label_specs,
+      all_series,
+      x,
+      y_padded,
+      crate::functions::plot::estimated_plot_area(opts),
+    )
+  };
   (x, y_padded)
 }
 
-/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 7/6000
-/// of the image width per step, from 7 steps for series of fewer than 50
-/// points down to 3 from 1000 points on (the longest series decides).
-fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
-  let n = all_series.iter().map(Vec::len).max().unwrap_or(0);
-  let steps = match n {
-    0..50 => 7.0,
-    50..100 => 6.0,
-    100..250 => 5.0,
-    250..1000 => 4.0,
-    _ => 3.0,
+/// Widen the automatic ranges so the point labels fit at their first-choice
+/// places, as WL makes room for them. `data` are the labelled points (the
+/// labels run parallel to them).
+fn widen_for_point_labels(
+  opts: &PlotOptions,
+  data: &[Vec<(f64, f64)>],
+  (x, y): ((f64, f64), (f64, f64)),
+) -> ((f64, f64), (f64, f64)) {
+  crate::functions::plot_curve_labels::widen_for_boxes(
+    &crate::functions::plot::point_label_boxes(opts, data),
+    x,
+    y,
+    crate::functions::plot::estimated_plot_area(opts),
+  )
+}
+
+/// The automatic size (in printer's points at a 360-point-wide image) of a
+/// list plot's dots, as WL's `Charting`adaptivePointSize` picks it from the
+/// distinct points of all series: 7 for fewer than 50 points, 6, 5 and 4
+/// from 50, 100 and 250 on, 1 above 15000. In between it depends also on
+/// how clustered the points are: their data range is cut into 10 × 10
+/// bins, and the fullest bin's share over the mean share of the non-empty
+/// bins classes the data as even (below 2), clustered (above 10) or in
+/// between.
+fn point_size_steps(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  let mut seen = std::collections::HashSet::new();
+  let points: Vec<(f64, f64)> = all_series
+    .iter()
+    .flatten()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .filter(|(x, y)| seen.insert((x.to_bits(), y.to_bits())))
+    .copied()
+    .collect();
+  let n = points.len();
+  match n {
+    0..50 => return 7.0,
+    50..100 => return 6.0,
+    100..250 => return 5.0,
+    250..500 => return 4.0,
+    15001.. => return 1.0,
+    _ => {}
+  }
+  let span = |sel: fn(&(f64, f64)) -> f64| {
+    let (lo, hi) = points
+      .iter()
+      .map(sel)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      });
+    if lo == hi {
+      (lo - 1.0, hi + 1.0)
+    } else {
+      (lo, hi)
+    }
   };
-  steps * 11.0 / 6000.0
+  let (x1, x2) = span(|p| p.0);
+  let (y1, y2) = span(|p| p.1);
+  let width = |lo: f64, hi: f64| (hi - lo + 0.0001 * (hi - lo)) / 10.0;
+  let (wx, wy) = (width(x1, x2), width(y1, y2));
+  let mut bins = [[0usize; 10]; 10];
+  for &(x, y) in &points {
+    let i = ((x - x1) / wx).floor();
+    let j = ((y - y1) / wy).floor();
+    if (0.0..10.0).contains(&i) && (0.0..10.0).contains(&j) {
+      bins[i as usize][j as usize] += 1;
+    }
+  }
+  let filled: Vec<usize> =
+    bins.iter().flatten().copied().filter(|&c| c > 0).collect();
+  let max = filled.iter().copied().max().unwrap_or(0) as f64;
+  let mean = filled.iter().sum::<usize>() as f64 / filled.len().max(1) as f64;
+  let density = max / mean;
+  let class = if density < 2.0 {
+    0
+  } else if density > 10.0 {
+    1
+  } else {
+    2
+  };
+  let table: [f64; 3] = match n {
+    ..1000 => [4.0, 4.0, 3.0],
+    ..2500 => [3.0, 3.0, 2.5],
+    ..5000 => [2.5, 2.5, 2.0],
+    ..10000 => [2.0, 2.0, 1.0],
+    _ => [2.0, 1.0, 1.0],
+  };
+  table[class]
+}
+
+/// The automatic `PointSize` WL 15 gives the dots of a `ListPlot`: 0.66 of
+/// the adaptive size, but at least 1, over the 360-point image width.
+fn list_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  (0.66 * point_size_steps(all_series)).max(1.0) / 360.0
+}
+
+/// The automatic `PointSize` of a `ListLinePlot`'s mesh points: 1/360 of
+/// the image width per step (`PointSize[7/360]` for 8 points, `1/90` for
+/// 300).
+fn list_line_plot_point_size(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  point_size_steps(all_series) / 360.0
 }
 
 /// Compute x/y ranges from data with 4% padding.
@@ -1703,16 +2224,17 @@ fn render_panel_layout(
   };
   let mut base = parsed.opts.clone();
   let (x_range, y_range) = if base.log_x || base.log_y {
-    let (x_range, y_range) =
-      compute_ranges_scaled(range_series, base.log_x, base.log_y);
-    (x_range, adjust_y_range_for_filling_opts(&base, y_range))
-  } else {
     let mut range_series = range_series.to_vec();
     include_axes_origin(&mut range_series, base.axes_origin);
+    let (x_range, y_range) =
+      compute_ranges_scaled(&range_series, base.log_x, base.log_y);
+    (x_range, adjust_y_range_for_filling_opts(&base, y_range))
+  } else {
     list_plot_ranges(
-      &range_series,
+      range_series,
       implicit_x,
       parsed.explicit_range(),
+      &(None, None),
       &mut base,
     )
   };
@@ -1724,7 +2246,15 @@ fn render_panel_layout(
     x_range,
     y_range,
     |idx, mut opts| {
-      opts.callout_labels = vec![labels.get(idx).cloned().flatten()];
+      opts.curve_label_specs = crate::functions::plot_curve_labels::panel_specs(
+        &parsed.opts.curve_label_specs,
+        idx,
+      );
+      if !opts.plot_labels.is_empty() {
+        opts.plot_labels = vec![labels.get(idx).cloned().flatten()];
+        opts.plot_label_leaders =
+          vec![parsed.opts.plot_label_leaders.get(idx) == Some(&true)];
+      }
       // Keep only this panel's error bars and data-point anchors (they are
       // indexed by series).
       opts.error_bars = match parsed.opts.error_bars.get(idx) {
@@ -1785,6 +2315,8 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
           *s = style_of(args, s.clone());
         }
       }
+      // A dataset's own `Style` inside still wins over the outer one.
+      apply_styled_datasets(&args[0], opts);
     }
     Expr::List(items) => {
       let is_styled_dataset = |e: &Expr| {
@@ -1831,6 +2363,74 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
   }
 }
 
+/// The points of a list plot's data written `Style[point, dirs…]` (`{1,
+/// Style[2, Red], 3}`, `Style[{x, y}, Hue[t]]`): per dataset, the parsed
+/// coordinates of each such point and the colour it is drawn in. The
+/// innermost `Style` wins, so a point's own colour beats its dataset's.
+fn styled_point_colors(
+  data: &Expr,
+  series: &[Vec<(f64, f64)>],
+) -> Vec<Vec<((f64, f64), (u8, u8, u8))>> {
+  fn unstyle(e: &Expr) -> &Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Style" && !args.is_empty() =>
+      {
+        unstyle(&args[0])
+      }
+      _ => e,
+    }
+  }
+  let style_color = |e: &Expr| -> Option<(u8, u8, u8)> {
+    let Expr::FunctionCall { name, args } = e else {
+      return None;
+    };
+    if name != "Style" || args.len() < 2 {
+      return None;
+    }
+    let mut style = SeriesStyle::default();
+    for d in &args[1..] {
+      crate::functions::plot::apply_style_directive(d, &mut style);
+    }
+    let c = style.color?;
+    let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Some((ch(c.r), ch(c.g), ch(c.b)))
+  };
+  let is_dataset = |e: &Expr| {
+    matches!(unstyle(e), Expr::List(items)
+      if items.len() != 2 || items.iter().any(|v| matches!(v, Expr::List(_))))
+  };
+  let Expr::List(items) = unstyle(data) else {
+    return Vec::new();
+  };
+  // Several datasets, or one dataset of points.
+  let datasets: Vec<&Expr> = if series.len() > 1
+    && series.len() == items.len()
+    && items.iter().all(is_dataset)
+  {
+    items.iter().collect()
+  } else {
+    vec![unstyle(data)]
+  };
+  let mut out = Vec::new();
+  let mut any = false;
+  for (i, ds) in datasets.iter().enumerate() {
+    let mut colors = Vec::new();
+    if let (Expr::List(points), Some(parsed)) = (unstyle(ds), series.get(i))
+      && points.len() == parsed.len()
+    {
+      for (point, &xy) in points.iter().zip(parsed) {
+        if let Some(rgb) = style_color(point) {
+          colors.push((xy, rgb));
+          any = true;
+        }
+      }
+    }
+    out.push(colors);
+  }
+  if any { out } else { Vec::new() }
+}
+
 fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
   let Expr::List(items) = data else {
     return;
@@ -1875,20 +2475,15 @@ fn apply_legended_datasets(data: &Expr, opts: &mut PlotOptions) {
   }
 }
 
-/// How a dataset's own label is drawn: `Labeled[data, l]` right after the
-/// dataset's last point, `Callout[data, l]` there too but off a leader
-/// line; `None` for a callout with an explicit position.
-fn dataset_label_kind(e: &Expr) -> Option<bool> {
+/// The position and kind of a dataset's own label: `Labeled[data, l,
+/// pos]` / `Callout[data, l, pos]` (`pos` absent at the automatic place,
+/// the dataset's end) and whether it is a callout.
+fn dataset_label_kind(e: &Expr) -> Option<(Option<Expr>, bool)> {
   match e {
     Expr::FunctionCall { name, args }
-      if name == "Labeled" && args.len() == 2 =>
+      if (name == "Labeled" || name == "Callout") && args.len() >= 2 =>
     {
-      Some(false)
-    }
-    Expr::FunctionCall { name, args }
-      if name == "Callout" && args.len() >= 2 =>
-    {
-      crate::functions::plot::callout_at_series_end(args).then_some(true)
+      Some((args.get(2).cloned(), name == "Callout"))
     }
     _ => None,
   }
@@ -1896,60 +2491,217 @@ fn dataset_label_kind(e: &Expr) -> Option<bool> {
 
 /// Attach the dataset labels of `Labeled` / `Callout` wrappers in the
 /// (evaluated) data `data`: those at their automatic place go to the
-/// series' end (`plot_labels`), the others are drawn as callouts. Explicit
-/// `PlotLabels` or callout labels win.
+/// series' end (`plot_labels`), a callout's off a leader line, the others
+/// where their position puts them. Explicit `PlotLabels` win.
 fn apply_dataset_labels(
   opts: &mut PlotOptions,
   labels: &[Option<String>],
   data: &Expr,
 ) {
   if !labels.iter().any(std::option::Option::is_some)
-    || !opts.callout_labels.is_empty()
+    || !opts.plot_labels.is_empty()
+    || !opts.curve_label_specs.is_empty()
   {
     return;
   }
   let data = evaluate_expr_to_expr(data).unwrap_or_else(|_| data.clone());
-  let kinds: Vec<Option<bool>> = match &data {
-    Expr::List(items) => items.iter().map(dataset_label_kind).collect(),
+  let kinds: Vec<Option<(Option<Expr>, bool)>> = match &data {
+    Expr::List(items) if items.len() == labels.len() => {
+      items.iter().map(dataset_label_kind).collect()
+    }
     whole => vec![dataset_label_kind(whole); labels.len()],
   };
-  let at_end = |i: usize| kinds.get(i).copied().flatten();
-  if opts.plot_labels.is_empty() && labels.len() == kinds.len() {
-    opts.plot_labels = labels
-      .iter()
-      .enumerate()
-      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_some()))
-      .collect();
-    opts.plot_label_leaders =
-      (0..labels.len()).map(|i| at_end(i) == Some(true)).collect();
-    opts.callout_labels = labels
-      .iter()
-      .enumerate()
-      .map(|(i, l)| l.clone().filter(|_| at_end(i).is_none()))
-      .collect();
-  } else {
-    opts.callout_labels = labels.to_vec();
+  let entries: Vec<_> = labels
+    .iter()
+    .zip(kinds)
+    .map(|(label, kind)| {
+      let (pos, callout) = kind.unwrap_or((None, false));
+      label.clone().map(|l| (l, pos, callout))
+    })
+    .collect();
+  let end_leaders = opts.plot_labels_automatic.then_some(true);
+  crate::functions::plot::apply_curve_label_entries(
+    opts,
+    &entries,
+    end_leaders,
+  );
+}
+
+/// The point labels drawn: none with `LabelingFunction -> None`, those a
+/// `LabelingFunction -> f` makes (as callouts), and none wider than a
+/// `LabelingSize`.
+fn resolve_point_labels(
+  parsed: &mut ParsedOptions,
+  point_labels: Vec<Vec<Option<String>>>,
+  all_series: &[Vec<(f64, f64)>],
+) -> Vec<Vec<Option<String>>> {
+  if parsed.hide_point_labels {
+    return Vec::new();
   }
+  let mut labels = match &parsed.labeling_function {
+    Some(f) => {
+      parsed.opts.point_label_callouts = true;
+      all_series
+        .iter()
+        .enumerate()
+        .map(|(i, series)| {
+          series
+            .iter()
+            .enumerate()
+            .map(|(j, &(x, y))| {
+              let call = Expr::CurriedCall {
+                func: Box::new(f.clone()),
+                args: vec![
+                  Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+                  Expr::List(
+                    vec![
+                      Expr::Integer(i as i128 + 1),
+                      Expr::Integer(j as i128 + 1),
+                    ]
+                    .into(),
+                  ),
+                ],
+              };
+              match &evaluate_expr_to_expr(&call).ok()? {
+                Expr::Identifier(n) if n == "None" || n == "Null" => None,
+                label => Some(label_string(label)),
+              }
+            })
+            .collect()
+        })
+        .collect()
+    }
+    None => point_labels,
+  };
+  if let Some(max_w) = parsed.labeling_size {
+    for label in labels.iter_mut().flatten() {
+      if label.as_ref().is_some_and(|l| {
+        crate::functions::plot_padding::text_width(l, 10.0) > max_w
+      }) {
+        *label = None;
+      }
+    }
+  }
+  labels
 }
 
 /// ListPlot[{y1, y2, ...}] or ListPlot[{{x1,y1}, ...}]
+/// Put the data and the coordinate options of a list plot into the scaled
+/// coordinates of its `ScalingFunctions`; points outside a scaling's domain
+/// are dropped.
+fn scale_list_data(
+  scaling: &(Option<Scaling>, Option<Scaling>),
+  draw_series: &mut [Vec<(f64, f64)>],
+  range_series: &mut [Vec<(f64, f64)>],
+  parsed: &mut ParsedOptions,
+) {
+  if scaling.0.is_none() && scaling.1.is_none() {
+    return;
+  }
+  let map = |series: &mut [Vec<(f64, f64)>]| {
+    for s in series.iter_mut() {
+      *s = s
+        .iter()
+        .filter_map(|&(x, y)| {
+          let x = match &scaling.0 {
+            Some(sx) => sx.forward(x)?,
+            None => x,
+          };
+          let y = match &scaling.1 {
+            Some(sy) => sy.forward(y)?,
+            None => y,
+          };
+          Some((x, y))
+        })
+        .collect();
+    }
+  };
+  map(draw_series);
+  map(range_series);
+  parsed.plot_range_x = crate::functions::plot::scale_range(
+    parsed.plot_range_x,
+    scaling.0.as_ref(),
+  );
+  parsed.plot_range_y = crate::functions::plot::scale_range(
+    parsed.plot_range_y,
+    scaling.1.as_ref(),
+  );
+  crate::functions::plot::scale_axis_options(&mut parsed.opts, scaling);
+}
+
+/// Finish the scaled axes of a list plot (see
+/// [`crate::functions::plot::finish_scaled_axis`]). The other axis crosses a
+/// log axis where its automatic range starts, inside the padding.
+fn finish_list_scaling(
+  scaling: &(Option<Scaling>, Option<Scaling>),
+  opts: &mut PlotOptions,
+  series: &mut [Vec<(f64, f64)>],
+  (x_range, y_range): ((f64, f64), (f64, f64)),
+) -> ((f64, f64), (f64, f64)) {
+  if scaling.0.is_none() && scaling.1.is_none() {
+    return (x_range, y_range);
+  }
+  let low = opts.axes_origin_low;
+  let x = crate::functions::plot::finish_scaled_axis(
+    0,
+    scaling.0.as_ref(),
+    opts,
+    series,
+    x_range,
+    true,
+  );
+  let y = crate::functions::plot::finish_scaled_axis(
+    1,
+    scaling.1.as_ref(),
+    opts,
+    series,
+    y_range,
+    true,
+  );
+  if opts.log_x {
+    opts.axes_origin_low.0 = low.0.map(f64::exp);
+  }
+  if opts.log_y {
+    opts.axes_origin_low.1 = low.1.map(f64::exp);
+  }
+  if opts.log_x || opts.log_y {
+    opts.grid_interior = None;
+  }
+  (x, y)
+}
+
 pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut parsed = parse_plot_options(args);
-  let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  let mut data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  if let Some(unit) = option_value(args, "TargetUnits") {
+    data = convert_to_target_units(&data, unit);
+  }
+  if matches!(option_value(args, "AxesLabel"), Some(Expr::Identifier(a)) if a == "Automatic")
+  {
+    parsed.opts.axes_label = automatic_unit_axes_label(&data);
+  }
+  if has_date_stamps(&data) {
+    parsed.opts.date_axis = true;
+  }
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
   parsed.opts.point_label_callouts = labels_are_callouts(&data);
-  let (err_series, labels, point_labels) =
+  let (mut err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, true)?;
+  apply_stacked_layout(args, &mut err_series);
+  apply_multiaxis(args, &mut err_series, &mut parsed.opts);
   let all_series = strip_errors(&err_series);
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.point_labels = if parsed.hide_point_labels {
-    Vec::new()
-  } else {
-    point_labels
-  };
+  parsed.opts.point_labels =
+    resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.opts.interval_markers == IntervalMarkers::Fences
+    && interval_only_data(&data)
+  {
+    parsed.opts.interval_markers = IntervalMarkers::Bars;
+  }
+  parsed.opts.point_colors = styled_point_colors(&data, &all_series);
 
   // InterpolationOrder reshapes only a joined series into a curve (0 =
   // steps, >= 2 = smooth spline); a series marked `Joined -> False` keeps
@@ -1993,9 +2745,14 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  parsed.opts.default_point_size = Some(list_plot_point_size(&draw_series));
+  // The data decide the dot size, not an interpolated curve through them.
+  parsed.opts.default_point_size =
+    Some(list_plot_point_size(if curve_transformed {
+      &parsed.opts.data_points
+    } else {
+      &draw_series
+    }));
   if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
-    include_axes_origin(&mut range_series, parsed.opts.axes_origin);
     return render_panel_layout(
       &draw_series,
       &range_series,
@@ -2005,14 +2762,25 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
-  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
+  let scaling = parsed.scaling.clone().unwrap_or((None, None));
+  let mut draw_series = draw_series;
+  scale_list_data(&scaling, &mut draw_series, &mut range_series, &mut parsed);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,
     parsed.explicit_range(),
+    &scaling,
     &mut parsed.opts,
   );
+  let (x_range, y_range) =
+    widen_for_point_labels(&parsed.opts, &draw_series, (x_range, y_range));
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let (x_range, y_range) = finish_list_scaling(
+    &scaling,
+    &mut parsed.opts,
+    &mut draw_series,
+    (x_range, y_range),
+  );
   let joined = parsed.joined;
   let mut parsed = parsed;
   if draw_series.len() == 1 {
@@ -2058,6 +2826,8 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = opts.grid_interior;
+  source.log_x = opts.log_x;
+  source.log_y = opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &opts.plot_markers,
@@ -2164,19 +2934,26 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Association keys don't label the points here: wolframscript draws key
   // labels for ListPlot but not for ListLinePlot.
   let data = evaluate_expr_to_expr(&data_arg(args, &parsed))?;
+  if has_date_stamps(&data) {
+    parsed.opts.date_axis = true;
+  }
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
-  let (err_series, labels, point_labels) =
+  let (mut err_series, labels, point_labels) =
     parse_list_data_err_labeled(&data, false)?;
+  apply_stacked_layout(args, &mut err_series);
   let all_series = strip_errors(&err_series);
+  parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
   let implicit_x = all_implicit_x(&err_series);
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.point_labels = if parsed.hide_point_labels {
-    Vec::new()
-  } else {
-    point_labels
-  };
+  parsed.opts.point_labels =
+    resolve_point_labels(&mut parsed, point_labels, &all_series);
   parsed.opts.error_bars = collect_error_bars(&err_series);
+  if parsed.opts.interval_markers == IntervalMarkers::Fences
+    && interval_only_data(&data)
+  {
+    parsed.opts.interval_markers = IntervalMarkers::Bars;
+  }
 
   // ListLinePlot always joins, so InterpolationOrder always reshapes the
   // curve (0 = steps, >= 2 = smooth spline).
@@ -2205,14 +2982,25 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       implicit_x,
     );
   }
-  include_axes_origin(&mut range_series, parsed.opts.axes_origin);
+  let scaling = parsed.scaling.clone().unwrap_or((None, None));
+  let mut draw_series = draw_series;
+  scale_list_data(&scaling, &mut draw_series, &mut range_series, &mut parsed);
   let (x_range, y_range) = list_plot_ranges(
     &range_series,
     implicit_x,
     parsed.explicit_range(),
+    &scaling,
     &mut parsed.opts,
   );
+  let (x_range, y_range) =
+    widen_for_point_labels(&parsed.opts, &draw_series, (x_range, y_range));
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
+  let (x_range, y_range) = finish_list_scaling(
+    &scaling,
+    &mut parsed.opts,
+    &mut draw_series,
+    (x_range, y_range),
+  );
 
   // A single curve takes a `PlotStyle` list as one combined style, as
   // `ListPlot` and `Plot` do: `{Thick, Orange}` is one thick orange line.
@@ -2221,29 +3009,6 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::plot::collapse_style_for_single_series(
         &parsed.opts.plot_style,
       );
-  }
-
-  // `MeshShading` colours the stretches of the curve between mesh values.
-  let mut draw_series = draw_series;
-  if let (Some(f), false, false) = (
-    &parsed.mesh_function,
-    parsed.mesh_levels.is_empty(),
-    parsed.mesh_shading.is_empty(),
-  ) {
-    let mut pieces = Vec::new();
-    let mut styles = Vec::new();
-    for series in &draw_series {
-      for (region, piece) in
-        split_at_mesh_levels(series, f, &parsed.mesh_levels)
-      {
-        styles.push(
-          parsed.mesh_shading[region % parsed.mesh_shading.len()].clone(),
-        );
-        pieces.push(piece);
-      }
-    }
-    draw_series = pieces;
-    parsed.opts.plot_style = styles;
   }
 
   let svg =
@@ -2262,6 +3027,8 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = parsed.opts.grid_interior;
+  source.log_x = parsed.opts.log_x;
+  source.log_y = parsed.opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
     &parsed.opts.plot_markers,
@@ -2306,6 +3073,7 @@ pub fn stacked_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &cumulative,
     false,
     parsed.explicit_range(),
+    &(None, None),
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -2340,6 +3108,7 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &step_series,
     false,
     parsed.explicit_range(),
+    &(None, None),
     &mut parsed.opts,
   );
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
@@ -2348,175 +3117,60 @@ pub fn list_step_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result(svg))
 }
 
-/// Wrap a log-scaled list plot's SVG together with its series, so `Show`
-/// can merge it with other graphics (an `Epilog`, a second plot) and keep
-/// the logarithmic axes instead of treating it as an opaque rendering.
-fn log_plot_result(
-  svg: String,
-  series: &[Vec<(f64, f64)>],
-  ranges: ((f64, f64), (f64, f64)),
-  parsed: &ParsedOptions,
-  args: &[Expr],
-) -> Expr {
-  let opts = &parsed.opts;
-  let mut source = build_plot_source(
-    series,
-    &opts.plot_style,
-    ranges.0,
-    ranges.1,
-    (opts.svg_width, opts.svg_height),
-    &[!parsed.joined],
-    opts.filling,
-    opts.filling_style,
-    crate::functions::plot::explicit_options(args),
-  );
-  source.plot_range = opts.grid_interior;
-  source.log_x = opts.log_x;
-  source.log_y = opts.log_y;
-  crate::functions::plot::apply_markers_to_source(
-    &mut source,
-    &opts.plot_markers,
-  );
-  crate::graphics_result_with_source(svg, source)
-}
-
-/// Draw the series of a log list plot as points unless `Joined -> True`
-/// asked for lines — `ListLogPlot` and its siblings scatter by default, as
-/// `ListPlot` does, with the same automatic dot size.
-fn points_unless_joined(
-  parsed: &mut ParsedOptions,
-  series: &[Vec<(f64, f64)>],
-) {
-  if !parsed.joined && parsed.opts.joined_per_series.is_none() {
-    parsed.opts.joined_per_series = Some(vec![false]);
-  }
-  parsed.opts.default_point_size = Some(list_plot_point_size(series));
-}
-
-/// ListLogPlot: y-axis is log10 scale
+/// `ListLogPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_y = true;
-
-  // Filter non-positive y values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| series.iter().filter(|&&(_, y)| y > 0.0).copied().collect())
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, false, true);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::Identifier("None".to_string()),
+      Expr::String("Log".to_string()),
+    ),
+  )
 }
 
-/// ListLogLogPlot: both axes log10 scale
+/// `ListLogLogPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_x = true;
-  parsed.opts.log_y = true;
-
-  // Filter non-positive values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| {
-      series
-        .iter()
-        .filter(|&&(x, y)| x > 0.0 && y > 0.0)
-        .copied()
-        .collect()
-    })
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, true);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::String("Log".to_string()),
+      Expr::String("Log".to_string()),
+    ),
+  )
 }
 
-/// ListLogLinearPlot: x-axis is log10 scale
+/// `ListLogLinearPlot`: `ListPlot` with `ScalingFunctions -> "Log"` on
+/// its log axes, as in the Wolfram Language.
 pub fn list_log_linear_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let mut parsed = parse_plot_options(args);
-  let data = data_arg(args, &parsed);
-  let (all_series, labels) = parse_list_data_labeled(&data)?;
-  apply_dataset_labels(&mut parsed.opts, &labels, &data);
-  parsed.opts.log_x = true;
-
-  // Filter non-positive x values; data stays in original space (LogCoord handles scaling)
-  let filtered: Vec<Vec<(f64, f64)>> = all_series
-    .iter()
-    .map(|series| series.iter().filter(|&&(x, _)| x > 0.0).copied().collect())
-    .collect();
-
-  points_unless_joined(&mut parsed, &filtered);
-  if parsed.opts.plot_layout.is_some() && filtered.len() > 1 {
-    return render_panel_layout(
-      &filtered,
-      &filtered,
-      &labels,
-      &parsed,
-      !parsed.joined,
-      false,
-    );
-  }
-  let (x_range, y_range) = compute_ranges_scaled(&filtered, true, false);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-  let svg =
-    generate_svg_with_filling(&filtered, x_range, y_range, &parsed.opts)?;
-  Ok(log_plot_result(
-    svg,
-    &filtered,
-    (x_range, y_range),
-    &parsed,
+  log_scaled_list_plot(
     args,
-  ))
+    (
+      Expr::String("Log".to_string()),
+      Expr::Identifier("None".to_string()),
+    ),
+  )
+}
+
+/// `ListPlot` with the `ScalingFunctions -> {x, y}` of a log list plot,
+/// ahead of any `ScalingFunctions` the call gives.
+fn log_scaled_list_plot(
+  args: &[Expr],
+  (x, y): (Expr, Expr),
+) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return list_plot_ast(args);
+  }
+  let mut scaled = vec![args[0].clone()];
+  scaled.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ScalingFunctions".to_string())),
+    replacement: Box::new(Expr::List(vec![x, y].into())),
+  });
+  scaled.extend_from_slice(&args[1..]);
+  list_plot_ast(&scaled)
 }
 
 /// ListPolarPlot[{r1, r2, ...}]: plot data in polar coordinates
@@ -3015,4 +3669,84 @@ pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data = expr_to_string(&data),
   );
   evaluate_expr_to_expr(&crate::syntax::string_to_expr(&code)?)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  fn values(ys: &[f64]) -> Vec<(f64, f64)> {
+    ys.iter()
+      .enumerate()
+      .map(|(i, &y)| ((i + 1) as f64, y))
+      .collect()
+  }
+
+  fn close(a: (f64, f64), b: (f64, f64)) -> bool {
+    (a.0 - b.0).abs() < 1e-12 && (a.1 - b.1).abs() < 1e-12
+  }
+
+  // The joined InterpolationOrder curve is WL's uniform parametric
+  // B-spline (values from wolframscript's ListPlot Line points).
+  #[test]
+  fn spline_curve_matches_wolfram_points() {
+    let data = values(&[1.0, 4.0, 2.0, 3.0, 10.0, 8.0, 2.0]);
+    let cubic = spline_curve(&data, 3);
+    assert_eq!(cubic.len(), 157);
+    assert!(close(cubic[1], (1.0252993839230191, 1.1112786798837362)));
+    let top = cubic.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+    assert!((top - 10.509765002305535).abs() < 1e-12, "{top}");
+    let quadratic = spline_curve(&data, 2);
+    assert!(close(quadratic[1], (1.023396301156198, 1.09145323398689)));
+    let top = quadratic.iter().map(|p| p.1).fold(f64::MIN, f64::max);
+    assert!((top - 10.442350579300358).abs() < 1e-12, "{top}");
+    let quintic = spline_curve(&data, 5);
+    assert!(close(quintic[1], (1.0281310425380483, 1.1313604537547608)));
+    assert!(close(quintic[89], (4.433552453390919, 6.128563635638771)));
+    // The curve passes through every data point.
+    for (i, p) in data.iter().enumerate() {
+      assert!(close(cubic[26 * i], *p));
+    }
+  }
+
+  // Each index interval is sampled 2 ⌊1200 / (n - 1)⌋ times, in 6..=26.
+  #[test]
+  fn spline_curve_sample_count() {
+    for (n, per) in [(5, 26), (93, 26), (95, 24), (150, 16), (500, 6)] {
+      let ys: Vec<f64> = (0..n).map(|i| (i as f64 / 3.0).sin()).collect();
+      let data = values(&ys);
+      assert_eq!(spline_curve(&data, 3).len(), (n - 1) * per + 1, "n = {n}");
+    }
+  }
+
+  // WL's Charting`adaptivePointSize: steps by count, then by clustering.
+  #[test]
+  fn point_size_steps_follow_density() {
+    let golden = |n: usize, cube: bool| {
+      vec![
+        (1..=n)
+          .map(|i| {
+            let y = (i as f64 * 0.414214).fract();
+            (
+              (i as f64 * 0.618034).fract(),
+              if cube { y.powi(3) } else { y },
+            )
+          })
+          .collect::<Vec<_>>(),
+      ]
+    };
+    assert_eq!(point_size_steps(&golden(300, false)), 4.0);
+    assert_eq!(point_size_steps(&golden(600, false)), 4.0);
+    assert_eq!(point_size_steps(&golden(600, true)), 3.0);
+    assert_eq!(point_size_steps(&golden(1200, true)), 2.5);
+    assert_eq!(point_size_steps(&golden(3000, true)), 2.0);
+    assert_eq!(point_size_steps(&golden(6000, true)), 1.0);
+    assert_eq!(point_size_steps(&golden(6000, false)), 2.0);
+    assert_eq!(point_size_steps(&golden(20000, false)), 1.0);
+    // Duplicate points count once.
+    let a = golden(300, false).remove(0);
+    assert_eq!(point_size_steps(&[a.clone(), a.clone(), a]), 4.0);
+    // Below 1 the size stays 1/360 of the image width.
+    assert_eq!(list_plot_point_size(&golden(20000, false)), 1.0 / 360.0);
+  }
 }

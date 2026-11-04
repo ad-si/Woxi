@@ -1986,11 +1986,13 @@ mod interpreter_tests {
     .graphics
     .expect("Show should produce a graphics SVG");
     assert!(
-      svg.contains("rgb(188,203,216)"),
+      // LightBlue under the default coloured lights, as wolframscript's
+      // rasterization reads the flat sheets.
+      svg.contains("rgb(231,207,169)"),
       "the two LightBlue surfaces must keep their PlotStyle colour:\n{svg}"
     );
     assert!(
-      svg.contains("rgb(216,216,0)"),
+      svg.contains("rgb(255,220,0)"),
       "the Yellow surface must keep its PlotStyle colour:\n{svg}"
     );
   }
@@ -2455,8 +2457,8 @@ mod interpreter_tests {
     // result). That second writer had its own, unfixed copy of the same
     // U+2146 DifferentialD bug: the raw glyph reached the SVG untouched,
     // where common font fallback renders it as an unrelated glyph (an "L"
-    // shape) instead of "d". It must also come out as a plain, italicized
-    // "d".
+    // shape) instead of "d". It must also come out as a plain "d",
+    // drawn double-struck.
     clear_state();
     let r = interpret_with_stdout(
       "Column[{Graphics[{Circle[{0, 0}, 1]}], \
@@ -2472,9 +2474,9 @@ mod interpreter_tests {
       "Manipulate-style Column SVG must not contain the raw U+2146 glyph:\n{svg}"
     );
     assert!(
-      svg.contains("<tspan font-style=\"italic\">d</tspan>"),
+      svg.contains("<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">d</tspan>"),
       "Manipulate-style Column SVG must render the differential as an \
-       italicized plain \"d\":\n{svg}"
+       double-struck plain \"d\":\n{svg}"
     );
   }
 
@@ -2483,7 +2485,7 @@ mod interpreter_tests {
     // Same bug, other two Letterlike Symbols glyphs TraditionalForm
     // typesets from this renderer: `E^x` as `\[ExponentialE]^x` (ⅇ,
     // U+2147) and `I` as `\[ImaginaryI]` (ⅈ, U+2148). Both must come out
-    // as plain, italicized ASCII letters through the same SVG writer as
+    // as plain ASCII letters, drawn double-struck, through the same SVG writer as
     // the DifferentialD case above.
     clear_state();
     let r = interpret_with_stdout(
@@ -2501,14 +2503,14 @@ mod interpreter_tests {
        glyphs:\n{svg}"
     );
     assert!(
-      svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+      svg.contains("<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">e</tspan>"),
       "Manipulate-style Column SVG must render Exp's base as an \
-       italicized plain \"e\":\n{svg}"
+       double-struck plain \"e\":\n{svg}"
     );
     assert!(
-      svg.contains("<tspan font-style=\"italic\">i</tspan>"),
+      svg.contains("<tspan font-style=\"normal\" font-weight=\"800\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.035em\">i</tspan>"),
       "Manipulate-style Column SVG must render the imaginary unit as an \
-       italicized plain \"i\":\n{svg}"
+       double-struck plain \"i\":\n{svg}"
     );
   }
 
@@ -4908,8 +4910,9 @@ mod interpreter_tests {
          AxesLabel -> {Re[Z], -Im[Z]}], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains(">Re[Z]</text>"), "missing x label: {svg}");
-    assert!(svg.contains(">-Im[Z]</text>"), "missing y label: {svg}");
+    // A graphic's labels are set in TraditionalForm: round brackets.
+    assert!(svg.contains(">Re(Z)</text>"), "missing x label: {svg}");
+    assert!(svg.contains(">-Im(Z)</text>"), "missing y label: {svg}");
   }
 
   #[test]
@@ -6934,6 +6937,7 @@ mod interpreter_tests {
   mod bullet_gauge;
   mod cellular_automaton;
   mod column;
+  mod container_layout;
   mod distribution_chart;
   mod graphics;
   mod image;
@@ -6942,6 +6946,7 @@ mod interpreter_tests {
   mod music;
   mod plot_layout;
   mod row;
+  mod scaling_functions;
   mod styling;
   mod volume_plots;
 }

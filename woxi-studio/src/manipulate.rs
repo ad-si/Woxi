@@ -129,6 +129,9 @@ pub enum ControlState {
     /// The variable follows the dragged points through a callback instead of
     /// holding them (see `woxi::functions::graphics::LocatorDerived`).
     derived: Option<woxi::functions::graphics::LocatorDerived>,
+    /// The variable holds one point (or `{}` when none is placed), not a
+    /// list of points.
+    single: bool,
   },
   /// A `ControlType -> Trigger` control: a play/pause pair sweeping its
   /// variable from `min` towards `max` in `step` increments while the
@@ -248,11 +251,13 @@ impl ControlState {
         name,
         points,
         derived,
+        single,
         ..
       } => woxi::functions::graphics::locator_binding_code(
         name,
         points,
         derived.as_ref(),
+        *single,
       ),
       ControlState::Color { current, .. } => current.clone(),
       // Annotation and button rows bind no variable; never substituted.
@@ -359,12 +364,21 @@ impl ControlState {
       ControlState::Locator {
         derived: Some(_), ..
       } => {}
-      ControlState::Locator { points, .. } => {
-        if let Expr::List(items) = &expr
+      ControlState::Locator { points, single, .. } => {
+        if let Some(p) = as_pair(&expr) {
+          // A lone point `{x, y}` written to a single-point Locator.
+          if *single {
+            *points = vec![p];
+          }
+        } else if let Expr::List(items) = &expr
           && let Some(new_points) =
             items.iter().map(as_pair).collect::<Option<Vec<_>>>()
         {
-          *points = new_points;
+          *points = if *single {
+            new_points.into_iter().take(1).collect()
+          } else {
+            new_points
+          };
         }
       }
       ControlState::Color { current, .. } => {
@@ -802,6 +816,7 @@ impl ManipulateState {
       // local sized by one) stays code, so it follows saved control
       // values applied later.
       let seeded = woxi::with_scoped_globals(&bindings, || {
+        let init = load_leading_packages(&init);
         let before = woxi::functions::graphics::read_manipulate_state(&names);
         let _ = woxi::interpret_with_stdout(&init);
         let after = woxi::functions::graphics::read_manipulate_state(&names);
@@ -2001,6 +2016,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         auto_create,
         label,
         derived,
+        single,
       } => ControlState::Locator {
         name: name.clone(),
         label: label.clone(),
@@ -2011,6 +2027,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         points: points.clone(),
         auto_create: *auto_create,
         derived: derived.clone(),
+        single: *single,
       },
       ManipulateControl::Trigger {
         name,
@@ -2066,6 +2083,78 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
     .collect()
 }
 
+/// Load the packages an `Initialization` reads in its leading
+/// `Get["Pkg`"]` / `Needs["Pkg`"]` statements (optionally under `Quiet`) and
+/// return the code with the package's exports spelled as bare names.
+///
+/// A Demonstration is authored in a kernel that already has the package
+/// loaded, so its saved code uses the bare export (`ConvexHull`). Woxi
+/// reads the whole Manipulate before the `Get` runs, which leaves such a
+/// name as an unrelated `Global`` symbol; rewriting `Global`Name` to `Name`
+/// once the package is loaded makes it the package's function again.
+fn load_leading_packages(init: &str) -> String {
+  let mut rewritten = init.to_string();
+  let mut rest = init.trim_start();
+  loop {
+    // `Get["Pkg`"]` or `Quiet[Get["Pkg`"]]`, then the `;` that ends it.
+    let (quiet, body) = match rest.strip_prefix("Quiet[") {
+      Some(b) => (true, b),
+      None => (false, rest),
+    };
+    let Some((ctx, after)) = ["Get[\"", "Needs[\""].iter().find_map(|head| {
+      let tail = body.strip_prefix(head)?;
+      let end = tail.find('"')?;
+      let ctx = &tail[..end];
+      let after = tail[end..].strip_prefix("\"]")?;
+      let after = if quiet {
+        after.strip_prefix(']')?
+      } else {
+        after
+      };
+      (ctx.ends_with('`')).then_some((ctx, after))
+    }) else {
+      break;
+    };
+    rest = after.trim_start();
+    rest = rest.strip_prefix(';').unwrap_or(rest).trim_start();
+    let _ = woxi::interpret(&format!("Quiet[Get[\"{ctx}\"]]"));
+    let Ok(names) = woxi::interpret(&format!("Names[\"{ctx}*\"]")) else {
+      continue;
+    };
+    for name in names
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(',')
+      .map(str::trim)
+      .filter(|n| !n.is_empty())
+    {
+      rewritten = unqualify_global_symbol(&rewritten, name);
+    }
+  }
+  rewritten
+}
+
+/// Replace every whole-symbol `` Global`name `` in `code` with `name`.
+fn unqualify_global_symbol(code: &str, name: &str) -> String {
+  let needle = format!("Global`{name}");
+  let is_name_char = |c: char| c.is_alphanumeric() || c == '$' || c == '`';
+  let mut out = String::with_capacity(code.len());
+  let mut rest = code;
+  while let Some(at) = rest.find(&needle) {
+    let before_ok = !rest[..at].chars().next_back().is_some_and(is_name_char);
+    let after = &rest[at + needle.len()..];
+    let after_ok = !after.chars().next().is_some_and(is_name_char);
+    if before_ok && after_ok {
+      out.push_str(&rest[..at]);
+      out.push_str(name);
+    } else {
+      out.push_str(&rest[..at + needle.len()]);
+    }
+    rest = after;
+  }
+  out.push_str(rest);
+  out
+}
+
 /// Format a f64 as Wolfram InputForm. Integers are rendered without a
 /// decimal point so that e.g. `n = 10` substitutes as an Integer.
 fn format_f64(v: f64) -> String {
@@ -2078,6 +2167,23 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+  /// An Initialization that loads `ComputationalGeometry`` and then uses the
+  /// bare `ConvexHull` in a helper (the whole code is one expression) must
+  /// reach the package's function, not an unrelated `Global`` symbol.
+  #[test]
+  fn initialization_package_symbols_resolve_after_get() {
+    let code = r#"Manipulate[
+      hull[pts],
+      {{n, 1}, 1, 3, 1},
+      Initialization :> (Get["ComputationalGeometry`"];
+        pts = {{0, 0}, {2, 0}, {2, 2}, {0, 2}, {1, 1}};
+        hull[p_] := Length[ConvexHull[p]])]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("4"), "{:?}", state.error);
+  }
 
   /// A puzzle generator initialised with `Needs["Combinatorica`"]` shuffles
   /// rows with the bare `RandomPermutation[Range[d]]`; the package version
@@ -2107,6 +2213,46 @@ mod tests {
     let render = state.check_render().expect("render");
     assert!(render.warnings.is_empty(), "{:?}", render.warnings);
   }
+  /// A shortest-path style Manipulate that clamps its own step variable
+  /// inside the body and shows either a weighted digraph or a matrix.
+  #[test]
+  fn weighted_digraph_or_matrix_with_step_clamping() {
+    let code = r#"Manipulate[
+      If[step > Length[tot[[g]]], step = Length[tot[[g]]]];
+      Pane[
+        If[show == 0,
+          If[tot[[g, step, 2]] == Infinity && tot[[g, step, 3]] == Infinity,
+            WeightedAdjacencyGraph[First[tot[[g, step]]],
+              VertexLabels -> "Name", EdgeLabels -> "EdgeWeight",
+              EdgeLabelStyle -> Directive[Gray, 15]],
+            WeightedAdjacencyGraph[First[tot[[g, step]]],
+              VertexLabels -> "Name", EdgeLabels -> "EdgeWeight",
+              EdgeLabelStyle -> {DirectedEdge[tot[[g, step, 2]], tot[[g, step, 3]]] -> Directive[Red, 15]},
+              EdgeLabelStyle -> Directive[Gray, 15]]],
+          Style[MatrixForm[First[tot[[g, step]]]], 16]],
+        {500, 300}, Alignment -> Center],
+      {{g, 1, "graph number"}, Range[Length[gl]], PopupMenu},
+      {{show, 0, "show matrix?"}, {0, 1}, Checkbox},
+      Delimiter,
+      {{step, 1, "update number"}, 1, Length[tot[[g]]], 1},
+      Initialization :> {
+        gl = {{{Infinity, 1, Infinity}, {Infinity, Infinity, 3}, {2, Infinity, Infinity}}},
+        mk[n_] := Module[{d = gl[[n]], pre},
+          pre = {{d, Infinity, Infinity}};
+          Do[If[d[[i, j]] > d[[i, k]] + d[[k, j]],
+            d[[i, j]] = d[[i, k]] + d[[k, j]];
+            AppendTo[pre, {d, i, j}]],
+            {k, Length[d]}, {i, Length[d]}, {j, Length[d]}];
+          pre],
+        tot = Table[mk[n], {n, Length[gl]}]}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let render = state.check_render().expect("render");
+    assert!(render.warnings.is_empty(), "{:?}", render.warnings);
+    assert!(state.current_svg().is_some());
+  }
+
   /// A variable driven by a custom control (a `With[…, Row[{Button[…]}]]`,
   /// which has no widget of its own) is still bound when the `Dynamic[…]`
   /// the body returns is shown, after the body itself has finished
@@ -5663,5 +5809,84 @@ mod mapped_layout_tests {
     let dump = format!("{node:?}");
     assert!(dump.contains("high") && dump.contains("150.00"), "{dump}");
     assert!(!dump.contains("Switch"), "{dump}");
+  }
+
+  /// A drag-a-coin game keeps its piece in a hidden `Locator` that starts
+  /// as `{}` (nothing placed yet) and whose bounds are `Dynamic[…]` boxes
+  /// following another variable. The piece is only set by a button, then
+  /// dragged — so the Locator must still become a 2D control.
+  #[test]
+  fn hidden_locator_with_empty_start_and_dynamic_bounds_is_a_control() {
+    let code = r#"Manipulate[
+      Graphics[{Disk[{0, 0}, 1], If[pts != {}, Disk[pts, 2], {}]},
+        PlotRange -> 10],
+      {{go, 0, ""}, {1 -> "place"}, ControlType -> SetterBar},
+      {{pts, {}}, Dynamic[{-bs, -bs}], Dynamic[{bs, bs}],
+        ControlType -> Locator, Appearance -> None},
+      {{bs, 5}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.controls.iter().any(
+        |c| matches!(c, ControlState::Locator { name, .. } if name == "pts")
+      ),
+      "{:?}",
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>()
+    );
+    // The bounds follow the hidden `bs` variable.
+    assert!(matches!(
+      &state.controls[state.controls.iter().position(|c| c.name() == "pts").unwrap()],
+      ControlState::Locator { x_min, x_max, .. } if *x_min == -5.0 && *x_max == 5.0
+    ));
+    // Empty until a point is placed; then it binds a single `{x, y}`.
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "pts")
+      .unwrap();
+    assert_eq!(state.controls[idx].current_code(), "{}");
+    state.controls[idx].set_current_from_code("{-5, -5}");
+    assert_eq!(state.controls[idx].current_code(), "{-5., -5.}");
+  }
+}
+
+#[cfg(test)]
+mod bare_tabview_tests {
+  use super::*;
+
+  /// A `TabView` given only its panes (and styling options) keeps its chosen
+  /// tab in the front end's own tab strip. Studio has none, so the second
+  /// tab used to be unreachable; it now gets a visible tab selector.
+  /// Self-authored, construct-equivalent example.
+  #[test]
+  fn selectorless_tabview_gets_a_tab_selector() {
+    let code = r#"Manipulate[
+      TabView[{"curve" -> Plot[k x, {x, 0, 1}],
+               "table" -> Grid[{{k, k^2}}]}, LabelStyle -> {Bold}],
+      {{k, 2, "k"}, 1, 5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "tab")
+      .expect("a tab selector control");
+    match &state.controls[idx] {
+      ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["curve", "table"]);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+    assert!(state.graphics_handle.is_some(), "first tab is the plot");
+    if let ControlState::Discrete { current_index, .. } =
+      &mut state.controls[idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
   }
 }

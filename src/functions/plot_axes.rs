@@ -7,8 +7,8 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  SeriesStyle, axis_tick_step, format_date_tick, format_tick_with_step,
-  generate_date_ticks, minor_tick_divisions, style_stroke,
+  SeriesStyle, axis_tick_step, format_tick_with_step, minor_tick_divisions,
+  style_stroke,
 };
 use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 
@@ -40,7 +40,7 @@ impl AxisScale {
     }
   }
 
-  fn contains(&self, v: f64) -> bool {
+  pub(crate) fn contains(&self, v: f64) -> bool {
     let eps = (self.max - self.min).abs() * 1e-9;
     v >= self.min - eps && v <= self.max + eps
   }
@@ -63,7 +63,12 @@ impl AxisScale {
     if let Some(o) = explicit.filter(|v| v.is_finite()) {
       return o.clamp(lo, hi);
     }
-    let natural = if self.log { 1.0 } else { 0.0 };
+    // A log axis has no natural origin: the other axis runs along its low
+    // end (Wolfram never crosses a log axis at 1 by itself).
+    if self.log {
+      return low.filter(|l| l.is_finite()).unwrap_or(lo).clamp(lo, hi);
+    }
+    let natural = 0.0;
     if natural < lo {
       low.filter(|l| l.is_finite()).unwrap_or(lo).clamp(lo, hi)
     } else {
@@ -86,7 +91,7 @@ pub(crate) fn axes_crossing_px(
 
 /// The tick marks of one axis: the labelled ones with their SVG label
 /// markup, and the unlabelled ones between them.
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct AxisTicks {
   pub majors: Vec<(f64, String)>,
   pub minors: Vec<f64>,
@@ -121,15 +126,10 @@ impl AxisTicks {
     }
     if date {
       return Self {
-        majors: generate_date_ticks(min, max)
+        majors: crate::functions::plot::wl_date_ticks(min, max)
           .into_iter()
-          .filter(|t| scale.contains(*t))
-          .map(|t| {
-            (
-              t,
-              crate::functions::graphics::svg_escape(&format_date_tick(t)),
-            )
-          })
+          .filter(|(t, _)| scale.contains(*t))
+          .map(|(t, label)| (t, crate::functions::graphics::svg_escape(&label)))
           .collect(),
         minors: Vec::new(),
       };
@@ -163,76 +163,9 @@ impl AxisTicks {
     ticks
   }
 
-  /// Log-axis ticks as `Charting`ScaledTicks[{Log, Exp}]` places them:
-  /// over up to ~1.7 decades the labelled majors are `{1, 2, 5} × 10^k`,
-  /// up to ~3.5 decades `{1, 5} × 10^k`, beyond that whole decades (every
-  /// one up to 6 decades, then every 2nd, 3rd, 4th, …). The remaining
-  /// multiples `2…9 × 10^k` are minors. Labels between `0.001` and `1000`
-  /// are written out (`5`, `50`, `0.01`); others as `10^k` / `m×10^k`.
+  /// Log-axis ticks as `Charting`ScaledTicks[{Log, Exp}]` places them.
   fn log(min: f64, max: f64) -> Self {
-    let mut ticks = Self::default();
-    if min <= 0.0 {
-      return ticks;
-    }
-    let (log_min, log_max) = (min.log10(), max.log10());
-    let decades = log_max - log_min;
-    let mantissas: &[i64] = if decades <= 1.7 {
-      &[1, 2, 5]
-    } else if decades <= 3.5 {
-      &[1, 5]
-    } else {
-      &[1]
-    };
-    let step = if decades <= 6.0 {
-      1
-    } else if decades <= 8.0 {
-      2
-    } else if decades <= 10.0 {
-      3
-    } else if decades <= 20.0 {
-      4
-    } else {
-      (decades / 5.0).ceil() as i64
-    };
-    let lo = log_min.floor() as i64;
-    let hi = log_max.ceil() as i64;
-    let contains = |v: f64| v >= min * (1.0 - 1e-9) && v <= max * (1.0 + 1e-9);
-    for exp in lo..=hi {
-      let decade = 10f64.powi(exp as i32);
-      for m in 1..=9i64 {
-        let v = m as f64 * decade;
-        if !contains(v) {
-          continue;
-        }
-        let labelled = if m == 1 {
-          exp.rem_euclid(step) == 0
-        } else {
-          step == 1 && mantissas.contains(&m)
-        };
-        if labelled {
-          ticks.majors.push((v, log_tick_label(m, exp)));
-        } else if m == 1 || step == 1 {
-          ticks.minors.push(v);
-        }
-      }
-    }
-    ticks
-  }
-}
-
-/// The label of the log-axis tick `m × 10^exp`.
-fn log_tick_label(m: i64, exp: i64) -> String {
-  let sup = |e: i64| {
-    format!("10<tspan baseline-shift=\"super\" font-size=\"70%\">{e}</tspan>")
-  };
-  if (0..=3).contains(&exp) {
-    (m * 10i64.pow(exp as u32)).to_string()
-  } else if (-3..0).contains(&exp) {
-    format!("{:.*}", (-exp) as usize, m as f64 * 10f64.powi(exp as i32))
-  } else if m == 1 {
-    sup(exp)
-  } else {
-    format!("{m}&#215;{}", sup(exp))
+    crate::functions::plot_scaling::log_axis_ticks(min, max)
   }
 }
 
@@ -279,6 +212,12 @@ pub(crate) struct OriginAxes<'a> {
   pub axes_style: &'a [Option<SeriesStyle>; 2],
   /// `TicksStyle` of the x and the y axis: the tick marks and tick labels.
   pub ticks_style: &'a [Option<SeriesStyle>; 2],
+  /// Keep the y label that sits on the x axis (a chart's `0`), which a
+  /// plot drops.
+  pub keep_y_label_on_x_axis: bool,
+  /// `LabelStyle`'s colour: it paints the tick labels over both
+  /// `AxesStyle` and `TicksStyle`.
+  pub label_color: Option<&'a str>,
 }
 
 /// The axis lines, tick marks and tick labels of an unframed plot.
@@ -313,7 +252,10 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
     let tick = a.ticks_style[i].as_ref().or(axis);
     let line = style_stroke(axis, a.axis_color, stroke, sf);
     let mark = style_stroke(tick, a.axis_color, stroke, sf);
-    let fill = style_stroke(tick, a.label_fill, stroke, sf).0;
+    let fill = a.label_color.map_or_else(
+      || style_stroke(tick, a.label_fill, stroke, sf).0,
+      str::to_string,
+    );
     (line, mark, fill)
   };
   let line = |svg: &mut String,
@@ -377,7 +319,10 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
         }
         line(&mut svg, &mark, (axis_x, y, axis_x + major_len, y));
         // The label would sit on the horizontal axis.
-        if a.show.0 && (y - axis_y).abs() < font * 0.6 {
+        if a.show.0
+          && !a.keep_y_label_on_x_axis
+          && (y - axis_y).abs() < font * 0.6
+        {
           continue;
         }
         svg.push_str(&format!(
@@ -416,7 +361,7 @@ mod tests {
       max: 100.0,
       log: true,
     };
-    assert_eq!(log.origin(None, None), 1.0);
+    assert_eq!(log.origin(None, None), 0.5);
     // The low end of the unpadded range, not the padded axis — unless the
     // origin is explicit, or 0 is within the padding.
     assert_eq!(lin(1.6, 10.4).origin(None, Some(2.0)), 2.0);
@@ -434,28 +379,33 @@ mod tests {
 
   #[test]
   fn log_ticks_label_decades() {
-    let t = AxisTicks::log(1.0, 1000.0);
-    // WL: 1, 5, 10, 50, 100, 500, 1000 over three decades.
+    // As `Charting`ScaledTicks[{Log, Exp}]` labels them.
     let labels = |t: &AxisTicks| -> Vec<String> {
       t.majors.iter().map(|(_, l)| l.clone()).collect()
     };
+    let t = AxisTicks::log(1.0, 1000.0);
     assert_eq!(labels(&t), ["1", "5", "10", "50", "100", "500", "1000"]);
-    // 1, 2, 5, 10, 20 over 1..30; decimals below 1.
+    assert_eq!(t.minors.len(), 37);
     let t = AxisTicks::log(1.0, 30.0);
     assert_eq!(labels(&t), ["1", "2", "5", "10", "20"]);
+    assert_eq!(t.minors.len(), 24);
+    // Decimals padded to a common width below 1.
     let t = AxisTicks::log(0.001, 1.0);
     assert_eq!(
       labels(&t),
-      ["0.001", "0.005", "0.01", "0.05", "0.1", "0.5", "1"]
+      ["0.001", "0.005", "0.010", "0.050", "0.100", "0.500", "1"]
     );
     // Whole decades past 3.5 decades, superscripted from 10^4 on.
     let t = AxisTicks::log(1.0, 1e5);
-    let pos: Vec<f64> = t.majors.iter().map(|(p, _)| *p).collect();
-    assert_eq!(pos, [1.0, 10.0, 100.0, 1000.0, 1e4, 1e5]);
+    let pos: Vec<f64> =
+      t.majors.iter().map(|(p, _)| p.log10().round()).collect();
+    assert_eq!(pos, [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]);
     assert_eq!(t.majors[3].1, "1000");
     assert!(t.majors[4].1.contains("baseline-shift"));
+    assert_eq!(t.minors.len(), 67);
     // Every 2nd decade over 8 decades.
     let t = AxisTicks::log(1.0, 1e8);
     assert_eq!(t.majors.len(), 5);
+    assert_eq!(t.minors.len(), 8);
   }
 }

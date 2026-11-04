@@ -207,6 +207,282 @@ mod mesh {
     );
     assert_eq!(circles(&svg("LogPlot[Exp[x], {x, 0, 5}, Mesh -> 4]")), 4);
   }
+
+  /// The `(r, fill, opacity)` of every mesh dot, in render units.
+  fn dots(s: &str) -> Vec<(u32, String, String)> {
+    let attr = |c: &str, name: &str| {
+      let key = format!(" {name}=\"");
+      let start = c.find(&key)? + key.len();
+      Some(c[start..start + c[start..].find('"')?].to_string())
+    };
+    s.split("<circle")
+      .skip(1)
+      .map(|c| {
+        (
+          attr(c, "r").unwrap().parse().unwrap(),
+          attr(c, "fill").unwrap(),
+          attr(c, "opacity").unwrap_or_default(),
+        )
+      })
+      .collect()
+  }
+
+  /// The `(stroke, opacity)` of every curve piece.
+  fn strokes(s: &str) -> Vec<(String, String)> {
+    let attr = |c: &str, name: &str| {
+      let key = format!(" {name}=\"");
+      let start = c.find(&key)? + key.len();
+      Some(c[start..start + c[start..].find('"')?].to_string())
+    };
+    s.split("<polyline")
+      .skip(1)
+      .map(|c| {
+        (
+          attr(c, "stroke").unwrap_or_default(),
+          attr(c, "opacity").unwrap_or_default(),
+        )
+      })
+      .collect()
+  }
+
+  fn count_fill(s: &str, fill: &str) -> usize {
+    dots(s).iter().filter(|d| d.1 == fill).count()
+  }
+
+  #[test]
+  fn explicit_mesh_values_mark_the_curve() {
+    // WL samples just inside the domain, so 0 and 2 Pi are not marked.
+    let s = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> {Range[0, 2 Pi, Pi/4]}, \
+       MeshStyle -> PointSize[Medium]]",
+    );
+    let d = dots(&s);
+    assert_eq!(d.len(), 7, "{d:?}");
+    // `PointSize[Medium]` is a 4.5 pt dot (radius 2.25 pt).
+    assert!(d.iter().all(|c| c.0 == 23), "{d:?}");
+    // A list plot's first data point is a mesh point when it takes a value.
+    let l = svg(
+      "ListPlot[Table[{x, Sin[x]}, {x, 0, 2 Pi, 0.1}], \
+       Mesh -> {Range[0, 2 Pi, Pi/4]}, MeshStyle -> PointSize[Medium], \
+       Joined -> True]",
+    );
+    assert_eq!(circles(&l), 8);
+    assert_eq!(
+      circles(&svg(
+        "Plot[Sin[Sqrt[2] x] + Sin[x], {x, 0, 20}, \
+         MeshFunctions -> {Function[{x, y}, y]}, Mesh -> {{0}}, \
+         MeshStyle -> Directive[PointSize[Medium], Red]]"
+      )),
+      8
+    );
+  }
+
+  #[test]
+  fn mesh_values_carry_their_own_styles() {
+    let s = svg(
+      "ListPlot[Table[{x, Sin[x]}, {x, 0, 2 Pi, 2 Pi/20}], Mesh -> \
+       {Table[{x, Directive[Hue[x/(2 Pi)], PointSize[Medium]]}, \
+       {x, 0., 2 Pi, 2 Pi/8}]}, Joined -> True]",
+    );
+    let d = dots(&s);
+    assert_eq!(d.len(), 9, "{d:?}");
+    // Hue[0] and Hue[1] at the two ends, Hue[0.5] in the middle.
+    assert_eq!(count_fill(&s, "#FF0000"), 2, "{d:?}");
+    assert_eq!(count_fill(&s, "#00FFFF"), 1, "{d:?}");
+    assert!(d.iter().all(|c| c.0 == 23), "{d:?}");
+  }
+
+  #[test]
+  fn several_mesh_functions_take_their_own_counts_and_styles() {
+    let s = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 10, MeshStyle -> {Red, Blue}, \
+       MeshFunctions -> {#1 &, #2 &}]",
+    );
+    assert_eq!(count_fill(&s, "#FF0000"), 10);
+    assert_eq!(count_fill(&s, "#0000FF"), 20);
+    let l = svg(
+      "ListPlot[Table[Binomial[15, k], {k, 0, 15}], Mesh -> {5, 10}, \
+       MeshFunctions -> {#1 &, #2 &}, \
+       MeshStyle -> {Directive[PointSize[Medium], Red], Blue}, \
+       Joined -> True]",
+    );
+    let d = dots(&l);
+    assert_eq!(
+      d.iter().filter(|c| c.1 == "#FF0000" && c.0 == 23).count(),
+      5
+    );
+    assert_eq!(count_fill(&l, "#0000FF"), 20);
+  }
+
+  #[test]
+  fn mesh_style_point_size_sets_the_dot_radius() {
+    let s = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 10, \
+       MeshStyle -> Directive[PointSize[Large], Red]]",
+    );
+    let d = dots(&s);
+    assert_eq!(d.len(), 10);
+    assert!(d.iter().all(|c| c.0 == 35 && c.1 == "#FF0000"), "{d:?}");
+    // Without `MeshStyle`, a curve's mesh dots are 3 pt across …
+    assert!(
+      dots(&svg("Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 3]"))
+        .iter()
+        .all(|c| c.0 == 15)
+    );
+    // … and a ListLinePlot's take its automatic PointSize[7/360].
+    assert!(
+      dots(&svg("ListLinePlot[Range[8], Mesh -> All]"))
+        .iter()
+        .all(|c| c.0 == 35)
+    );
+    // `MeshStyle -> Opacity[…]` alone is a style too.
+    let o =
+      svg("Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 2, MeshStyle -> Opacity[0.3]]");
+    assert!(dots(&o).iter().all(|c| c.2 == "0.3"), "{:?}", dots(&o));
+  }
+
+  #[test]
+  fn y_mesh_function_marks_equally_spaced_heights() {
+    // Heights -1/2, 0, 1/2; the zero at x = 0 is the curve's end.
+    assert_eq!(
+      circles(&svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, MeshFunctions -> {Function[{x, y}, y]}, \
+         Mesh -> 3]"
+      )),
+      5
+    );
+    assert_eq!(
+      circles(&svg(
+        "ListPlot[Table[Binomial[15, k], {k, 0, 15}], \
+         MeshFunctions -> {Function[{x, y}, y]}, Mesh -> 9, Joined -> True]"
+      )),
+      18
+    );
+  }
+
+  #[test]
+  fn mesh_values_span_every_curve_together() {
+    // One value at x = 150.5, which only the longer curve reaches.
+    assert_eq!(
+      circles(&svg("ListLinePlot[{Range[8], Range[300]}, Mesh -> 1]")),
+      1
+    );
+  }
+
+  #[test]
+  fn plot_mesh_full_marks_the_initial_grid() {
+    assert_eq!(
+      circles(&svg("Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> Full]")),
+      49
+    );
+  }
+
+  #[test]
+  fn mesh_shading_alternates_the_curve_styles() {
+    let s = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 10, MeshFunctions -> {#1 &}, \
+       MeshShading -> {Red, Blue}]",
+    );
+    let st: Vec<String> = strokes(&s).into_iter().map(|p| p.0).collect();
+    assert_eq!(st.len(), 11, "{st:?}");
+    for (i, c) in st.iter().enumerate() {
+      assert_eq!(c, if i % 2 == 0 { "#FF0000" } else { "#0000FF" });
+    }
+    // The mesh points keep the curve's colour.
+    assert_eq!(count_fill(&s, "#3D99CC"), 10);
+    // `None` leaves gaps; a three-entry list cycles.
+    let gaps =
+      svg("Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 10, MeshShading -> {Red, None}]");
+    let st: Vec<String> = strokes(&gaps).into_iter().map(|p| p.0).collect();
+    assert_eq!(st, vec!["#FF0000"; 6]);
+    let three = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 10, \
+       MeshShading -> {Red, None, Blue}]",
+    );
+    let st: Vec<String> = strokes(&three).into_iter().map(|p| p.0).collect();
+    assert_eq!(
+      st,
+      [
+        "#FF0000", "#0000FF", "#FF0000", "#0000FF", "#FF0000", "#0000FF",
+        "#FF0000"
+      ]
+    );
+  }
+
+  #[test]
+  fn mesh_shading_regions_follow_the_mesh_function_value() {
+    // Regions are numbered by how many mesh values lie below the
+    // function: y < -1/2 is Red, then Blue, Green, and y > 1/2 Orange.
+    let s = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> 3, MeshFunctions -> {#2 &}, \
+       MeshShading -> {Red, Blue, Green, Orange}]",
+    );
+    let st: Vec<String> = strokes(&s).into_iter().map(|p| p.0).collect();
+    assert_eq!(
+      st,
+      [
+        "#00FF00", "#FF8000", "#00FF00", "#0000FF", "#FF0000", "#0000FF"
+      ]
+    );
+    // Two mesh functions need a rank-2 array; a flat list shades nothing.
+    let flat = svg(
+      "Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> {2, 1}, \
+       MeshFunctions -> {#1 &, #2 &}, MeshShading -> {Red, Blue, Green}]",
+    );
+    assert!(strokes(&flat).iter().all(|p| p.0 == "#3D99CC"));
+  }
+
+  #[test]
+  fn mesh_shading_keeps_the_plot_style() {
+    // `Automatic` stretches draw in the PlotStyle colour.
+    let auto = svg(
+      "Plot[Sin[x], {x, 0, 10}, Mesh -> 10, \
+       PlotStyle -> Directive[Thick, Yellow], MeshFunctions -> {#1 &}, \
+       MeshShading -> {Red, Automatic}]",
+    );
+    let st: Vec<String> = strokes(&auto).into_iter().map(|p| p.0).collect();
+    assert_eq!(st.iter().filter(|c| *c == "#FF0000").count(), 6);
+    assert_eq!(st.iter().filter(|c| *c == "#FFFF00").count(), 5);
+    // The PlotStyle opacity stays on the shaded stretches and the dots.
+    let op = svg(
+      "ListLinePlot[Table[Sin[x], {x, 0, 2 Pi, 0.1}], \
+       PlotStyle -> Directive[Opacity[0.5], Thick], Mesh -> 10, \
+       MeshFunctions -> {#1 &}, MeshShading -> {Red, Blue}]",
+    );
+    let st = strokes(&op);
+    assert_eq!(st.len(), 11);
+    assert!(st.iter().all(|p| p.1 == "0.5"), "{st:?}");
+    assert!(dots(&op).iter().all(|d| d.2 == "0.5"));
+    // `ColorFunction` colours the `Automatic` stretches and the dots.
+    let cf = svg(
+      "Plot[Sin[x], {x, 0, 10}, Mesh -> 10, MeshFunctions -> {#1 &}, \
+       MeshShading -> {StandardGray, Automatic}, \
+       ColorFunction -> Function[{x, y}, Hue[x]]]",
+    );
+    let fills: std::collections::HashSet<String> =
+      dots(&cf).into_iter().map(|d| d.1).collect();
+    assert_eq!(fills.len(), 10, "{fills:?}");
+  }
+
+  #[test]
+  fn list_plot_mesh_shading_defaults_to_x() {
+    // Without MeshFunctions, a joined ListPlot shades between x values.
+    let s = svg(
+      "ListPlot[Table[Binomial[15, k], {k, 0, 15}], Mesh -> 10, \
+       MeshShading -> {Red, Blue}, Joined -> True]",
+    );
+    let st: Vec<String> = strokes(&s).into_iter().map(|p| p.0).collect();
+    assert_eq!(st.len(), 11, "{st:?}");
+    assert_eq!(st.iter().filter(|c| *c == "#0000FF").count(), 5);
+    // An unjoined ListPlot has no mesh: just its 16 points.
+    assert_eq!(
+      circles(&svg(
+        "ListPlot[Table[Binomial[15, k], {k, 0, 15}], Mesh -> 10, \
+         MeshShading -> {Red, Blue}]"
+      )),
+      16
+    );
+  }
 }
 
 mod labels_and_legends {
@@ -319,6 +595,7 @@ mod charts {
       framed
         .split("<polyline")
         .skip(1)
+        .map(|p| p.split("/>").next().unwrap_or(p))
         .any(|p| p.contains(RED_HEX) && p.matches(',').count() == 5),
       "{framed}"
     );

@@ -204,6 +204,10 @@ pub struct PlotMarker {
   /// One of the `"OpenMarkers"` shapes (named by `glyph`), drawn as a
   /// white-filled outline in the series colour rather than as text.
   pub open: bool,
+  /// One of the `PlotMarkers -> Automatic` shapes (named by `glyph`: filled
+  /// `●■◆▲▼`, outlined `○□◇△▽`), drawn as a shape rather than as text.
+  /// `size` is then the marker size in points (0 = WL's default).
+  pub automatic: bool,
 }
 
 /// A single data series within a plot.
@@ -245,6 +249,9 @@ pub struct PlotSeriesData {
   /// (empty when the series has none). Travel with the series so `Show`
   /// keeps drawing them.
   pub labels: Vec<Option<String>>,
+  /// The curve's initial sampling grid, the points `Mesh -> Full` marks
+  /// (empty when the plot has none), so a redraw marks the same points.
+  pub mesh_full_points: Vec<(f64, f64)>,
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its

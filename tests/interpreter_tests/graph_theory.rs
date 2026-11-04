@@ -3387,6 +3387,18 @@ mod weighted_adjacency_graph {
   use super::*;
 
   #[test]
+  fn trailing_options_are_kept() {
+    assert_eq!(
+      interpret("WeightedAdjacencyGraph[{{Infinity, 1}, {2, Infinity}}, VertexLabels -> \"Name\", EdgeLabels -> \"EdgeWeight\"]").unwrap(),
+      "Graph[<2>, <2>]"
+    );
+    assert_eq!(
+      interpret("EdgeList[WeightedAdjacencyGraph[{a, b}, {{Infinity, 1}, {2, Infinity}}, VertexLabels -> \"Name\"]]").unwrap(),
+      "{a \u{f3d5} b, b \u{f3d5} a}"
+    );
+  }
+
+  #[test]
   fn symmetric_matrices_give_undirected_graphs() {
     assert_eq!(
       interpret("WeightedAdjacencyGraph[{{Infinity, 2, Infinity}, {2, Infinity, 5}, {Infinity, 5, Infinity}}]").unwrap(),

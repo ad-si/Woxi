@@ -300,6 +300,40 @@ Smaller TraditionalForm typesetter differences, all in representation:
   `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
   renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
+The same goes for `Binomial[n, k]` (WL: `TemplateBox[{n, k}, "Binomial"]`,
+Woxi: `RowBox[{"(", GridBox[{{n}, {k}}], ")"}]`), the hypergeometric family
+(WL: a nest of `TagBox`es with `InterpretTemplate`, Woxi: the
+`SubscriptBox["", p]`/`SubscriptBox["F", q]` row with `;`-separated
+parameters, and `F̃` with a combining tilde for the regularized ones) and `Grad`/`Div`/`Curl`/`Laplacian` with a coordinate list (WL:
+`TemplateBox[{f, {x, y}}, "Grad", SyntaxForm -> Del]`, Woxi: a
+`SubscriptBox["∇", {x, y}]` row). The pictures agree.
+
+### TraditionalForm of a held product cannot see the source's parentheses
+
+WL's parser keeps a parenthesized product as a nested `Times`, and
+TraditionalForm brackets such a group as one factor: `(a b) c` is
+`(a b) c`, `(a e/b) c` is `((a e) c)/b`, and `(-a) b` keeps its `(-a)`.
+Woxi's held tree is the binary `a*b` chain, which is the same with or
+without the parentheses. A quotient written as the left factor of a
+product is therefore read as the parenthesized group (`(8 π G/c⁴) T` sets
+as `(8 π G) T/c⁴`, as in WL), so the unparenthesized `a e/b c`, flat in WL,
+sets as `((a e) c)/b`; and `(a b) c` sets flat, `-a b` and `(-a) b` both as
+`-(a b)`:
+
+```sh
+wolframscript -code 'ToString[ToBoxes[TraditionalForm[HoldForm[a e/b c]]], InputForm]'
+# …FractionBox[RowBox[{"a", " ", "e", " ", "c"}], "b"]…
+woxi eval 'ToString[ToBoxes[TraditionalForm[HoldForm[a e/b c]]], InputForm]'
+# …FractionBox[RowBox[{RowBox[{"(", RowBox[{"a", " ", "e"}], ")"}], " ", "c"}], "b"]…
+```
+
+The fix is a parser that records a parenthesized `Times` as its own node.
+
+Two smaller ones in the same typesetter: an exponent that is a quotient
+stays a stacked `FractionBox` (WL writes it inline, `SuperscriptBox["x",
+RowBox[{"a", "/", "b"}]]`, and `x^(1/3)` as `RadicalBox`), and a large
+operator's body follows its `∑`/`∫` after a `" "` item WL does not write.
+
 ### `ToBoxes` in StandardForm drops a held TagBox
 
 The TraditionalForm builder keeps a held `TagBox`; the StandardForm one does
@@ -4966,17 +5000,13 @@ fewer than 8 intervals of the padded range, as `AbsoluteOptions[g, Ticks]`
 reports them), open markers, the Marketing/Business/Web/Detailed/Scientific/
 Minimal/Grid/Frame themes and callout leaders. Still different:
 
-- WL widens the `PlotRange` so point labels and callouts fit
-  (`ListPlot[data -> labels]` reaches y = 12.7 for data up to 10); Woxi keeps
-  the data range and drops callouts that do not fit inside it. The callout
-  positions themselves come from a greedy search, not WL's optimiser, so
-  the subset shown and the leader directions differ.
-- `Callout[series, label, pos]` with an explicit position (`Above`, an x
-  value, …) is still drawn at 2/3 of the x range in the series color; WL
-  puts `Above` over the series maximum (widening the `PlotRange` for it)
-  and an x value at that x, in black on a gray leader. Series-end labels
-  that crowd each other are spread apart evenly, where WL's leaders bend
-  by their own optimiser.
+- The plot range is widened until every point label fits at its first
+  choice of place; WL's `PlotRangePadding` for labels comes out a little
+  larger (`Scaled[0.0809] + extent/250 pt` fits its numbers), so Woxi's
+  range ends short of WL's next tick. The callout positions come from a
+  greedy search, not WL's optimiser, so the leader directions differ.
+- Series-end labels that crowd each other are spread apart evenly, where
+  WL's leaders bend by their own optimiser.
 - A `Legended` dataset of `ListPlot` draws its legend entry, but the
   result is a `Graphics`, not WL's `Legended[Graphics[…],
   Placed[PointLegend[…], After]]`.
@@ -4992,27 +5022,46 @@ as the fraction `1/x`.
 
 With the same scene both engines place every primitive identically, but:
 
-- **Lighting.** Woxi applies a single diffuse term; Wolfram adds specular
-  highlights and coloured light sources, so faces of one polygon come out at
-  noticeably different brightness (its default face colour reads cream where
-  Woxi's reads blue-grey). Woxi also clamps intensity to 1, so a face can never
-  be brighter than its base colour, while Wolfram's ambient plus three
-  directional lights routinely saturate a channel.
+- **Lighting** follows WL's model (`src/functions/lighting3d.rs`, decoded by
+  rasterising single polygons at known normals with wolframscript and
+  validated on random unseen orientations, to within 1/255): colour = glow +
+  Σ ambient·c + Σ light·(c·max(0, n·l) + s·(n·h)^e), clipped per channel, with
+  faces lit two-sided and `"Directional"` lights at `ImageScaled[p]` pointing
+  along `p` in the camera frame. `Lighting -> Automatic` is WL's ambient plus
+  four coloured lights, plots use the default theme's per-surface material
+  (`System`PlotThemeDump`$ThemeDefaultLighting`: palette colour, its own
+  darkened lights, `Specularity[White, 3 | 6]`), a `ColorFunction` surface is
+  lit by `"Neutral"` lights, and explicit specs (`"Ambient"`, `"Directional"`,
+  `"Point"`, `"Spot"`, the named sets, `None`, and `Lighting` inside a
+  `Directive`) replace them. Remaining differences:
+  - Woxi shades each facet flat with its face normal; WL interpolates vertex
+    normals per pixel, so curved surfaces read smooth there and faceted here,
+    and a highlight smaller than a facet is lost or smeared.
+  - WL's camera is perspective, so its specular half vector varies across a
+    face (local viewer); Woxi's is the same everywhere. A highlight on a large
+    flat face can sit a little off (up to a few levels of 255).
+  - `"Spot"` lights are implemented from the documentation's form (cone half
+    angle, `cos^s` falloff, default target the scene centre) but were not
+    measured against wolframscript; `"Point"` lights are, without
+    attenuation.
+  - `MeshShading` colours are lit like a `PlotStyle` colour; not measured.
+  - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
+    lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
+    WL 15 gradient bar style is not implemented.
 - **Projection.** `ViewAngle` drives a perspective camera in Wolfram; Woxi's
   projection stays effectively orthographic, so a lattice looks uniform instead
   of splaying toward the viewer. A wide angle (≳30°) leaves the silhouette a
   few percent narrow.
 
-Compare geometry — vertex positions, which primitives appear, occlusion order —
-not pixels.
+### `Specularity`
 
-### `Specularity` is accepted and ignored
-
-Measured against wolframscript on a sphere under an explicit `Lighting` spec
-matching Woxi's model, `Specularity[0.7]`, `Specularity[1]` and no
-`Specularity` at all give **pixel-identical** output. The highlight only appears
-under WL's *default* light set. So a specular term added to Woxi's single-light
-model would be invented behaviour; it needs the default lighting first.
+`Specularity[s, e]` adds the Blinn highlight `light · s · (n·h)^e` per
+directional, point or spot light that reaches the face (never for ambient
+light). `Specularity[s]` without an exponent falls off as `(n·h)^1.5` in
+wolframscript (fitted over four angles; every explicit exponent is used as
+given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
+colours — wolframscript draws no highlight even though the plot's style names
+`Specularity[White, 3]`, so Woxi leaves it out there too.
 
 ### `SphericalRegion -> True` shrinks about 17 % more than Wolfram
 
@@ -5198,10 +5247,8 @@ expected pictures come from the reference pages' own examples.
 Found by the round-5 parameter sweep of the plot reference pages: each is
 accepted, but the picture is the same as without it.
 
-- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `MeshShading`,
-  `PlotRangeClipping`, `PlotLayout`; `MeshFunctions` is ignored (the mesh is
-  spaced along the curve), and an explicit `Mesh -> {{x1, x2, …}}` draws no
-  points.
+- `Plot`: `ClippingStyle`, `ExclusionsStyle`, `PlotRangeClipping`,
+  `PlotLayout`.
 - `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
   `LabelingFunction -> f` with a pure function.
 - `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
@@ -5222,6 +5269,34 @@ accepted, but the picture is the same as without it.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
 
+### Curve meshes: remaining differences
+
+`Mesh`, `MeshFunctions`, `MeshStyle` and `MeshShading` on the curves of
+`Plot`, joined `ListPlot` and `ListLinePlot` match wolframscript in the mesh
+point positions, counts, colours and radii, except for:
+
+- `MeshShading` with several mesh functions. Both take a rank-`k` array, and
+  both reject a flat list (`MeshShading::colshd`, which Woxi does not print).
+  Woxi indexes the array by each function's region in turn. Wolfram's
+  indexing does not follow the regions:
+  `Plot[Sin[x], {x, 0, 2 Pi}, Mesh -> {1, 1}, MeshFunctions -> {#1 &, #2 &},
+  MeshShading -> {{Red, Blue}, {Green, Orange}}]` draws Green then Red, and
+  with `Mesh -> {1, 2}` one stretch runs across the x mesh value without
+  being split.
+- `ListPlot[…, Joined -> True, Mesh -> Full]` draws each data point twice in
+  Wolfram (16 points for 8 data), once in Woxi. The picture is the same.
+- A list plot's dot `PointSize` is a fraction of the plot area's width in
+  Wolfram (about 340 pt of a 360 pt image, depending on the tick labels).
+  Woxi uses the image width, so dots, and list-plot mesh points with them,
+  are about 5% larger.
+- `Mesh -> True` (Wolfram: 50 x values) and `Mesh -> {1.5, 3}`, which
+  Wolfram rejects with `Mesh::ilevels`, give no mesh. Woxi does not print
+  the message.
+- In `{Plot[…, Mesh -> Full], Plot[…, Mesh -> All]}`, Wolfram draws each plot
+  half as wide while keeping the absolute dot and line sizes. Woxi draws the
+  plots full size, so the mesh points look much smaller when the picture is
+  scaled down.
+
 ### Side-by-side comparison with wolframscript: remaining differences
 
 Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
@@ -5231,12 +5306,25 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   automatic `PlotRange`, cutting off the second plot's data outside it.
 - The automatic `PlotRange` of `ListPlot` keeps every point; Wolfram drops
   outliers (`ListPlot[{0, 1, 2, 3, 100, 5, 6, 7}]` shows about 0–16).
-- `PlotLegends -> Automatic` labels the legend with the curves'
-  expressions; Wolfram shows numbered `Placeholder` boxes, and
-  `Placeholder[…]` itself has no display form.
-- `Labeled[f, label, pos]` / `Callout[f, label, pos]` inside `Plot` and
-  `ListPlot` ignore `pos`; `PlotLabels -> Placed[{…}, pos]` and per-curve
-  `Callout[label, pos]` draw the labels at the curve ends.
+- `Placeholder[…]` itself has no display form (the numbered placeholder
+  boxes of `PlotLegends -> Automatic | "Placeholder"` are drawn).
+- `Labeled[f, label, pos]` without a side (`3`, `Scaled[s]`) puts the
+  label above or below the curve point, a step along a sloping curve; WL's
+  own search lands a few points away (`Labeled[Sin[x], "sin(x)", 3]`: WL
+  shifts the box 2.5 pt right). WL sizes the `PlotRangePadding` for an
+  `Above` / `Below` label slightly larger than Woxi.
+- Per-point `Labeled[pt, label, pos]` in `ListPlot` data ignores `pos`.
+- `Highlighted[f, Placed["Ball" | "Dropline", x]]`: WL 15 labels the
+  callout `Rotate[x, y, 0]` (x turned by y radians), which Woxi copies; its
+  box width (39 pt for "2"/"0.45", 56 pt for "2.5"/"2500") follows no rule
+  found, Woxi sizes it as both numbers plus 11 pt.
+- `LabelingSize -> w`: WL leaves every label to a tooltip (even ones
+  narrower than `w`, and all of them at `w = 1000`) and truncates some with
+  front-end-only `TruncateStringToWidth`; Woxi drops the labels wider than
+  `w` points.
+- `PlotLayout` panels of labeled datasets (`ListPlot[{Labeled[d1, "a"],
+  Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centres each label at the
+  top of its panel; Woxi draws it as the panel's end label.
 - Graphics `PlotMarkers` (`PlotMarkers -> {{Graphics[…], size}, …}`) and
   `PlotMarkers -> Automatic` shapes draw the default dot.
 - Point-level `Style[point, …]` in `ListPlot` data is not applied (a styled
@@ -5252,12 +5340,64 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   `Div`/`Grad`/`Laplacian` lose their variable subscript, and a product
   with a fraction factor is not merged into one fraction.
 
+### `ScalingFunctions`: remaining differences
+
+Scaled plots are the plot of the scaled function (`Plot[Log[f], …]`) with
+the ticks of `Charting`ScaledTicks`, as in Wolfram, so what still differs
+comes from elsewhere:
+
+- The automatic y range of `Plot` is Woxi's IQR fence, not Wolfram's
+  clipping: `Plot[x^2, {x, 0, 10}, ScalingFunctions -> "Log"]` reaches down
+  to about `0.01` where Wolfram stops at `0.039` (`Plot[Log[x^2], …]` is
+  clipped at `-3.25`), and `Plot[Abs[Gamma[z]], {z, -4, 8}, ScalingFunctions
+  -> "Log"]` misses the `10^5` spike at `z = -4`, which Wolfram's first
+  sample just inside the interval hits (see "`Plot` samples just inside the
+  interval's ends").
+- Wolfram's Plot range reaches out to the scaled 0 (`Plot[Exp[x], {x, 1,
+  10}, ScalingFunctions -> "Log"]` starts at `1`, `Plot[1/x^2, {x, 1, 10}]`
+  at `0`); Woxi's starts at the lowest sample.
+- On a `"Reciprocal"` axis Wolfram's x axis sits at the scaled `0` (the
+  original infinity); Woxi's at the lowest sample.
+- The x tick label at the axes' crossing is dropped even where Wolfram
+  keeps it (`ScalingFunctions -> {None, {-Log[#] &, Exp[-#] &}}` hides the
+  `0`, `{"Reverse", None}` the `0` at the right end).
+- A framed plot's scaled (non-log) axis gets the scaled tick labels but
+  plain automatic tick marks; a framed log axis has no minor tick marks on
+  its left edge.
+- Automatic `GridLines` on a scaled (non-log) axis are spaced linearly in
+  the scaled coordinate rather than at the scaled ticks.
+
 ### Merged graphics use a different tick font
 
 A plot merged with other graphics by `Show` (say a `DensityPlot` under a
 `StreamPlot`) is redrawn by the `Graphics` renderer, whose tick labels are a
 monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
 both alike.
+
+### Graphics inside lists and layouts: remaining differences
+
+An automatically sized picture in a list, `Grid`, `Column`, `TableForm` or
+`Row` with a separator is drawn at half its size (a quarter in a `Row` of
+several items), at that size, as Wolfram draws it. What still differs:
+
+- A picture whose data Woxi cannot draw again keeps its full-size rendering,
+  shrunk: one whose `Show` redraw differs from it (`Plot` with
+  `PlotLegends`, a few `ListPlot` ranges with `AspectRatio -> Automatic`)
+  and whose call cannot be evaluated again (it has a side effect, or its
+  meaning depends on something other than its own arguments and their
+  symbols' values, such as a function that reads a `Table` iterator).
+- `Legended[plot, legend]` in a list: Wolfram fits plot and legend together
+  into the 180 pt (`{Plot[x, {x, 0, 1}, PlotLegends -> Automatic]}` is
+  196 pt wide); Woxi draws the plot 180 wide and puts the legend beside it.
+- `Graphics3D` at a reduced width is square in Woxi and taller in Wolfram
+  (`{Graphics3D[Sphere[]]}` 196 x 196 vs 196 x 180), and the 3D surfaces of
+  a `TableForm` of `SphericalPlot3D`s come out somewhat smaller.
+- Line wrapping only breaks between the list's own elements; a nested list
+  wider than the page is not broken inside, as Wolfram does.
+- The braces are a stretched serif glyph approximating Wolfram's; plot
+  heights are whole points, so a wrapped list can be 1 pt taller.
+- `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
+  (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
 
 ### Tables, grids and typeset math: remaining layout differences
 
@@ -5286,6 +5426,28 @@ Found comparing `Export[…, "SVG"]` of both engines:
   fractions keep their full spacing where Wolfram sets them tight
   (`n=0` under a `∑`, `1+x` in a matrix fraction); an implicit product's
   space is a full monospace advance, wider than Wolfram's.
+
+### Automatic `Plot` range: outlier quantiles are approximate
+
+Both engines clip outliers off an automatic range with the rule of
+``Charting`CommonDump`icomputeSceneRange`` (17.5 % / 82.5 % quantiles `lo`,
+`hi`; an extreme further than `2.5 (hi - lo)` beyond is replaced by
+`1.5 (hi - lo)` beyond). `ListPlot` matches exactly. For `Plot` the rule runs
+inside the kernel's `Visualization`Core`Plot` on its own adaptive samples;
+Woxi weighs its samples by the x stretch each stands for, which lands within
+about 1 % of WL's value (`Plot[Exp[x], {x, -1, 10}]`: WL 7948, Woxi ≈ 8070),
+not on it. WL also clips some curves the rule leaves alone on the continuous
+curve (`Plot[x^6, {x, 0, 1}]` stops at 0.634 in WL, Woxi shows all of it to 1).
+
+A partly automatic range, `PlotRange -> {0, Automatic}`, still gives the fully
+automatic range in Woxi; WL clips its automatic end against the given one
+(`ListPlot[{1, 2, 3, 4, 100, 5, 6, 7}, PlotRange -> {0, Automatic}]` → WL
+y range `{0, 17.5}`).
+
+`ListPlot` of `NIntegrate`'s `EvaluationMonitor` samples
+(`list-plot-app-eval-values`) still differs: Woxi's `NIntegrate` samples
+`1/Abs[Sqrt[x]]` much closer to the singularity (its 82.5 % quantile is
+2·10⁵, WL's 11), so the same range rule gives a far taller range.
 
 
 ## Images
@@ -7661,11 +7823,8 @@ Found comparing the graphics-tests renders (2026-11):
   small depth bias, so where a fold lies within that bias of the surface
   behind it a few segments still show through; WL clips them exactly.
 - `SphericalPlot3D` (drawn through the `Graphics3D` renderer, in the WL 15
-  `DefaultPlotStyle` colours) draws no default mesh (`Mesh -> Automatic`
-  rules lines of constant θ and φ in wolframscript), and its orange
-  surface looks duller: WL lights it with the style's own warm ambient
-  and three directional lights plus `Specularity[White, 3]` (see
-  "Graphics3D lighting and projection").
+  default theme materials) draws no default mesh (`Mesh -> Automatic`
+  rules lines of constant θ and φ in wolframscript).
 - Density and contour plots follow WL 15's frame layout (2% padding,
   ticks on all four edges, label-sized `ImagePadding`), but where a
   contour runs exactly through grid nodes at the domain's edge
@@ -7704,18 +7863,27 @@ Found comparing the graphics-tests renders (2026-11):
     `PlotRange` reaches down to 0 (`{0., 148.4}`), Woxi's starts at the
     curve's minimum 1.
   - `DateListPlot[{{{2020, 1, 1}, 1}, {{2020, 6, 1}, 3}, {{2021, 1, 1},
-    2}}]` is 227 tall (WL 221): WL's y range starts at 0 and its date
-    ticks are `Jan 2020`, `Apr`, … (Woxi `2020 Jul`, …).
+    2}}]` (unverified since DateListPlot draws through ListPlot with
+    WL's date ticks) was 227 tall (WL 221).
   - `LogPlot[Exp[x], {x, 0, 10}, Frame -> True]` is 222 tall (WL 221):
     WL's right padding is 4 pt, unexplained by the tick labels.
   - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
     442 wide (WL 414): the legend takes more room.
   - Tick labels are measured as WL sets them (a minus 0.63 em wide,
     `10 000` in digit blocks) but drawn with a hyphen and no blocks.
-  - Explicit `Ticks`/`FrameTicks` labels (`explicit_ticks_svg`) and the
-    decade labels of a framed log axis are still drawn at Woxi's old
-    sizes and offsets (13 / 14.5 px), though the padding measures them at
-    10 pt.
+  - Explicit `Ticks` labels of an unframed plot without axes
+    (`explicit_ticks_svg`) and the decade labels of a framed log axis are
+    still drawn at Woxi's old sizes and offsets (13 / 14.5 px), though the
+    padding measures them at 10 pt. (A frame's explicit ticks are drawn by
+    `frame_ticks_svg` at WL's offsets.)
+  - `Plot[Sin[x], {x, 0, 10}, Frame -> True, FrameTicks -> All]` is 223
+    tall (WL 224): WL re-labels the frame for `All` with `0` (not `0.0`)
+    and a narrower minus, which moves its left/right padding by 0.46 pt.
+    `ListPlot` with `FrameTicks -> All` matches.
+  - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
+    in italics (TraditionalForm), and writes `-a` with a minus sign.
+  - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
+    draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
     (WL 100 x 17).
   - `Show[ParametricPlot[{2 t, 3 t}, {t, 0, 1}], Graphics[…],
@@ -7818,6 +7986,25 @@ from a stated rule or needs missing machinery:
   `AugmentedSymmetricPolynomial`.
 - `LowerTriangularMatrix[SparseArray[…]]`: Wolfram's stored CSR data keeps
   the input's insertion order, which Woxi's sorted sparse arrays do not.
+
+## List plots: multiaxis, date ticks and data forms (2026-11)
+
+- `MultiaxisArrangement` draws one axis per frame side. WL stacks further
+  axes outside the frame (`All` with 3 series: two left axes;
+  `{Right -> {1, 2}, Left -> 3}`: two right axes); Woxi merges the axes of
+  a side into one shared axis.
+- Date axes (`DateListPlot`, `ListPlot` of a date-stamped `TimeSeries`)
+  have WL's major ticks and labels (`DateListPlotDump`DateTicks` with 6
+  divisions: `"Year"`, `"MonthNameShort Year"`, `"MonthNameShort Day"`, …)
+  but no minor ticks; WL marks every month / every half day between them.
+  Hour-and-finer steps are `FindDivisions` of the unit count, not WL's own
+  hour/minute tables. `ListPlot` of a `TimeSeries` uses
+  `Charting`ScaledTicks[DateScale]` in WL, which Woxi approximates with the
+  same DateTicks rules.
+- `ListPlot` data that mixes `Interval` and `Around` values draws caps on
+  every bar (WL caps only the `Around` ones); an `Interval` with several
+  ranges, or `Interval[{a, b}, {c, d}]` read as an x and a y interval, is
+  not supported.
 
 ## ListSurfacePlot3D
 

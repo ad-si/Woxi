@@ -103,6 +103,19 @@ const TICK_MINUS_EM: f64 = 0.63027;
 /// (`10 000`), in em.
 const DIGIT_BLOCK_GAP_EM: f64 = 285.0 / 2048.0;
 
+/// Advance widths of the printable ASCII characters in Atkinson Hyperlegible
+/// Next (weight 400), the face `Export` embeds for every SVG text, in
+/// 1/1000 em.
+const ATKINSON_ASCII: [u16; 95] = [
+  280, 286, 301, 651, 592, 919, 731, 160, 299, 299, 485, 606, 210, 362, 210,
+  387, 648, 407, 548, 576, 614, 588, 598, 510, 615, 595, 210, 210, 553, 628,
+  553, 480, 778, 626, 613, 645, 669, 569, 552, 694, 694, 392, 512, 631, 541,
+  824, 693, 714, 592, 724, 614, 592, 558, 690, 593, 856, 623, 575, 607, 317,
+  387, 344, 552, 372, 243, 525, 566, 485, 564, 538, 314, 558, 550, 252, 245,
+  492, 262, 845, 550, 548, 566, 574, 349, 471, 326, 540, 461, 684, 481, 449,
+  460, 344, 237, 344, 555,
+];
+
 fn char_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ARIAL_ASCII[c as usize - 0x20] as f64 / 2048.0,
@@ -111,6 +124,35 @@ fn char_width_em(c: char) -> f64 {
     // Narrow combining marks and zero-width characters.
     '\u{200B}'..='\u{200D}' | '\u{2061}'..='\u{2063}' => 0.0,
     _ => 1139.0 / 2048.0,
+  }
+}
+
+/// Left side bearings of the printable ASCII characters in Atkinson
+/// Hyperlegible Next (weight 400), in 1/1000 em: the blank the glyph leaves
+/// before its ink.
+const ATKINSON_ASCII_LSB: [i16; 95] = [
+  0, 78, 40, 36, 38, 36, 59, 40, 55, 35, 70, 55, 40, 35, 40, 20, 60, 35, 29,
+  44, 38, 59, 65, 15, 60, 57, 40, 40, 40, 66, 40, 30, 44, 10, 78, 44, 78, 78,
+  78, 44, 78, 55, 15, 78, 78, 78, 78, 44, 78, 44, 78, 38, 10, 76, 12, 18, 10,
+  0, 44, 78, 20, 60, 53, -2, 40, 31, 72, 36, 36, 36, 15, 36, 72, 25, -61, 72,
+  68, 72, 72, 36, 72, 36, 72, 31, 20, 70, 10, 15, 10, 10, 40, 38, 78, 34, 41,
+];
+
+fn atkinson_lsb_em(c: char) -> f64 {
+  match c {
+    ' '..='~' => ATKINSON_ASCII_LSB[c as usize - 0x20] as f64 / 1000.0,
+    '\u{2212}' | '\u{00D7}' => 0.055,
+    _ => 0.0,
+  }
+}
+
+/// Width of `c` in the face the exported SVG actually draws with.
+fn atkinson_width_em(c: char) -> f64 {
+  match c {
+    ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
+    '\u{2212}' => 0.606,
+    '\u{00D7}' => 0.532,
+    _ => char_width_em(c),
   }
 }
 
@@ -211,6 +253,187 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
   em * size
 }
 
+/// The horizontal ink of a one-line text in the face exported graphics draw
+/// with (Atkinson Hyperlegible Next): from the ink of its first glyph to the
+/// end of its advance, as `(lead, width)` at `size`, `lead` being the blank
+/// before the first glyph's ink.
+fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
+  let chars = visible_chars(markup);
+  let lead = chars.first().map_or(0.0, |&c| atkinson_lsb_em(c));
+  let width = chars.iter().copied().map(atkinson_width_em).sum::<f64>();
+  (lead * size, width * size)
+}
+
+/// Shift every label of a flat plot SVG that would run past the left or
+/// right edge of its `viewBox` back inside it.
+///
+/// The automatic padding is laid out in the Arial metrics the Wolfram front
+/// end uses, so a plot's geometry matches wolframscript's; but the text is
+/// drawn in Atkinson Hyperlegible, whose digits are wider (`0` is 0.648 em
+/// against Arial's 0.556 em). A y tick label that exactly fills its room in
+/// Arial would lose its first digit at the image edge. Only `<text>` outside
+/// any transformed group is considered, and only its single `x`.
+pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
+  use std::borrow::Cow;
+  let Some(width) = svg_canvas_width(svg) else {
+    return Cow::Borrowed(svg);
+  };
+  // Every unrotated top-level label: where its `x` value sits, the value,
+  // its anchor, and how far it must move to stay inside.
+  struct Label {
+    at: usize,
+    len: usize,
+    x: f64,
+    anchor: u8,
+    shift: f64,
+  }
+  let mut labels: Vec<Label> = Vec::new();
+  // One entry per open `<g>` / `<svg>`: whether it sets up coordinates of
+  // its own.
+  let mut groups: Vec<bool> = Vec::new();
+  let mut svg_depth = 0usize;
+  let mut pos = 0usize;
+  while let Some(rel) = svg[pos..].find('<') {
+    let start = pos + rel;
+    let Some(tag_end) = svg[start..].find('>').map(|e| start + e + 1) else {
+      break;
+    };
+    let tag = &svg[start..tag_end];
+    pos = tag_end;
+    let is_group = tag.starts_with("<g")
+      && tag
+        .as_bytes()
+        .get(2)
+        .is_none_or(|b| !b.is_ascii_alphanumeric());
+    if is_group {
+      if !tag.ends_with("/>") {
+        groups.push(tag.contains("transform="));
+      }
+      continue;
+    }
+    // A nested `<svg>` (a cell of a list of graphics) has its own
+    // coordinates, like a transformed group; the outermost one is the
+    // canvas.
+    let is_svg = tag.starts_with("<svg")
+      && tag
+        .as_bytes()
+        .get(4)
+        .is_none_or(|b| !b.is_ascii_alphanumeric());
+    if is_svg {
+      if !tag.ends_with("/>") {
+        groups.push(svg_depth > 0);
+        svg_depth += 1;
+      }
+      continue;
+    }
+    if tag.starts_with("</g") || tag.starts_with("</svg") {
+      groups.pop();
+      continue;
+    }
+    if !tag.starts_with("<text") || tag.ends_with("/>") {
+      continue;
+    }
+    let Some(close) = svg[tag_end..].find("</text>").map(|c| tag_end + c)
+    else {
+      continue;
+    };
+    pos = close;
+    let content = svg[tag_end..close].trim();
+    if groups.iter().any(|&t| t)
+      || tag.contains("transform=")
+      || content.contains('<')
+      || content.contains('\n')
+    {
+      continue;
+    }
+    let Some((x_at, len, x)) = attr_number(tag, "x") else {
+      continue;
+    };
+    let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
+    let (lead, w) = exported_text_extent(content, size);
+    if w <= 0.0 || w - lead > width {
+      continue;
+    }
+    let (anchor, left) = if tag.contains("text-anchor=\"end\"") {
+      (2, x - w)
+    } else if tag.contains("text-anchor=\"middle\"") {
+      (1, x - w / 2.0)
+    } else {
+      (0, x)
+    };
+    let ink_left = left + lead;
+    let shift = if ink_left < 0.0 {
+      -ink_left
+    } else if left + w > width {
+      (width - (left + w)).max(-ink_left)
+    } else {
+      0.0
+    };
+    labels.push(Label {
+      at: start + x_at,
+      len,
+      x,
+      anchor,
+      shift,
+    });
+  }
+  if labels.iter().all(|l| l.shift == 0.0) {
+    return Cow::Borrowed(svg);
+  }
+  // A column of right-aligned labels (the y tick labels) moves as one, so
+  // it stays aligned.
+  let column_shift = |l: &Label| {
+    if l.anchor != 2 || l.shift < 0.0 {
+      return l.shift;
+    }
+    labels
+      .iter()
+      .filter(|o| o.anchor == 2 && (o.x - l.x).abs() < 1e-6)
+      .map(|o| o.shift)
+      .fold(0.0, f64::max)
+  };
+  let mut out = String::with_capacity(svg.len());
+  let mut copied = 0usize;
+  for l in &labels {
+    let shift = column_shift(l);
+    if shift == 0.0 {
+      continue;
+    }
+    out.push_str(&svg[copied..l.at]);
+    out.push_str(&format!("{:.1}", l.x + shift));
+    copied = l.at + l.len;
+  }
+  out.push_str(&svg[copied..]);
+  Cow::Owned(out)
+}
+
+/// The width of the outermost `<svg>`'s `viewBox` (else its `width`).
+fn svg_canvas_width(svg: &str) -> Option<f64> {
+  let open = svg.find("<svg")?;
+  let tag = &svg[open..open + svg[open..].find('>')?];
+  if let Some(i) = tag.find("viewBox=\"") {
+    let v = &tag[i + 9..];
+    let v = &v[..v.find('"')?];
+    return v
+      .split([' ', ','])
+      .filter(|t| !t.is_empty())
+      .nth(2)?
+      .parse()
+      .ok();
+  }
+  attr_number(tag, "width").map(|(_, _, w)| w)
+}
+
+/// A numeric attribute of a tag: the byte offset and length of its value
+/// within `tag`, and the value.
+fn attr_number(tag: &str, name: &str) -> Option<(usize, usize, f64)> {
+  let pat = format!(" {name}=\"");
+  let at = tag.find(&pat)? + pat.len();
+  let len = tag[at..].find('"')?;
+  let value = tag[at..at + len].trim().parse().ok()?;
+  Some((at, len, value))
+}
+
 /// A tick label: where its tick falls along the axis (0 at the low end,
 /// 1 at the high end), and its size in points.
 #[derive(Clone, Copy, Debug)]
@@ -232,6 +455,9 @@ pub(crate) struct Decorations {
   pub origin: (f64, f64),
   /// The tick labels of the frame's bottom/left/top/right edges.
   pub frame_ticks: [Vec<LabelBox>; 4],
+  /// How far the tick marks of each frame edge reach out of the frame, as
+  /// a fraction of the plot width; the labels sit beyond them.
+  pub frame_tick_out: [f64; 4],
   /// The tick labels of the x and y axes.
   pub axis_ticks: (Vec<LabelBox>, Vec<LabelBox>),
   /// The heights of the bottom/left/top/right `FrameLabel`s.
@@ -242,6 +468,9 @@ pub(crate) struct Decorations {
   pub title: f64,
   /// Width of the widest of the `PlotLabels` beside the curve ends.
   pub curve_labels: Option<f64>,
+  /// Room the labels placed before / after their curves take left and
+  /// right of the plotting area.
+  pub side_labels: (f64, f64),
 }
 
 /// The padding around the plotting area, in points.
@@ -264,12 +493,13 @@ impl Padding {
 }
 
 impl Decorations {
-  /// Room the tick labels of frame edge `edge` take outside it (with their
-  /// gap), 0 without labels.
-  pub(crate) fn frame_tick_room(&self, edge: usize) -> f64 {
+  /// Room the tick marks and labels of frame edge `edge` take outside it
+  /// (with the labels' gap) on a plot `w` wide, 0 without either.
+  pub(crate) fn frame_tick_room(&self, edge: usize, w: f64) -> f64 {
+    let out = self.frame_tick_out[edge] * w;
     let ticks = &self.frame_ticks[edge];
     if ticks.is_empty() {
-      return 0.0;
+      return out;
     }
     let size = |b: &LabelBox| {
       if edge.is_multiple_of(2) {
@@ -278,7 +508,7 @@ impl Decorations {
         b.width
       }
     };
-    TICK_LABEL_GAP + ticks.iter().map(size).fold(0.0, f64::max)
+    out + TICK_LABEL_GAP + ticks.iter().map(size).fold(0.0, f64::max)
   }
 
   /// The extents past the left/right/bottom/top edges of a `w` × `h`
@@ -304,7 +534,7 @@ impl Decorations {
       // Edge order bottom, left, top, right; sides L R B T.
       let side_of = [B, L, T, R];
       for edge in 0..4 {
-        let mut room = self.frame_tick_room(edge);
+        let mut room = self.frame_tick_room(edge, w);
         for b in &self.frame_ticks[edge] {
           if edge % 2 == 0 {
             along_x(&mut reach, b);
@@ -321,6 +551,8 @@ impl Decorations {
     if let Some(lw) = self.curve_labels {
       reach(R, PLOT_LABELS_GAP + lw + PLOT_LABELS_TAIL);
     }
+    reach(L, self.side_labels.0);
+    reach(R, self.side_labels.1);
     let (ox, oy) = (self.origin.0 * w, self.origin.1 * h);
     if self.axes.0 {
       for b in &self.axis_ticks.0 {
@@ -404,9 +636,10 @@ pub(crate) struct LabelLayout {
 
 impl Decorations {
   /// The [`LabelLayout`] tick rooms of these decorations.
-  pub(crate) fn tick_rooms(&self) -> [f64; 4] {
+  /// `w` is the plot width, in points.
+  pub(crate) fn tick_rooms(&self, w: f64) -> [f64; 4] {
     if self.frame {
-      [0, 1, 2, 3].map(|edge| self.frame_tick_room(edge))
+      [0, 1, 2, 3].map(|edge| self.frame_tick_room(edge, w))
     } else {
       [0.0; 4]
     }
@@ -438,6 +671,14 @@ pub(crate) fn plot_tick_font(
   opts
     .tick_label_style
     .and_then(|s| s.font_size)
+    // `LabelStyle` sizes the frame's tick labels too (the origin axes draw
+    // theirs at the fixed `AXIS_TICK_FONT`).
+    .or(
+      opts
+        .label_style
+        .filter(|_| opts.frame)
+        .and_then(|s| s.font_size),
+    )
     .unwrap_or(TICK_FONT)
 }
 
@@ -536,21 +777,50 @@ pub(crate) fn plot_decorations(
   let edges = opts.frame_edges;
   if frame {
     if show_ticks {
-      if edges.bottom {
-        d.frame_ticks[0] = boxes(&x_ticks.majors, x, None);
-      }
-      if edges.left {
-        d.frame_ticks[1] = boxes(&y_ticks.majors, y, None);
-      }
-      if edges.top
-        && let Some(t) = &opts.ticks_top
-      {
-        d.frame_ticks[2] = boxes(t, x, None);
-      }
-      if edges.right
-        && let Some(t) = &opts.ticks_right
-      {
-        d.frame_ticks[3] = boxes(t, y, None);
+      use crate::functions::plot::FrameEdgeTicks;
+      let present = [edges.bottom, edges.left, edges.top, edges.right];
+      for (edge, spec) in opts.frame_tick_edges.iter().enumerate() {
+        if !present[edge] {
+          continue;
+        }
+        let horizontal = edge % 2 == 0;
+        let (scale, axis_ticks) = if horizontal {
+          (x, x_ticks)
+        } else {
+          (y, y_ticks)
+        };
+        d.frame_ticks[edge] = match spec {
+          // The bottom and left edge label what the axis ticks hold (an
+          // explicit `Ticks` list included); the far edges the automatic
+          // ticks.
+          FrameEdgeTicks::Labeled if edge < 2 => {
+            boxes(&axis_ticks.majors, scale, None)
+          }
+          FrameEdgeTicks::Labeled => boxes(
+            &crate::functions::plot_axes::AxisTicks::new(
+              scale,
+              horizontal && opts.date_axis,
+              None,
+            )
+            .majors,
+            scale,
+            None,
+          ),
+          FrameEdgeTicks::Explicit(ticks) => {
+            d.frame_tick_out[edge] = ticks
+              .iter()
+              .filter(|t| scale.contains(t.pos))
+              .filter_map(|t| t.len.map(|(_, out)| out))
+              .fold(0.0, f64::max);
+            let listed: Vec<(f64, String)> = ticks
+              .iter()
+              .filter(|t| scale.contains(t.pos))
+              .map(|t| (t.pos, t.label.clone()))
+              .collect();
+            boxes(&listed, scale, None)
+          }
+          FrameEdgeTicks::None | FrameEdgeTicks::Marks => Vec::new(),
+        };
       }
     }
   } else if show_ticks {
@@ -590,6 +860,8 @@ pub(crate) fn plot_decorations(
     .flatten()
     .map(|l| label_width(l, label_font))
     .reduce(f64::max);
+  d.side_labels =
+    crate::functions::plot_curve_labels::side_room(&opts.curve_label_specs);
   if let Some((lx, ly)) = &opts.axes_label
     && !frame
   {
@@ -631,6 +903,46 @@ mod tests {
     // `10 000`: a thin space between the digit blocks.
     assert!((tick_label_width("10000", 10.0) - 29.199).abs() < 1e-3);
     assert!((text_width("time", 10.0) - 18.892).abs() < 1e-3);
+  }
+
+  #[test]
+  fn labels_running_off_the_canvas_are_pulled_back_in() {
+    // `0.08` right-aligned 19.5 pt from the left edge: Arial's width, but
+    // Atkinson's ink reaches 20.61 pt left of the anchor.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"19.5\" y=\"9\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert!(out.contains("x=\"20.6\""), "{out}");
+    // The column of y labels moves together, so it stays right-aligned.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"19.5\" y=\"9\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text><text \
+               x=\"19.5\" y=\"29\" text-anchor=\"end\" font-size=\"10\">\
+               0.10</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert_eq!(out.matches("x=\"20.6\"").count(), 2, "{out}");
+    // A centred label overhanging the right edge moves left.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"398\" y=\"9\" \
+               text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
+    let out = keep_text_in_view(svg);
+    assert!(out.contains("x=\"391.5\""), "{out}");
+    // Labels already inside, and labels in a transformed group, stay.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"30\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text>\
+               <g transform=\"translate(50,0)\"><text x=\"1\" \
+               text-anchor=\"end\" font-size=\"10\">0.08</text></g></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
+    // Nor do labels of a nested `<svg>` (a cell of a list of graphics),
+    // which lie in that cell's own, wider coordinates.
+    let svg = "<svg viewBox=\"0 0 389 101\"><svg x=\"7.8\" width=\"180\" \
+               viewBox=\"0 0 1800 1010\"><text x=\"1684.7\" \
+               text-anchor=\"middle\" font-size=\"100\">6</text></svg></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
   }
 
   fn frame_sin() -> Decorations {

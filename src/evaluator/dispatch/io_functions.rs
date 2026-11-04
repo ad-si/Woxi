@@ -5472,6 +5472,72 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   }
 }
 
+/// The `ImageSize` multiplier a layout gives the automatically sized
+/// pictures it holds: a half in a `Grid`, a `Column` or a `Row` with a
+/// separator, a quarter in a `Row` of several items set side by side.
+/// `None` (the surrounding context decides) for a one-item `Row` and for
+/// `Labeled`, which show their content as it would be shown alone.
+fn layout_image_size_multiplier(name: &str, args: &[Expr]) -> Option<f64> {
+  use crate::functions::container_layout::{LIST_MULTIPLIER, ROW_MULTIPLIER};
+  match name {
+    "Grid" | "Column" => Some(LIST_MULTIPLIER),
+    "Row" if args.len() >= 2 => Some(LIST_MULTIPLIER),
+    "Row" => match args.first() {
+      Some(Expr::List(items)) if items.len() >= 2 => Some(ROW_MULTIPLIER),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// A non-empty list whose elements are all graphics or (recursively) such
+/// lists — what a notebook shows as `{g1, g2, …}` with the pictures inline.
+fn is_graphics_list(expr: &Expr) -> bool {
+  let is_graphic = |e: &Expr| {
+    is_inline_graphic(e)
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  };
+  matches!(expr, Expr::List(items) if !items.is_empty()
+    && items.iter().all(|item| is_graphic(item) || is_graphics_list(item)))
+}
+
+/// A list (possibly nested) of graphics drawn as a notebook shows it, or
+/// `None` for anything else.
+pub(crate) fn graphics_list_layout_svg(expr: &Expr) -> Option<String> {
+  if !is_graphics_list(expr) {
+    return None;
+  }
+  match graphics_list_cell(expr)? {
+    crate::functions::container_layout::ListCell::List(cells) => {
+      crate::functions::container_layout::list_layout_svg(cells)
+    }
+    crate::functions::container_layout::ListCell::Picture(_) => None,
+  }
+}
+
+/// The layout cell of a graphics list element: its pictures drawn at the
+/// reduced size a list gives an automatically sized graphic. `None` when a
+/// picture renders to nothing.
+fn graphics_list_cell(
+  expr: &Expr,
+) -> Option<crate::functions::container_layout::ListCell> {
+  use crate::functions::container_layout::{
+    LIST_MULTIPLIER, ListCell, with_image_size_multiplier,
+  };
+  if let Expr::List(items) = expr {
+    Some(ListCell::List(
+      items
+        .iter()
+        .map(graphics_list_cell)
+        .collect::<Option<Vec<_>>>()?,
+    ))
+  } else {
+    let svg = with_image_size_multiplier(LIST_MULTIPLIER, || expr_to_svg(expr));
+    (!svg.is_empty()).then_some(ListCell::Picture(svg))
+  }
+}
+
 /// Whether a `Button`'s options include `Appearance -> "Frameless"`.
 fn is_frameless_button(options: &[Expr]) -> bool {
   options.iter().any(|o| {
@@ -6223,6 +6289,17 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
       .filter(|cells| !cells.is_empty())
       .collect(),
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
+    // `Row[{a, b, …}, sep]` sets `sep` between neighbouring items.
+    "Row" if args.len() >= 2 => {
+      let mut cells = Vec::with_capacity(2 * items.len());
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          cells.push(args[1].clone());
+        }
+        cells.push(item.clone());
+      }
+      vec![cells]
+    }
     _ => vec![items.to_vec()],
   }
 }
@@ -6677,7 +6754,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         ),
       ))
     }
-    Expr::Graphics { svg: svg_data, .. } => svg_data.clone(),
+    // Inside a list, `Grid`, `Row`, … an automatically sized picture is
+    // drawn again at the container's reduced size.
+    Expr::Graphics { svg: svg_data, .. } => {
+      crate::functions::container_layout::resized_graphic_svg(expr)
+        .unwrap_or_else(|| svg_data.clone())
+    }
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it
     // wraps. (The notebook display pipeline already unwraps it — without
@@ -6977,6 +7059,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !args.is_empty()
         && lays_out_a_graphic(expr) =>
     {
+      // The layout's automatically sized pictures are drawn at its reduced
+      // size: lay it out again with that size in effect.
+      if let Some(m) = layout_image_size_multiplier(name, args)
+        && m != crate::functions::container_layout::image_size_multiplier()
+      {
+        return crate::functions::container_layout::with_image_size_multiplier(
+          m,
+          || expr_to_svg(expr),
+        );
+      }
       // `Column` places its own items, so an alignment argument is honoured
       // — `Column[{picture, legend}, Center]` centres the narrow legend
       // under the wide picture. The generic composition below packs every
@@ -7053,57 +7145,27 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         } else {
           &[]
         };
-        crate::functions::graphics::combine_graphics_svgs_with_options(
-          &rows,
-          option_args,
-        )
-        .map_or_else(
-          || expr_text_svg(expr),
-          |svg| {
-            crate::functions::graphics::with_grid_background(svg, option_args)
-          },
-        )
+        // The front end sets a `Row`'s items side by side and a `Grid`'s
+        // or `Column`'s cells a fixed distance apart, about 5.5 points —
+        // kept to whole points so the cells stay on the pixel grid.
+        let gap = if name == "Row" { 0.0 } else { 6.0 };
+        crate::functions::graphics::combine_layout_svgs(&rows, option_args, gap)
+          .map_or_else(
+            || expr_text_svg(expr),
+            |svg| {
+              crate::functions::graphics::with_grid_background(svg, option_args)
+            },
+          )
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
     // inline (matching how wolframscript displays such a list), instead
     // of falling through to the text renderer which would dump
     // `GraphicsBox[]` placeholders.
-    Expr::List(items)
-      if !items.is_empty() && items.iter().all(is_inline_graphic) =>
-    {
-      let svgs: Vec<String> = items.iter().map(expr_to_svg).collect();
-      if svgs.iter().all(|s| !s.is_empty())
-        && let Some(svg) = crate::functions::graphics::graphics_list_svg(&svgs)
-      {
-        svg
-      } else {
-        expr_text_svg(expr)
-      }
-    }
-    // A 2-D list of graphics renders as a grid of the plots.
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|item| {
-          matches!(item, Expr::List(inner)
-            if !inner.is_empty() && inner.iter().all(is_inline_graphic))
-        }) =>
-    {
-      let rows: Vec<Vec<String>> = items
-        .iter()
-        .map(|item| match item {
-          Expr::List(inner) => inner.iter().map(expr_to_svg).collect(),
-          _ => unreachable!(),
-        })
-        .collect();
-      if rows.iter().flatten().all(|s: &String| !s.is_empty())
-        && let Some(svg) =
-          crate::functions::graphics::combine_graphics_svgs(&rows)
-      {
-        svg
-      } else {
-        expr_text_svg(expr)
-      }
+    // Nested lists of graphics are set the same way, each with its own
+    // braces (`{{g1, g2}, {g3, g4}}` is one line, not a grid).
+    Expr::List(_) if is_graphics_list(expr) => {
+      graphics_list_layout_svg(expr).unwrap_or_else(|| expr_text_svg(expr))
     }
     // `Invisible[picture]` is drawn at the picture's size with nothing
     // painted, so a layout keeps its shape.
@@ -7223,10 +7285,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: gfx_name,
       args: gfx_args,
     } if gfx_name == "Graphics" && !gfx_args.is_empty() => {
+      // Inside a container an automatically sized picture takes the
+      // container's reduced `ImageSize`; what it holds is drawn at its own
+      // size again.
+      let sized =
+        crate::functions::container_layout::symbolic_graphics_args(gfx_args);
       if let Ok(Expr::Graphics {
         svg: ref svg_data, ..
-      }) = crate::functions::graphics::graphics_ast(gfx_args)
-      {
+      }) = crate::functions::container_layout::with_image_size_multiplier(
+        1.0,
+        || {
+          crate::functions::graphics::graphics_ast(
+            sized.as_deref().unwrap_or(gfx_args),
+          )
+        },
+      ) {
         svg_data.clone()
       } else {
         String::new()
@@ -7236,10 +7309,18 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       name: gfx_name,
       args: gfx_args,
     } if gfx_name == "Graphics3D" && !gfx_args.is_empty() => {
+      let sized =
+        crate::functions::container_layout::symbolic_graphics_args(gfx_args);
       if let Ok(Expr::Graphics {
         svg: ref svg_data, ..
-      }) = crate::functions::plot3d::graphics3d_ast(gfx_args)
-      {
+      }) = crate::functions::container_layout::with_image_size_multiplier(
+        1.0,
+        || {
+          crate::functions::plot3d::graphics3d_ast(
+            sized.as_deref().unwrap_or(gfx_args),
+          )
+        },
+      ) {
         svg_data.clone()
       } else {
         String::new()
@@ -7729,7 +7810,11 @@ fn tableform_graphics_grid_svg(args: &[Expr]) -> Option<String> {
     let Expr::List(cells) = r else { unreachable!() };
     let mut out = Vec::with_capacity(cells.len());
     for cell in cells {
-      let svg = expr_to_svg(cell);
+      // A table draws its automatically sized pictures at half size.
+      let svg = crate::functions::container_layout::with_image_size_multiplier(
+        crate::functions::container_layout::LIST_MULTIPLIER,
+        || expr_to_svg(cell),
+      );
       if svg.is_empty() {
         return None;
       }

@@ -2250,7 +2250,13 @@ fn evaluate_function_call_ast_inner(
   }
   if let Some(result) = plotting::dispatch_plotting(name, args) {
     let result = plotting::non_numeric_limit_is_plln(name, args, result);
-    return plotting::empty_plot_for_nothing_to_draw(name, args, result);
+    let result = plotting::empty_plot_for_nothing_to_draw(name, args, result);
+    // Shown in a list or a `Grid` later, the picture is drawn again at the
+    // container's size; remember how it was made.
+    if let Ok(plot) = &result {
+      crate::functions::container_layout::remember_plot_call(name, args, plot);
+    }
+    return result;
   }
   if let Some(result) =
     predicate_functions::dispatch_predicate_functions(name, args)
@@ -6484,7 +6490,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // WeightedAdjacencyGraph[wmat] → weighted graph (Infinity = no edge)
-  if name == "WeightedAdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
+  if name == "WeightedAdjacencyGraph" && !args.is_empty() {
     return crate::functions::graph::weighted_adjacency_graph_ast(args);
   }
 

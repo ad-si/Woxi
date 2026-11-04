@@ -3173,11 +3173,12 @@ mod tests {
     }
 
     #[test]
-    fn symbol_used_as_head_is_not_glyph_mapped() {
-      // `E[x, y, z]` is a field, not Euler's number — keep the head as `E`.
+    fn symbol_used_as_head_is_glyph_mapped() {
+      // wolframscript typesets a constant used as a head as its glyph:
+      // `E[x, y, z]` is `ⅇ(x, y, z)` (the Gauss-law field reads that way).
       let boxes = tf("Div[E[x, y, z], {x, y, z}]");
-      assert!(boxes.contains("\"E\""), "E head preserved: {boxes}");
-      assert!(!boxes.contains('\u{2147}'), "not turned into ⅇ: {boxes}");
+      assert!(boxes.contains('\u{2147}'), "E head is ⅇ: {boxes}");
+      assert!(!boxes.contains("\"E\""), "not the bare name: {boxes}");
     }
 
     #[test]

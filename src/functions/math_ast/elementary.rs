@@ -4002,8 +4002,17 @@ pub fn find_divisions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => items,
     _ => return unevaluated(),
   };
-  let (Some(min), Some(max)) =
-    (expr_to_rational(&range[0]), expr_to_rational(&range[1]))
+  // Machine-real endpoints give the same exact divisions as the rationals
+  // they stand for: `FindDivisions[{0.3, 17.2}, 6]` is `{0, 5, 10, 15, 20}`.
+  let endpoint = |e: &Expr| {
+    expr_to_rational(e).or_else(|| match e {
+      Expr::Real(x) if x.is_finite() && x.abs() < 1e20 => {
+        Some(((x * 1e12).round() as i128, 1_000_000_000_000))
+      }
+      _ => None,
+    })
+  };
+  let (Some(min), Some(max)) = (endpoint(&range[0]), endpoint(&range[1]))
   else {
     return unevaluated();
   };

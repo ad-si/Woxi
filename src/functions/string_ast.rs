@@ -5883,7 +5883,8 @@ fn box_ast_to_tex(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall { name, args }
-      if name == "FractionBox" && args.len() == 2 =>
+      if name == "FractionBox"
+        && crate::functions::graphics::is_fraction_box_args(args) =>
     {
       format!(
         "\\frac{{{}}}{{{}}}",

@@ -46,9 +46,9 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 10]\")"
 <line x1="3368.6" y1="1062.0" x2="3368.6" y2="1022.0" stroke="#666" stroke-width="5"/>
 <text x="3368.6" y="1182.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
 <line x1="232.4" y1="5.0" x2="232.4" y2="2119.0" stroke="#666" stroke-width="5"/>
-<line x1="232.4" y1="2108.5" x2="256.4" y2="2108.5" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="2108.4" x2="256.4" y2="2108.4" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="1918.2" x2="256.4" y2="1918.2" stroke="#666" stroke-width="5"/>
-<line x1="232.4" y1="1823.1" x2="256.4" y2="1823.1" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="1823.0" x2="256.4" y2="1823.0" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="1727.9" x2="256.4" y2="1727.9" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="1632.8" x2="256.4" y2="1632.8" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="1442.5" x2="256.4" y2="1442.5" stroke="#666" stroke-width="5"/>
@@ -61,16 +61,16 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotPoints -> 10]\")"
 <line x1="232.4" y1="681.5" x2="256.4" y2="681.5" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="491.2" x2="256.4" y2="491.2" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="396.1" x2="256.4" y2="396.1" stroke="#666" stroke-width="5"/>
-<line x1="232.4" y1="300.9" x2="256.4" y2="300.9" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="301.0" x2="256.4" y2="301.0" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="205.8" x2="256.4" y2="205.8" stroke="#666" stroke-width="5"/>
-<line x1="232.4" y1="15.5" x2="256.4" y2="15.5" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="15.6" x2="256.4" y2="15.6" stroke="#666" stroke-width="5"/>
 <line x1="232.4" y1="2013.3" x2="272.4" y2="2013.3" stroke="#666" stroke-width="5"/>
 <text x="202.4" y="2048.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-1.0</text>
 <line x1="232.4" y1="1537.7" x2="272.4" y2="1537.7" stroke="#666" stroke-width="5"/>
 <text x="202.4" y="1572.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.5</text>
 <line x1="232.4" y1="1062.0" x2="272.4" y2="1062.0" stroke="#666" stroke-width="5"/>
-<line x1="232.4" y1="586.3" x2="272.4" y2="586.3" stroke="#666" stroke-width="5"/>
+<line x1="232.4" y1="586.4" x2="272.4" y2="586.4" stroke="#666" stroke-width="5"/>
 <text x="202.4" y="621.0" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
 <line x1="232.4" y1="110.7" x2="272.4" y2="110.7" stroke="#666" stroke-width="5"/>
-<text x="202.4" y="145.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+<text x="202.4" y="145.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
 </svg>

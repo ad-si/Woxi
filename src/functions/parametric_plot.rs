@@ -32,7 +32,11 @@ fn evaluation_monitor(opts: &[Expr]) -> Option<Expr> {
 /// Matching Wolfram Language, the first occurrence of a repeated option
 /// wins (e.g. `PlotPoints -> 200, …, PlotPoints -> 10` uses 200).
 fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
-  let mut plot_opts = PlotOptions::default();
+  // The default `MeshFunctions` of a parametric curve is its parameter.
+  let mut plot_opts = PlotOptions {
+    mesh_by_parameter: true,
+    ..PlotOptions::default()
+  };
   let mut overrides = PlotRangeOverrides::default();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
@@ -321,7 +325,7 @@ fn color_function_series(
   curves: &[Vec<(f64, f64)>],
   params: &[Vec<f64>],
   cf: &Expr,
-  scaling: bool,
+  scaling: (bool, bool),
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   (t_min, t_max): (f64, f64),
@@ -341,11 +345,12 @@ fn color_function_series(
         name, sx,
       );
     }
-    let args = if scaling {
-      vec![Expr::Real(sx), Expr::Real(sy), Expr::Real(st)]
-    } else {
-      vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)]
-    };
+    // `{True, False}` scales x alone; the parameter follows x.
+    let args = vec![
+      Expr::Real(if scaling.0 { sx } else { x }),
+      Expr::Real(if scaling.1 { sy } else { y }),
+      Expr::Real(if scaling.0 { st } else { t }),
+    ];
     let call = Expr::CurriedCall {
       func: Box::new(cf.clone()),
       args,
@@ -480,6 +485,12 @@ pub(crate) fn exclusion_roots(
   };
   let mut roots = Vec::new();
   for condition in &conditions {
+    // `{eq, test, …}`: the roots of `eq` at which every test holds.
+    let (condition, tests) = match condition {
+      Expr::List(parts) if !parts.is_empty() => (&parts[0], &parts[1..]),
+      other => (other, &[][..]),
+    };
+    let first_new = roots.len();
     let (lhs, rhs) = match condition {
       Expr::Comparison {
         operands,
@@ -539,6 +550,26 @@ pub(crate) fn exclusion_roots(
         }
       }
       prev = cur;
+    }
+    // A root on an end of the domain, where rounding may leave the
+    // difference a hair off 0 without changing sign (`Sin[Pi x] == 0` at
+    // `x = 10`).
+    for end in [t_min, t_max] {
+      if diff(end).is_some_and(|f| f.abs() < 1e-12)
+        && !roots[first_new..].iter().any(|&r| (r - end).abs() <= step)
+      {
+        roots.push(end);
+      }
+    }
+    if !tests.is_empty() {
+      let mut kept = roots.split_off(first_new);
+      kept.retain(|&t| {
+        tests.iter().all(|test| {
+          let at = crate::syntax::substitute_variable(test, var, &Expr::Real(t));
+          matches!(evaluate_expr_to_expr(&at), Ok(Expr::Identifier(ref b)) if b == "True")
+        })
+      });
+      roots.extend(kept);
     }
   }
   roots
@@ -1007,9 +1038,10 @@ fn parametric_region_ast(
     )?);
   }
 
-  // Wolfram draws a ParametricPlot with axes and equally scaled ones; the
-  // caller's own options come last so they win.
+  // Wolfram draws a region ParametricPlot framed, with axes and equally
+  // scaled ones; the caller's own options come last so they win.
   let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
   graphics_args.extend(opt_args.iter().cloned());
@@ -1523,7 +1555,7 @@ fn parametric_region_layer(
           name, sx,
         );
       }
-      let args = if plot_opts.color_function_scaling {
+      let args = if plot_opts.color_function_scaling.0 {
         vec![
           Expr::Real(sx),
           Expr::Real(sy),

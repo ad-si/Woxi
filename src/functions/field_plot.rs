@@ -1515,8 +1515,7 @@ fn scaled_color(
 /// excludes extreme outliers so a singularity in the sampled domain (e.g. a
 /// pole in the plotted function) can't collapse the color scale and contour
 /// levels onto a handful of pixels around it, leaving the rest of the plot a
-/// single flat color. Mirrors `plot::sampled_y_range`'s approach for `Plot`'s
-/// y-range, applied here to a 2D function's sampled values.
+/// single flat color.
 fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let mut vs: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();
@@ -3481,6 +3480,7 @@ fn contour_plot_equations(
           dashing: None,
           opacity: None,
           labels: Vec::new(),
+          mesh_full_points: Vec::new(),
         });
       }
     }
