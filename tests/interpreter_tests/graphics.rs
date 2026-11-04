@@ -14127,6 +14127,19 @@ mod plot3d {
       assert!((shift - 100.0).abs() < 1.0, "{shift}");
     }
 
+    // `ListContourPlot[…, PlotLegends -> Automatic]` draws the same bar
+    // legend as `ContourPlot` (it used to draw none).
+    #[test]
+    fn list_contour_plot_automatic_bar_legend() {
+      let data = "Table[Sin[x] Cos[y], {y, 0, 4, 0.2}, {x, 0, 4, 0.2}]";
+      let with = export_svg(&format!(
+        "ListContourPlot[{data}, PlotLegends -> Automatic]"
+      ));
+      let without = export_svg(&format!("ListContourPlot[{data}]"));
+      assert!(with.contains(">0.8<") || with.contains(">-0.8<"));
+      assert!(with.matches("<rect").count() > without.matches("<rect").count());
+    }
+
     // A rule in a label is typeset with its arrow, as in a Wolfram graphic.
     #[test]
     fn plot_label_rule_typesets_arrow() {

@@ -3251,15 +3251,35 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  if opts.contour_labels {
-    push_contour_labels(&mut svg, &grid, &levels, &area);
-  }
-  if opts.bar_legend && opts.contour_shading {
-    push_bar_legend(&mut svg, &area, &opts, &levels, (v_min, v_max));
-  }
+  push_contour_annotations(
+    &mut svg,
+    &grid,
+    &levels,
+    &area,
+    &opts,
+    (v_min, v_max),
+  );
 
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(svg, structure))
+}
+
+/// The `ContourLabels` and the `PlotLegends -> Automatic` bar legend of a
+/// contour plot, shared by `ContourPlot` and `ListContourPlot`.
+fn push_contour_annotations(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+  value_range: (f64, f64),
+) {
+  if opts.contour_labels {
+    push_contour_labels(svg, grid, levels, area);
+  }
+  if opts.bar_legend && opts.contour_shading {
+    push_bar_legend(svg, area, opts, levels, value_range);
+  }
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
@@ -6142,6 +6162,14 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
+  push_contour_annotations(
+    &mut svg,
+    &grid,
+    &levels,
+    &area,
+    &opts,
+    (v_min, v_max),
+  );
 
   svg.push_str("</svg>");
   let structure_items = contour_structure_items(
