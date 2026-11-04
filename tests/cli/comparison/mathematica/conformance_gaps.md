@@ -8404,3 +8404,35 @@ against `wolframscript`, so the noise magnitude may differ.
   `Mesh -> 4`, `PlotLabels` placement for parametric `{x, y}` curves,
   callout leader shapes, and the RSolve-precision and NIntegrate sample
   divergences in the `list-plot-app-*` tests.
+
+## Graphics primitives sweep leftovers (2026-11)
+
+Found by the visual Graphics-Tests comparison; not fixed yet.
+
+- `Text` in `Graphics` defaults to 14 pt in Woxi; wolframscript's SVG
+  export sets it at 10 pt. Changing the default touches most Graphics
+  snapshots, so it is left for a dedicated pass.
+- `Line` strokes use butt caps; wolframscript draws `stroke-linecap:square`
+  (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
+- Graphics frames are drawn 1 pt wide in the theme grey; wolframscript uses
+  0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
+- Automatic frame/axis tick steps: wolframscript picks 0.5 for a span of
+  about 1.9 (a framed `RegularPolygon[5]`) where Woxi's "largest step with 4
+  steps" rule picks 0.2; for a span of 1.04 both pick 0.2. The exact choice
+  rule is not decoded.
+- Custom `Arrowheads[{{s, pos, Graphics[…]}}]` graphics are placed only once
+  the plot range is known, so they do not widen it (wolframscript keeps a
+  dot head at the end of an arrow whole). The default arrowhead is a plain
+  triangle; wolframscript's is swept back.
+- `GraphicsGrid[…, ImageSize -> 400]` of labelled graphics is 456 pt tall
+  (wolframscript 414): wolframscript shrinks each item to about 81 pt across
+  inside a 100 pt column, the layout rule is not decoded.
+- `Image` of 4-channel `{1, 0, 0, a}` data: wolframscript's SVG export shows
+  opaque red-to-magenta (alpha read as blue), Woxi a transparent-to-red ramp.
+- `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
+  ticks, Woxi round dots.
+- `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
+  space before each comma, uses non-stretchy braces and tighter boxes.
+- `Inset` of a nested `Graphics` with `Text`: the inner text does not scale
+  with the inset.
+- `PointSize[0.004]` points come out at r 0.43 instead of 0.5 pt.
