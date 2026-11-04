@@ -716,3 +716,46 @@ mod fields_and_graphs {
     assert!(s.matches("stroke=\"rgb(0,0,255)\"").count() > 100, "{s}");
   }
 }
+
+mod arrows_and_box {
+  use super::*;
+
+  /// The area of the first filled arrowhead `<polygon>` (the triangle after
+  /// a `<polyline>`).
+  fn head_area(svg: &str) -> f64 {
+    let after = svg.split("<polyline").nth(1).unwrap();
+    let pts = after.split("<polygon points=\"").nth(1).unwrap();
+    let p: Vec<(f64, f64)> = pts
+      .split('"')
+      .next()
+      .unwrap()
+      .split(' ')
+      .map(|xy| {
+        let mut it = xy.split(',').map(|v| v.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap())
+      })
+      .collect();
+    ((p[1].0 - p[0].0) * (p[2].1 - p[0].1)
+      - (p[2].0 - p[0].0) * (p[1].1 - p[0].1))
+      .abs()
+      / 2.0
+  }
+
+  // `Arrowheads[s]` sizes the heads of 3D arrows as a fraction of the
+  // picture's width.
+  #[test]
+  fn arrowheads_size_3d_arrow_heads() {
+    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let large =
+      svg("Graphics3D[{Arrowheads[0.05], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    assert!(head_area(&large) > 3.0 * head_area(&small));
+  }
+
+  // The bounding box is drawn opaque, in the axis grey.
+  #[test]
+  fn box_edges_are_opaque() {
+    let s = svg("Graphics3D[Cuboid[]]");
+    assert!(s.contains("stroke=\"rgb(102,102,102)\" stroke-width=\"0.5\""));
+    assert!(!s.contains("opacity=\"0.4\""));
+  }
+}

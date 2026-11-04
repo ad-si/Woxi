@@ -8645,3 +8645,48 @@ rule. Still open:
 - `FrameTicks -> {{f, None}, {f, None}}` with a tick function and
   `PlotRangePadding -> None` on a `ListPlot`: both are ignored (the
   wolframscript reference itself errors, so the target is unclear).
+
+## 3D graphics (graphics comparison sweep, 2026-11)
+
+Fixed this round: Ellipsoid/Parallelepiped/Simplex/CapsuleShape,
+ListContourPlot3D, StreamPlot3D, perspective camera and picture size,
+PlotRange clipping of curved solids, ViewPoint -> Top/Front, cylinder and
+cone bounds/rims, VertexColors, Plot3D's BoundaryStyle/Mesh/MeshStyle/
+MeshFunctions/MeshShading/RegionFunction/Filling/PlotLegends, smooth
+RegionPlot3D, per-level ContourPlot3D colours, solid VectorPlot3D arrows,
+GraphPlot3D of a Graph. What still differs:
+
+- Shading is per facet (flat): spheres, cylinders and surfaces show their
+  facets where wolframscript (which exports 3D graphics as an embedded
+  raster) interpolates vertex normals. SVG has no Gouraud fill.
+- StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
+  box and tops it up with points of its own choosing (the two extra lines
+  of `StreamPoints -> 10` start near `(±0.27, ±0.27, ±0.26)`); Woxi tops
+  up from the twice-as-fine lattice, farthest point first. Lines stop at
+  the box only; WL's colour scaling over the lines is approximated by the
+  drawn lines' magnitude range.
+- VectorPlot3D: wolframscript places its arrows on a jittered layout (221
+  of them by default, 64 for `VectorPoints -> 4`); Woxi uses the cell
+  centres of an n³ grid (n = 6 by default). Heads are hexagonal.
+- SliceDensityPlot3D: wolframscript jitters its sample positions randomly
+  (the centre planes sit at e.g. `x = 0.00053`), so `x y z` on
+  `"CenterPlanes"` shows a gradient of tiny random-sign values; Woxi samples
+  the planes exactly and draws one colour. Slice outlines are not drawn.
+- ListPlot3D `InterpolationOrder -> 0` (flat tiles, and WL's automatic
+  outlier clipping of the z range) is not implemented; scattered points
+  are triangulated but the hull edge is jagged at the 50 x 50 grid.
+- SphericalPlot3D and RevolutionPlot3D draw no default mesh; ContourPlot3D
+  and RegionPlot3D draw neither their default mesh nor the black curves
+  where a surface meets the box.
+- DensityPlot3D's default `OpacityFunction` (mid values transparent) is
+  not reproduced: the voxels stay near opaque.
+- `EdgeForm[Dashed]` on 3D faces is ignored (and the edge colour is not
+  inherited from an earlier `EdgeForm[colour]`); `FaceGrids` are not drawn;
+  `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
+  are ignored; a `Tube` polyline has no rounded joins or caps.
+- 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
+  screen length (wolframscript steps a short z axis over 0..10 by 5, Woxi
+  by 2.5).
+- The 3D charts (`BarChart3D`, `Histogram3D`, `PieChart3D`, …) keep their
+  own orthographic camera and square framing; `BubbleChart3D` is not
+  implemented.

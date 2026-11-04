@@ -4,46 +4,46 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 ---
 <svg width="360" height="380" viewBox="0 0 360 380" xmlns="http://www.w3.org/2000/svg">
 <rect width="360" height="380" fill="rgb(255,255,255)"/>
-<line x1="164.2" y1="170.1" x2="171.9" y2="172.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="164.2" y1="170.1" x2="163.9" y2="162.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="159.5" y1="174.8" x2="164.2" y2="170.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="171.9" y1="172.7" x2="179.8" y2="175.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="163.9" y1="162.8" x2="163.7" y2="155.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="179.8" y1="175.3" x2="187.7" y2="177.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="154.8" y1="179.6" x2="159.5" y2="174.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="187.7" y1="177.9" x2="195.7" y2="180.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="163.7" y1="155.4" x2="163.4" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="195.7" y1="180.5" x2="203.8" y2="183.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="150.0" y1="184.5" x2="154.8" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="163.4" y1="147.9" x2="163.1" y2="140.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="203.8" y1="183.2" x2="211.9" y2="185.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="145.1" y1="189.4" x2="150.0" y2="184.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="211.9" y1="185.9" x2="220.1" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="163.1" y1="140.2" x2="162.9" y2="132.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="220.1" y1="188.6" x2="228.4" y2="191.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="140.1" y1="194.4" x2="145.1" y2="189.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="162.9" y1="132.5" x2="162.6" y2="124.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="228.4" y1="191.3" x2="236.8" y2="194.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="236.8" y1="194.1" x2="245.3" y2="196.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="162.6" y1="124.6" x2="162.3" y2="116.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="135.0" y1="199.5" x2="140.1" y2="194.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="245.3" y1="196.9" x2="253.8" y2="199.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="162.3" y1="116.6" x2="162.0" y2="108.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="253.8" y1="199.7" x2="262.5" y2="202.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="129.8" y1="204.8" x2="135.0" y2="199.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="262.5" y1="202.6" x2="271.2" y2="205.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="162.0" y1="108.5" x2="161.8" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="271.2" y1="205.4" x2="280.0" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="124.6" y1="210.0" x2="129.8" y2="204.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="161.8" y1="100.3" x2="161.5" y2="91.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="280.0" y1="208.3" x2="288.8" y2="211.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="119.2" y1="215.4" x2="124.6" y2="210.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="288.8" y1="211.3" x2="297.8" y2="214.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="161.5" y1="91.9" x2="161.2" y2="83.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="297.8" y1="214.2" x2="306.9" y2="217.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="113.8" y1="220.9" x2="119.2" y2="215.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="161.2" y1="83.5" x2="160.9" y2="74.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="306.9" y1="217.2" x2="316.0" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="164.2" y1="170.1" x2="171.9" y2="172.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="164.2" y1="170.1" x2="163.9" y2="162.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="159.5" y1="174.8" x2="164.2" y2="170.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="171.9" y1="172.7" x2="179.8" y2="175.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="163.9" y1="162.8" x2="163.7" y2="155.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="179.8" y1="175.3" x2="187.7" y2="177.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="154.8" y1="179.6" x2="159.5" y2="174.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="187.7" y1="177.9" x2="195.7" y2="180.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="163.7" y1="155.4" x2="163.4" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="195.7" y1="180.5" x2="203.8" y2="183.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="150.0" y1="184.5" x2="154.8" y2="179.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="163.4" y1="147.9" x2="163.1" y2="140.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="203.8" y1="183.2" x2="211.9" y2="185.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="145.1" y1="189.4" x2="150.0" y2="184.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="211.9" y1="185.9" x2="220.1" y2="188.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="163.1" y1="140.2" x2="162.9" y2="132.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="220.1" y1="188.6" x2="228.4" y2="191.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="140.1" y1="194.4" x2="145.1" y2="189.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="162.9" y1="132.5" x2="162.6" y2="124.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="228.4" y1="191.3" x2="236.8" y2="194.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="236.8" y1="194.1" x2="245.3" y2="196.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="162.6" y1="124.6" x2="162.3" y2="116.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="135.0" y1="199.5" x2="140.1" y2="194.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="245.3" y1="196.9" x2="253.8" y2="199.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="162.3" y1="116.6" x2="162.0" y2="108.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="253.8" y1="199.7" x2="262.5" y2="202.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="129.8" y1="204.8" x2="135.0" y2="199.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="262.5" y1="202.6" x2="271.2" y2="205.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="162.0" y1="108.5" x2="161.8" y2="100.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="271.2" y1="205.4" x2="280.0" y2="208.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="124.6" y1="210.0" x2="129.8" y2="204.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="161.8" y1="100.3" x2="161.5" y2="91.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="280.0" y1="208.3" x2="288.8" y2="211.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="119.2" y1="215.4" x2="124.6" y2="210.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="288.8" y1="211.3" x2="297.8" y2="214.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="161.5" y1="91.9" x2="161.2" y2="83.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="297.8" y1="214.2" x2="306.9" y2="217.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="113.8" y1="220.9" x2="119.2" y2="215.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="161.2" y1="83.5" x2="160.9" y2="74.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="306.9" y1="217.2" x2="316.0" y2="220.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="204.9,169.2 204.6,175.4 194.9,169.2" fill="rgb(255,202,32)" stroke="rgb(255,202,32)" stroke-width="0.5"/>
 <polygon points="194.9,169.2 194.7,163.1 204.9,169.2" fill="rgb(255,194,30)" stroke="rgb(255,194,30)" stroke-width="0.5"/>
 <polygon points="195.1,175.4 194.9,169.2 204.6,175.4" fill="rgb(255,202,32)" stroke="rgb(255,202,32)" stroke-width="0.5"/>
@@ -110,7 +110,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="226.6,159.2 225.6,165.3 216.0,157.7" fill="rgb(255,157,24)" stroke="rgb(255,157,24)" stroke-width="0.5"/>
 <polygon points="222.1,183.5 220.8,189.5 213.3,182.2" fill="rgb(255,188,29)" stroke="rgb(255,188,29)" stroke-width="0.5"/>
 <polygon points="194.1,144.8 194.3,150.8 182.7,145.6" fill="rgb(255,177,27)" stroke="rgb(255,177,27)" stroke-width="0.5"/>
-<line x1="316.0" y1="220.2" x2="325.3" y2="223.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="316.0" y1="220.2" x2="325.3" y2="223.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="188.1,194.3 187.3,188.3 196.0,193.7" fill="rgb(255,225,36)" stroke="rgb(255,225,36)" stroke-width="0.5"/>
 <polygon points="183.2,151.6 183.7,157.7 172.3,153.2" fill="rgb(255,196,30)" stroke="rgb(255,196,30)" stroke-width="0.5"/>
 <polygon points="217.0,145.6 216.6,151.6 205.6,144.7" fill="rgb(255,152,23)" stroke="rgb(255,152,23)" stroke-width="0.5"/>
@@ -147,7 +147,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="233.9,173.6 232.3,179.6 224.5,171.4" fill="rgb(255,159,24)" stroke="rgb(255,159,24)" stroke-width="0.5"/>
 <polygon points="172.3,153.2 171.4,147.2 183.2,151.6" fill="rgb(255,186,28)" stroke="rgb(255,186,28)" stroke-width="0.5"/>
 <polygon points="173.2,159.3 174.2,165.4 162.9,161.6" fill="rgb(255,210,33)" stroke="rgb(255,210,33)" stroke-width="0.5"/>
-<line x1="160.9" y1="74.9" x2="160.6" y2="66.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="160.9" y1="74.9" x2="160.6" y2="66.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="232.3,179.6 230.6,185.5 223.3,177.5" fill="rgb(255,166,25)" stroke="rgb(255,166,25)" stroke-width="0.5"/>
 <line x1="204.9" y1="169.2" x2="204.6" y2="175.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="205.1" y1="163.1" x2="204.9" y2="169.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -167,7 +167,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="226.6,159.2 227.5,153.2 236.8,161.5" fill="rgb(230,132,19)" stroke="rgb(230,132,19)" stroke-width="0.5"/>
 <polygon points="179.1,189.6 180.5,195.5 171.1,191.5" fill="rgb(255,235,37)" stroke="rgb(255,235,37)" stroke-width="0.5"/>
 <polygon points="194.0,138.8 193.8,132.8 205.8,138.7" fill="rgb(250,143,21)" stroke="rgb(250,143,21)" stroke-width="0.5"/>
-<line x1="108.2" y1="226.5" x2="113.8" y2="220.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="108.2" y1="226.5" x2="113.8" y2="220.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="217.0,145.6 217.5,139.6 228.3,147.2" fill="rgb(222,127,18)" stroke="rgb(222,127,18)" stroke-width="0.5"/>
 <line x1="215.4" y1="163.8" x2="205.1" y2="163.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="194.7" y1="163.1" x2="184.3" y2="163.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -198,7 +198,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="227.5,153.2 228.3,147.2 238.1,155.5" fill="rgb(214,122,17)" stroke="rgb(214,122,17)" stroke-width="0.5"/>
 <polygon points="180.5,195.5 182.0,201.4 173.0,197.3" fill="rgb(255,235,37)" stroke="rgb(255,235,37)" stroke-width="0.5"/>
 <polygon points="238.1,155.5 236.8,161.5 227.5,153.2" fill="rgb(230,132,19)" stroke="rgb(230,132,19)" stroke-width="0.5"/>
-<line x1="325.3" y1="223.3" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="325.3" y1="223.3" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="229.0,141.2 228.3,147.2 217.5,139.6" fill="rgb(222,127,18)" stroke="rgb(222,127,18)" stroke-width="0.5"/>
 <line x1="212.5" y1="188.3" x2="204.1" y2="187.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="217.9,201.4 216.4,207.2 210.8,200.3" fill="rgb(255,198,30)" stroke="rgb(255,198,30)" stroke-width="0.5"/>
@@ -308,7 +308,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="170.1,135.3 169.6,129.5 181.9,133.7" fill="rgb(255,151,22)" stroke="rgb(255,151,22)" stroke-width="0.5"/>
 <polygon points="181.5,127.8 181.9,133.7 169.6,129.5" fill="rgb(255,151,22)" stroke="rgb(255,151,22)" stroke-width="0.5"/>
 <polygon points="222.6,208.7 220.4,214.3 216.4,207.2" fill="rgb(255,188,28)" stroke="rgb(255,188,28)" stroke-width="0.5"/>
-<line x1="160.6" y1="66.1" x2="160.3" y2="57.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="160.6" y1="66.1" x2="160.3" y2="57.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="206.0,127.0 206.1,121.2 218.2,127.8" fill="rgb(192,108,15)" stroke="rgb(192,108,15)" stroke-width="0.5"/>
 <line x1="233.9" y1="173.6" x2="232.3" y2="179.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="205.9" y1="132.8" x2="205.8" y2="138.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -344,7 +344,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="203.3" y1="205.6" x2="196.6" y2="205.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="236.8" y1="161.5" x2="235.4" y2="167.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="233.9,199.6 236.4,193.9 240.6,202.6" fill="rgb(255,150,22)" stroke="rgb(255,150,22)" stroke-width="0.5"/>
-<line x1="334.6" y1="226.4" x2="335.6" y2="218.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="334.6" y1="226.4" x2="335.6" y2="218.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="193.6,121.3 193.7,127.0 181.3,122.1" fill="rgb(230,131,19)" stroke="rgb(230,131,19)" stroke-width="0.5"/>
 <polygon points="207.9,217.6 208.9,211.9 213.1,218.5" fill="rgb(255,198,30)" stroke="rgb(255,198,30)" stroke-width="0.5"/>
 <polygon points="151.5,158.8 150.1,152.9 161.7,155.6" fill="rgb(255,193,29)" stroke="rgb(255,193,29)" stroke-width="0.5"/>
@@ -356,7 +356,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="228.8" y1="191.4" x2="226.8" y2="197.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="218.4,122.1 218.2,127.8 206.1,121.2" fill="rgb(192,108,15)" stroke="rgb(192,108,15)" stroke-width="0.5"/>
 <polygon points="241.1,137.7 240.2,143.6 229.6,135.3" fill="rgb(180,101,14)" stroke="rgb(180,101,14)" stroke-width="0.5"/>
-<line x1="331.1" y1="232.0" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="331.1" y1="232.0" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="177.2,208.8 179.5,214.3 171.3,210.8" fill="rgb(255,230,35)" stroke="rgb(255,230,35)" stroke-width="0.5"/>
 <polygon points="249.7,152.7 248.2,158.7 239.2,149.6" fill="rgb(188,106,15)" stroke="rgb(188,106,15)" stroke-width="0.5"/>
 <polygon points="218.2,127.8 218.4,122.1 230.1,129.5" fill="rgb(170,95,13)" stroke="rgb(170,95,13)" stroke-width="0.5"/>
@@ -367,7 +367,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="246.3,191.4 243.5,197.0 238.7,188.2" fill="rgb(251,143,21)" stroke="rgb(251,143,21)" stroke-width="0.5"/>
 <line x1="170.7" y1="141.2" x2="171.4" y2="147.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="185.1,212.9 186.8,218.5 179.5,214.3" fill="rgb(255,225,35)" stroke="rgb(255,225,35)" stroke-width="0.5"/>
-<line x1="102.6" y1="232.2" x2="108.2" y2="226.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="102.6" y1="232.2" x2="108.2" y2="226.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="229.6,135.3 230.1,129.5 241.1,137.7" fill="rgb(164,92,12)" stroke="rgb(164,92,12)" stroke-width="0.5"/>
 <polygon points="153.5,191.5 150.8,185.9 161.1,188.3" fill="rgb(255,228,35)" stroke="rgb(255,228,35)" stroke-width="0.5"/>
 <polygon points="231.3,205.3 233.9,199.6 237.4,208.0" fill="rgb(255,156,23)" stroke="rgb(255,156,23)" stroke-width="0.5"/>
@@ -484,7 +484,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="157.9,132.0 157.3,126.3 169.6,129.5" fill="rgb(254,144,21)" stroke="rgb(254,144,21)" stroke-width="0.5"/>
 <polygon points="184.2,225.0 181.8,219.8 188.6,223.9" fill="rgb(255,219,33)" stroke="rgb(255,219,33)" stroke-width="0.5"/>
 <polygon points="169.1,218.5 165.7,213.3 174.1,216.2" fill="rgb(255,229,35)" stroke="rgb(255,229,35)" stroke-width="0.5"/>
-<line x1="160.3" y1="57.3" x2="160.0" y2="48.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="160.3" y1="57.3" x2="160.0" y2="48.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="206.9,223.2 205.8,228.6 202.3,222.8" fill="rgb(255,199,30)" stroke="rgb(255,199,30)" stroke-width="0.5"/>
 <polygon points="193.6,115.7 193.5,110.2 206.1,115.6" fill="rgb(175,98,13)" stroke="rgb(175,98,13)" stroke-width="0.5"/>
 <polygon points="251.5,180.0 253.8,174.2 259.3,184.2" fill="rgb(186,104,14)" stroke="rgb(186,104,14)" stroke-width="0.5"/>
@@ -525,7 +525,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="157.9,132.0 158.7,137.8 146.8,135.3" fill="rgb(255,159,23)" stroke="rgb(255,159,23)" stroke-width="0.5"/>
 <polygon points="246.7,206.0 243.1,211.2 240.6,202.6" fill="rgb(252,143,20)" stroke="rgb(252,143,20)" stroke-width="0.5"/>
 <polygon points="215.7,225.0 218.1,219.7 219.8,226.5" fill="rgb(255,179,26)" stroke="rgb(255,179,26)" stroke-width="0.5"/>
-<line x1="335.6" y1="218.7" x2="336.7" y2="211.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="335.6" y1="218.7" x2="336.7" y2="211.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="230.8,218.4 227.3,223.4 225.8,216.1" fill="rgb(255,169,24)" stroke="rgb(255,169,24)" stroke-width="0.5"/>
 <polygon points="201.9,228.3 202.3,222.8 205.8,228.6" fill="rgb(255,199,30)" stroke="rgb(255,199,30)" stroke-width="0.5"/>
 <polygon points="253.8,174.2 255.9,168.4 262.0,178.6" fill="rgb(171,95,13)" stroke="rgb(171,95,13)" stroke-width="0.5"/>
@@ -571,12 +571,12 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="239.3,216.2 235.4,221.1 234.2,213.3" fill="rgb(255,154,22)" stroke="rgb(255,154,22)" stroke-width="0.5"/>
 <line x1="156.3" y1="197.1" x2="159.3" y2="202.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="148.4" y1="180.1" x2="150.8" y2="185.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="327.4" y1="237.9" x2="331.1" y2="232.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="327.4" y1="237.9" x2="331.1" y2="232.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="168.8,118.2 169.1,123.8 156.9,120.7" fill="rgb(234,132,18)" stroke="rgb(234,132,18)" stroke-width="0.5"/>
 <polygon points="261.1,150.9 259.6,156.7 251.0,146.9" fill="rgb(149,83,11)" stroke="rgb(149,83,11)" stroke-width="0.5"/>
 <polygon points="184.2,225.0 186.7,230.2 180.1,226.5" fill="rgb(255,212,32)" stroke="rgb(255,212,32)" stroke-width="0.5"/>
 <line x1="169.1" y1="123.8" x2="169.6" y2="129.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="96.8" y1="238.0" x2="102.6" y2="232.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="96.8" y1="238.0" x2="102.6" y2="232.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="219.8,226.5 222.9,221.4 223.7,228.2" fill="rgb(255,171,25)" stroke="rgb(255,171,25)" stroke-width="0.5"/>
 <polygon points="157.3,126.3 156.9,120.7 169.1,123.8" fill="rgb(234,132,18)" stroke="rgb(234,132,18)" stroke-width="0.5"/>
 <polygon points="168.8,118.2 168.6,112.7 181.1,116.5" fill="rgb(205,115,16)" stroke="rgb(205,115,16)" stroke-width="0.5"/>
@@ -677,7 +677,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="150.1" y1="152.9" x2="140.2" y2="156.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="218.8,105.7 218.7,111.0 206.2,104.9" fill="rgb(139,77,10)" stroke="rgb(139,77,10)" stroke-width="0.5"/>
 <polygon points="147.8,210.0 143.9,205.0 153.2,206.1" fill="rgb(255,221,33)" stroke="rgb(255,221,33)" stroke-width="0.5"/>
-<line x1="160.0" y1="48.3" x2="159.7" y2="39.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="160.0" y1="48.3" x2="159.7" y2="39.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="259.7,199.7 256.0,204.9 253.4,195.3" fill="rgb(206,115,16)" stroke="rgb(206,115,16)" stroke-width="0.5"/>
 <line x1="142.0" y1="162.7" x2="143.9" y2="168.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="207.8,234.4 209.6,229.2 210.7,235.1" fill="rgb(255,183,26)" stroke="rgb(255,183,26)" stroke-width="0.5"/>
@@ -710,7 +710,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="231.3,225.8 235.4,221.1 234.9,228.5" fill="rgb(255,148,21)" stroke="rgb(255,148,21)" stroke-width="0.5"/>
 <line x1="165.7" y1="213.3" x2="160.6" y2="216.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="146.0" y1="174.3" x2="137.8" y2="178.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="336.7" y1="211.0" x2="337.8" y2="203.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="336.7" y1="211.0" x2="337.8" y2="203.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="156.9,120.7 157.3,126.3 145.5,124.0" fill="rgb(240,135,18)" stroke="rgb(240,135,18)" stroke-width="0.5"/>
 <polygon points="268.7,161.3 266.7,167.1 259.6,156.7" fill="rgb(142,78,10)" stroke="rgb(142,78,10)" stroke-width="0.5"/>
 <polygon points="176.3,228.3 180.0,232.9 172.8,230.4" fill="rgb(255,209,30)" stroke="rgb(255,209,30)" stroke-width="0.5"/>
@@ -808,7 +808,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="130.4,183.7 127.6,178.1 137.8,178.7" fill="rgb(255,195,28)" stroke="rgb(255,195,28)" stroke-width="0.5"/>
 <polygon points="218.8,100.5 218.8,105.7 206.2,99.7" fill="rgb(120,65,8)" stroke="rgb(120,65,8)" stroke-width="0.5"/>
 <line x1="231.1" y1="112.6" x2="218.7" y2="111.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="323.8" y1="243.8" x2="327.4" y2="237.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="323.8" y1="243.8" x2="327.4" y2="237.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="222.9,234.7 218.5,238.8 219.9,232.9" fill="rgb(255,165,23)" stroke="rgb(255,165,23)" stroke-width="0.5"/>
 <line x1="181.0" y1="111.0" x2="168.6" y2="112.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.8" y1="200.8" x2="143.9" y2="205.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -818,7 +818,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="191.9,239.9 189.3,235.1 194.1,239.3" fill="rgb(255,194,28)" stroke="rgb(255,194,28)" stroke-width="0.5"/>
 <polygon points="168.5,107.4 168.6,112.7 156.5,109.9" fill="rgb(195,108,14)" stroke="rgb(195,108,14)" stroke-width="0.5"/>
 <line x1="190.4" y1="229.2" x2="192.2" y2="234.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="90.9" y1="244.0" x2="96.8" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="90.9" y1="244.0" x2="96.8" y2="238.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="140.2,199.8 143.9,205.0 134.7,204.7" fill="rgb(255,208,30)" stroke="rgb(255,208,30)" stroke-width="0.5"/>
 <polygon points="272.2,178.0 269.4,183.5 264.5,172.8" fill="rgb(149,82,11)" stroke="rgb(149,82,11)" stroke-width="0.5"/>
 <polygon points="216.1,237.3 219.9,232.9 218.5,238.8" fill="rgb(255,165,23)" stroke="rgb(255,165,23)" stroke-width="0.5"/>
@@ -871,7 +871,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="203.6,238.9 202.4,243.8 201.2,238.7" fill="rgb(255,179,25)" stroke="rgb(255,179,25)" stroke-width="0.5"/>
 <polygon points="131.1,161.5 133.1,167.3 122.8,166.9" fill="rgb(255,178,25)" stroke="rgb(255,178,25)" stroke-width="0.5"/>
 <line x1="140.2" y1="156.8" x2="131.1" y2="161.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="159.7" y1="39.1" x2="159.3" y2="29.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="159.7" y1="39.1" x2="159.3" y2="29.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="161.9,231.6 157.0,227.6 165.0,228.6" fill="rgb(255,209,30)" stroke="rgb(255,209,30)" stroke-width="0.5"/>
 <polygon points="265.2,204.6 261.2,209.5 259.7,199.7" fill="rgb(186,103,13)" stroke="rgb(186,103,13)" stroke-width="0.5"/>
 <polygon points="274.8,172.4 272.2,178.0 266.7,167.1" fill="rgb(135,74,9)" stroke="rgb(135,74,9)" stroke-width="0.5"/>
@@ -906,7 +906,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="259.7" y1="199.7" x2="256.0" y2="204.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="180.9,100.6 181.0,95.6 193.5,99.7" fill="rgb(134,73,9)" stroke="rgb(134,73,9)" stroke-width="0.5"/>
 <polygon points="243.1,115.1 243.2,109.8 254.6,118.4" fill="rgb(94,50,6)" stroke="rgb(94,50,6)" stroke-width="0.5"/>
-<line x1="337.8" y1="203.1" x2="338.9" y2="195.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="337.8" y1="203.1" x2="338.9" y2="195.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="269.0,199.5 265.2,204.6 263.2,194.4" fill="rgb(172,95,12)" stroke="rgb(172,95,12)" stroke-width="0.5"/>
 <line x1="263.5" y1="139.3" x2="253.0" y2="135.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="212.2,241.6 216.1,237.3 214.0,242.7" fill="rgb(255,165,23)" stroke="rgb(255,165,23)" stroke-width="0.5"/>
@@ -1064,7 +1064,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="265.2,204.6 269.0,199.5 269.8,209.9" fill="rgb(153,83,10)" stroke="rgb(153,83,10)" stroke-width="0.5"/>
 <line x1="210.2" y1="240.7" x2="208.1" y2="239.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="191.9" y1="239.9" x2="189.8" y2="240.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="320.0" y1="249.8" x2="323.8" y2="243.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="320.0" y1="249.8" x2="323.8" y2="243.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="123.9,189.2 120.8,183.9 130.4,183.7" fill="rgb(255,185,26)" stroke="rgb(255,185,26)" stroke-width="0.5"/>
 <polygon points="209.4,246.4 214.0,242.7 210.4,247.2" fill="rgb(255,160,22)" stroke="rgb(255,160,22)" stroke-width="0.5"/>
 <line x1="183.9" y1="237.4" x2="187.8" y2="241.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -1074,7 +1074,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="272.2" y1="178.0" x2="269.4" y2="183.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="206.9,245.0 203.5,249.1 205.5,244.5" fill="rgb(255,166,22)" stroke="rgb(255,166,22)" stroke-width="0.5"/>
 <line x1="168.5" y1="102.2" x2="168.5" y2="107.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="85.0" y1="250.0" x2="90.9" y2="244.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="85.0" y1="250.0" x2="90.9" y2="244.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="139.1,219.1 134.5,214.7 143.0,214.4" fill="rgb(255,200,28)" stroke="rgb(255,200,28)" stroke-width="0.5"/>
 <polygon points="264.4,133.6 265.1,128.0 274.4,138.4" fill="rgb(86,45,5)" stroke="rgb(86,45,5)" stroke-width="0.5"/>
 <polygon points="265.5,214.6 260.9,219.0 261.2,209.5" fill="rgb(182,100,13)" stroke="rgb(182,100,13)" stroke-width="0.5"/>
@@ -1099,7 +1099,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="152.1" y1="223.4" x2="157.0" y2="227.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="206.2" y1="94.8" x2="206.2" y2="99.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="200.4,248.4 200.8,243.7 201.2,248.5" fill="rgb(255,171,23)" stroke="rgb(255,171,23)" stroke-width="0.5"/>
-<line x1="159.3" y1="29.8" x2="159.0" y2="20.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="159.3" y1="29.8" x2="159.0" y2="20.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="198.8,248.5 197.6,243.8 199.6,248.4" fill="rgb(255,173,24)" stroke="rgb(255,173,24)" stroke-width="0.5"/>
 <polygon points="208.2,245.6 204.1,249.4 206.9,245.0" fill="rgb(255,164,22)" stroke="rgb(255,164,22)" stroke-width="0.5"/>
 <line x1="143.0" y1="214.4" x2="147.5" y2="219.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -1145,7 +1145,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="161.9" y1="231.6" x2="167.1" y2="235.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="245.9,231.1 251.1,227.3 248.2,235.0" fill="rgb(207,114,14)" stroke="rgb(207,114,14)" stroke-width="0.5"/>
 <line x1="131.1" y1="161.5" x2="122.8" y2="166.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="338.9" y1="195.1" x2="340.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="338.9" y1="195.1" x2="340.0" y2="186.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="154.1,231.2 159.4,234.8 151.9,235.1" fill="rgb(255,193,27)" stroke="rgb(255,193,27)" stroke-width="0.5"/>
 <polygon points="182.1,246.8 176.3,244.2 183.2,245.3" fill="rgb(255,184,25)" stroke="rgb(255,184,25)" stroke-width="0.5"/>
 <polygon points="164.9,238.2 170.5,241.3 163.3,241.2" fill="rgb(255,189,26)" stroke="rgb(255,189,26)" stroke-width="0.5"/>
@@ -1375,7 +1375,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="206.5,252.2 200.0,252.9 206.3,251.7" fill="rgb(255,156,20)" stroke="rgb(255,156,20)" stroke-width="0.5"/>
 <line x1="191.8" y1="245.6" x2="195.9" y2="249.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="193.7,251.7 200.0,252.9 193.6,252.2" fill="rgb(255,161,21)" stroke="rgb(255,161,21)" stroke-width="0.5"/>
-<line x1="159.0" y1="20.4" x2="158.7" y2="10.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="159.0" y1="20.4" x2="158.7" y2="10.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="243.8,241.8 237.8,244.2 242.5,238.2" fill="rgb(221,121,15)" stroke="rgb(221,121,15)" stroke-width="0.5"/>
 <polygon points="162.2,244.3 156.2,241.9 163.3,241.2" fill="rgb(255,184,25)" stroke="rgb(255,184,25)" stroke-width="0.5"/>
 <polygon points="218.3,86.3 218.6,90.8 206.0,85.5" fill="rgb(97,51,5)" stroke="rgb(97,51,5)" stroke-width="0.5"/>
@@ -1397,7 +1397,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="117.5,149.8 116.3,144.2 126.4,144.3" fill="rgb(248,137,18)" stroke="rgb(248,137,18)" stroke-width="0.5"/>
 <polygon points="206.5,252.8 200.0,252.9 206.5,252.2" fill="rgb(255,155,20)" stroke="rgb(255,155,20)" stroke-width="0.5"/>
 <polygon points="193.6,252.2 200.0,252.9 193.5,252.8" fill="rgb(255,160,21)" stroke="rgb(255,160,21)" stroke-width="0.5"/>
-<line x1="316.2" y1="255.9" x2="320.0" y2="249.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="316.2" y1="255.9" x2="320.0" y2="249.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="213.0,252.3 206.5,252.8 212.9,251.2" fill="rgb(255,150,19)" stroke="rgb(255,150,19)" stroke-width="0.5"/>
 <line x1="236.8" y1="241.1" x2="235.1" y2="238.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="134.0,117.2 134.0,111.9 144.9,113.1" fill="rgb(185,101,12)" stroke="rgb(185,101,12)" stroke-width="0.5"/>
@@ -1411,7 +1411,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="193.5,252.8 187.0,252.4 193.6,252.2" fill="rgb(255,165,22)" stroke="rgb(255,165,22)" stroke-width="0.5"/>
 <polygon points="200.0,252.9 206.5,252.8 200.0,252.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="200.0,252.9 193.5,252.8 200.0,252.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<line x1="78.9" y1="256.1" x2="85.0" y2="250.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="78.9" y1="256.1" x2="85.0" y2="250.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="174.5,248.4 180.8,250.0 174.2,250.6" fill="rgb(255,172,23)" stroke="rgb(255,172,23)" stroke-width="0.5"/>
 <polygon points="265.6,122.5 265.8,117.0 275.7,127.3" fill="rgb(75,39,4)" stroke="rgb(75,39,4)" stroke-width="0.5"/>
 <polygon points="219.5,251.6 213.0,252.3 219.2,249.9" fill="rgb(255,144,18)" stroke="rgb(255,144,18)" stroke-width="0.5"/>
@@ -1428,7 +1428,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="206.5,252.8 213.0,252.3 206.5,253.3" fill="rgb(255,148,19)" stroke="rgb(255,148,19)" stroke-width="0.5"/>
 <polygon points="253.6,231.6 258.9,227.9 255.3,236.1" fill="rgb(181,98,12)" stroke="rgb(181,98,12)" stroke-width="0.5"/>
 <polygon points="200.0,252.9 206.3,253.9 200.0,252.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<line x1="340.0" y1="186.9" x2="341.1" y2="178.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="340.0" y1="186.9" x2="341.1" y2="178.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="200.0,252.9 193.7,253.9 200.0,252.9" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="118.4,195.3 115.1,190.1 123.9,189.2" fill="rgb(255,173,23)" stroke="rgb(255,173,23)" stroke-width="0.5"/>
 <polygon points="126.0,205.3 130.1,210.1 122.1,211.4" fill="rgb(255,179,24)" stroke="rgb(255,179,24)" stroke-width="0.5"/>
@@ -1718,7 +1718,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="195.9,256.2 191.7,259.2 195.3,255.8" fill="rgb(255,151,19)" stroke="rgb(255,151,19)" stroke-width="0.5"/>
 <polygon points="225.2,254.9 219.0,254.8 225.7,252.7" fill="rgb(239,131,16)" stroke="rgb(239,131,16)" stroke-width="0.5"/>
 <polygon points="265.5,106.7 265.7,111.8 254.6,102.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="158.7" y1="10.8" x2="158.4" y2="1.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.7" y1="10.8" x2="158.4" y2="1.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="212.2,255.6 218.2,256.4 211.5,256.6" fill="rgb(247,135,17)" stroke="rgb(247,135,17)" stroke-width="0.5"/>
 <line x1="206.5" y1="253.3" x2="200.0" y2="252.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="242.7" y1="94.7" x2="243.0" y2="99.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -1757,7 +1757,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="116.3,144.2 117.5,149.8 108.3,150.4" fill="rgb(238,129,16)" stroke="rgb(238,129,16)" stroke-width="0.5"/>
 <polygon points="254.6,102.7 254.1,97.8 265.5,106.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="118.0,206.7 114.1,201.9 122.1,200.4" fill="rgb(255,167,21)" stroke="rgb(255,167,21)" stroke-width="0.5"/>
-<line x1="341.1" y1="178.7" x2="342.2" y2="170.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="341.1" y1="178.7" x2="342.2" y2="170.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="149.7,243.4 143.9,240.9 150.4,239.2" fill="rgb(255,173,22)" stroke="rgb(255,173,22)" stroke-width="0.5"/>
 <line x1="268.8" y1="220.0" x2="264.0" y2="224.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="181.8,256.5 187.9,255.6 182.9,258.0" fill="rgb(255,156,20)" stroke="rgb(255,156,20)" stroke-width="0.5"/>
@@ -1788,7 +1788,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="181.8,256.5 175.8,257.0 181.1,254.9" fill="rgb(255,158,20)" stroke="rgb(255,158,20)" stroke-width="0.5"/>
 <polygon points="199.6,257.2 199.2,261.2 198.8,257.2" fill="rgb(255,144,18)" stroke="rgb(255,144,18)" stroke-width="0.5"/>
 <line x1="219.4" y1="253.2" x2="219.5" y2="251.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="312.3" y1="262.2" x2="316.2" y2="255.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="312.3" y1="262.2" x2="316.2" y2="255.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="200.5,257.2 200.9,261.2 199.6,257.2" fill="rgb(255,143,18)" stroke="rgb(255,143,18)" stroke-width="0.5"/>
 <polygon points="174.9,254.9 181.1,254.9 175.8,257.0" fill="rgb(255,158,20)" stroke="rgb(255,158,20)" stroke-width="0.5"/>
 <line x1="204.2" y1="256.2" x2="200.0" y2="252.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -1796,7 +1796,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="191.7,259.2 195.9,256.2 193.0,259.9" fill="rgb(255,149,19)" stroke="rgb(255,149,19)" stroke-width="0.5"/>
 <line x1="187.4" y1="254.5" x2="193.7" y2="253.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="238.4" y1="247.5" x2="237.8" y2="244.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="72.6" y1="262.4" x2="78.9" y2="256.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="72.6" y1="262.4" x2="78.9" y2="256.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="207.1,259.8 203.5,256.5 208.4,259.2" fill="rgb(255,141,17)" stroke="rgb(255,141,17)" stroke-width="0.5"/>
 <polygon points="189.5,257.6 184.1,259.4 188.6,256.6" fill="rgb(255,152,19)" stroke="rgb(255,152,19)" stroke-width="0.5"/>
 <polygon points="231.4,254.6 225.2,254.9 232.0,251.8" fill="rgb(225,122,15)" stroke="rgb(225,122,15)" stroke-width="0.5"/>
@@ -1914,7 +1914,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="114.8,133.0 114.6,127.5 124.1,127.4" fill="rgb(197,106,12)" stroke="rgb(197,106,12)" stroke-width="0.5"/>
 <line x1="111.3" y1="161.7" x2="113.2" y2="167.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="290.2" y1="155.8" x2="282.3" y2="149.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="158.4" y1="1.1" x2="167.4" y2="3.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="158.4" y1="1.1" x2="167.4" y2="3.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="193.0,259.9 189.5,262.9 191.7,259.2" fill="rgb(255,143,17)" stroke="rgb(255,143,17)" stroke-width="0.5"/>
 <polygon points="288.6,161.5 290.2,155.8 295.2,168.2" fill="rgb(89,46,4)" stroke="rgb(89,46,4)" stroke-width="0.5"/>
 <line x1="115.5" y1="172.9" x2="109.3" y2="179.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -1979,7 +1979,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="243.6,253.0 237.5,253.9 244.4,249.3" fill="rgb(196,105,12)" stroke="rgb(196,105,12)" stroke-width="0.5"/>
 <line x1="217.2" y1="257.9" x2="211.5" y2="256.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="217.2" y1="257.9" x2="211.5" y2="256.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="152.9" y1="4.9" x2="158.4" y2="1.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="152.9" y1="4.9" x2="158.4" y2="1.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="210.7,262.9 207.1,259.8 212.6,261.8" fill="rgb(241,131,16)" stroke="rgb(241,131,16)" stroke-width="0.5"/>
 <line x1="282.0" y1="206.5" x2="277.9" y2="211.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="275.6,111.3 275.9,116.5 265.5,106.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -1998,7 +1998,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="197.6,261.1 196.4,264.8 196.0,260.8" fill="rgb(252,136,16)" stroke="rgb(252,136,16)" stroke-width="0.5"/>
 <line x1="194.5" y1="260.4" x2="197.3" y2="256.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="292.5,144.6 291.5,150.2 284.4,138.4" fill="rgb(81,42,4)" stroke="rgb(81,42,4)" stroke-width="0.5"/>
-<line x1="342.2" y1="170.3" x2="343.4" y2="161.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="342.2" y1="170.3" x2="343.4" y2="161.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="132.8,235.0 127.6,231.7 133.9,229.5" fill="rgb(255,163,20)" stroke="rgb(255,163,20)" stroke-width="0.5"/>
 <polygon points="202.5,261.1 203.8,264.7 200.9,261.2" fill="rgb(244,132,16)" stroke="rgb(244,132,16)" stroke-width="0.5"/>
 <polygon points="185.7,260.7 180.9,262.7 184.1,259.4" fill="rgb(255,145,17)" stroke="rgb(255,145,17)" stroke-width="0.5"/>
@@ -2060,16 +2060,16 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="203.8,264.7 202.5,261.1 206.2,264.3" fill="rgb(243,131,15)" stroke="rgb(243,131,15)" stroke-width="0.5"/>
 <polygon points="252.7,88.7 253.5,93.2 241.6,85.7" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
 <polygon points="230.3,257.2 236.2,257.1 228.7,259.7" fill="rgb(200,107,12)" stroke="rgb(200,107,12)" stroke-width="0.5"/>
-<line x1="308.3" y1="268.6" x2="312.3" y2="262.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="308.3" y1="268.6" x2="312.3" y2="262.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="114.6,127.5 114.6,122.1 123.8,122.0" fill="rgb(180,97,11)" stroke="rgb(180,97,11)" stroke-width="0.5"/>
 <line x1="285.8" y1="201.7" x2="282.0" y2="206.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="167.4" y1="3.2" x2="176.5" y2="5.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="167.4" y1="3.2" x2="176.5" y2="5.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="134.8,101.8 134.3,106.8 124.8,106.4" fill="rgb(157,83,9)" stroke="rgb(157,83,9)" stroke-width="0.5"/>
 <line x1="216.0" y1="259.4" x2="217.2" y2="257.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="182.9" y1="258.0" x2="184.1" y2="259.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="196.4,264.8 197.6,261.1 198.8,265.0" fill="rgb(249,135,16)" stroke="rgb(249,135,16)" stroke-width="0.5"/>
 <polygon points="201.3,265.0 200.9,261.2 203.8,264.7" fill="rgb(244,132,16)" stroke="rgb(244,132,16)" stroke-width="0.5"/>
-<line x1="66.3" y1="268.8" x2="72.6" y2="262.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="66.3" y1="268.8" x2="72.6" y2="262.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="261.9,243.1 256.2,245.5 261.8,237.9" fill="rgb(164,87,10)" stroke="rgb(164,87,10)" stroke-width="0.5"/>
 <polygon points="178.8,261.0 173.6,262.2 177.1,259.1" fill="rgb(255,145,17)" stroke="rgb(255,145,17)" stroke-width="0.5"/>
 <polygon points="198.8,265.0 199.2,261.2 201.3,265.0" fill="rgb(246,133,16)" stroke="rgb(246,133,16)" stroke-width="0.5"/>
@@ -2198,7 +2198,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="107.3,191.8 110.5,196.9 103.8,199.1" fill="rgb(255,139,16)" stroke="rgb(255,139,16)" stroke-width="0.5"/>
 <polygon points="203.8,264.7 205.0,268.1 201.3,265.0" fill="rgb(229,122,14)" stroke="rgb(229,122,14)" stroke-width="0.5"/>
 <line x1="156.5" y1="253.1" x2="162.5" y2="254.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="176.5" y1="5.3" x2="185.7" y2="7.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="176.5" y1="5.3" x2="185.7" y2="7.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="198.8,265.0 198.4,268.4 196.4,264.8" fill="rgb(235,126,14)" stroke="rgb(235,126,14)" stroke-width="0.5"/>
 <polygon points="201.3,265.0 201.7,268.4 198.8,265.0" fill="rgb(232,124,14)" stroke="rgb(232,124,14)" stroke-width="0.5"/>
 <polygon points="173.6,262.2 168.3,263.1 171.4,259.8" fill="rgb(255,141,16)" stroke="rgb(255,141,16)" stroke-width="0.5"/>
@@ -2214,7 +2214,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="256.2" y1="245.5" x2="250.3" y2="247.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="162.5" y1="254.0" x2="163.9" y2="257.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="198.8" y1="265.0" x2="199.2" y2="261.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="343.4" y1="161.8" x2="344.6" y2="153.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="343.4" y1="161.8" x2="344.6" y2="153.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="138.2,243.3 143.9,245.6 139.2,248.4" fill="rgb(255,148,17)" stroke="rgb(255,148,17)" stroke-width="0.5"/>
 <polygon points="165.8,260.2 171.4,259.8 168.3,263.1" fill="rgb(255,141,16)" stroke="rgb(255,141,16)" stroke-width="0.5"/>
 <polygon points="183.3,264.3 179.1,266.3 180.9,262.7" fill="rgb(252,135,15)" stroke="rgb(252,135,15)" stroke-width="0.5"/>
@@ -2230,7 +2230,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="205.7" y1="73.5" x2="205.8" y2="77.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="247.8,255.9 242.1,256.7 249.5,251.7" fill="rgb(175,93,10)" stroke="rgb(175,93,10)" stroke-width="0.5"/>
 <polygon points="132.7,240.6 127.5,237.7 132.8,235.0" fill="rgb(255,150,18)" stroke="rgb(255,150,18)" stroke-width="0.5"/>
-<line x1="147.3" y1="8.8" x2="152.9" y2="4.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="147.3" y1="8.8" x2="152.9" y2="4.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="205.7,73.5 205.5,70.1 217.3,74.2" fill="rgb(82,42,4)" stroke="rgb(82,42,4)" stroke-width="0.5"/>
 <line x1="295.6" y1="186.3" x2="290.6" y2="179.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="296.9" y1="162.6" x2="290.2" y2="155.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -2314,7 +2314,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="201.3" y1="265.0" x2="203.8" y2="264.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="196.4" y1="264.8" x2="198.8" y2="265.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="240.7,81.6 239.8,77.7 251.6,84.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="304.3" y1="275.1" x2="308.3" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="304.3" y1="275.1" x2="308.3" y2="268.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="171.1,75.7 171.9,72.1 182.4,74.2" fill="rgb(98,51,5)" stroke="rgb(98,51,5)" stroke-width="0.5"/>
 <line x1="198.8" y1="265.0" x2="201.3" y2="265.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="179.1,266.3 183.3,264.3 182.4,268.0" fill="rgb(245,131,15)" stroke="rgb(245,131,15)" stroke-width="0.5"/>
@@ -2324,7 +2324,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="132.7,240.6 138.2,243.3 133.8,246.2" fill="rgb(255,144,16)" stroke="rgb(255,144,16)" stroke-width="0.5"/>
 <polygon points="168.3,263.1 173.6,262.2 171.3,265.7" fill="rgb(252,135,15)" stroke="rgb(252,135,15)" stroke-width="0.5"/>
 <polygon points="152.3,256.0 146.7,254.9 150.6,251.9" fill="rgb(255,143,16)" stroke="rgb(255,143,16)" stroke-width="0.5"/>
-<line x1="59.8" y1="275.3" x2="66.3" y2="268.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="59.8" y1="275.3" x2="66.3" y2="268.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="188.8,266.7 186.0,269.4 185.9,265.6" fill="rgb(238,127,14)" stroke="rgb(238,127,14)" stroke-width="0.5"/>
 <polygon points="217.8,268.0 214.2,265.6 221.1,266.3" fill="rgb(208,111,12)" stroke="rgb(208,111,12)" stroke-width="0.5"/>
 <polygon points="264.2,96.9 263.2,92.4 274.1,101.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -2335,7 +2335,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="163.9" y1="257.2" x2="165.8" y2="260.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="277.4,227.9 282.2,224.1 277.6,234.3" fill="rgb(123,64,6)" stroke="rgb(123,64,6)" stroke-width="0.5"/>
 <line x1="295.6" y1="186.3" x2="292.7" y2="191.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="185.7" y1="7.4" x2="195.0" y2="9.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="185.7" y1="7.4" x2="195.0" y2="9.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="106.7,139.2 107.3,144.8 99.7,146.0" fill="rgb(195,103,11)" stroke="rgb(195,103,11)" stroke-width="0.5"/>
 <polygon points="228.8,265.6 224.0,264.3 231.8,263.0" fill="rgb(194,103,11)" stroke="rgb(194,103,11)" stroke-width="0.5"/>
 <polygon points="168.3,263.1 163.1,263.6 165.8,260.2" fill="rgb(255,136,15)" stroke="rgb(255,136,15)" stroke-width="0.5"/>
@@ -2402,7 +2402,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="231.8,263.0 237.0,263.5 228.8,265.6" fill="rgb(179,94,10)" stroke="rgb(179,94,10)" stroke-width="0.5"/>
 <polygon points="125.6,101.6 126.8,96.9 135.6,97.1" fill="rgb(135,71,7)" stroke="rgb(135,71,7)" stroke-width="0.5"/>
 <polygon points="139.2,248.4 144.8,250.3 141.2,253.5" fill="rgb(255,138,15)" stroke="rgb(255,138,15)" stroke-width="0.5"/>
-<line x1="344.6" y1="153.1" x2="345.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="344.6" y1="153.1" x2="345.8" y2="144.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="160.0,77.8 161.1,74.2 171.1,75.7" fill="rgb(101,52,5)" stroke="rgb(101,52,5)" stroke-width="0.5"/>
 <line x1="198.4" y1="268.4" x2="198.8" y2="265.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="186.0,269.4 188.8,266.7 189.8,270.4" fill="rgb(232,123,13)" stroke="rgb(232,123,13)" stroke-width="0.5"/>
@@ -2460,13 +2460,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="106.4,133.7 106.7,139.2 99.4,140.4" fill="rgb(181,95,10)" stroke="rgb(181,95,10)" stroke-width="0.5"/>
 <polygon points="202.2,271.5 201.7,268.4 206.3,271.1" fill="rgb(214,113,12)" stroke="rgb(214,113,12)" stroke-width="0.5"/>
 <polygon points="251.6,84.5 250.4,80.5 261.9,88.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="195.0" y1="9.5" x2="204.4" y2="11.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="195.0" y1="9.5" x2="204.4" y2="11.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="238.6,74.1 239.8,77.7 227.9,72.1" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
 <polygon points="198.0,271.5 198.4,268.4 202.2,271.5" fill="rgb(217,115,12)" stroke="rgb(217,115,12)" stroke-width="0.5"/>
 <polygon points="100.7,194.0 98.0,188.8 104.3,186.5" fill="rgb(234,124,13)" stroke="rgb(234,124,13)" stroke-width="0.5"/>
 <polygon points="260.9,248.3 266.3,246.1 258.9,253.4" fill="rgb(144,75,7)" stroke="rgb(144,75,7)" stroke-width="0.5"/>
 <polygon points="154.8,260.0 149.4,259.4 152.3,256.0" fill="rgb(252,134,15)" stroke="rgb(252,134,15)" stroke-width="0.5"/>
-<line x1="141.6" y1="12.7" x2="147.3" y2="8.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="141.6" y1="12.7" x2="147.3" y2="8.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="272.6,237.5 277.6,234.3 271.6,243.6" fill="rgb(128,67,6)" stroke="rgb(128,67,6)" stroke-width="0.5"/>
 <polygon points="216.8,70.7 216.2,67.6 227.9,72.1" fill="rgb(73,38,4)" stroke="rgb(73,38,4)" stroke-width="0.5"/>
 <polygon points="163.1,263.6 158.0,263.8 160.2,260.3" fill="rgb(247,131,14)" stroke="rgb(247,131,14)" stroke-width="0.5"/>
@@ -2531,7 +2531,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="168.3" y1="263.1" x2="171.3" y2="265.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="178.8,270.1 182.4,268.0 183.2,271.7" fill="rgb(227,120,13)" stroke="rgb(227,120,13)" stroke-width="0.5"/>
 <polygon points="141.2,253.5 135.9,251.8 139.2,248.4" fill="rgb(252,133,14)" stroke="rgb(252,133,14)" stroke-width="0.5"/>
-<line x1="300.1" y1="281.7" x2="304.3" y2="275.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="300.1" y1="281.7" x2="304.3" y2="275.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="189.8,270.4 187.8,273.0 186.0,269.4" fill="rgb(220,116,12)" stroke="rgb(220,116,12)" stroke-width="0.5"/>
 <line x1="111.0" y1="208.8" x2="109.2" y2="216.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="137.8,88.2 136.6,92.5 128.3,92.4" fill="rgb(125,65,6)" stroke="rgb(125,65,6)" stroke-width="0.5"/>
@@ -2540,7 +2540,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="104.3" y1="186.5" x2="100.7" y2="194.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="237.0,263.5 242.2,263.7 233.5,266.6" fill="rgb(166,87,9)" stroke="rgb(166,87,9)" stroke-width="0.5"/>
 <polygon points="161.1,74.2 160.0,77.8 150.9,76.9" fill="rgb(104,54,5)" stroke="rgb(104,54,5)" stroke-width="0.5"/>
-<line x1="53.2" y1="281.9" x2="59.8" y2="275.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="53.2" y1="281.9" x2="59.8" y2="275.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="274.1,101.4 273.0,96.7 283.2,106.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="300.5,140.2 300.2,145.8 293.5,133.5" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
 <polygon points="287.0,227.1 282.4,230.8 286.6,220.0" fill="rgb(114,59,6)" stroke="rgb(114,59,6)" stroke-width="0.5"/>
@@ -2581,7 +2581,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="225.3" y1="268.0" x2="221.1" y2="266.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="182.9" y1="70.8" x2="171.9" y2="72.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="161.1,74.2 162.5,70.9 171.9,72.1" fill="rgb(97,50,5)" stroke="rgb(97,50,5)" stroke-width="0.5"/>
-<line x1="204.4" y1="11.7" x2="213.9" y2="13.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="204.4" y1="11.7" x2="213.9" y2="13.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="248.9,76.8 250.4,80.5 238.6,74.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="183.2,271.7 186.0,269.4 187.8,273.0" fill="rgb(220,116,12)" stroke="rgb(220,116,12)" stroke-width="0.5"/>
 <polygon points="198.0,271.5 197.6,274.3 193.9,271.2" fill="rgb(208,109,11)" stroke="rgb(208,109,11)" stroke-width="0.5"/>
@@ -2593,7 +2593,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="299.5,151.4 300.2,145.8 305.1,158.8" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
 <polygon points="149.4,259.4 144.2,258.4 146.7,254.9" fill="rgb(245,129,14)" stroke="rgb(245,129,14)" stroke-width="0.5"/>
 <line x1="198.0" y1="271.5" x2="198.4" y2="268.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="345.8" y1="144.3" x2="347.0" y2="135.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="345.8" y1="144.3" x2="347.0" y2="135.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="304.3,183.2 302.0,188.6 300.5,175.5" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <polygon points="212.4,273.0 210.3,270.4 217.0,271.7" fill="rgb(194,102,10)" stroke="rgb(194,102,10)" stroke-width="0.5"/>
 <polygon points="158.0,263.8 163.1,263.6 162.0,267.3" fill="rgb(235,124,13)" stroke="rgb(235,124,13)" stroke-width="0.5"/>
@@ -2686,7 +2686,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="215.6,64.8 216.2,67.6 205.1,64.2" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <polygon points="271.6,243.6 276.6,240.8 269.4,249.5" fill="rgb(125,64,6)" stroke="rgb(125,64,6)" stroke-width="0.5"/>
 <line x1="158.0" y1="263.8" x2="163.1" y2="263.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="135.8" y1="16.7" x2="141.6" y2="12.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="135.8" y1="16.7" x2="141.6" y2="12.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="273.0,96.7 271.5,92.3 281.8,101.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="221.4" y1="270.0" x2="225.3" y2="268.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="128.5" y1="243.7" x2="133.8" y2="246.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -2704,12 +2704,12 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="162.0,267.3 166.6,266.7 166.6,270.4" fill="rgb(225,118,12)" stroke="rgb(225,118,12)" stroke-width="0.5"/>
 <polygon points="106.8,122.8 106.4,128.2 99.9,129.5" fill="rgb(158,82,8)" stroke="rgb(158,82,8)" stroke-width="0.5"/>
 <line x1="172.8" y1="68.9" x2="171.9" y2="72.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="213.9" y1="13.9" x2="223.5" y2="16.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="213.9" y1="13.9" x2="223.5" y2="16.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="128.3,92.4 130.1,88.2 137.8,88.2" fill="rgb(116,60,6)" stroke="rgb(116,60,6)" stroke-width="0.5"/>
 <polygon points="175.3,271.8 178.8,270.1 180.4,273.7" fill="rgb(216,113,11)" stroke="rgb(216,113,11)" stroke-width="0.5"/>
 <polygon points="144.2,258.4 139.1,257.1 141.2,253.5" fill="rgb(236,124,13)" stroke="rgb(236,124,13)" stroke-width="0.5"/>
 <polygon points="96.0,164.6 97.6,170.2 92.0,172.5" fill="rgb(197,102,10)" stroke="rgb(197,102,10)" stroke-width="0.5"/>
-<line x1="53.2" y1="281.9" x2="62.0" y2="285.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="53.2" y1="281.9" x2="62.0" y2="285.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="162.5,70.9 161.1,74.2 152.5,73.5" fill="rgb(99,51,5)" stroke="rgb(99,51,5)" stroke-width="0.5"/>
 <polygon points="187.8,273.0 185.7,275.2 183.2,271.7" fill="rgb(208,109,11)" stroke="rgb(208,109,11)" stroke-width="0.5"/>
 <polygon points="184.2,64.8 183.5,67.6 173.9,66.1" fill="rgb(89,46,4)" stroke="rgb(89,46,4)" stroke-width="0.5"/>
@@ -2737,7 +2737,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="303.9" y1="164.4" x2="302.4" y2="170.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="128.3,92.4 126.8,96.9 119.7,97.3" fill="rgb(126,65,6)" stroke="rgb(126,65,6)" stroke-width="0.5"/>
 <line x1="106.8" y1="122.8" x2="106.4" y2="128.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="53.2" y1="281.9" x2="52.0" y2="274.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="53.2" y1="281.9" x2="52.0" y2="274.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="261.1,257.0 256.0,258.3 264.3,251.6" fill="rgb(141,73,7)" stroke="rgb(141,73,7)" stroke-width="0.5"/>
 <polygon points="99.4,140.4 99.7,146.0 93.7,147.8" fill="rgb(171,89,9)" stroke="rgb(171,89,9)" stroke-width="0.5"/>
 <polygon points="192.6,273.9 191.4,276.2 187.8,273.0" fill="rgb(202,105,10)" stroke="rgb(202,105,10)" stroke-width="0.5"/>
@@ -2747,7 +2747,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="295.1,218.8 291.2,223.1 294.7,211.2" fill="rgb(101,52,5)" stroke="rgb(101,52,5)" stroke-width="0.5"/>
 <line x1="178.8" y1="270.1" x2="183.2" y2="271.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="99.4,134.9 99.9,129.5 106.4,128.2" fill="rgb(158,82,8)" stroke="rgb(158,82,8)" stroke-width="0.5"/>
-<line x1="295.9" y1="288.5" x2="300.1" y2="281.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="295.9" y1="288.5" x2="300.1" y2="281.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="302.0,188.6 304.3,183.2 304.2,196.5" fill="rgb(86,44,4)" stroke="rgb(86,44,4)" stroke-width="0.5"/>
 <line x1="139.4" y1="84.1" x2="137.8" y2="88.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="162.5,70.9 164.0,68.0 172.8,68.9" fill="rgb(92,47,4)" stroke="rgb(92,47,4)" stroke-width="0.5"/>
@@ -2763,7 +2763,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="197.6,274.3 197.2,276.7 192.6,273.9" fill="rgb(195,102,10)" stroke="rgb(195,102,10)" stroke-width="0.5"/>
 <polygon points="242.8,267.4 238.2,267.2 247.2,263.5" fill="rgb(156,81,8)" stroke="rgb(156,81,8)" stroke-width="0.5"/>
 <line x1="248.9" y1="76.8" x2="238.6" y2="74.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="347.0" y1="135.3" x2="348.2" y2="126.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="347.0" y1="135.3" x2="348.2" y2="126.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="214.5,275.2 212.4,273.0 219.9,273.7" fill="rgb(180,93,9)" stroke="rgb(180,93,9)" stroke-width="0.5"/>
 <line x1="197.6" y1="274.3" x2="198.0" y2="271.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="291.2,112.3 292.3,117.4 283.2,106.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -2813,7 +2813,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="228.4,273.0 224.9,271.7 233.6,270.3" fill="rgb(165,85,8)" stroke="rgb(165,85,8)" stroke-width="0.5"/>
 <line x1="301.4" y1="201.6" x2="299.2" y2="193.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.4" y1="259.4" x2="153.0" y2="263.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="223.5" y1="16.1" x2="233.2" y2="18.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="223.5" y1="16.1" x2="233.2" y2="18.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="94.9,159.0 96.0,164.6 90.8,166.9" fill="rgb(184,95,9)" stroke="rgb(184,95,9)" stroke-width="0.5"/>
 <line x1="153.0" y1="263.6" x2="158.0" y2="263.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="247.2,263.5 252.1,263.0 242.8,267.4" fill="rgb(146,75,7)" stroke="rgb(146,75,7)" stroke-width="0.5"/>
@@ -2825,7 +2825,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="281.8" y1="101.8" x2="273.0" y2="96.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="203.0,276.7 202.6,274.3 208.8,276.2" fill="rgb(186,96,9)" stroke="rgb(186,96,9)" stroke-width="0.5"/>
 <polygon points="118.0,101.9 116.6,106.7 110.2,107.5" fill="rgb(134,69,6)" stroke="rgb(134,69,6)" stroke-width="0.5"/>
-<line x1="62.0" y1="285.6" x2="70.8" y2="289.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="62.0" y1="285.6" x2="70.8" y2="289.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="104.9,219.1 101.3,214.6 105.4,211.5" fill="rgb(222,115,11)" stroke="rgb(222,115,11)" stroke-width="0.5"/>
 <polygon points="271.5,92.3 269.7,88.1 280.2,97.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="207.6" y1="273.9" x2="212.4" y2="273.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -2897,7 +2897,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="184.9,62.4 184.2,64.8 175.1,63.6" fill="rgb(85,44,4)" stroke="rgb(85,44,4)" stroke-width="0.5"/>
 <polygon points="267.6,84.1 269.7,88.1 258.6,80.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="292.3,117.4 291.2,112.3 299.2,123.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="129.9" y1="20.9" x2="135.8" y2="16.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="129.9" y1="20.9" x2="135.8" y2="16.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="290.1,230.5 285.9,234.2 291.2,223.1" fill="rgb(103,53,5)" stroke="rgb(103,53,5)" stroke-width="0.5"/>
 <line x1="118.7" y1="237.8" x2="123.5" y2="240.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="225.8,66.0 224.7,63.5 235.8,67.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -2919,7 +2919,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="214.5,275.2 216.5,277.0 208.8,276.2" fill="rgb(169,87,8)" stroke="rgb(169,87,8)" stroke-width="0.5"/>
 <polygon points="245.3,70.4 247.2,73.4 235.8,67.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="93.7,147.8 93.8,142.2 99.4,140.4" fill="rgb(160,83,8)" stroke="rgb(160,83,8)" stroke-width="0.5"/>
-<line x1="52.0" y1="274.1" x2="50.7" y2="266.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="52.0" y1="274.1" x2="50.7" y2="266.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="94.1,153.4 94.9,159.0 90.0,161.2" fill="rgb(172,89,8)" stroke="rgb(172,89,8)" stroke-width="0.5"/>
 <line x1="300.0" y1="129.3" x2="293.0" y2="122.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="171.8,273.1 168.4,274.1 166.6,270.4" fill="rgb(205,106,10)" stroke="rgb(205,106,10)" stroke-width="0.5"/>
@@ -2929,7 +2929,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="300.5,134.7 300.0,129.3 306.1,141.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="164.0,68.0 165.6,65.3 173.9,66.1" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <polygon points="177.6,275.3 180.4,273.7 183.7,277.0" fill="rgb(197,102,10)" stroke="rgb(197,102,10)" stroke-width="0.5"/>
-<line x1="233.2" y1="18.3" x2="243.1" y2="20.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="233.2" y1="18.3" x2="243.1" y2="20.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="104.9,219.1 108.9,223.3 106.0,226.8" fill="rgb(214,111,10)" stroke="rgb(214,111,10)" stroke-width="0.5"/>
 <polygon points="125.8,247.3 130.8,249.7 129.5,253.4" fill="rgb(219,113,11)" stroke="rgb(219,113,11)" stroke-width="0.5"/>
 <polygon points="101.3,214.6 98.1,209.9 101.8,206.7" fill="rgb(211,109,10)" stroke="rgb(211,109,10)" stroke-width="0.5"/>
@@ -2941,9 +2941,9 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="208.8,276.2 210.1,278.2 203.0,276.7" fill="rgb(173,89,8)" stroke="rgb(173,89,8)" stroke-width="0.5"/>
 <polygon points="242.8,267.4 247.3,267.3 237.6,270.9" fill="rgb(146,75,7)" stroke="rgb(146,75,7)" stroke-width="0.5"/>
 <line x1="242.8" y1="267.4" x2="247.2" y2="263.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="70.8" y1="289.4" x2="79.7" y2="293.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="70.8" y1="289.4" x2="79.7" y2="293.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="216.5,277.0 214.5,275.2 222.7,275.3" fill="rgb(166,86,8)" stroke="rgb(166,86,8)" stroke-width="0.5"/>
-<line x1="348.2" y1="126.2" x2="349.5" y2="116.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="348.2" y1="126.2" x2="349.5" y2="116.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="108.7,112.5 107.6,117.6 101.9,118.8" fill="rgb(140,72,6)" stroke="rgb(140,72,6)" stroke-width="0.5"/>
 <polygon points="278.2,92.8 280.2,97.2 269.7,88.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="247.2,73.4 245.3,70.4 256.6,76.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -2963,7 +2963,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="119.7,97.3 118.0,101.9 112.0,102.8" fill="rgb(125,64,6)" stroke="rgb(125,64,6)" stroke-width="0.5"/>
 <line x1="235.8" y1="67.9" x2="237.3" y2="70.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="306.4,177.8 308.0,172.3 308.8,185.9" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
-<line x1="291.6" y1="295.4" x2="295.9" y2="288.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="291.6" y1="295.4" x2="295.9" y2="288.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="93.3,191.6 91.2,186.2 95.6,183.5" fill="rgb(194,100,9)" stroke="rgb(194,100,9)" stroke-width="0.5"/>
 <line x1="204.9" y1="61.7" x2="205.1" y2="64.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="295.1" y1="218.8" x2="291.2" y2="223.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3039,7 +3039,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="121.7,92.9 124.0,88.8 130.1,88.2" fill="rgb(108,55,5)" stroke="rgb(108,55,5)" stroke-width="0.5"/>
 <polygon points="300.0,129.3 299.2,123.9 305.7,136.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="254.3,73.4 256.6,76.6 245.3,70.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="243.1" y1="20.6" x2="253.0" y2="22.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="243.1" y1="20.6" x2="253.0" y2="22.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="265.3,80.4 267.6,84.1 256.6,76.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="214.1,60.3 214.9,62.3 204.6,59.7" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
 <line x1="108.9" y1="223.3" x2="110.0" y2="230.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3057,7 +3057,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="306.2" y1="147.5" x2="305.8" y2="153.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="237.6" y1="270.9" x2="242.8" y2="267.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="143.2" y1="76.7" x2="141.2" y2="80.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="79.7" y1="293.2" x2="88.8" y2="297.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="79.7" y1="293.2" x2="88.8" y2="297.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="305.7,136.4 306.1,141.9 300.0,129.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="157.4" y1="267.5" x2="162.6" y2="271.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="183.7,277.0 181.7,278.5 177.6,275.3" fill="rgb(187,96,9)" stroke="rgb(187,96,9)" stroke-width="0.5"/>
@@ -3084,7 +3084,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="223.4,61.4 224.7,63.5 214.1,60.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="106.0,226.8 102.4,222.5 104.9,219.1" fill="rgb(205,105,9)" stroke="rgb(205,105,9)" stroke-width="0.5"/>
 <polygon points="100.7,124.1 99.9,129.5 95.1,131.1" fill="rgb(143,73,6)" stroke="rgb(143,73,6)" stroke-width="0.5"/>
-<line x1="50.7" y1="266.1" x2="49.5" y2="257.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="50.7" y1="266.1" x2="49.5" y2="257.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="216.5,277.0 218.5,278.4 210.1,278.2" fill="rgb(157,80,7)" stroke="rgb(157,80,7)" stroke-width="0.5"/>
 <polygon points="247.3,267.3 251.6,266.8 241.6,271.2" fill="rgb(137,70,6)" stroke="rgb(137,70,6)" stroke-width="0.5"/>
 <polygon points="121.7,92.9 119.7,97.3 114.2,98.2" fill="rgb(116,59,5)" stroke="rgb(116,59,5)" stroke-width="0.5"/>
@@ -3099,7 +3099,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="298.7,214.4 302.0,209.6 297.7,222.3" fill="rgb(90,46,4)" stroke="rgb(90,46,4)" stroke-width="0.5"/>
 <polygon points="174.9,276.6 177.6,275.3 181.7,278.5" fill="rgb(187,96,9)" stroke="rgb(187,96,9)" stroke-width="0.5"/>
 <polygon points="190.2,278.2 189.0,279.8 183.7,277.0" fill="rgb(179,92,8)" stroke="rgb(179,92,8)" stroke-width="0.5"/>
-<line x1="123.8" y1="25.1" x2="129.9" y2="20.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="123.8" y1="25.1" x2="129.9" y2="20.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="116.7,241.5 112.6,238.1 114.2,234.4" fill="rgb(208,107,10)" stroke="rgb(208,107,10)" stroke-width="0.5"/>
 <polygon points="245.3,70.4 243.3,67.6 254.3,73.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="224.7" y1="63.5" x2="214.9" y2="62.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3112,7 +3112,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="110.0" y1="230.7" x2="114.2" y2="234.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="267.6,84.1 265.3,80.4 275.8,88.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="297.7,222.3 294.1,226.5 298.7,214.4" fill="rgb(94,48,4)" stroke="rgb(94,48,4)" stroke-width="0.5"/>
-<line x1="349.5" y1="116.9" x2="350.8" y2="107.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="349.5" y1="116.9" x2="350.8" y2="107.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="218.5,278.4 216.5,277.0 225.4,276.5" fill="rgb(156,80,7)" stroke="rgb(156,80,7)" stroke-width="0.5"/>
 <polygon points="129.5,253.4 134.2,255.5 134.3,259.3" fill="rgb(205,105,9)" stroke="rgb(205,105,9)" stroke-width="0.5"/>
 <line x1="308.8" y1="185.9" x2="306.4" y2="177.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3154,7 +3154,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="94.1" y1="153.4" x2="90.0" y2="161.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="232.4,63.0 234.2,65.3 223.4,61.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="204.6,59.7 204.4,58.0 214.1,60.3" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="253.0" y1="22.9" x2="263.1" y2="25.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="253.0" y1="22.9" x2="263.1" y2="25.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="234.2,65.3 232.4,63.0 243.3,67.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="231.8" y1="274.0" x2="237.6" y2="270.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="299.2,123.9 298.0,118.6 304.8,130.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -3165,8 +3165,8 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="185.7,60.3 186.6,58.6 195.1,59.7" fill="rgb(75,38,3)" stroke="rgb(75,38,3)" stroke-width="0.5"/>
 <line x1="306.1" y1="141.9" x2="306.2" y2="147.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="134.5,80.5 132.2,84.2 126.7,84.9" fill="rgb(101,51,4)" stroke="rgb(101,51,4)" stroke-width="0.5"/>
-<line x1="88.8" y1="297.0" x2="97.9" y2="300.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="287.2" y1="302.5" x2="291.6" y2="295.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="88.8" y1="297.0" x2="97.9" y2="300.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="287.2" y1="302.5" x2="291.6" y2="295.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="307.4,199.6 304.9,204.7 306.7,191.3" fill="rgb(84,43,4)" stroke="rgb(84,43,4)" stroke-width="0.5"/>
 <polygon points="265.9,259.1 261.5,260.8 270.7,253.3" fill="rgb(121,62,5)" stroke="rgb(121,62,5)" stroke-width="0.5"/>
 <polygon points="174.9,276.6 172.2,277.4 168.4,274.1" fill="rgb(186,95,8)" stroke="rgb(186,95,8)" stroke-width="0.5"/>
@@ -3255,7 +3255,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="95.1,131.1 96.4,125.7 100.7,124.1" fill="rgb(135,69,6)" stroke="rgb(135,69,6)" stroke-width="0.5"/>
 <polygon points="265.3,80.4 262.7,77.0 273.2,84.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="243.3" y1="67.6" x2="234.2" y2="65.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="49.5" y1="257.9" x2="48.2" y2="249.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="49.5" y1="257.9" x2="48.2" y2="249.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="222.0,59.6 223.4,61.4 213.2,58.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="154.8,271.1 158.6,271.3 161.8,274.8" fill="rgb(186,95,8)" stroke="rgb(186,95,8)" stroke-width="0.5"/>
 <polygon points="243.3,67.6 241.0,65.2 251.8,70.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -3265,7 +3265,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="294.4,108.6 296.4,113.5 287.8,102.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="287.8,102.6 285.6,98.0 294.4,108.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="275.8" y1="88.6" x2="278.2" y2="92.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="263.1" y1="25.2" x2="273.3" y2="27.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="263.1" y1="25.2" x2="273.3" y2="27.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="167.4,63.1 169.4,61.2 176.4,61.4" fill="rgb(80,41,4)" stroke="rgb(80,41,4)" stroke-width="0.5"/>
 <polygon points="172.2,277.4 174.9,276.6 179.8,279.5" fill="rgb(177,90,8)" stroke="rgb(177,90,8)" stroke-width="0.5"/>
 <polygon points="309.5,194.3 307.4,199.6 308.8,185.9" fill="rgb(80,41,4)" stroke="rgb(80,41,4)" stroke-width="0.5"/>
@@ -3274,11 +3274,11 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="88.3,175.1 87.5,169.4 90.8,166.9" fill="rgb(160,82,7)" stroke="rgb(160,82,7)" stroke-width="0.5"/>
 <polygon points="310.0,161.0 310.4,155.3 312.5,169.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="287.6" y1="237.9" x2="290.1" y2="230.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="97.9" y1="300.9" x2="107.1" y2="304.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="97.9" y1="300.9" x2="107.1" y2="304.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="189.0,279.8 187.8,281.0 181.7,278.5" fill="rgb(169,86,7)" stroke="rgb(169,86,7)" stroke-width="0.5"/>
 <line x1="304.9" y1="204.7" x2="302.0" y2="209.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.0" y1="230.7" x2="112.6" y2="238.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="350.8" y1="107.5" x2="352.1" y2="97.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="350.8" y1="107.5" x2="352.1" y2="97.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="303.5,125.5 304.8,130.9 298.0,118.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="296.4" y1="113.5" x2="289.7" y2="107.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="154.8,271.1 151.1,270.6 148.6,266.9" fill="rgb(188,96,8)" stroke="rgb(188,96,8)" stroke-width="0.5"/>
@@ -3309,7 +3309,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="275.8,88.6 273.2,84.7 283.0,93.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="148.0,70.6 150.8,68.0 156.5,67.7" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <line x1="218.5" y1="278.4" x2="225.4" y2="276.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="117.6" y1="29.4" x2="123.8" y2="25.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="117.6" y1="29.4" x2="123.8" y2="25.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="89.7,149.9 90.1,144.2 93.8,142.2" fill="rgb(145,73,6)" stroke="rgb(145,73,6)" stroke-width="0.5"/>
 <line x1="174.9" y1="276.6" x2="181.7" y2="278.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="203.9,280.4 204.3,281.7 196.4,280.5" fill="rgb(155,79,7)" stroke="rgb(155,79,7)" stroke-width="0.5"/>
@@ -3369,13 +3369,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="295.0,230.1 291.5,234.2 297.7,222.3" fill="rgb(93,47,4)" stroke="rgb(93,47,4)" stroke-width="0.5"/>
 <polygon points="96.4,125.7 98.2,120.4 101.9,118.8" fill="rgb(127,64,5)" stroke="rgb(127,64,5)" stroke-width="0.5"/>
 <line x1="98.1" y1="209.9" x2="99.2" y2="218.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="282.7" y1="309.7" x2="287.2" y2="302.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="282.7" y1="309.7" x2="287.2" y2="302.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="196.0,281.7 196.4,280.5 204.3,281.7" fill="rgb(155,79,7)" stroke="rgb(155,79,7)" stroke-width="0.5"/>
 <polygon points="265.9,259.1 270.2,257.1 259.9,264.5" fill="rgb(112,57,5)" stroke="rgb(112,57,5)" stroke-width="0.5"/>
 <line x1="251.8" y1="70.5" x2="243.3" y2="67.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="120.7,248.3 125.0,251.0 126.1,254.8" fill="rgb(188,95,8)" stroke="rgb(188,95,8)" stroke-width="0.5"/>
 <line x1="156.5" y1="67.7" x2="148.0" y2="70.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="273.3" y1="27.5" x2="283.5" y2="29.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="273.3" y1="27.5" x2="283.5" y2="29.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="116.8,93.8 119.8,89.7 124.0,88.8" fill="rgb(100,51,4)" stroke="rgb(100,51,4)" stroke-width="0.5"/>
 <polygon points="169.4,61.2 167.4,63.1 161.4,63.3" fill="rgb(82,42,4)" stroke="rgb(82,42,4)" stroke-width="0.5"/>
 <polygon points="311.2,188.9 309.5,194.3 310.4,180.4" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
@@ -3391,7 +3391,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="307.4" y1="199.6" x2="304.9" y2="204.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="230.7,277.7 228.1,277.3 238.5,274.7" fill="rgb(138,70,6)" stroke="rgb(138,70,6)" stroke-width="0.5"/>
 <polygon points="204.1,56.8 204.4,58.0 195.8,56.8" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
-<line x1="107.1" y1="304.8" x2="116.5" y2="308.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="107.1" y1="304.8" x2="116.5" y2="308.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="296.4,113.5 294.4,108.6 301.8,120.2" fill="rgb(181,91,7)" stroke="rgb(181,91,7)" stroke-width="0.5"/>
 <polygon points="285.6,98.0 283.0,93.7 291.9,103.8" fill="rgb(184,93,8)" stroke="rgb(184,93,8)" stroke-width="0.5"/>
 <polygon points="251.8,70.5 249.0,68.0 259.7,73.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -3423,7 +3423,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="307.4,199.6 309.5,194.3 306.4,208.0" fill="rgb(137,69,6)" stroke="rgb(137,69,6)" stroke-width="0.5"/>
 <line x1="279.5" y1="248.1" x2="275.2" y2="250.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="279.5" y1="248.1" x2="275.2" y2="250.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="48.2" y1="249.7" x2="46.8" y2="241.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="48.2" y1="249.7" x2="46.8" y2="241.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="130.1,257.2 134.3,259.3 136.5,263.0" fill="rgb(183,93,8)" stroke="rgb(183,93,8)" stroke-width="0.5"/>
 <polygon points="304.8,130.9 303.5,125.5 308.9,138.3" fill="rgb(176,89,7)" stroke="rgb(176,89,7)" stroke-width="0.5"/>
 <polygon points="89.7,149.9 89.6,155.5 87.1,157.9" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
@@ -3451,7 +3451,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="116.7,245.2 113.0,241.8 112.6,238.1" fill="rgb(184,93,8)" stroke="rgb(184,93,8)" stroke-width="0.5"/>
 <polygon points="105.2,230.4 101.9,226.1 102.4,222.5" fill="rgb(181,91,7)" stroke="rgb(181,91,7)" stroke-width="0.5"/>
 <polygon points="241.7,274.4 238.5,274.7 249.2,270.4" fill="rgb(129,65,5)" stroke="rgb(129,65,5)" stroke-width="0.5"/>
-<line x1="352.1" y1="97.9" x2="353.4" y2="88.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="352.1" y1="97.9" x2="353.4" y2="88.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="279.5,248.1 283.5,245.0 274.2,254.7" fill="rgb(100,51,4)" stroke="rgb(100,51,4)" stroke-width="0.5"/>
 <polygon points="187.8,281.0 186.6,281.8 179.8,279.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="89.7" y1="149.9" x2="89.6" y2="155.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3486,7 +3486,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="256.5,71.2 259.7,73.9 249.0,68.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="230.4,61.2 228.3,59.7 238.5,63.2" fill="rgb(176,89,7)" stroke="rgb(176,89,7)" stroke-width="0.5"/>
 <line x1="130.1" y1="257.2" x2="134.3" y2="259.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="283.5" y1="29.9" x2="294.0" y2="32.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="283.5" y1="29.9" x2="294.0" y2="32.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="310.3,149.6 309.8,143.9 312.9,157.7" fill="rgb(169,86,7)" stroke="rgb(169,86,7)" stroke-width="0.5"/>
 <polygon points="204.3,281.7 204.7,282.5 196.0,281.7" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
 <line x1="309.5" y1="194.3" x2="307.4" y2="199.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3495,7 +3495,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="303.5" y1="125.5" x2="304.8" y2="130.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="204.1" y1="56.8" x2="204.4" y2="58.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="177.9,280.2 179.8,279.5 186.6,281.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="116.5" y1="308.8" x2="125.9" y2="312.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="116.5" y1="308.8" x2="125.9" y2="312.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="266.9,77.8 270.2,81.1 259.7,73.9" fill="rgb(183,93,8)" stroke="rgb(183,93,8)" stroke-width="0.5"/>
 <polygon points="169.6,277.8 167.0,277.8 161.8,274.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="249.2" y1="270.4" x2="255.9" y2="265.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3509,7 +3509,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="259.7" y1="73.9" x2="251.8" y2="70.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="119.8,89.7 123.1,85.9 126.7,84.9" fill="rgb(105,53,4)" stroke="rgb(105,53,4)" stroke-width="0.5"/>
 <line x1="112.6" y1="238.1" x2="116.7" y2="245.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="111.3" y1="33.7" x2="117.6" y2="29.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="111.3" y1="33.7" x2="117.6" y2="29.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="270.2,257.1 274.2,254.7 263.8,262.8" fill="rgb(97,49,4)" stroke="rgb(97,49,4)" stroke-width="0.5"/>
 <line x1="148.0" y1="70.6" x2="140.1" y2="74.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="299.6,115.0 301.8,120.2 294.4,108.6" fill="rgb(181,91,7)" stroke="rgb(181,91,7)" stroke-width="0.5"/>
@@ -3564,7 +3564,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="179.4" y1="58.3" x2="177.9" y2="59.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="101.9,226.1 99.1,221.5 99.2,218.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="113.0,241.8 109.5,238.1 108.7,234.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
-<line x1="278.1" y1="317.1" x2="282.7" y2="309.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="278.1" y1="317.1" x2="282.7" y2="309.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="270.2,81.1 266.9,77.8 276.8,85.7" fill="rgb(196,100,8)" stroke="rgb(196,100,8)" stroke-width="0.5"/>
 <polygon points="235.8,61.6 238.5,63.2 228.3,59.7" fill="rgb(176,89,7)" stroke="rgb(176,89,7)" stroke-width="0.5"/>
 <polygon points="196.1,56.0 195.8,56.8 188.5,56.4" fill="rgb(151,77,6)" stroke="rgb(151,77,6)" stroke-width="0.5"/>
@@ -3586,7 +3586,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="313.4,177.6 312.5,183.3 312.5,169.2" fill="rgb(151,77,6)" stroke="rgb(151,77,6)" stroke-width="0.5"/>
 <polygon points="87.1,157.9 87.6,152.1 89.7,149.9" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <polygon points="100.3,115.2 102.9,110.2 105.5,108.8" fill="rgb(93,47,4)" stroke="rgb(93,47,4)" stroke-width="0.5"/>
-<line x1="46.8" y1="241.2" x2="45.5" y2="232.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="46.8" y1="241.2" x2="45.5" y2="232.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="153.8,65.8 150.8,68.0 146.8,68.8" fill="rgb(128,65,5)" stroke="rgb(128,65,5)" stroke-width="0.5"/>
 <polygon points="133.0,77.9 136.6,74.9 140.1,74.0" fill="rgb(120,61,5)" stroke="rgb(120,61,5)" stroke-width="0.5"/>
 <polygon points="309.8,143.9 308.9,138.3 312.4,151.9" fill="rgb(180,92,8)" stroke="rgb(180,92,8)" stroke-width="0.5"/>
@@ -3594,13 +3594,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="222.4" y1="280.1" x2="220.5" y2="279.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="188.5,56.4 187.5,57.3 181.1,57.3" fill="rgb(149,76,6)" stroke="rgb(149,76,6)" stroke-width="0.5"/>
 <line x1="311.2" y1="188.9" x2="309.5" y2="194.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="294.0" y1="32.3" x2="304.5" y2="34.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="294.0" y1="32.3" x2="304.5" y2="34.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="290.7,237.8 287.3,241.6 295.0,230.1" fill="rgb(115,58,5)" stroke="rgb(115,58,5)" stroke-width="0.5"/>
 <polygon points="295.0,230.1 298.2,225.8 290.7,237.8" fill="rgb(123,62,5)" stroke="rgb(123,62,5)" stroke-width="0.5"/>
 <line x1="301.8" y1="120.2" x2="303.5" y2="125.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="171.6,59.7 173.8,58.7 179.4,58.3" fill="rgb(147,75,6)" stroke="rgb(147,75,6)" stroke-width="0.5"/>
 <polygon points="87.1,163.7 87.5,169.4 86.3,172.1" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
-<line x1="125.9" y1="312.8" x2="135.5" y2="316.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="125.9" y1="312.8" x2="135.5" y2="316.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="244.7,273.7 241.7,274.4 252.8,269.5" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <line x1="119.8" y1="89.7" x2="116.8" y2="93.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="167.0,277.8 169.6,277.8 176.0,280.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -3610,7 +3610,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="153.8,65.8 157.1,64.0 161.4,63.3" fill="rgb(137,69,6)" stroke="rgb(137,69,6)" stroke-width="0.5"/>
 <polygon points="133.0,77.9 129.7,81.3 126.8,82.3" fill="rgb(113,57,5)" stroke="rgb(113,57,5)" stroke-width="0.5"/>
 <line x1="298.2" y1="225.8" x2="301.0" y2="217.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="353.4" y1="88.1" x2="354.8" y2="78.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="353.4" y1="88.1" x2="354.8" y2="78.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="312.4,151.9 312.9,157.7 309.8,143.9" fill="rgb(169,86,7)" stroke="rgb(169,86,7)" stroke-width="0.5"/>
 <polygon points="291.9,103.8 289.1,99.2 297.0,110.0" fill="rgb(199,101,9)" stroke="rgb(199,101,9)" stroke-width="0.5"/>
 <line x1="126.1" y1="254.8" x2="130.1" y2="257.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3694,8 +3694,8 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="266.9,77.8 263.2,74.8 273.1,82.2" fill="rgb(205,105,9)" stroke="rgb(205,105,9)" stroke-width="0.5"/>
 <polygon points="102.9,110.2 105.9,105.4 107.9,104.0" fill="rgb(97,49,4)" stroke="rgb(97,49,4)" stroke-width="0.5"/>
 <line x1="312.5" y1="183.3" x2="311.2" y2="188.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="104.9" y1="38.2" x2="111.3" y2="33.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="304.5" y1="34.7" x2="315.1" y2="37.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="104.9" y1="38.2" x2="111.3" y2="33.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="304.5" y1="34.7" x2="315.1" y2="37.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="173.8,58.7 171.6,59.7 167.0,60.4" fill="rgb(146,74,6)" stroke="rgb(146,74,6)" stroke-width="0.5"/>
 <polygon points="303.6,216.4 301.1,221.3 306.4,208.0" fill="rgb(135,69,6)" stroke="rgb(135,69,6)" stroke-width="0.5"/>
 <polygon points="114.0,95.0 117.6,90.9 119.8,89.7" fill="rgb(106,54,5)" stroke="rgb(106,54,5)" stroke-width="0.5"/>
@@ -3709,7 +3709,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="299.6" y1="115.0" x2="301.8" y2="120.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="233.3,277.7 235.8,277.3 224.3,280.3" fill="rgb(84,43,4)" stroke="rgb(84,43,4)" stroke-width="0.5"/>
 <polygon points="205.1,282.9 204.7,282.5 214.9,282.0" fill="rgb(75,38,3)" stroke="rgb(75,38,3)" stroke-width="0.5"/>
-<line x1="135.5" y1="316.8" x2="145.1" y2="320.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="135.5" y1="316.8" x2="145.1" y2="320.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="155.6,273.9 152.7,272.7 147.5,269.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="313.4" y1="177.6" x2="312.5" y2="169.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="116.7" y1="245.2" x2="122.3" y2="252.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3752,7 +3752,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="218.8,57.3 217.1,56.8 226.0,58.6" fill="rgb(187,96,9)" stroke="rgb(187,96,9)" stroke-width="0.5"/>
 <line x1="122.3" y1="252.1" x2="126.1" y2="254.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="276.8,85.7 273.1,82.2 282.4,90.8" fill="rgb(210,108,10)" stroke="rgb(210,108,10)" stroke-width="0.5"/>
-<line x1="45.5" y1="232.7" x2="44.1" y2="223.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="45.5" y1="232.7" x2="44.1" y2="223.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="109.5,238.1 113.0,241.8 115.5,245.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="126.8,82.3 130.8,79.0 133.0,77.9" fill="rgb(121,62,5)" stroke="rgb(121,62,5)" stroke-width="0.5"/>
 <line x1="203.7" y1="56.0" x2="196.1" y2="56.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3760,7 +3760,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="303.4,121.8 305.7,127.2 299.6,115.0" fill="rgb(195,100,9)" stroke="rgb(195,100,9)" stroke-width="0.5"/>
 <line x1="224.3" y1="280.3" x2="222.4" y2="280.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="311.5,191.9 310.2,197.4 312.5,183.3" fill="rgb(152,78,7)" stroke="rgb(152,78,7)" stroke-width="0.5"/>
-<line x1="273.4" y1="324.6" x2="278.1" y2="317.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="273.4" y1="324.6" x2="278.1" y2="317.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="157.1,64.0 160.6,62.6 164.1,61.7" fill="rgb(145,74,6)" stroke="rgb(145,74,6)" stroke-width="0.5"/>
 <polygon points="99.1,221.5 101.9,226.1 103.6,229.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="189.6,56.0 188.5,56.4 182.8,56.8" fill="rgb(157,80,7)" stroke="rgb(157,80,7)" stroke-width="0.5"/>
@@ -3779,7 +3779,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="217.1,56.8 218.8,57.3 210.3,56.0" fill="rgb(179,92,8)" stroke="rgb(179,92,8)" stroke-width="0.5"/>
 <polygon points="278.0,251.9 281.5,248.7 271.0,258.2" fill="rgb(108,55,5)" stroke="rgb(108,55,5)" stroke-width="0.5"/>
 <polygon points="224.3,280.3 226.1,280.0 214.9,282.0" fill="rgb(81,42,4)" stroke="rgb(81,42,4)" stroke-width="0.5"/>
-<line x1="354.8" y1="78.2" x2="356.2" y2="68.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="354.8" y1="78.2" x2="356.2" y2="68.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="86.7,177.9 87.5,183.6 87.7,186.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="118.8,248.9 115.5,245.4 113.0,241.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="244.7,273.7 247.7,272.6 235.8,277.3" fill="rgb(90,46,4)" stroke="rgb(90,46,4)" stroke-width="0.5"/>
@@ -3810,7 +3810,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="87.6,152.1 87.1,157.9 86.9,160.3" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
 <line x1="224.3" y1="280.3" x2="233.3" y2="277.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="226.0,58.6 223.6,58.0 232.9,60.4" fill="rgb(195,100,9)" stroke="rgb(195,100,9)" stroke-width="0.5"/>
-<line x1="315.1" y1="37.2" x2="325.9" y2="39.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="315.1" y1="37.2" x2="325.9" y2="39.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="253.0,68.8 249.3,66.7 259.3,72.2" fill="rgb(209,107,10)" stroke="rgb(209,107,10)" stroke-width="0.5"/>
 <line x1="167.0" y1="277.8" x2="176.0" y2="280.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="157.1" y1="64.0" x2="153.8" y2="65.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3824,7 +3824,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="214.9,282.0 216.0,281.9 205.1,282.9" fill="rgb(78,40,4)" stroke="rgb(78,40,4)" stroke-width="0.5"/>
 <polygon points="117.6,90.9 121.5,87.1 123.1,85.9" fill="rgb(114,58,5)" stroke="rgb(114,58,5)" stroke-width="0.5"/>
 <line x1="273.1" y1="82.2" x2="266.9" y2="77.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="145.1" y1="320.9" x2="154.9" y2="325.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="145.1" y1="320.9" x2="154.9" y2="325.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="164.6,277.4 162.2,276.5 155.6,273.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="223.6,58.0 226.0,58.6 217.1,56.8" fill="rgb(187,96,9)" stroke="rgb(187,96,9)" stroke-width="0.5"/>
 <polygon points="263.2,74.8 259.3,72.2 269.1,78.9" fill="rgb(213,110,10)" stroke="rgb(213,110,10)" stroke-width="0.5"/>
@@ -3903,7 +3903,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="194.9,282.9 195.3,282.9 205.5,282.9" fill="rgb(74,38,3)" stroke="rgb(74,38,3)" stroke-width="0.5"/>
 <polygon points="94.5,211.6 92.8,206.2 91.6,203.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="305.7,127.2 303.4,121.8 308.1,134.6" fill="rgb(211,109,10)" stroke="rgb(211,109,10)" stroke-width="0.5"/>
-<line x1="98.3" y1="42.8" x2="104.9" y2="38.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="98.3" y1="42.8" x2="104.9" y2="38.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="255.1,69.9 259.3,72.2 249.3,66.7" fill="rgb(209,107,10)" stroke="rgb(209,107,10)" stroke-width="0.5"/>
 <line x1="182.8" y1="56.8" x2="181.1" y2="57.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="271.0" y1="258.2" x2="278.0" y2="251.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -3929,18 +3929,18 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="293.8" y1="233.7" x2="290.7" y2="237.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="293.8" y1="233.7" x2="290.7" y2="237.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="262.7,264.0 259.6,266.2 271.0,258.2" fill="rgb(101,52,5)" stroke="rgb(101,52,5)" stroke-width="0.5"/>
-<line x1="44.1" y1="223.9" x2="42.7" y2="215.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="44.1" y1="223.9" x2="42.7" y2="215.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="308.1,134.6 310.0,140.3 305.7,127.2" fill="rgb(200,103,9)" stroke="rgb(200,103,9)" stroke-width="0.5"/>
 <polygon points="264.8,76.0 269.1,78.9 259.3,72.2" fill="rgb(213,110,10)" stroke="rgb(213,110,10)" stroke-width="0.5"/>
 <line x1="195.3" y1="282.9" x2="205.1" y2="282.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="325.9" y1="39.7" x2="336.8" y2="42.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="325.9" y1="39.7" x2="336.8" y2="42.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="209.2,56.0 210.3,56.0 203.0,55.7" fill="rgb(183,94,9)" stroke="rgb(183,94,9)" stroke-width="0.5"/>
 <polygon points="103.6,229.6 101.2,224.9 99.1,221.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="307.4,206.0 305.7,211.3 310.2,197.4" fill="rgb(152,78,7)" stroke="rgb(152,78,7)" stroke-width="0.5"/>
 <line x1="294.0" y1="105.2" x2="297.0" y2="110.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="226.1" y1="280.0" x2="224.3" y2="280.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="259.3" y1="72.2" x2="263.2" y2="74.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="154.9" y1="325.1" x2="164.8" y2="329.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="154.9" y1="325.1" x2="164.8" y2="329.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="176.3,58.0 178.9,57.8 182.8,56.8" fill="rgb(166,86,8)" stroke="rgb(166,86,8)" stroke-width="0.5"/>
 <polygon points="121.5,87.1 125.9,83.5 126.8,82.3" fill="rgb(122,63,6)" stroke="rgb(122,63,6)" stroke-width="0.5"/>
 <polygon points="190.7,56.0 189.6,56.0 184.7,56.8" fill="rgb(169,87,8)" stroke="rgb(169,87,8)" stroke-width="0.5"/>
@@ -3950,7 +3950,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="170.1,59.6 167.0,60.4 164.3,61.6" fill="rgb(155,80,7)" stroke="rgb(155,80,7)" stroke-width="0.5"/>
 <line x1="259.6" y1="266.2" x2="256.3" y2="268.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="247.7,272.6 250.5,271.1 238.1,276.4" fill="rgb(94,48,4)" stroke="rgb(94,48,4)" stroke-width="0.5"/>
-<line x1="356.2" y1="68.1" x2="357.6" y2="57.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="356.2" y1="68.1" x2="357.6" y2="57.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="87.7,186.4 87.3,180.6 86.7,177.9" fill="rgb(71,37,3)" stroke="rgb(71,37,3)" stroke-width="0.5"/>
 <polygon points="287.7,241.3 284.7,245.2 293.8,233.7" fill="rgb(125,64,6)" stroke="rgb(125,64,6)" stroke-width="0.5"/>
 <polygon points="313.8,171.8 313.7,165.9 312.8,180.3" fill="rgb(184,95,9)" stroke="rgb(184,95,9)" stroke-width="0.5"/>
@@ -3971,7 +3971,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="271.0,258.2 274.2,255.3 262.7,264.0" fill="rgb(107,55,5)" stroke="rgb(107,55,5)" stroke-width="0.5"/>
 <polygon points="227.9,279.3 226.1,280.0 238.1,276.4" fill="rgb(88,45,4)" stroke="rgb(88,45,4)" stroke-width="0.5"/>
 <line x1="160.6" y1="62.6" x2="157.1" y2="64.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="268.7" y1="332.3" x2="273.4" y2="324.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="268.7" y1="332.3" x2="273.4" y2="324.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="115.5,245.4 118.8,248.9 123.1,252.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="235.6,61.5 239.3,62.5 229.8,59.6" fill="rgb(205,106,10)" stroke="rgb(205,106,10)" stroke-width="0.5"/>
 <polygon points="297.6,111.5 300.7,116.6 294.0,105.2" fill="rgb(214,111,10)" stroke="rgb(214,111,10)" stroke-width="0.5"/>
@@ -4037,7 +4037,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="196.8,55.7 197.2,56.2 203.0,55.7" fill="rgb(190,99,10)" stroke="rgb(190,99,10)" stroke-width="0.5"/>
 <polygon points="164.3,61.6 160.6,62.6 158.9,63.9" fill="rgb(155,80,7)" stroke="rgb(155,80,7)" stroke-width="0.5"/>
 <line x1="87.6" y1="152.1" x2="86.9" y2="160.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="336.8" y1="42.2" x2="347.8" y2="44.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="336.8" y1="42.2" x2="347.8" y2="44.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="203.0,55.7 202.7,56.2 209.2,56.0" fill="rgb(195,102,10)" stroke="rgb(195,102,10)" stroke-width="0.5"/>
 <polygon points="135.1,76.1 130.8,79.0 130.6,80.3" fill="rgb(131,68,6)" stroke="rgb(131,68,6)" stroke-width="0.5"/>
 <polygon points="240.4,275.1 238.1,276.4 250.5,271.1" fill="rgb(94,48,4)" stroke="rgb(94,48,4)" stroke-width="0.5"/>
@@ -4051,7 +4051,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="229.8,59.6 226.6,59.2 235.6,61.5" fill="rgb(215,112,11)" stroke="rgb(215,112,11)" stroke-width="0.5"/>
 <line x1="296.6" y1="229.3" x2="293.8" y2="233.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="296.6" y1="229.3" x2="293.8" y2="233.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="164.8" y1="329.3" x2="174.8" y2="333.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="164.8" y1="329.3" x2="174.8" y2="333.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="101.2,224.9 99.2,219.9 96.6,216.7" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="238.1,276.4 240.4,275.1 227.9,279.3" fill="rgb(92,47,4)" stroke="rgb(92,47,4)" stroke-width="0.5"/>
 <polygon points="260.1,73.4 264.8,76.0 255.1,69.9" fill="rgb(222,115,11)" stroke="rgb(222,115,11)" stroke-width="0.5"/>
@@ -4092,7 +4092,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="202.7,56.2 203.0,55.7 197.2,56.2" fill="rgb(190,99,10)" stroke="rgb(190,99,10)" stroke-width="0.5"/>
 <polygon points="215.2,56.7 213.3,57.1 221.0,57.8" fill="rgb(208,109,11)" stroke="rgb(208,109,11)" stroke-width="0.5"/>
 <polygon points="245.2,65.1 241.0,63.8 250.6,68.0" fill="rgb(227,118,12)" stroke="rgb(227,118,12)" stroke-width="0.5"/>
-<line x1="42.7" y1="215.1" x2="41.3" y2="206.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="42.7" y1="215.1" x2="41.3" y2="206.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="269.4,80.1 274.1,83.4 264.8,76.0" fill="rgb(228,118,12)" stroke="rgb(228,118,12)" stroke-width="0.5"/>
 <line x1="129.3" y1="258.4" x2="137.7" y2="264.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="245.2" y1="65.1" x2="239.3" y2="62.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4116,7 +4116,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="227.9" y1="279.3" x2="226.1" y2="280.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="250.5,271.1 253.1,269.1 240.4,275.1" fill="rgb(99,51,5)" stroke="rgb(99,51,5)" stroke-width="0.5"/>
 <polygon points="274.2,255.3 277.2,252.0 265.6,261.3" fill="rgb(116,60,6)" stroke="rgb(116,60,6)" stroke-width="0.5"/>
-<line x1="91.6" y1="47.4" x2="98.3" y2="42.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="91.6" y1="47.4" x2="98.3" y2="42.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="160.0,275.2 162.2,276.5 170.9,278.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="297.6" y1="111.5" x2="294.0" y2="105.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="91.9,134.8 90.0,140.5 91.2,142.4" fill="rgb(90,46,4)" stroke="rgb(90,46,4)" stroke-width="0.5"/>
@@ -4126,7 +4126,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="92.8,206.2 94.5,211.6 97.5,214.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="164.3" y1="61.6" x2="160.6" y2="62.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="313.2" y1="160.0" x2="313.7" y2="165.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="357.6" y1="57.8" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="357.6" y1="57.8" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="91.5,200.7 90.6,194.9 88.6,192.1" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
 <polygon points="231.8,61.0 235.6,61.5 226.6,59.2" fill="rgb(215,112,11)" stroke="rgb(215,112,11)" stroke-width="0.5"/>
 <polygon points="302.9,123.5 305.7,129.0 300.7,116.6" fill="rgb(222,115,11)" stroke="rgb(222,115,11)" stroke-width="0.5"/>
@@ -4150,7 +4150,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="183.4,281.4 182.4,280.3 172.5,279.4" fill="rgb(71,36,3)" stroke="rgb(71,36,3)" stroke-width="0.5"/>
 <polygon points="186.6,57.2 184.7,56.8 181.6,58.1" fill="rgb(180,93,9)" stroke="rgb(180,93,9)" stroke-width="0.5"/>
 <line x1="286.8" y1="96.2" x2="290.6" y2="100.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="347.8" y1="44.7" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="347.8" y1="44.7" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="309.5,194.7 308.7,200.4 312.4,186.2" fill="rgb(171,89,9)" stroke="rgb(171,89,9)" stroke-width="0.5"/>
 <polygon points="160.0,275.2 157.9,273.4 149.9,271.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="139.8,73.5 135.1,76.1 135.6,77.3" fill="rgb(141,73,7)" stroke="rgb(141,73,7)" stroke-width="0.5"/>
@@ -4158,7 +4158,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="112.6" y1="241.5" x2="115.5" y2="245.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="87.4,174.6 87.9,168.5 86.3,166.2" fill="rgb(79,41,4)" stroke="rgb(79,41,4)" stroke-width="0.5"/>
 <polygon points="173.3,59.3 176.7,59.3 178.9,57.8" fill="rgb(178,93,9)" stroke="rgb(178,93,9)" stroke-width="0.5"/>
-<line x1="174.8" y1="333.5" x2="185.0" y2="337.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="174.8" y1="333.5" x2="185.0" y2="337.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="218.4,58.1 221.0,57.8 213.3,57.1" fill="rgb(208,109,11)" stroke="rgb(208,109,11)" stroke-width="0.5"/>
 <polygon points="158.9,63.9 163.4,63.1 164.3,61.6" fill="rgb(165,86,8)" stroke="rgb(165,86,8)" stroke-width="0.5"/>
 <polygon points="123.1,252.2 126.1,255.5 132.1,258.4" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -4173,7 +4173,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="308.1,134.6 305.7,129.0 308.8,142.2" fill="rgb(228,120,12)" stroke="rgb(228,120,12)" stroke-width="0.5"/>
 <polygon points="110.0,237.3 107.7,232.7 103.6,229.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="89.3,148.4 91.2,142.4 90.0,140.5" fill="rgb(90,46,4)" stroke="rgb(90,46,4)" stroke-width="0.5"/>
-<line x1="263.8" y1="340.1" x2="268.7" y2="332.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="263.8" y1="340.1" x2="268.7" y2="332.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="87.3,180.6 87.7,186.4 90.2,189.0" fill="rgb(73,37,3)" stroke="rgb(73,37,3)" stroke-width="0.5"/>
 <polygon points="217.0,281.3 218.0,280.3 205.8,282.3" fill="rgb(85,44,4)" stroke="rgb(85,44,4)" stroke-width="0.5"/>
 <polygon points="255.2,71.2 260.1,73.4 250.6,68.0" fill="rgb(231,121,12)" stroke="rgb(231,121,12)" stroke-width="0.5"/>
@@ -4261,7 +4261,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="213.3,57.1 211.3,58.0 218.4,58.1" fill="rgb(220,116,12)" stroke="rgb(220,116,12)" stroke-width="0.5"/>
 <polygon points="120.4,248.5 118.0,244.5 112.6,241.5" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="154.2,66.5 159.2,65.4 158.9,63.9" fill="rgb(166,87,9)" stroke="rgb(166,87,9)" stroke-width="0.5"/>
-<line x1="41.3" y1="206.0" x2="39.8" y2="196.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="41.3" y1="206.0" x2="39.8" y2="196.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="202.3,57.2 202.7,56.2 197.7,57.2" fill="rgb(203,107,11)" stroke="rgb(203,107,11)" stroke-width="0.5"/>
 <polygon points="305.7,129.0 302.9,123.5 306.4,136.3" fill="rgb(240,127,13)" stroke="rgb(240,127,13)" stroke-width="0.5"/>
 <polygon points="253.1,269.1 255.6,266.6 242.5,273.2" fill="rgb(104,54,5)" stroke="rgb(104,54,5)" stroke-width="0.5"/>
@@ -4271,7 +4271,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="197.7,57.2 197.2,56.2 193.1,57.5" fill="rgb(199,104,11)" stroke="rgb(199,104,11)" stroke-width="0.5"/>
 <line x1="168.2" y1="61.0" x2="164.3" y2="61.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="181.6,58.1 184.4,58.8 186.6,57.2" fill="rgb(194,102,10)" stroke="rgb(194,102,10)" stroke-width="0.5"/>
-<line x1="185.0" y1="337.8" x2="195.2" y2="342.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="185.0" y1="337.8" x2="195.2" y2="342.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="273.0,84.6 278.0,88.2 269.4,80.1" fill="rgb(244,128,13)" stroke="rgb(244,128,13)" stroke-width="0.5"/>
 <polygon points="163.4,63.1 158.9,63.9 159.2,65.4" fill="rgb(166,87,9)" stroke="rgb(166,87,9)" stroke-width="0.5"/>
 <polygon points="285.5,97.4 290.0,101.9 282.6,92.0" fill="rgb(243,128,13)" stroke="rgb(243,128,13)" stroke-width="0.5"/>
@@ -4314,12 +4314,12 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="122.0,88.3 117.4,92.2 119.3,93.4" fill="rgb(128,67,6)" stroke="rgb(128,67,6)" stroke-width="0.5"/>
 <polygon points="120.4,248.5 123.1,252.2 129.7,254.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="240.7,65.3 245.8,66.4 236.5,63.0" fill="rgb(235,124,13)" stroke="rgb(235,124,13)" stroke-width="0.5"/>
-<line x1="355.1" y1="52.1" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="355.1" y1="52.1" x2="359.0" y2="47.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="303.9,208.8 302.7,214.3 308.7,200.4" fill="rgb(168,88,9)" stroke="rgb(168,88,9)" stroke-width="0.5"/>
 <line x1="87.4" y1="174.6" x2="87.3" y2="180.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="157.9,273.4 155.9,271.1 147.2,269.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <line x1="312.2" y1="168.3" x2="313.2" y2="160.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="84.7" y1="52.2" x2="91.6" y2="47.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="84.7" y1="52.2" x2="91.6" y2="47.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="188.7,58.0 186.6,57.2 184.4,58.8" fill="rgb(194,102,10)" stroke="rgb(194,102,10)" stroke-width="0.5"/>
 <polygon points="296.0,112.9 299.7,118.1 294.0,106.6" fill="rgb(242,128,13)" stroke="rgb(242,128,13)" stroke-width="0.5"/>
 <polygon points="290.3,237.0 292.6,232.5 282.4,244.3" fill="rgb(146,76,8)" stroke="rgb(146,76,8)" stroke-width="0.5"/>
@@ -4388,7 +4388,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="97.5,214.6 99.2,219.9 104.2,222.6" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="159.2,65.4 154.2,66.5 155.6,68.0" fill="rgb(168,88,9)" stroke="rgb(168,88,9)" stroke-width="0.5"/>
 <polygon points="87.9,168.5 87.4,174.6 90.8,176.8" fill="rgb(81,42,4)" stroke="rgb(81,42,4)" stroke-width="0.5"/>
-<line x1="258.8" y1="348.1" x2="263.8" y2="340.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="258.8" y1="348.1" x2="263.8" y2="340.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="309.8,156.0 311.2,162.2 310.8,148.1" fill="rgb(222,117,12)" stroke="rgb(222,117,12)" stroke-width="0.5"/>
 <polygon points="104.1,113.1 108.2,108.0 106.0,106.8" fill="rgb(114,59,6)" stroke="rgb(114,59,6)" stroke-width="0.5"/>
 <polygon points="242.5,273.2 244.5,271.0 231.1,276.5" fill="rgb(101,52,5)" stroke="rgb(101,52,5)" stroke-width="0.5"/>
@@ -4398,7 +4398,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="150.0,69.4 144.8,71.3 146.6,72.6" fill="rgb(161,84,9)" stroke="rgb(161,84,9)" stroke-width="0.5"/>
 <line x1="202.3" y1="57.2" x2="202.7" y2="56.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="147.2" y1="269.2" x2="157.9" y2="273.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="195.2" y1="342.2" x2="205.6" y2="346.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="195.2" y1="342.2" x2="205.6" y2="346.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="303.6,130.5 306.4,136.3 302.9,123.5" fill="rgb(240,127,13)" stroke="rgb(240,127,13)" stroke-width="0.5"/>
 <polygon points="264.3,77.2 259.0,74.7 267.6,81.3" fill="rgb(255,138,15)" stroke="rgb(255,138,15)" stroke-width="0.5"/>
 <polygon points="202.3,57.2 201.8,58.7 206.8,57.5" fill="rgb(221,117,13)" stroke="rgb(221,117,13)" stroke-width="0.5"/>
@@ -4450,7 +4450,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="119.3,93.4 124.5,89.4 122.0,88.3" fill="rgb(138,72,7)" stroke="rgb(138,72,7)" stroke-width="0.5"/>
 <polygon points="184.4,58.8 187.3,60.0 188.7,58.0" fill="rgb(209,111,12)" stroke="rgb(209,111,12)" stroke-width="0.5"/>
 <polygon points="235.4,64.6 240.7,65.3 231.8,62.6" fill="rgb(244,130,14)" stroke="rgb(244,130,14)" stroke-width="0.5"/>
-<line x1="39.8" y1="196.8" x2="38.4" y2="187.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="39.8" y1="196.8" x2="38.4" y2="187.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="312.2,168.3 311.2,162.2 309.4,176.5" fill="rgb(225,120,13)" stroke="rgb(225,120,13)" stroke-width="0.5"/>
 <polygon points="90.3,183.0 90.8,176.8 87.4,174.6" fill="rgb(81,42,4)" stroke="rgb(81,42,4)" stroke-width="0.5"/>
 <polygon points="155.9,271.1 157.9,273.4 167.9,274.4" fill="rgb(70,36,3)" stroke="rgb(70,36,3)" stroke-width="0.5"/>
@@ -4521,7 +4521,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="105.7,227.8 107.7,232.7 114.1,235.2" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="164.5,64.7 159.2,65.4 161.4,66.9" fill="rgb(181,96,10)" stroke="rgb(181,96,10)" stroke-width="0.5"/>
 <polygon points="146.6,72.6 152.6,70.8 150.0,69.4" fill="rgb(171,90,10)" stroke="rgb(171,90,10)" stroke-width="0.5"/>
-<line x1="205.6" y1="346.6" x2="216.1" y2="351.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="205.6" y1="346.6" x2="216.1" y2="351.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="272.8,250.8 270.6,254.8 282.4,244.3" fill="rgb(135,71,7)" stroke="rgb(135,71,7)" stroke-width="0.5"/>
 <polygon points="95.5,203.3 95.1,197.3 90.6,194.9" fill="rgb(74,38,4)" stroke="rgb(74,38,4)" stroke-width="0.5"/>
 <polygon points="219.6,59.9 215.9,60.9 223.4,61.1" fill="rgb(245,131,15)" stroke="rgb(245,131,15)" stroke-width="0.5"/>
@@ -4530,13 +4530,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="187.3,60.0 184.4,58.8 184.0,60.9" fill="rgb(208,110,12)" stroke="rgb(208,110,12)" stroke-width="0.5"/>
 <line x1="306.4" y1="136.3" x2="308.8" y2="142.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="88.9" y1="162.4" x2="87.9" y2="168.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="351.1" y1="56.9" x2="355.1" y2="52.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="351.1" y1="56.9" x2="355.1" y2="52.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="219.0,278.7 219.9,276.7 206.5,279.8" fill="rgb(93,48,5)" stroke="rgb(93,48,5)" stroke-width="0.5"/>
 <polygon points="164.5,64.7 170.0,64.4 168.2,62.7" fill="rgb(194,103,11)" stroke="rgb(194,103,11)" stroke-width="0.5"/>
 <polygon points="246.4,268.2 244.5,271.0 257.9,263.7" fill="rgb(109,57,6)" stroke="rgb(109,57,6)" stroke-width="0.5"/>
 <polygon points="146.6,72.6 141.0,74.8 144.0,75.9" fill="rgb(164,87,9)" stroke="rgb(164,87,9)" stroke-width="0.5"/>
 <polygon points="176.5,61.2 181.0,61.9 180.3,59.9" fill="rgb(208,111,12)" stroke="rgb(208,111,12)" stroke-width="0.5"/>
-<line x1="77.7" y1="57.1" x2="84.7" y2="52.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="77.7" y1="57.1" x2="84.7" y2="52.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="124.5,89.4 130.1,85.8 127.0,84.7" fill="rgb(148,78,8)" stroke="rgb(148,78,8)" stroke-width="0.5"/>
 <polygon points="167.9,274.4 169.3,276.6 180.5,276.7" fill="rgb(76,39,4)" stroke="rgb(76,39,4)" stroke-width="0.5"/>
 <line x1="270.6" y1="254.8" x2="279.9" y2="248.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4615,7 +4615,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="155.6" y1="68.0" x2="150.0" y2="69.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="253.3,72.5 247.4,70.7 256.0,75.8" fill="rgb(255,147,17)" stroke="rgb(255,147,17)" stroke-width="0.5"/>
 <polygon points="206.8,277.9 206.5,279.8 219.9,276.7" fill="rgb(93,48,5)" stroke="rgb(93,48,5)" stroke-width="0.5"/>
-<line x1="253.7" y1="356.3" x2="258.8" y2="348.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="253.7" y1="356.3" x2="258.8" y2="348.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="209.1,59.4 207.0,61.2 212.6,60.0" fill="rgb(244,131,15)" stroke="rgb(244,131,15)" stroke-width="0.5"/>
 <line x1="190.8" y1="59.4" x2="188.7" y2="58.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="235.4" y1="64.6" x2="240.7" y2="65.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4637,13 +4637,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="300.2" y1="124.9" x2="299.7" y2="118.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="95.1,197.3 95.1,191.2 90.2,189.0" fill="rgb(79,41,4)" stroke="rgb(79,41,4)" stroke-width="0.5"/>
 <line x1="235.4" y1="64.6" x2="231.8" y2="62.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="38.4" y1="187.4" x2="36.9" y2="177.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="38.4" y1="187.4" x2="36.9" y2="177.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="201.4,60.7 201.8,58.7 198.6,60.7" fill="rgb(232,124,14)" stroke="rgb(232,124,14)" stroke-width="0.5"/>
 <line x1="90.3" y1="156.3" x2="88.9" y2="162.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="91.2" y1="142.4" x2="92.3" y2="150.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="168.2" y1="62.7" x2="164.5" y2="64.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="309.9,182.7 309.4,176.5 305.1,190.9" fill="rgb(225,121,14)" stroke="rgb(225,121,14)" stroke-width="0.5"/>
-<line x1="216.1" y1="351.0" x2="226.8" y2="355.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="216.1" y1="351.0" x2="226.8" y2="355.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="170.0,64.4 164.5,64.7 167.4,66.3" fill="rgb(196,105,12)" stroke="rgb(196,105,12)" stroke-width="0.5"/>
 <polygon points="198.6,60.7 198.1,58.7 195.8,60.9" fill="rgb(229,122,14)" stroke="rgb(229,122,14)" stroke-width="0.5"/>
 <polygon points="152.6,70.8 146.6,72.6 150.3,73.7" fill="rgb(175,93,10)" stroke="rgb(175,93,10)" stroke-width="0.5"/>
@@ -4772,18 +4772,18 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="93.2,164.2 95.2,157.8 90.3,156.3" fill="rgb(96,50,5)" stroke="rgb(96,50,5)" stroke-width="0.5"/>
 <line x1="105.7" y1="227.8" x2="114.1" y2="235.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="198.6,60.7 199.0,63.2 201.4,60.7" fill="rgb(246,133,16)" stroke="rgb(246,133,16)" stroke-width="0.5"/>
-<line x1="347.0" y1="61.9" x2="351.1" y2="56.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="347.0" y1="61.9" x2="351.1" y2="56.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="175.7,64.6 170.0,64.4 173.6,66.1" fill="rgb(212,114,13)" stroke="rgb(212,114,13)" stroke-width="0.5"/>
 <polygon points="201.4,60.7 201.0,63.2 204.2,60.9" fill="rgb(249,135,16)" stroke="rgb(249,135,16)" stroke-width="0.5"/>
 <polygon points="103.6,119.5 99.8,125.1 104.7,126.0" fill="rgb(115,61,6)" stroke="rgb(115,61,6)" stroke-width="0.5"/>
 <polygon points="299.2,131.7 302.5,137.7 300.2,124.9" fill="rgb(255,146,17)" stroke="rgb(255,146,17)" stroke-width="0.5"/>
 <polygon points="195.8,60.9 197.2,63.3 198.6,60.7" fill="rgb(244,132,16)" stroke="rgb(244,132,16)" stroke-width="0.5"/>
-<line x1="226.8" y1="355.5" x2="237.5" y2="360.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="226.8" y1="355.5" x2="237.5" y2="360.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="271.2,90.1 276.9,94.1 269.9,85.6" fill="rgb(255,155,18)" stroke="rgb(255,155,18)" stroke-width="0.5"/>
 <polygon points="259.9,260.4 261.8,256.6 248.0,265.0" fill="rgb(129,68,7)" stroke="rgb(129,68,7)" stroke-width="0.5"/>
 <polygon points="234.7,68.3 241.2,69.3 232.6,66.2" fill="rgb(255,147,17)" stroke="rgb(255,147,17)" stroke-width="0.5"/>
 <line x1="201.4" y1="60.7" x2="201.8" y2="58.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="70.5" y1="62.1" x2="77.7" y2="57.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="70.5" y1="62.1" x2="77.7" y2="57.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="204.2,60.9 202.9,63.3 207.0,61.2" fill="rgb(252,136,16)" stroke="rgb(252,136,16)" stroke-width="0.5"/>
 <polygon points="125.7,246.7 124.1,242.0 115.9,240.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <polygon points="304.6,184.6 305.1,190.9 309.4,176.5" fill="rgb(225,121,14)" stroke="rgb(225,121,14)" stroke-width="0.5"/>
@@ -4839,7 +4839,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="138.6,256.7 140.5,260.5 150.9,261.5" fill="rgb(69,36,3)" stroke="rgb(69,36,3)" stroke-width="0.5"/>
 <line x1="233.9" y1="271.8" x2="232.5" y2="274.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="138.0" y1="78.5" x2="136.0" y2="82.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="36.9" y1="177.9" x2="35.3" y2="168.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="36.9" y1="177.9" x2="35.3" y2="168.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="282.5,103.8 287.6,108.8 282.3,98.4" fill="rgb(255,158,19)" stroke="rgb(255,158,19)" stroke-width="0.5"/>
 <polygon points="251.3,76.7 257.8,79.4 249.7,73.6" fill="rgb(255,156,19)" stroke="rgb(255,156,19)" stroke-width="0.5"/>
 <polygon points="197.2,63.3 195.8,60.9 195.3,63.6" fill="rgb(243,131,15)" stroke="rgb(243,131,15)" stroke-width="0.5"/>
@@ -4860,7 +4860,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="173.6,66.1 167.4,66.3 171.9,67.7" fill="rgb(215,116,14)" stroke="rgb(215,116,14)" stroke-width="0.5"/>
 <polygon points="156.9,71.9 163.7,70.5 158.8,69.3" fill="rgb(205,110,13)" stroke="rgb(205,110,13)" stroke-width="0.5"/>
 <line x1="241.2" y1="69.3" x2="238.6" y2="66.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="248.4" y1="364.7" x2="253.7" y2="356.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="248.4" y1="364.7" x2="253.7" y2="356.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="265.1,86.4 271.2,90.1 264.0,82.3" fill="rgb(255,159,19)" stroke="rgb(255,159,19)" stroke-width="0.5"/>
 <polygon points="224.3,64.5 218.4,65.1 226.4,66.0" fill="rgb(255,149,18)" stroke="rgb(255,149,18)" stroke-width="0.5"/>
 <line x1="161.4" y1="66.9" x2="158.8" y2="69.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -4912,7 +4912,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="191.8,64.3 187.9,62.4 190.3,64.9" fill="rgb(241,131,16)" stroke="rgb(241,131,16)" stroke-width="0.5"/>
 <polygon points="292.2,113.9 287.6,108.8 291.2,120.1" fill="rgb(255,165,21)" stroke="rgb(255,165,21)" stroke-width="0.5"/>
 <polygon points="134.9,86.5 141.3,83.1 136.0,82.4" fill="rgb(174,93,11)" stroke="rgb(174,93,11)" stroke-width="0.5"/>
-<line x1="237.5" y1="360.1" x2="248.4" y2="364.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="237.5" y1="360.1" x2="248.4" y2="364.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="234.7,68.3 228.1,67.7 236.4,70.4" fill="rgb(255,157,19)" stroke="rgb(255,157,19)" stroke-width="0.5"/>
 <line x1="152.4" y1="265.2" x2="154.1" y2="268.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="209.6" y1="61.7" x2="207.0" y2="61.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5038,7 +5038,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="208.2,64.3 204.1,66.8 209.7,64.9" fill="rgb(255,149,19)" stroke="rgb(255,149,19)" stroke-width="0.5"/>
 <polygon points="187.6,66.2 181.6,65.2 186.6,67.0" fill="rgb(244,133,16)" stroke="rgb(244,133,16)" stroke-width="0.5"/>
 <line x1="206.5" y1="63.9" x2="209.6" y2="61.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="342.8" y1="67.0" x2="347.0" y2="61.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="342.8" y1="67.0" x2="347.0" y2="61.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="286.5,114.5 291.2,120.1 287.6,108.8" fill="rgb(255,165,21)" stroke="rgb(255,165,21)" stroke-width="0.5"/>
 <line x1="114.1" y1="235.2" x2="124.1" y2="242.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="190.3,64.9 195.1,67.1 191.8,64.3" fill="rgb(255,141,17)" stroke="rgb(255,141,17)" stroke-width="0.5"/>
@@ -5048,7 +5048,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="200.5,66.2 201.0,63.2 199.5,66.2" fill="rgb(255,143,18)" stroke="rgb(255,143,18)" stroke-width="0.5"/>
 <polygon points="236.2,265.1 235.1,268.7 249.5,261.4" fill="rgb(122,65,7)" stroke="rgb(122,65,7)" stroke-width="0.5"/>
 <line x1="265.1" y1="86.4" x2="264.0" y2="82.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="63.1" y1="67.2" x2="70.5" y2="62.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="63.1" y1="67.2" x2="70.5" y2="62.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="199.5,66.2 199.0,63.2 198.6,66.3" fill="rgb(255,142,17)" stroke="rgb(255,142,17)" stroke-width="0.5"/>
 <polygon points="170.7,69.5 177.8,68.9 171.9,67.7" fill="rgb(235,128,16)" stroke="rgb(235,128,16)" stroke-width="0.5"/>
 <polygon points="201.5,66.3 202.9,63.3 200.5,66.2" fill="rgb(255,144,18)" stroke="rgb(255,144,18)" stroke-width="0.5"/>
@@ -5076,7 +5076,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="304.6" y1="184.6" x2="305.1" y2="190.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="304.6" y1="184.6" x2="305.1" y2="190.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="178.8,67.6 185.8,67.8 180.0,66.3" fill="rgb(247,135,17)" stroke="rgb(247,135,17)" stroke-width="0.5"/>
-<line x1="35.3" y1="168.1" x2="33.8" y2="158.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="35.3" y1="168.1" x2="33.8" y2="158.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="111.6,224.6 112.6,230.1 121.8,231.4" fill="rgb(71,37,4)" stroke="rgb(71,37,4)" stroke-width="0.5"/>
 <polygon points="101.9,205.3 102.2,211.3 110.5,212.8" fill="rgb(78,41,4)" stroke="rgb(78,41,4)" stroke-width="0.5"/>
 <polygon points="196.7,66.6 193.5,63.9 195.9,66.8" fill="rgb(255,141,17)" stroke="rgb(255,141,17)" stroke-width="0.5"/>
@@ -5116,7 +5116,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="122.8,236.9 121.8,231.4 112.6,230.1" fill="rgb(71,37,4)" stroke="rgb(71,37,4)" stroke-width="0.5"/>
 <polygon points="229.4,69.4 222.2,68.8 230.2,71.2" fill="rgb(255,163,21)" stroke="rgb(255,163,21)" stroke-width="0.5"/>
 <line x1="236.4" y1="70.4" x2="243.2" y2="71.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="248.4" y1="364.7" x2="248.9" y2="356.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="248.4" y1="364.7" x2="248.9" y2="356.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="195.1,67.1 190.3,64.9 194.4,67.4" fill="rgb(255,142,18)" stroke="rgb(255,142,18)" stroke-width="0.5"/>
 <polygon points="221.3,67.5 214.3,67.8 222.2,68.8" fill="rgb(255,159,20)" stroke="rgb(255,159,20)" stroke-width="0.5"/>
 <line x1="282.5" y1="103.8" x2="287.6" y2="108.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5349,7 +5349,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="118.6,109.3 113.6,114.7 121.1,114.7" fill="rgb(155,83,10)" stroke="rgb(155,83,10)" stroke-width="0.5"/>
 <polygon points="289.8,206.2 289.8,212.5 298.4,198.8" fill="rgb(231,126,16)" stroke="rgb(231,126,16)" stroke-width="0.5"/>
 <polygon points="200.0,69.7 207.5,69.0 200.0,69.7" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<line x1="33.8" y1="158.2" x2="32.2" y2="148.1" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="33.8" y1="158.2" x2="32.2" y2="148.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="207.8,69.9 215.5,70.5 207.7,69.4" fill="rgb(255,163,21)" stroke="rgb(255,163,21)" stroke-width="0.5"/>
 <polygon points="200.0,69.7 192.5,69.0 200.0,69.7" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <line x1="300.4" y1="165.1" x2="305.0" y2="157.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5372,7 +5372,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="95.2" y1="157.8" x2="99.9" y2="165.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="169.8" y1="71.3" x2="162.6" y2="72.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.6" y1="257.4" x2="150.9" y2="261.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="338.5" y1="72.2" x2="342.8" y2="67.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="338.5" y1="72.2" x2="342.8" y2="67.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="169.6,75.0 177.1,73.1 169.5,73.1" fill="rgb(250,137,17)" stroke="rgb(250,137,17)" stroke-width="0.5"/>
 <polygon points="250.8,257.3 251.9,252.7 237.2,261.0" fill="rgb(145,78,9)" stroke="rgb(145,78,9)" stroke-width="0.5"/>
 <polygon points="200.0,69.7 207.8,69.9 200.0,69.7" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
@@ -5383,7 +5383,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="295.3,151.8 298.1,158.4 299.8,144.8" fill="rgb(255,165,21)" stroke="rgb(255,165,21)" stroke-width="0.5"/>
 <polygon points="215.5,70.5 207.8,69.9 215.4,71.5" fill="rgb(255,165,22)" stroke="rgb(255,165,22)" stroke-width="0.5"/>
 <polygon points="163.3,261.1 164.2,265.2 177.8,263.7" fill="rgb(89,46,5)" stroke="rgb(89,46,5)" stroke-width="0.5"/>
-<line x1="55.6" y1="72.4" x2="63.1" y2="67.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="55.6" y1="72.4" x2="63.1" y2="67.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="207.8,69.9 200.0,69.7 207.7,70.4" fill="rgb(255,160,21)" stroke="rgb(255,160,21)" stroke-width="0.5"/>
 <polygon points="223.0,73.0 230.5,75.0 223.1,71.6" fill="rgb(255,172,23)" stroke="rgb(255,172,23)" stroke-width="0.5"/>
 <polygon points="284.0,120.3 288.6,126.2 286.5,114.5" fill="rgb(255,179,24)" stroke="rgb(255,179,24)" stroke-width="0.5"/>
@@ -5406,7 +5406,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="281.5,109.2 276.1,104.1 279.1,114.5" fill="rgb(255,188,25)" stroke="rgb(255,188,25)" stroke-width="0.5"/>
 <polygon points="222.2,267.6 222.7,263.6 207.6,268.9" fill="rgb(113,60,6)" stroke="rgb(113,60,6)" stroke-width="0.5"/>
 <polygon points="257.8,90.4 264.2,94.6 258.7,86.7" fill="rgb(255,183,24)" stroke="rgb(255,183,24)" stroke-width="0.5"/>
-<line x1="248.9" y1="356.6" x2="249.4" y2="348.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="248.9" y1="356.6" x2="249.4" y2="348.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="207.7,70.4 200.0,69.7 207.5,70.8" fill="rgb(255,161,21)" stroke="rgb(255,161,21)" stroke-width="0.5"/>
 <polygon points="192.5,70.9 200.0,69.7 192.3,70.4" fill="rgb(255,156,20)" stroke="rgb(255,156,20)" stroke-width="0.5"/>
 <polygon points="155.0,80.1 148.1,83.3 155.9,82.9" fill="rgb(221,121,15)" stroke="rgb(221,121,15)" stroke-width="0.5"/>
@@ -5687,7 +5687,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="103.3" y1="186.0" x2="102.4" y2="192.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="186.4,74.2 179.6,77.1 187.4,75.0" fill="rgb(255,157,21)" stroke="rgb(255,157,21)" stroke-width="0.5"/>
 <line x1="230.5" y1="75.0" x2="237.8" y2="77.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="32.2" y1="148.1" x2="30.5" y2="137.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="32.2" y1="148.1" x2="30.5" y2="137.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="235.8,81.9 242.7,85.6 237.1,79.6" fill="rgb(255,189,26)" stroke="rgb(255,189,26)" stroke-width="0.5"/>
 <polygon points="104.9,152.0 102.2,158.6 111.2,158.6" fill="rgb(116,62,7)" stroke="rgb(116,62,7)" stroke-width="0.5"/>
 <polygon points="178.4,75.8 171.3,78.7 179.6,77.1" fill="rgb(255,150,20)" stroke="rgb(255,150,20)" stroke-width="0.5"/>
@@ -5737,7 +5737,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="279.2,225.5 279.5,219.4 267.3,231.5" fill="rgb(222,123,16)" stroke="rgb(222,123,16)" stroke-width="0.5"/>
 <line x1="200.0" y1="69.7" x2="193.7" y2="72.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="155.0" y1="80.1" x2="155.9" y2="82.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="249.4" y1="348.4" x2="249.8" y2="340.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="249.4" y1="348.4" x2="249.8" y2="340.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="200.5,73.7 201.0,78.1 201.5,73.6" fill="rgb(255,173,24)" stroke="rgb(255,173,24)" stroke-width="0.5"/>
 <polygon points="199.6,73.7 199.1,78.1 200.5,73.7" fill="rgb(255,172,23)" stroke="rgb(255,172,23)" stroke-width="0.5"/>
 <line x1="292.1" y1="145.2" x2="296.5" y2="138.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5758,7 +5758,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="177.3,259.2 177.8,263.7 192.5,260.5" fill="rgb(102,54,6)" stroke="rgb(102,54,6)" stroke-width="0.5"/>
 <line x1="200.0" y1="69.7" x2="205.0" y2="72.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="235.8,81.9 228.8,78.6 233.9,84.1" fill="rgb(255,190,26)" stroke="rgb(255,190,26)" stroke-width="0.5"/>
-<line x1="334.1" y1="77.6" x2="338.5" y2="72.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="334.1" y1="77.6" x2="338.5" y2="72.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="208.4,77.0 204.2,73.1 206.7,77.4" fill="rgb(255,174,24)" stroke="rgb(255,174,24)" stroke-width="0.5"/>
 <line x1="142.3" y1="90.5" x2="135.9" y2="94.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="192.7" y1="265.0" x2="192.9" y2="268.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -5766,7 +5766,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="211.4,75.7 217.2,79.4 212.7,75.0" fill="rgb(255,182,25)" stroke="rgb(255,182,25)" stroke-width="0.5"/>
 <polygon points="193.4,77.4 196.7,73.3 191.7,77.0" fill="rgb(255,166,22)" stroke="rgb(255,166,22)" stroke-width="0.5"/>
 <polygon points="126.4,109.1 121.1,114.7 130.0,113.9" fill="rgb(182,100,13)" stroke="rgb(182,100,13)" stroke-width="0.5"/>
-<line x1="47.9" y1="77.7" x2="55.6" y2="72.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="47.9" y1="77.7" x2="55.6" y2="72.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="238.7,251.6 238.0,256.5 252.8,247.7" fill="rgb(157,85,10)" stroke="rgb(157,85,10)" stroke-width="0.5"/>
 <line x1="200.0" y1="69.7" x2="196.7" y2="73.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="208.0,260.5 207.8,265.0 223.2,259.2" fill="rgb(124,67,8)" stroke="rgb(124,67,8)" stroke-width="0.5"/>
@@ -5932,7 +5932,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="288.5" y1="138.6" x2="292.1" y2="145.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="282.7,144.6 286.1,151.5 288.5,138.6" fill="rgb(255,192,27)" stroke="rgb(255,192,27)" stroke-width="0.5"/>
 <line x1="280.1" y1="125.9" x2="284.0" y2="120.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="30.5" y1="137.8" x2="28.9" y2="127.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="30.5" y1="137.8" x2="28.9" y2="127.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="231.5,86.1 237.6,90.7 233.9,84.1" fill="rgb(255,201,29)" stroke="rgb(255,201,29)" stroke-width="0.5"/>
 <polygon points="239.2,246.2 238.7,251.6 253.5,242.3" fill="rgb(177,97,12)" stroke="rgb(177,97,12)" stroke-width="0.5"/>
 <polygon points="176.9,254.3 177.3,259.2 192.4,255.6" fill="rgb(106,57,6)" stroke="rgb(106,57,6)" stroke-width="0.5"/>
@@ -5972,7 +5972,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="117.6,144.8 121.3,138.0 111.7,138.8" fill="rgb(158,87,11)" stroke="rgb(158,87,11)" stroke-width="0.5"/>
 <line x1="199.6" y1="73.7" x2="199.1" y2="78.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="288.5,192.9 287.3,186.0 278.3,199.4" fill="rgb(255,165,23)" stroke="rgb(255,165,23)" stroke-width="0.5"/>
-<line x1="249.8" y1="340.0" x2="250.3" y2="331.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="249.8" y1="340.0" x2="250.3" y2="331.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="153.3,92.8 147.1,97.6 156.6,95.6" fill="rgb(248,139,19)" stroke="rgb(248,139,19)" stroke-width="0.5"/>
 <polygon points="124.9,119.9 120.1,126.0 130.0,124.8" fill="rgb(186,103,13)" stroke="rgb(186,103,13)" stroke-width="0.5"/>
 <polygon points="204.5,82.9 203.0,78.0 201.6,83.1" fill="rgb(255,182,26)" stroke="rgb(255,182,26)" stroke-width="0.5"/>
@@ -6034,7 +6034,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="150.8,100.9 156.6,95.6 147.1,97.6" fill="rgb(248,139,19)" stroke="rgb(248,139,19)" stroke-width="0.5"/>
 <line x1="210.0" y1="76.4" x2="215.0" y2="80.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="286.1" y1="151.5" x2="292.1" y2="145.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="329.6" y1="83.0" x2="334.1" y2="77.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="329.6" y1="83.0" x2="334.1" y2="77.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="228.5,88.0 234.1,93.0 231.5,86.1" fill="rgb(255,205,30)" stroke="rgb(255,205,30)" stroke-width="0.5"/>
 <line x1="280.1" y1="125.9" x2="284.5" y2="132.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="280.1" y1="125.9" x2="284.5" y2="132.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -6048,7 +6048,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="108.1" y1="145.3" x2="114.2" y2="151.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="192.5" y1="260.5" x2="208.0" y2="260.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="138.0" y1="98.8" x2="141.1" y2="102.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="40.0" y1="83.2" x2="47.9" y2="77.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="40.0" y1="83.2" x2="47.9" y2="77.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="121.3,206.5 120.9,213.1 133.3,212.3" fill="rgb(109,58,7)" stroke="rgb(109,58,7)" stroke-width="0.5"/>
 <polygon points="270.3,124.6 274.8,131.2 275.3,119.7" fill="rgb(255,208,30)" stroke="rgb(255,208,30)" stroke-width="0.5"/>
 <polygon points="223.9,248.9 223.6,254.2 239.2,246.2" fill="rgb(167,92,12)" stroke="rgb(167,92,12)" stroke-width="0.5"/>
@@ -6165,7 +6165,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="170.3,95.1 175.1,89.8 166.1,93.0" fill="rgb(255,164,23)" stroke="rgb(255,164,23)" stroke-width="0.5"/>
 <line x1="210.1" y1="82.0" x2="212.7" y2="81.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="187.5" y1="81.3" x2="190.0" y2="82.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="28.9" y1="127.3" x2="27.2" y2="116.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="28.9" y1="127.3" x2="27.2" y2="116.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="239.5,98.2 244.8,103.9 243.6,95.6" fill="rgb(255,216,32)" stroke="rgb(255,216,32)" stroke-width="0.5"/>
 <polygon points="146.3,230.4 146.3,223.9 132.9,225.5" fill="rgb(113,61,7)" stroke="rgb(113,61,7)" stroke-width="0.5"/>
 <line x1="146.5" y1="236.6" x2="147.0" y2="242.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -6195,7 +6195,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="183.3,92.4 186.7,87.0 179.1,91.2" fill="rgb(255,177,25)" stroke="rgb(255,177,25)" stroke-width="0.5"/>
 <polygon points="209.8,87.7 212.3,93.3 213.5,87.0" fill="rgb(255,204,30)" stroke="rgb(255,204,30)" stroke-width="0.5"/>
 <polygon points="133.3,212.3 133.9,205.3 121.3,206.5" fill="rgb(118,64,8)" stroke="rgb(118,64,8)" stroke-width="0.5"/>
-<line x1="250.3" y1="331.5" x2="250.8" y2="322.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="250.3" y1="331.5" x2="250.8" y2="322.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="254.1,223.8 254.2,230.3 267.5,218.9" fill="rgb(240,135,18)" stroke="rgb(240,135,18)" stroke-width="0.5"/>
 <polygon points="130.0,124.8 125.5,131.3 136.4,129.4" fill="rgb(206,115,16)" stroke="rgb(206,115,16)" stroke-width="0.5"/>
 <polygon points="223.9,248.9 224.2,243.0 208.2,250.2" fill="rgb(173,96,13)" stroke="rgb(173,96,13)" stroke-width="0.5"/>
@@ -6297,7 +6297,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="146.3" y1="230.4" x2="146.5" y2="236.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="146.5" y1="236.6" x2="161.0" y2="240.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.2" y1="212.1" x2="279.1" y2="206.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="325.0" y1="88.6" x2="329.6" y2="83.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="325.0" y1="88.6" x2="329.6" y2="83.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="183.3,92.4 180.1,98.3 187.9,93.4" fill="rgb(255,186,27)" stroke="rgb(255,186,27)" stroke-width="0.5"/>
 <line x1="198.6" y1="83.1" x2="198.1" y2="88.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="114.2" y1="151.7" x2="121.8" y2="157.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -6307,7 +6307,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="249.9,109.8 244.8,103.9 243.9,112.9" fill="rgb(255,225,34)" stroke="rgb(255,225,34)" stroke-width="0.5"/>
 <polygon points="253.9,217.0 254.1,223.8 267.2,212.1" fill="rgb(255,147,21)" stroke="rgb(255,147,21)" stroke-width="0.5"/>
 <line x1="121.3" y1="206.5" x2="133.3" y2="212.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="32.0" y1="88.8" x2="40.0" y2="83.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="32.0" y1="88.8" x2="40.0" y2="83.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="160.9,234.3 160.9,227.7 146.3,230.4" fill="rgb(127,69,8)" stroke="rgb(127,69,8)" stroke-width="0.5"/>
 <line x1="130.0" y1="124.8" x2="125.5" y2="131.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="271.8,170.3 274.0,177.7 281.3,164.7" fill="rgb(255,195,29)" stroke="rgb(255,195,29)" stroke-width="0.5"/>
@@ -6356,7 +6356,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="134.8,198.0 136.1,190.6 123.2,192.5" fill="rgb(149,83,11)" stroke="rgb(149,83,11)" stroke-width="0.5"/>
 <polygon points="220.2,98.2 223.4,104.5 225.3,96.8" fill="rgb(255,220,33)" stroke="rgb(255,220,33)" stroke-width="0.5"/>
 <polygon points="202.6,94.3 203.1,100.5 207.5,94.0" fill="rgb(255,208,31)" stroke="rgb(255,208,31)" stroke-width="0.5"/>
-<line x1="27.2" y1="116.6" x2="25.5" y2="105.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="27.2" y1="116.6" x2="25.5" y2="105.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="271.8,143.1 268.0,136.1 263.4,147.9" fill="rgb(255,223,34)" stroke="rgb(255,223,34)" stroke-width="0.5"/>
 <polygon points="254.1,223.8 253.9,217.0 239.6,227.6" fill="rgb(254,144,21)" stroke="rgb(254,144,21)" stroke-width="0.5"/>
 <polygon points="197.6,94.3 197.1,100.5 202.6,94.3" fill="rgb(255,204,30)" stroke="rgb(255,204,30)" stroke-width="0.5"/>
@@ -6389,7 +6389,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="209.8" y1="87.7" x2="212.3" y2="93.3" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="209.0,100.1 207.5,94.0 203.1,100.5" fill="rgb(255,208,31)" stroke="rgb(255,208,31)" stroke-width="0.5"/>
 <polygon points="192.2,238.2 192.2,244.4 208.3,238.2" fill="rgb(175,98,13)" stroke="rgb(175,98,13)" stroke-width="0.5"/>
-<line x1="250.8" y1="322.8" x2="251.3" y2="313.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="250.8" y1="322.8" x2="251.3" y2="313.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="266.5,205.1 265.6,197.9 253.4,209.9" fill="rgb(255,170,25)" stroke="rgb(255,170,25)" stroke-width="0.5"/>
 <line x1="224.2" y1="243.0" x2="239.5" y2="240.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="180.1,98.3 176.8,104.5 185.5,99.4" fill="rgb(255,188,28)" stroke="rgb(255,188,28)" stroke-width="0.5"/>
@@ -6510,7 +6510,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="263.4,147.9 260.0,140.6 253.8,152.1" fill="rgb(255,228,35)" stroke="rgb(255,228,35)" stroke-width="0.5"/>
 <polygon points="258.8,167.6 261.0,175.3 269.3,162.8" fill="rgb(255,209,32)" stroke="rgb(255,209,32)" stroke-width="0.5"/>
 <line x1="271.8" y1="170.3" x2="274.0" y2="177.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="320.2" y1="94.4" x2="325.0" y2="88.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="320.2" y1="94.4" x2="325.0" y2="88.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="264.3,190.5 262.8,182.9 251.6,194.9" fill="rgb(255,193,29)" stroke="rgb(255,193,29)" stroke-width="0.5"/>
 <polygon points="140.3,140.7 136.9,148.1 149.5,144.6" fill="rgb(238,136,19)" stroke="rgb(238,136,19)" stroke-width="0.5"/>
 <polygon points="224.1,223.3 224.2,230.2 239.4,220.7" fill="rgb(244,139,20)" stroke="rgb(244,139,20)" stroke-width="0.5"/>
@@ -6520,7 +6520,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="155.9,129.8 159.4,122.6 147.8,126.5" fill="rgb(255,156,23)" stroke="rgb(255,156,23)" stroke-width="0.5"/>
 <line x1="239.4" y1="106.6" x2="243.9" y2="112.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="214.7" y1="99.4" x2="220.2" y2="98.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="23.7" y1="94.5" x2="32.0" y2="88.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="23.7" y1="94.5" x2="32.0" y2="88.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="253.4,209.9 252.6,202.5 239.0,213.5" fill="rgb(255,168,25)" stroke="rgb(255,168,25)" stroke-width="0.5"/>
 <polygon points="170.6,117.9 173.7,111.1 163.1,115.7" fill="rgb(255,177,26)" stroke="rgb(255,177,26)" stroke-width="0.5"/>
 <line x1="180.1" y1="98.3" x2="185.5" y2="99.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -6534,7 +6534,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="141.6,167.7 143.9,159.9 131.0,163.0" fill="rgb(210,119,17)" stroke="rgb(210,119,17)" stroke-width="0.5"/>
 <polygon points="137.6,183.1 136.1,190.6 150.1,187.3" fill="rgb(188,106,15)" stroke="rgb(188,106,15)" stroke-width="0.5"/>
 <polygon points="244.4,129.7 247.7,137.0 252.4,126.4" fill="rgb(255,233,36)" stroke="rgb(255,233,36)" stroke-width="0.5"/>
-<line x1="25.5" y1="105.7" x2="23.7" y2="94.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="25.5" y1="105.7" x2="23.7" y2="94.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="256.4,159.8 258.8,167.6 266.5,155.4" fill="rgb(255,217,33)" stroke="rgb(255,217,33)" stroke-width="0.5"/>
 <polygon points="192.2,231.6 192.3,224.6 176.3,230.3" fill="rgb(192,108,15)" stroke="rgb(192,108,15)" stroke-width="0.5"/>
 <polygon points="152.6,137.1 155.9,129.8 143.9,133.5" fill="rgb(255,150,22)" stroke="rgb(255,150,22)" stroke-width="0.5"/>
@@ -6569,7 +6569,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="219.4,112.5 221.7,119.6 226.6,111.0" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <polygon points="229.7,117.9 226.6,111.0 221.7,119.6" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <polygon points="208.3,224.6 208.3,231.6 224.1,223.3" fill="rgb(230,131,19)" stroke="rgb(230,131,19)" stroke-width="0.5"/>
-<line x1="251.3" y1="313.9" x2="251.9" y2="304.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="251.3" y1="313.9" x2="251.9" y2="304.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="176.4,223.4 176.6,216.1 161.1,220.8" fill="rgb(187,105,15)" stroke="rgb(187,105,15)" stroke-width="0.5"/>
 <polygon points="161.5,213.6 161.1,220.8 176.6,216.1" fill="rgb(187,105,15)" stroke="rgb(187,105,15)" stroke-width="0.5"/>
 <polygon points="211.9,113.6 210.4,106.7 204.1,114.1" fill="rgb(255,219,34)" stroke="rgb(255,219,34)" stroke-width="0.5"/>
@@ -6684,7 +6684,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="161.1" y1="220.8" x2="176.4" y2="223.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="250.9" y1="144.5" x2="260.0" y2="140.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="173.7" y1="111.1" x2="170.6" y2="117.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="23.7" y1="94.5" x2="34.0" y2="97.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="23.7" y1="94.5" x2="34.0" y2="97.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="236.8,190.6 237.7,198.4 250.3,187.2" fill="rgb(255,191,29)" stroke="rgb(255,191,29)" stroke-width="0.5"/>
 <line x1="140.3" y1="140.7" x2="149.5" y2="144.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="192.3,217.4 192.4,209.8 176.6,216.1" fill="rgb(228,130,19)" stroke="rgb(228,130,19)" stroke-width="0.5"/>
@@ -6713,7 +6713,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <polygon points="162.2,140.1 159.7,147.9 172.5,142.4" fill="rgb(255,173,26)" stroke="rgb(255,173,26)" stroke-width="0.5"/>
 <polygon points="153.3,171.6 151.6,179.5 166.0,174.6" fill="rgb(246,141,21)" stroke="rgb(246,141,21)" stroke-width="0.5"/>
 <polygon points="195.3,129.0 195.8,121.4 185.8,128.3" fill="rgb(255,209,32)" stroke="rgb(255,209,32)" stroke-width="0.5"/>
-<line x1="315.4" y1="100.2" x2="320.2" y2="94.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="315.4" y1="100.2" x2="320.2" y2="94.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="192.4,209.8 192.3,217.4 208.1,209.8" fill="rgb(250,143,21)" stroke="rgb(250,143,21)" stroke-width="0.5"/>
 <polygon points="235.7,182.6 236.8,190.6 248.8,179.4" fill="rgb(255,201,31)" stroke="rgb(255,201,31)" stroke-width="0.5"/>
 <polygon points="240.7,147.8 238.2,140.0 229.8,150.3" fill="rgb(255,233,37)" stroke="rgb(255,233,37)" stroke-width="0.5"/>
@@ -6732,7 +6732,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="219.4" y1="112.5" x2="221.7" y2="119.6" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="245.2,163.5 243.1,155.6 233.0,166.4" fill="rgb(255,224,35)" stroke="rgb(255,224,35)" stroke-width="0.5"/>
 <line x1="170.6" y1="117.9" x2="167.6" y2="125.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="251.9" y1="304.8" x2="252.4" y2="295.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="251.9" y1="304.8" x2="252.4" y2="295.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="157.3,155.7 155.2,163.6 168.9,158.4" fill="rgb(255,159,24)" stroke="rgb(255,159,24)" stroke-width="0.5"/>
 <line x1="221.7" y1="119.6" x2="229.7" y2="117.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="184.5,136.0 185.8,128.3 174.4,134.6" fill="rgb(255,196,30)" stroke="rgb(255,196,30)" stroke-width="0.5"/>
@@ -6783,7 +6783,7 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="178.6" y1="119.7" x2="187.1" y2="120.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="229.8,150.3 227.9,142.3 218.2,152.0" fill="rgb(255,229,36)" stroke="rgb(255,229,36)" stroke-width="0.5"/>
 <polygon points="235.7,182.6 234.5,174.5 221.8,184.8" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
-<line x1="34.0" y1="97.7" x2="44.5" y2="101.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="34.0" y1="97.7" x2="44.5" y2="101.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <polygon points="184.5,136.0 183.3,144.0 194.9,136.8" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
 <line x1="196.2" y1="114.1" x2="195.8" y2="121.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="192.6,202.0 192.8,194.0 177.4,200.8" fill="rgb(255,152,23)" stroke="rgb(255,152,23)" stroke-width="0.5"/>
@@ -6904,46 +6904,46 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="193.2" y1="177.7" x2="207.2" y2="177.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="193.5" y1="169.4" x2="193.2" y2="177.7" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="193.8" y1="161.1" x2="193.5" y2="169.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="44.5" y1="101.0" x2="55.1" y2="104.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="252.4" y1="295.6" x2="252.9" y2="286.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="310.4" y1="106.2" x2="315.4" y2="100.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="55.1" y1="104.3" x2="65.8" y2="107.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="252.9" y1="286.2" x2="253.5" y2="276.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="65.8" y1="107.6" x2="76.7" y2="111.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="305.4" y1="112.4" x2="310.4" y2="106.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="76.7" y1="111.0" x2="87.7" y2="114.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="253.5" y1="276.5" x2="254.0" y2="266.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="300.2" y1="118.7" x2="305.4" y2="112.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="87.7" y1="114.4" x2="98.9" y2="117.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="254.0" y1="266.7" x2="254.6" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="98.9" y1="117.9" x2="110.2" y2="121.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="294.8" y1="125.2" x2="300.2" y2="118.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="110.2" y1="121.4" x2="121.7" y2="125.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="254.6" y1="256.6" x2="255.2" y2="246.4" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="121.7" y1="125.0" x2="133.3" y2="128.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="289.3" y1="131.9" x2="294.8" y2="125.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="255.2" y1="246.4" x2="255.8" y2="235.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="133.3" y1="128.6" x2="145.2" y2="132.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="145.2" y1="132.3" x2="157.1" y2="136.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="255.8" y1="235.9" x2="256.4" y2="225.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="283.7" y1="138.7" x2="289.3" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="157.1" y1="136.0" x2="169.3" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="256.4" y1="225.2" x2="257.0" y2="214.2" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="169.3" y1="139.8" x2="181.7" y2="143.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="277.9" y1="145.7" x2="283.7" y2="138.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="181.7" y1="143.6" x2="194.2" y2="147.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="257.0" y1="214.2" x2="257.7" y2="203.0" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="272.0" y1="152.9" x2="277.9" y2="145.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="194.2" y1="147.5" x2="206.9" y2="151.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="257.7" y1="203.0" x2="258.3" y2="191.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="206.9" y1="151.5" x2="219.8" y2="155.5" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="265.9" y1="160.3" x2="272.0" y2="152.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="219.8" y1="155.5" x2="232.9" y2="159.6" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="258.3" y1="191.6" x2="259.0" y2="179.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="232.9" y1="159.6" x2="246.2" y2="163.7" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="259.7" y1="167.9" x2="265.9" y2="160.3" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="259.0" y1="179.9" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
-<line x1="246.2" y1="163.7" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5" opacity="0.4"/>
+<line x1="44.5" y1="101.0" x2="55.1" y2="104.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="252.4" y1="295.6" x2="252.9" y2="286.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="310.4" y1="106.2" x2="315.4" y2="100.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="55.1" y1="104.3" x2="65.8" y2="107.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="252.9" y1="286.2" x2="253.5" y2="276.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="65.8" y1="107.6" x2="76.7" y2="111.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="305.4" y1="112.4" x2="310.4" y2="106.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="76.7" y1="111.0" x2="87.7" y2="114.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="253.5" y1="276.5" x2="254.0" y2="266.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="300.2" y1="118.7" x2="305.4" y2="112.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="87.7" y1="114.4" x2="98.9" y2="117.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="254.0" y1="266.7" x2="254.6" y2="256.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="98.9" y1="117.9" x2="110.2" y2="121.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="294.8" y1="125.2" x2="300.2" y2="118.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="110.2" y1="121.4" x2="121.7" y2="125.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="254.6" y1="256.6" x2="255.2" y2="246.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="121.7" y1="125.0" x2="133.3" y2="128.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="289.3" y1="131.9" x2="294.8" y2="125.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="255.2" y1="246.4" x2="255.8" y2="235.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="133.3" y1="128.6" x2="145.2" y2="132.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="145.2" y1="132.3" x2="157.1" y2="136.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="255.8" y1="235.9" x2="256.4" y2="225.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="283.7" y1="138.7" x2="289.3" y2="131.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="157.1" y1="136.0" x2="169.3" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="256.4" y1="225.2" x2="257.0" y2="214.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="169.3" y1="139.8" x2="181.7" y2="143.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="277.9" y1="145.7" x2="283.7" y2="138.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="181.7" y1="143.6" x2="194.2" y2="147.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="257.0" y1="214.2" x2="257.7" y2="203.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="272.0" y1="152.9" x2="277.9" y2="145.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="194.2" y1="147.5" x2="206.9" y2="151.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="257.7" y1="203.0" x2="258.3" y2="191.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="206.9" y1="151.5" x2="219.8" y2="155.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="265.9" y1="160.3" x2="272.0" y2="152.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="219.8" y1="155.5" x2="232.9" y2="159.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="258.3" y1="191.6" x2="259.0" y2="179.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="232.9" y1="159.6" x2="246.2" y2="163.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="259.7" y1="167.9" x2="265.9" y2="160.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="259.0" y1="179.9" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="246.2" y1="163.7" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="248.4" y1="364.7" x2="53.2" y2="281.9" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="53.2" y1="281.9" x2="54.8" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="49.3" y="291.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1.0</text>

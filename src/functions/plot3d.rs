@@ -2215,7 +2215,7 @@ fn generate_svg(
           project(edge.endpoints[1], camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
         ));
         ei += 1;
       }
@@ -2263,7 +2263,7 @@ fn generate_svg(
         project(edge.endpoints[1], camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
       ));
       ei += 1;
     }
@@ -3866,7 +3866,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           project(edge.endpoints[1], &camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
         ));
         ei += 1;
       }
@@ -3928,7 +3928,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         project(edge.endpoints[1], &camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
       ));
       ei += 1;
     }
@@ -4939,6 +4939,9 @@ struct StyleState3D {
   /// `VertexColors` of the polygon or line being added: one RGB colour per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
+  /// `Arrowheads[s]`: the arrowhead length as a fraction of the picture's
+  /// width. `None` keeps the default 8-pixel head.
+  arrowhead: Option<f64>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -4963,6 +4966,7 @@ impl Default for StyleState3D {
       texture: None,
       texture_coords: None,
       vertex_colors: None,
+      arrowhead: None,
       font_size: None,
     }
   }
@@ -5082,6 +5086,25 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Lighting")
   {
     style.lighting = Lighting::parse(replacement);
+    return true;
+  }
+
+  // `Arrowheads[s]` (or `{{s, …}}`): the size of the heads of the arrows
+  // that follow, as a fraction of the picture's width.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Arrowheads"
+    && !args.is_empty()
+  {
+    let size = match &args[0] {
+      Expr::List(specs) => specs.first().and_then(|spec| match spec {
+        Expr::List(parts) => parts.first().and_then(expr_to_f64),
+        other => expr_to_f64(other),
+      }),
+      other => expr_to_f64(other),
+    };
+    if let Some(size) = size.filter(|s| s.is_finite() && *s >= 0.0) {
+      style.arrowhead = Some(size);
+    }
     return true;
   }
 
@@ -10127,6 +10150,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             texture: None,
             texture_coords: None,
             vertex_colors: None,
+            arrowhead: None,
             font_size: None,
           },
         ),
@@ -10683,7 +10707,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           depth: depth(lerp(tm), &camera),
           color: axis_color.clone(),
           width: 0.5,
-          opacity: 0.4,
+          opacity: 1.0,
           dashing: None,
           dash_offset: 0.0,
         });
@@ -11009,8 +11033,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if len > 1.0 {
           let ux = dx / len;
           let uy = dy / len;
-          let hl = 8.0;
-          let hw = 3.0;
+          let hl = style.arrowhead.map_or(8.0, |s| s * svg_width as f64);
+          let hw = 3.0 * hl / 8.0;
           let bx1 = sx2 - ux * hl + (-uy) * hw;
           let by1 = sy2 - uy * hl + ux * hw;
           let bx2 = sx2 - ux * hl - (-uy) * hw;
@@ -15132,7 +15156,7 @@ fn generate_scatter_svg(
           project(edge.endpoints[1], camera).1,
         );
         svg.push_str(&format!(
-          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
         ));
         ei += 1;
       }
@@ -15166,7 +15190,7 @@ fn generate_scatter_svg(
         project(edge.endpoints[1], camera).1,
       );
       svg.push_str(&format!(
-        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
       ));
       ei += 1;
     }
@@ -15599,7 +15623,7 @@ fn generate_line3d_svg(
       project(edge.endpoints[1], camera).1,
     );
     svg.push_str(&format!(
-      "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\" opacity=\"0.4\"/>\n"
+      "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
     ));
   };
 
