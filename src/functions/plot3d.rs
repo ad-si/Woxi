@@ -5571,7 +5571,7 @@ fn collect_3d_primitives(
         // `Arrow[Tube[curve, r]]` is a solid arrow: the tube itself plus a
         // cone head capping its far end.
         "Arrow"
-          if matches!(&args[0], Expr::FunctionCall { name: n, args: ta }
+          if matches!(args.first(), Some( Expr::FunctionCall { name: n, args: ta })
             if n == "Tube" && !ta.is_empty()) =>
         {
           collect_3d_primitives(&args[0], style, prims);

@@ -21714,6 +21714,13 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// Regression: an argument-less `Arrow[]` in a `Graphics3D` must not
+    /// panic while checking for the `Arrow[Tube[…]]` form.
+    #[test]
+    fn graphics3d_empty_arrow_does_not_panic() {
+      assert!(export_svg("Graphics3D[Arrow[]]").contains("<svg"));
+    }
+
     #[test]
     fn graphics3d_cylinder() {
       insta::assert_snapshot!(export_svg(
