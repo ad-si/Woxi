@@ -4292,6 +4292,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       call("SuperscriptBox", script_box)
     }
     Expr::FunctionCall { name, args }
+      if (name == "SuperStar" || name == "SuperDagger") && args.len() == 1 =>
+    {
+      let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
+      call(
+        "SuperscriptBox",
+        vec![expr_to_box_form(&args[0]), str_expr(mark)],
+      )
+    }
+    Expr::FunctionCall { name, args }
       if name == "Subscript" && args.len() == 2 =>
     {
       call(
@@ -5438,6 +5447,15 @@ fn tf_power(base: &Expr, exp: &Expr) -> Expr {
   {
     return tf_box("FractionBox", vec![tf_string("1"), tf(&denominator)]);
   }
+  // `Subscript[p, x]^0` stacks both scripts on the base (`pₓ⁰`) instead of
+  // setting the exponent after the subscript.
+  if let Expr::FunctionCall { name, args } = base
+    && name == "Subscript"
+    && args.len() >= 2
+  {
+    let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();
+    return tf_box("SubsuperscriptBox", vec![tf(&args[0]), sub, tf(exp)]);
+  }
   let negative_number = matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0);
   let base_box = if tf_needs_paren_factor(base)
@@ -6361,6 +6379,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     "Superscript" if args.len() == 2 => {
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
+    }
+    // `SuperStar[x]` / `SuperDagger[x]` set the mark as an exponent: `x*`, `x†`.
+    "SuperStar" | "SuperDagger" if args.len() == 1 => {
+      let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
+      tf_box("SuperscriptBox", vec![tf(&args[0]), tf_string(mark)])
     }
     "Subsuperscript" if args.len() == 3 => tf_box(
       "SubsuperscriptBox",

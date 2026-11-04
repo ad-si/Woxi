@@ -7995,6 +7995,24 @@ mod cases {
     );
   }
 
+  /// `Subscript[p, x]^0` stacks both scripts on the base, and `SuperStar`/
+  /// `SuperDagger` set their mark as an exponent.
+  #[test]
+  fn traditional_form_subsuperscript_and_super_marks() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[Subscript[p, x]^0]]]"#,
+      r#"TagBox[FormBox[TagBox[SubsuperscriptBox[p, x, 0], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[SuperStar[x]]]"#,
+      r#"TagBox[FormBox[SuperscriptBox[x, *], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"StringContainsQ[ExportString[GraphicsGrid[{{Row[{TraditionalForm[HoldForm[SuperDagger[x]]]}]}}], "SVG"], "SuperDagger"]"#,
+      "False",
+    );
+  }
+
   /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
   /// like `sin^n(x)`.
   #[test]

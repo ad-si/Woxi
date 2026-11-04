@@ -15169,6 +15169,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           let bar = if name == "BracketingBar" { "|" } else { "\u{2016}" };
           format!("{bar}{}{bar}", expr_to_svg_markup(&args[0]))
         }
+        // `SuperStar[x]` / `SuperDagger[x]` raise their mark: `x*`, `x†`.
+        "SuperStar" | "SuperDagger" if args.len() == 1 => {
+          let mark = if name == "SuperStar" { "*" } else { "\u{2020}" };
+          format!(
+            "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{mark}</tspan>",
+            expr_to_svg_markup(&args[0]),
+          )
+        }
         "Subscript" | "Superscript" if args.len() >= 2 => {
           let shift = if name == "Subscript" { "sub" } else { "super" };
           let scripts: String = args[1..]
@@ -15747,6 +15755,9 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
       // Subscript[base, i, …] / Superscript[base, e, …] typeset as shifted
       // tspans at 70% size, the scripts comma-separated.
+      "SuperStar" | "SuperDagger" if args.len() == 1 => {
+        estimate_display_width(&args[0]) + 0.7
+      }
       "Subscript" | "Superscript" if args.len() >= 2 => {
         let scripts: f64 = args[1..].iter().map(estimate_display_width).sum();
         let seps = (args.len() - 2) as f64;
