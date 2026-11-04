@@ -552,3 +552,45 @@ mod plot3d_options {
     );
   }
 }
+
+mod plot3d_family {
+  use super::*;
+
+  // `PlotStyle -> Thick` thickens a space curve without dropping its
+  // default colour (the first plot colour, not black).
+  #[test]
+  fn thick_space_curve_keeps_its_colour() {
+    let s = svg(
+      "ParametricPlot3D[{Cos[t], Sin[t], t/4}, {t, 0, 6 Pi}, \
+       PlotStyle -> Thick]",
+    );
+    assert!(!s.contains("stroke=\"black\""), "{s}");
+    assert!(!s.contains("stroke=\"rgb(0,0,0)\""));
+  }
+
+  // Scattered `{x, y, z}` points are triangulated, not read as a height
+  // matrix of their coordinates: the axes span the points' x and y.
+  #[test]
+  fn list_plot3d_scattered_points() {
+    clear_state();
+    let s = svg(
+      "SeedRandom[1]; pts = RandomReal[{0, 3}, {80, 2}]; \
+       ListPlot3D[Map[Append[#, Sin[#[[1]] #[[2]]]] &, pts]]",
+    );
+    assert!(polygon_count(&s) > 500, "{s}");
+    assert!(!s.contains(">80</text>") && !s.contains(">60</text>"));
+  }
+
+  // A parametric surface carries the default mesh of constant-u and
+  // constant-v lines.
+  #[test]
+  fn parametric_surface_has_a_mesh() {
+    let torus = "ParametricPlot3D[{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], \
+                 Sin[v]}, {u, 0, 2 Pi}, {v, 0, 2 Pi}";
+    let meshed = svg(&format!("{torus}]"));
+    let bare = svg(&format!("{torus}, Mesh -> None]"));
+    let count = |s: &str| s.matches("stroke=\"#000000a0\"").count();
+    assert!(count(&meshed) > 200, "{}", count(&meshed));
+    assert_eq!(count(&bare), 0);
+  }
+}

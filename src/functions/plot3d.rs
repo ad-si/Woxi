@@ -88,6 +88,20 @@ impl Camera {
     }
   }
 
+  /// The default camera looking at a box normalized to `±ratios` about
+  /// the origin, from `|ViewPoint|` times its longest side.
+  pub(crate) fn for_box(ratios: [f64; 3]) -> Camera {
+    let side = 2.0 * ratios.iter().copied().fold(0.0_f64, f64::max);
+    let d = Camera::DEFAULT_VIEW_POINT;
+    Camera {
+      perspective: (side > 0.0 && side.is_finite()).then(|| Perspective {
+        center: [0.0; 3],
+        distance: side * (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt(),
+      }),
+      ..Camera::default()
+    }
+  }
+
   /// The camera frame lights fixed to the view (`ImageScaled`) are placed
   /// in: the screen basis `project` draws with and the direction towards
   /// the viewer. The scene placement defaults to a box of side 2 about
@@ -11233,6 +11247,65 @@ fn resample_tensor_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
   Some(grid)
 }
 
+/// Scattered `{x, y, z}` points sampled onto an `n` x `n` grid spanning
+/// their x/y extent (`grid[i][j]`, `i` along x): the surface linearly
+/// interpolated over the Delaunay triangulation of their positions, `NaN`
+/// outside its convex hull. `None` when the points span no area.
+fn resample_scattered(
+  points: &[(f64, f64, f64)],
+  n: usize,
+) -> Option<Vec<Vec<f64>>> {
+  let xy: Vec<[f64; 2]> = points.iter().map(|p| [p.0, p.1]).collect();
+  let tris = crate::functions::delaunay::triangulate(&xy)?;
+  if tris.is_empty() || n < 2 {
+    return None;
+  }
+  let (x0, x1) = xy
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+      (a.min(p[0]), b.max(p[0]))
+    });
+  let (y0, y1) = xy
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+      (a.min(p[1]), b.max(p[1]))
+    });
+  if x1 <= x0 || y1 <= y0 {
+    return None;
+  }
+  let gx = |i: usize| x0 + (x1 - x0) * i as f64 / (n - 1) as f64;
+  let gy = |j: usize| y0 + (y1 - y0) * j as f64 / (n - 1) as f64;
+  let mut grid = vec![vec![f64::NAN; n]; n];
+  for t in &tris {
+    let [a, b, c] = t.map(|k| points[k]);
+    let det = (b.1 - c.1) * (a.0 - c.0) + (c.0 - b.0) * (a.1 - c.1);
+    if det.abs() < 1e-300 {
+      continue;
+    }
+    let (lo_x, hi_x) = (a.0.min(b.0).min(c.0), a.0.max(b.0).max(c.0));
+    let (lo_y, hi_y) = (a.1.min(b.1).min(c.1), a.1.max(b.1).max(c.1));
+    let to_i = |v: f64| (v - x0) / (x1 - x0) * (n - 1) as f64;
+    let to_j = |v: f64| (v - y0) / (y1 - y0) * (n - 1) as f64;
+    let i_lo = to_i(lo_x).ceil().max(0.0) as usize;
+    let i_hi = (to_i(hi_x).floor() as usize).min(n - 1);
+    let j_lo = to_j(lo_y).ceil().max(0.0) as usize;
+    let j_hi = (to_j(hi_y).floor() as usize).min(n - 1);
+    for i in i_lo..=i_hi {
+      for j in j_lo..=j_hi {
+        let (x, y) = (gx(i), gy(j));
+        let l1 = ((b.1 - c.1) * (x - c.0) + (c.0 - b.0) * (y - c.1)) / det;
+        let l2 = ((c.1 - a.1) * (x - c.0) + (a.0 - c.0) * (y - c.1)) / det;
+        let l3 = 1.0 - l1 - l2;
+        let eps = -1e-9;
+        if l1 >= eps && l2 >= eps && l3 >= eps {
+          grid[i][j] = l1 * a.2 + l2 * b.2 + l3 * c.2;
+        }
+      }
+    }
+  }
+  Some(grid)
+}
+
 /// The surfaces of `ListPlot3D[{m1, m2, …}]`: a list of at least two
 /// height matrices (rectangular arrays of scalars). Rows of three numbers
 /// stay a single set of `{x, y, z}` points, as before.
@@ -11446,10 +11519,15 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Check first element to determine format
       match &outer[0] {
         // 2D matrix format: {{z11, z12, ...}, {z21, z22, ...}, ...}
+        // (An array whose rows all hold three numbers is a list of
+        // `{x, y, z}` points, as wolframscript reads it.)
         Expr::List(first_row)
           if !first_row.is_empty()
             && first_row.iter().all(|e| !matches!(e, Expr::List(_)))
-            && !is_xyz_point_list(outer) =>
+            && !is_xyz_point_list(outer)
+            && !outer
+              .iter()
+              .all(|r| matches!(r, Expr::List(row) if row.len() == 3)) =>
         {
           // Verify all rows are lists of the same length (or close)
           let num_rows = outer.len();
@@ -11541,6 +11619,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             let n = grid.len();
             (grid, n)
+          } else if let Some(grid) = resample_scattered(&points, 50) {
+            // Scattered points: the Delaunay triangulation of their (x, y)
+            // positions, sampled onto a uniform grid (undefined outside its
+            // convex hull).
+            (grid, 50)
           } else {
             // Bin points onto a grid
             let grid_n = 50usize.min(points.len());
@@ -16552,14 +16635,10 @@ fn parametric_plot3d_curve_ast(
 
   let mut produced_any = false;
   for (curve_idx, curve) in curves.iter().enumerate() {
-    if !per_curve_styles.is_empty() {
-      // Wrap whatever PlotStyle holds into a Directive[…] so that
-      // collect_3d_primitives picks up nested colors/Thickness/etc.
-      let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
-      prim_items.push(call1("Directive", style.clone()));
-    } else if color_function.is_none() {
-      // Without `PlotStyle`, each curve takes the next color of the
-      // default plot palette (blue first) rather than plain gray.
+    if color_function.is_none() {
+      // Each curve takes the next color of the default plot palette (blue
+      // first) rather than plain gray — also under a `PlotStyle` that only
+      // sets a thickness or dashing (`PlotStyle -> Thick`).
       let (r, g, b) = crate::functions::plot::PLOT_COLORS
         [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
       prim_items.push(call1(
@@ -16573,6 +16652,12 @@ fn parametric_plot3d_curve_ast(
           ],
         ),
       ));
+    }
+    if !per_curve_styles.is_empty() {
+      // Wrap whatever PlotStyle holds into a Directive[…] so that
+      // collect_3d_primitives picks up nested colors/Thickness/etc.
+      let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
+      prim_items.push(call1("Directive", style.clone()));
     }
     let mut current_segment: Vec<Expr> = Vec::new();
     let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {
@@ -17436,6 +17521,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let box_ratios: [f64; 3] = box_ratios_explicit.unwrap_or([rx, ry, rz]);
+  // The box is normalized to ±box_ratios, so the eye stands back by that.
+  let camera = Camera::for_box(box_ratios);
 
   // `ColorFunction`: the colour of facet `(i, j)`, from `f` at the facet's
   // mean point and its centre in parameter space.
@@ -17851,6 +17938,56 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (gz_min, gz_max)
   };
 
+  // The mesh: lines of constant u and of constant v (`Mesh -> n` of each,
+  // 15 by default, plus the surface's edges), drawn over the surface.
+  let mut mesh_lines: Vec<MeshLine> = Vec::new();
+  if mesh_mode == MeshMode::Default && !mesh_style_none && !mesh_shading_active
+  {
+    let n = mesh_count.unwrap_or(15);
+    // The depth pull that keeps a line in front of the facets it lies on
+    // grows with the box (normalized to ±box_ratios) and with the facets.
+    let extra_bias = MESH_DEPTH_BIAS
+      * (box_ratios.iter().copied().fold(1.0_f64, f64::max)
+        * (50.0 / grid_u.min(grid_v).max(1) as f64).max(1.0)
+        - 1.0);
+    let segment = |a: Point3D, b: Point3D| {
+      let mut line = mesh_segment(a, b, &camera);
+      line.depth -= extra_bias;
+      line
+    };
+    let normalize = |p: (f64, f64, f64)| -> Point3D {
+      Point3D {
+        x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
+        y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
+        z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
+      }
+    };
+    for sg in &all_surface_points {
+      let mut ku_seen = Vec::new();
+      let mut kv_seen = Vec::new();
+      for m in 0..=n + 1 {
+        let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
+        let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
+        if !kv_seen.contains(&kv) {
+          kv_seen.push(kv);
+          for i in 0..grid_u {
+            if let (Some(a), Some(b)) = (sg[i][kv], sg[i + 1][kv]) {
+              mesh_lines.push(segment(normalize(a), normalize(b)));
+            }
+          }
+        }
+        if !ku_seen.contains(&ku) {
+          ku_seen.push(ku);
+          for j in 0..grid_v {
+            if let (Some(a), Some(b)) = (sg[ku][j], sg[ku][j + 1]) {
+              mesh_lines.push(segment(normalize(a), normalize(b)));
+            }
+          }
+        }
+      }
+    }
+  }
+
   all_triangles.sort_by(|a, b| {
     b.depth
       .partial_cmp(&a.depth)
@@ -17859,7 +17996,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let svg = generate_svg(
     &all_triangles,
-    &[],
+    &mesh_lines,
     &camera,
     (gx_min, gx_max),
     (gy_min, gy_max),
