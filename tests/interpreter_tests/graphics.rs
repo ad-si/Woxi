@@ -12049,7 +12049,7 @@ mod plot3d {
             .unwrap()
         })
         .collect();
-      assert!(!fills.is_empty());
+      assert!(!fills.is_empty(), "{svg}");
       assert!(fills.iter().all(|f| *f == "rgb(255,0,0)"), "{svg}");
       assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
     }
@@ -16053,7 +16053,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
             && attr(l, "x1") == axis_x
         })
         .collect();
-      assert!(!y_marks.is_empty());
+      assert!(!y_marks.is_empty(), "{svg}");
       assert!(y_marks.iter().all(|l| attr(l, "x2") > axis_x), "{svg}");
       for label in ["0", "4", "1", "7"] {
         assert!(svg.contains(&format!(">{label}</text>")), "{label}");
@@ -47298,7 +47298,7 @@ mod frame_ticks_per_edge {
     let svg =
       list_plot("FrameStyle -> Red, FrameTicksStyle -> Directive[Blue, Thick]");
     let marks = lines(&svg);
-    assert!(!marks.is_empty());
+    assert!(!marks.is_empty(), "{svg}");
     assert!(marks.iter().all(|l| l.4 == "rgb(0,0,255)" && l.5 == 20.0));
     assert_eq!(attr(texts(&svg, "0.5")[0], "fill"), "#0000FF");
     // The frame keeps its own style.
