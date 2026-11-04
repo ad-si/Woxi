@@ -12322,6 +12322,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // group is clipped to the drawing area so a primitive that falls outside
   // the plot range is cut off at the frame edge instead of spilling into
   // the margins or off the canvas.
+  // With an automatic plot range the range is the primitives' own bounding
+  // box, so nothing is out of range — except text, whose extent the range
+  // ignores. A label wider than its picture (a lone `Text` pinned by its
+  // edge) must spill past the box rather than be cut off.
+  let has_explicit_range = plot_range_x.is_some() || plot_range_y.is_some();
+  let clip_primitives = clip_primitives
+    && (has_explicit_range
+      || !primitives
+        .iter()
+        .any(|p| matches!(p, Primitive::TextPrim { .. })));
   if clip_primitives {
     svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
   } else {
@@ -22920,8 +22930,10 @@ fn compute_grid_layout(
 
 /// Write a single `<svg>` cell element to `out`.
 fn write_cell_svg(out: &mut String, cell: &LayoutCell, y: f64) {
+  // A cell is a picture whose own `PlotRangeClipping` decides what is cut
+  // off, so the nested viewport must not clip a label that spills past it.
   out.push_str(&format!(
-    "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+    "<svg x=\"{:.0}\" y=\"{:.0}\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\" overflow=\"visible\">\n",
     cell.x,
     y + cell.y_off,
     cell.w,
