@@ -6977,6 +6977,7 @@ mod interpreter_tests {
   mod graphics_primitives;
   mod image;
   mod julia_set_plot;
+  mod layout_display;
   mod lic_plot;
   mod music;
   mod plot_layout;

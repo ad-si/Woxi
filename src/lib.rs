@@ -4430,8 +4430,13 @@ pub(crate) fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
-      if name == "MatrixForm" && args.len() == 1 =>
+      if name == "MatrixForm"
+        && !args.is_empty()
+        && args[1..].iter().all(syntax::is_rule_expr) =>
     {
+      // Options such as `TableHeadings` go to the grid the matrix is laid
+      // out as.
+      let opts = &args[1..];
       // A SparseArray is drawn as the dense matrix it stands for.
       let dense = functions::list_helpers_ast::densify_sparse_array(&args[0]);
       let data = dense.as_ref().unwrap_or(&args[0]);
@@ -4463,9 +4468,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             .iter()
             .all(|item| matches!(item, syntax::Expr::List(_))) =>
         {
-          match functions::graphics::grid_ast_with_parens(std::slice::from_ref(
-            data,
-          )) {
+          let mut grid_args = vec![data.clone()];
+          grid_args.extend(opts.iter().cloned());
+          match functions::graphics::grid_ast_with_parens(&grid_args) {
             Ok(result) => result,
             Err(_) => expr,
           }
@@ -4478,7 +4483,9 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
               .map(|e| syntax::Expr::List(vec![e.clone()].into()))
               .collect(),
           );
-          match functions::graphics::grid_ast_with_parens(&[grid_data]) {
+          let mut grid_args = vec![grid_data];
+          grid_args.extend(opts.iter().cloned());
+          match functions::graphics::grid_ast_with_parens(&grid_args) {
             Ok(result) => result,
             Err(_) => expr,
           }

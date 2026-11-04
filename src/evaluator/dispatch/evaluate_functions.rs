@@ -12849,6 +12849,7 @@ fn evaluate_function_call_ast_inner(
         | "Highlighted"
         | "Mouseover"
         | "Magnify"
+        | "Shallow"
         // Geographic primitives consumed by GeoGraphics (rendered there);
         // they stay symbolic on their own, matching wolframscript, so they
         // are not "unimplemented".

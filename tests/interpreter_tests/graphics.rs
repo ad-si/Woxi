@@ -26702,7 +26702,7 @@ mod grid_rasterize {
     .expect("Panel should produce a graphics SVG");
     assert!(svg.contains("<rect"), "Panel should draw a box:\n{svg}");
     assert!(
-      svg.contains("rgb(242,242,242)"),
+      svg.contains("rgb(245,245,245)"),
       "Panel should be filled light gray:\n{svg}"
     );
     assert!(!svg.contains("Panel["), "Panel head must not leak:\n{svg}");
@@ -26761,7 +26761,7 @@ mod grid_rasterize {
     .graphics
     .expect("Column of Panel should produce a graphics SVG");
     assert!(svg.contains("<rect"), "{svg}");
-    assert!(!svg.contains("rgb(242,242,242)"), "{svg}");
+    assert!(!svg.contains("rgb(245,245,245)"), "{svg}");
   }
 
   // An image is an atom: Part cannot reach inside it (Part::partd), and it
@@ -27050,7 +27050,7 @@ mod highlighted {
     let svg = interpret("ExportString[Highlighted[x], \"SVG\"]").unwrap();
     assert!(svg.starts_with("<svg"));
     assert!(
-      svg.contains("rgb(255,245,155)"),
+      svg.contains("rgb(254,236,84)"),
       "highlight background should be drawn, got: {svg}"
     );
     assert!(svg.contains(">x</text>"));
@@ -27063,7 +27063,7 @@ mod highlighted {
     let svg = result.graphics.unwrap();
     // The default highlight background (light yellow) should be present
     assert!(
-      svg.contains("rgb(255,245,155)"),
+      svg.contains("rgb(254,236,84)"),
       "default highlight color should be used, got: {svg}"
     );
   }

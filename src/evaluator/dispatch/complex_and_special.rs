@@ -3970,6 +3970,18 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   if let Some(boxed) = derivative_boxes(expr) {
     return boxed;
   }
+  // `Skeleton[k]`, the `<<k>>` standing for elided parts, sets `k` between
+  // the \[LeftSkeleton] and \[RightSkeleton] characters.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Skeleton"
+    && args.len() == 1
+  {
+    return row_box(vec![
+      str_expr("\u{F761}"),
+      expr_to_box_form(&args[0]),
+      str_expr("\u{F762}"),
+    ]);
+  }
   match expr {
     // wolframscript: positive integers render as a single String
     // (`"14"`); negative integers decompose into

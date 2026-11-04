@@ -366,6 +366,8 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     '\u{F424}' => "\u{2270}",              // NotLessSlantEqual: ≰
     '\u{F429}' => "\u{2271}",              // NotGreaterSlantEqual: ≱
     '\u{F750}' => "\u{25CF}",              // FilledSmallCircle: ●
+    '\u{F761}' => "\u{226A}",              // LeftSkeleton: ≪
+    '\u{F762}' => "\u{226B}",              // RightSkeleton: ≫
     '\u{F725}' => "\u{26A0}",              // WarningSign: ⚠
     '\u{F3DF}' => "\u{2641}",              // Earth: ♁
     '\u{F431}' => "=",                     // Equal

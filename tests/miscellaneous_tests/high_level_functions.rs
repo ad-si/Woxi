@@ -3664,14 +3664,14 @@ mod high_level_functions {
 
     #[test]
     fn test_text_style_font_weight_medium() {
-      // Style[..., FontWeight -> "Medium"] should set font-weight="medium"
+      // Style[..., FontWeight -> "Medium"] should set CSS font-weight="500"
       let svg = interpret(
         "ExportString[Graphics[Text[Style[7, FontWeight -> \"Medium\"]]], \"SVG\"]",
       )
       .unwrap();
       assert!(
-        svg.contains("font-weight=\"medium\""),
-        "Expected font-weight=\"medium\" in SVG: {svg}"
+        svg.contains("font-weight=\"500\""),
+        "Expected font-weight=\"500\" in SVG: {svg}"
       );
     }
 
@@ -3701,7 +3701,7 @@ mod high_level_functions {
         "missing font-family: {svg}"
       );
       assert!(
-        svg.contains("font-weight=\"medium\""),
+        svg.contains("font-weight=\"500\""),
         "missing font-weight: {svg}"
       );
     }

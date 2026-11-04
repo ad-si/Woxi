@@ -5637,6 +5637,17 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // And a bare `BarLegend[…]` colour bar, when its spec can be drawn.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "BarLegend"
+    && crate::functions::field_plot::bar_legend_svg(
+      args,
+      crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+    )
+    .is_some()
+  {
+    return true;
+  }
   // `Animate[expr, spec, …]` nested in a display draws its first frame
   // (see `animate_snapshot_svg`), so it counts as a picture too.
   if matches!(expr, Expr::FunctionCall { name, args } if crate::functions::graphics::is_animate_call(name, args))
@@ -6430,10 +6441,10 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
     };
   }
 
-  let inner_svg = expr_to_svg(g);
+  let inner_svg = expr_to_svg(&unquoted_display_string(g));
   let Some(angle) = rest
     .first()
-    .and_then(crate::functions::graphics::expr_to_f64)
+    .and_then(crate::functions::math_ast::try_eval_to_f64)
   else {
     return inner_svg;
   };
@@ -7250,6 +7261,32 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     }
     Expr::FunctionCall { name, args } if name == "PointLegend" => {
       crate::functions::graphics::point_legend_svg(args).unwrap_or_default()
+    }
+    // `Panel[expr, …]` is the light-gray box around `expr` (with its
+    // labels), as in a layout.
+    Expr::FunctionCall { name, args }
+      if name == "Panel"
+        && !args.is_empty()
+        && let Some(svg) = crate::functions::graphics::panel_to_svg(args) =>
+    {
+      svg
+    }
+    // `Short` / `Shallow` show their content with parts elided as
+    // `<<k>>` skeletons.
+    Expr::FunctionCall { name, args }
+      if (name == "Short" || name == "Shallow")
+        && (args.len() == 1 || args.len() == 2) =>
+    {
+      expr_to_svg(&crate::functions::graphics::elided_for_display(name, args))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "BarLegend"
+        && let Some(svg) = crate::functions::field_plot::bar_legend_svg(
+          args,
+          crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+        ) =>
+    {
+      svg
     }
     // `Animate[…]` composed into a static display (e.g. `Pane[Animate[…],
     // …]` sitting in a `Grid` cell) rather than being the whole Manipulate
@@ -8127,6 +8164,14 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
   };
   let (head, rest) = svg.split_at(end);
   let mut head = head.to_string();
+  // Without a viewBox the content would keep its own size inside the
+  // resized canvas; pin the original coordinate space so it scales.
+  if !head.contains("viewBox=") {
+    let (w, h) = crate::functions::graphics::parse_svg_wh(svg);
+    if w > 0.0 && h > 0.0 {
+      head.push_str(&format!(" viewBox=\"0 0 {w} {h}\""));
+    }
+  }
   for attr in ["width", "height"] {
     let key = format!(" {attr}=\"");
     if let Some(start) = head.find(&key) {

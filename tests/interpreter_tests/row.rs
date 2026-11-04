@@ -549,7 +549,7 @@ fn panel_in_grid_cell_draws_box() {
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
   assert!(!svg.contains("Panel"), "panel source leaked: {svg}");
   assert_eq!(
-    svg.matches("fill=\"rgb(242,242,242)\"").count(),
+    svg.matches("fill=\"rgb(245,245,245)\"").count(),
     2,
     "one box per panel: {svg}"
   );

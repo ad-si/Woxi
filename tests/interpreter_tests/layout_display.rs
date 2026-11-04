@@ -1,0 +1,424 @@
+//! How layout and form wrappers (`Grid` options, `Style` decorations,
+//! `Rotate`, `Magnify`, `Short`, `Shallow`, `PercentForm`, `MatrixForm`
+//! headings, legends) are drawn in SVG.
+use super::*;
+
+mod layout_display {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// The `<rect …>` elements of an SVG.
+  fn rects(svg: &str) -> Vec<&str> {
+    svg
+      .match_indices("<rect")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect()
+  }
+
+  /// The visible text of an SVG, all text nodes joined with whitespace
+  /// dropped (box layouts set every token as its own `<text>`).
+  fn flat_text(svg: &str) -> String {
+    let body = match svg.find("</defs>") {
+      Some(i) => &svg[i..],
+      None => svg,
+    };
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in body.chars() {
+      match c {
+        '<' => in_tag = true,
+        '>' => in_tag = false,
+        c if !in_tag && !c.is_whitespace() => out.push(c),
+        _ => {}
+      }
+    }
+    out
+  }
+
+  /// The `<text …>…</text>` elements of an SVG.
+  fn texts(svg: &str) -> Vec<&str> {
+    svg
+      .match_indices("<text")
+      .map(|(i, _)| &svg[i..i + svg[i..].find("</text>").unwrap()])
+      .collect()
+  }
+
+  /// Regression: a `Background` row list `{c1, …}` coloured every row
+  /// cyclically; like any explicit spec list it names only the first rows.
+  #[test]
+  fn grid_background_row_list_is_not_cyclic() {
+    let svg =
+      svg_of("Grid[{{1, 2}, {3, 4}, {5, 6}}, Background -> {None, {Red}}]");
+    let red = rects(&svg)
+      .iter()
+      .filter(|r| r.contains("rgb(255,0,0)"))
+      .count();
+    assert_eq!(red, 1, "{svg}");
+    // `{{c}}` is the cyclic form: every row.
+    let svg =
+      svg_of("Grid[{{1, 2}, {3, 4}, {5, 6}}, Background -> {None, {{Red}}}]");
+    let red = rects(&svg)
+      .iter()
+      .filter(|r| r.contains("rgb(255,0,0)"))
+      .count();
+    assert_eq!(red, 3, "{svg}");
+    // `{Red, Blue}`: rows 1 and 2, row 3 unpainted.
+    let svg = svg_of(
+      "Grid[{{1, 2}, {3, 4}, {5, 6}}, Background -> {None, {Red, Blue}}]",
+    );
+    let r = rects(&svg);
+    assert_eq!(r.iter().filter(|r| r.contains("rgb(255,0,0)")).count(), 1);
+    assert_eq!(r.iter().filter(|r| r.contains("rgb(0,0,255)")).count(), 1);
+  }
+
+  /// Regression: `ItemStyle -> {Automatic, {Directive[Bold, White]}}`
+  /// styled every row instead of only the header row.
+  #[test]
+  fn grid_item_style_row_list_styles_only_named_rows() {
+    let svg = svg_of(
+      "Grid[{{\"h1\", \"h2\"}, {\"a\", \"b\"}, {\"c\", \"d\"}}, \
+       ItemStyle -> {Automatic, {Directive[Bold, White]}}]",
+    );
+    let t = texts(&svg);
+    let bold: Vec<_> = t.iter().filter(|t| t.contains("bold")).collect();
+    assert_eq!(bold.len(), 2, "{svg}");
+    assert!(bold.iter().all(|t| t.contains(">h")), "{svg}");
+    // The cyclic `{{…}}` form styles every row.
+    let svg = svg_of(
+      "Grid[{{\"h1\", \"h2\"}, {\"a\", \"b\"}}, \
+       ItemStyle -> {Automatic, {{Directive[Bold]}}}]",
+    );
+    assert_eq!(texts(&svg).iter().filter(|t| t.contains("bold")).count(), 4);
+  }
+
+  /// `Style[…, Background -> c]` paints a panel behind the text in a `Row`
+  /// and a `Column`.
+  #[test]
+  fn style_background_paints_behind_text() {
+    let svg = svg_of(
+      "Row[{\"a\", Style[\"white on black\", White, Background -> Black]}]",
+    );
+    assert!(
+      rects(&svg)
+        .iter()
+        .any(|r| r.contains("fill=\"rgb(0,0,0)\"")),
+      "{svg}"
+    );
+    let svg = svg_of("Column[{Style[\"x\", Background -> Yellow], \"y\"}]");
+    assert!(
+      rects(&svg)
+        .iter()
+        .any(|r| r.contains("fill=\"rgb(255,255,0)\"")),
+      "{svg}"
+    );
+  }
+
+  /// `Underlined`, `Struckthrough` and the `FontVariations` spellings draw
+  /// their lines; "SmallCaps" sets the caps variant.
+  #[test]
+  fn style_text_decorations() {
+    let svg = svg_of(
+      "Column[{Style[\"u\", Underlined], Style[\"s\", Struckthrough], \
+       Style[\"c\", FontVariations -> {\"CapsType\" -> \"SmallCaps\"}], \
+       Style[\"v\", FontVariations -> {\"Underline\" -> True}], \
+       Style[\"b\", Underlined, Struckthrough]}]",
+    );
+    let t = texts(&svg);
+    let of = |label: &str| {
+      *t.iter()
+        .find(|t| t.ends_with(&format!(">{label}")))
+        .unwrap_or_else(|| panic!("no {label}: {svg}"))
+    };
+    assert!(of("u").contains("text-decoration=\"underline\""));
+    assert!(of("s").contains("text-decoration=\"line-through\""));
+    assert!(of("c").contains("font-variant=\"small-caps\""));
+    assert!(of("v").contains("text-decoration=\"underline\""));
+    assert!(of("b").contains("text-decoration=\"underline line-through\""));
+    // Rows and grids draw them too.
+    let svg = svg_of("Row[{Style[\"r\", Underlined]}]");
+    assert!(svg.contains("text-decoration=\"underline\""), "{svg}");
+    let svg = svg_of("Grid[{{Style[\"g\", Struckthrough]}}]");
+    assert!(svg.contains("text-decoration=\"line-through\""), "{svg}");
+  }
+
+  /// `FontWeight` names beyond Bold map to their CSS weights.
+  #[test]
+  fn style_font_weight_names() {
+    let svg = svg_of(
+      "Grid[{{Style[\"t\", FontWeight -> \"Thin\"], \
+       Style[\"k\", FontWeight -> \"Black\"], \
+       Style[\"l\", FontWeight -> \"Light\"]}}]",
+    );
+    assert!(svg.contains("font-weight=\"100\""), "{svg}");
+    assert!(svg.contains("font-weight=\"900\""), "{svg}");
+    assert!(svg.contains("font-weight=\"300\""), "{svg}");
+  }
+
+  /// A bare `BarLegend` is drawn as a colour bar with labelled ticks (it
+  /// printed its own source); a contour list makes it discrete, and
+  /// `LegendLabel` sits above the bar.
+  #[test]
+  fn bare_bar_legend_is_drawn() {
+    let svg = svg_of("BarLegend[{\"Rainbow\", {0, 100}}]");
+    assert!(svg.starts_with("<svg"), "{svg}");
+    assert!(!svg.contains("BarLegend"), "{svg}");
+    assert!(rects(&svg).len() >= 64, "{svg}");
+    for label in [">0<", ">20<", ">100<"] {
+      assert!(svg.contains(label), "missing {label}: {svg}");
+    }
+    let svg = svg_of("BarLegend[{\"BlueGreenYellow\", {0, 4}}, {1, 2, 3}]");
+    // Four bands plus the outline.
+    assert_eq!(rects(&svg).len(), 5, "{svg}");
+    for label in [">1<", ">2<", ">3<"] {
+      assert!(svg.contains(label), "missing {label}: {svg}");
+    }
+    assert!(!svg.contains(">0<") && !svg.contains(">4<"), "{svg}");
+    let svg =
+      svg_of("BarLegend[{\"Rainbow\", {0, 1}}, LegendLabel -> \"Temp\"]");
+    assert!(svg.contains(">Temp<"), "{svg}");
+    // Inside a layout too.
+    let svg = svg_of("Row[{BarLegend[{\"Rainbow\", {0, 1}}]}]");
+    assert!(!svg.contains("BarLegend"), "{svg}");
+  }
+
+  /// `Rotate` turns text (not only pictures) inside a layout, and
+  /// `Magnify` scales what it holds.
+  #[test]
+  fn rotate_and_magnify_text_in_row() {
+    let svg = svg_of("Row[{Rotate[\"abc\", 45 Degree], \"x\"}]");
+    assert!(svg.contains("rotate(-45"), "{svg}");
+    assert!(!svg.contains("Rotate"), "{svg}");
+    let svg = svg_of("Row[{Rotate[Framed[\"ab\"], Pi/2]}]");
+    assert!(svg.contains("rotate(-90"), "{svg}");
+    let small = svg_of("Row[{Magnify[\"abc\", 1]}]");
+    let big = svg_of("Row[{Magnify[\"abc\", 3]}]");
+    let width = |svg: &str| -> f64 {
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+    };
+    assert!(width(&big) > 2.5 * width(&small), "{small}\n{big}");
+    assert!(!big.contains("Magnify"), "{big}");
+  }
+
+  /// `Shallow` is a display wrapper, not an unimplemented function: it
+  /// stays as it is, and is drawn with skeletons below its depth and
+  /// beyond its length.
+  #[test]
+  fn shallow_display() {
+    clear_state();
+    assert_eq!(
+      interpret("Shallow[Nest[f, x, 5]]").unwrap(),
+      "Shallow[f[f[f[f[f[x]]]]]]"
+    );
+    let svg = svg_of("Shallow[Nest[f, x, 20]]");
+    assert_eq!(flat_text(&svg), "f[f[f[\u{226A}1\u{226B}]]]");
+    let svg = svg_of("Shallow[Nest[{#, #} &, a, 6], 3]");
+    assert_eq!(flat_text(&svg), "{{\u{226A}2\u{226B}},{\u{226A}2\u{226B}}}");
+    let svg = svg_of("Shallow[Range[50], {2, 10}]");
+    assert_eq!(flat_text(&svg), "{\u{226A}50\u{226B}}");
+    let svg = svg_of("Shallow[Range[50]]");
+    assert_eq!(flat_text(&svg), "{1,2,3,4,5,6,7,8,9,10,\u{226A}40\u{226B}}");
+    // Atoms at the elided depth stay; compound parts there are skeletons.
+    let svg = svg_of("Shallow[{1, {2, {3, 4}}}]");
+    assert_eq!(flat_text(&svg), "{1,{2,{\u{226A}2\u{226B}}}}");
+    // Inside a layout too.
+    let svg = svg_of("Column[{Shallow[Nest[f, x, 20]]}]");
+    assert_eq!(flat_text(&svg), "f[f[f[\u{226A}1\u{226B}]]]");
+  }
+
+  /// `Short` elides the middle of a long list, keeping parts from both
+  /// ends (it drew all of them).
+  #[test]
+  fn short_elides_long_lists() {
+    let svg = svg_of("Short[Range[1000]]");
+    let text = flat_text(&svg);
+    assert!(text.contains("10,11,\u{226A}978\u{226B},990,991"), "{text}");
+    assert!(!text.contains("500"), "{text}");
+    let svg = svg_of("Column[{Short[Range[1000]]}]");
+    assert!(flat_text(&svg).contains("\u{226A}978\u{226B}"), "{svg}");
+    // Something that fits is drawn whole.
+    let svg = svg_of("Short[{1, 2, 3}]");
+    assert_eq!(flat_text(&svg), "{1,2,3}");
+  }
+
+  /// `PercentForm` typesets numbers as percentages.
+  #[test]
+  fn percent_form_in_grid() {
+    let svg = svg_of(
+      "Grid[{{PercentForm[1234.5], PercentForm[-0.5], \
+       PercentForm[98765.], PercentForm[2], PercentForm[x]}}]",
+    );
+    for s in [">123450%<", ">-50%<", ">9876500%<", ">200%<", ">x<"] {
+      assert!(svg.contains(s), "missing {s}: {svg}");
+    }
+    assert!(!svg.contains("PercentForm"), "{svg}");
+  }
+
+  /// `MatrixForm[m, TableHeadings -> …]` draws the headings (it printed its
+  /// own source).
+  #[test]
+  fn matrix_form_table_headings() {
+    let svg = svg_of(
+      "MatrixForm[{{1, 2}, {3, 4}}, \
+       TableHeadings -> {{\"r1\", \"r2\"}, {\"c1\", \"c2\"}}]",
+    );
+    assert!(!svg.contains("MatrixForm"), "{svg}");
+    for s in [">r1<", ">r2<", ">c1<", ">c2<", ">4<"] {
+      assert!(svg.contains(s), "missing {s}: {svg}");
+    }
+  }
+
+  /// `Framed[…, FrameStyle -> Dashed]` dashes its border.
+  #[test]
+  fn framed_dashed_frame_style() {
+    let svg = svg_of("Row[{Framed[\"d\", FrameStyle -> Dashed]}]");
+    assert!(svg.contains("stroke-dasharray=\"4.0,4.0\""), "{svg}");
+    let svg = svg_of("Row[{Framed[\"d\"]}]");
+    assert!(!svg.contains("stroke-dasharray"), "{svg}");
+  }
+
+  /// Regression: a `Dividers` entry's thickness and dashing were dropped;
+  /// only its colour was drawn.
+  #[test]
+  fn grid_divider_thickness_and_dashing() {
+    let svg = svg_of(
+      "Grid[{{1, 2}, {3, 4}}, Dividers -> {{False, Directive[Red, Thick]}, \
+       {False, Directive[Blue, Dashed]}}]",
+    );
+    assert!(
+      svg.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(
+        "stroke=\"rgb(0,0,255)\" stroke-width=\"1\" stroke-dasharray"
+      ),
+      "{svg}"
+    );
+  }
+
+  /// `Item[…, Alignment -> Right]`, `Background` and `Frame` style their
+  /// own cell.
+  #[test]
+  fn grid_item_options() {
+    let svg = svg_of(
+      "Grid[{{Item[\"r\", Alignment -> Right], \"a long cell\"}, \
+       {\"another long cell\", Item[\"y\", Background -> Yellow]}, \
+       {Item[\"f\", Frame -> True], \"d\"}}]",
+    );
+    assert!(
+      texts(&svg)
+        .iter()
+        .any(|t| t.ends_with(">r") && t.contains("text-anchor=\"end\"")),
+      "{svg}"
+    );
+    assert!(
+      rects(&svg).iter().any(|r| r.contains("rgb(255,255,0)")),
+      "{svg}"
+    );
+    assert!(
+      rects(&svg).iter().any(|r| r.contains("fill=\"none\"")),
+      "{svg}"
+    );
+  }
+
+  /// `ItemSize -> {{w…}, {h…}}` fixes column widths (wrapping wider text)
+  /// and gives rows their height.
+  #[test]
+  fn grid_item_size() {
+    let svg = svg_of(
+      "Grid[{{\"a\", \"b\"}, {\"wide content\", \"x\"}}, \
+       ItemSize -> {{4, 12}, {2, 3}}]",
+    );
+    // "wide content" no longer fits 4 ems: it breaks onto two lines.
+    assert!(svg.contains(">wide<") && svg.contains(">content<"), "{svg}");
+    let wide = svg_of("Grid[{{\"a\", \"b\"}}, ItemSize -> {{4, 12}}]");
+    let plain = svg_of("Grid[{{\"a\", \"b\"}}]");
+    let width = |svg: &str| -> f64 {
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+    };
+    assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
+  }
+
+  /// `Highlighted` defaults to Wolfram's yellow and honours `Background`.
+  #[test]
+  fn highlighted_background_option() {
+    let svg = svg_of("Row[{Highlighted[\"a\", Background -> LightGreen]}]");
+    assert!(svg.contains("rgb(224,255,224)"), "{svg}");
+    let svg = svg_of("Row[{Highlighted[\"a\"]}]");
+    assert!(svg.contains("rgb(254,236,84)"), "{svg}");
+  }
+
+  /// `Pane[…, ImageSize -> {w, h}, Alignment -> {h, v}]` reserves the area
+  /// and places its text inside it.
+  #[test]
+  fn pane_image_size_and_alignment() {
+    let svg = svg_of(
+      "Framed[Pane[\"text\", ImageSize -> {120, 60}, Alignment -> {Left, Top}]]",
+    );
+    assert!(svg.contains("width=\"130\" height=\"70\""), "{svg}");
+    let t = texts(&svg);
+    let x: f64 = {
+      let s = t[0];
+      let i = s.find("x=\"").unwrap() + 3;
+      s[i..i + s[i..].find('"').unwrap()].parse().unwrap()
+    };
+    assert!(x < 40.0, "text should sit at the left: {svg}");
+  }
+
+  /// `Panel[expr, "Title"]` draws its title above the box, and a panel is
+  /// the light-gray box at the top level too.
+  #[test]
+  fn panel_title_and_top_level() {
+    let svg = svg_of("Row[{Panel[\"body\", \"Title\"]}]");
+    let title = svg.find(">Title<").expect("title drawn");
+    let body = svg.find(">body<").expect("body drawn");
+    assert!(title < body, "{svg}");
+    let svg = svg_of("Panel[\"x\"]");
+    assert!(svg.contains("fill=\"rgb(245,245,245)\""), "{svg}");
+    assert!(!svg.contains("Panel"), "{svg}");
+  }
+
+  /// `PointLegend`'s `LegendMarkers` glyphs, and `SwatchLegend`'s
+  /// `LegendLabel` title.
+  #[test]
+  fn legend_markers_and_label() {
+    let svg = svg_of(
+      "PointLegend[{Red, Blue}, {\"a\", \"b\"}, \
+       LegendMarkers -> {\"\\[FilledSquare]\", \"\\[FilledUpTriangle]\"}]",
+    );
+    assert!(
+      svg.contains("\u{25A0}") && svg.contains("\u{25B2}"),
+      "{svg}"
+    );
+    let svg = svg_of(
+      "SwatchLegend[{Red, Blue}, {\"a\", \"b\"}, LegendLabel -> \"Colors\"]",
+    );
+    assert!(svg.contains(">Colors<"), "{svg}");
+    assert!(svg.contains("stroke-opacity=\"0.3\""), "{svg}");
+  }
+
+  /// `Column[…, Frame -> All]` rules a line between its items, in black.
+  #[test]
+  fn column_frame_all_dividers() {
+    let svg = svg_of("Column[{\"a\", \"b\", \"c\"}, Frame -> All]");
+    assert_eq!(svg.matches("<line").count(), 2, "{svg}");
+    assert!(svg.contains("stroke=\"black\""), "{svg}");
+  }
+
+  /// A text `Underoverscript` stacks its limits around the base.
+  #[test]
+  fn underoverscript_text_in_row() {
+    let svg = svg_of("Row[{Underoverscript[\"S\", \"i=1\", \"n\"]}]");
+    assert!(!svg.contains("Underoverscript"), "{svg}");
+    let n = svg.find(">n<").expect("upper limit");
+    let s = svg.find(">S<").expect("base");
+    let i = svg.find(">i=1<").expect("lower limit");
+    assert!(n < s && s < i, "{svg}");
+  }
+}

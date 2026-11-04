@@ -8553,3 +8553,34 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
   wolframscript); the same sum at a `Grid` cell or `Row` item level is not
   covered.
+
+## Layout and form wrappers (graphics comparison sweep, 2026-11)
+
+- `Short[expr, n]` keeps parts from both ends while they fit a width budget
+  calibrated against `ToBoxes[Short[…]]` (70 characters for one line, 108
+  for two, about 58 more per further line, each part counted at its
+  estimated typeset width plus one for its separator). The counts match for
+  integer and symbol lists on one line (`Short[Range[1000]]` keeps 11 + 11),
+  but can be off by one elsewhere (`Short[Range[1000], 3]`: WL 25 + 25,
+  Woxi 25 + 24); WL's real rule measures typeset widths. A multi-line
+  `Short` is drawn on one line rather than wrapped, and `Short` does not
+  shorten inside a single over-wide part.
+- `Grid` column padding: Woxi pads every column by 12 points (6 per side)
+  around 8.4-point characters, wolframscript by about 2.5 points around
+  7.9-point characters, so `Grid[{{a, b}, {c, d}, {e, f}}]` is 41 points
+  wide vs 21. Changing the default padding re-lays out every grid.
+- `TableForm` of stacked fractions (`TableForm[Table[1/(i + j), …]]`) draws
+  the fractions at full size; wolframscript shrinks them (SVG 141×164 vs
+  123×94).
+- `ItemSize` text wrapping breaks only at spaces (a long word keeps its
+  line), using two characters per em; wolframscript also breaks inside a
+  word ("cont"/"ent") and aligns the cells of a row on their first
+  baseline. Row heights from `ItemSize -> {…, {h…}}` are approximate.
+- `FontSlant -> Italic` and `FontWeight -> "Thin"`/`"Black"` are written to
+  the SVG (`font-style`, `font-weight="100"`/`"900"`), but the embedded
+  Atkinson house font has no italic or extra weights, so they draw upright
+  and regular.
+- `Underscript[x, "_"]` (a one-character accent) is drawn as an underlined
+  `x` rather than a separate `_` below it.
+- `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
+  draws a minus sign (`−10`), and the continuous bar is 64 flat slices.
