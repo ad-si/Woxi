@@ -5051,10 +5051,12 @@ With the same scene both engines place every primitive identically, but:
   - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
     lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
     WL 15 gradient bar style is not implemented.
-- **Projection.** `ViewAngle` drives a perspective camera in Wolfram; Woxi's
-  projection stays effectively orthographic, so a lattice looks uniform instead
-  of splaying toward the viewer. A wide angle (≳30°) leaves the silhouette a
-  few percent narrow.
+- **Projection.** Woxi's camera is now a perspective one like Wolfram's (the
+  eye `|ViewPoint|` box sides from the box centre; a `ViewPoint` with an
+  infinite component is orthographic). An explicit `ViewAngle` still sets the
+  scale from the orthographic law above, so a wide angle (≳30°) can leave the
+  silhouette a few percent off. The 3D charts (`chart.rs`) keep their own
+  orthographic camera.
 
 ### `Specularity`
 
@@ -7990,19 +7992,13 @@ Found comparing the graphics-tests renders (2026-11):
     297 → 94 (WL 88).
   - `GraphicsGrid` of two `Rectangle[{0, 0}, {2, 1}]` is 600 x 171 (WL
     165), of two `Rectangle[{0, 0}, {1, 4}]` 226 wide (WL 225).
-- `Plot3D`, `Graphics3D` and the other 3D pictures are always square
-  (360 x 360). WL's height follows the projected box: with `a` the
-  height / width of the box corners under a *perspective* projection from
-  `ViewPoint` (the eye at `|ViewPoint|` times the box's longest side from
-  its centre, `z` up), the picture is `(w - pw) a + ph` tall, where the
-  automatic `ImagePadding` is `pw = 19.15`, `ph = 14.26` with axes (it
-  holds the tick labels) and `pw = ph = 2` without. That reproduces
-  `Plot3D` (`a = 0.811`: 360 x 290.7, `Large` 576 x 465, `Small` 180 x
-  142.8), the unit `Cuboid[]` (`a = 1.085`: 360 x 390.6) and a
-  `{2, 1, 1}` cuboid (`a = 0.812`). The height is capped at 432 (1.2 x
-  360), the width then shrinking to keep `a` (`Cuboid[{0, 0, 0}, {1, 1,
-  3}]` is 200.1 x 432). Woxi's own projection is orthographic, which
-  gives a slightly different `a` (0.829 for `Plot3D`).
+- 3D picture size: Graphics3D and the Plot3D-family renderers now follow
+  WL's model (perspective box, height `(w - pw) a + ph` capped at 1.2 w),
+  with the padding measured from where the tick labels land rather than
+  WL's fixed `pw = 19.15`, `ph = 14.26`. Woxi's tick labels sit a little
+  closer to the box, so `Plot3D` comes out 360 x ~273-282 (WL 290.7).
+  `ListPointPlot3D`, `ListLinePlot3D`, `VectorPlot3D` and the 3D charts
+  still use their own square framing.
 
 - The automatic tick step rule is unknown for log axes over more than 6
   decades (WL labels every 2nd decade over 8, every 3rd over 9,
@@ -8649,3 +8645,48 @@ rule. Still open:
 - `FrameTicks -> {{f, None}, {f, None}}` with a tick function and
   `PlotRangePadding -> None` on a `ListPlot`: both are ignored (the
   wolframscript reference itself errors, so the target is unclear).
+
+## 3D graphics (graphics comparison sweep, 2026-11)
+
+Fixed this round: Ellipsoid/Parallelepiped/Simplex/CapsuleShape,
+ListContourPlot3D, StreamPlot3D, perspective camera and picture size,
+PlotRange clipping of curved solids, ViewPoint -> Top/Front, cylinder and
+cone bounds/rims, VertexColors, Plot3D's BoundaryStyle/Mesh/MeshStyle/
+MeshFunctions/MeshShading/RegionFunction/Filling/PlotLegends, smooth
+RegionPlot3D, per-level ContourPlot3D colours, solid VectorPlot3D arrows,
+GraphPlot3D of a Graph. What still differs:
+
+- Shading is per facet (flat): spheres, cylinders and surfaces show their
+  facets where wolframscript (which exports 3D graphics as an embedded
+  raster) interpolates vertex normals. SVG has no Gouraud fill.
+- StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
+  box and tops it up with points of its own choosing (the two extra lines
+  of `StreamPoints -> 10` start near `(±0.27, ±0.27, ±0.26)`); Woxi tops
+  up from the twice-as-fine lattice, farthest point first. Lines stop at
+  the box only; WL's colour scaling over the lines is approximated by the
+  drawn lines' magnitude range.
+- VectorPlot3D: wolframscript places its arrows on a jittered layout (221
+  of them by default, 64 for `VectorPoints -> 4`); Woxi uses the cell
+  centres of an n³ grid (n = 6 by default). Heads are hexagonal.
+- SliceDensityPlot3D: wolframscript jitters its sample positions randomly
+  (the centre planes sit at e.g. `x = 0.00053`), so `x y z` on
+  `"CenterPlanes"` shows a gradient of tiny random-sign values; Woxi samples
+  the planes exactly and draws one colour. Slice outlines are not drawn.
+- ListPlot3D `InterpolationOrder -> 0` (flat tiles, and WL's automatic
+  outlier clipping of the z range) is not implemented; scattered points
+  are triangulated but the hull edge is jagged at the 50 x 50 grid.
+- SphericalPlot3D and RevolutionPlot3D draw no default mesh; ContourPlot3D
+  and RegionPlot3D draw neither their default mesh nor the black curves
+  where a surface meets the box.
+- DensityPlot3D's default `OpacityFunction` (mid values transparent) is
+  not reproduced: the voxels stay near opaque.
+- `EdgeForm[Dashed]` on 3D faces is ignored (and the edge colour is not
+  inherited from an earlier `EdgeForm[colour]`); `FaceGrids` are not drawn;
+  `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
+  are ignored; a `Tube` polyline has no rounded joins or caps.
+- 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
+  screen length (wolframscript steps a short z axis over 0..10 by 5, Woxi
+  by 2.5).
+- The 3D charts (`BarChart3D`, `Histogram3D`, `PieChart3D`, …) keep their
+  own orthographic camera and square framing; `BubbleChart3D` is not
+  implemented.
