@@ -43162,6 +43162,27 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 }
 
 #[test]
+fn lone_text_label_is_not_clipped_to_its_picture() {
+  // Regression: a `Text` label wider than its picture (its extent does not
+  // count towards an automatic plot range) was cut off at the picture's
+  // edge, both at top level and inside a `GraphicsGrid` cell.
+  let svg = export_svg(
+    "Graphics[Text[\"a long label that is wide\", {0, 0}, {-1, 0}]]",
+  );
+  assert!(!svg.contains("clip-path=\"url(#plotClip_"), "{svg}");
+  let grid = export_svg(
+    "GraphicsGrid[{{Graphics[Text[\"a long label that is wide\", {0, 0}, \
+     {-1, 0}]], Graphics[Circle[]]}}]",
+  );
+  assert!(grid.contains("overflow=\"visible\""), "{grid}");
+  // An explicit plot range still clips.
+  let ranged = export_svg(
+    "Graphics[Text[\"label\", {0, 0}], PlotRange -> {{-1, 1}, {-1, 1}}]",
+  );
+  assert!(ranged.contains("clip-path=\"url(#plotClip_"), "{ranged}");
+}
+
+#[test]
 fn full_aspect_ratio_frame_fills_the_requested_image_size() {
   // Regression: with `ImageSize -> {w, h}` a framed `AspectRatio -> Full`
   // picture stretches the plot range over the whole drawing area instead of
