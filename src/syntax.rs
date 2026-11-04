@@ -16082,6 +16082,11 @@ pub fn decode_string_literal(raw: &str) -> String {
         Some(&'\n') => {
           chars.next();
         } // line continuation
+        // `\<…\>` is linear syntax for a string literal's own quotes; the
+        // reader drops the delimiters, so `"\<ab\>"` is the string `ab`.
+        Some(&'<' | &'>') => {
+          chars.next();
+        }
         Some(&' ') => {
           // Linear-syntax escape for a literal space, part of the same
           // family as `\(`/`\)`/`\!`/`\*`: inside `\!\(…\)` embedded box

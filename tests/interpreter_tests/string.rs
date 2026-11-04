@@ -15765,3 +15765,16 @@ mod number_form_scientific_mantissa {
     );
   }
 }
+
+mod linear_syntax_string_delimiters {
+  use super::*;
+
+  #[test]
+  fn delimiters_are_dropped_from_string_literals() {
+    assert_eq!(interpret("StringLength[\"\\<ab\\>\"]").unwrap(), "2");
+    assert_eq!(
+      interpret("\"\\<phase portrait\\>\" == \"phase portrait\"").unwrap(),
+      "True"
+    );
+  }
+}
