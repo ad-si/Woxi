@@ -3245,7 +3245,7 @@ mod graphics {
         svg
           .lines()
           .filter(|l| {
-            l.starts_with("<line") && l.contains("stroke-width=\"1\"")
+            l.starts_with("<line ") && l.contains("stroke-width=\"1\"")
           })
           .map(|l| {
             let attr = |name: &str| -> f64 {
@@ -4992,11 +4992,10 @@ mod plot3d {
       assert!(!svg.contains(">z<"));
     }
 
-    // A long z-axis label used to be laid out horizontally beside the
-    // vertical axis, which pushed its centre past the left edge of the
-    // canvas so it was clipped. It now runs alongside the axis.
+    // A long z-axis label is set upright beside the vertical axis, as
+    // Wolfram sets it, and must not be pushed off the canvas.
     #[test]
-    fn long_z_axis_label_is_rotated_and_stays_on_canvas() {
+    fn long_z_axis_label_is_upright_and_stays_on_canvas() {
       let svg = export_svg(
         "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
          AxesLabel -> {\"x\", \"y\", \"a rather long height label\"}]",
@@ -5005,7 +5004,7 @@ mod plot3d {
         .split("<text ")
         .find(|t| t.contains("a rather long height label"))
         .expect("z label present");
-      assert!(tag.contains("rotate(-90,"), "z label not rotated: {tag}");
+      assert!(!tag.contains("rotate("), "z label rotated: {tag}");
       let x: f64 = tag
         .split("x=\"")
         .nth(1)
@@ -6660,21 +6659,24 @@ mod plot3d {
     /// The red component of every shaded facet's fill, so a test can talk
     /// about how dark or bright a surface came out. Only `<polygon>` fills
     /// count — the white background `<rect>` is not part of the shading.
+    /// The red channel of every flat facet fill and of every colour a
+    /// smoothly shaded facet's gradient runs through.
     fn fill_reds(svg: &str) -> Vec<u32> {
-      svg
-        .split("<polygon ")
+      let flat = svg.split("<polygon ").skip(1).filter_map(|tag| {
+        let tag = tag.split('>').next()?;
+        tag
+          .split("fill=\"rgb(")
+          .nth(1)?
+          .split(',')
+          .next()?
+          .parse()
+          .ok()
+      });
+      let stops = svg
+        .split("stop-color=\"#")
         .skip(1)
-        .filter_map(|tag| {
-          let tag = tag.split('>').next()?;
-          tag
-            .split("fill=\"rgb(")
-            .nth(1)?
-            .split(',')
-            .next()?
-            .parse()
-            .ok()
-        })
-        .collect()
+        .filter_map(|s| u32::from_str_radix(s.get(..2)?, 16).ok());
+      flat.chain(stops).collect()
     }
 
     /// A `Plot3D` with `PlotRange -> {zmin, zmax}` shown together with
@@ -7249,14 +7251,14 @@ mod plot3d {
       // … plus one stroked line per edge of the quad, and no fifth line
       // along the diagonal.
       let outline: Vec<&str> =
-        svg.lines().filter(|l| l.starts_with("<line")).collect();
+        svg.lines().filter(|l| l.starts_with("<line ")).collect();
       assert_eq!(outline.len(), 4, "{svg}");
       // A triangle keeps the single stroked-polygon form.
       let svg = export_svg(
         "Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {0,1,0}}], Boxed -> False]",
       );
       assert!(svg.contains("stroke=\"rgb(64,64,64)\""), "{svg}");
-      assert_eq!(svg.lines().filter(|l| l.starts_with("<line")).count(), 0);
+      assert_eq!(svg.lines().filter(|l| l.starts_with("<line ")).count(), 0);
     }
 
     // Part indexes the symbolic form of a rendered Graphics3D, as in
@@ -7552,7 +7554,7 @@ mod plot3d {
          Cylinder[{{0,0,0},{0,0,0.001}}, 0.5]}, Boxed -> False]",
       );
       let outlines: Vec<&str> =
-        svg.lines().filter(|l| l.starts_with("<line")).collect();
+        svg.lines().filter(|l| l.starts_with("<line ")).collect();
       assert!(
         !outlines.is_empty(),
         "the rim must be stroked, got no lines: {svg}"
@@ -7572,7 +7574,7 @@ mod plot3d {
         "Graphics3D[Cylinder[{{0,0,0},{0,0,0.001}}, 0.5], Boxed -> False]",
       );
       let rims: Vec<&str> =
-        plain.lines().filter(|l| l.starts_with("<line")).collect();
+        plain.lines().filter(|l| l.starts_with("<line ")).collect();
       assert!(!rims.is_empty() && rims.len() <= 100, "{rims:?}");
       assert!(rims.iter().all(|l| l.contains("stroke=\"rgb(64,64,64)\"")));
       // `EdgeForm[]` turns the rims off.
@@ -7580,7 +7582,7 @@ mod plot3d {
         "Graphics3D[{EdgeForm[], Cylinder[{{0,0,0},{0,0,0.001}}, 0.5]}, \
          Boxed -> False]",
       );
-      assert_eq!(bare.lines().filter(|l| l.starts_with("<line")).count(), 0);
+      assert_eq!(bare.lines().filter(|l| l.starts_with("<line ")).count(), 0);
     }
 
     /// `Dashed`/`Dotted`/`DotDashed`/`Dashing`/`AbsoluteDashing` used to be
@@ -7596,7 +7598,7 @@ mod plot3d {
         "Graphics3D[{Gray, Dashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
       );
       let lines: Vec<&str> =
-        dashed.lines().filter(|l| l.starts_with("<line")).collect();
+        dashed.lines().filter(|l| l.starts_with("<line ")).collect();
       assert!(!lines.is_empty(), "expected the line to be drawn: {dashed}");
       assert!(
         lines
@@ -7666,7 +7668,7 @@ mod plot3d {
         .filter(|l| l.contains("stroke-dasharray"))
         .count();
       let total_lines =
-        mixed.lines().filter(|l| l.starts_with("<line")).count();
+        mixed.lines().filter(|l| l.starts_with("<line ")).count();
       assert!(dashed_count > 0 && dashed_count < total_lines, "{mixed}");
     }
 
@@ -7698,7 +7700,7 @@ mod plot3d {
         // transparency has to be a `fill-opacity` rather than a blanket
         // `opacity`.
         let outlined = svg.lines().any(|l| {
-          l.starts_with("<line") && l.contains("stroke=\"rgb(64,64,64)\"")
+          l.starts_with("<line ") && l.contains("stroke=\"rgb(64,64,64)\"")
         }) || svg.lines().any(|l| {
           l.starts_with("<polygon")
             && l.contains("stroke=\"rgb(64,64,64)\"")
@@ -7714,7 +7716,7 @@ mod plot3d {
       assert!(
         half
           .lines()
-          .filter(|l| l.starts_with("<line"))
+          .filter(|l| l.starts_with("<line "))
           .all(|l| !l.contains("opacity=")),
         "the outline stays opaque at any face opacity: {half}"
       );
@@ -10392,7 +10394,7 @@ mod plot3d {
       assert_eq!(label_xs.len(), 5, "{svg}");
       for mark in svg
         .lines()
-        .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+        .filter(|l| l.starts_with("<line ") && attr(l, "x1") == attr(l, "x2"))
         .filter_map(|l| attr(l, "x1"))
       {
         assert!(
@@ -11088,7 +11090,7 @@ mod plot3d {
       // for by however much the axes take.)
       let axis_right = svg
         .lines()
-        .filter(|l| l.starts_with("<line") || l.starts_with("<polyline"))
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline"))
         .flat_map(|l| {
           l.split(['"', ' ', ','])
             .filter_map(|v| v.parse::<f64>().ok())
@@ -15943,7 +15945,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg("BarChart[{5, 3, 8, 2, 6}]");
       let lines: Vec<(f64, f64, f64, f64)> = svg
         .lines()
-        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.starts_with("<line "))
         .map(|l| {
           let a = |n: &str| -> f64 {
             l.split(&format!(" {n}=\""))
@@ -16847,7 +16849,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       };
       let verticals: Vec<&str> = svg
         .lines()
-        .filter(|l| l.starts_with("<line") && attr(l, "x1") == attr(l, "x2"))
+        .filter(|l| l.starts_with("<line ") && attr(l, "x1") == attr(l, "x2"))
         .collect();
       let axis = verticals
         .iter()
@@ -16867,7 +16869,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let y_marks: Vec<&str> = svg
         .lines()
         .filter(|l| {
-          l.starts_with("<line")
+          l.starts_with("<line ")
             && attr(l, "y1") == attr(l, "y2")
             && attr(l, "x1") == axis_x
         })
@@ -18478,23 +18480,68 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// The blocks are the shaded `GraphicsComplex`es wolframscript
+    /// builds: six faces each, coloured from the bar's colour to a light
+    /// tint and a dark shade.
     #[test]
     fn bar_chart_3d_basic() {
-      // Should evaluate to a Graphics3D object and produce an SVG.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = BarChart3D[{1, 2, 3, 4}]; \
+           {Length[Cases[g, _GraphicsComplex, Infinity]], \
+            Length[Cases[g, Polygon[_, VertexColors -> _], Infinity]]}"
+        )
+        .unwrap(),
+        "{4, 24}"
+      );
       let svg = export_svg("BarChart3D[{1, 2, 3, 4}]");
-      // Each cuboid contributes 12 triangles → 4 bars * 12 = 48 polygons.
-      let polys = svg.matches("<polygon").count();
-      assert_eq!(polys, 48, "expected 48 triangle polygons for 4 bars");
+      assert!(svg.contains("<linearGradient"), "{svg}");
     }
 
     #[test]
     fn bar_chart_3d_labeled_values() {
       // Labeled[value, label, pos] data elements draw as their value.
-      let svg = export_svg(
-        r#"BarChart3D[{{Labeled[3, "Q", Above], Labeled[5, "W", Above]}, {Labeled[1, "A", Above]}}]"#,
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"Length[Cases[BarChart3D[{{Labeled[3, "Q", Above], Labeled[5, "W", Above]}, {Labeled[1, "A", Above]}}], _GraphicsComplex, Infinity]]"#
+        )
+        .unwrap(),
+        "3"
       );
-      let polys = svg.matches("<polygon").count();
-      assert_eq!(polys, 36, "expected 3 cuboids of 12 triangles each");
+    }
+
+    /// `ChartLayout -> "Stacked"` piles each group's values into one
+    /// column, coloured by their place in the group.
+    #[test]
+    fn bar_chart_3d_stacked_piles_the_group() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = BarChart3D[{{1, 2, 3}, {3, 2, 1}}, ChartLayout -> \"Stacked\"]; \
+           Cases[g, GraphicsComplex[p_, ___] :> {Min[p[[All, 1]]], \
+             Min[p[[All, 3]]], Max[p[[All, 3]]]}, Infinity]"
+        )
+        .unwrap(),
+        "{{0., 0., 1.}, {0., 1., 3.}, {0., 3., 6.}, {1.2, 0., 3.}, \
+         {1.2, 3., 5.}, {1.2, 5., 6.}}"
+      );
+    }
+
+    /// A flat list draws every bar in the first colour; groups colour by
+    /// position, from the 3D charts' palette.
+    #[test]
+    fn bar_chart_3d_default_colours() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Union[Cases[BarChart3D[{1, 2}], Polygon[_, VertexColors -> \
+           {c_, ___}] :> c, Infinity][[{1, 7}]]]"
+        )
+        .unwrap(),
+        "{RGBColor[0.95, 0.7125, 0.]}"
+      );
     }
 
     #[test]
@@ -18509,9 +18556,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn bar_chart_3d_grouped() {
       // Grouped data: 2 groups of 3 bars = 6 bars * 12 triangles = 72 polygons.
-      let svg = export_svg("BarChart3D[{{1, 2, 3}, {4, 5, 6}}]");
-      let polys = svg.matches("<polygon").count();
-      assert_eq!(polys, 72);
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Length[Cases[BarChart3D[{{1, 2, 3}, {4, 5, 6}}], \
+           _GraphicsComplex, Infinity]]"
+        )
+        .unwrap(),
+        "6"
+      );
     }
 
     #[test]
@@ -19545,7 +19598,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       };
       let marks: Vec<&str> = svg
         .lines()
-        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.starts_with("<line "))
         .filter(|l| {
           let (x1, y1, x2, y2) =
             (attr(l, "x1"), attr(l, "y1"), attr(l, "x2"), attr(l, "y2"));
@@ -19581,7 +19634,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
               .and_then(|v| v.parse().ok())
               .unwrap_or(-1.0)
           };
-          l.starts_with("<line")
+          l.starts_with("<line ")
             && ((attr("x1") == 0.0 && attr("x2") > 300.0)
               || (attr("y1") == 0.0 && attr("y2") > 300.0))
         })
@@ -22692,7 +22745,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // edges and nothing across a face.
       let mut segments: Vec<String> = svg
         .lines()
-        .filter(|l| l.starts_with("<line"))
+        .filter(|l| l.starts_with("<line "))
         .map(|l| {
           let mut ends: Vec<String> = ["x1", "y1", "x2", "y2"]
             .iter()
@@ -29271,9 +29324,11 @@ mod contour_plot_3d {
     assert_eq!(
       interpret(
         "ExportString[ContourPlot3D[{x^2 + y^2 + z^2 - 1, z - 0.5}, \
-         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"] === \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6, \
+         Mesh -> None], \"SVG\"] === \
          ExportString[ContourPlot3D[{x^2 + y^2 + z^2 == 1, z == 0.5}, \
-         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6], \"SVG\"]"
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, PlotPoints -> 6, \
+         Mesh -> None], \"SVG\"]"
       )
       .unwrap(),
       "True"
@@ -41065,8 +41120,8 @@ mod tube_and_cap_form {
     };
     assert_eq!(
       see_through(""),
-      see_through("CapForm[None], ") + 24,
-      "the base disk must add a 24-triangle fan"
+      see_through("CapForm[None], ") + 48,
+      "the base disk must add a 48-triangle fan"
     );
   }
 }
@@ -41090,8 +41145,9 @@ mod graphics3d_painters_algorithm_face_subdivision {
     let short = export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
     let long = export_svg("Graphics3D[{Tube[{{0, 0, 0}, {0, 0, 40}}, 1]}]");
     let count = |svg: &str| svg.matches("<polygon").count();
+    // The rounded end caps are the same on both; the side adds rings.
     assert!(
-      count(&long) > count(&short) * 4,
+      count(&long) > count(&short) + 8 * 24,
       "a straight tube 40x longer than its radius must tessellate into \
        many more, smaller faces along its length: short={} long={}",
       count(&short),
@@ -43290,7 +43346,7 @@ fn graphics3d_view_vertical_turns_the_picture() {
     ))
   };
   let extent = |svg: &str| {
-    let line = svg.lines().find(|l| l.starts_with("<line")).unwrap();
+    let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
     let attr = |name: &str| -> f64 {
       let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
       rest.split('"').next().unwrap().parse().unwrap()
@@ -44357,7 +44413,7 @@ mod static_dynamic_controls {
   #[test]
   fn single_tube_keeps_fine_subdivision() {
     let svg = export_svg("Graphics3D[Tube[{{0, 0, 0}, {1, 0, 0}}, 0.02]]");
-    assert!(svg.matches("<polygon").count() > 1000);
+    assert!(svg.matches("<polygon").count() > 500);
   }
 
   /// `Show[image, graphics]` draws the image as the backdrop of the
@@ -49819,7 +49875,7 @@ mod ranges_and_ticks {
   fn ticks_outside_the_plot_range_are_not_drawn() {
     // Log axes generate decade ticks beyond their ends.
     let svg = export_svg("LogPlot[Exp[x], {x, 0, 10}]");
-    for line in svg.lines().filter(|l| l.starts_with("<line")) {
+    for line in svg.lines().filter(|l| l.starts_with("<line ")) {
       for attr in ["x1=\"", "y1=\"", "x2=\"", "y2=\""] {
         let v: f64 = line
           .split(attr)

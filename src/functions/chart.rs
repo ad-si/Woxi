@@ -5294,6 +5294,114 @@ fn pie_slice_label_svg(
 
 /// BarChart3D[{v1, v2, ...}] or BarChart3D[{{v1, v2}, {v3, v4}, ...}]
 /// Renders a 3D bar chart with each bar drawn as a colored cuboid.
+/// `BarChart3D` as Wolfram draws it: a unit-wide, unit-deep block per
+/// value, side by side in their groups (`ChartLayout -> "Stacked"` piles a
+/// group's values into one column), coloured by their place in the group —
+/// or, for a flat list, all in the first colour unless `ChartStyle` names
+/// one per bar.
+fn bar_chart_3d_graphics(
+  groups: &[Vec<f64>],
+  flat: bool,
+  opts: &mut ChartOptions,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::functions::chart3d::{
+    bar_chart3d_options, bar_positions, bar_ticks, chart3d_block, chart3d_color,
+  };
+  use crate::functions::plot::BarLayout;
+  let stacked = matches!(opts.layout, BarLayout::Stacked);
+  // (group, position in group, value) of every bar, and the column each
+  // stands in.
+  let mut bars: Vec<(usize, usize, f64)> = Vec::new();
+  let mut column_group: Vec<usize> = Vec::new();
+  for (gi, group) in groups.iter().enumerate() {
+    for (bi, &v) in group.iter().enumerate() {
+      bars.push((gi, bi, v));
+      if !stacked || bi == 0 {
+        column_group.push(if flat { 0 } else { gi });
+      }
+    }
+  }
+  apply_color_scheme(opts, if flat { bars.len() } else { 1 });
+  let color = |gi: usize, bi: usize| {
+    let k = if flat { gi } else { bi };
+    if opts.chart_style.is_empty() {
+      chart3d_color(if flat { 0 } else { k })
+    } else {
+      let c = &opts.chart_style[k % opts.chart_style.len()];
+      (c.r, c.g, c.b)
+    }
+  };
+  let xs = bar_positions(&column_group);
+  let mut content = Vec::new();
+  let mut column = 0;
+  let (mut base_up, mut base_down) = (0.0, 0.0);
+  for (k, &(gi, bi, v)) in bars.iter().enumerate() {
+    if k > 0 && !(stacked && gi == bars[k - 1].0) {
+      column += 1;
+    }
+    if !stacked || bi == 0 {
+      base_up = 0.0;
+      base_down = 0.0;
+    }
+    // A stack piles positive values up and negative ones down.
+    let (z0, z1) = if !stacked {
+      (v.min(0.0), v.max(0.0))
+    } else if v >= 0.0 {
+      base_up += v;
+      (base_up - v, base_up)
+    } else {
+      base_down += v;
+      (base_down, base_down - v)
+    };
+    let x = xs[column];
+    content.push(chart3d_block(
+      [x, 0.0, z0],
+      [x + 1.0, 1.0, z1],
+      color(gi, bi),
+    ));
+  }
+  let x_extent = xs.last().map_or(1.0, |x| x + 1.0);
+  // The invisible base plate Wolfram adds, which sets the scene's extent
+  // a little past the bars.
+  let z_top = bars.iter().map(|b| b.2.abs()).fold(0.0, f64::max);
+  let v3 = |p: [f64; 3]| {
+    Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+  };
+  content.insert(
+    0,
+    Expr::List(
+      vec![
+        Expr::FunctionCall {
+          name: "Opacity".to_string(),
+          args: vec![Expr::Integer(0)].into(),
+        },
+        Expr::FunctionCall {
+          name: "EdgeForm".to_string(),
+          args: vec![].into(),
+        },
+        Expr::FunctionCall {
+          name: "Cuboid".to_string(),
+          args: vec![
+            v3([-0.05 * x_extent, -0.25, 0.0]),
+            v3([1.05 * x_extent, 1.25, 0.0048 * z_top]),
+          ]
+          .into(),
+        },
+      ]
+      .into(),
+    ),
+  );
+  let defaults = bar_chart3d_options(
+    &bar_ticks(&xs, &column_group),
+    x_extent,
+    1.0,
+    false,
+    false,
+  );
+  crate::functions::chart3d::render_chart3d(content, defaults, &args[1..])
+}
+
 pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::plot3d::{
     Point3D, Triangle, apply_lighting, depth, project, tessellate_cuboid,
@@ -5308,7 +5416,13 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
-  let opts = parse_chart_options(args);
+  let mut opts = parse_chart_options(args);
+  // Without legends or labels the chart is the `Graphics3D` Wolfram builds.
+  if opts.chart_legends.is_empty() && opts.chart_labels.is_empty() {
+    let flat = matches!(evaluate_expr_to_expr(&args[0]),
+      Ok(Expr::List(ref items)) if items.iter().all(|e| !matches!(e, Expr::List(_))));
+    return bar_chart_3d_graphics(&groups, flat, &mut opts, args);
+  }
   let (svg_width, svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
 
@@ -5428,6 +5542,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           boundary: [true; 3],
           edge_color: None,
           edge_width: None,
+          edge_dashing: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -5437,6 +5552,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color,
           opacity: 1.0,
           texture: None,
+          vertex_colors: None,
         });
       }
     }
@@ -5537,6 +5653,56 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let opts = parse_chart_options(args);
+  // Without legends or labels the histogram is the `Graphics3D` Wolfram
+  // builds: a `Cuboid` per non-empty bin, outlined a shade darker.
+  if opts.chart_legends.is_empty() && opts.chart_labels.is_empty() {
+    let c = opts.chart_style.first().map_or_else(
+      || crate::functions::chart3d::chart3d_color(0),
+      |c| (c.r, c.g, c.b),
+    );
+    let rgb = |(r, g, b): (f64, f64, f64)| Expr::FunctionCall {
+      name: "RGBColor".to_string(),
+      args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+    };
+    let v3 = |p: [f64; 3]| {
+      Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+    };
+    let mut content = vec![
+      Expr::FunctionCall {
+        name: "EdgeForm".to_string(),
+        args: vec![rgb((c.0 * 0.8, c.1 * 0.8, c.2 * 0.8))].into(),
+      },
+      rgb(c),
+    ];
+    for i in 0..nx {
+      for j in 0..ny {
+        if counts[i][j] > 0 {
+          content.push(Expr::FunctionCall {
+            name: "Cuboid".to_string(),
+            args: vec![
+              v3([x_edges[i], y_edges[j], 0.0]),
+              v3([x_edges[i + 1], y_edges[j + 1], counts[i][j] as f64]),
+            ]
+            .into(),
+          });
+        }
+      }
+    }
+    let rule = |n: &str, v: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(n.to_string())),
+      replacement: Box::new(v),
+    };
+    let defaults = vec![
+      rule("Axes", Expr::Identifier("True".to_string())),
+      rule("BoxRatios", v3([1.0, 1.0, 0.4])),
+      rule("Lighting", Expr::String("Neutral".to_string())),
+    ];
+    return crate::functions::chart3d::render_chart3d(
+      content,
+      defaults,
+      &args[1..],
+    );
+  }
   let (svg_width, svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
 
@@ -5592,6 +5758,7 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           boundary: [true; 3],
           edge_color: None,
           edge_width: None,
+          edge_dashing: None,
           projected: [
             project(v0, &camera),
             project(v1, &camera),
@@ -5601,6 +5768,7 @@ pub fn histogram_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color,
           opacity: 1.0,
           texture: None,
+          vertex_colors: None,
         });
       }
     }
@@ -5655,15 +5823,31 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ring_width = (max_radius - (n_rings.saturating_sub(1)) as f64 * ring_gap)
     / n_rings as f64;
 
-  let camera = chart_3d_camera();
+  // Wolfram's `ViewPoint -> {0, -2.4, 2}`.
+  let camera = crate::functions::plot3d::Camera {
+    azimuth: -std::f64::consts::FRAC_PI_2,
+    elevation: (2.0_f64).atan2(2.4),
+    vertical: crate::functions::plot3d::Camera::DEFAULT_VERTICAL,
+    perspective: None,
+  };
   let mut all_triangles: Vec<Triangle> = Vec::new();
   // Number of segments per full circle for tessellating arcs.
   const SEG_PER_TURN: usize = 64;
 
   let mut labels: Vec<Label3D> = Vec::new();
   // The colour of each slice of the first ring, by data position.
+  // Without a `ChartStyle`, the 3D charts' own palette.
+  let slice_color = |i: usize| {
+    if opts.chart_style.is_empty() {
+      let (r, g, b) = crate::functions::chart3d::chart3d_color(i);
+      let q = |c: f64| (c * 255.0).round() as u8;
+      (q(r), q(g), q(b))
+    } else {
+      sector_color(&opts, i)
+    }
+  };
   let mut element_colors: Vec<(u8, u8, u8)> =
-    (0..rows[0].len()).map(|i| sector_color(&opts, i)).collect();
+    (0..rows[0].len()).map(slice_color).collect();
   for (ring_idx, row) in rows.iter().enumerate() {
     let total: f64 = row.iter().sum();
     if total <= 0.0 {
@@ -5675,16 +5859,8 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Single-ring input sorts slices smallest-to-largest, matching the
     // long-standing 3D layout. Multi-ring input preserves insertion
     // order per row so rings stay easy to compare.
-    let order: Vec<usize> = if n_rings == 1 {
-      let mut idx: Vec<(usize, f64)> =
-        row.iter().copied().enumerate().collect();
-      idx.sort_by(|a, b| {
-        a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-      });
-      idx.iter().map(|(i, _)| *i).collect()
-    } else {
-      (0..row.len()).collect()
-    };
+    // The slices go round in data order, as Wolfram draws them.
+    let order: Vec<usize> = (0..row.len()).collect();
 
     let mut start_angle = std::f64::consts::PI;
     // Restart the color cycle at each ring so every row uses the same
@@ -5697,7 +5873,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let end_angle = start_angle + sweep;
 
-      let base_color = sector_color(&opts, slot_color_idx);
+      let base_color = slice_color(slot_color_idx);
       if ring_idx == 0 {
         element_colors[i] = base_color;
         // `ChartLabels` of a single pie sit on the top face, radially
@@ -5707,7 +5883,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           labels.push(sector_label_3d(
             f64::midpoint(r_in, r_out),
-            f64::midpoint(start_angle, end_angle),
+            std::f64::consts::TAU - f64::midpoint(start_angle, end_angle),
             z_top,
             &label.text,
             &camera,
@@ -5715,13 +5891,14 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
 
+      // Wolfram goes clockwise from nine o'clock.
       build_cylindrical_sector(
         r_in,
         r_out,
         z_bot,
         z_top,
-        start_angle,
-        end_angle,
+        std::f64::consts::TAU - end_angle,
+        std::f64::consts::TAU - start_angle,
         base_color,
         &camera,
         SEG_PER_TURN,
@@ -5750,7 +5927,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     element_colors
       .get(i)
       .copied()
-      .unwrap_or_else(|| sector_color(&opts, i))
+      .unwrap_or_else(|| slice_color(i))
   });
   Ok(crate::graphics3d_result(svg))
 }
@@ -5851,13 +6028,19 @@ fn render_3d_triangles(
     bg.0, bg.1, bg.2
   ));
 
+  let mut gradients = crate::functions::smooth_shading::GradientDefs::default();
   for tri in triangles {
     let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
     let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
     let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
-    let (r, g, b) = tri.color;
+    let paint = crate::functions::plot3d::triangle_paint(
+      tri,
+      [(x0, y0), (x1, y1), (x2, y2)],
+      &mut svg,
+      &mut gradients,
+    );
     svg.push_str(&format!(
-      "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"0.5\"/>\n"
+      "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{paint}\" stroke-width=\"0.5\"/>\n"
     ));
   }
 
@@ -6165,6 +6348,7 @@ fn build_cylindrical_sector(
         boundary: [true; 3],
         edge_color: None,
         edge_width: None,
+        edge_dashing: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -6174,6 +6358,7 @@ fn build_cylindrical_sector(
         color,
         opacity: 1.0,
         texture: None,
+        vertex_colors: None,
       });
     };
 
@@ -6182,6 +6367,44 @@ fn build_cylindrical_sector(
     y: r * a.sin(),
     z,
   };
+  // Seen from above, the top face is in front of every wall below it;
+  // a single centroid depth per facet does not always say so for a long
+  // wedge triangle, so the top facets are sorted to the front.
+  let lift_top = |all: &mut Vec<Triangle>| {
+    if let Some(t) = all.last_mut() {
+      t.depth -= 1e3;
+    }
+  };
+  // The curved walls are lit at their corners with the wall's own
+  // (radial) normal, so they shade smoothly round the pie.
+  let push_wall =
+    |corners: [(Point3D, f64); 3], outward: f64, all: &mut Vec<Triangle>| {
+      let [v0, v1, v2] = corners.map(|(p, _)| p);
+      let lit = corners.map(|(_, a)| {
+        apply_lighting(base_color, [outward * a.cos(), outward * a.sin(), 0.0])
+      });
+      let center = Point3D {
+        x: (v0.x + v1.x + v2.x) / 3.0,
+        y: (v0.y + v1.y + v2.y) / 3.0,
+        z: (v0.z + v1.z + v2.z) / 3.0,
+      };
+      all.push(Triangle {
+        boundary: [true; 3],
+        edge_color: None,
+        edge_width: None,
+        edge_dashing: None,
+        projected: [
+          project(v0, camera),
+          project(v1, camera),
+          project(v2, camera),
+        ],
+        depth: depth(center, camera),
+        color: crate::functions::plot3d::average_color(lit),
+        opacity: 1.0,
+        texture: None,
+        vertex_colors: Some(lit),
+      });
+    };
 
   for s in 0..n_seg {
     let t0 = s as f64 / n_seg as f64;
@@ -6198,6 +6421,7 @@ fn build_cylindrical_sector(
       let center_top = pt(0.0, 0.0, z_top);
       let center_bot = pt(0.0, 0.0, z_bot);
       push_tri(center_top, o_top_0, o_top_1, out);
+      lift_top(out);
       push_tri(center_bot, o_bot_1, o_bot_0, out);
     } else {
       let i_top_0 = pt(r_in, a0, z_top);
@@ -6206,16 +6430,18 @@ fn build_cylindrical_sector(
       let i_bot_1 = pt(r_in, a1, z_bot);
 
       push_tri(i_top_0, o_top_0, o_top_1, out);
+      lift_top(out);
       push_tri(i_top_0, o_top_1, i_top_1, out);
+      lift_top(out);
       push_tri(i_bot_0, o_bot_1, o_bot_0, out);
       push_tri(i_bot_0, i_bot_1, o_bot_1, out);
 
-      push_tri(i_top_0, i_top_1, i_bot_1, out);
-      push_tri(i_top_0, i_bot_1, i_bot_0, out);
+      push_wall([(i_top_0, a0), (i_top_1, a1), (i_bot_1, a1)], -1.0, out);
+      push_wall([(i_top_0, a0), (i_bot_1, a1), (i_bot_0, a0)], -1.0, out);
     }
 
-    push_tri(o_top_0, o_bot_0, o_bot_1, out);
-    push_tri(o_top_0, o_bot_1, o_top_1, out);
+    push_wall([(o_top_0, a0), (o_bot_0, a0), (o_bot_1, a1)], 1.0, out);
+    push_wall([(o_top_0, a0), (o_bot_1, a1), (o_top_1, a1)], 1.0, out);
   }
 
   let edge0_out_top = pt(r_out, start_angle, z_top);
@@ -6290,6 +6516,7 @@ fn build_torus_sector(
         boundary: [true; 3],
         edge_color: None,
         edge_width: None,
+        edge_dashing: None,
         projected: [
           project(v0, camera),
           project(v1, camera),
@@ -6299,6 +6526,7 @@ fn build_torus_sector(
         color,
         opacity: 1.0,
         texture: None,
+        vertex_colors: None,
       });
     };
 

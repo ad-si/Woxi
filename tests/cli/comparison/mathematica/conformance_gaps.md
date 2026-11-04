@@ -8659,11 +8659,34 @@ PlotRange clipping of curved solids, ViewPoint -> Top/Front, cylinder and
 cone bounds/rims, VertexColors, Plot3D's BoundaryStyle/Mesh/MeshStyle/
 MeshFunctions/MeshShading/RegionFunction/Filling/PlotLegends, smooth
 RegionPlot3D, per-level ContourPlot3D colours, solid VectorPlot3D arrows,
-GraphPlot3D of a Graph. What still differs:
+GraphPlot3D of a Graph. Later: smooth (Gouraud) shading of curved
+primitives and plot surfaces — each facet is lit at its corners and filled
+with an SVG linear gradient, the least-squares single-direction fit of the
+three corner colours (rms error about 0.1–1.2 levels of 255 under the
+default coloured lights, at most ~6 on a coarse surface) —, coplanar faces
+drawn in primitive order, lines ordered against large faces, rounded `Tube`
+ends and corners and the slim `Arrow[Tube]` head, upright z axis label,
+`EdgeForm[Dashed]` with an inherited edge style, `FaceGrids`, `AxesEdge`,
+unlabelled ticks, ContourPlot3D's default mesh and gradient normals,
+scattered ListPlot3D drawn on its own triangulation, BarChart3D /
+RectangleChart3D / Histogram3D / BubbleChart3D built as wolframscript's
+`Graphics3D`, PieChart3D's view, colours and smooth wall. What still
+differs:
 
-- Shading is per facet (flat): spheres, cylinders and surfaces show their
-  facets where wolframscript (which exports 3D graphics as an embedded
-  raster) interpolates vertex normals. SVG has no Gouraud fill.
+- Smooth shading interpolates colours linearly across a facet (Gouraud), so
+  a sharp highlight or the edge of a coloured light still shows the
+  facets faintly where wolframscript (an embedded raster) lights per pixel.
+  A gradient varies along one direction only; where the red, green and
+  blue gradients of a facet point different ways (coloured lights), the
+  fill is their best single-direction approximation.
+- Curved surfaces cost SVG size: a lone sphere is ~200 KB (68 KB flat), a
+  50 x 50 Plot3D ~1.6 MB (0.8 MB), ContourPlot3D with its mesh ~2 MB.
+- The painter's sort splits only triangles that pass through each other;
+  a cycle of three or more mutually overlapping, non-intersecting
+  triangles is broken by centroid depth. Plot3D/ListPlot3D/ContourPlot3D
+  surfaces still sort by centroid depth (their mesh lines are merged in
+  by depth), and axis lines are drawn over the scene rather than hidden
+  behind it.
 - StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
   box and tops it up with points of its own choosing (the two extra lines
   of `StreamPoints -> 10` start near `(±0.27, ±0.27, ±0.26)`); Woxi tops
@@ -8677,21 +8700,28 @@ GraphPlot3D of a Graph. What still differs:
   (the centre planes sit at e.g. `x = 0.00053`), so `x y z` on
   `"CenterPlanes"` shows a gradient of tiny random-sign values; Woxi samples
   the planes exactly and draws one colour. Slice outlines are not drawn.
-- ListPlot3D `InterpolationOrder -> 0` (flat tiles, and WL's automatic
-  outlier clipping of the z range) is not implemented; scattered points
-  are triangulated but the hull edge is jagged at the 50 x 50 grid.
-- SphericalPlot3D and RevolutionPlot3D draw no default mesh; ContourPlot3D
-  and RegionPlot3D draw neither their default mesh nor the black curves
-  where a surface meets the box.
+- ListPlot3D `InterpolationOrder -> 0` (flat tiles with gaps between
+  them, and WL's automatic outlier clipping of the z range) is not
+  implemented: Woxi draws the interpolated surface.
+- SphericalPlot3D and RevolutionPlot3D draw no default mesh, and
+  RegionPlot3D neither its default mesh nor the black curves where a
+  surface meets the box; RegionPlot3D, RevolutionPlot3D and SphericalPlot3D
+  surfaces are still shaded flat.
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
-- `EdgeForm[Dashed]` on 3D faces is ignored (and the edge colour is not
-  inherited from an earlier `EdgeForm[colour]`); `FaceGrids` are not drawn;
-  `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
-  are ignored; a `Tube` polyline has no rounded joins or caps.
+- `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
+  are ignored. A translucent `EdgeForm` colour is faded towards white
+  rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
+  Back}` (BubbleChart3D's partial box) draws the whole box.
 - 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
   screen length (wolframscript steps a short z axis over 0..10 by 5, Woxi
-  by 2.5).
-- The 3D charts (`BarChart3D`, `Histogram3D`, `PieChart3D`, …) keep their
-  own orthographic camera and square framing; `BubbleChart3D` is not
-  implemented.
+  by 2.5, and a unit sphere's axes by 0.5 where Woxi steps by 1 — also the
+  spacing of automatic `FaceGrids`).
+- 3D charts: the translucent backdrop panels wolframscript puts behind
+  BarChart3D and RectangleChart3D (`Scaled` polygons with `VertexColors`)
+  are not drawn; BubbleChart3D's largest bubble is a fifth of the data's
+  smallest extent (wolframscript's is up to 1% smaller) and its
+  `Specularity` highlight is brighter. BarChart3D with `ChartLabels` or
+  `ChartLegends`, PieChart3D and SectorChart3D keep Woxi's own chart
+  renderer (no axes, square framing). DensityPlot3D's volume is as listed
+  above.

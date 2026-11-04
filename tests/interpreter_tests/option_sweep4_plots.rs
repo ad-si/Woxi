@@ -342,11 +342,30 @@ mod list_plot_3d_datasets {
   /// Facets whose colour is mostly green / yellow.
   fn green_and_yellow(s: &str) -> (usize, usize) {
     let (mut green, mut yellow) = (0, 0);
-    for part in s.split("fill=\"rgb(").skip(1) {
-      let rgb: Vec<u32> = part[..part.find(')').unwrap()]
-        .split(',')
-        .map(|c| c.parse().unwrap())
-        .collect();
+    // A smoothly shaded facet is filled with a gradient: its first stop
+    // stands for its colour.
+    let stop = |id: &str| -> Option<Vec<u32>> {
+      let def = s.split(&format!("id=\"{id}\"")).nth(1)?;
+      let hex = def.split("stop-color=\"#").nth(1)?;
+      (0..3)
+        .map(|k| u32::from_str_radix(hex.get(2 * k..2 * k + 2)?, 16).ok())
+        .collect()
+    };
+    for part in s.split("<polygon ").skip(1) {
+      let tag = &part[..part.find('>').unwrap()];
+      let rgb: Vec<u32> = if let Some(rest) = tag.split("fill=\"rgb(").nth(1) {
+        rest[..rest.find(')').unwrap()]
+          .split(',')
+          .map(|c| c.parse().unwrap())
+          .collect()
+      } else if let Some(rest) = tag.split("fill=\"url(#").nth(1) {
+        match stop(&rest[..rest.find(')').unwrap()]) {
+          Some(rgb) => rgb,
+          None => continue,
+        }
+      } else {
+        continue;
+      };
       if rgb[0] < 60 && rgb[1] > 100 && rgb[2] < 60 {
         green += 1;
       } else if rgb[0] > 100 && rgb[1] > 100 && rgb[2] < 60 {
