@@ -5949,8 +5949,8 @@ fn smooth_density_surface(
 
 /// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is
 /// coloured by its height and darkened or lightened by how its slope
-/// faces the light (`LightingAngle`). The first matrix row is at the top
-/// unless `DataReversed -> True`; `DataRange` places the matrix.
+/// faces the light (`LightingAngle`). The first matrix row is at the
+/// bottom unless `DataReversed -> True`; `DataRange` places the matrix.
 pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -6019,8 +6019,9 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {}
     }
   }
-  // `parse_matrix_to_grid` puts the first matrix row at the bottom.
-  if !reversed {
+  // `parse_matrix_to_grid` puts the first matrix row at the bottom, where
+  // WL draws it too; `DataReversed -> True` moves it to the top.
+  if reversed {
     for col in &mut grid {
       col.reverse();
     }
@@ -6032,17 +6033,9 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  let orig_cols = grid.len();
-  let orig_rows = grid[0].len();
-  let grid = if orig_cols < 256 || orig_rows < 256 {
-    resample_node_grid(&grid, 256.max(orig_cols), 256.max(orig_rows))
-  } else {
-    grid
-  };
-  // Distance between neighbouring samples in units of original cells, so
-  // slopes do not depend on how finely the grid was resampled.
-  let step_x = (orig_cols.max(2) - 1) as f64 / grid.len() as f64;
-  let step_y = (orig_rows.max(2) - 1) as f64 / grid[0].len() as f64;
+  // Each matrix entry is one flat-shaded cell, as in WL's raster (no
+  // interpolation between cells); slopes are measured in cell units.
+  let (step_x, step_y) = (1.0, 1.0);
 
   let mut colors = cell_colors(
     &grid,
@@ -6051,7 +6044,6 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.cf_expr(),
     Clipping::Saturate,
   );
-  let plain = opts.color_function.is_none() && opts.cf_expr().is_none();
   if let Some(azimuth) = lighting {
     let elevation = std::f64::consts::FRAC_PI_4;
     let light = (
@@ -6089,13 +6081,23 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  if plain && lighting.is_none() {
-    for col in &mut colors {
-      for c in col.iter_mut().flatten() {
-        *c = (235, 235, 235);
-      }
-    }
-  }
+  // Upscale by pixel repetition so a viewer's image smoothing cannot blur
+  // the cell edges of a small matrix.
+  let factor = 256usize.div_ceil(colors.len().min(colors[0].len()).max(1));
+  let colors: Vec<Vec<Option<(u8, u8, u8)>>> = if factor > 1 {
+    colors
+      .iter()
+      .flat_map(|col| {
+        let col: Vec<_> = col
+          .iter()
+          .flat_map(|c| std::iter::repeat_n(*c, factor))
+          .collect();
+        std::iter::repeat_n(col, factor)
+      })
+      .collect()
+  } else {
+    colors
+  };
   embed_color_image(
     &mut svg,
     &colors,

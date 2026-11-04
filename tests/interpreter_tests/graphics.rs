@@ -45416,6 +45416,46 @@ mod plots_with_nothing_to_draw {
     assert!(ranged.contains(">-1"), "{ranged}");
   }
 
+  fn relief_plot_pixels(code: &str) -> ::image::RgbImage {
+    use base64::Engine as _;
+    let svg = export_svg(code);
+    let b64 = svg
+      .split("base64,")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap();
+    let png = base64::engine::general_purpose::STANDARD
+      .decode(b64)
+      .unwrap();
+    ::image::load_from_memory(&png).unwrap().to_rgb8()
+  }
+
+  /// Regression: ReliefPlot drew the first matrix row at the top (WL puts
+  /// it at the bottom, like `ListDensityPlot`), bilinearly blended the
+  /// cells, and turned a `LightingAngle -> None` plot flat gray instead of
+  /// colouring it by height.
+  #[test]
+  fn relief_plot_first_row_at_bottom_with_flat_cells() {
+    let m = "{{0, 0, 0, 0}, {0, 0, 0, 0}, {1, 1, 1, 1}, {1, 1, 1, 1}}";
+    let img =
+      relief_plot_pixels(&format!("ReliefPlot[{m}, LightingAngle -> None]"));
+    let (w, h) = img.dimensions();
+    let top = img.get_pixel(w / 2, 0).0;
+    let bottom = img.get_pixel(w / 2, h - 1).0;
+    let luma = |p: [u8; 3]| p.iter().map(|&c| c as u32).sum::<u32>();
+    // Height 1 (pale yellow) on top, height 0 (dark purple) at the bottom.
+    assert!(luma(top) > luma(bottom) + 300, "{top:?} vs {bottom:?}");
+    // Cells are flat: the pixel just above the middle edge is still the
+    // top colour.
+    assert_eq!(img.get_pixel(w / 2, h / 2 - 1).0, top);
+    assert_eq!(img.get_pixel(w / 2, h / 2).0, bottom);
+    // `DataReversed -> True` puts the first row on top.
+    let rev = relief_plot_pixels(&format!(
+      "ReliefPlot[{m}, LightingAngle -> None, DataReversed -> True]"
+    ));
+    assert_eq!(rev.get_pixel(w / 2, 0).0, bottom);
+  }
+
   /// `"Thermometer"` is the short spelling of `"ThermometerColors"` in a
   /// `ColorFunction` option, for every plot kind that shades by gradient.
   #[test]
