@@ -11780,6 +11780,16 @@ pub(crate) fn graph_plot3d_ast(
   );
   let mut args = vec![complex];
   args.extend(options.iter().cloned());
+  // wolframscript draws the graph without its bounding box.
+  if !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Boxed"))
+  }) {
+    args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Boxed".into())),
+      replacement: Box::new(Expr::Identifier("False".into())),
+    });
+  }
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
     "Graphics3D",
     args,

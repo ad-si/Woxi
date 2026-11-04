@@ -5549,6 +5549,7 @@ fn chart_3d_camera() -> crate::functions::plot3d::Camera {
     azimuth: -1.35, // ~-77° — only ~13° offset from a direct front view
     elevation: 0.32, // ~18°
     vertical: crate::functions::plot3d::Camera::DEFAULT_VERTICAL,
+    perspective: None,
   }
 }
 
@@ -5649,7 +5650,7 @@ struct Label3D {
 /// coloured `color(i)`) to the right of a finished chart SVG. The chart
 /// keeps its place and size while the frame widens to fit the legend, as
 /// with `PieChart`.
-fn with_chart_legend(
+pub(crate) fn with_chart_legend(
   svg: String,
   legends: &[String],
   color: impl Fn(usize) -> (u8, u8, u8),

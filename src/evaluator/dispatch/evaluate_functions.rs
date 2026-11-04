@@ -5284,7 +5284,8 @@ fn evaluate_function_call_ast_inner(
     // Options may arrive as one list of rules, which is not a position.
     let args = &crate::functions::graphics::splice_option_lists(args)[..];
     if name == "GraphPlot3D"
-      && matches!(&args[0], Expr::List(_))
+      && (matches!(&args[0], Expr::List(_))
+        || matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Graph"))
       && let Some(plot) = crate::functions::graph::graph_plot3d_ast(
         &args[0],
         &args[1..]
