@@ -956,6 +956,19 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     {
       return Some(text);
     }
+    // The FrontEnd's entity icon: `TemplateBox[{"Mars", RowBox[{"Entity",
+    // "[", …, "]"}], "Entity[…]", "planet"}, "Entity"]` shows the entity's
+    // name but stands for the `Entity[…]` expression in its second slot, so
+    // code that asks the entity for properties stays evaluable.
+    if tag == "Entity"
+      && let Some(entity) = parts.get(1).map(|p| p.trim())
+      && entity.starts_with("RowBox[")
+    {
+      let source = extract_cell_content(entity);
+      if source.starts_with("Entity[") {
+        return Some(source);
+      }
+    }
     // Fallback: first positional argument is the displayed value.
     if let Some(first_part) = parts.first() {
       return Some(extract_cell_content(first_part.trim()));
@@ -7380,6 +7393,14 @@ Cell["Chapter 2", "Chapter"]
       " image=ColorConvert[Image[{{{1, 2, 3}}}, \"Byte\", \
        ColorSpace -> \"RGB\", Interleaving -> True],\"GrayScale\"];"
     );
+  }
+
+  #[test]
+  fn test_extract_entity_template_box_keeps_entity_expression() {
+    // The FrontEnd's entity icon displays a name but stands for the
+    // `Entity[…]` in its second slot.
+    let s = r#"TemplateBox[{"\"Mars\"", RowBox[{"Entity", "[", RowBox[{"\"Planet\"", ",", "\"Mars\""}], "]"}], "\"Entity[\\\"Planet\\\", \\\"Mars\\\"]\"", "\"planet\""}, "Entity"]"#;
+    assert_eq!(extract_cell_content(s), r#"Entity["Planet","Mars"]"#);
   }
 
   #[test]
