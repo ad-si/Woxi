@@ -441,3 +441,114 @@ mod ticks {
     );
   }
 }
+
+mod plot3d_options {
+  use super::*;
+
+  fn lines_with(svg: &str, stroke: &str) -> usize {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && l.contains(stroke))
+      .count()
+  }
+
+  // The surface's edges are outlined in black by default (`BoundaryStyle
+  // -> GrayLevel[0]`); `BoundaryStyle` restyles or removes the outline.
+  #[test]
+  fn boundary_style() {
+    let plain = svg("Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> None]");
+    assert!(
+      lines_with(&plain, "stroke=\"rgb(0,0,0)\"") >= 100,
+      "{plain}"
+    );
+    let red = svg(
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> None, \
+       BoundaryStyle -> Directive[Thick, Red]]",
+    );
+    assert!(lines_with(&red, "stroke=\"rgb(255,0,0)\"") >= 100);
+    let none = svg(
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> None, \
+       BoundaryStyle -> None]",
+    );
+    assert_eq!(lines_with(&none, "stroke=\"rgb(0,0,0)\""), 0);
+  }
+
+  // `Mesh -> n` draws n lines per direction, in the `MeshStyle`.
+  #[test]
+  fn mesh_count_and_style() {
+    let s = svg(
+      "Plot3D[Cos[x] Sin[y], {x, -Pi, Pi}, {y, -Pi, Pi}, Mesh -> 5, \
+       MeshStyle -> Red, BoundaryStyle -> None]",
+    );
+    let red = lines_with(&s, "stroke=\"rgb(255,0,0)\"");
+    // Ten lines, each crossing the 50 grid cells in about 50 pieces.
+    assert!((400..=1200).contains(&red), "{red}");
+    assert_eq!(lines_with(&s, "stroke=\"#000000a0\""), 0);
+  }
+
+  // `MeshShading` paints the patches between the mesh lines.
+  #[test]
+  fn mesh_shading_checkerboard() {
+    let s = svg(
+      "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> 4, \
+       MeshShading -> {{Red, Yellow}, {Yellow, Red}}]",
+    );
+    let colours = fills(&s);
+    let reddish = colours.iter().any(|c| {
+      let v: Vec<u8> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[0] > 150 && v[1] < 60
+    });
+    let yellowish = colours.iter().any(|c| {
+      let v: Vec<u8> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[0] > 150 && v[1] > 150 && v[2] < 60
+    });
+    assert!(reddish && yellowish, "{colours:?}");
+  }
+
+  // `RegionFunction` keeps only the part of the surface it accepts, and
+  // the vertical range is that of what remains.
+  #[test]
+  fn region_function_cuts_the_surface() {
+    let s = svg(
+      "Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, \
+       RegionFunction -> (#1^2 + #2^2 <= 4 &)]",
+    );
+    assert!(s.contains(">4</text>") && !s.contains(">8</text>"), "{s}");
+  }
+
+  #[test]
+  fn mesh_functions_draw_their_contours() {
+    let rings = svg(
+      "Plot3D[Exp[-(x^2 + y^2)], {x, -2, 2}, {y, -2, 2}, \
+       MeshFunctions -> {#1^2 + #2^2 &}, Mesh -> 6, BoundaryStyle -> None]",
+    );
+    let grid = svg(
+      "Plot3D[Exp[-(x^2 + y^2)], {x, -2, 2}, {y, -2, 2}, Mesh -> 6, \
+       BoundaryStyle -> None]",
+    );
+    assert_ne!(rings, grid);
+    assert!(lines_with(&rings, "stroke=\"#000000a0\"") > 100);
+  }
+
+  #[test]
+  fn filling_hangs_a_wall_to_the_bottom() {
+    let s = svg("Plot3D[Sin[x y], {x, 0, 3}, {y, 0, 3}, Filling -> Bottom]");
+    assert!(s.contains("fill=\"rgb(178,178,178)\""), "{s}");
+    let s = svg("Plot3D[Sin[x y], {x, 0, 3}, {y, 0, 3}]");
+    assert!(!s.contains("fill=\"rgb(178,178,178)\""));
+  }
+
+  #[test]
+  fn plot_legends_expressions() {
+    let s = svg(
+      "Plot3D[{x + y, x - y}, {x, -1, 1}, {y, -1, 1}, \
+       PlotLegends -> \"Expressions\"]",
+    );
+    assert!(
+      s.contains(">x + y</text>") && s.contains(">x - y</text>"),
+      "{s}"
+    );
+  }
+}

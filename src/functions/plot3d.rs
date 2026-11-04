@@ -520,6 +520,9 @@ fn painter_order(
 
 struct MeshLine {
   projected: [(f64, f64); 2],
+  /// The SVG `stroke` colour and width; `None` is the default
+  /// translucent hairline.
+  stroke: Option<(String, f64)>,
   /// Depth of the segment's midpoint, pulled slightly towards the viewer
   /// (see [`MESH_DEPTH_BIAS`]): the renderer paints it among the surface
   /// triangles, so a line behind a hill is hidden by it.
@@ -541,8 +544,35 @@ fn mesh_segment(p0: Point3D, p1: Point3D, camera: &Camera) -> MeshLine {
   };
   MeshLine {
     projected: [project(p0, camera), project(p1, camera)],
+    stroke: None,
     depth: depth(mid, camera) - MESH_DEPTH_BIAS,
   }
+}
+
+/// A [`mesh_segment`] stroked as `style` gives it (its colour, opacity and
+/// thickness), falling back to `default` for what it leaves out.
+fn styled_mesh_segment(
+  p0: Point3D,
+  p1: Point3D,
+  camera: &Camera,
+  style: Option<&StyleState3D>,
+  default: (&str, f64),
+) -> MeshLine {
+  let mut line = mesh_segment(p0, p1, camera);
+  let color = match style.and_then(|s| s.color) {
+    Some((r, g, b)) => {
+      let a = style.map_or(1.0, |s| s.opacity);
+      if a < 1.0 {
+        format!("#{r:02x}{g:02x}{b:02x}{:02x}", (a * 255.0).round() as u8)
+      } else {
+        format!("rgb({r},{g},{b})")
+      }
+    }
+    None => default.0.to_string(),
+  };
+  let width = style.and_then(|s| s.thickness).unwrap_or(default.1);
+  line.stroke = Some((color, width));
+  line
 }
 
 /// The default mesh of a surface sampled on a `[i][j]` grid of heights
@@ -598,6 +628,95 @@ fn grid_mesh_lines(
     }
   }
   lines
+}
+
+/// A mesh line restyled as `style` asks (`MeshStyle` on the default mesh).
+fn styled_line_like(line: &MeshLine, style: &StyleState3D) -> MeshLine {
+  let color = match style.color {
+    Some((r, g, b)) if style.opacity < 1.0 => format!(
+      "#{r:02x}{g:02x}{b:02x}{:02x}",
+      (style.opacity * 255.0).round() as u8
+    ),
+    Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+    None => "#000000a0".to_string(),
+  };
+  MeshLine {
+    projected: line.projected,
+    stroke: Some((color, style.thickness.unwrap_or(0.5))),
+    depth: line.depth,
+  }
+}
+
+/// The levels one mesh function is drawn at: `Mesh -> n` asks for `n`
+/// evenly spaced across its range, a list for those values.
+#[derive(Clone)]
+enum MeshLevels {
+  Count(usize),
+  Values(Vec<f64>),
+}
+
+/// `Mesh -> n`, `{n1, n2, …}` (one count per mesh function) or
+/// `{{v11, …}, {v21, …}}` (explicit levels).
+fn parse_mesh_levels(spec: &Expr) -> Option<Vec<MeshLevels>> {
+  let spec = evaluate_expr_to_expr(spec).unwrap_or_else(|_| spec.clone());
+  let one = |e: &Expr| -> Option<MeshLevels> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => Some(MeshLevels::Count(*n as usize)),
+      Expr::List(vals) => Some(MeshLevels::Values(
+        vals
+          .iter()
+          .filter_map(|v| match v {
+            // `{v, style}` levels keep their value.
+            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      )),
+      Expr::Identifier(n) if n == "None" => {
+        Some(MeshLevels::Values(Vec::new()))
+      }
+      _ => None,
+    }
+  };
+  match &spec {
+    Expr::Integer(_) => one(&spec).map(|l| vec![l]),
+    Expr::List(items) => items.iter().map(one).collect(),
+    _ => None,
+  }
+}
+
+/// A `MeshFunctions` entry: the default coordinate functions are computed
+/// directly; anything else is applied to `(x, y, z)`.
+enum MeshFn {
+  X,
+  Y,
+  Pure(Expr),
+}
+
+impl MeshFn {
+  fn of(f: &Expr) -> MeshFn {
+    // `#1 &` and `#2 &` are the coordinates themselves.
+    if let Expr::Function { body } = f
+      && let Expr::Slot(k) = body.as_ref()
+    {
+      match k {
+        1 => return MeshFn::X,
+        2 => return MeshFn::Y,
+        _ => {}
+      }
+    }
+    MeshFn::Pure(f.clone())
+  }
+
+  fn eval(&self, p: [f64; 3]) -> f64 {
+    match self {
+      MeshFn::X => p[0],
+      MeshFn::Y => p[1],
+      MeshFn::Pure(f) => {
+        eval_mesh_function(f, p[0], p[1], p[2]).unwrap_or(f64::NAN)
+      }
+    }
+  }
 }
 
 /// A bounding-box edge segment with a depth value so it can be
@@ -987,6 +1106,22 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
+  // `Mesh -> n` (or `{n1, n2}`, or explicit levels), drawn as contours of
+  // the `MeshFunctions` (default `{#1 &, #2 &}`: lines of constant x / y).
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  let mut mesh_functions: Option<Vec<Expr>> = None;
+  let mut mesh_style: Option<StyleState3D> = None;
+  let mut mesh_shading: Option<Expr> = None;
+  let mut region_function: Option<Expr> = None;
+  // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
+  // down (or up) to.
+  let mut filling: Option<Expr> = None;
+  // `BoundaryStyle`: the outline along the surface's edges, black by
+  // default; `None` turns it off.
+  let mut boundary_style: Option<StyleState3D> = Some(StyleState3D {
+    color: Some((0, 0, 0)),
+    ..StyleState3D::default()
+  });
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -1012,8 +1147,44 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
-            _ => {}
+            other => mesh_levels = parse_mesh_levels(other),
           }
+        }
+        Expr::Identifier(name) if name == "MeshFunctions" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_functions = Some(match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          });
+        }
+        Expr::Identifier(name) if name == "MeshStyle" => {
+          mesh_style = parse_plot_style_3d(replacement, 1).into_iter().next();
+        }
+        Expr::Identifier(name) if name == "MeshShading" => {
+          mesh_shading = evaluate_expr_to_expr(replacement).ok();
+        }
+        Expr::Identifier(name) if name == "RegionFunction" => {
+          region_function = Some((**replacement).clone());
+        }
+        Expr::Identifier(name) if name == "Filling" => {
+          filling = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => None,
+            other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          boundary_style = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "None" => None,
+            other => {
+              let mut style = StyleState3D {
+                color: Some((0, 0, 0)),
+                ..StyleState3D::default()
+              };
+              apply_3d_directive(other, &mut style);
+              Some(style)
+            }
+          };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
@@ -1067,8 +1238,21 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let camera = Camera::default();
   let mut scene = Scene::new(&camera, &args[3..]);
-  let x_step = (x_max - x_min) / GRID_N as f64;
-  let y_step = (y_max - y_min) / GRID_N as f64;
+  // The sampling grid. With `Mesh -> n` lines of constant x / y and a
+  // `MeshShading`, the cells are aligned with the mesh so each one lies in
+  // a single shaded patch.
+  let grid_n = match (&mesh_levels, &mesh_functions, &mesh_shading) {
+    (Some(levels), None, Some(_)) => match levels.first() {
+      Some(MeshLevels::Count(n)) if *n > 0 => {
+        let parts = n + 1;
+        parts * (GRID_N as f64 / parts as f64).round().max(1.0) as usize
+      }
+      _ => GRID_N,
+    },
+    _ => GRID_N,
+  };
+  let x_step = (x_max - x_min) / grid_n as f64;
+  let y_step = (y_max - y_min) / grid_n as f64;
 
   // Phase 1: Sample all grids and compute global z range
   let mut grids: Vec<Vec<Vec<f64>>> = Vec::with_capacity(bodies.len());
@@ -1076,12 +1260,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut global_z_max = f64::NEG_INFINITY;
 
   for func_body in &bodies {
-    let mut grid = vec![vec![f64::NAN; GRID_N + 1]; GRID_N + 1];
+    let mut grid = vec![vec![f64::NAN; grid_n + 1]; grid_n + 1];
     let compiled =
       crate::functions::plot::PlotBody2::new(func_body, &xvar, &yvar);
-    for i in 0..=GRID_N {
+    for i in 0..=grid_n {
       let xval = x_min + i as f64 * x_step;
-      for j in 0..=GRID_N {
+      for j in 0..=grid_n {
         let yval = y_min + j as f64 * y_step;
         if let Some(z) = compiled.at(xval, yval)
           && z.is_finite()
@@ -1093,6 +1277,47 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     grids.push(grid);
+  }
+
+  // A `RegionFunction` leaves out the samples it rejects: the vertical
+  // range is that of what remains, and the default mesh skips them too.
+  let region_masks: Option<Vec<Vec<Vec<bool>>>> =
+    region_function.as_ref().map(|rf| {
+      grids
+        .iter()
+        .map(|grid| {
+          (0..=grid_n)
+            .map(|i| {
+              (0..=grid_n)
+                .map(|j| {
+                  let z = grid[i][j];
+                  z.is_finite()
+                    && crate::functions::field_plot::region_allows(
+                      rf,
+                      x_min + i as f64 * x_step,
+                      y_min + j as f64 * y_step,
+                      z,
+                    )
+                })
+                .collect()
+            })
+            .collect()
+        })
+        .collect()
+    });
+  if let Some(masks) = &region_masks {
+    global_z_min = f64::INFINITY;
+    global_z_max = f64::NEG_INFINITY;
+    for (grid, mask) in grids.iter().zip(masks) {
+      for (row, mrow) in grid.iter().zip(mask) {
+        for (&z, &keep) in row.iter().zip(mrow) {
+          if keep {
+            global_z_min = global_z_min.min(z);
+            global_z_max = global_z_max.max(z);
+          }
+        }
+      }
+    }
   }
 
   if !global_z_min.is_finite() || !global_z_max.is_finite() {
@@ -1159,7 +1384,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .enumerate()
       .map(|(surface_idx, grid)| {
         let mut index_of: Vec<Vec<Option<usize>>> =
-          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+          vec![vec![None; grid_n + 1]; grid_n + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
         for (i, row) in grid.iter().enumerate() {
           for (j, &z) in row.iter().enumerate() {
@@ -1191,8 +1416,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color_fn.is_set(),
           &scene,
         ));
-        for i in 0..GRID_N {
-          for j in 0..GRID_N {
+        for i in 0..grid_n {
+          for j in 0..grid_n {
             let (Some(a), Some(b), Some(c), Some(d)) = (
               index_of[i][j],
               index_of[i + 1][j],
@@ -1247,13 +1472,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               ));
             }
           };
-          for j in (0..=GRID_N).step_by(MESH_STEP) {
-            for i in 0..GRID_N {
+          for j in (0..=grid_n).step_by(MESH_STEP) {
+            for i in 0..grid_n {
               push_segment(index_of[i][j], index_of[i + 1][j]);
             }
           }
-          for i in (0..=GRID_N).step_by(MESH_STEP) {
-            for j in 0..GRID_N {
+          for i in (0..=grid_n).step_by(MESH_STEP) {
+            for j in 0..grid_n {
               push_segment(index_of[i][j], index_of[i][j + 1]);
             }
           }
@@ -1342,122 +1567,301 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graphics3D", structure_args)
   };
 
+  let nx = |x: f64| -> f64 { (x - x_min) / (x_max - x_min) * 2.0 - 1.0 };
+  let ny = |y: f64| -> f64 { (y - y_min) / (y_max - y_min) * 2.0 - 1.0 };
+  let nz = |z: f64| -> f64 {
+    ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+  };
+  let to_box = |p: [f64; 3]| Point3D {
+    x: nx(p[0]),
+    y: ny(p[1]),
+    z: nz(p[2]),
+  };
+  let grid_x = |i: usize| x_min + i as f64 * x_step;
+  let grid_y = |j: usize| y_min + j as f64 * y_step;
+  // The mesh functions, evaluated at a point of the surface.
+  let mesh_fns: Vec<MeshFn> = match &mesh_functions {
+    Some(fs) => fs.iter().map(MeshFn::of).collect(),
+    None => vec![MeshFn::X, MeshFn::Y],
+  };
+  // Explicit mesh levels for each mesh function, from `Mesh -> n` / lists;
+  // `MeshFunctions` without a `Mesh` count draws 15 levels of each.
+  let explicit_mesh = mesh_levels.is_some() || mesh_functions.is_some();
+  let mut boundary_segments: Vec<[[f64; 3]; 2]> = Vec::new();
+  // The pieces of the domain's outer edge the surface runs along.
+  let mut edge_segments: Vec<[[f64; 3]; 2]> = Vec::new();
+  let mut contour_segments: Vec<[[f64; 3]; 2]> = Vec::new();
+
   for (surface_idx, grid) in grids.iter().enumerate() {
-    for i in 0..GRID_N {
-      for j in 0..GRID_N {
-        let z00 = grid[i][j];
-        let z10 = grid[i + 1][j];
-        let z01 = grid[i][j + 1];
-        let z11 = grid[i + 1][j + 1];
-        let cell_style = cell_color_style(grid, i, j);
-
-        let nx = |ii: usize| -> f64 { (ii as f64 / GRID_N as f64) * 2.0 - 1.0 };
-        let ny = |jj: usize| -> f64 { (jj as f64 / GRID_N as f64) * 2.0 - 1.0 };
-        let nz =
-          |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
-
-        // Triangle 1: (i,j), (i+1,j), (i,j+1)
-        if z00.is_finite() && z10.is_finite() && z01.is_finite() {
-          let cz00 = z00.clamp(z_lo, z_hi);
-          let cz10 = z10.clamp(z_lo, z_hi);
-          let cz01 = z01.clamp(z_lo, z_hi);
-
-          let v0 = Point3D {
-            x: nx(i),
-            y: ny(j),
-            z: nz(cz00),
-          };
-          let v1 = Point3D {
-            x: nx(i + 1),
-            y: ny(j),
-            z: nz(cz10),
-          };
-          let v2 = Point3D {
-            x: nx(i),
-            y: ny(j + 1),
-            z: nz(cz01),
-          };
-
-          let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(surface_idx),
-            cell_style.as_ref(),
-            plot_style_for_surface(&plot_styles, surface_idx),
-            normal,
-            tri_center(v0, v1, v2),
-            &scene,
-          );
-
-          let p0 = project(v0, &camera);
-          let p1 = project(v1, &camera);
-          let p2 = project(v2, &camera);
-          let center = Point3D {
-            x: (v0.x + v1.x + v2.x) / 3.0,
-            y: (v0.y + v1.y + v2.y) / 3.0,
-            z: (v0.z + v1.z + v2.z) / 3.0,
-          };
-
-          all_triangles.push(Triangle {
-            boundary: [true; 3],
-            edge_color: None,
-            edge_width: None,
-            projected: [p0, p1, p2],
-            depth: depth(center, &camera),
-            color,
-            opacity,
-            texture: None,
+    let compiled =
+      crate::functions::plot::PlotBody2::new(bodies[surface_idx], &xvar, &yvar);
+    // The surface point over (x, y), or `None` where it is undefined.
+    let surface_at = |x: f64, y: f64| -> Option<[f64; 3]> {
+      compiled
+        .at(x, y)
+        .filter(|z| z.is_finite())
+        .map(|z| [x, y, z])
+    };
+    let inside = |p: &[f64; 3]| {
+      region_function.as_ref().is_none_or(|rf| {
+        crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+      })
+    };
+    let vertex = |i: usize, j: usize| -> Option<[f64; 3]> {
+      let z = grid[i][j];
+      z.is_finite().then(|| [grid_x(i), grid_y(j), z])
+    };
+    let mask: Vec<Vec<bool>> = match &region_masks {
+      Some(masks) => masks[surface_idx].clone(),
+      None => (0..=grid_n)
+        .map(|i| (0..=grid_n).map(|j| vertex(i, j).is_some()).collect())
+        .collect(),
+    };
+    // Mesh function values at the grid vertices.
+    let mesh_values: Vec<Vec<Vec<f64>>> = mesh_fns
+      .iter()
+      .map(|f| {
+        (0..=grid_n)
+          .map(|i| {
+            (0..=grid_n)
+              .map(|j| vertex(i, j).map_or(f64::NAN, |p| f.eval(p)))
+              .collect()
+          })
+          .collect()
+      })
+      .collect();
+    // The levels each mesh function is drawn at.
+    let levels: Vec<Vec<f64>> = mesh_fns
+      .iter()
+      .enumerate()
+      .map(|(k, _)| {
+        let (lo, hi) = mesh_values[k]
+          .iter()
+          .flatten()
+          .filter(|v| v.is_finite())
+          .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+            (a.min(v), b.max(v))
           });
+        let spec = match &mesh_levels {
+          Some(specs) => specs
+            .get(k)
+            .or_else(|| specs.first().filter(|_| specs.len() == 1))
+            .cloned(),
+          None => Some(MeshLevels::Count(15)),
+        };
+        match spec {
+          Some(MeshLevels::Count(n)) if hi > lo => (1..=n)
+            .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+            .collect(),
+          Some(MeshLevels::Values(v)) => v,
+          _ => Vec::new(),
         }
+      })
+      .collect();
 
-        // Triangle 2: (i+1,j+1), (i,j+1), (i+1,j)
-        if z11.is_finite() && z01.is_finite() && z10.is_finite() {
-          let cz11 = z11.clamp(z_lo, z_hi);
-          let cz01 = z01.clamp(z_lo, z_hi);
-          let cz10 = z10.clamp(z_lo, z_hi);
+    // Emits one (world-coordinate) triangle of the surface.
+    let push_triangle =
+      |tri: [[f64; 3]; 3], all_triangles: &mut Vec<Triangle>| {
+        let centre =
+          [0, 1, 2].map(|d| (tri[0][d] + tri[1][d] + tri[2][d]) / 3.0);
+        // `MeshShading` colours each patch between mesh lines by its
+        // index along every mesh function.
+        let mut shading_style: Option<StyleState3D> = None;
+        if let Some(shading) = &mesh_shading {
+          let index: Vec<usize> = mesh_fns
+            .iter()
+            .zip(&levels)
+            .map(|(f, lv)| {
+              let v = f.eval(centre);
+              lv.iter().filter(|l| **l <= v).count()
+            })
+            .collect();
+          let mut entry = shading.clone();
+          for &k in &index {
+            entry = match &entry {
+              Expr::List(items) if !items.is_empty() => {
+                items[k % items.len()].clone()
+              }
+              other => other.clone(),
+            };
+          }
+          if matches!(&entry, Expr::Identifier(n) if n == "None") {
+            return;
+          }
+          let mut style = StyleState3D::default();
+          if apply_3d_directive(&entry, &mut style) {
+            shading_style = Some(style);
+          }
+        }
+        let [v0, v1, v2] = tri.map(to_box);
+        let normal = triangle_normal(v0, v1, v2);
+        let cell_style = if color_fn.is_set() {
+          color_fn
+            .style_at(centre, [(x_min, x_max), (y_min, y_max), (z_lo, z_hi)])
+        } else {
+          None
+        };
+        let (color, opacity) = shade_facet(
+          SurfaceDefault::Theme(surface_idx),
+          cell_style.as_ref().or(shading_style.as_ref()),
+          plot_style_for_surface(&plot_styles, surface_idx),
+          normal,
+          tri_center(v0, v1, v2),
+          &scene,
+        );
+        all_triangles.push(Triangle {
+          boundary: [true; 3],
+          edge_color: None,
+          edge_width: None,
+          projected: [v0, v1, v2].map(|v| project(v, &camera)),
+          depth: depth(tri_center(v0, v1, v2), &camera),
+          color,
+          opacity,
+          texture: None,
+        });
+      };
 
-          let v0 = Point3D {
-            x: nx(i + 1),
-            y: ny(j + 1),
-            z: nz(cz11),
+    for i in 0..grid_n {
+      for j in 0..grid_n {
+        for corners in [
+          [(i, j), (i + 1, j), (i, j + 1)],
+          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+        ] {
+          let Some(pts) = corners
+            .iter()
+            .map(|&(a, b)| vertex(a, b))
+            .collect::<Option<Vec<_>>>()
+          else {
+            continue;
           };
-          let v1 = Point3D {
-            x: nx(i),
-            y: ny(j + 1),
-            z: nz(cz01),
-          };
-          let v2 = Point3D {
-            x: nx(i + 1),
-            y: ny(j),
-            z: nz(cz10),
-          };
+          let tri = [pts[0], pts[1], pts[2]];
+          let ins = corners.map(|(a, b)| mask[a][b]);
+          if ins.iter().all(|b| *b) {
+            push_triangle(tri, &mut all_triangles);
+          } else if ins.iter().any(|b| *b) {
+            // Cut along the region's edge: each edge with one end inside
+            // and one outside crosses it where bisection finds it.
+            let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
+              let (mut lo, mut hi) = (a, b); // lo inside, hi outside
+              for _ in 0..12 {
+                let mx = f64::midpoint(lo[0], hi[0]);
+                let my = f64::midpoint(lo[1], hi[1]);
+                match surface_at(mx, my) {
+                  Some(m) if inside(&m) => lo = m,
+                  Some(m) => hi = m,
+                  None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
+                }
+              }
+              lo
+            };
+            let mut poly: Vec<[f64; 3]> = Vec::new();
+            let mut cut: Vec<[f64; 3]> = Vec::new();
+            for e in 0..3 {
+              let (a, b) = (tri[e], tri[(e + 1) % 3]);
+              let (ia, ib) = (ins[e], ins[(e + 1) % 3]);
+              if ia {
+                poly.push(a);
+              }
+              if ia != ib {
+                let c = if ia { cross(a, b) } else { cross(b, a) };
+                poly.push(c);
+                cut.push(c);
+              }
+            }
+            for k in 1..poly.len().saturating_sub(1) {
+              push_triangle(
+                [poly[0], poly[k], poly[k + 1]],
+                &mut all_triangles,
+              );
+            }
+            if cut.len() == 2 {
+              boundary_segments.push([cut[0], cut[1]]);
+            }
+          }
+          // Mesh contours through this triangle (marching triangles).
+          if explicit_mesh
+            && mesh_mode != MeshMode::None
+            && ins.iter().all(|b| *b)
+          {
+            for (k, lv) in levels.iter().enumerate() {
+              let vals = corners.map(|(a, b)| mesh_values[k][a][b]);
+              if vals.iter().any(|v| !v.is_finite()) {
+                continue;
+              }
+              for &level in lv {
+                let above = vals.map(|v| v >= level);
+                let mut ends: Vec<[f64; 3]> = Vec::new();
+                for e in 0..3 {
+                  let (a, b) = (e, (e + 1) % 3);
+                  if above[a] != above[b] {
+                    let t = (level - vals[a]) / (vals[b] - vals[a]);
+                    ends.push(
+                      [0, 1, 2]
+                        .map(|d| tri[a][d] + t * (tri[b][d] - tri[a][d])),
+                    );
+                  }
+                }
+                if ends.len() == 2 {
+                  let len = ((ends[0][0] - ends[1][0]).powi(2)
+                    + (ends[0][1] - ends[1][1]).powi(2))
+                  .sqrt();
+                  if len > 0.0 {
+                    contour_segments.push([ends[0], ends[1]]);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    // The outline along the domain's edges.
+    if boundary_style.is_some() || filling.is_some() {
+      for k in 0..grid_n {
+        for (a, b) in [
+          ((k, 0), (k + 1, 0)),
+          ((k, grid_n), (k + 1, grid_n)),
+          ((0, k), (0, k + 1)),
+          ((grid_n, k), (grid_n, k + 1)),
+        ] {
+          if mask[a.0][a.1]
+            && mask[b.0][b.1]
+            && let (Some(p), Some(q)) = (vertex(a.0, a.1), vertex(b.0, b.1))
+          {
+            boundary_segments.push([p, q]);
+            edge_segments.push([p, q]);
+          }
+        }
+      }
+    }
+  }
 
-          let normal = triangle_normal(v0, v1, v2);
-          let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(surface_idx),
-            cell_style.as_ref(),
-            plot_style_for_surface(&plot_styles, surface_idx),
-            normal,
-            tri_center(v0, v1, v2),
-            &scene,
-          );
-
-          let p0 = project(v0, &camera);
-          let p1 = project(v1, &camera);
-          let p2 = project(v2, &camera);
-          let center = Point3D {
-            x: (v0.x + v1.x + v2.x) / 3.0,
-            y: (v0.y + v1.y + v2.y) / 3.0,
-            z: (v0.z + v1.z + v2.z) / 3.0,
-          };
-
+  // `Filling` hangs a translucent grey wall from the surface's outer edge
+  // down (or up) to the filling height.
+  if let Some(spec) = &filling {
+    let to = match spec {
+      Expr::Identifier(n) if n == "Bottom" => Some(z_lo),
+      Expr::Identifier(n) if n == "Top" => Some(z_hi),
+      Expr::Identifier(n) if n == "Axis" => Some(0.0),
+      other => try_eval_to_f64(other),
+    };
+    if let Some(to) = to {
+      let to = to.clamp(z_lo, z_hi);
+      for [a, b] in &edge_segments {
+        let quad = [*a, *b, [b[0], b[1], to], [a[0], a[1], to]];
+        for tri in [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]] {
+          let [v0, v1, v2] = tri.map(to_box);
           all_triangles.push(Triangle {
-            boundary: [true; 3],
+            boundary: [false; 3],
             edge_color: None,
             edge_width: None,
-            projected: [p0, p1, p2],
-            depth: depth(center, &camera),
-            color,
-            opacity,
+            projected: [v0, v1, v2].map(|v| project(v, &camera)),
+            depth: depth(tri_center(v0, v1, v2), &camera),
+            // Wolfram's `FillingStyle -> Opacity[0.5]` grey, flattened onto
+            // the white page: neighbouring translucent pieces would leave
+            // seams where their edges overlap.
+            color: (178, 178, 178),
+            opacity: 1.0,
             texture: None,
           });
         }
@@ -1473,10 +1877,56 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Generate mesh lines from each surface grid
   let mut all_mesh_lines: Vec<MeshLine> = Vec::new();
-  for grid in &grids {
-    all_mesh_lines.extend(generate_mesh_lines(
-      grid, GRID_N, z_lo, z_hi, z_range, mesh_mode, &camera,
+  if !explicit_mesh {
+    for (surface_idx, grid) in grids.iter().enumerate() {
+      let masked;
+      let grid = match &region_masks {
+        Some(masks) => {
+          masked = grid
+            .iter()
+            .zip(&masks[surface_idx])
+            .map(|(row, m)| {
+              row
+                .iter()
+                .zip(m)
+                .map(|(&z, &keep)| if keep { z } else { f64::NAN })
+                .collect::<Vec<f64>>()
+            })
+            .collect::<Vec<_>>();
+          &masked
+        }
+        None => grid,
+      };
+      let mut lines = generate_mesh_lines(
+        grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera,
+      );
+      if let Some(style) = &mesh_style {
+        for line in &mut lines {
+          *line = styled_line_like(line, style);
+        }
+      }
+      all_mesh_lines.extend(lines);
+    }
+  }
+  for [a, b] in &contour_segments {
+    all_mesh_lines.push(styled_mesh_segment(
+      to_box(*a),
+      to_box(*b),
+      &camera,
+      mesh_style.as_ref(),
+      ("#000000a0", 0.5),
     ));
+  }
+  if let Some(style) = &boundary_style {
+    for [a, b] in &boundary_segments {
+      all_mesh_lines.push(styled_mesh_segment(
+        to_box(*a),
+        to_box(*b),
+        &camera,
+        Some(style),
+        ("rgb(0,0,0)", 0.75),
+      ));
+    }
   }
 
   // Finalize z range for axis labels
@@ -1512,6 +1962,38 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
+  // `PlotLegends` sets a swatch per surface to the right of the picture.
+  let svg = match args[3..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLegends") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) {
+    Some(spec) => {
+      let (mut labels, automatic, expressions, _) =
+        crate::functions::plot::parse_plot_legends(spec);
+      if expressions || (automatic && labels.is_empty()) {
+        labels = bodies
+          .iter()
+          .map(|b| crate::syntax::expr_to_string(b))
+          .collect();
+      }
+      labels.truncate(bodies.len());
+      crate::functions::chart::with_chart_legend(svg, &labels, |i| {
+        plot_style_for_surface(&plot_styles, i)
+          .and_then(|s| s.color)
+          .unwrap_or_else(|| {
+            let c = crate::functions::lighting3d::theme_surface(i).0;
+            let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+            (q(c[0]), q(c[1]), q(c[2]))
+          })
+      })
+    }
+    None => svg,
+  };
 
   Ok(crate::plot3d_result_with_structure(svg, structure))
 }
@@ -1689,8 +2171,12 @@ fn generate_svg(
   let mesh_svg = |line: &MeshLine| {
     let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
     let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
+    let (stroke, width) = line
+      .stroke
+      .as_ref()
+      .map_or(("#000000a0", 0.5), |(c, w)| (c.as_str(), *w));
     format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"#000000a0\" stroke-width=\"0.5\"/>\n"
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"{stroke}\" stroke-width=\"{width}\" stroke-linecap=\"round\"/>\n"
     )
   };
 
