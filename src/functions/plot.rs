@@ -4590,6 +4590,94 @@ fn explicit_ticks_in_axis_space(
 /// `area` is the plotting area as `(x0, y0, width, height)` in render-space
 /// pixels and `ranges` the data extents it displays, as `(x_min, x_max,
 /// y_min, y_max)`.
+/// Inset the `PlotMarkers -> Graphics[…]` markers at the data points of a
+/// finished plot, as WL's `Inset[g, pt, Automatic, Scaled[s]]`: the
+/// picture keeps its aspect ratio inside a box of `s` times the plot
+/// area's width and height (a named size is that many points square, no
+/// size the inset's natural 180 pt), drawn in the series colour.
+/// `area` is the plot region in render pixels (left, top, width, height).
+fn inject_graphics_markers(
+  buf: &mut String,
+  opts: &PlotOptions,
+  all_points: &[Vec<(f64, f64)>],
+  area: (f64, f64, f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+) {
+  let (x0, y0, w, h) = area;
+  let sf = RESOLUTION_SCALE as f64;
+  let mut out = String::new();
+  for (idx, series_points) in all_points.iter().enumerate() {
+    let Some(marker) = series_marker(&opts.plot_markers, idx) else {
+      continue;
+    };
+    let Some(graphic) = marker.graphics.as_deref() else {
+      continue;
+    };
+    let (r, g, b) = marker
+      .color
+      .unwrap_or_else(|| series_color(&opts.plot_style, idx));
+    // The series style (its colour and 2 pt lines) is the inset's default
+    // style; `thickness` is in the inset's own points.
+    let styled = |thickness: Option<f64>| match graphic {
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        let mut args = args.clone();
+        let mut content = vec![call(
+          "RGBColor",
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
+          ],
+        )];
+        if let Some(t) = thickness {
+          content.push(call1("AbsoluteThickness", Expr::Real(t)));
+        }
+        content.push(args[0].clone());
+        args[0] = Expr::List(content.into());
+        Expr::FunctionCall {
+          name: name.clone(),
+          args,
+        }
+      }
+      other => other.clone(),
+    };
+    let (box_w, box_h) = match marker.size {
+      s if s > 0.0 => (s * w, s * h),
+      s if s < 0.0 => (-s * sf, -s * sf),
+      _ => (180.0 * sf, 180.0 * sf),
+    };
+    // Lines keep their absolute 2 pt however far the inset is scaled.
+    let natural = crate::evaluator::expr_to_svg(&styled(None));
+    let svg = match crate::functions::graphics::svg_natural_size(&natural) {
+      Some((nw, nh)) if nw > 0.0 && nh > 0.0 => {
+        let k = (box_w / (nw * sf)).min(box_h / (nh * sf));
+        crate::evaluator::expr_to_svg(&styled(Some(2.0 / k)))
+      }
+      _ => natural,
+    };
+    let points = opts.data_points.get(idx).unwrap_or(series_points);
+    for &(x, y) in points {
+      // As with the dots, a marker beyond the plot range is clipped away.
+      let inside = |v: f64, lo: f64, hi: f64| {
+        v.is_finite() && v >= lo.min(hi) && v <= lo.max(hi)
+      };
+      if !inside(x, x_min, x_max) || !inside(y, y_min, y_max) {
+        continue;
+      }
+      let px = x0 + (x - x_min) / (x_max - x_min) * w;
+      let py = y0 + (y_max - y) / (y_max - y_min) * h;
+      out.push_str(&crate::functions::graphics::embed_svg_centered(
+        &svg, px, py, box_w, box_h,
+      ));
+    }
+  }
+  if !out.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    buf.insert_str(pos, &out);
+  }
+}
+
 fn inject_epilog(
   buf: &mut String,
   opts: &PlotOptions,
@@ -6359,6 +6447,13 @@ fn generate_svg_with_options(
       - x_label_area as f64,
   );
   inject_prolog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
+  inject_graphics_markers(
+    &mut buf,
+    opts,
+    all_points,
+    plot_area,
+    (x_min, x_max, y_min, y_max),
+  );
   inject_epilog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
 
   // Inject label SVG elements before </svg>
@@ -12154,8 +12249,8 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
 }
 
 /// The font size a `PlotMarkers` glyph is drawn at when the marker spec
-/// names none — the default graphics font size the Wolfram Language uses.
-const DEFAULT_MARKER_SIZE: f64 = 12.0;
+/// names none, as wolframscript's SVGs draw it.
+const DEFAULT_MARKER_SIZE: f64 = 10.0;
 
 /// The shapes `PlotMarkers -> "OpenMarkers"` cycles over the series (in WL
 /// 15's order): white-filled outlines rather than the default filled dot,
@@ -12243,6 +12338,65 @@ fn automatic_marker_shape(
   })
 }
 
+/// The outline of a geometric text glyph marker (`PlotMarkers -> "●"`) as
+/// WL's font draws it: points around the data point (y down), measured at
+/// font size 10 from wolframscript's SVG glyphs and scaled to `size`, and
+/// the outline's stroke width for the empty shapes (`None` = filled).
+fn glyph_marker_outline(
+  glyph: &str,
+  size: f64,
+) -> Option<(GlyphOutline, Option<f64>)> {
+  let k = size / 10.0;
+  let circle = |r: f64, cy: f64| GlyphOutline::Circle {
+    r: r * k,
+    cy: cy * k,
+  };
+  let poly = |pts: &[(f64, f64)]| {
+    GlyphOutline::Polygon(pts.iter().map(|&(x, y)| (x * k, y * k)).collect())
+  };
+  let rect = |hw: f64, hh: f64, cy: f64| {
+    poly(&[(-hw, cy - hh), (hw, cy - hh), (hw, cy + hh), (-hw, cy + hh)])
+  };
+  let diamond = |hw: f64, hh: f64, cy: f64| {
+    poly(&[(0.0, cy - hh), (hw, cy), (0.0, cy + hh), (-hw, cy)])
+  };
+  Some(match glyph {
+    "●" => (circle(3.17, 0.63), None),
+    "\u{F750}" => (circle(1.98, 0.635), None),
+    "○" => (circle(2.96, 0.53), Some(0.42 * k)),
+    "■" => (rect(2.155, 2.155, -0.28), None),
+    "◼" => (rect(1.975, 1.975, 0.635), None),
+    "□" => (rect(1.87, 1.87, -0.28), Some(0.565 * k)),
+    "◆" => (diamond(3.32, 2.935, 0.735), None),
+    "◇" => (diamond(2.45, 2.64, 0.735), Some(0.55 * k)),
+    "▲" => (poly(&[(0.0, -2.01), (2.75, 3.47), (-2.75, 3.47)]), None),
+    "▼" => (poly(&[(0.0, 3.47), (2.75, -2.01), (-2.75, -2.01)]), None),
+    "△" => (
+      poly(&[(0.0, -1.545), (2.395, 3.25), (-2.395, 3.25)]),
+      Some(0.44 * k),
+    ),
+    "▽" => (
+      poly(&[(0.0, 3.005), (2.395, -1.79), (-2.395, -1.79)]),
+      Some(0.44 * k),
+    ),
+    _ => return None,
+  })
+}
+
+/// A shape [`glyph_marker_outline`] draws, in points around the data point
+/// (y down).
+enum GlyphOutline {
+  Circle { r: f64, cy: f64 },
+  Polygon(Vec<(f64, f64)>),
+}
+
+/// The baseline of a text marker lies this many font sizes below its data
+/// point (WL centres the glyph's line box on the point).
+const TEXT_MARKER_BASELINE: f64 = 0.347;
+
+/// Plotters writes a font size `s` into the SVG as `s / 1.24`.
+const PLOTTERS_FONT_SCALE: f64 = 1.24;
+
 /// Draw the `PlotMarkers` glyph `marker` at each of `points`, centred on
 /// the point: text at the marker's size, or for an `"OpenMarkers"` shape a
 /// white-filled outline stroked 1.5 pt wide in `rgb` (the series colour).
@@ -12259,6 +12413,11 @@ where
   let err = |e: plotters::drawing::DrawingAreaErrorKind<DB::ErrorType>| {
     InterpreterError::EvaluationError(format!("Plot: {e}"))
   };
+  // A `Graphics` marker is inset into the finished SVG
+  // (`inject_graphics_markers`).
+  if marker.graphics.is_some() {
+    return Ok(());
+  }
   let (mr, mg, mb) = marker.color.unwrap_or(rgb);
   let color = RGBColor(mr, mg, mb);
   if marker.automatic
@@ -12336,16 +12495,66 @@ where
     }
     return Ok(());
   }
-  let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+  let scale = RESOLUTION_SCALE as f64;
+  let px = |v: f64| (v * scale).round() as i32;
+  if let Some((outline, stroke)) =
+    glyph_marker_outline(&marker.glyph, marker.size)
+  {
+    let style = match stroke {
+      Some(w) => color.stroke_width((w * scale).round().max(1.0) as u32),
+      None => color.filled(),
+    };
+    match outline {
+      GlyphOutline::Circle { r, cy } => {
+        chart
+          .draw_series(points.iter().map(|&p| {
+            EmptyElement::at(p) + Circle::new((0, px(cy)), px(r), style)
+          }))
+          .map_err(err)?;
+      }
+      GlyphOutline::Polygon(pts) => {
+        let pts: Vec<(i32, i32)> =
+          pts.iter().map(|&(x, y)| (px(x), px(y))).collect();
+        if stroke.is_some() {
+          let mut closed = pts.clone();
+          closed.push(pts[0]);
+          chart
+            .draw_series(points.iter().map(|&p| {
+              EmptyElement::at(p) + PathElement::new(closed.clone(), style)
+            }))
+            .map_err(err)?;
+        } else {
+          chart
+            .draw_series(
+              points.iter().map(|&p| {
+                EmptyElement::at(p) + Polygon::new(pts.clone(), style)
+              }),
+            )
+            .map_err(err)?;
+        }
+      }
+    }
+    return Ok(());
+  }
+  // Any other text sits horizontally centred with its baseline
+  // `TEXT_MARKER_BASELINE` sizes below the point; plotters' `VPos::Top`
+  // puts the baseline 0.76 em below the anchor.
+  let style = ("sans-serif", marker.size * scale * PLOTTERS_FONT_SCALE)
     .into_font()
     .color(&color)
     .pos(plotters::style::text_anchor::Pos::new(
       plotters::style::text_anchor::HPos::Center,
-      plotters::style::text_anchor::VPos::Center,
+      plotters::style::text_anchor::VPos::Top,
     ));
+  let dy = px((TEXT_MARKER_BASELINE - 0.76) * marker.size);
   chart
     .draw_series(points.iter().map(|&p| {
-      plotters::element::Text::new(marker.glyph.clone(), p, style.clone())
+      EmptyElement::at(p)
+        + plotters::element::Text::new(
+          marker.glyph.clone(),
+          (0, dy),
+          style.clone(),
+        )
     }))
     .map_err(err)?;
   Ok(())
@@ -12364,6 +12573,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
       color: None,
       open: false,
       automatic: false,
+      graphics: None,
     }),
     // `Row[{a, b, …}]` — the pieces laid side by side as one text glyph,
     // e.g. a number followed by its unit.
@@ -12388,6 +12598,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         color: None,
         open: false,
         automatic: false,
+        graphics: None,
       })
     }
     // `Style[marker, directives…]` — a colour and/or a font size.
@@ -12414,12 +12625,33 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
       }
       Some(marker)
     }
-    // `{marker, size}` — the size is always the second element.
+    // `{marker, size}` — the size is always the second element. A
+    // `Graphics` marker's numeric size is a fraction of the plot area and
+    // its named size (like a glyph's) is in points.
     Expr::List(items) if items.len() == 2 => {
-      let size = try_eval_to_f64(&items[1])?;
       let mut marker = parse_one_marker(&items[0])?;
-      marker.size = size;
+      let named = match &items[1] {
+        Expr::Identifier(name) => named_marker_size(name),
+        _ => None,
+      };
+      marker.size = match (named, marker.graphics.is_some()) {
+        (Some(points), true) => -points,
+        (Some(points), false) => points,
+        (None, _) => try_eval_to_f64(&items[1])?,
+      };
       Some(marker)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      Some(PlotMarker {
+        glyph: String::new(),
+        size: 0.0,
+        color: None,
+        open: false,
+        automatic: false,
+        graphics: Some(Box::new(val.clone())),
+      })
     }
     _ => None,
   }
@@ -12445,6 +12677,7 @@ pub(crate) fn parse_plot_markers(
           color: None,
           open: true,
           automatic: false,
+          graphics: None,
         })
       })
       .collect();
@@ -12474,6 +12707,7 @@ pub(crate) fn parse_plot_markers(
           color: None,
           open: false,
           automatic: true,
+          graphics: None,
         })
       })
       .collect();

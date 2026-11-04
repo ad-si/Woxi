@@ -14041,6 +14041,51 @@ mod plot3d {
       );
     }
 
+    // `PlotMarkers -> {Graphics[…], s}` insets the picture at every point
+    // (WL's `Inset[g, pt, Automatic, Scaled[s]]`) in the series colour.
+    #[test]
+    fn list_plot_graphics_markers_are_inset() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotMarkers -> \
+         {{Graphics[Disk[]], 0.1}, {Graphics[Circle[]], 0.1}}]",
+      );
+      // One nested picture per point, no default dots.
+      assert_eq!(svg.matches("<svg x=").count(), 6);
+      assert_eq!(svg.matches("<circle").count(), 0);
+      // 0.1 of the plot area across (about 340 pt wide, 10x render scale).
+      let width: f64 = svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("width=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap();
+      assert!(width > 250.0 && width < 400.0, "{width}");
+    }
+
+    // Geometric glyph markers are drawn as WL's font draws them: `●` at the
+    // default size 10 is a 3.17 pt disk just below the point (it used to
+    // be a small sans-serif glyph above it).
+    #[test]
+    fn list_plot_glyph_marker_is_wolfram_sized_disk() {
+      let svg =
+        export_svg("ListPlot[{1, 2, 3}, PlotMarkers -> \"\\[FilledCircle]\"]");
+      assert!(!svg.contains(">●<"));
+      assert_eq!(svg.matches("r=\"32\"").count(), 3, "{svg}");
+    }
+
+    // Other text markers keep their font size (10 by default).
+    #[test]
+    fn list_plot_text_marker_font_size() {
+      let svg = export_svg("ListPlot[{1, 2, 3}, PlotMarkers -> \"x\"]");
+      let text = svg
+        .split("<text")
+        .find(|s| s.contains("fill=\"#3D99CC\""))
+        .expect("marker text");
+      assert!(text.contains("font-size=\"100\""), "{text}");
+      assert!(text.trim_start_matches(|c| c != '>').contains('x'));
+    }
+
     // `ListPlot[{2 -> "a", …}]`: each `datum -> label` entry is a callout
     // (it used to give an empty 0..1 frame).
     #[test]

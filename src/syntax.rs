@@ -193,7 +193,7 @@ pub enum SeriesFilling {
 
 /// The glyph a series' points are drawn with (`PlotMarkers`). Lives here
 /// so `Show` can carry it across a merge, like [`SeriesFilling`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PlotMarker {
   /// The character(s) drawn at every data point.
   pub glyph: String,
@@ -208,6 +208,11 @@ pub struct PlotMarker {
   /// `●■◆▲▼`, outlined `○□◇△▽`), drawn as a shape rather than as text.
   /// `size` is then the marker size in points (0 = WL's default).
   pub automatic: bool,
+  /// A `Graphics[…]` marker, inset at every point (in the series colour
+  /// unless it sets its own). `size` is then a fraction of the plot area
+  /// (`{g, s}`, WL's `Scaled[s]`), minus an absolute size in points (a
+  /// named size), or 0 for the inset's natural size.
+  pub graphics: Option<Box<Expr>>,
 }
 
 /// A single data series within a plot.
