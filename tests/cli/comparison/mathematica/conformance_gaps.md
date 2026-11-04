@@ -8378,3 +8378,29 @@ embedding coordinates were not compared against `wolframscript`.
 Woxi draws each channel `v` as `s·Poisson(v/s)` (mean preserved, variance
 `s·v`). The exact meaning of Wolfram's amount parameter could not be checked
 against `wolframscript`, so the noise magnitude may differ.
+
+## List plots (graphics comparison sweep, 2026-11)
+
+- `MaxPlotPoints -> m` on list data (`ListPlot`, joined or not) is ignored.
+  wolframscript keeps exactly `m` of the original points, chosen by index
+  only (the y values do not matter: `Range[10]` and `{0,0,0,5,0,…}` give the
+  same subset). For `m ≥ n/2` it keeps the first `2m − n` points and then
+  every second one to the end. Smaller `m` follows a rule not decoded yet:
+  `n = 10`: `m = 5 → {1,3,6,9,10}`, `4 → {1,3,6,10}`, `3 → {1,4,10}`;
+  `n = 20`: `m = 10 → {1,2,3,4,6,9,12,15,18,20}`.
+- `LabelingSize -> 30` drops every text label in wolframscript
+  (`ListPlot[{1,1,2,3,5,8} -> {"healthfulness", …, "limey"}]`), while Woxi
+  keeps the ones narrower than 30 pt ("limey"); WL's measure of the size is
+  not known.
+- `Labeled[pt, label, Above]` etc.: the labels sit where wolframscript puts
+  them, but wolframscript pads the image further (its y axis runs to 1.0
+  for points up to 0.8; the `PlotRange` itself stays `{0, 0.8}`).
+- `ListVectorPlot` resamples the interpolated data on `VectorPlot`'s regular
+  grid; wolframscript places its arrows on an irregular (jittered) layout
+  (295 arrows for both an 11 × 11 array and 16 scattered points).
+- Not investigated in this round: `ListContourPlot` of scattered points
+  (WL leaves the area outside the convex hull blank), `ListDensityPlot`
+  with `InterpolationOrder -> 0` (WL's cells span `[i, i + 1]`) and
+  `Mesh -> 4`, `PlotLabels` placement for parametric `{x, y}` curves,
+  callout leader shapes, and the RSolve-precision and NIntegrate sample
+  divergences in the `list-plot-app-*` tests.
