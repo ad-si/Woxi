@@ -2777,6 +2777,30 @@ mod grid_graphics {
   }
 
   #[test]
+  fn grid_background_cell_ranges() {
+    clear_state();
+    // A function-valued rule list: each rule's row/column slot may be a
+    // `{from, to}` range, here rows 1-2 of column 3.
+    let result = interpret_with_stdout(
+      "Grid[{{a, b, c}, {d, e, f}, {g, h, i}}, Background -> {Automatic, Automatic, Map[{{1, 2}, 1 + {#, #}} -> Yellow &, {2}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,255,0)\"").count(), 2);
+  }
+
+  #[test]
+  fn grid_frame_cell_block() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{a, b, c}, {d, e, f}}, Frame -> {Automatic, Automatic, Map[{{1, 2}, 1 + {#, #}} -> True &, {2}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("fill=\"none\" stroke=").count(), 1);
+  }
+
+  #[test]
   fn grid_background_per_column() {
     clear_state();
     let result = interpret_with_stdout(
