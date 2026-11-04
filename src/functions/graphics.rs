@@ -2452,6 +2452,88 @@ fn fill_curve_prims(prims: &mut Vec<Primitive>, start: usize, joined: bool) {
   flush(&mut path, &mut path_style, prims);
 }
 
+/// Resolve the compact `FilledCurve[segments, coords]` form into one cubic
+/// Bezier point chain (`3k + 1` points) per component. A segment
+/// `{0, n, _}` is a polyline and `{1, n, d}` a degree-`d` Bezier. The first
+/// segment of a component consumes `n` coordinates including its start
+/// point; each later segment starts at the previous end point and consumes
+/// `n` new coordinates. Lines and lower-degree curves are elevated to
+/// cubics.
+fn filled_curve_segment_paths(
+  segments: &Expr,
+  coords: &Expr,
+) -> Option<Vec<Vec<(f64, f64)>>> {
+  let coords = expr_to_point_list(coords)?;
+  let Expr::List(components) = segments else {
+    return None;
+  };
+  let mut next = 0usize;
+  let mut paths = Vec::new();
+  for component in components {
+    let Expr::List(specs) = component else {
+      return None;
+    };
+    let mut chain: Vec<(f64, f64)> = Vec::new();
+    for spec in specs {
+      let Expr::List(parts) = spec else {
+        return None;
+      };
+      let kind = expr_to_f64(parts.first()?)? as i64;
+      let n = expr_to_f64(parts.get(1)?)? as usize;
+      let degree = match parts.get(2) {
+        Some(d) => expr_to_f64(d)? as usize,
+        None => 0,
+      };
+      // The first segment of a component counts its start point; later
+      // segments count only the new points they add.
+      let first = chain.is_empty();
+      if (first && n < 2) || n < 1 || next + n > coords.len() {
+        return None;
+      }
+      let mut pts: Vec<(f64, f64)> = Vec::with_capacity(n + 1);
+      if let Some(last) = chain.last() {
+        pts.push(*last);
+      }
+      pts.extend_from_slice(&coords[next..next + n]);
+      next += n;
+      let lerp = |a: (f64, f64), b: (f64, f64), t: f64| {
+        (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
+      };
+      let mut cubic = |a: (f64, f64), c1: (f64, f64), c2: (f64, f64), b| {
+        if chain.is_empty() {
+          chain.push(a);
+        }
+        chain.extend([c1, c2, b]);
+      };
+      match (kind, degree) {
+        (1, 3) if pts.len() == 4 => cubic(pts[0], pts[1], pts[2], pts[3]),
+        (1, 2) if pts.len() == 3 => cubic(
+          pts[0],
+          lerp(pts[0], pts[1], 2.0 / 3.0),
+          lerp(pts[2], pts[1], 2.0 / 3.0),
+          pts[2],
+        ),
+        // A line segment, or a degree-1 curve, joins its points directly.
+        (0, _) | (1, 1) => {
+          for w in pts.windows(2) {
+            cubic(
+              w[0],
+              lerp(w[0], w[1], 1.0 / 3.0),
+              lerp(w[0], w[1], 2.0 / 3.0),
+              w[1],
+            );
+          }
+        }
+        _ => return None,
+      }
+    }
+    if chain.len() >= 2 {
+      paths.push(chain);
+    }
+  }
+  Some(paths)
+}
+
 fn collect_primitives(
   expr: &Expr,
   style: &mut StyleState,
@@ -2649,6 +2731,25 @@ fn collect_primitives(
         }
         // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
         // region each Bezier path encloses.
+        "FilledCurve" if args.len() == 2 => {
+          // Compact form `FilledCurve[{{seg, …}, …}, {pt, …}]`: each
+          // component is a run of `{type, n, d}` segments drawing from
+          // the shared coordinate list.
+          if let Some(paths) = filled_curve_segment_paths(&args[0], &args[1]) {
+            for points in paths {
+              prims.push(Primitive::BezierCurvePrim {
+                points,
+                filled: true,
+                style: style.clone(),
+              });
+            }
+          } else {
+            errors.push(format!(
+              "FilledCurve segment specification {} is not valid.",
+              expr_to_string(&args[0])
+            ));
+          }
+        }
         "FilledCurve" if !args.is_empty() => {
           // A flat list of curve pieces is one joined path (the pieces
           // are chained end to end and filled together); a list of lists
