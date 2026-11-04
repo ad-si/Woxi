@@ -15124,6 +15124,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         }
 
         // HoldForm[expr] → render content
+        // A held assignment (`HoldForm[X = x]`) reads as written, not as
+        // the `Set[X, x]` call the generic renderer would print.
+        "HoldForm"
+          if args.len() == 1
+            && matches!(&args[0], Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Set" | "SetDelayed" | "UpSet"
+                | "UpSetDelayed" | "AddTo" | "SubtractFrom" | "TimesBy"
+                | "DivideBy")) =>
+        {
+          svg_escape(&graphics_text_content(expr))
+        }
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
         // Tooltip[content, tip] → render content (the tip only shows on

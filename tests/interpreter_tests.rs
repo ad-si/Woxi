@@ -2356,6 +2356,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_label_held_assignment_reads_as_written() {
+    // Regression: `HoldForm[X = x]` inside a `PlotLabel` row printed as the
+    // call `Set[X, x]` instead of the assignment as it was written.
+    for plot in ["Plot[t, {t, 0, 1}", "Plot3D[t u, {t, 0, 1}, {u, 0, 1}"] {
+      clear_state();
+      let code = format!(
+        "ExportString[{plot}, PlotLabel -> Row[{{\"given \", HoldForm[X = x], \" and \", HoldForm[Y += 1]}}]], \"SVG\"]"
+      );
+      let svg = interpret(&code).unwrap();
+      assert!(svg.contains("given X = x and Y += 1"), "{plot}: {svg}");
+      assert!(!svg.contains("Set[X"), "{plot}: {svg}");
+    }
+  }
+
+  #[test]
   fn test_traditional_form_integrate_differential_svg_uses_plain_d() {
     // Regression: `TraditionalForm[HoldForm[Integrate[…]]]` typesets the
     // closing differential as the literal box glyph `\[DifferentialD]`
