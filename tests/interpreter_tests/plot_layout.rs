@@ -937,4 +937,33 @@ mod automatic_image_padding {
     // Render units are tenths of a point.
     assert!((x / 10.0 - (23.2 - 3.0)).abs() < 0.2, "label ends at {x}");
   }
+
+  #[test]
+  fn plot_label_row_draws_inline_graphics_not_placeholder_text() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Row[{Graphics[Disk[]], \" done \", 5}]]",
+    );
+    assert!(!svg.contains("-Graphics-"), "placeholder leaked");
+    assert!(svg.contains("<svg x="), "no nested picture");
+    assert!(svg.contains(" done "), "text run missing");
+  }
+
+  #[test]
+  fn plot_label_padded_row_formats_numbers_beside_graphics() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> PaddedForm[Row[{Graphics[Disk[]], 13.85, \"%\"}], {3, 1}]]",
+    );
+    assert!(!svg.contains("-Graphics-"));
+    assert!(svg.contains(">13.9<") || svg.contains("13.9"), "{svg}");
+  }
+
+  #[test]
+  fn tall_inline_graphic_in_plot_label_makes_room_above_the_plot() {
+    let plain = svg_size(&svg_of("Plot[x, {x, 0, 1}, PlotLabel -> \"a\"]")).1;
+    let tall = svg_size(&svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Row[{Graphics[Disk[], ImageSize -> 40], \"a\"}]]",
+    ))
+    .1;
+    assert!(tall > plain, "{tall} vs {plain}");
+  }
 }
