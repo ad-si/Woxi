@@ -1983,6 +1983,20 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               style.dashing = Some(dashes);
             }
           }
+          // A named size is a fixed dash and a slightly longer gap, in
+          // printer's points (measured from wolframscript at several
+          // thicknesses).
+          Expr::Identifier(s)
+            if matches!(s.as_str(), "Tiny" | "Small" | "Medium" | "Large") =>
+          {
+            let (dash, gap) = match s.as_str() {
+              "Tiny" => (1.0, 3.0),
+              "Small" => (2.5, 4.5),
+              "Medium" => (5.0, 7.0),
+              _ => (10.0, 13.0),
+            };
+            style.dashing = Some(vec![-dash, -gap]);
+          }
           _ => {
             if let Some(d) =
               dash_size_to_f64(&args[0]).or_else(|| expr_to_f64(&args[0]))
@@ -9561,8 +9575,8 @@ fn render_axes(
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
-      // The two axes cross at the origin, so only one of them labels it.
-      if axes.1 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
+      // Neither axis labels the point where the two cross.
+      if axes.1 && (t - axis_x_data).abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
       // A tick sitting on the edge of the drawing area centres its label
@@ -9610,7 +9624,7 @@ fn render_axes(
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
-      if axes.0 && t.abs() < step.unwrap_or(1.0) * 1e-6 {
+      if axes.0 && (t - axis_y_data).abs() < step.unwrap_or(1.0) * 1e-6 {
         continue;
       }
       // 3 pt left of the axis, centred on the tick.
@@ -9888,15 +9902,18 @@ fn graphics_decorations(
                 lo: f64,
                 hi: f64,
                 frac: &dyn Fn(f64) -> f64,
-                other: bool| {
+                other: bool,
+                crossing: f64| {
       let entries = axis_ticks(spec, lo, hi);
       let step = tick_sequence_step(
         &entries.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
       );
       entries
         .into_iter()
-        // The two axes cross at the origin, so only one of them labels it.
-        .filter(|(t, _)| !(other && t.abs() < step.unwrap_or(1.0) * 1e-6))
+        // Neither axis labels the point where the two cross.
+        .filter(|(t, _)| {
+          !(other && (t - crossing).abs() < step.unwrap_or(1.0) * 1e-6)
+        })
         .map(|(t, l)| {
           let l =
             l.unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
@@ -9907,10 +9924,12 @@ fn graphics_decorations(
         .collect::<Vec<_>>()
     };
     if axes.0 {
-      d.axis_ticks.0 = axis(ticks.0, bb.x_min, bb.x_max, &frac_x, axes.1);
+      d.axis_ticks.0 =
+        axis(ticks.0, bb.x_min, bb.x_max, &frac_x, axes.1, axis_x_data);
     }
     if axes.1 {
-      d.axis_ticks.1 = axis(ticks.1, bb.y_min, bb.y_max, &frac_y, axes.0);
+      d.axis_ticks.1 =
+        axis(ticks.1, bb.y_min, bb.y_max, &frac_y, axes.0, axis_y_data);
     }
     if let Some((x, y)) = axes_label {
       d.axes_labels = (
@@ -11407,12 +11426,19 @@ fn render_primitive(
           Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
           None => String::new(),
         };
+        // The panel hugs the glyphs' advance width, as Wolfram's does.
+        // A frame keeps its margin round the text.
+        let panel_w = if frame.is_some() {
+          text_w
+        } else {
+          crate::functions::plot_padding::text_width(&svg_escape(text), fs)
+        };
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
           match anchor_attr {
             "start" => sx,
-            "end" => sx - text_w,
-            _ => sx - text_w / 2.0,
+            "end" => sx - panel_w,
+            _ => sx - panel_w / 2.0,
           },
           sy - text_h / 2.0,
         ));

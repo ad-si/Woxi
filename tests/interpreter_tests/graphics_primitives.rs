@@ -496,4 +496,44 @@ mod graphics_primitives {
       .collect();
     assert!(xs.iter().all(|&x| x >= -0.01), "{svg}");
   }
+
+  #[test]
+  fn axes_skip_the_label_where_they_cross() {
+    let svg = svg_of(
+      "Graphics[Line[{{0, 0}, {4, 3}}], Axes -> True, AxesOrigin -> {1, 1}]",
+    );
+    // 0 is labelled on the x axis, 1 (the crossing) on neither.
+    assert!(svg.contains(">0</text>"), "{svg}");
+    assert!(
+      svg.contains(">0.0</text>") || svg.contains(">0.</text>"),
+      "{svg}"
+    );
+    assert!(
+      !svg.contains(">1</text>") && !svg.contains(">1.0</text>"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn named_dashing_sizes() {
+    let svg = svg_of(
+      "Graphics[{Dashing[Medium], Line[{{0, 0}, {1, 0}}], \
+       Dashing[Large], Line[{{0, 1}, {1, 1}}]}]",
+    );
+    assert!(svg.contains("stroke-dasharray=\"5.0,7.0\""), "{svg}");
+    assert!(svg.contains("stroke-dasharray=\"10.0,13.0\""), "{svg}");
+  }
+
+  #[test]
+  fn text_background_hugs_the_text() {
+    let svg = svg_of(
+      "Graphics[{LightGray, Rectangle[{0, 0}, {4, 3}], \
+       Text[Style[\"Style background\", Background -> Yellow], {2, 2}]}]",
+    );
+    let yellow = svg.find("fill=\"rgb(255,255,0)\"").unwrap();
+    let rect = &svg[svg[..yellow].rfind("<rect").unwrap()..];
+    let w = attr_of(rect, "rect", "width");
+    // 16 characters of 14-point type: about 110 points of advance.
+    assert!(w > 95.0 && w < 125.0, "{w}");
+  }
 }
