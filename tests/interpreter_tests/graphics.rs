@@ -907,6 +907,30 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_segment_specs_fill_one_path_per_component() {
+      // Cubic piece (4 points) followed by a line back to the start.
+      let svg = export_svg(
+        "Graphics[{Red, FilledCurve[{{{1, 4, 3}, {0, 1, 0}}}, \
+         {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}]}]",
+      );
+      assert_eq!(svg.matches("<path").count(), 1, "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains(" Z\""), "{svg}");
+      // Chained cubic pieces share end points: 4 + 3 coordinates.
+      let svg = export_svg(
+        "Graphics[{FilledCurve[{{{1, 4, 3}, {1, 3, 3}}}, \
+         {{0, 0}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}, {0, 0}}]}]",
+      );
+      assert_eq!(svg.matches(" C").count(), 2, "{svg}");
+      // Two components give two separately filled paths.
+      let svg = export_svg(
+        "Graphics[{FilledCurve[{{{0, 3, 0}}, {{0, 3, 0}}}, \
+         {{0, 0}, {1, 0}, {1, 1}, {3, 3}, {4, 3}, {4, 4}}]}]",
+      );
+      assert_eq!(svg.matches("<path").count(), 2, "{svg}");
+    }
+
+    #[test]
     fn filled_curve_line_segments_become_filled_polygon() {
       let svg = export_svg(
         "Graphics[{Green, FilledCurve[Line[{{0, 0}, {1, 0}, {1, 1}}]]}]",
