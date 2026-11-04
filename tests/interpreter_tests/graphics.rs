@@ -44301,6 +44301,169 @@ fn quantile_plot_draws_points_and_reference_line() {
   assert_eq!(interpret("QuantilePlot[x]").unwrap(), "QuantilePlot[x]");
 }
 
+// The points, reference line and invisible range points wolframscript's
+// QuantilePlot draws: Benard plotting positions against a fitted normal
+// (MLE spread), a line through the quartile points, drawn dotted.
+#[test]
+fn quantile_plot_matches_wolfram_geometry() {
+  assert_eq!(
+    interpret(
+      "Round[Cases[QuantilePlot[{1, 2, 3, 4, 5, 10}], Point[p_] :> p, \
+       Infinity], 10^-6]"
+    )
+    .unwrap(),
+    "{{{586907/1000000, 1}, {93771/40000, 2}, {3592969/1000000, 3}, \
+     {948073/200000, 4}, {2994529/500000, 5}, {7746427/1000000, 10}}, \
+     {{-32613/100000, -39599/200000}, {7911173/1000000, 6582081/1000000}}}"
+  );
+  assert_eq!(
+    interpret(
+      "q = QuantilePlot[{1, 2, 3, 4, 5, 10}]; \
+       {Round[Cases[Options[q, Epilog], Line[p_] :> p, Infinity], 10^-6], \
+       Cases[Options[q, Epilog], Dashing[d_] :> d, Infinity]}"
+    )
+    .unwrap(),
+    "{{{{-586907/1000000, -412639/1000000}, {290491/12500, 9599279/500000}}}, \
+     {{0, Small}}}"
+  );
+  // Against a second dataset (its quantiles on x) and a distribution.
+  assert_eq!(
+    interpret(
+      "Cases[QuantilePlot[{1, 2, 3, 4, 5, 10, 12}, {1, 2, 3, 4, 8, 6}], \
+       Point[p_] :> Round[p], Infinity][[1]]"
+    )
+    .unwrap(),
+    "{{1, 1}, {2, 2}, {3, 3}, {3, 4}, {4, 5}, {6, 10}, {8, 12}}"
+  );
+  assert_eq!(
+    interpret(
+      "Round[Cases[QuantilePlot[{1, 2, 3, 4, 5, 10}, \
+       ExponentialDistribution[1]], Point[p_] :> p, Infinity][[1, All, 1]], \
+       10^-6]"
+    )
+    .unwrap(),
+    "{14479/125000, 61747/200000, 109593/200000, 431523/500000, \
+     132567/100000, 2212973/1000000}"
+  );
+  // Drawn in a frame, not on axes.
+  let svg = export_svg("QuantilePlot[{1, 2, 3, 4, 5, 10}]");
+  assert!(svg.contains("stroke-dasharray"), "{svg}");
+  assert_eq!(
+    interpret("QuantilePlot[{1, 2}, x]").unwrap(),
+    "QuantilePlot[{1, 2}, x]"
+  );
+}
+
+#[test]
+fn probability_plot_matches_wolfram_geometry() {
+  assert_eq!(
+    interpret(
+      "Round[Cases[ProbabilityPlot[{1, 2, 3, 4, 5, 10}], Point[p_] :> p, \
+       Infinity], 10^-6]"
+    )
+    .unwrap(),
+    "{{{138311/1000000, 166667/1000000}, {57081/250000, 333333/1000000}, \
+     {344277/1000000, 1/2}, {477169/1000000, 666667/1000000}, \
+     {153169/250000, 833333/1000000}, {97747/100000, 1}}, {{0, 0}, {1, 1}}}"
+  );
+  // Against a second dataset: its empirical CDF at the first's values.
+  assert_eq!(
+    interpret(
+      "Cases[ProbabilityPlot[{1, 2, 3, 7, 5, 10}, {1, 2, 3, 4, 8, 6}], \
+       Point[p_] :> p, Infinity][[1, All, 1]] * 6"
+    )
+    .unwrap(),
+    "{1., 2., 3., 4., 5., 6.}"
+  );
+  assert_eq!(
+    interpret("ProbabilityPlot[x]").unwrap(),
+    "ProbabilityPlot[x]"
+  );
+}
+
+#[test]
+fn probability_scale_plot_uses_percent_scale() {
+  assert_eq!(
+    interpret(
+      "s = ProbabilityScalePlot[{1, 2, 3, 4, 5, 10}, \"Normal\"]; \
+       {Round[Cases[s, Point[p_] :> p, Infinity][[1]], 10^-6], \
+       Round[Options[s, FrameTicks][[1, 2, 1, 1]], 10^-6], \
+       Round[Cases[Options[s, Epilog], Line[p_] :> p, Infinity], 10^-6]}"
+    )
+    .unwrap(),
+    "{{{1, -229859/1000000}, {2, 373901/1000000}, {3, 802901/1000000}, \
+     {4, 1197099/1000000}, {5, 1626099/1000000}, {10, 2229859/1000000}}, \
+     {{-331587/250000, 1}, {-322427/500000, 5}, {-17597/62500, 10}, \
+     {32551/100000, 25}, {1, 50}, {167449/100000, 75}, {142597/62500, 90}, \
+     {1322427/500000, 95}, {831587/250000, 99}}, \
+     {{{6919/12500, -229859/1000000}, {80581/12500, 2229859/1000000}}}}"
+  );
+  // Its dots are a ListLinePlot's mesh size, larger than a ListPlot's.
+  assert_eq!(
+    interpret(
+      "Union[Cases[ProbabilityScalePlot[{1, 2, 3, 4, 5, 10}], \
+       PointSize[x_] :> x, Infinity]]"
+    )
+    .unwrap(),
+    "{0.019444444444444445}"
+  );
+  assert_eq!(
+    interpret("ProbabilityScalePlot[{1, 2}, \"Weibull\"]").unwrap(),
+    "ProbabilityScalePlot[{1, 2}, Weibull]"
+  );
+}
+
+#[test]
+fn paired_smooth_histogram_draws_two_density_curves() {
+  assert_eq!(
+    interpret(
+      "p = PairedSmoothHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]; \
+       {Head[p], Length /@ Cases[p, Line[l_] /; Length[l] > 20 :> l, \
+       Infinity], Cases[p, Text[Style[v_, ___], Offset[{3., 0.}, _], ___] \
+       :> v, Infinity]}"
+    )
+    .unwrap(),
+    "{Graphics, {401, 401}, {0, 2, 4, 6}}"
+  );
+  // The left curve extends left of the gap, the right one right of it.
+  assert_eq!(
+    interpret(
+      "Sign[Mean /@ Cases[PairedSmoothHistogram[{1, 2, 2, 3}, {2, 3, 4}], \
+       Line[l_] /; Length[l] > 20 :> l[[All, 1]], Infinity]]"
+    )
+    .unwrap(),
+    "{-1, 1}"
+  );
+  assert_eq!(
+    interpret("PairedSmoothHistogram[x, y]").unwrap(),
+    "PairedSmoothHistogram[x, y]"
+  );
+}
+
+#[test]
+fn density_histogram_shades_cells_by_count() {
+  let data = "{{0.1, 0.2}, {0.3, 0.4}, {0.35, 0.45}, {1.2, 0.3}, \
+              {1.3, 1.4}, {0.1, 0.25}, {0.15, 0.22}}";
+  assert_eq!(
+    interpret(&format!(
+      "d = DensityHistogram[{data}, {{0.5}}]; \
+       {{Cases[d, Tooltip[r_, v_] :> {{v, r}}, Infinity], \
+       Options[d, PlotRange], Cases[d, _LABColor, Infinity]}}"
+    ))
+    .unwrap(),
+    "{{{1, {Rectangle[{1., 0.}, {1.5, 0.5}], Rectangle[{1., 1.}, \
+     {1.5, 1.5}]}}, {5, {Rectangle[{0., 0.}, {0.5, 0.5}]}}}, \
+     {PlotRange -> {{0., 1.5}, {0., 1.5}}}, \
+     {LABColor[0.2374577454874495, 0.4502326479674301, \
+     -0.29344758919909575], LABColor[0.9735241229755421, \
+     -0.05249018370661607, 0.31994142972937545]}}"
+  );
+  assert_eq!(
+    interpret("DensityHistogram[{1, 2, 3}]").unwrap(),
+    "DensityHistogram[{1, 2, 3}]"
+  );
+}
+
 #[test]
 fn text_subscript_of_styled_base_keeps_italic_and_lowers_script() {
   // A letter without a Unicode subscript form is lowered with a tspan, and
@@ -46476,6 +46639,19 @@ mod paired_charts {
       )
       .unwrap(),
       "{{0.5, 1.5}, {1.5, 2.5}, {2.5, 3.5}, {0.5, 1.5}, {1.5, 2.5}, {3.5, 4.5}}"
+    );
+    // The histogram's gap fits its bin labels (15/67 for a largest count
+    // of 3 with one-digit labels, as in wolframscript), which sit in the
+    // middle; the chart has the golden aspect ratio.
+    assert_eq!(
+      interpret(
+        "g = PairedHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]; \
+         {Union[Round[Abs[Cases[g, Rectangle[Offset[_, a_], Offset[_, b_], \
+         ___] :> b[[1]], Infinity]], 10^-6]], Cases[g, Text[Style[Pane[v_], \
+         ___], ___] :> v, Infinity], Options[g, AspectRatio]}"
+      )
+      .unwrap(),
+      "{{223881/1000000}, {1, 2, 3, 4, 5}, {AspectRatio -> GoldenRatio^(-1)}}"
     );
   }
 }

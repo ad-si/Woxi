@@ -834,7 +834,13 @@ pub fn dispatch_plotting(
       crate::functions::list_plot::list_fit_plot_ast(args)
     })),
     "QuantilePlot" if !args.is_empty() => Some(quiet_plot(|| {
-      crate::functions::list_plot::quantile_plot_ast(args)
+      crate::functions::quantile_plot::quantile_plot_ast(args)
+    })),
+    "ProbabilityPlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::quantile_plot::probability_plot_ast(args)
+    })),
+    "ProbabilityScalePlot" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::quantile_plot::probability_scale_plot_ast(args)
     })),
     "AudioPlot" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::list_plot::audio_plot_ast(args)
@@ -1160,6 +1166,12 @@ pub fn dispatch_plotting(
     "PairedBarChart" | "PairedHistogram" if args.len() >= 2 => {
       Some(crate::functions::chart::paired_chart_ast(name, args))
     }
+    "DensityHistogram" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::density_histogram::density_histogram_ast(args)
+    })),
+    "PairedSmoothHistogram" if args.len() >= 2 => Some(quiet_plot(|| {
+      crate::functions::chart::paired_smooth_histogram_ast(args)
+    })),
     // Association, temporal and `Quantity` data become plain list data
     // (keys filling the `Automatic` labels and legends) through the one
     // shared rewrite. BubbleChart reads its (point-level) associations

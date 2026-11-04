@@ -3678,8 +3678,18 @@ pub fn paired_chart_ast(
   let largest = bars
     .iter()
     .fold(0.0f64, |m, &(_, _, l, r)| m.max(l.abs()).max(r.abs()));
-  let gap = 0.075 * largest.max(f64::MIN_POSITIVE);
   let histogram = head == "PairedHistogram";
+  // A histogram labels its bin axis between the halves, so its gap is
+  // sized for the widest of those labels.
+  let bin_axis = histogram.then(|| {
+    let lo = bars.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
+    let hi = bars.iter().map(|b| b.1).fold(f64::NEG_INFINITY, f64::max);
+    PairedValueAxis::new(lo, hi, 0.05)
+  });
+  let gap = match &bin_axis {
+    Some(axis) => axis.gap(largest),
+    None => 0.075 * largest.max(f64::MIN_POSITIVE),
+  };
   let offset_point = |x: f64, y: f64| {
     call(
       "Offset",
@@ -3812,16 +3822,430 @@ pub fn paired_chart_ast(
       right_prims.push(bar(p0, p1, r));
     }
   }
-  let mut graphics_args = vec![Expr::List(
+  let Some(axis) = bin_axis else {
+    let mut graphics_args = vec![Expr::List(
+      vec![
+        style.clone(),
+        Expr::List(left_prims.into()),
+        Expr::List(right_prims.into()),
+      ]
+      .into(),
+    )];
+    graphics_args.extend(options.into_iter().cloned());
+    return crate::evaluator::evaluate_function_call_ast(
+      "Graphics",
+      &graphics_args,
+    );
+  };
+  // Each half is drawn in the histogram's own bar look: a translucent
+  // yellow over a gray edge.
+  let bar_look = call(
+    "Directive",
     vec![
       style.clone(),
-      Expr::List(left_prims.into()),
-      Expr::List(right_prims.into()),
+      call0("Directive"),
+      call(
+        "Directive",
+        vec![
+          call1(
+            "EdgeForm",
+            call(
+              "Directive",
+              vec![
+                call1("Opacity", Expr::Integer(1)),
+                call(
+                  "LightDarkSwitched",
+                  vec![
+                    call1("GrayLevel", Expr::Real(0.5)),
+                    call1("GrayLevel", Expr::Real(0.8)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          call(
+            "RGBColor",
+            vec![Expr::Integer(1), Expr::Real(0.8), Expr::Integer(0)],
+          ),
+          call1("Opacity", Expr::Real(0.8)),
+        ],
+      ),
+    ],
+  );
+  let half = |prims: Vec<Expr>| {
+    Expr::List(vec![bar_look.clone(), Expr::List(prims.into())].into())
+  };
+  let extent = 1.05 * (largest + gap);
+  let graphics_args = vec![Expr::List(
+    vec![
+      style.clone(),
+      half(left_prims),
+      half(right_prims),
+      axis.primitives(gap, extent, PairedLook::Histogram),
     ]
     .into(),
   )];
-  graphics_args.extend(options.into_iter().cloned());
+  paired_graphics(graphics_args, &options)
+}
+
+/// PairedSmoothHistogram[left, right, bw, opts]: the kernel density
+/// estimates (`SmoothKernelDistribution`) of two datasets drawn back to
+/// back along a vertical value axis, the first to the left. Each curve
+/// spans the range `SmoothHistogram` draws its dataset over, and the
+/// halves are a tenth of the largest density apart.
+pub fn paired_smooth_histogram_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("PairedSmoothHistogram", args));
+  let (positional, options): (Vec<&Expr>, Vec<&Expr>) = args
+    .iter()
+    .partition(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+  if !(2..=3).contains(&positional.len()) {
+    return unchanged();
+  }
+  let bandwidth = match positional.get(2) {
+    None => None,
+    Some(Expr::Identifier(a)) if a == "Automatic" => None,
+    Some(e) => match try_eval_to_f64(e) {
+      Some(h) if h > 0.0 => Some(h),
+      _ => return unchanged(),
+    },
+  };
+  // Each half as its (value, density) samples.
+  let mut halves: Vec<Vec<(f64, f64)>> = Vec::new();
+  for data in &positional[..2] {
+    let values: Option<Vec<f64>> = match data {
+      Expr::List(items) if items.len() >= 2 => {
+        items.iter().map(try_eval_to_f64).collect()
+      }
+      _ => None,
+    };
+    let Some(values) = values else {
+      return unchanged();
+    };
+    let (a, b) =
+      crate::functions::field_plot::smooth_kernel_domain(&values, bandwidth);
+    if !(a.is_finite() && b.is_finite() && a < b) {
+      return unchanged();
+    }
+    let mut dist_args = vec![(*data).clone()];
+    dist_args.extend(bandwidth.map(Expr::Real));
+    let dist = call("SmoothKernelDistribution", dist_args);
+    const SAMPLES: usize = 400;
+    let mut samples = vec![(a, 0.0)];
+    for k in 1..SAMPLES {
+      let t = a + (b - a) * k as f64 / SAMPLES as f64;
+      let f = crate::evaluator::evaluate_function_call_ast(
+        "PDF",
+        &[dist.clone(), Expr::Real(t)],
+      )?;
+      let Some(f) = try_eval_to_f64(&f).filter(|f| f.is_finite()) else {
+        return unchanged();
+      };
+      samples.push((t, f));
+    }
+    samples.push((b, 0.0));
+    halves.push(samples);
+  }
+  let largest = halves
+    .iter()
+    .flatten()
+    .fold(0.0f64, |m, &(_, f)| m.max(f))
+    .max(f64::MIN_POSITIVE);
+  let lo = halves[0][0].0.min(halves[1][0].0);
+  let hi = halves[0].last().unwrap().0.max(halves[1].last().unwrap().0);
+  let axis = PairedValueAxis::new(lo, hi, 0.0);
+  let gap = 0.05 * largest;
+  let curve = |samples: &[(f64, f64)], side: f64| {
+    call1(
+      "Line",
+      Expr::List(
+        samples
+          .iter()
+          .map(|&(t, f)| {
+            Expr::List(vec![Expr::Real(side * (gap + f)), Expr::Real(t)].into())
+          })
+          .collect(),
+      ),
+    )
+  };
+  let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB[0];
+  let prims = vec![
+    Expr::List(
+      vec![
+        call(
+          "RGBColor",
+          vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+        ),
+        call1("AbsoluteThickness", Expr::Integer(2)),
+        curve(&halves[0], -1.0),
+        curve(&halves[1], 1.0),
+      ]
+      .into(),
+    ),
+    axis.primitives(gap, gap + largest, PairedLook::Smooth),
+  ];
+  paired_graphics(vec![Expr::List(prims.into())], &options)
+}
+
+/// `Graphics[prims, opts]` of a paired (back-to-back) chart: the user's
+/// options, then the golden aspect ratio and the 2% padding around
+/// everything drawn that wolframscript's paired charts use.
+fn paired_graphics(
+  mut graphics_args: Vec<Expr>,
+  options: &[&Expr],
+) -> Result<Expr, InterpreterError> {
+  graphics_args.extend(options.iter().map(|o| (*o).clone()));
+  graphics_args.extend([
+    rule_expr(
+      Expr::Identifier("AspectRatio".into()),
+      call(
+        "Power",
+        vec![Expr::Identifier("GoldenRatio".into()), Expr::Integer(-1)],
+      ),
+    ),
+    rule_expr(
+      Expr::Identifier("PlotRange".into()),
+      Expr::Identifier("All".into()),
+    ),
+    rule_expr(
+      Expr::Identifier("PlotRangePadding".into()),
+      call1("Scaled", Expr::Real(0.02)),
+    ),
+  ]);
   crate::evaluator::evaluate_function_call_ast("Graphics", &graphics_args)
+}
+
+/// How a paired chart draws its axes.
+#[derive(Clone, Copy, PartialEq)]
+pub(crate) enum PairedLook {
+  /// `PairedHistogram`: value ticks point into the gap, whose middle holds
+  /// their labels; the magnitude axes reach 5% past the largest bar.
+  Histogram,
+  /// `PairedSmoothHistogram`: value ticks point away from the gap and are
+  /// labelled just right of its left edge; the magnitude axes end at the
+  /// largest density.
+  Smooth,
+}
+
+/// The value axis of a paired chart, which runs vertically between its two
+/// halves: the data span `lo..hi` widened by `pad` of it at both ends,
+/// with automatic major and minor ticks.
+pub(crate) struct PairedValueAxis {
+  lo: f64,
+  hi: f64,
+  majors: Vec<(f64, String)>,
+  minors: Vec<f64>,
+}
+
+impl PairedValueAxis {
+  pub(crate) fn new(lo: f64, hi: f64, pad: f64) -> Self {
+    let (lo, hi) = if lo.is_finite() && hi.is_finite() && hi > lo {
+      (lo, hi)
+    } else {
+      (0.0, 1.0)
+    };
+    let pad = pad * (hi - lo);
+    let (lo, hi) = (lo - pad, hi + pad);
+    let step = paired_value_step(hi - lo);
+    let (majors, minors) = paired_ticks(lo, hi, step);
+    PairedValueAxis {
+      lo,
+      hi,
+      majors,
+      minors,
+    }
+  }
+
+  /// Half the gap between the halves for a largest bar (or curve) extent
+  /// `largest`: the gap takes `(19 + 6 d + 3 s) / 360` of the half width,
+  /// `d` and `s` being the digits and signs of the widest value label
+  /// (decoded from wolframscript, whose 4-digit labels come out a unit
+  /// narrower).
+  pub(crate) fn gap(&self, largest: f64) -> f64 {
+    let units = self
+      .majors
+      .iter()
+      .map(|(_, label)| {
+        let digits = label.chars().filter(char::is_ascii_digit).count();
+        let marks = label.chars().count() - digits;
+        19.0 + 6.0 * digits as f64 - 0.5 * digits.saturating_sub(2) as f64
+          + 3.0 * marks as f64
+      })
+      .fold(25.0, f64::max);
+    let r = units / 360.0;
+    largest.max(f64::MIN_POSITIVE) * r / (1.0 - r)
+  }
+
+  /// The axes of a paired chart whose halves start `gap` from the centre
+  /// and whose magnitude axes end `extent` from it: a value axis on each
+  /// side of the gap and a magnitude axis under each half. Tick marks are
+  /// 4 (major) and 2.5 (minor) printer points long at the default image
+  /// size.
+  pub(crate) fn primitives(
+    &self,
+    gap: f64,
+    extent: f64,
+    look: PairedLook,
+  ) -> Expr {
+    let (lo, hi) = (self.lo, self.hi);
+    // Data units per printer point across the padded plot range.
+    let dx = 2.0 * extent * 1.04 / 360.0;
+    let dy = (hi - lo) * 1.04 / (360.0 / f64::midpoint(1.0, 5f64.sqrt()));
+    let pt =
+      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+    let line = |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
+    let number = |v: f64| {
+      if (v - v.round()).abs() < 1e-9 && v.abs() < 1e15 {
+        Expr::Integer(v.round() as i128)
+      } else {
+        Expr::Real(v)
+      }
+    };
+    let label = |content: Expr, pos: Expr, anchor: (f64, f64)| {
+      call(
+        "Text",
+        vec![
+          call(
+            "Style",
+            vec![
+              content,
+              Expr::Integer(10),
+              call1("GrayLevel", Expr::Real(0.25)),
+            ],
+          ),
+          pos,
+          pt(anchor.0, anchor.1),
+        ],
+      )
+    };
+    let mut prims = vec![
+      call1("GrayLevel", Expr::Real(0.4)),
+      call1("AbsoluteThickness", Expr::Real(0.2)),
+    ];
+    let span = extent - gap;
+    let step = paired_magnitude_step(span);
+    let inward = if look == PairedLook::Histogram {
+      1.0
+    } else {
+      -1.0
+    };
+    let label_drop = if look == PairedLook::Histogram {
+      -7.0
+    } else {
+      -3.0
+    };
+    let (count_majors, count_minors) = paired_ticks(0.0, span, step);
+    for side in [-1.0, 1.0] {
+      prims.push(line(pt(side * gap, lo), pt(side * extent, lo)));
+      prims.push(line(pt(side * gap, lo), pt(side * gap, hi)));
+      for &(v, _) in &count_majors {
+        let x = side * (gap + v);
+        prims.push(line(pt(x, lo), pt(x, lo - 4.0 * dy)));
+        prims.push(label(
+          number(v),
+          call(
+            "Offset",
+            vec![
+              Expr::List(vec![Expr::Real(0.0), Expr::Real(label_drop)].into()),
+              pt(x, lo),
+            ],
+          ),
+          (0.0, 1.0),
+        ));
+      }
+      for &v in &count_minors {
+        let x = side * (gap + v);
+        prims.push(line(pt(x, lo), pt(x, lo - 2.5 * dy)));
+      }
+      // Value ticks point into the gap.
+      for (y, len) in self
+        .majors
+        .iter()
+        .map(|&(y, _)| (y, 4.0))
+        .chain(self.minors.iter().map(|&y| (y, 2.5)))
+      {
+        prims.push(line(
+          pt(side * gap, y),
+          pt(side * (gap - inward * len * dx), y),
+        ));
+      }
+    }
+    for &(y, _) in &self.majors {
+      if look == PairedLook::Histogram {
+        prims.push(label(call1("Pane", number(y)), pt(0.0, y), (0.0, 0.0)));
+      } else {
+        let pos = call(
+          "Offset",
+          vec![
+            Expr::List(vec![Expr::Real(3.0), Expr::Real(0.0)].into()),
+            pt(-0.8 * gap, y),
+          ],
+        );
+        prims.push(label(number(y), pos, (-1.0, 0.0)));
+      }
+    }
+    Expr::List(prims.into())
+  }
+}
+
+/// The major tick step of a paired chart's value axis spanning `span`: the
+/// smallest of 1, 2 and 5 × 10^k that cuts it into fewer than 6 intervals.
+fn paired_value_step(span: f64) -> f64 {
+  if !(span.is_finite() && span > 0.0) {
+    return 1.0;
+  }
+  let mut mag = 10_f64.powf((span / 6.0).log10().floor());
+  loop {
+    for m in [1.0, 2.0, 5.0] {
+      if span / (m * mag) < 6.0 * (1.0 - 1e-12) {
+        return m * mag;
+      }
+    }
+    mag *= 10.0;
+  }
+}
+
+/// The major tick step of a paired chart's magnitude axis spanning `span`:
+/// the largest of 1, 2, 2.5 and 5 × 10^k that still fits twice.
+fn paired_magnitude_step(span: f64) -> f64 {
+  if !(span.is_finite() && span > 0.0) {
+    return 1.0;
+  }
+  let mut mag = 10_f64.powf(span.log10().floor());
+  loop {
+    for m in [5.0, 2.5, 2.0, 1.0] {
+      if span / (m * mag) >= 2.0 * (1.0 - 1e-12) {
+        return m * mag;
+      }
+    }
+    mag /= 10.0;
+  }
+}
+
+/// The `step`-spaced major ticks in `lo..=hi` with their labels, and the
+/// automatic minor ticks between (and beyond) them in that range.
+fn paired_ticks(lo: f64, hi: f64, step: f64) -> (Vec<(f64, String)>, Vec<f64>) {
+  use crate::functions::plot::{
+    format_tick_with_step, is_major_tick, minor_tick_step,
+  };
+  let first = (lo / step - 1e-9).ceil() as i64;
+  let last = (hi / step + 1e-9).floor() as i64;
+  let majors = (first..=last)
+    .map(|k| {
+      let v = k as f64 * step;
+      let v = if k == 0 { 0.0 } else { v };
+      (v, format_tick_with_step(v, step))
+    })
+    .collect();
+  let minor = minor_tick_step(step);
+  let first = (lo / minor - 1e-9).ceil() as i64;
+  let last = (hi / minor + 1e-9).floor() as i64;
+  let minors = (first..=last)
+    .map(|k| k as f64 * minor)
+    .filter(|&v| !is_major_tick(v, step))
+    .collect();
+  (majors, minors)
 }
 
 /// The bars of a vertical `BarChart` as `Graphics[{Rectangle[…], …}, opts]`

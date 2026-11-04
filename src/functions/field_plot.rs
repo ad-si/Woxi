@@ -5668,6 +5668,23 @@ fn nearest_node_grid(
     .collect()
 }
 
+/// The span a smooth histogram draws the kernel density estimate of
+/// `values` over: about 3.35 bandwidths (`bandwidth`, else Silverman's
+/// rule) beyond the smallest and the largest datum.
+pub(crate) fn smooth_kernel_domain(
+  values: &[f64],
+  bandwidth: Option<f64>,
+) -> (f64, f64) {
+  let h = bandwidth
+    .unwrap_or_else(|| crate::functions::math_ast::silverman_bandwidth(values));
+  let (min, max) = values
+    .iter()
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+      (a.min(v), b.max(v))
+    });
+  (min - 3.35 * h, max + 3.35 * h)
+}
+
 /// SmoothHistogram[data] / SmoothHistogram[{data1, …}, bw, dfun, opts] —
 /// the line plot of each dataset's `SmoothKernelDistribution` (bandwidth
 /// `bw`, Silverman's rule by default) as its PDF, or the "CDF", "SF" or "HF"
@@ -5734,16 +5751,9 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut hi = f64::NEG_INFINITY;
   let mut curves = Vec::with_capacity(datasets.len());
   for (data, values) in &datasets {
-    let h = bandwidth.unwrap_or_else(|| {
-      crate::functions::math_ast::silverman_bandwidth(values)
-    });
-    let (min, max) = values
-      .iter()
-      .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
-        (a.min(v), b.max(v))
-      });
-    lo = lo.min(min - 3.35 * h);
-    hi = hi.max(max + 3.35 * h);
+    let (min, max) = smooth_kernel_domain(values, bandwidth);
+    lo = lo.min(min);
+    hi = hi.max(max);
     let mut dist_args = vec![data.clone()];
     if let Some(h) = bandwidth {
       dist_args.push(Expr::Real(h));

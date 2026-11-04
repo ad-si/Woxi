@@ -1904,7 +1904,7 @@ GeneratedParameters,"Generated parameters option",,unevaluated,5.0,1873
 ImageValue,"Bilinear pixel value lookup in an image",✅,pure,8.0,1873
 MatrixLog,"Computes the matrix logarithm (inverse of MatrixExp)",✅,pure,9.0,1875
 PlotRegion,"Plot region option",,unevaluated,2.0,1875
-DensityHistogram,"Density histogram",,unevaluated,8.0,1877
+DensityHistogram,"Density plot of the bin counts of 2D data on a rectangular grid",✅,pure,8.0,1877
 DigitCount,"Counts occurrences of each digit in a number (Listable)",✅,pure,4.0,1877
 DistributionChart,"Violin chart of the kernel density estimate of each dataset",✅,pure,8.0,1880
 IncidenceMatrix,"Builds the vertex-by-edge incidence matrix of a graph",✅,none,8.0,1880
@@ -2213,7 +2213,7 @@ HankelH2,"Hankel function of the second kind",✅,pure,6.0,2197
 LinkObject,"Represents a MathLink or WSTP connection to an external process",🚫,None,3.0,2197
 RemoveAlphaChannel,"Removes the alpha transparency channel from an image (optionally compositing over a color)",✅,pure,8.0,2197
 WaveletScalogram,"Scalogram plot of discrete or continuous wavelet data",✅,graphics,8.0,2197
-ProbabilityPlot,"Creates a probability plot for assessing data distribution fit",🚫,None,8.0,2198
+ProbabilityPlot,"Plots the CDF of a distribution against the empirical CDF of data with a reference line",✅,pure,8.0,2198
 Gradient,"Symbolic gradient operator",🚫,None,2.2,2203
 InverseErfc,"Inverse complementary error function",✅,pure,3.0,2203
 PlotLayout,"Option specifying the layout arrangement of multiple plots",✅,pure,8.0,2203
@@ -2287,7 +2287,7 @@ GumbelDistribution,"Gumbel minimum extreme value distribution",✅,pure,6.0,2276
 LimitsPositioning,"Typesetting option",🚫,None,3.0,2276
 PrimeNu,"Count distinct prime factors of an integer (Listable)",✅,pure,7.0,2276
 SyntaxForm,"Typesetting",🚫,None,3.0,2276
-ProbabilityScalePlot,"Statistical visualization",🚫,None,8.0,2278
+ProbabilityScalePlot,"Plots data on a probability scale of a distribution with a fitted reference line",✅,pure,8.0,2278
 VectorDensityPlot,"Creates a density plot of a vector field's magnitude with its arrows",✅,pure,7.0,2278
 GeoProjectionData,"",🚫,,7.0,2282
 KeyExistsQ,"Checks if a key exists in an association",✅,pure,10.0,2282
@@ -2874,7 +2874,7 @@ CoordinateBoundsArray,"Array of coordinate bounds with optional padding",✅,1,1
 FourierSequenceTransform,"Discrete-time Fourier transform of a finite-support sequence",✅,pure,7.0,2880
 NormFunction,"",🚫,,5.0,2880
 PIDTune,"",🚫,,9.0,2880
-PairedSmoothHistogram,"",🚫,,9.0,2880
+PairedSmoothHistogram,"Two smooth kernel density histograms drawn back to back",✅,pure,9.0,2880
 PrimitiveRootList,"List of primitive roots modulo n",✅,none,10.0,2880
 RefreshRate,"",🚫,,6.0,2880
 AlphabeticOrder,"Compare strings in alphabetical order",✅,none,10.3,2889
