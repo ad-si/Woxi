@@ -3139,7 +3139,13 @@ fn split_radicand_content(expr: Expr) -> Expr {
   if !text.contains("Sqrt[") && !text.contains("^(1/2)") {
     return expr;
   }
-  match crate::evaluator::evaluate_expr_to_expr(&walk(&expr)) {
+  // Nothing to split: re-evaluating would be pointless, and for a Solve
+  // that stayed unevaluated it re-enters the very same Solve forever.
+  let walked = walk(&expr);
+  if crate::syntax::expr_to_string(&walked) == text {
+    return expr;
+  }
+  match crate::evaluator::evaluate_expr_to_expr(&walked) {
     Ok(e) => e,
     Err(_) => expr,
   }
@@ -17492,11 +17498,15 @@ fn minimize_find_critical_points_newton(
   let df =
     simplify(crate::functions::calculus_ast::differentiate_expr(f, var)?);
 
-  let starts: &[f64] = &[-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  // A coarse sweep of starting points, so a periodic or oscillating
+  // objective does not have its true optimum missed because every start
+  // converged to the same few critical points.
+  let mut starts: Vec<f64> = vec![-10.0, -3.0, -1.0, 0.0, 1.0, 3.0, 10.0];
+  starts.extend((-20..=20).map(|k| f64::from(k) * 0.5 + 0.25));
   let mut roots: Vec<f64> = Vec::new();
   let tol = 1e-10;
 
-  for &x0 in starts {
+  for &x0 in &starts {
     let mut x = x0;
     for _ in 0..100 {
       let gval = find_root_eval_at(&df, var, x).unwrap_or(f64::NAN);
