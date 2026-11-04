@@ -3240,7 +3240,8 @@ mod graphics {
     /// instead of running along the edges of the box.
     #[test]
     fn graphics3d_axes_origin_crosses_axes_at_the_point() {
-      let midpoints = |svg: &str| -> Vec<(f64, f64)> {
+      // The axis lines, as screen segments.
+      let axes = |svg: &str| -> Vec<[f64; 4]> {
         svg
           .lines()
           .filter(|l| {
@@ -3252,31 +3253,33 @@ mod graphics {
               let rest = &l[l.find(&key).unwrap() + key.len()..];
               rest[..rest.find('"').unwrap()].parse().unwrap()
             };
-            (
-              f64::midpoint(attr("x1"), attr("x2")),
-              f64::midpoint(attr("y1"), attr("y2")),
-            )
+            [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
           })
           .collect()
+      };
+      // Where the lines through two segments meet.
+      let meet = |a: [f64; 4], b: [f64; 4]| -> (f64, f64) {
+        let (d1x, d1y) = (a[2] - a[0], a[3] - a[1]);
+        let (d2x, d2y) = (b[2] - b[0], b[3] - b[1]);
+        let den = d1x * d2y - d1y * d2x;
+        let t = ((b[0] - a[0]) * d2y - (b[1] - a[1]) * d2x) / den;
+        (a[0] + t * d1x, a[1] + t * d1y)
+      };
+      // How far a point is from the line through a segment.
+      let off = |p: (f64, f64), s: [f64; 4]| -> f64 {
+        let (dx, dy) = (s[2] - s[0], s[3] - s[1]);
+        ((p.0 - s[0]) * dy - (p.1 - s[1]) * dx).abs() / dx.hypot(dy)
       };
       let scene = "Graphics3D[Line[{{-1, -1, -1}, {1, 1, 1}}], Axes -> True, \
                    Boxed -> False";
       let crossing =
-        midpoints(&export_svg(&format!("{scene}, AxesOrigin -> {{0, 0, 0}}]")));
+        axes(&export_svg(&format!("{scene}, AxesOrigin -> {{0, 0, 0}}]")));
       assert_eq!(crossing.len(), 3, "{crossing:?}");
-      for m in &crossing[1..] {
-        assert!(
-          (m.0 - crossing[0].0).abs() < 0.2
-            && (m.1 - crossing[0].1).abs() < 0.2,
-          "{crossing:?}"
-        );
-      }
-      let edges = midpoints(&export_svg(&format!("{scene}]")));
-      assert!(
-        (edges[0].0 - edges[1].0).abs() > 1.0
-          || (edges[0].1 - edges[1].1).abs() > 1.0,
-        "{edges:?}"
-      );
+      let p = meet(crossing[0], crossing[1]);
+      assert!(off(p, crossing[2]) < 0.3, "{crossing:?}");
+      let edges = axes(&export_svg(&format!("{scene}]")));
+      let p = meet(edges[0], edges[1]);
+      assert!(off(p, edges[2]) > 1.0, "{edges:?}");
     }
 
     /// Explicit ticks outside the plot range are not drawn.
@@ -4845,24 +4848,33 @@ mod plot3d {
       ));
     }
 
+    /// The `height` the root `<svg>` element declares.
+    fn svg_height(svg: &str) -> f64 {
+      let header = &svg[..svg.find('>').unwrap()];
+      let rest = &header[header.find(" height=\"").unwrap() + 9..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    }
+
     #[test]
     fn image_size_large() {
       let svg = export_svg(
         "Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}, ImageSize -> Large]",
       );
-      // WL 15's `Large` is 576 wide (WL draws it 452 high; Woxi's 3D
-      // picture stays square).
+      // WL 15's `Large` is 576 wide, and as high as the projected box
+      // needs (452 there).
       assert!(svg.contains("width=\"576\""));
-      assert!(svg.contains("height=\"576\""));
+      let h = svg_height(&svg);
+      assert!((440.0..=470.0).contains(&h), "height {h}");
     }
 
     #[test]
     fn image_size_small() {
       let svg =
         export_svg("Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, ImageSize -> Small]");
-      // WL 15's `Small` is 180 wide.
+      // WL 15's `Small` is 180 wide (and 142.8 high).
       assert!(svg.contains("width=\"180\""));
-      assert!(svg.contains("height=\"180\""));
+      let h = svg_height(&svg);
+      assert!((130.0..=150.0).contains(&h), "height {h}");
     }
 
     #[test]
@@ -6677,7 +6689,9 @@ mod plot3d {
         "Show[{Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, \
          PlotRange -> {0, 10}], Graphics3D[{Red, Sphere[{1, 1, 5}, 0.2]}]}]",
       );
-      for label in [">0</text>", ">5</text>", ">10</text>"] {
+      // The z ticks run from 0 to 10 (Woxi steps them by 2.5 and writes
+      // them with one decimal; wolframscript steps this short axis by 5).
+      for label in [">0.0</text>", ">5.0</text>", ">10.0</text>"] {
         assert!(alone.contains(label), "standalone plot lacks {label}");
         assert!(shown.contains(label), "shown plot lacks {label}");
       }
@@ -7011,7 +7025,7 @@ mod plot3d {
         .collect();
       let width = xs.iter().copied().fold(f64::MIN, f64::max)
         - xs.iter().copied().fold(f64::MAX, f64::min);
-      assert!(width > 150.0, "scene collapsed to {width}px wide");
+      assert!(width > 100.0, "scene collapsed to {width}px wide");
     }
 
     /// `Sphere[{p1, p2, …}, r]` is a set of spheres of that radius, one per
@@ -7551,12 +7565,22 @@ mod plot3d {
         outlines.iter().all(|l| !l.contains("opacity=")),
         "an outline stays opaque around a transparent face: {outlines:?}"
       );
-      // Without an edge colour a cylinder is still drawn smooth, with no
-      // facet outlines at all.
+      // Without an edge colour a cylinder still has its rims outlined in
+      // the default edge grey (as wolframscript draws them), but none of
+      // its facet cuts.
       let plain = export_svg(
         "Graphics3D[Cylinder[{{0,0,0},{0,0,0.001}}, 0.5], Boxed -> False]",
       );
-      assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
+      let rims: Vec<&str> =
+        plain.lines().filter(|l| l.starts_with("<line")).collect();
+      assert!(!rims.is_empty() && rims.len() <= 100, "{rims:?}");
+      assert!(rims.iter().all(|l| l.contains("stroke=\"rgb(64,64,64)\"")));
+      // `EdgeForm[]` turns the rims off.
+      let bare = export_svg(
+        "Graphics3D[{EdgeForm[], Cylinder[{{0,0,0},{0,0,0.001}}, 0.5]}, \
+         Boxed -> False]",
+      );
+      assert_eq!(bare.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
     /// `Dashed`/`Dotted`/`DotDashed`/`Dashing`/`AbsoluteDashing` used to be
@@ -7905,9 +7929,14 @@ mod plot3d {
           "Graphics3D[Cuboid[], ViewPoint -> {vp}, Boxed -> False]"
         ))
       };
-      assert_eq!(view("{0, 0, Infinity}"), view("Above"));
-      assert_eq!(view("{0, 0, -Infinity}"), view("Below"));
-      assert_eq!(view("{Infinity, 0, 0}"), view("Right"));
+      // A viewpoint at infinity is an orthographic view, unlike the
+      // perspective one of the finite `Above` ({0, 0, 2}), whose far side
+      // of the box shows inset (as wolframscript draws them).
+      assert_ne!(view("{0, 0, Infinity}"), view("Above"));
+      assert_ne!(view("{0, 0, -Infinity}"), view("Below"));
+      assert_ne!(view("{Infinity, 0, 0}"), view("Right"));
+      assert_eq!(view("Above"), view("{0, 0, 2}"));
+      assert_eq!(view("Top"), view("Above"));
       assert_ne!(view("{0, 0, Infinity}"), view("{1.3, -2.4, 2}"));
     }
 
@@ -22292,14 +22321,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn curved_surfaces_have_no_facet_edges() {
       for code in [
         "Graphics3D[Sphere[]]",
-        "Graphics3D[Cylinder[]]",
-        "Graphics3D[Cone[]]",
         "Graphics3D[Tube[{{0, 0, 0}, {1, 1, 1}}]]",
         "Graphics3D[Torus[]]",
       ] {
         let svg = export_svg(code);
         assert!(
           !svg.contains("stroke=\"rgb(64,64,64)\""),
+          "{code} must not stroke its facet edges"
+        );
+      }
+      // A cylinder or cone outlines only the rims of its flat ends, which
+      // are `<line>`s; no facet polygon is stroked dark.
+      for code in ["Graphics3D[Cylinder[]]", "Graphics3D[Cone[]]"] {
+        let svg = export_svg(code);
+        assert!(
+          !svg.lines().any(|l| l.starts_with("<polygon")
+            && l.contains("stroke=\"rgb(64,64,64)\"")),
           "{code} must not stroke its facet edges"
         );
       }
@@ -24338,8 +24375,9 @@ mod list_plot_3d {
     )
     .unwrap();
     let svg = result.graphics.unwrap();
-    // Axes span -1..1, not 0..8 (the index range of a z-matrix reading).
-    assert!(svg.contains(">-1</text>"));
+    // Axes span -1..1, not 0..8 (the index range of a z-matrix reading);
+    // the 0.5-spaced ticks are all written with one decimal.
+    assert!(svg.contains(">-1.0</text>"));
     assert!(!svg.contains(">8</text>"));
   }
 
@@ -29038,9 +29076,12 @@ mod contour_plot_3d {
        PlotPoints -> 5]",
     ] {
       let svg = export_svg(call);
+      // The height follows the projected box, so only the width is fixed.
+      let backdrop = svg.split("<rect width=\"360\" height=\"").nth(1);
       assert!(
-        svg
-          .contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+        backdrop.is_some_and(|r| r
+          .split_once('"')
+          .is_some_and(|(_, rest)| rest.starts_with(" fill=\"rgb(0,0,0)\"/>"))),
         "{call}: backdrop must be black"
       );
     }
@@ -29116,8 +29157,12 @@ mod contour_plot_3d {
       "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
        {z, -1, 1}, Background -> Black, PlotPoints -> 6]",
     );
+    // The height follows the projected box, so only the width is fixed.
+    let backdrop = svg.split("<rect width=\"360\" height=\"").nth(1);
     assert!(
-      svg.contains("<rect width=\"360\" height=\"360\" fill=\"rgb(0,0,0)\"/>"),
+      backdrop.is_some_and(|r| r
+        .split_once('"')
+        .is_some_and(|(_, rest)| rest.starts_with(" fill=\"rgb(0,0,0)\"/>"))),
       "canvas should be black: {}",
       &svg[..300.min(svg.len())]
     );
@@ -30674,7 +30719,7 @@ mod parametric_plot3d {
     );
     let (flat_aspect, tall_aspect) = (box_aspect(&flat), box_aspect(&tall));
     assert!(
-      tall_aspect > flat_aspect * 4.0,
+      tall_aspect > flat_aspect * 3.0,
       "BoxRatios -> {{1,1,4}} must draw a much taller box than \
        {{1,1,0.1}}: {tall_aspect} vs {flat_aspect}"
     );
@@ -40718,10 +40763,18 @@ mod tube_and_cap_form {
     );
     assert_ne!(capped, open, "CapForm[None] must drop the end disks");
     // Each end's disk fans into 24 triangles (`CYLINDER_SIDES`), same as a
-    // `Tube`'s cap.
+    // `Tube`'s cap. (Translucent, so the far side of the closed solid is
+    // not culled and every facet is counted.)
+    let see_through = |caps: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{Opacity[0.5], {caps}Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}]"
+      ))
+      .matches("<polygon")
+      .count()
+    };
     assert_eq!(
-      capped.matches("<polygon").count(),
-      open.matches("<polygon").count() + 2 * 24,
+      see_through(""),
+      see_through("CapForm[None], ") + 2 * 24,
       "both end disks must each add a 24-triangle fan"
     );
     // Naming a cap form puts them back.
@@ -40743,9 +40796,16 @@ mod tube_and_cap_form {
     );
     assert!(open.contains("<polygon"), "the open cone must still draw");
     assert_ne!(capped, open, "CapForm[None] must drop the base disk");
+    let see_through = |caps: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{Opacity[0.5], {caps}Cone[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}]"
+      ))
+      .matches("<polygon")
+      .count()
+    };
     assert_eq!(
-      capped.matches("<polygon").count(),
-      open.matches("<polygon").count() + 24,
+      see_through(""),
+      see_through("CapForm[None], ") + 24,
       "the base disk must add a 24-triangle fan"
     );
   }

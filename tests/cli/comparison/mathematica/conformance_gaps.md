@@ -5051,10 +5051,12 @@ With the same scene both engines place every primitive identically, but:
   - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
     lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
     WL 15 gradient bar style is not implemented.
-- **Projection.** `ViewAngle` drives a perspective camera in Wolfram; Woxi's
-  projection stays effectively orthographic, so a lattice looks uniform instead
-  of splaying toward the viewer. A wide angle (≳30°) leaves the silhouette a
-  few percent narrow.
+- **Projection.** Woxi's camera is now a perspective one like Wolfram's (the
+  eye `|ViewPoint|` box sides from the box centre; a `ViewPoint` with an
+  infinite component is orthographic). An explicit `ViewAngle` still sets the
+  scale from the orthographic law above, so a wide angle (≳30°) can leave the
+  silhouette a few percent off. The 3D charts (`chart.rs`) keep their own
+  orthographic camera.
 
 ### `Specularity`
 
@@ -7990,19 +7992,13 @@ Found comparing the graphics-tests renders (2026-11):
     297 → 94 (WL 88).
   - `GraphicsGrid` of two `Rectangle[{0, 0}, {2, 1}]` is 600 x 171 (WL
     165), of two `Rectangle[{0, 0}, {1, 4}]` 226 wide (WL 225).
-- `Plot3D`, `Graphics3D` and the other 3D pictures are always square
-  (360 x 360). WL's height follows the projected box: with `a` the
-  height / width of the box corners under a *perspective* projection from
-  `ViewPoint` (the eye at `|ViewPoint|` times the box's longest side from
-  its centre, `z` up), the picture is `(w - pw) a + ph` tall, where the
-  automatic `ImagePadding` is `pw = 19.15`, `ph = 14.26` with axes (it
-  holds the tick labels) and `pw = ph = 2` without. That reproduces
-  `Plot3D` (`a = 0.811`: 360 x 290.7, `Large` 576 x 465, `Small` 180 x
-  142.8), the unit `Cuboid[]` (`a = 1.085`: 360 x 390.6) and a
-  `{2, 1, 1}` cuboid (`a = 0.812`). The height is capped at 432 (1.2 x
-  360), the width then shrinking to keep `a` (`Cuboid[{0, 0, 0}, {1, 1,
-  3}]` is 200.1 x 432). Woxi's own projection is orthographic, which
-  gives a slightly different `a` (0.829 for `Plot3D`).
+- 3D picture size: Graphics3D and the Plot3D-family renderers now follow
+  WL's model (perspective box, height `(w - pw) a + ph` capped at 1.2 w),
+  with the padding measured from where the tick labels land rather than
+  WL's fixed `pw = 19.15`, `ph = 14.26`. Woxi's tick labels sit a little
+  closer to the box, so `Plot3D` comes out 360 x ~273-282 (WL 290.7).
+  `ListPointPlot3D`, `ListLinePlot3D`, `VectorPlot3D` and the 3D charts
+  still use their own square framing.
 
 - The automatic tick step rule is unknown for log axes over more than 6
   decades (WL labels every 2nd decade over 8, every 3rd over 9,

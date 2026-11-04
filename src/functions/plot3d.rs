@@ -25,6 +25,19 @@ pub(crate) struct Camera {
   /// `ViewVertical`: the direction that points up on screen. The default
   /// `{0, 0, 1}` is the one the azimuth/elevation basis already assumes.
   pub vertical: [f64; 3],
+  /// A perspective camera: the point it looks at and its distance from
+  /// it (Wolfram's `ViewPoint` at `|ViewPoint|` times the longest side of
+  /// the box). `None` projects orthographically, as a `ViewPoint` at
+  /// infinity does.
+  pub perspective: Option<Perspective>,
+}
+
+/// The eye of a perspective [`Camera`]: it sits `distance` from `center`
+/// towards the viewer.
+#[derive(Clone, Copy)]
+pub(crate) struct Perspective {
+  pub center: [f64; 3],
+  pub distance: f64,
 }
 
 impl Camera {
@@ -57,6 +70,22 @@ impl Camera {
     }
     let right = [right[0] / len, right[1] / len, right[2] / len];
     Some((right, cross(d, right)))
+  }
+
+  /// The direction from `p` towards the eye: the view direction for an
+  /// orthographic camera, the line to the eye for a perspective one.
+  pub(crate) fn toward_viewer(&self, p: Point3D) -> [f64; 3] {
+    let (sa, ca) = self.azimuth.sin_cos();
+    let (se, ce) = self.elevation.sin_cos();
+    let toward = [ce * ca, ce * sa, se];
+    match self.perspective {
+      Some(eye) => [
+        eye.center[0] + eye.distance * toward[0] - p.x,
+        eye.center[1] + eye.distance * toward[1] - p.y,
+        eye.center[2] + eye.distance * toward[2] - p.z,
+      ],
+      None => toward,
+    }
   }
 
   /// The camera frame lights fixed to the view (`ImageScaled`) are placed
@@ -99,6 +128,15 @@ impl Default for Camera {
       azimuth: -1.07,  // ~-61 degrees
       elevation: 0.63, // ~36 degrees
       vertical: Camera::DEFAULT_VERTICAL,
+      // The plots normalize their box into [-1, 1] (x and y), so the eye
+      // is |ViewPoint| times that side of 2 from its centre.
+      perspective: Some(Perspective {
+        center: [0.0; 3],
+        distance: 2.0 * {
+          let d = Camera::DEFAULT_VIEW_POINT;
+          (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+        },
+      }),
     }
   }
 }
@@ -179,10 +217,13 @@ fn projected_triangles_overlap(
 fn side_of_plane(
   t: &[Point3D; 3],
   plane: &[Point3D; 3],
-  gradient: [f64; 3],
+  camera: &Camera,
 ) -> Option<bool> {
   let mut n = triangle_normal(plane[0], plane[1], plane[2]);
-  if n[0] * gradient[0] + n[1] * gradient[1] + n[2] * gradient[2] > 0.0 {
+  // Towards the eye from the plane: the same everywhere for an
+  // orthographic camera, the line to the eye for a perspective one.
+  let view = camera.toward_viewer(plane[0]);
+  if n[0] * view[0] + n[1] * view[1] + n[2] * view[2] < 0.0 {
     n = [-n[0], -n[1], -n[2]];
   }
   // `n` now points toward the viewer.
@@ -247,17 +288,6 @@ fn for_each_overlapping_pair(
       }
     }
   }
-}
-
-/// The gradient of `depth` in scene coordinates: depth(p) = gradient . p.
-fn depth_gradient(camera: &Camera) -> [f64; 3] {
-  let unit = |x, y, z| Point3D { x, y, z };
-  let d0 = depth(unit(0.0, 0.0, 0.0), camera);
-  [
-    depth(unit(1.0, 0.0, 0.0), camera) - d0,
-    depth(unit(0.0, 1.0, 0.0), camera) - d0,
-    depth(unit(0.0, 0.0, 1.0), camera) - d0,
-  ]
 }
 
 /// Most cutting planes applied to a single triangle, bounding the growth of
@@ -327,12 +357,11 @@ fn split_interpenetrating(
   if !(2..=SPLIT_MAX_TRIANGLES).contains(&n) {
     return;
   }
-  let gradient = depth_gradient(camera);
   let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
-    if side_of_plane(&verts[i], &verts[j], gradient).is_none()
-      && side_of_plane(&verts[j], &verts[i], gradient).is_none()
+    if side_of_plane(&verts[i], &verts[j], camera).is_none()
+      && side_of_plane(&verts[j], &verts[i], camera).is_none()
     {
       if planes[i].len() < MAX_SPLIT_PLANES {
         planes[i].push(j);
@@ -432,13 +461,12 @@ fn painter_order(
   if n > PAINTER_ORDER_MAX_TRIANGLES {
     return by_depth;
   }
-  let gradient = depth_gradient(camera);
   // `after[i]` lists the triangles that must be drawn after `i`.
   let mut after: Vec<Vec<usize>> = vec![Vec::new(); n];
   let mut indegree = vec![0usize; n];
   for_each_overlapping_pair(projected, |i, j| {
-    let i_behind = side_of_plane(&verts[i], &verts[j], gradient)
-      .or_else(|| side_of_plane(&verts[j], &verts[i], gradient).map(|s| !s));
+    let i_behind = side_of_plane(&verts[i], &verts[j], camera)
+      .or_else(|| side_of_plane(&verts[j], &verts[i], camera).map(|s| !s));
     match i_behind {
       Some(true) => {
         after[i].push(j);
@@ -586,6 +614,29 @@ const MESH_STEP: usize = 3;
 /// Orthographic projection from a camera at spherical (azimuth, elevation).
 /// Returns (screen_x, screen_y) in projected coordinates.
 pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
+  let (sx, sy) = project_orthographic(p, cam);
+  let Some(eye) = cam.perspective else {
+    return (sx, sy);
+  };
+  // Foreshortening about the point the camera looks at: a point nearer the
+  // eye than that point's plane is spread out from it, a farther one drawn
+  // in towards it.
+  let c = Point3D {
+    x: eye.center[0],
+    y: eye.center[1],
+    z: eye.center[2],
+  };
+  let (cx, cy) = project_orthographic(c, cam);
+  let toward = -(depth(p, cam) - depth(c, cam));
+  let gap = eye.distance - toward;
+  if gap <= eye.distance * 1e-6 {
+    return (sx, sy);
+  }
+  let f = eye.distance / gap;
+  (cx + (sx - cx) * f, cy + (sy - cy) * f)
+}
+
+fn project_orthographic(p: Point3D, cam: &Camera) -> (f64, f64) {
   if cam.vertical != Camera::DEFAULT_VERTICAL
     && let Some((r, u)) = cam.tilted_basis()
   {
@@ -1457,6 +1508,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
+    !image_height_is_explicit(args),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -1479,7 +1531,10 @@ fn generate_svg(
   show_axes: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
+  auto_height: bool,
 ) -> Result<String, InterpreterError> {
+  let mut svg_width = svg_width;
+  let mut svg_height = svg_height;
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -1513,23 +1568,36 @@ fn generate_svg(
     ));
   }
 
-  // Compute scale and offset to map projected coords to SVG coords. An
-  // `AxesLabel` given while axes are shown needs extra room outside the
-  // box beyond what the tick labels alone reserve (mirrors
-  // `graphics3d_ast`'s margin); every other case keeps the fixed margin
-  // this renderer always used.
-  let margin = if show_axes && axes_labels.iter().any(Option::is_some) {
-    axes_label_margin(axes_labels, svg_width.min(svg_height))
-  } else {
-    25.0
-  };
-  let draw_w = svg_width as f64 - 2.0 * margin;
-  let draw_h = svg_height as f64 - 2.0 * margin;
-  let scale = (draw_w / p_width).min(draw_h / p_height);
-  let cx = margin + draw_w / 2.0;
-  let cy = margin + draw_h / 2.0;
+  // Map projected coords to SVG coords: the box (and the axes' labels
+  // sticking out of it) fitted into the picture with Wolfram's 1-pixel
+  // padding, the height following the box unless it is pinned.
   let p_cx = f64::midpoint(px_min, px_max);
   let p_cy = f64::midpoint(py_min, py_max);
+  let bbox_for_axes = bounding_box_corners_with_ratios(box_ratios);
+  let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
+    show_axes.then(|| {
+      let to_svg =
+        |px: f64, py: f64| (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale);
+      draw_axes_on_box(
+        &mut String::new(),
+        camera,
+        &to_svg,
+        &bbox_for_axes,
+        x_range,
+        y_range,
+        z_range,
+        axes_labels,
+      )
+    })
+  };
+  let (scale, cx, cy, w, h) = fit_3d_frame(
+    svg_width,
+    (!auto_height || full_width).then_some(svg_height),
+    (px_min, px_max, py_min, py_max),
+    &axes_extent,
+  );
+  svg_width = w;
+  svg_height = h;
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -1719,6 +1787,52 @@ fn generate_svg(
   Ok(svg)
 }
 
+/// The picture size Wolfram gives a 3D scene `width` wide whose projected
+/// box is `aspect` times as tall as it is wide, with `pad_w` x `pad_h` of
+/// padding: as tall as the box needs, up to 1.2 times the width — beyond
+/// that the width shrinks instead.
+fn fitted_image_size(
+  width: u32,
+  aspect: f64,
+  pad_w: f64,
+  pad_h: f64,
+) -> (u32, u32) {
+  let w = width as f64;
+  if !(aspect.is_finite() && aspect > 0.0) {
+    return (width, width);
+  }
+  let cap = 1.2 * w;
+  let h = (w - pad_w) * aspect + pad_h;
+  if h > cap {
+    let w = ((cap - pad_h) / aspect + pad_w).round().max(1.0);
+    (w as u32, cap.round() as u32)
+  } else {
+    (width, h.round().max(1.0) as u32)
+  }
+}
+
+/// Whether a plot's options pin the picture's height: `ImageSize -> {w,
+/// h}`, `ImageSize -> Full` or an `AspectRatio`. Otherwise the height
+/// follows the projected box.
+fn image_height_is_explicit(opts: &[Expr]) -> bool {
+  opts.iter().any(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match pattern.as_ref() {
+      Expr::Identifier(n) if n == "ImageSize" => {
+        matches!(
+          replacement.as_ref(),
+          Expr::List(items) if items.len() == 2
+        ) || matches!(replacement.as_ref(), Expr::Identifier(f) if f == "Full")
+      }
+      Expr::Identifier(n) if n == "AspectRatio" => true,
+      _ => false,
+    },
+    _ => false,
+  })
+}
+
 /// The 8 corners of the normalized [-1,1]x[-1,1]x[-Z_SCALE,Z_SCALE] bounding
 /// box — the default box shape shared by the Plot3D-family renderers.
 fn bounding_box_corners() -> [Point3D; 8] {
@@ -1813,7 +1927,7 @@ fn draw_axes_on_box(
   y_range: (f64, f64),
   z_range: (f64, f64),
   axes_labels: &[Option<String>; 3],
-) {
+) -> AxesExtent {
   draw_axes_on_box_with_ticks(
     svg,
     camera,
@@ -1825,14 +1939,18 @@ fn draw_axes_on_box(
     axes_labels,
     &[None, None, None],
     None,
-  );
+  )
 }
 
 /// Parse a 3D `Ticks` option into one entry per axis: `None` keeps the
 /// automatic ticks, `Some(positions)` pins them (`None` → no ticks at all,
 /// a list of positions or `{position, label}` pairs → just those).
-fn parse_ticks_3d(value: &Expr) -> [Option<Vec<f64>>; 3] {
-  let mut out: [Option<Vec<f64>>; 3] = [None, None, None];
+/// One axis' explicit ticks: each position with the label a `{x, label}`
+/// pair gives it (`None` labels it with its value).
+type TickList3D = Vec<(f64, Option<String>)>;
+
+fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
+  let mut out: [Option<TickList3D>; 3] = [None, None, None];
   if matches!(value, Expr::Identifier(s) if s == "None") {
     return [Some(Vec::new()), Some(Vec::new()), Some(Vec::new())];
   }
@@ -1846,8 +1964,12 @@ fn parse_ticks_3d(value: &Expr) -> [Option<Vec<f64>>; 3] {
         items
           .iter()
           .filter_map(|item| match item {
-            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
-            other => try_eval_to_f64(other),
+            Expr::List(pair) => {
+              let at = pair.first().and_then(try_eval_to_f64)?;
+              let label = pair.get(1).and_then(|l| axis_label_markup(l, None));
+              Some((at, label))
+            }
+            other => try_eval_to_f64(other).map(|at| (at, None)),
           })
           .collect(),
       ),
@@ -1868,9 +1990,10 @@ fn draw_axes_on_box_with_ticks(
   y_range: (f64, f64),
   z_range: (f64, f64),
   axes_labels: &[Option<String>; 3],
-  ticks: &[Option<Vec<f64>>; 3],
+  ticks: &[Option<TickList3D>; 3],
   crossing: Option<&[Option<f64>; 3]>,
-) {
+) -> AxesExtent {
+  let mut extent = AxesExtent::EMPTY;
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let font_size = 13;
@@ -2025,14 +2148,34 @@ fn draw_axes_on_box_with_ticks(
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
 
-  let axis_ticks = |ai: usize, lo: f64, hi: f64| -> Vec<f64> {
-    match &ticks[ai] {
-      Some(positions) => positions
+  // Each tick with its label. Automatic ticks share the decimals their
+  // step needs (`-1.0, -0.5, 0.0`), as Wolfram writes them.
+  let axis_ticks = |ai: usize, lo: f64, hi: f64| -> Vec<(f64, String)> {
+    if let Some(positions) = &ticks[ai] {
+      positions
         .iter()
-        .copied()
-        .filter(|v| *v >= lo.min(hi) && *v <= lo.max(hi))
-        .collect(),
-      None => tick_values(lo, hi),
+        .filter(|(v, _)| *v >= lo.min(hi) && *v <= lo.max(hi))
+        .map(|(v, label)| {
+          (*v, label.clone().unwrap_or_else(|| format_tick(*v)))
+        })
+        .collect()
+    } else {
+      let values = tick_values(lo, hi);
+      let step = match values.as_slice() {
+        [a, b, ..] => b - a,
+        _ => 0.0,
+      };
+      values
+        .into_iter()
+        .map(|v| {
+          let label = if step > 0.0 {
+            crate::functions::plot::format_tick_with_step(v, step)
+          } else {
+            format_tick(v)
+          };
+          (v, label)
+        })
+        .collect()
     }
   };
 
@@ -2049,6 +2192,8 @@ fn draw_axes_on_box_with_ticks(
     svg.push_str(&format!(
             "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{axis_color}\" stroke-width=\"1\"/>\n"
         ));
+    extent.add(sx0, sy0);
+    extent.add(sx1, sy1);
 
     // The axis label sits centred on the axis, clear of the tick labels
     // already sitting there — where Wolfram puts it.
@@ -2069,7 +2214,7 @@ fn draw_axes_on_box_with_ticks(
         // width, below a horizontal one it is the line height.
         let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
-          .map(|v| format_tick(*v).chars().count())
+          .map(|(_, label)| markup_char_count(label))
           .max()
           .unwrap_or(1) as f64;
         let half_w = tick_chars * font_size as f64 * 0.3;
@@ -2099,11 +2244,19 @@ fn draw_axes_on_box_with_ticks(
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{rotate}>{label}</text>\n",
         ));
+        let chars = markup_char_count(label);
+        if vertical {
+          extent.add_text(lx, ly, 1, font_size as f64, "middle");
+          extent.add(lx, ly - chars as f64 * font_size as f64 * 0.28);
+          extent.add(lx, ly + chars as f64 * font_size as f64 * 0.28);
+        } else {
+          extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        }
       }
     }
 
     // Ticks
-    for tick_val in axis_ticks(ai, val_min, val_max) {
+    for (tick_val, label) in axis_ticks(ai, val_min, val_max) {
       // Map tick_val to parameter t along the axis [origin → end]
       let t_raw = if (val_max - val_min).abs() < 1e-15 {
         0.5
@@ -2144,36 +2297,144 @@ fn draw_axes_on_box_with_ticks(
           1.0
         };
 
-        let label = format_tick(tick_val);
+        // A label pushed sideways is aligned on its near end, so it grows
+        // away from the axis instead of straddling its anchor (Wolfram
+        // right-aligns the labels of an axis on the left).
+        let (ux, uy) = (perpx / 4.0 * sign, perpy / 4.0 * sign);
+        let (anchor, reach) = if ux < -0.5 {
+          ("end", TICK_LABEL_OFFSET * 0.6)
+        } else if ux > 0.5 {
+          ("start", TICK_LABEL_OFFSET * 0.6)
+        } else {
+          ("middle", TICK_LABEL_OFFSET)
+        };
         svg.push_str(&format!(
-                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + perpx / 4.0 * TICK_LABEL_OFFSET * sign, ty + perpy / 4.0 * TICK_LABEL_OFFSET * sign, font_size, axis_color, label
+                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
+                    tx + ux * reach, ty + uy * reach, TICK_FONT_SIZE, axis_color, anchor, label
                 ));
+        extent.add_text(
+          tx + ux * reach,
+          ty + uy * reach,
+          markup_char_count(&label),
+          TICK_FONT_SIZE as f64,
+          anchor,
+        );
       }
     }
   }
+  extent
+}
+
+/// The pixel rectangle `(x_min, x_max, y_min, y_max)` the axes and their
+/// labels cover, so a picture can be padded to keep them in view.
+#[derive(Clone, Copy)]
+pub(crate) struct AxesExtent {
+  pub x_min: f64,
+  pub x_max: f64,
+  pub y_min: f64,
+  pub y_max: f64,
+}
+
+impl AxesExtent {
+  const EMPTY: AxesExtent = AxesExtent {
+    x_min: f64::INFINITY,
+    x_max: f64::NEG_INFINITY,
+    y_min: f64::INFINITY,
+    y_max: f64::NEG_INFINITY,
+  };
+
+  fn add(&mut self, x: f64, y: f64) {
+    self.x_min = self.x_min.min(x);
+    self.x_max = self.x_max.max(x);
+    self.y_min = self.y_min.min(y);
+    self.y_max = self.y_max.max(y);
+  }
+
+  /// A text run of `chars` characters anchored at `(x, y)` (`anchor` as
+  /// SVG's `text-anchor`, vertically centred).
+  fn add_text(
+    &mut self,
+    x: f64,
+    y: f64,
+    chars: usize,
+    font: f64,
+    anchor: &str,
+  ) {
+    let w = chars as f64 * font * 0.56;
+    let (l, r) = match anchor {
+      "end" => (x - w, x),
+      "start" => (x, x + w),
+      _ => (x - w / 2.0, x + w / 2.0),
+    };
+    self.add(l, y - font * 0.5);
+    self.add(r, y + font * 0.5);
+  }
+}
+
+/// Wolfram pads a 3D picture by 1 pixel around everything it draws: the
+/// projected box and the axes' tick labels sticking out of it. With the
+/// picture `width` x `height` (`height` `None` to fit it to the box) and
+/// the box spanning `p` (projected units), this returns the scale and the
+/// pixel position of the box's projected centre, and the final size.
+/// `extent_at` reports where the axes land for a trial framing.
+fn fit_3d_frame(
+  width: u32,
+  height: Option<u32>,
+  p: (f64, f64, f64, f64),
+  extent_at: &dyn Fn(f64, f64, f64) -> Option<AxesExtent>,
+) -> (f64, f64, f64, u32, u32) {
+  let (px_min, px_max, py_min, py_max) = p;
+  let p_width = (px_max - px_min).max(1e-15);
+  let p_height = (py_max - py_min).max(1e-15);
+  let mut pads = [1.0_f64; 4]; // left, right, top, bottom
+  let mut result = (1.0, 0.0, 0.0, width, height.unwrap_or(width));
+  for _ in 0..3 {
+    let pad_w = pads[0] + pads[1];
+    let pad_h = pads[2] + pads[3];
+    let (w, h) = match height {
+      Some(h) => (width, h),
+      None => fitted_image_size(width, p_height / p_width, pad_w, pad_h),
+    };
+    let scale =
+      ((w as f64 - pad_w) / p_width).min((h as f64 - pad_h) / p_height);
+    // The box is centred in the room the pads leave.
+    let cx = pads[0] + (w as f64 - pad_w) / 2.0;
+    let cy = pads[2] + (h as f64 - pad_h) / 2.0;
+    result = (scale, cx, cy, w, h);
+    let Some(ext) = extent_at(scale, cx, cy) else {
+      break;
+    };
+    // How far the axes reach beyond the box on each side.
+    let box_l = cx - p_width / 2.0 * scale;
+    let box_r = cx + p_width / 2.0 * scale;
+    let box_t = cy - p_height / 2.0 * scale;
+    let box_b = cy + p_height / 2.0 * scale;
+    let next = [
+      1.0 + (box_l - ext.x_min).max(0.0),
+      1.0 + (ext.x_max - box_r).max(0.0),
+      1.0 + (box_t - ext.y_min).max(0.0),
+      1.0 + (ext.y_max - box_b).max(0.0),
+    ];
+    let settled = next.iter().zip(&pads).all(|(a, b)| (a - b).abs() < 0.5);
+    pads = next;
+    if settled {
+      break;
+    }
+  }
+  result
 }
 
 /// How far from the axis line the tick labels are centred.
-const TICK_LABEL_OFFSET: f64 = 12.0;
+const TICK_LABEL_OFFSET: f64 = 10.0;
+
+/// The font size of 3D tick labels (Wolfram's are smaller than its
+/// axis labels).
+const TICK_FONT_SIZE: i32 = 10;
 
 /// Half the width a text label takes at `font_size`, estimated from its
 /// character count — enough to keep labels from landing on each other.
 fn label_half_width(label: &str, font_size: i32) -> f64 {
   markup_char_count(label) as f64 * font_size as f64 * 0.3
-}
-
-/// The margin a frame needs outside its box for `AxesLabel` text: the tick
-/// labels' own room plus the widest axis label. Capped at a fifth of the
-/// frame so a long label shrinks the plot rather than squeezing it away.
-fn axes_label_margin(axes_labels: &[Option<String>; 3], size: u32) -> f64 {
-  let font_size = 13;
-  let widest = axes_labels
-    .iter()
-    .flatten()
-    .map(|l| label_half_width(l, font_size) * 2.0)
-    .fold(0.0_f64, f64::max);
-  (25.0 + widest * 0.5).min(size as f64 / 5.0)
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
@@ -3516,6 +3777,34 @@ fn clip_polygon_to_halfspace(
     if (da < 0.0 && db > 0.0) || (da > 0.0 && db < 0.0) {
       let t = da / (da - db);
       out.push(v_add(a, v_scale(v_sub(b, a), t)));
+    }
+  }
+  out
+}
+
+/// The parts of `tris` inside the axis-aligned box `bounds`, each clipped
+/// triangle fanned back into triangles.
+fn clip_triangles_to_box(
+  tris: &[(Point3D, Point3D, Point3D)],
+  bounds: &[(f64, f64); 3],
+) -> Vec<(Point3D, Point3D, Point3D)> {
+  let mut out = Vec::with_capacity(tris.len());
+  for (a, b, c) in tris {
+    let mut poly: Vec<[f64; 3]> =
+      [a, b, c].iter().map(|p| [p.x, p.y, p.z]).collect();
+    for axis in 0..3 {
+      let mut n = [0.0; 3];
+      n[axis] = 1.0;
+      poly = clip_polygon_to_halfspace(&poly, n, bounds[axis].1);
+      n[axis] = -1.0;
+      poly = clip_polygon_to_halfspace(&poly, n, -bounds[axis].0);
+      if poly.len() < 3 {
+        break;
+      }
+    }
+    let pt = |[x, y, z]: [f64; 3]| Point3D { x, y, z };
+    for i in 1..poly.len().saturating_sub(1) {
+      out.push((pt(poly[0]), pt(poly[i]), pt(poly[i + 1])));
     }
   }
   out
@@ -6216,6 +6505,8 @@ fn collect_3d_primitives(
           {
             let mut tube_style = style.clone();
             tube_style.capped = false;
+            // Its ends meet the spheres, so they are no outline.
+            tube_style.edges = false;
             prims.push(Primitive3D::Cylinder {
               p1,
               p2,
@@ -8214,34 +8505,35 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
       Primitive3D::Cylinder { p1, p2, radius, .. }
       | Primitive3D::Cone { p1, p2, radius, .. } => {
-        let r = *radius;
-        for p in [p1, p2] {
-          extend_3d(
-            &Point3D {
-              x: p.x - r,
-              y: p.y - r,
-              z: p.z - r,
-            },
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
-          extend_3d(
-            &Point3D {
-              x: p.x + r,
-              y: p.y + r,
-              z: p.z + r,
-            },
-            &mut x3_min,
-            &mut x3_max,
-            &mut y3_min,
-            &mut y3_max,
-            &mut z3_min,
-            &mut z3_max,
-          );
+        // Each end is a disk of the radius at right angles to the axis
+        // (a cone's apex is a point), which reaches r·√(1 − uₖ²) along
+        // axis k for the unit axis direction u.
+        let axis = [p2.x - p1.x, p2.y - p1.y, p2.z - p1.z];
+        let len = v_len(axis);
+        let reach = if len > 0.0 {
+          axis.map(|a| *radius * (1.0 - (a / len).powi(2)).max(0.0).sqrt())
+        } else {
+          [*radius; 3]
+        };
+        let is_cone = matches!(prim, Primitive3D::Cone { .. });
+        for (p, r) in
+          [(p1, reach), (p2, if is_cone { [0.0; 3] } else { reach })]
+        {
+          for sign in [-1.0, 1.0] {
+            extend_3d(
+              &Point3D {
+                x: p.x + sign * r[0],
+                y: p.y + sign * r[1],
+                z: p.z + sign * r[2],
+              },
+              &mut x3_min,
+              &mut x3_max,
+              &mut y3_min,
+              &mut y3_max,
+              &mut z3_min,
+              &mut z3_max,
+            );
+          }
         }
       }
       Primitive3D::Polygon3D { points, .. } => {
@@ -8314,7 +8606,27 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
     }
   }
-  [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)]
+  // An axis the contents do not extend along (a flat polygon, a vertical
+  // line) is given a range as Wolfram does: from 0 to twice the value
+  // (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
+  let widen = |(lo, hi): (f64, f64)| {
+    if lo.is_finite() && hi.is_finite() && hi - lo <= 1e-12 * lo.abs().max(1.0)
+    {
+      let c = f64::midpoint(lo, hi);
+      if c == 0.0 {
+        (-1.0, 1.0)
+      } else {
+        (c.min(0.0) * 2.0, c.max(0.0) * 2.0)
+      }
+    } else {
+      (lo, hi)
+    }
+  };
+  [
+    widen((x3_min, x3_max)),
+    widen((y3_min, y3_max)),
+    widen((z3_min, z3_max)),
+  ]
 }
 
 /// Radius of the sphere centred on `center` that encloses every primitive.
@@ -8394,6 +8706,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
+  let mut explicit_height = false;
   let mut full_width = false;
   let mut show_box = true;
   let mut background: Option<(u8, u8, u8)> = None;
@@ -8430,10 +8743,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let d = Camera::DEFAULT_VIEW_POINT;
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
   };
+  // A `ViewPoint` with an infinite component looks from infinitely far
+  // away: an orthographic picture.
+  let mut view_point_at_infinity = false;
   let mut show_axes = false;
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
-  let mut tick_spec: [Option<Vec<f64>>; 3] = [None, None, None];
+  let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
   // `Lighting -> spec`: the lights every surface without its own
@@ -8455,6 +8771,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             svg_width = w;
             svg_height = h;
             full_width = fw;
+            // Only `{w, h}` pins the height; a bare width leaves it to
+            // follow the projected box.
+            explicit_height = fw
+              || matches!(replacement.as_ref(), Expr::List(items) if items.len() == 2);
           }
         }
         "Boxed" => match replacement.as_ref() {
@@ -8483,8 +8803,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // (Wolfram's `Above` is `{0, 0, ∞}`, etc.).
           let symbolic: Option<[f64; 3]> = match replacement.as_ref() {
             Expr::Identifier(s) => match s.as_str() {
-              "Above" => Some([0.0, 0.0, 2.0]),
-              "Below" => Some([0.0, 0.0, -2.0]),
+              "Above" | "Top" => Some([0.0, 0.0, 2.0]),
+              "Below" | "Bottom" => Some([0.0, 0.0, -2.0]),
               "Front" => Some([0.0, -2.0, 0.0]),
               "Back" => Some([0.0, 2.0, 0.0]),
               "Left" => Some([-2.0, 0.0, 0.0]),
@@ -8493,9 +8813,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             },
             _ => None,
           };
-          if let Some(vp) = symbolic
-            .or_else(|| eval_view_direction(replacement))
-            .or_else(|| eval_vec3(replacement))
+          let at_infinity = if symbolic.is_none() {
+            eval_view_direction(replacement)
+          } else {
+            None
+          };
+          view_point_at_infinity = at_infinity.is_some();
+          if let Some(vp) =
+            symbolic.or(at_infinity).or_else(|| eval_vec3(replacement))
           {
             camera.azimuth = vp[1].atan2(vp[0]);
             camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
@@ -8695,6 +9020,44 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(|p| {
       !matches!(p, Primitive3D::Polygon3D { points, .. } if points.len() < 3)
     });
+
+    // A curved solid that crosses the box is cut open along it: its
+    // facets are clipped like polygons (Wolfram does not cap the cut).
+    for prim in &mut prims {
+      let curved = matches!(
+        prim,
+        Primitive3D::Sphere { .. }
+          | Primitive3D::Cylinder { .. }
+          | Primitive3D::Cone { .. }
+      );
+      let tris = match prim {
+        Primitive3D::Surface3D { tris, .. } => Some(tris.clone()),
+        _ if curved => tessellate_for_transform(prim),
+        _ => None,
+      };
+      let Some(tris) = tris else { continue };
+      let inside = |p: &Point3D| point_in_box(p, &bounds);
+      if tris
+        .iter()
+        .all(|(a, b, c)| inside(a) && inside(b) && inside(c))
+      {
+        continue;
+      }
+      let clipped = clip_triangles_to_box(&tris, &bounds);
+      let style = primitive_style(prim).clone();
+      let smooth = match prim {
+        Primitive3D::Surface3D { smooth, .. } => *smooth,
+        _ => true,
+      };
+      *prim = Primitive3D::Surface3D {
+        tris: clipped,
+        style,
+        smooth,
+      };
+    }
+    prims.retain(
+      |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
+    );
   }
 
   // The symbolic form carried on the rendered result so that Part can
@@ -8789,6 +9152,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           range[i] = (range[i].0 * axis_scale[i], range[i].1 * axis_scale[i]);
         }
       }
+    }
+  }
+
+  // Wolfram's camera is a perspective one: the eye looks at the middle of
+  // the displayed box from `|ViewPoint|` times its longest side away. A
+  // `ViewPoint` at infinity (and the already warped `ViewVector` scene)
+  // is drawn orthographically.
+  camera.perspective = None;
+  if !perspective && !view_point_at_infinity {
+    let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let side = (b[0].1 - b[0].0).max(b[1].1 - b[1].0).max(b[2].1 - b[2].0);
+    if side.is_finite() && side > 0.0 && view_distance.is_finite() {
+      camera.perspective = Some(Perspective {
+        center: [
+          f64::midpoint(b[0].0, b[0].1),
+          f64::midpoint(b[1].0, b[1].1),
+          f64::midpoint(b[2].0, b[2].1),
+        ],
+        distance: view_distance * side,
+      });
     }
   }
 
@@ -8903,11 +9286,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (tris, style)
         }
         // A cylinder/cone is tessellated as a ring of quads split into two
-        // triangles each; the quad's ends lie on the two end circles. With
-        // an explicit `EdgeForm[colour]` those end circles are drawn — a
-        // flat cylinder is how a Demonstration draws a circle in space —
-        // while the longitudinal cuts stay internal, as on any smooth
-        // surface.
+        // triangles each; the quad's ends lie on the two end circles. Those
+        // end circles are outlined, as Wolfram's default `EdgeForm` does
+        // (`EdgeForm[]` turns them off) — a flat cylinder is how a
+        // Demonstration draws a circle in space — while the longitudinal
+        // cuts stay internal, as on any smooth surface.
         Primitive3D::Cylinder {
           p1,
           p2,
@@ -8918,7 +9301,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             cylinder_max_subdivisions(*radius, cyl_extent, cyl_count);
           let tris =
             tessellate_cylinder(p1, p2, *radius, style.capped, max_subdiv);
-          if style.edge_color.is_some() {
+          if style.edges {
             let len = ((p2.x - p1.x).powi(2)
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
@@ -8937,7 +9320,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           style,
         } => {
           let tris = tessellate_cone(p1, p2, *radius, style.capped);
-          if style.edge_color.is_some() {
+          if style.edges {
             holed_boundaries = cone_edge_flags(CYLINDER_SIDES, style.capped);
           }
           (tris, style)
@@ -9124,15 +9507,50 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
+    // The far side of a closed opaque solid is never seen. Dropping its
+    // facets keeps them from being painted over the near side where the
+    // depth order of the two is ambiguous (a cone's base seen from the
+    // side).
+    let closed_center = match prim {
+      Primitive3D::Sphere { center, .. } if prim_opacity >= 1.0 => {
+        Some(*center)
+      }
+      Primitive3D::Cylinder { p1, p2, style, .. }
+      | Primitive3D::Cone { p1, p2, style, .. }
+        if style.capped && prim_opacity >= 1.0 =>
+      {
+        // Any interior point serves to orient the faces of a convex solid.
+        let w = if matches!(prim, Primitive3D::Cone { .. }) {
+          0.25
+        } else {
+          0.5
+        };
+        Some(Point3D {
+          x: p1.x + w * (p2.x - p1.x),
+          y: p1.y + w * (p2.y - p1.y),
+          z: p1.z + w * (p2.z - p1.z),
+        })
+      }
+      _ => None,
+    };
     for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
+      if let Some(inner) = closed_center {
+        let n = triangle_normal(v0, v1, v2);
+        let c = tri_center(v0, v1, v2);
+        let out = [c.x - inner.x, c.y - inner.y, c.z - inner.z];
+        let sign = if v_dot(n, out) < 0.0 { -1.0 } else { 1.0 };
+        let view = camera.toward_viewer(c);
+        if sign * v_dot(n, view) < -1e-9 {
+          continue;
+        }
+      }
       // `EdgeForm[]` asks for faces with no outline, so every edge counts
       // as an internal cut and is stroked in the face's own colour. A
       // curved primitive that was given an explicit edge colour keeps the
       // silhouette flags computed above — its facet cuts stay internal,
       // but its end circles are drawn.
-      let outlined_smooth = smooth_surface
-        && prim_style.edge_color.is_some()
-        && !holed_boundaries.is_empty();
+      let outlined_smooth =
+        smooth_surface && prim_style.edges && !holed_boundaries.is_empty();
       let boundary =
         if !prim_style.edges || (smooth_surface && !outlined_smooth) {
           [false; 3]
@@ -9198,10 +9616,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_box_side =
     (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
-  // Add some padding to the 3D bounding box
-  let pad_x = (x3_max - x3_min) * 0.05;
-  let pad_y = (y3_max - y3_min) * 0.05;
-  let pad_z = (z3_max - z3_min) * 0.05;
+  // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
+  // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
+  let pad_x = (x3_max - x3_min) * 0.02;
+  let pad_y = (y3_max - y3_min) * 0.02;
+  let pad_z = (z3_max - z3_min) * 0.02;
   x3_min -= pad_x;
   x3_max += pad_x;
   y3_min -= pad_y;
@@ -9317,16 +9736,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Include box corners in the projected bounding box — always when the
   // box is drawn, and also for a fixed PlotRange so the zoom level does
-  // not follow the contents. A pinned region is framed by its box alone:
-  // content reaching beyond it (a long axis cylinder, a big sphere) is
-  // cut off by the picture rather than shrinking it.
+  // not follow the contents, or when the contents alone project to no
+  // area (a line seen side on). A pinned region is framed by its box
+  // alone: content reaching beyond it (a long axis cylinder, a big
+  // sphere) is cut off by the picture rather than shrinking it.
   if plot_range.is_some() {
     px_min = f64::INFINITY;
     px_max = f64::NEG_INFINITY;
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  if show_box || plot_range.is_some() {
+  let degenerate = !(px_max - px_min > 1e-9 && py_max - py_min > 1e-9);
+  if show_box || plot_range.is_some() || degenerate {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -9371,25 +9792,44 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let p_width = px_max - px_min;
-  let p_height = py_max - py_min;
-  let p_width = if p_width < 1e-15 { 1.0 } else { p_width };
-  let p_height = if p_height < 1e-15 { 1.0 } else { p_height };
-
-  // Axes need room outside the box for their ticks, and more again for
-  // the axis labels sitting beyond those.
-  let margin = match (show_axes, axes_labels.iter().any(Option::is_some)) {
-    (true, true) => axes_label_margin(&axes_labels, svg_width.min(svg_height)),
-    (true, false) => 25.0,
-    (false, _) => 10.0,
-  };
-  let draw_w = svg_width as f64 - 2.0 * margin;
-  let draw_h = svg_height as f64 - 2.0 * margin;
-  let mut scale = (draw_w / p_width).min(draw_h / p_height);
-  let cx = margin + draw_w / 2.0;
-  let cy = margin + draw_h / 2.0;
+  // Wolfram fits the projected box — and the axes' tick labels sticking
+  // out of it — into the picture with a 1-pixel padding. Unless the height
+  // is pinned (or a view volume fixes the scale), the picture is as tall
+  // as the box needs at this width (see `fit_3d_frame`).
   let mut p_cx = f64::midpoint(px_min, px_max);
   let mut p_cy = f64::midpoint(py_min, py_max);
+  let fitted_height = !explicit_height
+    && aspect_ratio.is_none()
+    && view_angle.is_none()
+    && !spherical_region
+    && !perspective;
+  let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
+    show_axes.then(|| {
+      let to_svg =
+        |px: f64, py: f64| (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale);
+      draw_axes_on_box_with_ticks(
+        &mut String::new(),
+        &camera,
+        &to_svg,
+        &box_corners,
+        (x3_min / axis_scale[0], x3_max / axis_scale[0]),
+        (y3_min / axis_scale[1], y3_max / axis_scale[1]),
+        (z3_min / axis_scale[2], z3_max / axis_scale[2]),
+        &axes_labels,
+        &tick_spec,
+        axes_origin.as_ref().filter(|_| !show_box),
+      )
+    })
+  };
+  let (fit_scale, cx, cy, fit_w, fit_h) = fit_3d_frame(
+    svg_width,
+    (!fitted_height || full_width).then_some(svg_height),
+    (px_min, px_max, py_min, py_max),
+    &axes_extent,
+  );
+  let mut scale = fit_scale;
+  svg_width = fit_w;
+  svg_height = fit_h;
 
   // An explicit `ViewAngle` fixes the camera's field of view, so the scale
   // comes from the view volume rather than from fitting the contents: the
@@ -9605,9 +10045,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let dash_attr =
         dash3d_attr(edge.dashing.as_ref(), svg_width as f64, edge.dash_offset);
+      // A line is drawn as many short depth-sorted pieces. Round caps on
+      // translucent pieces overlap where they meet and darken there, so
+      // the line reads as dotted; butt caps join the pieces seamlessly.
+      let cap = if edge.opacity < 1.0 { "butt" } else { "round" };
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"round\"{}{}/>\n",
-        ex0, ey0, ex1, ey1, edge.color, edge.width, opacity_attr, dash_attr
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"{}\"{}{}/>\n",
+        ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
     let mut ei = 0;
@@ -10113,6 +10557,19 @@ fn with_background_option(svg: String, opts: &[Expr]) -> String {
 /// in the strip — the projection inside was scaled to the picture's own
 /// size, so growing the canvas rather than the drawing area leaves it
 /// exactly as it was. Returns `svg` unchanged when there is no label.
+/// The `width`/`height` an SVG's root element declares, when both are
+/// plain numbers.
+fn svg_header_size(svg: &str) -> Option<(u32, u32)> {
+  let header = &svg[..svg.find('>')?];
+  let attr = |name: &str| -> Option<u32> {
+    let key = format!(" {name}=\"");
+    let start = header.find(&key)? + key.len();
+    let end = start + header[start..].find('"')?;
+    header[start..end].parse().ok()
+  };
+  Some((attr("width")?, attr("height")?))
+}
+
 fn with_plot_label(
   svg: String,
   opts: &[Expr],
@@ -10123,6 +10580,9 @@ fn with_plot_label(
   let Some(styled) = plot_label_styled(opts) else {
     return svg;
   };
+  // The renderer may have fitted the picture's size to its contents, so
+  // the size it wrote wins over the requested one.
+  let (width, height) = svg_header_size(&svg).unwrap_or((width, height));
   // A `FontSize` directive on the label resizes it, same as a 2-D title;
   // otherwise it keeps the default 16pt.
   let font_size = styled.font_size.unwrap_or(16.0);
@@ -10861,6 +11321,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     true, // show_axes: always show axes for list_plot3d
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
+    !image_height_is_explicit(args),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -11633,6 +12094,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
     [1.0, 1.0, Z_SCALE],
     &[None, None, None],
+    !image_height_is_explicit(args),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -12120,6 +12582,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
+    !image_height_is_explicit(args),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -13089,6 +13552,7 @@ fn contour3d_render(
     show_axes,
     [1.0, 1.0, CONTOUR3D_Z_SCALE],
     &[None, None, None],
+    !image_height_is_explicit(opts),
   )?;
   // `Background -> colour` repaints the canvas rectangle drawn first.
   let svg = match background {
@@ -16921,6 +17385,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     show_axes,
     box_ratios,
     &[None, None, None],
+    !image_height_is_explicit(args),
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -17230,12 +17695,11 @@ mod painter_order_tests {
     split_interpenetrating(&mut verts, &mut tris, &camera);
     assert!(verts.len() > 2);
     assert_eq!(verts.len(), tris.len());
-    let gradient = depth_gradient(&camera);
     let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
     for_each_overlapping_pair(&projected, |i, j| {
       assert!(
-        side_of_plane(&verts[i], &verts[j], gradient).is_some()
-          || side_of_plane(&verts[j], &verts[i], gradient).is_some()
+        side_of_plane(&verts[i], &verts[j], &camera).is_some()
+          || side_of_plane(&verts[j], &verts[i], &camera).is_some()
       );
     });
   }
@@ -17260,7 +17724,12 @@ mod painter_order_tests {
   /// faces' centroids lie farther from the viewer than its own.
   #[test]
   fn large_face_stays_behind_many_small_faces() {
-    let camera = Camera::default();
+    // The scene spans ±10, so it is viewed orthographically (the default
+    // eye of the normalized plot box would sit inside it).
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
     let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
     let mut verts =
       vec![[p(-10.0, -10.0, 0.0), p(10.0, -10.0, 0.0), p(0.0, 10.0, 0.0)]];
