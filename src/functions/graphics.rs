@@ -3034,12 +3034,42 @@ fn collect_primitives(
           }
           // Several components fill together by the even-odd rule, so a
           // component inside another cuts a hole (a gauge's bezel ring).
+          // Components apart from the first one (disjoint bounding boxes)
+          // stay polygons of their own.
+          let inside_first = |prims: &[Primitive]| {
+            let bounds = |p: &Primitive| match p {
+              Primitive::PolygonPrim { points, .. } => {
+                Some(points.iter().fold(
+                  (
+                    f64::INFINITY,
+                    f64::INFINITY,
+                    f64::NEG_INFINITY,
+                    f64::NEG_INFINITY,
+                  ),
+                  |(x0, y0, x1, y1), &(x, y)| {
+                    (x0.min(x), y0.min(y), x1.max(x), y1.max(y))
+                  },
+                ))
+              }
+              _ => None,
+            };
+            let Some((ax0, ay0, ax1, ay1)) = prims.first().and_then(bounds)
+            else {
+              return false;
+            };
+            prims[1..].iter().all(|p| {
+              bounds(p).is_some_and(|(bx0, by0, bx1, by1)| {
+                bx0 <= ax1 && ax0 <= bx1 && by0 <= ay1 && ay0 <= by1
+              })
+            })
+          };
           if several
             && prims.len() - first > 1
             && prims[first..].iter().all(|p| {
               matches!(p, Primitive::PolygonPrim { holes, vertex_colors: None, .. }
                 if holes.is_empty())
             })
+            && inside_first(&prims[first..])
           {
             let mut rings = prims.drain(first..).filter_map(|p| match p {
               Primitive::PolygonPrim { points, style, .. } => {
@@ -7044,9 +7074,7 @@ fn column_line_anchor(content: &Expr) -> Option<&'static str> {
 fn text_direction(spec: &Expr) -> Option<(f64, f64)> {
   match spec {
     Expr::List(items) if items.len() == 2 => {
-      let (dx, dy) = (expr_to_f64(&items[0])?, expr_to_f64(&items[1])?);
-      // `{1, 0}` (any positive x with no y) is the default baseline.
-      (dy != 0.0 || dx <= 0.0).then_some((dx, dy))
+      Some((expr_to_f64(&items[0])?, expr_to_f64(&items[1])?))
     }
     _ => None,
   }
@@ -12964,7 +12992,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         y,
         offset,
         scaled: false,
-        direction: None,
+        direction,
         glyph_map: None,
         style,
         ..
@@ -12972,6 +13000,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       else {
         continue;
       };
+      // A horizontal baseline (`{1, 0}`) takes room like an unrotated one.
+      if direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0) {
+        continue;
+      }
       let fs = style.font_size;
       let longest = text.split('\n').map(|l| l.chars().count()).max();
       let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;

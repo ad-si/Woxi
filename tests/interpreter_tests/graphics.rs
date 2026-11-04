@@ -1009,6 +1009,17 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_nested_components_cut_a_hole() {
+      // A component inside another fills by the even-odd rule (a ring).
+      let svg = export_svg(
+        "Graphics[{FilledCurve[{{Line[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}]}, \
+         {Line[{{1, 1}, {3, 1}, {3, 3}, {1, 3}}]}}]}]",
+      );
+      assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
+      assert_eq!(svg.matches("<polygon").count(), 0, "{svg}");
+    }
+
+    #[test]
     fn stroked_bezier_curve_stays_unfilled() {
       let svg =
         export_svg("Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]");
