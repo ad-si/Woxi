@@ -20237,6 +20237,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn matrix_plot_graphic_plot_label_is_embedded() {
+      // Regression: a chart used as `PlotLabel` was typeset as the text
+      // "-Graphics-" instead of being drawn above the matrix plot.
+      let svg = export_svg(
+        "MatrixPlot[{{0, 1}, {1, 0}}, \
+         PlotLabel -> BarChart[{3, 5}, ImageSize -> {250, 100}]]",
+      );
+      assert!(!svg.contains("-Graphics-"));
+      assert!(svg.contains("y=\"0\" width=\"250\" height=\"100\""));
+    }
+
+    #[test]
     fn matrix_plot_honors_color_function_and_color_rules() {
       // Regression: ColorFunction / ColorRules were ignored, so every plot
       // used the default blue-red gradient. The rule-colored cell takes no

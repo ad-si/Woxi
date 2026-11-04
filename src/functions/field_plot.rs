@@ -6736,9 +6736,13 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &tick_style,
   );
   let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
-  let buf = match parse_field_plot_label(args, 1) {
-    Some(label) => with_plot_label_above(&buf, &label),
-    None => buf,
+  let buf = if let Some(label_svg) = parse_field_plot_label_graphic(args, 1) {
+    with_graphic_label_above(&buf, &label_svg)
+  } else {
+    match parse_field_plot_label(args, 1) {
+      Some(label) => with_plot_label_above(&buf, &label),
+      None => buf,
+    }
   };
 
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
@@ -7245,6 +7249,77 @@ fn frame_ticked_svg(
   }
   out.push_str("</svg>\n");
   (out, total_w as u32, total_h as u32)
+}
+
+/// The SVG of a `PlotLabel` that is itself a graphic (a chart or plot used
+/// as a title, e.g. `PlotLabel -> BarChart[…]`), or `None` for any other
+/// label.
+fn parse_field_plot_label_graphic(
+  args: &[Expr],
+  start: usize,
+) -> Option<String> {
+  args[start..].iter().find_map(|opt| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotLabel") {
+      return None;
+    }
+    match evaluate_expr_to_expr(replacement) {
+      Ok(Expr::Graphics {
+        ref svg,
+        is_3d: false,
+        ..
+      }) => Some(svg.clone()),
+      _ => None,
+    }
+  })
+}
+
+/// The `width`/`height` attributes of an SVG document's root element.
+fn svg_root_size(svg: &str) -> Option<(f64, f64)> {
+  let head = &svg[..svg.find('>')?];
+  let attr = |name: &str| -> Option<f64> {
+    let start = head.find(&format!(" {name}=\""))? + name.len() + 3;
+    let end = start + head[start..].find('"')?;
+    head[start..end].trim_end_matches("px").parse().ok()
+  };
+  Some((attr("width")?, attr("height")?))
+}
+
+/// Set a graphic used as a `PlotLabel` above a finished picture: the label
+/// graphic keeps its own size, centred in a strip above the picture, and the
+/// canvas widens if the label is wider than the picture.
+fn with_graphic_label_above(svg: &str, label_svg: &str) -> String {
+  let (Some((w, h)), Some((lw, lh))) =
+    (svg_root_size(svg), svg_root_size(label_svg))
+  else {
+    return svg.to_string();
+  };
+  let gap = 4.0;
+  let total_w = w.max(lw);
+  let total_h = h + lh + gap;
+  format!(
+    "<svg width=\"{total_w:.0}\" height=\"{total_h:.0}\" \
+     viewBox=\"0 0 {total_w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <svg x=\"{:.1}\" y=\"0\" width=\"{lw:.0}\" height=\"{lh:.0}\" \
+     overflow=\"visible\">\n{}\n</svg>\n\
+     <svg x=\"{:.1}\" y=\"{:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
+     overflow=\"visible\">\n{}\n</svg>\n</svg>\n",
+    (total_w - lw) / 2.0,
+    label_svg.trim(),
+    (total_w - w) / 2.0,
+    lh + gap,
+    svg.trim(),
+  )
 }
 
 /// Set a `PlotLabel` caption above a finished picture: the picture keeps its
