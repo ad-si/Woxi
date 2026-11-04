@@ -2539,7 +2539,7 @@ TensorWedge,"Exterior (wedge) product of vectors/tensors",✅,pure,9.0,2533
 SmithDecomposition,"gives the Smith normal form decomposition of an integer matrix",✅,none,10.2,2535
 SpheroidalPS,"",🚫,,6.0,2535
 AsymptoticSolve,"Find asymptotic solutions to equations near a point",✅,pure,12.0,2541
-CandlestickChart,"",🚫,,8.0,2541
+CandlestickChart,"Open-high-low-close candles of dated financial data",✅,pure,8.0,2541
 ListFourierSequenceTransform,"Discrete-time Fourier transform of a list sequence",✅,pure,9.0,2541
 LogitModelFit,"Logistic regression model fitting via IRLS",✅,pure,7.0,2541
 NumberPoint,"Option for the NumberForm family giving the string used for the decimal point",✅,pure,1.0,2541
@@ -3650,7 +3650,7 @@ LameC,"",,,12.2,3697
 MeshCellShapeFunction,"",🚫,,10.2,3697
 NBodySimulation,"",,,12.0,3697
 PearsonCorrelationTest,"",,,9.0,3697
-StackedDateListPlot,"",🚫,,11.2,3697
+StackedDateListPlot,"Date list plot of datasets stacked on each other",✅,pure,11.2,3697
 TrainingProgressReporting,"",🚫,,11.1,3697
 WarpingDistance,"Dynamic time warping distance between two numeric sequences",✅,pure,11.0,3697
 DifferentiatorFilter,"",,,9.0,3717

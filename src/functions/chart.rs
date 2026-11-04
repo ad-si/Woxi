@@ -7192,20 +7192,47 @@ fn date_expr_to_absolute_time(expr: &Expr) -> Option<f64> {
 /// Dates can be date lists ({y,m,d}), DateObject[{...}], or AbsoluteTime values.
 /// Multiple datasets are supported: DateListPlot[{data1, data2, ...}].
 pub fn date_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  date_list_plot_ast_impl(args, false)
+  date_list_plot_ast_impl(args, DateListKind::Plain)
+}
+
+/// StackedDateListPlot[{data1, data2, …}] - the datasets of a
+/// [`date_list_plot_ast`] stacked on each other, as `StackedListPlot` does.
+pub fn stacked_date_list_plot_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  date_list_plot_ast_impl(args, DateListKind::Stacked)
+}
+
+/// Which list plot a date list plot is drawn as.
+#[derive(Clone, Copy, PartialEq)]
+enum DateListKind {
+  Plain,
+  Log,
+  Stacked,
+}
+
+impl DateListKind {
+  fn head(self) -> &'static str {
+    match self {
+      Self::Plain => "DateListPlot",
+      Self::Log => "DateListLogPlot",
+      Self::Stacked => "StackedDateListPlot",
+    }
+  }
 }
 
 /// DateListLogPlot[{{date, y}, ...}] - like [`date_list_plot_ast`] but with
 /// a logarithmic y-axis, matching how `ListLogPlot` relates to `ListPlot`.
 /// Non-positive y values are dropped since they have no log-space position.
 pub fn date_list_log_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  date_list_plot_ast_impl(args, true)
+  date_list_plot_ast_impl(args, DateListKind::Log)
 }
 
 fn date_list_plot_ast_impl(
   args: &[Expr],
-  log_y: bool,
+  kind: DateListKind,
 ) -> Result<Expr, InterpreterError> {
+  let log_y = kind == DateListKind::Log;
   let data = evaluate_expr_to_expr(&args[0])?;
   // A TimeSeries plots as its {date, value} path.
   let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
@@ -7218,14 +7245,7 @@ fn date_list_plot_ast_impl(
     None => data,
   };
   let Expr::List(items) = &data else {
-    return Ok(invalid_dataset(
-      if log_y {
-        "DateListLogPlot"
-      } else {
-        "DateListPlot"
-      },
-      args,
-    ));
+    return Ok(invalid_dataset(kind.head(), args));
   };
 
   // `DateListPlot[{y1, y2, …}, datespec]` — plain values plus a starting
@@ -7302,7 +7322,7 @@ fn date_list_plot_ast_impl(
     };
     let mut new_args = vec![paired];
     new_args.extend(args[2..].iter().cloned());
-    return date_list_plot_ast_impl(&new_args, log_y);
+    return date_list_plot_ast_impl(&new_args, kind);
   }
 
   // Detect whether this is multiple datasets or a single dataset.
@@ -7362,14 +7382,7 @@ fn date_list_plot_ast_impl(
 
   if all_series.is_empty() {
     // Return unevaluated (like Wolfram does for invalid data)
-    return Ok(unevaluated(
-      if log_y {
-        "DateListLogPlot"
-      } else {
-        "DateListPlot"
-      },
-      args,
-    ));
+    return Ok(unevaluated(kind.head(), args));
   }
 
   // Drawn as a list plot of {AbsoluteTime, y} points with a date axis and
@@ -7410,13 +7423,223 @@ fn date_list_plot_ast_impl(
       });
     }
   }
-  crate::functions::list_plot::with_date_axis(|| {
-    if log_y {
+  crate::functions::list_plot::with_date_axis(|| match kind {
+    DateListKind::Log => {
       crate::functions::list_plot::list_log_plot_ast(&new_args)
-    } else {
+    }
+    DateListKind::Stacked => {
+      crate::functions::list_plot::stacked_list_plot_ast(&new_args)
+    }
+    DateListKind::Plain => {
       crate::functions::list_plot::list_plot_ast(&new_args)
     }
   })
+}
+
+/// Half the width of a candle body, in index units, for `n` candles: read
+/// off wolframscript at the sampled counts and interpolated linearly in
+/// the squared width between them.
+fn candle_half_width(n: usize) -> f64 {
+  const SAMPLES: [(f64, f64); 13] = [
+    (1.0, 0.0712289776576065),
+    (2.0, 0.08357529905154015),
+    (3.0, 0.09600284669153103),
+    (4.0, 0.1070835978651753),
+    (5.0, 0.11701542751338023),
+    (6.0, 0.1260237553857959),
+    (8.0, 0.14191446029317767),
+    (10.0, 0.15567648974150095),
+    (12.0, 0.16785458090847993),
+    (15.0, 0.18388519963569294),
+    (20.0, 0.20630764636512544),
+    (25.0, 0.22496116296923785),
+    (28.0, 0.23481696414994058),
+  ];
+  let n = n as f64;
+  let last = SAMPLES[SAMPLES.len() - 1];
+  if n >= last.0 {
+    return (last.1 * last.1 + 0.0015 * (n - last.0)).sqrt().min(0.45);
+  }
+  for pair in SAMPLES.windows(2) {
+    let ((n0, w0), (n1, w1)) = (pair[0], pair[1]);
+    if n <= n1 {
+      let t = (n - n0) / (n1 - n0);
+      return (w0 * w0 + t * (w1 * w1 - w0 * w0)).sqrt();
+    }
+  }
+  last.1
+}
+
+/// CandlestickChart[{{date1, {o1, h1, l1, c1}}, …}] — one candle per entry
+/// at index positions 1, 2, …: a body from open to close, green when the
+/// close is not below the open and red otherwise, with wicks to the high
+/// and the low, over a horizontal axis labelled with the day of the month
+/// and horizontal grid lines, built as WL's `Graphics`.
+pub fn candlestick_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let data = evaluate_expr_to_expr(&args[0])?;
+  let entries: Vec<(Expr, Expr)> =
+    match crate::functions::timeseries_ast::time_series_pairs(&data) {
+      Some(pairs) => pairs,
+      None => match &data {
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|it| match it {
+            Expr::List(p) if p.len() == 2 => Some((p[0].clone(), p[1].clone())),
+            _ => None,
+          })
+          .collect(),
+        _ => Vec::new(),
+      },
+    };
+  let mut candles: Vec<(f64, [f64; 4])> = Vec::new();
+  for (date, ohlc) in &entries {
+    let Some(t) = date_expr_to_absolute_time(date) else {
+      return Ok(unevaluated("CandlestickChart", args));
+    };
+    let Expr::List(v) = ohlc else {
+      return Ok(unevaluated("CandlestickChart", args));
+    };
+    let vals: Option<Vec<f64>> = v.iter().map(try_eval_to_f64).collect();
+    match vals.as_deref() {
+      Some([o, h, l, c]) => candles.push((t, [*o, *h, *l, *c])),
+      _ => return Ok(unevaluated("CandlestickChart", args)),
+    }
+  }
+  if candles.is_empty() || entries.len() != candles.len() {
+    return Ok(unevaluated("CandlestickChart", args));
+  }
+
+  let n = candles.len();
+  let real = Expr::Real;
+  let pt = |x: f64, y: f64| Expr::List(vec![real(x), real(y)].into());
+  let low = candles.iter().map(|c| c.1[2]).fold(f64::INFINITY, f64::min);
+  let high = candles
+    .iter()
+    .map(|c| c.1[1])
+    .fold(f64::NEG_INFINITY, f64::max);
+  // WL puts the date axis 10.35 % of the value range below the lowest low.
+  let axis_y = low - 0.1035 * (high - low);
+  let hw = candle_half_width(n);
+  let rgb =
+    |r: f64, g: f64, b: f64| call("RGBColor", vec![real(r), real(g), real(b)]);
+  let up = rgb(0.23522342, 0.70958711, 0.0000231365);
+  let down = rgb(0.81957434, 0.06591159, 0.06593367);
+
+  let mut prims: Vec<Expr> = Vec::new();
+  for (i, (_, [o, h, l, c])) in candles.iter().enumerate() {
+    let x = (i + 1) as f64;
+    let (lo, hi) = (o.min(*c), o.max(*c));
+    let wicks = Expr::List(
+      vec![
+        Expr::List(vec![pt(x, *l), pt(x, lo)].into()),
+        Expr::List(vec![pt(x, *h), pt(x, hi)].into()),
+      ]
+      .into(),
+    );
+    let body = Expr::List(
+      vec![
+        pt(x - hw, *o),
+        pt(x + hw, *o),
+        pt(x + hw, *c),
+        pt(x - hw, *c),
+      ]
+      .into(),
+    );
+    prims.push(Expr::List(
+      vec![
+        if c >= o { up.clone() } else { down.clone() },
+        call1("AbsoluteThickness", Expr::Integer(1)),
+        call1("Line", wicks),
+        call1("Polygon", body),
+      ]
+      .into(),
+    ));
+  }
+  // The horizontal axis: long ticks at the ends, short ones between the
+  // candles, and each candle's day of the month under it.
+  let offset = |dy: f64, at: Expr| {
+    call(
+      "Offset",
+      vec![Expr::List(vec![real(0.0), real(dy)].into()), at],
+    )
+  };
+  let (x0, x1) = (0.5, n as f64 + 0.5);
+  let mut axis = vec![
+    call1("GrayLevel", real(0.4)),
+    call1("AbsoluteThickness", real(0.2)),
+    call1(
+      "Line",
+      Expr::List(vec![pt(x0, axis_y), pt(x1, axis_y)].into()),
+    ),
+  ];
+  for k in 0..=n {
+    let x = x0 + k as f64;
+    let len = if k == 0 || k == n { -8.0 } else { -4.0 };
+    axis.push(call1(
+      "Line",
+      Expr::List(vec![pt(x, axis_y), offset(len, pt(x, axis_y))].into()),
+    ));
+  }
+  for (i, (t, _)) in candles.iter().enumerate() {
+    let (_, _, day, ..) =
+      crate::functions::datetime_ast::absolute_seconds_to_date(*t);
+    let x = (i + 1) as f64;
+    axis.push(call(
+      "Text",
+      vec![
+        Expr::Integer(day as i128),
+        offset(-2.0, pt(x, axis_y)),
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+      ],
+    ));
+  }
+  prims.push(Expr::List(axis.into()));
+
+  let rule = |k: &str, v: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(k.to_string())),
+    replacement: Box::new(v),
+  };
+  let id = |s: &str| Expr::Identifier(s.to_string());
+  let list = |v: Vec<Expr>| Expr::List(v.into());
+  let mut gargs = vec![list(prims)];
+  // User options first, so they override the defaults below.
+  gargs.extend(
+    args[1..]
+      .iter()
+      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .cloned(),
+  );
+  gargs.extend([
+    rule(
+      "AspectRatio",
+      call("Power", vec![id("GoldenRatio"), Expr::Integer(-1)]),
+    ),
+    rule("Axes", list(vec![id("False"), id("True")])),
+    rule("AxesOrigin", list(vec![real(x0), id("Automatic")])),
+    rule("GridLines", list(vec![id("None"), id("Automatic")])),
+    rule(
+      "GridLinesStyle",
+      call(
+        "Directive",
+        vec![call("GrayLevel", vec![real(0.5), real(0.4)])],
+      ),
+    ),
+    rule(
+      "PlotRange",
+      list(vec![list(vec![real(x0), real(x1)]), id("All")]),
+    ),
+    rule(
+      "PlotRangePadding",
+      list(vec![
+        list(vec![id("None"), id("None")]),
+        list(vec![
+          call1("Scaled", real(0.02)),
+          call1("Scaled", real(0.05)),
+        ]),
+      ]),
+    ),
+  ]);
+  evaluate_expr_to_expr(&call("Graphics", gargs))
 }
 
 /// WordCloud[words], WordCloud[<|w1 -> wt1, …|>], WordCloud[{wt1 -> w1, …}],

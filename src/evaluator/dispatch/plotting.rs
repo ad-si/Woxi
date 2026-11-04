@@ -1292,6 +1292,12 @@ pub fn dispatch_plotting(
     "DateListPlot" if !args.is_empty() => {
       Some(crate::functions::chart::date_list_plot_ast(args))
     }
+    "CandlestickChart" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::candlestick_chart_ast(args)
+    })),
+    "StackedDateListPlot" if !args.is_empty() => {
+      Some(crate::functions::chart::stacked_date_list_plot_ast(args))
+    }
     "DateListLogPlot" if !args.is_empty() => {
       Some(crate::functions::chart::date_list_log_plot_ast(args))
     }

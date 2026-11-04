@@ -1,5 +1,57 @@
 use super::*;
 
+mod date_charts {
+  use super::*;
+
+  /// Regression: StackedDateListPlot stayed unevaluated and rendered as
+  /// its input text.
+  #[test]
+  fn stacked_date_list_plot_stacks_on_a_date_axis() {
+    let dates = "DateObject[{2024, #, 1}] & /@ Range[3]";
+    let svg = export_svg(&format!(
+      "StackedDateListPlot[{{Transpose[{{{dates}, {{1, 3, 2}}}}], \
+       Transpose[{{{dates}, {{2, 2, 3}}}}]}}]"
+    ));
+    assert!(!svg.contains("StackedDateListPlot"), "{svg}");
+    assert!(svg.contains(">Jan 2024<"), "date ticks: {svg}");
+  }
+
+  /// Regression: CandlestickChart stayed unevaluated.
+  #[test]
+  fn candlestick_chart_colours_and_axis() {
+    clear_state();
+    let data = "{{DateObject[{2024, 1, 1}], {10, 12, 9, 11}}, \
+                {DateObject[{2024, 1, 2}], {12.5, 13, 11, 11.5}}}";
+    assert_eq!(
+      interpret(&format!("Head[CandlestickChart[{data}]]")).unwrap(),
+      "Graphics"
+    );
+    // A rising candle is green, a falling one red; the axis sits 10.35 %
+    // of the value range below the lowest low and is labelled by day.
+    assert_eq!(
+      interpret(&format!(
+        "Cases[CandlestickChart[{data}], RGBColor[r_, _, _] :> \
+         Round[100 r], Infinity]"
+      ))
+      .unwrap(),
+      "{24, 82}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Cases[CandlestickChart[{data}], Text[l_, Offset[_, {{_, y_}}], ___] \
+         :> {{l, y}}, Infinity]"
+      ))
+      .unwrap(),
+      "{{1, 8.586}, {2, 8.586}}"
+    );
+    // Plain OHLC lists without dates are not a valid dataset in WL 15.
+    assert_eq!(
+      interpret("CandlestickChart[{{10, 12, 9, 11}}]").unwrap(),
+      "CandlestickChart[{{10, 12, 9, 11}}]"
+    );
+  }
+}
+
 /// Helper: wraps an expression with ExportString[..., "SVG"], evaluates it,
 /// and returns the SVG string. Panics if evaluation fails or if the result
 /// doesn't look like an SVG.
