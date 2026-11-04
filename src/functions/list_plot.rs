@@ -1108,14 +1108,44 @@ fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
 /// One parsed series per dataset plus one optional dataset label per series.
 type LabeledSeries = (Vec<Vec<(f64, f64)>>, Vec<Option<String>>);
 
+/// A point's label and, from `Labeled[pt, label, pos]`, the side of the
+/// point it is placed on (`Above`, `Below`, `Left`, `Right`, …).
+type PointLabel = (String, Option<String>);
+
 /// Like [`LabeledSeries`], but keeping the `Around` uncertainties plus
 /// per-point labels (parallel to each series' points) from `Labeled`
 /// wrappers around scalar data entries.
 type LabeledErrSeries = (
   Vec<Vec<ErrPoint>>,
   Vec<Option<String>>,
-  Vec<Vec<Option<String>>>,
+  Vec<Vec<Option<PointLabel>>>,
 );
+
+/// The side a `Labeled[pt, label, pos]` places its label on, in the names
+/// the point-label renderer reads (`Before` / `After` are `Left` /
+/// `Right`). Other positions (a number, `{…}`) give `None`.
+fn labeled_point_position(expr: &Expr) -> Option<String> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Labeled" {
+    return None;
+  }
+  match args.get(2)? {
+    Expr::Identifier(pos) => Some(
+      match pos.as_str() {
+        "Above" | "Top" => "Above",
+        "Below" | "Bottom" => "Below",
+        "Before" | "Left" => "Left",
+        "After" | "Right" => "Right",
+        "Center" => "Center",
+        _ => return None,
+      }
+      .to_string(),
+    ),
+    _ => None,
+  }
+}
 
 /// Like [`parse_list_data_err_labeled`], with the uncertainties and
 /// per-point labels stripped.
@@ -1128,14 +1158,7 @@ fn parse_list_data_labeled(
 
 /// Parse `ListPlot[ts -> "key"]` / `ListPlot[ts -> {"k1", …}]`: select the
 /// named components of a component-keyed TimeSeries, one series per key.
-fn parse_temporal_components(
-  ts: &Expr,
-  selector: &Expr,
-) -> (
-  std::vec::Vec<std::vec::Vec<crate::functions::list_plot::ErrPoint>>,
-  std::vec::Vec<std::option::Option<std::string::String>>,
-  std::vec::Vec<std::vec::Vec<std::option::Option<std::string::String>>>,
-) {
+fn parse_temporal_components(ts: &Expr, selector: &Expr) -> LabeledErrSeries {
   let pairs =
     crate::functions::timeseries_ast::time_series_pairs(ts).unwrap_or_default();
   let sel =
@@ -1184,13 +1207,13 @@ fn parse_rule_labeled(
     }
     other => vec![Some(label_string(other))],
   };
-  let point_labels: Vec<Vec<Option<String>>> = series
+  let point_labels: Vec<Vec<Option<PointLabel>>> = series
     .iter()
     .enumerate()
     .map(|(i, s)| {
       if i == 0 {
         (0..s.len())
-          .map(|j| labels.get(j).cloned().flatten())
+          .map(|j| labels.get(j).cloned().flatten().map(|l| (l, None)))
           .collect()
       } else {
         vec![None; s.len()]
@@ -1249,11 +1272,13 @@ fn parse_list_data_err_labeled(
   if let Expr::List(items) = &data
     && items.iter().any(|item| unwrap_labeled(item).is_some())
   {
-    let unwrapped: Vec<(Expr, Option<String>)> = items
+    let unwrapped: Vec<(Expr, Option<PointLabel>)> = items
       .iter()
       .map(|item| {
         let (content, label) = match unwrap_labeled(item) {
-          Some((content, label)) => (content, Some(label)),
+          Some((content, label)) => {
+            (content, Some((label, labeled_point_position(item))))
+          }
           None => (item.clone(), None),
         };
         let content = evaluate_expr_to_expr(&content).unwrap_or(content);
@@ -1311,7 +1336,9 @@ fn parse_list_data_err_labeled(
           None => all_series.push(Vec::new()),
         },
       }
-      labels.push(label);
+      // A dataset's label keeps no point position (its own placement is
+      // read from the data by `apply_dataset_labels`).
+      labels.push(label.map(|(text, _)| text));
     }
     return Ok((all_series, labels, Vec::new()));
   }
@@ -2690,12 +2717,31 @@ fn apply_dataset_labels(
 /// `LabelingSize`.
 fn resolve_point_labels(
   parsed: &mut ParsedOptions,
-  point_labels: Vec<Vec<Option<String>>>,
+  point_labels: Vec<Vec<Option<PointLabel>>>,
   all_series: &[Vec<(f64, f64)>],
 ) -> Vec<Vec<Option<String>>> {
   if parsed.hide_point_labels {
     return Vec::new();
   }
+  // `Labeled[pt, label, pos]` sides, parallel to the labels.
+  parsed.opts.point_label_positions = point_labels
+    .iter()
+    .map(|series| {
+      series
+        .iter()
+        .map(|l| l.as_ref().and_then(|(_, pos)| pos.clone()))
+        .collect()
+    })
+    .collect();
+  let point_labels: Vec<Vec<Option<String>>> = point_labels
+    .into_iter()
+    .map(|series| {
+      series
+        .into_iter()
+        .map(|l| l.map(|(text, _)| text))
+        .collect()
+    })
+    .collect();
   let mut labels = match &parsed.labeling_function {
     Some(f) => {
       parsed.opts.point_label_callouts = true;

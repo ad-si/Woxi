@@ -14153,6 +14153,30 @@ mod plot3d {
       assert!(dashes > 5 && dashes < 120, "{dashes}");
     }
 
+    // `Labeled[pt, label, pos]` puts each point's label on its own side
+    // (it used to ignore `pos` and use the automatic upper-right place).
+    #[test]
+    fn list_plot_labeled_point_positions() {
+      let anchor_of = |pos: &str| -> String {
+        let svg = export_svg(&format!(
+          "ListPlot[{{Labeled[{{0.2, 0.3}}, \"q\", {pos}], \
+             Labeled[{{0.5, 0.8}}, \"r\", {pos}]}}]"
+        ));
+        let at = svg.find(">q<").expect("label");
+        let start = svg[..at].rfind("<text").unwrap();
+        svg[start..at]
+          .split("text-anchor=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap()
+          .to_string()
+      };
+      assert_eq!(anchor_of("Above"), "middle");
+      assert_eq!(anchor_of("Below"), "middle");
+      assert_eq!(anchor_of("Before"), "end");
+      assert_eq!(anchor_of("After"), "start");
+    }
+
     // A rule in a label is typeset with its arrow, as in a Wolfram graphic.
     #[test]
     fn plot_label_rule_typesets_arrow() {

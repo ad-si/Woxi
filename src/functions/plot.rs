@@ -3381,6 +3381,10 @@ pub(crate) struct PlotOptions {
   /// as `LabelingFunction` (`Above`, `Below`, `Left`, `Right`, `Center`).
   /// `None` keeps the automatic above-right placement.
   pub point_label_position: Option<String>,
+  /// The side of its point each point label sits on, from `Labeled[pt,
+  /// label, pos]`, parallel to `point_labels`; `None` falls back to
+  /// `point_label_position`.
+  pub point_label_positions: Vec<Vec<Option<String>>>,
   /// The point labels are callouts (`Callout[pt, label]`, `data -> labels`):
   /// pulled away from their points along leader lines, and dropped where
   /// they find no free place.
@@ -3667,6 +3671,7 @@ impl Default for PlotOptions {
       plot_labels_automatic: false,
       point_labels: Vec::new(),
       point_label_position: None,
+      point_label_positions: Vec::new(),
       point_label_callouts: false,
       log_x: false,
       log_y: false,
@@ -7006,6 +7011,34 @@ fn named_callout_candidate(pos: &str) -> Option<usize> {
 /// The boxes (in points, y up, relative to their points) the point labels
 /// take at their first-choice places, paired with their points: what the
 /// plot range is widened for, as WL makes room for the labels.
+/// Where a point label at the named side `pos` of its point is drawn, for
+/// a `font` points high: the text anchor's offset from the point (in
+/// points, y down, at the baseline) and the SVG `text-anchor`. The gaps
+/// between point and text are wolframscript's: the baseline 2.1 pt above
+/// the point, the top 1.5 pt below it, the near end 2 pt beside it.
+fn named_point_label_anchor(pos: &str, font: f64) -> (f64, f64, &'static str) {
+  match pos {
+    "Above" | "Top" => (0.0, -2.1, "middle"),
+    "Below" | "Bottom" => (0.0, 1.5 + 0.75 * font, "middle"),
+    "Left" => (-2.0, 0.35 * font, "end"),
+    "Right" => (2.0, 0.35 * font, "start"),
+    _ => (0.0, 0.35 * font, "middle"),
+  }
+}
+
+/// The box (left, top, right, bottom; points, y down, around the point) a
+/// `w` × `h` label at the named side `pos` covers, as
+/// [`named_point_label_anchor`] draws it.
+fn named_point_label_box(pos: &str, w: f64, h: f64) -> (f64, f64, f64, f64) {
+  let (dx, dy, anchor) = named_point_label_anchor(pos, h);
+  let left = match anchor {
+    "end" => dx - w,
+    "start" => dx,
+    _ => dx - w / 2.0,
+  };
+  (left, dy - 0.75 * h, left + w, dy + 0.25 * h)
+}
+
 pub(crate) fn point_label_boxes(
   opts: &PlotOptions,
   all_points: &[Vec<(f64, f64)>],
@@ -7022,7 +7055,7 @@ pub(crate) fn point_label_boxes(
       continue;
     };
     let dot = series_point_radius(opts, series_idx, render_width) as f64 / sf;
-    for (&p, label) in points.iter().zip(labels) {
+    for (j, (&p, label)) in points.iter().zip(labels).enumerate() {
       let Some(text) = label else { continue };
       if !(p.0.is_finite() && p.1.is_finite()) {
         continue;
@@ -7032,6 +7065,21 @@ pub(crate) fn point_label_boxes(
         POINT_LABEL_FONT,
       );
       let h = POINT_LABEL_FONT;
+      // A label at a named side (not a callout) covers that side.
+      let position = opts
+        .point_label_positions
+        .get(series_idx)
+        .and_then(|p| p.get(j))
+        .cloned()
+        .flatten()
+        .or_else(|| opts.point_label_position.clone());
+      if let Some(pos) = position.as_deref()
+        && !opts.point_label_callouts
+      {
+        let (l, t, r, b) = named_point_label_box(pos, w, h);
+        out.push((p, (l, -b, r, -t)));
+        continue;
+      }
       let candidates = label_candidates(
         (0.0, 0.0),
         (w, h),
@@ -7127,26 +7175,29 @@ fn inject_point_labels(
     else {
       continue;
     };
-    for (&(data_x, data_y), label) in points.iter().zip(labels) {
+    for (j, (&(data_x, data_y), label)) in points.iter().zip(labels).enumerate()
+    {
       let Some(label_text) = label else { continue };
       if !(data_x.is_finite() && data_y.is_finite()) {
         continue;
       }
       let (px, py) = to_px((data_x, data_y));
       let text = crate::functions::graphics::box_string_to_svg(label_text);
-      // A named position puts the label on that side of the point; a
-      // callout's leader runs straight out that way.
-      if let Some(pos) = opts.point_label_position.as_deref()
+      // A named position — the point's own (`Labeled[pt, l, pos]`) or the
+      // plot's — puts the label on that side of the point; a callout's
+      // leader runs straight out that way.
+      let position = opts
+        .point_label_positions
+        .get(series_idx)
+        .and_then(|p| p.get(j))
+        .cloned()
+        .flatten()
+        .or_else(|| opts.point_label_position.clone());
+      if let Some(pos) = position.as_deref()
         && !opts.point_label_callouts
       {
-        let gap = sf * 6.0;
-        let (label_px, label_py, anchor) = match pos {
-          "Above" | "Top" => (px, py - gap, "middle"),
-          "Below" | "Bottom" => (px, py + gap + font_size * 0.75, "middle"),
-          "Left" => (px - gap, py + font_size * 0.35, "end"),
-          "Right" => (px + gap, py + font_size * 0.35, "start"),
-          _ => (px, py + font_size * 0.35, "middle"),
-        };
+        let (dx, dy, anchor) = named_point_label_anchor(pos, font_size / sf);
+        let (label_px, label_py) = (px + dx * sf, py + dy * sf);
         label_svg.push_str(&format!(
           "<text x=\"{label_px:.1}\" y=\"{label_py:.1}\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
