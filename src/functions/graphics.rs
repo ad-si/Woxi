@@ -1318,7 +1318,44 @@ fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
   {
     return Some((x / *width as f64, 1.0 - y / *height as f64));
   }
-  None
+  inset_object_fraction(peel_style_wrapper(args.first()?), x, y)
+}
+
+/// Where the point `(ox, oy)` of an inset object's own coordinates sits in
+/// its picture, as fractions `(from the left, from the top)`.
+///
+/// A plot is measured in its data coordinates: one that gave no `PlotRange`
+/// is drawn over its data extent plus the default 2% padding on each side,
+/// so the point is measured against that padded range. A laid-out display
+/// (`Grid`, `Row`, `Column`, `Framed`) is measured in fractions of its own
+/// size, `{0, 0}` being its lower left corner and `{1, 1}` its upper right.
+pub(crate) fn inset_object_fraction(
+  object: &Expr,
+  ox: f64,
+  oy: f64,
+) -> Option<(f64, f64)> {
+  if let Expr::FunctionCall { name, .. } = object
+    && matches!(name.as_str(), "Grid" | "Row" | "Column" | "Framed")
+  {
+    return Some((ox, 1.0 - oy));
+  }
+  let Expr::Graphics { is_3d: false, .. } = object else {
+    return None;
+  };
+  let ((mut x0, mut x1), (mut y0, mut y1)) = absolute_plot_range(object)?;
+  let explicit = graphics_options(object).is_some_and(|opts| {
+    opts
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some((n, _)) if n == "PlotRange"))
+  });
+  if !explicit {
+    let (px, py) = ((x1 - x0) * 0.02, (y1 - y0) * 0.02);
+    (x0, x1, y0, y1) = (x0 - px, x1 + px, y0 - py, y1 + py);
+  }
+  if !(x1 > x0 && y1 > y0) {
+    return None;
+  }
+  Some(((ox - x0) / (x1 - x0), 1.0 - (oy - y0) / (y1 - y0)))
 }
 
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
@@ -6781,9 +6818,21 @@ fn inset_primitives(
     // `Inset[obj, pos, {Left, Top}]` puts the object's own corner, not its
     // centre, on `pos`. Embedded pictures always centre on the anchor, so
     // pad the picture to twice its distance to the far side of that point.
-    if let Some((fx, fy)) = inset_object_anchor(args)
-      && ((fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
+    let (mut x, mut y) = (x, y);
+    let object_anchor = inset_object_anchor(args)
+      .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9);
+    if let Some((fx, fy)) = object_anchor
+      && let Some((sw, sh)) = size
+      && !scaled
+      && !inset_size_is_scaled(args)
+      && plot.is_some_and(|g| inset_object_fraction(g, 0.0, 0.0).is_some())
     {
+      // A plot with an explicit size is laid out anew at that size, so its
+      // anchor point is reached by moving the centre rather than by padding
+      // the picture.
+      x += (0.5 - fx) * sw;
+      y += (fy - 0.5) * sh;
+    } else if let Some((fx, fy)) = object_anchor {
       let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
       let (pw, ph) = (w * kx, h * ky);
       let (ox, oy) = (pw / 2.0 - fx * w, ph / 2.0 - fy * h);

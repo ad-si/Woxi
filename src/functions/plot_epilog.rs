@@ -1036,12 +1036,23 @@ fn render_item(
         };
         if let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
         {
+          let (w, h) = (w * area.scale, h * area.scale);
+          // `opos` names the point of the inset object (a plot's data
+          // coordinates, a display's fractions of its size) that lands on `pos`; the picture is otherwise
+          // centred there.
+          let (fx, fy) = args
+            .get(2)
+            .and_then(point2)
+            .and_then(|(ox, oy)| {
+              crate::functions::graphics::inset_object_fraction(&object, ox, oy)
+            })
+            .unwrap_or((0.5, 0.5));
           out.push_str(&crate::functions::graphics::embed_svg_centered(
             &svg,
-            area.px(anchor.0),
-            area.py(anchor.1),
-            w * area.scale,
-            h * area.scale,
+            area.px(anchor.0) + (0.5 - fx) * w,
+            area.py(anchor.1) + (0.5 - fy) * h,
+            w,
+            h,
           ));
         }
       }
