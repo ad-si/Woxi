@@ -8071,6 +8071,40 @@ from a stated rule or needs missing machinery:
   ranges, or `Interval[{a, b}, {c, d}]` read as an x and a y interval, is
   not supported.
 
+## Field plots: remaining differences (graphics-tests, 2026-11)
+
+- `ContourPlot` with a `RegionFunction` masks whole grid cells, so the
+  region's edge is a staircase; WL clips the bands to the region boundary.
+- `ContourLabels` are placed a third of the way along each contour line
+  (alternating ends between levels); WL's label placement differs.
+- `ComplexPlot`: WL's SVG export frames the data rectangle with a thin
+  black box (an edge of its texture-mapped polygon); Woxi does not.
+- `LineIntegralConvolutionPlot`: the default colouring approximates WL's
+  brown-to-cream magnitude gradient with `"SiennaTones"` over 0.4..0.8 of
+  the rescaled norm (within a few percent); the noise texture and its
+  intensity mapping are Woxi's own, so pixels never match.
+- `StreamPlot` seeds and spaces its streamlines differently from WL (WL
+  leaves the corners of a rotational field sparse).
+- `VectorPlot`: `VectorScaling -> Automatic` lengths follow WL's
+  `1/3 + 2/3 (√(1 + 80 s) - 1)/8`; `VectorSizes`, `VectorMarkers` and
+  `VectorAspectRatio` are not implemented. The arrowhead shape is
+  Woxi's plain triangle, not WL's curved-back head.
+- `TimelinePlot`: WL widens the date range so callout boxes fit; Woxi
+  keeps the 6% padding. Overlapping callout boxes are not stacked into
+  further rows.
+- `PolarPlot` with `PolarAxes`: the angular labels are drawn inline
+  (`5 π/6`), not as stacked fractions, because `Text` of a
+  `TraditionalForm` fraction is not typeset; the picture is padded by 15%
+  of the radius for the labels where WL's own export clips them.
+  `PolarPlot` without polar axes pads its range to a round tick
+  (`±1.0` for a rose reaching `±0.95`) where WL keeps the data extent.
+- `DateListPlot`'s frame and ticks are 1 pt `#666`; WL draws 0.5 pt
+  `GrayLevel[0.4]` (the shared frame renderer of the list plots).
+- `DensityPlot`'s `BarLegend` does not label the ends of its range (WL
+  shows `0` and `1.0` for `Exp[-(x^2 + y^2)]`).
+- `ComplexContourPlot` draws its curves in the WL 14 palette at 2 pt; WL
+  uses the older palette at 1 pt.
+
 ## ListSurfacePlot3D
 
 - Scattered (non-array) point lists are wrapped in their convex hull, whereas

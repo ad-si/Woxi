@@ -19428,7 +19428,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "MinMax[Round[Norm[#[[2]] - #[[1]]] & /@ Cases[VectorPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, VectorScaling -> Automatic][[1]], Arrow[p_] :> p, Infinity], 0.0001]]"
         )
         .unwrap(),
-        "{0.0188, 0.0563}"
+        "{0.0188, 0.0562}"
       );
     }
 
@@ -20937,8 +20937,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let count = |svg: &str| svg.matches("<polyline points=\"").count();
       // 11 lines for each of the two mesh functions, on top of the contour.
       assert_eq!(count(&meshed), count(&plain) + 22, "{meshed}");
-      // Mesh lines are drawn in grey, under the darker contour.
-      assert!(meshed.contains("stroke=\"#b0b0b0\""), "{meshed}");
+      // Mesh lines are Wolfram's translucent black, under the contour.
+      assert!(meshed.contains("stroke-opacity=\"0.3\""), "{meshed}");
       // Without MeshFunctions the coordinates themselves are used.
       let default_mesh = export_svg(
         "ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, \

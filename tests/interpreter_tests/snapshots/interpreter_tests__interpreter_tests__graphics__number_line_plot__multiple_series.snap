@@ -2,76 +2,78 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"NumberLinePlot[{Range[20], 2*Range[10], 3*Range[6], 5*Range[4], 7*Range[2]}]\")"
 ---
-<svg width="360" height="145" viewBox="0 0 3600 1450" xmlns="http://www.w3.org/2000/svg">
-<rect width="3600" height="1450" fill="#ffffff"/>
-<line x1="600.0" y1="1150.0" x2="3400.0" y2="1150.0" stroke="#666666" stroke-width="10"/>
-<circle cx="793.1" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="920.1" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1047.2" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1174.2" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1301.3" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1428.3" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1555.4" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1682.4" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1809.4" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="1936.5" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2063.5" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2190.6" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2317.6" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2444.6" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2571.7" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2698.7" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2825.8" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="2952.8" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="3079.9" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="3206.9" cy="983.3" r="40.0" fill="rgb(61,153,204)"/>
-<circle cx="920.1" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="1174.2" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="1428.3" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="1682.4" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="1936.5" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="2190.6" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="2444.6" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="2698.7" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="2952.8" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="3206.9" cy="816.7" r="40.0" fill="rgb(242,160,36)"/>
-<circle cx="1047.2" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="1428.3" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="1809.4" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="2190.6" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="2571.7" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="2952.8" cy="650.0" r="40.0" fill="rgb(116,179,54)"/>
-<circle cx="1301.3" cy="483.3" r="40.0" fill="rgb(235,98,53)"/>
-<circle cx="1936.5" cy="483.3" r="40.0" fill="rgb(235,98,53)"/>
-<circle cx="2571.7" cy="483.3" r="40.0" fill="rgb(235,98,53)"/>
-<circle cx="3206.9" cy="483.3" r="40.0" fill="rgb(235,98,53)"/>
-<circle cx="1555.4" cy="316.7" r="40.0" fill="rgb(147,130,217)"/>
-<circle cx="2444.6" cy="316.7" r="40.0" fill="rgb(147,130,217)"/>
-<line x1="793.1" y1="1150.0" x2="793.1" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="920.1" y1="1150.0" x2="920.1" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1047.2" y1="1150.0" x2="1047.2" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1174.2" y1="1150.0" x2="1174.2" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1428.3" y1="1150.0" x2="1428.3" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1555.4" y1="1150.0" x2="1555.4" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1682.4" y1="1150.0" x2="1682.4" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="1809.4" y1="1150.0" x2="1809.4" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2063.5" y1="1150.0" x2="2063.5" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2190.6" y1="1150.0" x2="2190.6" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2317.6" y1="1150.0" x2="2317.6" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2444.6" y1="1150.0" x2="2444.6" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2698.7" y1="1150.0" x2="2698.7" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2825.8" y1="1150.0" x2="2825.8" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="2952.8" y1="1150.0" x2="2952.8" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="3079.9" y1="1150.0" x2="3079.9" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="3333.9" y1="1150.0" x2="3333.9" y2="1180.0" stroke="#666666" stroke-width="5"/>
-<line x1="666.1" y1="1150.0" x2="666.1" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="666.1" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">0</text>
-<line x1="1301.3" y1="1150.0" x2="1301.3" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="1301.3" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">5</text>
-<line x1="1936.5" y1="1150.0" x2="1936.5" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="1936.5" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">10</text>
-<line x1="2571.7" y1="1150.0" x2="2571.7" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="2571.7" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">15</text>
-<line x1="3206.9" y1="1150.0" x2="3206.9" y2="1200.0" stroke="#666666" stroke-width="10"/>
-<text x="3206.9" y="1354.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="140" fill="#666">20</text>
+<svg width="360" height="126" viewBox="0 0 3600 1260" xmlns="http://www.w3.org/2000/svg">
+<rect width="3600" height="1260" fill="#ffffff"/>
+<circle cx="363.0" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="513.7" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="664.5" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="815.2" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="965.9" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1116.7" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1267.4" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1418.2" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1568.9" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1719.6" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="1870.4" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2021.1" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2171.8" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2322.6" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2473.3" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2624.1" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2774.8" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="2925.5" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="3076.3" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="3227.0" cy="921.9" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="513.7" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="815.2" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="1116.7" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="1418.2" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="1719.6" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="2021.1" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="2322.6" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="2624.1" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="2925.5" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="3227.0" cy="737.5" r="22.5" fill="rgb(242,160,36)"/>
+<circle cx="664.5" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="1116.7" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="1568.9" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="2021.1" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="2473.3" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="2925.5" cy="553.1" r="22.5" fill="rgb(116,179,54)"/>
+<circle cx="965.9" cy="368.8" r="22.5" fill="rgb(235,98,53)"/>
+<circle cx="1719.6" cy="368.8" r="22.5" fill="rgb(235,98,53)"/>
+<circle cx="2473.3" cy="368.8" r="22.5" fill="rgb(235,98,53)"/>
+<circle cx="3227.0" cy="368.8" r="22.5" fill="rgb(235,98,53)"/>
+<circle cx="1267.4" cy="184.4" r="22.5" fill="rgb(147,130,217)"/>
+<circle cx="2322.6" cy="184.4" r="22.5" fill="rgb(147,130,217)"/>
+<line x1="5.0" y1="1106.2" x2="3585.0" y2="1106.2" stroke="#666666" stroke-width="2.0"/>
+<line x1="61.5" y1="1106.2" x2="61.5" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="363.0" y1="1106.2" x2="363.0" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="513.7" y1="1106.2" x2="513.7" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="664.5" y1="1106.2" x2="664.5" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="815.2" y1="1106.2" x2="815.2" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1116.7" y1="1106.2" x2="1116.7" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1267.4" y1="1106.2" x2="1267.4" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1418.2" y1="1106.2" x2="1418.2" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1568.9" y1="1106.2" x2="1568.9" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1870.4" y1="1106.2" x2="1870.4" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2021.1" y1="1106.2" x2="2021.1" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2171.8" y1="1106.2" x2="2171.8" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2322.6" y1="1106.2" x2="2322.6" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2624.1" y1="1106.2" x2="2624.1" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2774.8" y1="1106.2" x2="2774.8" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2925.5" y1="1106.2" x2="2925.5" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3076.3" y1="1106.2" x2="3076.3" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3377.7" y1="1106.2" x2="3377.7" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3528.5" y1="1106.2" x2="3528.5" y2="1092.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="212.3" y1="1106.2" x2="212.3" y2="1083.2" stroke="#666666" stroke-width="2.0"/>
+<text x="212.3" y="1226.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0</text>
+<line x1="965.9" y1="1106.2" x2="965.9" y2="1083.2" stroke="#666666" stroke-width="2.0"/>
+<text x="965.9" y="1226.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
+<line x1="1719.6" y1="1106.2" x2="1719.6" y2="1083.2" stroke="#666666" stroke-width="2.0"/>
+<text x="1719.6" y="1226.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
+<line x1="2473.3" y1="1106.2" x2="2473.3" y2="1083.2" stroke="#666666" stroke-width="2.0"/>
+<text x="2473.3" y="1226.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">15</text>
+<line x1="3227.0" y1="1106.2" x2="3227.0" y2="1083.2" stroke="#666666" stroke-width="2.0"/>
+<text x="3227.0" y="1226.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">20</text>
 </svg>

@@ -4,11 +4,11 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 ---
 <svg width="360" height="351" viewBox="0 0 3600 3510" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3510" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="299.1" y="3258.8" width="128.8" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<rect x="299.1" y="3258.8" width="128.8" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M460.0 3282.8L460.0 3258.8L433.8 3258.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M427.8 3290.9L460.0 3290.9L460.0 3282.8L433.8 3258.8L427.8 3258.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M427.8 3290.9L460.0 3290.9L460.0 3282.8L433.8 3258.8L427.8 3258.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M469.0 3290.9L492.2 3290.9L492.2 3258.8L460.0 3258.8L460.0 3282.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M460.0 3290.9L469.0 3290.9L460.0 3282.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M460.0 3290.9L469.0 3290.9L460.0 3282.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="492.2" y="3258.8" width="128.8" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M653.1 3284.1L653.1 3258.8L621.4 3258.8Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M620.9 3290.9L653.1 3290.9L653.1 3284.1L621.4 3258.8L620.9 3258.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -90,15 +90,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3163.9 3290.9L3196.1 3290.9L3196.1 3258.8L3195.6 3258.8L3163.9 3284.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3196.1" y="3258.8" width="128.8" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3324.8 3290.9L3348.0 3290.9L3357.0 3282.8L3357.0 3258.8L3324.8 3258.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3348.0 3290.9L3357.0 3290.9L3357.0 3282.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3348.0 3290.9L3357.0 3290.9L3357.0 3282.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3383.2 3258.8L3357.0 3258.8L3357.0 3282.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3357.0 3290.9L3389.2 3290.9L3389.2 3258.8L3383.2 3258.8L3357.0 3282.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3389.2" y="3258.8" width="128.8" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="3226.6" width="96.6" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3357.0 3290.9L3389.2 3290.9L3389.2 3258.8L3383.2 3258.8L3357.0 3282.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3389.2" y="3258.8" width="128.8" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="3226.6" width="96.6" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M427.8 3253.1L427.8 3226.6L400.1 3226.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M395.6 3258.8L427.8 3258.8L427.8 3253.1L400.1 3226.6L395.6 3226.6Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M395.6 3258.8L427.8 3258.8L427.8 3253.1L400.1 3226.6L395.6 3226.6Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M433.8 3258.8L460.0 3258.8L460.0 3226.6L427.8 3226.6L427.8 3253.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M427.8 3258.8L433.8 3258.8L427.8 3253.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M427.8 3258.8L433.8 3258.8L427.8 3253.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="460.0" y="3226.6" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M588.8 3231.5L588.8 3226.6L582.9 3226.6Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M556.6 3258.8L588.8 3258.8L588.8 3231.5L582.9 3226.6L556.6 3226.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -161,15 +161,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3228.2 3258.8L3260.4 3258.8L3260.4 3226.6L3234.1 3226.6L3228.2 3231.5Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3260.4" y="3226.6" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3357.0 3258.8L3383.2 3258.8L3389.2 3253.1L3389.2 3226.6L3357.0 3226.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3383.2 3258.8L3389.2 3258.8L3389.2 3253.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3383.2 3258.8L3389.2 3258.8L3389.2 3253.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3416.9 3226.6L3389.2 3226.6L3389.2 3253.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3389.2 3258.8L3421.4 3258.8L3421.4 3226.6L3416.9 3226.6L3389.2 3253.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3421.4" y="3226.6" width="96.6" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="3194.4" width="64.4" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3389.2 3258.8L3421.4 3258.8L3421.4 3226.6L3416.9 3226.6L3389.2 3253.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3421.4" y="3226.6" width="96.6" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="3194.4" width="64.4" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M395.6 3222.2L395.6 3194.4L367.8 3194.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M363.4 3226.6L395.6 3226.6L395.6 3222.2L367.8 3194.4L363.4 3194.4Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M363.4 3226.6L395.6 3226.6L395.6 3222.2L367.8 3194.4L363.4 3194.4Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M400.1 3226.6L427.8 3226.6L427.8 3194.4L395.6 3194.4L395.6 3222.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M395.6 3226.6L400.1 3226.6L395.6 3222.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M395.6 3226.6L400.1 3226.6L395.6 3222.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="427.8" y="3194.4" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M556.6 3203.5L556.6 3194.4L546.3 3194.4Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M524.4 3226.6L556.6 3226.6L556.6 3203.5L546.3 3194.4L524.4 3194.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -228,15 +228,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3260.4 3226.6L3292.6 3226.6L3292.6 3194.4L3270.7 3194.4L3260.4 3203.5Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3292.6" y="3194.4" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3389.2 3226.6L3416.9 3226.6L3421.4 3222.2L3421.4 3194.4L3389.2 3194.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3416.9 3226.6L3421.4 3226.6L3421.4 3222.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3416.9 3226.6L3421.4 3226.6L3421.4 3222.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3449.2 3194.4L3421.4 3194.4L3421.4 3222.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3421.4 3226.6L3453.6 3226.6L3453.6 3194.4L3449.2 3194.4L3421.4 3222.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3453.6" y="3194.4" width="64.4" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="3162.2" width="32.2" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3421.4 3226.6L3453.6 3226.6L3453.6 3194.4L3449.2 3194.4L3421.4 3222.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3453.6" y="3194.4" width="64.4" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="3162.2" width="32.2" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M363.4 3189.9L363.4 3162.2L336.9 3162.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M331.2 3194.4L363.4 3194.4L363.4 3189.9L336.9 3162.2L331.2 3162.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M331.2 3194.4L363.4 3194.4L363.4 3189.9L336.9 3162.2L331.2 3162.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M367.8 3194.4L395.6 3194.4L395.6 3162.2L363.4 3162.2L363.4 3189.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M363.4 3194.4L367.8 3194.4L363.4 3189.9Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M363.4 3194.4L367.8 3194.4L363.4 3189.9Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="395.6" y="3162.2" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M524.4 3174.3L524.4 3162.2L511.4 3162.2Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M492.2 3194.4L524.4 3194.4L524.4 3174.3L511.4 3162.2L492.2 3162.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -287,14 +287,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3292.6 3194.4L3324.8 3194.4L3324.8 3162.2L3305.6 3162.2L3292.6 3174.3Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3324.8" y="3162.2" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3421.4 3194.4L3449.2 3194.4L3453.6 3189.9L3453.6 3162.2L3421.4 3162.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3449.2 3194.4L3453.6 3194.4L3453.6 3189.9Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3449.2 3194.4L3453.6 3194.4L3453.6 3189.9Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3480.1 3162.2L3453.6 3162.2L3453.6 3189.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3453.6 3194.4L3485.8 3194.4L3485.8 3162.2L3480.1 3162.2L3453.6 3189.9Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3485.8" y="3162.2" width="32.2" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3453.6 3194.4L3485.8 3194.4L3485.8 3162.2L3480.1 3162.2L3453.6 3189.9Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3485.8" y="3162.2" width="32.2" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M331.2 3156.2L331.2 3130.0L307.2 3130.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M299.1 3162.2L331.2 3162.2L331.2 3156.2L307.2 3130.0L299.1 3130.0Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M299.1 3162.2L331.2 3162.2L331.2 3156.2L307.2 3130.0L299.1 3130.0Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M336.9 3162.2L363.4 3162.2L363.4 3130.0L331.2 3130.0L331.2 3156.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M331.2 3162.2L336.9 3162.2L331.2 3156.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M331.2 3162.2L336.9 3162.2L331.2 3156.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="363.4" y="3130.0" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M492.2 3143.8L492.2 3130.0L478.1 3130.0Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M460.0 3162.2L492.2 3162.2L492.2 3143.8L478.1 3130.0L460.0 3130.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -345,11 +345,11 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3324.8 3162.2L3357.0 3162.2L3357.0 3130.0L3338.9 3130.0L3324.8 3143.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3357.0" y="3130.0" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3453.6 3162.2L3480.1 3162.2L3485.8 3156.2L3485.8 3130.0L3453.6 3130.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3480.1 3162.2L3485.8 3162.2L3485.8 3156.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3480.1 3162.2L3485.8 3162.2L3485.8 3156.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3509.8 3130.0L3485.8 3130.0L3485.8 3156.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3485.8 3162.2L3517.9 3162.2L3517.9 3130.0L3509.8 3130.0L3485.8 3156.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3485.8 3162.2L3517.9 3162.2L3517.9 3130.0L3509.8 3130.0L3485.8 3156.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M307.2 3130.0L331.2 3130.0L331.2 3097.8L299.1 3097.8L299.1 3121.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M299.1 3130.0L307.2 3130.0L299.1 3121.0Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M299.1 3130.0L307.2 3130.0L299.1 3121.0Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="331.2" y="3097.8" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M460.0 3111.9L460.0 3097.8L446.2 3097.8Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M427.8 3130.0L460.0 3130.0L460.0 3111.9L446.2 3097.8L427.8 3097.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -431,7 +431,7 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3357.0 3130.0L3389.2 3130.0L3389.2 3097.8L3370.8 3097.8L3357.0 3111.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3389.2" y="3097.8" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3485.8 3130.0L3509.8 3130.0L3517.9 3121.0L3517.9 3097.8L3485.8 3097.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3509.8 3130.0L3517.9 3130.0L3517.9 3121.0Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3509.8 3130.0L3517.9 3130.0L3517.9 3121.0Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="299.1" y="3065.6" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M427.8 3078.6L427.8 3065.6L415.7 3065.6Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M395.6 3097.8L427.8 3097.8L427.8 3078.6L415.7 3065.6L395.6 3065.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1634,25 +1634,25 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1210.1 2421.8L1232.5 2421.8L1232.5 2389.7L1200.3 2389.7L1200.3 2412.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 2421.8L1210.1 2421.8L1200.3 2412.5Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1232.5" y="2389.7" width="515.0" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1779.7 2389.7L1779.7 2389.7L1779.7 2389.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1779.7 2389.7L1779.7 2389.7L1779.7 2389.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1747.6 2421.8L1779.7 2421.8L1779.7 2389.7L1779.7 2389.7L1747.6 2389.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1811.9 2394.7L1811.9 2389.7L1779.7 2389.7L1779.7 2389.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1811.9 2394.7L1811.9 2389.7L1779.7 2389.7L1779.7 2389.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1779.7 2421.8L1811.9 2421.8L1811.9 2394.7L1779.7 2389.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1844.1 2398.2L1844.1 2389.7L1811.9 2389.7L1811.9 2394.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1844.1 2398.2L1844.1 2389.7L1811.9 2389.7L1811.9 2394.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1811.9 2421.8L1844.1 2421.8L1844.1 2398.2L1811.9 2394.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1876.3 2400.4L1876.3 2389.7L1844.1 2389.7L1844.1 2398.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1876.3 2400.4L1876.3 2389.7L1844.1 2389.7L1844.1 2398.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1844.1 2421.8L1876.3 2421.8L1876.3 2400.4L1844.1 2398.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1908.5 2401.1L1908.5 2389.7L1876.3 2389.7L1876.3 2400.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1908.5 2401.1L1908.5 2389.7L1876.3 2389.7L1876.3 2400.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1876.3 2421.8L1908.5 2421.8L1908.5 2401.1L1876.3 2400.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1940.7 2400.4L1940.7 2389.7L1908.5 2389.7L1908.5 2401.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1940.7 2400.4L1940.7 2389.7L1908.5 2389.7L1908.5 2401.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1908.5 2421.8L1940.7 2421.8L1940.7 2400.4L1908.5 2401.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1972.9 2398.2L1972.9 2389.7L1940.7 2389.7L1940.7 2400.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1972.9 2398.2L1972.9 2389.7L1940.7 2389.7L1940.7 2400.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1940.7 2421.8L1972.9 2421.8L1972.9 2398.2L1940.7 2400.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2005.1 2394.7L2005.1 2389.7L1972.9 2389.7L1972.9 2398.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2005.1 2394.7L2005.1 2389.7L1972.9 2389.7L1972.9 2398.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1972.9 2421.8L2005.1 2421.8L2005.1 2394.7L1972.9 2398.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2037.3 2389.7L2037.3 2389.7L2005.1 2389.7L2005.1 2394.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2037.3 2389.7L2037.3 2389.7L2005.1 2389.7L2005.1 2394.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2005.1 2421.8L2037.3 2421.8L2037.3 2389.7L2005.1 2394.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2037.3 2389.7L2037.3 2389.7L2037.3 2389.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2037.3 2389.7L2037.3 2389.7L2037.3 2389.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2037.3 2421.8L2069.4 2421.8L2069.4 2389.7L2037.3 2389.7L2037.3 2389.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2069.4" y="2389.7" width="515.0" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2584.5 2421.8L2606.9 2421.8L2616.7 2412.5L2616.7 2389.7L2584.5 2389.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1692,22 +1692,22 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1177.5 2389.7L1200.3 2389.7L1200.3 2357.5L1168.2 2357.5L1168.2 2379.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 2389.7L1177.5 2389.7L1168.2 2379.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1200.3" y="2357.5" width="450.6" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1683.2 2365.0L1683.2 2357.5L1661.7 2357.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1683.2 2365.0L1683.2 2357.5L1661.7 2357.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1651.0 2389.7L1683.2 2389.7L1683.2 2365.0L1661.7 2357.5L1651.0 2357.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1715.4 2374.7L1715.4 2357.5L1683.2 2357.5L1683.2 2365.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1715.4 2374.7L1715.4 2357.5L1683.2 2357.5L1683.2 2365.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1683.2 2389.7L1715.4 2389.7L1715.4 2374.7L1683.2 2365.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1747.6 2382.9L1747.6 2357.5L1715.4 2357.5L1715.4 2374.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1747.6 2382.9L1747.6 2357.5L1715.4 2357.5L1715.4 2374.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1715.4 2389.7L1747.6 2389.7L1747.6 2382.9L1715.4 2374.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1779.7 2389.7L1779.7 2389.7L1779.7 2357.5L1747.6 2357.5L1747.6 2382.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1779.7 2389.7L1779.7 2389.7L1779.7 2357.5L1747.6 2357.5L1747.6 2382.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1747.6 2389.7L1779.7 2389.7L1747.6 2382.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1779.7" y="2357.5" width="257.5" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2037.3 2389.7L2037.3 2389.7L2069.4 2382.9L2069.4 2357.5L2037.3 2357.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1779.7" y="2357.5" width="257.5" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2037.3 2389.7L2037.3 2389.7L2069.4 2382.9L2069.4 2357.5L2037.3 2357.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2037.3 2389.7L2069.4 2389.7L2069.4 2382.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2101.6 2374.7L2101.6 2357.5L2069.4 2357.5L2069.4 2382.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2101.6 2374.7L2101.6 2357.5L2069.4 2357.5L2069.4 2382.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2069.4 2389.7L2101.6 2389.7L2101.6 2374.7L2069.4 2382.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2133.8 2365.0L2133.8 2357.5L2101.6 2357.5L2101.6 2374.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2133.8 2365.0L2133.8 2357.5L2101.6 2357.5L2101.6 2374.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2101.6 2389.7L2133.8 2389.7L2133.8 2365.0L2101.6 2374.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2155.3 2357.5L2133.8 2357.5L2133.8 2365.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2155.3 2357.5L2133.8 2357.5L2133.8 2365.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2133.8 2389.7L2166.0 2389.7L2166.0 2357.5L2155.3 2357.5L2133.8 2365.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2166.0" y="2357.5" width="450.6" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2616.7 2389.7L2639.5 2389.7L2648.8 2379.9L2648.8 2357.5L2616.7 2357.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1747,18 +1747,18 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1147.6 2357.5L1168.2 2357.5L1168.2 2325.3L1136.0 2325.3L1136.0 2344.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1136.0 2357.5L1147.6 2357.5L1136.0 2344.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1168.2" y="2325.3" width="418.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1618.8 2340.2L1618.8 2325.3L1586.6 2325.3L1586.6 2325.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1618.8 2340.2L1618.8 2325.3L1586.6 2325.3L1586.6 2325.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1586.6 2357.5L1618.8 2357.5L1618.8 2340.2L1586.6 2325.3L1586.6 2325.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1651.0 2353.5L1651.0 2325.3L1618.8 2325.3L1618.8 2340.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1651.0 2353.5L1651.0 2325.3L1618.8 2325.3L1618.8 2340.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1618.8 2357.5L1651.0 2357.5L1651.0 2353.5L1618.8 2340.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1661.7 2357.5L1683.2 2357.5L1683.2 2325.3L1651.0 2325.3L1651.0 2353.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1661.7 2357.5L1683.2 2357.5L1683.2 2325.3L1651.0 2325.3L1651.0 2353.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1651.0 2357.5L1661.7 2357.5L1651.0 2353.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1683.2" y="2325.3" width="450.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2133.8 2357.5L2155.3 2357.5L2166.0 2353.5L2166.0 2325.3L2133.8 2325.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1683.2" y="2325.3" width="450.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2133.8 2357.5L2155.3 2357.5L2166.0 2353.5L2166.0 2325.3L2133.8 2325.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2155.3 2357.5L2166.0 2357.5L2166.0 2353.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2198.2 2340.2L2198.2 2325.3L2166.0 2325.3L2166.0 2353.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2198.2 2340.2L2198.2 2325.3L2166.0 2325.3L2166.0 2353.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2166.0 2357.5L2198.2 2357.5L2198.2 2340.2L2166.0 2353.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2230.4 2325.3L2230.4 2325.3L2198.2 2325.3L2198.2 2340.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2230.4 2325.3L2230.4 2325.3L2198.2 2325.3L2198.2 2340.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2198.2 2357.5L2230.4 2357.5L2230.4 2325.3L2230.4 2325.3L2198.2 2340.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2230.4" y="2325.3" width="418.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2648.8 2357.5L2669.4 2357.5L2681.0 2344.1L2681.0 2325.3L2648.8 2325.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1796,18 +1796,18 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1120.2 2325.3L1136.0 2325.3L1136.0 2293.1L1103.8 2293.1L1103.8 2304.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1103.8 2325.3L1120.2 2325.3L1103.8 2304.6Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1136.0" y="2293.1" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1554.4 2307.9L1554.4 2293.1L1529.2 2293.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1554.4 2307.9L1554.4 2293.1L1529.2 2293.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1522.2 2325.3L1554.4 2325.3L1554.4 2307.9L1529.2 2293.1L1522.2 2293.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1586.6 2325.3L1586.6 2325.3L1586.6 2293.1L1554.4 2293.1L1554.4 2307.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1586.6 2325.3L1586.6 2325.3L1586.6 2293.1L1554.4 2293.1L1554.4 2307.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1554.4 2325.3L1586.6 2325.3L1586.6 2325.3L1554.4 2307.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1586.6 2325.3L1618.8 2325.3L1618.8 2293.1L1586.6 2293.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1586.6 2325.3L1618.8 2325.3L1618.8 2293.1L1586.6 2293.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1586.6 2325.3L1586.6 2325.3L1586.6 2325.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1618.8" y="2293.1" width="579.4" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2198.2 2325.3L2230.4 2325.3L2230.4 2293.1L2198.2 2293.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1618.8" y="2293.1" width="579.4" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2198.2 2325.3L2230.4 2325.3L2230.4 2293.1L2198.2 2293.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2230.4 2325.3L2230.4 2325.3L2230.4 2325.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2230.4 2325.3L2230.4 2325.3L2262.6 2307.9L2262.6 2293.1L2230.4 2293.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2230.4 2325.3L2230.4 2325.3L2262.6 2307.9L2262.6 2293.1L2230.4 2293.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2230.4 2325.3L2262.6 2325.3L2262.6 2307.9L2230.4 2325.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2287.8 2293.1L2262.6 2293.1L2262.6 2307.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2287.8 2293.1L2262.6 2293.1L2262.6 2307.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2262.6 2325.3L2294.8 2325.3L2294.8 2293.1L2287.8 2293.1L2262.6 2307.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2294.8" y="2293.1" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2681.0 2325.3L2696.8 2325.3L2713.2 2304.6L2713.2 2293.1L2681.0 2293.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1843,18 +1843,18 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1094.9 2293.1L1103.8 2293.1L1103.8 2260.9L1071.6 2260.9L1071.6 2260.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1071.6 2293.1L1094.9 2293.1L1071.6 2260.9L1071.6 2260.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1103.8" y="2260.9" width="354.1" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1490.0 2267.0L1490.0 2260.9L1481.7 2260.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1490.0 2267.0L1490.0 2260.9L1481.7 2260.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1457.9 2293.1L1490.0 2293.1L1490.0 2267.0L1481.7 2260.9L1457.9 2260.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1522.2 2288.7L1522.2 2260.9L1490.0 2260.9L1490.0 2267.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1522.2 2288.7L1522.2 2260.9L1490.0 2260.9L1490.0 2267.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1490.0 2293.1L1522.2 2293.1L1522.2 2288.7L1490.0 2267.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1529.2 2293.1L1554.4 2293.1L1554.4 2260.9L1522.2 2260.9L1522.2 2288.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1529.2 2293.1L1554.4 2293.1L1554.4 2260.9L1522.2 2260.9L1522.2 2288.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1522.2 2293.1L1529.2 2293.1L1522.2 2288.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1554.4" y="2260.9" width="708.2" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2262.6 2293.1L2287.8 2293.1L2294.8 2288.7L2294.8 2260.9L2262.6 2260.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1554.4" y="2260.9" width="708.2" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2262.6 2293.1L2287.8 2293.1L2294.8 2288.7L2294.8 2260.9L2262.6 2260.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2287.8 2293.1L2294.8 2293.1L2294.8 2288.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2327.0 2267.0L2327.0 2260.9L2294.8 2260.9L2294.8 2288.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2327.0 2267.0L2327.0 2260.9L2294.8 2260.9L2294.8 2288.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2294.8 2293.1L2327.0 2293.1L2327.0 2267.0L2294.8 2288.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2335.3 2260.9L2327.0 2260.9L2327.0 2267.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2335.3 2260.9L2327.0 2260.9L2327.0 2267.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2327.0 2293.1L2359.1 2293.1L2359.1 2260.9L2335.3 2260.9L2327.0 2267.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2359.1" y="2260.9" width="354.1" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2713.2 2293.1L2722.1 2293.1L2745.4 2260.9L2745.4 2260.9L2713.2 2260.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1890,14 +1890,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1071.6 2260.9L1103.8 2260.9L1103.8 2228.7L1071.6 2228.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1071.6 2260.9L1071.6 2260.9L1071.6 2260.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1103.8" y="2228.7" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1457.9 2242.5L1457.9 2228.7L1441.2 2228.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1457.9 2242.5L1457.9 2228.7L1441.2 2228.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1425.7 2260.9L1457.9 2260.9L1457.9 2242.5L1441.2 2228.7L1425.7 2228.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1481.7 2260.9L1490.0 2260.9L1490.0 2228.7L1457.9 2228.7L1457.9 2242.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1481.7 2260.9L1490.0 2260.9L1490.0 2228.7L1457.9 2228.7L1457.9 2242.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1457.9 2260.9L1481.7 2260.9L1457.9 2242.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1490.0" y="2228.7" width="836.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2327.0 2260.9L2335.3 2260.9L2359.1 2242.5L2359.1 2228.7L2327.0 2228.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1490.0" y="2228.7" width="836.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2327.0 2260.9L2335.3 2260.9L2359.1 2242.5L2359.1 2228.7L2327.0 2228.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2335.3 2260.9L2359.1 2260.9L2359.1 2242.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2375.8 2228.7L2359.1 2228.7L2359.1 2242.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2375.8 2228.7L2359.1 2228.7L2359.1 2242.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2359.1 2260.9L2391.3 2260.9L2391.3 2228.7L2375.8 2228.7L2359.1 2242.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2391.3" y="2228.7" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2713.2 2260.9L2745.4 2260.9L2745.4 2228.7L2713.2 2228.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1935,14 +1935,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1050.3 2228.7L1071.6 2228.7L1071.6 2196.5L1039.4 2196.5L1039.4 2211.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1039.4 2228.7L1050.3 2228.7L1039.4 2211.2Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1071.6" y="2196.5" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1425.7 2215.1L1425.7 2196.5L1405.9 2196.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1425.7 2215.1L1425.7 2196.5L1405.9 2196.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1393.5 2228.7L1425.7 2228.7L1425.7 2215.1L1405.9 2196.5L1393.5 2196.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1441.2 2228.7L1457.9 2228.7L1457.9 2196.5L1425.7 2196.5L1425.7 2215.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1441.2 2228.7L1457.9 2228.7L1457.9 2196.5L1425.7 2196.5L1425.7 2215.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1425.7 2228.7L1441.2 2228.7L1425.7 2215.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1457.9" y="2196.5" width="901.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2359.1 2228.7L2375.8 2228.7L2391.3 2215.1L2391.3 2196.5L2359.1 2196.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1457.9" y="2196.5" width="901.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2359.1 2228.7L2375.8 2228.7L2391.3 2215.1L2391.3 2196.5L2359.1 2196.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2375.8 2228.7L2391.3 2228.7L2391.3 2215.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2411.1 2196.5L2391.3 2196.5L2391.3 2215.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2411.1 2196.5L2391.3 2196.5L2391.3 2215.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2391.3 2228.7L2423.5 2228.7L2423.5 2196.5L2411.1 2196.5L2391.3 2215.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2423.5" y="2196.5" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2745.4 2228.7L2766.7 2228.7L2777.6 2211.2L2777.6 2196.5L2745.4 2196.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -1976,14 +1976,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1030.6 2196.5L1039.4 2196.5L1039.4 2164.3L1012.5 2164.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1007.2 2196.5L1030.6 2196.5L1012.5 2164.3L1007.2 2164.3Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1039.4" y="2164.3" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1393.5 2184.1L1393.5 2164.3L1374.9 2164.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1393.5 2184.1L1393.5 2164.3L1374.9 2164.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1361.3 2196.5L1393.5 2196.5L1393.5 2184.1L1374.9 2164.3L1361.3 2164.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1405.9 2196.5L1425.7 2196.5L1425.7 2164.3L1393.5 2164.3L1393.5 2184.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1405.9 2196.5L1425.7 2196.5L1425.7 2164.3L1393.5 2164.3L1393.5 2184.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1393.5 2196.5L1405.9 2196.5L1393.5 2184.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1425.7" y="2164.3" width="965.7" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2391.3 2196.5L2411.1 2196.5L2423.5 2184.1L2423.5 2164.3L2391.3 2164.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1425.7" y="2164.3" width="965.7" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2391.3 2196.5L2411.1 2196.5L2423.5 2184.1L2423.5 2164.3L2391.3 2164.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2411.1 2196.5L2423.5 2196.5L2423.5 2184.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2442.1 2164.3L2423.5 2164.3L2423.5 2184.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2442.1 2164.3L2423.5 2164.3L2423.5 2184.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2423.5 2196.5L2455.7 2196.5L2455.7 2164.3L2442.1 2164.3L2423.5 2184.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2455.7" y="2164.3" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2777.6 2196.5L2786.4 2196.5L2804.5 2164.3L2777.6 2164.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2017,14 +2017,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1012.5 2164.3L1039.4 2164.3L1039.4 2132.1L1007.2 2132.1L1007.2 2154.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1007.2 2164.3L1012.5 2164.3L1007.2 2154.3Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1039.4" y="2132.1" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1361.3 2148.8L1361.3 2132.1L1347.5 2132.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1361.3 2148.8L1361.3 2132.1L1347.5 2132.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1329.1 2164.3L1361.3 2164.3L1361.3 2148.8L1347.5 2132.1L1329.1 2132.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1374.9 2164.3L1393.5 2164.3L1393.5 2132.1L1361.3 2132.1L1361.3 2148.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1374.9 2164.3L1393.5 2164.3L1393.5 2132.1L1361.3 2132.1L1361.3 2148.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1361.3 2164.3L1374.9 2164.3L1361.3 2148.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1393.5" y="2132.1" width="1030.0" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2423.5 2164.3L2442.1 2164.3L2455.7 2148.8L2455.7 2132.1L2423.5 2132.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1393.5" y="2132.1" width="1030.0" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2423.5 2164.3L2442.1 2164.3L2455.7 2148.8L2455.7 2132.1L2423.5 2132.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2442.1 2164.3L2455.7 2164.3L2455.7 2148.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2469.5 2132.1L2455.7 2132.1L2455.7 2148.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2469.5 2132.1L2455.7 2132.1L2455.7 2148.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2455.7 2164.3L2487.9 2164.3L2487.9 2132.1L2469.5 2132.1L2455.7 2148.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2487.9" y="2132.1" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2777.6 2164.3L2804.5 2164.3L2809.8 2154.3L2809.8 2132.1L2777.6 2132.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2058,14 +2058,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M995.9 2132.1L1007.2 2132.1L1007.2 2100.0L980.7 2100.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M975.0 2132.1L995.9 2132.1L980.7 2100.0L975.0 2100.0Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1007.2" y="2100.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1329.1 2108.3L1329.1 2100.0L1323.0 2100.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1329.1 2108.3L1329.1 2100.0L1323.0 2100.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1296.9 2132.1L1329.1 2132.1L1329.1 2108.3L1323.0 2100.0L1296.9 2100.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1347.5 2132.1L1361.3 2132.1L1361.3 2100.0L1329.1 2100.0L1329.1 2108.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1347.5 2132.1L1361.3 2132.1L1361.3 2100.0L1329.1 2100.0L1329.1 2108.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1329.1 2132.1L1347.5 2132.1L1329.1 2108.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1361.3" y="2100.0" width="1094.4" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2455.7 2132.1L2469.5 2132.1L2487.9 2108.3L2487.9 2100.0L2455.7 2100.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1361.3" y="2100.0" width="1094.4" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2455.7 2132.1L2469.5 2132.1L2487.9 2108.3L2487.9 2100.0L2455.7 2100.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2469.5 2132.1L2487.9 2132.1L2487.9 2108.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2494.0 2100.0L2487.9 2100.0L2487.9 2108.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2494.0 2100.0L2487.9 2100.0L2487.9 2108.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2487.9 2132.1L2520.1 2132.1L2520.1 2100.0L2494.0 2100.0L2487.9 2108.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2520.1" y="2100.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2809.8 2132.1L2821.1 2132.1L2836.3 2100.0L2809.8 2100.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2099,10 +2099,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M980.7 2100.0L1007.2 2100.0L1007.2 2067.8L975.0 2067.8L975.0 2087.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M975.0 2100.0L980.7 2100.0L975.0 2087.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1007.2" y="2067.8" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1323.0 2100.0L1329.1 2100.0L1329.1 2067.8L1301.3 2067.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1323.0 2100.0L1329.1 2100.0L1329.1 2067.8L1301.3 2067.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1296.9 2100.0L1323.0 2100.0L1301.3 2067.8L1296.9 2067.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1329.1" y="2067.8" width="1158.8" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2487.9 2100.0L2494.0 2100.0L2515.7 2067.8L2487.9 2067.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1329.1" y="2067.8" width="1158.8" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2487.9 2100.0L2494.0 2100.0L2515.7 2067.8L2487.9 2067.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2494.0 2100.0L2520.1 2100.0L2520.1 2067.8L2515.7 2067.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2520.1" y="2067.8" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2809.8 2100.0L2836.3 2100.0L2842.0 2087.1L2842.0 2067.8L2809.8 2067.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2136,14 +2136,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M966.8 2067.8L975.0 2067.8L975.0 2035.6L954.3 2035.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M942.8 2067.8L966.8 2067.8L954.3 2035.6L942.8 2035.6Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="975.0" y="2035.6" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1296.9 2060.8L1296.9 2035.6L1282.1 2035.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1296.9 2060.8L1296.9 2035.6L1282.1 2035.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 2067.8L1296.9 2067.8L1296.9 2060.8L1282.1 2035.6L1264.7 2035.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1301.3 2067.8L1329.1 2067.8L1329.1 2035.6L1296.9 2035.6L1296.9 2060.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1301.3 2067.8L1329.1 2067.8L1329.1 2035.6L1296.9 2035.6L1296.9 2060.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1296.9 2067.8L1301.3 2067.8L1296.9 2060.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1329.1" y="2035.6" width="1158.8" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2487.9 2067.8L2515.7 2067.8L2520.1 2060.8L2520.1 2035.6L2487.9 2035.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1329.1" y="2035.6" width="1158.8" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2487.9 2067.8L2515.7 2067.8L2520.1 2060.8L2520.1 2035.6L2487.9 2035.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2515.7 2067.8L2520.1 2067.8L2520.1 2060.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2534.9 2035.6L2520.1 2035.6L2520.1 2060.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2534.9 2035.6L2520.1 2035.6L2520.1 2060.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2520.1 2067.8L2552.3 2067.8L2552.3 2035.6L2534.9 2035.6L2520.1 2060.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2552.3" y="2035.6" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 2067.8L2850.2 2067.8L2862.7 2035.6L2842.0 2035.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2175,12 +2175,12 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M954.3 2035.6L975.0 2035.6L975.0 2003.4L942.8 2003.4L942.8 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M942.8 2035.6L954.3 2035.6L942.8 2003.4Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="975.0" y="2003.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1282.1 2035.6L1296.9 2035.6L1296.9 2003.4L1264.7 2003.4L1264.7 2003.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1282.1 2035.6L1296.9 2035.6L1296.9 2003.4L1264.7 2003.4L1264.7 2003.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 2035.6L1282.1 2035.6L1264.7 2003.4L1264.7 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1296.9" y="2003.4" width="1223.2" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2520.1 2035.6L2534.9 2035.6L2552.3 2003.4L2552.3 2003.4L2520.1 2003.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1296.9" y="2003.4" width="1223.2" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2520.1 2035.6L2534.9 2035.6L2552.3 2003.4L2552.3 2003.4L2520.1 2003.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2534.9 2035.6L2552.3 2035.6L2552.3 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2552.3 2003.4L2552.3 2003.4L2552.3 2003.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2552.3 2003.4L2552.3 2003.4L2552.3 2003.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2552.3 2035.6L2584.5 2035.6L2584.5 2003.4L2552.3 2003.4L2552.3 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="2003.4" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 2035.6L2862.7 2035.6L2874.2 2003.4L2842.0 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2209,12 +2209,12 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M942.8 2003.4L942.8 2003.4L942.8 1971.2L932.8 1971.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 2003.4L942.8 2003.4L932.8 1971.2L910.6 1971.2Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1971.2" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1264.7 2003.4L1264.7 2003.4L1264.7 1971.2L1249.8 1971.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1264.7 2003.4L1264.7 2003.4L1264.7 1971.2L1249.8 1971.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1232.5 2003.4L1264.7 2003.4L1264.7 2003.4L1249.8 1971.2L1232.5 1971.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1264.7 2003.4L1296.9 2003.4L1296.9 1971.2L1264.7 1971.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1264.7 2003.4L1296.9 2003.4L1296.9 1971.2L1264.7 1971.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 2003.4L1264.7 2003.4L1264.7 2003.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1296.9" y="1971.2" width="1255.4" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 2003.4L2552.3 2003.4L2567.2 1971.2L2552.3 1971.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1296.9" y="1971.2" width="1255.4" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 2003.4L2552.3 2003.4L2567.2 1971.2L2552.3 1971.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2552.3 2003.4L2584.5 2003.4L2584.5 1971.2L2567.2 1971.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="1971.2" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 2003.4L2874.2 2003.4L2874.2 2003.4L2874.2 1971.2L2842.0 1971.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2244,10 +2244,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M932.8 1971.2L942.8 1971.2L942.8 1939.0L923.8 1939.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1971.2L932.8 1971.2L923.8 1939.0L910.6 1939.0Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1939.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1249.8 1971.2L1264.7 1971.2L1264.7 1939.0L1236.5 1939.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1249.8 1971.2L1264.7 1971.2L1264.7 1939.0L1236.5 1939.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1232.5 1971.2L1249.8 1971.2L1236.5 1939.0L1232.5 1939.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1264.7" y="1939.0" width="1287.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 1971.2L2567.2 1971.2L2580.5 1939.0L2552.3 1939.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1264.7" y="1939.0" width="1287.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 1971.2L2567.2 1971.2L2580.5 1939.0L2552.3 1939.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2567.2 1971.2L2584.5 1971.2L2584.5 1939.0L2580.5 1939.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="1939.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1971.2L2884.2 1971.2L2893.2 1939.0L2874.2 1939.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2279,14 +2279,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M923.8 1939.0L942.8 1939.0L942.8 1906.8L915.9 1906.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1939.0L923.8 1939.0L915.9 1906.8L910.6 1906.8Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1906.8" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1232.5 1928.3L1232.5 1906.8L1225.0 1906.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1232.5 1928.3L1232.5 1906.8L1225.0 1906.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1939.0L1232.5 1939.0L1232.5 1928.3L1225.0 1906.8L1200.3 1906.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1236.5 1939.0L1264.7 1939.0L1264.7 1906.8L1232.5 1906.8L1232.5 1928.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1236.5 1939.0L1264.7 1939.0L1264.7 1906.8L1232.5 1906.8L1232.5 1928.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1232.5 1939.0L1236.5 1939.0L1232.5 1928.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1264.7" y="1906.8" width="1287.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 1939.0L2580.5 1939.0L2584.5 1928.3L2584.5 1906.8L2552.3 1906.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1264.7" y="1906.8" width="1287.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 1939.0L2580.5 1939.0L2584.5 1928.3L2584.5 1906.8L2552.3 1906.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2580.5 1939.0L2584.5 1939.0L2584.5 1928.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2592.0 1906.8L2584.5 1906.8L2584.5 1928.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2592.0 1906.8L2584.5 1906.8L2584.5 1928.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2584.5 1939.0L2616.7 1939.0L2616.7 1906.8L2592.0 1906.8L2584.5 1928.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1906.8" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1939.0L2893.2 1939.0L2901.1 1906.8L2874.2 1906.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2316,10 +2316,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M915.9 1906.8L942.8 1906.8L942.8 1874.6L910.6 1874.6L910.6 1882.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1906.8L915.9 1906.8L910.6 1882.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1874.6" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1225.0 1906.8L1232.5 1906.8L1232.5 1874.6L1215.3 1874.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1225.0 1906.8L1232.5 1906.8L1232.5 1874.6L1215.3 1874.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1906.8L1225.0 1906.8L1215.3 1874.6L1200.3 1874.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1874.6" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1906.8L2592.0 1906.8L2601.7 1874.6L2584.5 1874.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1874.6" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1906.8L2592.0 1906.8L2601.7 1874.6L2584.5 1874.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2592.0 1906.8L2616.7 1906.8L2616.7 1874.6L2601.7 1874.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1874.6" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1906.8L2901.1 1906.8L2906.4 1882.1L2906.4 1874.6L2874.2 1874.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2347,10 +2347,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M909.1 1874.6L910.6 1874.6L910.6 1842.4L903.5 1842.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1874.6L909.1 1874.6L903.5 1842.4L878.5 1842.4Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1842.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1215.3 1874.6L1232.5 1874.6L1232.5 1842.4L1207.1 1842.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1215.3 1874.6L1232.5 1874.6L1232.5 1842.4L1207.1 1842.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1874.6L1215.3 1874.6L1207.1 1842.4L1200.3 1842.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1842.4" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1874.6L2601.7 1874.6L2609.9 1842.4L2584.5 1842.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1842.4" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1874.6L2601.7 1874.6L2609.9 1842.4L2584.5 1842.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2601.7 1874.6L2616.7 1874.6L2616.7 1842.4L2609.9 1842.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1842.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1874.6L2907.9 1874.6L2913.5 1842.4L2906.4 1842.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2376,14 +2376,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M903.5 1842.4L910.6 1842.4L910.6 1810.3L898.9 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1842.4L903.5 1842.4L898.9 1810.3L878.5 1810.3Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1810.3" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1200.3 1810.3L1200.3 1810.3L1200.3 1810.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1200.3 1810.3L1200.3 1810.3L1200.3 1810.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1842.4L1200.3 1842.4L1200.3 1810.3L1200.3 1810.3L1168.2 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1207.1 1842.4L1232.5 1842.4L1232.5 1810.3L1200.3 1810.3L1200.3 1810.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1207.1 1842.4L1232.5 1842.4L1232.5 1810.3L1200.3 1810.3L1200.3 1810.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1842.4L1207.1 1842.4L1200.3 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1810.3" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1842.4L2609.9 1842.4L2616.7 1810.3L2616.7 1810.3L2584.5 1810.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1810.3" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1842.4L2609.9 1842.4L2616.7 1810.3L2616.7 1810.3L2584.5 1810.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2609.9 1842.4L2616.7 1842.4L2616.7 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2616.7 1810.3L2616.7 1810.3L2616.7 1810.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2616.7 1810.3L2616.7 1810.3L2616.7 1810.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2616.7 1842.4L2648.8 1842.4L2648.8 1810.3L2616.7 1810.3L2616.7 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1810.3" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1842.4L2913.5 1842.4L2918.1 1810.3L2906.4 1810.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2409,10 +2409,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M898.9 1810.3L910.6 1810.3L910.6 1778.1L895.3 1778.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1810.3L898.9 1810.3L895.3 1778.1L878.5 1778.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1778.1" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1200.3 1810.3L1200.3 1810.3L1200.3 1778.1L1195.3 1778.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1200.3 1810.3L1200.3 1810.3L1200.3 1778.1L1195.3 1778.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1810.3L1200.3 1810.3L1195.3 1778.1L1168.2 1778.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1778.1" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1810.3L2616.7 1810.3L2621.7 1778.1L2616.7 1778.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1778.1" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1810.3L2616.7 1810.3L2621.7 1778.1L2616.7 1778.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2616.7 1810.3L2648.8 1810.3L2648.8 1778.1L2621.7 1778.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1778.1" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1810.3L2918.1 1810.3L2921.7 1778.1L2906.4 1778.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2438,10 +2438,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M895.3 1778.1L910.6 1778.1L910.6 1745.9L892.8 1745.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1778.1L895.3 1778.1L892.8 1745.9L878.5 1745.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1745.9" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1195.3 1778.1L1200.3 1778.1L1200.3 1745.9L1191.8 1745.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1195.3 1778.1L1200.3 1778.1L1200.3 1745.9L1191.8 1745.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1778.1L1195.3 1778.1L1191.8 1745.9L1168.2 1745.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1745.9" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1778.1L2621.7 1778.1L2625.2 1745.9L2616.7 1745.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1745.9" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1778.1L2621.7 1778.1L2625.2 1745.9L2616.7 1745.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2621.7 1778.1L2648.8 1778.1L2648.8 1745.9L2625.2 1745.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1745.9" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1778.1L2921.7 1778.1L2924.2 1745.9L2906.4 1745.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2467,10 +2467,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M892.8 1745.9L910.6 1745.9L910.6 1713.7L891.2 1713.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1745.9L892.8 1745.9L891.2 1713.7L878.5 1713.7Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1713.7" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1191.8 1745.9L1200.3 1745.9L1200.3 1713.7L1189.6 1713.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1191.8 1745.9L1200.3 1745.9L1200.3 1713.7L1189.6 1713.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1745.9L1191.8 1745.9L1189.6 1713.7L1168.2 1713.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1713.7" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1745.9L2625.2 1745.9L2627.4 1713.7L2616.7 1713.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1713.7" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1745.9L2625.2 1745.9L2627.4 1713.7L2616.7 1713.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2625.2 1745.9L2648.8 1745.9L2648.8 1713.7L2627.4 1713.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1713.7" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1745.9L2924.2 1745.9L2925.8 1713.7L2906.4 1713.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2496,10 +2496,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M891.2 1713.7L910.6 1713.7L910.6 1681.5L890.7 1681.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1713.7L891.2 1713.7L890.7 1681.5L878.5 1681.5Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1681.5" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1189.6 1713.7L1200.3 1713.7L1200.3 1681.5L1188.9 1681.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1189.6 1713.7L1200.3 1713.7L1200.3 1681.5L1188.9 1681.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1713.7L1189.6 1713.7L1188.9 1681.5L1168.2 1681.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1681.5" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1713.7L2627.4 1713.7L2628.1 1681.5L2616.7 1681.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1681.5" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1713.7L2627.4 1713.7L2628.1 1681.5L2616.7 1681.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2627.4 1713.7L2648.8 1713.7L2648.8 1681.5L2628.1 1681.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1681.5" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1713.7L2925.8 1713.7L2926.3 1681.5L2906.4 1681.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2525,10 +2525,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M890.7 1681.5L910.6 1681.5L910.6 1649.3L891.2 1649.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1681.5L890.7 1681.5L891.2 1649.3L878.5 1649.3Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1649.3" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1188.9 1681.5L1200.3 1681.5L1200.3 1649.3L1189.6 1649.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1188.9 1681.5L1200.3 1681.5L1200.3 1649.3L1189.6 1649.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1681.5L1188.9 1681.5L1189.6 1649.3L1168.2 1649.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1649.3" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1681.5L2628.1 1681.5L2627.4 1649.3L2616.7 1649.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1649.3" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1681.5L2628.1 1681.5L2627.4 1649.3L2616.7 1649.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2628.1 1681.5L2648.8 1681.5L2648.8 1649.3L2627.4 1649.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1649.3" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1681.5L2926.3 1681.5L2925.8 1649.3L2906.4 1649.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2554,10 +2554,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M891.2 1649.3L910.6 1649.3L910.6 1617.1L892.8 1617.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1649.3L891.2 1649.3L892.8 1617.1L878.5 1617.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1617.1" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1189.6 1649.3L1200.3 1649.3L1200.3 1617.1L1191.8 1617.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1189.6 1649.3L1200.3 1649.3L1200.3 1617.1L1191.8 1617.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1649.3L1189.6 1649.3L1191.8 1617.1L1168.2 1617.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1617.1" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1649.3L2627.4 1649.3L2625.2 1617.1L2616.7 1617.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1617.1" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1649.3L2627.4 1649.3L2625.2 1617.1L2616.7 1617.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2627.4 1649.3L2648.8 1649.3L2648.8 1617.1L2625.2 1617.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1617.1" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1649.3L2925.8 1649.3L2924.2 1617.1L2906.4 1617.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2583,10 +2583,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M892.8 1617.1L910.6 1617.1L910.6 1584.9L895.3 1584.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1617.1L892.8 1617.1L895.3 1584.9L878.5 1584.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1584.9" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1191.8 1617.1L1200.3 1617.1L1200.3 1584.9L1195.3 1584.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1191.8 1617.1L1200.3 1617.1L1200.3 1584.9L1195.3 1584.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1617.1L1191.8 1617.1L1195.3 1584.9L1168.2 1584.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1584.9" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1617.1L2625.2 1617.1L2621.7 1584.9L2616.7 1584.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1584.9" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1617.1L2625.2 1617.1L2621.7 1584.9L2616.7 1584.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2625.2 1617.1L2648.8 1617.1L2648.8 1584.9L2621.7 1584.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1584.9" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1617.1L2924.2 1617.1L2921.7 1584.9L2906.4 1584.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2612,10 +2612,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M895.3 1584.9L910.6 1584.9L910.6 1552.7L898.9 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1584.9L895.3 1584.9L898.9 1552.7L878.5 1552.7Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1552.7" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1195.3 1584.9L1200.3 1584.9L1200.3 1552.7L1200.3 1552.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1195.3 1584.9L1200.3 1584.9L1200.3 1552.7L1200.3 1552.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1584.9L1195.3 1584.9L1200.3 1552.7L1168.2 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1200.3" y="1552.7" width="1416.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2616.7 1584.9L2621.7 1584.9L2616.7 1552.7L2616.7 1552.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1200.3" y="1552.7" width="1416.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2616.7 1584.9L2621.7 1584.9L2616.7 1552.7L2616.7 1552.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2621.7 1584.9L2648.8 1584.9L2648.8 1552.7L2616.7 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1552.7" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1584.9L2921.7 1584.9L2918.1 1552.7L2906.4 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2641,14 +2641,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M898.9 1552.7L910.6 1552.7L910.6 1520.6L903.5 1520.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1552.7L898.9 1552.7L903.5 1520.6L878.5 1520.6Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1520.6" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1200.3 1552.7L1200.3 1552.7L1200.3 1552.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1200.3 1552.7L1200.3 1552.7L1200.3 1552.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1168.2 1552.7L1200.3 1552.7L1200.3 1552.7L1200.3 1520.6L1168.2 1520.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1200.3 1552.7L1232.5 1552.7L1232.5 1520.6L1207.1 1520.6L1200.3 1552.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1200.3 1552.7L1232.5 1552.7L1232.5 1520.6L1207.1 1520.6L1200.3 1552.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1207.1 1520.6L1200.3 1520.6L1200.3 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1520.6" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1552.7L2616.7 1552.7L2616.7 1552.7L2609.9 1520.6L2584.5 1520.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1520.6" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1552.7L2616.7 1552.7L2616.7 1552.7L2609.9 1520.6L2584.5 1520.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2616.7 1552.7L2616.7 1520.6L2609.9 1520.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2616.7 1552.7L2616.7 1552.7L2616.7 1552.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2616.7 1552.7L2616.7 1552.7L2616.7 1552.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2616.7 1552.7L2648.8 1552.7L2648.8 1520.6L2616.7 1520.6L2616.7 1552.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2648.8" y="1520.6" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1552.7L2918.1 1552.7L2913.5 1520.6L2906.4 1520.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2674,10 +2674,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M903.5 1520.6L910.6 1520.6L910.6 1488.4L909.1 1488.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M878.5 1520.6L903.5 1520.6L909.1 1488.4L878.5 1488.4Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="910.6" y="1488.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1207.1 1520.6L1232.5 1520.6L1232.5 1488.4L1215.3 1488.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1207.1 1520.6L1232.5 1520.6L1232.5 1488.4L1215.3 1488.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1520.6L1207.1 1520.6L1215.3 1488.4L1200.3 1488.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1488.4" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1520.6L2609.9 1520.6L2601.7 1488.4L2584.5 1488.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1488.4" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1520.6L2609.9 1520.6L2601.7 1488.4L2584.5 1488.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2609.9 1520.6L2616.7 1520.6L2616.7 1488.4L2601.7 1488.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1488.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2906.4 1520.6L2913.5 1520.6L2907.9 1488.4L2906.4 1488.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2705,10 +2705,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M910.6 1488.4L942.8 1488.4L942.8 1456.2L915.9 1456.2L910.6 1480.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M915.9 1456.2L910.6 1456.2L910.6 1480.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1456.2" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1215.3 1488.4L1232.5 1488.4L1232.5 1456.2L1225.0 1456.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1215.3 1488.4L1232.5 1488.4L1232.5 1456.2L1225.0 1456.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1488.4L1215.3 1488.4L1225.0 1456.2L1200.3 1456.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1232.5" y="1456.2" width="1351.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2584.5 1488.4L2601.7 1488.4L2592.0 1456.2L2584.5 1456.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1232.5" y="1456.2" width="1351.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2584.5 1488.4L2601.7 1488.4L2592.0 1456.2L2584.5 1456.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2601.7 1488.4L2616.7 1488.4L2616.7 1456.2L2592.0 1456.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1456.2" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1488.4L2906.4 1488.4L2906.4 1480.9L2901.1 1456.2L2874.2 1456.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2738,14 +2738,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M915.9 1456.2L942.8 1456.2L942.8 1424.0L923.8 1424.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1456.2L915.9 1456.2L923.8 1424.0L910.6 1424.0Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1424.0" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1225.0 1456.2L1232.5 1456.2L1232.5 1434.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1225.0 1456.2L1232.5 1456.2L1232.5 1434.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1200.3 1456.2L1225.0 1456.2L1232.5 1434.7L1232.5 1424.0L1200.3 1424.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1232.5 1456.2L1264.7 1456.2L1264.7 1424.0L1236.5 1424.0L1232.5 1434.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1232.5 1456.2L1264.7 1456.2L1264.7 1424.0L1236.5 1424.0L1232.5 1434.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1236.5 1424.0L1232.5 1424.0L1232.5 1434.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1264.7" y="1424.0" width="1287.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 1456.2L2584.5 1456.2L2584.5 1434.7L2580.5 1424.0L2552.3 1424.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1264.7" y="1424.0" width="1287.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 1456.2L2584.5 1456.2L2584.5 1434.7L2580.5 1424.0L2552.3 1424.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2584.5 1434.7L2584.5 1424.0L2580.5 1424.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2584.5 1456.2L2592.0 1456.2L2584.5 1434.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2584.5 1456.2L2592.0 1456.2L2584.5 1434.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2592.0 1456.2L2616.7 1456.2L2616.7 1424.0L2584.5 1424.0L2584.5 1434.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2616.7" y="1424.0" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1456.2L2901.1 1456.2L2893.2 1424.0L2874.2 1424.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2775,10 +2775,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M923.8 1424.0L942.8 1424.0L942.8 1391.8L932.8 1391.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1424.0L923.8 1424.0L932.8 1391.8L910.6 1391.8Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1391.8" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1236.5 1424.0L1264.7 1424.0L1264.7 1391.8L1249.8 1391.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1236.5 1424.0L1264.7 1424.0L1264.7 1391.8L1249.8 1391.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1232.5 1424.0L1236.5 1424.0L1249.8 1391.8L1232.5 1391.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1264.7" y="1391.8" width="1287.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 1424.0L2580.5 1424.0L2567.2 1391.8L2552.3 1391.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1264.7" y="1391.8" width="1287.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 1424.0L2580.5 1424.0L2567.2 1391.8L2552.3 1391.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2580.5 1424.0L2584.5 1424.0L2584.5 1391.8L2567.2 1391.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="1391.8" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2874.2 1424.0L2893.2 1424.0L2884.2 1391.8L2874.2 1391.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2808,12 +2808,12 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M932.8 1391.8L942.8 1391.8L942.8 1359.6L942.8 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M910.6 1391.8L932.8 1391.8L942.8 1359.6L910.6 1359.6Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="942.8" y="1359.6" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1249.8 1391.8L1264.7 1391.8L1264.7 1359.6L1264.7 1359.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1249.8 1391.8L1264.7 1391.8L1264.7 1359.6L1264.7 1359.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1232.5 1391.8L1249.8 1391.8L1264.7 1359.6L1264.7 1359.6L1232.5 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1264.7 1391.8L1296.9 1391.8L1296.9 1359.6L1264.7 1359.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1264.7 1391.8L1296.9 1391.8L1296.9 1359.6L1264.7 1359.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 1359.6L1264.7 1359.6L1264.7 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1296.9" y="1359.6" width="1255.4" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2552.3 1391.8L2567.2 1391.8L2552.3 1359.6L2552.3 1359.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1296.9" y="1359.6" width="1255.4" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2552.3 1391.8L2567.2 1391.8L2552.3 1359.6L2552.3 1359.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2567.2 1391.8L2584.5 1391.8L2584.5 1359.6L2552.3 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="1359.6" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 1391.8L2874.2 1391.8L2874.2 1359.6L2874.2 1359.6L2842.0 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2846,12 +2846,12 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M942.8 1359.6L975.0 1359.6L975.0 1327.4L954.3 1327.4L942.8 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M954.3 1327.4L942.8 1327.4L942.8 1359.6Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="975.0" y="1327.4" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1264.7 1359.6L1296.9 1359.6L1296.9 1327.4L1282.1 1327.4L1264.7 1359.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1264.7 1359.6L1296.9 1359.6L1296.9 1327.4L1282.1 1327.4L1264.7 1359.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 1359.6L1264.7 1359.6L1282.1 1327.4L1264.7 1327.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1296.9" y="1327.4" width="1223.2" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2520.1 1359.6L2552.3 1359.6L2552.3 1359.6L2534.9 1327.4L2520.1 1327.4Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1296.9" y="1327.4" width="1223.2" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2520.1 1359.6L2552.3 1359.6L2552.3 1359.6L2534.9 1327.4L2520.1 1327.4Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2552.3 1359.6L2552.3 1327.4L2534.9 1327.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2552.3 1359.6L2552.3 1359.6L2552.3 1359.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2552.3 1359.6L2552.3 1359.6L2552.3 1359.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2552.3 1359.6L2584.5 1359.6L2584.5 1327.4L2552.3 1327.4L2552.3 1359.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2584.5" y="1327.4" width="257.5" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 1359.6L2874.2 1359.6L2862.7 1327.4L2842.0 1327.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2881,14 +2881,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M954.3 1327.4L975.0 1327.4L975.0 1295.2L966.8 1295.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M942.8 1327.4L954.3 1327.4L966.8 1295.2L942.8 1295.2Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="975.0" y="1295.2" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1282.1 1327.4L1296.9 1327.4L1296.9 1302.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1282.1 1327.4L1296.9 1327.4L1296.9 1302.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1264.7 1327.4L1282.1 1327.4L1296.9 1302.2L1296.9 1295.2L1264.7 1295.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1296.9 1327.4L1329.1 1327.4L1329.1 1295.2L1301.3 1295.2L1296.9 1302.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1296.9 1327.4L1329.1 1327.4L1329.1 1295.2L1301.3 1295.2L1296.9 1302.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1301.3 1295.2L1296.9 1295.2L1296.9 1302.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1329.1" y="1295.2" width="1158.8" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2487.9 1327.4L2520.1 1327.4L2520.1 1302.2L2515.7 1295.2L2487.9 1295.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1329.1" y="1295.2" width="1158.8" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2487.9 1327.4L2520.1 1327.4L2520.1 1302.2L2515.7 1295.2L2487.9 1295.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2520.1 1302.2L2520.1 1295.2L2515.7 1295.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2520.1 1327.4L2534.9 1327.4L2520.1 1302.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2520.1 1327.4L2534.9 1327.4L2520.1 1302.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2534.9 1327.4L2552.3 1327.4L2552.3 1295.2L2520.1 1295.2L2520.1 1302.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2552.3" y="1295.2" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2842.0 1327.4L2862.7 1327.4L2850.2 1295.2L2842.0 1295.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2922,10 +2922,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M975.0 1295.2L1007.2 1295.2L1007.2 1263.0L980.7 1263.0L975.0 1275.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M980.7 1263.0L975.0 1263.0L975.0 1275.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1007.2" y="1263.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1301.3 1295.2L1329.1 1295.2L1329.1 1263.0L1323.0 1263.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1301.3 1295.2L1329.1 1295.2L1329.1 1263.0L1323.0 1263.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1296.9 1295.2L1301.3 1295.2L1323.0 1263.0L1296.9 1263.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1329.1" y="1263.0" width="1158.8" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2487.9 1295.2L2515.7 1295.2L2494.0 1263.0L2487.9 1263.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1329.1" y="1263.0" width="1158.8" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2487.9 1295.2L2515.7 1295.2L2494.0 1263.0L2487.9 1263.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2515.7 1295.2L2520.1 1295.2L2520.1 1263.0L2494.0 1263.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2520.1" y="1263.0" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2809.8 1295.2L2842.0 1295.2L2842.0 1275.9L2836.3 1263.0L2809.8 1263.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -2959,14 +2959,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M980.7 1263.0L1007.2 1263.0L1007.2 1230.9L995.9 1230.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M975.0 1263.0L980.7 1263.0L995.9 1230.9L975.0 1230.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1007.2" y="1230.9" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1323.0 1263.0L1329.1 1263.0L1329.1 1254.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1323.0 1263.0L1329.1 1263.0L1329.1 1254.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1296.9 1263.0L1323.0 1263.0L1329.1 1254.7L1329.1 1230.9L1296.9 1230.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1329.1 1263.0L1361.3 1263.0L1361.3 1230.9L1347.5 1230.9L1329.1 1254.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1329.1 1263.0L1361.3 1263.0L1361.3 1230.9L1347.5 1230.9L1329.1 1254.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1347.5 1230.9L1329.1 1230.9L1329.1 1254.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1361.3" y="1230.9" width="1094.4" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2455.7 1263.0L2487.9 1263.0L2487.9 1254.7L2469.5 1230.9L2455.7 1230.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1361.3" y="1230.9" width="1094.4" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2455.7 1263.0L2487.9 1263.0L2487.9 1254.7L2469.5 1230.9L2455.7 1230.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2487.9 1254.7L2487.9 1230.9L2469.5 1230.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2487.9 1263.0L2494.0 1263.0L2487.9 1254.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2487.9 1263.0L2494.0 1263.0L2487.9 1254.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2494.0 1263.0L2520.1 1263.0L2520.1 1230.9L2487.9 1230.9L2487.9 1254.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2520.1" y="1230.9" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2809.8 1263.0L2836.3 1263.0L2821.1 1230.9L2809.8 1230.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3000,14 +3000,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1007.2 1230.9L1039.4 1230.9L1039.4 1198.7L1012.5 1198.7L1007.2 1208.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1012.5 1198.7L1007.2 1198.7L1007.2 1208.7Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1039.4" y="1198.7" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1347.5 1230.9L1361.3 1230.9L1361.3 1214.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1347.5 1230.9L1361.3 1230.9L1361.3 1214.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1329.1 1230.9L1347.5 1230.9L1361.3 1214.2L1361.3 1198.7L1329.1 1198.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1361.3 1230.9L1393.5 1230.9L1393.5 1198.7L1374.9 1198.7L1361.3 1214.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1361.3 1230.9L1393.5 1230.9L1393.5 1198.7L1374.9 1198.7L1361.3 1214.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1374.9 1198.7L1361.3 1198.7L1361.3 1214.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1393.5" y="1198.7" width="1030.0" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2423.5 1230.9L2455.7 1230.9L2455.7 1214.2L2442.1 1198.7L2423.5 1198.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1393.5" y="1198.7" width="1030.0" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2423.5 1230.9L2455.7 1230.9L2455.7 1214.2L2442.1 1198.7L2423.5 1198.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2455.7 1214.2L2455.7 1198.7L2442.1 1198.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2455.7 1230.9L2469.5 1230.9L2455.7 1214.2Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2455.7 1230.9L2469.5 1230.9L2455.7 1214.2Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2469.5 1230.9L2487.9 1230.9L2487.9 1198.7L2455.7 1198.7L2455.7 1214.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2487.9" y="1198.7" width="289.7" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2777.6 1230.9L2809.8 1230.9L2809.8 1208.7L2804.5 1198.7L2777.6 1198.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3041,14 +3041,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1012.5 1198.7L1039.4 1198.7L1039.4 1166.5L1030.6 1166.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1007.2 1198.7L1012.5 1198.7L1030.6 1166.5L1007.2 1166.5Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1039.4" y="1166.5" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1374.9 1198.7L1393.5 1198.7L1393.5 1178.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1374.9 1198.7L1393.5 1198.7L1393.5 1178.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1361.3 1198.7L1374.9 1198.7L1393.5 1178.9L1393.5 1166.5L1361.3 1166.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1393.5 1198.7L1425.7 1198.7L1425.7 1166.5L1405.9 1166.5L1393.5 1178.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1393.5 1198.7L1425.7 1198.7L1425.7 1166.5L1405.9 1166.5L1393.5 1178.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1405.9 1166.5L1393.5 1166.5L1393.5 1178.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1425.7" y="1166.5" width="965.7" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2391.3 1198.7L2423.5 1198.7L2423.5 1178.9L2411.1 1166.5L2391.3 1166.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1425.7" y="1166.5" width="965.7" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2391.3 1198.7L2423.5 1198.7L2423.5 1178.9L2411.1 1166.5L2391.3 1166.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2423.5 1178.9L2423.5 1166.5L2411.1 1166.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2423.5 1198.7L2442.1 1198.7L2423.5 1178.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2423.5 1198.7L2442.1 1198.7L2423.5 1178.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2442.1 1198.7L2455.7 1198.7L2455.7 1166.5L2423.5 1166.5L2423.5 1178.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2455.7" y="1166.5" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2777.6 1198.7L2804.5 1198.7L2786.4 1166.5L2777.6 1166.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3082,14 +3082,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1039.4 1166.5L1071.6 1166.5L1071.6 1134.3L1050.3 1134.3L1039.4 1151.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1050.3 1134.3L1039.4 1134.3L1039.4 1151.8Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1071.6" y="1134.3" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1405.9 1166.5L1425.7 1166.5L1425.7 1147.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1405.9 1166.5L1425.7 1166.5L1425.7 1147.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1393.5 1166.5L1405.9 1166.5L1425.7 1147.9L1425.7 1134.3L1393.5 1134.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1425.7 1166.5L1457.9 1166.5L1457.9 1134.3L1441.2 1134.3L1425.7 1147.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1425.7 1166.5L1457.9 1166.5L1457.9 1134.3L1441.2 1134.3L1425.7 1147.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1441.2 1134.3L1425.7 1134.3L1425.7 1147.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1457.9" y="1134.3" width="901.3" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2359.1 1166.5L2391.3 1166.5L2391.3 1147.9L2375.8 1134.3L2359.1 1134.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1457.9" y="1134.3" width="901.3" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2359.1 1166.5L2391.3 1166.5L2391.3 1147.9L2375.8 1134.3L2359.1 1134.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2391.3 1147.9L2391.3 1134.3L2375.8 1134.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2391.3 1166.5L2411.1 1166.5L2391.3 1147.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2391.3 1166.5L2411.1 1166.5L2391.3 1147.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2411.1 1166.5L2423.5 1166.5L2423.5 1134.3L2391.3 1134.3L2391.3 1147.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2423.5" y="1134.3" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2745.4 1166.5L2777.6 1166.5L2777.6 1151.8L2766.7 1134.3L2745.4 1134.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3127,14 +3127,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1071.6 1134.3L1103.8 1134.3L1103.8 1102.1L1071.6 1102.1L1071.6 1102.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1071.6 1102.1L1071.6 1102.1L1071.6 1102.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1103.8" y="1102.1" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1441.2 1134.3L1457.9 1134.3L1457.9 1120.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1441.2 1134.3L1457.9 1134.3L1457.9 1120.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1425.7 1134.3L1441.2 1134.3L1457.9 1120.5L1457.9 1102.1L1425.7 1102.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1457.9 1134.3L1490.0 1134.3L1490.0 1102.1L1481.7 1102.1L1457.9 1120.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1457.9 1134.3L1490.0 1134.3L1490.0 1102.1L1481.7 1102.1L1457.9 1120.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1481.7 1102.1L1457.9 1102.1L1457.9 1120.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1490.0" y="1102.1" width="836.9" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2327.0 1134.3L2359.1 1134.3L2359.1 1120.5L2335.3 1102.1L2327.0 1102.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1490.0" y="1102.1" width="836.9" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2327.0 1134.3L2359.1 1134.3L2359.1 1120.5L2335.3 1102.1L2327.0 1102.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2359.1 1120.5L2359.1 1102.1L2335.3 1102.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2359.1 1134.3L2375.8 1134.3L2359.1 1120.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2359.1 1134.3L2375.8 1134.3L2359.1 1120.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2375.8 1134.3L2391.3 1134.3L2391.3 1102.1L2359.1 1102.1L2359.1 1120.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2391.3" y="1102.1" width="321.9" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2713.2 1134.3L2745.4 1134.3L2745.4 1102.1L2745.4 1102.1L2713.2 1102.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3170,18 +3170,18 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1071.6 1102.1L1103.8 1102.1L1103.8 1069.9L1094.9 1069.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1071.6 1102.1L1071.6 1102.1L1094.9 1069.9L1071.6 1069.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1103.8" y="1069.9" width="354.1" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1481.7 1102.1L1490.0 1102.1L1490.0 1096.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1481.7 1102.1L1490.0 1102.1L1490.0 1096.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1457.9 1102.1L1481.7 1102.1L1490.0 1096.0L1490.0 1069.9L1457.9 1069.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1490.0 1102.1L1522.2 1102.1L1522.2 1074.3L1490.0 1096.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1490.0 1102.1L1522.2 1102.1L1522.2 1074.3L1490.0 1096.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1522.2 1074.3L1522.2 1069.9L1490.0 1069.9L1490.0 1096.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1522.2 1102.1L1554.4 1102.1L1554.4 1069.9L1529.2 1069.9L1522.2 1074.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1522.2 1102.1L1554.4 1102.1L1554.4 1069.9L1529.2 1069.9L1522.2 1074.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1529.2 1069.9L1522.2 1069.9L1522.2 1074.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1554.4" y="1069.9" width="708.2" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2262.6 1102.1L2294.8 1102.1L2294.8 1074.3L2287.8 1069.9L2262.6 1069.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1554.4" y="1069.9" width="708.2" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2262.6 1102.1L2294.8 1102.1L2294.8 1074.3L2287.8 1069.9L2262.6 1069.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2294.8 1074.3L2294.8 1069.9L2287.8 1069.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2294.8 1102.1L2327.0 1102.1L2327.0 1096.0L2294.8 1074.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2294.8 1102.1L2327.0 1102.1L2327.0 1096.0L2294.8 1074.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2327.0 1096.0L2327.0 1069.9L2294.8 1069.9L2294.8 1074.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2327.0 1102.1L2335.3 1102.1L2327.0 1096.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2327.0 1102.1L2335.3 1102.1L2327.0 1096.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2335.3 1102.1L2359.1 1102.1L2359.1 1069.9L2327.0 1069.9L2327.0 1096.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2359.1" y="1069.9" width="354.1" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2713.2 1102.1L2745.4 1102.1L2722.1 1069.9L2713.2 1069.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3217,14 +3217,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1103.8 1069.9L1136.0 1069.9L1136.0 1037.7L1120.2 1037.7L1103.8 1058.4Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1120.2 1037.7L1103.8 1037.7L1103.8 1058.4Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1136.0" y="1037.7" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1529.2 1069.9L1554.4 1069.9L1554.4 1055.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1529.2 1069.9L1554.4 1069.9L1554.4 1055.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1522.2 1069.9L1529.2 1069.9L1554.4 1055.1L1554.4 1037.7L1522.2 1037.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1554.4 1069.9L1586.6 1069.9L1586.6 1037.7L1586.6 1037.7L1554.4 1055.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1554.4 1069.9L1586.6 1069.9L1586.6 1037.7L1586.6 1037.7L1554.4 1055.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1586.6 1037.7L1554.4 1037.7L1554.4 1055.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1586.6" y="1037.7" width="643.8" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2230.4 1069.9L2262.6 1069.9L2262.6 1055.1L2230.4 1037.7L2230.4 1037.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1586.6" y="1037.7" width="643.8" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2230.4 1069.9L2262.6 1069.9L2262.6 1055.1L2230.4 1037.7L2230.4 1037.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2262.6 1055.1L2262.6 1037.7L2230.4 1037.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2262.6 1069.9L2287.8 1069.9L2262.6 1055.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2262.6 1069.9L2287.8 1069.9L2262.6 1055.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2287.8 1069.9L2294.8 1069.9L2294.8 1037.7L2262.6 1037.7L2262.6 1055.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2294.8" y="1037.7" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2681.0 1069.9L2713.2 1069.9L2713.2 1058.4L2696.8 1037.7L2681.0 1037.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3262,22 +3262,22 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1136.0 1037.7L1168.2 1037.7L1168.2 1005.5L1147.6 1005.5L1136.0 1018.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1147.6 1005.5L1136.0 1005.5L1136.0 1018.9Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1168.2" y="1005.5" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1586.6 1037.7L1586.6 1037.7L1586.6 1037.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1586.6 1037.7L1586.6 1037.7L1586.6 1037.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1554.4 1037.7L1586.6 1037.7L1586.6 1037.7L1586.6 1005.5L1554.4 1005.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1586.6 1037.7L1618.8 1037.7L1618.8 1022.8L1586.6 1037.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1586.6 1037.7L1618.8 1037.7L1618.8 1022.8L1586.6 1037.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1618.8 1022.8L1618.8 1005.5L1586.6 1005.5L1586.6 1037.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1618.8 1037.7L1651.0 1037.7L1651.0 1009.5L1618.8 1022.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1618.8 1037.7L1651.0 1037.7L1651.0 1009.5L1618.8 1022.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1651.0 1009.5L1651.0 1005.5L1618.8 1005.5L1618.8 1022.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1651.0 1037.7L1683.2 1037.7L1683.2 1005.5L1661.7 1005.5L1651.0 1009.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1651.0 1037.7L1683.2 1037.7L1683.2 1005.5L1661.7 1005.5L1651.0 1009.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1661.7 1005.5L1651.0 1005.5L1651.0 1009.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1683.2" y="1005.5" width="450.6" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2133.8 1037.7L2166.0 1037.7L2166.0 1009.5L2155.3 1005.5L2133.8 1005.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1683.2" y="1005.5" width="450.6" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2133.8 1037.7L2166.0 1037.7L2166.0 1009.5L2155.3 1005.5L2133.8 1005.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2166.0 1009.5L2166.0 1005.5L2155.3 1005.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2166.0 1037.7L2198.2 1037.7L2198.2 1022.8L2166.0 1009.5Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2166.0 1037.7L2198.2 1037.7L2198.2 1022.8L2166.0 1009.5Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2198.2 1022.8L2198.2 1005.5L2166.0 1005.5L2166.0 1009.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2198.2 1037.7L2230.4 1037.7L2230.4 1037.7L2198.2 1022.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2198.2 1037.7L2230.4 1037.7L2230.4 1037.7L2198.2 1022.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2230.4 1037.7L2230.4 1005.5L2198.2 1005.5L2198.2 1022.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2230.4 1037.7L2230.4 1037.7L2230.4 1037.7Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2230.4 1037.7L2230.4 1037.7L2230.4 1037.7Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2230.4 1037.7L2262.6 1037.7L2262.6 1005.5L2230.4 1005.5L2230.4 1037.7Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2262.6" y="1005.5" width="386.3" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2648.8 1037.7L2681.0 1037.7L2681.0 1018.9L2669.4 1005.5L2648.8 1005.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3317,22 +3317,22 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1168.2 1005.5L1200.3 1005.5L1200.3 973.3L1177.5 973.3L1168.2 983.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1177.5 973.3L1168.2 973.3L1168.2 983.1Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1200.3" y="973.3" width="450.6" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1661.7 1005.5L1683.2 1005.5L1683.2 998.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1661.7 1005.5L1683.2 1005.5L1683.2 998.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1651.0 1005.5L1661.7 1005.5L1683.2 998.0L1683.2 973.3L1651.0 973.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1683.2 1005.5L1715.4 1005.5L1715.4 988.3L1683.2 998.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1683.2 1005.5L1715.4 1005.5L1715.4 988.3L1683.2 998.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1715.4 988.3L1715.4 973.3L1683.2 973.3L1683.2 998.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1715.4 1005.5L1747.6 1005.5L1747.6 980.1L1715.4 988.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1715.4 1005.5L1747.6 1005.5L1747.6 980.1L1715.4 988.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1747.6 980.1L1747.6 973.3L1715.4 973.3L1715.4 988.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1747.6 1005.5L1779.7 1005.5L1779.7 973.3L1779.7 973.3L1747.6 980.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1747.6 1005.5L1779.7 1005.5L1779.7 973.3L1779.7 973.3L1747.6 980.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1779.7 973.3L1747.6 973.3L1747.6 980.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="1779.7" y="973.3" width="257.5" height="32.2" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0"/>
-<path d="M2037.3 1005.5L2069.4 1005.5L2069.4 980.1L2037.3 973.3L2037.3 973.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="1779.7" y="973.3" width="257.5" height="32.2" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0"/>
+<path d="M2037.3 1005.5L2069.4 1005.5L2069.4 980.1L2037.3 973.3L2037.3 973.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2069.4 980.1L2069.4 973.3L2037.3 973.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2069.4 1005.5L2101.6 1005.5L2101.6 988.3L2069.4 980.1Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2069.4 1005.5L2101.6 1005.5L2101.6 988.3L2069.4 980.1Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2101.6 988.3L2101.6 973.3L2069.4 973.3L2069.4 980.1Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2101.6 1005.5L2133.8 1005.5L2133.8 998.0L2101.6 988.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2101.6 1005.5L2133.8 1005.5L2133.8 998.0L2101.6 988.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2133.8 998.0L2133.8 973.3L2101.6 973.3L2101.6 988.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2133.8 1005.5L2155.3 1005.5L2133.8 998.0Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2133.8 1005.5L2155.3 1005.5L2133.8 998.0Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2155.3 1005.5L2166.0 1005.5L2166.0 973.3L2133.8 973.3L2133.8 998.0Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2166.0" y="973.3" width="450.6" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2616.7 1005.5L2648.8 1005.5L2648.8 983.1L2639.5 973.3L2616.7 973.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -3372,25 +3372,25 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M1200.3 973.3L1232.5 973.3L1232.5 941.2L1210.1 941.2L1200.3 950.5Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1210.1 941.2L1200.3 941.2L1200.3 950.5Z" fill="rgb(188,25,95)" stroke="rgb(188,25,95)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="1232.5" y="941.2" width="515.0" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
-<path d="M1779.7 973.3L1779.7 973.3L1779.7 973.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1779.7 973.3L1779.7 973.3L1779.7 973.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1747.6 973.3L1779.7 973.3L1779.7 973.3L1779.7 941.2L1747.6 941.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1779.7 973.3L1811.9 973.3L1811.9 968.3L1779.7 973.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1779.7 973.3L1811.9 973.3L1811.9 968.3L1779.7 973.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1811.9 968.3L1811.9 941.2L1779.7 941.2L1779.7 973.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1811.9 973.3L1844.1 973.3L1844.1 964.8L1811.9 968.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1811.9 973.3L1844.1 973.3L1844.1 964.8L1811.9 968.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1844.1 964.8L1844.1 941.2L1811.9 941.2L1811.9 968.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1844.1 973.3L1876.3 973.3L1876.3 962.6L1844.1 964.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1844.1 973.3L1876.3 973.3L1876.3 962.6L1844.1 964.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1876.3 962.6L1876.3 941.2L1844.1 941.2L1844.1 964.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1876.3 973.3L1908.5 973.3L1908.5 961.9L1876.3 962.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1876.3 973.3L1908.5 973.3L1908.5 961.9L1876.3 962.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1908.5 961.9L1908.5 941.2L1876.3 941.2L1876.3 962.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1908.5 973.3L1940.7 973.3L1940.7 962.6L1908.5 961.9Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1908.5 973.3L1940.7 973.3L1940.7 962.6L1908.5 961.9Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1940.7 962.6L1940.7 941.2L1908.5 941.2L1908.5 961.9Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1940.7 973.3L1972.9 973.3L1972.9 964.8L1940.7 962.6Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1940.7 973.3L1972.9 973.3L1972.9 964.8L1940.7 962.6Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M1972.9 964.8L1972.9 941.2L1940.7 941.2L1940.7 962.6Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M1972.9 973.3L2005.1 973.3L2005.1 968.3L1972.9 964.8Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M1972.9 973.3L2005.1 973.3L2005.1 968.3L1972.9 964.8Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2005.1 968.3L2005.1 941.2L1972.9 941.2L1972.9 964.8Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2005.1 973.3L2037.3 973.3L2037.3 973.3L2005.1 968.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2005.1 973.3L2037.3 973.3L2037.3 973.3L2005.1 968.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2037.3 973.3L2037.3 941.2L2005.1 941.2L2005.1 968.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M2037.3 973.3L2037.3 973.3L2037.3 973.3Z" fill="rgb(119,14,101)" stroke="rgb(119,14,101)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M2037.3 973.3L2037.3 973.3L2037.3 973.3Z" fill="rgb(102,13,102)" stroke="rgb(102,13,102)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M2037.3 973.3L2069.4 973.3L2069.4 941.2L2037.3 941.2L2037.3 973.3Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="2069.4" y="941.2" width="515.0" height="32.2" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0"/>
 <path d="M2584.5 973.3L2616.7 973.3L2616.7 950.5L2606.9 941.2L2584.5 941.2Z" fill="rgb(154,19,98)" stroke="rgb(154,19,98)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4593,7 +4593,7 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3401.3 297.4L3421.4 297.4L3421.4 265.2L3389.2 265.2L3389.2 284.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3421.4" y="265.2" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M299.1 265.2L331.2 265.2L331.2 233.0L307.2 233.0L299.1 242.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M307.2 233.0L299.1 233.0L299.1 242.0Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M307.2 233.0L299.1 233.0L299.1 242.0Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="331.2" y="233.0" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M446.2 265.2L460.0 265.2L460.0 251.1Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M427.8 265.2L446.2 265.2L460.0 251.1L460.0 233.0L427.8 233.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4677,11 +4677,11 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3370.8 265.2L3389.2 265.2L3389.2 233.0L3357.0 233.0L3357.0 251.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3389.2" y="233.0" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3485.8 265.2L3517.9 265.2L3517.9 242.0L3509.8 233.0L3485.8 233.0Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3517.9 242.0L3517.9 233.0L3509.8 233.0Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3517.9 242.0L3517.9 233.0L3509.8 233.0Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M307.2 233.0L331.2 233.0L331.2 206.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M299.1 233.0L307.2 233.0L331.2 206.8L331.2 200.8L299.1 200.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M299.1 233.0L307.2 233.0L331.2 206.8L331.2 200.8L299.1 200.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M331.2 233.0L363.4 233.0L363.4 200.8L336.9 200.8L331.2 206.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M336.9 200.8L331.2 200.8L331.2 206.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M336.9 200.8L331.2 200.8L331.2 206.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="363.4" y="200.8" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M478.1 233.0L492.2 233.0L492.2 219.2Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M460.0 233.0L478.1 233.0L492.2 219.2L492.2 200.8L460.0 200.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4732,14 +4732,14 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3338.9 233.0L3357.0 233.0L3357.0 200.8L3324.8 200.8L3324.8 219.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3357.0" y="200.8" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3453.6 233.0L3485.8 233.0L3485.8 206.8L3480.1 200.8L3453.6 200.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3485.8 206.8L3485.8 200.8L3480.1 200.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3485.8 206.8L3485.8 200.8L3480.1 200.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3485.8 233.0L3509.8 233.0L3485.8 206.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3509.8 233.0L3517.9 233.0L3517.9 200.8L3485.8 200.8L3485.8 206.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="299.1" y="168.6" width="32.2" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3509.8 233.0L3517.9 233.0L3517.9 200.8L3485.8 200.8L3485.8 206.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="299.1" y="168.6" width="32.2" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M336.9 200.8L363.4 200.8L363.4 173.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M331.2 200.8L336.9 200.8L363.4 173.1L363.4 168.6L331.2 168.6Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M331.2 200.8L336.9 200.8L363.4 173.1L363.4 168.6L331.2 168.6Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M363.4 200.8L395.6 200.8L395.6 168.6L367.8 168.6L363.4 173.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M367.8 168.6L363.4 168.6L363.4 173.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M367.8 168.6L363.4 168.6L363.4 173.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="395.6" y="168.6" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M511.4 200.8L524.4 200.8L524.4 188.7Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M492.2 200.8L511.4 200.8L524.4 188.7L524.4 168.6L492.2 168.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4790,15 +4790,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3305.6 200.8L3324.8 200.8L3324.8 168.6L3292.6 168.6L3292.6 188.7Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3324.8" y="168.6" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3421.4 200.8L3453.6 200.8L3453.6 173.1L3449.2 168.6L3421.4 168.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3453.6 173.1L3453.6 168.6L3449.2 168.6Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3453.6 173.1L3453.6 168.6L3449.2 168.6Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3453.6 200.8L3480.1 200.8L3453.6 173.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3480.1 200.8L3485.8 200.8L3485.8 168.6L3453.6 168.6L3453.6 173.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3485.8" y="168.6" width="32.2" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="136.4" width="64.4" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3480.1 200.8L3485.8 200.8L3485.8 168.6L3453.6 168.6L3453.6 173.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3485.8" y="168.6" width="32.2" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="136.4" width="64.4" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M367.8 168.6L395.6 168.6L395.6 140.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M363.4 168.6L367.8 168.6L395.6 140.8L395.6 136.4L363.4 136.4Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M363.4 168.6L367.8 168.6L395.6 140.8L395.6 136.4L363.4 136.4Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M395.6 168.6L427.8 168.6L427.8 136.4L400.1 136.4L395.6 140.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M400.1 136.4L395.6 136.4L395.6 140.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M400.1 136.4L395.6 136.4L395.6 140.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="427.8" y="136.4" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M546.3 168.6L556.6 168.6L556.6 159.5Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M524.4 168.6L546.3 168.6L556.6 159.5L556.6 136.4L524.4 136.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4857,15 +4857,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3270.7 168.6L3292.6 168.6L3292.6 136.4L3260.4 136.4L3260.4 159.5Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3292.6" y="136.4" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3389.2 168.6L3421.4 168.6L3421.4 140.8L3416.9 136.4L3389.2 136.4Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3421.4 140.8L3421.4 136.4L3416.9 136.4Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3421.4 140.8L3421.4 136.4L3416.9 136.4Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3421.4 168.6L3449.2 168.6L3421.4 140.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3449.2 168.6L3453.6 168.6L3453.6 136.4L3421.4 136.4L3421.4 140.8Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3453.6" y="136.4" width="64.4" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="104.2" width="96.6" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3449.2 168.6L3453.6 168.6L3453.6 136.4L3421.4 136.4L3421.4 140.8Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3453.6" y="136.4" width="64.4" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="104.2" width="96.6" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M400.1 136.4L427.8 136.4L427.8 109.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M395.6 136.4L400.1 136.4L427.8 109.9L427.8 104.2L395.6 104.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M395.6 136.4L400.1 136.4L427.8 109.9L427.8 104.2L395.6 104.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M427.8 136.4L460.0 136.4L460.0 104.2L433.8 104.2L427.8 109.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M433.8 104.2L427.8 104.2L427.8 109.9Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M433.8 104.2L427.8 104.2L427.8 109.9Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="460.0" y="104.2" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M582.9 136.4L588.8 136.4L588.8 131.5Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M556.6 136.4L582.9 136.4L588.8 131.5L588.8 104.2L556.6 104.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -4928,15 +4928,15 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3234.1 136.4L3260.4 136.4L3260.4 104.2L3228.2 104.2L3228.2 131.5Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3260.4" y="104.2" width="96.6" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3357.0 136.4L3389.2 136.4L3389.2 109.9L3383.2 104.2L3357.0 104.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3389.2 109.9L3389.2 104.2L3383.2 104.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3389.2 109.9L3389.2 104.2L3383.2 104.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3389.2 136.4L3416.9 136.4L3389.2 109.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3416.9 136.4L3421.4 136.4L3421.4 104.2L3389.2 104.2L3389.2 109.9Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3421.4" y="104.2" width="96.6" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
-<rect x="299.1" y="72.1" width="128.8" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3416.9 136.4L3421.4 136.4L3421.4 104.2L3389.2 104.2L3389.2 109.9Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3421.4" y="104.2" width="96.6" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
+<rect x="299.1" y="72.1" width="128.8" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M433.8 104.2L460.0 104.2L460.0 80.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M427.8 104.2L433.8 104.2L460.0 80.2L460.0 72.1L427.8 72.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M427.8 104.2L433.8 104.2L460.0 80.2L460.0 72.1L427.8 72.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M460.0 104.2L492.2 104.2L492.2 72.1L469.0 72.1L460.0 80.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M469.0 72.1L460.0 72.1L460.0 80.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M469.0 72.1L460.0 72.1L460.0 80.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="492.2" y="72.1" width="128.8" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M621.4 104.2L653.1 104.2L653.1 78.9Z" fill="rgb(255,174,113)" stroke="rgb(255,174,113)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M620.9 104.2L621.4 104.2L653.1 78.9L653.1 72.1L620.9 72.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
@@ -5018,10 +5018,10 @@ expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 <path d="M3195.6 104.2L3196.1 104.2L3196.1 72.1L3163.9 72.1L3163.9 78.9Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
 <rect x="3196.1" y="72.1" width="128.8" height="32.2" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0"/>
 <path d="M3324.8 104.2L3357.0 104.2L3357.0 80.2L3348.0 72.1L3324.8 72.1Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3357.0 80.2L3357.0 72.1L3348.0 72.1Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
+<path d="M3357.0 80.2L3357.0 72.1L3348.0 72.1Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
 <path d="M3357.0 104.2L3383.2 104.2L3357.0 80.2Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
-<path d="M3383.2 104.2L3389.2 104.2L3389.2 72.1L3357.0 72.1L3357.0 80.2Z" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0" stroke-linejoin="round"/>
-<rect x="3389.2" y="72.1" width="128.8" height="32.2" fill="rgb(255,234,170)" stroke="rgb(255,234,170)" stroke-width="10.0"/>
+<path d="M3383.2 104.2L3389.2 104.2L3389.2 72.1L3357.0 72.1L3357.0 80.2Z" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0" stroke-linejoin="round"/>
+<rect x="3389.2" y="72.1" width="128.8" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <polyline points="1200.3,1810.3 1195.3,1778.1 1191.8,1745.9 1189.6,1713.7 1188.9,1681.5 1189.6,1649.3 1191.8,1617.1 1195.3,1584.9 1200.3,1552.7 1207.1,1520.6 1215.3,1488.4 1225.0,1456.2 1232.5,1434.7 1236.5,1424.0 1249.8,1391.8 1264.7,1359.6 1282.1,1327.4 1296.9,1302.2 1301.3,1295.2 1323.0,1263.0 1329.1,1254.7 1347.5,1230.9 1361.3,1214.2 1374.9,1198.7 1393.5,1178.9 1405.9,1166.5 1425.7,1147.9 1441.2,1134.3 1457.9,1120.5 1481.7,1102.1 1490.0,1096.0 1522.2,1074.3 1529.2,1069.9 1554.4,1055.1 1586.6,1037.7 1618.8,1022.8 1651.0,1009.5 1661.7,1005.5 1683.2,998.0 1715.4,988.3 1747.6,980.1 1779.7,973.3 1811.9,968.3 1844.1,964.8 1876.3,962.6 1908.5,961.9 1940.7,962.6 1972.9,964.8 2005.1,968.3 2037.3,973.3 2069.4,980.1 2101.6,988.3 2133.8,998.0 2155.3,1005.5 2166.0,1009.5 2198.2,1022.8 2230.4,1037.7 2262.6,1055.1 2287.8,1069.9 2294.8,1074.3 2327.0,1096.0 2335.3,1102.1 2359.1,1120.5 2375.8,1134.3 2391.3,1147.9 2411.1,1166.5 2423.5,1178.9 2442.1,1198.7 2455.7,1214.2 2469.5,1230.9 2487.9,1254.7 2494.0,1263.0 2515.7,1295.2 2520.1,1302.2 2534.9,1327.4 2552.3,1359.6 2567.2,1391.8 2580.5,1424.0 2584.5,1434.7 2592.0,1456.2 2601.7,1488.4 2609.9,1520.6 2616.7,1552.7 2621.7,1584.9 2625.2,1617.1 2627.4,1649.3 2628.1,1681.5 2627.4,1713.7 2625.2,1745.9 2621.7,1778.1 2616.7,1810.3 2609.9,1842.4 2601.7,1874.6 2592.0,1906.8 2584.5,1928.3 2580.5,1939.0 2567.2,1971.2 2552.3,2003.4 2534.9,2035.6 2520.1,2060.8 2515.7,2067.8 2494.0,2100.0 2487.9,2108.3 2469.5,2132.1 2455.7,2148.8 2442.1,2164.3 2423.5,2184.1 2411.1,2196.5 2391.3,2215.1 2375.8,2228.7 2359.1,2242.5 2335.3,2260.9 2327.0,2267.0 2294.8,2288.7 2287.8,2293.1 2262.6,2307.9 2230.4,2325.3 2198.2,2340.2 2166.0,2353.5 2155.3,2357.5 2133.8,2365.0 2101.6,2374.7 2069.4,2382.9 2037.3,2389.7 2005.1,2394.7 1972.9,2398.2 1940.7,2400.4 1908.5,2401.1 1876.3,2400.4 1844.1,2398.2 1811.9,2394.7 1779.7,2389.7 1747.6,2382.9 1715.4,2374.7 1683.2,2365.0 1661.7,2357.5 1651.0,2353.5 1618.8,2340.2 1586.6,2325.3 1554.4,2307.9 1529.2,2293.1 1522.2,2288.7 1490.0,2267.0 1481.7,2260.9 1457.9,2242.5 1441.2,2228.7 1425.7,2215.1 1405.9,2196.5 1393.5,2184.1 1374.9,2164.3 1361.3,2148.8 1347.5,2132.1 1329.1,2108.3 1323.0,2100.0 1301.3,2067.8 1296.9,2060.8 1282.1,2035.6 1264.7,2003.4 1249.8,1971.2 1236.5,1939.0 1232.5,1928.3 1225.0,1906.8 1215.3,1874.6 1207.1,1842.4 1200.3,1810.3" fill="none" stroke="#000000" stroke-width="10.0" stroke-opacity="0.5" stroke-linecap="round" stroke-linejoin="round"/>
 <polyline points="910.6,1882.1 909.1,1874.6 903.5,1842.4 898.9,1810.3 895.3,1778.1 892.8,1745.9 891.2,1713.7 890.7,1681.5 891.2,1649.3 892.8,1617.1 895.3,1584.9 898.9,1552.7 903.5,1520.6 909.1,1488.4 910.6,1480.9 915.9,1456.2 923.8,1424.0 932.8,1391.8 942.8,1359.6 954.3,1327.4 966.8,1295.2 975.0,1275.9 980.7,1263.0 995.9,1230.9 1007.2,1208.7 1012.5,1198.7 1030.6,1166.5 1039.4,1151.8 1050.3,1134.3 1071.6,1102.1 1094.9,1069.9 1103.8,1058.4 1120.2,1037.7 1136.0,1018.9 1147.6,1005.5 1168.2,983.1 1177.5,973.3 1200.3,950.5 1210.1,941.2 1232.5,920.6 1245.9,909.0 1264.7,893.2 1285.4,876.8 1296.9,867.9 1329.1,844.6 1361.3,823.3 1378.8,812.4 1393.5,803.6 1425.7,785.5 1435.7,780.2 1457.9,768.9 1490.0,753.7 1502.9,748.0 1522.2,739.8 1554.4,727.3 1586.6,715.8 1618.8,705.8 1651.0,696.8 1683.2,688.9 1707.9,683.6 1715.4,682.1 1747.6,676.5 1779.7,671.9 1811.9,668.3 1844.1,665.8 1876.3,664.2 1908.5,663.7 1940.7,664.2 1972.9,665.8 2005.1,668.3 2037.3,671.9 2069.4,676.5 2101.6,682.1 2109.1,683.6 2133.8,688.9 2166.0,696.8 2198.2,705.8 2230.4,715.8 2262.6,727.3 2294.8,739.8 2314.1,748.0 2327.0,753.7 2359.1,768.9 2381.3,780.2 2391.3,785.5 2423.5,803.6 2438.2,812.4 2455.7,823.3 2487.9,844.6 2520.1,867.9 2531.6,876.8 2552.3,893.2 2571.1,909.0 2584.5,920.6 2606.9,941.2 2616.7,950.5 2639.5,973.3 2648.8,983.1 2669.4,1005.5 2681.0,1018.9 2696.8,1037.7 2713.2,1058.4 2722.1,1069.9 2745.4,1102.1 2766.7,1134.3 2777.6,1151.8 2786.4,1166.5 2804.5,1198.7 2809.8,1208.7 2821.1,1230.9 2836.3,1263.0 2842.0,1275.9 2850.2,1295.2 2862.7,1327.4 2874.2,1359.6 2884.2,1391.8 2893.2,1424.0 2901.1,1456.2 2906.4,1480.9 2907.9,1488.4 2913.5,1520.6 2918.1,1552.7 2921.7,1584.9 2924.2,1617.1 2925.8,1649.3 2926.3,1681.5 2925.8,1713.7 2924.2,1745.9 2921.7,1778.1 2918.1,1810.3 2913.5,1842.4 2907.9,1874.6 2906.4,1882.1 2901.1,1906.8 2893.2,1939.0 2884.2,1971.2 2874.2,2003.4 2862.7,2035.6 2850.2,2067.8 2842.0,2087.1 2836.3,2100.0 2821.1,2132.1 2809.8,2154.3 2804.5,2164.3 2786.4,2196.5 2777.6,2211.2 2766.7,2228.7 2745.4,2260.9 2722.1,2293.1 2713.2,2304.6 2696.8,2325.3 2681.0,2344.1 2669.4,2357.5 2648.8,2379.9 2639.5,2389.7 2616.7,2412.5 2606.9,2421.8 2584.5,2442.4 2571.1,2454.0 2552.3,2469.8 2531.6,2486.2 2520.1,2495.1 2487.9,2518.4 2455.7,2539.7 2438.2,2550.6 2423.5,2559.4 2391.3,2577.5 2381.3,2582.8 2359.1,2594.1 2327.0,2609.3 2314.1,2615.0 2294.8,2623.2 2262.6,2635.7 2230.4,2647.2 2198.2,2657.2 2166.0,2666.2 2133.8,2674.1 2109.1,2679.4 2101.6,2680.9 2069.4,2686.5 2037.3,2691.1 2005.1,2694.7 1972.9,2697.2 1940.7,2698.8 1908.5,2699.3 1876.3,2698.8 1844.1,2697.2 1811.9,2694.7 1779.7,2691.1 1747.6,2686.5 1715.4,2680.9 1707.9,2679.4 1683.2,2674.1 1651.0,2666.2 1618.8,2657.2 1586.6,2647.2 1554.4,2635.7 1522.2,2623.2 1502.9,2615.0 1490.0,2609.3 1457.9,2594.1 1435.7,2582.8 1425.7,2577.5 1393.5,2559.4 1378.8,2550.6 1361.3,2539.7 1329.1,2518.4 1296.9,2495.1 1285.4,2486.2 1264.7,2469.8 1245.9,2454.0 1232.5,2442.4 1210.1,2421.8 1200.3,2412.5 1177.5,2389.7 1168.2,2379.9 1147.6,2357.5 1136.0,2344.1 1120.2,2325.3 1103.8,2304.6 1094.9,2293.1 1071.6,2260.9 1050.3,2228.7 1039.4,2211.2 1030.6,2196.5 1012.5,2164.3 1007.2,2154.3 995.9,2132.1 980.7,2100.0 975.0,2087.1 966.8,2067.8 954.3,2035.6 942.8,2003.4 932.8,1971.2 923.8,1939.0 915.9,1906.8 910.6,1882.1" fill="none" stroke="#000000" stroke-width="10.0" stroke-opacity="0.5" stroke-linecap="round" stroke-linejoin="round"/>
 <polyline points="685.3,1921.8 682.4,1906.8 677.0,1874.6 672.4,1842.4 668.6,1810.3 665.7,1778.1 663.6,1745.9 662.3,1713.7 661.9,1681.5 662.3,1649.3 663.6,1617.1 665.7,1584.9 668.6,1552.7 672.4,1520.6 677.0,1488.4 682.4,1456.2 685.3,1441.2 688.8,1424.0 696.1,1391.8 704.2,1359.6 713.2,1327.4 717.5,1313.4 723.2,1295.2 734.3,1263.0 746.2,1230.9 749.7,1222.0 759.2,1198.7 773.3,1166.5 781.9,1147.9 788.4,1134.3 804.8,1102.1 814.1,1084.7 822.2,1069.9 841.0,1037.7 846.3,1029.1 861.1,1005.5 878.5,979.3 882.5,973.3 905.5,941.2 910.6,934.3 930.2,909.0 942.8,893.2 956.5,876.8 975.0,855.3 984.6,844.6 1007.2,820.3 1014.8,812.4 1039.4,787.8 1047.3,780.2 1071.6,757.6 1082.3,748.0 1103.8,729.5 1120.2,715.8 1136.0,703.2 1161.3,683.6 1168.2,678.5 1200.3,655.5 1206.3,651.5 1232.5,634.1 1256.1,619.3 1264.7,614.0 1296.9,595.2 1311.7,587.1 1329.1,577.8 1361.3,561.4 1374.9,554.9 1393.5,546.3 1425.7,532.2 1449.0,522.7 1457.9,519.2 1490.0,507.3 1522.2,496.2 1540.4,490.5 1554.4,486.2 1586.6,477.2 1618.8,469.1 1651.0,461.8 1668.2,458.3 1683.2,455.4 1715.4,450.0 1747.6,445.4 1779.7,441.6 1811.9,438.7 1844.1,436.6 1876.3,435.3 1908.5,434.9 1940.7,435.3 1972.9,436.6 2005.1,438.7 2037.3,441.6 2069.4,445.4 2101.6,450.0 2133.8,455.4 2148.8,458.3 2166.0,461.8 2198.2,469.1 2230.4,477.2 2262.6,486.2 2276.6,490.5 2294.8,496.2 2327.0,507.3 2359.1,519.2 2368.0,522.7 2391.3,532.2 2423.5,546.3 2442.1,554.9 2455.7,561.4 2487.9,577.8 2505.3,587.1 2520.1,595.2 2552.3,614.0 2560.9,619.3 2584.5,634.1 2610.7,651.5 2616.7,655.5 2648.8,678.5 2655.7,683.6 2681.0,703.2 2696.8,715.8 2713.2,729.5 2734.7,748.0 2745.4,757.6 2769.7,780.2 2777.6,787.8 2802.2,812.4 2809.8,820.3 2832.4,844.6 2842.0,855.3 2860.5,876.8 2874.2,893.2 2886.8,909.0 2906.4,934.3 2911.5,941.2 2934.5,973.3 2938.5,979.3 2955.9,1005.5 2970.7,1029.1 2976.0,1037.7 2994.8,1069.9 3002.9,1084.7 3012.2,1102.1 3028.6,1134.3 3035.1,1147.9 3043.7,1166.5 3057.8,1198.7 3067.3,1222.0 3070.8,1230.9 3082.7,1263.0 3093.8,1295.2 3099.5,1313.4 3103.8,1327.4 3112.8,1359.6 3120.9,1391.8 3128.2,1424.0 3131.7,1441.2 3134.6,1456.2 3140.0,1488.4 3144.6,1520.6 3148.4,1552.7 3151.3,1584.9 3153.4,1617.1 3154.7,1649.3 3155.1,1681.5 3154.7,1713.7 3153.4,1745.9 3151.3,1778.1 3148.4,1810.3 3144.6,1842.4 3140.0,1874.6 3134.6,1906.8 3131.7,1921.8 3128.2,1939.0 3120.9,1971.2 3112.8,2003.4 3103.8,2035.6 3099.5,2049.6 3093.8,2067.8 3082.7,2100.0 3070.8,2132.1 3067.3,2141.0 3057.8,2164.3 3043.7,2196.5 3035.1,2215.1 3028.6,2228.7 3012.2,2260.9 3002.9,2278.3 2994.8,2293.1 2976.0,2325.3 2970.7,2333.9 2955.9,2357.5 2938.5,2383.7 2934.5,2389.7 2911.5,2421.8 2906.4,2428.7 2886.8,2454.0 2874.2,2469.8 2860.5,2486.2 2842.0,2507.7 2832.4,2518.4 2809.8,2542.7 2802.2,2550.6 2777.6,2575.2 2769.7,2582.8 2745.4,2605.4 2734.7,2615.0 2713.2,2633.5 2696.8,2647.2 2681.0,2659.8 2655.7,2679.4 2648.8,2684.5 2616.7,2707.5 2610.7,2711.5 2584.5,2728.9 2560.9,2743.7 2552.3,2749.0 2520.1,2767.8 2505.3,2775.9 2487.9,2785.2 2455.7,2801.6 2442.1,2808.1 2423.5,2816.7 2391.3,2830.8 2368.0,2840.3 2359.1,2843.8 2327.0,2855.7 2294.8,2866.8 2276.6,2872.5 2262.6,2876.8 2230.4,2885.8 2198.2,2893.9 2166.0,2901.2 2148.8,2904.7 2133.8,2907.6 2101.6,2913.0 2069.4,2917.6 2037.3,2921.4 2005.1,2924.3 1972.9,2926.4 1940.7,2927.7 1908.5,2928.1 1876.3,2927.7 1844.1,2926.4 1811.9,2924.3 1779.7,2921.4 1747.6,2917.6 1715.4,2913.0 1683.2,2907.6 1668.2,2904.7 1651.0,2901.2 1618.8,2893.9 1586.6,2885.8 1554.4,2876.8 1540.4,2872.5 1522.2,2866.8 1490.0,2855.7 1457.9,2843.8 1449.0,2840.3 1425.7,2830.8 1393.5,2816.7 1374.9,2808.1 1361.3,2801.6 1329.1,2785.2 1311.7,2775.9 1296.9,2767.8 1264.7,2749.0 1256.1,2743.7 1232.5,2728.9 1206.3,2711.5 1200.3,2707.5 1168.2,2684.5 1161.3,2679.4 1136.0,2659.8 1120.2,2647.2 1103.8,2633.5 1082.3,2615.0 1071.6,2605.4 1047.3,2582.8 1039.4,2575.2 1014.8,2550.6 1007.2,2542.7 984.6,2518.4 975.0,2507.7 956.5,2486.2 942.8,2469.8 930.2,2454.0 910.6,2428.7 905.5,2421.8 882.5,2389.7 878.5,2383.7 861.1,2357.5 846.3,2333.9 841.0,2325.3 822.2,2293.1 814.1,2278.3 804.8,2260.9 788.4,2228.7 781.9,2215.1 773.3,2196.5 759.2,2164.3 749.7,2141.0 746.2,2132.1 734.3,2100.0 723.2,2067.8 717.5,2049.6 713.2,2035.6 704.2,2003.4 696.1,1971.2 688.8,1939.0 685.3,1921.8" fill="none" stroke="#000000" stroke-width="10.0" stroke-opacity="0.5" stroke-linecap="round" stroke-linejoin="round"/>
