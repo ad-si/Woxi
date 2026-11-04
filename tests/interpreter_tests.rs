@@ -1683,6 +1683,24 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_show_barchart_keeps_chart_labels_and_frame_ticks() {
+    // Regression: `Show` rebuilt a BarChart without its ChartLabels and
+    // FrameTicks/Ticks options, drawing numeric ticks instead of labels.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[BarChart[{1, 2}, ChartLabels -> {\"Aa\", \"Bb\"}, Ticks -> None, \
+       Frame -> True, FrameTicks -> None], Graphics[Text[\"Cc\", {0.5, 0.9}]]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce graphics");
+    for label in ["Aa", "Bb", "Cc"] {
+      assert!(svg.contains(&format!(">{label}</text>")), "missing {label}");
+    }
+    assert!(!svg.contains(">1.5</text>"), "numeric ticks drawn:\n{svg}");
+  }
+
+  #[test]
   fn test_piechart_plotlabel_string() {
     // Regression: PieChart silently ignored PlotLabel (unlike Plot/BarChart).
     clear_state();
