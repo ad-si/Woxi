@@ -694,7 +694,7 @@ fn parse_density_contour_options(
 /// Function[{x, y, z}, …]` value: called positionally exactly like
 /// `Plot3D`/`ContourPlot3D`'s region function, so it does not need the
 /// plot's own x/y variable names substituted in first.
-fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
+pub(crate) fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
   let call = Expr::CurriedCall {
     func: Box::new(region.clone()),
     args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)],

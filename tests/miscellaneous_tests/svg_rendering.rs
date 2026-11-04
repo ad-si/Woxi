@@ -2558,8 +2558,14 @@ mod tests {
         !plain.contains("<text"),
         "an unlabelled picture gains no text: {plain}"
       );
-      assert!(
-        labelled.contains("height=\"386\""),
+      let height = |svg: &str| -> u32 {
+        let header = &svg[..svg.find('>').unwrap()];
+        let rest = &header[header.find(" height=\"").unwrap() + 9..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(
+        height(&labelled),
+        height(&plain) + 26,
         "the canvas grows by the label strip: {labelled}"
       );
       // `PlotLabel -> None` is how a picture asks to stay untitled.
