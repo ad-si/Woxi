@@ -883,7 +883,7 @@ fn drawn_y_range(
     return extent;
   }
   let total: f64 = weighted.iter().map(|&(_, w)| w).sum();
-  if !(total > 0.0) {
+  if total.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
     return extent;
   }
   let quantile = |q: f64| {
@@ -15187,7 +15187,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   source.log_y = plot_opts.log_y;
   // A redraw marks the `Mesh -> Full` points the plot sampled first.
   for (s, grid) in source.series.iter_mut().zip(&plot_opts.mesh_full_points) {
-    s.mesh_full_points = grid.clone();
+    s.mesh_full_points.clone_from(grid);
   }
   // `build_plot_source` only knows the single global `Filling` mode; a
   // per-series `Filling -> {i -> spec, …}` rule list is resolved here

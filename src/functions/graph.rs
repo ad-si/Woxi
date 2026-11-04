@@ -5992,7 +5992,7 @@ pub fn weighted_adjacency_graph_ast(
   if !options.iter().all(is_option) {
     return Ok(unevaluated(full_args));
   }
-  let graph = weighted_adjacency_graph_core(args, unevaluated)?;
+  let graph = weighted_adjacency_graph_core(args, unevaluated);
   match &graph {
     Expr::FunctionCall { name, args } if name == "Graph" => {
       let mut graph_args = args.clone();
@@ -6009,11 +6009,11 @@ pub fn weighted_adjacency_graph_ast(
 fn weighted_adjacency_graph_core(
   args: &[Expr],
   unevaluated: impl Fn(&[Expr]) -> Expr,
-) -> Result<Expr, InterpreterError> {
+) -> Expr {
   let (vertices, matrix) = match args {
     [Expr::List(m)] => (None, m),
     [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
-    _ => return Ok(unevaluated(args)),
+    _ => return unevaluated(args),
   };
   let n = matrix.len();
   let rows: Option<Vec<&[Expr]>> = matrix
@@ -6024,11 +6024,11 @@ fn weighted_adjacency_graph_core(
     })
     .collect();
   let Some(rows) = rows else {
-    return Ok(unevaluated(args));
+    return unevaluated(args);
   };
   let vertices: Vec<Expr> = match vertices {
     Some(v) if v.len() == n => v.to_vec(),
-    Some(_) => return Ok(unevaluated(args)),
+    Some(_) => return unevaluated(args),
     None => (1..=n as i128).map(Expr::Integer).collect(),
   };
   let is_edge = |e: &Expr| !matches!(e, Expr::Identifier(s) if s == "Infinity");
@@ -6056,14 +6056,14 @@ fn weighted_adjacency_graph_core(
       }
     }
   }
-  Ok(call(
+  call(
     "Graph",
     vec![
       Expr::List(vertices.into()),
       Expr::List(edges.into()),
       rule_expr(id_expr("EdgeWeight"), Expr::List(weights.into())),
     ],
-  ))
+  )
 }
 
 /// AdjacencyGraph[matrix, opts...] / AdjacencyGraph[vertices, matrix, opts...]

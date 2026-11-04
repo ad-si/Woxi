@@ -18589,7 +18589,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       };
       // 10 sits at u = (√5 - 1)/2 ≈ 0.618 of the half-axis from 0 to ∞.
       let (ten, inf) = (x_of("10"), x_of("\u{221E}"));
-      let centre = (x_of("-\u{221E}") + inf) / 2.0;
+      let centre = f64::midpoint(x_of("-\u{221E}"), inf);
       let frac = (ten - centre) / (inf - centre);
       assert!((frac - 0.618).abs() < 0.01, "{frac}");
     }
