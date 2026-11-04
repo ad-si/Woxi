@@ -3606,6 +3606,26 @@ fn bar_chart_structure(
       });
     }
   }
+  // `ChartLabels` name the groups below the baseline (one label per group,
+  // centred on it).
+  if !opts.chart_labels.is_empty() {
+    let mut labels: Vec<Expr> = vec![Expr::FunctionCall {
+      name: "GrayLevel".to_string(),
+      args: vec![Expr::Integer(0)].into(),
+    }];
+    for (gi, label) in opts.chart_labels.iter().take(groups.len()).enumerate() {
+      labels.push(Expr::FunctionCall {
+        name: "Text".to_string(),
+        args: vec![
+          Expr::String(label.text.clone()),
+          Expr::List(vec![Expr::Real(gi as f64 + 1.0), Expr::Real(0.0)].into()),
+          Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
+        ]
+        .into(),
+      });
+    }
+    prims.push(Expr::List(labels.into()));
+  }
   let mut graphics_args = vec![Expr::List(prims.into())];
   let mut framed = false;
   for arg in args.iter().skip(1) {
@@ -3613,7 +3633,15 @@ fn bar_chart_structure(
       && let Expr::Identifier(name) = pattern.as_ref()
       && matches!(
         name.as_str(),
-        "Frame" | "FrameLabel" | "ImageSize" | "Axes" | "AxesLabel"
+        "Frame"
+          | "FrameLabel"
+          | "ImageSize"
+          | "Axes"
+          | "AxesLabel"
+          | "PlotRange"
+          | "AspectRatio"
+          | "FrameTicks"
+          | "Ticks"
       )
     {
       framed |= name == "Frame";
