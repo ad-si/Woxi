@@ -5166,9 +5166,10 @@ mod plot3d {
       std::fs::remove_file(&path).ok();
     }
 
-    /// Regression: Export[..., png, ImageResolution -> n] should scale
-    /// the rasterized output to n DPI (vs the default 96 DPI). A Plot
-    /// with ImageSize -> 800 at 300 DPI should come out at 2500 px wide.
+    /// Regression: Export[..., png, ImageResolution -> n] scales the
+    /// rasterized output to n DPI, one printer point being 1/72 inch, and
+    /// defaults to 144 DPI like Wolfram Language. A Plot with
+    /// ImageSize -> 800 comes out 3334 px wide at 300 DPI, 1600 by default.
     #[test]
     fn export_png_with_image_resolution() {
       let path_hi = temp_file("woxi_test_plot_export_hi.png");
@@ -5195,11 +5196,11 @@ mod plot3d {
 
       let img_hi = ::image::load_from_memory(&bytes_hi).unwrap();
       let img_lo = ::image::load_from_memory(&bytes_lo).unwrap();
-      // 300 DPI / 96 DPI == 3.125×; 800 * 3.125 == 2500
-      assert_eq!(img_hi.width(), 2500);
-      assert_eq!(img_lo.width(), 800);
+      // ceil(800 * 300 / 72) == 3334; 800 * 144 / 72 == 1600
+      assert_eq!(img_hi.width(), 3334);
+      assert_eq!(img_lo.width(), 1600);
       // Height scales proportionally
-      assert!(img_hi.height() > img_lo.height() * 3);
+      assert!(img_hi.height() > img_lo.height() * 2);
 
       std::fs::remove_file(&path_hi).ok();
       std::fs::remove_file(&path_lo).ok();
@@ -26059,10 +26060,10 @@ mod grid_rasterize {
   #[test]
   fn rasterize_image_resolution_scales() {
     clear_state();
-    // Default DPI (96)
+    // Default DPI (72: one pixel per printer point)
     let dim1 =
       interpret("ImageDimensions[Rasterize[Grid[{{\"a\", \"b\"}}]]]").unwrap();
-    // Higher DPI (288 = 3x default)
+    // Higher DPI (288 = 4x default)
     let dim2 = interpret(
       "ImageDimensions[Rasterize[Grid[{{\"a\", \"b\"}}], ImageResolution -> 288]]",
     )
@@ -26078,11 +26079,37 @@ mod grid_rasterize {
     };
     let (w1, h1) = parse_dims(&dim1);
     let (w2, h2) = parse_dims(&dim2);
-    // At 3x DPI, dimensions should be ~3x larger
+    // At 4x DPI, dimensions should be ~4x larger
     assert!(
       w2 >= w1 * 2 && h2 >= h1 * 2,
       "Higher DPI should produce larger image: {w1}x{h1} vs {w2}x{h2}"
     );
+  }
+
+  #[test]
+  fn image_resolution_counts_printer_points() {
+    // One SVG unit is a printer point (1/72 inch): a 100x50 graphic is
+    // 139x70 pixels at 100 dpi, and Export defaults to 144 dpi.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Graphics[Circle[], ImageSize -> {100, 50}], \
+         ImageResolution -> 100]]"
+      )
+      .unwrap(),
+      "{139, 70}"
+    );
+    let path = std::env::temp_dir().join("woxi_image_resolution_default.png");
+    let path = path.to_string_lossy();
+    assert_eq!(
+      interpret(&format!(
+        "Export[\"{path}\", Graphics[Circle[], ImageSize -> {{100, 50}}]]; \
+         ImageDimensions[Import[\"{path}\"]]"
+      ))
+      .unwrap(),
+      "{200, 100}"
+    );
+    std::fs::remove_file(&*path).ok();
   }
 
   #[test]

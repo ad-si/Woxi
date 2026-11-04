@@ -4695,8 +4695,11 @@ differently from the front end. The baseline is approximated: half the
 height for graphics (WL: 182 of 359 for `Graphics[Disk[]]`) and three
 quarters for everything else. WL's "RasterSize" is also at twice the
 resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
-Woxi also takes 96 dpi as 1x where WL takes 72, so `ImageResolution -> 144`
-gives 540 pixels for a 360-point graphic instead of 720.
+WL's `Rasterize` defaults to 144 dpi and tags the image with
+`ImageResolution -> 144.` so it still displays at its point size; Woxi's
+`Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
+An explicit `ImageResolution`, and `Export` to a raster format (default
+144 dpi), match WL.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve
 is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally

@@ -12988,7 +12988,7 @@ pub(crate) fn coerce_graphics_to_image(expr: &Expr) -> Option<Expr> {
   }
   #[cfg(not(target_arch = "wasm32"))]
   {
-    rasterize_svg(&graphics_svg(expr)?, 96.0).ok()
+    rasterize_svg(&graphics_svg(expr)?, 72.0).ok()
   }
 }
 
@@ -13077,8 +13077,9 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
 
-  // Parse ImageResolution option (default 96 DPI to match usvg default)
-  let mut dpi: f64 = 96.0;
+  // Parse ImageResolution option. 72 dpi rasterizes one printer point
+  // (one SVG unit) to one pixel.
+  let mut dpi: f64 = 72.0;
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -13181,7 +13182,9 @@ fn rasterize_svg_to(
 
   // Compute output pixel dimensions scaled by DPI
   let svg_size = tree.size();
-  let scale = dpi / 96.0; // usvg default DPI is 96
+  // SVG units are printer points (1/72 inch), as in Wolfram Language:
+  // `ImageSize -> 360` at `ImageResolution -> 144` is 720 pixels wide.
+  let scale = dpi / 72.0;
   let (svg_w, svg_h) = (svg_size.width() as f64, svg_size.height() as f64);
   let (pix_w, pix_h, scale_x, scale_y) = match raster_size {
     Some((w, Some(h))) => (w, h, w as f64 / svg_w, h as f64 / svg_h),

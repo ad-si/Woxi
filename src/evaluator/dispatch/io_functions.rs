@@ -1891,9 +1891,9 @@ pub fn dispatch_io_functions(
         fmt.as_str(),
         "PNG" | "JPG" | "JPEG" | "GIF" | "BMP" | "TIF" | "TIFF"
       ) {
-        // Parse ImageResolution option (default 96 DPI to match
-        // usvg's default output resolution).
-        let mut dpi: f64 = 96.0;
+        // Parse ImageResolution option. Wolfram Language exports rasters
+        // at 144 dpi by default (2 pixels per printer point).
+        let mut dpi: f64 = 144.0;
         // Frame delay in hundredths of a second (GIF's native unit).
         // Default 1/8 s = 12 (matches Mathematica's 8 fps default for
         // animated GIF export).
