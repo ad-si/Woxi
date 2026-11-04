@@ -5674,6 +5674,26 @@ mod plot3d {
       }
 
       #[test]
+      fn one_element_curves_are_scalar_profiles() {
+        // `{f}` is the profile `z = f(t)`, so wrapped functions draw the
+        // same surfaces as the bare ones instead of an empty picture.
+        let bare = export_svg("RevolutionPlot3D[Log[t + 1], {t, 0, 5}]");
+        assert!(bare.len() > 1000);
+        assert_eq!(
+          export_svg("RevolutionPlot3D[{Log[t + 1]}, {t, 0, 5}]"),
+          bare
+        );
+        assert_eq!(
+          export_svg("RevolutionPlot3D[{{Log[t + 1]}}, {t, 0, 5}]"),
+          bare
+        );
+        let two = export_svg(
+          "RevolutionPlot3D[{{Log[t + 1]}, {-Log[t + 1]}}, {t, 0, 5}]",
+        );
+        assert!(two.len() > bare.len());
+      }
+
+      #[test]
       fn scalar_function() {
         // Revolve (t, t^4 - t^2) → r=t, z=t^4-t^2
         insta::assert_snapshot!(export_svg(

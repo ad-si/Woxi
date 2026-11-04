@@ -10495,18 +10495,27 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // A list of profile curves `{{r1, z1}, {r2, z2}, …}` revolves each curve
-  // into its own surface, all drawn in one scene.
-  let bodies: Vec<&Expr> = match &args[0] {
+  // into its own surface, all drawn in one scene. A one-element curve
+  // `{f}` is the plain profile `z = f(t)` (so `{{f}, {g}}` draws two
+  // surfaces), and a lone `{f}` is the single surface for `f`.
+  let unwrap_single = |e: &Expr| -> Expr {
+    match e {
+      Expr::List(c) if c.len() == 1 => c[0].clone(),
+      other => other.clone(),
+    }
+  };
+  let bodies_owned: Vec<Expr> = match &args[0] {
     Expr::List(items)
       if !items.is_empty()
         && items.iter().all(
-          |it| matches!(it, Expr::List(c) if c.len() == 2 || c.len() == 3),
+          |it| matches!(it, Expr::List(c) if (1..=3).contains(&c.len())),
         ) =>
     {
-      items.iter().collect()
+      items.iter().map(unwrap_single).collect()
     }
-    other => vec![other],
+    other => vec![unwrap_single(other)],
   };
+  let bodies: Vec<&Expr> = bodies_owned.iter().collect();
 
   // Parse t iterator
   let (tvar, t_min, t_max) =
