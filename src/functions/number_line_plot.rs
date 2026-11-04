@@ -4,17 +4,28 @@ use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::interval_ast::is_interval;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE, format_tick,
-  is_major_tick, nice_step, parse_image_size,
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, PLOT_COLORS, RESOLUTION_SCALE,
+  parse_image_size,
 };
 
 const DEFAULT_NLP_WIDTH: u32 = 360;
-const DEFAULT_NLP_HEIGHT: u32 = 60;
-/// Height per row when multiple series are displayed.
-const ROW_HEIGHT: u32 = 20;
-/// Top/bottom padding for the overall plot.
-const PADDING_TOP: u32 = 15;
-const PADDING_BOTTOM: u32 = 30;
+/// WL's layout at the default 360-point width, in points: the axis lies
+/// `ROW_PITCH` below the top for each series, the series split the space
+/// above it evenly, and the tick labels take `LABEL_ROOM` below it.
+const ROW_PITCH: f64 = 22.125;
+const LABEL_ROOM: f64 = 15.171875;
+/// Width of a series' line and radius of its point markers.
+const SERIES_THICKNESS: f64 = 1.6;
+const POINT_RADIUS: f64 = 2.25;
+/// An open (excluded) endpoint: a ring from `OPEN_INNER` to `OPEN_OUTER`.
+const OPEN_INNER: f64 = 2.09;
+const OPEN_OUTER: f64 = 2.33;
+/// Axis and tick strokes, tick lengths (pointing up) and label metrics.
+const AXIS_STROKE: f64 = 0.2;
+const MAJOR_TICK: f64 = 2.31;
+const MINOR_TICK: f64 = 1.39;
+const TICK_FONT: f64 = 10.0;
+const TICK_LABEL_BASELINE: f64 = 12.05;
 
 /// A single interval span with inclusivity flags for each endpoint.
 struct Span {
@@ -70,12 +81,10 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let num_rows = series.len();
-  let svg_height = if num_rows <= 1 {
-    DEFAULT_NLP_HEIGHT
-  } else {
-    PADDING_TOP + num_rows as u32 * ROW_HEIGHT + PADDING_BOTTOM
-  };
+  let num_rows = series.len().max(1);
+  let unit = svg_width as f64 / DEFAULT_NLP_WIDTH as f64;
+  let svg_height =
+    ((ROW_PITCH * num_rows as f64 + LABEL_ROOM) * unit).ceil() as u32;
 
   // Compute the global x range across all series.
   let (x_min, x_max) = compute_global_x_range(&series);
@@ -157,12 +166,22 @@ fn parse_number_line_args(
       if let (Some(xmin), Some(xmax)) =
         (try_eval_to_f64(&xmin_expr), try_eval_to_f64(&xmax_expr))
       {
-        return Ok(vec![NumberLineData::Predicate {
-          body: first,
-          var: var.clone(),
-          xmin,
-          xmax,
-        }]);
+        // `{pred1, pred2, …}` plots one row per predicate.
+        let predicates: Vec<Expr> = match &first {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        };
+        return Ok(
+          predicates
+            .into_iter()
+            .map(|body| NumberLineData::Predicate {
+              body,
+              var: var.clone(),
+              xmin,
+              xmax,
+            })
+            .collect(),
+        );
       }
     }
     // Case: NumberLinePlot[pred, x] — predicate with default range
@@ -305,11 +324,12 @@ fn compute_global_x_range(series: &[NumberLineData]) -> (f64, f64) {
     x_max = 10.0;
   }
 
+  // WL pads the data by an eighth of its span on each side.
   let range = x_max - x_min;
   let pad = if range.abs() < f64::EPSILON {
     1.0
   } else {
-    range * 0.08
+    range * 0.125
   };
   (x_min - pad, x_max + pad)
 }
@@ -443,26 +463,23 @@ fn render_number_line_svg(
   svg_height: u32,
   full_width: bool,
 ) -> std::string::String {
-  let sf = RESOLUTION_SCALE as f64;
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
+  // Render pixels per WL point (the layout scales with the width).
+  let sf =
+    RESOLUTION_SCALE as f64 * svg_width as f64 / DEFAULT_NLP_WIDTH as f64;
 
-  let margin_left = 60.0 * sf;
-  let margin_right = 20.0 * sf;
-  let plot_width = render_width as f64 - margin_left - margin_right;
+  // The axis spans the picture (0.5 points in from the left, 1.5 from
+  // the right), and the padded range maps onto it.
+  let axis_x0 = 0.5 * sf;
+  let axis_x1 = render_width as f64 - 1.5 * sf;
+  let plot_width = axis_x1 - axis_x0;
+  let x_to_px =
+    |x: f64| -> f64 { axis_x0 + (x - x_min) / (x_max - x_min) * plot_width };
 
-  let num_rows = series.len();
-  let axis_area_top = PADDING_TOP as f64 * sf;
-  let axis_area_bottom = PADDING_BOTTOM as f64 * sf;
-  let usable_height = render_height as f64 - axis_area_top - axis_area_bottom;
-  // Divide usable height into equal gaps: one between the axis and the
-  // first series, plus one between each pair of series.
-  let row_spacing = usable_height / (num_rows as f64 + 1.0);
-
-  // Map x value to pixel coordinate.
-  let x_to_px = |x: f64| -> f64 {
-    margin_left + (x - x_min) / (x_max - x_min) * plot_width
-  };
+  let num_rows = series.len().max(1);
+  let axis_y = ROW_PITCH * num_rows as f64 * sf;
+  let row_spacing = axis_y / (num_rows as f64 + 1.0);
 
   let (bg_color, axis_color, _origin_color, label_fill, _title_fill) =
     theme_colors();
@@ -474,15 +491,39 @@ fn render_number_line_svg(
     "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"{bg_color}\"/>\n"
   ));
 
-  let axis_x0 = margin_left;
-  let axis_x1 = margin_left + plot_width;
-
-  // Single axis line at the bottom of the plot area.
-  let axis_y = axis_area_top + usable_height;
-  svg.push_str(&format!(
-    "<line x1=\"{axis_x0:.1}\" y1=\"{axis_y:.1}\" x2=\"{axis_x1:.1}\" y2=\"{axis_y:.1}\" \
-     stroke=\"{axis_color}\" stroke-width=\"{sf:.0}\"/>\n"
-  ));
+  // A run of the line, with its endpoint markers or, for an unbounded
+  // end, an arrowhead whose tip sits 2% of the axis in from its end.
+  let arrow_len = 0.04 * plot_width;
+  let arrow_half = 3.77 * sf;
+  let line_w = SERIES_THICKNESS * sf;
+  let draw_span = |svg: &mut String, span: &Span, y: f64, color: &str| {
+    let lo_tip = axis_x0 + 0.02 * plot_width;
+    let hi_tip = axis_x1 - 0.02 * plot_width;
+    let px_lo = if span.lo.is_infinite() {
+      lo_tip + arrow_len
+    } else {
+      x_to_px(span.lo)
+    };
+    let px_hi = if span.hi.is_infinite() {
+      hi_tip - arrow_len
+    } else {
+      x_to_px(span.hi)
+    };
+    svg.push_str(&format!(
+      "<line x1=\"{px_lo:.1}\" y1=\"{y:.1}\" x2=\"{px_hi:.1}\" y2=\"{y:.1}\" \
+       stroke=\"{color}\" stroke-width=\"{line_w:.1}\"/>\n"
+    ));
+    if span.lo.is_finite() {
+      draw_endpoint(svg, px_lo, y, sf, color, bg_color, span.lo_inclusive);
+    } else {
+      draw_arrow(svg, lo_tip, px_lo, y, arrow_half, color);
+    }
+    if span.hi.is_finite() {
+      draw_endpoint(svg, px_hi, y, sf, color, bg_color, span.hi_inclusive);
+    } else {
+      draw_arrow(svg, hi_tip, px_hi, y, arrow_half, color);
+    }
+  };
 
   // Draw each series row (first series closest to axis, rest stacked upward).
   for (row_idx, data) in series.iter().enumerate() {
@@ -491,7 +532,7 @@ fn render_number_line_svg(
 
     match data {
       NumberLineData::Points(pts) => {
-        let radius = 4.0 * sf;
+        let radius = POINT_RADIUS * sf;
         for &v in pts {
           if v.is_finite() {
             let px = x_to_px(v);
@@ -510,7 +551,7 @@ fn render_number_line_svg(
                  fill=\"{label_fill}\">{}</text>\n",
                 x_to_px(*v),
                 data_y - radius - 3.0 * sf,
-                11.0 * sf,
+                TICK_FONT * sf,
                 crate::functions::graphics::box_string_to_svg(text)
               ));
             }
@@ -518,58 +559,8 @@ fn render_number_line_svg(
         }
       }
       NumberLineData::Intervals(intervals) => {
-        let bar_half = 1.5 * sf;
-        let circle_r = 3.5 * sf;
         for span in intervals {
-          let px_lo = if span.lo.is_infinite() {
-            axis_x0
-          } else {
-            x_to_px(span.lo)
-          };
-          let px_hi = if span.hi.is_infinite() {
-            axis_x1
-          } else {
-            x_to_px(span.hi)
-          };
-          // Draw interval bar
-          svg.push_str(&format!(
-            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-             fill=\"{}\"/>\n",
-            px_lo,
-            data_y - bar_half,
-            (px_hi - px_lo).max(0.0),
-            bar_half * 2.0,
-            color,
-          ));
-          // Draw endpoint markers
-          if span.lo.is_finite() {
-            draw_endpoint(
-              &mut svg,
-              px_lo,
-              data_y,
-              circle_r,
-              &color,
-              bg_color,
-              span.lo_inclusive,
-            );
-          } else {
-            let arrow_size = 5.0 * sf;
-            draw_arrow_left(&mut svg, axis_x0, data_y, arrow_size, &color);
-          }
-          if span.hi.is_finite() {
-            draw_endpoint(
-              &mut svg,
-              px_hi,
-              data_y,
-              circle_r,
-              &color,
-              bg_color,
-              span.hi_inclusive,
-            );
-          } else {
-            let arrow_size = 5.0 * sf;
-            draw_arrow_right(&mut svg, axis_x1, data_y, arrow_size, &color);
-          }
+          draw_span(&mut svg, span, data_y, &color);
         }
       }
       NumberLineData::Predicate {
@@ -578,120 +569,51 @@ fn render_number_line_svg(
         xmin,
         xmax,
       } => {
-        let intervals = sample_predicate(body, var, *xmin, *xmax);
-        let bar_half = 1.5 * sf;
-        let circle_r = 3.5 * sf;
-        for span in &intervals {
-          let px_lo = if span.lo.is_infinite() {
-            axis_x0
-          } else {
-            x_to_px(span.lo)
-          };
-          let px_hi = if span.hi.is_infinite() {
-            axis_x1
-          } else {
-            x_to_px(span.hi)
-          };
-          svg.push_str(&format!(
-            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" \
-             fill=\"{}\"/>\n",
-            px_lo,
-            data_y - bar_half,
-            (px_hi - px_lo).max(0.0),
-            bar_half * 2.0,
-            color,
-          ));
-          if span.lo.is_finite() {
-            draw_endpoint(
-              &mut svg,
-              px_lo,
-              data_y,
-              circle_r,
-              &color,
-              bg_color,
-              span.lo_inclusive,
-            );
-          } else {
-            let arrow_size = 5.0 * sf;
-            draw_arrow_left(&mut svg, axis_x0, data_y, arrow_size, &color);
-          }
-          if span.hi.is_finite() {
-            draw_endpoint(
-              &mut svg,
-              px_hi,
-              data_y,
-              circle_r,
-              &color,
-              bg_color,
-              span.hi_inclusive,
-            );
-          } else {
-            let arrow_size = 5.0 * sf;
-            draw_arrow_right(&mut svg, axis_x1, data_y, arrow_size, &color);
-          }
+        for span in &sample_predicate(body, var, *xmin, *xmax) {
+          draw_span(&mut svg, span, data_y, &color);
         }
       }
     }
   }
 
-  // Draw tick marks and labels on the bottom axis
-  let tick_y = axis_y;
-  let x_range = x_max - x_min;
-  let major_step = nice_step(x_range, 6);
-  let minor_step = major_step / 5.0;
-  let major_tick_len = 5.0 * sf;
-  let minor_tick_len = 3.0 * sf;
-  let font_size = 14.0 * sf;
-
-  // Minor ticks
-  let first_minor = (x_min / minor_step).ceil() * minor_step;
-  let mut tick_val = first_minor;
-  while tick_val <= x_max + minor_step * 1e-9 {
-    if !is_major_tick(tick_val, major_step) {
-      let px = x_to_px(tick_val);
-      svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-         stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-        px,
-        tick_y,
-        px,
-        tick_y + minor_tick_len,
-        axis_color,
-        sf * 0.5
-      ));
-    }
-    tick_val += minor_step;
+  // The axis line, with tick marks pointing up from it and the labels of
+  // the major ones below.
+  let axis_w = AXIS_STROKE * sf;
+  svg.push_str(&format!(
+    "<line x1=\"{axis_x0:.1}\" y1=\"{axis_y:.1}\" x2=\"{axis_x1:.1}\" y2=\"{axis_y:.1}\" \
+     stroke=\"{axis_color}\" stroke-width=\"{axis_w:.1}\"/>\n"
+  ));
+  use crate::functions::plot_axes::{AxisScale, AxisTicks};
+  let ticks = AxisTicks::new(
+    AxisScale {
+      min: x_min,
+      max: x_max,
+      log: false,
+    },
+    false,
+    None,
+  );
+  let font_size = TICK_FONT * sf;
+  let tick = |svg: &mut String, v: f64, len: f64| {
+    let px = x_to_px(v);
+    svg.push_str(&format!(
+      "<line x1=\"{px:.1}\" y1=\"{axis_y:.1}\" x2=\"{px:.1}\" y2=\"{:.1}\" \
+       stroke=\"{axis_color}\" stroke-width=\"{axis_w:.1}\"/>\n",
+      axis_y - len * sf,
+    ));
+  };
+  for &v in &ticks.minors {
+    tick(&mut svg, v, MINOR_TICK);
   }
-
-  // Major ticks with labels
-  let first_major = (x_min / major_step).ceil() * major_step;
-  tick_val = first_major;
-  while tick_val <= x_max + major_step * 1e-9 {
-    if is_major_tick(tick_val, major_step) {
-      let px = x_to_px(tick_val);
-      svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" \
-         stroke=\"{}\" stroke-width=\"{:.0}\"/>\n",
-        px,
-        tick_y,
-        px,
-        tick_y + major_tick_len,
-        axis_color,
-        sf
-      ));
-      let label = format_tick(tick_val);
-      svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{:.0}\" \
-         fill=\"{}\">{}</text>\n",
-        px,
-        tick_y + major_tick_len + font_size * 1.1,
-        font_size,
-        label_fill,
-        label
-      ));
-    }
-    tick_val += major_step;
+  for (v, label) in &ticks.majors {
+    tick(&mut svg, *v, MAJOR_TICK);
+    svg.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+       fill=\"{label_fill}\">{label}</text>\n",
+      x_to_px(*v),
+      axis_y + TICK_LABEL_BASELINE * sf,
+    ));
   }
 
   // Wrap in SVG element
@@ -710,50 +632,43 @@ fn render_number_line_svg(
   buf
 }
 
-/// Draw a left-pointing arrow for -Infinity.
-fn draw_arrow_left(svg: &mut String, x: f64, y: f64, size: f64, color: &str) {
+/// An arrowhead with its tip at `tip` and its base at `base`, on the line
+/// at height `y`.
+fn draw_arrow(
+  svg: &mut String,
+  tip: f64,
+  base: f64,
+  y: f64,
+  half: f64,
+  color: &str,
+) {
   svg.push_str(&format!(
-    "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"/>\n",
-    x - size * 2.0,
-    y,
-    x,
-    y - size,
-    x,
-    y + size,
-    color
+    "<polygon points=\"{tip:.1},{y:.1} {base:.1},{:.1} {base:.1},{:.1}\" fill=\"{color}\"/>\n",
+    y - half,
+    y + half,
   ));
 }
 
-/// Draw a right-pointing arrow for +Infinity.
-fn draw_arrow_right(svg: &mut String, x: f64, y: f64, size: f64, color: &str) {
-  svg.push_str(&format!(
-    "<polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\" fill=\"{}\"/>\n",
-    x + size * 2.0,
-    y,
-    x,
-    y - size,
-    x,
-    y + size,
-    color
-  ));
-}
-
-/// Draw an endpoint circle: filled for inclusive, empty (stroke-only) for exclusive.
+/// Draw an endpoint marker: a filled disk for an included endpoint, a
+/// ring around the background colour for an excluded one. `sf` is render
+/// pixels per point.
 fn draw_endpoint(
   svg: &mut String,
   cx: f64,
   cy: f64,
-  r: f64,
+  sf: f64,
   color: &str,
   bg_color: &str,
   inclusive: bool,
 ) {
-  let stroke_w = r * 0.5;
   if inclusive {
+    let r = POINT_RADIUS * sf;
     svg.push_str(&format!(
       "<circle cx=\"{cx:.1}\" cy=\"{cy:.1}\" r=\"{r:.1}\" fill=\"{color}\"/>\n"
     ));
   } else {
+    let r = f64::midpoint(OPEN_INNER, OPEN_OUTER) * sf;
+    let stroke_w = (OPEN_OUTER - OPEN_INNER) * sf;
     svg.push_str(&format!(
       "<circle cx=\"{cx:.1}\" cy=\"{cy:.1}\" r=\"{r:.1}\" \
        fill=\"{bg_color}\" stroke=\"{color}\" stroke-width=\"{stroke_w:.1}\"/>\n"

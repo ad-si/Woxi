@@ -477,9 +477,49 @@ pub fn dispatch_plotting(
           vec![call1("Re", f.clone()), call1("Im", f.clone())].into(),
         ),
       };
-      let mut new_args = Vec::with_capacity(args.len());
+      let functions = match &args[0] {
+        Expr::List(items) => items.len(),
+        _ => 1,
+      };
+      let mut new_args = Vec::with_capacity(args.len() + 1);
       new_args.push(reim_list);
       new_args.extend(args[1..].iter().cloned());
+      // Wolfram draws each function's real and imaginary parts in the
+      // function's colour, the imaginary part dotted.
+      let styled = args[2..].iter().any(|opt| {
+        crate::functions::graphics::option_name_value(opt)
+          .is_some_and(|(name, _)| name == "PlotStyle")
+      });
+      if !styled {
+        let palette = crate::functions::plot::PLOT_COLORS_RGB;
+        let mut styles = Vec::with_capacity(2 * functions);
+        for k in 0..functions {
+          let (r, g, b) = palette[k % palette.len()];
+          let color = Expr::FunctionCall {
+            name: "RGBColor".into(),
+            args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+          };
+          styles.push(color.clone());
+          styles.push(Expr::FunctionCall {
+            name: "Directive".into(),
+            args: vec![
+              color,
+              call1(
+                "Dashing",
+                Expr::List(
+                  vec![Expr::Integer(0), Expr::Identifier("Small".into())]
+                    .into(),
+                ),
+              ),
+            ]
+            .into(),
+          });
+        }
+        new_args.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("PlotStyle".into())),
+          replacement: Box::new(Expr::List(styles.into())),
+        });
+      }
       Some(quiet_plot(|| crate::functions::plot::plot_ast(&new_args)))
     }
     // Manipulate holds its arguments (see core_eval.rs) and, in a text

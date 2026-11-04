@@ -1804,17 +1804,37 @@ fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
   let swatch = 14.0_f64;
   let mut entries: Vec<Expr> = Vec::new();
   for (label, color_expr) in labels.iter().zip(colors.iter()) {
-    let color = parse_color(color_expr).unwrap_or(Color::new(0.0, 0.0, 0.0));
+    // A plain colour, or a directive such as a `RegionPlot` region's
+    // `Directive[EdgeForm[…], color, Opacity[…]]`: the face takes its colour
+    // and opacity, the outline its `EdgeForm` colour.
+    let (color, opacity, edge) = if let Some(c) = parse_color(color_expr) {
+      (c, 1.0, None)
+    } else {
+      let mut style = StyleState::default();
+      apply_directive(color_expr, &mut style);
+      let edge = style.edge_form.as_ref().and_then(|e| e.color);
+      (
+        style.color,
+        style.face_opacity.unwrap_or(style.opacity),
+        edge,
+      )
+    };
     let color = color.to_svg_rgb();
+    let edge = edge.map_or_else(|| "black".to_string(), Color::to_svg_rgb);
+    let fill_opacity = if opacity < 1.0 {
+      format!(" fill-opacity=\"{opacity}\"")
+    } else {
+      String::new()
+    };
     let marker = if round {
       format!(
-        "<circle cx=\"{c}\" cy=\"{c}\" r=\"{r}\" fill=\"{color}\"/>",
+        "<circle cx=\"{c}\" cy=\"{c}\" r=\"{r}\" fill=\"{color}\"{fill_opacity}/>",
         c = swatch / 2.0,
         r = swatch / 4.0,
       )
     } else {
       format!(
-        "<rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\" stroke=\"black\" stroke-width=\"1\"/>",
+        "<rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\"{fill_opacity} stroke=\"{edge}\" stroke-width=\"1\"/>",
         inner = swatch - 1.0,
       )
     };

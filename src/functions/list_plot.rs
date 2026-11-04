@@ -3059,6 +3059,18 @@ fn complex_data_to_points(e: &Expr) -> Expr {
   {
     return Expr::List(vec![Expr::Real(re), Expr::Real(im)].into());
   }
+  // An exact numeric value (`Exp[2 Pi I / 7]`, `(1 + I)^3 / 4`) is plotted
+  // at its numerical value.
+  if !matches!(e, Expr::List(_) | Expr::Association(_) | Expr::Rule { .. })
+    && let Ok(numeric) = evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "N".into(),
+      args: vec![e.clone()].into(),
+    })
+    && let Some((re, im)) =
+      crate::functions::list_helpers_ast::expr_to_complex_parts(&numeric)
+  {
+    return Expr::List(vec![Expr::Real(re), Expr::Real(im)].into());
+  }
   match &e {
     Expr::List(items) => {
       Expr::List(items.iter().map(complex_data_to_points).collect())
@@ -3565,22 +3577,181 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_series.push(points);
   }
 
-  let parsed = parse_plot_options(args);
-  let (x_range, y_range) = compute_ranges(&all_series);
-  let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
-  let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
-
-  let svg = if parsed.joined {
-    generate_svg_with_filling(&all_series, x_range, y_range, &parsed.opts)?
-  } else {
-    generate_scatter_svg_with_options(
-      &all_series,
-      x_range,
-      y_range,
-      &parsed.opts,
-    )?
+  let option = |key: &str| {
+    args[2..].iter().rev().find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == key).then(|| value.into_owned())
+    })
   };
-  Ok(crate::graphics_result(svg))
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  let given = |key: &str| option(key).is_some();
+  // The user's options, without the ones DiscretePlot itself resolves.
+  let passed_options = |skip: &[&str]| -> Vec<Expr> {
+    args[2..]
+      .iter()
+      .filter(|opt| {
+        !crate::functions::graphics::option_name_value(opt)
+          .is_some_and(|(name, _)| skip.contains(&name))
+      })
+      .cloned()
+      .collect()
+  };
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  // `Filling -> Axis` is DiscretePlot's default: a stem from every point
+  // down to the axis.
+  let filling = !matches!(
+    option("Filling"),
+    Some(Expr::Identifier(ref s)) if s == "None" || s == "False"
+  );
+
+  // `ExtentSize -> Right | Left | Full` draws each value as a flat step over
+  // that part of its cell, filled down to the axis, instead of a point.
+  let extent = match &option("ExtentSize") {
+    Some(Expr::Identifier(s)) if s == "Right" => Some((0.0, step)),
+    Some(Expr::Identifier(s)) if s == "Left" => Some((-step, 0.0)),
+    Some(Expr::Identifier(s)) if s == "Full" => Some((-step / 2.0, step / 2.0)),
+    Some(e) => try_eval_to_f64(e)
+      .filter(|w| *w > 0.0)
+      .map(|w| (-w * step / 2.0, w * step / 2.0)),
+    None => None,
+  };
+  if let Some((left, right)) = extent {
+    let palette = crate::functions::plot::PLOT_COLORS_RGB;
+    let mut items: Vec<Expr> = Vec::new();
+    let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
+    for (k, points) in all_series.iter().enumerate() {
+      let (r, g, b) = palette[k % palette.len()];
+      let color = Expr::FunctionCall {
+        name: "RGBColor".to_string(),
+        args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
+      };
+      let style = |extra: Vec<Expr>| {
+        let mut directives = extra;
+        directives.push(color.clone());
+        directives.push(Expr::FunctionCall {
+          name: "AbsoluteThickness".to_string(),
+          args: vec![Expr::Integer(2)].into(),
+        });
+        Expr::FunctionCall {
+          name: "Directive".to_string(),
+          args: directives.into(),
+        }
+      };
+      if filling {
+        let mut group = vec![style(vec![Expr::FunctionCall {
+          name: "Opacity".to_string(),
+          args: vec![Expr::Real(0.2)].into(),
+        }])];
+        group.extend(points.iter().map(|&(n, y)| Expr::FunctionCall {
+          name: "Rectangle".to_string(),
+          args: vec![point(n + left, 0.0), point(n + right, y)].into(),
+        }));
+        items.push(Expr::List(group.into()));
+      }
+      let steps: Vec<Expr> = points
+        .iter()
+        .map(|&(n, y)| {
+          y_lo = y_lo.min(y);
+          y_hi = y_hi.max(y);
+          Expr::List(vec![point(n + left, y), point(n + right, y)].into())
+        })
+        .collect();
+      items.push(Expr::List(
+        vec![
+          style(Vec::new()),
+          Expr::FunctionCall {
+            name: "Line".to_string(),
+            args: vec![Expr::List(steps.into())].into(),
+          },
+        ]
+        .into(),
+      ));
+    }
+    let scaled = |f: f64| Expr::FunctionCall {
+      name: "Scaled".to_string(),
+      args: vec![Expr::Real(f)].into(),
+    };
+    let pair = |a: Expr, b: Expr| Expr::List(vec![a, b].into());
+    let mut graphics_args = vec![Expr::List(items.into())];
+    graphics_args.extend(passed_options(&[
+      "ExtentSize",
+      "Filling",
+      "PlotLegends",
+      "PlotStyle",
+    ]));
+    let defaults = [
+      ("Axes", Expr::Identifier("True".to_string())),
+      (
+        "AspectRatio",
+        Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![
+            Expr::Identifier("GoldenRatio".to_string()),
+            Expr::Integer(-1),
+          ]
+          .into(),
+        },
+      ),
+      ("AxesOrigin", point(0.0, 0.0)),
+      (
+        "PlotRange",
+        pair(point(n_min + left, n_max + right), point(y_lo, y_hi)),
+      ),
+      (
+        "PlotRangePadding",
+        pair(
+          pair(scaled(0.02), scaled(0.02)),
+          pair(scaled(0.05), scaled(0.05)),
+        ),
+      ),
+    ];
+    for (name, value) in defaults {
+      if !given(name) {
+        graphics_args.push(rule(name, value));
+      }
+    }
+    return crate::functions::graphics::graphics_ast(&graphics_args);
+  }
+
+  // Otherwise the plot is `ListPlot` of the sampled points, with the stems
+  // of `Filling -> Axis` unless the caller chose another filling.
+  let data: Vec<Expr> = all_series
+    .iter()
+    .map(|points| {
+      Expr::List(points.iter().map(|&(n, y)| point(n, y)).collect())
+    })
+    .collect();
+  let data = if data.len() == 1 {
+    data.into_iter().next().unwrap()
+  } else {
+    Expr::List(data.into())
+  };
+  let mut list_args = vec![data];
+  list_args.extend(passed_options(&["PlotLegends"]));
+  if !given("Filling") {
+    list_args.push(rule("Filling", Expr::Identifier("Axis".to_string())));
+  }
+  // `PlotLegends -> "Expressions"` labels each series with its function,
+  // typeset in TraditionalForm as Plot's are.
+  match &option("PlotLegends") {
+    Some(Expr::String(s)) if s == "Expressions" => {
+      let labels: Vec<Expr> = bodies
+        .iter()
+        .map(|b| Expr::FunctionCall {
+          name: "TraditionalForm".to_string(),
+          args: vec![(*b).clone()].into(),
+        })
+        .collect();
+      list_args.push(rule("PlotLegends", Expr::List(labels.into())));
+    }
+    Some(other) => list_args.push(rule("PlotLegends", other.clone())),
+    None => {}
+  }
+  list_plot_ast(&list_args)
 }
 
 /// Cap on rendered points per channel. Longer audio is reduced to a min/max

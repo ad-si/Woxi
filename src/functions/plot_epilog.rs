@@ -857,10 +857,18 @@ fn render_item(
         } else {
           args
         };
-        // `Text[label]` sits at the origin, as in `Graphics`.
-        let anchor = match args.get(1) {
-          Some(pos) => anchor2(pos, area),
-          None => Some((0.0, 0.0)),
+        // `Text[label]` sits at the origin, as in `Graphics`;
+        // `Offset[{dx, dy}, pos]` moves it `dx`, `dy` points from `pos`.
+        let (anchor, shift) = match args.get(1) {
+          Some(Expr::FunctionCall { name, args: oargs })
+            if name == "Offset"
+              && oargs.len() == 2
+              && let Some(shift) = point2(&oargs[0]) =>
+          {
+            (anchor2(&oargs[1], area), shift)
+          }
+          Some(pos) => (anchor2(pos, area), (0.0, 0.0)),
+          None => (Some((0.0, 0.0)), (0.0, 0.0)),
         };
         if let Some((x, y)) = anchor {
           // `Framed[content, opts…]` boxes the label: a panel behind it and
@@ -891,7 +899,10 @@ fn render_item(
             .fill_attrs(),
             None => style.fill_attrs(),
           };
-          let (mut px, mut py) = (area.px(x), area.py(y));
+          let (mut px, mut py) = (
+            area.px(x) + shift.0 * area.scale,
+            area.py(y) - shift.1 * area.scale,
+          );
           // `Text[label, pt, {ox, oy}]` places the anchor at `{ox, oy}`
           // inside the label's own box (`{-1, 0}`: its left edge), so the
           // label's centre sits `-ox`/`oy` half-extents from the anchor.

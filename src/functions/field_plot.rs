@@ -12,7 +12,6 @@ use crate::functions::plot::{
 };
 
 const FIELD_GRID: usize = 100;
-const VECTOR_GRID: usize = 15;
 
 /// Default look of a contour line, used unless `ContourStyle` says
 /// otherwise: WL's `Directive[GrayLevel[0], Opacity[0.5]]`, 1 point wide.
@@ -206,15 +205,6 @@ fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
   (svg_width, svg_height, full_width)
 }
 
-/// `Epilog -> …` primitives for `VectorPlot`, drawn over the finished field
-/// with `plot_epilog::render_epilog_svg` — the same mechanism `DensityPlot`/
-/// `ContourPlot` already use via `DensityContourOptions`. Evaluated eagerly
-/// so primitives that reference a Manipulate's current control values (e.g.
-/// `Disk[place1]`) resolve to numeric coordinates.
-fn parse_vector_plot_epilog(args: &[Expr], start: usize) -> Vec<Expr> {
-  parse_overlay_primitives(args, start, "Epilog")
-}
-
 /// The primitives of an `Epilog`/`Prolog` option among `args[start..]`,
 /// evaluated eagerly. Empty when the option is absent or `None`.
 fn parse_overlay_primitives(
@@ -302,6 +292,9 @@ struct DensityContourOptions {
   color_function_scaling: bool,
   contours: ContourSpec,
   contour_shading: bool,
+  /// `ContourShading -> {c1, c2, …}`: the colours of the bands from the
+  /// bottom up (cycled); empty for the colour function's.
+  contour_shading_colors: Vec<(u8, u8, u8)>,
   /// `Mesh -> n`: how many mesh lines each mesh function contributes.
   mesh: Option<usize>,
   /// `MeshFunctions -> {f1, …}`: the functions whose level curves the
@@ -351,6 +344,9 @@ struct DensityContourOptions {
   value_range: Option<(f64, f64)>,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
+  /// The `PlotRangePadding` between the frame and the data, as a fraction
+  /// of the frame (`Scaled[0.02]` unless a plot sets its own default).
+  range_padding: f64,
 }
 
 /// How a density cell whose value lies outside an explicit `PlotRange` is
@@ -452,6 +448,15 @@ impl DensityContourOptions {
       .as_ref()
       .map(|e| (e, self.color_function_scaling))
   }
+
+  /// How the contour bands are coloured.
+  fn band_coloring(&self) -> BandColoring<'_> {
+    BandColoring {
+      color_function: self.color_function.as_deref(),
+      color_function_expr: self.cf_expr(),
+      shading: &self.contour_shading_colors,
+    }
+  }
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -496,6 +501,7 @@ fn parse_density_contour_options(
   let mut color_function = None;
   let mut contours = ContourSpec::Automatic;
   let mut contour_shading = true;
+  let mut contour_shading_colors = Vec::new();
   let mut mesh: Option<usize> = None;
   let mut mesh_functions: Vec<Expr> = Vec::new();
   let mut contour_style = None;
@@ -571,6 +577,18 @@ fn parse_density_contour_options(
           if matches!(replacement, Expr::Identifier(v) if v == "False" || v == "None")
           {
             contour_shading = false;
+          } else if let Expr::List(items) = replacement {
+            contour_shading_colors = items
+              .iter()
+              .filter_map(|c| {
+                let c = parse_color(c)?;
+                Some((
+                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                ))
+              })
+              .collect();
           }
         }
         // `Mesh -> n` draws n mesh lines per mesh function; `Mesh -> None`
@@ -660,6 +678,7 @@ fn parse_density_contour_options(
     color_function_scaling,
     contours,
     contour_shading,
+    contour_shading_colors,
     mesh,
     mesh_functions,
     contour_style,
@@ -677,6 +696,7 @@ fn parse_density_contour_options(
     bar_legend,
     value_range,
     clipping,
+    range_padding: FIELD_RANGE_PADDING,
   }
 }
 
@@ -746,7 +766,13 @@ impl DensityContourOptions {
     } else {
       default_opacity
     });
-    (color, weight, opacity_attr(opacity))
+    // `Dashed`/`Dashing[…]` in the style dashes the lines.
+    let dashes = contour_dash_attr(
+      Some(style),
+      self.svg_width * RESOLUTION_SCALE,
+      self.svg_width,
+    );
+    (color, weight, opacity_attr(opacity) + &dashes)
   }
 }
 
@@ -797,6 +823,8 @@ struct FieldFrameLayout {
   y_span: (f64, f64),
   x_ticks: crate::functions::plot_axes::AxisTicks,
   y_ticks: crate::functions::plot_axes::AxisTicks,
+  /// The `PlotRangePadding` fraction between the frame and the data.
+  padding: f64,
 }
 
 impl FieldFrameLayout {
@@ -804,7 +832,7 @@ impl FieldFrameLayout {
   /// at render resolution.
   fn data_rect(&self, sf: f64) -> (f64, f64, f64, f64) {
     let (fx, fy, fw, fh) = self.frame;
-    let (px, py) = (fw * FIELD_RANGE_PADDING, fh * FIELD_RANGE_PADDING);
+    let (px, py) = (fw * self.padding, fh * self.padding);
     (
       (fx + px) * sf,
       (fy + py) * sf,
@@ -827,7 +855,7 @@ fn field_frame_layout(
 ) -> FieldFrameLayout {
   use crate::functions::plot_axes::{AxisScale, AxisTicks};
   let pad = |lo: f64, hi: f64| {
-    let p = (hi - lo) * FIELD_RANGE_PADDING / (1.0 - 2.0 * FIELD_RANGE_PADDING);
+    let p = (hi - lo) * opts.range_padding / (1.0 - 2.0 * opts.range_padding);
     (lo - p, hi + p)
   };
   let x_span = pad(x_min, x_max);
@@ -936,6 +964,7 @@ fn field_frame_layout(
     y_span,
     x_ticks,
     y_ticks,
+    padding: opts.range_padding,
   }
 }
 
@@ -1143,23 +1172,26 @@ fn contour_label_points(
   cell_h: f64,
 ) -> Vec<(f64, (f64, f64))> {
   let mut points = Vec::new();
-  for &level in levels {
+  for (k, &level) in levels.iter().enumerate() {
     let segments =
       marching_squares_segments(grid, level, x0, y0, cell_w, cell_h);
-    let chains = chain_segments(&segments);
-    let Some(chain) = chains.iter().max_by_key(|c| c.len()) else {
-      continue;
-    };
-    if chain.len() < 4 {
-      continue;
+    // Every separate line of the level carries its own label, as in
+    // Wolfram; neighbouring levels put theirs a third of the way along
+    // their lines from opposite ends, so labels of nested lines do not
+    // stack up in one column.
+    let along = if k % 2 == 0 { 1.0 / 3.0 } else { 2.0 / 3.0 };
+    for chain in chain_segments(&segments) {
+      if chain.len() >= 4 {
+        let i = ((chain.len() - 1) as f64 * along).round() as usize;
+        points.push((level, chain[i]));
+      }
     }
-    points.push((level, chain[chain.len() / 2]));
   }
   points
 }
 
-/// `ContourLabels -> True`: write each contour's level on its longest
-/// line, centred on the line with a light halo so it stays legible over
+/// `ContourLabels -> True`: write each contour's level on each of its
+/// lines, centred on the line with a light halo so it stays legible over
 /// the shading.
 fn push_contour_labels(
   svg: &mut String,
@@ -1254,14 +1286,8 @@ fn push_bar_legend(
   bounds.extend_from_slice(levels);
   bounds.push(v_max);
   for band in 0..bounds.len() - 1 {
-    let (r, g, b) = band_color(
-      band,
-      levels,
-      v_min,
-      v_max,
-      opts.color_function.as_deref(),
-      opts.cf_expr(),
-    );
+    let (r, g, b) =
+      band_color(band, levels, v_min, v_max, &opts.band_coloring());
     let y_top = bar_y + bar_h * (1.0 - frac(bounds[band + 1]));
     let y_bot = bar_y + bar_h * (1.0 - frac(bounds[band]));
     svg.push_str(&format!(
@@ -1760,9 +1786,25 @@ pub(crate) fn resolve_contour_levels(
 ) -> Vec<f64> {
   match spec {
     ContourSpec::Automatic => nice_contour_levels(v_min, v_max, 10),
+    // Wolfram splits the range into `n + 1` parts, truncates that step to
+    // two significant digits, and draws the first `n` multiples of it
+    // above the bottom of the range (so `Contours -> 6` over `-4..4` gives
+    // `-3.3, -2.2, -1.1, 0, 1.1, 2.2`).
     ContourSpec::Count(n) => {
-      let step = (v_max - v_min) / (*n as f64 + 1.0);
-      (1..=*n).map(|k| v_min + k as f64 * step).collect()
+      let range = v_max - v_min;
+      if !range.is_finite() || range <= 0.0 {
+        return vec![];
+      }
+      let raw = range / (*n as f64 + 1.0);
+      let unit = libm::pow(10.0, libm::floor(libm::log10(raw)) - 1.0);
+      let step = libm::floor(raw / unit + 1e-9) * unit;
+      let first = libm::floor(v_min / step + 1e-9) as i64 + 1;
+      (first..)
+        .map(|k| k as f64 * step)
+        .take_while(|v| *v < v_max - 1e-9 * step)
+        .filter(|v| *v > v_min + 1e-9 * step)
+        .take(*n)
+        .collect()
     }
     ContourSpec::Levels(levels) => {
       let mut ls: Vec<f64> = levels
@@ -1924,20 +1966,42 @@ fn band_color(
   levels: &[f64],
   v_min: f64,
   v_max: f64,
-  color_function: Option<&str>,
-  color_function_expr: Option<(&Expr, bool)>,
+  coloring: &BandColoring,
 ) -> (u8, u8, u8) {
+  // `ContourShading -> {c1, c2, …}` paints the bands from the bottom up,
+  // cycling through the colours.
+  if !coloring.shading.is_empty() {
+    return coloring.shading[band % coloring.shading.len()];
+  }
   let mut bounds = Vec::with_capacity(levels.len() + 2);
   bounds.push(v_min);
   bounds.extend_from_slice(levels);
   bounds.push(v_max);
-  let mid = f64::midpoint(bounds[band], bounds[band + 1]);
+  // As in Wolfram, the lowest band takes the colour of the bottom of the
+  // range, the highest that of the top, and every other band the colour of
+  // its middle.
+  let last = bounds.len() - 2;
+  let value = if band == 0 && last > 0 {
+    v_min
+  } else if band == last && last > 0 {
+    v_max
+  } else {
+    f64::midpoint(bounds[band], bounds[band + 1])
+  };
   scaled_color(
-    scale_value(mid, v_min, v_max),
-    mid,
-    color_function,
-    color_function_expr,
+    scale_value(value, v_min, v_max),
+    value,
+    coloring.color_function,
+    coloring.color_function_expr,
   )
+}
+
+/// How the bands between contours are coloured: `ContourShading -> {…}`
+/// colours, else the colour function at each band's value.
+struct BandColoring<'a> {
+  color_function: Option<&'a str>,
+  color_function_expr: Option<(&'a Expr, bool)>,
+  shading: &'a [(u8, u8, u8)],
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1951,8 +2015,7 @@ fn render_contour_bands(
   plot_y0: f64,
   cell_w: f64,
   cell_h: f64,
-  color_function: Option<&str>,
-  color_function_expr: Option<(&Expr, bool)>,
+  coloring: &BandColoring,
 ) {
   let Some(rows) = grid.first().map(std::vec::Vec::len) else {
     return;
@@ -1967,14 +2030,7 @@ fn render_contour_bands(
   let seam = RESOLUTION_SCALE as f64;
 
   for region in contour_band_regions(grid, levels) {
-    let (r, g, b) = band_color(
-      region.band,
-      levels,
-      v_min,
-      v_max,
-      color_function,
-      color_function_expr,
-    );
+    let (r, g, b) = band_color(region.band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
       (plot_x0 + fx * cell_w, plot_y0 + (n_cj - fy) * cell_h)
@@ -2013,8 +2069,7 @@ fn contour_band_primitives(
   x_max: f64,
   y_min: f64,
   y_max: f64,
-  color_function: Option<&str>,
-  color_function_expr: Option<(&Expr, bool)>,
+  coloring: &BandColoring,
 ) -> Vec<Expr> {
   let cols = grid.len();
   let rows = grid.first().map_or(0, std::vec::Vec::len);
@@ -2026,14 +2081,7 @@ fn contour_band_primitives(
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
   for region in contour_band_regions(grid, levels) {
-    let color = band_color(
-      region.band,
-      levels,
-      v_min,
-      v_max,
-      color_function,
-      color_function_expr,
-    );
+    let color = band_color(region.band, levels, v_min, v_max, coloring);
     if last_color != Some(color) {
       let rgb = call(
         "RGBColor",
@@ -2489,8 +2537,7 @@ fn contour_structure_items(
       x_max,
       y_min,
       y_max,
-      opts.color_function.as_deref(),
-      opts.cf_expr(),
+      &opts.band_coloring(),
     );
     if !bands.is_empty() {
       structure_items.push(Expr::List(bands.into()));
@@ -3088,6 +3135,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sample grid
   let mut grid = vec![vec![f64::NAN; n]; n];
   let mut samples = Vec::with_capacity(n * n);
+  let mut all_samples = Vec::with_capacity(n * n);
 
   for i in 0..n {
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
@@ -3100,19 +3148,25 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if y < row_lo || y > row_hi {
         continue;
       }
+      // As in Wolfram, the levels are chosen over the whole plot range and
+      // the colours over the part a `RegionFunction` keeps.
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
-        && opts
+      {
+        all_samples.push(v);
+        if opts
           .region_function
           .as_ref()
           .is_none_or(|r| region_allows(r, x, y, v))
-      {
-        grid[i][j] = v;
-        samples.push(v);
+        {
+          grid[i][j] = v;
+          samples.push(v);
+        }
       }
     }
   }
   let (v_min, v_max) = robust_value_range(&samples);
+  let (level_min, level_max) = robust_value_range(&all_samples);
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -3120,7 +3174,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
+  let levels = resolve_contour_levels(&opts.contours, level_min, level_max);
 
   // Sample each mesh function over the same grid and pick its levels.
   let mesh_grids = sample_mesh_grids(
@@ -3176,8 +3230,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_y0,
       cell_w,
       cell_h,
-      opts.color_function.as_deref(),
-      opts.cf_expr(),
+      &opts.band_coloring(),
     );
   }
   // Mesh lines sit under the contours: they are the level curves of the
@@ -3682,6 +3735,23 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     option("ColorFunctionScaling"),
     Some(Expr::Identifier(ref s)) if s == "False"
   );
+  // `Mesh -> n` draws lines of constant x and y across each region;
+  // `MeshStyle` styles them (`Directive[Opacity[0.3], GrayLevel[0]]` by
+  // default, as in Wolfram).
+  let mesh_spec = option("Mesh");
+  let mesh_style = option("MeshStyle")
+    .filter(|s| !matches!(s, Expr::Identifier(n) if n == "Automatic"))
+    .unwrap_or_else(|| {
+      call(
+        "Directive",
+        vec![
+          call1("Opacity", Expr::Real(0.3)),
+          call1("GrayLevel", Expr::Integer(0)),
+        ],
+      )
+    });
+  // The fill-and-edge directive of each region, for a `PlotLegends` swatch.
+  let mut swatches: Vec<Expr> = Vec::new();
 
   let mut items: Vec<Expr> = Vec::new();
   for (k, pred) in predicates.iter().enumerate() {
@@ -3729,9 +3799,40 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       ),
     };
+    let mut swatch = vec![edge.clone()];
+    swatch.extend(face.iter().cloned());
+    swatches.push(call("Directive", swatch));
     let mut group = vec![edge, call("Directive", face)];
     group.extend(polygons);
     items.push(Expr::List(group.into()));
+    // The mesh divides the region's own extent, not the plot range.
+    let extent = |f: fn(&(f64, f64)) -> f64| {
+      loops
+        .iter()
+        .flatten()
+        .map(f)
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+          (lo.min(v), hi.max(v))
+        })
+    };
+    let mesh_levels =
+      mesh_spec.as_ref().map_or((Vec::new(), Vec::new()), |spec| {
+        region_mesh_levels(spec, extent(|p| p.0), extent(|p| p.1))
+      });
+    let mesh = region_mesh_lines(
+      pred,
+      (&xvar, &yvar),
+      (x_min, x_max),
+      (y_min, y_max),
+      &mesh_levels,
+    );
+    if !mesh.is_empty()
+      && !matches!(&mesh_style, Expr::Identifier(s) if s == "None")
+    {
+      let mut group = vec![mesh_style.clone()];
+      group.extend(mesh);
+      items.push(Expr::List(group.into()));
+    }
   }
 
   // Wolfram's RegionPlot defaults, for the options the caller left unset.
@@ -3784,7 +3885,153 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       graphics_args,
     ))));
   }
+  // `PlotLegends -> {"a", "b"}` (or `"Expressions"`) puts a swatch of each
+  // region's fill and edge after the plot, as `Legended[…, Placed[
+  // SwatchLegend[…], After]]`.
+  let labels: Option<Vec<Expr>> = match &option("PlotLegends") {
+    Some(Expr::List(labels)) => Some(labels.to_vec()),
+    Some(Expr::String(s)) if s == "Expressions" => Some(
+      predicates
+        .iter()
+        .map(|p| call1("HoldForm", (*p).clone()))
+        .collect(),
+    ),
+    _ => None,
+  };
+  if let Some(labels) = labels
+    && !swatches.is_empty()
+  {
+    let n = swatches.len().min(labels.len());
+    let legend = call(
+      "SwatchLegend",
+      vec![
+        Expr::List(swatches[..n].to_vec().into()),
+        Expr::List(labels[..n].to_vec().into()),
+        rule_expr(id_expr("LegendMarkers"), id_expr("Automatic")),
+        rule_expr(id_expr("LabelStyle"), Expr::List(vec![].into())),
+        rule_expr(id_expr("LegendLayout"), id_expr("Column")),
+      ],
+    );
+    return Ok(call(
+      "Legended",
+      vec![
+        result,
+        call(
+          "Placed",
+          vec![legend, id_expr("After"), id_expr("Identity")],
+        ),
+      ],
+    ));
+  }
   Ok(result)
+}
+
+/// The x and y levels of a `RegionPlot`'s `Mesh` option: `n` lines
+/// dividing each range into `n + 1` equal parts, `{nx, ny}` per axis, or
+/// explicit `{{x1, …}, {y1, …}}` levels. `None`/`False` (the default)
+/// draws none.
+fn region_mesh_levels(
+  spec: &Expr,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> (Vec<f64>, Vec<f64>) {
+  let even = |n: usize, lo: f64, hi: f64| -> Vec<f64> {
+    (1..=n)
+      .map(|k| lo + (hi - lo) * k as f64 / (n + 1) as f64)
+      .collect()
+  };
+  let axis = |e: &Expr, lo: f64, hi: f64| -> Vec<f64> {
+    match e {
+      Expr::Integer(n) if *n >= 0 => even(*n as usize, lo, hi),
+      Expr::List(levels) => levels
+        .iter()
+        .filter_map(|v| try_eval_to_f64(&evaluate_expr_to_expr(v).ok()?))
+        .collect(),
+      Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "True" => {
+        even(14, lo, hi)
+      }
+      _ => Vec::new(),
+    }
+  };
+  match spec {
+    Expr::List(parts) if parts.len() == 2 => {
+      (axis(&parts[0], x_min, x_max), axis(&parts[1], y_min, y_max))
+    }
+    other => (axis(other, x_min, x_max), axis(other, y_min, y_max)),
+  }
+}
+
+/// The mesh lines of a `RegionPlot` region: the stretches of each line of
+/// constant x (and of constant y) at `levels` where `pred` holds, each end
+/// bisected onto the region's boundary.
+fn region_mesh_lines(
+  pred: &Expr,
+  (xvar, yvar): (&str, &str),
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  (x_levels, y_levels): &(Vec<f64>, Vec<f64>),
+) -> Vec<Expr> {
+  const SAMPLES: usize = 200;
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  // The runs `(t0, t1)` of `t ∈ [lo, hi]` where `holds(t)`.
+  let runs = |holds: &dyn Fn(f64) -> bool, lo: f64, hi: f64| {
+    let at = |i: usize| lo + (hi - lo) * i as f64 / SAMPLES as f64;
+    let edge = |mut inside: f64, mut outside: f64| {
+      for _ in 0..30 {
+        let mid = f64::midpoint(inside, outside);
+        if holds(mid) {
+          inside = mid;
+        } else {
+          outside = mid;
+        }
+      }
+      inside
+    };
+    let mut out = Vec::new();
+    let mut start: Option<f64> = None;
+    let mut prev = holds(at(0));
+    if prev {
+      start = Some(lo);
+    }
+    for i in 1..=SAMPLES {
+      let now = holds(at(i));
+      match (prev, now) {
+        (false, true) => start = Some(edge(at(i), at(i - 1))),
+        (true, false) => {
+          if let Some(s) = start.take() {
+            out.push((s, edge(at(i - 1), at(i))));
+          }
+        }
+        _ => {}
+      }
+      prev = now;
+    }
+    if let Some(s) = start {
+      out.push((s, hi));
+    }
+    out
+  };
+  let mut lines = Vec::new();
+  for &x in x_levels {
+    let holds = |y: f64| evaluate_condition(pred, xvar, yvar, x, y);
+    for (a, b) in runs(&holds, y_min, y_max) {
+      lines.push(call1(
+        "Line",
+        Expr::List(vec![point(x, a), point(x, b)].into()),
+      ));
+    }
+  }
+  for &y in y_levels {
+    let holds = |x: f64| evaluate_condition(pred, xvar, yvar, x, y);
+    for (a, b) in runs(&holds, x_min, x_max) {
+      lines.push(call1(
+        "Line",
+        Expr::List(vec![point(a, y), point(b, y)].into()),
+      ));
+    }
+  }
+  lines
 }
 
 /// Cells per axis of a `ColorFunction`-coloured `RegionPlot`.
@@ -4198,211 +4445,337 @@ fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
   polygons
 }
 
-/// How `VectorPlot` draws its vectors, from `ColorFunction` and
-/// `VectorStyle`.
-#[derive(Default)]
+/// How `VectorPlot` colours and shapes its vectors, from
+/// `VectorColorFunction`, `VectorColorFunctionScaling`, `VectorStyle` and
+/// `VectorScaling`.
 struct VectorArrowStyle {
-  /// `ColorFunction -> f`: `f` maps each vector's scaled magnitude to a color.
-  color_function: Option<Expr>,
-  /// `VectorStyle -> color`: one color for every vector.
+  /// `VectorColorFunction`: the colour of each vector.
+  color_function: VectorColoring,
+  /// `VectorColorFunctionScaling -> False` passes the raw arguments.
+  scaling: bool,
+  /// `VectorStyle -> color`: the colour of every vector when
+  /// `VectorColorFunction -> None`.
   color: Option<(u8, u8, u8)>,
   /// `VectorStyle -> "Segment"`: plain segments without arrowheads.
   segments: bool,
+  /// `VectorScaling -> Automatic`: the arrow length grows with the
+  /// magnitude instead of being the same for every vector.
+  scaled_lengths: bool,
 }
 
-/// The `ColorFunction` and `VectorStyle` options among `args[start..]`.
+/// The `VectorColorFunction` of a vector plot.
+enum VectorColoring {
+  /// `Automatic`: the magnitude on `"WL12DefaultVectorGradient"`.
+  Default,
+  /// `None`: the `VectorStyle` colour (Wolfram's default blue otherwise).
+  Plain,
+  /// A gradient name.
+  Named(String),
+  /// A function of `x, y, vx, vy, |v|`.
+  Function(Expr),
+}
+
+/// The vector options among `args[start..]`.
 fn parse_vector_arrow_style(args: &[Expr], start: usize) -> VectorArrowStyle {
-  let mut style = VectorArrowStyle::default();
-  for opt in args.iter().skip(start) {
-    let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-    else {
-      continue;
+  let mut style = VectorArrowStyle {
+    color_function: VectorColoring::Default,
+    scaling: true,
+    color: None,
+    segments: false,
+    scaled_lengths: false,
+  };
+  let opts = &args[start.min(args.len())..];
+  if let Some(value) = option_rule(opts, "VectorColorFunction") {
+    let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+    style.color_function = match &value {
+      Expr::Identifier(s) if s == "Automatic" => VectorColoring::Default,
+      Expr::Identifier(s) if s == "None" => VectorColoring::Plain,
+      Expr::String(name) => VectorColoring::Named(name.clone()),
+      other => VectorColoring::Function(other.clone()),
     };
-    let Expr::Identifier(name) = pattern.as_ref() else {
-      continue;
+  }
+  if let Some(Expr::Identifier(s)) =
+    option_rule(opts, "VectorColorFunctionScaling")
+  {
+    style.scaling = s != "False";
+  }
+  if let Some(Expr::Identifier(s)) = option_rule(opts, "VectorScaling") {
+    style.scaled_lengths = s == "Automatic";
+  }
+  if let Some(value) = option_rule(opts, "VectorStyle") {
+    let directives: Vec<Expr> = match value {
+      Expr::List(items) => items.to_vec(),
+      other => vec![other.clone()],
     };
-    match name.as_str() {
-      "ColorFunction" => {
-        if !matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Automatic" || s == "None")
-        {
-          style.color_function = Some((**replacement).clone());
-        }
+    for d in &directives {
+      if matches!(d, Expr::String(s) if s == "Segment") {
+        style.segments = true;
+      } else if let Some(c) = crate::functions::graphics::parse_color(d) {
+        style.color = Some((
+          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        ));
       }
-      "VectorStyle" => {
-        let directives: Vec<Expr> = match replacement.as_ref() {
-          Expr::List(items) => items.to_vec(),
-          other => vec![other.clone()],
-        };
-        for d in &directives {
-          if matches!(d, Expr::String(s) if s == "Segment") {
-            style.segments = true;
-          } else if let Some(c) = crate::functions::graphics::parse_color(d) {
-            style.color = Some((
-              (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-              (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-              (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-            ));
-          }
-        }
-      }
-      _ => {}
     }
   }
   style
 }
 
-/// `VectorPoints -> n`: the number of sample points across each axis.
-fn parse_vector_points(args: &[Expr], start: usize) -> Option<usize> {
-  let value = option_rule(&args[start..], "VectorPoints")?;
-  let n = try_eval_to_f64(&evaluate_expr_to_expr(value).ok()?)?;
-  (n >= 2.0).then(|| n.round() as usize)
+/// `VectorPoints`: how a vector plot places its sample points.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum VectorPointsSpec {
+  /// `n` (and the named settings): `n` points across the longer side of
+  /// the plot, rows as far apart as in a hexagonal lattice.
+  Count(usize),
+  /// `{nx, ny}`: `max(nx, ny)` points along that axis and the other count
+  /// of rows spread evenly across the other.
+  Grid(usize, usize),
 }
 
-/// Draws arrows for a set of `(x, y, vx, vy, magnitude)` vectors onto `svg`,
-/// scaled so the largest arrow spans about `cell_size * 0.4` pixels, and
-/// returns the `{color, Arrow[...]}` primitives drawn (so callers can hand
-/// them back as `Graphics[{…}]`, e.g. for `VectorPlot[…][[1]]`).
+/// The `VectorPoints` option among `args[start..]` (`Automatic` is 16
+/// points, `Coarse` 10, `Fine` 25, as in Wolfram).
+fn parse_vector_points(args: &[Expr], start: usize) -> VectorPointsSpec {
+  let count = |e: &Expr| -> Option<usize> {
+    let n = try_eval_to_f64(&evaluate_expr_to_expr(e).ok()?)?;
+    (n >= 1.0).then(|| n.round() as usize)
+  };
+  match option_rule(&args[start.min(args.len())..], "VectorPoints") {
+    Some(Expr::Identifier(s)) if s == "Coarse" => VectorPointsSpec::Count(10),
+    Some(Expr::Identifier(s)) if s == "Fine" => VectorPointsSpec::Count(25),
+    Some(Expr::List(items)) if items.len() == 2 => {
+      match (count(&items[0]), count(&items[1])) {
+        (Some(nx), Some(ny)) => VectorPointsSpec::Grid(nx, ny),
+        _ => VectorPointsSpec::Count(16),
+      }
+    }
+    Some(e) => VectorPointsSpec::Count(count(e).unwrap_or(16)),
+    None => VectorPointsSpec::Count(16),
+  }
+}
+
+/// Wolfram's sample points of a vector plot whose data rectangle is
+/// `width` × `height` pixels, as fractions `(u, v)` of the plot range, and
+/// the pixel length of an arrow.
 ///
-/// Each vector points along the direction it has in the plot's own data
-/// coordinates, so a slope field stays tangent to the curves plotted over it
-/// even when the two axes have different scales.
-///
-/// Shared by `VectorPlot` (vectors sampled from a symbolic field over a
-/// regular grid) and `ListVectorPlot` (vectors supplied as literal data), so
-/// both draw identically instead of maintaining two arrow renderers.
-fn render_vector_arrows(
+/// The points form a staggered (hexagonal) lattice along the longer side:
+/// rows of `n` points at the cell centres alternate with rows of `n - 1`
+/// at the cell edges, starting with a full row. With a count `n` the rows
+/// are `√3/2` cells apart and centred across the shorter side; with
+/// `{nx, ny}` the smaller count of rows spans the first to the last cell
+/// centre. Every arrow is `0.9 / max(n, 12)` of the longer side.
+fn vector_sample_points(
+  spec: VectorPointsSpec,
+  width: f64,
+  height: f64,
+) -> (Vec<(f64, f64)>, f64) {
+  let (along_x, n, rows): (bool, usize, Vec<f64>) = match spec {
+    VectorPointsSpec::Count(n) => {
+      let n = n.max(1);
+      let along_x = width >= height;
+      let (long, short) = if along_x {
+        (width, height)
+      } else {
+        (height, width)
+      };
+      // Row spacing as a fraction of the shorter side.
+      let step = long / n as f64 * 3f64.sqrt() / 2.0 / short;
+      let count = ((1.0 / step) - 1e-9).ceil().max(1.0) as usize;
+      let first = (1.0 - (count - 1) as f64 * step) / 2.0;
+      let rows = (0..count).map(|j| first + j as f64 * step).collect();
+      (along_x, n, rows)
+    }
+    VectorPointsSpec::Grid(nx, ny) => {
+      let along_x = nx >= ny;
+      let (n, m) = if along_x { (nx, ny) } else { (ny, nx) };
+      let (n, m) = (n.max(1), m.max(1));
+      let edge = 0.5 / n as f64;
+      let rows = if m == 1 {
+        vec![0.5]
+      } else {
+        (0..m)
+          .map(|j| edge + j as f64 * (1.0 - 2.0 * edge) / (m - 1) as f64)
+          .collect()
+      };
+      (along_x, n, rows)
+    }
+  };
+  let mut points = Vec::new();
+  for (j, &v) in rows.iter().enumerate() {
+    let along: Vec<f64> = if j % 2 == 0 {
+      (0..n).map(|i| (i as f64 + 0.5) / n as f64).collect()
+    } else {
+      (1..n).map(|i| i as f64 / n as f64).collect()
+    };
+    for u in along {
+      points.push(if along_x { (u, v) } else { (v, u) });
+    }
+  }
+  let long = width.max(height);
+  (points, 0.9 / n.max(12) as f64 * long)
+}
+
+/// The field `field_at` sampled at Wolfram's vector points over the plot
+/// range (see [`vector_sample_points`]), as `(x, y, vx, vy, |v|)`, and the
+/// pixel length of an arrow.
+fn sample_vector_field(
+  field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
+  spec: VectorPointsSpec,
+  area: &crate::functions::plot::PlotArea,
+) -> (Vec<(f64, f64, f64, f64, f64)>, f64) {
+  let (points, arrow_len) =
+    vector_sample_points(spec, area.plot_w, area.plot_h);
+  let vectors = points
+    .into_iter()
+    .filter_map(|(u, v)| {
+      let x = area.x_min + u * (area.x_max - area.x_min);
+      let y = area.y_min + v * (area.y_max - area.y_min);
+      let (vx, vy) = field_at(x, y)?;
+      let mag = vx.hypot(vy);
+      mag.is_finite().then_some((x, y, vx, vy, mag))
+    })
+    .collect();
+  (vectors, arrow_len)
+}
+
+/// The arrows of a vector field as `{Arrowheads[…], {color, Arrow[…]}}`
+/// primitives in data coordinates, the way Wolfram's `VectorPlot` builds
+/// them: each arrow `arrow_len` pixels long (scaled by the magnitude under
+/// `VectorScaling -> Automatic`), centred on its sample point and pointing
+/// along the vector as the axes display it, with a head half its length.
+/// Zero vectors are left out.
+fn vector_arrow_primitives(
   vectors: &[(f64, f64, f64, f64, f64)],
-  max_mag: f64,
-  cell_size: f64,
+  arrow_len: f64,
   area: &crate::functions::plot::PlotArea,
   style: &VectorArrowStyle,
-  svg: &mut String,
 ) -> Vec<Expr> {
-  let mut primitives: Vec<Expr> = Vec::new();
-  if max_mag <= 0.0 {
-    return primitives;
-  }
-
-  let to_px = |x: f64, y: f64| -> (f64, f64) {
-    let sx =
-      area.plot_x0 + (x - area.x_min) / (area.x_max - area.x_min) * area.plot_w;
-    let sy =
-      area.plot_y0 + (area.y_max - y) / (area.y_max - area.y_min) * area.plot_h;
-    (sx, sy)
-  };
-
-  // Pixels per unit of each axis: the vector's on-screen direction.
+  type Vector = (f64, f64, f64, f64, f64);
   let px_per_x = area.plot_w / (area.x_max - area.x_min);
   let px_per_y = area.plot_h / (area.y_max - area.y_min);
-  let longest_px = vectors
-    .iter()
-    .map(|&(_, _, vx, vy, _)| (vx * px_per_x).hypot(vy * px_per_y))
-    .fold(0.0_f64, f64::max);
-  if longest_px <= 0.0 {
-    return primitives;
-  }
-  let arrow_scale = cell_size * 0.4 / longest_px;
-  let stroke_w = area.render_width as f64 / 1000.0 * 1.5;
-  // The pixel-space arrow length maps back to a data-space length so the
-  // symbolic arrows have the same footprint as the drawn ones.
-  let min_mag = vectors.iter().map(|v| v.4).fold(f64::INFINITY, f64::min);
-  for &(x, y, vx, vy, mag) in vectors {
-    if mag < 1e-15 {
+  let range = |f: fn(&Vector) -> f64| {
+    vectors
+      .iter()
+      .map(f)
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+        (lo.min(v), hi.max(v))
+      })
+  };
+  let ranges = [
+    range(|v| v.0),
+    range(|v| v.1),
+    range(|v| v.2),
+    range(|v| v.3),
+    range(|v| v.4),
+  ];
+  let rescale = |v: f64, (lo, hi): (f64, f64)| {
+    if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
+  };
+  let to_rgb = |c: crate::functions::graphics::Color| {
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  };
+  let color_of = |v: &Vector| -> (u8, u8, u8) {
+    let s = rescale(v.4, ranges[4]);
+    match &style.color_function {
+      VectorColoring::Default => {
+        crate::functions::plot::wl_default_vector_gradient(s)
+      }
+      VectorColoring::Plain => style.color.unwrap_or((49, 122, 163)),
+      VectorColoring::Named(name) => apply_named_color_function(name, s),
+      VectorColoring::Function(f) => {
+        let raw = [v.0, v.1, v.2, v.3, v.4];
+        let args: Vec<Expr> = raw
+          .iter()
+          .zip(ranges.iter())
+          .map(|(&x, &r)| {
+            Expr::Real(if style.scaling { rescale(x, r) } else { x })
+          })
+          .collect();
+        let call = Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args,
+        };
+        evaluate_expr_to_expr(&call)
+          .ok()
+          .and_then(|c| crate::functions::graphics::parse_color(&c))
+          .map_or_else(
+            || crate::functions::plot::wl_default_vector_gradient(s),
+            to_rgb,
+          )
+      }
+    }
+  };
+  let pt =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let mut primitives = Vec::new();
+  for v in vectors {
+    let &(x, y, vx, vy, mag) = v;
+    let (sx, sy) = (vx * px_per_x, vy * px_per_y);
+    let screen = sx.hypot(sy);
+    if mag < 1e-15 || screen <= 0.0 || !screen.is_finite() {
       continue;
     }
-
-    let (sx, sy) = to_px(x, y);
-    let dx = vx * px_per_x * arrow_scale;
-    let dy = -vy * px_per_y * arrow_scale; // SVG y is flipped
-
-    let ex = sx + dx;
-    let ey = sy + dy;
-
-    // Color: an explicit `VectorStyle` color, else `ColorFunction` of the
-    // scaled magnitude, else a magnitude gradient.
-    let t = (mag / max_mag).clamp(0.0, 1.0);
-    let default_color = (
-      (t * 200.0) as u8 + 50,
-      ((1.0 - t) * 150.0) as u8 + 50,
-      100_u8,
-    );
-    let (r, g, b) = style.color.unwrap_or_else(|| {
-      style
-        .color_function
-        .as_ref()
-        .and_then(|f| {
-          let scaled = if max_mag > min_mag {
-            (mag - min_mag) / (max_mag - min_mag)
-          } else {
-            0.0
-          };
-          let call = Expr::CurriedCall {
-            func: Box::new(f.clone()),
-            args: vec![Expr::Real(scaled)],
-          };
-          let c = crate::functions::graphics::parse_color(
-            &evaluate_expr_to_expr(&call).ok()?,
-          )?;
-          Some((
-            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-          ))
-        })
-        .unwrap_or(default_color)
+    // `VectorScaling -> Automatic` maps the rescaled magnitude `s` to
+    // `1/3 + 2/3 (√(1 + 80 s) - 1) / 8` of the full length, as Wolfram does.
+    let len = if style.scaled_lengths {
+      let s = rescale(mag, ranges[4]);
+      arrow_len
+        * (1.0 / 3.0 + 2.0 / 3.0 * ((1.0 + 80.0 * s).sqrt() - 1.0) / 8.0)
+    } else {
+      arrow_len
+    };
+    let half = len / 2.0 / screen;
+    let (dx, dy) = (sx * half / px_per_x, sy * half / px_per_y);
+    let ends = Expr::List(vec![pt(x - dx, y - dy), pt(x + dx, y + dy)].into());
+    let color = rgb_color(color_of(v));
+    primitives.push(if style.segments {
+      Expr::List(vec![color, call1("Line", ends)].into())
+    } else {
+      let head = Expr::List(
+        vec![Expr::List(
+          vec![Expr::Real(len / 2.0 / area.plot_w), Expr::Real(1.0)].into(),
+        )]
+        .into(),
+      );
+      Expr::List(
+        vec![
+          call1("Arrowheads", head),
+          Expr::List(vec![color, call1("Arrow", ends)].into()),
+        ]
+        .into(),
+      )
     });
-
-    primitives.push(Expr::List(
-      vec![
-        rgb_color((r, g, b)),
-        call1(
-          "Arrow",
-          Expr::List(
-            vec![
-              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-              Expr::List(
-                vec![
-                  Expr::Real(x + dx / px_per_x),
-                  Expr::Real(y - dy / px_per_y),
-                ]
-                .into(),
-              ),
-            ]
-            .into(),
-          ),
-        ),
-      ]
-      .into(),
-    ));
-
-    // Arrow shaft
-    svg.push_str(&format!(
-      "<line x1=\"{sx:.1}\" y1=\"{sy:.1}\" x2=\"{ex:.1}\" y2=\"{ey:.1}\" stroke=\"rgb({r},{g},{b})\" stroke-width=\"{stroke_w:.1}\"/>\n"
-    ));
-
-    // Arrowhead
-    let len = (dx * dx + dy * dy).sqrt();
-    if len > 2.0 && !style.segments {
-      let ux = dx / len;
-      let uy = dy / len;
-      let head_len = len * 0.3;
-      let head_w = head_len * 0.4;
-      let px = -uy;
-      let py = ux;
-      let bx1 = ex - ux * head_len + px * head_w;
-      let by1 = ey - uy * head_len + py * head_w;
-      let bx2 = ex - ux * head_len - px * head_w;
-      let by2 = ey - uy * head_len - py * head_w;
-      svg.push_str(&format!(
-        "<polygon points=\"{ex:.1},{ey:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"rgb({r},{g},{b})\"/>\n"
-      ));
-    }
   }
-
   primitives
+}
+
+/// Draw vector-field (or streamline) primitives over the data rectangle of
+/// `area`.
+fn push_field_primitives_svg(
+  svg: &mut String,
+  primitives: &[Expr],
+  area: &crate::functions::plot::PlotArea,
+  kind: &str,
+) {
+  svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+    primitives,
+    &crate::functions::plot_epilog::PlotArea {
+      x0: area.plot_x0,
+      y0: area.plot_y0,
+      w: area.plot_w,
+      h: area.plot_h,
+      x_min: area.x_min,
+      x_max: area.x_max,
+      y_min: area.y_min,
+      y_max: area.y_max,
+      scale: f64::from(RESOLUTION_SCALE),
+    },
+    kind,
+  ));
 }
 
 /// VectorPlot[{vx, vy}, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -4435,67 +4808,30 @@ fn render_sampled_vector_plot(
   (y_min, y_max): (f64, f64),
   field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
 ) -> Result<Expr, InterpreterError> {
-  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
-  let epilog = parse_vector_plot_epilog(args, start);
-  let prolog = parse_overlay_primitives(args, start, "Prolog");
-  let plot_label = parse_field_plot_label(args, start);
-
+  let mut opts = parse_density_contour_options(args, start);
   let arrow_style = parse_vector_arrow_style(args, start);
-  // `VectorPoints -> n` samples n points across each axis.
-  let grid = parse_vector_points(args, start).map_or(VECTOR_GRID, |n| n - 1);
-  let x_step = (x_max - x_min) / grid as f64;
-  let y_step = (y_max - y_min) / grid as f64;
 
-  // Sample vectors and find max magnitude
-  let mut vectors = Vec::new();
-  let mut max_mag = 0.0_f64;
-  for i in 0..=grid {
-    let x = x_min + i as f64 * x_step;
-    for j in 0..=grid {
-      let y = y_min + j as f64 * y_step;
-      if let Some((vx, vy)) = field_at(x, y) {
-        let mag = (vx * vx + vy * vy).sqrt();
-        max_mag = max_mag.max(mag);
-        vectors.push((x, y, vx, vy, mag));
-      }
-    }
-  }
-
-  // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(plot_label.as_ref());
-  let mut area = crate::functions::plot::generate_axes_only_opts(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
-
+  // Framed like DensityPlot, `Scaled[0.02]` padding on every side.
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
-  splice_field_plot_prolog(&mut svg, &area, &prolog);
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
+  // The `Prolog` goes on the blank canvas now, before the arrows bring
+  // their own `<defs>` (which the later splice would mistake for the
+  // canvas').
+  splice_field_plot_prolog(&mut svg, &area, &std::mem::take(&mut opts.prolog));
 
-  let cell_size = (area.plot_w / grid as f64).min(area.plot_h / grid as f64);
-
+  let (vectors, arrow_len) =
+    sample_vector_field(field_at, parse_vector_points(args, start), &area);
   // Arrows in data coordinates, kept so `VectorPlot[…][[1]]` yields the
   // primitives a surrounding `Graphics[{…}]` can redraw.
-  let primitives = render_vector_arrows(
-    &vectors,
-    max_mag,
-    cell_size,
-    &area,
-    &arrow_style,
-    &mut svg,
-  );
+  let primitives =
+    vector_arrow_primitives(&vectors, arrow_len, &area, &arrow_style);
+  push_field_primitives_svg(&mut svg, &primitives, &area, "vectors");
 
-  push_epilog_primitives(&mut svg, &area, &epilog);
+  push_field_frame(&mut svg, &area, &opts);
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
@@ -4739,7 +5075,8 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// The stream plot of the field `field_at` over the given ranges, with the
-/// options among `args[start..]`.
+/// options among `args[start..]`: framed like DensityPlot, with
+/// `Scaled[0.05]` padding on every side.
 fn render_stream_plot(
   args: &[Expr],
   start: usize,
@@ -4747,37 +5084,24 @@ fn render_stream_plot(
   (y_min, y_max): (f64, f64),
   field_at: &dyn Fn(f64, f64) -> Option<(f64, f64)>,
 ) -> Result<Expr, InterpreterError> {
-  let (svg_width, svg_height, full_width) = parse_field_options(args, start);
-  let plot_label = parse_field_plot_label(args, start);
-  let prolog = parse_overlay_primitives(args, start, "Prolog");
-  let epilog = parse_overlay_primitives(args, start, "Epilog");
-
-  // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(plot_label.as_ref());
-  let area = crate::functions::plot::generate_axes_only_opts(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
-
-  let mut svg = area.svg.clone();
+  let mut opts = parse_density_contour_options(args, start);
+  opts.range_padding = 0.05;
+  let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
+  let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
-  splice_field_plot_prolog(&mut svg, &area, &prolog);
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
+  // The `Prolog` goes on the blank canvas now, before the arrows bring
+  // their own `<defs>` (which the later splice would mistake for the
+  // canvas').
+  splice_field_plot_prolog(&mut svg, &area, &std::mem::take(&mut opts.prolog));
 
   let primitives =
     stream_primitives(field_at, (x_min, x_max), (y_min, y_max), &args[start..]);
-  push_stream_svg(&mut svg, &primitives, &area);
+  push_field_primitives_svg(&mut svg, &primitives, &area, "streams");
 
-  push_epilog_primitives(&mut svg, &area, &epilog);
+  push_field_frame(&mut svg, &area, &opts);
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
@@ -4988,28 +5312,6 @@ fn stream_primitives(
   primitives
 }
 
-/// Draw `stream_primitives` over the plot area of a field plot.
-fn push_stream_svg(
-  svg: &mut String,
-  primitives: &[Expr],
-  area: &crate::functions::plot::PlotArea,
-) {
-  svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
-    primitives,
-    &crate::functions::plot_epilog::PlotArea {
-      x0: area.plot_x0,
-      y0: area.plot_y0,
-      w: area.plot_w,
-      h: area.plot_h,
-      x_min: area.x_min,
-      x_max: area.x_max,
-      y_min: area.y_min,
-      y_max: area.y_max,
-      scale: f64::from(RESOLUTION_SCALE),
-    },
-    "streams",
-  ));
-}
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
 pub fn stream_density_plot_ast(
   args: &[Expr],
@@ -5119,7 +5421,7 @@ pub fn stream_density_plot_ast(
     (y_min, y_max),
     &args[3..],
   );
-  push_stream_svg(&mut svg, &primitives, &area);
+  push_field_primitives_svg(&mut svg, &primitives, &area, "streams");
 
   push_frame(&mut svg, plot_x0, plot_y0, plot_w, plot_h);
   push_epilog_primitives(&mut svg, &area, &epilog);
@@ -5142,8 +5444,6 @@ pub fn vector_density_plot_ast(
     &[xvar.as_str(), yvar.as_str()],
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
-  let plot_label = parse_field_plot_label(args, 3);
 
   let grid_n = 60;
   let mut mag_grid = vec![vec![f64::NAN; grid_n]; grid_n];
@@ -5163,42 +5463,19 @@ pub fn vector_density_plot_ast(
   }
   let (v_min, v_max) = robust_value_range(&mag_samples);
 
-  let grid = parse_vector_points(args, 3).map_or(VECTOR_GRID, |n| n - 1);
-  let x_step = (x_max - x_min) / grid as f64;
-  let y_step = (y_max - y_min) / grid as f64;
-  let mut vectors = Vec::new();
-  let mut max_mag = 0.0_f64;
-  for i in 0..=grid {
-    let x = x_min + i as f64 * x_step;
-    for j in 0..=grid {
-      let y = y_min + j as f64 * y_step;
-      if let Some((vx, vy)) = evaluate_vector(body, &xvar, &yvar, x, y) {
-        let mag = vx.hypot(vy);
-        max_mag = max_mag.max(mag);
-        vectors.push((x, y, vx, vy, mag));
-      }
-    }
-  }
-
-  let margins = field_plot_label_margins(plot_label.as_ref());
-  let mut area = crate::functions::plot::generate_axes_only_opts(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
+  let mut density_opts = parse_density_contour_options(args, 3);
+  let mut area =
+    field_plot_axes((x_min, x_max), (y_min, y_max), &mut density_opts);
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
+  splice_field_plot_prolog(
+    &mut svg,
+    &area,
+    &std::mem::take(&mut density_opts.prolog),
+  );
 
-  let density_opts = parse_density_contour_options(args, 3);
   let (color_function, cf_expr) = match density_opts.cf_expr() {
     Some(cf) => (density_opts.color_function.as_deref(), Some(cf)),
     None => (
@@ -5224,23 +5501,18 @@ pub fn vector_density_plot_ast(
     cf_expr,
   );
 
-  let cell_size = (area.plot_w / grid as f64).min(area.plot_h / grid as f64);
-  let arrow_style = VectorArrowStyle::default();
-  let primitives = render_vector_arrows(
-    &vectors,
-    max_mag,
-    cell_size,
+  // The arrows, sampled and drawn as in VectorPlot.
+  let (vectors, arrow_len) = sample_vector_field(
+    &|x, y| evaluate_vector(body, &xvar, &yvar, x, y),
+    parse_vector_points(args, 3),
     &area,
-    &arrow_style,
-    &mut svg,
   );
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  let arrow_style = parse_vector_arrow_style(args, 3);
+  let primitives =
+    vector_arrow_primitives(&vectors, arrow_len, &area, &arrow_style);
+  push_field_primitives_svg(&mut svg, &primitives, &area, "vectors");
+  push_field_frame(&mut svg, &area, &density_opts);
+  push_field_plot_overlays(&mut svg, &area, &density_opts);
 
   svg.push_str("</svg>");
   Ok(crate::plot_result_with_structure(
@@ -6143,8 +6415,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_y0,
       cell_w,
       cell_h,
-      opts.color_function.as_deref(),
-      opts.cf_expr(),
+      &opts.band_coloring(),
     );
   }
   let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
@@ -7834,115 +8105,289 @@ fn evaluate_complex_at(
   try_extract_complex_f64(&result)
 }
 
-/// Convert complex value to domain coloring HSB color.
-/// Hue is determined by Arg(z), brightness by Abs(z).
-fn complex_to_rgb(re: f64, im: f64) -> (u8, u8, u8) {
-  // libm (not the std methods backed by the platform's libm) so the result
-  // is bit-identical across platforms; macOS and glibc disagree by ULPs,
-  // which flips the 8-bit rounding below at .5 boundaries.
-  let arg = libm::atan2(im, re); // -PI to PI
-  let abs = (re * re + im * im).sqrt();
+/// The LAB stops of Wolfram's cyclic `"MidShiftBalancedHue"` gradient
+/// (from `ColorData["MidShiftBalancedHue", "BlendArgument"]`): the colour
+/// `ComplexPlot` gives the argument of `f`, rescaled from `{-π, π}`.
+const MID_SHIFT_BALANCED_HUE: [(f64, f64, f64); 11] = [
+  (
+    0.696_834_353_860_575_7,
+    -0.338_939_529_841_170_7,
+    -0.176_301_837_746_030_14,
+  ),
+  (
+    0.540_321_883_289_963,
+    0.140_738_576_280_879_93,
+    -0.633_412_299_177_931_2,
+  ),
+  (
+    0.455_352_637_499_781_83,
+    0.524_938_227_665_651_7,
+    -0.762_983_962_036_596_1,
+  ),
+  (
+    0.472_739_848_289_186_1,
+    0.734_560_334_754_151_8,
+    -0.524_738_049_352_345_7,
+  ),
+  (
+    0.498_124_951_476_866_75,
+    0.728_765_216_898_950_6,
+    -0.017_535_695_125_840_745,
+  ),
+  (
+    0.548_794_727_814_933_8,
+    0.629_271_353_261_171,
+    0.427_707_053_320_353_1,
+  ),
+  (
+    0.744_614_499_672_737_1,
+    0.263_245_761_848_233_1,
+    0.726_671_113_987_900_7,
+  ),
+  (
+    0.830_224_736_008_544_3,
+    -0.145_458_704_411_263_74,
+    0.808_118_689_239_579_2,
+  ),
+  (
+    0.746_289_099_140_021_4,
+    -0.550_730_213_853_387_6,
+    0.696_130_246_147_550_4,
+  ),
+  (
+    0.728_327_349_255_748_2,
+    -0.563_983_416_547_880_2,
+    0.324_475_400_605_764_46,
+  ),
+  (
+    0.696_834_353_860_575_7,
+    -0.338_939_529_841_170_7,
+    -0.176_301_837_746_030_14,
+  ),
+];
 
-  // Hue: map argument from [-PI, PI] to [0, 1]
-  let hue = (arg + std::f64::consts::PI) / (2.0 * std::f64::consts::PI);
-
-  // Brightness: use a smooth function that maps [0, inf) to [0, 1)
-  // Following Mathematica's approach: brightness varies with magnitude
-  let brightness = 1.0 - 1.0 / (1.0 + libm::pow(abs, 0.3));
-
-  // Saturation: high saturation, slightly reduced for very large/small magnitudes
-  let saturation = 0.8 + 0.2 * (1.0 - (2.0 * brightness - 1.0).abs());
-
-  hsb_to_rgb(hue, saturation, brightness)
+/// How `ComplexPlot` shades the argument colour by the value of `f`: the
+/// `ColorFunction` names Wolfram defines (`Automatic` is `"LocalMaxAbs"`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ComplexShading {
+  None,
+  CyclicArg,
+  CyclicLogAbs,
+  CyclicLogAbsArg,
+  CyclicLogAbsArgBoundaries,
+  CyclicReImBoundaries,
+  GlobalAbs,
+  MaxAbs,
+  LocalMaxAbs,
+  QuantileAbs,
 }
 
-/// Convert HSB (all in [0,1]) to RGB.
-fn hsb_to_rgb(h: f64, s: f64, b: f64) -> (u8, u8, u8) {
-  let h = h.fract();
-  let h = if h < 0.0 { h + 1.0 } else { h };
-  let hi = (h * 6.0).floor() as u32 % 6;
-  let f = h * 6.0 - hi as f64;
-  let p = b * (1.0 - s);
-  let q = b * (1.0 - f * s);
-  let t = b * (1.0 - (1.0 - f) * s);
-  let (r, g, bl) = match hi {
-    0 => (b, t, p),
-    1 => (q, b, p),
-    2 => (p, b, t),
-    3 => (p, q, b),
-    4 => (t, p, b),
-    _ => (b, p, q),
+impl ComplexShading {
+  fn from_name(name: &str) -> Option<Self> {
+    Some(match name {
+      "CyclicArg" => Self::CyclicArg,
+      "CyclicLogAbs" => Self::CyclicLogAbs,
+      "CyclicLogAbsArg" => Self::CyclicLogAbsArg,
+      "CyclicLogAbsArgBoundaries" => Self::CyclicLogAbsArgBoundaries,
+      "CyclicReImBoundaries" => Self::CyclicReImBoundaries,
+      "GlobalAbs" => Self::GlobalAbs,
+      "MaxAbs" => Self::MaxAbs,
+      "LocalMaxAbs" => Self::LocalMaxAbs,
+      "QuantileAbs" => Self::QuantileAbs,
+      _ => return None,
+    })
+  }
+}
+
+/// `Mod[x, 1]`.
+fn mod1(x: f64) -> f64 {
+  x - x.floor()
+}
+
+/// Wolfram's `biasedSawtooth[f, x]`: a sawtooth from 0.5 to 1 per unit of
+/// `x`, bent by `f`.
+fn biased_sawtooth(f: f64, x: f64) -> f64 {
+  let m = mod1(x);
+  0.5 + 0.5 * m / ((f - 2.0) * (1.0 - m) + 1.0)
+}
+
+/// `Quantile[values, q]` with Wolfram's default parameters: the element at
+/// position `⌈q n⌉` of the sorted values.
+fn quantile_of(sorted: &[f64], q: f64) -> f64 {
+  if sorted.is_empty() {
+    return 0.0;
+  }
+  let k = ((q * sorted.len() as f64).ceil() as usize).clamp(1, sorted.len());
+  sorted[k - 1]
+}
+
+/// Wolfram's `ComplexPlot` colouring of the values `values` (`None` where
+/// `f` has no number): the argument on `"MidShiftBalancedHue"`, shaded by
+/// `shading` as `ComplexPlotsDump`complexArrayPlotRasterGenerate` does.
+fn complex_shaded_colors(
+  values: &[Option<(f64, f64)>],
+  shading: ComplexShading,
+) -> Vec<Option<(u8, u8, u8)>> {
+  use std::f64::consts::PI;
+  let mut abs_sorted: Vec<f64> = values
+    .iter()
+    .flatten()
+    .map(|&(re, im)| re.hypot(im))
+    .collect();
+  abs_sorted.sort_by(f64::total_cmp);
+  let local_max = {
+    let q = quantile_of(&abs_sorted, 0.975);
+    if q == 0.0 {
+      abs_sorted.last().copied().unwrap_or(1.0)
+    } else {
+      q
+    }
   };
-  (channel_to_u8(r), channel_to_u8(g), channel_to_u8(bl))
-}
-
-/// Quantize a [0,1] color channel to an 8-bit value.
-///
-/// The magnitude/argument feeding domain coloring is computed with libm's
-/// `atan2`/`pow`, whose internal `mul_add` calls compile to a hardware FMA on
-/// aarch64 but not on x86_64. That single-vs-double rounding shifts the result
-/// by ~1e-13, which is invisible in the color itself but flips the 8-bit
-/// rounding of a channel value sitting exactly on an `x.5` boundary — so the
-/// same plot renders one LSB apart on macOS and on the Linux CI runner.
-///
-/// Snapping to a 1e-9 grid (10^4× the FP noise, far below any perceptible color
-/// step) before rounding pulls both platforms onto the same side of the
-/// boundary, making the SVG bit-identical everywhere.
-fn channel_to_u8(c: f64) -> u8 {
-  let v = c * 255.0;
-  ((v * 1e9).round() / 1e9).round() as u8
+  let eps = f64::EPSILON;
+  let (r0, r1) = {
+    let with_eps: Vec<f64> = abs_sorted.iter().map(|a| a + eps).collect();
+    let k = 0.9_f64.atanh();
+    (
+      2.0 * quantile_of(&with_eps, 0.05) / k,
+      2.0 * quantile_of(&with_eps, 0.95) / k,
+    )
+  };
+  let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  values
+    .iter()
+    .map(|v| {
+      let (re, im) = (*v)?;
+      let arg = libm::atan2(im, re);
+      let abs = re.hypot(im);
+      let (r, g, b) = crate::functions::plot::lab_blend(
+        &MID_SHIFT_BALANCED_HUE,
+        (arg + PI) / (2.0 * PI),
+      );
+      let c = [r, g, b].map(|x| f64::from(x) / 255.0);
+      // `out = lighten + c (1 - lighten) (1 - darken)` covers every shading.
+      let (lighten, darken, factor) = match shading {
+        ComplexShading::None => (0.0, 0.0, 1.0),
+        ComplexShading::CyclicArg => {
+          (0.0, 0.0, 1.0 - 0.3 * mod1(12.0 * (arg / (2.0 * PI) + 0.5)))
+        }
+        ComplexShading::CyclicLogAbs => {
+          (0.0, 0.0, 1.0 - 0.3 * mod1((abs + eps).log2()))
+        }
+        ComplexShading::CyclicLogAbsArg => (
+          0.0,
+          0.0,
+          1.0
+            - 0.3
+              * mod1((abs + eps).log2())
+              * mod1(12.0 * (arg / (2.0 * PI) + 0.5)),
+        ),
+        ComplexShading::CyclicLogAbsArgBoundaries => (
+          0.0,
+          0.0,
+          biased_sawtooth(1.02, (abs + eps).log2())
+            * biased_sawtooth(1.02, 6.0 * (arg / PI + 1.0)),
+        ),
+        ComplexShading::CyclicReImBoundaries => (
+          0.0,
+          0.0,
+          biased_sawtooth(1.02, 1.5 * re) * biased_sawtooth(1.02, 1.5 * im),
+        ),
+        ComplexShading::GlobalAbs => {
+          let s = 2.0 * abs.atan() / PI;
+          if s < 0.5 {
+            (0.0, 1.0 - 2.0 * s, 1.0)
+          } else {
+            (2.0 * s - 1.0, 0.0, 1.0)
+          }
+        }
+        ComplexShading::MaxAbs => {
+          (2.0 * (abs / 10.0 * PI).atan() / PI, 0.0, 1.0)
+        }
+        ComplexShading::LocalMaxAbs => {
+          (2.0 * (abs / local_max * PI).atan() / PI, 0.0, 1.0)
+        }
+        ComplexShading::QuantileAbs => (
+          1.0 - 1.0 / (2.0 * abs / r1).cosh(),
+          1.0 - (2.0 * abs / r0).tanh(),
+          1.0,
+        ),
+      };
+      let out = c.map(|x| {
+        let x = x * factor;
+        lighten + x * (1.0 - lighten) * (1.0 - darken)
+      });
+      Some((channel(out[0]), channel(out[1]), channel(out[2])))
+    })
+    .collect()
 }
 
 /// ComplexPlot[f, {z, zmin, zmax}]
-/// Domain coloring visualization of a complex function.
+/// Domain coloring visualization of a complex function, framed like
+/// DensityPlot: the argument of `f` picks a hue on `"MidShiftBalancedHue"`
+/// and its magnitude shades it (towards white where `|f|` is large, by
+/// default), sampled on Wolfram's raster (144 points across, 400 for the
+/// cyclic shadings).
 pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
   let (zvar, re_min, re_max, im_min, im_max) =
     parse_complex_iterator(&args[1], "ComplexPlot")?;
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 2);
+  // The colouring is ours; the rest of `parse_density_contour_options`
+  // (frame, labels, image size, epilog) applies as for DensityPlot.
+  let shading = match option_rule(&args[2..], "ColorFunction") {
+    Some(Expr::String(name)) => {
+      ComplexShading::from_name(name).unwrap_or(ComplexShading::LocalMaxAbs)
+    }
+    Some(Expr::Identifier(s)) if s == "None" => ComplexShading::None,
+    _ => ComplexShading::LocalMaxAbs,
+  };
+  let opts_args: Vec<Expr> = args
+    .iter()
+    .filter(|a| {
+      !matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction"))
+    })
+    .cloned()
+    .collect();
+  let mut opts = parse_density_contour_options(&opts_args, 2);
+  let grid_size = match shading {
+    ComplexShading::None
+    | ComplexShading::GlobalAbs
+    | ComplexShading::QuantileAbs
+    | ComplexShading::MaxAbs
+    | ComplexShading::LocalMaxAbs => 144,
+    _ => 400,
+  };
 
-  let grid_size = FIELD_GRID;
-  let plot_label = parse_field_plot_label(args, 2);
-
-  // Use plotters for axes (Re on x-axis, Im on y-axis), reserving room above
-  // the frame for a PlotLabel.
-  let margins = field_plot_label_margins(plot_label.as_ref());
-  let mut area = crate::functions::plot::generate_axes_only_opts(
-    (re_min, re_max),
-    (im_min, im_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
-
+  let mut area = field_plot_axes((re_min, re_max), (im_min, im_max), &mut opts);
   let mut svg = std::mem::take(&mut area.svg);
-  // Remove closing </svg> to append custom elements
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
   }
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
 
-  // Render domain coloring as one embedded bitmap (a pixel per sample)
-  // stretched over the plot area: no per-cell rect seams.
-  use base64::Engine as _;
-  let mut img = image::RgbaImage::new(grid_size as u32, grid_size as u32);
+  // Sample the cell centres, column by column from the left, each column
+  // from the bottom.
+  let mut values = Vec::with_capacity(grid_size * grid_size);
   for i in 0..grid_size {
     let re = re_min + (i as f64 + 0.5) / grid_size as f64 * (re_max - re_min);
     for j in 0..grid_size {
       let im = im_min + (j as f64 + 0.5) / grid_size as f64 * (im_max - im_min);
-      let px = if let Some((fre, fim)) =
+      values.push(
         evaluate_complex_at(body, &zvar, re, im)
-        && fre.is_finite()
-        && fim.is_finite()
-      {
-        let (r, g, b) = complex_to_rgb(fre, fim);
-        image::Rgba([r, g, b, 255])
-      } else {
-        image::Rgba([0, 0, 0, 0])
+          .filter(|(a, b)| a.is_finite() && b.is_finite()),
+      );
+    }
+  }
+  let colors = complex_shaded_colors(&values, shading);
+
+  // One embedded bitmap (a pixel per sample) stretched over the plot area:
+  // no per-cell rect seams.
+  use base64::Engine as _;
+  let mut img = image::RgbaImage::new(grid_size as u32, grid_size as u32);
+  for i in 0..grid_size {
+    for j in 0..grid_size {
+      let px = match colors[i * grid_size + j] {
+        Some((r, g, b)) => image::Rgba([r, g, b, 255]),
+        None => image::Rgba([0, 0, 0, 0]),
       };
       // Flip y: higher im values at top
       img.put_pixel(i as u32, (grid_size - 1 - j) as u32, px);
@@ -7959,13 +8404,8 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       area.plot_x0, area.plot_y0, area.plot_w, area.plot_h
     ));
   }
-  push_frame(
-    &mut svg,
-    area.plot_x0,
-    area.plot_y0,
-    area.plot_w,
-    area.plot_h,
-  );
+  push_field_frame(&mut svg, &area, &opts);
+  push_field_plot_overlays(&mut svg, &area, &opts);
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))

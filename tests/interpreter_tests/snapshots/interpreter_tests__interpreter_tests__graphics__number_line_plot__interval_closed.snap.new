@@ -1,0 +1,43 @@
+---
+source: tests/interpreter_tests/graphics.rs
+assertion_line: 30112
+expression: "export_svg(\"NumberLinePlot[Interval[{0, 1}]]\")"
+---
+<svg width="360" height="38" viewBox="0 0 3600 380" xmlns="http://www.w3.org/2000/svg">
+<rect width="3600" height="380" fill="#ffffff"/>
+<line x1="363.0" y1="110.6" x2="3227.0" y2="110.6" stroke="rgb(61,153,204)" stroke-width="16.0"/>
+<circle cx="363.0" cy="110.6" r="22.5" fill="rgb(61,153,204)"/>
+<circle cx="3227.0" cy="110.6" r="22.5" fill="rgb(61,153,204)"/>
+<line x1="5.0" y1="221.2" x2="3585.0" y2="221.2" stroke="#666666" stroke-width="2.0"/>
+<line x1="76.6" y1="221.2" x2="76.6" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="219.8" y1="221.2" x2="219.8" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="506.2" y1="221.2" x2="506.2" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="649.4" y1="221.2" x2="649.4" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="792.6" y1="221.2" x2="792.6" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1079.0" y1="221.2" x2="1079.0" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1222.2" y1="221.2" x2="1222.2" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1365.4" y1="221.2" x2="1365.4" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1651.8" y1="221.2" x2="1651.8" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1795.0" y1="221.2" x2="1795.0" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="1938.2" y1="221.2" x2="1938.2" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2224.6" y1="221.2" x2="2224.6" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2367.8" y1="221.2" x2="2367.8" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2511.0" y1="221.2" x2="2511.0" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2797.4" y1="221.2" x2="2797.4" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="2940.6" y1="221.2" x2="2940.6" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3083.8" y1="221.2" x2="3083.8" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3370.2" y1="221.2" x2="3370.2" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="3513.4" y1="221.2" x2="3513.4" y2="207.3" stroke="#666666" stroke-width="2.0"/>
+<line x1="363.0" y1="221.2" x2="363.0" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="363.0" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.0</text>
+<line x1="935.8" y1="221.2" x2="935.8" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="935.8" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.2</text>
+<line x1="1508.6" y1="221.2" x2="1508.6" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="1508.6" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.4</text>
+<line x1="2081.4" y1="221.2" x2="2081.4" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="2081.4" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.6</text>
+<line x1="2654.2" y1="221.2" x2="2654.2" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="2654.2" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.8</text>
+<line x1="3227.0" y1="221.2" x2="3227.0" y2="198.2" stroke="#666666" stroke-width="2.0"/>
+<text x="3227.0" y="341.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1.0</text>
+</svg>

@@ -1680,24 +1680,60 @@ impl PolarAxesSpec {
   }
 
   /// The primitives drawn under the curve, and the half-width of the square
-  /// plot range that holds the axes and their labels. `r_max` is the largest
-  /// radius the curve reaches.
+  /// plot range that holds the axes and their labels. `r_max` is the
+  /// distance of the curve's bounding box's farthest corner from the origin.
+  ///
+  /// As in Wolfram, the angular axis is a circle at the first radial tick
+  /// at or beyond `r_max`, with major ticks and labels every π/12 (minor
+  /// ticks every π/36) pointing outwards; the grid has a spoke every π/12
+  /// and a circle at every radial tick inside the axis; and the radial
+  /// axis runs up from the origin with ticks every major and fifth of a
+  /// major on its right, labelled at the majors.
   fn prolog(&self, r_max: f64) -> (Vec<Expr>, f64) {
-    let step = crate::functions::plot::nice_step(r_max.max(1e-9), 4);
+    use crate::functions::plot_axes::{AxisScale, AxisTicks};
+    use std::f64::consts::PI;
+    let ticks = AxisTicks::new(
+      AxisScale {
+        min: 0.0,
+        max: r_max.max(1e-9),
+        log: false,
+      },
+      false,
+      None,
+    );
+    let step = match ticks.majors.as_slice() {
+      [(a, _), (b, _), ..] => b - a,
+      _ => crate::functions::plot::nice_step(r_max.max(1e-9), 5),
+    };
     let steps = (r_max / step - 1e-9).ceil().max(1.0) as usize;
     let radius = step * steps as f64;
+    let extent = radius * 1.15;
+    // Tick lengths are fractions of the plot range's width.
+    let width = 2.0 * extent;
     let point =
       |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    let gray = |level: f64| call1("GrayLevel", Expr::Real(level));
     let line = |a: (f64, f64), b: (f64, f64)| {
       call1(
         "Line",
         Expr::List(vec![point(a.0, a.1), point(b.0, b.1)].into()),
       )
     };
+    let grid_style = call(
+      "Directive",
+      vec![
+        call1("GrayLevel", Expr::Real(0.5)),
+        call1("Opacity", Expr::Real(0.4)),
+      ],
+    );
     let mut items: Vec<Expr> = Vec::new();
 
-    let mut grid = vec![gray(0.8)];
+    let mut grid = vec![grid_style];
+    if self.angular_grid {
+      for k in 0..24 {
+        let a = PI / 12.0 * k as f64;
+        grid.push(line((0.0, 0.0), (radius * a.cos(), radius * a.sin())));
+      }
+    }
     if self.radial_grid {
       for k in 1..steps {
         grid.push(call(
@@ -1706,59 +1742,73 @@ impl PolarAxesSpec {
         ));
       }
     }
-    if self.angular_grid {
-      for k in 0..12 {
-        let a = std::f64::consts::PI / 6.0 * k as f64;
-        grid.push(line((0.0, 0.0), (radius * a.cos(), radius * a.sin())));
-      }
-    }
     items.push(Expr::List(grid.into()));
 
-    // The axes: the angular circle and the radial axis along angle zero.
-    let mut axes = vec![gray(0.4)];
-    axes.push(call("Circle", vec![point(0.0, 0.0), Expr::Real(radius)]));
-    axes.push(line((0.0, 0.0), (radius, 0.0)));
-    for k in 0..12 {
-      let a = std::f64::consts::PI / 6.0 * k as f64;
+    // The angular axis: the circle, its outward ticks and their labels.
+    let mut axis =
+      vec![call("Circle", vec![point(0.0, 0.0), Expr::Real(radius)])];
+    for k in 0..72 {
+      let a = PI / 36.0 * k as f64;
+      let len = if k % 3 == 0 { 0.006 } else { 0.004 } * width;
       let (c, s) = (a.cos(), a.sin());
-      axes.push(line(
+      axis.push(line(
         (radius * c, radius * s),
-        (radius * 1.03 * c, radius * 1.03 * s),
+        ((radius + len) * c, (radius + len) * s),
       ));
     }
-    items.push(Expr::List(axes.into()));
-
-    let label = |text: String, at: (f64, f64), offset: (f64, f64)| {
-      call(
+    for k in 0..24_i128 {
+      let a = PI / 12.0 * k as f64;
+      let (c, s) = (a.cos(), a.sin());
+      let text = if self.degree_labels {
+        Expr::String(format!("{}°", 15 * k))
+      } else {
+        // `k π / 12` in lowest terms, typeset as a stacked fraction.
+        let fraction = call(
+          "Times",
+          vec![
+            call("Rational", vec![Expr::Integer(k), Expr::Integer(12)]),
+            Expr::Identifier("Pi".to_string()),
+          ],
+        );
+        crate::evaluator::evaluate_expr_to_expr(&fraction)
+          .unwrap_or(Expr::Integer(0))
+      };
+      axis.push(call(
         "Text",
         vec![
-          Expr::String(text),
-          point(at.0, at.1),
-          point(offset.0, offset.1),
+          call("Style", vec![text, Expr::Integer(10)]),
+          call(
+            "Offset",
+            vec![point(8.0 * c, 8.0 * s), point(radius * c, radius * s)],
+          ),
+          point(-c, -s),
         ],
-      )
-    };
-    let mut labels = vec![gray(0.4)];
-    if self.degree_labels {
-      for k in 0..12 {
-        let a = std::f64::consts::PI / 6.0 * k as f64;
-        labels.push(label(
-          format!("{}°", 30 * k),
-          (radius * 1.12 * a.cos(), radius * 1.12 * a.sin()),
-          (0.0, 0.0),
+      ));
+    }
+    items.push(Expr::List(axis.into()));
+
+    // The radial axis, up the positive y axis.
+    if self.radial_labels {
+      let mut radial = vec![line((0.0, 0.0), (0.0, radius))];
+      for k in 0..=steps * 5 {
+        let r = step * k as f64 / 5.0;
+        let len = if k % 5 == 0 { 0.006 } else { 0.003 } * width;
+        radial.push(line((0.0, r), (len, r)));
+      }
+      for k in 0..=steps {
+        let r = step * k as f64;
+        radial.push(call(
+          "Text",
+          vec![
+            call("Style", vec![Expr::Real(r), Expr::Integer(10)]),
+            call("Offset", vec![point(8.0, 0.0), point(0.006 * width, r)]),
+            point(-1.0, 0.0),
+          ],
         ));
       }
+      items.push(Expr::List(radial.into()));
     }
-    if self.radial_labels {
-      for k in 1..=steps {
-        let r = step * k as f64;
-        let text = format!("{r:.6}");
-        let text = text.trim_end_matches('0').trim_end_matches('.').to_string();
-        labels.push(label(text, (r, 0.0), (0.0, 1.5)));
-      }
-    }
-    items.push(Expr::List(labels.into()));
-    (items, radius * 1.3)
+    (items, extent)
   }
 }
 
@@ -1782,6 +1832,22 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => items.iter().collect(),
     _ => vec![body],
   };
+  // `PlotLegends -> "Expressions"` names each curve by its function, set
+  // in TraditionalForm as Plot's are.
+  let expressions_legend = args[2..].iter().any(|opt| {
+    crate::functions::graphics::option_name_value(opt).is_some_and(
+      |(name, value)| {
+        name == "PlotLegends"
+          && matches!(&*value, Expr::String(s) if s == "Expressions")
+      },
+    )
+  });
+  if expressions_legend && plot_opts.plot_legends.is_empty() {
+    plot_opts.plot_legends = bodies
+      .iter()
+      .map(|b| crate::functions::graphics::traditional_label(b))
+      .collect();
+  }
 
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
   let step = (t_max - t_min) / (num_samples - 1) as f64;
@@ -1804,12 +1870,10 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (mut data_x, mut data_y) = compute_data_ranges(&all_points);
   if let Some(axes) = PolarAxesSpec::from_options(&args[2..]) {
-    let r_max = all_points
-      .iter()
-      .flatten()
-      .map(|&(x, y)| x.hypot(y))
-      .filter(|r| r.is_finite())
-      .fold(0.0_f64, f64::max);
+    // The farthest corner of the curve's bounding box.
+    let corner = |(lo, hi): (f64, f64)| lo.abs().max(hi.abs());
+    let r_max = corner(data_x).hypot(corner(data_y));
+    let r_max = if r_max.is_finite() { r_max } else { 1.0 };
     let (prolog, extent) = axes.prolog(r_max);
     plot_opts.prolog.extend(prolog);
     plot_opts.axes = (false, false);

@@ -9595,7 +9595,7 @@ pub(crate) fn matrix_plot_gradient(t: f64) -> (u8, u8, u8) {
 /// `Blend` of `LABColor` stops (L in [0, 1], a/b divided by 100) at `t`:
 /// linear in LAB, then converted D50-LAB → sRGB with out-of-gamut channels
 /// clipped, as Wolfram renders it.
-fn lab_blend(stops: &[(f64, f64, f64)], t: f64) -> (u8, u8, u8) {
+pub(crate) fn lab_blend(stops: &[(f64, f64, f64)], t: f64) -> (u8, u8, u8) {
   let pos = t.clamp(0.0, 1.0) * (stops.len() - 1) as f64;
   let i = (pos.floor() as usize).min(stops.len() - 2);
   let f = pos - i as f64;
@@ -14257,9 +14257,16 @@ pub(crate) fn parse_plot_legends(
     Expr::List(items) => {
       let labels = items
         .iter()
-        .map(|item| {
-          crate::functions::graphics::styled_axis_label(item)
-            .unwrap_or_else(|| expr_to_string(item))
+        .map(|item| match item {
+          // `TraditionalForm[expr]` is typeset as the label of a
+          // `"Expressions"` legend is.
+          Expr::FunctionCall { name, args }
+            if name == "TraditionalForm" && args.len() == 1 =>
+          {
+            crate::functions::graphics::traditional_label(&args[0])
+          }
+          _ => crate::functions::graphics::styled_axis_label(item)
+            .unwrap_or_else(|| expr_to_string(item)),
         })
         .collect();
       (labels, false, false, LegendPosition::Right)

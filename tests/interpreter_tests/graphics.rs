@@ -15798,7 +15798,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "PolarPlot[2 Cos[3 t], {t, 0, Pi}, PolarAxes -> True, \
          PolarGridLines -> {None, Automatic}]",
       );
-      assert!(svg.contains(">1<") && svg.contains(">2<"));
+      // The radial ticks are labelled with machine reals, as in Wolfram.
+      assert!(svg.contains(">1.<") && svg.contains(">2.<"), "{svg}");
       assert!(!svg.contains("°"));
     }
 
@@ -19374,14 +19375,61 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn vector_plot_color_function_and_segment_style() {
-      // Regression: VectorPlot ignored ColorFunction, VectorStyle and
+      // Regression: VectorPlot ignored VectorColorFunction, VectorStyle and
       // VectorPoints, so a red slope field with plain segments came out as
       // a multicolored field of arrows on the default 16-point grid.
+      // `VectorPoints -> 4` is Wolfram's staggered lattice: rows of 4 and
+      // 3 points, 5 rows across the square.
       let svg = export_svg(
-        "VectorPlot[{1, y}, {t, 0, 1}, {y, 0, 1}, ColorFunction -> (Hue[0] &), VectorStyle -> \"Segment\", VectorPoints -> 4]",
+        "VectorPlot[{1, y}, {t, 0, 1}, {y, 0, 1}, VectorColorFunction -> (Hue[0] &), VectorStyle -> \"Segment\", VectorPoints -> 4]",
       );
-      assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 16, "{svg}");
+      assert_eq!(
+        svg.matches("stroke=\"rgb(255,0,0)\"").count(),
+        3 * 4 + 2 * 3,
+        "{svg}"
+      );
       assert!(!svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn vector_plot_arrows_have_wolfram_size_and_colors() {
+      // Regression: the arrows were scaled to 40% of a grid cell by
+      // magnitude and drawn as near-invisible specks in a pink-to-green
+      // gradient. Wolfram draws every arrow 0.9/16 of the plot wide
+      // (`VectorScaling -> None`) on a 16-across staggered lattice,
+      // coloured by magnitude on "WL12DefaultVectorGradient", with a head
+      // half the arrow's length.
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot[{x, -y}, {x, -2, 2}, {y, -2, 2}][[1]], _Arrow, Infinity]]"
+        )
+        .unwrap(),
+        "294"
+      );
+      assert_eq!(
+        interpret(
+          "Union[Round[Norm[#[[2]] - #[[1]]] & /@ Cases[VectorPlot[{x, -y}, {x, -2, 2}, {y, -2, 2}][[1]], Arrow[p_] :> p, Infinity], 0.001]]"
+        )
+        .unwrap(),
+        "{0.225}"
+      );
+      // The weakest arrow is the gradient's dark blue end.
+      assert_eq!(
+        interpret(
+          "First[Cases[VectorPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 5][[1]], {___, {c_, Arrow[{{a_, _}, _}]}} /; a < 0.1 :> c, Infinity]]"
+        )
+        .unwrap(),
+        "RGBColor[0., 0., 0.6980392156862745]"
+      );
+      // `VectorScaling -> Automatic` grows the arrows with the magnitude:
+      // a third of the full length for the weakest one.
+      assert_eq!(
+        interpret(
+          "MinMax[Round[Norm[#[[2]] - #[[1]]] & /@ Cases[VectorPlot[{x, 0}, {x, 0, 1}, {y, 0, 1}, VectorScaling -> Automatic][[1]], Arrow[p_] :> p, Infinity], 0.0001]]"
+        )
+        .unwrap(),
+        "{0.0188, 0.0563}"
+      );
     }
 
     #[test]
@@ -19394,16 +19442,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         let svg = export_svg(&format!(
           "VectorPlot[{{1, 40}}, {{t, 0, 1}}, {{y, 0, {y_max}}}, VectorStyle -> \"Segment\", VectorPoints -> 2]"
         ));
-        let line = svg
-          .lines()
-          .find(|l| l.starts_with("<line") && l.contains("stroke=\"rgb("))
+        let points = svg
+          .split("<polyline")
+          .nth(1)
+          .and_then(|p| p.split("points=\"").nth(1))
+          .and_then(|p| p.split('"').next())
           .expect("arrow shaft");
-        let attr = |n: &str| -> f64 {
-          let key = format!("{n}=\"");
-          let rest = &line[line.find(&key).unwrap() + key.len()..];
-          rest[..rest.find('"').unwrap()].parse().unwrap()
-        };
-        (attr("y1") - attr("y2")) / (attr("x2") - attr("x1"))
+        let xy: Vec<f64> = points
+          .split([' ', ','])
+          .filter(|t| !t.is_empty())
+          .map(|t| t.parse().unwrap())
+          .collect();
+        (xy[1] - xy[3]) / (xy[2] - xy[0])
       };
       let ratio = slope("40") / slope("100");
       assert!((ratio - 2.5).abs() < 0.01, "ratio = {ratio}");
@@ -30772,7 +30822,7 @@ mod number_line_plot {
     let svg = export_svg("NumberLinePlot[x >= 5, {x, 0, 10}]");
     // Filled circle (no stroke-only pattern) at the boundary
     assert!(
-      svg.contains(r#"r="35.0" fill="rgb(61,153,204)"/>"#),
+      svg.contains(r#"r="22.5" fill="rgb(61,153,204)"/>"#),
       "Expected filled circle at boundary for inclusive inequality"
     );
     // Right-pointing arrow
@@ -30805,7 +30855,7 @@ mod number_line_plot {
       "Expected left arrow for region extending beyond domain"
     );
     assert!(
-      svg.contains(r#"r="35.0" fill="rgb(61,153,204)"/>"#),
+      svg.contains(r#"r="22.5" fill="rgb(61,153,204)"/>"#),
       "Expected filled circle at boundary for inclusive inequality"
     );
   }
