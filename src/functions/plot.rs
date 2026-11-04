@@ -15217,7 +15217,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// width less the usual tick-label padding, at the plot's aspect ratio.
 pub(crate) fn estimated_plot_area(opts: &PlotOptions) -> (f64, f64) {
   let w = (opts.svg_width as f64 - 25.0).max(10.0);
-  let ratio = opts.aspect_ratio.unwrap_or(1.0 / 1.618_033_988_749_895);
+  // Default aspect ratio is 1/GoldenRatio.
+  let golden_ratio = f64::midpoint(1.0, 5.0_f64.sqrt());
+  let ratio = opts.aspect_ratio.unwrap_or(1.0 / golden_ratio);
   (w, w * ratio)
 }
 
