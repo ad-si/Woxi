@@ -950,8 +950,9 @@ mod graph_embedding {
   #[test]
   fn complete_graph_4() {
     assert_eq!(
+      // A triangle around its centre (`"StarEmbedding"`).
       interpret("GraphEmbedding[CompleteGraph[4]]").unwrap(),
-      "{{-1., 0.}, {0., -1.}, {1., 0.}, {0., 1.}}"
+      "{{0., 0.}, {0.8660254037844384, -0.5}, {0., 1.}, {-0.8660254037844392, -0.5}}"
     );
   }
 
@@ -967,15 +968,16 @@ mod graph_embedding {
   fn single_edge() {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 -> 2}]]").unwrap(),
-      "{{0., -1.}, {0., 1.}}"
+      "{{1., 0.}, {0., 0.}}"
     );
   }
 
   #[test]
   fn path_graph() {
     assert_eq!(
+      // A path lies on a line.
       interpret("GraphEmbedding[PathGraph[{1, 2, 3, 4}]]").unwrap(),
-      "{{-1., 0.}, {0., -1.}, {1., 0.}, {0., 1.}}"
+      "{{0., 0.}, {1., 0.}, {2., 0.}, {3., 0.}}"
     );
   }
 
@@ -2304,7 +2306,9 @@ mod two_way_rule {
       pairs_checked += 1;
     }
     assert!(
-      pairs_checked >= 50,
+      // (Edges shorter than 2 px, which the setback at both vertex
+      // boundaries leaves for the tightest clusters, are skipped.)
+      pairs_checked >= 40,
       "expected to find many arrow edges, got {pairs_checked}"
     );
   }
@@ -4415,9 +4419,9 @@ mod highlight_graph {
       "ExportString[HighlightGraph[{G}, {{1}}], \"SVG\"]"
     ))
     .unwrap();
-    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 1);
     // The other two vertices keep the default blue.
-    assert_eq!(svg.matches("fill=\"rgb(66,116,183)\"").count(), 2);
+    assert_eq!(svg.matches("fill=\"rgb(128,179,255)\"").count(), 2);
   }
 
   #[test]
@@ -4426,8 +4430,8 @@ mod highlight_graph {
       "ExportString[HighlightGraph[{G}, {{1 <-> 2}}], \"SVG\"]"
     ))
     .unwrap();
-    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
-    assert_eq!(svg.matches("stroke=\"rgb(153,153,153)\"").count(), 2);
+    assert_eq!(svg.matches("stroke=\"rgb(179,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("stroke=\"rgb(54,104,179)\"").count(), 2);
   }
 
   #[test]
@@ -4435,7 +4439,7 @@ mod highlight_graph {
     let svg =
       interpret(&format!("ExportString[HighlightGraph[{G}, 2], \"SVG\"]"))
         .unwrap();
-    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 1);
   }
 
   #[test]
@@ -4461,7 +4465,7 @@ mod highlight_graph {
     )
     .unwrap();
     // Every vertex gets its own color, so the default blue is gone.
-    assert!(!svg.contains("fill=\"rgb(66,116,183)\""));
+    assert!(!svg.contains("fill=\"rgb(128,179,255)\""));
   }
 
   #[test]
@@ -4470,9 +4474,10 @@ mod highlight_graph {
       "ExportString[HighlightGraph[{G}, Subgraph[{G}, {{1, 2}}]], \"SVG\"]"
     ))
     .unwrap();
-    // Vertices 1 and 2 plus the edge between them.
-    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 2);
-    assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
+    // Vertices 1 and 2 plus the edge between them (the vertices are
+    // outlined in the highlight colour too).
+    assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 2);
+    assert_eq!(svg.matches("stroke=\"rgb(179,0,0)\"").count(), 3);
   }
 
   #[test]
@@ -4481,7 +4486,7 @@ mod highlight_graph {
       "ExportString[HighlightGraph[{G}, {{99, 1}}], \"SVG\"]"
     ))
     .unwrap();
-    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 1);
   }
 
   #[test]
@@ -4501,7 +4506,7 @@ mod highlight_graph {
        VertexStyle -> Orange], {2}], \"SVG\"]",
     )
     .unwrap();
-    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 1);
     // The un-highlighted vertices keep the graph's own orange.
     assert_eq!(svg.matches("fill=\"rgb(255,128,0)\"").count(), 2);
   }
@@ -4528,7 +4533,7 @@ mod graph_style_rules {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""));
     assert!(svg.contains("fill=\"rgb(0,255,0)\""));
     // Vertex 2 is not named by a rule and keeps the default blue.
-    assert_eq!(svg.matches("fill=\"rgb(66,116,183)\"").count(), 1);
+    assert_eq!(svg.matches("fill=\"rgb(128,179,255)\"").count(), 1);
   }
 
   #[test]
@@ -4550,7 +4555,7 @@ mod graph_style_rules {
     )
     .unwrap();
     assert_eq!(svg.matches("stroke=\"rgb(255,0,0)\"").count(), 1);
-    assert_eq!(svg.matches("stroke=\"rgb(153,153,153)\"").count(), 1);
+    assert_eq!(svg.matches("stroke=\"rgb(54,104,179)\"").count(), 1);
   }
 
   #[test]
@@ -9127,8 +9132,7 @@ mod graph_background {
     )
     .unwrap();
     assert!(
-      svg
-        .contains("<rect width=\"360\" height=\"317\" fill=\"rgb(255,0,0)\"/>")
+      svg.contains("<rect width=\"360\" height=\"23\" fill=\"rgb(255,0,0)\"/>")
     );
   }
 
@@ -9225,5 +9229,367 @@ mod graph_hub {
       interpret("{GraphHub[5], GraphHub[Graph[{1 -> 2}], \"All\"]}").unwrap(),
       "{GraphHub[5], GraphHub[Graph[<2>, <1>], All]}"
     );
+  }
+}
+
+/// A graph is drawn in Wolfram's look: light blue vertices with a
+/// translucent black outline, translucent blue edges, vertex sizes and
+/// label positions as Wolfram computes them.
+mod wolfram_graph_look {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// `(cx, rx)` of every ellipse in an SVG.
+  fn ellipses(svg: &str) -> Vec<(f64, f64)> {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let key = format!("{name}=\"");
+      let start = tag.find(&key).unwrap() + key.len();
+      tag[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    svg
+      .split("<ellipse ")
+      .skip(1)
+      .map(|t| (attr(t, "cx"), attr(t, "rx")))
+      .collect()
+  }
+
+  #[test]
+  fn default_colours_and_opacities() {
+    let out = svg("Graph[{1 <-> 2, 2 <-> 3}]");
+    // Hue[0.6, 0.5, 1] vertices outlined in GrayLevel[0] at Opacity[0.7].
+    assert_eq!(out.matches("fill=\"rgb(128,179,255)\"").count(), 3);
+    assert_eq!(out.matches("stroke-opacity=\"0.7\"").count(), 3);
+    // Hue[0.6, 0.7, 0.7] edges at Opacity[0.7].
+    assert_eq!(out.matches("stroke=\"rgb(54,104,179)\"").count(), 2);
+  }
+
+  #[test]
+  fn numeric_vertex_size_is_a_fraction_of_the_closest_pair() {
+    // The closest vertices are 1 apart, so the diameter is 0.3.
+    let out = svg(
+      "Graph[{1 <-> 2, 2 <-> 3}, VertexSize -> 0.3, \
+       VertexCoordinates -> {{0, 0}, {1, 0}, {3, 0}}]",
+    );
+    let e = ellipses(&out);
+    let unit = e[1].0 - e[0].0;
+    for (_, rx) in &e {
+      assert!((rx / unit - 0.15).abs() < 1e-3, "{e:?}");
+    }
+  }
+
+  #[test]
+  fn per_vertex_sizes() {
+    let out = svg(
+      "Graph[{1 <-> 2, 2 <-> 3}, VertexSize -> {2 -> 0.5}, \
+       VertexCoordinates -> {{0, 0}, {1, 0}, {3, 0}}]",
+    );
+    let e = ellipses(&out);
+    let unit = e[1].0 - e[0].0;
+    assert!((e[1].1 / unit - 0.25).abs() < 1e-3, "{e:?}");
+    // The others keep the automatic size (0.0302 for an extent of 3).
+    assert!((e[0].1 / unit - 0.030_24).abs() < 1e-3, "{e:?}");
+  }
+
+  #[test]
+  fn named_vertex_sizes() {
+    let out = svg(
+      "Graph[{1 <-> 2}, VertexSize -> Large, \
+       VertexCoordinates -> {{0, 0}, {2, 0}}]",
+    );
+    let e = ellipses(&out);
+    let unit = (e[1].0 - e[0].0) / 2.0;
+    assert!((e[0].1 / unit - 0.4).abs() < 1e-3, "{e:?}");
+  }
+
+  #[test]
+  fn vertex_shape_function_names_per_vertex() {
+    let out = svg(
+      "CycleGraph[4, VertexShapeFunction -> \
+       {1 -> \"Square\", 2 -> \"Diamond\", 3 -> \"Star\"}]",
+    );
+    // A square (rect, besides the background), a diamond and a star
+    // (polygons), and one disk.
+    assert_eq!(out.matches("<rect").count() - 1, 1, "{out}");
+    assert_eq!(out.matches("<polygon").count(), 2, "{out}");
+    assert_eq!(out.matches("<ellipse").count(), 1, "{out}");
+  }
+
+  #[test]
+  fn edge_labels_from_edge_weights() {
+    let out = svg(
+      "Graph[{1 <-> 2, 2 <-> 3}, EdgeWeight -> {4, 7}, \
+       EdgeLabels -> \"EdgeWeight\"]",
+    );
+    assert!(
+      out.contains(">4</text>") && out.contains(">7</text>"),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn name_labels_sit_above_right_of_the_vertex() {
+    let out = svg("Graph[{1 <-> 2}, VertexLabels -> \"Name\"]");
+    assert_eq!(out.matches("text-anchor=\"start\"").count(), 2, "{out}");
+  }
+
+  #[test]
+  fn graph_plot_of_rules_draws_plain_lines() {
+    assert!(!svg("GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}]").contains("<polygon"));
+    assert!(!svg("TreePlot[{1 -> 2, 1 -> 3}]").contains("<polygon"));
+    // A directed Graph keeps its arrows.
+    assert!(svg("GraphPlot[Graph[{1 -> 2}]]").contains("<polygon"));
+  }
+
+  #[test]
+  fn highlight_thick_style() {
+    let out = svg(
+      "HighlightGraph[CycleGraph[4], Graph[{1 <-> 2}], \
+       GraphHighlightStyle -> \"Thick\"]",
+    );
+    // Light red vertices outlined in dark red, the edge dark red.
+    assert_eq!(out.matches("fill=\"rgb(217,128,128)\"").count(), 2, "{out}");
+    assert!(out.contains("stroke=\"rgb(179,0,0)\""), "{out}");
+  }
+}
+
+/// The named graphs carry Wolfram's layout, and the named embeddings place
+/// the vertices as Wolfram does.
+mod wolfram_graph_layouts {
+  use super::*;
+
+  #[test]
+  fn named_graphs_carry_their_layout() {
+    for (code, expected) in [
+      ("CycleGraph[4]", "{GraphLayout -> \"CircularEmbedding\"}"),
+      ("StarGraph[4]", "{GraphLayout -> \"StarEmbedding\"}"),
+      ("WheelGraph[5]", "{GraphLayout -> \"StarEmbedding\"}"),
+      ("CompleteGraph[4]", "{GraphLayout -> \"StarEmbedding\"}"),
+      (
+        "CompleteGraph[5]",
+        "{GraphLayout -> {\"CircularEmbedding\", \"OptimalOrder\" -> False}}",
+      ),
+      (
+        "GridGraph[{2, 3}]",
+        "{GraphLayout -> {\"GridEmbedding\", \"Dimension\" -> {2, 3}}}",
+      ),
+      (
+        "TuranGraph[7, 3]",
+        "{GraphLayout -> {\"MultipartiteLayout\", \"VertexPartition\" -> {3, 2, 2}}}",
+      ),
+      (
+        "KnightTourGraph[3, 4]",
+        "{GraphLayout -> {\"VertexLayout\" -> {\"GridEmbedding\", \"Dimension\" -> {4, 3}}, \"PackingLayout\" -> None}}",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[Options[{code}], InputForm]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  #[test]
+  fn petersen_graph_coordinates() {
+    assert_eq!(
+      interpret(
+        "c = VertexCoordinates /. Options[PetersenGraph[]]; \
+         Max[Abs[Flatten[c - {{0.951, 0.309}, {0.588, -0.809}, \
+         {-0.588, -0.809}, {-0.951, 0.309}, {0, 1}, {1.902, 0.618}, \
+         {1.176, -1.618}, {-1.176, -1.618}, {-1.902, 0.618}, {0, 2}}]]] < 0.001"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn grid_embedding() {
+    assert_eq!(
+      interpret("GraphEmbedding[GridGraph[{2, 3}]]").unwrap(),
+      "{{1., 1.}, {1., 2.}, {2., 1.}, {2., 2.}, {3., 1.}, {3., 2.}}"
+    );
+  }
+
+  #[test]
+  fn star_embedding() {
+    assert_eq!(
+      interpret("Round[GraphEmbedding[StarGraph[5]], 0.001]").unwrap(),
+      "{{0., 0.}, {0., -1.}, {1., 0.}, {0., 1.}, {-1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn multipartite_embedding() {
+    assert_eq!(
+      interpret(
+        "Max[Abs[Flatten[GraphEmbedding[CompleteGraph[{2, 3}]] - \
+         {{0, -0.1795}, {0, 0.1795}, {1, -0.359}, {1, 0}, {1, 0.359}}]]] < 0.0001"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn bipartite_embedding() {
+    assert_eq!(
+      interpret(
+        "Round[GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4}, \
+         GraphLayout -> \"BipartiteEmbedding\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0., -0.334}, {1.336, -0.334}, {0., 0.334}, {1.336, 0.334}}"
+    );
+  }
+
+  #[test]
+  fn radial_embedding_puts_the_root_in_the_middle() {
+    assert_eq!(
+      interpret(
+        "Round[GraphEmbedding[StarGraph[5, GraphLayout -> \
+         \"RadialEmbedding\"]], 0.001]"
+      )
+      .unwrap(),
+      "{{0.707, 0.707}, {0., 1.414}, {0., 0.}, {1.414, 0.}, {1.414, 1.414}}"
+    );
+  }
+
+  #[test]
+  fn spiral_embedding_climbs_evenly() {
+    // One vertex per equal step up a sphere seen from the side.
+    assert_eq!(
+      interpret(
+        "e = GraphEmbedding[PathGraph[Range[5], GraphLayout -> \
+         \"SpiralEmbedding\"]]; \
+         Max[Abs[Differences[Differences[e[[All, 2]]]]]] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn circular_embedding_starts_past_the_top_and_reorders() {
+    // Vertex 1 at 90° + 360°/n; the order follows the edges.
+    assert_eq!(
+      interpret(
+        "Round[Mod[ArcTan @@@ GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, \
+         3 <-> 1, 3 <-> 4, 4 <-> 5}, GraphLayout -> \
+         \"CircularEmbedding\"]]/Degree, 360]]"
+      )
+      .unwrap(),
+      "{162, 90, 234, 306, 18}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[Mod[ArcTan @@@ GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, \
+         3 <-> 1, 3 <-> 4, 4 <-> 5}, GraphLayout -> {\"CircularEmbedding\", \
+         \"OptimalOrder\" -> False}]]/Degree, 360]]"
+      )
+      .unwrap(),
+      "{162, 234, 306, 18, 90}"
+    );
+  }
+
+  #[test]
+  fn a_tree_is_drawn_tidily_from_its_centre() {
+    assert_eq!(
+      interpret("GraphEmbedding[Graph[{1 <-> 2, 1 <-> 3, 2 <-> 4, 2 <-> 5}]]")
+        .unwrap(),
+      "{{0.8944271909999159, 1.7888543819998317}, {0.4472135954999579, \
+       0.8944271909999159}, {1.3416407864998738, 0.8944271909999159}, \
+       {0., 0.}, {0.8944271909999159, 0.}}"
+    );
+  }
+
+  #[test]
+  fn a_path_lies_on_a_line() {
+    assert_eq!(
+      interpret("GraphEmbedding[Graph[{3 <-> 1, 1 <-> 2, 2 <-> 4}]]").unwrap(),
+      "{{0., 0.}, {1., 0.}, {2., 0.}, {3., 0.}}"
+    );
+  }
+
+  #[test]
+  fn layered_embedding_of_a_tree() {
+    // Vertex 8 hangs straight below its parent 7, and 1 sits midway
+    // between its children.
+    assert_eq!(
+      interpret(
+        "e = GraphEmbedding[Graph[{1 <-> 2, 1 <-> 3, 2 <-> 4, 2 <-> 5, \
+         3 <-> 6, 3 <-> 7, 7 <-> 8}, GraphLayout -> {\"LayeredEmbedding\", \
+         \"RootVertex\" -> 1}]]; \
+         {e[[8, 1]] == e[[7, 1]], e[[1, 1]] == (e[[2, 1]] + e[[3, 1]])/2}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn layered_digraph_embedding() {
+    assert_eq!(
+      interpret(
+        "GraphEmbedding[Graph[{1 -> 2, 1 -> 3, 1 -> 4}, \
+         GraphLayout -> \"LayeredDigraphEmbedding\"]]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {-1., 0.}, {0., 0.}, {1., 0.}}"
+    );
+    // A wide drawing closes up its layers: at most 1/φ as tall as wide.
+    assert_eq!(
+      interpret(
+        "e = GraphEmbedding[Graph[{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4, 4 -> 5, \
+         4 -> 6, 2 -> 6}, GraphLayout -> \"LayeredDigraphEmbedding\"]]; \
+         Round[Max[e[[All, 2]]] - Min[e[[All, 2]]], 0.001]"
+      )
+      .unwrap(),
+      "0.618"
+    );
+  }
+}
+
+/// `Tree[…]` objects and `TreeForm` draw as Wolfram draws them.
+mod tree_pictures {
+  use super::*;
+
+  #[test]
+  fn tree_object_exports_as_a_picture() {
+    let out = interpret(
+      "ExportString[Tree[\"a\", {Tree[\"b\", None], Tree[\"c\", {\"d\"}]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    for label in ["a", "b", "c", "d"] {
+      assert!(out.contains(&format!(">{label}</text>")), "{out}");
+    }
+    // Wolfram's tree green: the boxes' outline and the edges.
+    assert!(out.contains("rgb(82,178,146)"), "{out}");
+  }
+
+  #[test]
+  fn tree_layout_left_puts_the_root_on_the_left() {
+    let out = interpret(
+      "ExportString[Tree[\"root\", {Tree[1, None], Tree[2, None]}, \
+       TreeLayout -> Left], \"SVG\"]",
+    )
+    .unwrap();
+    let x_of = |label: &str| -> f64 {
+      let i = out.find(&format!(">{label}</text>")).unwrap();
+      let tag = &out[out[..i].rfind("<text").unwrap()..i];
+      let s = tag.find("x=\"").unwrap() + 3;
+      tag[s..].split('"').next().unwrap().parse().unwrap()
+    };
+    assert!(x_of("root") < x_of("1"));
+  }
+
+  #[test]
+  fn tree_form_boxes_are_light_yellow() {
+    let out = interpret("ExportString[TreeForm[f[a, b]], \"SVG\"]").unwrap();
+    assert_eq!(out.matches("fill=\"rgb(255,255,222)\"").count(), 3, "{out}");
   }
 }

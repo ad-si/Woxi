@@ -3970,10 +3970,14 @@ fn evaluate_function_call_ast_inner(
           ));
         }
       }
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-      ));
+      // Wolfram draws K4 as a triangle around its centre, every other
+      // complete graph as a regular polygon.
+      let layout = if n == 4 {
+        str_expr("StarEmbedding")
+      } else {
+        layout_with("CircularEmbedding", "OptimalOrder", id_expr("False"))
+      };
+      return Ok(graph_with_layout(vertices, edges, layout));
     }
     // CompleteGraph[{n1, ..., nk}] → complete k-partite graph: vertices
     // partitioned into groups of the given sizes, with an edge between every
@@ -4015,11 +4019,24 @@ fn evaluate_function_call_ast_inner(
             }
           }
         }
-        let opts: Vec<Expr> = args[1..]
+        let mut opts: Vec<Expr> = args[1..]
           .iter()
           .filter(|a| matches!(a, Expr::Rule { .. }))
           .cloned()
           .collect();
+        if !single_part {
+          opts.insert(
+            0,
+            rule_expr(
+              id_expr("GraphLayout"),
+              layout_with(
+                "MultipartiteLayout",
+                "VertexPartition",
+                int_list(&sizes),
+              ),
+            ),
+          );
+        }
         let mut graph_args =
           vec![Expr::List(vertices.into()), Expr::List(edges.into())];
         if !opts.is_empty() {
@@ -4058,9 +4075,10 @@ fn evaluate_function_call_ast_inner(
           )
         })
         .collect();
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      return Ok(graph_with_layout(
+        vertices,
+        edges,
+        str_expr("CircularEmbedding"),
       ));
     }
   }
@@ -4094,9 +4112,10 @@ fn evaluate_function_call_ast_inner(
           edges.push(call("UndirectedEdge", edge));
         }
       }
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      return Ok(graph_with_layout(
+        vertices,
+        edges,
+        layout_with("GridEmbedding", "Dimension", int_list(&[m, n])),
       ));
     }
   }
@@ -4171,9 +4190,10 @@ fn evaluate_function_call_ast_inner(
           )
         })
         .collect();
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      return Ok(graph_with_layout(
+        vertices,
+        edges,
+        str_expr("StarEmbedding"),
       ));
     } else if n == 1 {
       return Ok(call(
@@ -4231,9 +4251,10 @@ fn evaluate_function_call_ast_inner(
           edges.push(mk_edge(a, b));
         }
       }
-      return Ok(call(
-        "Graph",
-        vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+      return Ok(graph_with_layout(
+        vertices,
+        edges,
+        str_expr("StarEmbedding"),
       ));
     }
   }
@@ -4395,9 +4416,14 @@ fn evaluate_function_call_ast_inner(
         )
       })
       .collect();
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+    return Ok(graph_with_layout(
+      vertices,
+      edges,
+      unpacked_layout(layout_with(
+        "CircularEmbedding",
+        "OptimalOrder",
+        id_expr("False"),
+      )),
     ));
   }
 
@@ -4579,9 +4605,12 @@ fn evaluate_function_call_ast_inner(
       }
     }
 
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+    let sizes: Vec<usize> =
+      (0..k).map(|p| base + usize::from(p < extra)).collect();
+    return Ok(graph_with_layout(
+      vertices,
+      edges,
+      layout_with("MultipartiteLayout", "VertexPartition", int_list(&sizes)),
     ));
   }
 
@@ -5208,14 +5237,38 @@ fn evaluate_function_call_ast_inner(
       (1..=2 * n).map(|i| Expr::Integer(i as i128)).collect();
     let mut graph_args =
       vec![Expr::List(vertices.into()), Expr::List(edges.into())];
-    let opts: Vec<Expr> = args[opts_start..]
+    let mut opts: Vec<Expr> = args[opts_start..]
       .iter()
       .filter(|a| matches!(a, Expr::Rule { .. }))
       .cloned()
       .collect();
-    if !opts.is_empty() {
-      graph_args.push(Expr::List(opts.into()));
+    // The jump ring on the unit circle and the plain cycle on the circle
+    // of radius 2, vertex i of each at angle 2 pi i / n clockwise from
+    // the top — Wolfram's coordinates.
+    if !opts.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "VertexCoordinates"))
+    }) {
+      let point = |radius: f64, i: usize| {
+        let t = 2.0 * std::f64::consts::PI * i as f64 / n as f64;
+        Expr::List(
+          vec![Expr::Real(radius * t.sin()), Expr::Real(radius * t.cos())].into(),
+        )
+      };
+      let coords: Vec<Expr> = (1..=n)
+        .map(|i| point(1.0, i))
+        .chain((1..=n).map(|i| point(2.0, i)))
+        .collect();
+      opts.push(rule_expr(
+        id_expr("VertexCoordinates"),
+        Expr::List(coords.into()),
+      ));
+      opts.sort_by_key(|o| match o {
+        Expr::Rule { pattern, .. } => expr_to_string(pattern),
+        _ => String::new(),
+      });
     }
+    graph_args.push(Expr::List(opts.into()));
     return Ok(call("Graph", graph_args));
   }
 
@@ -5456,13 +5509,25 @@ fn evaluate_function_call_ast_inner(
           return Ok(plot);
         }
       }
+      // `GraphPlot` and `TreePlot` draw the edges of a rule list as plain
+      // lines unless `DirectedEdges -> True`; `LayeredGraphPlot` and a
+      // Graph object keep their arrows.
+      let plain_lines = matches!(name, "GraphPlot" | "TreePlot")
+        && directed_option != Some(true)
+        && !matches!(&args[0], Expr::FunctionCall { name: gn, .. } if gn == "Graph");
       if let Expr::FunctionCall {
         name: en,
         args: eargs,
       } = &evaluated
         && en == "Graph"
         && eargs.len() >= 2
-        && let Ok(rendered) = crate::functions::graph::graph_ast(eargs)
+        && let Ok(rendered) = crate::functions::graph::graph_ast(&{
+          let mut a = eargs.to_vec();
+          if plain_lines {
+            a.push(rule_expr(id_expr("DirectedEdges"), id_expr("False")));
+          }
+          a
+        })
       {
         if let Expr::Graphics { svg, .. } = &rendered {
           crate::capture_graphics(svg);
@@ -8873,9 +8938,14 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+    return Ok(graph_with_layout(
+      vertices,
+      edges,
+      unpacked_layout(layout_with(
+        "GridEmbedding",
+        "Dimension",
+        int_list(&[n, m]),
+      )),
     ));
   }
 
@@ -10866,28 +10936,20 @@ fn evaluate_function_call_ast_inner(
       && gargs.len() >= 2
       && let Expr::List(verts) = &gargs[0]
     {
-      let n = verts.len();
-      if n == 0 {
+      if verts.is_empty() {
         return Ok(Expr::List(vec![].into()));
       }
-      // Circular embedding: angle_k = π/2 + k * 2π/n for k = 1..n
-      // Snap coordinates near simple rational values (0, ±0.5, ±1) to
-      // eliminate platform-dependent ULP differences in f64 trig.
-      use crate::functions::graph::snap_coord;
-      let coords: Vec<Expr> = (1..=n)
-        .map(|k| {
-          let angle = std::f64::consts::FRAC_PI_2
-            + (k as f64) * 2.0 * std::f64::consts::PI / (n as f64);
-          Expr::List(
-            vec![
-              Expr::Real(snap_coord(angle.cos())),
-              Expr::Real(snap_coord(angle.sin())),
-            ]
-            .into(),
-          )
-        })
-        .collect();
-      return Ok(Expr::List(coords.into()));
+      // The positions the graph is drawn with (its `GraphLayout`, or the
+      // automatic layout).
+      if let Some(pts) =
+        crate::functions::graph::computed_graph_embedding(gargs)
+      {
+        let coords: Vec<Expr> = pts
+          .into_iter()
+          .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        return Ok(Expr::List(coords.into()));
+      }
     }
     // Return unevaluated for non-graph input
     return Ok(unevaluated(name, args));
@@ -15651,6 +15713,43 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
 
 /// Trees are drawn in layers growing down from vertex 1 unless the caller
 /// picked a `GraphLayout` of their own.
+/// `Graph[vertices, edges, {GraphLayout -> layout}]`: a named graph with
+/// the embedding Wolfram gives it.
+fn graph_with_layout(
+  vertices: Vec<Expr>,
+  edges: Vec<Expr>,
+  layout: Expr,
+) -> Expr {
+  call(
+    "Graph",
+    vec![
+      Expr::List(vertices.into()),
+      Expr::List(edges.into()),
+      Expr::List(vec![rule_expr(id_expr("GraphLayout"), layout)].into()),
+    ],
+  )
+}
+
+/// `{"VertexLayout" -> layout, "PackingLayout" -> None}`.
+fn unpacked_layout(layout: Expr) -> Expr {
+  Expr::List(
+    vec![
+      rule_expr(str_expr("VertexLayout"), layout),
+      rule_expr(str_expr("PackingLayout"), id_expr("None")),
+    ]
+    .into(),
+  )
+}
+
+/// `{name, key -> value}`: a layout with one sub-option.
+fn layout_with(name: &str, key: &str, value: Expr) -> Expr {
+  Expr::List(vec![str_expr(name), rule_expr(str_expr(key), value)].into())
+}
+
+fn int_list(values: &[usize]) -> Expr {
+  Expr::List(values.iter().map(|&v| Expr::Integer(v as i128)).collect())
+}
+
 fn push_tree_layout(graph_args: &mut Vec<Expr>, options: &[Expr]) {
   let has_layout = options.iter().any(|o| {
     crate::evaluator::dispatch::list_operations::as_rule(o).is_some_and(

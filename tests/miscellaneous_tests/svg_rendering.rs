@@ -3627,10 +3627,11 @@ mod tests {
         1,
         "the named edge takes the rule: {svg}"
       );
+      // A rule list plots as plain lines (no arrow heads), as in Wolfram.
       assert_eq!(
         svg.matches("<polygon").count(),
-        1,
-        "the other one keeps its arrow head: {svg}"
+        0,
+        "the other one stays a plain line: {svg}"
       );
     }
 
@@ -3696,7 +3697,13 @@ mod tests {
         );
         pts
           .into_iter()
-          .map(|(x, y)| ((x - x0) / (x1 - x0), (y - y0) / (y1 - y0)))
+          // A path lies on one line: a flat axis normalizes to 0.
+          .map(|(x, y)| {
+            (
+              (x - x0) / (x1 - x0).max(1e-9),
+              (y - y0) / (y1 - y0).max(1e-9),
+            )
+          })
           .collect::<Vec<_>>()
       };
       let defaults = normalized(circle_centres(&plain));

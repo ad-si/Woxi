@@ -2067,10 +2067,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           args
             .iter()
             .for_each(|a| flatten_edge_directives(a, &mut directives));
+          // `EdgeForm[{GrayLevel[0], Opacity[0.7]}]`: the opacity applies
+          // to the edge colour, whichever order the two come in.
+          let mut edge_opacity: Option<f64> = None;
           for a in directives {
             if let Some(c) = parse_color(a) {
               ef.color = Some(c);
             } else if let Expr::FunctionCall { name: n2, args: a2 } = a {
+              if n2 == "Opacity"
+                && let Some(o) = a2.first().and_then(expr_to_f64)
+              {
+                edge_opacity = Some(o.clamp(0.0, 1.0));
+              } else
               // `EdgeForm[Thin]` arrives as `EdgeForm[Thickness[Tiny]]`.
               if n2 == "Thickness" && a2.len() == 1 {
                 ef.thickness = symbolic_thickness_arg(&a2[0])
@@ -2101,6 +2109,10 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
                 ef.dashing = scratch.dashing;
               }
             }
+          }
+          if let Some(o) = edge_opacity {
+            ef.color =
+              Some(ef.color.unwrap_or(Color::new(0.0, 0.0, 0.0)).with_alpha(o));
           }
           style.edge_form = Some(ef);
         }
@@ -11322,7 +11334,9 @@ fn render_primitive(
           None => vec![(1.0, default_head, 1.0)],
           Some(specs) => specs
             .iter()
-            .filter(|h| h.graphic.is_none())
+            // `Arrowheads[0]` draws no head at all (how Wolfram draws an
+            // undirected graph edge as an `Arrow`).
+            .filter(|h| h.graphic.is_none() && h.size != 0.0)
             .map(|h| {
               // A size is a fraction of the plot width, as Wolfram's is —
               // uncapped, because the whole point of naming it is to fix

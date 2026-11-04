@@ -41993,12 +41993,13 @@ fn test_sphere_with_several_centres_draws_one_sphere_each() {
 fn test_highlight_graph_draws_the_highlighted_parts_red() {
   clear_state();
   let one_vertex = export_svg("HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], {2}]");
-  assert_eq!(one_vertex.matches("rgb(255,0,0)").count(), 1);
+  // Wolfram's dark red, as the fill and the outline of the vertex.
+  assert_eq!(one_vertex.matches("rgb(179,0,0)").count(), 2);
 
   clear_state();
   let one_edge =
     export_svg("HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], 1 <-> 2]");
-  assert_eq!(one_edge.matches("rgb(255,0,0)").count(), 1);
+  assert_eq!(one_edge.matches("rgb(179,0,0)").count(), 1);
 
   // `Style[part, colour]` inside the specification picks the colour.
   clear_state();
@@ -42013,10 +42014,11 @@ fn test_highlight_graph_draws_the_highlighted_parts_red() {
   let subgraph = interpret(
     "g = Graph[{1 <-> 2, 2 <-> 3}]; \
      StringCount[ExportString[HighlightGraph[g, Subgraph[g, {1, 2}]], \"SVG\"], \
-     \"rgb(255,0,0)\"]",
+     \"rgb(179,0,0)\"]",
   )
   .unwrap();
-  assert_eq!(subgraph, "3");
+  // Two vertices (fill and outline each) and the edge.
+  assert_eq!(subgraph, "5");
 }
 
 mod options_of_a_graphic {

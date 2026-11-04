@@ -7475,6 +7475,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     Expr::FunctionCall {
+      name: t_name,
+      args: t_args,
+    } if t_name == "Tree" && t_args.len() >= 2 => {
+      if let Some(Expr::Graphics {
+        svg: ref svg_data, ..
+      }) = crate::functions::tree_form::tree_object_ast(t_args)
+      {
+        svg_data.clone()
+      } else {
+        expr_text_svg(expr)
+      }
+    }
+    Expr::FunctionCall {
       name: tg_name,
       args: tg_args,
     } if tg_name == "TreeGraph" && !tg_args.is_empty() => {

@@ -5367,6 +5367,11 @@ fn render_treeform_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Tree" && args.len() >= 2 =>
+    {
+      functions::tree_form::tree_object_ast(args).unwrap_or(expr)
+    }
     _ => expr,
   }
 }

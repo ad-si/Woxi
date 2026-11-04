@@ -243,11 +243,11 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Generate Graphics primitives: Lines for edges, then boxes and text
   let mut primitives: Vec<Expr> = Vec::new();
 
-  // Draw edges first (so they appear behind boxes and text)
-  // Edge color: gray
+  // Draw edges first (so they appear behind boxes and text), in
+  // Wolfram's greyish brown `RGBColor[0.55, 0.45, 0.45]`.
   primitives.push(call(
     "RGBColor",
-    vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Real(0.6)],
+    vec![Expr::Real(0.55), Expr::Real(0.45), Expr::Real(0.45)],
   ));
 
   for node in &layout {
@@ -267,37 +267,16 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if vertex_labeling {
     // First pass: rectangular boxes for every node (drawn on top of edges)
     for node in &layout {
-      let is_leaf = node.children_indices.is_empty();
       let hw = box_half_width(&node.label);
       let hh = box_half_height;
 
-      if is_leaf {
-        // Leaf nodes: white fill, black border
-        primitives.push(call(
-          "EdgeForm",
-          vec![call(
-            "RGBColor",
-            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-          )],
-        ));
-        primitives.push(call(
-          "RGBColor",
-          vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(1.0)],
-        ));
-      } else {
-        // Internal nodes: light orange fill, orange border
-        primitives.push(call(
-          "EdgeForm",
-          vec![call(
-            "RGBColor",
-            vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
-          )],
-        ));
-        primitives.push(call(
-          "RGBColor",
-          vec![Expr::Real(1.0), Expr::Real(0.95), Expr::Real(0.85)],
-        ));
-      }
+      // Every node: a light yellow box with a grey outline.
+      primitives
+        .push(call("EdgeForm", vec![call1("GrayLevel", Expr::Real(0.5))]));
+      primitives.push(call(
+        "RGBColor",
+        vec![Expr::Real(1.0), Expr::Real(1.0), Expr::Real(0.871)],
+      ));
 
       primitives.push(call(
         "Rectangle",
@@ -315,22 +294,12 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Second pass: text labels for all nodes (on top of boxes)
     primitives.push(call0("EdgeForm"));
 
+    // Black text in every box.
+    primitives.push(call(
+      "RGBColor",
+      vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+    ));
     for node in &layout {
-      let is_leaf = node.children_indices.is_empty();
-
-      if is_leaf {
-        // Leaf nodes: black text
-        primitives.push(call(
-          "RGBColor",
-          vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
-        ));
-      } else {
-        // Internal nodes: dark orange text
-        primitives.push(call(
-          "RGBColor",
-          vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
-        ));
-      }
       let style = call(
         "Style",
         vec![
@@ -683,4 +652,147 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
     rule_expr(id_expr("ImageSize"), Expr::Integer(image_width as i128));
 
   graphics_ast(&[content, image_size_opt])
+}
+
+/// `Tree[data, children, opts…]` drawn the way Wolfram draws a tree
+/// object: every node a box holding its data (rounded for inner nodes,
+/// square for leaves) in Wolfram's tree green, the edges in the same
+/// green, laid out as a tidy tree from the root at the top — or at the
+/// side `TreeLayout -> Left | Right | Bottom` names. `None` when the
+/// expression is not a well-formed tree.
+pub fn tree_object_ast(args: &[Expr]) -> Option<Expr> {
+  use crate::functions::graph::{LayerDirection, orient_layers, tidy_tree};
+  // Flatten into data and child-index lists.
+  fn collect(
+    data: &Expr,
+    kids: &Expr,
+    labels: &mut Vec<Expr>,
+    children: &mut Vec<Vec<usize>>,
+  ) -> Option<usize> {
+    let idx = labels.len();
+    labels.push(data.clone());
+    children.push(Vec::new());
+    match kids {
+      Expr::Identifier(s) if s == "None" => {}
+      Expr::List(items) => {
+        for item in items {
+          let child = match item {
+            Expr::FunctionCall { name, args }
+              if name == "Tree" && args.len() >= 2 =>
+            {
+              collect(&args[0], &args[1], labels, children)?
+            }
+            leaf => collect(leaf, &id_expr("None"), labels, children)?,
+          };
+          children[idx].push(child);
+        }
+      }
+      _ => return None,
+    }
+    Some(idx)
+  }
+  let mut labels = Vec::new();
+  let mut children = Vec::new();
+  collect(&args[0], &args[1], &mut labels, &mut children)?;
+
+  let dir = args[2..]
+    .iter()
+    .find_map(|o| {
+      crate::evaluator::dispatch::list_operations::as_rule(o).and_then(
+        |(k, v)| {
+          if !matches!(k, Expr::Identifier(n) if n == "TreeLayout") {
+            return None;
+          }
+          let v = match v {
+            Expr::List(items) => items.first()?,
+            other => other,
+          };
+          crate::functions::graph::layer_direction(v)
+        },
+      )
+    })
+    .unwrap_or(LayerDirection::Top);
+
+  /// Levels sit a little further apart than neighbouring leaves.
+  const LEVEL_STEP: f64 = 1.2;
+  let pts: Vec<(f64, f64)> = tidy_tree(&children, 0)
+    .into_iter()
+    .map(|(along, depth)| orient_layers(along, depth * LEVEL_STEP, dir))
+    .collect();
+
+  let green = || {
+    call(
+      "RGBColor",
+      vec![
+        Expr::Real(0.32312),
+        Expr::Real(0.696411),
+        Expr::Real(0.574097),
+      ],
+    )
+  };
+  let pair =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut prims: Vec<Expr> = vec![
+    call1("Opacity", Expr::Real(0.7)),
+    green(),
+    call1("CapForm", Expr::String("Round".to_string())),
+  ];
+  for (v, kids) in children.iter().enumerate() {
+    for &c in kids {
+      let (a, b) = (pts[v], pts[c]);
+      prims.push(call1(
+        "Line",
+        Expr::List(vec![pair(a.0, a.1), pair(b.0, b.1)].into()),
+      ));
+    }
+  }
+  prims.push(call1("Opacity", Expr::Integer(1)));
+  prims.push(call1("EdgeForm", green()));
+  // Box extents in layout units: wide enough for the label's characters.
+  let half_height = 0.06;
+  for (v, label) in labels.iter().enumerate() {
+    let text = match label {
+      Expr::String(s) => s.clone(),
+      other => expr_to_string(other),
+    };
+    let half_width = 0.035 * text.chars().count() as f64 + 0.035;
+    let (x, y) = pts[v];
+    prims.push(call(
+      "RGBColor",
+      vec![
+        Expr::Real(0.940308),
+        Expr::Real(0.986938),
+        Expr::Real(0.97168),
+      ],
+    ));
+    let mut rect = vec![
+      pair(x - half_width, y - half_height),
+      pair(x + half_width, y + half_height),
+    ];
+    if !children[v].is_empty() {
+      rect.push(rule_expr(
+        id_expr("RoundingRadius"),
+        Expr::Real(half_height),
+      ));
+    }
+    prims.push(call("Rectangle", rect));
+    prims.push(Expr::List(
+      vec![
+        call1("GrayLevel", Expr::Integer(0)),
+        call(
+          "Text",
+          vec![
+            call("Style", vec![Expr::String(text), Expr::Integer(9)]),
+            pair(x, y),
+          ],
+        ),
+      ]
+      .into(),
+    ));
+  }
+  graphics_ast(&[
+    Expr::List(prims.into()),
+    rule_expr(id_expr("ImageSize"), Expr::Integer(360)),
+  ])
+  .ok()
 }
