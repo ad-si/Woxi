@@ -19711,6 +19711,29 @@ fn grid_bg_index(expr: &Expr) -> Option<usize> {
   }
 }
 
+/// An inclusive 1-indexed span from a cell-rule position: a single index
+/// `i`, or a range `{from, to}` covering rows or columns `from` through `to`.
+fn grid_bg_range(expr: &Expr) -> Option<(usize, usize)> {
+  match expr {
+    Expr::List(r) if r.len() == 2 => {
+      let (a, b) = (grid_bg_index(&r[0])?, grid_bg_index(&r[1])?);
+      (a <= b).then_some((a, b))
+    }
+    other => grid_bg_index(other).map(|i| (i, i)),
+  }
+}
+
+/// The `(rows, columns)` block named by the left side of a per-cell
+/// `{rows, columns} -> value` rule in a `Grid` `Background` or `Frame` spec.
+fn grid_rule_block(pattern: &Expr) -> Option<((usize, usize), (usize, usize))> {
+  match pattern {
+    Expr::List(pos) if pos.len() == 2 => {
+      Some((grid_bg_range(&pos[0])?, grid_bg_range(&pos[1])?))
+    }
+    _ => None,
+  }
+}
+
 fn grid_svg_internal(
   args: &[Expr],
   group_gaps: &[usize],
@@ -20013,6 +20036,8 @@ fn grid_svg_styled_internal(
   // `Background -> {cols, rows, {{i, j} -> color, ...}}` — explicit
   // per-cell overrides (1-indexed, matching the source), highest priority.
   let mut cell_backgrounds: Vec<((usize, usize), Color)> = Vec::new();
+  // `Frame -> {cols, rows, {{rows, cols} -> True, ...}}`: blocks outlined.
+  let mut cell_frames: Vec<((usize, usize), (usize, usize))> = Vec::new();
   // For WL repeating-list patterns like {first, {repeat1, repeat2}, last}
   let mut row_bg_explicit_start: Vec<Option<Color>> = Vec::new();
   let mut row_bg_repeating: Vec<Option<Color>> = Vec::new();
@@ -20038,6 +20063,23 @@ fn grid_svg_styled_internal(
           Expr::Identifier(val) if val == "True" => frame_outer = true,
           Expr::FunctionCall { name: fn_name, .. } if fn_name == "True" => {
             frame_outer = true;
+          }
+          Expr::List(items)
+            if items.len() >= 3 && matches!(&items[2], Expr::List(_)) =>
+          {
+            if let Expr::List(rules) = &items[2] {
+              for rule in rules {
+                if let Expr::Rule {
+                  pattern,
+                  replacement: flag,
+                } = rule
+                  && matches!(flag.as_ref(), Expr::Identifier(v) if v == "True")
+                  && let Some(block) = grid_rule_block(pattern)
+                {
+                  cell_frames.push(block);
+                }
+              }
+            }
           }
           expr => {
             // A color expression means Frame -> True with that color
@@ -20226,13 +20268,14 @@ fn grid_svg_styled_internal(
                   pattern,
                   replacement: color_expr,
                 } = rule
-                  && let Expr::List(pos) = pattern.as_ref()
-                  && pos.len() == 2
-                  && let (Some(i), Some(j)) =
-                    (grid_bg_index(&pos[0]), grid_bg_index(&pos[1]))
+                  && let Some(((r0, r1), (c0, c1))) = grid_rule_block(pattern)
                   && let Some(color) = parse_bg_color(color_expr)
                 {
-                  cell_backgrounds.push(((i, j), color));
+                  for i in r0..=r1 {
+                    for j in c0..=c1 {
+                      cell_backgrounds.push(((i, j), color));
+                    }
+                  }
                 }
               }
             }
@@ -20798,6 +20841,7 @@ fn grid_svg_styled_internal(
   // Build SVG — add padding when frame borders are drawn so strokes aren't clipped
   let has_frame = frame_all
     || frame_outer
+    || !cell_frames.is_empty()
     || has_per_pos_dividers
     || dividers_col_border
     || dividers_row_border;
@@ -21320,6 +21364,23 @@ fn grid_svg_styled_internal(
         x_offset += col_widths[j];
       }
     }
+  }
+
+  // Per-block frames: outline each `{rows, cols}` block named in `Frame`.
+  for &((r0, r1), (c0, c1)) in &cell_frames {
+    if r0 > num_rows || c0 > num_cols {
+      continue;
+    }
+    let (r1, c1) = (r1.min(num_rows), c1.min(num_cols));
+    let x0 = paren_margin + col_widths[..c0 - 1].iter().sum::<f64>();
+    let x1 = paren_margin + col_widths[..c1].iter().sum::<f64>();
+    let y0 = visual_tops[r0 - 1];
+    let y1 = visual_bottoms[r1 - 1];
+    svg.push_str(&format!(
+      "<rect x=\"{x0:.1}\" y=\"{y0:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"none\" stroke=\"{default_stroke}\" stroke-width=\"1\"/>\n",
+      x1 - x0,
+      y1 - y0
+    ));
   }
 
   // TableHeadings separators: a thin rule below the heading row and to the
