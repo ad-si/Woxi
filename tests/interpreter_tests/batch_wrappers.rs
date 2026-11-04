@@ -3277,18 +3277,57 @@ mod batch_unevaluated_wrappers_2 {
       .unwrap(),
       "-Graphics-"
     );
-    assert!(
-      interpret("Cases[VerticalGauge[{0.3}, {0, 1}], Line[p_] :> p, Infinity]")
+    // The scale runs upwards: the picture is taller than it is wide.
+    let svg =
+      interpret("ExportString[VerticalGauge[0.3, {0, 1}], \"SVG\"]").unwrap();
+    let dim = |key: &str| -> f64 {
+      svg
+        .split(&format!("{key}=\""))
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
         .unwrap()
-        .contains("{{0., 0.3}, {0.2, 0.3}}")
-    );
-    assert_eq!(
-      interpret(
-        "Cases[VerticalGauge[0.3, {0, 1}], Rectangle[a_, b_] :> {a, b}, Infinity]"
-      )
-      .unwrap(),
-      "{{{0., 0.}, {0.2, 0.3}}}"
-    );
+    };
+    assert!(dim("height") > dim("width"), "{svg}");
+  }
+
+  /// Regression: the gauges rendered as black placeholders (a bare circle
+  /// and line, a filled bar). WL draws a gray bezel, a labelled scale and
+  /// a red needle or pointer.
+  #[test]
+  fn gauges_draw_wl_default_look() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let has_label = |s: &str, l: &str| s.contains(&format!(">{l}</text>"));
+    let red = "rgb(186,62,50)";
+
+    let angular = svg("AngularGauge[35, {0, 100}]");
+    assert!(angular.contains(red), "red needle: {angular}");
+    assert!(angular.contains("rgb(204,204,204)"), "bezel: {angular}");
+    for l in ["0", "20", "40", "60", "80", "100"] {
+      assert!(has_label(&angular, l), "{l}: {angular}");
+    }
+
+    let clock = svg("ClockGauge[{10, 15, 0}]");
+    for l in 1..=12 {
+      assert!(has_label(&clock, &l.to_string()), "{l}: {clock}");
+    }
+
+    let horizontal = svg("HorizontalGauge[0.6]");
+    assert!(horizontal.contains(red), "{horizontal}");
+    for l in ["0", "0.2", "0.4", "0.6", "0.8", "1.0"] {
+      assert!(has_label(&horizontal, l), "{l}: {horizontal}");
+    }
+
+    let vertical = svg("VerticalGauge[7, {0, 10}]");
+    assert!(vertical.contains(red), "{vertical}");
+    assert!(has_label(&vertical, "10"), "{vertical}");
+
+    let thermometer = svg("ThermometerGauge[37, {30, 45}]");
+    for l in ["30", "35", "40", "45"] {
+      assert!(has_label(&thermometer, l), "{l}: {thermometer}");
+    }
   }
   #[test]
   fn horizontal_gauge_accepts_multiple_values() {

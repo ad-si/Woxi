@@ -5538,268 +5538,28 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
-  // AngularGauge[value, {min, max}, opts...] → Graphics dial showing
-  // `value` on a circular scale from `min` to `max`. The gauge sweeps
-  // clockwise from -135° at `min` to 135° at `max`. Options are kept on
-  // the resulting Graphics so wolframscript's `-Graphics-` placeholder
-  // is produced for callers that just check the head.
-  //
-  // The range is optional — `AngularGauge[value]` gauges against `{0, 1}`,
-  // as wolframscript does.
-  if name == "AngularGauge" && !args.is_empty() {
-    let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
-    let (lo, hi) = gauge_range(args.get(1));
-    let mut primitives: Vec<Expr> = Vec::new();
-    // Outer dial.
-    primitives.push(call(
-      "Circle",
-      vec![
-        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-        Expr::Integer(1),
-      ],
-    ));
-    // Needle from center to the angle corresponding to `value`.
-    if let (Some(v), Some(lo), Some(hi)) = (value, lo, hi)
-      && hi != lo
-    {
-      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-      let start_deg = -135.0f64;
-      let end_deg = 135.0f64;
-      let theta_deg = start_deg + t * (end_deg - start_deg);
-      // Wolfram's angular convention: 0° at top, increasing clockwise.
-      // For SVG-style Graphics axes we use math convention with the dial
-      // rotated by 90°.
-      let theta = (90.0 - theta_deg).to_radians();
-      let nx = theta.cos();
-      let ny = theta.sin();
-      primitives.push(call1(
-        "Line",
-        Expr::List(
-          vec![
-            Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
-            Expr::List(vec![Expr::Real(nx), Expr::Real(ny)].into()),
-          ]
-          .into(),
-        ),
-      ));
-    }
-    let mut graphics_args = vec![Expr::List(primitives.into())];
-    graphics_args.extend(gauge_options(args));
-    return Ok(call("Graphics", graphics_args));
-  }
-
-  // ClockGauge[{h, m, s}] / ClockGauge[DateObject[…]] / ClockGauge[secs] /
-  // ClockGauge[] → an analog clock face: the dial, a tick per hour and the
-  // hour, minute and second hands for that time of day.
-  if name == "ClockGauge" {
-    let positional: Vec<&Expr> = args
-      .iter()
-      .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-      .collect();
-    let num = |e: &Expr| crate::functions::math_ast::try_eval_to_f64(e);
-    let time_of = |list: &Expr| -> Option<(f64, f64, f64)> {
-      match list {
-        Expr::List(d) if d.len() >= 6 => {
-          Some((num(&d[3])?, num(&d[4])?, num(&d[5])?))
-        }
-        _ => None,
-      }
-    };
-    let hms: Option<(f64, f64, f64)> = match positional.first() {
-      None => time_of(&crate::evaluator::evaluate_function_call_ast(
-        "DateList",
-        &[],
-      )?),
-      Some(Expr::List(t)) if (1..=3).contains(&t.len()) => {
-        let get = |i: usize| t.get(i).map_or(Some(0.0), num);
-        match (get(0), get(1), get(2)) {
-          (Some(h), Some(m), Some(sec)) => Some((h, m, sec)),
-          _ => None,
-        }
-      }
-      Some(date @ Expr::FunctionCall { name: d, .. }) if d == "DateObject" => {
-        time_of(&crate::evaluator::evaluate_function_call_ast(
-          "DateList",
-          &[(*date).clone()],
-        )?)
-      }
-      Some(e) => num(e).map(|secs| {
-        let secs = secs.rem_euclid(86400.0);
-        (
-          (secs / 3600.0).floor(),
-          ((secs % 3600.0) / 60.0).floor(),
-          secs % 60.0,
-        )
-      }),
-    };
-    let Some((h, m, sec)) = hms else {
-      return Ok(unevaluated(name, args));
-    };
-    let pt =
-      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    // Clock angles run clockwise from 12 o'clock.
-    let at = |turns: f64, r: f64| {
-      let a = std::f64::consts::FRAC_PI_2 - turns * std::f64::consts::TAU;
-      pt(r * a.cos(), r * a.sin())
-    };
-    let mut primitives: Vec<Expr> =
-      vec![call("Circle", vec![pt(0.0, 0.0), Expr::Real(1.0)])];
-    for k in 0..12 {
-      let turns = f64::from(k) / 12.0;
-      primitives.push(call1(
-        "Line",
-        Expr::List(vec![at(turns, 0.88), at(turns, 0.98)].into()),
-      ));
-      let label = if k == 0 { 12 } else { k };
-      primitives.push(call(
-        "Text",
-        vec![Expr::Integer(i128::from(label)), at(turns, 0.75)],
-      ));
-    }
-    let seconds_total = sec + 60.0 * m + 3600.0 * h;
-    let hand = |turns: f64, r: f64, thickness: f64| {
-      Expr::List(
-        vec![
-          call1("AbsoluteThickness", Expr::Real(thickness)),
-          call1("Line", Expr::List(vec![pt(0.0, 0.0), at(turns, r)].into())),
-        ]
-        .into(),
-      )
-    };
-    primitives.push(hand((seconds_total / 43200.0).rem_euclid(1.0), 0.5, 4.0));
-    primitives.push(hand((seconds_total / 3600.0).rem_euclid(1.0), 0.8, 3.0));
-    primitives.push(Expr::List(
-      vec![
-        call(
-          "RGBColor",
-          vec![Expr::Integer(1), Expr::Integer(0), Expr::Integer(0)],
-        ),
-        hand((seconds_total / 60.0).rem_euclid(1.0), 0.85, 1.0),
-      ]
-      .into(),
-    ));
-    let mut graphics_args = vec![Expr::List(primitives.into())];
-    graphics_args.extend(gauge_options(args));
-    return Ok(call("Graphics", graphics_args));
-  }
-
-  // HorizontalGauge[value, {min, max}, opts...] or
-  // HorizontalGauge[{value1, value2, …}, {min, max}, opts...] → Graphics bar
-  // showing one or more values on a horizontal scale from `min` to `max`.
-  // Each value is drawn as a marker bar at its position along the track,
-  // like AngularGauge's needle but on a linear rather than angular scale.
-  // VerticalGauge is the same gauge stood upright. Options are kept on the
-  // resulting Graphics so wolframscript's `-Graphics-` placeholder is
-  // produced for callers that just check the head.
-  //
-  // The range is optional — `HorizontalGauge[value]` gauges against
-  // `{0, 1}`, as wolframscript does.
-  if (name == "HorizontalGauge" || name == "VerticalGauge") && !args.is_empty()
+  // The gauges: AngularGauge[value, {min, max}, opts] (the range defaults
+  // to {0, 1}), ClockGauge[time], HorizontalGauge / VerticalGauge[value(s),
+  // {min, max}, opts] and ThermometerGauge[value, {min, max}, opts] draw as
+  // the Graphics wolframscript returns (see `functions::gauges`).
   {
-    let vertical = name == "VerticalGauge";
-    let values: Vec<f64> = match &args[0] {
-      Expr::List(items) => items
-        .iter()
-        .filter_map(crate::functions::math_ast::try_eval_to_f64)
-        .collect(),
-      other => crate::functions::math_ast::try_eval_to_f64(other)
-        .into_iter()
-        .collect(),
-    };
-    let (lo, hi) = gauge_range(args.get(1));
-    // A point at `along` the track and `across` it.
-    let pt = |along: f64, across: f64| {
-      let (x, y) = if vertical {
-        (across, along)
-      } else {
-        (along, across)
-      };
-      Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
-    };
-    let mut primitives: Vec<Expr> = Vec::new();
-    // A single value fills the bar from `min` up to the value, in the
-    // `GaugeStyle` colour; several values are marked on the bare track.
-    let single = !matches!(&args[0], Expr::List(_));
-    let normalized = match (lo, hi) {
-      (Some(lo), Some(hi)) if hi != lo => Some((lo, hi)),
+    use crate::functions::gauges;
+    let gauge = match name {
+      "AngularGauge" if !args.is_empty() => {
+        Some(gauges::angular_gauge_ast(args)?)
+      }
+      "ClockGauge" => Some(gauges::clock_gauge_ast(args)?),
+      "HorizontalGauge" | "VerticalGauge" if !args.is_empty() => {
+        Some(gauges::linear_gauge_ast(args, name == "VerticalGauge")?)
+      }
+      "ThermometerGauge" if !args.is_empty() => {
+        Some(gauges::thermometer_gauge_ast(args)?)
+      }
       _ => None,
     };
-    if single
-      && let Some((lo, hi)) = normalized
-      && let Some(&v) = values.first()
-    {
-      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-      if let Some(style) = gauge_style(args) {
-        primitives.push(style);
-      }
-      primitives.push(call("Rectangle", vec![pt(0.0, 0.0), pt(t, 0.2)]));
-      primitives.push(call1("GrayLevel", Expr::Integer(0)));
+    if let Some(gauge) = gauge {
+      return Ok(gauge.unwrap_or_else(|| unevaluated(name, args)));
     }
-    // Track: an outline spanning the full scale.
-    primitives.push(call1(
-      "Line",
-      Expr::List(
-        vec![
-          pt(0.0, 0.0),
-          pt(1.0, 0.0),
-          pt(1.0, 0.2),
-          pt(0.0, 0.2),
-          pt(0.0, 0.0),
-        ]
-        .into(),
-      ),
-    ));
-    // One marker bar per value, at its normalized position along the track.
-    if !single && let Some((lo, hi)) = normalized {
-      for v in values {
-        let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-        primitives.push(call1(
-          "Line",
-          Expr::List(vec![pt(t, 0.0), pt(t, 0.2)].into()),
-        ));
-      }
-    }
-    let mut graphics_args = vec![Expr::List(primitives.into())];
-    graphics_args.extend(gauge_options(args));
-    return Ok(call("Graphics", graphics_args));
-  }
-
-  // ThermometerGauge[value, {min, max}, opts...] → Graphics thermometer: a
-  // bulb at the bottom, a tube outline above it, and a column filled up to
-  // `value` on the scale from `min` to `max`. Options are kept on the
-  // resulting Graphics; the range is optional (`{0, 1}`) like the other
-  // gauges.
-  if name == "ThermometerGauge" && !args.is_empty() {
-    let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
-    let (lo, hi) = gauge_range(args.get(1));
-    let pt =
-      |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-    let mut primitives: Vec<Expr> = vec![
-      call("Circle", vec![pt(0.0, 0.0), Expr::Real(0.3)]),
-      call1(
-        "Line",
-        Expr::List(
-          vec![pt(-0.1, 0.28), pt(-0.1, 1.5), pt(0.1, 1.5), pt(0.1, 0.28)]
-            .into(),
-        ),
-      ),
-    ];
-    if let (Some(v), Some(lo), Some(hi)) = (value, lo, hi)
-      && hi != lo
-    {
-      let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
-      if let Some(style) = gauge_style(args) {
-        primitives.push(style);
-      }
-      primitives.push(call("Disk", vec![pt(0.0, 0.0), Expr::Real(0.2)]));
-      primitives.push(call(
-        "Rectangle",
-        vec![pt(-0.05, 0.0), pt(0.05, 0.2 + t * 1.3)],
-      ));
-    }
-    let mut graphics_args = vec![Expr::List(primitives.into())];
-    graphics_args.extend(gauge_options(args));
-    return Ok(call("Graphics", graphics_args));
   }
 
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
@@ -13278,50 +13038,6 @@ fn evaluate_function_call_ast_inner(
 /// Accepts a single root element with balanced nested tags. Rejects
 /// inputs with text outside the root element (such as trailing junk
 /// after the closing tag), unbalanced tags, or empty content. Comments,
-/// The `{min, max}` scale of a gauge, from its optional second argument.
-///
-/// Every gauge takes the range optionally — `AngularGauge[0.7]` gauges
-/// against `{0, 1}` in wolframscript, and the argument that would hold the
-/// range may instead be the first option rule. A range that is not a pair of
-/// numbers (a symbolic one, say) yields `None`s, which leaves the marker off
-/// the track.
-fn gauge_range(range_arg: Option<&Expr>) -> (Option<f64>, Option<f64>) {
-  match range_arg {
-    None | Some(Expr::Rule { .. } | Expr::RuleDelayed { .. }) => {
-      (Some(0.0), Some(1.0))
-    }
-    Some(Expr::List(items)) if items.len() == 2 => (
-      crate::functions::math_ast::try_eval_to_f64(&items[0]),
-      crate::functions::math_ast::try_eval_to_f64(&items[1]),
-    ),
-    _ => (None, None),
-  }
-}
-
-/// The `GaugeStyle` colour of a gauge call, if one was given.
-fn gauge_style(args: &[Expr]) -> Option<Expr> {
-  args.iter().skip(1).find_map(|a| match a {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(&**pattern, Expr::Identifier(n) if n == "GaugeStyle") => {
-      Some((**replacement).clone())
-    }
-    _ => None,
-  })
-}
-
-/// The option rules of a gauge call — everything after the value that is a
-/// rule, so the optional `{min, max}` argument is skipped either way.
-fn gauge_options(args: &[Expr]) -> Vec<Expr> {
-  args
-    .iter()
-    .skip(1)
-    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-    .cloned()
-    .collect()
-}
-
 /// CDATA sections, processing instructions, and XML declarations are
 /// recognized only at the document level. Not a conformant XML parser —
 /// just enough to flag the obviously broken cases that should yield

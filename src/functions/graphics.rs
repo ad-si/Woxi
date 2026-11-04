@@ -311,6 +311,9 @@ struct StyleState {
   /// `Text[expr, Offset[{dx, dy}, pos]]`: the label sits `dx`, `dy` screen
   /// points (y up) away from `pos`, whatever the plot range.
   text_pixel_shift: (f64, f64),
+  /// `Text[expr, Scaled[{dx, dy}, pos]]`: the label sits `dx`, `dy` of the
+  /// plot range's width and height away from `pos`.
+  text_scaled_shift: (f64, f64),
   /// `Arrowheads[…]`: where the heads of the arrows that follow sit, how
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
@@ -566,6 +569,7 @@ impl Default for StyleState {
       text_background: None,
       text_line_anchor: None,
       text_pixel_shift: (0.0, 0.0),
+      text_scaled_shift: (0.0, 0.0),
       arrowheads: None,
       cap_form: None,
       join_form: None,
@@ -798,6 +802,14 @@ enum Primitive {
     vertex_colors: Option<Vec<Color>>,
     style: StyleState,
   },
+  /// A `Line` with at least one `Scaled[{dx, dy}, pos]` / `Offset[{dx, dy},
+  /// pos]` vertex (gauge and chart tick marks): each point is its base
+  /// position moved by a fraction of the plot range and by screen points,
+  /// both only known at render time.
+  ShiftedLine {
+    segments: Vec<Vec<ShiftedPoint>>,
+    style: StyleState,
+  },
   CircleArc {
     cx: f64,
     cy: f64,
@@ -977,6 +989,7 @@ impl Primitive {
       Self::PointSingle { style, .. }
       | Self::PointMulti { style, .. }
       | Self::Line { style, .. }
+      | Self::ShiftedLine { style, .. }
       | Self::CircleArc { style, .. }
       | Self::Disk { style, .. }
       | Self::ScaledDisk { style, .. }
@@ -1025,6 +1038,55 @@ fn scale_anchor_point(spec: &Expr, bb: &BBox) -> Option<(f64, f64)> {
     return Some((x, y));
   }
   expr_to_point(spec)
+}
+
+/// A vertex `base` moved by `scaled` (fractions of the plot range) and then
+/// by `points` (screen points, y up): `Offset[points, Scaled[scaled, base]]`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ShiftedPoint {
+  base: (f64, f64),
+  scaled: (f64, f64),
+  points: (f64, f64),
+}
+
+impl ShiftedPoint {
+  fn has_shift(&self) -> bool {
+    self.scaled != (0.0, 0.0) || self.points != (0.0, 0.0)
+  }
+
+  /// The point in data coordinates, once the plot range `bb` and the canvas
+  /// size are known.
+  fn resolve(&self, bb: &BBox, svg_w: f64, svg_h: f64) -> (f64, f64) {
+    let (w, h) = (bb.width(), bb.height());
+    (
+      self.base.0 + self.scaled.0 * w + self.points.0 * w / svg_w.max(1e-9),
+      self.base.1 + self.scaled.1 * h + self.points.1 * h / svg_h.max(1e-9),
+    )
+  }
+}
+
+/// A point that may carry `Scaled[{dx, dy}, pos]` / `Offset[{dx, dy}, pos]`
+/// shifts (nested either way round), split into its parts.
+fn expr_to_shifted_point(expr: &Expr) -> Option<ShiftedPoint> {
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Scaled" || name == "Offset")
+    && args.len() == 2
+    && let Some(shift) = expr_to_point(&args[0])
+  {
+    let mut inner = expr_to_shifted_point(&args[1])?;
+    let slot = if name == "Scaled" {
+      &mut inner.scaled
+    } else {
+      &mut inner.points
+    };
+    slot.0 += shift.0;
+    slot.1 += shift.1;
+    return Some(inner);
+  }
+  Some(ShiftedPoint {
+    base: expr_to_point(expr)?,
+    ..ShiftedPoint::default()
+  })
 }
 
 pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
@@ -2951,6 +3013,8 @@ fn collect_primitives(
             }
             other => vec![other],
           };
+          let first = prims.len();
+          let several = components.len() > 1;
           for component in components {
             if let Expr::List(curves) = component
               && let Some(points) = joined_curve_points(curves, style)
@@ -2967,6 +3031,31 @@ fn collect_primitives(
             collect_primitives(component, style, prims, errors);
             let joined = matches!(component, Expr::List(_));
             fill_curve_prims(prims, before, joined);
+          }
+          // Several components fill together by the even-odd rule, so a
+          // component inside another cuts a hole (a gauge's bezel ring).
+          if several
+            && prims.len() - first > 1
+            && prims[first..].iter().all(|p| {
+              matches!(p, Primitive::PolygonPrim { holes, vertex_colors: None, .. }
+                if holes.is_empty())
+            })
+          {
+            let mut rings = prims.drain(first..).filter_map(|p| match p {
+              Primitive::PolygonPrim { points, style, .. } => {
+                Some((points, style))
+              }
+              _ => None,
+            });
+            if let Some((points, style)) = rings.next() {
+              let holes = rings.map(|(pts, _)| pts).collect();
+              prims.push(Primitive::PolygonPrim {
+                points,
+                holes,
+                vertex_colors: None,
+                style,
+              });
+            }
           }
         }
         "PolarCurve" if args.len() >= 2 => {
@@ -3846,8 +3935,40 @@ fn parse_vertex_colors(opts: &[Expr]) -> Option<Vec<Color>> {
   })
 }
 
+/// The segments of a `Line` whose vertices use `Scaled[{dx, dy}, pos]` /
+/// `Offset[{dx, dy}, pos]`, or `None` when no vertex is shifted.
+fn shifted_line_segments(arg: &Expr) -> Option<Vec<Vec<ShiftedPoint>>> {
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  let segment = |e: &Expr| -> Option<Vec<ShiftedPoint>> {
+    match e {
+      Expr::List(pts) if !pts.is_empty() => {
+        pts.iter().map(expr_to_shifted_point).collect()
+      }
+      _ => None,
+    }
+  };
+  let segments: Vec<Vec<ShiftedPoint>> = match segment(arg) {
+    Some(single) => vec![single],
+    None => items.iter().filter_map(segment).collect(),
+  };
+  segments
+    .iter()
+    .flatten()
+    .any(ShiftedPoint::has_shift)
+    .then_some(segments)
+}
+
 fn parse_line(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   let vertex_colors = parse_vertex_colors(&args[1..]);
+  if let Some(segments) = shifted_line_segments(&args[0]) {
+    prims.push(Primitive::ShiftedLine {
+      segments,
+      style: style.clone(),
+    });
+    return;
+  }
   // Line[{{x1,y1},{x2,y2},...}] or Line[{seg1, seg2, ...}] for multiple segments
   if let Some(pts) = expr_to_point_list(&args[0]) {
     // A vertex-color count that doesn't match the point count can't be
@@ -6506,6 +6627,16 @@ fn inset_primitives(
     Some(th) if h > 0.0 => th / h,
     _ => 1.0,
   };
+  // A picture keeps its own shape inside a `{w, h}` box (its aspect ratio
+  // is automatic): it shrinks to fit the tighter side (a clock's hands).
+  let keeps_shape = matches!(&args[0], Expr::FunctionCall { name, .. }
+    if name == "Graphics" || name == "GraphicsBox")
+    || matches!(&args[0], Expr::Graphics { .. });
+  let (sx, sy) = if keeps_shape && target_w.is_some() && target_h.is_some() {
+    (sx.min(sy), sx.min(sy))
+  } else {
+    (sx, sy)
+  };
 
   // `dirs` is `{Automatic, {dx, dy}}` (or a bare direction vector): the
   // object turns so its x axis points that way.
@@ -6790,10 +6921,26 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => (other, (0.0, 0.0)),
   };
-  local_style.text_pixel_shift = pixel_shift;
-  let (x, y, scaled) = match anchor_expr {
-    Some(e) => expr_to_anchor(e).unwrap_or((0.0, 0.0, false)),
-    None => (0.0, 0.0, false),
+  // A two-argument `Scaled[{dx, dy}, pos]` / `Offset[{dx, dy}, pos]` anchor
+  // (a gauge's tick label) is `pos` shifted by a fraction of the plot range
+  // and by screen points.
+  let shifted = anchor_expr
+    .filter(|e| {
+      matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Scaled" || name == "Offset") && args.len() == 2)
+    })
+    .and_then(expr_to_shifted_point);
+  let (x, y, scaled) = if let Some(p) = shifted {
+    local_style.text_scaled_shift = p.scaled;
+    local_style.text_pixel_shift =
+      (pixel_shift.0 + p.points.0, pixel_shift.1 + p.points.1);
+    (p.base.0, p.base.1, false)
+  } else {
+    local_style.text_pixel_shift = pixel_shift;
+    match anchor_expr {
+      Some(e) => expr_to_anchor(e).unwrap_or((0.0, 0.0, false)),
+      None => (0.0, 0.0, false),
+    }
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
   // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
@@ -6897,7 +7044,9 @@ fn column_line_anchor(content: &Expr) -> Option<&'static str> {
 fn text_direction(spec: &Expr) -> Option<(f64, f64)> {
   match spec {
     Expr::List(items) if items.len() == 2 => {
-      Some((expr_to_f64(&items[0])?, expr_to_f64(&items[1])?))
+      let (dx, dy) = (expr_to_f64(&items[0])?, expr_to_f64(&items[1])?);
+      // `{1, 0}` (any positive x with no y) is the default baseline.
+      (dy != 0.0 || dx <= 0.0).then_some((dx, dy))
     }
     _ => None,
   }
@@ -7640,6 +7789,12 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
         bb.include_point(x, y);
       }
     }
+    // Only the base points anchor the range; the shifts are relative to it.
+    Primitive::ShiftedLine { segments, .. } => {
+      for p in segments.iter().flatten() {
+        bb.include_point(p.base.0, p.base.1);
+      }
+    }
     Primitive::Line { segments, .. } => {
       for seg in segments {
         for &(x, y) in seg {
@@ -7955,6 +8110,21 @@ fn rotate_primitive(
     Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
       prim.clone()
     }
+    Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
+      segments: segments
+        .iter()
+        .map(|seg| {
+          seg
+            .iter()
+            .map(|p| ShiftedPoint {
+              base: rp(p.base.0, p.base.1),
+              ..*p
+            })
+            .collect()
+        })
+        .collect(),
+      style: style.clone(),
+    },
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -8273,6 +8443,21 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
     Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
       prim.clone()
     }
+    Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
+      segments: segments
+        .iter()
+        .map(|seg| {
+          seg
+            .iter()
+            .map(|p| ShiftedPoint {
+              base: tp(p.base.0, p.base.1),
+              ..*p
+            })
+            .collect()
+        })
+        .collect(),
+      style: style.clone(),
+    },
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -8527,6 +8712,21 @@ fn scale_primitive(
     Primitive::ClickGroupStart { .. } | Primitive::ClickGroupEnd => {
       prim.clone()
     }
+    Primitive::ShiftedLine { segments, style } => Primitive::ShiftedLine {
+      segments: segments
+        .iter()
+        .map(|seg| {
+          seg
+            .iter()
+            .map(|p| ShiftedPoint {
+              base: sp(p.base.0, p.base.1),
+              ..*p
+            })
+            .collect()
+        })
+        .collect(),
+      style: style.clone(),
+    },
     Primitive::ScaledDisk {
       cx,
       cy,
@@ -10641,6 +10841,17 @@ fn render_primitive(
       out.push_str(&format!("<g id=\"{BUTTON_HIT_ID_PREFIX}{hex}\">\n"));
     }
     Primitive::ClickGroupEnd => out.push_str("</g>\n"),
+    Primitive::ShiftedLine { segments, style } => {
+      let line = Primitive::Line {
+        segments: segments
+          .iter()
+          .map(|seg| seg.iter().map(|p| p.resolve(bb, svg_w, svg_h)).collect())
+          .collect(),
+        vertex_colors: None,
+        style: style.clone(),
+      };
+      render_primitive(&line, prim_index, bb, svg_w, svg_h, out);
+    }
     // The inset is embedded whole, centred on its anchor — at its own
     // natural size, unless `Inset[…]` gave an explicit `size` (in this
     // picture's data coordinates), which is only convertible to pixels now
@@ -11427,6 +11638,8 @@ fn render_primitive(
       let text_w = longest as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
+      let ax = ax + style.text_scaled_shift.0 * bb.width();
+      let ay = ay + style.text_scaled_shift.1 * bb.height();
       let anchor_x = coord_x(ax, bb, svg_w) + style.text_pixel_shift.0;
       let anchor_y = coord_y(ay, bb, svg_h) - style.text_pixel_shift.1;
       // A fourth `direction` argument tilts the label's baseline to match
@@ -12122,6 +12335,14 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.extend(gbox::line_box(segments));
       }
+      Primitive::ShiftedLine { segments, style } => {
+        elements.extend(tracker.emit_style_changes(style));
+        let bases: Vec<Vec<(f64, f64)>> = segments
+          .iter()
+          .map(|seg| seg.iter().map(|p| p.base).collect())
+          .collect();
+        elements.extend(gbox::line_box(&bases));
+      }
       Primitive::CircleArc {
         cx, cy, rx, style, ..
       } => {
@@ -12278,6 +12499,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // axes and labels included, so the margins come out of it rather than
   // being added around it.
   let mut explicit_size = false;
+  let mut named_size_max_height: Option<f64> = None;
   let mut svg_width: u32 = 360;
   let mut svg_height: u32 = 225;
   let mut explicit_height = false;
@@ -12371,6 +12593,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             svg_height = h;
             full_width = fw;
           }
+          // A named size bounds a tall picture's height too.
+          named_size_max_height = match replacement {
+            Expr::Identifier(n) => match n.as_str() {
+              "Tiny" => Some(100.0),
+              "Small" => Some(216.0),
+              "Medium" => Some(1.2 * f64::from(DEFAULT_WIDTH)),
+              "Large" => Some(720.0),
+              _ => None,
+            },
+            _ => None,
+          };
         }
         "PlotRange" => {
           let (xr, yr) = parse_plot_range(replacement);
@@ -12743,6 +12976,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let longest = text.split('\n').map(|l| l.chars().count()).max();
       let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
+      // `Offset[…]` / `Scaled[{dx, dy}, pos]` anchors shift the label off
+      // its base point.
+      let x = x
+        + style.text_scaled_shift.0 * bb.width()
+        + style.text_pixel_shift.0 / kx;
+      let y = y
+        + style.text_scaled_shift.1 * bb.height()
+        + style.text_pixel_shift.1 / ky;
       let cx = x - offset.0 * text_w / 2.0 / kx;
       let cy = y - offset.1 * text_h / 2.0 / ky;
       // A label as wide as the picture (a long `Row` in a `Pane`) cannot be
@@ -12801,8 +13042,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A picture of automatic size that is taller than 1.2 times its width is
   // drawn 1.2 × 360 tall instead, narrowing to keep its shape.
   let mut capped_tall = false;
-  if !explicit_size {
-    let max_h = (1.2 * svg_width as f64).round();
+  // So is one of a named size (`ImageSize -> Small` fits in 180 × 216).
+  if !explicit_size || named_size_max_height.is_some() {
+    let max_h =
+      named_size_max_height.unwrap_or_else(|| (1.2 * svg_width as f64).round());
     if svg_height as f64 > max_h {
       let aspect = svg_height as f64 / svg_width as f64;
       svg_height = max_h as u32;

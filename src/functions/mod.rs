@@ -55,6 +55,7 @@ pub mod field_plot;
 pub mod financial_ast;
 pub mod function_range_ast;
 pub mod gabor;
+pub mod gauges;
 pub mod geo_math;
 pub mod geographics;
 pub mod geometric_test_ast;
