@@ -2,7 +2,7 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(r#\"WordCloud[{\"only\"}]\"#)"
 ---
-<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="225" fill="rgb(255,255,255)"/>
-<text transform="translate(180.0,112.5)" font-size="28.5" fill="rgb(61,153,204)" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" dominant-baseline="central">only</text>
+<svg width="360" height="158" viewBox="0 0 360 158" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="158" fill="rgb(255,255,255)"/>
+<text transform="translate(180.0,79.0)" font-size="192.3" fill="rgb(61,153,204)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">only</text>
 </svg>

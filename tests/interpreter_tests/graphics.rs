@@ -46522,6 +46522,46 @@ mod word_cloud_text {
     assert!(svg.contains(">cat<"), "{svg}");
     assert!(!svg.contains(">the<"), "{svg}");
   }
+
+  /// The font size (`font-size="…"`) of word `w` in a WordCloud SVG.
+  fn font_size_of(svg: &str, w: &str) -> f64 {
+    let line = svg
+      .lines()
+      .find(|l| l.contains(&format!(">{w}</text>")))
+      .unwrap_or_else(|| panic!("{w} missing: {svg}"));
+    line
+      .split("font-size=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap()
+      .parse()
+      .unwrap()
+  }
+
+  /// Regression: an association of weights was taken as one word and
+  /// nothing was drawn.
+  #[test]
+  fn weighted_forms() {
+    for code in [
+      "WordCloud[<|\"big\" -> 3, \"mid\" -> 2, \"low\" -> 1|>]",
+      "WordCloud[{3 -> \"big\", 2 -> \"mid\", 1 -> \"low\"}]",
+      "WordCloud[{{\"big\", 3}, {\"mid\", 2}, {\"low\", 1}}]",
+    ] {
+      let svg = export_svg(code);
+      let (big, mid, low) = (
+        font_size_of(&svg, "big"),
+        font_size_of(&svg, "mid"),
+        font_size_of(&svg, "low"),
+      );
+      // Three distinct weights: sizes run linearly from 10 to 70 units.
+      assert!((big / low - 7.0).abs() < 0.05, "{code}: {big} {low}");
+      assert!((mid / low - 4.0).abs() < 0.05, "{code}: {mid} {low}");
+      // Colours follow ColorData[116] by rank; all words are horizontal.
+      assert!(svg.contains("fill=\"rgb(61,153,204)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(242,160,36)\""), "{svg}");
+      assert!(!svg.contains("rotate("), "{svg}");
+    }
+  }
 }
 
 mod graphics3d_overlay_and_atom_colors {

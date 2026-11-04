@@ -2,9 +2,9 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(r#\"WordCloud[{\"hello\", \"world\", \"hello\", \"foo\", \"hello\", \"world\"}]\"#)"
 ---
-<svg width="360" height="225" viewBox="0 0 360 225" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="225" fill="rgb(255,255,255)"/>
-<text transform="translate(180.0,112.5)" font-size="45.0" fill="rgb(61,153,204)" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" dominant-baseline="central">hello</text>
-<text transform="translate(262.3,101.0) rotate(-90)" font-size="28.5" fill="rgb(242,160,36)" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" dominant-baseline="central">world</text>
-<text transform="translate(191.0,141.2)" font-size="12.0" fill="rgb(116,179,54)" font-family="Atkinson Hyperlegible Next, sans-serif" text-anchor="middle" dominant-baseline="central">foo</text>
+<svg width="360" height="212" viewBox="0 0 360 212" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="212" fill="rgb(255,255,255)"/>
+<text transform="translate(180.0,81.3)" font-size="153.8" fill="rgb(61,153,204)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">hello</text>
+<text transform="translate(167.6,172.4)" font-size="87.9" fill="rgb(242,160,36)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">world</text>
+<text transform="translate(245.1,15.2)" font-size="22.0" fill="rgb(116,179,54)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">foo</text>
 </svg>

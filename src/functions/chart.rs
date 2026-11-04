@@ -7286,11 +7286,13 @@ fn date_list_plot_ast_impl(
   })
 }
 
-/// WordCloud[{"word1", "word2", ...}] or WordCloud[{1, 2, 3, ...}]
+/// WordCloud[words], WordCloud[<|w1 -> wt1, …|>], WordCloud[{wt1 -> w1, …}],
+/// WordCloud[{{w1, wt1}, …}] or WordCloud["text"] — horizontal words sized
+/// by weight (or frequency), packed around the heaviest one and coloured by
+/// rank with `ColorData[116]`, as WL does.
 pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
 
-  // Extract list of strings from first argument
   let data = evaluate_expr_to_expr(&args[0])?;
   // A string is the text its words come from, stopwords deleted; any other
   // non-list is a single item.
@@ -7308,157 +7310,179 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )?],
       )?
     }
-    Expr::List(_) => data,
+    Expr::List(_) | Expr::Association(_) => data,
     other => Expr::List(vec![other.clone()].into()),
   };
-  let Expr::List(items) = &data else {
-    return Err(InterpreterError::EvaluationError(
-      "WordCloud: first argument must be a list".into(),
-    ));
+  let word_text = |e: &Expr| match e {
+    Expr::String(s) => s.clone(),
+    other => expr_to_string(other),
   };
 
-  let mut words: Vec<String> = Vec::new();
-  for item in items {
-    let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-    match &ev {
-      Expr::String(s) => words.push(s.clone()),
-      _ => words.push(expr_to_string(&ev)),
+  // (word, weight) pairs: explicit weights, or occurrence counts.
+  let mut weighted: Vec<(String, f64)> = Vec::new();
+  match &data {
+    Expr::Association(pairs) => {
+      for (k, v) in pairs {
+        weighted.push((word_text(k), try_eval_to_f64(v).unwrap_or(0.0)));
+      }
     }
+    Expr::List(items) => {
+      let explicit: Option<Vec<(String, f64)>> = items
+        .iter()
+        .map(|it| match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          } => try_eval_to_f64(pattern).map(|w| (word_text(replacement), w)),
+          Expr::List(pair) if pair.len() == 2 => {
+            try_eval_to_f64(&pair[1]).map(|w| (word_text(&pair[0]), w))
+          }
+          _ => None,
+        })
+        .collect();
+      match explicit {
+        Some(pairs) if !items.is_empty() => weighted = pairs,
+        _ => {
+          let mut freq: HashMap<String, f64> = HashMap::new();
+          let mut first_seen: Vec<String> = Vec::new();
+          for item in items {
+            let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
+            let w = word_text(&ev);
+            let count = freq.entry(w.clone()).or_insert(0.0);
+            if *count == 0.0 {
+              first_seen.push(w);
+            }
+            *count += 1.0;
+          }
+          weighted = first_seen
+            .into_iter()
+            .map(|w| {
+              let c = freq[&w];
+              (w, c)
+            })
+            .collect();
+        }
+      }
+    }
+    _ => {}
   }
+  weighted.retain(|(_, w)| *w > 0.0);
 
-  if words.is_empty() {
+  let opts = parse_chart_options(args);
+  let (svg_width, full_width) = (opts.svg_width, opts.full_width);
+  if weighted.is_empty() {
     return Ok(crate::graphics_result(
       "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
     ));
   }
 
-  // Count word frequencies
-  let mut freq: HashMap<String, usize> = HashMap::new();
-  for w in &words {
-    *freq.entry(w.clone()).or_insert(0) += 1;
-  }
+  // Heaviest first, ties alphabetically: this rank picks the colour.
+  weighted.sort_by(|a, b| {
+    b.1
+      .partial_cmp(&a.1)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| a.0.cmp(&b.0))
+  });
 
-  // Sort by frequency (descending), then alphabetically for stability
-  let mut sorted_words: Vec<(String, usize)> = freq.into_iter().collect();
-  sorted_words.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-
-  // Parse options (ImageSize)
-  let opts = parse_chart_options(args);
-  let (svg_width, svg_height, full_width) =
-    (opts.svg_width, opts.svg_height, opts.full_width);
-  let w = svg_width as f64;
-  let h = svg_height as f64;
-  let cx = w / 2.0;
-  let cy = h / 2.0;
-
-  // Map frequencies to font sizes (linear scaling)
-  let max_freq = sorted_words[0].1 as f64;
-  let min_freq = sorted_words.last().unwrap().1 as f64;
-  let min_font = 12.0_f64;
-  let max_font = (h * 0.2).min(60.0);
-
-  let font_size_for = |count: usize| -> f64 {
-    if (max_freq - min_freq).abs() < f64::EPSILON {
-      f64::midpoint(min_font, max_font)
+  // Font sizes in layout units, read off WL's `FontSize -> Scaled[…]`
+  // values: with three or more distinct weights they run linearly from
+  // 10 to 70; with fewer they are proportional to the weight.
+  let w_max = weighted[0].1;
+  let w_min = weighted.last().map_or(w_max, |p| p.1);
+  let mut distinct: Vec<f64> = weighted.iter().map(|p| p.1).collect();
+  distinct.dedup();
+  let size_of = |w: f64| -> f64 {
+    if distinct.len() >= 3 {
+      10.0 + 60.0 * (w - w_min) / (w_max - w_min)
     } else {
-      min_font
-        + (count as f64 - min_freq) / (max_freq - min_freq)
-          * (max_font - min_font)
+      70.0 * w / w_max
     }
   };
 
-  // Placed word bounding boxes: (x_min, y_min, x_max, y_max)
-  let mut placed: Vec<(f64, f64, f64, f64)> = Vec::new();
-
-  struct PlacedWord {
+  // Pack the word boxes on an Archimedean spiral around the origin, the
+  // heaviest word at the centre (y up).
+  const CHAR_W: f64 = 0.45; // average glyph advance in em
+  const BOX_H: f64 = 0.75; // box height in em
+  struct Placed {
     x: f64,
     y: f64,
-    font_size: f64,
-    text: String,
-    color_idx: usize,
-    rotated: bool,
+    size: f64,
+    half_w: f64,
+    half_h: f64,
   }
-  let mut placed_words: Vec<PlacedWord> = Vec::new();
-
-  let char_width_factor = 0.6;
-
-  for (i, (word, count)) in sorted_words.iter().enumerate() {
-    let font_size = font_size_for(*count);
-    let rotated = i % 3 == 1; // every third word rotated
-
-    // Estimate bounding box dimensions
-    let text_w = word.len() as f64 * char_width_factor * font_size;
-    let text_h = font_size;
-    let (box_w, box_h) = if rotated {
-      (text_h, text_w) // swap for rotation
-    } else {
-      (text_w, text_h)
-    };
-
-    // Try placing using Archimedean spiral from center
-    let max_steps = 10000;
-    let a = 1.5; // spiral spacing
-
-    for s in 0..max_steps {
-      let t = s as f64 * 0.04;
-      let x = cx + a * t * t.cos();
-      let y = cy + a * t * t.sin() * 0.6; // compress vertically to fit aspect ratio
-
-      // Bounding box centered at (x, y)
-      let x_min = x - box_w / 2.0;
-      let y_min = y - box_h / 2.0;
-      let x_max = x + box_w / 2.0;
-      let y_max = y + box_h / 2.0;
-
-      // Check bounds
-      if x_min < 2.0 || y_min < 2.0 || x_max > w - 2.0 || y_max > h - 2.0 {
-        continue;
-      }
-
-      // Check collision with already placed words
-      let collides = placed.iter().any(|&(px_min, py_min, px_max, py_max)| {
-        x_min < px_max && x_max > px_min && y_min < py_max && y_max > py_min
+  let mut placed: Vec<Placed> = Vec::new();
+  for (word, weight) in &weighted {
+    let size = size_of(*weight);
+    let half_w = word.chars().count() as f64 * CHAR_W * size / 2.0;
+    let half_h = BOX_H * size / 2.0;
+    let mut s = 0usize;
+    loop {
+      let t = s as f64 * 0.05;
+      let (x, y) = (2.0 * t * t.cos(), 1.4 * t * t.sin());
+      let clear = placed.iter().all(|p| {
+        (x - p.x).abs() >= half_w + p.half_w
+          || (y - p.y).abs() >= half_h + p.half_h
       });
-
-      if !collides {
-        placed.push((x_min, y_min, x_max, y_max));
-        placed_words.push(PlacedWord {
+      if clear || s > 200_000 {
+        placed.push(Placed {
           x,
           y,
-          font_size,
-          text: word.clone(),
-          color_idx: i,
-          rotated,
+          size,
+          half_w,
+          half_h,
         });
         break;
       }
+      s += 1;
     }
-
-    // Words that can't be placed are simply skipped.
   }
 
-  // Generate SVG
-  let mut svg = svg_header(svg_width, svg_height, full_width);
+  // The plot range hugs the boxes; the picture is `svg_width` wide.
+  let x0 = placed
+    .iter()
+    .map(|p| p.x - p.half_w)
+    .fold(f64::INFINITY, f64::min);
+  let x1 = placed
+    .iter()
+    .map(|p| p.x + p.half_w)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let y0 = placed
+    .iter()
+    .map(|p| p.y - p.half_h)
+    .fold(f64::INFINITY, f64::min);
+  let y1 = placed
+    .iter()
+    .map(|p| p.y + p.half_h)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let pad = 0.02 * (x1 - x0).max(y1 - y0);
+  let (x0, x1, y0, y1) = (x0 - pad, x1 + pad, y0 - pad, y1 + pad);
+  let scale = svg_width as f64 / (x1 - x0);
+  let svg_height = ((y1 - y0) * scale).round().max(1.0) as u32;
 
-  for pw in &placed_words {
-    let (r, g, b) = PLOT_COLORS[pw.color_idx % PLOT_COLORS.len()];
-    let transform = if pw.rotated {
-      format!(
-        " transform=\"translate({:.1},{:.1}) rotate(-90)\"",
-        pw.x, pw.y
+  let mut svg = svg_header(svg_width, svg_height, full_width);
+  for (rank, ((word, _), p)) in weighted.iter().zip(&placed).enumerate() {
+    let color = crate::evaluator::evaluate_function_call_ast(
+      "ColorData",
+      &[Expr::Integer(116), Expr::Integer(rank as i128 + 1)],
+    )
+    .ok()
+    .and_then(|c| crate::functions::graphics::parse_color(&c));
+    let (r, g, b) = color.map_or(PLOT_COLORS[rank % PLOT_COLORS.len()], |c| {
+      (
+        (c.r * 255.0).round() as u8,
+        (c.g * 255.0).round() as u8,
+        (c.b * 255.0).round() as u8,
       )
-    } else {
-      format!(" transform=\"translate({:.1},{:.1})\"", pw.x, pw.y)
-    };
+    });
+    let (sx, sy) = ((p.x - x0) * scale, (y1 - p.y) * scale);
     svg.push_str(&format!(
-      "<text{transform} font-size=\"{:.1}\" fill=\"rgb({r},{g},{b})\" \
-       font-family=\"sans-serif\" text-anchor=\"middle\" \
-       dominant-baseline=\"central\">{}</text>\n",
-      pw.font_size,
-      html_escape(&pw.text)
+      "<text transform=\"translate({sx:.1},{sy:.1})\" font-size=\"{:.1}\" \
+       fill=\"rgb({r},{g},{b})\" font-family=\"'Source Sans Pro', sans-serif\" \
+       text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
+      p.size * scale,
+      html_escape(word)
     ));
   }
-
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
 }
