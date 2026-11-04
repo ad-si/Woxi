@@ -7349,6 +7349,16 @@ fn text_offset(spec: &Expr) -> Option<(f64, f64)> {
     Expr::List(items) if items.len() == 2 => {
       Some((component(&items[0], true)?, component(&items[1], false)?))
     }
+    // A bare alignment symbol is the offset along its own axis:
+    // `Left` is `{-1, 0}`, `Top` is `{0, 1}`, `Center` is `{0, 0}`.
+    Expr::Identifier(s) => match s.as_str() {
+      "Left" => Some((-1.0, 0.0)),
+      "Right" => Some((1.0, 0.0)),
+      "Bottom" => Some((0.0, -1.0)),
+      "Top" => Some((0.0, 1.0)),
+      "Center" => Some((0.0, 0.0)),
+      _ => None,
+    },
     _ => None,
   }
 }
