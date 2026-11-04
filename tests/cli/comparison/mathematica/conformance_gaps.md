@@ -8511,10 +8511,6 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme grey; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
-- Automatic frame/axis tick steps: wolframscript picks 0.5 for a span of
-  about 1.9 (a framed `RegularPolygon[5]`) where Woxi's "largest step with 4
-  steps" rule picks 0.2; for a span of 1.04 both pick 0.2. The exact choice
-  rule is not decoded.
 - Custom `Arrowheads[{{s, pos, Graphics[…]}}]` graphics are placed only once
   the plot range is known, so they do not widen it (wolframscript keeps a
   dot head at the end of an arrow whole). The default arrowhead is a plain
@@ -8608,3 +8604,48 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - An automatically sized `GraphicsRow` of several pictures fits them into
   640 points; a row of variables holding already-rendered plots is not
   re-laid out at the cell width.
+
+## Plot ranges and ticks (graphics comparison sweep, 2026-11)
+
+Decoded and fixed: the crossing-label rule (a label at the axes crossing is
+dropped only when the other axis runs more than 2.6 pt past it on the label's
+side), the function-plot zero reach (an automatic range within 0.1228 of its
+span from 0 is extended to it), constant curves (`0..2 c`), `Automatic`/`All`
+x ranges from the sampled points, the 1e-6-step inset of the end samples,
+`Show` keeping the first plot's range, and Graphics ticks on the plot step
+rule. Still open:
+
+- The automatic outlier clipping of function plots depends on where the
+  samples fall: `Plot[{x^(1/4), x^(3/4), x^(3/2), x^(7/2)}, {x, 0, 2}]` tops
+  out at 3.81 (WL 3.77, so Woxi labels a `4`), `Plot[Tan[x], {x, 0, Pi/2}]`
+  at 8.50 (WL 8.24), `Plot[x^2, {x, 1, 10}, ScalingFunctions ->
+  "Reciprocal"]` at 0.360 (WL 0.349). Woxi weighs its quantiles by x
+  stretch over its own adaptive samples; WL's sample set differs.
+- Pole spikes reach different heights because the adaptive refinement
+  lands at different distances from the pole:
+  `LogLogPlot[Abs[10^2/((I w)^2 + 100)], {w, 1, 10^5}]` peaks near 900
+  (WL 137, which then also ticks every 2 decades instead of every 3), and
+  the `Abs[Gamma[z]]` log plot spikes differ the same way. The coarse
+  `PlotPoints -> 5`/`MaxRecursion -> 0` grids differ from WL's initial grid
+  for the same reason.
+- `PlotRange[Plot[…, PlotRange -> h]]` reports `{-h, h}` for x too; WL keeps
+  the iterator domain. A log axis reports original values where WL reports
+  the scaled ones.
+- `ListPolarPlot` pads its symmetric range 5 % on both axes; WL pads x by
+  2 % and y by 5 % (`±1.399` data radius: WL x axis ends at `±1.43`).
+- `PlotTheme -> "Business"` (`GridLines -> {None, Automatic}`) draws a grid
+  line at every y tick; WL leaves out the outermost ones (`±1.0` of a
+  sine). With an explicit `GridLinesStyle`, WL draws those outermost lines
+  in it but the interior ones in a darker default, so the automatic grid
+  lines carry two styles; not decoded.
+- `Show[Histogram[…, PlotRange -> All], Plot[…]]`: the combined x range is
+  the union (0..80); WL ends at the histogram's 75.
+- Label-driven range widening is still missing: `LabelingFunction` /
+  `Callout` labels of `ListPlot` do not widen the range (WL makes room so
+  the top label is inside), `LabelingFunction -> Above` does not pad the
+  range up, and callout placement does not alternate sides as WL does.
+  `PlotLabels -> Placed[…, Above]` centres the first label on the curve
+  start instead of shifting it right into the plot and padding the range.
+- `FrameTicks -> {{f, None}, {f, None}}` with a tick function and
+  `PlotRangePadding -> None` on a `ListPlot`: both are ignored (the
+  wolframscript reference itself errors, so the target is unclear).
