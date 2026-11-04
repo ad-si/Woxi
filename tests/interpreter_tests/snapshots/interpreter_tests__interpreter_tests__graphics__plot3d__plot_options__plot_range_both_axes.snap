@@ -67,6 +67,7 @@ expression: "export_svg(\"Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {{0.5, 2}, {-0
 <line x1="232.0" y1="1427.4" x2="272.0" y2="1427.4" stroke="#666" stroke-width="5"/>
 <text x="202.0" y="1462.1" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">-0.2</text>
 <line x1="232.0" y1="1021.0" x2="272.0" y2="1021.0" stroke="#666" stroke-width="5"/>
+<text x="202.0" y="1055.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.0</text>
 <line x1="232.0" y1="614.6" x2="272.0" y2="614.6" stroke="#666" stroke-width="5"/>
 <text x="202.0" y="649.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.2</text>
 <line x1="232.0" y1="208.2" x2="272.0" y2="208.2" stroke="#666" stroke-width="5"/>

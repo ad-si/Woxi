@@ -8,13 +8,6 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <circle cx="1944" cy="1013" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <circle cx="3505" cy="110" r="23" opacity="1" fill="#3D99CC" stroke="none" stroke-width="1"/>
 <line x1="185.0" y1="2058.1" x2="3574.0" y2="2058.1" stroke="#666" stroke-width="5"/>
-<line x1="-1176.8" y1="2058.1" x2="-1176.8" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="-706.9" y1="2058.1" x2="-706.9" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="-432.0" y1="2058.1" x2="-432.0" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="-237.0" y1="2058.1" x2="-237.0" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="-85.7" y1="2058.1" x2="-85.7" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="37.9" y1="2058.1" x2="37.9" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="142.4" y1="2058.1" x2="142.4" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="232.9" y1="2058.1" x2="232.9" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="312.8" y1="2058.1" x2="312.8" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="854.1" y1="2058.1" x2="854.1" y2="2034.1" stroke="#666" stroke-width="5"/>
@@ -31,13 +24,6 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <line x1="3264.4" y1="2058.1" x2="3264.4" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="3354.9" y1="2058.1" x2="3354.9" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="3434.8" y1="2058.1" x2="3434.8" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="3976.1" y1="2058.1" x2="3976.1" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="4251.0" y1="2058.1" x2="4251.0" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="4446.0" y1="2058.1" x2="4446.0" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="4597.3" y1="2058.1" x2="4597.3" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="4825.4" y1="2058.1" x2="4825.4" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="5245.1" y1="2058.1" x2="5245.1" y2="2034.1" stroke="#666" stroke-width="5"/>
-<line x1="5537.1" y1="2058.1" x2="5537.1" y2="2034.1" stroke="#666" stroke-width="5"/>
 <line x1="384.2" y1="2058.1" x2="384.2" y2="2018.1" stroke="#666" stroke-width="5"/>
 <text x="384.2" y="2178.6" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
 <line x1="1475.3" y1="2058.1" x2="1475.3" y2="2018.1" stroke="#666" stroke-width="5"/>
@@ -49,17 +35,6 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <line x1="3506.2" y1="2058.1" x2="3506.2" y2="2018.1" stroke="#666" stroke-width="5"/>
 <text x="3506.2" y="2178.6" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">100</text>
 <line x1="252.8" y1="5.0" x2="252.8" y2="2100.0" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="3092.1" x2="276.8" y2="3092.1" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="3020.6" x2="276.8" y2="3020.6" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2960.1" x2="276.8" y2="2960.1" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2907.7" x2="276.8" y2="2907.7" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2861.5" x2="276.8" y2="2861.5" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2820.2" x2="276.8" y2="2820.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2548.2" x2="276.8" y2="2548.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2389.1" x2="276.8" y2="2389.1" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2276.2" x2="276.8" y2="2276.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2188.7" x2="276.8" y2="2188.7" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="2117.1" x2="276.8" y2="2117.1" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="2056.6" x2="276.8" y2="2056.6" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="2004.3" x2="276.8" y2="2004.3" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="1958.0" x2="276.8" y2="1958.0" stroke="#666" stroke-width="5"/>
@@ -77,17 +52,6 @@ expression: "export_svg(\"ListLogLogPlot[{{1, 10}, {10, 100}, {100, 1000}}]\")"
 <line x1="252.8" y1="249.7" x2="276.8" y2="249.7" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="197.3" x2="276.8" y2="197.3" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="151.1" x2="276.8" y2="151.1" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-162.2" x2="276.8" y2="-162.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-321.3" x2="276.8" y2="-321.3" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-434.2" x2="276.8" y2="-434.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-521.8" x2="276.8" y2="-521.8" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-593.3" x2="276.8" y2="-593.3" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-653.8" x2="276.8" y2="-653.8" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-706.2" x2="276.8" y2="-706.2" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-752.4" x2="276.8" y2="-752.4" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-793.7" x2="276.8" y2="-793.7" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-952.8" x2="276.8" y2="-952.8" stroke="#666" stroke-width="5"/>
-<line x1="252.8" y1="-1065.7" x2="276.8" y2="-1065.7" stroke="#666" stroke-width="5"/>
 <line x1="252.8" y1="1916.7" x2="292.8" y2="1916.7" stroke="#666" stroke-width="5"/>
 <text x="231.6" y="1951.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="252.8" y1="1285.2" x2="292.8" y2="1285.2" stroke="#666" stroke-width="5"/>

@@ -441,6 +441,9 @@ pub(crate) struct LabelBox {
   pub frac: f64,
   pub width: f64,
   pub height: f64,
+  /// An axis label at the axes crossing, drawn only while the other axis
+  /// stops short of it (see `plot_axes::crossing_label_blocked`).
+  pub at_crossing: bool,
 }
 
 /// Everything around the plotting area that the padding has to hold.
@@ -589,8 +592,15 @@ impl Decorations {
     reach(L, self.side_labels.0);
     reach(R, self.side_labels.1);
     let (ox, oy) = (self.origin.0 * w, self.origin.1 * h);
+    let blocked = crate::functions::plot_axes::crossing_label_blocked;
     if self.axes.0 {
-      for b in &self.axis_ticks.0 {
+      // The y axis runs `oy` below the crossing.
+      for b in self
+        .axis_ticks
+        .0
+        .iter()
+        .filter(|b| !(b.at_crossing && self.axes.1 && blocked(oy)))
+      {
         along_x(&mut reach, b);
         reach(B, TICK_LABEL_GAP + b.height - oy);
       }
@@ -601,7 +611,13 @@ impl Decorations {
       }
     }
     if self.axes.1 {
-      for b in &self.axis_ticks.1 {
+      // The x axis runs `ox` left of the crossing.
+      for b in self
+        .axis_ticks
+        .1
+        .iter()
+        .filter(|b| !(b.at_crossing && self.axes.0 && blocked(ox)))
+      {
         along_y(&mut reach, b);
         reach(L, TICK_LABEL_GAP + b.width - ox);
       }
@@ -776,12 +792,11 @@ pub(crate) fn plot_decorations(
                skip: Option<f64>| {
     ticks
       .iter()
-      .filter(|(v, _)| {
-        skip
-          .is_none_or(|o| (v - o).abs() > (scale.max - scale.min).abs() * 1e-9)
-      })
       .filter(|(_, l)| !l.is_empty())
       .map(|(v, l)| LabelBox {
+        at_crossing: skip.is_some_and(|o| {
+          (v - o).abs() <= (scale.max - scale.min).abs() * 1e-9
+        }),
         frac: scale.frac(*v),
         width: l
           .split('\n')
@@ -859,7 +874,8 @@ pub(crate) fn plot_decorations(
       }
     }
   } else if show_ticks {
-    // A label at the crossing is dropped when the other axis is drawn.
+    // A label at the crossing is dropped when the other axis runs past it
+    // (decided in `extents`, which knows the plot size).
     let (sx, sy) = opts.axes;
     d.axis_ticks = (
       boxes(&x_ticks.majors, x, sy.then_some(origin.0)),
@@ -1001,6 +1017,7 @@ mod tests {
         frac: (1.0 + 48.0 * i as f64 / 5.0) / 50.0,
         width: tick_label_width(&(2 * i).to_string(), TICK_FONT),
         height: lh,
+        at_crossing: false,
       })
       .collect();
     let y = ["-1.0", "-0.5", "0.0", "0.5", "1.0"]
@@ -1010,6 +1027,7 @@ mod tests {
         frac: (1.0 + 18.0 * i as f64 / 4.0) / 20.0,
         width: tick_label_width(l, TICK_FONT),
         height: lh,
+        at_crossing: false,
       })
       .collect();
     Decorations {

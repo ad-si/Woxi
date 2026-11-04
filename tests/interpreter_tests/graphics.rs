@@ -10220,9 +10220,9 @@ mod plot3d {
           })
           .collect::<Vec<_>>()
       };
-      // Only 1 on each axis (the origin's 0 is suppressed where the two
-      // axes cross, as it is for automatic ticks).
-      assert_eq!(ticks("{{0, 1}, {1}}"), ["1", "1"]);
+      // The axes cross at the corner, so neither runs past the x axis's 0,
+      // which stays labelled.
+      assert_eq!(ticks("{{0, 1}, {1}}"), ["0", "1", "1"]);
       assert_eq!(ticks("None"), [] as [std::string::String; 0]);
       // A `{pos, label}` pair carries its own text.
       assert_eq!(ticks(r#"{{{0.5, "half"}}, {}}"#), ["half"]);
@@ -10615,7 +10615,9 @@ mod plot3d {
         .filter(|l| l.contains("text-anchor=\"middle\""))
         .filter_map(|l| l.split('>').nth(1)?.split('<').next())
         .collect();
-      assert_eq!(labels, ["-2", "2", "4", "6", "8", "10"]);
+      // The x axis runs along the bottom edge, so the y axis does not cross
+      // below it and its `0` stays labelled.
+      assert_eq!(labels, ["-2", "0", "2", "4", "6", "8", "10"]);
     }
 
     /// Every label of a tick set carries the decimals its spacing needs, so
@@ -49431,5 +49433,251 @@ mod field_plot_conformance {
       "PolarPlot[{1, 1 + Cos[t]}, {t, 0, 2 Pi}, PlotLegends -> \"Expressions\"]",
     );
     assert!(svg.contains("cos"), "{svg}");
+  }
+}
+
+/// Automatic plot ranges, padding and tick labels, decoded against
+/// wolframscript.
+mod ranges_and_ticks {
+  use super::*;
+
+  /// The text of every `<text>` element, in document order.
+  fn labels(svg: &str) -> Vec<String> {
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|tag| {
+        let body = tag.split_once('>')?.1;
+        Some(body.split_once("</text>")?.0.to_string())
+      })
+      .collect()
+  }
+
+  fn count(svg: &str, label: &str) -> usize {
+    labels(svg).iter().filter(|l| *l == label).count()
+  }
+
+  #[test]
+  fn crossing_label_kept_when_the_other_axis_stops_at_it() {
+    // Both axes start at the corner: both label their 0.
+    let corner =
+      export_svg("Plot[x, {x, 0, 2}, PlotRange -> {{0, 2}, {0, 2}}]");
+    assert_eq!(count(&corner, "0.0"), 2);
+    // The y axis runs on below the x axis: only the y label survives.
+    let below =
+      export_svg("Plot[x, {x, 0, 2}, PlotRange -> {{0, 2}, {-1, 2}}]");
+    assert_eq!(count(&below, "0.0"), 1);
+    // The automatic padding runs both axes past the crossing.
+    assert_eq!(count(&export_svg("Plot[x, {x, 0, 2}]"), "0.0"), 0);
+    // Graphics follows the same rule.
+    let graphics = export_svg(
+      "Graphics[Line[{{0, 0}, {2, 2}}], Axes -> True, \
+       PlotRange -> {{-1, 2}, {0, 2}}]",
+    );
+    assert_eq!(count(&graphics, "0.0"), 1);
+  }
+
+  #[test]
+  fn crossing_label_depends_on_the_overrun_in_points() {
+    // A 2 % padding under 2.6 pt (a small plot) keeps the x axis's 0.
+    let data = "Table[Binomial[9, k], {k, 0, 9}]";
+    let small = export_svg(&format!("ListLinePlot[{data}, ImageSize -> 180]"));
+    assert_eq!(count(&small, "0"), 1);
+    let large = export_svg(&format!("ListLinePlot[{data}, ImageSize -> 260]"));
+    assert_eq!(count(&large, "0"), 0);
+  }
+
+  #[test]
+  fn ticks_outside_the_plot_range_are_not_drawn() {
+    // Log axes generate decade ticks beyond their ends.
+    let svg = export_svg("LogPlot[Exp[x], {x, 0, 10}]");
+    for line in svg.lines().filter(|l| l.starts_with("<line")) {
+      for attr in ["x1=\"", "y1=\"", "x2=\"", "y2=\""] {
+        let v: f64 = line
+          .split(attr)
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap();
+        assert!(v >= 0.0, "{line}");
+      }
+    }
+  }
+
+  #[test]
+  fn automatic_x_range_trims_to_the_curve() {
+    assert_eq!(
+      interpret(
+        "ToString[PlotRange[Plot[Sqrt[x], {x, -5, 5}, \
+         PlotRange -> Automatic]][[1]], InputForm]"
+      )
+      .unwrap(),
+      "{0., 4.9999997959183675}"
+    );
+    // The default `{Full, Automatic}` keeps the iterator domain.
+    assert_eq!(
+      interpret("PlotRange[Plot[Sqrt[x], {x, -5, 5}]][[1]]").unwrap(),
+      "{-5., 5.}"
+    );
+  }
+
+  #[test]
+  fn y_range_reaches_to_zero_when_close() {
+    assert_eq!(
+      interpret("PlotRange[Plot[0.1 + x, {x, 0, 1}]][[2, 1]]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[-0.1 - x, {x, 0, 1}]][[2, 2]]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret(
+        "ToString[PlotRange[Plot[0.2 + x, {x, 0, 1}]][[2, 1]], InputForm]"
+      )
+      .unwrap(),
+      "0.20000002040816328"
+    );
+    // A reciprocal axis reaches to its scaled 0 too.
+    assert_eq!(
+      interpret(
+        "PlotRange[Plot[x^2, {x, 1, 10}, \
+         ScalingFunctions -> \"Reciprocal\"]][[2, 1]]"
+      )
+      .unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn constant_curve_spans_zero_to_twice_its_value() {
+    assert_eq!(
+      interpret("PlotRange[Plot[-1, {x, 0, 1}]][[2]]").unwrap(),
+      "{-2., 0.}"
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[0.3, {x, 0, 1}]][[2]]").unwrap(),
+      "{0., 0.6}"
+    );
+    assert_eq!(
+      interpret("PlotRange[Plot[0, {x, 0, 1}]][[2]]").unwrap(),
+      "{-1., 1.}"
+    );
+  }
+
+  #[test]
+  fn show_keeps_the_first_plot_range() {
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[Plot[Sin[x], {x, 0, 1}], Plot[3 Sin[x], {x, 0, 10}]]]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {0., 0.8414709737813186}}"
+    );
+    // `PlotRange -> All` on the first spans everything shown.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[Plot[Sin[x], {x, 0, 1}, PlotRange -> All], \
+         Plot[3 Sin[x], {x, 0, 10}]]][[1, 2]]"
+      )
+      .unwrap(),
+      "10."
+    );
+  }
+
+  #[test]
+  fn end_samples_sit_inside_the_domain() {
+    // The step function is not caught on its next stair at x = 100.
+    assert_eq!(
+      interpret(
+        "PlotRange[Plot[Floor[Sqrt[x]], {x, 0, 100}, Exclusions -> None]][[2]]"
+      )
+      .unwrap(),
+      "{0., 9.}"
+    );
+  }
+
+  #[test]
+  fn graphics_ticks_use_the_plot_tick_step() {
+    // A span of 1.7 steps by 0.5, one of 1.5 by 0.2.
+    let wide = export_svg(
+      "Graphics[Line[{{0, 0}, {1.7, 1.7}}], Frame -> True, \
+       PlotRange -> {{0, 1.7}, {0, 1.7}}]",
+    );
+    assert_eq!(count(&wide, "0.5"), 2);
+    assert_eq!(count(&wide, "0.2"), 0);
+    let narrow = export_svg(
+      "Graphics[Line[{{0, 0}, {1.5, 1.5}}], Frame -> True, \
+       PlotRange -> {{0, 1.5}, {0, 1.5}}]",
+    );
+    assert_eq!(count(&narrow, "0.2"), 2);
+  }
+
+  #[test]
+  fn y_only_plot_range_leaves_x_to_the_points() {
+    // An `Automatic` x reaches to 0 when close, as y does …
+    assert_eq!(
+      interpret("PlotRange[Plot[x, {x, 1, 10}, PlotRange -> {0, 10}]][[1, 1]]")
+        .unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret(
+        "ToString[PlotRange[Plot[x, {x, 2, 10}, PlotRange -> {0, 10}]][[1, 1]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "2.000000163265306"
+    );
+    // … an `All` one spans just the points, on either axis.
+    assert_eq!(
+      interpret(
+        "ToString[PlotRange[Plot[x, {x, 1, 10}, PlotRange -> All]], InputForm]"
+      )
+      .unwrap(),
+      "{{1.0000001836734693, 9.99999981632653}, \
+       {1.0000001836734693, 9.99999981632653}}"
+    );
+  }
+
+  #[test]
+  fn list_plot_all_x_range_does_not_reach_to_zero() {
+    assert_eq!(
+      interpret(
+        "ToString[PlotRange[ListPlot[{1, 2, 3, 10, 5}, PlotRange -> All]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "{{0.9166666666666666, 5.}, {0., 10.}}"
+    );
+    // `DataRange -> All` places the values at 1, 2, … from 0.
+    assert_eq!(
+      interpret(
+        "PlotRange[ListPlot[{{1, 2}, {3, 6}, {7, 5}}, DataRange -> All]]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 7.}}"
+    );
+  }
+
+  #[test]
+  fn list_polar_plot_data_range_includes_both_ends() {
+    // Five radii over {0, Pi}: the last one lands at angle Pi.
+    let svg = export_svg(
+      "ListPolarPlot[{1, 1, 1, 1, 1}, DataRange -> {0, Pi}, Axes -> False]",
+    );
+    let xs: Vec<f64> = svg
+      .split("<circle ")
+      .skip(1)
+      .filter_map(|c| c.split("cx=\"").nth(1)?.split('"').next()?.parse().ok())
+      .collect();
+    assert_eq!(xs.len(), 5, "{svg}");
+    let (lo, hi) = xs
+      .iter()
+      .fold((f64::MAX, f64::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
+    // Angles 0 and Pi put points at both horizontal extremes, with the
+    // middle one (angle Pi/2) halfway between them.
+    let mid = xs[2];
+    assert!(((lo + hi) / 2.0 - mid).abs() < 1.0, "{xs:?}");
   }
 }

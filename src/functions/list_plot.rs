@@ -966,7 +966,7 @@ fn apply_multiaxis(
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
           (lo.min(p.y - p.dy.0), hi.max(p.y + p.dy.1))
         });
-      let extent = list_axis_extent(lo, hi, ListAxis::Y, false, false);
+      let extent = list_axis_extent(lo, hi, ListAxis::Y, false, false, false);
       pad_list_axis(extent, ListAxis::Y, false)
     })
     .collect();
@@ -2006,13 +2006,16 @@ enum ListAxis {
 /// away gets its lower end lowered by 1/48 (x) or 1/18 (y) of its span,
 /// which is where the axis then crosses; negative data keeps its range.
 /// `from_zero` (the positions of a plain value list) always starts at 0. A
-/// single value `v` spans `0..2 v` (`-1..1` for 0).
+/// single value `v` spans `0..2 v` (`-1..1` for 0). `whole` (`PlotRange ->
+/// All` on the x axis) reaches out to 0 neither way:
+/// `ListPlot[{1, …, 10}, PlotRange -> All]` runs from `1 - 9/48`.
 fn list_axis_extent(
   min: f64,
   max: f64,
   axis: ListAxis,
   from_zero: bool,
   no_zero: bool,
+  whole: bool,
 ) -> (f64, f64) {
   if !(min.is_finite() && max.is_finite()) {
     return (0.0, 1.0);
@@ -2032,6 +2035,7 @@ fn list_axis_extent(
     let lo = min - (max - min) * first;
     return (lo - (max - lo) * second, max);
   }
+  let from_zero = from_zero && !whole;
   let (min, max) = if from_zero {
     (min.min(0.0), max.max(0.0))
   } else {
@@ -2045,6 +2049,7 @@ fn list_axis_extent(
     };
   }
   let (ratio, reach) = match axis {
+    ListAxis::X if whole => (0.0, 1.0 / 48.0),
     ListAxis::X => (1.0 / 6.0, 1.0 / 48.0),
     ListAxis::Y => (0.5, 1.0 / 18.0),
   };
@@ -2128,9 +2133,16 @@ fn list_plot_ranges(
   let x = if opts.date_axis && x_min < x_max {
     (x_min, x_max)
   } else {
-    list_axis_extent(x_min, x_max, ListAxis::X, implicit_x && !nx, nx)
+    list_axis_extent(
+      x_min,
+      x_max,
+      ListAxis::X,
+      implicit_x && !nx,
+      nx,
+      request.keep_outliers.0,
+    )
   };
-  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny);
+  let y = list_axis_extent(y_min, y_max, ListAxis::Y, false, ny, false);
   if !explicit_x {
     opts.axes_origin_low.0 = Some(x.0);
   }
@@ -2895,7 +2907,10 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   apply_stacked_layout(args, &mut err_series);
   apply_multiaxis(args, &mut err_series, &mut parsed.opts);
   let all_series = strip_errors(&err_series);
-  let implicit_x = all_implicit_x(&err_series);
+  // `DataRange -> All` puts the values at their positions 1, 2, …, an x
+  // axis that starts at 0 like a plain value list's.
+  let implicit_x = all_implicit_x(&err_series)
+    || matches!(parsed.data_range, Some(DataRangeSpec::All));
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels =
     resolve_point_labels(&mut parsed, point_labels, &all_series);
@@ -3160,7 +3175,10 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   apply_stacked_layout(args, &mut err_series);
   let all_series = strip_errors(&err_series);
   parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
-  let implicit_x = all_implicit_x(&err_series);
+  // `DataRange -> All` puts the values at their positions 1, 2, …, an x
+  // axis that starts at 0 like a plain value list's.
+  let implicit_x = all_implicit_x(&err_series)
+    || matches!(parsed.data_range, Some(DataRangeSpec::All));
   apply_dataset_labels(&mut parsed.opts, &labels, &data);
   parsed.opts.point_labels =
     resolve_point_labels(&mut parsed, point_labels, &all_series);
@@ -3411,7 +3429,8 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // `{{θ1, r1}, …}` pairs give each point its angle; plain radii
-  // `{r1, r2, …}` are spread evenly over the circle, starting at angle 0.
+  // `{r1, r2, …}` are spread evenly over the circle, starting at angle 0,
+  // or over the `DataRange`.
   let is_pair = |e: &Expr| matches!(e, Expr::List(p) if p.len() == 2 && !matches!(p[0], Expr::List(_)));
   let pairs_per_series: Vec<bool> = match &args[0] {
     Expr::List(items) if items.first().is_some_and(is_pair) => vec![true],
@@ -3435,10 +3454,14 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .enumerate()
         .map(|(i, &(x, r))| {
-          let theta = if pairs {
-            x
-          } else {
-            2.0 * std::f64::consts::PI * i as f64 / n as f64
+          // `DataRange -> {a, b}` runs the angles from `a` to `b`, both
+          // ends included.
+          let theta = match &parsed.data_range {
+            _ if pairs => x,
+            Some(DataRangeSpec::Span(a, b)) if n > 1 => {
+              a + (b - a) * i as f64 / (n - 1) as f64
+            }
+            _ => 2.0 * std::f64::consts::PI * i as f64 / n as f64,
           };
           (r * theta.cos(), r * theta.sin())
         })

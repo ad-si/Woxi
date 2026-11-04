@@ -33,6 +33,7 @@ expression: "export_svg(\"ListPlot[{1, 2, 3}, ImageSize -> 200]\")"
 <line x1="1803.8" y1="1109.5" x2="1803.8" y2="1085.5" stroke="#666" stroke-width="5"/>
 <line x1="1862.2" y1="1109.5" x2="1862.2" y2="1085.5" stroke="#666" stroke-width="5"/>
 <line x1="169.5" y1="1109.5" x2="169.5" y2="1069.5" stroke="#666" stroke-width="5"/>
+<text x="169.5" y="1230.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.0</text>
 <line x1="461.3" y1="1109.5" x2="461.3" y2="1069.5" stroke="#666" stroke-width="5"/>
 <text x="461.3" y="1230.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">0.5</text>
 <line x1="753.2" y1="1109.5" x2="753.2" y2="1069.5" stroke="#666" stroke-width="5"/>

@@ -22,6 +22,23 @@ pub(crate) const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
 /// Length of an unlabelled tick mark, in display pixels (Wolfram draws 2.4).
 pub(crate) const AXIS_MINOR_TICK_LEN: f64 = 2.4;
 
+/// How far, in points, the other axis may run past the crossing on the
+/// side a tick label sits before Wolfram drops the label at the crossing.
+///
+/// The x label at the crossing sits below the x axis, so it survives when
+/// the y axis stops there (an explicit `PlotRange` starting at the origin,
+/// `PlotRangePadding -> None`, a small panel whose 2 % padding is under
+/// 2.6 pt) and is dropped once the y axis reaches further down; the y
+/// label likewise against the x axis running left of the y axis. Probed
+/// between 2.56 pt (kept) and 2.67 pt (dropped) at several image sizes.
+pub(crate) const CROSSING_LABEL_CLEARANCE: f64 = 2.6;
+
+/// Whether a tick label at the axes crossing is hidden because the other
+/// axis runs `overrun` points past the crossing on the label's side.
+pub(crate) fn crossing_label_blocked(overrun: f64) -> bool {
+  overrun > CROSSING_LABEL_CLEARANCE
+}
+
 /// How one axis maps data values onto its length.
 #[derive(Clone, Copy)]
 pub(crate) struct AxisScale {
@@ -229,7 +246,7 @@ pub(crate) struct OriginAxes<'a> {
 /// plot (up from the x axis, right from the y axis); labels sit below the x
 /// axis and left of the y axis. A label that would collide with the other
 /// axis is dropped, which is how the shared `0` at a centred origin
-/// disappears from both.
+/// disappears from both (see [`crossing_label_blocked`]).
 pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   let (x0, y0, w, h) = a.area;
   let sf = a.sf;
@@ -237,10 +254,20 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   if !(w > 0.0 && h > 0.0) {
     return svg;
   }
-  let px = |v: f64| x0 + a.x.frac(v) * w;
-  let py = |v: f64| y0 + h - a.y.frac(v) * h;
-  let axis_y = py(a.origin.1);
-  let axis_x = px(a.origin.0);
+  // Ticks outside the plot range are not drawn (a log axis's decade
+  // ticks run on past its ends): NaN maps to nothing.
+  let inside = |s: &AxisScale, v: f64| {
+    let f = s.frac(v);
+    if (-1e-9..=1.0 + 1e-9).contains(&f) {
+      f
+    } else {
+      f64::NAN
+    }
+  };
+  let px = |v: f64| x0 + inside(&a.x, v) * w;
+  let py = |v: f64| y0 + h - inside(&a.y, v) * h;
+  let axis_y = y0 + h - a.y.frac(a.origin.1) * h;
+  let axis_x = x0 + a.x.frac(a.origin.0) * w;
   if !(axis_x.is_finite() && axis_y.is_finite()) {
     return svg;
   }
@@ -294,8 +321,9 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           continue;
         }
         line(&mut svg, &mark, (x, axis_y, x, axis_y - major_len));
-        // The label would straddle the vertical axis.
+        // The label would straddle the vertical axis below the crossing.
         if a.show.1
+          && crossing_label_blocked((y0 + h - axis_y) / sf)
           && (x - axis_x).abs() < (label_width(label) / 2.0 + 2.0) * sf
         {
           continue;
@@ -327,9 +355,10 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           continue;
         }
         line(&mut svg, &mark, (axis_x, y, axis_x + major_len, y));
-        // The label would sit on the horizontal axis.
+        // The label would sit on the horizontal axis left of the crossing.
         if a.show.0
           && !a.keep_y_label_on_x_axis
+          && crossing_label_blocked((axis_x - x0) / sf)
           && (y - axis_y).abs() < font * 0.6
         {
           continue;

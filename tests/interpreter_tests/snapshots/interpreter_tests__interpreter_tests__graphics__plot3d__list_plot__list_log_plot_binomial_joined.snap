@@ -39,13 +39,10 @@ expression: svg
 <line x1="3391.4" y1="2087.0" x2="3391.4" y2="2047.0" stroke="#666" stroke-width="5"/>
 <text x="3391.4" y="2207.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">25</text>
 <line x1="252.0" y1="27.0" x2="252.0" y2="2129.0" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2215.0" x2="276.0" y2="2215.0" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1945.1" x2="276.0" y2="1945.1" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1405.2" x2="276.0" y2="1405.2" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="865.3" x2="276.0" y2="865.3" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="325.4" x2="276.0" y2="325.4" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-214.5" x2="276.0" y2="-214.5" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-484.5" x2="276.0" y2="-484.5" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1675.1" x2="292.0" y2="1675.1" stroke="#666" stroke-width="5"/>
 <text x="231.6" y="1709.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>
 <line x1="252.0" y1="1135.2" x2="292.0" y2="1135.2" stroke="#666" stroke-width="5"/>

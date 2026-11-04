@@ -1062,6 +1062,34 @@ pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   }
 }
 
+/// Whether a `PlotRange` value leaves the x range of a function plot to
+/// the sampled points, and if so whether that range reaches out to 0 when
+/// close to it ([`reach_to_zero`]). A function plot's default `{Full,
+/// Automatic}` (and a bare `PlotRange -> h`) keeps the iterator domain; an
+/// `Automatic` x — given as such, or left to it by a y-only `{ymin, ymax}`
+/// — spans the points and reaches to 0
+/// (`Plot[Sqrt[x], {x, -5, 5}, PlotRange -> Automatic]` runs from 0 to 5,
+/// `Plot[x, {x, 1, 10}, PlotRange -> {0, 10}]` from 0); an `All` x spans
+/// just the points.
+pub(crate) fn plot_range_x_from_points(value: &Expr) -> Option<bool> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let spec = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "Automatic" => Some(true),
+    Expr::Identifier(s) if s == "All" => Some(false),
+    _ => None,
+  };
+  match &val {
+    Expr::List(items) if items.len() == 2 => {
+      if items.iter().all(|e| try_eval_to_f64(e).is_some()) {
+        return Some(true);
+      }
+      spec(&items[0])
+        .filter(|_| matches!(&items[1], Expr::List(_) | Expr::Identifier(_)))
+    }
+    e => spec(e),
+  }
+}
+
 /// Split points into contiguous finite segments, breaking at NaN/Infinity
 /// in either coordinate (a `ParametricPlot` curve can diverge in x too).
 pub(crate) fn split_into_segments(
@@ -13746,6 +13774,29 @@ pub(crate) fn parse_axes_origin(value: &Expr) -> (Option<f64>, Option<f64>) {
 
 /// Widen an automatic data range so it contains an explicit `AxesOrigin`
 /// coordinate, as Wolfram does; `None` (an automatic origin) leaves it alone.
+/// How close to 0, as a fraction of its span, the automatic y range (and
+/// an automatic x range) of a function plot may stop and still be extended
+/// to 0: `Plot[a + x, {x, 0, 1}]`
+/// ranges from 0 for `a = 0.1225` and from `a` for `a = 0.123`, at any
+/// scale, above or below the axis.
+const PLOT_ZERO_REACH: f64 = 0.1228;
+
+/// The automatic y range `(min, max)` of a function plot, extended to 0
+/// when its nearer end lies within [`PLOT_ZERO_REACH`] of its span from it.
+pub(crate) fn reach_to_zero((min, max): (f64, f64)) -> (f64, f64) {
+  let span = max - min;
+  if !(span.is_finite() && span > 0.0) {
+    return (min, max);
+  }
+  if min > 0.0 && min < PLOT_ZERO_REACH * span {
+    (0.0, max)
+  } else if max < 0.0 && -max < PLOT_ZERO_REACH * span {
+    (min, 0.0)
+  } else {
+    (min, max)
+  }
+}
+
 pub(crate) fn include_in_range(
   (min, max): (f64, f64),
   origin: Option<f64>,
@@ -15008,6 +15059,10 @@ pub(crate) struct PlotRangeOverrides {
   /// `PlotRange -> All` on the y axis: show every sampled value instead of
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
+  /// The x range follows the sampled points rather than the iterator
+  /// domain, reaching to 0 when close if `Some(true)` (see
+  /// [`plot_range_x_from_points`]).
+  pub x_from_points: Option<bool>,
   pub aspect_ratio: Option<f64>,
   /// `AspectRatio -> Automatic`.
   pub aspect_automatic: bool,
@@ -15114,6 +15169,7 @@ pub(crate) fn apply_common_plot_option(
       overrides.x = rx;
       overrides.y = ry;
       overrides.y_all = plot_range_requests_all_y(replacement);
+      overrides.x_from_points = plot_range_x_from_points(replacement);
     }
     "Axes" => {
       if let Some(axes) = parse_axes_option(replacement) {
@@ -15870,6 +15926,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
   let plot_range_y_all = overrides.y_all;
+  let plot_range_x_from_points = overrides.x_from_points;
   let _precision = WorkingPrecisionGuard::set(working_precision);
 
   // Apply AspectRatio to the plotting area (not the whole image); the total
@@ -16277,6 +16334,53 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A numeric `AxesOrigin` y is part of the automatic plot range.
   let (y_data_min, y_data_max) =
     include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1);
+  // A constant curve `c` gets the range from 0 to `2 c` (`-1..1` for 0),
+  // padded like any other.
+  let (y_data_min, y_data_max) =
+    if !scaling.1.as_ref().is_some_and(Scaling::is_log)
+      && y_data_min.is_finite()
+      && (y_data_max - y_data_min).abs()
+        <= f64::EPSILON * y_data_min.abs().max(1.0)
+    {
+      let c = y_data_min;
+      if c == 0.0 {
+        (-1.0, 1.0)
+      } else {
+        ((2.0 * c).min(0.0), (2.0 * c).max(0.0))
+      }
+    } else {
+      (y_data_min, y_data_max)
+    };
+  // So is 0 when the curve comes close enough to it — the scaled 0 of a
+  // scaled axis, which a log axis does not have.
+  let (y_data_min, y_data_max) =
+    if !plot_range_y_all && !scaling.1.as_ref().is_some_and(Scaling::is_log) {
+      reach_to_zero((y_data_min, y_data_max))
+    } else {
+      (y_data_min, y_data_max)
+    };
+
+  // An automatic x range spans the points the curves were drawn through,
+  // not the whole iterator domain.
+  let (x_min, x_max) = match plot_range_x_from_points {
+    Some(reach) => {
+      let extent = all_points
+        .iter()
+        .flatten()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .fold(None, |acc: Option<(f64, f64)>, &(x, _)| {
+          Some(acc.map_or((x, x), |(lo, hi)| (lo.min(x), hi.max(x))))
+        })
+        .filter(|(lo, hi)| hi > lo)
+        .unwrap_or((x_min, x_max));
+      if reach && scaling.0.is_none() {
+        reach_to_zero(extent)
+      } else {
+        extent
+      }
+    }
+    None => (x_min, x_max),
+  };
 
   // WL 15 pads an automatic range by `PlotRangePadding -> {{Scaled[0.02],
   // …}, {Scaled[0.05], …}}`: that fraction of the padded span, i.e. 1/48
@@ -16316,7 +16420,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if plot_range_x.is_none() {
     plot_opts.axes_origin_low.0 = Some(x_min);
   }
-  if plot_range_y.is_none() {
+  // On a log axis whose automatic range cut the curve off at the bottom
+  // the axis drops to the padded edge instead.
+  let log_clipped_below = scaling.1.as_ref().is_some_and(Scaling::is_log)
+    && all_points
+      .iter()
+      .flatten()
+      .any(|&(_, y)| y.is_finite() && y < y_data_min - 1e-9 * y_span.abs());
+  if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
   plot_opts.unpadded_range = Some((

@@ -9792,29 +9792,12 @@ fn format_tick_in_sequence(v: f64, step: Option<f64>) -> String {
   }
 }
 
-fn nice_tick_step(min: f64, max: f64, target_count: usize) -> f64 {
-  let range = (max - min).abs();
-  if !range.is_finite() || range <= 0.0 {
-    return 1.0;
-  }
-  // As in Wolfram: the largest step of 1, 2 or 5 times a power of ten that
-  // still fits `target_count` steps into the range (4 steps: a span of 4–7
-  // gets unit ticks, 8–19 steps of 2, 2–3.9 steps of 0.5).
-  let raw_step = range / (target_count.max(1) as f64);
-  let magnitude = 10f64.powf(raw_step.log10().floor());
-  let normalized = raw_step / magnitude;
-  let nice = if normalized < 2.0 {
-    1.0
-  } else if normalized < 5.0 {
-    2.0
-  } else {
-    5.0
-  };
-  nice * magnitude
-}
-
-fn generate_ticks(min: f64, max: f64, target_count: usize) -> Vec<f64> {
-  let step = nice_tick_step(min, max, target_count);
+/// The automatic major ticks of a Graphics axis or frame edge over
+/// `min..max`, spaced as a plot's axes are (see
+/// [`crate::functions::plot::axis_tick_step`]): a span of 1.9 steps by 0.5,
+/// one of 1.5 by 0.2.
+fn generate_ticks(min: f64, max: f64) -> Vec<f64> {
+  let step = crate::functions::plot::axis_tick_step(max - min);
   if !step.is_finite() || step <= 0.0 {
     return vec![];
   }
@@ -9892,7 +9875,7 @@ fn axis_ticks(
 ) -> Vec<(f64, Option<String>)> {
   match spec {
     TickSpec::None => Vec::new(),
-    TickSpec::Automatic => generate_ticks(min, max, 4)
+    TickSpec::Automatic => generate_ticks(min, max)
       .into_iter()
       .map(|t| (t, None))
       .collect(),
@@ -9920,7 +9903,7 @@ fn axis_minor_ticks(spec: &TickSpec, min: f64, max: f64) -> Vec<f64> {
   if !matches!(spec, TickSpec::Automatic) {
     return Vec::new();
   }
-  let major = nice_tick_step(min, max, 4);
+  let major = crate::functions::plot::axis_tick_step(max - min);
   if !(major.is_finite() && major > 0.0) {
     return Vec::new();
   }
@@ -10128,8 +10111,14 @@ fn render_axes(
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
-      // Neither axis labels the point where the two cross.
-      if axes.1 && (t - axis_x_data).abs() < step.unwrap_or(1.0) * 1e-6 {
+      // The label at the crossing is dropped where the y axis runs on
+      // below it.
+      if axes.1
+        && (t - axis_x_data).abs() < step.unwrap_or(1.0) * 1e-6
+        && crate::functions::plot_axes::crossing_label_blocked(
+          svg_h - axis_y_px,
+        )
+      {
         continue;
       }
       // A tick sitting on the edge of the drawing area centres its label
@@ -10177,7 +10166,11 @@ fn render_axes(
       ));
       let label = tick_label
         .unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
-      if axes.0 && (t - axis_y_data).abs() < step.unwrap_or(1.0) * 1e-6 {
+      // … and where the x axis runs on left of it.
+      if axes.0
+        && (t - axis_y_data).abs() < step.unwrap_or(1.0) * 1e-6
+        && crate::functions::plot_axes::crossing_label_blocked(axis_x_px)
+      {
         continue;
       }
       // 3 pt left of the axis, centred on the tick.
@@ -10381,9 +10374,10 @@ fn graphics_decorations(
     frac,
     width: tick_label_width(label, TICK_FONT),
     height: line_height(TICK_FONT),
+    at_crossing: false,
   };
   let auto_labels = |lo: f64, hi: f64| {
-    let ticks = generate_ticks(lo, hi, 4);
+    let ticks = generate_ticks(lo, hi);
     let step = tick_sequence_step(&ticks);
     ticks
       .into_iter()
@@ -10463,17 +10457,20 @@ fn graphics_decorations(
       );
       entries
         .into_iter()
-        // Neither axis labels the point where the two cross.
-        .filter(|(t, _)| {
-          !(other && (t - crossing).abs() < step.unwrap_or(1.0) * 1e-6)
-        })
         .map(|(t, l)| {
           let l =
             l.unwrap_or_else(|| svg_escape(&format_tick_in_sequence(t, step)));
-          (frac(t), l)
+          // The label at the crossing is kept only while the other axis
+          // stops short of it (`Decorations::extents` decides).
+          let at_crossing =
+            other && (t - crossing).abs() < step.unwrap_or(1.0) * 1e-6;
+          (frac(t), l, at_crossing)
         })
-        .filter(|(f, l)| f.is_finite() && !l.is_empty())
-        .map(|(f, l)| label_box(f, &l))
+        .filter(|(f, l, _)| f.is_finite() && !l.is_empty())
+        .map(|(f, l, at_crossing)| LabelBox {
+          at_crossing,
+          ..label_box(f, &l)
+        })
         .collect::<Vec<_>>()
     };
     if axes.0 {
@@ -10558,8 +10555,8 @@ fn render_frame(
     return;
   }
 
-  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 4);
-  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 4);
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max);
   let x_step = tick_sequence_step(&x_ticks);
   let y_step = tick_sequence_step(&y_ticks);
   // A tick starting on the origin edge is written as a bare `0`.
@@ -10785,8 +10782,8 @@ fn render_grid_lines(
   grid_y: &GridSpec,
   default_style: &StyleState,
 ) {
-  let x_ticks = generate_ticks(bb.x_min, bb.x_max, 4);
-  let y_ticks = generate_ticks(bb.y_min, bb.y_max, 4);
+  let x_ticks = generate_ticks(bb.x_min, bb.x_max);
+  let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
   for (pos, style) in grid_positions(grid_x, &x_ticks, default_style) {
     let x = coord_x(pos, bb, svg_w);
@@ -20479,9 +20476,23 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // If there are also Graphics[...] primitives, render them as an
-    // overlay by converting to plot source entries is not feasible,
-    // so we render the plot sources alone for now.
+    // Like its other options, the merged graphic keeps the `PlotRange` of
+    // the first plot — the numeric range that plot settled on, so
+    // `Show[Plot[Sin[x], {x, 0, 1}], Plot[3 Sin[x], {x, 0, 10}]]` shows
+    // 0..1 — unless that plot asked for `PlotRange -> All`, which spans
+    // everything shown.
+    let first_all = merged_options.iter().any(|o| {
+      matches!(option_name_value(o), Some(("PlotRange", v))
+        if crate::functions::plot::plot_range_all_axes(&v) == (true, true))
+    });
+    let first = plot_sources
+      .iter()
+      .find(|ps| !any_curves || !ps.series.is_empty())
+      .filter(|_| !first_all);
+    let ((x_min, x_max), (y_min, y_max)) = first
+      .map_or(((x_min, x_max), (y_min, y_max)), |ps| {
+        (ps.x_range, ps.y_range)
+      });
     // Like the other options, the axis scales come from the first graphic.
     let merged = crate::syntax::PlotSource {
       series: all_series,
@@ -20491,9 +20502,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       options: merged_options.clone(),
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
-      // The reported range of the merged plot spans those of its parts.
+      // The reported range is the first plot's too (or spans them all).
       plot_range: plot_sources
         .iter()
+        .filter(|ps| first.is_none_or(|f| std::ptr::eq(*ps, f)))
         .map(|s| s.plot_range)
         .try_fold(None, |acc: Option<((f64, f64), (f64, f64))>, r| {
           let ((x0, x1), (y0, y1)) = r?;

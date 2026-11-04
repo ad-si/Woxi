@@ -35,19 +35,6 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <line x1="3517.0" y1="2065.0" x2="3517.0" y2="2025.0" stroke="#666" stroke-width="5"/>
 <text x="3517.0" y="2185.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
 <line x1="252.0" y1="5.0" x2="252.0" y2="2107.0" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="3131.7" x2="276.0" y2="3131.7" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2949.8" x2="276.0" y2="2949.8" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2843.4" x2="276.0" y2="2843.4" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2767.9" x2="276.0" y2="2767.9" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2709.3" x2="276.0" y2="2709.3" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2661.5" x2="276.0" y2="2661.5" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2621.0" x2="276.0" y2="2621.0" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2586.0" x2="276.0" y2="2586.0" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2555.1" x2="276.0" y2="2555.1" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2527.4" x2="276.0" y2="2527.4" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2345.5" x2="276.0" y2="2345.5" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2239.1" x2="276.0" y2="2239.1" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="2163.6" x2="276.0" y2="2163.6" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="2105.0" x2="276.0" y2="2105.0" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="2057.2" x2="276.0" y2="2057.2" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="2016.7" x2="276.0" y2="2016.7" stroke="#666" stroke-width="5"/>
@@ -77,24 +64,6 @@ expression: "export_svg(\"ListLogPlot[{1, 10, 100, 1000}]\")"
 <line x1="252.0" y1="203.7" x2="276.0" y2="203.7" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="168.7" x2="276.0" y2="168.7" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="137.8" x2="276.0" y2="137.8" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-71.8" x2="276.0" y2="-71.8" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-178.2" x2="276.0" y2="-178.2" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-253.7" x2="276.0" y2="-253.7" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-312.3" x2="276.0" y2="-312.3" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-360.2" x2="276.0" y2="-360.2" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-400.6" x2="276.0" y2="-400.6" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-435.7" x2="276.0" y2="-435.7" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-466.6" x2="276.0" y2="-466.6" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-494.2" x2="276.0" y2="-494.2" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-676.1" x2="276.0" y2="-676.1" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-782.6" x2="276.0" y2="-782.6" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-858.1" x2="276.0" y2="-858.1" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-916.6" x2="276.0" y2="-916.6" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-964.5" x2="276.0" y2="-964.5" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-1004.9" x2="276.0" y2="-1004.9" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-1040.0" x2="276.0" y2="-1040.0" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-1070.9" x2="276.0" y2="-1070.9" stroke="#666" stroke-width="5"/>
-<line x1="252.0" y1="-1098.6" x2="276.0" y2="-1098.6" stroke="#666" stroke-width="5"/>
 <line x1="252.0" y1="1923.1" x2="292.0" y2="1923.1" stroke="#666" stroke-width="5"/>
 <text x="231.6" y="1957.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
 <line x1="252.0" y1="1318.8" x2="292.0" y2="1318.8" stroke="#666" stroke-width="5"/>
