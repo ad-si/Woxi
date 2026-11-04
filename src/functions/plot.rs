@@ -3849,6 +3849,20 @@ pub(crate) fn plot_labels_svg(
     } else {
       sl.svg_scaled_stacked(sf, cx, title_pitch)
     };
+    if !sl.segments.is_empty() {
+      // Centre the line on the band the tallest picture claims.
+      let ty = ty + sl.extra_line_count() as f64 * title_pitch / 2.0;
+      labels_svg.push_str(&inline_segments_svg(
+        &sl.segments,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+      ));
+      return labels_svg;
+    }
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
@@ -3857,6 +3871,58 @@ pub(crate) fn plot_labels_svg(
   }
 
   labels_svg
+}
+
+/// A title made of text runs and small inline pictures, laid out left to
+/// right and centred on `cx`. `ty` is the text baseline; each picture is
+/// centred on the text's x-height line. Lengths are in render units, with
+/// `sf` render units per nominal point.
+fn inline_segments_svg(
+  segments: &[crate::functions::chart::LabelSegment],
+  cx: f64,
+  ty: f64,
+  fs: f64,
+  fill: &str,
+  style_attrs: &str,
+  sf: f64,
+) -> String {
+  use crate::functions::chart::LabelSegment;
+  let widths: Vec<f64> = segments
+    .iter()
+    .map(|seg| match seg {
+      LabelSegment::Text(m) => {
+        crate::functions::plot_padding::text_width(
+          &crate::functions::chart::svg_markup_visible_text(m),
+          fs / sf,
+        ) * sf
+      }
+      LabelSegment::Graphic { w, .. } => w * sf,
+    })
+    .collect();
+  let mut x = cx - widths.iter().sum::<f64>() / 2.0;
+  let mid = ty - fs * 0.3;
+  let mut out = String::new();
+  for (seg, w) in segments.iter().zip(&widths) {
+    match seg {
+      LabelSegment::Text(m) => out.push_str(&format!(
+        "<text x=\"{x:.1}\" y=\"{ty:.1}\" font-family=\"sans-serif\" \
+         font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs} \
+         xml:space=\"preserve\">{m}</text>\n"
+      )),
+      LabelSegment::Graphic { svg, h, .. } => {
+        let h = h * sf;
+        out.push_str(&crate::functions::graphics::embed_svg_centered(
+          svg,
+          x + w / 2.0,
+          mid,
+          *w,
+          h,
+        ));
+      }
+    }
+    x += w;
+  }
+  out
 }
 
 /// Overlay primitives on a log axis use that axis's natural-log coordinates

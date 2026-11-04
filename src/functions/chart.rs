@@ -158,6 +158,97 @@ pub(crate) struct StyledLabel {
   pub font_size: Option<f64>,
   /// `Framed[…]` title: drawn inside a thin box.
   pub framed: bool,
+  /// A one-line title that mixes text with small inline pictures
+  /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
+  /// set, the renderer lays the segments out side by side.
+  pub segments: Vec<LabelSegment>,
+}
+
+/// One piece of a title that mixes text and inline pictures.
+#[derive(Clone)]
+pub(crate) enum LabelSegment {
+  /// Typeset SVG `<text>` markup.
+  Text(String),
+  /// A rendered picture and its natural size.
+  Graphic { svg: String, w: f64, h: f64 },
+}
+
+/// Split `Row[{…}]` — possibly inside `PaddedForm`/`NumberForm`, which format
+/// the numbers in the row — into text and picture segments. `None` unless the
+/// row holds at least one picture.
+fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
+  fn walk(
+    expr: &Expr,
+    form: Option<&Expr>,
+    out: &mut Vec<LabelSegment>,
+  ) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "PaddedForm" | "NumberForm")
+          && args.len() >= 2
+          && form.is_none() =>
+      {
+        let mut hit = false;
+        let wrapper = |inner: &Expr| Expr::FunctionCall {
+          name: name.clone(),
+          args: std::iter::once(inner.clone())
+            .chain(args[1..].iter().cloned())
+            .collect(),
+        };
+        if let Expr::FunctionCall { name: rn, args: ra } = &args[0]
+          && rn == "Row"
+          && let Some(Expr::List(parts)) = ra.first()
+        {
+          for part in parts {
+            hit |=
+              walk(part, Some(&wrapper(&Expr::Identifier("x".into()))), out);
+          }
+          return hit;
+        }
+        false
+      }
+      Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+        let Expr::List(parts) = &args[0] else {
+          return false;
+        };
+        let mut hit = false;
+        for part in parts {
+          hit |= walk(part, form, out);
+        }
+        hit
+      }
+      Expr::FunctionCall { name, .. } if name == "Graphics" => {
+        let svg = crate::evaluator::expr_to_svg(expr);
+        match crate::functions::graphics::svg_natural_size(&svg) {
+          Some((w, h)) if svg.starts_with("<svg") => {
+            out.push(LabelSegment::Graphic { svg, w, h });
+            true
+          }
+          _ => false,
+        }
+      }
+      other => {
+        let shown = match (form, other) {
+          (
+            Some(Expr::FunctionCall { name, args }),
+            Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_),
+          ) => Expr::FunctionCall {
+            name: name.clone(),
+            args: std::iter::once(other.clone())
+              .chain(args[1..].iter().cloned())
+              .collect(),
+          },
+          _ => other.clone(),
+        };
+        out.push(LabelSegment::Text(
+          crate::functions::graphics::expr_to_svg_markup(&shown),
+        ));
+        false
+      }
+    }
+  }
+  let mut out = Vec::new();
+  walk(expr, None, &mut out).then_some(out)
 }
 
 impl StyledLabel {
@@ -433,6 +524,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      segments: Vec::new(),
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -488,6 +580,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color: None,
         font_size: None,
         framed: false,
+        segments: Vec::new(),
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -499,6 +592,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      segments: Vec::new(),
     }),
     Expr::Identifier(s) => Some(StyledLabel {
       text: s.clone(),
@@ -509,6 +603,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      segments: Vec::new(),
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -553,18 +648,36 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color,
         font_size,
         framed: false,
+        segments: Vec::new(),
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
     // plot with its OutputForm text, matching wolframscript.
     other => {
       let (markup, extra_lines) = markup_and_extra_lines(other);
+      let segments = inline_graphic_segments(other).unwrap_or_default();
+      // A picture taller than a line of text claims the room of the blank
+      // lines it spans, so the plot leaves space for it above the axes.
+      let tallest = segments
+        .iter()
+        .filter_map(|s| match s {
+          LabelSegment::Graphic { h, .. } => Some(*h),
+          _ => None,
+        })
+        .fold(0.0, f64::max);
+      let mut extra_lines = extra_lines;
+      if tallest > 16.0 {
+        extra_lines.extend(std::iter::repeat_n(
+          String::new(),
+          ((tallest - 16.0) / 16.0).ceil() as usize,
+        ));
+      }
       let text = stacked_visible_text(&markup, &extra_lines);
-      if text.is_empty() {
+      if text.is_empty() && segments.is_empty() {
         None
       } else {
         Some(StyledLabel {
-          text,
+          text: if text.is_empty() { " ".into() } else { text },
           markup: Some(markup),
           extra_lines,
           bold: false,
@@ -572,6 +685,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           color: None,
           font_size: None,
           framed: false,
+          segments,
         })
       }
     }
