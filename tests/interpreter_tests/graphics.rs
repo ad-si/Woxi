@@ -4603,6 +4603,26 @@ mod plot_option_evaluate_once {
 }
 
 mod plot3d {
+  /// `PlotPoints -> {nu, nv}` sets the sample count of each parameter
+  /// separately; the second entry must not be ignored.
+  #[test]
+  fn parametric_plot3d_plot_points_per_direction() {
+    clear_state();
+    let count = |opts: &str| {
+      interpret(&format!(
+        "StringCount[ExportString[ParametricPlot3D[{{s, t, 0}}, {{s, 0, 1}}, \
+         {{t, 0, 1}}, Axes -> False, Boxed -> False, {opts}], \"SVG\"], \
+         \"<polygon\"]"
+      ))
+      .unwrap()
+      .parse::<usize>()
+      .unwrap()
+    };
+    let rect = count("PlotPoints -> {9, 2}");
+    let square = count("PlotPoints -> {9, 9}");
+    assert!(rect < square, "{rect} !< {square}");
+  }
+
   /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
   /// colours and thins out the surface, both when drawn on its own and when
   /// `Show` re-renders it from its symbolic form.

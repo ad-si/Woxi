@@ -19312,6 +19312,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // samples per direction, i.e. `n - 1` grid cells. Demonstrations lower it
   // (`PlotPoints -> 15`) to keep a `Table` of many patches interactive.
   let mut plot_points: Option<usize> = None;
+  // Second entry of `PlotPoints -> {nu, nv}` (defaults to the first).
+  let mut plot_points_v: Option<usize> = None;
   // `RegionFunction -> f`: keep only the parts of the surface where
   // `f[x, y, z, u, v]` is `True`.
   let mut region_fn: Option<Expr> = None;
@@ -19332,18 +19334,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           plot_style_expr = Some(replacement.as_ref());
         }
         Expr::Identifier(name) if name == "PlotPoints" => {
-          let n = match evaluate_expr_to_expr(replacement) {
-            Ok(Expr::Integer(n)) => Some(n),
-            Ok(Expr::List(ref items)) => match items.first() {
-              Some(Expr::Integer(n)) => Some(*n),
-              _ => None,
-            },
+          let count = |e: &Expr| match e {
+            Expr::Integer(n) if *n >= 2 => Some(*n as usize),
             _ => None,
           };
-          if let Some(n) = n
-            && n >= 2
-          {
-            plot_points = Some(n as usize);
+          match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::List(ref items)) => {
+              plot_points = items.first().and_then(count);
+              plot_points_v = items.get(1).and_then(count);
+            }
+            Ok(ref e) => plot_points = count(e),
+            _ => {}
           }
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
@@ -19514,7 +19515,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (bound(&v_lo_expr), bound(&v_hi_expr))
     })
     .collect();
-  let grid_v = plot_points.map_or_else(
+  let grid_v = plot_points_v.or(plot_points).map_or_else(
     || {
       let span = v_ranges
         .iter()
