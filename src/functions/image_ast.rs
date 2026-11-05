@@ -698,7 +698,10 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     // An explicit color space is remembered (ImageColorSpace, Options).
-    color_space: explicit_space.as_deref().and_then(color_space_tag),
+    color_space: explicit_space
+      .as_deref()
+      .and_then(color_space_tag)
+      .or((channels > 3 && explicit_space.is_none()).then_some("Automatic")),
     display_size: None,
     width,
     height,
@@ -1584,8 +1587,8 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // image (the common case for inputs built from raw NumericArrays).
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
+      Some("Automatic") | None => id_expr("Automatic"),
       Some(cs) => str_expr(cs),
-      None => id_expr("Automatic"),
     });
   }
   if is_valid_image3d(&args[0]) {
@@ -5089,6 +5092,9 @@ pub fn rgb_pixels<'a>(
   channels: u8,
   data: &'a [f64],
 ) -> (u8, Cow<'a, [f64]>) {
+  if color_space == Some("Automatic") && channels >= 4 {
+    return (3, Cow::Owned(spectral_rgb(data, channels as usize, false)));
+  }
   let ch = channels as usize;
   let (is_cmyk, has_alpha) = match (color_space, ch) {
     (Some("HSB"), 3) => (false, false),
@@ -5110,6 +5116,27 @@ pub fn rgb_pixels<'a>(
     }
   }
   (if has_alpha { 4 } else { 3 }, Cow::Owned(rgb))
+}
+
+/// Convert untagged spectral bands to RGB, shared by display and ColorConvert.
+fn spectral_rgb(data: &[f64], n: usize, single: bool) -> Vec<f64> {
+  let red = n / 3;
+  let blue = (n as f64 / 3.0).round() as usize;
+  let green = n - red - blue;
+  let mut rgb = Vec::with_capacity(data.len() / n * 3);
+  for px in data.chunks_exact(n) {
+    let mut start = 0;
+    for size in [red, green, blue] {
+      let group = &px[start..start + size];
+      rgb.push(if single {
+        (group.iter().map(|v| *v as f32).sum::<f32>() / size as f32) as f64
+      } else {
+        group.iter().sum::<f64>() / size as f64
+      });
+      start += size;
+    }
+  }
+  rgb
 }
 
 /// HSB/HSV → RGB. `h`, `s`, `v` in [0, 1]; the hue wraps modulo 1.
@@ -5396,7 +5423,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Floor[n/3], n - Floor[n/3] - Round[n/3] and Round[n/3] channels whose
   // means are the red, green and blue components.
   if let Expr::Image {
-    color_space: None,
+    color_space: None | Some("Automatic"),
     width,
     height,
     channels,
@@ -5406,24 +5433,11 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = source
     && *channels >= 4
   {
-    let n = *channels as usize;
-    let red = n / 3;
-    let blue = (n as f64 / 3.0).round() as usize;
-    let green = n - red - blue;
-    let mut rgb = Vec::with_capacity(data.len() / n * 3);
-    for px in data.chunks(n) {
-      let mut start = 0;
-      for size in [red, green, blue] {
-        let group = &px[start..start + size];
-        rgb.push(if matches!(image_type, ImageType::Real32) {
-          // Real32 pixels are averaged in single precision.
-          (group.iter().map(|v| *v as f32).sum::<f32>() / size as f32) as f64
-        } else {
-          group.iter().sum::<f64>() / size as f64
-        });
-        start += size;
-      }
-    }
+    let rgb = spectral_rgb(
+      data,
+      *channels as usize,
+      matches!(image_type, ImageType::Real32),
+    );
     let mut regrouped = args.to_vec();
     regrouped[0] = Expr::Image {
       color_space: Some("RGB"),
@@ -5477,7 +5491,16 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
         }
         "RGB" => {
-          if ch == 3 {
+          if ch == 3
+            || (ch == 4
+              && matches!(
+                source,
+                Expr::Image {
+                  color_space: Some("RGB"),
+                  ..
+                }
+              ))
+          {
             return Ok(retag(source, tag)); // Already RGB
           }
           if ch == 1 {

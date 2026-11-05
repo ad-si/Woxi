@@ -559,6 +559,26 @@ mod layout_display {
   }
 
   #[test]
+  fn spectral_images_keep_channels_while_display_uses_rgb_composite() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ColorConvert[Image[{{{1,0,0,1/2}}}], \"RGB\"]]")
+        .unwrap(),
+      "{{{1., 0., 0.5}}}"
+    );
+    assert_eq!(
+      interpret("ImageChannels[Image[{{{1,0,0,1/2}}}]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("ImageColorSpace[Image[{{{1,0,0,1/2}}}]]").unwrap(),
+      "Automatic"
+    );
+    assert_eq!(interpret("ImageChannels[ColorConvert[Image[{{{1,0,0,1/2}}}, ColorSpace -> \"RGB\"], \"RGB\"]]").unwrap(), "4");
+    assert_eq!(interpret("Table[With[{im=Image[{{Table[N[Mod[k,3]/2],{k,n}]}}]},ExportString[im,\"SVG\"]===ExportString[ColorConvert[im,\"RGB\"],\"SVG\"]],{n,4,9}]").unwrap(), "{True, True, True, True, True, True}");
+  }
+
+  #[test]
   fn small_caps_are_painted_in_all_text_layouts() {
     for head in ["Row", "Column"] {
       let svg = svg_of(&format!(

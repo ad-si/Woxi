@@ -8542,8 +8542,6 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `GraphicsGrid[…, ImageSize -> 400]` of labelled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.
-- `Image` of 4-channel `{1, 0, 0, a}` data: wolframscript's SVG export shows
-  opaque red-to-magenta (alpha read as blue), Woxi a transparent-to-red ramp.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
