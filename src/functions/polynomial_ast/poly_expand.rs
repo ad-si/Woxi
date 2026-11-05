@@ -80,7 +80,21 @@ pub(super) fn expand_polynomial_with_kernels(expr: &Expr) -> Option<Expr> {
     .into_iter()
     .map(Expr::Identifier)
     .chain(kernels.list)
-    .map(|g| eval(&g).ok())
+    .map(|g| {
+      let mut g = eval(&g).ok()?;
+      // A kernel can occur in thousands of monomials. Share its arguments
+      // even when the call is small: cloning g[a, b] must not copy a and b
+      // (and their subtrees) for every occurrence. Mutation still detaches
+      // through ExprList's copy-on-write storage, and evaluation keeps its
+      // normal epoch checks.
+      if p.t.len() > 1
+        && let Expr::FunctionCall { args, .. } = &mut g
+        && !args.is_empty()
+      {
+        args.share();
+      }
+      Some(g)
+    })
     .collect::<Option<_>>()?;
   let mut terms: Vec<Expr> = Vec::with_capacity(p.t.len());
   for (m, c) in &p.t {
@@ -687,6 +701,45 @@ mod tests {
         "{source}"
       );
     }
+  }
+
+  #[test]
+  fn expanded_terms_share_kernel_arguments() {
+    let expr = eval("g[x[1], x[2]] (a + b + c)");
+    let expanded = expand_polynomial_with_kernels(&expr).unwrap();
+    let Expr::FunctionCall { name, args: terms } = &expanded else {
+      panic!("expected a sum");
+    };
+    assert_eq!(name, "Plus");
+    assert_eq!(terms.len(), 3);
+    let kernels: Vec<_> = terms
+      .iter()
+      .map(|term| {
+        let Expr::FunctionCall { name, args } = term else {
+          panic!("expected a product");
+        };
+        assert_eq!(name, "Times");
+        args
+          .iter()
+          .find_map(|factor| match factor {
+            Expr::FunctionCall { name, args } if name == "g" => Some(args),
+            _ => None,
+          })
+          .unwrap()
+      })
+      .collect();
+    assert!(kernels[0].is_shared());
+    assert!(kernels.iter().all(|args| args.same_shared(kernels[0])));
+
+    // Updating one occurrence must leave every other occurrence intact.
+    let original = kernels[0][0].clone();
+    let mut changed = kernels[0].clone();
+    changed[0] = Expr::Integer(99);
+    assert!(!changed.same_shared(kernels[0]));
+    assert!(crate::evaluator::pattern_matching::expr_equal(
+      &kernels[0][0],
+      &original
+    ));
   }
 
   #[test]

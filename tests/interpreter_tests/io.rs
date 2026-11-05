@@ -5046,15 +5046,18 @@ mod url_read {
 
   #[test]
   fn connection_failure_returns_failure_object() {
-    // Reserved-TLD host: name resolution fails deterministically, matching
-    // wolframscript's URLRead::invhttp + Failure["ConnectionFailure", …].
+    // Close without an HTTP response to force a transport failure locally.
+    // A reserved-TLD host can instead return an HTTP error through a proxy.
+    let port = serve(1, |_, _| Vec::new());
     assert_eq!(
-      interpret(
-        r#"URLRead[HTTPRequest["http://nonexistent-woxi-test.invalid/"]]"#
-      )
+      interpret(&format!(
+        r#"URLRead[HTTPRequest["http://127.0.0.1:{port}/"]]"#
+      ))
       .unwrap(),
-      "Could not connect to DisplayForm[TagBox[\
-       \"http://nonexistent-woxi-test.invalid/\", Short[#1, 3] & ]]."
+      format!(
+        "Could not connect to DisplayForm[TagBox[\
+         \"http://127.0.0.1:{port}/\", Short[#1, 3] & ]]."
+      )
     );
   }
 }
