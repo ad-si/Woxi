@@ -135,7 +135,8 @@ mod layout_display {
     };
     assert!(of("u").contains("text-decoration=\"underline\""));
     assert!(of("s").contains("text-decoration=\"line-through\""));
-    assert!(of("c").contains("font-variant=\"small-caps\""));
+    assert!(svg.contains("font-variant=\"small-caps\""));
+    assert!(svg.contains("font-size=\"80%\">C</tspan>"));
     assert!(of("v").contains("text-decoration=\"underline\""));
     assert!(of("b").contains("text-decoration=\"underline line-through\""));
     // Rows and grids draw them too.
@@ -183,6 +184,95 @@ mod layout_display {
     // Inside a layout too.
     let svg = svg_of("Row[{BarLegend[{\"Rainbow\", {0, 1}}]}]");
     assert!(!svg.contains("BarLegend"), "{svg}");
+  }
+
+  #[test]
+  fn svg_export_preserves_explicit_font_families() {
+    let svg = svg_of(
+      "Column[{Style[\"serif\", FontFamily -> \"Times\"], Style[\"mono\", FontFamily -> \"Courier\"]}]",
+    );
+    assert!(svg.contains("font-family=\"Times, serif\""), "{svg}");
+    assert!(svg.contains("font-family=\"Courier, monospace\""), "{svg}");
+    assert!(!svg.contains("svg text { font-family:"), "{svg}");
+    assert!(!svg.contains("svg text[font-family*=\"Courier\"]"), "{svg}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn svg_axes_inherit_the_embedded_atkinson_default() {
+    for expression in [
+      "Plot[Sin[x],{x,0,1}]",
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0]",
+    ] {
+      let svg = svg_of(expression);
+      assert!(svg.contains("<text "), "missing axis labels");
+      assert!(
+        svg
+          .contains("@font-face { font-family: \"Atkinson Hyperlegible Next\"")
+      );
+      assert!(svg.contains(
+        "svg { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }"
+      ));
+      assert!(!svg.contains("text:not([font-family])"));
+    }
+    // Exercise the rasterizer used by the graphics review. An inherited
+    // family must render identically to an explicit text family.
+    let svg =
+      svg_of("Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0]");
+    let explicit = svg.replace(
+      "<text ",
+      "<text font-family=\"Atkinson Hyperlegible Next\" ",
+    );
+    let rasterize = woxi::functions::image_ast::rasterize_svg;
+    let actual = rasterize(&svg, 72.0).unwrap();
+    let expected = rasterize(&explicit, 72.0).unwrap();
+    match (&actual, &expected) {
+      (
+        woxi::syntax::Expr::Image {
+          width: aw,
+          height: ah,
+          channels: ac,
+          data: a,
+          ..
+        },
+        woxi::syntax::Expr::Image {
+          width: bw,
+          height: bh,
+          channels: bc,
+          data: b,
+          ..
+        },
+      ) => {
+        assert!(
+          aw == bw && ah == bh && ac == bc && a == b,
+          "axis font did not match explicit Atkinson rendering"
+        );
+      }
+      _ => panic!("SVG rasterization did not produce images"),
+    }
+  }
+
+  #[test]
+  fn dataset_records_have_vertical_column_separators() {
+    for expr in [
+      "Dataset[{<|\"a\" -> 1, \"long header\" -> 2, \"c\" -> 3|>}]",
+      "Dataset[{<|\"a\" -> 1, \"b\" -> 2|>, <|\"a\" -> 3, \"b\" -> 4|>}]",
+    ] {
+      let svg = svg_of(expr);
+      let vertical = svg
+        .match_indices("<line ")
+        .filter(|(i, _)| {
+          let line = &svg[*i..*i + svg[*i..].find('>').unwrap()];
+          line.contains("y1=\"0\"")
+            && !line.contains("y2=\"0.0\"")
+            && !line.contains("y2=\"0\"")
+        })
+        .count();
+      assert!(
+        vertical >= if expr.contains("long header") { 4 } else { 3 },
+        "missing column separators: {svg}"
+      );
+    }
   }
 
   /// `Rotate` turns text (not only pictures) inside a layout, and
@@ -411,6 +501,44 @@ mod layout_display {
     assert!(svg.contains("stroke=\"black\""), "{svg}");
   }
 
+  #[test]
+  fn letter_overscripts_are_centered_above_the_base() {
+    let svg = svg_of("Row[{Overscript[\"\\[LongRightArrow]\", \"f\"]}]");
+    let f = texts(&svg)
+      .into_iter()
+      .find(|t| t.ends_with(">f"))
+      .expect("overscript");
+    assert!(f.contains("text-anchor=\"middle\""), "{f}");
+    assert!(f.contains("font-size=\"10\""), "{f}");
+    assert!(!f.contains("dx="), "{f}");
+  }
+
+  #[test]
+  fn long_monospace_layouts_reserve_the_actual_glyph_advance() {
+    for head in ["Column", "Row"] {
+      let svg = svg_of(&format!(
+        "{head}[{{Style[StringRepeat[\"W\", 100], Background -> Yellow]}}]"
+      ));
+      let rect = rects(&svg)
+        .into_iter()
+        .find(|r| r.contains("rgb(255,255,0)"))
+        .expect("background");
+      let width: f64 = rect
+        .split("width=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        width >= 100.0 * 14.0 * 0.632 - 0.1,
+        "background clips glyphs: {rect}"
+      );
+    }
+  }
+
   /// A text `Underoverscript` stacks its limits around the base.
   #[test]
   fn underoverscript_text_in_row() {
@@ -420,5 +548,72 @@ mod layout_display {
     let s = svg.find(">S<").expect("base");
     let i = svg.find(">i=1<").expect("lower limit");
     assert!(n < s && s < i, "{svg}");
+  }
+  #[test]
+  fn held_standard_roots_and_matrix_baselines_typeset() {
+    let svg = svg_of("StandardForm[HoldForm[Sqrt[x/(1+x)]]]");
+    assert!(!svg.contains(">Sqrt<"), "root was printed as a call");
+    let svg =
+      svg_of("TraditionalForm[HoldForm[s == MatrixForm[{{a,b},{c,d}}]]]");
+    assert!(svg.contains(">s</text>"));
+  }
+
+  #[test]
+  fn small_caps_are_painted_in_all_text_layouts() {
+    for head in ["Row", "Column"] {
+      let svg = svg_of(&format!(
+        "{head}[{{Style[\"Abc\",FontVariations->{{\"CapsType\"->\"SmallCaps\"}}]}}]"
+      ));
+      assert!(svg.contains(">B</tspan>") && svg.contains(">C</tspan>"));
+    }
+  }
+
+  #[test]
+  fn standard_form_grid_cells_keep_native_radicals() {
+    let svg =
+      svg_of("Grid[{{StandardForm[HoldForm[Sqrt[x/(1+x)]]]}},Frame->All]");
+    assert!(
+      !svg.contains("Sqrt["),
+      "StandardForm radical became source text"
+    );
+    assert!(
+      svg.contains("stroke-linejoin=\"round\""),
+      "missing radical outline"
+    );
+  }
+
+  #[test]
+  fn mathematical_legends_use_native_fraction_bars_and_bounds() {
+    for expression in [
+      "DiscretePlot[{1/n,1/n^2,(-1)^n/n},{n,1,8},PlotLegends->\"Expressions\"]",
+      "Plot[{x,x^2},{x,0,1},PlotLegends->{TraditionalForm[(a+b+c)/d],TraditionalForm[Sqrt[x]]}]",
+    ] {
+      let svg = svg_of(expression);
+      assert!(
+        svg.contains("<line x1=\"0\" y1="),
+        "legend lost its native fraction bar"
+      );
+      assert!(
+        !svg.contains("text-decoration=\"overline\""),
+        "legend used a text-decoration fraction"
+      );
+      assert!(
+        !svg.contains('\u{E000}'),
+        "internal label marker leaked into the SVG"
+      );
+    }
+  }
+
+  #[test]
+  fn binomial_plot_titles_reserve_their_native_height() {
+    let svg = svg_of("ListPlot[Range[4],PlotLabel->Binomial[n,k]]");
+    assert!(
+      !svg.contains("dx=\"0.150ch\""),
+      "binomial title used inline pair markup"
+    );
+    assert!(
+      svg.contains("stroke-width=\"0.56\""),
+      "binomial title lost its native brackets"
+    );
   }
 }

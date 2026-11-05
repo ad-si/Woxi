@@ -4408,6 +4408,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       parts.push(str_expr("}"));
       row_box(parts)
     }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      call("SqrtBox", vec![expr_to_box_form(&args[0])])
+    }
     // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
     Expr::FunctionCall { name, args }
       if name == "Quantity" && args.len() == 2 =>

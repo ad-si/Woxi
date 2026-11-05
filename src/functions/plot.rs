@@ -4610,7 +4610,7 @@ fn inline_segments_svg(
     .collect();
   let mut x = cx - widths.iter().sum::<f64>() / 2.0;
   let mid = ty - fs * 0.3;
-  let mut out = String::new();
+  let mut out = format!("<g color=\"{fill}\">");
   for (seg, w) in segments.iter().zip(&widths) {
     match seg {
       LabelSegment::Text(m) => out.push_str(&format!(
@@ -4631,6 +4631,7 @@ fn inline_segments_svg(
     }
     x += w;
   }
+  out.push_str("</g>");
   out
 }
 
@@ -10760,7 +10761,14 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   };
 
   let font_size = sf * 14.0;
-  let line_height = font_size * 1.6;
+  let line_height = opts
+    .plot_legends
+    .iter()
+    .filter_map(|label| {
+      crate::functions::graphics::legend_picture(label)
+        .map(|(_, _, h)| h * font_size / 14.0 + sf * 4.0)
+    })
+    .fold(font_size * 1.6, f64::max);
   let swatch_len = sf * 20.0;
   let swatch_gap = sf * 6.0;
   let legend_padding = sf * 10.0;
@@ -11024,6 +11032,9 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
 /// The width of a legend entry's label at `font_size` (render units).
 fn legend_label_width(opts: &PlotOptions, label: &str, font_size: f64) -> f64 {
+  if let Some((_, w, _)) = crate::functions::graphics::legend_picture(label) {
+    return w * font_size / 14.0;
+  }
   let text = crate::functions::graphics::box_string_visible_len(label) as f64
     * font_size
     * 0.55;
@@ -11046,6 +11057,14 @@ fn legend_label_svg(
   fill: &str,
 ) -> String {
   let sf = RESOLUTION_SCALE as f64;
+  if let Some((svg, _w, h)) = crate::functions::graphics::legend_picture(label)
+  {
+    let scale = font_size / 14.0;
+    return format!(
+      "<g color=\"{fill}\" transform=\"translate({x:.1},{:.1}) scale({scale:.5})\">{svg}</g>",
+      y - h * scale / 2.0
+    );
+  }
   let text_y = y + font_size * 0.35;
   if opts.legend_placeholders {
     let w = legend_label_width(opts, label, font_size);
@@ -14694,10 +14713,16 @@ pub(crate) fn parse_plot_legends(
           Expr::FunctionCall { name, args }
             if name == "TraditionalForm" && args.len() == 1 =>
           {
-            crate::functions::graphics::traditional_label(&args[0])
+            crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => crate::functions::graphics::styled_axis_label(item)
-            .unwrap_or_else(|| expr_to_string(item)),
+          _ => match crate::functions::graphics::structured_label_svg(item) {
+            Some(svg) => format!(
+              "{}{svg}",
+              crate::functions::graphics::STYLED_LABEL_MARKER
+            ),
+            None => crate::functions::graphics::styled_axis_label(item)
+              .unwrap_or_else(|| expr_to_string(item)),
+          },
         })
         .collect();
       (labels, false, false, LegendPosition::Right)
@@ -16188,7 +16213,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for b in &bodies {
       plot_opts
         .plot_legends
-        .push(crate::functions::graphics::traditional_label(b));
+        .push(crate::functions::graphics::traditional_legend_label(b));
     }
   }
   if labels_expressions && plot_opts.plot_labels.is_empty() {

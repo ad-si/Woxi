@@ -1861,7 +1861,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if expressions_legend && plot_opts.plot_legends.is_empty() {
     plot_opts.plot_legends = bodies
       .iter()
-      .map(|b| crate::functions::graphics::traditional_label(b))
+      .map(|b| crate::functions::graphics::traditional_legend_label(b))
       .collect();
   }
 

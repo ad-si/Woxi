@@ -7967,9 +7967,9 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// We also bake the preferred Atkinson family directly onto each text
 /// element's `font-family` attribute, keeping the generic family as a
 /// fallback (e.g. `"Atkinson Hyperlegible Next, sans-serif"`). CSS-aware
-/// renderers apply the equivalent `svg text {}` rule; renderers that read the
-/// presentation attribute but ignore that type-selector rule still pick up the
-/// embedded face from the attribute. Both paths therefore converge on
+/// renderers inherit the default from the SVG root; renderers that read the
+/// presentation attribute still pick up the embedded face directly from it.
+/// Both paths therefore converge on
 /// Atkinson. The Mono face is embedded only when the document actually uses
 /// monospace text, to avoid bloating graphics that don't.
 fn embed_used_fonts(svg: &str) -> String {
@@ -8006,14 +8006,16 @@ fn embed_used_fonts(svg: &str) -> String {
     ));
   }
 
+  // Set the inherited default on the SVG, rather than selecting unannotated
+  // text with :not(). Some SVG renderers do not apply that selector, leaving
+  // axis labels without an explicit family in the renderer's default face.
+  // Inheritance also preserves family overrides on text and enclosing groups.
   style.push_str(
-    "svg text { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }\n",
+    "svg { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }\n",
   );
   if needs_mono {
     style.push_str(
-      "svg text[font-family~=\"monospace\"], \
-svg text[font-family*=\"Mono\"], \
-svg text[font-family*=\"Courier\"] \
+      "svg text[font-family=\"Atkinson Hyperlegible Mono, monospace\"] \
 { font-family: \"Atkinson Hyperlegible Mono\", monospace; }\n",
     );
   }
@@ -8031,11 +8033,24 @@ svg text[font-family*=\"Courier\"] \
     .replace(
       "font-family=\"monospace\"",
       "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
-    )
-    .replace(
-      "font-family=\"serif\"",
-      "font-family=\"Atkinson Hyperlegible Next, serif\"",
     );
+  // Named faces may be absent on the machine rendering the export. Preserve
+  // the requested face and provide its generic family for that case.
+  let mut body = body;
+  for (family, fallback) in [
+    ("Times", "serif"),
+    ("Times New Roman", "serif"),
+    ("Georgia", "serif"),
+    ("Courier", "monospace"),
+    ("Courier New", "monospace"),
+    ("Helvetica", "sans-serif"),
+    ("Arial", "sans-serif"),
+  ] {
+    body = body.replace(
+      &format!("font-family=\"{family}\""),
+      &format!("font-family=\"{family}, {fallback}\""),
+    );
+  }
 
   // Insert the style block immediately after the opening `<svg …>` tag. The
   // tag's attribute values never contain `>`, so the first `>` after `<svg`

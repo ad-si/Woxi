@@ -8607,12 +8607,10 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 
 ## Plot styling and labelling options (graphics comparison sweep, 2026-11)
 
-- Plot labels, legends and explicit tick labels are text markup: a
-  `PlotLegends -> "Expressions"` entry such as `Abs[Exp[I w]/(1 + w^2)]`
-  reads `|(exp(i w))/(1+w^2)|` on one line, `Ticks -> {{Pi/2, 3 Pi/2}}`
-  labels read `π/2`, and `Sqrt[x]` is `√` with an SVG overline rather than
-  a vinculum joined to the sign. wolframscript typesets the stacked
-  fractions and radicals.
+- Structured mathematical plot titles and legend entries now use native
+  layout boxes, including stacked fractions, binomials and joined radicals.
+  Some curve annotations and explicit tick labels still use text markup;
+  `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than stacked fractions.
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with

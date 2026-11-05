@@ -266,6 +266,12 @@ pub(crate) enum LabelSegment {
 /// the numbers in the row — into text and picture segments. `None` unless the
 /// row holds at least one picture.
 fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
+  if crate::functions::graphics::expr_to_svg_markup_lines(expr).len() == 1
+    && let Some(svg) = crate::functions::graphics::structured_label_svg(expr)
+    && let Some((w, h)) = crate::functions::graphics::svg_natural_size(&svg)
+  {
+    return Some(vec![LabelSegment::Graphic { svg, w, h }]);
+  }
   fn walk(
     expr: &Expr,
     form: Option<&Expr>,
