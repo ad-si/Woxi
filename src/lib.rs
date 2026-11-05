@@ -5469,10 +5469,23 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
           &args[2..],
         )
         .unwrap_or(expr)
-      } else if let Some(svg) =
-        functions::graphics::mesh_region_2d_svg(&args[0], &args[1], &args[2..])
-      {
+      } else if let Some(svg) = functions::graphics::mesh_region_2d_svg(&expr) {
         capture_graphics(&svg);
+        // Adding pictures for boundary and triangular meshes must preserve
+        // their exact constructor text in the terminal. Polygon meshes
+        // retain their established Graphics display representation.
+        let polygon_cells = match &args[1] {
+          syntax::Expr::FunctionCall { name, .. } => name == "Polygon",
+          syntax::Expr::List(cells) => cells.iter().any(|c| {
+            matches!(c,
+            syntax::Expr::FunctionCall { name, .. } if name == "Polygon")
+          }),
+          _ => false,
+        };
+        if !polygon_cells {
+          return expr;
+        }
+
         syntax::Expr::Graphics {
           svg,
           is_3d: false,

@@ -334,6 +334,8 @@ struct StyleState {
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
   arrowheads: Option<Vec<ArrowHead>>,
+  /// Width of the inset picture in data coordinates, for scaled arrowheads.
+  arrowhead_width: Option<f64>,
   /// `CapForm[…]`: how the ends of an open stroked primitive (`Line`,
   /// `Arrow`) are drawn. `None` keeps Woxi's existing butt-cap rendering.
   cap_form: Option<LineCapKind>,
@@ -651,6 +653,7 @@ impl Default for StyleState {
       text_pixel_shift: (0.0, 0.0),
       text_scaled_shift: (0.0, 0.0),
       arrowheads: None,
+      arrowhead_width: None,
       cap_form: None,
       join_form: None,
     }
@@ -7100,7 +7103,11 @@ fn inset_primitives(
       };
       // After scaling about the centre, the alignment point moved with it.
       let (ax, ay) = (cx + (ox - cx) * sx, cy + (oy - cy) * sy);
-      translate_primitive(&p, pos.0 - ax, pos.1 - ay)
+      let mut p = translate_primitive(&p, pos.0 - ax, pos.1 - ay);
+      if let Primitive::ArrowPrim { style, .. } = &mut p {
+        style.arrowhead_width = Some(w * sx.abs());
+      }
+      p
     })
     .collect();
   Some(placed)
@@ -12000,7 +12007,10 @@ fn render_primitive(
       // the path length, and 40 % of the shape's bounding-box diagonal
       // (which keeps a self-loop's head in proportion to its visible
       // size rather than its arc length).
-      let default_head = (svg_w * 0.04)
+      let head_width = style
+        .arrowhead_width
+        .map_or(svg_w, |w| w * svg_w / bb.width());
+      let default_head = (head_width * 0.04)
         .min(total_len_px * 0.45)
         .min(bbox_diag * 0.4)
         .max(1.0);
@@ -12036,7 +12046,7 @@ fn render_primitive(
         if h.absolute {
           h.size.abs()
         } else {
-          h.size.abs() * svg_w
+          h.size.abs() * head_width
         }
       };
 
@@ -14074,7 +14084,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   svg.push_str("</g>\n");
 
-  // The axes sit in front of the primitives, as Wolfram draws them.
+  // Wolfram paints axes after the primitives with a thin default stroke.
   render_axes(
     &mut svg,
     axes,
@@ -14084,9 +14094,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref(),
     (&ticks_x, &ticks_y),
     (margin_left, margin_right),
-    axes_style.as_ref().map_or_else(Default::default, |spec| {
-      AxisLineStyle::parse_pair(spec, &bb, svg_w)
-    }),
+    axes_style.as_ref().map_or_else(
+      || {
+        let style = AxisLineStyle {
+          width: 0.2,
+          ..Default::default()
+        };
+        (style.clone(), style)
+      },
+      |spec| AxisLineStyle::parse_pair(spec, &bb, svg_w),
+    ),
     ticks_style
       .as_ref()
       .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
@@ -17002,9 +17019,6 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── FunctionCall ──
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
-        // Missing[...] → rendered as a dash
-        "Missing" => "-".to_string(),
-
         // TildeTilde[a, b, ...] → a ≈ b ≈ ...
         "TildeTilde" if args.len() >= 2 => args
           .iter()
@@ -19726,29 +19740,135 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Canonical conversion of a mesh object, including filled boundary loops and labels.
+pub(crate) fn mesh_region_graphics_prims(region: &Expr) -> Option<Vec<Expr>> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let mesh = crate::functions::mesh_region::parse_mesh(region)?;
+  let opts: Vec<Expr> = args[2..]
+    .iter()
+    .filter(|o| option_kv(o).is_some())
+    .cloned()
+    .collect();
+  let mut prims = if name == "BoundaryMeshRegion" {
+    let [_, edge, face] = mesh_cell_styles(&opts);
+    let mut p = vec![
+      call1("EdgeForm", id_expr("None")),
+      face.unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr()),
+    ];
+    let rings = mesh.planar_rings()?;
+    p.extend(crate::functions::field_plot::region_plot_polygons(&rings));
+    p.push(edge.unwrap_or_else(|| Color::gray(0.4).to_expr()));
+    for edge in &mesh.cells[1] {
+      let points = edge
+        .iter()
+        .map(|i| mesh.coordinates.get(*i - 1).cloned())
+        .collect::<Option<Vec<_>>>()?;
+      p.push(call1("Line", Expr::List(points.into())));
+    }
+    p
+  } else {
+    mesh_region_to_graphics_prims(&args[0], &args[1], &opts)?
+  };
+  // MeshCellLabel specifications select a cell dimension, optionally an index.
+  if let Some((_, value)) = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "MeshCellLabel")
+  {
+    let entries = match value {
+      Expr::List(v) => v.to_vec(),
+      other => vec![other.clone()],
+    };
+    for entry in entries {
+      let Expr::Rule {
+        pattern,
+        replacement,
+      } = &entry
+      else {
+        continue;
+      };
+      let (dim, selected) = match pattern.as_ref() {
+        Expr::List(key) if key.len() == 2 => (
+          expr_to_f64(&key[0])?,
+          expr_to_f64(&key[1]).map(|i| i as usize),
+        ),
+        key => (expr_to_f64(key)?, None),
+      };
+      if !(0.0..=2.0).contains(&dim) || dim.fract() != 0.0 {
+        continue;
+      }
+      let cells = if dim == 0.0 {
+        (1..=mesh.coordinates.len()).map(|i| vec![i]).collect()
+      } else {
+        mesh.cells[dim as usize].clone()
+      };
+      for (i, cell) in cells.iter().enumerate() {
+        if selected.is_some_and(|n| n != i + 1) {
+          continue;
+        }
+        let points = cell
+          .iter()
+          .map(|n| expr_to_point(mesh.coordinates.get(*n - 1)?))
+          .collect::<Option<Vec<_>>>()?;
+        if points.is_empty() {
+          continue;
+        }
+        let (x, y) = points
+          .iter()
+          .fold((0.0, 0.0), |(x, y), p| (x + p.0, y + p.1));
+        let label = if matches!(replacement.as_ref(), Expr::String(s) if s == "Index")
+        {
+          Expr::Integer((i + 1) as i128)
+        } else {
+          *replacement.clone()
+        };
+        let position = Expr::List(
+          vec![
+            Expr::Real(x / points.len() as f64),
+            Expr::Real(y / points.len() as f64),
+          ]
+          .into(),
+        );
+        prims.push(Expr::List(
+          vec![
+            Color::gray(0.0).to_expr(),
+            call(
+              "Text",
+              vec![
+                call("Style", vec![label, Expr::Integer(10)]),
+                call(
+                  "Offset",
+                  vec![
+                    Expr::List(vec![Expr::Integer(2), Expr::Integer(2)].into()),
+                    position,
+                  ],
+                ),
+                Expr::List(vec![Expr::Integer(-1), Expr::Integer(-1)].into()),
+              ],
+            ),
+          ]
+          .into(),
+        ));
+      }
+    }
+  }
+  Some(prims)
+}
+
 /// A two-dimensional `MeshRegion`'s picture: its cells drawn as `Graphics`
 /// primitives, styled by its `MeshCellStyle`.
-pub(crate) fn mesh_region_2d_svg(
-  vertices_expr: &Expr,
-  primitives_expr: &Expr,
-  opts: &[Expr],
-) -> Option<String> {
-  // Only a mesh of `Polygon` cells is shown as a picture; others keep
-  // their symbolic form, as in wolframscript's text output.
-  let has_polygons = match primitives_expr {
-    Expr::List(cells) => cells.iter().any(
-      |c| matches!(c, Expr::FunctionCall { name, .. } if name == "Polygon"),
-    ),
-    Expr::FunctionCall { name, .. } => name == "Polygon",
-    _ => false,
-  };
-  if !has_polygons {
+pub(crate) fn mesh_region_2d_svg(region: &Expr) -> Option<String> {
+  let Expr::FunctionCall { args, .. } = region else {
     return None;
-  }
-  let prims =
-    mesh_region_to_graphics_prims(vertices_expr, primitives_expr, opts)?;
-  match &graphics_ast(&[Expr::List(prims.into())]).ok()? {
-    Expr::Graphics { svg, .. } => Some(svg.clone()),
+  };
+  let prims = mesh_region_graphics_prims(region)?;
+  let mut graphics_args = vec![Expr::List(prims.into())];
+  graphics_args
+    .extend(args[2..].iter().filter(|o| option_kv(o).is_some()).cloned());
+  match graphics_ast(&graphics_args).ok()? {
+    Expr::Graphics { ref svg, .. } => Some(svg.clone()),
     _ => None,
   }
 }
@@ -20679,7 +20799,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
         } else if let Some(graphics_prims) =
-          mesh_region_to_graphics_prims(&gargs[0], &gargs[1], &gargs[2..])
+          mesh_region_graphics_prims(&call(name, gargs.to_vec()))
         {
           layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(Expr::List(graphics_prims.into()));
@@ -21770,7 +21890,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
-    return None;
+    return standard_fraction_cell_svg(content, size);
   };
   // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
   // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
@@ -21857,12 +21977,15 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
   let arithmetic = matches!(cell, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
     || matches!(cell, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
-  if !arithmetic || !has_fraction(cell) {
+  if !arithmetic {
     return None;
   }
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form(cell);
-  if !box_has_fraction(&boxes) {
+  if !box_has_fraction(&boxes)
+    && !crate::syntax::expr_to_string(&boxes).contains("SqrtBox[")
+    && !crate::syntax::expr_to_string(&boxes).contains("RadicalBox[")
+  {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -29331,9 +29454,6 @@ fn framed_box_to_svg(
     )
   };
 
-  // Layout constants
-  let char_width: f64 = 8.4;
-  let font_size: f64 = 14.0;
   let numeric_option = |key: &str| {
     args[1..]
       .iter()
@@ -29341,11 +29461,32 @@ fn framed_box_to_svg(
       .find(|(k, _)| *k == key)
       .and_then(|(_, v)| expr_to_f64(v))
   };
-  // `FrameMargins -> m` pads every side by `m` points (WL's automatic
-  // margins put the content 5 points inside a framed box's edge).
-  let margin: f64 =
-    numeric_option("FrameMargins").unwrap_or(if is_panel { 6.0 } else { 5.0 });
-  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(0.0);
+  let default_margin = if is_panel { 6.0 } else { 5.0 };
+  let margins = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameMargins")
+    .map(|(_, v)| v);
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  let (left, right, bottom, top) = match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
+      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
+      (m, m, m, m)
+    }
+  };
+  let rounding = numeric_option("RoundingRadius").unwrap_or(0.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
   let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
@@ -29451,81 +29592,66 @@ fn framed_box_to_svg(
     other => (other, inner_w, inner_h),
   };
 
-  if let Some(ref child_svg) = inner_svg {
-    // Embed child SVG inside a frame
-    let total_w = inner_w + 2.0 * margin;
-    let total_h = inner_h + 2.0 * margin;
-    let svg_w = total_w.ceil() as u32;
-    let svg_h = total_h.ceil() as u32;
-
-    let mut svg = String::with_capacity(child_svg.len() + 512);
-    svg.push_str(&format!(
-      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
-    ));
-    // Border rectangle
-    svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {}/>\n",
-      stroke_width / 2.0, stroke_width / 2.0,
-      total_w - stroke_width, total_h - stroke_width,
-      border_attrs(total_w),
-    ));
-    // Embed child SVG
-    svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
-      view_box_attr(child_svg)
-    ));
-    // Strip outer <svg> and </svg> tags from child to embed its content
-    let inner_content = strip_svg_wrapper(child_svg);
-    svg.push_str(inner_content);
-    svg.push_str("</svg>\n");
-    svg.push_str("</svg>");
-    Some(svg)
+  let (child_svg, content_w, content_h) = if let Some(svg) = inner_svg {
+    (svg, inner_w, inner_h)
   } else {
-    // Text content — measure and render. A `Pane`/`Item` around the text
-    // only sizes it, so the frame holds the content itself.
-    let pane_size = pane_content_size(content);
-    let (align_x, align_y) = pane_content_alignment(content);
-    let content = &unwrap_display_wrappers(content);
-    let (content_w, content_h) = pane_size.unwrap_or_else(|| {
-      let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
-      // A framed line of text is one line height (1.2 em) tall in WL.
-      let line_h = if is_panel { font_size } else { font_size * 1.2 };
-      (
-        estimate_display_width(content) * char_width,
-        line_h + frac_extra,
-      )
-    });
-
-    let total_w = content_w + 2.0 * margin;
-    let total_h = content_h + 2.0 * margin;
-    let svg_w = total_w.ceil() as u32;
-    let svg_h = total_h.ceil() as u32;
-
-    let mut svg = String::with_capacity(512);
-    svg.push_str(&format!(
-      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
-    ));
-    // Border rectangle
-    svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {}/>\n",
-      stroke_width / 2.0, stroke_width / 2.0,
-      total_w - stroke_width, total_h - stroke_width,
-      border_attrs(total_w),
-    ));
-    // The text sits where the pane's alignment puts it (centred by
-    // default) inside the content area.
-    let text_w = estimate_display_width(content) * char_width;
-    let line_h = font_size * 1.2;
-    let cx = margin + text_w / 2.0 + (content_w - text_w).max(0.0) * align_x;
-    let cy = margin + line_h / 2.0 + (content_h - line_h).max(0.0) * align_y;
-    let text_fill = theme().text_primary;
-    svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
-      expr_to_svg_markup(content)
-    ));
-    svg.push_str("</svg>");
-    Some(svg)
-  }
+    let content = unwrap_display_wrappers(content);
+    let style = extract_cell_style(&content);
+    let size = style.font_size.unwrap_or(14.0);
+    let boxes =
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+        style.content,
+      );
+    let layout =
+      layout_box(&crate::strip_number_precision_markers(&boxes), size);
+    let fill = style
+      .color
+      .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
+    let mut svg = layout_to_svg(&layout, &fill).replacen(
+      "<g fill=",
+      &format!(
+        "<g font-weight=\"{}\" font-style=\"{}\" opacity=\"{}\" fill=",
+        style.font_weight,
+        style.font_style,
+        i32::from(!style.hidden)
+      ),
+      1,
+    );
+    if let Some(family) = &style.font_family {
+      svg = svg
+        .replace("Atkinson Hyperlegible Mono, monospace", &svg_escape(family));
+    }
+    (svg, layout.width, layout.height)
+  };
+  let (area_w, area_h) =
+    pane_content_size(content).unwrap_or((content_w, content_h));
+  let (align_x, align_y) = pane_content_alignment(content);
+  let total_w = (area_w + left + right).ceil();
+  let total_h = (area_h + bottom + top).ceil();
+  let (child_svg, content_w, content_h) = if pane_content_size(content)
+    .is_some()
+  {
+    let x = (area_w - content_w).max(0.0) * align_x;
+    let y = (area_h - content_h).max(0.0) * align_y;
+    let svg = format!(
+      "<svg width=\"{area_w}\" height=\"{area_h}\" viewBox=\"0 0 {area_w} {area_h}\"><svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg></svg>",
+      view = view_box_attr(&child_svg),
+      body = strip_svg_wrapper(&child_svg)
+    );
+    (svg, area_w, area_h)
+  } else {
+    (child_svg, content_w, content_h)
+  };
+  let (x, y) = (left, top);
+  Some(format!(
+    "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border}/>\n<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>\n</svg>",
+    half = stroke_width / 2.0,
+    rw = total_w - stroke_width,
+    rh = total_h - stroke_width,
+    border = border_attrs(total_w),
+    view = view_box_attr(&child_svg),
+    body = strip_svg_wrapper(&child_svg)
+  ))
 }
 
 /// Render `Highlighted[expr]` (or `Highlighted[expr, color]`) as an SVG box

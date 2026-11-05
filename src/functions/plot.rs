@@ -3310,6 +3310,8 @@ pub(crate) struct PlotOptions {
   /// The labels of an explicit bottom / left list are also in `ticks_x` /
   /// `ticks_y`.
   pub frame_tick_edges: [FrameEdgeTicks; 4],
+  pub frame_tick_spec: Option<Expr>,
+  pub invalid_frame_ticks: bool,
   /// The plot theme labels the axes without explicit ticks with
   /// `Charting`SimpleTicks` (majors only, about six) over the displayed
   /// range instead of the automatic ticks.
@@ -3408,7 +3410,7 @@ pub(crate) struct PlotOptions {
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
   /// each curve (None = that curve is unlabeled).
   pub plot_labels: Vec<Option<String>>,
-  pub finite_labeling_size: bool,
+  pub labeling_size: Option<f64>,
   /// Per series: its `plot_labels` entry hangs off a horizontal leader line
   /// (a `Callout[data, label]` at its automatic place, the series' end)
   /// rather than sitting right after the last point (`PlotLabels`,
@@ -3572,6 +3574,8 @@ pub(crate) struct PlotOptions {
   /// The default mesh function is the curve parameter (`ParametricPlot`),
   /// taken as the position along the point list, instead of x.
   pub mesh_by_parameter: bool,
+  /// Original parametric samples (x, y, t), retained through clipping.
+  pub mesh_parameters: Vec<Vec<(f64, f64, f64)>>,
   /// Mesh values met exactly at the ends of a curve are not marked
   /// (`Plot`, which samples just inside its domain).
   pub mesh_open_ends: bool,
@@ -3702,6 +3706,8 @@ impl Default for PlotOptions {
       ticks_x: None,
       ticks_y: None,
       frame_tick_edges: FrameEdgeTicks::defaults(),
+      frame_tick_spec: None,
+      invalid_frame_ticks: false,
       simple_ticks: false,
       frame_label_bottom: None,
       frame_label_left: None,
@@ -3713,7 +3719,7 @@ impl Default for PlotOptions {
       curve_label_specs: Vec::new(),
       placed_highlights: Vec::new(),
       plot_labels: Vec::new(),
-      finite_labeling_size: false,
+      labeling_size: None,
       plot_label_leaders: Vec::new(),
       plot_labels_automatic: false,
       point_labels: Vec::new(),
@@ -3762,6 +3768,7 @@ impl Default for PlotOptions {
       mesh_shading: None,
       mesh_full_points: Vec::new(),
       mesh_by_parameter: false,
+      mesh_parameters: Vec::new(),
       mesh_open_ends: false,
       mesh_point_size: None,
       axes_origin: (None, None),
@@ -5087,6 +5094,84 @@ fn generate_svg_up_to(
   }
 }
 
+/// Resolve function ticks once the numerical range is known. Named callback
+/// symbols in exported graphics live in Wolfram's $CellContext, so an
+/// unqualified user definition cannot be called from that stored graphic.
+fn with_frame_tick_functions(
+  opts: &PlotOptions,
+  x: (f64, f64),
+  y: (f64, f64),
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let Some(spec) = &opts.frame_tick_spec else {
+    return std::borrow::Cow::Borrowed(opts);
+  };
+  let mut invalid = false;
+  let mut resolve = |e: &Expr, (lo, hi): (f64, f64)| -> Expr {
+    let callable = matches!(
+      e,
+      Expr::Function { .. } | Expr::CurriedCall { .. }
+    ) || matches!(e, Expr::Identifier(s) if !matches!(s.as_str(), "None" | "False" | "Automatic" | "All"));
+    if !callable {
+      return e.clone();
+    }
+    let f = match e {
+      Expr::Identifier(s) if !s.contains('`') => {
+        id_expr(&format!("$CellContext`{s}"))
+      }
+      _ => e.clone(),
+    };
+    let call = Expr::CurriedCall {
+      func: Box::new(f),
+      args: vec![Expr::Real(lo), Expr::Real(hi)],
+    };
+    let result = evaluate_expr_to_expr(&call).ok();
+    if let Some(result) = result
+      && parse_explicit_tick_entries(&result).is_some()
+    {
+      return result;
+    }
+    invalid = true;
+    Expr::List(Vec::new().into())
+  };
+  let resolved = match spec {
+    Expr::List(items) if items.len() == 2 && items.iter().all(|e| matches!(e, Expr::List(p) if p.len() == 2 && p.iter().all(|q| !matches!(q, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))))) => {
+      let Expr::List(lr) = &items[0] else { unreachable!() };
+      let Expr::List(bt) = &items[1] else { unreachable!() };
+      Expr::List(vec![Expr::List(vec![resolve(&lr[0], y), resolve(&lr[1], y)].into()),
+        Expr::List(vec![resolve(&bt[0], x), resolve(&bt[1], x)].into())].into())
+    }
+    Expr::List(items) if items.len() == 4 => Expr::List(items.iter().enumerate().map(|(i, e)| resolve(e, if i % 2 == 0 { x } else { y })).collect()),
+    Expr::List(items) if items.len() == 2 => Expr::List(vec![resolve(&items[0], x), resolve(&items[1], y)].into()),
+    other => Expr::List(vec![resolve(other, x), resolve(other, y)].into()),
+  };
+  let mut out = opts.clone();
+  out.frame_tick_edges = parse_frame_ticks(&resolved);
+  out.invalid_frame_ticks = invalid;
+  for (axis, ticks) in [
+    (&mut out.ticks_x, &out.frame_tick_edges[0]),
+    (&mut out.ticks_y, &out.frame_tick_edges[1]),
+  ] {
+    if let Some(labels) = ticks.explicit_labels() {
+      *axis = Some(labels);
+    }
+  }
+  std::borrow::Cow::Owned(out)
+}
+
+fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
+  let Some(width) = opts.labeling_size else {
+    return std::borrow::Cow::Borrowed(opts);
+  };
+  let mut out = opts.clone();
+  for label in out.plot_labels.iter_mut().flatten() {
+    *label = plot_padding::truncate_label(label, width);
+  }
+  for spec in &mut out.curve_label_specs {
+    spec.text = plot_padding::truncate_label(&spec.text, width);
+  }
+  std::borrow::Cow::Owned(out)
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
@@ -5096,6 +5181,8 @@ fn generate_svg_with_options(
   if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
+  let opts = &*with_labeling_size(opts);
+  let opts = &*with_frame_tick_functions(opts, x_range, y_range);
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let opts = &*with_simple_ticks(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
@@ -5961,6 +6048,7 @@ fn generate_svg_with_options(
           &opts.mesh,
           &opts.mesh_functions,
           opts.mesh_by_parameter,
+          &opts.mesh_parameters,
         );
         // (position, radius, colour, opacity) of every curve's mesh points.
         let mut pending_mesh_dots: Vec<((f64, f64), u32, (u8, u8, u8), f64)> =
@@ -6078,6 +6166,7 @@ fn generate_svg_with_options(
               opts.mesh_shading.as_ref(),
               opts.mesh_by_parameter,
               opts.mesh_open_ends,
+              opts.mesh_parameters.get(series_idx).map_or(&[], |p| p.as_slice()),
             )
           });
 
@@ -6958,6 +7047,19 @@ fn generate_svg_with_options(
     }
   }
 
+  if opts.invalid_frame_ticks {
+    let tint = format!(
+      "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"rgb(100%,33%,33%)\" fill-opacity=\"0.08\"/>\n"
+    );
+    if let Some(start) = buf.find("<rect")
+      && let Some(end) = buf[start..].find('>')
+    {
+      buf.insert_str(start + end + 1, &tint);
+    }
+    if let Some(end) = buf.rfind("</svg>") {
+      buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
+    }
+  }
   Ok(buf)
 }
 
@@ -7019,7 +7121,7 @@ fn inject_callout_labels(
   y_range: (f64, f64),
   plot_area: (f64, f64, f64, f64),
 ) {
-  if opts.finite_labeling_size || opts.curve_label_specs.is_empty() {
+  if opts.curve_label_specs.is_empty() {
     return;
   }
   let (x_min, x_max) = x_range;
@@ -7069,9 +7171,7 @@ fn inject_plot_labels(
   y_range: (f64, f64),
   plot_area: (f64, f64, f64, f64),
 ) {
-  if opts.finite_labeling_size
-    || !opts.plot_labels.iter().any(std::option::Option::is_some)
-  {
+  if !opts.plot_labels.iter().any(std::option::Option::is_some) {
     return;
   }
   let (x_min, x_max) = x_range;
@@ -15323,8 +15423,8 @@ pub(crate) fn apply_common_plot_option(
     // WL 15 hangs `PlotLabels` at the curve ends off callout leaders;
     // placed ones go where they are placed.
     "LabelingSize" => {
-      plot_opts.finite_labeling_size =
-        try_eval_to_f64(replacement).is_some_and(f64::is_finite);
+      plot_opts.labeling_size =
+        try_eval_to_f64(replacement).filter(|w| w.is_finite());
     }
     "PlotLabels" => {
       plot_opts.plot_labels = Vec::new();
@@ -15379,6 +15479,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
+      plot_opts.frame_tick_spec = Some(replacement.clone());
       let edges = parse_frame_ticks(replacement);
       plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
       if let Some(t) = edges[0].explicit_labels() {

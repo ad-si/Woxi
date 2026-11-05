@@ -1004,7 +1004,7 @@ PreIncrement,"Increments a variable by 1 and returns the new value",✅,stateful
 DisplayForm,"Wrapper that causes box expressions to be rendered visually",✅,pure,3.0,956
 TransferFunctionModel,"Transfer-function model of a linear system (continuous; delays)",✅,pure,8.0,957
 Shortest,"Pattern wrapper that tries the shortest match first — the default for both string and expression sequences",✅,pure,6.0,958
-Region,"Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D; Style[reg + directives] applies styling)",✅,pure,11.1,959
+Region,"Represents a geometric region and renders it as a plot (Point/Line/Circle/Disk/Rectangle/Triangle/Polygon/RegularPolygon/MeshRegion/BoundaryMeshRegion/ImplicitRegion/BooleanRegion/TransformedRegion in 2D; Ball/Sphere/Cuboid/Cylinder/Cone/Polygon in 3D; Style[reg + directives] applies styling)",✅,pure,11.1,959
 EdgeDetect,"Detects edges by thinning the derivative-of-Gaussian gradient to single-pixel ridges",✅,pure,8.0,962
 JacobiP,"Jacobi polynomial",✅,pure,1.0,962
 VectorAngle,"Angle between two vectors",✅,pure,6.0,962
@@ -5940,7 +5940,7 @@ RecalibrationFunction,"",🚫,,12.3,
 ReconstructionMesh,"",🚫,,13.1,
 ReferenceAltitude,"",,,14.1,
 RegionCongruent,"",,,13.0,
-RegionConvert,"Converts a region to its ImplicitRegion form for boxes and balls and parallelepipeds",✅,pure,12.3,
+RegionConvert,"Converts boxes and balls and parallelepipeds and Boolean regions to ImplicitRegion",✅,pure,12.3,
 RegionDilation,"",,,12.3,
 RegionErosion,"",,,12.3,
 RegionFarthestDistance,"",,,13.3,

@@ -7291,6 +7291,15 @@ fn tf(expr: &Expr) -> Expr {
     // typesets as itself and the arguments follow in round brackets, the
     // same shape an unknown named head gets.
     Expr::CurriedCall { func, args } => {
+      // Inactive changes evaluation, while retaining the operator's notation.
+      if let Expr::FunctionCall { name, args: head } = func.as_ref()
+        && name == "Inactive"
+        && head.len() == 1
+        && let Expr::Identifier(operator) = &head[0]
+      {
+        return tf_call(operator, args);
+      }
+
       // `Derivative[n₁, …, nₖ][f]` — a multivariate derivative keeps the
       // curried shape, and typesets as `f^(n₁,…,nₖ)` rather than exposing
       // the `Derivative` head.

@@ -4464,8 +4464,23 @@ mod grid_item_style_tests {
     )
     .expect("interpret should succeed");
     assert!(!svg.contains("+ -"), "unexpected '+ -' in {svg}");
-    assert!(svg.contains("- 5 x"), "missing '- 5 x' in {svg}");
-    assert!(svg.contains("- y/3"), "missing '- y/3' in {svg}");
+    let visible = svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|part| {
+        part.split_once('>').and_then(|(_, body)| {
+          body.split_once("</text>").map(|(text, _)| text)
+        })
+      })
+      .collect::<Vec<_>>()
+      .join("");
+    assert_eq!(visible.matches('-').count(), 2, "{visible}");
+    assert!(!visible.contains("+ -"), "{visible}");
+    assert!(visible.contains('x') && visible.contains('y'), "{visible}");
+    assert!(
+      svg.matches("<line").count() >= 2,
+      "fractions must be stacked"
+    );
   }
 
   #[test]

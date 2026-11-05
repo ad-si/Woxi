@@ -7604,11 +7604,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         } else {
           expr_text_svg(expr)
         }
-      } else if let Some(svg) = crate::functions::graphics::mesh_region_2d_svg(
-        &mr_args[0],
-        &mr_args[1],
-        &mr_args[2..],
-      ) {
+      } else if let Some(svg) =
+        crate::functions::graphics::mesh_region_2d_svg(expr)
+      {
         svg
       } else {
         expr_text_svg(expr)

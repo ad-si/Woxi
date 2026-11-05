@@ -172,13 +172,25 @@ fn region_primitives(reg: &Expr) -> Option<(Vec<Expr>, bool)> {
     },
     // MeshRegion[verts, {Polygon[…], …}] (e.g. from VoronoiMesh) reuses the
     // existing conversion, which brings its own edge/face styling.
-    "MeshRegion" if args.len() == 2 => {
-      crate::functions::graphics::mesh_region_to_graphics_prims(
-        &args[0],
-        &args[1],
-        &[],
-      )
-      .map(|prims| (prims, false))
+    "MeshRegion" | "BoundaryMeshRegion" if args.len() >= 2 => {
+      crate::functions::graphics::mesh_region_graphics_prims(reg)
+        .map(|p| (p, false))
+    }
+    "TransformedRegion" if args.len() == 2 => {
+      let (prims, is_3d) = region_primitives(&args[0])?;
+      if is_3d
+        || crate::functions::graphics::parse_affine_transforms(&args[1])
+          .is_empty()
+      {
+        return None;
+      }
+      Some((
+        vec![call(
+          "GeometricTransformation",
+          vec![Expr::List(prims.into()), args[1].clone()],
+        )],
+        false,
+      ))
     }
     // ── Solids (3D) ────────────────────────────────────────────────────
     // Ball[c, r]: a disk in the plane, a solid ball (drawn as a sphere
@@ -245,6 +257,129 @@ fn region_primitives(reg: &Expr) -> Option<(Vec<Expr>, bool)> {
   }
 }
 
+/// Finite conservative bounds for a region, reusing RegionBounds for
+/// primitives and enclosing all operands of a Boolean combination.
+fn bounds_2d(reg: &Expr) -> Option<[(f64, f64); 2]> {
+  if let Expr::FunctionCall { name, args } = reg
+    && name == "BooleanRegion"
+    && args.len() == 2
+    && let Expr::List(regions) = &args[1]
+  {
+    let mut bounds = [(f64::INFINITY, f64::NEG_INFINITY); 2];
+    for r in regions {
+      for (target, (lo, hi)) in bounds.iter_mut().zip(bounds_2d(r)?) {
+        target.0 = target.0.min(lo);
+        target.1 = target.1.max(hi);
+      }
+    }
+    return Some(bounds);
+  }
+  let bounds = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "RegionBounds",
+    reg.clone(),
+  ))
+  .ok()?;
+  range_2d(&bounds)
+}
+
+fn range_2d(expr: &Expr) -> Option<[(f64, f64); 2]> {
+  let Expr::List(axes) = expr else { return None };
+  if axes.len() != 2 {
+    return None;
+  }
+  let mut bounds = [(0.0, 0.0); 2];
+  for (range, axis) in bounds.iter_mut().zip(axes) {
+    let Expr::List(pair) = axis else { return None };
+    if pair.len() != 2 {
+      return None;
+    }
+    *range = (try_eval_to_f64(&pair[0])?, try_eval_to_f64(&pair[1])?);
+    if !range.0.is_finite() || !range.1.is_finite() || range.0 >= range.1 {
+      return None;
+    }
+  }
+  Some(bounds)
+}
+
+/// Render implicit and Boolean regions through the same contour extraction
+/// used by RegionPlot, keeping the predicate symbolic until it is sampled.
+fn implicit_graphics(reg: &Expr, opts: &[Expr]) -> Option<Expr> {
+  let converted = crate::functions::region_convert::region_convert_ast(&[
+    reg.clone(),
+    Expr::String("Implicit".into()),
+  ])
+  .ok()?;
+  let Expr::FunctionCall { name, args } = &converted else {
+    return None;
+  };
+  if name != "ImplicitRegion" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  if vars.len() != 2 {
+    return None;
+  }
+  let option = |key: &str| {
+    opts.iter().find_map(|o| {
+      let (name, value) = crate::functions::graphics::option_name_value(o)?;
+      (name == key).then(|| value.into_owned())
+    })
+  };
+  let bounds = option("PlotRange")
+    .as_ref()
+    .and_then(range_2d)
+    .or_else(|| bounds_2d(reg))?;
+  let iterator = |i: usize| {
+    Expr::List(
+      vec![
+        vars[i].clone(),
+        Expr::Real(bounds[i].0),
+        Expr::Real(bounds[i].1),
+      ]
+      .into(),
+    )
+  };
+  let rule = |key: &str, value: Expr| rule_expr(id_expr(key), value);
+  let mut plot_args = vec![
+    args[0].clone(),
+    iterator(0),
+    iterator(1),
+    rule("Frame", id_expr("False")),
+    rule("Axes", id_expr("False")),
+    rule("BoundaryStyle", id_expr("None")),
+    rule("PlotStyle", option("BaseStyle").unwrap_or_else(area_color)),
+    rule("AspectRatio", id_expr("Automatic")),
+  ];
+  plot_args.extend(opts.iter().cloned());
+  let rendered =
+    crate::functions::field_plot::region_plot_ast(&plot_args).ok()?;
+  if option("PlotRange").is_none()
+    && let Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } = &rendered
+    && let Expr::FunctionCall { args, .. } = structure.as_ref()
+  {
+    // Sampling needs enclosing bounds; an automatically framed Region
+    // fits its resulting geometry rather than that conservative rectangle.
+    let args = crate::functions::graphics::splice_option_lists(args);
+    let mut graphics_args = vec![args.first()?.clone()];
+    graphics_args.extend(
+      args[1..]
+        .iter()
+        .filter(|opt| {
+          crate::functions::graphics::option_name_value(opt)
+            .is_none_or(|(name, _)| name != "PlotRange")
+        })
+        .cloned(),
+    );
+    return crate::functions::graphics::graphics_ast(&graphics_args).ok();
+  }
+  Some(rendered)
+}
+
 /// Render `Region[reg, opts…]` to an `Expr::Graphics` (capturing the SVG
 /// for notebook front ends), or `None` to leave the call unevaluated.
 pub fn region_to_graphics(args: &[Expr]) -> Option<Expr> {
@@ -258,16 +393,24 @@ pub fn region_to_graphics(args: &[Expr]) -> Option<Expr> {
   {
     return None;
   }
-  let (prims, is_3d) = region_primitives(reg)?;
-
-  let mut g_args: Vec<Expr> = vec![Expr::List(prims.into())];
-  g_args.extend(opts.iter().cloned());
-  let rendered = if is_3d {
-    crate::functions::plot3d::graphics3d_ast(&g_args)
+  let rendered = if let Some((mut prims, is_3d)) = region_primitives(reg) {
+    if let Some(style) = opts.iter().find_map(|o| {
+      let (name, value) = crate::functions::graphics::option_name_value(o)?;
+      (name == "BaseStyle").then(|| value.into_owned())
+    }) {
+      prims.insert(prims.len().saturating_sub(1), style);
+    }
+    let mut g_args = vec![Expr::List(prims.into())];
+    g_args.extend(opts.iter().cloned());
+    if is_3d {
+      crate::functions::plot3d::graphics3d_ast(&g_args)
+    } else {
+      crate::functions::graphics::graphics_ast(&g_args)
+    }
+    .ok()?
   } else {
-    crate::functions::graphics::graphics_ast(&g_args)
-  }
-  .ok()?;
+    implicit_graphics(reg, opts)?
+  };
 
   // Report `Region` as the head (like GeoGraphics does) while rendering
   // identically to the underlying graphic.

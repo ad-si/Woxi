@@ -609,6 +609,11 @@ fn parse_list_data_err(
             (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
         {
           points.push(ErrPoint::from_xy(x, y));
+        } else {
+          points.push(ErrPoint::from_xy(
+            (f64::NAN, (0.0, 0.0)),
+            (f64::NAN, (0.0, 0.0)),
+          ));
         }
       }
       return Ok(vec![points]);
@@ -647,9 +652,8 @@ fn parse_list_data_err(
       Some((content, _)) => content,
       None => item.clone(),
     };
-    if let Some(y) = eval_to_value_err(&value) {
-      points.push(ErrPoint::from_y((i + 1) as f64, y));
-    }
+    let y = eval_to_value_err(&value).unwrap_or((f64::NAN, (0.0, 0.0)));
+    points.push(ErrPoint::from_y((i + 1) as f64, y));
   }
   Ok(vec![points])
 }
@@ -673,13 +677,17 @@ fn parse_single_series(
           (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
       {
         points.push(ErrPoint::from_xy(x, y));
+      } else {
+        points.push(ErrPoint::from_xy(
+          (f64::NAN, (0.0, 0.0)),
+          (f64::NAN, (0.0, 0.0)),
+        ));
       }
     }
   } else {
     for (i, val) in series_items.iter().enumerate() {
-      if let Some(y) = eval_to_value_err(val) {
-        points.push(ErrPoint::from_y((i + 1) as f64, y));
-      }
+      let y = eval_to_value_err(val).unwrap_or((f64::NAN, (0.0, 0.0)));
+      points.push(ErrPoint::from_y((i + 1) as f64, y));
     }
   }
   points
@@ -2027,10 +2035,22 @@ fn interpolate_series(
 ) -> Vec<Vec<(f64, f64)>> {
   all_series
     .iter()
-    .map(|series| match order {
-      0 => step_curve(series),
-      o if o >= 2 => spline_curve(series, o.min(16) as usize),
-      _ => series.clone(),
+    .map(|series| {
+      let mut out = Vec::new();
+      for segment in series.split(|p| !p.0.is_finite() || !p.1.is_finite()) {
+        if segment.is_empty() {
+          continue;
+        }
+        if !out.is_empty() {
+          out.push((f64::NAN, f64::NAN));
+        }
+        out.extend(match order {
+          0 => step_curve(segment),
+          o if o >= 2 => spline_curve(segment, o.min(16) as usize),
+          _ => segment.to_vec(),
+        });
+      }
+      out
     })
     .collect()
 }
@@ -2798,11 +2818,7 @@ fn resolve_point_labels(
   point_labels: Vec<Vec<Option<PointLabel>>>,
   all_series: &[Vec<(f64, f64)>],
 ) -> Vec<Vec<Option<String>>> {
-  // A finite LabelingSize produces FEPrivate`TruncateStringToWidth boxes.
-  // Wolfram's static exporter leaves those front-end boxes unpainted.
-  if parsed.hide_point_labels
-    || parsed.labeling_size.is_some_and(f64::is_finite)
-  {
+  if parsed.hide_point_labels {
     return Vec::new();
   }
   // `Labeled[pt, label, pos]` sides, parallel to the labels.
@@ -2860,12 +2876,8 @@ fn resolve_point_labels(
     None => point_labels,
   };
   if let Some(max_w) = parsed.labeling_size {
-    for label in labels.iter_mut().flatten() {
-      if label.as_ref().is_some_and(|l| {
-        crate::functions::plot_padding::text_width(l, 10.0) > max_w
-      }) {
-        *label = None;
-      }
+    for label in labels.iter_mut().flatten().flatten() {
+      *label = crate::functions::plot_padding::truncate_label(label, max_w);
     }
   }
   labels
@@ -2888,16 +2900,19 @@ fn scale_list_data(
     for s in series.iter_mut() {
       *s = s
         .iter()
-        .filter_map(|&(x, y)| {
-          let x = match &scaling.0 {
-            Some(sx) => sx.forward(x)?,
-            None => x,
-          };
-          let y = match &scaling.1 {
-            Some(sy) => sy.forward(y)?,
-            None => y,
-          };
-          Some((x, y))
+        .map(|&(x, y)| {
+          let mapped = (|| {
+            let x = match &scaling.0 {
+              Some(sx) => sx.forward(x)?,
+              None => x,
+            };
+            let y = match &scaling.1 {
+              Some(sy) => sy.forward(y)?,
+              None => y,
+            };
+            Some((x, y))
+          })();
+          mapped.unwrap_or((f64::NAN, f64::NAN))
         })
         .collect();
     }

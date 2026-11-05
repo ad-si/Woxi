@@ -4505,7 +4505,7 @@ fn drop_collinear_points(ring: &[(f64, f64)], tol: f64) -> Vec<(f64, f64)> {
 /// Turns a region's boundary loops into `Polygon`s: a loop nested inside an
 /// odd number of others is a hole of the innermost loop around it, and comes
 /// out as `Polygon[outer -> {holes…}]`.
-fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
+pub(crate) fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
   fn contains(ring: &[(f64, f64)], (px, py): (f64, f64)) -> bool {
     let mut inside = false;
     let len = ring.len();

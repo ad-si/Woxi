@@ -7060,9 +7060,9 @@ printed form of the result differs.
 
 `HighlightMesh[mesh, spec]` returns the mesh with the `Properties ->
 {{d, Default} -> MeshCellHighlight | MeshCellLabel -> …}` option
-wolframscript adds, but Woxi draws a `MeshRegion` as text, so neither the
-highlighted cells nor the vertex indices of `Labeled[0, "Index"]` appear in
-the picture. wolframscript's echo also normalises the mesh itself (machine
+wolframscript adds. Woxi now renders mesh cells and explicit `MeshCellLabel`
+options, but does not yet apply the stored `MeshCellHighlight` and
+`MeshCellLabel` properties from `HighlightMesh`. wolframscript's echo also normalises the mesh itself (machine
 coordinates, `{Polygon[…]}` cells), which Woxi does not.
 
 ## ``ComputationalGeometry`VoronoiDiagram`` of machine points: last digits
@@ -8776,11 +8776,27 @@ uses `x + y + z` so it exercises actual gradients without depending on
 Wolfram's random perturbations of the slice positions. Exact zero slices
 remain exact in Woxi.
 
-The headless Wolfram Engine reference for `Plot[{Sin[x] + x, x Log[x]},
-{x, 0, 5}, PlotLabels -> {"barcarole", "perilously"}, LabelingSize -> 30]`
-currently exports the front-end-only ``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]``
-box itself, collapsing the SVG height to 21 pt. Reproduced by regenerating
-its reference with wolframscript on 2026-11-05. Both `UsingFrontEnd[Export[…]]`
-and direct `FrontEndExecute[ExportPacket[…, "SVG"]]` reproduce it. Woxi omits those labels and
-keeps the plotted curves; a valid reference for this comparison requires a
-working front-end export. The review note remains open for the reference.
+The headless Wolfram Engine initially exported the front-end-only
+``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]`` boxes for finite
+`LabelingSize` instead of the graph. This reference-generation problem was
+resolved in the graphics comparison harness: within `UsingFrontEnd`, a scoped
+``FE`Evaluate`` definition sends the truncation operation to
+``MathLink`CallFrontEnd[FrontEnd`Value[...]]`` before SVG export. The original
+`LabelingSize -> 30` example now exports a 190 pt high graphic without internal
+code. Woxi renders the truncated labels, keeping short labels intact.
+
+
+### Saved graphics review fixes (2026-11-05, second pass)
+
+Corrected styled frame measurement and asymmetric margins, inactive integral /
+sum / product notation, joined-list gaps at missing samples (including spline
+interpolation), parametric mesh functions with the actual third parameter,
+Wolfram's thin axes strokes, inset-relative arrowhead sizes, filled boundary meshes
+with holes and edge styles, mesh vertex indices, implicit / Boolean / affine
+region pictures, and connected radicals in ordinary table cells. Invalid
+stored frame tick callbacks now draw Wolfram's red error frame; inline tick
+functions resolve against the numerical axis ranges.
+
+Finite `LabelingSize` now renders labels with Wolfram's Text-style width
+measure and three-dot truncation. The corresponding repaired reference is
+valid for reviewing Woxi's output.

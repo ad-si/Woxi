@@ -683,12 +683,12 @@ mod layout_display {
   }
 
   #[test]
-  fn finite_labeling_size_omits_frontend_only_truncation_boxes() {
+  fn finite_labeling_size_keeps_short_point_labels() {
     for size in [10, 30, 1000] {
       let svg = svg_of(&format!(
         "ListPlot[{{1,2,3}}->{{\"a\",\"b\",\"c\"}},LabelingSize->{size}]"
       ));
-      assert!(!svg.contains(">a</text>"));
+      assert!(svg.contains(">a</text>"));
     }
   }
 
@@ -927,12 +927,20 @@ mod layout_display {
   }
 
   #[test]
-  fn reviewed_finite_plot_label_size_omits_frontend_truncation() {
+  fn reviewed_finite_plot_label_size_truncates_instead_of_omitting() {
     for size in [10, 30, 1000] {
       let svg = svg_of(&format!(
         "Plot[{{Sin[x]+x,x Log[x]}},{{x,0,5}},PlotLabels->{{\"barcarole\",\"perilously\"}},LabelingSize->{size}]"
       ));
-      assert!(!svg.contains("barcarole") && !svg.contains("perilously"));
+      if size < 1000 {
+        assert!(svg.contains(">ba...</text>") && svg.contains(">pe...</text>"));
+      } else {
+        assert!(
+          svg.contains(">barcarole</text>")
+            && svg.contains(">perilously</text>")
+        );
+      }
+      assert!(!svg.contains("FEPrivate"));
     }
   }
 

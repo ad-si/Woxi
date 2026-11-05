@@ -3923,10 +3923,10 @@ mod graphics {
     fn axes_true() {
       let svg = export_svg("Graphics[Circle[], Axes -> True]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.contains(
-        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.matches("<line ").count() > 2);
       assert!(svg.contains("<text "));
@@ -3937,10 +3937,10 @@ mod graphics {
     fn axes_list_x_only() {
       let svg = export_svg("Graphics[Circle[], Axes -> {True, False}]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
       ));
       assert!(!svg.contains(
-        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"1\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.matches("<line ").count() > 1);
       assert!(svg.contains("<text "));
@@ -19646,7 +19646,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       };
       let plain = axis_lines("");
       assert_eq!(plain.len(), 2, "{plain:?}");
-      assert!(plain.iter().all(|l| l.contains("stroke-width=\"1\"")));
+      assert!(plain.iter().all(|l| l.contains("stroke-width=\"0.2\"")));
       let thick = axis_lines(", AxesStyle -> Thick");
       assert!(
         thick
@@ -25764,14 +25764,13 @@ mod graphics_grid {
     )
     .unwrap();
     let svg = result.graphics.unwrap();
-    // √ with its vinculum over the radicand, and a cube root's index.
+    // The square root uses a connected hook and vinculum. StandardForm
+    // writes a cube root as a power with a stacked 1/3 exponent.
+    assert!(svg.contains("stroke-linejoin=\"round\""), "{svg}");
+    assert!(!svg.contains("text-decoration=\"overline\""), "{svg}");
     assert!(
-      svg.contains("√<tspan text-decoration=\"overline\">2</tspan>"),
+      svg.contains(">1</text>") && svg.contains(">3</text>"),
       "{svg}"
-    );
-    assert!(
-      svg.contains(">3</tspan>√<tspan text-decoration=\"overline\">2</tspan>"),
-      "the cube root keeps its index: {svg}"
     );
     // The binary expansion, with the base as a subscript.
     assert!(
@@ -26148,21 +26147,14 @@ mod graphics_grid {
   }
 
   #[test]
-  fn missing_rendered_as_dash() {
+  fn missing_expression_is_visible_in_grid() {
     clear_state();
-    // Missing[] in SVG markup should render as "-"
     let result =
       interpret_with_stdout("Grid[{{1, 2}, {3, Missing[]}}]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
-    assert!(
-      svg.contains(">-</text>"),
-      "Missing[] should render as dash in grid SVG"
-    );
-    assert!(
-      !svg.contains(">Missing[]</text>"),
-      "Missing[] should not render as literal text"
-    );
+    assert!(svg.contains(">Missing[]</text>"), "{svg}");
+    assert!(!svg.contains(">-</text>"), "{svg}");
   }
 
   // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for a
@@ -49287,13 +49279,14 @@ mod curve_labels_and_legends {
   }
 
   #[test]
-  fn labeling_size_leaves_long_labels_to_tooltips() {
+  fn labeling_size_truncates_long_labels_and_keeps_short_labels() {
     let svg = export_svg(
       "ListPlot[{1, 1, 2} -> {\"healthfulness\", \"obstreperous\", \"a\"}, \
        LabelingSize -> 30]",
     );
     assert!(!svg.contains(">healthfulness</text>"));
-    assert!(!svg.contains(">a</text>"));
+    assert!(svg.contains(">a</text>"));
+    assert!(svg.contains(">he...</text>"));
   }
 
   #[test]
@@ -50298,5 +50291,261 @@ mod stream_plot3d_seeds {
     assert_eq!(values.len(), 10, "{radii}");
     assert_eq!(values.iter().filter(|r| **r < 0.5).count(), 2, "{radii}");
     assert!(values.iter().all(|r| *r < 0.5 || *r > 1.0), "{radii}");
+  }
+}
+
+mod review_regressions {
+  use super::*;
+
+  #[test]
+  fn styled_frame_sizes_and_asymmetric_margins() {
+    for size in [12, 18, 36] {
+      let plain = export_svg(&format!(
+        "Framed[Style[\"padded\", {size}], FrameMargins -> 0]"
+      ));
+      let padded = export_svg(&format!(
+        "Framed[Style[\"padded\", {size}], FrameMargins -> {{{{20, 5}}, {{5, 15}}}}, RoundingRadius -> 12]"
+      ));
+      let dims = |svg: &str| {
+        let read = |key: &str| {
+          svg
+            .split(&format!("{key}=\""))
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse::<f64>()
+            .unwrap()
+        };
+        (read("width"), read("height"))
+      };
+      let (w, h) = dims(&plain);
+      let (pw, ph) = dims(&padded);
+      assert_eq!((pw - w, ph - h), (25.0, 20.0));
+      assert!(padded.contains("x=\"20.0\" y=\"15.0\""));
+      assert!(w >= 6.0 * size as f64 * 0.55, "{plain}");
+    }
+  }
+
+  #[test]
+  fn inactive_operators_keep_notation_without_evaluation() {
+    for (op, body, glyph) in [
+      ("Integrate", "Exp[-x^2]", "∫"),
+      ("Sum", "1/x^2", "∑"),
+      ("Product", "1-z^2/x^2", "∏"),
+    ] {
+      let svg = export_svg(&format!(
+        "Column[{{TraditionalForm[Inactive[{op}][{body}, {{x, 1, Infinity}}]]}}]"
+      ));
+      assert!(svg.contains(glyph), "{op}: {svg}");
+      assert!(!svg.contains("Inactive["), "{svg}");
+    }
+  }
+
+  #[test]
+  fn joined_missing_samples_break_curves_in_all_data_forms() {
+    for head in ["ListLinePlot", "ListPlot"] {
+      for data in [
+        "{1, 2, Missing[\"NA\"], 3, 4}",
+        "{{1, 1}, {2, 2}, {3, Indeterminate}, {4, 3}, {5, 4}}",
+        "{{1, 2, Missing[], 3, 4}, {2, 3, Missing[], 4, 5}}",
+      ] {
+        for order in [0, 1, 3] {
+          let svg = export_svg(&format!(
+            "{head}[{data}, Joined -> True, InterpolationOrder -> {order}, Axes -> False, PlotStyle -> Blue]"
+          ));
+          let lines = svg
+            .split("<polyline")
+            .skip(1)
+            .filter(|p| {
+              p.split('>').next().unwrap().contains("stroke=\"#0000FF\"")
+            })
+            .count();
+          assert!(lines >= 2, "{head}, order {order}: {svg}");
+        }
+      }
+    }
+  }
+
+  #[test]
+  fn parametric_mesh_functions_receive_the_actual_parameter() {
+    for range in ["{t, 0, 2 Pi}", "{t, 2 Pi, 4 Pi}"] {
+      let svg = export_svg(&format!(
+        "ParametricPlot[{{Cos[t], Sin[t]}}, {range}, MeshFunctions -> {{#3 &}}, Mesh -> {{{{5 Pi/2, Pi/2}}}}, MeshStyle -> Red, PlotStyle -> Blue]"
+      ));
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+    }
+    let endpoints = export_svg(
+      "ParametricPlot[{Cos[t],Sin[t]}, {t,0,2 Pi}, MeshFunctions -> {#3 &}, Mesh -> {{0,Pi,2 Pi}}, MeshStyle -> Red]",
+    );
+    assert_eq!(
+      endpoints.matches("fill=\"#FF0000\"").count(),
+      1,
+      "{endpoints}"
+    );
+    let svg = export_svg(
+      "ParametricPlot[{t, t^2}, {t, 2, 6}, Mesh -> {{3, 5}}, MeshStyle -> Red]",
+    );
+    assert_eq!(svg.matches("fill=\"#FF0000\"").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn graphics_axes_use_wolframs_thin_stroke_over_lines() {
+    let svg = export_svg(
+      "Graphics[{Blue, Line[{{0, 0}, {4, 3}}]}, Axes -> True, AxesOrigin -> {1, 1}]",
+    );
+    let blue = svg.find("stroke=\"rgb(0,0,255)\"").unwrap();
+    let axis = svg.find("stroke=\"#").unwrap();
+    assert!(blue < axis, "{svg}");
+    for axis in svg.lines().filter(|line| line.starts_with("<line")) {
+      assert!(axis.contains("stroke-width=\"0.2\""), "{axis}");
+    }
+  }
+
+  #[test]
+  fn inset_arrowheads_scale_with_the_inset_picture() {
+    for extent in [2, 5, 10] {
+      let svg = export_svg(&format!(
+        "Graphics[{{Inset[Graphics[{{Arrow[{{{{0.2,0.5}},{{0.8,0.5}}}}]}}], {{0,0}}, Center, {{1,1}}]}}, PlotRange -> {{{{-{extent},{extent}}},{{-1,1}}}}, ImageSize -> 400]"
+      ));
+      let polygon = svg
+        .split("<polygon points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
+      let xs: Vec<f64> = polygon
+        .split_whitespace()
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      let head_width = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        - xs.iter().copied().fold(f64::INFINITY, f64::min);
+      // A default head is 4% of the inset width, independent of the parent range.
+      let expected = (400.0 / (2 * extent) as f64 * 0.04).max(1.0);
+      assert!(head_width <= expected * 1.1, "{polygon}");
+    }
+  }
+
+  #[test]
+  fn boundary_mesh_holes_fill_and_style_without_internal_seams() {
+    let svg = export_svg(
+      "Show[BoundaryMeshRegion[{{0,0},{3,0},{3,3},{0,3},{1,1},{1,2},{2,2},{2,1}}, Line[{{1,2},{2,3},{3,4},{4,1},{5,6},{6,7},{7,8},{8,5}}], MeshCellStyle -> {1 -> Directive[Blue, Thick]}]]",
+    );
+    assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
+    assert!(svg.contains("rgb(160,213,234)"), "{svg}");
+    assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+  }
+
+  #[test]
+  fn mesh_region_vertex_labels_render_directly_and_in_show() {
+    let mesh = "MeshRegion[{{0,0},{2,0},{1,2}}, Triangle[{{1,2,3}}], MeshCellLabel -> {0 -> \"Index\"}]";
+    for expr in [mesh.to_string(), format!("Show[{mesh}]")] {
+      let svg = export_svg(&expr);
+      for label in [">1</", ">2</", ">3</"] {
+        assert!(svg.contains(label), "{svg}");
+      }
+      assert!(!svg.contains("MeshRegion["));
+    }
+  }
+
+  #[test]
+  fn boundary_mesh_keeps_exact_terminal_text_and_captures_its_picture() {
+    let result = interpret_with_stdout(
+      "BoundaryMeshRegion[{{0,0},{2,0},{0,2}}, Line[{{1,2},{2,3},{3,1}}]]",
+    )
+    .unwrap();
+    assert!(
+      result.result.starts_with("BoundaryMeshRegion["),
+      "{}",
+      result.result
+    );
+    assert!(result.graphics.unwrap().contains("<polygon"));
+  }
+
+  #[test]
+  fn implicit_and_boolean_regions_render_as_geometry() {
+    let svg = export_svg(
+      "Region[ImplicitRegion[1/4 <= x^2+y^2 <= 4 && y >= x/2, {x,y}], PlotRange -> {{-2.2,2.2},{-2.2,2.2}}, BaseStyle -> Orange]",
+    );
+    assert!(
+      svg.contains("fill-rule=\"evenodd\"") || svg.contains("<polygon"),
+      "{svg}"
+    );
+    assert!(!svg.contains("ImplicitRegion["), "{svg}");
+    for op in ["RegionUnion", "RegionIntersection", "RegionDifference"] {
+      let svg =
+        export_svg(&format!("Region[{op}[Disk[{{-1/2,0}}], Disk[{{1/2,0}}]]]"));
+      assert!(
+        svg.contains("<polygon") || svg.contains("fill-rule=\"evenodd\""),
+        "{svg}"
+      );
+      assert!(!svg.contains("BooleanRegion["), "{svg}");
+      let dimension = |name: &str| {
+        svg
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse::<f64>()
+          .unwrap()
+      };
+      if op == "RegionIntersection" {
+        assert!(
+          dimension("height") > dimension("width"),
+          "tight intersection bounds: {svg}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn transformed_region_uses_the_affine_graphics_renderer() {
+    let svg = export_svg(
+      "Region[TransformedRegion[Disk[], AffineTransform[{{{1.8,0.6},{0.3,0.8}},{0.5,-0.2}}]], Axes -> True]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+    assert!(!svg.contains("TransformedRegion["));
+  }
+
+  #[test]
+  fn table_roots_use_a_connected_radical_and_keep_missing_expression() {
+    for radicand in [2, 3, 7] {
+      let svg = export_svg(&format!(
+        "TableForm[{{{{Sqrt[{radicand}], Missing[\"NotAvailable\"]}}}}]"
+      ));
+      assert!(svg.contains("stroke-linejoin=\"round\""), "{svg}");
+      assert!(!svg.contains("text-decoration=\"overline\""), "{svg}");
+      assert!(svg.contains("Missing[NotAvailable]"), "{svg}");
+    }
+  }
+
+  #[test]
+  fn finite_plot_labeling_size_renders_truncated_labels() {
+    for (width, expected) in
+      [(30, "ba..."), (40, "barc..."), (100, "barcarole")]
+    {
+      let svg = export_svg(&format!(
+        "Plot[Sin[x], {{x,0,5}}, PlotLabels -> {{\"barcarole\"}}, LabelingSize -> {width}]"
+      ));
+      assert!(svg.contains(&format!(">{expected}</text>")), "{svg}");
+      assert!(!svg.contains("FEPrivate"), "{svg}");
+    }
+  }
+
+  #[test]
+  fn invalid_named_frame_ticks_show_the_wolfram_error_frame() {
+    let svg = export_svg(
+      "ListPlot[{1,2,3}, Joined -> True, Frame -> True, FrameTicks -> {{unknownTicks, None}, {unknownTicks, None}}]",
+    );
+    assert!(svg.contains("rgb(100%,33%,33%)"), "{svg}");
+    assert!(svg.contains("fill-opacity=\"0.08\""), "{svg}");
+    let valid = export_svg(
+      "ListPlot[{1,2,3}, Frame -> True, FrameTicks -> {{({{#1,#1},{#2,#2}} &), None}, {None,None}}]",
+    );
+    assert!(!valid.contains("rgb(100%,33%,33%)"), "{valid}");
   }
 }
