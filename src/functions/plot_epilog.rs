@@ -57,9 +57,10 @@ struct EpilogStyle {
   /// Point diameter as a fraction of the plot width.
   point_size: f64,
   opacity: f64,
-  /// `Arrowheads[s]`: arrowhead length as a fraction of the plot width.
-  /// `None` sizes it from the stroke width.
-  arrowhead: Option<f64>,
+  /// Preserve the complete Arrowheads specification for Graphics' collector.
+  arrowheads: Option<Expr>,
+  /// Epilog strokes have historically used round caps.
+  cap_form: Expr,
   /// `EdgeForm[…]`: the outline drawn around filled primitives
   /// (`Rectangle`, `Polygon`, `Disk`). `None` = no outline.
   edge: Option<Box<EpilogStyle>>,
@@ -80,7 +81,8 @@ impl EpilogStyle {
       dashing: None,
       point_size: 0.012,
       opacity: 1.0,
-      arrowhead: None,
+      arrowheads: None,
+      cap_form: Expr::String("Round".into()),
       edge: None,
     }
   }
@@ -432,19 +434,11 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
           style.thickness = t;
         }
       }
-      // `Arrowheads[s]` or `Arrowheads[{{s, pos}, …}]` — the head at the
-      // end of an arrow, `s` a fraction of the plot width.
       "Arrowheads" if args.len() == 1 => {
-        let size = match &args[0] {
-          Expr::List(specs) => specs.first().and_then(|spec| match spec {
-            Expr::List(parts) => parts.first().and_then(try_eval_to_f64),
-            other => try_eval_to_f64(other),
-          }),
-          other => try_eval_to_f64(other),
-        };
-        if let Some(size) = size {
-          style.arrowhead = Some(size);
-        }
+        style.arrowheads = Some(args[0].clone());
+      }
+      "CapForm" if args.len() == 1 => {
+        style.cap_form = args[0].clone();
       }
       "Dashing" if args.len() == 1 => {
         // Named sizes (`Small`, …) are absolute lengths, stored negative;
@@ -687,27 +681,52 @@ fn render_item(
         }
       }
       "Arrow" if !args.is_empty() => {
-        // Arrow[{p1, …, pn}] — a polyline with an arrowhead on the last
-        // segment. `Arrow[Line[…]]` unwraps to the same point list.
-        let arg = match &args[0] {
-          Expr::FunctionCall { name, args: inner }
-            if name == "Line" && !inner.is_empty() =>
-          {
-            &inner[0]
-          }
-          other => other,
-        };
-        for pts in collect_point_lists(arg) {
-          out.push_str(&format!(
-            "<polyline fill=\"none\" {} stroke-linecap=\"round\" \
-             stroke-linejoin=\"round\" points=\"{}\"/>\n",
-            style.stroke_attrs(area),
-            polyline_points(&pts, area),
+        let mut directives = vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(style.color.r),
+              Expr::Real(style.color.g),
+              Expr::Real(style.color.b),
+              Expr::Real(style.color.a),
+            ],
+          ),
+          call1("Opacity", Expr::Real(style.opacity)),
+          call1(
+            "AbsoluteThickness",
+            Expr::Real(style.thickness.max(0.5 / area.scale)),
+          ),
+          call1("CapForm", style.cap_form.clone()),
+        ];
+        if let Some(dashes) = &style.dashing {
+          directives.push(call1(
+            "AbsoluteDashing",
+            Expr::List(
+              dashes
+                .iter()
+                .map(|d| {
+                  Expr::Real(
+                    crate::functions::plot::dash_len(*d, area.w, area.scale)
+                      / area.scale,
+                  )
+                })
+                .collect(),
+            ),
           ));
-          if let [.., prev, last] = pts.as_slice() {
-            out.push_str(&arrow_head(*prev, *last, style, area));
-          }
         }
+        if let Some(heads) = &style.arrowheads {
+          directives.push(call1("Arrowheads", heads.clone()));
+        }
+        directives.push(expr.clone());
+        let fragment = crate::functions::graphics::primitives_svg_fragment(
+          &Expr::List(directives.into()),
+          (area.x_min, area.x_max, area.y_min, area.y_max),
+          (area.w / area.scale, area.h / area.scale),
+        );
+        out.push_str(&format!(
+          "<g transform=\"translate({:.1},{:.1}) scale({:.1})\">{fragment}</g>",
+          area.x0, area.y0, area.scale
+        ));
       }
       "Circle" | "Disk" => {
         render_circle_like(name == "Disk", args, style, area, out);
@@ -1189,47 +1208,6 @@ fn render_circle_like(
       style.stroke_attrs(area),
     ));
   }
-}
-
-/// A filled triangular arrowhead at `to`, oriented along `from → to`.
-fn arrow_head(
-  from: (f64, f64),
-  to: (f64, f64),
-  style: &EpilogStyle,
-  area: &PlotArea,
-) -> String {
-  let (x1, y1) = (area.px(from.0), area.py(from.1));
-  let (x2, y2) = (area.px(to.0), area.py(to.1));
-  let (dx, dy) = (x2 - x1, y2 - y1);
-  let len = (dx * dx + dy * dy).sqrt();
-  if len < 1e-9 {
-    return String::new();
-  }
-  let (ux, uy) = (dx / len, dy / len);
-  // An `Arrowheads` size is a fraction of the plot width, drawn with the
-  // proportions `Graphics` gives it; otherwise the head scales with the
-  // stroke width but stays visible for thin strokes.
-  let (size, half) = if let Some(fraction) = style.arrowhead {
-    (fraction * area.w, fraction * area.w * 0.28)
-  } else {
-    let size = (style.thickness * area.scale * 4.0).max(6.0 * area.scale);
-    (size, size * 0.45)
-  };
-  if size <= 0.0 {
-    return String::new();
-  }
-  let (bx, by) = (x2 - ux * size, y2 - uy * size);
-  let (nx, ny) = (-uy, ux);
-  format!(
-    "<polygon {} points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/>\n",
-    style.fill_attrs(),
-    x2,
-    y2,
-    bx + nx * half,
-    by + ny * half,
-    bx - nx * half,
-    by - ny * half,
-  )
 }
 
 /// Escape text content for inclusion in an SVG text element.

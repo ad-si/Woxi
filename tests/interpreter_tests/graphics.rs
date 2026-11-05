@@ -50164,8 +50164,56 @@ mod arrowhead_shape {
     let shaft = &svg_point_lists(&svg, "polyline")[0];
     let end = shaft[shaft.len() - 1];
     // The frame is 399 wide, so the tip is at x = 399 and the head is
-    // 79.8 long; a quarter of it is 19.95.
+    // 79.8 long; a quarter of it is 19.95. Its default butt cap does
+    // not project beyond the centreline endpoint.
     assert!((end.0 - 379.05).abs() < 0.1, "{shaft:?}");
+  }
+
+  #[test]
+  fn epilog_arrows_use_the_canonical_head_and_trim_round_caps() {
+    let svg = export_svg(
+      "Plot[0,{x,0,1},PlotRange->{{0,1},{-1,1}},Epilog->{AbsoluteThickness[6],Arrowheads[0.1],Arrow[{{0.2,0.5},{0.8,0.5}}]}]",
+    );
+    let shafts = svg_point_lists(&svg, "polyline");
+    let heads = svg_point_lists(&svg, "polygon");
+    assert_eq!(shafts.len(), 1);
+    assert_eq!(heads.len(), 1);
+    assert_eq!(
+      heads[0].len(),
+      14,
+      "head must match Graphics' concave outline"
+    );
+    let shaft_end = shafts[0].last().unwrap();
+    let notch = heads[0][7];
+    // The canonical fragment uses display units inside its scaled group.
+    assert!(
+      (notch.0 - shaft_end.0 - 3.0).abs() < 0.05,
+      "shaft cap protrudes into head: {shaft_end:?}, notch {notch:?}"
+    );
+  }
+
+  #[test]
+  fn epilog_named_arrowheads_keep_their_absolute_display_size() {
+    let svg = export_svg(
+      "Plot[0,{x,0,1},Epilog->{Arrowheads[Small],Arrow[{{0.2,0},{0.8,0}}]}]",
+    );
+    let heads = svg_point_lists(&svg, "polygon");
+    assert_eq!(heads.len(), 1);
+    assert!((heads[0][0].0 - heads[0][1].0 - 7.0).abs() < 0.02);
+    assert!(
+      svg.contains("scale(10.0)"),
+      "display-space fragment was not scaled into the plot frame"
+    );
+  }
+
+  #[test]
+  fn epilog_arrows_preserve_head_positions_and_no_head_specs() {
+    for (heads, count) in [("0", 0), ("{{-0.1,0},{0.1,1}}", 2)] {
+      let svg = export_svg(&format!(
+        "Plot[0,{{x,0,1}},Epilog->{{Arrowheads[{heads}],Arrow[Line[{{{{0.2,0}},{{0.8,0}}}}]]}}]"
+      ));
+      assert_eq!(svg_point_lists(&svg, "polygon").len(), count);
+    }
   }
 
   #[test]

@@ -8548,10 +8548,6 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme grey; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
-- Custom `Arrowheads[{{s, pos, Graphics[…]}}]` graphics are placed only once
-  the plot range is known, so they do not widen it (wolframscript keeps a
-  dot head at the end of an arrow whole). The default arrowhead is a plain
-  triangle; wolframscript's is swept back.
 - `GraphicsGrid[…, ImageSize -> 400]` of labelled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.

@@ -782,6 +782,35 @@ mod layout_display {
         > no_ticks.matches("<line ").count() + 30
     );
   }
+
+  #[test]
+  fn custom_arrowhead_disks_fit_automatic_bounds() {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let start = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      tag[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    for position in [0, 1] {
+      let svg = svg_of(&format!(
+        "Graphics[{{Arrowheads[{{{{0.15,{position},Graphics[{{Blue,Disk[{{0,0}},1/2]}}]}}}}],Arrow[{{{{0,0}},{{3,0}}}}]}}]"
+      ));
+      let root = svg.split('>').next().unwrap();
+      let (width, height) = (attr(root, "width"), attr(root, "height"));
+      for disk in svg.split("<ellipse ").skip(1) {
+        let tag = disk.split('>').next().unwrap();
+        let (cx, cy, rx, ry) = (
+          attr(tag, "cx"),
+          attr(tag, "cy"),
+          attr(tag, "rx"),
+          attr(tag, "ry"),
+        );
+        assert!(
+          cx >= rx && cy >= ry && cx + rx <= width && cy + ry <= height,
+          "custom head clipped: {tag}"
+        );
+      }
+      assert!(svg.contains("<ellipse "), "custom disk missing");
+    }
+  }
   #[test]
   fn double_exponential_preserves_distances_from_shifted_endpoints() {
     for expression in ["1/Sqrt[1-x]", "1/Sqrt[1+x]"] {

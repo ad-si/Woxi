@@ -9788,7 +9788,12 @@ mod graph_arrow_edges {
     let back = head[1];
     assert!((tip.0 - back.0 - 12.0).abs() < 0.05, "{head:?}");
     let end = line[line.len() - 1];
-    assert!((tip.0 - end.0 - 10.89).abs() < 0.05, "{line:?} {head:?}");
+    // The round cap extends half a point past the centreline endpoint.
+    let painted_end = end.0 + 0.5;
+    assert!(
+      (tip.0 - painted_end - 10.89).abs() < 0.05,
+      "{line:?} {head:?}"
+    );
   }
 
   #[test]
