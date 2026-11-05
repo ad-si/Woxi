@@ -17840,6 +17840,31 @@ fn integrand_numeric_somewhere(
   })
 }
 
+/// The base of a fractional power, whose zero can be a branch point or an
+/// endpoint with an unbounded derivative even when the value stays finite.
+fn fractional_power_base(expr: &Expr) -> Option<&Expr> {
+  let fractional = |power: &Expr| {
+    crate::functions::math_ast::try_eval_to_f64(power)
+      .is_some_and(|p| p.is_finite() && p.fract() != 0.0)
+  };
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if fractional(right) => Some(left),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && fractional(&args[1]) =>
+    {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
 /// The points where a `Piecewise` in `integrand` switches pieces: the
 /// numeric sides of the comparisons with `var` in its conditions. The
 /// integrand is evaluated with `var` symbolic first, so a piecewise
@@ -17908,6 +17933,11 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
     Some(-f0 / slope)
   }
   fn walk(e: &Expr, var: &str, out: &mut Vec<f64>) {
+    if let Some(base) = fractional_power_base(e)
+      && let Some(root) = linear_root(base, var)
+    {
+      out.push(root);
+    }
     if let Expr::FunctionCall { name, args } = e
       && matches!(
         name.as_str(),
@@ -17940,6 +17970,7 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
   crate::pop_quiet();
   crate::restore_warnings(snapshot);
   let mut out = Vec::new();
+  walk(integrand, var, &mut out);
   if let Ok(symbolic) = symbolic {
     walk(&symbolic, var, &mut out);
   }
@@ -18060,6 +18091,9 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
+  // Machine-precision global quadrature uses about half the available digits
+  // for its error goal; its higher-order value retains the remaining digits.
+  let mut gk_tolerance = 1e-8_f64;
   let mut max_recursion = 50_u32;
   let mut goal_tolerance: Option<f64> = None;
   let mut max_points: Option<u32> = None;
@@ -18122,6 +18156,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(t) = crate::functions::math_ast::try_eval_to_f64(opt_value)
         {
           tolerance = t;
+          gk_tolerance = t;
         }
       }
       // Loosening goals shrink the work: the quadrature stops once its
@@ -18193,6 +18228,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if let Some(t) = goal_tolerance {
     tolerance = tolerance.max(t);
+    gk_tolerance = t;
   }
 
   // Iterated / multi-dimensional integration: any argument after the first
@@ -18777,6 +18813,32 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     None
   };
+  let raw = |point: &Expr| -> Option<f64> {
+    let substituted =
+      crate::syntax::substitute_variable(integrand, &var_name, point);
+    let evaluated =
+      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+    crate::functions::math_ast::try_eval_to_f64(&evaluated)
+      .or_else(|| {
+        let numeric =
+          crate::evaluator::evaluate_expr_to_expr(&call1("N", evaluated))
+            .ok()?;
+        crate::functions::math_ast::try_eval_to_f64(&numeric)
+      })
+      .filter(|v| v.is_finite())
+  };
+  let sample = |point: &Expr| -> Option<f64> {
+    if let Some(m) = &monitor {
+      let substituted = crate::syntax::substitute_variable(m, &var_name, point);
+      let _ = crate::evaluator::evaluate_expr_to_expr(&substituted);
+    }
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let value = raw(point);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    value
+  };
   let eval_at = |x: f64| -> Option<f64> {
     if let Some(node) = &compiled {
       let v = node.eval(&[x]);
@@ -18784,51 +18846,96 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Some(v);
       }
     }
-    // Fire the EvaluationMonitor at each sampled abscissa (with the variable
-    // bound to x), e.g. so `Sow[x]` records the sample locations.
-    if let Some(m) = &monitor {
-      let sub =
-        crate::syntax::substitute_variable(m, &var_name, &Expr::Real(x));
-      let _ = crate::evaluator::evaluate_expr_to_expr(&sub);
-    }
-    let raw = |xx: f64| -> Option<f64> {
-      let substituted = crate::syntax::substitute_variable(
-        integrand,
-        &var_name,
-        &Expr::Real(xx),
-      );
-      let evaluated =
-        crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
-      // An inner Integrate with no closed form becomes a number under N
-      // (an iterated NIntegrate), as in the inumr check above.
-      crate::functions::math_ast::try_eval_to_f64(&evaluated)
-        .or_else(|| {
-          let numeric =
-            crate::evaluator::evaluate_expr_to_expr(&call1("N", evaluated))
-              .ok()?;
-          crate::functions::math_ast::try_eval_to_f64(&numeric)
-        })
-        .filter(|v| v.is_finite())
-    };
-    // Evaluate the literal point quietly: a removable singularity there (e.g.
-    // Sin[x]/x at x = 0, or this same quotient once an adaptive-quadrature
-    // fallback lands one of its subdivision endpoints exactly on it) yields
-    // Indeterminate/ComplexInfinity, which would otherwise emit a spurious
-    // `Power::infy`-style message for a sample that is about to be discarded
-    // and replaced by the perturbed value below. Snapshot/restore the message
-    // buffers around the probe (push_quiet only silences printing, not
-    // capture).
-    let snapshot = crate::snapshot_warnings();
-    crate::push_quiet();
-    let direct = raw(x);
-    crate::pop_quiet();
-    crate::restore_warnings(snapshot);
-    if let Some(v) = direct {
-      return Some(v);
-    }
-    let d = x.abs().max(1.0) * 1e-10;
-    raw(x + d).or_else(|| raw(x - d))
+    sample(&Expr::Real(x)).or_else(|| {
+      let d = x.abs().max(1.0) * 1e-10;
+      raw(&Expr::Real(x + d)).or_else(|| raw(&Expr::Real(x - d)))
+    })
   };
+  // Keep a DE node's distance from a nonzero endpoint when adding it in
+  // machine precision would lose the digits needed by a singular integrand.
+  let eval_offset = |endpoint: f64, offset: f64| -> Option<f64> {
+    if endpoint == 0.0 || offset.abs() > endpoint.abs() * 1e-8 {
+      return eval_at(endpoint + offset);
+    }
+    use astro_float::{BigFloat, RoundingMode};
+    let rm = RoundingMode::ToEven;
+    let point = BigFloat::from_f64(endpoint, 512).add(
+      &BigFloat::from_f64(offset, 512),
+      512,
+      rm,
+    );
+    let digits =
+      crate::functions::math_ast::numerical::with_astro_consts(|cc| {
+        crate::functions::math_ast::bigfloat_to_string(&point, None, rm, cc)
+          .ok()
+      })
+      .ok()??;
+    sample(&Expr::BigFloat(digits, 150.0))
+  };
+
+  fn collect_fractional_bases(expr: &Expr, bases: &mut Vec<Expr>) {
+    if let Some(base) = fractional_power_base(expr) {
+      bases.push(base.clone());
+    }
+    for child in crate::syntax::expr_children(expr) {
+      collect_fractional_bases(child, bases);
+    }
+  }
+  let symbolic =
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      crate::evaluator::evaluate_expr_to_expr(integrand)
+    })
+    .ok();
+  let mut endpoint_bases = Vec::new();
+  collect_fractional_bases(
+    symbolic.as_ref().unwrap_or(integrand),
+    &mut endpoint_bases,
+  );
+  // Endpoint classification does not itself sample the quadrature or fire its
+  // monitor. All finite waypoints share one adaptive error queue.
+  let singular = |x: f64| {
+    let expression =
+      crate::syntax::substitute_variable(integrand, &var_name, &Expr::Real(x));
+    crate::with_messages_dropped(&["Power::infy", "Infinity::indet"], || {
+      crate::evaluator::evaluate_expr_to_expr(&expression)
+    })
+    .ok()
+    .and_then(|value| crate::functions::math_ast::try_eval_to_f64(&value))
+    .is_none_or(|value| !value.is_finite())
+      || endpoint_bases.iter().any(|base| {
+        let at_endpoint =
+          crate::syntax::substitute_variable(base, &var_name, &Expr::Real(x));
+        crate::with_messages_dropped(
+          &["Power::infy", "Infinity::indet"],
+          || crate::evaluator::evaluate_expr_to_expr(&at_endpoint),
+        )
+        .ok()
+        .and_then(|e| crate::functions::math_ast::try_eval_to_f64(&e))
+          == Some(0.0)
+      })
+  };
+  if bounds.iter().all(|x| x.is_finite())
+    && !expr_contains_head(integrand, "Re")
+    && !expr_contains_head(integrand, "Im")
+  {
+    let panels: Option<Vec<_>> = bounds
+      .windows(2)
+      .map(|pair| gk11_panel(&eval_at, pair[0], pair[1], 0))
+      .collect();
+    if let Some(value) = panels.and_then(|panels| {
+      adaptive_gk11(
+        &eval_at,
+        &eval_offset,
+        panels,
+        &singular,
+        gk_tolerance,
+        max_recursion,
+        max_points,
+      )
+    }) {
+      return Ok(Expr::Real(value));
+    }
+  }
 
   // Integrate one sub-interval [a, b], handling infinite end bounds via a
   // tangent substitution. Interior waypoints are always finite.
@@ -18856,10 +18963,27 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
       adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
     } else {
-      // Tanh-sinh first: it is the only one of the two that copes with an
-      // endpoint singularity. It converges slowly on a strongly oscillatory
-      // integrand, so fall back to the adaptive rule when it does not settle.
-      tanh_sinh(&eval_at, a, b, tolerance, max_points)
+      // Projecting across a complex branch cut creates interior kinks; the
+      // double-exponential rule is more robust for these component functions.
+      if (expr_contains_head(integrand, "Re")
+        || expr_contains_head(integrand, "Im"))
+        && let Some(value) = tanh_sinh(&eval_at, a, b, tolerance, max_points)
+      {
+        return Some(value);
+      }
+      gk11_panel(&eval_at, a, b, 0)
+        .and_then(|root| {
+          adaptive_gk11(
+            &eval_at,
+            &eval_offset,
+            vec![root],
+            &singular,
+            gk_tolerance,
+            max_recursion,
+            max_points,
+          )
+        })
+        .or_else(|| tanh_sinh(&eval_at, a, b, tolerance, max_points))
         .or_else(|| adaptive_simpson(&eval_at, a, b, tolerance, max_recursion))
     }
   };
@@ -19629,6 +19753,256 @@ pub(crate) fn tanh_sinh(
       return Some(estimate);
     }
     previous = Some(estimate);
+    h *= 0.5;
+  }
+  None
+}
+
+/// Embedded Gauss--Kronrod (5,11) rule on [0,1], with the difference
+/// between the Kronrod and Gauss weights as its error estimator.
+const GK11_NODES: [f64; 11] = [
+  0.007957319952578768,
+  0.046910077030668004,
+  0.122_916_636_714_575_4,
+  0.23076534494715845,
+  0.3601847934191084,
+  0.5,
+  0.6398152065808916,
+  0.7692346550528415,
+  0.8770833632854246,
+  0.953089922969332,
+  0.9920426800474212,
+];
+const GK11_WEIGHTS: [f64; 11] = [
+  0.021291018375540916,
+  0.057_616_658_311_236_7,
+  0.09340039827824633,
+  0.120_520_169_614_323_8,
+  0.13642490095627946,
+  0.1414937089287456,
+  0.13642490095627946,
+  0.120_520_169_614_323_8,
+  0.09340039827824633,
+  0.057_616_658_311_236_7,
+  0.021291018375540916,
+];
+const GK11_ERROR: [f64; 11] = [
+  0.021291018375540916,
+  -0.0608467842168579,
+  0.09340039827824633,
+  -0.11879416563535941,
+  0.13642490095627946,
+  -0.14295073551569884,
+  0.13642490095627946,
+  -0.11879416563535941,
+  0.09340039827824633,
+  -0.0608467842168579,
+  0.021291018375540916,
+];
+
+#[derive(Clone, Copy)]
+struct QuadraturePanel {
+  a: f64,
+  b: f64,
+  value: f64,
+  error: f64,
+  depth: u32,
+}
+fn gk11_panel(
+  f: &impl Fn(f64) -> Option<f64>,
+  a: f64,
+  b: f64,
+  depth: u32,
+) -> Option<QuadraturePanel> {
+  let mut values = [0.0; 11];
+  let mut error = 0.0;
+  for k in 0..11 {
+    let v = f(a + (b - a) * GK11_NODES[k])?;
+    if !v.is_finite() {
+      return None;
+    }
+    values[k] = v;
+    error += v * GK11_ERROR[k];
+  }
+  let mut value = values[5] * GK11_WEIGHTS[5];
+  let mut correction = 0.0;
+  for k in 0..5 {
+    let term = (values[k] + values[10 - k]) * GK11_WEIGHTS[k];
+    let next = value + term;
+    correction += if value.abs() >= term.abs() {
+      (value - next) + term
+    } else {
+      (term - next) + value
+    };
+    value = next;
+  }
+  Some(QuadraturePanel {
+    a,
+    b,
+    value: (value + correction) * (b - a),
+    error: (error * (b - a)).abs(),
+    depth,
+  })
+}
+
+/// Refine the interval with the largest error first, evaluating both
+/// children before choosing the next interval. This avoids concentrating
+/// evaluations at the endpoints of already-converged smooth intervals.
+fn adaptive_gk11(
+  f: &impl Fn(f64) -> Option<f64>,
+  offset: &impl Fn(f64, f64) -> Option<f64>,
+  mut panels: Vec<QuadraturePanel>,
+  singular: &impl Fn(f64) -> bool,
+  tol: f64,
+  max_depth: u32,
+  max_points: Option<u32>,
+) -> Option<f64> {
+  struct Budget {
+    taken: u32,
+    used: std::cell::Cell<u32>,
+  }
+  impl Drop for Budget {
+    fn drop(&mut self) {
+      nintegrate_budget_return(u64::from(
+        self.taken.saturating_sub(self.used.get()),
+      ));
+    }
+  }
+  let budget = Budget {
+    taken: nintegrate_budget_take(100_000) as u32,
+    used: std::cell::Cell::new(panels.len() as u32 * 11),
+  };
+  let cap = max_points.unwrap_or(u32::MAX).min(budget.taken);
+  let counted = |x: f64| {
+    budget.used.set(budget.used.get() + 1);
+    f(x)
+  };
+  let counted_offset = |endpoint: f64, distance: f64| {
+    budget.used.set(budget.used.get() + 1);
+    offset(endpoint, distance)
+  };
+  loop {
+    let value: f64 = panels.iter().map(|p| p.value).sum();
+    let error: f64 = panels.iter().map(|p| p.error).sum();
+    if error <= tol * (1.0 + value.abs()) {
+      return Some(value);
+    }
+    if budget.used.get() + 22 > cap {
+      return Some(value);
+    }
+    let i = panels
+      .iter()
+      .enumerate()
+      .filter(|(_, p)| {
+        p.error > 0.0
+          && (p.depth < max_depth
+            || p.depth == max_depth
+              && max_depth >= 4
+              && (singular(p.a) || singular(p.b)))
+      })
+      .max_by(|(_, a), (_, b)| {
+        // Equal-error panels retain insertion priority. Roundoff in the
+        // weighted sums must not reorder symmetric regions.
+        if (a.error - b.error).abs() <= 1e-12 * a.error.max(b.error) {
+          std::cmp::Ordering::Equal
+        } else {
+          a.error.total_cmp(&b.error)
+        }
+      })?
+      .0;
+    let mut p = panels.remove(i);
+    if p.depth >= 4 && (singular(p.a) || singular(p.b)) {
+      let (result, evaluations) = singularity_de(
+        &counted,
+        &counted_offset,
+        p.a,
+        p.b,
+        tol,
+        cap.saturating_sub(budget.used.get()),
+      )?;
+      p.value = result;
+      p.error = 0.0;
+      panels.push(p);
+      if evaluations == 0 || budget.used.get() >= cap {
+        return Some(panels.iter().map(|p| p.value).sum());
+      }
+      continue;
+    }
+    let mid = f64::midpoint(p.a, p.b);
+    if mid == p.a || mid == p.b {
+      return None;
+    }
+    panels.push(gk11_panel(&counted, p.a, mid, p.depth + 1)?);
+    panels.push(gk11_panel(&counted, mid, p.b, p.depth + 1)?);
+  }
+}
+
+/// Double-exponential singularity handler. Each side truncates its tail
+/// independently; nested half-step rules reuse all previous evaluations.
+fn singularity_de(
+  f: &impl Fn(f64) -> Option<f64>,
+  offset: &impl Fn(f64, f64) -> Option<f64>,
+  a: f64,
+  b: f64,
+  tol: f64,
+  cap: u32,
+) -> Option<(f64, u32)> {
+  let radius = (b - a) / 2.0;
+  let half_pi = std::f64::consts::FRAC_PI_2;
+  let mut used = 0;
+  let mut sum = half_pi * f(f64::midpoint(a, b))?;
+  used += 1;
+  let mut correction = 0.0;
+  let mut previous: Option<f64> = None;
+  let mut h = 0.5;
+  for level in 0..12 {
+    for toward_b in [true, false] {
+      let mut k = 1;
+      loop {
+        let t = k as f64 * h;
+        if t > 6.5 {
+          break;
+        }
+        let decay = (-2.0 * half_pi * t.sinh()).exp();
+        let distance = 2.0 * decay / (1.0 + decay);
+        let weight = half_pi * t.cosh() * 4.0 * decay / (1.0 + decay).powi(2);
+        if distance == 0.0 || weight == 0.0 {
+          break;
+        }
+        if used >= cap {
+          return Some((radius * h * (sum + correction), used));
+        }
+        let value = if toward_b {
+          offset(b, -radius * distance)
+        } else {
+          offset(a, radius * distance)
+        }?;
+        let term = weight * value;
+        if !term.is_finite() {
+          return None;
+        }
+        used += 1;
+        let next = sum + term;
+        correction += if sum.abs() >= term.abs() {
+          (sum - next) + term
+        } else {
+          (term - next) + sum
+        };
+        sum = next;
+        if t > 2.0 && term.abs() <= f64::EPSILON * sum.abs() {
+          break;
+        }
+        k += if level == 0 { 1 } else { 2 };
+      }
+    }
+    let value = radius * h * (sum + correction);
+    // Halving the DE mesh gives quadratic error decay once its tails vanish.
+    if let Some(old) = previous
+      && (value - old).powi(2) <= tol * value.abs().max(1.0).powi(2)
+    {
+      return Some((value, used));
+    }
+    previous = Some(value);
     h *= 0.5;
   }
   None

@@ -579,6 +579,25 @@ mod layout_display {
   }
 
   #[test]
+  fn integration_monitor_uses_an_embedded_interior_rule() {
+    clear_state();
+    assert_eq!(interpret("Length[Reap[NIntegrate[Sin[x]^2,{x,0,2 Pi},EvaluationMonitor:>Sow[x]]][[2,1]]]").unwrap(), "77");
+    let value: f64 = interpret("NIntegrate[Sin[x]^2,{x,0,2 Pi}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((value - std::f64::consts::PI).abs() < 1e-10);
+    for end in [1, 3, 5] {
+      let value: f64 =
+        interpret(&format!("NIntegrate[1/Sqrt[x],{{x,0,{end}}}]"))
+          .unwrap()
+          .parse()
+          .unwrap();
+      assert!((value - 2.0 * (end as f64).sqrt()).abs() < 1e-8);
+    }
+  }
+
+  #[test]
   fn small_caps_are_painted_in_all_text_layouts() {
     for head in ["Row", "Column"] {
       let svg = svg_of(&format!(
@@ -635,5 +654,45 @@ mod layout_display {
       svg.contains("stroke-width=\"0.56\""),
       "binomial title lost its native brackets"
     );
+  }
+  #[test]
+  fn global_adaptive_singularities_switch_to_double_exponential_after_refinement()
+   {
+    clear_state();
+    assert_eq!(interpret("Length[Reap[NIntegrate[1/Abs[Sqrt[x]],{x,-1,0,1},EvaluationMonitor:>Sow[x]]][[2,1]]]").unwrap(),"262");
+    assert_eq!(interpret("p=Reap[NIntegrate[1/Abs[Sqrt[x]],{x,-1,0,1},EvaluationMonitor:>Sow[x]]][[2,1]];Sign /@ p[[{23,45,67,89,111,133,155,177,199}]]").unwrap(),"{1, -1, -1, 1, 1, -1, -1, 1, 1}");
+    for power in ["1/4", "1/2", "3/4"] {
+      let value: f64 =
+        interpret(&format!("NIntegrate[x^(-({power})),{{x,0,1}}]"))
+          .unwrap()
+          .parse()
+          .unwrap();
+      let expected: f64 = interpret(&format!("N[1/(1-({power}))]"))
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        (value - expected).abs() < 1e-8,
+        "failed singular exponent {power}: {value}"
+      );
+    }
+  }
+  #[test]
+  fn double_exponential_preserves_distances_from_shifted_endpoints() {
+    for expression in ["1/Sqrt[1-x]", "1/Sqrt[1+x]"] {
+      let bounds = if expression.contains("1-x") {
+        "{x,0,1}"
+      } else {
+        "{x,-1,0}"
+      };
+      let value: f64 = interpret(&format!("NIntegrate[{expression},{bounds}]"))
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        (value - 2.0).abs() < 1e-10,
+        "lost endpoint distance for {expression}: {value}"
+      );
+    }
   }
 }

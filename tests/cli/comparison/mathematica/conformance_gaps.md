@@ -5488,10 +5488,12 @@ automatic range in Woxi; WL clips its automatic end against the given one
 (`ListPlot[{1, 2, 3, 4, 100, 5, 6, 7}, PlotRange -> {0, Automatic}]` → WL
 y range `{0, 17.5}`).
 
-`ListPlot` of `NIntegrate`'s `EvaluationMonitor` samples
-(`list-plot-app-eval-values`) still differs: Woxi's `NIntegrate` samples
-`1/Abs[Sqrt[x]]` much closer to the singularity (its 82.5 % quantile is
-2·10⁵, WL's 11), so the same range rule gives a far taller range.
+`NIntegrate` now uses global Gauss–Kronrod refinement with a
+double-exponential singularity handler. The reviewed smooth monitor has
+77 samples; the singular `1/Abs[Sqrt[x]]` monitor on `{x,-1,0,1}` has
+262 samples in Wolfram's order, agreeing within machine rounding.
+Near nonzero singular endpoints, arbitrary-precision sample coordinates
+avoid cancellation in the double-exponential tail.
 
 ### `Dendrogram` leaf order is reconstructed, not exact
 
