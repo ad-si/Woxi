@@ -881,40 +881,6 @@ fn automatic_opacity_bands(values: &[f64]) -> Vec<(usize, usize, usize)> {
   bands
 }
 
-#[cfg(test)]
-mod opacity_tests {
-  use super::*;
-
-  #[test]
-  fn explicit_automatic_opacity_uses_the_default_transfer_function() {
-    crate::clear_state();
-    assert_eq!(crate::interpret("SameQ[DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3],DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3,OpacityFunction->Automatic]]").unwrap(), "True");
-  }
-
-  #[test]
-  fn automatic_opacity_uses_eighty_percent_histogram_coverage() {
-    let values: Vec<f64> = (0..8)
-      .flat_map(|i| std::iter::repeat_n(-1.0 + 2.0 * i as f64 / 7.0, 64))
-      .collect();
-    assert_eq!(
-      automatic_opacity_bands(&values),
-      vec![(2, 4, 12), (5, 7, 12), (8, 10, 12), (11, 12, 12)]
-    );
-    let mut quadratic = Vec::new();
-    for i in 0..10 {
-      for j in 0..10 {
-        for k in 0..10 {
-          let x = -1.0 + 2.0 * i as f64 / 9.0;
-          let y = -1.0 + 2.0 * j as f64 / 9.0;
-          let z = -1.0 + 2.0 * k as f64 / 9.0;
-          quadratic.push(x * x + y * y - z * z);
-        }
-      }
-    }
-    assert_eq!(automatic_opacity_bands(&quadratic), vec![(3, 11, 15)]);
-  }
-}
-
 pub fn density_plot3d_ast(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -1075,4 +1041,38 @@ pub fn density_plot3d_ast(
   let plot = graphics3d(vec![raster, Expr::List(vec![].into())], graphics_opts);
   let plot = evaluate_expr_to_expr(&plot)?;
   Ok(Some(with_legend(plot, &opts, (lo, hi), None)))
+}
+
+#[cfg(test)]
+mod opacity_tests {
+  use super::*;
+
+  #[test]
+  fn explicit_automatic_opacity_uses_the_default_transfer_function() {
+    crate::clear_state();
+    assert_eq!(crate::interpret("SameQ[DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3],DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3,OpacityFunction->Automatic]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn automatic_opacity_uses_eighty_percent_histogram_coverage() {
+    let values: Vec<f64> = (0..8)
+      .flat_map(|i| std::iter::repeat_n(-1.0 + 2.0 * i as f64 / 7.0, 64))
+      .collect();
+    assert_eq!(
+      automatic_opacity_bands(&values),
+      vec![(2, 4, 12), (5, 7, 12), (8, 10, 12), (11, 12, 12)]
+    );
+    let mut quadratic = Vec::new();
+    for i in 0..10 {
+      for j in 0..10 {
+        for k in 0..10 {
+          let x = -1.0 + 2.0 * i as f64 / 9.0;
+          let y = -1.0 + 2.0 * j as f64 / 9.0;
+          let z = -1.0 + 2.0 * k as f64 / 9.0;
+          quadratic.push(x * x + y * y - z * z);
+        }
+      }
+    }
+    assert_eq!(automatic_opacity_bands(&quadratic), vec![(3, 11, 15)]);
+  }
 }

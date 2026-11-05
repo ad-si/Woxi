@@ -14788,7 +14788,11 @@ impl BoxLayout {
       // Drawing the dots as geometry keeps its ink and measured width equal.
       let width = font_size;
       let y = ascent - 0.26 * font_size;
-      let elements = [0.15,0.5,0.85].iter().map(|t| format!("<circle cx=\"{:.2}\" cy=\"{y:.2}\" r=\"{:.2}\" fill=\"currentColor\" stroke=\"none\"/>",t*width,font_size*0.055)).collect();
+      let elements = [0.15,0.5,0.85].iter().fold(String::new(), |mut acc, t| {
+        use std::fmt::Write;
+        let _ = write!(acc, "<circle cx=\"{:.2}\" cy=\"{y:.2}\" r=\"{:.2}\" fill=\"currentColor\" stroke=\"none\"/>",t*width,font_size*0.055);
+        acc
+      });
       return Self {
         width,
         height,

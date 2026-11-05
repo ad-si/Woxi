@@ -40,7 +40,7 @@ pub(crate) fn modularity_communities(
   // of its nodes stands for.
   let mut members: Vec<Vec<usize>> = (0..n).map(|v| vec![v]).collect();
   let mut weights: Vec<std::collections::BTreeMap<usize, f64>> =
-    vec![Default::default(); n];
+    vec![std::collections::BTreeMap::default(); n];
   for &(a, b) in edges {
     if a == b {
       continue;
@@ -71,7 +71,7 @@ pub(crate) fn modularity_communities(
         tot[own] -= degree[i];
         // Links from `i` into each neighbouring community.
         let mut links: std::collections::BTreeMap<usize, f64> =
-          Default::default();
+          std::collections::BTreeMap::default();
         for (&j, &w) in &weights[i] {
           *links.entry(community[j]).or_insert(0.0) += w;
         }
@@ -103,7 +103,7 @@ pub(crate) fn modularity_communities(
     }
     // Aggregate: one node per community.
     let mut index: std::collections::BTreeMap<usize, usize> =
-      Default::default();
+      std::collections::BTreeMap::default();
     for &c in &community {
       let next = index.len();
       index.entry(c).or_insert(next);
@@ -111,7 +111,7 @@ pub(crate) fn modularity_communities(
     let k = index.len();
     let mut new_members: Vec<Vec<usize>> = vec![Vec::new(); k];
     let mut new_weights: Vec<std::collections::BTreeMap<usize, f64>> =
-      vec![Default::default(); k];
+      vec![std::collections::BTreeMap::default(); k];
     let mut new_self = vec![0.0; k];
     for i in 0..nodes {
       let ci = index[&community[i]];

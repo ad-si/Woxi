@@ -4201,7 +4201,7 @@ mod tests {
     let Expr::Graphics {
       source: Some(ref full),
       ..
-    } = list_plot_ast(&[data.clone()]).unwrap()
+    } = list_plot_ast(std::slice::from_ref(&data)).unwrap()
     else {
       panic!("expected plot source");
     };

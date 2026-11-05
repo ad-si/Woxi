@@ -2483,6 +2483,7 @@ pub(crate) fn triangle_paint(
     })
 }
 
+#[allow(clippy::fn_params_excessive_bools)]
 fn generate_svg(
   triangles: &[Triangle],
   mesh_lines: &[MeshLine],
