@@ -1550,7 +1550,10 @@ fn graph_render(
       // sits outside the circle, in line with its vertex's spoke.
       let spoke = (x - layout_centre.0, y - layout_centre.1);
       let spoke_len = (spoke.0 * spoke.0 + spoke.1 * spoke.1).sqrt();
-      if placement == "Automatic" && layout_choice.circular && spoke_len > 1e-12
+      if placement == "Automatic"
+        && (layout_choice.circular
+          || matches!(layout_choice.named, Some(NamedLayout::Star { .. })))
+        && spoke_len > 1e-12
       {
         let u = (spoke.0 / spoke_len, spoke.1 / spoke_len);
         let pair = |a: f64, b: f64| {
@@ -2777,11 +2780,9 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
         .collect();
       return unit_mean_edge(pts, graph);
     }
-    // Larger connected graphs get the force-directed embedding too, as
-    // wolframscript's default spring-electrical layout would; small ones
-    // keep the circular layout (in the order `CircularEmbedding` picks)
-    // for stable output.
-    if n > 8 {
+    // Small paths and single cycles retain their circular arrangement;
+    // additional cycles need a spring embedding even with few vertices.
+    if n > 8 || graph.edge_count() > n {
       let comp: Vec<usize> = (0..n).collect();
       return layout_component(graph, &comp);
     }
@@ -2836,12 +2837,27 @@ fn edge_order_adjacency(
 /// neighbour first, following directed edges only forwards. In a
 /// component that is a tree whose walk ends in exactly two dead ends, the
 /// walk's first run (the root down to the first dead end) is turned
-/// round, so the tree is laid out end to end. Decoded from
+/// round, so the tree is laid out end to end. Directed cycles with one
+/// chord use the same reversal when their walk has two dead ends. Decoded from
 /// wolframscript's embeddings of random small graphs: this reproduces
 /// every tree, about half the other undirected graphs and three quarters
 /// of the directed ones.
 fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
   let n = graph.node_count();
+  let all_directed = graph.edge_references().all(|e| e.weight().directed);
+  let strongly_connected = if all_directed {
+    petgraph::algo::kosaraju_scc(graph)
+      .into_iter()
+      .filter(|c| c.len() > 1)
+      .map(|c| {
+        c.into_iter()
+          .map(petgraph::prelude::NodeIndex::index)
+          .collect::<Vec<_>>()
+      })
+      .collect::<Vec<_>>()
+  } else {
+    Vec::new()
+  };
   let mut succ: Vec<Vec<usize>> = vec![Vec::new(); n];
   let mut undirected_edges = vec![0usize; n];
   let mut any_directed = false;
@@ -2887,13 +2903,42 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
     }
     let start = order.len();
     visit(root, &succ, &mut seen, &mut parent, &mut order);
-    if any_directed {
+    if any_directed && !all_directed {
       continue;
     }
     let comp = &mut order[start..];
+    let directed_cycle_with_chord = if all_directed {
+      let mut indegree = vec![0usize; n];
+      for &v in comp.iter() {
+        for &w in &succ[v] {
+          indegree[w] += 1;
+        }
+      }
+      let branches: Vec<_> = comp
+        .iter()
+        .copied()
+        .filter(|&v| succ[v].len() == 2)
+        .collect();
+      let joins: Vec<_> =
+        comp.iter().copied().filter(|&v| indegree[v] == 2).collect();
+      branches.len() == 1
+        && joins.len() == 1
+        && succ[branches[0]].contains(&joins[0])
+        && comp.iter().all(|&v| {
+          (1..=2).contains(&succ[v].len()) && (1..=2).contains(&indegree[v])
+        })
+    } else {
+      false
+    };
     // A tree: one edge fewer than vertices.
     let edges: usize = comp.iter().map(|&v| undirected_edges[v]).sum();
-    if edges + 1 != comp.len() {
+    if (all_directed
+      && (!directed_cycle_with_chord
+        || !strongly_connected.iter().any(|scc| {
+          scc.len() == comp.len() && comp.iter().all(|v| scc.contains(v))
+        })))
+      || (!all_directed && edges + 1 != comp.len())
+    {
       continue;
     }
     let has_child: std::collections::HashSet<usize> =
@@ -3051,11 +3096,15 @@ fn named_layout_positions(
         || ((n as f64).sqrt().floor() as usize).max(1),
         |(r, _)| r,
       );
-      Some(
-        (0..n)
-          .map(|k| ((k / rows) as f64 + 1.0, (k % rows) as f64 + 1.0))
-          .collect(),
-      )
+      let mut components = weakly_connected_components(graph);
+      let mut pts = vec![(0.0, 0.0); n];
+      for comp in &mut components {
+        comp.sort_unstable();
+        for (k, &v) in comp.iter().enumerate() {
+          pts[v] = ((k / rows + 1) as f64, (k % rows + 1) as f64);
+        }
+      }
+      Some(pack_grid_components(&components, pts))
     }
     NamedLayout::Multipartite { partition }
       if partition.iter().sum::<usize>() == n =>
@@ -3386,8 +3435,79 @@ fn weakly_connected_components(
   result
 }
 
+/// Pack grid components without rescaling their unit lattice. Wolfram pads
+/// each component by one eighth of the mean sum of its coordinate spans,
+/// then stacks the padded rectangles in columns. Spare column height is
+/// distributed after each rectangle, keeping the first rectangle at the top.
+fn pack_grid_components(
+  components: &[Vec<usize>],
+  mut pts: Vec<(f64, f64)>,
+) -> Vec<(f64, f64)> {
+  if components.len() <= 1 {
+    return pts;
+  }
+  let bounds: Vec<_> = components
+    .iter()
+    .map(|comp| {
+      comp.iter().fold(
+        (
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+        ),
+        |(xmin, xmax, ymin, ymax), &v| {
+          let (x, y) = pts[v];
+          (xmin.min(x), xmax.max(x), ymin.min(y), ymax.max(y))
+        },
+      )
+    })
+    .collect();
+  let padding = bounds
+    .iter()
+    .map(|&(x0, x1, y0, y1)| x1 - x0 + y1 - y0)
+    .sum::<f64>()
+    / (8.0 * components.len() as f64)
+    + 1e-5;
+  let heights: Vec<_> =
+    bounds.iter().map(|b| b.3 - b.2 + 2.0 * padding).collect();
+  let column_height = heights.iter().copied().fold(0.0_f64, f64::max);
+  let mut columns: Vec<Vec<usize>> = Vec::new();
+  let mut used: Vec<f64> = Vec::new();
+  for (i, &height) in heights.iter().enumerate() {
+    if let Some(col) =
+      used.iter().position(|h| h + height <= column_height + 1e-9)
+    {
+      columns[col].push(i);
+      used[col] += height;
+    } else {
+      columns.push(vec![i]);
+      used.push(height);
+    }
+  }
+  let mut x = 0.0;
+  for (col, &height) in columns.iter().zip(&used) {
+    let slack = (column_height - height) / col.len() as f64;
+    let mut y = 0.0;
+    let mut width = 0.0_f64;
+    for &i in col {
+      let (xmin, xmax, _, ymax) = bounds[i];
+      for &v in &components[i] {
+        pts[v] = (
+          x + padding + pts[v].0 - xmin,
+          -y - padding + pts[v].1 - ymax,
+        );
+      }
+      width = width.max(xmax - xmin + 2.0 * padding);
+      y += heights[i] + slack;
+    }
+    x += width;
+  }
+  pts
+}
+
 /// Lay out a single component in a local [-1, 1]^2 coordinate system.
-/// Small components (≤ 8 nodes) use a circular layout; larger ones use
+/// Small components with at most one cycle use a circular layout; others use
 /// a Fruchterman-Reingold force-directed layout with deterministic
 /// initialization so the output is reproducible.
 fn layout_component(
@@ -3401,7 +3521,15 @@ fn layout_component(
   if m == 1 {
     return vec![(0.0, 0.0)];
   }
-  if m <= 8 {
+  let members: std::collections::HashSet<_> = comp.iter().copied().collect();
+  let edge_count = graph
+    .edge_references()
+    .filter(|e| {
+      members.contains(&e.source().index())
+        && members.contains(&e.target().index())
+    })
+    .count();
+  if m <= 8 && edge_count <= m {
     return (0..m)
       .map(|k| {
         let angle = PI / 2.0 + (k as f64) * 2.0 * PI / (m as f64);
@@ -3413,8 +3541,8 @@ fn layout_component(
 }
 
 /// A Fruchterman-Reingold force-directed layout of one component, scaled
-/// to fit [-1, 1]^2, from a deterministic start so the output is
-/// reproducible.
+/// to fit [-1, 1]^2. Two deterministic starts compete by their final
+/// spring energy, avoiding crossed local minima without randomizing output.
 fn force_layout_component(
   graph: &DiGraph<usize, RenderEdgeData>,
   comp: &[usize],
@@ -3446,7 +3574,7 @@ fn force_layout_component(
 
   // Deterministic initial placement on a sunflower spiral.
   let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
-  let mut pos: Vec<(f64, f64)> = (0..m)
+  let sunflower: Vec<(f64, f64)> = (0..m)
     .map(|i| {
       let r = ((i as f64) + 0.5).sqrt() / (m as f64).sqrt();
       let angle = (i as f64) * golden_angle;
@@ -3454,68 +3582,113 @@ fn force_layout_component(
     })
     .collect();
 
+  // A DFS circle supplies a different basin of attraction, especially
+  // for graphs made of several paths between the same vertices.
+  let mut seen = vec![false; m];
+  let mut stack = vec![0];
+  let mut circular = vec![(0.0, 0.0); m];
+  let mut next = 0;
+  while let Some(v) = stack.pop() {
+    if seen[v] {
+      continue;
+    }
+    seen[v] = true;
+    let angle = PI / 2.0 + next as f64 * 2.0 * PI / m as f64;
+    circular[v] = (angle.cos(), angle.sin());
+    next += 1;
+    let mut neighbours = adj[v].clone();
+    neighbours.sort_unstable();
+    stack.extend(neighbours);
+  }
+
   // Fruchterman-Reingold on the unit square [-1, 1]^2.
   let w = 2.0_f64;
   let h = 2.0_f64;
   let area = w * h;
   let k = (area / (m as f64)).sqrt();
   let iterations = 120;
-  let mut temp = w * 0.1;
-  let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
+  let mut best_energy = f64::INFINITY;
+  let mut best_positions = Vec::new();
+  for mut pos in [sunflower, circular] {
+    let mut temp = w * 0.1;
+    let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
 
-  for _ in 0..iterations {
-    let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
+    for _ in 0..iterations {
+      let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
 
-    // Repulsive force between every pair.
-    for i in 0..m {
-      for j in (i + 1)..m {
-        let dx = pos[i].0 - pos[j].0;
-        let dy = pos[i].1 - pos[j].1;
-        let d2 = dx * dx + dy * dy;
-        let d = d2.sqrt().max(1e-4);
-        let force = (k * k) / d;
-        let fx = dx / d * force;
-        let fy = dy / d * force;
-        disp[i].0 += fx;
-        disp[i].1 += fy;
-        disp[j].0 -= fx;
-        disp[j].1 -= fy;
-      }
-    }
-
-    // Attractive force along edges (each undirected edge is listed twice
-    // in `adj`, so we guard on i < j to count it once).
-    for i in 0..m {
-      for &j in &adj[i] {
-        if i >= j {
-          continue;
+      // Repulsive force between every pair.
+      for i in 0..m {
+        for j in (i + 1)..m {
+          let dx = pos[i].0 - pos[j].0;
+          let dy = pos[i].1 - pos[j].1;
+          let d2 = dx * dx + dy * dy;
+          let d = d2.sqrt().max(1e-4);
+          let force = (k * k) / d;
+          let fx = dx / d * force;
+          let fy = dy / d * force;
+          disp[i].0 += fx;
+          disp[i].1 += fy;
+          disp[j].0 -= fx;
+          disp[j].1 -= fy;
         }
-        let dx = pos[i].0 - pos[j].0;
-        let dy = pos[i].1 - pos[j].1;
-        let d = (dx * dx + dy * dy).sqrt().max(1e-4);
-        let force = (d * d) / k;
-        let fx = dx / d * force;
-        let fy = dy / d * force;
-        disp[i].0 -= fx;
-        disp[i].1 -= fy;
-        disp[j].0 += fx;
-        disp[j].1 += fy;
+      }
+
+      // Attractive force along edges (each undirected edge is listed twice
+      // in `adj`, so we guard on i < j to count it once).
+      for i in 0..m {
+        for &j in &adj[i] {
+          if i >= j {
+            continue;
+          }
+          let dx = pos[i].0 - pos[j].0;
+          let dy = pos[i].1 - pos[j].1;
+          let d = (dx * dx + dy * dy).sqrt().max(1e-4);
+          let force = (d * d) / k;
+          let fx = dx / d * force;
+          let fy = dy / d * force;
+          disp[i].0 -= fx;
+          disp[i].1 -= fy;
+          disp[j].0 += fx;
+          disp[j].1 += fy;
+        }
+      }
+
+      // Apply displacement, clamped by the current temperature, and keep
+      // everything inside [-w/2, w/2] × [-h/2, h/2].
+      for i in 0..m {
+        let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
+          .sqrt()
+          .max(1e-9);
+        let step = dlen.min(temp);
+        pos[i].0 += disp[i].0 / dlen * step;
+        pos[i].1 += disp[i].1 / dlen * step;
+      }
+
+      temp *= cool;
+    }
+
+    // Potential whose gradient gives the forces above. Compare before
+    // normalization so an expanded, tangled drawing cannot win by scale.
+    let mut energy = 0.0;
+    for i in 0..m {
+      for j in i + 1..m {
+        let distance =
+          (pos[i].0 - pos[j].0).hypot(pos[i].1 - pos[j].1).max(1e-4);
+        energy -= k * k * distance.ln();
+      }
+      for &j in &adj[i] {
+        if i < j {
+          let distance = (pos[i].0 - pos[j].0).hypot(pos[i].1 - pos[j].1);
+          energy += distance.powi(3) / (3.0 * k);
+        }
       }
     }
-
-    // Apply displacement, clamped by the current temperature, and keep
-    // everything inside [-w/2, w/2] × [-h/2, h/2].
-    for i in 0..m {
-      let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
-        .sqrt()
-        .max(1e-9);
-      let step = dlen.min(temp);
-      pos[i].0 += disp[i].0 / dlen * step;
-      pos[i].1 += disp[i].1 / dlen * step;
+    if energy < best_energy {
+      best_energy = energy;
+      best_positions = pos;
     }
-
-    temp *= cool;
   }
+  let mut pos = best_positions;
 
   // Turn the layout so its long axis runs horizontally, the way Wolfram's
   // spring embeddings come out.

@@ -2211,6 +2211,17 @@ mod two_way_rule {
     // size, 2.5 vertex radii long (`Arrowheads[2.5 r / width]`), as
     // wolframscript does — not `Arrowheads[Medium]`, which would swallow
     // the short edges of a dense cluster.
+    assert_eq!(
+      interpret(
+        "g=Show[Graph[Table[i->Mod[i^2,74],{i,100}]]]; \
+         h=First[Cases[g,Arrowheads[a_]:>a,Infinity]]; \
+         r=First[Cases[g,Disk[p_,a_]:>a,Infinity]]; \
+         c=Cases[g,Disk[p_,a_]:>p,Infinity]; \
+         Round[h (Max[c[[All,1]]]-Min[c[[All,1]]])/r,0.001]"
+      )
+      .unwrap(),
+      "2.5"
+    );
     let svg = interpret(
       "ExportString[Graph[Table[i -> Mod[i^2, 74], {i, 100}]], \"SVG\"]",
     )
@@ -2247,7 +2258,10 @@ mod two_way_rule {
       r[..r.find('"').unwrap()].parse().unwrap()
     };
     assert!(
-      first > 2.4 * rx && first < 3.0 * rx,
+      // Fractional heads reference the full image width; vertex radii
+      // follow the padded coordinate window, so their screen-space ratio
+      // also depends on padding and the packed layout's aspect.
+      first > 2.4 * rx && first < 3.2 * rx,
       "the head is about 2.5 vertex radii: {first} vs radius {rx}"
     );
   }
@@ -8944,6 +8958,54 @@ mod graph_coordinates_3d {
   }
 
   #[test]
+  fn small_graphs_with_multiple_cycles_use_a_spring_layout() {
+    assert_eq!(
+      interpret(
+        "e={1->2,2->3,3->4,4->1,1->5,5->6,6->4}; \
+         ExportString[GraphPlot[e],\"SVG\"] =!= \
+         ExportString[GraphPlot[e,Method->\"CircularEmbedding\"],\"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn spring_layout_escapes_a_crossed_local_minimum() {
+    let coordinates = interpret(
+      "Flatten[GraphEmbedding[Graph[{1->2,2->3,3->4,4->1,1->5,5->6,6->4}]]]",
+    )
+    .unwrap();
+    let coordinates: Vec<f64> = coordinates
+      .trim_matches(['{', '}'])
+      .split(',')
+      .map(|v| v.trim().parse().unwrap())
+      .collect();
+    let points: Vec<_> =
+      coordinates.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+    let edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (4, 5), (5, 3)];
+    let side = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
+      (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+    };
+    // Wolfram's spring drawing is planar. A single sunflower start used
+    // to trap two of these three paths in a crossed, flattened drawing.
+    for (i, &(a, b)) in edges.iter().enumerate() {
+      for &(c, d) in &edges[i + 1..] {
+        if a == c || a == d || b == c || b == d {
+          continue;
+        }
+        let crosses = side(points[a], points[b], points[c])
+          * side(points[a], points[b], points[d])
+          < -1e-8
+          && side(points[c], points[d], points[a])
+            * side(points[c], points[d], points[b])
+            < -1e-8;
+        assert!(!crosses, "edges {a}-{b} and {c}-{d}: {points:?}");
+      }
+    }
+  }
+
+  #[test]
   fn small_connected_graph_keeps_circular_layout() {
     assert_eq!(
       interpret(
@@ -9354,6 +9416,29 @@ mod wolfram_graph_layouts {
   }
 
   #[test]
+  fn disconnected_grid_components_keep_their_lattices_and_pack_separately() {
+    // Coordinates verified with wolframscript. In particular, vertex 11
+    // occupies its own packing rectangle instead of filling the large grid.
+    assert_eq!(
+      interpret(
+        "Round[GraphEmbedding[Graph[Range[12], \
+         {1<->2,2<->3,3<->4,5<->6,7<->8,1<->5,6<->10,8<->12,9<->10}, \
+         GraphLayout->{\"GridEmbedding\",\"Dimension\"->{4,3}}]],0.001]"
+      )
+      .unwrap(),
+      "{{0.25, -3.25}, {0.25, -2.25}, {0.25, -1.25}, {0.25, -0.25}, {1.25, -3.25}, {1.25, -2.25}, {1.75, -2.25}, {1.75, -1.25}, {1.25, -1.25}, {1.25, -0.25}, {1.75, -3.}, {1.75, -0.25}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[GraphEmbedding[Graph[Range[6],{1<->2,3<->4,5<->6}, \
+         GraphLayout->{\"GridEmbedding\",\"Dimension\"->{3,2}}]],0.001]"
+      )
+      .unwrap(),
+      "{{0.125, -1.125}, {0.125, -0.125}, {0.375, -1.125}, {0.375, -0.125}, {0.625, -1.125}, {0.625, -0.125}}"
+    );
+  }
+
+  #[test]
   fn star_embedding() {
     assert_eq!(
       interpret("Round[GraphEmbedding[StarGraph[5]], 0.001]").unwrap(),
@@ -9598,6 +9683,33 @@ mod circular_embedding_order {
   }
 
   #[test]
+  fn a_directed_cycle_with_one_chord_reverses_its_first_branch() {
+    assert_eq!(
+      order(
+        "Graph[{\"a\"->\"b\",\"b\"->\"c\",\"c\"->\"d\",\"d\"->\"a\",\"a\"->\"c\"}, \
+         GraphLayout->\"CircularEmbedding\"]"
+      ),
+      "{d, c, a, b}"
+    );
+    assert_eq!(
+      order(
+        "Graph[Range[6],Join[Table[i->Mod[i,6]+1,{i,6}],{1->3}], \
+         GraphLayout->\"CircularEmbedding\"]"
+      ),
+      "{6, 5, 4, 3, 1, 2}"
+    );
+    // Additional branching can retain the ordinary walk, even when the
+    // graph is strongly connected and DFS still has two dead ends.
+    assert_eq!(
+      order(
+        "Graph[Range[3],{2->1,2->3,1->3,1->2,3->1}, \
+         GraphLayout->\"CircularEmbedding\"]"
+      ),
+      "{1, 3, 2}"
+    );
+  }
+
+  #[test]
   fn a_two_ended_tree_is_laid_out_end_to_end() {
     // The walk's first run (1, 5, 6) is turned round, so the path
     // 6 - 5 - 1 - 2 - 3 - 4 goes round the circle in order.
@@ -9757,6 +9869,22 @@ mod graph_arrow_edges {
        VertexLabels -> \"Name\"]",
     );
     assert_eq!(plain.matches("text-anchor=\"start\"").count(), 4, "{plain}");
+  }
+
+  #[test]
+  fn star_layout_labels_follow_the_outer_spokes() {
+    let out = svg(
+      "Graph[Table[1<->k,{k,2,9}],GraphLayout->\"StarEmbedding\",VertexLabels->\"Name\"]",
+    );
+    let label = |name: &str| -> String {
+      let end = out.find(&format!(">{name}</text>")).unwrap();
+      out[out[..end].rfind("<text").unwrap()..end].to_string()
+    };
+    // The centre keeps its ordinary label position. Outer vertices on
+    // either side align their labels away from the centre.
+    assert!(label("1").contains("text-anchor=\"start\""), "{out}");
+    assert!(label("2").contains("text-anchor=\"end\""), "{out}");
+    assert!(label("6").contains("text-anchor=\"start\""), "{out}");
   }
 }
 

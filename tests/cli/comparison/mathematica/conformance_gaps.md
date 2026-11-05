@@ -5973,34 +5973,56 @@ internal hash order. Woxi keeps input order.
 ### Graph layouts that only approximate Wolfram's
 
 - **Spring-electrical layouts** (the automatic layout of a non-tree graph
-  with more than 8 vertices, `"SpringElectricalEmbedding"`,
+  with more than 8 vertices or more than one cycle, `"SpringElectricalEmbedding"`,
   `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
-  Fruchterman–Reingold layout turned so the long axis is horizontal. WL's
-  result (e.g. the cube projection of `HypercubeGraph[3]`) is not
-  reproduced; small non-tree graphs get the circular layout instead.
+  Fruchterman–Reingold layout turned so the long axis is horizontal. It
+  relaxes a sunflower start and a DFS-circle start and retains the lower
+  spring-energy result, avoiding the crossed local minimum of the reviewed
+  six-vertex graph. WL's
+  coordinates, orientation and choice between symmetry-equivalent vertex
+  placements are not reproduced. Small graphs with several cycles now use
+  this layout too, including `HypercubeGraph[3]` and the reviewed six-vertex
+  `GraphPlot`; they no longer fall back to a circle. `GraphPlot3D` also uses
+  its own deterministic force layout. Its native Wolfram cube orientation
+  is independent of `SeedRandom`; both systems use the same default
+  `ViewPoint -> {1.3, -2.4, 2}`.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
   neighbour first and following directed edges forwards only; in a tree
   whose walk ends in exactly two dead ends the walk's first run is turned
-  round. Checked against 320 random small graphs: every tree, about half
+  round. The same reversal now applies to directed cycles with one chord
+  and two DFS dead ends: directed cycles with a chord from
+  vertex 1 to vertex 3 match for sizes 4 through 7, including the reviewed
+  string-label graph. Across 1,000 random directed graphs, the structural
+  cycle-plus-chord correction improves exact matches from 701 to 708
+  without regressing any previously matching example. Extending the rule
+  to all strongly connected graphs or mixed graphs regresses many other
+  examples and is intentionally avoided. The earlier DFS algorithm was checked against 320
+  random small graphs: every tree, about half
   the other undirected graphs and three quarters of the directed ones
   match exactly. The rest are wolframscript's own heuristic, not decoded:
-  e.g. `Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]` is `{4, 3, 1, 2}`
-  round the circle in wolframscript (the walk's run turned round), `{1,
-  3, 4, 2}` in Woxi, and the mixed `Graph[{1 -> 2, 2 <-> 3, 3 -> 4, 4 <->
+  e.g. the mixed `Graph[{1 -> 2, 2 <-> 3, 3 -> 4, 4 <->
   1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
   image, and WL draws long edges as splines through the layers.
-- **`"GridEmbedding"` / `"BipartiteEmbedding"` of a disconnected graph**:
-  WL packs the components separately; Woxi lays out the whole graph.
+- **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
+  component on its own unit lattice, pads its bounding rectangle by one
+  eighth of the mean sum of coordinate spans plus `0.00001`, and packs
+  the rectangles in columns with evenly distributed spare height. This
+  matches the reviewed 12-vertex graph and additional mixed-size component
+  examples. More general rectangle packing can still differ: six isolated
+  vertices form a 2-by-3 arrangement in Wolfram rather than Woxi's strip.
+  Disconnected **`"BipartiteEmbedding"`** still lays out the whole graph
+  rather than packing each component separately.
 - **`"SpiralEmbedding"` scale**: the spiral is WL's (Rakhmanov–Saff–Zhou),
   the sphere radius only approximates WL's (`0.42 Sqrt[n]`).
 - **`Tree[…]` layout** uses a tidy tree; WL spreads leaves differently.
 - **Automatic vertex-label placement**: with an explicit
-  `GraphLayout -> "CircularEmbedding"` a `"Name"` label sits outside the
-  circle on its vertex's spoke, as in WL; otherwise it is above-right,
+  `GraphLayout -> "CircularEmbedding"` or `"StarEmbedding"`, an outer
+  `"Name"` label sits outside the circle on its vertex's spoke, as in WL;
+  otherwise it is above-right,
   which is what WL does for its default layouts too.
 - **Graph arrowheads**: `Arrowheads[Medium]` (12 pt), or 2.5 vertex radii
   for a graph of more than 20 vertices or with small vertices. The
