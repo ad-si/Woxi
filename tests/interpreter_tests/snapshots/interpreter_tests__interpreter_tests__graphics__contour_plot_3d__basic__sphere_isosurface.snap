@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 29589
 expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \\\n         {z, -3, 3}]\")"
 ---
 <svg width="360" height="384" viewBox="0 0 360 384" xmlns="http://www.w3.org/2000/svg">
@@ -21001,6 +21002,16 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3
 <line x1="253.6" y1="188.9" x2="254.3" y2="176.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="240.2" y1="172.0" x2="254.3" y2="176.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="242.6" y1="383.0" x2="37.6" y2="296.1" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="37.6" y1="296.1" x2="38.6" y2="293.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="53.0" y1="302.6" x2="53.9" y2="300.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="84.5" y1="316.0" x2="85.5" y2="313.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="100.7" y1="322.8" x2="101.7" y2="320.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="117.3" y1="329.9" x2="118.2" y2="327.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="151.3" y1="344.3" x2="152.3" y2="342.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="168.8" y1="351.7" x2="169.8" y2="349.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="186.7" y1="359.3" x2="187.7" y2="357.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="223.6" y1="374.9" x2="224.5" y2="372.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="242.6" y1="383.0" x2="243.5" y2="380.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="68.6" y1="309.2" x2="70.1" y2="305.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="64.7" y="318.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
 <line x1="134.1" y1="337.0" x2="135.7" y2="333.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -21008,6 +21019,16 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3
 <line x1="205.0" y1="367.0" x2="206.5" y2="363.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="201.1" y="376.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
 <line x1="242.6" y1="383.0" x2="333.2" y2="237.5" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="242.6" y1="383.0" x2="244.7" y2="384.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="251.7" y1="368.4" x2="253.8" y2="369.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="268.9" y1="340.8" x2="271.0" y2="342.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="277.0" y1="327.7" x2="279.1" y2="329.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="284.9" y1="315.0" x2="287.0" y2="316.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="299.8" y1="291.0" x2="302.0" y2="292.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="307.0" y1="279.6" x2="309.1" y2="280.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="313.8" y1="268.6" x2="316.0" y2="269.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="326.9" y1="247.5" x2="329.1" y2="248.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="333.2" y1="237.5" x2="335.3" y2="238.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="260.4" y1="354.3" x2="263.8" y2="356.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="265.5" y="357.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-2</text>
 <line x1="292.5" y1="302.8" x2="295.9" y2="304.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -21015,6 +21036,16 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3
 <line x1="320.5" y1="257.9" x2="323.9" y2="260.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="325.6" y="261.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2</text>
 <line x1="37.6" y1="296.1" x2="6.6" y2="99.3" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="37.6" y1="296.1" x2="40.1" y2="295.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="35.4" y1="282.2" x2="37.9" y2="281.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="30.9" y1="253.3" x2="33.4" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="28.5" y1="238.2" x2="31.0" y2="237.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.1" y1="222.7" x2="28.5" y2="222.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="20.9" y1="190.2" x2="23.4" y2="189.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="18.2" y1="173.1" x2="20.7" y2="172.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="15.5" y1="155.6" x2="17.9" y2="155.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="9.7" y1="118.7" x2="12.1" y2="118.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="6.6" y1="99.3" x2="9.1" y2="98.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="33.2" y1="268.0" x2="37.1" y2="267.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="27.3" y="268.9" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-2</text>
 <line x1="23.5" y1="206.7" x2="27.5" y2="206.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>

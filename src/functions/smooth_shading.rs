@@ -461,6 +461,61 @@ fn hex(c: [f64; 3]) -> String {
   format!("#{:02x}{:02x}{:02x}", q(c[0]), q(c[1]), q(c[2]))
 }
 
+/// A true affine RGB field when the channels vary in different directions.
+/// A single linear SVG gradient has only one colour direction; fitting one
+/// separately to neighbouring triangles makes their shared edge discontinuous.
+fn rgb_triangle_pattern(
+  pts: [(f64, f64); 3],
+  colors: [(u8, u8, u8); 3],
+) -> Option<(String, String)> {
+  use base64::Engine;
+  use std::hash::{Hash, Hasher};
+  let xmin = pts.iter().map(|p| p.0).fold(f64::INFINITY, f64::min) - 1.0;
+  let ymin = pts.iter().map(|p| p.1).fold(f64::INFINITY, f64::min) - 1.0;
+  let w =
+    pts.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max) - xmin + 1.0;
+  let h =
+    pts.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max) - ymin + 1.0;
+  let width = (w * 2.0).ceil().clamp(2.0, 1024.0) as u32;
+  let height = (h * 2.0).ceil().clamp(2.0, 1024.0) as u32;
+  let [(ax, ay), (bx, by), (cx, cy)] = pts;
+  let det = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+  if det.abs() < 1e-15 {
+    return None;
+  }
+  let pixels = image::RgbImage::from_fn(width, height, |x, y| {
+    let (x, y) = (
+      xmin + (x as f64 + 0.5) * w / width as f64,
+      ymin + (y as f64 + 0.5) * h / height as f64,
+    );
+    let a = ((by - cy) * (x - cx) + (cx - bx) * (y - cy)) / det;
+    let b = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det;
+    let c = 1.0 - a - b;
+    let at = |k: usize| {
+      let channel = |v: (u8, u8, u8)| [v.0, v.1, v.2][k] as f64;
+      (a * channel(colors[0]) + b * channel(colors[1]) + c * channel(colors[2]))
+        .round()
+        .clamp(0.0, 255.0) as u8
+    };
+    image::Rgb([at(0), at(1), at(2)])
+  });
+  let mut png = std::io::Cursor::new(Vec::new());
+  image::DynamicImage::ImageRgb8(pixels)
+    .write_to(&mut png, image::ImageFormat::Png)
+    .ok()?;
+  let data = base64::engine::general_purpose::STANDARD.encode(png.into_inner());
+  let body = format!(
+    "patternUnits=\"userSpaceOnUse\" x=\"{xmin:.4}\" y=\"{ymin:.4}\" width=\"{w:.4}\" height=\"{h:.4}\"><image width=\"{w:.4}\" height=\"{h:.4}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{data}\"/></pattern>"
+  );
+  // Hash the serialized paint so intermediate roundoff in algebraically
+  // equivalent coordinates does not change an otherwise identical export.
+  let mut hash = std::collections::hash_map::DefaultHasher::new();
+  body.hash(&mut hash);
+  let id = format!("rgb{:x}", hash.finish());
+  let definition = format!("<pattern id=\"{id}\" {body}");
+  Some((id, definition))
+}
+
 impl GradientDefs {
   /// The SVG paint for a triangle with screen corners `pts` and corner
   /// colours `colors`: `url(#…)` of a linear gradient (written to `out`
@@ -486,6 +541,11 @@ impl GradientDefs {
     let c = colors
       .map(|(r, g, b)| [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0]);
     let fit = fit_gradient(pts, c)?;
+    if fit.rms_error > 2.0 {
+      let (id, definition) = rgb_triangle_pattern(pts, colors)?;
+      out.push_str(&definition);
+      return Some(format!("url(#{id})"));
+    }
     let (c1, c2) = (hex(fit.from_color), hex(fit.to_color));
     if c1 == c2 {
       return None;

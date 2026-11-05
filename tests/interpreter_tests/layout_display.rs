@@ -598,6 +598,33 @@ mod layout_display {
   }
 
   #[test]
+  fn zero_order_height_fields_are_horizontal_plates() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[ListPlot3D[Table[x+y,{x,4},{y,4}],InterpolationOrder->0]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    let svg = svg_of(
+      "ListPlot3D[Table[x+y,{x,4},{y,4}],InterpolationOrder->0,Mesh->None]",
+    );
+    assert!(svg.contains("<polygon"));
+  }
+
+  #[test]
+  fn spherical_surfaces_have_smooth_shading() {
+    let svg = svg_of(
+      "SphericalPlot3D[1+Sin[3p] Sin[t]/3,{t,0,Pi},{p,0,2Pi},PlotPoints->12,Mesh->None]",
+    );
+    assert!(
+      svg.contains("<linearGradient"),
+      "surface remained flat shaded"
+    );
+  }
+
+  #[test]
   fn integration_monitor_uses_an_embedded_interior_rule() {
     clear_state();
     assert_eq!(interpret("Length[Reap[NIntegrate[Sin[x]^2,{x,0,2 Pi},EvaluationMonitor:>Sow[x]]][[2,1]]]").unwrap(), "77");
@@ -634,6 +661,25 @@ mod layout_display {
       ));
       assert!(svg.contains(">B</tspan>") && svg.contains(">C</tspan>"));
     }
+  }
+
+  #[test]
+  fn marketing_surfaces_include_rear_planes() {
+    let svg = svg_of(
+      "Plot3D[x+y,{x,-1,1},{y,-1,1},PlotTheme->\"Marketing\",PlotPoints->5,MaxRecursion->0]",
+    );
+    assert_eq!(svg.matches("fill=\"rgb(110,110,110)\"").count(), 3);
+  }
+
+  #[test]
+  fn vertex_colors_keep_independent_rgb_gradients() {
+    let svg = svg_of(
+      "Graphics3D[Polygon[{{0,0,0},{1,0,0},{1,1,1},{0,1,1}},VertexColors->{Red,Green,Blue,Yellow}]]",
+    );
+    assert!(
+      svg.contains("<pattern"),
+      "vertex colors collapsed to a one-dimensional fit"
+    );
   }
 
   #[test]
@@ -715,6 +761,26 @@ mod layout_display {
         "failed singular exponent {power}: {value}"
       );
     }
+  }
+
+  #[test]
+  fn calendar_and_surface_axes_have_minor_ticks() {
+    let date = svg_of("DateListPlot[{{{2024,1,1},1},{{2024,7,1},2}}]");
+    let date_none =
+      svg_of("DateListPlot[{{{2024,1,1},1},{{2024,7,1},2}},FrameTicks->None]");
+    assert!(
+      date.matches("<line ").count() > date_none.matches("<line ").count() + 10
+    );
+    let surface = svg_of(
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0,Mesh->None]",
+    );
+    let no_ticks = svg_of(
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0,Mesh->None,Ticks->None]",
+    );
+    assert!(
+      surface.matches("<line ").count()
+        > no_ticks.matches("<line ").count() + 30
+    );
   }
   #[test]
   fn double_exponential_preserves_distances_from_shifted_endpoints() {

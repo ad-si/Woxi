@@ -4718,7 +4718,7 @@ mod plot3d {
          PlotRange -> 0.6, Boxed -> False, Axes -> None]"
       )
     );
-    assert!(!plain.contains("<line"), "no box, no axes: {plain}");
+    assert!(!plain.contains("<line "), "no box, no axes: {plain}");
     // The default axes and box are drawn.
     assert!(
       export_svg("SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}]")

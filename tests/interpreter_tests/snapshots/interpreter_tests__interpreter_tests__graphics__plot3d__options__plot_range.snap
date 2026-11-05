@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 4905
 expression: "export_svg(\"Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange -> {0, 4}]\")"
 ---
 <svg width="360" height="297" viewBox="0 0 360 297" xmlns="http://www.w3.org/2000/svg">
@@ -10649,6 +10650,22 @@ expression: "export_svg(\"Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange ->
 <line x1="241.3" y1="191.6" x2="255.0" y2="196.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="254.8" y1="201.0" x2="255.0" y2="196.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="250.2" y1="281.6" x2="25.3" y2="192.8" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="35.3" y1="196.8" x2="36.3" y2="194.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="45.5" y1="200.8" x2="46.4" y2="198.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="55.7" y1="204.8" x2="56.6" y2="202.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="66.0" y1="208.9" x2="67.0" y2="206.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="87.1" y1="217.2" x2="88.0" y2="214.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="97.8" y1="221.5" x2="98.8" y2="219.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="108.7" y1="225.8" x2="109.6" y2="223.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="119.7" y1="230.1" x2="120.6" y2="227.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="142.1" y1="238.9" x2="143.0" y2="236.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="153.5" y1="243.4" x2="154.4" y2="241.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="165.1" y1="248.0" x2="166.0" y2="245.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="176.8" y1="252.6" x2="177.7" y2="250.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="200.6" y1="262.0" x2="201.5" y2="259.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="212.8" y1="266.8" x2="213.7" y2="264.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="225.1" y1="271.7" x2="226.0" y2="269.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="237.5" y1="276.6" x2="238.5" y2="274.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="25.3" y1="192.8" x2="26.8" y2="189.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="21.7" y="202.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
 <line x1="76.5" y1="213.0" x2="78.0" y2="209.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -10660,6 +10677,22 @@ expression: "export_svg(\"Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange ->
 <line x1="250.2" y1="281.6" x2="251.7" y2="277.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="246.5" y="290.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
 <line x1="250.2" y1="281.6" x2="348.4" y2="133.6" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="256.2" y1="272.5" x2="258.3" y2="273.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="262.1" y1="263.7" x2="264.2" y2="265.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="267.8" y1="255.0" x2="269.9" y2="256.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="273.4" y1="246.6" x2="275.5" y2="248.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="284.3" y1="230.3" x2="286.3" y2="231.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="289.5" y1="222.4" x2="291.6" y2="223.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="294.6" y1="214.6" x2="296.7" y2="216.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="299.6" y1="207.1" x2="301.7" y2="208.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="309.4" y1="192.5" x2="311.4" y2="193.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="314.1" y1="185.4" x2="316.1" y2="186.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="318.7" y1="178.4" x2="320.7" y2="179.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="323.2" y1="171.6" x2="325.3" y2="173.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="331.9" y1="158.5" x2="334.0" y2="159.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="336.2" y1="152.1" x2="338.2" y2="153.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="340.3" y1="145.8" x2="342.4" y2="147.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="344.4" y1="139.7" x2="346.5" y2="141.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="250.2" y1="281.6" x2="253.5" y2="283.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="255.2" y="284.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-2</text>
 <line x1="278.9" y1="238.3" x2="282.2" y2="240.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -10671,6 +10704,22 @@ expression: "export_svg(\"Plot3D[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, PlotRange ->
 <line x1="348.4" y1="133.6" x2="351.7" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="353.4" y="137.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2</text>
 <line x1="25.3" y1="192.8" x2="12.5" y2="111.5" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="24.7" y1="189.1" x2="27.2" y2="188.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.1" y1="185.2" x2="26.6" y2="184.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="23.5" y1="181.4" x2="26.0" y2="181.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="22.9" y1="177.5" x2="25.4" y2="177.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="21.7" y1="169.7" x2="24.2" y2="169.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="21.1" y1="165.7" x2="23.5" y2="165.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="20.4" y1="161.7" x2="22.9" y2="161.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="19.8" y1="157.7" x2="22.3" y2="157.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="18.5" y1="149.6" x2="21.0" y2="149.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="17.9" y1="145.5" x2="20.4" y2="145.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="17.2" y1="141.4" x2="19.7" y2="141.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="16.6" y1="137.2" x2="19.0" y2="136.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="15.2" y1="128.8" x2="17.7" y2="128.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="14.6" y1="124.5" x2="17.0" y2="124.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="13.9" y1="120.2" x2="16.4" y2="119.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="13.2" y1="115.9" x2="15.7" y2="115.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="25.3" y1="192.8" x2="29.3" y2="192.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="19.4" y="193.8" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0</text>
 <line x1="22.3" y1="173.6" x2="26.3" y2="173.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>

@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 5418
 expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 2}, {z, -2, 2}]\")"
 ---
 <svg width="360" height="392" viewBox="0 0 360 392" xmlns="http://www.w3.org/2000/svg">
@@ -29223,8 +29224,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="181.2,34.9 181.2,34.7 181.3,34.8" fill="url(#s65a56fca89)" stroke="url(#s65a56fca89)" stroke-width="0.5"/>
 <linearGradient id="sa5d4a590fb" gradientUnits="userSpaceOnUse" x1="166.0" y1="68.6" x2="172.3" y2="64.4"><stop stop-color="#ffde23"/><stop offset="1" stop-color="#ffd021"/></linearGradient>
 <polygon points="164.3,66.0 172.1,64.2 169.7,70.3" fill="url(#sa5d4a590fb)" stroke="url(#sa5d4a590fb)" stroke-width="0.5"/>
-<linearGradient id="sde5bfe79a5" gradientUnits="userSpaceOnUse" x1="290.3" y1="301.6" x2="290.3" y2="301.6"><stop stop-color="#ffa415"/><stop offset="1" stop-color="#c4630b"/></linearGradient>
-<polygon points="290.1,303.8 290.0,303.8 290.7,297.1" fill="url(#sde5bfe79a5)" stroke="url(#sde5bfe79a5)" stroke-width="0.5"/>
+<pattern id="rgb6d919d1e6907f605" patternUnits="userSpaceOnUse" x="289.0499" y="296.0717" width="2.6770" height="8.7462"><image width="2.6770" height="8.7462" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAASCAIAAAD36TiSAAAA00lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1S9s27Z/xn71BwNQeaYDOLgbgMozHTQO1gBUnung7l86AIAKwBIO7v7FAwCoABzAwd2/cAAAFYADOLj76QBABeAADu4GAKgAHMDB3QAAFYADOLgbAKACcAAHdwMAVAAO4OBuAIAKwAEXDu4GAKgAHCx/4SABACocwsHdv3jAZUCFfTi4+xeXXAZUOICDe/a4AqhwAAd380zAPwLOAkf/nVvSrgAAAABJRU5ErkJggg=="/></pattern><polygon points="290.1,303.8 290.0,303.8 290.7,297.1" fill="url(#rgb6d919d1e6907f605)" stroke="url(#rgb6d919d1e6907f605)" stroke-width="0.5"/>
 <polygon points="185.8,22.5 194.1,24.5 185.8,22.5" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="257.8,34.2 257.8,34.2 266.4,36.3" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <linearGradient id="sdc47000437" gradientUnits="userSpaceOnUse" x1="181.3" y1="35.0" x2="181.4" y2="34.8"><stop stop-color="#ffbb1d"/><stop offset="1" stop-color="#ffa519"/></linearGradient>
@@ -30171,8 +30171,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="84.7,121.2 85.5,129.3 85.5,129.3" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <linearGradient id="s58be93583c" gradientUnits="userSpaceOnUse" x1="200.0" y1="58.6" x2="199.2" y2="48.1"><stop stop-color="#ffa519"/><stop offset="1" stop-color="#ff9c18"/></linearGradient>
 <polygon points="194.6,59.0 199.5,48.0 204.5,51.2" fill="url(#s58be93583c)" stroke="url(#s58be93583c)" stroke-width="0.5"/>
-<linearGradient id="scb578ab345" gradientUnits="userSpaceOnUse" x1="290.1" y1="303.8" x2="288.0" y2="302.9"><stop stop-color="#ffa415"/><stop offset="1" stop-color="#c4630b"/></linearGradient>
-<polygon points="286.5,309.2 290.7,297.1 290.0,303.8" fill="url(#scb578ab345)" stroke="url(#scb578ab345)" stroke-width="0.5"/>
+<pattern id="rgba4eeddd2ea94355e" patternUnits="userSpaceOnUse" x="285.5195" y="296.0717" width="6.2073" height="14.1418"><image width="6.2073" height="14.1418" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAAdCAIAAAD+X3GwAAAC2ElEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a++FWzABmzABmzusLHDxjFt7JSNY7GxExvHyuZO1A466KGHvqfr6WZ0vfqZ+l79TH2vbqbaQw8ddND19D19r75X16vr1fXR9+p71Q466KGv9D3djK5XN1Pfq5+p79XN1PWqPfTQQdfT9fS9+l59r65X16vr1ffqe9UOeuiDvqef0fXqZur66Gfqe/Uzdb26mWoPHXQ9XU/f0/fqe/W9ul5dr65X36vvVTvooe/pZ3R9dDN1vbqZ+l79TH2vbqauV+2h6+l6up6+V9+r79X36np1vbpefa++V+2g7+ln9L26mbpe3Ux9r36mvlc/U9erm6n2la6n6+l69b36Xn2vrlfXq+vV9+p7dX3Urqef0ffqZ+p6dTN1vfqZ+l79TF2vbiZ61b6n6+l6db36Xn2vvlfXq+vV9dH3qr2YqfYz+l79TH2vbqauVzdT36ufqe/VzUQvetWup+vV9ep79b36Xn2vbqauVzdT6cVM9Kp9Tz9T36ubqevVzdT30ffqe/W96EUvetWuV9erm6nv1c/U9+pm6np1M0UvZqIXM9V+pr5X36vro+vV9ep79b36XvSiF73oVbte3Uxdr36mvlc/U9erm0m9mIlezESv2vfR9+p7db26Xl2vvlffi170ohd90Kt2M3W9+pn6Xv1Mfa9uJnoxE72YiV7MVPtefa+uV9er69X36nrRi170ohe96FW7Xt1Mfa9+pr5XNxO9mIk+mIlezESv2vfqe3W9ul5dr9qLXvSiF73oRS9CtZup69XP1PfqZ6IPZqIXM9GLmegFqn2vvlfXq+tVetGLXvSiF73oRRWodr26mfpe/Uz0YiZ6MRO9mIleIFDte/W9uj6iF73oRS960Yte9AKBajdT36ufiV7MRC9mohcz0QsEAv0jkooQzVTdsPUAAAAASUVORK5CYII="/></pattern><polygon points="286.5,309.2 290.7,297.1 290.0,303.8" fill="url(#rgba4eeddd2ea94355e)" stroke="url(#rgba4eeddd2ea94355e)" stroke-width="0.5"/>
 <polygon points="307.7,81.1 308.5,72.7 308.5,72.7" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <line x1="249.0" y1="231.8" x2="244.9" y2="226.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="244.9" y1="226.8" x2="249.0" y2="231.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -33441,8 +33440,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="251.5,260.8 253.7,268.0 257.4,263.3" fill="rgb(255,196,27)" stroke="rgb(255,196,27)" stroke-width="0.5"/>
 <polygon points="350.8,109.2 351.9,101.0 351.9,101.0" fill="rgb(99,53,6)" stroke="rgb(99,53,6)" stroke-width="0.5"/>
 <polygon points="350.8,109.2 351.9,101.0 351.9,101.0" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
-<linearGradient id="s3ffd270497" gradientUnits="userSpaceOnUse" x1="202.9" y1="158.1" x2="205.3" y2="159.1"><stop stop-color="#ffc21e"/><stop offset="1" stop-color="#b65b0b"/></linearGradient>
-<polygon points="204.4,161.1 202.7,158.5 205.4,156.3" fill="url(#s3ffd270497)" stroke="url(#s3ffd270497)" stroke-width="0.5"/>
+<pattern id="rgb7a9afd465ef2706c" patternUnits="userSpaceOnUse" x="201.6691" y="155.2751" width="4.7180" height="6.8699"><image width="4.7180" height="6.8699" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAOCAIAAACZwRr8AAABV0lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/aL85q4mLjQuPCxIU2XJgOL7bDC+3wwlTBDGZt1sngHLwevF57vfZ6cKUlgxnMYNZer3M9eD14PeR67cpg1madDB4Hrwev116vvR68HlwZzGAGs/Z6nevB68HrIddrr9eurM06WXs9eD14vfZ67fXa68HrISuDGdwGr9e5Xns9eD3kevB67fXalXWy9nrwevB68Hrt9drrwesh14Mrg4fB63Wu114PXg+5Hrxee732enDNtdeD14PXg9drr9deD14PuR68XruuB6/XuV57vfZ6yPXg9drrtddrr4es67XXg9eD14PXa6/XXg+5HrwevF67rodcr71eez3kevB68Hrt9drrIdcDdT14PXg9eL32eu31kOvB68Hrtddr/hFGL3n9y4cD2wAAAABJRU5ErkJggg=="/></pattern><polygon points="204.4,161.1 202.7,158.5 205.4,156.3" fill="url(#rgb7a9afd465ef2706c)" stroke="url(#rgb7a9afd465ef2706c)" stroke-width="0.5"/>
 <line x1="71.3" y1="167.1" x2="71.3" y2="167.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="71.3" y1="167.1" x2="71.3" y2="167.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="71.3" y1="167.1" x2="71.3" y2="167.1" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
@@ -40376,8 +40374,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="350.9,88.4 354.2,84.1 350.9,88.4" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <line x1="178.1" y1="180.7" x2="188.6" y2="179.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="178.1" y1="180.7" x2="188.6" y2="179.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<linearGradient id="s42082b17d5" gradientUnits="userSpaceOnUse" x1="168.0" y1="180.4" x2="166.3" y2="178.5"><stop stop-color="#da7510"/><stop offset="1" stop-color="#ffbc1c"/></linearGradient>
-<polygon points="164.1,183.7 164.4,181.5 172.8,173.0" fill="url(#s42082b17d5)" stroke="url(#s42082b17d5)" stroke-width="0.5"/>
+<pattern id="rgb14d99f53f9ad9442" patternUnits="userSpaceOnUse" x="163.0884" y="172.0004" width="10.7112" height="12.6850"><image width="10.7112" height="12.6850" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABYAAAAaCAIAAAA8FDsXAAAEO0lEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/arwCGBIPBYDAYDKaZIRnNYAYzmsEMZjSDGVwhwWAwGAyGBIMZzWAGM5rBjGYwQzKawQw+HF3BYEgwGAwGk2Y0gxnMmAxmMKMZzGBGM/hw8OHoCgkGg8FgMFMymNEMZjCjGcxgRjOYwYx5OPhw8OHoCgZDgsHYjGYwgxnNYAYzmiEZzGgGM/hw9OHgw8GHoyskGAymmcGMZkgGM5rBjGYwgxnNYAYfjj4c8nDw4ejDwRUMhmQ0gxnNYAYzmsEMZjSDGZLRDD4cfDj6cPDh4MPRh4MrJGlGM5jBjGYwgxmTwQxmNIMZzOjDwYeDj0YfDXk0+Gj00eDKZAYzmiEZzGgGM5jRDGYwoxnMkEejjwYfDT4cfTj4cPDh6MPBlVUymNEMZjCjGcxohmQwoxnM4KPRh4MPBx+OPhx8OOTh6MPBh4MrKzOawQzJaAYzmNEMZjCjGXw0+HDMw8GHgw9HHw4+HHw4+nDw4eDKKhnNYAYzmsEMZjRDMpjRR4MPBx+OPhx8OPhw9OHgw8GHYx4OPhxcWZnRDGZIRjOYwYxmMIOPRh8OPhx8OPpwyMPBh6MPBx+OPhx8OPhwdGWVjGYwgxnNYEYzmCGPRh8OPhx8OPpw8OHgw9GHgw8HH44+HPJw8OHoytoMZjBjMpjBjGbw0eDD0YeDDwcfjj4cfDjk4ejDwYeDD0cfDj4cfDi6skoGM5jRDGYwo48GHw4+HPNw8OHgw9GHgw8HH44+HHw4+HD04ZCHgw9HV1ZmMIMZzZAMPhp9OPhw8OHow8GHgw9HHw4+HPJw9OHgw9FHg48GH40+GlxZJYMZzWAGH40+HHw4+HD04ZCHg49GHw0+Gnw0+mjw0eCj0YeDD4c8HH04uLIygxnN4KMhj0YfDT4afDT6aPDR4MPRh4MPBx+OeTj4cPDh6MPBh4MPRx8OrqySwYxeDj4afDj6cPDh4MPRh0MeDj4cfTj4cPDh6MPBh4MPRx8OPhx8OObh4MrKDF6OPhx8OOTh6MPBh4MPRx8OPhx8OPpw8OHow8GHQx6OPhx8OPhw9OHgw8GVVS5HHw4+HHw4+nDw4eDD0YeDD4c8HH04+HDw4ejDwYeDD0cfDj4cfDj6cPDhQF2ufDj6cPDh4MMxDwcfDj4cfTj4cPDh6MPBh4MPRx8OPhzycPTh4MPBhyOHA4cD9XCVh6MPBx8OPhx9OPhw8OHow8GHgw/HPBx8OPhw9OHgw8GHow8HHw4cjhwOHA7Uw5UPRx8OPhx8OPpwyMPBh6MPBx+OPhx8OPhw9OHgw8GHYx4OHA4cjhwOHA5MI/VwnYeDDwcfjj4cfDj4cPTh4MPBh6MPhzwcfDj6cPDh4MORw4HDgaORo4FpgMY/AoW7VnkKhQkVAAAAAElFTkSuQmCC"/></pattern><polygon points="164.1,183.7 164.4,181.5 172.8,173.0" fill="url(#rgb14d99f53f9ad9442)" stroke="url(#rgb14d99f53f9ad9442)" stroke-width="0.5"/>
 <line x1="243.9" y1="263.9" x2="243.3" y2="265.5" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="243.3" y1="265.5" x2="243.9" y2="263.9" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s00c6766e61" gradientUnits="userSpaceOnUse" x1="87.9" y1="200.3" x2="88.2" y2="196.9"><stop stop-color="#92500a"/><stop offset="1" stop-color="#9c560b"/></linearGradient>
@@ -52232,8 +52229,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="59.3,84.7 61.5,74.5 65.6,79.8" fill="rgb(255,226,35)" stroke="rgb(255,226,35)" stroke-width="0.5"/>
 <line x1="333.3" y1="111.0" x2="332.3" y2="119.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="332.3" y1="119.8" x2="333.3" y2="111.0" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<linearGradient id="s0fb7d00866" gradientUnits="userSpaceOnUse" x1="60.2" y1="74.1" x2="60.7" y2="74.3"><stop stop-color="#ffd320"/><stop offset="1" stop-color="#c4640a"/></linearGradient>
-<polygon points="60.7,74.2 60.6,73.4 59.8,74.9" fill="url(#s0fb7d00866)" stroke="url(#s0fb7d00866)" stroke-width="0.5"/>
+<pattern id="rgbedcb12077638d22b" patternUnits="userSpaceOnUse" x="58.8229" y="72.3720" width="2.8914" height="3.4957"><image width="2.8914" height="3.4957" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAHCAIAAACk8qu6AAAAkElEQVR4AQGFAHr/AP//U///RP//NP/wJP+dFMxKBAD//07//z7//y7/0B7kfQ+uKwAA//9I//84//8o/LAZxl4JkQsAAP//Qv//M//kI9+RE6k+A3MAAAD//z3//y33xB3BcQ2LHgBWAAAA//83//cn2aQXpFEIbgAAOAAAAP//MfLXIryEEoYxAlAAABsAADGBQKn/h23/AAAAAElFTkSuQmCC"/></pattern><polygon points="60.7,74.2 60.6,73.4 59.8,74.9" fill="url(#rgbedcb12077638d22b)" stroke="url(#rgbedcb12077638d22b)" stroke-width="0.5"/>
 <polygon points="267.5,125.7 269.0,124.4 268.5,125.2" fill="rgb(125,64,6)" stroke="rgb(125,64,6)" stroke-width="0.5"/>
 <linearGradient id="s4e9866815b" gradientUnits="userSpaceOnUse" x1="209.4" y1="192.5" x2="208.8" y2="191.0"><stop stop-color="#5b2f04"/><stop offset="1" stop-color="#633305"/></linearGradient>
 <polygon points="209.9,192.3 208.2,193.0 209.5,190.7" fill="url(#s4e9866815b)" stroke="url(#s4e9866815b)" stroke-width="0.5"/>
@@ -52416,8 +52412,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <line x1="207.0" y1="182.0" x2="212.9" y2="176.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="212.0" y1="223.2" x2="211.5" y2="218.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="211.5" y1="218.4" x2="212.0" y2="223.2" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
-<linearGradient id="s9dbaafd6cb" gradientUnits="userSpaceOnUse" x1="58.4" y1="77.7" x2="58.8" y2="78.0"><stop stop-color="#ffd220"/><stop offset="1" stop-color="#c4640b"/></linearGradient>
-<polygon points="60.7,74.2 59.8,74.9 55.1,84.4" fill="url(#s9dbaafd6cb)" stroke="url(#s9dbaafd6cb)" stroke-width="0.5"/>
+<pattern id="rgbfbdd86668de2c9a1" patternUnits="userSpaceOnUse" x="54.1021" y="73.2356" width="7.6122" height="12.1354"><image width="7.6122" height="12.1354" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAZCAIAAAC3njn+AAACzklEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/aBmAXzsN5uADn4QKch/NwAc7DeT/lwl98z/m/+O5LFYAVHMERLOEIjuAIjuAIjuAIlnf9xdFdf3F01x1UAJZwBEdwBEdwBEdwBEs4gqN83NFdf3l011+Md0GFJRzBERzBERzBEo7gCI7gCI7u+suju/7i6K77uAsqHMERHMERHMERHMERHMERHLW/Xt71F0d3/cV0F9wFFY7gCI5gCUdwBEdwBEdwRDu66y+P7vqLo7t2uQvuggpLOIIjOIIjOIIjOIIlHLW/PLr7L47u+st2F9wF90GFIziCIziCI1jCERzBEauju/7i6K6/OLr7kLvgLgAqHMERLOEIjuAIjuAIjqa/OLrrL5Z3/WXeBXfDWQAqHMERHMERHMERHMGSvaO7/uLorr88umvkLriLK6hwBEdwBEdwBEdwBEfjXxzd9ZdHd/2l74K74CxXUOEIjuAIjmAJR3DEuaO7/uLorr9Y3gV3wV08CxWOYAlHcARHcARH418c3fWXR3f9PXfBXXCOZ6HCERzBERzBERxx1/Kuvzy6+y9Wd8FdcBcPRIUjOIIjWMIRHA1/cXTXXxzd9STuhrvgPA9EhSM4giM4giNuPbrrL4/u+ov1XXAX3M1zocISjuAIjuBo/ZdHd/3F0V23chfcBed5LlQ4giM4giOefHTXXyzv+ovhLrgL7uJ5UeEIjmAJR6u/OLrrL47uuou74C64wPOiwhEcwRH/cHT3Xxzd9ZfjXXAX3MXzRYUjOIKj1V8c3fWXR3ef5S64Cy7yfFHhCI74q6O7/uLorr9od8HdcBcvCBWOmJbLvzi66y+P7rrEXXAX7PKCUOGIvzi66y+P7vqLvAvugrt4IagcHR39xdFdf3F015K74C7Y5YXgHwGpLJrD3ukKNQAAAABJRU5ErkJggg=="/></pattern><polygon points="60.7,74.2 59.8,74.9 55.1,84.4" fill="url(#rgbfbdd86668de2c9a1)" stroke="url(#rgbfbdd86668de2c9a1)" stroke-width="0.5"/>
 <polygon points="308.5,187.8 309.4,179.5 309.4,179.5" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <polygon points="217.5,232.7 216.8,229.0 220.0,233.0" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s05912a4a67" gradientUnits="userSpaceOnUse" x1="297.7" y1="93.2" x2="297.0" y2="91.7"><stop stop-color="#864707"/><stop offset="1" stop-color="#8a4908"/></linearGradient>
@@ -52726,8 +52721,7 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <polygon points="299.7,207.2 304.6,193.4 303.7,201.6" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
 <linearGradient id="s2d487ebff3" gradientUnits="userSpaceOnUse" x1="48.6" y1="104.1" x2="49.6" y2="104.3"><stop stop-color="#ffb11a"/><stop offset="1" stop-color="#c1660b"/></linearGradient>
 <polygon points="50.3,101.5 49.0,102.5 47.6,108.6" fill="url(#s2d487ebff3)" stroke="url(#s2d487ebff3)" stroke-width="0.5"/>
-<linearGradient id="s95be5ab0a7" gradientUnits="userSpaceOnUse" x1="52.2" y1="91.8" x2="53.7" y2="92.4"><stop stop-color="#ffbd1c"/><stop offset="1" stop-color="#c4640b"/></linearGradient>
-<polygon points="55.5,87.8 53.1,89.6 50.0,98.7" fill="url(#s95be5ab0a7)" stroke="url(#s95be5ab0a7)" stroke-width="0.5"/>
+<pattern id="rgb9ad85c90a9da25a5" patternUnits="userSpaceOnUse" x="48.9549" y="86.8360" width="7.5612" height="12.8809"><image width="7.5612" height="12.8809" preserveAspectRatio="none" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAaCAIAAAAxCktQAAADEklEQVR4Ae3AA6AkWZbG8f937o3IzKdyS2Oubdu2bdu2bdu2bWmMnpZKr54yMyLu+Xa3anqmhztr1a/abwcjjDDACCOMMMLI2ZG7xr27xt27hot3jrt3jbt3jRUSGjRISEhISIbkINtBGw7acJDDYQ6HORxmhQYJCQkJCQnJQeOwDYc5HOZwmMNhDgc5HGSFhISEhISERmscJoc5HORwkMNBDgc5HOZwmBUSEhISGjRIDpKDHA9yOMzhMIfDHA7bcNCGAyokNGjQICEhOUwOczjM4TCHgzYctPEgh8McDqnQICEhISE5TA6TgzYctOGgDYc5HOZwmMMhwwEVEhISEhKSg8ZBGw5zOMzhMIfDHA5yOMjhgGFFhYSEhITGqnGYHOZwkMNBDgc5HORwmMOhh0MGqJCQ0KBBcpAcZB7kcJjDYQ6HORy24aANBwwHDFChQYOEZEwOk8McDnM4zOGgDQdtPMjh0MMhAwxQISEhITlMDpODHA7acNCGwxwOczjM4ZDhgAEGqJCQkGRykBy0dtiGwxwOczjM4SCHgxwOGBoDDFAhIaFx2DhsHOZwkMNBDgc5HORwmMMhwyEDDDBAhQYNkoPkIDnI4TCHwxwOczhsw0EbDhjWDDDAABUSkqPkMDnM8TCHwxwO2nDQhoMcDhkOGWCAAQaokJAcJofJQQ4HbThow2EOhzke5nDIcMQAA4wwQIVknRwkB43DNhzmcJjDYQ4HORx4OGCAAQYYYIAKyWHjsHGYw0EOBzkc5HCQw2EOhwyHDDDAAAMMUGmNg+QgOcjhMIfDHA5zOMzhIIcDhmSAAQYYYIDKQXKYHGYe5nCYw0EbDtpw0IZDhkMGGGCAAQYYoHKYHCYHORy04aANhzkc5niYwyHDyAADjDDAAANUDpKDxmEbDnM4zOEwh4McDhgOGGCAAQYYYIABKoeNw2wHORzkcJDDQQ6HORwyrBhggAEGGGCAASoHyUEOhzkc5nCYw2EOhx4OGGCAAQYYYIABBqgcJoc5HOZwkMNBGw7acMBwyAADDDDAAAMMMMA/AsLSDgeuaA6vAAAAAElFTkSuQmCC"/></pattern><polygon points="55.5,87.8 53.1,89.6 50.0,98.7" fill="url(#rgb9ad85c90a9da25a5)" stroke="url(#rgb9ad85c90a9da25a5)" stroke-width="0.5"/>
 <line x1="274.0" y1="292.4" x2="273.4" y2="299.8" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="273.4" y1="299.8" x2="274.0" y2="292.4" stroke="#000000a0" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="294.1,229.2 294.1,229.2 294.9,221.1" fill="rgb(193,102,11)" stroke="rgb(193,102,11)" stroke-width="0.5"/>
@@ -60838,6 +60832,22 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <line x1="255.5" y1="185.9" x2="256.2" y2="173.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="242.3" y1="169.2" x2="256.2" y2="173.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="244.6" y1="376.8" x2="43.0" y2="291.3" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="52.1" y1="295.1" x2="53.0" y2="292.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="61.2" y1="299.0" x2="62.2" y2="296.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="70.4" y1="302.9" x2="71.4" y2="300.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="79.7" y1="306.8" x2="80.7" y2="304.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="98.7" y1="314.9" x2="99.7" y2="312.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="108.3" y1="319.0" x2="109.3" y2="316.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="118.1" y1="323.1" x2="119.1" y2="320.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="128.0" y1="327.3" x2="129.0" y2="325.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="148.1" y1="335.8" x2="149.0" y2="333.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="158.3" y1="340.2" x2="159.3" y2="337.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="168.6" y1="344.5" x2="169.6" y2="342.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="179.1" y1="349.0" x2="180.1" y2="346.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="200.4" y1="358.0" x2="201.4" y2="355.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="211.3" y1="362.6" x2="212.3" y2="360.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="222.3" y1="367.3" x2="223.2" y2="365.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="233.4" y1="372.0" x2="234.4" y2="369.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="43.0" y1="291.3" x2="44.6" y2="287.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="39.1" y="300.5" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-2</text>
 <line x1="89.2" y1="310.8" x2="90.7" y2="307.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -60849,6 +60859,22 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <line x1="244.6" y1="376.8" x2="246.2" y2="373.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="240.7" y="386.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
 <line x1="244.6" y1="376.8" x2="333.8" y2="233.6" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="250.0" y1="368.1" x2="252.2" y2="369.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="255.3" y1="359.6" x2="257.5" y2="360.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="260.5" y1="351.3" x2="262.6" y2="352.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="265.6" y1="343.2" x2="267.7" y2="344.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="275.4" y1="327.5" x2="277.5" y2="328.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="280.1" y1="319.8" x2="282.2" y2="321.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="284.7" y1="312.4" x2="286.9" y2="313.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="289.3" y1="305.1" x2="291.4" y2="306.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="298.1" y1="290.9" x2="300.2" y2="292.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="302.4" y1="284.0" x2="304.5" y2="285.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="306.6" y1="277.3" x2="308.7" y2="278.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="310.7" y1="270.7" x2="312.8" y2="272.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="318.7" y1="257.9" x2="320.8" y2="259.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="322.6" y1="251.6" x2="324.7" y2="252.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="326.4" y1="245.5" x2="328.5" y2="246.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="330.1" y1="239.5" x2="332.2" y2="240.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="244.6" y1="376.8" x2="248.0" y2="378.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="249.7" y="379.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-2</text>
 <line x1="270.5" y1="335.2" x2="273.9" y2="337.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -60860,6 +60886,22 @@ expression: "export_svg(\"RegionPlot3D[x^2 + y^3 - z^2 > 0, {x, -2, 2}, {y, -2, 
 <line x1="333.8" y1="233.6" x2="337.2" y2="235.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="338.9" y="236.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2</text>
 <line x1="43.0" y1="291.3" x2="12.5" y2="97.7" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="41.8" y1="283.1" x2="44.2" y2="282.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="40.5" y1="274.9" x2="42.9" y2="274.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="39.1" y1="266.5" x2="41.6" y2="266.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="37.8" y1="257.9" x2="40.3" y2="257.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="35.0" y1="240.4" x2="37.5" y2="240.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="33.6" y1="231.4" x2="36.1" y2="231.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="32.2" y1="222.2" x2="34.6" y2="221.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="30.7" y1="212.9" x2="33.1" y2="212.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.7" y1="193.7" x2="30.1" y2="193.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="26.1" y1="183.8" x2="28.6" y2="183.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="24.5" y1="173.7" x2="27.0" y2="173.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="22.9" y1="163.5" x2="25.4" y2="163.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="19.6" y1="142.4" x2="22.0" y2="142.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="17.9" y1="131.6" x2="20.3" y2="131.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="16.1" y1="120.5" x2="18.6" y2="120.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="14.3" y1="109.2" x2="16.8" y2="108.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="43.0" y1="291.3" x2="47.0" y2="290.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="37.1" y="292.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-2</text>
 <line x1="36.4" y1="249.2" x2="40.4" y2="248.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>

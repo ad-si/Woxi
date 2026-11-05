@@ -19,18 +19,6 @@ fn fills(svg: &str) -> std::collections::BTreeSet<String> {
     .collect()
 }
 
-/// The colours the gradients of smoothly shaded facets run through.
-fn stop_colors(svg: &str) -> Vec<(u8, u8, u8)> {
-  svg
-    .split("stop-color=\"#")
-    .skip(1)
-    .filter_map(|s| {
-      let h = |k: usize| u8::from_str_radix(s.get(k..k + 2)?, 16).ok();
-      Some((h(0)?, h(2)?, h(4)?))
-    })
-    .collect()
-}
-
 mod solids {
   use super::*;
 
@@ -139,9 +127,27 @@ mod vertex_colors {
       "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 1}, {0, 1, 1}}, \
        VertexColors -> {Red, Green, Blue, Yellow}]]",
     );
-    // Each fan triangle is one gradient between its lit corner colours.
-    let colours = stop_colors(&s);
-    assert!(colours.len() >= 4, "got: {s}");
+    // Independent RGB directions require a two-dimensional colour field.
+    use base64::Engine;
+    let colours: Vec<_> = s
+      .split("data:image/png;base64,")
+      .skip(1)
+      .flat_map(|rest| {
+        let bytes = base64::engine::general_purpose::STANDARD
+          .decode(rest.split('"').next().unwrap())
+          .unwrap();
+        ::image::load_from_memory(&bytes)
+          .unwrap()
+          .to_rgb8()
+          .pixels()
+          .map(|p| (p[0], p[1], p[2]))
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    assert!(
+      !colours.is_empty(),
+      "missing two-dimensional vertex colours"
+    );
     // Near the red corner the face is (lit) red: no green or blue.
     assert!(
       colours.iter().any(|&(r, g, b)| r > 150 && g < 60 && b < 60),
@@ -930,4 +936,16 @@ mod scattered_list_plot3d {
     );
     assert!(s.contains(">2.0<") || s.contains(">2<"), "{s}");
   }
+}
+
+#[test]
+fn raster_volume_colours_do_not_expose_triangle_lighting() {
+  let s = svg("Graphics3D[Raster3D[{{{{1,0,0}}}}],Boxed->False]");
+  assert!(s.contains("fill=\"rgb(255,0,0)\""));
+  assert!(s.split("<polygon").skip(1).all(|p| {
+    p.split('>')
+      .next()
+      .unwrap()
+      .contains("fill=\"rgb(255,0,0)\"")
+  }));
 }

@@ -839,6 +839,7 @@ fn painter_order(
 }
 
 struct MeshLine {
+  endpoints: [Point3D; 2],
   projected: [(f64, f64); 2],
   /// The SVG `stroke` colour and width; `None` is the default
   /// translucent hairline.
@@ -863,6 +864,7 @@ fn mesh_segment(p0: Point3D, p1: Point3D, camera: &Camera) -> MeshLine {
     z: f64::midpoint(p0.z, p1.z),
   };
   MeshLine {
+    endpoints: [p0, p1],
     projected: [project(p0, camera), project(p1, camera)],
     stroke: None,
     depth: depth(mid, camera) - MESH_DEPTH_BIAS,
@@ -1070,6 +1072,7 @@ fn styled_line_like(line: &MeshLine, style: &StyleState3D) -> MeshLine {
     None => "#000000a0".to_string(),
   };
   MeshLine {
+    endpoints: line.endpoints,
     projected: line.projected,
     stroke: Some((color, style.thickness.unwrap_or(0.5))),
     depth: line.depth,
@@ -2406,6 +2409,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg(
     &all_triangles,
     &all_mesh_lines,
+    None,
+    args[3..].iter().any(|o| matches!(o, Expr::Rule { pattern, replacement } if matches!(&**pattern, Expr::Identifier(n) if n == "PlotTheme") && matches!(&**replacement, Expr::String(t) if t == "Marketing"))),
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -2418,6 +2423,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
     !image_height_is_explicit(args),
+    args,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -2480,6 +2486,8 @@ pub(crate) fn triangle_paint(
 fn generate_svg(
   triangles: &[Triangle],
   mesh_lines: &[MeshLine],
+  worlds: Option<&[[Point3D; 3]]>,
+  marketing_planes: bool,
   camera: &Camera,
   x_range: (f64, f64),
   y_range: (f64, f64),
@@ -2492,6 +2500,7 @@ fn generate_svg(
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
+  options: &[Expr],
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
@@ -2594,6 +2603,45 @@ fn generate_svg(
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
     let corners = bounding_box_corners_with_ratios(box_ratios);
+    if marketing_planes {
+      // The three rear faces form the theme's grey scene backdrop.
+      let (sa, ca) = camera.azimuth.sin_cos();
+      let (se, _) = camera.elevation.sin_cos();
+      let faces = [
+        if ca > 0.0 { [0, 2, 6, 4] } else { [1, 3, 7, 5] },
+        if sa > 0.0 { [0, 1, 5, 4] } else { [2, 3, 7, 6] },
+        if se > 0.0 { [0, 1, 3, 2] } else { [4, 5, 7, 6] },
+      ];
+      for face in faces {
+        let points = face.map(|i| {
+          let p = project(corners[i], camera);
+          to_svg(p.0, p.1)
+        });
+        let coords = points
+          .iter()
+          .map(|(x, y)| format!("{x:.2},{y:.2}"))
+          .collect::<Vec<_>>()
+          .join(" ");
+        svg.push_str(&format!(
+          "<polygon points=\"{coords}\" fill=\"rgb(110,110,110)\"/>\n"
+        ));
+        for k in 1..5 {
+          let t = k as f64 / 5.0;
+          for d in 0..2 {
+            let (a, b, c, e) = if d == 0 { (0, 1, 3, 2) } else { (0, 3, 1, 2) };
+            let lerp = |a: usize, b: usize| {
+              (
+                points[a].0 + (points[b].0 - points[a].0) * t,
+                points[a].1 + (points[b].1 - points[a].1) * t,
+              )
+            };
+            let ((x0, y0), (x1, y1)) = (lerp(a, b), lerp(c, e));
+            svg.push_str(&format!("<line x1=\"{x0:.2}\" y1=\"{y0:.2}\" x2=\"{x1:.2}\" y2=\"{y1:.2}\" stroke=\"rgb(70,70,70)\" stroke-width=\"0.5\"/>\n"));
+          }
+        }
+      }
+    }
+
     let edge_pairs: [(usize, usize); 12] = [
       (0, 1),
       (0, 2),
@@ -2641,11 +2689,22 @@ fn generate_svg(
   // Mesh segments are painted among the triangles too, so the surface
   // hides the parts of the mesh it covers.
   let mut sorted_mesh: Vec<&MeshLine> = mesh_lines.iter().collect();
-  sorted_mesh.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
+  let mesh_slots = worlds.map(|worlds| {
+    let endpoints: Vec<_> =
+      sorted_mesh.iter().map(|line| line.endpoints).collect();
+    line_draw_slots(worlds, triangles, &endpoints, camera)
   });
+  let mut ordered_slots: Vec<_> = sorted_mesh.drain(..).enumerate().collect();
+  ordered_slots.sort_by(|(a, x), (b, y)| match &mesh_slots {
+    Some(slots) => slots[*a].cmp(&slots[*b]),
+    None => y.depth.total_cmp(&x.depth),
+  });
+  let sorted_slots: Vec<_> = ordered_slots
+    .iter()
+    .map(|(i, _)| mesh_slots.as_ref().map(|s| s[*i]))
+    .collect();
+  let sorted_mesh: Vec<_> =
+    ordered_slots.into_iter().map(|(_, line)| line).collect();
   let mesh_svg = |line: &MeshLine| {
     let (x0, y0) = to_svg(line.projected[0].0, line.projected[0].1);
     let (x1, y1) = to_svg(line.projected[1].0, line.projected[1].1);
@@ -2664,8 +2723,11 @@ fn generate_svg(
     let mut mi = 0; // index into sorted_mesh
     let mut gradients =
       crate::functions::smooth_shading::GradientDefs::default();
-    for tri in triangles {
-      while mi < sorted_mesh.len() && sorted_mesh[mi].depth >= tri.depth {
+    for (ti, tri) in triangles.iter().enumerate() {
+      while mi < sorted_mesh.len()
+        && sorted_slots[mi]
+          .map_or(sorted_mesh[mi].depth >= tri.depth, |slot| slot <= ti)
+      {
         svg.push_str(&mesh_svg(sorted_mesh[mi]));
         mi += 1;
       }
@@ -2740,9 +2802,25 @@ fn generate_svg(
     }
   }
 
-  // Draw axes (ticks, labels) on top of everything
+  // All surface renderers share Graphics3D's explicit/automatic tick parser.
   if show_axes {
-    draw_axes_on_box(
+    let ticks = options
+      .iter()
+      .rev()
+      .find_map(|option| match option {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(&**pattern,Expr::Identifier(name) if name=="Ticks") => {
+          Some(parse_ticks_3d(
+            &evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| (**replacement).clone()),
+          ))
+        }
+        _ => None,
+      })
+      .unwrap_or([None, None, None]);
+    draw_axes_on_box_with_ticks(
       &mut svg,
       camera,
       &to_svg,
@@ -2751,6 +2829,9 @@ fn generate_svg(
       y_range,
       z_range,
       axes_labels,
+      &ticks,
+      None,
+      None,
     );
   }
 
@@ -3271,6 +3352,36 @@ fn draw_axes_on_box_with_ticks(
       }
     }
 
+    if ticks[ai].is_none() {
+      let majors = tick_values(val_min, val_max);
+      if majors.len() >= 2 {
+        let step =
+          crate::functions::plot::minor_tick_step(majors[1] - majors[0]);
+        let dx = sx1 - sx0;
+        let dy = sy1 - sy0;
+        let len = dx.hypot(dy);
+        if step > 0.0 && len > 1.0 {
+          let first = (val_min / step).ceil() as i64;
+          let last = (val_max / step).floor() as i64;
+          for k in first..=last {
+            let value = k as f64 * step;
+            if majors.iter().any(|v| (v - value).abs() < step * 1e-6) {
+              continue;
+            }
+            let t = (value - val_min) / (val_max - val_min);
+            let t = if flipped { 1.0 - t } else { t };
+            let p = Point3D {
+              x: axis_origin.x + (end.x - axis_origin.x) * t,
+              y: axis_origin.y + (end.y - axis_origin.y) * t,
+              z: axis_origin.z + (end.z - axis_origin.z) * t,
+            };
+            let (x, y) = project(p, camera);
+            let (x, y) = to_svg(x, y);
+            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
+          }
+        }
+      }
+    }
     // Ticks
     for (tick_val, label) in axis_ticks(ai, val_min, val_max) {
       // Map tick_val to parameter t along the axis [origin → end]
@@ -5419,7 +5530,7 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 }
 
 /// A 3D primitive for Graphics3D
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct StyleState3D {
   color: Option<(u8, u8, u8)>,
   /// `FaceForm[front, back]`: the colour of faces turned away from the
@@ -8023,7 +8134,42 @@ fn collect_3d_primitives(
               tex.as_deref(),
             );
             let saved = style.clone();
-            collect_3d_primitives(&resolved, style, prims);
+            let mut collected = Vec::new();
+            collect_3d_primitives(&resolved, style, &mut collected);
+            // Keep a sampled surface together so shared vertices receive
+            // averaged normals. Collecting each triangle as an independent
+            // polygon loses the topology and produces faceted lighting.
+            let mut surfaces: std::collections::BTreeMap<
+              String,
+              (StyleState3D, Vec<(Point3D, Point3D, Point3D)>),
+            > = std::collections::BTreeMap::new();
+            for prim in collected {
+              match prim {
+                Primitive3D::Polygon3D {
+                  points,
+                  holes,
+                  style: face,
+                } if points.len() == 3
+                  && holes.is_empty()
+                  && !face.edges
+                  && face.texture.is_none()
+                  && face.vertex_colors.is_none() =>
+                {
+                  let key = format!("{face:?}");
+                  let entry =
+                    surfaces.entry(key).or_insert_with(|| (face, Vec::new()));
+                  entry.1.push((points[0], points[1], points[2]));
+                }
+                other => prims.push(other),
+              }
+            }
+            for (_, (style, tris)) in surfaces {
+              prims.push(Primitive3D::Surface3D {
+                tris,
+                style,
+                smooth: true,
+              });
+            }
             *style = saved;
           }
         }
@@ -8534,6 +8680,12 @@ fn collect_raster3d(
         let mut voxel_style = style.clone();
         // Voxels are cells of one volume, not outlined boxes.
         voxel_style.edges = false;
+        // A volume's transfer function already supplies its emitted colour.
+        // Lighting its tessellation exposes artificial diagonal facet seams.
+        voxel_style.lighting = Some(Lighting {
+          lights: vec![crate::functions::lighting3d::Light::Ambient([1.0; 3])],
+          name: None,
+        });
         if channels > 0 {
           voxel_style.color = Some((
             (mean[0].clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -10920,6 +11072,20 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
+    let polygon_normal = match prim {
+      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
+        let mut normal = [0.0; 3];
+        for i in 0..points.len() {
+          let (a, b) = (points[i], points[(i + 1) % points.len()]);
+          normal[0] += (a.y - b.y) * (a.z + b.z);
+          normal[1] += (a.z - b.z) * (a.x + b.x);
+          normal[2] += (a.x - b.x) * (a.y + b.y);
+        }
+        let len = v_dot(normal, normal).sqrt();
+        (len > 1e-15).then(|| normal.map(|v| v / len))
+      }
+      _ => None,
+    };
     let tri_count = tris.len();
     // A convex polygon with `VertexColors` blends the corner colours across
     // each fan triangle (corners 0, i + 1, i + 2), drawn as a fine grid of
@@ -10947,7 +11113,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           [true; 3]
         };
-        let normal = triangle_normal(v0, v1, v2);
+        let normal =
+          polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
         let corner = |c: &(f64, f64, f64), at: Point3D| {
           let q = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
           let mut sub_style = prim_style.clone();
@@ -11088,7 +11255,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           [true; 3]
         };
-      let normal = triangle_normal(v0, v1, v2);
+      let normal =
+        polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
       let (color, _) = shade_facet(
         SurfaceDefault::Plain(base_color),
         None,
@@ -11316,10 +11484,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if radius > 0.0 {
       let (pcx, pcy) = project(center, &camera);
-      px_min = pcx - radius;
-      px_max = pcx + radius;
-      py_min = pcy - radius;
-      py_max = pcy + radius;
+      px_min = px_min.min(pcx - radius);
+      px_max = px_max.max(pcx + radius);
+      py_min = py_min.min(pcy - radius);
+      py_max = py_max.max(pcy + radius);
     }
   }
 
@@ -11640,6 +11808,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Unboxed charts may place an axis through the projected columns. Paint
+  // those axes before the solids so bars occlude them, including their ticks.
+  if show_axes && !show_box {
+    draw_axes_on_box_with_ticks(
+      &mut svg,
+      &camera,
+      &to_svg,
+      &box_corners,
+      (x3_min / axis_scale[0], x3_max / axis_scale[0]),
+      (y3_min / axis_scale[1], y3_max / axis_scale[1]),
+      (z3_min / axis_scale[2], z3_max / axis_scale[2]),
+      &axes_labels,
+      &tick_spec,
+      axes_origin.as_ref(),
+      axes_edge.as_ref(),
+    );
+  }
   // Render triangles interleaved with box edges (painter's algorithm)
   {
     let emit_edge = |svg: &mut String, edge: &SceneEdge| {
@@ -11914,7 +12099,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Axes (with their ticks and labels) go on top of the scene.
-  if show_axes {
+  if show_axes && show_box {
     // The ticks report coordinates as they were given, so a box reshaped
     // by `BoxRatios` still reads off the data's own values.
     draw_axes_on_box_with_ticks(
@@ -12822,6 +13007,86 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  if args[1..].iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(&**pattern, Expr::Identifier(n) if n == "InterpolationOrder")
+        && matches!(&**replacement, Expr::Integer(0)))
+  }) && scattered.is_none()
+  {
+    // Order zero uses the lower endpoint of each data interval, with no
+    // vertical faces connecting the discontinuities.
+    let coord = |k: usize, n: usize, lo: f64, hi: f64| {
+      lo + k as f64 * (hi - lo) / (n - 1).max(1) as f64
+    };
+    let mut plates = Vec::new();
+    for i in 0..rows.saturating_sub(1) {
+      for j in 0..cols.saturating_sub(1) {
+        let z = grid[i][j];
+        if !z.is_finite() {
+          continue;
+        }
+        let (x0, x1) = (
+          coord(i, rows, x_min, x_max),
+          coord(i + 1, rows, x_min, x_max),
+        );
+        let (y0, y1) = (
+          coord(j, cols, y_min, y_max),
+          coord(j + 1, cols, y_min, y_max),
+        );
+        let point = |x, y| point3d_expr([x, y, z]);
+        let mut content = surface_style_directives(
+          0,
+          surface_style,
+          color_function.is_some(),
+          &scene,
+        );
+        content.push(call0("EdgeForm"));
+        content.push(call1(
+          "Polygon",
+          Expr::List(
+            vec![point(x0, y0), point(x1, y0), point(x1, y1), point(x0, y1)]
+              .into(),
+          ),
+        ));
+        if mesh_mode != MeshMode::None {
+          content.push(call1("GrayLevel", Expr::Real(0.2)));
+          content.push(call1("AbsoluteThickness", Expr::Real(0.5)));
+          for axis in 0..2 {
+            let (lo, hi, a, b) = if axis == 0 {
+              (x_min, x_max, x0, x1)
+            } else {
+              (y_min, y_max, y0, y1)
+            };
+            for k in 0..=16 {
+              let v = lo + (hi - lo) * k as f64 / 16.0;
+              if v < a - 1e-12 || v > b + 1e-12 {
+                continue;
+              }
+              let ends = if axis == 0 {
+                vec![point(v, y0), point(v, y1)]
+              } else {
+                vec![point(x0, v), point(x1, v)]
+              };
+              content.push(call1("Line", Expr::List(ends.into())));
+            }
+          }
+        }
+        plates.push(Expr::List(content.into()));
+      }
+    }
+    let mut render = vec![Expr::List(plates.into())];
+    render.extend(args[1..].iter().filter(|o| !matches!(o, Expr::Rule { pattern, .. }
+      if matches!(&**pattern, Expr::Identifier(n) if matches!(n.as_str(), "InterpolationOrder"|"Mesh"|"MeshStyle"|"PlotStyle")))).cloned());
+    render.push(crate::helpers::rule_expr(id_expr("Axes"), id_expr("True")));
+    render.push(crate::helpers::rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+      ),
+    ));
+    return graphics3d_ast(&render);
+  }
+
   // Find z range
   let mut z_min = f64::INFINITY;
   let mut z_max = f64::NEG_INFINITY;
@@ -12858,6 +13123,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  let mut mesh_world = Vec::new();
   let mut facets: Vec<SmoothFacet> = Vec::new();
   // A scattered point's fractional grid position.
   let frac = |x: f64, y: f64| {
@@ -12963,6 +13229,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let Some(c) = sub.vertex_colors {
           sub.color = average_color(c);
         }
+        mesh_world.push(p);
         all_triangles.push(sub);
       };
       for a in 0..n {
@@ -13055,6 +13322,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
 
+        mesh_world.push([v0, v1, v2]);
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
@@ -13116,6 +13384,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: (v0.z + v1.z + v2.z) / 3.0,
         };
 
+        mesh_world.push([v0, v1, v2]);
         all_triangles.push(Triangle {
           boundary: [true; 3],
           edge_color: None,
@@ -13159,11 +13428,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // A height field seen from above sorts well by centroid depth, which
   // also keeps the mesh lines (merged in by depth) on their facets.
-  all_triangles.sort_by(|a, b| {
-    b.depth
-      .partial_cmp(&a.depth)
-      .unwrap_or(std::cmp::Ordering::Equal)
-  });
+  let mut ordered: Vec<_> = all_triangles.into_iter().zip(mesh_world).collect();
+  ordered.sort_by(|a, b| b.0.depth.total_cmp(&a.0.depth));
+  let (all_triangles, mesh_world): (Vec<_>, Vec<_>) =
+    ordered.into_iter().unzip();
 
   // `Mesh -> Automatic`: as in WL, 15 lines across each direction of the
   // data plus its outline, whatever the size of the data.
@@ -13245,6 +13513,8 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
+    Some(&mesh_world),
+    false,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -13257,6 +13527,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
     !image_height_is_explicit(args),
+    args,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -14069,6 +14340,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
+    None,
+    false,
     &camera,
     x_range,
     y_range,
@@ -14081,6 +14354,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, z_scale],
     &[None, None, None],
     !image_height_is_explicit(args),
+    args,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -14652,6 +14926,8 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg(
     &all_triangles,
     &[],
+    None,
+    false,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
@@ -14664,6 +14940,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     [1.0, 1.0, Z_SCALE],
     &axes_labels,
     !image_height_is_explicit(args),
+    args,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -15836,6 +16113,8 @@ fn contour3d_render(
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
+    None,
+    false,
     &camera,
     (x_min_p, x_max_p),
     (y_min_p, y_max_p),
@@ -15852,6 +16131,7 @@ fn contour3d_render(
     [1.0, 1.0, CONTOUR3D_Z_SCALE],
     &axes_labels,
     !image_height_is_explicit(opts),
+    opts,
   )?;
   // `Background -> colour` repaints the canvas rectangle drawn first.
   let svg = match background {
@@ -16928,6 +17208,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // as in Wolfram. Low values matter: Demonstrations use PlotPoints -> 2
   // with MaxRecursion -> 0 to get intentionally flat facets.
   let mut plot_points: Option<usize> = None;
+  let mut max_recursion = 0usize;
   // `RegionFunction -> f`: keep only surface parts where
   // f[x, y, z, theta, phi, r] is True; cells crossing the boundary are
   // clipped to it.
@@ -16983,6 +17264,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {}
           }
         }
+        Expr::Identifier(name) if name == "MaxRecursion" => {
+          if let Ok(Expr::Integer(n)) = evaluate_expr_to_expr(replacement) {
+            max_recursion = n.clamp(0, 4) as usize;
+          }
+        }
         Expr::Identifier(name) if name == "PlotPoints" => {
           let n = match evaluate_expr_to_expr(replacement) {
             Ok(Expr::Integer(n)) => Some(n),
@@ -17033,8 +17319,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     SPHERICAL_GRID
   };
-  let n_theta = plot_points.map_or(default_grid, |p| p - 1);
-  let n_phi = plot_points.map_or(default_grid, |p| p - 1);
+  let n_theta = (plot_points.map_or(default_grid, |p| p - 1)
+    * (1 << max_recursion))
+    .min(256);
+  let n_phi = (plot_points.map_or(default_grid, |p| p - 1)
+    * (1 << max_recursion))
+    .min(256);
   let theta_range = theta_max - theta_min;
   let phi_range = phi_max - phi_min;
 
@@ -19816,6 +20106,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
+    None,
+    false,
     &camera,
     (gx_min, gx_max),
     (gy_min, gy_max),
@@ -19828,6 +20120,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     box_ratios,
     &[None, None, None],
     !image_height_is_explicit(args),
+    args,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);

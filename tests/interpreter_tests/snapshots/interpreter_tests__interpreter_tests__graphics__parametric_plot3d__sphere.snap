@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 30652
 expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="380" viewBox="0 0 360 380" xmlns="http://www.w3.org/2000/svg">
@@ -11512,6 +11513,22 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="259.0" y1="179.9" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="246.2" y1="163.7" x2="259.7" y2="167.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="248.4" y1="364.7" x2="53.2" y2="281.9" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="62.0" y1="285.6" x2="63.0" y2="283.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="70.8" y1="289.4" x2="71.8" y2="287.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="79.7" y1="293.2" x2="80.7" y2="290.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="88.8" y1="297.0" x2="89.7" y2="294.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="107.1" y1="304.8" x2="108.1" y2="302.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="116.5" y1="308.8" x2="117.4" y2="306.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="125.9" y1="312.8" x2="126.9" y2="310.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="135.5" y1="316.8" x2="136.5" y2="314.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="154.9" y1="325.1" x2="155.9" y2="322.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="164.8" y1="329.3" x2="165.8" y2="327.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="174.8" y1="333.5" x2="175.8" y2="331.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="185.0" y1="337.8" x2="186.0" y2="335.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="205.6" y1="346.6" x2="206.6" y2="344.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="216.1" y1="351.0" x2="217.1" y2="348.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="226.8" y1="355.5" x2="227.7" y2="353.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="237.5" y1="360.1" x2="238.5" y2="357.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="53.2" y1="281.9" x2="54.8" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="49.3" y="291.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1.0</text>
 <line x1="97.9" y1="300.9" x2="99.5" y2="297.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11523,6 +11540,22 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="248.4" y1="364.7" x2="250.0" y2="361.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="244.5" y="373.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1.0</text>
 <line x1="248.4" y1="364.7" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="253.6" y1="356.5" x2="255.7" y2="357.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="258.7" y1="348.3" x2="260.8" y2="349.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="263.7" y1="340.2" x2="265.8" y2="341.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="268.6" y1="332.3" x2="270.7" y2="333.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="278.1" y1="317.1" x2="280.2" y2="318.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="282.7" y1="309.7" x2="284.8" y2="311.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="287.2" y1="302.5" x2="289.3" y2="303.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="291.6" y1="295.4" x2="293.7" y2="296.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="300.1" y1="281.7" x2="302.2" y2="283.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="304.3" y1="275.1" x2="306.4" y2="276.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="308.3" y1="268.5" x2="310.5" y2="269.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="312.3" y1="262.1" x2="314.4" y2="263.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="320.0" y1="249.7" x2="322.2" y2="251.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="323.8" y1="243.7" x2="325.9" y2="245.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="327.5" y1="237.8" x2="329.6" y2="239.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="331.1" y1="231.9" x2="333.2" y2="233.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="273.4" y1="324.7" x2="276.8" y2="326.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="278.5" y="327.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-0.5</text>
 <line x1="295.9" y1="288.5" x2="299.3" y2="290.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11532,6 +11565,22 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="334.6" y1="226.4" x2="338.0" y2="228.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="339.7" y="229.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.0</text>
 <line x1="53.2" y1="281.9" x2="23.7" y2="94.5" stroke="rgb(102,102,102)" stroke-width="1"/>
+<line x1="52.0" y1="274.1" x2="54.5" y2="273.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="50.7" y1="266.1" x2="53.2" y2="265.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="49.5" y1="257.9" x2="51.9" y2="257.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="48.2" y1="249.7" x2="50.6" y2="249.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="45.5" y1="232.7" x2="48.0" y2="232.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="44.1" y1="223.9" x2="46.6" y2="223.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="42.7" y1="215.1" x2="45.2" y2="214.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="41.3" y1="206.0" x2="43.8" y2="205.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="38.4" y1="187.4" x2="40.8" y2="187.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="36.9" y1="177.9" x2="39.3" y2="177.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="35.3" y1="168.1" x2="37.8" y2="167.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="33.8" y1="158.2" x2="36.2" y2="157.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="30.5" y1="137.8" x2="33.0" y2="137.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="28.9" y1="127.3" x2="31.4" y2="126.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="27.2" y1="116.6" x2="29.7" y2="116.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="25.5" y1="105.7" x2="28.0" y2="105.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="53.2" y1="281.9" x2="57.2" y2="281.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="47.3" y="282.9" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-1.0</text>
 <line x1="46.8" y1="241.2" x2="50.8" y2="240.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
