@@ -18767,9 +18767,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "{Legended, True, Graphics}"
       );
       let svg = export_svg("s");
-      // One merged plot (its density raster) plus the 64-band colour bar.
+      // One merged plot (its density raster) plus a continuous colour bar.
       assert_eq!(svg.matches("<image").count(), 1);
-      assert!(svg.matches("<rect").count() >= 64, "no colour bar");
+      assert!(
+        svg.contains("fill=\"url(#woxiLegendGradient"),
+        "no colour bar"
+      );
       assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
     }
 
@@ -49289,7 +49292,7 @@ mod curve_labels_and_legends {
        LabelingSize -> 30]",
     );
     assert!(!svg.contains(">healthfulness</text>"));
-    assert!(svg.contains(">a</text>"));
+    assert!(!svg.contains(">a</text>"));
   }
 
   #[test]

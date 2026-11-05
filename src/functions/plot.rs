@@ -2781,7 +2781,7 @@ fn parse_filling_rules(
       other => out.push(other),
     }
   }
-  if !matches!(replacement, Expr::List(_)) {
+  if !matches!(replacement, Expr::List(_) | Expr::Rule { .. }) {
     return None;
   }
   let mut items: Vec<&Expr> = Vec::new();
@@ -6578,6 +6578,12 @@ fn generate_svg_with_options(
               len: None,
               style: None,
             })
+            .chain(x_ticks.minors.iter().map(|&pos| ExplicitTick {
+              pos,
+              label: String::new(),
+              len: Some((0.003, 0.0)),
+              style: None,
+            }))
             .collect(),
         );
       }

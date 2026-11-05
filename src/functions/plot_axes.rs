@@ -142,14 +142,18 @@ impl AxisTicks {
       return Self::log(min, max);
     }
     if date {
-      return Self {
-        majors: crate::functions::plot::wl_date_ticks(min, max)
-          .into_iter()
-          .filter(|(t, _)| scale.contains(*t))
-          .map(|(t, label)| (t, crate::functions::graphics::svg_escape(&label)))
-          .collect(),
-        minors: Vec::new(),
-      };
+      let majors: Vec<_> = crate::functions::plot::wl_date_ticks(min, max)
+        .into_iter()
+        .filter(|(t, _)| scale.contains(*t))
+        .map(|(t, label)| (t, crate::functions::graphics::svg_escape(&label)))
+        .collect();
+      let mut minors = Vec::new();
+      for pair in majors.windows(2) {
+        for k in 1..5 {
+          minors.push(pair[0].0 + (pair[1].0 - pair[0].0) * k as f64 / 5.0);
+        }
+      }
+      return Self { majors, minors };
     }
     let major = axis_tick_step(max - min);
     if !(major.is_finite() && major > 0.0) {

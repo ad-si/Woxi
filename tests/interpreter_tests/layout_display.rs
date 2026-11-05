@@ -167,7 +167,11 @@ mod layout_display {
     let svg = svg_of("BarLegend[{\"Rainbow\", {0, 100}}]");
     assert!(svg.starts_with("<svg"), "{svg}");
     assert!(!svg.contains("BarLegend"), "{svg}");
-    assert!(rects(&svg).len() >= 64, "{svg}");
+    assert_eq!(rects(&svg).len(), 2, "{svg}");
+    assert_eq!(svg.matches("<linearGradient ").count(), 1, "{svg}");
+    assert!(svg.contains("fill=\"url(#woxiLegendGradient"), "{svg}");
+    assert!(svg.contains("offset=\"0.000000\""), "{svg}");
+    assert!(svg.contains("offset=\"1.000000\""), "{svg}");
     for label in [">0<", ">20<", ">100<"] {
       assert!(svg.contains(label), "missing {label}: {svg}");
     }
@@ -559,6 +563,21 @@ mod layout_display {
   }
 
   #[test]
+  fn bare_series_filling_rules_delegate_to_list_form() {
+    for filling in ["1 -> {2}", "2 -> {1}"] {
+      let expr = |f: &str| {
+        format!(
+          "ListPlot[{{Range[8], Range[8]/2}}, Joined -> {{True,False}}, Filling -> {f}]"
+        )
+      };
+      assert_eq!(
+        svg_of(&expr(filling)),
+        svg_of(&expr(&format!("{{{filling}}}")))
+      );
+    }
+  }
+
+  #[test]
   fn spectral_images_keep_channels_while_display_uses_rgb_composite() {
     clear_state();
     assert_eq!(
@@ -598,12 +617,32 @@ mod layout_display {
   }
 
   #[test]
+  fn density_mesh_and_rounded_legend_endpoints_are_rendered() {
+    let svg = svg_of(
+      "ListDensityPlot[Table[Sin[x y],{x,0,3,1/4},{y,0,3,1/4}],Mesh->4]",
+    );
+    assert!(svg.contains("<polyline"), "missing density mesh");
+    let svg = svg_of("BarLegend[{\"Rainbow\",{0.0003,0.999}}]");
+    assert!(svg.contains(">0</text>") && svg.contains(">1.0</text>"));
+  }
+
+  #[test]
   fn small_caps_are_painted_in_all_text_layouts() {
     for head in ["Row", "Column"] {
       let svg = svg_of(&format!(
         "{head}[{{Style[\"Abc\",FontVariations->{{\"CapsType\"->\"SmallCaps\"}}]}}]"
       ));
       assert!(svg.contains(">B</tspan>") && svg.contains(">C</tspan>"));
+    }
+  }
+
+  #[test]
+  fn finite_labeling_size_omits_frontend_only_truncation_boxes() {
+    for size in [10, 30, 1000] {
+      let svg = svg_of(&format!(
+        "ListPlot[{{1,2,3}}->{{\"a\",\"b\",\"c\"}},LabelingSize->{size}]"
+      ));
+      assert!(!svg.contains(">a</text>"));
     }
   }
 
