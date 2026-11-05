@@ -291,6 +291,9 @@ struct Marks {
   mean: bool,
   notched: bool,
   outliers: bool,
+  whisker_style: Option<Expr>,
+  fence: Option<(f64, Option<Expr>)>,
+  mean_diamond: Option<(f64, Option<Expr>)>,
 }
 
 fn bwspec_message(spec: &Expr) {
@@ -311,23 +314,44 @@ fn parse_bwspec(spec: &Expr) -> Marks {
       "Outliers" => marks.outliers = true,
       _ => bwspec_message(spec),
     },
-    // `{{"Outliers", …}, {"MeanMarker", …}, …}`: one entry per element.
-    Expr::List(items)
-      if !items.is_empty()
-        && items.iter().all(|i| matches!(i, Expr::List(_))) =>
-    {
+    Expr::List(items) => {
       for item in items {
-        let Expr::List(parts) = item else { continue };
-        match parts.first() {
-          Some(Expr::String(s)) if s == "Outliers" || s == "FarOutliers" => {
-            marks.outliers = true;
+        if matches!(item, Expr::String(_)) {
+          let preset = parse_bwspec(item);
+          marks.basic |= preset.basic;
+          marks.mean |= preset.mean;
+          marks.notched |= preset.notched;
+          marks.outliers |= preset.outliers;
+          continue;
+        }
+        let Expr::List(parts) = item else {
+          bwspec_message(item);
+          continue;
+        };
+        let Some(Expr::String(element)) = parts.first() else {
+          bwspec_message(item);
+          continue;
+        };
+        let sized_style = || {
+          let width = parts
+            .get(1)
+            .and_then(crate::functions::math_ast::try_eval_to_f64);
+          let directives = &parts[if width.is_some() { 2 } else { 1 }..];
+          (
+            width.unwrap_or(1.0),
+            (!directives.is_empty())
+              .then(|| call("Directive", directives.to_vec())),
+          )
+        };
+        match element.as_str() {
+          "Outliers" | "FarOutliers" => marks.outliers = true,
+          "MeanMarker" => marks.mean = true,
+          "Whiskers" => {
+            marks.whisker_style = Some(call("Directive", parts[1..].to_vec()));
           }
-          Some(Expr::String(s)) if s == "MeanMarker" => marks.mean = true,
-          Some(Expr::String(s))
-            if matches!(
-              s.as_str(),
-              "MedianMarker" | "Whiskers" | "Fences" | "Notch"
-            ) => {}
+          "Fences" => marks.fence = Some(sized_style()),
+          "MeanDiamond" => marks.mean_diamond = Some(sized_style()),
+          "MedianMarker" | "Notch" => {}
           _ => bwspec_message(item),
         }
       }
@@ -500,6 +524,42 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    if let Some((width, style)) = &marks.mean_diamond {
+      let count = data.len() as f64;
+      let mean = data.iter().sum::<f64>() / count;
+      let error = if data.len() > 1 {
+        let variance =
+          data.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (count - 1.0);
+        let t = call(
+          "Quantile",
+          vec![
+            call("StudentTDistribution", vec![Expr::Real(count)]),
+            Expr::Real(0.975),
+          ],
+        );
+        // WL uses n degrees of freedom and rounds the 95% critical
+        // value to hundredths before multiplying the standard error.
+        let critical = evaluate_expr_to_expr(&t)
+          .ok()
+          .and_then(|v| crate::functions::math_ast::try_eval_to_f64(&v))
+          .unwrap_or(0.0);
+        (critical * 100.0).round() / 100.0 * (variance / count).sqrt()
+      } else {
+        0.0
+      };
+      parts.push(list(vec![
+        style.clone().unwrap_or_else(|| gray(0.5)),
+        call(
+          "Polygon",
+          vec![list(vec![
+            p(c + half * width, mean),
+            p(c, mean - error),
+            p(c - half * width, mean),
+            p(c, mean + error),
+          ])],
+        ),
+      ]));
+    }
     let median_half = if marks.notched { cap } else { half };
     parts.push(list(vec![
       gray(1.0),
@@ -517,7 +577,10 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     parts.push(list(vec![
       call("CapForm", vec![Expr::String("Butt".to_string())]),
-      gray(0.5),
+      marks.whisker_style.as_ref().map_or_else(
+        || gray(0.5),
+        |style| call("Directive", vec![gray(0.0), style.clone()]),
+      ),
       call(
         "Line",
         vec![list(vec![
@@ -526,14 +589,20 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ])],
       ),
     ]));
-    if !marks.basic {
+    if !marks.basic || marks.fence.is_some() {
+      let (fence_half, fence_style) = match &marks.fence {
+        Some((width, style)) => {
+          (half * width, style.clone().unwrap_or_else(|| gray(0.0)))
+        }
+        None => (cap, gray(0.5)),
+      };
       parts.push(list(vec![
-        gray(0.5),
+        fence_style,
         call(
           "Line",
           vec![list(vec![
-            seg(p(c + cap, w_lo), p(c - cap, w_lo)),
-            seg(p(c + cap, w_hi), p(c - cap, w_hi)),
+            seg(p(c + fence_half, w_lo), p(c - fence_half, w_lo)),
+            seg(p(c + fence_half, w_hi), p(c - fence_half, w_hi)),
           ])],
         ),
       ]));

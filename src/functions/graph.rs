@@ -1385,11 +1385,13 @@ fn graph_render(
         .find(|(target, _)| same_edge(&edge_expr, target))
         && edge_labeling
       {
+        let (label, position) = placed_edge_label(label);
+        let t = position.unwrap_or(0.5);
         let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
         let point = Expr::List(
           vec![
-            Expr::Real(f64::midpoint(x1, x2)),
-            Expr::Real(f64::midpoint(y1, y2)),
+            Expr::Real(x1 + t * (x2 - x1)),
+            Expr::Real(y1 + t * (y2 - y1)),
           ]
           .into(),
         );
@@ -3820,14 +3822,26 @@ pub(crate) fn snap_coord(v: f64) -> f64 {
 /// The text of an edge label: strings as they are, `Placed[label, pos]`
 /// looked through, anything else in its formatted output form (so
 /// `NumberForm[x, 3]` shows as the rounded number).
-fn edge_label_text(label: &Expr) -> String {
+fn placed_edge_label(label: &Expr) -> (&Expr, Option<f64>) {
   match label {
-    Expr::String(s) => s.clone(),
     Expr::FunctionCall { name, args }
       if name == "Placed" && !args.is_empty() =>
     {
-      edge_label_text(&args[0])
+      (
+        &args[0],
+        args
+          .get(1)
+          .and_then(crate::functions::math_ast::try_eval_to_f64),
+      )
     }
+    other => (other, None),
+  }
+}
+
+fn edge_label_text(label: &Expr) -> String {
+  let (label, _) = placed_edge_label(label);
+  match label {
+    Expr::String(s) => s.clone(),
     other => {
       let shown = crate::evaluator::evaluate_expr_to_expr(
         &crate::helpers::call1("ToString", other.clone()),
@@ -3846,11 +3860,8 @@ fn edge_label_fraction(mut e: &Expr) -> Option<f64> {
   while let Expr::FunctionCall { name, args } = e {
     match name.as_str() {
       "Labeled" if args.len() == 2 => {
-        if let Expr::FunctionCall { name: p, args: pa } = &args[1]
-          && p == "Placed"
-          && pa.len() == 2
-        {
-          return crate::functions::graphics::expr_to_f64(&pa[1]);
+        if let (_, Some(position)) = placed_edge_label(&args[1]) {
+          return Some(position);
         }
         e = &args[0];
       }

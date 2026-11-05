@@ -44094,7 +44094,8 @@ mod bracketing_bar_labels {
   fn string_subscript_in_traditional_form_has_no_quotes() {
     let svg = export_svg(r#"Grid[{{TraditionalForm[Subscript[S, "A"] + 1]}}]"#);
     assert!(!svg.contains("&quot;"), "{svg}");
-    assert!(svg.contains(">A</tspan>"), "{svg}");
+    // Native box layout draws the subscript as its own text element.
+    assert!(svg.contains(">A</text>"), "{svg}");
   }
 }
 

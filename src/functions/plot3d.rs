@@ -10400,6 +10400,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `ViewPoint` with an infinite component looks from infinitely far
   // away: an orthographic picture.
   let mut view_point_at_infinity = false;
+  let mut orthographic = false;
   let mut show_axes = false;
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
@@ -10436,6 +10437,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "True" => show_box = true,
           _ => {}
         },
+        "ViewProjection" => {
+          orthographic = matches!(replacement.as_ref(), Expr::String(s) if s == "Orthographic");
+        }
         "AxesEdge" => axes_edge = parse_axes_edge(replacement),
         "Lighting" => {
           scene_lighting = Lighting::parse(replacement);
@@ -10742,7 +10746,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // planes, so warping the contents into the camera's screen space lets the
   // orthographic pipeline below draw them: x and z carry the screen
   // position and y the depth.
-  let perspective = view_vector.is_some();
+  let perspective = view_vector.is_some() && !orthographic;
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
@@ -10752,18 +10756,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         f64::midpoint(b[2].0, b[2].1),
       ]
     });
-    perspective_warp(&mut prims, eye, target, camera.vertical);
-    camera.azimuth = -std::f64::consts::FRAC_PI_2;
-    camera.elevation = 0.0;
-    camera.vertical = Camera::DEFAULT_VERTICAL;
-    show_axes = false;
-    if prims.is_empty() {
-      let empty_svg = format!(
-        "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
-      );
-      return Ok(crate::graphics3d_result_with_structure(
-        empty_svg, structure,
-      ));
+    if orthographic {
+      let direction =
+        [eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]];
+      camera.azimuth = direction[1].atan2(direction[0]);
+      camera.elevation = direction[2].atan2(direction[0].hypot(direction[1]));
+    } else {
+      perspective_warp(&mut prims, eye, target, camera.vertical);
+      camera.azimuth = -std::f64::consts::FRAC_PI_2;
+      camera.elevation = 0.0;
+      camera.vertical = Camera::DEFAULT_VERTICAL;
+      show_axes = false;
+      if prims.is_empty() {
+        let empty_svg = format!(
+          "<svg width=\"{svg_width}\" height=\"{svg_height}\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        );
+        return Ok(crate::graphics3d_result_with_structure(
+          empty_svg, structure,
+        ));
+      }
     }
   }
 
@@ -10815,7 +10826,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ViewPoint` at infinity (and the already warped `ViewVector` scene)
   // is drawn orthographically.
   camera.perspective = None;
-  if !perspective && !view_point_at_infinity {
+  if !perspective && !view_point_at_infinity && !orthographic {
     let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
     let side = (b[0].1 - b[0].0).max(b[1].1 - b[1].0).max(b[2].1 - b[2].0);
     if side.is_finite() && side > 0.0 && view_distance.is_finite() {

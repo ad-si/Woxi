@@ -3408,6 +3408,7 @@ pub(crate) struct PlotOptions {
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
   /// each curve (None = that curve is unlabeled).
   pub plot_labels: Vec<Option<String>>,
+  pub finite_labeling_size: bool,
   /// Per series: its `plot_labels` entry hangs off a horizontal leader line
   /// (a `Callout[data, label]` at its automatic place, the series' end)
   /// rather than sitting right after the last point (`PlotLabels`,
@@ -3712,6 +3713,7 @@ impl Default for PlotOptions {
       curve_label_specs: Vec::new(),
       placed_highlights: Vec::new(),
       plot_labels: Vec::new(),
+      finite_labeling_size: false,
       plot_label_leaders: Vec::new(),
       plot_labels_automatic: false,
       point_labels: Vec::new(),
@@ -7017,7 +7019,7 @@ fn inject_callout_labels(
   y_range: (f64, f64),
   plot_area: (f64, f64, f64, f64),
 ) {
-  if opts.curve_label_specs.is_empty() {
+  if opts.finite_labeling_size || opts.curve_label_specs.is_empty() {
     return;
   }
   let (x_min, x_max) = x_range;
@@ -7067,7 +7069,9 @@ fn inject_plot_labels(
   y_range: (f64, f64),
   plot_area: (f64, f64, f64, f64),
 ) {
-  if !opts.plot_labels.iter().any(std::option::Option::is_some) {
+  if opts.finite_labeling_size
+    || !opts.plot_labels.iter().any(std::option::Option::is_some)
+  {
     return;
   }
   let (x_min, x_max) = x_range;
@@ -8332,6 +8336,8 @@ pub(crate) struct BarChartLook {
   pub edge: Option<((u8, u8, u8), f64, f64)>,
   /// `ChartElementFunction -> "FadingRectangle"` / `"GlassRectangle"`.
   pub element: BarElement,
+  pub element_function: Option<Expr>,
+  pub element_values: Vec<Vec<Expr>>,
   /// Which frame edges `Frame` draws: left, right, bottom, top.
   pub frame_sides: [bool; 4],
   /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
@@ -8356,6 +8362,8 @@ impl Default for BarChartLook {
       value_axis_negated: false,
       edge: None,
       element: BarElement::Rectangle,
+      element_function: None,
+      element_values: Vec::new(),
       frame_sides: [true; 4],
       value_grid: None,
     }
@@ -8856,6 +8864,7 @@ pub(crate) fn generate_bar_svg(
   // `AxesStyle` recolours the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
 
+  let mut custom_elements = Vec::new();
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -8905,6 +8914,37 @@ pub(crate) fn generate_bar_svg(
           crate::functions::chart::CHART_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
+        if let Some(function) = &look.element_function {
+          let pair =
+            |a, b| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+          let invocation = Expr::CurriedCall {
+            func: Box::new(function.clone()),
+            args: vec![
+              Expr::List(
+                vec![pair(rect.x0, rect.x1), pair(rect.y0, rect.y1)].into(),
+              ),
+              look.element_values[gi][bi].clone(),
+              Expr::List(Vec::new().into()),
+            ],
+          };
+          let element = evaluate_expr_to_expr(&invocation)?;
+          custom_elements.push(Expr::List(
+            vec![
+              Expr::FunctionCall {
+                name: "RGBColor".into(),
+                args: vec![
+                  Expr::Real(br as f64 / 255.0),
+                  Expr::Real(bg as f64 / 255.0),
+                  Expr::Real(bb as f64 / 255.0),
+                ]
+                .into(),
+              },
+              element,
+            ]
+            .into(),
+          ));
+          continue;
+        }
         chart
           .draw_series(std::iter::once(Rectangle::new(
             [(rect.x0, rect.y0), (rect.x1, rect.y1)],
@@ -9022,6 +9062,16 @@ pub(crate) fn generate_bar_svg(
     - BAR_SIDE_MARGIN * sf
     - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
+  if !custom_elements.is_empty() {
+    let fragment = crate::functions::graphics::primitives_svg_fragment(
+      &Expr::List(custom_elements.into()),
+      (x_min, x_max, y_min, y_max),
+      (plot_w / sf, plot_h / sf),
+    );
+    if let Some(end) = buf.rfind("</svg>") {
+      buf.insert_str(end, &format!("<g transform=\"translate({plot_x0},{plot_y0}) scale({sf})\">{fragment}</g>"));
+    }
+  }
 
   // `GridLines -> {…, Automatic}`: lines across the plot at the value
   // ticks, behind the bars.
@@ -15272,6 +15322,10 @@ pub(crate) fn apply_common_plot_option(
     }
     // WL 15 hangs `PlotLabels` at the curve ends off callout leaders;
     // placed ones go where they are placed.
+    "LabelingSize" => {
+      plot_opts.finite_labeling_size =
+        try_eval_to_f64(replacement).is_some_and(f64::is_finite);
+    }
     "PlotLabels" => {
       plot_opts.plot_labels = Vec::new();
       plot_opts.curve_label_specs.clear();

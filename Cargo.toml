@@ -54,6 +54,13 @@ exclude = [
   "/flake.lock",
 ]
 
+# The executable depends on the optional CLI dependencies; library-only
+# builds (Python/WASM) must not try to compile it.
+[[bin]]
+name = "woxi"
+path = "src/main.rs"
+required-features = ["cli"]
+
 # Differential fuzzer comparing woxi against wolframscript
 # (see fuzz/README.md and `make fuzz-diff`). Gated behind the non-default
 # `diff-fuzz` feature so the default build (and `cargo install`) produces

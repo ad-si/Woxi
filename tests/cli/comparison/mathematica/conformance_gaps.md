@@ -5361,10 +5361,6 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   callout `Rotate[x, y, 0]` (x turned by y radians), which Woxi copies; its
   box width (39 pt for "2"/"0.45", 56 pt for "2.5"/"2500") follows no rule
   found, Woxi sizes it as both numbers plus 11 pt.
-- `LabelingSize -> w`: WL leaves every label to a tooltip (even ones
-  narrower than `w`, and all of them at `w = 1000`) and truncates some with
-  front-end-only `TruncateStringToWidth`; Woxi drops the labels wider than
-  `w` points.
 - `PlotLayout` panels of labeled datasets (`ListPlot[{Labeled[d1, "a"],
   Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centres each label at the
   top of its panel; Woxi draws it as the panel's end label.
@@ -8763,3 +8759,28 @@ differs:
   `ChartLegends`, PieChart3D and SectorChart3D keep Woxi's own chart
   renderer (no axes, square framing). DensityPlot3D's volume is as listed
   above.
+
+## Graphics review follow-up (2026-11-05)
+
+Fixed the saved visual review notes for custom `BarChart` functions (including
+rounded rectangles through the canonical Graphics renderer), mixed
+`BoxWhiskerChart` element specifications and Student t mean diamonds,
+`ViewProjection -> "Orthographic"`, `Placed` labels in `EdgeLabels`, portable
+long arrows in script layouts, TraditionalForm arithmetic spacing in grid
+cells, finite `LabelingSize` on function plots, custom arrowhead paint order,
+and the measured monospace width of padded base-number table cells.
+
+The `SliceDensityPlot3D[x y z, "CenterPlanes", …]` sampling difference listed
+above is an exact-zero field on all three slices. Its graphics comparison now
+uses `x + y + z` so it exercises actual gradients without depending on
+Wolfram's random perturbations of the slice positions. Exact zero slices
+remain exact in Woxi.
+
+The headless Wolfram Engine reference for `Plot[{Sin[x] + x, x Log[x]},
+{x, 0, 5}, PlotLabels -> {"barcarole", "perilously"}, LabelingSize -> 30]`
+currently exports the front-end-only ``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]``
+box itself, collapsing the SVG height to 21 pt. Reproduced by regenerating
+its reference with wolframscript on 2026-11-05. Both `UsingFrontEnd[Export[…]]`
+and direct `FrontEndExecute[ExportPacket[…, "SVG"]]` reproduce it. Woxi omits those labels and
+keeps the plotted curves; a valid reference for this comparison requires a
+working front-end export. The review note remains open for the reference.

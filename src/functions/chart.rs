@@ -185,7 +185,7 @@ fn extract_grouped<T>(
 /// Numeric value of one chart data element. A Demonstration wraps values in
 /// `Tooltip[value, hint]` (or `Annotation`/`Style`/`Labeled`) to add hover text or
 /// styling; the wrapper does not change the value that is drawn.
-fn chart_datum_value(e: &Expr) -> Option<f64> {
+fn chart_datum_expr(e: &Expr) -> &Expr {
   match e {
     Expr::FunctionCall { name, args }
       if matches!(
@@ -193,17 +193,21 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
         "Tooltip" | "Annotation" | "Style" | "Labeled"
       ) && !args.is_empty() =>
     {
-      chart_datum_value(&args[0])
+      chart_datum_expr(&args[0])
     }
     // A `Quantity[magnitude, unit]` plots as its magnitude, an
     // `Around[value, δ]` as its value.
     Expr::FunctionCall { name, args }
       if (name == "Quantity" || name == "Around") && args.len() == 2 =>
     {
-      chart_datum_value(&args[0])
+      chart_datum_expr(&args[0])
     }
-    _ => try_eval_to_f64(e),
+    _ => e,
   }
+}
+
+fn chart_datum_value(e: &Expr) -> Option<f64> {
+  try_eval_to_f64(chart_datum_expr(e))
 }
 
 /// Typeset a label expression into its first line plus the lines after it.
@@ -3369,6 +3373,11 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let mut look = bar_chart_look(args);
+  if look.element_function.is_some() {
+    look.element_values = extract_grouped(&args[0], |datum| {
+      chart_datum_value(datum).map(|_| chart_datum_expr(datum).clone())
+    })?;
+  }
   look.layout = opts.layout;
   let decor = extract_grouped_decor(&args[0]).unwrap_or_default();
   if DatumDecor::any(&decor) {
@@ -3603,6 +3612,8 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
         if let Expr::String(s) = &value {
           look.element = crate::functions::plot::BarElement::from_name(s)
             .unwrap_or_default();
+        } else if !matches!(&value, Expr::Identifier(n) if n == "Automatic") {
+          look.element_function = Some(value);
         }
       }
       _ => {}

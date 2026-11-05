@@ -829,4 +829,206 @@ mod layout_display {
       );
     }
   }
+
+  #[test]
+  fn reviewed_custom_chart_elements_use_graphics_primitives() {
+    for radius in ["1/10", "1/4"] {
+      let svg = svg_of(&format!(
+        "BarChart[{{2,5,-3}},ChartElementFunction->Function[{{bounds,value,meta}},{{EdgeForm[Black],Rectangle[{{bounds[[1,1]]+0.08,bounds[[2,1]]}},{{bounds[[1,2]]-0.08,bounds[[2,2]]}},RoundingRadius->{radius}]}}],ChartStyle->{{Blue,Orange,Red}}]"
+      ));
+      assert_eq!(
+        svg.matches(" rx=\"").count(),
+        3,
+        "rounded bars missing: {svg}"
+      );
+      assert!(svg.contains("rgb(0,0,255)"), "custom bars lost chart color");
+    }
+    let svg =
+      svg_of("BarChart[{2,5},ChartElementFunction->(Disk[Mean /@ #1,0.1]&)]");
+    assert_eq!(svg.matches("<ellipse ").count(), 2);
+  }
+
+  #[test]
+  fn reviewed_box_elements_keep_independent_styles_and_mean_intervals() {
+    for origin in ["Bottom", "Left", "Top", "Right"] {
+      let expr = format!(
+        "BoxWhiskerChart[{{{{1,2,2,3,3,4,4,5,6,9}},{{2,3,4,5,5,6,6,7,8,12}}}},{{\"Basic\",{{\"Whiskers\",Dashed}},{{\"Fences\",0.5,Red}},{{\"MeanDiamond\",0.5,Gray}}}},BarOrigin->{origin}]"
+      );
+      let svg = svg_of(&expr);
+      assert!(svg.contains("stroke-dasharray="), "whiskers not dashed");
+      assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "fences not red");
+      assert_eq!(svg.matches("<polygon ").count(), 4, "mean diamonds missing");
+      clear_state();
+      let geometry =
+        interpret(&format!("InputForm[Cases[{expr},_Polygon,Infinity]]"))
+          .unwrap();
+      assert!(
+        geometry.contains("2.25624"),
+        "incorrect mean confidence interval: {geometry}"
+      );
+    }
+  }
+
+  #[test]
+  fn reviewed_projection_options_change_scene_geometry() {
+    let scene = "{{LightBlue,Cuboid[]},{Orange,Sphere[{1.5,1.5,1.5},1/2]}}";
+    let ortho = svg_of(&format!(
+      "Graphics3D[{scene},ViewProjection->\"Orthographic\",ViewPoint->{{2,-3,1.5}}]"
+    ));
+    let perspective = svg_of(&format!(
+      "Graphics3D[{scene},ViewProjection->\"Perspective\",ViewPoint->{{2,-3,1.5}}]"
+    ));
+    assert_ne!(ortho, perspective);
+    assert_eq!(
+      perspective,
+      svg_of(&format!("Graphics3D[{scene},ViewPoint->{{2,-3,1.5}}]"))
+    );
+  }
+
+  #[test]
+  fn reviewed_edge_option_labels_unwrap_placed_and_keep_style() {
+    for position in ["1/4", "3/4"] {
+      let svg = svg_of(&format!(
+        "Graph[{{1->2}},VertexCoordinates->{{{{0,0}},{{2,0}}}},EdgeLabels->{{DirectedEdge[1,2]->Placed[Style[\"rise\",Red],{position}]}}]"
+      ));
+      assert!(!svg.contains("Placed["), "{svg}");
+      assert!(svg.contains("rise"));
+      assert!(svg.contains("rgb(255,0,0)"), "label lost its style");
+    }
+  }
+
+  #[test]
+  fn reviewed_arrowheads_paint_after_their_shafts() {
+    let svg = svg_of(
+      "Graphics[{Arrowheads[{{0.1,0,Graphics[{Blue,Disk[]} ]},{0.1,1,Graphics[{Red,Disk[]} ]}}],Arrow[{{0,0},{3,0}}]}]",
+    );
+    let shaft = svg.find("<polyline ").unwrap();
+    assert!(
+      svg
+        .match_indices("<ellipse ")
+        .all(|(index, _)| index > shaft)
+    );
+  }
+
+  #[test]
+  fn reviewed_long_arrows_have_portable_vector_geometry() {
+    for arrow in [
+      "\\[LongRightArrow]",
+      "\\[LongLeftArrow]",
+      "\\[DoubleLongLeftRightArrow]",
+    ] {
+      let svg = svg_of(&format!("Row[{{Overscript[\"{arrow}\",\"f\"]}}]"));
+      assert!(
+        svg.contains("<path "),
+        "arrow depends on a missing font glyph"
+      );
+      assert!(!svg.contains("⟶") && !svg.contains("⟵"));
+    }
+  }
+
+  #[test]
+  fn reviewed_finite_plot_label_size_omits_frontend_truncation() {
+    for size in [10, 30, 1000] {
+      let svg = svg_of(&format!(
+        "Plot[{{Sin[x]+x,x Log[x]}},{{x,0,5}},PlotLabels->{{\"barcarole\",\"perilously\"}},LabelingSize->{size}]"
+      ));
+      assert!(!svg.contains("barcarole") && !svg.contains("perilously"));
+    }
+  }
+
+  #[test]
+  fn reviewed_traditional_grid_arithmetic_uses_spaced_boxes() {
+    let svg = svg_of(
+      "Grid[{{TraditionalForm[HoldForm[(a+b)^2]],\"=\",TraditionalForm[HoldForm[a^2+2 a b+b^2]]}}]",
+    );
+    assert!(
+      svg.contains(">+</text>"),
+      "arithmetic was flattened into unspaced text"
+    );
+    assert!(!svg.contains("a+b"));
+  }
+
+  #[test]
+  fn reviewed_padded_base_table_reserves_the_monospace_advance() {
+    let svg = svg_of(
+      "PaddedForm[BaseForm[TableForm[{{8,49},{123,5}}],2],8,NumberPadding->{\"0\",\"\"}]",
+    );
+    let root = svg.split('>').next().unwrap();
+    let width: f64 = root
+      .split("width=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap()
+      .parse()
+      .unwrap();
+    for text in texts(&svg) {
+      let x: f64 = text
+        .split("x=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      let right = x + 9.7 * 14.0 * 0.632;
+      assert!(
+        right <= width + 0.5,
+        "table clips its base subscript: {text}, viewport {width}"
+      );
+    }
+  }
+
+  #[test]
+  fn center_slice_density_preserves_exact_zeros_and_real_gradients() {
+    let gradient = svg_of(
+      "SliceDensityPlot3D[x+y+z,\"CenterPlanes\",{x,-1,1},{y,-1,1},{z,-1,1},PlotPoints->5]",
+    );
+    assert!(
+      gradient.contains("<pattern"),
+      "slice vertex colors lost their gradients"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Simplify[{x y z/.x->0,x y z/.y->0,x y z/.z->0}]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn nested_text_styles_inherit_outer_size_and_inner_color() {
+    let svg = svg_of("Graphics[Text[Style[Style[\"label\",Red],18],{0,0}]]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("font-size=\"18\""));
+  }
+
+  #[test]
+  fn mean_diamond_confidence_intervals_follow_wolfram_rounding() {
+    for (n, expected) in [
+      (2, 2.15),
+      (3, 1.8359738560230103),
+      (5, 1.8172644276494268),
+      (10, 2.1350624502966333),
+    ] {
+      clear_state();
+      let error: f64 = interpret(&format!("g=BoxWhiskerChart[{{Range[{n}]}},{{\"Basic\",{{\"MeanDiamond\",0.5,Gray}}}}]; p=Last[Cases[g,Polygon[p_]:>p,Infinity]]; Max[p[[All,2]]]-Mean[Range[{n}]]")).unwrap().parse().unwrap();
+      assert!(
+        (error - expected).abs() < 1e-10,
+        "{n}: {error} instead of {expected}"
+      );
+    }
+  }
+
+  #[test]
+  fn custom_bar_callbacks_keep_exact_values_and_empty_metadata() {
+    for data in ["{2,1/3}", "{{2,1/3},{3,1/2}}"] {
+      let svg = svg_of(&format!(
+        "BarChart[{data},ChartElementFunction->Function[{{b,v,m}},Text[If[ExactNumberQ[v]&&m==={{}},\"exact\",\"wrong\"],Mean /@ b]]]"
+      ));
+      assert!(svg.contains("exact"));
+      assert!(!svg.contains("wrong"));
+    }
+  }
 }

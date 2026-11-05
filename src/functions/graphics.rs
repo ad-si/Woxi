@@ -5226,6 +5226,11 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       }
       CoordMode::Unsupported => Some(None),
     };
+    prims.push(Primitive::ArrowPrim {
+      points: pts.clone(),
+      setback,
+      style: style.clone(),
+    });
     for head in style.arrowheads.iter().flatten() {
       let Some(graphic) = &head.graphic else {
         continue;
@@ -5282,11 +5287,6 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         });
       }
     }
-    prims.push(Primitive::ArrowPrim {
-      points: pts,
-      setback,
-      style: style.clone(),
-    });
   }
 }
 
@@ -7257,18 +7257,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
-  let content = match framed_body {
-    Expr::FunctionCall { name, args: sargs }
-      if is_style_wrapper(name) && !sargs.is_empty() =>
-    {
-      for d in style_directives_in_application_order(&sargs[1..]) {
-        apply_directive(d, &mut local_style);
-        apply_text_style_directive(d, &mut local_style);
-      }
-      &sargs[0]
+  let mut content = framed_body;
+  while let Expr::FunctionCall { name, args: sargs } = content
+    && is_style_wrapper(name)
+    && !sargs.is_empty()
+  {
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      apply_directive(d, &mut local_style);
+      apply_text_style_directive(d, &mut local_style);
     }
-    other => other,
-  };
+    content = peel_label_rotate(&sargs[0], &mut rotation);
+  }
   let content = peel_label_rotate(content, &mut rotation);
   // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
   let content = match peel_invisible(content) {
@@ -13448,9 +13447,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           with_coord_mode(CoordMode::Known(frame), || {
             parse_arrow(&[path], style, &mut placed);
           });
-          // parse_arrow appends the shaft after its custom graphics. Reuse
-          // those transformed primitives to measure the heads at this scale.
-          for head in placed.iter().take(placed.len().saturating_sub(1)) {
+          // The shaft is first; the remaining transformed primitives
+          // measure the custom heads at this scale.
+          for head in placed.iter().skip(1) {
             let bounds = primitive_bbox(head);
             if plot_range_x.is_none() {
               grown.x_min = grown.x_min.min(bounds.x_min - 1.0 / kx);
@@ -14674,6 +14673,40 @@ impl BoxLayout {
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
+    if matches!(
+      s,
+      "\u{27F5}"
+        | "\u{27F6}"
+        | "\u{27F7}"
+        | "\u{27F8}"
+        | "\u{27F9}"
+        | "\u{27FA}"
+    ) {
+      let width = font_size * 1.5;
+      let y = ascent - font_size * 0.25;
+      let mut elements = String::new();
+      let double = matches!(s, "\u{27F8}" | "\u{27F9}" | "\u{27FA}");
+      for dy in if double { vec![-0.08, 0.08] } else { vec![0.0] } {
+        let yy = y + dy * font_size;
+        elements.push_str(&format!("<path d=\"M 0 {yy} H {width}\" fill=\"none\" stroke=\"currentColor\"/>"));
+      }
+      let mut head = |tip: f64, direction: f64| {
+        let back = tip - direction * font_size * 0.25;
+        elements.push_str(&format!("<path d=\"M {back} {} L {tip} {y} L {back} {}\" fill=\"none\" stroke=\"currentColor\"/>", y-font_size*0.2,y+font_size*0.2));
+      };
+      if !matches!(s, "\u{27F5}" | "\u{27F8}") {
+        head(width, 1.0);
+      }
+      if !matches!(s, "\u{27F6}" | "\u{27F9}") {
+        head(0.0, -1.0);
+      }
+      return Self {
+        width,
+        height,
+        baseline: ascent,
+        elements,
+      };
+    }
     if s == "\u{22EF}" {
       // The fallback font's ellipsis can span several monospace advances.
       // Drawing the dots as geometry keeps its ink and measured width equal.
@@ -21783,7 +21816,8 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   ]
   .iter()
   .any(|head| source.contains(head));
-  if !two_dimensional
+  if name != "TraditionalForm"
+    && !two_dimensional
     && !source.contains(crate::functions::string_ast::BOX_START)
     && !source.contains("\\!\\(")
   {
@@ -23239,7 +23273,7 @@ fn grid_svg_styled_internal(
   // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell
   // metrics (character width, line height, padding) follow that size.
   let size_scale: f64 = default_style.font_size.map_or(1.0, |fs| fs / 14.0);
-  let char_width: f64 = 8.4 * size_scale; // approximate monospace char width
+  let char_width: f64 = 8.4 * size_scale;
   let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
   let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
@@ -23358,12 +23392,16 @@ fn grid_svg_styled_internal(
       if is_span_placeholder(cell) {
         continue;
       }
-      let w = match grid_cell_graphic(cell) {
-        Some((_, nat_w, _)) => nat_w + col_pad(j),
-        None => {
-          estimate_display_width(cell) * char_width * cell_text_scale(cell)
-            + col_pad(j)
-        }
+      let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
+        nat_w + col_pad(j)
+      } else {
+        let advance = if contains_base_form(cell) {
+          font_size * MONO_ADVANCE
+        } else {
+          char_width
+        };
+        estimate_display_width(cell) * advance * cell_text_scale(cell)
+          + col_pad(j)
       };
       let cols = span_width(row, j);
       if cols > 1 {
@@ -28065,12 +28103,21 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       {
         let script =
           |e: &Expr| call("Style", vec![e.clone(), Expr::Real(10.0)]);
+        let base = if matches!(&args[0], Expr::String(s) if s.chars().any(|c| ('\u{27F5}'..='\u{27FA}').contains(&c)))
+        {
+          crate::graphics_result(layout_to_svg(
+            &layout_box(&args[0], 14.0),
+            theme().text_primary,
+          ))
+        } else {
+          args[0].clone()
+        };
         let stacked = match name.as_str() {
           "Underoverscript" => {
-            vec![script(&args[2]), args[0].clone(), script(&args[1])]
+            vec![script(&args[2]), base, script(&args[1])]
           }
-          "Overscript" => vec![script(&args[1]), args[0].clone()],
-          _ => vec![args[0].clone(), script(&args[1])],
+          "Overscript" => vec![script(&args[1]), base],
+          _ => vec![base, script(&args[1])],
         };
         return column_to_svg(&[
           Expr::List(stacked.into()),
