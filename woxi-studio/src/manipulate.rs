@@ -4933,6 +4933,36 @@ mod tests {
     assert!(dump.contains("label: \"σ₁₂= \""), "{dump}");
   }
 
+  /// A toggle captioned with a typeset derivative operator
+  /// (`\!\(\*FractionBox[\(\[DifferentialD]\), \(\[DifferentialD]x\)]\)`)
+  /// reads `ⅆ/ⅆx`, not the evaluated `ⅆ/DifferentialD[x]` source.
+  #[test]
+  fn control_label_typesets_derivative_operator_fraction() {
+    let code = r#"Manipulate[s, {{s, False, "\!\(\*FractionBox[\(\[DifferentialD]\), \(\[DifferentialD]x\)]\)"}, {True, False}},
+      {{t, False, "\!\(\*FractionBox[SuperscriptBox[\(\[DifferentialD]\), \(2\)], \(\[DifferentialD]\*SuperscriptBox[\(x\), \(2\)]\)]\)"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("DifferentialD["), "{dump}");
+    assert!(dump.contains("label: \"ⅆ/ⅆx\""), "{dump}");
+    assert!(dump.contains("label: \"ⅆ²/ⅆx²\""), "{dump}");
+  }
+
+  /// The same derivative captions written with the Unicode operator `ⅆ`
+  /// (as a notebook input cell stores them) must not parse `ⅆx` as the
+  /// `DifferentialD[x]` call.
+  #[test]
+  fn control_label_keeps_unicode_differential_d_adjacent_to_variable() {
+    let code = r#"Manipulate[s, {{s, False, "\!\(\*FractionBox[\(ⅆ\), \(ⅆx\)]\)"}, {True, False}},
+      {{t, False, "\!\(\*FractionBox[SuperscriptBox[\(ⅆ\), \(2\)], \(ⅆ\*SuperscriptBox[\(x\), \(2\)]\)]\)"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains("DifferentialD"), "{dump}");
+    assert!(dump.contains("label: \"ⅆ/ⅆx\""), "{dump}");
+    assert!(dump.contains("label: \"ⅆ²/ⅆx²\""), "{dump}");
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
