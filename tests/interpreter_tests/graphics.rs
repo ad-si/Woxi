@@ -42287,7 +42287,8 @@ fn a_text_wrapper_resets_the_font_face() {
 /// stroke and shrank it for short arrows.
 #[test]
 fn the_default_arrowhead_is_four_percent_of_the_width() {
-  // The head is drawn as a triangle: tip, then the two base corners.
+  // The head is drawn tip first, then round its outline from one back
+  // corner to the other.
   let head_length = |svg: &str| -> f64 {
     let at = svg
       .find("<polygon points=\"")
@@ -42302,9 +42303,10 @@ fn the_default_arrowhead_is_four_percent_of_the_width() {
       })
       .collect();
     let (tx, ty) = xy[0];
+    let last = xy[xy.len() - 1];
     let (bx, by) = (
-      f64::midpoint(xy[1].0, xy[2].0),
-      f64::midpoint(xy[1].1, xy[2].1),
+      f64::midpoint(xy[1].0, last.0),
+      f64::midpoint(xy[1].1, last.1),
     );
     ((tx - bx).powi(2) + (ty - by).powi(2)).sqrt()
   };
@@ -50099,5 +50101,150 @@ mod ranges_and_ticks {
     let default =
       export_svg("RegionPlot[x^2 + y^2 < 1, {x, -1, 1}, {y, -1, 1}]");
     assert!(default.contains("fill-opacity=\"0.3"), "{default}");
+  }
+}
+
+/// The `points` of every `<tag points="…">` element of an SVG.
+fn svg_point_lists(svg: &str, tag: &str) -> Vec<Vec<(f64, f64)>> {
+  svg
+    .split(&format!("<{tag} points=\""))
+    .skip(1)
+    .map(|rest| {
+      rest[..rest.find('"').unwrap()]
+        .split_whitespace()
+        .map(|p| {
+          let (x, y) = p.split_once(',').unwrap();
+          (x.parse().unwrap(), y.parse().unwrap())
+        })
+        .collect()
+    })
+    .collect()
+}
+
+mod arrowhead_shape {
+  use super::*;
+
+  #[test]
+  fn the_head_is_wolframs_and_the_shaft_stops_at_its_notch() {
+    // wolframscript draws `Arrowheads[0.5]` on a 1000-wide frame as a
+    // 500 pt head with a concave back whose notch is 453.85 pt behind
+    // the tip, and stops the shaft there.
+    let svg = export_svg(
+      "Graphics[{Arrowheads[0.5], Arrow[{{0, 0}, {1, 0}}]}, \
+       PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 1000, \
+       PlotRangePadding -> 0]",
+    );
+    let shaft = &svg_point_lists(&svg, "polyline")[0];
+    let head = &svg_point_lists(&svg, "polygon")[0];
+    assert_eq!(head.len(), 14, "{head:?}");
+    let tip = head[0];
+    let end = shaft[shaft.len() - 1];
+    assert!((tip.0 - end.0 - 453.85).abs() < 1.0, "{shaft:?} {head:?}");
+    // The back corners, a little over a quarter of the length either side.
+    let (a, b) = (head[1], head[13]);
+    assert!(
+      (tip.0 - a.0 - 500.0).abs() < 1.0 && (tip.0 - b.0 - 500.0).abs() < 1.0,
+      "{head:?}"
+    );
+    assert!(((a.1 - b.1).abs() - 268.4).abs() < 1.0, "{head:?}");
+  }
+
+  #[test]
+  fn a_custom_head_names_where_the_shaft_stops() {
+    // `{size, pos, {g, rpos}}`: the shaft ends rpos head lengths short
+    // of the tip.
+    let svg = export_svg(
+      "Graphics[{Arrowheads[{{0.2, 1, {Graphics[{Disk[{-0.5, 0}, 0.5]}], \
+       0.25}}}], Arrow[{{0, 0}, {1, 0}}]}, PlotRange -> {{-1, 1}, {-1, 1}}, \
+       ImageSize -> 400, PlotRangePadding -> 0]",
+    );
+    let shaft = &svg_point_lists(&svg, "polyline")[0];
+    let end = shaft[shaft.len() - 1];
+    // The frame is 399 wide, so the tip is at x = 399 and the head is
+    // 79.8 long; a quarter of it is 19.95.
+    assert!((end.0 - 379.05).abs() < 0.1, "{shaft:?}");
+  }
+
+  #[test]
+  fn filled_curve_takes_one_coordinate_list_per_component() {
+    let svg = export_svg(
+      "Graphics[FilledCurve[{{{0, 2, 0}, {0, 1, 0}}}, \
+       {{{0, 0}, {1, 0}, {0, 1}}}]]",
+    );
+    assert!(svg.contains("<path"), "{svg}");
+    assert!(!svg.contains("is not valid"), "{svg}");
+  }
+}
+
+mod graphics3d_point_depth {
+  use super::*;
+
+  #[test]
+  fn box_edges_in_front_of_a_point_are_drawn_over_it() {
+    // The dots take part in the depth order: the box edges nearer the
+    // viewer than the dot come after it in the SVG, the far ones before.
+    let svg = export_svg("Graphics3D[{PointSize[0.05], Point[{0, 0, 0}]}]");
+    let dot = svg.find("<circle").expect("the point is drawn");
+    assert!(svg[..dot].contains("<line"), "far edges come first");
+    assert!(svg[dot..].contains("<line"), "near edges come after");
+  }
+}
+
+mod surface_default_mesh {
+  use super::*;
+
+  #[test]
+  fn revolution_plot3d_draws_fifteen_lines_each_way() {
+    let mesh = |opts: &str| {
+      export_svg(&format!(
+        "RevolutionPlot3D[Sin[t] + 1.5, {{t, 0, 2 Pi}}{opts}]"
+      ))
+      .matches("stroke=\"#000000a0\" stroke-width=\"0.5\"")
+      .count()
+    };
+    let with = mesh("");
+    let without = mesh(", Mesh -> None");
+    assert!(with > without + 100, "{with} vs {without}");
+  }
+
+  #[test]
+  fn spherical_plot3d_carries_its_mesh_lines() {
+    let lines = |opts: &str| {
+      interpret(&format!(
+        "Length[Cases[SphericalPlot3D[1, {{u, 0, Pi}}, {{v, 0, 2 Pi}}{opts}], \
+         _Line, Infinity]]"
+      ))
+      .unwrap()
+    };
+    // 15 lines of constant u and of constant v, and the edges (Wolfram
+    // joins the edges into one line, Woxi draws each side on its own).
+    let count: usize = lines("").parse().unwrap();
+    assert!((30..=34).contains(&count), "{count}");
+    assert_eq!(lines(", Mesh -> None"), "0");
+  }
+}
+
+mod stream_plot3d_seeds {
+  use super::*;
+
+  #[test]
+  fn extra_seeds_come_from_the_middle_of_the_finer_lattice() {
+    // `StreamPoints -> 10`: the eight corners of the 2×2×2 lattice, then
+    // two points of the 4×4×4 lattice nearest the centre — the helices of
+    // radius 0.38 about the axis, never a wide one (as wolframscript).
+    let radii = interpret(
+      "Round[Max[Norm[Most[#]] & /@ #], 0.01] & /@ Cases[StreamPlot3D[{-y, \
+       x, 0.2}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, StreamPoints -> 10], \
+       Line[p_, ___] :> p, Infinity]",
+    )
+    .unwrap();
+    let values: Vec<f64> = radii
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    assert_eq!(values.len(), 10, "{radii}");
+    assert_eq!(values.iter().filter(|r| **r < 0.5).count(), 2, "{radii}");
+    assert!(values.iter().all(|r| *r < 0.5 || *r > 1.0), "{radii}");
   }
 }

@@ -6076,6 +6076,16 @@ fn evaluate_function_call_ast_inner(
     return Ok(unevaluated(name, args));
   }
 
+  // FindGraphCommunities[g] → the communities of maximal modularity.
+  if name == "FindGraphCommunities" && !args.is_empty() {
+    return crate::functions::community_graph::find_graph_communities_ast(args);
+  }
+
+  // CommunityGraphPlot[g, communities?, opts…]
+  if name == "CommunityGraphPlot" && !args.is_empty() {
+    return crate::functions::community_graph::community_graph_plot_ast(args);
+  }
+
   // FindCycle[graph | edgeList, kspec, n] → list of cycles (each a list of edges)
   if name == "FindCycle" && (1..=3).contains(&args.len()) {
     return crate::functions::graph::find_cycle_ast(args);
@@ -10701,7 +10711,30 @@ fn evaluate_function_call_ast_inner(
         return Ok(Expr::List(vec![].into()));
       }
       // The positions the graph is drawn with (its `GraphLayout`, or the
-      // automatic layout).
+      // automatic layout). `GraphEmbedding[g, layout]` lays it out with
+      // `layout` in place of its own.
+      let with_layout;
+      let gargs = match args.get(1) {
+        Some(layout) => {
+          let mut owned: Vec<Expr> = gargs
+            .iter()
+            .filter(|opt| {
+              !crate::evaluator::dispatch::list_operations::as_rule(opt)
+                .is_some_and(|(p, _)| {
+                  matches!(p, Expr::Identifier(n) if n == "GraphLayout")
+                })
+            })
+            .cloned()
+            .collect();
+          owned.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+            replacement: Box::new(layout.clone()),
+          });
+          with_layout = owned;
+          &with_layout[..]
+        }
+        None => &gargs[..],
+      };
       if let Some(pts) =
         crate::functions::graph::computed_graph_embedding(gargs)
       {

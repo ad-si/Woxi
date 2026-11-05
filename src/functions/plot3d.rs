@@ -381,12 +381,18 @@ fn line_draw_slots(
       }
     }
   }
+  // A face counts as covering a point within a hair (about a pixel) of
+  // it: the hairline every face is stroked with reaches that far, so a
+  // line along a face's edge (a mesh line on a surface) must still be
+  // drawn after it.
+  let margin = 0.002 * (hi.0 - lo.0).max(hi.1 - lo.1);
   let inside = |t: &[(f64, f64); 3], (x, y): (f64, f64)| {
     let side = |a: (f64, f64), b: (f64, f64)| {
-      (b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)
+      let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+      ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / len.max(1e-300)
     };
     let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
-    s.iter().all(|&v| v >= 0.0) || s.iter().all(|&v| v <= 0.0)
+    s.iter().all(|&v| v >= -margin) || s.iter().all(|&v| v <= margin)
   };
   segs
     .iter()
@@ -422,7 +428,9 @@ fn line_draw_slots(
             })
             .fold(0.0, f64::max);
           let d = v_dot(n, [m.x - v[0].x, m.y - v[0].y, m.z - v[0].z]);
-          if d >= -1e-6 * size.max(1e-300) {
+          // A line on a curved surface lies a little behind the planes
+          // of the faces next to the ones it runs along.
+          if d >= -1e-2 * size.max(1e-300) {
             slot = k + 1;
           }
         }
@@ -936,6 +944,45 @@ fn grid_mesh_lines(
           to_box((i + 1) as f64, fj, z1),
           camera,
         ));
+      }
+    }
+  }
+  lines
+}
+
+/// The default mesh of a surface sampled on a `(grid_u + 1) × (grid_v + 1)`
+/// parameter grid (`ParametricPlot3D`, `RevolutionPlot3D`): `n` lines of
+/// constant first and of constant second parameter, evenly spaced and
+/// snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
+/// is the sample in the normalized box (`None` where the surface has a
+/// hole); `segment` builds the line piece between two samples.
+fn parameter_grid_mesh_lines(
+  grid_u: usize,
+  grid_v: usize,
+  n: usize,
+  at: &dyn Fn(usize, usize) -> Option<Point3D>,
+  segment: &dyn Fn(Point3D, Point3D) -> MeshLine,
+) -> Vec<MeshLine> {
+  let mut lines = Vec::new();
+  let mut ku_seen = Vec::new();
+  let mut kv_seen = Vec::new();
+  for m in 0..=n + 1 {
+    let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
+    let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
+    if !kv_seen.contains(&kv) {
+      kv_seen.push(kv);
+      for i in 0..grid_u {
+        if let (Some(a), Some(b)) = (at(i, kv), at(i + 1, kv)) {
+          lines.push(segment(a, b));
+        }
+      }
+    }
+    if !ku_seen.contains(&ku) {
+      ku_seen.push(ku);
+      for j in 0..grid_v {
+        if let (Some(a), Some(b)) = (at(ku, j), at(ku, j + 1)) {
+          lines.push(segment(a, b));
+        }
       }
     }
   }
@@ -4494,7 +4541,8 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `StreamPoints -> n` asks for n streamlines: a k×k×k lattice spanning
   // the middle 80% of each side (k³ ≤ n), topped up from the lattice twice
-  // as fine by the points farthest from the lines already traced.
+  // as fine, nearest the centre of the box first — the order wolframscript
+  // seeds them in, whatever the field.
   let count = match option("StreamPoints")
     .map(|e| evaluate_expr_to_expr(e).unwrap_or(e.clone()))
   {
@@ -4527,11 +4575,41 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut seeds = lattice(k);
   seeds.truncate(count);
-  let mut extra = if seeds.len() < count {
-    lattice(2 * k)
-  } else {
-    Vec::new()
-  };
+  if seeds.len() < count {
+    // Distance from the centre in units of each side, so the order does
+    // not depend on the box's proportions; ties keep lattice order.
+    let off_centre = |p: &[f64; 3]| -> f64 {
+      (0..3)
+        .map(|d| {
+          let (lo, hi) = bounds[d];
+          let f = if hi > lo {
+            (p[d] - lo) / (hi - lo) - 0.5
+          } else {
+            0.0
+          };
+          f * f
+        })
+        .sum()
+    };
+    let mut extra = lattice(2 * k);
+    extra.retain(|p| {
+      !seeds
+        .iter()
+        .any(|q| v_len(v_sub(*p, *q)) < 1e-9 * (1.0 + v_len(*q)))
+    });
+    let keys: Vec<i64> = extra
+      .iter()
+      .map(|p| (off_centre(p) * 1e9).round() as i64)
+      .collect();
+    let mut order: Vec<usize> = (0..extra.len()).collect();
+    order.sort_by_key(|&i| keys[i]);
+    seeds.extend(
+      order
+        .into_iter()
+        .map(|i| extra[i])
+        .take(count - seeds.len()),
+    );
+  }
 
   let diag = bounds
     .iter()
@@ -4607,20 +4685,6 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   for seed in &seeds {
     trace_seed(*seed, &mut lines);
-  }
-  while lines.len() < count && !extra.is_empty() {
-    let far = |c: &[f64; 3]| {
-      lines
-        .iter()
-        .flatten()
-        .map(|p| v_len(v_sub(*p, *c)))
-        .fold(f64::INFINITY, f64::min)
-    };
-    let best = (0..extra.len())
-      .max_by(|&a, &b| far(&extra[a]).total_cmp(&far(&extra[b])))
-      .unwrap_or(0);
-    let seed = extra.swap_remove(best);
-    trace_seed(seed, &mut lines);
   }
 
   // Colour by magnitude, scaled over the drawn lines.
@@ -11372,6 +11436,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opacity: f64,
     dashing: Option<Vec<f64>>,
     dash_offset: f64,
+    /// A `Point` dot of this radius rather than a line piece (its two
+    /// endpoints coincide): the dots take their place in the same depth
+    /// order, so a box edge or line in front of a dot is drawn over it.
+    dot_radius: Option<f64>,
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -11414,6 +11482,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           opacity: 1.0,
           dashing: None,
           dash_offset: 0.0,
+          dot_radius: None,
         });
       }
     }
@@ -11462,6 +11531,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               opacity: 1.0,
               dashing: None,
               dash_offset: 0.0,
+              dot_radius: None,
             });
           }
         }
@@ -11514,9 +11584,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               opacity: style.opacity,
               dashing: style.dashing.clone(),
               dash_offset: t0 * total_px,
+              dot_radius: None,
             });
           }
         }
+      }
+    }
+    for prim in &prims {
+      let Primitive3D::Point3DPrim { points, style } = prim else {
+        continue;
+      };
+      let color = match style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => default_prim_color.to_string(),
+      };
+      let radius = style.point_size.map_or(3.0, |ps| {
+        crate::functions::graphics::point_radius(ps, svg_width as f64)
+      });
+      for &pt in points {
+        sorted_edges.push(SceneEdge {
+          endpoints: [pt, pt],
+          depth: depth(pt, &camera) - bias,
+          color: color.clone(),
+          width: 0.0,
+          opacity: style.opacity,
+          dashing: None,
+          dash_offset: 0.0,
+          dot_radius: Some(radius),
+        });
       }
     }
   }
@@ -11561,6 +11656,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
+      if let Some(radius) = edge.dot_radius {
+        svg.push_str(&format!(
+          "<circle cx=\"{ex0:.1}\" cy=\"{ey0:.1}\" r=\"{radius:.2}\" fill=\"{}\"{opacity_attr}/>\n",
+          edge.color
+        ));
+        return;
+      }
       let dash_attr =
         dash3d_attr(edge.dashing.as_ref(), svg_width as f64, edge.dash_offset);
       // A line is drawn as many short depth-sorted pieces. Round caps on
@@ -11756,28 +11858,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{body}</text>\n",
         ));
       }
-      Primitive3D::Point3DPrim { points, style } => {
-        let fill_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let radius = style.point_size.map_or(3.0, |ps| {
-          crate::functions::graphics::point_radius(ps, svg_width as f64)
-        });
-        for pt in points {
-          let (sx, sy) =
-            to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
-          svg.push_str(&format!(
-            "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"{radius:.2}\" fill=\"{fill_color}\"{opacity_attr}/>\n"
-          ));
-        }
-      }
+      // Points were drawn in depth order with the lines above.
       Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
         let stroke_color = if let Some((r, g, b)) = style.color {
           format!("rgb({r},{g},{b})")
@@ -13573,6 +13654,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The sweep is about the z axis unless `RevolutionAxis` says otherwise;
   // only then do x and y need their own extents when normalizing.
   let axis_is_z = axis[0] == 0.0 && axis[1] == 0.0;
+  // Whether every surface is a plain profile `z = f(t)`: Wolfram then
+  // flattens the box to `BoxRatios -> {2, 2, 1/GoldenRatio}`.
+  let mut all_profiles = true;
 
   for body in &bodies {
     let parametric_len: Option<usize> = match body {
@@ -13592,6 +13676,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => false,
     };
+    all_profiles &=
+      parametric_len.is_none() && (theta_var.is_none() || scalar_is_profile);
     let mut grid: Vec<Vec<Option<Point3D>>> =
       vec![vec![None; n_theta + 1]; n_t + 1];
     for i in 0..=n_t {
@@ -13777,9 +13863,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let scene = Scene::new(&camera, &args[opt_start..]);
 
+  let z_scale = if all_profiles && axis_is_z {
+    0.5 * 0.618_033_988_749_894_9
+  } else {
+    Z_SCALE
+  };
   let nz = |z: f64| -> f64 {
     let cz = z.clamp(z_lo, z_hi);
-    ((cz - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+    ((cz - z_lo) / z_range) * 2.0 * z_scale - z_scale
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
@@ -13938,9 +14029,46 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (z_lo, z_hi)
   };
 
+  // The mesh: 15 lines of constant t and of constant θ, plus the
+  // surface's edges, as `ParametricPlot3D` draws them.
+  let mut mesh_lines: Vec<MeshLine> = Vec::new();
+  if mesh_mode == MeshMode::Default {
+    let normalize = |p: Point3D| -> Point3D {
+      if axis_is_z {
+        Point3D {
+          x: p.x / r_scale,
+          y: p.y / r_scale,
+          z: nz(p.z),
+        }
+      } else {
+        Point3D {
+          x: norm_extent(p.x, global_x_min, global_x_max),
+          y: norm_extent(p.y, global_y_min, global_y_max),
+          z: nz(p.z),
+        }
+      }
+    };
+    let extra_bias = MESH_DEPTH_BIAS
+      * ((50.0 / n_t.min(n_theta).max(1) as f64).max(1.0) - 1.0);
+    let segment = |a: Point3D, b: Point3D| {
+      let mut line = mesh_segment(a, b, &camera);
+      line.depth -= extra_bias;
+      line
+    };
+    for grid in &grids {
+      mesh_lines.extend(parameter_grid_mesh_lines(
+        n_t,
+        n_theta,
+        15,
+        &|i, j| grid[i][j].map(normalize),
+        &segment,
+      ));
+    }
+  }
+
   let svg = generate_svg(
     &all_triangles,
-    &[],
+    &mesh_lines,
     &camera,
     x_range,
     y_range,
@@ -13950,7 +14078,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
-    [1.0, 1.0, Z_SCALE],
+    [1.0, 1.0, z_scale],
     &[None, None, None],
     !image_height_is_explicit(args),
   )?;
@@ -16936,6 +17064,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `VertexTextureCoordinates` of the symbolic structure.
   let mut surface_tri_vparams: Vec<Vec<[(f64, f64); 3]>> =
     Vec::with_capacity(bodies.len());
+  // Each surface's mesh lines: its edges, then the interior lines.
+  type MeshRuns = (Vec<Vec<Point3D>>, Vec<Vec<Point3D>>);
+  let mut surface_mesh: Vec<MeshRuns> = Vec::with_capacity(bodies.len());
   for surface_body in &evaluated_bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
     let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
@@ -17099,6 +17230,41 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     surface_tris.push(tris);
     surface_tri_params.push(tri_params);
     surface_tri_vparams.push(tri_vparams);
+
+    // `Mesh -> Automatic`: 15 lines of constant θ and of constant φ,
+    // snapped to the sampling grid, plus the surface's edges — the
+    // `ParametricPlot3D` mesh. A region-clipped surface keeps none.
+    let mut mesh: (Vec<Vec<Point3D>>, Vec<Vec<Point3D>>) = Default::default();
+    if mesh_mode == MeshMode::Default && region_fn.is_none() {
+      let n = 15;
+      let mut runs = |cells: Vec<Option<Point3D>>, edge: bool| {
+        for run in cells.split(Option::is_none) {
+          if run.len() >= 2 {
+            let line: Vec<Point3D> = run.iter().flatten().copied().collect();
+            if edge {
+              mesh.0.push(line);
+            } else {
+              mesh.1.push(line);
+            }
+          }
+        }
+      };
+      let (mut ku_seen, mut kv_seen) = (Vec::new(), Vec::new());
+      for m in 0..=n + 1 {
+        let edge = m == 0 || m == n + 1;
+        let ku = (n_theta * m + n.div_ceil(2)) / (n + 1);
+        let kv = (n_phi * m + n.div_ceil(2)) / (n + 1);
+        if !kv_seen.contains(&kv) {
+          kv_seen.push(kv);
+          runs((0..=n_theta).map(|i| grid_pts[i][kv]).collect(), edge);
+        }
+        if !ku_seen.contains(&ku) {
+          ku_seen.push(ku);
+          runs(grid_pts[ku].clone(), edge);
+        }
+      }
+    }
+    surface_mesh.push(mesh);
   }
 
   if surface_tris.iter().all(std::vec::Vec::is_empty) {
@@ -17428,6 +17594,37 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ],
         );
         gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
+      }
+      // The mesh: thin dark grey lines (the edges drawn alike).
+      let (edges, interior) = &surface_mesh[surface_idx];
+      let line_of = |pts: &Vec<Point3D>| {
+        call1(
+          "Line",
+          Expr::List(
+            pts
+              .iter()
+              .map(|p| {
+                Expr::List(
+                  vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)]
+                    .into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+        )
+      };
+      if !edges.is_empty() || !interior.is_empty() {
+        let mut group = vec![call(
+          "Directive",
+          vec![
+            call1("Opacity", Expr::Integer(1)),
+            call1("AbsoluteThickness", Expr::Real(0.5)),
+            call1("GrayLevel", Expr::Real(0.2)),
+          ],
+        )];
+        group.extend(edges.iter().chain(interior).map(line_of));
+        gc_content.push(Expr::List(group.into()));
       }
       let mut complex_args = vec![
         Expr::List(point_exprs.into()),
@@ -19600,28 +19797,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
     for sg in &all_surface_points {
-      let mut ku_seen = Vec::new();
-      let mut kv_seen = Vec::new();
-      for m in 0..=n + 1 {
-        let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
-        let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
-        if !kv_seen.contains(&kv) {
-          kv_seen.push(kv);
-          for i in 0..grid_u {
-            if let (Some(a), Some(b)) = (sg[i][kv], sg[i + 1][kv]) {
-              mesh_lines.push(segment(normalize(a), normalize(b)));
-            }
-          }
-        }
-        if !ku_seen.contains(&ku) {
-          ku_seen.push(ku);
-          for j in 0..grid_v {
-            if let (Some(a), Some(b)) = (sg[ku][j], sg[ku][j + 1]) {
-              mesh_lines.push(segment(normalize(a), normalize(b)));
-            }
-          }
-        }
-      }
+      mesh_lines.extend(parameter_grid_mesh_lines(
+        grid_u,
+        grid_v,
+        n,
+        &|i, j| sg[i][j].map(normalize),
+        &segment,
+      ));
     }
   }
 

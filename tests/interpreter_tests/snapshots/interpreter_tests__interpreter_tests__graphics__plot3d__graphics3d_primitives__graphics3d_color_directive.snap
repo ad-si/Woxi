@@ -1019,7 +1019,6 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <polygon points="308.0,181.6 352.2,54.7 341.2,135.3" fill="rgb(0,0,209)" stroke="rgb(0,0,209)" stroke-width="0.5"/>
 <line x1="341.2" y1="135.3" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="308.0" y1="181.6" x2="341.2" y2="135.3" stroke="rgb(64,64,64)" stroke-width="1"/>
-<line x1="350.7" y1="59.6" x2="354.9" y2="54.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="safbe0fe513" gradientUnits="userSpaceOnUse" x1="112.3" y1="271.6" x2="114.1" y2="277.7"><stop stop-color="#a90000"/><stop offset="1" stop-color="#8d0000"/></linearGradient>
 <polygon points="110.5,272.1 111.1,278.6 118.8,276.1" fill="url(#safbe0fe513)" stroke="url(#safbe0fe513)" stroke-width="0.5"/>
 <linearGradient id="s0276f92671" gradientUnits="userSpaceOnUse" x1="70.0" y1="231.8" x2="76.5" y2="229.8"><stop stop-color="#e70000"/><stop offset="1" stop-color="#f60000"/></linearGradient>
@@ -1281,6 +1280,7 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <polygon points="308.0,181.6 317.4,97.0 352.2,54.7" fill="rgb(0,0,209)" stroke="rgb(0,0,209)" stroke-width="0.5"/>
 <line x1="308.0" y1="181.6" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="317.4" y1="97.0" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="350.7" y1="59.6" x2="354.9" y2="54.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="346.4" y1="64.9" x2="350.7" y2="59.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="342.0" y1="70.3" x2="346.4" y2="64.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="337.5" y1="75.8" x2="342.0" y2="70.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>

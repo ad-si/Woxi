@@ -3469,7 +3469,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="200.2,64.8 201.5,63.4 196.5,64.6" fill="rgb(222,117,13)" stroke="rgb(222,117,13)" stroke-width="0.5"/>
 <polygon points="86.0,161.4 87.9,155.2 84.9,153.5" fill="rgb(93,48,4)" stroke="rgb(93,48,4)" stroke-width="0.5"/>
 <polygon points="293.6,123.5 289.9,118.3 294.1,130.2" fill="rgb(255,140,16)" stroke="rgb(255,140,16)" stroke-width="0.5"/>
-<line x1="293.4" y1="128.4" x2="298.9" y2="121.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="85.9,193.8 86.3,199.7 90.7,202.1" fill="rgb(75,38,4)" stroke="rgb(75,38,4)" stroke-width="0.5"/>
 <polygon points="92.1,136.0 95.4,130.4 92.6,129.0" fill="rgb(105,54,5)" stroke="rgb(105,54,5)" stroke-width="0.5"/>
 <polygon points="290.0,226.9 288.5,232.1 296.6,218.9" fill="rgb(164,86,9)" stroke="rgb(164,86,9)" stroke-width="0.5"/>
@@ -3553,6 +3552,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="192.9,64.6 193.3,66.6 196.5,64.6" fill="rgb(232,124,14)" stroke="rgb(232,124,14)" stroke-width="0.5"/>
 <polygon points="196.5,64.6 196.1,66.6 200.2,64.8" fill="rgb(235,126,14)" stroke="rgb(235,126,14)" stroke-width="0.5"/>
 <polygon points="290.4,124.7 294.1,130.2 289.9,118.3" fill="rgb(255,140,16)" stroke="rgb(255,140,16)" stroke-width="0.5"/>
+<line x1="293.4" y1="128.4" x2="298.9" y2="121.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="217.9,67.0 213.6,67.8 221.4,68.5" fill="rgb(253,135,15)" stroke="rgb(253,135,15)" stroke-width="0.5"/>
 <polygon points="189.2,64.8 190.5,66.8 192.9,64.6" fill="rgb(229,122,14)" stroke="rgb(229,122,14)" stroke-width="0.5"/>
 <polygon points="297.8,213.5 298.6,207.8 291.2,221.4" fill="rgb(190,101,11)" stroke="rgb(190,101,11)" stroke-width="0.5"/>
@@ -4101,7 +4101,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="106.0,217.4 106.0,211.1 97.4,210.0" fill="rgb(84,44,4)" stroke="rgb(84,44,4)" stroke-width="0.5"/>
 <polygon points="194.8,75.5 199.6,72.9 194.8,75.5" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="246.2,257.0 245.1,261.5 259.0,252.1" fill="rgb(152,82,9)" stroke="rgb(152,82,9)" stroke-width="0.5"/>
-<line x1="251.5" y1="265.2" x2="252.2" y2="254.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="194.8,75.5 189.9,72.9 194.8,75.5" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <polygon points="164.4,78.9 157.1,80.8 164.6,80.8" fill="rgb(238,130,16)" stroke="rgb(238,130,16)" stroke-width="0.5"/>
 <polygon points="202.4,75.2 209.9,75.4 202.2,74.8" fill="rgb(255,161,21)" stroke="rgb(255,161,21)" stroke-width="0.5"/>
@@ -4160,6 +4159,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="187.1,75.7 179.4,76.4 187.1,76.2" fill="rgb(255,150,19)" stroke="rgb(255,150,19)" stroke-width="0.5"/>
 <polygon points="98.8,190.9 100.1,184.2 92.2,183.3" fill="rgb(98,51,5)" stroke="rgb(98,51,5)" stroke-width="0.5"/>
 <polygon points="259.0,252.1 260.1,247.1 246.2,257.0" fill="rgb(164,89,11)" stroke="rgb(164,89,11)" stroke-width="0.5"/>
+<line x1="251.5" y1="265.2" x2="252.2" y2="254.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="289.3,156.9 292.0,163.5 293.7,150.0" fill="rgb(255,165,21)" stroke="rgb(255,165,21)" stroke-width="0.5"/>
 <polygon points="210.1,76.3 202.4,75.7 210.0,77.3" fill="rgb(255,165,22)" stroke="rgb(255,165,22)" stroke-width="0.5"/>
 <polygon points="158.3,265.4 159.3,269.4 172.7,267.9" fill="rgb(89,46,5)" stroke="rgb(89,46,5)" stroke-width="0.5"/>
@@ -4348,7 +4348,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="157.5,260.9 158.3,265.4 172.2,263.5" fill="rgb(93,49,5)" stroke="rgb(93,49,5)" stroke-width="0.5"/>
 <polygon points="129.0,241.8 128.4,236.1 117.2,235.9" fill="rgb(83,44,5)" stroke="rgb(83,44,5)" stroke-width="0.5"/>
 <polygon points="111.5,125.8 107.0,131.7 115.5,131.3" fill="rgb(153,83,10)" stroke="rgb(153,83,10)" stroke-width="0.5"/>
-<line x1="101.3" y1="124.4" x2="113.2" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="207.3,80.7 201.0,77.9 206.1,81.5" fill="rgb(255,172,23)" stroke="rgb(255,172,23)" stroke-width="0.5"/>
 <polygon points="106.4,204.6 107.2,197.9 97.9,197.4" fill="rgb(95,50,5)" stroke="rgb(95,50,5)" stroke-width="0.5"/>
 <polygon points="223.3,84.4 230.3,87.6 224.4,82.6" fill="rgb(255,186,25)" stroke="rgb(255,186,25)" stroke-width="0.5"/>
@@ -4449,6 +4448,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="127.3,109.3 121.7,114.6 130.6,113.7" fill="rgb(196,108,14)" stroke="rgb(196,108,14)" stroke-width="0.5"/>
 <polygon points="177.8,85.1 183.5,81.5 176.0,84.0" fill="rgb(255,160,22)" stroke="rgb(255,160,22)" stroke-width="0.5"/>
 <polygon points="115.5,131.3 120.2,125.2 111.5,125.8" fill="rgb(169,92,12)" stroke="rgb(169,92,12)" stroke-width="0.5"/>
+<line x1="101.3" y1="124.4" x2="113.2" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="221.8,86.1 215.1,82.8 219.8,87.7" fill="rgb(255,188,26)" stroke="rgb(255,188,26)" stroke-width="0.5"/>
 <polygon points="197.7,83.7 196.2,79.4 195.8,83.9" fill="rgb(255,173,24)" stroke="rgb(255,173,24)" stroke-width="0.5"/>
 <polygon points="213.5,84.0 219.8,87.7 215.1,82.8" fill="rgb(255,188,26)" stroke="rgb(255,188,26)" stroke-width="0.5"/>
@@ -4968,7 +4968,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="257.6,153.1 254.3,145.8 248.1,157.2" fill="rgb(255,228,35)" stroke="rgb(255,228,35)" stroke-width="0.5"/>
 <polygon points="253.1,172.5 255.2,180.2 263.5,167.9" fill="rgb(255,209,32)" stroke="rgb(255,209,32)" stroke-width="0.5"/>
 <line x1="257.1" y1="172.8" x2="263.6" y2="164.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="256.3" y1="185.3" x2="257.1" y2="172.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="258.5,195.3 257.0,187.8 245.9,199.7" fill="rgb(255,193,29)" stroke="rgb(255,193,29)" stroke-width="0.5"/>
 <polygon points="135.5,145.9 132.1,153.2 144.6,149.8" fill="rgb(239,136,19)" stroke="rgb(239,136,19)" stroke-width="0.5"/>
 <polygon points="218.6,227.8 218.8,234.7 233.8,225.3" fill="rgb(244,139,20)" stroke="rgb(244,139,20)" stroke-width="0.5"/>
@@ -5008,6 +5007,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="141.7,157.4 144.6,149.8 132.1,153.2" fill="rgb(239,136,19)" stroke="rgb(239,136,19)" stroke-width="0.5"/>
 <polygon points="156.5,218.2 157.0,210.9 142.3,214.6" fill="rgb(181,102,14)" stroke="rgb(181,102,14)" stroke-width="0.5"/>
 <polygon points="257.0,187.8 255.2,180.2 244.6,192.1" fill="rgb(255,203,31)" stroke="rgb(255,203,31)" stroke-width="0.5"/>
+<line x1="256.3" y1="185.3" x2="257.1" y2="172.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="144.0,199.8 145.2,192.2 131.3,195.4" fill="rgb(189,106,15)" stroke="rgb(189,106,15)" stroke-width="0.5"/>
 <polygon points="214.0,118.0 216.2,125.0 221.1,116.5" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
 <polygon points="224.2,123.3 221.1,116.5 216.2,125.0" fill="rgb(255,230,36)" stroke="rgb(255,230,36)" stroke-width="0.5"/>
@@ -5200,7 +5200,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="215.6,181.5 216.4,189.6 228.9,179.5" fill="rgb(255,205,32)" stroke="rgb(255,205,32)" stroke-width="0.5"/>
 <polygon points="200.5,149.9 200.1,142.0 189.3,149.9" fill="rgb(255,216,34)" stroke="rgb(255,216,34)" stroke-width="0.5"/>
 <polygon points="212.8,157.1 213.8,165.2 224.2,155.4" fill="rgb(255,225,36)" stroke="rgb(255,225,36)" stroke-width="0.5"/>
-<line x1="215.4" y1="159.9" x2="229.1" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="178.2,149.1 177.1,157.2 189.3,149.9" fill="rgb(255,201,31)" stroke="rgb(255,201,31)" stroke-width="0.5"/>
 <polygon points="176.1,165.3 177.1,157.2 163.9,163.5" fill="rgb(255,182,28)" stroke="rgb(255,182,28)" stroke-width="0.5"/>
 <polygon points="173.5,189.7 172.9,197.7 187.8,190.8" fill="rgb(255,163,25)" stroke="rgb(255,163,25)" stroke-width="0.5"/>
@@ -5208,6 +5207,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, Mes
 <polygon points="187.6,198.8 187.8,190.8 172.9,197.7" fill="rgb(255,163,25)" stroke="rgb(255,163,25)" stroke-width="0.5"/>
 <polygon points="214.8,173.4 215.6,181.5 227.5,171.4" fill="rgb(255,213,34)" stroke="rgb(255,213,34)" stroke-width="0.5"/>
 <polygon points="213.8,165.2 214.8,173.4 225.9,163.4" fill="rgb(255,220,35)" stroke="rgb(255,220,35)" stroke-width="0.5"/>
+<line x1="215.4" y1="159.9" x2="229.1" y2="164.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="175.1,173.4 176.1,165.3 162.4,171.5" fill="rgb(255,174,27)" stroke="rgb(255,174,27)" stroke-width="0.5"/>
 <polygon points="200.5,149.9 200.9,158.0 211.6,149.1" fill="rgb(255,222,35)" stroke="rgb(255,222,35)" stroke-width="0.5"/>
 <polygon points="212.8,157.1 211.6,149.1 200.9,158.0" fill="rgb(255,222,35)" stroke="rgb(255,222,35)" stroke-width="0.5"/>

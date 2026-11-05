@@ -415,6 +415,69 @@ struct ArrowHead {
   position: f64,
   /// A custom head — the graphic drawn in place of the triangle.
   graphic: Option<Expr>,
+  /// `{g, rpos}` as the custom head: the shaft stops `rpos` head lengths
+  /// short of the head's point. 0 when not given.
+  shaft_stop: f64,
+}
+
+/// Wolfram's default arrowhead, tip at the origin pointing along +x, in
+/// head lengths: `(along, side)` with `side` to the right of the
+/// direction. Its concave back runs from one corner through the notch to
+/// the other; Wolfram's corners are not quite symmetric. Read off
+/// wolframscript's SVG of `Arrowheads[0.5]`.
+const ARROWHEAD_SHAPE: [(f64, f64); 13] = [
+  (-1.0, -0.26316),
+  (-0.98534, -0.23323),
+  (-0.95326, -0.16142),
+  (-0.93622, -0.11824),
+  (-0.92147, -0.07470),
+  (-0.91122, -0.03416),
+  (-0.90770, 0.0),
+  (-0.91122, 0.03091),
+  (-0.92147, 0.07091),
+  (-0.93622, 0.11592),
+  (-0.95326, 0.16186),
+  (-0.98534, 0.24031),
+  (-1.0, 0.27368),
+];
+
+/// How far back from the tip (in head lengths) the default head's notch
+/// sits — where Wolfram stops the shaft.
+const ARROWHEAD_NOTCH: f64 = 0.90770;
+
+/// Shorten a screen polyline by `start` pixels at its first end and `end`
+/// pixels at its last, measured along the path.
+fn trim_screen_path(
+  pts: &[(f64, f64)],
+  start: f64,
+  end: f64,
+) -> Vec<(f64, f64)> {
+  fn cut_front(pts: &[(f64, f64)], mut d: f64) -> Vec<(f64, f64)> {
+    for i in 0..pts.len().saturating_sub(1) {
+      let (a, b) = (pts[i], pts[i + 1]);
+      let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+      if d < len {
+        let f = d / len;
+        let mut out = vec![(a.0 + f * (b.0 - a.0), a.1 + f * (b.1 - a.1))];
+        out.extend_from_slice(&pts[i + 1..]);
+        return out;
+      }
+      d -= len;
+    }
+    Vec::new()
+  }
+  let front = if start > 0.0 {
+    cut_front(pts, start)
+  } else {
+    pts.to_vec()
+  };
+  if end <= 0.0 {
+    return front;
+  }
+  let mut rev: Vec<(f64, f64)> = front.into_iter().rev().collect();
+  rev = cut_front(&rev, end);
+  rev.reverse();
+  rev
 }
 
 #[derive(Debug, Clone)]
@@ -630,20 +693,32 @@ fn arrowhead_size(expr: &Expr) -> Option<(f64, bool)> {
 /// `{size, pos, graphic}`. `default_position` applies to a bare size.
 fn parse_arrowhead(spec: &Expr, default_position: f64) -> Option<ArrowHead> {
   match spec {
-    Expr::List(items) if !items.is_empty() => Some(ArrowHead {
-      size: arrowhead_size(&items[0])?.0,
-      absolute: arrowhead_size(&items[0])?.1,
-      position: items
-        .get(1)
-        .and_then(expr_to_f64)
-        .unwrap_or(default_position),
-      graphic: items.get(2).cloned(),
-    }),
+    Expr::List(items) if !items.is_empty() => {
+      // The head graphic is `g` or `{g, rpos}`.
+      let (graphic, shaft_stop) = match items.get(2) {
+        Some(Expr::List(gr)) if gr.len() == 2 => match expr_to_f64(&gr[1]) {
+          Some(r) => (Some(gr[0].clone()), r),
+          None => (items.get(2).cloned(), 0.0),
+        },
+        other => (other.cloned(), 0.0),
+      };
+      Some(ArrowHead {
+        size: arrowhead_size(&items[0])?.0,
+        absolute: arrowhead_size(&items[0])?.1,
+        position: items
+          .get(1)
+          .and_then(expr_to_f64)
+          .unwrap_or(default_position),
+        graphic,
+        shaft_stop,
+      })
+    }
     other => Some(ArrowHead {
       size: arrowhead_size(other)?.0,
       absolute: arrowhead_size(other)?.1,
       position: default_position,
       graphic: None,
+      shaft_stop: 0.0,
     }),
   }
 }
@@ -2855,20 +2930,44 @@ fn fill_curve_prims(prims: &mut Vec<Primitive>, start: usize, joined: bool) {
 /// segment of a component consumes `n` coordinates including its start
 /// point; each later segment starts at the previous end point and consumes
 /// `n` new coordinates. Lines and lower-degree curves are elevated to
-/// cubics.
+/// cubics. `coords` is a single shared point list or one list per
+/// component.
 fn filled_curve_segment_paths(
   segments: &Expr,
   coords: &Expr,
 ) -> Option<Vec<Vec<(f64, f64)>>> {
-  let coords = expr_to_point_list(coords)?;
   let Expr::List(components) = segments else {
     return None;
   };
+  // The coordinates are one shared list, or — as Wolfram's own arrowhead
+  // shapes give them — one list per component.
+  let per_component: Option<Vec<Vec<(f64, f64)>>> = match coords {
+    Expr::List(lists)
+      if lists.len() == components.len()
+        && lists.iter().all(|l| {
+          matches!(l, Expr::List(pts) if pts.iter().all(|p| matches!(p, Expr::List(_))))
+        }) =>
+    {
+      lists.iter().map(expr_to_point_list).collect()
+    }
+    _ => None,
+  };
+  let shared = match per_component {
+    Some(_) => Vec::new(),
+    None => expr_to_point_list(coords)?,
+  };
   let mut next = 0usize;
   let mut paths = Vec::new();
-  for component in components {
+  for (ci, component) in components.iter().enumerate() {
     let Expr::List(specs) = component else {
       return None;
+    };
+    let coords: &[(f64, f64)] = match &per_component {
+      Some(lists) => {
+        next = 0;
+        &lists[ci]
+      }
+      None => &shared,
     };
     let mut chain: Vec<(f64, f64)> = Vec::new();
     for spec in specs {
@@ -5109,6 +5208,25 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         let (c, sn) = (angle.cos() * s, angle.sin() * s);
         [[c, -sn], [sn, c]]
       });
+      // A `Graphics[…]` head draws its primitives.
+      let graphic = match graphic {
+        Expr::FunctionCall { name, args }
+          if name == "Graphics" && !args.is_empty() =>
+        {
+          &args[0]
+        }
+        Expr::Graphics {
+          structure: Some(s), ..
+        } => match s.as_ref() {
+          Expr::FunctionCall { name, args }
+            if name == "Graphics" && !args.is_empty() =>
+          {
+            &args[0]
+          }
+          _ => graphic,
+        },
+        _ => graphic,
+      };
       let mut inner_style = style.clone();
       inner_style.arrowheads = None;
       let mut inner = Vec::new();
@@ -11769,136 +11887,163 @@ fn render_primitive(
       let cap = stroke_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
 
-      // Draw the line
-      let pts: Vec<String> = trimmed
+      // The path in screen pixels, with its cumulative arc length, so a
+      // head's position along the arrow resolves to a point and a
+      // direction there.
+      let screen: Vec<(f64, f64)> = trimmed
         .iter()
-        .map(|&(x, y)| {
-          format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
-        })
+        .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
         .collect();
-      out.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
-        pts.join(" "),
-        color.to_svg_rgb(),
-        color.opacity_attr(),
-        dash,
-      ));
+      let seg_len: Vec<f64> = screen
+        .windows(2)
+        .map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt())
+        .collect();
+      let total_len_px: f64 = seg_len.iter().sum();
+
+      // The shape's bounding box, so a self-loop gets a head in
+      // proportion to the size it is drawn at rather than its arc length.
+      let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+      let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+      for &(x, y) in &screen {
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+      }
+      let bbox_diag =
+        ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
+
+      // Wolfram's `Arrowheads[Automatic]` is a head 4 % of the plot's
+      // width long, the same measure an explicit size gives — every
+      // arrow in a picture carries the same head, however short it is
+      // and however thick its shaft. Measured from wolframscript against
+      // `Arrowheads[0.1]` in frames of two different aspects.
+      //
+      // Two caps remain, for shapes a fixed head would swallow: 45 % of
+      // the path length, and 40 % of the shape's bounding-box diagonal
+      // (which keeps a self-loop's head in proportion to its visible
+      // size rather than its arc length).
+      let default_head = (svg_w * 0.04)
+        .min(total_len_px * 0.45)
+        .min(bbox_diag * 0.4)
+        .max(1.0);
+
+      // Where a head at fraction `t` sits, and the unit direction of the
+      // path there (pointing towards the tip).
+      let at = |t: f64| -> Option<((f64, f64), (f64, f64))> {
+        if total_len_px <= 0.0 {
+          return None;
+        }
+        let mut want = t.clamp(0.0, 1.0) * total_len_px;
+        for (i, &len) in seg_len.iter().enumerate() {
+          if (want <= len || i + 1 == seg_len.len()) && len > 0.0 {
+            let f = (want / len).clamp(0.0, 1.0);
+            let (ax, ay) = screen[i];
+            let (bx, by) = screen[i + 1];
+            return Some((
+              (ax + f * (bx - ax), ay + f * (by - ay)),
+              ((bx - ax) / len, (by - ay) / len),
+            ));
+          }
+          want -= len;
+        }
+        None
+      };
+
+      // The size of a head in pixels. A size is a fraction of the plot
+      // width, as Wolfram's is — uncapped, because the whole point of
+      // naming it is to fix the head's size. A vector field draws
+      // hundreds of arrows barely longer than their heads, and Wolfram
+      // lets the head take up nearly all of each one.
+      let head_px = |h: &ArrowHead| {
+        if h.absolute {
+          h.size.abs()
+        } else {
+          h.size.abs() * svg_w
+        }
+      };
+
+      // (position, head length in px, direction sign) for each head.
+      let heads: Vec<(f64, f64, f64)> = match &style.arrowheads {
+        None => vec![(1.0, default_head, 1.0)],
+        Some(specs) => specs
+          .iter()
+          // `Arrowheads[0]` draws no head at all (how Wolfram draws an
+          // undirected graph edge as an `Arrow`).
+          .filter(|h| h.graphic.is_none() && h.size != 0.0)
+          .map(|h| (h.position, head_px(h).max(1.0), h.size.signum()))
+          .collect(),
+      };
+
+      // Wolfram stops the shaft where it meets a head at either end of the
+      // arrow — at the notch of its own head, and at the point a custom
+      // head names (`{size, pos, {g, rpos}}`) — so a translucent arrow is
+      // not darker where the two would overlap.
+      let mut cut_start = 0.0f64;
+      let mut cut_end = 0.0f64;
+      for &(t, head_len, dir) in &heads {
+        if t >= 1.0 && dir > 0.0 {
+          cut_end = cut_end.max(head_len * ARROWHEAD_NOTCH);
+        } else if t <= 0.0 && dir < 0.0 {
+          cut_start = cut_start.max(head_len * ARROWHEAD_NOTCH);
+        }
+      }
+      for h in style.arrowheads.iter().flatten() {
+        if h.graphic.is_some() && h.shaft_stop > 0.0 {
+          let cut = head_px(h) * h.shaft_stop;
+          if h.position >= 1.0 && h.size > 0.0 {
+            cut_end = cut_end.max(cut);
+          } else if h.position <= 0.0 && h.size < 0.0 {
+            cut_start = cut_start.max(cut);
+          }
+        }
+      }
+      let shaft = if cut_start + cut_end > 0.0 {
+        trim_screen_path(&screen, cut_start, cut_end)
+      } else {
+        screen.clone()
+      };
+
+      // Draw the line
+      if shaft.len() >= 2 {
+        let pts: Vec<String> = shaft
+          .iter()
+          .map(|&(x, y)| format!("{x:.2},{y:.2}"))
+          .collect();
+        out.push_str(&format!(
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
+          pts.join(" "),
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+          dash,
+        ));
+      }
 
       // Draw the arrowheads. Without an `Arrowheads` directive there is
       // one at the tip, sized to the arrow; with one, there is a head at
       // every position it names — except the ones carrying their own
       // graphic, which `parse_arrow` already placed.
-      if trimmed.len() >= 2 {
-        // The path in screen pixels, with its cumulative arc length, so a
-        // head's position along the arrow resolves to a point and a
-        // direction there.
-        let screen: Vec<(f64, f64)> = trimmed
-          .iter()
-          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
-          .collect();
-        let seg_len: Vec<f64> = screen
-          .windows(2)
-          .map(|w| {
-            ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()
+      for (t, head_len, dir) in heads {
+        let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
+          continue;
+        };
+        let (ux, uy) = (ux * dir, uy * dir);
+        // `(px, py)` is the screen normal to the right of the direction.
+        let (px, py) = (-uy, ux);
+        let pts: Vec<String> = std::iter::once((0.0, 0.0))
+          .chain(ARROWHEAD_SHAPE.iter().copied())
+          .map(|(along, side)| {
+            let x = tip_x + (ux * along + px * side) * head_len;
+            let y = tip_y + (uy * along + py * side) * head_len;
+            format!("{x:.2},{y:.2}")
           })
           .collect();
-        let total_len_px: f64 = seg_len.iter().sum();
-
-        // The shape's bounding box, so a self-loop gets a head in
-        // proportion to the size it is drawn at rather than its arc length.
-        let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
-        let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
-        for &(x, y) in &screen {
-          min_x = min_x.min(x);
-          max_x = max_x.max(x);
-          min_y = min_y.min(y);
-          max_y = max_y.max(y);
-        }
-        let bbox_diag =
-          ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
-
-        // Wolfram's `Arrowheads[Automatic]` is a head 4 % of the plot's
-        // width long, the same measure an explicit size gives — every
-        // arrow in a picture carries the same head, however short it is
-        // and however thick its shaft. Measured from wolframscript against
-        // `Arrowheads[0.1]` in frames of two different aspects.
-        //
-        // Two caps remain, for shapes a fixed head would swallow: 45 % of
-        // the path length, and 40 % of the shape's bounding-box diagonal
-        // (which keeps a self-loop's head in proportion to its visible
-        // size rather than its arc length).
-        let default_head = (svg_w * 0.04)
-          .min(total_len_px * 0.45)
-          .min(bbox_diag * 0.4)
-          .max(1.0);
-
-        // Where a head at fraction `t` sits, and the unit direction of the
-        // path there (pointing towards the tip).
-        let at = |t: f64| -> Option<((f64, f64), (f64, f64))> {
-          if total_len_px <= 0.0 {
-            return None;
-          }
-          let mut want = t.clamp(0.0, 1.0) * total_len_px;
-          for (i, &len) in seg_len.iter().enumerate() {
-            if (want <= len || i + 1 == seg_len.len()) && len > 0.0 {
-              let f = (want / len).clamp(0.0, 1.0);
-              let (ax, ay) = screen[i];
-              let (bx, by) = screen[i + 1];
-              return Some((
-                (ax + f * (bx - ax), ay + f * (by - ay)),
-                ((bx - ax) / len, (by - ay) / len),
-              ));
-            }
-            want -= len;
-          }
-          None
-        };
-
-        // (position, head length in px, direction sign) for each head.
-        let heads: Vec<(f64, f64, f64)> = match &style.arrowheads {
-          None => vec![(1.0, default_head, 1.0)],
-          Some(specs) => specs
-            .iter()
-            // `Arrowheads[0]` draws no head at all (how Wolfram draws an
-            // undirected graph edge as an `Arrow`).
-            .filter(|h| h.graphic.is_none() && h.size != 0.0)
-            .map(|h| {
-              // A size is a fraction of the plot width, as Wolfram's is —
-              // uncapped, because the whole point of naming it is to fix
-              // the head's size. A vector field draws hundreds of arrows
-              // barely longer than their heads, and Wolfram lets the head
-              // take up nearly all of each one.
-              let px = if h.absolute {
-                h.size.abs()
-              } else {
-                h.size.abs() * svg_w
-              };
-              (h.position, px.max(1.0), h.size.signum())
-            })
-            .collect(),
-        };
-
-        for (t, head_len, dir) in heads {
-          let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
-            continue;
-          };
-          let (ux, uy) = (ux * dir, uy * dir);
-          // Wolfram's head is a good deal narrower than it is long: its
-          // corners sit 0.28 of the length either side of the shaft
-          // (measured across sizes and frames from wolframscript).
-          let head_half_w = head_len * 0.28;
-          // Perpendicular
-          let (px, py) = (-uy, ux);
-          let base_l_x = tip_x - ux * head_len + px * head_half_w;
-          let base_l_y = tip_y - uy * head_len + py * head_half_w;
-          let base_r_x = tip_x - ux * head_len - px * head_half_w;
-          let base_r_y = tip_y - uy * head_len - py * head_half_w;
-          out.push_str(&format!(
-            "<polygon points=\"{tip_x:.2},{tip_y:.2} {base_l_x:.2},{base_l_y:.2} {base_r_x:.2},{base_r_y:.2}\" fill=\"{}\"{}/>\n",
-            color.to_svg_rgb(),
-            color.opacity_attr(),
-          ));
-        }
+        out.push_str(&format!(
+          "<polygon points=\"{}\" fill=\"{}\"{}/>\n",
+          pts.join(" "),
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+        ));
       }
     }
     Primitive::TextPrim {
@@ -12242,8 +12387,9 @@ fn render_primitive(
         return;
       }
 
+      let cap = stroke_linecap_attr(style.cap_form);
       out.push_str(&format!(
-        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
+        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"{cap}\"{}{}/>\n",
         d,
         color.to_svg_rgb(),
         color.opacity_attr(),

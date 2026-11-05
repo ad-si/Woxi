@@ -1726,7 +1726,7 @@ Underlined,"Underlined display wrapper (stays symbolic)",✅,unevaluated,6.0,170
 Constant,"Attribute indicating zero derivative with respect to all parameters",✅,pure,1.0,1704
 Overscript,"Overscript notation wrapper (stays symbolic)",✅,unevaluated,3.0,1704
 UpValues,"Returns the up values of a symbol",✅,pure,2.0,1704
-CommunityGraphPlot,"Community graph plot",,unevaluated,9.0,1707
+CommunityGraphPlot,"Community graph plot",✅,pure,9.0,1707
 Multinomial,"Returns the multinomial coefficient",✅,pure,1.0,1707
 Primes,"Domain of prime numbers used with Element and related predicates",✅,none,4.0,1707
 RandomPrime,"Random prime number",✅,contextual,6.0,1709
@@ -2190,7 +2190,7 @@ EdgeDelete,"Delete one or more edges from a graph while keeping all vertices",�
 ImageValuePositions,"Returns positions of pixels with a specified value in an image",🚫,None,9.0,2172
 ImageHistogram,"Plots the histogram of pixel values in an image",✅,pure,7.0,2174
 PasteButton,"Represents a button that pastes content when clicked",🚫,None,6.0,2174
-FindGraphCommunities,"Finds community structure in a graph",🚫,None,9.0,2179
+FindGraphCommunities,"Finds community structure in a graph",✅,pure,9.0,2179
 ImageSizeMultipliers,"Option for scaling image display size",🚫,None,6.0,2179
 IntervalIntersection,"Computes the intersection of intervals",✅,pure,3.0,2179
 NotebookLocate,"Locates and selects a cell or object in an open notebook",🚫,None,3.0,2179

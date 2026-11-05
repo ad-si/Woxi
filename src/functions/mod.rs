@@ -29,6 +29,7 @@ pub mod city_data;
 pub mod code_parser;
 pub mod color_blend;
 pub mod combinatorica_graph;
+pub mod community_graph;
 pub mod compile_vm;
 pub mod computational_geometry;
 pub mod confirm_ast;

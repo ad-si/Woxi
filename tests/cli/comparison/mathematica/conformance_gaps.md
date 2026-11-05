@@ -5976,12 +5976,18 @@ internal hash order. Woxi keeps input order.
   Fruchterman–Reingold layout turned so the long axis is horizontal. WL's
   result (e.g. the cube projection of `HypercubeGraph[3]`) is not
   reproduced; small non-tree graphs get the circular layout instead.
-- **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): Woxi
-  walks the graph depth-first from the first vertex, taking the most
-  recently listed edge first. That matches WL for cycles, trees and most
-  small graphs, but not all (`Graph[{1 <-> 2, 1 <-> 5, 2 <-> 4, 3 <-> 6,
-  4 <-> 7, 5 <-> 8, 6 <-> 8, 7 <-> 1, 8 <-> 2}]` swaps 2 and 5), and for
-  graphs with directed edges the rotation can differ by some steps.
+- **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
+  order does not depend on the order the edges are listed in. Woxi walks
+  the graph depth-first from the first vertex, trying the highest-numbered
+  neighbour first and following directed edges forwards only; in a tree
+  whose walk ends in exactly two dead ends the walk's first run is turned
+  round. Checked against 320 random small graphs: every tree, about half
+  the other undirected graphs and three quarters of the directed ones
+  match exactly. The rest are wolframscript's own heuristic, not decoded:
+  e.g. `Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1, 1 -> 3}]` is `{4, 3, 1, 2}`
+  round the circle in wolframscript (the walk's run turned round), `{1,
+  3, 4, 2}` in Woxi, and the mixed `Graph[{1 -> 2, 2 <-> 3, 3 -> 4, 4 <->
+  1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
   image, and WL draws long edges as splines through the layers.
@@ -5990,11 +5996,28 @@ internal hash order. Woxi keeps input order.
 - **`"SpiralEmbedding"` scale**: the spiral is WL's (Rakhmanov–Saff–Zhou),
   the sphere radius only approximates WL's (`0.42 Sqrt[n]`).
 - **`Tree[…]` layout** uses a tidy tree; WL spreads leaves differently.
-- **Automatic vertex-label placement**: WL moves a `"Name"` label to a side
-  where it does not overlap edges; Woxi always places it above-right.
-- **`CommunityGraphPlot`** is not implemented.
-- **`EdgeShapeFunction` named arrow shapes** other than `"Line"`,
-  `"Arrow"` and `"CurvedArc"` (e.g. `"UnfilledArrow"`) draw the default.
+- **Automatic vertex-label placement**: with an explicit
+  `GraphLayout -> "CircularEmbedding"` a `"Name"` label sits outside the
+  circle on its vertex's spoke, as in WL; otherwise it is above-right,
+  which is what WL does for its default layouts too.
+- **Graph arrowheads**: `Arrowheads[Medium]` (12 pt), or 2.5 vertex radii
+  for a graph of more than 20 vertices or with small vertices. The
+  switch-over is read off a handful of graphs (cycles of 20 and 21
+  vertices, a path of 11); it is not exactly WL's rule.
+- **`CommunityGraphPlot`** draws WL's look (grey closed-spline rings round
+  each community, WL's community colours) but its own layout: each
+  community is laid out as its own graph and the communities as the
+  vertices of the graph of communities, turned so linked vertices face
+  each other. WL bends the chain of three triangles of the comparison test
+  into a V where Woxi draws a straight row.
+- **`FindGraphCommunities`** maximizes modularity the Louvain way; it gets
+  stuck in a worse local optimum than WL on some graphs (the Petersen
+  graph: five pairs where WL finds two communities of five).
+- **`EdgeShapeFunction` named arrow shapes**: `"Arrow"`, `"FilledArrow"`,
+  `"UnfilledArrow"`, `"ShortFilledArrow"`, `"ShortUnfilledArrow"` draw
+  WL's head graphics; `"CurvedArc"` is WL's quadratic Bézier. A curved
+  edge is cut where it leaves the vertex along the line to its control
+  point; WL cuts it where the curve crosses the vertex's disk.
 
 
 ## Knot data
@@ -8688,11 +8711,14 @@ differs:
   by depth), and axis lines are drawn over the scene rather than hidden
   behind it.
 - StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
-  box and tops it up with points of its own choosing (the two extra lines
-  of `StreamPoints -> 10` start near `(±0.27, ±0.27, ±0.26)`); Woxi tops
-  up from the twice-as-fine lattice, farthest point first. Lines stop at
-  the box only; WL's colour scaling over the lines is approximated by the
-  drawn lines' magnitude range.
+  box and tops it up from the twice-as-fine lattice, nearest the centre
+  first, whatever the field — as Woxi does. Among the points equally far
+  from the centre wolframscript's order is lattice order with the
+  all-negative point last (`StreamPoints -> 10` adds `(-,-,+)` and
+  `(-,+,-)` of the inner 2×2×2 cube); Woxi keeps plain lattice order, so
+  it adds `(-,-,-)` and `(-,-,+)`. Lines stop at the box only; WL's colour
+  scaling over the lines is approximated by the drawn lines' magnitude
+  range.
 - VectorPlot3D: wolframscript places its arrows on a jittered layout (221
   of them by default, 64 for `VectorPoints -> 4`); Woxi uses the cell
   centres of an n³ grid (n = 6 by default). Heads are hexagonal.
@@ -8703,10 +8729,17 @@ differs:
 - ListPlot3D `InterpolationOrder -> 0` (flat tiles with gaps between
   them, and WL's automatic outlier clipping of the z range) is not
   implemented: Woxi draws the interpolated surface.
-- SphericalPlot3D and RevolutionPlot3D draw no default mesh, and
-  RegionPlot3D neither its default mesh nor the black curves where a
-  surface meets the box; RegionPlot3D, RevolutionPlot3D and SphericalPlot3D
-  surfaces are still shaded flat.
+- SphericalPlot3D and RevolutionPlot3D draw the default mesh (15 lines of
+  each parameter, snapped to their sampling grid, and the surface's edges);
+  SphericalPlot3D draws the edges as separate lines where wolframscript
+  joins them into one. RegionPlot3D draws neither its default mesh nor the
+  black curves where a surface meets the box; RegionPlot3D,
+  RevolutionPlot3D and SphericalPlot3D surfaces are still shaded flat.
+  RevolutionPlot3D flattens the box of a plain profile `z = f(t)` to
+  `BoxRatios -> {2, 2, 1/GoldenRatio}` as wolframscript does, but keeps the
+  x/y ratio 1 for a partial sweep (wolframscript: `{2, 1, …}` for
+  `θ ∈ [0, π]`) and a fixed z ratio for `{r, z}` profiles (wolframscript:
+  `Automatic`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D

@@ -991,11 +991,12 @@ mod graph_embedding {
 
   #[test]
   fn with_method_argument() {
-    // With explicit "CircularEmbedding" method, same result
+    // The method replaces the graph's own layout: "CircularEmbedding"
+    // orders the triangle 1, 3, 2 round the circle, as wolframscript does.
     assert_eq!(
       interpret("GraphEmbedding[CompleteGraph[3], \"CircularEmbedding\"]")
         .unwrap(),
-      "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
+      "{{-0.8660254037844388, -0.5}, {0., 1.}, {0.8660254037844384, -0.5}}"
     );
   }
 
@@ -2205,111 +2206,49 @@ mod two_way_rule {
   }
 
   #[test]
-  fn short_arrow_edges_get_proportionally_smaller_arrowheads() {
-    // Regression: multi-component cluster graphs pack many short edges
-    // into small cells. The arrowhead must scale down with the edge so
-    // it doesn't swallow the whole line. For each directed edge we
-    // verify that the arrowhead's triangle is no larger than ~half the
-    // edge's polyline length in pixel space.
+  fn many_vertex_graph_heads_are_two_and_a_half_vertex_radii() {
+    // A graph of more than 20 vertices draws every arrowhead the same
+    // size, 2.5 vertex radii long (`Arrowheads[2.5 r / width]`), as
+    // wolframscript does — not `Arrowheads[Medium]`, which would swallow
+    // the short edges of a dense cluster.
     let svg = interpret(
       "ExportString[Graph[Table[i -> Mod[i^2, 74], {i, 100}]], \"SVG\"]",
     )
     .unwrap();
-
-    // Extract (polyline points, polygon points) pairs — in graph
-    // rendering each directed edge produces one polyline followed
-    // immediately by one arrowhead polygon.
-    let polyline_re = "<polyline points=\"";
-    let polygon_re = "<polygon points=\"";
-
-    let mut idx = 0;
-    let mut pairs_checked = 0;
-    while let Some(p_off) = svg[idx..].find(polyline_re) {
-      let p_start = idx + p_off + polyline_re.len();
-      let p_end = svg[p_start..].find('"').map(|e| p_start + e).unwrap();
-      let polyline_pts_str = &svg[p_start..p_end];
-
-      // Find the next polygon after this polyline.
-      let after = p_end;
-      let Some(g_off) = svg[after..].find(polygon_re) else {
-        break;
-      };
-      let g_start = after + g_off + polygon_re.len();
-      let g_end = svg[g_start..].find('"').map(|e| g_start + e).unwrap();
-      let polygon_pts_str = &svg[g_start..g_end];
-
-      idx = g_end;
-
-      // Parse points like "x,y x,y ..." into Vec<(f64,f64)>.
-      let parse = |s: &str| -> Vec<(f64, f64)> {
-        s.split_whitespace()
-          .filter_map(|tok| {
-            let (a, b) = tok.split_once(',')?;
-            Some((a.parse().ok()?, b.parse().ok()?))
-          })
-          .collect()
-      };
-      let pl = parse(polyline_pts_str);
-      let pg = parse(polygon_pts_str);
-      if pl.len() < 2 || pg.len() != 3 {
-        continue;
-      }
-
-      // Polyline length in pixels, and bounding-box diagonal.
-      let mut line_len = 0.0_f64;
-      let (mut minx, mut maxx) = (f64::INFINITY, f64::NEG_INFINITY);
-      let (mut miny, mut maxy) = (f64::INFINITY, f64::NEG_INFINITY);
-      for &(x, y) in &pl {
-        if x < minx {
-          minx = x;
-        }
-        if x > maxx {
-          maxx = x;
-        }
-        if y < miny {
-          miny = y;
-        }
-        if y > maxy {
-          maxy = y;
-        }
-      }
-      for w in pl.windows(2) {
-        line_len +=
-          ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
-      }
-      let bbox_diag = ((maxx - minx).powi(2) + (maxy - miny).powi(2)).sqrt();
-
-      // Arrowhead length = distance from tip to midpoint of the base.
-      // The tip is vertex 0 of the polygon (emitted first in graphics.rs).
-      let tip = pg[0];
-      let base_mid = (
-        f64::midpoint(pg[1].0, pg[2].0),
-        f64::midpoint(pg[1].1, pg[2].1),
-      );
-      let head_len =
-        ((tip.0 - base_mid.0).powi(2) + (tip.1 - base_mid.1).powi(2)).sqrt();
-
-      // Skip pathologically collapsed edges (e.g. FR layouts sometimes
-      // put two nodes on top of each other, producing a line of length
-      // < 1 px). The arrow is invisible anyway.
-      if line_len < 2.0 {
-        continue;
-      }
-
-      // Head must be small compared to both the path length and the
-      // shape's bbox diagonal (the latter catches tight self-loops).
-      let shape_size = line_len.min(bbox_diag).max(1.0);
-      assert!(
-        head_len <= shape_size * 0.6 + 0.5,
-        "arrowhead too large: head_len={head_len:.2} shape_size={shape_size:.2}"
-      );
-      pairs_checked += 1;
-    }
+    let parse = |s: &str| -> Vec<(f64, f64)> {
+      s.split_whitespace()
+        .filter_map(|tok| {
+          let (a, b) = tok.split_once(',')?;
+          Some((a.parse().ok()?, b.parse().ok()?))
+        })
+        .collect()
+    };
+    let heads: Vec<f64> = svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|rest| parse(&rest[..rest.find('"').unwrap()]))
+      .filter(|pg| pg.len() > 3)
+      .map(|pg| {
+        let (tip, a, b) = (pg[0], pg[1], pg[pg.len() - 1]);
+        let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
+        ((tip.0 - mid.0).powi(2) + (tip.1 - mid.1).powi(2)).sqrt()
+      })
+      .collect();
+    assert!(heads.len() >= 90, "one head per edge: {}", heads.len());
+    let first = heads[0];
     assert!(
-      // (Edges shorter than 2 px, which the setback at both vertex
-      // boundaries leaves for the tightest clusters, are skipped.)
-      pairs_checked >= 40,
-      "expected to find many arrow edges, got {pairs_checked}"
+      heads.iter().all(|h| (h - first).abs() < 0.05),
+      "every head is the same size: {heads:?}"
+    );
+    let rx: f64 = {
+      let at = svg.find("<ellipse").unwrap();
+      let rest = &svg[at..];
+      let r = &rest[rest.find("rx=\"").unwrap() + 4..];
+      r[..r.find('"').unwrap()].parse().unwrap()
+    };
+    assert!(
+      first > 2.4 * rx && first < 3.0 * rx,
+      "the head is about 2.5 vertex radii: {first} vs radius {rx}"
     );
   }
 
@@ -9591,5 +9530,334 @@ mod tree_pictures {
   fn tree_form_boxes_are_light_yellow() {
     let out = interpret("ExportString[TreeForm[f[a, b]], \"SVG\"]").unwrap();
     assert_eq!(out.matches("fill=\"rgb(255,255,222)\"").count(), 3, "{out}");
+  }
+}
+
+mod circular_embedding_order {
+  use super::*;
+
+  /// The slot (1 = first after the top, counterclockwise) each vertex
+  /// takes round the circle, as the vertex list in slot order.
+  fn order(graph: &str) -> String {
+    interpret(&format!(
+      "g = {graph}; c = GraphEmbedding[g]; n = VertexCount[g]; \
+       s = Mod[Round[(ArcTan @@@ c - Pi/2)/(2 Pi/n)], n] /. 0 -> n; \
+       VertexList[g][[Ordering[s]]]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn cycles_run_from_the_latest_neighbour() {
+    // Values from wolframscript.
+    assert_eq!(
+      order(
+        "Graph[Range[5], {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 5, 5 <-> 1}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 5, 4, 3, 2}"
+    );
+    assert_eq!(
+      order(
+        "Graph[Range[5], {1 <-> 3, 3 <-> 5, 5 <-> 2, 2 <-> 4, 4 <-> 1}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 4, 2, 5, 3}"
+    );
+  }
+
+  #[test]
+  fn the_walk_prefers_the_highest_numbered_neighbour() {
+    // Not the most recently listed edge: the walk from 1 tries 4 before 3
+    // and 2, and from 4 tries 3 before 2.
+    assert_eq!(
+      order(
+        "Graph[Range[4], {1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 1, 1 <-> 3}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 4, 3, 2}"
+    );
+  }
+
+  #[test]
+  fn directed_edges_are_followed_forwards() {
+    assert_eq!(
+      order(
+        "Graph[Range[4], {1 -> 2, 1 -> 3, 3 -> 2, 3 -> 4}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 3, 4, 2}"
+    );
+    assert_eq!(
+      order(
+        "Graph[Range[5], {2 -> 1, 3 -> 2, 4 -> 3, 5 -> 4, 1 -> 5}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 5, 4, 3, 2}"
+    );
+  }
+
+  #[test]
+  fn a_two_ended_tree_is_laid_out_end_to_end() {
+    // The walk's first run (1, 5, 6) is turned round, so the path
+    // 6 - 5 - 1 - 2 - 3 - 4 goes round the circle in order.
+    assert_eq!(
+      order(
+        "Graph[Range[6], {1 <-> 2, 2 <-> 3, 3 <-> 4, 1 <-> 5, 5 <-> 6}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{6, 5, 1, 2, 3, 4}"
+    );
+    assert_eq!(
+      order(
+        "Graph[Range[6], {1 <-> 6, 2 <-> 3, 2 <-> 4, 3 <-> 5, 3 <-> 6}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{5, 3, 6, 1, 2, 4}"
+    );
+    // A tree with three dead ends keeps the plain walk.
+    assert_eq!(
+      order(
+        "Graph[Range[5], {1 <-> 2, 1 <-> 3, 2 <-> 4, 2 <-> 5}, \
+         GraphLayout -> \"CircularEmbedding\"]"
+      ),
+      "{1, 3, 2, 5, 4}"
+    );
+  }
+
+  #[test]
+  fn graph_embedding_method_argument_sets_the_layout() {
+    // `GraphEmbedding[g, "CircularEmbedding"]` lays out the path
+    // 5 - 1 - 2 - 3 - 4 end to end, like the `GraphLayout` option does.
+    let out = interpret(
+      "c = GraphEmbedding[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 1 <-> 5}], \
+       \"CircularEmbedding\"]; \
+       Range[5][[Ordering[Mod[Round[(ArcTan @@@ c - Pi/2)/(2 Pi/5)], 5] \
+       /. 0 -> 5]]]",
+    )
+    .unwrap();
+    assert_eq!(out, "{5, 1, 2, 3, 4}");
+  }
+}
+
+mod graph_arrow_edges {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The `points` of every `<polyline>`/`<polygon>` element.
+  fn shapes(svg: &str, tag: &str) -> Vec<Vec<(f64, f64)>> {
+    svg
+      .split(&format!("<{tag} points=\""))
+      .skip(1)
+      .map(|rest| {
+        rest[..rest.find('"').unwrap()]
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn a_directed_edge_head_is_medium_and_the_shaft_stops_at_its_notch() {
+    // wolframscript: a 12 pt head, the shaft ending 10.9 pt before the
+    // tip, where the head's concave back meets it — so the translucent
+    // shaft does not darken the head.
+    let out = svg("Graph[{1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 0}}]");
+    let line = &shapes(&out, "polyline")[0];
+    let head = &shapes(&out, "polygon")[0];
+    let tip = head[0];
+    let back = head[1];
+    assert!((tip.0 - back.0 - 12.0).abs() < 0.05, "{head:?}");
+    let end = line[line.len() - 1];
+    assert!((tip.0 - end.0 - 10.89).abs() < 0.05, "{line:?} {head:?}");
+  }
+
+  #[test]
+  fn unfilled_arrow_is_wolframs_open_head() {
+    let out = interpret(
+      "InputForm[Show[Graph[{1 -> 2}, EdgeShapeFunction -> \
+       \"UnfilledArrow\", VertexCoordinates -> {{0, 0}, {1, 0}}]][[1]]]",
+    )
+    .unwrap();
+    assert!(out.contains("Arrowheads[{{0.04, 1, {"), "{out}");
+    assert!(out.contains(", 0.34122077195125033}}}]"), "{out}");
+    // Drawn as the outline's six corners, and the shaft stops at the
+    // head's inner point.
+    let svg_out = svg(
+      "Graph[{1 -> 2}, EdgeShapeFunction -> \"UnfilledArrow\", \
+       VertexCoordinates -> {{0, 0}, {1, 0}}]",
+    );
+    assert!(svg_out.contains("<path"), "{svg_out}");
+  }
+
+  #[test]
+  fn curved_arc_bows_left_by_a_tenth_of_the_edge() {
+    // `"CurvedArc"` is a quadratic Bézier whose control point lies
+    // `Curvature/2` (0.15 by default) edge lengths to the left of the
+    // edge's middle, and it carries no head even on a directed edge.
+    // The control point's offset from the middle of the edge, in edge
+    // lengths, along and across the edge.
+    let control = |shape: &str| -> (f64, f64) {
+      let out = interpret(&format!(
+        "s = Show[Graph[{{1 -> 2}}, EdgeShapeFunction -> {shape}, \
+         VertexCoordinates -> {{{{0, 0}}, {{1, 0}}}}]]; \
+         {{a, b}} = Cases[s, Disk[p_, _] :> p, Infinity]; \
+         c = First[Cases[s, BezierCurve[{{_, c_, _}}] :> c, Infinity]]; \
+         {{(c - (a + b)/2) . (b - a), Cross[b - a] . (c - (a + b)/2)}} \
+         / Norm[b - a]^2"
+      ))
+      .unwrap();
+      let nums: Vec<f64> = out
+        .trim_matches(|c| c == '{' || c == '}')
+        .split(", ")
+        .map(|s| s.parse().unwrap())
+        .collect();
+      (nums[0], nums[1])
+    };
+    let (along, left) = control("\"CurvedArc\"");
+    assert!(
+      along.abs() < 1e-6 && (left - 0.15).abs() < 0.01,
+      "{along} {left}"
+    );
+    let (_, left) = control("{{\"CurvedArc\", \"Curvature\" -> 2}}");
+    assert!((left - 1.0).abs() < 0.05, "{left}");
+    let heads = interpret(
+      "Length[Cases[Show[Graph[{1 -> 2}, EdgeShapeFunction -> \
+       \"CurvedArc\"]], _Arrow, Infinity]]",
+    )
+    .unwrap();
+    assert_eq!(heads, "0");
+  }
+
+  #[test]
+  fn circular_layout_labels_sit_outside_the_circle() {
+    // As wolframscript places them: the vertex on the left (vertex 1 of
+    // a 4-cycle) gets its label to its left, ending at the vertex; the
+    // one on the right, starting at it.
+    let out = svg(
+      "Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}, \
+       GraphLayout -> \"CircularEmbedding\", VertexLabels -> \"Name\"]",
+    );
+    let label = |name: &str| -> String {
+      let end = out.find(&format!(">{name}</text>")).unwrap();
+      out[out[..end].rfind("<text").unwrap()..end].to_string()
+    };
+    assert!(label("1").contains("text-anchor=\"end\""), "{out}");
+    assert!(label("3").contains("text-anchor=\"start\""), "{out}");
+    // The default layout keeps the label above right of every vertex.
+    let plain = svg(
+      "Graph[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 1}, \
+       VertexLabels -> \"Name\"]",
+    );
+    assert_eq!(plain.matches("text-anchor=\"start\"").count(), 4, "{plain}");
+  }
+}
+
+mod find_graph_communities {
+  use super::*;
+
+  #[test]
+  fn modularity_communities() {
+    // Values from wolframscript.
+    assert_eq!(
+      interpret(
+        "FindGraphCommunities[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1, 4 <-> 5, \
+         5 <-> 6, 6 <-> 4, 3 <-> 4, 7 <-> 8, 8 <-> 9, 9 <-> 7, 6 <-> 7}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindGraphCommunities[Graph[{1 <-> 2, 2 <-> 3, 3 <-> 4, 4 <-> 5, \
+         5 <-> 6}]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {3, 4}, {5, 6}}"
+    );
+    assert_eq!(
+      interpret(
+        "FindGraphCommunities[Graph[{1 <-> 2, 1 <-> 3, 2 <-> 3, 3 <-> 4, \
+         4 <-> 5, 4 <-> 6, 5 <-> 6, 10 <-> 11}]]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, {4, 5, 6}, {10, 11}}"
+    );
+    assert_eq!(
+      interpret("FindGraphCommunities[CycleGraph[12]]").unwrap(),
+      "{{1, 2, 3, 4}, {5, 6, 7, 8}, {9, 10, 11, 12}}"
+    );
+    assert_eq!(
+      interpret("FindGraphCommunities[CompleteGraph[5]]").unwrap(),
+      "{{1, 2, 3, 4, 5}}"
+    );
+    assert_eq!(
+      interpret("FindGraphCommunities[GridGraph[{3, 4}]]").unwrap(),
+      "{{1, 2, 4, 5}, {3, 6, 9, 12}, {7, 8, 10, 11}}"
+    );
+  }
+
+  #[test]
+  fn non_graph_stays_unevaluated() {
+    assert_eq!(
+      interpret("FindGraphCommunities[42]").unwrap(),
+      "FindGraphCommunities[42]"
+    );
+  }
+}
+
+mod community_graph_plot {
+  use super::*;
+
+  const GRAPH: &str = "Graph[{1 <-> 2, 2 <-> 3, 3 <-> 1, 4 <-> 5, 5 <-> 6, \
+    6 <-> 4, 3 <-> 4, 7 <-> 8, 8 <-> 9, 9 <-> 7, 6 <-> 7}]";
+
+  #[test]
+  fn rings_each_community_and_colours_its_vertices() {
+    let out = interpret(&format!(
+      "ExportString[CommunityGraphPlot[{GRAPH}, {{{{1, 2, 3}}, {{4, 5, 6}}, \
+       {{7, 8, 9}}}}], \"SVG\"]"
+    ))
+    .unwrap();
+    // Three grey rings, unfilled.
+    assert_eq!(
+      out.matches("stroke=\"rgb(128,128,128)\"").count(),
+      3,
+      "{out}"
+    );
+    // Wolfram's community colours: Hue[0, 1, 0.8], Hue[0.14, 1, 0.9],
+    // Hue[0.8, 0.6, 0.8].
+    assert_eq!(out.matches("fill=\"rgb(204,0,0)\"").count(), 3, "{out}");
+    assert_eq!(out.matches("fill=\"rgb(230,193,0)\"").count(), 3, "{out}");
+    assert_eq!(out.matches("fill=\"rgb(180,82,204)\"").count(), 3, "{out}");
+  }
+
+  #[test]
+  fn finds_the_communities_itself() {
+    let given = interpret(&format!(
+      "ExportString[CommunityGraphPlot[{GRAPH}, {{{{1, 2, 3}}, {{4, 5, 6}}, \
+       {{7, 8, 9}}}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let found = interpret(&format!(
+      "ExportString[CommunityGraphPlot[{GRAPH}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert_eq!(given, found);
+  }
+
+  #[test]
+  fn is_a_graphics() {
+    assert_eq!(
+      interpret(&format!("Head[CommunityGraphPlot[{GRAPH}]]")).unwrap(),
+      "Graphics"
+    );
   }
 }

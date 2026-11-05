@@ -654,7 +654,6 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="105.4,43.4 111.1,39.3 109.2,38.9" fill="url(#s9adac1fc19)" stroke="url(#s9adac1fc19)" stroke-width="0.5"/>
 <linearGradient id="se105c3f981" gradientUnits="userSpaceOnUse" x1="156.7" y1="78.7" x2="163.2" y2="77.6"><stop stop-color="#e7f6f1"/><stop offset="1" stop-color="#cde2e1"/></linearGradient>
 <polygon points="155.8,73.6 161.9,83.1 163.2,77.6" fill="url(#se105c3f981)" stroke="url(#se105c3f981)" stroke-width="0.5"/>
-<line x1="158.3" y1="77.5" x2="161.6" y2="73.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s6dc479d968" gradientUnits="userSpaceOnUse" x1="150.6" y1="131.2" x2="154.1" y2="136.1"><stop stop-color="#8ea7da"/><stop offset="1" stop-color="#788cc2"/></linearGradient>
 <polygon points="151.5,130.6 150.0,139.2 157.3,133.6" fill="url(#s6dc479d968)" stroke="url(#s6dc479d968)" stroke-width="0.5"/>
 <linearGradient id="s5fef988d8a" gradientUnits="userSpaceOnUse" x1="101.1" y1="38.6" x2="103.4" y2="44.2"><stop stop-color="#ffc68b"/><stop offset="1" stop-color="#ffdca9"/></linearGradient>
@@ -782,6 +781,7 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="105.4,43.4 117.3,45.2 117.4,44.2" fill="url(#s5e00a19581)" stroke="url(#s5e00a19581)" stroke-width="0.5"/>
 <linearGradient id="s57fef0ea18" gradientUnits="userSpaceOnUse" x1="153.0" y1="77.5" x2="162.6" y2="79.5"><stop stop-color="#ebf9f5"/><stop offset="1" stop-color="#d3e9eb"/></linearGradient>
 <polygon points="152.8,78.3 161.9,83.1 155.8,73.6" fill="url(#s57fef0ea18)" stroke="url(#s57fef0ea18)" stroke-width="0.5"/>
+<line x1="158.3" y1="77.5" x2="161.6" y2="73.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="scfc5b0b535" gradientUnits="userSpaceOnUse" x1="96.2" y1="42.6" x2="99.1" y2="47.3"><stop stop-color="#ffc994"/><stop offset="1" stop-color="#ffdca9"/></linearGradient>
 <polygon points="105.4,43.4 93.3,44.4 93.5,45.5" fill="url(#scfc5b0b535)" stroke="url(#scfc5b0b535)" stroke-width="0.5"/>
 <linearGradient id="s3dd27e64aa" gradientUnits="userSpaceOnUse" x1="62.2" y1="60.0" x2="69.3" y2="62.0"><stop stop-color="#d9855f"/><stop offset="1" stop-color="#eb9e6f"/></linearGradient>
@@ -1200,7 +1200,6 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <line x1="72.7" y1="77.8" x2="79.8" y2="80.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s7caa670e5c" gradientUnits="userSpaceOnUse" x1="135.7" y1="102.1" x2="136.3" y2="114.2"><stop stop-color="#dde5f9"/><stop offset="1" stop-color="#c4d4f5"/></linearGradient>
 <polygon points="128.6,104.9 140.9,114.0 138.3,102.0" fill="url(#s7caa670e5c)" stroke="url(#s7caa670e5c)" stroke-width="0.5"/>
-<line x1="139.6" y1="119.8" x2="140.0" y2="113.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="140.0" y1="113.0" x2="140.4" y2="106.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="scd116ca9cb" gradientUnits="userSpaceOnUse" x1="71.4" y1="95.0" x2="78.8" y2="91.7"><stop stop-color="#cd9797"/><stop offset="1" stop-color="#e0ada7"/></linearGradient>
 <polygon points="70.5,87.5 74.8,102.9 78.3,90.6" fill="url(#scd116ca9cb)" stroke="url(#scd116ca9cb)" stroke-width="0.5"/>
@@ -1212,6 +1211,7 @@ expression: "export_svg(\"Graphics3D[Sphere[], ImageSize -> 200]\")"
 <polygon points="87.9,67.5 90.1,80.4 93.6,68.8" fill="url(#sf85d304c00)" stroke="url(#sf85d304c00)" stroke-width="0.5"/>
 <linearGradient id="s65133dd4fd" gradientUnits="userSpaceOnUse" x1="133.1" y1="104.8" x2="133.5" y2="117.1"><stop stop-color="#d9e0f6"/><stop offset="1" stop-color="#c1cef1"/></linearGradient>
 <polygon points="128.6,104.9 130.5,117.2 140.9,114.0" fill="url(#s65133dd4fd)" stroke="url(#s65133dd4fd)" stroke-width="0.5"/>
+<line x1="139.6" y1="119.8" x2="140.0" y2="113.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s0239905b00" gradientUnits="userSpaceOnUse" x1="82.5" y1="75.8" x2="89.7" y2="75.3"><stop stop-color="#f0c0af"/><stop offset="1" stop-color="#f8cfbc"/></linearGradient>
 <polygon points="87.9,67.5 82.7,78.6 90.1,80.4" fill="url(#s0239905b00)" stroke="url(#s0239905b00)" stroke-width="0.5"/>
 <linearGradient id="s1b8b018b0d" gradientUnits="userSpaceOnUse" x1="117.0" y1="71.1" x2="129.1" y2="79.1"><stop stop-color="#fff7e7"/><stop offset="1" stop-color="#fdf9f7"/></linearGradient>
