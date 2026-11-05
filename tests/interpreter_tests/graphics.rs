@@ -45093,6 +45093,21 @@ mod list_plot_frame {
     assert!(centered.contains("text-anchor=\"middle\""), "{centered}");
   }
 
+  #[test]
+  fn text_bare_alignment_symbol_is_an_offset() {
+    let left = export_svg(r#"Graphics[Text["ab", {0, 0}, Left]]"#);
+    assert!(left.contains("text-anchor=\"start\""), "{left}");
+    let right = export_svg(r#"Graphics[Text["ab", {0, 0}, Right]]"#);
+    assert!(right.contains("text-anchor=\"end\""), "{right}");
+    let styled =
+      export_svg(r#"Graphics[Text[Style["ab", 12, Blue], {0, 0}, Left]]"#);
+    assert!(styled.contains("text-anchor=\"start\""), "{styled}");
+    let top = export_svg(r#"Graphics[Text["ab", {0, 0}, Top]]"#);
+    let center = export_svg(r#"Graphics[Text["ab", {0, 0}, Center]]"#);
+    assert!(center.contains("text-anchor=\"middle\""), "{center}");
+    assert_ne!(top, center);
+  }
+
   /// A `Column` that is a cell of a styled `Grid` is set in the grid's
   /// face and size — not as a free-standing monospace column at the base
   /// size — and a column of text lines is one text run with line breaks.
