@@ -8136,7 +8136,7 @@ fn matrix_plot_hybrid_scale(values: &[f64]) -> Vec<f64> {
 
 /// MatrixPlot[m, opts] — `ArrayPlot` with MatrixPlot's own defaults: values
 /// rescaled by [`matrix_plot_hybrid_scale`] (zeros at the middle of the
-/// color range), the theme's diverging blue–dark–orange LAB gradient, and
+/// color range), the front end's blue–white–orange gradient, and
 /// index ticks with the end values on all four frame edges.
 pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];

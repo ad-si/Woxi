@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 20984
 expression: "export_svg(\"MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]\")"
 ---
 <svg width="386" height="400" viewBox="0 0 386 400" xmlns="http://www.w3.org/2000/svg">
@@ -7,15 +8,15 @@ expression: "export_svg(\"MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]\")"
 <svg width="360" height="359" viewBox="0 0 3600 3590" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <g shape-rendering="crispEdges">
 <rect x="0" y="0" width="3600" height="3590" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="72" y="69" width="1152" height="1151" opacity="1" fill="#4C341F" stroke="none"/>
-<rect x="1224" y="69" width="1152" height="1151" opacity="1" fill="#724214" stroke="none"/>
-<rect x="2376" y="69" width="1152" height="1151" opacity="1" fill="#884B0F" stroke="none"/>
-<rect x="72" y="1220" width="1152" height="1150" opacity="1" fill="#9A540E" stroke="none"/>
-<rect x="1224" y="1220" width="1152" height="1150" opacity="1" fill="#AD5C0C" stroke="none"/>
-<rect x="2376" y="1220" width="1152" height="1150" opacity="1" fill="#C0650A" stroke="none"/>
-<rect x="72" y="2370" width="1152" height="1151" opacity="1" fill="#D36D07" stroke="none"/>
-<rect x="1224" y="2370" width="1152" height="1151" opacity="1" fill="#E67504" stroke="none"/>
-<rect x="2376" y="2370" width="1152" height="1151" opacity="1" fill="#FA7D00" stroke="none"/>
+<rect x="72" y="69" width="1152" height="1151" opacity="1" fill="#F0E6C0" stroke="none"/>
+<rect x="1224" y="69" width="1152" height="1151" opacity="1" fill="#EDD89B" stroke="none"/>
+<rect x="2376" y="69" width="1152" height="1151" opacity="1" fill="#E9CA76" stroke="none"/>
+<rect x="72" y="1220" width="1152" height="1150" opacity="1" fill="#E4B64F" stroke="none"/>
+<rect x="1224" y="1220" width="1152" height="1150" opacity="1" fill="#E0A229" stroke="none"/>
+<rect x="2376" y="1220" width="1152" height="1150" opacity="1" fill="#DB8F02" stroke="none"/>
+<rect x="72" y="2370" width="1152" height="1151" opacity="1" fill="#E78301" stroke="none"/>
+<rect x="1224" y="2370" width="1152" height="1151" opacity="1" fill="#F37701" stroke="none"/>
+<rect x="2376" y="2370" width="1152" height="1151" opacity="1" fill="#FF6B00" stroke="none"/>
 <rect x="2" y="2" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
 <rect x="2" y="3583" width="3596" height="5" opacity="1" fill="#666666" stroke="none"/>
 <rect x="2" y="2" width="5" height="3586" opacity="1" fill="#666666" stroke="none"/>
