@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 17930
 expression: "export_svg(\"DateListPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 3}, {{2010, 12, 31}, 2}}]\")"
 ---
 <svg width="360" height="227" viewBox="0 0 3600 2270" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -148,6 +149,26 @@ expression: "export_svg(\"DateListPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 3}, {
 <text x="2622.8" y="2236.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="rgb(102,102,102)">2008</text>
 <line x1="3219.5" y1="2116.0" x2="3219.5" y2="2076.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <text x="3219.5" y="2236.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="rgb(102,102,102)">2010</text>
+<line x1="356.7" y1="2116.0" x2="356.7" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="476.0" y1="2116.0" x2="476.0" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="595.4" y1="2116.0" x2="595.4" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="714.7" y1="2116.0" x2="714.7" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="953.3" y1="2116.0" x2="953.3" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1072.5" y1="2116.0" x2="1072.5" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1191.7" y1="2116.0" x2="1191.7" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1310.8" y1="2116.0" x2="1310.8" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1549.4" y1="2116.0" x2="1549.4" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1668.7" y1="2116.0" x2="1668.7" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1788.1" y1="2116.0" x2="1788.1" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1907.5" y1="2116.0" x2="1907.5" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2146.0" y1="2116.0" x2="2146.0" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2265.2" y1="2116.0" x2="2265.2" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2384.4" y1="2116.0" x2="2384.4" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2503.6" y1="2116.0" x2="2503.6" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2742.1" y1="2116.0" x2="2742.1" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2861.5" y1="2116.0" x2="2861.5" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2980.8" y1="2116.0" x2="2980.8" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3100.2" y1="2116.0" x2="3100.2" y2="2105.8" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="169.0" y1="2073.8" x2="209.0" y2="2073.8" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="169.0" y1="2008.3" x2="193.0" y2="2008.3" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="169.0" y1="1942.9" x2="193.0" y2="1942.9" stroke="rgb(102,102,102)" stroke-width="10"/>
@@ -186,6 +207,26 @@ expression: "export_svg(\"DateListPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 3}, {
 <line x1="2026.8" y1="5.0" x2="2026.8" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="2622.8" y1="5.0" x2="2622.8" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3219.5" y1="5.0" x2="3219.5" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="356.7" y1="5.0" x2="356.7" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="476.0" y1="5.0" x2="476.0" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="595.4" y1="5.0" x2="595.4" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="714.7" y1="5.0" x2="714.7" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="953.3" y1="5.0" x2="953.3" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1072.5" y1="5.0" x2="1072.5" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1191.7" y1="5.0" x2="1191.7" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1310.8" y1="5.0" x2="1310.8" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1549.4" y1="5.0" x2="1549.4" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1668.7" y1="5.0" x2="1668.7" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1788.1" y1="5.0" x2="1788.1" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="1907.5" y1="5.0" x2="1907.5" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2146.0" y1="5.0" x2="2146.0" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2265.2" y1="5.0" x2="2265.2" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2384.4" y1="5.0" x2="2384.4" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2503.6" y1="5.0" x2="2503.6" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2742.1" y1="5.0" x2="2742.1" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2861.5" y1="5.0" x2="2861.5" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="2980.8" y1="5.0" x2="2980.8" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3100.2" y1="5.0" x2="3100.2" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3585.0" y1="2073.8" x2="3545.0" y2="2073.8" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3585.0" y1="2008.3" x2="3561.0" y2="2008.3" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3585.0" y1="1942.9" x2="3561.0" y2="1942.9" stroke="rgb(102,102,102)" stroke-width="10"/>

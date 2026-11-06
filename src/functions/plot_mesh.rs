@@ -230,6 +230,36 @@ fn mesh_function_value(f: &Expr, (x, y): (f64, f64)) -> Option<f64> {
   try_eval_to_f64(&r).filter(|v| v.is_finite())
 }
 
+/// Interpolate the parameter on the closest original sample edge, including
+/// points introduced when clipping a curve to its plot range.
+fn parameter_at(
+  p: (f64, f64),
+  samples: &[(f64, f64, f64)],
+  start: &mut usize,
+) -> Option<f64> {
+  let mut best = (f64::INFINITY, None);
+  for (index, edge) in samples.windows(2).enumerate().skip(*start) {
+    let (x, y, t) = edge[0];
+    let (u, v, s) = edge[1];
+    if ![x, y, t, u, v, s].iter().all(|v| v.is_finite()) {
+      continue;
+    }
+    let d2 = (u - x).powi(2) + (v - y).powi(2);
+    let f = if d2 == 0.0 {
+      0.0
+    } else {
+      (((p.0 - x) * (u - x) + (p.1 - y) * (v - y)) / d2).clamp(0.0, 1.0)
+    };
+    let distance =
+      (p.0 - x - f * (u - x)).powi(2) + (p.1 - y - f * (v - y)).powi(2);
+    if distance < best.0 {
+      best = (distance, Some(t + f * (s - t)));
+      *start = index;
+    }
+  }
+  best.1
+}
+
 /// The values of each mesh function at each point of a curve, segment by
 /// segment. `functions` are the mesh functions (empty: `{#1 &}`);
 /// `by_parameter` makes the default mesh function the position along the
@@ -238,22 +268,36 @@ fn function_values(
   segments: &[Vec<(f64, f64)>],
   functions: &[Expr],
   by_parameter: bool,
+  parameters: &[(f64, f64, f64)],
 ) -> Vec<Vec<Vec<Option<f64>>>> {
   (0..functions.len().max(1))
     .map(|k| {
       let mut counter = 0.0;
+      let mut parameter_index = 0;
       segments
         .iter()
         .map(|seg| {
           seg
             .iter()
-            .map(|&p| match functions.get(k) {
-              Some(f) => mesh_function_value(f, p),
-              None if by_parameter => {
-                counter += 1.0;
-                Some(counter)
+            .map(|&p| {
+              let t = parameter_at(p, parameters, &mut parameter_index)
+                .unwrap_or_else(|| {
+                  counter += 1.0;
+                  counter
+                });
+              match functions.get(k) {
+                Some(f) if by_parameter => {
+                  let result = evaluate_expr_to_expr(&Expr::CurriedCall {
+                    func: Box::new(f.clone()),
+                    args: vec![Expr::Real(p.0), Expr::Real(p.1), Expr::Real(t)],
+                  })
+                  .ok()?;
+                  try_eval_to_f64(&result).filter(|v| v.is_finite())
+                }
+                Some(f) => mesh_function_value(f, p),
+                None if by_parameter => Some(t),
+                None => Some(p.0),
               }
-              None => Some(p.0),
             })
             .collect()
         })
@@ -271,6 +315,7 @@ pub(crate) fn mesh_levels(
   mesh: &Mesh,
   functions: &[Expr],
   by_parameter: bool,
+  parameters: &[Vec<(f64, f64, f64)>],
 ) -> Option<Vec<Vec<(f64, Option<SeriesStyle>)>>> {
   let Mesh::Levels(specs) = mesh else {
     return None;
@@ -279,7 +324,15 @@ pub(crate) fn mesh_levels(
   let values: Vec<Vec<Vec<Vec<Option<f64>>>>> = if needs_range {
     curves
       .iter()
-      .map(|c| function_values(c, functions, by_parameter))
+      .enumerate()
+      .map(|(i, c)| {
+        function_values(
+          c,
+          functions,
+          by_parameter,
+          parameters.get(i).map_or(&[], |p| p.as_slice()),
+        )
+      })
       .collect()
   } else {
     Vec::new()
@@ -330,9 +383,10 @@ pub(crate) fn curve_mesh(
   shading: Option<&MeshShade>,
   by_parameter: bool,
   open_ends: bool,
+  parameters: &[(f64, f64, f64)],
 ) -> CurveMesh {
   let n_funcs = functions.len().max(1);
-  let values = function_values(segments, functions, by_parameter);
+  let values = function_values(segments, functions, by_parameter, parameters);
 
   // Mesh points: a value is met on the half-open stretch [va, vb) of each
   // pair of points, and at the last point of a segment, so a value taken

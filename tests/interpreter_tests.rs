@@ -3791,6 +3791,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_inset_plot_honors_object_position() {
+    // Regression: `Inset[plot, pos, opos, size]` centred the plot on `pos`
+    // and ignored `opos`, the point of the plot's own data coordinates that
+    // lands on `pos` — both inside `Graphics` and in a plot's `Epilog`.
+    let unit =
+      "u = ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Axes -> None];";
+    let render = |wrap: &str, opos: &str| {
+      clear_state();
+      interpret(&format!(
+        "{unit} ExportString[{}, \"SVG\"]",
+        wrap.replace("OPOS", opos)
+      ))
+      .unwrap()
+    };
+    let in_graphics =
+      "Graphics[Inset[u, {0, 0}, OPOS, 1], PlotRange -> {{-3, 3}, {-2, 2}}]";
+    let in_epilog = "ParametricPlot[{t, t}, {t, 0, 1}, Frame -> True, \
+       PlotRange -> {{-3, 3}, {-2, 2}}, \
+       Epilog -> Inset[u, {0, 0}, OPOS, 1]]";
+    for wrap in [in_graphics, in_epilog] {
+      let centred = render(wrap, "{0, 0}");
+      let default = render(wrap, "Automatic");
+      let right_edge = render(wrap, "{1, 0}");
+      let left_edge = render(wrap, "{-1, 0}");
+      assert_eq!(centred, default, "{wrap}");
+      assert_ne!(centred, right_edge, "{wrap}");
+      assert_ne!(right_edge, left_edge, "{wrap}");
+    }
+  }
+
+  #[test]
   fn test_graphics_text_pane_wraps_to_width() {
     // Regression: `Text[Pane[str, width], pos]` (an Inset's label sized by
     // a slider) drew the literal `Pane[…]` source on one clipped line

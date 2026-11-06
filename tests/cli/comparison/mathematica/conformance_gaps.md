@@ -4964,8 +4964,9 @@ reproduce wolframscript's primitive tree:
 - `RectangleChart`, ``BarCharts`GeneralizedBarChart``, `PairedBarChart` and
   `PairedHistogram` use one
   ``Tooltip[StatusArea[Charting`DelayedMouseEffect[…]]]`` per bar, at
-  wolframscript's positions. The paired charts' axes, ticks and options are
-  not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
+  wolframscript's positions. The paired charts draw WL's axes and ticks,
+  but as lines in data coordinates rather than WL's `Offset` forms, and
+  their options are not reproduced. `PairedHistogram` leaves a gap of `0.075` times the
   largest count between its halves. wolframscript's gap is a little smaller
   and not proportional: `15/67` for a largest count of 3, `85/163` for 5.
 - `BarChart` of one plain dataset (a list or association of numbers, no
@@ -5254,7 +5255,7 @@ accepted, but the picture is the same as without it.
 
 - `Plot`: `ClippingStyle`, `ExclusionsStyle`, `PlotRangeClipping`,
   `PlotLayout`.
-- `ListPlot`/`ListLinePlot`: `ClippingStyle`, `MaxPlotPoints`,
+- `ListPlot`/`ListLinePlot`: `ClippingStyle`,
   `LabelingFunction -> f` with a pure function.
 - `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
   `"Log2"`, `"SignedLog"`), and `ScalingFunctions` on `ParametricPlot`.
@@ -5273,8 +5274,8 @@ accepted, but the picture is the same as without it.
   approximation of WL's raster), `AxesOrigin`, per-axis `Axes -> {x, y}` and
   `AxesStyle -> {x, y}`; `ColorFunction` only for a flat list; `PlotTheme`
   other than `"Business"`.
-- `PieChart`: `PlotTheme`, `ChartElementFunction` (`"GlassSector"` draws
-  flat sectors).
+- `PieChart`: `PlotTheme`, `ChartElementFunction` other than
+  `"GlassSector"`; `SectorSpacing` only for the space between rings.
 
 ### Bar, pie and sector charts: remaining layout differences
 
@@ -5286,22 +5287,26 @@ radius), the `SectorChart` mapping, `Histogram`'s `{min, max, dx}` and
 `{"Log", n}` bins, `ScalingFunctions -> "Log"` and stacked histograms.
 Still different:
 
-- `ChartLayout -> "Percentile"`: WL pads the x range on the left as if
-  there were more groups; Woxi centres the bars. `"Overlapped"` and
-  `"Stepped"` bars are a little wider than WL's.
+- `ChartLayout -> "Stacked"` / `"Percentile"`: WL pads the x range on the
+  left as if there were more groups; Woxi starts it 2% before the first
+  bar, as for grouped bars.
 - `BarOrigin -> Top` draws no bar-edge marks on the top axis.
 - A donut (`SectorOrigin -> {Automatic, r}`) keeps the plain pie's outer
   radius; WL's fills a little more of the frame.
 - `Placed[…, "RadialCallout"]` labels: WL shrinks the pie less and bends
   the leaders; Woxi draws straight short leaders.
-- `PairedBarChart` draws no axes or tick labels (WL labels both halves with
-  magnitudes, `4 … 0 0 … 4`), and its edges are black, not gray.
-- `BubbleChart`: the plot's aspect ratio follows the data range rather than
-  WL's near-square default, tick labels are too large and the largest
-  bubble is about 0.75 of WL's radius.
-- Chart legends (`ChartLegends`) are set larger than WL's, in gray, and
-  top-aligned instead of centred on the plot.
-- `PieChart` of several datasets leaves a thinner gap between the rings.
+- `PairedBarChart`'s edges are black, not gray.
+- `BubbleChart`: tick labels are too large and the largest bubble is about
+  0.75 of WL's radius.
+- Automatic `BarSpacing` uses WL's spacing for charts of few bars (a bar
+  0.902 of its step, groups four bar gaps apart). Flat lists follow WL as
+  the bar count grows; grouped charts of many bars do not (WL narrows them,
+  for `Table[Range[5], 6]` to 0.661 of the step, and lets 8 × 6 bars
+  touch).
+- A framed grouped `BarChart`'s tick between two groups is a fixed 2.73 pt;
+  WL's is scaled (`{0.008, 0}`) and varies with the chart.
+- `PieChart` of several datasets keeps the plain pie's outer radius; WL's
+  rings fill a little more of the frame.
 - A log x axis (`Histogram[…, {"Log", n}]`) is labelled `0.05, 0.1, 0.5, …`
   where WL writes `0.010, 0.100, 1, 10`.
 - `DiscretePlot`: `ExtentSize`.
@@ -5356,10 +5361,6 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   callout `Rotate[x, y, 0]` (x turned by y radians), which Woxi copies; its
   box width (39 pt for "2"/"0.45", 56 pt for "2.5"/"2500") follows no rule
   found, Woxi sizes it as both numbers plus 11 pt.
-- `LabelingSize -> w`: WL leaves every label to a tooltip (even ones
-  narrower than `w`, and all of them at `w = 1000`) and truncates some with
-  front-end-only `TruncateStringToWidth`; Woxi drops the labels wider than
-  `w` points.
 - `PlotLayout` panels of labeled datasets (`ListPlot[{Labeled[d1, "a"],
   Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centres each label at the
   top of its panel; Woxi draws it as the panel's end label.
@@ -5483,10 +5484,12 @@ automatic range in Woxi; WL clips its automatic end against the given one
 (`ListPlot[{1, 2, 3, 4, 100, 5, 6, 7}, PlotRange -> {0, Automatic}]` → WL
 y range `{0, 17.5}`).
 
-`ListPlot` of `NIntegrate`'s `EvaluationMonitor` samples
-(`list-plot-app-eval-values`) still differs: Woxi's `NIntegrate` samples
-`1/Abs[Sqrt[x]]` much closer to the singularity (its 82.5 % quantile is
-2·10⁵, WL's 11), so the same range rule gives a far taller range.
+`NIntegrate` now uses global Gauss–Kronrod refinement with a
+double-exponential singularity handler. The reviewed smooth monitor has
+77 samples; the singular `1/Abs[Sqrt[x]]` monitor on `{x,-1,0,1}` has
+262 samples in Wolfram's order, agreeing within machine rounding.
+Near nonzero singular endpoints, arbitrary-precision sample coordinates
+avoid cancellation in the double-exponential tail.
 
 ### `Dendrogram` leaf order is reconstructed, not exact
 
@@ -5966,30 +5969,75 @@ internal hash order. Woxi keeps input order.
 ### Graph layouts that only approximate Wolfram's
 
 - **Spring-electrical layouts** (the automatic layout of a non-tree graph
-  with more than 8 vertices, `"SpringElectricalEmbedding"`,
+  with more than 8 vertices or more than one cycle, `"SpringElectricalEmbedding"`,
   `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
-  Fruchterman–Reingold layout turned so the long axis is horizontal. WL's
-  result (e.g. the cube projection of `HypercubeGraph[3]`) is not
-  reproduced; small non-tree graphs get the circular layout instead.
-- **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): Woxi
-  walks the graph depth-first from the first vertex, taking the most
-  recently listed edge first. That matches WL for cycles, trees and most
-  small graphs, but not all (`Graph[{1 <-> 2, 1 <-> 5, 2 <-> 4, 3 <-> 6,
-  4 <-> 7, 5 <-> 8, 6 <-> 8, 7 <-> 1, 8 <-> 2}]` swaps 2 and 5), and for
-  graphs with directed edges the rotation can differ by some steps.
+  Fruchterman–Reingold layout turned so the long axis is horizontal. It
+  relaxes a sunflower start and a DFS-circle start and retains the lower
+  spring-energy result, avoiding the crossed local minimum of the reviewed
+  six-vertex graph. WL's
+  coordinates, orientation and choice between symmetry-equivalent vertex
+  placements are not reproduced. Small graphs with several cycles now use
+  this layout too, including `HypercubeGraph[3]` and the reviewed six-vertex
+  `GraphPlot`; they no longer fall back to a circle. `GraphPlot3D` also uses
+  its own deterministic force layout. Its native Wolfram cube orientation
+  is independent of `SeedRandom`; both systems use the same default
+  `ViewPoint -> {1.3, -2.4, 2}`.
+- **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
+  order does not depend on the order the edges are listed in. Woxi walks
+  the graph depth-first from the first vertex, trying the highest-numbered
+  neighbour first and following directed edges forwards only; in a tree
+  whose walk ends in exactly two dead ends the walk's first run is turned
+  round. The same reversal now applies to directed cycles with one chord
+  and two DFS dead ends: directed cycles with a chord from
+  vertex 1 to vertex 3 match for sizes 4 through 7, including the reviewed
+  string-label graph. Across 1,000 random directed graphs, the structural
+  cycle-plus-chord correction improves exact matches from 701 to 708
+  without regressing any previously matching example. Extending the rule
+  to all strongly connected graphs or mixed graphs regresses many other
+  examples and is intentionally avoided. The earlier DFS algorithm was checked against 320
+  random small graphs: every tree, about half
+  the other undirected graphs and three quarters of the directed ones
+  match exactly. The rest are wolframscript's own heuristic, not decoded:
+  e.g. the mixed `Graph[{1 -> 2, 2 <-> 3, 3 -> 4, 4 <->
+  1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
   image, and WL draws long edges as splines through the layers.
-- **`"GridEmbedding"` / `"BipartiteEmbedding"` of a disconnected graph**:
-  WL packs the components separately; Woxi lays out the whole graph.
+- **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
+  component on its own unit lattice, pads its bounding rectangle by one
+  eighth of the mean sum of coordinate spans plus `0.00001`, and packs
+  the rectangles in columns with evenly distributed spare height. This
+  matches the reviewed 12-vertex graph and additional mixed-size component
+  examples. More general rectangle packing can still differ: six isolated
+  vertices form a 2-by-3 arrangement in Wolfram rather than Woxi's strip.
+  Disconnected **`"BipartiteEmbedding"`** still lays out the whole graph
+  rather than packing each component separately.
 - **`"SpiralEmbedding"` scale**: the spiral is WL's (Rakhmanov–Saff–Zhou),
   the sphere radius only approximates WL's (`0.42 Sqrt[n]`).
 - **`Tree[…]` layout** uses a tidy tree; WL spreads leaves differently.
-- **Automatic vertex-label placement**: WL moves a `"Name"` label to a side
-  where it does not overlap edges; Woxi always places it above-right.
-- **`CommunityGraphPlot`** is not implemented.
-- **`EdgeShapeFunction` named arrow shapes** other than `"Line"`,
-  `"Arrow"` and `"CurvedArc"` (e.g. `"UnfilledArrow"`) draw the default.
+- **Automatic vertex-label placement**: with an explicit
+  `GraphLayout -> "CircularEmbedding"` or `"StarEmbedding"`, an outer
+  `"Name"` label sits outside the circle on its vertex's spoke, as in WL;
+  otherwise it is above-right,
+  which is what WL does for its default layouts too.
+- **Graph arrowheads**: `Arrowheads[Medium]` (12 pt), or 2.5 vertex radii
+  for a graph of more than 20 vertices or with small vertices. The
+  switch-over is read off a handful of graphs (cycles of 20 and 21
+  vertices, a path of 11); it is not exactly WL's rule.
+- **`CommunityGraphPlot`** draws WL's look (grey closed-spline rings round
+  each community, WL's community colours) but its own layout: each
+  community is laid out as its own graph and the communities as the
+  vertices of the graph of communities, turned so linked vertices face
+  each other. WL bends the chain of three triangles of the comparison test
+  into a V where Woxi draws a straight row.
+- **`FindGraphCommunities`** maximizes modularity the Louvain way; it gets
+  stuck in a worse local optimum than WL on some graphs (the Petersen
+  graph: five pairs where WL finds two communities of five).
+- **`EdgeShapeFunction` named arrow shapes**: `"Arrow"`, `"FilledArrow"`,
+  `"UnfilledArrow"`, `"ShortFilledArrow"`, `"ShortUnfilledArrow"` draw
+  WL's head graphics; `"CurvedArc"` is WL's quadratic Bézier. A curved
+  edge is cut where it leaves the vertex along the line to its control
+  point; WL cuts it where the curve crosses the vertex's disk.
 
 
 ## Knot data
@@ -7012,9 +7060,9 @@ printed form of the result differs.
 
 `HighlightMesh[mesh, spec]` returns the mesh with the `Properties ->
 {{d, Default} -> MeshCellHighlight | MeshCellLabel -> …}` option
-wolframscript adds, but Woxi draws a `MeshRegion` as text, so neither the
-highlighted cells nor the vertex indices of `Labeled[0, "Index"]` appear in
-the picture. wolframscript's echo also normalises the mesh itself (machine
+wolframscript adds. Woxi now renders mesh cells and explicit `MeshCellLabel`
+options, but does not yet apply the stored `MeshCellHighlight` and
+`MeshCellLabel` properties from `HighlightMesh`. wolframscript's echo also normalises the mesh itself (machine
 coordinates, `{Polygon[…]}` cells), which Woxi does not.
 
 ## ``ComputationalGeometry`VoronoiDiagram`` of machine points: last digits
@@ -8472,17 +8520,6 @@ against `wolframscript`, so the noise magnitude may differ.
 
 ## List plots (graphics comparison sweep, 2026-11)
 
-- `MaxPlotPoints -> m` on list data (`ListPlot`, joined or not) is ignored.
-  wolframscript keeps exactly `m` of the original points, chosen by index
-  only (the y values do not matter: `Range[10]` and `{0,0,0,5,0,…}` give the
-  same subset). For `m ≥ n/2` it keeps the first `2m − n` points and then
-  every second one to the end. Smaller `m` follows a rule not decoded yet:
-  `n = 10`: `m = 5 → {1,3,6,9,10}`, `4 → {1,3,6,10}`, `3 → {1,4,10}`;
-  `n = 20`: `m = 10 → {1,2,3,4,6,9,12,15,18,20}`.
-- `LabelingSize -> 30` drops every text label in wolframscript
-  (`ListPlot[{1,1,2,3,5,8} -> {"healthfulness", …, "limey"}]`), while Woxi
-  keeps the ones narrower than 30 pt ("limey"); WL's measure of the size is
-  not known.
 - `Labeled[pt, label, Above]` etc.: the labels sit where wolframscript puts
   them, but wolframscript pads the image further (its y axis runs to 1.0
   for points up to 0.8; the `PlotRange` itself stays `{0, 0.8}`).
@@ -8492,7 +8529,7 @@ against `wolframscript`, so the noise magnitude may differ.
 - Not investigated in this round: `ListContourPlot` of scattered points
   (WL leaves the area outside the convex hull blank), `ListDensityPlot`
   with `InterpolationOrder -> 0` (WL's cells span `[i, i + 1]`) and
-  `Mesh -> 4`, `PlotLabels` placement for parametric `{x, y}` curves,
+  `PlotLabels` placement for parametric `{x, y}` curves,
   callout leader shapes, and the RSolve-precision and NIntegrate sample
   divergences in the `list-plot-app-*` tests.
 
@@ -8507,15 +8544,9 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme grey; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
-- Custom `Arrowheads[{{s, pos, Graphics[…]}}]` graphics are placed only once
-  the plot range is known, so they do not widen it (wolframscript keeps a
-  dot head at the end of an arrow whole). The default arrowhead is a plain
-  triangle; wolframscript's is swept back.
 - `GraphicsGrid[…, ImageSize -> 400]` of labelled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.
-- `Image` of 4-channel `{1, 0, 0, a}` data: wolframscript's SVG export shows
-  opaque red-to-magenta (alpha read as blue), Woxi a transparent-to-red ramp.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
@@ -8575,16 +8606,14 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Underscript[x, "_"]` (a one-character accent) is drawn as an underlined
   `x` rather than a separate `_` below it.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
-  draws a minus sign (`−10`), and the continuous bar is 64 flat slices.
+  draws a minus sign (`−10`). Continuous bars now use SVG gradients.
 
 ## Plot styling and labelling options (graphics comparison sweep, 2026-11)
 
-- Plot labels, legends and explicit tick labels are text markup: a
-  `PlotLegends -> "Expressions"` entry such as `Abs[Exp[I w]/(1 + w^2)]`
-  reads `|(exp(i w))/(1+w^2)|` on one line, `Ticks -> {{Pi/2, 3 Pi/2}}`
-  labels read `π/2`, and `Sqrt[x]` is `√` with an SVG overline rather than
-  a vinculum joined to the sign. wolframscript typesets the stacked
-  fractions and radicals.
+- Structured mathematical plot titles and legend entries now use native
+  layout boxes, including stacked fractions, binomials and joined radicals.
+  Some curve annotations and explicit tick labels still use text markup;
+  `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than stacked fractions.
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with
@@ -8654,17 +8683,43 @@ PlotRange clipping of curved solids, ViewPoint -> Top/Front, cylinder and
 cone bounds/rims, VertexColors, Plot3D's BoundaryStyle/Mesh/MeshStyle/
 MeshFunctions/MeshShading/RegionFunction/Filling/PlotLegends, smooth
 RegionPlot3D, per-level ContourPlot3D colours, solid VectorPlot3D arrows,
-GraphPlot3D of a Graph. What still differs:
+GraphPlot3D of a Graph. Later: smooth (Gouraud) shading of curved
+primitives and plot surfaces — each facet is lit at its corners and filled
+with an SVG linear gradient, the least-squares single-direction fit of the
+three corner colours (rms error about 0.1–1.2 levels of 255 under the
+default coloured lights, at most ~6 on a coarse surface) —, coplanar faces
+drawn in primitive order, lines ordered against large faces, rounded `Tube`
+ends and corners and the slim `Arrow[Tube]` head, upright z axis label,
+`EdgeForm[Dashed]` with an inherited edge style, `FaceGrids`, `AxesEdge`,
+unlabelled ticks, ContourPlot3D's default mesh and gradient normals,
+scattered ListPlot3D drawn on its own triangulation, BarChart3D /
+RectangleChart3D / Histogram3D / BubbleChart3D built as wolframscript's
+`Graphics3D`, PieChart3D's view, colours and smooth wall. What still
+differs:
 
-- Shading is per facet (flat): spheres, cylinders and surfaces show their
-  facets where wolframscript (which exports 3D graphics as an embedded
-  raster) interpolates vertex normals. SVG has no Gouraud fill.
+- Smooth shading interpolates colours linearly across a facet (Gouraud), so
+  a sharp highlight or the edge of a coloured light still shows the
+  facets faintly where wolframscript (an embedded raster) lights per pixel.
+  A gradient varies along one direction only; where the red, green and
+  blue gradients of a facet point different ways (coloured lights), the
+  fill is their best single-direction approximation.
+- Curved surfaces cost SVG size: a lone sphere is ~200 KB (68 KB flat), a
+  50 x 50 Plot3D ~1.6 MB (0.8 MB), ContourPlot3D with its mesh ~2 MB.
+- The painter's sort splits only triangles that pass through each other;
+  a cycle of three or more mutually overlapping, non-intersecting
+  triangles is broken by centroid depth. Plot3D/ListPlot3D/ContourPlot3D
+  surfaces still sort by centroid depth (their mesh lines are merged in
+  by depth), and axis lines are drawn over the scene rather than hidden
+  behind it.
 - StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
-  box and tops it up with points of its own choosing (the two extra lines
-  of `StreamPoints -> 10` start near `(±0.27, ±0.27, ±0.26)`); Woxi tops
-  up from the twice-as-fine lattice, farthest point first. Lines stop at
-  the box only; WL's colour scaling over the lines is approximated by the
-  drawn lines' magnitude range.
+  box and tops it up from the twice-as-fine lattice, nearest the centre
+  first, whatever the field — as Woxi does. Among the points equally far
+  from the centre wolframscript's order is lattice order with the
+  all-negative point last (`StreamPoints -> 10` adds `(-,-,+)` and
+  `(-,+,-)` of the inner 2×2×2 cube); Woxi keeps plain lattice order, so
+  it adds `(-,-,-)` and `(-,-,+)`. Lines stop at the box only; WL's colour
+  scaling over the lines is approximated by the drawn lines' magnitude
+  range.
 - VectorPlot3D: wolframscript places its arrows on a jittered layout (221
   of them by default, 64 for `VectorPoints -> 4`); Woxi uses the cell
   centres of an n³ grid (n = 6 by default). Heads are hexagonal.
@@ -8672,21 +8727,76 @@ GraphPlot3D of a Graph. What still differs:
   (the centre planes sit at e.g. `x = 0.00053`), so `x y z` on
   `"CenterPlanes"` shows a gradient of tiny random-sign values; Woxi samples
   the planes exactly and draws one colour. Slice outlines are not drawn.
-- ListPlot3D `InterpolationOrder -> 0` (flat tiles, and WL's automatic
-  outlier clipping of the z range) is not implemented; scattered points
-  are triangulated but the hull edge is jagged at the 50 x 50 grid.
-- SphericalPlot3D and RevolutionPlot3D draw no default mesh; ContourPlot3D
-  and RegionPlot3D draw neither their default mesh nor the black curves
-  where a surface meets the box.
+- ListPlot3D `InterpolationOrder -> 0` (flat tiles with gaps between
+  them, and WL's automatic outlier clipping of the z range) is not
+  implemented: Woxi draws the interpolated surface.
+- SphericalPlot3D and RevolutionPlot3D draw the default mesh (15 lines of
+  each parameter, snapped to their sampling grid, and the surface's edges);
+  SphericalPlot3D draws the edges as separate lines where wolframscript
+  joins them into one. RegionPlot3D draws neither its default mesh nor the
+  black curves where a surface meets the box; RegionPlot3D,
+  RevolutionPlot3D and SphericalPlot3D surfaces are still shaded flat.
+  RevolutionPlot3D flattens the box of a plain profile `z = f(t)` to
+  `BoxRatios -> {2, 2, 1/GoldenRatio}` as wolframscript does, but keeps the
+  x/y ratio 1 for a partial sweep (wolframscript: `{2, 1, …}` for
+  `θ ∈ [0, π]`) and a fixed z ratio for `{r, z}` profiles (wolframscript:
+  `Automatic`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
-- `EdgeForm[Dashed]` on 3D faces is ignored (and the edge colour is not
-  inherited from an earlier `EdgeForm[colour]`); `FaceGrids` are not drawn;
-  `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
-  are ignored; a `Tube` polyline has no rounded joins or caps.
+- `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
+  are ignored. A translucent `EdgeForm` colour is faded towards white
+  rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
+  Back}` (BubbleChart3D's partial box) draws the whole box.
 - 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
   screen length (wolframscript steps a short z axis over 0..10 by 5, Woxi
-  by 2.5).
-- The 3D charts (`BarChart3D`, `Histogram3D`, `PieChart3D`, …) keep their
-  own orthographic camera and square framing; `BubbleChart3D` is not
-  implemented.
+  by 2.5, and a unit sphere's axes by 0.5 where Woxi steps by 1 — also the
+  spacing of automatic `FaceGrids`).
+- 3D charts: the translucent backdrop panels wolframscript puts behind
+  BarChart3D and RectangleChart3D (`Scaled` polygons with `VertexColors`)
+  are not drawn; BubbleChart3D's largest bubble is a fifth of the data's
+  smallest extent (wolframscript's is up to 1% smaller) and its
+  `Specularity` highlight is brighter. BarChart3D with `ChartLabels` or
+  `ChartLegends`, PieChart3D and SectorChart3D keep Woxi's own chart
+  renderer (no axes, square framing). DensityPlot3D's volume is as listed
+  above.
+
+## Graphics review follow-up (2026-11-05)
+
+Fixed the saved visual review notes for custom `BarChart` functions (including
+rounded rectangles through the canonical Graphics renderer), mixed
+`BoxWhiskerChart` element specifications and Student t mean diamonds,
+`ViewProjection -> "Orthographic"`, `Placed` labels in `EdgeLabels`, portable
+long arrows in script layouts, TraditionalForm arithmetic spacing in grid
+cells, finite `LabelingSize` on function plots, custom arrowhead paint order,
+and the measured monospace width of padded base-number table cells.
+
+The `SliceDensityPlot3D[x y z, "CenterPlanes", …]` sampling difference listed
+above is an exact-zero field on all three slices. Its graphics comparison now
+uses `x + y + z` so it exercises actual gradients without depending on
+Wolfram's random perturbations of the slice positions. Exact zero slices
+remain exact in Woxi.
+
+The headless Wolfram Engine initially exported the front-end-only
+``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]`` boxes for finite
+`LabelingSize` instead of the graph. This reference-generation problem was
+resolved in the graphics comparison harness: within `UsingFrontEnd`, a scoped
+``FE`Evaluate`` definition sends the truncation operation to
+``MathLink`CallFrontEnd[FrontEnd`Value[...]]`` before SVG export. The original
+`LabelingSize -> 30` example now exports a 190 pt high graphic without internal
+code. Woxi renders the truncated labels, keeping short labels intact.
+
+
+### Saved graphics review fixes (2026-11-05, second pass)
+
+Corrected styled frame measurement and asymmetric margins, inactive integral /
+sum / product notation, joined-list gaps at missing samples (including spline
+interpolation), parametric mesh functions with the actual third parameter,
+Wolfram's thin axes strokes, inset-relative arrowhead sizes, filled boundary meshes
+with holes and edge styles, mesh vertex indices, implicit / Boolean / affine
+region pictures, and connected radicals in ordinary table cells. Invalid
+stored frame tick callbacks now draw Wolfram's red error frame; inline tick
+functions resolve against the numerical axis ranges.
+
+Finite `LabelingSize` now renders labels with Wolfram's Text-style width
+measure and three-dot truncation. The corresponding repaired reference is
+valid for reviewing Woxi's output.

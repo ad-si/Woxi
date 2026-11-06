@@ -35,6 +35,7 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
   // The default `MeshFunctions` of a parametric curve is its parameter.
   let mut plot_opts = PlotOptions {
     mesh_by_parameter: true,
+    mesh_open_ends: true,
     ..PlotOptions::default()
   };
   let mut overrides = PlotRangeOverrides::default();
@@ -834,6 +835,18 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     all_params.extend(std::iter::repeat_n(params, series.len()));
     all_points.extend(series);
   }
+
+  plot_opts.mesh_parameters = all_points
+    .iter()
+    .zip(&all_params)
+    .map(|(points, params)| {
+      points
+        .iter()
+        .zip(params)
+        .map(|(&(x, y), &t)| (x, y, t))
+        .collect()
+    })
+    .collect();
 
   // Compute ranges (explicit PlotRange components override the data extents)
   let (data_x, data_y) = compute_data_ranges(&all_points);
@@ -1861,7 +1874,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if expressions_legend && plot_opts.plot_legends.is_empty() {
     plot_opts.plot_legends = bodies
       .iter()
-      .map(|b| crate::functions::graphics::traditional_label(b))
+      .map(|b| crate::functions::graphics::traditional_legend_label(b))
       .collect();
   }
 

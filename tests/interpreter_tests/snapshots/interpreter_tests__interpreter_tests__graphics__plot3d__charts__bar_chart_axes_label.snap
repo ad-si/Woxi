@@ -4,9 +4,9 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3}, AxesLabel -> {\"X Axis\", \"Y Ax
 ---
 <svg width="360" height="189" viewBox="0 0 3600 1890" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="1890" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="255" y="1306" width="694" height="508" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
-<rect x="1122" y="797" width="693" height="1017" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
-<rect x="1989" y="288" width="693" height="1526" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
+<rect x="219" y="1306" width="793" height="508" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="1098" y="797" width="792" height="1017" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="1976" y="288" width="793" height="1526" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
 <line x1="169.0" y1="1815.0" x2="2770.0" y2="1815.0" stroke="#666666" stroke-width="5"/>
 <line x1="169.0" y1="205.0" x2="169.0" y2="1815.0" stroke="#666666" stroke-width="5"/>
 <line x1="169.0" y1="1764.1" x2="193.0" y2="1764.1" stroke="#666666" stroke-width="5"/>
@@ -49,8 +49,8 @@ expression: "export_svg(r#\"BarChart[{1, 2, 3}, AxesLabel -> {\"X Axis\", \"Y Ax
 <line x1="169.0" y1="287.1" x2="209.0" y2="287.1" stroke="#666666" stroke-width="5"/>
 <text x="144.6" y="321.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
 <line x1="2770.0" y1="1815.0" x2="2837.0" y2="1815.0" stroke="#666666" stroke-width="5"/>
-<line x1="255.7" y1="1815.0" x2="255.7" y2="1875.0" stroke="#666666" stroke-width="5"/>
-<line x1="2683.3" y1="1815.0" x2="2683.3" y2="1875.0" stroke="#666666" stroke-width="5"/>
+<line x1="220.0" y1="1815.0" x2="220.0" y2="1875.0" stroke="#666666" stroke-width="5"/>
+<line x1="2770.0" y1="1815.0" x2="2770.0" y2="1875.0" stroke="#666666" stroke-width="5"/>
 <text x="2850.0" y="1849.7" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">X Axis</text>
 <text x="185.0" y="123.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Y Axis</text>
 </svg>

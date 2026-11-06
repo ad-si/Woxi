@@ -254,6 +254,8 @@ pub fn rectangle_chart_ast(
   let mut label_prims = Vec::new();
   let mut flat_index = 0usize;
   let mut swatches = Vec::new();
+  // Where each block starts and ends along x.
+  let (mut starts, mut ends) = (Vec::new(), Vec::new());
   for (s, set) in sets.iter().enumerate() {
     // A dataset starts 0.2 past the end of the one before.
     if s > 0 {
@@ -266,47 +268,27 @@ pub fn rectangle_chart_ast(
         swatches.push(style.clone());
       }
       let shape = if three_d {
-        // A box is six polygons over its corners, flush with the back of
-        // the deepest box, as wolframscript draws it.
+        // A block flush with the back of the deepest one, shaded as
+        // wolframscript shades a 3D chart's bars.
         let (d, h) = (item.sizes[1], item.sizes[2]);
-        let y0 = max_depth - d;
-        let v = |a: f64, b: f64, c: f64| {
-          Expr::List(vec![Expr::Real(a), Expr::Real(b), Expr::Real(c)].into())
+        let color = match chart_style.as_ref() {
+          None | Some(Expr::Identifier(_) | Expr::String(_)) => {
+            crate::functions::chart3d::chart3d_color(if multi {
+              pos
+            } else {
+              0
+            })
+          }
+          Some(_) => crate::functions::graphics::parse_color(&style)
+            .map_or_else(
+              || crate::functions::chart3d::chart3d_color(0),
+              |c| (c.r, c.g, c.b),
+            ),
         };
-        let corners = vec![
-          v(x, y0, 0.0),
-          v(x, max_depth, 0.0),
-          v(x, max_depth, h),
-          v(x, y0, h),
-          v(x + w, y0, 0.0),
-          v(x + w, max_depth, 0.0),
-          v(x + w, max_depth, h),
-          v(x + w, y0, h),
-        ];
-        let faces = [
-          [4, 3, 2, 1],
-          [5, 6, 7, 8],
-          [2, 3, 7, 6],
-          [5, 8, 4, 1],
-          [4, 8, 7, 3],
-          [2, 6, 5, 1],
-        ]
-        .iter()
-        .map(|f| {
-          call(
-            "Polygon",
-            vec![Expr::List(
-              f.iter()
-                .map(|&i| Expr::Integer(i))
-                .collect::<Vec<_>>()
-                .into(),
-            )],
-          )
-        })
-        .collect::<Vec<_>>();
-        call(
-          "GraphicsComplex",
-          vec![Expr::List(corners.into()), Expr::List(faces.into())],
+        crate::functions::chart3d::chart3d_block(
+          [x, max_depth - d, 0.0],
+          [x + w, max_depth, h],
+          color,
         )
       } else {
         let h = item.sizes[1];
@@ -322,7 +304,7 @@ pub fn rectangle_chart_ast(
           ],
         )
       };
-      let mut group = vec![style];
+      let mut group = if three_d { vec![] } else { vec![style] };
       group.extend(item.style.iter().cloned());
       if three_d {
         group.push(shape);
@@ -408,6 +390,8 @@ pub fn rectangle_chart_ast(
         ));
       }
       flat_index += 1;
+      starts.push(x);
+      ends.push(x + w);
       end = x + w;
       x = x + w + gap;
     }
@@ -460,11 +444,38 @@ pub fn rectangle_chart_ast(
 
   let mut opts = passthrough.clone();
   if three_d {
-    if !has.contains("Axes") {
-      opts.push(rule("Axes", Expr::Identifier("True".into())));
+    // Wolfram's 3D chart frame: seen almost from the front, the value
+    // axis on the right, the blocks' extents as unlabelled ticks below.
+    let group_of: Vec<usize> = sets
+      .iter()
+      .enumerate()
+      .flat_map(|(s, set)| std::iter::repeat_n(s, set.len()))
+      .collect();
+    let mut ticks = Vec::new();
+    if let (Some(&first), Some(&last)) = (starts.first(), ends.last()) {
+      ticks.push((first, 0.005));
+      ticks.push((last, 0.005));
+      for i in 1..starts.len() {
+        if group_of[i] == group_of[i - 1] {
+          ticks.push((f64::midpoint(ends[i - 1], starts[i]), 0.005));
+        }
+      }
+      ticks.push((first, 0.01));
+      ticks.push((last, 0.01));
     }
-    if !has.contains("Boxed") {
-      opts.push(rule("Boxed", Expr::Identifier("False".into())));
+    for o in crate::functions::chart3d::bar_chart3d_options(
+      &ticks, end, max_depth, true, true,
+    ) {
+      let named = match &o {
+        Expr::Rule { pattern, .. } => match pattern.as_ref() {
+          Expr::Identifier(n) => n.clone(),
+          _ => String::new(),
+        },
+        _ => String::new(),
+      };
+      if !has.contains(&named) {
+        opts.push(o);
+      }
     }
   } else {
     // A frame replaces the value axis, and its bottom edge is labelled by

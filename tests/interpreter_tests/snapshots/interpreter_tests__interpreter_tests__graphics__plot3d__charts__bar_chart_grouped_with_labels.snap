@@ -4,12 +4,12 @@ expression: "export_svg(r#\"BarChart[{{1, 2}, {3, 4}, {5, 6}}, ChartLabels -> {\
 ---
 <svg width="360" height="230" viewBox="0 0 3600 2300" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2300" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="199" y="1789" width="457" height="335" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
-<rect x="656" y="1454" width="458" height="670" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
-<rect x="1343" y="1119" width="457" height="1005" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
-<rect x="1800" y="784" width="457" height="1340" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
-<rect x="2486" y="449" width="458" height="1675" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
-<rect x="2944" y="114" width="457" height="2010" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>6</title></rect>
+<rect x="152" y="1789" width="468" height="335" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="670" y="1454" width="468" height="670" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="1340" y="1119" width="468" height="1005" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
+<rect x="1859" y="784" width="468" height="1340" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
+<rect x="2529" y="449" width="468" height="1675" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
+<rect x="3048" y="114" width="468" height="2010" opacity="1" fill="#00AAF2" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>6</title></rect>
 <line x1="85.0" y1="2125.0" x2="3517.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="5.0" x2="85.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="2057.9" x2="109.0" y2="2057.9" stroke="#666666" stroke-width="5"/>
@@ -52,13 +52,19 @@ expression: "export_svg(r#\"BarChart[{{1, 2}, {3, 4}, {5, 6}}, ChartLabels -> {\
 <line x1="85.0" y1="113.2" x2="125.0" y2="113.2" stroke="#666666" stroke-width="5"/>
 <text x="58.8" y="147.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
 <line x1="3517.0" y1="2125.0" x2="3585.6" y2="2125.0" stroke="#666666" stroke-width="5"/>
-<line x1="199.4" y1="2125.0" x2="199.4" y2="2185.0" stroke="#666666" stroke-width="5"/>
-<line x1="3402.6" y1="2125.0" x2="3402.6" y2="2185.0" stroke="#666666" stroke-width="5"/>
-<line x1="1114.6" y1="2125.0" x2="1114.6" y2="2165.0" stroke="#666666" stroke-width="5"/>
-<line x1="1343.4" y1="2125.0" x2="1343.4" y2="2165.0" stroke="#666666" stroke-width="5"/>
-<line x1="2258.6" y1="2125.0" x2="2258.6" y2="2165.0" stroke="#666666" stroke-width="5"/>
-<line x1="2487.4" y1="2125.0" x2="2487.4" y2="2165.0" stroke="#666666" stroke-width="5"/>
-<text x="657.0" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
-<text x="1801.0" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
-<text x="2945.0" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">C</text>
+<line x1="152.3" y1="2125.0" x2="152.3" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="3517.0" y1="2125.0" x2="3517.0" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="620.3" y1="2125.0" x2="620.3" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<line x1="670.9" y1="2125.0" x2="670.9" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<line x1="1341.3" y1="2125.0" x2="1341.3" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1138.9" y1="2125.0" x2="1138.9" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1809.3" y1="2125.0" x2="1809.3" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<line x1="1860.0" y1="2125.0" x2="1860.0" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<line x1="2530.4" y1="2125.0" x2="2530.4" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="2327.9" y1="2125.0" x2="2327.9" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="2998.4" y1="2125.0" x2="2998.4" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<line x1="3049.0" y1="2125.0" x2="3049.0" y2="2165.0" stroke="#666666" stroke-width="5"/>
+<text x="645.6" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
+<text x="1834.6" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
+<text x="3023.7" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">C</text>
 </svg>

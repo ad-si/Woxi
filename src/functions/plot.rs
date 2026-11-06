@@ -2781,7 +2781,7 @@ fn parse_filling_rules(
       other => out.push(other),
     }
   }
-  if !matches!(replacement, Expr::List(_)) {
+  if !matches!(replacement, Expr::List(_) | Expr::Rule { .. }) {
     return None;
   }
   let mut items: Vec<&Expr> = Vec::new();
@@ -3310,6 +3310,8 @@ pub(crate) struct PlotOptions {
   /// The labels of an explicit bottom / left list are also in `ticks_x` /
   /// `ticks_y`.
   pub frame_tick_edges: [FrameEdgeTicks; 4],
+  pub frame_tick_spec: Option<Expr>,
+  pub invalid_frame_ticks: bool,
   /// The plot theme labels the axes without explicit ticks with
   /// `Charting`SimpleTicks` (majors only, about six) over the displayed
   /// range instead of the automatic ticks.
@@ -3408,6 +3410,7 @@ pub(crate) struct PlotOptions {
   /// `PlotLabels -> {l1, l2, …}`: a label drawn after the right-hand end of
   /// each curve (None = that curve is unlabeled).
   pub plot_labels: Vec<Option<String>>,
+  pub labeling_size: Option<f64>,
   /// Per series: its `plot_labels` entry hangs off a horizontal leader line
   /// (a `Callout[data, label]` at its automatic place, the series' end)
   /// rather than sitting right after the last point (`PlotLabels`,
@@ -3571,6 +3574,8 @@ pub(crate) struct PlotOptions {
   /// The default mesh function is the curve parameter (`ParametricPlot`),
   /// taken as the position along the point list, instead of x.
   pub mesh_by_parameter: bool,
+  /// Original parametric samples (x, y, t), retained through clipping.
+  pub mesh_parameters: Vec<Vec<(f64, f64, f64)>>,
   /// Mesh values met exactly at the ends of a curve are not marked
   /// (`Plot`, which samples just inside its domain).
   pub mesh_open_ends: bool,
@@ -3701,6 +3706,8 @@ impl Default for PlotOptions {
       ticks_x: None,
       ticks_y: None,
       frame_tick_edges: FrameEdgeTicks::defaults(),
+      frame_tick_spec: None,
+      invalid_frame_ticks: false,
       simple_ticks: false,
       frame_label_bottom: None,
       frame_label_left: None,
@@ -3712,6 +3719,7 @@ impl Default for PlotOptions {
       curve_label_specs: Vec::new(),
       placed_highlights: Vec::new(),
       plot_labels: Vec::new(),
+      labeling_size: None,
       plot_label_leaders: Vec::new(),
       plot_labels_automatic: false,
       point_labels: Vec::new(),
@@ -3760,6 +3768,7 @@ impl Default for PlotOptions {
       mesh_shading: None,
       mesh_full_points: Vec::new(),
       mesh_by_parameter: false,
+      mesh_parameters: Vec::new(),
       mesh_open_ends: false,
       mesh_point_size: None,
       axes_origin: (None, None),
@@ -4610,7 +4619,7 @@ fn inline_segments_svg(
     .collect();
   let mut x = cx - widths.iter().sum::<f64>() / 2.0;
   let mid = ty - fs * 0.3;
-  let mut out = String::new();
+  let mut out = format!("<g color=\"{fill}\">");
   for (seg, w) in segments.iter().zip(&widths) {
     match seg {
       LabelSegment::Text(m) => out.push_str(&format!(
@@ -4631,6 +4640,7 @@ fn inline_segments_svg(
     }
     x += w;
   }
+  out.push_str("</g>");
   out
 }
 
@@ -5084,6 +5094,84 @@ fn generate_svg_up_to(
   }
 }
 
+/// Resolve function ticks once the numerical range is known. Named callback
+/// symbols in exported graphics live in Wolfram's $CellContext, so an
+/// unqualified user definition cannot be called from that stored graphic.
+fn with_frame_tick_functions(
+  opts: &PlotOptions,
+  x: (f64, f64),
+  y: (f64, f64),
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let Some(spec) = &opts.frame_tick_spec else {
+    return std::borrow::Cow::Borrowed(opts);
+  };
+  let mut invalid = false;
+  let mut resolve = |e: &Expr, (lo, hi): (f64, f64)| -> Expr {
+    let callable = matches!(
+      e,
+      Expr::Function { .. } | Expr::CurriedCall { .. }
+    ) || matches!(e, Expr::Identifier(s) if !matches!(s.as_str(), "None" | "False" | "Automatic" | "All"));
+    if !callable {
+      return e.clone();
+    }
+    let f = match e {
+      Expr::Identifier(s) if !s.contains('`') => {
+        id_expr(&format!("$CellContext`{s}"))
+      }
+      _ => e.clone(),
+    };
+    let call = Expr::CurriedCall {
+      func: Box::new(f),
+      args: vec![Expr::Real(lo), Expr::Real(hi)],
+    };
+    let result = evaluate_expr_to_expr(&call).ok();
+    if let Some(result) = result
+      && parse_explicit_tick_entries(&result).is_some()
+    {
+      return result;
+    }
+    invalid = true;
+    Expr::List(Vec::new().into())
+  };
+  let resolved = match spec {
+    Expr::List(items) if items.len() == 2 && items.iter().all(|e| matches!(e, Expr::List(p) if p.len() == 2 && p.iter().all(|q| !matches!(q, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))))) => {
+      let Expr::List(lr) = &items[0] else { unreachable!() };
+      let Expr::List(bt) = &items[1] else { unreachable!() };
+      Expr::List(vec![Expr::List(vec![resolve(&lr[0], y), resolve(&lr[1], y)].into()),
+        Expr::List(vec![resolve(&bt[0], x), resolve(&bt[1], x)].into())].into())
+    }
+    Expr::List(items) if items.len() == 4 => Expr::List(items.iter().enumerate().map(|(i, e)| resolve(e, if i % 2 == 0 { x } else { y })).collect()),
+    Expr::List(items) if items.len() == 2 => Expr::List(vec![resolve(&items[0], x), resolve(&items[1], y)].into()),
+    other => Expr::List(vec![resolve(other, x), resolve(other, y)].into()),
+  };
+  let mut out = opts.clone();
+  out.frame_tick_edges = parse_frame_ticks(&resolved);
+  out.invalid_frame_ticks = invalid;
+  for (axis, ticks) in [
+    (&mut out.ticks_x, &out.frame_tick_edges[0]),
+    (&mut out.ticks_y, &out.frame_tick_edges[1]),
+  ] {
+    if let Some(labels) = ticks.explicit_labels() {
+      *axis = Some(labels);
+    }
+  }
+  std::borrow::Cow::Owned(out)
+}
+
+fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
+  let Some(width) = opts.labeling_size else {
+    return std::borrow::Cow::Borrowed(opts);
+  };
+  let mut out = opts.clone();
+  for label in out.plot_labels.iter_mut().flatten() {
+    *label = plot_padding::truncate_label(label, width);
+  }
+  for spec in &mut out.curve_label_specs {
+    spec.text = plot_padding::truncate_label(&spec.text, width);
+  }
+  std::borrow::Cow::Owned(out)
+}
+
 fn generate_svg_with_options(
   all_points: &[Vec<(f64, f64)>],
   x_range: (f64, f64),
@@ -5093,6 +5181,8 @@ fn generate_svg_with_options(
   if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
+  let opts = &*with_labeling_size(opts);
+  let opts = &*with_frame_tick_functions(opts, x_range, y_range);
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let opts = &*with_simple_ticks(opts, x_range, y_range);
   let (x_min, x_max) = x_range;
@@ -5958,6 +6048,7 @@ fn generate_svg_with_options(
           &opts.mesh,
           &opts.mesh_functions,
           opts.mesh_by_parameter,
+          &opts.mesh_parameters,
         );
         // (position, radius, colour, opacity) of every curve's mesh points.
         let mut pending_mesh_dots: Vec<((f64, f64), u32, (u8, u8, u8), f64)> =
@@ -6075,6 +6166,7 @@ fn generate_svg_with_options(
               opts.mesh_shading.as_ref(),
               opts.mesh_by_parameter,
               opts.mesh_open_ends,
+              opts.mesh_parameters.get(series_idx).map_or(&[], |p| p.as_slice()),
             )
           });
 
@@ -6577,6 +6669,12 @@ fn generate_svg_with_options(
               len: None,
               style: None,
             })
+            .chain(x_ticks.minors.iter().map(|&pos| ExplicitTick {
+              pos,
+              label: String::new(),
+              len: Some((0.003, 0.0)),
+              style: None,
+            }))
             .collect(),
         );
       }
@@ -6949,6 +7047,19 @@ fn generate_svg_with_options(
     }
   }
 
+  if opts.invalid_frame_ticks {
+    let tint = format!(
+      "<rect width=\"{render_width}\" height=\"{render_height}\" fill=\"rgb(100%,33%,33%)\" fill-opacity=\"0.08\"/>\n"
+    );
+    if let Some(start) = buf.find("<rect")
+      && let Some(end) = buf[start..].find('>')
+    {
+      buf.insert_str(start + end + 1, &tint);
+    }
+    if let Some(end) = buf.rfind("</svg>") {
+      buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
+    }
+  }
   Ok(buf)
 }
 
@@ -8304,9 +8415,9 @@ pub(crate) struct BarChartLook {
   pub frame: bool,
   pub frame_color: Option<RGBColor>,
   pub frame_width: Option<u32>,
-  /// `BarSpacing -> s`: the space between adjacent groups (single bars of a
-  /// flat list), as a fraction of a group's width.
-  pub bar_spacing: Option<f64>,
+  /// `BarSpacing -> s` / `{s, sg}`: the space between the bars of a group
+  /// and between groups, in bar widths.
+  pub bar_spacing: BarSpacing,
   /// `AspectRatio -> r`: height / width of the plotting area.
   pub aspect_ratio: Option<f64>,
   /// `ChartLayout`: how the bars of a group share its slot.
@@ -8325,6 +8436,8 @@ pub(crate) struct BarChartLook {
   pub edge: Option<((u8, u8, u8), f64, f64)>,
   /// `ChartElementFunction -> "FadingRectangle"` / `"GlassRectangle"`.
   pub element: BarElement,
+  pub element_function: Option<Expr>,
+  pub element_values: Vec<Vec<Expr>>,
   /// Which frame edges `Frame` draws: left, right, bottom, top.
   pub frame_sides: [bool; 4],
   /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
@@ -8341,7 +8454,7 @@ impl Default for BarChartLook {
       frame: false,
       frame_color: None,
       frame_width: None,
-      bar_spacing: None,
+      bar_spacing: BarSpacing::default(),
       aspect_ratio: None,
       layout: BarLayout::Grouped,
       bar_colors: Vec::new(),
@@ -8349,6 +8462,8 @@ impl Default for BarChartLook {
       value_axis_negated: false,
       edge: None,
       element: BarElement::Rectangle,
+      element_function: None,
+      element_values: Vec::new(),
       frame_sides: [true; 4],
       value_grid: None,
     }
@@ -8424,25 +8539,139 @@ pub(crate) struct BarRect {
   pub y1: f64,
 }
 
-/// The rectangles of a bar chart's groups under `layout`, each group
-/// leaving `gap` free on both sides. The single canonical bar layout, shared
-/// by the SVG renderer and the chart's `Graphics` structure.
+/// A `BarChart`'s `BarSpacing`: the space between the bars of one group
+/// (`within`) and between groups (`between`), each in bar widths, `None`
+/// for `Automatic`. A scalar `BarSpacing -> s` sets `within`, which for a
+/// flat list is the space between its bars.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct BarSpacing {
+  pub within: Option<f64>,
+  pub between: Option<f64>,
+  /// Given as a `{s, sg}` pair (a stacked chart then spaces its columns by
+  /// `sg`).
+  pub pair: bool,
+}
+
+/// The width WL's automatic `BarSpacing` gives a bar, in units of the bar
+/// step (a spacing of about 0.108 bar widths).
+const AUTO_BAR_WIDTH: f64 = 0.9024034959941734;
+
+/// The width of each bar of an `n`-bar flat chart under automatic spacing,
+/// read off wolframscript: constant up to nine bars, then the bars narrow
+/// in two linear stretches, and from 46 bars on they touch.
+pub(crate) fn auto_flat_bar_width(n: usize) -> f64 {
+  let line = |n0: usize, a: f64, n1: usize, b: f64| {
+    a + (b - a) * (n - n0) as f64 / (n1 - n0) as f64
+  };
+  let left_edge = match n {
+    0..=9 => 1.0 - AUTO_BAR_WIDTH / 2.0,
+    10..=33 => line(10, 0.5460988028072107, 33, 0.6521260492637952),
+    34..=45 => line(34, 0.6102525182834277, 45, 0.6459224506692425),
+    _ => 0.5,
+  };
+  2.0 * (1.0 - left_edge)
+}
+/// The bar width of an automatic spacing within groups when the space
+/// between groups is given explicitly.
+const AUTO_BAR_WIDTH_FIXED_GROUPS: f64 = 0.916590284142988;
+
+/// Where the bars sit in a group's slot (one unit wide per group): the
+/// empty `margin` on each side, each bar's `width` and the `step` from one
+/// bar's left edge to the next.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BarSlot {
+  pub margin: f64,
+  pub width: f64,
+  pub step: f64,
+}
+
+impl BarSpacing {
+  /// The layout of a slot holding `columns` side-by-side bars, following
+  /// WL: in units of the bar step a bar is `w = 1/(1 + s)` wide, groups are
+  /// `sg w` apart, and a group's slot is `columns - 1 + w + sg w` wide.
+  /// Automatic spacing is WL's for a chart of few bars: `w ≈ 0.902` with
+  /// groups `4 (1 - w)` apart, or `0.2 w` apart once `s` is given.
+  pub(crate) fn slot(
+    self,
+    columns: usize,
+    layout: BarLayout,
+    groups: usize,
+  ) -> BarSlot {
+    let clean = |v: Option<f64>| v.filter(|x| x.is_finite() && *x >= 0.0);
+    let (within, between) = (clean(self.within), clean(self.between));
+    if layout == BarLayout::Overlapped {
+      // Full-width bars over one another, the groups apart as grouped
+      // bars' groups are.
+      let gap = between.unwrap_or(if within.is_some() {
+        0.2
+      } else {
+        4.0 * (1.0 - AUTO_BAR_WIDTH) / AUTO_BAR_WIDTH
+      });
+      let width = 1.0 / (1.0 + gap);
+      return BarSlot {
+        margin: (1.0 - width) / 2.0,
+        width,
+        step: 0.0,
+      };
+    }
+    if columns <= 1 {
+      let s = if layout.single_column() && self.pair {
+        between
+      } else {
+        within
+      };
+      let width =
+        s.map_or_else(|| auto_flat_bar_width(groups), |s| 1.0 / (1.0 + s));
+      return BarSlot {
+        margin: (1.0 - width) / 2.0,
+        width,
+        step: 0.0,
+      };
+    }
+    let w = within.map_or(
+      if between.is_some() {
+        AUTO_BAR_WIDTH_FIXED_GROUPS
+      } else {
+        AUTO_BAR_WIDTH
+      },
+      |s| 1.0 / (1.0 + s),
+    );
+    let gap = between.map_or(
+      if within.is_some() {
+        0.2 * w
+      } else {
+        4.0 * (1.0 - w)
+      },
+      |sg| sg * w,
+    );
+    let slot = (columns - 1) as f64 + w + gap;
+    BarSlot {
+      margin: gap / 2.0 / slot,
+      width: w / slot,
+      step: 1.0 / slot,
+    }
+  }
+}
+
+/// The rectangles of a bar chart's groups under `layout`, placed in their
+/// slots by `spacing`. The single canonical bar layout, shared by the SVG
+/// renderer and the chart's `Graphics` structure.
 pub(crate) fn bar_rects(
   groups: &[Vec<f64>],
   layout: BarLayout,
-  gap: f64,
+  spacing: BarSpacing,
 ) -> Vec<BarRect> {
   let k = groups.iter().map(Vec::len).max().unwrap_or(1).max(1);
   let slots = if layout.single_column() { 1 } else { k };
-  let bar_w = (1.0 - 2.0 * gap) / slots as f64;
+  let slot = spacing.slot(slots, layout, groups.len());
   let mut rects = Vec::new();
   for (gi, group) in groups.iter().enumerate() {
-    let group_x0 = gi as f64 + gap;
+    let group_x0 = gi as f64 + slot.margin;
     let total: f64 = group.iter().map(|v| v.abs()).sum();
     let (mut up, mut down, mut run) = (0.0_f64, 0.0_f64, 0.0_f64);
     for (bi, &val) in group.iter().enumerate() {
       let column = if layout.single_column() { 0 } else { bi };
-      let x0 = group_x0 + column as f64 * bar_w;
+      let x0 = group_x0 + column as f64 * slot.step;
       let (y0, y1) = match layout {
         BarLayout::Grouped | BarLayout::Overlapped => (0.0, val),
         BarLayout::Stacked | BarLayout::Percentile => {
@@ -8470,7 +8699,7 @@ pub(crate) fn bar_rects(
         group: gi,
         index: bi,
         x0,
-        x1: x0 + bar_w,
+        x1: x0 + slot.width,
         y0,
         y1,
       });
@@ -8479,21 +8708,13 @@ pub(crate) fn bar_rects(
   rects
 }
 
-/// The empty margin on each side of a bar group, in units of the group's
-/// slot (one per group): 0.1 by default, else half the `BarSpacing -> s`
-/// space between groups, which is `s` bar widths — a group of `columns`
-/// bars takes `columns / (columns + s)` of its slot.
-pub(crate) fn bar_group_gap(bar_spacing: Option<f64>, columns: usize) -> f64 {
-  let columns = columns.max(1) as f64;
-  match bar_spacing {
-    Some(sp) if sp.is_finite() && sp >= 0.0 => sp / (columns + sp) / 2.0,
-    _ => 0.1,
-  }
-}
-
 /// The bare margin left of and below a vertical bar chart's label areas,
 /// in display points (WL 15's automatic `ImagePadding` hugs the labels).
 const BAR_SIDE_MARGIN: f64 = 2.0;
+
+/// The length (points) of the tick a framed grouped bar chart puts between
+/// two groups, slightly longer than its bars' ticks.
+const FRAME_GROUP_TICK_LEN: f64 = 2.73;
 
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
@@ -8531,7 +8752,8 @@ pub(crate) fn generate_bar_svg(
   };
   // Palette index is by position within the group even when stacked.
   let k_colors = groups.iter().map(std::vec::Vec::len).max().unwrap_or(1);
-  let rects = bar_rects(groups, layout, bar_group_gap(look.bar_spacing, k));
+  let rects = bar_rects(groups, layout, look.bar_spacing);
+  let slot = look.bar_spacing.slot(k, layout, n);
   // Highest drawn point of a group.
   let group_top = |gi: usize| -> f64 {
     rects
@@ -8576,7 +8798,19 @@ pub(crate) fn generate_bar_svg(
   // PlotRange -> {{xmin, xmax}, ...} extends the drawn axis (bars stay
   // at their slots and the excess becomes empty padding), mirroring
   // the way ListLinePlot treats an x-range wider than the data.
-  let (x_min, x_max) = plot_range_x.unwrap_or((0.0, n as f64));
+  // Otherwise WL's range runs from 2% of the bars' span before the first
+  // bar (where the y axis stands) to the last bar's edge; a frame pads that
+  // by another `Scaled[0.02]` of it on both sides.
+  let (x_min, x_max) = plot_range_x.unwrap_or_else(|| {
+    let (first, last) = (slot.margin, n as f64 - slot.margin);
+    let lo = first - 0.02 * (last - first);
+    if look.frame {
+      let pad = 0.02 / 0.96 * (last - lo);
+      (lo - pad, last + pad)
+    } else {
+      (lo, last)
+    }
+  });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
   let s = RESOLUTION_SCALE as i32;
@@ -8699,12 +8933,20 @@ pub(crate) fn generate_bar_svg(
     r - 1.5 * sf
   };
   let x_axis_overrun = axis_overrun(BAR_SIDE_MARGIN * sf + y_label_area as f64);
-  let legend_margin_right = if chart_legends.is_empty() || row_legend {
-    (x_axis_overrun + 1.5 * sf) as u32
-  } else {
-    chart_legend_column_width(chart_legends, sf) as u32
+  // A column legend is set beside the finished image (see the end).
+  let column_legend = !chart_legends.is_empty() && !row_legend;
+  let legend_color = |i: usize| {
+    if chart_style.is_empty() {
+      crate::functions::chart::CHART_COLORS
+        [i % crate::functions::chart::CHART_COLORS.len()]
+    } else {
+      let c = &chart_style[i % chart_style.len()];
+      let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+      (ch(c.r), ch(c.g), ch(c.b))
+    }
   };
-  let legend_margin_right = legend_margin_right + axes_label_margin_right;
+  let legend_margin_right =
+    (x_axis_overrun + 1.5 * sf) as u32 + axes_label_margin_right;
 
   // `AspectRatio -> r` makes the plotting area (not the whole image) r times
   // as tall as it is wide; the image grows or shrinks around it.
@@ -8722,6 +8964,7 @@ pub(crate) fn generate_bar_svg(
   // `AxesStyle` recolours the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
 
+  let mut custom_elements = Vec::new();
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -8771,6 +9014,37 @@ pub(crate) fn generate_bar_svg(
           crate::functions::chart::CHART_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
+        if let Some(function) = &look.element_function {
+          let pair =
+            |a, b| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+          let invocation = Expr::CurriedCall {
+            func: Box::new(function.clone()),
+            args: vec![
+              Expr::List(
+                vec![pair(rect.x0, rect.x1), pair(rect.y0, rect.y1)].into(),
+              ),
+              look.element_values[gi][bi].clone(),
+              Expr::List(Vec::new().into()),
+            ],
+          };
+          let element = evaluate_expr_to_expr(&invocation)?;
+          custom_elements.push(Expr::List(
+            vec![
+              Expr::FunctionCall {
+                name: "RGBColor".into(),
+                args: vec![
+                  Expr::Real(br as f64 / 255.0),
+                  Expr::Real(bg as f64 / 255.0),
+                  Expr::Real(bb as f64 / 255.0),
+                ]
+                .into(),
+              },
+              element,
+            ]
+            .into(),
+          ));
+          continue;
+        }
         chart
           .draw_series(std::iter::once(Rectangle::new(
             [(rect.x0, rect.y0), (rect.x1, rect.y1)],
@@ -8888,6 +9162,16 @@ pub(crate) fn generate_bar_svg(
     - BAR_SIDE_MARGIN * sf
     - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
+  if !custom_elements.is_empty() {
+    let fragment = crate::functions::graphics::primitives_svg_fragment(
+      &Expr::List(custom_elements.into()),
+      (x_min, x_max, y_min, y_max),
+      (plot_w / sf, plot_h / sf),
+    );
+    if let Some(end) = buf.rfind("</svg>") {
+      buf.insert_str(end, &format!("<g transform=\"translate({plot_x0},{plot_y0}) scale({sf})\">{fragment}</g>"));
+    }
+  }
 
   // `GridLines -> {…, Automatic}`: lines across the plot at the value
   // ticks, behind the bars.
@@ -8931,11 +9215,10 @@ pub(crate) fn generate_bar_svg(
       log: false,
     };
     let no_x_ticks = crate::functions::plot_axes::AxisTicks::default();
-    let x_axis_end = if (chart_legends.is_empty() || row_legend) && !look.frame
-    {
-      plot_x0 + plot_w + x_axis_overrun
-    } else {
+    let x_axis_end = if look.frame {
       plot_x0 + plot_w
+    } else {
+      plot_x0 + plot_w + x_axis_overrun
     };
     let origin = if look.frame {
       (x_min, y_min)
@@ -8973,12 +9256,42 @@ pub(crate) fn generate_bar_svg(
         plot_x0 + plot_w
       ));
     }
-    // The x axis carries no labels, only marks hanging below it at the
-    // outer edges of the bars (6 pt) and, between labelled bars, at both
-    // edges of each gap (4 pt).
-    if show_ticks && n > 0 {
-      let gap = bar_group_gap(look.bar_spacing, k);
-      let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
+    let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
+    if show_ticks && n > 0 && look.frame {
+      // A frame is ticked (inwards, on its bottom and top edges) at each
+      // bar's centre and, a little longer, in the middle of each gap
+      // between groups.
+      let [_, _, bottom, top] = look.frame_sides;
+      let mut marks: Vec<(f64, f64)> = rects
+        .iter()
+        .map(|r| {
+          (
+            f64::midpoint(r.x0, r.x1),
+            crate::functions::plot_axes::AXIS_MINOR_TICK_LEN,
+          )
+        })
+        .collect();
+      if k_colors > 1 {
+        marks.extend((1..n).map(|gi| (gi as f64, FRAME_GROUP_TICK_LEN)));
+      }
+      for (v, len) in marks {
+        let x = px(v);
+        for (shown, edge, dir) in
+          [(bottom, plot_y0 + plot_h, -1.0), (top, plot_y0, 1.0)]
+        {
+          if shown {
+            axes_svg.push_str(&format!(
+              "<line x1=\"{x:.1}\" y1=\"{edge:.1}\" x2=\"{x:.1}\" \
+               y2=\"{:.1}\" stroke=\"{axis_hex}\" stroke-width=\"{stroke:.0}\"/>\n",
+              edge + dir * len * sf
+            ));
+          }
+        }
+      }
+    } else if show_ticks && n > 0 {
+      // The x axis carries no labels, only marks hanging below it: 6 pt at
+      // the outer edges of the bars and at both edges of each gap between
+      // groups, and 4 pt at the edges of each labelled bar.
       let mut mark = |x: f64, len: f64| {
         axes_svg.push_str(&format!(
           "<line x1=\"{x:.1}\" y1=\"{axis_y:.1}\" x2=\"{x:.1}\" \
@@ -8986,12 +9299,24 @@ pub(crate) fn generate_bar_svg(
           axis_y + len * sf
         ));
       };
-      mark(px(gap), 6.0);
-      mark(px(n as f64 - gap), 6.0);
-      if has_chart_labels {
-        for gi in 1..n {
-          mark(px(gi as f64 - gap), 4.0);
-          mark(px(gi as f64 + gap), 4.0);
+      let (first, last) = (slot.margin, n as f64 - slot.margin);
+      mark(px(first), 6.0);
+      mark(px(last), 6.0);
+      for gi in 0..n {
+        let g0 = gi as f64 + slot.margin;
+        if k_colors > 1 && gi > 0 {
+          mark(px(g0), 6.0);
+          mark(px(gi as f64 - slot.margin), 6.0);
+        } else if has_chart_labels && gi > 0 {
+          mark(px(g0), 4.0);
+          mark(px(gi as f64 - slot.margin), 4.0);
+        }
+        if has_chart_labels && k > 1 {
+          for bi in 1..k {
+            let x = g0 + bi as f64 * slot.step;
+            mark(px(x - slot.step + slot.width), 4.0);
+            mark(px(x), 4.0);
+          }
         }
       }
     }
@@ -9133,11 +9458,11 @@ pub(crate) fn generate_bar_svg(
     // for `Above`). `bar_labels` is a
     // flat list across all groups/bars, aligned with the bar draw order.
     if has_value_labels {
-      let bar_w = (1.0 - 2.0 * bar_group_gap(look.bar_spacing, k)) / k as f64;
       // Shrink the font so the widest label fits within one bar's
-      // center-to-center spacing (`1.0` chart unit between groups, `bar_w`
-      // between bars in a group), preventing adjacent labels from overlapping.
-      let spacing_chart = if k > 1 { bar_w } else { 1.0 };
+      // center-to-center spacing (`1.0` chart unit between groups, the bar
+      // step between bars in a group), preventing adjacent labels from
+      // overlapping.
+      let spacing_chart = if k > 1 { slot.step } else { 1.0 };
       let spacing_px = (map_x_val(spacing_chart) - map_x_val(0.0)).abs();
       let max_len = bar_labels
         .iter()
@@ -9247,75 +9572,107 @@ pub(crate) fn generate_bar_svg(
       ));
     }
 
-    // ChartLegends: color swatch + label, positioned to the right of the
-    // plot (or in a single row below it for `LegendAppearance -> "Row"`)
-    if !chart_legends.is_empty() {
-      let swatch_size = sf * 12.0;
-      let swatch_gap = sf * 6.0;
+    // `LegendAppearance -> "Row"`: the ChartLegends in a single row below
+    // the plot.
+    if row_legend {
       let entry_gap = sf * 14.0;
-      let entry_width = |label: &String| {
-        swatch_size
-          + swatch_gap
-          + crate::functions::graphics::box_string_visible_len(label) as f64
-            * sf
-            * 8.5
-      };
-      let row_width = chart_legends.iter().map(entry_width).sum::<f64>()
+      let row_width = chart_legends
+        .iter()
+        .map(|l| chart_legend_entry_width(l) * sf)
+        .sum::<f64>()
         + entry_gap * (chart_legends.len() - 1) as f64;
       let mut row_x = plot_x0 + (plot_w - row_width) / 2.0;
       let row_y = render_height as f64 - sf * 24.0;
-      let legend_x = plot_x0 + plot_w + sf * 16.0;
-      let legend_y_start = plot_y0 + sf * 8.0;
-      let line_height = sf * 22.0;
-
+      let (_, _, _, _, text_fill) = plot_theme();
       for (i, label) in chart_legends.iter().enumerate() {
-        let (cr, cg, cb) = if chart_style.is_empty() {
-          crate::functions::chart::CHART_COLORS
-            [i % crate::functions::chart::CHART_COLORS.len()]
-        } else {
-          let c = &chart_style[i % chart_style.len()];
-          (
-            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-          )
-        };
-        let (legend_x, ly) = if row_legend {
-          let x = row_x;
-          row_x += entry_width(label) + entry_gap;
-          (x, row_y)
-        } else {
-          (legend_x, legend_y_start + i as f64 * line_height)
-        };
         labels_svg.push_str(&chart_legend_entry_svg(
           label,
-          (cr, cg, cb),
-          (legend_x, ly),
+          legend_color(i),
+          (row_x, row_y),
           sf,
-          label_fill,
+          text_fill,
         ));
+        row_x += chart_legend_entry_width(label) * sf + entry_gap;
       }
     }
 
     buf.insert_str(insert_pos, &labels_svg);
   }
 
+  if column_legend {
+    buf = crate::functions::chart::with_chart_legend(
+      buf,
+      chart_legends,
+      legend_color,
+    );
+  }
   Ok(buf)
 }
 
-/// The room a column of chart legend entries takes to the right of a
-/// chart: swatch, gap, the estimated text width and padding.
+/// WL's `ChartLegends` / `PlotLegends` swatch legend, in points: an
+/// edged square swatch, the label `CHART_LEGEND_TEXT_GAP` right of it in
+/// black 13 pt text, rows `CHART_LEGEND_ROW` apart.
+const CHART_LEGEND_SWATCH: f64 = 8.5;
+const CHART_LEGEND_TEXT_GAP: f64 = 5.15;
+const CHART_LEGEND_FONT: f64 = 13.0;
+const CHART_LEGEND_ROW: f64 = 18.6;
+/// The space between the chart's image and the legend column, and the
+/// margin right of the widest label.
+const CHART_LEGEND_LEFT: f64 = 10.45;
+const CHART_LEGEND_RIGHT: f64 = 5.0;
+
+/// The width one legend entry (swatch, gap, label) takes, in points.
+pub(crate) fn chart_legend_entry_width(label: &str) -> f64 {
+  CHART_LEGEND_SWATCH
+    + CHART_LEGEND_TEXT_GAP
+    + plot_padding::text_width(label, CHART_LEGEND_FONT)
+}
+
+/// The room a column of chart legend entries takes beside a chart's image
+/// (WL widens the image by it), in units of `sf` per point.
 pub(crate) fn chart_legend_column_width(labels: &[String], sf: f64) -> f64 {
-  let max_label_len = labels
+  let widest = labels
     .iter()
-    .map(|l| crate::functions::graphics::box_string_visible_len(l))
-    .max()
-    .unwrap_or(0);
-  sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0
+    .map(|l| chart_legend_entry_width(l))
+    .fold(0.0, f64::max);
+  (CHART_LEGEND_LEFT + widest + CHART_LEGEND_RIGHT) * sf
+}
+
+/// A column of chart legend entries (entry `i` coloured `color(i)`) set
+/// beside a chart image whose right edge is at `x` and whose vertical
+/// middle is `center_y`, as WL places it: a little above the middle.
+pub(crate) fn chart_legend_column_svg(
+  labels: &[String],
+  color: impl Fn(usize) -> (u8, u8, u8),
+  x: f64,
+  center_y: f64,
+  sf: f64,
+) -> String {
+  let block = (labels.len().saturating_sub(1) as f64 * CHART_LEGEND_ROW)
+    + CHART_LEGEND_SWATCH;
+  let top = center_y - 1.25 * sf - block * sf / 2.0;
+  let (_, _, _, _, text_fill) = plot_theme();
+  labels
+    .iter()
+    .enumerate()
+    .map(|(i, label)| {
+      chart_legend_entry_svg(
+        label,
+        color(i),
+        (
+          x + CHART_LEGEND_LEFT * sf,
+          top + i as f64 * CHART_LEGEND_ROW * sf,
+        ),
+        sf,
+        text_fill,
+      )
+    })
+    .collect()
 }
 
 /// One chart legend entry (`ChartLegends` / `PlotLegends`): a colour swatch
-/// with its top-left corner at `(x, y)` and the label beside it.
+/// edged like WL's (half a point of 64% black) with its top-left corner at
+/// `(x, y)`, and the label beside it on the swatch's baseline.
 pub(crate) fn chart_legend_entry_svg(
   label: &str,
   (cr, cg, cb): (u8, u8, u8),
@@ -9323,16 +9680,17 @@ pub(crate) fn chart_legend_entry_svg(
   sf: f64,
   label_fill: &str,
 ) -> String {
-  let legend_font = sf * 16.0;
-  let swatch_size = sf * 12.0;
-  let swatch_gap = sf * 6.0;
+  let legend_font = sf * CHART_LEGEND_FONT;
+  let swatch_size = sf * CHART_LEGEND_SWATCH;
   format!(
-    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-     fill=\"rgb({cr},{cg},{cb})\"/>\n\
+    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{swatch_size:.1}\" height=\"{swatch_size:.1}\" \
+     fill=\"rgb({cr},{cg},{cb})\" stroke=\"black\" stroke-opacity=\"0.637\" \
+     stroke-width=\"{:.2}\"/>\n\
      <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
-     fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-    x + swatch_size + swatch_gap,
-    y + swatch_size / 2.0,
+     fill=\"{label_fill}\">{}</text>\n",
+    0.5 * sf,
+    x + swatch_size + CHART_LEGEND_TEXT_GAP * sf,
+    y + swatch_size + 0.25 * sf,
     crate::functions::graphics::box_string_to_svg(label)
   )
 }
@@ -9929,13 +10287,8 @@ pub(crate) fn generate_bubble_chart_svg(
   let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
     plot_theme();
 
-  let legend_margin_right = if chart_legends.is_empty() {
-    10 * s as u32
-  } else {
-    let max_label_len =
-      chart_legends.iter().map(std::string::String::len).max().unwrap_or(0);
-    (sf * 12.0 + sf * 6.0 + max_label_len as f64 * sf * 10.0 + sf * 16.0) as u32
-  }
+  // `ChartLegends` are set beside the finished image (see the end).
+  let legend_margin_right = 10 * s as u32
   // The count-gradient bar legend occupies a 53-display-pixel strip right
   // of the plot — the widening wolframscript applies (360 → 413 pt).
   + if count_legend.is_some() { 53 * s as u32 } else { 0 };
@@ -10329,43 +10682,6 @@ pub(crate) fn generate_bubble_chart_svg(
       ));
     }
 
-    if !chart_legends.is_empty() {
-      let legend_font = sf * 16.0;
-      let swatch_size = sf * 12.0;
-      let swatch_gap = sf * 6.0;
-      let legend_x = plot_x0 + plot_w + sf * 16.0;
-      let legend_y_start = plot_y0 + sf * 8.0;
-      let line_height = sf * 22.0;
-
-      for (i, label) in chart_legends.iter().enumerate() {
-        let (cr, cg, cb) = if chart_style.is_empty() {
-          crate::functions::chart::CHART_COLORS
-            [i % crate::functions::chart::CHART_COLORS.len()]
-        } else {
-          let c = &chart_style[i % chart_style.len()];
-          (
-            (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-            (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-          )
-        };
-        let ly = legend_y_start + i as f64 * line_height;
-        // Bubbles are drawn fully opaque with a black border — mirror that
-        // on the swatch so the legend color visually matches the bubbles.
-        labels_svg.push_str(&format!(
-          "<rect x=\"{legend_x:.1}\" y=\"{ly:.1}\" width=\"{swatch_size:.0}\" height=\"{swatch_size:.0}\" \
-           fill=\"rgb({cr},{cg},{cb})\" stroke=\"#000000\" stroke-width=\"1\"/>\n"
-        ));
-        labels_svg.push_str(&format!(
-          "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{legend_font:.0}\" \
-           fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-          legend_x + swatch_size + swatch_gap,
-          ly + swatch_size / 2.0,
-          crate::functions::graphics::box_string_to_svg(label)
-        ));
-      }
-    }
-
     // Count-gradient bar legend (BubbleHistogram's PlotLegends ->
     // Automatic): a vertical WL12DefaultVectorGradient bar right of the
     // plot, smallest count at the bottom, labels at nice count steps —
@@ -10467,7 +10783,20 @@ pub(crate) fn generate_bubble_chart_svg(
     buf.insert_str(insert_pos, &labels_svg);
   }
 
-  Ok(buf)
+  Ok(crate::functions::chart::with_chart_legend(
+    buf,
+    chart_legends,
+    |i| {
+      if chart_style.is_empty() {
+        crate::functions::chart::CHART_COLORS
+          [i % crate::functions::chart::CHART_COLORS.len()]
+      } else {
+        let c = &chart_style[i % chart_style.len()];
+        let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+        (ch(c.r), ch(c.g), ch(c.b))
+      }
+    },
+  ))
 }
 
 /// Escape special characters for SVG/HTML text content.
@@ -10588,7 +10917,14 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   };
 
   let font_size = sf * 14.0;
-  let line_height = font_size * 1.6;
+  let line_height = opts
+    .plot_legends
+    .iter()
+    .filter_map(|label| {
+      crate::functions::graphics::legend_picture(label)
+        .map(|(_, _, h)| h * font_size / 14.0 + sf * 4.0)
+    })
+    .fold(font_size * 1.6, f64::max);
   let swatch_len = sf * 20.0;
   let swatch_gap = sf * 6.0;
   let legend_padding = sf * 10.0;
@@ -10852,6 +11188,9 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
 
 /// The width of a legend entry's label at `font_size` (render units).
 fn legend_label_width(opts: &PlotOptions, label: &str, font_size: f64) -> f64 {
+  if let Some((_, w, _)) = crate::functions::graphics::legend_picture(label) {
+    return w * font_size / 14.0;
+  }
   let text = crate::functions::graphics::box_string_visible_len(label) as f64
     * font_size
     * 0.55;
@@ -10874,6 +11213,14 @@ fn legend_label_svg(
   fill: &str,
 ) -> String {
   let sf = RESOLUTION_SCALE as f64;
+  if let Some((svg, _w, h)) = crate::functions::graphics::legend_picture(label)
+  {
+    let scale = font_size / 14.0;
+    return format!(
+      "<g color=\"{fill}\" transform=\"translate({x:.1},{:.1}) scale({scale:.5})\">{svg}</g>",
+      y - h * scale / 2.0
+    );
+  }
   let text_y = y + font_size * 0.35;
   if opts.legend_placeholders {
     let w = legend_label_width(opts, label, font_size);
@@ -11337,11 +11684,33 @@ pub(crate) fn generate_histogram_svg(
         * 18.0
   }) as u32;
 
-  // `ChartLegends` / `PlotLegends`: a column of swatches to the right.
-  let legend_margin_right = if opts.chart_legends.is_empty() {
-    0
-  } else {
-    chart_legend_column_width(&opts.chart_legends, sf) as u32
+  // `ChartLegends` / `PlotLegends`: a column of swatches set beside the
+  // finished image (see the end).
+  let legend_margin_right = 0u32;
+  // A swatch looks like its dataset's bars: overlaid datasets are
+  // translucent (see the bars below), shown here over the background.
+  let legend_color = |i: usize| {
+    let ((r, g, b), opacity) = if opts.chart_style.is_empty() {
+      if i == 0 && datasets.len() > 1 {
+        ((255, 204, 0), 0.8)
+      } else {
+        (
+          crate::functions::chart::CHART_COLORS
+            [i % crate::functions::chart::CHART_COLORS.len()],
+          0.7,
+        )
+      }
+    } else {
+      let c = &opts.chart_style[i % opts.chart_style.len()];
+      let ch = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
+      ((ch(c.r), ch(c.g), ch(c.b)), 0.7)
+    };
+    let opacity = if datasets.len() > 1 { opacity } else { 1.0 };
+    let (bg, _, _, _, _) = plot_theme();
+    let mix = |c: u8, under: u8| {
+      (c as f64 * opacity + under as f64 * (1.0 - opacity)).round() as u8
+    };
+    (mix(r, bg.0), mix(g, bg.1), mix(b, bg.2))
   };
   let (bg_color, _dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
@@ -11562,31 +11931,6 @@ pub(crate) fn generate_histogram_svg(
       label_fill,
     ));
 
-    // Legend entries, one per dataset, in the datasets' colours.
-    for (i, label) in opts.chart_legends.iter().enumerate() {
-      let color = if opts.chart_style.is_empty() {
-        crate::functions::chart::CHART_COLORS
-          [i % crate::functions::chart::CHART_COLORS.len()]
-      } else {
-        let c = &opts.chart_style[i % opts.chart_style.len()];
-        (
-          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
-      };
-      labels_svg.push_str(&chart_legend_entry_svg(
-        label,
-        color,
-        (
-          plot_x0 + plot_w + sf * 16.0,
-          plot_y0 + sf * 8.0 + i as f64 * sf * 22.0,
-        ),
-        sf,
-        label_fill,
-      ));
-    }
-
     // PlotLabel: centered above the chart
     if let Some(sl) = &opts.plot_label
       && !sl.text.is_empty()
@@ -11628,7 +11972,11 @@ pub(crate) fn generate_histogram_svg(
     }
   }
 
-  Ok(buf)
+  Ok(crate::functions::chart::with_chart_legend(
+    buf,
+    &opts.chart_legends,
+    legend_color,
+  ))
 }
 
 /// Generate SVG with plotters axes and a blank chart area, returning the SVG
@@ -14521,10 +14869,16 @@ pub(crate) fn parse_plot_legends(
           Expr::FunctionCall { name, args }
             if name == "TraditionalForm" && args.len() == 1 =>
           {
-            crate::functions::graphics::traditional_label(&args[0])
+            crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => crate::functions::graphics::styled_axis_label(item)
-            .unwrap_or_else(|| expr_to_string(item)),
+          _ => match crate::functions::graphics::structured_label_svg(item) {
+            Some(svg) => format!(
+              "{}{svg}",
+              crate::functions::graphics::STYLED_LABEL_MARKER
+            ),
+            None => crate::functions::graphics::styled_axis_label(item)
+              .unwrap_or_else(|| expr_to_string(item)),
+          },
         })
         .collect();
       (labels, false, false, LegendPosition::Right)
@@ -15068,6 +15422,10 @@ pub(crate) fn apply_common_plot_option(
     }
     // WL 15 hangs `PlotLabels` at the curve ends off callout leaders;
     // placed ones go where they are placed.
+    "LabelingSize" => {
+      plot_opts.labeling_size =
+        try_eval_to_f64(replacement).filter(|w| w.is_finite());
+    }
     "PlotLabels" => {
       plot_opts.plot_labels = Vec::new();
       plot_opts.curve_label_specs.clear();
@@ -15121,6 +15479,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
+      plot_opts.frame_tick_spec = Some(replacement.clone());
       let edges = parse_frame_ticks(replacement);
       plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
       if let Some(t) = edges[0].explicit_labels() {
@@ -16015,7 +16374,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for b in &bodies {
       plot_opts
         .plot_legends
-        .push(crate::functions::graphics::traditional_label(b));
+        .push(crate::functions::graphics::traditional_legend_label(b));
     }
   }
   if labels_expressions && plot_opts.plot_labels.is_empty() {

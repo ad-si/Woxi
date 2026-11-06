@@ -15838,8 +15838,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         ImageType::Real64 => ("Real64", "Real64"),
       };
       let color_space = match color_space {
+        Some("Automatic") | None => "Automatic".to_string(),
         Some(cs) => format!("\"{cs}\""),
-        None => "Automatic".to_string(),
       };
       let interleaving = if *channels == 1 { "None" } else { "True" };
 

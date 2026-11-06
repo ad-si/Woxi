@@ -334,6 +334,8 @@ struct StyleState {
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
   arrowheads: Option<Vec<ArrowHead>>,
+  /// Width of the inset picture in data coordinates, for scaled arrowheads.
+  arrowhead_width: Option<f64>,
   /// `CapForm[…]`: how the ends of an open stroked primitive (`Line`,
   /// `Arrow`) are drawn. `None` keeps Woxi's existing butt-cap rendering.
   cap_form: Option<LineCapKind>,
@@ -415,6 +417,69 @@ struct ArrowHead {
   position: f64,
   /// A custom head — the graphic drawn in place of the triangle.
   graphic: Option<Expr>,
+  /// `{g, rpos}` as the custom head: the shaft stops `rpos` head lengths
+  /// short of the head's point. 0 when not given.
+  shaft_stop: f64,
+}
+
+/// Wolfram's default arrowhead, tip at the origin pointing along +x, in
+/// head lengths: `(along, side)` with `side` to the right of the
+/// direction. Its concave back runs from one corner through the notch to
+/// the other; Wolfram's corners are not quite symmetric. Read off
+/// wolframscript's SVG of `Arrowheads[0.5]`.
+const ARROWHEAD_SHAPE: [(f64, f64); 13] = [
+  (-1.0, -0.26316),
+  (-0.98534, -0.23323),
+  (-0.95326, -0.16142),
+  (-0.93622, -0.11824),
+  (-0.92147, -0.07470),
+  (-0.91122, -0.03416),
+  (-0.90770, 0.0),
+  (-0.91122, 0.03091),
+  (-0.92147, 0.07091),
+  (-0.93622, 0.11592),
+  (-0.95326, 0.16186),
+  (-0.98534, 0.24031),
+  (-1.0, 0.27368),
+];
+
+/// How far back from the tip (in head lengths) the default head's notch
+/// sits — where Wolfram stops the shaft.
+const ARROWHEAD_NOTCH: f64 = 0.90770;
+
+/// Shorten a screen polyline by `start` pixels at its first end and `end`
+/// pixels at its last, measured along the path.
+fn trim_screen_path(
+  pts: &[(f64, f64)],
+  start: f64,
+  end: f64,
+) -> Vec<(f64, f64)> {
+  fn cut_front(pts: &[(f64, f64)], mut d: f64) -> Vec<(f64, f64)> {
+    for i in 0..pts.len().saturating_sub(1) {
+      let (a, b) = (pts[i], pts[i + 1]);
+      let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+      if d < len {
+        let f = d / len;
+        let mut out = vec![(a.0 + f * (b.0 - a.0), a.1 + f * (b.1 - a.1))];
+        out.extend_from_slice(&pts[i + 1..]);
+        return out;
+      }
+      d -= len;
+    }
+    Vec::new()
+  }
+  let front = if start > 0.0 {
+    cut_front(pts, start)
+  } else {
+    pts.to_vec()
+  };
+  if end <= 0.0 {
+    return front;
+  }
+  let mut rev: Vec<(f64, f64)> = front.into_iter().rev().collect();
+  rev = cut_front(&rev, end);
+  rev.reverse();
+  rev
 }
 
 #[derive(Debug, Clone)]
@@ -588,6 +653,7 @@ impl Default for StyleState {
       text_pixel_shift: (0.0, 0.0),
       text_scaled_shift: (0.0, 0.0),
       arrowheads: None,
+      arrowhead_width: None,
       cap_form: None,
       join_form: None,
     }
@@ -630,20 +696,32 @@ fn arrowhead_size(expr: &Expr) -> Option<(f64, bool)> {
 /// `{size, pos, graphic}`. `default_position` applies to a bare size.
 fn parse_arrowhead(spec: &Expr, default_position: f64) -> Option<ArrowHead> {
   match spec {
-    Expr::List(items) if !items.is_empty() => Some(ArrowHead {
-      size: arrowhead_size(&items[0])?.0,
-      absolute: arrowhead_size(&items[0])?.1,
-      position: items
-        .get(1)
-        .and_then(expr_to_f64)
-        .unwrap_or(default_position),
-      graphic: items.get(2).cloned(),
-    }),
+    Expr::List(items) if !items.is_empty() => {
+      // The head graphic is `g` or `{g, rpos}`.
+      let (graphic, shaft_stop) = match items.get(2) {
+        Some(Expr::List(gr)) if gr.len() == 2 => match expr_to_f64(&gr[1]) {
+          Some(r) => (Some(gr[0].clone()), r),
+          None => (items.get(2).cloned(), 0.0),
+        },
+        other => (other.cloned(), 0.0),
+      };
+      Some(ArrowHead {
+        size: arrowhead_size(&items[0])?.0,
+        absolute: arrowhead_size(&items[0])?.1,
+        position: items
+          .get(1)
+          .and_then(expr_to_f64)
+          .unwrap_or(default_position),
+        graphic,
+        shaft_stop,
+      })
+    }
     other => Some(ArrowHead {
       size: arrowhead_size(other)?.0,
       absolute: arrowhead_size(other)?.1,
       position: default_position,
       graphic: None,
+      shaft_stop: 0.0,
     }),
   }
 }
@@ -1318,7 +1396,44 @@ fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
   {
     return Some((x / *width as f64, 1.0 - y / *height as f64));
   }
-  None
+  inset_object_fraction(peel_style_wrapper(args.first()?), x, y)
+}
+
+/// Where the point `(ox, oy)` of an inset object's own coordinates sits in
+/// its picture, as fractions `(from the left, from the top)`.
+///
+/// A plot is measured in its data coordinates: one that gave no `PlotRange`
+/// is drawn over its data extent plus the default 2% padding on each side,
+/// so the point is measured against that padded range. A laid-out display
+/// (`Grid`, `Row`, `Column`, `Framed`) is measured in fractions of its own
+/// size, `{0, 0}` being its lower left corner and `{1, 1}` its upper right.
+pub(crate) fn inset_object_fraction(
+  object: &Expr,
+  ox: f64,
+  oy: f64,
+) -> Option<(f64, f64)> {
+  if let Expr::FunctionCall { name, .. } = object
+    && matches!(name.as_str(), "Grid" | "Row" | "Column" | "Framed")
+  {
+    return Some((ox, 1.0 - oy));
+  }
+  let Expr::Graphics { is_3d: false, .. } = object else {
+    return None;
+  };
+  let ((mut x0, mut x1), (mut y0, mut y1)) = absolute_plot_range(object)?;
+  let explicit = graphics_options(object).is_some_and(|opts| {
+    opts
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some((n, _)) if n == "PlotRange"))
+  });
+  if !explicit {
+    let (px, py) = ((x1 - x0) * 0.02, (y1 - y0) * 0.02);
+    (x0, x1, y0, y1) = (x0 - px, x1 + px, y0 - py, y1 + py);
+  }
+  if !(x1 > x0 && y1 > y0) {
+    return None;
+  }
+  Some(((ox - x0) / (x1 - x0), 1.0 - (oy - y0) / (y1 - y0)))
 }
 
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
@@ -2612,6 +2727,34 @@ impl TextDecoration {
     }
   }
 
+  /// Draw small caps explicitly: SVG renderers do not consistently implement
+  /// font-variant, and the bundled fonts have no small-cap substitution.
+  fn markup(self, markup: &str) -> String {
+    if !self.small_caps {
+      return markup.to_string();
+    }
+    let mut out = String::new();
+    let mut tag = false;
+    let mut entity = false;
+    for c in markup.chars() {
+      match c {
+        '<' => tag = true,
+        '>' => tag = false,
+        '&' if !tag => entity = true,
+        ';' if entity => entity = false,
+        _ => {}
+      }
+      if !tag && !entity && c.is_lowercase() {
+        out.push_str("<tspan font-size=\"80%\">");
+        out.extend(c.to_uppercase());
+        out.push_str("</tspan>");
+      } else {
+        out.push(c);
+      }
+    }
+    out
+  }
+
   /// The SVG attributes drawing these decorations (with a leading space),
   /// or an empty string.
   pub(crate) fn svg_attrs(self) -> String {
@@ -2855,20 +2998,44 @@ fn fill_curve_prims(prims: &mut Vec<Primitive>, start: usize, joined: bool) {
 /// segment of a component consumes `n` coordinates including its start
 /// point; each later segment starts at the previous end point and consumes
 /// `n` new coordinates. Lines and lower-degree curves are elevated to
-/// cubics.
+/// cubics. `coords` is a single shared point list or one list per
+/// component.
 fn filled_curve_segment_paths(
   segments: &Expr,
   coords: &Expr,
 ) -> Option<Vec<Vec<(f64, f64)>>> {
-  let coords = expr_to_point_list(coords)?;
   let Expr::List(components) = segments else {
     return None;
   };
+  // The coordinates are one shared list, or — as Wolfram's own arrowhead
+  // shapes give them — one list per component.
+  let per_component: Option<Vec<Vec<(f64, f64)>>> = match coords {
+    Expr::List(lists)
+      if lists.len() == components.len()
+        && lists.iter().all(|l| {
+          matches!(l, Expr::List(pts) if pts.iter().all(|p| matches!(p, Expr::List(_))))
+        }) =>
+    {
+      lists.iter().map(expr_to_point_list).collect()
+    }
+    _ => None,
+  };
+  let shared = match per_component {
+    Some(_) => Vec::new(),
+    None => expr_to_point_list(coords)?,
+  };
   let mut next = 0usize;
   let mut paths = Vec::new();
-  for component in components {
+  for (ci, component) in components.iter().enumerate() {
     let Expr::List(specs) = component else {
       return None;
+    };
+    let coords: &[(f64, f64)] = match &per_component {
+      Some(lists) => {
+        next = 0;
+        &lists[ci]
+      }
+      None => &shared,
     };
     let mut chain: Vec<(f64, f64)> = Vec::new();
     for spec in specs {
@@ -5030,6 +5197,17 @@ fn joined_curve_points(
 }
 
 fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  if let Expr::FunctionCall {
+    name,
+    args: line_args,
+  } = &args[0]
+    && name == "Line"
+    && !line_args.is_empty()
+  {
+    let mut unwrapped = args.to_vec();
+    unwrapped[0] = line_args[0].clone();
+    return parse_arrow(&unwrapped, style, prims);
+  }
   // Arrow[BSplineCurve[…]] / Arrow[BezierCurve[…]] — an arrow along a curve.
   if let Some(pts) = curve_polyline(&args[0], style) {
     let pts_expr = Expr::List(
@@ -5088,6 +5266,11 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       }
       CoordMode::Unsupported => Some(None),
     };
+    prims.push(Primitive::ArrowPrim {
+      points: pts.clone(),
+      setback,
+      style: style.clone(),
+    });
     for head in style.arrowheads.iter().flatten() {
       let Some(graphic) = &head.graphic else {
         continue;
@@ -5109,6 +5292,25 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         let (c, sn) = (angle.cos() * s, angle.sin() * s);
         [[c, -sn], [sn, c]]
       });
+      // A `Graphics[…]` head draws its primitives.
+      let graphic = match graphic {
+        Expr::FunctionCall { name, args }
+          if name == "Graphics" && !args.is_empty() =>
+        {
+          &args[0]
+        }
+        Expr::Graphics {
+          structure: Some(s), ..
+        } => match s.as_ref() {
+          Expr::FunctionCall { name, args }
+            if name == "Graphics" && !args.is_empty() =>
+          {
+            &args[0]
+          }
+          _ => graphic,
+        },
+        _ => graphic,
+      };
       let mut inner_style = style.clone();
       inner_style.arrowheads = None;
       let mut inner = Vec::new();
@@ -5125,11 +5327,6 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         });
       }
     }
-    prims.push(Primitive::ArrowPrim {
-      points: pts,
-      setback,
-      style: style.clone(),
-    });
   }
 }
 
@@ -6781,9 +6978,21 @@ fn inset_primitives(
     // `Inset[obj, pos, {Left, Top}]` puts the object's own corner, not its
     // centre, on `pos`. Embedded pictures always centre on the anchor, so
     // pad the picture to twice its distance to the far side of that point.
-    if let Some((fx, fy)) = inset_object_anchor(args)
-      && ((fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
+    let (mut x, mut y) = (x, y);
+    let object_anchor = inset_object_anchor(args)
+      .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9);
+    if let Some((fx, fy)) = object_anchor
+      && let Some((sw, sh)) = size
+      && !scaled
+      && !inset_size_is_scaled(args)
+      && plot.is_some_and(|g| inset_object_fraction(g, 0.0, 0.0).is_some())
     {
+      // A plot with an explicit size is laid out anew at that size, so its
+      // anchor point is reached by moving the centre rather than by padding
+      // the picture.
+      x += (0.5 - fx) * sw;
+      y += (fy - 0.5) * sh;
+    } else if let Some((fx, fy)) = object_anchor {
       let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
       let (pw, ph) = (w * kx, h * ky);
       let (ox, oy) = (pw / 2.0 - fx * w, ph / 2.0 - fy * h);
@@ -6943,7 +7152,11 @@ fn inset_primitives(
       };
       // After scaling about the centre, the alignment point moved with it.
       let (ax, ay) = (cx + (ox - cx) * sx, cy + (oy - cy) * sy);
-      translate_primitive(&p, pos.0 - ax, pos.1 - ay)
+      let mut p = translate_primitive(&p, pos.0 - ax, pos.1 - ay);
+      if let Primitive::ArrowPrim { style, .. } = &mut p {
+        style.arrowhead_width = Some(w * sx.abs());
+      }
+      p
     })
     .collect();
   Some(placed)
@@ -7100,18 +7313,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
-  let content = match framed_body {
-    Expr::FunctionCall { name, args: sargs }
-      if is_style_wrapper(name) && !sargs.is_empty() =>
-    {
-      for d in style_directives_in_application_order(&sargs[1..]) {
-        apply_directive(d, &mut local_style);
-        apply_text_style_directive(d, &mut local_style);
-      }
-      &sargs[0]
+  let mut content = framed_body;
+  while let Expr::FunctionCall { name, args: sargs } = content
+    && is_style_wrapper(name)
+    && !sargs.is_empty()
+  {
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      apply_directive(d, &mut local_style);
+      apply_text_style_directive(d, &mut local_style);
     }
-    other => other,
-  };
+    content = peel_label_rotate(&sargs[0], &mut rotation);
+  }
   let content = peel_label_rotate(content, &mut rotation);
   // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
   let content = match peel_invisible(content) {
@@ -7349,6 +7561,16 @@ fn text_offset(spec: &Expr) -> Option<(f64, f64)> {
     Expr::List(items) if items.len() == 2 => {
       Some((component(&items[0], true)?, component(&items[1], false)?))
     }
+    // A bare alignment symbol is the offset along its own axis:
+    // `Left` is `{-1, 0}`, `Top` is `{0, 1}`, `Center` is `{0, 0}`.
+    Expr::Identifier(s) => match s.as_str() {
+      "Left" => Some((-1.0, 0.0)),
+      "Right" => Some((1.0, 0.0)),
+      "Bottom" => Some((0.0, -1.0)),
+      "Top" => Some((0.0, 1.0)),
+      "Center" => Some((0.0, 0.0)),
+      _ => None,
+    },
     _ => None,
   }
 }
@@ -11110,6 +11332,45 @@ fn render_math_letterlike_glyphs(s: &str) -> String {
   out
 }
 
+/// Render primitives through Graphics' canonical collector in a caller's
+/// settled data frame. The caller positions this SVG fragment on its canvas.
+pub(crate) fn primitives_svg_fragment(
+  content: &Expr,
+  range: (f64, f64, f64, f64),
+  size: (f64, f64),
+) -> String {
+  let bb = BBox {
+    x_min: range.0,
+    x_max: range.1,
+    y_min: range.2,
+    y_max: range.3,
+  };
+  let (w, h) = size;
+  let frame = CoordFrame {
+    bb,
+    w,
+    h,
+    left: 0.0,
+    bottom: 0.0,
+    image_w: w,
+    image_h: h,
+  };
+  let mut primitives = Vec::new();
+  with_coord_mode(CoordMode::Known(frame), || {
+    collect_primitives(
+      content,
+      &mut StyleState::default(),
+      &mut primitives,
+      &mut Vec::new(),
+    );
+  });
+  let mut svg = String::new();
+  for (index, primitive) in primitives.iter().enumerate() {
+    render_primitive(primitive, index, &bb, w, h, &mut svg);
+  }
+  svg
+}
+
 fn render_primitive(
   prim: &Primitive,
   prim_index: usize,
@@ -11769,136 +12030,179 @@ fn render_primitive(
       let cap = stroke_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
 
-      // Draw the line
-      let pts: Vec<String> = trimmed
+      // The path in screen pixels, with its cumulative arc length, so a
+      // head's position along the arrow resolves to a point and a
+      // direction there.
+      let screen: Vec<(f64, f64)> = trimmed
         .iter()
-        .map(|&(x, y)| {
-          format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
-        })
+        .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
         .collect();
-      out.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
-        pts.join(" "),
-        color.to_svg_rgb(),
-        color.opacity_attr(),
-        dash,
-      ));
+      let seg_len: Vec<f64> = screen
+        .windows(2)
+        .map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt())
+        .collect();
+      let total_len_px: f64 = seg_len.iter().sum();
+
+      // The shape's bounding box, so a self-loop gets a head in
+      // proportion to the size it is drawn at rather than its arc length.
+      let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
+      let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
+      for &(x, y) in &screen {
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+      }
+      let bbox_diag =
+        ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
+
+      // Wolfram's `Arrowheads[Automatic]` is a head 4 % of the plot's
+      // width long, the same measure an explicit size gives — every
+      // arrow in a picture carries the same head, however short it is
+      // and however thick its shaft. Measured from wolframscript against
+      // `Arrowheads[0.1]` in frames of two different aspects.
+      //
+      // Two caps remain, for shapes a fixed head would swallow: 45 % of
+      // the path length, and 40 % of the shape's bounding-box diagonal
+      // (which keeps a self-loop's head in proportion to its visible
+      // size rather than its arc length).
+      let head_width = style
+        .arrowhead_width
+        .map_or(svg_w, |w| w * svg_w / bb.width());
+      let default_head = (head_width * 0.04)
+        .min(total_len_px * 0.45)
+        .min(bbox_diag * 0.4)
+        .max(1.0);
+
+      // Where a head at fraction `t` sits, and the unit direction of the
+      // path there (pointing towards the tip).
+      let at = |t: f64| -> Option<((f64, f64), (f64, f64))> {
+        if total_len_px <= 0.0 {
+          return None;
+        }
+        let mut want = t.clamp(0.0, 1.0) * total_len_px;
+        for (i, &len) in seg_len.iter().enumerate() {
+          if (want <= len || i + 1 == seg_len.len()) && len > 0.0 {
+            let f = (want / len).clamp(0.0, 1.0);
+            let (ax, ay) = screen[i];
+            let (bx, by) = screen[i + 1];
+            return Some((
+              (ax + f * (bx - ax), ay + f * (by - ay)),
+              ((bx - ax) / len, (by - ay) / len),
+            ));
+          }
+          want -= len;
+        }
+        None
+      };
+
+      // The size of a head in pixels. A size is a fraction of the plot
+      // width, as Wolfram's is — uncapped, because the whole point of
+      // naming it is to fix the head's size. A vector field draws
+      // hundreds of arrows barely longer than their heads, and Wolfram
+      // lets the head take up nearly all of each one.
+      let head_px = |h: &ArrowHead| {
+        if h.absolute {
+          h.size.abs()
+        } else {
+          h.size.abs() * head_width
+        }
+      };
+
+      // (position, head length in px, direction sign) for each head.
+      let heads: Vec<(f64, f64, f64)> = match &style.arrowheads {
+        None => vec![(1.0, default_head, 1.0)],
+        Some(specs) => specs
+          .iter()
+          // `Arrowheads[0]` draws no head at all (how Wolfram draws an
+          // undirected graph edge as an `Arrow`).
+          .filter(|h| h.graphic.is_none() && h.size != 0.0)
+          .map(|h| (h.position, head_px(h).max(1.0), h.size.signum()))
+          .collect(),
+      };
+
+      // Wolfram stops the shaft where it meets a head at either end of the
+      // arrow — at the notch of its own head, and at the point a custom
+      // head names (`{size, pos, {g, rpos}}`) — so a translucent arrow is
+      // not darker where the two would overlap.
+      let mut cut_start = 0.0f64;
+      let mut cut_end = 0.0f64;
+      for &(t, head_len, dir) in &heads {
+        if t >= 1.0 && dir > 0.0 {
+          cut_end = cut_end.max(head_len * ARROWHEAD_NOTCH);
+        } else if t <= 0.0 && dir < 0.0 {
+          cut_start = cut_start.max(head_len * ARROWHEAD_NOTCH);
+        }
+      }
+      for h in style.arrowheads.iter().flatten() {
+        if h.graphic.is_some() && h.shaft_stop > 0.0 {
+          let cut = head_px(h) * h.shaft_stop;
+          if h.position >= 1.0 && h.size > 0.0 {
+            cut_end = cut_end.max(cut);
+          } else if h.position <= 0.0 && h.size < 0.0 {
+            cut_start = cut_start.max(cut);
+          }
+        }
+      }
+      // A round/square stroke cap projects half a stroke past its endpoint.
+      // Keep that cap inside the head rather than exposing it at the notch.
+      if matches!(
+        style.cap_form,
+        Some(LineCapKind::Round | LineCapKind::Square)
+      ) {
+        if cut_start > 0.0 {
+          cut_start += sw / 2.0;
+        }
+        if cut_end > 0.0 {
+          cut_end += sw / 2.0;
+        }
+      }
+      let shaft = if cut_start + cut_end > 0.0 {
+        trim_screen_path(&screen, cut_start, cut_end)
+      } else {
+        screen.clone()
+      };
+
+      // Draw the line
+      if shaft.len() >= 2 {
+        let pts: Vec<String> = shaft
+          .iter()
+          .map(|&(x, y)| format!("{x:.2},{y:.2}"))
+          .collect();
+        out.push_str(&format!(
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
+          pts.join(" "),
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+          dash,
+        ));
+      }
 
       // Draw the arrowheads. Without an `Arrowheads` directive there is
       // one at the tip, sized to the arrow; with one, there is a head at
       // every position it names — except the ones carrying their own
       // graphic, which `parse_arrow` already placed.
-      if trimmed.len() >= 2 {
-        // The path in screen pixels, with its cumulative arc length, so a
-        // head's position along the arrow resolves to a point and a
-        // direction there.
-        let screen: Vec<(f64, f64)> = trimmed
-          .iter()
-          .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
-          .collect();
-        let seg_len: Vec<f64> = screen
-          .windows(2)
-          .map(|w| {
-            ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()
+      for (t, head_len, dir) in heads {
+        let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
+          continue;
+        };
+        let (ux, uy) = (ux * dir, uy * dir);
+        // `(px, py)` is the screen normal to the right of the direction.
+        let (px, py) = (-uy, ux);
+        let pts: Vec<String> = std::iter::once((0.0, 0.0))
+          .chain(ARROWHEAD_SHAPE.iter().copied())
+          .map(|(along, side)| {
+            let x = tip_x + (ux * along + px * side) * head_len;
+            let y = tip_y + (uy * along + py * side) * head_len;
+            format!("{x:.2},{y:.2}")
           })
           .collect();
-        let total_len_px: f64 = seg_len.iter().sum();
-
-        // The shape's bounding box, so a self-loop gets a head in
-        // proportion to the size it is drawn at rather than its arc length.
-        let (mut min_x, mut max_x) = (f64::INFINITY, f64::NEG_INFINITY);
-        let (mut min_y, mut max_y) = (f64::INFINITY, f64::NEG_INFINITY);
-        for &(x, y) in &screen {
-          min_x = min_x.min(x);
-          max_x = max_x.max(x);
-          min_y = min_y.min(y);
-          max_y = max_y.max(y);
-        }
-        let bbox_diag =
-          ((max_x - min_x).powi(2) + (max_y - min_y).powi(2)).sqrt();
-
-        // Wolfram's `Arrowheads[Automatic]` is a head 4 % of the plot's
-        // width long, the same measure an explicit size gives — every
-        // arrow in a picture carries the same head, however short it is
-        // and however thick its shaft. Measured from wolframscript against
-        // `Arrowheads[0.1]` in frames of two different aspects.
-        //
-        // Two caps remain, for shapes a fixed head would swallow: 45 % of
-        // the path length, and 40 % of the shape's bounding-box diagonal
-        // (which keeps a self-loop's head in proportion to its visible
-        // size rather than its arc length).
-        let default_head = (svg_w * 0.04)
-          .min(total_len_px * 0.45)
-          .min(bbox_diag * 0.4)
-          .max(1.0);
-
-        // Where a head at fraction `t` sits, and the unit direction of the
-        // path there (pointing towards the tip).
-        let at = |t: f64| -> Option<((f64, f64), (f64, f64))> {
-          if total_len_px <= 0.0 {
-            return None;
-          }
-          let mut want = t.clamp(0.0, 1.0) * total_len_px;
-          for (i, &len) in seg_len.iter().enumerate() {
-            if (want <= len || i + 1 == seg_len.len()) && len > 0.0 {
-              let f = (want / len).clamp(0.0, 1.0);
-              let (ax, ay) = screen[i];
-              let (bx, by) = screen[i + 1];
-              return Some((
-                (ax + f * (bx - ax), ay + f * (by - ay)),
-                ((bx - ax) / len, (by - ay) / len),
-              ));
-            }
-            want -= len;
-          }
-          None
-        };
-
-        // (position, head length in px, direction sign) for each head.
-        let heads: Vec<(f64, f64, f64)> = match &style.arrowheads {
-          None => vec![(1.0, default_head, 1.0)],
-          Some(specs) => specs
-            .iter()
-            // `Arrowheads[0]` draws no head at all (how Wolfram draws an
-            // undirected graph edge as an `Arrow`).
-            .filter(|h| h.graphic.is_none() && h.size != 0.0)
-            .map(|h| {
-              // A size is a fraction of the plot width, as Wolfram's is —
-              // uncapped, because the whole point of naming it is to fix
-              // the head's size. A vector field draws hundreds of arrows
-              // barely longer than their heads, and Wolfram lets the head
-              // take up nearly all of each one.
-              let px = if h.absolute {
-                h.size.abs()
-              } else {
-                h.size.abs() * svg_w
-              };
-              (h.position, px.max(1.0), h.size.signum())
-            })
-            .collect(),
-        };
-
-        for (t, head_len, dir) in heads {
-          let Some(((tip_x, tip_y), (ux, uy))) = at(t) else {
-            continue;
-          };
-          let (ux, uy) = (ux * dir, uy * dir);
-          // Wolfram's head is a good deal narrower than it is long: its
-          // corners sit 0.28 of the length either side of the shaft
-          // (measured across sizes and frames from wolframscript).
-          let head_half_w = head_len * 0.28;
-          // Perpendicular
-          let (px, py) = (-uy, ux);
-          let base_l_x = tip_x - ux * head_len + px * head_half_w;
-          let base_l_y = tip_y - uy * head_len + py * head_half_w;
-          let base_r_x = tip_x - ux * head_len - px * head_half_w;
-          let base_r_y = tip_y - uy * head_len - py * head_half_w;
-          out.push_str(&format!(
-            "<polygon points=\"{tip_x:.2},{tip_y:.2} {base_l_x:.2},{base_l_y:.2} {base_r_x:.2},{base_r_y:.2}\" fill=\"{}\"{}/>\n",
-            color.to_svg_rgb(),
-            color.opacity_attr(),
-          ));
-        }
+        out.push_str(&format!(
+          "<polygon points=\"{}\" fill=\"{}\"{}/>\n",
+          pts.join(" "),
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+        ));
       }
     }
     Primitive::TextPrim {
@@ -12242,8 +12546,9 @@ fn render_primitive(
         return;
       }
 
+      let cap = stroke_linecap_attr(style.cap_form);
       out.push_str(&format!(
-        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
+        "<path d=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"{cap}\"{}{}/>\n",
         d,
         color.to_svg_rgb(),
         color.opacity_attr(),
@@ -12301,7 +12606,8 @@ fn render_primitive(
           let sw = (x_max - x_min) / bb.width() * svg_w;
           let sh = (y_max - y_min) / bb.height() * svg_h;
           out.push_str(&format!(
-            "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"/>\n"
+            "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"{}/>\n",
+            crate::functions::image_ast::IMAGE_RENDERING_ATTRS
           ));
           return;
         }
@@ -13184,6 +13490,46 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if points.len() < 2 {
           continue;
         }
+        if style
+          .arrowheads
+          .as_ref()
+          .is_some_and(|heads| heads.iter().any(|h| h.graphic.is_some()))
+        {
+          let frame = CoordFrame {
+            bb,
+            w: svg_width as f64,
+            h: svg_height as f64,
+            left: 0.0,
+            bottom: 0.0,
+            image_w: svg_width as f64,
+            image_h: svg_height as f64,
+          };
+          let path = Expr::List(
+            points
+              .iter()
+              .map(|&(x, y)| {
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+              })
+              .collect(),
+          );
+          let mut placed = Vec::new();
+          with_coord_mode(CoordMode::Known(frame), || {
+            parse_arrow(&[path], style, &mut placed);
+          });
+          // The shaft is first; the remaining transformed primitives
+          // measure the custom heads at this scale.
+          for head in placed.iter().skip(1) {
+            let bounds = primitive_bbox(head);
+            if plot_range_x.is_none() {
+              grown.x_min = grown.x_min.min(bounds.x_min - 1.0 / kx);
+              grown.x_max = grown.x_max.max(bounds.x_max + 1.0 / kx);
+            }
+            if plot_range_y.is_none() {
+              grown.y_min = grown.y_min.min(bounds.y_min - 1.0 / ky);
+              grown.y_max = grown.y_max.max(bounds.y_max + 1.0 / ky);
+            }
+          }
+        }
         let heads: Vec<(f64, f64)> = match &style.arrowheads {
           None => vec![(1.0, 0.04)],
           Some(specs) => specs
@@ -13797,7 +14143,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   svg.push_str("</g>\n");
 
-  // The axes sit in front of the primitives, as Wolfram draws them.
+  // Wolfram paints axes after the primitives with a thin default stroke.
   render_axes(
     &mut svg,
     axes,
@@ -13807,9 +14153,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref(),
     (&ticks_x, &ticks_y),
     (margin_left, margin_right),
-    axes_style.as_ref().map_or_else(Default::default, |spec| {
-      AxisLineStyle::parse_pair(spec, &bb, svg_w)
-    }),
+    axes_style.as_ref().map_or_else(
+      || {
+        let style = AxisLineStyle {
+          width: 0.2,
+          ..Default::default()
+        };
+        (style.clone(), style)
+      },
+      |spec| AxisLineStyle::parse_pair(spec, &bb, svg_w),
+    ),
     ticks_style
       .as_ref()
       .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
@@ -14034,12 +14387,12 @@ fn fraction_side_needs_parens(b: &Expr) -> bool {
 /// Legacy stacked fraction for the old `expr_to_svg_markup` / `boxes_to_svg`
 /// text-based paths (used by Grid cell rendering). Renders as "num/den" inline.
 fn stacked_fraction_svg(
-  num_markup: &str,
-  den_markup: &str,
+  num: &str,
+  den: &str,
   _num_w: f64,
   _den_w: f64,
 ) -> String {
-  format!("{num_markup}/{den_markup}")
+  format!("{num}/{den}")
 }
 
 /// A rendered box layout node. Each node carries its pixel dimensions,
@@ -14145,11 +14498,12 @@ fn delim_pair_matches(open: char, close: char) -> bool {
 fn operator_space(s: &str) -> f64 {
   match s {
     "=" | "\u{2260}" | "<" | ">" | "\u{2264}" | "\u{2265}" | "\u{2261}"
-    | "\u{2262}" | "\u{2192}" | "\u{29F4}" | "\u{2248}" | "\u{221D}"
-    | "\u{21D2}" | "\u{27F9}" | "\u{F523}" | "\u{29E6}" | "\u{2208}"
-    | "\u{2209}" | "\u{220B}" | "\u{2282}" | "\u{2283}" | "\u{2286}"
-    | "\u{2287}" | "\u{2284}" | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
-    "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.36,
+    | "\u{2262}" | "\u{2248}" | "\u{221D}" | "\u{21D2}" | "\u{27F9}"
+    | "\u{F523}" | "\u{29E6}" | "\u{2208}" | "\u{2209}" | "\u{220B}"
+    | "\u{2282}" | "\u{2283}" | "\u{2286}" | "\u{2287}" | "\u{2284}"
+    | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
+    "\u{2192}" | "\u{29F4}" => 0.60,
+    "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.44,
     "\u{2227}" | "\u{2228}" | "\u{22C5}" | "\u{222A}" | "\u{2229}"
     | "\u{F3D3}" => 0.34,
     "\u{F432}" => 0.2,
@@ -14254,9 +14608,10 @@ fn render_stretchy_delim(
     ),
     '{' => {
       let midy = h / 2.0;
-      let xm = f64::midpoint(x0, x1);
+      let xm = x0;
+      let shoulder = f64::midpoint(x0, x1);
       format!(
-        "<path d=\"M {x1:.2} 0 Q {x0:.2} 0 {x0:.2} {q:.2} L {x0:.2} {a:.2} Q {x0:.2} {midy:.2} {xm:.2} {midy:.2} Q {x0:.2} {midy:.2} {x0:.2} {b:.2} L {x0:.2} {c:.2} Q {x0:.2} {h:.2} {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        "<path d=\"M {x1:.2} 0 Q {shoulder:.2} 0 {shoulder:.2} {q:.2} L {shoulder:.2} {a:.2} Q {shoulder:.2} {midy:.2} {xm:.2} {midy:.2} Q {shoulder:.2} {midy:.2} {shoulder:.2} {b:.2} L {shoulder:.2} {c:.2} Q {shoulder:.2} {h:.2} {x1:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
         q = h * 0.12,
         a = midy - h * 0.06,
         b = midy + h * 0.06,
@@ -14265,9 +14620,10 @@ fn render_stretchy_delim(
     }
     '}' => {
       let midy = h / 2.0;
-      let xm = f64::midpoint(x0, x1);
+      let xm = x1;
+      let shoulder = f64::midpoint(x0, x1);
       format!(
-        "<path d=\"M {x0:.2} 0 Q {x1:.2} 0 {x1:.2} {q:.2} L {x1:.2} {a:.2} Q {x1:.2} {midy:.2} {xm:.2} {midy:.2} Q {x1:.2} {midy:.2} {x1:.2} {b:.2} L {x1:.2} {c:.2} Q {x1:.2} {h:.2} {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
+        "<path d=\"M {x0:.2} 0 Q {shoulder:.2} 0 {shoulder:.2} {q:.2} L {shoulder:.2} {a:.2} Q {shoulder:.2} {midy:.2} {xm:.2} {midy:.2} Q {shoulder:.2} {midy:.2} {shoulder:.2} {b:.2} L {shoulder:.2} {c:.2} Q {shoulder:.2} {h:.2} {x0:.2} {h:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>",
         q = h * 0.12,
         a = midy - h * 0.06,
         b = midy + h * 0.06,
@@ -14368,7 +14724,7 @@ fn sqrt_radical(
   let p1 = (x0 + hook_w * 0.30, content_top + ch * 0.72);
   let p2 = (x0 + hook_w * 0.52, h - sw * 0.5);
   let p3 = (content_x, line_y);
-  let p4 = (w, line_y);
+  let p4 = (w - sw * 0.5, line_y);
   let path = format!(
     "<path d=\"M {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2} L {:.2} {:.2}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>",
     p0.0, p0.1, p1.0, p1.1, p2.0, p2.1, p3.0, p3.1, p4.0, p4.1,
@@ -14393,6 +14749,57 @@ impl BoxLayout {
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
+    if matches!(
+      s,
+      "\u{27F5}"
+        | "\u{27F6}"
+        | "\u{27F7}"
+        | "\u{27F8}"
+        | "\u{27F9}"
+        | "\u{27FA}"
+    ) {
+      let width = font_size * 1.5;
+      let y = ascent - font_size * 0.25;
+      let mut elements = String::new();
+      let double = matches!(s, "\u{27F8}" | "\u{27F9}" | "\u{27FA}");
+      for dy in if double { vec![-0.08, 0.08] } else { vec![0.0] } {
+        let yy = y + dy * font_size;
+        elements.push_str(&format!("<path d=\"M 0 {yy} H {width}\" fill=\"none\" stroke=\"currentColor\"/>"));
+      }
+      let mut head = |tip: f64, direction: f64| {
+        let back = tip - direction * font_size * 0.25;
+        elements.push_str(&format!("<path d=\"M {back} {} L {tip} {y} L {back} {}\" fill=\"none\" stroke=\"currentColor\"/>", y-font_size*0.2,y+font_size*0.2));
+      };
+      if !matches!(s, "\u{27F5}" | "\u{27F8}") {
+        head(width, 1.0);
+      }
+      if !matches!(s, "\u{27F6}" | "\u{27F9}") {
+        head(0.0, -1.0);
+      }
+      return Self {
+        width,
+        height,
+        baseline: ascent,
+        elements,
+      };
+    }
+    if s == "\u{22EF}" {
+      // The fallback font's ellipsis can span several monospace advances.
+      // Drawing the dots as geometry keeps its ink and measured width equal.
+      let width = font_size;
+      let y = ascent - 0.26 * font_size;
+      let elements = [0.15,0.5,0.85].iter().fold(String::new(), |mut acc, t| {
+        use std::fmt::Write;
+        let _ = write!(acc, "<circle cx=\"{:.2}\" cy=\"{y:.2}\" r=\"{:.2}\" fill=\"currentColor\" stroke=\"none\"/>",t*width,font_size*0.055);
+        acc
+      });
+      return Self {
+        width,
+        height,
+        baseline: ascent,
+        elements,
+      };
+    }
     // A string atom carrying embedded newlines — `ToString[1/3,
     // FormatType -> TraditionalForm]` renders a Rational as a stacked
     // "1\n-\n3" (matching wolframscript's OutputForm text rendering) —
@@ -15326,7 +15733,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
             y += row_h + gap_y;
           }
-          let first_bl = row_metrics.first().map_or(font_size, |(bl, _)| *bl);
+          let first_bl = total_h / 2.0 + 0.26 * font_size;
           BoxLayout {
             width: total_w,
             height: total_h,
@@ -16675,9 +17082,6 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── FunctionCall ──
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
-        // Missing[...] → rendered as a dash
-        "Missing" => "-".to_string(),
-
         // TildeTilde[a, b, ...] → a ≈ b ≈ ...
         "TildeTilde" if args.len() >= 2 => args
           .iter()
@@ -17026,6 +17430,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           } else {
             args[1..].to_vec()
           };
+          let mut decoration = TextDecoration::default();
+          for directive in &directives {
+            decoration.apply(directive);
+          }
+          let content = decoration.markup(&content);
           let attrs = style_directives_to_svg_attrs(&directives);
           if attrs.is_empty() {
             content
@@ -18676,6 +19085,57 @@ pub fn traditional_label(e: &Expr) -> String {
   }
 }
 
+/// A legend's mathematical expression uses the canonical two-dimensional box
+/// layout. The marker distinguishes the SVG picture from ordinary label text.
+pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
+  if let Expr::String(text) = expr {
+    return text.clone();
+  }
+  let expr = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  match structured_label_svg(expr) {
+    Some(svg) => format!("{STYLED_LABEL_MARKER}{svg}"),
+    None => traditional_label(expr),
+  }
+}
+
+/// Structured mathematical labels need a picture host instead of a text span.
+pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
+  let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
+  let source = crate::syntax::expr_to_string(&boxes);
+  if ![
+    "FractionBox[",
+    "SqrtBox[",
+    "RadicalBox[",
+    "GridBox[",
+    "UnderoverscriptBox[",
+    "OverscriptBox[",
+    "UnderscriptBox[",
+  ]
+  .iter()
+  .any(|head| source.contains(head))
+  {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  Some(layout_to_svg(&layout_box(&boxes, 14.0), "currentColor"))
+}
+
+pub(crate) fn legend_picture(label: &str) -> Option<(&str, f64, f64)> {
+  let svg = label.strip_prefix(STYLED_LABEL_MARKER)?;
+  if !svg.starts_with("<svg ") {
+    return None;
+  }
+  let (w, h) = svg_natural_size(svg)?;
+  Some((svg, w, h))
+}
+
 /// A label that applies a function the label typesetter has no notation
 /// for (`Sin[x]`, `Re[Z]`), set the way a graphic's `TraditionalForm` sets
 /// it: the traditional name, if any, applied in round brackets (`sin(x)`,
@@ -19343,29 +19803,135 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Canonical conversion of a mesh object, including filled boundary loops and labels.
+pub(crate) fn mesh_region_graphics_prims(region: &Expr) -> Option<Vec<Expr>> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let mesh = crate::functions::mesh_region::parse_mesh(region)?;
+  let opts: Vec<Expr> = args[2..]
+    .iter()
+    .filter(|o| option_kv(o).is_some())
+    .cloned()
+    .collect();
+  let mut prims = if name == "BoundaryMeshRegion" {
+    let [_, edge, face] = mesh_cell_styles(&opts);
+    let mut p = vec![
+      call1("EdgeForm", id_expr("None")),
+      face.unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr()),
+    ];
+    let rings = mesh.planar_rings()?;
+    p.extend(crate::functions::field_plot::region_plot_polygons(&rings));
+    p.push(edge.unwrap_or_else(|| Color::gray(0.4).to_expr()));
+    for edge in &mesh.cells[1] {
+      let points = edge
+        .iter()
+        .map(|i| mesh.coordinates.get(*i - 1).cloned())
+        .collect::<Option<Vec<_>>>()?;
+      p.push(call1("Line", Expr::List(points.into())));
+    }
+    p
+  } else {
+    mesh_region_to_graphics_prims(&args[0], &args[1], &opts)?
+  };
+  // MeshCellLabel specifications select a cell dimension, optionally an index.
+  if let Some((_, value)) = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "MeshCellLabel")
+  {
+    let entries = match value {
+      Expr::List(v) => v.to_vec(),
+      other => vec![other.clone()],
+    };
+    for entry in entries {
+      let Expr::Rule {
+        pattern,
+        replacement,
+      } = &entry
+      else {
+        continue;
+      };
+      let (dim, selected) = match pattern.as_ref() {
+        Expr::List(key) if key.len() == 2 => (
+          expr_to_f64(&key[0])?,
+          expr_to_f64(&key[1]).map(|i| i as usize),
+        ),
+        key => (expr_to_f64(key)?, None),
+      };
+      if !(0.0..=2.0).contains(&dim) || dim.fract() != 0.0 {
+        continue;
+      }
+      let cells = if dim == 0.0 {
+        (1..=mesh.coordinates.len()).map(|i| vec![i]).collect()
+      } else {
+        mesh.cells[dim as usize].clone()
+      };
+      for (i, cell) in cells.iter().enumerate() {
+        if selected.is_some_and(|n| n != i + 1) {
+          continue;
+        }
+        let points = cell
+          .iter()
+          .map(|n| expr_to_point(mesh.coordinates.get(*n - 1)?))
+          .collect::<Option<Vec<_>>>()?;
+        if points.is_empty() {
+          continue;
+        }
+        let (x, y) = points
+          .iter()
+          .fold((0.0, 0.0), |(x, y), p| (x + p.0, y + p.1));
+        let label = if matches!(replacement.as_ref(), Expr::String(s) if s == "Index")
+        {
+          Expr::Integer((i + 1) as i128)
+        } else {
+          *replacement.clone()
+        };
+        let position = Expr::List(
+          vec![
+            Expr::Real(x / points.len() as f64),
+            Expr::Real(y / points.len() as f64),
+          ]
+          .into(),
+        );
+        prims.push(Expr::List(
+          vec![
+            Color::gray(0.0).to_expr(),
+            call(
+              "Text",
+              vec![
+                call("Style", vec![label, Expr::Integer(10)]),
+                call(
+                  "Offset",
+                  vec![
+                    Expr::List(vec![Expr::Integer(2), Expr::Integer(2)].into()),
+                    position,
+                  ],
+                ),
+                Expr::List(vec![Expr::Integer(-1), Expr::Integer(-1)].into()),
+              ],
+            ),
+          ]
+          .into(),
+        ));
+      }
+    }
+  }
+  Some(prims)
+}
+
 /// A two-dimensional `MeshRegion`'s picture: its cells drawn as `Graphics`
 /// primitives, styled by its `MeshCellStyle`.
-pub(crate) fn mesh_region_2d_svg(
-  vertices_expr: &Expr,
-  primitives_expr: &Expr,
-  opts: &[Expr],
-) -> Option<String> {
-  // Only a mesh of `Polygon` cells is shown as a picture; others keep
-  // their symbolic form, as in wolframscript's text output.
-  let has_polygons = match primitives_expr {
-    Expr::List(cells) => cells.iter().any(
-      |c| matches!(c, Expr::FunctionCall { name, .. } if name == "Polygon"),
-    ),
-    Expr::FunctionCall { name, .. } => name == "Polygon",
-    _ => false,
-  };
-  if !has_polygons {
+pub(crate) fn mesh_region_2d_svg(region: &Expr) -> Option<String> {
+  let Expr::FunctionCall { args, .. } = region else {
     return None;
-  }
-  let prims =
-    mesh_region_to_graphics_prims(vertices_expr, primitives_expr, opts)?;
-  match &graphics_ast(&[Expr::List(prims.into())]).ok()? {
-    Expr::Graphics { svg, .. } => Some(svg.clone()),
+  };
+  let prims = mesh_region_graphics_prims(region)?;
+  let mut graphics_args = vec![Expr::List(prims.into())];
+  graphics_args
+    .extend(args[2..].iter().filter(|o| option_kv(o).is_some()).cloned());
+  match graphics_ast(&graphics_args).ok()? {
+    Expr::Graphics { ref svg, .. } => Some(svg.clone()),
     _ => None,
   }
 }
@@ -20296,7 +20862,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
         } else if let Some(graphics_prims) =
-          mesh_region_to_graphics_prims(&gargs[0], &gargs[1], &gargs[2..])
+          mesh_region_graphics_prims(&call(name, gargs.to_vec()))
         {
           layers.push(Layer::Prims(merged_primitives.len()));
           merged_primitives.push(Expr::List(graphics_prims.into()));
@@ -21387,7 +21953,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
-    return None;
+    return standard_fraction_cell_svg(content, size);
   };
   // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
   // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
@@ -21407,16 +21973,17 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     }
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
-  if name != "TraditionalForm"
+  if !matches!(name.as_str(), "TraditionalForm" | "StandardForm")
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
   {
     return standard_fraction_cell_svg(content, size);
   }
-  let boxes =
-    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
-      &args[0],
-    );
+  let boxes = if name == "StandardForm" {
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
+  } else {
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(&args[0])
+  };
   let source = crate::syntax::expr_to_string(&boxes);
   // A two-dimensional box — a stacked fraction, a radical, a binomial's
   // grid, a large operator's limits — needs the box layout; the text
@@ -21432,7 +21999,8 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   ]
   .iter()
   .any(|head| source.contains(head));
-  if !two_dimensional
+  if name != "TraditionalForm"
+    && !two_dimensional
     && !source.contains(crate::functions::string_ast::BOX_START)
     && !source.contains("\\!\\(")
   {
@@ -21472,12 +22040,15 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
   let arithmetic = matches!(cell, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
     || matches!(cell, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
-  if !arithmetic || !has_fraction(cell) {
+  if !arithmetic {
     return None;
   }
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form(cell);
-  if !box_has_fraction(&boxes) {
+  if !box_has_fraction(&boxes)
+    && !crate::syntax::expr_to_string(&boxes).contains("SqrtBox[")
+    && !crate::syntax::expr_to_string(&boxes).contains("RadicalBox[")
+  {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
@@ -21486,6 +22057,39 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+fn contains_base_form(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "BaseForm" || args.iter().any(contains_base_form)
+    }
+    Expr::List(items) => items.iter().any(contains_base_form),
+    _ => false,
+  }
+}
+
+/// A Labeled block aligns on its content, rather than the center of the
+/// combined content-and-caption rectangle.
+fn graphic_content_anchor(cell: &Expr, height: f64) -> f64 {
+  if let Expr::FunctionCall { name, args } = cell {
+    if is_style_wrapper(name) && !args.is_empty() {
+      return graphic_content_anchor(&args[0], height);
+    }
+    if name == "Labeled"
+      && args.len() >= 2
+      && let Some((_, _, h)) = grid_cell_graphic(&args[0])
+    {
+      return match args.get(2) {
+        Some(Expr::Identifier(p)) if p == "Top" => height - h / 2.0,
+        Some(Expr::Identifier(p)) if p == "Left" || p == "Right" => {
+          height / 2.0
+        }
+        _ => h / 2.0,
+      };
+    }
+  }
+  height / 2.0
 }
 
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
@@ -22855,7 +23459,7 @@ fn grid_svg_styled_internal(
   // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell
   // metrics (character width, line height, padding) follow that size.
   let size_scale: f64 = default_style.font_size.map_or(1.0, |fs| fs / 14.0);
-  let char_width: f64 = 8.4 * size_scale; // approximate monospace char width
+  let char_width: f64 = 8.4 * size_scale;
   let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
   let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
@@ -22974,12 +23578,16 @@ fn grid_svg_styled_internal(
       if is_span_placeholder(cell) {
         continue;
       }
-      let w = match grid_cell_graphic(cell) {
-        Some((_, nat_w, _)) => nat_w + col_pad(j),
-        None => {
-          estimate_display_width(cell) * char_width * cell_text_scale(cell)
-            + col_pad(j)
-        }
+      let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
+        nat_w + col_pad(j)
+      } else {
+        let advance = if contains_base_form(cell) {
+          font_size * MONO_ADVANCE
+        } else {
+          char_width
+        };
+        estimate_display_width(cell) * advance * cell_text_scale(cell)
+          + col_pad(j)
       };
       let cols = span_width(row, j);
       if cols > 1 {
@@ -23113,6 +23721,31 @@ fn grid_svg_styled_internal(
     }
     row_heights.push(max_h);
   }
+  let row_anchors: Vec<Option<f64>> = rows
+    .iter()
+    .enumerate()
+    .map(|(i, row)| {
+      let graphics: Vec<_> = row
+        .iter()
+        .filter_map(|cell| grid_cell_graphic(cell).map(|(_, _, h)| (cell, h)))
+        .collect();
+      if !graphics.iter().any(|(cell, h)| {
+        (graphic_content_anchor(cell, *h) - h / 2.0).abs() > 1e-9
+      }) {
+        return None;
+      }
+      let above = graphics
+        .iter()
+        .map(|(cell, h)| graphic_content_anchor(cell, *h))
+        .fold(0.0, f64::max);
+      let below = graphics
+        .iter()
+        .map(|(cell, h)| h - graphic_content_anchor(cell, *h))
+        .fold(0.0, f64::max);
+      row_heights[i] = row_heights[i].max(above + below + pad_y);
+      Some(above + pad_y / 2.0)
+    })
+    .collect();
   for (i, span, h) in row_spans {
     let end = (i + span).min(num_rows);
     let have: f64 = row_heights[i..end].iter().sum();
@@ -23455,7 +24088,10 @@ fn grid_svg_styled_internal(
           _ => x_offset + (col_w - nat_w) / 2.0,
         };
         let vis_h = cell_bottom - cell_top;
-        let gy = cell_top + (vis_h - nat_h) / 2.0;
+        let gy = cell_top
+          + row_anchors[i].map_or((vis_h - nat_h) / 2.0, |a| {
+            a - graphic_content_anchor(cell, nat_h)
+          });
         svg.push_str(&format!(
           "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
           parsed.view_box, parsed.inner_content
@@ -23482,23 +24118,17 @@ fn grid_svg_styled_internal(
           let vis_h = cell_bottom - cell_top;
           let iy = cell_top + (vis_h - draw_h) / 2.0;
 
-          // Encode image as base64 PNG
-          let dyn_img = crate::functions::image_ast::expr_to_dynamic_image(
-            *iw, *ih, *channels, data,
-          );
-          let mut buf = Vec::new();
-          dyn_img
-            .write_to(
-              &mut std::io::Cursor::new(&mut buf),
-              image::ImageFormat::Png,
-            )
-            .expect("PNG encoding failed");
-          let b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &buf,
+          // Encode image as base64 PNG, its pixels shown as blocks.
+          let b64 = crate::functions::image_ast::blocky_png_base64(
+            *iw,
+            *ih,
+            *channels,
+            data,
+            (draw_w, draw_h),
           );
           svg.push_str(&format!(
-            "<image x=\"{ix:.1}\" y=\"{iy:.1}\" width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"xMidYMid meet\"/>\n"
+            "<image x=\"{ix:.1}\" y=\"{iy:.1}\" width=\"{draw_w:.1}\" height=\"{draw_h:.1}\" href=\"data:image/png;base64,{b64}\" preserveAspectRatio=\"xMidYMid meet\"{}/>\n",
+            crate::functions::image_ast::IMAGE_RENDERING_ATTRS
           ));
         }
       } else {
@@ -23560,7 +24190,11 @@ fn grid_svg_styled_internal(
         let ff = cell_ff
           .as_deref()
           .or(default_style.font_family.as_deref())
-          .unwrap_or("sans-serif");
+          .unwrap_or(if contains_base_form(content) {
+            "monospace"
+          } else {
+            "sans-serif"
+          });
         // Hyperlink cells default to a link-blue fill (overridable via
         // explicit Style[..., color]). Plain cells use the cell/default/theme
         // colors as before.
@@ -23585,7 +24219,7 @@ fn grid_svg_styled_internal(
         } else {
           theme().text_primary.to_string()
         };
-        let markup = expr_to_svg_markup(text_content);
+        let markup = cell_decoration.markup(&expr_to_svg_markup(text_content));
         // A centred or right-aligned number in the proportional default
         // face sets its digit-group gaps as thin spaces: resvg leaves `dx`
         // shifts out of the `text-anchor` placement, so a `<tspan dx>` gap
@@ -24340,6 +24974,14 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
     } else if i < num_total_rows {
       y += row_height;
     }
+  }
+  // Separate every data column, including tables with uneven column widths.
+  let mut column_x = 0.0;
+  for width in col_widths.iter().take(col_widths.len().saturating_sub(1)) {
+    column_x += width;
+    svg.push_str(&format!(
+      "<line x1=\"{column_x:.1}\" y1=\"0\" x2=\"{column_x:.1}\" y2=\"{total_height:.1}\" stroke=\"{light_color}\" stroke-width=\"0.5\"/>\n"
+    ));
   }
   // Vertical lines (only outer borders)
   svg.push_str(&format!(
@@ -26869,6 +27511,14 @@ fn render_tabular_svg_grid(
     }
   }
 
+  // Separate every data column, including tables with uneven column widths.
+  let mut column_x = row_num_col_w;
+  for width in col_widths.iter().take(col_widths.len().saturating_sub(1)) {
+    column_x += width;
+    svg.push_str(&format!(
+      "<line x1=\"{column_x:.1}\" y1=\"0\" x2=\"{column_x:.1}\" y2=\"{total_height:.1}\" stroke=\"{light_color}\" stroke-width=\"0.5\"/>\n"
+    ));
+  }
   // Vertical lines: outer borders + separator after row-number column
   svg.push_str(&format!(
     "<line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"{total_height:.1}\" stroke=\"{border_color}\" stroke-width=\"1.5\"/>\n"
@@ -26906,6 +27556,7 @@ fn render_tabular_svg_grid(
 pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
+  let mut standard = false;
   while let Expr::FunctionCall { name, args } = &current {
     let pass_through = match name.as_str() {
       "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
@@ -26951,6 +27602,7 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       break;
     }
     traditional |= name == "TraditionalForm";
+    standard |= name == "StandardForm";
     let inner = args[0].clone();
     current = inner;
   }
@@ -26976,6 +27628,22 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     current = call1("TraditionalForm", current);
   } else if traditional {
     current = traditionalize_layout_items(&current);
+  } else if standard
+    && !matches!(&current, Expr::String(_))
+    && !crate::evaluator::lays_out_a_graphic(&current)
+    && !styles_a_layout
+  {
+    let boxes =
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+        &current,
+      );
+    let source = crate::syntax::expr_to_string(&boxes);
+    if ["FractionBox[", "SqrtBox[", "RadicalBox[", "GridBox["]
+      .iter()
+      .any(|head| source.contains(head))
+    {
+      current = call1("StandardForm", current);
+    }
   }
   current
 }
@@ -27572,6 +28240,21 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       return None;
     }
     match name.as_str() {
+      "Short" if args.len() <= 2 => {
+        if let Expr::List(ref items) = elided_for_display(name, &args) {
+          use crate::functions::container_layout::{
+            ListCell, list_layout_svg, set_baseline_attr,
+          };
+          let cells = items.iter().map(|item| {
+            let boxes = crate::evaluator::dispatch::complex_and_special::expr_to_box_form(item);
+            let layout = layout_box(&boxes,14.0);
+            let mut svg = layout_to_svg(&layout,theme().text_primary);
+            set_baseline_attr(&mut svg,layout.baseline);
+            ListCell::Picture(svg)
+          }).collect();
+          return list_layout_svg(cells);
+        }
+      }
       "Row" => return row_to_svg(&args),
       "Column" => return column_to_svg(&args),
       // An `Underscript`/`Overscript` over or under a picture or layout
@@ -27602,16 +28285,25 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       "Underoverscript" | "Overscript" | "Underscript"
         if (name == "Underoverscript" && args.len() == 3)
           || (args.len() == 2
-            && !matches!(&args[1], Expr::String(s) if s.chars().count() == 1)) =>
+            && !matches!(&args[1], Expr::String(s) if matches!(s.as_str(), "~" | "^" | "." | ".." | "_" | "-" | "\u{00AF}" | "\u{02C6}" | "\u{02DC}"))) =>
       {
         let script =
           |e: &Expr| call("Style", vec![e.clone(), Expr::Real(10.0)]);
+        let base = if matches!(&args[0], Expr::String(s) if s.chars().any(|c| ('\u{27F5}'..='\u{27FA}').contains(&c)))
+        {
+          crate::graphics_result(layout_to_svg(
+            &layout_box(&args[0], 14.0),
+            theme().text_primary,
+          ))
+        } else {
+          args[0].clone()
+        };
         let stacked = match name.as_str() {
           "Underoverscript" => {
-            vec![script(&args[2]), args[0].clone(), script(&args[1])]
+            vec![script(&args[2]), base, script(&args[1])]
           }
-          "Overscript" => vec![script(&args[1]), args[0].clone()],
-          _ => vec![args[0].clone(), script(&args[1])],
+          "Overscript" => vec![script(&args[1]), base],
+          _ => vec![base, script(&args[1])],
         };
         return column_to_svg(&[
           Expr::List(stacked.into()),
@@ -27868,7 +28560,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     0.0
   };
 
-  let char_width: f64 = 8.4;
+  let char_width: f64 = 14.0 * MONO_ADVANCE;
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
@@ -27963,7 +28655,8 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let n = cells.len();
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
-  let total_width = col_width;
+  let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
+  let total_width = col_width + 2.0 * frame_padding;
 
   let svg_w = total_width.ceil() as u32;
   let svg_h = total_height.ceil() as u32;
@@ -28025,7 +28718,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           // Spans inside the run carry their own `Style` colors; the
           // opacity (inherited by them) is what keeps those unpainted too.
           hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
-          content = expr_to_svg_markup(style.content),
+          content = style.decoration.markup(&expr_to_svg_markup(style.content)),
         ));
       }
       Cell::Svg {
@@ -28033,11 +28726,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         width: cw,
         height: ch,
       } => {
-        let x_off: f64 = match alignment {
-          "middle" => (total_width - cw) / 2.0,
-          "end" => total_width - cw,
-          _ => 0.0,
-        };
+        let x_off: f64 = frame_padding
+          + match alignment {
+            "middle" => (total_width - cw) / 2.0,
+            "end" => total_width - cw,
+            _ => 0.0,
+          };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
@@ -28271,7 +28965,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     }
   }
 
-  let char_width: f64 = 8.4;
+  let char_width: f64 = 14.0 * MONO_ADVANCE;
   let font_size: f64 = 14.0;
   let pad_y: f64 = 8.0;
 
@@ -28321,7 +29015,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = expr_to_svg_markup(item);
+    let markup = st.text_decoration.markup(&expr_to_svg_markup(item));
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -28823,9 +29517,6 @@ fn framed_box_to_svg(
     )
   };
 
-  // Layout constants
-  let char_width: f64 = 8.4;
-  let font_size: f64 = 14.0;
   let numeric_option = |key: &str| {
     args[1..]
       .iter()
@@ -28833,11 +29524,32 @@ fn framed_box_to_svg(
       .find(|(k, _)| *k == key)
       .and_then(|(_, v)| expr_to_f64(v))
   };
-  // `FrameMargins -> m` pads every side by `m` points (WL's automatic
-  // margins put the content 5 points inside a framed box's edge).
-  let margin: f64 =
-    numeric_option("FrameMargins").unwrap_or(if is_panel { 6.0 } else { 5.0 });
-  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(0.0);
+  let default_margin = if is_panel { 6.0 } else { 5.0 };
+  let margins = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameMargins")
+    .map(|(_, v)| v);
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  let (left, right, bottom, top) = match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
+      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
+      (m, m, m, m)
+    }
+  };
+  let rounding = numeric_option("RoundingRadius").unwrap_or(0.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
   let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
@@ -28943,81 +29655,66 @@ fn framed_box_to_svg(
     other => (other, inner_w, inner_h),
   };
 
-  if let Some(ref child_svg) = inner_svg {
-    // Embed child SVG inside a frame
-    let total_w = inner_w + 2.0 * margin;
-    let total_h = inner_h + 2.0 * margin;
-    let svg_w = total_w.ceil() as u32;
-    let svg_h = total_h.ceil() as u32;
-
-    let mut svg = String::with_capacity(child_svg.len() + 512);
-    svg.push_str(&format!(
-      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
-    ));
-    // Border rectangle
-    svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {}/>\n",
-      stroke_width / 2.0, stroke_width / 2.0,
-      total_w - stroke_width, total_h - stroke_width,
-      border_attrs(total_w),
-    ));
-    // Embed child SVG
-    svg.push_str(&format!(
-      "<svg x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\"{}>\n",
-      view_box_attr(child_svg)
-    ));
-    // Strip outer <svg> and </svg> tags from child to embed its content
-    let inner_content = strip_svg_wrapper(child_svg);
-    svg.push_str(inner_content);
-    svg.push_str("</svg>\n");
-    svg.push_str("</svg>");
-    Some(svg)
+  let (child_svg, content_w, content_h) = if let Some(svg) = inner_svg {
+    (svg, inner_w, inner_h)
   } else {
-    // Text content — measure and render. A `Pane`/`Item` around the text
-    // only sizes it, so the frame holds the content itself.
-    let pane_size = pane_content_size(content);
-    let (align_x, align_y) = pane_content_alignment(content);
-    let content = &unwrap_display_wrappers(content);
-    let (content_w, content_h) = pane_size.unwrap_or_else(|| {
-      let frac_extra = if has_fraction(content) { 10.0 } else { 0.0 };
-      // A framed line of text is one line height (1.2 em) tall in WL.
-      let line_h = if is_panel { font_size } else { font_size * 1.2 };
-      (
-        estimate_display_width(content) * char_width,
-        line_h + frac_extra,
-      )
-    });
-
-    let total_w = content_w + 2.0 * margin;
-    let total_h = content_h + 2.0 * margin;
-    let svg_w = total_w.ceil() as u32;
-    let svg_h = total_h.ceil() as u32;
-
-    let mut svg = String::with_capacity(512);
-    svg.push_str(&format!(
-      "<svg width=\"{svg_w}\" height=\"{svg_h}\" viewBox=\"0 0 {svg_w} {svg_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
-    ));
-    // Border rectangle
-    svg.push_str(&format!(
-      "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{:.1}\" height=\"{:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {}/>\n",
-      stroke_width / 2.0, stroke_width / 2.0,
-      total_w - stroke_width, total_h - stroke_width,
-      border_attrs(total_w),
-    ));
-    // The text sits where the pane's alignment puts it (centred by
-    // default) inside the content area.
-    let text_w = estimate_display_width(content) * char_width;
-    let line_h = font_size * 1.2;
-    let cx = margin + text_w / 2.0 + (content_w - text_w).max(0.0) * align_x;
-    let cy = margin + line_h / 2.0 + (content_h - line_h).max(0.0) * align_y;
-    let text_fill = theme().text_primary;
-    svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"monospace\" font-size=\"{font_size}\" fill=\"{text_fill}\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n",
-      expr_to_svg_markup(content)
-    ));
-    svg.push_str("</svg>");
-    Some(svg)
-  }
+    let content = unwrap_display_wrappers(content);
+    let style = extract_cell_style(&content);
+    let size = style.font_size.unwrap_or(14.0);
+    let boxes =
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+        style.content,
+      );
+    let layout =
+      layout_box(&crate::strip_number_precision_markers(&boxes), size);
+    let fill = style
+      .color
+      .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
+    let mut svg = layout_to_svg(&layout, &fill).replacen(
+      "<g fill=",
+      &format!(
+        "<g font-weight=\"{}\" font-style=\"{}\" opacity=\"{}\" fill=",
+        style.font_weight,
+        style.font_style,
+        i32::from(!style.hidden)
+      ),
+      1,
+    );
+    if let Some(family) = &style.font_family {
+      svg = svg
+        .replace("Atkinson Hyperlegible Mono, monospace", &svg_escape(family));
+    }
+    (svg, layout.width, layout.height)
+  };
+  let (area_w, area_h) =
+    pane_content_size(content).unwrap_or((content_w, content_h));
+  let (align_x, align_y) = pane_content_alignment(content);
+  let total_w = (area_w + left + right).ceil();
+  let total_h = (area_h + bottom + top).ceil();
+  let (child_svg, content_w, content_h) = if pane_content_size(content)
+    .is_some()
+  {
+    let x = (area_w - content_w).max(0.0) * align_x;
+    let y = (area_h - content_h).max(0.0) * align_y;
+    let svg = format!(
+      "<svg width=\"{area_w}\" height=\"{area_h}\" viewBox=\"0 0 {area_w} {area_h}\"><svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg></svg>",
+      view = view_box_attr(&child_svg),
+      body = strip_svg_wrapper(&child_svg)
+    );
+    (svg, area_w, area_h)
+  } else {
+    (child_svg, content_w, content_h)
+  };
+  let (x, y) = (left, top);
+  Some(format!(
+    "<svg width=\"{total_w}\" height=\"{total_h}\" viewBox=\"0 0 {total_w} {total_h}\" xmlns=\"http://www.w3.org/2000/svg\">\n<rect x=\"{half:.1}\" y=\"{half:.1}\" width=\"{rw:.1}\" height=\"{rh:.1}\" rx=\"{rounding:.1}\" fill=\"{rect_fill}\" {border}/>\n<svg x=\"{x:.1}\" y=\"{y:.1}\" width=\"{content_w:.2}\" height=\"{content_h:.2}\"{view}>{body}</svg>\n</svg>",
+    half = stroke_width / 2.0,
+    rw = total_w - stroke_width,
+    rh = total_h - stroke_width,
+    border = border_attrs(total_w),
+    view = view_box_attr(&child_svg),
+    body = strip_svg_wrapper(&child_svg)
+  ))
 }
 
 /// Render `Highlighted[expr]` (or `Highlighted[expr, color]`) as an SVG box
@@ -37504,7 +38201,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Graphics" | "Graphics3D" | "Image" | "Image3D" | "Graphics3DBox"
       | "GraphicsBox" | "RasterBox" => vec![],
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
-      | "Framed" | "Dynamic" | "HoldForm" | "Pane" | "Panel" => args
+      | "Framed" | "Dynamic" | "HoldForm" | "Defer" | "Pane" | "Panel" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
@@ -37603,6 +38300,17 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       }
       // `FormBox[boxes, form]` only records how its boxes were formatted.
       "FormBox" if !args.is_empty() => manipulate_label_runs(&args[0], italic),
+      // `ⅆx` — the differential operator followed by its variable, as a
+      // typeset derivative `ⅆ/ⅆx` writes it.
+      "DifferentialD" if args.len() == 1 => {
+        let mut runs = vec![LabelRun {
+          text: "\u{2146}".to_string(),
+          italic: false,
+          ..Default::default()
+        }];
+        runs.extend(manipulate_label_runs(&args[0], italic));
+        runs
+      }
       "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
       "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
       // `SuperscriptBox[x, "*"]` reads back as `SuperStar[x]` (and `"†"` as
@@ -37923,6 +38631,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Text"
           | "Tooltip"
           | "HoldForm"
+          | "Defer"
           | "DisplayForm"
           | "TraditionalForm"
           | "Subscript"
@@ -37930,6 +38639,7 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Subsuperscript"
           | "Overscript"
           | "Underscript"
+          | "DifferentialD"
       ) || args.iter().any(contains_presentation_head)
     }
     Expr::BinaryOp { left, right, .. } => {
@@ -44951,6 +45661,26 @@ mod manipulate_traditional_form_choice_svg_tests {
     }
   }
 
+  /// `Defer[expr]` is display-transparent, so a choice labelled with it
+  /// shows the expression rather than the `Defer[…]` wrapper.
+  #[test]
+  fn choice_labels_see_through_defer() {
+    let control = discrete_control(
+      "Manipulate[f, \
+       {{f, 1, \"f\"}, {1 -> Defer[g[n]], 2 -> Defer[Row[{\"a\", \"b\"}]]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert!(
+          value_labels.iter().all(|l| !l.contains("Defer")),
+          "{value_labels:?}"
+        );
+        assert_eq!(value_labels[1], "ab");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A choice whose label is a list of strings carrying inline boxes
   /// (`\!\(\*SubscriptBox[…]\)`) typesets as the braced list with the boxes
   /// laid out, not as `DisplayForm[SubscriptBox[…]]` source.
@@ -45388,4 +46118,47 @@ mod manipulate_traditional_form_equation_tests {
 /// followed only by options such as `MultilineFunction -> None`?
 pub(crate) fn is_fraction_box_args(args: &[Expr]) -> bool {
   args.len() >= 2 && args[2..].iter().all(crate::syntax::is_rule_expr)
+}
+
+#[cfg(test)]
+mod review_brace_regressions {
+  use super::*;
+
+  #[test]
+  fn brace_cusps_point_outwards_at_every_size() {
+    for size in [10.0, 14.0, 28.0] {
+      for height in [size * 2.0, size * 5.0] {
+        for kind in ['{', '}'] {
+          let brace = render_stretchy_delim(
+            kind,
+            height * 0.7,
+            height * 0.3,
+            size,
+            true,
+            false,
+          );
+          let path = brace
+            .elements
+            .split("d=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+          let numbers: Vec<f64> = path
+            .split_whitespace()
+            .filter_map(|s| s.parse().ok())
+            .collect();
+          let tip = numbers[0];
+          let shoulder = numbers[2];
+          let cusp = numbers[10];
+          if kind == '{' {
+            assert!(cusp < shoulder && shoulder < tip, "{path}");
+          } else {
+            assert!(cusp > shoulder && shoulder > tip, "{path}");
+          }
+        }
+      }
+    }
+  }
 }

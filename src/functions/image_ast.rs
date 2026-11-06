@@ -170,8 +170,11 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
 
 /// Encode an Expr::Image as a base64 PNG data URI `<img>` tag.
 ///
-/// `display_size` is the `ImageSize` the image is shown at; the embedded
-/// raster keeps its own pixel dimensions and is scaled without smoothing.
+/// `display_size` is the `ImageSize` the image is shown at. As in WL, the
+/// pixels are shown as blocks, never smoothed: the embedded raster is
+/// enlarged by nearest-neighbour sampling to (at least) 300 dpi of the
+/// displayed size, which is what WL's SVG export embeds, and marked for
+/// pixelated scaling.
 pub fn image_to_html_img(
   width: u32,
   height: u32,
@@ -180,23 +183,78 @@ pub fn image_to_html_img(
   display_size: Option<(u32, u32)>,
 ) -> String {
   let (shown_w, shown_h) = display_size.unwrap_or((width, height));
-  let rendering = if display_size.is_some() {
-    " style='image-rendering:pixelated'"
-  } else {
-    ""
-  };
-  let dyn_img = expr_to_dynamic_image(width, height, channels, data);
+  let b64 = blocky_png_base64(
+    width,
+    height,
+    channels,
+    data,
+    (shown_w as f64, shown_h as f64),
+  );
+  format!(
+    "<svg xmlns='http://www.w3.org/2000/svg' width='{shown_w}' height='{shown_h}'>\
+     <image href='data:image/png;base64,{b64}' width='{shown_w}' height='{shown_h}'{IMAGE_RENDERING_ATTRS}/>\
+     </svg>"
+  )
+}
+
+/// The attributes that make an SVG `<image>` scale its raster without
+/// smoothing (the SVG 1.1 hint and the CSS property, for every renderer).
+pub(crate) const IMAGE_RENDERING_ATTRS: &str =
+  " image-rendering='optimizeSpeed' style='image-rendering:pixelated'";
+
+/// An image's pixels as a base64 PNG for showing at `shown` points, its
+/// pixels enlarged into blocks by nearest-neighbour sampling to WL's
+/// 300 dpi (see [`image_block_factor`]).
+pub(crate) fn blocky_png_base64(
+  width: u32,
+  height: u32,
+  channels: u8,
+  data: &[f64],
+  shown: (f64, f64),
+) -> String {
+  let mut dyn_img = expr_to_dynamic_image(width, height, channels, data);
+  let shown = (
+    shown.0.max(0.0).round() as u32,
+    shown.1.max(0.0).round() as u32,
+  );
+  let factor = image_block_factor((width, height), shown);
+  if factor > 1 {
+    dyn_img = dyn_img.resize_exact(
+      width * factor,
+      height * factor,
+      image::imageops::FilterType::Nearest,
+    );
+  }
   let mut buf = Vec::new();
   dyn_img
     .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
     .expect("PNG encoding failed");
-  let b64 =
-    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf);
-  format!(
-    "<svg xmlns='http://www.w3.org/2000/svg' width='{shown_w}' height='{shown_h}'>\
-     <image href='data:image/png;base64,{b64}' width='{shown_w}' height='{shown_h}'{rendering}/>\
-     </svg>"
-  )
+  base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf)
+}
+
+/// The whole number of raster pixels per image pixel that brings an image
+/// of `pixels` shown at `shown` points to WL's 300 dpi, or 1 when it
+/// already has the resolution (or the enlarged raster would pass 4096
+/// pixels a side).
+pub(crate) fn image_block_factor(
+  (width, height): (u32, u32),
+  (shown_w, shown_h): (u32, u32),
+) -> u32 {
+  const DPI_SCALE: f64 = 300.0 / 72.0;
+  const MAX_SIDE: u32 = 4096;
+  if width == 0 || height == 0 {
+    return 1;
+  }
+  let need =
+    |shown: u32, px: u32| (shown as f64 * DPI_SCALE / px as f64).ceil();
+  let factor = need(shown_w, width).max(need(shown_h, height)).max(1.0) as u32;
+  if width.saturating_mul(factor) > MAX_SIDE
+    || height.saturating_mul(factor) > MAX_SIDE
+  {
+    1
+  } else {
+    factor
+  }
 }
 
 /// A standalone SVG *document* wrapping an image's raster as a base64 PNG.
@@ -640,7 +698,10 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   Ok(Expr::Image {
     // An explicit color space is remembered (ImageColorSpace, Options).
-    color_space: explicit_space.as_deref().and_then(color_space_tag),
+    color_space: explicit_space
+      .as_deref()
+      .and_then(color_space_tag)
+      .or((channels > 3 && explicit_space.is_none()).then_some("Automatic")),
     display_size: None,
     width,
     height,
@@ -1526,8 +1587,8 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // image (the common case for inputs built from raw NumericArrays).
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
+      Some("Automatic") | None => id_expr("Automatic"),
       Some(cs) => str_expr(cs),
-      None => id_expr("Automatic"),
     });
   }
   if is_valid_image3d(&args[0]) {
@@ -5031,6 +5092,9 @@ pub fn rgb_pixels<'a>(
   channels: u8,
   data: &'a [f64],
 ) -> (u8, Cow<'a, [f64]>) {
+  if color_space == Some("Automatic") && channels >= 4 {
+    return (3, Cow::Owned(spectral_rgb(data, channels as usize, false)));
+  }
   let ch = channels as usize;
   let (is_cmyk, has_alpha) = match (color_space, ch) {
     (Some("HSB"), 3) => (false, false),
@@ -5052,6 +5116,27 @@ pub fn rgb_pixels<'a>(
     }
   }
   (if has_alpha { 4 } else { 3 }, Cow::Owned(rgb))
+}
+
+/// Convert untagged spectral bands to RGB, shared by display and ColorConvert.
+fn spectral_rgb(data: &[f64], n: usize, single: bool) -> Vec<f64> {
+  let red = n / 3;
+  let blue = (n as f64 / 3.0).round() as usize;
+  let green = n - red - blue;
+  let mut rgb = Vec::with_capacity(data.len() / n * 3);
+  for px in data.chunks_exact(n) {
+    let mut start = 0;
+    for size in [red, green, blue] {
+      let group = &px[start..start + size];
+      rgb.push(if single {
+        (group.iter().map(|v| *v as f32).sum::<f32>() / size as f32) as f64
+      } else {
+        group.iter().sum::<f64>() / size as f64
+      });
+      start += size;
+    }
+  }
+  rgb
 }
 
 /// HSB/HSV → RGB. `h`, `s`, `v` in [0, 1]; the hue wraps modulo 1.
@@ -5338,7 +5423,7 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Floor[n/3], n - Floor[n/3] - Round[n/3] and Round[n/3] channels whose
   // means are the red, green and blue components.
   if let Expr::Image {
-    color_space: None,
+    color_space: None | Some("Automatic"),
     width,
     height,
     channels,
@@ -5348,24 +5433,11 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = source
     && *channels >= 4
   {
-    let n = *channels as usize;
-    let red = n / 3;
-    let blue = (n as f64 / 3.0).round() as usize;
-    let green = n - red - blue;
-    let mut rgb = Vec::with_capacity(data.len() / n * 3);
-    for px in data.chunks(n) {
-      let mut start = 0;
-      for size in [red, green, blue] {
-        let group = &px[start..start + size];
-        rgb.push(if matches!(image_type, ImageType::Real32) {
-          // Real32 pixels are averaged in single precision.
-          (group.iter().map(|v| *v as f32).sum::<f32>() / size as f32) as f64
-        } else {
-          group.iter().sum::<f64>() / size as f64
-        });
-        start += size;
-      }
-    }
+    let rgb = spectral_rgb(
+      data,
+      *channels as usize,
+      matches!(image_type, ImageType::Real32),
+    );
     let mut regrouped = args.to_vec();
     regrouped[0] = Expr::Image {
       color_space: Some("RGB"),
@@ -5419,7 +5491,16 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
         }
         "RGB" => {
-          if ch == 3 {
+          if ch == 3
+            || (ch == 4
+              && matches!(
+                source,
+                Expr::Image {
+                  color_space: Some("RGB"),
+                  ..
+                }
+              ))
+          {
             return Ok(retag(source, tag)); // Already RGB
           }
           if ch == 1 {

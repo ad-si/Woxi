@@ -215,6 +215,32 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
     * size
 }
 
+/// Finite LabelingSize uses the front end's Text-style (14 pt) measure.
+/// Keep at least two characters before the three-dot truncation marker,
+/// as TruncateStringToWidth does even for very small positive widths.
+pub(crate) fn truncate_label(markup: &str, width: f64) -> String {
+  if !width.is_finite() || text_width(markup, 14.0) <= width {
+    return markup.to_string();
+  }
+  if width <= 0.0 {
+    return String::new();
+  }
+  let chars = visible_chars(markup);
+  let mut count = chars.len().min(2);
+  while count < chars.len() {
+    let candidate =
+      format!("{}...", chars[..=count].iter().collect::<String>());
+    if text_width(&candidate, 14.0) > width {
+      break;
+    }
+    count += 1;
+  }
+  crate::functions::graphics::svg_escape(&format!(
+    "{}...",
+    chars[..count].iter().collect::<String>()
+  ))
+}
+
 /// Width of a tick label at `size` points. A number is measured the way
 /// the front end typesets it: a leading minus a little wider than a
 /// hyphen, and an integer part of five or more digits split into blocks

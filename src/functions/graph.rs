@@ -997,6 +997,30 @@ fn graph_render(
   let default_edge_color = Color::new(0.21, 0.406, 0.7);
   let default_applied_edge_color =
     *edge_style.as_ref().unwrap_or(&default_edge_color);
+  // A directed edge's head is `Arrowheads[Medium]`, a fixed 12 points,
+  // in a small graph. A graph of more than 20 vertices, or one whose
+  // vertices are small against its width, gets a head 2.5 vertex radii
+  // long instead (measured from wolframscript's `Show[graph]`).
+  let width = {
+    let (lo, hi) = positions
+      .iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      });
+    hi - lo
+  };
+  let relative_head = 2.5 * vertex_radius / width;
+  primitives.push(call1(
+    "Arrowheads",
+    if width > 0.0
+      && relative_head.is_finite()
+      && (vertices.len() > 20 || relative_head < 0.0225)
+    {
+      Expr::Real(relative_head)
+    } else {
+      Expr::Identifier("Medium".into())
+    },
+  ));
   primitives.push(call1("Opacity", Expr::Real(0.7)));
   primitives.push(default_applied_edge_color.to_expr());
   primitives.push(call1("CapForm", str_expr("Round")));
@@ -1244,33 +1268,77 @@ fn graph_render(
 
     match shape {
       Some((EdgeShape::Hidden, ..)) => {}
-      Some((EdgeShape::Named(name), ..)) => match name.as_str() {
+      Some((EdgeShape::Named(name, settings), ..)) => match name.as_str() {
         "Line" | "UndirectedLine" => {
           primitives.push(line_or_arrow(false, &shape_pts));
         }
+        // A plain arrow with a head 4 % of the plot wide.
         "Arrow" | "DirectedLine" => {
-          primitives.push(line_or_arrow(true, &shape_pts));
+          primitives.push(Expr::List(
+            vec![
+              call1(
+                "Arrowheads",
+                Expr::List(
+                  vec![Expr::List(
+                    vec![Expr::Real(0.04), Expr::Integer(1)].into(),
+                  )]
+                  .into(),
+                ),
+              ),
+              line_or_arrow(true, &shape_pts),
+            ]
+            .into(),
+          ));
         }
-        // An arc bowing out to the right of the edge's direction, its
-        // middle a tenth of the edge length off the straight line.
+        "FilledArrow" | "UnfilledArrow" | "ShortFilledArrow"
+        | "ShortUnfilledArrow" => {
+          primitives.push(Expr::List(
+            vec![named_arrowheads(&name), line_or_arrow(true, &shape_pts)]
+              .into(),
+          ));
+        }
+        // A quadratic Bézier bowing out to the left of the edge's
+        // direction, its control point `Curvature/2` edge lengths off the
+        // straight line (Curvature 0.3 unless given). Wolfram draws it
+        // without a head even on a directed edge.
         "CurvedArc" if shape_pts.len() >= 2 => {
-          let (a, b) = (shape_pts[0], shape_pts[shape_pts.len() - 1]);
-          let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-          let ctrl = (
-            f64::midpoint(a.0, b.0) + dy * 0.2,
-            f64::midpoint(a.1, b.1) - dx * 0.2,
-          );
-          let pts: Vec<(f64, f64)> = (0..=18)
-            .map(|k| {
-              let t = f64::from(k) / 18.0;
-              let u = 1.0 - t;
-              (
-                u * u * a.0 + 2.0 * u * t * ctrl.0 + t * t * b.0,
-                u * u * a.1 + 2.0 * u * t * ctrl.1 + t * t * b.1,
-              )
+          let curvature = settings
+            .iter()
+            .find_map(|s| match s {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(), Expr::String(n) if n == "Curvature") => {
+                crate::functions::math_ast::try_eval_to_f64(replacement)
+              }
+              _ => None,
             })
-            .collect();
-          primitives.push(line_or_arrow(edge_data.directed, &pts));
+            .unwrap_or(0.3);
+          let k = curvature / 2.0;
+          let ctrl_of = |a: (f64, f64), b: (f64, f64)| {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            (
+              f64::midpoint(a.0, b.0) - dy * k,
+              f64::midpoint(a.1, b.1) + dx * k,
+            )
+          };
+          // The curve leaves each vertex towards its control point, so it
+          // starts and ends on the vertex's boundary.
+          let ctrl = ctrl_of((x1, y1), (x2, y2));
+          let towards = |v: (f64, f64), r: f64| {
+            let (tx, ty) = (ctrl.0 - v.0, ctrl.1 - v.1);
+            let d = (tx * tx + ty * ty).sqrt().max(1e-12);
+            (v.0 + tx / d * r, v.1 + ty / d * r)
+          };
+          let (r1, r2) = (
+            vertex_radii[graph[edge_ref.source()]],
+            vertex_radii[graph[edge_ref.target()]],
+          );
+          let (sa, sb) = (towards((x1, y1), r1), towards((x2, y2), r2));
+          primitives.push(call1(
+            "BezierCurve",
+            points_expr(&[sa, ctrl_of(sa, sb), sb]),
+          ));
         }
         _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
       },
@@ -1317,11 +1385,13 @@ fn graph_render(
         .find(|(target, _)| same_edge(&edge_expr, target))
         && edge_labeling
       {
+        let (label, position) = placed_edge_label(label);
+        let t = position.unwrap_or(0.5);
         let styled = call("Style", vec![label.clone(), Expr::Integer(10)]);
         let point = Expr::List(
           vec![
-            Expr::Real(f64::midpoint(x1, x2)),
-            Expr::Real(f64::midpoint(y1, y2)),
+            Expr::Real(x1 + t * (x2 - x1)),
+            Expr::Real(y1 + t * (y2 - y1)),
           ]
           .into(),
         );
@@ -1478,7 +1548,30 @@ fn graph_render(
       // pre-stringifying it) so a structured name like `Subscript[x, 1]`
       // still typesets instead of showing its literal head name.
       let styled = call("Style", vec![label, Expr::Integer(10)]);
-      primitives.push(vertex_label_text(styled, &placement, x, y, radius));
+      // On an explicit `"CircularEmbedding"` an automatically placed label
+      // sits outside the circle, in line with its vertex's spoke.
+      let spoke = (x - layout_centre.0, y - layout_centre.1);
+      let spoke_len = (spoke.0 * spoke.0 + spoke.1 * spoke.1).sqrt();
+      if placement == "Automatic"
+        && (layout_choice.circular
+          || matches!(layout_choice.named, Some(NamedLayout::Star { .. })))
+        && spoke_len > 1e-12
+      {
+        let u = (spoke.0 / spoke_len, spoke.1 / spoke_len);
+        let pair = |a: f64, b: f64| {
+          Expr::List(vec![Expr::Real(a), Expr::Real(b)].into())
+        };
+        let point = call(
+          "Offset",
+          vec![
+            pair(2.0 * u.0, 2.0 * u.1),
+            pair(x + radius * u.0, y + radius * u.1),
+          ],
+        );
+        primitives.push(label_text(styled, point, Some((-u.0, -u.1))));
+      } else {
+        primitives.push(vertex_label_text(styled, &placement, x, y, radius));
+      }
     }
   }
 
@@ -1740,6 +1833,84 @@ fn line_or_arrow(directed: bool, pts: &[(f64, f64)]) -> Expr {
   call1(if directed { "Arrow" } else { "Line" }, points_expr(pts))
 }
 
+/// The `Arrowheads[{{0.04, 1, {Graphics[FilledCurve[…]], rpos}}}]` Wolfram
+/// sets for the named arrow edge shapes (`"FilledArrow"`,
+/// `"UnfilledArrow"`, `"ShortFilledArrow"`, `"ShortUnfilledArrow"`): the
+/// head outline, tip at the origin, and where along it the shaft stops.
+/// Coordinates read off wolframscript's own head graphics.
+fn named_arrowheads(name: &str) -> Expr {
+  let (pts, stop): (&[(f64, f64)], f64) = match name {
+    "UnfilledArrow" => (
+      &[
+        (-0.9696460829962081, -0.3030048596799224),
+        (-1.0, -0.2058621479276388),
+        (-0.34122077195125033, 0.0),
+        (-1.0, 0.2058621479276388),
+        (-0.9696460829962081, 0.3030048596799233),
+        (0.0, 0.0),
+      ],
+      0.34122077195125033,
+    ),
+    "ShortFilledArrow" => (
+      &[
+        (-0.6666528591843921, -1.0 / 3.0),
+        (-0.533327810340424, 0.0),
+        (-0.6666528591843921, 1.0 / 3.0),
+        (0.0, 0.0),
+      ],
+      0.533327810340424,
+    ),
+    "ShortUnfilledArrow" => (
+      &[
+        (-0.6196492749623843, -0.30983120782659546),
+        (-2.0 / 3.0, -0.21579642441803149),
+        (-0.23506067713979562, 0.0),
+        (-2.0 / 3.0, 0.21579642441803237),
+        (-0.6196492749623843, 0.3098312078265959),
+        (0.0, 0.0),
+      ],
+      0.23506067713979562,
+    ),
+    // "FilledArrow"
+    _ => (
+      &[
+        (-1.0, -0.31249915682968066),
+        (-0.8749949409780775, 0.0),
+        (-1.0, 0.3124991568296789),
+        (0.0, 0.0),
+      ],
+      0.8749949409780782,
+    ),
+  };
+  let int = |n: i128| Expr::Integer(n);
+  let seg = |n: i128| Expr::List(vec![int(0), int(n), int(0)].into());
+  let segments: Vec<Expr> = std::iter::once(seg(2))
+    .chain((2..pts.len()).map(|_| seg(1)))
+    .collect();
+  let curve = call(
+    "FilledCurve",
+    vec![
+      Expr::List(vec![Expr::List(segments.into())].into()),
+      Expr::List(vec![points_expr(pts)].into()),
+    ],
+  );
+  let head = Expr::List(
+    vec![
+      Expr::Real(0.04),
+      int(1),
+      Expr::List(
+        vec![
+          call1("Graphics", Expr::List(vec![curve].into())),
+          Expr::Real(stop),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  );
+  call1("Arrowheads", Expr::List(vec![head].into()))
+}
+
 /// Whether a layout option value asks for the vertices to sit on one
 /// circle. The value is either the name on its own or the name at the
 /// head of a list that carries sub-options.
@@ -1787,8 +1958,9 @@ fn layout_is_linear(value: &Expr) -> bool {
 enum EdgeShape {
   /// `EdgeShapeFunction -> None` — the edge is not drawn at all.
   Hidden,
-  /// A named shape such as `"Line"` or `"Arrow"`.
-  Named(String),
+  /// A named shape such as `"Line"` or `"Arrow"`, with the sub-options
+  /// given after the name (`{"CurvedArc", "Curvature" -> 2}`).
+  Named(String, Vec<Expr>),
   /// A function applied as `f[{pt, …}, edge]` whose result is used as
   /// the graphics for that edge.
   Func(Expr),
@@ -2017,10 +2189,19 @@ fn parse_edge_shape(
 fn edge_shape_value(value: &Expr) -> EdgeShape {
   match value {
     Expr::Identifier(s) if s == "None" => EdgeShape::Hidden,
-    Expr::String(s) => EdgeShape::Named(s.clone()),
+    Expr::String(s) => EdgeShape::Named(s.clone(), Vec::new()),
+    // `{{"CurvedArc", "Curvature" -> 2}}`: the one setting every edge
+    // shares.
+    Expr::List(items)
+      if items.len() == 1
+        && matches!(&items[0], Expr::List(inner)
+          if matches!(inner.first(), Some(Expr::String(_)))) =>
+    {
+      edge_shape_value(&items[0])
+    }
     // `{"CurvedArc", "Curvature" -> 2}` — the name plus its settings.
     Expr::List(items) => match items.first() {
-      Some(Expr::String(s)) => EdgeShape::Named(s.clone()),
+      Some(Expr::String(s)) => EdgeShape::Named(s.clone(), items[1..].to_vec()),
       _ => EdgeShape::Func(value.clone()),
     },
     other => EdgeShape::Func(other.clone()),
@@ -2601,11 +2782,9 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
         .collect();
       return unit_mean_edge(pts, graph);
     }
-    // Larger connected graphs get the force-directed embedding too, as
-    // wolframscript's default spring-electrical layout would; small ones
-    // keep the circular layout (in the order `CircularEmbedding` picks)
-    // for stable output.
-    if n > 8 {
+    // Small paths and single cycles retain their circular arrangement;
+    // additional cycles need a spring embedding even with few vertices.
+    if n > 8 || graph.edge_count() > n {
       let comp: Vec<usize> = (0..n).collect();
       return layout_component(graph, &comp);
     }
@@ -2656,28 +2835,67 @@ fn edge_order_adjacency(
 
 /// The order `"CircularEmbedding"` puts the vertices in around the
 /// circle (its default `"OptimalOrder" -> True`): a depth-first walk from
-/// the first vertex of each component, taking the most recently listed
-/// edge first, which keeps neighbours next to each other. A graph with
-/// directed edges runs the other way round the circle. This reproduces
-/// Wolfram's order for cycles, trees and most small graphs, though not
-/// every one.
+/// the first vertex of each component that tries the latest-listed
+/// neighbour first, following directed edges only forwards. In a
+/// component that is a tree whose walk ends in exactly two dead ends, the
+/// walk's first run (the root down to the first dead end) is turned
+/// round, so the tree is laid out end to end. Directed cycles with one
+/// chord use the same reversal when their walk has two dead ends. Decoded from
+/// wolframscript's embeddings of random small graphs: this reproduces
+/// every tree, about half the other undirected graphs and three quarters
+/// of the directed ones.
 fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
   let n = graph.node_count();
-  let adj = edge_order_adjacency(graph);
-  let directed = graph.edge_references().any(|e| e.weight().directed);
+  let all_directed = graph.edge_references().all(|e| e.weight().directed);
+  let strongly_connected = if all_directed {
+    petgraph::algo::kosaraju_scc(graph)
+      .into_iter()
+      .filter(|c| c.len() > 1)
+      .map(|c| {
+        c.into_iter()
+          .map(petgraph::prelude::NodeIndex::index)
+          .collect::<Vec<_>>()
+      })
+      .collect::<Vec<_>>()
+  } else {
+    Vec::new()
+  };
+  let mut succ: Vec<Vec<usize>> = vec![Vec::new(); n];
+  let mut undirected_edges = vec![0usize; n];
+  let mut any_directed = false;
+  for e in graph.edge_references() {
+    let (s, d) = (e.source().index(), e.target().index());
+    if s == d {
+      continue;
+    }
+    succ[s].push(d);
+    if e.weight().directed {
+      any_directed = true;
+    } else {
+      succ[d].push(s);
+    }
+    undirected_edges[s] += 1;
+  }
+  for list in &mut succ {
+    list.sort_unstable_by(|a, b| b.cmp(a));
+    list.dedup();
+  }
   let mut seen = vec![false; n];
+  let mut parent = vec![usize::MAX; n];
   let mut order = Vec::with_capacity(n);
   fn visit(
     v: usize,
-    adj: &[Vec<usize>],
+    succ: &[Vec<usize>],
     seen: &mut [bool],
+    parent: &mut [usize],
     out: &mut Vec<usize>,
   ) {
     seen[v] = true;
     out.push(v);
-    for &w in adj[v].iter().rev() {
+    for &w in &succ[v] {
       if !seen[w] {
-        visit(w, adj, seen, out);
+        parent[w] = v;
+        visit(w, succ, seen, parent, out);
       }
     }
   }
@@ -2686,9 +2904,51 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
       continue;
     }
     let start = order.len();
-    visit(root, &adj, &mut seen, &mut order);
-    if directed {
-      order[start + 1..].reverse();
+    visit(root, &succ, &mut seen, &mut parent, &mut order);
+    if any_directed && !all_directed {
+      continue;
+    }
+    let comp = &mut order[start..];
+    let directed_cycle_with_chord = if all_directed {
+      let mut indegree = vec![0usize; n];
+      for &v in comp.iter() {
+        for &w in &succ[v] {
+          indegree[w] += 1;
+        }
+      }
+      let branches: Vec<_> = comp
+        .iter()
+        .copied()
+        .filter(|&v| succ[v].len() == 2)
+        .collect();
+      let joins: Vec<_> =
+        comp.iter().copied().filter(|&v| indegree[v] == 2).collect();
+      branches.len() == 1
+        && joins.len() == 1
+        && succ[branches[0]].contains(&joins[0])
+        && comp.iter().all(|&v| {
+          (1..=2).contains(&succ[v].len()) && (1..=2).contains(&indegree[v])
+        })
+    } else {
+      false
+    };
+    // A tree: one edge fewer than vertices.
+    let edges: usize = comp.iter().map(|&v| undirected_edges[v]).sum();
+    if (all_directed
+      && (!directed_cycle_with_chord
+        || !strongly_connected.iter().any(|scc| {
+          scc.len() == comp.len() && comp.iter().all(|v| scc.contains(v))
+        })))
+      || (!all_directed && edges + 1 != comp.len())
+    {
+      continue;
+    }
+    let has_child: std::collections::HashSet<usize> =
+      comp[1..].iter().map(|&v| parent[v]).collect();
+    let dead_ends = comp[1..].iter().filter(|v| !has_child.contains(v)).count();
+    let run = 1 + comp.windows(2).take_while(|w| parent[w[1]] == w[0]).count();
+    if dead_ends == 2 && run < comp.len() {
+      comp[..run].reverse();
     }
   }
   order
@@ -2838,11 +3098,15 @@ fn named_layout_positions(
         || ((n as f64).sqrt().floor() as usize).max(1),
         |(r, _)| r,
       );
-      Some(
-        (0..n)
-          .map(|k| ((k / rows) as f64 + 1.0, (k % rows) as f64 + 1.0))
-          .collect(),
-      )
+      let mut components = weakly_connected_components(graph);
+      let mut pts = vec![(0.0, 0.0); n];
+      for comp in &mut components {
+        comp.sort_unstable();
+        for (k, &v) in comp.iter().enumerate() {
+          pts[v] = ((k / rows + 1) as f64, (k % rows + 1) as f64);
+        }
+      }
+      Some(pack_grid_components(&components, pts))
     }
     NamedLayout::Multipartite { partition }
       if partition.iter().sum::<usize>() == n =>
@@ -3173,8 +3437,79 @@ fn weakly_connected_components(
   result
 }
 
+/// Pack grid components without rescaling their unit lattice. Wolfram pads
+/// each component by one eighth of the mean sum of its coordinate spans,
+/// then stacks the padded rectangles in columns. Spare column height is
+/// distributed after each rectangle, keeping the first rectangle at the top.
+fn pack_grid_components(
+  components: &[Vec<usize>],
+  mut pts: Vec<(f64, f64)>,
+) -> Vec<(f64, f64)> {
+  if components.len() <= 1 {
+    return pts;
+  }
+  let bounds: Vec<_> = components
+    .iter()
+    .map(|comp| {
+      comp.iter().fold(
+        (
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+        ),
+        |(xmin, xmax, ymin, ymax), &v| {
+          let (x, y) = pts[v];
+          (xmin.min(x), xmax.max(x), ymin.min(y), ymax.max(y))
+        },
+      )
+    })
+    .collect();
+  let padding = bounds
+    .iter()
+    .map(|&(x0, x1, y0, y1)| x1 - x0 + y1 - y0)
+    .sum::<f64>()
+    / (8.0 * components.len() as f64)
+    + 1e-5;
+  let heights: Vec<_> =
+    bounds.iter().map(|b| b.3 - b.2 + 2.0 * padding).collect();
+  let column_height = heights.iter().copied().fold(0.0_f64, f64::max);
+  let mut columns: Vec<Vec<usize>> = Vec::new();
+  let mut used: Vec<f64> = Vec::new();
+  for (i, &height) in heights.iter().enumerate() {
+    if let Some(col) =
+      used.iter().position(|h| h + height <= column_height + 1e-9)
+    {
+      columns[col].push(i);
+      used[col] += height;
+    } else {
+      columns.push(vec![i]);
+      used.push(height);
+    }
+  }
+  let mut x = 0.0;
+  for (col, &height) in columns.iter().zip(&used) {
+    let slack = (column_height - height) / col.len() as f64;
+    let mut y = 0.0;
+    let mut width = 0.0_f64;
+    for &i in col {
+      let (xmin, xmax, _, ymax) = bounds[i];
+      for &v in &components[i] {
+        pts[v] = (
+          x + padding + pts[v].0 - xmin,
+          -y - padding + pts[v].1 - ymax,
+        );
+      }
+      width = width.max(xmax - xmin + 2.0 * padding);
+      y += heights[i] + slack;
+    }
+    x += width;
+  }
+  pts
+}
+
 /// Lay out a single component in a local [-1, 1]^2 coordinate system.
-/// Small components (≤ 8 nodes) use a circular layout; larger ones use
+/// Small components with at most one cycle use a circular layout; others use
 /// a Fruchterman-Reingold force-directed layout with deterministic
 /// initialization so the output is reproducible.
 fn layout_component(
@@ -3188,7 +3523,15 @@ fn layout_component(
   if m == 1 {
     return vec![(0.0, 0.0)];
   }
-  if m <= 8 {
+  let members: std::collections::HashSet<_> = comp.iter().copied().collect();
+  let edge_count = graph
+    .edge_references()
+    .filter(|e| {
+      members.contains(&e.source().index())
+        && members.contains(&e.target().index())
+    })
+    .count();
+  if m <= 8 && edge_count <= m {
     return (0..m)
       .map(|k| {
         let angle = PI / 2.0 + (k as f64) * 2.0 * PI / (m as f64);
@@ -3200,8 +3543,8 @@ fn layout_component(
 }
 
 /// A Fruchterman-Reingold force-directed layout of one component, scaled
-/// to fit [-1, 1]^2, from a deterministic start so the output is
-/// reproducible.
+/// to fit [-1, 1]^2. Two deterministic starts compete by their final
+/// spring energy, avoiding crossed local minima without randomizing output.
 fn force_layout_component(
   graph: &DiGraph<usize, RenderEdgeData>,
   comp: &[usize],
@@ -3233,7 +3576,7 @@ fn force_layout_component(
 
   // Deterministic initial placement on a sunflower spiral.
   let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
-  let mut pos: Vec<(f64, f64)> = (0..m)
+  let sunflower: Vec<(f64, f64)> = (0..m)
     .map(|i| {
       let r = ((i as f64) + 0.5).sqrt() / (m as f64).sqrt();
       let angle = (i as f64) * golden_angle;
@@ -3241,68 +3584,113 @@ fn force_layout_component(
     })
     .collect();
 
+  // A DFS circle supplies a different basin of attraction, especially
+  // for graphs made of several paths between the same vertices.
+  let mut seen = vec![false; m];
+  let mut stack = vec![0];
+  let mut circular = vec![(0.0, 0.0); m];
+  let mut next = 0;
+  while let Some(v) = stack.pop() {
+    if seen[v] {
+      continue;
+    }
+    seen[v] = true;
+    let angle = PI / 2.0 + next as f64 * 2.0 * PI / m as f64;
+    circular[v] = (angle.cos(), angle.sin());
+    next += 1;
+    let mut neighbours = adj[v].clone();
+    neighbours.sort_unstable();
+    stack.extend(neighbours);
+  }
+
   // Fruchterman-Reingold on the unit square [-1, 1]^2.
   let w = 2.0_f64;
   let h = 2.0_f64;
   let area = w * h;
   let k = (area / (m as f64)).sqrt();
   let iterations = 120;
-  let mut temp = w * 0.1;
-  let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
+  let mut best_energy = f64::INFINITY;
+  let mut best_positions = Vec::new();
+  for mut pos in [sunflower, circular] {
+    let mut temp = w * 0.1;
+    let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
 
-  for _ in 0..iterations {
-    let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
+    for _ in 0..iterations {
+      let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
 
-    // Repulsive force between every pair.
-    for i in 0..m {
-      for j in (i + 1)..m {
-        let dx = pos[i].0 - pos[j].0;
-        let dy = pos[i].1 - pos[j].1;
-        let d2 = dx * dx + dy * dy;
-        let d = d2.sqrt().max(1e-4);
-        let force = (k * k) / d;
-        let fx = dx / d * force;
-        let fy = dy / d * force;
-        disp[i].0 += fx;
-        disp[i].1 += fy;
-        disp[j].0 -= fx;
-        disp[j].1 -= fy;
-      }
-    }
-
-    // Attractive force along edges (each undirected edge is listed twice
-    // in `adj`, so we guard on i < j to count it once).
-    for i in 0..m {
-      for &j in &adj[i] {
-        if i >= j {
-          continue;
+      // Repulsive force between every pair.
+      for i in 0..m {
+        for j in (i + 1)..m {
+          let dx = pos[i].0 - pos[j].0;
+          let dy = pos[i].1 - pos[j].1;
+          let d2 = dx * dx + dy * dy;
+          let d = d2.sqrt().max(1e-4);
+          let force = (k * k) / d;
+          let fx = dx / d * force;
+          let fy = dy / d * force;
+          disp[i].0 += fx;
+          disp[i].1 += fy;
+          disp[j].0 -= fx;
+          disp[j].1 -= fy;
         }
-        let dx = pos[i].0 - pos[j].0;
-        let dy = pos[i].1 - pos[j].1;
-        let d = (dx * dx + dy * dy).sqrt().max(1e-4);
-        let force = (d * d) / k;
-        let fx = dx / d * force;
-        let fy = dy / d * force;
-        disp[i].0 -= fx;
-        disp[i].1 -= fy;
-        disp[j].0 += fx;
-        disp[j].1 += fy;
+      }
+
+      // Attractive force along edges (each undirected edge is listed twice
+      // in `adj`, so we guard on i < j to count it once).
+      for i in 0..m {
+        for &j in &adj[i] {
+          if i >= j {
+            continue;
+          }
+          let dx = pos[i].0 - pos[j].0;
+          let dy = pos[i].1 - pos[j].1;
+          let d = (dx * dx + dy * dy).sqrt().max(1e-4);
+          let force = (d * d) / k;
+          let fx = dx / d * force;
+          let fy = dy / d * force;
+          disp[i].0 -= fx;
+          disp[i].1 -= fy;
+          disp[j].0 += fx;
+          disp[j].1 += fy;
+        }
+      }
+
+      // Apply displacement, clamped by the current temperature, and keep
+      // everything inside [-w/2, w/2] × [-h/2, h/2].
+      for i in 0..m {
+        let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
+          .sqrt()
+          .max(1e-9);
+        let step = dlen.min(temp);
+        pos[i].0 += disp[i].0 / dlen * step;
+        pos[i].1 += disp[i].1 / dlen * step;
+      }
+
+      temp *= cool;
+    }
+
+    // Potential whose gradient gives the forces above. Compare before
+    // normalization so an expanded, tangled drawing cannot win by scale.
+    let mut energy = 0.0;
+    for i in 0..m {
+      for j in i + 1..m {
+        let distance =
+          (pos[i].0 - pos[j].0).hypot(pos[i].1 - pos[j].1).max(1e-4);
+        energy -= k * k * distance.ln();
+      }
+      for &j in &adj[i] {
+        if i < j {
+          let distance = (pos[i].0 - pos[j].0).hypot(pos[i].1 - pos[j].1);
+          energy += distance.powi(3) / (3.0 * k);
+        }
       }
     }
-
-    // Apply displacement, clamped by the current temperature, and keep
-    // everything inside [-w/2, w/2] × [-h/2, h/2].
-    for i in 0..m {
-      let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
-        .sqrt()
-        .max(1e-9);
-      let step = dlen.min(temp);
-      pos[i].0 += disp[i].0 / dlen * step;
-      pos[i].1 += disp[i].1 / dlen * step;
+    if energy < best_energy {
+      best_energy = energy;
+      best_positions = pos;
     }
-
-    temp *= cool;
   }
+  let mut pos = best_positions;
 
   // Turn the layout so its long axis runs horizontally, the way Wolfram's
   // spring embeddings come out.
@@ -3434,14 +3822,26 @@ pub(crate) fn snap_coord(v: f64) -> f64 {
 /// The text of an edge label: strings as they are, `Placed[label, pos]`
 /// looked through, anything else in its formatted output form (so
 /// `NumberForm[x, 3]` shows as the rounded number).
-fn edge_label_text(label: &Expr) -> String {
+fn placed_edge_label(label: &Expr) -> (&Expr, Option<f64>) {
   match label {
-    Expr::String(s) => s.clone(),
     Expr::FunctionCall { name, args }
       if name == "Placed" && !args.is_empty() =>
     {
-      edge_label_text(&args[0])
+      (
+        &args[0],
+        args
+          .get(1)
+          .and_then(crate::functions::math_ast::try_eval_to_f64),
+      )
     }
+    other => (other, None),
+  }
+}
+
+fn edge_label_text(label: &Expr) -> String {
+  let (label, _) = placed_edge_label(label);
+  match label {
+    Expr::String(s) => s.clone(),
     other => {
       let shown = crate::evaluator::evaluate_expr_to_expr(
         &crate::helpers::call1("ToString", other.clone()),
@@ -3460,11 +3860,8 @@ fn edge_label_fraction(mut e: &Expr) -> Option<f64> {
   while let Expr::FunctionCall { name, args } = e {
     match name.as_str() {
       "Labeled" if args.len() == 2 => {
-        if let Expr::FunctionCall { name: p, args: pa } = &args[1]
-          && p == "Placed"
-          && pa.len() == 2
-        {
-          return crate::functions::graphics::expr_to_f64(&pa[1]);
+        if let (_, Some(position)) = placed_edge_label(&args[1]) {
+          return Some(position);
         }
         e = &args[0];
       }
@@ -8877,7 +9274,7 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Parse a Graph expression into (vertex count, edge index pairs including
 /// duplicates and self-loops). Returns None for non-graphs.
-fn parse_graph_pairs(
+pub(crate) fn parse_graph_pairs(
   expr: &Expr,
 ) -> Option<(usize, Vec<(usize, usize, bool)>)> {
   let (vertices, edge_exprs) = match expr {

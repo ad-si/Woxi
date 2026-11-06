@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 860
 expression: "export_svg(\"Graphics[{Arrow[{{0, 0}, {1, 1}}, {0, 0}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -7,7 +8,7 @@ expression: "export_svg(\"Graphics[{Arrow[{{0, 0}, {1, 1}}, {0, 0}]}]\")"
 <clipPath id="plotClip_359x358"><rect x="0" y="0" width="359.00" height="358.43"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_359x358)">
-<polyline points="7.18,351.53 351.82,6.89" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polygon points="351.82,6.89 344.51,19.89 338.82,14.20" fill="rgb(0,0,0)"/>
+<polyline points="7.18,351.53 342.60,16.11" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polygon points="351.82,6.89 338.99,14.37 339.45,14.53 340.50,14.93 341.11,15.20 341.70,15.49 342.22,15.80 342.60,16.11 342.88,16.46 343.18,16.97 343.49,17.58 343.78,18.22 344.25,19.34 344.44,19.83" fill="rgb(0,0,0)"/>
 </g>
 </svg>

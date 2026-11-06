@@ -1406,15 +1406,16 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let label_room = if label.is_some() { font + 6.0 } else { 0.0 };
   let top = 10.6 + label_room;
   let span = hi - lo;
-  let y_of = |v: f64| top + bar_height * (1.0 - (v - lo) / span);
+  let y_of =
+    |v: f64| top + bar_height * (1.0 - ((v - lo) / span).clamp(0.0, 1.0));
 
   // Labelled values, and the unlabelled minor tick values between them.
   let step = crate::functions::plot::nice_step(span, 5);
   let (majors, minors): (Vec<f64>, Vec<f64>) = if let Some(cs) = &contours {
     (cs.clone(), Vec::new())
   } else {
-    let first = (lo / step - 1e-9).ceil() as i64;
-    let last = (hi / step + 1e-9).floor() as i64;
+    let first = (lo / step - 0.05).ceil() as i64;
+    let last = (hi / step + 0.05).floor() as i64;
     let majors = (first..=last).map(|k| k as f64 * step).collect();
     let minor_step = step / 4.0;
     let mf = (lo / minor_step - 1e-9).ceil() as i64;
@@ -1455,40 +1456,41 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       crate::functions::graphics::expr_to_svg_markup(l)
     ));
   }
-  // The bands, from the low end (bottom) upward: one per contour interval,
-  // coloured by its position among the bands, or 64 thin slices of the
-  // continuous gradient.
-  let bands: Vec<(f64, f64, f64)> = if let Some(cs) = &contours {
+  if let Some(cs) = &contours {
     let mut bounds = vec![lo];
     bounds.extend_from_slice(cs);
     bounds.push(hi);
     let n = bounds.len() - 1;
-    (0..n)
-      .map(|k| {
-        let t = if n > 1 {
-          k as f64 / (n - 1) as f64
-        } else {
-          0.5
-        };
-        (k as f64 / n as f64, (k + 1) as f64 / n as f64, t)
-      })
-      .collect()
+    for k in 0..n {
+      let t = if n > 1 {
+        k as f64 / (n - 1) as f64
+      } else {
+        0.5
+      };
+      let (r, g, b) = color_at(t);
+      let y = top + bar_height * (1.0 - (k + 1) as f64 / n as f64);
+      svg.push_str(&format!(
+        "<rect x=\"{left:.1}\" y=\"{y:.2}\" width=\"{bar_w:.2}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
+        bar_height / n as f64 + 0.3
+      ));
+    }
   } else {
-    const SLICES: usize = 64;
-    (0..SLICES)
-      .map(|k| {
-        let n = SLICES as f64;
-        (k as f64 / n, (k + 1) as f64 / n, (k as f64 + 0.5) / n)
-      })
-      .collect()
-  };
-  for (from, to, t) in bands {
-    let (r, g, b) = color_at(t);
-    let y = top + bar_height * (1.0 - to);
-    svg.push_str(&format!(
-      "<rect x=\"{left:.1}\" y=\"{y:.2}\" width=\"{bar_w:.2}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
-      bar_height * (to - from) + 0.3
-    ));
+    // Interpolate between colour samples in SVG, avoiding visible band edges.
+    let mut stops = String::new();
+    for k in 0..=64 {
+      let t = k as f64 / 64.0;
+      let (r, g, b) = color_at(t);
+      stops.push_str(&format!(
+        "<stop offset=\"{t:.6}\" stop-color=\"rgb({r},{g},{b})\"/>"
+      ));
+    }
+    // Different legends can share a Row; their paint servers must not collide.
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    stops.hash(&mut hash);
+    let id = format!("woxiLegendGradient{:x}", hash.finish());
+    svg.push_str(&format!("<defs><linearGradient id=\"{id}\" x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\">{stops}</linearGradient></defs>"));
+    svg.push_str(&format!("<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"url(#{id})\"/>\n"));
   }
   svg.push_str(&format!(
     "<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"none\" stroke=\"black\" stroke-opacity=\"0.3\" stroke-width=\"0.1\"/>\n"
@@ -2517,6 +2519,35 @@ fn sample_mesh_grids(
     .collect()
 }
 
+fn push_mesh_grids(
+  svg: &mut String,
+  grids: &[MeshGrid],
+  area: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
+) {
+  let (color, weight, attrs) = opts.mesh_stroke();
+  for mesh in grids {
+    let nx = mesh.grid.len().saturating_sub(1).max(1);
+    let ny = mesh
+      .grid
+      .first()
+      .map_or(1, |r| r.len().saturating_sub(1).max(1));
+    render_contour_lines_styled(
+      svg,
+      &mesh.grid,
+      &mesh.levels,
+      area.plot_x0,
+      area.plot_y0,
+      area.plot_w / nx as f64,
+      area.plot_h / ny as f64,
+      area.render_width,
+      &color,
+      weight,
+      &attrs,
+    );
+  }
+}
+
 /// The mesh lines as data-space `Line` primitives under a light grey
 /// thin-line style, in their own list so the grey does not leak onto
 /// whatever is drawn after them. Empty when there are no mesh lines.
@@ -2897,22 +2928,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_min, y_max),
     &grid,
   );
-  let (mesh_color, mesh_weight, mesh_attrs) = opts.mesh_stroke();
-  for mesh_grid in &mesh_grids {
-    render_contour_lines_styled(
-      &mut svg,
-      &mesh_grid.grid,
-      &mesh_grid.levels,
-      area.plot_x0,
-      area.plot_y0,
-      area.plot_w / FIELD_GRID as f64,
-      area.plot_h / FIELD_GRID as f64,
-      area.render_width,
-      &mesh_color,
-      mesh_weight,
-      &mesh_attrs,
-    );
-  }
+  push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 
@@ -3237,7 +3253,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     parse_dependent_iterator(&args[2], "ContourPlot", &xvar, x_min, x_max)?;
   let mut opts = parse_density_contour_options(args, 3);
 
-  let n = FIELD_GRID + 1;
+  // A clipped boundary needs finer sampling than an interior level curve.
+  let cells = if opts.region_function.is_some() {
+    FIELD_GRID * 4
+  } else {
+    FIELD_GRID
+  };
+  let n = cells + 1;
 
   // Sample grid
   let mut grid = vec![vec![f64::NAN; n]; n];
@@ -3245,13 +3267,13 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_samples = Vec::with_capacity(n * n);
 
   for i in 0..n {
-    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    let x = x_min + i as f64 / cells as f64 * (x_max - x_min);
     let (row_lo, row_hi) = match &y_bounds {
       Some(b) => b.at(x),
       None => (f64::NEG_INFINITY, f64::INFINITY),
     };
     for j in 0..n {
-      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      let y = y_min + j as f64 / cells as f64 * (y_max - y_min);
       if y < row_lo || y > row_hi {
         continue;
       }
@@ -3323,8 +3345,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  let cell_w = area.plot_w / FIELD_GRID as f64;
-  let cell_h = area.plot_h / FIELD_GRID as f64;
+  let cell_w = area.plot_w / cells as f64;
+  let cell_h = area.plot_h / cells as f64;
 
   if opts.contour_shading {
     render_contour_bands(
@@ -3343,22 +3365,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Mesh lines sit under the contours: they are the level curves of the
   // mesh functions (the coordinates themselves by default), so the same
   // marching squares draw them.
-  let (mesh_color, mesh_weight, mesh_attrs) = opts.mesh_stroke();
-  for mesh_grid in &mesh_grids {
-    render_contour_lines_styled(
-      &mut svg,
-      &mesh_grid.grid,
-      &mesh_grid.levels,
-      area.plot_x0,
-      area.plot_y0,
-      cell_w,
-      cell_h,
-      area.render_width,
-      &mesh_color,
-      mesh_weight,
-      &mesh_attrs,
-    );
-  }
+  push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
   let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
   render_contour_lines_styled(
     &mut svg,
@@ -4498,7 +4505,7 @@ fn drop_collinear_points(ring: &[(f64, f64)], tol: f64) -> Vec<(f64, f64)> {
 /// Turns a region's boundary loops into `Polygon`s: a loop nested inside an
 /// odd number of others is a hole of the innermost loop around it, and comes
 /// out as `Polygon[outer -> {holes…}]`.
-fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
+pub(crate) fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
   fn contains(ring: &[(f64, f64)], (px, py): (f64, f64)) -> bool {
     let mut inside = false;
     let len = ring.len();
@@ -5684,6 +5691,10 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.color_function.as_deref(),
     opts.cf_expr(),
   );
+  let mask = resample_node_grid(&grid, FIELD_GRID + 1, FIELD_GRID + 1);
+  let mesh =
+    sample_mesh_grids(&opts, "x", "y", (x_min, x_max), (y_min, y_max), &mask);
+  push_mesh_grids(&mut svg, &mesh, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
 

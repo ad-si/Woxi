@@ -2,15 +2,15 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(r#\"WordCloud[{\"Lorem\", \"ipsum\", \"dolor\", \"sit\", \"amet\", \"consectetur\", \"adipiscing\", \"dolor\", \"Pellentesque\", \"dolor\", \"augue\", \"sit\"}]\"#)"
 ---
-<svg width="360" height="262" viewBox="0 0 360 262" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-<rect width="360" height="262" fill="rgb(255,255,255)"/>
-<text transform="translate(180.0,130.8)" font-size="153.8" fill="rgb(61,153,204)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">dolor</text>
-<text transform="translate(167.6,221.9)" font-size="87.9" fill="rgb(242,160,36)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">sit</text>
-<text transform="translate(245.1,64.7)" font-size="22.0" fill="rgb(116,179,54)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">Lorem</text>
-<text transform="translate(156.9,49.6)" font-size="22.0" fill="rgb(235,98,53)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">Pellentesque</text>
-<text transform="translate(213.8,32.9)" font-size="22.0" fill="rgb(147,130,217)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">adipiscing</text>
-<text transform="translate(250.4,210.3)" font-size="22.0" fill="rgb(197,110,26)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">amet</text>
-<text transform="translate(72.1,59.4)" font-size="22.0" fill="rgb(102,163,255)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">augue</text>
-<text transform="translate(225.7,15.2)" font-size="22.0" fill="rgb(255,191,0)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">consectetur</text>
-<text transform="translate(60.7,200.1)" font-size="22.0" fill="rgb(204,102,194)" font-family="'Source Sans Pro', sans-serif" text-anchor="middle" dominant-baseline="central">ipsum</text>
+<svg width="360" height="224" viewBox="0 0 360 224" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<rect width="360" height="224" fill="rgb(255,255,255)"/>
+<text x="10.47" y="164.63" font-size="147.74" fill="rgb(61,153,204)" font-family="Atkinson Hyperlegible Next, sans-serif">dolor</text>
+<text x="227.35" y="72.27" font-size="84.42" fill="rgb(242,160,36)" font-family="Atkinson Hyperlegible Next, sans-serif">sit</text>
+<text x="113.49" y="64.13" font-size="21.11" fill="rgb(116,179,54)" font-family="Atkinson Hyperlegible Next, sans-serif">Lorem</text>
+<text x="102.45" y="40.37" font-size="21.11" fill="rgb(235,98,53)" font-family="Atkinson Hyperlegible Next, sans-serif">Pellentesque</text>
+<text x="69.06" y="192.75" font-size="21.11" fill="rgb(147,130,217)" font-family="Atkinson Hyperlegible Next, sans-serif">adipiscing</text>
+<text x="169.70" y="207.64" font-size="21.11" fill="rgb(197,110,26)" font-family="Atkinson Hyperlegible Next, sans-serif">amet</text>
+<text x="219.05" y="192.86" font-size="21.11" fill="rgb(102,163,255)" font-family="Atkinson Hyperlegible Next, sans-serif">augue</text>
+<text x="130.44" y="22.34" font-size="21.11" fill="rgb(255,191,0)" font-family="Atkinson Hyperlegible Next, sans-serif">consectetur</text>
+<text x="82.99" y="212.56" font-size="21.11" fill="rgb(204,102,194)" font-family="Atkinson Hyperlegible Next, sans-serif">ipsum</text>
 </svg>

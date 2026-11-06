@@ -1746,8 +1746,8 @@ pub fn dispatch_predicate_functions(
         let mut opts = vec![rule(
           "ColorSpace",
           match color_space {
+            Some("Automatic") | None => Expr::Identifier("Automatic".into()),
             Some(cs) => Expr::String(cs.to_string()),
-            None => Expr::Identifier("Automatic".into()),
           },
         )];
         if let Some((w, _)) = display_size {

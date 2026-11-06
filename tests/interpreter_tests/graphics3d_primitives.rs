@@ -127,15 +127,30 @@ mod vertex_colors {
       "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 1}, {0, 1, 1}}, \
        VertexColors -> {Red, Green, Blue, Yellow}]]",
     );
-    let colours = fills(&s);
-    assert!(colours.len() > 50, "got: {colours:?}");
+    // Independent RGB directions require a two-dimensional colour field.
+    use base64::Engine;
+    let colours: Vec<_> = s
+      .split("data:image/png;base64,")
+      .skip(1)
+      .flat_map(|rest| {
+        let bytes = base64::engine::general_purpose::STANDARD
+          .decode(rest.split('"').next().unwrap())
+          .unwrap();
+        ::image::load_from_memory(&bytes)
+          .unwrap()
+          .to_rgb8()
+          .pixels()
+          .map(|p| (p[0], p[1], p[2]))
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    assert!(
+      !colours.is_empty(),
+      "missing two-dimensional vertex colours"
+    );
     // Near the red corner the face is (lit) red: no green or blue.
     assert!(
-      colours.iter().any(|c| {
-        let v: Vec<u8> =
-          c.split(',').map(|x| x.trim().parse().unwrap()).collect();
-        v[0] > 150 && v[1] < 30 && v[2] < 30
-      }),
+      colours.iter().any(|&(r, g, b)| r > 150 && g < 60 && b < 60),
       "got: {colours:?}"
     );
   }
@@ -381,7 +396,7 @@ mod outlines {
   // wolframscript's; `EdgeForm[]` removes them.
   #[test]
   fn rims_are_outlined_by_default() {
-    let lines = |s: &str| s.lines().filter(|l| l.starts_with("<line")).count();
+    let lines = |s: &str| s.lines().filter(|l| l.starts_with("<line ")).count();
     let plain = svg("Graphics3D[Cylinder[], Boxed -> False]");
     let bare = svg("Graphics3D[{EdgeForm[], Cylinder[]}, Boxed -> False]");
     assert!(lines(&plain) > 10, "{plain}");
@@ -448,7 +463,7 @@ mod plot3d_options {
   fn lines_with(svg: &str, stroke: &str) -> usize {
     svg
       .lines()
-      .filter(|l| l.starts_with("<line") && l.contains(stroke))
+      .filter(|l| l.starts_with("<line ") && l.contains(stroke))
       .count()
   }
 
@@ -758,4 +773,179 @@ mod arrows_and_box {
     assert!(s.contains("stroke=\"rgb(102,102,102)\" stroke-width=\"0.5\""));
     assert!(!s.contains("opacity=\"0.4\""));
   }
+}
+
+mod smooth_shading {
+  use super::*;
+
+  // A curved surface is lit at its corners and each facet is filled with
+  // the gradient between them; flat faces keep one colour.
+  #[test]
+  fn curved_surfaces_are_filled_with_gradients() {
+    for code in [
+      "Graphics3D[Sphere[]]",
+      "Graphics3D[Cylinder[]]",
+      "Graphics3D[Cone[]]",
+      "Graphics3D[CapsuleShape[{{0, 0, 0}, {1, 1, 1}}, 0.3]]",
+      "Plot3D[Sin[x y], {x, 0, 3}, {y, 0, 3}, Mesh -> None]",
+    ] {
+      let s = svg(code);
+      assert!(s.contains("<linearGradient"), "{code}");
+      assert!(s.contains("fill=\"url(#"), "{code}");
+    }
+    let flat = svg("Graphics3D[Cuboid[]]");
+    assert!(!flat.contains("<linearGradient"), "{flat}");
+  }
+
+  // The far side of a closed convex surface (a capsule) is hidden, so a
+  // translucent one, whose far side shows, draws more facets.
+  #[test]
+  fn far_side_of_a_capsule_is_dropped() {
+    let opaque = polygon_count(&svg(
+      "Graphics3D[CapsuleShape[{{0, 0, 0}, {1, 1, 1}}, 0.3], Boxed -> False]",
+    ));
+    let glassy = polygon_count(&svg(
+      "Graphics3D[{Opacity[0.5], CapsuleShape[{{0, 0, 0}, {1, 1, 1}}, \
+       0.3]}, Boxed -> False]",
+    ));
+    assert!(glassy > opaque * 3 / 2, "{opaque} vs {glassy}");
+  }
+
+  // Of two faces in one plane, the one given later is drawn on top.
+  #[test]
+  fn coplanar_faces_draw_in_order() {
+    let s = svg(
+      "Graphics3D[{Red, Polygon[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, {0, 2, \
+       0}}], Blue, Polygon[{{-1, -1, 0}, {5, -1, 0}, {-1, 5, 0}}]}]",
+    );
+    let colours: Vec<(u32, u32, u32)> = s
+      .split("<polygon ")
+      .skip(1)
+      .filter_map(|p| {
+        let rgb = p.split("fill=\"rgb(").nth(1)?.split(')').next()?;
+        let v: Vec<u32> =
+          rgb.split(',').filter_map(|c| c.parse().ok()).collect();
+        Some((v[0], v[1], v[2]))
+      })
+      .collect();
+    let last_red = colours.iter().rposition(|c| c.0 > c.2).unwrap();
+    let first_blue = colours.iter().position(|c| c.2 > c.0).unwrap();
+    assert!(last_red < first_blue, "{colours:?}");
+  }
+}
+
+mod edge_form_3d {
+  use super::*;
+
+  // `EdgeForm[Dashed]` adds dashing to the edge style already in force.
+  #[test]
+  fn dashed_edges_keep_the_earlier_edge_colour() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[{Thick, Red}], Cuboid[{0, 0, 0}], EdgeForm[None], \
+       Cuboid[{2, 0, 0}], EdgeForm[Dashed], Cuboid[{4, 0, 0}]}]",
+    );
+    let dashed: Vec<&str> = s
+      .lines()
+      .filter(|l| l.starts_with("<line ") && l.contains("stroke-dasharray"))
+      .collect();
+    assert!(dashed.len() >= 9, "{s}");
+    assert!(dashed.iter().all(|l| l.contains("stroke=\"rgb(255,0,0)\"")));
+  }
+}
+
+mod contour_plot3d_mesh {
+  use super::*;
+
+  // The default mesh follows the planes of the sampling grid.
+  #[test]
+  fn default_mesh_is_drawn() {
+    let mesh = |opt: &str| {
+      svg(&format!(
+        "ContourPlot3D[x^2 + y^2 - z^2 == 1, {{x, -2, 2}}, {{y, -2, 2}}, \
+         {{z, -2, 2}}, PlotPoints -> 8{opt}]"
+      ))
+      .matches("stroke=\"#000000a0\"")
+      .count()
+    };
+    assert!(mesh("") > 50);
+    assert_eq!(mesh(", Mesh -> None"), 0);
+  }
+}
+
+mod face_grids {
+  use super::*;
+
+  #[test]
+  fn face_grids_draw_light_lines() {
+    let grid = "stroke=\"rgb(217,217,217)\"";
+    assert!(svg("Graphics3D[Sphere[], FaceGrids -> All]").contains(grid));
+    assert!(!svg("Graphics3D[Sphere[]]").contains(grid));
+    // Only the asked face's lines, and none along a `None` direction.
+    let one =
+      svg("Graphics3D[Sphere[], FaceGrids -> {{{0, 1, 0}, {None, {0}}}}]");
+    assert_eq!(one.matches(grid).count(), 20, "{one}");
+  }
+
+  // `{x, ""}` is a tick mark without a number.
+  #[test]
+  fn empty_tick_labels_are_not_numbered() {
+    let s = svg(
+      "Graphics3D[Cuboid[], Axes -> True, Ticks -> {{{0.5, \"\"}}, None, \
+       None}]",
+    );
+    assert!(!s.contains(">0.5<"), "{s}");
+  }
+}
+
+mod charts_3d {
+  use super::*;
+
+  #[test]
+  fn bubble_chart_3d_draws_spheres() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 8}}]; \
+         {Head[g], Cases[g, Sphere[_, r_] :> r, Infinity]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {0.1, 0.2}}"
+    );
+    assert!(
+      polygon_count(&svg("BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 8}}]")) > 100
+    );
+  }
+
+  // The pie's rounded wall is shaded smoothly.
+  #[test]
+  fn pie_chart_3d_wall_is_smooth() {
+    assert!(svg("PieChart3D[{3, 5, 2, 4}]").contains("<linearGradient"));
+  }
+}
+
+mod scattered_list_plot3d {
+  use super::*;
+
+  // Scattered points are drawn on their own triangulation, so the surface
+  // reaches each point's height (a resampled grid shaved the peak off).
+  #[test]
+  fn surface_reaches_the_data_peak() {
+    let s = svg(
+      "ListPlot3D[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}, \
+       {0.37, 0.61, 2}}]",
+    );
+    assert!(s.contains(">2.0<") || s.contains(">2<"), "{s}");
+  }
+}
+
+#[test]
+fn raster_volume_colours_do_not_expose_triangle_lighting() {
+  let s = svg("Graphics3D[Raster3D[{{{{1,0,0}}}}],Boxed->False]");
+  assert!(s.contains("fill=\"rgb(255,0,0)\""));
+  assert!(s.split("<polygon").skip(1).all(|p| {
+    p.split('>')
+      .next()
+      .unwrap()
+      .contains("fill=\"rgb(255,0,0)\"")
+  }));
 }

@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 3955
 expression: "export_svg(\"Graphics[{\n          Red, Disk[{0, 0}, 0.5],\n          Blue, Circle[{2, 0}, 0.8],\n          Green, Polygon[{{4, 0}, {5, 1}, {5, -1}}],\n          Black, Line[{{0, 0}, {2, 0}, {4, 0}}],\n          Orange, Arrow[{{-1, -1}, {-1, 1}}],\n          Text[\\\"Origin\\\", {0, -0.8}]\n        }, ImageSize -> 400]\")"
 ---
 <svg width="400" height="144" viewBox="0 0 400 144" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -11,8 +12,8 @@ expression: "export_svg(\"Graphics[{\n          Red, Disk[{0, 0}, 0.5],\n       
 <ellipse cx="199.50" cy="71.50" rx="51.07" ry="51.07" fill="none" stroke="rgb(0,0,255)" stroke-width="1.00"/>
 <polygon points="327.18,71.50 391.02,7.66 391.02,135.34" fill="rgb(0,255,0)"/>
 <polyline points="71.82,71.50 199.50,71.50 327.18,71.50" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="7.98,135.34 7.98,7.66" fill="none" stroke="rgb(255,128,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polygon points="7.98,7.66 12.45,23.62 3.51,23.62" fill="rgb(255,128,0)"/>
+<polyline points="7.98,135.34 7.98,22.15" fill="none" stroke="rgb(255,128,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polygon points="7.98,7.66 3.78,23.62 4.26,23.39 5.40,22.87 6.09,22.60 6.79,22.37 7.43,22.20 7.98,22.15 8.47,22.20 9.11,22.37 9.83,22.60 10.56,22.87 11.82,23.39 12.35,23.62" fill="rgb(255,128,0)"/>
 <text x="71.82" y="122.57" fill="rgb(255,128,0)" font-size="14" font-weight="normal" font-style="normal" text-anchor="middle" dominant-baseline="central">Origin</text>
 </g>
 </svg>

@@ -4408,6 +4408,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       parts.push(str_expr("}"));
       row_box(parts)
     }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      call("SqrtBox", vec![expr_to_box_form(&args[0])])
+    }
     // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
     Expr::FunctionCall { name, args }
       if name == "Quantity" && args.len() == 2 =>
@@ -7288,6 +7291,15 @@ fn tf(expr: &Expr) -> Expr {
     // typesets as itself and the arguments follow in round brackets, the
     // same shape an unknown named head gets.
     Expr::CurriedCall { func, args } => {
+      // Inactive changes evaluation, while retaining the operator's notation.
+      if let Expr::FunctionCall { name, args: head } = func.as_ref()
+        && name == "Inactive"
+        && head.len() == 1
+        && let Expr::Identifier(operator) = &head[0]
+      {
+        return tf_call(operator, args);
+      }
+
       // `Derivative[n₁, …, nₖ][f]` — a multivariate derivative keeps the
       // curried shape, and typesets as `f^(n₁,…,nₖ)` rather than exposing
       // the `Derivative` head.

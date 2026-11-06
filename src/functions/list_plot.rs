@@ -56,6 +56,72 @@ fn all_implicit_x(all_series: &[Vec<ErrPoint>]) -> bool {
   points.peek().is_some() && points.all(|p| p.implicit_x)
 }
 
+/// List plots use a coarse index grid, refining its beginning when that
+/// grid leaves fewer than the requested number of points. Selection is
+/// independent of coordinates, and always preserves both endpoints.
+fn plot_sample_indices(n: usize, limit: usize) -> Vec<usize> {
+  if n <= limit || limit < 2 {
+    return (0..n).collect();
+  }
+  let stride = n / limit + 1;
+  let mut selected = vec![false; n];
+  selected[0] = true;
+  selected[n - 1] = true;
+  let mut count = 2;
+  for i in (stride..n).step_by(stride).take(limit - 2) {
+    selected[i - 1] = true;
+    count += 1;
+  }
+  let refinement = stride.div_ceil(2);
+  let mut candidate = refinement - 1;
+  while count < limit {
+    while selected[candidate] {
+      candidate += 1;
+    }
+    selected[candidate] = true;
+    count += 1;
+    candidate += refinement;
+  }
+  selected
+    .into_iter()
+    .enumerate()
+    .filter_map(|(i, keep)| keep.then_some(i))
+    .collect()
+}
+
+fn sample_plot_data(
+  args: &[Expr],
+  series: &mut [Vec<ErrPoint>],
+  labels: &mut [Vec<Option<PointLabel>>],
+) {
+  fn limit(expr: &Expr) -> Option<usize> {
+    match expr {
+      Expr::Integer(n) if *n >= 2 => usize::try_from(*n).ok(),
+      Expr::List(items) if items.len() <= 2 => {
+        items.iter().rev().find_map(limit)
+      }
+      _ => None,
+    }
+  }
+  let Some(option) = option_value(args, "MaxPlotPoints") else {
+    return;
+  };
+  let option = evaluate_expr_to_expr(option).unwrap_or_else(|_| option.clone());
+  let Some(limit) = limit(&option) else {
+    return;
+  };
+  for (i, points) in series.iter_mut().enumerate() {
+    let indices = plot_sample_indices(points.len(), limit);
+    *points = indices.iter().map(|&j| points[j]).collect();
+    if let Some(labels) = labels.get_mut(i) {
+      *labels = indices
+        .iter()
+        .map(|&j| labels.get(j).cloned().flatten())
+        .collect();
+    }
+  }
+}
+
 /// Strips a `Quantity[magnitude, unit]` wrapper down to its magnitude, like
 /// wolframscript's plot functions do when handed dimensioned data (the axis
 /// then just carries the bare number). Any other expression passes through
@@ -543,6 +609,11 @@ fn parse_list_data_err(
             (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
         {
           points.push(ErrPoint::from_xy(x, y));
+        } else {
+          points.push(ErrPoint::from_xy(
+            (f64::NAN, (0.0, 0.0)),
+            (f64::NAN, (0.0, 0.0)),
+          ));
         }
       }
       return Ok(vec![points]);
@@ -581,9 +652,8 @@ fn parse_list_data_err(
       Some((content, _)) => content,
       None => item.clone(),
     };
-    if let Some(y) = eval_to_value_err(&value) {
-      points.push(ErrPoint::from_y((i + 1) as f64, y));
-    }
+    let y = eval_to_value_err(&value).unwrap_or((f64::NAN, (0.0, 0.0)));
+    points.push(ErrPoint::from_y((i + 1) as f64, y));
   }
   Ok(vec![points])
 }
@@ -607,13 +677,17 @@ fn parse_single_series(
           (eval_to_value_err(&pair[0]), eval_to_value_err(&pair[1]))
       {
         points.push(ErrPoint::from_xy(x, y));
+      } else {
+        points.push(ErrPoint::from_xy(
+          (f64::NAN, (0.0, 0.0)),
+          (f64::NAN, (0.0, 0.0)),
+        ));
       }
     }
   } else {
     for (i, val) in series_items.iter().enumerate() {
-      if let Some(y) = eval_to_value_err(val) {
-        points.push(ErrPoint::from_y((i + 1) as f64, y));
-      }
+      let y = eval_to_value_err(val).unwrap_or((f64::NAN, (0.0, 0.0)));
+      points.push(ErrPoint::from_y((i + 1) as f64, y));
     }
   }
   points
@@ -1961,10 +2035,22 @@ fn interpolate_series(
 ) -> Vec<Vec<(f64, f64)>> {
   all_series
     .iter()
-    .map(|series| match order {
-      0 => step_curve(series),
-      o if o >= 2 => spline_curve(series, o.min(16) as usize),
-      _ => series.clone(),
+    .map(|series| {
+      let mut out = Vec::new();
+      for segment in series.split(|p| !p.0.is_finite() || !p.1.is_finite()) {
+        if segment.is_empty() {
+          continue;
+        }
+        if !out.is_empty() {
+          out.push((f64::NAN, f64::NAN));
+        }
+        out.extend(match order {
+          0 => step_curve(segment),
+          o if o >= 2 => spline_curve(segment, o.min(16) as usize),
+          _ => segment.to_vec(),
+        });
+      }
+      out
     })
     .collect()
 }
@@ -2790,12 +2876,8 @@ fn resolve_point_labels(
     None => point_labels,
   };
   if let Some(max_w) = parsed.labeling_size {
-    for label in labels.iter_mut().flatten() {
-      if label.as_ref().is_some_and(|l| {
-        crate::functions::plot_padding::text_width(l, 10.0) > max_w
-      }) {
-        *label = None;
-      }
+    for label in labels.iter_mut().flatten().flatten() {
+      *label = crate::functions::plot_padding::truncate_label(label, max_w);
     }
   }
   labels
@@ -2818,16 +2900,19 @@ fn scale_list_data(
     for s in series.iter_mut() {
       *s = s
         .iter()
-        .filter_map(|&(x, y)| {
-          let x = match &scaling.0 {
-            Some(sx) => sx.forward(x)?,
-            None => x,
-          };
-          let y = match &scaling.1 {
-            Some(sy) => sy.forward(y)?,
-            None => y,
-          };
-          Some((x, y))
+        .map(|&(x, y)| {
+          let mapped = (|| {
+            let x = match &scaling.0 {
+              Some(sx) => sx.forward(x)?,
+              None => x,
+            };
+            let y = match &scaling.1 {
+              Some(sy) => sy.forward(y)?,
+              None => y,
+            };
+            Some((x, y))
+          })();
+          mapped.unwrap_or((f64::NAN, f64::NAN))
         })
         .collect();
     }
@@ -2902,11 +2987,17 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
   parsed.opts.point_label_callouts = labels_are_callouts(&data);
-  let (mut err_series, labels, point_labels) =
+  let (mut err_series, labels, mut point_labels) =
     parse_list_data_err_labeled(&data, true)?;
   apply_stacked_layout(args, &mut err_series);
   apply_multiaxis(args, &mut err_series, &mut parsed.opts);
+  let source_point_size = list_plot_point_size(&strip_errors(&err_series));
+  let mut point_colors = styled_point_colors(&data, &strip_errors(&err_series));
+  sample_plot_data(args, &mut err_series, &mut point_labels);
   let all_series = strip_errors(&err_series);
+  for (colors, points) in point_colors.iter_mut().zip(&all_series) {
+    colors.retain(|(xy, _)| points.contains(xy));
+  }
   // `DataRange -> All` puts the values at their positions 1, 2, …, an x
   // axis that starts at 0 like a plain value list's.
   let implicit_x = all_implicit_x(&err_series)
@@ -2920,7 +3011,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     parsed.opts.interval_markers = IntervalMarkers::Bars;
   }
-  parsed.opts.point_colors = styled_point_colors(&data, &all_series);
+  parsed.opts.point_colors = point_colors;
 
   // InterpolationOrder reshapes only a joined series into a curve (0 =
   // steps, >= 2 = smooth spline); a series marked `Joined -> False` keeps
@@ -2965,12 +3056,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The data decide the dot size, not an interpolated curve through them.
-  parsed.opts.default_point_size =
-    Some(list_plot_point_size(if curve_transformed {
-      &parsed.opts.data_points
-    } else {
-      &draw_series
-    }));
+  parsed.opts.default_point_size = Some(source_point_size);
   if parsed.opts.plot_layout.is_some() && draw_series.len() > 1 {
     return render_panel_layout(
       &draw_series,
@@ -3170,11 +3256,13 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   apply_legended_datasets(&data, &mut parsed.opts);
   apply_styled_datasets(&data, &mut parsed.opts);
-  let (mut err_series, labels, point_labels) =
+  let (mut err_series, labels, mut point_labels) =
     parse_list_data_err_labeled(&data, false)?;
   apply_stacked_layout(args, &mut err_series);
+  parsed.opts.mesh_point_size =
+    Some(list_line_plot_point_size(&strip_errors(&err_series)));
+  sample_plot_data(args, &mut err_series, &mut point_labels);
   let all_series = strip_errors(&err_series);
-  parsed.opts.mesh_point_size = Some(list_line_plot_point_size(&all_series));
   // `DataRange -> All` puts the values at their positions 1, 2, …, an x
   // axis that starts at 0 like a plain value list's.
   let implicit_x = all_implicit_x(&err_series)
@@ -4003,6 +4091,137 @@ pub fn list_fit_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn max_plot_points_matches_wolfram_indices() {
+    let one_based = |n, m| {
+      plot_sample_indices(n, m)
+        .into_iter()
+        .map(|i| i + 1)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(one_based(10, 5), vec![1, 3, 6, 9, 10]);
+    assert_eq!(one_based(10, 6), vec![1, 2, 4, 6, 8, 10]);
+    assert_eq!(one_based(15, 8), vec![1, 2, 4, 6, 8, 10, 12, 15]);
+    assert_eq!(
+      one_based(100, 30),
+      vec![
+        1, 2, 4, 5, 7, 8, 9, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56,
+        60, 64, 68, 72, 76, 80, 84, 88, 92, 96, 100,
+      ]
+    );
+    assert_eq!(
+      one_based(100, 50),
+      vec![
+        1, 2, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27,
+        28, 30, 31, 33, 34, 36, 37, 39, 40, 42, 43, 45, 48, 51, 54, 57, 60, 63,
+        66, 69, 72, 75, 78, 81, 84, 87, 90, 93, 96, 99, 100,
+      ]
+    );
+    for n in 2..120 {
+      for m in 2..=n {
+        let indices = plot_sample_indices(n, m);
+        assert_eq!(indices.len(), m);
+        assert_eq!(indices.first(), Some(&0));
+        assert_eq!(indices.last(), Some(&(n - 1)));
+        assert!(indices.windows(2).all(|w| w[0] < w[1]));
+      }
+    }
+  }
+
+  #[test]
+  fn max_plot_points_samples_all_list_plot_series() {
+    for plot in [list_plot_ast, list_line_plot_ast] {
+      let data = Expr::List(
+        (1..=10)
+          .map(|n| Expr::Integer(if n == 5 { 100 } else { n }))
+          .collect(),
+      );
+      let args = vec![
+        Expr::List(vec![data.clone(), data].into()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("MaxPlotPoints".into())),
+          replacement: Box::new(Expr::Integer(3)),
+        },
+      ];
+      let Expr::Graphics {
+        source: Some(ref source),
+        ..
+      } = plot(&args).unwrap()
+      else {
+        panic!("expected plot source");
+      };
+      assert_eq!(source.series.len(), 2);
+      assert!(source.y_range.1 < 20.0, "omitted outlier set plot range");
+      for series in &source.series {
+        assert_eq!(series.points, vec![(1.0, 1.0), (4.0, 4.0), (10.0, 10.0)]);
+      }
+    }
+  }
+
+  #[test]
+  fn max_plot_points_keeps_labels_and_uncertainties_aligned() {
+    let mut series = vec![
+      (1..=10)
+        .map(|n| ErrPoint::from_y(n as f64, (n as f64, (0.0, n as f64))))
+        .collect(),
+    ];
+    let mut labels =
+      vec![(1..=10).map(|n| Some((n.to_string(), None))).collect()];
+    sample_plot_data(
+      &[
+        Expr::List(Vec::new().into()),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("MaxPlotPoints".into())),
+          replacement: Box::new(Expr::Integer(5)),
+        },
+      ],
+      &mut series,
+      &mut labels,
+    );
+    assert_eq!(
+      series[0]
+        .iter()
+        .map(|p| p.dy.1 as usize)
+        .collect::<Vec<_>>(),
+      vec![1, 3, 6, 9, 10]
+    );
+    assert_eq!(
+      labels[0]
+        .iter()
+        .map(|label| label.as_ref().unwrap().0.as_str())
+        .collect::<Vec<_>>(),
+      vec!["1", "3", "6", "9", "10"]
+    );
+  }
+
+  #[test]
+  fn max_plot_points_preserves_original_point_size() {
+    let data = Expr::List((1..=100).map(Expr::Integer).collect());
+    let Expr::Graphics {
+      source: Some(ref full),
+      ..
+    } = list_plot_ast(std::slice::from_ref(&data)).unwrap()
+    else {
+      panic!("expected plot source");
+    };
+    let Expr::Graphics {
+      source: Some(ref sampled),
+      ..
+    } = list_plot_ast(&[
+      data,
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier("MaxPlotPoints".into())),
+        replacement: Box::new(Expr::Integer(3)),
+      },
+    ])
+    .unwrap()
+    else {
+      panic!("expected plot source");
+    };
+    assert_eq!(sampled.series[0].points.len(), 3);
+    assert_eq!(sampled.series[0].point_size, full.series[0].point_size);
+  }
 
   fn values(ys: &[f64]) -> Vec<(f64, f64)> {
     ys.iter()

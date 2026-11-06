@@ -33,7 +33,6 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="115.6" y1="216.8" x2="121.1" y2="211.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="255.7" y1="214.4" x2="264.9" y2="217.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.7" y1="115.1" x2="149.4" y2="106.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="264.9" y1="217.5" x2="274.2" y2="220.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="110.0" y1="222.5" x2="115.6" y2="216.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="149.4" y1="106.4" x2="149.1" y2="97.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="274.2" y1="220.5" x2="283.6" y2="223.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -46,7 +45,6 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="302.7" y1="229.9" x2="312.4" y2="233.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="312.4" y1="233.1" x2="322.2" y2="236.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="148.4" y1="79.5" x2="148.1" y2="70.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="92.6" y1="240.0" x2="98.5" y2="234.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="322.2" y1="236.4" x2="332.1" y2="239.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="148.1" y1="70.2" x2="147.8" y2="60.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="332.1" y1="239.6" x2="333.2" y2="231.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -93,13 +91,9 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="33.8" y1="299.1" x2="40.9" y2="292.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="194.4" y1="12.1" x2="204.5" y2="14.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="344.4" y1="152.8" x2="345.7" y2="143.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 295.2,263.3 288.2,245.4" fill="rgb(190,200,186)" stroke="rgb(190,200,186)" stroke-width="0.5"/>
-<line x1="295.2" y1="263.3" x2="288.2" y2="245.4" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="121.6" y1="17.5" x2="127.8" y2="13.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="204.5" y1="14.4" x2="214.7" y2="16.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="33.8" y1="299.1" x2="43.1" y2="303.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 89.5,248.3 83.7,266.5" fill="rgb(156,70,59)" stroke="rgb(156,70,59)" stroke-width="0.5"/>
-<line x1="89.5" y1="248.3" x2="83.7" y2="266.5" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="33.8" y1="299.1" x2="32.4" y2="290.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="291.5" y1="306.0" x2="295.9" y2="298.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="345.7" y1="143.2" x2="347.1" y2="133.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -112,14 +106,10 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="52.4" y1="307.0" x2="61.8" y2="311.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="286.9" y1="313.4" x2="291.5" y2="306.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="235.5" y1="21.4" x2="246.1" y2="23.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 295.2,282.3 295.2,263.3" fill="rgb(198,217,215)" stroke="rgb(198,217,215)" stroke-width="0.5"/>
-<line x1="295.2" y1="282.3" x2="295.2" y2="263.3" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="61.8" y1="311.1" x2="71.4" y2="315.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="31.1" y1="282.3" x2="29.6" y2="273.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="108.8" y1="26.2" x2="115.3" y2="21.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="348.5" y1="123.7" x2="349.9" y2="113.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 83.7,266.5 85.0,285.7" fill="rgb(161,72,68)" stroke="rgb(161,72,68)" stroke-width="0.5"/>
-<line x1="83.7" y1="266.5" x2="85.0" y2="285.7" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="246.1" y1="23.8" x2="256.8" y2="26.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="282.3" y1="320.9" x2="286.9" y2="313.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="71.4" y1="315.2" x2="81.1" y2="319.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -132,12 +122,8 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="267.6" y1="28.7" x2="278.5" y2="31.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="90.9" y1="323.5" x2="100.8" y2="327.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="28.2" y1="264.9" x2="26.7" y2="256.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 287.7,301.2 295.2,282.3" fill="rgb(204,228,237)" stroke="rgb(204,228,237)" stroke-width="0.5"/>
-<line x1="287.7" y1="301.2" x2="295.2" y2="282.3" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="351.4" y1="103.4" x2="352.8" y2="93.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="278.5" y1="31.2" x2="289.6" y2="33.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 85.0,285.7 93.9,304.4" fill="rgb(169,83,80)" stroke="rgb(169,83,80)" stroke-width="0.5"/>
-<line x1="85.0" y1="285.7" x2="93.9" y2="304.4" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="100.8" y1="327.8" x2="110.8" y2="332.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="95.4" y1="35.3" x2="102.2" y2="30.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="272.7" y1="336.6" x2="277.5" y2="328.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -148,14 +134,10 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="300.8" y1="36.3" x2="312.2" y2="38.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="88.5" y1="40.0" x2="95.4" y2="35.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="120.9" y1="336.4" x2="131.2" y2="340.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 272.5,318.5 287.7,301.2" fill="rgb(209,232,250)" stroke="rgb(209,232,250)" stroke-width="0.5"/>
-<line x1="272.5" y1="318.5" x2="287.7" y2="301.2" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="25.2" y1="246.9" x2="23.7" y2="237.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.7" y1="344.7" x2="272.7" y2="336.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="354.3" y1="82.4" x2="355.9" y2="71.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="312.2" y1="38.8" x2="323.7" y2="41.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 93.9,304.4 110.3,321.2" fill="rgb(178,101,94)" stroke="rgb(178,101,94)" stroke-width="0.5"/>
-<line x1="93.9" y1="304.4" x2="110.3" y2="321.2" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="131.2" y1="340.8" x2="141.6" y2="345.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="81.5" y1="44.8" x2="88.5" y2="40.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="323.7" y1="41.4" x2="335.3" y2="44.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -164,29 +146,17 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="355.9" y1="71.6" x2="357.4" y2="60.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="262.7" y1="352.9" x2="267.7" y2="344.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="335.3" y1="44.1" x2="347.1" y2="46.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 250.4,332.5 272.5,318.5" fill="rgb(211,229,253)" stroke="rgb(211,229,253)" stroke-width="0.5"/>
-<line x1="250.4" y1="332.5" x2="272.5" y2="318.5" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="152.1" y1="349.8" x2="162.8" y2="354.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 110.3,321.2 133.5,334.5" fill="rgb(187,128,133)" stroke="rgb(187,128,133)" stroke-width="0.5"/>
-<line x1="110.3" y1="321.2" x2="133.5" y2="334.5" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="22.2" y1="228.2" x2="20.6" y2="218.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="74.2" y1="49.7" x2="81.5" y2="44.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="357.4" y1="60.6" x2="359.0" y2="49.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="347.1" y1="46.7" x2="359.0" y2="49.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="162.8" y1="354.3" x2="173.6" y2="359.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="257.5" y1="361.4" x2="262.7" y2="352.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 222.9,341.8 250.4,332.5" fill="rgb(210,219,245)" stroke="rgb(210,219,245)" stroke-width="0.5"/>
-<line x1="222.9" y1="341.8" x2="250.4" y2="332.5" stroke="rgb(64,64,64)" stroke-width="1"/>
-<polygon points="189.7,77.6 133.5,334.5 161.7,342.9" fill="rgb(196,156,170)" stroke="rgb(196,156,170)" stroke-width="0.5"/>
-<line x1="133.5" y1="334.5" x2="161.7" y2="342.9" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="20.6" y1="218.6" x2="19.0" y2="208.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="173.6" y1="359.0" x2="184.5" y2="363.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="354.9" y1="54.5" x2="359.0" y2="49.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="66.8" y1="54.7" x2="74.2" y2="49.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<polygon points="189.7,77.6 192.4,345.4 222.9,341.8" fill="rgb(207,203,228)" stroke="rgb(207,203,228)" stroke-width="0.5"/>
-<line x1="192.4" y1="345.4" x2="222.9" y2="341.8" stroke="rgb(64,64,64)" stroke-width="1"/>
-<polygon points="189.7,77.6 161.7,342.9 192.4,345.4" fill="rgb(202,181,203)" stroke="rgb(202,181,203)" stroke-width="0.5"/>
-<line x1="161.7" y1="342.9" x2="192.4" y2="345.4" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="252.2" y1="370.0" x2="257.5" y2="361.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="184.5" y1="363.6" x2="195.5" y2="368.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="19.0" y1="208.8" x2="17.3" y2="198.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -223,53 +193,138 @@ expression: "export_svg(\"Graphics3D[Cone[]]\")"
 <line x1="323.2" y1="93.2" x2="328.1" y2="87.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="10.0" y1="93.5" x2="18.7" y2="87.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="4.9" y1="123.2" x2="3.0" y2="111.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="243.9" y1="343.6" x2="244.4" y2="334.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="318.2" y1="99.3" x2="323.2" y2="93.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="1.0" y1="99.6" x2="10.0" y2="93.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="3.0" y1="111.5" x2="1.0" y2="99.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="244.4" y1="334.2" x2="245.0" y2="324.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="1.0" y1="99.6" x2="12.0" y2="103.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="313.1" y1="105.5" x2="318.2" y2="99.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="245.0" y1="324.5" x2="245.6" y2="314.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="12.0" y1="103.0" x2="23.1" y2="106.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="23.1" y1="106.5" x2="34.4" y2="110.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="245.6" y1="314.7" x2="246.2" y2="304.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="307.9" y1="111.9" x2="313.1" y2="105.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="34.4" y1="110.0" x2="45.8" y2="113.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="246.2" y1="304.7" x2="246.8" y2="294.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="302.5" y1="118.5" x2="307.9" y2="111.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="45.8" y1="113.5" x2="57.4" y2="117.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="57.4" y1="117.1" x2="69.2" y2="120.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="246.8" y1="294.4" x2="247.4" y2="283.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="297.0" y1="125.2" x2="302.5" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="69.2" y1="120.8" x2="81.1" y2="124.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="247.4" y1="283.9" x2="248.1" y2="273.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="81.1" y1="124.5" x2="93.2" y2="128.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="291.3" y1="132.2" x2="297.0" y2="125.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="93.2" y1="128.2" x2="105.5" y2="132.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="248.1" y1="273.2" x2="248.7" y2="262.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="105.5" y1="132.0" x2="118.0" y2="135.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="285.5" y1="139.3" x2="291.3" y2="132.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="248.7" y1="262.3" x2="249.4" y2="251.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="118.0" y1="135.9" x2="130.6" y2="139.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="130.6" y1="139.8" x2="143.5" y2="143.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="249.4" y1="251.1" x2="250.1" y2="239.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="279.5" y1="146.6" x2="285.5" y2="139.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="143.5" y1="143.8" x2="156.6" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="250.1" y1="239.6" x2="250.8" y2="227.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="156.6" y1="147.9" x2="169.8" y2="152.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="273.4" y1="154.2" x2="279.5" y2="146.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="169.8" y1="152.0" x2="183.3" y2="156.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="250.8" y1="227.9" x2="251.5" y2="215.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.0" y1="161.9" x2="273.4" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="183.3" y1="156.2" x2="196.9" y2="160.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="251.5" y1="215.8" x2="252.3" y2="203.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="196.9" y1="160.4" x2="210.8" y2="164.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="260.5" y1="169.9" x2="267.0" y2="161.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="210.8" y1="164.7" x2="224.9" y2="169.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="252.3" y1="203.6" x2="253.0" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="224.9" y1="169.1" x2="239.2" y2="173.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="253.8" y1="178.1" x2="260.5" y2="169.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s9e06a928e8" gradientUnits="userSpaceOnUse" x1="257.1" y1="192.2" x2="256.5" y2="192.5"><stop stop-color="#babea9"/><stop offset="1" stop-color="#bec8ba"/></linearGradient>
+<polygon points="189.7,77.6 292.5,254.1 288.2,245.4" fill="url(#s9e06a928e8)" stroke="url(#s9e06a928e8)" stroke-width="0.5"/>
+<line x1="288.2" y1="245.4" x2="292.5" y2="254.1" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="264.9" y1="217.5" x2="274.2" y2="220.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sd0a73b2787" gradientUnits="userSpaceOnUse" x1="122.2" y1="194.7" x2="121.2" y2="194.1"><stop stop-color="#9c473c"/><stop offset="1" stop-color="#9a4637"/></linearGradient>
+<polygon points="189.7,77.6 89.5,248.3 85.8,257.2" fill="url(#sd0a73b2787)" stroke="url(#sd0a73b2787)" stroke-width="0.5"/>
+<line x1="85.8" y1="257.2" x2="89.5" y2="248.3" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="92.6" y1="240.0" x2="98.5" y2="234.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sf8d27e63f6" gradientUnits="userSpaceOnUse" x1="260.1" y1="197.8" x2="258.2" y2="198.9"><stop stop-color="#bec8ba"/><stop offset="1" stop-color="#c2d1ca"/></linearGradient>
+<polygon points="189.7,77.6 295.2,263.3 292.5,254.1" fill="url(#sf8d27e63f6)" stroke="url(#sf8d27e63f6)" stroke-width="0.5"/>
+<line x1="292.5" y1="254.1" x2="295.2" y2="263.3" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="se7c53d0806" gradientUnits="userSpaceOnUse" x1="118.5" y1="199.8" x2="120.9" y2="201.1"><stop stop-color="#9c473c"/><stop offset="1" stop-color="#9f4740"/></linearGradient>
+<polygon points="189.7,77.6 85.8,257.2 83.7,266.5" fill="url(#se7c53d0806)" stroke="url(#se7c53d0806)" stroke-width="0.5"/>
+<line x1="83.7" y1="266.5" x2="85.8" y2="257.2" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s4ae0d8929f" gradientUnits="userSpaceOnUse" x1="258.7" y1="205.4" x2="262.0" y2="203.6"><stop stop-color="#c6d9d8"/><stop offset="1" stop-color="#c2d1ca"/></linearGradient>
+<polygon points="189.7,77.6 296.1,272.7 295.2,263.3" fill="url(#s4ae0d8929f)" stroke="url(#s4ae0d8929f)" stroke-width="0.5"/>
+<line x1="295.2" y1="263.3" x2="296.1" y2="272.7" stroke="rgb(64,64,64)" stroke-width="1"/>
 <line x1="253.0" y1="191.0" x2="253.8" y2="178.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s9b70c67cb1" gradientUnits="userSpaceOnUse" x1="117.0" y1="205.7" x2="120.8" y2="207.8"><stop stop-color="#9f4740"/><stop offset="1" stop-color="#a14844"/></linearGradient>
+<polygon points="189.7,77.6 83.7,266.5 83.4,276.0" fill="url(#s9b70c67cb1)" stroke="url(#s9b70c67cb1)" stroke-width="0.5"/>
+<line x1="83.4" y1="276.0" x2="83.7" y2="266.5" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s441e5c1986" gradientUnits="userSpaceOnUse" x1="258.0" y1="212.1" x2="262.7" y2="209.6"><stop stop-color="#cae0e4"/><stop offset="1" stop-color="#c6d9d8"/></linearGradient>
+<polygon points="189.7,77.6 295.2,282.3 296.1,272.7" fill="url(#s441e5c1986)" stroke="url(#s441e5c1986)" stroke-width="0.5"/>
+<line x1="295.2" y1="282.3" x2="296.1" y2="272.7" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s2e806a8d26" gradientUnits="userSpaceOnUse" x1="122.3" y1="214.7" x2="117.1" y2="211.9"><stop stop-color="#a54c4a"/><stop offset="1" stop-color="#a14844"/></linearGradient>
+<polygon points="189.7,77.6 83.4,276.0 85.0,285.7" fill="url(#s2e806a8d26)" stroke="url(#s2e806a8d26)" stroke-width="0.5"/>
+<line x1="83.4" y1="276.0" x2="85.0" y2="285.7" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s71f9b95950" gradientUnits="userSpaceOnUse" x1="256.1" y1="218.8" x2="262.2" y2="215.7"><stop stop-color="#cde4ed"/><stop offset="1" stop-color="#cae0e4"/></linearGradient>
+<polygon points="189.7,77.6 292.4,291.9 295.2,282.3" fill="url(#s71f9b95950)" stroke="url(#s71f9b95950)" stroke-width="0.5"/>
+<line x1="292.4" y1="291.9" x2="295.2" y2="282.3" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="252.3" y1="203.6" x2="253.0" y2="191.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="239.2" y1="173.5" x2="253.8" y2="178.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s35d827b2a9" gradientUnits="userSpaceOnUse" x1="117.8" y1="217.9" x2="124.3" y2="221.1"><stop stop-color="#a54c4a"/><stop offset="1" stop-color="#a95450"/></linearGradient>
+<polygon points="189.7,77.6 85.0,285.7 88.4,295.2" fill="url(#s35d827b2a9)" stroke="url(#s35d827b2a9)" stroke-width="0.5"/>
+<line x1="85.0" y1="285.7" x2="88.4" y2="295.2" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="143.5" y1="143.8" x2="156.6" y2="147.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s33b00f6bf1" gradientUnits="userSpaceOnUse" x1="253.2" y1="225.1" x2="260.6" y2="221.8"><stop stop-color="#cfe7f5"/><stop offset="1" stop-color="#cde4ed"/></linearGradient>
+<polygon points="189.7,77.6 287.7,301.2 292.4,291.9" fill="url(#s33b00f6bf1)" stroke="url(#s33b00f6bf1)" stroke-width="0.5"/>
+<line x1="287.7" y1="301.2" x2="292.4" y2="291.9" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="251.5" y1="215.8" x2="252.3" y2="203.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sa258bb32ed" gradientUnits="userSpaceOnUse" x1="128.1" y1="227.6" x2="120.1" y2="224.0"><stop stop-color="#ae5c57"/><stop offset="1" stop-color="#a95450"/></linearGradient>
+<polygon points="189.7,77.6 88.4,295.2 93.9,304.4" fill="url(#sa258bb32ed)" stroke="url(#sa258bb32ed)" stroke-width="0.5"/>
+<line x1="88.4" y1="295.2" x2="93.9" y2="304.4" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s72c899e3c8" gradientUnits="userSpaceOnUse" x1="248.6" y1="231.4" x2="257.4" y2="227.8"><stop stop-color="#d1e9fa"/><stop offset="1" stop-color="#cfe7f5"/></linearGradient>
+<polygon points="189.7,77.6 281.0,310.2 287.7,301.2" fill="url(#s72c899e3c8)" stroke="url(#s72c899e3c8)" stroke-width="0.5"/>
+<line x1="281.0" y1="310.2" x2="287.7" y2="301.2" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="250.8" y1="227.9" x2="251.5" y2="215.8" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s8627665559" gradientUnits="userSpaceOnUse" x1="133.2" y1="233.7" x2="123.8" y2="229.9"><stop stop-color="#b2655f"/><stop offset="1" stop-color="#ae5c57"/></linearGradient>
+<polygon points="189.7,77.6 93.9,304.4 101.2,313.1" fill="url(#s8627665559)" stroke="url(#s8627665559)" stroke-width="0.5"/>
+<line x1="93.9" y1="304.4" x2="101.2" y2="313.1" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s60d7a9a78d" gradientUnits="userSpaceOnUse" x1="243.1" y1="237.1" x2="253.3" y2="233.4"><stop stop-color="#d2e8fd"/><stop offset="1" stop-color="#d1e9fa"/></linearGradient>
+<polygon points="189.7,77.6 272.5,318.5 281.0,310.2" fill="url(#s60d7a9a78d)" stroke="url(#s60d7a9a78d)" stroke-width="0.5"/>
+<line x1="272.5" y1="318.5" x2="281.0" y2="310.2" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="250.1" y1="239.6" x2="250.8" y2="227.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="224.9" y1="169.1" x2="239.2" y2="173.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s9cee88e867" gradientUnits="userSpaceOnUse" x1="128.3" y1="235.4" x2="139.0" y2="239.2"><stop stop-color="#b2655f"/><stop offset="1" stop-color="#b77372"/></linearGradient>
+<polygon points="189.7,77.6 101.2,313.1 110.3,321.2" fill="url(#s9cee88e867)" stroke="url(#s9cee88e867)" stroke-width="0.5"/>
+<line x1="101.2" y1="313.1" x2="110.3" y2="321.2" stroke="rgb(64,64,64)" stroke-width="1"/>
+<polygon points="189.7,77.6 262.2,326.0 272.5,318.5" fill="rgb(211,231,253)" stroke="rgb(211,231,253)" stroke-width="0.5"/>
+<line x1="262.2" y1="326.0" x2="272.5" y2="318.5" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="248.1" y1="273.2" x2="248.7" y2="262.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="248.7" y1="262.3" x2="249.4" y2="251.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="249.4" y1="251.1" x2="250.1" y2="239.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="scc3d41ed02" gradientUnits="userSpaceOnUse" x1="134.5" y1="240.6" x2="146.4" y2="244.2"><stop stop-color="#b77372"/><stop offset="1" stop-color="#bc8186"/></linearGradient>
+<polygon points="189.7,77.6 110.3,321.2 121.2,328.4" fill="url(#scc3d41ed02)" stroke="url(#scc3d41ed02)" stroke-width="0.5"/>
+<line x1="110.3" y1="321.2" x2="121.2" y2="328.4" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s8517e5e414" gradientUnits="userSpaceOnUse" x1="227.4" y1="247.2" x2="240.1" y2="243.8"><stop stop-color="#d3e1fb"/><stop offset="1" stop-color="#d3e6fd"/></linearGradient>
+<polygon points="189.7,77.6 250.4,332.5 262.2,326.0" fill="url(#s8517e5e414)" stroke="url(#s8517e5e414)" stroke-width="0.5"/>
+<line x1="250.4" y1="332.5" x2="262.2" y2="326.0" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="246.2" y1="304.7" x2="246.8" y2="294.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="246.8" y1="294.4" x2="247.4" y2="283.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="247.4" y1="283.9" x2="248.1" y2="273.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="210.8" y1="164.7" x2="224.9" y2="169.1" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sc82defc06b" gradientUnits="userSpaceOnUse" x1="141.7" y1="245.2" x2="154.7" y2="248.5"><stop stop-color="#bc8186"/><stop offset="1" stop-color="#c08f99"/></linearGradient>
+<polygon points="189.7,77.6 121.2,328.4 133.5,334.5" fill="url(#sc82defc06b)" stroke="url(#sc82defc06b)" stroke-width="0.5"/>
+<line x1="121.2" y1="328.4" x2="133.5" y2="334.5" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="156.6" y1="147.9" x2="169.8" y2="152.0" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sa5c25b6fae" gradientUnits="userSpaceOnUse" x1="218.6" y1="250.8" x2="232.3" y2="247.9"><stop stop-color="#d3dbf6"/><stop offset="1" stop-color="#d3e1fb"/></linearGradient>
+<polygon points="189.7,77.6 237.2,337.8 250.4,332.5" fill="url(#sa5c25b6fae)" stroke="url(#sa5c25b6fae)" stroke-width="0.5"/>
+<line x1="237.2" y1="337.8" x2="250.4" y2="332.5" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="243.9" y1="343.6" x2="244.4" y2="334.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="244.4" y1="334.2" x2="245.0" y2="324.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="245.0" y1="324.5" x2="245.6" y2="314.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="245.6" y1="314.7" x2="246.2" y2="304.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s4bec93cd61" gradientUnits="userSpaceOnUse" x1="149.8" y1="249.2" x2="163.8" y2="251.8"><stop stop-color="#c08f99"/><stop offset="1" stop-color="#c49cab"/></linearGradient>
+<polygon points="189.7,77.6 133.5,334.5 147.1,339.4" fill="url(#s4bec93cd61)" stroke="url(#s4bec93cd61)" stroke-width="0.5"/>
+<line x1="133.5" y1="334.5" x2="147.1" y2="339.4" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s00ee34e493" gradientUnits="userSpaceOnUse" x1="209.2" y1="253.6" x2="223.7" y2="251.3"><stop stop-color="#d2d4ee"/><stop offset="1" stop-color="#d3dbf6"/></linearGradient>
+<polygon points="189.7,77.6 222.9,341.8 237.2,337.8" fill="url(#s00ee34e493)" stroke="url(#s00ee34e493)" stroke-width="0.5"/>
+<line x1="222.9" y1="341.8" x2="237.2" y2="337.8" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s1cf707f645" gradientUnits="userSpaceOnUse" x1="158.7" y1="252.3" x2="173.5" y2="254.3"><stop stop-color="#c49cab"/><stop offset="1" stop-color="#c8a9bb"/></linearGradient>
+<polygon points="189.7,77.6 147.1,339.4 161.7,342.9" fill="url(#s1cf707f645)" stroke="url(#s1cf707f645)" stroke-width="0.5"/>
+<line x1="147.1" y1="339.4" x2="161.7" y2="342.9" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="sf950805753" gradientUnits="userSpaceOnUse" x1="199.0" y1="255.4" x2="214.1" y2="253.9"><stop stop-color="#d0cbe5"/><stop offset="1" stop-color="#d2d4ee"/></linearGradient>
+<polygon points="189.7,77.6 207.9,344.4 222.9,341.8" fill="url(#sf950805753)" stroke="url(#sf950805753)" stroke-width="0.5"/>
+<line x1="207.9" y1="344.4" x2="222.9" y2="341.8" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="196.9" y1="160.4" x2="210.8" y2="164.7" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="s282b863f88" gradientUnits="userSpaceOnUse" x1="168.5" y1="254.6" x2="183.8" y2="255.7"><stop stop-color="#c8a9bb"/><stop offset="1" stop-color="#cbb5cb"/></linearGradient>
+<polygon points="189.7,77.6 161.7,342.9 176.9,344.9" fill="url(#s282b863f88)" stroke="url(#s282b863f88)" stroke-width="0.5"/>
+<line x1="161.7" y1="342.9" x2="176.9" y2="344.9" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="169.8" y1="152.0" x2="183.3" y2="156.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<linearGradient id="sc8a96fd66f" gradientUnits="userSpaceOnUse" x1="188.9" y1="256.1" x2="204.4" y2="255.5"><stop stop-color="#cec1d9"/><stop offset="1" stop-color="#d0cbe5"/></linearGradient>
+<polygon points="189.7,77.6 192.4,345.4 207.9,344.4" fill="url(#sc8a96fd66f)" stroke="url(#sc8a96fd66f)" stroke-width="0.5"/>
+<line x1="192.4" y1="345.4" x2="207.9" y2="344.4" stroke="rgb(64,64,64)" stroke-width="1"/>
+<linearGradient id="s920b8f1ec8" gradientUnits="userSpaceOnUse" x1="178.6" y1="255.8" x2="194.1" y2="256.1"><stop stop-color="#cbb5cb"/><stop offset="1" stop-color="#cec1d9"/></linearGradient>
+<polygon points="189.7,77.6 176.9,344.9 192.4,345.4" fill="url(#s920b8f1ec8)" stroke="url(#s920b8f1ec8)" stroke-width="0.5"/>
+<line x1="176.9" y1="344.9" x2="192.4" y2="345.4" stroke="rgb(64,64,64)" stroke-width="1"/>
+<line x1="183.3" y1="156.2" x2="196.9" y2="160.4" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 </svg>

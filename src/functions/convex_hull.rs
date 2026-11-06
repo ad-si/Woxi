@@ -323,7 +323,7 @@ const EPS: f64 = 1e-10;
 
 /// Andrew's monotone chain. Returns the input indices of the strict convex-hull
 /// corners in counter-clockwise order (collinear points are dropped).
-fn convex_hull_ccw(pts: &[(f64, f64, usize)]) -> Vec<usize> {
+pub(crate) fn convex_hull_ccw(pts: &[(f64, f64, usize)]) -> Vec<usize> {
   let mut p = pts.to_vec();
   p.sort_by(|a, b| {
     a.0

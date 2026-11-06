@@ -186,6 +186,8 @@ struct PlotOptions {
   plot_points: Option<usize>,
   colors: Colors,
   scaling: bool,
+  opacity_function: Option<Expr>,
+  opacity_scaling: bool,
   contours: ContourSpec,
   legend: bool,
   graphics: Vec<Expr>,
@@ -197,6 +199,8 @@ impl PlotOptions {
       plot_points: None,
       colors: Colors::Default,
       scaling: true,
+      opacity_function: None,
+      opacity_scaling: true,
       contours: ContourSpec::Automatic,
       legend: false,
       graphics: Vec::new(),
@@ -237,6 +241,20 @@ impl PlotOptions {
         "ColorFunctionScaling" => {
           opts.scaling = !matches!(value, Expr::Identifier(v) if v == "False");
         }
+        "OpacityFunction" => {
+          let function =
+            evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+          opts.opacity_function = if matches!(&function, Expr::Identifier(name) if name == "Automatic")
+          {
+            None
+          } else {
+            Some(function)
+          };
+        }
+        "OpacityFunctionScaling" => {
+          opts.opacity_scaling =
+            !matches!(value, Expr::Identifier(s) if s=="False");
+        }
         "Contours" => match &evaluate_expr_to_expr(value) {
           Ok(Expr::Integer(n)) if *n > 0 => {
             opts.contours = ContourSpec::Count(*n as usize);
@@ -258,25 +276,11 @@ impl PlotOptions {
         }
         // Sampling and styling controls with no counterpart in the
         // Graphics3D the plot returns.
-        "PerformanceGoal"
-        | "MaxRecursion"
-        | "BoundaryStyle"
-        | "ContourStyle"
-        | "ContourShading"
-        | "Mesh"
-        | "MeshStyle"
-        | "MeshFunctions"
-        | "RegionFunction"
-        | "OpacityFunction"
-        | "OpacityFunctionScaling"
-        | "EvaluationMonitor"
-        | "Exclusions"
-        | "ExclusionsStyle"
-        | "ClippingStyle"
-        | "PlotTheme"
-        | "WorkingPrecision"
-        | "Method"
-        | "PlotRange" => {}
+        "PerformanceGoal" | "MaxRecursion" | "BoundaryStyle"
+        | "ContourStyle" | "ContourShading" | "Mesh" | "MeshStyle"
+        | "MeshFunctions" | "RegionFunction" | "EvaluationMonitor"
+        | "Exclusions" | "ExclusionsStyle" | "ClippingStyle" | "PlotTheme"
+        | "WorkingPrecision" | "Method" | "PlotRange" => {}
         _ => opts.graphics.push(opt.clone()),
       }
     }
@@ -683,16 +687,36 @@ pub fn slice_density_plot3d_ast(
   let mut vertices = Vertices::default();
   let mut primitives = Vec::with_capacity(facets.len());
   for facet in &facets {
+    let colors: Vec<Expr> = facet
+      .values
+      .iter()
+      .map(|&value| {
+        opts.colors.at(if opts.scaling {
+          scale(value, lo, hi)
+        } else {
+          value
+        })
+      })
+      .collect();
+    let polygon = vertices.polygon(&facet.points);
     let mean = facet.values.iter().sum::<f64>() / facet.values.len() as f64;
-    let t = if opts.scaling {
+    let color = opts.colors.at(if opts.scaling {
       scale(mean, lo, hi)
     } else {
       mean
+    });
+    let polygon = if colors
+      .iter()
+      .all(|c| crate::functions::graphics::parse_color(c).is_some())
+    {
+      call(
+        "Polygon",
+        vec![polygon, rule("VertexColors", Expr::List(colors.into()))],
+      )
+    } else {
+      call("Polygon", vec![polygon])
     };
-    let polygon = vertices.polygon(&facet.points);
-    primitives.push(Expr::List(
-      vec![opts.colors.at(t), call("Polygon", vec![polygon])].into(),
-    ));
+    primitives.push(Expr::List(vec![color, polygon].into()));
   }
   let plot = graphics3d(
     vec![vertices.complex(primitives)],
@@ -808,6 +832,55 @@ pub fn slice_contour_plot3d_ast(
 /// stored, `z`-layer by `y`-row, in a `Raster3D` spanning the box. Its
 /// `ColorFunction` shows the upper half of that scale through the plot's
 /// colour function and leaves the lower half transparent.
+fn automatic_opacity_bands(values: &[f64]) -> Vec<(usize, usize, usize)> {
+  let finite: Vec<f64> =
+    values.iter().copied().filter(|v| v.is_finite()).collect();
+  let Ok(histogram) = evaluate_expr_to_expr(&call(
+    "HistogramList",
+    vec![reals(&finite), Expr::Integer(20)],
+  )) else {
+    return Vec::new();
+  };
+  let Expr::List(parts) = &histogram else {
+    return Vec::new();
+  };
+  let Some(Expr::List(counts)) = parts.get(1) else {
+    return Vec::new();
+  };
+  let counts: Vec<f64> = counts.iter().filter_map(try_eval_to_f64).collect();
+  let total: f64 = counts.iter().sum();
+  if total <= 0.0 {
+    return Vec::new();
+  }
+  // Ordering[..., All, Greater] breaks equal-count ties by decreasing index.
+  let mut order: Vec<usize> = (0..counts.len()).collect();
+  order
+    .sort_by(|&a, &b| counts[b].total_cmp(&counts[a]).then_with(|| b.cmp(&a)));
+  let mut selected = vec![false; counts.len()];
+  let mut covered = 0.0;
+  for i in order {
+    selected[i] = true;
+    covered += counts[i];
+    if covered / total >= 0.8 {
+      break;
+    }
+  }
+  let mut bands = Vec::new();
+  let mut i = 0;
+  while i < selected.len() {
+    if !selected[i] {
+      i += 1;
+      continue;
+    }
+    let start = i;
+    while i < selected.len() && selected[i] {
+      i += 1;
+    }
+    bands.push((start, i, selected.len()));
+  }
+  bands
+}
+
 pub fn density_plot3d_ast(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -881,6 +954,49 @@ pub fn density_plot3d_ast(
     Colors::Function(f) => f.clone(),
     other => call("ColorData", vec![other.as_expr()]),
   };
+  let raw_value = call(
+    "Plus",
+    vec![
+      Expr::Real(lo),
+      call("Times", vec![Expr::Real(hi - lo), rescaled.clone()]),
+    ],
+  );
+  let opacity = if let Some(f) = &opts.opacity_function {
+    Expr::CurriedCall {
+      func: Box::new(f.clone()),
+      args: vec![if opts.opacity_scaling {
+        rescaled.clone()
+      } else {
+        raw_value.clone()
+      }],
+    }
+  } else {
+    // Wolfram makes the most populated histogram bins transparent until
+    // they cover at least 80% of the samples; sparse bands form the shell.
+    let bands = automatic_opacity_bands(&values)
+      .into_iter()
+      .map(|(lo, hi, n)| {
+        let ratio = |i| {
+          call(
+            "Rational",
+            vec![Expr::Integer(i as i128), Expr::Integer(n as i128)],
+          )
+        };
+        Expr::Comparison {
+          operands: vec![ratio(lo), rescaled.clone(), ratio(hi)],
+          operators: vec![ComparisonOp::LessEqual, ComparisonOp::Less],
+        }
+      })
+      .collect::<Vec<_>>();
+    if bands.is_empty() {
+      Expr::Real(0.5)
+    } else {
+      call(
+        "If",
+        vec![call("Or", bands), Expr::Real(0.01), Expr::Real(0.5)],
+      )
+    }
+  };
   let color_function = Expr::Function {
     body: Box::new(call(
       "If",
@@ -892,10 +1008,10 @@ pub fn density_plot3d_ast(
         call(
           "Opacity",
           vec![
-            Expr::Real(0.3),
+            opacity,
             Expr::CurriedCall {
               func: Box::new(colors),
-              args: vec![rescaled],
+              args: vec![if opts.scaling { rescaled } else { raw_value }],
             },
           ],
         ),
@@ -925,4 +1041,38 @@ pub fn density_plot3d_ast(
   let plot = graphics3d(vec![raster, Expr::List(vec![].into())], graphics_opts);
   let plot = evaluate_expr_to_expr(&plot)?;
   Ok(Some(with_legend(plot, &opts, (lo, hi), None)))
+}
+
+#[cfg(test)]
+mod opacity_tests {
+  use super::*;
+
+  #[test]
+  fn explicit_automatic_opacity_uses_the_default_transfer_function() {
+    crate::clear_state();
+    assert_eq!(crate::interpret("SameQ[DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3],DensityPlot3D[x+y-z,{x,0,1},{y,0,1},{z,0,1},PlotPoints->3,OpacityFunction->Automatic]]").unwrap(), "True");
+  }
+
+  #[test]
+  fn automatic_opacity_uses_eighty_percent_histogram_coverage() {
+    let values: Vec<f64> = (0..8)
+      .flat_map(|i| std::iter::repeat_n(-1.0 + 2.0 * i as f64 / 7.0, 64))
+      .collect();
+    assert_eq!(
+      automatic_opacity_bands(&values),
+      vec![(2, 4, 12), (5, 7, 12), (8, 10, 12), (11, 12, 12)]
+    );
+    let mut quadratic = Vec::new();
+    for i in 0..10 {
+      for j in 0..10 {
+        for k in 0..10 {
+          let x = -1.0 + 2.0 * i as f64 / 9.0;
+          let y = -1.0 + 2.0 * j as f64 / 9.0;
+          let z = -1.0 + 2.0 * k as f64 / 9.0;
+          quadratic.push(x * x + y * y - z * z);
+        }
+      }
+    }
+    assert_eq!(automatic_opacity_bands(&quadratic), vec![(3, 11, 15)]);
+  }
 }

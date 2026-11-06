@@ -135,7 +135,8 @@ mod layout_display {
     };
     assert!(of("u").contains("text-decoration=\"underline\""));
     assert!(of("s").contains("text-decoration=\"line-through\""));
-    assert!(of("c").contains("font-variant=\"small-caps\""));
+    assert!(svg.contains("font-variant=\"small-caps\""));
+    assert!(svg.contains("font-size=\"80%\">C</tspan>"));
     assert!(of("v").contains("text-decoration=\"underline\""));
     assert!(of("b").contains("text-decoration=\"underline line-through\""));
     // Rows and grids draw them too.
@@ -166,7 +167,11 @@ mod layout_display {
     let svg = svg_of("BarLegend[{\"Rainbow\", {0, 100}}]");
     assert!(svg.starts_with("<svg"), "{svg}");
     assert!(!svg.contains("BarLegend"), "{svg}");
-    assert!(rects(&svg).len() >= 64, "{svg}");
+    assert_eq!(rects(&svg).len(), 2, "{svg}");
+    assert_eq!(svg.matches("<linearGradient ").count(), 1, "{svg}");
+    assert!(svg.contains("fill=\"url(#woxiLegendGradient"), "{svg}");
+    assert!(svg.contains("offset=\"0.000000\""), "{svg}");
+    assert!(svg.contains("offset=\"1.000000\""), "{svg}");
     for label in [">0<", ">20<", ">100<"] {
       assert!(svg.contains(label), "missing {label}: {svg}");
     }
@@ -183,6 +188,95 @@ mod layout_display {
     // Inside a layout too.
     let svg = svg_of("Row[{BarLegend[{\"Rainbow\", {0, 1}}]}]");
     assert!(!svg.contains("BarLegend"), "{svg}");
+  }
+
+  #[test]
+  fn svg_export_preserves_explicit_font_families() {
+    let svg = svg_of(
+      "Column[{Style[\"serif\", FontFamily -> \"Times\"], Style[\"mono\", FontFamily -> \"Courier\"]}]",
+    );
+    assert!(svg.contains("font-family=\"Times, serif\""), "{svg}");
+    assert!(svg.contains("font-family=\"Courier, monospace\""), "{svg}");
+    assert!(!svg.contains("svg text { font-family:"), "{svg}");
+    assert!(!svg.contains("svg text[font-family*=\"Courier\"]"), "{svg}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn svg_axes_inherit_the_embedded_atkinson_default() {
+    for expression in [
+      "Plot[Sin[x],{x,0,1}]",
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0]",
+    ] {
+      let svg = svg_of(expression);
+      assert!(svg.contains("<text "), "missing axis labels");
+      assert!(
+        svg
+          .contains("@font-face { font-family: \"Atkinson Hyperlegible Next\"")
+      );
+      assert!(svg.contains(
+        "svg { font-family: \"Atkinson Hyperlegible Next\", sans-serif; }"
+      ));
+      assert!(!svg.contains("text:not([font-family])"));
+    }
+    // Exercise the rasterizer used by the graphics review. An inherited
+    // family must render identically to an explicit text family.
+    let svg =
+      svg_of("Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0]");
+    let explicit = svg.replace(
+      "<text ",
+      "<text font-family=\"Atkinson Hyperlegible Next\" ",
+    );
+    let rasterize = woxi::functions::image_ast::rasterize_svg;
+    let actual = rasterize(&svg, 72.0).unwrap();
+    let expected = rasterize(&explicit, 72.0).unwrap();
+    match (&actual, &expected) {
+      (
+        woxi::syntax::Expr::Image {
+          width: aw,
+          height: ah,
+          channels: ac,
+          data: a,
+          ..
+        },
+        woxi::syntax::Expr::Image {
+          width: bw,
+          height: bh,
+          channels: bc,
+          data: b,
+          ..
+        },
+      ) => {
+        assert!(
+          aw == bw && ah == bh && ac == bc && a == b,
+          "axis font did not match explicit Atkinson rendering"
+        );
+      }
+      _ => panic!("SVG rasterization did not produce images"),
+    }
+  }
+
+  #[test]
+  fn dataset_records_have_vertical_column_separators() {
+    for expr in [
+      "Dataset[{<|\"a\" -> 1, \"long header\" -> 2, \"c\" -> 3|>}]",
+      "Dataset[{<|\"a\" -> 1, \"b\" -> 2|>, <|\"a\" -> 3, \"b\" -> 4|>}]",
+    ] {
+      let svg = svg_of(expr);
+      let vertical = svg
+        .match_indices("<line ")
+        .filter(|(i, _)| {
+          let line = &svg[*i..*i + svg[*i..].find('>').unwrap()];
+          line.contains("y1=\"0\"")
+            && !line.contains("y2=\"0.0\"")
+            && !line.contains("y2=\"0\"")
+        })
+        .count();
+      assert!(
+        vertical >= if expr.contains("long header") { 4 } else { 3 },
+        "missing column separators: {svg}"
+      );
+    }
   }
 
   /// `Rotate` turns text (not only pictures) inside a layout, and
@@ -411,6 +505,44 @@ mod layout_display {
     assert!(svg.contains("stroke=\"black\""), "{svg}");
   }
 
+  #[test]
+  fn letter_overscripts_are_centered_above_the_base() {
+    let svg = svg_of("Row[{Overscript[\"\\[LongRightArrow]\", \"f\"]}]");
+    let f = texts(&svg)
+      .into_iter()
+      .find(|t| t.ends_with(">f"))
+      .expect("overscript");
+    assert!(f.contains("text-anchor=\"middle\""), "{f}");
+    assert!(f.contains("font-size=\"10\""), "{f}");
+    assert!(!f.contains("dx="), "{f}");
+  }
+
+  #[test]
+  fn long_monospace_layouts_reserve_the_actual_glyph_advance() {
+    for head in ["Column", "Row"] {
+      let svg = svg_of(&format!(
+        "{head}[{{Style[StringRepeat[\"W\", 100], Background -> Yellow]}}]"
+      ));
+      let rect = rects(&svg)
+        .into_iter()
+        .find(|r| r.contains("rgb(255,255,0)"))
+        .expect("background");
+      let width: f64 = rect
+        .split("width=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        width >= 100.0 * 14.0 * 0.632 - 0.1,
+        "background clips glyphs: {rect}"
+      );
+    }
+  }
+
   /// A text `Underoverscript` stacks its limits around the base.
   #[test]
   fn underoverscript_text_in_row() {
@@ -420,5 +552,491 @@ mod layout_display {
     let s = svg.find(">S<").expect("base");
     let i = svg.find(">i=1<").expect("lower limit");
     assert!(n < s && s < i, "{svg}");
+  }
+  #[test]
+  fn held_standard_roots_and_matrix_baselines_typeset() {
+    let svg = svg_of("StandardForm[HoldForm[Sqrt[x/(1+x)]]]");
+    assert!(!svg.contains(">Sqrt<"), "root was printed as a call");
+    let svg =
+      svg_of("TraditionalForm[HoldForm[s == MatrixForm[{{a,b},{c,d}}]]]");
+    assert!(svg.contains(">s</text>"));
+  }
+
+  #[test]
+  fn bare_series_filling_rules_delegate_to_list_form() {
+    for filling in ["1 -> {2}", "2 -> {1}"] {
+      let expr = |f: &str| {
+        format!(
+          "ListPlot[{{Range[8], Range[8]/2}}, Joined -> {{True,False}}, Filling -> {f}]"
+        )
+      };
+      assert_eq!(
+        svg_of(&expr(filling)),
+        svg_of(&expr(&format!("{{{filling}}}")))
+      );
+    }
+  }
+
+  #[test]
+  fn spectral_images_keep_channels_while_display_uses_rgb_composite() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ColorConvert[Image[{{{1,0,0,1/2}}}], \"RGB\"]]")
+        .unwrap(),
+      "{{{1., 0., 0.5}}}"
+    );
+    assert_eq!(
+      interpret("ImageChannels[Image[{{{1,0,0,1/2}}}]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("ImageColorSpace[Image[{{{1,0,0,1/2}}}]]").unwrap(),
+      "Automatic"
+    );
+    assert_eq!(interpret("ImageChannels[ColorConvert[Image[{{{1,0,0,1/2}}}, ColorSpace -> \"RGB\"], \"RGB\"]]").unwrap(), "4");
+    assert_eq!(interpret("Table[With[{im=Image[{{Table[N[Mod[k,3]/2],{k,n}]}}]},ExportString[im,\"SVG\"]===ExportString[ColorConvert[im,\"RGB\"],\"SVG\"]],{n,4,9}]").unwrap(), "{True, True, True, True, True, True}");
+  }
+
+  #[test]
+  fn zero_order_height_fields_are_horizontal_plates() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[ListPlot3D[Table[x+y,{x,4},{y,4}],InterpolationOrder->0]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+    let svg = svg_of(
+      "ListPlot3D[Table[x+y,{x,4},{y,4}],InterpolationOrder->0,Mesh->None]",
+    );
+    assert!(svg.contains("<polygon"));
+  }
+
+  #[test]
+  fn spherical_surfaces_have_smooth_shading() {
+    let svg = svg_of(
+      "SphericalPlot3D[1+Sin[3p] Sin[t]/3,{t,0,Pi},{p,0,2Pi},PlotPoints->12,Mesh->None]",
+    );
+    assert!(
+      svg.contains("<linearGradient"),
+      "surface remained flat shaded"
+    );
+  }
+
+  #[test]
+  fn integration_monitor_uses_an_embedded_interior_rule() {
+    clear_state();
+    assert_eq!(interpret("Length[Reap[NIntegrate[Sin[x]^2,{x,0,2 Pi},EvaluationMonitor:>Sow[x]]][[2,1]]]").unwrap(), "77");
+    let value: f64 = interpret("NIntegrate[Sin[x]^2,{x,0,2 Pi}]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((value - std::f64::consts::PI).abs() < 1e-10);
+    for end in [1, 3, 5] {
+      let value: f64 =
+        interpret(&format!("NIntegrate[1/Sqrt[x],{{x,0,{end}}}]"))
+          .unwrap()
+          .parse()
+          .unwrap();
+      assert!((value - 2.0 * (end as f64).sqrt()).abs() < 1e-8);
+    }
+  }
+
+  #[test]
+  fn density_mesh_and_rounded_legend_endpoints_are_rendered() {
+    let svg = svg_of(
+      "ListDensityPlot[Table[Sin[x y],{x,0,3,1/4},{y,0,3,1/4}],Mesh->4]",
+    );
+    assert!(svg.contains("<polyline"), "missing density mesh");
+    let svg = svg_of("BarLegend[{\"Rainbow\",{0.0003,0.999}}]");
+    assert!(svg.contains(">0</text>") && svg.contains(">1.0</text>"));
+  }
+
+  #[test]
+  fn small_caps_are_painted_in_all_text_layouts() {
+    for head in ["Row", "Column"] {
+      let svg = svg_of(&format!(
+        "{head}[{{Style[\"Abc\",FontVariations->{{\"CapsType\"->\"SmallCaps\"}}]}}]"
+      ));
+      assert!(svg.contains(">B</tspan>") && svg.contains(">C</tspan>"));
+    }
+  }
+
+  #[test]
+  fn marketing_surfaces_include_rear_planes() {
+    let svg = svg_of(
+      "Plot3D[x+y,{x,-1,1},{y,-1,1},PlotTheme->\"Marketing\",PlotPoints->5,MaxRecursion->0]",
+    );
+    assert_eq!(svg.matches("fill=\"rgb(110,110,110)\"").count(), 3);
+  }
+
+  #[test]
+  fn vertex_colors_keep_independent_rgb_gradients() {
+    let svg = svg_of(
+      "Graphics3D[Polygon[{{0,0,0},{1,0,0},{1,1,1},{0,1,1}},VertexColors->{Red,Green,Blue,Yellow}]]",
+    );
+    assert!(
+      svg.contains("<pattern"),
+      "vertex colors collapsed to a one-dimensional fit"
+    );
+  }
+
+  #[test]
+  fn finite_labeling_size_keeps_short_point_labels() {
+    for size in [10, 30, 1000] {
+      let svg = svg_of(&format!(
+        "ListPlot[{{1,2,3}}->{{\"a\",\"b\",\"c\"}},LabelingSize->{size}]"
+      ));
+      assert!(svg.contains(">a</text>"));
+    }
+  }
+
+  #[test]
+  fn standard_form_grid_cells_keep_native_radicals() {
+    let svg =
+      svg_of("Grid[{{StandardForm[HoldForm[Sqrt[x/(1+x)]]]}},Frame->All]");
+    assert!(
+      !svg.contains("Sqrt["),
+      "StandardForm radical became source text"
+    );
+    assert!(
+      svg.contains("stroke-linejoin=\"round\""),
+      "missing radical outline"
+    );
+  }
+
+  #[test]
+  fn mathematical_legends_use_native_fraction_bars_and_bounds() {
+    for expression in [
+      "DiscretePlot[{1/n,1/n^2,(-1)^n/n},{n,1,8},PlotLegends->\"Expressions\"]",
+      "Plot[{x,x^2},{x,0,1},PlotLegends->{TraditionalForm[(a+b+c)/d],TraditionalForm[Sqrt[x]]}]",
+    ] {
+      let svg = svg_of(expression);
+      assert!(
+        svg.contains("<line x1=\"0\" y1="),
+        "legend lost its native fraction bar"
+      );
+      assert!(
+        !svg.contains("text-decoration=\"overline\""),
+        "legend used a text-decoration fraction"
+      );
+      assert!(
+        !svg.contains('\u{E000}'),
+        "internal label marker leaked into the SVG"
+      );
+    }
+  }
+
+  #[test]
+  fn binomial_plot_titles_reserve_their_native_height() {
+    let svg = svg_of("ListPlot[Range[4],PlotLabel->Binomial[n,k]]");
+    assert!(
+      !svg.contains("dx=\"0.150ch\""),
+      "binomial title used inline pair markup"
+    );
+    assert!(
+      svg.contains("stroke-width=\"0.56\""),
+      "binomial title lost its native brackets"
+    );
+  }
+  #[test]
+  fn global_adaptive_singularities_switch_to_double_exponential_after_refinement()
+   {
+    clear_state();
+    assert_eq!(interpret("Length[Reap[NIntegrate[1/Abs[Sqrt[x]],{x,-1,0,1},EvaluationMonitor:>Sow[x]]][[2,1]]]").unwrap(),"262");
+    assert_eq!(interpret("p=Reap[NIntegrate[1/Abs[Sqrt[x]],{x,-1,0,1},EvaluationMonitor:>Sow[x]]][[2,1]];Sign /@ p[[{23,45,67,89,111,133,155,177,199}]]").unwrap(),"{1, -1, -1, 1, 1, -1, -1, 1, 1}");
+    for power in ["1/4", "1/2", "3/4"] {
+      let value: f64 =
+        interpret(&format!("NIntegrate[x^(-({power})),{{x,0,1}}]"))
+          .unwrap()
+          .parse()
+          .unwrap();
+      let expected: f64 = interpret(&format!("N[1/(1-({power}))]"))
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        (value - expected).abs() < 1e-8,
+        "failed singular exponent {power}: {value}"
+      );
+    }
+  }
+
+  #[test]
+  fn calendar_and_surface_axes_have_minor_ticks() {
+    let date = svg_of("DateListPlot[{{{2024,1,1},1},{{2024,7,1},2}}]");
+    let date_none =
+      svg_of("DateListPlot[{{{2024,1,1},1},{{2024,7,1},2}},FrameTicks->None]");
+    assert!(
+      date.matches("<line ").count() > date_none.matches("<line ").count() + 10
+    );
+    let surface = svg_of(
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0,Mesh->None]",
+    );
+    let no_ticks = svg_of(
+      "Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0,Mesh->None,Ticks->None]",
+    );
+    assert!(
+      surface.matches("<line ").count()
+        > no_ticks.matches("<line ").count() + 30
+    );
+  }
+
+  #[test]
+  fn custom_arrowhead_disks_fit_automatic_bounds() {
+    let attr = |tag: &str, name: &str| -> f64 {
+      let start = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      tag[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    for position in [0, 1] {
+      let svg = svg_of(&format!(
+        "Graphics[{{Arrowheads[{{{{0.15,{position},Graphics[{{Blue,Disk[{{0,0}},1/2]}}]}}}}],Arrow[{{{{0,0}},{{3,0}}}}]}}]"
+      ));
+      let root = svg.split('>').next().unwrap();
+      let (width, height) = (attr(root, "width"), attr(root, "height"));
+      for disk in svg.split("<ellipse ").skip(1) {
+        let tag = disk.split('>').next().unwrap();
+        let (cx, cy, rx, ry) = (
+          attr(tag, "cx"),
+          attr(tag, "cy"),
+          attr(tag, "rx"),
+          attr(tag, "ry"),
+        );
+        assert!(
+          cx >= rx && cy >= ry && cx + rx <= width && cy + ry <= height,
+          "custom head clipped: {tag}"
+        );
+      }
+      assert!(svg.contains("<ellipse "), "custom disk missing");
+    }
+  }
+  #[test]
+  fn double_exponential_preserves_distances_from_shifted_endpoints() {
+    for expression in ["1/Sqrt[1-x]", "1/Sqrt[1+x]"] {
+      let bounds = if expression.contains("1-x") {
+        "{x,0,1}"
+      } else {
+        "{x,-1,0}"
+      };
+      let value: f64 = interpret(&format!("NIntegrate[{expression},{bounds}]"))
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!(
+        (value - 2.0).abs() < 1e-10,
+        "lost endpoint distance for {expression}: {value}"
+      );
+    }
+  }
+
+  #[test]
+  fn reviewed_custom_chart_elements_use_graphics_primitives() {
+    for radius in ["1/10", "1/4"] {
+      let svg = svg_of(&format!(
+        "BarChart[{{2,5,-3}},ChartElementFunction->Function[{{bounds,value,meta}},{{EdgeForm[Black],Rectangle[{{bounds[[1,1]]+0.08,bounds[[2,1]]}},{{bounds[[1,2]]-0.08,bounds[[2,2]]}},RoundingRadius->{radius}]}}],ChartStyle->{{Blue,Orange,Red}}]"
+      ));
+      assert_eq!(
+        svg.matches(" rx=\"").count(),
+        3,
+        "rounded bars missing: {svg}"
+      );
+      assert!(svg.contains("rgb(0,0,255)"), "custom bars lost chart color");
+    }
+    let svg =
+      svg_of("BarChart[{2,5},ChartElementFunction->(Disk[Mean /@ #1,0.1]&)]");
+    assert_eq!(svg.matches("<ellipse ").count(), 2);
+  }
+
+  #[test]
+  fn reviewed_box_elements_keep_independent_styles_and_mean_intervals() {
+    for origin in ["Bottom", "Left", "Top", "Right"] {
+      let expr = format!(
+        "BoxWhiskerChart[{{{{1,2,2,3,3,4,4,5,6,9}},{{2,3,4,5,5,6,6,7,8,12}}}},{{\"Basic\",{{\"Whiskers\",Dashed}},{{\"Fences\",0.5,Red}},{{\"MeanDiamond\",0.5,Gray}}}},BarOrigin->{origin}]"
+      );
+      let svg = svg_of(&expr);
+      assert!(svg.contains("stroke-dasharray="), "whiskers not dashed");
+      assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "fences not red");
+      assert_eq!(svg.matches("<polygon ").count(), 4, "mean diamonds missing");
+      clear_state();
+      let geometry =
+        interpret(&format!("InputForm[Cases[{expr},_Polygon,Infinity]]"))
+          .unwrap();
+      assert!(
+        geometry.contains("2.25624"),
+        "incorrect mean confidence interval: {geometry}"
+      );
+    }
+  }
+
+  #[test]
+  fn reviewed_projection_options_change_scene_geometry() {
+    let scene = "{{LightBlue,Cuboid[]},{Orange,Sphere[{1.5,1.5,1.5},1/2]}}";
+    let ortho = svg_of(&format!(
+      "Graphics3D[{scene},ViewProjection->\"Orthographic\",ViewPoint->{{2,-3,1.5}}]"
+    ));
+    let perspective = svg_of(&format!(
+      "Graphics3D[{scene},ViewProjection->\"Perspective\",ViewPoint->{{2,-3,1.5}}]"
+    ));
+    assert_ne!(ortho, perspective);
+    assert_eq!(
+      perspective,
+      svg_of(&format!("Graphics3D[{scene},ViewPoint->{{2,-3,1.5}}]"))
+    );
+  }
+
+  #[test]
+  fn reviewed_edge_option_labels_unwrap_placed_and_keep_style() {
+    for position in ["1/4", "3/4"] {
+      let svg = svg_of(&format!(
+        "Graph[{{1->2}},VertexCoordinates->{{{{0,0}},{{2,0}}}},EdgeLabels->{{DirectedEdge[1,2]->Placed[Style[\"rise\",Red],{position}]}}]"
+      ));
+      assert!(!svg.contains("Placed["), "{svg}");
+      assert!(svg.contains("rise"));
+      assert!(svg.contains("rgb(255,0,0)"), "label lost its style");
+    }
+  }
+
+  #[test]
+  fn reviewed_arrowheads_paint_after_their_shafts() {
+    let svg = svg_of(
+      "Graphics[{Arrowheads[{{0.1,0,Graphics[{Blue,Disk[]} ]},{0.1,1,Graphics[{Red,Disk[]} ]}}],Arrow[{{0,0},{3,0}}]}]",
+    );
+    let shaft = svg.find("<polyline ").unwrap();
+    assert!(
+      svg
+        .match_indices("<ellipse ")
+        .all(|(index, _)| index > shaft)
+    );
+  }
+
+  #[test]
+  fn reviewed_long_arrows_have_portable_vector_geometry() {
+    for arrow in [
+      "\\[LongRightArrow]",
+      "\\[LongLeftArrow]",
+      "\\[DoubleLongLeftRightArrow]",
+    ] {
+      let svg = svg_of(&format!("Row[{{Overscript[\"{arrow}\",\"f\"]}}]"));
+      assert!(
+        svg.contains("<path "),
+        "arrow depends on a missing font glyph"
+      );
+      assert!(!svg.contains("⟶") && !svg.contains("⟵"));
+    }
+  }
+
+  #[test]
+  fn reviewed_finite_plot_label_size_truncates_instead_of_omitting() {
+    for size in [10, 30, 1000] {
+      let svg = svg_of(&format!(
+        "Plot[{{Sin[x]+x,x Log[x]}},{{x,0,5}},PlotLabels->{{\"barcarole\",\"perilously\"}},LabelingSize->{size}]"
+      ));
+      if size < 1000 {
+        assert!(svg.contains(">ba...</text>") && svg.contains(">pe...</text>"));
+      } else {
+        assert!(
+          svg.contains(">barcarole</text>")
+            && svg.contains(">perilously</text>")
+        );
+      }
+      assert!(!svg.contains("FEPrivate"));
+    }
+  }
+
+  #[test]
+  fn reviewed_traditional_grid_arithmetic_uses_spaced_boxes() {
+    let svg = svg_of(
+      "Grid[{{TraditionalForm[HoldForm[(a+b)^2]],\"=\",TraditionalForm[HoldForm[a^2+2 a b+b^2]]}}]",
+    );
+    assert!(
+      svg.contains(">+</text>"),
+      "arithmetic was flattened into unspaced text"
+    );
+    assert!(!svg.contains("a+b"));
+  }
+
+  #[test]
+  fn reviewed_padded_base_table_reserves_the_monospace_advance() {
+    let svg = svg_of(
+      "PaddedForm[BaseForm[TableForm[{{8,49},{123,5}}],2],8,NumberPadding->{\"0\",\"\"}]",
+    );
+    let root = svg.split('>').next().unwrap();
+    let width: f64 = root
+      .split("width=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap()
+      .parse()
+      .unwrap();
+    for text in texts(&svg) {
+      let x: f64 = text
+        .split("x=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+      let right = x + 9.7 * 14.0 * 0.632;
+      assert!(
+        right <= width + 0.5,
+        "table clips its base subscript: {text}, viewport {width}"
+      );
+    }
+  }
+
+  #[test]
+  fn center_slice_density_preserves_exact_zeros_and_real_gradients() {
+    let gradient = svg_of(
+      "SliceDensityPlot3D[x+y+z,\"CenterPlanes\",{x,-1,1},{y,-1,1},{z,-1,1},PlotPoints->5]",
+    );
+    assert!(
+      gradient.contains("<pattern"),
+      "slice vertex colors lost their gradients"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("Simplify[{x y z/.x->0,x y z/.y->0,x y z/.z->0}]").unwrap(),
+      "{0, 0, 0}"
+    );
+  }
+
+  #[test]
+  fn nested_text_styles_inherit_outer_size_and_inner_color() {
+    let svg = svg_of("Graphics[Text[Style[Style[\"label\",Red],18],{0,0}]]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("font-size=\"18\""));
+  }
+
+  #[test]
+  fn mean_diamond_confidence_intervals_follow_wolfram_rounding() {
+    for (n, expected) in [
+      (2, 2.15),
+      (3, 1.8359738560230103),
+      (5, 1.8172644276494268),
+      (10, 2.1350624502966333),
+    ] {
+      clear_state();
+      let error: f64 = interpret(&format!("g=BoxWhiskerChart[{{Range[{n}]}},{{\"Basic\",{{\"MeanDiamond\",0.5,Gray}}}}]; p=Last[Cases[g,Polygon[p_]:>p,Infinity]]; Max[p[[All,2]]]-Mean[Range[{n}]]")).unwrap().parse().unwrap();
+      assert!(
+        (error - expected).abs() < 1e-10,
+        "{n}: {error} instead of {expected}"
+      );
+    }
+  }
+
+  #[test]
+  fn custom_bar_callbacks_keep_exact_values_and_empty_metadata() {
+    for data in ["{2,1/3}", "{{2,1/3},{3,1/2}}"] {
+      let svg = svg_of(&format!(
+        "BarChart[{data},ChartElementFunction->Function[{{b,v,m}},Text[If[ExactNumberQ[v]&&m==={{}},\"exact\",\"wrong\"],Mean /@ b]]]"
+      ));
+      assert!(svg.contains("exact"));
+      assert!(!svg.contains("wrong"));
+    }
   }
 }

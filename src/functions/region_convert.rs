@@ -173,6 +173,37 @@ fn implicit_form(region: &Expr) -> Option<Expr> {
   let one = || Expr::Integer(1);
   match (name.as_str(), args.as_slice()) {
     ("ImplicitRegion", [_, _]) => Some(region.clone()),
+    ("BooleanRegion", [function, Expr::List(regions)]) => {
+      let vars = formal_vars(2)?;
+      let mut predicates = Vec::new();
+      for region in regions {
+        let converted = implicit_form(region)?;
+        let Expr::FunctionCall { args, .. } = &converted else {
+          return None;
+        };
+        let Expr::List(old_vars) = &args[1] else {
+          return None;
+        };
+        if old_vars.len() != vars.len() {
+          return None;
+        }
+        let mut condition = args[0].clone();
+        for (old, new) in old_vars.iter().zip(&vars) {
+          let Expr::Identifier(old) = old else {
+            return None;
+          };
+          condition =
+            crate::functions::plot::substitute_var(&condition, old, new);
+        }
+        predicates.push(condition);
+      }
+      let condition = Expr::CurriedCall {
+        func: Box::new(function.clone()),
+        args: predicates,
+      };
+      implicit(&condition, vars)
+    }
+
     ("Rectangle", []) => {
       box_region(&[Expr::Integer(0), Expr::Integer(0)], &[one(), one()])
     }

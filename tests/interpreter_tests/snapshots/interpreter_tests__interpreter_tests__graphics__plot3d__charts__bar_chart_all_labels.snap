@@ -4,11 +4,11 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 ---
 <svg width="360" height="214" viewBox="0 0 3600 2140" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2140" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="193" y="1643" width="420" height="321" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
-<rect x="718" y="1387" width="421" height="577" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>9</title></rect>
-<rect x="1244" y="423" width="420" height="1541" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>24</title></rect>
-<rect x="1769" y="1194" width="421" height="770" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>12</title></rect>
-<rect x="2295" y="1258" width="420" height="706" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>11</title></rect>
+<rect x="192" y="1643" width="474" height="321" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>5</title></rect>
+<rect x="717" y="1387" width="474" height="577" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>9</title></rect>
+<rect x="1243" y="423" width="474" height="1541" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>24</title></rect>
+<rect x="1768" y="1194" width="474" height="770" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>12</title></rect>
+<rect x="2293" y="1258" width="475" height="706" opacity="1" fill="#FFD540" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>11</title></rect>
 <line x1="141.0" y1="1965.0" x2="2769.0" y2="1965.0" stroke="#666666" stroke-width="5"/>
 <line x1="141.0" y1="340.0" x2="141.0" y2="1965.0" stroke="#666666" stroke-width="5"/>
 <line x1="141.0" y1="1900.7" x2="165.0" y2="1900.7" stroke="#666666" stroke-width="5"/>
@@ -44,21 +44,21 @@ expression: "export_svg(r#\"BarChart[{5, 9, 24, 12, 11}, ChartLabels -> {\"Anna\
 <line x1="141.0" y1="358.7" x2="181.0" y2="358.7" stroke="#666666" stroke-width="5"/>
 <text x="116.7" y="393.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">25</text>
 <line x1="2769.0" y1="1965.0" x2="2836.5" y2="1965.0" stroke="#666666" stroke-width="5"/>
-<line x1="193.6" y1="1965.0" x2="193.6" y2="2025.0" stroke="#666666" stroke-width="5"/>
-<line x1="2716.4" y1="1965.0" x2="2716.4" y2="2025.0" stroke="#666666" stroke-width="5"/>
-<line x1="614.0" y1="1965.0" x2="614.0" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="719.2" y1="1965.0" x2="719.2" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="1139.6" y1="1965.0" x2="1139.6" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="1244.8" y1="1965.0" x2="1244.8" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="1665.2" y1="1965.0" x2="1665.2" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="1770.4" y1="1965.0" x2="1770.4" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="2190.8" y1="1965.0" x2="2190.8" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<line x1="2296.0" y1="1965.0" x2="2296.0" y2="2005.0" stroke="#666666" stroke-width="5"/>
-<text x="403.8" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Anna</text>
-<text x="929.4" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Ben</text>
-<text x="1455.0" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Carl</text>
-<text x="1980.6" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Marc</text>
-<text x="2506.2" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Sven</text>
+<line x1="192.5" y1="1965.0" x2="192.5" y2="2025.0" stroke="#666666" stroke-width="5"/>
+<line x1="2769.0" y1="1965.0" x2="2769.0" y2="2025.0" stroke="#666666" stroke-width="5"/>
+<line x1="718.1" y1="1965.0" x2="718.1" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="666.8" y1="1965.0" x2="666.8" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="1243.6" y1="1965.0" x2="1243.6" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="1192.3" y1="1965.0" x2="1192.3" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="1769.2" y1="1965.0" x2="1769.2" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="1717.9" y1="1965.0" x2="1717.9" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="2294.7" y1="1965.0" x2="2294.7" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<line x1="2243.4" y1="1965.0" x2="2243.4" y2="2005.0" stroke="#666666" stroke-width="5"/>
+<text x="429.7" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Anna</text>
+<text x="955.2" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Ben</text>
+<text x="1480.8" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Carl</text>
+<text x="2006.3" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Marc</text>
+<text x="2531.9" y="2115.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Sven</text>
 <text x="2849.0" y="1999.7" text-anchor="start" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Person</text>
 <text x="185.0" y="258.8" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">Fruits</text>
 <text x="1455.0" y="160.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="120" fill="#333">Fruit Consumption</text>

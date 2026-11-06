@@ -4,10 +4,10 @@ expression: "export_svg(r##\"BarChart[{{1, 2}, {3, 4}}, ChartStyle -> {RGBColor[
 ---
 <svg width="360" height="220" viewBox="0 0 3600 2200" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2200" opacity="1" fill="#FFFFFF" stroke="none"/>
-<rect x="256" y="1622" width="686" height="502" opacity="1" fill="#E76F51" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
-<rect x="942" y="1119" width="686" height="1005" opacity="1" fill="#2A9D8F" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
-<rect x="1972" y="616" width="686" height="1508" opacity="1" fill="#E76F51" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
-<rect x="2658" y="114" width="686" height="2010" opacity="1" fill="#2A9D8F" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
+<rect x="152" y="1622" width="723" height="502" opacity="1" fill="#E76F51" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>1</title></rect>
+<rect x="954" y="1119" width="723" height="1005" opacity="1" fill="#2A9D8F" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>2</title></rect>
+<rect x="1990" y="616" width="724" height="1508" opacity="1" fill="#E76F51" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>3</title></rect>
+<rect x="2792" y="114" width="724" height="2010" opacity="1" fill="#2A9D8F" stroke="#000000" stroke-opacity="0.66" stroke-width="7.5"><title>4</title></rect>
 <line x1="85.0" y1="2125.0" x2="3517.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="5.0" x2="85.0" y2="2125.0" stroke="#666666" stroke-width="5"/>
 <line x1="85.0" y1="2024.4" x2="109.0" y2="2024.4" stroke="#666666" stroke-width="5"/>
@@ -38,6 +38,8 @@ expression: "export_svg(r##\"BarChart[{{1, 2}, {3, 4}}, ChartStyle -> {RGBColor[
 <line x1="85.0" y1="113.2" x2="125.0" y2="113.2" stroke="#666666" stroke-width="5"/>
 <text x="58.8" y="147.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
 <line x1="3517.0" y1="2125.0" x2="3585.6" y2="2125.0" stroke="#666666" stroke-width="5"/>
-<line x1="256.6" y1="2125.0" x2="256.6" y2="2185.0" stroke="#666666" stroke-width="5"/>
-<line x1="3345.4" y1="2125.0" x2="3345.4" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="152.3" y1="2125.0" x2="152.3" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="3517.0" y1="2125.0" x2="3517.0" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1991.2" y1="2125.0" x2="1991.2" y2="2185.0" stroke="#666666" stroke-width="5"/>
+<line x1="1678.1" y1="2125.0" x2="1678.1" y2="2185.0" stroke="#666666" stroke-width="5"/>
 </svg>
