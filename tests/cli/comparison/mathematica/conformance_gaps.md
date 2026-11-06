@@ -9012,3 +9012,23 @@ expansion, matching the polynomial forms for `Sin[x] + Sin[x]^3` and
 Standalone `Sin[x]^3` and `1 + Sin[x]^3` remain unchanged, as in Wolfram.
 The quotient forms above are algebraically equivalent under the
 trigonometric identities, but their printed forms still differ.
+
+### Rational integration with repeated irreducible poles
+
+Verified on 2026-11-06 while investigating diff-fuzz seed
+1794006364899906000: square-free cubic and quartic denominators now use
+the shared `RootSum` residue formula, including polynomial numerators.
+Repeated irreducible poles still require Hermite reduction. For example,
+`Integrate[1/(1+x+x^3)^2,x]` remains unevaluated in Woxi. Wolfram returns
+`(-4+9*x-6*x^2)/(31*(1+x+x^3)) -
+6*RootSum[1+#1+#1^3&,(-3*Log[x-#1]+Log[x-#1]*#1)/(1+3*#1^2)&]/31`.
+The simple-pole residue path explicitly rejects repeated roots.
+
+### FullSimplify distributes a constant polynomial denominator
+
+Verified on 2026-11-06, minimized from diff-fuzz seed 1794006364899906000:
+`FullSimplify[(1+2*x)/(-3)]` returns `-1/3 - (2*x)/3` in Woxi and
+`(-1 - 2*x)/3` in Wolfram. The values agree, but rational polynomial
+content is not retained in the same form. Improper fractions with a
+nonconstant denominator now consider polynomial division as a candidate,
+fixing the original `(3+4*x)/(x-3)` case.
