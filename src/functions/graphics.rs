@@ -22180,7 +22180,10 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
           } else {
             (&args[0], &args[1])
           };
-          row_to_svg(&[list(vec![first.clone(), second.clone()])])?
+          row_to_svg(&[
+            list(vec![first.clone(), second.clone()]),
+            call("Spacer", vec![Expr::Real(7.0)]),
+          ])?
         }
         _ => return None,
       };
@@ -29272,6 +29275,18 @@ pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
   let mut above = Vec::new();
   let mut below = Vec::new();
   for (k, label) in labels.into_iter().enumerate() {
+    // Give captions the same graphic-cell origin as the panel, avoiding
+    // Column's text-cell inset relative to its graphic cells.
+    let label = match row_to_svg(&[Expr::List(vec![label.clone()].into())]) {
+      Some(svg) => Expr::Graphics {
+        svg,
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      },
+      None => label,
+    };
     let is_bottom = matches!(positions.get(k),
       Some(Expr::Identifier(p)) if p == "Bottom");
     if is_bottom {
@@ -29291,7 +29306,7 @@ pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
   items.extend(below);
   column_to_svg(&[
     Expr::List(items.into()),
-    Expr::Identifier("Center".to_string()),
+    Expr::Identifier("Left".to_string()),
   ])
 }
 
@@ -46120,5 +46135,51 @@ mod review_layout_tests {
           .1;
       assert!(measured.width >= width);
     }
+  }
+
+  #[test]
+  fn side_labels_have_a_seven_point_gap() {
+    let content = call("Framed", vec![str_expr("content")]);
+    for name in ["Left", "Right", "longLabel"] {
+      let label = id_expr(name);
+      for side in ["Left", "Right"] {
+        let labeled = call(
+          "Labeled",
+          vec![content.clone(), label.clone(), id_expr(side)],
+        );
+        let (_, actual, _) = grid_cell_graphic(&labeled).unwrap();
+        let cells = if side == "Left" {
+          vec![label.clone(), content.clone()]
+        } else {
+          vec![content.clone(), label.clone()]
+        };
+        let row = row_to_svg(&[Expr::List(cells.into())]).unwrap();
+        let plain = parse_svg_dimensions(&row).unwrap().nat_w;
+        assert!((actual - plain - 7.0).abs() < 1.1, "{actual} vs {plain}");
+      }
+    }
+  }
+
+  #[test]
+  fn panel_caption_and_box_share_the_left_edge() {
+    let svg = panel_to_svg(&[
+      call(
+        "Column",
+        vec![Expr::List(
+          vec![str_expr("line 1"), str_expr("line 2")].into(),
+        )],
+      ),
+      str_expr("Title"),
+    ])
+    .unwrap();
+    // Both column cells are SVGs with the same origin; the caption has no
+    // extra text-cell padding relative to the bordered content.
+    let cells: Vec<_> = svg
+      .lines()
+      .filter(|line| line.starts_with("<svg x="))
+      .collect();
+    assert!(cells.len() >= 2);
+    assert!(cells[0].starts_with("<svg x=\"0.0\""), "{}", cells[0]);
+    assert!(cells[1].starts_with("<svg x=\"0.0\""), "{}", cells[1]);
   }
 }
