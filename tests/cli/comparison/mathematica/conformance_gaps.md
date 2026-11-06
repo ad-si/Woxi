@@ -8972,7 +8972,7 @@ The shrinker reaches `Integrate[x^3/(1 + x), x]`, where the choice of
 additive constant also differs. This is a symbolic-output difference,
 not an incorrect derivative.
 
-### N[E, p] prints different guard digits
+### N of constants prints different guard digits
 
 In the same run, `N[E, 22]` prints
 ``2.71828182845904523536028747135266249776`22.`` in Woxi and
@@ -8981,7 +8981,19 @@ The requested 22 digits agree; the extra displayed working digits do not.
 This remains a byte-for-byte output gap, separate from the small-rational
 binary-grid rounding cases documented above.
 
-### TrigExpand chooses different polynomial forms in sums and quotients
+Diff-fuzz seed 1794003161694997000 also found `N[Pi, 23]`: Woxi prints
+``3.1415926535897932384626433832795028842`23.`` and Wolfram prints
+``3.14159265358979323846264338327950288582`23.``. Again the requested
+digits agree, but the extra guard digits differ (verified 2026-11-06).
+
+The minimized case exposes a separate precision-boundary gap: `N[Pi, 0]`
+emits `N::precbd` and remains unevaluated in Woxi; Wolfram returns
+```0``-0.49714987269413446```. Negative requested precision emits
+`N::precsm` in Wolfram and uses zero precision. Positive fractional
+precisions below one are now accepted in Woxi; zero-precision accuracy
+tracking remains unimplemented.
+
+### TrigExpand chooses different polynomial forms in quotients
 
 Verified on 2026-11-06, diff-fuzz seed 1794002508685553000:
 
@@ -8994,9 +9006,9 @@ The minimized quotient case `TrigExpand[Tan[2 x]^2]` gives
 `(1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4)/
 (2*(Cos[x]^2 - Sin[x]^2)^2)`, displayed as four separate terms.
 
-The sum also differs independently: `TrigExpand[Sin[x] + Sin[x]^3]`
-stays unchanged in Woxi, while Wolfram returns
-`(7*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4`.
-Wolfram leaves the standalone `Sin[x]^3` and `1 + Sin[x]^3` unchanged,
-so unconditional power reduction before angle expansion does not match.
-These forms are algebraically equivalent under the trigonometric identities.
+Combined sums and products now use the shared trig reduction before angle
+expansion, matching the polynomial forms for `Sin[x] + Sin[x]^3` and
+`Cos[x y]^2 Cos[2 x]` (the latter from seed 1794003161694997000).
+Standalone `Sin[x]^3` and `1 + Sin[x]^3` remain unchanged, as in Wolfram.
+The quotient forms above are algebraically equivalent under the
+trigonometric identities, but their printed forms still differ.
