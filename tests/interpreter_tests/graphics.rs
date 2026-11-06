@@ -49255,13 +49255,14 @@ mod curve_labels_and_legends {
     assert!(
       svg.contains("fill=\"rgb(226,240,247)\" stroke=\"rgb(61,153,204)\"")
     );
-    // WL 15 shows `Rotate[x, y, 0]`: x rotated by y (0.45) radians.
-    assert!(svg.contains("rotate(-25.78"), "{svg}");
-    assert!(svg.contains(">2</text>"));
+    // Front-end exports show both coordinates, without rotating the label.
+    assert!(!svg.contains("rotate(-25.78"), "{svg}");
+    assert!(svg.contains(">2, 0.45</text>"));
     let multi = export_svg(
       "Plot[Highlighted[Sinc[x], Placed[\"Ball\", {{2}, {7}}]], {x, 0, 10}]",
     );
     assert_eq!(multi.matches("<polygon").count(), 2);
+    assert!(multi.contains(">7, 0.09</text>"));
   }
 
   #[test]
@@ -49280,6 +49281,7 @@ mod curve_labels_and_legends {
       "Plot[Highlighted[Sin[x] + x, Placed[\"Dropline\", 7]], {x, 0, 10}]",
     );
     assert_eq!(d.matches("stroke=\"#B3B3B3\"").count(), 2);
+    assert!(d.contains(">7, 7.65</text>"));
   }
 
   #[test]

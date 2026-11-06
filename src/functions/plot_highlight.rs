@@ -187,25 +187,16 @@ pub(crate) fn highlights_svg(
           4.5 * sf,
           3.0 * sf,
         ));
-        // The value shown: a slice's coordinate across it; for a ball the
-        // x value, which WL 15 sets rotated by the y value in radians
-        // (`Rotate[x, y, 0]`).
+        // Ball and dropline callouts show the coordinate pair.
         let x_text = format_value(p.0, x_range.1 - x_range.0);
         let y_text = format_value(p.1, y_range.1 - y_range.0);
-        let (text, rotated_by) = match h.kind {
-          HighlightKind::XSlice => (y_text, None),
-          HighlightKind::YSlice => (x_text, None),
-          _ => (x_text, Some(y_text)),
+        let text = match h.kind {
+          HighlightKind::XSlice => y_text,
+          HighlightKind::YSlice => x_text,
+          _ => format!("{x_text}, {y_text}"),
         };
         let left = slice && hits.len() > 1 && rank == 0;
-        bubbles.push_str(&bubble_svg(
-          (px, py),
-          &text,
-          rotated_by.as_deref(),
-          left,
-          (r, g, b),
-          sf,
-        ));
+        bubbles.push_str(&bubble_svg((px, py), &text, left, (r, g, b), sf));
       }
     }
   }
@@ -219,20 +210,13 @@ pub(crate) fn highlights_svg(
 fn bubble_svg(
   (px, py): (f64, f64),
   text: &str,
-  rotated_by: Option<&str>,
   left: bool,
   (r, g, b): (u8, u8, u8),
   sf: f64,
 ) -> String {
   let font = crate::functions::plot_padding::LABEL_FONT;
   let width = |t: &str| crate::functions::plot_padding::text_width(t, font);
-  // WL sizes the box of a rotated `Rotate[x, y, 0]` label as if it held
-  // both numbers.
-  let w = width(text)
-    + match rotated_by {
-      Some(y) => width(y) + 11.0,
-      None => 8.5,
-    };
+  let w = width(text) + 8.5;
   let d = std::f64::consts::FRAC_1_SQRT_2 * 3.0;
   let a = 4.0 * std::f64::consts::SQRT_2;
   let (tip, top, mid) = (2.0 * d, a + 18.0, a + 9.0);
@@ -253,23 +237,12 @@ fn bubble_svg(
     .collect();
   let fill = |c: u8| (c as f64 * 0.15 + 255.0 * 0.85).round() as u8;
   let (cx, cy) = (px + sx * (a + d + w / 2.0) * sf, py - (mid + d) * sf);
-  let angle = rotated_by
-    .and_then(|y| y.parse::<f64>().ok())
-    .unwrap_or(0.0);
-  let rotate = if angle == 0.0 {
-    String::new()
-  } else {
-    format!(
-      " transform=\"rotate({:.2} {cx:.1} {cy:.1})\"",
-      -angle.to_degrees()
-    )
-  };
   format!(
     "<polygon points=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({r},{g},{b})\" \
      stroke-width=\"{sf:.1}\"/>\n\
      <text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"sans-serif\" \
      font-size=\"{:.0}\" text-anchor=\"middle\" dominant-baseline=\"central\"\
-     {rotate}>{text}</text>\n",
+     >{text}</text>\n",
     pts.join(" "),
     fill(r),
     fill(g),
