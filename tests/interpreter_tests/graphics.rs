@@ -21029,16 +21029,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // and the linear position of each value, with 0 at the middle.
       assert_eq!(
         interpret(
-          "Round[MatrixPlot[{{1, 10}, {-5, 0}}, \
-           ColorFunction -> (GrayLevel[#] &)][[1, 1, All, All, 1]], 0.01]"
+          "Round[First[Cases[MatrixPlot[{{1, 10}, {-5, 0}}, \
+           ColorFunction -> (GrayLevel[#] &)], Raster[r_, ___] :> With[{d = Normal[r]}, If[ArrayDepth[d] == 3, d[[All, All, 1]], d]], Infinity]], 0.01]"
         )
         .unwrap(),
         "{{0.25, 0.5}, {0.65, 1.}}"
       );
       assert_eq!(
         interpret(
-          "Round[MatrixPlot[{{-5, 1, 2}}, \
-           ColorFunction -> (GrayLevel[#] &)][[1, 1, All, All, 1]], 0.01]"
+          "Round[First[Cases[MatrixPlot[{{-5, 1, 2}}, \
+           ColorFunction -> (GrayLevel[#] &)], Raster[r_, ___] :> With[{d = Normal[r]}, If[ArrayDepth[d] == 3, d[[All, All, 1]], d]], Infinity]], 0.01]"
         )
         .unwrap(),
         "{{0., 0.73, 0.9500000000000001}}"
@@ -21101,7 +21101,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // |value| / max |value| onto white..black.
       assert_eq!(
         interpret(
-          "Round[ArrayPlot[{{-2, -1, 0, 1}, {1, 2, 3, 4}}][[1, 1, All, All, 1]], 0.01]"
+          "Round[First[Cases[ArrayPlot[{{-2, -1, 0, 1}, {1, 2, 3, 4}}], Raster[r_, _, {lo_, hi_}] :> (Normal[r] - lo)/(hi - lo), Infinity]], 0.01]"
         )
         .unwrap(),
         "{{0.75, 0.5, 0.25, 0.}, {0.5, 0.75, 1., 0.75}}"
@@ -44909,6 +44909,26 @@ fn probability_scale_plot_uses_percent_scale() {
   assert_eq!(
     interpret("ProbabilityScalePlot[{1, 2}, \"Weibull\"]").unwrap(),
     "ProbabilityScalePlot[{1, 2}, Weibull]"
+  );
+}
+
+#[test]
+fn automatic_raster_tick_labels_are_numbers() {
+  assert_eq!(
+    interpret("Union[Cases[FrameTicks /. Options[MatrixPlot[ConstantArray[1, {12, 30}]]], {_Real, label_} :> Head[label], Infinity]]").unwrap(),
+    "{Integer}"
+  );
+  assert_eq!(
+    interpret("Union[Cases[FrameTicks /. Options[ArrayPlot[ConstantArray[1, {12, 30}], FrameTicks -> Automatic]], {_Real, label_} :> Head[label], Infinity]]").unwrap(),
+    "{Integer}"
+  );
+}
+
+#[test]
+fn explicit_raster_tick_labels_keep_their_types() {
+  assert_eq!(
+    interpret("Union[Cases[FrameTicks /. Options[ArrayPlot[{{1, 2}, {3, 4}}, FrameTicks -> {{{{1, \"one\"}, {2, 2}}, None}, {None, None}}]], {_Real, label_} :> Head[label], Infinity]]").unwrap(),
+    "{Integer, String}"
   );
 }
 

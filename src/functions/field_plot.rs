@@ -7008,6 +7008,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let max_abs = v_min.abs().max(v_max.abs());
+  let max_abs_expr = matrix
+    .iter()
+    .flatten()
+    .find_map(|cell| match cell {
+      ArrayCell::Value(v, e) if v.abs() == max_abs => {
+        evaluate_expr_to_expr(&call1("Abs", e.clone())).ok()
+      }
+      _ => None,
+    })
+    .unwrap_or(Expr::Real(max_abs));
 
   let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
   let n_rows = matrix.len();
@@ -7050,6 +7060,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let border_color = frame_style_color.unwrap_or(RGBColor(0x66, 0x66, 0x66));
 
   let mut cell_rgb: Vec<Vec<(u8, u8, u8)>> = Vec::with_capacity(n_rows);
+  let mut scalar_rows = Vec::with_capacity(n_rows);
+  let mut scalar_raster = color_rules.is_none() && color_function.is_none();
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -7065,7 +7077,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     for (i, row) in matrix.iter().enumerate() {
       let mut rgb_row = Vec::with_capacity(row.len());
+      let mut scalar_row = Vec::with_capacity(row.len());
       for (j, cell) in row.iter().enumerate() {
+        let mut scalar = None;
         let (r, g, b) = match cell {
           ArrayCell::Color(color) => (
             (color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -7119,26 +7133,39 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   func: Box::new(cf_expr.clone()),
                   args: vec![arg_expr],
                 };
-                evaluate_expr_to_expr(&call)
-                  .ok()
-                  .and_then(|r| parse_color(&r))
-                  .map_or_else(
-                    || {
-                      let gray = ((1.0 - t) * 255.0).round() as u8;
-                      (gray, gray, gray)
-                    },
-                    |c| {
-                      (
-                        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-                      )
-                    },
-                  )
+                let evaluated = evaluate_expr_to_expr(&call).ok();
+                if let Some(Expr::FunctionCall { name, args }) = &evaluated
+                  && name == "GrayLevel"
+                  && args.len() == 1
+                {
+                  scalar = Some(args[0].clone());
+                }
+                evaluated.as_ref().and_then(parse_color).map_or_else(
+                  || {
+                    let gray = ((1.0 - t) * 255.0).round() as u8;
+                    (gray, gray, gray)
+                  },
+                  |c| {
+                    (
+                      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    )
+                  },
+                )
               } else {
                 // The default gray scale runs from white at 0 to black at
                 // the largest magnitude (sign ignored), not from the
                 // minimum to the maximum.
+                scalar = Some(if max_abs > 0.0 {
+                  evaluate_expr_to_expr(&crate::helpers::minus2(
+                    max_abs_expr.clone(),
+                    call1("Abs", cell_expr.clone()),
+                  ))
+                  .unwrap_or_else(|_| Expr::Real(max_abs - val.abs()))
+                } else {
+                  Expr::Integer(1)
+                });
                 let t = if max_abs > 0.0 {
                   (val.abs() / max_abs).min(1.0)
                 } else {
@@ -7152,6 +7179,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         rgb_row.push((r, g, b));
+        scalar_raster &= scalar.is_some();
+        scalar_row.push(scalar.unwrap_or(Expr::Integer(0)));
         let vi = if data_reversed { n_rows - 1 - i } else { i };
         let x0 = (off_x + j as f64 * cell_w).round() as i32;
         let y0 = (off_y + vi as f64 * cell_h).round() as i32;
@@ -7168,6 +7197,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })?;
       }
       cell_rgb.push(rgb_row);
+      scalar_rows.push(Expr::List(scalar_row.into()));
     }
 
     // Draw mesh grid lines between cells
@@ -7294,6 +7324,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               i as f64
             },
             text: i.to_string(),
+            label: Expr::Integer(i as i128),
             style: TickStyle::default(),
           })
           .collect()
@@ -7374,10 +7405,27 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     })
     .collect();
+  if scalar_raster {
+    raster_rows = scalar_rows;
+  }
   if !data_reversed {
     raster_rows.reverse();
   }
-  let raster = call("Raster", vec![Expr::List(raster_rows.into()), rect]);
+  let mut raster_args = vec![Expr::List(raster_rows.into()), rect];
+  if scalar_raster {
+    raster_args.push(Expr::List(
+      vec![
+        Expr::Integer(0),
+        if color_function_expr.is_some() || max_abs == 0.0 {
+          Expr::Integer(1)
+        } else {
+          max_abs_expr
+        },
+      ]
+      .into(),
+    ));
+  }
+  let raster = call("Raster", raster_args);
   // What `Show` redraws when it layers other graphics over the plot: the
   // mesh lines as primitives, and the explicit frame ticks as a framed
   // plot's options (ticks are in `ArrayPlot` coordinates — the center of
@@ -7441,9 +7489,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               n_rows as f64 - t.pos + 0.5
             };
-            Expr::List(
-              vec![Expr::Real(pos), Expr::String(t.text.clone())].into(),
-            )
+            Expr::List(vec![Expr::Real(pos), t.label.clone()].into())
           })
           .collect::<Vec<_>>()
           .into(),
@@ -7496,6 +7542,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 struct FrameTickLabel {
   pos: f64,
   text: String,
+  label: Expr,
   style: TickStyle,
 }
 
@@ -7581,7 +7628,12 @@ fn parse_edge_tick_labels(edge: &Expr) -> Vec<FrameTickLabel> {
         Expr::String(s) => s.clone(),
         other => crate::syntax::expr_to_output(other),
       };
-      Some(FrameTickLabel { pos, text, style })
+      Some(FrameTickLabel {
+        pos,
+        text,
+        label: parts[1].clone(),
+        style,
+      })
     })
     .collect()
 }
@@ -7649,6 +7701,14 @@ fn automatic_array_ticks(
     out.push(FrameTickLabel {
       pos: 1.0 + frac * (n.saturating_sub(1)) as f64,
       text: crate::functions::plot::format_tick_with_step(v, step),
+      label: if v.fract() == 0.0
+        && v >= i128::MIN as f64
+        && v < -(i128::MIN as f64)
+      {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      },
       style: TickStyle::default(),
     });
     k += 1.0;
