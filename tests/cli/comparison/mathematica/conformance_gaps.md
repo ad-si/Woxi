@@ -8892,3 +8892,44 @@ with the elementary primitive of `Sin[x y]^2`. Integrating the remaining
 The minimized polynomial-times-tangent case `Integrate[x Tan[x], x]`
 is supported by a finite polylogarithmic integration-by-parts recurrence;
 it does not resolve the original mixed-frequency trigonometric integral.
+
+### Rational-integral scaling retains an outer denominator
+
+Verified with `wolframscript` on 2026-11-06, diff-fuzz seed
+1793998012131898000:
+
+```wolfram
+Integrate[(x^3 - 2 x^2 - 2 x)/(1 - 3 x - 4 x^2), x]
+```
+
+Woxi returns `(11*x - 2*x^2 + (39*Log[1 - 4*x])/20 -
+(16*Log[1 + x])/5)/16`; Wolfram distributes the outer factor, returning
+`(11*x)/16 - x^2/8 + (39*Log[1 - 4*x])/320 - Log[1 + x]/5`.
+The values agree, but the symbolic output does not.
+
+### Shifted cosine times tangent powers stays unevaluated
+
+The same run found:
+
+```wolfram
+Integrate[Cos[x + y] Tan[x]^3 (Tan[x] + Sin[x + y]), x]
+```
+
+Woxi leaves the integral unevaluated. Wolfram returns an elementary
+antiderivative involving `Sec[x]^3`, shifted sines and cosines,
+`Log[Cos[x]]`, and `ArcTanh[Tan[x/2]]`. The shrinker reaches
+`Integrate[Cos[x + y], x]`, but that is the separate angle-expansion
+discrepancy documented above, not a reproducer for the missing product rule.
+
+### TrigReduce does not reduce tangent products
+
+Verified in the same run and independently against `wolframscript`:
+
+```wolfram
+TrigReduce[Cos[x] Tan[y]]
+```
+
+Woxi retains the product; Wolfram returns
+`-1/2*(Sec[y]*(Sin[x - y] - Sin[x + y]))`. For the original
+`TrigReduce[Cos[x]^3 Tan[x y]]`, Woxi reduces only the cosine power,
+leaving the tangent factor outside the product-to-sum transformation.
