@@ -875,6 +875,7 @@ fn canonicalize_exact_trig_value(
 
 pub fn negate_expr(mut expr: Expr) -> Expr {
   match &mut expr {
+    Expr::Identifier(name) if name == "ComplexInfinity" => return expr,
     Expr::Integer(n) => return Expr::Integer(-*n),
     Expr::Real(f) => return Expr::Real(-*f),
     // --x => x (collapse instead of stacking another wrapper)

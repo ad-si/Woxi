@@ -15174,3 +15174,13 @@ fn xor_invalid_comparison_messages_are_emitted_once() {
     );
   }
 }
+
+#[test]
+fn negative_cosecant_poles_are_directionless() {
+  for n in -6..=6 {
+    assert_eq!(
+      interpret(&format!("Csc[{n} Pi]")).unwrap(),
+      "ComplexInfinity"
+    );
+  }
+}
