@@ -8921,15 +8921,52 @@ antiderivative involving `Sec[x]^3`, shifted sines and cosines,
 `Integrate[Cos[x + y], x]`, but that is the separate angle-expansion
 discrepancy documented above, not a reproducer for the missing product rule.
 
-### TrigReduce does not reduce tangent products
+### TrigReduce leaves tangent powers in mixed sums
 
-Verified in the same run and independently against `wolframscript`:
+Single tangent/cotangent products now use the shared product-to-sum
+identities, including their hyperbolic counterparts. Diff-fuzz seed
+1793998974438453000 found a remaining power case, verified on 2026-11-06:
 
 ```wolfram
-TrigReduce[Cos[x] Tan[y]]
+TrigReduce[Sin[x y]^3 Tan[x] + Tan[x]^2]
 ```
 
-Woxi retains the product; Wolfram returns
-`-1/2*(Sec[y]*(Sin[x - y] - Sin[x + y]))`. For the original
-`TrigReduce[Cos[x]^3 Tan[x y]]`, Woxi reduces only the cosine power,
-leaving the tangent factor outside the product-to-sum transformation.
+The product term is reduced, but Woxi retains `Tan[x]^2`. Wolfram writes
+that contribution as `(Sec[x]^2 - Cos[2*x]*Sec[x]^2)/2` within the sum.
+For the standalone `TrigReduce[Tan[x]^2]`, Wolfram instead returns
+`(1 - Cos[2*x])/(1 + Cos[2*x])`, reducing both numerator and denominator.
+
+### Simplify does not combine a difference of tangents
+
+Verified on 2026-11-06, diff-fuzz seed 1793998974438453000:
+
+```wolfram
+Simplify[Tan[x + y] - Tan[x]]
+```
+
+Woxi retains the difference; Wolfram returns `Sec[x]*Sec[x + y]*Sin[y]`.
+The same reduction applies when the difference is added to
+`Sin[x]*Sin[3*x]`, as in the original fuzz case.
+
+### TrigToExp does not expand shifted cosine squares
+
+The same run found `TrigToExp[Cos[x + y]^2]`. Woxi retains
+`(1/(2*E^(I*(x + y))) + E^(I*(x + y))/2)^2`; Wolfram returns
+`1/2 + E^((-2*I)*x - (2*I)*y)/4 + E^((2*I)*x + (2*I)*y)/4`.
+This also exposes the missing distribution of the imaginary coefficient
+over the exponent's sum, separately from the powered-function grouping
+already documented for `TrigToExp[Sin[x]^3]`.
+
+### Linear-denominator integrals choose different additive constants
+
+Verified in the same run:
+
+```wolfram
+Integrate[(3 x^3 - 2 x - 4)/(x + 4), x]
+```
+
+Woxi returns `46*x - 6*x^2 + x^3 - 188*Log[4 + x]`; Wolfram returns
+the same expression plus `344`. Both derivatives equal the integrand.
+The shrinker reaches `Integrate[x^3/(1 + x), x]`, where the choice of
+additive constant also differs. This is a symbolic-output difference,
+not an incorrect derivative.
