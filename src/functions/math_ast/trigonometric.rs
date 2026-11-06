@@ -6117,7 +6117,36 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("TrigExpand", args));
   }
-  let result = trig_expand_recursive(&args[0]);
+  if let Expr::List(items) = &args[0] {
+    return Ok(Expr::List(
+      items
+        .iter()
+        .map(|item| trig_expand_ast(std::slice::from_ref(item)))
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ));
+  }
+  // Combined trig terms are linearized before angle expansion. A lone
+  // power such as Sin[x]^3 retains its original polynomial form.
+  fn trig_terms(expr: &Expr) -> usize {
+    if extract_trig(expr).is_some() {
+      return 1;
+    }
+    match expr {
+      Expr::FunctionCall { args, .. } => args.iter().map(trig_terms).sum(),
+      Expr::BinaryOp { left, right, .. } => {
+        trig_terms(left) + trig_terms(right)
+      }
+      Expr::UnaryOp { operand, .. } => trig_terms(operand),
+      _ => 0,
+    }
+  }
+  let prepared = if trig_terms(&args[0]) > 1 {
+    trig_reduce_ast(args)?
+  } else {
+    args[0].clone()
+  };
+  let result = trig_expand_recursive(&prepared);
   // TrigExpand distributes products over sums (and expands powers).
   let expanded = crate::functions::expand_and_combine(&result);
   crate::evaluator::evaluate_expr_to_expr(&expanded)
@@ -6213,6 +6242,20 @@ fn expand_trig_function(name: &str, arg: &Expr) -> Expr {
   } else {
     // Single term — check for integer multiple
     let (coeff, base) = extract_integer_factor(arg);
+    if coeff <= -2
+      && let Some(positive) = coeff.checked_neg()
+    {
+      let expanded =
+        expand_trig_function(name, &times2(Expr::Integer(positive), base));
+      return if matches!(
+        name,
+        "Sin" | "Tan" | "Cot" | "Csc" | "Sinh" | "Tanh" | "Coth" | "Csch"
+      ) {
+        negate_expr(expanded)
+      } else {
+        expanded
+      };
+    }
     if coeff >= 2 {
       match name {
         "Sin" => expand_sin_multiple(coeff as usize, &base),
@@ -6296,30 +6339,23 @@ fn collect_additive_terms(expr: &Expr) -> Vec<Expr> {
 
 /// Extract integer factor from n*x. Returns (n, x).
 fn extract_integer_factor(expr: &Expr) -> (i128, Expr) {
-  match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(n) = left.as_ref() {
-        return (*n, *right.clone());
-      }
-      if let Expr::Integer(n) = right.as_ref() {
-        return (*n, *left.clone());
-      }
-      (1, expr.clone())
+  let factors = crate::functions::collect_multiplicative_factors(expr);
+  let mut coefficient = 1i128;
+  let mut rest = Vec::new();
+  for factor in factors {
+    if let Expr::Integer(n) = factor {
+      let Some(product) = coefficient.checked_mul(n) else {
+        return (1, expr.clone());
+      };
+      coefficient = product;
+    } else {
+      rest.push(factor);
     }
-    Expr::FunctionCall { name, args } if name == "Times" && args.len() == 2 => {
-      if let Expr::Integer(n) = &args[0] {
-        return (*n, args[1].clone());
-      }
-      if let Expr::Integer(n) = &args[1] {
-        return (*n, args[0].clone());
-      }
-      (1, expr.clone())
-    }
-    _ => (1, expr.clone()),
+  }
+  if rest.is_empty() {
+    (1, expr.clone())
+  } else {
+    (coefficient, mk_times(rest))
   }
 }
 

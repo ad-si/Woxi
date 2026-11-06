@@ -15998,6 +15998,43 @@ mod trig_expand {
   use super::*;
 
   #[test]
+  fn integer_multiples_of_products() {
+    for (code, expected) in [
+      ("TrigExpand[Sin[2 x y]]", "2*Cos[x*y]*Sin[x*y]"),
+      (
+        "TrigExpand[Cos[3 x y z]]",
+        "Cos[x*y*z]^3 - 3*Cos[x*y*z]*Sin[x*y*z]^2",
+      ),
+      ("TrigExpand[Sinh[2 x y]]", "2*Cosh[x*y]*Sinh[x*y]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn combined_trig_terms_are_linearized_before_expansion() {
+    for (code, expected) in [
+      (
+        "TrigExpand[Cos[x] Cos[2x]]",
+        "Cos[x]/2 + Cos[x]^3/2 - (3*Cos[x]*Sin[x]^2)/2",
+      ),
+      (
+        "TrigExpand[Cos[x*y]^2 Cos[2x]]",
+        "Cos[x]^2/2 + (Cos[x]^2*Cos[x*y]^2)/2 - Sin[x]^2/2 - (Cos[x*y]^2*Sin[x]^2)/2 - (Cos[x]^2*Sin[x*y]^2)/2 + (Sin[x]^2*Sin[x*y]^2)/2",
+      ),
+      (
+        "TrigExpand[Sin[x]+Sin[x]^3]",
+        "(7*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4",
+      ),
+      ("TrigExpand[Sin[x]^3]", "Sin[x]^3"),
+      ("TrigExpand[1+Sin[x]^3]", "1 + Sin[x]^3"),
+      ("TrigExpand[{Sin[x]^3,Cos[y]}]", "{Sin[x]^3, Cos[y]}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn sin_double_angle() {
     assert_eq!(interpret("TrigExpand[Sin[2x]]").unwrap(), "2*Cos[x]*Sin[x]");
   }
