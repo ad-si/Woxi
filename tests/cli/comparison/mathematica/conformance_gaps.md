@@ -1124,6 +1124,11 @@ against `…416`, `ExpIntegralE[3, 10.]` is off by 1.6e-14 and
 `LogIntegral[1.4513692348]` is `-2.2383719991068265*^-10` in WL and
 `-2.2383724226744812*^-10` (correct) in Woxi. **Not reproducible.**
 
+Diff-fuzz seed 1794008323899532000 reproduced this class on 2026-11-06:
+`LogIntegral[1.2]` is `-0.9337872926672578` in Woxi versus
+`-0.933787292667258` in Wolfram. Wolfram's own
+`N[N[LogIntegral[SetPrecision[1.2,70]],60]]` agrees with Woxi.
+
 The guard digits WL prints past the precision of `N[LogIntegral[3/10], 30]`,
 `N[ExpIntegralE[2, 2/10], 30]` and `N[Gamma[0, 2/10], 30]` differ from
 Woxi's from about the 35th digit; Woxi's are the true ones (they agree with
