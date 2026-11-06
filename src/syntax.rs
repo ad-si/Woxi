@@ -175,6 +175,9 @@ pub struct PlotSource {
   /// `AbsoluteOptions`): the range before `PlotRangePadding`, where
   /// `x_range`/`y_range` are the padded ones drawn. `None` = those.
   pub plot_range: Option<((f64, f64), (f64, f64))>,
+  /// Sampled x extent used when Show recomputes PlotRange -> All. A
+  /// function plot's displayed interval includes unsampled endpoints.
+  pub data_x_range: Option<(f64, f64)>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging

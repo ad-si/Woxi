@@ -21084,10 +21084,42 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .find(|ps| !any_curves || !ps.series.is_empty())
       .filter(|_| !first_all);
-    let ((x_min, x_max), (y_min, y_max)) = first
-      .map_or(((x_min, x_max), (y_min, y_max)), |ps| {
-        (ps.x_range, ps.y_range)
-      });
+    let data_x_range = plot_sources
+      .iter()
+      .filter(|ps| !any_curves || !ps.series.is_empty())
+      .map(|ps| {
+        ps.data_x_range
+          .unwrap_or_else(|| ps.plot_range.map_or(ps.x_range, |r| r.0))
+      })
+      .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
+    let all_range = if first_all {
+      plot_sources
+        .iter()
+        .filter(|ps| !any_curves || !ps.series.is_empty())
+        .filter_map(|ps| {
+          ps.plot_range
+            .map(|(x, y)| (ps.data_x_range.unwrap_or(x), y))
+            .or_else(|| {
+              ps.series
+                .iter()
+                .flat_map(|s| &s.points)
+                .filter(|p| p.0.is_finite() && p.1.is_finite())
+                .fold(None, |acc: Option<((f64, f64), (f64, f64))>, &(x, y)| {
+                  Some(acc.map_or(((x, x), (y, y)), |((x0, x1), (y0, y1))| {
+                    ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
+                  }))
+                })
+            })
+        })
+        .reduce(|((a, b), (c, d)), ((e, f), (g, h))| {
+          ((a.min(e), b.max(f)), (c.min(g), d.max(h)))
+        })
+    } else {
+      None
+    };
+    let ((x_min, x_max), (y_min, y_max)) = all_range
+      .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
+      .unwrap_or(((x_min, x_max), (y_min, y_max)));
     // Like the other options, the axis scales come from the first graphic.
     let merged = crate::syntax::PlotSource {
       series: all_series,
@@ -21097,21 +21129,24 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       options: merged_options.clone(),
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
+      data_x_range,
       // The reported range is the first plot's too (or spans them all).
-      plot_range: plot_sources
-        .iter()
-        .filter(|ps| first.is_none_or(|f| std::ptr::eq(*ps, f)))
-        .map(|s| s.plot_range)
-        .try_fold(None, |acc: Option<((f64, f64), (f64, f64))>, r| {
-          let ((x0, x1), (y0, y1)) = r?;
-          Some(Some(acc.map_or(
-            ((x0, x1), (y0, y1)),
-            |((a0, a1), (b0, b1))| {
-              ((a0.min(x0), a1.max(x1)), (b0.min(y0), b1.max(y1)))
-            },
-          )))
-        })
-        .flatten(),
+      plot_range: all_range.or_else(|| {
+        plot_sources
+          .iter()
+          .filter(|ps| first.is_none_or(|f| std::ptr::eq(*ps, f)))
+          .map(|s| s.plot_range)
+          .try_fold(None, |acc: Option<((f64, f64), (f64, f64))>, r| {
+            let ((x0, x1), (y0, y1)) = r?;
+            Some(Some(acc.map_or(
+              ((x0, x1), (y0, y1)),
+              |((a0, a1), (b0, b1))| {
+                ((a0.min(x0), a1.max(x1)), (b0.min(y0), b1.max(y1)))
+              },
+            )))
+          })
+          .flatten()
+      }),
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;

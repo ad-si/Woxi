@@ -7706,6 +7706,7 @@ pub(crate) fn build_plot_source(
     log_x: false,
     log_y: false,
     plot_range: None,
+    data_x_range: None,
   }
 }
 
@@ -11498,6 +11499,7 @@ pub(crate) fn histogram_plot_source(
     log_x: false,
     log_y: false,
     plot_range: None,
+    data_x_range: None,
   })
 }
 
@@ -16776,6 +16778,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = plot_opts.unpadded_range;
+  source.data_x_range = all_points
+    .iter()
+    .flatten()
+    .filter(|p| p.0.is_finite() && p.1.is_finite())
+    .map(|p| p.0)
+    .fold(None, |acc: Option<(f64, f64)>, x| {
+      Some(acc.map_or((x, x), |(lo, hi)| (lo.min(x), hi.max(x))))
+    });
   source.log_x = plot_opts.log_x;
   source.log_y = plot_opts.log_y;
   // A redraw marks the `Mesh -> Full` points the plot sampled first.
