@@ -3836,14 +3836,22 @@ fn vector_plot3d_solid(
     let real3 = |q: [f64; 3]| {
       Expr::List(q.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
     };
-    let color = call(
-      "RGBColor",
-      vec![
-        Expr::Real(f64::from(r) / 255.0),
-        Expr::Real(f64::from(g) / 255.0),
-        Expr::Real(f64::from(bl) / 255.0),
-      ],
-    );
+    let color = if bodies.len() == 1 && color_function.is_none() && m_lo == m_hi
+    {
+      call(
+        "RGBColor",
+        vec![Expr::Real(0.24), Expr::Real(0.6), Expr::Real(0.8)],
+      )
+    } else {
+      call(
+        "RGBColor",
+        vec![
+          Expr::Real(f64::from(r) / 255.0),
+          Expr::Real(f64::from(g) / 255.0),
+          Expr::Real(f64::from(bl) / 255.0),
+        ],
+      )
+    };
     {
       // Box units: every axis spans 1.
       let ua = [0, 1, 2].map(|d| (a[d] - [x0, y0, z0][d]) / sides[d]);
@@ -3904,14 +3912,7 @@ fn vector_plot3d_solid(
     }
     content.push(Expr::List(
       vec![
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(bl) / 255.0),
-          ],
-        ),
+        color,
         call1(
           "Arrow",
           call(
@@ -4059,9 +4060,9 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vector_grid = Some(n);
           }
         }
-        // `ColorFunction -> f`: colors a single field's arrows by their
+        // `VectorColorFunction -> f`: colors a single field's arrows by their
         // magnitude, scaled to 0–1 (a named gradient or a pure function).
-        "ColorFunction" => {
+        "VectorColorFunction" => {
           if let Some(s) =
             crate::functions::field_plot::color_function_scheme_name(
               replacement,
@@ -4834,15 +4835,16 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let colors: Vec<Expr> = mags
       .iter()
       .map(|&m| {
-        let (r, g, b) =
-          crate::functions::plot::wl_default_vector_gradient(scale(m));
-        call(
-          "RGBColor",
+        let lab = crate::functions::plot::vector_gradient_expr(scale(m));
+        let color = crate::functions::graphics::parse_color(&lab)
+          .expect("valid vector gradient color");
+        Expr::List(
           vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ],
+            Expr::Real(color.r),
+            Expr::Real(color.g),
+            Expr::Real(color.b),
+          ]
+          .into(),
         )
       })
       .collect();

@@ -10067,31 +10067,48 @@ pub(crate) fn generate_horizontal_bar_svg(
 /// are interpolated linearly in LAB space (WL `Blend` semantics), then
 /// converted D50-LAB → sRGB with out-of-gamut channels clipped. Matches
 /// wolframscript's rendered colors to well within 8-bit quantization.
+pub(crate) const VECTOR_LAB_STOPS: [(f64, f64, f64); 4] = [
+  (
+    0.188_667_522_250_113_1,
+    0.522_596_101_276_680_9,
+    -0.857_210_761_912_256_8,
+  ),
+  (
+    0.402_329_034_265_632_8,
+    0.522_214_589_645_690_3,
+    -0.346_571_396_721_582_05,
+  ),
+  (
+    0.644_456_290_545_989,
+    0.537_992_026_017_925,
+    0.732_111_567_127_367_9,
+  ),
+  (
+    0.816_796_918_973_305_3,
+    0.145_001_147_401_695_45,
+    0.828_253_206_343_699_9,
+  ),
+];
+
 pub(crate) fn wl_default_vector_gradient(t: f64) -> (u8, u8, u8) {
-  // LABColor stores L in [0, 1] and a/b divided by 100.
-  const LAB_STOPS: [(f64, f64, f64); 4] = [
-    (
-      0.188_667_522_250_113_1,
-      0.522_596_101_276_680_9,
-      -0.857_210_761_912_256_8,
-    ),
-    (
-      0.402_329_034_265_632_8,
-      0.522_214_589_645_690_3,
-      -0.346_571_396_721_582_05,
-    ),
-    (
-      0.644_456_290_545_989,
-      0.537_992_026_017_925,
-      0.732_111_567_127_367_9,
-    ),
-    (
-      0.816_796_918_973_305_3,
-      0.145_001_147_401_695_45,
-      0.828_253_206_343_699_9,
-    ),
-  ];
-  lab_blend(&LAB_STOPS, t)
+  lab_blend(&VECTOR_LAB_STOPS, t)
+}
+
+/// Preserve the gradient's color space in symbolic vector primitives.
+pub(crate) fn vector_gradient_expr(t: f64) -> Expr {
+  let stops = Expr::List(
+    VECTOR_LAB_STOPS
+      .iter()
+      .map(|&(l, a, b)| {
+        call(
+          "LABColor",
+          vec![Expr::Real(l), Expr::Real(a), Expr::Real(b)],
+        )
+      })
+      .collect(),
+  );
+  evaluate_expr_to_expr(&call("Blend", vec![stops, Expr::Real(t)]))
+    .expect("finite vector magnitude and valid LAB gradient")
 }
 
 /// Wolfram's `"WL12DefaultVectorDensityGradient"` — the orange-to-yellow

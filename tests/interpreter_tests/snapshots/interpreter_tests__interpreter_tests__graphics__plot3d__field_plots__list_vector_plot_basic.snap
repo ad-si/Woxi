@@ -1,6 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 20123
+assertion_line: 20143
 expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{-1, 1}, {-1, 0}}}]\")"
 ---
 <svg width="360" height="357" viewBox="0 0 3600 3570" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -55,10 +55,10 @@ expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{
 <polygon points="150.81,193.88 142.00,197.54 142.28,197.68 142.91,198.02 143.28,198.24 143.63,198.48 143.93,198.72 144.15,198.95 144.30,199.20 144.44,199.55 144.59,199.96 144.72,200.39 144.92,201.15 145.00,201.48" fill="rgb(174,60,134)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="157.28,205.82 164.22,199.23" fill="none" stroke="rgb(201,74,105)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="170.65,193.12 162.30,197.71 162.58,197.82 163.26,198.09 163.64,198.27 164.02,198.47 164.34,198.68 164.59,198.88 164.76,199.11 164.94,199.44 165.13,199.84 165.31,200.25 165.59,200.98 165.71,201.30" fill="rgb(201,74,105)"/>
-</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="178.22,206.26 184.70,199.21" fill="none" stroke="rgb(226,90,72)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="190.70,192.68 182.68,197.83 182.97,197.91 183.66,198.14 184.06,198.30 184.45,198.47 184.79,198.65 185.04,198.84 185.23,199.06 185.44,199.38 185.65,199.76 185.85,200.16 186.19,200.87 186.32,201.18" fill="rgb(226,90,72)"/>
-</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="199.04,206.54 205.19,199.20" fill="none" stroke="rgb(251,107,22)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="210.88,192.40 203.10,197.91 203.40,197.98 204.10,198.18 204.50,198.32 204.90,198.47 205.24,198.64 205.51,198.82 205.70,199.02 205.93,199.33 206.16,199.70 206.38,200.10 206.75,200.79 206.90,201.09" fill="rgb(251,107,22)"/>
+</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="178.22,206.26 184.70,199.21" fill="none" stroke="rgb(227,90,72)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="190.70,192.68 182.68,197.83 182.97,197.91 183.66,198.14 184.06,198.30 184.45,198.47 184.79,198.65 185.04,198.84 185.23,199.06 185.44,199.38 185.65,199.76 185.85,200.16 186.19,200.87 186.32,201.18" fill="rgb(227,90,72)"/>
+</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="199.04,206.54 205.19,199.20" fill="none" stroke="rgb(251,107,23)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="210.88,192.40 203.10,197.91 203.40,197.98 204.10,198.18 204.50,198.32 204.90,198.47 205.24,198.64 205.51,198.82 205.70,199.02 205.93,199.33 206.16,199.70 206.38,200.10 206.75,200.79 206.90,201.09" fill="rgb(251,107,23)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="219.77,206.73 225.67,199.19" fill="none" stroke="rgb(255,129,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="231.14,192.20 223.54,197.97 223.85,198.04 224.55,198.21 224.96,198.33 225.36,198.47 225.71,198.63 225.98,198.80 226.19,199.00 226.42,199.30 226.66,199.66 226.90,200.05 227.28,200.73 227.44,201.02" fill="rgb(255,129,0)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="83.03,182.40 92.58,181.69" fill="none" stroke="rgb(86,16,170)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
@@ -159,8 +159,8 @@ expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{
 <polygon points="141.39,83.98 141.11,93.52 141.35,93.32 141.92,92.88 142.28,92.64 142.64,92.42 142.98,92.24 143.28,92.14 143.56,92.11 143.95,92.11 144.38,92.15 144.83,92.21 145.60,92.34 145.93,92.40" fill="rgb(155,52,151)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="164.93,102.14 163.93,92.62" fill="none" stroke="rgb(170,58,137)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="163.01,83.79 161.55,93.22 161.81,93.06 162.44,92.69 162.82,92.50 163.21,92.32 163.57,92.19 163.88,92.12 164.17,92.12 164.54,92.18 164.97,92.27 165.41,92.38 166.16,92.60 166.48,92.71" fill="rgb(170,58,137)"/>
-</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="184.60,102.19 184.46,92.62" fill="none" stroke="rgb(190,68,117)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="184.33,83.75 182.04,93.00 182.31,92.86 182.97,92.56 183.36,92.40 183.76,92.25 184.14,92.15 184.45,92.12 184.74,92.14 185.11,92.23 185.52,92.36 185.95,92.51 186.68,92.80 186.99,92.93" fill="rgb(190,68,117)"/>
+</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="184.60,102.19 184.46,92.62" fill="none" stroke="rgb(190,68,118)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="184.33,83.75 182.04,93.00 182.31,92.86 182.97,92.56 183.36,92.40 183.76,92.25 184.14,92.15 184.45,92.12 184.74,92.14 185.11,92.23 185.52,92.36 185.95,92.51 186.68,92.80 186.99,92.93" fill="rgb(190,68,118)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="204.48,102.18 204.98,92.62" fill="none" stroke="rgb(210,80,94)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="205.44,83.76 202.54,92.84 202.82,92.72 203.50,92.46 203.90,92.32 204.31,92.21 204.69,92.13 205.00,92.12 205.29,92.16 205.65,92.28 206.06,92.44 206.47,92.61 207.18,92.95 207.48,93.10" fill="rgb(210,80,94)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="224.51,102.14 225.49,92.62" fill="none" stroke="rgb(231,93,64)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
@@ -257,12 +257,12 @@ expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{
 <polygon points="74.31,16.85 80.64,23.99 80.68,23.68 80.80,22.97 80.89,22.55 81.00,22.14 81.13,21.78 81.28,21.50 81.46,21.28 81.74,21.02 82.09,20.75 82.45,20.49 83.10,20.05 83.38,19.87" fill="rgb(255,122,0)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="109.16,28.32 102.23,21.73" fill="none" stroke="rgb(255,112,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="95.80,15.61 100.81,23.73 100.90,23.43 101.14,22.75 101.30,22.35 101.48,21.97 101.67,21.63 101.86,21.38 102.08,21.20 102.41,20.99 102.79,20.79 103.20,20.59 103.91,20.27 104.22,20.14" fill="rgb(255,112,0)"/>
-</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="128.59,29.28 122.76,21.69" fill="none" stroke="rgb(251,107,22)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="117.36,14.65 121.05,23.45 121.19,23.17 121.53,22.53 121.75,22.17 121.99,21.81 122.23,21.51 122.46,21.29 122.70,21.14 123.05,20.99 123.47,20.85 123.90,20.72 124.65,20.51 124.98,20.43" fill="rgb(251,107,22)"/>
+</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="128.59,29.28 122.76,21.69" fill="none" stroke="rgb(251,107,23)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="117.36,14.65 121.05,23.45 121.19,23.17 121.53,22.53 121.75,22.17 121.99,21.81 122.23,21.51 122.46,21.29 122.70,21.14 123.05,20.99 123.47,20.85 123.90,20.72 124.65,20.51 124.98,20.43" fill="rgb(251,107,23)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="148.05,29.97 143.30,21.66" fill="none" stroke="rgb(247,104,33)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="138.89,13.96 141.36,23.17 141.54,22.92 141.97,22.33 142.23,22.00 142.51,21.68 142.79,21.41 143.05,21.23 143.31,21.12 143.68,21.01 144.11,20.93 144.55,20.85 145.33,20.75 145.66,20.71" fill="rgb(247,104,33)"/>
-</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="167.60,30.45 163.83,21.64" fill="none" stroke="rgb(247,104,32)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
-<polygon points="160.34,13.49 161.74,22.92 161.94,22.69 162.43,22.16 162.73,21.86 163.05,21.57 163.36,21.34 163.63,21.18 163.91,21.10 164.28,21.04 164.72,21.01 165.17,20.98 165.95,20.97 166.29,20.97" fill="rgb(247,104,32)"/>
+</g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="167.60,30.45 163.83,21.64" fill="none" stroke="rgb(247,104,33)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
+<polygon points="160.34,13.49 161.74,22.92 161.94,22.69 162.43,22.16 162.73,21.86 163.05,21.57 163.36,21.34 163.63,21.18 163.91,21.10 164.28,21.04 164.72,21.01 165.17,20.98 165.95,20.97 166.29,20.97" fill="rgb(247,104,33)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="187.26,30.76 184.36,21.63" fill="none" stroke="rgb(251,107,21)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="181.66,13.18 182.15,22.70 182.37,22.49 182.91,22.01 183.25,21.74 183.59,21.49 183.92,21.28 184.21,21.16 184.49,21.10 184.87,21.08 185.30,21.08 185.76,21.10 186.53,21.17 186.87,21.20" fill="rgb(251,107,21)"/>
 </g><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="207.04,30.95 204.88,21.63" fill="none" stroke="rgb(255,113,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>

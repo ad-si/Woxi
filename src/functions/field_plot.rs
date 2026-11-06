@@ -4851,7 +4851,11 @@ fn vector_arrow_primitives(
     let half = len / 2.0 / screen;
     let (dx, dy) = (sx * half / px_per_x, sy * half / px_per_y);
     let ends = Expr::List(vec![pt(x - dx, y - dy), pt(x + dx, y + dy)].into());
-    let color = rgb_color(color_of(v));
+    let color = if matches!(style.color_function, VectorColoring::Default) {
+      crate::functions::plot::vector_gradient_expr(rescale(v.4, ranges[4]))
+    } else {
+      rgb_color(color_of(v))
+    };
     primitives.push(if style.segments {
       Expr::List(vec![color, call1("Line", ends)].into())
     } else {

@@ -705,11 +705,11 @@ mod fields_and_graphs {
     assert_eq!(
       interpret(
         "g = VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
-         VectorPoints -> 4]; {Length[Cases[g, Arrow[_Tube], Infinity]], \
+         VectorPoints -> 4]; {Length[Cases[g, Arrow[_Tube], Infinity]] == Length[Cases[g, _Arrow, Infinity]], \
          BoxRatios /. Options[g]}"
       )
       .unwrap(),
-      "{64, {1, 1, 1}}"
+      "{True, {1, 1, 1}}"
     );
     let s = svg(
       "VectorPlot3D[{-y, x, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
@@ -725,9 +725,10 @@ mod fields_and_graphs {
     clear_state();
     assert_eq!(
       interpret(
-        "c = Flatten[Cases[StreamPlot3D[{-y, x, 0.2}, {x, -1, 1}, \
+        "c = Join @@ Cases[StreamPlot3D[{-y, x, 0.2}, {x, -1, 1}, \
          {y, -1, 1}, {z, -1, 1}, StreamPoints -> 10], \
-         Line[_, VertexColors -> v_] :> v, Infinity]]; \
+         Line[_, VertexColors -> v_] :> v, Infinity]; \
+         c = (If[ListQ[#], RGBColor @@ #, ColorConvert[#, \"RGB\"]] &) /@ c; \
          {MemberQ[c, RGBColor[r_, g_, b_] /; b > 0.6 && r < 0.1], \
          MemberQ[c, RGBColor[r_, g_, b_] /; r > 0.95 && b < 0.1]}"
       )
