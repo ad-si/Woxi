@@ -19237,7 +19237,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {Head[p], p[[2]], Head[p[[1]]]}"
         )
         .unwrap(),
-        "{Legended, Placed[BarLegend[{Rainbow, {0, 1}}], After], Graphics}"
+        "{Legended, Placed[BarLegend[{Rainbow, {0, 1}}, {LabelStyle -> {}, LegendLayout -> Column, LegendMarkerSize -> 150, Charting`AxisLabel -> None, Charting`TickSide -> Right, ColorFunctionScaling -> True}], After, Identity], Graphics}"
       );
       assert_eq!(
         interpret(

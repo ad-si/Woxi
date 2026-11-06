@@ -264,7 +264,7 @@ fn with_bar_legend(
   else {
     return None;
   };
-  let legend = match replacement.as_ref() {
+  let mut legend = match replacement.as_ref() {
     e @ Expr::FunctionCall { name, .. } if name == "BarLegend" => e.clone(),
     // A legend kept in a variable (`PlotLegends -> leg`) of a held plot.
     Expr::Identifier(_) => {
@@ -276,13 +276,52 @@ fn with_bar_legend(
     }
     _ => return None,
   };
+  if let Expr::FunctionCall {
+    args: legend_args, ..
+  } = &mut legend
+  {
+    let defaults = [
+      ("LabelStyle", Expr::List(Vec::new().into())),
+      ("LegendLayout", Expr::String("Column".into())),
+      ("LegendMarkerSize", Expr::Integer(150)),
+      ("Charting`AxisLabel", id_expr("None")),
+      ("Charting`TickSide", id_expr("Right")),
+      ("ColorFunctionScaling", id_expr("True")),
+    ];
+    let existing: Vec<&Expr> = legend_args
+      .iter()
+      .skip(1)
+      .flat_map(|e| match e {
+        Expr::List(items) => items.iter().collect::<Vec<_>>(),
+        other => vec![other],
+      })
+      .collect();
+    let options: Vec<Expr> = defaults.into_iter().filter(|(key, _)| {
+      !existing.iter().any(|e| matches!(e, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key)))
+    }).map(|(key, value)| Expr::Rule { pattern: Box::new(id_expr(key)), replacement: Box::new(value) }).collect();
+    if let Some(Expr::List(items)) = legend_args.last_mut()
+      && items
+        .iter()
+        .all(|e| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    {
+      items.extend(options);
+    } else {
+      legend_args.push(Expr::List(options.into()));
+    }
+  }
   let mut rest = args.to_vec();
   rest.remove(pos);
   Some(
     crate::evaluator::evaluate_function_call_ast(name, &rest).map(|plot| {
       call(
         "Legended",
-        vec![plot, call("Placed", vec![legend, id_expr("After")])],
+        vec![
+          plot,
+          call(
+            "Placed",
+            vec![legend, id_expr("After"), id_expr("Identity")],
+          ),
+        ],
       )
     }),
   )
