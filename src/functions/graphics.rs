@@ -10467,7 +10467,9 @@ fn graphics_decorations(
   let frac_y = |v: f64| (v - bb.y_min) / (bb.y_max - bb.y_min);
   let label_box = |frac: f64, label: &str| LabelBox {
     frac,
-    width: tick_label_width(label, TICK_FONT),
+    width: tick_label_width(label, TICK_FONT).max(
+      crate::functions::plot_padding::exported_text_extent(label, TICK_FONT).1,
+    ),
     height: line_height(TICK_FONT),
     at_crossing: false,
   };
@@ -46078,6 +46080,45 @@ mod review_brace_regressions {
           }
         }
       }
+    }
+  }
+}
+
+#[cfg(test)]
+mod review_layout_tests {
+  use super::*;
+
+  #[test]
+  fn decimal_ticks_reserve_room_for_the_exported_font() {
+    let bb = BBox {
+      x_min: 0.0,
+      x_max: 12.0,
+      y_min: 0.0,
+      y_max: 0.2,
+    };
+    let labels = ["0.05", "0.10", "0.15", "0.20"];
+    let ticks = TickSpec::Explicit(
+      labels
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (0.05 * (i + 1) as f64, Some(s.to_string())))
+        .collect(),
+    );
+    let d = graphics_decorations(
+      &bb,
+      (true, true),
+      (None, None),
+      (&TickSpec::Automatic, &ticks),
+      None,
+      None,
+      None,
+      0,
+    );
+    for (label, measured) in labels.iter().zip(&d.axis_ticks.1) {
+      let width =
+        crate::functions::plot_padding::exported_text_extent(label, TICK_FONT)
+          .1;
+      assert!(measured.width >= width);
     }
   }
 }

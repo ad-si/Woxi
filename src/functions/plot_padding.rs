@@ -283,7 +283,7 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
 /// with (Atkinson Hyperlegible Next): from the ink of its first glyph to the
 /// end of its advance, as `(lead, width)` at `size`, `lead` being the blank
 /// before the first glyph's ink.
-fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
+pub(crate) fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
   let chars = visible_chars(markup);
   let lead = chars.first().map_or(0.0, |&c| atkinson_lsb_em(c));
   let width = chars.iter().copied().map(atkinson_width_em).sum::<f64>();

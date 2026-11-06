@@ -42218,7 +42218,7 @@ fn an_axis_through_the_middle_needs_no_gutter() {
      PlotRange -> {{1, 3}, {1, 3}}, ImageSize -> {400, 400}]",
   );
   assert!(
-    left_edge.contains("translate(16.90,"),
+    left_edge.contains("translate(17.34,"),
     "an axis at the edge still gets its gutter: {left_edge}"
   );
 }
