@@ -1454,6 +1454,21 @@ struct RunOutput {
   timed_out: bool,
 }
 
+/// Finding a launcher on PATH does not mean its kernel can evaluate code.
+/// Check both process health and a known result before comparing test cases.
+fn validate_oracle_probe(output: &RunOutput) -> Result<(), String> {
+  if !output.timed_out
+    && output.exit_code == Some(0)
+    && output.stdout.trim() == "2"
+  {
+    return Ok(());
+  }
+  Err(format!(
+    "oracle failed the startup evaluation (1 + 1): timeout={}, exit={:?}\n{}{}",
+    output.timed_out, output.exit_code, output.stdout, output.stderr
+  ))
+}
+
 /// Run a command with piped stdio, killing it after `timeout`.
 fn run_with_timeout(
   mut cmd: Command,
@@ -1942,6 +1957,16 @@ fn main() {
     mode,
   };
 
+  let probe = harness
+    .oracle
+    .eval("1 + 1", harness.timeout)
+    .map_err(|error| format!("oracle startup evaluation failed: {error}"))
+    .and_then(|output| validate_oracle_probe(&output));
+  if let Err(error) = probe {
+    eprintln!("error: {error}");
+    std::process::exit(2);
+  }
+
   eprintln!(
     "woxi-diff-fuzz: {} cases, batch size {}, seed {master_seed}, oracle: {}",
     cli.cases,
@@ -2228,6 +2253,47 @@ mod tests {
     assert_eq!(cli_safe("-Sqrt[2]"), "(-Sqrt[2])");
     assert_eq!(cli_safe("Plus[1, 2]"), "Plus[1, 2]");
     assert_eq!(cli_safe("{-1, -2}"), "{-1, -2}");
+  }
+
+  #[test]
+  fn oracle_probe_requires_a_successful_evaluation() {
+    let good = RunOutput {
+      stdout: "2\n".into(),
+      stderr: String::new(),
+      exit_code: Some(0),
+      timed_out: false,
+    };
+    assert!(validate_oracle_probe(&good).is_ok());
+    for output in [
+      RunOutput {
+        stdout: String::new(),
+        stderr: "A WolframKernel location could not be determined.".into(),
+        exit_code: Some(255),
+        ..good.clone()
+      },
+      RunOutput {
+        timed_out: true,
+        ..good.clone()
+      },
+      RunOutput {
+        exit_code: None,
+        ..good.clone()
+      },
+      RunOutput {
+        exit_code: Some(1),
+        ..good.clone()
+      },
+      RunOutput {
+        stdout: "1 + 1\n".into(),
+        ..good.clone()
+      },
+      RunOutput {
+        stdout: String::new(),
+        ..good.clone()
+      },
+    ] {
+      assert!(validate_oracle_probe(&output).is_err(), "{output:?}");
+    }
   }
 
   /// The bag comparator must tolerate messages landing on different
