@@ -14214,6 +14214,26 @@ mod discriminant {
 mod factor_square_free {
   use super::*;
 
+  #[test]
+  fn monomial_content_controls_multivariate_factor_signs() {
+    for (polynomial, expected) in [
+      ("y(3-2x^2+x y)", "y*(3 - 2*x^2 + x*y)"),
+      ("y(-3+2x^2-x y)", "-(y*(3 - 2*x^2 + x*y))"),
+      ("x(3-2x^2+x y)", "-(x*(-3 + 2*x^2 - x*y))"),
+      ("y(3-2x^3+x y)", "y*(3 - 2*x^3 + x*y)"),
+      ("x*y(3-2x^2+x y)", "-(x*y*(-3 + 2*x^2 - x*y))"),
+      ("y*z(3-2x^2+x y)", "y*(3 - 2*x^2 + x*y)*z"),
+      ("y(3-2x^2)^2", "(-3 + 2*x^2)^2*y"),
+    ] {
+      for code in [
+        format!("FactorSquareFree[{polynomial}]"),
+        format!("FactorSquareFree[Expand[{polynomial}]]"),
+      ] {
+        assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+      }
+    }
+  }
+
   // Factors of an explicit product that share a gcd are refined into
   // coprime ones, so the result is square-free.
   #[test]

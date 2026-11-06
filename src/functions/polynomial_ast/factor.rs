@@ -2434,10 +2434,14 @@ fn term_lex_exponents(term: &Expr) -> std::collections::BTreeMap<String, i128> {
 fn lex_exponents_greater(
   a: &std::collections::BTreeMap<String, i128>,
   b: &std::collections::BTreeMap<String, i128>,
+  priority: &[String],
 ) -> bool {
   let mut vars: Vec<&String> = a.keys().chain(b.keys()).collect();
   vars.sort();
   vars.dedup();
+  vars.sort_by_key(|v| {
+    priority.iter().position(|p| p == *v).unwrap_or(usize::MAX)
+  });
   for v in vars {
     let ea = a.get(v).copied().unwrap_or(0);
     let eb = b.get(v).copied().unwrap_or(0);
@@ -2458,6 +2462,13 @@ fn lex_exponents_greater(
 /// term has a non-rational coefficient.
 pub(super) fn rational_content(
   terms: &[Expr],
+) -> Option<(i128, i128, Vec<(i128, i128)>)> {
+  rational_content_with_priority(terms, &[])
+}
+
+fn rational_content_with_priority(
+  terms: &[Expr],
+  priority: &[String],
 ) -> Option<(i128, i128, Vec<(i128, i128)>)> {
   let mut coeffs: Vec<(i128, i128)> = Vec::new();
   for term in terms {
@@ -2489,7 +2500,7 @@ pub(super) fn rational_content(
     let key = term_lex_exponents(term);
     let better = match &best_key {
       None => true,
-      Some(best) => lex_exponents_greater(&key, best),
+      Some(best) => lex_exponents_greater(&key, best, priority),
     };
     if better {
       best_key = Some(key);
@@ -3263,7 +3274,75 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
 pub fn factor_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Monomial factors take their canonical position against sum factors
   // (x*(-5 + 3*x), not (-5 + 3*x)*x), exactly like factor_ast.
-  canonical_factored_result(factor_square_free_ast_impl(args)?)
+  let result = factor_square_free_ast_impl(args)?;
+  canonical_factored_result(square_free_content_sign(result))
+}
+
+/// Square-free factors use monomial-content variables first when choosing
+/// their leading coefficient, unlike Factor's alphabetical variable order.
+fn square_free_content_sign(result: Expr) -> Expr {
+  let Some((mut numerator, denominator, items)) =
+    decompose_content_factors(&result)
+  else {
+    return result;
+  };
+  let mut priority: Vec<String> = items
+    .iter()
+    .filter_map(|(base, _)| {
+      if let Expr::Identifier(name) = base {
+        Some(name.clone())
+      } else {
+        None
+      }
+    })
+    .collect();
+  priority.sort();
+  priority.dedup();
+  if priority.is_empty() {
+    return result;
+  }
+  let mut changed = false;
+  let mut factors = Vec::new();
+  for (base, exponent) in items {
+    let terms = collect_additive_terms(&base);
+    let base = if terms.len() > 1
+      && rational_content_with_priority(&terms, &priority)
+        .is_some_and(|(n, _, _)| n < 0)
+    {
+      if exponent % 2 != 0 {
+        let Some(negated) = numerator.checked_neg() else {
+          return result;
+        };
+        numerator = negated;
+      }
+      changed = true;
+      expand_and_combine(&neg1(base))
+    } else {
+      base
+    };
+    factors.push(if exponent == 1 {
+      base
+    } else {
+      pow2(base, Expr::Integer(exponent))
+    });
+  }
+  if !changed {
+    return result;
+  }
+  let negate = numerator == -1 && denominator == 1;
+  if denominator != 1 {
+    factors.insert(
+      0,
+      call(
+        "Rational",
+        vec![Expr::Integer(numerator), Expr::Integer(denominator)],
+      ),
+    );
+  } else if numerator != 1 && !negate {
+    factors.insert(0, Expr::Integer(numerator));
+  }
+  let product = build_product(factors);
+  if negate { neg1(product) } else { product }
 }
 
 fn factor_square_free_ast_impl(
