@@ -759,13 +759,53 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       // where Simplify would pull -(...) out front — so the quotient
       // minus-extraction is disabled here (differential fuzzer, seed
       // 8887).
-      let fallback = super::simplify::simplify_division_impl(
+      let mut fallback = super::simplify::simplify_division_impl(
         &num,
         &den,
         canonicalize_sign,
         false,
         false,
       );
+      // The shared simplifier may collapse an expanded numerator into a
+      // perfect power. Cancel (and Together through this path) preserves
+      // the expanded numerator, extracting numeric content only, while
+      // a power already present in the input keeps its factored form.
+      let has_sum_power = |e: &Expr| {
+        super::together::flatten_times_args(std::slice::from_ref(e))
+          .iter()
+          .any(|factor| super::expand::sum_power_exponent(factor).is_some())
+      };
+      let (fallback_num, fallback_den) =
+        super::together::extract_num_den(&fallback);
+      if !has_sum_power(&raw_num) && has_sum_power(&fallback_num) {
+        let expanded_num = expand_and_combine(&fallback_num);
+        if expr_to_string(&expanded_num) == expr_to_string(&num)
+          || expr_to_string(&expanded_num)
+            == expr_to_string(&expand_and_combine(&neg1(num.clone())))
+        {
+          let terms = collect_additive_terms(&expanded_num);
+          let content_num =
+            super::factor::factor_terms_numeric(&expanded_num, &terms);
+          fallback = make_divide(content_num, fallback_den);
+        }
+      } else if has_sum_power(&raw_num) && !has_sum_power(&fallback_num) {
+        let expanded_num = expand_and_combine(&fallback_num);
+        let same = expr_to_string(&expanded_num) == expr_to_string(&num);
+        let opposite = expr_to_string(&expanded_num)
+          == expr_to_string(&expand_and_combine(&neg1(num.clone())));
+        if same || opposite {
+          let factored_input =
+            super::together::normalize_numerator_power_signs(&raw_num);
+          fallback = make_divide(
+            if opposite {
+              neg1(factored_input)
+            } else {
+              factored_input
+            },
+            fallback_den,
+          );
+        }
+      }
       if canonicalize_sign {
         let (fnum, fden) = super::together::extract_num_den(&fallback);
         if !matches!(&fden, Expr::Integer(1))

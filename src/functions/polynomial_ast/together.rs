@@ -218,8 +218,17 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if matches!(&den, Expr::Integer(1)) {
     return expr.clone();
   }
-  let result = canonicalize_quotient_sign(&num, &den, false)
-    .unwrap_or_else(|| expr.clone());
+  let normalized_num = normalize_numerator_power_signs(&num);
+  let unchanged = expr_to_string(&normalized_num) == expr_to_string(&num);
+  let num = normalized_num;
+  let result =
+    canonicalize_quotient_sign(&num, &den, false).unwrap_or_else(|| {
+      if unchanged {
+        expr.clone()
+      } else {
+        div2(num, den)
+      }
+    });
   // wolframscript presents Together denominators with their content
   // hoisted: Together[1/(x + x^2 + 4*x^3)] → 1/(x*(1 + x + 4*x^2)),
   // Together[1/(2 + 2*x)] → 1/(2*(1 + x)) (wolframscript-verified;
@@ -242,6 +251,37 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
     ));
   }
   hoist_numerator_content(&distribute_unit_negative_numerator(&result))
+}
+
+/// Orient existing powers of sums without factoring a previously expanded
+/// numerator. Odd powers transfer their sign to the surrounding product.
+pub(super) fn normalize_numerator_power_signs(num: &Expr) -> Expr {
+  let mut changed = false;
+  let factors = flatten_times_args(std::slice::from_ref(num))
+    .into_iter()
+    .map(|factor| {
+      if let Some((base, exponent)) = super::expand::sum_power_exponent(&factor)
+        && additive_content_sign(&base) == Some(-1)
+      {
+        changed = true;
+        let power =
+          pow2(expand_and_combine(&neg1(base)), Expr::Integer(exponent));
+        if exponent % 2 == 0 {
+          power
+        } else {
+          neg1(power)
+        }
+      } else {
+        factor
+      }
+    })
+    .collect();
+  if changed {
+    let product = build_product(factors);
+    crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product)
+  } else {
+    num.clone()
+  }
 }
 
 /// A combined quotient presents its numerator with the integer content

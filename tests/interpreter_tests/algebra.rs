@@ -2621,6 +2621,25 @@ mod factor_list {
 mod cancel {
   use super::*;
 
+  #[test]
+  fn expanded_numerator_powers_are_not_newly_factored() {
+    for head in ["Cancel", "Together"] {
+      for (expr, expected) in [
+        ("(2-4x+2x^2)/(-5-4x^3)", "(-2*(1 - 2*x + x^2))/(5 + 4*x^3)"),
+        ("(1-2x+x^2)/(1+x^3)", "(1 - 2*x + x^2)/(1 + x^3)"),
+        ("(1-x)^2/(1+x^3)", "(-1 + x)^2/(1 + x^3)"),
+        ("(1-x)^3/(1+x^4)", "-((-1 + x)^3/(1 + x^4))"),
+        (
+          "(3+9z+9z^2+3z^3)/(7+z^4)",
+          "(3*(1 + 3*z + 3*z^2 + z^3))/(7 + z^4)",
+        ),
+      ] {
+        let code = format!("{head}[{expr}]");
+        assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+      }
+    }
+  }
+
   // A radical of a quotient with a symbolic denominator stays whole (one
   // with a numeric denominator splits), so D's cancellation no longer turns
   // `(m w/h)^(1/4)` into `(m w)^(1/4)/h^(1/4)` and like terms meet: the
