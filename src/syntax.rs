@@ -10095,10 +10095,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   let with_normalized_children;
   let expr = if expr_children(expr)
     .iter()
-    .any(|c| operator_call_child(c).is_some())
+    .any(|c| operator_call_child(c, expr).is_some())
   {
     with_normalized_children = map_children(expr, &|child| {
-      operator_call_child(child).unwrap_or_else(|| child.clone())
+      operator_call_child(child, expr).unwrap_or_else(|| child.clone())
     });
     &with_normalized_children
   } else {
@@ -11847,7 +11847,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let needs_neg_parens = (rest_factors.len() >= 2
             && all_symbolic_factors)
             || (args.len() == 2
-              && (matches!(&args[1], Expr::FunctionCall { name, .. } if name == "Times")
+              && (matches!(&args[1], Expr::FunctionCall { name, args } if name == "Times" || (name == "Divide" && args.len() == 2))
                 || matches!(
                   &args[1],
                   Expr::BinaryOp {
@@ -14613,10 +14613,10 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   let with_normalized_children;
   let expr = if expr_children(expr)
     .iter()
-    .any(|c| operator_call_child(c).is_some())
+    .any(|c| operator_call_child(c, expr).is_some())
   {
     with_normalized_children = map_children(expr, &|child| {
-      operator_call_child(child).unwrap_or_else(|| child.clone())
+      operator_call_child(child, expr).unwrap_or_else(|| child.clone())
     });
     &with_normalized_children
   } else {
@@ -18902,7 +18902,23 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
 /// for a held `Plus[a, Minus[b]]` — wolframscript prints that one as
 /// `a + -b`. Left in call form they are rendered by the recursion instead,
 /// which reaches `operator_call_node` and prints the operator anyway.
-fn operator_call_child(expr: &Expr) -> Option<Expr> {
+fn operator_call_child(expr: &Expr, parent: &Expr) -> Option<Expr> {
+  // An explicit Divide survives evaluation only in structural contexts.
+  // Keep it as one Times factor: converting it to BinaryOp::Divide here
+  // lets product formatting collect its denominator across held factors.
+  // Other parents still need the operator node for precedence decisions.
+  if matches!(expr, Expr::FunctionCall { name, args } if name == "Divide" && args.len() == 2)
+    && (matches!(parent, Expr::FunctionCall { name, .. } if name == "Times")
+      || matches!(
+        parent,
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          ..
+        }
+      ))
+  {
+    return None;
+  }
   match expr {
     Expr::FunctionCall { name, .. } if name == "Minus" || name == "Not" => None,
     _ => operator_call_node(expr),

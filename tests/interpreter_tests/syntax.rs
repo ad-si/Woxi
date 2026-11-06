@@ -357,6 +357,32 @@ mod trailing_semicolon {
     assert_eq!(interpret("Hold[List[]]").unwrap(), "Hold[{}]");
   }
 
+  #[test]
+  fn held_divide_factors_preserve_their_product_boundaries() {
+    for (code, expected) in [
+      ("Hold[Times[Divide[5, 6], -57]]", "Hold[5/6*-57]"),
+      ("Hold[Times[Divide[5, 6], 0]]", "Hold[5/6*0]"),
+      ("Hold[Times[a, Divide[b, c]]]", "Hold[a*b/c]"),
+      ("Hold[Times[Divide[a, b], c]]", "Hold[a/b*c]"),
+      ("Hold[Times[Divide[a, b], Divide[c, d]]]", "Hold[a/b*c/d]"),
+      (
+        "Hold[Times[Divide[a+b, c+d], x]]",
+        "Hold[(a + b)/(c + d)*x]",
+      ),
+      ("Hold[Times[-1, Divide[a, b]]]", "Hold[-(a/b)]"),
+      ("Hold[Power[Divide[a, b], c]]", "Hold[(a/b)^c]"),
+      ("Hold[Divide[Divide[a, b], c]]", "Hold[a/b/c]"),
+      ("Hold[Divide[a, b] c]", "Hold[a/b*c]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "InputForm: {code}"
+      );
+    }
+  }
+
   /// Only the arities wolframscript itself treats as the operator are
   /// rewritten — `Divide` and `Subtract` are binary there, so a third
   /// argument keeps the call form on both engines.
