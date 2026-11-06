@@ -16274,7 +16274,15 @@ fn substitute_slots_expand(exprs: &[Expr], values: &[Expr]) -> Vec<Expr> {
 /// heads that print in operator form (`u -> v`, `u ;; v`, `u!`, `u_`) would
 /// otherwise bind the trailing bracket to their last operand.
 fn curried_head_needs_parens(func: &Expr) -> bool {
-  prints_as_not(func)
+  let negative_number = match func {
+    Expr::Integer(n) => *n < 0,
+    Expr::BigInteger(n) => n.sign() == num_bigint::Sign::Minus,
+    Expr::Real(n) => n.is_sign_negative(),
+    Expr::BigFloat(digits, _) => digits.starts_with('-'),
+    _ => false,
+  };
+  negative_number
+    || prints_as_not(func)
     || matches!(
       func,
       Expr::Function { .. }
@@ -16311,7 +16319,7 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
       Expr::FunctionCall { name, args }
         if match name.as_str() {
           // Infix operator forms: `u + v`, `u -> v`, `u ;; v`, …
-          "Plus" | "Times" | "Power" | "Pattern" | "Condition" | "Rule"
+          "Plus" | "Times" | "Power" | "Rational" | "Complex" | "Pattern" | "Condition" | "Rule"
           | "RuleDelayed" | "And" | "Or" | "Alternatives" | "Span"
           | "Composition" | "RightComposition" => args.len() >= 2,
           // Prefix / postfix operator forms: `u!`, `u++`, `u..`. `Optional`

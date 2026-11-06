@@ -358,6 +358,30 @@ mod trailing_semicolon {
   }
 
   #[test]
+  fn numeric_call_heads_keep_their_parentheses() {
+    for (code, expected) in [
+      ("ReplacePart[{3,-3,-5}, -4 -> -2]", "(-2)[3, -3, -5]"),
+      ("(-2)[a]", "(-2)[a]"),
+      ("(-2.)[a]", "(-2.)[a]"),
+      ("(-2`20)[a]", "(-2.`20.)[a]"),
+      ("(-10^30)[a]", "(-1000000000000000000000000000000)[a]"),
+      ("(1/2)[a]", "(1/2)[a]"),
+      ("(-1/2)[a]", "(-1/2)[a]"),
+      ("(1+I)[a]", "(1 + I)[a]"),
+      ("2[a]", "2[a]"),
+      ("2.[a]", "2.[a]"),
+      ("I[a]", "I[a]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+      assert_eq!(
+        interpret(&format!("ToString[{code}, InputForm]")).unwrap(),
+        expected,
+        "InputForm: {code}"
+      );
+    }
+  }
+
+  #[test]
   fn held_divide_factors_preserve_their_product_boundaries() {
     for (code, expected) in [
       ("Hold[Times[Divide[5, 6], -57]]", "Hold[5/6*-57]"),
