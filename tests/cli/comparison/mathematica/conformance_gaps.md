@@ -9032,3 +9032,20 @@ Verified on 2026-11-06, minimized from diff-fuzz seed 1794006364899906000:
 content is not retained in the same form. Improper fractions with a
 nonconstant denominator now consider polynomial division as a candidate,
 fixing the original `(3+4*x)/(x-3)` case.
+
+### Machine Sinc and PolyLog differ from Wolfram's high-precision rounding
+
+Verified on 2026-11-06 while investigating diff-fuzz seed
+1794007662705807000. `Sinc[1.5]` now rounds the complete quotient once,
+and `PolyLog[4,0.3]` uses compensated summation with a guarded tail bound;
+both original fuzz cases agree with Wolfram.
+
+Some nearby machine evaluations still differ. Woxi gives
+`0.2393888576415826` for `Sinc[2.5]`, whereas Wolfram gives
+`0.23938885764158258`. Wolfram's own `N[N[Sinc[5/2],60]]` returns the
+Woxi value. Likewise `PolyLog[2,0.5]` gives `0.5822405264650125` in
+Woxi and `0.5822405264650127` in Wolfram; Wolfram's
+`N[N[PolyLog[2,1/2],60]]` agrees with Woxi. For `PolyLog[3,0.3]`,
+Woxi gives `0.3124001778928926`, Wolfram gives `0.31240017789289265`,
+and Wolfram's `N[N[PolyLog[3,SetPrecision[0.3,70]],60]]` agrees with
+Woxi. These direct machine-evaluation differences remain unresolved.
