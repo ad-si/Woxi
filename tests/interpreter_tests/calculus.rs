@@ -16308,6 +16308,78 @@ mod trig_reduce {
   use super::*;
 
   #[test]
+  fn quotient_products_use_product_to_sum() {
+    let mut mismatches = Vec::new();
+    for (code, expected) in [
+      (
+        "TrigReduce[Cos[x] Tan[y]]",
+        "-1/2*(Sec[y]*(Sin[x - y] - Sin[x + y]))",
+      ),
+      (
+        "TrigReduce[Sin[x] Tan[y]]",
+        "((Cos[x - y] - Cos[x + y])*Sec[y])/2",
+      ),
+      (
+        "TrigReduce[Cos[x] Cot[y]]",
+        "((Cos[x - y] + Cos[x + y])*Csc[y])/2",
+      ),
+      (
+        "TrigReduce[Sin[x] Cot[y]]",
+        "(Csc[y]*(Sin[x - y] + Sin[x + y]))/2",
+      ),
+      (
+        "TrigReduce[Tan[x] Tan[y]]",
+        "(Cos[x - y] - Cos[x + y])/(Cos[x - y] + Cos[x + y])",
+      ),
+      (
+        "TrigReduce[Cot[x] Cot[y]]",
+        "(Cos[x - y] + Cos[x + y])/(Cos[x - y] - Cos[x + y])",
+      ),
+      (
+        "TrigReduce[Tan[x] Cot[y]]",
+        "(-Sin[x - y] - Sin[x + y])/(Sin[x - y] - Sin[x + y])",
+      ),
+      (
+        "TrigReduce[Sinh[x] Tanh[y]]",
+        "-1/2*((Cosh[x - y] - Cosh[x + y])*Sech[y])",
+      ),
+      (
+        "TrigReduce[Cosh[x] Tanh[y]]",
+        "-1/2*(Sech[y]*(Sinh[x - y] - Sinh[x + y]))",
+      ),
+      (
+        "TrigReduce[Sinh[x] Coth[y]]",
+        "(Csch[y]*(Sinh[x - y] + Sinh[x + y]))/2",
+      ),
+      (
+        "TrigReduce[Tanh[x] Tanh[y]]",
+        "(-Cosh[x - y] + Cosh[x + y])/(Cosh[x - y] + Cosh[x + y])",
+      ),
+      ("TrigReduce[Cos[x] Tan[x]]", "Sin[x]"),
+      ("TrigReduce[Sin[x] Tan[x]]", "-1/2*((-1 + Cos[2*x])*Sec[x])"),
+      (
+        "TrigReduce[Cos[x]^3 Tan[x y]]",
+        "-1/8*(Sec[x*y]*(3*Sin[x - x*y] + Sin[3*x - x*y] - 3*Sin[x + x*y] - Sin[3*x + x*y]))",
+      ),
+    ] {
+      let actual = interpret(code).unwrap();
+      if actual != expected {
+        mismatches
+          .push(format!("{code}:\n  got: {actual}\n  expected: {expected}"));
+      }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+  }
+
+  #[test]
+  fn hyperbolic_sum_arguments_have_canonical_signs() {
+    assert_eq!(
+      interpret("{Sinh[-x+y], Cosh[-x+y], Tanh[-x+y], Coth[-x+y], Sech[-x+y], Csch[-x+y], Sinh[-1+x]}").unwrap(),
+      "{-Sinh[x - y], Cosh[x - y], -Tanh[x - y], -Coth[x - y], Sech[x - y], -Csch[x - y], -Sinh[1 - x]}"
+    );
+  }
+
+  #[test]
   fn sin_squared() {
     assert_eq!(
       interpret("TrigReduce[Sin[x]^2]").unwrap(),

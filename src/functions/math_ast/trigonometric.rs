@@ -4612,6 +4612,19 @@ fn circular_at_infinity(
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
 
+fn try_extract_hyperbolic_negated(expr: &Expr) -> Option<Expr> {
+  if let Some(positive) = try_extract_negated(expr) {
+    return Some(positive);
+  }
+  let mut terms = Vec::new();
+  collect_plus_terms(expr, &mut terms);
+  if terms.len() > 1 && term_is_negative(&terms[0]) {
+    Some(plus(terms.into_iter().map(negate_expr).collect()))
+  } else {
+    None
+  }
+}
+
 pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -4668,7 +4681,7 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Odd function: Sinh[-x] → -Sinh[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Sinh", &[pos])?;
     return Ok(negate_expr(inner));
   }
@@ -4731,7 +4744,7 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Even function: Cosh[-x] → Cosh[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Cosh", &[pos]);
   }
   Ok(unevaluated("Cosh", args))
@@ -4789,7 +4802,7 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Odd function: Tanh[-x] → -Tanh[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Tanh", &[pos])?;
     return Ok(negate_expr(inner));
   }
@@ -4852,7 +4865,7 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Odd function: Coth[-x] → -Coth[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Coth", &[pos])?;
     return Ok(negate_expr(inner));
   }
@@ -4905,7 +4918,7 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Even function: Sech[-x] → Sech[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sech", &[pos]);
   }
   Ok(unevaluated("Sech", args))
@@ -4967,7 +4980,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return res;
   }
   // Odd function: Csch[-x] → -Csch[x]
-  if let Some(pos) = try_extract_negated(&args[0]) {
+  if let Some(pos) = try_extract_hyperbolic_negated(&args[0]) {
     let inner = crate::evaluator::evaluate_function_call_ast("Csch", &[pos])?;
     return Ok(negate_expr(inner));
   }
@@ -6579,7 +6592,87 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // intact.
   let combined =
     crate::evaluator::evaluate_function_call_ast("Together", &[current])?;
-  crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])
+  let cancelled =
+    crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])?;
+  factor_reduced_reciprocals(cancelled)
+}
+
+fn contains_reciprocal_trig(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Sec" | "Csc" | "Sech" | "Csch")
+        || args.iter().any(contains_reciprocal_trig)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_reciprocal_trig(left) || contains_reciprocal_trig(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_reciprocal_trig(operand),
+    Expr::List(items) => items.iter().any(contains_reciprocal_trig),
+    _ => false,
+  }
+}
+
+/// Keep a common reciprocal factor outside a linearized trig sum. Mixed
+/// reciprocal powers remain expanded, as they do in Wolfram's result.
+fn factor_reduced_reciprocals(expr: Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = &expr {
+    return Ok(Expr::List(
+      items
+        .iter()
+        .cloned()
+        .map(factor_reduced_reciprocals)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ));
+  }
+  if !contains_reciprocal_trig(&expr) {
+    return Ok(expr);
+  }
+  let factored = crate::evaluator::evaluate_function_call_ast(
+    "Factor",
+    std::slice::from_ref(&expr),
+  )?;
+  fn normalize(expr: &Expr) -> Option<Expr> {
+    if let Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } = expr
+    {
+      return Some(div2(normalize(left)?, (**right).clone()));
+    }
+    let mut factors = match expr {
+      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => vec![(**left).clone(), (**right).clone()],
+      _ => return None,
+    };
+    if !factors.iter().any(contains_reciprocal_trig) {
+      return None;
+    }
+    let index = factors.iter().position(|factor| {
+      matches!(factor, Expr::FunctionCall { name, .. } if name == "Plus")
+        && !contains_reciprocal_trig(factor)
+    })?;
+    let mut terms = Vec::new();
+    collect_plus_terms(&factors[index], &mut terms);
+    // Constants do not determine the sign of the trigonometric numerator.
+    let leading = terms
+      .iter()
+      .find(|term| !matches!(term, Expr::Integer(_) | Expr::Real(_)))?;
+    if term_is_negative(leading) {
+      factors[index] = plus(terms.into_iter().map(negate_expr).collect());
+      factors.push(Expr::Integer(-1));
+    }
+    Some(times(factors))
+  }
+  match normalize(&factored) {
+    Some(normalized) => crate::evaluator::evaluate_expr_to_expr(&normalized),
+    None => Ok(expr),
+  }
 }
 
 /// Recursively apply TrigReduce.
@@ -6693,6 +6786,38 @@ fn reduce_two_factor_product(a: &Expr, b: &Expr) -> Expr {
 fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   let (a_name, a_arg) = extract_trig(a)?;
   let (b_name, b_arg) = extract_trig(b)?;
+
+  // Reduce quotient functions through the same numerator identities as
+  // Sin/Cos and Sinh/Cosh. With two quotients, reduce the denominator pair
+  // as well; with one, preserve its reciprocal function (Sec, Csc, ...).
+  let quotient = |name: &str| match name {
+    "Tan" => Some(("Sin", "Cos", "Sec")),
+    "Cot" => Some(("Cos", "Sin", "Csc")),
+    "Tanh" => Some(("Sinh", "Cosh", "Sech")),
+    "Coth" => Some(("Cosh", "Sinh", "Csch")),
+    _ => None,
+  };
+  let aq = quotient(a_name);
+  let bq = quotient(b_name);
+  if aq.is_some() || bq.is_some() {
+    let an = call1(aq.map_or(a_name, |q| q.0), a_arg.clone());
+    let bn = call1(bq.map_or(b_name, |q| q.0), b_arg.clone());
+    let numerator = try_reduce_trig_pair(&an, &bn)?;
+    return Some(match (aq, bq) {
+      (Some((_, ad, _)), Some((_, bd, _))) => {
+        let denominator =
+          try_reduce_trig_pair(&call1(ad, a_arg), &call1(bd, b_arg))?;
+        div2(numerator, denominator)
+      }
+      (Some((_, _, reciprocal)), None) => {
+        times2(numerator, call1(reciprocal, a_arg))
+      }
+      (None, Some((_, _, reciprocal))) => {
+        times2(numerator, call1(reciprocal, b_arg))
+      }
+      (None, None) => unreachable!(),
+    });
+  }
 
   let sum = plus2(a_arg.clone(), b_arg.clone());
   let diff = minus2(a_arg.clone(), b_arg.clone());
