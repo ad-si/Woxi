@@ -8921,6 +8921,13 @@ antiderivative involving `Sec[x]^3`, shifted sines and cosines,
 `Integrate[Cos[x + y], x]`, but that is the separate angle-expansion
 discrepancy documented above, not a reproducer for the missing product rule.
 
+Seed 1793999916799759000 also found
+`Integrate[Sin[x + y] Tan[3*x], x]`: Woxi leaves it unevaluated while
+Wolfram returns an elementary primitive with `ArcTanh[Tan[x/2]]`,
+`Log[1 +/- 2*Sin[x]]`, and shifted half-angle `ArcTanh` terms. This
+integer-frequency case does not require the hypergeometric primitive
+of the symbolic-frequency sine/tangent gap above.
+
 ### TrigReduce leaves tangent powers in mixed sums
 
 Single tangent/cotangent products now use the shared product-to-sum
@@ -8935,18 +8942,6 @@ The product term is reduced, but Woxi retains `Tan[x]^2`. Wolfram writes
 that contribution as `(Sec[x]^2 - Cos[2*x]*Sec[x]^2)/2` within the sum.
 For the standalone `TrigReduce[Tan[x]^2]`, Wolfram instead returns
 `(1 - Cos[2*x])/(1 + Cos[2*x])`, reducing both numerator and denominator.
-
-### Simplify does not combine a difference of tangents
-
-Verified on 2026-11-06, diff-fuzz seed 1793998974438453000:
-
-```wolfram
-Simplify[Tan[x + y] - Tan[x]]
-```
-
-Woxi retains the difference; Wolfram returns `Sec[x]*Sec[x + y]*Sin[y]`.
-The same reduction applies when the difference is added to
-`Sin[x]*Sin[3*x]`, as in the original fuzz case.
 
 ### TrigToExp does not expand shifted cosine squares
 
@@ -8970,3 +8965,25 @@ the same expression plus `344`. Both derivatives equal the integrand.
 The shrinker reaches `Integrate[x^3/(1 + x), x]`, where the choice of
 additive constant also differs. This is a symbolic-output difference,
 not an incorrect derivative.
+
+### Held products collect a Divide factor into a common denominator
+
+Verified on 2026-11-06, diff-fuzz seed 1793999916799759000:
+
+```wolfram
+Hold[Times[Divide[5, 6], -57]]
+```
+
+Woxi prints `Hold[(5*-57)/6]`; Wolfram prints `Hold[5/6*-57]`.
+The formatter collects the unevaluated quotient into the product's common
+denominator instead of preserving the held factor boundary. The same
+difference appears with a zero second factor.
+
+### N[E, p] prints different guard digits
+
+In the same run, `N[E, 22]` prints
+``2.71828182845904523536028747135266249776`22.`` in Woxi and
+``2.71828182845904523536028746877783245151`22.`` in Wolfram.
+The requested 22 digits agree; the extra displayed working digits do not.
+This remains a byte-for-byte output gap, separate from the small-rational
+binary-grid rounding cases documented above.
