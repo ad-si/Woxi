@@ -614,6 +614,26 @@ mod hypergeometric2f1 {
   }
 
   #[test]
+  fn zero_argument_with_singular_denominator_parameter() {
+    for a in ["a", "-2", "-1", "1", "2"] {
+      for z in ["0", "0."] {
+        for c in ["0", "0."] {
+          let code = format!("Hypergeometric2F1[{a},1,{c},{z}]");
+          assert_eq!(interpret(&code).unwrap(), "Indeterminate", "{code}");
+        }
+      }
+    }
+    for code in [
+      "Hypergeometric2F1[0,b,0,0]",
+      "Hypergeometric2F1[a,0,0,0]",
+      "Hypergeometric2F1[1,1,-1,0]",
+      "Hypergeometric2F1[1,1,-2,0]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), "1", "{code}");
+    }
+  }
+
+  #[test]
   fn symbolic_1_b_c() {
     // 2F1(1, b, c, z) with positive integer b < c, c > b+1
     assert_eq!(

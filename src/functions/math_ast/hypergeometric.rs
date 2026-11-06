@@ -1974,11 +1974,6 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let z = &args[3];
 
-  // Special case: z = 0 => result is 1
-  if matches!(z, Expr::Integer(0)) {
-    return Ok(Expr::Integer(1));
-  }
-
   // Extract integer values for a, b, c if available. Treat Real arguments
   // that are exactly integer-valued as integers too, so closed-form
   // identities like the Euler transformation also fire for `2.`, `3.`, …
@@ -1996,6 +1991,18 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a = 0 or b = 0 => 1
   if a_int == Some(0) || b_int == Some(0) {
     return Ok(Expr::Integer(1));
+  }
+
+  // A zero denominator parameter remains singular even at the origin,
+  // unless a numerator parameter has already terminated the series at 0.
+  if int_of(z) == Some(0) {
+    return Ok(if c_int == Some(0) {
+      Expr::Identifier("Indeterminate".into())
+    } else if args.iter().any(|a| matches!(a, Expr::Real(_))) {
+      Expr::Real(1.0)
+    } else {
+      Expr::Integer(1)
+    });
   }
 
   // 2F1(a, b, b, z) = (1-z)^(-a)
