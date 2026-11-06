@@ -16,6 +16,25 @@ fn run(prog: &str) {
   woxi::interpret(prog).expect("interpret failed");
 }
 
+// Issue #2142: recursive expansion repeatedly copies the same metric calls
+// into different monomials. Keep the result out of the printer so this
+// measures evaluation and allocation rather than formatting.
+fn bench_dirac_trace(c: &mut Criterion) {
+  for n in [10, 12, 14] {
+    let prog = format!(
+      "diracTr[] := 4; diracTr[a_, b_] := 4 g[a, b]; \
+       diracTr[a_, rest___] := Module[{{list = {{rest}}, n}}, \
+         Sum[(-1)^(m + 1) Expand[g[a, list[[m]]] diracTr @@ Delete[list, m]], \
+           {{m, 1, Length[list]}}]]; \
+       t = diracTr @@ Array[x, {n}]; \
+       {{Length[t], Length[Union[Cases[t, _g, Infinity]]]}}"
+    );
+    c.bench_function(&format!("dirac_trace_{n}"), |b| {
+      b.iter(|| run(black_box(&prog)));
+    });
+  }
+}
+
 // --- #1: regex compile cost -----------------------------------------------
 
 fn bench_string_cases_repeat_pattern(c: &mut Criterion) {
@@ -232,6 +251,7 @@ criterion_group! {
     bench_sort_with_user_comparator,
     bench_to_character_code_loop,
     bench_module_call_overhead,
+    bench_dirac_trace,
     bench_script_build_summary
 }
 

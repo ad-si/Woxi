@@ -206,8 +206,9 @@ fn sum_terms(args: &[Expr]) -> Vec<&Expr> {
 
 /// The factors of a canonical product of calls of heads without built-in
 /// meaning, with an optional exact coefficient (`4*g[a, b]*g[c, d]`, or a
-/// single call): the factors sorted the way `Plus` compares them.
-fn call_product_key(term: &Expr) -> Option<Vec<&Expr>> {
+/// single call). Optionally sort them the way `Plus` compares them; large
+/// sums defer that work until the factors have integer ranks.
+fn call_product_key(term: &Expr, sort: bool) -> Option<Vec<&Expr>> {
   let factors: &[Expr] = match term {
     Expr::FunctionCall { name, args } if name == "Times" => {
       match args.first() {
@@ -227,7 +228,9 @@ fn call_product_key(term: &Expr) -> Option<Vec<&Expr>> {
     return None;
   }
   let mut key: Vec<&Expr> = factors.iter().collect();
-  key.sort_by(|a, b| super::arithmetic::wl_arg_order(a, b));
+  if sort {
+    key.sort_by(|a, b| super::arithmetic::wl_arg_order(a, b));
+  }
   Some(key)
 }
 
@@ -247,10 +250,76 @@ pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
   if terms.len() < 2 {
     return None;
   }
+  let rank_factors = terms.len() >= 32;
   let mut keyed: Vec<(Vec<&Expr>, &Expr)> = terms
     .into_iter()
-    .map(|term| Some((call_product_key(term)?, term)))
+    .map(|term| Some((call_product_key(term, !rank_factors)?, term)))
     .collect::<Option<_>>()?;
+  if rank_factors {
+    // Intern factors by the very comparator used below, including its
+    // equivalence classes. Sorting long sums then compares small integers
+    // instead of repeatedly traversing the same nested calls.
+    struct Factor<'a>(&'a Expr);
+    impl PartialEq for Factor<'_> {
+      fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+      }
+    }
+    impl Eq for Factor<'_> {}
+    impl PartialOrd for Factor<'_> {
+      fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+      }
+    }
+    impl Ord for Factor<'_> {
+      fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        super::arithmetic::wl_arg_order(self.0, other.0)
+      }
+    }
+    // ExprList's interior mutability only caches derived values. The borrowed
+    // expressions cannot change here, so wl_arg_order remains stable.
+    #[allow(clippy::mutable_key_type)]
+    let mut ranks = std::collections::BTreeMap::new();
+    let mut identities = HashMap::new();
+    let mut ranked: Vec<_> = keyed
+      .into_iter()
+      .map(|(factors, term)| {
+        let key: Vec<usize> = factors
+          .into_iter()
+          .rev()
+          .map(|factor| {
+            let Expr::FunctionCall { name, args } = factor else {
+              unreachable!("call_product_key accepts only calls");
+            };
+            // Borrowed inputs remain alive throughout sorting. Shared calls
+            // have the same argument address; no pointer is dereferenced.
+            *identities
+              .entry((name.as_str(), args.as_ptr(), args.len()))
+              .or_insert_with(|| {
+                let next = ranks.len();
+                *ranks.entry(Factor(factor)).or_insert(next)
+              })
+          })
+          .collect();
+        (key, term)
+      })
+      .collect();
+    let mut ordered = vec![0; ranks.len()];
+    for (rank, id) in ranks.values().enumerate() {
+      ordered[*id] = rank;
+    }
+    for (key, _) in &mut ranked {
+      for id in key.iter_mut() {
+        *id = ordered[*id];
+      }
+      key.sort_unstable_by(|a, b| b.cmp(a));
+    }
+    ranked.sort_by(|(a, _), (b, _)| a.cmp(b));
+    if ranked.windows(2).any(|w| w[0].0 == w[1].0) {
+      return None;
+    }
+    return Some(plus(ranked.into_iter().map(|(_, t)| t.clone()).collect()));
+  }
   let order = |a: &[&Expr], b: &[&Expr]| {
     a.iter()
       .rev()
@@ -525,6 +594,24 @@ mod tests {
       let fast = plus_ast(&terms).unwrap();
       let general = generic(|| plus_ast(&terms)).unwrap();
       assert_eq!(format!("{fast:?}"), format!("{general:?}"), "{terms:?}");
+    }
+  }
+
+  #[test]
+  fn ranked_call_sums_match_the_general_plus() {
+    for count in [31, 32, 64, 128] {
+      let mut terms: Vec<_> = (1..=count)
+        .rev()
+        .map(|i| eval(&format!("g[x[1], x[2]] h[x[{i}]]")))
+        .collect();
+      for duplicate in [false, true] {
+        if duplicate {
+          terms.push(terms[0].clone());
+        }
+        let fast = plus_ast(&terms).unwrap();
+        let general = generic(|| plus_ast(&terms)).unwrap();
+        assert_eq!(format!("{fast:?}"), format!("{general:?}"));
+      }
     }
   }
 

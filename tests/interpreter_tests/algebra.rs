@@ -595,6 +595,37 @@ mod expand {
     assert!(start.elapsed().as_secs() < 30, "took {:?}", start.elapsed());
   }
 
+  // Issue #2142: 10395 terms reuse just 66 distinct metric calls. Check
+  // the signs as well as the term and kernel counts after expansion.
+  #[test]
+  fn dirac_trace_recursion_twelve_indices() {
+    assert_eq!(
+      interpret(
+        "diracTr[] := 4; diracTr[a_, b_] := 4 g[a, b]; \
+         diracTr[a_, rest___] := Module[{list = {rest}, n}, \
+           Sum[(-1)^(m + 1) Expand[g[a, list[[m]]] diracTr @@ Delete[list, m]], \
+             {m, 1, Length[list]}]]; \
+         t = diracTr @@ Array[x, 12]; \
+         {Length[t], Length[Union[Cases[t, _g, Infinity]]], t /. g[_, _] -> 1}"
+      )
+      .unwrap(),
+      "{10395, 66, 4}"
+    );
+  }
+
+  #[test]
+  fn expanded_kernels_follow_later_definitions() {
+    assert_eq!(
+      interpret(
+        "t = Expand[(g[x[1], x[2]] + g[x[3], x[4]])^3]; \
+         before = t; g[a_, b_] := a + b; x[i_] := i; \
+         {t, before}"
+      )
+      .unwrap(),
+      "{1000, 1000}"
+    );
+  }
+
   #[test]
   fn rational_coefficients() {
     assert_eq!(
