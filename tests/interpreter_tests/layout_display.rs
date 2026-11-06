@@ -1085,3 +1085,13 @@ fn review_rectangle_chart_has_category_baseline_and_end_ticks() {
     );
   }
 }
+
+#[test]
+fn review_colored_background_keeps_black_tick_labels() {
+  clear_state();
+  for size in ["Full", "Scaled[0.5]"] {
+    let svg = interpret(&format!("ExportString[Framed[Pane[Plot[Sin[x],{{x,0,10}},ImageSize->{size},Background->StandardOrange],{{200,100}}]],\"SVG\"]")).unwrap();
+    assert!(!svg.contains("fill=\"#666\""));
+    assert!(svg.contains("fill=\"#000000\""));
+  }
+}

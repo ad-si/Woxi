@@ -5497,6 +5497,11 @@ fn generate_svg_with_options(
   };
   // Background -> color replaces the theme background for the whole image.
   let bg_color = opts.background.unwrap_or(theme_bg);
+  let label_fill = if opts.background.is_some() {
+    "#000000"
+  } else {
+    label_fill
+  };
 
   // Dashed series are collected here and emitted after the plot is drawn as a
   // single `<polyline stroke-dasharray>` each (rather than one element per
