@@ -13313,6 +13313,15 @@ fn real_over_exact_quotient(x: f64, b: &Expr) -> Option<f64> {
       _ => None,
     }
   };
+  // Dividing by n/d with a rational n multiplies by its exact reciprocal
+  // first, then by the symbolic denominator. Rounding n/d and inverting
+  // that machine value introduces an extra rounding step.
+  if let Some((n, d)) = frac_of(&bn)
+    && n != 0
+    && frac_of(&bd).is_none()
+  {
+    return Some(x * (d as f64 / n as f64) * try_eval_to_f64(&bd)?);
+  }
   let (bd_n, bd_d) = frac_of(&bd)?;
   let mut num_n: i128 = 1;
   let mut num_d: i128 = 1;

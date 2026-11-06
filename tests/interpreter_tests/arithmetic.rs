@@ -15184,3 +15184,18 @@ fn negative_cosecant_poles_are_directionless() {
     );
   }
 }
+
+#[test]
+fn divide_real_by_exact_symbolic_quotient_rounds_once() {
+  for (code, expected) in [
+    (
+      "Divide[Divide[81,Divide[Divide[-11,2],Times[15.4,-18]]],Divide[66,Subtract[Divide[-19,4],Plus[Pi,Divide[13,3]]]]]",
+      "-756.1672401365905",
+    ),
+    ("Divide[7.,66/(-109/12-Pi)]", "-1.2965830592191196"),
+    ("Divide[7.,3/(2+Pi)]", "11.997049525042849"),
+    ("Divide[19.6,(145 (63+Pi))/86]", "0.17575669287388962"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
