@@ -8762,24 +8762,20 @@ mod longest_common_subsequence_tests {
     );
   }
 
-  // Among several maximal-length runs, wolframscript returns the one with the
-  // smallest sum of start positions, then the smallest start in the first
-  // argument. "AGGTAB"/"GXTXAYB" has four length-1 runs (A, G, T, B); the
-  // "G" run (starts at 2 and 1, sum 3) wins over the "A" run (starts 1 and 5).
+  // Among maximal-length runs, prefer the earliest in the longer argument.
+  // Equal-length arguments prefer the earliest in the first argument.
   #[test]
-  fn ties_prefer_smallest_start_sum() {
+  fn ties_prefer_earliest_in_longer_input() {
     assert_eq!(
       interpret(r#"LongestCommonSubsequence["AGGTAB", "GXTXAYB"]"#).unwrap(),
       "G"
     );
-    // Equal start sums fall back to the smaller first-argument start: "XABY"
-    // vs "YAXB" ties X (starts 1,3) and A (starts 2,2) at sum 4, so X wins.
+    // Equal-length inputs prefer X, which starts first in the first input.
     assert_eq!(
       interpret(r#"LongestCommonSubsequence["XABY", "YAXB"]"#).unwrap(),
       "X"
     );
-    // "ABCD"/"CDAB" ties two length-2 runs (AB and CD) at start sum 4; AB wins
-    // on the smaller first-argument start.
+    // The same rule applies to multi-character runs.
     assert_eq!(
       interpret(r#"LongestCommonSubsequence["ABCD", "CDAB"]"#).unwrap(),
       "AB"
@@ -8789,6 +8785,34 @@ mod longest_common_subsequence_tests {
       interpret(r#"LongestCommonSubsequencePositions["AGGTAB", "GXTXAYB"]"#)
         .unwrap(),
       "{{2, 2}, {1, 1}}"
+    );
+    for (a, b, expected, positions) in [
+      ("158qA", "jACvq", "q", "{{4, 4}, {5, 5}}"),
+      ("zzqA", "jACvq", "A", "{{4, 4}, {2, 2}}"),
+      ("158qA", "Aq", "q", "{{4, 4}, {2, 2}}"),
+      ("qA", "Azzq", "A", "{{2, 2}, {1, 1}}"),
+      ("ABzzCD", "CDxxABy", "CD", "{{5, 6}, {1, 2}}"),
+      ("ABzzCDt", "CDxxAB", "AB", "{{1, 2}, {5, 6}}"),
+      ("xxABAB", "AB", "AB", "{{3, 4}, {1, 2}}"),
+      ("AB", "xxABAB", "AB", "{{1, 2}, {3, 4}}"),
+    ] {
+      assert_eq!(
+        interpret(&format!("LongestCommonSubsequence[\"{a}\", \"{b}\"]"))
+          .unwrap(),
+        expected
+      );
+      assert_eq!(
+        interpret(&format!(
+          "LongestCommonSubsequencePositions[\"{a}\", \"{b}\"]"
+        ))
+        .unwrap(),
+        positions
+      );
+    }
+    assert_eq!(
+      interpret("LongestCommonSubsequencePositions[{0, 0, q, A}, {A, q}]")
+        .unwrap(),
+      "{{3, 3}, {2, 2}}"
     );
   }
 }
