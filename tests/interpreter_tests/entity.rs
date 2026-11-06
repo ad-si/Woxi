@@ -362,11 +362,11 @@ mod city_data_tests {
     clear_state();
     assert_eq!(
       interpret("CityData[\"Frankfurt\", \"Coordinates\"]").unwrap(),
-      "{50.1167, 8.6833}"
+      "{50.120000000000005, 8.68}"
     );
     assert_eq!(
       interpret("CityData[\"Sydney\", \"Coordinates\"]").unwrap(),
-      "{-33.8833, 151.2167}"
+      "{-33.87, 151.21}"
     );
   }
 
@@ -375,7 +375,13 @@ mod city_data_tests {
     clear_state();
     assert_eq!(
       interpret("CityData[\"Paris\"]").unwrap(),
-      "Entity[City, {Paris, IleDeFrance, France}]"
+      "{Entity[City, {Paris, IleDeFrance, France}], Entity[City, {Paris, Texas, UnitedStates}], \
+       Entity[City, {Paris, Ontario, Canada}], Entity[City, {Paris, Tennessee, UnitedStates}], \
+       Entity[City, {Paris, Kentucky, UnitedStates}], Entity[City, {Paris, Illinois, UnitedStates}], \
+       Entity[City, {Paris, Maine, UnitedStates}], Entity[City, {Paris, NewYork, UnitedStates}], \
+       Entity[City, {Paris, Arkansas, UnitedStates}], Entity[City, {Paris, Wisconsin, UnitedStates}], \
+       Entity[City, {Paris, Missouri, UnitedStates}], Entity[City, {ParisGrant, Wisconsin, UnitedStates}], \
+       Entity[City, {Paris, Pennsylvania, UnitedStates}], Entity[City, {Paris, Idaho, UnitedStates}]}"
     );
     assert_eq!(
       interpret("CityData[\"paris\", \"Country\"]").unwrap(),
@@ -384,16 +390,51 @@ mod city_data_tests {
     assert_eq!(
       interpret("CityData[Entity[\"City\", {\"Berlin\", \"Berlin\", \"Germany\"}], \"Latitude\"]")
         .unwrap(),
-      "52.5167"
+      "Quantity[52.52, AngularDegrees]"
     );
   }
 
   #[test]
-  fn unknown_city_stays_unevaluated() {
+  fn unknown_city_property_is_missing() {
     clear_state();
     assert_eq!(
       interpret("CityData[\"Nowhereville\", \"Coordinates\"]").unwrap(),
-      "CityData[Nowhereville, Coordinates]"
+      "Missing[NotAvailable]"
+    );
+  }
+
+  #[test]
+  fn qualified_city_names_disambiguate_the_catalogue() {
+    assert_eq!(
+      interpret("CityData[{\"Paris\", \"Texas\", \"UnitedStates\"}]").unwrap(),
+      "Entity[City, {Paris, Texas, UnitedStates}]"
+    );
+    assert_eq!(
+      interpret("CityData[{\"Paris\", \"France\"}]").unwrap(),
+      "{Entity[City, {Paris, IleDeFrance, France}]}"
+    );
+    assert_eq!(
+      interpret("CityData[x, \"Coordinates\"]").unwrap(),
+      "{Missing[NotAvailable], Missing[NotAvailable]}"
+    );
+  }
+
+  #[test]
+  fn bundled_names_search_all_matches_and_unknown_names_are_empty() {
+    assert_eq!(interpret("Length[CityData[\"Berlin\"]]").unwrap(), "17");
+    assert_eq!(
+      interpret("CityData[\"Sydney\"]").unwrap(),
+      "{Entity[City, {Sydney, NewSouthWales, Australia}], Entity[City, {Sydney, NovaScotia, Canada}]}"
+    );
+    assert_eq!(interpret("CityData[\"Nowhereville\"]").unwrap(), "{}");
+    assert_eq!(
+      interpret("CityData[{\"Nowhereville\", \"Texas\", \"UnitedStates\"}]")
+        .unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("CityData[\"Berlin\", \"Longitude\"]").unwrap(),
+      "Quantity[13.38, AngularDegrees]"
     );
   }
 }
