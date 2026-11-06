@@ -18513,7 +18513,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
             Length[Cases[g, Polygon[_, VertexColors -> _], Infinity]]}"
         )
         .unwrap(),
-        "{4, 24}"
+        "{4, 36}"
       );
       let svg = export_svg("BarChart3D[{1, 2, 3, 4}]");
       assert!(svg.contains("<linearGradient"), "{svg}");
@@ -18560,7 +18560,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {c_, ___}] :> c, Infinity][[{1, 7}]]]"
         )
         .unwrap(),
-        "{RGBColor[0.95, 0.7125, 0.]}"
+        "{Directive[Opacity[0.1], RGBColor[0.95, 0.7125, 0.]]}"
       );
     }
 

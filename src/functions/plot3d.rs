@@ -4950,31 +4950,57 @@ fn parse_point3d_list_strict(expr: &Expr) -> Option<Vec<Point3D>> {
 const UNBOUNDED_3D_HEADS: [&str; 4] =
   ["InfiniteLine", "HalfLine", "InfinitePlane", "HalfPlane"];
 
-/// Does this scene contain an unbounded primitive anywhere?
-fn has_unbounded_3d(expr: &Expr) -> bool {
+/// Does any primitive need the final scene bounds (Scaled coordinates or an unbounded object)?
+fn has_frame_dependent_3d(expr: &Expr) -> bool {
   match expr {
-    Expr::List(items) => items.iter().any(has_unbounded_3d),
+    Expr::List(items) => items.iter().any(has_frame_dependent_3d),
     Expr::FunctionCall { name, args } => {
-      UNBOUNDED_3D_HEADS.contains(&name.as_str())
-        || args.iter().any(has_unbounded_3d)
+      (name == "Scaled"
+        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3))
+        || UNBOUNDED_3D_HEADS.contains(&name.as_str())
+        || args.iter().any(has_frame_dependent_3d)
     }
     _ => false,
   }
 }
 
-/// Replace every unbounded primitive in `expr` with the `Line`/`Polygon` it
+/// Resolve Scaled points and replace every unbounded primitive with the `Line`/`Polygon` it
 /// shows inside `bounds`, leaving the rest of the scene untouched. One that
 /// misses the box entirely disappears (an empty `Line[{}]`), which is what
 /// Wolfram draws for it.
-fn expand_unbounded_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
+fn expand_frame_dependent_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
   match expr {
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|i| expand_unbounded_3d(i, bounds))
+        .map(|i| expand_frame_dependent_3d(i, bounds))
         .collect::<Vec<_>>()
         .into(),
     ),
+    Expr::FunctionCall { name, args }
+      if name == "Scaled"
+        && (args.len() == 1 || args.len() == 2)
+        && matches!(args.first(), Some(Expr::List(p)) if p.len() == 3) =>
+    {
+      let Some(fractions) = eval_vec3(&args[0]) else {
+        return expr.clone();
+      };
+      let base = if args.len() == 2 {
+        let Some(base) = eval_vec3(&args[1]) else {
+          return expr.clone();
+        };
+        base
+      } else {
+        bounds.map(|(lo, _)| lo)
+      };
+      Expr::List(
+        (0..3)
+          .map(|i| {
+            Expr::Real(base[i] + fractions[i] * (bounds[i].1 - bounds[i].0))
+          })
+          .collect(),
+      )
+    }
     Expr::FunctionCall { name, args }
       if UNBOUNDED_3D_HEADS.contains(&name.as_str()) =>
     {
@@ -4984,7 +5010,7 @@ fn expand_unbounded_3d(expr: &Expr, bounds: &[(f64, f64); 3]) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| expand_unbounded_3d(a, bounds))
+        .map(|a| expand_frame_dependent_3d(a, bounds))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -7289,7 +7315,20 @@ fn resolve_complex_indices(
 
 /// The per-point colours of a `GraphicsComplex`'s `VertexColors -> {…}`
 /// option, as unit-range RGB triples.
-fn complex_vertex_colors(options: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
+fn complex_vertex_colors(
+  options: &[Expr],
+) -> Option<(Vec<(f64, f64, f64)>, Option<f64>)> {
+  fn color(expr: &Expr) -> Option<crate::functions::graphics::Color> {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().rev().find_map(color)
+      }
+      Expr::List(items) if items.len() != 3 => {
+        items.iter().rev().find_map(color)
+      }
+      other => crate::functions::graphics::parse_color(other),
+    }
+  }
   options.iter().find_map(|opt| {
     let Expr::Rule {
       pattern,
@@ -7305,7 +7344,7 @@ fn complex_vertex_colors(options: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
     let Expr::List(items) = &value else {
       return None;
     };
-    items
+    let colors = items
       .iter()
       .map(|c| {
         // A bare `{r, g, b}` triple (what a stored complex holds) is an
@@ -7319,14 +7358,24 @@ fn complex_vertex_colors(options: &[Expr]) -> Option<Vec<(f64, f64, f64)>> {
         {
           return Some((v[0], v[1], v[2]));
         }
-        crate::functions::graphics::parse_color(c).map(|c| (c.r, c.g, c.b))
+        color(c).map(|c| (c.r, c.g, c.b))
       })
       .map(|c| {
         c.map(|(r, g, b)| {
           (r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0))
         })
       })
-      .collect()
+      .collect::<Option<Vec<_>>>()?;
+    let opacity = items
+      .iter()
+      .map(|c| {
+        let mut style = StyleState3D::default();
+        apply_3d_directive(c, &mut style);
+        style.opacity
+      })
+      .reduce(|a, b| if a == b { a } else { f64::NAN })
+      .filter(|a| a.is_finite());
+    Some((colors, opacity))
   })
 }
 
@@ -7602,7 +7651,12 @@ fn collect_3d_primitives(
             style.texture_coords = parse_texture_coords3d(&args[1..])
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
-            style.vertex_colors = complex_vertex_colors(&args[1..])
+            let palette = complex_vertex_colors(&args[1..]);
+            if let Some((_, Some(alpha))) = &palette {
+              style.opacity *= alpha;
+            }
+            style.vertex_colors = palette
+              .map(|p| p.0)
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
             let (points, holes) = if style.texture_coords.is_some() {
@@ -7654,7 +7708,9 @@ fn collect_3d_primitives(
           }
         }
         "Line" if !args.is_empty() => {
-          let vertex_colors = complex_vertex_colors(&args[1..]);
+          let palette = complex_vertex_colors(&args[1..]);
+          let alpha = palette.as_ref().and_then(|p| p.1).unwrap_or(1.0);
+          let vertex_colors = palette.map(|p| p.0);
           if let Some(pts) = parse_point3d_list(&args[0])
             && let Some(colors) =
               vertex_colors.filter(|c| c.len() == pts.len() && pts.len() >= 2)
@@ -7664,6 +7720,7 @@ fn collect_3d_primitives(
             for (w, c) in pts.windows(2).zip(colors.windows(2)) {
               let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
               let mut seg_style = style.clone();
+              seg_style.opacity *= alpha;
               seg_style.color = Some((
                 q(f64::midpoint(c[0].0, c[1].0)),
                 q(f64::midpoint(c[0].1, c[1].1)),
@@ -8126,7 +8183,12 @@ fn collect_3d_primitives(
         // coordinate list by 1-based index.
         "GraphicsComplex" if args.len() >= 2 => {
           if let Ok(Expr::List(ref points)) = evaluate_expr_to_expr(&args[0]) {
-            let colors = complex_vertex_colors(&args[2..]);
+            let palette = complex_vertex_colors(&args[2..]);
+            let saved = style.clone();
+            if let Some((_, Some(alpha))) = &palette {
+              style.opacity *= alpha;
+            }
+            let colors = palette.map(|p| p.0);
             let tex = parse_texture_coords3d(&args[2..]);
             let resolved = resolve_complex_indices(
               &args[1],
@@ -8134,7 +8196,6 @@ fn collect_3d_primitives(
               colors.as_deref(),
               tex.as_deref(),
             );
-            let saved = style.clone();
             let mut collected = Vec::new();
             collect_3d_primitives(&resolved, style, &mut collected);
             // Keep a sampled surface together so shared vertices receive
@@ -10629,10 +10690,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // each of them replaced by the `Line`/`Polygon` it draws there. Clipping
   // to exactly those bounds is what keeps an unbounded object from
   // widening the range it was measured against.
-  if has_unbounded_3d(&content) {
+  if has_frame_dependent_3d(&content) {
     let bounds =
       clipping_bounds(plot_range.unwrap_or_else(|| primitives_bounds(&prims)));
-    let expanded = expand_unbounded_3d(&content, &bounds);
+    let expanded = expand_frame_dependent_3d(&content, &bounds);
     prims.clear();
     style3d = StyleState3D::default();
     collect_3d_primitives(&expanded, &mut style3d, &mut prims);

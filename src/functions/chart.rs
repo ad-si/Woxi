@@ -5409,6 +5409,10 @@ fn bar_chart_3d_graphics(
       .into(),
     ),
   );
+  content.insert(
+    0,
+    crate::functions::chart3d::bar_chart_backdrop(color(0, 0)),
+  );
   let defaults = bar_chart3d_options(
     &bar_ticks(&xs, &column_group),
     x_extent,

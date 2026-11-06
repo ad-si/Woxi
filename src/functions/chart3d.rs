@@ -51,6 +51,103 @@ fn rgb((r, g, b): (f64, f64, f64)) -> Expr {
   call("RGBColor", vec![real(r), real(g), real(b)])
 }
 
+/// The beveled floor and back wall, in coordinates relative to the chart's
+/// bounds. Each face shares the series color fading towards white.
+pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
+  const CORNERS: [[f64; 3]; 12] = [
+    [0.015, 0.02, 0.02],
+    [0.985, 0.02, 0.02],
+    [0.985, 0.98, 0.02],
+    [0.015, 0.98, 0.02],
+    [1.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0],
+    [1.0, 1.0, 0.0],
+    [0.0, 0.99999, 0.0],
+    [0.985, 0.98, 0.98],
+    [0.015, 0.98, 0.98],
+    [1.0, 1.0, 1.0],
+    [0.0, 1.0, 1.0],
+  ];
+  const FACES: [[usize; 4]; 12] = [
+    [0, 1, 2, 3],
+    [0, 1, 4, 5],
+    [1, 4, 6, 2],
+    [3, 2, 6, 7],
+    [0, 5, 7, 3],
+    [5, 4, 6, 7],
+    [3, 2, 8, 9],
+    [3, 2, 6, 7],
+    [6, 10, 8, 2],
+    [9, 8, 10, 11],
+    [3, 7, 11, 9],
+    [7, 6, 10, 11],
+  ];
+  let blend = |weight: f64| {
+    rgb((
+      1.0 - (1.0 - c.0) * weight,
+      1.0 - (1.0 - c.1) * weight,
+      1.0 - (1.0 - c.2) * weight,
+    ))
+  };
+  let colors = [
+    rgb(c),
+    blend(2.0 / 3.0),
+    blend(4.0 / 9.0),
+    call("GrayLevel", vec![Expr::Integer(1)]),
+  ];
+  let colors = list(
+    colors
+      .into_iter()
+      .map(|c| call("Directive", vec![call("Opacity", vec![real(0.1)]), c]))
+      .collect(),
+  );
+  let mut content =
+    vec![call("EdgeForm", vec![call("GrayLevel", vec![real(0.85)])])];
+  content.extend(FACES.iter().map(|face| {
+    call(
+      "Polygon",
+      vec![
+        list(
+          face
+            .iter()
+            .map(|&i| {
+              call(
+                "Scaled",
+                vec![list(
+                  CORNERS[i]
+                    .iter()
+                    .map(|&v| {
+                      if v == 0.0 || v == 1.0 {
+                        Expr::Integer(v as i128)
+                      } else {
+                        real(v)
+                      }
+                    })
+                    .collect(),
+                )],
+              )
+            })
+            .collect(),
+        ),
+        rule("VertexColors", colors.clone()),
+      ],
+    )
+  }));
+  call(
+    "Style",
+    vec![
+      list(content),
+      rule(
+        "Lighting",
+        list(vec![list(vec![
+          Expr::String("Ambient".into()),
+          call("GrayLevel", vec![Expr::Integer(1)]),
+        ])]),
+      ),
+    ],
+  )
+}
+
 /// A bar of a 3D bar or rectangle chart from corner `lo` to corner `hi`, as
 /// Wolfram draws one: unlit faces in colour `c` blending towards a light
 /// tint (`c` four fifths of the way to white) on one side and a dark shade

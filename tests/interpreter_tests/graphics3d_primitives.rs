@@ -23,6 +23,30 @@ mod solids {
   use super::*;
 
   #[test]
+  fn scaled_polygon_coordinates_use_the_scene_bounds() {
+    assert_eq!(
+      svg(
+        "Graphics3D[Polygon[{Scaled[{0, 0, 0}], Scaled[{1, 0, 0}], Scaled[{0, 1, 1}]}], PlotRange -> {{2, 4}, {3, 7}, {-2, 2}}, Lighting -> None]"
+      ),
+      svg(
+        "Graphics3D[Polygon[{{2, 3, -2}, {4, 3, -2}, {2, 7, 2}}], PlotRange -> {{2, 4}, {3, 7}, {-2, 2}}, Lighting -> None]"
+      )
+    );
+  }
+
+  #[test]
+  fn uniform_vertex_opacity_is_applied_to_the_polygon() {
+    assert_eq!(
+      svg(
+        "Graphics3D[{EdgeForm[], Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}, VertexColors -> {Directive[Opacity[0.25], Red], Directive[Opacity[0.25], Green], Directive[Opacity[0.25], Blue]}]}, Lighting -> None]"
+      ),
+      svg(
+        "Graphics3D[{EdgeForm[], Opacity[0.25], Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 1}}, VertexColors -> {Red, Green, Blue}]}, Lighting -> None]"
+      )
+    );
+  }
+
+  #[test]
   fn ellipsoid_with_semi_axes_is_drawn() {
     let s = svg("Graphics3D[Ellipsoid[{0, 0, 0}, {2, 1, 0.5}]]");
     assert!(polygon_count(&s) > 100, "got: {s}");

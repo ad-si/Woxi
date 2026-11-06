@@ -65,8 +65,9 @@ mod chart_data_forms {
   #[test]
   fn bar_chart_3d_association_plots_the_values() {
     assert_eq!(
-      interpret("BarChart3D[<|\"a\" -> 4, \"b\" -> 2, \"c\" -> 6|>]").unwrap(),
-      "-Graphics3D-"
+      interpret("Head[BarChart3D[<|\"a\" -> 4, \"b\" -> 2, \"c\" -> 6|>]]")
+        .unwrap(),
+      "Graphics3D"
     );
     assert_eq!(
       svg("BarChart3D[<|\"a\" -> 4, \"b\" -> 2, \"c\" -> 6|>]"),
