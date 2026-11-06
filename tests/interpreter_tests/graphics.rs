@@ -40940,14 +40940,30 @@ mod color_data_gradients {
     clear_state();
     assert_eq!(
       interpret("ColorData[\"Rainbow\", \"Name\"]").unwrap(),
-      "Rainbow"
+      "rainbow"
     );
     assert_eq!(
       interpret(
         "And @@ (ColorData[#, \"Name\"] === # & /@ ColorData[\"Gradients\"])"
       )
       .unwrap(),
-      "True"
+      "False"
+    );
+  }
+
+  #[test]
+  fn gradient_display_names_cover_the_whole_collection() {
+    assert_eq!(
+      interpret("ColorData[#, \"Name\"] & /@ ColorData[\"Gradients\"]")
+        .unwrap(),
+      "{alpine colors, aquamarine, army colors, atlantic colors, aurora colors, avocado colors, \
+       beach colors, blue-green-yellow, brass tones, bright bands, brown-cyan tones, candy colors, \
+       cherry tones, CMYK colors, coffee tones, dark bands, dark rainbow, dark terrain, deep sea colors, \
+       fall colors, fruit punch colors, fuchsia tones, gray tones, gray-yellow tones, green-brown terrain, \
+       green-pink tones, island colors, lake colors, light temperature map, light terrain, mint colors, \
+       neon colors, pastel, pearl colors, pigeon tones, plum colors, rainbow, red-blue tones, red-green split, \
+       rose colors, rust tones, sandy terrain, sienna tones, solar colors, southwest colors, starry night colors, \
+       sunset colors, temperature map, thermometer colors, valentine tones, watermelon colors}"
     );
   }
 

@@ -1582,7 +1582,28 @@ pub fn dispatch_image_functions(
         // ColorData[name, "Name"]: the scheme's canonical name, which is
         // what gradient pickers use as the label of each choice.
         if matches!(&args[1], Expr::String(p) if p == "Name") {
-          return Some(Ok(Expr::String(scheme.clone())));
+          // Display names use words, with hyphens between paired colors.
+          let label = match scheme.as_str() {
+            "BlueGreenYellow" => "blue-green-yellow".to_string(),
+            "BrownCyanTones" => "brown-cyan tones".to_string(),
+            "CMYKColors" => "CMYK colors".to_string(),
+            "GrayYellowTones" => "gray-yellow tones".to_string(),
+            "GreenBrownTerrain" => "green-brown terrain".to_string(),
+            "GreenPinkTones" => "green-pink tones".to_string(),
+            "RedBlueTones" => "red-blue tones".to_string(),
+            "RedGreenSplit" => "red-green split".to_string(),
+            _ => {
+              let mut words = String::new();
+              for c in scheme.chars() {
+                if c.is_ascii_uppercase() && !words.is_empty() {
+                  words.push(' ');
+                }
+                words.push(c.to_ascii_lowercase());
+              }
+              words
+            }
+          };
+          return Some(Ok(Expr::String(label)));
         }
         // ColorData[name, "Range"]: the parameter interval the gradient is
         // defined over — always {0, 1} for the built-in gradients.
