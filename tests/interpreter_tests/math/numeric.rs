@@ -141,20 +141,30 @@ mod n_arbitrary_precision {
     );
   }
 
-  // `N[machineReal, p]` with p below machine precision lowers the precision
-  // (the digits shown are rounded); above it the machine Real is unchanged.
+  // N preserves machine reals even when fewer digits are requested.
   #[test]
-  fn n_machine_real_lowered_to_low_precision() {
+  fn n_machine_real_preserved_at_low_precision() {
     assert_eq!(
       interpret("ToString[N[3.95408163265306, 4]]").unwrap(),
-      "3.954"
+      "3.95408"
     );
     assert_eq!(
       interpret("ToString[N[{1.23456789, 2.5}, 3]]").unwrap(),
-      "{1.23, 2.5}"
+      "{1.23457, 2.5}"
     );
-    assert_eq!(interpret("Precision[N[1.23456789, 4]]").unwrap(), "4.");
+    assert_eq!(
+      interpret("Precision[N[1.23456789, 4]]").unwrap(),
+      "MachinePrecision"
+    );
     assert_eq!(interpret("N[1.5, 20]").unwrap(), "1.5");
+  }
+
+  #[test]
+  fn n_preserves_machine_values_across_requested_precisions() {
+    assert_eq!(
+      interpret("And @@ Flatten[Table[(N[#, p] === # &) /@ {0., -1.23456789, 2.5, 1.*^30}, {p, {1, 3, 10, 30}}]]").unwrap(),
+      "True"
+    );
   }
 
   // Regression (mathics test_evaluators.py:29, F[1.2, 2/9]):

@@ -1974,19 +1974,10 @@ pub fn n_eval_arbitrary(
   // precision marker.
   let prec_usize = precision.floor().max(1.0) as usize;
 
-  // Machine-precision Reals already live at MachinePrecision and cannot be
-  // promoted by N — wolframscript returns the Real unchanged. A precision
-  // below machine precision does lower it: `N[3.95408163, 4]` is `3.954`.
-  // A Real that already prints within the requested digits (`N[1.5, 5]`)
-  // stays as it is.
-  if let Expr::Real(x) = expr
-    && (precision >= MACHINE_PRECISION_DIGITS
-      || !x.is_finite()
-      || *x == 0.0
-      || format!("{:.*e}", precision.floor().max(1.0) as usize - 1, x)
-        .parse::<f64>()
-        .is_ok_and(|rounded| rounded == *x))
-  {
+  // N leaves machine reals unchanged for every requested precision.
+  // Lowering their precision requires SetPrecision, just as increasing it
+  // does; N only approximates exact values or lowers arbitrary precision.
+  if matches!(expr, Expr::Real(_)) {
     return Ok(expr.clone());
   }
 

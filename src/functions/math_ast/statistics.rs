@@ -4429,6 +4429,11 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let mut sorted: Vec<&Expr> = items.iter().collect();
     sorted.sort_by(|a, b| {
+      if let Some(order) =
+        crate::functions::list_helpers_ast::sorting::exact_real_cmp(a, b)
+      {
+        return order;
+      }
       try_eval_to_f64(a)
         .partial_cmp(&try_eval_to_f64(b))
         .unwrap_or(std::cmp::Ordering::Equal)
@@ -4466,6 +4471,11 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Sort the items numerically
   let mut sorted: Vec<&Expr> = items.iter().collect();
   sorted.sort_by(|a, b| {
+    if let Some(order) =
+      crate::functions::list_helpers_ast::sorting::exact_real_cmp(a, b)
+    {
+      return order;
+    }
     let fa = try_eval_to_f64(a);
     let fb = try_eval_to_f64(b);
     fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)

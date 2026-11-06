@@ -643,6 +643,26 @@ mod quartile_skewness {
 mod quartiles_edge_cases {
   use super::*;
 
+  #[test]
+  fn rational_inputs_stay_exact() {
+    assert_eq!(
+      interpret("Quartiles[{1/3, 2/3, 1, 4/3, 5/3}]").unwrap(),
+      "{7/12, 1, 17/12}"
+    );
+    assert_eq!(
+      interpret("Quartiles[{100000000000000000000, 100000000000000000001, 100000000000000000002}]").unwrap(),
+      "{400000000000000000001/4, 100000000000000000001, 400000000000000000007/4}"
+    );
+  }
+
+  #[test]
+  fn quartiles_order_large_exact_values_without_machine_rounding() {
+    assert_eq!(
+      interpret("And @@ Table[Quartiles[n + {2, 0, 1}] === {n + 1/4, n + 1, n + 7/4}, {n, {10^20, 10^80, 10^400}}]").unwrap(),
+      "True"
+    );
+  }
+
   // Regression: Quartiles of a single-element list used to panic with an
   // index underflow; it now returns the element repeated, matching
   // wolframscript.

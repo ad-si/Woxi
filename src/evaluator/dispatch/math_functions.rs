@@ -331,92 +331,28 @@ pub fn dispatch_math_functions(
         if items.is_empty() {
           return Some(Ok(unevaluated("Quartiles", args)));
         }
-        // Sort numerically. Machine reals (e.g. 10^7 RandomReal samples)
-        // sort as plain f64s rather than re-converting both operands on
-        // every comparison.
-        let sorted: Vec<Expr> = if let Some(mut xs) = items
-          .iter()
-          .map(|e| match e {
-            Expr::Real(r) => Some(*r),
-            _ => None,
-          })
-          .collect::<Option<Vec<f64>>>()
-        {
-          xs.sort_unstable_by(|a, b| {
-            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          xs.into_iter().map(Expr::Real).collect()
-        } else {
-          let mut sorted = items.to_vec();
-          sorted.sort_by(|a, b| {
-            let fa = crate::functions::math_ast::try_eval_to_f64(a);
-            let fb = crate::functions::math_ast::try_eval_to_f64(b);
-            fa.partial_cmp(&fb).unwrap_or(std::cmp::Ordering::Equal)
-          });
-          sorted
-        };
-        let n = sorted.len() as i128;
-        // Machine-real inputs must yield machine-real quartiles, not exact
-        // rationals (e.g. Quartiles[{1., 2., 3., 4., 5.}] → {1.75, 3., 4.25}).
-        let any_real = sorted
-          .iter()
-          .any(|e| matches!(e, Expr::Real(_) | Expr::BigFloat(_, _)));
-        // Convert a 1-based position to a 0-based index, clamped to [1, n] so
-        // positions outside the data fall back to the first/last element. This
-        // also keeps single-element lists from underflowing (Quartiles[{5}] →
-        // {5, 5, 5}).
-        let clamp_idx = |i: i128| -> usize { (i.clamp(1, n) - 1) as usize };
-        let mut results = Vec::new();
-        for (qn, qd) in [(1i128, 4i128), (1, 2), (3, 4)] {
-          // pos = 1/2 + n * q = 1/2 + n*qn/qd
-          // pos = (qd + 2*n*qn) / (2*qd)
-          let pos_num = qd + 2 * n * qn;
-          let pos_den = 2 * qd;
-          let j = pos_num / pos_den; // Floor
-          let frac_num = pos_num - j * pos_den; // remainder
-          // frac = frac_num / pos_den
-          if frac_num == 0 {
-            // Exact position
-            results.push(sorted[clamp_idx(j)].clone());
-          } else {
-            // Interpolate: (1 - frac)*sorted[j-1] + frac*sorted[j]
-            // = ((pos_den - frac_num)*sorted[j-1] + frac_num*sorted[j]) / pos_den
-            let lo = &sorted[clamp_idx(j)];
-            let hi = &sorted[clamp_idx(j + 1)];
-            let w_lo = pos_den - frac_num;
-            let w_hi = frac_num;
-            // Try integer arithmetic
-            if let (Some(lo_v), Some(hi_v)) = (
-              crate::functions::math_ast::try_eval_to_f64(lo),
-              crate::functions::math_ast::try_eval_to_f64(hi),
-            ) {
-              let lo_i = lo_v as i128;
-              let hi_i = hi_v as i128;
-              if !any_real && lo_i as f64 == lo_v && hi_i as f64 == hi_v {
-                // Exact rational: (w_lo*lo_i + w_hi*hi_i) / pos_den
-                let num = w_lo * lo_i + w_hi * hi_i;
-                results.push(make_rational(num, pos_den));
-              } else {
-                let v =
-                  (w_lo as f64 * lo_v + w_hi as f64 * hi_v) / pos_den as f64;
-                // Machine-real inputs stay real even when the interpolated
-                // value is integral (e.g. 5.0 must print as `5.`, not `5`).
-                if any_real {
-                  results.push(Expr::Real(v));
-                } else {
-                  results.push(crate::functions::math_ast::num_to_expr(v));
-                }
-              }
-            } else {
-              // Symbolic fallback
-              results.push(unevaluated("Quartiles", args));
-              break;
-            }
-          }
-        }
-        if results.len() == 3 {
-          return Some(Ok(Expr::List(results.into())));
-        }
+        // Use the canonical interpolation, retaining rational, large-integer
+        // and arbitrary-precision data rather than passing through f64.
+        let probabilities = Expr::List(
+          vec![
+            make_rational(1, 4),
+            make_rational(1, 2),
+            make_rational(3, 4),
+          ]
+          .into(),
+        );
+        let parameters = Expr::List(
+          vec![
+            Expr::List(vec![make_rational(1, 2), Expr::Integer(0)].into()),
+            Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
+          ]
+          .into(),
+        );
+        return Some(crate::functions::math_ast::quantile_ast(&[
+          args[0].clone(),
+          probabilities,
+          parameters,
+        ]));
       }
     }
     "InterquartileRange" if args.len() == 1 => {
