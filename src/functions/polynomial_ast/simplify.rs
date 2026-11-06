@@ -9625,8 +9625,81 @@ fn inequalities_contradict(a: &Expr, b: &Expr) -> bool {
   }
 }
 
-/// Apply trigonometric identities to a sum expression.
-/// Detects a*Sin[x]^2 + a*Cos[x]^2 → a and similar patterns.
+/// Extract the coefficient and argument of one tangent factor.
+fn extract_tangent_term(term: &Expr) -> Option<(Expr, String, Expr)> {
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = term
+  {
+    let (coefficient, head, arg) = extract_tangent_term(operand)?;
+    return Some((neg1(coefficient), head, arg));
+  }
+  let factors = collect_multiplicative_factors(term);
+  let mut tangent = None;
+  let mut coefficients = Vec::new();
+  for factor in factors {
+    if let Expr::FunctionCall { name, args } = &factor
+      && matches!(name.as_str(), "Tan" | "Tanh")
+      && args.len() == 1
+    {
+      if tangent.is_some() {
+        return None;
+      }
+      tangent = Some((name.clone(), args[0].clone()));
+    } else {
+      coefficients.push(factor);
+    }
+  }
+  let (head, arg) = tangent?;
+  Some((build_product(coefficients), head, arg))
+}
+
+/// Combine tangent differences when subtracting their arguments removes
+/// structure: tan(a)-tan(b) = sec(a) sec(b) sin(a-b), and similarly for
+/// tanh. Independent arguments retain their shorter original difference.
+fn simplify_tangent_difference(
+  a: &(Expr, String, Expr),
+  b: &(Expr, String, Expr),
+) -> Option<Expr> {
+  let (ca, ha, aa) = a;
+  let (cb, hb, ab) = b;
+  let coefficient_sum = crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+    ca.clone(),
+    cb.clone(),
+  ]))
+  .ok()?;
+  if ha != hb || !matches!(coefficient_sum, Expr::Integer(0)) {
+    return None;
+  }
+  let difference = expand_and_combine(&minus2(aa.clone(), ab.clone()));
+  let reverse = expand_and_combine(&minus2(ab.clone(), aa.clone()));
+  let (difference, coefficient) =
+    if leaf_count(&reverse) < leaf_count(&difference) {
+      (reverse, cb)
+    } else {
+      (difference, ca)
+    };
+  if leaf_count(&difference) >= leaf_count(aa).max(leaf_count(ab)) {
+    return None;
+  }
+  let (reciprocal, sine) = if ha == "Tan" {
+    ("Sec", "Sin")
+  } else {
+    ("Sech", "Sinh")
+  };
+  let candidate = times(vec![
+    coefficient.clone(),
+    call1(reciprocal, aa.clone()),
+    call1(reciprocal, ab.clone()),
+    call1(sine, difference),
+  ]);
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&candidate).ok()?;
+  Some(simplify_expr_with_together(&evaluated))
+}
+
+/// Apply trigonometric identities to a sum, including Pythagorean pairs
+/// and tangent differences whose arguments share additive terms.
 pub fn apply_trig_identities(expr: &Expr) -> Expr {
   let terms = collect_additive_terms(expr);
   if terms.len() < 2 {
@@ -9636,8 +9709,26 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
   // Look for pairs: coeff*Sin[arg]^2 + coeff*Cos[arg]^2 → coeff
   let mut used = vec![false; terms.len()];
   let mut result_terms: Vec<Expr> = Vec::new();
+  let tangents: Vec<_> = terms.iter().map(extract_tangent_term).collect();
 
   for i in 0..terms.len() {
+    if used[i] {
+      continue;
+    }
+    if let Some(tangent_i) = &tangents[i] {
+      for j in (i + 1)..terms.len() {
+        if !used[j]
+          && let Some(tangent_j) = &tangents[j]
+          && let Some(reduced) =
+            simplify_tangent_difference(tangent_i, tangent_j)
+        {
+          result_terms.push(reduced);
+          used[i] = true;
+          used[j] = true;
+          break;
+        }
+      }
+    }
     if used[i] {
       continue;
     }

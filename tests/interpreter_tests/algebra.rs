@@ -813,6 +813,30 @@ mod simplify {
   use super::*;
 
   #[test]
+  fn tangent_differences_cancel_shared_argument_terms() {
+    for (code, expected) in [
+      ("Simplify[Tan[x+y]-Tan[x]]", "Sec[x]*Sec[x + y]*Sin[y]"),
+      (
+        "Simplify[Tan[x+y]-Tan[x]+Sin[3x] Sin[x]]",
+        "Sin[x]*Sin[3*x] + Sec[x]*Sec[x + y]*Sin[y]",
+      ),
+      ("Simplify[Tan[x+1]-Tan[x]]", "Sec[x]*Sec[1 + x]*Sin[1]"),
+      ("Simplify[Tan[2x]-Tan[x]]", "Sec[2*x]*Tan[x]"),
+      ("Simplify[Tan[x+y]-Tan[y]]", "Sec[y]*Sec[x + y]*Sin[x]"),
+      (
+        "Simplify[2 Tan[x+y]-2 Tan[x]]",
+        "2*Sec[x]*Sec[x + y]*Sin[y]",
+      ),
+      ("Simplify[Tanh[x+y]-Tanh[x]]", "Sech[x]*Sech[x + y]*Sinh[y]"),
+      ("Simplify[Tan[a]-Tan[b]]", "Tan[a] - Tan[b]"),
+      ("Simplify[Tan[x+y]+Tan[x]]", "Tan[x] + Tan[x + y]"),
+      ("Simplify[Cot[x+y]-Cot[x]]", "-Cot[x] + Cot[x + y]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn combine_like_terms() {
     assert_eq!(interpret("Simplify[x + x]").unwrap(), "2*x");
   }
