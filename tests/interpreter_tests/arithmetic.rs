@@ -15186,6 +15186,28 @@ fn negative_cosecant_poles_are_directionless() {
 }
 
 #[test]
+fn full_simplify_quotient_polynomial_parts() {
+  for code in [
+    "SameQ[FullSimplify[1/(5x^2-5x^3)], 1/(5x^2-5x^3)]",
+    "SameQ[FullSimplify[1/(x^2+2x y+y^2)], (x+y)^(-2)]",
+    "SameQ[FullSimplify[1/(x^2-y^2)], (x^2-y^2)^(-1)]",
+    "SameQ[FullSimplify[-1/(-2+x)], 1/(2-x)]",
+    "SameQ[FullSimplify[-1/(-7+z)], 1/(7-z)]",
+  ] {
+    assert_eq!(interpret(code).unwrap(), "True", "{code}");
+  }
+
+  assert_eq!(
+    interpret("FullSimplify[(4+4x-5x^2)/(5-5x+5x^2-5x^3)]").unwrap(),
+    "(-4 + x*(-4 + 5*x))/(5*(-1 + x)*(1 + x^2))"
+  );
+  assert_eq!(
+    interpret("FullSimplify[(3+4x-x^2-x^3)/(-4+x)]").unwrap(),
+    "(3 - x*(-4 + x + x^2))/(-4 + x)"
+  );
+}
+
+#[test]
 fn divide_real_by_exact_symbolic_quotient_rounds_once() {
   for (code, expected) in [
     (

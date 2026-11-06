@@ -6996,8 +6996,46 @@ fn term_sqrt_radicand(term: &Expr) -> Option<i128> {
 /// digit count plus one when negative, Rational[n, d] costs both parts
 /// plus one, every other atom costs 1, and every compound node costs one
 /// plus its children.
+/// Count a displayed quotient as its canonical flat product of factors
+/// and inverses. Divide is a display node, not a Wolfram Language head;
+/// counting it directly underestimates factored denominators.
+fn wl_quotient_simplify_count(num: &Expr, den: &Expr) -> i64 {
+  let mut coefficient = Expr::Integer(1);
+  let mut costs = Vec::new();
+  for factor in collect_times_factors(num) {
+    if crate::functions::math_ast::expr_to_rational(&factor).is_some() {
+      coefficient =
+        crate::functions::math_ast::times_ast(&[coefficient.clone(), factor])
+          .unwrap_or(coefficient);
+    } else {
+      costs.push(wl_simplify_count(&factor));
+    }
+  }
+  for factor in collect_times_factors(den) {
+    if crate::functions::math_ast::expr_to_rational(&factor).is_some() {
+      coefficient =
+        crate::functions::math_ast::divide_two(&coefficient, &factor)
+          .unwrap_or(coefficient);
+    } else {
+      let inverse =
+        crate::functions::math_ast::power_two(&factor, &Expr::Integer(-1))
+          .unwrap_or_else(|_| pow2(factor, Expr::Integer(-1)));
+      costs.push(wl_simplify_count(&inverse));
+    }
+  }
+  if !matches!(coefficient, Expr::Integer(1)) {
+    costs.push(wl_simplify_count(&coefficient));
+  }
+  (costs.iter().sum::<i64>() + i64::from(costs.len() > 1)).max(1)
+}
+
 pub(crate) fn wl_simplify_count(e: &Expr) -> i64 {
   match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => wl_quotient_simplify_count(left, right),
     Expr::Integer(n) => quotient_cost::sc_int(*n),
     Expr::BigInteger(n) => {
       let s = n.to_string();
@@ -7213,13 +7251,13 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn full_simplify_expr_with_together(expr: &Expr) -> Expr {
   let simplified = full_simplify_expr(expr);
   let mut best = simplified.clone();
-  let mut best_c = leaf_count(&best);
+  let mut best_c = wl_simplify_count(&best);
 
   let togethered = super::together::together_expr(&simplified);
-  let tc = leaf_count(&togethered);
+  let tc = wl_simplify_count(&togethered);
   if tc < best_c {
     let resimplified = full_simplify_expr(&togethered);
-    let rc = leaf_count(&resimplified);
+    let rc = wl_simplify_count(&resimplified);
     if rc <= tc {
       best = resimplified;
       best_c = rc;
@@ -7230,7 +7268,7 @@ fn full_simplify_expr_with_together(expr: &Expr) -> Expr {
   }
 
   let sub_togethered = together_subexpressions(&simplified);
-  let sc = leaf_count(&sub_togethered);
+  let sc = wl_simplify_count(&sub_togethered);
   if sc < best_c {
     best = sub_togethered;
     let _ = best_c;
@@ -7291,6 +7329,17 @@ fn simplify_call_arguments(
       }
       crate::evaluator::evaluate_expr_to_expr(&call(name, new_args))
         .unwrap_or_else(|_| expr.clone())
+    }
+    // Polynomial reciprocals are optimized as whole quotients above.
+    // Simplifying their bases again can introduce a partial factorization
+    // that the quotient candidate selection deliberately rejected.
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+        && polynomial_like(&args[0]) =>
+    {
+      expr.clone()
     }
     Expr::FunctionCall { name, args }
       if !matches!(name.as_str(), "Rational" | "Complex") && !holds(name) =>
@@ -8212,6 +8261,66 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     if c <= best_complexity {
       best = absorbed;
       best_complexity = c;
+    }
+  }
+
+  // A constant numerator also needs both sign orientations considered.
+  // In particular -1/(x-c) is cheaper as 1/(c-x), whereas extracting
+  // a negative factor from a positive reciprocal can increase its cost.
+  let (input_num, input_den) = super::together::extract_num_den(expr);
+  if matches!(input_num, Expr::Integer(_))
+    && !matches!(input_den, Expr::Integer(1))
+  {
+    let den = expand_and_combine(&input_den);
+    if polynomial_like(&den) {
+      // Search from the expanded quotient, rather than a partial
+      // denominator factorization inherited from Simplify.
+      best = crate::evaluator::evaluate_expr_to_expr(
+        &crate::functions::math_ast::make_divide(
+          input_num.clone(),
+          den.clone(),
+        ),
+      )
+      .unwrap_or_else(|_| expr.clone());
+      for sign in [1, -1] {
+        let n =
+          expand_and_combine(&times2(Expr::Integer(sign), input_num.clone()));
+        let d = expand_and_combine(&times2(Expr::Integer(sign), den.clone()));
+        let ds = full_simplify_univariate_polynomial(&d)
+          .or_else(|| full_simplify_recursive(&d))
+          .unwrap_or(d.clone());
+        for d in [d, ds] {
+          if let Ok(candidate) = crate::evaluator::evaluate_expr_to_expr(
+            &crate::functions::math_ast::make_divide(n.clone(), d),
+          ) && wl_simplify_count(&candidate) <= wl_simplify_count(&best)
+          {
+            best = candidate;
+          }
+        }
+      }
+    }
+  }
+
+  // Optimize polynomial numerator and denominator independently: expanding
+  // the whole quotient cannot expose Horner forms or denominator factors.
+  let (num, den) = super::together::extract_num_den(&best);
+  if !matches!(den, Expr::Integer(1)) {
+    let num = expand_and_combine(&num);
+    let den = expand_and_combine(&den);
+    if let (Some(n), Some(d)) = (
+      full_simplify_univariate_polynomial(&num),
+      full_simplify_univariate_polynomial(&den),
+    ) {
+      let candidate = crate::functions::math_ast::make_divide(n, d);
+      if wl_simplify_count(
+        &crate::evaluator::evaluate_expr_to_expr(&candidate)
+          .unwrap_or_else(|_| candidate.clone()),
+      ) < wl_simplify_count(
+        &crate::evaluator::evaluate_expr_to_expr(&best)
+          .unwrap_or_else(|_| best.clone()),
+      ) {
+        best = candidate;
+      }
     }
   }
 
