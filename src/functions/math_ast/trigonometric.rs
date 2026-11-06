@@ -1076,6 +1076,16 @@ mod cr {
   pub(super) fn sin(x: f64) -> f64 {
     eval(x, |v, cc| v.sin(192, RoundingMode::ToEven, cc), f64::sin)
   }
+  pub(super) fn sinc(x: f64) -> f64 {
+    eval(
+      x,
+      |v, cc| {
+        v.sin(192, RoundingMode::ToEven, cc)
+          .div(v, 192, RoundingMode::ToEven)
+      },
+      |v| v.sin() / v,
+    )
+  }
   pub(super) fn cos(x: f64) -> f64 {
     eval(x, |v, cc| v.cos(192, RoundingMode::ToEven, cc), f64::cos)
   }
@@ -1085,6 +1095,11 @@ mod cr {
   pub(super) fn cosh(x: f64) -> f64 {
     eval(x, |v, cc| v.cosh(192, RoundingMode::ToEven, cc), f64::cosh)
   }
+}
+
+/// Evaluate the whole sinc quotient before rounding to machine precision.
+pub fn sinc_machine(x: f64) -> f64 {
+  if x == 0.0 { 1.0 } else { cr::sinc(x) }
 }
 
 /// Evaluate one of the circular/hyperbolic functions at a complex float

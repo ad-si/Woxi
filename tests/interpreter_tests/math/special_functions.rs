@@ -3,6 +3,24 @@ use super::*;
 mod sinc {
   use super::*;
 
+  #[test]
+  fn machine_quotient_rounds_once() {
+    for (x, expected) in [
+      ("0.", "1."),
+      ("0.1", "0.9983341664682815"),
+      ("0.5", "0.958851077208406"),
+      ("1.5", "0.6649966577360363"),
+      ("10.", "-0.05440211108893698"),
+      ("100.", "-0.005063656411097588"),
+      ("1.*^-10", "1."),
+    ] {
+      for sign in ["", "-"] {
+        let code = format!("Sinc[{sign}{x}]");
+        assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+      }
+    }
+  }
+
   // Sinc is even: Sinc[-x] = Sinc[x]. It must NOT expand to Sin[x]/x for
   // symbolic arguments (a regression where Sin[-x] = -Sin[x] tricked the
   // Sin[x]/x rewrite).

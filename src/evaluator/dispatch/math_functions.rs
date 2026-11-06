@@ -2361,6 +2361,11 @@ pub fn dispatch_math_functions(
         Expr::Real(f) if *f == 0.0 => {
           return Some(Ok(Expr::Real(1.0)));
         }
+        Expr::Real(f) if f.is_finite() => {
+          return Some(Ok(Expr::Real(
+            crate::functions::math_ast::sinc_machine(*f),
+          )));
+        }
         _ => {}
       }
       // Limits at infinity: Sin is bounded while the denominator diverges, so
