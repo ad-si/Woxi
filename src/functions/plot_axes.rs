@@ -16,7 +16,7 @@ use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 pub(crate) const AXIS_TICK_FONT: f64 =
   crate::functions::plot_padding::TICK_FONT;
 /// Stroke width of the axis lines and tick marks, in display pixels.
-const AXIS_STROKE: f64 = 0.5;
+const AXIS_STROKE: f64 = 0.2;
 /// Length of a labelled tick mark, in display pixels (Wolfram draws 4).
 pub(crate) const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
 /// Length of an unlabelled tick mark, in display pixels (Wolfram draws 2.4).

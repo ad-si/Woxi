@@ -337,3 +337,20 @@ fn graphics_row_fits_640_points() {
   let width = root_attr(&svg, "width");
   assert!((600.0..=680.0).contains(&width), "{width}");
 }
+
+#[test]
+fn default_plot_axes_use_gray_hairlines_with_any_background() {
+  for size in [240, 480] {
+    for background in ["White", "LightYellow"] {
+      let svg = svg_of(&format!(
+        "Plot[Sin[x], {{x, -2, 2}}, ImageSize -> {size}, Background -> {background}]"
+      ));
+      // Plot SVGs use ten render units per display point: WL's 0.2 pt
+      // axis stroke is two units, independently of image size/background.
+      let axes: Vec<_> =
+        svg.lines().filter(|l| l.starts_with("<line ")).collect();
+      assert!(!axes.is_empty(), "{svg}");
+      assert!(axes.iter().all(|l| l.contains("stroke=\"rgb(102,102,102)\" stroke-width=\"2\"")), "{svg}");
+    }
+  }
+}

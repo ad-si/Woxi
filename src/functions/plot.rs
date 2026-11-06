@@ -6825,7 +6825,10 @@ fn generate_svg_with_options(
       show: (show_x_axis, show_y_axis),
       ticks: show_ticks.then_some((&x_ticks, &y_ticks)),
       sf,
-      axis_color: label_fill,
+      axis_color: &format!(
+        "rgb({},{},{})",
+        theme_gray.0, theme_gray.1, theme_gray.2
+      ),
       label_fill,
       axes_style: &opts.axes_style,
       ticks_style: &opts.ticks_style,
