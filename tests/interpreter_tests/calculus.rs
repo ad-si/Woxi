@@ -16308,6 +16308,26 @@ mod trig_reduce {
   use super::*;
 
   #[test]
+  fn rational_multiples_of_sum_arguments_are_distributed() {
+    for (code, expected) in [
+      ("TrigReduce[Sin[x+y]^2]", "(1 - Cos[2*x + 2*y])/2"),
+      (
+        "TrigReduce[Cos[x+y]^3]",
+        "(3*Cos[x + y] + Cos[3*x + 3*y])/4",
+      ),
+      ("TrigReduce[Sinh[x+y]^2]", "(-1 + Cosh[2*x + 2*y])/2"),
+      ("TrigReduce[Sin[2(x+y)+z]]", "Sin[2*x + 2*y + z]"),
+      ("TrigReduce[Sin[(x+y)/3]]", "Sin[x/3 + y/3]"),
+      ("TrigReduce[Tan[2(x+y)]]", "Tan[2*x + 2*y]"),
+      ("TrigReduce[Sin[(x+y)^2]^2]", "(1 - Cos[2*(x + y)^2])/2"),
+      ("TrigReduce[Sin[(a+b)(x+y)]]", "Sin[(a + b)*(x + y)]"),
+      ("TrigReduce[Sin[2a(x+y)]]", "Sin[2*a*(x + y)]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn quotient_products_use_product_to_sum() {
     let mut mismatches = Vec::new();
     for (code, expected) in [

@@ -6594,7 +6594,18 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_function_call_ast("Together", &[current])?;
   let cancelled =
     crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])?;
-  factor_reduced_reciprocals(cancelled)
+  let factored = factor_reduced_reciprocals(cancelled)?;
+  // Together/Cancel may factor scalar multiples inside arguments again,
+  // so normalize the arguments after those algebraic passes.
+  fn normalize_arguments(expr: &Expr) -> Expr {
+    let mapped = crate::syntax::map_children(expr, &normalize_arguments);
+    if let Some((name, arg)) = extract_trig(&mapped) {
+      call1(name, distribute_trig_argument(&arg))
+    } else {
+      mapped
+    }
+  }
+  crate::evaluator::evaluate_expr_to_expr(&normalize_arguments(&factored))
 }
 
 fn contains_reciprocal_trig(expr: &Expr) -> bool {
@@ -6726,6 +6737,46 @@ fn trig_reduce_recursive(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
+}
+
+/// Distribute rational multiples of sums in trig arguments, preserving
+/// symbolic products and powers. Delegate the distribution to Distribute.
+fn distribute_trig_argument(expr: &Expr) -> Expr {
+  let (head, args) = match expr {
+    Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
+    _ => match crate::functions::list_helpers_ast::expr_to_head_args(expr) {
+      Some(parts) => parts,
+      None => return expr.clone(),
+    },
+  };
+  if head == "Plus" {
+    return plus(args.iter().map(distribute_trig_argument).collect());
+  }
+  if head != "Times" {
+    return expr.clone();
+  }
+  let mut sums = 0;
+  for arg in &args {
+    if crate::functions::list_helpers_ast::get_expr_head_str(arg) == "Plus" {
+      sums += 1;
+    } else {
+      let Ok(value) = crate::evaluator::evaluate_expr_to_expr(arg) else {
+        return expr.clone();
+      };
+      if !matches!(value, Expr::Integer(_) | Expr::BigInteger(_))
+        && !matches!(&value, Expr::FunctionCall { name, .. } if name == "Rational")
+      {
+        return expr.clone();
+      }
+    }
+  }
+  if sums != 1 {
+    return expr.clone();
+  }
+  call(
+    "Distribute",
+    vec![expr.clone(), id_expr("Plus"), id_expr("Times")],
+  )
 }
 
 /// Handle Times[a1, a2, ...] — find pairs of trig functions to reduce.
