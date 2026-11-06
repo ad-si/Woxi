@@ -8341,6 +8341,40 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // Polynomial division can shorten an improper rational function without
+  // factoring its denominator. Compare the canonical quotient plus proper
+  // remainder with the other candidates using the same expression cost.
+  let (num, den) = super::together::extract_num_den(&best);
+  if !matches!(den, Expr::Integer(1)) {
+    let mut vars = std::collections::BTreeSet::new();
+    collect_free_vars_simple(&num, &mut vars);
+    collect_free_vars_simple(&den, &mut vars);
+    if vars.len() == 1 {
+      let var = vars.into_iter().next().unwrap();
+      if extract_poly_coeffs(&expand_and_combine(&num), &var).is_some()
+        && extract_poly_coeffs(&expand_and_combine(&den), &var).is_some()
+        && let Ok(Expr::List(ref parts)) =
+          super::polynomial_quotient_remainder_ast(&[
+            num,
+            den.clone(),
+            Expr::Identifier(var),
+          ])
+        && !matches!(parts[0], Expr::Integer(0))
+      {
+        let candidate = plus2(
+          parts[0].clone(),
+          crate::functions::math_ast::make_divide(parts[1].clone(), den),
+        );
+        if let Ok(candidate) =
+          crate::evaluator::evaluate_expr_to_expr(&candidate)
+          && wl_simplify_count(&candidate) < wl_simplify_count(&best)
+        {
+          best = candidate;
+        }
+      }
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
 }

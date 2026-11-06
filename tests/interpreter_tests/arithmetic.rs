@@ -15291,6 +15291,19 @@ fn full_simplify_quotient_polynomial_parts() {
 }
 
 #[test]
+fn full_simplify_shorter_polynomial_quotient_and_remainder() {
+  for (code, expected) in [
+    ("FullSimplify[(3+4x)/(x-3)]", "4 + 15/(-3 + x)"),
+    ("FullSimplify[(2+3x)/(x-5)]", "3 + 17/(-5 + x)"),
+    ("FullSimplify[(4+6y)/(y-7)]", "6 + 46/(-7 + y)"),
+    ("FullSimplify[(x^2+1)/(x-1)]", "1 + 2/(-1 + x) + x"),
+    ("FullSimplify[(x^2+2)/(x-2)]", "2 + 6/(-2 + x) + x"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn divide_real_by_exact_symbolic_quotient_rounds_once() {
   for (code, expected) in [
     (
