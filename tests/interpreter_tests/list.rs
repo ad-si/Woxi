@@ -2077,6 +2077,46 @@ mod canonical_order_constants {
   }
 }
 
+#[test]
+fn order_normalizes_rule_and_comparison_heads() {
+  for code in [
+    "Order[Rule[\"\", 0], \"wbz\"]",
+    "Order[a -> b, z]",
+    "Order[a :> b, z]",
+    "Order[a == b, z]",
+  ] {
+    assert_eq!(interpret(code).unwrap(), "-1", "{code}");
+  }
+}
+
+#[test]
+fn association_canonical_ordering() {
+  for (code, expected) in [
+    ("Order[<|\"a\" -> -9, \"b\" -> 8|>, \"wbzlCz\"]", "1"),
+    ("Order[\"wbzlCz\", <|\"a\" -> -9|>]", "-1"),
+    ("Order[<|\"a\" -> 2|>, <|\"a\" -> 1, \"b\" -> 3|>]", "-1"),
+    ("Order[<|\"a\" -> 1|>, <|\"a\" -> 1, \"b\" -> 0|>]", "1"),
+    (
+      "Order[<|\"a\" -> 9, \"b\" -> 0|>, <|\"a\" -> 1, \"c\" -> 0|>]",
+      "-1",
+    ),
+    (
+      "Order[<|\"a\" -> 1, \"b\" -> 2|>, <|\"b\" -> 2, \"a\" -> 1|>]",
+      "1",
+    ),
+    ("Order[<|1 -> 1|>, <|\"a\" -> 1|>]", "1"),
+    ("Order[<|\"a\" -> 0|>, <|\"z\" :> 9|>]", "-1"),
+    ("Order[<|\"a\" :> 1|>, <|\"a\" :> 1|>]", "0"),
+    ("Order[<||>, <||>]", "0"),
+    (
+      "Sort[{z, \"a\", <||>, <|\"z\" -> 4|>, <|\"a\" -> 1|>, 1, Sqrt[2], Pi, {}, f[x]}]",
+      "{1, Sqrt[2], <||>, <|a -> 1|>, <|z -> 4|>, a, Pi, z, f[x], {}}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
 mod ordering {
   use super::*;
 

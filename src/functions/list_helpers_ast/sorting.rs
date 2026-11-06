@@ -245,6 +245,9 @@ pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
 }
 
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  if matches!(a, Expr::Association(_)) || matches!(b, Expr::Association(_)) {
+    return compare_exprs(a, b).cmp(&0).reverse();
+  }
   let (sa, sb) = (slot_as_call(a), slot_as_call(b));
   if sa.is_some() || sb.is_some() {
     return canonical_cmp(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
@@ -1683,6 +1686,10 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  let (ra, rb) = (rule_as_call(a), rule_as_call(b));
+  if ra.is_some() || rb.is_some() {
+    return compare_exprs(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+  }
   // Two calls of the same non-built-in head: none of the special cases
   // below concern them, and they end up comparing argument by argument.
   if let (
@@ -1965,6 +1972,49 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
       }
       (None, None) => {}
     }
+  }
+
+  // Associations precede other nonnumeric expressions. Compare entries
+  // lexicographically in insertion order, with delayed entries first, then
+  // keys and values; a shared prefix precedes its extension.
+  match (a, b) {
+    (Expr::Association(aa), Expr::Association(ab)) => {
+      fn entry<'a>(key: &Expr, value: &'a Expr) -> (bool, &'a Expr) {
+        if let Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } = value
+          && crate::syntax::assoc_marker_matches(key, pattern)
+        {
+          (true, replacement)
+        } else {
+          (false, value)
+        }
+      }
+      for ((ka, va), (kb, vb)) in aa.iter().zip(ab) {
+        let (da, va) = entry(ka, va);
+        let (db, vb) = entry(kb, vb);
+        if da != db {
+          return if da { 1 } else { -1 };
+        }
+        let key_order = compare_exprs(ka, kb);
+        if key_order != 0 {
+          return key_order;
+        }
+        let value_order = compare_exprs(va, vb);
+        if value_order != 0 {
+          return value_order;
+        }
+      }
+      return match aa.len().cmp(&ab.len()) {
+        std::cmp::Ordering::Less => 1,
+        std::cmp::Ordering::Greater => -1,
+        std::cmp::Ordering::Equal => 0,
+      };
+    }
+    (Expr::Association(_), _) => return 1,
+    (_, Expr::Association(_)) => return -1,
+    _ => {}
   }
 
   // Powers with the same symbolic base compare by exponent, canonically:
