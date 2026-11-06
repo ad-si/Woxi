@@ -614,6 +614,26 @@ mod hypergeometric2f1 {
   }
 
   #[test]
+  fn logarithmic_integer_parameters_extract_rational_content() {
+    for (code, expected) in [
+      ("Hypergeometric2F1[3,1,4,-1/2]", "3*(-3 + 8*Log[3/2])"),
+      ("Hypergeometric2F1[1,3,4,-1/2]", "3*(-3 + 8*Log[3/2])"),
+      ("Hypergeometric2F1[1,2,3,-1/3]", "-6*(-1 + 3*Log[4/3])"),
+      (
+        "Hypergeometric2F1[1,4,5,-1/2]",
+        "(-16*(-5 + 12*Log[3/2]))/3",
+      ),
+      ("Hypergeometric2F1[1,3,4,1/3]", "(9*(-7 + 18*Log[3/2]))/2"),
+      (
+        "Hypergeometric2F1[1,3,4,z]",
+        "(-3*(2*z + z^2 + 2*Log[1 - z]))/(2*z^3)",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn zero_argument_with_singular_denominator_parameter() {
     for a in ["a", "-2", "-1", "1", "2"] {
       for z in ["0", "0."] {

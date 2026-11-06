@@ -2342,7 +2342,10 @@ fn hypergeometric2f1_1_n_np1(
   }
   inner_terms.push(log_1mz);
 
-  let inner = plus(inner_terms);
+  let inner = crate::evaluator::evaluate_function_call_ast(
+    "FactorTerms",
+    &[plus(inner_terms)],
+  )?;
 
   // -(n/z^n) * inner = Times[-n, Power[z, -n], inner]
   let result = times(vec![
@@ -2351,7 +2354,14 @@ fn hypergeometric2f1_1_n_np1(
     inner,
   ]);
 
-  crate::evaluator::evaluate_expr_to_expr(&result)
+  let result = crate::evaluator::evaluate_expr_to_expr(&result)?;
+  if matches!(z, Expr::Integer(_))
+    || matches!(z, Expr::FunctionCall { name, .. } if name == "Rational")
+  {
+    crate::evaluator::evaluate_function_call_ast("FactorTerms", &[result])
+  } else {
+    Ok(result)
+  }
 }
 
 /// Evaluate 2F1(1, b, c, z) for positive integers b, c with c > b + 1.
