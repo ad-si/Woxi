@@ -5105,6 +5105,9 @@ fn with_frame_tick_functions(
   let Some(spec) = &opts.frame_tick_spec else {
     return std::borrow::Cow::Borrowed(opts);
   };
+  let resolved_charting =
+    crate::functions::plot_scaling::resolve_charting_frame_ticks(spec, x, y);
+  let spec = &resolved_charting;
   let mut invalid = false;
   let mut resolve = |e: &Expr, (lo, hi): (f64, f64)| -> Expr {
     let callable = matches!(

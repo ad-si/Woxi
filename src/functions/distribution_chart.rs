@@ -173,13 +173,15 @@ fn quantile_column(
     Some((r, g, b)) => rgb(0.7 * r, 0.7 * g, 0.7 * b),
     None => call("GrayLevel", vec![Expr::Real(0.35)]),
   };
-  let mut parts = vec![column_rectangle(
-    origin,
-    c,
-    half,
-    sorted[0],
-    sorted[sorted.len() - 1],
-  )];
+  let mut rectangle =
+    column_rectangle(origin, c, half, sorted[0], sorted[sorted.len() - 1]);
+  if let Expr::FunctionCall { args, .. } = &mut rectangle {
+    args.push(Expr::Rule {
+      pattern: Box::new(Expr::String("RoundingRadius".into())),
+      replacement: Box::new(Expr::Integer(0)),
+    });
+  }
+  let mut parts = vec![rectangle];
   for p in [0.25, 0.5, 0.75] {
     let v = q(p);
     parts.push(Expr::List(
@@ -227,33 +229,58 @@ fn density_column(
   let ys: Vec<f64> = (0..=STRIPS)
     .map(|k| lo + (hi - lo) * k as f64 / STRIPS as f64)
     .collect();
-  let mids: Vec<f64> = ys
-    .windows(2)
-    .map(|w| density(f64::midpoint(w[0], w[1])))
-    .collect();
-  let (d_min, d_max) = mids
+  let densities: Vec<f64> = ys.iter().map(|&y| density(y)).collect();
+  let (d_min, d_max) = densities
     .iter()
-    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &d| {
-      (a.min(d), b.max(d))
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &d| {
+      (lo.min(d), hi.max(d))
     });
-  let mut parts = vec![call("EdgeForm", vec![])];
-  for (k, d) in mids.iter().enumerate() {
+  let mut vertices = Vec::with_capacity(2 * ys.len());
+  let mut colors = Vec::with_capacity(2 * ys.len());
+  for (&y, &d) in ys.iter().zip(&densities) {
     let t = if d_max > d_min {
       (d - d_min) / (d_max - d_min)
     } else {
       1.0
     };
-    let mix = |ch: f64| 1.0 - t * (1.0 - ch);
-    parts.push(rgb(mix(r), mix(g), mix(b)));
-    // Each strip reaches halfway under the next one, so anti-aliased
-    // edges leave no hairline seams.
-    let top = if k + 2 < ys.len() {
-      f64::midpoint(ys[k + 1], ys[k + 2])
-    } else {
-      ys[k + 1]
-    };
-    parts.push(column_rectangle(origin, c, half, ys[k], top));
+    vertices.push(origin.point(c - half, y));
+    vertices.push(origin.point(c + half, y));
+    // Wolfram shades the two sides towards white and dark gray. The
+    // density controls the shared blend weight; it is not a stack of bars.
+    colors.push(rgb(
+      1.0 - t * (1.0 - r),
+      1.0 - t * (1.0 - g),
+      1.0 - t * (1.0 - b),
+    ));
+    colors.push(rgb(
+      0.1 + t * (r - 0.1),
+      0.1 + t * (g - 0.1),
+      0.1 + t * (b - 0.1),
+    ));
   }
+  let indices = (0..ys.len())
+    .map(|i| Expr::Integer((2 * i + 1) as i128))
+    .chain(
+      (0..ys.len())
+        .rev()
+        .map(|i| Expr::Integer((2 * i + 2) as i128)),
+    )
+    .collect();
+  let parts = vec![
+    call("EdgeForm", vec![]),
+    column_rectangle(origin, c, half, lo, hi),
+    call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(vertices.into()),
+        call("Polygon", vec![Expr::List(indices)]),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("VertexColors".into())),
+          replacement: Box::new(Expr::List(colors.into())),
+        },
+      ],
+    ),
+  ];
   Expr::List(parts.into())
 }
 

@@ -1034,7 +1034,7 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // `Spacer[n]` is a gap, not something to print.
     Expr::FunctionCall { name, args } if name == "Spacer" => {
       let width = args.first().and_then(try_eval_to_f64).unwrap_or(1.0);
-      Some(" ".repeat((width.max(0.0).round() as usize).max(1)))
+      Some(" ".repeat(width.max(0.0).round() as usize))
     }
     // `Row[{…}]` joins its parts, with an optional separator.
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
@@ -6979,6 +6979,18 @@ fn parse_histogram_height(arg: &Expr) -> Option<HistogramHeight> {
 pub(crate) fn parse_datasets(
   arg: &Expr,
 ) -> Result<Vec<Vec<f64>>, InterpreterError> {
+  Ok(
+    parse_datasets_expr(arg)?
+      .iter()
+      .map(|row| row.iter().filter_map(try_eval_to_f64).collect())
+      .collect(),
+  )
+}
+
+/// The same chart datasets, retaining exact values for symbolic geometry.
+pub(crate) fn parse_datasets_expr(
+  arg: &Expr,
+) -> Result<Vec<Vec<Expr>>, InterpreterError> {
   let data = evaluate_expr_to_expr(arg)?;
   let Expr::List(items) = &data else {
     return Err(InterpreterError::EvaluationError(
@@ -6998,8 +7010,8 @@ pub(crate) fn parse_datasets(
         let mut vals = Vec::new();
         for v in inner {
           let ev = evaluate_expr_to_expr(v).unwrap_or(v.clone());
-          if let Some(f) = try_eval_to_f64(&ev) {
-            vals.push(f);
+          if try_eval_to_f64(&ev).is_some() {
+            vals.push(ev);
           }
         }
         if !vals.is_empty() {
@@ -7013,8 +7025,8 @@ pub(crate) fn parse_datasets(
     let mut vals = Vec::new();
     for item in items {
       let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-      if let Some(f) = try_eval_to_f64(&ev) {
-        vals.push(f);
+      if try_eval_to_f64(&ev).is_some() {
+        vals.push(ev);
       }
     }
     if vals.is_empty() {
@@ -8586,6 +8598,18 @@ mod tests {
     assert_eq!(expr_to_label(&id_expr("None")), None);
     // A quoted string "None" is a real label and must still print as-is.
     assert_eq!(expr_to_label(&str_expr("None")), Some("None".to_string()));
+  }
+
+  #[test]
+  fn zero_width_spacer_has_no_label_text() {
+    assert_eq!(
+      expr_to_label(&call("Spacer", vec![Expr::Integer(0)])),
+      Some(String::new())
+    );
+    assert_eq!(
+      expr_to_label(&call("Spacer", vec![Expr::Integer(3)])),
+      Some("   ".to_string())
+    );
   }
 
   #[test]

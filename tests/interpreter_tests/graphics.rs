@@ -44911,6 +44911,18 @@ fn probability_scale_plot_uses_percent_scale() {
 }
 
 #[test]
+fn a_separate_blank_tick_and_label_draw_as_one_tick() {
+  assert_eq!(
+    export_svg(
+      "Graphics[Line[{{0, 0}, {2, 2}}], Frame -> True, FrameTicks -> {{{{1, Spacer[0], 0.008}, {1, \"one\", 0}}, None}, {None, None}}]"
+    ),
+    export_svg(
+      "Graphics[Line[{{0, 0}, {2, 2}}], Frame -> True, FrameTicks -> {{{{1, \"one\", 0.008}}, None}, {None, None}}]"
+    )
+  );
+}
+
+#[test]
 fn paired_smooth_histogram_draws_two_density_curves() {
   assert_eq!(
     interpret(

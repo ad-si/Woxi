@@ -1,5 +1,13 @@
 use super::*;
 
+#[test]
+fn box_coordinates_preserve_rational_quartiles() {
+  assert_eq!(
+    interpret("Cases[BoxWhiskerChart[{1/3, 2/3, 1, 4/3, 5/3}], Polygon[p_] :> p[[All, 2]], Infinity]").unwrap(),
+    "{{17/12, 17/12, 7/12, 7/12}}"
+  );
+}
+
 // BoxWhiskerChart builds a framed symbolic Graphics: one box polygon per
 // dataset, ticks under the boxes, no axes.
 #[test]
@@ -22,11 +30,11 @@ fn box_spans_quartiles_and_whiskers_reach_extremes() {
     interpret(
       "g = BoxWhiskerChart[{1, 2, 2, 3, 3, 3, 4, 4, 5}]; \
        {MinMax[Cases[g, Polygon[p_] :> p[[All, 2]], Infinity]], \
-        MinMax[Cases[g, {CapForm[\"Butt\"], _, Line[l_]} :> l[[All, All, 2]], Infinity]], \
-        Cases[g, {GrayLevel[1.], Line[l_]} :> l[[1, 2]], Infinity]}"
+        MinMax[Cases[g, {GrayLevel[0], CapForm[\"Butt\"], _, Line[l_]} :> l[[All, All, 2]], Infinity]], \
+        Cases[g, {GrayLevel[0], GrayLevel[1], Line[l_]} :> l[[1, 2]], Infinity]}"
     )
     .unwrap(),
-    "{{2., 4.}, {1., 5.}, {3.}}"
+    "{{2, 4}, {1, 5}, {3}}"
   );
 }
 
@@ -37,11 +45,11 @@ fn outliers_are_dots_and_whiskers_stop_at_fences() {
   assert_eq!(
     interpret(
       "g = BoxWhiskerChart[{1, 2, 2, 3, 3, 3, 4, 4, 5, 9, 15}, \"Outliers\"]; \
-       {Cases[g, {GrayLevel[l_], _AbsolutePointSize, Point[p_]} :> {l, p[[All, 2]]}, Infinity], \
-        MinMax[Cases[g, {CapForm[\"Butt\"], _, Line[l_]} :> l[[All, All, 2]], Infinity]]}"
+       {Cases[g, Inset[Style[_, 10, GrayLevel[l_]], {_, y_}] :> {l, y}, Infinity], \
+        MinMax[Cases[g, {GrayLevel[0], CapForm[\"Butt\"], _, Line[l_]} :> l[[All, All, 2]], Infinity]]}"
     )
     .unwrap(),
-    "{{{0., {9.}}, {0.5, {15.}}}, {1., 5.}}"
+    "{{{0, 9}, {0.5, 15}}, {1, 5}}"
   );
 }
 
@@ -51,7 +59,7 @@ fn mean_marker_line() {
   assert_eq!(
     interpret(
       "g = BoxWhiskerChart[{{1, 2, 2, 3, 3, 3, 4, 4, 12}}, \"Mean\"]; \
-       Cases[g, {GrayLevel[0.], Line[{{x1_, y_}, {x2_, y_}}]} :> {Round[900 y], Round[(x1 - x2)/(1.1960569343063403 - 1), 0.5]}, Infinity]"
+       Cases[g, {GrayLevel[0], GrayLevel[0], Line[{{x1_, y_}, {x2_, y_}}]} :> {Round[900 y], Round[(x1 - x2)/(1.1960569343063403 - 1), 0.5]}, Infinity]"
     )
     .unwrap(),
     "{{3400, 1.}}"
@@ -69,7 +77,7 @@ fn notched_box() {
        {Length[p], Round[1000 p[[3, 2]]], p[[4, 2]]}"
     )
     .unwrap(),
-    "{10, 184414, 110.5}"
+    "{10, 184414, 221/2}"
   );
 }
 
@@ -83,7 +91,7 @@ fn bar_origin_left_is_horizontal() {
         (FrameTicks /. Options[g])[[1, 1, 1, 2]], (FrameTicks /. Options[g])[[2]]}"
     )
     .unwrap(),
-    "{{2., 4.}, a, {Automatic, Automatic}}"
+    "{{2, 4}, Spacer[0], {Automatic, Automatic}}"
   );
 }
 
@@ -98,7 +106,7 @@ fn bar_origin_top_mirrors_values() {
         Cases[(FrameTicks /. Options[g])[[1, 1]], {-2., l_, _} :> l]}"
     )
     .unwrap(),
-    "{{-4.25, -1.75}, {2}}"
+    "{{-17/4, -7/4}, {}}"
   );
 }
 

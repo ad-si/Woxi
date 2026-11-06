@@ -14,6 +14,116 @@
 use crate::functions::plot_axes::AxisTicks;
 use crate::syntax::Expr;
 
+/// Resolve stored scaled-tick callbacks for drawing, keeping the original
+/// symbolic callback in the graphic's options.
+pub(crate) fn resolve_charting_frame_ticks(
+  spec: &Expr,
+  x: (f64, f64),
+  y: (f64, f64),
+) -> Expr {
+  fn edge(spec: &Expr, range: (f64, f64)) -> Expr {
+    let Expr::FunctionCall { name, args } = spec else {
+      return spec.clone();
+    };
+    if !matches!(
+      name.as_str(),
+      "Charting`ScaledTicks" | "Charting`ScaledFrameTicks"
+    ) || args.len() != 1
+    {
+      return spec.clone();
+    }
+    let labelled = name == "Charting`ScaledTicks";
+    let Expr::List(pair) = &args[0] else {
+      return spec.clone();
+    };
+    if pair.len() != 2 {
+      return spec.clone();
+    }
+    let ticks = if matches!(&pair[0], Expr::String(s) if s == "NormalY" || s == "WeibullY")
+    {
+      [1, 5, 10, 25, 50, 75, 90, 95, 99]
+        .into_iter()
+        .filter_map(|pct| {
+          let p = pct as f64 / 100.0;
+          let pos = if matches!(&pair[0], Expr::String(s) if s == "WeibullY") {
+            (-(1.0 - p).ln()).ln()
+          } else {
+            let dist = crate::helpers::call(
+              "NormalDistribution",
+              vec![Expr::Integer(0), Expr::Integer(1)],
+            );
+            let z = crate::evaluator::evaluate_function_call_ast(
+              "InverseCDF",
+              &[dist, Expr::Real(p)],
+            )
+            .ok()?;
+            1.0 + crate::functions::math_ast::try_eval_to_f64(&z)?
+          };
+          Some(Expr::List(
+            vec![
+              Expr::Real(pos),
+              if labelled {
+                Expr::Integer(pct)
+              } else {
+                Expr::String(String::new())
+              },
+            ]
+            .into(),
+          ))
+        })
+        .collect()
+    } else if let Some(Some(scale)) = Scaling::parse_axis(&args[0]) {
+      let ticks = scale.ticks(range.0, range.1);
+      ticks
+        .majors
+        .into_iter()
+        .map(|(pos, label)| {
+          Expr::List(
+            vec![
+              Expr::Real(pos),
+              Expr::String(if labelled { label } else { String::new() }),
+            ]
+            .into(),
+          )
+        })
+        .chain(ticks.minors.into_iter().map(|pos| {
+          Expr::List(vec![Expr::Real(pos), Expr::String(String::new())].into())
+        }))
+        .collect()
+    } else {
+      return spec.clone();
+    };
+    Expr::List(ticks)
+  }
+  match spec {
+    Expr::List(sides)
+      if sides.len() == 2
+        && sides
+          .iter()
+          .all(|e| matches!(e, Expr::List(p) if p.len() == 2)) =>
+    {
+      Expr::List(
+        sides
+          .iter()
+          .enumerate()
+          .map(|(i, side)| {
+            let Expr::List(pair) = side else {
+              unreachable!()
+            };
+            Expr::List(
+              pair
+                .iter()
+                .map(|s| edge(s, if i == 0 { y } else { x }))
+                .collect(),
+            )
+          })
+          .collect(),
+      )
+    }
+    _ => spec.clone(),
+  }
+}
+
 /// The transform of one scaled axis.
 #[derive(Clone, Debug)]
 pub(crate) enum Scaling {

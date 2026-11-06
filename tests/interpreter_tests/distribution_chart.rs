@@ -30,7 +30,7 @@ fn quantile_element() {
   assert_eq!(
     interpret(
       "g = DistributionChart[{{1, 2, 2, 3, 3, 3, 4, 4, 5, 9}, {2, 3, 4, 4, 5, 5, 6, 7, 8}}, ChartElementFunction -> \"Quantile\"]; \
-       {Cases[g, Rectangle[{_, a_}, {_, b_}] :> {a, b}, Infinity], \
+       {Cases[g, Rectangle[{_, a_}, {_, b_}, ___] :> {a, b}, Infinity], \
         Cases[g, {RGBColor[r_, _, _], Line[{{_, y_}, _}]} :> {r, y}, Infinity][[;; 3]]}"
     )
     .unwrap(),
@@ -46,12 +46,13 @@ fn density_element() {
     interpret(
       "g = DistributionChart[{{1, 2, 2, 3, 3, 3, 4, 4, 5, 9}}, ChartElementFunction -> \"Density\"]; \
        cs = Cases[g, RGBColor[__], Infinity]; \
-       {Length[Cases[g, _Rectangle, Infinity]] > 50, \
-        Min[cs[[All, 3]]] == 0.25, Max[cs[[All, 3]]] == 1., \
+       {Length[Cases[g, _Rectangle, Infinity]] == 1, \
+        Length[Cases[g, _GraphicsComplex, Infinity]] == 1, \
+        Min[cs[[All, 3]]] < 0.25, Max[cs[[All, 3]]] == 1., \
         MinMax[Cases[g, Rectangle[{_, a_}, {_, b_}] :> {a, b}, Infinity]]}"
     )
     .unwrap(),
-    "{True, True, True, {1., 9.}}"
+    "{True, True, True, True, {1., 9.}}"
   );
 }
 

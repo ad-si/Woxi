@@ -10,8 +10,9 @@
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::chart::{invalid_dataset, parse_datasets};
+use crate::functions::chart::{invalid_dataset, parse_datasets_expr};
 use crate::functions::distribution_chart::{chart_legended, chart_styles};
+use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
 fn call(name: &str, args: Vec<Expr>) -> Expr {
@@ -37,7 +38,14 @@ fn list(items: Vec<Expr>) -> Expr {
 }
 
 fn gray(level: f64) -> Expr {
-  call("GrayLevel", vec![Expr::Real(level)])
+  call(
+    "GrayLevel",
+    vec![if level.fract() == 0.0 {
+      Expr::Integer(level as i128)
+    } else {
+      Expr::Real(level)
+    }],
+  )
 }
 
 /// The automatic `BarSpacing` of `n` side-by-side boxes, as a fraction of
@@ -103,19 +111,24 @@ pub(crate) fn bar_spacing_value(value: &Expr) -> Option<f64> {
 pub(crate) fn category_frame_ticks(n: usize, labels: &[Expr]) -> (Expr, Expr) {
   let len = || list(vec![Expr::Real(0.008), Expr::Integer(0)]);
   let labelled = (0..n)
-    .map(|i| {
-      let label = labels
-        .get(i)
-        .cloned()
-        .unwrap_or_else(|| Expr::String(String::new()));
-      list(vec![Expr::Real((i + 1) as f64), label, len()])
+    .flat_map(|i| {
+      let pos = || Expr::Real((i + 1) as f64);
+      let mut ticks = vec![list(vec![
+        pos(),
+        call("Spacer", vec![Expr::Integer(0)]),
+        len(),
+      ])];
+      if let Some(label) = labels.get(i) {
+        ticks.push(list(vec![pos(), label.clone(), Expr::Integer(0)]));
+      }
+      ticks
     })
     .collect();
   let plain = (0..n)
     .map(|i| {
       list(vec![
         Expr::Real((i + 1) as f64),
-        Expr::String(String::new()),
+        call("Spacer", vec![Expr::Integer(0)]),
         len(),
       ])
     })
@@ -167,37 +180,23 @@ impl Origin {
     let (x, y) = self.coords(c, v);
     list(vec![Expr::Real(x), Expr::Real(y)])
   }
-}
 
-/// The frame ticks of a mirrored value axis: automatic positions over
-/// `lo..hi` (the unmirrored values), placed at `-v` and labelled `v`.
-fn mirrored_value_ticks(lo: f64, hi: f64, labelled: bool) -> Expr {
-  use crate::functions::plot::{
-    axis_tick_step, format_tick_with_step, minor_tick_step,
-  };
-  let step = axis_tick_step(hi - lo);
-  let minor = minor_tick_step(step);
-  let first = (lo / minor).ceil() as i64;
-  let last = (hi / minor).floor() as i64;
-  let per_major = (step / minor).round() as i64;
-  let mut ticks = Vec::new();
-  for k in first..=last {
-    let v = k as f64 * minor;
-    let major = per_major > 0 && k.rem_euclid(per_major) == 0;
-    let label = if major && labelled {
-      let v = if v.abs() < minor * 1e-9 { 0.0 } else { v };
-      Expr::String(format_tick_with_step(v, step))
+  fn exact_point(self, c: f64, value: &Expr) -> Expr {
+    let v = if self.mirrored() {
+      evaluate_expr_to_expr(&call(
+        "Times",
+        vec![Expr::Integer(-1), value.clone()],
+      ))
+      .unwrap_or_else(|_| value.clone())
     } else {
-      Expr::String(String::new())
+      value.clone()
     };
-    let len = if major { 0.00625 } else { 0.00375 };
-    ticks.push(list(vec![
-      Expr::Real(-v),
-      label,
-      list(vec![Expr::Real(len), Expr::Integer(0)]),
-    ]));
+    if self.horizontal() {
+      list(vec![v, Expr::Real(c)])
+    } else {
+      list(vec![Expr::Real(c), v])
+    }
   }
-  list(ticks)
 }
 
 /// The `FrameTicks` of a chart of `n` categories: per-box ticks on the
@@ -206,12 +205,21 @@ pub(crate) fn chart_frame_ticks(
   origin: Origin,
   n: usize,
   labels: &[Expr],
-  value_range: (f64, f64),
+  _value_range: (f64, f64),
 ) -> Expr {
   let (cat, cat_opposite) = category_frame_ticks(n, labels);
   let value = |labelled: bool| {
     if origin.mirrored() {
-      mirrored_value_ticks(value_range.0, value_range.1, labelled)
+      let reverse =
+        crate::syntax::string_to_expr("-# &").expect("reverse scaling parses");
+      call(
+        if labelled {
+          "Charting`ScaledTicks"
+        } else {
+          "Charting`ScaledFrameTicks"
+        },
+        vec![list(vec![reverse.clone(), reverse])],
+      )
     } else {
       id("Automatic")
     }
@@ -361,31 +369,13 @@ fn parse_bwspec(spec: &Expr) -> Marks {
   marks
 }
 
-/// Quartiles the way `Quartiles` interpolates them: positions (n+2)/4,
-/// (n+1)/2 and (3n+2)/4 of the sorted data (1-indexed).
-fn quartiles(sorted: &[f64]) -> (f64, f64, f64) {
-  let n = sorted.len() as f64;
-  let interp = |pos: f64| -> f64 {
-    let idx = (pos - 1.0).clamp(0.0, n - 1.0);
-    let lo = idx.floor() as usize;
-    let hi = (idx.ceil() as usize).min(sorted.len() - 1);
-    let frac = idx - lo as f64;
-    sorted[lo] * (1.0 - frac) + sorted[hi] * frac
-  };
-  (
-    interp((n + 2.0) / 4.0),
-    interp(f64::midpoint(n, 1.0)),
-    interp((3.0 * n + 2.0) / 4.0),
-  )
-}
-
 pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Association / temporal data chart their values (keys name the boxes
   // under `ChartLabels -> Automatic`).
   if let Some(new_args) = crate::functions::chart::chart_data_args(args, true) {
     return box_whisker_chart_ast(&new_args);
   }
-  let Ok(mut datasets) = parse_datasets(&args[0]) else {
+  let Ok(mut datasets) = parse_datasets_expr(&args[0]) else {
     return Ok(invalid_dataset("BoxWhiskerChart", args));
   };
   if datasets.is_empty() {
@@ -453,17 +443,38 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let half = slots.half;
   let cap = half / 2.0;
   let p = |c: f64, v: f64| origin.point(c, v);
+  let pv = |c: f64, v: &Expr| origin.exact_point(c, v);
   let seg = |a: Expr, b: Expr| list(vec![a, b]);
 
   let (mut v_lo, mut v_hi) = (f64::INFINITY, f64::NEG_INFINITY);
   let mut boxes = Vec::with_capacity(n);
-  for (i, data) in datasets.iter_mut().enumerate() {
-    data.sort_by(f64::total_cmp);
+  for (i, values) in datasets.iter_mut().enumerate() {
+    values.sort_by(|a, b| {
+      if let Some(order) =
+        crate::functions::list_helpers_ast::sorting::exact_real_cmp(a, b)
+      {
+        return order;
+      }
+      try_eval_to_f64(a)
+        .unwrap()
+        .total_cmp(&try_eval_to_f64(b).unwrap())
+    });
+    let data: Vec<f64> = values.iter().filter_map(try_eval_to_f64).collect();
+    let Expr::List(ref qs) =
+      evaluate_expr_to_expr(&call("Quartiles", vec![list(values.clone())]))?
+    else {
+      return Ok(invalid_dataset("BoxWhiskerChart", args));
+    };
+    let (q1_expr, median_expr, q3_expr) = (&qs[0], &qs[1], &qs[2]);
     let c = (i + 1) as f64;
     let (min, max) = (data[0], data[data.len() - 1]);
     v_lo = v_lo.min(min);
     v_hi = v_hi.max(max);
-    let (q1, median, q3) = quartiles(data);
+    let (q1, median, q3) = (
+      try_eval_to_f64(q1_expr).unwrap(),
+      try_eval_to_f64(median_expr).unwrap(),
+      try_eval_to_f64(q3_expr).unwrap(),
+    );
     let iqr = q3 - q1;
     // With outliers marked, whiskers stop at the last datum inside the
     // 1.5 IQR fences; the rest are drawn as dots (far ones, beyond 3 IQR,
@@ -477,6 +488,14 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       (min, max)
     };
+    let whisker_value = |v: f64, fallback: &Expr| {
+      data
+        .iter()
+        .position(|&x| x == v)
+        .map_or_else(|| fallback.clone(), |j| values[j].clone())
+    };
+    let (w_lo_expr, w_hi_expr) =
+      (whisker_value(w_lo, q1_expr), whisker_value(w_hi, q3_expr));
 
     let (l, r) = (c - half, c + half);
     let box_polygon = if marks.notched {
@@ -485,19 +504,24 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let depth = 1.7 * 1.25 * iqr / (1.35 * (data.len() as f64).sqrt());
       let (n_lo, n_hi) = ((median - depth).max(q1), (median + depth).min(q3));
       vec![
-        p(l, q3),
-        p(r, q3),
+        pv(l, q3_expr),
+        pv(r, q3_expr),
         p(r, n_hi),
-        p(c + cap, median),
+        pv(c + cap, median_expr),
         p(r, n_lo),
-        p(r, q1),
-        p(l, q1),
+        pv(r, q1_expr),
+        pv(l, q1_expr),
         p(l, n_lo),
-        p(c - cap, median),
+        pv(c - cap, median_expr),
         p(l, n_hi),
       ]
     } else {
-      vec![p(l, q3), p(r, q3), p(r, q1), p(l, q1)]
+      vec![
+        pv(l, q3_expr),
+        pv(r, q3_expr),
+        pv(r, q1_expr),
+        pv(l, q1_expr),
+      ]
     };
     let mut parts = vec![
       call(
@@ -511,16 +535,27 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (is_far, level) in [(false, 0.0), (true, 0.5)] {
         let dots: Vec<Expr> = data
           .iter()
-          .copied()
-          .filter(|&v| (v < w_lo || v > w_hi) && far(v) == is_far)
-          .map(|v| p(c, v))
+          .zip(values.iter())
+          .filter(|(v, _)| (**v < w_lo || **v > w_hi) && far(**v) == is_far)
+          .map(|(_, value)| {
+            call(
+              "Inset",
+              vec![
+                call(
+                  "Style",
+                  vec![
+                    Expr::String("\u{f750}".into()),
+                    Expr::Integer(10),
+                    gray(level),
+                  ],
+                ),
+                pv(c, value),
+              ],
+            )
+          })
           .collect();
         if !dots.is_empty() {
-          parts.push(list(vec![
-            gray(level),
-            call("AbsolutePointSize", vec![Expr::Integer(4)]),
-            call("Point", vec![list(dots)]),
-          ]));
+          parts.push(list(dots));
         }
       }
     }
@@ -562,20 +597,27 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let median_half = if marks.notched { cap } else { half };
     parts.push(list(vec![
+      gray(0.0),
       gray(1.0),
       call(
         "Line",
-        vec![seg(p(c + median_half, median), p(c - median_half, median))],
+        vec![seg(
+          pv(c + median_half, median_expr),
+          pv(c - median_half, median_expr),
+        )],
       ),
     ]));
     if marks.mean {
-      let mean = data.iter().sum::<f64>() / data.len() as f64;
+      let mean =
+        evaluate_expr_to_expr(&call("Mean", vec![list(values.clone())]))?;
       parts.push(list(vec![
         gray(0.0),
-        call("Line", vec![seg(p(c + cap, mean), p(c - cap, mean))]),
+        gray(0.0),
+        call("Line", vec![seg(pv(c + cap, &mean), pv(c - cap, &mean))]),
       ]));
     }
     parts.push(list(vec![
+      gray(0.0),
       call("CapForm", vec![Expr::String("Butt".to_string())]),
       marks.whisker_style.as_ref().map_or_else(
         || gray(0.5),
@@ -584,8 +626,8 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       call(
         "Line",
         vec![list(vec![
-          seg(p(c, q1), p(c, w_lo)),
-          seg(p(c, q3), p(c, w_hi)),
+          seg(pv(c, q1_expr), pv(c, &w_lo_expr)),
+          seg(pv(c, q3_expr), pv(c, &w_hi_expr)),
         ])],
       ),
     ]));
@@ -597,12 +639,19 @@ pub fn box_whisker_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => (cap, gray(0.5)),
       };
       parts.push(list(vec![
+        gray(0.0),
         fence_style,
         call(
           "Line",
           vec![list(vec![
-            seg(p(c + fence_half, w_lo), p(c - fence_half, w_lo)),
-            seg(p(c + fence_half, w_hi), p(c - fence_half, w_hi)),
+            seg(
+              pv(c + fence_half, &w_lo_expr),
+              pv(c - fence_half, &w_lo_expr),
+            ),
+            seg(
+              pv(c + fence_half, &w_hi_expr),
+              pv(c - fence_half, &w_hi_expr),
+            ),
           ])],
         ),
       ]));

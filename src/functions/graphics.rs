@@ -10546,11 +10546,26 @@ fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
 /// value gives per edge, in bottom, left, top, right order. Edges given as
 /// anything else (`Automatic`, `None`, `All`) hold `None`.
 fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
-  let one = |e: &Expr| match e {
-    Expr::List(_) | Expr::FunctionCall { .. } => {
-      crate::functions::plot::parse_explicit_ticks(e)
-    }
-    _ => None,
+  let one = |e: &Expr| {
+    let ticks = match e {
+      Expr::List(_) | Expr::FunctionCall { .. } => {
+        crate::functions::plot::parse_explicit_ticks(e)
+      }
+      _ => None,
+    };
+    ticks.map(|ticks| {
+      // Charting separates a tick mark with Spacer[0] from its label at
+      // the same position. Draw one combined tick, retaining every visible
+      // label and avoiding a duplicate stroke under it.
+      ticks
+        .iter()
+        .filter(|(pos, label)| {
+          !label.is_empty()
+            || !ticks.iter().any(|(p, l)| p == pos && !l.is_empty())
+        })
+        .cloned()
+        .collect()
+    })
   };
   match value {
     Expr::List(items) if items.len() == 4 => [
@@ -13124,6 +13139,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut frame_tick_modes = DEFAULT_FRAME_TICKS;
   let mut frame_tick_lists: [Option<Vec<(f64, String)>>; 4] =
     [None, None, None, None];
+  let mut stored_frame_ticks = None;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
@@ -13310,6 +13326,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "FrameTicks" => {
+          stored_frame_ticks = Some(replacement.clone());
           frame_tick_modes = parse_frame_tick_modes(replacement);
           frame_tick_lists = parse_frame_tick_lists(replacement);
         }
@@ -13747,6 +13764,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !drawn {
       *mode = EdgeTicks::None;
     }
+  }
+  if let Some(spec) = &stored_frame_ticks {
+    let resolved = crate::functions::plot_scaling::resolve_charting_frame_ticks(
+      spec,
+      (bb.x_min, bb.x_max),
+      (bb.y_min, bb.y_max),
+    );
+    frame_tick_lists = parse_frame_tick_lists(&resolved);
   }
   let decorations = graphics_decorations(
     &bb,
