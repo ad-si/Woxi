@@ -441,16 +441,39 @@ fn polylog_numeric(s: f64, z: f64) -> f64 {
   }
   if z.abs() <= 1.0 {
     let mut sum = 0.0;
+    let mut correction = 0.0;
     let mut z_power = z;
     for k in 1..=10000 {
-      let term = z_power / (k as f64).powf(s);
-      sum += term;
-      if term.abs() < 1e-15 * sum.abs().max(1e-300) {
+      let denominator =
+        if s.fract() == 0.0 && s >= i32::MIN as f64 && s <= i32::MAX as f64 {
+          (k as f64).powi(s as i32)
+        } else {
+          (k as f64).powf(s)
+        };
+      let term = z_power / denominator;
+      let next = sum + term;
+      correction += if sum.abs() >= term.abs() {
+        (sum - next) + term
+      } else {
+        (term - next) + sum
+      };
+      sum = next;
+      // For nonnegative order inside the unit disk the remaining terms
+      // are bounded by a geometric tail. Do not stop merely because a
+      // single term is small relative to the accumulated value.
+      let tail = if z.abs() < 1.0 && s >= 0.0 {
+        term.abs() * z.abs() / (1.0 - z.abs())
+      } else {
+        term.abs()
+      };
+      // Keep the tail below the second-order error of compensated
+      // summation, including when the result is close to a rounding tie.
+      if tail < f64::EPSILON.powi(2) * (sum + correction).abs().max(1e-300) {
         break;
       }
       z_power *= z;
     }
-    sum
+    sum + correction
   } else if s <= 0.0 && s.fract() == 0.0 {
     polylog_nonpositive_integer(-s as usize, z)
   } else if z < -1.0 && s > 0.0 {

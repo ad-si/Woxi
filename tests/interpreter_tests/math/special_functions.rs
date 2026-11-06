@@ -1849,6 +1849,22 @@ mod polylog {
   use super::*;
 
   #[test]
+  fn machine_series_retains_small_terms() {
+    for (code, expected) in [
+      ("PolyLog[4,0.3]", "0.30599453530775617"),
+      ("PolyLog[4,-0.3]", "-0.29468009578675625"),
+      ("PolyLog[4,0.5]", "0.5174790616738993"),
+      ("PolyLog[4,-0.5]", "-0.4857145378306064"),
+      ("PolyLog[5,0.3]", "0.3029324080381147"),
+      ("PolyLog[5,-0.3]", "-0.2972913960985421"),
+      ("PolyLog[5,0.5]", "0.5084005792422687"),
+      ("PolyLog[5,-0.5]", "-0.49264922998110783"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn at_zero() {
     assert_eq!(interpret("PolyLog[2, 0]").unwrap(), "0");
     assert_eq!(interpret("PolyLog[3, 0]").unwrap(), "0");
