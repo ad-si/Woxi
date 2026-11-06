@@ -1838,6 +1838,27 @@ fn au_quantity(v: f64) -> Expr {
   )
 }
 
+// Knowledgebase measurements are separate from the secular J2000 orbital
+// elements used by the two-body ephemeris above. Preserve their precision
+// instead of replacing them with the ephemeris's machine approximations.
+const ORBITAL_ENTITY_PROPERTIES: &[(&str, &str, &str, &str, f64)] = &[
+  ("Planet", "Mars", "Eccentricity", "0.09341233", 8.0),
+  (
+    "Planet",
+    "Mars",
+    "SemimajorAxis",
+    "1.5236623099083345189",
+    8.99956592252068,
+  ),
+  (
+    "MinorPlanet",
+    "Ceres",
+    "SemimajorAxis",
+    "2.7666197369118376039998152928255223797",
+    11.523565137563514,
+  ),
+];
+
 /// Orbital properties of `Entity["Planet", name]` and
 /// `Entity["MinorPlanet", name]`: `"SemimajorAxis"`, `"Eccentricity"`,
 /// `"OrbitPeriod"` (Kepler's third law) and, for the major planets,
@@ -1847,6 +1868,17 @@ pub fn solar_system_body_property(
   name: &str,
   property: &str,
 ) -> Option<Expr> {
+  if let Some((_, _, _, digits, precision)) = ORBITAL_ENTITY_PROPERTIES
+    .iter()
+    .find(|(t, n, p, _, _)| *t == type_name && *n == name && *p == property)
+  {
+    let value = Expr::BigFloat((*digits).to_string(), *precision);
+    return Some(if property == "SemimajorAxis" {
+      call("Quantity", vec![value, str_expr("AstronomicalUnit")])
+    } else {
+      value
+    });
+  }
   let (a, e) = match type_name {
     "Planet" => {
       let p = planet_by_name(name).filter(|p| p.name != "Pluto")?;

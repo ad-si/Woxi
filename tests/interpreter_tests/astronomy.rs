@@ -391,18 +391,18 @@ mod geo_location {
   fn planet_entity_orbital_properties() {
     assert_eq!(
       interpret(r#"Entity["Planet", "Mars"]["Eccentricity"]"#).unwrap(),
-      "0.09340065"
+      "0.09341233`8."
     );
     assert_eq!(
       interpret(r#"Entity["Planet", "Mars"]["SemimajorAxis"]"#).unwrap(),
-      "Quantity[1.52367935, AstronomicalUnit]"
+      "Quantity[1.5236623099083345189`8.99956592252068, AstronomicalUnit]"
     );
     assert_eq!(
       interpret(
         r#"EntityValue[Entity["MinorPlanet", "Ceres"], "SemimajorAxis"]"#
       )
       .unwrap(),
-      "Quantity[2.7691652, AstronomicalUnit]"
+      "Quantity[2.7666197369118376039998152928255223797`11.523565137563514, AstronomicalUnit]"
     );
     // Kepler's third law gives the period in years.
     assert_eq!(
