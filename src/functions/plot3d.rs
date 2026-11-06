@@ -966,23 +966,38 @@ fn parameter_grid_mesh_lines(
   segment: &dyn Fn(Point3D, Point3D) -> MeshLine,
 ) -> Vec<MeshLine> {
   let mut lines = Vec::new();
-  let mut ku_seen = Vec::new();
-  let mut kv_seen = Vec::new();
+  // Mesh levels are independent of PlotPoints. Interpolate between rows
+  // instead of snapping to them (which loses levels on coarse surfaces).
+  let interpolate = |a: Point3D, b: Point3D, f: f64| Point3D {
+    x: a.x + (b.x - a.x) * f,
+    y: a.y + (b.y - a.y) * f,
+    z: a.z + (b.z - a.z) * f,
+  };
   for m in 0..=n + 1 {
-    let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
-    let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
-    if !kv_seen.contains(&kv) {
-      kv_seen.push(kv);
-      for i in 0..grid_u {
-        if let (Some(a), Some(b)) = (at(i, kv), at(i + 1, kv)) {
-          lines.push(segment(a, b));
-        }
+    for axis in 0..2 {
+      let (across, along) = if axis == 0 {
+        (grid_u, grid_v)
+      } else {
+        (grid_v, grid_u)
+      };
+      if across == 0 {
+        continue;
       }
-    }
-    if !ku_seen.contains(&ku) {
-      ku_seen.push(ku);
-      for j in 0..grid_v {
-        if let (Some(a), Some(b)) = (at(ku, j), at(ku, j + 1)) {
+      let level = across as f64 * m as f64 / (n + 1) as f64;
+      let k = (level.floor() as usize).min(across - 1);
+      let f = level - k as f64;
+      let point = |j| {
+        let get = |k| if axis == 0 { at(k, j) } else { at(j, k) };
+        if f == 0.0 {
+          get(k)
+        } else if f == 1.0 {
+          get(k + 1)
+        } else {
+          Some(interpolate(get(k)?, get(k + 1)?, f))
+        }
+      };
+      for j in 0..along {
+        if let (Some(a), Some(b)) = (point(j), point(j + 1)) {
           lines.push(segment(a, b));
         }
       }
@@ -20817,4 +20832,40 @@ pub fn list_surface_plot3d_ast(
     name: "Graphics3D".to_string(),
     args: g_args.into(),
   })
+}
+
+#[cfg(test)]
+mod review_mesh_tests {
+  use super::*;
+
+  #[test]
+  fn mesh_levels_do_not_disappear_on_coarse_grids() {
+    for (nu, nv, count) in [(30, 4, 15), (2, 3, 9), (5, 5, 3)] {
+      let lines = parameter_grid_mesh_lines(
+        nu,
+        nv,
+        count,
+        &|i, j| {
+          Some(Point3D {
+            x: i as f64,
+            y: j as f64,
+            z: 0.0,
+          })
+        },
+        &|a, b| MeshLine {
+          endpoints: [a, b],
+          projected: [(a.x, a.y), (b.x, b.y)],
+          stroke: None,
+          depth: 0.0,
+        },
+      );
+      assert_eq!(lines.len(), (count + 2) * (nu + nv));
+      let levels: std::collections::BTreeSet<_> = lines
+        .iter()
+        .filter(|l| l.endpoints[0].x == l.endpoints[1].x)
+        .map(|l| (l.endpoints[0].x * 1e6).round() as i64)
+        .collect();
+      assert_eq!(levels.len(), count + 2);
+    }
+  }
 }
