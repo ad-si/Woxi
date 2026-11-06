@@ -1927,7 +1927,7 @@ mod image_processing {
   #[test]
   fn image_effect_poisson_noise() {
     clear_state();
-    // Shape is preserved; black stays black; zero amount is a no-op.
+    // Shape is preserved and black stays black.
     assert_eq!(
       interpret(
         "ImageDimensions[ImageEffect[Image[Table[0.5, {4}, {5}]], \
@@ -1946,11 +1946,11 @@ mod image_processing {
     );
     assert_eq!(
       interpret(
-        "ImageData[ImageEffect[Image[Table[0.5, {2}, {2}]], \
+        "Head[ImageEffect[Image[Table[0.5, {2}, {2}]], \
          {\"PoissonNoise\", 0}]]"
       )
       .unwrap(),
-      "{{0.5, 0.5}, {0.5, 0.5}}"
+      "ImageEffect"
     );
     // Values are non-negative multiples of the amount, and the mean is
     // preserved on average.

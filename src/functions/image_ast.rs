@@ -2266,7 +2266,11 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Some(amount) = numeric_param(0, 0.1) else {
         return Ok(unevaluated("ImageEffect", args));
       };
-      let amount = amount.abs();
+      // Shot noise needs a strictly positive scale. Zero and negative
+      // scales leave ImageEffect unevaluated in Wolfram Language.
+      if !amount.is_finite() || amount <= 0.0 {
+        return Ok(unevaluated("ImageEffect", args));
+      }
       let mut out = data.as_ref().clone();
       if amount > 0.0 {
         crate::with_rng(|rng| {
