@@ -8397,6 +8397,66 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // Numeric radical sums also admit a nested-square-root candidate.
+  // Same-sign real summands have an unambiguous square-root sign.
+  let terms = collect_additive_terms(&expand_and_combine(&best));
+  if terms.len() > 1 && terms.iter().all(|t| classify_radical_term(t).is_some())
+  {
+    if let Ok(mut candidate) =
+      super::factor_terms_ast(std::slice::from_ref(&best))
+    {
+      let factors = collect_times_factors(&candidate);
+      if factors.len() == 2
+        && let Expr::Integer(c) = &factors[0]
+        && *c < 0
+        && let Some(positive) = c.checked_neg()
+        && collect_additive_terms(&factors[1]).len() > 1
+      {
+        candidate = times2(
+          Expr::Integer(positive),
+          expand_and_combine(&neg(factors[1].clone())),
+        );
+      }
+      if wl_simplify_count(&candidate) <= wl_simplify_count(&best) {
+        best = candidate;
+      }
+    }
+    for i in 0..terms.len() {
+      for j in i + 1..terms.len() {
+        let Some((a, Some(m))) = classify_radical_term(&terms[i]) else {
+          continue;
+        };
+        let Some((b, Some(n))) = classify_radical_term(&terms[j]) else {
+          continue;
+        };
+        if m <= 0 || n <= 0 || a.signum() != b.signum() {
+          continue;
+        }
+        let pair = plus2(terms[i].clone(), terms[j].clone());
+        let square = expand_and_combine(&pow(pair, Expr::Integer(2)));
+        let root = call("Sqrt", vec![square]);
+        let root = if a < 0 {
+          times2(Expr::Integer(-1), root)
+        } else {
+          root
+        };
+        let mut remaining: Vec<Expr> = terms
+          .iter()
+          .enumerate()
+          .filter(|(k, _)| *k != i && *k != j)
+          .map(|(_, t)| t.clone())
+          .collect();
+        remaining.push(root);
+        if let Ok(candidate) =
+          crate::evaluator::evaluate_expr_to_expr(&plus(remaining))
+          && wl_simplify_count(&candidate) <= wl_simplify_count(&best)
+        {
+          best = candidate;
+        }
+      }
+    }
+  }
+
   let _ = best_complexity; // suppress unused warning
   best
 }

@@ -15317,6 +15317,33 @@ fn full_simplify_shorter_polynomial_quotient_and_remainder() {
 }
 
 #[test]
+fn full_simplify_numeric_radical_sum_candidates() {
+  for (code, expected) in [
+    (
+      "FullSimplify[-Sqrt[24]-Sqrt[25]-(Sqrt[22]+Sqrt[22])]",
+      "-5 - 4*Sqrt[7 + Sqrt[33]]",
+    ),
+    ("FullSimplify[2Sqrt[6]+2Sqrt[22]]", "4*Sqrt[7 + Sqrt[33]]"),
+    (
+      "FullSimplify[5+2Sqrt[6]+2Sqrt[22]]",
+      "5 + 4*Sqrt[7 + Sqrt[33]]",
+    ),
+    ("FullSimplify[Sqrt[24]-22]", "2*(-11 + Sqrt[6])"),
+    ("FullSimplify[Sqrt[2]+Sqrt[3]]", "Sqrt[2] + Sqrt[3]"),
+    ("FullSimplify[Sqrt[6]+Sqrt[22]]", "Sqrt[6] + Sqrt[22]"),
+    ("FullSimplify[2Sqrt[6]-2Sqrt[22]]", "2*(Sqrt[6] - Sqrt[22])"),
+    ("FullSimplify[2Sqrt[10]+2Sqrt[26]]", "4*Sqrt[9 + Sqrt[65]]"),
+    (
+      "FullSimplify[-7-3Sqrt[2]-3Sqrt[14]]",
+      "-7 - 6*Sqrt[4 + Sqrt[7]]",
+    ),
+    ("FullSimplify[Sqrt[40]-26]", "2*(-13 + Sqrt[10])"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn divide_real_by_exact_symbolic_quotient_rounds_once() {
   for (code, expected) in [
     (
