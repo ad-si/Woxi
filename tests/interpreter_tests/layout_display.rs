@@ -1055,3 +1055,33 @@ fn review_density_complex_preserves_vertex_colors() {
     "Rendering a complex must preserve Normal's vertex colors"
   );
 }
+
+#[test]
+fn review_rectangle_chart_has_category_baseline_and_end_ticks() {
+  clear_state();
+  for data in ["{{1,2},{2,3}}", "{{2,4},{3,-1},{1,5}}"] {
+    assert_eq!(
+      interpret(&format!(
+        "Length[Cases[RectangleChart[{data}], _Line, Infinity]]"
+      ))
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Length[Cases[RectangleChart[{data}], Offset[{{0,-6}}, _], Infinity]]"
+      ))
+      .unwrap(),
+      "2"
+    );
+  }
+  for option in ["Frame -> True", "Axes -> False", "Axes -> {False,False}"] {
+    assert_eq!(
+      interpret(&format!(
+        "Cases[RectangleChart[{{{{1,2}},{{2,3}}}},{option}],_Line,Infinity]"
+      ))
+      .unwrap(),
+      "{}"
+    );
+  }
+}

@@ -256,11 +256,13 @@ pub fn rectangle_chart_ast(
   let mut swatches = Vec::new();
   // Where each block starts and ends along x.
   let (mut starts, mut ends) = (Vec::new(), Vec::new());
+  let mut group_ends = Vec::new();
   for (s, set) in sets.iter().enumerate() {
     // A dataset starts 0.2 past the end of the one before.
     if s > 0 {
       x = end + GROUP_GAP;
     }
+    group_ends.push(x);
     for (pos, item) in set.iter().enumerate() {
       let w = item.sizes[0];
       let style = chart_style_for(chart_style.as_ref(), pos, multi);
@@ -395,6 +397,7 @@ pub fn rectangle_chart_ast(
       end = x + w;
       x = x + w + gap;
     }
+    group_ends.push(end);
   }
 
   let mut content = if three_d { vec![edge.clone()] } else { vec![] };
@@ -432,6 +435,54 @@ pub fn rectangle_chart_ast(
   }
   if let Some(b) = base_style {
     content.push(b);
+  }
+  let framed = passthrough.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Frame")
+        && !matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False" || v == "None"))
+  });
+  let axes_disabled = passthrough.iter().any(|o| {
+    let off = |v: &Expr| matches!(v, Expr::Identifier(s) if s == "False" || s == "None");
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && (off(replacement) || matches!(replacement.as_ref(), Expr::List(items) if items.iter().all(off))))
+  });
+  if !three_d && !framed && !axes_disabled {
+    // The category baseline is a chart primitive, even though Axes enables
+    // only the value axis. Its end marks are six printer points long.
+    let point =
+      |x: f64| Expr::List(vec![Expr::Real(x), Expr::Integer(0)].into());
+    let start = group_ends[0];
+    let width = end - start;
+    let mut baseline = vec![
+      call("GrayLevel", vec![Expr::Real(0.5)]),
+      call("AbsoluteThickness", vec![Expr::Real(0.5)]),
+      call(
+        "Line",
+        vec![Expr::List(
+          vec![point(start - 0.02 * width), point(end + 0.0204 * width)].into(),
+        )],
+      ),
+    ];
+    for x in group_ends {
+      baseline.push(call(
+        "Line",
+        vec![Expr::List(
+          vec![
+            point(x),
+            call(
+              "Offset",
+              vec![
+                Expr::List(vec![Expr::Integer(0), Expr::Integer(-6)].into()),
+                point(x),
+              ],
+            ),
+          ]
+          .into(),
+        )],
+      ));
+    }
+    content.push(Expr::List(baseline.into()));
   }
   content.extend(prims);
   if !label_prims.is_empty() {
@@ -480,12 +531,6 @@ pub fn rectangle_chart_ast(
   } else {
     // A frame replaces the value axis, and its bottom edge is labelled by
     // the `ChartLabels` rather than by numeric ticks.
-    let framed = passthrough.iter().any(|o| {
-      matches!(o, Expr::Rule { pattern, replacement }
-        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Frame")
-          && !matches!(replacement.as_ref(),
-            Expr::Identifier(v) if v == "False" || v == "None"))
-    });
     if !has.contains("Axes") {
       let flag =
         |on: bool| Expr::Identifier(if on { "True" } else { "False" }.into());
