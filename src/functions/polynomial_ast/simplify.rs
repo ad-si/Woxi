@@ -11418,6 +11418,34 @@ fn settled_quotient_factor_display(
   if !shaped(&fn_) && !shaped(&fd) {
     return Some(basic.clone());
   }
+  // Factoring the numerator does not justify splitting the denominator
+  // into distinct sum bases. Monomial content and a single repeated base
+  // may stay factored, but (1+x)(2+x) returns to 2+3x+x^2.
+  let denominator_sum_bases =
+    super::together::flatten_times_args(std::slice::from_ref(&fd))
+      .iter()
+      .filter(|factor| {
+        super::coefficient::collect_additive_terms(factor).len() > 1
+          || super::expand::sum_power_exponent(factor).is_some()
+      })
+      .count();
+  let numerator_factors =
+    super::together::flatten_times_args(std::slice::from_ref(&fn_));
+  let numerator_factored = numerator_factors
+    .iter()
+    .filter(|factor| {
+      let mut variables = std::collections::HashSet::new();
+      collect_variables(factor, &mut variables);
+      !variables.is_empty()
+    })
+    .count()
+    > 1
+    || numerator_factors
+      .iter()
+      .any(|factor| super::expand::sum_power_exponent(factor).is_some());
+  if numerator_factored && denominator_sum_bases > 1 {
+    return Some(div2(fn_, fd_e));
+  }
   if factored_den_acceptable(basic, factored) || shaped(&fn_) {
     return Some(factored.clone());
   }

@@ -1,5 +1,31 @@
 use super::*;
 
+#[test]
+fn simplify_keeps_distinct_denominator_sum_bases_expanded() {
+  for (code, expected) in [
+    (
+      "Simplify[(-x-5x^2)/(-2-3x-x^2)]",
+      "(x*(1 + 5*x))/(2 + 3*x + x^2)",
+    ),
+    (
+      "Simplify[(x+3x^2)/(6+5x+x^2)]",
+      "(x*(1 + 3*x))/(6 + 5*x + x^2)",
+    ),
+    (
+      "Simplify[(x+x^2)/(6+5x+x^2)]",
+      "(x*(1 + x))/(6 + 5*x + x^2)",
+    ),
+    ("Simplify[(1+2x+x^2)/(2x+3x^2)]", "(1 + x)^2/(x*(2 + 3*x))"),
+    ("Simplify[(x+5x^2)/(1+2x+x^2)]", "(x*(1 + 5*x))/(1 + x)^2"),
+    (
+      "Simplify[(x+5x^2)/Expand[(x-1)^2*(x+2)]]",
+      "(x*(1 + 5*x))/(2 - 3*x + x^3)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
 mod polynomial_q {
   use super::*;
 
