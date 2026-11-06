@@ -656,6 +656,12 @@ Woxi's `-12`. Woxi's `Simplify` is also non-confluent here: given the
 already-distributed sum, `Simplify[-6 Sqrt[399] + 6 Sqrt[2261]]` returns
 `-6*(Sqrt[399] - Sqrt[2261])`, while the product form it came from is fixed.
 
+Diff-fuzz seed 1794000670664151000 also minimized to
+`Simplify[(Sqrt[15] - 1)/5]`: Woxi keeps `(-1 + Sqrt[15])/5`, while
+Wolfram returns `-1/5 + Sqrt[3/5]` (verified 2026-11-06). The original
+common-radical numerator case from that run now uses the same radical
+extraction as a standalone sum; this rational-radical redisplay remains.
+
 ### `Sqrt[1/(2 Pi)]` and constants outside a radical
 
 `Sqrt[1/(2 Pi)]` stays as written instead of `1/Sqrt[2 Pi]`, and a constant
@@ -8965,19 +8971,6 @@ the same expression plus `344`. Both derivatives equal the integrand.
 The shrinker reaches `Integrate[x^3/(1 + x), x]`, where the choice of
 additive constant also differs. This is a symbolic-output difference,
 not an incorrect derivative.
-
-### Held products collect a Divide factor into a common denominator
-
-Verified on 2026-11-06, diff-fuzz seed 1793999916799759000:
-
-```wolfram
-Hold[Times[Divide[5, 6], -57]]
-```
-
-Woxi prints `Hold[(5*-57)/6]`; Wolfram prints `Hold[5/6*-57]`.
-The formatter collects the unevaluated quotient into the product's common
-denominator instead of preserving the held factor boundary. The same
-difference appears with a zero second factor.
 
 ### N[E, p] prints different guard digits
 
