@@ -6592,6 +6592,23 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
+  // A quotient can hide a radical sum from the candidates above. Reuse
+  // the same numerator simplifier rather than implementing extraction a
+  // second time, then compare the complete quotient's complexity.
+  let (numerator, denominator) = super::together::extract_num_den(&best);
+  if !matches!(denominator, Expr::Integer(1)) {
+    let terms = collect_additive_terms(&numerator);
+    if terms.len() >= 2
+      && terms.iter().all(|term| term_sqrt_radicand(term).is_some())
+    {
+      let refined = simplify_expr_with_together(&numerator);
+      let candidate = div2(refined, denominator);
+      if wl_simplify_count(&candidate) < wl_simplify_count(&best) {
+        best = candidate;
+      }
+    }
+  }
+
   // Candidate 7: the exponential-sum regrouping from the top of this
   // function, retried on what the candidates above made of the sum — one
   // of them may have combined it over a common denominator, which hides

@@ -813,6 +813,30 @@ mod simplify {
   use super::*;
 
   #[test]
+  fn common_radicals_are_extracted_inside_quotients() {
+    for (code, expected) in [
+      (
+        "Simplify[Divide[Subtract[Sqrt[15], Times[2, Sqrt[3]]], Sqrt[25]]]",
+        "(Sqrt[3]*(-2 + Sqrt[5]))/5",
+      ),
+      (
+        "Simplify[(Sqrt[21]-2 Sqrt[3])/7]",
+        "(Sqrt[3]*(-2 + Sqrt[7]))/7",
+      ),
+      (
+        "Simplify[(Sqrt[30]-3 Sqrt[6])/11]",
+        "(Sqrt[6]*(-3 + Sqrt[5]))/11",
+      ),
+      (
+        "Simplify[(Sqrt[10]+3 Sqrt[2])/5]",
+        "(Sqrt[2]*(3 + Sqrt[5]))/5",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn tangent_differences_cancel_shared_argument_terms() {
     for (code, expected) in [
       ("Simplify[Tan[x+y]-Tan[x]]", "Sec[x]*Sec[x + y]*Sin[y]"),
