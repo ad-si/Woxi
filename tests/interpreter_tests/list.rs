@@ -20104,6 +20104,19 @@ mod replace_part_rules_and_patterns {
       interpret("ReplacePart[f[a, b], 0 -> g]").unwrap(),
       "g[a, b]"
     );
+    for (code, expected) in [
+      ("ReplacePart[{-5, -4}, -3 -> 5]", "5[-5, -4]"),
+      ("ReplacePart[{a, b}, 0 -> 5]", "5[a, b]"),
+      ("ReplacePart[{}, -1 -> f]", "f[]"),
+      ("ReplacePart[f[a, b, c], -4 -> g]", "g[a, b, c]"),
+      ("ReplacePart[{{a, b}, c}, {1, -3} -> f]", "{f[a, b], c}"),
+      ("ReplacePart[{a, b}, -4 -> f]", "{a, b}"),
+      ("ReplacePart[{a, b}, -3 -> 5, Heads -> False]", "5[a, b]"),
+      ("ReplacePart[{a, b}, {0 -> 5, -3 -> g}]", "5[a, b]"),
+      ("ReplacePart[{a, b}, -3 -> f[x]]", "f[x][a, b]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
   }
 
   #[test]

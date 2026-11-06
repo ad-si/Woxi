@@ -2199,7 +2199,7 @@ pub fn replace_part_heads_ast(
     let items = items.as_slice();
     let len = items.len() as i128;
     // Position 0 at this level replaces the head
-    let mut new_head: Option<String> = None;
+    let mut new_head: Option<Expr> = None;
     for (comps, ri) in matchers {
       if comps.len() != path.len() + 1 {
         continue;
@@ -2229,7 +2229,7 @@ pub fn replace_part_heads_ast(
         }
       }
       let head_comp = match comps.last() {
-        Some(Comp::Index(0)) => true,
+        Some(Comp::Index(n)) => *n == 0 || *n == -len - 1,
         Some(Comp::Pattern(pat)) if heads => {
           crate::evaluator::pattern_matching::match_pattern(
             &Expr::Integer(0),
@@ -2242,10 +2242,8 @@ pub fn replace_part_heads_ast(
       if all_match && head_comp {
         let (_, rhs, _) = &rules[*ri];
         let value = crate::evaluator::evaluate_expr_to_expr(rhs)?;
-        if let Expr::Identifier(h) = &value {
-          new_head = Some(h.clone());
-          break;
-        }
+        new_head = Some(value);
+        break;
       }
     }
     let mut out: Vec<Expr> = Vec::with_capacity(items.len());
@@ -2351,7 +2349,18 @@ pub fn replace_part_heads_ast(
     // Put the parts back the way `parts_and_head` took them apart, so a rule
     // stays an `Expr::Rule` rather than coming back as a `Rule[…]` call that
     // every later reader would have to recognise separately.
-    Ok(match new_head.or(head) {
+    if let Some(new_head) = new_head {
+      return Ok(match new_head {
+        Expr::Identifier(ref h) => {
+          crate::functions::expr_form::compose_expr(h, &out)
+        }
+        other => Expr::CurriedCall {
+          func: Box::new(other),
+          args: out,
+        },
+      });
+    }
+    Ok(match head {
       Some(h) => crate::functions::expr_form::compose_expr(&h, &out),
       None => Expr::List(out.into()),
     })
