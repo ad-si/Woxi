@@ -276,6 +276,9 @@ pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
         super::arithmetic::wl_arg_order(self.0, other.0)
       }
     }
+    // ExprList's interior mutability only caches derived values. The borrowed
+    // expressions cannot change here, so wl_arg_order remains stable.
+    #[allow(clippy::mutable_key_type)]
     let mut ranks = std::collections::BTreeMap::new();
     let mut identities = HashMap::new();
     let mut ranked: Vec<_> = keyed

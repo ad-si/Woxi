@@ -8981,8 +8981,12 @@ mod graph_coordinates_3d {
       .split(',')
       .map(|v| v.trim().parse().unwrap())
       .collect();
-    let points: Vec<_> =
-      coordinates.chunks_exact(2).map(|p| (p[0], p[1])).collect();
+    let points: Vec<_> = coordinates
+      .as_chunks::<2>()
+      .0
+      .iter()
+      .map(|p| (p[0], p[1]))
+      .collect();
     let edges = [(0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (4, 5), (5, 3)];
     let side = |a: (f64, f64), b: (f64, f64), c: (f64, f64)| {
       (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
