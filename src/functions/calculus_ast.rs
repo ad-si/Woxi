@@ -7689,7 +7689,11 @@ fn try_integrate_rational_impl(
   // A single coefficient (zero or not) is a constant, i.e. degree 0.
   let remaining_deg = remaining.len().saturating_sub(1);
   if remaining_deg > 2 {
-    return None;
+    let result = integrate_polynomial_residues(&proper_num, &den_coeffs, var)?;
+    return Some(match quotient_integral {
+      Some(qi) => plus2(qi, result),
+      None => result,
+    });
   }
 
   // Must have at least one root or a quadratic remaining to do something useful
@@ -8420,27 +8424,94 @@ fn try_integrate_one_over_poly_rootsum(expr: &Expr, var: &str) -> Option<Expr> {
   if find_integer_root(&coeffs).is_some() {
     return None;
   }
-  // p'(x) = sum k * c_k * x^(k-1). Use the symbolic differentiator so the
-  // result is in the same canonical form as the integrand.
-  let pprime = differentiate(&poly, var).ok()?;
-  let pprime = simplify(pprime);
+  integrate_polynomial_residues(&[1], &coeffs, var)
+}
+
+/// For a square-free denominator, each simple pole r contributes
+/// n(r) Log[x-r] / p'(r). Keep polynomial content outside RootSum and
+/// reduce the residue before multiplying by the logarithm.
+fn integrate_polynomial_residues(
+  numerator: &[i128],
+  denominator: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::{
+    coeffs_to_expr, expand_and_combine, poly_gcd,
+  };
+  let content = denominator.iter().copied().fold(0, gcd_i128);
+  let content = if *denominator.last()? < 0 {
+    content.checked_neg()?
+  } else {
+    content
+  };
+  if content == 0 {
+    return None;
+  }
+  let primitive = denominator
+    .iter()
+    .map(|c| c.checked_div(content))
+    .collect::<Option<Vec<_>>>()?;
+  let derivative = primitive
+    .iter()
+    .enumerate()
+    .skip(1)
+    .map(|(k, c)| c.checked_mul(k as i128))
+    .collect::<Option<Vec<_>>>()?;
+  if poly_gcd(&primitive, &derivative)?.len() != 1 {
+    return None;
+  }
+  let numerator_content = numerator.iter().copied().fold(0, gcd_i128);
+  let numerator_content = if *numerator.iter().rev().find(|c| **c != 0)? < 0 {
+    numerator_content.checked_neg()?
+  } else {
+    numerator_content
+  };
+  let derivative_content = derivative.iter().copied().fold(0, gcd_i128);
+  let numerator = numerator
+    .iter()
+    .map(|c| c.checked_div(numerator_content))
+    .collect::<Option<Vec<_>>>()?;
+  let derivative = derivative
+    .iter()
+    .map(|c| c.checked_div(derivative_content))
+    .collect::<Option<Vec<_>>>()?;
+  let poly = coeffs_to_expr(&primitive, var);
+  let pprime = coeffs_to_expr(&derivative, var);
+  let numerator = coeffs_to_expr(&numerator, var);
+  let residue =
+    crate::functions::polynomial_ast::cancel_ast(&[div2(numerator, pprime)])
+      .ok()?;
+  let (num, den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&residue);
   // Substitute `x → #1` in both poly and p' to build the Function bodies.
   let poly_in_slot =
     crate::syntax::substitute_variable(&poly, var, &Expr::Slot(1));
-  let pprime_in_slot =
-    crate::syntax::substitute_variable(&pprime, var, &Expr::Slot(1));
+  let num_in_slot =
+    crate::syntax::substitute_variable(&num, var, &Expr::Slot(1));
+  let den_in_slot =
+    crate::syntax::substitute_variable(&den, var, &Expr::Slot(1));
   // Inner function body: Log[x - #1] / p'(#1).
   let var_expr = id_expr(var);
   let log_arg = minus2(var_expr, Expr::Slot(1));
   let log_term = call1("Log", log_arg);
-  let body = div2(log_term, pprime_in_slot);
+  let body = div2(
+    expand_and_combine(&times2(log_term, num_in_slot)),
+    den_in_slot,
+  );
+  let body = crate::evaluator::evaluate_expr_to_expr(&body).ok()?;
   let log_fn = Expr::Function {
     body: Box::new(body),
   };
   let poly_fn = Expr::Function {
     body: Box::new(poly_in_slot),
   };
-  Some(call("RootSum", vec![poly_fn, log_fn]))
+  Some(times2(
+    div2(
+      Expr::Integer(numerator_content),
+      Expr::Integer(content.checked_mul(derivative_content)?),
+    ),
+    call("RootSum", vec![poly_fn, log_fn]),
+  ))
 }
 
 /// Closed-form integration of polynomial × constant-base exponential:

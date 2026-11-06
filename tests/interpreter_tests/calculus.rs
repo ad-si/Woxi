@@ -26475,3 +26475,35 @@ mod dsolve_wolfram_forms {
     );
   }
 }
+#[test]
+fn rational_integrals_with_square_free_cubic_and_quartic_denominators() {
+  for (code, expected) in [
+    (
+      "Integrate[(2-4x)/(-1-4x-2x^2-2x^3),x]",
+      "RootSum[1 + 4*#1 + 2*#1^2 + 2*#1^3 & , (-Log[x - #1] + 2*Log[x - #1]*#1)/(2 + 2*#1 + 3*#1^2) & ]",
+    ),
+    (
+      "Integrate[1/(-4-2x^2-2x^3),x]",
+      "-1/2*RootSum[2 + #1^2 + #1^3 & , Log[x - #1]/(2*#1 + 3*#1^2) & ]",
+    ),
+    (
+      "Integrate[1/(1+x+x^3),x]",
+      "RootSum[1 + #1 + #1^3 & , Log[x - #1]/(1 + 3*#1^2) & ]",
+    ),
+    (
+      "Integrate[y/(1+y+y^3),y]",
+      "RootSum[1 + #1 + #1^3 & , (Log[y - #1]*#1)/(1 + 3*#1^2) & ]",
+    ),
+    (
+      "Integrate[1/(2+x+x^4),x]",
+      "RootSum[2 + #1 + #1^4 & , Log[x - #1]/(1 + 4*#1^3) & ]",
+    ),
+    (
+      "Integrate[(1+x^3)/(1+x+x^3),x]",
+      "x - RootSum[1 + #1 + #1^3 & , (Log[x - #1]*#1)/(1 + 3*#1^2) & ]",
+    ),
+    ("Integrate[(1+3x^2)/(1+x+x^3),x]", "Log[1 + x + x^3]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
