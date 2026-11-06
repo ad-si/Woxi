@@ -7831,6 +7831,26 @@ fn order_factor_vs_additive(
   {
     return Ordering::Less;
   }
+  // A symbolic coefficient is another factor, not a negative numeric
+  // coefficient of the tied base: y*(1 - x*y), but (1 - 2*y)*y.
+  let top_product = match top {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => operand.as_ref(),
+    other => other,
+  };
+  if crate::functions::collect_multiplicative_factors(top_product)
+    .iter()
+    .filter(|part| {
+      expr_to_coeff(part).is_none()
+        && !matches!(part, Expr::Real(_) | Expr::BigFloat(..))
+    })
+    .count()
+    > 1
+  {
+    return Ordering::Less;
+  }
   if is_negated_form(top) {
     return Ordering::Greater;
   }

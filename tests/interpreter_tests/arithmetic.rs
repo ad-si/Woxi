@@ -1,6 +1,20 @@
 use super::*;
 
 #[test]
+fn symbolic_coefficients_in_sums_keep_monomials_first() {
+  for (code, expected) in [
+    ("y*(1-x*y)", "y*(1 - x*y)"),
+    ("y*(1-2*y)", "(1 - 2*y)*y"),
+    ("y*(1-a*y)", "y*(1 - a*y)"),
+    ("y*(1-2*x*y)", "y*(1 - 2*x*y)"),
+    ("y^2*(1-x*y)", "y^2*(1 - x*y)"),
+    ("y*(1-x*y^2)", "y*(1 - x*y^2)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn n_accepts_positive_precisions_below_one() {
   for (code, expected) in [
     ("N[Pi, 1/2]", "3.1415926535897932385`0.5"),
