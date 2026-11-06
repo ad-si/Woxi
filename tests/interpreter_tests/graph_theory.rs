@@ -2213,7 +2213,7 @@ mod two_way_rule {
     // the short edges of a dense cluster.
     assert_eq!(
       interpret(
-        "g=Show[Graph[Table[i->Mod[i^2,74],{i,100}]]]; \
+        "g=Normal[Show[Graph[Table[i->Mod[i^2,74],{i,100}]]]]; \
          h=First[Cases[g,Arrowheads[a_]:>a,Infinity]]; \
          r=First[Cases[g,Disk[p_,a_]:>a,Infinity]]; \
          c=Cases[g,Disk[p_,a_]:>p,Infinity]; \
@@ -3346,8 +3346,8 @@ mod weighted_adjacency_graph {
   #[test]
   fn trailing_options_are_kept() {
     assert_eq!(
-      interpret("WeightedAdjacencyGraph[{{Infinity, 1}, {2, Infinity}}, VertexLabels -> \"Name\", EdgeLabels -> \"EdgeWeight\"]").unwrap(),
-      "Graph[<2>, <2>]"
+      interpret("g = WeightedAdjacencyGraph[{{Infinity, 1}, {2, Infinity}}, VertexLabels -> \"Name\", EdgeLabels -> \"EdgeWeight\"]; {Options[g, VertexLabels], Options[g, EdgeLabels], PropertyValue[g, EdgeWeight]}").unwrap(),
+      "{{VertexLabels -> {Name}}, {EdgeLabels -> {EdgeWeight}}, {1, 2}}"
     );
     assert_eq!(
       interpret("EdgeList[WeightedAdjacencyGraph[{a, b}, {{Infinity, 1}, {2, Infinity}}, VertexLabels -> \"Name\"]]").unwrap(),

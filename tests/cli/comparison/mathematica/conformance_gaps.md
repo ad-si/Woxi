@@ -8800,3 +8800,77 @@ functions resolve against the numerical axis ranges.
 Finite `LabelingSize` now renders labels with Wolfram's Text-style width
 measure and three-dot truncation. The corresponding repaired reference is
 valid for reviewing Woxi's output.
+## Unit conformance follow-up (2026-11-06)
+
+Verified against Wolfram Engine 15.0.0 for Mac OS X ARM. The launcher did
+not auto-detect the installed kernel; the reference runs used
+`WOLFRAMSCRIPT_KERNELPATH` pointing at the app bundle's kernel.
+
+Fixed the reported runtime differences:
+
+- `N[machineReal, p]` preserves machine precision at every requested precision.
+- City latitude/longitude carry angular units. All 67 bundled cities have
+  verified coordinates and labels, with 398 disambiguation matches. Qualified
+  query shapes and unknown-name/property results agree with the reference.
+  The table remains a static subset; its existing population estimates are
+  retained separately from the verified coordinate/identity data.
+- Mars/Ceres entity orbital measurements retain their reference precision,
+  independently of the secular elements used for the two-body ephemeris.
+- All 51 gradient display names are verified, including hyphenated color
+  pairs and `"CMYK colors"`.
+- `Quartiles` uses the canonical `Quantile` interpolation and the exact-number
+  ordering shared with Sort, preserving rationals and large integers. Box geometry, whiskers and means retain
+  exact data; outliers use the reference's inset glyphs and marker styles.
+- Mirrored chart axes and probability scales retain symbolic
+  ``Charting`ScaledTicks`` callbacks, resolving them only when drawing.
+  `Spacer[0]` is a zero-width label, not a space that adds image padding.
+- Distribution-chart quantile rectangles carry their rounding option;
+  density columns use a shaded `GraphicsComplex` and one bounding rectangle.
+- BarChart3D draws the twelve backdrop panels. The canonical 3D renderer
+  resolves their `Scaled` coordinates from the scene bounds and handles
+  uniform opacity in vertex color directives.
+- VectorPlot preserves the LAB gradient in its symbolic primitives;
+  StreamPlot3D uses unquantized RGB triples for vertex colors. VectorPlot3D
+  uses `VectorColorFunction`, and a constant field
+  keeps the default series blue when the unsupported `ColorFunction` option
+  is given.
+- Grayscale rasters retain scalar data and a value range, while automatic
+  raster tick labels retain numeric types. Explicit tick-label types survive.
+- ProbabilityScalePlot supports the Weibull transform and exact point sizes.
+  Point-size directives retain their expression through serialization and Show.
+- Explicit bar legends acquire their default options and placement function.
+  Show with `PlotRange -> All` combines sampled extents rather than reverting
+  to the function plots' unsampled interval endpoints.
+
+The geometry regressions now expand `GraphicsComplex` indices before reading
+coordinates, distinguish mesh paths from the region boundary, account for
+rotation and translation of paired density curves, and locate the vertex
+array by its head rather than a wrapper-dependent Part path. Palette tests
+check the plotted series colors, rather than also counting highlight/default
+style metadata. Tick-label drawing is checked in SVG tests because Wolfram
+can keep labels in axis specifications instead of Text primitives. VectorPoints
+checks density and solid-arrow structure; exact sampling layouts differ by
+reference version (the earlier sweep observed 64 arrows for 4, this version 49).
+These checks retain their local geometry/rendering coverage.
+Raster probes accept scalar or RGB data and normalize sparse arrays before
+reading pixel values; streamline probes preserve RGB triples instead of
+flattening them into scalar numbers.
+
+Two automatic-range probes differ only in the last few binary digits and
+use the verifier's existing numeric-tolerance comparison, preserving their
+printed structure: ListLinePlot's lower y bound is `2.8888888888888955` in
+Wolfram versus `2.888888888888889`, and the all-range ListPlot's lower x bound
+is `0.916666666666669` versus `0.9166666666666666`.
+
+Two invalid-input reference cases remain excluded individually:
+
+- `QuantilePlot[{1, 2}, x]` repeatedly terminates with
+  `TerminatedEvaluation[RecursionLimit]`, even after isolation to one case.
+- `PairedSmoothHistogram[x, y]` constructs a malformed graphic containing
+  unresolved Part and private Charting expressions instead of rejecting
+  non-data arguments. Woxi retains its unevaluated-form regression.
+
+The verifier bisects kernel evaluation failures without startup retries,
+reports isolated failures as errors, and excludes unfinished comparisons from
+its pass count. Neither of these two inputs is classified as a cold-start
+flake; other valid inputs of both functions remain in reference comparisons.

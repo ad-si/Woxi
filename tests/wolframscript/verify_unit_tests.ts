@@ -809,6 +809,10 @@ const APPROX_MATCH = new Set([
 // neighbours in conformance_gaps.md — or where both engines iterate to a
 // root and stop in different places.
 const NEAR_MATCH = new Set([
+  // Automatic plot-range arithmetic differs by a few ulps between the
+  // two engines; preserve the whole structure and compare its numbers.
+  "{PlotRange[ListPlot[Range[10]]], PlotRange[Plot[x, {x, 2, 10}]], PlotRange[ListLinePlot[{3, 5, 4}]]}",
+  "ToString[PlotRange[ListPlot[{1, 2, 3, 10, 5}, PlotRange -> All]], InputForm]",
   // BarChart's layout is reproduced from wolframscript's numbers, but its bar
   // edges and extents come out an ulp or two away (see "Chart functions:
   // symbolic primitives").
@@ -991,10 +995,12 @@ function runWolframBatch(
     throw err;
   }
   if (res.signal || res.status !== 0) {
-    throw new Error(
+    const err = new Error(
       lastWolframStderr.trim() ||
         `wolframscript exited with ${res.signal ?? res.status}`
     );
+    Object.assign(err, { output: res.stdout ?? "" });
+    throw err;
   }
   return res.stdout ?? "";
 }
@@ -1021,6 +1027,16 @@ function hasDoneSentinel(output: string): boolean {
     .trim()
     .split("\n")
     .some((l) => l.trim() === "DONE");
+}
+
+/** Kernel evaluation failures are deterministic, unlike activation flakes. */
+export function evaluationFailureReason(output: string): string | null {
+  return output.match(/TerminatedEvaluation\[([^\]\r\n]+)\]/)?.[1] ?? null;
+}
+
+/** Uncompleted cases must never contribute to the reported pass count. */
+export function incompleteCaseCount(failures: string[]): number {
+  return failures.filter((line) => /^(?:FLAKY|ERROR) case #/.test(line)).length;
 }
 
 /** A single expression that wolframscript cannot finish on its own. */
@@ -1074,13 +1090,14 @@ const FLAKE_RETRIES = 3;
  * over. Instead a timed-out batch is split in half and both halves rerun with
  * their own (still generous) budget, so slow-but-finite work simply completes.
  * Only a single case that cannot finish alone is a genuine hang, and only that
- * aborts the run. Non-timeout failures are wolframscript cold-start flakes
- * (transient "not activated" / SIGKILL / empty output) and are retried.
+ * aborts the run. Kernel evaluation failures are split immediately; other
+ * non-timeout failures may be cold-start flakes and are retried.
  */
-function runBatchResilient(
+export function runBatchResilient(
   batch: BatchCase[],
   failures: string[],
-  label = rangeLabel(batch)
+  label = rangeLabel(batch),
+  runBatch: typeof runWolframBatch = runWolframBatch
 ): string[] {
   const timeoutMs = batchTimeoutMs(batch.length);
   for (let flakeAttempt = 0; ; flakeAttempt++) {
@@ -1088,11 +1105,11 @@ function runBatchResilient(
     let crashErr = "";
     let timedOut = false;
     try {
-      output = runWolframBatch(batch, timeoutMs);
+      output = runBatch(batch, timeoutMs);
     } catch (err: any) {
       crashErr = err.message || String(err);
       timedOut = err.timedOut === true;
-      output = "";
+      output = typeof err.output === "string" ? err.output : "";
     }
     if (!crashErr && hasDoneSentinel(output)) {
       return output.trim().split("\n");
@@ -1106,7 +1123,7 @@ function runBatchResilient(
         ? "produced no output"
         : "did not contain DONE sentinel";
     console.error(`\n${label} ${reason}.`);
-    if (!crashErr && output.trim()) {
+    if (output.trim()) {
       console.error(`wolframscript output:\n${output}`);
     }
     // stderr is captured rather than forwarded (see runWolframBatch), so echo
@@ -1122,6 +1139,16 @@ function runBatchResilient(
     if (timedOut) {
       reapOrphanedKernels();
       if (batch.length === 1) throw new HangingCaseError(batch[0], timeoutMs);
+      break;
+    }
+    const evaluationFailure = evaluationFailureReason(output + "\n" + crashErr);
+    if (evaluationFailure !== null) {
+      if (batch.length === 1) {
+        failures.push(
+          `ERROR case #${batch[0].idx + 1} terminated with ${evaluationFailure}: ${batch[0].expr}`
+        );
+        return [];
+      }
       break;
     }
     if (flakeAttempt < FLAKE_RETRIES) {
@@ -1149,8 +1176,8 @@ function runBatchResilient(
     `Splitting into ${rangeLabel(first)} and ${rangeLabel(second)} and rerunning…`
   );
   return [
-    ...runBatchResilient(first, failures),
-    ...runBatchResilient(second, failures),
+    ...runBatchResilient(first, failures, rangeLabel(first), runBatch),
+    ...runBatchResilient(second, failures, rangeLabel(second), runBatch),
   ];
 }
 
@@ -1376,6 +1403,14 @@ function main() {
   // while Wolfram's companion-matrix eigenvalues introduce machine-epsilon
   // artifacts (1.0000000000000002).
   const EXACT_EXPR_SKIP = new Set([
+    // Invalid symbolic reference recurses in the reference kernel, including
+    // when run alone. See "Unit conformance follow-up (2026-11-06)" in
+    // conformance_gaps.md. Retain the local unevaluated-form regression.
+    "QuantilePlot[{1, 2}, x]",
+    // The reference constructs a malformed graphic containing unresolved
+    // Part/Charting expressions for symbolic, non-data arguments. See the
+    // same follow-up in conformance_gaps.md; keep the local invalid-input test.
+    "PairedSmoothHistogram[x, y]",
     // Attributes[ParallelDo] is non-deterministic in wolframscript: ParallelDo
     // autoloads lazily. On a cold kernel it is a stub with {Protected,
     // ReadProtected}; once the Parallel subsystem initializes (e.g. after any
@@ -3006,17 +3041,17 @@ function main() {
   }
 
   const testedFiltered = woxiResultsFiltered.length;
-  const passCount = testedFiltered - failCount;
+  const incompleteCount = incompleteCaseCount(failures);
+  const passCount = testedFiltered - failCount - incompleteCount;
   const flakyCases = failures.filter((l) => l.startsWith("FLAKY case"));
+  const erroredCases = failures.filter((l) => l.startsWith("ERROR case"));
 
-  if (failCount === 0 && flakyCases.length === 0) {
+  if (failCount === 0 && incompleteCount === 0) {
     console.log(`All ${testedFiltered} test cases match between Woxi and wolframscript.`);
   } else {
-    if (failCount > 0) {
-      console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ:\n`);
-    }
+    console.error(`\n${passCount}/${testedFiltered} passed, ${failCount} differ, ${incompleteCount} incomplete:\n`);
     for (const line of failures) {
-      const m = line.match(/^FAIL #(\d+)/);
+      const m = line.match(/^(?:FAIL|(?:ERROR|FLAKY) case) #(\d+)/);
       if (m) {
         const idx = parseInt(m[1]) - 1;
         const tc = cases[idx];
@@ -3032,9 +3067,15 @@ function main() {
           `cold-start flakes; re-run to verify them.`
       );
     }
+    if (erroredCases.length > 0) {
+      console.error(
+        `\n${erroredCases.length} case(s) terminated with kernel evaluation errors; ` +
+          `these are not cold-start flakes or passing comparisons.`
+      );
+    }
 
     process.exit(1);
   }
 }
 
-main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) main();

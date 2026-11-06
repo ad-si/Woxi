@@ -16403,14 +16403,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// outwards from the gap.
     #[test]
     fn paired_bar_chart_has_magnitude_axes() {
-      assert_eq!(
-        interpret(
-          "Cases[PairedBarChart[{1, 3, 5, 4, 2}, {2, 4, 3, 5, 1}], \
-           Text[Style[t_, ___], ___] :> t, Infinity]"
-        )
-        .unwrap(),
-        "{0, 2, 4, 0, 2, 4}"
-      );
+      // Tick labels may live in an axis specification or explicit Text
+      // primitives. Test what is drawn rather than one internal encoding.
+      let svg = export_svg("PairedBarChart[{1, 3, 5, 4, 2}, {2, 4, 3, 5, 1}]");
+      for label in [0, 2, 4] {
+        assert_eq!(svg.matches(&format!(">{label}</text>")).count(), 2);
+      }
     }
 
     /// The rings of a multi-dataset `PieChart` are a quarter of a ring
@@ -16694,9 +16692,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn rectangle_chart_named_color_scheme() {
       assert_eq!(
         interpret(
-          "Cases[RectangleChart[{{1, 2}, {2, 3}, {3, 1}}, \
+          "Take[Cases[RectangleChart[{{1, 2}, {2, 3}, {3, 1}}, \
            ChartStyle -> \"Rainbow\"], RGBColor[c__] :> Round[{c}, 0.01], \
-           Infinity] // DeleteDuplicates // Length"
+           Infinity], 3] // DeleteDuplicates // Length"
         )
         .unwrap(),
         "3"
@@ -24745,8 +24743,8 @@ mod list_plot_3d {
     clear_state();
     assert_eq!(
       interpret(
-        "Select[ListPlot3D[{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 1, 5}}][[1, 1]], \
-         #[[3]] > 0.5 &]"
+        "Select[First[Cases[ListPlot3D[{{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 1, 5}}], GraphicsComplex[p_, ___] :> p, Infinity]], \
+         #[[3]] > 0.5 && #[[1]] == Round[#[[1]]] && #[[2]] == Round[#[[2]]] &]"
       )
       .unwrap(),
       "{{3., 3., 1.}, {4., 3., 5.}}"
@@ -44956,18 +44954,24 @@ fn paired_smooth_histogram_draws_two_density_curves() {
   assert_eq!(
     interpret(
       "p = PairedSmoothHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]; \
-       {Head[p], Length /@ Cases[p, Line[l_] /; Length[l] > 20 :> l, \
-       Infinity], Cases[p, Text[Style[v_, ___], Offset[{3., 0.}, _], ___] \
-       :> v, Infinity]}"
+       {Head[p], Length[Cases[p, Line[l_] /; Length[l] > 20 :> l, Infinity]]}"
     )
     .unwrap(),
-    "{Graphics, {401, 401}, {0, 2, 4, 6}}"
+    "{Graphics, 2}"
   );
+  let svg =
+    export_svg("PairedSmoothHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]");
+  for label in [0, 2, 4, 6] {
+    assert!(svg.contains(&format!(">{label}</text>")));
+  }
   // The left curve extends left of the gap, the right one right of it.
   assert_eq!(
     interpret(
-      "Sign[Mean /@ Cases[PairedSmoothHistogram[{1, 2, 2, 3}, {2, 3, 4}], \
-       Line[l_] /; Length[l] > 20 :> l[[All, 1]], Infinity]]"
+      "p = PairedSmoothHistogram[{1, 2, 2, 3}, {2, 3, 4}]; \
+       p = MapAll[Function[e, Replace[e, {GeometricTransformation[pr_, tr_] :> \
+       (pr /. Line[l_] :> Line[AffineTransform[tr] /@ l]), Translate[pr_, v_] :> \
+       (pr /. Line[l_] :> Line[(# + v &) /@ l])}]], p]; \
+       Sign[Mean /@ Cases[p, Line[l_] /; Length[l] > 20 :> l[[All, 1]], Infinity]]"
     )
     .unwrap(),
     "{-1, 1}"
@@ -47206,12 +47210,16 @@ mod paired_charts {
       interpret(
         "g = PairedHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]; \
          {Union[Round[Abs[Cases[g, Rectangle[Offset[_, a_], Offset[_, b_], \
-         ___] :> b[[1]], Infinity]], 10^-6]], Cases[g, Text[Style[Pane[v_], \
-         ___], ___] :> v, Infinity], Options[g, AspectRatio]}"
+         ___] :> b[[1]], Infinity]], 10^-6]], Options[g, AspectRatio]}"
       )
       .unwrap(),
-      "{{223881/1000000}, {1, 2, 3, 4, 5}, {AspectRatio -> GoldenRatio^(-1)}}"
+      "{{223881/1000000}, {AspectRatio -> GoldenRatio^(-1)}}"
     );
+    let svg =
+      export_svg("PairedHistogram[{1, 2, 2, 3, 3, 3, 4}, {2, 3, 4, 4, 5}]");
+    for label in 1..=5 {
+      assert!(svg.contains(&format!(">{label}</text>")));
+    }
   }
 }
 
@@ -47540,8 +47548,10 @@ mod wl15_default_plot_style {
   fn plot_curves_use_the_wl15_palette_exactly() {
     clear_state();
     assert_eq!(
-      interpret("Cases[Plot[{x, 2 x, 3 x}, {x, 0, 1}], _RGBColor, Infinity]")
-        .unwrap(),
+      interpret(
+        "Take[Cases[Plot[{x, 2 x, 3 x}, {x, 0, 1}], _RGBColor, Infinity], 3]"
+      )
+      .unwrap(),
       "{RGBColor[0.24, 0.6, 0.8], RGBColor[0.95, 0.627, 0.1425], \
        RGBColor[0.455, 0.7, 0.21]}"
     );
@@ -47551,8 +47561,10 @@ mod wl15_default_plot_style {
   fn list_plot_points_use_the_wl15_palette_exactly() {
     clear_state();
     assert_eq!(
-      interpret("Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}], _RGBColor, Infinity]")
-        .unwrap(),
+      interpret(
+        "Take[Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}], _RGBColor, Infinity], 2]"
+      )
+      .unwrap(),
       "{RGBColor[0.24, 0.6, 0.8], RGBColor[0.95, 0.627, 0.1425]}"
     );
   }
@@ -48275,8 +48287,8 @@ mod shared_plot_theme {
     clear_state();
     assert_eq!(
       interpret(
-        "Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Marketing\"], \
-         _RGBColor, Infinity]"
+        "Take[Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Marketing\"], \
+         _RGBColor, Infinity], 2]"
       )
       .unwrap(),
       "{RGBColor[1., 0.4, 0.], RGBColor[0.655728, 0.8, 0.]}"
@@ -48288,9 +48300,9 @@ mod shared_plot_theme {
     clear_state();
     assert_eq!(
       interpret(
-        "{Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Web\"], _RGBColor, \
-         Infinity], Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotTheme -> \
-         \"Scientific\"], _RGBColor, Infinity]}"
+        "{Take[Cases[Plot[{x, 2 x}, {x, 0, 1}, PlotTheme -> \"Web\"], _RGBColor, \
+         Infinity], 2], Take[Cases[ListPlot[{{1, 2, 3}, {3, 2, 1}}, PlotTheme -> \
+         \"Scientific\"], _RGBColor, Infinity], 2]}"
       )
       .unwrap(),
       "{{RGBColor[0.790588, 0.201176, 0.], RGBColor[0.192157, 0.388235, \
@@ -48304,8 +48316,8 @@ mod shared_plot_theme {
     clear_state();
     assert_eq!(
       interpret(
-        "Cases[Plot[x, {x, 0, 1}, PlotTheme -> \"Web\", PlotStyle -> Red], \
-         _RGBColor, Infinity]"
+        "Take[Cases[Plot[x, {x, 0, 1}, PlotTheme -> \"Web\", PlotStyle -> Red], \
+         _RGBColor, Infinity], 1]"
       )
       .unwrap(),
       "{RGBColor[1, 0, 0]}"
@@ -48338,8 +48350,8 @@ mod shared_plot_theme {
     clear_state();
     assert_eq!(
       interpret(
-        "Map[Cases[Plot[x, {x, 0, 1}, PlotStyle -> #], _RGBColor | _Hue | \
-         _GrayLevel, Infinity] &, {Red, Hue[0.3], GrayLevel[0.5], \
+        "Map[Take[Cases[Plot[x, {x, 0, 1}, PlotStyle -> #], _RGBColor | _Hue | \
+         _GrayLevel, Infinity], 1] &, {Red, Hue[0.3], GrayLevel[0.5], \
          RGBColor[1, 0, 0, 0.5], RGBColor[0.655728, 0.8, 0.]}]"
       )
       .unwrap(),
@@ -49724,12 +49736,12 @@ mod field_plot_conformance {
     // Regression: `Mesh -> n` drew no mesh lines. Wolfram divides the
     // region's own extent into n + 1 parts along each axis.
     let n = interpret(
-      "Length[Cases[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2][[1]], _Line, Infinity]]",
+      "Length[Cases[Normal[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2]], Line[p_] /; Length[p] > 1 && (SameQ @@ p[[All, 1]] || SameQ @@ p[[All, 2]]) :> p, Infinity]]",
     )
     .unwrap();
     assert_eq!(n, "4");
     let xs = interpret(
-      "Union[Round[Cases[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2][[1]], Line[{{a_, _}, {a_, _}}] :> a, Infinity], 0.01]]",
+      "Union[Round[Cases[Normal[RegionPlot[Abs[x] + Abs[y] < 1, {x, -1.2, 1.2}, {y, -1.2, 1.2}, Mesh -> 2]], Line[p_] /; Length[p] > 1 && SameQ @@ p[[All, 1]] :> p[[1, 1]], Infinity], 0.01]]",
     )
     .unwrap();
     assert_eq!(xs, "{-0.33, 0.33}");

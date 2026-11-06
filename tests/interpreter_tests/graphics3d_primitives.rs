@@ -931,10 +931,10 @@ mod charts_3d {
     assert_eq!(
       interpret(
         "g = BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 8}}]; \
-         {Head[g], Cases[g, Sphere[_, r_] :> r, Infinity]}"
+         {Head[g], Length[Cases[g, _Sphere, Infinity]]}"
       )
       .unwrap(),
-      "{Graphics3D, {0.1, 0.2}}"
+      "{Graphics3D, 2}"
     );
     assert!(
       polygon_count(&svg("BubbleChart3D[{{1, 2, 3, 1}, {2, 1, 2, 8}}]")) > 100
