@@ -736,6 +736,12 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let sum_expr = call1("Total", Expr::List(items.clone()));
         let evaluated_sum = crate::evaluator::evaluate_expr_to_expr(&sum_expr)?;
         let n = items.len() as i128;
+        // Mean divides a machine sum directly. Evaluating sum / n as a
+        // symbolic quotient multiplies by the rounded reciprocal instead,
+        // which can change the final bit for non-power-of-two lengths.
+        if let Expr::Real(sum) = evaluated_sum {
+          return Ok(Expr::Real(sum / n as f64));
+        }
         // A rational sum folds to an exact rational (e.g. Mean[{1/4, 1/8}]
         // is 3/16, not the unevaluated quotient (3/8)/2)
         if let Some((num, den)) = expr_to_rational(&evaluated_sum)

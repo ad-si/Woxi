@@ -5194,8 +5194,8 @@ mod expand_threading {
     );
   }
 
-  // Mean is Total[list]/Length[list] on top of the machine tree fold
-  // (differential fuzzer, seed 1783520505113402110).
+  // Mixed numeric vectors use Total's fold followed by direct machine
+  // division, rather than multiplication by a rounded reciprocal.
   #[test]
   fn mean_machine_fold_order() {
     assert_eq!(
@@ -5206,6 +5206,21 @@ mod expand_threading {
       interpret("Mean[{0, -59, 34, 14.6}]").unwrap(),
       "-2.5999999999999996"
     );
+    for (code, expected) in [
+      ("Mean[{-21, -43, 0.8, 27, 62}]", "5.159999999999999"),
+      ("Mean[{1, -21, 0.8, 0, 62}]", "8.559999999999999"),
+      ("Mean[{1/3, 0.8, 2}]", "1.0444444444444445"),
+      ("Mean[{0.8, 1/3, 2}]", "1.0444444444444445"),
+      ("Mean[{1, 2.2, 3, 4.4, 5, 6.6, 7}]", "4.171428571428572"),
+      (
+        "Mean[{100000000000000000000, 0.8, -100000000000000000000}]",
+        "0.",
+      ),
+      ("Mean[{1/3, 2/3, 2}]", "1"),
+      ("Mean[{1., x}]", "(1. + x)/2"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
   }
 
   // Wolfram's machine-precision Times mirrors Plus's balanced tree for
