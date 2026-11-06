@@ -15153,3 +15153,24 @@ mod scaled_power_prime_split {
     );
   }
 }
+
+#[test]
+fn xor_invalid_comparison_messages_are_emitted_once() {
+  for (head, inverse) in [("Less", "GreaterEqual"), ("Greater", "LessEqual")] {
+    let r = woxi::interpret_with_stdout(&format!(
+      "Xor[{head}[16, ComplexInfinity], True]"
+    ))
+    .unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        format!(
+          "{head}::nord: Invalid comparison with ComplexInfinity attempted."
+        ),
+        format!(
+          "{inverse}::nord: Invalid comparison with ComplexInfinity attempted."
+        ),
+      ]
+    );
+  }
+}

@@ -142,7 +142,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Not", args));
   }
 
-  let evaluated = evaluate_expr_to_expr(&args[0])?;
+  let evaluated = args[0].clone();
   match as_bool(&evaluated) {
     Some(true) => Ok(bool_expr(false)),
     Some(false) => Ok(bool_expr(true)),
@@ -170,7 +170,7 @@ pub fn not_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && operators.len() == 1
         && let Some(neg_op) = negate_comparison_op(operators[0])
       {
-        return Ok(Expr::Comparison {
+        return evaluate_expr_to_expr(&Expr::Comparison {
           operands: operands.clone(),
           operators: vec![neg_op],
         });
@@ -208,7 +208,7 @@ fn reduce_xor_operands(
   let mut true_count = 0;
   let mut remaining: Vec<Expr> = Vec::new();
   for arg in args {
-    let evaluated = evaluate_expr_to_expr(arg)?;
+    let evaluated = arg.clone();
     match as_bool(&evaluated) {
       Some(true) => true_count += 1,
       Some(false) => {} // Skip False (the Xor identity element)
@@ -240,7 +240,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Single argument: Xor[x] => x
   if args.len() == 1 {
-    return evaluate_expr_to_expr(&args[0]);
+    return Ok(args[0].clone());
   }
 
   let (remaining, odd_true) = reduce_xor_operands(args)?;
