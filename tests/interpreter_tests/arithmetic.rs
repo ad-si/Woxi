@@ -15221,3 +15221,21 @@ fn divide_real_by_exact_symbolic_quotient_rounds_once() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn polynomial_times_tangent_uses_polylogarithms() {
+  assert_eq!(interpret("SameQ[Integrate[x Tan[a x],x], I x^2/2-x Log[1+Exp[2 I a x]]/a+I PolyLog[2,-Exp[2 I a x]]/(2a^2)]").unwrap(), "True");
+
+  assert_eq!(
+    interpret("Integrate[x Tan[x],x]").unwrap(),
+    "I/2*x^2 - x*Log[1 + E^((2*I)*x)] + I/2*PolyLog[2, -E^((2*I)*x)]"
+  );
+  assert_eq!(
+    interpret("Integrate[x^2 Tan[2x],x]").unwrap(),
+    "I/3*x^3 - (x^2*Log[1 + E^((4*I)*x)])/2 + I/4*x*PolyLog[2, -E^((4*I)*x)] - PolyLog[3, -E^((4*I)*x)]/16"
+  );
+  assert_eq!(
+    interpret("Integrate[x^3 Tan[2x],x]").unwrap(),
+    "I/4*x^4 - (x^3*Log[1 + E^((4*I)*x)])/2 + (3*I)/8*x^2*PolyLog[2, -E^((4*I)*x)] - (3*x*PolyLog[3, -E^((4*I)*x)])/16 - (3*I)/64*PolyLog[4, -E^((4*I)*x)]"
+  );
+}

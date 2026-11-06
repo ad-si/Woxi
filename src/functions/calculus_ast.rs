@@ -8783,6 +8783,54 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
     );
   }
 
+  // Polynomial times tangent has a finite polylogarithmic primitive.
+  // Repeated integration by parts terminates when the polynomial's
+  // derivatives vanish; Li_s[-Exp[2 I a x]] differentiates to
+  // 2 I a Li_(s-1)[-Exp[2 I a x]].
+  if dv_factors.len() == 1
+    && let Expr::FunctionCall { name, args } = dv_factors[0]
+    && name == "Tan"
+    && args.len() == 1
+    && let Some(a) = try_match_linear_arg(&args[0], var)
+    && is_polynomial_in(u, var)
+  {
+    let i = id_expr("I");
+    let rate = times(vec![Expr::Integer(2), i.clone(), a.clone()]);
+    let exponential = pow2(id_expr("E"), times2(rate.clone(), id_expr(var)));
+    let mut terms = vec![
+      times2(i, integrate(u, var)?),
+      neg1(div2(
+        times2(
+          u.clone(),
+          call1("Log", plus2(Expr::Integer(1), exponential.clone())),
+        ),
+        a.clone(),
+      )),
+    ];
+    let mut derivative = simplify(differentiate(u, var).ok()?);
+    let mut order = 1;
+    while !matches!(derivative, Expr::Integer(0)) {
+      let coefficient = div2(
+        if order % 2 == 0 {
+          derivative.clone()
+        } else {
+          neg1(derivative.clone())
+        },
+        times2(a.clone(), pow2(rate.clone(), Expr::Integer(order))),
+      );
+      terms.push(times2(
+        coefficient,
+        call(
+          "PolyLog",
+          vec![Expr::Integer(order + 1), neg1(exponential.clone())],
+        ),
+      ));
+      derivative = simplify(differentiate(&derivative, var).ok()?);
+      order += 1;
+    }
+    return Some(plus(terms));
+  }
+
   let dv_expr = if dv_factors.len() == 1 {
     dv_factors[0].clone()
   } else {

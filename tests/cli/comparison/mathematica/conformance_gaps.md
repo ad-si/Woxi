@@ -8874,3 +8874,21 @@ The verifier bisects kernel evaluation failures without startup retries,
 reports isolated failures as errors, and excludes unfinished comparisons from
 its pass count. Neither of these two inputs is classified as a cold-start
 flake; other valid inputs of both functions remain in reference comparisons.
+
+
+### Mixed sine/tangent integrals need hypergeometric primitives
+
+Verified with `wolframscript` on 2026-11-06 (diff-fuzz seed
+1793914225895660000, case seed 13215040516269365654):
+
+```wolfram
+Integrate[(Tan[2 x] + Sin[x y]) Sin[x y], x]
+```
+
+Woxi leaves the integral unevaluated. Wolfram returns a combination of four
+`Hypergeometric2F1` terms with parameters `±y/4` and `1 ± y/4`, together
+with the elementary primitive of `Sin[x y]^2`. Integrating the remaining
+`Sin[b x] Tan[a x]` product requires a hypergeometric integration rule.
+The minimized polynomial-times-tangent case `Integrate[x Tan[x], x]`
+is supported by a finite polylogarithmic integration-by-parts recurrence;
+it does not resolve the original mixed-frequency trigonometric integral.
