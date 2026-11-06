@@ -6288,7 +6288,11 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           let inner = plus(divided);
           let inner =
             crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
-          let product = times(vec![content_expr, inner]);
+          let product = if matches!(content_expr, Expr::Integer(1)) {
+            inner
+          } else {
+            times(vec![content_expr, inner])
+          };
           let candidate = if g_den == 1 {
             product
           } else {
@@ -8324,10 +8328,9 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   if !matches!(den, Expr::Integer(1)) {
     let num = expand_and_combine(&num);
     let den = expand_and_combine(&den);
-    if let (Some(n), Some(d)) = (
-      full_simplify_univariate_polynomial(&num),
-      full_simplify_univariate_polynomial(&den),
-    ) {
+    if polynomial_like(&num) && polynomial_like(&den) {
+      let n = full_simplify_univariate_polynomial(&num).unwrap_or(num);
+      let d = full_simplify_univariate_polynomial(&den).unwrap_or(den);
       let candidate = crate::functions::math_ast::make_divide(n, d);
       if wl_simplify_count(
         &crate::evaluator::evaluate_expr_to_expr(&candidate)
@@ -8344,27 +8347,46 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   // Polynomial division can shorten an improper rational function without
   // factoring its denominator. Compare the canonical quotient plus proper
   // remainder with the other candidates using the same expression cost.
-  let (num, den) = super::together::extract_num_den(&best);
+  let (mut num, mut den) = super::together::extract_num_den(expr);
   if !matches!(den, Expr::Integer(1)) {
     let mut vars = std::collections::BTreeSet::new();
     collect_free_vars_simple(&num, &mut vars);
     collect_free_vars_simple(&den, &mut vars);
     if vars.len() == 1 {
       let var = vars.into_iter().next().unwrap();
+      if extract_poly_coeffs(&expand_and_combine(&den), &var)
+        .is_some_and(|c| c.last().is_some_and(|n| *n < 0))
+      {
+        num = expand_and_combine(&times2(Expr::Integer(-1), num));
+        den = expand_and_combine(&times2(Expr::Integer(-1), den));
+      }
       if extract_poly_coeffs(&expand_and_combine(&num), &var).is_some()
         && extract_poly_coeffs(&expand_and_combine(&den), &var).is_some()
         && let Ok(Expr::List(ref parts)) =
           super::polynomial_quotient_remainder_ast(&[
             num,
             den.clone(),
-            Expr::Identifier(var),
+            Expr::Identifier(var.clone()),
           ])
         && !matches!(parts[0], Expr::Integer(0))
       {
-        let candidate = plus2(
-          parts[0].clone(),
-          crate::functions::math_ast::make_divide(parts[1].clone(), den),
-        );
+        let negative =
+          extract_poly_coeffs(&expand_and_combine(&parts[1]), &var)
+            .is_some_and(|c| c.last().is_some_and(|n| *n < 0));
+        let remainder = if negative {
+          expand_and_combine(&times2(Expr::Integer(-1), parts[1].clone()))
+        } else {
+          parts[1].clone()
+        };
+        let remainder =
+          super::factor_terms_ast(std::slice::from_ref(&remainder))
+            .unwrap_or(remainder);
+        let den =
+          full_simplify_univariate_polynomial(&expand_and_combine(&den))
+            .unwrap_or(den);
+        let proper = crate::functions::math_ast::make_divide(remainder, den);
+        let proper = if negative { neg(proper) } else { proper };
+        let candidate = plus2(parts[0].clone(), proper);
         if let Ok(candidate) =
           crate::evaluator::evaluate_expr_to_expr(&candidate)
           && wl_simplify_count(&candidate) < wl_simplify_count(&best)

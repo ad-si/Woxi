@@ -15298,6 +15298,19 @@ fn full_simplify_shorter_polynomial_quotient_and_remainder() {
     ("FullSimplify[(4+6y)/(y-7)]", "6 + 46/(-7 + y)"),
     ("FullSimplify[(x^2+1)/(x-1)]", "1 + 2/(-1 + x) + x"),
     ("FullSimplify[(x^2+2)/(x-2)]", "2 + 6/(-2 + x) + x"),
+    (
+      "FullSimplify[(3+2x+4x^2+x^3)/(-1-4x-x^2)]",
+      "-x - (3 + x)/(1 + x*(4 + x))",
+    ),
+    (
+      "FullSimplify[(5+x+4x^2+3x^3)/(3x)]",
+      "1/3 + 5/(3*x) + (4*x)/3 + x^2",
+    ),
+    (
+      "FullSimplify[(1+x+2x^2+3x^3)/(3x)]",
+      "(1 + x^(-1) + 2*x + 3*x^2)/3",
+    ),
+    ("FullSimplify[x/(-1-4x+x^2)]", "x/(-1 + (-4 + x)*x)"),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
