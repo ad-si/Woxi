@@ -2287,7 +2287,7 @@ GumbelDistribution,"Gumbel minimum extreme value distribution",✅,pure,6.0,2276
 LimitsPositioning,"Typesetting option",🚫,None,3.0,2276
 PrimeNu,"Count distinct prime factors of an integer (Listable)",✅,pure,7.0,2276
 SyntaxForm,"Typesetting",🚫,None,3.0,2276
-ProbabilityScalePlot,"Plots data on a probability scale of a distribution with a fitted reference line",✅,pure,8.0,2278
+ProbabilityScalePlot,"Plots data on a Normal or Weibull probability scale with a fitted reference line",✅,pure,8.0,2278
 VectorDensityPlot,"Creates a density plot of a vector field's magnitude with its arrows",✅,pure,7.0,2278
 GeoProjectionData,"",🚫,,7.0,2282
 KeyExistsQ,"Checks if a key exists in an association",✅,pure,10.0,2282

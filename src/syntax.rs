@@ -241,6 +241,8 @@ pub struct PlotSeriesData {
   /// points of `AbsolutePointSize[…]`, the same sign convention the graphics
   /// primitives use. `None` = the default dot.
   pub point_size: Option<f64>,
+  /// The original PointSize/AbsolutePointSize directive, retaining exactness.
+  pub point_size_expr: Option<Expr>,
   /// Dash pattern from `PlotStyle` (`Dashed`, `Dashing[…]`, …) in the
   /// plot's own encoding — negative lengths are absolute pixels, positive
   /// ones fractions of the image width. `None` = a solid line. Travels with

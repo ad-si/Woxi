@@ -44886,15 +44886,13 @@ fn probability_scale_plot_uses_percent_scale() {
     interpret(
       "s = ProbabilityScalePlot[{1, 2, 3, 4, 5, 10}, \"Normal\"]; \
        {Round[Cases[s, Point[p_] :> p, Infinity][[1]], 10^-6], \
-       Round[Options[s, FrameTicks][[1, 2, 1, 1]], 10^-6], \
+       Head[Options[s, FrameTicks][[1, 2, 1, 1]]], \
        Round[Cases[Options[s, Epilog], Line[p_] :> p, Infinity], 10^-6]}"
     )
     .unwrap(),
     "{{{1, -229859/1000000}, {2, 373901/1000000}, {3, 802901/1000000}, \
      {4, 1197099/1000000}, {5, 1626099/1000000}, {10, 2229859/1000000}}, \
-     {{-331587/250000, 1}, {-322427/500000, 5}, {-17597/62500, 10}, \
-     {32551/100000, 25}, {1, 50}, {167449/100000, 75}, {142597/62500, 90}, \
-     {1322427/500000, 95}, {831587/250000, 99}}, \
+     Charting`ScaledTicks, \
      {{{6919/12500, -229859/1000000}, {80581/12500, 2229859/1000000}}}}"
   );
   // Its dots are a ListLinePlot's mesh size, larger than a ListPlot's.
@@ -44904,11 +44902,11 @@ fn probability_scale_plot_uses_percent_scale() {
        PointSize[x_] :> x, Infinity]]"
     )
     .unwrap(),
-    "{0.019444444444444445}"
+    "{7/360}"
   );
   assert_eq!(
-    interpret("ProbabilityScalePlot[{1, 2}, \"Weibull\"]").unwrap(),
-    "ProbabilityScalePlot[{1, 2}, Weibull]"
+    interpret("Head[ProbabilityScalePlot[{1, 2}, \"Weibull\"]]").unwrap(),
+    "Graphics"
   );
 }
 
@@ -44921,6 +44919,15 @@ fn automatic_raster_tick_labels_are_numbers() {
   assert_eq!(
     interpret("Union[Cases[FrameTicks /. Options[ArrayPlot[ConstantArray[1, {12, 30}], FrameTicks -> Automatic]], {_Real, label_} :> Head[label], Infinity]]").unwrap(),
     "{Integer}"
+  );
+}
+
+#[test]
+fn weibull_probability_scale_uses_logarithmic_data_and_ranks() {
+  assert_eq!(
+    interpret("Round[Cases[ProbabilityScalePlot[{1, 2, 3, 4, 5, 10}, \"Weibull\"], Point[p_] :> p, Infinity][[1]], 10^-6]").unwrap(),
+    "{{0, -67363/31250}, {693147/1000000, -117527/100000}, {274653/250000, -75193/125000}, \
+     {693147/500000, -147287/1000000}, {804719/500000, 140959/500000}, {460517/200000, 794337/1000000}}"
   );
 }
 

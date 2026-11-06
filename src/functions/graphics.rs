@@ -20356,11 +20356,13 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         ));
       }
     } else if sd.is_scatter {
-      series_prims.push(match sd.point_size {
-        Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
-        Some(f) => call1("PointSize", Expr::Real(f)),
-        None => call1("PointSize", Expr::Real(0.012)),
-      });
+      series_prims.push(sd.point_size_expr.clone().unwrap_or_else(|| {
+        match sd.point_size {
+          Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
+          Some(f) => call1("PointSize", Expr::Real(f)),
+          None => call1("PointSize", Expr::Real(0.012)),
+        }
+      }));
       // `ColorFunction -> f` colors every dot on its own.
       if let Some(colors) = crate::functions::plot::scatter_point_colors(
         &ps.options,

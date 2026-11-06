@@ -3180,6 +3180,8 @@ pub(crate) struct SeriesStyle {
   /// stored negative for the absolute printer's points of
   /// `AbsolutePointSize[…]`. None means the default dot.
   pub point_size: Option<f64>,
+  /// Original directive, kept for symbolic output and Show.
+  pub point_size_expr: Option<Expr>,
   /// Dash pattern in display pixels. None = solid line.
   pub dashing: Option<Vec<f64>>,
   /// DropShadowing[...] directive: draw the curve with a drop shadow.
@@ -7684,6 +7686,9 @@ pub(crate) fn build_plot_source(
         marker: None,
         thickness,
         point_size,
+        point_size_expr: plot_style
+          .get(i % plot_style.len().max(1))
+          .and_then(|s| s.point_size_expr.clone()),
         dashing,
         opacity,
         labels: Vec::new(),
@@ -7757,6 +7762,7 @@ pub(crate) fn collapse_style_for_single_series(
     }
     if style.point_size.is_some() {
       merged.point_size = style.point_size;
+      merged.point_size_expr.clone_from(&style.point_size_expr);
     }
     if style.dashing.is_some() {
       merged.dashing.clone_from(&style.dashing);
@@ -8200,6 +8206,7 @@ pub(crate) fn render_merged_plot_source(
       color_expr: s.color_expr.clone(),
       thickness: s.thickness,
       point_size: s.point_size,
+      point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
       opacity: s.opacity,
       ..SeriesStyle::default()
@@ -8334,11 +8341,13 @@ fn scatter_overlay_primitives(
     }
     return prims;
   }
-  prims.push(match series.point_size {
-    Some(f) if f > 0.0 => call1("PointSize", Expr::Real(f)),
-    Some(p) => call1("AbsolutePointSize", Expr::Real(-p)),
-    None => call1("AbsolutePointSize", Expr::Real(6.0)),
-  });
+  prims.push(series.point_size_expr.clone().unwrap_or_else(|| {
+    match series.point_size {
+      Some(f) if f > 0.0 => call1("PointSize", Expr::Real(f)),
+      Some(p) => call1("AbsolutePointSize", Expr::Real(-p)),
+      None => call1("AbsolutePointSize", Expr::Real(6.0)),
+    }
+  }));
   prims.push(call1(
     "Point",
     Expr::List(finite.into_iter().map(point).collect::<Vec<_>>().into()),
@@ -11471,6 +11480,7 @@ pub(crate) fn histogram_plot_source(
       marker: None,
       thickness: Some(0.5),
       point_size: None,
+      point_size_expr: None,
       dashing: None,
       opacity: Some(0.66),
       labels: Vec::new(),
@@ -12729,8 +12739,10 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           crate::functions::graphics::symbolic_point_size(&args[0])
         {
           style.point_size = Some(s);
+          style.point_size_expr = Some(expr.clone());
         } else if let Some(s) = try_eval_to_f64(&args[0]) {
           style.point_size = Some(s);
+          style.point_size_expr = Some(expr.clone());
         }
       }
       "AbsolutePointSize" if args.len() == 1 => {
@@ -12738,8 +12750,10 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
           crate::functions::graphics::symbolic_point_size(&args[0])
         {
           style.point_size = Some(s);
+          style.point_size_expr = Some(expr.clone());
         } else if let Some(s) = try_eval_to_f64(&args[0]) {
           style.point_size = Some(-s);
+          style.point_size_expr = Some(expr.clone());
         }
       }
       // `AbsoluteDashing[{d1, d2, …}]`: dash lengths in printer's points,

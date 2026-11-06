@@ -142,6 +142,8 @@ fn quantile_family_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let head = kind.head();
+  let weibull = kind == Kind::ProbabilityScale
+    && matches!(args.get(1), Some(Expr::String(s)) if s == "Weibull");
   let unchanged = || Ok(unevaluated(head, args));
   let data_count = args.iter().take_while(|e| !is_option(e)).count();
   if data_count == 0 || data_count > 2 {
@@ -164,7 +166,7 @@ fn quantile_family_ast(
   let reference = match args.get(1).filter(|_| data_count == 2) {
     None => Reference::Fitted,
     Some(Expr::String(s)) if kind == Kind::ProbabilityScale => {
-      if s == "Normal" {
+      if s == "Normal" || s == "Weibull" {
         Reference::Fitted
       } else {
         return unchanged();
@@ -210,6 +212,13 @@ fn quantile_family_ast(
           apply("CDF", d, y).map(|x| (x, (i + 1) as f64 / n as f64))
         }
         (Kind::ProbabilityScale, _, _) => {
+          if weibull {
+            if y <= 0.0 {
+              continue;
+            }
+            pts.push((y.ln(), (-(1.0 - ps[i]).ln()).ln()));
+            continue;
+          }
           let normal = call(
             "NormalDistribution",
             vec![Expr::Integer(0), Expr::Integer(1)],
@@ -222,6 +231,9 @@ fn quantile_family_ast(
         Some((x, y)) if x.is_finite() && y.is_finite() => pts.push((x, y)),
         _ => return unchanged(),
       }
+    }
+    if pts.is_empty() {
+      return unchanged();
     }
     series.push(pts);
   }
@@ -349,40 +361,46 @@ fn quantile_family_ast(
   if scale {
     // The dots are a little larger than a ListPlot's, and the vertical
     // axis is labelled in percent.
-    let size = crate::functions::list_plot::point_size_steps(&series) / 360.0;
+    let size = crate::functions::math_ast::make_rational(
+      crate::functions::list_plot::point_size_steps(&series) as i128,
+      360,
+    );
     let styles = (0..series.len())
       .map(|i| {
         call(
           "Directive",
-          vec![style_of(i), call1("PointSize", Expr::Real(size))],
+          vec![style_of(i), call1("PointSize", size.clone())],
         )
       })
       .collect();
     plot_args.push(rule_expr(id("PlotStyle"), Expr::List(styles)));
-    let normal = call(
-      "NormalDistribution",
-      vec![Expr::Integer(0), Expr::Integer(1)],
+    let scale_name = if weibull { "WeibullY" } else { "NormalY" };
+    let scaling = Expr::List(
+      vec![
+        Expr::String(scale_name.into()),
+        Expr::String(format!("{scale_name}Inverse")),
+      ]
+      .into(),
     );
-    let mut left = Vec::new();
-    let mut right = Vec::new();
-    for pct in [1, 5, 10, 25, 50, 75, 90, 95, 99] {
-      let Some(z) = apply("InverseCDF", &normal, pct as f64 / 100.0) else {
-        continue;
-      };
-      let pos = 1.0 + z;
-      left.push(Expr::List(vec![Expr::Real(pos), Expr::Integer(pct)].into()));
-      right.push(Expr::List(
-        vec![Expr::Real(pos), Expr::String(String::new())].into(),
-      ));
-    }
+    let left = call("Charting`ScaledTicks", vec![scaling.clone()]);
+    let right = call("Charting`ScaledFrameTicks", vec![scaling]);
     plot_args.push(rule_expr(
       id("FrameTicks"),
       Expr::List(
         vec![
-          Expr::List(
-            vec![Expr::List(left.into()), Expr::List(right.into())].into(),
-          ),
-          Expr::List(vec![id("Automatic"), id("Automatic")].into()),
+          Expr::List(vec![left, right].into()),
+          if weibull {
+            let log = Expr::List(vec![id("Log"), id("Exp")].into());
+            Expr::List(
+              vec![
+                call("Charting`ScaledTicks", vec![log.clone()]),
+                call("Charting`ScaledFrameTicks", vec![log]),
+              ]
+              .into(),
+            )
+          } else {
+            Expr::List(vec![id("Automatic"), id("Automatic")].into())
+          },
         ]
         .into(),
       ),

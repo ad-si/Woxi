@@ -3664,6 +3664,7 @@ fn contour_plot_equations(
           marker: None,
           thickness: series_thickness,
           point_size: None,
+          point_size_expr: None,
           dashing: None,
           opacity: None,
           labels: Vec::new(),
