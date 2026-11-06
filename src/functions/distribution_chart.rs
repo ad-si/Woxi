@@ -245,26 +245,30 @@ fn density_column(
     };
     vertices.push(origin.point(c - half, y));
     vertices.push(origin.point(c + half, y));
-    // Wolfram shades the two sides towards white and dark gray. The
-    // density controls the shared blend weight; it is not a stack of bars.
-    colors.push(rgb(
-      1.0 - t * (1.0 - r),
-      1.0 - t * (1.0 - g),
-      1.0 - t * (1.0 - b),
-    ));
-    colors.push(rgb(
-      0.1 + t * (r - 0.1),
-      0.1 + t * (g - 0.1),
-      0.1 + t * (b - 0.1),
-    ));
+    let color = if crate::is_dark_mode() {
+      rgb(
+        0.1 + t * (r - 0.1),
+        0.1 + t * (g - 0.1),
+        0.1 + t * (b - 0.1),
+      )
+    } else {
+      rgb(
+        1.0 - t * (1.0 - r),
+        1.0 - t * (1.0 - g),
+        1.0 - t * (1.0 - b),
+      )
+    };
+    colors.extend([color.clone(), color]);
   }
-  let indices = (0..ys.len())
-    .map(|i| Expr::Integer((2 * i + 1) as i128))
-    .chain(
-      (0..ys.len())
-        .rev()
-        .map(|i| Expr::Integer((2 * i + 2) as i128)),
-    )
+  let indices = (0..STRIPS)
+    .map(|i| {
+      Expr::List(
+        [2 * i + 1, 2 * i + 2, 2 * i + 4, 2 * i + 3]
+          .into_iter()
+          .map(|n| Expr::Integer(n as i128))
+          .collect(),
+      )
+    })
     .collect();
   let parts = vec![
     call("EdgeForm", vec![]),
@@ -494,5 +498,33 @@ pub(crate) fn chart_legended(
       ],
     ),
     _ => chart,
+  }
+}
+
+#[cfg(test)]
+mod review_density_tests {
+  use super::*;
+  #[test]
+  fn density_fades_at_both_ends_without_a_horizontal_color_ramp() {
+    for data in [vec![-2., -1., 0., 0., 0., 1., 2.], vec![1., 2., 3., 4., 5.]] {
+      let expr =
+        density_column(&data, 1.0, 0.3, Origin::Bottom, &rgb(1.0, 0.8, 0.2));
+      let Expr::List(parts) = &expr else { panic!() };
+      let Expr::FunctionCall { args, .. } = &parts[2] else {
+        panic!()
+      };
+      let Expr::Rule { replacement, .. } = &args[2] else {
+        panic!()
+      };
+      let Expr::List(colors) = replacement.as_ref() else {
+        panic!()
+      };
+      for pair in colors.chunks_exact(2) {
+        assert_eq!(fill_rgb(&pair[0]), fill_rgb(&pair[1]));
+      }
+      let blue = |i| fill_rgb(&colors[i]).unwrap().2;
+      assert!(blue(0) > blue(colors.len() / 2));
+      assert!(blue(colors.len() - 1) > blue(colors.len() / 2));
+    }
   }
 }

@@ -48,7 +48,7 @@ fn density_element() {
        cs = Cases[g, RGBColor[__], Infinity]; \
        {Length[Cases[g, _Rectangle, Infinity]] == 1, \
         Length[Cases[g, _GraphicsComplex, Infinity]] == 1, \
-        Min[cs[[All, 3]]] < 0.25, Max[cs[[All, 3]]] == 1., \
+        Min[cs[[All, 3]]] == 0.25, Max[cs[[All, 3]]] == 1., \
         MinMax[Cases[g, Rectangle[{_, a_}, {_, b_}] :> {a, b}, Infinity]]}"
     )
     .unwrap(),

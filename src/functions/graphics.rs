@@ -3437,9 +3437,9 @@ fn collect_primitives(
           parse_raster(args, style.opacity, prims);
         }
         "GraphicsComplex" if args.len() >= 2 => {
-          if let Some(coords) = expr_to_point_list(&args[0]) {
-            // Resolve integer indices to coordinates and process normally
-            let resolved = resolve_graphics_complex_indices(&args[1], &coords);
+          if let Expr::List(points) = &args[0] {
+            let resolved =
+              graphics_complex_to_normal_form(points, &args[1], &args[2..]);
             collect_primitives(&resolved, style, prims, errors);
           }
         }
@@ -3827,7 +3827,7 @@ const POINT_TAKING_PRIMITIVES: &[&str] = &[
 /// `Point` always becomes a list of single points, index arguments of
 /// `Disk`/`Circle`/`Rectangle`/`Inset`/… are resolved too, and a polygon
 /// picks up its vertices' share of the complex's `VertexColors`/
-/// `VertexNormals`. Unlike `resolve_graphics_complex_indices`, this keeps
+/// `VertexNormals`. This keeps
 /// coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of lowering to
 /// `f64`, and works for points of any dimension, not just 2D.
 pub(crate) fn graphics_complex_to_normal_form(
@@ -4028,149 +4028,6 @@ fn substitute_indices_in_points(pts: &[Expr], expr: &Expr) -> Expr {
     _ => expr.clone(),
   }
 }
-
-/// Resolve integer indices within a GraphicsComplex to actual coordinate pairs.
-/// In GraphicsComplex, integer indices (1-based) refer to the coordinate list.
-/// This function walks the expression tree and replaces:
-/// - Single integers inside primitives → coordinate pair {x, y}
-/// - Lists of integers inside primitives → lists of coordinate pairs
-fn resolve_graphics_complex_indices(
-  expr: &Expr,
-  coords: &[(f64, f64)],
-) -> Expr {
-  match expr {
-    Expr::List(items) => {
-      // A list of integers → resolve each to a coordinate pair
-      if !items.is_empty()
-        && items.iter().all(|e| matches!(e, Expr::Integer(_)))
-      {
-        Expr::List(
-          items
-            .iter()
-            .map(|e| {
-              if let Expr::Integer(idx) = e {
-                index_to_coord(*idx, coords)
-              } else {
-                e.clone()
-              }
-            })
-            .collect(),
-        )
-      } else {
-        Expr::List(
-          items
-            .iter()
-            .map(|e| resolve_graphics_complex_indices(e, coords))
-            .collect(),
-        )
-      }
-    }
-    Expr::FunctionCall { name, args } => {
-      // For primitives that take point arguments, resolve integer indices
-      match name.as_str() {
-        "Point" | "Line" | "Polygon" | "Triangle" | "Arrow" | "BezierCurve"
-        | "BSplineCurve" => call(
-          name.as_str(),
-          args
-            .iter()
-            .map(|a| resolve_primitive_arg(a, coords))
-            .collect(),
-        ),
-        "Circle" | "Disk" | "Rectangle" => {
-          // First arg is center/position (single index), rest stay
-          let mut new_args = Vec::with_capacity(args.len());
-          for (i, a) in args.iter().enumerate() {
-            if i == 0 {
-              if let Expr::Integer(idx) = a {
-                new_args.push(index_to_coord(*idx, coords));
-              } else {
-                new_args.push(resolve_graphics_complex_indices(a, coords));
-              }
-            } else {
-              new_args.push(a.clone());
-            }
-          }
-          call(name.as_str(), new_args)
-        }
-        "Text" | "Inset" => {
-          // Second arg (if present) is position
-          let mut new_args = args.clone();
-          if new_args.len() >= 2
-            && let Expr::Integer(idx) = &new_args[1]
-          {
-            new_args[1] = index_to_coord(*idx, coords);
-          }
-          Expr::FunctionCall {
-            name: name.clone(),
-            args: new_args,
-          }
-        }
-        _ => {
-          // For everything else (Style, directives, etc.), recurse
-          call(
-            name.as_str(),
-            args
-              .iter()
-              .map(|a| resolve_graphics_complex_indices(a, coords))
-              .collect(),
-          )
-        }
-      }
-    }
-    _ => expr.clone(),
-  }
-}
-
-/// Resolve a primitive argument that expects point(s).
-/// An integer becomes a coordinate, a list of integers becomes a list of coordinates,
-/// a list of lists of integers becomes a list of list of coordinates.
-fn resolve_primitive_arg(arg: &Expr, coords: &[(f64, f64)]) -> Expr {
-  match arg {
-    Expr::Integer(idx) => index_to_coord(*idx, coords),
-    Expr::List(items) => {
-      if !items.is_empty()
-        && items.iter().all(|e| matches!(e, Expr::Integer(_)))
-      {
-        // List of integer indices → list of coordinate pairs
-        Expr::List(
-          items
-            .iter()
-            .map(|e| {
-              if let Expr::Integer(idx) = e {
-                index_to_coord(*idx, coords)
-              } else {
-                e.clone()
-              }
-            })
-            .collect(),
-        )
-      } else {
-        // Could be list of lists (multi-segment line) or mixed
-        Expr::List(
-          items
-            .iter()
-            .map(|e| resolve_primitive_arg(e, coords))
-            .collect(),
-        )
-      }
-    }
-    _ => arg.clone(),
-  }
-}
-
-/// Convert a 1-based index to a coordinate pair expression {x, y}.
-fn index_to_coord(idx: i128, coords: &[(f64, f64)]) -> Expr {
-  let i = (idx as usize).wrapping_sub(1);
-  if i < coords.len() {
-    let (x, y) = coords[i];
-    Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
-  } else {
-    // Out of bounds — return as-is
-    Expr::Integer(idx)
-  }
-}
-
-// ── Primitive parsers ────────────────────────────────────────────────────
 
 fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if let Some(pt) = expr_to_point(&args[0]) {

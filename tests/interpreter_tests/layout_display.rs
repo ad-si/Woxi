@@ -1040,3 +1040,18 @@ mod layout_display {
     }
   }
 }
+
+#[test]
+fn review_density_complex_preserves_vertex_colors() {
+  clear_state();
+  let graphic = "Graphics[GraphicsComplex[{{0,0},{1,0},{1,1},{0,1}}, Polygon[{1,2,3,4}], VertexColors->{White,White,Red,Red}]]";
+  let svg = interpret(&format!("ExportString[{graphic}, \"SVG\"]")).unwrap();
+  let normal = interpret(&format!(
+    "ExportString[Graphics[Normal[First[{graphic}]]], \"SVG\"]"
+  ))
+  .unwrap();
+  assert_eq!(
+    svg, normal,
+    "Rendering a complex must preserve Normal's vertex colors"
+  );
+}
