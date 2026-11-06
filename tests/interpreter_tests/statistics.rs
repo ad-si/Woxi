@@ -1,5 +1,42 @@
 use super::*;
 
+#[test]
+fn standardized_moments_handle_degenerate_data_without_arithmetic_messages() {
+  for head in ["Skewness", "Kurtosis"] {
+    for data in ["{2,2}", "{0.,0.}", "{a,a,a}", "{1/3,1/3,1/3}"] {
+      let code = format!("{head}[{data}]");
+      let result = interpret_with_stdout(&code).unwrap();
+      assert_eq!(result.result, "Indeterminate", "{code}");
+      assert!(result.warnings.is_empty(), "{code}: {:?}", result.warnings);
+    }
+    let empty = interpret_with_stdout(&format!("{head}[{{}}]")).unwrap();
+    assert_eq!(empty.result, format!("{head}[{{}}]"));
+    assert!(empty.warnings.is_empty());
+    for data in ["{2}", "{{1, 2}}", "{{}, {}}"] {
+      let code = format!("{head}[{data}]");
+      let result = interpret_with_stdout(&code).unwrap();
+      assert_eq!(result.result, code);
+      assert_eq!(
+        result.warnings,
+        vec![format!(
+          "{head}::shlen: The argument {data} should have at least two elements."
+        )]
+      );
+    }
+    let matrix =
+      interpret_with_stdout(&format!("{head}[{{{{1,2}},{{1,3}}}}]")).unwrap();
+    assert_eq!(
+      matrix.result,
+      if head == "Skewness" {
+        "{Indeterminate, 0}"
+      } else {
+        "{Indeterminate, 1}"
+      }
+    );
+    assert!(matrix.warnings.is_empty());
+  }
+}
+
 // Statistics functions operate on an association's values, like wolframscript.
 mod association_statistics {
   use super::*;

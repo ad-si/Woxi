@@ -3966,10 +3966,74 @@ fn cumulant_from_raw_moments(
   Ok(k[r].clone())
 }
 
+/// Shared data handling for standardized moments. Constant samples have
+/// undefined standardized moments without generating arithmetic messages.
+fn standardized_moment_data(
+  name: &str,
+  data: &Expr,
+) -> Option<Result<Expr, InterpreterError>> {
+  if let Some(dense) =
+    crate::functions::list_helpers_ast::densify_sparse_array(data)
+  {
+    return Some(crate::evaluator::evaluate_function_call_ast(name, &[dense]));
+  }
+  let Expr::List(items) = data else {
+    return None;
+  };
+  let short = items.len() == 1
+    || (!items.is_empty()
+      && items
+        .iter()
+        .all(|item| matches!(item, Expr::List(row) if row.is_empty())));
+  if items.is_empty() || short {
+    if short {
+      crate::emit_message(&format!(
+        "{name}::shlen: The argument {} should have at least two elements.",
+        expr_to_string(data)
+      ));
+    }
+    return Some(Ok(call1(name, data.clone())));
+  }
+  if let Expr::List(first) = &items[0]
+    && items
+      .iter()
+      .all(|item| matches!(item, Expr::List(row) if row.len() == first.len()))
+  {
+    let results = (0..first.len())
+      .map(|column| {
+        let values = items
+          .iter()
+          .map(|item| {
+            let Expr::List(row) = item else {
+              unreachable!()
+            };
+            row[column].clone()
+          })
+          .collect();
+        crate::evaluator::evaluate_function_call_ast(
+          name,
+          &[Expr::List(values)],
+        )
+      })
+      .collect::<Result<Vec<_>, _>>();
+    return Some(results.map(|values| Expr::List(values.into())));
+  }
+  if items
+    .iter()
+    .all(|item| crate::evaluator::pattern_matching::expr_equal(item, &items[0]))
+  {
+    return Some(Ok(id_expr("Indeterminate")));
+  }
+  None
+}
+
 /// Kurtosis[list] - CentralMoment[list, 4] / CentralMoment[list, 2]^2
 pub fn kurtosis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("Kurtosis", args));
+  }
+  if let Some(result) = standardized_moment_data("Kurtosis", &args[0]) {
+    return result;
   }
   // Skellam: Kurtosis = 3 + 1/(a+b). Built directly because the generic
   // moment-ratio Expand mangles the multi-parameter denominator.
@@ -4055,6 +4119,9 @@ fn maybe_expand_for_distribution(arg: &Expr, result: Expr) -> Expr {
 pub fn skewness_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated("Skewness", args));
+  }
+  if let Some(result) = standardized_moment_data("Skewness", &args[0]) {
+    return result;
   }
   // Skellam: Skewness = (a-b)/(a+b)^(3/2). Built directly so the compact form
   // is preserved (the generic moment-ratio Expand would distribute it).
