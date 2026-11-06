@@ -49,7 +49,8 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(n) if *n > 0 => *n as f64,
       other => {
         if let Some(v) = try_eval_to_f64(other)
-          && v.floor() as i128 > 0
+          && v.is_finite()
+          && v > 0.0
         {
           v
         } else {

@@ -1,5 +1,18 @@
 use super::*;
 
+#[test]
+fn n_accepts_positive_precisions_below_one() {
+  for (code, expected) in [
+    ("N[Pi, 1/2]", "3.1415926535897932385`0.5"),
+    ("N[1/3, 1/4]", "0.3333333333333333333`0.25"),
+    ("N[10, 3/4]", "10.`0.75"),
+    ("N[{0, Pi}, 1/2]", "{0, 3.1415926535897932385`0.5}"),
+    ("N[Pi, 1/10]", "3.1415926535897932385`0.1"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
 mod arithmetic {
   use super::*;
 
