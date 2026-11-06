@@ -8980,3 +8980,23 @@ In the same run, `N[E, 22]` prints
 The requested 22 digits agree; the extra displayed working digits do not.
 This remains a byte-for-byte output gap, separate from the small-rational
 binary-grid rounding cases documented above.
+
+### TrigExpand chooses different polynomial forms in sums and quotients
+
+Verified on 2026-11-06, diff-fuzz seed 1794002508685553000:
+
+```wolfram
+TrigExpand[Sin[x y]^3 + Sin[x y] - Tan[2 x]^2]
+```
+
+The minimized quotient case `TrigExpand[Tan[2 x]^2]` gives
+`4*Cos[x]^2*Sin[x]^2/(Cos[x]^2 - Sin[x]^2)^2` in Woxi. Wolfram uses
+`(1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4)/
+(2*(Cos[x]^2 - Sin[x]^2)^2)`, displayed as four separate terms.
+
+The sum also differs independently: `TrigExpand[Sin[x] + Sin[x]^3]`
+stays unchanged in Woxi, while Wolfram returns
+`(7*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4`.
+Wolfram leaves the standalone `Sin[x]^3` and `1 + Sin[x]^3` unchanged,
+so unconditional power reduction before angle expansion does not match.
+These forms are algebraically equivalent under the trigonometric identities.
