@@ -10647,6 +10647,47 @@ mod zero_divisor {
   use super::*;
 
   #[test]
+  fn infinite_dividends_do_not_treat_zero_as_negative() {
+    for (code, expected, reciprocal_message) in [
+      ("Divide[Infinity, 0]", "ComplexInfinity", true),
+      ("Divide[-Infinity, 0]", "ComplexInfinity", true),
+      ("Divide[ComplexInfinity, 0]", "ComplexInfinity", true),
+      ("Divide[Indeterminate, 0]", "Indeterminate", false),
+      ("Indeterminate/0", "Indeterminate", true),
+      ("ComplexInfinity/0", "ComplexInfinity", true),
+      ("Infinity/0.", "ComplexInfinity", true),
+      (
+        "Divide[Divide[-77, Divide[0, 6]], Times[Divide[0, 3], -8]]",
+        "ComplexInfinity",
+        true,
+      ),
+      ("Divide[Divide[0, 0], 0]", "Indeterminate", false),
+    ] {
+      let output = interpret_with_stdout(code).unwrap();
+      assert_eq!(output.result, expected, "{code}");
+      assert_eq!(
+        output
+          .warnings
+          .iter()
+          .any(|warning| warning.contains("Power::infy:")),
+        reciprocal_message,
+        "{code}: {:?}",
+        output.warnings
+      );
+    }
+    for divisor in ["-2", "-2.5", "-3/2"] {
+      assert_eq!(
+        interpret(&format!("ComplexInfinity/({divisor})")).unwrap(),
+        "ComplexInfinity"
+      );
+      assert_eq!(
+        interpret(&format!("Infinity/({divisor})")).unwrap(),
+        "-Infinity"
+      );
+    }
+  }
+
+  #[test]
   fn real_division_by_zero_does_not_error() {
     // Regression: real / 0 used to raise a hard "Division by zero" error
     // instead of returning ComplexInfinity (or Indeterminate for 0./0) with

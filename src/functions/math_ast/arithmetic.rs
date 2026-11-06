@@ -12967,6 +12967,13 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args
   };
   if args.len() == 2 {
+    // The explicit head propagates Indeterminate before expanding to
+    // Times/Power, so Divide[Indeterminate, 0] emits no reciprocal message.
+    if args.iter().any(
+      |arg| matches!(arg, Expr::Identifier(name) if name == "Indeterminate"),
+    ) {
+      return Ok(id_expr("Indeterminate"));
+    }
     let denom_is_zero = matches!(&args[1], Expr::Integer(0))
       || matches!(&args[1], Expr::Real(z) if *z == 0.0);
     // Integers and Reals render single-line; Rationals render as a
@@ -13281,6 +13288,9 @@ fn divide_by_zero_result(a: &Expr, divisor: &Expr) -> Expr {
     ));
     return id_expr("Indeterminate");
   }
+  if matches!(a, Expr::Identifier(name) if name == "Indeterminate") {
+    return a.clone();
+  }
   id_expr("ComplexInfinity")
 }
 
@@ -13422,14 +13432,14 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     }
   }
-  if is_infinity_like(a) && !is_infinity_like(b) {
+  if is_infinity_like(a) && !is_infinity_like(b) && !b_is_zero {
     if let Some(true) = is_known_positive_local(b) {
       return Ok(a.clone());
     }
     if let Some(false) = is_known_positive_local(b) {
-      // Negative divisor flips Infinity → -Infinity. Use UnaryOp Minus
-      // so the formatter prints `-Infinity` consistently.
-      return Ok(neg1(a.clone()));
+      // A negative divisor reverses directed infinities, while an
+      // undirected ComplexInfinity keeps its lack of direction.
+      return times_ast(&[Expr::Integer(-1), a.clone()]);
     }
   }
 
