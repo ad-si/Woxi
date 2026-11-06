@@ -3923,10 +3923,10 @@ mod graphics {
     fn axes_true() {
       let svg = export_svg("Graphics[Circle[], Axes -> True]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#666666\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.contains(
-        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#666666\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.matches("<line ").count() > 2);
       assert!(svg.contains("<text "));
@@ -3937,10 +3937,10 @@ mod graphics {
     fn axes_list_x_only() {
       let svg = export_svg("Graphics[Circle[], Axes -> {True, False}]");
       assert!(svg.contains(
-        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
+        "<line x1=\"0.00\" y1=\"177.47\" x2=\"355.51\" y2=\"177.47\" stroke=\"#666666\" stroke-width=\"0.2\"/>"
       ));
       assert!(!svg.contains(
-        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#b3b3b3\" stroke-width=\"0.2\"/>"
+        "<line x1=\"177.75\" y1=\"0.00\" x2=\"177.75\" y2=\"354.94\" stroke=\"#666666\" stroke-width=\"0.2\"/>"
       ));
       assert!(svg.matches("<line ").count() > 1);
       assert!(svg.contains("<text "));
@@ -19486,7 +19486,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "RegionPlot[y > x, {x, -5, 5}, {y, -5, 5}, Frame -> False, \
          Axes -> True, AxesOrigin -> {0, 0}]",
       );
-      let frame_box = "fill=\"none\" stroke=\"rgb(190,190,190)\"";
+      let frame_box = "fill=\"none\" stroke=\"#666666\"";
       assert!(plain.contains(frame_box), "{plain}");
       assert!(!styled.contains(frame_box), "{styled}");
       assert!(
@@ -19589,8 +19589,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       let curve = export_svg("ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]");
       // Only the region gets the frame's closed border.
-      assert!(region.contains("fill=\"none\" stroke=\"rgb(190,190,190)\""));
-      assert!(!curve.contains("fill=\"none\" stroke=\"rgb(190,190,190)\""));
+      assert!(region.contains("fill=\"none\" stroke=\"#666666\""));
+      assert!(!curve.contains("fill=\"none\" stroke=\"#666666\""));
     }
 
     /// Wolfram draws a graphic's axes in front of its primitives, with

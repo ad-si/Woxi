@@ -231,7 +231,7 @@ const LIGHT_THEME: ThemeColors = ThemeColors {
   text_secondary: "#555",
   text_muted: "#888",
   stroke_default: "black",
-  axis_stroke: "#b3b3b3",
+  axis_stroke: "#666666",
   tick_label_fill: "#555555",
   table_header_bg: "#f0f0f0",
   table_row_num_bg: "#eef2f7",
@@ -10037,7 +10037,7 @@ impl Default for AxisLineStyle {
   fn default() -> Self {
     Self {
       color: None,
-      width: 1.0,
+      width: 0.5,
       dash: String::new(),
     }
   }
@@ -10607,7 +10607,7 @@ fn render_frame(
   // `FrameStyle` paints each edge; `FrameTicksStyle` (else the edge's own
   // style) the tick marks and their labels.
   let frame_strokes: [String; 4] =
-    std::array::from_fn(|i| frame_styles[i].stroke_attrs(t.framed_border));
+    std::array::from_fn(|i| frame_styles[i].stroke_attrs(t.axis_stroke));
   // The marks take an edge's colour, but not its thickness or dashing.
   let edge_ticks_styles: [AxisLineStyle; 4] = std::array::from_fn(|i| {
     ticks_style.clone().unwrap_or_else(|| AxisLineStyle {
@@ -10616,7 +10616,7 @@ fn render_frame(
     })
   });
   let tick_strokes: [String; 4] =
-    std::array::from_fn(|i| edge_ticks_styles[i].stroke_attrs(t.framed_border));
+    std::array::from_fn(|i| edge_ticks_styles[i].stroke_attrs(t.axis_stroke));
   let tick_label_fills: [String; 4] = std::array::from_fn(|i| {
     edge_ticks_styles[i]
       .color

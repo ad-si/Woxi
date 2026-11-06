@@ -354,3 +354,22 @@ fn default_plot_axes_use_gray_hairlines_with_any_background() {
     }
   }
 }
+
+#[test]
+fn graphics_axes_and_frames_use_gray_unless_explicitly_styled() {
+  for decoration in ["Axes", "Frame"] {
+    for primitive in ["Disk[]", "Rectangle[{-2, -1}, {3, 2}]"] {
+      let svg = svg_of(&format!("Graphics[{primitive}, {decoration} -> True]"));
+      let width = if decoration == "Frame" { "0.5" } else { "0.2" };
+      assert!(
+        svg.contains(&format!("stroke=\"#666666\" stroke-width=\"{width}\"")),
+        "{svg}"
+      );
+      let styled = svg_of(&format!(
+        "Graphics[{primitive}, {decoration} -> True, {decoration}Style -> Red]"
+      ));
+      assert!(styled.contains("stroke=\"rgb(255,0,0)\""), "{styled}");
+      assert!(!styled.contains("stroke=\"#666666\""), "{styled}");
+    }
+  }
+}
