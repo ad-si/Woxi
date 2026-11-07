@@ -537,6 +537,29 @@ mod hypergeometric2f1 {
   use super::*;
 
   #[test]
+  fn terminating_euler_transforms_and_parameter_poles() {
+    for (code, expected) in [
+      ("Quiet[Hypergeometric2F1[3,3,1,1]]", "ComplexInfinity"),
+      ("Quiet[Hypergeometric2F1[3,3,1,1.]]", "ComplexInfinity"),
+      ("Hypergeometric2F1[3,3,1,z]", "(1 + 4*z + z^2)/(1 - z)^5"),
+      ("Hypergeometric2F1[4,3,2,z]", "(1 + z)/(1 - z)^5"),
+      ("Hypergeometric2F1[5,4,2,z]", "(1 + 3*z + z^2)/(1 - z)^7"),
+      ("Hypergeometric2F1[1,1,0,1]", "ComplexInfinity"),
+      ("Hypergeometric2F1[1,1,-1,z]", "ComplexInfinity"),
+      ("Hypergeometric2F1[-3,2,-1,z]", "ComplexInfinity"),
+      ("Hypergeometric2F1[-1,2,-1,z]", "1 + 2*z"),
+      ("Hypergeometric2F1[-3,-1,-1,z]", "1 - 3*z"),
+      ("Hypergeometric2F1[-1,-3,-1,z]", "1 - 3*z"),
+      ("Hypergeometric2F1[-3,2,-1,0]", "1"),
+      ("Hypergeometric2F1[-1,1,2,z]", "(2 - z)/2"),
+      ("Hypergeometric2F1[-2,1,3,z]", "(6 - 4*z + z^2)/6"),
+      ("Hypergeometric2F1[4,2,3,z]", "(3 - z)/(3*(1 - z)^3)"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn terminating_series_does_not_overflow_factorials() {
     for code in [
       "Hypergeometric2F1[-40,2,3,1/2]",
@@ -6592,10 +6615,20 @@ mod hypergeometric_pfq {
       interpret("HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]").unwrap(),
       "HypergeometricPFQ[{1/2, 1/2}, {3/2}, z]"
     );
-    assert_eq!(
-      interpret("HypergeometricPFQ[{3, 1}, {2}, x]").unwrap(),
-      "HypergeometricPFQ[{3, 1}, {2}, x]"
-    );
+  }
+
+  #[test]
+  fn two_one_terminating_euler_transform_reduces() {
+    for (code, expected) in [
+      ("HypergeometricPFQ[{3,1},{2},x]", "(2 - x)/(2*(-1 + x)^2)"),
+      (
+        "HypergeometricPFQ[{3,3},{1},z]",
+        "(1 + 4*z + z^2)/(1 - z)^5",
+      ),
+      ("HypergeometricPFQ[{2,3},{2},z]", "(1 - z)^(-3)"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
   }
 }
 

@@ -446,6 +446,24 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::FunctionCall { name, .. } if name == "Hypergeometric2F1"
     );
     if !is_bare_2f1 {
+      // PFQ normalizes even-order rational poles to the (z-1) form;
+      // odd-order poles retain the 2F1 sign convention.
+      if let (Expr::Integer(a), Expr::Integer(b), Expr::Integer(c)) =
+        (&a_list[0], &a_list[1], &b_list[0])
+        && *a > 0
+        && *b > 0
+        && *c > 0
+        && (*a > *c || *b > *c)
+        && let Some(order) =
+          a.checked_add(*b).and_then(|sum| sum.checked_sub(*c))
+        && order > 0
+        && order % 2 == 0
+      {
+        return crate::evaluator::evaluate_function_call_ast(
+          "Together",
+          &[reduced],
+        );
+      }
       return Ok(reduced);
     }
   }
@@ -2082,6 +2100,26 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
+  // Use the shorter terminating numerator before cancelling equal
+  // parameters. Cancellation would discard termination at a denominator pole.
+  let terminating = [a_int, b_int]
+    .into_iter()
+    .flatten()
+    .filter(|n| *n < 0)
+    .max();
+  if let Some(c) = c_int
+    && c <= 0
+    && terminating.is_none_or(|n| n < c)
+  {
+    return Ok(Expr::Identifier("ComplexInfinity".into()));
+  }
+  if let Some(n) = terminating {
+    let other = if a_int == Some(n) { &args[1] } else { &args[0] };
+    if let Ok(degree) = usize::try_from(n.unsigned_abs()) {
+      return hypergeometric2f1_polynomial(degree, other, &args[2], z);
+    }
+  }
+
   // 2F1(a, b, b, z) = (1-z)^(-a)
   if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
     let neg_a = crate::evaluator::evaluate_expr_to_expr(&neg(args[0].clone()))?;
@@ -2098,20 +2136,6 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plus(vec![Expr::Integer(1), neg(z.clone())]),
       neg_b,
     ));
-  }
-
-  // a is non-positive integer: finite polynomial
-  if let Some(a) = a_int
-    && a < 0
-  {
-    return hypergeometric2f1_polynomial(-a as usize, &args[1], &args[2], z);
-  }
-
-  // b is non-positive integer: finite polynomial (by symmetry 2F1(a,b,c,z) = 2F1(b,a,c,z))
-  if let Some(b) = b_int
-    && b < 0
-  {
-    return hypergeometric2f1_polynomial(-b as usize, &args[0], &args[2], z);
   }
 
   // 2F1(1, n, n+1, z) for positive integer n: closed form with Log
@@ -2149,6 +2173,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Euler transformation: 2F1(a, b, c, z) = (1-z)^(c-a-b) * 2F1(c-a, c-b, c, z).
+  // A nonpositive transformed numerator terminates as a polynomial.
   // When (c-a) or (c-b) lands on 1, the transformed form drops into the
   // closed-form 2F1(1, b', c, z) branch above. This covers cases like
   // 2F1(2, 3, 4, z) → (1-z)^(-1) * 2F1(2, 1, 4, z) = (1-z)^(-1) * 2F1(1, 2, 4, z).
@@ -2156,9 +2181,8 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && a > 0
     && b > 0
     && c > 0
-    && (c - a == 1 || c - b == 1)
-    && c - a > 0
-    && c - b > 0
+    && ((c - a <= 0 || c - b <= 0)
+      || ((c - a == 1 || c - b == 1) && c - a > 0 && c - b > 0))
   {
     let new_a = c - a;
     let new_b = c - b;
@@ -2373,7 +2397,8 @@ fn hypergeometric2f1_polynomial(
   }
 
   let sum = plus(terms);
-  crate::evaluator::evaluate_expr_to_expr(&sum)
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&sum)?;
+  crate::evaluator::evaluate_function_call_ast("FactorTerms", &[evaluated])
 }
 
 /// Evaluate 2F1(1, n, n+1, z) for positive integer n.
