@@ -1878,6 +1878,23 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     };
   }
 
+  // A complex linear leading coefficient uses the same coefficient
+  // comparison as Sort when its sum is compared with a monomial.
+  for (sum, monomial, reverse) in [(a, b, false), (b, a, true)] {
+    if let Some(terms) = sum_terms_list(sum)
+      && terms
+        .last()
+        .is_some_and(|lead| numeric_coeff_and_rest_expr(lead).0.1 != 0.0)
+      && let Some(ord) = linear_sum_vs_monomial(&terms, monomial)
+    {
+      let order = match ord {
+        std::cmp::Ordering::Less => 1,
+        std::cmp::Ordering::Equal => 0,
+        std::cmp::Ordering::Greater => -1,
+      };
+      return if reverse { -order } else { order };
+    }
+  }
   // Two sums: like products, Wolfram compares them from their LAST term
   // backwards, so the leading (highest) terms decide and the constant only
   // breaks a tie — Order[-3 + x^2, 3 + x] = -1 (x < x^2), Order[2 + x^3,
@@ -2346,6 +2363,9 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
       {
         crate::functions::math_ast::try_extract_complex_float(x)
       }
+      _ if crate::functions::predicate_ast::is_complex_number(x) => {
+        crate::functions::math_ast::try_extract_complex_float(x)
+      }
       _ => None,
     }
   };
@@ -2495,7 +2515,7 @@ fn linear_sum_vs_monomial(
   let lead = terms.last()?;
   let ((c, c_im), lead_rest) = numeric_coeff_and_rest_expr(lead);
   let lead_var = lead_rest.unwrap_or_else(|| lead.clone());
-  if c_im != 0.0 || !matches!(lead_var, Expr::Identifier(_)) {
+  if !matches!(lead_var, Expr::Identifier(_)) {
     return None;
   }
   let ((k, k_im), mono_rest) = numeric_coeff_and_rest_expr(monomial);
@@ -2507,23 +2527,25 @@ fn linear_sum_vs_monomial(
     }
     None => mono_core,
   };
-  if k_im != 0.0 || !matches!(mono_var, Expr::Identifier(_)) {
+  if !matches!(mono_var, Expr::Identifier(_)) {
     return None;
   }
   let ord = canonical_cmp(&lead_var, &mono_var);
   if ord != std::cmp::Ordering::Equal {
     return Some(ord);
   }
-  Some(match c.partial_cmp(&k)? {
-    std::cmp::Ordering::Equal => {
-      if negative_constant_lower_terms(terms) {
-        std::cmp::Ordering::Less
-      } else {
-        std::cmp::Ordering::Greater
+  Some(
+    match (c, c_im.abs(), c_im).partial_cmp(&(k, k_im.abs(), k_im))? {
+      std::cmp::Ordering::Equal => {
+        if negative_constant_lower_terms(terms) {
+          std::cmp::Ordering::Less
+        } else {
+          std::cmp::Ordering::Greater
+        }
       }
-    }
-    other => other,
-  })
+      other => other,
+    },
+  )
 }
 
 /// A sum (its `terms`) against a monomial whose symbol differs from the

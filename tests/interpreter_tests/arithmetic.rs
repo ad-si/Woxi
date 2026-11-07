@@ -11763,6 +11763,27 @@ mod times_factor_vs_sum_ordering {
     }
   }
 
+  #[test]
+  fn complex_linear_sums_order_by_their_leading_coefficients() {
+    for (code, expected) in [
+      (
+        "Table[Order[c*x+c*y,c*x*y],{c,{1,2,-1,I,-I,2I,1+I,1-I,2+3I}}]",
+        "{-1, -1, 1, 1, 1, 1, -1, -1, -1}",
+      ),
+      (
+        "Table[Order[x+c*y,y],{c,{I,1/2+I,1+I,2+I,-1+I}}]",
+        "{1, 1, -1, -1, 1}",
+      ),
+      ("Sort[{I*x*y,I*x+I*y}]", "{I*x + I*y, I*x*y}"),
+      (
+        "TrigToExp[Tan[x+y]*Tan[x*y]*Tan[3*x]^3]",
+        "(I*(E^((-3*I)*x) - E^((3*I)*x))^3*(E^(-I*x - I*y) - E^(I*x + I*y))*(E^(-I*x*y) - E^(I*x*y)))/((E^((-3*I)*x) + E^((3*I)*x))^3*(E^(-I*x - I*y) + E^(I*x + I*y))*(E^(-I*x*y) + E^(I*x*y)))",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   // A power of a product orders canonically against the symbol its base
   // ends with: the symbol first.
   #[test]
