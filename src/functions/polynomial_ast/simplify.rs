@@ -13707,7 +13707,15 @@ fn try_trig_polynomial_simplify(expr: &Expr) -> Option<Expr> {
     let (c, sp, cp, a) = parse_trig_monomial(term)?;
     if let Some(ref existing) = trig_arg {
       if expr_to_string(&a) != expr_to_string(existing) {
-        return None;
+        // Different harmonics can combine after canonical power reduction,
+        // exposing the same converse cosine identity used for a single sum.
+        let reduced = crate::functions::math_ast::trig_reduce_ast(
+          std::slice::from_ref(expr),
+        )
+        .ok()?;
+        let reduced = expand_and_combine(&reduced);
+        let reduced = crate::evaluator::evaluate_expr_to_expr(&reduced).ok()?;
+        return try_cos_power_reduction(&reduced);
       }
     } else {
       trig_arg = Some(a);

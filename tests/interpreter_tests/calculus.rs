@@ -27253,3 +27253,18 @@ fn trig_expand_preserves_denominator_powers_from_quotients() {
   let direct = interpret("TrigExpand[1/(3*Cos[2*x]+Cos[6*x])]").unwrap();
   assert!(!direct.contains("(Cos[x]^2 - Sin[x]^2)^3"));
 }
+
+#[test]
+fn simplify_combines_distinct_trig_harmonics_before_square_reduction() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      ("Cos[2*x]+Sin[x]^2", "Cos[x]^2"),
+      ("Cos[4*x]+Sin[2*x]^2", "Cos[2*x]^2"),
+      ("Cos[2*(x+y)]+Sin[x+y]^2", "Cos[x + y]^2"),
+      ("Cos[2*x]-Cos[x]^2", "-Sin[x]^2"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
