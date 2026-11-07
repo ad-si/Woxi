@@ -1114,6 +1114,10 @@ Diff-fuzz seed 1794016680256839000 (2026-11-07) confirms the same class
 for `InverseErf[-0.2]`: Woxi's `-0.1791434546212917` agrees with the
 rounded high-precision value of the exact binary input, while Wolfram's
 machine result is `-0.17914345462129166`.
+Seed 1794033740867996000 also found `InverseErf[-0.9]`: Woxi returns
+`-1.1630871536766743`, Wolfram's machine evaluation returns
+`-1.163087153676674`, and Wolfram's
+`N[InverseErf[SetPrecision[-0.9,70]]]` agrees with Woxi.
 
 Seed 1794021370602620000 (2026-11-07) found `LogGamma[0.8]`: Woxi
 returns `0.15205967839983756`, Wolfram returns `0.15205967839983753`,
