@@ -8978,6 +8978,17 @@ sine terms for the remaining product; Woxi leaves the integral unevaluated.
 The minimized polynomial `Integrate[(x+y)*x*y,x]` now preserves the
 external `y` factor and matches Wolfram, independently of this missing rule.
 
+### Higher tangent harmonics retain RootSum primitives
+
+Tangent products with commensurate linear frequencies now use rational
+substitution, matching Wolfram for frequency pairs `1:2`, `1:3`, and `2:3`
+(including scaled and symbolic common frequencies). For
+`Integrate[Tan[x]*Tan[4*x],x]` and `Integrate[Tan[x]*Tan[5*x],x]`,
+Woxi retains quartic `RootSum` primitives from the shared rational
+integrator. Wolfram instead gives explicit radical/logarithmic or
+inverse-hyperbolic forms. Verified on 2026-11-07 while investigating
+fuzz seed 1794028247483472000.
+
 ### Rational-integral scaling retains an outer denominator
 
 Verified with `wolframscript` on 2026-11-06, diff-fuzz seed

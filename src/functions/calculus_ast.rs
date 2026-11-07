@@ -5627,6 +5627,106 @@ fn extract_any_trig_factor(expr: &Expr) -> Option<(&str, &Expr, i64)> {
   None
 }
 
+/// Reduce tangent products with commensurate linear frequencies to a
+/// rational integral in t = Tan[u], using the shared trig and Apart paths.
+fn try_integrate_tangent_product(factors: &[&Expr], var: &str) -> Option<Expr> {
+  if factors.len() != 2 {
+    return None;
+  }
+  let (name_a, arg_a, power_a) = extract_any_trig_factor(factors[0])?;
+  let (name_b, arg_b, power_b) = extract_any_trig_factor(factors[1])?;
+  if name_a != "Tan" || name_b != "Tan" || power_a != 1 || power_b != 1 {
+    return None;
+  }
+  let a = try_match_linear_arg(arg_a, var)?;
+  let b = try_match_linear_arg(arg_b, var)?;
+  let eval = |expr: Expr| crate::evaluator::evaluate_expr_to_expr(&expr).ok();
+  let ratio = eval(div2(b, a.clone()))?;
+  let (p, q) = crate::functions::math_ast::expr_to_rational(&ratio)?;
+  if p == 0 || q == 0 || p == q {
+    return None;
+  }
+  let scale = eval(div2(a, Expr::Integer(q)))?;
+  let u = eval(times2(scale.clone(), id_expr(var)))?;
+  let t = id_expr(var);
+  let trig_rules = Expr::List(
+    vec![
+      call("Rule", vec![call1("Tan", t.clone()), t.clone()]),
+      call("Rule", vec![call1("Sin", t.clone()), t.clone()]),
+      call("Rule", vec![call1("Cos", t.clone()), Expr::Integer(1)]),
+    ]
+    .into(),
+  );
+  let mut rational_factors = Vec::new();
+  for multiple in [q, p] {
+    let angle = eval(times2(Expr::Integer(multiple), t.clone()))?;
+    let expanded =
+      crate::functions::math_ast::trig_expand_ast(&[call1("Tan", angle)])
+        .ok()?;
+    rational_factors.push(eval(call(
+      "ReplaceAll",
+      vec![expanded, trig_rules.clone()],
+    ))?);
+  }
+  let rational = crate::functions::polynomial_ast::together_ast(&[div2(
+    times(rational_factors),
+    plus2(Expr::Integer(1), pow2(t.clone(), Expr::Integer(2))),
+  )])
+  .ok()?;
+  // Expansion must have eliminated the tangent calls completely.
+  let (numerator, denominator) =
+    crate::functions::polynomial_ast::together::extract_num_den(&rational);
+  if !crate::functions::polynomial_ast::is_polynomial(&numerator, var)
+    || !crate::functions::polynomial_ast::is_polynomial(&denominator, var)
+  {
+    return None;
+  }
+  let apart =
+    crate::functions::polynomial_ast::apart_ast(&[rational, t.clone()]).ok()?;
+  let mut primitives = Vec::new();
+  for term in crate::functions::polynomial_ast::collect_additive_terms(&apart) {
+    // The transformed product is even. Pair each partial fraction with
+    // its reflection to retain quadratic denominators instead of logs.
+    let reflected =
+      crate::syntax::substitute_variable(&term, var, &neg1(t.clone()));
+    let even = crate::functions::polynomial_ast::together_ast(&[eval(div2(
+      plus2(term, reflected),
+      Expr::Integer(2),
+    ))?])
+    .ok()?;
+    let even = eval(even)?;
+    let quadratic_primitive = (|| {
+      let (num, den) =
+        crate::functions::polynomial_ast::together::extract_num_den(&even);
+      let num = crate::functions::polynomial_ast::extract_poly_coeffs(
+        &crate::functions::polynomial_ast::expand_and_combine(&num),
+        var,
+      )?;
+      let den = crate::functions::polynomial_ast::extract_poly_coeffs(
+        &crate::functions::polynomial_ast::expand_and_combine(&den),
+        var,
+      )?;
+      integrate_linear_over_quadratic_impl(&num, &den, var, false)
+    })();
+    primitives.push(quadratic_primitive.or_else(|| integrate(&even, var))?);
+  }
+  let primitive = eval(plus(primitives))?;
+  let tangent = call1("Tan", u.clone());
+  let primitive = crate::syntax::substitute_variable(&primitive, var, &tangent);
+  let primitive = eval(call(
+    "ReplaceAll",
+    vec![primitive, call("Rule", vec![call1("ArcTan", tangent), u])],
+  ))?;
+  let terms =
+    crate::functions::polynomial_ast::collect_additive_terms(&primitive);
+  eval(plus(
+    terms
+      .into_iter()
+      .map(|term| div2(term, scale.clone()))
+      .collect(),
+  ))
+}
+
 /// Integrate products of trig functions of a common linear argument that
 /// reduce to `Sin[u]^p / Cos[u]` or `Cos[u]^p / Sin[u]` (e.g. `Sin[x]*Tan[x]`,
 /// `Sin[x]^2/Cos[x]`, `Cos[x]*Cot[x]`), matching wolframscript's closed forms:
@@ -7326,6 +7426,15 @@ fn integrate_linear_over_quadratic(
   den: &[i128],
   var: &str,
 ) -> Option<Expr> {
+  integrate_linear_over_quadratic_impl(num, den, var, true)
+}
+
+fn integrate_linear_over_quadratic_impl(
+  num: &[i128],
+  den: &[i128],
+  var: &str,
+  split_rational_roots: bool,
+) -> Option<Expr> {
   if den.len() != 3 || num.len() > 2 {
     return None;
   }
@@ -7354,7 +7463,7 @@ fn integrate_linear_over_quadratic(
 
   // A perfect-square discriminant means rational roots, and wolframscript
   // splits into partial fractions there rather than using ArcTanh.
-  if disc > 0 {
+  if disc > 0 && split_rational_roots {
     let k = (disc as f64).sqrt().round() as i128;
     if k.checked_mul(k) == Some(disc) {
       return rational_root_partial_fractions(
@@ -10303,6 +10412,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             if let Some(trig_result) =
               try_integrate_sin_cos_product(&var_refs, var)
                 .or_else(|| try_integrate_trig_quotient(&var_refs, &[], var))
+                .or_else(|| try_integrate_tangent_product(&var_refs, var))
             {
               if const_factors.is_empty() {
                 return Some(trig_result);

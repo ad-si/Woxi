@@ -26762,3 +26762,41 @@ fn polynomial_product_integrals_preserve_external_constants() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn tangent_products_use_rational_substitution_for_commensurate_frequencies() {
+  for (code, expected) in [
+    ("Integrate[Tan[x]*Tan[2*x],x]", "-x + ArcTanh[Tan[x]]"),
+    (
+      "Integrate[Tan[x]*Tan[3*x],x]",
+      "-x + (2*ArcTanh[Sqrt[3]*Tan[x]])/(3*Sqrt[3]) + Tan[x]/3",
+    ),
+    (
+      "Integrate[Tan[2*x]*Tan[6*x],x]",
+      "-x + ArcTanh[Sqrt[3]*Tan[2*x]]/(3*Sqrt[3]) + Tan[2*x]/6",
+    ),
+    (
+      "Integrate[Tan[x/2]*Tan[3*x/2],x]",
+      "-x + (4*ArcTanh[Sqrt[3]*Tan[x/2]])/(3*Sqrt[3]) + (2*Tan[x/2])/3",
+    ),
+    (
+      "Integrate[Tan[a*x]*Tan[3*a*x],x]",
+      "-x + (2*ArcTanh[Sqrt[3]*Tan[a*x]])/(3*Sqrt[3]*a) + Tan[a*x]/(3*a)",
+    ),
+    (
+      "Integrate[Tan[3*x]*Tan[9*x],x]",
+      "-x + (2*ArcTanh[Sqrt[3]*Tan[3*x]])/(9*Sqrt[3]) + Tan[3*x]/9",
+    ),
+    ("Integrate[Tan[2*x]*Tan[4*x],x]", "-x + ArcTanh[Tan[2*x]]/2"),
+    (
+      "Integrate[Tan[2*x]*Tan[3*x],x]",
+      "-x - ArcTanh[Tan[x]] + (2*ArcTanh[Sqrt[3]*Tan[x]])/Sqrt[3]",
+    ),
+    (
+      "Integrate[Cos[3*x]-Cos[x*y]+Tan[x]*Tan[3*x],x]",
+      "-x + (2*ArcTanh[Sqrt[3]*Tan[x]])/(3*Sqrt[3]) + Sin[3*x]/3 - Sin[x*y]/y + Tan[x]/3",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
