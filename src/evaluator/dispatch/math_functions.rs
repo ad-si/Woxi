@@ -7575,6 +7575,10 @@ fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
         count,
         parts.iter().any(|part| part.1)
           || powered_quotient
+          || (name == "Power"
+            && args.len() == 2
+            && matches!(args[1], Expr::Integer(n) if n > 2)
+            && matches!(&args[0], Expr::FunctionCall { name, .. } if matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")))
           || (name == "Times" && count > 1),
       )
     }
@@ -7593,6 +7597,91 @@ fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
     Expr::UnaryOp { operand, .. } => trig_to_exp_grouping(operand),
     _ => (0, false),
   }
+}
+
+// Small powers expand in sums when their harmonics combine with another
+// summand. Otherwise retain the shorter exponential powers. Limit this
+// combination pass to at most five harmonics per term.
+fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
+  let terms = crate::functions::polynomial_ast::collect_additive_terms(expr);
+  if terms.len() < 2 {
+    return false;
+  }
+  let mut spectra = Vec::new();
+  for term in terms {
+    let factors =
+      crate::functions::polynomial_ast::together::flatten_times_args(
+        std::slice::from_ref(&term),
+      );
+    let mut spectrum = None;
+    for factor in factors {
+      if trig_to_exp_grouping(&factor).0 == 0 {
+        continue;
+      }
+      if spectrum.is_some() {
+        return false;
+      }
+      let (base, power) = match &factor {
+        Expr::FunctionCall { name, args }
+          if name == "Power" && args.len() == 2 =>
+        {
+          let Expr::Integer(n) = args[1] else {
+            return false;
+          };
+          (&args[0], n)
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left,
+          right,
+        } => {
+          let Expr::Integer(n) = right.as_ref() else {
+            return false;
+          };
+          (left.as_ref(), *n)
+        }
+        _ => (&factor, 1),
+      };
+      let Expr::FunctionCall { name, args } = base else {
+        return false;
+      };
+      if args.len() != 1
+        || !(1..=4).contains(&power)
+        || !matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")
+      {
+        return false;
+      }
+      let hyperbolic = matches!(name.as_str(), "Sinh" | "Cosh");
+      let mut harmonics = Vec::new();
+      for k in (-power..=power).step_by(2) {
+        if k == 0 {
+          continue;
+        }
+        let angle = call("Times", vec![Expr::Integer(k), args[0].clone()]);
+        let Ok(angle) = crate::evaluator::evaluate_expr_to_expr(&angle) else {
+          return false;
+        };
+        harmonics.push((hyperbolic, expr_to_string(&angle)));
+      }
+      spectrum = Some((power, harmonics));
+    }
+    if let Some(spectrum) = spectrum {
+      spectra.push(spectrum);
+    }
+  }
+  let mut has_power = false;
+  for (i, (power, harmonics)) in spectra.iter().enumerate() {
+    if *power <= 2 {
+      continue;
+    }
+    has_power = true;
+    if !spectra.iter().enumerate().any(|(j, (_, other))| {
+      i != j && harmonics.iter().any(|harmonic| other.contains(harmonic))
+    }) {
+      return false;
+    }
+  }
+  has_power
 }
 
 fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
@@ -7641,7 +7730,8 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       other_transformed_factor = true;
     }
   }
-  let grouped = trig_to_exp_grouping(expr).1;
+  let grouped =
+    trig_to_exp_grouping(expr).1 && !trig_to_exp_has_combining_harmonics(expr);
   let transformed = trig_to_exp_recursive_impl(expr, grouped);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
   if !grouped

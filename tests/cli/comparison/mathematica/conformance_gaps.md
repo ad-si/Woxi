@@ -9087,7 +9087,7 @@ short real trigonometric sum. The minimized `TrigReduce[Tan[x]-Sin[x]^2]`
 is `(-1+Cos[3*x]*Sec[x]+4*Tan[x])/4` in Wolfram, compared with
 `(-1+Cos[2*x]+2*Tan[x])/2` in Woxi. These are equivalent forms.
 
-### TrigToExp retains ordering and some mixed-power grouping differences
+### TrigToExp retains ordering differences
 
 Isolated circular/hyperbolic sine and cosine squares, scalar multiples,
 and higher integer powers now match the tested Wolfram coefficient forms.
@@ -9105,10 +9105,11 @@ The minimized `TrigToExp[x-Tan[x]]` also puts `x` first in Woxi rather
 than last in Wolfram; the corresponding example with a separate `z`
 orders correctly.
 
-For `TrigToExp[Sin[x]^2+Cos[y]^3]`, Woxi expands the exponential
-powers while Wolfram retains each power with its scalar coefficient.
-This pure-power mixed-sum convention remains separate from the resolved
-product and quotient grouping.
+Higher circular/hyperbolic powers now preserve grouping inside sums
+(seed 1794036713376450000, 2026-11-07). This resolves
+`TrigToExp[Sin[x]^2+Cos[y]^3]`, `TrigToExp[1-Sin[x]^3]`, and the
+mixed tangent/cubic-sine case while retaining the expansion of sums
+containing only isolated squares.
 
 ### N of constants prints different guard digits
 

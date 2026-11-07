@@ -26951,3 +26951,53 @@ fn log_derivative_integrals_normalize_negative_polynomial_content() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_keeps_higher_powers_grouped_in_sums() {
+  for (code, expected) in [
+    ("TrigToExp[1-Sin[x]^3]", "1 + I/8*(E^(-I*x) - E^(I*x))^3"),
+    ("TrigToExp[Sinh[x]^3+1]", "1 + (-E^(-x) + E^x)^3/8"),
+    (
+      "TrigToExp[Cosh[x]^4+Sin[y]]",
+      "(E^(-x) + E^x)^4/16 + I/2*(E^(-I*y) - E^(I*y))",
+    ),
+    (
+      "TrigToExp[Sin[x]^2+Cos[y]^3]",
+      "-1/4*(E^(-I*x) - E^(I*x))^2 + (E^(-I*y) + E^(I*y))^3/8",
+    ),
+    (
+      "TrigToExp[Sin[x]^4+Cos[y]]",
+      "(E^(-I*x) - E^(I*x))^4/16 + (E^(-I*y) + E^(I*y))/2",
+    ),
+    (
+      "TrigToExp[Tan[2*x]-Sin[x]^3]",
+      "I/8*(E^(-I*x) - E^(I*x))^3 + (I*(E^((-2*I)*x) - E^((2*I)*x)))/(E^((-2*I)*x) + E^((2*I)*x))",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn trig_to_exp_combines_overlapping_harmonics_of_small_powers() {
+  for (code, expected) in [
+    (
+      "TrigToExp[Cos[x]+Cos[x]^3]",
+      "7/(8*E^(I*x)) + (7*E^(I*x))/8 + 1/(8*E^((3*I)*x)) + E^((3*I)*x)/8",
+    ),
+    (
+      "TrigToExp[Sin[x]^4+Cos[x]^2]",
+      "7/8 + 1/(16*E^((4*I)*x)) + E^((4*I)*x)/16",
+    ),
+    (
+      "TrigToExp[Cos[2*x]+Sin[x]^4]",
+      "3/8 + 1/(4*E^((2*I)*x)) + E^((2*I)*x)/4 + 1/(16*E^((4*I)*x)) + E^((4*I)*x)/16",
+    ),
+    (
+      "TrigToExp[Cos[x]+Sin[x]^5]",
+      "I/32*(E^(-I*x) - E^(I*x))^5 + (E^(-I*x) + E^(I*x))/2",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
