@@ -25930,6 +25930,28 @@ fn simplify_absorbs_polynomial_minus_only_when_cheaper() {
 }
 
 #[test]
+fn simplify_numeric_radical_sums_compare_signed_content() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      ("(Sqrt[16]-4*Sqrt[2])*(2*Sqrt[9])", "-24*(-1 + Sqrt[2])"),
+      ("16-2*Sqrt[2]", "-2*(-8 + Sqrt[2])"),
+      ("16+2*Sqrt[2]", "2*(8 + Sqrt[2])"),
+      ("-16+2*Sqrt[2]", "2*(-8 + Sqrt[2])"),
+      ("10-2*Sqrt[2]-4*Sqrt[3]", "-2*(-5 + Sqrt[2] + 2*Sqrt[3])"),
+      ("3-3*Sqrt[2]", "3 - 3*Sqrt[2]"),
+      ("2-2*Sqrt[3]", "2 - 2*Sqrt[3]"),
+      ("4-8*Sqrt[3]", "4 - 8*Sqrt[3]"),
+      ("-4-8*Sqrt[3]", "-4 - 8*Sqrt[3]"),
+      ("2-Sqrt[3]", "2 - Sqrt[3]"),
+      ("1-Sqrt[2]", "1 - Sqrt[2]"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+#[test]
 fn full_simplify_retains_negative_radical_content_on_cost_ties() {
   for (code, expected) in [
     ("FullSimplify[16*(-1-2*Sqrt[23])]", "-16*(1 + 2*Sqrt[23])"),

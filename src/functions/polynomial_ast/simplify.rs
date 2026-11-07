@@ -6623,12 +6623,67 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
-  prefer_unexpanded_numeric_radical_product(
-    expr,
-    prefer_rationalized_radical_quotient(prefer_radical_denominator(
-      prefer_expanded_radical_sum(absorb_cheaper_polynomial_minus(best)),
-    )),
+  prefer_factored_numeric_radical_sum(
+    prefer_unexpanded_numeric_radical_product(
+      expr,
+      prefer_rationalized_radical_quotient(prefer_radical_denominator(
+        prefer_expanded_radical_sum(absorb_cheaper_polynomial_minus(best)),
+      )),
+    ),
   )
+}
+
+// Integer-plus-radical sums admit signed numeric content, with the final
+// radical coefficient positive inside the sum. Compare the complete product,
+// including the sign, so small coefficients that make factoring dearer stay put.
+fn prefer_factored_numeric_radical_sum(best: Expr) -> Expr {
+  let terms = collect_additive_terms(&best);
+  let classified: Option<Vec<_>> =
+    terms.iter().map(classify_radical_term).collect();
+  let Some(classified) = classified else {
+    return best;
+  };
+  if !classified.iter().any(|(_, root)| root.is_none())
+    || !classified.iter().any(|(_, root)| root.is_some())
+  {
+    return best;
+  }
+  let Ok(candidate) = super::factor_terms_ast(std::slice::from_ref(&best))
+  else {
+    return best;
+  };
+  let factors = collect_times_factors(&candidate);
+  if factors.len() != 2 {
+    return best;
+  }
+  let Expr::Integer(content) = factors[0] else {
+    return best;
+  };
+  if content.unsigned_abs() <= 1 {
+    return best;
+  }
+  let inner = collect_additive_terms(&factors[1]);
+  let candidate = if inner
+    .last()
+    .and_then(classify_radical_term)
+    .is_some_and(|(coefficient, _)| coefficient < 0)
+  {
+    let Some(content) = content.checked_neg() else {
+      return best;
+    };
+    let inner = plus(inner.into_iter().map(neg1).collect());
+    let Ok(inner) = crate::evaluator::evaluate_expr_to_expr(&inner) else {
+      return best;
+    };
+    times2(Expr::Integer(content), inner)
+  } else {
+    candidate
+  };
+  if wl_simplify_count(&candidate) <= wl_simplify_count(&best) {
+    candidate
+  } else {
+    best
+  }
 }
 
 // Reuse algebraic-number reduction for a quadratic radical reciprocal,
@@ -8933,7 +8988,9 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     prefer_expanded_radical_sum(best),
   ));
   let best = prefer_unexpanded_numeric_radical_product(&simplified, best);
-  prefer_unexpanded_numeric_radical_product(expr, best)
+  prefer_factored_numeric_radical_sum(
+    prefer_unexpanded_numeric_radical_product(expr, best),
+  )
 }
 
 /// FullSimplify of an expanded univariate polynomial with integer
