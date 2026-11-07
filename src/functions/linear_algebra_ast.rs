@@ -5056,16 +5056,27 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
       }
     };
     let outer = outer as i128;
+    let with_content = |re: i128, coeff: i128| {
+      let common = gcd_i128(re, coeff);
+      if inner != 1 && common > 1 && re != 0 {
+        times2(
+          Expr::Integer(common),
+          with_real(re / common, imag_term(coeff / common)),
+        )
+      } else {
+        with_real(re, imag_term(coeff))
+      }
+    };
     if neg_b % 2 == 0 && outer % 2 == 0 {
       // Components fold to exact halves: re ± oc*I*Sqrt[inner]
       let (re, oc) = (neg_b / 2, outer / 2);
-      return vec![with_real(re, imag_term(oc)), with_real(re, imag_term(-oc))];
+      return vec![with_content(re, oc), with_content(re, -oc)];
     }
     // Otherwise keep the quotient form (3 + I*Sqrt[11])/2
     let halved = |num: Expr| div2(num, Expr::Integer(2));
     return vec![
-      halved(with_real(neg_b, imag_term(outer))),
-      halved(with_real(neg_b, imag_term(-outer))),
+      halved(with_content(neg_b, outer)),
+      halved(with_content(neg_b, -outer)),
     ];
   }
 

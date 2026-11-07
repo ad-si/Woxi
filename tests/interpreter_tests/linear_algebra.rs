@@ -12973,3 +12973,27 @@ mod symbolic_eigen_forms {
     );
   }
 }
+#[test]
+fn exact_complex_eigenvalues_extract_common_radical_content() {
+  for (code, expected) in [
+    (
+      "Eigenvalues[{{4,3},{-4,0}}]",
+      "{2*(1 + I*Sqrt[2]), 2*(1 - I*Sqrt[2])}",
+    ),
+    (
+      "Eigenvalues[{{-4,3},{-4,0}}]",
+      "{2*(-1 + I*Sqrt[2]), 2*(-1 - I*Sqrt[2])}",
+    ),
+    (
+      "Eigenvalues[{{6,6},{-6,0}}]",
+      "{3*(1 + I*Sqrt[3]), 3*(1 - I*Sqrt[3])}",
+    ),
+    (
+      "Eigenvalues[{{3,6},{-3,0}}]",
+      "{(3*(1 + I*Sqrt[7]))/2, (3*(1 - I*Sqrt[7]))/2}",
+    ),
+    ("Eigenvalues[{{4,4},{-2,0}}]", "{2 + 2*I, 2 - 2*I}"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
