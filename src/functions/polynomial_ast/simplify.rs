@@ -6536,7 +6536,14 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           let mixed_unit = has_pos
             && has_neg
             && coeffs.iter().all(|(n, _)| (n / content).abs() == 1);
-          let signed = if !has_pos || (mixed_unit && coeffs.last()?.0 < 0) {
+          let negative_unit_cofactor = has_pos
+            && has_neg
+            && coeffs.last()?.0 == -content
+            && radicands.contains(&g);
+          let signed = if !has_pos
+            || (mixed_unit && coeffs.last()?.0 < 0)
+            || negative_unit_cofactor
+          {
             -content
           } else {
             content
@@ -6558,10 +6565,12 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
           }
           let candidate = times(factors);
           // Coprime coefficients favor radical extraction on a tie when
-          // the final cofactor is positive, or all signs can move outside.
-          // Existing numeric-content extraction keeps its own tie rules.
+          // the final cofactor is positive, all signs can move outside,
+          // or a negative unit cofactor can be oriented with an outer minus.
+          // Existing numeric-content extraction keeps its other tie rules.
           let tie_ok = radicands.contains(&g)
             && ((content > 1 && mixed_unit)
+              || negative_unit_cofactor
               || (content == 1 && (!has_pos || coeffs.last()?.0 > 0)));
           Some((candidate, tie_ok))
         })()
@@ -8864,8 +8873,14 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   // A common radical scale can simplify both sides of a quotient even
   // when extracting it from either sum alone would not reduce its cost.
   let (num, den) = super::together::extract_num_den(&best);
-  let numerator_terms = collect_additive_terms(&num);
-  let denominator_terms = collect_additive_terms(&den);
+  // Earlier candidates can already have extracted a radical from a sum.
+  // Expand and normalize both sides so the shared scale remains visible.
+  let normalize_sum = |value: &Expr| {
+    let expanded = expand_and_combine(value);
+    crate::evaluator::evaluate_expr_to_expr(&expanded).unwrap_or(expanded)
+  };
+  let numerator_terms = collect_additive_terms(&normalize_sum(&num));
+  let denominator_terms = collect_additive_terms(&normalize_sum(&den));
   if !matches!(den, Expr::Integer(1))
     && numerator_terms
       .iter()

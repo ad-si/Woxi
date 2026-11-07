@@ -26214,3 +26214,26 @@ fn cancel_normalizes_numerator_content_with_factored_denominators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_extracts_common_radicals_with_negative_unit_cofactors() {
+  for (body, expected) in [
+    (
+      "(Sqrt[6]/(-Sqrt[3]))*(Sqrt[21]-Sqrt[6])",
+      "-(Sqrt[3]*(-2 + Sqrt[14]))",
+    ),
+    ("2*Sqrt[3]-Sqrt[42]", "-(Sqrt[3]*(-2 + Sqrt[14]))"),
+    ("3*Sqrt[2]-Sqrt[10]", "-(Sqrt[2]*(-3 + Sqrt[5]))"),
+    ("3*Sqrt[3]-Sqrt[42]", "-(Sqrt[3]*(-3 + Sqrt[14]))"),
+    ("2*Sqrt[5]-Sqrt[70]", "-(Sqrt[5]*(-2 + Sqrt[14]))"),
+    ("4*Sqrt[3]-2*Sqrt[42]", "-2*Sqrt[3]*(-2 + Sqrt[14])"),
+    ("2*Sqrt[3]-3*Sqrt[42]", "2*Sqrt[3] - 3*Sqrt[42]"),
+    ("3*Sqrt[3]-2*Sqrt[42]", "3*Sqrt[3] - 2*Sqrt[42]"),
+    ("-2*Sqrt[3]+Sqrt[42]", "Sqrt[3]*(-2 + Sqrt[14])"),
+    ("2*Sqrt[3]+Sqrt[42]", "Sqrt[3]*(2 + Sqrt[14])"),
+    ("2*Sqrt[3]-Sqrt[7]", "2*Sqrt[3] - Sqrt[7]"),
+  ] {
+    let code = format!("Simplify[{body}]");
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}

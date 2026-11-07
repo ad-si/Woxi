@@ -15429,6 +15429,14 @@ fn full_simplify_radical_quotient_candidates() {
       "FullSimplify[(2Sqrt[3]-Sqrt[6])/(Sqrt[3]+Sqrt[15])]",
       "(2 - Sqrt[2])/(1 + Sqrt[5])",
     ),
+    (
+      "FullSimplify[-(Sqrt[3]*(-2+Sqrt[2]))/(Sqrt[3]+Sqrt[15])]",
+      "(2 - Sqrt[2])/(1 + Sqrt[5])",
+    ),
+    (
+      "FullSimplify[(3*Sqrt[5]-Sqrt[35])/(Sqrt[5]+Sqrt[15])]",
+      "(3 - Sqrt[7])/(1 + Sqrt[3])",
+    ),
     ("FullSimplify[18/(2+Sqrt[13])]", "2*(-2 + Sqrt[13])"),
     ("FullSimplify[12/(1+Sqrt[7])]", "2*(-1 + Sqrt[7])"),
   ] {
