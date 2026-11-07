@@ -8111,7 +8111,15 @@ pub fn candlestick_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     ));
   }
-  prims.push(Expr::List(axis.into()));
+  // The category labels use the same point size as the value-axis ticks,
+  // rather than Graphics Text's larger default.
+  prims.push(call(
+    "Style",
+    vec![
+      Expr::List(axis.into()),
+      real(crate::functions::plot_padding::TICK_FONT),
+    ],
+  ));
 
   let rule = |k: &str, v: Expr| Expr::Rule {
     pattern: Box::new(Expr::Identifier(k.to_string())),

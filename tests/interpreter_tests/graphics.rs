@@ -50710,6 +50710,28 @@ mod graphics_review_regressions {
   }
 
   #[test]
+  fn candlestick_category_labels_match_value_tick_size() {
+    for days in [[1, 2], [14, 15]] {
+      let svg = export_svg(&format!(
+        "CandlestickChart[{{{{DateObject[{{2024, 1, {}}}], {{10, 12, 9, 11}}}}, {{DateObject[{{2024, 1, {}}}], {{11, 13, 10, 12}}}}}}]",
+        days[0], days[1]
+      ));
+      for day in days {
+        let label = svg
+          .lines()
+          .find(|line| line.contains(&format!(">{day}</text>")))
+          .unwrap();
+        assert!(label.contains("font-size=\"10\""), "{label}");
+      }
+      let value_label = svg
+        .lines()
+        .find(|line| line.contains(">10</text>"))
+        .unwrap();
+      assert!(value_label.contains("font-size=\"10\""), "{value_label}");
+    }
+  }
+
+  #[test]
   fn rectangle_category_labels_match_tick_typography() {
     let svg = export_svg(
       "RectangleChart[{{1, 2}, {2, 3}}, ChartLabels -> {\"a\", \"b\"}]",
