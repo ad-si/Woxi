@@ -25864,3 +25864,23 @@ fn simplify_factors_coprime_radical_coefficients_on_cost_ties() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplification_preserves_cheaper_numeric_radical_products() {
+  for head in ["Simplify", "FullSimplify"] {
+    for (expression, expected) in [
+      (
+        "(4+Sqrt[11])*3*Sqrt[22]/(4*Sqrt[13])",
+        "(3*Sqrt[11/26]*(4 + Sqrt[11]))/2",
+      ),
+      (
+        "(2+Sqrt[11])*3*Sqrt[22]/(4*Sqrt[13])",
+        "(3*Sqrt[11/26]*(2 + Sqrt[11]))/2",
+      ),
+      ("(3+Sqrt[5])*Sqrt[10]/Sqrt[7]", "Sqrt[10/7]*(3 + Sqrt[5])"),
+    ] {
+      let code = format!("{head}[{expression}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}

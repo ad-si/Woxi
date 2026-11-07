@@ -6622,7 +6622,45 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
-  best
+  prefer_unexpanded_numeric_radical_product(expr, best)
+}
+
+// Expansion can destroy a cheaper numeric radical factorization. Retain
+// the evaluated input as a candidate in both simplification entry points.
+fn prefer_unexpanded_numeric_radical_product(expr: &Expr, best: Expr) -> Expr {
+  let mut has_sum = false;
+  let mut has_radical = false;
+  let valid = collect_times_factors(expr).iter().all(|factor| {
+    if crate::functions::math_ast::expr_to_rational(factor).is_some() {
+      return true;
+    }
+    if as_sqrt(factor).is_some_and(|radicand| {
+      crate::functions::math_ast::expr_to_rational(radicand)
+        .is_some_and(|(n, d)| n > 0 && d > 0)
+    }) {
+      has_radical = true;
+      return true;
+    }
+    let terms = collect_additive_terms(factor);
+    if terms.len() > 1
+      && terms
+        .iter()
+        .all(|term| classify_radical_term(term).is_some())
+    {
+      has_sum = true;
+      return true;
+    }
+    false
+  });
+  if valid
+    && has_sum
+    && has_radical
+    && wl_simplify_count(expr) < wl_simplify_count(&best)
+  {
+    expr.clone()
+  } else {
+    best
+  }
 }
 
 /// Regroup a sum of exponentials `Σ cᵢ E^(kᵢ u)` as
@@ -8574,7 +8612,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   }
 
   let _ = best_complexity; // suppress unused warning
-  best
+  prefer_unexpanded_numeric_radical_product(expr, best)
 }
 
 /// FullSimplify of an expanded univariate polynomial with integer
