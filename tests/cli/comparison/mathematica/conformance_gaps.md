@@ -8952,10 +8952,22 @@ identities, including their hyperbolic counterparts. Diff-fuzz seed
 TrigReduce[Sin[x y]^3 Tan[x] + Tan[x]^2]
 ```
 
-The product term is reduced, but Woxi retains `Tan[x]^2`. Wolfram writes
-that contribution as `(Sec[x]^2 - Cos[2*x]*Sec[x]^2)/2` within the sum.
-For the standalone `TrigReduce[Tan[x]^2]`, Wolfram instead returns
+Tangent powers now reduce numerator and denominator through the shared
+sine/cosine power identities. Wolfram writes the tangent-square contribution
+within this mixed sum as `(Sec[x]^2 - Cos[2*x]*Sec[x]^2)/2`.
+For the standalone `TrigReduce[Tan[x]^2]`, both implementations now return
 `(1 - Cos[2*x])/(1 + Cos[2*x])`, reducing both numerator and denominator.
+
+Diff-fuzz seed 1794011902339689000 (2026-11-07) also found
+`TrigReduce[Cos[x y]^2 Tan[x]^2]`. Both sides now fully reduce the product,
+but Woxi orders `Cos[2*x - 2*x*y]` before `Cos[2*x]`; Wolfram puts it after
+`Cos[2*x*y]`. The minimized `TrigReduce[Cos[y]^2 Tan[x]]` leaves
+`(Sec[x]*Sin[x - 2*y] + Sec[x]*Sin[x + 2*y] + 2*Tan[x])/4` in Woxi;
+Wolfram factors it as `(Sec[x]*(2*Sin[x] + Sin[x - 2*y] + Sin[x + 2*y]))/4`.
+The evaluator simplifies `Sec[x]*Sin[x]` back to `Tan[x]` before common
+reciprocal-factor extraction. Also, `TrigReduce[Coth[x]^3]` has numerator
+and denominator signs both reversed from Wolfram's convention. These
+remaining cases are equivalent expressions with different presentation.
 
 ### TrigToExp does not expand shifted cosine squares
 

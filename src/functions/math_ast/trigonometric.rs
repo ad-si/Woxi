@@ -6893,6 +6893,18 @@ fn reduce_two_factor_product(a: &Expr, b: &Expr) -> Expr {
   times2(a.clone(), b.clone())
 }
 
+fn trig_quotient_parts(
+  name: &str,
+) -> Option<(&'static str, &'static str, &'static str)> {
+  match name {
+    "Tan" => Some(("Sin", "Cos", "Sec")),
+    "Cot" => Some(("Cos", "Sin", "Csc")),
+    "Tanh" => Some(("Sinh", "Cosh", "Sech")),
+    "Coth" => Some(("Cosh", "Sinh", "Csch")),
+    _ => None,
+  }
+}
+
 /// Try product-to-sum for Sin[a]*Cos[b], Sin[a]*Sin[b], Cos[a]*Cos[b].
 fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   let (a_name, a_arg) = extract_trig(a)?;
@@ -6901,15 +6913,8 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   // Reduce quotient functions through the same numerator identities as
   // Sin/Cos and Sinh/Cosh. With two quotients, reduce the denominator pair
   // as well; with one, preserve its reciprocal function (Sec, Csc, ...).
-  let quotient = |name: &str| match name {
-    "Tan" => Some(("Sin", "Cos", "Sec")),
-    "Cot" => Some(("Cos", "Sin", "Csc")),
-    "Tanh" => Some(("Sinh", "Cosh", "Sech")),
-    "Coth" => Some(("Cosh", "Sinh", "Csch")),
-    _ => None,
-  };
-  let aq = quotient(a_name);
-  let bq = quotient(b_name);
+  let aq = trig_quotient_parts(a_name);
+  let bq = trig_quotient_parts(b_name);
   if aq.is_some() || bq.is_some() {
     let an = call1(aq.map_or(a_name, |q| q.0), a_arg.clone());
     let bn = call1(bq.map_or(b_name, |q| q.0), b_arg.clone());
@@ -6992,6 +6997,12 @@ fn try_reduce_trig_pair(a: &Expr, b: &Expr) -> Option<Expr> {
 /// Reduce trig power: Sin[x]^n, Cos[x]^n and the hyperbolic Sinh/Cosh forms.
 fn reduce_trig_power(base: &Expr, n: i128) -> Option<Expr> {
   let (trig_name, arg) = extract_trig(base)?;
+  if let Some((numerator, denominator, _)) = trig_quotient_parts(trig_name) {
+    return Some(div2(
+      reduce_trig_power(&call1(numerator, arg.clone()), n)?,
+      reduce_trig_power(&call1(denominator, arg), n)?,
+    ));
+  }
   if !matches!(trig_name, "Sin" | "Cos" | "Sinh" | "Cosh") {
     return None;
   }

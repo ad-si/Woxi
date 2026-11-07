@@ -26568,3 +26568,18 @@ fn rational_integrals_use_linear_denominator_substitution() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_reduce_quotient_powers_use_shared_power_identities() {
+  for (code, expected) in [
+    ("TrigReduce[Tan[x]^2]", "(1 - Cos[2*x])/(1 + Cos[2*x])"),
+    (
+      "TrigReduce[Tan[x]^3]",
+      "(3*Sin[x] - Sin[3*x])/(3*Cos[x] + Cos[3*x])",
+    ),
+    ("TrigReduce[Cot[x]^2]", "(-1 - Cos[2*x])/(-1 + Cos[2*x])"),
+    ("TrigReduce[Tanh[x]^2]", "(-1 + Cosh[2*x])/(1 + Cosh[2*x])"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
