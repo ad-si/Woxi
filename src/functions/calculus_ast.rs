@@ -7750,6 +7750,29 @@ fn try_integrate_rational(
     );
   }
   let den_lead = *den_coeffs.last()?;
+  // A monomial denominator gives a Laurent polynomial. Integrate its
+  // terms through the canonical power rules, so the simple pole yields
+  // Log[x] instead of a logarithmic derivative such as Log[x^2]/2.
+  if den_coeffs.len() > 1
+    && den_coeffs[..den_coeffs.len() - 1].iter().all(|c| *c == 0)
+  {
+    let degree = (den_coeffs.len() - 1) as i128;
+    let mut primitives = Vec::new();
+    for (power, coefficient) in num_coeffs.iter().enumerate() {
+      if *coefficient == 0 {
+        continue;
+      }
+      let term = times2(
+        Expr::Integer(*coefficient),
+        pow(id_expr(var), Expr::Integer(power as i128 - degree)),
+      );
+      let term = crate::evaluator::evaluate_expr_to_expr(&term).ok()?;
+      primitives.push(integrate(&term, var)?);
+    }
+    let primitive =
+      crate::evaluator::evaluate_expr_to_expr(&plus(primitives)).ok()?;
+    return Some(div2(primitive, Expr::Integer(den_lead)));
+  }
   if den_coeffs.len() == 2
     && den_coeffs[0] != 0
     && num_coeffs.len() >= 2

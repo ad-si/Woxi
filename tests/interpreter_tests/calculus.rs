@@ -27288,3 +27288,32 @@ fn trig_to_exp_combines_harmonics_beside_separate_tangent_terms() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn monomial_denominator_integrals_use_canonical_simple_pole_logs() {
+  assert_eq!(
+    interpret("Integrate[(-5+x-5*x^2)/(-4*x^2),x]").unwrap(),
+    "(-5/x + 5*x - Log[x])/4"
+  );
+  assert_eq!(
+    interpret("Integrate[(1+x+x^2)/x^2,x]").unwrap(),
+    "-x^(-1) + x + Log[x]"
+  );
+  for degree in [2, 3, 4, 7] {
+    for coefficient in [-5, 1, 3] {
+      let body = format!(
+        "(1+2*x^{}+x^{})/({coefficient}*x^{degree})",
+        degree - 1,
+        degree + 1
+      );
+      let primitive = interpret(&format!("Integrate[{body},x]")).unwrap();
+      assert!(primitive.contains("Log[x]"), "{body}: {primitive}");
+      assert!(!primitive.contains("Log[x^"), "{body}: {primitive}");
+      assert_eq!(
+        interpret(&format!("Simplify[D[{primitive},x]-({body})]")).unwrap(),
+        "0",
+        "{body}"
+      );
+    }
+  }
+}
