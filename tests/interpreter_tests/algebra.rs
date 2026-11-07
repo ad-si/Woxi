@@ -26034,3 +26034,19 @@ fn simplify_canonicalizes_negative_reciprocal_powers() {
     }
   }
 }
+
+#[test]
+fn simplification_rationalizes_quadratic_radical_quotients_when_cheaper() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      ("Sqrt[15]/(Sqrt[9]+Sqrt[8])", "Sqrt[15]*(3 - 2*Sqrt[2])"),
+      ("Sqrt[3]/(1+Sqrt[2])", "Sqrt[3]*(-1 + Sqrt[2])"),
+      ("Sqrt[5]/(2+Sqrt[3])", "Sqrt[5]/(2 + Sqrt[3])"),
+      ("1/(2+Sqrt[8])", "-1/2 + 1/Sqrt[2]"),
+      ("2/(2+Sqrt[8])", "-1 + Sqrt[2]"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}

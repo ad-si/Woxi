@@ -6625,10 +6625,48 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 
   prefer_unexpanded_numeric_radical_product(
     expr,
-    prefer_radical_denominator(prefer_expanded_radical_sum(
-      absorb_cheaper_polynomial_minus(best),
+    prefer_rationalized_radical_quotient(prefer_radical_denominator(
+      prefer_expanded_radical_sum(absorb_cheaper_polynomial_minus(best)),
     )),
   )
+}
+
+// Reuse algebraic-number reduction for a quadratic radical reciprocal,
+// retaining the numerator as a factor instead of constructing a higher root.
+fn prefer_rationalized_radical_quotient(best: Expr) -> Expr {
+  let candidate = (|| -> Option<Expr> {
+    let (num, den) = super::together::extract_num_den(&best);
+    classify_radical_term(&num)?;
+    let terms = collect_additive_terms(&den);
+    if terms.len() != 2 {
+      return None;
+    }
+    let classified = terms
+      .iter()
+      .map(classify_radical_term)
+      .collect::<Option<Vec<_>>>()?;
+    if classified.iter().filter(|(_, r)| r.is_some()).count() != 1 {
+      return None;
+    }
+    let reciprocal =
+      super::root_reduce_ast(&[pow2(den, Expr::Integer(-1))]).ok()?;
+    let mut candidate =
+      crate::evaluator::evaluate_expr_to_expr(&times2(num, reciprocal)).ok()?;
+    let expanded = expand_and_combine(&candidate);
+    let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded).ok()?;
+    if wl_simplify_count(&expanded) < wl_simplify_count(&candidate) {
+      candidate = expanded;
+    }
+    Some(candidate)
+  })();
+  match candidate {
+    Some(candidate)
+      if wl_simplify_count(&candidate) < wl_simplify_count(&best) =>
+    {
+      candidate
+    }
+    _ => best,
+  }
 }
 
 // Clear rational radicands together before scoring the resulting quotient.
@@ -8841,7 +8879,9 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   }
 
   let _ = best_complexity; // suppress unused warning
-  let best = prefer_radical_denominator(prefer_expanded_radical_sum(best));
+  let best = prefer_rationalized_radical_quotient(prefer_radical_denominator(
+    prefer_expanded_radical_sum(best),
+  ));
   let best = prefer_unexpanded_numeric_radical_product(&simplified, best);
   prefer_unexpanded_numeric_radical_product(expr, best)
 }
