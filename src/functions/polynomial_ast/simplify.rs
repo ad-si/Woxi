@@ -10764,9 +10764,10 @@ fn simplify_quotient_select(
       return simplify_quotient_select(&basic2, &num2, &den2);
     }
   }
-  // A literal -1 numerator keeps the older reciprocal handling
-  // (Simplify[-1/(1+x)] → -(1+x)^(-1), -1/(1-x) → (-1+x)^(-1)).
-  if matches!(num, Expr::Integer(-1)) {
+  // Keep existing unit-reciprocal normalization when the denominator
+  // has a constant term. A zero-constant polynomial also needs the
+  // reciprocal candidate's cost comparison below.
+  if matches!(num, Expr::Integer(-1)) && d_coeffs[0] != 0 {
     return None;
   }
   let content = |terms: &[(i128, i128, i128)]| -> i128 {
@@ -11135,7 +11136,15 @@ fn simplify_quotient_select(
         }
       }
     } else {
-      if n_terms.first().is_some_and(|&(n, _, _)| n < 0) {
+      // An all-negative polynomial numerator pulls its own sign rather
+      // than reversing a positive-leading denominator with a constant
+      // term. Zero-constant denominators and mixed-sign numerators may
+      // flip; constants still compete as reciprocals.
+      if n_terms.first().is_some_and(|&(n, _, _)| n < 0)
+        && (n_terms.len() == 1
+          || den_min_exp > 0
+          || n_terms.iter().any(|&(n, _, _)| n > 0))
+      {
         cands.push(Cand {
           cost: sc_quotient((1, 1), &fn_terms, Some(&fd), None),
           class: 3,
@@ -11181,7 +11190,7 @@ fn simplify_quotient_select(
   for i in 1..cands.len() {
     let tie_wins = match (cands[best].class, cands[i].class) {
       (0, 1) => true,
-      (0 | 1, 2 | 3) => first_num_term_negative,
+      (0 | 1, 2 | 3) => first_num_term_negative && n_terms.len() > 1,
       _ => false,
     };
     let better = cands[i].cost < cands[best].cost
@@ -11199,6 +11208,9 @@ fn simplify_quotient_select(
     // reciprocals keep their Power form.
     if matches!(num, Expr::Integer(1)) {
       return Some((basic.clone(), false));
+    }
+    if matches!(num, Expr::Integer(-1)) {
+      return Some((neg1(pow2(den.clone(), Expr::Integer(-1))), true));
     }
     let plain_num = coeffs_from_terms(&n_terms, &var);
     return Some((div2(plain_num, den.clone()), false));

@@ -25572,3 +25572,29 @@ mod reduce_shape_position_and_root_order {
     );
   }
 }
+
+#[test]
+fn simplify_keeps_negative_polynomial_content_outside_positive_leading_denominators()
+ {
+  for (code, expected) in [
+    (
+      "Simplify[(-4-x)/(1-5x+2x^2)]",
+      "-((4 + x)/(1 - 5*x + 2*x^2))",
+    ),
+    (
+      "Simplify[(-4-2x)/(1-5x+2x^2)]",
+      "(-2*(2 + x))/(1 - 5*x + 2*x^2)",
+    ),
+    (
+      "Simplify[(-3-x-x^2)/(2-x+3x^3)]",
+      "-((3 + x + x^2)/(2 - x + 3*x^3))",
+    ),
+    ("Simplify[(-4-x)/(-1+5x-2x^2)]", "(4 + x)/(1 - 5*x + 2*x^2)"),
+    ("Simplify[-2/(-2x+2x^2)]", "(x - x^2)^(-1)"),
+    ("Simplify[-3/(-3x+3x^2)]", "(x - x^2)^(-1)"),
+    ("Simplify[-4/(-2x+2x^2)]", "2/(x - x^2)"),
+    ("Simplify[-2/(1-5x+2x^2)]", "-2/(1 - 5*x + 2*x^2)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
