@@ -4326,11 +4326,11 @@ mod arithmetic_geometric_mean {
   fn machine_real_values() {
     assert_eq!(
       interpret("ArithmeticGeometricMean[1.8, 1.2]").unwrap(),
-      "1.4848082617417828"
+      "1.4848082617417826"
     );
     assert_eq!(
       interpret("ArithmeticGeometricMean[3.0, 7.0]").unwrap(),
-      "4.789013583140951"
+      "4.789013583140952"
     );
   }
 }
@@ -7106,5 +7106,30 @@ fn agm_evaluates_exact_numeric_arguments_with_a_machine_partner() {
     ("ArithmeticGeometricMean[0.,Pi]", "0."),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn agm_rounds_after_convergence_without_intermediate_overflow() {
+  for (code, expected) in [
+    ("ArithmeticGeometricMean[3.9,9/5]", "2.7488502874981866"),
+    ("ArithmeticGeometricMean[3.9,1.8]", "2.7488502874981866"),
+    ("ArithmeticGeometricMean[-3.9,-1.8]", "-2.7488502874981866"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+  for exponent in [-200, -100, 200] {
+    let code =
+      format!("ArithmeticGeometricMean[1.*^{exponent},2.*^{exponent}]");
+    let result = interpret(&code)
+      .unwrap()
+      .replace("*^", "e")
+      .parse::<f64>()
+      .unwrap();
+    let expected = 1.4567910310469068 * 10f64.powi(exponent);
+    assert!(
+      (result / expected - 1.0).abs() <= 2.0 * f64::EPSILON,
+      "{code}: {result}"
+    );
   }
 }

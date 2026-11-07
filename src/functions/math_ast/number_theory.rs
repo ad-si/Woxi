@@ -6550,31 +6550,53 @@ pub fn arithmetic_geometric_mean_ast(
   // value and are left for symbolic handling.
   if let (Some(a), Some(b)) = (fa, fb)
     && inexact
+    && ((a > 0.0 && b > 0.0) || (a < 0.0 && b < 0.0))
+    && let Some(value) = agm(&args[0], &args[1])
   {
-    if a > 0.0 && b > 0.0 {
-      return Ok(Expr::Real(agm(a, b)));
-    }
-    if a < 0.0 && b < 0.0 {
-      return Ok(Expr::Real(-agm(-a, -b)));
-    }
+    return Ok(Expr::Real(if a < 0.0 { -value } else { value }));
   }
 
   // Stay unevaluated for symbolic/exact inputs
   Ok(unevaluated("ArithmeticGeometricMean", args))
 }
 
-/// Compute AGM iteratively
-fn agm(mut a: f64, mut b: f64) -> f64 {
+/// Compute AGM with guard precision, rounding only the converged result.
+fn agm(a: &Expr, b: &Expr) -> Option<f64> {
+  use astro_float::{BigFloat, RoundingMode};
+  const BITS: usize = 192;
+  let mut constants = super::numerical::astro_consts().ok()?;
+  let mut arithmetic = super::numerical::expr_to_bigfloat(
+    a,
+    BITS,
+    RoundingMode::ToEven,
+    &mut constants,
+  )
+  .ok()?
+  .abs();
+  let mut geometric = super::numerical::expr_to_bigfloat(
+    b,
+    BITS,
+    RoundingMode::ToEven,
+    &mut constants,
+  )
+  .ok()?
+  .abs();
+  let two = BigFloat::from_i32(2, BITS);
   for _ in 0..100 {
-    let a_new = f64::midpoint(a, b);
-    let b_new = (a * b).sqrt();
-    if (a_new - b_new).abs() < 1e-15 * a_new.abs().max(1.0) {
-      return a_new;
+    let next_arithmetic = arithmetic
+      .add(&geometric, BITS, RoundingMode::ToEven)
+      .div(&two, BITS, RoundingMode::ToEven);
+    let next_geometric = arithmetic
+      .mul(&geometric, BITS, RoundingMode::ToEven)
+      .sqrt(BITS, RoundingMode::ToEven);
+    let converged = next_arithmetic.cmp(&arithmetic) == Some(0);
+    arithmetic = next_arithmetic;
+    geometric = next_geometric;
+    if converged {
+      break;
     }
-    a = a_new;
-    b = b_new;
   }
-  f64::midpoint(a, b)
+  super::numerical::bigfloat_to_f64_approx(&arithmetic)
 }
 
 /// Compute q(n) - number of partitions into distinct parts
