@@ -9385,3 +9385,17 @@ Nearby controls do not consistently extract both contents:
 `Simplify[3*Sqrt[2]+6*Sqrt[6]]` returns `3*(Sqrt[2]+2*Sqrt[6])`, and
 `FullSimplify[Sqrt[7]*(3+6*Sqrt[5])]` keeps the input product.
 The general candidate-selection rule remains unresolved.
+
+### Machine RealDigits can expose an extra final decimal digit
+
+Seed `1794070447502802000` (2026-11-07) found `RealDigits[0.8]`.
+Woxi returns sixteen digits beginning with 8 and followed by zeros;
+Wolfram's sixteenth digit is 1. The explicit sixteen-digit form agrees
+with each implementation's default. With seventeen requested digits,
+Wolfram appends `Indeterminate` after that 1.
+
+Wolfram returns zero as the sixteenth digit for `0.08`, `0.008`, `8.`,
+and `RealDigits[SetPrecision[0.8,80],10,16]`. Thus the extra digit is not
+obtained by directly extracting the exact binary input's decimal digits.
+Woxi currently promotes machine values from their shortest decimal string;
+the general machine digit-extraction and uncertainty rule remains unresolved.
