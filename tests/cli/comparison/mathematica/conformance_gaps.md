@@ -9330,3 +9330,16 @@ While checking seed 1794046424858751000, the positive-value variant
 candidate: Wolfram returns `4/Sqrt[299+65*Sqrt[21]]`, while Woxi keeps
 `-(Sqrt[2/13]*(-5+Sqrt[21]))`. Rationalizing the positive difference
 proves the two forms equal. `Simplify` uses the latter form in both engines.
+
+### Hyperbolic integral machine rounding
+
+Cycle 79 (`make fuzz-diff`, seed `1794047080111913000`) found
+`CoshIntegral[1.1]`: Wolfram returns `0.9906936875136816`, while its
+`N[CoshIntegral[SetPrecision[1.1,80]]]` reference rounds to
+`0.9906936875136815`. Woxi now agrees with the latter after replacing its
+machine series with the shared guarded exponential-integral implementation.
+The same backend difference affects `SinhIntegral[1.1]`: Wolfram's machine
+result is `1.1766845920497218`, versus the guarded reference
+`1.1766845920497215`. Larger inputs also differ in their final digits.
+This change additionally fixes substantial large-input errors, premature
+machine overflow at `710.`.

@@ -12619,3 +12619,28 @@ fn regularized_hypergeometric_1f1_remains_finite_at_lower_parameter_poles() {
     }
   }
 }
+
+#[test]
+fn hyperbolic_integrals_match_guarded_references() {
+  // References: N[f[SetPrecision[x, 80]]] in Wolfram, preserving binary x.
+  for (x, shi, chi) in [
+    ("1.1", 1.1766845920497215, 0.9906936875136815),
+    ("40.", 3.019859131805621e15, 3.019859131805621e15),
+    ("100.", 1.35777637242694e41, 1.35777637242694e41),
+    ("710.", 1.5754578441031007e305, 1.5754578441031007e305),
+    ("1.*^-300", 1e-300, -690.1983122333122),
+  ] {
+    for (function, expected) in [("SinhIntegral", shi), ("CoshIntegral", chi)] {
+      let input = format!("{function}[{x}]");
+      let actual: f64 = interpret(&input)
+        .unwrap()
+        .replace("*^", "e")
+        .parse()
+        .unwrap();
+      assert!(
+        (actual / expected - 1.0).abs() <= 2.0 * f64::EPSILON,
+        "{input}: {actual} != {expected}"
+      );
+    }
+  }
+}
