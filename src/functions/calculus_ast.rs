@@ -9046,15 +9046,16 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
           );
         }
       }
-      if crate::functions::math_ast::expr_to_rational(&ratio_val)
-        .is_some_and(|(n, _)| n < 0)
+      if let Some((numerator, denominator)) =
+        crate::functions::math_ast::expr_to_rational(&ratio_val)
         && let Some(coeffs) =
           crate::functions::polynomial_ast::extract_poly_coeffs(
             &crate::functions::polynomial_ast::expand_and_combine(&g),
             var,
           )
         && coeffs.len() == 2
-        && coeffs[0] < 0
+        && ((numerator < 0 && coeffs[0] < 0)
+          || (coeffs[1] == -1 && denominator == 1 && numerator != -1))
       {
         log_g = call1(
           "Log",

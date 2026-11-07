@@ -27167,6 +27167,23 @@ fn trig_expand_reduces_powers_with_shared_variable_terms() {
 }
 
 #[test]
+fn scaled_linear_poles_choose_wolfram_logarithm_signs() {
+  for offset in [1, 3, 7] {
+    for coefficient in [-3, -1, 1, 2, 5] {
+      let code = format!("Integrate[{coefficient}/({offset}-x),x]");
+      let expected = if coefficient == 1 {
+        format!("-Log[{offset} - x]")
+      } else if coefficient == -1 {
+        format!("Log[-{offset} + x]")
+      } else {
+        format!("{}*Log[-{offset} + x]", -coefficient)
+      };
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+#[test]
 fn trig_reduce_orders_multivariate_angles_with_negative_product_terms() {
   assert_eq!(
     interpret("TrigReduce[Sin[x*y]*Tan[x]^2]").unwrap(),
