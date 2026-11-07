@@ -8991,6 +8991,12 @@ reciprocal-factor extraction. Also, `TrigReduce[Coth[x]^3]` has numerator
 and denominator signs both reversed from Wolfram's convention. These
 remaining cases are equivalent expressions with different presentation.
 
+Seed 1794016680256839000 also found the call-argument ordering variant
+`TrigReduce[Sin[x]+Sin[x*y]-Tan[x*y]*Cos[x]^2]`: Woxi places
+`Sec[x*y]*Sin[2*x-x*y]` before `Sin[x]` and `Sin[x*y]`, while Wolfram
+puts those single sine terms first. This is the same compound-argument
+ordering issue as the cosine product above (verified 2026-11-07).
+
 Seed 1794015443102756000 found the cubic mixed-sum variant
 `TrigReduce[Tan[x+y]^3 + Cos[x+y]*Cos[2*x]^3]`. Woxi combines the result
 over the reduced cosine denominator; Wolfram retains `Sec[x+y]^3` and
