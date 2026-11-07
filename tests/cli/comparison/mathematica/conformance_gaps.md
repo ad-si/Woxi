@@ -3037,18 +3037,14 @@ Wolfram's are near zero inside the data and large at both ends, which looks
 like a circular (FFT) convolution of the uncentered data; Woxi correlates the
 mean-centered data with the sampled wavelet directly. Not decoded yet.
 
-### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
+### Mixed exact and machine complex ordering compares component types
 
-```sh
-wolframscript -code 'ToString[TrigToExp[Sin[x]^3], InputForm]'
-# (-1/8*I)*(E^(-I*x) - E^(I*x))^3
-woxi eval 'TrigToExp[Sin[x]^3]'
-# (I/2/E^(I*x) - I/2*E^(I*x))^3
-```
-
-Same value. wolframscript pulls the `(-I/2)^3` coefficient out of the cubed
-difference; Woxi rewrites each `Sin` in place and leaves the coefficient
-inside. Found by the differential fuzzer.
+`Sort[{-2I,-1.5I,I,-I,1.5I,2I}]` places the exact imaginary values
+before the machine complex values in Wolfram, because their real components
+are exact `0` rather than `0.`. Woxi compares their numeric components and
+interleaves the machine values by imaginary magnitude. Exact complex
+magnitudes, coefficients, and exponential phases now sort correctly.
+Verified on 2026-11-07 while investigating fuzz seed 1794029749545146000.
 
 ### `LegendreP` distributes but `LaguerreL` collects
 
@@ -9071,8 +9067,9 @@ The shifted square `TrigToExp[Cos[x+y]^2]` and product-angle square
 `TrigToExp[Sin[x*y]^2]` are resolved (seed 1794029130738190000,
 2026-11-07). Isolated circular/hyperbolic sine and cosine squares,
 including scalar multiples, now expand into exponential terms.
-The higher-power coefficient grouping documented for `TrigToExp[Sin[x]^3]`
-remains, as does grouping within mixed trigonometric products.
+Higher integer powers now extract their scalar coefficients as well
+(seed 1794029749545146000), resolving the former `TrigToExp[Sin[x]^3]`
+gap. Grouping within mixed trigonometric products still differs.
 
 Seed 1794023524037498000 (2026-11-07) found the converse grouping issue
 for `TrigToExp[Cos[2*x]+Cos[3*x]-Tan[3*x]^2*Sin[x]^2]`: Woxi expands
