@@ -8856,7 +8856,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   }
 
   // Numeric radical sums also admit a nested-square-root candidate.
-  // Same-sign real summands have an unambiguous square-root sign.
+  // Determine the sign exactly, including opposite-sign real summands.
   let terms = collect_additive_terms(&expand_and_combine(&best));
   if terms.len() > 1 && terms.iter().all(|t| classify_radical_term(t).is_some())
   {
@@ -8887,13 +8887,24 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         let Some((b, Some(n))) = classify_radical_term(&terms[j]) else {
           continue;
         };
-        if m <= 0 || n <= 0 || a.signum() != b.signum() {
+        if m <= 0 || n <= 0 {
           continue;
         }
+        let negative = if a.signum() == b.signum() {
+          a < 0
+        } else {
+          let a_squared = num_bigint::BigInt::from(a).pow(2) * m;
+          let b_squared = num_bigint::BigInt::from(b).pow(2) * n;
+          if a < 0 {
+            a_squared > b_squared
+          } else {
+            b_squared > a_squared
+          }
+        };
         let pair = plus2(terms[i].clone(), terms[j].clone());
         let square = expand_and_combine(&pow(pair, Expr::Integer(2)));
         let root = call("Sqrt", vec![square]);
-        let root = if a < 0 {
+        let root = if negative {
           times2(Expr::Integer(-1), root)
         } else {
           root
@@ -8907,7 +8918,9 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         remaining.push(root);
         if let Ok(candidate) =
           crate::evaluator::evaluate_expr_to_expr(&plus(remaining))
-          && wl_simplify_count(&candidate) <= wl_simplify_count(&best)
+          && (wl_simplify_count(&candidate) < wl_simplify_count(&best)
+            || (a.signum() == b.signum()
+              && wl_simplify_count(&candidate) == wl_simplify_count(&best)))
         {
           best = candidate;
         }

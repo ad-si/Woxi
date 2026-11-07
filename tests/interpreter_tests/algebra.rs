@@ -26065,3 +26065,16 @@ fn simplification_cancels_factored_radicals_in_numeric_quotients() {
     }
   }
 }
+
+#[test]
+fn full_simplify_nests_opposite_sign_radicals_only_when_cheaper() {
+  for (body, expected) in [
+    ("2*Sqrt[3]-Sqrt[2]", "Sqrt[14 - 4*Sqrt[6]]"),
+    ("Sqrt[2]-2*Sqrt[3]", "Sqrt[2] - 2*Sqrt[3]"),
+    ("3*Sqrt[2]-Sqrt[7]", "3*Sqrt[2] - Sqrt[7]"),
+    ("Sqrt[7]-3*Sqrt[2]", "-3*Sqrt[2] + Sqrt[7]"),
+  ] {
+    let code = format!("FullSimplify[{body}]");
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}
