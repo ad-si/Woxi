@@ -26836,3 +26836,21 @@ fn trig_to_exp_preserves_opaque_function_arguments() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_extracts_coefficients_from_higher_powers() {
+  for (code, expected) in [
+    ("TrigToExp[Cos[x]^3]", "(E^(-I*x) + E^(I*x))^3/8"),
+    ("TrigToExp[Cos[x]^4]", "(E^(-I*x) + E^(I*x))^4/16"),
+    ("TrigToExp[Sin[x]^3]", "(-1/8*I)*(E^(-I*x) - E^(I*x))^3"),
+    ("TrigToExp[Sin[x]^5]", "I/32*(E^(-I*x) - E^(I*x))^5"),
+    ("TrigToExp[Sinh[x]^3]", "(-E^(-x) + E^x)^3/8"),
+    ("TrigToExp[Cosh[x]^3]", "(E^(-x) + E^x)^3/8"),
+    (
+      "TrigToExp[-Cos[x+y]-Cos[x+y]^3]",
+      "(-7*E^(-I*x - I*y))/8 - (7*E^(I*x + I*y))/8 - E^((-3*I)*x - (3*I)*y)/8 - E^((3*I)*x + (3*I)*y)/8",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

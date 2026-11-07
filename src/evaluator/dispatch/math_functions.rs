@@ -7597,6 +7597,42 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn trig_to_exp_recursive(expr: &Expr) -> Expr {
+  let powered = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    _ => None,
+  };
+  if let Some((base, exponent)) = powered
+    && matches!(exponent, Expr::Integer(n) if *n > 2)
+    && let Expr::FunctionCall { name, args } = base
+    && args.len() == 1
+    && matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")
+  {
+    let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+    let coefficient = if name == "Sin" {
+      times(vec![id_expr("I"), half])
+    } else {
+      half
+    };
+    // Remove the known scalar through the canonical algebraic expander,
+    // keeping the shared single-function conversion as the source of truth.
+    let transformed = trig_to_exp_recursive(base);
+    let unscaled = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Expand",
+      div2(transformed.clone(), coefficient.clone()),
+    ))
+    .unwrap_or(transformed);
+    return times(vec![
+      power(coefficient, exponent.clone()),
+      power(unscaled, exponent.clone()),
+    ]);
+  }
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let arg = trig_to_exp_recursive(&args[0]);
