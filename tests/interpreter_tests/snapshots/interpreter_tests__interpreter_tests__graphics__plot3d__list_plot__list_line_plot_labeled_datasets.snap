@@ -83,6 +83,6 @@ expression: "export_svg(r#\"ListLinePlot[{Labeled[{1, 2, 3}, \"up\"], Labeled[{3
 <text x="139.0" y="407.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">2.5</text>
 <line x1="169.0" y1="94.6" x2="209.0" y2="94.6" stroke="rgb(102,102,102)" stroke-width="2"/>
 <text x="139.0" y="129.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3.0</text>
-<text x="3014.0" y="94.6" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333" dominant-baseline="central">up</text>
-<text x="3014.0" y="1206.3" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333" dominant-baseline="central">down</text>
+<text x="3014.0" y="129.3" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333">up</text>
+<text x="3014.0" y="1241.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333">down</text>
 </svg>

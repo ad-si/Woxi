@@ -69,5 +69,5 @@ expression: "export_svg(r#\"ListPlot[Labeled[{1, 4, 9}, \"squares\"]]\"#)"
 <text x="57.6" y="677.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">6</text>
 <line x1="85.3" y1="276.7" x2="125.3" y2="276.7" stroke="rgb(102,102,102)" stroke-width="2"/>
 <text x="57.6" y="311.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">8</text>
-<text x="2897.7" y="93.6" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333" dominant-baseline="central">squares</text>
+<text x="2897.7" y="128.3" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333">squares</text>
 </svg>

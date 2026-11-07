@@ -50757,4 +50757,19 @@ mod graphics_review_regressions {
       );
     }
   }
+
+  #[test]
+  fn callout_scripts_share_an_alphabetic_baseline() {
+    for function in ["Sin", "Cos"] {
+      let svg = export_svg(&format!(
+        "Plot[Callout[n^{function}[n], n^{function}[n]], {{n, 1, 5}}]"
+      ));
+      let label = svg
+        .lines()
+        .find(|l| l.contains("baseline-shift=\"super\""))
+        .unwrap();
+      assert!(label.contains("font-style=\"italic\">n</tspan>"), "{label}");
+      assert!(!label.contains("dominant-baseline=\"central\""), "{label}");
+    }
+  }
 }

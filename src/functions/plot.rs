@@ -7264,10 +7264,14 @@ fn inject_plot_labels(
       ));
       text_x = x2 + 2.0 * sf;
     }
+    // Position the alphabetic baseline explicitly. A central dominant
+    // baseline resets the baseline table at a superscript's smaller font
+    // size, misaligning nested italic symbols with the surrounding text.
     label_svg.push_str(&format!(
-      "<text x=\"{text_x:.1}\" y=\"{ly:.1}\" font-family=\"sans-serif\" \
-       font-size=\"{font_size:.0}\" fill=\"{text_fill}\" \
-       dominant-baseline=\"central\">{}</text>\n",
+      "<text x=\"{text_x:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" fill=\"{text_fill}\">{}</text>\n",
+      ly + (crate::functions::plot_padding::ascent(font_size)
+        - crate::functions::plot_padding::line_height(font_size) / 2.0),
       crate::functions::graphics::box_string_to_svg(label_text)
     ));
   }

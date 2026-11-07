@@ -1460,7 +1460,7 @@ mod interpreter_tests {
     .unwrap();
     assert!(labeled.contains(">alpha</text>"), "label missing");
     assert!(!plain.contains(">alpha</text>"));
-    assert_eq!(labeled.matches("dominant-baseline=\"central\"").count(), 1);
+    assert_eq!(labeled.matches(">alpha</text>").count(), 1);
   }
 
   /// A `PlotLabel` wider than the picture shrinks to fit instead of being

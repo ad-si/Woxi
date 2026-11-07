@@ -62,6 +62,6 @@ expression: "export_svg(r#\"ListPlot[{Labeled[{{1, 1}, {2, 4}}, \"a\"], Labeled[
 <text x="57.6" y="593.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">3</text>
 <line x1="85.5" y1="103.0" x2="125.5" y2="103.0" stroke="rgb(102,102,102)" stroke-width="2"/>
 <text x="57.6" y="137.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">4</text>
-<text x="3191.5" y="103.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333" dominant-baseline="central">a</text>
-<text x="3191.5" y="559.0" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333" dominant-baseline="central">b</text>
+<text x="3191.5" y="137.7" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333">a</text>
+<text x="3191.5" y="593.7" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#333">b</text>
 </svg>
