@@ -7540,6 +7540,87 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
 /// TrigToExp[expr] — replace trig/hyperbolic functions with exponentials.
 // Products of transformed functions and powered trigonometric quotients
 // retain their exponential factors instead of expanding their numerators.
+// Low-degree products of one harmonic family expand when their angles
+// differ only by exact rational scales. Unrelated angles retain grouping.
+fn trig_to_exp_shared_angle_product(expr: &Expr) -> bool {
+  use crate::functions::polynomial_ast::together::flatten_times_args;
+  let factors = flatten_times_args(std::slice::from_ref(expr));
+  let mut common = None;
+  let mut count = 0;
+  let mut degree = 0;
+  for factor in &factors {
+    let (base, power) = match factor {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        let Expr::Integer(n) = args[1] else {
+          return false;
+        };
+        (&args[0], n)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        let Expr::Integer(n) = right.as_ref() else {
+          return false;
+        };
+        (left.as_ref(), *n)
+      }
+      _ => (factor, 1),
+    };
+    let Expr::FunctionCall { name, args } = base else {
+      continue;
+    };
+    if args.len() != 1
+      || !matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")
+    {
+      if trig_to_exp_grouping(factor).0 > 0 {
+        return false;
+      }
+      continue;
+    }
+    if !(1..=2).contains(&power) {
+      return false;
+    }
+    degree += power;
+    if degree > 3 {
+      return false;
+    }
+    let mut angle = flatten_times_args(std::slice::from_ref(&args[0]));
+    angle.retain(|part| !matches!(part, Expr::Integer(_))
+      && !matches!(part, Expr::FunctionCall { name, .. } if name == "Rational"));
+    if angle.is_empty()
+      || angle.iter().any(|part| {
+        crate::functions::polynomial_ast::collect_additive_terms(part).len() > 1
+      })
+    {
+      return false;
+    }
+    let angle = if angle.len() == 1 {
+      angle.remove(0)
+    } else {
+      call("Times", angle)
+    };
+    let hyperbolic = matches!(name.as_str(), "Sinh" | "Cosh");
+    if let Some((previous_family, previous_angle)) = &common {
+      if *previous_family != hyperbolic
+        || !crate::evaluator::pattern_matching::expr_equal(
+          previous_angle,
+          &angle,
+        )
+      {
+        return false;
+      }
+    } else {
+      common = Some((hyperbolic, angle));
+    }
+    count += 1;
+  }
+  count > 1
+}
+
 fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
   match expr {
     Expr::FunctionCall { name, args }
@@ -7579,7 +7660,9 @@ fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
             && args.len() == 2
             && matches!(args[1], Expr::Integer(n) if n > 2)
             && matches!(&args[0], Expr::FunctionCall { name, .. } if matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")))
-          || (name == "Times" && count > 1),
+          || (name == "Times"
+            && count > 1
+            && !trig_to_exp_shared_angle_product(expr)),
       )
     }
     Expr::BinaryOp { op, left, right } => {
@@ -7811,6 +7894,7 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
   if !grouped
     && (combining_harmonics
+      || trig_to_exp_shared_angle_product(expr)
       || (expandable_count == 1 && !other_transformed_factor)
       || monomial_times_transformed_sum
       || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")

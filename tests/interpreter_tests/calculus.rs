@@ -27345,3 +27345,56 @@ fn trig_to_exp_combines_matching_harmonics_in_distributed_products() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_expands_low_degree_products_of_shared_angles() {
+  for (body, expected) in [
+    (
+      "Cos[x]*Cos[2*x]",
+      "1/(4*E^(I*x)) + E^(I*x)/4 + 1/(4*E^((3*I)*x)) + E^((3*I)*x)/4",
+    ),
+    (
+      "Cos[x/2]*Cos[3*x/2]",
+      "1/(4*E^(I*x)) + E^(I*x)/4 + 1/(4*E^((2*I)*x)) + E^((2*I)*x)/4",
+    ),
+    (
+      "Cos[x*y]*Cos[2*x*y]",
+      "1/(4*E^(I*x*y)) + E^(I*x*y)/4 + 1/(4*E^((3*I)*x*y)) + E^((3*I)*x*y)/4",
+    ),
+    (
+      "Cos[x]^2*Cos[2*x]",
+      "1/4 + 1/(4*E^((2*I)*x)) + E^((2*I)*x)/4 + 1/(8*E^((4*I)*x)) + E^((4*I)*x)/8",
+    ),
+    (
+      "Cosh[x]*Cosh[2*x]",
+      "1/(4*E^(3*x)) + 1/(4*E^x) + E^x/4 + E^(3*x)/4",
+    ),
+    (
+      "Cos[x]*Cos[2*x]*Cos[3*x]",
+      "1/4 + 1/(8*E^((2*I)*x)) + E^((2*I)*x)/8 + 1/(8*E^((4*I)*x)) + E^((4*I)*x)/8 + 1/(8*E^((6*I)*x)) + E^((6*I)*x)/8",
+    ),
+    (
+      "Sin[x]+Tan[x*y]+Cos[x]*Cos[2*x]",
+      "(1/4 + I/2)/E^(I*x) + (1/4 - I/2)*E^(I*x) + 1/(4*E^((3*I)*x)) + E^((3*I)*x)/4 + I/(E^(I*x*y)*(E^(-I*x*y) + E^(I*x*y))) - (I*E^(I*x*y))/(E^(-I*x*y) + E^(I*x*y))",
+    ),
+    (
+      "Cos[x]*Cos[y]",
+      "((E^(-I*x) + E^(I*x))*(E^(-I*y) + E^(I*y)))/4",
+    ),
+    (
+      "Cos[x]^3*Cos[2*x]",
+      "((E^(-I*x) + E^(I*x))^3*(E^((-2*I)*x) + E^((2*I)*x)))/16",
+    ),
+    (
+      "Sin[x]*Cosh[2*x]",
+      "I/4*(E^(-I*x) - E^(I*x))*(E^(-2*x) + E^(2*x))",
+    ),
+    (
+      "Cos[x]*Cos[2*x]+Cos[y]*Cos[z]",
+      "((E^(-I*x) + E^(I*x))*(E^((-2*I)*x) + E^((2*I)*x)))/4 + ((E^(-I*y) + E^(I*y))*(E^(-I*z) + E^(I*z)))/4",
+    ),
+  ] {
+    let code = format!("TrigToExp[{body}]");
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}

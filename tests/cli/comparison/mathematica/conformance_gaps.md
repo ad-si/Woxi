@@ -9127,6 +9127,12 @@ Products and powered trigonometric quotients now preserve exponential
 factor grouping (seed 1794032979590698000, 2026-11-07), resolving the
 expanded-numerator differences in earlier mixed-product examples.
 
+Low-degree products with rationally scaled shared angles now expand,
+including `Cos[x]*Cos[2*x]`, `Cos[x/2]*Cos[3*x/2]`, and their hyperbolic
+counterparts. This resolves the mixed sine/tangent/cosine-product case
+from seed 1794079366620147000 (2026-11-07). Higher-degree products and
+products of unrelated angles retain their exponential grouping.
+
 Some ordering differences remain. For
 `TrigToExp[Tan[x*y]*Cos[x]-Cos[3*x]+Cos[x+y]]`, the transformed product
 comes before the shifted cosine pair in Woxi and after it in Wolfram.
