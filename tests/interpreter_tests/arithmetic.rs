@@ -15633,3 +15633,18 @@ fn order_compares_lists_and_calls_by_their_heads() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn nested_division_inverts_the_whole_denominator_before_combining_content() {
+  for (code, expected) in [
+    (
+      "Divide[-9603,Divide[-62,Divide[62+Pi,90]]]",
+      "(-1067*(-62 - Pi))/620",
+    ),
+    ("Divide[-6,-8/(a+b)]", "(-3*(-a - b))/4"),
+    ("Divide[-5,-8/(a+b)]", "(-5*(-a - b))/8"),
+    ("Divide[-2,-6/(a+b)]", "(a + b)/3"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

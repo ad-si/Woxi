@@ -13941,55 +13941,6 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(1));
     }
 
-    // When both numerator and denominator are Times products containing integer
-    // factors, convert to Times[num_factors..., Power[den_factors, -1]...] and let
-    // times_ast handle coefficient simplification and canonical ordering.
-    // E.g. (2*Sqrt[2]*E^(-6)) / (12*BesselK[...]) → Sqrt[2]/(6*E^6*BesselK[...])
-    if let Expr::FunctionCall {
-      name: dn,
-      args: dargs,
-    } = b
-      && dn == "Times"
-    {
-      let num_factors = match a {
-        Expr::FunctionCall { name, args } if name == "Times" => args.clone(),
-        _ => vec![a.clone()].into(),
-      };
-      let den_factors = dargs.clone();
-      let has_int_num = num_factors.iter().any(|f| {
-        matches!(f, Expr::Integer(_))
-          || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
-      });
-      let has_int_den = den_factors.iter().any(|f| {
-        matches!(f, Expr::Integer(_))
-          || matches!(f, Expr::FunctionCall { name, .. } if name == "Rational")
-      });
-      if has_int_num && has_int_den {
-        // Only apply when integer factors have GCD > 1 (can actually simplify)
-        let num_int = num_factors
-          .iter()
-          .find_map(|f| match f {
-            Expr::Integer(n) => Some(n.unsigned_abs()),
-            _ => None,
-          })
-          .unwrap_or(1);
-        let den_int = den_factors
-          .iter()
-          .find_map(|f| match f {
-            Expr::Integer(n) => Some(n.unsigned_abs()),
-            _ => None,
-          })
-          .unwrap_or(1);
-        if gcd_i128(num_int as i128, den_int as i128) > 1 {
-          let mut all_factors = num_factors;
-          for df in den_factors {
-            all_factors.push(power_two(&df, &Expr::Integer(-1))?);
-          }
-          return times_ast(&all_factors);
-        }
-      }
-    }
-
     // Canonicalize: a/b → Times[a, Power[b, -1]]
     let den_inv = power_two(b, &Expr::Integer(-1))?;
     times_ast(&[a.clone(), den_inv])
