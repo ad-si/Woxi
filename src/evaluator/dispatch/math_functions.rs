@@ -7608,11 +7608,15 @@ fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
     return false;
   }
   let mut spectra = Vec::new();
-  for term in terms {
+  'terms: for term in terms {
     let factors =
       crate::functions::polynomial_ast::together::flatten_times_args(
         std::slice::from_ref(&term),
       );
+    let factors_count = factors
+      .iter()
+      .filter(|factor| trig_to_exp_grouping(factor).0 != 0)
+      .count();
     let mut spectrum = None;
     for factor in factors {
       if trig_to_exp_grouping(&factor).0 == 0 {
@@ -7645,6 +7649,13 @@ fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
       let Expr::FunctionCall { name, args } = base else {
         return false;
       };
+      if args.len() == 1
+        && matches!(name.as_str(), "Tan" | "Cot" | "Tanh" | "Coth")
+        && power == 1
+        && factors_count == 1
+      {
+        continue 'terms;
+      }
       if args.len() != 1
         || !(1..=4).contains(&power)
         || !matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")

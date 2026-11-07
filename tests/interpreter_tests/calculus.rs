@@ -27268,3 +27268,23 @@ fn simplify_combines_distinct_trig_harmonics_before_square_reduction() {
     }
   }
 }
+
+#[test]
+fn trig_to_exp_combines_harmonics_beside_separate_tangent_terms() {
+  for (code, expected) in [
+    (
+      "TrigToExp[Cos[x+y]^3+Tan[x*y]-Sin[x+y]^3]",
+      "(3/8 - (3*I)/8)*E^(-I*x - I*y) + (3/8 + (3*I)/8)*E^(I*x + I*y) + (1/8 + I/8)*E^((-3*I)*x - (3*I)*y) + (1/8 - I/8)*E^((3*I)*x + (3*I)*y) + I/(E^(I*x*y)*(E^(-I*x*y) + E^(I*x*y))) - (I*E^(I*x*y))/(E^(-I*x*y) + E^(I*x*y))",
+    ),
+    (
+      "TrigToExp[Sin[x]^3+Cos[x]^3+Tan[y]]",
+      "(3/8 + (3*I)/8)/E^(I*x) + (3/8 - (3*I)/8)*E^(I*x) + (1/8 - I/8)/E^((3*I)*x) + (1/8 + I/8)*E^((3*I)*x) + I/(E^(I*y)*(E^(-I*y) + E^(I*y))) - (I*E^(I*y))/(E^(-I*y) + E^(I*y))",
+    ),
+    (
+      "TrigToExp[Sin[x]^3+Tan[y]]",
+      "(-1/8*I)*(E^(-I*x) - E^(I*x))^3 + (I*(E^(-I*y) - E^(I*y)))/(E^(-I*y) + E^(I*y))",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
