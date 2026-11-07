@@ -26713,3 +26713,40 @@ fn rational_integrals_normalize_polynomial_log_arguments() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn linear_rational_integrals_preserve_logarithm_sign_conventions() {
+  for (code, expected) in [
+    (
+      "Integrate[a*x/(2x-3),x]",
+      "(a*(-3 + 2*x + 3*Log[-3 + 2*x]))/4",
+    ),
+    (
+      "Integrate[(-5+3x-x^2)/(-2+5x),x]",
+      "(-48 + 130*x - 25*x^2 - 198*Log[2 - 5*x])/250",
+    ),
+    (
+      "Integrate[(5-3x+x^2)/(-2+5x),x]",
+      "(48 - 130*x + 25*x^2 + 198*Log[-2 + 5*x])/250",
+    ),
+    ("Integrate[-x/(2x-3),x]", "(3 - 2*x - 3*Log[3 - 2*x])/4"),
+    (
+      "Integrate[-x^2/(2x-3),x]",
+      "(27 - 12*x - 4*x^2 - 18*Log[3 - 2*x])/16",
+    ),
+    (
+      "Integrate[-x^3/(2x-3),x]",
+      "(297 - 108*x - 36*x^2 - 16*x^3 - 162*Log[3 - 2*x])/96",
+    ),
+    (
+      "Integrate[(10-x^2)/(2x-3),x]",
+      "(27 - 12*x - 4*x^2 + 62*Log[-3 + 2*x])/16",
+    ),
+    ("Integrate[-x/(x-2),x]", "-x - 2*Log[-2 + x]"),
+    ("Integrate[x/(x-3),x]", "x + 3*Log[-3 + x]"),
+    ("Integrate[(1-x)/(x-2),x]", "-x - Log[-2 + x]"),
+    ("Integrate[x/(2-x),x]", "-x - 2*Log[2 - x]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

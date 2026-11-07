@@ -7631,7 +7631,24 @@ fn try_integrate_rational(
     let transformed =
       crate::evaluator::evaluate_expr_to_expr(&call1("Expand", transformed))
         .ok()?;
-    let primitive = integrate(&transformed, var)?;
+    let mut primitive = integrate(&transformed, var)?;
+    if content < 0 && den_coeffs[0] < 0 {
+      let logarithm = call1("Log", id_expr(var));
+      let coefficient = crate::functions::polynomial_ast::coefficient_ast(&[
+        primitive.clone(),
+        logarithm.clone(),
+      ])
+      .ok()?;
+      if crate::functions::math_ast::expr_to_rational(&coefficient)
+        .is_some_and(|(n, _)| n > 0)
+      {
+        primitive = crate::functions::polynomial_ast::substitute_expr(
+          &primitive,
+          &logarithm,
+          &call1("Log", neg1(id_expr(var))),
+        );
+      }
+    }
     let mut substituted =
       crate::syntax::substitute_variable(&primitive, var, den_expr);
     if let Expr::FunctionCall { name, args } = &primitive
@@ -7828,7 +7845,9 @@ fn try_integrate_rational_impl(
     // Step 5: Build Log terms
     // Convention: argument is positive at x=0
     // root > 0: Log[root - x], root < 0: Log[-root + x], root = 0: Log[x]
-    let log_arg = if root == 0 {
+    let log_arg = if den_coeffs.len() == 2 && quotient_integral.is_some() {
+      coeffs_to_expr(&den_coeffs, var)
+    } else if root == 0 {
       id_expr(var)
     } else if root > 0 {
       // Log[root - x]
@@ -10221,11 +10240,38 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               {
                 return Some(apply_const(result));
               }
-              // Try rational function integration
+              // Non-monic linear substitution needs the signed numerator
+              // content to choose the logarithm argument consistently.
+              let include_constants = !const_factors.is_empty()
+                && crate::functions::polynomial_ast::extract_poly_coeffs(
+                  &crate::functions::polynomial_ast::expand_and_combine(
+                    &denominator,
+                  ),
+                  var,
+                )
+                .is_some_and(|coeffs| {
+                  coeffs.len() == 2 && coeffs[1].abs() != 1
+                })
+                && crate::functions::polynomial_ast::extract_poly_coeffs(
+                  &crate::functions::polynomial_ast::expand_and_combine(
+                    &apply_const(numerator.clone()),
+                  ),
+                  var,
+                )
+                .is_some();
+              let rational_numerator = if include_constants {
+                apply_const(numerator.clone())
+              } else {
+                numerator.clone()
+              };
               if let Some(result) =
-                try_integrate_rational(&numerator, &denominator, var)
+                try_integrate_rational(&rational_numerator, &denominator, var)
               {
-                return Some(apply_const(result));
+                return Some(if include_constants {
+                  result
+                } else {
+                  apply_const(result)
+                });
               }
             }
             // Try trig product: Sin[f]^m * Cos[f]^n
