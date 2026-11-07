@@ -25785,3 +25785,29 @@ fn full_simplify_keeps_simple_negative_numerators_inside_quotients() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_extracts_radicals_and_nonunit_numeric_content_together() {
+  for (code, expected) in [
+    (
+      "Simplify[-4*Sqrt[14]*Sqrt[28]-4*Sqrt[6]]",
+      "-4*Sqrt[2]*(14 + Sqrt[3])",
+    ),
+    ("Simplify[56*Sqrt[2]+4*Sqrt[6]]", "4*Sqrt[2]*(14 + Sqrt[3])"),
+    (
+      "Simplify[-12*Sqrt[2]-4*Sqrt[6]]",
+      "-4*Sqrt[2]*(3 + Sqrt[3])",
+    ),
+    (
+      "Simplify[-12*Sqrt[2]+4*Sqrt[6]]",
+      "4*Sqrt[2]*(-3 + Sqrt[3])",
+    ),
+    ("Simplify[-4*Sqrt[2]-4*Sqrt[6]]", "-4*(Sqrt[2] + Sqrt[6])"),
+    ("Simplify[-28*Sqrt[2]-4]", "-4*(1 + 7*Sqrt[2])"),
+    ("Simplify[-4-12*Sqrt[2]]", "-4*(1 + 3*Sqrt[2])"),
+    ("Simplify[-4-8*Sqrt[3]]", "-4 - 8*Sqrt[3]"),
+    ("Simplify[28*Sqrt[2]+4]", "4 + 28*Sqrt[2]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

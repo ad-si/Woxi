@@ -6367,7 +6367,14 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               let all_sqrt =
                 terms.iter().all(|t| term_sqrt_radicand(t).is_some());
               let first_negative = coeffs.first().is_some_and(|(n, _)| *n < 0);
-              let tie_ok = all_unit && !(all_sqrt && first_negative);
+              // With an all-negative sum and a bare constant, extracting
+              // the sign also wins a tie even with non-unit cofactors:
+              // -4 - 28*Sqrt[2] -> -4*(1 + 7*Sqrt[2]).
+              let has_constant = terms.iter().any(|term| {
+                crate::functions::math_ast::expr_to_rational(term).is_some()
+              });
+              let tie_ok = (all_unit && !(all_sqrt && first_negative))
+                || (all_negative && has_constant);
               cand_cost < best_cost || (cand_cost == best_cost && tie_ok)
             }
           };
@@ -6507,72 +6514,50 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
         .collect::<Option<Vec<i128>>>()
     {
       let g = radicands.iter().fold(0i128, |a, &b| gcd_i128(a, b));
-      // A MIXED-SIGN sum whose integer coefficients share |content| > 1
-      // with unit cofactors extracts BOTH the content and the radical —
-      // wolframscript's true SimplifyCount ties the content-only and
-      // fully-extracted forms and Simplify picks the latter, signed so
-      // the greatest term stays positive: Sqrt[8] - Sqrt[24] →
-      // -2*Sqrt[2]*(-1 + Sqrt[3]), -Sqrt[8] + Sqrt[24] →
-      // 2*Sqrt[2]*(-1 + Sqrt[3]); the all-positive Sqrt[8] + Sqrt[24]
-      // keeps 2*(Sqrt[2] + Sqrt[6]) (wolframscript-verified; differential
-      // fuzzer, seed 16005587802477298591).
+      // Extract rational content and the common radical together: either
+      // extraction alone can miss a strict cost win with non-unit cofactors.
+      // Mixed-sign unit cofactors also win the tie when one radicand
+      // disappears (Sqrt[8] - Sqrt[24] -> -2*Sqrt[2]*(-1 + Sqrt[3])).
       let full_extraction = if g > 1 {
-        (|| -> Option<Expr> {
+        (|| -> Option<(Expr, bool)> {
           let (_, _, coeffs) = super::factor::rational_content(&terms)?;
           if coeffs.iter().any(|(_, d)| *d != 1) {
             return None;
           }
-          let content = coeffs
-            .iter()
-            .map(|(n, _)| *n)
-            .filter(|&n| n != 0)
-            .fold(0i128, gcd_i128);
+          let content = coeffs.iter().fold(0, |c, (n, _)| gcd_i128(c, *n));
           if content <= 1 {
             return None;
           }
           let has_pos = coeffs.iter().any(|(n, _)| *n > 0);
           let has_neg = coeffs.iter().any(|(n, _)| *n < 0);
-          if !(has_pos && has_neg) {
-            return None;
-          }
-          if coeffs.iter().any(|(n, _)| (n / content).abs() != 1) {
-            return None;
-          }
-          let signed = if coeffs.last()?.0 < 0 {
+          let mixed_unit = has_pos
+            && has_neg
+            && coeffs.iter().all(|(n, _)| (n / content).abs() == 1);
+          let signed = if !has_pos || (mixed_unit && coeffs.last()?.0 < 0) {
             -content
           } else {
             content
           };
-          let sqrt_of = |n: i128| call1("Sqrt", Expr::Integer(n));
-          let inner: Vec<Expr> = coeffs
+          let radical = call1("Sqrt", Expr::Integer(g));
+          let divisor = times(vec![Expr::Integer(signed), radical.clone()]);
+          let divided: Result<Vec<_>, _> = terms
             .iter()
-            .zip(radicands.iter())
-            .map(|(&(n, _), &r)| {
-              let c = n / signed; // ±1 by the unit-cofactor gate
-              let rad = r / g;
-              match (c, rad) {
-                (_, 1) => Expr::Integer(c),
-                (1, _) => sqrt_of(rad),
-                _ => neg1(sqrt_of(rad)),
-              }
+            .map(|term| {
+              crate::evaluator::evaluate_expr_to_expr(&div2(
+                term.clone(),
+                divisor.clone(),
+              ))
             })
             .collect();
-          Some(times(vec![Expr::Integer(signed), sqrt_of(g), plus(inner)]))
+          let candidate =
+            times(vec![Expr::Integer(signed), radical, plus(divided.ok()?)]);
+          Some((candidate, mixed_unit && radicands.contains(&g)))
         })()
       } else {
         None
       };
-      // The full radical+content extraction only wins when pulling the
-      // common Sqrt[g] out collapses a cofactor to a bare integer — i.e.
-      // some radicand equals g (Sqrt[8] - Sqrt[24] → -2*Sqrt[2]*(-1 +
-      // Sqrt[3]): radicand 2 == g, dropping a whole Sqrt). When every
-      // cofactor stays a Sqrt (2*Sqrt[57] - 2*Sqrt[323], g = 19: 57/19 = 3
-      // and 323/19 = 17 both survive) pulling Sqrt[19] out costs MORE than
-      // the content-only 2*(Sqrt[57] - Sqrt[323]) that candidate 5 already
-      // built, so keep that instead. Differential fuzzer, seed
-      // 14323847961001369104; wolframscript-verified.
-      if let Some(full) = full_extraction
-        && radicands.contains(&g)
+      if let Some((full, tie_ok)) = full_extraction
+        && (tie_ok || wl_simplify_count(&full) < wl_simplify_count(&best))
       {
         best = full;
       } else if g > 1 {
