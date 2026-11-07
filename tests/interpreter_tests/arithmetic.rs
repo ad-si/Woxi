@@ -15461,3 +15461,30 @@ fn explicit_divide_folds_external_exact_numeric_content() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn exponential_integral_zero_order_pole_uses_divide_diagnostics() {
+  for code in [
+    "ExpIntegralE[0,0]",
+    "ExpIntegralE[0,0.]",
+    "ExpIntegralE[0.,0]",
+  ] {
+    let output = interpret_with_stdout(code).unwrap();
+    assert_eq!(output.result, "ComplexInfinity", "{code}");
+    assert!(
+      output
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("Divide::infy:")),
+      "{code}: {:?}",
+      output.warnings
+    );
+    assert!(
+      !output
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("Power::infy:")),
+      "{code}"
+    );
+  }
+}

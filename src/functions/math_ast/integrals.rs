@@ -621,6 +621,15 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // E_n(0): E_1(0) = ComplexInfinity, E_n(0) = 1/(n-1) for n > 1
   if is_expr_zero(z_expr) {
+    if is_expr_zero(n_expr) {
+      let zero =
+        if matches!(n_expr, Expr::Real(_)) || matches!(z_expr, Expr::Real(_)) {
+          Expr::Real(0.0)
+        } else {
+          Expr::Integer(0)
+        };
+      return divide_head_ast(&[Expr::Integer(1), zero]);
+    }
     match n_expr {
       Expr::Integer(1) => return Ok(id_expr("ComplexInfinity")),
       Expr::Integer(n) if *n > 1 => {
