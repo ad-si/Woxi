@@ -887,6 +887,28 @@ mod inverse_trig_identities {
     assert_eq!(interpret("ArcCosh[2]").unwrap(), "ArcCosh[2]");
   }
 
+  #[test]
+  fn arccos_exact_candidates_require_symbolic_equality() {
+    for (code, expected) in [
+      (
+        "ArcCos[5000000000001/10000000000000]",
+        "ArcCos[5000000000001/10000000000000]",
+      ),
+      (
+        "ArcCos[-5000000000001/10000000000000]",
+        "ArcCos[-5000000000001/10000000000000]",
+      ),
+      (
+        "ArcCos[Sqrt[2]/2+1/10^14]",
+        "ArcCos[1/100000000000000 + 1/Sqrt[2]]",
+      ),
+      ("ArcCos[1/2]", "Pi/3"),
+      ("ArcCos[Sqrt[3]/2]", "Pi/6"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   // ArcSin/ArcCos/ArcTanh of an inexact real outside their real domain give a
   // numeric complex result (an exact integer/rational argument stays
   // symbolic). All expected values verified against wolframscript.

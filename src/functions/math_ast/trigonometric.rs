@@ -3996,11 +3996,20 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(call1("DirectedInfinity", direction));
   }
-  // Check for special rational/irrational values via numeric comparison
+  // Numeric comparison selects candidates; exact inputs must also satisfy
+  // the forward identity symbolically, without a tolerance.
   if let Some(v) = try_eval_to_f64(&args[0])
     && let Some(result) = arccos_special_value(v)
   {
-    return Ok(result);
+    let value = crate::evaluator::evaluate_function_call_ast(
+      "Cos",
+      std::slice::from_ref(&result),
+    )?;
+    if contains_inexact_real(&args[0])
+      || crate::evaluator::pattern_matching::expr_equal(&value, &args[0])
+    {
+      return Ok(result);
+    }
   }
   Ok(unevaluated("ArcCos", args))
 }
