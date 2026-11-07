@@ -536,6 +536,23 @@ mod bessel_y {
 mod hypergeometric2f1 {
   use super::*;
 
+  #[test]
+  fn zero_numerator_parameter_preserves_numeric_precision() {
+    for (code, expected) in [
+      ("Hypergeometric2F1[0,0,0,-0.3]", "1."),
+      ("Hypergeometric2F1[0,3,2,-0.3]", "1."),
+      ("Hypergeometric2F1[3,0.,2,1/3]", "1."),
+      ("Hypergeometric2F1[0,3.,2,1/3]", "1."),
+      ("Hypergeometric2F1[0,3,2,0.3+0.2I]", "1."),
+      ("Precision[Hypergeometric2F1[0,3,2,0.3`30]]", "30."),
+      ("Hypergeometric2F1[0.,3,2,z]", "1"),
+      ("Hypergeometric2F1[0,b,2,0.3]", "1"),
+      ("Hypergeometric2F1[0,3,2,1/3]", "1"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   /// Real and imaginary parts of a machine number, for a tolerance check
   /// (WL's last digits come from different transformations).
   fn parts(code: &str) -> (f64, f64) {

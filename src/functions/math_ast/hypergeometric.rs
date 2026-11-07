@@ -2058,6 +2058,15 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // a = 0 or b = 0 => 1
   if a_int == Some(0) || b_int == Some(0) {
+    if args
+      .iter()
+      .all(crate::functions::predicate_ast::is_numeric_q)
+    {
+      let precision = precision_ast(&[Expr::List(args.to_vec().into())])?;
+      if !matches!(&precision, Expr::Identifier(name) if name == "Infinity") {
+        return n_ast(&[Expr::Integer(1), precision]);
+      }
+    }
     return Ok(Expr::Integer(1));
   }
 
