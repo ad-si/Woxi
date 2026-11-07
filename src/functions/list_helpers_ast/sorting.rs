@@ -311,7 +311,7 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
   match (a_num, b_num) {
     (Some((a_re, a_im)), Some((b_re, b_im))) => {
-      // Both numeric: compare by real part first, then imaginary part
+      // Compare real parts, then imaginary magnitude and sign.
       match if a_re == b_re {
         std::cmp::Ordering::Equal
       } else {
@@ -325,11 +325,13 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           if a_im != 0.0 && b_im == 0.0 {
             return std::cmp::Ordering::Greater;
           }
-          match if a_im == b_im {
-            std::cmp::Ordering::Equal
-          } else {
-            a_im.total_cmp(&b_im)
-          } {
+          match a_im.abs().total_cmp(&b_im.abs()).then_with(|| {
+            if a_im == b_im {
+              std::cmp::Ordering::Equal
+            } else {
+              a_im.total_cmp(&b_im)
+            }
+          }) {
             std::cmp::Ordering::Equal => {
               // Numerically equal number atoms tie-break by type:
               // Integer before Real before Rational. wolframscript:
@@ -374,7 +376,9 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             return ord;
           }
           if ca != cb {
-            return if ca < cb {
+            let ka = (ca.0, ca.1.abs(), ca.1);
+            let kb = (cb.0, cb.1.abs(), cb.1);
+            return if ka < kb {
               std::cmp::Ordering::Less
             } else {
               std::cmp::Ordering::Greater
@@ -1721,7 +1725,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   // Only NUMBER LITERALS compare by value — symbolic constants (Pi, E)
   // and numeric composites (2*Pi, Sqrt[2]) sort structurally after all
   // numbers in Wolfram's canonical order (Sort[{Pi, 7}] = {7, Pi}).
-  // Complex literals order by real part, then imaginary part
+  // Complex literals order by real part, then imaginary magnitude and sign
   // (Sort[{I, -I, 1, 1 + I}] = {-I, I, 1, 1 + I}).
   let literal_parts = |e: &Expr| -> Option<(f64, f64)> {
     match e {
@@ -1747,6 +1751,9 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   if let (Some((ar, ai)), Some((br, bi))) = (a_lit, b_lit) {
     if ar != br {
       return if ar < br { 1 } else { -1 };
+    }
+    if ai.abs() != bi.abs() {
+      return if ai.abs() < bi.abs() { 1 } else { -1 };
     }
     if ai != bi {
       return if ai < bi { 1 } else { -1 };
@@ -1900,7 +1907,9 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         return ord;
       }
       if ca != cb {
-        return if ca < cb { 1 } else { -1 };
+        let ka = (ca.0, ca.1.abs(), ca.1);
+        let kb = (cb.0, cb.1.abs(), cb.1);
+        return if ka < kb { 1 } else { -1 };
       }
       // Coefficient and symbolic part both tie (e.g. 2*x vs 2.*x): fall
       // through so the structural comparison below can still distinguish

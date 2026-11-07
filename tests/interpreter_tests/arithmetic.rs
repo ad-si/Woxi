@@ -15528,3 +15528,25 @@ fn explicit_divide_folds_exact_sums_and_unit_numerators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn complex_order_uses_imaginary_magnitude_before_sign() {
+  for (code, expected) in [
+    ("Sort[{-3I,-I,I,3I}]", "{-I, I, -3*I, 3*I}"),
+    ("Order[-3I,-I]", "-1"),
+    (
+      "Sort[{(1-3I)x,(1-I)x,(1+I)x,(1+3I)x}]",
+      "{(1 - I)*x, (1 + I)*x, (1 - 3*I)*x, (1 + 3*I)*x}",
+    ),
+    (
+      "Sort[{-3 I x-3 I y,-I x-I y,I x+I y,3 I x+3 I y}]",
+      "{-I*x - I*y, I*x + I*y, (-3*I)*x - (3*I)*y, (3*I)*x + (3*I)*y}",
+    ),
+    (
+      "E^(-3I*x-3I*y)+E^(-I*x-I*y)+E^(I*x+I*y)+E^(3I*x+3I*y)",
+      "E^(-I*x - I*y) + E^(I*x + I*y) + E^((-3*I)*x - (3*I)*y) + E^((3*I)*x + (3*I)*y)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
