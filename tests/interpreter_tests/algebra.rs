@@ -25698,3 +25698,22 @@ fn minimal_polynomial_four_independent_square_roots() {
     );
   }
 }
+
+#[test]
+fn simplify_compares_outer_minus_for_negative_leading_denominators() {
+  for (code, expected) in [
+    (
+      "Simplify[(1+3*x+4*x^2)/(-5+3*x-x^2)]",
+      "-((1 + 3*x + 4*x^2)/(5 - 3*x + x^2))",
+    ),
+    ("Simplify[x/(-2+3*x-x^2)]", "-(x/(2 - 3*x + x^2))"),
+    ("Simplify[x/(-5+3*x-x^2)]", "-(x/(5 - 3*x + x^2))"),
+    ("Simplify[(1+x)/(-5+3*x-x^2)]", "-((1 + x)/(5 - 3*x + x^2))"),
+    (
+      "Simplify[(1+3*x+4*x^2)/(-5+3*x-2*x^2)]",
+      "(1 + 3*x + 4*x^2)/(-5 + 3*x - 2*x^2)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

@@ -11110,6 +11110,20 @@ fn simplify_quotient_select(
     let fn_terms = negate(&n_terms);
     let fn_content = -n_content;
     if fd_content > 0 {
+      // Pulling the denominator sign outside the quotient can be cheaper
+      // than negating every numerator term, even for mixed-sign denominators.
+      cands.push(Cand {
+        cost: sc_quotient((-1, 1), &n_terms, Some(&fd), None),
+        class: 3,
+        minus_pull: true,
+        num_content: 1,
+        num_terms: n_terms.clone(),
+        den_content: 1,
+        den_terms: fd.clone(),
+        den_mono: 0,
+        split: false,
+        terminal: false,
+      });
       let (fdc, fdt) = if fd_content > 1 {
         (fd_content, scale(&fd, fd_content))
       } else {
