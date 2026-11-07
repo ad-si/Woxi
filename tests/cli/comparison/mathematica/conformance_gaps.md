@@ -1137,6 +1137,13 @@ and Woxi returns the correctly rounded `4.789013583140952`.
 its high-precision evaluation agrees with Woxi's `1.4567910310469068*^-200`.
 These checks retain machine arguments' exact binary values via `SetPrecision`.
 
+Seed 1794045270718263000 also finds `ArithmeticGeometricMean[12,3.9]`:
+Woxi gives `7.385115155519322`, matching the rounded 80-digit reference,
+while Wolfram's direct machine result is `7.385115155519321`.
+The same seed finds `LogIntegral[3.]`: Woxi's `2.1635885946671918`
+agrees with the rounded 80-digit reference, while Wolfram's direct
+machine result is `2.163588594667192`.
+
 ### Machine cosine integrals differ from high-precision rounding
 
 The same seed found `CosIntegral[5.8]`. After replacing the cancellation-prone
@@ -9307,3 +9314,13 @@ numeric content and sign remain grouped differently.
 The minimized `Hypergeometric2F1[1,1,4,1]` endpoint bug is fixed: the
 Gauss endpoint formula returns `3/2` before the logarithmic closed form
 can produce cancelling infinities.
+
+### FullSimplify combines a radical sum into a nested square root
+
+Verified on 2026-11-07, diff-fuzz seed 1794045270718263000:
+`FullSimplify[(4/Sqrt[7])*(-3*Sqrt[2]-2*Sqrt[23])]` remains
+`-12*Sqrt[2/7]-8*Sqrt[23/7]` in Woxi, while Wolfram chooses
+`-4*Sqrt[(2*(55+6*Sqrt[46]))/7]`. Squaring the positive inner sum
+proves the two forms equal; Woxi does not offer that nested-radical
+candidate. The minimized negative scalar-content case now retains
+`-16*(1+2*Sqrt[23])` on its simplification-cost tie.
