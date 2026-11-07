@@ -12644,3 +12644,18 @@ fn hyperbolic_integrals_match_guarded_references() {
     }
   }
 }
+
+#[test]
+fn cosh_integral_machine_branch_cut() {
+  for x in ["1.1", "2.", "40."] {
+    assert_eq!(
+      interpret(&format!("Im[CoshIntegral[-{x}]]")).unwrap(),
+      "3.141592653589793"
+    );
+    assert_eq!(
+      interpret(&format!("Re[CoshIntegral[-{x}]]")).unwrap(),
+      interpret(&format!("CoshIntegral[{x}]")).unwrap()
+    );
+  }
+  assert_eq!(interpret("CoshIntegral[0.]").unwrap(), "-Infinity");
+}

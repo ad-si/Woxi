@@ -9342,4 +9342,5 @@ The same backend difference affects `SinhIntegral[1.1]`: Wolfram's machine
 result is `1.1766845920497218`, versus the guarded reference
 `1.1766845920497215`. Larger inputs also differ in their final digits.
 This change additionally fixes substantial large-input errors, premature
-machine overflow at `710.`.
+machine overflow at `710.`, and the omitted imaginary part of `CoshIntegral`
+on the negative real axis.

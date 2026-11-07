@@ -836,6 +836,11 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // CoshIntegral[Infinity] = Infinity
     Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Numeric evaluation
+    Expr::Real(x) if *x == 0.0 => Ok(neg(id_expr("Infinity"))),
+    Expr::Real(x) if *x < 0.0 => Ok(build_complex_float_expr(
+      cosh_integral_numeric(-*x),
+      std::f64::consts::PI,
+    )),
     Expr::Real(x) => Ok(Expr::Real(cosh_integral_numeric(*x))),
     other => {
       if is_neg_infinity(other) {
