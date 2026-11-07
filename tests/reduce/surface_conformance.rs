@@ -1,21 +1,39 @@
-use super::assert_reduces;
 use woxi::interpret;
 
 #[test]
 fn canonical_surface_examples() {
-  for (input, expected) in [
-    ("Reduce[x^2 == 4, x]", "x == -2 || x == 2"),
-    (
-      "Reduce[x > 2, x, Integers]",
-      "Element[x, Integers] && x >= 3",
-    ),
-    (
-      "Reduce[-1 < x < 1, x, Reals]",
-      "Inequality[-1, Less, x, Less, 1]",
-    ),
-  ] {
-    assert_reduces(input, expected);
-  }
+  assert_eq!(
+    interpret("Reduce[x^2 == 4, x]").unwrap(),
+    "x == -2 || x == 2"
+  );
+  assert_eq!(
+    interpret("Reduce[x > 2, x, Integers]").unwrap(),
+    "Element[x, Integers] && x >= 3"
+  );
+  assert_eq!(
+    interpret("Reduce[-1 < x < 1, x, Reals]").unwrap(),
+    "Inequality[-1, Less, x, Less, 1]"
+  );
+}
+
+#[test]
+fn linear_surface_examples() {
+  assert_eq!(
+    interpret("Reduce[2*x + 1 == 0, x, Reals]").unwrap(),
+    "x == -1/2"
+  );
+  assert_eq!(
+    interpret("Reduce[1/3 < x && x <= 5/7, x, Rationals]").unwrap(),
+    "Element[x, Rationals] && Inequality[1/3, Less, x, LessEqual, 5/7]"
+  );
+  assert_eq!(
+    interpret("Reduce[2 < x < 5, x, Integers]").unwrap(),
+    "x == 3 || x == 4"
+  );
+  assert_eq!(
+    interpret("Reduce[!(3*x < 1), x, Reals]").unwrap(),
+    "x >= 1/3"
+  );
 }
 
 #[test]

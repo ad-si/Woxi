@@ -56,9 +56,10 @@ below is complete and its evidence is recorded in the evidence ledger.
       theorems, pseudocode, invariants, and a theorem-to-module reference map.
 - [x] Add a dedicated `tests/reduce/` corpus divided into rational semantics,
       Presburger semantics, Wolfram surface conformance, and regressions.
-- [x] Add `make test-reduce`, `make test-reduce-oracle`, and
-      `make test-reduce-fuzz` targets. Only the oracle target may need external
-      development tools; `make test-reduce` must be completely self-contained.
+- [x] Add `make test-reduce` and `make test-reduce-fuzz` targets, with Wolfram
+      surface comparisons covered by the standard `make test-conformance`
+      workflow. Only conformance checks may need Wolfram development tools;
+      `make test-reduce` must be completely self-contained.
 - [x] Record deterministic generator seeds and retain every discovered failure
       as a named regression.
 - [x] Capture the pre-change Woxi test baseline.

@@ -62,19 +62,6 @@ test-reduce-fuzz:
 		--failure-output=final
 
 
-# Development-only comparison with Wolfram. This is never part of the runtime
-# implementation or the self-contained test target.
-.PHONY: test-reduce-oracle
-test-reduce-oracle:
-	@command -v wolframscript >/dev/null || \
-		(echo "wolframscript is required for test-reduce-oracle"; exit 1)
-	cargo nextest run --test reduce_tests --run-ignored only \
-		-E 'test(/oracle::/)' \
-		--show-progress=none \
-		--status-level=fail \
-		--failure-output=final
-
-
 # Independent semantic oracle for generated dense linear formulas. Z3 is a
 # development dependency only; the shipped solver and normal test target do
 # not invoke it.
@@ -97,18 +84,16 @@ test-reduce-smt-oracle:
 # each in debug builds and the wikidata tests need network access. This
 # target runs nightly, so hitting the live endpoint is fine.
 #
-# `--run-ignored only` would otherwise also select the two oracle suites,
-# which need a tool that is a development dependency rather than something
-# this target may assume: wolframscript (`test-reduce-oracle`) and z3
-# (`test-reduce-smt-oracle`). They have their own targets, which check for
-# their tool first; excluding them here keeps this one self-contained.
+# `--run-ignored only` would otherwise also select the Z3 oracle tests.
+# Their separate `test-reduce-smt-oracle` target checks for that development
+# dependency first; excluding them here keeps this target independent of Z3.
 .PHONY: test-slow
 test-slow:
 	cargo nextest run \
 		--features slow-tests \
 		--profile slow \
 		--run-ignored only \
-		-E 'not (test(/_agree_with_z3$$/) or test(/oracle::/))' \
+		-E 'not test(/_agree_with_z3$$/)' \
 		--show-progress=none \
 		--status-level=fail \
 		--failure-output=final
