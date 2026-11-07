@@ -9049,6 +9049,12 @@ The minimized quotient case `TrigExpand[Tan[2 x]^2]` gives
 `(1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4)/
 (2*(Cos[x]^2 - Sin[x]^2)^2)`, displayed as four separate terms.
 
+Seed 1794018312928924000 (2026-11-07) found the related
+`TrigExpand[Tan[x]^2 Sin[x+y]]` case: Woxi uses a reduced cosine quotient,
+while Wolfram leaves a sum involving `Sec[x]` and `Tan[x]`. Even the
+minimized `TrigExpand[x Tan[x]^2]` differs: Woxi retains the product,
+where Wolfram returns `-x/2 + x*Sec[x]^2/2 + x*Tan[x]^2/2`.
+
 Combined sums and products now use the shared trig reduction before angle
 expansion, matching the polynomial forms for `Sin[x] + Sin[x]^3` and
 `Cos[x y]^2 Cos[2 x]` (the latter from seed 1794003161694997000).
