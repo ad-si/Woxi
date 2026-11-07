@@ -42935,6 +42935,14 @@ mod grid_text_in_graphics {
   }
 
   #[test]
+  fn parenthesized_box_products_keep_multiplication_operators() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(a*b*c\), \(2\)]\)", {0, 0}]], "SVG"]"#,
+    ).unwrap();
+    assert!(svg.contains(">(a*b*c)/2</text>"));
+  }
+
+  #[test]
   fn text_quotient_with_string_operand_is_one_line() {
     let svg = interpret(
       r#"ExportString[Graphics[Text[Style[ToString[x]/y, 20], {0, 0}]], "SVG"] /. {x -> 0, y -> 100}"#,

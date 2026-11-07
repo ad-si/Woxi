@@ -4854,6 +4854,9 @@ fn parse_expression_inner(
     }
   }
 
+  let has_multiplicative_operator = inner.iter().any(|item| {
+    item.as_rule() == Rule::Operator && matches!(item.as_str(), "*" | "/" | "×")
+  });
   for item in inner {
     match item.as_rule() {
       Rule::LeadingPlus => {
@@ -5099,7 +5102,23 @@ fn parse_expression_inner(
         // single divisor.
         let split_implicit =
           is_implicit_times && operators.last().is_some_and(|o| o == "/");
+        let parenthesized = item.as_rule() == Rule::Expression;
         let expr = pair_to_expr(item);
+        // A parenthesized product is one factor, not part of the outer
+        // operator chain. The call form marks that boundary for held forms.
+        let expr = if parenthesized
+          && has_multiplicative_operator
+          && matches!(
+            expr,
+            Expr::BinaryOp {
+              op: BinaryOperator::Times,
+              ..
+            }
+          ) {
+          times(flatten_times_chain(&expr))
+        } else {
+          expr
+        };
         if split_implicit {
           let factors = flatten_times_chain(&expr);
           let mut iter = factors.into_iter();
@@ -9211,6 +9230,7 @@ fn format_times_with_denominator(
         }
       )
       || is_looser_than_times_infix(a)
+      || held_times_factor_needs_parens(a)
     {
       format!("({s})")
     } else {
@@ -10105,6 +10125,10 @@ fn association_entry_rule(key: &Expr, value: &Expr) -> Expr {
 }
 
 fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
+  let _held_guard = HeldFormatGuard::enter(expr);
+  if let Some(product) = held_product_call(expr) {
+    return format_expr(&product, form);
+  }
   let fmt = |e: &Expr| -> String { format_expr(e, form) };
   let fmt_fn: fn(&Expr) -> String = match form {
     ExprForm::Input => expr_to_string,
@@ -11414,7 +11438,20 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // as (a*d)/(c + b*d).
         let mut flat_args: Vec<Expr> = Vec::with_capacity(args.len());
         for a in args {
-          flatten_times_recursive(a, &mut flat_args);
+          if in_held_format()
+            && (is_times_expression(a)
+              || matches!(
+                a,
+                Expr::UnaryOp {
+                  op: UnaryOperator::Minus,
+                  ..
+                }
+              ))
+          {
+            flat_args.push(a.clone());
+          } else {
+            flatten_times_recursive(a, &mut flat_args);
+          }
         }
         // Normalize a pure-imaginary integer Complex coefficient
         // (`Complex[0, n]` = `n*I`) into explicit `[n, I]` factors so the
@@ -12100,6 +12137,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 }
               )
               || is_looser_than_times_infix(a)
+              || held_times_factor_needs_parens(a)
               // Complex numbers (except plain I = Complex[0,1]) need parens in Times (InputForm only)
               || (!is_output && matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
@@ -14247,6 +14285,90 @@ fn binds_looser_than_rule(e: &Expr) -> bool {
 }
 
 thread_local! {
+  static IN_HELD_FORMAT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn in_held_format() -> bool {
+  IN_HELD_FORMAT.with(std::cell::Cell::get)
+}
+
+struct HeldFormatGuard(bool);
+impl HeldFormatGuard {
+  fn enter(expr: &Expr) -> Option<Self> {
+    if matches!(expr, Expr::FunctionCall { name, .. } if matches!(name.as_str(),
+      "Hold" | "HoldForm" | "HoldComplete" | "HoldPattern" | "Unevaluated" | "Defer" | "Verbatim" | "Function"))
+    {
+      Some(Self(IN_HELD_FORMAT.with(|state| state.replace(true))))
+    } else {
+      None
+    }
+  }
+}
+impl Drop for HeldFormatGuard {
+  fn drop(&mut self) {
+    IN_HELD_FORMAT.with(|state| state.set(self.0));
+  }
+}
+
+fn is_times_expression(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2)
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    )
+}
+
+fn held_product_call(expr: &Expr) -> Option<Expr> {
+  if in_held_format()
+    && matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    )
+  {
+    Some(times(flatten_times_chain(expr)))
+  } else {
+    None
+  }
+}
+
+fn held_times_factor_needs_parens(expr: &Expr) -> bool {
+  if !in_held_format() {
+    return false;
+  }
+  if matches!(
+    expr,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    }
+  ) {
+    return true;
+  }
+  let factors: Vec<&Expr> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left, right],
+    _ => return false,
+  };
+  // Unary negations and quotients already show their grouping.
+  !matches!(factors[0], Expr::Integer(-1)) && !factors.iter().any(|factor| {
+    is_denominator_factor(factor)
+      || matches!(factor, Expr::FunctionCall { name, .. } if name == "Rational")
+  })
+}
+
+thread_local! {
   /// True while rendering *genuine* InputForm (via `expr_to_input_form`).
   /// `format_expr` reuses its InputForm path as the 1D renderer for OutputForm
   /// BinaryOps, so `is_output` alone cannot tell the two apart. This flag lets
@@ -14634,6 +14756,10 @@ fn image3d_input_form(expr: &Expr) -> Option<String> {
 }
 
 fn expr_to_input_form_impl(expr: &Expr) -> String {
+  let _held_guard = HeldFormatGuard::enter(expr);
+  if let Some(product) = held_product_call(expr) {
+    return expr_to_input_form(&product);
+  }
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
 
   // The call spellings of the operators (`Divide`, `Subtract`, `List`, …)
@@ -15789,7 +15915,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           Expr::FunctionCall {
             name: inner_name,
             args: inner_args,
-          } if inner_name == "Times" => inner_args.clone(),
+          } if inner_name == "Times" && !in_held_format() => inner_args.clone(),
           Expr::BinaryOp {
             op: BinaryOperator::Times,
             left,

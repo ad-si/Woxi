@@ -38848,7 +38848,27 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       .then(|| crate::notebook::box_source_to_expression(&seg.text))
       .flatten()
       .and_then(|code| crate::parse_to_expr(&code).ok())
-      .map(|expr| manipulate_label_runs(&expr, italic));
+      .map(|expr| {
+        // This is frozen source reconstructed from boxes, not an evaluated
+        // Times expression. Keep its multiplication operators visible even
+        // when parentheses made the parser preserve a Times call boundary.
+        fn source_products(expr: &Expr) -> Expr {
+          let mapped = crate::syntax::map_children(expr, &source_products);
+          if let Expr::FunctionCall { name, args } = &mapped
+            && name == "Times"
+            && args.len() >= 2
+          {
+            let mut factors = args.iter().cloned();
+            return factors
+              .by_ref()
+              .next()
+              .map(|first| factors.fold(first, times2))
+              .unwrap();
+          }
+          mapped
+        }
+        manipulate_label_runs(&source_products(&expr), italic)
+      });
     match rendered {
       // A box with no expression form (a `TagBox`/`GridBox` layout of
       // formulas) is drawn as the display text it typesets to.

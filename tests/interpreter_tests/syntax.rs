@@ -14696,3 +14696,47 @@ fn held_plus_formats_negative_real_literals_as_subtractions() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn held_products_preserve_nested_times_grouping() {
+  for (code, expected) in [
+    ("Hold[Times[Times[0,0],0]]", "Hold[(0*0)*0]"),
+    ("Hold[Times[a,Times[b,c]]]", "Hold[a*(b*c)]"),
+    ("Hold[Times[Times[a,b],Times[c,d]]]", "Hold[(a*b)*(c*d)]"),
+    (
+      "Hold[Times[Times[Divide[-96,-3.2],-94],55]]",
+      "Hold[(-96/-3.2*-94)*55]",
+    ),
+    ("Hold[Times[Times[-1,x],y]]", "Hold[-x*y]"),
+    ("Hold[Times[-1,Times[a,b]]]", "Hold[-(a*b)]"),
+    ("Hold[Times[Times[a,Power[b,-1]],c]]", "Hold[a/b*c]"),
+    (
+      "ToString[Hold[Times[a,Times[b,c]]],InputForm]",
+      "Hold[a*(b*c)]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn parenthesized_products_remain_distinct_in_held_syntax() {
+  for (code, expected) in [
+    ("Hold[(a*b)*c]", "Hold[(a*b)*c]"),
+    ("Hold[a*(b*c)]", "Hold[a*(b*c)]"),
+    ("Hold[(a*b)*(c*d)]", "Hold[(a*b)*(c*d)]"),
+    ("Hold[a*b*c]", "Hold[a*b*c]"),
+    (
+      "ToString[FullForm[Hold[(a*b)*c]]]",
+      "Hold[Times[Times[a, b], c]]",
+    ),
+    (
+      "ToString[FullForm[Hold[a*(b*c)]]]",
+      "Hold[Times[a, Times[b, c]]]",
+    ),
+    ("ToString[FullForm[Hold[a*b*c]]]", "Hold[Times[a, b, c]]"),
+    ("(2*3)*4", "24"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
