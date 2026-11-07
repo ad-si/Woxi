@@ -11645,7 +11645,12 @@ fn simplify_quotient_select(
       return Some((basic.clone(), false));
     }
     if matches!(num, Expr::Integer(-1)) {
-      return Some((neg1(pow2(den.clone(), Expr::Integer(-1))), true));
+      let reciprocal = crate::evaluator::evaluate_expr_to_expr(&pow2(
+        den.clone(),
+        Expr::Integer(-1),
+      ))
+      .ok()?;
+      return Some((neg1(reciprocal), true));
     }
     let plain_num = coeffs_from_terms(&n_terms, &var);
     return Some((div2(plain_num, den.clone()), false));

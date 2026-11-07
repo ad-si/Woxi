@@ -26014,3 +26014,23 @@ fn simplification_collects_cheaper_rational_radical_denominators() {
     }
   }
 }
+
+#[test]
+fn simplify_canonicalizes_negative_reciprocal_powers() {
+  for degree in [2, 3, 4, 7] {
+    for body in [
+      format!("-1/x^{degree}"),
+      format!("-2/(2*x^{degree})"),
+      format!("-a/(a*x^{degree})"),
+    ] {
+      for function in ["Simplify", "FullSimplify"] {
+        let code = format!("{function}[{body}]");
+        assert_eq!(
+          interpret(&code).unwrap(),
+          format!("-x^(-{degree})"),
+          "{code}"
+        );
+      }
+    }
+  }
+}
