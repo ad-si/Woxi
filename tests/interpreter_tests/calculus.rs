@@ -26800,3 +26800,25 @@ fn tangent_products_use_rational_substitution_for_commensurate_frequencies() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_expands_isolated_trigonometric_squares() {
+  for (code, expected) in [
+    (
+      "TrigToExp[Sin[x*y]^2]",
+      "1/2 - 1/(4*E^((2*I)*x*y)) - E^((2*I)*x*y)/4",
+    ),
+    (
+      "TrigToExp[Cos[x+y]^2]",
+      "1/2 + E^((-2*I)*x - (2*I)*y)/4 + E^((2*I)*x + (2*I)*y)/4",
+    ),
+    (
+      "TrigToExp[a*Sin[x]^2]",
+      "a/2 - a/(4*E^((2*I)*x)) - (a*E^((2*I)*x))/4",
+    ),
+    ("TrigToExp[Sinh[x]^2]", "-1/2 + 1/(4*E^(2*x)) + E^(2*x)/4"),
+    ("TrigToExp[Cosh[x]^2]", "1/2 + 1/(4*E^(2*x)) + E^(2*x)/4"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

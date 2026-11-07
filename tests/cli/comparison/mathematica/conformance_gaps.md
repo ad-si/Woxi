@@ -9065,15 +9065,14 @@ also rewrites the polynomial terms into reciprocal-trig products in Wolfram,
 so simply changing the tangent power's own representation is insufficient.
 Verified on 2026-11-07; this remains part of the mixed-sum convention gap.
 
-### TrigToExp does not expand shifted cosine squares
+### TrigToExp retains different grouping in mixed products and sums
 
-The same run found `TrigToExp[Cos[x + y]^2]`. Woxi retains the square of
-the transformed exponential sum; Wolfram returns
-`1/2 + E^((-2*I)*x - (2*I)*y)/4 + E^((2*I)*x + (2*I)*y)/4`.
-The imaginary coefficient now distributes over each exponent's sum, and
-transformed top-level sums expand (diff-fuzz seed 1794015946701080000,
-2026-11-07). The powered-function grouping remains separate from that fix,
-as does the case documented for `TrigToExp[Sin[x]^3]`.
+The shifted square `TrigToExp[Cos[x+y]^2]` and product-angle square
+`TrigToExp[Sin[x*y]^2]` are resolved (seed 1794029130738190000,
+2026-11-07). Isolated circular/hyperbolic sine and cosine squares,
+including scalar multiples, now expand into exponential terms.
+The higher-power coefficient grouping documented for `TrigToExp[Sin[x]^3]`
+remains, as does grouping within mixed trigonometric products.
 
 Seed 1794023524037498000 (2026-11-07) found the converse grouping issue
 for `TrigToExp[Cos[2*x]+Cos[3*x]-Tan[3*x]^2*Sin[x]^2]`: Woxi expands
