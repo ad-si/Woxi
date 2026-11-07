@@ -10745,6 +10745,43 @@ mod zero_divisor {
   }
 
   #[test]
+  fn explicit_divide_machine_numerator_message_layout() {
+    let prefix = "Divide::infy: Infinite expression ";
+    let lead = " ".repeat(prefix.len());
+    for (input, shown) in [
+      ("-1.", "-1."),
+      ("1.", "1."),
+      ("-12.", "-12."),
+      ("123456.", "123456."),
+      ("123456.789", "123457."),
+      ("1.0000001", "1."),
+      ("0.99999999", "1."),
+    ] {
+      let r = interpret_with_stdout(&format!("Divide[{input},0]")).unwrap();
+      assert_eq!(r.result, "ComplexInfinity");
+      let width = shown.len();
+      let expected = format!(
+        "{lead}{shown}\n{prefix}{} encountered.\n{}0",
+        "-".repeat(width),
+        " ".repeat(prefix.len() + (width - 1) / 2)
+      );
+      assert!(r.warnings.contains(&expected), "{input}: {:?}", r.warnings);
+    }
+    for input in ["1.*^6", "999999.9"] {
+      let r = interpret_with_stdout(&format!("Divide[{input},0]")).unwrap();
+      let expected = format!(
+        "{lead}     6\n{lead}1. 10\n{prefix}------ encountered.\n{lead}  0"
+      );
+      assert!(r.warnings.contains(&expected), "{input}: {:?}", r.warnings);
+    }
+    let r = interpret_with_stdout("Divide[-1.2345678*^-8,0]").unwrap();
+    let expected = format!(
+      "{lead}           -8\n{lead}-1.23457 10\n{prefix}------------- encountered.\n{lead}      0"
+    );
+    assert!(r.warnings.contains(&expected), "{:?}", r.warnings);
+  }
+
+  #[test]
   fn explicit_divide_head_uses_divide_infy_message() {
     // wolframscript distinguishes the explicit `Divide[]` head from the `/`
     // operator when a *numeric* numerator is divided by zero: the head reports
@@ -10786,9 +10823,8 @@ mod zero_divisor {
     );
 
     // Message bodies show machine Reals in wolframscript's 6-significant-
-    // digit OutputForm — not the full-precision result form. A value that
-    // rounds to an integer loses its trailing dot. (Differential fuzzer,
-    // seed 71026; wolframscript-verified.)
+    // digit OutputForm — not the full-precision result form. Values that
+    // round to integers retain their decimal point.
     let r = interpret_with_stdout("Divide[Plus[-7.9, Pi], 0]").unwrap();
     assert_eq!(r.result, "ComplexInfinity");
     let expected = format!(
@@ -10805,9 +10841,9 @@ mod zero_divisor {
     assert_eq!(r.result, "ComplexInfinity");
     assert!(
       r.warnings.iter().any(|w| w.contains(
-        "123457
+        "123457.
 "
-      ) && !w.contains("123457.")),
+      )),
       "rounded-integral message mismatch, got: {:?}",
       r.warnings
     );

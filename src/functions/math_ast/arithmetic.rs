@@ -13227,39 +13227,19 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
 /// -(--)
 ///   2
 /// ```
-/// Message bodies display machine Reals in wolframscript's 6-significant-
-/// digit OutputForm (640.2415926535898 shows as 640.242), unlike result
-/// output which keeps full precision. Only the plain-notation magnitude
-/// range is handled; scientific-notation values fall back to the full
-/// form.
-fn message_real_string(v: f64) -> Option<String> {
-  if !v.is_finite() || v == 0.0 {
-    return None;
-  }
-  let magnitude = v.abs().log10().floor() as i32;
-  if !(-5..6).contains(&magnitude) {
-    return None;
-  }
-  let decimals = (5 - magnitude).max(0) as usize;
-  let mut s = format!("{v:.decimals$}");
-  if s.contains('.') {
-    while s.ends_with('0') {
-      s.pop();
-    }
-    // A value that rounds to an integer loses the dot entirely
-    // (Divide[123456.789, 0] shows 123457, not 123457.).
-    if s.ends_with('.') {
-      s.pop();
-    }
-  }
-  Some(s)
-}
-
+/// Machine numerators use the shared six-significant-digit display
+/// conversion, retaining their decimal point even when rounding to an integer.
 fn numerator_box_lines(e: &Expr) -> Vec<String> {
-  if let Expr::Real(v) = e
-    && let Some(s) = message_real_string(*v)
-  {
-    return vec![s];
+  if matches!(e, Expr::Real(_)) {
+    let shown = expr_to_string(&crate::to_display_precision(e));
+    if let Some((mantissa, exponent)) = shown.split_once("*^") {
+      let baseline = format!("{mantissa} 10");
+      return vec![
+        format!("{}{exponent}", " ".repeat(baseline.len())),
+        baseline,
+      ];
+    }
+    return vec![shown];
   }
   if let Expr::FunctionCall { name, args } = e
     && name == "Rational"
