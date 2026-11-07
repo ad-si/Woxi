@@ -50710,6 +50710,27 @@ mod graphics_review_regressions {
   }
 
   #[test]
+  fn rectangle_category_labels_match_tick_typography() {
+    let svg = export_svg(
+      "RectangleChart[{{1, 2}, {2, 3}}, ChartLabels -> {\"a\", \"b\"}]",
+    );
+    for label in ["a", "b"] {
+      let text = svg
+        .lines()
+        .find(|l| l.contains(&format!(">{label}</text>")))
+        .unwrap();
+      assert!(text.contains("font-size=\"10\""), "{text}");
+      assert!(text.contains("fill=\"rgb(85,85,85)\""), "{text}");
+    }
+    let svg = export_svg(
+      "RectangleChart[{{1, 2}}, ChartLabels -> {Style[\"a\", Red, 18]}]",
+    );
+    let text = svg.lines().find(|l| l.contains(">a</text>")).unwrap();
+    assert!(text.contains("font-size=\"18\""), "{text}");
+    assert!(text.contains("fill=\"rgb(255,0,0)\""), "{text}");
+  }
+
+  #[test]
   fn business_bar_chart_keeps_labels_without_value_frame_strokes() {
     for values in ["{1, 2, 3}", "{{2, 4}, {3, 1}}"] {
       let svg =

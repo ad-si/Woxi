@@ -486,10 +486,13 @@ pub fn rectangle_chart_ast(
   }
   content.extend(prims);
   if !label_prims.is_empty() {
-    content.push(Expr::List(
-      std::iter::once(call("GrayLevel", vec![Expr::Integer(0)]))
-        .chain(label_prims)
-        .collect(),
+    content.push(call(
+      "Style",
+      vec![
+        Expr::List(label_prims.into()),
+        Expr::Real(crate::functions::plot_padding::TICK_FONT),
+        call("GrayLevel", vec![Expr::Real(1.0 / 3.0)]),
+      ],
     ));
   }
 
