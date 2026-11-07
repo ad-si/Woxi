@@ -26866,3 +26866,35 @@ fn trig_to_exp_distributes_scalar_single_function_products() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn integrate_powered_and_multiple_sine_cosine_factors() {
+  for (code, expected) in [
+    (
+      "Integrate[Sin[x]*Cos[2*x]^2,x]",
+      "-1/2*Cos[x] + Cos[3*x]/12 - Cos[5*x]/20",
+    ),
+    (
+      "Integrate[Cos[x]*Cos[2*x]^2,x]",
+      "Sin[x]/2 + Sin[3*x]/12 + Sin[5*x]/20",
+    ),
+    (
+      "Integrate[Sin[2*x]^2*Cos[3*x],x]",
+      "-1/4*Sin[x] + Sin[3*x]/6 - Sin[7*x]/28",
+    ),
+    (
+      "Integrate[Cos[x]*Cos[2*x]*Cos[3*x],x]",
+      "x/4 + Sin[2*x]/8 + Sin[4*x]/16 + Sin[6*x]/24",
+    ),
+    (
+      "Integrate[Cos[x]^2*Cos[2*x],x]",
+      "x/4 + Sin[2*x]/4 + Sin[4*x]/16",
+    ),
+    (
+      "Simplify[TrigReduce[D[Integrate[Cos[x+y]*Cos[x*y]^2,x],x]-Cos[x+y]*Cos[x*y]^2]]",
+      "0",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

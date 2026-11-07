@@ -5353,6 +5353,33 @@ fn try_integrate_trig_product_to_sum(
   factors: &[&Expr],
   var: &str,
 ) -> Option<Expr> {
+  let parts = factors
+    .iter()
+    .map(|factor| extract_trig_factor(factor))
+    .collect::<Option<Vec<_>>>()?;
+  if parts.iter().any(|(_, _, power)| *power != 1) || factors.len() > 2 {
+    if !parts.iter().all(|(name, arg, power)| {
+      matches!(*name, "Sin" | "Cos")
+        && *power > 0
+        && extract_linear_coefficient(arg, var).is_some()
+    }) {
+      return None;
+    }
+    let product =
+      times(factors.iter().map(|factor| (*factor).clone()).collect());
+    let reduced = crate::functions::math_ast::trig_reduce_ast(
+      std::slice::from_ref(&product),
+    )
+    .ok()?;
+    let reduced = crate::evaluator::evaluate_expr_to_expr(&reduced).ok()?;
+    if expr_str_eq(&product, &reduced) {
+      return None;
+    }
+    let expanded =
+      crate::evaluator::evaluate_function_call_ast("Expand", &[reduced])
+        .ok()?;
+    return integrate(&expanded, var);
+  }
   let [f0, f1] = factors else {
     return None;
   };
@@ -10425,9 +10452,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               return Some(times2(const_expr, trig_result));
             }
             // Trig product-to-sum: Sin[m x] Sin[n x], m != n, etc.
-            if var_factors.len() == 2
-              && let Some(pts_result) =
-                try_integrate_trig_product_to_sum(&var_refs, var)
+            if let Some(pts_result) =
+              try_integrate_trig_product_to_sum(&var_refs, var)
             {
               if const_factors.is_empty() {
                 return Some(pts_result);
