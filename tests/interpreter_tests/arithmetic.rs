@@ -15685,3 +15685,25 @@ fn sum_factors_use_structural_reciprocal_order() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn machine_mod_preserves_remainders_already_in_range() {
+  for (code, expected) in [
+    ("Mod[.1,9]", "0.1"),
+    ("Mod[.1,2.]", "0.1"),
+    ("Mod[-.1,-9]", "-0.1"),
+    ("Mod[-.1,9]", "8.9"),
+    ("Mod[.1,-9]", "-8.9"),
+    ("Mod[1.*^-20,9]", "1.*^-20"),
+    ("Mod[-1.*^-20,-9]", "-1.*^-20"),
+    ("Mod[-1.*^-20,9]", "0."),
+    ("Mod[6.,-3]", "0."),
+    ("Mod[-6.,3]", "0."),
+    (
+      "Mod[(-644/9)*((8.7/-59)/(-88*-17.2)),9]",
+      "0.006971070579663405",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

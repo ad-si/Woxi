@@ -2834,7 +2834,16 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       ));
       return Ok(id_expr("Indeterminate"));
     }
-    let result = ((a % b) + b) % b;
+    let remainder = a % b;
+    // Adjust only a remainder with the wrong sign. Adding the modulus to
+    // an already valid remainder can discard its low bits (or all of it).
+    let result = if remainder != 0.0
+      && remainder.is_sign_negative() != b.is_sign_negative()
+    {
+      (remainder + b) % b
+    } else {
+      remainder
+    };
     // This path is only reached when an operand is an inexact machine real, so
     // the result stays Real even when it is a whole number (Mod[10., 5.] = 0.,
     // not 0) — num_to_expr would otherwise collapse it to an Integer.
