@@ -12432,3 +12432,38 @@ fn machine_arctanh_rounds_from_guard_precision() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn cosine_integral_avoids_series_cancellation() {
+  // Reference values round high-precision evaluations of the exact
+  // binary input; Wolfram's machine approximation differs at 5.8.
+  for (code, expected) in [
+    ("CosIntegral[5.8]", -0.09944066468937861),
+    ("CosIntegral[0.1]", -1.7278683866572966),
+    ("CosIntegral[10.]", -0.04545643300445537),
+    ("CosIntegral[40.]", 0.019020007896208765),
+    ("CosIntegral[100.]", -0.005148825142610492),
+  ] {
+    let actual: f64 =
+      interpret(code).unwrap().replace("*^", "e").parse().unwrap();
+    assert_eq!(actual, expected, "{code}");
+  }
+  for (code, expected) in [
+    ("CosIntegral[129.]", -0.0014406777201286937),
+    ("CosIntegral[256.]", -0.003902430186909135),
+    ("CosIntegral[1000.]", 0.0008263155110906822),
+    ("CosIntegral[10000000000.]", -4.8750602517482264e-11),
+  ] {
+    let actual: f64 =
+      interpret(code).unwrap().replace("*^", "e").parse().unwrap();
+    assert!(
+      (actual - expected).abs() <= 4.0 * f64::EPSILON * expected.abs(),
+      "{code}: {actual}"
+    );
+  }
+  assert_eq!(interpret("CosIntegral[0.]").unwrap(), "-Infinity");
+  assert_eq!(
+    interpret("CosIntegral[-1.]").unwrap(),
+    "0.33740392290096816 + 3.141592653589793*I"
+  );
+}

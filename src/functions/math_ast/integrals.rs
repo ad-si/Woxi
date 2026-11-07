@@ -55,6 +55,11 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // CosIntegral[Infinity] = 0
     Expr::Identifier(s) if s == "Infinity" => Ok(Expr::Integer(0)),
     // Numeric evaluation
+    Expr::Real(x) if *x == 0.0 => Ok(neg(id_expr("Infinity"))),
+    Expr::Real(x) if *x < 0.0 => Ok(build_complex_float_expr(
+      cos_integral_numeric(-*x),
+      std::f64::consts::PI,
+    )),
     Expr::Real(x) => Ok(Expr::Real(cos_integral_numeric(*x))),
     // Check for -Infinity
     other => {
@@ -72,53 +77,58 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Ci(z) = γ + ln|z| + ∫₀ᶻ (cos(t)-1)/t dt
 /// = γ + ln|z| + Σ_{n=1}^∞ (-1)^n z^(2n) / (2n · (2n)!)
 fn cos_integral_numeric(z: f64) -> f64 {
-  let euler_gamma = std::f64::consts::EULER_GAMMA;
-
-  if z.abs() < 40.0 {
-    // Power series: Ci(z) = γ + ln|z| + Σ (-1)^n z^(2n) / (2n · (2n)!)
-    let mut sum = euler_gamma + z.abs().ln();
-    let z2 = z * z;
-    let mut term = 1.0; // Will build up z^(2n) / (2n)!
-    for n in 1..200 {
-      let n2 = (2 * n) as f64;
-      // term *= z^2 / ((2n-1) * 2n)
-      term *= z2 / ((n2 - 1.0) * n2);
-      let contrib = if n % 2 == 1 { -term } else { term };
-      sum += contrib / n2;
-      if (contrib / n2).abs() < 1e-16 * sum.abs().max(1e-300) {
-        break;
-      }
-    }
-    sum
-  } else {
-    // Asymptotic expansion for large |z|
-    // Ci(z) ≈ sin(z)/z * f(z) - cos(z)/z * g(z)
-    // where f(z) = Σ (-1)^n (2n)! / z^(2n)
-    //       g(z) = Σ (-1)^n (2n+1)! / z^(2n+1)
-    let mut f = 0.0;
-    let mut g = 0.0;
-    let mut f_term = 1.0;
-    let mut g_term = 1.0 / z;
-    for n in 0..100 {
-      f += if n % 2 == 0 { f_term } else { -f_term };
-      g += if n % 2 == 0 { g_term } else { -g_term };
-      let n2 = (2 * n + 1) as f64;
-      let n2p = (2 * n + 2) as f64;
-      f_term *= n2 * n2p / (z * z);
-      g_term *= n2p * (n2p + 1.0) / (z * z);
-      if f_term.abs() < 1e-16 && g_term.abs() < 1e-16 {
-        break;
-      }
-      // Divergent series: stop when terms start growing
-      if n > 0
-        && (f_term.abs() > (n2 * n2p / (z * z) * f_term).abs()
-          || g_term.abs() > 1e10)
-      {
-        break;
-      }
-    }
-    f / z * z.sin() - g * z.cos()
+  if z == 0.0 {
+    return f64::NEG_INFINITY;
   }
+  if z.is_infinite() {
+    return 0.0;
+  }
+  if z.abs() <= 128.0 {
+    // Ci(x) = Re[Ei(i*x)]. Reuse the guarded complex series so its large
+    // intermediate terms do not cancel away the machine result.
+    use astro_float::{BigFloat, RoundingMode};
+    if let Ok(mut cc) = crate::functions::math_ast::numerical::astro_consts() {
+      let bits = 128 + z.abs().ceil() as usize;
+      let (re, _) =
+        crate::functions::math_ast::numerical::complex_exp_integral_ei(
+          &BigFloat::from_i32(0, bits),
+          &BigFloat::from_f64(z.abs(), bits),
+          bits,
+          RoundingMode::ToEven,
+          &mut cc,
+        );
+      if let Some(value) =
+        crate::functions::math_ast::bigfloat_to_f64_approx(&re)
+      {
+        return value;
+      }
+    }
+  }
+  // Ci(z) ~ sin(z)/z * sum (-1)^n (2n)!/z^(2n)
+  //          - cos(z)/z * sum (-1)^n (2n+1)!/z^(2n+1).
+  // Stop before the next terms increase, or once both are negligible.
+  let z = z.abs();
+  let inv = 1.0 / z;
+  let inv2 = inv * inv;
+  let (mut f, mut g) = (1.0, inv);
+  let (mut ft, mut gt) = (1.0, inv);
+  for n in 1..1000 {
+    let k = (2 * n) as f64;
+    let next_f = -ft * (k - 1.0) * k * inv2;
+    let next_g = -gt * k * (k + 1.0) * inv2;
+    if next_f.abs() > ft.abs() || next_g.abs() > gt.abs() {
+      break;
+    }
+    f += next_f;
+    g += next_g;
+    ft = next_f;
+    gt = next_g;
+    if ft.abs() <= f64::EPSILON * f.abs() && gt.abs() <= f64::EPSILON * g.abs()
+    {
+      break;
+    }
+  }
+  inv * (f * z.sin() - g * z.cos())
 }
 
 /// FresnelS[z] - Fresnel sine integral S(z) = ∫₀ᶻ sin(π t²/2) dt

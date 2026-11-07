@@ -1110,6 +1110,20 @@ correctly rounded value) against WL's `…4526`, `LogGamma[10.3]` `…355` again
 The same 1–3 ULP class: `InverseErf[0.5]` (`…698` vs `…6993`, Woxi nearer).
 **Not reproducible** without WL's own approximations.
 
+Diff-fuzz seed 1794016680256839000 (2026-11-07) confirms the same class
+for `InverseErf[-0.2]`: Woxi's `-0.1791434546212917` agrees with the
+rounded high-precision value of the exact binary input, while Wolfram's
+machine result is `-0.17914345462129166`.
+
+### Machine cosine integrals differ from high-precision rounding
+
+The same seed found `CosIntegral[5.8]`. After replacing the cancellation-prone
+machine series with the guarded complex exponential-integral core, Woxi
+returns `-0.09944066468937861`, matching the high-precision result rounded
+to a machine real. Wolfram's machine approximation is `-0.09944066468937793`.
+The large-argument asymptotic stopping rule and negative-real branch were
+also corrected; this remaining difference is in the oracle approximation.
+
 ### Machine exponential integrals are not correctly rounded in WL
 
 Woxi rounds machine `ExpIntegralE`, `ExpIntegralEi`, `LogIntegral`,
