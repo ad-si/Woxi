@@ -15550,3 +15550,15 @@ fn complex_order_uses_imaginary_magnitude_before_sign() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn explicit_divide_folds_named_constants_with_machine_reciprocals() {
+  for (code, expected) in [
+    ("Divide[Pi,17.2]", "0.18265073567382517"),
+    ("Divide[E,17.2]", "0.15803964118947936"),
+    ("Divide[EulerGamma,17.2]", "0.033559050284972844"),
+    ("Divide[Catalan,17.2]", "0.05325381361495459"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
