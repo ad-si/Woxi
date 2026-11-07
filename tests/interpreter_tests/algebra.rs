@@ -25765,3 +25765,23 @@ fn full_simplify_preserves_compact_outer_quotient_signs() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn full_simplify_keeps_simple_negative_numerators_inside_quotients() {
+  for (code, expected) in [
+    (
+      "FullSimplify[(1+3*x^2)/(-1-2*x+4*x^2-x^3)]",
+      "(-1 - 3*x^2)/(1 + x*(2 + (-4 + x)*x))",
+    ),
+    (
+      "FullSimplify[(1+3*x)/(-1-2*x+4*x^2-x^3)]",
+      "(-1 - 3*x)/(1 + x*(2 + (-4 + x)*x))",
+    ),
+    (
+      "FullSimplify[(2+7*x^2)/(-1-2*x+4*x^2-x^3)]",
+      "(-2 - 7*x^2)/(1 + x*(2 + (-4 + x)*x))",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

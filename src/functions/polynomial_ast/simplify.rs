@@ -8351,18 +8351,23 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         })
       {
         let negated_num = expand_and_combine(&neg1(num.clone()));
-        let negated_num = full_simplify_univariate_polynomial(&negated_num)
-          .unwrap_or(negated_num);
-        candidates.extend([
-          neg1(crate::functions::math_ast::make_divide(
-            negated_num.clone(),
-            d.clone(),
-          )),
-          neg1(crate::functions::math_ast::make_divide(
-            negated_num,
-            den.clone(),
-          )),
-        ]);
+        let optimized = full_simplify_univariate_polynomial(&negated_num)
+          .unwrap_or_else(|| negated_num.clone());
+        // Prefer an outer sign only when it enables a shorter numerator.
+        // A simple sum keeps its negative coefficients inside the quotient.
+        if wl_simplify_count(&optimized) < wl_simplify_count(&negated_num) {
+          let negated_num = optimized;
+          candidates.extend([
+            neg1(crate::functions::math_ast::make_divide(
+              negated_num.clone(),
+              d.clone(),
+            )),
+            neg1(crate::functions::math_ast::make_divide(
+              negated_num,
+              den.clone(),
+            )),
+          ]);
+        }
       }
       for (numerator, denominator) in
         [(n.clone(), d.clone()), (n, den), (num, d)]
