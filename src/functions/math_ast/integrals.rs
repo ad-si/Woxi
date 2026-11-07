@@ -648,9 +648,9 @@ pub fn exp_integral_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // E_0(z) = E^(-z)/z — an exact elementary closed form, matching
   // wolframscript (e.g. ExpIntegralE[0, 1/2] = 2/Sqrt[E]). Symbolic and exact
-  // arguments are handled here; a machine-Real argument folds to the same value
-  // the numeric path below would give.
-  if matches!(n_expr, Expr::Integer(0)) {
+  // arguments are handled here. Machine arguments use the guarded numeric
+  // core below: rounding Exp[-z] before dividing can lose a final bit.
+  if matches!(n_expr, Expr::Integer(0)) && !matches!(z_expr, Expr::Real(_)) {
     let exp_neg_z =
       call("Exp", vec![times2(Expr::Integer(-1), z_expr.clone())]);
     let result = div2(exp_neg_z, z_expr.clone());

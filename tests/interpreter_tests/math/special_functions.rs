@@ -12659,3 +12659,18 @@ fn cosh_integral_machine_branch_cut() {
   }
   assert_eq!(interpret("CoshIntegral[0.]").unwrap(), "-Infinity");
 }
+
+#[test]
+fn zero_order_exponential_integral_rounds_after_division() {
+  for (x, expected) in [
+    ("0.7", "0.7094075768448708"),
+    ("1.1", "0.3026100760891632"),
+    ("5.6", "0.0006603328065148094"),
+    ("-1.1", "-2.7310600217694847"),
+  ] {
+    for order in ["0", "0."] {
+      let code = format!("ExpIntegralE[{order},{x}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
