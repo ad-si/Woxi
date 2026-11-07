@@ -888,6 +888,29 @@ mod inverse_trig_identities {
   }
 
   #[test]
+  fn arccosh_exact_unit_interval_angles() {
+    for (code, expected) in [
+      ("ArcCosh[-1]", "I*Pi"),
+      ("ArcCosh[-Sqrt[3]/2]", "(5*I)/6*Pi"),
+      ("ArcCosh[-1/Sqrt[2]]", "(3*I)/4*Pi"),
+      ("ArcCosh[-1/2]", "(2*I)/3*Pi"),
+      ("ArcCosh[0]", "I/2*Pi"),
+      ("ArcCosh[1/2]", "I/3*Pi"),
+      ("ArcCosh[1/Sqrt[2]]", "I/4*Pi"),
+      ("ArcCosh[Sqrt[3]/2]", "I/6*Pi"),
+      ("ArcCosh[1]", "0"),
+      ("ArcCosh[1/3]", "ArcCosh[1/3]"),
+      ("ArcCosh[-2]", "ArcCosh[-2]"),
+      (
+        "ArcCosh[5000000000001/10000000000000]",
+        "ArcCosh[5000000000001/10000000000000]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn arccos_exact_candidates_require_symbolic_equality() {
     for (code, expected) in [
       (

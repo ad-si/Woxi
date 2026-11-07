@@ -5083,18 +5083,23 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(r);
   }
-  match &args[0] {
-    Expr::Integer(0) => {
-      // ArcCosh[0] = (I/2)*Pi
+  // On the real unit interval ArcCosh[x] = I ArcCos[x]. Reuse the shared
+  // exact-angle reductions rather than maintaining another table.
+  if !contains_inexact_real(&args[0])
+    && crate::functions::predicate_ast::is_numeric_q(&args[0])
+  {
+    let angle = arccos_ast(args)?;
+    if let Some((numerator, denominator)) = try_symbolic_pi_fraction(&angle)
+      && numerator >= 0
+      && numerator <= denominator
+    {
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[
-          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-          id_expr("I"),
-          const_expr("Pi"),
-        ],
+        &[id_expr("I"), angle],
       );
     }
+  }
+  match &args[0] {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => {
       let x = *f;
