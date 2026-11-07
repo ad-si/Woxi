@@ -15488,3 +15488,17 @@ fn exponential_integral_zero_order_pole_uses_divide_diagnostics() {
     );
   }
 }
+
+#[test]
+fn products_display_negative_complex_exponents_in_denominators() {
+  for (code, expected) in [
+    ("TrigToExp[Cos[2]]", "1/(2*E^(2*I)) + E^(2*I)/2"),
+    ("E^(-2I)/2", "1/(2*E^(2*I))"),
+    ("a^(-1+2I)/2", "1/(2*a^(1 - 2*I))"),
+    ("a^(-1-2I)/2", "1/(2*a^(1 + 2*I))"),
+    ("a^(1-2I)/2", "a^(1 - 2*I)/2"),
+    ("E^(-2I)", "E^(-2*I)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

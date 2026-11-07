@@ -8918,6 +8918,25 @@ fn is_symbolic_neg_int_power(expr: &Expr) -> bool {
   ) && !matches!(base, Expr::FunctionCall { name, .. } if name == "Rational" || name == "Complex")
 }
 
+/// Complex exponents have a leading minus when their real part is negative,
+/// or their real part vanishes and their imaginary part is negative.
+fn has_negative_complex_exponent(expr: &Expr) -> bool {
+  let coefficient = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.first().unwrap_or(expr)
+    }
+    _ => expr,
+  };
+  let Some(((real, _), (imaginary, _))) =
+    crate::functions::math_ast::try_extract_complex_exact_big(coefficient)
+  else {
+    return false;
+  };
+  imaginary.sign() != Sign::NoSign
+    && (real.sign() == Sign::Minus
+      || (real.sign() == Sign::NoSign && imaginary.sign() == Sign::Minus))
+}
+
 /// Check if an expression is Power[base, negative_exponent] suitable for moving to denominator
 /// in a Times expression. Handles both FunctionCall and BinaryOp representations.
 fn is_denominator_factor(expr: &Expr) -> bool {
@@ -8946,6 +8965,9 @@ fn is_denominator_factor(expr: &Expr) -> bool {
     } => right.as_ref(),
     _ => return false,
   };
+  if has_negative_complex_exponent(exponent) {
+    return true;
+  }
   match exponent {
     Expr::Integer(n) => *n < 0,
     Expr::Real(r) => *r < 0.0,
@@ -9033,6 +9055,13 @@ fn denominator_form(expr: &Expr) -> Expr {
     _ => unreachable!(),
   };
   let pos_exp = match exponent {
+    exponent if has_negative_complex_exponent(exponent) => {
+      crate::functions::math_ast::times_ast(&[
+        Expr::Integer(-1),
+        exponent.clone(),
+      ])
+      .expect("negating an exact complex exponent succeeds")
+    }
     Expr::Integer(n) => Expr::Integer(-n),
     Expr::Real(r) => Expr::Real(-r),
     Expr::FunctionCall { name: rn, args: ra }
