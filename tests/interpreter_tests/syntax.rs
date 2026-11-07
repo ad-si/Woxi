@@ -14684,3 +14684,15 @@ mod power_of_sum_order {
     );
   }
 }
+
+#[test]
+fn held_plus_formats_negative_real_literals_as_subtractions() {
+  for (code, expected) in [
+    ("Hold[Plus[0,-7.7]]", "Hold[0 - 7.7]"),
+    ("Hold[Plus[a,-1.25,-2.5]]", "Hold[a - 1.25 - 2.5]"),
+    ("Hold[Plus[a,-2.5`30]]", "Hold[a - 2.5`30.]"),
+    ("Hold[Plus[a,Divide[-5,4]]]", "Hold[a + -5/4]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

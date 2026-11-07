@@ -12359,6 +12359,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               result.push_str(" + ");
               result.push_str(&fmt(arg));
             }
+          } else if matches!(arg, Expr::Real(r) if *r < 0.0)
+            || matches!(arg, Expr::BigFloat(digits, _) if digits.starts_with('-'))
+          {
+            let positive = match arg {
+              Expr::Real(r) => Expr::Real(-r),
+              Expr::BigFloat(digits, prec) => {
+                Expr::BigFloat(digits[1..].to_string(), *prec)
+              }
+              _ => unreachable!(),
+            };
+            result.push_str(" - ");
+            result.push_str(&fmt(&positive));
           } else if !is_output {
             // InputForm: Fallback check if the rendered form starts with "-"
             let s = fmt_plus_term(arg);
