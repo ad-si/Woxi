@@ -6625,8 +6625,40 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 
   prefer_unexpanded_numeric_radical_product(
     expr,
-    absorb_cheaper_polynomial_minus(best),
+    prefer_expanded_radical_sum(absorb_cheaper_polynomial_minus(best)),
   )
+}
+
+// Combining denominators can make a radical sum more expensive than its
+// individual terms. Offer expansion without changing symbolic polynomials.
+fn prefer_expanded_radical_sum(best: Expr) -> Expr {
+  let (numerator, denominator) = super::together::extract_num_den(&best);
+  let numerator =
+    crate::evaluator::evaluate_expr_to_expr(&numerator).unwrap_or(numerator);
+  let terms = collect_additive_terms(&numerator);
+  if terms.len() < 2
+    || !terms.iter().all(|term| term_sqrt_radicand(term).is_some())
+  {
+    return best;
+  }
+  let expanded = Expr::FunctionCall {
+    name: "Plus".into(),
+    args: terms
+      .into_iter()
+      .map(|term| Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(term),
+        right: Box::new(denominator.clone()),
+      })
+      .collect(),
+  };
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expanded).unwrap_or(expanded);
+  if wl_simplify_count(&expanded) < wl_simplify_count(&best) {
+    expanded
+  } else {
+    best
+  }
 }
 
 // Absorb a standalone minus into a polynomial cofactor only on a strict
@@ -8701,6 +8733,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   }
 
   let _ = best_complexity; // suppress unused warning
+  let best = prefer_expanded_radical_sum(best);
   let best = prefer_unexpanded_numeric_radical_product(&simplified, best);
   prefer_unexpanded_numeric_radical_product(expr, best)
 }

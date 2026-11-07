@@ -25979,3 +25979,21 @@ fn quadratic_gaussian_roots_normalize_negative_leading_coefficients() {
     );
   }
 }
+
+#[test]
+fn simplification_distributes_radical_denominators_only_when_cheaper() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      (
+        "Sqrt[28]/Sqrt[18]+Sqrt[10]*(4*Sqrt[22])",
+        "Sqrt[14]/3 + 8*Sqrt[55]",
+      ),
+      ("Sqrt[14]/9+8*Sqrt[55]", "Sqrt[14]/9 + 8*Sqrt[55]"),
+      ("Sqrt[2]/3+8*Sqrt[5]", "Sqrt[2]/3 + 8*Sqrt[5]"),
+      ("Sqrt[2]/3+Sqrt[5]/3", "(Sqrt[2] + Sqrt[5])/3"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
