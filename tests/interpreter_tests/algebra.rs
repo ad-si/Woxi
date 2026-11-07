@@ -26118,6 +26118,35 @@ fn simplification_cancels_factored_radicals_in_numeric_quotients() {
 }
 
 #[test]
+fn simplify_combines_common_roots_across_radical_denominators() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      (
+        "(3*Sqrt[2]-Sqrt[10])/Sqrt[17]",
+        "-(Sqrt[2/17]*(-3 + Sqrt[5]))",
+      ),
+      (
+        "(5*Sqrt[3]-2*Sqrt[21])/Sqrt[11]",
+        "Sqrt[3/11]*(5 - 2*Sqrt[7])",
+      ),
+      ("(3*Sqrt[2]+Sqrt[10])/Sqrt[17]", "Sqrt[2/17]*(3 + Sqrt[5])"),
+      (
+        "(-3*Sqrt[2]-Sqrt[10])/Sqrt[17]",
+        "-(Sqrt[2/17]*(3 + Sqrt[5]))",
+      ),
+      (
+        "(7*Sqrt[5]-Sqrt[35])/Sqrt[13]",
+        "-(Sqrt[5/13]*(-7 + Sqrt[7]))",
+      ),
+      ("(Sqrt[2]+Sqrt[5])/3", "(Sqrt[2] + Sqrt[5])/3"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+#[test]
 fn full_simplify_nests_opposite_sign_radicals_only_when_cheaper() {
   for (body, expected) in [
     ("2*Sqrt[3]-Sqrt[2]", "Sqrt[14 - 4*Sqrt[6]]"),

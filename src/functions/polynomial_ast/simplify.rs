@@ -6855,6 +6855,18 @@ fn prefer_radical_denominator(best: Expr) -> Expr {
         candidate = quotient;
       }
     }
+    // A common numerator root can combine with the denominator root.
+    // Score the canonical product too, rather than only its quotient form.
+    if let Ok(normalized) = crate::evaluator::evaluate_expr_to_expr(&candidate)
+    {
+      let normalized = prefer_unexpanded_numeric_radical_product(
+        &normalized,
+        normalized.clone(),
+      );
+      if wl_simplify_count(&normalized) < wl_simplify_count(&candidate) {
+        candidate = normalized;
+      }
+    }
     Some(candidate)
   })();
   match candidate {
