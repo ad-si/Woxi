@@ -7091,3 +7091,20 @@ mod continued_fraction_quadratic_irrationals {
     }
   }
 }
+
+#[test]
+fn agm_evaluates_exact_numeric_arguments_with_a_machine_partner() {
+  for (code, expected) in [
+    ("ArithmeticGeometricMean[Pi,0.2]", "1.1909309446160772"),
+    ("ArithmeticGeometricMean[E,0.5]", "1.3785569400825801"),
+    ("ArithmeticGeometricMean[Sqrt[2],0.5]", "0.8980614914641647"),
+    ("ArithmeticGeometricMean[Log[2],0.5]", "0.5926327711448846"),
+    (
+      "ArithmeticGeometricMean[Pi,1/2]",
+      "ArithmeticGeometricMean[1/2, Pi]",
+    ),
+    ("ArithmeticGeometricMean[0.,Pi]", "0."),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

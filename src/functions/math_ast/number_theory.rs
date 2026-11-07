@@ -6528,7 +6528,11 @@ pub fn arithmetic_geometric_mean_ast(
     return Ok(args[0].clone());
   }
 
-  let (fa, fb) = (expr_to_f64(&args[0]), expr_to_f64(&args[1]));
+  let (fa, fb) = if inexact {
+    (try_eval_to_f64(&args[0]), try_eval_to_f64(&args[1]))
+  } else {
+    (expr_to_f64(&args[0]), expr_to_f64(&args[1]))
+  };
 
   // AGM[a, a] = a. With a machine-real argument the result is a machine real.
   if let (Some(a), Some(b)) = (fa, fb)
