@@ -27130,3 +27130,38 @@ fn linear_rational_substitution_orients_content_and_logarithms() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_expand_reduces_powers_with_shared_variable_terms() {
+  for (code, expected) in [
+    (
+      "TrigExpand[x+Sin[x]^3]",
+      "x + (3*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4",
+    ),
+    (
+      "TrigExpand[x^2+Sin[x]^3]",
+      "x^2 + (3*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4",
+    ),
+    (
+      "TrigExpand[f[x]+Sin[x]^3]",
+      "f[x] + (3*Sin[x])/4 - (3*Cos[x]^2*Sin[x])/4 + Sin[x]^3/4",
+    ),
+    (
+      "TrigExpand[x*Sin[x]^3]",
+      "(3*x*Sin[x])/4 - (3*x*Cos[x]^2*Sin[x])/4 + (x*Sin[x]^3)/4",
+    ),
+    (
+      "TrigExpand[x+Sin[x]^2]",
+      "1/2 + x - Cos[x]^2/2 + Sin[x]^2/2",
+    ),
+    (
+      "TrigExpand[x*Tan[x]^2]",
+      "-1/2*x + (x*Sec[x]^2)/2 + (x*Tan[x]^2)/2",
+    ),
+    ("TrigExpand[y+Sin[x]^3]", "y + Sin[x]^3"),
+    ("TrigExpand[2+Sin[x]^3]", "2 + Sin[x]^3"),
+    ("TrigExpand[Sin[x]^3]", "Sin[x]^3"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

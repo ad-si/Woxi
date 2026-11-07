@@ -6199,7 +6199,45 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => 0,
     }
   }
-  let prepared = if trig_terms(&args[0]) > 1 {
+  // A nontrigonometric term sharing an angle variable also triggers the
+  // reduction pass: x + Sin[x]^3 does, but y + Sin[x]^3 does not.
+  fn angle_and_other_symbols(
+    expr: &Expr,
+    in_angle: bool,
+    angles: &mut std::collections::HashSet<String>,
+    others: &mut std::collections::HashSet<String>,
+  ) {
+    if let Some((_, arg)) = extract_trig(expr) {
+      angle_and_other_symbols(&arg, true, angles, others);
+      return;
+    }
+    match expr {
+      Expr::Identifier(name) => {
+        if in_angle {
+          angles.insert(name.clone());
+        } else {
+          others.insert(name.clone());
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for arg in args {
+          angle_and_other_symbols(arg, in_angle, angles, others);
+        }
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        angle_and_other_symbols(left, in_angle, angles, others);
+        angle_and_other_symbols(right, in_angle, angles, others);
+      }
+      Expr::UnaryOp { operand, .. } => {
+        angle_and_other_symbols(operand, in_angle, angles, others);
+      }
+      _ => {}
+    }
+  }
+  let mut angles = std::collections::HashSet::new();
+  let mut others = std::collections::HashSet::new();
+  angle_and_other_symbols(&args[0], false, &mut angles, &mut others);
+  let prepared = if trig_terms(&args[0]) > 1 || !angles.is_disjoint(&others) {
     trig_reduce_ast(args)?
   } else {
     args[0].clone()

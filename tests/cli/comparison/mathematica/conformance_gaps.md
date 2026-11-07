@@ -9175,14 +9175,18 @@ between the full outputs simplifies to zero.
 
 Seed 1794018312928924000 (2026-11-07) found the related
 `TrigExpand[Tan[x]^2 Sin[x+y]]` case: Woxi uses a reduced cosine quotient,
-while Wolfram leaves a sum involving `Sec[x]` and `Tan[x]`. Even the
-minimized `TrigExpand[x Tan[x]^2]` differs: Woxi retains the product,
-where Wolfram returns `-x/2 + x*Sec[x]^2/2 + x*Tan[x]^2/2`.
+while Wolfram leaves a sum involving `Sec[x]` and `Tan[x]`. The
+minimized `TrigExpand[x Tan[x]^2]` now matches Wolfram after recognizing
+nontrigonometric terms that share an angle variable (seed
+1794048635105978000). Both return
+`-x/2 + x*Sec[x]^2/2 + x*Tan[x]^2/2`.
 
 Combined sums and products now use the shared trig reduction before angle
 expansion, matching the polynomial forms for `Sin[x] + Sin[x]^3` and
 `Cos[x y]^2 Cos[2 x]` (the latter from seed 1794003161694997000).
 Standalone `Sin[x]^3` and `1 + Sin[x]^3` remain unchanged, as in Wolfram.
+A shared variable outside the trig argument now triggers reduction too:
+`TrigExpand[x+Sin[x]^3]` matches Wolfram, while `y+Sin[x]^3` stays unchanged.
 The quotient forms above are algebraically equivalent under the
 trigonometric identities, but their printed forms still differ.
 
@@ -9196,8 +9200,8 @@ three terms over that denominator, while Woxi keeps the standalone `x`.
 Seed 1794040363065373000 (2026-11-07) reproduces the secant/tangent
 representation difference with `TrigExpand[Cos[x]^2*(Tan[x]^3-Cos[3*x])]`.
 Wolfram verifies `FullSimplify[woxiResult-wolframResult] == 0`.
-The minimized `TrigExpand[Tan[x]^3-x]` remains `-x+Tan[x]^3` in Woxi,
-where Wolfram gives
+The minimized `TrigExpand[Tan[x]^3-x]` now reduces in Woxi but uses an expanded
+sine/cosine quotient, where Wolfram gives
 `-x/4-3*x*Sec[x]^2/4-3*Tan[x]/4+3*Sec[x]^2*Tan[x]/4+
 3*x*Tan[x]^2/4+Tan[x]^3/4`. A standalone `TrigExpand[Tan[x]^3]`
 remains unchanged in both implementations.
