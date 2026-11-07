@@ -2399,6 +2399,31 @@ fn hypergeometric2f1_polynomial(
   c: &Expr,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  // A finite polynomial can be evaluated exactly at the binary machine
+  // inputs, then rounded once. Reuse the same coefficient recurrence below.
+  if [b, c, z].iter().any(|arg| matches!(arg, Expr::Real(_))) {
+    let exact: Option<Vec<Expr>> = [b, c, z]
+      .into_iter()
+      .map(|arg| match arg {
+        Expr::Real(value) => {
+          let (num, den) = super::complex::f64_exact_ratio(*value)?;
+          Some(call(
+            "Rational",
+            vec![bigint_to_expr(num), bigint_to_expr(den)],
+          ))
+        }
+        _ if expr_to_big_rational(arg).is_some() => Some(arg.clone()),
+        _ => None,
+      })
+      .collect();
+    if let Some(exact) = exact {
+      let result =
+        hypergeometric2f1_polynomial(n, &exact[0], &exact[1], &exact[2])?;
+      if let Some(value) = try_eval_to_f64(&result) {
+        return Ok(Expr::Real(value));
+      }
+    }
+  }
   // Advance exact coefficients by their ratio instead of forming k! in
   // a fixed-width integer. The evaluator promotes large integers as needed.
   let mut terms = vec![Expr::Integer(1)];

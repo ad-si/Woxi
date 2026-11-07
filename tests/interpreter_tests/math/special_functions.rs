@@ -12689,3 +12689,18 @@ fn equal_parameter_hypergeometric_endpoints_preserve_power_diagnostics() {
     assert!(actual.warnings.iter().any(|w| w.contains("Power::infy")));
   }
 }
+
+#[test]
+fn terminating_hypergeometric_machine_polynomials_round_once() {
+  for (code, expected) in [
+    ("Hypergeometric2F1[3,-2,4,0.7]", "0.24400000000000002"),
+    ("Hypergeometric2F1[-2,3,4,0.7]", "0.24400000000000002"),
+    ("Hypergeometric2F1[3.,-2,4.,0.7]", "0.24400000000000002"),
+    ("Hypergeometric2F1[3,-2,1,0.7]", "-0.2600000000000001"),
+    ("Hypergeometric2F1[2,-3,5,0.8]", "0.36548571428571425"),
+    ("Hypergeometric2F1[2.5,-4,3.5,0.8]", "0.07424841824841824"),
+    ("Hypergeometric2F1[3,-2,4,7/10]", "61/250"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

@@ -1561,7 +1561,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// The exact binary fraction of a finite double: `x = n/d` with `d > 0`.
-fn f64_exact_ratio(x: f64) -> Option<(BigInt, BigInt)> {
+pub(super) fn f64_exact_ratio(x: f64) -> Option<(BigInt, BigInt)> {
   if !x.is_finite() {
     return None;
   }
