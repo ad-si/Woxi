@@ -9374,3 +9374,14 @@ while Wolfram retains the input quotient. Wolfram's own `SimplifyCount`
 rates the flipped result at 33 and the retained form at 34, so this is a
 candidate-search distinction rather than a cost error. The minimized
 `Simplify[-2/(2*x^3)]` now canonicalizes its reciprocal to `-x^(-3)`.
+
+### Numeric radical content can override simplification cost
+
+Seed `1794068343228530000` (2026-11-07) found
+`FullSimplify[2*Sqrt[5]+4*Sqrt[15]]`: Woxi returns
+`Sqrt[5]*(2+4*Sqrt[3])`, while Wolfram returns `2*Sqrt[5]*(1+2*Sqrt[3])`.
+Wolfram's own `SimplifyCount` rates these at 15 and 16 respectively.
+Nearby controls do not consistently extract both contents:
+`Simplify[3*Sqrt[2]+6*Sqrt[6]]` returns `3*(Sqrt[2]+2*Sqrt[6])`, and
+`FullSimplify[Sqrt[7]*(3+6*Sqrt[5])]` keeps the input product.
+The general candidate-selection rule remains unresolved.
