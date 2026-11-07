@@ -6198,6 +6198,9 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Recursively apply TrigExpand to an expression.
 fn trig_expand_recursive(expr: &Expr) -> Expr {
+  if let Some(result) = trig_expand_half_angle_denominator(expr) {
+    return result;
+  }
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let trig_name = name.as_str();
@@ -6231,6 +6234,70 @@ fn trig_expand_recursive(expr: &Expr) -> Expr {
     }
     _ => expr.clone(),
   }
+}
+
+/// Preserve the square supplied by a half-angle identity in a denominator.
+/// Expanding 1 + Cos[2 a] first loses the simpler 2 Cos[a]^2 form.
+fn trig_expand_half_angle_denominator(expr: &Expr) -> Option<Expr> {
+  let (base, exponent) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  let Expr::Integer(n) = exponent else {
+    return None;
+  };
+  if *n >= 0 {
+    return None;
+  }
+  let doubled = n.checked_mul(2)?;
+  let terms = collect_additive_terms(base);
+  if terms.len() != 2 {
+    return None;
+  }
+  let (constant, term) = match (&terms[0], &terms[1]) {
+    (Expr::Integer(c @ (1 | -1)), term)
+    | (term, Expr::Integer(c @ (1 | -1))) => (*c, term),
+    _ => return None,
+  };
+  let (coefficient, trig) = extract_integer_factor(term);
+  if coefficient.unsigned_abs() != 1 {
+    return None;
+  }
+  let (name, angle) = extract_trig(&trig)?;
+  if !matches!(name, "Cos" | "Cosh") {
+    return None;
+  }
+  let mut halves = Vec::new();
+  for term in collect_additive_terms(&angle) {
+    let (multiple, rest) = extract_integer_factor(&term);
+    if multiple % 2 != 0 {
+      return None;
+    }
+    halves.push(mk_times(vec![Expr::Integer(multiple / 2), rest]));
+  }
+  let half = crate::evaluator::evaluate_expr_to_expr(&plus(halves)).ok()?;
+  let same_sign = constant == coefficient;
+  let (function, scale) = match (name, same_sign) {
+    ("Cos", true) => ("Cos", 2 * constant),
+    ("Cos", false) => ("Sin", 2 * constant),
+    ("Cosh", true) => ("Cosh", 2 * constant),
+    ("Cosh", false) => ("Sinh", 2 * coefficient),
+    _ => return None,
+  };
+  Some(mk_times(vec![
+    pow(Expr::Integer(scale), Expr::Integer(*n)),
+    pow(
+      expand_trig_function(function, &half),
+      Expr::Integer(doubled),
+    ),
+  ]))
 }
 
 /// Expand a single trig function application.

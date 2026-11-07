@@ -9154,12 +9154,17 @@ TrigExpand[Sin[x y]^3 + Sin[x y] - Tan[2 x]^2]
 ```
 
 The minimized quotient case `TrigExpand[Tan[2 x]^2]`, reproduced by seed
-1794019526553002000 on 2026-11-07, now gives four separate terms with
-combined numerator `1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4`
-and denominator `1 + Cos[x]^4 - 6*Cos[x]^2*Sin[x]^2 + Sin[x]^4`
-in Woxi. Wolfram uses
-`(1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4)/
-(2*(Cos[x]^2 - Sin[x]^2)^2)`, displayed as four separate terms.
+1794019526553002000 on 2026-11-07, now matches Wolfram. Half-angle
+identities preserve the squared denominator
+`2*(Cos[x]^2-Sin[x]^2)^2` before expanding angles. This also resolves
+`TrigExpand[Tan[3 x]^2]`, `TrigExpand[Tan[x+y]^2]`, and the analogous
+hyperbolic-square denominator cases (seed 1794042350525575000).
+
+The original expression from that seed,
+`TrigExpand[Tan[3*x]^2+Tan[x+y]*Cos[x*y]^2]`, still differs in the
+numerator: Woxi combines some complementary sine/cosine square terms
+that Wolfram retains separately. Wolfram verifies that the difference
+between the full outputs simplifies to zero.
 
 Seed 1794018312928924000 (2026-11-07) found the related
 `TrigExpand[Tan[x]^2 Sin[x+y]]` case: Woxi uses a reduced cosine quotient,

@@ -15998,6 +15998,38 @@ mod trig_expand {
   use super::*;
 
   #[test]
+  fn half_angle_identities_preserve_squared_denominators() {
+    for (code, expected) in [
+      ("TrigExpand[1/(1+Cos[2*x])]", "Sec[x]^2/2"),
+      ("TrigExpand[(1-Cos[2*x])^-2]", "Csc[x]^4/4"),
+      ("TrigExpand[1/(Cosh[2*x]-1)]", "Csch[x]^2/2"),
+      ("TrigExpand[1/(1-Cosh[2*x])]", "-1/2*Csch[x]^2"),
+      (
+        "TrigExpand[1/(1+Cos[3*x])]",
+        "(1 + Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^(-1)",
+      ),
+      (
+        "TrigExpand[Tan[2*x]^2]",
+        "1/(2*(Cos[x]^2 - Sin[x]^2)^2) - Cos[x]^4/(2*(Cos[x]^2 - Sin[x]^2)^2) + (3*Cos[x]^2*Sin[x]^2)/(Cos[x]^2 - Sin[x]^2)^2 - Sin[x]^4/(2*(Cos[x]^2 - Sin[x]^2)^2)",
+      ),
+      (
+        "TrigExpand[Tan[3*x]^2]",
+        "1/(2*(Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^2) - Cos[x]^6/(2*(Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^2) + (15*Cos[x]^4*Sin[x]^2)/(2*(Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^2) - (15*Cos[x]^2*Sin[x]^4)/(2*(Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^2) + Sin[x]^6/(2*(Cos[x]^3 - 3*Cos[x]*Sin[x]^2)^2)",
+      ),
+      (
+        "TrigExpand[Tan[x+y]^2]",
+        "1/(2*(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2) - (Cos[x]^2*Cos[y]^2)/(2*(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2) + (Cos[y]^2*Sin[x]^2)/(2*(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2) + (2*Cos[x]*Cos[y]*Sin[x]*Sin[y])/(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2 + (Cos[x]^2*Sin[y]^2)/(2*(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2) - (Sin[x]^2*Sin[y]^2)/(2*(Cos[x]*Cos[y] - Sin[x]*Sin[y])^2)",
+      ),
+      (
+        "TrigExpand[Tanh[2*x]^2]",
+        "-1/2*1/(Cosh[x]^2 + Sinh[x]^2)^2 + Cosh[x]^4/(2*(Cosh[x]^2 + Sinh[x]^2)^2) + (3*Cosh[x]^2*Sinh[x]^2)/(Cosh[x]^2 + Sinh[x]^2)^2 + Sinh[x]^4/(2*(Cosh[x]^2 + Sinh[x]^2)^2)",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn integer_multiples_of_products() {
     for (code, expected) in [
       ("TrigExpand[Sin[2 x y]]", "2*Cos[x*y]*Sin[x*y]"),
