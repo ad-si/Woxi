@@ -2412,6 +2412,29 @@ mod factor_multivariate {
 mod factor_list {
   use super::*;
 
+  #[test]
+  fn normalized_factors_use_canonical_order() {
+    for (input, expected) in [
+      ("(5*x-2*x^2)^2", "{{1, 1}, {x, 2}, {-5 + 2*x, 2}}"),
+      ("Expand[(5*x-2*x^2)^2]", "{{1, 1}, {x, 2}, {-5 + 2*x, 2}}"),
+      ("x*(x-5)", "{{1, 1}, {-5 + x, 1}, {x, 1}}"),
+      ("x*(2*x-5)", "{{1, 1}, {x, 1}, {-5 + 2*x, 1}}"),
+      ("(3*x-1)*(2*x-5)", "{{1, 1}, {-5 + 2*x, 1}, {-1 + 3*x, 1}}"),
+      ("(x^2+3)*(2*x-1)^2", "{{1, 1}, {-1 + 2*x, 2}, {3 + x^2, 1}}"),
+      (
+        "(x^2+7)*(x^2-2*x+3)",
+        "{{1, 1}, {7 + x^2, 1}, {3 - 2*x + x^2, 1}}",
+      ),
+      (
+        "(2*x^2+1)*(x^2+x+1)",
+        "{{1, 1}, {1 + x + x^2, 1}, {1 + 2*x^2, 1}}",
+      ),
+    ] {
+      let code = format!("FactorList[{input}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+
   // A factor's sign follows its lexicographically leading monomial (the
   // variables in canonical order): x - y stays, y^2 - x flips.
   #[test]

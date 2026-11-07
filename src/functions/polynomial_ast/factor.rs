@@ -1881,19 +1881,33 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  factored_expr_to_list(&factor_ast(args)?)
+  factored_expr_to_list(&factor_ast(args)?, true)
 }
 
 /// Turn a factored expression into wolframscript's `{{factor, exponent}, …}`
 /// form. Shared by `FactorList` and `FactorSquareFreeList`, which differ only
 /// in which factoriser produced the input.
-fn factored_expr_to_list(factored: &Expr) -> Result<Expr, InterpreterError> {
+fn factored_expr_to_list(
+  factored: &Expr,
+  canonical_order: bool,
+) -> Result<Expr, InterpreterError> {
   // Decompose the factored form into {factor, exponent} pairs
   let mut pairs: Vec<Expr> = Vec::new();
   let mut numeric_coeff = Expr::Integer(1);
 
   decompose_product(factored, &mut pairs, &mut numeric_coeff);
   normalize_factor_signs(&mut pairs, &mut numeric_coeff)?;
+  // FactorList orders normalized bases canonically, independently of the
+  // Factor output's retained product order. FactorSquareFreeList preserves
+  // the decomposition order supplied by its own factorization path.
+  if canonical_order {
+    pairs.sort_by(|a, b| match (a, b) {
+      (Expr::List(a), Expr::List(b)) => {
+        crate::functions::list_helpers_ast::canonical_cmp(&a[0], &b[0])
+      }
+      _ => std::cmp::Ordering::Equal,
+    });
+  }
 
   // Numeric content comes first, split into numerator/denominator entries,
   // matching wolframscript (e.g. `FactorList[3/4]` → `{{3, 1}, {4, -1}}`).
@@ -3583,7 +3597,7 @@ pub fn factor_square_free_list_ast(
   // (3x + x²)(1 + x + x²) lists x, 3 + x and 1 + x + x² separately rather
   // than refactoring the expanded quartic.
   if let Some(product) = product_square_free(&args[0])? {
-    return factored_expr_to_list(&product);
+    return factored_expr_to_list(&product, false);
   }
 
   let expanded = expand_and_combine(&args[0]);
@@ -3610,11 +3624,11 @@ pub fn factor_square_free_list_ast(
   // `FactorSquareFreeList[-x - y]` came back as `{{-x - y, 1}}` instead of
   // `{{-1, 1}, {x + y, 1}}`.
   let Some(var) = find_single_variable(&expanded) else {
-    return factored_expr_to_list(&factor_square_free_ast(args)?);
+    return factored_expr_to_list(&factor_square_free_ast(args)?, false);
   };
 
   let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
-    return factored_expr_to_list(&factor_square_free_ast(args)?);
+    return factored_expr_to_list(&factor_square_free_ast(args)?, false);
   };
 
   // Factor out GCD of coefficients (content)
