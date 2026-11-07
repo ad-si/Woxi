@@ -6634,6 +6634,43 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 // Reuse algebraic-number reduction for a quadratic radical reciprocal,
 // retaining the numerator as a factor instead of constructing a higher root.
 fn prefer_rationalized_radical_quotient(best: Expr) -> Expr {
+  // Factoring a numeric numerator can expose a radical common to the
+  // denominator. Canonical evaluation cancels it without expanding the sum.
+  let (_, denominator) = super::together::extract_num_den(&best);
+  let mut variables = std::collections::HashSet::new();
+  collect_variables(&best, &mut variables);
+  let best = if variables.is_empty()
+    && as_sqrt(&denominator)
+      .and_then(crate::functions::math_ast::expr_to_rational)
+      .is_some_and(|(n, d)| n > 0 && d > 0)
+  {
+    let mut best = match crate::evaluator::evaluate_expr_to_expr(&best) {
+      Ok(evaluated)
+        if wl_simplify_count(&evaluated) < wl_simplify_count(&best) =>
+      {
+        evaluated
+      }
+      _ => best,
+    };
+    let (numerator, denominator) = super::together::extract_num_den(&best);
+    let terms = collect_additive_terms(&numerator);
+    if terms.len() > 1
+      && terms
+        .iter()
+        .all(|term| classify_radical_term(term).is_some_and(|(c, _)| c < 0))
+    {
+      let positive = plus(terms.into_iter().map(neg1).collect());
+      if let Ok(positive) = crate::evaluator::evaluate_expr_to_expr(&positive) {
+        let candidate = neg1(div2(positive, denominator));
+        if wl_simplify_count(&candidate) < wl_simplify_count(&best) {
+          best = candidate;
+        }
+      }
+    }
+    best
+  } else {
+    best
+  };
   let candidate = (|| -> Option<Expr> {
     let (num, den) = super::together::extract_num_den(&best);
     classify_radical_term(&num)?;

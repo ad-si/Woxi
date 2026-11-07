@@ -26050,3 +26050,18 @@ fn simplification_rationalizes_quadratic_radical_quotients_when_cheaper() {
     }
   }
 }
+
+#[test]
+fn simplification_cancels_factored_radicals_in_numeric_quotients() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      ("(-Sqrt[27]-Sqrt[21])/Sqrt[30]", "-((3 + Sqrt[7])/Sqrt[10])"),
+      ("(Sqrt[27]+Sqrt[21])/Sqrt[30]", "(3 + Sqrt[7])/Sqrt[10]"),
+      ("(-Sqrt[27]+Sqrt[21])/Sqrt[30]", "(-3 + Sqrt[7])/Sqrt[10]"),
+      ("(-1-Sqrt[5])/Sqrt[30]", "-((1 + Sqrt[5])/Sqrt[30])"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
