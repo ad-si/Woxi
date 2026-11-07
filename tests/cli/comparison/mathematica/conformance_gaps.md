@@ -9324,3 +9324,9 @@ Verified on 2026-11-07, diff-fuzz seed 1794045270718263000:
 proves the two forms equal; Woxi does not offer that nested-radical
 candidate. The minimized negative scalar-content case now retains
 `-16*(1+2*Sqrt[23])` on its simplification-cost tie.
+
+While checking seed 1794046424858751000, the positive-value variant
+`FullSimplify[Sqrt[2/13]*(5-Sqrt[21])]` exposes a related reciprocal
+candidate: Wolfram returns `4/Sqrt[299+65*Sqrt[21]]`, while Woxi keeps
+`-(Sqrt[2/13]*(-5+Sqrt[21]))`. Rationalizing the positive difference
+proves the two forms equal. `Simplify` uses the latter form in both engines.

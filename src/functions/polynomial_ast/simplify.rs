@@ -6705,14 +6705,48 @@ fn prefer_unexpanded_numeric_radical_product(expr: &Expr, best: Expr) -> Expr {
   });
   let negative_content_tie =
     negative_scalar && positive_radical_sum_with_constant;
+  let mut candidate = expr.clone();
+  let mut normalized_sign = false;
+  if valid && has_sum && has_radical {
+    let factors = collect_times_factors(expr);
+    for index in 0..factors.len() {
+      let terms = collect_additive_terms(&factors[index]);
+      if terms.len() < 2
+        || !terms.iter().any(|term| {
+          classify_radical_term(term).is_some_and(|(_, r)| r.is_none())
+        })
+        || terms
+          .last()
+          .and_then(classify_radical_term)
+          .is_none_or(|(c, _)| c >= 0)
+      {
+        continue;
+      }
+      let negated = plus(terms.into_iter().map(neg1).collect());
+      let Ok(negated) = crate::evaluator::evaluate_expr_to_expr(&negated)
+      else {
+        continue;
+      };
+      let mut oriented = factors.clone();
+      oriented[index] = negated;
+      oriented.push(Expr::Integer(-1));
+      if let Ok(oriented) =
+        crate::evaluator::evaluate_expr_to_expr(&times(oriented))
+        && wl_simplify_count(&oriented) <= wl_simplify_count(&candidate)
+      {
+        candidate = oriented;
+        normalized_sign = true;
+      }
+    }
+  }
   if valid
     && has_sum
     && (has_radical || negative_content_tie)
-    && (wl_simplify_count(expr) < wl_simplify_count(&best)
-      || (negative_content_tie
-        && wl_simplify_count(expr) == wl_simplify_count(&best)))
+    && (wl_simplify_count(&candidate) < wl_simplify_count(&best)
+      || ((negative_content_tie || normalized_sign)
+        && wl_simplify_count(&candidate) == wl_simplify_count(&best)))
   {
-    expr.clone()
+    candidate
   } else {
     best
   }

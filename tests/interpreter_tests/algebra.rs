@@ -25912,3 +25912,27 @@ fn full_simplify_retains_negative_radical_content_on_cost_ties() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn numeric_radical_products_prefer_cheaper_outer_signs() {
+  assert_eq!(
+    interpret("Simplify[Sqrt[2/13]*(5-Sqrt[21])]").unwrap(),
+    "-(Sqrt[2/13]*(-5 + Sqrt[21]))"
+  );
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      (
+        "(2-Sqrt[21])/(Sqrt[13]/Sqrt[2])",
+        "-(Sqrt[2/13]*(-2 + Sqrt[21]))",
+      ),
+      ("Sqrt[2/13]*(1-Sqrt[10])", "-(Sqrt[2/13]*(-1 + Sqrt[10]))"),
+      ("Sqrt[2/13]*(2+Sqrt[21])", "Sqrt[2/13]*(2 + Sqrt[21])"),
+      ("Sqrt[2/13]*(-2-Sqrt[21])", "-(Sqrt[2/13]*(2 + Sqrt[21]))"),
+      ("Sqrt[2/13]*(3-2*Sqrt[21])", "Sqrt[2/13]*(3 - 2*Sqrt[21])"),
+      ("Sqrt[2/13]*(2-3*Sqrt[21])", "Sqrt[2/13]*(2 - 3*Sqrt[21])"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
