@@ -785,6 +785,16 @@ OS. glibc rounds `Cos[2.0943951023931953]` (`N[2 Pi/3]`) correctly to
 (`CompleteGraph[3]`, …) show it on Linux. Matching Wolfram everywhere would
 need its own trigonometric kernel.
 
+### Machine ArcTanh differs from high-precision rounding
+
+Seed `1794077442250731000` (2026-11-07) found `ArcTanh[-0.7]`:
+Woxi returns `-0.8673005276940531`, while Wolfram's machine result is
+`-0.8673005276940532`. Evaluating
+`N[ArcTanh[SetPrecision[-0.7,80]],60]` gives
+`-0.86730052769405310735082903360028...`, agreeing with Woxi's rounding.
+`SetPrecision` preserves the exact binary machine input for this comparison.
+The remaining mismatch is the numerical backend's last-bit choice.
+
 ### `SpherePoints` differs in the last bit, and small `n` is missing
 
 `SpherePoints[n]` lays the points on the golden spiral Wolfram uses (the same
