@@ -15502,3 +15502,16 @@ fn products_display_negative_complex_exponents_in_denominators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn constant_powers_order_against_polynomials_in_the_same_constant() {
+  for (code, expected) in [
+    ("(1+E/2)*E^E", "(1 + E/2)*E^E"),
+    ("(1+E/2)*E^Pi", "(1 + E/2)*E^Pi"),
+    ("(1+E/2)*E^x", "(1 + E/2)*E^x"),
+    ("(1+Pi/3)*Pi^Pi", "(1 + Pi/3)*Pi^Pi"),
+    ("(1+E)*E^E", "E^E*(1 + E)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

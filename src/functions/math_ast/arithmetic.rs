@@ -8087,6 +8087,19 @@ fn sum_constant_and_rest(e: &Expr) -> Option<((f64, f64), Vec<&Expr>)> {
 }
 
 pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // A power of a named constant compares with a polynomial in that
+  // constant by the same coefficient-vector rule as a plain symbol.
+  for (factor, sum, reverse) in [(a, b, false), (b, a, true)] {
+    if let Some(base) = power_const_base(factor)
+      && let Some(terms) = plus_call_args(sum)
+      && let Some((variable, _)) = univar_rat_coeffs(sum)
+      && base == variable
+    {
+      let (base, _) = extract_base_exponent_ref(factor);
+      let order = order_factor_vs_additive(base.as_ref(), terms);
+      return if reverse { order.reverse() } else { order };
+    }
+  }
   // Calls and powers of calls use the same argument-first comparison
   // as call-led Plus terms; an exponent does not precede the base call.
   if let (Some(a), Some(b)) = (call_factor_parts(a), call_factor_parts(b)) {
