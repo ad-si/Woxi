@@ -9465,6 +9465,9 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
 }
 
 fn simplify_expr_inner(expr: &Expr) -> Expr {
+  if let Some(reduced) = try_double_angle_quotient_product(expr) {
+    return reduced;
+  }
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)
@@ -9912,12 +9915,91 @@ fn simplify_tangent_difference(
   Some(simplify_expr_with_together(&evaluated))
 }
 
+/// Offer double-angle expansion only when a quotient factor cancels its
+/// extra sine/cosine factor and the resulting expression is simpler.
+fn try_double_angle_quotient_product(expr: &Expr) -> Option<Expr> {
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    let reduced = try_double_angle_quotient_product(operand)?;
+    return crate::evaluator::evaluate_expr_to_expr(&neg1(reduced)).ok();
+  }
+  let mut factors =
+    super::together::flatten_times_args(std::slice::from_ref(expr));
+  let mut changed = false;
+  for i in 0..factors.len() {
+    let Expr::FunctionCall { name, args } = &factors[i] else {
+      continue;
+    };
+    if args.len() != 1 || !matches!(name.as_str(), "Sin" | "Sinh") {
+      continue;
+    }
+    let hyperbolic = name == "Sinh";
+    let mut replacement = None;
+    for (j, factor) in factors.iter().enumerate() {
+      if i == j {
+        continue;
+      }
+      let Expr::FunctionCall {
+        name: quotient,
+        args: qa,
+      } = factor
+      else {
+        continue;
+      };
+      if qa.len() != 1
+        || !matches!(
+          (hyperbolic, quotient.as_str()),
+          (false, "Tan" | "Cot") | (true, "Tanh" | "Coth")
+        )
+      {
+        continue;
+      }
+      let difference = expand_and_combine(&minus2(
+        args[0].clone(),
+        times2(Expr::Integer(2), qa[0].clone()),
+      ));
+      if !matches!(difference, Expr::Integer(0)) {
+        continue;
+      }
+      replacement = Some(if hyperbolic {
+        crate::functions::math_ast::expand_sinh_multiple(2, &qa[0])
+      } else {
+        crate::functions::math_ast::expand_sin_multiple(2, &qa[0])
+      });
+      break;
+    }
+    if let Some(replacement) = replacement {
+      factors[i] = replacement;
+      changed = true;
+    }
+  }
+  if !changed {
+    return None;
+  }
+  let candidate =
+    crate::evaluator::evaluate_expr_to_expr(&times(factors)).ok()?;
+  (leaf_count(&candidate) < leaf_count(expr)).then_some(candidate)
+}
+
 /// Apply trigonometric identities to a sum, including Pythagorean pairs
 /// and tangent differences whose arguments share additive terms.
 pub fn apply_trig_identities(expr: &Expr) -> Expr {
-  let terms = collect_additive_terms(expr);
+  let original_terms = collect_additive_terms(expr);
+  let terms: Vec<_> = original_terms
+    .iter()
+    .map(|term| {
+      try_double_angle_quotient_product(term).unwrap_or_else(|| term.clone())
+    })
+    .collect();
+  let products_changed = terms
+    .iter()
+    .zip(&original_terms)
+    .any(|(a, b)| expr_to_string(a) != expr_to_string(b));
   if terms.len() < 2 {
-    return expr.clone();
+    return terms.into_iter().next().unwrap_or_else(|| expr.clone());
   }
 
   // Look for pairs: coeff*Sin[arg]^2 + coeff*Cos[arg]^2 → coeff
@@ -9992,7 +10074,7 @@ pub fn apply_trig_identities(expr: &Expr) -> Expr {
     }
   }
 
-  if result_terms.len() == terms.len() {
+  if result_terms.len() == terms.len() && !products_changed {
     // No simplification happened
     return expr.clone();
   }

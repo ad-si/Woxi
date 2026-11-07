@@ -25717,3 +25717,23 @@ fn simplify_compares_outer_minus_for_negative_leading_denominators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_double_angle_sines_cancel_quotient_factors() {
+  for (code, expected) in [
+    ("Simplify[Tan[x]*Sin[2*x]]", "2*Sin[x]^2"),
+    ("Simplify[Cot[x]*Sin[2*x]]", "2*Cos[x]^2"),
+    ("Simplify[Tanh[x]*Sinh[2*x]]", "2*Sinh[x]^2"),
+    ("Simplify[Coth[x]*Sinh[2*x]]", "2*Cosh[x]^2"),
+    ("Simplify[Tan[x+y]*Sin[2*x+2*y]]", "2*Sin[x + y]^2"),
+    ("Simplify[a*Tan[3*x]*Sin[6*x]]", "2*a*Sin[3*x]^2"),
+    ("Simplify[Sin[x]*Tan[x/2]]", "Sin[x]*Tan[x/2]"),
+    (
+      "Simplify[Tan[x+y]^3*Tan[x*y]^3-Tan[x]*Sin[2*x]]",
+      "-2*Sin[x]^2 + Tan[x*y]^3*Tan[x + y]^3",
+    ),
+    ("FullSimplify[Tan[x]*Sin[2*x]]", "2*Sin[x]^2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

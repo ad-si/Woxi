@@ -6447,7 +6447,7 @@ fn expand_cos_sum(terms: &[Expr]) -> Expr {
 
 /// Expand Sin[n*x] using Chebyshev-like formula:
 /// Sin[n*x] = Sum_{k} (-1)^k * C(n, 2k+1) * cos(x)^(n-2k-1) * sin(x)^(2k+1)
-fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
+pub(crate) fn expand_sin_multiple(n: usize, x: &Expr) -> Expr {
   let sin_x = make_fn("Sin", std::slice::from_ref(x));
   let cos_x = make_fn("Cos", std::slice::from_ref(x));
   let mut terms = Vec::new();
@@ -6531,7 +6531,7 @@ fn expand_cosh_sum(terms: &[Expr]) -> Expr {
 }
 
 /// Expand Sinh[n*x] using the multiple-angle formula.
-fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
+pub(crate) fn expand_sinh_multiple(n: usize, x: &Expr) -> Expr {
   let sinh_x = make_fn("Sinh", std::slice::from_ref(x));
   let cosh_x = make_fn("Cosh", std::slice::from_ref(x));
   let mut terms = Vec::new();
