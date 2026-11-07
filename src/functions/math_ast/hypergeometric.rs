@@ -2120,6 +2120,34 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Gauss's endpoint value must precede logarithmic representations, whose
+  // separately evaluated terms can contain cancelling infinities at z = 1.
+  if let [
+    Expr::Integer(a),
+    Expr::Integer(b),
+    Expr::Integer(c),
+    Expr::Integer(1),
+  ] = args
+    && *a > 0
+    && *b > 0
+    && *c > 0
+    && let Some(delta) = a.checked_add(*b).and_then(|sum| c.checked_sub(sum))
+  {
+    if delta <= 0 {
+      return Ok(id_expr(if delta == 0 {
+        "Infinity"
+      } else {
+        "ComplexInfinity"
+      }));
+    }
+    return crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      call1("Gamma", Expr::Integer(*c)),
+      call1("Gamma", Expr::Integer(delta)),
+      pow(call1("Gamma", Expr::Integer(c - a)), Expr::Integer(-1)),
+      pow(call1("Gamma", Expr::Integer(c - b)), Expr::Integer(-1)),
+    ]));
+  }
+
   // 2F1(a, b, b, z) = (1-z)^(-a)
   if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
     let neg_a = crate::evaluator::evaluate_expr_to_expr(&neg(args[0].clone()))?;

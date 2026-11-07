@@ -537,6 +537,24 @@ mod hypergeometric2f1 {
   use super::*;
 
   #[test]
+  fn exact_gauss_endpoint_precedes_logarithmic_forms() {
+    for (code, expected) in [
+      ("Hypergeometric2F1[1,1,4,1]", "3/2"),
+      ("Hypergeometric2F1[1,1,3,1]", "2"),
+      ("Hypergeometric2F1[2,3,7,1]", "5"),
+      ("Hypergeometric2F1[3,2,7,1]", "5"),
+      ("Hypergeometric2F1[3,4,9,1]", "14"),
+      ("Hypergeometric2F1[20,21,43,1]", "24466267020"),
+      ("Hypergeometric2F1[1,1,2,1]", "Infinity"),
+      ("Hypergeometric2F1[2,2,4,1]", "Infinity"),
+      ("Hypergeometric2F1[2,3,4,1]", "ComplexInfinity"),
+      ("Hypergeometric2F1[0,1,4,1]", "1"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn terminating_euler_transforms_and_parameter_poles() {
     for (code, expected) in [
       ("Quiet[Hypergeometric2F1[3,3,1,1]]", "ComplexInfinity"),
