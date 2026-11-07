@@ -1170,6 +1170,12 @@ Seed 1794009243473726000 also found `LogIntegral[5.]`: Woxi returns
 Seed 1794019526553002000 found `ExpIntegralE[1,4.9]`: Woxi returns
 `0.0012914833627059846`, Wolfram returns `0.0012914833627059848`, and
 `N[N[ExpIntegralE[1,SetPrecision[4.9,70]],60]]` agrees with Woxi.
+Seed 1794035699370760000 found `ExpIntegralE[4,5.7]`: Woxi returns
+`0.00035851619983733805`, Wolfram returns `0.0003585161998373378`,
+and `N[ExpIntegralE[4,SetPrecision[5.7,70]]]` agrees with Woxi.
+The minimized `ExpIntegralE[1,5.7]` similarly gives
+`0.0005085464802750315` in Woxi versus `0.0005085464802750316`
+in Wolfram; the higher-precision reference agrees with Woxi.
 
 The guard digits WL prints past the precision of `N[LogIntegral[3/10], 30]`,
 `N[ExpIntegralE[2, 2/10], 30]` and `N[Gamma[0, 2/10], 30]` differ from
@@ -9239,3 +9245,18 @@ remains unevaluated in Woxi. Wolfram evaluates the symbolic-frequency
 cosine/tangent product using `Hypergeometric2F1`, in addition to the
 existing tangent primitives. This extends the symbolic-frequency mixed
 trigonometric integration gap above.
+
+### Rational primitives retain different radical and logarithm forms
+
+Seed 1794035699370760000 (2026-11-07) found
+`Integrate[(5+3*x-x^2+2*x^3)/(5-5*x-5*x^2),x]`.
+Woxi returns `(15*x-5*x^2-4*Sqrt[5]*ArcTanh[(1+2*x)/Sqrt[5]]-
+20*Log[1-x-x^2])/25`; Wolfram returns
+`(3*x-x^2-4*ArcTanh[(1+2*x)/Sqrt[5]]/Sqrt[5]-4*Log[1-x-x^2])/5`.
+Wolfram verifies that differentiating the Woxi primitive recovers the integrand.
+
+The minimized negative quadratic logarithm now normalizes its sign.
+For the related mixed-sign logarithmic derivative
+`Integrate[(-1-2*x)/(1-x-x^2),x]`, Woxi still returns
+`Log[1-x-x^2]` where Wolfram returns `Log[-1+x+x^2]`.
+Their derivatives agree, but the branch-dependent integration constant differs.
