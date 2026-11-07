@@ -8313,14 +8313,11 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       return std::cmp::Ordering::Greater;
     }
   }
-  // Powers of sums compare their bases structurally, then exponents. A
-  // printed sort key loses coefficient order inside exponential sums.
+  // Sums and powers of sums share the structural comparator. Priority
+  // buckets and printed keys lose reciprocal and coefficient ordering.
   let (base_a, _) = extract_base_exponent_ref(a);
   let (base_b, _) = extract_base_exponent_ref(b);
-  if plus_call_args(&base_a).is_some()
-    && plus_call_args(&base_b).is_some()
-    && (!std::ptr::eq(base_a.as_ref(), a) || !std::ptr::eq(base_b.as_ref(), b))
-  {
+  if plus_call_args(&base_a).is_some() && plus_call_args(&base_b).is_some() {
     return crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
   }
   // A Plus factor takes the max priority of its terms (like Times) so a

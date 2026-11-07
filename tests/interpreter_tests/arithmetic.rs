@@ -15669,3 +15669,19 @@ fn sorting_negative_product_leading_sums_uses_total_degree() {
     }
   }
 }
+
+#[test]
+fn sum_factors_use_structural_reciprocal_order() {
+  for (code, expected) in [
+    ("(1+Pi)*(1+59/(10-Pi))", "(1 + 59/(10 - Pi))*(1 + Pi)"),
+    ("(1+x)*(1+2/(3-x))", "(1 + 2/(3 - x))*(1 + x)"),
+    ("(1+x)*(1+2/(3+x))", "(1 + x)*(1 + 2/(3 + x))"),
+    ("(1+Pi)*(1+2/(3+Pi))", "(1 + Pi)*(1 + 2/(3 + Pi))"),
+    (
+      "(603+(91-Pi)/2+Pi)*(-61+59/(10-Pi))",
+      "(-61 + 59/(10 - Pi))*(603 + (91 - Pi)/2 + Pi)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
