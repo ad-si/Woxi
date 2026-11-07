@@ -9221,3 +9221,21 @@ free-coordinate construction rather than Wolfram's preferred bases:
 
 The vectors span the same generic null spaces, but symbolic denominator
 clearing, basis ordering, and numerical orthonormalization remain different.
+
+### Scaled odd tangent powers use different antiderivative grouping
+
+Diff-fuzz seed 1794034567657590000 (2026-11-07) minimized an unsupported
+mixed trigonometric integral to `Integrate[Tan[3*x]^3,x]`. Woxi returns
+`Log[Cos[3*x]]/3 + Sec[3*x]^2/6`, while Wolfram combines this as
+`(2*Log[Cos[3*x]] + Sec[3*x]^2)/6`. The same grouping difference occurs
+with symbolic argument scale and the seventh power. Wolfram keeps the
+unscaled cubic and seventh-power primitives distributed, and also keeps
+scaled fifth and ninth powers distributed, so blanket fraction combination
+would introduce new differences. Both cubic forms differentiate correctly.
+
+The original integral,
+`Integrate[Tan[3*x]^3 - Tan[x*y]^2 + Cos[x+y]*Tan[x*y]^2,x]`,
+remains unevaluated in Woxi. Wolfram evaluates the symbolic-frequency
+cosine/tangent product using `Hypergeometric2F1`, in addition to the
+existing tangent primitives. This extends the symbolic-frequency mixed
+trigonometric integration gap above.
