@@ -5,7 +5,7 @@ fn exact_linear_equation_and_bounds() {
   assert_reduces("Reduce[2*x + 1 == 0, x, Reals]", "x == -1/2");
   assert_reduces(
     "Reduce[1/3 < x && x <= 5/7, x, Rationals]",
-    "Inequality[1/3, Less, x, LessEqual, 5/7]",
+    "Element[x, Rationals] && Inequality[1/3, Less, x, LessEqual, 5/7]",
   );
 }
 
@@ -18,7 +18,7 @@ fn target_independent_condition_survives() {
 fn projected_open_polyhedron() {
   assert_reduces(
     "Reduce[Exists[y, 0 < y && y < x && x < 2], x, Rationals]",
-    "Inequality[0, Less, x, Less, 2]",
+    "Element[x, Rationals] && Inequality[0, Less, x, Less, 2]",
   );
 }
 

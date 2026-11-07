@@ -28,7 +28,36 @@ pub(super) fn formula_expr_for_targets(
     Formula::Atom(atom) => atom_expr(atom, targets),
     Formula::And(children) => interval_expr(children, targets)
       .unwrap_or_else(|| fold_binary(children, BinaryOperator::And, targets)),
-    Formula::Or(children) => fold_binary(children, BinaryOperator::Or, targets),
+    Formula::Or(children) => {
+      // A finite set of values of one variable is displayed in numeric order,
+      // rather than the affine IR's structural order of equation constants.
+      let values: Option<Vec<_>> = children
+        .iter()
+        .map(|child| {
+          let Formula::Atom(Atom::Relation(Relation::Equal, term)) = child
+          else {
+            return None;
+          };
+          if term.coefficients.len() != 1 {
+            return None;
+          }
+          let (variable, coefficient) = term.coefficients.first_key_value()?;
+          let value = term.constant.negated().checked_divide(coefficient)?;
+          Some((variable, value, child.clone()))
+        })
+        .collect();
+      if let Some(mut values) = values
+        && let Some((first, _, _)) = values.first()
+        && values.iter().all(|(variable, _, _)| variable == first)
+      {
+        values.sort_by(|a, b| a.1.numeric_cmp(&b.1));
+        let children: Vec<_> =
+          values.into_iter().map(|(_, _, child)| child).collect();
+        fold_binary(&children, BinaryOperator::Or, targets)
+      } else {
+        fold_binary(children, BinaryOperator::Or, targets)
+      }
+    }
     Formula::Not(inner) => Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand: Box::new(formula_expr_for_targets(inner, targets)),
@@ -600,7 +629,12 @@ fn fold_binary(
   let mut ordered = children.iter().collect::<Vec<_>>();
   if operator == BinaryOperator::And && !targets.is_empty() {
     ordered.sort_by_key(|child| {
-      targets.iter().any(|target| child.contains_variable(target))
+      // Parameter-only conditions lead, followed by conditions for each
+      // target in the requested variable order. Mixed conditions belong to
+      // their last target, as in a triangular solved system.
+      targets
+        .iter()
+        .rposition(|target| child.contains_variable(target))
     });
   }
   fold_owned_binary(

@@ -41,7 +41,56 @@ pub(super) fn try_linear_rational_reduce(args: &[Expr]) -> Option<Expr> {
   }
   let result =
     woxi_reduce::rational_qe::eliminate_quantifiers(request.formula)?;
-  Some(emit::formula_expr_for_targets(&result, &request.targets))
+  let expression = emit::formula_expr_for_targets(&result, &request.targets);
+  if request.domain != ReduceDomain::Rationals
+    || matches!(result, Formula::False)
+  {
+    return Some(expression);
+  }
+  // Dense elimination describes the bounds over Q but does not encode domain
+  // membership in the formula. Restore it unless every branch fixes the target
+  // to an exact rational constant, which already implies that membership.
+  fn fixes_rational_value(
+    formula: &Formula,
+    target: &woxi_reduce::Variable,
+  ) -> bool {
+    match formula {
+      Formula::False => true,
+      Formula::Atom(Atom::Relation(Relation::Equal, term)) => {
+        term.coefficients.len() == 1 && term.coefficients.contains_key(target)
+      }
+      Formula::And(parts) => {
+        parts.iter().any(|part| fixes_rational_value(part, target))
+      }
+      Formula::Or(parts) => {
+        parts.iter().all(|part| fixes_rational_value(part, target))
+      }
+      _ => false,
+    }
+  }
+  let members: Vec<_> = request
+    .targets
+    .iter()
+    .filter(|target| !fixes_rational_value(&result, target))
+    .map(|target| Expr::Identifier(target.name.clone()))
+    .collect();
+  let membership = |member| call("Element", vec![member, id_expr("Rationals")]);
+  if matches!(result, Formula::True) {
+    return Some(
+      members
+        .into_iter()
+        .map(membership)
+        .reduce(|a, b| binop(BinaryOperator::And, a, b))
+        .unwrap_or(expression),
+    );
+  }
+  let Some(members) = members
+    .into_iter()
+    .reduce(|a, b| binop(BinaryOperator::Alternatives, a, b))
+  else {
+    return Some(expression);
+  };
+  Some(binop(BinaryOperator::And, membership(members), expression))
 }
 
 /// Runs the self-contained Presburger engine for every completely lowered
