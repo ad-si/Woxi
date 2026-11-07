@@ -3559,18 +3559,20 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
           .filter(|s| matches!(s, Expr::Identifier(v) if v == "Automatic"))
           .map(|_| ((128, 128, 128), 0.4, 0.5, None));
       }
-      // `PlotTheme -> "Business"`: a left/bottom frame instead of axes,
+      // `PlotTheme -> "Business"`: a bottom frame and left labels,
       // dotted value grid lines (and its own palette, see `bar_chart_ast`).
       "PlotTheme" => {
         if matches!(&value, Expr::String(s) if s == "Business") {
           look.axes = false;
           look.frame = true;
           look.frame_sides = [true, false, true, false];
+          look.hide_value_frame = true;
           look.value_grid = Some(((102, 102, 102), 0.5, 1.0, Some((1.0, 2.0))));
         }
       }
       "FrameStyle" => {
         if let Some((c, w)) = paint(&value) {
+          look.hide_value_frame = false;
           look.frame_color = c;
           look.frame_width = w;
         }

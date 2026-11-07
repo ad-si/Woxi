@@ -50708,4 +50708,32 @@ mod graphics_review_regressions {
       "{svg}"
     );
   }
+
+  #[test]
+  fn business_bar_chart_keeps_labels_without_value_frame_strokes() {
+    for values in ["{1, 2, 3}", "{{2, 4}, {3, 1}}"] {
+      let svg =
+        export_svg(&format!("BarChart[{values}, PlotTheme -> \"Business\"]"));
+      assert!(svg.contains("text-anchor=\"end\""), "{svg}");
+      assert!(svg.contains("stroke-width=\"0\""), "{svg}");
+      assert!(
+        !svg.lines().any(|l| {
+          if !l.contains("<polyline") {
+            return false;
+          }
+          let Some(points) = l
+            .split("points=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+          else {
+            return false;
+          };
+          let points: Vec<_> = points.split_whitespace().collect();
+          points.len() == 2
+            && points[0].split(',').next() == points[1].split(',').next()
+        }),
+        "{svg}"
+      );
+    }
+  }
 }

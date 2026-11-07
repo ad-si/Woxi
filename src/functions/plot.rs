@@ -8461,6 +8461,8 @@ pub(crate) struct BarChartLook {
   pub element_values: Vec<Vec<Expr>>,
   /// Which frame edges `Frame` draws: left, right, bottom, top.
   pub frame_sides: [bool; 4],
+  /// Hide the value frame stroke and tick marks while keeping its labels.
+  pub hide_value_frame: bool,
   /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
   /// `(colour, opacity, width in points, dash pattern in points)`.
   pub value_grid: Option<((u8, u8, u8), f64, f64, Option<(f64, f64)>)>,
@@ -8486,6 +8488,7 @@ impl Default for BarChartLook {
       element_function: None,
       element_values: Vec::new(),
       frame_sides: [true; 4],
+      hide_value_frame: false,
       value_grid: None,
     }
   }
@@ -9123,7 +9126,10 @@ pub(crate) fn generate_bar_svg(
         ]]
       } else {
         [
-          (left, [(x_min, y_min), (x_min, y_max)]),
+          (
+            left && !look.hide_value_frame,
+            [(x_min, y_min), (x_min, y_max)],
+          ),
           (right, [(x_max, y_min), (x_max, y_max)]),
           (bottom, [(x_min, y_min), (x_max, y_min)]),
           (top, [(x_min, y_max), (x_max, y_max)]),
@@ -9229,7 +9235,15 @@ pub(crate) fn generate_bar_svg(
       thickness: look.axes_width.map(|w| w as f64 / sf),
       ..Default::default()
     };
-    let axes_style = [Some(axis_style.clone()), Some(axis_style)];
+    let value_style = SeriesStyle {
+      thickness: if look.hide_value_frame {
+        Some(0.0)
+      } else {
+        axis_style.thickness
+      },
+      ..axis_style.clone()
+    };
+    let axes_style = [Some(axis_style), Some(value_style)];
     let x_scale = crate::functions::plot_axes::AxisScale {
       min: x_min,
       max: x_max,
