@@ -26854,3 +26854,15 @@ fn trig_to_exp_extracts_coefficients_from_higher_powers() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_distributes_scalar_single_function_products() {
+  for (code, expected) in [
+    ("TrigToExp[x*Cos[x]]", "x/(2*E^(I*x)) + (E^(I*x)*x)/2"),
+    ("TrigToExp[a*Sin[x]]", "(I/2*a)/E^(I*x) - I/2*a*E^(I*x)"),
+    ("TrigToExp[a*Sinh[x]]", "-1/2*a/E^x + (a*E^x)/2"),
+    ("TrigToExp[a*Cosh[x]]", "a/(2*E^x) + (a*E^x)/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

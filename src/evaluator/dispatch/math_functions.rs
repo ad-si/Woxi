@@ -7548,12 +7548,12 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         .into(),
     ));
   }
-  // Wolfram expands a single sine/cosine square (possibly scaled), but
+  // Wolfram expands a single sine/cosine function or square (possibly scaled), but
   // retains grouped powers in products of trigonometric factors.
   let factors = crate::functions::polynomial_ast::together::flatten_times_args(
     std::slice::from_ref(expr),
   );
-  let mut square_count = 0;
+  let mut expandable_count = 0;
   let mut other_transformed_factor = false;
   for factor in &factors {
     let base = match factor {
@@ -7569,18 +7569,24 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
         left,
         right,
       } if matches!(right.as_ref(), Expr::Integer(2)) => Some(left.as_ref()),
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh") =>
+      {
+        Some(factor)
+      }
       _ => None,
     };
     if base.is_some_and(|base| matches!(base, Expr::FunctionCall { name, args }
       if args.len() == 1 && matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh"))) {
-      square_count += 1;
+      expandable_count += 1;
     } else if expr_to_string(factor) != expr_to_string(&trig_to_exp_recursive(factor)) {
       other_transformed_factor = true;
     }
   }
   let transformed = trig_to_exp_recursive(expr);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
-  if (square_count == 1 && !other_transformed_factor)
+  if (expandable_count == 1 && !other_transformed_factor)
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
     || matches!(
       expr,
