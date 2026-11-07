@@ -1145,6 +1145,9 @@ Diff-fuzz seed 1794008323899532000 reproduced this class on 2026-11-06:
 Seed 1794009243473726000 also found `LogIntegral[5.]`: Woxi returns
 `3.634588310032652`, Wolfram returns `3.634588310032651`, and Wolfram's
 `N[N[LogIntegral[5],60]]` agrees with Woxi.
+Seed 1794019526553002000 found `ExpIntegralE[1,4.9]`: Woxi returns
+`0.0012914833627059846`, Wolfram returns `0.0012914833627059848`, and
+`N[N[ExpIntegralE[1,SetPrecision[4.9,70]],60]]` agrees with Woxi.
 
 The guard digits WL prints past the precision of `N[LogIntegral[3/10], 30]`,
 `N[ExpIntegralE[2, 2/10], 30]` and `N[Gamma[0, 2/10], 30]` differ from
@@ -9044,8 +9047,11 @@ Verified on 2026-11-06, diff-fuzz seed 1794002508685553000:
 TrigExpand[Sin[x y]^3 + Sin[x y] - Tan[2 x]^2]
 ```
 
-The minimized quotient case `TrigExpand[Tan[2 x]^2]` gives
-`4*Cos[x]^2*Sin[x]^2/(Cos[x]^2 - Sin[x]^2)^2` in Woxi. Wolfram uses
+The minimized quotient case `TrigExpand[Tan[2 x]^2]`, reproduced by seed
+1794019526553002000 on 2026-11-07, now gives four separate terms with
+combined numerator `1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4`
+and denominator `1 + Cos[x]^4 - 6*Cos[x]^2*Sin[x]^2 + Sin[x]^4`
+in Woxi. Wolfram uses
 `(1 - Cos[x]^4 + 6*Cos[x]^2*Sin[x]^2 - Sin[x]^4)/
 (2*(Cos[x]^2 - Sin[x]^2)^2)`, displayed as four separate terms.
 
