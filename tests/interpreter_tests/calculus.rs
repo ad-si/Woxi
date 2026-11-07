@@ -26750,3 +26750,15 @@ fn linear_rational_integrals_preserve_logarithm_sign_conventions() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn polynomial_product_integrals_preserve_external_constants() {
+  for (code, expected) in [
+    ("Integrate[y*x*(x+y),x]", "y*(x^3/3 + (x^2*y)/2)"),
+    ("Integrate[2*x*(x+y),x]", "2*(x^3/3 + (x^2*y)/2)"),
+    ("Integrate[a*b*x*(x+a),x]", "a*b*((a*x^2)/2 + x^3/3)"),
+    ("Integrate[-2*x*(x+y),x]", "-2*(x^3/3 + (x^2*y)/2)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

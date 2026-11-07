@@ -9228,6 +9228,16 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     .count()
       > 1
   {
+    let (constants, dependent): (Vec<_>, Vec<_>) =
+      crate::functions::polynomial_ast::together::flatten_times_args(
+        std::slice::from_ref(expr),
+      )
+      .into_iter()
+      .partition(|factor| is_constant_wrt(factor, var));
+    if !constants.is_empty() {
+      let primitive = integrate(&times(dependent), var)?;
+      return Some(times2(times(constants), primitive));
+    }
     let expanded = crate::evaluator::evaluate_function_call_ast(
       "Expand",
       std::slice::from_ref(expr),

@@ -8962,6 +8962,13 @@ The minimized polynomial-times-tangent case `Integrate[x Tan[x], x]`
 is supported by a finite polylogarithmic integration-by-parts recurrence;
 it does not resolve the original mixed-frequency trigonometric integral.
 
+Seed 1794026622041900000 also found
+`Integrate[(Tan[x+y]+Sin[2*x]^3)*Sin[x*y],x]`. Wolfram returns
+hypergeometric terms for the shifted tangent product and elementary
+sine terms for the remaining product; Woxi leaves the integral unevaluated.
+The minimized polynomial `Integrate[(x+y)*x*y,x]` now preserves the
+external `y` factor and matches Wolfram, independently of this missing rule.
+
 ### Rational-integral scaling retains an outer denominator
 
 Verified with `wolframscript` on 2026-11-06, diff-fuzz seed
