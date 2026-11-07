@@ -25598,3 +25598,19 @@ fn simplify_keeps_negative_polynomial_content_outside_positive_leading_denominat
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_negative_leading_numerators_split_denominator_monomials_on_ties() {
+  for (code, expected) in [
+    ("Simplify[(-2+4x)/(5x+2x^2)]", "(-2 + 4*x)/(x*(5 + 2*x))"),
+    ("Simplify[(-2+3x)/(4x+3x^2)]", "(-2 + 3*x)/(x*(4 + 3*x))"),
+    ("Simplify[(-3+5x)/(7x+2x^2)]", "(-3 + 5*x)/(x*(7 + 2*x))"),
+    ("Simplify[(2+4x)/(5x+2x^2)]", "(2 + 4*x)/(5*x + 2*x^2)"),
+    ("Simplify[x/(2x+2x^2)]", "(2 + 2*x)^(-1)"),
+    ("Simplify[x/(3x+3x^2)]", "(3 + 3*x)^(-1)"),
+    ("Simplify[x/(2x+2x^3)]", "(2 + 2*x^2)^(-1)"),
+    ("Simplify[x/(2x+4x^2+2x^3)]", "1/(2*(1 + x)^2)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

@@ -11191,6 +11191,7 @@ fn simplify_quotient_select(
     let tie_wins = match (cands[best].class, cands[i].class) {
       (0, 1) => true,
       (0 | 1, 2 | 3) => first_num_term_negative && n_terms.len() > 1,
+      (0, 4) => first_num_term_negative,
       _ => false,
     };
     let better = cands[i].cost < cands[best].cost
@@ -11582,6 +11583,15 @@ fn settled_quotient_factor_display(
         Expr::Integer(-n_c[0]),
         coeffs_from_terms(&terms, &var),
       ));
+    }
+    if n_c[0] == 1
+      && factored_den_acceptable(basic, factored)
+      && sum_factor_count(&fd) == 1
+      && !super::together::flatten_times_args(std::slice::from_ref(&fd))
+        .iter()
+        .any(|factor| super::expand::sum_power_exponent(factor).is_some())
+    {
+      return Some(pow2(fd_e, Expr::Integer(-1)));
     }
     return Some(if factored_den_acceptable(basic, factored) {
       factored.clone()
