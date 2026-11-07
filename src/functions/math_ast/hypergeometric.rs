@@ -1093,6 +1093,79 @@ fn expr_fraction_big(e: &Expr) -> Option<(BigInt, BigInt)> {
   }
 }
 
+/// Integer polynomials P and Q such that the beta-integral reduction is
+/// (P(z) Exp[z] + Q(z))/z^(b-1), before multiplication by 1/Beta[a,b-a].
+/// Share the exact recurrence between rational and symbolic arguments.
+fn hypergeometric1f1_integer_polynomials(
+  a: i128,
+  b: i128,
+) -> (Vec<BigInt>, Vec<BigInt>) {
+  let size = (b - 1) as usize;
+  let mut exponential = vec![BigInt::from(0); size];
+  let mut constant = exponential.clone();
+  let mut p = vec![BigInt::from(1)];
+  let mut q = BigInt::from(-1);
+  for n in 0..size {
+    if n > 0 {
+      for c in &mut p {
+        *c *= -(n as i128);
+      }
+      p.push(BigInt::from(1));
+      q *= -(n as i128);
+    }
+    if n < (a - 1) as usize {
+      continue;
+    }
+    let k = n as i128 - a + 1;
+    let coefficient = crate::functions::binomial_coeff_big(b - a - 1, k)
+      * BigInt::from(if k % 2 == 0 { 1 } else { -1 });
+    let offset = size - 1 - n;
+    for (i, c) in p.iter().enumerate() {
+      exponential[offset + i] += &coefficient * c;
+    }
+    constant[offset] += &coefficient * &q;
+  }
+  (exponential, constant)
+}
+
+fn hypergeometric1f1_symbolic_z(
+  a: i128,
+  b: i128,
+  z: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let (p, q) = hypergeometric1f1_integer_polynomials(a, b);
+  let eval = crate::evaluator::evaluate_function_call_ast;
+  let exp = eval("Power", &[id_expr("E"), z.clone()])?;
+  let mut terms = Vec::new();
+  for (coefficients, factor) in [(&p, exp), (&q, Expr::Integer(1))] {
+    for (i, c) in coefficients.iter().enumerate() {
+      if *c != BigInt::from(0) {
+        terms.push(eval(
+          "Times",
+          &[
+            bigint_to_expr(c.clone()),
+            factor.clone(),
+            eval("Power", &[z.clone(), Expr::Integer(i as i128)])?,
+          ],
+        )?);
+      }
+    }
+  }
+  let numerator = eval("Plus", &terms)?;
+  let (beta_num, beta_den) = beta_parts_big(a, b - a);
+  eval(
+    "Times",
+    &[
+      eval(
+        "Rational",
+        &[bigint_to_expr(beta_den), bigint_to_expr(beta_num)],
+      )?,
+      numerator,
+      eval("Power", &[z.clone(), Expr::Integer(1 - b)])?,
+    ],
+  )
+}
+
 /// `1F1[a, b, z]` for integers `1 ≤ a < b` at a rational `z ≠ 0` (see the
 /// caller), built as `A·E^z + C` and shaped like wolframscript's result:
 /// the content comes out so that the `E^|z|` coefficient inside is a
@@ -1118,34 +1191,22 @@ fn hypergeometric1f1_rational_z(
   let mul = |x: &Rat, y: &Rat| reduce((&x.0 * &y.0, &x.1 * &y.1));
   let int = |n: i128| -> Rat { (BigInt::from(n), BigInt::from(1)) };
   let zr: Rat = reduce((zp.clone(), zq.clone()));
-  let z_inv: Rat = reduce((zr.1.clone(), zr.0.clone()));
-
-  // P_n and Q_n for n = 0..=b-2.
-  let max_n = (b - 2) as usize;
-  let (mut p_vec, mut q_vec) = (vec![int(1)], vec![int(-1)]);
-  let mut z_pow = int(1);
-  for n in 1..=max_n {
-    z_pow = mul(&z_pow, &zr);
-    p_vec.push(add(&z_pow, &mul(&int(-(n as i128)), &p_vec[n - 1])));
-    q_vec.push(mul(&int(-(n as i128)), &q_vec[n - 1]));
+  let (p, q) = hypergeometric1f1_integer_polynomials(a, b);
+  let evaluate_polynomial = |coefficients: &[BigInt]| {
+    coefficients.iter().rev().fold(int(0), |value, c| {
+      add(&mul(&value, &zr), &(c.clone(), BigInt::from(1)))
+    })
+  };
+  let mut inverse_power = int(1);
+  for _ in 0..b - 1 {
+    inverse_power = mul(&inverse_power, &reduce((zr.1.clone(), zr.0.clone())));
   }
-  // Γ(b)/(Γ(a)·Γ(b-a)) = 1/Beta[a, b-a]
   let (beta_num, beta_den) = beta_parts_big(a, b - a);
-  let prefactor: Rat = reduce((beta_den, beta_num));
-  let (mut e_coef, mut c_coef) = (int(0), int(0));
-  for k in 0..(b - a) {
-    let n = (a - 1 + k) as usize;
-    let mut z_neg_pow = int(1);
-    for _ in 0..=n {
-      z_neg_pow = mul(&z_neg_pow, &z_inv);
-    }
-    let sign = if k % 2 == 0 { 1 } else { -1 };
-    let binom = crate::functions::binomial_coeff_big(b - a - 1, k);
-    let coeff = mul(&(binom * BigInt::from(sign), BigInt::from(1)), &z_neg_pow);
-    e_coef = add(&e_coef, &mul(&coeff, &p_vec[n]));
-    c_coef = add(&c_coef, &mul(&coeff, &q_vec[n]));
-  }
-  let (e_coef, c_coef) = (mul(&e_coef, &prefactor), mul(&c_coef, &prefactor));
+  let prefactor = mul(&reduce((beta_den, beta_num)), &inverse_power);
+  let (e_coef, c_coef) = (
+    mul(&evaluate_polynomial(&p), &prefactor),
+    mul(&evaluate_polynomial(&q), &prefactor),
+  );
 
   let eval = crate::evaluator::evaluate_function_call_ast;
   let rat_expr = |(n, d): &Rat| -> Result<Expr, InterpreterError> {
@@ -1515,10 +1576,15 @@ fn hypergeometric1f1_impl(
     && *a_i >= 1
     && *b_i > *a_i
     && *b_i <= 30
-    && let Some((zp, zq)) = expr_fraction_big(&args[2])
-    && zp != BigInt::from(0)
   {
-    return hypergeometric1f1_rational_z(*a_i, *b_i, &zp, &zq, &args[2]);
+    if let Some((zp, zq)) = expr_fraction_big(&args[2])
+      && zp != BigInt::from(0)
+    {
+      return hypergeometric1f1_rational_z(*a_i, *b_i, &zp, &zq, &args[2]);
+    }
+    if !crate::functions::math_ast::contains_float(&args[2]) {
+      return hypergeometric1f1_symbolic_z(*a_i, *b_i, &args[2]);
+    }
   }
 
   // Closed form for 1F1[positive integer a, 1, z]:

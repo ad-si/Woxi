@@ -3082,10 +3082,16 @@ smaller divergences live in the core `Power` normalizer and reproduce without
 any hypergeometric: `(64/729)^(1/4)` stays put where WL gives `(2 Sqrt[2/3])/3`,
 and Woxi's prefactor prints `4^(1/2 - b/2)` where WL prints `2^(1 - b)`.
 
-`Hypergeometric1F1[a, b, z]` with symbolic `z` and `1 ≤ a < b`:
-`HypergeometricPFQ[{1},{2},x]` is `(-1+E^z)/z` in WL and unevaluated in Woxi.
-The `a=1` family has a clean formula, but Woxi orders `E^z` after the z-power
-terms where WL puts it right after the constant.
+`Hypergeometric1F1[a, b, z]` now reduces exact symbolic arguments for
+positive integers `1 ≤ a < b ≤ 30`, using the same beta-integral polynomial
+recurrence as rational arguments. This resolves seed 1794071016657654000's
+`Hypergeometric1F1[2,3,Pi]` and the delegated `HypergeometricPFQ` form.
+Higher parameters can still differ in display: `Hypergeometric1F1[1,4,x]`
+is `3*(-2+2*E^x-2*x-x^2)/x^3` in Woxi versus
+`-3*(2-2*E^x+2*x+x^2)/x^3` in Wolfram. For `Hypergeometric1F1[2,4,x]`,
+Woxi gives `6*(2-2*E^x+x+E^x*x)/x^3`, while Wolfram retains nested
+quotients. The symbolic formulas satisfy Kummer's differential equation;
+these remaining differences concern representation.
 
 ### Carlson elliptic integrals
 

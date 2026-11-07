@@ -784,6 +784,26 @@ mod hypergeometric2f1 {
 mod hypergeometric_1f1 {
   use super::*;
 
+  #[test]
+  fn integer_a_lt_b_symbolic_z() {
+    for (input, expected) in [
+      ("Hypergeometric1F1[2,3,Pi]", "(2*(1 - E^Pi + E^Pi*Pi))/Pi^2"),
+      ("Hypergeometric1F1[1,2,x]", "(-1 + E^x)/x"),
+      ("Hypergeometric1F1[1,3,x]", "(2*(-1 + E^x - x))/x^2"),
+      ("Hypergeometric1F1[2,3,x]", "(2*(1 - E^x + E^x*x))/x^2"),
+      (
+        "HypergeometricPFQ[{2},{3},Pi]",
+        "(2*(1 - E^Pi + E^Pi*Pi))/Pi^2",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    // Kummer's differential equation checks the whole polynomial family,
+    // including higher parameters whose Wolfram display uses nested quotients.
+    assert_eq!(interpret("Table[Simplify[Together[x*D[Hypergeometric1F1[a,b,x],{x,2}]+(b-x)*D[Hypergeometric1F1[a,b,x],x]-a*Hypergeometric1F1[a,b,x]]],{b,2,6},{a,1,b-1}]").unwrap(),
+      "{{0}, {0, 0}, {0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0, 0}}");
+  }
+
   // 1 ≤ a < b at a rational z: A*E^z + C with the content pulled out so the
   // E^|z| coefficient inside is positive, over E^|z| for a negative z.
   #[test]
