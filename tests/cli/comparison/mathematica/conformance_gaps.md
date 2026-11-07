@@ -1115,6 +1115,24 @@ for `InverseErf[-0.2]`: Woxi's `-0.1791434546212917` agrees with the
 rounded high-precision value of the exact binary input, while Wolfram's
 machine result is `-0.17914345462129166`.
 
+Seed 1794021370602620000 (2026-11-07) found `LogGamma[0.8]`: Woxi
+returns `0.15205967839983756`, Wolfram returns `0.15205967839983753`,
+and `N[N[LogGamma[SetPrecision[0.8,70]],60]]` agrees with Woxi.
+
+### Machine arithmetic-geometric means differ from high-precision rounding
+
+Verified on 2026-11-07 while investigating seed 1794021370602620000.
+AGM now preserves exact input values and uses guard precision throughout the
+iteration, fixing `ArithmeticGeometricMean[3.9,9/5]` and intermediate
+product overflow/underflow. Some Wolfram machine results remain less accurate:
+`ArithmeticGeometricMean[1.8,1.2]` is `1.4848082617417828` in Wolfram,
+versus the high-precision rounded value `1.4848082617417826` in Woxi.
+For `ArithmeticGeometricMean[3.,7.]`, Wolfram returns `4.789013583140951`
+and Woxi returns the correctly rounded `4.789013583140952`.
+`ArithmeticGeometricMean[1.*^-200,2.*^-200]` underflows to zero in Wolfram;
+its high-precision evaluation agrees with Woxi's `1.4567910310469068*^-200`.
+These checks retain machine arguments' exact binary values via `SetPrecision`.
+
 ### Machine cosine integrals differ from high-precision rounding
 
 The same seed found `CosIntegral[5.8]`. After replacing the cancellation-prone
@@ -1915,6 +1933,11 @@ The shifted inverse-trig argument now matches `Sqrt[2]*(1+x)`, including
 in the minimized reciprocal-quadratic case. The full result still collects
 the polynomial, logarithmic, and inverse-trig terms over a common denominator,
 while Wolfram displays separate terms.
+
+Seed 1794021370602620000 also found this grouping difference for
+`Integrate[(3+2*x+5*x^2+x^3)/(-5+4*x+4*x^2),x]`.
+The logarithm argument now has Wolfram's sign; Woxi still collects the
+polynomial, inverse-hyperbolic, and logarithmic terms over a common denominator.
 
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
