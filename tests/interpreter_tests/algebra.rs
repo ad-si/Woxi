@@ -25614,3 +25614,25 @@ fn simplify_negative_leading_numerators_split_denominator_monomials_on_ties() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_negative_polynomial_numerators_flip_linear_denominators() {
+  for head in ["Simplify", "FullSimplify"] {
+    for (fraction, expected) in [
+      ("(-1-x-3x^2)/(-3+5x)", "(1 + x + 3*x^2)/(3 - 5*x)"),
+      ("(-2-3x-4x^3)/(-7+2x)", "(2 + 3*x + 4*x^3)/(7 - 2*x)"),
+      (
+        "(-1-x-3x^2)/(-3+5x+x^2)",
+        "-((1 + x + 3*x^2)/(-3 + 5*x + x^2))",
+      ),
+    ] {
+      let code = format!("{head}[{fraction}]");
+      let expected = if head == "FullSimplify" && fraction.ends_with("+x^2)") {
+        "-((1 + x + 3*x^2)/(-3 + x*(5 + x)))"
+      } else {
+        expected
+      };
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}

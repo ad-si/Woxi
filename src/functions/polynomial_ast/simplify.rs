@@ -8322,24 +8322,34 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
-  // Optimize polynomial numerator and denominator independently: expanding
-  // the whole quotient cannot expose Horner forms or denominator factors.
+  // Optimize either side independently as well as together: a numerator
+  // rewrite can lose its compact outer sign while the denominator improves.
   let (num, den) = super::together::extract_num_den(&best);
   if !matches!(den, Expr::Integer(1)) {
     let num = expand_and_combine(&num);
     let den = expand_and_combine(&den);
     if polynomial_like(&num) && polynomial_like(&den) {
-      let n = full_simplify_univariate_polynomial(&num).unwrap_or(num);
-      let d = full_simplify_univariate_polynomial(&den).unwrap_or(den);
-      let candidate = crate::functions::math_ast::make_divide(n, d);
-      if wl_simplify_count(
-        &crate::evaluator::evaluate_expr_to_expr(&candidate)
-          .unwrap_or_else(|_| candidate.clone()),
-      ) < wl_simplify_count(
-        &crate::evaluator::evaluate_expr_to_expr(&best)
-          .unwrap_or_else(|_| best.clone()),
-      ) {
-        best = candidate;
+      let n = full_simplify_univariate_polynomial(&num)
+        .unwrap_or_else(|| num.clone());
+      let d = full_simplify_univariate_polynomial(&den)
+        .unwrap_or_else(|| den.clone());
+      for (numerator, denominator) in
+        [(n.clone(), d.clone()), (n, den), (num, d)]
+      {
+        let original =
+          crate::functions::math_ast::make_divide(numerator, denominator);
+        let normalized = finish_quotient_sign(original.clone(), true);
+        for candidate in [original, normalized] {
+          if wl_simplify_count(
+            &crate::evaluator::evaluate_expr_to_expr(&candidate)
+              .unwrap_or_else(|_| candidate.clone()),
+          ) < wl_simplify_count(
+            &crate::evaluator::evaluate_expr_to_expr(&best)
+              .unwrap_or_else(|_| best.clone()),
+          ) {
+            best = candidate;
+          }
+        }
       }
     }
   }
@@ -8389,7 +8399,11 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         let candidate = plus2(parts[0].clone(), proper);
         if let Ok(candidate) =
           crate::evaluator::evaluate_expr_to_expr(&candidate)
-          && wl_simplify_count(&candidate) < wl_simplify_count(&best)
+          && wl_simplify_count(&candidate)
+            < wl_simplify_count(
+              &crate::evaluator::evaluate_expr_to_expr(&best)
+                .unwrap_or_else(|_| best.clone()),
+            )
         {
           best = candidate;
         }
@@ -11138,11 +11152,13 @@ fn simplify_quotient_select(
     } else {
       // An all-negative polynomial numerator pulls its own sign rather
       // than reversing a positive-leading denominator with a constant
-      // term. Zero-constant denominators and mixed-sign numerators may
+      // term of degree at least two. Linear or zero-constant denominators
+      // and mixed-sign numerators may
       // flip; constants still compete as reciprocals.
       if n_terms.first().is_some_and(|&(n, _, _)| n < 0)
         && (n_terms.len() == 1
           || den_min_exp > 0
+          || d_terms.iter().all(|&(_, _, exponent)| exponent <= 1)
           || n_terms.iter().any(|&(n, _, _)| n > 0))
       {
         cands.push(Cand {
