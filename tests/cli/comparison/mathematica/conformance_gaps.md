@@ -9348,3 +9348,14 @@ result is `1.1766845920497218`, versus the guarded reference
 This change additionally fixes substantial large-input errors, premature
 machine overflow at `710.`, and the omitted imaginary part of `CoshIntegral`
 on the negative real axis.
+
+### FullSimplify quotient signs and Horner search
+
+Seed `1794051010990785000` (2026-11-07) found
+`FullSimplify[(2+2*x)/(4+2*x-5*x^2-4*x^3)]`. Woxi returns
+`(2*(1+x))/(4+x*(2-x*(5+4*x)))`; Wolfram returns
+`(-2*(1+x))/(-4+x*(-2+x*(5+4*x)))`. Wolfram verifies that their
+difference simplifies to zero. This is another sign/search-order case in
+its polynomial Horner-form selection. The reduced
+`FullSimplify[2/(1-5*x^2-4*x^3)]` keeps the denominator expanded in Wolfram,
+while Woxi uses `2/(1-x^2*(5+4*x))`.
