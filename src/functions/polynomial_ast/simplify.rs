@@ -8924,7 +8924,13 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
 
   // Numeric radical sums also admit a nested-square-root candidate.
   // Determine the sign exactly, including opposite-sign real summands.
-  let terms = collect_additive_terms(&expand_and_combine(&best));
+  let expanded = expand_and_combine(&best);
+  // Canonicalize products such as Sqrt[2]*Sqrt[5] before classifying
+  // summands; factoring an earlier candidate must not hide a radical pair.
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expanded).unwrap_or(expanded);
+  let terms = collect_additive_terms(&expanded);
+  let mut preferred_nested_square = None;
   if terms.len() > 1 && terms.iter().all(|t| classify_radical_term(t).is_some())
   {
     if let Ok(mut candidate) =
@@ -8970,7 +8976,27 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         };
         let pair = plus2(terms[i].clone(), terms[j].clone());
         let square = expand_and_combine(&pow(pair, Expr::Integer(2)));
-        let root = call("Sqrt", vec![square]);
+        let square =
+          crate::evaluator::evaluate_expr_to_expr(&square).unwrap_or(square);
+        let mut root = call("Sqrt", vec![square.clone()]);
+        let mut extracted_square = false;
+        // Extract perfect-square content without splitting a nonsquare
+        // factor into a second radical. Keep the original root candidate.
+        if let Ok(factored) =
+          super::factor_terms_ast(std::slice::from_ref(&square))
+        {
+          let factors = collect_times_factors(&factored);
+          if let Some(Expr::Integer(content)) = factors.first()
+            && *content > 1
+            && content.isqrt().checked_mul(content.isqrt()) == Some(*content)
+            && let Ok(candidate) =
+              crate::evaluator::evaluate_expr_to_expr(&call1("Sqrt", factored))
+            && wl_simplify_count(&candidate) <= wl_simplify_count(&root)
+          {
+            root = candidate;
+            extracted_square = true;
+          }
+        }
         let root = if negative {
           times2(Expr::Integer(-1), root)
         } else {
@@ -8986,9 +9012,11 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         if let Ok(candidate) =
           crate::evaluator::evaluate_expr_to_expr(&plus(remaining))
           && (wl_simplify_count(&candidate) < wl_simplify_count(&best)
-            || (a.signum() == b.signum()
+            || ((a.signum() == b.signum() || (extracted_square && !negative))
               && wl_simplify_count(&candidate) == wl_simplify_count(&best)))
         {
+          preferred_nested_square =
+            (extracted_square && !negative).then(|| candidate.clone());
           best = candidate;
         }
       }
@@ -9000,9 +9028,18 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     prefer_expanded_radical_sum(best),
   ));
   let best = prefer_unexpanded_numeric_radical_product(&simplified, best);
-  prefer_factored_numeric_radical_sum(
+  let best = prefer_factored_numeric_radical_sum(
     prefer_unexpanded_numeric_radical_product(expr, best),
-  )
+  );
+  // A normalized product may tie the chosen nested root; retain the root
+  // preference instead of undoing it during the final sign selection.
+  if let Some(nested) = preferred_nested_square
+    && wl_simplify_count(&nested) <= wl_simplify_count(&best)
+  {
+    nested
+  } else {
+    best
+  }
 }
 
 /// FullSimplify of an expanded univariate polynomial with integer

@@ -26147,6 +26147,21 @@ fn simplify_combines_common_roots_across_radical_denominators() {
 }
 
 #[test]
+fn full_simplify_extracts_square_content_from_nested_root_candidates() {
+  for (body, expected) in [
+    ("3*Sqrt[2]-Sqrt[10]", "2*Sqrt[7 - 3*Sqrt[5]]"),
+    ("6*Sqrt[2]-2*Sqrt[10]", "4*Sqrt[7 - 3*Sqrt[5]]"),
+    ("Sqrt[10]-3*Sqrt[2]", "Sqrt[2]*(-3 + Sqrt[5])"),
+    ("Sqrt[2]+Sqrt[10]", "Sqrt[2] + Sqrt[10]"),
+    ("3*Sqrt[2]+Sqrt[10]", "Sqrt[2]*(3 + Sqrt[5])"),
+    ("5*Sqrt[2]-Sqrt[10]", "-(Sqrt[2]*(-5 + Sqrt[5]))"),
+  ] {
+    let code = format!("FullSimplify[{body}]");
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn full_simplify_nests_opposite_sign_radicals_only_when_cheaper() {
   for (body, expected) in [
     ("2*Sqrt[3]-Sqrt[2]", "Sqrt[14 - 4*Sqrt[6]]"),
