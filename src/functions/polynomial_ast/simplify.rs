@@ -11894,6 +11894,24 @@ fn settled_quotient_factor_display(
   }
 
   if sum_factor_count(&fn_) >= 2 {
+    // Reject splitting squarefree sums, but retain common monomial content.
+    // Factor may produce x*(1+x)*(2+3*x); Simplify keeps x*(2+5*x+3*x^2).
+    let partial =
+      super::factor::factor_square_free_ast(std::slice::from_ref(&bn0)).ok()?;
+    if !exprs_equal(&partial, &bn0)
+      && leaf_count(&partial) <= leaf_count(&bn0)
+      && super::together::flatten_times_args(std::slice::from_ref(&partial))
+        .iter()
+        .filter(|f| {
+          let mut vars = std::collections::HashSet::new();
+          collect_variables(f, &mut vars);
+          !vars.is_empty()
+        })
+        .count()
+        > 1
+    {
+      return Some(div2(partial, bd0));
+    }
     // The numerator split is rejected; a same-orientation collapsed
     // denominator still applies over the input numerator.
     if shaped(&fd)

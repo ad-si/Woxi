@@ -25936,3 +25936,23 @@ fn numeric_radical_products_prefer_cheaper_outer_signs() {
     }
   }
 }
+
+#[test]
+fn simplify_keeps_monomial_content_when_rejecting_a_split_numerator() {
+  for (code, expected) in [
+    (
+      "Simplify[(2*x+5*x^2+3*x^3)/(4+3*x+2*x^2)]",
+      "(x*(2 + 5*x + 3*x^2))/(4 + 3*x + 2*x^2)",
+    ),
+    (
+      "Simplify[(2*x^2+5*x^3+3*x^4)/(4+3*x+2*x^2)]",
+      "(x^2*(2 + 5*x + 3*x^2))/(4 + 3*x + 2*x^2)",
+    ),
+    (
+      "Simplify[(6*x+15*x^2+9*x^3)/(4+3*x+2*x^2)]",
+      "(3*x*(2 + 5*x + 3*x^2))/(4 + 3*x + 2*x^2)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
