@@ -25835,3 +25835,32 @@ fn simplify_extracts_denominator_monomials_on_negative_leading_term_ties() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_factors_coprime_radical_coefficients_on_cost_ties() {
+  for (code, expected) in [
+    (
+      "Simplify[Sqrt[24]*Sqrt[16]+3*Sqrt[2]]",
+      "Sqrt[2]*(3 + 8*Sqrt[3])",
+    ),
+    ("Simplify[Sqrt[24]-Sqrt[2]]", "Sqrt[2]*(-1 + 2*Sqrt[3])"),
+    ("Simplify[-3*Sqrt[2]+8*Sqrt[6]]", "Sqrt[2]*(-3 + 8*Sqrt[3])"),
+    (
+      "Simplify[-3*Sqrt[2]-8*Sqrt[6]]",
+      "-(Sqrt[2]*(3 + 8*Sqrt[3]))",
+    ),
+    ("Simplify[2*Sqrt[2]+3*Sqrt[6]]", "Sqrt[2]*(2 + 3*Sqrt[3])"),
+    (
+      "Simplify[3*Sqrt[2]+8*Sqrt[6]+7*Sqrt[10]]",
+      "Sqrt[2]*(3 + 8*Sqrt[3] + 7*Sqrt[5])",
+    ),
+    ("Simplify[3*Sqrt[2]-8*Sqrt[6]]", "3*Sqrt[2] - 8*Sqrt[6]"),
+    ("Simplify[Sqrt[2]+2*Sqrt[6]]", "Sqrt[2] + 2*Sqrt[6]"),
+    ("Simplify[-4*Sqrt[2]+8*Sqrt[6]]", "-4*Sqrt[2] + 8*Sqrt[6]"),
+    ("Simplify[4*Sqrt[2]+8*Sqrt[6]]", "4*(Sqrt[2] + 2*Sqrt[6])"),
+    ("Simplify[4*Sqrt[3]+8*Sqrt[5]]", "4*(Sqrt[3] + 2*Sqrt[5])"),
+    ("Simplify[8*Sqrt[3]+4*Sqrt[5]]", "4*(2*Sqrt[3] + Sqrt[5])"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

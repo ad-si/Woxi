@@ -6373,7 +6373,9 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               let has_constant = terms.iter().any(|term| {
                 crate::functions::math_ast::expr_to_rational(term).is_some()
               });
+              let all_positive = coeffs.iter().all(|(n, _)| *n > 0);
               let tie_ok = (all_unit && !(all_sqrt && first_negative))
+                || (all_sqrt && all_positive)
                 || (all_negative && has_constant);
               cand_cost < best_cost || (cand_cost == best_cost && tie_ok)
             }
@@ -6525,7 +6527,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
             return None;
           }
           let content = coeffs.iter().fold(0, |c, (n, _)| gcd_i128(c, *n));
-          if content <= 1 {
+          if content == 0 {
             return None;
           }
           let has_pos = coeffs.iter().any(|(n, _)| *n > 0);
@@ -6549,15 +6551,25 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
               ))
             })
             .collect();
-          let candidate =
-            times(vec![Expr::Integer(signed), radical, plus(divided.ok()?)]);
-          Some((candidate, mixed_unit && radicands.contains(&g)))
+          let mut factors = vec![radical, plus(divided.ok()?)];
+          if signed != 1 {
+            factors.insert(0, Expr::Integer(signed));
+          }
+          let candidate = times(factors);
+          // Coprime coefficients favor radical extraction on a tie when
+          // the final cofactor is positive, or all signs can move outside.
+          // Existing numeric-content extraction keeps its own tie rules.
+          let tie_ok = radicands.contains(&g)
+            && ((content > 1 && mixed_unit)
+              || (content == 1 && (!has_pos || coeffs.last()?.0 > 0)));
+          Some((candidate, tie_ok))
         })()
       } else {
         None
       };
       if let Some((full, tie_ok)) = full_extraction
-        && (tie_ok || wl_simplify_count(&full) < wl_simplify_count(&best))
+        && (wl_simplify_count(&full) < wl_simplify_count(&best)
+          || (tie_ok && wl_simplify_count(&full) == wl_simplify_count(&best)))
       {
         best = full;
       } else if g > 1 {
