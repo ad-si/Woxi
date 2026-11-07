@@ -15707,3 +15707,20 @@ fn machine_mod_preserves_remainders_already_in_range() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn real_digits_extends_recurring_blocks_into_the_integer_prefix() {
+  for (code, expected) in [
+    ("RealDigits[10/3]", "{{{3}}, 1}"),
+    ("RealDigits[100/3]", "{{{3}}, 2}"),
+    ("RealDigits[100/7]", "{{{1, 4, 2, 8, 5, 7}}, 2}"),
+    ("RealDigits[100/11]", "{{{9, 0}}, 1}"),
+    ("RealDigits[22/7]", "{{3, {1, 4, 2, 8, 5, 7}}, 1}"),
+    ("RealDigits[10/3,2]", "{{1, {1, 0}}, 2}"),
+    ("RealDigits[100/3,2]", "{{1, 0, 0, 0, {0, 1}}, 6}"),
+    ("RealDigits[1/6]", "{{1, {6}}, 0}"),
+    ("RealDigits[5/6]", "{{8, {3}}, 0}"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

@@ -1789,7 +1789,17 @@ fn real_digits_rational_base(
   }
 
   // Build the result
-  if let Some(cycle_pos) = cycle_start {
+  if let Some(mut cycle_pos) = cycle_start {
+    // Remainder detection starts after the integer digits. Extend the
+    // period backwards when those digits already follow the same cycle,
+    // rotating the repeating block by moving its start with the prefix.
+    let period_len = digits.len() - cycle_pos;
+    while cycle_pos > 0
+      && digits[cycle_pos - 1] == digits[cycle_pos - 1 + period_len]
+    {
+      cycle_pos -= 1;
+    }
+    digits.truncate(cycle_pos + period_len);
     let non_repeating: Vec<Expr> = digits[..cycle_pos]
       .iter()
       .map(|&d| Expr::Integer(d))
