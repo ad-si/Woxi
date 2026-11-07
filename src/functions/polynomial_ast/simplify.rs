@@ -10870,7 +10870,9 @@ fn simplify_quotient_select(
   // extraction (-2*(1+2x))/(1+5x) on the tie, while a strict count win
   // keeps the extraction (Simplify[(-5-10x)/(1+7x)] → (-5*(1+2x))/(1+7x));
   // wolframscript-verified (differential fuzzer, seed 5520550946540289960).
-  let num_pullable = !den_gate_open && n_terms.len() > 1 && n_content < 0;
+  let num_pullable = !den_gate_open
+    && n_terms.len() > 1
+    && (n_content < 0 || n_terms.first().is_some_and(|&(n, _, _)| n < 0));
   // A denominator sum with monomial content x^k (k >= 1) can split it out
   // as its own reciprocal power factor: 1/(-3x^2+5x^3) → 1/(x^2*(-3+5x))
   // (15 < 17), while 1/(4x+3x^2) stays expanded (13 > 12);

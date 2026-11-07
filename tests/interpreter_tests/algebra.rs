@@ -25636,3 +25636,23 @@ fn simplify_negative_polynomial_numerators_flip_linear_denominators() {
     }
   }
 }
+
+#[test]
+fn simplify_compares_outer_minus_for_positive_leading_numerators() {
+  for (code, expected) in [
+    (
+      "Simplify[(-5-3x-2x^2+4x^3)/(3+5x)]",
+      "-((5 + 3*x + 2*x^2 - 4*x^3)/(3 + 5*x))",
+    ),
+    (
+      "Simplify[(-2-x-2x^2+4x^3)/(3+5x)]",
+      "-((2 + x + 2*x^2 - 4*x^3)/(3 + 5*x))",
+    ),
+    (
+      "Simplify[(-2+x+2x^2+4x^3)/(3+5x)]",
+      "(-2 + x + 2*x^2 + 4*x^3)/(3 + 5*x)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
