@@ -9191,7 +9191,11 @@ Woxi and `0.5822405264650127` in Wolfram; Wolfram's
 `N[N[PolyLog[2,1/2],60]]` agrees with Woxi. For `PolyLog[3,0.3]`,
 Woxi gives `0.3124001778928926`, Wolfram gives `0.31240017789289265`,
 and Wolfram's `N[N[PolyLog[3,SetPrecision[0.3,70]],60]]` agrees with
-Woxi. These direct machine-evaluation differences remain unresolved.
+Woxi. Seed 1794031960996514000 (2026-11-07) also found
+`PolyLog[3,0.2]`: Woxi gives `0.20532419573331034`, Wolfram's direct
+machine evaluation gives `0.20532419573331032`, and Wolfram's
+`N[PolyLog[3,SetPrecision[0.2,60]]]` agrees with Woxi.
+These direct machine-evaluation differences remain unresolved.
 
 ### Symbolic and machine NullSpace basis conventions
 
