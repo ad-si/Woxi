@@ -14765,3 +14765,24 @@ fn held_subtraction_preserves_explicit_sum_operands() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn held_plus_preserves_explicit_negative_division_terms() {
+  for (code, expected) in [
+    ("Hold[Plus[a,Divide[-5,b]]]", "Hold[a + -5/b]"),
+    ("Hold[Plus[a,Divide[-5,Divide[b,c]]]]", "Hold[a + -5/(b/c)]"),
+    ("Hold[Plus[a,Divide[Times[-2,x],y]]]", "Hold[a + (-2*x)/y]"),
+    (
+      "Hold[Plus[a,Divide[Subtract[b,c],d]]]",
+      "Hold[a + (b - c)/d]",
+    ),
+    ("Hold[a+(-5)/(b/c)]", "Hold[a - 5/(b/c)]"),
+    ("Hold[Plus[a,Divide[-5,b,c]]]", "Hold[a + Divide[-5, b, c]]"),
+    (
+      "Hold[Divide[Plus[Times[-72,Pi],Divide[-44,Divide[8,9]]],Divide[12,6]]]",
+      "Hold[(-72*Pi + -44/(8/9))/(12/6)]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

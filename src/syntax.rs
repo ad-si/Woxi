@@ -19111,13 +19111,14 @@ fn operator_call_child(expr: &Expr, parent: &Expr) -> Option<Expr> {
   // An explicit Divide survives evaluation only in structural contexts.
   // Keep it as one Times factor: converting it to BinaryOp::Divide here
   // lets product formatting collect its denominator across held factors.
+  // In Plus, preserve its sign inside the explicit quotient as well.
   // Other parents still need the operator node for precedence decisions.
   if matches!(expr, Expr::FunctionCall { name, args } if name == "Divide" && args.len() == 2)
-    && (matches!(parent, Expr::FunctionCall { name, .. } if name == "Times")
+    && (matches!(parent, Expr::FunctionCall { name, .. } if name == "Times" || name == "Plus")
       || matches!(
         parent,
         Expr::BinaryOp {
-          op: BinaryOperator::Times,
+          op: BinaryOperator::Times | BinaryOperator::Plus,
           ..
         }
       ))
