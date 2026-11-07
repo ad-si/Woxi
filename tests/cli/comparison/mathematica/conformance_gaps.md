@@ -9279,3 +9279,16 @@ For the related mixed-sign logarithmic derivative
 `Integrate[(-1-2*x)/(1-x-x^2),x]`, Woxi still returns
 `Log[1-x-x^2]` where Wolfram returns `Log[-1+x+x^2]`.
 Their derivatives agree, but the branch-dependent integration constant differs.
+
+### Equal-parameter hypergeometric machine rounding
+
+Verified on 2026-11-07, diff-fuzz seed 1794041714556375000:
+`Hypergeometric2F1[2,3,2,-0.3]` returns `0.4551661356395083` in Woxi
+and `0.45516613563950836` in Wolfram. Woxi applies the exact identity
+`Hypergeometric2F1[a,b,a,z] == (1-z)^(-b)`; evaluating that power with
+machine inputs in Wolfram also gives `0.4551661356395083`.
+Evaluating the hypergeometric function after raising the binary input's
+precision to 80 digits gives approximately `0.45516613563950843223510757`,
+so the direct machine paths have different intermediate rounding.
+The minimized zero-numerator case now preserves approximate result precision
+for fully numeric arguments instead of returning an exact integer.
