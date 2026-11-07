@@ -15576,3 +15576,21 @@ fn explicit_divide_combines_exact_coefficients_before_symbolic_rounding() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn order_compares_lists_and_calls_by_their_heads() {
+  for (code, expected) in [
+    ("Order[{57,-60},Log[8]]", "1"),
+    ("Order[Log[8],{57,-60}]", "-1"),
+    ("Order[{},Log[2]]", "1"),
+    ("Order[{},Sin[2]]", "1"),
+    ("Order[{},Gamma[1/3]]", "-1"),
+    ("Order[{},Sqrt[2]]", "-1"),
+    (
+      "Sort[{Log[2],{},Sin[2],Gamma[1/3]}]",
+      "{Gamma[1/3], {}, Log[2], Sin[2]}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

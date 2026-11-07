@@ -1866,6 +1866,18 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
+  // Lists are List-headed calls against ordinary function calls. Reuse
+  // Sort's structural comparison instead of comparing their printed braces.
+  if matches!(a, Expr::List(_)) && is_plain_func_call(b)
+    || matches!(b, Expr::List(_)) && is_plain_func_call(a)
+  {
+    return match canonical_cmp(a, b) {
+      std::cmp::Ordering::Less => 1,
+      std::cmp::Ordering::Equal => 0,
+      std::cmp::Ordering::Greater => -1,
+    };
+  }
+
   // Two sums: like products, Wolfram compares them from their LAST term
   // backwards, so the leading (highest) terms decide and the constant only
   // breaks a tie — Order[-3 + x^2, 3 + x] = -1 (x < x^2), Order[2 + x^3,
