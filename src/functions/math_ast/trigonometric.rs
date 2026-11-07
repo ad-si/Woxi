@@ -6242,15 +6242,17 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     args[0].clone()
   };
-  let result = trig_expand_recursive(&prepared);
+  let mut denominator_powers = Vec::new();
+  collect_trig_denominator_powers(&args[0], &mut denominator_powers);
+  let result = trig_expand_recursive(&prepared, &denominator_powers);
   // TrigExpand distributes products over sums (and expands powers).
   let expanded = crate::functions::expand_and_combine(&result);
   crate::evaluator::evaluate_expr_to_expr(&expanded)
 }
 
 /// Recursively apply TrigExpand to an expression.
-fn trig_expand_recursive(expr: &Expr) -> Expr {
-  if let Some(result) = trig_expand_half_angle_denominator(expr) {
+fn trig_expand_recursive(expr: &Expr, powers: &[(Expr, i128)]) -> Expr {
+  if let Some(result) = trig_expand_half_angle_denominator(expr, powers) {
     return result;
   }
   match expr {
@@ -6260,37 +6262,49 @@ fn trig_expand_recursive(expr: &Expr) -> Expr {
         "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" | "Sinh" | "Cosh"
         | "Tanh" | "Coth" | "Sech" | "Csch" => {
           // First recursively expand the argument
-          let arg = trig_expand_recursive(&args[0]);
+          let arg = trig_expand_recursive(&args[0], powers);
           expand_trig_function(trig_name, &arg)
         }
         _ => {
           // Recurse into other function calls
           Expr::FunctionCall {
             name: name.clone(),
-            args: args.iter().map(trig_expand_recursive).collect(),
+            args: args
+              .iter()
+              .map(|arg| trig_expand_recursive(arg, powers))
+              .collect(),
           }
         }
       }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args.iter().map(trig_expand_recursive).collect(),
+      args: args
+        .iter()
+        .map(|arg| trig_expand_recursive(arg, powers))
+        .collect(),
     },
     Expr::BinaryOp { op, left, right } => binop(
       *op,
-      trig_expand_recursive(left),
-      trig_expand_recursive(right),
+      trig_expand_recursive(left, powers),
+      trig_expand_recursive(right, powers),
     ),
-    Expr::List(items) => {
-      Expr::List(items.iter().map(trig_expand_recursive).collect())
-    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|arg| trig_expand_recursive(arg, powers))
+        .collect(),
+    ),
     _ => expr.clone(),
   }
 }
 
 /// Preserve the square supplied by a half-angle identity in a denominator.
 /// Expanding 1 + Cos[2 a] first loses the simpler 2 Cos[a]^2 form.
-fn trig_expand_half_angle_denominator(expr: &Expr) -> Option<Expr> {
+fn trig_expand_half_angle_denominator(
+  expr: &Expr,
+  powers: &[(Expr, i128)],
+) -> Option<Expr> {
   let (base, exponent) = match expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (&args[0], &args[1])
@@ -6307,6 +6321,9 @@ fn trig_expand_half_angle_denominator(expr: &Expr) -> Option<Expr> {
   };
   if *n >= 0 {
     return None;
+  }
+  if let Some(power) = trig_expand_reduced_power_denominator(base, *n, powers) {
+    return Some(power);
   }
   let doubled = n.checked_mul(2)?;
   let terms = collect_additive_terms(base);
@@ -6350,6 +6367,96 @@ fn trig_expand_half_angle_denominator(expr: &Expr) -> Option<Expr> {
       Expr::Integer(doubled),
     ),
   ]))
+}
+
+/// Record denominator powers from the input before linearization removes them.
+fn collect_trig_denominator_powers(expr: &Expr, out: &mut Vec<(Expr, i128)>) {
+  let power = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left.as_ref(), right.as_ref())),
+    _ => None,
+  };
+  if let Some((base, Expr::Integer(n))) = power
+    && (3..127).contains(n)
+    && let Some((function, angle)) = extract_trig(base)
+    && let Some((_, denominator, _)) = trig_quotient_parts(function)
+  {
+    out.push((call1(denominator, angle), *n));
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => {
+      for arg in args {
+        collect_trig_denominator_powers(arg, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      collect_trig_denominator_powers(left, out);
+      collect_trig_denominator_powers(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_trig_denominator_powers(operand, out);
+    }
+    _ => {}
+  }
+}
+
+/// Undo a verified power-reduction identity supplied by an input quotient.
+/// Reusing reduce_trig_power avoids a separate set of inverse identities.
+fn trig_expand_reduced_power_denominator(
+  base: &Expr,
+  exponent: i128,
+  powers: &[(Expr, i128)],
+) -> Option<Expr> {
+  let terms = collect_additive_terms(base);
+  if terms.len() < 2 || powers.is_empty() {
+    return None;
+  }
+  let term_parts = |term: &Expr| match term {
+    Expr::Integer(c) => (*c, Expr::Integer(1)),
+    _ => extract_integer_factor(term),
+  };
+  let (source_coefficient, source_term) = term_parts(&terms[0]);
+  for (root, degree) in powers {
+    let reduced = reduce_trig_power(root, *degree)?;
+    let (numerator, denominator) =
+      crate::functions::polynomial_ast::together::extract_num_den(&reduced);
+    let numerator = crate::evaluator::evaluate_expr_to_expr(
+      &normalize_trig_arguments(&numerator),
+    )
+    .ok()?;
+    let matching_coefficient =
+      collect_additive_terms(&numerator).iter().find_map(|term| {
+        let (coefficient, rest) = term_parts(term);
+        crate::evaluator::pattern_matching::expr_equal(&rest, &source_term)
+          .then_some(coefficient)
+      });
+    let Some(coefficient) = matching_coefficient else {
+      continue;
+    };
+    let scale = make_rational(source_coefficient, coefficient);
+    let difference = crate::functions::expand_and_combine(&minus2(
+      base.clone(),
+      mk_times(vec![scale.clone(), numerator]),
+    ));
+    if !matches!(difference, Expr::Integer(0)) {
+      continue;
+    }
+    let (function, angle) = extract_trig(root)?;
+    return Some(mk_times(vec![
+      pow(mk_times(vec![scale, denominator]), Expr::Integer(exponent)),
+      pow(
+        expand_trig_function(function, &angle),
+        Expr::Integer(degree.checked_mul(exponent)?),
+      ),
+    ]));
+  }
+  None
 }
 
 /// Expand a single trig function application.
@@ -6785,15 +6892,17 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let factored = factor_reduced_numeric_content(factored)?;
   // Together/Cancel may factor scalar multiples inside arguments again,
   // so normalize the arguments after those algebraic passes.
-  fn normalize_arguments(expr: &Expr) -> Expr {
-    let mapped = crate::syntax::map_children(expr, &normalize_arguments);
-    if let Some((name, arg)) = extract_trig(&mapped) {
-      call1(name, distribute_trig_argument(&arg))
-    } else {
-      mapped
-    }
+
+  crate::evaluator::evaluate_expr_to_expr(&normalize_trig_arguments(&factored))
+}
+
+fn normalize_trig_arguments(expr: &Expr) -> Expr {
+  let mapped = crate::syntax::map_children(expr, &normalize_trig_arguments);
+  if let Some((name, arg)) = extract_trig(&mapped) {
+    call1(name, distribute_trig_argument(&arg))
+  } else {
+    mapped
   }
-  crate::evaluator::evaluate_expr_to_expr(&normalize_arguments(&factored))
 }
 
 fn contains_reciprocal_trig(expr: &Expr) -> bool {

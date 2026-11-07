@@ -27218,3 +27218,38 @@ fn trig_to_exp_expands_monomials_times_one_transformed_sum() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_expand_preserves_denominator_powers_from_quotients() {
+  for (code, expected) in [
+    (
+      "TrigExpand[Tan[2*x]^3]",
+      "(3*Cos[x]*Sin[x])/(2*(Cos[x]^2 - Sin[x]^2)^3) - (3*Cos[x]^5*Sin[x])/(2*(Cos[x]^2 - Sin[x]^2)^3) + (5*Cos[x]^3*Sin[x]^3)/(Cos[x]^2 - Sin[x]^2)^3 - (3*Cos[x]*Sin[x]^5)/(2*(Cos[x]^2 - Sin[x]^2)^3)",
+    ),
+    (
+      "TrigExpand[Tanh[2*x]^3]",
+      "(-3*Cosh[x]*Sinh[x])/(2*(Cosh[x]^2 + Sinh[x]^2)^3) + (3*Cosh[x]^5*Sinh[x])/(2*(Cosh[x]^2 + Sinh[x]^2)^3) + (5*Cosh[x]^3*Sinh[x]^3)/(Cosh[x]^2 + Sinh[x]^2)^3 + (3*Cosh[x]*Sinh[x]^5)/(2*(Cosh[x]^2 + Sinh[x]^2)^3)",
+    ),
+    (
+      "TrigExpand[Cot[2*x]^3]",
+      "(-15*Cot[x])/32 + Cot[x]^3/32 + (3*Csc[x]^3*Sec[x])/32 - (3*Csc[x]*Sec[x]^3)/32 + (15*Tan[x])/32 - Tan[x]^3/32",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+  for degree in [3, 4, 5] {
+    for angle in ["2*x", "3*x", "x+y"] {
+      let code = format!("TrigExpand[Tan[{angle}]^{degree}]");
+      let result = interpret(&code).unwrap();
+      let denominator =
+        interpret(&format!("TrigExpand[Cos[{angle}]]")).unwrap();
+      assert!(
+        result.contains(&format!("({denominator})^{degree}")),
+        "{code}: {result}"
+      );
+    }
+  }
+  // Explicit harmonic sums must not acquire an input quotient's power.
+  let direct = interpret("TrigExpand[1/(3*Cos[2*x]+Cos[6*x])]").unwrap();
+  assert!(!direct.contains("(Cos[x]^2 - Sin[x]^2)^3"));
+}
