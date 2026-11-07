@@ -989,40 +989,64 @@ fn big_rational_to_f64(num: &BigInt, den: &BigInt) -> Option<f64> {
   if den.is_zero() {
     return None;
   }
+  let sign = u64::from(num.is_negative() ^ den.is_negative()) << 63;
   if num.is_zero() {
-    return Some(0.0);
+    return Some(f64::from_bits(sign));
   }
-  let sign = if num.is_negative() ^ den.is_negative() {
-    -1.0
+  let numerator = num.abs();
+  let denominator = den.abs();
+  // Division rounds once when both integer operands are exactly representable.
+  if numerator.bits() <= 53 && denominator.bits() <= 53 {
+    return Some(num.to_f64()? / den.to_f64()?);
+  }
+  let mut exponent = numerator.bits() as i64 - denominator.bits() as i64;
+  let below_power = if exponent >= 0 {
+    numerator < (&denominator << exponent as usize)
   } else {
-    1.0
+    (&numerator << (-exponent) as usize) < denominator
   };
-  let num_a = num.abs();
-  let den_a = den.abs();
-
-  // Fast path: both magnitudes are comfortably within f64 range.
-  let nb = num_a.bits() as i64;
-  let db = den_a.bits() as i64;
-  if nb < 1000 && db < 1000 {
-    let n = num_a.to_f64()?;
-    let d = den_a.to_f64()?;
-    return Some(sign * n / d);
+  if below_power {
+    exponent -= 1;
+  }
+  if exponent > 1023 {
+    return Some(f64::from_bits(sign | (0x7ff << 52)));
+  }
+  if exponent < -1075 {
+    return Some(f64::from_bits(sign));
   }
 
-  // General path: form q = floor((num << k) / den) so the integer quotient
-  // carries ~64 significant bits (q ≈ (num/den) * 2^k), then scale by 2^-k.
-  // Choosing k = 64 - (nb - db) makes q's bit length ≈ 64 regardless of how
-  // large num and den are, so q.to_f64() never overflows.
-  let k: i64 = 64 - (nb - db);
-  let q = if k >= 0 {
-    (&num_a << (k as usize)) / &den_a
+  // Divide at the target binary spacing, including subnormal spacing.
+  // The exact remainder supplies the guard/sticky information for ties-to-even.
+  let shift = (52 - exponent).min(1074);
+  let (scaled_num, scaled_den) = if shift >= 0 {
+    (numerator << shift as usize, denominator)
   } else {
-    &num_a / (&den_a << ((-k) as usize))
+    (numerator, denominator << (-shift) as usize)
   };
-  let qf = q.to_f64()?;
-  // num/den = q * 2^{-k}; a too-large exponent overflows to +/-inf and a
-  // too-small one underflows to 0, both of which are the correct f64 result.
-  Some(sign * qf * 2.0_f64.powi(-k as i32))
+  let quotient = &scaled_num / &scaled_den;
+  let remainder = scaled_num % &scaled_den;
+  let mut significand = quotient.to_u64()?;
+  let twice_remainder = remainder << 1usize;
+  if twice_remainder > scaled_den
+    || (twice_remainder == scaled_den && significand & 1 != 0)
+  {
+    significand += 1;
+  }
+  if exponent < -1022 {
+    return Some(f64::from_bits(sign | significand));
+  }
+  if significand == 1u64 << 53 {
+    significand >>= 1;
+    exponent += 1;
+  }
+  if exponent > 1023 {
+    return Some(f64::from_bits(sign | (0x7ff << 52)));
+  }
+  Some(f64::from_bits(
+    sign
+      | (((exponent + 1023) as u64) << 52)
+      | (significand & ((1u64 << 52) - 1)),
+  ))
 }
 
 /// Check if an expression requires BigInt arithmetic (exceeds f64 precision).
@@ -2438,4 +2462,72 @@ pub fn fast_machine_complex_binop(
       build_complex_float_expr(re, im)
     },
   )
+}
+
+#[cfg(test)]
+mod rational_machine_rounding_tests {
+  use super::*;
+
+  #[test]
+  fn rational_rounds_once_with_ties_to_even() {
+    let denominator = BigInt::from(1) << 53usize;
+    for (offset, bits) in [(1, 1.0f64.to_bits()), (3, 1.0f64.to_bits() + 2)] {
+      let numerator = &denominator + offset;
+      assert_eq!(
+        big_rational_to_f64(&numerator, &denominator)
+          .unwrap()
+          .to_bits(),
+        bits
+      );
+      assert_eq!(
+        big_rational_to_f64(&(-numerator), &denominator)
+          .unwrap()
+          .to_bits(),
+        bits | (1u64 << 63)
+      );
+    }
+    let denominator = BigInt::from(1) << 54usize;
+    assert_eq!(
+      big_rational_to_f64(&(&denominator + 3), &denominator)
+        .unwrap()
+        .to_bits(),
+      1.0f64.to_bits() + 1
+    );
+  }
+
+  #[test]
+  fn rational_rounds_at_subnormal_and_overflow_boundaries() {
+    let denominator = BigInt::from(1) << 1075usize;
+    assert_eq!(
+      big_rational_to_f64(&BigInt::from(1), &denominator)
+        .unwrap()
+        .to_bits(),
+      0
+    );
+    assert_eq!(
+      big_rational_to_f64(&BigInt::from(3), &denominator)
+        .unwrap()
+        .to_bits(),
+      2
+    );
+    let normal_boundary = (BigInt::from(1) << 53usize) - 1;
+    assert_eq!(
+      big_rational_to_f64(&normal_boundary, &denominator)
+        .unwrap()
+        .to_bits(),
+      1u64 << 52
+    );
+    let largest = ((BigInt::from(1) << 53usize) - 1) << 971usize;
+    assert_eq!(
+      big_rational_to_f64(&largest, &BigInt::from(1)),
+      Some(f64::MAX)
+    );
+    let overflow = ((BigInt::from(1) << 54usize) - 1) << 970usize;
+    assert_eq!(
+      big_rational_to_f64(&overflow, &BigInt::from(1)),
+      Some(f64::INFINITY)
+    );
+    let huge = BigInt::from(10).pow(400);
+    assert_eq!(big_rational_to_f64(&huge, &(&huge / 10)), Some(10.0));
+  }
 }
