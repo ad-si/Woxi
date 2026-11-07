@@ -4060,6 +4060,34 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
   }
+  // A product containing a function-valued sum compares through that
+  // compound factor, just as Sort does. Looking only for bare call
+  // factors misses expressions such as x*(Sin[x] + Sec[x]^2).
+  fn has_call_sum_factor(e: &Expr) -> bool {
+    let factors = plus_term_factors(std::slice::from_ref(e));
+    // A numeric multiple of a sum still compares as a sum, including
+    // coefficients such as Sqrt[Pi] in incomplete-gamma expansions.
+    factors.iter().any(|f| {
+      matches!(f.as_ref(), Expr::FunctionCall { name, args }
+        if name == "Plus" && args.iter().any(|a| !is_purely_algebraic(a)))
+    }) && factors
+      .iter()
+      .filter(|f| !crate::functions::predicate_ast::is_numeric_q(f))
+      .count()
+      > 1
+  }
+  if has_call_sum_factor(a) || has_call_sum_factor(b) {
+    match (is_purely_algebraic(a), is_purely_algebraic(b)) {
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+    let order =
+      crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+    if order != std::cmp::Ordering::Equal {
+      return order;
+    }
+  }
   // Symbols times a power of a sum free of them (`a/(1 + c)`, `z Sqrt[2 +
   // c]`) order as `Order` does — from the last factor back, so the power
   // decides and then the symbols: `-(a/(1 + c)) + x/(1 + c)`, `a/(2 + c) +
@@ -8059,6 +8087,11 @@ fn sum_constant_and_rest(e: &Expr) -> Option<((f64, f64), Vec<&Expr>)> {
 }
 
 pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  // Calls and powers of calls use the same argument-first comparison
+  // as call-led Plus terms; an exponent does not precede the base call.
+  if let (Some(a), Some(b)) = (call_factor_parts(a), call_factor_parts(b)) {
+    return compare_call_factors(&a, &b);
+  }
   // A power of `-s` against a power of the symbol `s` orders by the bases,
   // as `Order` does, and `-s` comes first: `(-p)^(3/2)*p`, `Sqrt[-p]*p`.
   {

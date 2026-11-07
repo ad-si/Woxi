@@ -15393,3 +15393,22 @@ fn polynomial_times_tangent_uses_polylogarithms() {
     "I/4*x^4 - (x^3*Log[1 + E^((4*I)*x)])/2 + (3*I)/8*x^2*PolyLog[2, -E^((4*I)*x)] - (3*x*PolyLog[3, -E^((4*I)*x)])/16 - (3*I)/64*PolyLog[4, -E^((4*I)*x)]"
   );
 }
+#[test]
+fn function_factors_and_compound_sum_terms_use_canonical_order() {
+  for (code, expected) in [
+    ("Sin[x*y] Sin[x]^2", "Sin[x]^2*Sin[x*y]"),
+    ("Sin[x*y] Sin[y]^2", "Sin[y]^2*Sin[x*y]"),
+    ("f[x*y] f[x]^2", "f[x]^2*f[x*y]"),
+    ("Gamma[x*y] Gamma[x]^2", "Gamma[x]^2*Gamma[x*y]"),
+    (
+      "D[x(Tan[2x]-Cos[x]),x]",
+      "-Cos[x] + x*(2*Sec[2*x]^2 + Sin[x]) + Tan[2*x]",
+    ),
+    (
+      "D[(Sin[2x]^3+Sin[x+y]^3)(Tan[2x]^2-Cos[x]),x]",
+      "(Sin[2*x]^3 + Sin[x + y]^3)*(Sin[x] + 4*Sec[2*x]^2*Tan[2*x]) + (6*Cos[2*x]*Sin[2*x]^2 + 3*Cos[x + y]*Sin[x + y]^2)*(-Cos[x] + Tan[2*x]^2)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

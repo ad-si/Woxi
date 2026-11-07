@@ -16015,6 +16015,10 @@ mod trig_expand {
   fn combined_trig_terms_are_linearized_before_expansion() {
     for (code, expected) in [
       (
+        "TrigExpand[Tan[x]+Cos[x*y]^2+Sin[x*y] Cos[x+y]^2]",
+        "1/2 + Cos[x*y]^2/2 + Sin[x*y]/2 + (Cos[x]^2*Cos[y]^2*Sin[x*y])/2 - (Cos[y]^2*Sin[x]^2*Sin[x*y])/2 - 2*Cos[x]*Cos[y]*Sin[x]*Sin[y]*Sin[x*y] - (Cos[x]^2*Sin[y]^2*Sin[x*y])/2 + (Sin[x]^2*Sin[y]^2*Sin[x*y])/2 - Sin[x*y]^2/2 + Tan[x]",
+      ),
+      (
         "TrigExpand[Cos[x] Cos[2x]]",
         "Cos[x]/2 + Cos[x]^3/2 - (3*Cos[x]*Sin[x]^2)/2",
       ),
