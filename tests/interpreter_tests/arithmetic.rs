@@ -15768,3 +15768,40 @@ fn real_digits_extends_recurring_blocks_into_the_integer_prefix() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn order_products_independently_of_stored_denominator_position() {
+  for (left, right) in [
+    ("Cos[x]", "Sin[x]"),
+    ("Cosh[x]", "Sinh[x]"),
+    ("f[x]", "g[x]"),
+  ] {
+    for exponent in 1..=4 {
+      let denominator = format!("({left}^2 - {right}^2)^{exponent}");
+      let plain = format!("{right}^2/{denominator}");
+      let product = format!("({left}^4*{right}^2)/{denominator}");
+      let expected_denominator = if exponent == 1 {
+        format!("({left}^2 - {right}^2)")
+      } else {
+        denominator.clone()
+      };
+      let plain_display = format!("{right}^2/{expected_denominator}");
+      let product_display =
+        format!("({left}^4*{right}^2)/{expected_denominator}");
+      for (code, expected) in [
+        (
+          format!("{product}+{plain}"),
+          format!("{plain_display} + {product_display}"),
+        ),
+        (
+          format!("Sort[{{{product},{plain}}}]"),
+          format!("{{{plain_display}, {product_display}}}"),
+        ),
+        (format!("Order[{plain},{product}]"), "1".to_string()),
+        (format!("Order[{product},{plain}]"), "-1".to_string()),
+      ] {
+        assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+      }
+    }
+  }
+}

@@ -9186,8 +9186,10 @@ hyperbolic-square denominator cases (seed 1794042350525575000).
 Seed 1794052678793255000 also exposed higher quotient powers. Cubic
 `Tan[2*x]` and `Tanh[2*x]` expansions now preserve their denominator powers
 and match Wolfram. Higher degrees and other angles use the same reduction
-identity. Fourth powers still have a term-order difference. An explicitly
-written `TrigExpand[1/(3*Cos[2*x]+Cos[6*x])]` also differs: Wolfram expands
+identity. The fourth-power term-order difference is now resolved, together
+with `TrigExpand[Cos[2*x]^2-Tan[2*x]^3]` from seed 1794078589196024000
+(2026-11-07): the shared product comparator orders denominator factors
+canonically before comparing products. An explicitly written `TrigExpand[1/(3*Cos[2*x]+Cos[6*x])]` also differs: Wolfram expands
 `4*(Cos[x]^2-Sin[x]^2)^3`, while Woxi directly expands the two harmonics.
 These denominator polynomials are equivalent, but their displayed forms differ.
 

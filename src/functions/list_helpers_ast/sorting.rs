@@ -2982,5 +2982,9 @@ fn times_factors_for_order(e: &Expr) -> Option<Vec<&Expr>> {
   {
     return None;
   }
+  // Arithmetic construction can retain denominator factors in a different
+  // position from canonical Order. Compare the factors in canonical order
+  // rather than letting that stored position change the product's order.
+  factors.sort_by(|a, b| canonical_cmp(a, b));
   Some(factors)
 }
