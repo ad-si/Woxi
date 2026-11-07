@@ -2347,43 +2347,29 @@ fn hypergeometric2f1_polynomial(
   c: &Expr,
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // Build the polynomial symbolically: sum_{k=0}^{n} coeff_k * z^k
-  // coeff_k = (-n)_k (b)_k / ((c)_k * k!)
-  // (-n)_k = (-n)(-n+1)...(-n+k-1) = (-1)^k * n!/(n-k)!
-  let mut terms: Vec<Expr> = vec![Expr::Integer(1)]; // k=0 term
+  // Advance exact coefficients by their ratio instead of forming k! in
+  // a fixed-width integer. The evaluator promotes large integers as needed.
+  let mut terms = vec![Expr::Integer(1)];
+  let mut coefficient = Expr::Integer(1);
   let ni = n as i128;
-  let mut k_fact = 1i128;
   for k in 1..=n {
     let ki = k as i128;
-    // Build coefficient: product of (-n+j)*(b+j)/(c+j) for j=0..k-1, divided by k!
-    // Use symbolic multiplication
-    let mut numer_factors: Vec<Expr> = Vec::new();
-    let mut denom_factors: Vec<Expr> = Vec::new();
-
-    for j in 0..k {
-      let ji = j as i128;
-      // (-n+j) factor
-      numer_factors.push(Expr::Integer(-ni + ji));
-      // (b+j) factor
-      numer_factors.push(plus(vec![b.clone(), Expr::Integer(ji)]));
-      // (c+j) factor in denominator
-      denom_factors.push(plus(vec![c.clone(), Expr::Integer(ji)]));
-    }
-    // k! in denominator
-    k_fact *= k as i128;
-    denom_factors.push(Expr::Integer(k_fact));
-
-    // z^k
+    let offset = Expr::Integer(ki - 1);
+    coefficient = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+      coefficient,
+      Expr::Integer(-ni + ki - 1),
+      plus(vec![b.clone(), offset.clone()]),
+      pow(
+        times(vec![plus(vec![c.clone(), offset]), Expr::Integer(ki)]),
+        Expr::Integer(-1),
+      ),
+    ]))?;
     let zk = if k == 1 {
       z.clone()
     } else {
       pow(z.clone(), Expr::Integer(ki))
     };
-    numer_factors.push(zk);
-
-    let numer = times(numer_factors);
-    let denom = times(denom_factors);
-    terms.push(times(vec![numer, pow(denom, Expr::Integer(-1))]));
+    terms.push(times(vec![coefficient.clone(), zk]));
   }
 
   let sum = plus(terms);

@@ -537,6 +537,16 @@ mod hypergeometric2f1 {
   use super::*;
 
   #[test]
+  fn terminating_series_does_not_overflow_factorials() {
+    for code in [
+      "Hypergeometric2F1[-40,2,3,1/2]",
+      "Hypergeometric2F1[2,-40,3,1/2]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), "209430786241/45079976738816");
+    }
+  }
+
+  #[test]
   fn zero_numerator_parameter_preserves_numeric_precision() {
     for (code, expected) in [
       ("Hypergeometric2F1[0,0,0,-0.3]", "1."),
