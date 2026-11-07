@@ -13823,6 +13823,26 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Fold an exact product's rational coefficient with the machine
+  // reciprocal before rounding its symbolic factors, just as Times does.
+  if matches!(b, Expr::Real(y) if *y != 0.0) && !contains_real(a) {
+    let (_, den) =
+      crate::functions::polynomial_ast::together::extract_num_den(a);
+    let factors =
+      crate::functions::polynomial_ast::together::flatten_times_args(
+        std::slice::from_ref(a),
+      );
+    if expr_to_rational(&den).is_some()
+      && factors.len() > 1
+      && factors
+        .iter()
+        .any(|factor| expr_to_rational(factor).is_some())
+    {
+      let reciprocal = power_two(b, &Expr::Integer(-1))?;
+      return times_ast(&[a.clone(), reciprocal]);
+    }
+  }
+
   // For reals, perform floating-point division
   // Use try_eval_to_f64 when at least one operand is Real to handle constants like Pi/4.0
   let has_real = matches!(a, Expr::Real(_)) || matches!(b, Expr::Real(_));

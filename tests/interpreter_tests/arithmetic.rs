@@ -15562,3 +15562,17 @@ fn explicit_divide_folds_named_constants_with_machine_reciprocals() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn explicit_divide_combines_exact_coefficients_before_symbolic_rounding() {
+  for (code, expected) in [
+    (
+      "Divide[57*Pi/160,430.2845056908104]",
+      "0.0026010520203243897",
+    ),
+    ("Divide[7*E/13,17.2]", "0.08509826833279657"),
+    ("Divide[3*Sqrt[2]/7,1.8]", "0.3367175148507369"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
