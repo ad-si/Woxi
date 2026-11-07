@@ -1135,10 +1135,6 @@ fn poly_matrix_determinant_big(
   if n == 1 {
     return Some(matrix[0][0].clone());
   }
-  if n > 8 {
-    return None; // Too expensive
-  }
-
   // Every term of the permutation expansion takes one entry per row, so the
   // determinant's degree is at most the sum of the per-row maxima.
   let degree_bound: usize = matrix

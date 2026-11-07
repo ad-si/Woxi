@@ -25674,3 +25674,27 @@ fn full_simplify_normalizes_constant_remainders_before_comparing_costs() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn minimal_polynomial_four_independent_square_roots() {
+  for (alpha, expected) in [
+    (
+      "Sqrt[2]+Sqrt[3]+Sqrt[5]+Sqrt[7]",
+      "46225 - 5596840*x^2 + 13950764*x^4 - 7453176*x^6 + 1513334*x^8 - 141912*x^10 + 6476*x^12 - 136*x^14 + x^16",
+    ),
+    (
+      "Sqrt[2]-Sqrt[13]-Sqrt[24]+Sqrt[22]",
+      "485018923489 - 284135124776*x^2 + 58793126780*x^4 - 5485092312*x^6 + 261669350*x^8 - 6592920*x^10 + 84284*x^12 - 488*x^14 + x^16",
+    ),
+    (
+      "Sqrt[5]-Sqrt[13]-Sqrt[24]+Sqrt[22]",
+      "105796669696 - 137631985664*x^2 + 51494021888*x^4 - 6051956736*x^6 + 306075488*x^8 - 7548672*x^10 + 91952*x^12 - 512*x^14 + x^16",
+    ),
+  ] {
+    assert_eq!(
+      interpret(&format!("MinimalPolynomial[{alpha},x]")).unwrap(),
+      expected,
+      "{alpha}"
+    );
+  }
+}
