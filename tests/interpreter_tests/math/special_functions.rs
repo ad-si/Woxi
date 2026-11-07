@@ -12467,3 +12467,64 @@ fn cosine_integral_avoids_series_cancellation() {
     "0.33740392290096816 + 3.141592653589793*I"
   );
 }
+
+#[test]
+fn hypergeometric_1f1_lower_parameter_poles_preserve_termination() {
+  for (code, expected) in [
+    ("Hypergeometric1F1[1,0,E]", "ComplexInfinity"),
+    ("Hypergeometric1F1[2,-1,z]", "ComplexInfinity"),
+    ("Hypergeometric1F1[-2,-1,z]", "ComplexInfinity"),
+    ("Hypergeometric1F1[Pi,-2,z]", "ComplexInfinity"),
+    ("Hypergeometric1F1[I,0,z]", "ComplexInfinity"),
+    ("Hypergeometric1F1[1,0.,z]", "ComplexInfinity"),
+    ("Hypergeometric1F1[1,0,0]", "Indeterminate"),
+    ("Hypergeometric1F1[a,0,0]", "Indeterminate"),
+    ("Hypergeometric1F1[1,-1,0]", "1"),
+    ("Hypergeometric1F1[0,0,z]", "1"),
+    ("Hypergeometric1F1[-1,-1,z]", "1 + z"),
+    ("Hypergeometric1F1[-1,-2,z]", "1 + z/2"),
+    ("Hypergeometric1F1[a,0,z]", "Hypergeometric1F1[a, 0, z]"),
+  ] {
+    let output = woxi::interpret_with_stdout(code).unwrap();
+    assert_eq!(output.result, expected, "{code}");
+    assert!(output.warnings.is_empty(), "{code}: {:?}", output.warnings);
+  }
+}
+
+#[test]
+fn hypergeometric_1f1_inexact_integer_upper_parameters_terminate() {
+  for (code, expected) in [
+    ("Hypergeometric1F1[0.,0,z]", "1.`15.954589770191005"),
+    ("Hypergeometric1F1[0,0,2.]", "1."),
+    ("Hypergeometric1F1[-2.,-1.,0]", "1."),
+    ("Hypergeometric1F1[-1.,-1.,2]", "3."),
+    ("Hypergeometric1F1[-1.,-2,2]", "2."),
+    (
+      "Hypergeometric1F1[-1.,-1.,z]",
+      "1.`15.954589770191005 + 1.`15.954589770191005*z",
+    ),
+    (
+      "Hypergeometric1F1[-1.,-2,z]",
+      "1.`15.954589770191005 + 0.5`15.954589770191005*z",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn regularized_hypergeometric_1f1_remains_finite_at_lower_parameter_poles() {
+  for b in ["0", "0.", "-2", "-2."] {
+    let power = if b.starts_with('-') { 3 } else { 1 };
+    let expected = 0.5_f64.powi(power) * 0.5_f64.exp();
+    for code in [
+      format!("Hypergeometric1F1Regularized[1,{b},0.5]"),
+      format!("HypergeometricPFQRegularized[{{1}},{{{b}}},0.5]"),
+    ] {
+      let output = woxi::interpret_with_stdout(&code).unwrap();
+      let value = output.result.parse::<f64>().unwrap();
+      assert!((value - expected).abs() < 1e-14, "{code}: {value}");
+      assert!(output.warnings.is_empty(), "{code}: {:?}", output.warnings);
+    }
+  }
+}

@@ -841,7 +841,7 @@ pub fn hypergeometric_pfq_regularized_ast(
 
   // Handle Infinity result (either symbolic `Infinity` or float ∞).
   let pfq_is_infinity = match &pfq_result {
-    Expr::Identifier(s) if s == "Infinity" => true,
+    Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity" => true,
     Expr::Real(x) if x.is_infinite() => true,
     _ => false,
   };
@@ -849,8 +849,9 @@ pub fn hypergeometric_pfq_regularized_ast(
     // Check if any denominator Gamma is infinite (non-positive integer b)
     let mut has_pole = false;
     for b_expr in &b_list {
-      if let Some(n) = expr_to_i128(b_expr)
-        && n <= 0
+      if let Some(n) = expr_to_f64_real(b_expr)
+        && n <= 0.0
+        && n.fract() == 0.0
       {
         has_pole = true;
         break;
@@ -866,7 +867,7 @@ pub fn hypergeometric_pfq_regularized_ast(
       }
       return Ok(unevaluated("HypergeometricPFQRegularized", args));
     }
-    return Ok(id_expr("Infinity"));
+    return Ok(pfq_result);
   }
 
   // Check if any argument is Real (to decide numeric vs symbolic evaluation)
@@ -1196,19 +1197,49 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A zero lower parameter is singular even at z=0, except at a=0.
+  if is_expr_zero(&args[1]) && is_expr_zero(&args[2]) && !is_expr_zero(&args[0])
+  {
+    return Ok(id_expr("Indeterminate"));
+  }
   // 1F1[a, b, 0] = 1
   if is_expr_zero(&args[2]) {
-    return Ok(Expr::Integer(1));
+    return Ok(if args.iter().any(|arg| matches!(arg, Expr::Real(_))) {
+      Expr::Real(1.0)
+    } else {
+      Expr::Integer(1)
+    });
   }
 
-  // 1F1[0, 0, z] = 1 — the Pochhammer ratio (0)_k/(0)_k is conventionally 0
-  // for k ≥ 1, so only the k=0 term survives. (Distinct from the general
-  // 1F1[a, a, z] = E^z rule; here a = 0 collapses to the constant 1.)
-  if is_expr_zero(&args[0]) && is_expr_zero(&args[1]) {
-    if matches!(&args[2], Expr::Real(_) | Expr::BigFloat(_, _)) {
-      return Ok(Expr::Real(1.0));
+  let integer_parameter = |expr: &Expr| -> Option<BigInt> {
+    use num_traits::FromPrimitive;
+    match expr {
+      Expr::Integer(n) => Some(BigInt::from(*n)),
+      Expr::BigInteger(n) => Some(n.clone()),
+      Expr::Real(n) if n.is_finite() && n.fract() == 0.0 => {
+        BigInt::from_f64(*n)
+      }
+      _ => None,
     }
-    return Ok(Expr::Integer(1));
+  };
+  if let Some(b) = integer_parameter(&args[1])
+    && b <= BigInt::from(0)
+    && crate::functions::predicate_ast::is_numeric_q(&args[0])
+  {
+    let terminates_before_pole = integer_parameter(&args[0])
+      .is_some_and(|a| a <= BigInt::from(0) && a >= b);
+    if !terminates_before_pole {
+      return Ok(id_expr("ComplexInfinity"));
+    }
+  }
+
+  // Preserve the existing arbitrary-precision-zero convention; exact and
+  // machine zero parameters use the shared terminating polynomial below.
+  if is_expr_zero(&args[0])
+    && is_expr_zero(&args[1])
+    && matches!(&args[2], Expr::BigFloat(_, _))
+  {
+    return Ok(Expr::Real(1.0));
   }
 
   // 1F1[a, a, z] = E^z (the (a)_n factors cancel). Use Exp to trigger the
@@ -1217,7 +1248,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // giving a truncated-exponential polynomial (e.g. 1F1[-2, -2, z] =
   // 1 + z + z^2/2), handled by the terminating-series branch below.
   if expr_to_string(&args[0]) == expr_to_string(&args[1])
-    && !matches!(&args[0], Expr::Integer(n) if *n <= 0)
+    && integer_parameter(&args[0]).is_none_or(|n| n > BigInt::from(0))
   {
     let exp_call = call1("Exp", args[2].clone());
     return crate::evaluator::evaluate_expr_to_expr(&exp_call);
@@ -1264,14 +1295,20 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // make a (b)_k factor vanish). Computed directly term-by-term so it also
   // works for symbolic b, e.g. 1F1[-1, b, x] = 1 - x/b. (The a == b case is
   // E^z and was already handled above.)
-  if let Expr::Integer(a_i) = &args[0]
-    && *a_i <= 0
-    && !matches!(&args[1], Expr::Integer(bi) if *bi <= 0 && -*bi < -*a_i)
+  if let Some(a_i) = integer_parameter(&args[0])
+    .and_then(|n| num_traits::ToPrimitive::to_i128(&n))
+    && a_i <= 0
+    && !integer_parameter(&args[1])
+      .is_some_and(|b| b <= BigInt::from(0) && b > BigInt::from(a_i))
   {
-    let neg_n = *a_i;
+    let neg_n = a_i;
     let n = -neg_n;
-    let b = &args[1];
+    let b = integer_parameter(&args[1])
+      .map_or_else(|| args[1].clone(), bigint_to_expr);
     let z = &args[2];
+    let inexact_parameters =
+      args.iter().any(|arg| matches!(arg, Expr::Real(_)));
+    let numeric_z = crate::functions::predicate_ast::is_numeric_q(z);
     let mut terms: Vec<Expr> = Vec::new();
     let mut poch_a = BigInt::from(1); // (a)_0 = 1
     let mut k_fact = BigInt::from(1); // 0! = 1
@@ -1288,15 +1325,6 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Power",
           &[bigint_to_expr(k_fact.clone()), Expr::Integer(-1)],
         )?);
-        let z_pow = if k == 1 {
-          z.clone()
-        } else {
-          crate::evaluator::evaluate_function_call_ast(
-            "Power",
-            &[z.clone(), Expr::Integer(k)],
-          )?
-        };
-        factors.push(z_pow);
         for j in 0..k {
           let factor = if j == 0 {
             b.clone()
@@ -1312,10 +1340,35 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )?);
         }
       }
-      let term = if factors.len() == 1 {
+      let mut coefficient = if factors.len() == 1 {
         factors.into_iter().next().unwrap()
       } else {
         crate::evaluator::evaluate_function_call_ast("Times", &factors)?
+      };
+      if inexact_parameters && let Some(value) = try_eval_to_f64(&coefficient) {
+        coefficient = if numeric_z {
+          Expr::Real(value)
+        } else {
+          crate::evaluator::evaluate_function_call_ast(
+            "SetPrecision",
+            &[
+              Expr::Real(value),
+              Expr::Real(f64::MANTISSA_DIGITS as f64 / 10.0_f64.log2()),
+            ],
+          )?
+        };
+      }
+      let term = if k == 0 {
+        coefficient
+      } else {
+        let z_power = crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[z.clone(), Expr::Integer(k)],
+        )?;
+        crate::evaluator::evaluate_function_call_ast(
+          "Times",
+          &[coefficient, z_power],
+        )?
       };
       terms.push(term);
     }
@@ -2760,6 +2813,22 @@ pub fn hypergeometric_1f1_regularized_ast(
   let has_real = matches!(args[0], Expr::Real(_))
     || matches!(args[1], Expr::Real(_))
     || matches!(args[2], Expr::Real(_));
+
+  if has_real && b_val.is_some_and(|b| b <= 0.0 && b.fract() == 0.0) {
+    let result = hypergeometric_pfq_regularized_ast(&[
+      Expr::List(vec![args[0].clone()].into()),
+      Expr::List(vec![args[1].clone()].into()),
+      args[2].clone(),
+    ])?;
+    return Ok(
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "HypergeometricPFQRegularized")
+      {
+        unevaluated("Hypergeometric1F1Regularized", args)
+      } else {
+        result
+      },
+    );
+  }
 
   if let (Some(_a), Some(b), Some(_z)) = (a_val, b_val, z_val)
     && has_real
