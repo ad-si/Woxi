@@ -26672,3 +26672,23 @@ fn polynomial_products_integrate_collected_coefficients() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn rational_integrals_share_nonmonic_quadratic_partial_fractions() {
+  for (code, expected) in [
+    (
+      "Integrate[(2+5x)/((x-1)*(3x^2+2x+4)),x]",
+      "(17*ArcTan[(1 + 3*x)/Sqrt[11]])/(9*Sqrt[11]) + (7*Log[1 - x])/9 - (7*Log[4 + 2*x + 3*x^2])/18",
+    ),
+    (
+      "Integrate[(4+3x)/(5x+4x^2+2x^3),x]",
+      "(7*ArcTan[Sqrt[2/3]*(1 + x)])/(5*Sqrt[6]) + (4*Log[x])/5 - (2*Log[5 + 4*x + 2*x^2])/5",
+    ),
+    (
+      "Integrate[1/(x+4x^2+2x^3),x]",
+      "Sqrt[2]*ArcTanh[Sqrt[2]*(1 + x)] + Log[x] - Log[1 + 4*x + 2*x^2]/2",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
