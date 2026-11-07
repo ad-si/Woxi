@@ -1128,6 +1128,9 @@ Diff-fuzz seed 1794008323899532000 reproduced this class on 2026-11-06:
 `LogIntegral[1.2]` is `-0.9337872926672578` in Woxi versus
 `-0.933787292667258` in Wolfram. Wolfram's own
 `N[N[LogIntegral[SetPrecision[1.2,70]],60]]` agrees with Woxi.
+Seed 1794009243473726000 also found `LogIntegral[5.]`: Woxi returns
+`3.634588310032652`, Wolfram returns `3.634588310032651`, and Wolfram's
+`N[N[LogIntegral[5],60]]` agrees with Woxi.
 
 The guard digits WL prints past the precision of `N[LogIntegral[3/10], 30]`,
 `N[ExpIntegralE[2, 2/10], 30]` and `N[Gamma[0, 2/10], 30]` differ from
@@ -9054,3 +9057,19 @@ Woxi and `0.5822405264650127` in Wolfram; Wolfram's
 Woxi gives `0.3124001778928926`, Wolfram gives `0.31240017789289265`,
 and Wolfram's `N[N[PolyLog[3,SetPrecision[0.3,70]],60]]` agrees with
 Woxi. These direct machine-evaluation differences remain unresolved.
+
+### Symbolic and machine NullSpace basis conventions
+
+Verified on 2026-11-06 while investigating diff-fuzz seed
+1794009243473726000. Integer input matrices now return primitive integer
+basis vectors, while rational matrices retain their free-coordinate
+normalization. Symbolic and machine inputs still use that same row-reduced
+free-coordinate construction rather than Wolfram's preferred bases:
+
+- `NullSpace[{{x,2,3}}]` gives `{{-3/x,0,1},{-2/x,1,0}}` in Woxi;
+  Wolfram gives `{{2,-x,0},{3,0,-x}}`.
+- `NullSpace[{{2.,3.}}]` gives `{{-1.5,1}}` in Woxi; Wolfram gives
+  `{{-0.8320502943378436,0.5547001962252293}}`.
+
+The vectors span the same generic null spaces, but symbolic denominator
+clearing, basis ordering, and numerical orthonormalization remain different.
