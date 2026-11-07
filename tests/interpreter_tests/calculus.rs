@@ -26657,3 +26657,18 @@ fn rational_integrals_cancel_polynomial_content_and_expand_residue_denominators(
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn polynomial_products_integrate_collected_coefficients() {
+  for (code, expected) in [
+    ("Integrate[x*(x+y),x]", "x^3/3 + (x^2*y)/2"),
+    ("Integrate[x*(x+2),x]", "x^2 + x^3/3"),
+    ("Integrate[(x+y)*x^2,x]", "x^4/4 + (x^3*y)/3"),
+    (
+      "Integrate[(x+y)*(x+z),x]",
+      "x^3/3 + x*y*z + (x^2*(y + z))/2",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

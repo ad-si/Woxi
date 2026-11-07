@@ -9505,6 +9505,39 @@ fn try_integrate_reciprocal_quadratic(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
+  // Polynomial products should integrate coefficient by coefficient before
+  // the integration-by-parts fallback can produce an uncollected primitive.
+  if (matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    ))
+    && crate::functions::polynomial_ast::is_polynomial(expr, var)
+    && crate::functions::polynomial_ast::together::flatten_times_args(
+      std::slice::from_ref(expr),
+    )
+    .iter()
+    .filter(|factor| !is_constant_wrt(factor, var))
+    .count()
+      > 1
+  {
+    let expanded = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(expr),
+    )
+    .ok()?;
+    let collected = crate::evaluator::evaluate_function_call_ast(
+      "Collect",
+      &[expanded, id_expr(var)],
+    )
+    .ok()?;
+    if !expr_str_eq(&collected, expr) {
+      return integrate(&collected, var);
+    }
+  }
   // ∫ 1/(p x^2 + q) dx = ArcTan / Sqrt or -ArcTanh / Sqrt for constants p, q
   // (handles symbolic a^2 and leading coefficients that the integer-coefficient
   // rational path misses, e.g. 1/(x^2 + a^2), 1/(9 x^2 + 1)).
