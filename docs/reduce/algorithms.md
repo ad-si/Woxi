@@ -3,14 +3,56 @@
 This document is the implementation contract for Woxi's self-contained linear
 quantifier-elimination engine. It covers ordered linear arithmetic over the
 reals and rationals and first-order Presburger arithmetic over the integers.
-The precise supported surface grammar and completion gates are recorded in
-[`REDUCE_ROADMAP.md`](../../REDUCE_ROADMAP.md).
+The supported surface grammar, correctness requirements, and outstanding
+validation work are recorded below.
 
 The engine is a decision procedure, not a collection of expression templates.
 Every accepted input must be lowered completely, decided with exact arithmetic,
 and emitted without calling another solver. Failure to lower an expression is
 an explicit out-of-scope result; it must never silently discard an atom or
 coerce an exact coefficient through a machine number.
+
+## Supported grammar and scope
+
+```text
+term    := exact-rational | variable | exact-rational * variable | term + term
+atom    := term == term | term != term | term < term | term <= term
+         | term > term | term >= term
+         | Divisible[term, positive-integer]
+formula := True | False | atom | !formula | formula && formula
+         | formula || formula | formula xor formula
+         | Exists[variables, formula] | ForAll[variables, formula]
+domain  := Reals | Rationals | Integers
+```
+
+`Mod[term, m] == r` and its negation are accepted as surface forms of integer
+divisibility/congruence atoms. Chained comparisons and the Wolfram Language
+function-call forms of the Boolean operators are part of the surface grammar.
+Quantifier nesting and alternation are unrestricted; practical running time is
+necessarily subject to the known worst-case complexity of the theories.
+
+Nonlinear polynomial, algebraic-number, complex, transcendental, approximate,
+and mixed integer/real formulas are explicitly outside this campaign. Existing
+specialized Woxi behavior for them must not regress, but it does not count
+toward completion of the linear decision procedures.
+
+For every input inside the scoped grammar:
+
+1. `Reduce` and `Resolve` return a logically equivalent, quantifier-free result.
+2. No requested or bound variable that should be eliminated occurs in the
+   result.
+3. The result is computed with `BigInt` and normalized exact rationals; no
+   conversion through `f32`, `f64`, `i64`, or `i128` is allowed.
+4. No subprocess, network service, Wolfram installation, SMT solver, or bounded
+   search is required at runtime.
+5. Output is deterministic and matches `wolframscript` exactly for the checked
+   conformance corpus. Generated tests additionally check semantic equivalence,
+   because equivalent quantifier-free formulas need not have identical text.
+6. The implementation works in native and WebAssembly builds.
+
+An unsupported formula may remain unevaluated through the existing fallback.
+An in-scope formula may not. These are the implementation requirements;
+completion still depends on the outstanding validation checklist below.
 
 ## Semantic boundary
 
@@ -417,6 +459,61 @@ to an independent development oracle.
 Oracle cases are deterministic and versioned. Every mismatch is classified as
 a Woxi semantic bug, Woxi presentation bug, unsupported case, or oracle issue;
 unexplained mismatches block the relevant gate.
+
+## Acceptance coverage and outstanding validation
+
+The roadmap's historical progress and measurements remain available in Git
+history. The following acceptance requirements and unfinished work remain in
+force; removing the roadmap does not mark them complete.
+
+### Required coverage
+
+- Cover every accepted grammar form and rejected out-of-scope form, including
+  coefficients larger than 128 bits and normalization/alpha-renaming properties.
+- Dense linear arithmetic: at least 200 curated cases spanning all atom kinds,
+  empty and unbounded regions, multiple eliminated variables, free parameters,
+  negation, and quantifier alternation through depth three; 10,000 fixed-seed
+  generated formulas checked with exact rational valuations; and at least 500
+  closed formulas compared with an independent development oracle.
+- Presburger arithmetic: at least 300 curated cases spanning signs, zero
+  coefficients, non-coprime moduli, inconsistent congruences, one-sided bounds,
+  large constants, strict-bound shifts, and alternation through depth three;
+  25,000 fixed-seed bounded formulas checked by exhaustive evaluation; and at
+  least 1,000 closed formulas compared with an independent Presburger oracle.
+- Every in-scope result must be quantifier-free, have the correct free-variable
+  set, and contain no unevaluated `Reduce` or `Resolve`. Unbounded integer
+  examples must terminate by decision procedure rather than a search cap.
+- Preserve existing Reduce, Resolve, and Solve regressions, and verify that no
+  external command is reachable from the scoped runtime routes.
+
+### Open work
+
+- [ ] Verify at least 100 curated rational/real and 150 curated integer surface
+      cases against `wolframscript` through the standard conformance workflow.
+- [ ] Run at least 100,000 parser/normalizer/eliminator fuzz cases without a
+      panic, nondeterministic result, invalid rational, or leaked binder.
+- [ ] Set generous CI smoke budgets for a named industrial benchmark corpus.
+      Keep detailed timing and formula-growth measurements as benchmark reports;
+      do not assume a universal polynomial-time bound for Presburger arithmetic.
+- [ ] Complete the reference/provenance audit and independent review of Cooper's
+      boundary construction, strict integer shifts, and divisibility normalization.
+- [ ] Audit public documentation for the exact supported grammar and ensure it
+      does not imply nonlinear or mixed-theory completeness.
+
+Run the final verification from a clean checkout and record the revision,
+commands, and results in the corresponding change review or verification report:
+
+- [ ] `make format`
+- [ ] `make lint`
+- [ ] `make test-reduce`
+- [ ] `make test`
+- [ ] `make test-cli`
+- [ ] `make test-conformance` with Wolfram available
+- [ ] Native and `wasm32-unknown-unknown` release builds
+
+Completion requires this checklist to be closed, the benchmark corpus to meet
+its documented smoke budgets, and all correctness properties to pass. No
+correctness requirement is waived for performance.
 
 ## Runtime and failure policy
 
