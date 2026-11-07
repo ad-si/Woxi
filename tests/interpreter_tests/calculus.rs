@@ -27165,3 +27165,11 @@ fn trig_expand_reduces_powers_with_shared_variable_terms() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_reduce_orders_multivariate_angles_with_negative_product_terms() {
+  assert_eq!(
+    interpret("TrigReduce[Sin[x*y]*Tan[x]^2]").unwrap(),
+    "(2*Sin[x*y] + Sin[2*x - x*y] - Sin[2*x + x*y])/(2*(1 + Cos[2*x]))"
+  );
+}

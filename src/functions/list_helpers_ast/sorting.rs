@@ -2475,6 +2475,27 @@ fn sum_terms_list(e: &Expr) -> Option<Vec<Expr>> {
 fn term_exponent(t: &Expr) -> Option<f64> {
   let (_, r) = numeric_coeff_and_rest_expr(t);
   let rest = r.as_ref().unwrap_or(t);
+  if let Some(factors) = times_factors_for_order(rest) {
+    // A product of variables is not linear merely because its outer head
+    // is Times. Use its total degree for the early/late sum class.
+    let degrees: Option<Vec<f64>> = factors
+      .iter()
+      .map(|factor| {
+        if matches!(factor, Expr::Identifier(_)) {
+          Some(1.0)
+        } else if let Some((base, exponent)) = power_parts(factor)
+          && matches!(base, Expr::Identifier(_))
+        {
+          crate::functions::math_ast::try_eval_to_f64(&exponent)
+        } else {
+          None
+        }
+      })
+      .collect();
+    if let Some(degrees) = degrees {
+      return Some(degrees.iter().sum());
+    }
+  }
   if let Some((_, exp)) = power_parts(rest) {
     crate::functions::math_ast::try_eval_to_f64(&exp)
   } else {

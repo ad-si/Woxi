@@ -15648,3 +15648,24 @@ fn nested_division_inverts_the_whole_denominator_before_combining_content() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn sorting_negative_product_leading_sums_uses_total_degree() {
+  for coefficient in [-2, -1, 1, 2] {
+    let sum = format!("2*x+2*y+({coefficient})*x*y");
+    for wrap in ["", "f", "Sin"] {
+      let a = if wrap.is_empty() {
+        "x*y".to_string()
+      } else {
+        format!("{wrap}[x*y]")
+      };
+      let b = if wrap.is_empty() {
+        sum.clone()
+      } else {
+        format!("{wrap}[{sum}]")
+      };
+      let expected = interpret(&format!("{{{a},{b}}}")).unwrap();
+      assert_eq!(interpret(&format!("Sort[{{{b},{a}}}]")).unwrap(), expected);
+    }
+  }
+}
