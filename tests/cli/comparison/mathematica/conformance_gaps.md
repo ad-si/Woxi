@@ -1946,6 +1946,15 @@ Woxi retains a half times a sum with smaller individual denominators.
 The minimized `Integrate[-3/(-2*x-x^2-2*x^3),x]` instead differs by whether
 the outer factor is `3` or `-3`, with all inner signs reversed.
 
+Seed 1794027220383996000 adds
+`Integrate[(-1+4*x+2*x^2)/(3+3*x-x^2-5*x^3),x]`: Wolfram
+collects the inverse-tangent and logarithm terms over `420`, while Woxi
+uses individual denominators. For
+`Integrate[(-4-2*x-2*x^2)/(-4-5*x+2*x^2),x]`, Wolfram retains an
+outer `-2` and Woxi an outer `1/2`, with compensating inner coefficients.
+Wolfram verifies that differentiating either Woxi result recovers its
+integrand exactly.
+
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
 ```sh
