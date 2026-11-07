@@ -9297,3 +9297,13 @@ precision to 80 digits gives approximately `0.45516613563950843223510757`,
 so the direct machine paths have different intermediate rounding.
 The minimized zero-numerator case now preserves approximate result precision
 for fully numeric arguments instead of returning an exact integer.
+
+### Hypergeometric rational arguments retain different scalar content
+
+Verified on 2026-11-07, diff-fuzz seed 1794044812549838000:
+`Hypergeometric2F1[2,3,4,-1/2]` gives `16*(5/4-3*Log[3/2])` in Woxi
+and `-4*(-5+12*Log[3/2])` in Wolfram. These are exactly equal, but the
+numeric content and sign remain grouped differently.
+The minimized `Hypergeometric2F1[1,1,4,1]` endpoint bug is fixed: the
+Gauss endpoint formula returns `3/2` before the logarithmic closed form
+can produce cancelling infinities.
