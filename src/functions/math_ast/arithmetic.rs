@@ -13157,6 +13157,22 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       if contains_real(a) {
         return None;
       }
+      // An external exact numeric coefficient combines with the machine
+      // reciprocal before evaluating the symbolic factor. Delegate this
+      // form to the same fold as the infix quotient; symbolic denominators
+      // retain the guarded whole-expression evaluation below.
+      let (num, den) =
+        crate::functions::polynomial_ast::together::extract_num_den(a);
+      if expr_to_rational(&den).is_some()
+        && (!matches!(den, Expr::Integer(1))
+          || crate::functions::polynomial_ast::together::flatten_times_args(
+            std::slice::from_ref(&num),
+          )
+          .iter()
+          .any(|factor| expr_to_rational(factor).is_some()))
+      {
+        return None;
+      }
       let hi = n_eval_arbitrary(a, 25.0).ok().and_then(|e| match &e {
         Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
         Expr::Real(x) => Some(*x),

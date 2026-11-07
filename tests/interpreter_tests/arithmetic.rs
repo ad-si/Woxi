@@ -15443,3 +15443,21 @@ fn division_by_infinity_preserves_inexact_zero_contagion() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn explicit_divide_folds_external_exact_numeric_content() {
+  for (code, expected) in [
+    (
+      "Divide[Divide[Pi,3],Times[73,-10.7]]",
+      "-0.0013406702742242962",
+    ),
+    ("Divide[Pi/3,-781.1]", "-0.001340670274224296"),
+    ("Divide[E/3,-781.1]", "-0.0011600229712196667"),
+    ("Divide[Sqrt[2]/3,-781.1]", "-0.0006035136612354777"),
+    ("Divide[(Pi+1)/3,-781.1]", "-0.001767418876622623"),
+    ("Divide[Pi^2/3,-781.1]", "-0.004211839884389262"),
+    ("Divide[2Pi/7,-781.1]", "-0.0011491459493351108"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
