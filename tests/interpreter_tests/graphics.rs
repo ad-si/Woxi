@@ -50662,3 +50662,50 @@ mod review_regressions {
     assert!(!valid.contains("rgb(100%,33%,33%)"), "{valid}");
   }
 }
+
+mod graphics_review_regressions {
+  use super::*;
+
+  #[test]
+  fn thin_graphics_strokes_keep_requested_width() {
+    for width in [0.1, 0.2, 0.35] {
+      for primitive in [
+        "Line[{{0, 0}, {1, 1}}]",
+        "Circle[{0, 0}, 1]",
+        "BezierCurve[{{0, 0}, {1, 1}, {2, 0}}]",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[{{AbsoluteThickness[{width}], {primitive}}}]"
+        ));
+        assert!(
+          svg.contains(&format!("stroke-width=\"{width:.2}\"")),
+          "{svg}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn candlestick_category_axis_matches_value_axis_width() {
+    let svg = export_svg(
+      "CandlestickChart[{{DateObject[{2024, 1, 1}], {10, 12, 9, 11}}, {DateObject[{2024, 1, 2}], {11, 13, 10, 12}}}]",
+    );
+    let category_lines: Vec<_> = svg
+      .lines()
+      .filter(|l| {
+        l.contains("<polyline") && l.contains("stroke=\"rgb(102,102,102)\"")
+      })
+      .collect();
+    assert!(!category_lines.is_empty());
+    assert!(
+      category_lines
+        .iter()
+        .all(|l| l.contains("stroke-width=\"0.20\"")),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("stroke=\"#666666\" stroke-width=\"0.2\""),
+      "{svg}"
+    );
+  }
+}

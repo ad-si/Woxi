@@ -10055,7 +10055,7 @@ impl AxisLineStyle {
     let color = (st.color != unset).then(|| st.effective_color());
     Self {
       color,
-      width: thickness_px(st.thickness, bb, svg_w).max(0.5),
+      width: thickness_px(st.thickness, bb, svg_w),
       dash: dash_attr(st.dashing.as_ref(), bb, svg_w),
     }
   }
@@ -11354,7 +11354,7 @@ fn render_primitive(
       style,
     } => {
       let color = style.effective_color();
-      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       let cap = stroke_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
@@ -11436,7 +11436,7 @@ fn render_primitive(
       let srx = *rx / bb.width() * svg_w;
       let sry = *ry / bb.height() * svg_h;
       let color = style.effective_color();
-      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       // A partial angular range draws only that open arc (stroked on one
       // side); a full turn (or no range) draws the whole circle as an ellipse.
@@ -11874,7 +11874,7 @@ fn render_primitive(
       };
       let (ex, ey) = (p.0 + ux, p.1 + uy);
       let color = style.effective_color();
-      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       let cap = stroke_linecap_attr(style.cap_form);
       out.push_str(&format!(
@@ -11899,7 +11899,7 @@ fn render_primitive(
       }
 
       let color = style.effective_color();
-      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
       let cap = stroke_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
@@ -12293,7 +12293,7 @@ fn render_primitive(
       style,
     } => {
       let color = style.effective_color();
-      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
 
       if points.len() < 2 {
