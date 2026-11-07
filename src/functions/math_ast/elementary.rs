@@ -934,6 +934,39 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return power_two(&args[0], &make_rational(1, 2));
   }
+  // Positive rational square content can leave a complex radical without
+  // changing its principal branch. Keep this in Sqrt's shared path so
+  // Power[z, 1/2] uses the same exact normalization.
+  if let Some(((rn, rd), (im, id))) = try_extract_complex_exact_big(&args[0])
+    && im != BigInt::from(0)
+  {
+    if rn == BigInt::from(0) && (im == id || im == -&id) {
+      let unit = if im < BigInt::from(0) {
+        call("Complex", vec![Expr::Integer(0), Expr::Integer(-1)])
+      } else {
+        id_expr("I")
+      };
+      return power_two(&unit, &make_rational(1, 2));
+    }
+    let numerator = gcd_bigint(&(&rn * &id), &(&im * &rd));
+    let denominator = &rd * &id;
+    let common = gcd_bigint(&numerator, &denominator);
+    let (outside_n, _) = extract_square_factor_big(&(numerator / &common));
+    let (outside_d, _) = extract_square_factor_big(&(denominator / common));
+    if outside_n != BigInt::from(1) || outside_d != BigInt::from(1) {
+      let nsq = &outside_n * &outside_n;
+      let dsq = &outside_d * &outside_d;
+      let primitive = big_complex_to_expr(&(
+        (&rn * &dsq, &rd * &nsq),
+        (&im * &dsq, &id * &nsq),
+      ));
+      let primitive = crate::evaluator::evaluate_expr_to_expr(&primitive)?;
+      return times_ast(&[
+        make_rational_expr(&outside_n, &outside_d),
+        sqrt_ast(&[primitive])?,
+      ]);
+    }
+  }
   // Sqrt of an inexact complex number (a machine float with a nonzero
   // imaginary part, e.g. `2.0 + 3.0 I`) numericizes via Power[base, 1/2] to
   // match wolframscript, rather than staying wrapped as a symbolic Sqrt[…].

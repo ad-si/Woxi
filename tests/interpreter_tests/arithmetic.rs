@@ -15412,3 +15412,18 @@ fn function_factors_and_compound_sum_terms_use_canonical_order() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn complex_square_roots_extract_positive_rational_square_content() {
+  for (code, expected) in [
+    ("Sqrt[4-4I]", "2*Sqrt[1 - I]"),
+    ("(4-4I)^(1/2)", "2*Sqrt[1 - I]"),
+    ("Sqrt[-4I]", "-2*(-1)^(3/4)"),
+    ("Sqrt[8+8I]", "2*Sqrt[2 + 2*I]"),
+    ("Sqrt[9+18I]", "3*Sqrt[1 + 2*I]"),
+    ("Sqrt[10^40-10^40 I]", "100000000000000000000*Sqrt[1 - I]"),
+    ("Sqrt[1/4-I/4]", "Sqrt[1 - I]/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
