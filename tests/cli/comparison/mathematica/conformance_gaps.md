@@ -1939,6 +1939,13 @@ Seed 1794021370602620000 also found this grouping difference for
 The logarithm argument now has Wolfram's sign; Woxi still collects the
 polynomial, inverse-hyperbolic, and logarithmic terms over a common denominator.
 
+Seed 1794025115685661000 found the same grouping convention with a cubic
+denominator: `Integrate[(-1-3*x+2*x^2-x^3)/(5-2*x-x^2-2*x^3),x]`.
+Wolfram collects all terms over `1240`, rationalizing the radical coefficient;
+Woxi retains a half times a sum with smaller individual denominators.
+The minimized `Integrate[-3/(-2*x-x^2-2*x^3),x]` instead differs by whether
+the outer factor is `3` or `-3`, with all inner signs reversed.
+
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
 ```sh
