@@ -6663,6 +6663,7 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cancelled =
     crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])?;
   let factored = factor_reduced_reciprocals(cancelled)?;
+  let factored = factor_reduced_numeric_content(factored)?;
   // Together/Cancel may factor scalar multiples inside arguments again,
   // so normalize the arguments after those algebraic passes.
   fn normalize_arguments(expr: &Expr) -> Expr {
@@ -6711,47 +6712,98 @@ fn factor_reduced_reciprocals(expr: Expr) -> Result<Expr, InterpreterError> {
     "Factor",
     std::slice::from_ref(&expr),
   )?;
-  fn normalize(expr: &Expr) -> Option<Expr> {
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } = expr
-    {
-      return Some(div2(normalize(left)?, (**right).clone()));
-    }
-    let mut factors = match expr {
-      Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left,
-        right,
-      } => vec![(**left).clone(), (**right).clone()],
-      _ => return None,
-    };
-    if !factors.iter().any(contains_reciprocal_trig) {
-      return None;
-    }
-    let index = factors.iter().position(|factor| {
-      matches!(factor, Expr::FunctionCall { name, .. } if name == "Plus")
-        && !contains_reciprocal_trig(factor)
-    })?;
-    let mut terms = Vec::new();
-    collect_plus_terms(&factors[index], &mut terms);
-    // Constants do not determine the sign of the trigonometric numerator.
-    let leading = terms
-      .iter()
-      .find(|term| !matches!(term, Expr::Integer(_) | Expr::Real(_)))?;
-    if term_is_negative(leading) {
-      factors[index] = plus(terms.into_iter().map(negate_expr).collect());
-      factors.push(Expr::Integer(-1));
-    }
-    Some(times(factors))
-  }
-  match normalize(&factored) {
+
+  match normalize_reduced_factored_sum(&factored, true) {
     Some(normalized) => crate::evaluator::evaluate_expr_to_expr(&normalized),
     None => Ok(expr),
   }
+}
+
+fn normalize_reduced_factored_sum(
+  expr: &Expr,
+  require_reciprocal: bool,
+) -> Option<Expr> {
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Divide,
+    left,
+    right,
+  } = expr
+  {
+    return Some(div2(
+      normalize_reduced_factored_sum(left, require_reciprocal)?,
+      (**right).clone(),
+    ));
+  }
+  let mut factors = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => args.to_vec(),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![(**left).clone(), (**right).clone()],
+    _ => return None,
+  };
+  if require_reciprocal && !factors.iter().any(contains_reciprocal_trig) {
+    return None;
+  }
+  let index = factors.iter().position(|factor| {
+    matches!(factor, Expr::FunctionCall { name, .. } if name == "Plus")
+      && !contains_reciprocal_trig(factor)
+  })?;
+  let mut terms = Vec::new();
+  collect_plus_terms(&factors[index], &mut terms);
+  // Constants do not determine the sign of the trigonometric numerator.
+  let leading = terms
+    .iter()
+    .find(|term| !matches!(term, Expr::Integer(_) | Expr::Real(_)))?;
+  if term_is_negative(leading) {
+    factors[index] = plus(terms.into_iter().map(negate_expr).collect());
+    factors.push(Expr::Integer(-1));
+  }
+  Some(times(factors))
+}
+
+fn factor_reduced_numeric_content(
+  expr: Expr,
+) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = &expr {
+    return Ok(Expr::List(
+      items
+        .iter()
+        .cloned()
+        .map(factor_reduced_numeric_content)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ));
+  }
+  let (mut num, mut den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&expr);
+  let mut den_terms = Vec::new();
+  collect_plus_terms(&den, &mut den_terms);
+  let flip_den = den_terms
+    .iter()
+    .find(|term| !matches!(term, Expr::Integer(_) | Expr::Real(_)))
+    .is_some_and(term_is_negative);
+  if flip_den {
+    num = crate::evaluator::evaluate_expr_to_expr(&negate_expr(num))?;
+    den = crate::evaluator::evaluate_expr_to_expr(&plus(
+      den_terms.into_iter().map(negate_expr).collect(),
+    ))?;
+  }
+  let factored = crate::evaluator::evaluate_function_call_ast(
+    "FactorTerms",
+    &[num.clone()],
+  )?;
+  let factored = crate::evaluator::evaluate_expr_to_expr(&factored)?;
+  let Some(normalized) = normalize_reduced_factored_sum(&factored, false)
+  else {
+    return if flip_den {
+      crate::evaluator::evaluate_expr_to_expr(&div2(num, den))
+    } else {
+      Ok(expr)
+    };
+  };
+  crate::evaluator::evaluate_expr_to_expr(&div2(normalized, den))
 }
 
 /// Recursively apply TrigReduce.

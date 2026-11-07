@@ -27001,3 +27001,60 @@ fn trig_to_exp_combines_overlapping_harmonics_of_small_powers() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_reduce_extracts_numeric_content_from_reduced_numerators() {
+  for (code, expected) in [
+    (
+      "TrigReduce[2*Tan[2]^3]",
+      "(2*(3*Sin[2] - Sin[6]))/(3*Cos[2] + Cos[6])",
+    ),
+    (
+      "TrigReduce[-3*Tan[x]^3]",
+      "(-3*(3*Sin[x] - Sin[3*x]))/(3*Cos[x] + Cos[3*x])",
+    ),
+    (
+      "TrigReduce[(2/3)*Tan[x]^3]",
+      "(2*(3*Sin[x] - Sin[3*x]))/(3*(3*Cos[x] + Cos[3*x]))",
+    ),
+    (
+      "TrigReduce[2*Tan[x]^2]",
+      "(-2*(-1 + Cos[2*x]))/(1 + Cos[2*x])",
+    ),
+    (
+      "TrigReduce[2*Cot[x]^3]",
+      "(2*(3*Cos[x] + Cos[3*x]))/(3*Sin[x] - Sin[3*x])",
+    ),
+    (
+      "TrigReduce[2*Tanh[x]^3]",
+      "(-2*(3*Sinh[x] - Sinh[3*x]))/(3*Cosh[x] + Cosh[3*x])",
+    ),
+    ("TrigReduce[2*Sin[x]^3]", "(3*Sin[x] - Sin[3*x])/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn trig_reduce_normalizes_cotangent_power_denominator_signs() {
+  for (code, expected) in [
+    (
+      "TrigReduce[Cot[x]^3]",
+      "(3*Cos[x] + Cos[3*x])/(3*Sin[x] - Sin[3*x])",
+    ),
+    (
+      "TrigReduce[Coth[x]^3]",
+      "(-3*Cosh[x] - Cosh[3*x])/(3*Sinh[x] - Sinh[3*x])",
+    ),
+    (
+      "TrigReduce[2*Coth[x]^3]",
+      "(-2*(3*Cosh[x] + Cosh[3*x]))/(3*Sinh[x] - Sinh[3*x])",
+    ),
+    (
+      "TrigReduce[2*Coth[x]^2]",
+      "(2*(1 + Cosh[2*x]))/(-1 + Cosh[2*x])",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

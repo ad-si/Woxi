@@ -9062,9 +9062,10 @@ but Woxi orders `Cos[2*x - 2*x*y]` before `Cos[2*x]`; Wolfram puts it after
 `(Sec[x]*Sin[x - 2*y] + Sec[x]*Sin[x + 2*y] + 2*Tan[x])/4` in Woxi;
 Wolfram factors it as `(Sec[x]*(2*Sin[x] + Sin[x - 2*y] + Sin[x + 2*y]))/4`.
 The evaluator simplifies `Sec[x]*Sin[x]` back to `Tan[x]` before common
-reciprocal-factor extraction. Also, `TrigReduce[Coth[x]^3]` has numerator
-and denominator signs both reversed from Wolfram's convention. These
-remaining cases are equivalent expressions with different presentation.
+reciprocal-factor extraction. The reversed numerator/denominator signs for
+`TrigReduce[Coth[x]^3]` are now normalized, along with circular cotangent
+powers (seed 1794037683798353000). The remaining product-ordering and
+reciprocal-factor cases are equivalent expressions with different presentation.
 
 Seed 1794016680256839000 also found the call-argument ordering variant
 `TrigReduce[Sin[x]+Sin[x*y]-Tan[x*y]*Cos[x]^2]`: Woxi places
@@ -9079,6 +9080,14 @@ over the reduced cosine denominator; Wolfram retains `Sec[x+y]^3` and
 also rewrites the polynomial terms into reciprocal-trig products in Wolfram,
 so simply changing the tangent power's own representation is insufficient.
 Verified on 2026-11-07; this remains part of the mixed-sum convention gap.
+
+Seed 1794037683798353000 adds
+`TrigReduce[(Tan[2*x]-Cos[x*y])*Tan[2*x]^3]`. Wolfram keeps a common
+`Sec[2*x]` outside the numerator, inserting compensating `Cos[2*x]`
+factors on its sine terms. Woxi cancels those factors, leaving `Sec[2*x]`
+on only some numerator terms. Wolfram simplifies the difference to zero.
+The minimized `TrigReduce[2*Tan[2]^3]` now retains its numeric factor
+outside the reduced sine numerator, matching Wolfram.
 
 Seed 1794031159154931000 also found
 `TrigReduce[Cos[2*x]*(Tan[x]-Sin[x*y]^2)]`: Wolfram expands through
