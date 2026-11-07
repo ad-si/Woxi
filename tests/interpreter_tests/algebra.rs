@@ -25656,3 +25656,21 @@ fn simplify_compares_outer_minus_for_positive_leading_numerators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn full_simplify_normalizes_constant_remainders_before_comparing_costs() {
+  for (code, expected) in [
+    (
+      "FullSimplify[(-2+4x+3x^2)/(-1+3x)]",
+      "5/3 + (3 - 9*x)^(-1) + x",
+    ),
+    (
+      "FullSimplify[(1+4x+3x^2)/(-1+3x)]",
+      "5/3 + x + 8/(-3 + 9*x)",
+    ),
+    ("Simplify[-1/(3*(-1+3x))]", "(3 - 9*x)^(-1)"),
+    ("FullSimplify[-1/(3*(-1+3x))]", "(3 - 9*x)^(-1)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

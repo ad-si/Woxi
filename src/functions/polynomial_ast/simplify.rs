@@ -8396,6 +8396,12 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
             .unwrap_or(den);
         let proper = crate::functions::math_ast::make_divide(remainder, den);
         let proper = if negative { neg(proper) } else { proper };
+        let (proper_num, _) = super::together::extract_num_den(&proper);
+        let proper = if matches!(proper_num, Expr::Integer(_)) {
+          full_simplify_expr(&proper)
+        } else {
+          proper
+        };
         let candidate = plus2(parts[0].clone(), proper);
         if let Ok(candidate) =
           crate::evaluator::evaluate_expr_to_expr(&candidate)
@@ -10778,11 +10784,18 @@ fn simplify_quotient_select(
       return simplify_quotient_select(&basic2, &num2, &den2);
     }
   }
-  // Keep existing unit-reciprocal normalization when the denominator
-  // has a constant term. A zero-constant polynomial also needs the
-  // reciprocal candidate's cost comparison below.
+  // A negative unit numerator can absorb its sign into the expanded
+  // denominator without introducing a separate content factor.
   if matches!(num, Expr::Integer(-1)) && d_coeffs[0] != 0 {
-    return None;
+    let plain = neg1(pow2(den.clone(), Expr::Integer(-1)));
+    let flipped =
+      pow2(expand_and_combine(&neg1(den.clone())), Expr::Integer(-1));
+    let chosen = if wl_simplify_count(&flipped) < wl_simplify_count(&plain) {
+      flipped
+    } else {
+      plain
+    };
+    return Some((chosen, true));
   }
   let content = |terms: &[(i128, i128, i128)]| -> i128 {
     let g = terms.iter().fold(0i128, |g, &(n, _, _)| gcd_i128(g, n));
