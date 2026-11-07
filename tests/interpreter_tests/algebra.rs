@@ -25811,3 +25811,27 @@ fn simplify_extracts_radicals_and_nonunit_numeric_content_together() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn simplify_extracts_denominator_monomials_on_negative_leading_term_ties() {
+  for (code, expected) in [
+    (
+      "Simplify[(1+x)/(-5*x+4*x^2+x^3)]",
+      "(1 + x)/(x*(-5 + 4*x + x^2))",
+    ),
+    ("Simplify[2/(-2*x+4*x^2+x^3)]", "2/(x*(-2 + 4*x + x^2))"),
+    ("Simplify[(2+3*x)/(-4*x+3*x^2)]", "(2 + 3*x)/(x*(-4 + 3*x))"),
+    (
+      "Simplify[(1+x)/(-2*x+4*x^2+3*x^3)]",
+      "(1 + x)/(x*(-2 + 4*x + 3*x^2))",
+    ),
+    (
+      "Simplify[(1+x)/(5*x+4*x^2+x^3)]",
+      "(1 + x)/(5*x + 4*x^2 + x^3)",
+    ),
+    ("Simplify[(2+3*x)/(4*x-3*x^2)]", "(2 + 3*x)/(4*x - 3*x^2)"),
+    ("Simplify[1/(-5*x+4*x^2+x^3)]", "(-5*x + 4*x^2 + x^3)^(-1)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

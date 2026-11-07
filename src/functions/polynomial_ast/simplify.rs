@@ -11071,8 +11071,8 @@ fn simplify_quotient_select(
         // the -(…) pull only beats plain on a tie when plain's first
         // numerator term is negative (Simplify[(2-x)/(-1+x)] keeps,
         // (-2-3x)/(4x+3x^2) pulls) — same tie rule as a flip. The
-        // denominator x^k split (class 4) needs a STRICT win:
-        // (2+3x)/(4x+3x^2) stays expanded on its 18=18 tie.
+        // denominator x^k split (class 4) wins a tie when the numerator
+        // or denominator starts negative; (2+3x)/(4x+3x^2) stays expanded.
         class: if *pull {
           2
         } else if dk > 0 {
@@ -11341,7 +11341,10 @@ fn simplify_quotient_select(
     let tie_wins = match (cands[best].class, cands[i].class) {
       (0, 1) => true,
       (0 | 1, 2 | 3) => first_num_term_negative && n_terms.len() > 1,
-      (0, 4) => first_num_term_negative,
+      (0, 4) => {
+        first_num_term_negative
+          || d_terms.first().is_some_and(|&(n, _, _)| n < 0)
+      }
       _ => false,
     };
     let better = cands[i].cost < cands[best].cost
