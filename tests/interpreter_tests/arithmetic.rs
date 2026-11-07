@@ -11745,6 +11745,24 @@ mod times_factor_vs_sum_ordering {
     );
   }
 
+  #[test]
+  fn powered_sum_factors_compare_coefficients_structurally() {
+    for (code, expected) in [
+      ("1/((a+2*b)*(a+10*b))", "1/((a + 2*b)*(a + 10*b))"),
+      ("(a+10*b)^2*(a+2*b)^3", "(a + 2*b)^3*(a + 10*b)^2"),
+      (
+        "TrigToExp[Tan[x]*Tan[3*x]]",
+        "-(((E^(-I*x) - E^(I*x))*(E^((-3*I)*x) - E^((3*I)*x)))/((E^(-I*x) + E^(I*x))*(E^((-3*I)*x) + E^((3*I)*x))))",
+      ),
+      (
+        "TrigToExp[Tan[x]*Tan[2*x]]",
+        "-(((E^(-I*x) - E^(I*x))*(E^((-2*I)*x) - E^((2*I)*x)))/((E^(-I*x) + E^(I*x))*(E^((-2*I)*x) + E^((2*I)*x))))",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   // A power of a product orders canonically against the symbol its base
   // ends with: the symbol first.
   #[test]
