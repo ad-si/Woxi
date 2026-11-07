@@ -26607,3 +26607,37 @@ fn quadratic_integrals_normalize_shifted_radical_arguments() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_expands_shifted_phases_and_transformed_sums() {
+  for (code, expected) in [
+    (
+      "TrigToExp[Sin[x+y]]",
+      "I/2*E^(-I*x - I*y) - I/2*E^(I*x + I*y)",
+    ),
+    ("TrigToExp[Cos[x+y]]", "E^(-I*x - I*y)/2 + E^(I*x + I*y)/2"),
+    (
+      "TrigToExp[Tan[x+y]]",
+      "(I*(E^(-I*x - I*y) - E^(I*x + I*y)))/(E^(-I*x - I*y) + E^(I*x + I*y))",
+    ),
+    (
+      "TrigToExp[Cot[x+y]]",
+      "(-I*(E^(-I*x - I*y) + E^(I*x + I*y)))/(E^(-I*x - I*y) - E^(I*x + I*y))",
+    ),
+    ("TrigToExp[Sec[x+y]]", "2/(E^(-I*x - I*y) + E^(I*x + I*y))"),
+    (
+      "TrigToExp[Csc[x+y]]",
+      "(-2*I)/(E^(-I*x - I*y) - E^(I*x + I*y))",
+    ),
+    (
+      "TrigToExp[Cos[2x]+Tan[x+y]]",
+      "1/(2*E^((2*I)*x)) + E^((2*I)*x)/2 + (I*E^(-I*x - I*y))/(E^(-I*x - I*y) + E^(I*x + I*y)) - (I*E^(I*x + I*y))/(E^(-I*x - I*y) + E^(I*x + I*y))",
+    ),
+    (
+      "TrigToExp[Tan[x]+z]",
+      "I/(E^(I*x)*(E^(-I*x) + E^(I*x))) - (I*E^(I*x))/(E^(-I*x) + E^(I*x)) + z",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

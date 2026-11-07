@@ -7539,8 +7539,30 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
 
 /// TrigToExp[expr] — replace trig/hyperbolic functions with exponentials.
 fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
+  if let Expr::List(items) = expr {
+    return Ok(Expr::List(
+      items
+        .iter()
+        .map(trig_to_exp_ast)
+        .collect::<Result<Vec<_>, _>>()?
+        .into(),
+    ));
+  }
   let transformed = trig_to_exp_recursive(expr);
-  crate::evaluator::evaluate_expr_to_expr(&transformed)
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
+    || matches!(
+      expr,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    )
+  {
+    crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated])
+  } else {
+    Ok(evaluated)
+  }
 }
 
 fn trig_to_exp_recursive(expr: &Expr) -> Expr {
@@ -7550,12 +7572,24 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
       let i = id_expr("I");
       let e = const_expr("E");
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+      let circular_pair = || {
+        let phase =
+          crate::functions::polynomial_ast::expand_and_combine(&times(vec![
+            i.clone(),
+            arg.clone(),
+          ]));
+        (
+          power(e.clone(), phase.clone()),
+          power(
+            e.clone(),
+            crate::functions::polynomial_ast::expand_and_combine(&neg(phase)),
+          ),
+        )
+      };
       match name.as_str() {
         // Cos[x] = E^(I*x)/2 + E^(-I*x)/2
         "Cos" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           plus(vec![
             times(vec![half.clone(), e_ix]),
             times(vec![half, e_nix]),
@@ -7563,9 +7597,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         }
         // Sin[x] = -I*E^(I*x)/2 + I*E^(-I*x)/2
         "Sin" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           plus(vec![
             times(vec![Expr::Integer(-1), i.clone(), half.clone(), e_ix]),
             times(vec![i, half, e_nix]),
@@ -7594,9 +7626,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // term is the positive-exponent E^(I*x); this matches wolframscript's
         // form and avoids rendering E^(-I*x) as -(1/E^(I*x)).
         "Tan" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           times(vec![
             i,
             plus(vec![e_nix.clone(), neg(e_ix.clone())]),
@@ -7605,9 +7635,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         }
         // Sec[x] = 2/(E^(I*x) + E^(-I*x))
         "Sec" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           times(vec![
             Expr::Integer(2),
             power(plus(vec![e_ix, e_nix]), Expr::Integer(-1)),
@@ -7615,9 +7643,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         }
         // Csc[x] = -2*I/(E^(-I*x) - E^(I*x))
         "Csc" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           times(vec![
             Expr::Integer(-2),
             i,
@@ -7626,9 +7652,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         }
         // Cot[x] = -I*(E^(-I*x) + E^(I*x))/(E^(-I*x) - E^(I*x))
         "Cot" => {
-          let ix = times(vec![i.clone(), arg.clone()]);
-          let e_ix = power(e.clone(), ix.clone());
-          let e_nix = power(e.clone(), neg(ix));
+          let (e_ix, e_nix) = circular_pair();
           times(vec![
             Expr::Integer(-1),
             i,

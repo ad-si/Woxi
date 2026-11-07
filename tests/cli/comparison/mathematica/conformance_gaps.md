@@ -8987,12 +8987,13 @@ Verified on 2026-11-07; this remains part of the mixed-sum convention gap.
 
 ### TrigToExp does not expand shifted cosine squares
 
-The same run found `TrigToExp[Cos[x + y]^2]`. Woxi retains
-`(1/(2*E^(I*(x + y))) + E^(I*(x + y))/2)^2`; Wolfram returns
+The same run found `TrigToExp[Cos[x + y]^2]`. Woxi retains the square of
+the transformed exponential sum; Wolfram returns
 `1/2 + E^((-2*I)*x - (2*I)*y)/4 + E^((2*I)*x + (2*I)*y)/4`.
-This also exposes the missing distribution of the imaginary coefficient
-over the exponent's sum, separately from the powered-function grouping
-already documented for `TrigToExp[Sin[x]^3]`.
+The imaginary coefficient now distributes over each exponent's sum, and
+transformed top-level sums expand (diff-fuzz seed 1794015946701080000,
+2026-11-07). The powered-function grouping remains separate from that fix,
+as does the case documented for `TrigToExp[Sin[x]^3]`.
 
 ### N of constants prints different guard digits
 
