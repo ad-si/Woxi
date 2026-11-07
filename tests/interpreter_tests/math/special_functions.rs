@@ -12492,6 +12492,19 @@ fn hypergeometric_1f1_lower_parameter_poles_preserve_termination() {
 }
 
 #[test]
+fn hypergeometric_1f1_linear_kummer_polynomial_preserves_unit_constant() {
+  for (code, expected) in [
+    ("Hypergeometric1F1[3,2,E]", "(1 + E/2)*E^E"),
+    ("Hypergeometric1F1[3,2,z]", "E^z*(1 + z/2)"),
+    ("Hypergeometric1F1[4,3,z]", "E^z*(1 + z/3)"),
+    ("HypergeometricPFQ[{4},{3},z]", "(E^z*(3 + z))/3"),
+    ("Hypergeometric1F1[3,2,2]", "2*E^2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn hypergeometric_1f1_inexact_integer_upper_parameters_terminate() {
   for (code, expected) in [
     ("Hypergeometric1F1[0.,0,z]", "1.`15.954589770191005"),

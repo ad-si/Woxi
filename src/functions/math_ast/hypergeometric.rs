@@ -422,11 +422,10 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // simplifications. Delegate so e.g. `HypergeometricPFQ[{6},{1},2]` →
   // `(719*E^2)/15` rather than the unsimplified series.
   if a_list.len() == 1 && b_list.len() == 1 {
-    return hypergeometric1f1_ast(&[
-      a_list[0].clone(),
-      b_list[0].clone(),
-      z.clone(),
-    ]);
+    return hypergeometric1f1_impl(
+      &[a_list[0].clone(), b_list[0].clone(), z.clone()],
+      true,
+    );
   }
 
   // p=2, q=1 form is exactly Hypergeometric2F1, which carries its own
@@ -1191,6 +1190,13 @@ fn hypergeometric1f1_rational_z(
 }
 
 pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  hypergeometric1f1_impl(args, false)
+}
+
+fn hypergeometric1f1_impl(
+  args: &[Expr],
+  collect_linear_content: bool,
+) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
       "Hypergeometric1F1 expects exactly 3 arguments".into(),
@@ -1464,8 +1470,17 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let b_int = *b_i;
     let z = &args[2];
-    let plus = plus(vec![Expr::Integer(b_int), z.clone()]);
-    let ratio = div2(plus, Expr::Integer(b_int));
+    let ratio = plus(vec![
+      Expr::Integer(1),
+      div2(z.clone(), Expr::Integer(b_int)),
+    ]);
+    // PFQ collects the linear polynomial's denominator; 1F1 retains
+    // its unit constant term. Both use the same Kummer reduction.
+    let ratio = if collect_linear_content {
+      crate::functions::polynomial_ast::together_ast(&[ratio])?
+    } else {
+      ratio
+    };
     let exp_z = pow(id_expr("E"), z.clone());
     let prod = times2(ratio, exp_z);
     return crate::evaluator::evaluate_expr_to_expr(&prod);
