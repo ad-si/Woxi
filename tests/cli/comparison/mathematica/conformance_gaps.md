@@ -8977,6 +8977,14 @@ reciprocal-factor extraction. Also, `TrigReduce[Coth[x]^3]` has numerator
 and denominator signs both reversed from Wolfram's convention. These
 remaining cases are equivalent expressions with different presentation.
 
+Seed 1794015443102756000 found the cubic mixed-sum variant
+`TrigReduce[Tan[x+y]^3 + Cos[x+y]*Cos[2*x]^3]`. Woxi combines the result
+over the reduced cosine denominator; Wolfram retains `Sec[x+y]^3` and
+`Sec[x+y]^2*Tan[x+y]` terms. The minimized `TrigReduce[Tan[x]^3+x+y]`
+also rewrites the polynomial terms into reciprocal-trig products in Wolfram,
+so simply changing the tangent power's own representation is insufficient.
+Verified on 2026-11-07; this remains part of the mixed-sum convention gap.
+
 ### TrigToExp does not expand shifted cosine squares
 
 The same run found `TrigToExp[Cos[x + y]^2]`. Woxi retains
