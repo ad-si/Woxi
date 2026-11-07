@@ -13448,9 +13448,10 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(id_expr("Indeterminate"));
   }
 
-  // finite / Infinity or finite / DirectedInfinity[z] → 0
+  // Finite / infinity is zero with the numerator's numeric type.
+  // Delegate contagion (including machine complex zero) to Times.
   if is_infinity_like(b) && !is_infinity_like(a) {
-    return Ok(Expr::Integer(0));
+    return times_ast(&[Expr::Integer(0), a.clone()]);
   }
 
   // Infinity / positive_finite → Infinity. Wolfram absorbs any

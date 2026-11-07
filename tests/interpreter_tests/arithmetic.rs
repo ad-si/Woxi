@@ -15427,3 +15427,19 @@ fn complex_square_roots_extract_positive_rational_square_content() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn division_by_infinity_preserves_inexact_zero_contagion() {
+  for (code, expected) in [
+    ("4.6/ComplexInfinity", "0."),
+    ("4.6/Infinity", "0."),
+    ("4.6/(-Infinity)", "0."),
+    ("(1.2+I)/ComplexInfinity", "0. + 0.*I"),
+    ("(1+2I)/ComplexInfinity", "0"),
+    ("Sin[0.2]/ComplexInfinity", "0."),
+    ("0./ComplexInfinity", "0."),
+    ("4.6/ComplexInfinity+44-Pi", "40.8584073464102"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
