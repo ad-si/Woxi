@@ -1891,6 +1891,14 @@ numeric content: `Integrate[(2 + 2*x)/(-3 + 3*x - 5*x^2), x]` is
 `-2*((13*ArcTan[…])/(5*Sqrt[51]) + Log[3 - 3*x + 5*x^2]/10)` there and
 `(-26*ArcTan[…])/(5*Sqrt[51]) - Log[3 - 3*x + 5*x^2]/5` here.
 
+Diff-fuzz seed 1794014818998938000 (2026-11-07) found the same outer
+collection difference for
+`Integrate[(5+3*x-2*x^2-5*x^3)/(3+4*x+2*x^2), x]`.
+The shifted inverse-trig argument now matches `Sqrt[2]*(1+x)`, including
+in the minimized reciprocal-quadratic case. The full result still collects
+the polynomial, logarithmic, and inverse-trig terms over a common denominator,
+while Wolfram displays separate terms.
+
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
 ```sh

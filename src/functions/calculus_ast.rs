@@ -7415,7 +7415,17 @@ fn integrate_linear_over_quadratic(
       .ok()?;
       times2(coeff, var_expr.clone())
     } else {
-      div2(linear_expr(b_g, two_a_g), inner_denom)
+      let content = gcd_i128(b_g, two_a_g);
+      if content > 1 {
+        let coeff = crate::evaluator::evaluate_expr_to_expr(&div2(
+          Expr::Integer(content),
+          inner_denom,
+        ))
+        .ok()?;
+        times2(coeff, linear_expr(b_g / content, two_a_g / content))
+      } else {
+        div2(linear_expr(b_g, two_a_g), inner_denom)
+      }
     };
     let sqrt_s = make_sqrt(Expr::Integer(s));
     let (head, sign) = if disc < 0 {

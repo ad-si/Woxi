@@ -26583,3 +26583,27 @@ fn trig_reduce_quotient_powers_use_shared_power_identities() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn quadratic_integrals_normalize_shifted_radical_arguments() {
+  for (code, expected) in [
+    (
+      "Integrate[1/(1+4x+2x^2),x]",
+      "-(ArcTanh[Sqrt[2]*(1 + x)]/Sqrt[2])",
+    ),
+    (
+      "Integrate[1/(3+4x+2x^2),x]",
+      "ArcTan[Sqrt[2]*(1 + x)]/Sqrt[2]",
+    ),
+    (
+      "Integrate[1/(1+6x+3x^2),x]",
+      "-(ArcTanh[Sqrt[3/2]*(1 + x)]/Sqrt[6])",
+    ),
+    (
+      "Integrate[1/(4+6x+3x^2),x]",
+      "ArcTan[Sqrt[3]*(1 + x)]/Sqrt[3]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
