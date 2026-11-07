@@ -7447,8 +7447,16 @@ fn integrate_linear_over_quadratic(
   let log_term = if big_b == 0 {
     None
   } else {
-    let quad =
-      crate::functions::polynomial_ast::coeffs_to_expr(&[c, b, a], var);
+    let content = gcd_i128(gcd_i128(a, b), c);
+    let sign = if k_num != 0 && c < 0 { -1 } else { 1 };
+    let quad = crate::functions::polynomial_ast::coeffs_to_expr(
+      &[
+        sign * (c / content),
+        sign * (b / content),
+        sign * (a / content),
+      ],
+      var,
+    );
     Some(times2(
       div2(Expr::Integer(big_b), Expr::Integer(two_a)),
       call1("Log", quad),
@@ -8834,6 +8842,24 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     let mut log_g = call1("Log", g.clone());
     // n = -1: integrand = c·g'/g → c·Log[g].
     if is_constant_wrt(&ratio_val, var) {
+      if let Some(mut coeffs) =
+        crate::functions::polynomial_ast::extract_poly_coeffs(
+          &crate::functions::polynomial_ast::expand_and_combine(&g),
+          var,
+        )
+        && coeffs.len() > 2
+      {
+        let content = coeffs.iter().copied().fold(0, gcd_i128);
+        if content > 1 {
+          for coefficient in &mut coeffs {
+            *coefficient /= content;
+          }
+          log_g = call1(
+            "Log",
+            crate::functions::polynomial_ast::coeffs_to_expr(&coeffs, var),
+          );
+        }
+      }
       if crate::functions::math_ast::expr_to_rational(&ratio_val)
         .is_some_and(|(n, _)| n < 0)
         && let Some(coeffs) =

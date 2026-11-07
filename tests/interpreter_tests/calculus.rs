@@ -26692,3 +26692,24 @@ fn rational_integrals_share_nonmonic_quadratic_partial_fractions() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn rational_integrals_normalize_polynomial_log_arguments() {
+  for (code, expected) in [
+    ("Integrate[x/(4+4x^2),x]", "Log[1 + x^2]/8"),
+    ("Integrate[x/(6+4x^2),x]", "Log[3 + 2*x^2]/8"),
+    ("Integrate[x/(-6+4x^2),x]", "Log[-3 + 2*x^2]/8"),
+    ("Integrate[x^2/(3+3x^3),x]", "Log[1 + x^3]/9"),
+    (
+      "Integrate[(1+x)/(-5+x+x^2),x]",
+      "-(ArcTanh[(1 + 2*x)/Sqrt[21]]/Sqrt[21]) + Log[5 - x - x^2]/2",
+    ),
+    (
+      "Integrate[(1+2x)/(-5+4x+4x^2),x]",
+      "Log[-5 + 4*x + 4*x^2]/4",
+    ),
+    ("Integrate[1/(4+2x),x]", "Log[4 + 2*x]/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
