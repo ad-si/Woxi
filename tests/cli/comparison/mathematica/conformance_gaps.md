@@ -9041,6 +9041,13 @@ transformed top-level sums expand (diff-fuzz seed 1794015946701080000,
 2026-11-07). The powered-function grouping remains separate from that fix,
 as does the case documented for `TrigToExp[Sin[x]^3]`.
 
+Seed 1794023524037498000 (2026-11-07) found the converse grouping issue
+for `TrigToExp[Cos[2*x]+Cos[3*x]-Tan[3*x]^2*Sin[x]^2]`: Woxi expands
+the top-level sum and the product's exponential numerators, while Wolfram
+keeps the cosine exponential pairs and squared factors grouped. Its
+minimized `TrigToExp[Cos[2]]` case is now fixed by denominator formatting
+for negative complex exponents; the larger expansion choice remains.
+
 ### N of constants prints different guard digits
 
 In the same run, `N[E, 22]` prints
