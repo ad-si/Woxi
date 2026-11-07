@@ -12416,3 +12416,19 @@ mod hypergeometric_pfq_continuation {
     );
   }
 }
+
+#[test]
+fn machine_arctanh_rounds_from_guard_precision() {
+  for (code, expected) in [
+    ("ArcTanh[-0.4]", "-0.42364893019360184"),
+    ("ArcTanh[0.4]", "0.42364893019360184"),
+    ("ArcTanh[-0.9]", "-1.4722194895832204"),
+    ("ArcTanh[0.9]", "1.4722194895832204"),
+    ("ArcTanh[-0.1]", "-0.10033534773107558"),
+    ("ArcTanh[0.1]", "0.10033534773107558"),
+    ("ArcTanh[0.]", "0."),
+    ("ArcTanh[0.9999999999999999]", "18.714973875118524"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
