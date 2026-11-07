@@ -27317,3 +27317,31 @@ fn monomial_denominator_integrals_use_canonical_simple_pole_logs() {
     }
   }
 }
+
+#[test]
+fn trig_to_exp_combines_matching_harmonics_in_distributed_products() {
+  for (code, expected) in [
+    (
+      "TrigToExp[(Sin[3*x]^2+Cos[x]^2)*Cos[x]]",
+      "5/(8*E^(I*x)) + (5*E^(I*x))/8 + 1/(8*E^((3*I)*x)) + E^((3*I)*x)/8 - 1/(8*E^((5*I)*x)) - E^((5*I)*x)/8 - 1/(8*E^((7*I)*x)) - E^((7*I)*x)/8",
+    ),
+    (
+      "TrigToExp[(Sin[x]+Cos[x])*Cos[x]]",
+      "1/2 + (1/4 + I/4)/E^((2*I)*x) + (1/4 - I/4)*E^((2*I)*x)",
+    ),
+    (
+      "TrigToExp[(1+x)*Cos[x]]",
+      "((E^(-I*x) + E^(I*x))*(1 + x))/2",
+    ),
+    (
+      "TrigToExp[(Sin[3*x]^2+Cos[y]^2)*Cos[x]]",
+      "((E^(-I*x) + E^(I*x))*(-1/4*(E^((-3*I)*x) - E^((3*I)*x))^2 + (E^(-I*y) + E^(I*y))^2/4))/2",
+    ),
+    (
+      "TrigToExp[(Sin[3*x]+Cos[7*x])*Cos[x]]",
+      "((E^(-I*x) + E^(I*x))*(I/2*(E^((-3*I)*x) - E^((3*I)*x)) + (E^((-7*I)*x) + E^((7*I)*x))/2))/2",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

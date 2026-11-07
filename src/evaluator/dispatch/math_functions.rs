@@ -7601,29 +7601,53 @@ fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
 
 // Small powers expand in sums when their harmonics combine with another
 // summand. Otherwise retain the shorter exponential powers. Limit this
-// combination pass to at most five harmonics per term.
+// combination pass to total trigonometric degree four per term.
 fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
-  let terms = crate::functions::polynomial_ast::collect_additive_terms(expr);
+  let mut terms =
+    crate::functions::polynomial_ast::collect_additive_terms(expr);
+  let product_input = terms.len() == 1;
+  if product_input {
+    let factors =
+      crate::functions::polynomial_ast::together::flatten_times_args(
+        std::slice::from_ref(expr),
+      );
+    if !factors.iter().any(|factor| {
+      crate::functions::polynomial_ast::collect_additive_terms(factor).len() > 1
+        && trig_to_exp_grouping(factor).0 > 0
+    }) {
+      return false;
+    }
+    let Ok(expanded) = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(expr),
+    ) else {
+      return false;
+    };
+    terms = crate::functions::polynomial_ast::collect_additive_terms(&expanded);
+  }
   if terms.len() < 2 {
     return false;
   }
   let mut spectra = Vec::new();
+  let mut single_power = false;
   'terms: for term in terms {
     let factors =
       crate::functions::polynomial_ast::together::flatten_times_args(
         std::slice::from_ref(&term),
       );
-    let factors_count = factors
+    let trig_count = factors
       .iter()
       .filter(|factor| trig_to_exp_grouping(factor).0 != 0)
       .count();
-    let mut spectrum = None;
+    if !product_input && trig_count > 1 {
+      return false;
+    }
+    let mut degree = 0;
+    let mut family = None;
+    let mut harmonics = vec![Expr::Integer(0)];
     for factor in factors {
       if trig_to_exp_grouping(&factor).0 == 0 {
         continue;
-      }
-      if spectrum.is_some() {
-        return false;
       }
       let (base, power) = match &factor {
         Expr::FunctionCall { name, args }
@@ -7652,7 +7676,7 @@ fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
       if args.len() == 1
         && matches!(name.as_str(), "Tan" | "Cot" | "Tanh" | "Coth")
         && power == 1
-        && factors_count == 1
+        && trig_count == 1
       {
         continue 'terms;
       }
@@ -7662,27 +7686,51 @@ fn trig_to_exp_has_combining_harmonics(expr: &Expr) -> bool {
       {
         return false;
       }
-      let hyperbolic = matches!(name.as_str(), "Sinh" | "Cosh");
-      let mut harmonics = Vec::new();
-      for k in (-power..=power).step_by(2) {
-        if k == 0 {
-          continue;
-        }
-        let angle = call("Times", vec![Expr::Integer(k), args[0].clone()]);
-        let Ok(angle) = crate::evaluator::evaluate_expr_to_expr(&angle) else {
-          return false;
-        };
-        harmonics.push((hyperbolic, expr_to_string(&angle)));
+      degree += power;
+      if degree > 4 {
+        return false;
       }
-      spectrum = Some((power, harmonics));
+      let hyperbolic = matches!(name.as_str(), "Sinh" | "Cosh");
+      if family.is_some_and(|previous| previous != hyperbolic) {
+        return false;
+      }
+      family = Some(hyperbolic);
+      let mut next = Vec::new();
+      for previous in &harmonics {
+        for k in (-power..=power).step_by(2) {
+          let angle = call(
+            "Plus",
+            vec![
+              previous.clone(),
+              call("Times", vec![Expr::Integer(k), args[0].clone()]),
+            ],
+          );
+          let Ok(angle) = crate::evaluator::evaluate_expr_to_expr(&angle)
+          else {
+            return false;
+          };
+          next.push(angle);
+        }
+      }
+      harmonics = next;
     }
-    if let Some(spectrum) = spectrum {
-      spectra.push(spectrum);
+    if let Some(family) = family {
+      single_power |= trig_count == 1 && degree >= 2;
+      let harmonics: Vec<_> = harmonics
+        .into_iter()
+        .filter(|angle| !matches!(angle, Expr::Integer(0)))
+        .map(|angle| (family, expr_to_string(&angle)))
+        .collect();
+      spectra.push((degree, harmonics));
     }
   }
+  if product_input && !single_power {
+    return false;
+  }
+  let threshold = if product_input { 2 } else { 3 };
   let mut has_power = false;
   for (i, (power, harmonics)) in spectra.iter().enumerate() {
-    if *power <= 2 {
+    if *power < threshold {
       continue;
     }
     has_power = true;
@@ -7749,14 +7797,21 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       .filter(|factor| {
         crate::functions::polynomial_ast::collect_additive_terms(factor).len()
           > 1
+          && trig_to_exp_grouping(factor).0 > 0
       })
       .count()
       == 1;
-  let grouped = grouping.1 && !trig_to_exp_has_combining_harmonics(expr);
+  let algebraic_sum_factor = factors.iter().any(|factor| {
+    crate::functions::polynomial_ast::collect_additive_terms(factor).len() > 1
+      && trig_to_exp_grouping(factor).0 == 0
+  });
+  let combining_harmonics = trig_to_exp_has_combining_harmonics(expr);
+  let grouped = (grouping.1 || algebraic_sum_factor) && !combining_harmonics;
   let transformed = trig_to_exp_recursive_impl(expr, grouped);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
   if !grouped
-    && ((expandable_count == 1 && !other_transformed_factor)
+    && (combining_harmonics
+      || (expandable_count == 1 && !other_transformed_factor)
       || monomial_times_transformed_sum
       || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
       || matches!(
