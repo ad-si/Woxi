@@ -8307,6 +8307,16 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         let n =
           expand_and_combine(&times2(Expr::Integer(sign), input_num.clone()));
         let d = expand_and_combine(&times2(Expr::Integer(sign), den.clone()));
+        // A denominator with a monomial factor keeps positive leading
+        // content after that factor is extracted. Do not hide an outer
+        // quotient sign inside its nested polynomial remainder.
+        if let Some(var) = find_single_variable(&d)
+          && let Some(coeffs) = extract_poly_coeffs(&d, &var)
+          && coeffs.first() == Some(&0)
+          && coeffs.last().is_some_and(|coefficient| *coefficient < 0)
+        {
+          continue;
+        }
         let ds = full_simplify_univariate_polynomial(&d)
           .or_else(|| full_simplify_recursive(&d))
           .unwrap_or(d.clone());
@@ -8333,22 +8343,45 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
         .unwrap_or_else(|| num.clone());
       let d = full_simplify_univariate_polynomial(&den)
         .unwrap_or_else(|| den.clone());
+      let mut candidates = Vec::new();
+      if find_single_variable(&num)
+        .and_then(|var| extract_poly_coeffs(&num, &var))
+        .is_some_and(|coeffs| {
+          coeffs.last().is_some_and(|coefficient| *coefficient < 0)
+        })
+      {
+        let negated_num = expand_and_combine(&neg1(num.clone()));
+        let negated_num = full_simplify_univariate_polynomial(&negated_num)
+          .unwrap_or(negated_num);
+        candidates.extend([
+          neg1(crate::functions::math_ast::make_divide(
+            negated_num.clone(),
+            d.clone(),
+          )),
+          neg1(crate::functions::math_ast::make_divide(
+            negated_num,
+            den.clone(),
+          )),
+        ]);
+      }
       for (numerator, denominator) in
         [(n.clone(), d.clone()), (n, den), (num, d)]
       {
         let original =
           crate::functions::math_ast::make_divide(numerator, denominator);
         let normalized = finish_quotient_sign(original.clone(), true);
-        for candidate in [original, normalized] {
-          if wl_simplify_count(
-            &crate::evaluator::evaluate_expr_to_expr(&candidate)
-              .unwrap_or_else(|_| candidate.clone()),
-          ) < wl_simplify_count(
+        candidates.extend([original, normalized]);
+      }
+      for candidate in candidates {
+        let candidate = crate::evaluator::evaluate_expr_to_expr(&candidate)
+          .unwrap_or(candidate);
+        if wl_simplify_count(&candidate)
+          < wl_simplify_count(
             &crate::evaluator::evaluate_expr_to_expr(&best)
               .unwrap_or_else(|_| best.clone()),
-          ) {
-            best = candidate;
-          }
+          )
+        {
+          best = candidate;
         }
       }
     }

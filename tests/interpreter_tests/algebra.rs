@@ -25737,3 +25737,31 @@ fn simplify_double_angle_sines_cancel_quotient_factors() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn full_simplify_preserves_compact_outer_quotient_signs() {
+  for (code, expected) in [
+    (
+      "FullSimplify[(-3+5*x-2*x^2-3*x^3)/(5-2*x+3*x^2+x^3)]",
+      "-((3 + (-1 + x)*x*(5 + 3*x))/(5 + x*(-2 + x*(3 + x))))",
+    ),
+    (
+      "FullSimplify[-1/(-2*x+3*x^2+x^3)]",
+      "-(1/(x*(-2 + x*(3 + x))))",
+    ),
+    (
+      "FullSimplify[1/(2*x-3*x^2-x^3)]",
+      "-(1/(x*(-2 + x*(3 + x))))",
+    ),
+    (
+      "FullSimplify[-1/(-4*x+2*x^2+x^3)]",
+      "-(1/(x*(-4 + x*(2 + x))))",
+    ),
+    (
+      "FullSimplify[(-3+5*x-2*x^2-3*x^3)/(7-2*x+3*x^2+x^3)]",
+      "-((3 + (-1 + x)*x*(5 + 3*x))/(7 + x*(-2 + x*(3 + x))))",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
