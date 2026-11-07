@@ -6141,9 +6141,30 @@ pub fn trig_expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
     ));
   }
-  // Combined trig terms are linearized before angle expansion. A lone
-  // power such as Sin[x]^3 retains its original polynomial form.
+  // Combined trig terms and powers with expandable angles are linearized
+  // first. A lone power such as Sin[x]^3 retains its polynomial form.
   fn trig_terms(expr: &Expr) -> usize {
+    let power = match expr {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      _ => None,
+    };
+    if let Some((base, Expr::Integer(n))) = power
+      && *n > 1
+      && let Some((_, arg)) = extract_trig(base)
+      && (collect_additive_terms(&arg).len() > 1
+        || extract_integer_factor(&arg).0.unsigned_abs() > 1)
+    {
+      return 2;
+    }
     if extract_trig(expr).is_some() {
       return 1;
     }
@@ -6476,40 +6497,28 @@ fn expand_cos_multiple(n: usize, x: &Expr) -> Expr {
 /// Expand Sinh[a + b + ...] recursively.
 fn expand_sinh_sum(terms: &[Expr]) -> Expr {
   if terms.len() == 1 {
-    return make_fn("Sinh", &[terms[0].clone()]);
+    return expand_trig_function("Sinh", &terms[0]);
   }
   let a = &terms[0];
   let rest = &terms[1..];
   // Sinh[a + rest] = Sinh[a]*Cosh[rest] + Cosh[a]*Sinh[rest]
   make_plus(
-    &make_times(
-      &make_fn("Sinh", std::slice::from_ref(a)),
-      &expand_cosh_sum(rest),
-    ),
-    &make_times(
-      &make_fn("Cosh", std::slice::from_ref(a)),
-      &expand_sinh_sum(rest),
-    ),
+    &make_times(&expand_trig_function("Sinh", a), &expand_cosh_sum(rest)),
+    &make_times(&expand_trig_function("Cosh", a), &expand_sinh_sum(rest)),
   )
 }
 
 /// Expand Cosh[a + b + ...] recursively.
 fn expand_cosh_sum(terms: &[Expr]) -> Expr {
   if terms.len() == 1 {
-    return make_fn("Cosh", &[terms[0].clone()]);
+    return expand_trig_function("Cosh", &terms[0]);
   }
   let a = &terms[0];
   let rest = &terms[1..];
   // Cosh[a + rest] = Cosh[a]*Cosh[rest] + Sinh[a]*Sinh[rest]
   make_plus(
-    &make_times(
-      &make_fn("Cosh", std::slice::from_ref(a)),
-      &expand_cosh_sum(rest),
-    ),
-    &make_times(
-      &make_fn("Sinh", std::slice::from_ref(a)),
-      &expand_sinh_sum(rest),
-    ),
+    &make_times(&expand_trig_function("Cosh", a), &expand_cosh_sum(rest)),
+    &make_times(&expand_trig_function("Sinh", a), &expand_sinh_sum(rest)),
   )
 }
 

@@ -16039,6 +16039,31 @@ mod trig_expand {
   }
 
   #[test]
+  fn powered_compound_angles_are_linearized_before_expansion() {
+    for (code, expected) in [
+      (
+        "TrigExpand[Cos[x+y]^2]",
+        "1/2 + (Cos[x]^2*Cos[y]^2)/2 - (Cos[y]^2*Sin[x]^2)/2 - 2*Cos[x]*Cos[y]*Sin[x]*Sin[y] - (Cos[x]^2*Sin[y]^2)/2 + (Sin[x]^2*Sin[y]^2)/2",
+      ),
+      (
+        "TrigExpand[Sin[x+y]^2]",
+        "1/2 - (Cos[x]^2*Cos[y]^2)/2 + (Cos[y]^2*Sin[x]^2)/2 + 2*Cos[x]*Cos[y]*Sin[x]*Sin[y] + (Cos[x]^2*Sin[y]^2)/2 - (Sin[x]^2*Sin[y]^2)/2",
+      ),
+      (
+        "TrigExpand[Cos[2x]^2]",
+        "1/2 + Cos[x]^4/2 - 3*Cos[x]^2*Sin[x]^2 + Sin[x]^4/2",
+      ),
+      (
+        "TrigExpand[Sinh[x+y]^2]",
+        "-1/2 + (Cosh[x]^2*Cosh[y]^2)/2 + (Cosh[y]^2*Sinh[x]^2)/2 + 2*Cosh[x]*Cosh[y]*Sinh[x]*Sinh[y] + (Cosh[x]^2*Sinh[y]^2)/2 + (Sinh[x]^2*Sinh[y]^2)/2",
+      ),
+      ("TrigExpand[Cos[x*y]^2]", "Cos[x*y]^2"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn sin_double_angle() {
     assert_eq!(interpret("TrigExpand[Sin[2x]]").unwrap(), "2*Cos[x]*Sin[x]");
   }
