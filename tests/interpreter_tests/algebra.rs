@@ -26078,3 +26078,21 @@ fn full_simplify_nests_opposite_sign_radicals_only_when_cheaper() {
     assert_eq!(interpret(&code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn cancel_normalizes_numerator_content_with_factored_denominators() {
+  for (code, expected) in [
+    ("Cancel[(4-4*x)/(x+3*x^2)]", "(-4*(-1 + x))/(x*(1 + 3*x))"),
+    ("Cancel[(2-2*x)/(x+3*x^2)]", "(-2*(-1 + x))/(x*(1 + 3*x))"),
+    ("Cancel[(6-6*x)/(x*(2+5*x))]", "(-6*(-1 + x))/(x*(2 + 5*x))"),
+    (
+      "Cancel[(2-2*x^2)/(x*(1+3*x))]",
+      "(-2*(-1 + x^2))/(x*(1 + 3*x))",
+    ),
+    ("Cancel[(2+2*x)/(x*(1+3*x))]", "(2*(1 + x))/(x*(1 + 3*x))"),
+    ("Cancel[(1-x)/(x*(1+3*x))]", "(1 - x)/(x*(1 + 3*x))"),
+    ("Cancel[(2*x+2*x^2)/(1+3*x)]", "(2*(x + x^2))/(1 + 3*x)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

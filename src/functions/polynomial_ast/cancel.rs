@@ -55,7 +55,27 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       == expr_to_string(&expand_and_combine(&input_n))
     && expr_to_string(&expand_and_combine(&rd))
       == expr_to_string(&expand_and_combine(&input_d));
-  let base = if unchanged { args[0].clone() } else { result };
+  let base = if unchanged {
+    // Preserve only the denominator's grouping. The numerator still needs
+    // Cancel's canonical content and sign, even when no factor cancelled.
+    div2(rn, input_d)
+  } else {
+    result
+  };
+  let (numerator, denominator) = super::together::extract_num_den(&base);
+  let terms =
+    super::coefficient::collect_additive_terms(&expand_and_combine(&numerator));
+  let base = if !matches!(denominator, Expr::Integer(1))
+    && super::factor::rational_content(&terms)
+      .is_some_and(|(n, d, _)| n.abs() > 1 || d > 1)
+  {
+    match super::factor_terms_ast(std::slice::from_ref(&numerator)) {
+      Ok(numerator) => div2(numerator, denominator),
+      Err(_) => base,
+    }
+  } else {
+    base
+  };
   Ok(super::together::distribute_unit_negative_numerator(
     &super::together::hoist_result_denominator_content(&base),
   ))
