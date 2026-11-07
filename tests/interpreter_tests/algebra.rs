@@ -18091,6 +18091,35 @@ mod cases {
     );
   }
 
+  #[test]
+  fn polynomial_gcd_preserves_exposed_factors() {
+    for (input, expected) in [
+      (
+        "PolynomialGCD[(-1+x-2*x^2-4*x^3)*(1-2*x+x^2),(-3+2*x+x^2)*(-1+x)]",
+        "(-1 + x)^2",
+      ),
+      ("PolynomialGCD[1-2*x+x^2,(-3+2*x+x^2)*(-1+x)]", "(-1 + x)^2"),
+      ("PolynomialGCD[(-3+2*x+x^2)*(-1+x),1-2*x+x^2]", "(-1 + x)^2"),
+      (
+        "PolynomialGCD[(2*x-1)^4*(x+2),Expand[(2*x-1)^3*(x+3)]]",
+        "(-1 + 2*x)^3",
+      ),
+      ("PolynomialGCD[(x-1)^2,(x-1)*(x+2)]", "-1 + x"),
+      ("PolynomialGCD[3*(x-1)^2,6*(x-1)^3]", "3*(-1 + x)^2"),
+      (
+        "PolynomialGCD[(x-1)*(x+2),(x-1)*(x+2)*(x+3)]",
+        "(-1 + x)*(2 + x)",
+      ),
+      ("PolynomialGCD[(x-1)^3,(x-1)^2,(x-1)*(x+2)]", "-1 + x"),
+      ("PolynomialGCD[(x-1)^2/2,(x-1)^3/3]", "(-1 + x)^2/6"),
+      ("PolynomialGCD[2*(1+x),4*(1+x)]", "2*(1 + x)"),
+      ("PolynomialGCD[2+2*x,4+4*x]", "2 + 2*x"),
+      ("PolynomialGCD[1-2*x+x^2,-1+3*x-3*x^2+x^3]", "1 - 2*x + x^2"),
+    ] {
+      assert_case(input, expected);
+    }
+  }
+
   // The gcd of polynomials in several variables, and of inexact ones.
   #[test]
   fn polynomial_gcd_multivariate_and_inexact() {

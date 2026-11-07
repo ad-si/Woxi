@@ -505,6 +505,77 @@ fn poly_gcd_pair(
     return normalize_poly_sign(p, var);
   }
 
+  // Preserve exposed product/power boundaries. gcd(p, q*r) is
+  // gcd(p,q) * gcd(p/gcd(p,q),r); consuming the quotient prevents counting
+  // repeated factors more often than they occur in the other polynomial.
+  let exposed_factors = |expr: &Expr| -> Option<Vec<(Expr, i128)>> {
+    let factors = collect_multiplicative_factors(expr);
+    if factors.len() > 1 {
+      return Some(factors.into_iter().map(|factor| (factor, 1)).collect());
+    }
+    match expr {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        if let Expr::Integer(n) = args[1]
+          && n > 1
+        {
+          return Some(vec![(args[0].clone(), n)]);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => {
+        if let Expr::Integer(n) = right.as_ref()
+          && *n > 1
+        {
+          return Some(vec![(*left.clone(), *n)]);
+        }
+      }
+      _ => {}
+    }
+    None
+  };
+  let split = exposed_factors(p)
+    .map(|factors| (factors, q))
+    .or_else(|| exposed_factors(q).map(|factors| (factors, p)));
+  if let Some((factors, other)) = split
+    && super::polynomial_q::is_polynomial(p, var)
+    && super::polynomial_q::is_polynomial(q, var)
+  {
+    let mut remaining = other.clone();
+    let mut common = Vec::new();
+    let mut exact = true;
+    'factors: for (factor, multiplicity) in factors {
+      for _ in 0..multiplicity {
+        let part = poly_gcd_pair(&factor, &remaining, var)?;
+        if matches!(part, Expr::Integer(1)) {
+          break;
+        }
+        let Ok((quotient, remainder)) =
+          poly_divide_symbolic(&remaining, &part, var)
+        else {
+          exact = false;
+          break 'factors;
+        };
+        let remainder = crate::evaluator::evaluate_expr_to_expr(&remainder)?;
+        if !matches!(remainder, Expr::Integer(0)) {
+          exact = false;
+          break 'factors;
+        }
+        remaining = crate::evaluator::evaluate_expr_to_expr(&quotient)?;
+        common.push(part);
+      }
+    }
+    if exact {
+      return crate::evaluator::evaluate_expr_to_expr(&times(common));
+    }
+    // If symbolic division cannot certify a factor, use the ordinary
+    // Euclidean path rather than returning an incomplete product.
+  }
+
   // Check degrees in the main variable
   let p_deg = max_power_int(&expand_and_combine(p), var).unwrap_or(0);
   let q_deg = max_power_int(&expand_and_combine(q), var).unwrap_or(0);
