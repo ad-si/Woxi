@@ -7402,8 +7402,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Gaussian integer/rational roots
           let real_part =
             solve_divide(&Expr::Integer(-bi), &Expr::Integer(2 * ai));
-          let imag_part =
-            solve_divide(&Expr::Integer(sqrt_out), &Expr::Integer(2 * ai));
+          // Keep the imaginary magnitude positive so the minus root comes
+          // first regardless of the leading coefficient's sign.
+          let imag_part = solve_divide(
+            &Expr::Integer(if ai < 0 { -sqrt_out } else { sqrt_out }),
+            &Expr::Integer(2 * ai),
+          );
           let make_sol = |sign_minus: bool| -> Expr {
             let i_part = multiply_exprs(&id_expr("I"), &imag_part);
             let join_op = if sign_minus {
@@ -7411,7 +7415,8 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               BinaryOperator::Plus
             };
-            simplify(binop(join_op, real_part.clone(), i_part))
+            let root = binop(join_op, real_part.clone(), i_part);
+            crate::evaluator::evaluate_expr_to_expr(&root).unwrap_or(root)
           };
           let sol1 = make_sol(true);
           let sol2 = make_sol(false);

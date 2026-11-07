@@ -25956,3 +25956,26 @@ fn simplify_keeps_monomial_content_when_rejecting_a_split_numerator() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn quadratic_gaussian_roots_normalize_negative_leading_coefficients() {
+  for (polynomial, roots) in [
+    ("-5+4*x-4*x^2", "{1/2 - I, 1/2 + I}"),
+    ("-10+4*x-4*x^2", "{1/2 - (3*I)/2, 1/2 + (3*I)/2}"),
+    ("-5-4*x-4*x^2", "{-1/2 - I, -1/2 + I}"),
+    ("5-4*x+4*x^2", "{1/2 - I, 1/2 + I}"),
+    ("-4-x^2", "{-2*I, 2*I}"),
+  ] {
+    let code = format!("SolveValues[{polynomial}==0,x]");
+    assert_eq!(interpret(&code).unwrap(), roots, "{code}");
+    assert_eq!(
+      interpret(&format!("x /. Solve[{polynomial}==0,x]")).unwrap(),
+      roots
+    );
+    assert_eq!(
+      interpret(&format!("Simplify[({polynomial}) /. x -> #]& /@ {roots}"))
+        .unwrap(),
+      "{0, 0}"
+    );
+  }
+}
