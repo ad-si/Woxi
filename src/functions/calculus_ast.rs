@@ -7732,6 +7732,23 @@ fn try_integrate_rational(
       };
     }
   }
+  // A linear denominator with entirely negative coefficients is first
+  // made positive, keeping the logarithm on the same branch as Wolfram.
+  if den_coeffs.len() == 2 && den_coeffs.iter().all(|c| *c < 0) {
+    let numerator = num_coeffs
+      .iter()
+      .map(|c| c.checked_neg())
+      .collect::<Option<Vec<_>>>()?;
+    let denominator = den_coeffs
+      .iter()
+      .map(|c| c.checked_neg())
+      .collect::<Option<Vec<_>>>()?;
+    return try_integrate_rational(
+      &coeffs_to_expr(&numerator, var),
+      &coeffs_to_expr(&denominator, var),
+      var,
+    );
+  }
   let den_lead = *den_coeffs.last()?;
   if den_coeffs.len() == 2
     && den_coeffs[0] != 0
@@ -7768,16 +7785,16 @@ fn try_integrate_rational(
       crate::evaluator::evaluate_expr_to_expr(&call1("Expand", transformed))
         .ok()?;
     let mut primitive = integrate(&transformed, var)?;
-    if content < 0 && den_coeffs[0] < 0 {
+    if content < 0 && (den_coeffs[0] < 0 || den_lead < 0) {
       let logarithm = call1("Log", id_expr(var));
       let coefficient = crate::functions::polynomial_ast::coefficient_ast(&[
         primitive.clone(),
         logarithm.clone(),
       ])
       .ok()?;
-      if crate::functions::math_ast::expr_to_rational(&coefficient)
-        .is_some_and(|(n, _)| n > 0)
-      {
+      if crate::functions::math_ast::expr_to_rational(&coefficient).is_some_and(
+        |(n, _)| (n > 0 && den_coeffs[0] < 0) || (n < 0 && den_lead < 0),
+      ) {
         primitive = crate::functions::polynomial_ast::substitute_expr(
           &primitive,
           &logarithm,
@@ -7801,6 +7818,11 @@ fn try_integrate_rational(
         call1("Expand", substituted),
       ))
       .ok()?;
+    }
+    if num_coeffs.len() == 2 && den_lead < 0 {
+      substituted =
+        crate::evaluator::evaluate_expr_to_expr(&neg1(substituted)).ok()?;
+      return Some(times2(Expr::Integer(content.checked_neg()?), substituted));
     }
     return Some(times2(Expr::Integer(content), substituted));
   }

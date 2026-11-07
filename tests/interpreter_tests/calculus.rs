@@ -27090,3 +27090,43 @@ fn trig_reduce_normalizes_cotangent_power_denominator_signs() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn linear_rational_substitution_orients_content_and_logarithms() {
+  for (code, expected) in [
+    (
+      "Integrate[(4+4*x)/(4-5*x),x]",
+      "(-4*(-4 + 5*x + 9*Log[4 - 5*x]))/25",
+    ),
+    (
+      "Integrate[(2+2*x)/(4-5*x),x]",
+      "(-2*(-4 + 5*x + 9*Log[4 - 5*x]))/25",
+    ),
+    (
+      "Integrate[(-2-2*x)/(4-5*x),x]",
+      "(2*(-4 + 5*x + 9*Log[-4 + 5*x]))/25",
+    ),
+    (
+      "Integrate[(2+2*x)/(-4-5*x),x]",
+      "(-2*(4 + 5*x + Log[4 + 5*x]))/25",
+    ),
+    (
+      "Integrate[(-2-2*x)/(-4-5*x),x]",
+      "(2*(4 + 5*x + Log[4 + 5*x]))/25",
+    ),
+    (
+      "Integrate[(1+x)/(-4-5*x),x]",
+      "(-4 - 5*x - Log[4 + 5*x])/25",
+    ),
+    (
+      "Integrate[(2+2*x)/(4+5*x),x]",
+      "(2*(4 + 5*x + Log[4 + 5*x]))/25",
+    ),
+    (
+      "Integrate[(2+2*x)/(-4+5*x),x]",
+      "(2*(-4 + 5*x + 9*Log[-4 + 5*x]))/25",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
