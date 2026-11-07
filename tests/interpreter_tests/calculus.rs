@@ -27190,3 +27190,31 @@ fn trig_reduce_orders_multivariate_angles_with_negative_product_terms() {
     "(2*Sin[x*y] + Sin[2*x - x*y] - Sin[2*x + x*y])/(2*(1 + Cos[2*x]))"
   );
 }
+
+#[test]
+fn trig_to_exp_expands_monomials_times_one_transformed_sum() {
+  for (code, expected) in [
+    (
+      "TrigToExp[x*y*(x+Sin[x])]",
+      "(I/2*x*y)/E^(I*x) - I/2*E^(I*x)*x*y + x^2*y",
+    ),
+    (
+      "TrigToExp[x*(y+Sin[x])]",
+      "(I/2*x)/E^(I*x) - I/2*E^(I*x)*x + x*y",
+    ),
+    (
+      "TrigToExp[x*(y+Cos[x])]",
+      "x/(2*E^(I*x)) + (E^(I*x)*x)/2 + x*y",
+    ),
+    (
+      "TrigToExp[x*(y+Sin[x]^2)]",
+      "x/2 - x/(4*E^((2*I)*x)) - (E^((2*I)*x)*x)/4 + x*y",
+    ),
+    (
+      "TrigToExp[x*(y+Sin[x]^3)]",
+      "x*((-1/8*I)*(E^(-I*x) - E^(I*x))^3 + y)",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

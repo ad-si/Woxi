@@ -7730,12 +7730,23 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       other_transformed_factor = true;
     }
   }
-  let grouped =
-    trig_to_exp_grouping(expr).1 && !trig_to_exp_has_combining_harmonics(expr);
+  let grouping = trig_to_exp_grouping(expr);
+  let monomial_times_transformed_sum = grouping.0 == 1
+    && factors.len() > 1
+    && factors
+      .iter()
+      .filter(|factor| {
+        crate::functions::polynomial_ast::collect_additive_terms(factor).len()
+          > 1
+      })
+      .count()
+      == 1;
+  let grouped = grouping.1 && !trig_to_exp_has_combining_harmonics(expr);
   let transformed = trig_to_exp_recursive_impl(expr, grouped);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
   if !grouped
     && ((expandable_count == 1 && !other_transformed_factor)
+      || monomial_times_transformed_sum
       || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
       || matches!(
         expr,
