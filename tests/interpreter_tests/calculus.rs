@@ -26822,3 +26822,17 @@ fn trig_to_exp_expands_isolated_trigonometric_squares() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_preserves_opaque_function_arguments() {
+  for (code, expected) in [
+    ("TrigToExp[f[Sin[x]^2]]", "f[Sin[x]^2]"),
+    ("TrigToExp[g[Sin[x],Cos[x]]]", "g[Sin[x], Cos[x]]"),
+    (
+      "TrigToExp[f[Sin[x]]+Cos[y]]",
+      "1/(2*E^(I*y)) + E^(I*y)/2 + f[Sin[x]]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

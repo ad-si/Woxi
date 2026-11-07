@@ -7880,18 +7880,19 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             )
           }
         }
-        // Other functions: recurse into args
-        _ => Expr::FunctionCall {
-          name: name.clone(),
-          args: args.iter().map(trig_to_exp_recursive).collect(),
-        },
+        // Unknown function heads are opaque to TrigToExp.
+        _ => expr.clone(),
       }
     }
-    // Recurse into function calls with != 1 arg
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(trig_to_exp_recursive).collect(),
-    },
+    // Arithmetic heads expose their operands; other heads remain opaque.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Plus" | "Times" | "Power") =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(trig_to_exp_recursive).collect(),
+      }
+    }
     Expr::BinaryOp { op, left, right } => binop(
       *op,
       trig_to_exp_recursive(left),
