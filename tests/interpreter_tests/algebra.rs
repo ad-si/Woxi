@@ -25997,3 +25997,20 @@ fn simplification_distributes_radical_denominators_only_when_cheaper() {
     }
   }
 }
+
+#[test]
+fn simplification_collects_cheaper_rational_radical_denominators() {
+  for function in ["Simplify", "FullSimplify"] {
+    for (body, expected) in [
+      ("Sqrt[8]-3*Sqrt[23]/Sqrt[2]", "(4 - 3*Sqrt[23])/Sqrt[2]"),
+      ("Sqrt[8]+Sqrt[11/2]", "(4 + Sqrt[11])/Sqrt[2]"),
+      ("Sqrt[12]+Sqrt[7/3]", "(6 + Sqrt[7])/Sqrt[3]"),
+      ("Sqrt[12]-2*Sqrt[7/3]", "(-2*(-3 + Sqrt[7]))/Sqrt[3]"),
+      ("Sqrt[2/3]+Sqrt[5/3]", "Sqrt[2/3] + Sqrt[5/3]"),
+      ("Sqrt[2/3]+Sqrt[5/7]", "Sqrt[2/3] + Sqrt[5/7]"),
+    ] {
+      let code = format!("{function}[{body}]");
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+}
