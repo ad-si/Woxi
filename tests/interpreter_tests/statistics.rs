@@ -7419,6 +7419,136 @@ mod standardize {
   use super::*;
 
   #[test]
+  fn validates_custom_statistics_per_column() {
+    for (code, tag) in [
+      ("Standardize[{1,2},({1,2}&),StandardDeviation]", "loc"),
+      ("Standardize[{1,2},Mean,({1,2}&)]", "scl"),
+      ("Standardize[{1,1},Mean,Variance]", "scl"),
+      ("Standardize[{1,1},Mean,(StandardDeviation[#]&)]", "scl"),
+      ("f[x_]:=0; Standardize[{1,2},Mean,f]", "scl"),
+      (
+        "Standardize[{{1,2},{3,4}},({1,2}&),StandardDeviation]",
+        "loc2",
+      ),
+      ("Standardize[{{1,2},{3,4}},Mean,({1,2}&)]", "scl2"),
+    ] {
+      let output = interpret_with_stdout(code).unwrap();
+      assert!(
+        output.result.starts_with("Standardize["),
+        "{code}: {}",
+        output.result
+      );
+      assert_eq!(output.warnings.len(), 1, "{code}");
+      assert!(
+        output.warnings[0].starts_with(&format!("Standardize::{tag}:")),
+        "{code}: {:?}",
+        output.warnings
+      );
+    }
+    assert_eq!(
+      interpret("Standardize[{{1,2},{3,4}},Total,Total]").unwrap(),
+      "{{-3/4, -2/3}, {-1/4, -1/3}}"
+    );
+  }
+
+  #[test]
+  fn custom_zero_scale_evaluates_reciprocal_once() {
+    for scale in ["(0&)", "(0. &)", "(Total[#]-Total[#]&)", "Function[x,0]"] {
+      let code = format!("Standardize[{{1,2}},Mean,{scale}]");
+      let output = interpret_with_stdout(&code).unwrap();
+      assert_eq!(
+        output.result, "{ComplexInfinity, ComplexInfinity}",
+        "{code}"
+      );
+      assert_eq!(output.warnings.len(), 1, "{code}: {:?}", output.warnings);
+      assert!(
+        output.warnings[0].contains("Power::infy:"),
+        "{code}: {:?}",
+        output.warnings
+      );
+    }
+    let output = interpret_with_stdout("Standardize[{1,1},Mean,(0&)]").unwrap();
+    assert_eq!(output.result, "{Indeterminate, Indeterminate}");
+    assert!(
+      output
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("Infinity::indet:"))
+    );
+  }
+
+  #[test]
+  fn rejects_degenerate_default_scales_before_division() {
+    for data in [
+      "{1, 1}",
+      "{0., 0.}",
+      "{a, a, a}",
+      "{1/3, 1/3}",
+      "{{1, 2}, {1, 3}}",
+    ] {
+      let code = format!("Standardize[{data}]");
+      let output = interpret_with_stdout(&code).unwrap();
+      assert_eq!(output.result, code);
+      let (tag, suffix) = if data.starts_with("{{") {
+        ("scl2", " for one or more of the columns")
+      } else {
+        ("scl", "")
+      };
+      assert_eq!(
+        output.warnings,
+        vec![format!(
+          "Standardize::{tag}: The scale function StandardDeviation evaluated to a list or zero{suffix}."
+        )]
+      );
+    }
+  }
+
+  #[test]
+  fn rejects_short_default_data_and_ragged_arrays() {
+    for data in ["{}", "{1}", "{{1, 2}}", "{{}}"] {
+      let code = format!("Standardize[{data}]");
+      let output = interpret_with_stdout(&code).unwrap();
+      assert_eq!(output.result, code);
+      assert_eq!(
+        output.warnings,
+        vec![format!(
+          "Standardize::shlen: The argument {data} should have at least two elements."
+        )]
+      );
+    }
+    for data in ["{1, {2}}", "{{1}, {2, 3}}", "{{{1}}, {{2}}}"] {
+      let code = format!("Standardize[{data}]");
+      let output = interpret_with_stdout(&code).unwrap();
+      assert_eq!(output.result, code);
+      assert_eq!(
+        output.warnings,
+        vec![
+          "Standardize::vectmat: The first argument is expected to be a vector or matrix."
+        ]
+      );
+    }
+  }
+
+  #[test]
+  fn preserves_valid_matrices_and_custom_short_data() {
+    for (code, expected) in [
+      (
+        "Standardize[{{1,2},{3,4}}]",
+        "{{-(1/Sqrt[2]), -(1/Sqrt[2])}, {1/Sqrt[2], 1/Sqrt[2]}}",
+      ),
+      ("Standardize[{{},{}}]", "{{}, {}}"),
+      ("Standardize[{},Mean,(1&)]", "{}"),
+      ("Standardize[{1},Mean,(1&)]", "{0}"),
+      (
+        "Standardize[{1,1},Mean,StandardDeviation]",
+        "Standardize[{1, 1}, Mean, StandardDeviation]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn standardize_middle_element_is_zero() {
     // Middle element of odd-length symmetric range is always 0
     assert_eq!(interpret("Standardize[{1, 2, 3, 4, 5}][[3]]").unwrap(), "0");

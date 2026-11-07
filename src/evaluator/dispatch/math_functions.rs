@@ -8350,30 +8350,125 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Standardize", args));
   };
 
-  if items.is_empty() {
+  let matrix_width = match items.first() {
+    Some(Expr::List(row)) => Some(row.len()),
+    _ => None,
+  };
+  let valid_shape = items.iter().all(|item| match (matrix_width, item) {
+    (Some(width), Expr::List(row)) => {
+      row.len() == width
+        && row.iter().all(|entry| !matches!(entry, Expr::List(_)))
+    }
+    (None, Expr::List(_)) | (Some(_), _) => false,
+    (None, _) => true,
+  });
+  if !valid_shape {
+    crate::emit_message(
+      "Standardize::vectmat: The first argument is expected to be a vector or matrix.",
+    );
+    return Ok(unevaluated("Standardize", args));
+  }
+  if args.len() == 1 && items.len() < 2 {
+    crate::emit_message(&format!(
+      "Standardize::shlen: The argument {} should have at least two elements.",
+      expr_to_string(data),
+    ));
+    return Ok(unevaluated("Standardize", args));
+  }
+  if items.is_empty() || matrix_width == Some(0) {
     return Ok(data.clone());
   }
 
-  // Compute location (mean) and scale (standard deviation)
-  let (location, scale): (Expr, Expr) = if args.len() >= 3 {
-    let loc =
-      crate::functions::list_helpers_ast::apply_func_ast(&args[1], data)?;
-    let sc =
-      crate::functions::list_helpers_ast::apply_func_ast(&args[2], data)?;
-    (loc, sc)
-  } else if args.len() == 2 {
-    let loc =
-      crate::functions::list_helpers_ast::apply_func_ast(&args[1], data)?;
-    let sc = crate::functions::math_ast::standard_deviation_ast(
-      std::slice::from_ref(data),
-    )?;
-    (loc, sc)
+  let location_function = args
+    .get(1)
+    .cloned()
+    .unwrap_or_else(|| Expr::Identifier("Mean".into()));
+  let scale_function = args
+    .get(2)
+    .cloned()
+    .unwrap_or_else(|| Expr::Identifier("StandardDeviation".into()));
+  // A literal zero-valued pure function simplifies to a reciprocal pole
+  // before the statistic is applied; data-dependent zero results are invalid.
+  let constant_zero_scale = match &scale_function {
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+      is_expr_zero(&crate::functions::polynomial_ast::expand_and_combine(body))
+    }
+    _ => false,
+  };
+  let columns: Vec<Expr> = if let Some(width) = matrix_width {
+    (0..width)
+      .map(|column| {
+        Expr::List(
+          items
+            .iter()
+            .map(|row| {
+              let Expr::List(entries) = row else {
+                unreachable!()
+              };
+              entries[column].clone()
+            })
+            .collect(),
+        )
+      })
+      .collect()
   } else {
-    let loc = crate::functions::math_ast::mean_ast(std::slice::from_ref(data))?;
-    let sc = crate::functions::math_ast::standard_deviation_ast(
-      std::slice::from_ref(data),
-    )?;
-    (loc, sc)
+    vec![data.clone()]
+  };
+  let mut locations = Vec::new();
+  let mut scales = Vec::new();
+  for column in &columns {
+    locations.push(crate::functions::list_helpers_ast::apply_func_ast(
+      &location_function,
+      column,
+    )?);
+    scales.push(crate::functions::list_helpers_ast::apply_func_ast(
+      &scale_function,
+      column,
+    )?);
+  }
+  let invalid_location =
+    locations.iter().any(|value| matches!(value, Expr::List(_)));
+  let invalid_scale = scales.iter().any(|value| {
+    matches!(value, Expr::List(_))
+      || (!constant_zero_scale && is_expr_zero(value))
+  });
+  if invalid_location || invalid_scale {
+    let (kind, function, problem) = if invalid_location {
+      ("loc", &location_function, "a list")
+    } else {
+      ("scl", &scale_function, "a list or zero")
+    };
+    let (tag_suffix, suffix) = if matrix_width.is_some() {
+      ("2", " for one or more of the columns")
+    } else {
+      ("", "")
+    };
+    let function_kind = if invalid_location {
+      "location"
+    } else {
+      "scale"
+    };
+    crate::emit_message(&format!(
+      "Standardize::{kind}{tag_suffix}: The {function_kind} function {} evaluated to {problem}{suffix}.",
+      expr_to_string(function),
+    ));
+    return Ok(unevaluated("Standardize", args));
+  }
+  let zero_scale = scales.iter().any(is_expr_zero);
+  let (location, scale) = if matrix_width.is_some() {
+    (Expr::List(locations.into()), Expr::List(scales.into()))
+  } else {
+    (locations.remove(0), scales.remove(0))
+  };
+  // A custom zero scale is evaluated as a reciprocal once, before threading
+  // the product over the data, matching Power::infy and Infinity::indet.
+  let reciprocal = if zero_scale {
+    Some(crate::evaluator::evaluate_function_call_ast(
+      "Power",
+      &[scale.clone(), Expr::Integer(-1)],
+    )?)
+  } else {
+    None
   };
 
   // Compute (x - location) / scale for each element
@@ -8384,10 +8479,17 @@ fn standardize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Subtract",
       &[item.clone(), location.clone()],
     )?;
-    let standardized = crate::evaluator::evaluate_function_call_ast(
-      "Divide",
-      &[diff, scale.clone()],
-    )?;
+    let standardized = if let Some(inverse) = &reciprocal {
+      crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[diff, inverse.clone()],
+      )?
+    } else {
+      crate::evaluator::evaluate_function_call_ast(
+        "Divide",
+        &[diff, scale.clone()],
+      )?
+    };
     result.push(standardized);
   }
   Ok(Expr::List(result.into()))
