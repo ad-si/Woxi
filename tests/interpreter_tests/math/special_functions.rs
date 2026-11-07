@@ -12674,3 +12674,18 @@ fn zero_order_exponential_integral_rounds_after_division() {
     }
   }
 }
+
+#[test]
+fn equal_parameter_hypergeometric_endpoints_preserve_power_diagnostics() {
+  for (code, power) in [
+    ("Hypergeometric2F1[1,1,1,1]", "0^-1"),
+    ("Hypergeometric2F1[3,2,2,1]", "0^-3"),
+    ("Hypergeometric2F1[2,3,2,1]", "0^-3"),
+  ] {
+    let actual = woxi::interpret_with_stdout(code).unwrap();
+    let expected = woxi::interpret_with_stdout(power).unwrap();
+    assert_eq!(actual.result, expected.result, "{code}");
+    assert_eq!(actual.warnings, expected.warnings, "{code}");
+    assert!(actual.warnings.iter().any(|w| w.contains("Power::infy")));
+  }
+}

@@ -2120,6 +2120,24 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // 2F1(a, b, b, z) = (1-z)^(-a)
+  if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
+    let neg_a = crate::evaluator::evaluate_expr_to_expr(&neg(args[0].clone()))?;
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      plus(vec![Expr::Integer(1), neg(z.clone())]),
+      neg_a,
+    ));
+  }
+
+  // 2F1(a, b, a, z) = (1-z)^(-b)
+  if expr_to_string(&args[0]) == expr_to_string(&args[2]) {
+    let neg_b = crate::evaluator::evaluate_expr_to_expr(&neg(args[1].clone()))?;
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      plus(vec![Expr::Integer(1), neg(z.clone())]),
+      neg_b,
+    ));
+  }
+
   // Gauss's endpoint value must precede logarithmic representations, whose
   // separately evaluated terms can contain cancelling infinities at z = 1.
   if let [
@@ -2146,24 +2164,6 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       pow(call1("Gamma", Expr::Integer(c - a)), Expr::Integer(-1)),
       pow(call1("Gamma", Expr::Integer(c - b)), Expr::Integer(-1)),
     ]));
-  }
-
-  // 2F1(a, b, b, z) = (1-z)^(-a)
-  if expr_to_string(&args[1]) == expr_to_string(&args[2]) {
-    let neg_a = crate::evaluator::evaluate_expr_to_expr(&neg(args[0].clone()))?;
-    return crate::evaluator::evaluate_expr_to_expr(&pow(
-      plus(vec![Expr::Integer(1), neg(z.clone())]),
-      neg_a,
-    ));
-  }
-
-  // 2F1(a, b, a, z) = (1-z)^(-b)
-  if expr_to_string(&args[0]) == expr_to_string(&args[2]) {
-    let neg_b = crate::evaluator::evaluate_expr_to_expr(&neg(args[1].clone()))?;
-    return crate::evaluator::evaluate_expr_to_expr(&pow(
-      plus(vec![Expr::Integer(1), neg(z.clone())]),
-      neg_b,
-    ));
   }
 
   // 2F1(1, n, n+1, z) for positive integer n: closed form with Log
