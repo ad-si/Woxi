@@ -9181,6 +9181,15 @@ the sine-square contribution separately. The minimized
 `TrigExpand[x+Tan[2*x]]` has the same distinction: Wolfram displays
 three terms over that denominator, while Woxi keeps the standalone `x`.
 
+Seed 1794040363065373000 (2026-11-07) reproduces the secant/tangent
+representation difference with `TrigExpand[Cos[x]^2*(Tan[x]^3-Cos[3*x])]`.
+Wolfram verifies `FullSimplify[woxiResult-wolframResult] == 0`.
+The minimized `TrigExpand[Tan[x]^3-x]` remains `-x+Tan[x]^3` in Woxi,
+where Wolfram gives
+`-x/4-3*x*Sec[x]^2/4-3*Tan[x]/4+3*Sec[x]^2*Tan[x]/4+
+3*x*Tan[x]^2/4+Tan[x]^3/4`. A standalone `TrigExpand[Tan[x]^3]`
+remains unchanged in both implementations.
+
 ### Rational integration with repeated irreducible poles
 
 Verified on 2026-11-06 while investigating diff-fuzz seed
