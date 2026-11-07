@@ -6672,8 +6672,11 @@ fn absorb_cheaper_polynomial_minus(expr: Expr) -> Expr {
 fn prefer_unexpanded_numeric_radical_product(expr: &Expr, best: Expr) -> Expr {
   let mut has_sum = false;
   let mut has_radical = false;
+  let mut negative_scalar = false;
+  let mut positive_radical_sum_with_constant = false;
   let valid = collect_times_factors(expr).iter().all(|factor| {
-    if crate::functions::math_ast::expr_to_rational(factor).is_some() {
+    if let Some((n, d)) = crate::functions::math_ast::expr_to_rational(factor) {
+      negative_scalar ^= (n < 0) != (d < 0);
       return true;
     }
     if as_sqrt(factor).is_some_and(|radicand| {
@@ -6690,14 +6693,24 @@ fn prefer_unexpanded_numeric_radical_product(expr: &Expr, best: Expr) -> Expr {
         .all(|term| classify_radical_term(term).is_some())
     {
       has_sum = true;
+      let classified: Vec<_> =
+        terms.iter().filter_map(classify_radical_term).collect();
+      positive_radical_sum_with_constant |=
+        classified.iter().all(|(c, _)| *c > 0)
+          && classified.iter().any(|(_, r)| r.is_none())
+          && classified.iter().any(|(_, r)| r.is_some());
       return true;
     }
     false
   });
+  let negative_content_tie =
+    negative_scalar && positive_radical_sum_with_constant;
   if valid
     && has_sum
-    && has_radical
-    && wl_simplify_count(expr) < wl_simplify_count(&best)
+    && (has_radical || negative_content_tie)
+    && (wl_simplify_count(expr) < wl_simplify_count(&best)
+      || (negative_content_tie
+        && wl_simplify_count(expr) == wl_simplify_count(&best)))
   {
     expr.clone()
   } else {
@@ -8654,6 +8667,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   }
 
   let _ = best_complexity; // suppress unused warning
+  let best = prefer_unexpanded_numeric_radical_product(&simplified, best);
   prefer_unexpanded_numeric_radical_product(expr, best)
 }
 

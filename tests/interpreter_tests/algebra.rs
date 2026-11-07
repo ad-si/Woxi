@@ -25899,3 +25899,16 @@ fn simplify_absorbs_polynomial_minus_only_when_cheaper() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn full_simplify_retains_negative_radical_content_on_cost_ties() {
+  for (code, expected) in [
+    ("FullSimplify[16*(-1-2*Sqrt[23])]", "-16*(1 + 2*Sqrt[23])"),
+    ("FullSimplify[-20-40*Sqrt[7]]", "-20*(1 + 2*Sqrt[7])"),
+    ("FullSimplify[-8-16*Sqrt[5]]", "-8*(1 + 2*Sqrt[5])"),
+    ("FullSimplify[-4-8*Sqrt[3]]", "-4 - 8*Sqrt[3]"),
+    ("FullSimplify[16+32*Sqrt[23]]", "16 + 32*Sqrt[23]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
