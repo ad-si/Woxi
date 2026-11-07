@@ -25884,3 +25884,18 @@ fn simplification_preserves_cheaper_numeric_radical_products() {
     }
   }
 }
+
+#[test]
+fn simplify_absorbs_polynomial_minus_only_when_cheaper() {
+  for (code, expected) in [
+    ("Simplify[5*x-2*x^2]", "(5 - 2*x)*x"),
+    ("Simplify[-x+2*x^2-5*x^3]", "x*(-1 + 2*x - 5*x^2)"),
+    ("Simplify[2*x^2-5*x^3]", "(2 - 5*x)*x^2"),
+    ("Simplify[-x-x^2]", "-(x*(1 + x))"),
+    ("Simplify[-x-2*x^2-5*x^3]", "-(x*(1 + 2*x + 5*x^2))"),
+    ("Simplify[x-x^2]", "-((-1 + x)*x)"),
+    ("Simplify[2*x-2*x^3]", "-2*x*(-1 + x^2)"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

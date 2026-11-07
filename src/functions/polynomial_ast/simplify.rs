@@ -6151,6 +6151,7 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
       super::factor::factor_ast(&[best.clone()])
     };
     if let Ok(factored) = factored {
+      let factored = absorb_cheaper_polynomial_minus(factored);
       // A univariate integer-polynomial quotient keeps Factor's
       // CANCELLATION but not its display — wolframscript shows the
       // reduced parts in FactorSquareFree form (squarefree numerators
@@ -6622,7 +6623,48 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
     }
   }
 
-  prefer_unexpanded_numeric_radical_product(expr, best)
+  prefer_unexpanded_numeric_radical_product(
+    expr,
+    absorb_cheaper_polynomial_minus(best),
+  )
+}
+
+// Absorb a standalone minus into a polynomial cofactor only on a strict
+// SimplifyCount improvement; unit-coefficient and all-negative ties stay put.
+fn absorb_cheaper_polynomial_minus(expr: Expr) -> Expr {
+  if !polynomial_like(&expr) {
+    return expr;
+  }
+  let expr = crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr);
+  let mut factors = crate::functions::collect_multiplicative_factors(&expr);
+  let Some(minus) = factors
+    .iter()
+    .position(|factor| matches!(factor, Expr::Integer(-1)))
+  else {
+    return expr;
+  };
+  factors.remove(minus);
+  for index in 0..factors.len() {
+    let terms = collect_additive_terms(&factors[index]);
+    if terms.len() < 2 {
+      continue;
+    }
+    let negated = plus(terms.into_iter().map(neg1).collect());
+    let Ok(negated) = crate::evaluator::evaluate_expr_to_expr(&negated) else {
+      continue;
+    };
+    let mut candidate = factors.clone();
+    candidate[index] = negated;
+    let Ok(candidate) =
+      crate::evaluator::evaluate_expr_to_expr(&times(candidate))
+    else {
+      continue;
+    };
+    if wl_simplify_count(&candidate) < wl_simplify_count(&expr) {
+      return candidate;
+    }
+  }
+  expr
 }
 
 // Expansion can destroy a cheaper numeric radical factorization. Retain
