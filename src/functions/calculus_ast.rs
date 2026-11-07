@@ -9005,7 +9005,16 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
         && coeffs.len() > 2
       {
         let content = coeffs.iter().copied().fold(0, gcd_i128);
-        if content > 1 {
+        // A negative constant and leading coefficient share a removable
+        // sign. Normalize it with the content before constructing Log;
+        // this changes only the integration constant.
+        let content = if coeffs[0] < 0 && coeffs.last().is_some_and(|c| *c < 0)
+        {
+          -content
+        } else {
+          content
+        };
+        if content != 1 && content != 0 {
           for coefficient in &mut coeffs {
             *coefficient /= content;
           }

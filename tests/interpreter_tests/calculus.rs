@@ -26935,3 +26935,19 @@ fn trig_to_exp_preserves_grouped_products_and_powered_quotients() {
 fn trig_to_exp_nested_power_product_matches_oracle_symbolically() {
   assert_eq!(interpret("Expand[TrigToExp[(Sin[x]^3-Tan[x+y]^2)*Sin[2*x]^2*Tan[x*y]]-((-I/4)*(E^(-2I*x)-E^(2I*x))^2*(E^(-I*x*y)-E^(I*x*y))*((-I/8)*(E^(-I*x)-E^(I*x))^3+(E^(-I*x-I*y)-E^(I*x+I*y))^2/(E^(-I*x-I*y)+E^(I*x+I*y))^2)/(E^(-I*x*y)+E^(I*x*y)))]").unwrap(), "0");
 }
+
+#[test]
+fn log_derivative_integrals_normalize_negative_polynomial_content() {
+  for (code, expected) in [
+    ("Integrate[x/(-5-5*x^2),x]", "-1/10*Log[1 + x^2]"),
+    ("Integrate[x/(-1-x^2),x]", "-1/2*Log[1 + x^2]"),
+    ("Integrate[x/(-3-2*x^2),x]", "-1/4*Log[3 + 2*x^2]"),
+    ("Integrate[(1-2*x)/(-1+x-x^2),x]", "Log[1 - x + x^2]"),
+    ("Integrate[x^2/(-1-x^3),x]", "-1/3*Log[1 + x^3]"),
+    ("Integrate[x^3/(-1-x^4),x]", "-1/4*Log[1 + x^4]"),
+    ("Integrate[x/(1-x^2),x]", "-1/2*Log[1 - x^2]"),
+    ("Integrate[x/(-1+x^2),x]", "Log[-1 + x^2]/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
