@@ -13055,7 +13055,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               Expr::BinaryOp { op: BinaryOperator::Times, .. }
             )
         ))
-        || (in_held_format() && matches!(op, BinaryOperator::Minus)
+        || (in_held_format() && matches!(op, BinaryOperator::Plus | BinaryOperator::Minus)
           && matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus"))
         || (is_multiplicative && is_additive(left))
         || (matches!(op, BinaryOperator::Divide | BinaryOperator::Power)
@@ -19108,6 +19108,25 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
 /// `a + -b`. Left in call form they are rendered by the recursion instead,
 /// which reaches `operator_call_node` and prints the operator anyway.
 fn operator_call_child(expr: &Expr, parent: &Expr) -> Option<Expr> {
+  // The explicit Subtract head in the first Plus position prints without
+  // an extra pair of parentheses. Preserve its call identity there; later
+  // operands still need the binary node for grouping (a + (b - c)).
+  // Compare node identity, since equal Subtract calls can occupy both slots.
+  if matches!(expr, Expr::FunctionCall { name, args } if name == "Subtract" && args.len() == 2)
+    && match parent {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        args.first().is_some_and(|first| std::ptr::eq(first, expr))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        ..
+      } => std::ptr::eq(left.as_ref(), expr),
+      _ => false,
+    }
+  {
+    return None;
+  }
   // An explicit Divide survives evaluation only in structural contexts.
   // Keep it as one Times factor: converting it to BinaryOp::Divide here
   // lets product formatting collect its denominator across held factors.

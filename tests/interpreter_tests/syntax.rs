@@ -14786,3 +14786,39 @@ fn held_plus_preserves_explicit_negative_division_terms() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn held_plus_preserves_leading_subtract_call_formatting() {
+  for (code, expected) in [
+    ("Hold[Plus[Subtract[a,b],c]]", "Hold[a - b + c]"),
+    ("Hold[Plus[a,Subtract[b,c]]]", "Hold[a + (b - c)]"),
+    (
+      "Hold[Plus[Subtract[a,b],Subtract[a,b]]]",
+      "Hold[a - b + (a - b)]",
+    ),
+    (
+      "Hold[Plus[Subtract[a,Plus[b,c]],d]]",
+      "Hold[a - (b + c) + d]",
+    ),
+    ("Hold[(a-b)+c]", "Hold[(a - b) + c]"),
+    ("Hold[a+(b-c)]", "Hold[a + (b - c)]"),
+    (
+      "Hold[Plus[Subtract[a,b,c],d]]",
+      "Hold[Subtract[a, b, c] + d]",
+    ),
+    (
+      "Hold[Divide[Subtract[8,Divide[18,1]],Plus[Subtract[41,-3],11.7]]]",
+      "Hold[(8 - 18/1)/(41 - -3 + 11.7)]",
+    ),
+    (
+      "ToString[Hold[Plus[Subtract[a,b],c]],InputForm]",
+      "Hold[a - b + c]",
+    ),
+    (
+      "ToString[FullForm[Hold[Plus[Subtract[a,b],c]]]]",
+      "Hold[Plus[Subtract[a, b], c]]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
