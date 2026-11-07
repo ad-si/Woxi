@@ -6920,32 +6920,29 @@ fn complex_2x2_eigenvectors(
 
 /// Scale a vector of rational Exprs to integer entries (clear denominators, reduce GCD).
 fn scale_to_integers(vec: &[Expr]) -> Vec<Expr> {
-  let rationals: Vec<Option<(i128, i128)>> =
-    vec.iter().map(expr_to_rational).collect();
-  if rationals.iter().any(std::option::Option::is_none) {
+  use crate::functions::math_ast::{
+    bigint_to_expr, expr_to_big_rational, gcd_bigint,
+  };
+  use num_traits::Zero;
+  let Some(rats) = vec
+    .iter()
+    .map(expr_to_big_rational)
+    .collect::<Option<Vec<_>>>()
+  else {
     return vec.to_vec();
-  }
-  let rats: Vec<(i128, i128)> =
-    rationals.into_iter().map(|r| r.unwrap()).collect();
-
-  // Find LCM of denominators
-  let lcm_den = rats.iter().fold(1i128, |acc, &(_, d)| {
-    let g = gcd_i128(acc, d);
-    if g == 0 { acc } else { (acc / g) * d.abs() }
+  };
+  let lcm_den = rats.iter().fold(BigInt::from(1), |acc, (_, d)| {
+    &acc / gcd_bigint(&acc, d) * d
   });
-
-  // Scale all entries
-  let scaled: Vec<i128> =
-    rats.iter().map(|&(n, d)| n * (lcm_den / d)).collect();
-
-  // Find GCD of all entries
-  let g = scaled.iter().fold(0i128, |acc, &x| gcd_i128(acc, x));
-
-  if g == 0 || g == 1 {
-    scaled.iter().map(|&x| Expr::Integer(x)).collect()
-  } else {
-    scaled.iter().map(|&x| Expr::Integer(x / g)).collect()
-  }
+  let scaled: Vec<BigInt> =
+    rats.iter().map(|(n, d)| n * (&lcm_den / d)).collect();
+  let g = scaled
+    .iter()
+    .fold(BigInt::zero(), |acc, n| gcd_bigint(&acc, n));
+  scaled
+    .into_iter()
+    .map(|n| bigint_to_expr(if g.is_zero() { n } else { n / &g }))
+    .collect()
 }
 
 /// Compute eigenvectors for an integer matrix.
@@ -8594,6 +8591,10 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(vec![].into()));
   }
   let ncols = matrix[0].len();
+  let integer_matrix = matrix
+    .iter()
+    .flatten()
+    .all(|e| matches!(e, Expr::Integer(_) | Expr::BigInteger(_)));
 
   let rref = row_reduce_impl(&matrix);
 
@@ -8626,6 +8627,9 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Negate the entry from rref
         vec[pivot_col] = eval_sub(&Expr::Integer(0), &rref[row][free_col]);
       }
+    }
+    if integer_matrix {
+      vec = scale_to_integers(&vec);
     }
     basis.push(Expr::List(vec.into()));
   }

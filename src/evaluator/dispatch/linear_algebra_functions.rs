@@ -6496,6 +6496,8 @@ fn triangular_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
 ///   (`JordanDecomposition`, or Jordan chains built from the null spaces of
 ///   `(m - λ)^j` where it is not available), a Jordan block of λ of size L
 ///   contributing `Binomial`-like `k (k - 1) … / d! λ^(k - d)` entries;
+/// - triangular diagonal entries retain `m[[i, i]]^k` directly, independent
+///   of the scale of the Jordan basis used to reconstruct other entries;
 /// - for a defective matrix each entry is then factored with the powers
 ///   `b^(k + c)` read as `b^c Y` (`2^n + 2^(-1 + n) n` is
 ///   `2^(-1 + n) (2 + n)`).
@@ -6537,6 +6539,8 @@ const SYMBOLIC_MATRIX_POWER_WL: &str = r#"Function[{m$mp, k$mp}, Module[{dim$mp 
         jn$mp[[off$mp + ii$mp, off$mp + jj$mp]] = Product[k$mp - t$mp, {t$mp, 0, jj$mp - ii$mp - 1}]/(jj$mp - ii$mp)! b$mp[[1]]^(k$mp - jj$mp + ii$mp)],
        {ii$mp, b$mp[[2]]}, {jj$mp, b$mp[[2]]}]; off$mp += b$mp[[2]], {b$mp, blocks$mp}]];
   r$mp = s$mp . jn$mp . Inverse[s$mp];
+  If[And @@ Flatten[Table[m$mp[[i$mp, j$mp]] === 0, {i$mp, dim$mp}, {j$mp, i$mp - 1}]],
+    Do[r$mp[[i$mp, i$mp]] = m$mp[[i$mp, i$mp]]^k$mp, {i$mp, dim$mp}]];
   If[Max[blocks$mp[[All, 2]]] > 1,
     expTog$mp = Function[e$mp, Module[{pw$mp, rules$mp},
       pw$mp = DeleteDuplicates[Cases[e$mp, Power[bb$mp_, x$mp_] /; !FreeQ[x$mp, k$mp], {0, Infinity}]];

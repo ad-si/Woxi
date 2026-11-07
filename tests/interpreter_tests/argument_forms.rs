@@ -233,6 +233,10 @@ mod matrix_power_symbolic_exponent {
   #[test]
   fn diagonalizable_rational_eigenvalues() {
     assert_eq!(
+      interpret("Diagonal[MatrixPower[{{2,3,5},{0,6,7},{0,0,10}},n]]").unwrap(),
+      "{2^n, 6^n, 10^n}"
+    );
+    assert_eq!(
       interpret("MatrixPower[{{2, 1}, {1, 2}}, n]").unwrap(),
       "{{1/2 + 3^n/2, -1/2 + 3^n/2}, {-1/2 + 3^n/2, 1/2 + 3^n/2}}"
     );

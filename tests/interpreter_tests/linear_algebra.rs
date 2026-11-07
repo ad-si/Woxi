@@ -2664,6 +2664,23 @@ mod null_space {
   use super::*;
 
   #[test]
+  fn integer_matrices_have_primitive_integer_bases() {
+    for (code, expected) in [
+      ("NullSpace[{{-4,2},{0,0}}]", "{{1, 2}}"),
+      ("NullSpace[{{2,3}}]", "{{-3, 2}}"),
+      ("NullSpace[{{-2,3,5}}]", "{{5, 0, 2}, {3, 2, 0}}"),
+      (
+        "NullSpace[{{10^40,3}}]",
+        "{{-3, 10000000000000000000000000000000000000000}}",
+      ),
+      ("NullSpace[{{1/2,1/3}}]", "{{-2/3, 1}}"),
+      ("NullSpace[{{2,3,0},{0,0,1/2}}]", "{{-3/2, 1, 0}}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn invalid_matrices_remain_unevaluated() {
     for code in [
       "NullSpace[{}]",
