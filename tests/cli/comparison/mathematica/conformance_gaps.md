@@ -9077,27 +9077,28 @@ short real trigonometric sum. The minimized `TrigReduce[Tan[x]-Sin[x]^2]`
 is `(-1+Cos[3*x]*Sec[x]+4*Tan[x])/4` in Wolfram, compared with
 `(-1+Cos[2*x]+2*Tan[x])/2` in Woxi. These are equivalent forms.
 
-### TrigToExp retains different grouping in mixed products and sums
+### TrigToExp retains ordering and some mixed-power grouping differences
 
-The shifted square `TrigToExp[Cos[x+y]^2]` and product-angle square
-`TrigToExp[Sin[x*y]^2]` are resolved (seed 1794029130738190000,
-2026-11-07). Isolated circular/hyperbolic sine and cosine squares,
-including scalar multiples, now expand into exponential terms.
-Higher integer powers now extract their scalar coefficients as well
-(seed 1794029749545146000), resolving the former `TrigToExp[Sin[x]^3]`
-gap. Grouping within mixed trigonometric products still differs.
+Isolated circular/hyperbolic sine and cosine squares, scalar multiples,
+and higher integer powers now match the tested Wolfram coefficient forms.
+Products and powered trigonometric quotients now preserve exponential
+factor grouping (seed 1794032979590698000, 2026-11-07), resolving the
+expanded-numerator differences in earlier mixed-product examples.
 
-Seed 1794023524037498000 (2026-11-07) found the converse grouping issue
-for `TrigToExp[Cos[2*x]+Cos[3*x]-Tan[3*x]^2*Sin[x]^2]`: Woxi expands
-the top-level sum and the product's exponential numerators, while Wolfram
-keeps the cosine exponential pairs and squared factors grouped. Its
-minimized `TrigToExp[Cos[2]]` case is now fixed by denominator formatting
-for negative complex exponents; the larger expansion choice remains.
+Some ordering differences remain. For
+`TrigToExp[Tan[x*y]*Cos[x]-Cos[3*x]+Cos[x+y]]`, the transformed product
+comes before the shifted cosine pair in Woxi and after it in Wolfram.
+For `TrigToExp[(Sin[x]^3-Tan[x+y]^2)*Sin[2*x]^2*Tan[x*y]]`, Woxi
+places the sum factor before the tangent numerator; Wolfram places it
+afterward. Expanding the difference of the two outputs gives zero.
+The minimized `TrigToExp[x-Tan[x]]` also puts `x` first in Woxi rather
+than last in Wolfram; the corresponding example with a separate `z`
+orders correctly.
 
-Seed 1794031159154931000 found the same mixed-product grouping issue
-for `TrigToExp[Tan[x*y]*Cos[x]-Cos[3*x]+Cos[x+y]]`. Its minimized
-`TrigToExp[x*Cos[x]]` now matches: scalar multiples of a lone sine,
-cosine, sinh, or cosh distribute into exponential terms.
+For `TrigToExp[Sin[x]^2+Cos[y]^3]`, Woxi expands the exponential
+powers while Wolfram retains each power with its scalar coefficient.
+This pure-power mixed-sum convention remains separate from the resolved
+product and quotient grouping.
 
 ### N of constants prints different guard digits
 
@@ -9112,6 +9113,10 @@ Diff-fuzz seed 1794003161694997000 also found `N[Pi, 23]`: Woxi prints
 ``3.1415926535897932384626433832795028842`23.`` and Wolfram prints
 ``3.14159265358979323846264338327950288582`23.``. Again the requested
 digits agree, but the extra guard digits differ (verified 2026-11-06).
+
+Seed 1794032979590698000 also found `N[E,19]`: the requested digits
+agree, while Wolfram's printed extra digits begin `...235319747...`
+and Woxi's begin `...235360287...`. This is the same guard-digit issue.
 
 The minimized case exposes a separate precision-boundary gap: `N[Pi, 0]`
 emits `N::precbd` and remains unevaluated in Woxi; Wolfram returns
