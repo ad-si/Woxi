@@ -5158,6 +5158,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(s) if s == "ComplexInfinity" => {
       return Ok(id_expr("Indeterminate"));
     }
+    Expr::Real(f) if f.abs() == 1.0 => return Ok(id_expr("Indeterminate")),
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(cr::atanh(*f))),
     // Outside (-1, 1) the (inexact) real argument gives a complex result:
     // ArcTanh[x] = (1/2) Log|(1+x)/(1-x)| - sign(x)*Pi/2 I.

@@ -2648,3 +2648,17 @@ mod quotient_term_plus_order {
     assert_eq!(interpret("D[Log[x^2], x]").unwrap(), "2/x");
   }
 }
+
+#[test]
+fn arctanh_machine_endpoints_are_indeterminate() {
+  for (code, expected) in [
+    ("ArcTanh[1.]", "Indeterminate"),
+    ("ArcTanh[-1.]", "Indeterminate"),
+    ("ArcTanh[1]", "Infinity"),
+    ("ArcTanh[-1]", "-Infinity"),
+  ] {
+    let output = woxi::interpret_with_stdout(code).unwrap();
+    assert_eq!(output.result, expected, "{code}");
+    assert!(output.warnings.is_empty(), "{code}: {:?}", output.warnings);
+  }
+}
