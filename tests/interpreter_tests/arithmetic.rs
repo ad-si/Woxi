@@ -15515,3 +15515,16 @@ fn constant_powers_order_against_polynomials_in_the_same_constant() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn explicit_divide_folds_exact_sums_and_unit_numerators() {
+  for (code, expected) in [
+    ("Divide[7+1344/Pi,Divide[-78,-1.4]]", "7.8042548954284685"),
+    ("Divide[1/Pi,-1.4]", "-0.22736420441699334"),
+    ("Divide[1/E,1.7]", "0.21639967127731902"),
+    ("Divide[1+1/Pi,1.4]", "0.9416499187027076"),
+    ("Divide[Pi^2,1.4]", "7.049717429349542"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

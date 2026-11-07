@@ -13176,6 +13176,14 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
       // retain the guarded whole-expression evaluation below.
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(a);
+      // Sums and unit numerators follow the shared reciprocal fold.
+      // Evaluating the complete exact expression at guarded precision
+      // first changes the last machine digit for these forms.
+      if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+        || matches!(num, Expr::Integer(1))
+      {
+        return None;
+      }
       if expr_to_rational(&den).is_some()
         && (!matches!(den, Expr::Integer(1))
           || crate::functions::polynomial_ast::together::flatten_times_args(
