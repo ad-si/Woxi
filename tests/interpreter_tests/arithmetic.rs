@@ -15344,6 +15344,24 @@ fn full_simplify_numeric_radical_sum_candidates() {
 }
 
 #[test]
+fn full_simplify_radical_quotient_candidates() {
+  for (code, expected) in [
+    (
+      "FullSimplify[(Sqrt[18]-Sqrt[20])/(Sqrt[2]+Sqrt[26])]",
+      "(3 - Sqrt[10])/(1 + Sqrt[13])",
+    ),
+    (
+      "FullSimplify[(2Sqrt[3]-Sqrt[6])/(Sqrt[3]+Sqrt[15])]",
+      "(2 - Sqrt[2])/(1 + Sqrt[5])",
+    ),
+    ("FullSimplify[18/(2+Sqrt[13])]", "2*(-2 + Sqrt[13])"),
+    ("FullSimplify[12/(1+Sqrt[7])]", "2*(-1 + Sqrt[7])"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
 fn divide_real_by_exact_symbolic_quotient_rounds_once() {
   for (code, expected) in [
     (

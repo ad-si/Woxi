@@ -8397,6 +8397,67 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
     }
   }
 
+  // A common radical scale can simplify both sides of a quotient even
+  // when extracting it from either sum alone would not reduce its cost.
+  let (num, den) = super::together::extract_num_den(&best);
+  let numerator_terms = collect_additive_terms(&num);
+  let denominator_terms = collect_additive_terms(&den);
+  if !matches!(den, Expr::Integer(1))
+    && numerator_terms
+      .iter()
+      .all(|t| classify_radical_term(t).is_some())
+    && denominator_terms
+      .iter()
+      .all(|t| classify_radical_term(t).is_some())
+  {
+    if denominator_terms.len() > 1
+      && denominator_terms
+        .iter()
+        .all(|t| term_sqrt_radicand(t).is_some())
+    {
+      for term in &denominator_terms {
+        let Some(radicand) = term_sqrt_radicand(term).filter(|n| *n > 0) else {
+          continue;
+        };
+        let scale = call1("Sqrt", Expr::Integer(radicand));
+        let divide_sum = |terms: &[Expr]| -> Result<Expr, InterpreterError> {
+          let divided = terms
+            .iter()
+            .map(|t| {
+              crate::evaluator::evaluate_expr_to_expr(&div2(
+                t.clone(),
+                scale.clone(),
+              ))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+          crate::evaluator::evaluate_expr_to_expr(&plus(divided))
+        };
+        if let (Ok(n), Ok(d)) =
+          (divide_sum(&numerator_terms), divide_sum(&denominator_terms))
+          && let Ok(candidate) =
+            crate::evaluator::evaluate_expr_to_expr(&div2(n, d))
+          && wl_simplify_count(&candidate) < wl_simplify_count(&best)
+        {
+          best = candidate;
+        }
+      }
+    }
+    // A constant over a quadratic radical is already handled by the
+    // canonical algebraic-number reduction. Offer that result here.
+    if matches!(num, Expr::Integer(_))
+      && denominator_terms.len() == 2
+      && denominator_terms
+        .iter()
+        .filter(|t| term_sqrt_radicand(t).is_some())
+        .count()
+        == 1
+      && let Ok(candidate) = super::root_reduce_ast(std::slice::from_ref(&best))
+      && wl_simplify_count(&candidate) <= wl_simplify_count(&best)
+    {
+      best = candidate;
+    }
+  }
+
   // Numeric radical sums also admit a nested-square-root candidate.
   // Same-sign real summands have an unambiguous square-root sign.
   let terms = collect_additive_terms(&expand_and_combine(&best));
