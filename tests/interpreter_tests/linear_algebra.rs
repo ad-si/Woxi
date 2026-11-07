@@ -2664,6 +2664,25 @@ mod null_space {
   use super::*;
 
   #[test]
+  fn invalid_matrices_remain_unevaluated() {
+    for code in [
+      "NullSpace[{}]",
+      "NullSpace[{{1, 2}, {3}}]",
+      "NullSpace[{1, 2}]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), code);
+      assert!(
+        woxi::get_captured_messages_raw()
+          .iter()
+          .any(|m| m.starts_with("NullSpace::matrix:"))
+      );
+    }
+    assert_eq!(interpret("NullSpace[m]").unwrap(), "NullSpace[m]");
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(interpret("NullSpace[{{}}]").unwrap(), "{}");
+  }
+
+  #[test]
   fn null_space_3x3() {
     assert_eq!(
       interpret("NullSpace[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]").unwrap(),

@@ -8581,8 +8581,13 @@ pub fn null_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let Some(matrix) = expr_to_matrix(&args[0]) else {
-    // Return empty list for non-matrix (symbolic matrix)
-    return Ok(Expr::List(vec![].into()));
+    if is_matsq_subject(&args[0]) {
+      crate::emit_message(&format!(
+        "NullSpace::matrix: Argument {} at position 1 is not a nonempty rectangular matrix.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+    }
+    return Ok(unevaluated("NullSpace", args));
   };
   let nrows = matrix.len();
   if nrows == 0 {
