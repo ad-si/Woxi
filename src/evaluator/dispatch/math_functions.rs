@@ -7538,6 +7538,63 @@ fn extract_imaginary_part(z: &Expr) -> Option<Expr> {
 }
 
 /// TrigToExp[expr] — replace trig/hyperbolic functions with exponentials.
+// Products of transformed functions and powered trigonometric quotients
+// retain their exponential factors instead of expanding their numerators.
+fn trig_to_exp_grouping(expr: &Expr) -> (usize, bool) {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "Sin"
+            | "Cos"
+            | "Sinh"
+            | "Cosh"
+            | "Tan"
+            | "Cot"
+            | "Sec"
+            | "Csc"
+            | "Tanh"
+            | "Coth"
+            | "Sech"
+            | "Csch"
+        ) =>
+    {
+      (1, false)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Plus" | "Times" | "Power") =>
+    {
+      let parts: Vec<_> = args.iter().map(trig_to_exp_grouping).collect();
+      let count = parts.iter().map(|part| part.0).sum();
+      let powered_quotient = name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(n) if n > 1)
+        && matches!(&args[0], Expr::FunctionCall { name, .. } if matches!(name.as_str(), "Tan" | "Cot" | "Sec" | "Csc" | "Tanh" | "Coth" | "Sech" | "Csch"));
+      (
+        count,
+        parts.iter().any(|part| part.1)
+          || powered_quotient
+          || (name == "Times" && count > 1),
+      )
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let name = match op {
+        BinaryOperator::Times => "Times",
+        BinaryOperator::Power => "Power",
+        BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+        _ => return (0, false),
+      };
+      trig_to_exp_grouping(&call(
+        name,
+        vec![(**left).clone(), (**right).clone()],
+      ))
+    }
+    Expr::UnaryOp { operand, .. } => trig_to_exp_grouping(operand),
+    _ => (0, false),
+  }
+}
+
 fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::List(items) = expr {
     return Ok(Expr::List(
@@ -7584,17 +7641,19 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       other_transformed_factor = true;
     }
   }
-  let transformed = trig_to_exp_recursive(expr);
+  let grouped = trig_to_exp_grouping(expr).1;
+  let transformed = trig_to_exp_recursive_impl(expr, grouped);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&transformed)?;
-  if (expandable_count == 1 && !other_transformed_factor)
-    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
-    || matches!(
-      expr,
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus | BinaryOperator::Minus,
-        ..
-      }
-    )
+  if !grouped
+    && ((expandable_count == 1 && !other_transformed_factor)
+      || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        expr,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      ))
   {
     crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated])
   } else {
@@ -7603,6 +7662,39 @@ fn trig_to_exp_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn trig_to_exp_recursive(expr: &Expr) -> Expr {
+  trig_to_exp_recursive_impl(expr, false)
+}
+
+fn trig_to_exp_scalar_and_sum(expr: &Expr) -> Option<(Expr, Expr)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if args.len() != 1
+    || !matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")
+  {
+    return None;
+  }
+  let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+  let coefficient = if name == "Sin" {
+    times(vec![id_expr("I"), half])
+  } else {
+    half
+  };
+  let transformed = trig_to_exp_recursive(expr);
+  let unscaled = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Expand",
+    div2(transformed, coefficient.clone()),
+  ))
+  .ok()?;
+  Some((coefficient, unscaled))
+}
+
+fn trig_to_exp_recursive_impl(expr: &Expr, grouped: bool) -> Expr {
+  if grouped
+    && let Some((coefficient, unscaled)) = trig_to_exp_scalar_and_sum(expr)
+  {
+    return times(vec![coefficient, unscaled]);
+  }
   let powered = match expr {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       Some((&args[0], &args[1]))
@@ -7615,25 +7707,9 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
     _ => None,
   };
   if let Some((base, exponent)) = powered
-    && matches!(exponent, Expr::Integer(n) if *n > 2)
-    && let Expr::FunctionCall { name, args } = base
-    && args.len() == 1
-    && matches!(name.as_str(), "Sin" | "Cos" | "Sinh" | "Cosh")
+    && matches!(exponent, Expr::Integer(n) if *n >= 2)
+    && let Some((coefficient, unscaled)) = trig_to_exp_scalar_and_sum(base)
   {
-    let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
-    let coefficient = if name == "Sin" {
-      times(vec![id_expr("I"), half])
-    } else {
-      half
-    };
-    // Remove the known scalar through the canonical algebraic expander,
-    // keeping the shared single-function conversion as the source of truth.
-    let transformed = trig_to_exp_recursive(base);
-    let unscaled = crate::evaluator::evaluate_expr_to_expr(&call1(
-      "Expand",
-      div2(transformed.clone(), coefficient.clone()),
-    ))
-    .unwrap_or(transformed);
     return times(vec![
       power(coefficient, exponent.clone()),
       power(unscaled, exponent.clone()),
@@ -7641,7 +7717,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
   }
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
-      let arg = trig_to_exp_recursive(&args[0]);
+      let arg = trig_to_exp_recursive_impl(&args[0], grouped);
       let i = id_expr("I");
       let e = const_expr("E");
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
@@ -7906,8 +7982,10 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
         // The inverse functions in degrees: ArcFDegrees[x] = 180/Pi ArcF[x].
         _ if name.starts_with("Arc") && name.ends_with("Degrees") => {
           let radians = name.trim_end_matches("Degrees");
-          let expanded =
-            trig_to_exp_recursive(&call1(radians, args[0].clone()));
+          let expanded = trig_to_exp_recursive_impl(
+            &call1(radians, args[0].clone()),
+            grouped,
+          );
           if matches!(&expanded, Expr::FunctionCall { name: n, .. } if n == radians)
           {
             call1(name, arg)
@@ -7932,21 +8010,27 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
     {
       Expr::FunctionCall {
         name: name.clone(),
-        args: args.iter().map(trig_to_exp_recursive).collect(),
+        args: args
+          .iter()
+          .map(|arg| trig_to_exp_recursive_impl(arg, grouped))
+          .collect(),
       }
     }
     Expr::BinaryOp { op, left, right } => binop(
       *op,
-      trig_to_exp_recursive(left),
-      trig_to_exp_recursive(right),
+      trig_to_exp_recursive_impl(left, grouped),
+      trig_to_exp_recursive_impl(right, grouped),
     ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
-      operand: Box::new(trig_to_exp_recursive(operand)),
+      operand: Box::new(trig_to_exp_recursive_impl(operand, grouped)),
     },
-    Expr::List(items) => {
-      Expr::List(items.iter().map(trig_to_exp_recursive).collect())
-    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|arg| trig_to_exp_recursive_impl(arg, grouped))
+        .collect(),
+    ),
     _ => expr.clone(),
   }
 }

@@ -26898,3 +26898,40 @@ fn integrate_powered_and_multiple_sine_cosine_factors() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn trig_to_exp_preserves_grouped_products_and_powered_quotients() {
+  for (code, expected) in [
+    (
+      "TrigToExp[1-Tan[x]^3]",
+      "1 + (I*(E^(-I*x) - E^(I*x))^3)/(E^(-I*x) + E^(I*x))^3",
+    ),
+    (
+      "TrigToExp[Tan[3*x]-Tan[x*y]^3]",
+      "(I*(E^((-3*I)*x) - E^((3*I)*x)))/(E^((-3*I)*x) + E^((3*I)*x)) + (I*(E^(-I*x*y) - E^(I*x*y))^3)/(E^(-I*x*y) + E^(I*x*y))^3",
+    ),
+    (
+      "TrigToExp[Cos[x]+Tan[y]^2]",
+      "(E^(-I*x) + E^(I*x))/2 - (E^(-I*y) - E^(I*y))^2/(E^(-I*y) + E^(I*y))^2",
+    ),
+    (
+      "TrigToExp[Cos[x]+Sin[y]*Tan[z]]",
+      "(E^(-I*x) + E^(I*x))/2 - ((E^(-I*y) - E^(I*y))*(E^(-I*z) - E^(I*z)))/(2*(E^(-I*z) + E^(I*z)))",
+    ),
+    (
+      "TrigToExp[Sin[x]^2*Cos[y]]",
+      "-1/8*((E^(-I*x) - E^(I*x))^2*(E^(-I*y) + E^(I*y)))",
+    ),
+    (
+      "TrigToExp[Cos[x]+Sin[y]*Cos[z]]",
+      "(E^(-I*x) + E^(I*x))/2 + I/4*(E^(-I*y) - E^(I*y))*(E^(-I*z) + E^(I*z))",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+#[test]
+fn trig_to_exp_nested_power_product_matches_oracle_symbolically() {
+  assert_eq!(interpret("Expand[TrigToExp[(Sin[x]^3-Tan[x+y]^2)*Sin[2*x]^2*Tan[x*y]]-((-I/4)*(E^(-2I*x)-E^(2I*x))^2*(E^(-I*x*y)-E^(I*x*y))*((-I/8)*(E^(-I*x)-E^(I*x))^3+(E^(-I*x-I*y)-E^(I*x+I*y))^2/(E^(-I*x-I*y)+E^(I*x+I*y))^2)/(E^(-I*x*y)+E^(I*x*y)))]").unwrap(), "0");
+}
