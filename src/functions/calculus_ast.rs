@@ -7568,6 +7568,26 @@ fn try_integrate_rational(
   };
   let num_coeffs = extract_poly_coeffs(&expand_and_combine(num_expr), var)?;
   let den_coeffs = extract_poly_coeffs(&expand_and_combine(den_expr), var)?;
+  if let Some(common) =
+    crate::functions::polynomial_ast::poly_gcd(&num_coeffs, &den_coeffs)
+    && common.len() > 1
+  {
+    let (num, nr) =
+      crate::functions::polynomial_ast::poly_long_divide(&num_coeffs, &common);
+    let (den, dr) =
+      crate::functions::polynomial_ast::poly_long_divide(&den_coeffs, &common);
+    if nr.iter().chain(dr.iter()).all(|c| *c == 0)
+      && den.len() < den_coeffs.len()
+    {
+      let num = coeffs_to_expr(&num, var);
+      let denominator = coeffs_to_expr(&den, var);
+      return if den.len() == 1 {
+        integrate(&div2(num, denominator), var)
+      } else {
+        try_integrate_rational(&num, &denominator, var)
+      };
+    }
+  }
   let den_lead = *den_coeffs.last()?;
   if den_coeffs.len() == 2
     && den_coeffs[0] != 0
@@ -8552,8 +8572,11 @@ fn integrate_polynomial_residues(
     crate::syntax::substitute_variable(&poly, var, &Expr::Slot(1));
   let num_in_slot =
     crate::syntax::substitute_variable(&num, var, &Expr::Slot(1));
-  let den_in_slot =
-    crate::syntax::substitute_variable(&den, var, &Expr::Slot(1));
+  let den_in_slot = crate::syntax::substitute_variable(
+    &expand_and_combine(&den),
+    var,
+    &Expr::Slot(1),
+  );
   // Inner function body: Log[x - #1] / p'(#1).
   let var_expr = id_expr(var);
   let log_arg = minus2(var_expr, Expr::Slot(1));

@@ -26641,3 +26641,19 @@ fn trig_to_exp_expands_shifted_phases_and_transformed_sums() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn rational_integrals_cancel_polynomial_content_and_expand_residue_denominators()
+ {
+  for (code, expected) in [
+    ("Integrate[x^3/(4x^2-x^3),x]", "-x - 4*Log[4 - x]"),
+    ("Integrate[x^4/(6x^3-x^4),x]", "-x - 6*Log[6 - x]"),
+    ("Integrate[(x+1)^2/((x+1)*(x+2)),x]", "x - Log[2 + x]"),
+    (
+      "Integrate[(-3-2x+4x^2-5x^3)/(1+4x^2-x^3),x]",
+      "5*x + 2*RootSum[-1 - 4*#1^2 + #1^3 & , (4*Log[x - #1] + Log[x - #1]*#1 + 8*Log[x - #1]*#1^2)/(-8*#1 + 3*#1^2) & ]",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
