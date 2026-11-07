@@ -9367,3 +9367,10 @@ difference simplifies to zero. This is another sign/search-order case in
 its polynomial Horner-form selection. The reduced
 `FullSimplify[2/(1-5*x^2-4*x^3)]` keeps the denominator expanded in Wolfram,
 while Woxi uses `2/(1-x^2*(5+4*x))`.
+
+Seed `1794064956360384000` also found a `Simplify` sign-search difference:
+`Simplify[(-4+5*x^2+5*x^3)/(3-4*x-x^2+4*x^3)]` flips both signs in Woxi,
+while Wolfram retains the input quotient. Wolfram's own `SimplifyCount`
+rates the flipped result at 33 and the retained form at 34, so this is a
+candidate-search distinction rather than a cost error. The minimized
+`Simplify[-2/(2*x^3)]` now canonicalizes its reciprocal to `-x^(-3)`.
