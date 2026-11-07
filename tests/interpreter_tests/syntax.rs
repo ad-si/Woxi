@@ -14740,3 +14740,28 @@ fn parenthesized_products_remain_distinct_in_held_syntax() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn held_subtraction_preserves_explicit_sum_operands() {
+  for (code, expected) in [
+    ("Hold[Subtract[Plus[a,b],c]]", "Hold[(a + b) - c]"),
+    ("Hold[Subtract[Plus[0,0],0]]", "Hold[(0 + 0) - 0]"),
+    ("Hold[Subtract[Plus[a],b]]", "Hold[(Plus[a]) - b]"),
+    ("Hold[Subtract[Plus[],b]]", "Hold[(Plus[]) - b]"),
+    ("Hold[(a+b)-c]", "Hold[(a + b) - c]"),
+    ("Hold[(a-b)-c]", "Hold[(a - b) - c]"),
+    ("Hold[(a-b+c)-d]", "Hold[(a - b + c) - d]"),
+    (
+      "ToString[FullForm[Hold[(a-b+c)-d]]]",
+      "Hold[Plus[Plus[a, Times[-1, b], c], Times[-1, d]]]",
+    ),
+    ("Hold[(a+b+c)-d]", "Hold[(a + b + c) - d]"),
+    ("Hold[a+b-c]", "Hold[a + b - c]"),
+    ("Hold[Subtract[Subtract[a,b],c]]", "Hold[a - b - c]"),
+    ("Hold[Subtract[a,Plus[b,c]]]", "Hold[a - (b + c)]"),
+    ("ToString[Hold[(a+b)-c],InputForm]", "Hold[(a + b) - c]"),
+    ("(2+3)-4", "1"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

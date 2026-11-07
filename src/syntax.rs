@@ -4120,21 +4120,33 @@ fn parse_postfix_function(pair: Pair<Rule>) -> Expr {
 /// `ImplicitTimes` term back into the parent operator chain so that
 /// `a/b c d` parses as `(a*c*d)/b` rather than `a/(b*c*d)`.
 fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
-  fn walk(e: &Expr, out: &mut Vec<Expr>) {
+  flatten_binary_chain(expr, BinaryOperator::Times)
+}
+
+/// Flatten one operator chain without crossing explicit call boundaries.
+fn flatten_binary_chain(expr: &Expr, operator: BinaryOperator) -> Vec<Expr> {
+  fn walk(e: &Expr, operator: BinaryOperator, out: &mut Vec<Expr>) {
     match e {
+      Expr::BinaryOp { op, left, right } if *op == operator => {
+        walk(left, operator, out);
+        walk(right, operator, out);
+      }
       Expr::BinaryOp {
-        op: BinaryOperator::Times,
+        op: BinaryOperator::Minus,
         left,
         right,
-      } => {
-        walk(left, out);
-        walk(right, out);
+      } if operator == BinaryOperator::Plus => {
+        walk(left, operator, out);
+        out.push(Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand: right.clone(),
+        });
       }
       other => out.push(other.clone()),
     }
   }
   let mut out = Vec::new();
-  walk(expr, &mut out);
+  walk(expr, operator, &mut out);
   out
 }
 
@@ -4854,6 +4866,9 @@ fn parse_expression_inner(
     }
   }
 
+  let has_additive_operator = inner.iter().any(|item| {
+    item.as_rule() == Rule::Operator && matches!(item.as_str(), "+" | "-")
+  });
   let has_multiplicative_operator = inner.iter().any(|item| {
     item.as_rule() == Rule::Operator && matches!(item.as_str(), "*" | "/" | "×")
   });
@@ -5116,6 +5131,19 @@ fn parse_expression_inner(
             }
           ) {
           times(flatten_times_chain(&expr))
+        } else if parenthesized
+          && has_additive_operator
+          && matches!(
+            expr,
+            Expr::BinaryOp {
+              op: BinaryOperator::Plus | BinaryOperator::Minus,
+              ..
+            }
+          )
+        {
+          // A parenthesized sum is one operand even under another sum or
+          // subtraction. Preserve the boundary for held formatting.
+          plus(flatten_binary_chain(&expr, BinaryOperator::Plus))
         } else {
           expr
         };
@@ -13027,6 +13055,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               Expr::BinaryOp { op: BinaryOperator::Times, .. }
             )
         ))
+        || (in_held_format() && matches!(op, BinaryOperator::Minus)
+          && matches!(left.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus"))
         || (is_multiplicative && is_additive(left))
         || (matches!(op, BinaryOperator::Divide | BinaryOperator::Power)
           && (matches!(
