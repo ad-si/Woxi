@@ -8966,20 +8966,6 @@ This also exposes the missing distribution of the imaginary coefficient
 over the exponent's sum, separately from the powered-function grouping
 already documented for `TrigToExp[Sin[x]^3]`.
 
-### Linear-denominator integrals choose different additive constants
-
-Verified in the same run:
-
-```wolfram
-Integrate[(3 x^3 - 2 x - 4)/(x + 4), x]
-```
-
-Woxi returns `46*x - 6*x^2 + x^3 - 188*Log[4 + x]`; Wolfram returns
-the same expression plus `344`. Both derivatives equal the integrand.
-The shrinker reaches `Integrate[x^3/(1 + x), x]`, where the choice of
-additive constant also differs. This is a symbolic-output difference,
-not an incorrect derivative.
-
 ### N of constants prints different guard digits
 
 In the same run, `N[E, 22]` prints

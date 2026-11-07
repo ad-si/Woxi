@@ -26536,3 +26536,35 @@ fn rational_integrals_with_square_free_cubic_and_quartic_denominators() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+#[test]
+fn rational_integrals_use_linear_denominator_substitution() {
+  for (code, expected) in [
+    (
+      "Integrate[(-2x+4x^2)/(-1+4x),x]",
+      "2*((-1 + 4*x)^2/64 - Log[-1 + 4*x]/32)",
+    ),
+    (
+      "Integrate[(3x^2-2x)/(3x-1),x]",
+      "(-1 + 3*x)^2/18 - Log[-1 + 3*x]/9",
+    ),
+    (
+      "Integrate[(1+x^2)/(1+2x),x]",
+      "(-3 - 4*x + 4*x^2 + 10*Log[1 + 2*x])/16",
+    ),
+    ("Integrate[x/(2x-1),x]", "(-1 + 2*x + Log[-1 + 2*x])/4"),
+    (
+      "Integrate[x^2/(2x-1),x]",
+      "(-3 + 4*x + 4*x^2 + 2*Log[-1 + 2*x])/16",
+    ),
+    (
+      "Integrate[x^3/(1+x),x]",
+      "(11 + 6*x - 3*x^2 + 2*x^3 - 6*Log[1 + x])/6",
+    ),
+    ("Integrate[-2/(2x-1),x]", "-Log[1 - 2*x]"),
+    ("Integrate[-3/(3x-2),x]", "-Log[2 - 3*x]"),
+    ("Integrate[1/(2x-1),x]", "Log[-1 + 2*x]/2"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

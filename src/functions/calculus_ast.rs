@@ -7559,6 +7559,60 @@ fn try_integrate_rational(
   let num_coeffs = extract_poly_coeffs(&expand_and_combine(num_expr), var)?;
   let den_coeffs = extract_poly_coeffs(&expand_and_combine(den_expr), var)?;
   let den_lead = *den_coeffs.last()?;
+  if den_coeffs.len() == 2
+    && den_coeffs[0] != 0
+    && num_coeffs.len() >= 2
+    && !(num_coeffs.len() == 2 && den_lead.abs() == 1)
+  {
+    // Substitute t = a*x+b before integrating. This also fixes the
+    // integration constant selected by Wolfram's linear substitution.
+    let content = num_coeffs.iter().copied().fold(0, gcd_i128);
+    let content = if *num_coeffs.last()? < 0 {
+      content.checked_neg()?
+    } else {
+      content
+    };
+    if content == 0 {
+      return Some(Expr::Integer(0));
+    }
+    let primitive = num_coeffs
+      .iter()
+      .map(|n| n.checked_div(content))
+      .collect::<Option<Vec<_>>>()?;
+    let inverse = div2(
+      minus2(id_expr(var), Expr::Integer(den_coeffs[0])),
+      Expr::Integer(den_lead),
+    );
+    let transformed = crate::syntax::substitute_variable(
+      &coeffs_to_expr(&primitive, var),
+      var,
+      &inverse,
+    );
+    let transformed =
+      div2(transformed, times2(Expr::Integer(den_lead), id_expr(var)));
+    let transformed =
+      crate::evaluator::evaluate_expr_to_expr(&call1("Expand", transformed))
+        .ok()?;
+    let primitive = integrate(&transformed, var)?;
+    let mut substituted =
+      crate::syntax::substitute_variable(&primitive, var, den_expr);
+    if let Expr::FunctionCall { name, args } = &primitive
+      && name == "Plus"
+      && (num_coeffs.len() == 2
+        || args
+          .iter()
+          .filter(|term| !expr_contains_head(term, "Log"))
+          .count()
+          > 1)
+    {
+      substituted = crate::evaluator::evaluate_expr_to_expr(&call1(
+        "Together",
+        call1("Expand", substituted),
+      ))
+      .ok()?;
+    }
+    return Some(times2(Expr::Integer(content), substituted));
+  }
   if num_coeffs.len() >= den_coeffs.len() && den_lead.abs() != 1 {
     let power = (num_coeffs.len() - den_coeffs.len() + 1) as u32;
     let scale = den_lead.checked_pow(power)?;
@@ -9085,9 +9139,24 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     if matches!(&ratio_val, Expr::Integer(0)) {
       continue;
     }
-    let log_g = call1("Log", g);
+    let mut log_g = call1("Log", g.clone());
     // n = -1: integrand = c·g'/g → c·Log[g].
     if is_constant_wrt(&ratio_val, var) {
+      if crate::functions::math_ast::expr_to_rational(&ratio_val)
+        .is_some_and(|(n, _)| n < 0)
+        && let Some(coeffs) =
+          crate::functions::polynomial_ast::extract_poly_coeffs(
+            &crate::functions::polynomial_ast::expand_and_combine(&g),
+            var,
+          )
+        && coeffs.len() == 2
+        && coeffs[0] < 0
+      {
+        log_g = call1(
+          "Log",
+          crate::functions::polynomial_ast::expand_and_combine(&neg1(g)),
+        );
+      }
       return Some(if matches!(&ratio_val, Expr::Integer(1)) {
         log_g
       } else {
