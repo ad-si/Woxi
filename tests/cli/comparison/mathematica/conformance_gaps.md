@@ -8974,6 +8974,15 @@ sine terms for the remaining product; Woxi leaves the integral unevaluated.
 The minimized polynomial `Integrate[(x+y)*x*y,x]` now preserves the
 external `y` factor and matches Wolfram, independently of this missing rule.
 
+### Powered sine/cosine product integrals retain shifted-angle grouping
+
+Powered products now integrate through the shared `TrigReduce` path.
+For `Integrate[Cos[x+y]*Cos[x*y]^2,x]` (seed 1794031159154931000),
+Woxi returns `Sin[x+y]/2 + Sin[x+y-2*x*y]/(4*(1-2*y)) +
+Sin[x+y+2*x*y]/(4*(1+2*y))`. Wolfram angle-expands the first sine,
+reverses the first variable denominator, and collects the terms over `4`.
+Wolfram verified the derivative of Woxi's form exactly on 2026-11-07.
+
 ### Higher tangent harmonics retain RootSum primitives
 
 Tangent products with commensurate linear frequencies now use rational
@@ -9061,6 +9070,13 @@ also rewrites the polynomial terms into reciprocal-trig products in Wolfram,
 so simply changing the tangent power's own representation is insufficient.
 Verified on 2026-11-07; this remains part of the mixed-sum convention gap.
 
+Seed 1794031159154931000 also found
+`TrigReduce[Cos[2*x]*(Tan[x]-Sin[x*y]^2)]`: Wolfram expands through
+complex conjugate pairs multiplied by `Sec[x]`, while Woxi retains a
+short real trigonometric sum. The minimized `TrigReduce[Tan[x]-Sin[x]^2]`
+is `(-1+Cos[3*x]*Sec[x]+4*Tan[x])/4` in Wolfram, compared with
+`(-1+Cos[2*x]+2*Tan[x])/2` in Woxi. These are equivalent forms.
+
 ### TrigToExp retains different grouping in mixed products and sums
 
 The shifted square `TrigToExp[Cos[x+y]^2]` and product-angle square
@@ -9077,6 +9093,11 @@ the top-level sum and the product's exponential numerators, while Wolfram
 keeps the cosine exponential pairs and squared factors grouped. Its
 minimized `TrigToExp[Cos[2]]` case is now fixed by denominator formatting
 for negative complex exponents; the larger expansion choice remains.
+
+Seed 1794031159154931000 found the same mixed-product grouping issue
+for `TrigToExp[Tan[x*y]*Cos[x]-Cos[3*x]+Cos[x+y]]`. Its minimized
+`TrigToExp[x*Cos[x]]` now matches: scalar multiples of a lone sine,
+cosine, sinh, or cosh distribute into exponential terms.
 
 ### N of constants prints different guard digits
 
@@ -9127,6 +9148,13 @@ expansion, matching the polynomial forms for `Sin[x] + Sin[x]^3` and
 Standalone `Sin[x]^3` and `1 + Sin[x]^3` remain unchanged, as in Wolfram.
 The quotient forms above are algebraically equivalent under the
 trigonometric identities, but their printed forms still differ.
+
+Seed 1794031159154931000 adds
+`TrigExpand[Sin[x+y]^2+Tan[2*x]]`. Wolfram puts the complete expression
+over `Cos[x]^2-Sin[x]^2` before distributing its numerator; Woxi expands
+the sine-square contribution separately. The minimized
+`TrigExpand[x+Tan[2*x]]` has the same distinction: Wolfram displays
+three terms over that denominator, while Woxi keeps the standalone `x`.
 
 ### Rational integration with repeated irreducible poles
 
