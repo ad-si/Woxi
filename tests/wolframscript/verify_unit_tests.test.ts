@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  buildWolframScript,
   evaluationFailureReason,
   incompleteCaseCount,
   runBatchResilient,
@@ -76,4 +77,12 @@ test("uncompleted comparisons do not count as passes", () => {
     ]),
     2
   );
+});
+
+test("MatrixPlot reference resolves the light palette in a scoped block", () => {
+  const expr = "MatrixPlot[{{0, 0}}][[1, 1]]";
+  const script = buildWolframScript([{idx: 0, key: expr, expr, woxiResult: "1"}]);
+  assert.ok(script.includes("Internal`InheritedBlock[{AbsoluteCurrentValue}"));
+  assert.ok(script.includes('AbsoluteCurrentValue[LightDark] = "Light"'));
+  assert.ok(!buildWolframScript([exampleCase(0)]).includes("InheritedBlock"));
 });

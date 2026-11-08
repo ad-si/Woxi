@@ -39,13 +39,14 @@ fn quantile_element() {
 }
 
 // ChartElementFunction -> "Density": a bar over the data range whose
-// colour fades to white where the density estimate is lowest.
+// colour fades to white where the density estimate is lowest. Resolve WL's
+// paired light/dark directives before inspecting the light palette.
 #[test]
 fn density_element() {
   assert_eq!(
     interpret(
       "g = DistributionChart[{{1, 2, 2, 3, 3, 3, 4, 4, 5, 9}}, ChartElementFunction -> \"Density\"]; \
-       cs = Cases[g, RGBColor[__], Infinity]; \
+       cs = Cases[g /. LightDarkSwitched[light_, ___] :> light, RGBColor[__], Infinity]; \
        {Length[Cases[g, _Rectangle, Infinity]] == 1, \
         Length[Cases[g, _GraphicsComplex, Infinity]] == 1, \
         Min[cs[[All, 3]]] == 0.25, Max[cs[[All, 3]]] == 1., \

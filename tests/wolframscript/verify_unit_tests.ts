@@ -511,7 +511,7 @@ const DEFAULT_RECURSION_LIMIT = 1024;
 /** What the batch raises it to so deep test expressions can evaluate. */
 const RAISED_RECURSION_LIMIT = 4096;
 
-function buildWolframScript(
+export function buildWolframScript(
   cases: { expr: string; key: string; woxiResult: string; idx: number }[]
 ): string {
   const lines: string[] = [];
@@ -690,6 +690,16 @@ function buildWolframScript(
       }
     } else {
       wBlock = "Quiet[ToString[(" + expr + "), InputForm]]";
+    }
+
+    // MatrixPlot materializes its default palette from the front-end theme.
+    // A headless kernel gets $Failed for this query and selects dark colors.
+    // Match Woxi's default light mode, scoped so other cases retain defaults.
+    if (/\bMatrixPlot\[/.test(expr)) {
+      wBlock = 'Internal`InheritedBlock[{AbsoluteCurrentValue}, ' +
+        'Unprotect[AbsoluteCurrentValue]; ' +
+        'AbsoluteCurrentValue[LightDark] = "Light"; ' +
+        'Protect[AbsoluteCurrentValue]; ' + wBlock + ']';
     }
 
     // Astronomy: evaluate with the network switched off, which is both what
