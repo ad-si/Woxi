@@ -7,7 +7,7 @@ $ wo 'FileNameJoin[{"a", "b", "c"}]'
 a/b/c
 ```
 
-A single string is a path already; joining it normalises the separators.
+A single string is a path already; joining it normalizes the separators.
 
 ```scrut
 $ wo 'FileNameJoin["/a//b/c.wlx/"]'

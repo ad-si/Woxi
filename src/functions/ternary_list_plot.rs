@@ -16,8 +16,8 @@ type Triple = (f64, f64, f64);
 /// TernaryListPlot[{data1, data2, ...}] with each `data` a list of triples.
 ///
 /// Each triple `{a, b, c}` is normalized so that `a + b + c == 1` and plotted
-/// inside an equilateral triangle. Component 1 pulls the point towards the top
-/// corner, component 2 towards the bottom-left corner and component 3 towards
+/// inside an equilateral triangle. Component 1 pulls the point toward the top
+/// corner, component 2 toward the bottom-left corner and component 3 toward
 /// the bottom-right corner.
 pub fn ternary_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let TernaryData {
@@ -95,7 +95,7 @@ pub fn ternary_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if legends.is_empty() {
     return Ok(graphics);
   }
-  // `PlotLegends` names the datasets beside point markers of their colour.
+  // `PlotLegends` names the datasets beside point markers of their color.
   let colors: Vec<Expr> = (0..legends.len())
     .map(|i| {
       let color = series_color(i, &custom_colors);

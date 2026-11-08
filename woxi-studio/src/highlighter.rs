@@ -79,7 +79,7 @@ pub fn highlight_color(
 ) -> Option<Color> {
   Some(match highlight {
     WolframHighlight::Normal => return None,
-    // The comment grey reads well on both themes.
+    // The comment gray reads well on both themes.
     WolframHighlight::Comment => Color::from_rgb(0.42, 0.45, 0.49),
     WolframHighlight::String => {
       if is_dark {

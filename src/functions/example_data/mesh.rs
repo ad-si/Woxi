@@ -146,7 +146,7 @@ impl Mesh {
   }
 
   /// Close the ring of `n` vertices starting at `start` with a fan around a
-  /// new centre vertex `center` (`flip` reverses the orientation).
+  /// new center vertex `center` (`flip` reverses the orientation).
   pub fn cap(&mut self, start: usize, n: usize, center: P3, flip: bool) {
     let c = self.vertices.len();
     self.vertices.push(center);
@@ -298,17 +298,17 @@ impl Mesh {
     let (cx, cy) = outline.iter().fold((0.0, 0.0), |(a, b), &(x, y)| {
       (a + x / n as f64, b + y / n as f64)
     });
-    let centre = |t: f64| {
+    let center = |t: f64| {
       add(
         add(origin, add(scale(u, cx), scale(v, cy))),
         scale(w, t - 0.5),
       )
     };
-    self.cap(start, n, centre(0.0), true);
-    self.cap(start + (rows.max(2) - 1) * n, n, centre(1.0), false);
+    self.cap(start, n, center(0.0), true);
+    self.cap(start + (rows.max(2) - 1) * n, n, center(1.0), false);
   }
 
-  /// A box with the given centre and half-sizes along the rotated axes,
+  /// A box with the given center and half-sizes along the rotated axes,
   /// each side a `k × k` grid.
   pub fn cuboid(
     &mut self,
@@ -464,7 +464,7 @@ pub fn fit(
 }
 
 /// Top up `mesh` with a filler: the missing vertices on a tiny ring at the
-/// centre of the mesh's first part, and the missing faces as small polygons
+/// center of the mesh's first part, and the missing faces as small polygons
 /// over those vertices (or over existing ones when there are too few new
 /// ones), so the counts match exactly while staying out of sight.
 fn fill(
@@ -478,14 +478,14 @@ fn fill(
   } else {
     mesh.bounds()
   };
-  let centre = scale(add(lo, hi), 0.5);
+  let center = scale(add(lo, hi), 0.5);
   let r = 1e-3 * norm(sub(hi, lo)).max(1e-9);
   let start = mesh.vertices.len();
   for i in 0..dv {
     let a = TAU * i as f64 / dv.max(1) as f64;
     mesh
       .vertices
-      .push(add(centre, [r * a.cos(), r * a.sin(), 0.0]));
+      .push(add(center, [r * a.cos(), r * a.sin(), 0.0]));
   }
   let counts = mesh.face_counts();
   let total = mesh.vertices.len();

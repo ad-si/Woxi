@@ -13,7 +13,7 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Woxi Studio & Wolfram Demonstrations
 
-- `Manipulate` supports colour controls with an initial colour but no range
+- `Manipulate` supports color controls with an initial color but no range
     or choice list. Scalar and `Slider2D` bounds can depend on other controls,
     including through `Dynamic` wrappers.
 - Explicit `RadioButtonBar` controls keep their button layout. A
@@ -41,7 +41,7 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 - `ListPlot` accepts per-series `Joined` flags. `ParametricPlot` handles
     lists of conditional curves whose hidden entries evaluate to `{}`.
-- `ContourPlot` and `DensityPlot` honour `RegionFunction`, `FrameLabel`
+- `ContourPlot` and `DensityPlot` honor `RegionFunction`, `FrameLabel`
     and `Epilog`. `ContourStyle` reaches both function and equation forms
     and survives composition with `Show`.
 - A flat `PlotRange -> {min, max}` applies to every axis. Plot options such
@@ -61,9 +61,9 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 - `Disk[c, Scaled[r]]` scales its radius by the plot width. `Graphics3D`
     draws `InfiniteLine`, `HalfLine`, `InfinitePlane` and `HalfPlane`, clipped
     to the existing picture range without enlarging it. Lists of sphere
-    centres and `Ball` primitives render correctly.
-- 3D `Scale` acts about the object's bounding-box centre and supports
-    unequal scale factors for curved primitives. `EdgeForm` colours face
+    centers and `Ball` primitives render correctly.
+- 3D `Scale` acts about the object's bounding-box center and supports
+    unequal scale factors for curved primitives. `EdgeForm` colors face
     outlines and curved primitives' end circles, retaining opaque outlines
     around transparent faces.
 - `RegionPlot3D` retains a symbolic `GraphicsComplex`, so its surfaces can
@@ -73,7 +73,7 @@ server brings diagnostics, navigation, formatting and code actions to editors.
     the former. The rhombic hexecontahedron includes exact measures and its
     62 vertices, 120 edges and 60 faces. Polyhedron truncation follows
     Wolfram's edge order.
-- Graphs honour callable, named, per-edge and `None` forms of
+- Graphs honor callable, named, per-edge and `None` forms of
     `EdgeShapeFunction`, passing the edge object to the callback and keeping
     directives scoped to that edge. `GraphPlot` accepts
     `Method -> "CircularEmbedding"`; an explicit `GraphLayout` takes priority.
@@ -197,7 +197,7 @@ server brings diagnostics, navigation, formatting and code actions to editors.
 
 ## Images & audio
 
-- `Image` validates channel counts against its colour space rather than
+- `Image` validates channel counts against its color space rather than
     silently reinterpreting the data. Gaussian noise in `ImageEffect` is no
     longer clipped to `[0, 1]`, avoiding bias at the endpoints.
 - `Play` accepts options and synthesizes at the requested `SampleRate`.
@@ -344,7 +344,7 @@ described in detail in the last section.
     rendering, and `AspectRatio` applied to the plotting area rather than
     the whole image.
 - Graphics3D draws curved surfaces without facet edges, triangulates
-    concave polygons, honours `EdgeForm[]`, `SphericalRegion` and
+    concave polygons, honors `EdgeForm[]`, `SphericalRegion` and
     `ViewAngle`, and outlines flat faces the way Wolfram does.
     `PolyhedronData` gained face lists with Wolfram's vertex order and
     the icosahedral Archimedean solids.
@@ -519,7 +519,7 @@ described in detail in the last section.
         a sphere is the circle bounding it and a ball the filled disk. Both
         used to be dropped, and since `Circumsphere` returns a `Sphere`
         whatever the dimension, a picture built around a circumcircle came
-        out with no circle at all. A list of centres draws one per point,
+        out with no circle at all. A list of centers draws one per point,
         and `Ball[2]` is the unit disk at the origin.
     - A `Style` around a label paints its `Background` behind the text —
         `Style[Text[…], 12, Background -> White]` is what keeps a distance
@@ -569,7 +569,7 @@ described in detail in the last section.
         for it. Previously the list was fixed at build time.
     - `ControlType -> Slider` over a choice list renders a slider that
         steps through the choices, matching Wolfram; a twenty-entry
-        colour-scheme list used to become a dropdown.
+        color-scheme list used to become a dropdown.
 - Fixes driven by a Wolfram Demonstration that runs a cellular automaton
     over a dendrite and compares it with the linear case:
     - A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a
@@ -579,7 +579,7 @@ described in detail in the last section.
         evaluated, so a Manipulate body that arranges several plots in a
         grid displayed a single one of them and dropped the rest.
     - A `Grid`'s columns line up when its rows hold different things: the
-        caption under a picture is centred on that picture instead of
+        caption under a picture is centered on that picture instead of
         being packed against the left edge of the grid.
     - `LayeredGraphPlot` and `TreePlot` draw the layered embedding they
         name, rather than the circular one every graph got. Vertices are
@@ -593,9 +593,9 @@ described in detail in the last section.
         the left and right labels rotated onto theirs.
 - Fixes driven by the "Selectivity in a Semibatch Reactor" Wolfram
     Demonstration:
-    - `Text` inside a `Graphics3D` scene is drawn — a labelled 3D
-        schematic used to arrive with no lettering at all. It honours the
-        `Style` size and colour, typesets `Subscript`/`Superscript`, and
+    - `Text` inside a `Graphics3D` scene is drawn — a labeled 3D
+        schematic used to arrive with no lettering at all. It honors the
+        `Style` size and color, typesets `Subscript`/`Superscript`, and
         respects the alignment offset of `Text[expr, pos, offset]`.
     - `Scaled[{sx, sy}]` places a `Text` or `Inset` by fraction of the
         plot range, in `Graphics` and in a plot's `Epilog` alike. The
@@ -642,7 +642,7 @@ described in detail in the last section.
         used to be reported as unimplemented, so every primitive colored
         through it fell back to black. `ColorData[name, "Range"]` reads
         the parameter interval alongside it.
-    - `Graphics[…, ImagePadding -> …]` honours the padding (it was only
+    - `Graphics[…, ImagePadding -> …]` honors the padding (it was only
         read by the plot functions), so the drawing area sits where the
         notebook puts it instead of at the automatic frame margins.
     - A named `Arrowheads` size is a fraction of the plot width and
@@ -664,7 +664,7 @@ described in detail in the last section.
     - Labels written as a function of the plot variable typeset the way
         Wolfram draws them — `AxesLabel -> {t, y[t]}` reads `y(t)` and a
         derivative reads `y′(t)`, where both used to be dropped — and a
-        `Manipulate` control labelled `Style["y", Italic]'` shows `y′`.
+        `Manipulate` control labeled `Style["y", Italic]'` shows `y′`.
 - Symbol names may contain `$` anywhere (`a$b`, `signal$1`), matching Wolfram.
 - `PlotRange` bounds given in reversed order (e.g. `{3, -3}`) normalize to
     the same plot as the sorted form, matching Wolfram.
@@ -712,7 +712,7 @@ described in detail in the last section.
 - Manipulate improvements (driven by the "Descartes's Rule of Signs"
     Wolfram Demonstration):
     - `Setter`, `Toggler`, `CheckboxBar`, `Opener` and `OpenerBar` are
-        recognised as control types. A `Setter` spec used to be read as a
+        recognized as control types. A `Setter` spec used to be read as a
         slider bound, and since one unparsable spec aborts the whole
         extraction, the entire Manipulate fell back to a text echo.
     - `{v, domain, ControlType -> None}` starts `v` at the first choice of

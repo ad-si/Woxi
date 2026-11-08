@@ -1,7 +1,7 @@
 //! `QuantilePlot`, `ProbabilityPlot` and `ProbabilityScalePlot`: the
 //! sorted data of each dataset against a reference distribution (a normal
 //! fitted to the data unless one is given) or a second dataset, as a framed
-//! `ListPlot` with a dotted reference line in the series' colour.
+//! `ListPlot` with a dotted reference line in the series' color.
 //!
 //! The three share their layout, decoded from wolframscript: plotting
 //! positions `(i - 3/10)/(n + 2/5)` (Benard's median ranks), a fitted
@@ -282,7 +282,7 @@ fn quantile_family_ast(
     hidden.push(point(r, at(r)));
   }
 
-  // Series styles: the user's PlotStyle, else the default plot colours.
+  // Series styles: the user's PlotStyle, else the default plot colors.
   let user_style = options.iter().find_map(|o| match o {
     Expr::Rule {
       pattern,
@@ -360,7 +360,7 @@ fn quantile_family_ast(
   plot_args.push(rule_expr(id("Epilog"), Expr::List(epilog.into())));
   if scale {
     // The dots are a little larger than a ListPlot's, and the vertical
-    // axis is labelled in percent.
+    // axis is labeled in percent.
     let size = crate::functions::math_ast::make_rational(
       crate::functions::list_plot::point_size_steps(&series) as i128,
       360,

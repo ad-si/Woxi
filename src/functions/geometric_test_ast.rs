@@ -162,7 +162,7 @@ fn all_parallel(lines: &[(Pt, Pt)]) -> bool {
 
 fn all_perpendicular(lines: &[(Pt, Pt)]) -> bool {
   // Every distinct pair of lines is mutually perpendicular. Only meaningful
-  // for two lines in the plane, but generalises to the pairwise check.
+  // for two lines in the plane, but generalizes to the pairwise check.
   if lines.len() < 2 {
     return false;
   }
@@ -993,7 +993,7 @@ const PRISM_FACES: [&[usize]; 5] = [
 ///   Head[]                      → origin, edge 1
 ///   Head[l]                     → origin, edge l
 ///   Head[{θ, ϕ}]                → origin, edge 1, rotated
-///   Head[{x, y, z}]             → centred there, edge 1
+///   Head[{x, y, z}]             → centered there, edge 1
 ///   Head[{θ, ϕ} | {x, y, z}, l] → likewise, edge l
 pub(crate) struct PlatonicPlacement {
   /// `None` for the origin.
@@ -1007,7 +1007,7 @@ pub(crate) struct PlatonicPlacement {
 /// Parse a Platonic-solid primitive's arguments (see [`PlatonicPlacement`]).
 /// `None` for any other shape — including Tetrahedron's explicit four-vertex
 /// form, three or more arguments (wolframscript leaves the rotated-and-
-/// centred form unevaluated), and a concrete non-positive edge
+/// centered form unevaluated), and a concrete non-positive edge
 /// (`Volume[Dodecahedron[-2]]` stays unevaluated in wolframscript).
 pub(crate) fn platonic_placement(args: &[Expr]) -> Option<PlatonicPlacement> {
   let is_scalar = |e: &Expr| {
@@ -1044,7 +1044,7 @@ pub(crate) fn platonic_placement(args: &[Expr]) -> Option<PlatonicPlacement> {
   })
 }
 
-/// The vertices of a unit-edge Platonic solid centred at the origin, placed
+/// The vertices of a unit-edge Platonic solid centered at the origin, placed
 /// the way Wolfram places `Head[]`: a face of the tetrahedron, cube and
 /// icosahedron's antiprism rings perpendicular to z, the octahedron's
 /// corners on the axes.
@@ -1347,7 +1347,7 @@ pub fn convex_polyhedron_q_ast(
   };
   let convex = match name.as_str() {
     // The regular solids, which are convex whenever they have any size. Each
-    // takes an optional centre and an optional size.
+    // takes an optional center and an optional size.
     "Cube" | "Dodecahedron" | "Octahedron" | "Icosahedron" | "Tetrahedron"
     | "Hexahedron"
       if sargs.len() <= 2 =>

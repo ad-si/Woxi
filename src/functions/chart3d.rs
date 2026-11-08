@@ -5,7 +5,7 @@
 use crate::InterpreterError;
 use crate::syntax::Expr;
 
-/// Wolfram's default colours for the series of a 3D chart.
+/// Wolfram's default colors for the series of a 3D chart.
 pub(crate) const CHART3D_COLORS: [(f64, f64, f64); 7] = [
   (0.95, 0.7125, 0.0),
   (0.0, 0.595, 0.85),
@@ -16,7 +16,7 @@ pub(crate) const CHART3D_COLORS: [(f64, f64, f64); 7] = [
   (0.0, 0.6, 0.6),
 ];
 
-/// The `i`-th default series colour.
+/// The `i`-th default series color.
 pub(crate) fn chart3d_color(i: usize) -> (f64, f64, f64) {
   CHART3D_COLORS[i % CHART3D_COLORS.len()]
 }
@@ -52,7 +52,7 @@ fn rgb((r, g, b): (f64, f64, f64)) -> Expr {
 }
 
 /// The beveled floor and back wall, in coordinates relative to the chart's
-/// bounds. Each face shares the series color fading towards white.
+/// bounds. Each face shares the series color fading toward white.
 pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
   const CORNERS: [[f64; 3]; 12] = [
     [0.015, 0.02, 0.02],
@@ -149,7 +149,7 @@ pub(crate) fn bar_chart_backdrop(c: (f64, f64, f64)) -> Expr {
 }
 
 /// A bar of a 3D bar or rectangle chart from corner `lo` to corner `hi`, as
-/// Wolfram draws one: unlit faces in colour `c` blending towards a light
+/// Wolfram draws one: unlit faces in color `c` blending toward a light
 /// tint (`c` four fifths of the way to white) on one side and a dark shade
 /// (`c / 2`) on the other, with faint edges.
 pub(crate) fn chart3d_block(
@@ -315,7 +315,7 @@ pub(crate) fn render_chart3d(
 /// The options Wolfram gives a 3D bar-like chart whose blocks span
 /// `x_extent` along x and `y_extent` deep: the box flattened to the bars'
 /// depth, seen almost from the front, with a value axis on the left and
-/// the bar positions as unlabelled ticks along the bottom.
+/// the bar positions as unlabeled ticks along the bottom.
 pub(crate) fn bar_chart3d_options(
   x_ticks: &[(f64, f64)],
   x_extent: f64,
@@ -398,7 +398,7 @@ pub(crate) fn bar_chart3d_options(
   ]
 }
 
-/// The unlabelled ticks along a bar chart's x axis for bars starting at
+/// The unlabeled ticks along a bar chart's x axis for bars starting at
 /// `xs` (each one wide) in groups `group_of`: short ones between the bars
 /// of a group and at the ends, long ones at the ends of every group.
 pub(crate) fn bar_ticks(xs: &[f64], group_of: &[usize]) -> Vec<(f64, f64)> {
@@ -441,7 +441,7 @@ pub(crate) fn bar_positions(group_of: &[usize]) -> Vec<f64> {
 
 /// `BubbleChart3D[{{x, y, z, s}, …}]` (or several such datasets): a sphere
 /// at each point whose volume follows its size `s` — the largest a fifth
-/// of the points' smallest extent across — in the dataset's colour, shiny
+/// of the points' smallest extent across — in the dataset's color, shiny
 /// under neutral lights, with grids on the box's back faces.
 pub fn bubble_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::math_ast::try_eval_to_f64;

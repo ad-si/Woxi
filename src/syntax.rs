@@ -202,16 +202,16 @@ pub struct PlotMarker {
   pub glyph: String,
   /// Font size in printer's points, as `Style[marker, size]` gives it.
   pub size: f64,
-  /// Colour from `Style[marker, colour]`; `None` = the series colour.
+  /// Color from `Style[marker, color]`; `None` = the series color.
   pub color: Option<(u8, u8, u8)>,
   /// One of the `"OpenMarkers"` shapes (named by `glyph`), drawn as a
-  /// white-filled outline in the series colour rather than as text.
+  /// white-filled outline in the series color rather than as text.
   pub open: bool,
   /// One of the `PlotMarkers -> Automatic` shapes (named by `glyph`: filled
   /// `●■◆▲▼`, outlined `○□◇△▽`), drawn as a shape rather than as text.
   /// `size` is then the marker size in points (0 = WL's default).
   pub automatic: bool,
-  /// A `Graphics[…]` marker, inset at every point (in the series colour
+  /// A `Graphics[…]` marker, inset at every point (in the series color
   /// unless it sets its own). `size` is then a fraction of the plot area
   /// (`{g, s}`, WL's `Scaled[s]`), minus an absolute size in points (a
   /// named size), or 0 for the inset's natural size.
@@ -326,7 +326,7 @@ pub fn ascii_character_escapes(s: &str) -> std::borrow::Cow<'_, str> {
 ///
 /// The characters that draw nothing at all in Wolfram (the invisible
 /// operators, the script-base placeholders, the `Grid` span fillers)
-/// substitute to the empty string, so they leave no artefact behind.
+/// substitute to the empty string, so they leave no artifact behind.
 pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
   if !s.chars().any(|c| ('\u{E000}'..='\u{F8FF}').contains(&c)) {
     return std::borrow::Cow::Borrowed(s);
@@ -2112,7 +2112,7 @@ fn strip_box_delimiters(raw: &str) -> &str {
 /// translate to SuperscriptBox/SubscriptBox/UnderscriptBox/OverscriptBox/
 /// SqrtBox/UnderoverscriptBox respectively. `\^` and `\_` are right-
 /// associative; `\%` extends the immediately preceding `\+`/`\&` into an
-/// UnderoverscriptBox. Returns None on unrecognised shapes so the caller
+/// UnderoverscriptBox. Returns None on unrecognized shapes so the caller
 /// can fall back to a HoldComplete wrapper.
 fn parse_box_notation_str(raw: &str) -> Option<Expr> {
   let stripped = strip_box_delimiters(raw);
@@ -2135,7 +2135,7 @@ fn parse_box_notation_str(raw: &str) -> Option<Expr> {
   parse_box_rowbox(&toks)
 }
 
-/// Build a generic `RowBox[{…}]` from a token list. Recognises balanced `(` /
+/// Build a generic `RowBox[{…}]` from a token list. Recognizes balanced `(` /
 /// `)` Atom pairs as nested groups so the parens themselves stay as their own
 /// string atoms inside the surrounding RowBox.
 fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
@@ -2165,7 +2165,7 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
         }
         let inner_toks = &toks[i + 1..j];
         let inner_expr = parse_box_rowbox(inner_toks)?;
-        // Build the parenthesised group as its own RowBox of `(`, inner, `)`.
+        // Build the parenthesized group as its own RowBox of `(`, inner, `)`.
         let group = call(
           "RowBox",
           vec![Expr::List(
@@ -2177,7 +2177,7 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
       }
       _ => {
         // Try `parse_box_chain` first so operators like `\/` (and
-        // `\^`/`\_`) can combine with neighbouring units (e.g.
+        // `\^`/`\_`) can combine with neighboring units (e.g.
         // `x \/ y` inside `\(x \/ y + z\)` becomes
         // `FractionBox[x, y]`).
         if let Some((chained, new_i)) = parse_box_chain(toks, i)
@@ -2227,7 +2227,7 @@ fn tokenize_box(s: &str) -> Option<Vec<BoxTok>> {
         continue;
       }
       if n == b'(' {
-        // Find matching `\)` honouring nested `\(`.
+        // Find matching `\)` honoring nested `\(`.
         let start = i;
         let mut depth = 1;
         i += 2;
@@ -2969,7 +2969,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // explicit *Box heads (SuperscriptBox, SubscriptBox, …). Atoms
       // inside the box are surfaced as String literals to mirror the
       // wolframscript box AST. Falls back to HoldComplete[<source>] if
-      // the inner content can't be parsed as a recognised box form.
+      // the inner content can't be parsed as a recognized box form.
       let raw = pair.as_str().to_string();
       parse_box_notation_str(&raw)
         .unwrap_or_else(|| call1("HoldComplete", Expr::String(raw)))
@@ -3976,7 +3976,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           }
         } else {
           let factor = pair_to_expr(inners[i].clone());
-          // A parenthesised product is one factor of the chain. Keep it
+          // A parenthesized product is one factor of the chain. Keep it
           // whole, as a `Times` call, so that splicing the chain into a
           // surrounding `/` (see `flatten_times_chain`) cannot reach into
           // it: `a/(b c) d` is `(a/(b c)) d`, not `(a/b) c d`.
@@ -4266,7 +4266,7 @@ fn build_operator_chain(mut terms: Vec<Expr>, operators: &[String]) -> Expr {
 
 /// An implicit product (`2 x`) is `Times` at ordinary multiplicative
 /// precedence, but the grammar hands it to the tree builder as a single
-/// term. When a neighbouring operator binds tighter than `Times` that
+/// term. When a neighboring operator binds tighter than `Times` that
 /// operator must reach the adjacent *factor* — Wolfram reads
 /// `2 Times @@ {3, 4}` as `2 (Times @@ {3, 4})` and `a b . c` as
 /// `a (b . c)` — so split such a term into its factors joined by explicit
@@ -4682,7 +4682,7 @@ fn parse_expression(pair: Pair<Rule>) -> Expr {
     let op = tail.next().unwrap().as_str().to_string();
     let rhs = pair_to_expr(tail.next().unwrap());
     // Only the assignments written in this chain are descended into — a
-    // parenthesised one (`(x = a) /. b = 1`) is an ordinary operand.
+    // parenthesized one (`(x = a) /. b = 1`) is an ordinary operand.
     let depth = inner
       .iter()
       .take_while(|p| p.as_rule() != Rule::AnonymousFunctionSuffix)
@@ -4708,7 +4708,7 @@ fn is_assignment_operator(op: &str) -> bool {
 /// suffixes that bind tighter than `=` but are parsed after the operator
 /// chain: in `x = y = a /. b` the `/.` belongs to `a`, giving
 /// `Set[x, Set[y, ReplaceAll[a, b]]]`, while in `(a = 1) /. b` it belongs to
-/// the whole parenthesised assignment.
+/// the whole parenthesized assignment.
 fn in_assignment_rhs(
   mut expr: Expr,
   depth: usize,
@@ -4832,7 +4832,7 @@ fn parse_expression_inner(
   // Build expression with proper precedence
   let mut terms: Vec<Expr> = Vec::new();
   // Parallel to `terms`: whether each pushed term originated from an
-  // `ImplicitTimes` (i.e. unparenthesised juxtaposition like `4z`). Used so
+  // `ImplicitTimes` (i.e. unparenthesized juxtaposition like `4z`). Used so
   // a trailing `!` can attach to the rightmost factor — `4z!` → `4*(z!)`,
   // matching wolframscript's binding while keeping `(4z)!` intact.
   let mut term_was_implicit_times: Vec<bool> = Vec::new();
@@ -4970,7 +4970,7 @@ fn parse_expression_inner(
           } else {
             "Factorial"
           };
-          // For an unparenthesised juxtaposition like `4z!`, attach the
+          // For an unparenthesized juxtaposition like `4z!`, attach the
           // factorial to the rightmost factor — `Times[4, Factorial[z]]` —
           // matching Wolfram's binding (factorial > implicit times). The
           // implicit-times builder yields a right-leaning BinaryOp Times
@@ -5101,7 +5101,7 @@ fn parse_expression_inner(
         // `f[x] y` is an implicit product as much as `x y` is; the grammar
         // just reaches it through `FunctionCallExtended`'s implicit suffix
         // instead of `ImplicitTimes`. Both have to be spliceable, or a
-        // neighbouring tighter operator takes the whole product as one
+        // neighboring tighter operator takes the whole product as one
         // operand — `f[x] Times @@ list` would read as
         // `Apply[f[x] Times, list]`.
         let is_implicit_times = matches!(item.as_rule(), Rule::ImplicitTimes)
@@ -5182,7 +5182,7 @@ fn parse_expression_inner(
       }
     }
   }
-  // Decide whether to suppress the term-level Not in favour of wrapping
+  // Decide whether to suppress the term-level Not in favor of wrapping
   // the whole tree after it is built. We only suppress when the *first*
   // infix operator binds tighter than `!`; otherwise the local wrap is
   // already correct (e.g. `!a && b` → `And[Not[a], b]`).
@@ -8593,7 +8593,7 @@ fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
 fn quantity_unit_to_input_form(unit: &Expr) -> String {
   // A unit is an ordinary expression, so the InputForm renderer writes it:
   // string names stay quoted, a negative exponent becomes a quotient
-  // (`"Meters"/"Seconds"`) and a compound one is parenthesised.
+  // (`"Meters"/"Seconds"`) and a compound one is parenthesized.
   expr_to_input_form(unit)
 }
 
@@ -9320,7 +9320,7 @@ fn expr_to_part_index_string(expr: &Expr, form: ExprForm) -> String {
   // A Span index renders with the `;;` operator in InputForm
   // (l[[5 ;; 2]]) but keeps its functional head form in OutputForm and
   // FullForm (l[[Span[5, 2]]]), matching wolframscript. A nested Span
-  // argument is parenthesised.
+  // argument is parenthesized.
   if form == ExprForm::Input
     && let Expr::FunctionCall { name, args } = expr
     && name == "Span"
@@ -9767,7 +9767,7 @@ fn is_loose_assignment(e: &Expr) -> bool {
 
 /// Whether `e` prints with a leading `-`, in either spelling. A held
 /// `Minus[x]` keeps the call form until the recursion reaches it, so the
-/// parenthesisation checks above the recursion have to recognise both:
+/// parenthesization checks above the recursion have to recognize both:
 /// `Power[Minus[a], 2]` is `(-a)^2`, not `-a^2`, and `Minus[Minus[a]]` is
 /// `-(-a)`, not the unparsable `--a`.
 fn prints_as_negation(e: &Expr) -> bool {
@@ -10167,11 +10167,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   if let Some(rewritten) = operator_call_node(expr) {
     return format_expr(&rewritten, form);
   }
-  // Parenthesisation is decided by inspecting the direct children — a
+  // Parenthesization is decided by inspecting the direct children — a
   // `Power`'s base, a `Times` factor — so those checks have to see the
   // operator node rather than the call spelling. Without this,
   // `Hold[Divide[Subtract[a, b], c]]` prints as `a - b/c`, which re-parses
-  // as something else entirely. One level is enough: each child normalises
+  // as something else entirely. One level is enough: each child normalizes
   // its own children when the recursion reaches it.
   let with_normalized_children;
   let expr = if expr_children(expr)
@@ -10561,7 +10561,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
       // Special case: Repeated[x] displays as x.. (or (x).. when x is a
       // Pattern or numeric atom, matching wolframscript's
-      // parenthesisation of `_`-bearing patterns and numeric literals
+      // parenthesization of `_`-bearing patterns and numeric literals
       // — `Repeated[0]` prints as `(0)..`, not `0..`, since `0..`
       // would be lex-ambiguous with the `0.` Real literal).
       let is_pattern_arg = |e: &Expr| -> bool {
@@ -11188,7 +11188,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
       // TensorProduct[a, b, ...] displays with the U+F3DA operator (the glyph
       // wolframscript uses, distinct from CircleTimes' U+2297). Operands that
-      // bind looser than the product (Plus, Times, …) are parenthesised:
+      // bind looser than the product (Plus, Times, …) are parenthesized:
       // TensorProduct[a + b, c] → (a + b) ⊗ c.
       if name == "TensorProduct" && args.len() >= 2 {
         let parts: Vec<String> = args
@@ -11239,7 +11239,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return parts.join(" \u{22C0} ");
       }
       // Star[a, b, ...] displays as a ⋆ b ⋆ ... (Precedence 390: a sum
-      // operand is parenthesised, a product operand is not)
+      // operand is parenthesized, a product operand is not)
       if name == "Star" && args.len() >= 2 {
         let parts: Vec<String> = args
           .iter()
@@ -11822,7 +11822,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         }
         // Handle Times[-1, x, ...] as "-x*..."
         // In InputForm, `Times[-1, I, sym…]` is rendered by the imaginary-
-        // coefficient block below as `(-I)*sym…` (parenthesised), so skip the
+        // coefficient block below as `(-I)*sym…` (parenthesized), so skip the
         // bare `-…` negation path here when an imaginary unit AND a symbolic
         // factor are both present. Pure imaginary coefficients (`-I`, with no
         // symbolic factor) keep the `-I` form, and OutputForm always does.
@@ -12020,7 +12020,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   if let (Expr::Integer(num), Expr::Integer(den)) =
                     (&ra[0], &ra[1])
                   {
-                    // InputForm: wolframscript parenthesises the imaginary
+                    // InputForm: wolframscript parenthesizes the imaginary
                     // coefficient (`(I/2)*x`). OutputForm uses the bare
                     // `I/2*x` 1D form. Negative rationals stay parenthesized
                     // (`(-1/2*I)*x`) so the leading `-` is not pulled out as
@@ -12052,7 +12052,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               // (Power[base, negative]) split it out as `(<i_part>*<numer>)/<denom>`,
               // matching wolframscript's `Times[I, …, Power[d, -1]]` form. The
               // imaginary coefficient is folded into the numerator and the
-              // whole numerator product is parenthesised when it has more than
+              // whole numerator product is parenthesized when it has more than
               // one factor: `(I*y)/x`, `((-I)*(a + b))/c`, `I/x`.
               if symbolic_factors.iter().any(|a| is_denominator_factor(a)) {
                 let numer_factors: Vec<&Expr> = symbolic_factors
@@ -12184,7 +12184,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // Special case: Plus displays as infix with + (with spaces)
       if name == "Plus" && args.len() >= 2 {
         // Pattern/PatternOptional/PatternTest terms in Plus are
-        // parenthesised in Wolfram (e.g. `B[...] + (a_.)`, never
+        // parenthesized in Wolfram (e.g. `B[...] + (a_.)`, never
         // `B[...] + a_.`). The `_` inside the term is otherwise
         // syntactically ambiguous next to an additive operator.
         let needs_pattern_parens = |a: &Expr| -> bool {
@@ -12335,7 +12335,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             } else if let Some(idx) = pos_rat_idx {
               // Reorder so the Rational is leading, then build a flat
               // FunctionCall Times so the standalone Times printer
-              // recognises the fraction.
+              // recognizes the fraction.
               let mut new_args: Vec<Expr> = Vec::new();
               new_args.push(factor_refs[idx].clone());
               for (i, f) in factor_refs.iter().enumerate() {
@@ -13039,7 +13039,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // Held right-nested Times chain on the left of another Times — i.e.
         // the inner Times is `BinaryOp[Times, Integer, BinaryOp[Times, …]]`.
         // This is the shape produced for held derivative chains like
-        // `Derivative[2,1][#1^3*#2 &] → (3*(2*#1))*1 & `. Canonicalised
+        // `Derivative[2,1][#1^3*#2 &] → (3*(2*#1))*1 & `. Canonicalized
         // products are left-nested with an atomic right factor (e.g.
         // `Times[Times[2, c], d]` for `2*c*d`), so checking that the inner
         // right is itself a Times keeps us from over-wrapping those.
@@ -13280,7 +13280,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if matches!(op, UnaryOperator::Not) {
         // Not: Wolfram formats as " !expr" (leading space) or " !(expr)".
         // The logical operators And/Or/Xor/Xnor/Nand/Nor have an operator
-        // form whose precedence is below Not, so wolframscript parenthesises
+        // form whose precedence is below Not, so wolframscript parenthesizes
         // them: `!(Xor[a, b])`, `!(a && b)`, etc.
         let needs_parens = matches!(
           operand.as_ref(),
@@ -14402,7 +14402,7 @@ thread_local! {
   /// True while rendering *genuine* InputForm (via `expr_to_input_form`).
   /// `format_expr` reuses its InputForm path as the 1D renderer for OutputForm
   /// BinaryOps, so `is_output` alone cannot tell the two apart. This flag lets
-  /// the imaginary-coefficient handling emit the parenthesised InputForm
+  /// the imaginary-coefficient handling emit the parenthesized InputForm
   /// (`(-I)*x`, `(I/2)*x`) only when truly producing InputForm, and keep the
   /// bare OutputForm (`-I*x`, `I/2*x`) for the bare echo.
   static IN_TRUE_INPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -14503,7 +14503,7 @@ impl Drop for TrueInputFormGuard {
 }
 
 /// True when `e` binds looser than the symbolic ring products
-/// (TensorProduct/CircleTimes, precedence 36) and so must be parenthesised when
+/// (TensorProduct/CircleTimes, precedence 36) and so must be parenthesized when
 /// used as an operand, matching wolframscript (`TensorProduct[a + b, c]` →
 /// `(a + b) ⊗ c`). Tighter-binding operands (Power, Dot, …) stay bare.
 /// `a \u{F3DE} b \u{F3DE} …` for `PermutationProduct` (precedence 520,
@@ -14596,9 +14596,9 @@ fn neg_times_coeff(e: &Expr) -> Option<Option<Expr>> {
   }
 }
 
-/// Render a term that follows a ` - ` in a `Plus`, parenthesising a prefix
+/// Render a term that follows a ` - ` in a `Plus`, parenthesizing a prefix
 /// `MinusPlus` so the leading `-` doesn't fuse with the `∓`, the way Wolfram
-/// prints it: `a - MinusPlus[b]` → `a - (∓b)`. Also parenthesises any term
+/// prints it: `a - MinusPlus[b]` → `a - (∓b)`. Also parenthesizes any term
 /// that itself prints with an operator at or below `Plus`/`Minus`'s own
 /// precedence — reached from the negative-`Times`-coefficient folding above,
 /// e.g. `Plus[0.05, Times[-1, ReplaceAll[x, sol]]]` (ordinary evaluated
@@ -14805,7 +14805,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   if let Some(graph) = crate::functions::graph::graph_display_form(expr) {
     return expr_to_input_form(&graph);
   }
-  // Parenthesisation is decided by inspecting the direct children, so those
+  // Parenthesization is decided by inspecting the direct children, so those
   // checks have to see the operator node rather than the call spelling.
   let with_normalized_children;
   let expr = if expr_children(expr)
@@ -14941,7 +14941,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       // Parenthesize RHS if it's an assignment (Set/SetDelayed/Up*), so
       // that e.g. `Initialization :> (d[t_] := ...)` renders with the
       // parentheses required to disambiguate operator precedence. A pure
-      // function on the RHS is also parenthesised (`&` binds looser than
+      // function on the RHS is also parenthesized (`&` binds looser than
       // `:>`), and so is a `;`-sequence — `CompoundExpression` has the
       // lowest precedence of any operator, so `cond :> a = 1; b = 2` is
       // `(cond :> a = 1); b = 2` without parens (the Demonstrations idiom
@@ -15000,7 +15000,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     }
     // Span[a, b] / Span[a, b, c] render with the `;;` operator in InputForm,
     // matching wolframscript's `ToString[5 ;; 2, InputForm]` -> "5 ;; 2"; a
-    // nested Span argument is parenthesised. OutputForm and the bare echo keep
+    // nested Span argument is parenthesized. OutputForm and the bare echo keep
     // the head form (`Span[5, 2]`) via format_expr, and inside a FullForm
     // wrapper Span also stays in head form, so this branch is skipped there.
     Expr::FunctionCall { name, args }
@@ -16015,7 +16015,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         // String-free Times: expr_to_output renders the structure (fractions,
         // Power, Sqrt, base parens) in 1D; the IN_TRUE_INPUT_FORM flag drives
-        // format_expr's imaginary-coefficient parenthesisation so the result
+        // format_expr's imaginary-coefficient parenthesization so the result
         // is the InputForm `(-I)*x` / `(I/2)*x` rather than `-I*x` / `I/2*x`.
         expr_to_output(expr)
       }
@@ -17390,7 +17390,7 @@ fn substitute_variable_impl(
         // appears as an identifier in `value`, naive substitution would
         // capture the new occurrence. Rename each such param to a fresh
         // name (with a `$` suffix) before substituting, matching Wolfram's
-        // alpha-renaming behaviour: `Function[{x}, Function[{y}, f[x,y]]][y]`
+        // alpha-renaming behavior: `Function[{x}, Function[{y}, f[x,y]]][y]`
         // ⇒ `Function[{y$}, f[y, y$]]`, not `Function[{y}, f[y, y]]`.
         let mut value_names = std::collections::HashSet::new();
         collect_identifier_names(value, &mut value_names);
@@ -18739,7 +18739,7 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
       && (matches!(&args[1], Expr::Integer(n) if *n < 0)
         || matches!(&args[1], Expr::Real(f) if *f < 0.0)));
   // Times with a leading negative coefficient (e.g. `Times[-1, I]`,
-  // which prints as `-I` and needs to be parenthesised before `^n`).
+  // which prints as `-I` and needs to be parenthesized before `^n`).
   let times_neg_leading = match expr {
     Expr::FunctionCall { name, args }
       if name == "Times" && !args.is_empty() =>
@@ -19078,7 +19078,7 @@ fn factor_boxes(factors: &[&Expr], extra_boxes: usize) -> Vec<TextBox> {
 
 /// An infix product that binds looser than `Times` (Wolfram's
 /// `Precedence[Star]` is 390 against 400 for `Times`), so it is
-/// parenthesised as a factor: `x*(a ⋆ b)`. The other symbolic products
+/// parenthesized as a factor: `x*(a ⋆ b)`. The other symbolic products
 /// (Wedge, Diamond, CircleDot, …) bind tighter and stay bare.
 fn is_looser_than_times_infix(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
@@ -19097,7 +19097,7 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
 
 /// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),
 /// every one of which binds looser than `Power`: as a Power base it is
-/// parenthesised, `(a ⋆ b)^2`.
+/// parenthesized, `(a ⋆ b)^2`.
 /// `operator_call_node` restricted to the heads that are safe to rewrite in
 /// a parent's argument list.
 ///
@@ -19157,7 +19157,7 @@ fn operator_call_child(expr: &Expr, parent: &Expr) -> Option<Expr> {
 /// them away, so they only survive inside `Hold`, `Unevaluated` and function
 /// bodies — where wolframscript still prints the operator: `Hold[Divide[a,
 /// b]]` is `Hold[a/b]`. Mapping them onto the operator nodes reuses this
-/// renderer's precedence and parenthesisation rules instead of restating
+/// renderer's precedence and parenthesization rules instead of restating
 /// them per head.
 ///
 /// The arities are the ones wolframscript itself treats as the operator:
@@ -19207,7 +19207,7 @@ fn is_infix_display_call(e: &Expr) -> bool {
 }
 
 /// An operand of `Star` (Precedence 390) that binds looser than it — a sum,
-/// a comparison, a rule, a logical combination — and so is parenthesised:
+/// a comparison, a rule, a logical combination — and so is parenthesized:
 /// `x ⋆ (a + b)` but `x ⋆ a*b`.
 fn star_operand_needs_parens(e: &Expr) -> bool {
   match e {
@@ -20374,7 +20374,7 @@ pub fn hoist_large_literals(src: &str) -> Option<(String, Vec<String>)> {
           HOISTED_LITERALS
             .with(|m| m.borrow_mut().insert(key.clone(), literal));
           out.push_str(&src[copied..i]);
-          // Spaces around it keep it from fusing with a neighbour.
+          // Spaces around it keep it from fusing with a neighbor.
           out.push(' ');
           out.push_str(&key);
           out.push(' ');

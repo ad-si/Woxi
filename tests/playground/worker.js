@@ -177,7 +177,7 @@ self.onmessage = async function (e) {
   // Evaluate each control's `Enabled` condition against the current bindings
   // and report which controls should be interactive. Fired alongside a
   // Manipulate re-render when any control has an `Enabled -> Dynamic[…]`
-  // option, so a control can grey itself out for the current state.
+  // option, so a control can gray itself out for the current state.
   if (type === "evaluate_manipulate_enabled") {
     if (!wasm) return
     try {

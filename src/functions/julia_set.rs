@@ -1,7 +1,7 @@
 //! `JuliaSetPlot[c]` and `JuliaSetPlot[f, z]`: the filled Julia set of
 //! `z^2 + c` (or of the polynomial `f`) by escape time, as a `Graphics` of
 //! one `Raster`. Points whose orbit stays within the escape radius for the
-//! whole iteration budget are black; the others are coloured by how many
+//! whole iteration budget are black; the others are colored by how many
 //! steps they took to leave, through the same palette as wolframscript.
 
 use crate::InterpreterError;
@@ -36,7 +36,7 @@ const ESCAPE_RADIUS: f64 = 3.0;
 /// Raster columns (or rows, for a domain taller than wide).
 const RESOLUTION: usize = 501;
 
-/// wolframscript's colours for escape after `n` steps, `n = 1, 2, …`
+/// wolframscript's colors for escape after `n` steps, `n = 1, 2, …`
 /// (from blue through purple to orange).
 const PALETTE: [(f64, f64, f64); 49] = [
   (0.4065135971340173, 0.5398078488845466, 0.7788308093144439),
@@ -295,7 +295,7 @@ pub fn julia_set_plot_ast(
       },
     }
   };
-  // Rows from the bottom up, each pixel sampled at its centre.
+  // Rows from the bottom up, each pixel sampled at its center.
   let data: Vec<Expr> = (0..rows)
     .map(|i| {
       let y = y0 + (y1 - y0) * (i as f64 + 0.5) / rows as f64;

@@ -2473,7 +2473,7 @@ mod factor_list {
     );
   }
 
-  /// wolframscript normalises every factor to a positive leading
+  /// wolframscript normalizes every factor to a positive leading
   /// coefficient and moves the sign into the unit entry. A factor whose
   /// numeric content is ±1 — `Factor[-(1 + x)]` is the bare sum `-1 - x` —
   /// used to keep the sign, giving `{{1, 1}, {-1 - x, 1}}`. Found by the
@@ -2524,10 +2524,10 @@ mod factor_list {
     );
   }
 
-  /// A denominator factor is normalised too, and its negative exponent is
+  /// A denominator factor is normalized too, and its negative exponent is
   /// odd, so it flips the unit as well.
   #[test]
-  fn denominator_factors_are_normalised() {
+  fn denominator_factors_are_normalized() {
     assert_eq!(
       interpret("FactorList[-(1 + x)/(2 + x)]").unwrap(),
       "{{-1, 1}, {1 + x, 1}, {2 + x, -1}}"
@@ -2669,7 +2669,7 @@ mod cancel {
   // lowering operator annihilates the oscillator ground state (Demonstration
   // EnergyLevelsOfAQuantumHarmonicOscillatorInSecondQuantization).
   // Radicals of one symbolic base cancel as powers of its root, sums are
-  // cancelled term by term, and Simplify uses both: the number operator
+  // canceled term by term, and Simplify uses both: the number operator
   // gives the level n for every oscillator eigenstate, quickly — the
   // heuristic gcd of the six-variable quotients D cancels is bounded
   // instead of retrying 6^depth images.
@@ -3709,7 +3709,7 @@ mod together {
       interpret("Together[(x^2 - 4)/(x^2 - x - 2)]").unwrap(),
       "(2 + x)/(1 + x)"
     );
-    // No common factor: the fraction is left combined but uncancelled.
+    // No common factor: the fraction is left combined but uncanceled.
     assert_eq!(
       interpret("Together[(2 x)/(x^2 - 1)]").unwrap(),
       "(2*x)/(-1 + x^2)"
@@ -4457,7 +4457,7 @@ mod apart {
   // A removable factor (the numerator cancels one root) leaves only the
   // surviving partial fraction: (x - 3)/((x - 3)(x + 1)) = 1/(x + 1).
   #[test]
-  fn apart_cancelling_factor() {
+  fn apart_canceling_factor() {
     assert_eq!(
       interpret("Apart[(x - 3)/(x^2 - 2 x - 3)]").unwrap(),
       "(1 + x)^(-1)"
@@ -5730,7 +5730,7 @@ mod solve {
   //   * a `Part` counts as constant with respect to a variable
   //     (`is_constant_wrt`), or the linear-system path refuses the system;
   //   * `Simplify` can cancel a quotient whose "variables" are opaque
-  //     subexpressions, or the answer comes back as the uncancelled
+  //     subexpressions, or the answer comes back as the uncanceled
   //     quotients Gaussian elimination produced;
   //   * the elimination fallback must not recurse into itself — it used to
   //     re-spell the equation list as a conjunction and retry `Solve`,
@@ -5957,9 +5957,9 @@ mod solve {
   }
 
   #[test]
-  fn nsolve_quadratic_system_with_large_cancelling_terms() {
+  fn nsolve_quadratic_system_with_large_canceling_terms() {
     // The eliminant's terms are ~1e15 while its value at a root is O(1), so
-    // the residual check must weigh the cancelled terms, not the sum.
+    // the residual check must weigh the canceled terms, not the sum.
     clear_state();
     assert_eq!(
       interpret(
@@ -6518,7 +6518,7 @@ y^2]^3)) y}, {x, y}]; \
 
   // Regression: a rational equation whose denominator is a repeated linear
   // factor lost its roots (or reported "all values") once `Together` left the
-  // factors uncancelled.
+  // factors uncanceled.
   #[test]
   fn solve_rational_equation_repeated_denominator_factor() {
     assert_eq!(
@@ -6778,7 +6778,7 @@ y^2]^3)) y}, {x, y}]; \
     );
   }
 
-  // Points at distance 2 from two centres: the intersection of two circles.
+  // Points at distance 2 from two centers: the intersection of two circles.
   #[test]
   fn solve_equidistant_norms() {
     assert_eq!(
@@ -8612,7 +8612,7 @@ mod simplify_assumptions {
 
   // Regression (mathics test_assumptions.py:22): `Assuming[var == value,
   // Integrate[...]]` substitutes `var → value` in the Integrate body
-  // before evaluating, so the definite integral specialises to the
+  // before evaluating, so the definite integral specializes to the
   // concrete numeric result.
   #[test]
   fn assuming_eq_one_integrate_x_n() {
@@ -8641,7 +8641,7 @@ mod simplify_assumptions {
   // Under an inequality assumption `n > 0`, the lower-limit boundary term
   // `0^(1 + n)` resolves to 0 (Re[1 + n] > 0), so the symbolic power integral
   // simplifies to `1/(1 + n)` — matching wolframscript. Both the `Assuming`
-  // wrapper and the `Assumptions ->` option must honour this.
+  // wrapper and the `Assumptions ->` option must honor this.
   #[test]
   fn assuming_positive_integrate_x_n() {
     assert_eq!(
@@ -10338,7 +10338,7 @@ mod reduce {
       interpret("Reduce[x^4 - 1 >= 0, x]").unwrap(),
       "x <= -1 || x >= 1"
     );
-    // A double root with no satisfied neighbourhood is an isolated point.
+    // A double root with no satisfied neighborhood is an isolated point.
     assert_eq!(interpret("Reduce[(x - 1)^2 <= 0, x]").unwrap(), "x == 1");
   }
 
@@ -10865,7 +10865,7 @@ mod nsolve {
   }
 }
 
-// NSolveValues is the numeric analogue of SolveValues: it returns the variable
+// NSolveValues is the numeric analog of SolveValues: it returns the variable
 // values from NSolve rather than the {var -> value} rules. Verified against
 // wolframscript.
 mod nsolve_values {
@@ -11817,7 +11817,7 @@ mod find_root {
 
   // Regression: the documented multivariate calling convention —
   // `FindRoot[{eqns}, {x, x0}, {y, y0}, ...]`, each variable spec its own
-  // trailing argument — was not recognised as multivariate at all. Only the
+  // trailing argument — was not recognized as multivariate at all. Only the
   // single-list form `{{x, x0}, {y, y0}}` was detected, so this call fell
   // through to the single-variable path, which built a "function" out of
   // the whole two-equation list and failed with FindRoot::nlnum ("not a
@@ -11901,7 +11901,7 @@ mod find_root {
   // ...}; FindRoot[sys, initguess]` — the idiom collocation methods use to
   // build a long spec list programmatically) reached find_root_ast as bare
   // unevaluated identifiers rather than literal lists, so neither the
-  // equations nor the variable specs were ever recognised.
+  // equations nor the variable specs were ever recognized.
   #[test]
   fn equations_and_spec_passed_by_name() {
     assert_eq!(
@@ -11964,7 +11964,7 @@ mod find_root {
   fn piecewise_guarded_interpolation() {
     use woxi::interpret_with_stdout;
     // The shape a Demonstration uses to solve for a vehicle's top speed: a
-    // tabulated curve wrapped in a `Piecewise` range guard, maximised over a
+    // tabulated curve wrapped in a `Piecewise` range guard, maximized over a
     // set of gear ratios, minus a drag term. Neither the `Piecewise` nor the
     // `Max` survives symbolic differentiation, so the whole solve rides on the
     // numeric-derivative fallback.
@@ -14737,7 +14737,7 @@ mod refine {
     assert_eq!(interpret("Refine[Max[a, b], b < a]").unwrap(), "a");
     // Simplify accepts assumptions the same way.
     assert_eq!(interpret("Simplify[Max[a, b], a > b]").unwrap(), "a");
-    // x > 0 orders Max[x, 0] (which canonicalises to Max[0, x]).
+    // x > 0 orders Max[x, 0] (which canonicalizes to Max[0, x]).
     assert_eq!(interpret("Refine[Max[x, 0], x > 0]").unwrap(), "x");
     assert_eq!(interpret("Refine[Min[x, 0], x > 0]").unwrap(), "0");
     // No ordering known -> unchanged.
@@ -16654,7 +16654,7 @@ mod find_instance {
   #[test]
   fn linear_system_over_the_reals() {
     // Equations eliminate variables; the largest slack of the strict
-    // inequalities centres the instance.
+    // inequalities centers the instance.
     assert_eq!(
       interpret(
         "FindInstance[{x + y == 2, x > 0, y > 0, x < 1}, {x, y}, Reals]"
@@ -18902,7 +18902,7 @@ mod cases {
     assert_case(r#"Numerator[x^2]"#, r#"x^2"#);
   }
   // A negative RATIONAL exponent (x^(-1/2) = 1/Sqrt[x]) is also a denominator
-  // power. Previously negate_if_negative did not recognise Rational[-n, d].
+  // power. Previously negate_if_negative did not recognize Rational[-n, d].
   #[test]
   fn denominator_negative_rational_power() {
     assert_case(r#"Denominator[x^(-1/2)]"#, r#"Sqrt[x]"#);
@@ -21498,7 +21498,7 @@ mod sqrt_ratio_combination {
     assert_eq!(interpret("Sqrt[2]/Sqrt[3*Pi]").unwrap(), "Sqrt[2/(3*Pi)]");
   }
 
-  // The merged radicand must be canonicalised: Sqrt[2/Pi]/Sqrt[5] has a
+  // The merged radicand must be canonicalized: Sqrt[2/Pi]/Sqrt[5] has a
   // numerator base of 2/Pi, and dividing it by 5 must reduce to 2/(5*Pi)
   // rather than leaving the unreduced (2*Pi^(-1))/5 inside the Sqrt.
   #[test]
@@ -23075,7 +23075,7 @@ mod power_denominators_survive_simplify {
   /// A denominator that genuinely shares a factor with the numerator still
   /// cancels — the power form is only restored when nothing reduced.
   #[test]
-  fn a_cancelling_power_denominator_still_reduces() {
+  fn a_canceling_power_denominator_still_reduces() {
     assert_eq!(
       interpret("Simplify[(x^2 - 1)/(x - 1)^2]").unwrap(),
       "(1 + x)/(-1 + x)"
@@ -23139,7 +23139,7 @@ mod nested_product_expansion_stays_bounded {
   ///
   /// Found by the nightly fuzzer, which reported it as an interpreter hang.
   /// These cases are the regression guard: the assertions are cheap, but a
-  /// return to the old behaviour makes them take minutes.
+  /// return to the old behavior makes them take minutes.
   #[test]
   fn a_symbolic_ordinate_does_not_blow_up_the_intermediate() {
     let pts = "{{0,1},{1,6},{2,17},{3,34},{4,57},{5,q},{6,121},{7,162},\
@@ -23675,7 +23675,7 @@ mod solve_with_max_min {
 
   #[test]
   fn inexact_quartic_system_does_not_overflow() {
-    // CentreDunTriangleequilateralCirconscritaUneParaboleFrench: solving the
+    // CenterDunTriangleequilateralCirconscritaUneParaboleFrench: solving the
     // rationalized system multiplied two machine-size integers past i128.
     let v = interpret(
       r#"eq1[a_,b_,x_,y_] :=(((a)^(2)) (1+Sqrt[3] y)==((1)/(2)) (Sqrt[3]-2 b) b x+a (x+Sqrt[3] b x-((Sqrt[3] y)/(2))+b y));eq2[a_,b_,x_,y_] :=(a ((2-2 Sqrt[3] b) x+(Sqrt[3]+2 b) y+2 a (-1+Sqrt[3] y))==b (Sqrt[3]+2 b) x); eq3[a_,b_,x_,y_] :=(27 ((a)^(2))+36 ((a)^(3))+12 ((a)^(4))-18 Sqrt[3] a b-36 Sqrt[3] ((a)^(2)) b-16 Sqrt[3] ((a)^(3)) b+9 ((b)^(2))-12 a ((b)^(2))-8 ((a)^(2)) ((b)^(2))+12 Sqrt[3] ((b)^(3))+16 Sqrt[3] a ((b)^(3))+12 ((b)^(4))+(2 ((a)^(2))+24 ((a)^(3))+72 ((a)^(4))+4 Sqrt[3] a b+40 Sqrt[3] ((a)^(2)) b+96 Sqrt[3] ((a)^(3)) b+6 ((b)^(2))+56 a ((b)^(2))+144 ((a)^(2)) ((b)^(2))+8 Sqrt[3] ((b)^(3))+32 Sqrt[3] a ((b)^(3))+8 ((b)^(4))) x+(-6 Sqrt[3] ((a)^(2))-40 Sqrt[3] ((a)^(3))-24 Sqrt[3] ((a)^(4))-12 a b-40 ((a)^(2)) b+6 Sqrt[3] ((b)^(2))+24 Sqrt[3] a ((b)^(2))+48 Sqrt[3] ((a)^(2)) ((b)^(2))+24 ((b)^(3))+64 a ((b)^(3))+8 Sqrt[3] ((b)^(4))) y==0); g[al_] := Module[{x,y},(Plus @@ Map[({x,y}/.First[Solve[#]]&), {{eq1[al,Sqrt[3al^2+5al+3/4],x,y], eq2[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq2[al,Sqrt[3al^2+5al+3/4],x,y], eq3[al,Sqrt[3al^2+5al+3/4],x,y]}, {eq3[al,Sqrt[3al^2+5al+3/4],x,y], eq1[al,Sqrt[3al^2+5al+3/4],x,y]}}])/3]; g[-0.16]"#,
@@ -24743,7 +24743,7 @@ mod rational_equation_systems {
   // An exact algebraic difference that cancels to 0 in machine arithmetic
   // only to rounding noise is equal to 0, judged against its terms.
   #[test]
-  fn equal_of_a_cancelling_radical_expression() {
+  fn equal_of_a_canceling_radical_expression() {
     assert_eq!(
       interpret(
         "a0 = -1/3*Sqrt[459166902557462217177787456152124786724708855/60525454535147937288340513937925780045854903]; \

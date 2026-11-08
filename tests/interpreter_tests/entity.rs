@@ -404,7 +404,7 @@ mod city_data_tests {
   }
 
   #[test]
-  fn qualified_city_names_disambiguate_the_catalogue() {
+  fn qualified_city_names_disambiguate_the_catalog() {
     assert_eq!(
       interpret("CityData[{\"Paris\", \"Texas\", \"UnitedStates\"}]").unwrap(),
       "Entity[City, {Paris, Texas, UnitedStates}]"

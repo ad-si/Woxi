@@ -387,7 +387,7 @@ fn centered_interval_real_passthrough() {
 
 #[test]
 fn centered_interval_intersection_real() {
-  // Real centered intervals: [4, 6] ∩ [5, 9] = [5, 6] → centre 11/2, radius 1/2.
+  // Real centered intervals: [4, 6] ∩ [5, 9] = [5, 6] → center 11/2, radius 1/2.
   assert_eq!(
     interpret(
       "IntervalIntersection[CenteredInterval[5, 1], CenteredInterval[7, 2]]"
@@ -399,7 +399,7 @@ fn centered_interval_intersection_real() {
 
 #[test]
 fn centered_interval_union_real() {
-  // Smallest centred interval containing both: span [4, 9] → centre 13/2, radius 5/2.
+  // Smallest centered interval containing both: span [4, 9] → center 13/2, radius 5/2.
   assert_eq!(
     interpret("IntervalUnion[CenteredInterval[5, 1], CenteredInterval[7, 2]]")
       .unwrap(),
@@ -409,10 +409,10 @@ fn centered_interval_union_real() {
 
 #[test]
 fn centered_interval_complex_intersection_audit_case() {
-  // The audit case: rectangular centred intervals in the complex plane.
+  // The audit case: rectangular centered intervals in the complex plane.
   //   B₁: c=2+3i, r=1+i  → Re∈[1, 3], Im∈[2, 4]
   //   B₂: c=1+i,  r=2+2i → Re∈[-1, 3], Im∈[-1, 3]
-  // Intersection: Re∈[1, 3], Im∈[2, 3] → centre 2 + 5/2·i, radii (1, 1/2).
+  // Intersection: Re∈[1, 3], Im∈[2, 3] → center 2 + 5/2·i, radii (1, 1/2).
   assert_eq!(
     interpret(
       "IntervalIntersection[CenteredInterval[2 + 3*I, 1 + I], \
@@ -426,7 +426,7 @@ fn centered_interval_complex_intersection_audit_case() {
 #[test]
 fn centered_interval_complex_union_audit_case() {
   // Smallest axis-aligned box covering both:
-  //   Re∈[-1, 3], Im∈[-1, 4] → centre 1 + 3/2·i, radii (2, 5/2).
+  //   Re∈[-1, 3], Im∈[-1, 4] → center 1 + 3/2·i, radii (2, 5/2).
   assert_eq!(
     interpret(
       "IntervalUnion[CenteredInterval[2 + 3*I, 1 + I], \

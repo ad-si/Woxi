@@ -408,8 +408,8 @@ mod element_data_tests {
   }
 
   #[test]
-  fn element_data_recognised_property_without_data_returns_not_available() {
-    // SpecificHeat, Density, IonizationEnergies, etc. are recognised by name
+  fn element_data_recognized_property_without_data_returns_not_available() {
+    // SpecificHeat, Density, IonizationEnergies, etc. are recognized by name
     // but not tabulated — return Missing[NotAvailable] rather than NotFound.
     assert_eq!(
       interpret(r#"ElementData["Tc", "SpecificHeat"]"#).unwrap(),
@@ -508,7 +508,7 @@ mod element_data_tests {
   }
 
   // Properties the "Properties of Chemical Elements" Demonstration's control
-  // panel offers alongside the already-tabulated ones — recognised (so the
+  // panel offers alongside the already-tabulated ones — recognized (so the
   // Manipulate's Map over the whole property list doesn't leave any of them
   // unevaluated) but not yet backed by real per-element data, matching the
   // existing treatment of e.g. `Density`/`SpecificHeat` above. Checked

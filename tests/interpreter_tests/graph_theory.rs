@@ -645,7 +645,7 @@ mod adjacency_graph_from_matrix {
 /// three or more such pairs the list used to stay an unevaluated `Graph[…]`
 /// (it was only mistaken for an adjacency matrix when square), and
 /// `EdgeRenderingFunction` never received the label as its third argument.
-mod graph_plot_labelled_edges {
+mod graph_plot_labeled_edges {
   use super::*;
 
   #[test]
@@ -950,7 +950,7 @@ mod graph_embedding {
   #[test]
   fn complete_graph_4() {
     assert_eq!(
-      // A triangle around its centre (`"StarEmbedding"`).
+      // A triangle around its center (`"StarEmbedding"`).
       interpret("GraphEmbedding[CompleteGraph[4]]").unwrap(),
       "{{0., 0.}, {0.8660254037844384, -0.5}, {0., 1.}, {-0.8660254037844392, -0.5}}"
     );
@@ -1304,7 +1304,7 @@ mod graph_rendering {
 
   #[test]
   fn undirected_graph_renders() {
-    // Graph summarises as `<vertex_count>, <edge_count>`.
+    // Graph summarizes as `<vertex_count>, <edge_count>`.
     assert_eq!(
       interpret("Graph[{1  2, 2  3, 3  1}]").unwrap(),
       "Graph[<3>, <3>]"
@@ -1391,7 +1391,7 @@ mod graph_rendering {
 
   #[test]
   fn graph_labeled_edge_label_is_black() {
-    // Regression: edge labels previously inherited the edge's grey stroke
+    // Regression: edge labels previously inherited the edge's gray stroke
     // color instead of being rendered in black.
     let result = interpret(
       "ExportString[Graph[{1 <-> 2, 2 <-> 3, Labeled[3 <-> 1, \"hello\"]}, VertexLabels -> \"Name\"], \"SVG\"]"
@@ -2924,9 +2924,9 @@ mod find_shortest_path {
   }
 
   #[test]
-  fn ties_favour_lower_numbered_vertices() {
+  fn ties_favor_lower_numbered_vertices() {
     // Two equal-length paths exist around the cycle; wolframscript returns
-    // the lexicographically smallest one (favouring lower vertices).
+    // the lexicographically smallest one (favoring lower vertices).
     assert_eq!(
       interpret("FindShortestPath[CycleGraph[6], 1, 4]").unwrap(),
       "{1, 2, 3, 4}"
@@ -2935,7 +2935,7 @@ mod find_shortest_path {
       interpret("FindShortestPath[CycleGraph[8], 1, 5]").unwrap(),
       "{1, 2, 3, 4, 5}"
     );
-    // From 2 the smallest neighbour is 1, so the path wraps the low side.
+    // From 2 the smallest neighbor is 1, so the path wraps the low side.
     assert_eq!(
       interpret("FindShortestPath[CycleGraph[6], 2, 5]").unwrap(),
       "{2, 1, 6, 5}"
@@ -4428,7 +4428,7 @@ mod highlight_graph {
     ))
     .unwrap();
     // Vertices 1 and 2 plus the edge between them (the vertices are
-    // outlined in the highlight colour too).
+    // outlined in the highlight color too).
     assert_eq!(svg.matches("fill=\"rgb(179,0,0)\"").count(), 2);
     assert_eq!(svg.matches("stroke=\"rgb(179,0,0)\"").count(), 3);
   }
@@ -4863,7 +4863,7 @@ mod graph_predicates {
   }
 
   // FindEulerianCycle: Hierholzer from the first vertex, taking the
-  // highest-ranked available neighbour (reproduces wolframscript's cycle).
+  // highest-ranked available neighbor (reproduces wolframscript's cycle).
   #[test]
   fn find_eulerian_cycle() {
     assert_eq!(
@@ -5504,10 +5504,10 @@ mod graph_metrics {
   }
 
   // MeanDegreeConnectivity[g] gives, for each degree k = 0, 1, 2, ..., the mean
-  // average neighbour degree over vertices of degree k.
+  // average neighbor degree over vertices of degree k.
   #[test]
   fn mean_degree_connectivity_undirected() {
-    // Star: leaves (degree 1) see the degree-3 centre; the centre sees leaves.
+    // Star: leaves (degree 1) see the degree-3 center; the center sees leaves.
     assert_eq!(
       interpret("MeanDegreeConnectivity[StarGraph[4]]").unwrap(),
       "{0, 3, 0, 1}"
@@ -5519,7 +5519,7 @@ mod graph_metrics {
   }
 
   // Directed graphs use total (in+out) degree; every edge makes its endpoints
-  // neighbours regardless of direction.
+  // neighbors regardless of direction.
   #[test]
   fn mean_degree_connectivity_directed() {
     assert_eq!(
@@ -5732,15 +5732,15 @@ mod graph_metrics {
     );
   }
 
-  // MeanNeighborDegree[g] gives, per vertex, the mean degree of its neighbours.
+  // MeanNeighborDegree[g] gives, per vertex, the mean degree of its neighbors.
   #[test]
   fn mean_neighbor_degree() {
-    // Every C5 vertex has two degree-2 neighbours.
+    // Every C5 vertex has two degree-2 neighbors.
     assert_eq!(
       interpret("MeanNeighborDegree[CycleGraph[5]]").unwrap(),
       "{2, 2, 2, 2, 2}"
     );
-    // Star: the centre sees degree-1 leaves; each leaf sees the degree-3 centre.
+    // Star: the center sees degree-1 leaves; each leaf sees the degree-3 center.
     assert_eq!(
       interpret("MeanNeighborDegree[StarGraph[4]]").unwrap(),
       "{1, 3, 3, 3}"
@@ -5757,7 +5757,7 @@ mod graph_metrics {
       .unwrap(),
       "{5/2, 5/2, 5/3, 3}"
     );
-    // An isolated vertex has mean neighbour degree 0.
+    // An isolated vertex has mean neighbor degree 0.
     assert_eq!(
       interpret("MeanNeighborDegree[Graph[{1, 2, 3}, {1 <-> 2}]]").unwrap(),
       "{1, 1, 0}"
@@ -6535,7 +6535,7 @@ mod katz_centrality {
     );
   }
 
-  // Katz gains centrality from in-neighbours, so directed edges matter: on a
+  // Katz gains centrality from in-neighbors, so directed edges matter: on a
   // directed path each vertex accumulates alpha^k from k steps upstream.
   #[test]
   fn directed_uses_in_edges() {
@@ -6546,7 +6546,7 @@ mod katz_centrality {
       .unwrap(),
       "{1, 11/10, 111/100, 1111/1000}"
     );
-    // A shared target gains from both its in-neighbours.
+    // A shared target gains from both its in-neighbors.
     assert_eq!(
       interpret(
         "Round[KatzCentrality[Graph[{1 -> 3, 2 -> 3, 3 -> 4}], 0.2], 10^-6]"
@@ -7730,14 +7730,14 @@ mod graph_annotations {
   }
 
   /// The graph the annotation tests below read from: two of its three
-  /// vertices are labelled, one vertex is styled and one of its two edges is.
+  /// vertices are labeled, one vertex is styled and one of its two edges is.
   const ANNOTATED: &str = "Graph[{1 -> 2, 2 -> 3}, \
      VertexLabels -> {1 -> \"a\", 2 -> \"b\"}, \
      EdgeStyle -> {DirectedEdge[1, 2] -> Red}, VertexStyle -> {1 -> Blue}]";
 
   /// The same graph with a single label, so that every annotation it carries
   /// names exactly one item.
-  const LABELLED: &str = "Graph[{1 -> 2, 2 -> 3}, \
+  const LABELED: &str = "Graph[{1 -> 2, 2 -> 3}, \
      VertexLabels -> {1 -> \"a\"}, \
      EdgeStyle -> {DirectedEdge[1, 2] -> Red}]";
 
@@ -7898,15 +7898,15 @@ mod graph_annotations {
     clear_state();
     for (code, expected) in [
       // Without a key every annotation goes.
-      (format!("Options[AnnotationDelete[{LABELLED}]]"), "{}"),
+      (format!("Options[AnnotationDelete[{LABELED}]]"), "{}"),
       // With one only that key does; the rest keep their values.
       (
-        format!("Options[AnnotationDelete[{LABELLED}, VertexLabels]]"),
+        format!("Options[AnnotationDelete[{LABELED}, VertexLabels]]"),
         "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}}",
       ),
       (
         format!(
-          "Options[AnnotationDelete[{LABELLED}, {{VertexLabels, EdgeStyle}}]]"
+          "Options[AnnotationDelete[{LABELED}, {{VertexLabels, EdgeStyle}}]]"
         ),
         "{}",
       ),
@@ -7929,7 +7929,7 @@ mod graph_annotations {
       ),
       (
         format!(
-          "Options[AnnotationDelete[{{{LABELLED}, DirectedEdge[1, 2]}}, \
+          "Options[AnnotationDelete[{{{LABELED}, DirectedEdge[1, 2]}}, \
            EdgeStyle]]"
         ),
         "{VertexLabels -> {1 -> \"a\"}}",
@@ -7963,7 +7963,7 @@ mod graph_annotations {
   fn graph_options_are_named_in_alphabetical_order() {
     clear_state();
     assert_eq!(
-      interpret(&format!("ToString[Options[{LABELLED}], InputForm]")).unwrap(),
+      interpret(&format!("ToString[Options[{LABELED}], InputForm]")).unwrap(),
       "{EdgeStyle -> {DirectedEdge[1, 2] -> RGBColor[1, 0, 0]}, \
        VertexLabels -> {1 -> \"a\"}}"
         .replace("       ", "")
@@ -8167,12 +8167,12 @@ mod topological_sort {
 // GraphData backs itself with a self-contained slice of the Wolfram
 // Knowledgebase graph atlas (see src/functions/graph_data.rs) rather than the
 // full ~12500-entry enumeration. Everything it does carry uses Wolfram's own
-// names, vertex labelling and edge order, so the two agree entry for entry.
+// names, vertex labeling and edge order, so the two agree entry for entry.
 mod graph_data {
   use super::*;
 
   // The icosahedron and dodecahedron skeletons, in the Knowledgebase's
-  // vertex labelling (Demonstration GolayCode builds a code from the
+  // vertex labeling (Demonstration GolayCode builds a code from the
   // icosahedral adjacency matrix).
   #[test]
   fn platonic_skeletons() {
@@ -8276,12 +8276,12 @@ mod graph_data {
     assert_eq!(result, "True");
   }
 
-  // Vertex labelling follows Wolfram's, so the edge rules match rule for
-  // rule — including the ones that are *not* the obvious labelling: the
+  // Vertex labeling follows Wolfram's, so the edge rules match rule for
+  // rule — including the ones that are *not* the obvious labeling: the
   // Petersen graph's outer cycle is not 1-2-3-4-5, a star's hub is its
   // *last* vertex, and a cycle's wrap-around edge sorts second.
   #[test]
-  fn edge_rules_follow_wolframs_vertex_labelling() {
+  fn edge_rules_follow_wolframs_vertex_labeling() {
     assert_eq!(
       interpret("GraphData[{\"Complete\", 4}, \"EdgeRules\"]").unwrap(),
       "{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 3, 2 -> 4, 3 -> 4}"
@@ -8442,7 +8442,7 @@ mod graph_utilities_package {
   }
 
   // The package's search: depth first from the first vertex, each vertex
-  // trying its in-neighbours (ascending) and then its out-neighbours (in the
+  // trying its in-neighbors (ascending) and then its out-neighbors (in the
   // order the rules give them); a symmetric graph as stored. Every cycle is
   // found once per orientation.
   #[test]
@@ -8473,7 +8473,7 @@ mod graph_utilities_package {
        {{1, 3, 2, 4}, {1, 4, 2, 3}}}"
     );
     // The search starts at the first vertex of the rules (2) and takes the
-    // out-neighbours in rule order (2 -> 1 comes before any other).
+    // out-neighbors in rule order (2 -> 1 comes before any other).
     assert_eq!(
       interpret(
         "HamiltonianCycles[{2 -> 1, 3 -> 2, 1 -> 3, 1 -> 5, 4 -> 1, 5 -> 4, \
@@ -8487,7 +8487,7 @@ mod graph_utilities_package {
 
   // The cycle is the first in search order even where that order runs into
   // long dead ends; the search prunes them (each remaining vertex needs two
-  // open neighbours and the rest must be biconnected) without reordering.
+  // open neighbors and the rest must be biconnected) without reordering.
   #[test]
   fn hamiltonian_cycles_of_large_polyhedra_match_the_package() {
     clear_state();
@@ -9125,7 +9125,7 @@ mod degree_and_spatial_graph_distributions {
   }
 }
 
-/// `Background -> colour` on `Graph` / `GraphPlot` paints the panel behind
+/// `Background -> color` on `Graph` / `GraphPlot` paints the panel behind
 /// the drawing instead of being ignored.
 mod graph_background {
   use super::*;
@@ -9196,7 +9196,7 @@ mod graph_hub {
   use super::*;
 
   #[test]
-  fn undirected_counts_distinct_neighbours() {
+  fn undirected_counts_distinct_neighbors() {
     // Self-loops and repeated edges do not count.
     assert_eq!(
       interpret(
@@ -9262,7 +9262,7 @@ mod wolfram_graph_look {
   }
 
   #[test]
-  fn default_colours_and_opacities() {
+  fn default_colors_and_opacities() {
     let out = svg("Graph[{1 <-> 2, 2 <-> 3}]");
     // Hue[0.6, 0.5, 1] vertices outlined in GrayLevel[0] at Opacity[0.7].
     assert_eq!(out.matches("fill=\"rgb(128,179,255)\"").count(), 3);
@@ -9524,7 +9524,7 @@ mod wolfram_graph_layouts {
   }
 
   #[test]
-  fn a_tree_is_drawn_tidily_from_its_centre() {
+  fn a_tree_is_drawn_tidily_from_its_center() {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 <-> 2, 1 <-> 3, 2 <-> 4, 2 <-> 5}]]")
         .unwrap(),
@@ -9637,7 +9637,7 @@ mod circular_embedding_order {
   }
 
   #[test]
-  fn cycles_run_from_the_latest_neighbour() {
+  fn cycles_run_from_the_latest_neighbor() {
     // Values from wolframscript.
     assert_eq!(
       order(
@@ -9656,7 +9656,7 @@ mod circular_embedding_order {
   }
 
   #[test]
-  fn the_walk_prefers_the_highest_numbered_neighbour() {
+  fn the_walk_prefers_the_highest_numbered_neighbor() {
     // Not the most recently listed edge: the walk from 1 tries 4 before 3
     // and 2, and from 4 tries 3 before 2.
     assert_eq!(
@@ -9792,7 +9792,7 @@ mod graph_arrow_edges {
     let back = head[1];
     assert!((tip.0 - back.0 - 12.0).abs() < 0.05, "{head:?}");
     let end = line[line.len() - 1];
-    // The round cap extends half a point past the centreline endpoint.
+    // The round cap extends half a point past the centerline endpoint.
     let painted_end = end.0 + 0.5;
     assert!(
       (tip.0 - painted_end - 10.89).abs() < 0.05,
@@ -9889,8 +9889,8 @@ mod graph_arrow_edges {
       let end = out.find(&format!(">{name}</text>")).unwrap();
       out[out[..end].rfind("<text").unwrap()..end].to_string()
     };
-    // The centre keeps its ordinary label position. Outer vertices on
-    // either side align their labels away from the centre.
+    // The center keeps its ordinary label position. Outer vertices on
+    // either side align their labels away from the center.
     assert!(label("1").contains("text-anchor=\"start\""), "{out}");
     assert!(label("2").contains("text-anchor=\"end\""), "{out}");
     assert!(label("6").contains("text-anchor=\"start\""), "{out}");
@@ -9957,19 +9957,19 @@ mod community_graph_plot {
     6 <-> 4, 3 <-> 4, 7 <-> 8, 8 <-> 9, 9 <-> 7, 6 <-> 7}]";
 
   #[test]
-  fn rings_each_community_and_colours_its_vertices() {
+  fn rings_each_community_and_colors_its_vertices() {
     let out = interpret(&format!(
       "ExportString[CommunityGraphPlot[{GRAPH}, {{{{1, 2, 3}}, {{4, 5, 6}}, \
        {{7, 8, 9}}}}], \"SVG\"]"
     ))
     .unwrap();
-    // Three grey rings, unfilled.
+    // Three gray rings, unfilled.
     assert_eq!(
       out.matches("stroke=\"rgb(128,128,128)\"").count(),
       3,
       "{out}"
     );
-    // Wolfram's community colours: Hue[0, 1, 0.8], Hue[0.14, 1, 0.9],
+    // Wolfram's community colors: Hue[0, 1, 0.8], Hue[0.14, 1, 0.9],
     // Hue[0.8, 0.6, 0.8].
     assert_eq!(out.matches("fill=\"rgb(204,0,0)\"").count(), 3, "{out}");
     assert_eq!(out.matches("fill=\"rgb(230,193,0)\"").count(), 3, "{out}");

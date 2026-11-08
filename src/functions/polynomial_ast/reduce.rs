@@ -507,7 +507,7 @@ fn enumerate_integer_interval(result: &Expr, var: &str) -> Option<Expr> {
 /// `op` one of `<`, `<=`, `>`, `>=` — return its `(lower, upper)` integer
 /// contributions (either may be `None`). Returns `None` for anything that is
 /// not a linear bound on the bare variable (e.g. `Mod[x, n] == k`, `x != v`,
-/// `x^2 < 10`), signalling an "extra" constraint to the caller.
+/// `x^2 < 10`), signaling an "extra" constraint to the caller.
 fn numeric_var_bounds(
   c: &Expr,
   var: &str,
@@ -1719,7 +1719,7 @@ fn reduce_not_equal(
   })
 }
 
-/// Recognise `ArcXxxDegrees[var] CompOp const_degrees` and invert it.
+/// Recognize `ArcXxxDegrees[var] CompOp const_degrees` and invert it.
 /// Returns Some(reduced) when the pattern matches and the inversion has a
 /// closed form, None otherwise.
 fn try_reduce_arc_degrees(
@@ -1827,7 +1827,7 @@ fn reduce_inequality(
   var: &str,
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
-  // Recognise `ArcXxxDegrees[var] CompOp const_degrees` directly — these
+  // Recognize `ArcXxxDegrees[var] CompOp const_degrees` directly — these
   // need transcendental inversion, not polynomial reduction.
   if let Some(result) = try_reduce_arc_degrees(lhs, rhs, op, var)? {
     return Ok(result);
@@ -2124,7 +2124,7 @@ fn extract_abs(expr: &Expr) -> Option<Expr> {
   }
 }
 
-/// Recognise `Abs[inner]` or `const * Abs[inner]` (the form `Abs[2 x]` takes
+/// Recognize `Abs[inner]` or `const * Abs[inner]` (the form `Abs[2 x]` takes
 /// after evaluation pulls the factor out: `2 Abs[x]`). Returns `(coeff, inner)`.
 fn extract_abs_term(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
   if let Some(inner) = extract_abs(expr) {
@@ -2172,7 +2172,7 @@ fn try_reduce_abs_inequality(
   if domain != Some("Reals") {
     return None;
   }
-  // Normalise to `coeff*Abs[inner] op bound`; flip if `Abs` is on the right.
+  // Normalize to `coeff*Abs[inner] op bound`; flip if `Abs` is on the right.
   let (coeff, inner, bound, op) =
     match (extract_abs_term(lhs, var), extract_abs_term(rhs, var)) {
       (Some((coeff, inner)), None) => (coeff, inner, rhs.clone(), op),
@@ -4380,7 +4380,7 @@ fn expanded_if_polynomial(value: &Expr, vars: &[String]) -> Expr {
   let head = if vanishing_denominators(value, &symbols).is_empty() {
     "Expand"
   } else {
-    // A quotient over a common denominator, its common factors cancelled:
+    // A quotient over a common denominator, its common factors canceled:
     // back-substitution leaves nested fractions (`24 a^2/((-3 + 8 a) (a +
     // 3 a/(-3 + 8 a)))` is 3).
     "Together"
@@ -4630,7 +4630,7 @@ fn try_reduce_exists_quadratic_linear(
   }
   let (gamma, delta) = extract_x_y_coeffs(&l_lhs, &var_names)?;
 
-  // The audit's pattern is α=1 (a constant) and β=param. Generalise by
+  // The audit's pattern is α=1 (a constant) and β=param. Generalize by
   // also accepting the swap (param appears as α). Bail out otherwise.
   let (alpha_const, beta_is_param) = (
     !contains_var(&alpha, &param),

@@ -1,6 +1,6 @@
 // Argument forms of the plot and chart functions found missing by the
 // reference-page parameter sweep (round 4). Graphics are checked by their
-// structure — primitives, labels, colours — not by their full SVG text.
+// structure — primitives, labels, colors — not by their full SVG text.
 
 use super::*;
 
@@ -101,11 +101,11 @@ mod chart_association_data {
 
   #[test]
   fn pie_chart_labels_and_legends_from_keys() {
-    let labelled = svg(
+    let labeled = svg(
       "PieChart[<|\"ka\" -> 1, \"kb\" -> 2, \"kc\" -> 5|>, \
        PlotLabels -> Automatic]",
     );
-    assert!(has_text(&labelled, "ka"), "{:?}", texts(&labelled));
+    assert!(has_text(&labeled, "ka"), "{:?}", texts(&labeled));
     let called_out = svg(
       "PieChart[<|\"ka\" -> 1, \"kb\" -> 2, \"kc\" -> 5|>, \
        PlotLabels -> Callout[Automatic]]",
@@ -303,7 +303,7 @@ mod list_point_plot_3d_datasets {
       "ListPointPlot3D[{Table[Sin[j/3], {i, 4}, {j, 4}], \
        Table[-Sin[j/3], {i, 4}, {j, 4}]}]",
     );
-    // 16 points per dataset, each dataset in its own colour.
+    // 16 points per dataset, each dataset in its own color.
     assert_eq!(fills(&s, "55,138,184"), 16, "{s}");
     assert_eq!(fills(&s, "218,144,33"), 16, "{s}");
   }
@@ -339,11 +339,11 @@ mod list_point_plot_3d_datasets {
 mod list_plot_3d_datasets {
   use super::*;
 
-  /// Facets whose colour is mostly green / yellow.
+  /// Facets whose color is mostly green / yellow.
   fn green_and_yellow(s: &str) -> (usize, usize) {
     let (mut green, mut yellow) = (0, 0);
     // A smoothly shaded facet is filled with a gradient: its first stop
-    // stands for its colour.
+    // stands for its color.
     let stop = |id: &str| -> Option<Vec<u32>> {
       let def = s.split(&format!("id=\"{id}\"")).nth(1)?;
       let hex = def.split("stop-color=\"#").nth(1)?;
@@ -520,7 +520,7 @@ mod discrete_plot_3d_forms {
   }
 
   #[test]
-  fn style_wrappers_colour_their_function() {
+  fn style_wrappers_color_their_function() {
     assert_eq!(
       interpret(
         "Cases[DiscretePlot3D[{i + j, Style[i - j, Green]}, {i, 2}, {j, 2}], \

@@ -8,8 +8,8 @@ $ wo 'PowerRange[1, 100]'
 ```
 
 Terms are kept while their magnitude stays inside the bound, and the factor
-sets the direction: one above `1` grows towards the bound, one below shrinks
-towards it.
+sets the direction: one above `1` grows toward the bound, one below shrinks
+toward it.
 
 ```scrut
 $ wo 'PowerRange[100, 1, 1/10]'

@@ -110,7 +110,7 @@ mod rosetta_script_fixes {
   }
 
   // In a rule/condition context (the RHS of `->`, `/.`, or a List item) the
-  // Map operator `/@` must be recognised before the bare arithmetic `/`,
+  // Map operator `/@` must be recognized before the bare arithmetic `/`,
   // otherwise `b /@ c` is mis-parsed as `b / (@c)` and the parse fails.
   // (ranking_methods)
   mod map_in_rule_context {

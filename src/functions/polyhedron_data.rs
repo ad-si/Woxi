@@ -180,8 +180,8 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     midradius: "(Sqrt[5] - 1)/4",
     // A Kepler-Poinsot star polyhedron: its 12 vertices are an
     // icosahedron's, shrunk by 1/GoldenRatio so the {5/2} chords between
-    // second neighbours have unit length. Each face is the pentagram
-    // through the five neighbours of one vertex (skip-one star order);
+    // second neighbors have unit length. Each face is the pentagram
+    // through the five neighbors of one vertex (skip-one star order);
     // 5 faces meet at each vertex, giving the {5/2, 5} Schläfli symbol.
     vertices_src: r#"{{0, 0, Root[5 - 20*#1^2 + 16*#1^4 & , 3, 0]}, {Sqrt[(5 + Sqrt[5])/10]/2, (1 - Sqrt[5])/4, Root[1 - 20*#1^2 + 80*#1^4 & , 3, 0]}, {-1/2*Sqrt[1 - 2/Sqrt[5]], 1/2, Root[1 - 20*#1^2 + 80*#1^4 & , 3, 0]}, {Sqrt[1 - 2/Sqrt[5]]/2, -1/2, Root[1 - 20*#1^2 + 80*#1^4 & , 2, 0]}, {Root[1 - 20*#1^2 + 80*#1^4 & , 1, 0], (-1 + Sqrt[5])/4, Root[1 - 20*#1^2 + 80*#1^4 & , 2, 0]}, {0, 0, Root[5 - 20*#1^2 + 16*#1^4 & , 2, 0]}, {Sqrt[(5 + Sqrt[5])/10]/2, (-1 + Sqrt[5])/4, Root[1 - 20*#1^2 + 80*#1^4 & , 3, 0]}, {Root[1 - 20*#1^2 + 80*#1^4 & , 1, 0], (1 - Sqrt[5])/4, Root[1 - 20*#1^2 + 80*#1^4 & , 2, 0]}, {-1/2*Sqrt[1 - 2/Sqrt[5]], -1/2, Root[1 - 20*#1^2 + 80*#1^4 & , 3, 0]}, {Root[1 - 5*#1^2 + 5*#1^4 & , 2, 0], 0, Root[1 - 20*#1^2 + 80*#1^4 & , 3, 0]}, {Root[1 - 5*#1^2 + 5*#1^4 & , 3, 0], 0, Root[1 - 20*#1^2 + 80*#1^4 & , 2, 0]}, {Sqrt[1 - 2/Sqrt[5]]/2, 1/2, Root[1 - 20*#1^2 + 80*#1^4 & , 2, 0]}}"#,
     faces_src: r#"{{2, 12, 1, 11, 3}, {10, 4, 1, 8, 2}, {3, 8, 1, 5, 9}, {9, 11, 1, 4, 7}, {7, 5, 1, 12, 10}, {7, 10, 2, 3, 9}, {4, 12, 2, 6, 7}, {9, 6, 2, 8, 11}, {7, 6, 3, 11, 5}, {12, 8, 3, 6, 10}, {9, 5, 4, 10, 6}, {8, 12, 4, 5, 11}}"#,
@@ -204,8 +204,8 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     midradius: "(Sqrt[5] - 1)/4",
     // A Kepler-Poinsot polyhedron on the same 12 vertices as the small
     // stellated dodecahedron (an icosahedron shrunk by 1/GoldenRatio, so
-    // second neighbours are a unit chord apart). Its 20 faces are the unit
-    // triangles formed by mutual second neighbours, five meeting at each
+    // second neighbors are a unit chord apart). Its 20 faces are the unit
+    // triangles formed by mutual second neighbors, five meeting at each
     // vertex ({3, 5/2}).
     vertices_src: r#"{{0, 0, -1/2*Sqrt[(5 - Sqrt[5])/2]}, {0, 0, Sqrt[(5 - Sqrt[5])/2]/2}, {Sqrt[1/8 + 1/(8*Sqrt[5])], -(1 + Sqrt[5])^(-1), -1/2*Sqrt[(5 - Sqrt[5])/10]}, {Sqrt[1/8 + 1/(8*Sqrt[5])], (1 + Sqrt[5])^(-1), -1/2*Sqrt[(5 - Sqrt[5])/10]}, {-Sqrt[1/8 + 1/(8*Sqrt[5])], -(1 + Sqrt[5])^(-1), Sqrt[(5 - Sqrt[5])/10]/2}, {-Sqrt[1/8 + 1/(8*Sqrt[5])], (1 + Sqrt[5])^(-1), Sqrt[(5 - Sqrt[5])/10]/2}, {Sqrt[(5 - Sqrt[5])/10], 0, Sqrt[(5 - Sqrt[5])/10]/2}, {-Sqrt[(5 - Sqrt[5])/10], 0, -1/2*Sqrt[(5 - Sqrt[5])/10]}, {-1/2*Sqrt[1 - 2/Sqrt[5]], -1/2, -1/2*Sqrt[(5 - Sqrt[5])/10]}, {-1/2*Sqrt[1 - 2/Sqrt[5]], 1/2, -1/2*Sqrt[(5 - Sqrt[5])/10]}, {Sqrt[1 - 2/Sqrt[5]]/2, -1/2, Sqrt[(5 - Sqrt[5])/10]/2}, {Sqrt[1 - 2/Sqrt[5]]/2, 1/2, Sqrt[(5 - Sqrt[5])/10]/2}}"#,
     faces_src: r#"{{1, 7, 5}, {6, 7, 1}, {1, 5, 12}, {11, 6, 1}, {12, 11, 1}, {2, 8, 3}, {4, 8, 2}, {2, 3, 10}, {9, 4, 2}, {10, 9, 2}, {12, 3, 8}, {8, 4, 11}, {8, 11, 12}, {10, 5, 7}, {7, 6, 9}, {7, 9, 10}, {3, 5, 10}, {12, 5, 3}, {9, 6, 4}, {4, 6, 11}}"#,
@@ -557,7 +557,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     vertex_count: 14,
     edge_count: 36,
     face_count: 24,
-    // The stellated octahedron as Wolfram catalogues it: the outer surface
+    // The stellated octahedron as Wolfram catalogs it: the outer surface
     // of the compound of two unit-edge tetrahedra, i.e. an octahedron of
     // edge 1/2 with a tetrahedral cap on each face — 8 tips plus the 6
     // octahedron corners, 24 triangles. Data copied from wolframscript.

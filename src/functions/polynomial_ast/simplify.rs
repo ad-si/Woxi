@@ -5419,7 +5419,7 @@ fn combine_assumption_args(rest: &[Expr]) -> (Expr, bool) {
         override_asn = Some(replacement.as_ref().clone());
         continue;
       }
-      // Recognise Simplify-specific options as options, not assumptions.
+      // Recognize Simplify-specific options as options, not assumptions.
       // `ComplexityFunction -> LeafCount` switches the cost metric to
       // raw leaf count (so e.g. `Log[1048576]` beats `20*Log[2]`).
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ComplexityFunction")
@@ -5552,7 +5552,7 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // minimized (DNF) form is larger.
   let assumed = try_boolean_minimize(&assumed).unwrap_or(assumed);
   // If simplification exposed a singularity like `0^(-1)` (e.g. after
-  // cancelling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
+  // canceling `Sin[x]^2 + Cos[x]^2 − 1`), re-evaluate so it collapses to
   // `ComplexInfinity`. Limited to this pattern to avoid re-canonicalizing
   // other Plus/Times orderings the simplifier has already settled on.
   if contains_zero_negative_power(&assumed) {
@@ -6030,10 +6030,10 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
 
   // Candidate 1b: a quotient over radicals of one symbolic base cancels as
   // a polynomial in that base's root (`r^(7/4)/r^(3/4)` sums).
-  if let Some(cancelled) =
+  if let Some(canceled) =
     super::cancel::cancel_via_radical_variables(&best, true)
   {
-    let resimplified = simplify_expr(&cancelled);
+    let resimplified = simplify_expr(&canceled);
     if complexity_digits(&resimplified) < complexity_digits(&best) {
       best_c = leaf_count(&resimplified);
       best = resimplified;
@@ -10787,7 +10787,7 @@ pub(crate) fn simplify_division_impl(
   restore_power_denominator(&result, den)
 }
 
-/// A `(sum)^n` denominator that nothing cancelled against comes back in its
+/// A `(sum)^n` denominator that nothing canceled against comes back in its
 /// power form. The cancellation search below runs on the EXPANDED denominator,
 /// and multivariate quotients have no polynomial-GCD path that would rebuild
 /// it, so `Simplify[(x^2+y^2)/(x^2+y^2+z^2)^3]` used to surface the degree-6
@@ -10803,7 +10803,7 @@ fn restore_power_denominator(result: &Expr, original_den: &Expr) -> Expr {
   if expr_to_string(&res_den)
     != expr_to_string(&expand_and_combine(original_den))
   {
-    // Something cancelled — the reduced denominator stands.
+    // Something canceled — the reduced denominator stands.
     return result.clone();
   }
   crate::functions::math_ast::make_divide(res_num, original_den.clone())
@@ -11289,7 +11289,7 @@ fn simplify_quotient_select(
     return None;
   }
   // FACTORED quotients (powered sums, products of sums, monomial-times-
-  // sum numerators) belong to the Factor pipeline; re-analysing them
+  // sum numerators) belong to the Factor pipeline; re-analyzing them
   // here would rebuild expanded displays and destroy x^2/(-1+x)^3-style
   // forms. Only a plain sum, a monomial, or a content-wrapped sum
   // (Times[c, Plus[…]]) may pass.
@@ -11332,7 +11332,7 @@ fn simplify_quotient_select(
   // — factored numerators like 2x(-1+2x) are Factor-pipeline displays
   // that a re-analysis would destroy. The DENOMINATOR may additionally
   // be a power-free product of sums/monomials (2*(-1+x)*x from a
-  // cancelled quotient): the plain candidate keeps its display verbatim
+  // canceled quotient): the plain candidate keeps its display verbatim
   // while the flip normalizes Simplify[(-1-3x)/(2(-1+x)x)] to
   // (1+3x)/(2x-2x^2) like wolframscript (differential fuzzer, seed
   // 1785246333519574598).
@@ -11547,7 +11547,7 @@ fn simplify_quotient_select(
       }
       let g = gcd_i128(coeff_n, coeff_d);
       if g > 1 {
-        // shared content would have been cancelled upstream; skip
+        // shared content would have been canceled upstream; skip
         // rather than construct a misleading display
         continue;
       }
@@ -11993,7 +11993,7 @@ fn coeffs_from_terms(terms: &[(i128, i128, i128)], var: &str) -> Expr {
 /// bare Simplify[8 - 2*Sqrt[3]] keeps its form (wolframscript-verified;
 /// differential fuzzer, seed 16005587802477298591). The content must be
 /// coprime to the denominator's own integer factor — a shared factor
-/// would have cancelled upstream. None → no extraction applies.
+/// would have canceled upstream. None → no extraction applies.
 fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
   let mut vars = std::collections::HashSet::new();
   collect_variables(num, &mut vars);
@@ -12211,7 +12211,7 @@ fn settled_quotient_factor_display(
       .count()
   };
 
-  // A constant numerator out of Factor (the input numerator cancelled
+  // A constant numerator out of Factor (the input numerator canceled
   // away, or Factor re-canonicalized a reciprocal's sign).
   if n_c.len() == 1 {
     if bn_c.len() == 1 && bn_c[0] < 0 {
@@ -12946,7 +12946,7 @@ fn complexity_digits(expr: &Expr) -> usize {
 
 /// Parse a summand of the form `c*Log[n]` with an integer coefficient `c` and a
 /// positive integer base `n >= 2`, returning `(c, n)`. Symbolic/rational bases
-/// and non-integer coefficients are not recognised (they are left un-merged).
+/// and non-integer coefficients are not recognized (they are left un-merged).
 fn parse_log_term(term: &Expr) -> Option<(i64, BigInt)> {
   let as_log = |e: &Expr| -> Option<BigInt> {
     if let Expr::FunctionCall { name, args } = e
@@ -13018,9 +13018,9 @@ fn try_merge_logs(expr: &Expr) -> Option<Expr> {
   use num_traits::One;
 
   // Flatten the additive structure (both FunctionCall and BinaryOp forms),
-  // and distribute an integer coefficient over a parenthesised sum of logs so
+  // and distribute an integer coefficient over a parenthesized sum of logs so
   // that e.g. a `2*(Log[2]+Log[3])` produced by common-factor pulling is still
-  // recognised.
+  // recognized.
   fn collect_addends(e: &Expr, out: &mut Vec<Expr>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Plus" => {

@@ -35,7 +35,7 @@ fn azimuth_deg(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
   az1
 }
 
-/// Destination `(lat, lon)` reached from `(lat, lon)` by travelling `dist_m`
+/// Destination `(lat, lon)` reached from `(lat, lon)` by traveling `dist_m`
 /// meters along the geodesic with initial bearing `az_deg` (degrees).
 pub fn destination(lat: f64, lon: f64, az_deg: f64, dist_m: f64) -> (f64, f64) {
   geodesic().direct(lat, lon, az_deg, dist_m)

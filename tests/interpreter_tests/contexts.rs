@@ -145,7 +145,7 @@ mod symbol_creation {
     assert_eq!(interpret("rpub[3]").unwrap(), "6");
     // The `$`-suffixed names a scoping construct mints while it runs are
     // filtered out: Woxi numbers them (`loc$1`) where wolframscript does not
-    // (`loc$`), an artefact of how each renames locals.
+    // (`loc$`), an artifact of how each renames locals.
     assert_eq!(
       interpret(
         "ToString[Select[Names[\"R`Private`*\"],          !StringContainsQ[#, \"$\"] &], InputForm]"
@@ -662,7 +662,7 @@ mod relative_sub_contexts {
 /// `cache = wcache` inside a package makes `cache[…]` a call of `wcache`.
 /// The value has to keep its context: the text `wcache` alone names a
 /// different, undefined symbol once the package's private context is gone.
-/// WLJS's WLX importer switches its memoiser on exactly this way.
+/// WLJS's WLX importer switches its memoizer on exactly this way.
 mod a_symbol_stored_in_a_variable_keeps_its_context {
   use super::*;
 

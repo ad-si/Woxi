@@ -94,7 +94,7 @@ fn greek_template(call: bool, greek: &str) -> Option<&'static str> {
 /// "CurrentPrice" -> s, "Dividend" -> q}, greeks]`.
 ///
 /// `greeks` is a single name or a list of names; it defaults to `"Value"`.
-/// Returns `None` (stay unevaluated) for anything that isn't a recognised
+/// Returns `None` (stay unevaluated) for anything that isn't a recognized
 /// European call/put with all required parameters.
 pub fn financial_derivative_ast(
   args: &[Expr],

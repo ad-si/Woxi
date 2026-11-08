@@ -523,7 +523,7 @@ pub(crate) const AUDIO_SAMPLE_RATE: f64 = 44100.0;
 
 /// Find a positive `SampleRate -> r` option in an option list, falling back to
 /// `default` when absent or non-positive. Both the `Expr::Rule` form and the
-/// `Rule[SampleRate, r]` function-call form are recognised.
+/// `Rule[SampleRate, r]` function-call form are recognized.
 fn option_sample_rate(opts: &[Expr], default: f64) -> f64 {
   for opt in opts {
     let Some((key, value)) = rule_parts(opt) else {

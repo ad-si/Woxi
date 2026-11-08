@@ -4523,7 +4523,7 @@ mod date_object_granularity {
 
 /// A `DateObject` is itself a date specification, so `DateObject[date,
 /// granularity]` re-tags one: `DateObject[Now, "Hour"]` is the hour `Now`
-/// falls in — the key a package memoising once an hour caches on. The
+/// falls in — the key a package memoizing once an hour caches on. The
 /// calendar and offset travel with the date; a date that carries neither
 /// only grows them when the new granularity is fine enough to need them.
 /// Verified against wolframscript.
@@ -4597,7 +4597,7 @@ mod retagging_an_existing_date {
   }
 
   /// Two dates re-tagged to the same hour are the same date — this is what
-  /// makes the memoisation idiom `cache[expr, DateObject[Now, "Hour"]]`
+  /// makes the memoization idiom `cache[expr, DateObject[Now, "Hour"]]`
   /// find its entry on the second call instead of recomputing.
   #[test]
   fn the_same_hour_compares_equal() {

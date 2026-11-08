@@ -164,7 +164,7 @@ mod factor_integer {
       interpret("FactorInteger[39, GaussianIntegers -> True]").unwrap(),
       "{{-I, 1}, {2 + 3*I, 1}, {3, 1}, {3 + 2*I, 1}}"
     );
-    // Negative input contributes -1 to the unit (here cancelling to 1).
+    // Negative input contributes -1 to the unit (here canceling to 1).
     assert_eq!(
       interpret("FactorInteger[-12, GaussianIntegers -> True]").unwrap(),
       "{{1 + I, 4}, {3, 1}}"

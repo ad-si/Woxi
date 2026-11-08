@@ -612,7 +612,7 @@ fn graph_render(
   // fixes the layout outright instead of computing one.
   let mut explicit_coordinates: Option<Vec<(f64, f64)>> = None;
   // `PlotRange -> {{x0, x1}, {y0, y1}}`: the window of the coordinate
-  // plane to show. Only honoured together with `VertexCoordinates`, where
+  // plane to show. Only honored together with `VertexCoordinates`, where
   // the caller decides what the coordinates mean.
   let mut explicit_range: Option<((f64, f64), (f64, f64))> = None;
   let mut draw_directed = true;
@@ -813,7 +813,7 @@ fn graph_render(
         "ImageSize" => {
           image_size = Some(replacement.clone());
         }
-        // `Background -> colour` fills the panel behind the drawing, as it
+        // `Background -> color` fills the panel behind the drawing, as it
         // does for `Graphics`.
         "Background" => {
           background = Some(replacement.clone());
@@ -881,8 +881,8 @@ fn graph_render(
   // Factor that maps the caller's own coordinate units onto the internal
   // diameter-2 scale (1 when the layout is ours to choose).
   let mut coord_scale = 1.0_f64;
-  // Centre of the caller's coordinates, mapped to the origin.
-  let mut coord_centre = (0.0_f64, 0.0_f64);
+  // Center of the caller's coordinates, mapped to the origin.
+  let mut coord_center = (0.0_f64, 0.0_f64);
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
       // Keep the caller's window: map it onto the same diameter-2 scale
@@ -890,7 +890,7 @@ fn graph_render(
       let scale = 2.0 / (x1 - x0).max(y1 - y0);
       coord_scale = scale;
       let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
-      coord_centre = (cx, cy);
+      coord_center = (cx, cy);
       let pair =
         |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
       shown_range = Some(rule_expr(
@@ -908,9 +908,9 @@ fn graph_render(
         .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
         .collect()
     } else {
-      let (pts, scale, centre) = normalize_explicit_positions(pts);
+      let (pts, scale, center) = normalize_explicit_positions(pts);
       coord_scale = scale;
-      coord_centre = centre;
+      coord_center = center;
       pts
     }
   } else {
@@ -922,8 +922,8 @@ fn graph_render(
       .iter()
       .map(|&(x, y)| {
         (
-          x / coord_scale + coord_centre.0,
-          y / coord_scale + coord_centre.1,
+          x / coord_scale + coord_center.0,
+          y / coord_scale + coord_center.1,
         )
       })
       .collect();
@@ -949,7 +949,7 @@ fn graph_render(
     .filter(|d| *d > 1e-12)
     .fold(f64::INFINITY, f64::min);
   let layout_extent = layout_max_extent(&positions);
-  let layout_centre = {
+  let layout_center = {
     let (sx, sy) = positions
       .iter()
       .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
@@ -993,7 +993,7 @@ fn graph_render(
 
   // --- Draw edges ---
   // Wolfram's edge style: `Directive[Opacity[0.7], Hue[0.6, 0.7, 0.7],
-  // CapForm["Round"]]`, with an `EdgeStyle` colour replacing the hue.
+  // CapForm["Round"]]`, with an `EdgeStyle` color replacing the hue.
   let default_edge_color = Color::new(0.21, 0.406, 0.7);
   let default_applied_edge_color =
     *edge_style.as_ref().unwrap_or(&default_edge_color);
@@ -1051,7 +1051,7 @@ fn graph_render(
     let (x1, y1) = positions[si];
     let (x2, y2) = positions[di];
 
-    // Restore the default edge colour so a previous styled edge does not
+    // Restore the default edge color so a previous styled edge does not
     // bleed into this one; the edge's own style (if any) scopes the
     // primitives drawn for it below.
     let edge_start = primitives.len();
@@ -1069,7 +1069,7 @@ fn graph_render(
     let shape_pts: Vec<(f64, f64)>;
     // The points the default rendering uses. They differ from `shape_pts`
     // only for the undirected straight edge, which has always been drawn
-    // from centre to centre.
+    // from center to center.
     let default_pts: Vec<(f64, f64)>;
 
     if si == di {
@@ -1078,7 +1078,7 @@ fn graph_render(
       // for a vertex at the middle). Wolfram's loops are a sizeable
       // fraction of the drawing, whatever the size of the vertex marker.
       let loop_r = (layout_extent * 0.1).max(vertex_radius * 1.4);
-      let (mx, my) = layout_centre;
+      let (mx, my) = layout_center;
       let away = if ((x1 - mx).powi(2) + (y1 - my).powi(2)).sqrt() > 1e-9 {
         (y1 - my).atan2(x1 - mx)
       } else {
@@ -1095,7 +1095,7 @@ fn graph_render(
       let cy = vertex_radius - loop_r * start_angle.sin();
 
       // The arc's ends are pulled onto the vertex circle, along the
-      // direction from the vertex centre.
+      // direction from the vertex center.
       let attach = |angle: f64| -> (f64, f64) {
         let (lx, ly) = (loop_r * angle.cos(), cy + loop_r * angle.sin());
         let d = (lx * lx + ly * ly).sqrt();
@@ -1322,10 +1322,10 @@ fn graph_render(
               f64::midpoint(a.1, b.1) + dx * k,
             )
           };
-          // The curve leaves each vertex towards its control point, so it
+          // The curve leaves each vertex toward its control point, so it
           // starts and ends on the vertex's boundary.
           let ctrl = ctrl_of((x1, y1), (x2, y2));
-          let towards = |v: (f64, f64), r: f64| {
+          let toward = |v: (f64, f64), r: f64| {
             let (tx, ty) = (ctrl.0 - v.0, ctrl.1 - v.1);
             let d = (tx * tx + ty * ty).sqrt().max(1e-12);
             (v.0 + tx / d * r, v.1 + ty / d * r)
@@ -1334,7 +1334,7 @@ fn graph_render(
             vertex_radii[graph[edge_ref.source()]],
             vertex_radii[graph[edge_ref.target()]],
           );
-          let (sa, sb) = (towards((x1, y1), r1), towards((x2, y2), r2));
+          let (sa, sb) = (toward((x1, y1), r1), toward((x2, y2), r2));
           primitives.push(call1(
             "BezierCurve",
             points_expr(&[sa, ctrl_of(sa, sb), sb]),
@@ -1448,7 +1448,7 @@ fn graph_render(
     let i = node_idx.index();
     let (x, y) = positions[i];
 
-    // `VertexRenderingFunction` replaces the shape, the fill colour and
+    // `VertexRenderingFunction` replaces the shape, the fill color and
     // the label alike: whatever it returns is the whole vertex.
     match &vertex_render {
       Some(VertexRender::Hidden) => continue,
@@ -1550,7 +1550,7 @@ fn graph_render(
       let styled = call("Style", vec![label, Expr::Integer(10)]);
       // On an explicit `"CircularEmbedding"` an automatically placed label
       // sits outside the circle, in line with its vertex's spoke.
-      let spoke = (x - layout_centre.0, y - layout_centre.1);
+      let spoke = (x - layout_center.0, y - layout_center.1);
       let spoke_len = (spoke.0 * spoke.0 + spoke.1 * spoke.1).sqrt();
       if placement == "Automatic"
         && (layout_choice.circular
@@ -1618,7 +1618,7 @@ fn graph_render(
   // Prolog / Epilog are given in the caller's coordinates; bring them onto
   // the internal scale the graph itself is drawn in.
   let to_internal = |layer: Expr| -> Expr {
-    if coord_scale == 1.0 && coord_centre == (0.0, 0.0) {
+    if coord_scale == 1.0 && coord_center == (0.0, 0.0) {
       return layer;
     }
     let row =
@@ -1632,7 +1632,7 @@ fn graph_render(
             Expr::List(
               vec![row(coord_scale, 0.0), row(0.0, coord_scale)].into(),
             ),
-            row(-coord_centre.0 * coord_scale, -coord_centre.1 * coord_scale),
+            row(-coord_center.0 * coord_scale, -coord_center.1 * coord_scale),
           ]
           .into(),
         ),
@@ -1711,7 +1711,7 @@ fn layout_max_extent(positions: &[(f64, f64)]) -> f64 {
 
 /// The radius Wolfram gives a graph's vertices by default, for a layout
 /// whose larger extent is `extent` (in the graph's own coordinates). It
-/// grows linearly up to an extent of 1 and then ever more slowly, towards
+/// grows linearly up to an extent of 1 and then ever more slowly, toward
 /// 0.15. Above 1 the curve is interpolated (in `extent / radius` against
 /// `log extent`) between values read off Wolfram (`Disk` radii of
 /// `Show[graph]`), so it is exact at those points.
@@ -2058,7 +2058,7 @@ fn vertex_label_text(
 fn vertex_shape_primitive(name: Option<&str>, x: f64, y: f64, r: f64) -> Expr {
   let pt =
     |px: f64, py: f64| Expr::List(vec![Expr::Real(px), Expr::Real(py)].into());
-  // A closed polygon through points given relative to the centre, in
+  // A closed polygon through points given relative to the center, in
   // units of `r`.
   let polygon = |pts: &[(f64, f64)]| {
     call1(
@@ -2141,7 +2141,7 @@ fn vertex_shape_primitive(name: Option<&str>, x: f64, y: f64, r: f64) -> Expr {
     Some("RoundedUpTrapezoid") => {
       polygon(&[(-0.66, 0.8), (0.66, 0.8), (1.1, -0.8), (-1.1, -0.8)])
     }
-    // `"Circle"` and anything unrecognised: the default disk.
+    // `"Circle"` and anything unrecognized: the default disk.
     _ => call("Disk", vec![pt(x, y), Expr::Real(r)]),
   }
 }
@@ -2351,11 +2351,11 @@ pub(crate) fn tidy_tree(
 /// Layered ("hierarchical") vertex positions.
 ///
 /// A tree (edge directions aside) is drawn tidily from its root — the
-/// given one, else the one vertex nothing points at, else the centre —
+/// given one, else the one vertex nothing points at, else the center —
 /// see [`tidy_tree`]. Any other graph gets a layered-digraph drawing:
 /// every vertex one layer below the longest chain of edges leading to it
 /// (breadth-first from `root` when one is given), vertices ordered within
-/// a layer by the mean position of their neighbours to keep crossings
+/// a layer by the mean position of their neighbors to keep crossings
 /// down, and packed from the left one unit apart. As in Wolfram, the
 /// layers of a wide drawing close up so it is at most 1/φ times as tall
 /// as it is wide.
@@ -2401,7 +2401,7 @@ fn layered_layout(
     return if scale_tree {
       unit_mean_edge(pts, graph)
     } else {
-      // The deepest layer at 0, the vertices across a layer centred on
+      // The deepest layer at 0, the vertices across a layer centered on
       // the root.
       let vertical =
         matches!(dir, LayerDirection::Top | LayerDirection::Bottom);
@@ -2537,9 +2537,9 @@ fn layered_layout(
       (0..layers.saturating_sub(1)).rev().collect()
     };
     for l in range {
-      let neighbours = if downward { &up } else { &down };
+      let neighbors = if downward { &up } else { &down };
       let bary = |v: usize| {
-        let ns = &neighbours[v];
+        let ns = &neighbors[v];
         if ns.is_empty() {
           slot[v]
         } else {
@@ -2586,7 +2586,7 @@ struct LayoutChoice {
   /// from, instead of every vertex nothing points at.
   layered_root: Option<Expr>,
   /// The layered spec is `"LayeredDigraphEmbedding"`, which keeps one unit
-  /// between neighbours even in a tree (`"LayeredEmbedding"` scales a
+  /// between neighbors even in a tree (`"LayeredEmbedding"` scales a
   /// tree to unit mean edge length).
   layered_digraph: bool,
   /// `"CircularEmbedding"`: every vertex on one circle, also for graphs
@@ -2739,7 +2739,7 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
 
   if components.len() <= 1 {
     // A tree is drawn as one, as Wolfram's automatic layout does: tidily
-    // from its root (the one vertex nothing points at, else its centre).
+    // from its root (the one vertex nothing points at, else its center).
     let root = {
       let mut indeg = vec![0usize; n];
       for e in graph.edge_references() {
@@ -2817,7 +2817,7 @@ fn circular_layout_in_order(order: &[usize]) -> Vec<(f64, f64)> {
   pts
 }
 
-/// The undirected neighbours of every vertex, in the order the edges are
+/// The undirected neighbors of every vertex, in the order the edges are
 /// listed (self-loops left out).
 fn edge_order_adjacency(
   graph: &DiGraph<usize, RenderEdgeData>,
@@ -2836,7 +2836,7 @@ fn edge_order_adjacency(
 /// The order `"CircularEmbedding"` puts the vertices in around the
 /// circle (its default `"OptimalOrder" -> True`): a depth-first walk from
 /// the first vertex of each component that tries the latest-listed
-/// neighbour first, following directed edges only forwards. In a
+/// neighbor first, following directed edges only forwards. In a
 /// component that is a tree whose walk ends in exactly two dead ends, the
 /// walk's first run (the root down to the first dead end) is turned
 /// round, so the tree is laid out end to end. Directed cycles with one
@@ -3042,7 +3042,7 @@ fn parse_named_layout(value: &Expr) -> Option<NamedLayout> {
 }
 
 /// Wolfram's placement of the parts of a multipartite layout: part `i` on
-/// the vertical line `x = i`, its members evenly spaced and centred, with
+/// the vertical line `x = i`, its members evenly spaced and centered, with
 /// the column height `0.05 (k - 1) + (parts - 1)/φ` for the largest
 /// part's `k` members. Each part is a list of vertex indices.
 fn multipartite_positions(parts: &[Vec<usize>], n: usize) -> Vec<(f64, f64)> {
@@ -3121,21 +3121,21 @@ fn named_layout_positions(
     }
     NamedLayout::Multipartite { .. } => None,
     NamedLayout::BipartiteEmbedding => {
-      // Two-colour each component breadth-first from its first vertex.
+      // Two-color each component breadth-first from its first vertex.
       let adj = edge_order_adjacency(graph);
-      let mut colour: Vec<Option<usize>> = vec![None; n];
+      let mut color: Vec<Option<usize>> = vec![None; n];
       for root in 0..n {
-        if colour[root].is_some() {
+        if color[root].is_some() {
           continue;
         }
-        colour[root] = Some(0);
+        color[root] = Some(0);
         let mut queue = std::collections::VecDeque::from([root]);
         while let Some(v) = queue.pop_front() {
-          let c = colour[v].unwrap_or(0);
+          let c = color[v].unwrap_or(0);
           for &w in &adj[v] {
-            match colour[w] {
+            match color[w] {
               None => {
-                colour[w] = Some(1 - c);
+                color[w] = Some(1 - c);
                 queue.push_back(w);
               }
               Some(cw) if cw == c => return None,
@@ -3145,7 +3145,7 @@ fn named_layout_positions(
         }
       }
       let parts: Vec<Vec<usize>> = (0..2)
-        .map(|c| (0..n).filter(|&v| colour[v] == Some(c)).collect())
+        .map(|c| (0..n).filter(|&v| color[v] == Some(c)).collect())
         .collect();
       let mut pts = multipartite_positions(&parts, n);
       // The two columns stand as far apart as the taller one is high.
@@ -3158,7 +3158,7 @@ fn named_layout_positions(
     }
     NamedLayout::SpiralEmbedding => {
       // Points evenly spread along a spiral from pole to pole of a
-      // sphere, seen from the side (the generalised spiral of Rakhmanov,
+      // sphere, seen from the side (the generalized spiral of Rakhmanov,
       // Saff and Zhou), in vertex order.
       if n < 2 {
         return None;
@@ -3598,9 +3598,9 @@ fn force_layout_component(
     let angle = PI / 2.0 + next as f64 * 2.0 * PI / m as f64;
     circular[v] = (angle.cos(), angle.sin());
     next += 1;
-    let mut neighbours = adj[v].clone();
-    neighbours.sort_unstable();
-    stack.extend(neighbours);
+    let mut neighbors = adj[v].clone();
+    neighbors.sort_unstable();
+    stack.extend(neighbors);
   }
 
   // Fruchterman-Reingold on the unit square [-1, 1]^2.
@@ -3711,7 +3711,7 @@ fn force_layout_component(
     *p = (x * cos - y * sin, x * sin + y * cos);
   }
 
-  // Centre on the origin and scale the layout to fit [-1, 1]^2 so the
+  // Center on the origin and scale the layout to fit [-1, 1]^2 so the
   // spread is kept as it is instead of being squashed against the border.
   let (mut min_x, mut max_x, mut min_y, mut max_y) =
     (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
@@ -4544,7 +4544,7 @@ pub(crate) fn fc_parse_input(arg: &Expr) -> Option<(Vec<Expr>, Vec<Expr>)> {
     _ => return None,
   };
 
-  // If the input was a Graph with an explicit vertex list, honour that order.
+  // If the input was a Graph with an explicit vertex list, honor that order.
   if let Expr::FunctionCall { name, args } = arg
     && name == "Graph"
     && args.len() >= 2
@@ -4870,7 +4870,7 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// unevaluated.
 /// FindHamiltonianPath[g] / FindHamiltonianPath[g, s, t] — one path visiting
 /// every vertex once, as a vertex list, or `{}` when there is none. The search
-/// is a greedy depth-first one that tries the lowest-numbered neighbour first,
+/// is a greedy depth-first one that tries the lowest-numbered neighbor first,
 /// starting from each vertex in vertex-list order.
 pub fn find_hamiltonian_path_ast(
   args: &[Expr],
@@ -5085,9 +5085,9 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Graph", graph_args))
 }
 
-/// Refine a vertex colouring: each vertex's new colour is the rank of
-/// (old colour, sorted colours of its out-neighbours, sorted colours of its
-/// in-neighbours) among all vertices, until the partition stops splitting.
+/// Refine a vertex coloring: each vertex's new color is the rank of
+/// (old color, sorted colors of its out-neighbors, sorted colors of its
+/// in-neighbors) among all vertices, until the partition stops splitting.
 fn refine_colors(colors: &mut [usize], out: &[Vec<usize>], inn: &[Vec<usize>]) {
   loop {
     let keys: Vec<(usize, Vec<usize>, Vec<usize>)> = (0..colors.len())
@@ -5118,9 +5118,9 @@ fn refine_colors(colors: &mut [usize], out: &[Vec<usize>], inn: &[Vec<usize>]) {
   }
 }
 
-/// CanonicalGraph[g] — g relabelled 1, 2, …, n so that isomorphic graphs
+/// CanonicalGraph[g] — g relabeled 1, 2, …, n so that isomorphic graphs
 /// come out identical. Vertices are ordered by their refined degree
-/// colouring (lower degree first; for a directed graph a sink before a
+/// coloring (lower degree first; for a directed graph a sink before a
 /// source), and the ties left over are settled by an individualize-and-
 /// refine search for the lexicographically smallest edge list.
 pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -5171,7 +5171,7 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       inn[a].push(b);
     }
   }
-  // Initial colour: degree, and for a directed graph out-degree next.
+  // Initial color: degree, and for a directed graph out-degree next.
   let mut colors: Vec<usize> = {
     let keys: Vec<(usize, usize)> = (0..n)
       .map(|v| {
@@ -5192,7 +5192,7 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   refine_colors(&mut colors, &out, &inn);
 
-  let relabelled = |labels: &[usize]| -> Vec<(usize, usize)> {
+  let relabeled = |labels: &[usize]| -> Vec<(usize, usize)> {
     let mut es: Vec<(usize, usize)> = edges
       .iter()
       .map(|&(a, b)| {
@@ -5215,7 +5215,7 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     colors: Vec<usize>,
     out: &[Vec<usize>],
     inn: &[Vec<usize>],
-    relabelled: &dyn Fn(&[usize]) -> Vec<(usize, usize)>,
+    relabeled: &dyn Fn(&[usize]) -> Vec<(usize, usize)>,
     best: &mut Option<(Vec<(usize, usize)>, Vec<usize>)>,
     budget: &mut usize,
   ) {
@@ -5229,7 +5229,7 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       counts[c] += 1;
     }
     let Some(cell) = (0..n).find(|&c| counts[c] > 1) else {
-      let candidate = relabelled(&colors);
+      let candidate = relabeled(&colors);
       if best.as_ref().is_none_or(|(b, _)| candidate < *b) {
         *best = Some((candidate, colors));
       }
@@ -5255,13 +5255,13 @@ pub fn canonical_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         *c = distinct.binary_search(c).unwrap_or(0);
       }
       refine_colors(&mut split, out, inn);
-      search(split, out, inn, relabelled, best, budget);
+      search(split, out, inn, relabeled, best, budget);
       if *budget == 0 {
         return;
       }
     }
   }
-  search(colors, &out, &inn, &relabelled, &mut best, &mut budget);
+  search(colors, &out, &inn, &relabeled, &mut best, &mut budget);
   let Some((edge_list, _)) = best else {
     return Ok(unevaluated());
   };
@@ -5410,7 +5410,7 @@ pub fn find_hamiltonian_cycle_ast(
     }
   }
   // Sort each adjacency list by destination rank so the DFS always tries the
-  // lowest-numbered neighbour first (lexicographic greedy choice).
+  // lowest-numbered neighbor first (lexicographic greedy choice).
   for a in &mut adj {
     a.sort_by_key(|x| x.0);
   }
@@ -5441,7 +5441,7 @@ pub fn find_hamiltonian_cycle_ast(
 
   /// Whether the unvisited vertices can still be threaded into a Hamiltonian
   /// cycle that goes on from `cur` and closes at vertex 0: every unvisited
-  /// vertex needs two usable neighbours, and the unvisited vertices must be
+  /// vertex needs two usable neighbors, and the unvisited vertices must be
   /// connected to each other, to `cur` and to vertex 0.
   fn hamiltonian_cycle_completable(
     cur: usize,
@@ -5571,8 +5571,8 @@ pub fn find_hamiltonian_cycle_ast(
   Ok(Expr::List(cycles.into()))
 }
 
-/// Hierholzer's algorithm from vertex 0. `adj[v]` lists `(neighbour, edge id)`
-/// pairs (already sorted highest-neighbour-first); each edge id is consumed
+/// Hierholzer's algorithm from vertex 0. `adj[v]` lists `(neighbor, edge id)`
+/// pairs (already sorted highest-neighbor-first); each edge id is consumed
 /// once. Returns the closed Euler tour as a vertex sequence if one exists that
 /// uses all `num_edges` edges and returns to the start, else None.
 fn hierholzer_euler_tour(
@@ -5611,7 +5611,7 @@ fn hierholzer_euler_tour(
 /// (a closed walk using every edge exactly once) as a list of edges, or `{}`
 /// when the graph has no Eulerian cycle. The traversal is Hierholzer's
 /// algorithm starting at the first vertex and always taking the
-/// highest-ranked available neighbour, which reproduces wolframscript's
+/// highest-ranked available neighbor, which reproduces wolframscript's
 /// chosen cycle.
 pub fn find_eulerian_cycle_ast(
   args: &[Expr],
@@ -5635,7 +5635,7 @@ pub fn find_eulerian_cycle_ast(
   }
 
   // Edge list as (src rank, dst rank, directed). Adjacency stores
-  // (neighbour rank, edge id) so each edge is consumed exactly once.
+  // (neighbor rank, edge id) so each edge is consumed exactly once.
   let mut edges: Vec<(usize, usize, bool)> = Vec::new();
   let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
   for e in &raw_edges {
@@ -5668,7 +5668,7 @@ pub fn find_eulerian_cycle_ast(
   if num_edges == 0 {
     return Ok(empty);
   }
-  // Highest-ranked neighbour first (wolframscript's tie-break).
+  // Highest-ranked neighbor first (wolframscript's tie-break).
   for a in &mut adj {
     a.sort_by_key(|x| std::cmp::Reverse(x.0));
   }
@@ -5694,7 +5694,7 @@ pub fn find_eulerian_cycle_ast(
 /// that traverses every edge at least once (the Chinese-postman route). For an
 /// Eulerian graph this is the Eulerian cycle; otherwise a minimum-weight
 /// pairing of the odd-degree vertices is duplicated to make the graph
-/// Eulerian, then Hierholzer's algorithm (highest-ranked neighbour first, from
+/// Eulerian, then Hierholzer's algorithm (highest-ranked neighbor first, from
 /// vertex 0) traces the tour — matching wolframscript on the reproducible
 /// forms. Only undirected graphs are handled.
 pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -5864,9 +5864,9 @@ pub fn find_postman_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// GraphHub[g] and GraphHub[g, "In" | "Out"]: the vertices (in VertexList
-/// order) with the most distinct neighbours. Self-loops and repeated edges
-/// do not count; in a directed graph the default counts in-neighbours plus
-/// out-neighbours.
+/// order) with the most distinct neighbors. Self-loops and repeated edges
+/// do not count; in a directed graph the default counts in-neighbors plus
+/// out-neighbors.
 pub fn graph_hub_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let call_text =
     || crate::syntax::expr_to_output(&unevaluated("GraphHub", args));
@@ -5945,7 +5945,7 @@ pub fn graph_hub_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// MeanNeighborDegree[g] gives, for each vertex (in VertexList order), the mean
-/// degree of its neighbours (0 for an isolated vertex). Degrees are total
+/// degree of its neighbors (0 for an isolated vertex). Degrees are total
 /// degrees, treating every edge as an undirected connection.
 pub fn mean_neighbor_degree_ast(
   args: &[Expr],
@@ -6208,7 +6208,7 @@ pub fn find_fundamental_cycles_ast(
     }
   }
 
-  // BFS spanning forest: roots in vertex order, neighbours in edge input
+  // BFS spanning forest: roots in vertex order, neighbors in edge input
   // order.
   let mut adj: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n];
   for (idx, &(u, v)) in edges.iter().enumerate() {
@@ -6557,7 +6557,7 @@ pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Canonical vertex order for tie-breaking: numeric when both keys are
   // numbers (so 2 < 10), otherwise lexicographic on the string form. This
   // reproduces wolframscript, which returns the lexicographically smallest
-  // shortest path (the one favouring lower-numbered vertices).
+  // shortest path (the one favoring lower-numbered vertices).
   let vcmp = |a: &str, b: &str| -> std::cmp::Ordering {
     match (a.parse::<i128>(), b.parse::<i128>()) {
       (Ok(x), Ok(y)) => x.cmp(&y),
@@ -6571,7 +6571,7 @@ pub fn find_shortest_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Greedily walk from start to goal: at each node step to the smallest
-  // neighbour that keeps us on a shortest path (w + dist_to_goal[v] equals
+  // neighbor that keeps us on a shortest path (w + dist_to_goal[v] equals
   // the node's own distance to the goal).
   let eps = 1e-9;
   let mut path_keys = vec![start.clone()];
@@ -7278,7 +7278,7 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the seeds); `out == false` follows them backwards (vertices that can
 /// *reach* the seeds). Undirected edges are bidirectional either way. An
 /// optional integer third argument bounds the path length. Vertices come out
-/// in seed-first BFS order with neighbours visited in vertex-list order.
+/// in seed-first BFS order with neighbors visited in vertex-list order.
 pub fn vertex_reach_component_ast(
   name: &str,
   args: &[Expr],
@@ -9347,7 +9347,7 @@ pub fn graph_predicate_ast(
     s.dedup();
     s.len() != edge_keys.len()
   };
-  // The underlying simple undirected graph, for the connectivity-flavoured
+  // The underlying simple undirected graph, for the connectivity-flavored
   // predicates.
   let mut simple_pairs: Vec<(usize, usize)> = pairs
     .iter()
@@ -10293,8 +10293,8 @@ pub fn directed_local_clustering(expr: &Expr) -> Option<Vec<(i128, i128)>> {
 
 /// MeanDegreeConnectivity for a graph containing directed edges: for each
 /// degree k = 0, 1, 2, ..., the mean over vertices of (total, in+out) degree k
-/// of the average degree of their neighbours. Every edge contributes one to
-/// each endpoint's degree and makes the endpoints neighbours (in or out alike).
+/// of the average degree of their neighbors. Every edge contributes one to
+/// each endpoint's degree and makes the endpoints neighbors (in or out alike).
 /// Returns `None` for anything that is not such a graph.
 fn directed_mean_degree_connectivity(expr: &Expr) -> Option<Expr> {
   let (vertices, edge_exprs) = match expr {
@@ -10336,7 +10336,7 @@ fn directed_mean_degree_connectivity(expr: &Expr) -> Option<Expr> {
     nbr_of[b].push(a);
   }
   let maxdeg = deg.iter().copied().max().unwrap_or(0);
-  // Sum of neighbour degrees for each vertex.
+  // Sum of neighbor degrees for each vertex.
   let s: Vec<i128> = (0..n)
     .map(|v| nbr_of[v].iter().map(|&u| deg[u]).sum())
     .collect();
@@ -10807,7 +10807,7 @@ fn graph_parts(expr: &Expr) -> Option<(Vec<Expr>, Vec<Expr>, Vec<Expr>)> {
 }
 
 /// The `Graphics3D` picture of a `Graph3D[…]` that carries explicit
-/// `VertexCoordinates`: grey edges as lines and one sphere per vertex, sized
+/// `VertexCoordinates`: gray edges as lines and one sphere per vertex, sized
 /// by `VertexSize` (a number or `{"Scaled", s}`, relative to the extent of
 /// the vertices). Accepts `Graph3D[graph, opts…]` and
 /// `Graph3D[vertices, edges, opts…]`. `None` when there are no 3D
@@ -11913,7 +11913,7 @@ pub fn edge_tagged_graph_q_ast(
   Ok(bool_expr(tagged))
 }
 
-/// Corners of a regular `n`-gon of circumradius `r` centred at `(x, y)`,
+/// Corners of a regular `n`-gon of circumradius `r` centered at `(x, y)`,
 /// with the first corner at angle `PI/2 + rotation` (pointing up).
 fn regular_polygon_points(
   x: f64,
@@ -11979,7 +11979,7 @@ pub fn decode_graph6(text: &str) -> Option<Vec<(usize, Vec<(usize, usize)>)>> {
 
 /// Fruchterman-Reingold layout of `n` vertices in `dim` dimensions, with a
 /// deterministic start so repeated runs give the same picture. Coordinates
-/// are centred and scaled to fit the cube [-1, 1]^dim.
+/// are centered and scaled to fit the cube [-1, 1]^dim.
 fn force_layout_nd(
   n: usize,
   edges: &[(usize, usize)],
@@ -12047,7 +12047,7 @@ fn force_layout_nd(
     temp *= cool;
   }
 
-  // Centre and scale into [-1, 1]^dim.
+  // Center and scale into [-1, 1]^dim.
   for c in 0..dim {
     let mean = pos.iter().map(|p| p[c]).sum::<f64>() / n as f64;
     for p in &mut pos {

@@ -74,7 +74,7 @@ COPY . .
 RUN mkdir -p .git && : > .git/HEAD && : > .git/index
 
 # Pre-build the test binaries while online with the exact nextest
-# invocation used at runtime so `docker run` reuses the artefacts
+# invocation used at runtime so `docker run` reuses the artifacts
 # instead of recompiling. --offline guarantees we'd notice if
 # `cargo fetch` above missed anything; --package woxi avoids
 # dragging in woxi-studio's GUI dependency tree (iced, resvg, …)

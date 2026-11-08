@@ -36,7 +36,7 @@ StringCases[foo, a]
 ```
 
 The `Overlaps` option controls how much of the string a match may share with
-its neighbours. The default keeps matches disjoint, `Overlaps -> True` reports
+its neighbors. The default keeps matches disjoint, `Overlaps -> True` reports
 the preferred match at every start position, and `Overlaps -> All` reports
 *every* match at every start position:
 

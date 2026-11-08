@@ -1,7 +1,7 @@
 //! Common-subexpression elimination for compiled `NDSolve` residuals.
 //!
 //! A large DAE's residuals repeat the same pieces many times over — a
-//! column's vapour pressures and activity coefficients appear in every
+//! column's vapor pressures and activity coefficients appear in every
 //! equilibrium, and differentiating a bubble-point constraint copies each of
 //! them into several terms of its derivative. [`share`] evaluates every
 //! repeated arithmetic subtree once per evaluation: it hoists them into an

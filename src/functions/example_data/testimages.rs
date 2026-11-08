@@ -19,7 +19,7 @@ fn scrub(s: &mut Sketch, density: f64, base: Rgb) {
   let n = (1300.0 * density) as usize;
   for _ in 0..n {
     let (x, y) = (s.rng.range(0.0, w), s.rng.range(0.0, h));
-    // Smaller and denser towards the top (further away).
+    // Smaller and denser toward the top (further away).
     let r = s.rng.range(0.6, 2.2) * (0.5 + y / h) * w / 512.0 * 3.0;
     let tone = shade(rgb8(105, 105, 90), s.rng.range(0.6, 1.2));
     for _ in 0..4 {
@@ -1085,7 +1085,7 @@ pub fn draw(name: &str, w: usize, h: usize, seed: u64) -> Option<Canvas> {
       s.person(0.05, 0.66, 0.08, rgb8(60, 60, 80));
     }
     "WalterCronkite" => {
-      // A news anchor in a dark suit against wood panelling, a framed
+      // A news anchor in a dark suit against wood paneling, a framed
       // picture behind his shoulder.
       let n = &s.noise;
       let f = |x: f64, y: f64| {

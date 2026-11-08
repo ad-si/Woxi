@@ -877,7 +877,7 @@ impl GroupingOp {
 }
 
 /// Parse the second argument of `Groupings` into a list of operators.
-/// Returns `None` if the argument doesn't match any recognised form.
+/// Returns `None` if the argument doesn't match any recognized form.
 fn parse_grouping_ops(arg: &Expr) -> Option<Vec<GroupingOp>> {
   match arg {
     // Plain integer k -> single anonymous arity-k operator.
@@ -946,7 +946,7 @@ pub fn groupings_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Single anonymous arity: use the existing optimised path so the
+  // Single anonymous arity: use the existing optimized path so the
   // canonical output of `Groupings[list, k]` is byte-identical.
   if ops.len() == 1 && ops[0].head.is_none() {
     let arity = ops[0].arity;

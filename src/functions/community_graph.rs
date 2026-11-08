@@ -1,6 +1,6 @@
 //! `FindGraphCommunities` and `CommunityGraphPlot`: the communities of a
 //! graph (by modularity, Wolfram's default method) and the plot that lays
-//! each community out on its own, colours its vertices and rings it with a
+//! each community out on its own, colors its vertices and rings it with a
 //! smooth boundary.
 
 use crate::InterpreterError;
@@ -27,7 +27,7 @@ fn graph_parts(g: &Expr) -> Option<(Vec<Expr>, Vec<(usize, usize)>)> {
 }
 
 /// Communities of maximal modularity, found the Louvain way: each vertex
-/// moves to the neighbouring community it raises the modularity most, in
+/// moves to the neighboring community it raises the modularity most, in
 /// vertex order, until none moves; the communities then become single
 /// vertices of a smaller graph, and the moving starts over. Each community
 /// lists its vertex indices in order; the communities come largest first,
@@ -69,7 +69,7 @@ pub(crate) fn modularity_communities(
       for i in 0..nodes {
         let own = community[i];
         tot[own] -= degree[i];
-        // Links from `i` into each neighbouring community.
+        // Links from `i` into each neighboring community.
         let mut links: std::collections::BTreeMap<usize, f64> =
           std::collections::BTreeMap::default();
         for (&j, &w) in &weights[i] {
@@ -170,7 +170,7 @@ pub fn find_graph_communities_ast(
   ))
 }
 
-/// The colour `CommunityGraphPlot` gives its `k`-th community: Wolfram's
+/// The color `CommunityGraphPlot` gives its `k`-th community: Wolfram's
 /// seven fixed hues, then hues a golden-ratio turn apart.
 fn community_color(k: usize) -> Expr {
   const FIXED: [(f64, f64, f64); 7] = [
@@ -286,7 +286,7 @@ pub fn community_graph_plot_ast(
   let k = communities.len();
   let community_of = |v: usize| communities.iter().position(|c| c.contains(&v));
 
-  // Each community laid out on its own, centred and scaled so its edges
+  // Each community laid out on its own, centered and scaled so its edges
   // are about 0.7 long (as Wolfram draws them).
   let locals: Vec<Vec<(f64, f64)>> = communities
     .iter()
@@ -336,7 +336,7 @@ pub fn community_graph_plot_ast(
       links.push((ca.min(cb), ca.max(cb)));
     }
   }
-  let centres: Vec<(f64, f64)> = if k == 1 {
+  let centers: Vec<(f64, f64)> = if k == 1 {
     vec![(0.0, 0.0)]
   } else {
     let ids: Vec<Expr> = (1..=k).map(|i| Expr::Integer(i as i128)).collect();
@@ -362,7 +362,7 @@ pub fn community_graph_plot_ast(
   // Each community is turned so the vertices with edges to another
   // community face it: the angle that maximizes the sum, over those
   // edges, of the vertex's offset along the direction to the other
-  // community's centre.
+  // community's center.
   let mut pos = vec![(0.0, 0.0); n];
   for (c, community) in communities.iter().enumerate() {
     let (mut along, mut across) = (0.0, 0.0);
@@ -377,7 +377,7 @@ pub fn community_graph_plot_ast(
           continue;
         }
         let p = locals[c][i];
-        let dir = (centres[d].0 - centres[c].0, centres[d].1 - centres[c].1);
+        let dir = (centers[d].0 - centers[c].0, centers[d].1 - centers[c].1);
         along += p.0 * dir.0 + p.1 * dir.1;
         across += p.0 * dir.1 - p.1 * dir.0;
       }
@@ -390,7 +390,7 @@ pub fn community_graph_plot_ast(
     let (s, co) = angle.sin_cos();
     for (i, &v) in community.iter().enumerate() {
       let (x, y) = locals[c][i];
-      pos[v] = (centres[c].0 + co * x - s * y, centres[c].1 + s * x + co * y);
+      pos[v] = (centers[c].0 + co * x - s * y, centers[c].1 + s * x + co * y);
     }
   }
   let extent = {
@@ -486,7 +486,7 @@ pub fn community_graph_plot_ast(
   }
   primitives.push(Expr::List(edge_group.into()));
 
-  // The vertices, filled and outlined in their community's colour.
+  // The vertices, filled and outlined in their community's color.
   for (c, community) in communities.iter().enumerate() {
     let color = community_color(c);
     let mut group = vec![

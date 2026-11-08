@@ -4,7 +4,7 @@
 //! WL 15 draws what the effect shows on hover, fixed at the given place:
 //! the curve point enlarged on a white halo, the gray drop lines or slice
 //! line, and a speech-bubble callout with the value, in a pale tint of the
-//! curve's colour, its edge in the colour itself.
+//! curve's color, its edge in the color itself.
 
 use crate::syntax::Expr;
 
@@ -106,7 +106,7 @@ fn format_value(v: f64, span: f64) -> String {
 }
 
 /// SVG for the highlights. `curves` are the drawn curves, `colors` their
-/// colours, `to_px` maps data coordinates to render pixels, `sf` is render
+/// colors, `to_px` maps data coordinates to render pixels, `sf` is render
 /// pixels per point, `origin` where the axes cross and `ranges` the
 /// displayed x and y ranges.
 pub(crate) fn highlights_svg(

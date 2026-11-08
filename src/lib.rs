@@ -242,7 +242,7 @@ pub fn is_quiet_print() -> bool {
 // process's standard input, the way `wolframscript -file` does. Off by
 // default so embedders that don't own stdin (the wasm playground, the
 // Jupyter kernel, the Python bindings, unit tests) keep the
-// non-interactive `EndOfFile` behaviour instead of blocking on a stream
+// non-interactive `EndOfFile` behavior instead of blocking on a stream
 // that will never deliver a line.
 thread_local! {
     static STDIN_INPUT: RefCell<bool> = const { RefCell::new(false) };
@@ -2060,7 +2060,7 @@ pub fn variable_value(name: &str) -> Option<syntax::Expr> {
 /// One reaches `ENV` in either of two shapes: the key-string
 /// [`StoredValue::Association`] a top-level `a = <||>` builds, or a plain
 /// `Expr::Association` inside [`StoredValue::ExprVal`] — which is what
-/// `Module[{a = <||>}, …]` leaves, since localisation stores the evaluated
+/// `Module[{a = <||>}, …]` leaves, since localization stores the evaluated
 /// initial value as an expression. Both must count, or `a[key] = value`
 /// installs a DownValue on the local instead of adding a key.
 pub fn symbol_holds_association(name: &str) -> bool {
@@ -4983,11 +4983,11 @@ pub(crate) fn column_svg_with_rendered_items(
 /// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
 /// layout it wraps with the directives in force — a `Style` is inherited by
 /// everything inside it, so `Style[Column[{…}], 65, Hue[c]]` is a large
-/// coloured column, not a column at the default size. Distributing the
+/// colored column, not a column at the default size. Distributing the
 /// directives over the items is what lets the layout renderers, which read
 /// each item's own `Style`, apply them. (`Grid`/`TextGrid` take a different
 /// route below: they have their own styled path in `render_grid_if_needed`,
-/// which colours frames and dividers too, not only cells — distributing
+/// which colors frames and dividers too, not only cells — distributing
 /// directives over the cells first would hide that, and would wrap span
 /// placeholders like `SpanFromLeft` in a `Style` they aren't recognized
 /// through.)
@@ -5426,7 +5426,7 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Graph" && args.len() >= 2 =>
     {
-      // wolframscript summarises Graph as `Graph[<n>, <m>]` instead of
+      // wolframscript summarizes Graph as `Graph[<n>, <m>]` instead of
       // the `-Graphics-` placeholder. Render the SVG (so jupyter/HTML
       // surfaces still get it via capture_graphics) but keep the Expr
       // as the original FunctionCall so expr_to_string can print the

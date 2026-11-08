@@ -1,6 +1,6 @@
 //! `BulletGauge[values, references, {min, r1, …, max}]`: a horizontal
 //! bullet graph, built as the `Graphics` wolframscript returns. The scale
-//! runs over `{0, 1}`: the qualitative ranges are grey bands (`{min, max}`
+//! runs over `{0, 1}`: the qualitative ranges are gray bands (`{min, max}`
 //! alone splits at a half and three quarters), the scale line carries
 //! `FindDivisions` ticks, each value is a bar (rotated onto the scale,
 //! longest first) and each reference a translucent marker.
@@ -41,7 +41,7 @@ const BAND_GRAYS: [&str; 3] = [
 const FONT: &str =
   "{GrayLevel[0.25], FontSize -> 10, FontFamily -> \"Helvetica\"}";
 
-/// The colour of the `k`-th series (1-based), counting the value bars
+/// The color of the `k`-th series (1-based), counting the value bars
 /// first: hues `9/10 φ⁻¹` apart (modulo 0.9) at saturation and brightness
 /// 0.73, starting from `0.9 (1/60 + φ⁻¹)`.
 fn series_color(k: usize) -> Expr {

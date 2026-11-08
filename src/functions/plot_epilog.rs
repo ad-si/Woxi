@@ -836,7 +836,7 @@ fn render_item(
         }
       }
       // `Rotate[content, θ]` turns `content` counter-clockwise by `θ`
-      // radians about the centre of its bounding box (`Rotate[content, θ,
+      // radians about the center of its bounding box (`Rotate[content, θ,
       // {x, y}]` about the given point). Rendering the content as usual and
       // wrapping it in an SVG rotation keeps every primitive — text
       // included — working without per-primitive rotation support.
@@ -910,13 +910,13 @@ fn render_item(
             other => (other, &[] as &[Expr], false),
           };
           // `Style[…]` around the content sets the text's own size and
-          // colour; without one the epilog's directives still apply.
+          // color; without one the epilog's directives still apply.
           let styled = crate::functions::chart::parse_styled_label(body);
           let font_size =
             styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
               * area.scale;
           let fill = match styled.as_ref().and_then(|s| s.color) {
-            // A translucent colour (`Transparent` placeholder text, say)
+            // A translucent color (`Transparent` placeholder text, say)
             // keeps its alpha instead of drawing opaque.
             Some(c) => EpilogStyle {
               color: c,
@@ -931,13 +931,13 @@ fn render_item(
           );
           // `Text[label, pt, {ox, oy}]` places the anchor at `{ox, oy}`
           // inside the label's own box (`{-1, 0}`: its left edge), so the
-          // label's centre sits `-ox`/`oy` half-extents from the anchor.
+          // label's center sits `-ox`/`oy` half-extents from the anchor.
           let (off_x, off_y) =
             args.get(2).and_then(point2).unwrap_or((0.0, 0.0));
           let mut text_anchor = "middle";
           // A `Column`/`Grid` label (a Demonstration's boxed summary of
           // several computed values, say) stacks below its first line; the
-          // whole block is centred on the anchor the way a single line
+          // whole block is centered on the anchor the way a single line
           // would be, so the first line moves up by half the extra height.
           let line_height = font_size * 1.2;
           let extra_lines = styled
@@ -986,7 +986,7 @@ fn render_item(
                 super::graphics::Color::to_svg_rgb,
               );
             // Wolfram draws the box with a thin border unless the label
-            // asks for none; `FrameStyle -> colour` recolours it.
+            // asks for none; `FrameStyle -> color` recolors it.
             let stroke = match option_value(frame_opts, "FrameStyle") {
               Some(Expr::Identifier(s)) if s == "None" => String::new(),
               Some(spec) => format!(
@@ -1058,7 +1058,7 @@ fn render_item(
           let (w, h) = (w * area.scale, h * area.scale);
           // `opos` names the point of the inset object (a plot's data
           // coordinates, a display's fractions of its size) that lands on `pos`; the picture is otherwise
-          // centred there.
+          // centered there.
           let (fx, fy) = args
             .get(2)
             .and_then(point2)

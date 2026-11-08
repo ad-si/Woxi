@@ -1014,7 +1014,7 @@ pub fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If the assumption is a simple equality `var == value` (or a List of
   // such), AND the body contains an Integrate/Sum/Product/Limit (where
-  // wolframscript's ConditionalExpression handling would specialise the
+  // wolframscript's ConditionalExpression handling would specialize the
   // result), substitute `var → value` in the body before evaluating.
   // Matches wolframscript: `Assuming[n == 1, Integrate[x^n, {x, 0, 1}]]`
   // returns `1/2`. Cases like `Assuming[n == 1, x^n]` keep `x^n`
@@ -1043,7 +1043,7 @@ pub fn assuming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Does `expr` contain a function whose result depends on
 /// `$Assumptions` (Integrate / Sum / Product / Limit)? Used as a guard
-/// before specialising the body of `Assuming`, so `Assuming[n == 1, x^n]`
+/// before specializing the body of `Assuming`, so `Assuming[n == 1, x^n]`
 /// keeps `x^n` (matching wolframscript) while
 /// `Assuming[n == 1, Integrate[x^n, ...]]` substitutes.
 fn contains_assumption_consumer(expr: &Expr) -> bool {
@@ -1069,7 +1069,7 @@ fn contains_assumption_consumer(expr: &Expr) -> bool {
 /// Walk `assumption` looking for equality assumptions of the form
 /// `Equal[symbol, value]` (parsed as Comparison or FunctionCall, with
 /// optional List wrapper for conjunctions) and substitute each
-/// `symbol → value` in `body`. Used by `assuming_ast` to specialise an
+/// `symbol → value` in `body`. Used by `assuming_ast` to specialize an
 /// integration / sum / etc. before evaluating it.
 fn apply_assumption_substitutions(body: &Expr, assumption: &Expr) -> Expr {
   fn extract_equalities(a: &Expr, out: &mut Vec<(String, Expr)>) {

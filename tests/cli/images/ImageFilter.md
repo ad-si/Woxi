@@ -1,11 +1,11 @@
 # `ImageFilter`
 
-`ImageFilter[f, image, r]` applies `f` to the range-`r` neighbourhood of every
+`ImageFilter[f, image, r]` applies `f` to the range-`r` neighborhood of every
 pixel, in each channel. `f` receives the window as a matrix.
 
 Unlike `MeanFilter` and its siblings, the window is always the full `(2r+1)`
 square: the image is extended by repeating its edge samples rather than
-clipped, so a corner sees as many values as the centre does.
+clipped, so a corner sees as many values as the center does.
 
 ```scrut
 $ wo 'ImageData[ImageFilter[Mean[Flatten[#]] &, Image[{{0., 1.}}], 1]]'

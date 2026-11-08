@@ -481,9 +481,9 @@ fn solve(
   let mut d = vec![0.0; m];
   let mut e = vec![0.0; m.saturating_sub(1)];
   for (k, &i) in unknowns.iter().enumerate() {
-    let neighbours = usize::from(i > 0) + usize::from(i < n);
+    let neighbors = usize::from(i > 0) + usize::from(i < n);
     let w = weight(i);
-    d[k] = (-problem.a * neighbours as f64 / h + c[i] * w) / w;
+    d[k] = (-problem.a * neighbors as f64 / h + c[i] * w) / w;
     if k + 1 < m {
       let j = unknowns[k + 1];
       e[k] = problem.a / h / (w * weight(j)).sqrt();

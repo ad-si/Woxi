@@ -579,7 +579,7 @@ pub fn dispatch_math_functions(
     }
     "Total" => {
       // A structured matrix (CauchyMatrix[…], BlockDiagonalMatrix[…], …) is
-      // totalled over the matrix it represents, not over its stored payload.
+      // totaled over the matrix it represents, not over its stored payload.
       if let Some(first) = args.first()
         && let Some(dense) =
           crate::functions::linear_algebra_ast::structured_matrix_to_dense(
@@ -3064,7 +3064,7 @@ pub fn dispatch_math_functions(
         (&args[0], &args[1], &args[2])
         && *n > 0
       {
-        // Normalise the target residues into [0, n).
+        // Normalize the target residues into [0, n).
         let mut targets: Vec<i128> = Vec::with_capacity(residues.len());
         let mut ok = true;
         for r in residues {
@@ -4168,7 +4168,7 @@ pub fn dispatch_math_functions(
         return Some(Ok(Expr::List(result.into())));
       }
     }
-    // CircleThrough[{p1, ...}, q] — the circle centred at q through every
+    // CircleThrough[{p1, ...}, q] — the circle centered at q through every
     // p_i, and CircleThrough[{p1, ...}, q, r] — the one that also has radius
     // r. An explicit Circle is returned only when the points really are
     // equidistant from q (at distance r); otherwise it stays unevaluated.
@@ -4967,7 +4967,7 @@ pub fn dispatch_math_functions(
       }
     }
     // DMSList[degrees] — convert decimal degrees to {d, m, s}.
-    // DMSList[{d, m, s}] — re-normalise an unnormalised DMS triple.
+    // DMSList[{d, m, s}] — re-normalize an unnormalized DMS triple.
     "DMSList" if args.len() == 1 => {
       let val =
         evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
@@ -6898,7 +6898,7 @@ fn is_complex_expand_real_base(base: &Expr) -> bool {
 }
 
 /// Closed-form expansions for `Abs[arg]` under `ComplexExpand`. Returns
-/// `None` when the argument doesn't fit one of the recognised shapes so
+/// `None` when the argument doesn't fit one of the recognized shapes so
 /// the caller falls through to the split-real-imag path.
 fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   // Abs[a * b * …] → Abs[a] * Abs[b] * …
@@ -6918,7 +6918,7 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
     // `complex_expand_recursive` pass that produced this rewrite will
     // recurse into the resulting Abs[…] sub-calls, where this same
     // helper can apply the Power/Log closed forms to the un-expanded
-    // factor (e.g. recognising `Abs[Power[2, z]]` as `2^Re[z]`).
+    // factor (e.g. recognizing `Abs[Power[2, z]]` as `2^Re[z]`).
     let abs_factors: Vec<Expr> = factors
       .iter()
       .map(|f| complex_expand_recursive(&call1("Abs", f.clone())))

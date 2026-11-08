@@ -1,8 +1,8 @@
 use super::*;
 
-/// `ExampleData` serves Wolfram's catalogue with generated data. These tests
+/// `ExampleData` serves Wolfram's catalog with generated data. These tests
 /// check the generated values against the metadata table recorded from
-/// wolframscript (`resources/example_data_meta.tsv.gz`): the catalogue, the
+/// wolframscript (`resources/example_data_meta.tsv.gz`): the catalog, the
 /// property lists, every exact metadata value, and the head and shape of the
 /// generated data. The data itself is invented, so only its structure and
 /// statistics are asserted — plus pinned fingerprints, which catch any change
@@ -40,10 +40,10 @@ mod example_data_tests {
       .collect()
   }
 
-  /// The catalogue as wolframscript reported it: 19 collections and the
-  /// number of entries of each (SpatialPointData's catalogue is `$Failed`).
+  /// The catalog as wolframscript reported it: 19 collections and the
+  /// number of entries of each (SpatialPointData's catalog is `$Failed`).
   #[test]
-  fn catalogue_matches_wolframscript() {
+  fn catalog_matches_wolframscript() {
     clear_state();
     assert_eq!(
       interpret("ExampleData[]").unwrap(),
@@ -287,7 +287,7 @@ mod example_data_tests {
     );
   }
 
-  /// Every image has the recorded size, channels, type and colour space.
+  /// Every image has the recorded size, channels, type and color space.
   /// Check the images of every `parts`-th entry of `c`, starting at `part`
   /// (large collections are split so each test stays within its budget).
   fn check_images_part(c: &str, part: usize, parts: usize) {

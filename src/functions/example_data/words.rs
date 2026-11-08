@@ -661,7 +661,7 @@ impl Lexicon {
   }
 }
 
-/// An index biased towards the start of a frequency-ordered list.
+/// An index biased toward the start of a frequency-ordered list.
 fn biased<'a, T>(rng: &mut Rng, items: &'a [T]) -> &'a T {
   let i = (rng.uniform().powf(1.8) * items.len() as f64) as usize;
   &items[i.min(items.len() - 1)]

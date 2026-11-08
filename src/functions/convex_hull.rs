@@ -491,7 +491,7 @@ pub(crate) fn convex_hull_polygons(
 /// triangular faces as index triples into `points`, each wound so its
 /// outward normal follows the right-hand rule, or `None` when fewer than 4
 /// points are affinely independent (too few points, or all collinear/
-/// coplanar) — the 3D analogue of the 2D hull needing 3 non-collinear
+/// coplanar) — the 3D analog of the 2D hull needing 3 non-collinear
 /// points.
 fn convex_hull_3d(points: &[(f64, f64, f64)]) -> Option<Vec<[usize; 3]>> {
   let n = points.len();

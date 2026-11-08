@@ -1,7 +1,7 @@
 # Linear Algebra
 
 Matrix and vector operations. Sub-heading levels are
-normalised to `##` in this file.
+normalized to `##` in this file.
 
 - [`Dot`](linear_algebra/Dot.md)
 - [`Det`](linear_algebra/Det.md)

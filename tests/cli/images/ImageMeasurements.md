@@ -9,7 +9,7 @@ $ wo 'ImageMeasurements[Image[{{0., 1.}, {0.5, 0.25}}], "Mean"]'
 0.4375
 ```
 
-A colour image is measured channel by channel:
+A color image is measured channel by channel:
 
 ```scrut
 $ wo 'ImageMeasurements[Image[{{{1., 0., 0.}, {0., 1., 0.}}}], "Mean"]'
@@ -17,7 +17,7 @@ $ wo 'ImageMeasurements[Image[{{{1., 0., 0.}, {0., 1., 0.}}}], "Mean"]'
 ```
 
 `Entropy` and `Energy` are taken over the histogram of distinct *pixels*, so a
-colour pixel counts once however many channels it carries — two distinct
+color pixel counts once however many channels it carries — two distinct
 pixels give `Log[2]`:
 
 ```scrut

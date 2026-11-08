@@ -3,7 +3,7 @@
 //! The kernelspec files are embedded in the binary, so the command works from
 //! any working directory and from a binary installed via `cargo install` /
 //! a release archive, which has no `kernelspec/` directory next to it.
-//! They are materialised into a temporary staging directory and handed to
+//! They are materialized into a temporary staging directory and handed to
 //! `jupyter kernelspec install`; when the `jupyter` CLI is not on `PATH` the
 //! spec is written into Jupyter's kernels directory directly.
 
@@ -93,8 +93,8 @@ fn kernel_json() -> String {
 /// UTF-8 (`kernel.json` is JSON, so non-UTF-8 paths cannot be stored).
 fn current_exe() -> Option<String> {
   let exe = env::current_exe().ok()?;
-  // Resolves `./woxi` and symlinks; the un-canonicalised path is still
-  // absolute and usable, so a failure here is not fatal. Canonicalising via
+  // Resolves `./woxi` and symlinks; the un-canonicalized path is still
+  // absolute and usable, so a failure here is not fatal. Canonicalizing via
   // `woxi::utils` keeps the Windows extended-length prefix (`\\?\C:\…`) out
   // of the spec — `kernel.json` is read by tools that do not expect it.
   let exe = woxi::utils::canonicalize(&exe).unwrap_or(exe);

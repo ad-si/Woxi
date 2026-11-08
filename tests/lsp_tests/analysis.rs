@@ -1,4 +1,4 @@
-//! Tokenisation, definition discovery, diagnostics and position mapping.
+//! Tokenization, definition discovery, diagnostics and position mapping.
 
 use woxi::lsp::analysis::{
   Definition, DefinitionKind, LineIndex, MODIFIER_DECLARATION,
@@ -404,7 +404,7 @@ fn an_astral_character_takes_two_utf16_code_units() {
 
 /// The repository's own script suite is known-good Wolfram Language, so
 /// the language server must not flag any of it as a syntax error. This is
-/// the regression test for a tokeniser or diagnostic change that starts
+/// the regression test for a tokenizer or diagnostic change that starts
 /// rejecting valid code.
 #[test]
 fn no_repository_script_reports_a_syntax_error() {

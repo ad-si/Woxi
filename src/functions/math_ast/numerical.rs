@@ -106,7 +106,7 @@ fn n_eval_arbitrary_precision_form(
 ///
 /// Wolfram's `N` never numericizes an exact rational exponent: `N[x^2]` stays
 /// `x^2` (not `x^2.`) and `N[Sqrt[x]]` stays `Sqrt[x]`. Keeping the exponent
-/// exact is what lets `Solve`/`NSolve` still recognise `N[poly]` as a
+/// exact is what lets `Solve`/`NSolve` still recognize `N[poly]` as a
 /// polynomial — `N[BernoulliB[20, z]] == 0` is solvable only because the
 /// `z^20` term keeps its integer exponent. A non-rational exponent is still
 /// numericized (`N[x^Pi]` → `x^3.14159…`).
@@ -244,7 +244,7 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // N[Integrate[expr, {var, a, b}]] — when symbolic Integrate
       // didn't simplify (e.g. Abs[Sin[phi]]), fall back to NIntegrate.
-      // Matches wolframscript's behaviour of computing the value
+      // Matches wolframscript's behavior of computing the value
       // numerically rather than returning the unevaluated form.
       if name == "Integrate"
         && args.len() == 2
@@ -328,7 +328,7 @@ fn n_eval_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return Ok(r);
       }
-      // Honour NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
+      // Honor NHoldAll / NHoldFirst / NHoldRest attributes (built-in or
       // user-set). When a slot is held, leave the argument literal and
       // skip the recursive N application.
       let attrs = {
@@ -2118,7 +2118,7 @@ fn n_eval_arbitrary_partial(
       n_eval_arbitrary(&value, precision)
     }
     Expr::FunctionCall { name, args } => {
-      // Honour NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
+      // Honor NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
       // doesn't recurse into Out's slot and rewrite the index as a
       // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
       let attrs = {
@@ -4182,7 +4182,7 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Exact: each element / Sqrt[sum_sq], handed to the evaluator rather
       // than built literally. It owns both reductions this needs — a
       // perfect-square norm (`{3, 4}` → `{3/5, 4/5}`) and the radical
-      // canonicalisation wolframscript applies component-wise
+      // canonicalization wolframscript applies component-wise
       // (`3/Sqrt[18]` → `1/Sqrt[2]`, `5/Sqrt[70]` → `Sqrt[5/14]`). Built
       // literally the components came out as `3/Sqrt[18]`.
       let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
@@ -4448,7 +4448,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if *f == 0.0 {
         // Accuracy[0.] is the negative log of the smallest distinguishable
         // machine number, i.e. MachinePrecision - Log10[$MinMachineNumber].
-        // Wolfram uses 2^-1022 (smallest normalised double) here.
+        // Wolfram uses 2^-1022 (smallest normalized double) here.
         let min_machine_number = f64::MIN_POSITIVE;
         return Ok(Expr::Real(machine_precision - min_machine_number.log10()));
       }
@@ -4553,7 +4553,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// either FunctionCall or BinaryOp form) where both parts have finite
 /// accuracy, and return Wolfram's combined accuracy:
 ///   Acc = -Log10[Sqrt[10^(-2*Acc[re]) + 10^(-2*Acc[im])]].
-/// Returns None if the structure isn't a recognised real+imag pair, if
+/// Returns None if the structure isn't a recognized real+imag pair, if
 /// either part has infinite accuracy, or if there's no I factor — in
 /// those cases the caller falls back to the generic min-of-children path.
 fn try_complex_accuracy(expr: &Expr) -> Option<Expr> {
@@ -5726,7 +5726,7 @@ pub fn inverse_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Core discrete cosine transform of a real list `u`.
 /// `m` selects the DCT method: 1, 2 (default), 3, or 4.
-/// Mirrors the normalisation used by Wolfram's `FourierDCT`.
+/// Mirrors the normalization used by Wolfram's `FourierDCT`.
 fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
   let n = u.len();
   let nf = n as f64;
@@ -5924,7 +5924,7 @@ fn fourier_trig_transform(
 /// of a list of real numbers. Computed via the DFT: multiply the spectrum by
 /// -i on the positive-frequency half and +i on the negative-frequency half
 /// (zeroing the DC and, for even length, the Nyquist bin), then invert.
-/// Matches Wolfram's Chop behaviour: entries that vanish become the exact
+/// Matches Wolfram's Chop behavior: entries that vanish become the exact
 /// integer 0 while the rest stay machine-precision reals.
 pub fn discrete_hilbert_transform_ast(
   args: &[Expr],
@@ -6468,7 +6468,7 @@ pub fn nproduct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Detect `Infinity` upper bound and switch to Wynn-epsilon acceleration
-  // over partial products. The standard `try_eval_to_f64` doesn't recognise
+  // over partial products. The standard `try_eval_to_f64` doesn't recognize
   // the `Infinity` identifier, so check it explicitly first.
   let is_infinity_max =
     matches!(&items[2], Expr::Identifier(s) if s == "Infinity");
@@ -9280,7 +9280,7 @@ pub fn polish_and_pair_roots(coeffs: &[f64], roots: &mut [(f64, f64)]) {
   let monic: Vec<f64> = coeffs.iter().map(|c| c / lc).collect();
 
   // Horner with FMA — more accurate near a root, which lets the polish step
-  // tell the correctly-rounded f64 from its neighbour.
+  // tell the correctly-rounded f64 from its neighbor.
   let eval_p = |zr: f64, zi: f64| -> (f64, f64) {
     let mut re = monic[n];
     let mut im = 0.0;
@@ -9432,7 +9432,7 @@ fn apply_fn_to_complex(fnexpr: &Expr, zr: f64, zi: f64) -> Option<(f64, f64)> {
 }
 
 /// Convert an evaluated numeric expression into a `(re, im)` pair when
-/// possible. Recognises plain Reals, Complex[a, b], and Plus[real, im*I]
+/// possible. Recognizes plain Reals, Complex[a, b], and Plus[real, im*I]
 /// shapes.
 fn complex_from_expr(e: &Expr) -> Option<(f64, f64)> {
   match e {
@@ -9488,7 +9488,7 @@ fn complex_from_expr(e: &Expr) -> Option<(f64, f64)> {
   }
 }
 
-/// Recognise `Times[real, I]` (in either nesting) and return the real
+/// Recognize `Times[real, I]` (in either nesting) and return the real
 /// coefficient.
 fn imaginary_coeff(e: &Expr) -> Option<f64> {
   if let Expr::FunctionCall { name, args } = e

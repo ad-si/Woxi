@@ -282,7 +282,7 @@ const ASSIGNMENT_OPERATORS: &[&str] = &["=", ":=", "^=", "^:="];
 ///
 /// Definitions inside `Module[{i = 1}, …]` are reported too (with a nonzero
 /// `depth`), because "go to definition" on a local variable should land on
-/// its initialiser just as much as on a top-level one.
+/// its initializer just as much as on a top-level one.
 pub fn find_definitions(source: &str, tokens: &[Token]) -> Vec<Definition> {
   let mut definitions = Vec::new();
   let mut depths = vec![0_usize; tokens.len()];
@@ -425,7 +425,7 @@ pub struct Diagnostic {
   pub message: String,
 }
 
-/// Analyse `source` and report syntax errors and unsupported built-ins.
+/// Analyze `source` and report syntax errors and unsupported built-ins.
 ///
 /// A syntax error is fatal for the whole document, so it is reported alone:
 /// past the error the token stream is not trustworthy enough to say

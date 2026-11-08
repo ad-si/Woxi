@@ -775,7 +775,7 @@ pub fn dispatch_polynomial_functions(
     // NMaxValue/NMinValue/NArgMax/NArgMin/FindArgMax/FindArgMin with a
     // constrained form: `{f, cons}, {v1, v2}`. Currently only the
     // closed-form case "linear objective on a unit-disk-like quadratic
-    // constraint" is recognised; other inputs fall through.
+    // constraint" is recognized; other inputs fall through.
     "NMaxValue" | "NMinValue" | "NArgMax" | "NArgMin" | "FindArgMax"
     | "FindArgMin"
       if args.len() == 2
@@ -2198,7 +2198,7 @@ fn minimize_or_numeric_fallback(
 /// `ExpandNumerator[expr, opts]`, `ExpandDenominator[expr, opts]` and
 /// `Cancel[expr, Modulus -> p]`: each term of a sum (and each element of a
 /// list) is split into numerator and denominator; the numerator or the
-/// denominator is expanded by `Expand[…, opts]`, or the term is cancelled by
+/// denominator is expanded by `Expand[…, opts]`, or the term is canceled by
 /// `Together[…, Modulus -> p]`.
 fn rational_parts_with_options(
   name: &str,

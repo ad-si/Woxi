@@ -41,7 +41,7 @@ Nearest[5, 1]
 ```
 
 `DistanceFunction -> f` measures with `f[element, target]` instead of the
-built-in metric, so a named metric picks the neighbour:
+built-in metric, so a named metric picks the neighbor:
 
 ```scrut
 $ wo 'Nearest[{{0, 0}, {3, 4}}, {0, 1}, DistanceFunction -> ManhattanDistance]'

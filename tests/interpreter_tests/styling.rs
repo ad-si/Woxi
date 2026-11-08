@@ -210,7 +210,7 @@ mod font_size {
   fn number_form_of_style_keeps_the_style() {
     // A number format around a Style stays as written (wolframscript), and
     // typesets as the style around the formatted number, so a styled entry
-    // in a list of formatted numbers still draws coloured.
+    // in a list of formatted numbers still draws colored.
     assert_eq!(
       interpret(
         "{Head[#], Head[First[#]]} &[NumberForm[Style[3., Red], {4, 2}]]"
@@ -1319,7 +1319,7 @@ mod number_form_options {
   fn digit_blocks_widen_the_padded_field() {
     clear_state();
     for (code, expected) in [
-      // The separators a full field would carry count towards the width.
+      // The separators a full field would carry count toward the width.
       (
         "ToString[PaddedForm[123456, 8, DigitBlock -> 3]]",
         "    123,456",
@@ -1482,7 +1482,7 @@ mod directive_in_style {
       clear_state();
       let svg =
         interpret(&format!(r#"ExportString[{layout}, "SVG"]"#)).unwrap();
-      assert!(svg.contains("rgb(255,0,0)"), "no colour: {svg}");
+      assert!(svg.contains("rgb(255,0,0)"), "no color: {svg}");
       assert!(svg.contains("font-weight=\"bold\""), "not bold: {svg}");
       assert!(svg.contains("font-size=\"16\""), "wrong size: {svg}");
     }

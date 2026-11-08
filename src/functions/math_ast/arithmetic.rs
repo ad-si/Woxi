@@ -4,7 +4,7 @@ use std::borrow::Cow;
 
 /// Combine `SeriesData[var, x0, coeffs, nmin, nmax, denom]` summands that
 /// share the same `(var, x0, denom)` into a single SeriesData. The result
-/// truncates to `min(nmax_i)` so the O(…) order matches Wolfram's behaviour
+/// truncates to `min(nmax_i)` so the O(…) order matches Wolfram's behavior
 /// when adding two truncated series. Returns `None` if no two SeriesData
 /// summands are present.
 /// If `e` is a polynomial term `c * var^n` (or `var^n`, `var`, or a
@@ -198,7 +198,7 @@ fn try_series_data_plus(
   // When there is exactly one SeriesData but other args are polynomial
   // terms in the same `(var, x0)` (constant, `c*x^n`, `c*x`, `x^n`, `x`),
   // lift each polynomial term to a singleton SeriesData and merge — that's
-  // wolframscript's behaviour for e.g.
+  // wolframscript's behavior for e.g.
   // `Series[Exp[x],{x,0,3}] - 1 - x - x^2`
   // → `SeriesData[x, 0, {-1/2, 1/6}, 2, 4, 1]`.
   // Polynomials are exact (no truncation), so the lifted singleton uses the
@@ -254,7 +254,7 @@ fn try_series_data_plus(
       return crate::evaluator::evaluate_function_call_ast("Plus", &lifted)
         .map(Some);
     }
-    // About another centre only constants lift (`Log[2] + SeriesData[x,
+    // About another center only constants lift (`Log[2] + SeriesData[x,
     // Infinity, …]`); a power of x would have to be rewritten in `x - x0`
     // (or `1/x`) first.
     if !matches!(&sd_x0, Expr::Integer(0))
@@ -485,7 +485,7 @@ fn try_series_data_times(
     };
     for i in dependent {
       let mut series = expand(&args[i], nmax - 1)?;
-      // A factor vanishing to order v at the centre carries the product v
+      // A factor vanishing to order v at the center carries the product v
       // orders further, so it is expanded that much further too
       // (`Series[f[x], {x, 0, 3}] Sin[x]` is good to O[x]^5).
       if let Expr::FunctionCall { name, args: fa } = &series
@@ -1944,7 +1944,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // priority expressions, not strictly transitive — Rust's sort then panics
     // with "comparison function does not correctly implement a total order".
     // Catch the panic and fall back to a stable string-based sort instead, so
-    // these inputs simply lose the fine-grained Wolfram-flavoured ordering
+    // these inputs simply lose the fine-grained Wolfram-flavored ordering
     // rather than aborting the program.
     //
     // Both sorts permute indices, not the terms themselves: a panicking sort
@@ -2011,7 +2011,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Recognise an exact-coefficient imaginary term that should be promoted
+/// Recognize an exact-coefficient imaginary term that should be promoted
 /// to Real form when combined with an inexact value via Plus.
 /// Matches `I`, `Times[Integer|Rational, I]` (FunctionCall or BinaryOp),
 /// `Complex[Integer|Rational, Integer|Rational]`.
@@ -4238,7 +4238,7 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // Two real numeric terms (`E`, `Sqrt[8 + E^2]`) are in canonical order:
   // `-E + Sqrt[8 + E^2]`, `Pi + Sqrt[2 + Pi]`, `Sqrt[2] + Pi`.
   // Kept to small terms: canonical_cmp of two large numeric sums (the
-  // radicals of a triangle-centre formula) made every Plus sort crawl.
+  // radicals of a triangle-center formula) made every Plus sort crawl.
   fn small(e: &Expr, budget: &mut usize) -> bool {
     if *budget == 0 {
       return false;
@@ -8441,7 +8441,7 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // identifier when its highest-key arg is alphabetically smaller
       // (matches Wolfram `Order[Plus[2,a,b], z] = 1`). Only applies
       // for true bare identifiers — Power[x, n] keeps its existing
-      // comparison behaviour against additives.
+      // comparison behavior against additives.
       if is_bare_identifier(a) {
         let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
         let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
@@ -8479,7 +8479,7 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
       // Mirror of the (identifier, additive) case above — only applies
       // when b is a bare identifier so Power factors keep their
-      // existing comparison behaviour.
+      // existing comparison behavior.
       if is_bare_identifier(b) {
         let ak = crate::functions::list_helpers_ast::sorting::expr_sort_key(a);
         let bk = crate::functions::list_helpers_ast::sorting::expr_sort_key(b);
@@ -9315,7 +9315,7 @@ pub fn is_pos_real_const(name: &str) -> bool {
 /// constants multiplying it: `2 Pi` → `(2, 1, [Pi])`, `Pi/18` → `(1, 18,
 /// [Pi])`, `3/2` → `(3, 2, [])`.
 ///
-/// Radical canonicalisation uses this to fold a rational coefficient into a
+/// Radical canonicalization uses this to fold a rational coefficient into a
 /// radicand while leaving the constants inside, the way wolframscript prints
 /// `Sqrt[2 Pi]/2` as `Sqrt[Pi/2]`. Only named constants qualify: for a free
 /// symbol wolframscript splits the radical instead (the Sqrt product-split
@@ -10130,7 +10130,7 @@ fn combine_like_bases_depth(
   for (pi, ni) in &pairs {
     let (base_p, exp_p) = extract_base_exponent(&combined[*pi]);
     let (base_n, _) = extract_base_exponent(&combined[*ni]);
-    // Normalise the radicand: divide_two leaves a base like 2/Pi over 5 as the
+    // Normalize the radicand: divide_two leaves a base like 2/Pi over 5 as the
     // unreduced (2*Pi^(-1))/5, so re-evaluate it to the canonical 2/(5*Pi)
     // before wrapping it back up — matching wolframscript's Sqrt[2/(5*Pi)].
     // The bases are positive numerics/constants here, so this never recurses
@@ -10157,7 +10157,7 @@ fn combine_like_bases_depth(
 /// `SeriesData[var, x0, coeffs, nmin, nmax, denom] * var^k` →
 /// shift the series's exponent range by `k`. `k` may be Integer,
 /// `Rational[p, q]`, or `BinaryOp Divide` of two integers. Returns
-/// `None` if `series` isn't a SeriesData, `power` isn't a recognised
+/// `None` if `series` isn't a SeriesData, `power` isn't a recognized
 /// `var^k` form, or the variables don't match.
 fn try_series_data_times_var_power(
   series: &Expr,
@@ -11921,7 +11921,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Power[Integer|BigInteger base, Integer exponent] folds into the exact
         // coefficient fraction — a negative exponent (a reciprocal such as
         // `(10^40)^(-1)`) is otherwise left symbolic and never cancels against a
-        // large integer numerator (the BigInteger analogue of the Rational case).
+        // large integer numerator (the BigInteger analog of the Rational case).
         Expr::BinaryOp {
           op: BinaryOperator::Power,
           left: base,
@@ -14438,7 +14438,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 
   // A power past what wolframscript can represent is `Overflow[]` (or
   // `Underflow[]` on the way to zero), with a message — not a symbolic
-  // result, and certainly not an attempt to materialise a number with 10^17
+  // result, and certainly not an attempt to materialize a number with 10^17
   // digits. `2^(10^18/3)` used to stay symbolic and `2^(10^20)` used to hang.
   if let Some(result) = try_power_overflow(base, exp) {
     return Ok(result);
@@ -14546,7 +14546,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // (-I)^(p/q) → -(-1)^((2q - p)/(2q) mod 2). Wolfram canonicalises a
+  // (-I)^(p/q) → -(-1)^((2q - p)/(2q) mod 2). Wolfram canonicalizes a
   // negative-imaginary base raised to a rational power into a sign · (-1)^y
   // form by lining up the principal branch
   //   (-I)^x  = e^(-iπx/2)
@@ -14603,7 +14603,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // I^(p/q) → (-1)^(p/(2q)). Since I = (-1)^(1/2), Wolfram canonicalises a
+  // I^(p/q) → (-1)^(p/(2q)). Since I = (-1)^(1/2), Wolfram canonicalizes a
   // non-integer rational power of the imaginary unit into a (-1)^y form,
   // pulling out a sign when y lands in [1, 2):  (-1)^y = -(-1)^(y-1).
   if matches!(base, Expr::Identifier(s) if s == "I")
@@ -15040,7 +15040,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     }
     // Only a numeric sum: `1/Sqrt[2 Pi]`-style radicands have their own
-    // normalisation, which this flip would fight forever.
+    // normalization, which this flip would fight forever.
     && matches!(b, Expr::FunctionCall { name, .. } if name == "Plus")
     && crate::functions::math_ast::try_eval_to_f64(b).is_some_and(|v| v > 0.0)
     && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
@@ -15782,7 +15782,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // takes below: `1/Sqrt[Pi/2]` prints as `Sqrt[2/Pi]`. Only a base that is a
   // genuine fraction flips — wolframscript leaves `1/Sqrt[2 Pi]` alone, just
   // as it leaves `1/Sqrt[3]` alone, and flipping it would bounce against the
-  // reciprocal normalisation forever.
+  // reciprocal normalization forever.
   if let Expr::FunctionCall {
     name: ename,
     args: eargs,
@@ -16054,7 +16054,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // (`2^(1000/7)` pulls out 2^142 and used to panic on overflow).
     if *numer > 0 && *denom > 0 && *b > 0 && *b <= u64::MAX as i128 {
       // Above this the extracted factor is too large to be worth
-      // materialising; the power stays symbolic instead.
+      // materializing; the power stays symbolic instead.
       const MAX_EXTRACTED_EXPONENT: i128 = 100_000;
       let d = *denom;
       let n = *numer;
@@ -17624,7 +17624,7 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
     use astro_float::{BigFloat, RoundingMode};
     let rm = RoundingMode::ToEven;
     // Enough bits for the most precise summand at its magnitude, so the
-    // exact parts of a cancelling sum survive.
+    // exact parts of a canceling sum survive.
     let max_mag = scale as f64;
     let max_prec = args
       .iter()
@@ -17717,7 +17717,7 @@ fn is_bigfloat_evaluable_factor(e: &Expr) -> bool {
 }
 
 /// Extract a small signed integer exponent (`Integer(n)` or `-Integer(n)`).
-/// Used to recognise `Power[base, integer]` factors as bigfloat-evaluable.
+/// Used to recognize `Power[base, integer]` factors as bigfloat-evaluable.
 fn bigfloat_int_exponent(e: &Expr) -> Option<i128> {
   match e {
     Expr::Integer(n) => Some(*n),

@@ -58,7 +58,7 @@ fn bars_markers_and_bands_as_fractions() {
     .unwrap(),
     "{0, NumberForm[0.25, {Infinity, 2}], NumberForm[0.5, {Infinity, 2}], NumberForm[0.75, {Infinity, 2}], NumberForm[1., {Infinity, 2}]}"
   );
-  // The reference marker takes the series colour after the bars.
+  // The reference marker takes the series color after the bars.
   assert_eq!(
     interpret(
       "Cases[BulletGauge[{3, 8}, 5, {0, 10}], Directive[c_RGBColor, Opacity[0.5]] :> c, Infinity, 1]"

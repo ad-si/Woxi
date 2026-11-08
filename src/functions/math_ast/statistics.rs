@@ -5463,7 +5463,7 @@ fn legacy_one_sided_p(stat: f64, df: Option<f64>) -> Option<f64> {
 
 /// `(mean - mu0) / standardError`, with the degenerate zero-spread sample
 /// mapped the way the package's `0/0` and `x/0` do: indeterminate when the
-/// sample sits exactly on the hypothesised value, infinite otherwise.
+/// sample sits exactly on the hypothesized value, infinite otherwise.
 fn legacy_statistic(difference: f64, standard_error: f64) -> f64 {
   if standard_error == 0.0 {
     if difference == 0.0 {

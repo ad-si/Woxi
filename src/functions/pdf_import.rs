@@ -3,10 +3,10 @@
 //! Every page's content stream is interpreted into an SVG picture that
 //! becomes a `Graphics`, the way wolframscript's `Import["file.pdf"]` gives
 //! one `Graphics` per page. The interpreter covers the vector part of the
-//! content model — paths, transforms, colours, clipping, transparency,
+//! content model — paths, transforms, colors, clipping, transparency,
 //! form and image XObjects — and draws text through SVG text elements
 //! under the font family the PDF names, since embedded font programs are
-//! not rasterised here.
+//! not rasterized here.
 
 use crate::InterpreterError;
 use crate::syntax::Expr;
@@ -120,7 +120,7 @@ fn matrix_attr(m: &Matrix) -> String {
   )
 }
 
-/// A colour as an SVG paint, from PDF components by their count.
+/// A color as an SVG paint, from PDF components by their count.
 fn paint(components: &[f64]) -> String {
   let clamp = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
   match components {
@@ -388,8 +388,8 @@ impl Renderer<'_> {
     Some(entry.clone())
   }
 
-  /// The number of components a colour space takes.
-  fn colour_components(&self, resources: &Dictionary, space: &Object) -> usize {
+  /// The number of components a color space takes.
+  fn color_components(&self, resources: &Dictionary, space: &Object) -> usize {
     match space {
       Object::Name(n) => match n.as_slice() {
         b"DeviceGray" | b"G" | b"CalGray" => 1,
@@ -398,7 +398,7 @@ impl Renderer<'_> {
         b"Pattern" => 0,
         other => self
           .resource(resources, b"ColorSpace", other)
-          .map_or(3, |cs| self.colour_components(resources, &cs)),
+          .map_or(3, |cs| self.color_components(resources, &cs)),
       },
       Object::Array(items) => {
         let family = items.first().and_then(|o| o.as_name().ok());
@@ -426,7 +426,7 @@ impl Renderer<'_> {
     }
   }
 
-  /// Colour components as a paint, where a one-component value of a
+  /// Color components as a paint, where a one-component value of a
   /// `Separation`/`Indexed` space is read as ink coverage.
   fn paint_for(components: &[f64], separation: bool) -> String {
     if separation && components.len() == 1 {
@@ -531,7 +531,7 @@ impl Renderer<'_> {
       tm: IDENTITY,
       tlm: IDENTITY,
     };
-    // Whether the current fill/stroke colour space reads one component as
+    // Whether the current fill/stroke color space reads one component as
     // ink coverage rather than gray.
     let mut fill_sep = false;
     let mut stroke_sep = false;
@@ -598,7 +598,7 @@ impl Renderer<'_> {
           }
         }
 
-        // Colour
+        // Color
         "g" | "G" => {
           let v = numbers(o);
           if v.len() == 1 {
@@ -646,7 +646,7 @@ impl Renderer<'_> {
         }
         "cs" | "CS" => {
           if let Some(space) = o.first() {
-            let n = self.colour_components(resources, space);
+            let n = self.color_components(resources, space);
             let sep = match space {
               Object::Name(name) => self
                 .resource(resources, b"ColorSpace", name)
@@ -661,7 +661,7 @@ impl Renderer<'_> {
                 }),
               _ => false,
             };
-            // A new colour space starts out black.
+            // A new color space starts out black.
             let black = paint(&vec![0.0; n.max(1)]);
             if op.operator == "cs" {
               fill_n = n;

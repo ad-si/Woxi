@@ -328,7 +328,7 @@ pub fn dispatch_datetime_functions(
       }
       // `DateObject[date, granularity]` re-tags a date that is already a
       // `DateObject`: `DateObject[Now, "Hour"]` is the hour `Now` falls in,
-      // which is what a package memoising once an hour keys its cache on.
+      // which is what a package memoizing once an hour keys its cache on.
       if let Expr::FunctionCall {
         name: inner_name,
         args: inner_args,

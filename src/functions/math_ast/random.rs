@@ -725,7 +725,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RandomColor[] returns a single `RGBColor[r, g, b]` whose three channels
 /// are independent uniform draws from [0, 1). `RandomColor[n]` returns a
-/// list of `n` such colours.
+/// list of `n` such colors.
 pub fn random_color_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use rand::RngExt;
 
@@ -3334,7 +3334,7 @@ fn price_edges(n: usize, k: usize, a: f64) -> Vec<(usize, usize)> {
 }
 
 /// Watts–Strogatz small world: the circulant ring where every vertex is
-/// joined to its `k` nearest neighbours on each side, with every edge's far
+/// joined to its `k` nearest neighbors on each side, with every edge's far
 /// endpoint rewired with probability `p` to a uniformly chosen vertex that
 /// keeps the graph simple.
 fn watts_strogatz_edges(n: usize, p: f64, k: usize) -> Vec<(usize, usize)> {

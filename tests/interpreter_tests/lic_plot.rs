@@ -12,7 +12,7 @@ fn default_texture_raster() {
   );
 }
 
-// `{"noise", m, …}` sets an m × m texture; a five-argument colour function
+// `{"noise", m, …}` sets an m × m texture; a five-argument color function
 // gets x, y, vx, vy and the field's norm.
 #[test]
 fn noise_size_and_color_function() {

@@ -913,7 +913,7 @@ pub fn dispatch_complex_and_special(
       // tags (in order of first sow), and for each unique tag collect
       // its sowed values. Sows whose tags do not match any of the given
       // patterns are propagated to the enclosing Reap scope (if any),
-      // matching Wolfram's behaviour.
+      // matching Wolfram's behavior.
       let mut matched_indices: std::collections::HashSet<usize> =
         std::collections::HashSet::new();
       let mut result_groups: Vec<Expr> = Vec::new();
@@ -2366,10 +2366,10 @@ pub fn dispatch_complex_and_special(
 /// Enumerate all ways a list of sequence-pattern slots can match a list of
 /// expression elements. Each pattern slot is a `Pattern[name, BlankSequence]`
 /// or `Pattern[name, BlankNullSequence]` (possibly with an empty name).
-/// Returns `None` if the pattern structure isn't recognised.
+/// Returns `None` if the pattern structure isn't recognized.
 /// Reap tag matching: a bare `_`-style pattern matches any tag via the
 /// pattern matcher; any other expression compares structurally against the
-/// tag. Keeps the behaviour consistent with Wolfram's `Reap[expr, form]`,
+/// tag. Keeps the behavior consistent with Wolfram's `Reap[expr, form]`,
 /// where `form` is a symbol or a pattern like `_Symbol`, `_Integer`, etc.
 /// Parse a `MaxIterations -> n` option argument into an iteration count.
 /// Accepts a non-negative integer (clamped to >= 0) or `Infinity`, which maps
@@ -3224,7 +3224,7 @@ fn negated_term(term: &Expr) -> Option<Expr> {
       return Some(pos);
     }
     // Woxi stores a complex number as its `re + im I` Plus/Times tree;
-    // `complex_full_form_parts` is the shared recogniser for one.
+    // `complex_full_form_parts` is the shared recognizer for one.
     use crate::functions::expr_form::{ComplexParts, complex_full_form_parts};
     let negative = match complex_full_form_parts(e)? {
       ComplexParts::Exact { re, im } => {
@@ -3905,7 +3905,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   }
   // MakeBoxes has HoldAllComplete, so a postfix `expr // f` arg is
   // delivered as `Expr::Postfix { expr, func }` rather than being
-  // normalised to `FunctionCall { name: f, args: [expr] }`. The
+  // normalized to `FunctionCall { name: f, args: [expr] }`. The
   // form-specific branches below match on FunctionCall heads (e.g.
   // `FullForm[…]`), so unwrap any Postfix chain first so
   // `MakeBoxes[a-b // FullForm]` and `MakeBoxes[FullForm[a-b]]`
@@ -3913,11 +3913,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   if let Expr::Postfix { expr: inner, func } = expr
     && let Expr::Identifier(fname) = func.as_ref()
   {
-    let normalised = Expr::FunctionCall {
+    let normalized = Expr::FunctionCall {
       name: fname.clone(),
       args: vec![(**inner).clone()].into(),
     };
-    return expr_to_box_form(&normalised);
+    return expr_to_box_form(&normalized);
   }
   // Number-display forms (ScientificForm/EngineeringForm/NumberForm) render as
   // 2D `mantissa × 10^exp` (or plain) notation rather than as a literal
@@ -5308,7 +5308,7 @@ fn tf_indexed_special(
     "GegenbauerC" => ("C", None, &[3]),
     "ZernikeR" => ("R", None, &[3]),
     "JacobiP" => ("P", None, &[4]),
-    // The polynomial generalisations of the number sequences below.
+    // The polynomial generalizations of the number sequences below.
     "BernoulliB" | "BellB" => ("B", None, &[2]),
     "EulerE" => ("E", None, &[2]),
     "Fibonacci" => ("F", None, &[2]),
@@ -5320,7 +5320,7 @@ fn tf_indexed_special(
 
 /// Build `letterₙ^sup(x)` for an indexed special function. All but the last
 /// argument are indices: the first becomes the subscript, any further ones
-/// the superscript (parenthesised and comma-separated when there is more
+/// the superscript (parenthesized and comma-separated when there is more
 /// than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`).
 fn tf_indexed_call(
   letter: &str,
@@ -5472,7 +5472,7 @@ fn tf_is_additive(expr: &Expr) -> bool {
 /// Is this a large operator — `Sum`, `Product` or `Integrate` — whose
 /// operand runs on to the right of its `∑`/`∏`/`∫`? Anything set after it
 /// (another factor, an exponent, an outer integral's `ⅆx`) would read as
-/// part of that operand, so it is parenthesised there.
+/// part of that operand, so it is parenthesized there.
 fn tf_is_big_operator(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if matches!(name.as_str(), "Sum" | "Product" | "Integrate") && args.len() >= 2)
@@ -5593,7 +5593,7 @@ fn tf_fraction(num: &Expr, den: &Expr) -> Expr {
 ///
 /// `Derivative` is the head `f'` carries, and a front end never shows that
 /// head: a single order sets as prime marks (`f′`, `f″`, `f‴`), a higher or
-/// multivariate order as a parenthesised superscript (`f^(4)`, `f^(1,0)`).
+/// multivariate order as a parenthesized superscript (`f^(4)`, `f^(1,0)`).
 /// `None` when `orders` are not all non-negative integers, in which case the
 /// caller falls back to the generic `head(args)` rendering.
 fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
@@ -5848,7 +5848,7 @@ fn tf_times(expr: &Expr) -> Expr {
       if i > 0 {
         items.push(tf_thin_space());
       }
-      // A large operator followed by another factor is parenthesised;
+      // A large operator followed by another factor is parenthesized;
       // the last one runs on to the end of the product. A product among
       // other factors keeps its grouping: `a (b c)`.
       if (i + 1 < parts.len() && tf_is_big_operator(f)) || tf_is_product_node(f)
@@ -5986,7 +5986,7 @@ fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
   }
   let mut items = ops;
   items.push(tf_thin_space());
-  // A sum of terms as the operand is parenthesised: `∑ (a + b)`.
+  // A sum of terms as the operand is parenthesized: `∑ (a + b)`.
   if tf_is_additive(&args[0]) {
     items.push(tf_parens(tf(&args[0])));
   } else {
@@ -6036,7 +6036,7 @@ fn tf_integrate(args: &[Expr]) -> Expr {
   }
   let mut items = ops;
   items.push(tf_thin_space());
-  // A sum, or an inner large operator, is parenthesised so the `ⅆx`
+  // A sum, or an inner large operator, is parenthesized so the `ⅆx`
   // closes this integral: `∫ (∫ f ⅆy) ⅆx`. Over a region there is no
   // `ⅆx` to close it, so only a sum is.
   let body_needs_paren = tf_is_additive(&args[0])
@@ -12747,7 +12747,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_expr_to_expr(&area)
       }
       // RegularPolygon[n] / [r, n] / [{r, theta}, n] / [{x, y}, rspec, n]
-      // Area = (n/2) * r^2 * Sin[2 Pi / n]. Rotation and centre offsets
+      // Area = (n/2) * r^2 * Sin[2 Pi / n]. Rotation and center offsets
       // don't change the area, so they're discarded.
       "RegularPolygon" => {
         let (radius, n_expr) = match args.len() {
@@ -13932,7 +13932,7 @@ fn rat_div(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
 
 /// An exact rational over big integers, kept reduced with a positive
 /// denominator. The geometry solvers below need it: the numerators and
-/// denominators of a circumcentre grow fast enough that `i128` arithmetic
+/// denominators of a circumcenter grow fast enough that `i128` arithmetic
 /// overflows (and panics) on inputs with large coordinates.
 #[derive(Clone, PartialEq, Eq)]
 struct BigRat {
@@ -15284,9 +15284,9 @@ fn is_region_head(expr: &Expr) -> bool {
   )
 }
 
-/// The circumball of the points `idx` in `pts`: the ball whose centre lies in
+/// The circumball of the points `idx` in `pts`: the ball whose center lies in
 /// their affine hull and whose boundary passes through all of them. With
-/// v_i = q_i - q_0 the centre is q_0 + sum_i lambda_i v_i, where lambda solves
+/// v_i = q_i - q_0 the center is q_0 + sum_i lambda_i v_i, where lambda solves
 /// `2 (v_i . v_j) lambda_j = v_i . v_i`. `None` when the points are affinely
 /// dependent (a singular system).
 fn affine_circumball(
@@ -15384,9 +15384,9 @@ fn enclosing_ball_support(pts: &[Vec<f64>]) -> Option<Vec<usize>> {
 }
 
 /// The smallest ball enclosing `points`, as `(center, radius)`. The support set
-/// is found in machine arithmetic and the centre and radius are then recomputed
+/// is found in machine arithmetic and the center and radius are then recomputed
 /// exactly whenever every coordinate is an integer or a rational, so exact
-/// input gives an exact centre and a (possibly radical) radius like
+/// input gives an exact center and a (possibly radical) radius like
 /// wolframscript. `None` for non-numeric coordinates.
 fn minimal_enclosing_ball(points: &[Vec<Expr>]) -> Option<(Expr, Expr)> {
   let fpts: Vec<Vec<f64>> = points
@@ -15400,7 +15400,7 @@ fn minimal_enclosing_ball(points: &[Vec<Expr>]) -> Option<(Expr, Expr)> {
   let support = enclosing_ball_support(&fpts)?;
   let d = fpts[0].len();
 
-  // Exact path: rational coordinates give a rational centre and radius^2.
+  // Exact path: rational coordinates give a rational center and radius^2.
   let rpts: Option<Vec<Vec<(i128, i128)>>> = support
     .iter()
     .map(|&i| {
@@ -15576,7 +15576,7 @@ fn compute_bounding_region(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if matches!(spec, "FastBall" | "FastDisk") {
-    // The circumball of the bounding box: centred on the box centre with the
+    // The circumball of the bounding box: centered on the box center with the
     // half-diagonal as its radius.
     let half = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&div(
@@ -15739,7 +15739,7 @@ fn eval_call(name: &str, args: Vec<Expr>) -> Result<Expr, InterpreterError> {
 
 /// Whether two expressions are the same number, decided by simplifying their
 /// difference rather than by comparing how they are written — the radicals a
-/// circumcentre picks up do not cancel on their own.
+/// circumcenter picks up do not cancel on their own.
 fn same_value(a: &Expr, b: &Expr) -> bool {
   let difference = call("Subtract", vec![a.clone(), b.clone()]);
   matches!(
@@ -15764,9 +15764,9 @@ fn squared_distance(p: &[Expr], q: &[Expr]) -> Result<Expr, InterpreterError> {
   eval_call("Plus", vec![term(0), term(1)])
 }
 
-/// The centre of the circle through three planar points, or `None` when they
+/// The center of the circle through three planar points, or `None` when they
 /// are collinear and no circle passes through all of them.
-fn circumcentre(
+fn circumcenter(
   a: &[Expr],
   b: &[Expr],
   c: &[Expr],
@@ -15791,7 +15791,7 @@ fn circumcentre(
   let norm =
     |p: &[Expr]| squared_distance(p, &[Expr::Integer(0), Expr::Integer(0)]);
   let (na, nb, nc) = (norm(a)?, norm(b)?, norm(c)?);
-  // The circumcentre coordinates are the usual determinant ratios.
+  // The circumcenter coordinates are the usual determinant ratios.
   let coordinate = |i: usize| -> Result<Expr, InterpreterError> {
     let j = 1 - i;
     let sign = if i == 0 { 1 } else { -1 };
@@ -15808,9 +15808,9 @@ fn circumcentre(
   Ok(Some(vec![coordinate(0)?, coordinate(1)?]))
 }
 
-/// `CircularArcThrough[{p1, …}]`, optionally with a centre and a radius — the
+/// `CircularArcThrough[{p1, …}]`, optionally with a center and a radius — the
 /// arc of the circle through the points, written as a `Circle` running from
-/// the smallest of their angles about the centre to the largest.
+/// the smallest of their angles about the center to the largest.
 fn compute_circular_arc_through(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -15847,9 +15847,9 @@ fn compute_circular_arc_through(
     return indep();
   }
 
-  let centre: Vec<Expr> = match args.get(1) {
+  let center: Vec<Expr> = match args.get(1) {
     Some(Expr::List(c)) if c.len() == 2 => c.iter().cloned().collect(),
-    // A centre that is not a planar point — `Automatic`, say — is not one
+    // A center that is not a planar point — `Automatic`, say — is not one
     // wolframscript works out for itself.
     Some(_) => return uneval(),
     None => {
@@ -15866,7 +15866,7 @@ fn compute_circular_arc_through(
         };
         vec![midpoint(0)?, midpoint(1)?]
       } else {
-        match circumcentre(&coords[0], &coords[1], &coords[2])? {
+        match circumcenter(&coords[0], &coords[1], &coords[2])? {
           Some(c) => c,
           None => return indep(),
         }
@@ -15874,11 +15874,11 @@ fn compute_circular_arc_through(
     }
   };
 
-  // Every point has to sit on one circle about that centre.
-  let squared_radius = simplified(squared_distance(&coords[0], &centre)?)?;
+  // Every point has to sit on one circle about that center.
+  let squared_radius = simplified(squared_distance(&coords[0], &center)?)?;
   for point in &coords[1..] {
-    if !same_value(&squared_distance(point, &centre)?, &squared_radius) {
-      // A centre the caller named simply does not fit; one worked out here
+    if !same_value(&squared_distance(point, &center)?, &squared_radius) {
+      // A center the caller named simply does not fit; one worked out here
       // means the points are not concyclic.
       return if args.len() > 1 { uneval() } else { indep() };
     }
@@ -15890,12 +15890,12 @@ fn compute_circular_arc_through(
     return uneval();
   }
 
-  // The arc spans the angles the points make about the centre, taken over a
+  // The arc spans the angles the points make about the center, taken over a
   // full turn so that the smallest and largest of them are its ends.
   let mut angles = Vec::with_capacity(coords.len());
   for point in &coords {
     let delta =
-      |i: usize| call("Subtract", vec![point[i].clone(), centre[i].clone()]);
+      |i: usize| call("Subtract", vec![point[i].clone(), center[i].clone()]);
     let turn = times(vec![Expr::Integer(2), id_expr("Pi")]);
     angles.push(eval_call(
       "Mod",
@@ -15907,7 +15907,7 @@ fn compute_circular_arc_through(
   );
   Ok(call(
     "Circle",
-    vec![Expr::List(centre.into()), radius, span],
+    vec![Expr::List(center.into()), radius, span],
   ))
 }
 
@@ -16967,7 +16967,7 @@ fn region_within(
 }
 
 /// `true` if `expr` is structurally zero (e.g. `Integer(0)`). Used to
-/// short-circuit the symbolic-complex DirectedInfinity normalisation when
+/// short-circuit the symbolic-complex DirectedInfinity normalization when
 /// the imaginary part collapses to zero — that's the pure-real case
 /// already handled above.
 fn is_zero_expr(expr: &Expr) -> bool {
@@ -16979,7 +16979,7 @@ fn is_zero_expr(expr: &Expr) -> bool {
 /// factor (imaginary contribution) or none (real contribution); both kinds
 /// of contribution must themselves be real-valued (no `I` anywhere). When
 /// any term doesn't fit, returns None and the caller leaves the input
-/// unchanged. Used by `DirectedInfinity` to normalise symbolic directions
+/// unchanged. Used by `DirectedInfinity` to normalize symbolic directions
 /// like `-1 + 2*Pi*I` into `(-1 + 2*Pi*I)/Sqrt[1 + 4*Pi^2]`.
 pub fn split_real_imag_symbolic(expr: &Expr) -> Option<(Expr, Expr)> {
   fn pull_i_factor(e: &Expr) -> Option<Expr> {
@@ -17140,7 +17140,7 @@ fn contains_unevaluated_integrate(expr: &Expr) -> bool {
 /// `true` if `expr` contains a machine-precision Real anywhere in its
 /// structure. Used by `DirectedInfinity` to distinguish exact closed-form
 /// directions like `(1 + 2 I)/Sqrt[5]` from inexact ones like
-/// `1. + 2. I` — only the latter should be normalised numerically.
+/// `1. + 2. I` — only the latter should be normalized numerically.
 use crate::functions::math_ast::expr_contains_real;
 
 /// `RegionIntersection` / `RegionUnion` / `RegionDifference`. Regions that
@@ -17574,7 +17574,7 @@ fn segment_ends(reg: &Expr) -> Option<(Expr, Expr)> {
   Some((from.clone(), coord_sum(vec![from.clone(), step.clone()])))
 }
 
-/// The centre and radius of a disk written with either of its two spellings.
+/// The center and radius of a disk written with either of its two spellings.
 fn disk_parts(reg: &Expr) -> Option<(Vec<Expr>, Expr)> {
   let Expr::FunctionCall { name, args } = reg else {
     return None;
@@ -17582,15 +17582,15 @@ fn disk_parts(reg: &Expr) -> Option<(Vec<Expr>, Expr)> {
   if name != "Disk" {
     return None;
   }
-  let centre = match args.first() {
+  let center = match args.first() {
     Some(p) => point_coords(p)?,
     None => vec![Expr::Integer(0), Expr::Integer(0)],
   };
-  if centre.len() != 2 {
+  if center.len() != 2 {
     return None;
   }
   let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
-  Some((centre, radius))
+  Some((center, radius))
 }
 
 /// The corners of a triangle, filling in the unit one written bare.
@@ -17697,16 +17697,16 @@ fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
   // A disk swept along a segment is a cylinder, a triangle swept along one a
   // prism — neither side of which is a parallelotope.
   for (disk, segment, disk_first) in [(a, b, true), (b, a, false)] {
-    let (Some((centre, radius)), Some((lo, hi))) =
+    let (Some((center, radius)), Some((lo, hi))) =
       (disk_parts(disk), segment_ends(segment))
     else {
       continue;
     };
     let ends = |z: Expr| {
       if disk_first {
-        join_coords(&centre, &[z])
+        join_coords(&center, &[z])
       } else {
-        join_coords(&[z], &centre)
+        join_coords(&[z], &center)
       }
     };
     return Some(call(

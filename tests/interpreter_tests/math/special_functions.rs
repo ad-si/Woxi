@@ -3012,7 +3012,7 @@ mod hurwitz_zeta {
   }
 
   // Rounded from the arbitrary-precision sum. At a negative s the f64
-  // Euler–Maclaurin sum lost digits to cancelling terms.
+  // Euler–Maclaurin sum lost digits to canceling terms.
   #[test]
   fn machine_values_correctly_rounded() {
     assert_eq!(
@@ -4707,7 +4707,7 @@ mod beta_fn {
   }
 
   #[test]
-  fn real_cancelling_poles_are_finite() {
+  fn real_canceling_poles_are_finite() {
     // Numerator and denominator poles cancel to a finite limit.
     assert_eq!(interpret("Beta[-3.0, 2.0]").unwrap(), "0.16666666666666666");
     assert_eq!(interpret("Beta[2.0, -2.0]").unwrap(), "0.5");
@@ -8666,7 +8666,7 @@ mod bandpass_filter {
 // `GradientFilter[data, r]` returns the magnitude of the Gaussian-
 // smoothed gradient. Uses the same Bessel-based discrete Gaussian as
 // GaussianFilter for the smoothing direction, paired with a derivative
-// kernel `D[k] = -k·T[k] / Σ_j j²·T[j]` normalised so a unit ramp
+// kernel `D[k] = -k·T[k] / Σ_j j²·T[j]` normalized so a unit ramp
 // reproduces its slope.
 mod gradient_filter {
   use super::*;
@@ -8718,7 +8718,7 @@ mod gradient_filter {
 }
 
 // `GaussianFilter[data, r]` uses the Bessel-based discrete Gaussian
-// kernel `T_k(t) = e^(-t)·I_k(t)` with `t = σ² = (r/2)²`, normalised
+// kernel `T_k(t) = e^(-t)·I_k(t)` with `t = σ² = (r/2)²`, normalized
 // over `k ∈ [-r, r]` so the kernel sums to 1.
 mod gaussian_filter {
   use super::*;
@@ -10374,7 +10374,7 @@ mod barnes_g {
   fn series_at_zero_order_2() {
     // wolframscript:
     //   SeriesData[x, 0, {1, EulerGamma + (-1 + Log[2*Pi])/2}, 1, 3, 1]
-    // Woxi's Plus canonicalisation reorders the EulerGamma summand.
+    // Woxi's Plus canonicalization reorders the EulerGamma summand.
     assert_eq!(
       interpret("Series[BarnesG[x], {x, 0, 2}]").unwrap(),
       "SeriesData[x, 0, {1, (-1 + Log[2*Pi])/2 + EulerGamma}, 1, 3, 1]"
@@ -11455,8 +11455,8 @@ mod mathieu_s {
     s.trim().parse().unwrap()
   }
 
-  /// Woxi's normalisation pins `y(0) = 0`, `y'(0) = √a` so the q → 0
-  /// limit reproduces sin(√a · z). Wolfram's normalisation introduces
+  /// Woxi's normalization pins `y(0) = 0`, `y'(0) = √a` so the q → 0
+  /// limit reproduces sin(√a · z). Wolfram's normalization introduces
   /// an additional (a, q)-dependent factor for q ≠ 0; tests compare
   /// shape ratios where Wolfram and Woxi must agree.
 
@@ -11493,9 +11493,9 @@ mod mathieu_s {
   #[test]
   fn mathieu_s_prime_audit_case_is_numeric() {
     // Audit case `MathieuSPrime[2, 1, 3.2]`. Previously unevaluated.
-    // Now returns a finite Real (with Woxi's q → 0 normalisation —
+    // Now returns a finite Real (with Woxi's q → 0 normalization —
     // not the same scalar Wolfram returns, but the call is no longer
-    // symbolic). The normalisation-invariant shape ratio
+    // symbolic). The normalization-invariant shape ratio
     // `MathieuSPrime(a, q, z) / MathieuSPrime(a, q, 0)` matches.
     let val = parse_real(&interpret("MathieuSPrime[2, 1, 3.2]").unwrap());
     assert!(val.is_finite(), "expected a finite real, got {val}");
@@ -11556,7 +11556,7 @@ mod mathieu_s {
     );
   }
 
-  // wolframscript's Floquet normalisation, not 1 at the origin.
+  // wolframscript's Floquet normalization, not 1 at the origin.
   #[test]
   fn mathieu_c_at_origin() {
     let val = parse_real(&interpret("MathieuC[2., 1., 0.]").unwrap());
@@ -12309,9 +12309,9 @@ mod mathieu_far_arguments {
     );
   }
 
-  // wolframscript's normalisation: the Floquet coefficients have unit norm.
+  // wolframscript's normalization: the Floquet coefficients have unit norm.
   #[test]
-  fn floquet_normalisation() {
+  fn floquet_normalization() {
     assert_eq!(
       interpret(
         "{Abs[MathieuC[1.5, 0.5, 0.] - 1.3027092577566124] < 10^-10, \

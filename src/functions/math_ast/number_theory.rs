@@ -345,7 +345,7 @@ fn gaussian_rem(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   (ar - (br * q_re - bi * q_im), ai - (br * q_im + bi * q_re))
 }
 
-/// Normalise a nonzero Gaussian integer to its canonical associate with
+/// Normalize a nonzero Gaussian integer to its canonical associate with
 /// Re > 0 and Im >= 0 (multiplying by a unit 1, i, -1, or -i), matching
 /// wolframscript's GCD representative. `(0, 0)` maps to itself.
 fn gaussian_normalize(mut g: (i128, i128)) -> (i128, i128) {
@@ -430,7 +430,7 @@ fn gaussian_exact_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   ((ar * br + ai * bi) / denom, (ai * br - ar * bi) / denom)
 }
 
-/// LCM of two Gaussian integers: (a / gcd(a, b)) * b, normalised to the
+/// LCM of two Gaussian integers: (a / gcd(a, b)) * b, normalized to the
 /// canonical associate. `(0, 0)` if either operand is zero.
 fn gaussian_lcm(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
   if a == (0, 0) || b == (0, 0) {
@@ -685,7 +685,7 @@ pub fn make_rational_expr(num: &BigInt, den: &BigInt) -> Expr {
   use num_traits::One;
   if den.is_zero() {
     // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
-    // callers see the same surface behaviour.
+    // callers see the same surface behavior.
     return id_expr("ComplexInfinity");
   }
   let (n, d) = rat_reduce_bigint(num, den);
@@ -2101,7 +2101,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       k.clone()
     } else {
       // Build the BinaryOp Power form (k^j), which Sum's closed-form path
-      // recognises; FunctionCall Power[k, j] would be left unevaluated.
+      // recognizes; FunctionCall Power[k, j] would be left unevaluated.
       pow2(k.clone(), Expr::Integer(j))
     };
     let sum = call(

@@ -3923,9 +3923,9 @@ fn imaginary_infinity_sign(expr: &Expr) -> Option<i8> {
       }
       if has_i && has_inf { Some(sign) } else { None }
     }
-    // After Times canonicalisation, `I·Infinity` collapses to
+    // After Times canonicalization, `I·Infinity` collapses to
     // `DirectedInfinity[I]` (and `-I·Infinity` to `DirectedInfinity[-I]`).
-    // Recognise both forms here so trig handlers downstream still match.
+    // Recognize both forms here so trig handlers downstream still match.
     Expr::FunctionCall { name, args }
       if name == "DirectedInfinity" && args.len() == 1 =>
     {
@@ -6886,9 +6886,9 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // intact.
   let combined =
     crate::evaluator::evaluate_function_call_ast("Together", &[current])?;
-  let cancelled =
+  let canceled =
     crate::evaluator::evaluate_function_call_ast("Cancel", &[combined])?;
-  let factored = factor_reduced_reciprocals(cancelled)?;
+  let factored = factor_reduced_reciprocals(canceled)?;
   let factored = factor_reduced_numeric_content(factored)?;
   // Together/Cancel may factor scalar multiples inside arguments again,
   // so normalize the arguments after those algebraic passes.

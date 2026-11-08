@@ -2812,7 +2812,7 @@ mod correlation {
     //      `as u64` (gave garbage radicands).
     //   2. The large-integer (>2^53) branch of times_ast folded only
     //      Integer/BigInteger factors, leaving a Rational coefficient
-    //      uncancelled (e.g. `(15*10^15 Sqrt[3/7])/10^16`).
+    //      uncanceled (e.g. `(15*10^15 Sqrt[3/7])/10^16`).
     // Correlation is scale-invariant, so all of these equal the {1,2,4}/{1,2,3}
     // value `(3 Sqrt[3/7])/2`, matching wolframscript.
     for k in ["15", "20", "25", "40"] {
@@ -3005,7 +3005,7 @@ mod cdf {
     // PDF[HypergeometricDistribution[20, 50, 100], k] =
     //   Binomial[50, k] * Binomial[50, 20 - k] / Binomial[100, 20] for
     //   0 <= k <= 20, else 0. Binomial[100, 20] = 535983370403809682970.
-    // (Times canonicalisation puts Binomial[50, k] before
+    // (Times canonicalization puts Binomial[50, k] before
     //  Binomial[50, 20 - k]; mathematically identical to wolframscript's
     //  reverse order.)
     assert_eq!(
@@ -5831,7 +5831,7 @@ mod hypothesis_testing_legacy_package {
   }
 
   #[test]
-  fn difference_test_needs_a_hypothesised_difference() {
+  fn difference_test_needs_a_hypothesized_difference() {
     clear_state();
     assert_eq!(
       interpret(
@@ -8092,7 +8092,7 @@ mod cases {
     // Same FindClusters heuristic-disagreement family as cases
     // 1698/1700/1701. The last expression also exercises the
     // `Method -> "Agglomerate"` option — Woxi now accepts it (along
-    // with other recognised options like CriterionFunction,
+    // with other recognized options like CriterionFunction,
     // PerformanceGoal, WorkingPrecision) and silently ignores them
     // since the default algorithm is used. Verify the partition-of-
     // input contract.

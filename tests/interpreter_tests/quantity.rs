@@ -503,7 +503,7 @@ fn quantity_q_false() {
 #[test]
 fn quantity_q_unknown_unit_false() {
   // 'Maters' isn't a known unit, so Quantity[3, "Maters"] fails QuantityQ —
-  // matching wolframscript's stricter behaviour.
+  // matching wolframscript's stricter behavior.
   assert_eq!(
     interpret(r#"QuantityQ[Quantity[3, "Maters"]]"#).unwrap(),
     "False"
@@ -3019,7 +3019,7 @@ mod compound_unit_input_form {
     );
   }
 
-  // A lone negative power stays a power, with its exponent parenthesised.
+  // A lone negative power stays a power, with its exponent parenthesized.
   #[test]
   fn a_lone_negative_power_keeps_its_form() {
     assert_eq!(

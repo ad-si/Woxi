@@ -311,7 +311,7 @@ SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Id
 // ListCall handles List used as a function head: {f, g}[x] → applies each element to args
 ListCall = { List ~ BracketArgs+ }
 // NumericCall handles a numeric literal used as a function head, e.g.
-// `1[2, 3]` (an expression with an integer head, used for labelled trees).
+// `1[2, 3]` (an expression with an integer head, used for labeled trees).
 // Restricted to numeric literals (not Constants) and mirrors `(1)[2, 3]`.
 NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
 // StringCall handles a string literal used as a function head, e.g.
@@ -460,7 +460,7 @@ Operator = @{
 // PostfixFunction: function used in postfix application (x // f or x // Map[f])
 // Uses BaseFunctionCall to avoid circular reference with FunctionCall -> FunctionArg -> Expression -> PostfixApplication
 // Optional trailing & allows "x // f &" to parse as x // (f &), matching Wolfram precedence.
-// Parenthesised expressions and List literals can also serve as the postfix
+// Parenthesized expressions and List literals can also serve as the postfix
 // operator, supporting `expr // (#1+1&)` and `expr // {#1, Precision[#1]}&`.
 // A bare Slot-based body (`expr // #&`, `expr // #+1&`) is its own
 // alternative: SimpleAnonymousFunction already parses `# op term &` and

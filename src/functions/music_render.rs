@@ -25,7 +25,7 @@ use crate::functions::music_font::{self, glyph};
 /// Vertical distance between two adjacent staff lines.
 const GAP: f64 = 12.0;
 /// Half a `GAP`: the vertical step between adjacent diatonic degrees (a line
-/// and its neighbouring space).
+/// and its neighboring space).
 const STEP: f64 = GAP / 2.0;
 /// `y` of the bottom staff line (E4) in internal coordinates.
 const BOTTOM_LINE_Y: f64 = 100.0;
@@ -609,7 +609,7 @@ impl Canvas {
 
   /// Draw the Leland glyph `ch` so its origin `(0, 0)` lands at `(ox, oy)`,
   /// tagging the emitted `<path>` with `class` so hosts (and tests) can
-  /// recognise it.
+  /// recognize it.
   fn glyph_at(&mut self, ch: char, ox: f64, oy: f64, class: &str) {
     self.glyph_scaled(ch, ox, oy, self.scale, class);
   }
@@ -637,7 +637,7 @@ impl Canvas {
     }
   }
 
-  /// Draw a glyph horizontally centred on `cx`, with its vertical origin (the
+  /// Draw a glyph horizontally centered on `cx`, with its vertical origin (the
   /// SMuFL staff reference) at `cy`.
   fn glyph_centered(&mut self, ch: char, cx: f64, cy: f64, class: &str) {
     let cxoff =
@@ -646,7 +646,7 @@ impl Canvas {
   }
 
   /// Half the width of the notehead glyph used for `dur`, in user units — the
-  /// horizontal offset from a head's centre to where its stem attaches.
+  /// horizontal offset from a head's center to where its stem attaches.
   fn notehead_half_width(&self, dur: Dur) -> f64 {
     music_font::glyph_bbox(notehead_glyph(dur))
       .map_or(6.0, |bb| bb.half_width(self.scale))
@@ -681,8 +681,8 @@ impl Canvas {
       / 2.0
   }
 
-  /// Draw a run of digits with the group horizontally centred on `cx` and each
-  /// glyph's bounding box vertically centred on `cy`.
+  /// Draw a run of digits with the group horizontally centered on `cx` and each
+  /// glyph's bounding box vertically centered on `cy`.
   fn draw_digits_centered(&mut self, cx: f64, cy: f64, digits: &[char]) {
     const DIGIT_GAP: f64 = 1.0;
     let mut left = cx - self.digits_width(digits) / 2.0;
@@ -690,7 +690,7 @@ impl Canvas {
       let Some(bb) = music_font::glyph_bbox(c) else {
         continue;
       };
-      // Left ink edge at `left`; bounding box vertically centred on `cy`.
+      // Left ink edge at `left`; bounding box vertically centered on `cy`.
       let ox = left - bb.x_min * self.scale;
       let oy = cy + f64::midpoint(bb.y_min, bb.y_max) * self.scale;
       self.glyph_at(c, ox, oy, "timesig");
@@ -698,7 +698,7 @@ impl Canvas {
     }
   }
 
-  /// How far left of a note/chord's head centre its ink reaches, including any
+  /// How far left of a note/chord's head center its ink reaches, including any
   /// accidentals (mirrors the column staggering in [`draw_note`]).
   fn note_left_extent(&self, heads: &[Head], dur: Dur) -> f64 {
     let hw = self.notehead_half_width(dur);
@@ -722,7 +722,7 @@ impl Canvas {
     reach
   }
 
-  /// How far right of a note/chord's head centre its ink reaches, including an
+  /// How far right of a note/chord's head center its ink reaches, including an
   /// up-stem flag and any second displaced to the right of the stem.
   fn note_right_extent(&self, heads: &[Head], dur: Dur) -> f64 {
     let hw = self.notehead_half_width(dur);
@@ -847,7 +847,7 @@ fn accidental_columns(heads: &[Head], scale: f64) -> (Vec<Option<usize>>, f64) {
 }
 
 /// Draw a Leland sharp or flat glyph to the left of a note head, its right edge
-/// a small gap left of `head_left` and vertically centred on `cy`. `column` and
+/// a small gap left of `head_left` and vertically centered on `cy`. `column` and
 /// `slot` place stacked chord accidentals in uniform-width columns so their
 /// signs do not collide horizontally regardless of glyph width.
 fn draw_accidental(
@@ -871,7 +871,7 @@ fn draw_accidental(
   cv.glyph_at(ch, ox, cy, "accidental");
 }
 
-/// Draw ledger lines through a head at diatonic position `dn` centred at `cx`,
+/// Draw ledger lines through a head at diatonic position `dn` centered at `cx`,
 /// extending `head_half_width` plus a small overhang either side of the head.
 fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32, head_half_width: f64) {
   let half = head_half_width + 2.5;
@@ -894,7 +894,7 @@ fn draw_ledger_lines(cv: &mut Canvas, cx: f64, dn: i32, head_half_width: f64) {
   }
 }
 
-/// Draw a note or chord centred at `x`.
+/// Draw a note or chord centered at `x`.
 fn draw_note(cv: &mut Canvas, x: f64, heads: &[Head], dur: Dur) {
   let nh = notehead_glyph(dur);
   let hw = cv.notehead_half_width(dur);
@@ -940,7 +940,7 @@ fn draw_note(cv: &mut Canvas, x: f64, heads: &[Head], dur: Dur) {
   }
 }
 
-/// Whether a note or chord's stem points up: notes centred on the lower half of
+/// Whether a note or chord's stem points up: notes centered on the lower half of
 /// the staff stem up, the rest stem down.
 fn stem_up(heads: &[Head]) -> bool {
   let top = heads.iter().map(|h| h.dn).max().unwrap();
@@ -960,7 +960,7 @@ fn flag_glyph(dur: Dur, up: bool) -> Option<char> {
   })
 }
 
-/// Draw a rest centred at `x`. The whole rest hangs from the fourth staff line
+/// Draw a rest centered at `x`. The whole rest hangs from the fourth staff line
 /// (D5) and the half rest sits on the middle line; the shorter rests are
 /// registered on the middle line, matching SMuFL's glyph origins.
 fn draw_rest(cv: &mut Canvas, x: f64, dur: Dur) {
@@ -993,7 +993,7 @@ fn time_sig_digits(n: u32) -> Vec<char> {
     .collect()
 }
 
-/// Draw a stacked time signature centred horizontally on `cx`: the numerator on
+/// Draw a stacked time signature centered horizontally on `cx`: the numerator on
 /// the upper half of the staff (the fourth line) and the denominator on the
 /// lower half (the second line), matching standard notation.
 fn draw_time_signature(cv: &mut Canvas, cx: f64, num: u32, den: u32) {
@@ -1028,7 +1028,7 @@ impl Clef {
   }
 
   /// Draw the clef with its origin at `x`. Leland's `gClef` is registered on
-  /// the G4 line (the second line), where its curl must centre; the `fClef` on
+  /// the G4 line (the second line), where its curl must center; the `fClef` on
   /// the F3 line (the fourth line), which its dots enclose.
   fn draw(self, cv: &mut Canvas, x: f64) {
     let line = match self {
@@ -1148,7 +1148,7 @@ fn render_system(staves: &[(Clef, Vec<Glyph>)], container: bool) -> String {
   }
   let first_note_x = clef_right + 14.0;
 
-  // Lay the columns out left to right. `cursor` is the preferred centre of the
+  // Lay the columns out left to right. `cursor` is the preferred center of the
   // next note (a steady rhythmic advance). A column whose left extent (e.g. an
   // accidental) would collide with the previous ink on any of its staves is
   // pushed right just enough to clear it, `PAD` apart.
@@ -1542,7 +1542,7 @@ pub fn music_list_to_svg(expr: &Expr) -> Option<String> {
   const CHAR_W: f64 = FONT * 0.62; // monospace advance for `{`, `,`, `}`
   const SEP_GAP: f64 = 4.0; // padding around separators
 
-  // Overall height is the tallest staff; separators are centred within it.
+  // Overall height is the tallest staff; separators are centered within it.
   let height = staves
     .iter()
     .filter_map(|s| svg_attr(s, "height"))

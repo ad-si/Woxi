@@ -72,7 +72,7 @@ fn eval(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// `ErlangDistribution[k, λ]` is identical to `GammaDistribution[k, 1/λ]`
-/// (Erlang parameterises by rate, Gamma by scale). Return the equivalent
+/// (Erlang parameterizes by rate, Gamma by scale). Return the equivalent
 /// Gamma parameters `{k, 1/λ}` so every distribution property reuses the Gamma
 /// machinery and matches wolframscript.
 pub fn erlang_gamma_dargs(
@@ -960,7 +960,7 @@ fn match_erfc_half(expr: &Expr) -> Option<Expr> {
 }
 
 /// Closed-form Quantile[dist, q] for distributions whose inverse CDF is
-/// elementary. Returns `Some(expr)` when the head is recognised. Callers
+/// elementary. Returns `Some(expr)` when the head is recognized. Callers
 /// should try this before the numerical fallback.
 pub fn quantile_distribution_closed_form(
   dist_name: &str,
@@ -1629,7 +1629,7 @@ fn quantile_discrete(
 
 /// Numerical inverse-CDF for distributions whose CDF Woxi can compute
 /// symbolically or numerically. Returns `Some(quantile)` if successful,
-/// `None` if the head isn't recognised (caller falls back), or `Err` for
+/// `None` if the head isn't recognized (caller falls back), or `Err` for
 /// hard failures.
 pub fn quantile_distribution_numeric(
   dist_name: &str,
@@ -2222,7 +2222,7 @@ fn pdf_hypergeometric(
 /// PDF[BinormalDistribution[{sigma1, sigma2}, rho], {x, y}],
 /// PDF[BinormalDistribution[{mu1, mu2}, {sigma1, sigma2}, rho], {x, y}]:
 ///   PDF = exp(-Q / (2 (1 - rho^2))) / (2 Pi sigma1 sigma2 Sqrt[1 - rho^2])
-/// where Q is the standardised quadratic form
+/// where Q is the standardized quadratic form
 ///   ((x - mu1)/sigma1)^2
 ///   - 2 rho ((x - mu1)/sigma1) ((y - mu2)/sigma2)
 ///   + ((y - mu2)/sigma2)^2.
@@ -2287,7 +2287,7 @@ fn pdf_binormal(dargs: &[Expr], xy: Expr) -> Result<Expr, InterpreterError> {
       ));
     }
   };
-  // Standardised coordinates u = (x - mu1)/sigma1, v = (y - mu2)/sigma2.
+  // Standardized coordinates u = (x - mu1)/sigma1, v = (y - mu2)/sigma2.
   let u = div2(minus2(x, mu1), sigma1.clone());
   let v = div2(minus2(y, mu2), sigma2.clone());
   // Q = u^2 - 2 rho u v + v^2
@@ -4497,7 +4497,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return eval(&result);
     }
 
-    // MGF identity: E[c · Exp[t·x]] = c · MGF_X(t). Recognised for normal
+    // MGF identity: E[c · Exp[t·x]] = c · MGF_X(t). Recognized for normal
     // distributions where MGF(t) = exp(μ t + σ² t²/2), giving exact
     // symbolic results like `3 Sqrt[E]` instead of numerical surrogates.
     if dist_name == "NormalDistribution"
@@ -4666,7 +4666,7 @@ fn strip_constant_multiplier(expr: &Expr, var: &str) -> (Expr, Expr) {
 ///   - `x < k`, `x <= k`        → Integrate[pdf, {x, lo, min(k,hi)}]
 ///   - `a < x < b`, `a ≤ x ≤ b` → Integrate[pdf, {x, max(a,lo), min(b,hi)}]
 ///   - `x \[Conditioned] y`     → P[x ∧ y] / P[y]
-///     Returns `None` if the shape isn't recognised so the caller can fall back.
+///     Returns `None` if the shape isn't recognized so the caller can fall back.
 fn try_probability_probability_distribution(
   event: &Expr,
   var_name: &str,
@@ -6000,7 +6000,7 @@ pub fn distribution_mean_variance(
     }
     "StableDistribution" => {
       // Canonical 5-arg form: StableDistribution[type, alpha, beta, mu, sigma].
-      // type ∈ {0, 1} selects between the two standard parametrisations.
+      // type ∈ {0, 1} selects between the two standard parameterizations.
       if dargs.len() != 5 {
         return Err(InterpreterError::EvaluationError(
           "StableDistribution expects 5 arguments (canonical form)".into(),
@@ -6037,7 +6037,7 @@ pub fn distribution_mean_variance(
         indet.clone(),
       );
       // Variance is finite only for alpha == 2 (Gaussian limit), where it
-      // is 2 * sigma^2. Holds for both type parametrisations.
+      // is 2 * sigma^2. Holds for both type parameterizations.
       let var = piecewise(
         vec![(
           times2(int(2), pow2(sigma, int(2))),
@@ -11312,7 +11312,7 @@ fn pdf_multivariate_poisson(
 
   // Numerator: (-μ_0)^x · μ_2^(y - x) · HypergeometricU[-x, 1 - x + y, -μ_1·μ_2/μ_0]
   let neg_mu0_pow_x = pow2(neg_mu0, xv.clone());
-  // Canonicalise `y - x` to its Plus form (`-x + y`) so the final
+  // Canonicalize `y - x` to its Plus form (`-x + y`) so the final
   // Piecewise matches wolframscript's display.
   let y_minus_x_canon = eval(&minus2(yv.clone(), xv.clone()))?;
   let mu2_pow_y_minus_x = pow2(mu2.clone(), y_minus_x_canon);
@@ -19153,7 +19153,7 @@ fn kernel_mixture_bandwidth(sorted: &[Expr]) -> Option<(Expr, Expr)> {
 /// `KernelMixtureDistribution[data]` / `KernelMixtureDistribution[data, h]`
 /// with the (default) Gaussian kernel — wolframscript's container
 /// `DataDistribution["KernelMixture", {1/n, "Gaussian", sorted data, h}, 1,
-/// n]`, the equal-weight mixture of normal kernels of width `h` centred on
+/// n]`, the equal-weight mixture of normal kernels of width `h` centered on
 /// the data.
 pub fn kernel_mixture_distribution_ast(
   args: &[Expr],

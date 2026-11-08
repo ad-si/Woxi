@@ -2067,7 +2067,7 @@ fn try_factor_integer_poly(coeffs: &[i128]) -> Vec<Vec<i128>> {
   // Beyond rational roots, hand the rest to the same Zassenhaus engine
   // `Factor` uses, so a candidate that splits into two irreducible cubics
   // (the shape a square root taken inside a cubic field produces) is
-  // recognised here too rather than being reported as one Root object of
+  // recognized here too rather than being reported as one Root object of
   // twice the true degree.
   if remaining.len() > 3
     && let Some(split) = super::zassenhaus::zassenhaus_int_factors(&remaining)

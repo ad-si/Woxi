@@ -13,7 +13,7 @@
 //! have — Woxi used to invent `"CompleteGraphK4"`, `"CycleGraphC6"` and
 //! friends — are *not* accepted: an unknown entity leaves the call
 //! unevaluated after a `GraphData::notent` message, exactly as wolframscript
-//! does. Vertex labellings and hence `"EdgeRules"` follow the
+//! does. Vertex labelings and hence `"EdgeRules"` follow the
 //! Knowledgebase's, so the two agree entry for entry over the covered slice.
 
 use super::*;
@@ -34,7 +34,7 @@ enum GraphSpec {
 }
 
 /// The named entities that are not one of the parametrized families, with
-/// Wolfram's vertex labelling and its `"Name"` text.
+/// Wolfram's vertex labeling and its `"Name"` text.
 static SPECIAL_GRAPHS: &[(&str, &str, usize, &[(usize, usize)])] = &[
   (
     "PetersenGraph",
@@ -300,7 +300,7 @@ fn resolve(arg: &Expr) -> Option<GraphSpec> {
   }
 }
 
-/// Vertex count and 1-based edge list, in Wolfram's vertex labelling and
+/// Vertex count and 1-based edge list, in Wolfram's vertex labeling and
 /// (sorted) edge order.
 fn vertices_and_edges(spec: &GraphSpec) -> (usize, Vec<(usize, usize)>) {
   match *spec {

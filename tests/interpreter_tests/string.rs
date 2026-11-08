@@ -1420,7 +1420,7 @@ mod string_replace {
     );
   }
 
-  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  // IgnoreCase -> False keeps the default case-sensitive behavior.
   #[test]
   fn ignore_case_false_is_case_sensitive() {
     assert_eq!(
@@ -1465,7 +1465,7 @@ mod to_character_code {
   /// (`\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
   /// is `¹Σ`). They draw no glyph, but they are characters like any other:
   /// they live at U+F3B3 / U+F3B4 and `StringLength` counts them.
-  /// Regression: unrecognised, they printed their own names into a
+  /// Regression: unrecognized, they printed their own names into a
   /// Demonstration's control labels.
   #[test]
   fn invisible_script_base_chars_are_private_use_characters() {
@@ -2567,7 +2567,7 @@ mod ignore_case {
     );
   }
 
-  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  // IgnoreCase -> False keeps the default case-sensitive behavior.
   #[test]
   fn string_cases_ignore_case_false() {
     assert_eq!(
@@ -2619,7 +2619,7 @@ mod ignore_case {
     );
   }
 
-  // IgnoreCase -> False keeps the default case-sensitive behaviour.
+  // IgnoreCase -> False keeps the default case-sensitive behavior.
   #[test]
   fn string_position_ignore_case_false() {
     assert_eq!(
@@ -5136,7 +5136,7 @@ mod string_form {
 
   // Out-of-range indexed placeholders are kept literal even after ToString
   // forces substitution (instead of silently blanking them). This is the
-  // wolframscript/mathics behaviour.
+  // wolframscript/mathics behavior.
   #[test]
   fn out_of_range_positive_index_kept_literal() {
     assert_eq!(
@@ -5240,7 +5240,7 @@ mod tex_form {
       interpret("ToString[-Sqrt[x]/2, TeXForm]").unwrap(),
       "-\\frac{\\sqrt{x}}{2}"
     );
-    // A single parenthesised-sum factor still folds (with its parens).
+    // A single parenthesized-sum factor still folds (with its parens).
     assert_eq!(
       interpret("ToString[3 (a + b)/2, TeXForm]").unwrap(),
       "\\frac{3 (a+b)}{2}"
@@ -6399,7 +6399,7 @@ mod make_expression {
       interpret("MakeExpression[\"f[x, y]\"]").unwrap(),
       "HoldComplete[f[x, y]]"
     );
-    // Implicit multiplication is recognised.
+    // Implicit multiplication is recognized.
     assert_eq!(
       interpret("MakeExpression[\"2 3\"]").unwrap(),
       "HoldComplete[2*3]"
@@ -6901,7 +6901,7 @@ mod to_string_machine_reals {
   use super::*;
 
   // ToString rounds machine reals to 6 significant digits (OutputForm), but
-  // must not introduce precision artefacts: 15000000000. is exactly 1.5*^10.
+  // must not introduce precision artifacts: 15000000000. is exactly 1.5*^10.
   #[test]
   fn large_reals_use_clean_scientific() {
     assert_eq!(interpret("ToString[15000000000.]").unwrap(), "1.5*^10");
@@ -7667,7 +7667,7 @@ mod make_boxes {
 
   // `MakeBoxes` is HoldAllComplete, so a postfix arg
   // `expr // FullForm` arrives as `Expr::Postfix` rather than a
-  // FunctionCall. Without normalisation it produced a plain string
+  // FunctionCall. Without normalization it produced a plain string
   // `"FullForm[a - b]"`. Regression: postfix and prefix forms must
   // yield the same TagBox/StyleBox structure (mathics
   // makeboxes_tests.yaml `MakeBoxes[a-b//FullForm]`).
@@ -14576,7 +14576,7 @@ mod tex_form_conformance {
 
   #[test]
   fn greek_names_and_characters() {
-    // Only the lower-case spellings carry a macro; the capitalised names are
+    // Only the lower-case spellings carry a macro; the capitalized names are
     // ordinary symbols (`Pi` is the constant, so it keeps \pi).
     assert_eq!(tex("alpha"), "\\alpha");
     assert_eq!(tex("Alpha"), "\\text{Alpha}");
@@ -15500,7 +15500,7 @@ mod tex_form_typesetting {
 /// A trailing `;` ends an empty statement, so a program written with one is
 /// a `CompoundExpression` whose last part is `Null`. WLX reads a `.wlx` file
 /// statement by statement through the three-argument `ToExpression` and
-/// matches on that trailing `Null` to find the names to localise. Verified
+/// matches on that trailing `Null` to find the names to localize. Verified
 /// against wolframscript.
 mod to_expression_keeps_a_trailing_semicolon {
   use super::*;

@@ -1,9 +1,9 @@
 //! Plots of a function of three variables over a box:
 //!
 //! - `DensityPlot3D[f, {x, …}, {y, …}, {z, …}]` — a `Raster3D` of the
-//!   sampled values, coloured by a `ColorFunction` that hides the values
+//!   sampled values, colored by a `ColorFunction` that hides the values
 //!   below the midpoint of its scale, as in Wolfram.
-//! - `SliceDensityPlot3D[f, surf, …]` — `f` coloured continuously on the
+//! - `SliceDensityPlot3D[f, surf, …]` — `f` colored continuously on the
 //!   slice surfaces `surf`.
 //! - `SliceContourPlot3D[f, surf, …]` — `f`'s contour bands on them.
 //!
@@ -113,7 +113,7 @@ impl Volume {
   }
 }
 
-/// How sampled values are turned into colours.
+/// How sampled values are turned into colors.
 enum Colors {
   /// The default density gradient.
   Default,
@@ -135,7 +135,7 @@ impl Colors {
     }
   }
 
-  /// The colour directive for the value `t` (scaled to `[0, 1]`, or the
+  /// The color directive for the value `t` (scaled to `[0, 1]`, or the
   /// raw value with `ColorFunctionScaling -> False`).
   fn at(&self, t: f64) -> Expr {
     match self {
@@ -154,7 +154,7 @@ impl Colors {
     }
   }
 
-  /// The colour directive for the value `t` given as an expression (an
+  /// The color directive for the value `t` given as an expression (an
   /// exact band position).
   fn at_expr(&self, t: Expr) -> Expr {
     match self {
@@ -170,7 +170,7 @@ impl Colors {
     }
   }
 
-  /// The colour function itself, as a legend shows it.
+  /// The color function itself, as a legend shows it.
   fn as_expr(&self) -> Expr {
     match self {
       Colors::Default => Expr::String("WL14DefaultDensityGradient".into()),
@@ -793,8 +793,8 @@ pub fn slice_contour_plot3d_ast(
   }
   let mut vertices = Vertices::default();
   let mut primitives = Vec::new();
-  // Band k of the n + 1 bands takes the colour at k/(n + 2) (exactly, as
-  // a rational) of the colour function's scale.
+  // Band k of the n + 1 bands takes the color at k/(n + 2) (exactly, as
+  // a rational) of the color function's scale.
   let band_count = bands.len() as i128;
   for (b, polygons) in bands.iter().enumerate() {
     if polygons.is_empty() {
@@ -831,7 +831,7 @@ pub fn slice_contour_plot3d_ast(
 /// `n × n × n` grid (51 per side by default), mapped to `[1/2, 1]` and
 /// stored, `z`-layer by `y`-row, in a `Raster3D` spanning the box. Its
 /// `ColorFunction` shows the upper half of that scale through the plot's
-/// colour function and leaves the lower half transparent.
+/// color function and leaves the lower half transparent.
 fn automatic_opacity_bands(values: &[f64]) -> Vec<(usize, usize, usize)> {
   let finite: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();

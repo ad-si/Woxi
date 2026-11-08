@@ -5518,7 +5518,7 @@ mod upvalues_for_arithmetic_shorthands {
     );
     clear_state();
     // Upvalues only fire for the symbol they are tagged on, so operands
-    // unrelated to `mytag` keep the head-specific built-in behaviour: the
+    // unrelated to `mytag` keep the head-specific built-in behavior: the
     // explicit `Divide` head is one IEEE division while `/` multiplies by
     // the rounded reciprocal, and complex quotients stay exact.
     let quotients =
@@ -5535,7 +5535,7 @@ mod upvalues_for_arithmetic_shorthands {
 // `Language`ExtendedFullDefinition` gathers every kind of definition a
 // symbol carries into one inert expression, and assigning that expression
 // to another symbol installs the lot there. Copying a symbol's whole
-// behaviour — `Language`ExtendedFullDefinition[b] =
+// behavior — `Language`ExtendedFullDefinition[b] =
 // Language`ExtendedFullDefinition[a] /. a -> b` — is how object systems
 // written in the Wolfram Language derive a type from a parent type.
 // Regression tests for <https://github.com/ad-si/Woxi/issues/603>.
@@ -6333,9 +6333,9 @@ mod an_assignment_consults_the_right_hand_sides_upvalues {
   }
 
   /// The wrapper-object idiom the importer builds on: the upvalue turns a
-  /// delayed definition into a parameterised one.
+  /// delayed definition into a parameterized one.
   #[test]
-  fn the_upvalue_can_define_a_parameterised_symbol() {
+  fn the_upvalue_can_define_a_parameterized_symbol() {
     clear_state();
     assert_eq!(
       interpret(

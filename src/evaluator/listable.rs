@@ -794,7 +794,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // ("UTF-8"), unlike the user-facing `$CharacterEncoding` above.
     "$SystemCharacterEncoding" => Some(str_expr("UTF-8")),
     // List of available print forms, in wolframscript's exact order —
-    // InputForm/OutputForm first, then the specialised ones, then the
+    // InputForm/OutputForm first, then the specialized ones, then the
     // current `$BoxForms` last (so user-defined box forms appended to
     // `$BoxForms` show up in `$PrintForms` too).
     "$PrintForms" => {

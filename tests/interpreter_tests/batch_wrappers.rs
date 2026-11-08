@@ -1583,7 +1583,7 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn graph_plot_honours_plot_range_with_vertex_coordinates() {
+  fn graph_plot_honors_plot_range_with_vertex_coordinates() {
     // With an explicit PlotRange the vertices keep their place in the
     // window instead of being stretched to fill it (the 359 px drawing
     // area a bare picture leaves, a point short on its right and bottom).
@@ -2480,7 +2480,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn text_recognize_image_returns_empty_string() {
     // Woxi has no OCR backend. For ordinary images wolframscript falls
-    // back to an empty string when no text is recognised; Woxi mirrors
+    // back to an empty string when no text is recognized; Woxi mirrors
     // that fallback so the call doesn't stay unevaluated.
     assert_eq!(interpret("TextRecognize[Image[{{0.5, 0.6}}]]").unwrap(), "");
   }
@@ -3219,8 +3219,8 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn gauge_style_colours_the_filled_part() {
-    // GaugeStyle colours the thermometer column and the bar gauges' fill.
+  fn gauge_style_colors_the_filled_part() {
+    // GaugeStyle colors the thermometer column and the bar gauges' fill.
     for f in ["ThermometerGauge", "VerticalGauge", "HorizontalGauge"] {
       let svg = interpret(&format!(
         "ExportString[{f}[3, {{0, 10}}, GaugeStyle -> Red], \"SVG\"]"
@@ -3292,7 +3292,7 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   /// Regression: the gauges rendered as black placeholders (a bare circle
-  /// and line, a filled bar). WL draws a gray bezel, a labelled scale and
+  /// and line, a filled bar). WL draws a gray bezel, a labeled scale and
   /// a red needle or pointer.
   #[test]
   fn gauges_draw_wl_default_look() {
@@ -3544,7 +3544,7 @@ mod batch_unevaluated_wrappers_2 {
     // Real-valued boundaries: 1.0 / -1.0 also yield ±Infinity.
     assert_eq!(interpret("InverseErf[1.0]").unwrap(), "Infinity");
     assert_eq!(interpret("InverseErf[-1.0]").unwrap(), "-Infinity");
-    // InverseErfc analogues: 0 / 2 (and their Real forms) → ±Infinity.
+    // InverseErfc analogs: 0 / 2 (and their Real forms) → ±Infinity.
     assert_eq!(interpret("InverseErfc[0]").unwrap(), "Infinity");
     assert_eq!(interpret("InverseErfc[0.0]").unwrap(), "Infinity");
     assert_eq!(interpret("InverseErfc[2]").unwrap(), "-Infinity");
@@ -3624,7 +3624,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn from_polar_coordinates_3d() {
     // Hyperspherical {r, t, p}: x1 = r Cos[t], x2 = r Sin[t] Cos[p],
-    // x3 = r Sin[t] Sin[p]. (Woxi's Times canonicalisation orders the
+    // x3 = r Sin[t] Sin[p]. (Woxi's Times canonicalization orders the
     // two Sin factors by argument, so Sin[p] precedes Sin[t]; the
     // expression is identical to wolframscript's r*Sin[t]*Sin[p].)
     assert_eq!(
@@ -6110,7 +6110,7 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
-  // Index view honours the `n` argument and ties.
+  // Index view honors the `n` argument and ties.
   #[test]
   fn nearest_index_with_count() {
     assert_eq!(
@@ -6119,7 +6119,7 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
-  // A list of property names returns each neighbour as a list of properties.
+  // A list of property names returns each neighbor as a list of properties.
   #[test]
   fn nearest_multi_property() {
     assert_eq!(
@@ -6141,7 +6141,7 @@ mod batch_unevaluated_wrappers_2 {
       .unwrap(),
       "{{20, 2, 2.}}"
     );
-    // With a count, one property list per neighbour, ordered by distance.
+    // With a count, one property list per neighbor, ordered by distance.
     assert_eq!(
       interpret("Nearest[{10, 20, 30, 21} -> {\"Element\", \"Index\"}, 22, 2]")
         .unwrap(),
@@ -6182,7 +6182,7 @@ mod batch_unevaluated_wrappers_2 {
       interpret(r#"Nearest[{"cat", "car", "dog", "cab"}, "cat", 2]"#).unwrap(),
       "{cat, car}"
     );
-    // The labelled form draws the result from the labels.
+    // The labeled form draws the result from the labels.
     assert_eq!(
       interpret(r#"Nearest[{"cat", "car", "dog"} -> {1, 2, 3}, "cot"]"#)
         .unwrap(),
@@ -6290,7 +6290,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn median_filter_basic() {
     // MedianFilter[list, r] replaces each element with the median of
-    // its range-r neighbourhood; boundary windows are clipped.
+    // its range-r neighborhood; boundary windows are clipped.
     assert_eq!(
       interpret("MedianFilter[{1, 2, 3, 2, 1}, 1]").unwrap(),
       "{3/2, 2, 2, 2, 3/2}"
@@ -6305,7 +6305,7 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn median_filter_2d_uses_square_neighbourhood() {
+  fn median_filter_2d_uses_square_neighborhood() {
     // 2D MedianFilter uses a (2r+1)×(2r+1) window per cell, clipped at
     // the boundaries — not a per-row 1D window.
     assert_eq!(
@@ -6336,7 +6336,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn laplacian_filter_image() {
     // A constant image has no second derivative; a single bright pixel
-    // gives a negative centre and positive neighbours summing to ~0.
+    // gives a negative center and positive neighbors summing to ~0.
     assert_eq!(
       interpret("ImageData[LaplacianFilter[Image[Table[0.5, {5}, {5}]], 1]]")
         .unwrap(),
@@ -7118,7 +7118,7 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("PowerRange[1, 10, 2]").unwrap(), "{1, 2, 4, 8}");
     assert_eq!(interpret("PowerRange[1, 5, -2]").unwrap(), "{1, -2, 4}");
     assert_eq!(interpret("PowerRange[1/2, 5]").unwrap(), "{1/2, 5}");
-    // A factor below one shrinks towards the bound instead of growing.
+    // A factor below one shrinks toward the bound instead of growing.
     assert_eq!(interpret("PowerRange[5, 1, 1/10]").unwrap(), "{5}");
     assert_eq!(
       interpret("PowerRange[100, 1, 1/10]").unwrap(),
@@ -8117,7 +8117,7 @@ mod batch_unevaluated_wrappers_2 {
   #[test]
   fn savitzky_golay_2d_kernel() {
     // The isotropic 2D kernel is the outer product of the 1D kernel with
-    // itself; the centre entry is (17/35)^2.
+    // itself; the center entry is (17/35)^2.
     assert_eq!(
       interpret("Round[SavitzkyGolayMatrix[2, 2][[3, 3]], 10^-6]").unwrap(),
       "117959/500000"
@@ -8224,7 +8224,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn dms_list_from_integer_triple() {
-    // All-integer input → all-integer output, normalised via rationals.
+    // All-integer input → all-integer output, normalized via rationals.
     assert_eq!(interpret("DMSList[{10, 30, 5}]").unwrap(), "{10, 30, 5}");
   }
   #[test]
@@ -8461,7 +8461,7 @@ mod batch_unevaluated_wrappers_2 {
 
   #[test]
   fn shearing_matrix_3d_irrational() {
-    // Normalization can leave an irrational (non-cancelling) factor.
+    // Normalization can leave an irrational (non-canceling) factor.
     // wolframscript: ShearingMatrix[t, {1, 2, 0}, {0, 0, 3}]
     //   -> {{1, 0, Tan[t]/Sqrt[5]}, {0, 1, (2 Tan[t])/Sqrt[5]}, {0, 0, 1}}
     assert_eq!(
@@ -8691,13 +8691,13 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn fourier_matrix_4_dimensions() {
-    // For n = 4 a 4x4 matrix should be materialised.
+    // For n = 4 a 4x4 matrix should be materialized.
     let result = interpret("Dimensions[FourierMatrix[4]]").unwrap();
     assert_eq!(result, "{4, 4}");
   }
   #[test]
   fn fourier_matrix_large_does_not_materialize() {
-    // wolframscript: FourierMatrix[800] is too large to materialise and
+    // wolframscript: FourierMatrix[800] is too large to materialize and
     // is returned as a `FourierMatrix[StructuredArray\`StructuredData[...]]`
     // placeholder. Woxi must not time out by trying to enumerate 640k
     // symbolic entries; it leaves the call unevaluated instead.
@@ -8706,7 +8706,7 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn fourier_matrix_boundary_materializes() {
-    // n = 100 is well below the materialisation threshold and must
+    // n = 100 is well below the materialization threshold and must
     // produce a concrete 100×100 list.
     assert_eq!(
       interpret("Dimensions[FourierMatrix[100]]").unwrap(),
@@ -9825,7 +9825,7 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   // Directed graphs use directed distances. A directed path is not strongly
-  // connected, so radius/diameter are Infinity and centre/periphery empty;
+  // connected, so radius/diameter are Infinity and center/periphery empty;
   // eccentricity is the greatest distance to a *reachable* vertex.
   #[test]
   fn eccentricity_family_directed_chain() {
@@ -10823,7 +10823,7 @@ mod batch_unevaluated_wrappers_2 {
   }
 
   // Directed closeness uses (#reachable) / (sum of directed distances). On a
-  // directed path the sink reaches nothing (0); undirected behaviour unchanged.
+  // directed path the sink reaches nothing (0); undirected behavior unchanged.
   #[test]
   fn closeness_centrality_directed() {
     assert_eq!(
@@ -10837,7 +10837,7 @@ mod batch_unevaluated_wrappers_2 {
         .unwrap(),
       "{0.6666666666666666, 0.6666666666666666, 0.6666666666666666}"
     );
-    // Disconnected: each vertex reaches only its neighbour.
+    // Disconnected: each vertex reaches only its neighbor.
     assert_eq!(
       interpret("ClosenessCentrality[Graph[{1 <-> 2, 3 <-> 4}]]").unwrap(),
       "{1., 1., 1., 1.}"

@@ -271,7 +271,7 @@ fn parse_initial_spec(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 /// AST-based Product: product of list elements or iterator product.
-/// Recognise the integrand `1 + 1/var^2` across the AST shapes Woxi
+/// Recognize the integrand `1 + 1/var^2` across the AST shapes Woxi
 /// produces for that input. Used by the infinite-product closed form
 /// `Product[1 + 1/k², {k, 1, ∞}] = Sinh[π]/π` so we don't depend on the
 /// exact canonical form of the body.
@@ -322,7 +322,7 @@ fn body_is_one_minus_one_over_var_quartic(body: &Expr, var_name: &str) -> bool {
     }
     false
   };
-  // Recognise `-1 * var^-4` or `var^-4 * -1`.
+  // Recognize `-1 * var^-4` or `var^-4 * -1`.
   let is_neg_one_over_var_quartic = |e: &Expr| -> bool {
     // `Times[-1, var^-4]`.
     if let Expr::FunctionCall { name, args } = e
@@ -471,7 +471,7 @@ fn telescope_linear_pair(
 /// symbolic. `k` → `[0]`, `k^2 - 1` → `[-1, 1]`, `k^2` → `[0, 0]`.
 fn monic_linear_int_shifts(poly: &Expr, var_name: &str) -> Option<Vec<i128>> {
   // Fast path: a bare monic linear polynomial (matches the old single-factor
-  // behaviour without invoking the factoriser).
+  // behavior without invoking the factorizer).
   if let Some(a) = monic_int_shift(poly, var_name) {
     return Some(vec![a]);
   }
@@ -1373,9 +1373,9 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
           // Closed form for the classical infinite product
           //   ∏_{k=1}^∞ (1 + 1/k²) = Sinh[π] / π
-          // (the `x = π` case of the Weierstrass factorisation
+          // (the `x = π` case of the Weierstrass factorization
           //   sinh(x)/x = ∏_{k=1}^∞ (1 + x²/(kπ)²)).
-          // Recognised when min == 1, max == Infinity, and the body is
+          // Recognized when min == 1, max == Infinity, and the body is
           // `1 + 1/var^2` in any of the canonical AST shapes.
           if let Some(1) = min_concrete
             && matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
@@ -3508,7 +3508,7 @@ fn try_symbolic_sum(
     }
   }
 
-  // Sum[c^(q*var), {var, 0, n}] = (c^(q*(n+1)) - 1) / (c^q - 1) — generalised
+  // Sum[c^(q*var), {var, 0, n}] = (c^(q*(n+1)) - 1) / (c^q - 1) — generalized
   // geometric series with a coefficient `q` in the exponent (constant w.r.t.
   // `var`). Handles e.g. `Sum[a^(k*n), {k, 0, m-1}]` →
   // `(a^(m*n) - 1) / (a^n - 1)` after simplifying `q*((m-1)+1) = q*m`.
@@ -4025,7 +4025,7 @@ fn linear_coeff_of_var(exp: &Expr, var_name: &str) -> Option<Expr> {
 /// term over the first power of the summation variable. Returns `(coeff, base)`
 /// with `base` the product of all `base^var` factors. Used for the Mercator
 /// series Sum[base^k/k, {k,1,Infinity}] = -Log[1 - base]. Reciprocal forms such
-/// as `1/(2^n n)` and `2^(-n)/n` are normalised to base `1/2`.
+/// as `1/(2^n n)` and `2^(-n)/n` are normalized to base `1/2`.
 fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
   // Push 1/e as multiplicative factors, distributing over products and folding
   // one level of power so 1/(2^n n) yields [2^(-n), n^(-1)].
@@ -4520,7 +4520,7 @@ fn tr_poly_deriv_eval_rat(
 
 /// Sum of a convergent rational summand with simple RATIONAL poles whose
 /// residues cancel within each fractional class, telescoping to an exact
-/// rational, e.g. `Sum[1/(4 n^2 - 1), {n, 1, Infinity}] = 1/2`. Generalises
+/// rational, e.g. `Sum[1/(4 n^2 - 1), {n, 1, Infinity}] = 1/2`. Generalizes
 /// `try_telescoping_rational_sum` (integer poles) via the residue/digamma
 /// identity `Sum[P/Q] = -sum_r residue_r * PolyGamma[0, min - r]`, with
 /// `PolyGamma[0, q0 + m] = PolyGamma[0, q0] + sum_{j<m} 1/(q0 + j)`. The
@@ -5336,7 +5336,7 @@ fn match_factorial_trig_series(
 }
 
 /// Like `match_reciprocal_power` but for an arbitrary (var-dependent) base:
-/// recognises `1/base^s` written as `Power[base, -s]`, `Divide[1, Power[base,
+/// recognizes `1/base^s` written as `Power[base, -s]`, `Divide[1, Power[base,
 /// s]]`, `Divide[1, base]`, or `Power[Power[base, s], -1]`. Returns `(base, s)`.
 fn match_reciprocal_power_general(
   expr: &Expr,

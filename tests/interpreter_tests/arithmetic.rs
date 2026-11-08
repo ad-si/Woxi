@@ -272,7 +272,7 @@ mod arithmetic {
     }
 
     // Regression: `0` and `0.` are distinct to Union, so a coordinate
-    // computed as `j*0.5` with j = 0 must be `0.` like its neighbours.
+    // computed as `j*0.5` with j = 0 must be `0.` like its neighbors.
     #[test]
     fn union_of_offsets_with_zero_step() {
       assert_eq!(
@@ -600,7 +600,7 @@ mod arithmetic {
       assert_eq!(interpret("x^2*(-2 + x)").unwrap(), "(-2 + x)*x^2");
       assert_eq!(interpret("x^2*(-1/2 + x)").unwrap(), "(-1/2 + x)*x^2");
       assert_eq!(interpret("x^3*(-1 + x)").unwrap(), "(-1 + x)*x^3");
-      // Bare x keeps its existing behaviour.
+      // Bare x keeps its existing behavior.
       assert_eq!(interpret("x*(1 + x)").unwrap(), "x*(1 + x)");
       assert_eq!(interpret("x*(-1 + x^2)").unwrap(), "x*(-1 + x^2)");
     }
@@ -1234,7 +1234,7 @@ mod plus_call_led_ordering {
 }
 
 /// `Star` (Precedence 390) binds looser than `Times` (400) and tighter than
-/// `Plus` (310): it is parenthesised as a factor and parenthesises a sum
+/// `Plus` (310): it is parenthesized as a factor and parenthesizes a sum
 /// operand. wolframscript-verified.
 mod star_operator_parenthesization {
   use super::*;
@@ -1287,7 +1287,7 @@ mod star_operator_parenthesization {
 mod negative_real_exponent_form {
   use super::*;
 
-  // wolframscript parenthesises a negative real exponent like a negative
+  // wolframscript parenthesizes a negative real exponent like a negative
   // integer one: `x^(-2.)`, `Sin[x]^(-2.)`.
   #[test]
   fn negative_real_exponent_is_parenthesized() {
@@ -1653,7 +1653,7 @@ mod plus_numeric_contagion {
   }
 
   // A machine zero is kept as the numeric term of a symbolic sum, and
-  // cancelling machine imaginary parts leave a machine Complex zero.
+  // canceling machine imaginary parts leave a machine Complex zero.
   #[test]
   fn machine_zero_is_kept() {
     assert_eq!(interpret("x + 0.").unwrap(), "0. + x");
@@ -4872,7 +4872,7 @@ mod expand_threading {
       interpret("StringSplit[\"aXbXc\", x_ /; UpperCaseQ[x]]").unwrap(),
       "{a, b, c}"
     );
-    // The conditional limit form still honours the max-replacements count.
+    // The conditional limit form still honors the max-replacements count.
     assert_eq!(
       interpret(
         "StringReplace[\"aAbB\", x_ /; LowerCaseQ[x] :> ToUpperCase[x], 1]"
@@ -8058,7 +8058,7 @@ mod cases {
   /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
   /// like `sin^n(x)`.
   #[test]
-  fn traditional_form_power_of_exp_is_parenthesised() {
+  fn traditional_form_power_of_exp_is_parenthesized() {
     assert_case(
       r#"ToBoxes[TraditionalForm[HoldForm[Exp[x]^n]]]"#,
       r#"TagBox[FormBox[TagBox[RowBox[{SuperscriptBox[exp, n], (, x, )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
@@ -8069,12 +8069,12 @@ mod cases {
     );
   }
 
-  /// A large operator's operand, base or neighbour is parenthesised the way
+  /// A large operator's operand, base or neighbor is parenthesized the way
   /// WL does, so the typeset formula reads as the expression it came from:
   /// a sum of terms under `∑`/`∏`, a `∑` raised to a power or followed by
   /// another factor, and an integral as an outer integral's integrand.
   #[test]
-  fn traditional_form_parenthesises_large_operators() {
+  fn traditional_form_parenthesizes_large_operators() {
     let boxes = |code: &str| {
       woxi::interpret(&format!(
         "ToString[ToBoxes[TraditionalForm[HoldForm[{code}]]], InputForm]"
@@ -8109,7 +8109,7 @@ mod cases {
   }
 
   /// A held `-a x` sets its sign in front of the product, not as a
-  /// parenthesised `(-a)` factor.
+  /// parenthesized `(-a)` factor.
   #[test]
   fn traditional_form_leading_negated_factor() {
     assert_case(
@@ -10134,7 +10134,7 @@ qué tal?"; a/b//MakeBoxes"#,
 /// `1.605*10^1355718576299609`. A power past it answers `Overflow[]` (or
 /// `Underflow[]` on the way to zero) with a `General::ovfl`/`General::unfl`
 /// message. Woxi used to leave `2^(10^18/3)` symbolic and to *hang* on
-/// `2^(10^20)`, trying to materialise a number with 3*10^19 digits.
+/// `2^(10^20)`, trying to materialize a number with 3*10^19 digits.
 mod power_overflow {
   use woxi::interpret;
 
@@ -10302,7 +10302,7 @@ mod set_precision {
       interpret("SetPrecision[Tanh[1], 3]").unwrap(),
       "0.7615941559557648881`3.2585008449265427"
     );
-    // A head with no numeric behaviour keeps its converted leaf.
+    // A head with no numeric behavior keeps its converted leaf.
     assert_eq!(interpret("SetPrecision[f[1], 3]").unwrap(), "f[1.`3.]");
     // Nothing numeric to convert: no re-evaluation, no loop.
     assert_eq!(interpret("SetPrecision[x, 10]").unwrap(), "x");
@@ -10718,7 +10718,7 @@ mod zero_divisor {
   fn real_division_by_zero_does_not_error() {
     // Regression: real / 0 used to raise a hard "Division by zero" error
     // instead of returning ComplexInfinity (or Indeterminate for 0./0) with
-    // the Power::infy message, matching wolframscript's `/`-operator behaviour.
+    // the Power::infy message, matching wolframscript's `/`-operator behavior.
     assert_eq!(interpret("1.5/0").unwrap(), "ComplexInfinity");
     assert_eq!(interpret("Divide[1.5, 0]").unwrap(), "ComplexInfinity");
     assert_eq!(interpret("0./0").unwrap(), "Indeterminate");

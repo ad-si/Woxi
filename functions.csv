@@ -223,7 +223,7 @@ Total,"Sums the elements of a list down to a level spec — AllowedHeads -> All 
 ColorFunction,"Option specifying the color function for visualization",✅,none,2.0,152
 ContourPlot,"Creates a contour plot of a function",✅,pure,1.0,155
 RandomInteger,"Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards",✅,contextual,6.0,156
-NDSolve,"Solves ordinary differential equations numerically (including vector-valued unknowns solved component-wise and delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs (unknowns given bare or applied to the domain variables) via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries; and complex-valued first-order-in-time 1-D PDEs with periodic boundaries (e.g. nonlinear Schroedinger) via a Fourier pseudospectral discretisation; and implicit curves given by algebraic equations plus a unit-speed condition on the derivatives traced by arclength continuation",✅,contextual,2.0,157
+NDSolve,"Solves ordinary differential equations numerically (including vector-valued unknowns solved component-wise and delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs (unknowns given bare or applied to the domain variables) via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries; and complex-valued first-order-in-time 1-D PDEs with periodic boundaries (e.g. nonlinear Schroedinger) via a Fourier pseudospectral discretization; and implicit curves given by algebraic equations plus a unit-speed condition on the derivatives traced by arclength continuation",✅,contextual,2.0,157
 Integers,"Domain symbol representing the set of integers",✅,pure,4.0,158
 Large,"Named size symbol used as option value for ImageSize and Style",✅,pure,6.0,159
 Limit,"Computes the limit of an expression",✅,pure,1.0,160
@@ -283,9 +283,9 @@ Position,"Finds all positions of a pattern in a list",✅,pure,1.0,218
 Union,"Returns sorted union of lists or a key-merge of associations",✅,pure,1.0,219
 While,"Evaluates an expression repeatedly while a condition is true",✅,pure,1.0,220
 FrameLabel,"Axis labels for framed charts (alias for AxesLabel)",✅,pure,2.0,221
-FindRoot,"Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honours MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds",✅,pure,1.0,222
+FindRoot,"Numerically finds a root of an equation using a damped Newton iteration — the derivative is symbolic where that reduces to a number and a difference quotient otherwise; honors MaxIterations and StepMonitor (fired after each accepted step) and reports non-convergence or a singular derivative (WorkingPrecision and the accuracy goals are accepted but ignored); a {var; x0; xmin; xmax} spec confines the search to the given bounds",✅,pure,1.0,222
 Image,"Constructs an image from pixel data",✅,pure,7.0,223
-ColorData,"Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colours; the WebSafe hex codes (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Legacy palette; the Atoms element colours (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties",✅,pure,6.0,224
+ColorData,"Named color data: every indexed scheme 0-119 from its Wolfram definition (ColorData[n] ColorData[n; k] and the ColorList/ColorFunction/Range properties); the HTML CSS colors; the WebSafe hex codes (ColorData[""WebSafe""][""#99CC00""]) and the pre-v6 Legacy palette; the Atoms element colors (by symbol or atomic number; H to Kr); the VisibleSpectrum wavelength scheme and the BlackBodySpectrum temperature scheme (approximations); named gradients as a ColorDataFunction (optionally over a custom range or reversed) sampled via ColorData[name; t] with ColorFunction/Range/Image properties",✅,pure,6.0,224
 Binomial,"Returns the binomial coefficient",✅,pure,1.0,225
 Which,"Evaluates conditions and returns the value for the first true one",✅,pure,1.0,226
 Replace,"Applies transformation rules to an expression",✅,pure,1.0,227
@@ -332,7 +332,7 @@ Eigenvalues,"Computes the eigenvalues of a matrix; the two-arg form takes the k 
 Timing,"Returns the CPU time taken to evaluate an expression",✅,contextual,1.0,276
 RowBox,"Represents a horizontal row of boxes for typesetting",✅,pure,3.0,277
 Button,"Interactive button element (stays symbolic in script mode)",✅,unevaluated,6.0,280
-Sphere,"Sphere graphics primitive; a circle in two dimensions; a list of centres draws one sphere of the given radius per centre",✅,none,6.0,282
+Sphere,"Sphere graphics primitive; a circle in two dimensions; a list of centers draws one sphere of the given radius per center",✅,none,6.0,282
 Get,"Reads and evaluates a file returning the last result",✅,effectful,1.0,283
 Quiet,"Evaluate expression suppressing messages",✅,contextual,6.0,284
 Joined,"Option for joining points in list plots",✅,none,6.0,285
@@ -484,7 +484,7 @@ TagSetDelayed,"Defines a delayed upvalue assignment associated with a tag symbol
 Boole,"Converts True to 1 and False to 0",✅,pure,5.1,433
 Outer,"Generalized outer product over any number of nonatomic arguments sharing one head",✅,pure,1.0,434
 InterpolationOrder,"Option for specifying the order of interpolation",✅,pure,3.0,435
-FindMinimum,"Finds a local minimum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted; honours MaxIterations and the StepMonitor and EvaluationMonitor options in the unconstrained case",✅,pure,1.0,436
+FindMinimum,"Finds a local minimum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted; honors MaxIterations and the StepMonitor and EvaluationMonitor options in the unconstrained case",✅,pure,1.0,436
 LinearSolve,"Solves a square or rectangular linear system of equations using Gaussian elimination",✅,pure,1.0,437
 StringLength,"Returns the length of a string",✅,pure,1.0,438
 NDSolveValue,"Numerically solve a differential equation and return the solution",✅,pure,9.0,439
@@ -544,7 +544,7 @@ GraphicsRow,"Arranges graphics in a horizontal row",✅,pure,6.0,494
 TrackedSymbols,"Option for specifying which symbols trigger dynamic updates",✅,pure,6.0,495
 NonlinearModelFit,"Fits a nonlinear model to data and returns a FittedModel object",✅,pure,7.0,496
 MapAt,"Applies a function at one or more positions where position 0 addresses the head; each level may be an index All or a span",✅,pure,1.0,498
-IntegerPart,"Returns the integer part of a number (truncation towards zero)",✅,pure,3.0,499
+IntegerPart,"Returns the integer part of a number (truncation toward zero)",✅,pure,3.0,499
 PlotMarkers,"Option for specifying markers on plot points",✅,pure,6.0,500
 Through,"Distributes a list of functions over arguments",✅,pure,1.0,501
 HoldAll,"Attribute specifying all args are held",✅,pure,1.0,502
@@ -609,13 +609,13 @@ Intersection,"Returns sorted intersection of lists or associations",✅,pure,1.0
 Erf,"Returns the error function value",✅,pure,1.0,554
 ImageDimensions,"Returns the dimensions of an image",✅,pure,7.0,555
 InputField,"Input field for interactive interfaces",✅,none,6.0,556
-FindMaximum,"Finds a local maximum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted; honours MaxIterations and the StepMonitor and EvaluationMonitor options in the unconstrained case",✅,pure,5.0,557
+FindMaximum,"Finds a local maximum of a function numerically; a {f cons} objective states a constrained problem and the starting values may be omitted; honors MaxIterations and the StepMonitor and EvaluationMonitor options in the unconstrained case",✅,pure,5.0,557
 RegionFunction,"Option to restrict plotting to a region",✅,none,6.0,558
 ColorFunctionScaling,"Option to scale color function input",✅,none,4.0,559
 Values,"Returns the values of an association (optionally wrapping each with a head)",✅,pure,10.0,560
 Cuboid,"3D graphics primitive representing a cuboid",✅,none,2.0,561
 AbsoluteTime,"Total seconds since January 1 1900",✅,contextual,2.0,562
-ExampleData,"Serves Wolfram's example-data catalogue (all collections; entries; properties; metadata) with generated content: drawn images; modelled meshes; synthesized audio; generated text; tables; matrices; networks",✅,pure,6.0,563
+ExampleData,"Serves Wolfram's example-data catalog (all collections; entries; properties; metadata) with generated content: drawn images; modeled meshes; synthesized audio; generated text; tables; matrices; networks",✅,pure,6.0,563
 TwoWayRule,"Represent a two-way transformation rule",✅,none,11.2,564
 Initialization,"Option for initialization code",✅,none,6.0,565
 StringCases,"Returns substrings matching a pattern (threading over a list of strings; supports a count limit and the Overlaps and IgnoreCase options)",✅,pure,5.1,566
@@ -865,7 +865,7 @@ Polytopes`Faces,"Legacy package function: the vertex indices of a regular polygo
 Polytopes`InscribedRadius,"Legacy package function: inradius of a regular polygon with unit edges",✅,pure,2.0,814
 Polytopes`CircumscribedRadius,"Legacy package function: circumradius of a regular polygon with unit edges",✅,pure,2.0,814
 ComputationalGeometry`ConvexHullArea,"Legacy package function: area of the convex hull of a 2D point set (exact for exact points)",✅,pure,1.0,814
-ComputationalGeometry`DelaunayTriangulation,"Legacy package function: adjacency list {i; {neighbours of point i}} of the Delaunay triangulation of a 2D point set",✅,pure,5.0,814
+ComputationalGeometry`DelaunayTriangulation,"Legacy package function: adjacency list {i; {neighbors of point i}} of the Delaunay triangulation of a 2D point set",✅,pure,5.0,814
 ComputationalGeometry`DiagramPlot,"Legacy package function: Voronoi diagram of a 2D point set as Graphics with cell edges as Line and sites as Point (LabelPoints -> True adds Text indices)",✅,pure,5.0,814
 ComputationalGeometry`VoronoiDiagram,"Legacy package function: {vertices; cells} of the Voronoi diagram of a 2D point set with Ray[origin; direction] entries for unbounded edges",✅,pure,5.0,814
 ConvexHullMesh,"Convex hull of a 2D or 3D point set as a BoundaryMeshRegion",✅,pure,10.0,814
@@ -983,7 +983,7 @@ FontTracking,"",🚫,,3.0,935
 MeshRegion,"Mesh region built from coordinates and cells; measured and read like any other region",✅,pure,10.0,935
 ScalingFunctions,"",🚫,,8.0,936
 ChartElementFunction,"Selects a sector's 3D shape in SectorChart3D (CylindricalSector3D/ProfileSector3D/TorusSector3D)",✅,none,7.0,937
-ComponentMeasurements,"Measure labelled components of a label matrix (Count Area Label)",✅,pure,8.0,938
+ComponentMeasurements,"Measure labeled components of a label matrix (Count Area Label)",✅,pure,8.0,938
 PolynomialMod,"Reduces a polynomial modulo m (a number reduces the coefficients; a polynomial divides and leaves the remainder; a list reduces modulo the ideal they generate)",✅,pure,2.0,939
 RegionMember,"Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon)",✅,pure,10.0,940
 Cycles,"Permutation cycle notation wrapper",✅,none,8.0,941
@@ -1032,7 +1032,7 @@ DirectedEdges,"Option saying whether graph edges are drawn as arrows",✅,none,6
 ViewVertical,"Option for 3D up direction on screen",✅,pure,2.0,986
 StyleDefinitions,"",🚫,,3.0,987
 RoundingRadius,"",🚫,,7.0,988
-Ball,"Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centres draws one ball per centre",✅,none,10.0,989
+Ball,"Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centers draws one ball per center",✅,none,10.0,989
 FormBox,"",🚫,,3.0,991
 RegionDifference,"Region left after removing one region from another",✅,pure,10.0,991
 UpSetDelayed,"Assign delayed upvalues to symbols appearing in the LHS",✅,side_effect,1.0,992
@@ -1208,7 +1208,7 @@ PolynomialQ,"Tests whether an expression is a polynomial",✅,pure,1.0,1167
 AppellF1,"Appell hypergeometric function F1(a b1 b2; c; x y)",✅,pure,4.0,1168
 Glow,"Graphics directive for glow effect",✅,1,6.0,1169
 Cone,"3D cone graphics primitive",✅,none,7.0,1170
-DistanceFunction,"Option naming the metric a nearest-neighbour or clustering function measures with",✅,pure,6.0,1171
+DistanceFunction,"Option naming the metric a nearest-neighbor or clustering function measures with",✅,pure,6.0,1171
 IgnoreCase,"",🚫,,2.0,1172
 GaussianFilter,"Gaussian filter for images and arrays",✅,pure,7.0,1173
 FixedPointList,"Returns the list of results from applying a function repeatedly until fixed point",✅,pure,2.0,1174
@@ -1462,7 +1462,7 @@ CreateDialog,"Create a dialog window",🚫,io,6.0,1427
 MinimalPolynomial,"Computes the minimal polynomial of an algebraic number over the rationals",✅,pure,6.0,1428
 SynchronousInitialization,"Notebook synchronous initialization",🚫,io,6.0,1429
 GeoBackground,"Background for geographic plots",✅,pure,10.0,1430
-ItemStyle,"Style specification for items (text colours of Grid rows and columns)",✅,pure,6.0,1431
+ItemStyle,"Style specification for items (text colors of Grid rows and columns)",✅,pure,6.0,1431
 GeoStyling,"Styling for geographic regions",🚫,pure,10.0,1432
 CharacterEncoding,"Character encoding specification",🚫,io,3.0,1434
 InfinitePlane,"Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range",✅,unevaluated,10.0,1434
@@ -1473,7 +1473,7 @@ DecimalForm,"Display a number in decimal notation without scientific notation; T
 GeneratingFunction,"Compute generating function of a sequence",✅,pure,7.0,1440
 Proportional,"Symbolic proportional relation",✅,pure,3.0,1440
 ConnectedComponents,"Find connected components of a graph",✅,pure,8.0,1441
-ScalingTransform,"Scaling transformation by per-axis factors or by one factor along a direction optionally centred at a point",✅,pure,6.0,1442
+ScalingTransform,"Scaling transformation by per-axis factors or by one factor along a direction optionally centered at a point",✅,pure,6.0,1442
 TriangleWave,"gives a triangle wave with period 1",✅,pure,7.0,1443
 SessionTime,"Elapsed time in seconds since session start",✅,pure,2.0,1444
 NetGraph,"Neural network graph structure",✅,pure,11.0,1445
@@ -1766,7 +1766,7 @@ GeometricScene,"Geometric scene",✅,pure,12.0,1743
 MaxDetect,"Gives a 0/1 mask marking the regional maxima of a numeric list or matrix",✅,pure,8.0,1743
 FactorList,"List irreducible factors of a polynomial with exponents",✅,pure,1.0,1745
 Parallelize,"Evaluates an expression and returns the same result as the sequential evaluation (single Woxi kernel)",✅,pure,7.0,1745
-BernoulliGraphDistribution,"Erdős–Rényi G(n p) random graph distribution (recognised by RandomGraph)",✅,pure,8.0,1748
+BernoulliGraphDistribution,"Erdős–Rényi G(n p) random graph distribution (recognized by RandomGraph)",✅,pure,8.0,1748
 ClusteringComponents,"Clustering components",✅,unevaluated,8.0,1748
 MandelbrotSetPlot,"Mandelbrot set plot",,unevaluated,10.0,1748
 Language,"Language option",,unevaluated,3.0,1749
@@ -1868,7 +1868,7 @@ BeckmannDistribution,"Beckmann distribution (numeric PDF and CDF and bisected Qu
 CoordinateTransformData,"Mapping and Jacobian of the Polar/Spherical/Cylindrical/Cartesian coordinate transforms",✅,pure,9.0,1849
 FirstCase,"First element matching a pattern",✅,pure,10.0,1849
 EndOfFile,"Symbol returned by Read at end of file",✅,pure,1.0,1852
-MathieuC,"Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0)",✅,pure,3.0,1852
+MathieuC,"Even Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalization differs from wolframscript's for q != 0)",✅,pure,3.0,1852
 WeierstrassSigma,"Weierstrass sigma function (numeric for machine arguments incl. complex)",✅,pure,3.0,1852
 StringReplacePart,"Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart",✅,pure,3.0,1853
 KeyMap,"Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc]",✅,pure,10.0,1855
@@ -1980,7 +1980,7 @@ MultinomialDistribution,"Multivariate discrete distribution for modeling outcome
 NonConstants,"Option for Simplify specifying which symbols are not constants",✅,pure,1.0,1954
 BooleanFunction,"Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction[""BDD"" -> ...] object and BooleanFunction[k n vars] writes it out in those variables",✅,pure,7.0,1956
 ViewVector,"3D graphics option placing a perspective camera at a position and optionally its target",✅,pure,6.0,1956
-MathieuS,"Odd Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0)",✅,pure,3.0,1960
+MathieuS,"Odd Mathieu function (also for imaginary z; Floquet ODE integration; Woxi's q-to-zero normalization differs from wolframscript's for q != 0)",✅,pure,3.0,1960
 NumberFormat,"Option for NumberForm specifying how mantissa/base/exponent are assembled",🚫,,2.0,1960
 OneIdentity,"Attribute indicating f[x] is identical to x for matching",✅,pure,1.0,1960
 Subfactorial,"Returns the subfactorial (number of derangements)",✅,pure,6.0,1960
@@ -2058,7 +2058,7 @@ Spectrogram,"Plot the magnitude of the short-time Fourier transform (time vs fre
 DateTicksFormat,"Date format for plot tick labels",🚫,,6.0,2036
 RootLocusPlot,"Root locus of the closed-loop characteristic equation as a gain varies",✅,pure,8.0,2036
 UndirectedGraph,"Gives the graph with every edge undirected and duplicates dropped",✅,pure,8.0,2038
-DegreeGraphDistribution,"Random simple graphs with a given degree sequence (recognised by RandomGraph)",✅,pure,8.0,2039
+DegreeGraphDistribution,"Random simple graphs with a given degree sequence (recognized by RandomGraph)",✅,pure,8.0,2039
 NyquistPlot,"Nyquist stability plot",✅,pure,8.0,2040
 FlattenLayer,"Neural network flatten layer",🚫,,11.0,2042
 VertexInDegree,"Number of incoming edges per vertex of a graph or edge list",✅,none,8.0,2042
@@ -2165,7 +2165,7 @@ KeyTake,"Takes specified keys from an association; supports the operator form Ke
 Paneled,"Panel wrapper for display",🚫,,6.0,2147
 BinLists,"Group data points into equal-width bins",✅,pure,6.0,2149
 VertexIndex,"Returns the 1-based position of a vertex in VertexList of a graph",✅,none,8.0,2149
-BoxMatrix,"Gives the all-ones box structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width",✅,pure,7.0,2152
+BoxMatrix,"Gives the all-ones box structuring element for a scalar radius or list of radii (n-D) optionally centered in a grid of a given width",✅,pure,7.0,2152
 CircleMinus,"Symbolic circle-minus operator displayed with the Unicode glyph",✅,pure,3.0,2152
 DiscreteLimit,"Discrete limit of sequence",✅,pure,11.2,2152
 FixedOrder,"Fixed ordering pattern constraint",🚫,,10.1,2157
@@ -2219,10 +2219,10 @@ InverseErfc,"Inverse complementary error function",✅,pure,3.0,2203
 PlotLayout,"Option specifying the layout arrangement of multiple plots",✅,pure,8.0,2203
 ReflectionMatrix,"Gives the reflection matrix for a normal vector",✅,None,6.0,2203
 TTest,"Performs a Student t-test for statistical hypothesis testing",🚫,None,8.0,2203
-ImageFilter,"Applies a filter function to the range-r neighbourhood of every pixel in each channel — the edges are repeated so every window is the full square",✅,pure,7.0,2205
+ImageFilter,"Applies a filter function to the range-r neighborhood of every pixel in each channel — the edges are repeated so every window is the full square",✅,pure,7.0,2205
 DropoutLayer,"Represents a dropout layer in a neural network",🚫,None,11.0,2208
 RegionQ,"Geometric region predicate",✅,pure,10.0,2208
-ShearingTransform,"Shear transformation by an angle along a direction relative to a normal optionally centred at a point",✅,pure,6.0,2208
+ShearingTransform,"Shear transformation by an angle along a direction relative to a normal optionally centered at a point",✅,pure,6.0,2208
 ComplexContourPlot,"Contour plot of real functions of a complex variable over a region of the complex plane",✅,pure,12.1,2210
 GreenFunction,"Differential equation Green's function",🚫,None,10.4,2210
 ContinuedFractionK,"Evaluates a generalized continued fraction",✅,pure,7.0,2212
@@ -2247,7 +2247,7 @@ Nand,"Logical NAND",✅,pure,4.1,2233
 TimeSeriesShift,"Shifts every time stamp of a series by a given amount",✅,pure,10.0,2233
 WaitAll,"Waits for asynchronous tasks and returns the value of its argument (single Woxi kernel)",✅,pure,7.0,2233
 ClickPane,"Clickable pane feeding a handler; renders as an interactive 2D pane",✅,unevaluated,6.0,2236
-DiamondMatrix,"Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D) optionally centred in a grid of a given width",✅,pure,7.0,2236
+DiamondMatrix,"Gives the diamond (L1-ball) structuring element for a scalar radius or list of radii (n-D) optionally centered in a grid of a given width",✅,pure,7.0,2236
 MaxItems,"Display option",🚫,None,10.1,2236
 SSSTriangle,"Constructs a triangle from three side lengths",✅,None,10.0,2239
 ThreadingLayer,"Machine learning",🚫,None,11.1,2239
@@ -2707,7 +2707,7 @@ MeanShiftFilter,"",🚫,,8.0,2707
 PrintingStyleEnvironment,"",🚫,,3.0,2707
 ShowAutoStyles,"",🚫,,4.0,2707
 SpheroidalEigenvalue,"",🚫,,6.0,2707
-WattsStrogatzGraphDistribution,"Watts-Strogatz small-world graph distribution (recognised by RandomGraph)",✅,pure,8.0,2707
+WattsStrogatzGraphDistribution,"Watts-Strogatz small-world graph distribution (recognized by RandomGraph)",✅,pure,8.0,2707
 DictionaryWordQ,"Tests whether a string is a recognized dictionary word",✅,pure,10.4,2712
 GompertzMakehamDistribution,"represents a Gompertz-Makeham distribution",✅,Computation,8.0,2712
 LinearGradientFilling,"Specifies a linear gradient color filling for graphics",✅,pure,12.2,2712
@@ -2726,7 +2726,7 @@ WaveletThreshold,"Threshold wavelet coefficients in discrete wavelet data",✅,p
 DotEqual,"dot-equal symbol",✅,Symbolic,3.0,2729
 EntityTypeName,"",🚫,,10.0,2729
 LatitudeLongitude,"extract latitude and longitude from a geo position",✅,none,7.0,2729
-QHypergeometricPFQ,"q-analogue of the generalized hypergeometric function",🚫,,7.0,2729
+QHypergeometricPFQ,"q-analog of the generalized hypergeometric function",🚫,,7.0,2729
 ScrollPosition,"",🚫,,7.0,2729
 TraceDepth,"Option controlling depth of tracing in Trace",✅,pure,2.0,2729
 FinishDynamic,"Force pending Dynamic updates to complete (a front-end operation with no kernel value)",✅,pure,6.0,2734
@@ -2766,7 +2766,7 @@ ImageChannels,"Returns the number of channels in an image",✅,pure,7.0,2767
 ImageClip,"",🚫,,8.0,2767
 TakeSmallestBy,"Takes the n smallest elements by a criterion; supports the operator form TakeSmallestBy[f;n][list]",✅,pure,10.1,2767
 WeaklyConnectedComponents,"weakly connected components of a graph",✅,Computation,9.0,2767
-BarabasiAlbertGraphDistribution,"Barabasi-Albert random graph distribution (recognised by RandomGraph)",✅,pure,8.0,2777
+BarabasiAlbertGraphDistribution,"Barabasi-Albert random graph distribution (recognized by RandomGraph)",✅,pure,8.0,2777
 GraphComplement,"Complement of a graph",✅,1,8.0,2777
 Groupings,"Generates all ways to group elements with an operator of given arity",✅,pure,11.0,2777
 KochCurve,"Generates a Koch fractal curve as a Line primitive",✅,pure,11.1,2777
@@ -2839,7 +2839,7 @@ UniformPolyhedron,"",🚫,,12.0,2837
 ControllableModelQ,"",🚫,,8.0,2842
 KeyUnion,"Extends associations to have the union of all keys with Missing for absent keys",✅,pure,10.0,2842
 LinkProtocol,"",🚫,,3.0,2842
-SpatialGraphDistribution,"Random geometric graphs on the unit square (recognised by RandomGraph)",✅,pure,9.0,2842
+SpatialGraphDistribution,"Random geometric graphs on the unit square (recognized by RandomGraph)",✅,pure,9.0,2842
 UnderoverscriptBoxOptions,"",🚫,,4.0,2842
 BooleanQ,"Tests if an expression is True or False",✅,pure,10.0,2845
 IndependentUnit,"Represents a user-defined independent unit",✅,pure,9.0,2845
@@ -2915,7 +2915,7 @@ GaugeStyle,"",🚫,,9.0,2921
 QuantityDistribution,"Probability distribution with physical units",✅,pure,10.4,2921
 SequenceCount,"Count occurrences of a subsequence (non-overlapping by default; Overlaps option); subsequence elements may be patterns including BlankSequence (__h)",✅,none,10.1,2921
 SpheroidalS2Prime,"",🚫,,6.0,2921
-UniformGraphDistribution,"Uniform random graph distribution (recognised by RandomGraph)",✅,pure,8.0,2921
+UniformGraphDistribution,"Uniform random graph distribution (recognized by RandomGraph)",✅,pure,8.0,2921
 DateListStepPlot,"",🚫,,10.3,2929
 EarthquakeData,"",🚫,,10.0,2929
 ExcludedForms,"Option to specify patterns excluded from an operation",✅,pure,3.0,2929
@@ -3325,7 +3325,7 @@ EntityClassList,"List entity classes for a type",✅,,10.0,3353
 FindTransientRepeat,"Split a sequence into {transient repeat} where repeat is the shortest end-cycle occurring at least n times",✅,pure,10.4,3353
 InverseContinuousWaveletTransform,"Inverse continuous wavelet transform (least-squares reconstruction)",✅,pure,8.0,3353
 Perimeter,"Compute the perimeter of a region",✅,pure,11.1,3353
-PriceGraphDistribution,"de Solla Price random graph distribution (recognised by RandomGraph)",✅,pure,8.0,3353
+PriceGraphDistribution,"de Solla Price random graph distribution (recognized by RandomGraph)",✅,pure,8.0,3353
 SocketConnect,"Connect to a TCP endpoint and return a SocketObject",✅,effectful,10.3,3353
 AlgebraicNumberPolynomial,"",,,6.0,3363
 ArgumentsOptions,"",,,12.2,3363
@@ -4262,7 +4262,7 @@ GeoGroup,"",🚫,,10.0,4356
 HeatTemperatureCondition,"",,,12.2,4356
 InputAssumptions,"",🚫,,8.0,4356
 ItemAspectRatio,"",,,6.0,4356
-KnownUnitQ,"Tests whether an expression is a recognised unit specification",✅,pure,9.0,4356
+KnownUnitQ,"Tests whether an expression is a recognized unit specification",✅,pure,9.0,4356
 LeftVector,"Operator without built-in meaning displayed infix",✅,pure,3.0,4356
 LinearSolveFunction,"",,,5.0,4356
 LossFunction,"",,,11.3,4356
@@ -4443,7 +4443,7 @@ DefaultNaturalLanguage,"",,,4.0,4567
 DimensionalCombinations,"",,,10.0,4567
 Disjunction,"Or of an expression over all True/False assignments of the given variables (minimized)",✅,pure,7.0,4567
 GoodmanKruskalGammaTest,"",,,9.0,4567
-GraphHub,"Vertices with the most distinct neighbours",✅,pure,9.0,4567
+GraphHub,"Vertices with the most distinct neighbors",✅,pure,9.0,4567
 ImageDemosaic,"",🚫,,9.0,4567
 InitializationObjects,"",🚫,,11.2,4567
 InputNamePacket,"",🚫,,3.0,4567
@@ -4606,7 +4606,7 @@ CircularSymplecticMatrixDistribution,"",,,10.3,4747
 DateOverlapsQ,"True when two dates or date intervals share a common calendar span",✅,pure,11.1,4747
 DefineOutputStreamMethod,"",,,9.0,4747
 Devices,"",🚫,,10.0,4747
-EchoLabel,"Operator form of labelled Echo: EchoLabel[label][expr] prints "">> label expr"" and returns expr",✅,effectful,12.2,4747
+EchoLabel,"Operator form of labeled Echo: EchoLabel[label][expr] prints "">> label expr"" and returns expr",✅,effectful,12.2,4747
 ExternalStorageObject,"",,,12.1,4747
 FindTextualAnswer,"",🚫,,11.3,4747
 FunctionCompileExportLibrary,"",🚫,,12.0,4747
@@ -5491,7 +5491,7 @@ ChemicalConvert,"",🚫,,13.1,
 ChemicalFormula,"",🚫,,13.0,
 ChemicalInstance,"",🚫,,13.1,
 ChemicalReaction,"",🚫,,13.0,
-CircularArcThrough,"Arc of the circle through the given points as a Circle running from the smallest of their angles about the centre to the largest",✅,pure,13.1,
+CircularArcThrough,"Arc of the circle through the given points as a Circle running from the smallest of their angles about the center to the largest",✅,pure,13.1,
 CircumscribedBall,"Ball of minimal radius enclosing a set of points or a vertex-based region",✅,pure,13.3,
 ClassifierMeasurementsObject,"",🚫,,10.1,
 ClearDistributedDefinitions,"",🚫,,14.1,
@@ -6032,7 +6032,7 @@ SqrtBoxOptions,"",🚫,,6.0,
 Squiggled,"",🚫,,13.3,
 StraussHardcorePointProcess,"",🚫,,12.2,
 StraussPointProcess,"",🚫,,12.2,
-StreamPlot3D,"Streamlines of a 3D vector field coloured by magnitude",✅,pure,12.3,
+StreamPlot3D,"Streamlines of a 3D vector field colored by magnitude",✅,pure,12.3,
 StrictInequalities,"",,,12.2,
 StringApply,"",,,14.1,
 StringFormatQ,"",,,12.2,
@@ -6412,7 +6412,7 @@ Combinatorica`Edges,"Edges of a Combinatorica graph as vertex pairs",✅,pure,6.
 Combinatorica`ShowGraph,"Draws a Combinatorica graph as Graphics with edges as lines and vertices as disks",✅,pure,6.0,
 Combinatorica`ShowLabeledGraph,"Draws a Combinatorica graph as Graphics with its vertices numbered",✅,pure,6.0,
 Combinatorica`M,"Number of edges of a Combinatorica graph",✅,pure,6.0,
-Combinatorica`ToAdjacencyLists,"Sorted neighbour lists of a Combinatorica graph",✅,pure,6.0,
+Combinatorica`ToAdjacencyLists,"Sorted neighbor lists of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`ConnectedComponents,"Connected components of a Combinatorica graph as sorted vertex lists",✅,pure,6.0,
 Combinatorica`BreadthFirstTraversal,"Vertices of a Combinatorica graph in breadth-first order from a start vertex",✅,pure,6.0,
 Combinatorica`Neighborhood,"Vertices of a Combinatorica graph within a given edge distance of a vertex",✅,pure,6.0,

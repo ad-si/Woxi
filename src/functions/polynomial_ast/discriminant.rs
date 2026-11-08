@@ -93,8 +93,8 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Simplify the result
   let simplified = crate::evaluator::evaluate_expr_to_expr(&result)?;
   // Apply Cancel to simplify rational expressions
-  let cancelled = super::cancel_ast(std::slice::from_ref(&simplified));
-  match cancelled {
+  let canceled = super::cancel_ast(std::slice::from_ref(&simplified));
+  match canceled {
     Ok(c) => Ok(c),
     Err(_) => Ok(simplified),
   }

@@ -547,7 +547,7 @@ pre.output-box {
 }
 
 /* A control whose `Enabled -> Dynamic[…]` condition is currently false is
-   greyed out and non-interactive. */
+   grayed out and non-interactive. */
 .manipulate-control-row.disabled {
   opacity: 0.45;
 }

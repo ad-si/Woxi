@@ -67,8 +67,8 @@ mod slice_density_plot3d {
     );
   }
 
-  // A `ColorFunction` returning a directive (an opacity with the colour)
-  // colours the slice with it, and the surface spec may be computed.
+  // A `ColorFunction` returning a directive (an opacity with the color)
+  // colors the slice with it, and the surface spec may be computed.
   #[test]
   fn directive_color_function_and_computed_surface() {
     assert_eq!(
@@ -107,7 +107,7 @@ mod slice_contour_plot3d {
   }
 
   // `Contours -> n` splits the slice into n + 1 bands, band k of them
-  // coloured by the colour function at k/(n + 2).
+  // colored by the color function at k/(n + 2).
   #[test]
   fn contour_bands() {
     assert_eq!(

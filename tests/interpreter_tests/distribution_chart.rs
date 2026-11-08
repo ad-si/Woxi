@@ -39,7 +39,7 @@ fn quantile_element() {
 }
 
 // ChartElementFunction -> "Density": a bar over the data range whose
-// colour fades to white where the density estimate is lowest. Resolve WL's
+// color fades to white where the density estimate is lowest. Resolve WL's
 // paired light/dark directives before inspecting the light palette.
 #[test]
 fn density_element() {

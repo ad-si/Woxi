@@ -339,7 +339,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (_, den) =
     crate::functions::polynomial_ast::together::extract_num_den(&result);
   // Powers with symbolic exponents (`((x - c)/b)^(a - 1)`, exponentials
-  // aside) are not polynomial; cancelling over them only makes the GCD
+  // aside) are not polynomial; canceling over them only makes the GCD
   // search blow up.
   fn has_symbolic_exponent(e: &Expr) -> bool {
     match e {
@@ -369,7 +369,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   // A purely numeric denominator (`(-3 (1 - z)^2)/2`) has nothing to cancel
-  // against; cancelling would only rewrite the factors' signs
+  // against; canceling would only rewrite the factors' signs
   // (`(-1 + z)^2`), which D does not do.
   if matches!(&den, Expr::Integer(1)) || has_symbolic_exponent(&result) {
     return Ok(result);
@@ -377,21 +377,21 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&den, Expr::Integer(_) | Expr::BigInteger(_)) {
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
-  let cancelled =
+  let canceled =
     crate::functions::polynomial_ast::cancel_expr_keep_quotient_sign(&result);
   // A cancellation that leaves the denominator as it was up to a number
-  // has cancelled nothing; it would only have moved a sign into a factor
+  // has canceled nothing; it would only have moved a sign into a factor
   // (`-1/(6 (1 - z))` as `1/(6 (-1 + z))`).
-  let (_, cancelled_den) =
-    crate::functions::polynomial_ast::together::extract_num_den(&cancelled);
-  if expr_to_string(&cancelled_den) != expr_to_string(&den)
+  let (_, canceled_den) =
+    crate::functions::polynomial_ast::together::extract_num_den(&canceled);
+  if expr_to_string(&canceled_den) != expr_to_string(&den)
     && let Ok(ratio) = crate::evaluator::evaluate_expr_to_expr(&call1(
       "Together",
       call(
         "Times",
         vec![
           den.clone(),
-          call("Power", vec![cancelled_den, Expr::Integer(-1)]),
+          call("Power", vec![canceled_den, Expr::Integer(-1)]),
         ],
       ),
     ))
@@ -399,7 +399,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(result);
   }
-  Ok(cancelled)
+  Ok(canceled)
 }
 
 /// Recursively replace every occurrence of `target` in `expr` with `replacement`.
@@ -463,7 +463,7 @@ fn is_derivative_form(e: &Expr) -> bool {
 }
 
 /// Like `replace_subexpr_simple`, but matches applied derivatives by their
-/// printed form so both internal shapes of `f'[t]` are recognised.
+/// printed form so both internal shapes of `f'[t]` are recognized.
 fn replace_derivative_form(
   expr: &Expr,
   target: &Expr,
@@ -731,7 +731,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Separate trailing option rules (`Assumptions -> …`, `GenerateConditions ->
   // …`, etc.) from the integration specs so they are not mistaken for extra
   // integration variables by the multivariate path below. An `Assumptions`
-  // option is honoured by evaluating the integral under the Assuming mechanism
+  // option is honored by evaluating the integral under the Assuming mechanism
   // (which sets `$Assumptions`, consulted by the definite-integral and limit
   // paths); any other option is accepted and ignored.
   {
@@ -809,7 +809,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_constant_wrt(&args[0], &var_name) {
       let lo_ne_hi = expr_to_string(lo) != expr_to_string(hi);
       // -Infinity must be returned through the evaluator so it gets
-      // canonicalised to the same form `DirectedInfinity[-1]` / unary-minus
+      // canonicalized to the same form `DirectedInfinity[-1]` / unary-minus
       // that the REPL displays as `-Infinity`.
       let return_neg_infinity = || -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_expr_to_expr(&neg1(Expr::Identifier(
@@ -920,7 +920,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Divergent improper integral: if at least one bound is infinite and
       // the evaluated difference is non-finite (±Infinity, ComplexInfinity,
       // Indeterminate), treat the integral as divergent and return it
-      // unevaluated — matching wolframscript's Integrate::idiv behaviour.
+      // unevaluated — matching wolframscript's Integrate::idiv behavior.
       let has_infinite_bound = is_infinity(lo)
         || is_negative_infinity(lo)
         || is_infinity(hi)
@@ -1701,7 +1701,7 @@ fn try_definite_integral(
   // c independent of the integration variable. Recursing on the var-dependent
   // part lets every known-integral rule above compose with constant
   // multiples. Runs last so rules with their own coefficient handling (e.g.
-  // DiracDelta sifting, Gaussian moments) keep their specialised results.
+  // DiracDelta sifting, Gaussian moments) keep their specialized results.
   {
     let (negated, base) = match integrand {
       Expr::UnaryOp {
@@ -2374,7 +2374,7 @@ fn match_neg_a_x_squared(expr: &Expr, var: &str) -> Option<Expr> {
 
 /// Check if expr is x^(-2) (where x is the variable). Accepts both the
 /// parsed `BinaryOp::Power` form and the `Power[x, -2]` FunctionCall form.
-/// Used to recognise `Exp[-1/x^2]` for the special antiderivative
+/// Used to recognize `Exp[-1/x^2]` for the special antiderivative
 /// `x*Exp[-1/x^2] + Sqrt[Pi]*Erf[1/x]`.
 fn is_var_to_minus_two(expr: &Expr, var: &str) -> bool {
   if let Expr::BinaryOp {
@@ -2397,7 +2397,7 @@ fn is_var_to_minus_two(expr: &Expr, var: &str) -> bool {
 }
 
 /// Match `-1/x^2` (i.e. `-x^(-2)`) and return `Some(())`. Currently only
-/// the specific `a == 1` case is recognised since that's the only Erf-
+/// the specific `a == 1` case is recognized since that's the only Erf-
 /// closed-form antiderivative we surface.
 fn match_neg_inverse_x_squared(expr: &Expr, var: &str) -> bool {
   match expr {
@@ -2426,7 +2426,7 @@ fn match_neg_inverse_x_squared(expr: &Expr, var: &str) -> bool {
 }
 
 /// Check if expr is x^2 (where x is the variable). Accepts both the parsed
-/// `BinaryOp::Power` form and the canonicalised `Power[x, 2]` FunctionCall
+/// `BinaryOp::Power` form and the canonicalized `Power[x, 2]` FunctionCall
 /// form (which is what falls out of simplifying `(x/2)^2` etc.).
 fn is_var_squared(expr: &Expr, var: &str) -> bool {
   if let Expr::BinaryOp {
@@ -4051,7 +4051,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|_| {
             simplify(plus2(args[0].clone(), Expr::Integer(1)))
           });
-          // Evaluate the neighbour orders so a concrete n resolves its
+          // Evaluate the neighbor orders so a concrete n resolves its
           // negative-order symmetry (e.g. BesselK[-1, z] -> BesselK[1, z]).
           let f_nm1 =
             crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
@@ -4063,7 +4063,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               name: name.clone(),
               args: vec![n_plus_1, args[1].clone()].into(),
             })?;
-          // BesselI adds the neighbours; BesselK adds and negates; the rest
+          // BesselI adds the neighbors; BesselK adds and negates; the rest
           // (J, Y, HankelH1, HankelH2) subtract.
           let numer = match name.as_str() {
             "BesselI" => simplify(plus2(f_nm1, f_np1)),
@@ -5404,7 +5404,7 @@ fn try_integrate_trig_product_to_sum(
 
   // Combine like terms (`Pi*t - 2*Pi*t` → `-Pi*t`) so the resulting
   // Cos/Sin argument is a single linear term the recursive `integrate`
-  // call below can recognise — `simplify` alone leaves the bare
+  // call below can recognize — `simplify` alone leaves the bare
   // subtraction/addition uncollected.
   let sum_arg =
     crate::evaluator::evaluate_expr_to_expr(&plus2(arg0.clone(), arg1.clone()))
@@ -7611,7 +7611,7 @@ fn integrate_linear_over_quadratic_impl(
 /// `k²`, so the roots `(-b ± k)/(2a)` are rational and the answer is a sum of
 /// two `Log`s.
 ///
-/// Writing each root as `n/d` in lowest terms, the factorisation is
+/// Writing each root as `n/d` in lowest terms, the factorization is
 /// `content·(d₁x - n₁)(d₂x - n₂)`, and
 ///
 ///   ∫ = Σ (B·nᵢ + C·dᵢ) / (content·dᵢ·(d_j·nᵢ - n_j·dᵢ)) · Log[…]
@@ -7644,7 +7644,7 @@ fn rational_root_partial_fractions(
   let (n1, d1) = root(1)?;
   let (n2, d2) = root(-1)?;
   // a = content * d1 * d2; a non-integer content means the quadratic was not
-  // primitive in a way this factorisation covers.
+  // primitive in a way this factorization covers.
   let d_product = d1.checked_mul(d2)?;
   if d_product == 0 || a % d_product != 0 {
     return None;
@@ -9915,7 +9915,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             Expr::Integer(0)
           };
           // Detect 2-piece complementary conditions: drop the second piece
-          // and promote its antiderivative to the default. Recognise
+          // and promote its antiderivative to the default. Recognize
           // `x <= 0` ↔ `x > 0`, `x < 0` ↔ `x >= 0`, and (for symmetry) the
           // mirrored pair, anchored at any constant `c`.
           let is_complement =
@@ -11313,7 +11313,7 @@ fn net_poly_order(expr: &Expr, var: &str) -> Option<f64> {
   }
 }
 
-/// The leading asymptotic behaviour of `expr` as the pair `(order, coeff)`
+/// The leading asymptotic behavior of `expr` as the pair `(order, coeff)`
 /// meaning `expr ~ coeff * var^order` — at `var -> +Infinity` when `at_zero`
 /// is false, and at `var -> 0` when it is true. The only difference is which
 /// end of a sum wins: the largest exponent dominates at infinity, the
@@ -11506,9 +11506,9 @@ fn leading_of_sum(
   let coeff = crate::evaluator::evaluate_expr_to_expr(&sum).ok()?;
   // Cancellation among the leading terms hides the real leading order. A
   // symbolic sum that did not fold to zero is taken to be nonzero.
-  let cancelled = matches!(&coeff, Expr::Integer(0))
+  let canceled = matches!(&coeff, Expr::Integer(0))
     || crate::functions::math_ast::try_eval_to_f64(&coeff) == Some(0.0);
-  if cancelled {
+  if canceled {
     return None;
   }
   Some((top, coeff))
@@ -12084,7 +12084,7 @@ fn contains_var_power(expr: &Expr, var: &str) -> bool {
 
 /// For x -> ±Infinity limits of expressions with exponential growth in `var`,
 /// probe two moderate points (E^180 ≈ 1e78 stays within f64 range while
-/// E^-90 ≈ 1e-39 makes decaying terms negligible) and recognise a clean
+/// E^-90 ≈ 1e-39 makes decaying terms negligible) and recognize a clean
 /// integer / simple-rational / zero / divergent limit.
 fn exp_growth_limit_at_infinity(
   expr: &Expr,
@@ -12124,7 +12124,7 @@ fn exp_growth_limit_at_infinity(
   if (f2 - rounded).abs() < 1e-9 {
     return Some(Expr::Integer(rounded as i128));
   }
-  // Recognise a simple rational p/q (smallest denominator wins).
+  // Recognize a simple rational p/q (smallest denominator wins).
   for q in 2..=36i128 {
     let pf = f2 * q as f64;
     let p = pf.round();
@@ -12388,7 +12388,7 @@ fn parse_direction(option: &Expr) -> Option<LimitDirection> {
 }
 
 /// Check if two scalar comparisons cover the whole real line, i.e. one is
-/// the negation of the other. Recognises the four pair shapes that a
+/// the negation of the other. Recognizes the four pair shapes that a
 /// Piecewise-on-the-real-line typically takes: `x ≤ c` ↔ `x > c` and
 /// `x < c` ↔ `x ≥ c`, in either order. Used by Integrate[Piecewise[…]] to
 /// collapse two complementary pieces into one piece + default.
@@ -14111,7 +14111,7 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_infinity(&point)
       && let Some(rewritten) = rewrite_harmonic_asymptotic(&args[0], &var_name)
     {
-      // Evaluate first so cancelling Log terms (e.g. Log[n] - Log[n]) collapse
+      // Evaluate first so canceling Log terms (e.g. Log[n] - Log[n]) collapse
       // before the limit is taken.
       let collapsed = crate::evaluator::evaluate_expr_to_expr(&rewritten)
         .unwrap_or(rewritten);
@@ -15192,7 +15192,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Fully simplify via the `Simplify` builtin (the internal `simplify` helper
   // does not cancel `(z - z0)^m * p / (z - z0)^m` the way the builtin does;
-  // differentiating an uncancelled form would create spurious ∞ − ∞ limits).
+  // differentiating an uncanceled form would create spurious ∞ − ∞ limits).
   // The input is evaluated first: Simplify's rewrite loop can cycle without
   // terminating on half-canonical constructed trees (e.g. a raw
   // Times[Power[Minus[z, -1], 1], ...] with Times[-1, 1 - EulerGamma]
@@ -15237,7 +15237,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut deriv = g;
       for _ in 0..(m - 1) {
         // Recombine and re-simplify after each derivative: the product
-        // rule leaves cancelling pole terms like 1/(z-1) - (z-1)/(z-1)^2
+        // rule leaves canceling pole terms like 1/(z-1) - (z-1)/(z-1)^2
         // spread across the sum, which the limit only resolves
         // numerically otherwise; Together folds them into one quotient.
         let raw = differentiate_expr(&deriv, &var_name)?;
@@ -15321,7 +15321,7 @@ fn rat_linear_solve(
     a.swap(col, pivot);
     b.swap(col, pivot);
     let inv_pivot = rat_div((1, 1), a[col][col]);
-    // Normalise the pivot row.
+    // Normalize the pivot row.
     for j in col..n {
       a[col][j] = rat_mul(a[col][j], inv_pivot);
     }
@@ -17195,7 +17195,7 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::push_quiet();
     let inner_result: Result<Expr, InterpreterError> = (|| {
       // Cancel[Together[…]] clears the nested 1/t fractions and reduces the
-      // result to a single cancelled rational so the t = 0 expansion is clean.
+      // result to a single canceled rational so the t = 0 expansion is clean.
       let simplified = crate::evaluator::evaluate_expr_to_expr(&call(
         "Cancel",
         vec![call1("Together", substituted)],
@@ -18287,7 +18287,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EvaluationMonitor :> expr` — evaluated (with the integration variable
   // bound) at every sampled point, e.g. to `Sow` the abscissae.
   let mut monitor: Option<Expr> = None;
-  // Recognised method names — anything else triggers NIntegrate::bdmtd.
+  // Recognized method names — anything else triggers NIntegrate::bdmtd.
   // These are the standard Wolfram NIntegrate strategies; Woxi treats
   // them all as the same adaptive Simpson backend internally for now.
   const KNOWN_METHODS: &[&str] = &[
@@ -18406,7 +18406,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "EvaluationMonitor" => {
         monitor = Some(opt_value.clone());
       }
-      _ => {} // Ignore unrecognised options (Wolfram does too).
+      _ => {} // Ignore unrecognized options (Wolfram does too).
     }
   }
   if bad_method_call {
@@ -19805,7 +19805,7 @@ fn compile_condition(cond: &Expr, var: &str) -> Option<CompiledCondition> {
 /// Adaptive Simpson's quadrature
 /// Tanh-sinh (double-exponential) quadrature over a finite interval.
 ///
-/// Its nodes crowd exponentially towards the endpoints and its weights vanish
+/// Its nodes crowd exponentially toward the endpoints and its weights vanish
 /// there, so an integrand that blows up at an endpoint — `1/Sqrt[x]` on
 /// `{0, 1}`, `Sqrt[Tan[x]]` on `{0, Pi/2}` — integrates to near machine
 /// precision without the endpoint itself ever being sampled. Adaptive Simpson
@@ -22727,7 +22727,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // preserving plain rational forms like (2 + n)/n, matching wolframscript.
   // Only adopt it when it fully reduces the ratio (no Gamma/Factorial left):
   // for higher-order or scaled arguments (e.g. (2 n)!) woxi can't reduce the
-  // residual Gamma ratio, so keep the cancelled form rather than swap one
+  // residual Gamma ratio, so keep the canceled form rather than swap one
   // unreduced display for another.
   let expanded = crate::evaluator::evaluate_function_call_ast(
     "FunctionExpand",

@@ -28,7 +28,7 @@ fn split_lines(s: &str) -> Vec<&str> {
 }
 
 /// Auto-convert a token to Integer / BigInteger / Real / String, matching
-/// wolframscript's behaviour for the `"Data"` element of a plain-text file.
+/// wolframscript's behavior for the `"Data"` element of a plain-text file.
 fn token_to_expr(tok: &str) -> Expr {
   if tok.is_empty() {
     return Expr::String(String::new());
@@ -81,18 +81,18 @@ pub fn import_element(content: &str, element: &str) -> Option<Expr> {
     }
     "Data" => {
       let lines = split_lines(content);
-      // Tokenise each line; track whether every line has the same token
+      // Tokenize each line; track whether every line has the same token
       // count so we can decide between a table and a list of strings.
-      let tokenised: Vec<Vec<&str>> = lines
+      let tokenized: Vec<Vec<&str>> = lines
         .iter()
         .map(|l| l.split_whitespace().collect())
         .collect();
-      let uniform = !tokenised.is_empty()
-        && tokenised.iter().all(|row| row.len() == tokenised[0].len())
-        && !tokenised[0].is_empty();
+      let uniform = !tokenized.is_empty()
+        && tokenized.iter().all(|row| row.len() == tokenized[0].len())
+        && !tokenized[0].is_empty();
 
       if uniform {
-        let rows: Vec<Expr> = tokenised
+        let rows: Vec<Expr> = tokenized
           .iter()
           .map(|row| {
             Expr::List(row.iter().map(|tok| token_to_expr(tok)).collect())

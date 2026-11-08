@@ -10,7 +10,7 @@ fn polygon_count(svg: &str) -> usize {
   svg.matches("<polygon").count()
 }
 
-/// The distinct `fill="rgb(…)"` colours an SVG uses.
+/// The distinct `fill="rgb(…)"` colors an SVG uses.
 fn fills(svg: &str) -> std::collections::BTreeSet<String> {
   svg
     .split("fill=\"rgb(")
@@ -143,17 +143,17 @@ mod solids {
 mod vertex_colors {
   use super::*;
 
-  // The corner colours are blended across the face instead of the face
-  // being drawn in one flat colour.
+  // The corner colors are blended across the face instead of the face
+  // being drawn in one flat color.
   #[test]
   fn polygon_vertex_colors_blend_across_the_face() {
     let s = svg(
       "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 1}, {0, 1, 1}}, \
        VertexColors -> {Red, Green, Blue, Yellow}]]",
     );
-    // Independent RGB directions require a two-dimensional colour field.
+    // Independent RGB directions require a two-dimensional color field.
     use base64::Engine;
-    let colours: Vec<_> = s
+    let colors: Vec<_> = s
       .split("data:image/png;base64,")
       .skip(1)
       .flat_map(|rest| {
@@ -168,19 +168,16 @@ mod vertex_colors {
           .collect::<Vec<_>>()
       })
       .collect();
-    assert!(
-      !colours.is_empty(),
-      "missing two-dimensional vertex colours"
-    );
+    assert!(!colors.is_empty(), "missing two-dimensional vertex colors");
     // Near the red corner the face is (lit) red: no green or blue.
     assert!(
-      colours.iter().any(|&(r, g, b)| r > 150 && g < 60 && b < 60),
-      "got: {colours:?}"
+      colors.iter().any(|&(r, g, b)| r > 150 && g < 60 && b < 60),
+      "got: {colors:?}"
     );
   }
 
   #[test]
-  fn line_vertex_colors_colour_each_segment() {
+  fn line_vertex_colors_color_each_segment() {
     let s = svg(
       "Graphics3D[Line[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}}, \
        VertexColors -> {Red, Red, Blue}]]",
@@ -260,7 +257,7 @@ mod stream_plot3d {
   use super::*;
 
   #[test]
-  fn draws_coloured_streamlines() {
+  fn draws_colored_streamlines() {
     clear_state();
     assert_eq!(
       interpret(
@@ -532,22 +529,22 @@ mod plot3d_options {
       "Plot3D[x y, {x, -1, 1}, {y, -1, 1}, Mesh -> 4, \
        MeshShading -> {{Red, Yellow}, {Yellow, Red}}]",
     );
-    let colours = fills(&s);
-    let reddish = colours.iter().any(|c| {
+    let colors = fills(&s);
+    let reddish = colors.iter().any(|c| {
       let v: Vec<u8> = c
         .split(',')
         .map(|x| x.trim().parse::<u8>().unwrap())
         .collect();
       v[0] > 150 && v[1] < 60
     });
-    let yellowish = colours.iter().any(|c| {
+    let yellowish = colors.iter().any(|c| {
       let v: Vec<u8> = c
         .split(',')
         .map(|x| x.trim().parse::<u8>().unwrap())
         .collect();
       v[0] > 150 && v[1] > 150 && v[2] < 60
     });
-    assert!(reddish && yellowish, "{colours:?}");
+    assert!(reddish && yellowish, "{colors:?}");
   }
 
   // `RegionFunction` keeps only the part of the surface it accepts, and
@@ -600,9 +597,9 @@ mod plot3d_family {
   use super::*;
 
   // `PlotStyle -> Thick` thickens a space curve without dropping its
-  // default colour (the first plot colour, not black).
+  // default color (the first plot color, not black).
   #[test]
-  fn thick_space_curve_keeps_its_colour() {
+  fn thick_space_curve_keeps_its_color() {
     let s = svg(
       "ParametricPlot3D[{Cos[t], Sin[t], t/4}, {t, 0, 6 Pi}, \
        PlotStyle -> Thick]",
@@ -641,10 +638,10 @@ mod plot3d_family {
 mod level_surfaces {
   use super::*;
 
-  // Each contour level takes the next theme colour (orange, blue, green),
+  // Each contour level takes the next theme color (orange, blue, green),
   // as in wolframscript.
   #[test]
-  fn contour_levels_take_theme_colours() {
+  fn contour_levels_take_theme_colors() {
     let one = fills(&svg(
       "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
        Contours -> {0.5}, Mesh -> None]",
@@ -703,8 +700,8 @@ mod level_surfaces {
 mod fields_and_graphs {
   use super::*;
 
-  // Solid arrows (a shaft and a head) centred on the cells of an n³ grid,
-  // coloured along "WL12DefaultVectorGradient", in a 1 x 1 x 1 box.
+  // Solid arrows (a shaft and a head) centered on the cells of an n³ grid,
+  // colored along "WL12DefaultVectorGradient", in a 1 x 1 x 1 box.
   #[test]
   fn vector_plot3d_draws_solid_arrows() {
     clear_state();
@@ -797,7 +794,7 @@ mod arrows_and_box {
     assert!(head_area(&large) > 3.0 * head_area(&small));
   }
 
-  // The bounding box is drawn opaque, in the axis grey.
+  // The bounding box is drawn opaque, in the axis gray.
   #[test]
   fn box_edges_are_opaque() {
     let s = svg("Graphics3D[Cuboid[]]");
@@ -810,7 +807,7 @@ mod smooth_shading {
   use super::*;
 
   // A curved surface is lit at its corners and each facet is filled with
-  // the gradient between them; flat faces keep one colour.
+  // the gradient between them; flat faces keep one color.
   #[test]
   fn curved_surfaces_are_filled_with_gradients() {
     for code in [
@@ -849,7 +846,7 @@ mod smooth_shading {
       "Graphics3D[{Red, Polygon[{{0, 0, 0}, {2, 0, 0}, {2, 2, 0}, {0, 2, \
        0}}], Blue, Polygon[{{-1, -1, 0}, {5, -1, 0}, {-1, 5, 0}}]}]",
     );
-    let colours: Vec<(u32, u32, u32)> = s
+    let colors: Vec<(u32, u32, u32)> = s
       .split("<polygon ")
       .skip(1)
       .filter_map(|p| {
@@ -859,9 +856,9 @@ mod smooth_shading {
         Some((v[0], v[1], v[2]))
       })
       .collect();
-    let last_red = colours.iter().rposition(|c| c.0 > c.2).unwrap();
-    let first_blue = colours.iter().position(|c| c.2 > c.0).unwrap();
-    assert!(last_red < first_blue, "{colours:?}");
+    let last_red = colors.iter().rposition(|c| c.0 > c.2).unwrap();
+    let first_blue = colors.iter().position(|c| c.2 > c.0).unwrap();
+    assert!(last_red < first_blue, "{colors:?}");
   }
 }
 
@@ -870,7 +867,7 @@ mod edge_form_3d {
 
   // `EdgeForm[Dashed]` adds dashing to the edge style already in force.
   #[test]
-  fn dashed_edges_keep_the_earlier_edge_colour() {
+  fn dashed_edges_keep_the_earlier_edge_color() {
     let s = svg(
       "Graphics3D[{EdgeForm[{Thick, Red}], Cuboid[{0, 0, 0}], EdgeForm[None], \
        Cuboid[{2, 0, 0}], EdgeForm[Dashed], Cuboid[{4, 0, 0}]}]",
@@ -970,7 +967,7 @@ mod scattered_list_plot3d {
 }
 
 #[test]
-fn raster_volume_colours_do_not_expose_triangle_lighting() {
+fn raster_volume_colors_do_not_expose_triangle_lighting() {
   let s = svg("Graphics3D[Raster3D[{{{{1,0,0}}}}],Boxed->False]");
   assert!(s.contains("fill=\"rgb(255,0,0)\""));
   assert!(s.split("<polygon").skip(1).all(|p| {

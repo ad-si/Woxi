@@ -341,7 +341,7 @@ syntactic forms (`UpSet`, `Span`), and special functions that stay symbolic for 
 
 ## Quantities (2)
 
-- `KnownUnitQ` — Tests whether an expression is a recognised unit specification
+- `KnownUnitQ` — Tests whether an expression is a recognized unit specification
 - `UnitConvert` — Converts a quantity to a different unit
 
 ## Strings (1)

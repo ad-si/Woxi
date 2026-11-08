@@ -1431,7 +1431,7 @@ pub fn dispatch_predicate_functions(
     // `Language`ExtendedFullDefinition[sym]` gathers every kind of
     // definition attached to `sym` into one inert expression, which
     // assigning back to another symbol installs there. Copying a symbol's
-    // whole behaviour onto a new one — `Language`ExtendedFullDefinition[b] =
+    // whole behavior onto a new one — `Language`ExtendedFullDefinition[b] =
     // Language`ExtendedFullDefinition[a] /. a -> b` — is how object systems
     // written in the Wolfram Language derive a type from a parent type.
     "Language`ExtendedFullDefinition" if args.len() == 1 => {

@@ -406,7 +406,7 @@ mod discrete_asymptotic {
   }
 
   #[test]
-  fn cancelling_terms_use_series() {
+  fn canceling_terms_use_series() {
     assert_eq!(
       interpret("DiscreteAsymptotic[Sqrt[n^2 + 1] - n, n -> Infinity]")
         .unwrap(),

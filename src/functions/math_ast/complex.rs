@@ -960,7 +960,7 @@ pub fn is_strictly_positive_real(e: &Expr) -> bool {
 }
 
 /// Arg[z] - Argument (phase angle) of a complex number
-/// Recognise `Re[v] + I*Im[v]` (in either Plus arg order, FunctionCall or
+/// Recognize `Re[v] + I*Im[v]` (in either Plus arg order, FunctionCall or
 /// BinaryOp Plus) for some symbol `v`, returning the symbol's name. Used
 /// to collapse `Arg[Re[v] + I·Im[v]]` back to `Arg[v]` after the
 /// ComplexExpand substitution has run.

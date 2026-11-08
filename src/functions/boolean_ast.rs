@@ -314,7 +314,7 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// The one SameQ test, also behind `===` and `=!=`: the display form plus
-/// the identity of anything it summarises (a Graph's `Graph[<v>, <e>]`,
+/// the identity of anything it summarizes (a Graph's `Graph[<v>, <e>]`,
 /// nested images and graphics) must agree, up to machine reals SameQ
 /// identifies. Images and graphics, which all display as the same
 /// placeholder, compare their content.
@@ -999,7 +999,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use crate::functions::math_ast::try_eval_to_f64;
 
-  // The display form plus the identity of anything it summarises (a
+  // The display form plus the identity of anything it summarizes (a
   // Graph's `Graph[<v>, <e>]`, nested images and graphics).
   let identity =
     |e: &Expr| expr_to_string(e) + &crate::syntax::graphics_identity_suffix(e);
@@ -1987,7 +1987,7 @@ fn to_dnf(expr: &Expr) -> Expr {
 }
 
 /// Decompose a literal into `(variable-key, is_positive, positive-atom)`.
-/// Negation is recognised in either the `Not[..]` head form or the
+/// Negation is recognized in either the `Not[..]` head form or the
 /// `UnaryOp::Not` form produced by `normalize_not`.
 fn dnf_literal(e: &Expr) -> (String, bool, Expr) {
   match e {
@@ -3200,7 +3200,7 @@ struct BddNode {
   else_edge: BddEdge,
 }
 
-/// Wolfram's internal serialisation of the ROBDD for a Boolean function of
+/// Wolfram's internal serialization of the ROBDD for a Boolean function of
 /// `n` variables — the list carried by the `"BDD" -> {…}` rule inside the
 /// `BooleanFunction` object `BooleanFunction[k, n]` evaluates to.
 ///
@@ -3211,7 +3211,7 @@ struct BddNode {
 /// branch value `v` refers to the `|v|`-th node in that order, negated when
 /// `v` is negative, except that `±1` is the True/False terminal — the root
 /// sits at position 1 and, having no incoming edge, is never referred to.
-/// Complement edges are normalised the usual way: a then-branch is never
+/// Complement edges are normalized the usual way: a then-branch is never
 /// negated, so `Not` shows up only as a sign on the root or an else-branch.
 pub fn bdd_encoding(table: &[bool], n: usize) -> Vec<i64> {
   let mut nodes: Vec<BddNode> = Vec::new();
@@ -4687,7 +4687,7 @@ pub fn satisfiability_count_ast(
 }
 
 /// Majority[b1, b2, ...] - True when more than half the arguments are True.
-/// Symbolic arguments simplify by cancelling True/False pairs and deciding
+/// Symbolic arguments simplify by canceling True/False pairs and deciding
 /// early when the outcome no longer depends on the unknowns (matching
 /// wolframscript: Majority[True, False, x] -> x, Majority[a, b] -> a && b).
 pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

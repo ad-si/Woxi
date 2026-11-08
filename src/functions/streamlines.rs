@@ -85,7 +85,7 @@ struct Placed {
 }
 
 /// Placed points bucketed into square cells of the separation distance, so
-/// a proximity test only looks at the neighbouring cells.
+/// a proximity test only looks at the neighboring cells.
 struct Occupancy {
   cell: f64,
   cols: usize,
@@ -151,7 +151,7 @@ impl Occupancy {
 /// Evenly spaced streamlines of `field`, as point lists in data coordinates.
 ///
 /// Spacing is measured as Wolfram measures it, in the plot domain scaled
-/// to the unit square: `separation` is the distance between neighbouring
+/// to the unit square: `separation` is the distance between neighboring
 /// streamlines as a fraction of each axis' range.
 pub(crate) fn even_streamlines(
   field: &SampledField,

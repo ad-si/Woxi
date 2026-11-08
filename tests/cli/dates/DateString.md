@@ -35,7 +35,7 @@ $ wo 'DateString[{2026, 4, 15, 14, 5}, {"Hour24", ":", "Minute"}]'
 - `"Year"`, `"Month"`, `"Day"` → individual components
 
 The ISO week date names the week a day belongs to, which near New Year can be
-in the neighbouring year:
+in the neighboring year:
 
 ```scrut
 $ wo 'DateString[{2024, 12, 31}, "ISOWeekDate"]'

@@ -1,7 +1,7 @@
 # `CircumscribedBall`
 
 The ball of minimal radius enclosing a set of points. Exact coordinates give an
-exact centre and radius:
+exact center and radius:
 
 ```scrut
 $ wo 'CircumscribedBall[{{0, 0}, {4, 0}, {0, 3}}]'

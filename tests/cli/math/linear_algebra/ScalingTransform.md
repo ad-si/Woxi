@@ -15,7 +15,7 @@ $ wo 'ScalingTransform[2, {1, 1}]'
 TransformationFunction[{{3/2, 1/2, 0}, {1/2, 3/2, 0}, {0, 0, 1}}]
 ```
 
-A third argument centres the scaling at that point:
+A third argument centers the scaling at that point:
 
 ```scrut
 $ wo 'ScalingTransform[2, {0, 1}, {3, 4}]'

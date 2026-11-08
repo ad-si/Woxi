@@ -134,7 +134,7 @@ pub enum ControlState {
     single: bool,
   },
   /// A `ControlType -> Trigger` control: a play/pause pair sweeping its
-  /// variable from `min` towards `max` in `step` increments while the
+  /// variable from `min` toward `max` in `step` increments while the
   /// widget is playing. `max` may be infinite (`{time, 0, Infinity, 1}`),
   /// in which case the sweep never wraps.
   Trigger {
@@ -2185,7 +2185,7 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("4"), "{:?}", state.error);
   }
 
-  /// A puzzle generator initialised with `Needs["Combinatorica`"]` shuffles
+  /// A puzzle generator initialized with `Needs["Combinatorica`"]` shuffles
   /// rows with the bare `RandomPermutation[Range[d]]`; the package version
   /// must evaluate it, so the stored puzzle holds numbers rather than
   /// unevaluated calls that warn on every re-render.
@@ -2300,7 +2300,7 @@ mod tests {
 
   /// A conformal-map explorer: a textured square translated by a locator,
   /// shown beside its warp under a map chosen from a popup of pure
-  /// functions labelled with `TraditionalForm`.
+  /// functions labeled with `TraditionalForm`.
   #[test]
   fn conformal_warp_explorer_renders() {
     let code = r#"Manipulate[
@@ -2522,7 +2522,7 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("80"));
   }
 
-  /// An `Epilog -> (list /. rule)` option is parenthesised in the source; the
+  /// An `Epilog -> (list /. rule)` option is parenthesized in the source; the
   /// body is printed back to text for every re-evaluation, and without the
   /// parentheses the option became `(Epilog -> list) /. rule`, so the
   /// annotations vanished from the plot.
@@ -2541,7 +2541,7 @@ mod tests {
     assert_eq!(state.error, None);
     assert!(
       state.body.contains("Epilog -> ({"),
-      "the replacement must stay parenthesised, got {}",
+      "the replacement must stay parenthesized, got {}",
       state.body
     );
   }
@@ -3216,7 +3216,7 @@ mod tests {
   }
 
   /// A slider over a variable written with a private-use named character
-  /// (`\\[DoubleStruckCapitalC]`, U+F7A6) is labelled with the glyph a
+  /// (`\\[DoubleStruckCapitalC]`, U+F7A6) is labeled with the glyph a
   /// normal font has (`ℂ`), not the blank box of the raw code point.
   #[test]
   fn default_control_label_draws_private_use_symbol_as_glyph() {
@@ -4398,7 +4398,7 @@ mod tests {
   /// Spacer[n]}]` and pins its readouts with left-aligned `Text`. The
   /// spacer is layout, so the control heading must not spell out the
   /// `Spacer[n]` head, and the left-aligned readout must be anchored at
-  /// its left edge rather than centred on a guessed width.
+  /// its left edge rather than centered on a guessed width.
   #[test]
   fn heading_row_with_spacer_and_left_aligned_readout() {
     let code = r#"Manipulate[
@@ -4790,7 +4790,7 @@ mod tests {
 
   /// A Manipulate whose body applies a plot head chosen by a `PopupMenu`
   /// (`kind[field @@ {x, y}, …]`) to a field picked from a menu of pure
-  /// functions labelled with `TraditionalForm` rules; the choice list also
+  /// functions labeled with `TraditionalForm` rules; the choice list also
   /// carries a `FieldSize` option. `VectorDensityPlot` used to be missing,
   /// so selecting it left the body unevaluated.
   #[test]
@@ -5524,12 +5524,12 @@ mod textcell_tests {
     );
   }
 
-  /// A rotating shaded solid driven by a bare colour spec
+  /// A rotating shaded solid driven by a bare color spec
   /// (`{c, RGBColor[…], ImageSize -> Tiny}`), an opacity slider, an
   /// edge checkbox and a `Trigger` spinning it about the z axis — the
   /// Demonstrations idiom for a turntable view of a polyhedron.
-  /// The colour spec names no domain, so it is the control's *initial
-  /// value*: it must build a colour swatch, not get baked into the body as
+  /// The color spec names no domain, so it is the control's *initial
+  /// value*: it must build a color swatch, not get baked into the body as
   /// a constant (which silently dropped the control, leaving the panel one
   /// row short of what Wolfram draws).
   #[test]
@@ -5566,7 +5566,7 @@ mod textcell_tests {
     match &state.controls[..] {
       [
         ControlState::Color {
-          name: colour,
+          name: color,
           current,
           ..
         },
@@ -5581,7 +5581,7 @@ mod textcell_tests {
           ..
         },
       ] => {
-        assert_eq!(colour, "shade");
+        assert_eq!(color, "shade");
         assert_eq!(current, "RGBColor[0.3, 0.4, 0.8]");
         assert_eq!(alpha, "opacity");
         assert_eq!(flag, "edge");
@@ -5591,7 +5591,7 @@ mod textcell_tests {
       }
       other => panic!("unexpected control panel: {other:?}"),
     }
-    // Picking a new colour re-renders the body with it bound.
+    // Picking a new color re-renders the body with it bound.
     let mut state = state;
     state.color_change(0, 0.75);
     assert_eq!(state.controls[0].current_code(), "Hue[0.75]");
@@ -5765,7 +5765,7 @@ mod mapped_layout_tests {
       Graphics[{c, Circle[{0, 0}, r]}],
       Column[(Row[#, Spacer[3]] &) /@ {
         {"radius", Control[{{r, 1, "r"}, 0, 2, 0.1}]},
-        {Style["colour", Bold]},
+        {Style["color", Bold]},
         {Control[{{c, Red, ""}, Red, ImageSize -> Tiny}]}}],
       ControlPlacement -> Left, SaveDefinitions -> True]"#;
     let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");

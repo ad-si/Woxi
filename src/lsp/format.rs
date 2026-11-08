@@ -16,7 +16,7 @@
 //! Formatting a file must never change what it does. Every result is
 //! therefore checked against its input before it is returned: the two must
 //! tokenize to the same tokens, separated by the same line breaks, no two
-//! neighbouring atoms may have been glued into one, and — for a file that
+//! neighboring atoms may have been glued into one, and — for a file that
 //! reads as an expression at all — the two must read as the same one. A
 //! result that fails the check is dropped and the source returned
 //! unchanged, so the worst a formatting bug can do is leave a file alone.
@@ -297,7 +297,7 @@ fn is_postfix_position_at(
 /// The two must produce the same tokens in the same order, separated by
 /// the same number of line breaks — the Wolfram Language ends a statement
 /// at a newline, so a line break gained or lost is a change of meaning —
-/// and no pair of neighbouring atoms may have been run together.
+/// and no pair of neighboring atoms may have been run together.
 fn preserves_code(source: &str, formatted: &str) -> bool {
   let original = scan(source);
   let result = scan(formatted);

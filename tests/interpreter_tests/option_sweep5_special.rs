@@ -360,7 +360,7 @@ mod mittag_leffler {
   }
 
   #[test]
-  fn cancelling_series() {
+  fn canceling_series() {
     // E_(1/2)(-x) = e^(x^2) Erfc[x]
     assert_close("MittagLefflerE[1/2, -3.] - Exp[9.] Erfc[3.]", 0.0, 1e-14);
     assert_close("MittagLefflerE[1/4, -4.]", 0.17291766990277474, 1e-14);

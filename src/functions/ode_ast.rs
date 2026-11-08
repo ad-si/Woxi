@@ -378,7 +378,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // PDE branch: `DSolve[eqn, f, {x, y}]` (or `DSolve[eqn, f[x, y], {x, y}]`)
-  // for a first-order linear PDE in two variables. Three recognised
+  // for a first-order linear PDE in two variables. Three recognized
   // shapes:
   //   * Constant coefficients with f-divided derivatives:
   //       a*D[f,x]/f + b*D[f,y]/f == c
@@ -595,7 +595,7 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Collect terms: classify each additive term by derivative order
   // A product such as `k*(a - y[x] + f[x])` hides the linear terms inside a
-  // parenthesised sum, so retry on the expanded form before giving up.
+  // parenthesized sum, so retry on the expanded form before giving up.
   let collected =
     collect_ode_terms(&ode_normalized, &y_name, &x_name).or_else(|err| {
       let expanded =
@@ -2518,10 +2518,10 @@ fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
     .any(|c| expr_references_any(c, names))
 }
 
-/// Recognise `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
+/// Recognize `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
 /// evolution equation of a hyperbolic (second-order-in-time) PDE. Unlike
 /// [`try_pde_evolution_term`], no coefficient scaling on the
-/// time-derivative term is recognised.
+/// time-derivative term is recognized.
 fn try_pde_evolution_term_order2(
   eq: &Expr,
   u_name: &str,
@@ -2547,7 +2547,7 @@ fn try_pde_evolution_term_order2(
   None
 }
 
-/// Recognise `u[t0, x] == rhs(x)` (or `u[x, t0]` when `swap` is set, or
+/// Recognize `u[t0, x] == rhs(x)` (or `u[x, t0]` when `swap` is set, or
 /// either reversed) — the initial condition at `t == t0`. Returns the RHS.
 fn try_pde_initial_condition(
   eq: &Expr,
@@ -2560,7 +2560,7 @@ fn try_pde_initial_condition(
 }
 
 /// Like [`try_pde_initial_condition`], but for the `time_order`-th time
-/// derivative's initial value: `time_order == 1` recognises
+/// derivative's initial value: `time_order == 1` recognizes
 /// `Derivative[1, 0][u][t0, x] == rhs(x)` — the initial *velocity*
 /// condition a second-order-in-time (hyperbolic) PDE needs in addition to
 /// the ordinary initial value.
@@ -2603,11 +2603,11 @@ enum PdeBc {
   /// xmax]`), set at both `bc_lo` and `bc_hi` at once by
   /// `try_pde_periodic_boundary`. Only the hyperbolic solver
   /// (`compile_hyperbolic_boundary`) acts on this; the coupled-system
-  /// solver treats it like any other unrecognised shape and bails out.
+  /// solver treats it like any other unrecognized shape and bails out.
   Periodic,
 }
 
-/// Recognise `u[t, x0] == rhs(t)` (Dirichlet) or
+/// Recognize `u[t, x0] == rhs(t)` (Dirichlet) or
 /// `Derivative[0, 1][u][t, x0] == rhs(t)` (Neumann) — or either reversed —
 /// a boundary condition at `x == x0`. Returns the condition kind and RHS.
 fn try_pde_boundary_condition(
@@ -2643,7 +2643,7 @@ fn try_pde_boundary_condition(
   None
 }
 
-/// Recognise `u[t, x_min] == u[t, x_max]` (or reversed) — a periodic
+/// Recognize `u[t, x_min] == u[t, x_max]` (or reversed) — a periodic
 /// boundary tying both ends of the space domain together, rather than one
 /// end's value to a function of time. Unlike `try_pde_boundary_condition`,
 /// a single matching equation supplies both `bc_lo` and `bc_hi` at once, so
@@ -2872,7 +2872,7 @@ fn lower_neumann_values(
         ))
         .ok()?;
         // `D` of a piecewise coefficient leaves `sym*If[cond, 0, 0]`
-        // behind; collapse such branches so linearity can be recognised.
+        // behind; collapse such branches so linearity can be recognized.
         let coef = crate::evaluator::evaluate_expr_to_expr(
           &collapse_identical_if_branches(&coef),
         )
@@ -5276,7 +5276,7 @@ fn function_in_transcendental_context(
 /// nonlinear equation, those mentioning the fewest unknowns first, grows a
 /// square block with the unknowns it holds — once the unknowns already in
 /// blocks are known, an equation affine in the rest (a still's energy
-/// balance in its vapour flow, once the bubble point fixes its temperature)
+/// balance in its vapor flow, once the bubble point fixes its temperature)
 /// is left to the linear solve for the highest derivatives.
 fn find_numeric_constraints(
   odes: &[Expr],
@@ -5374,7 +5374,7 @@ fn find_numeric_constraints(
     // A constraint solved by Newton iteration can read no unknown of the
     // linear solve: every unknown it holds joins the block, together with
     // further equations for them, those bringing in the fewest new unknowns
-    // first (a condenser's equilibria for its two vapour fractions and its
+    // first (a condenser's equilibria for its two vapor fractions and its
     // temperature), until the block is square.
     let mut block_eqs = vec![ei];
     let mut block_unknowns = rest;
@@ -5566,7 +5566,7 @@ fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
   );
   let eval = crate::evaluator::evaluate_expr_to_expr;
   // The bare derivative: `D` cancels the quotients in its result, which
-  // costs polynomial GCDs over a stage's rational vapour-pressure terms.
+  // costs polynomial GCDs over a stage's rational vapor-pressure terms.
   if let Ok(c) = differentiate_expr(&residual, "\u{2620}dae\u{2620}")
     && crate::functions::calculus_ast::is_constant_wrt(
       &c,
@@ -5643,7 +5643,7 @@ const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 /// Restrict integrated solution samples (ascending in x) to `[lo, hi]`.
 ///
 /// A bound that falls between two grid points becomes a sample of its own,
-/// interpolated from the neighbours at the same order the returned
+/// interpolated from the neighbors at the same order the returned
 /// `InterpolatingFunction` uses, so the reported domain is exactly the
 /// requested range rather than the nearest grid point to it. A bound that
 /// already coincides with a grid point keeps that point untouched.
@@ -5776,7 +5776,7 @@ fn reduce_index(
     let Some((lhs, rhs)) = as_equal_pair(ode) else {
       continue;
     };
-    // The bare derivative: `D`'s cancelling of the quotients in it (for the
+    // The bare derivative: `D`'s canceling of the quotients in it (for the
     // forms Wolfram prints) costs polynomial GCDs over a large constraint,
     // which the numerical solution has no use for.
     let d = |side: &Expr| differentiate_expr(side, x_name);
@@ -6249,7 +6249,7 @@ fn ndsolve_system(
 
   // An elimination can leave a constraint with only differentiated
   // unknowns behind (a condenser's dew point once its liquid composition
-  // is substituted by the top stage's vapour): it is reduced like the ones
+  // is substituted by the top stage's vapor): it is reduced like the ones
   // the equations started with.
   index_reduced |= reduce_index(
     &mut odes,
@@ -8203,7 +8203,7 @@ fn integrate_leg(
   // diverge: without event functions or periodic actions to locate, the
   // rest of the leg is integrated again with adaptive steps.
   // A right-hand side that solves a system at every evaluation (the
-  // implicit constraints of a DAE) makes an adaptive leg crawling towards a
+  // implicit constraints of a DAE) makes an adaptive leg crawling toward a
   // singular point prohibitively slow: such a leg only gets a bounded
   // number of stiff steps, and otherwise stops where RK4 did.
   let costly = residuals.iter().any(NumFn::is_costly);
@@ -11256,7 +11256,7 @@ fn extract_derivative_order_and_point(
 }
 
 /// Evaluate an initial-condition side (or domain bound) numerically.
-/// Exact symbolic values (`-ArcCos[31/40]`, `Pi/6`, …) numericise via the
+/// Exact symbolic values (`-ArcCos[31/40]`, `Pi/6`, …) numericize via the
 /// `N` fallback of `interp_value_to_f64` — NDSolve is a numeric solver,
 /// so this loses nothing.
 fn nval_to_f64(expr: &Expr) -> Option<f64> {
@@ -13306,9 +13306,9 @@ fn eval_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   expr_to_f64(&evaluated)
 }
 
-/// Convert an interpolation data value to f64, numericising exact symbolic
+/// Convert an interpolation data value to f64, numericizing exact symbolic
 /// entries (e.g. `Sin[1]`, `Pi/2`) via `N` when a direct conversion fails.
-/// wolframscript's Interpolation accepts exact symbolic data by numericising
+/// wolframscript's Interpolation accepts exact symbolic data by numericizing
 /// it, so `Interpolation[Table[{x, Sin[x]}, {x, 0, 10}]]` must work.
 fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
@@ -13322,7 +13322,7 @@ fn interp_value_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     return Ok(v);
   }
   // Fall back to N[...] for exact symbolic values that do not reduce to a
-  // number on their own (Sin[1] stays symbolic until numericised).
+  // number on their own (Sin[1] stays symbolic until numericized).
   let n_expr = call1("N", evaluated);
   let numericized = crate::evaluator::evaluate_expr_to_expr(&n_expr)
     .unwrap_or_else(|_| expr.clone());
@@ -15991,7 +15991,7 @@ fn extract_point(expr: &Expr) -> Result<(f64, f64), InterpreterError> {
 
 // ─── First-order linear PDE in two variables ──────────────────────────
 
-/// Recognise `a*D[f[x,y], x] + b*D[f[x,y], y] == c*f[x,y]` (and its
+/// Recognize `a*D[f[x,y], x] + b*D[f[x,y], y] == c*f[x,y]` (and its
 /// equivalent forms) and return the closed-form solution
 /// `{{f -> Function[{x, y}, E^((c/a)*x) * C[1][y - (b/a)*x]]}}`.
 ///
@@ -16020,7 +16020,7 @@ fn try_linear_first_order_pde_body(
   let c_eff = -c; // -c was accumulated; flip sign back.
   if a == 0 || a != 1 {
     // The closed form below assumes a == 1. Restrict to that shape;
-    // generalised rationals require a Rational arithmetic path.
+    // generalized rationals require a Rational arithmetic path.
     return None;
   }
   // Build the body: E^(c*x) * C[1][y - b*x]
@@ -16058,10 +16058,10 @@ fn try_linear_first_order_pde_body(
   Some(body)
 }
 
-/// Recognise the Euler-type PDE `x*D[f[x,y], x] + y*D[f[x,y], y] == c`
+/// Recognize the Euler-type PDE `x*D[f[x,y], x] + y*D[f[x,y], y] == c`
 /// (constant c) and return the body
 /// `c*Log[x] + C[1][y/x]` of the closed-form solution.
-/// Recognise `a*D[f[x,y], x] + b*D[f[x,y], y] == c` (constant integer
+/// Recognize `a*D[f[x,y], x] + b*D[f[x,y], y] == c` (constant integer
 /// coefficients on bare derivatives, integer RHS) and return the body
 /// `(c/a)*x + C[1][y - (b/a)*x]`. Inhomogeneous (c ≠ 0) and homogeneous
 /// (c = 0) cases are both handled.
@@ -16384,7 +16384,7 @@ fn pde_split_equation(eqn: &Expr) -> Option<(Expr, Expr)> {
 
 /// Walk a Plus chain in `expr`, classifying each term by its shape and
 /// adding its (signed) integer coefficient to the appropriate slot.
-/// Returns `None` if any term doesn't fit the recognised PDE shape.
+/// Returns `None` if any term doesn't fit the recognized PDE shape.
 fn collect_pde_terms(
   expr: &Expr,
   fname: &str,
@@ -16431,7 +16431,7 @@ enum PdeTerm {
 }
 
 /// Decompose a single Plus term into (integer coefficient, kind). The
-/// recognised shapes are:
+/// recognized shapes are:
 ///   * integer constant                        -> Const
 ///   * c * f[x,y]                              -> Const (consumes the f)
 ///   * c * Derivative[1,0][f][x,y] / f[x,y]    -> Fx
@@ -16529,7 +16529,7 @@ fn derivative_order_of(
   None
 }
 
-/// Recognise the homogeneous second-order PDE with constant coefficients
+/// Recognize the homogeneous second-order PDE with constant coefficients
 /// `a*D[f, x, x] + b*D[f, x, y] + c*D[f, y, y] == 0` and return the body of
 /// its general solution.
 ///
@@ -16547,8 +16547,8 @@ fn derivative_order_of(
 ///
 /// A repeated root gives `C[1][λ*x + y] + x*C[2][λ*x + y]`. Equations with
 /// no `D[f, x, x]` or no `D[f, y, y]` term have a characteristic along an
-/// axis, which Wolfram writes in a different (unnormalised) shape; those are
-/// left to the caller's other recognisers.
+/// axis, which Wolfram writes in a different (unnormalized) shape; those are
+/// left to the caller's other recognizers.
 fn try_second_order_constant_pde_body(
   eqn: &Expr,
   fname: &str,
@@ -16824,7 +16824,7 @@ fn is_f_at_xy(expr: &Expr, fname: &str, xn: &str, yn: &str) -> bool {
 // `DSolve[{eq1, eq2, …, ic1, ic2, …}, {y1[t], y2[t], …}, t]` for a linear,
 // constant-coefficient system (the classic "two coupled oscillators" shape
 // a Demonstrations-Project notebook tends to use, e.g. a Foucault pendulum
-// or coupled pendulums). The single-variable branch above only recognises
+// or coupled pendulums). The single-variable branch above only recognizes
 // one dependent function; this extends the same closed-form machinery to a
 // small system via operator-determinant elimination:
 //

@@ -1,8 +1,8 @@
 //! `FindShortestTour[points]`, `FindShortestTour[points, s, t]`.
 //!
 //! Up to `EXACT_MAX` points the tour is optimal (Held–Karp dynamic
-//! programming); larger inputs get a nearest-neighbour tour improved by
-//! neighbour-list 2-opt and Or-opt until no move shortens it. The optimisation
+//! programming); larger inputs get a nearest-neighbor tour improved by
+//! neighbor-list 2-opt and Or-opt until no move shortens it. The optimization
 //! runs on machine distances; the reported length is the exact sum of the
 //! chosen legs (`2 + 2*Sqrt[2]` for exact points).
 
@@ -16,8 +16,8 @@ use crate::syntax::Expr;
 /// Largest instance solved exactly.
 const EXACT_MAX: usize = 12;
 
-/// Neighbour-list size for the local search.
-const NEIGHBOURS: usize = 12;
+/// Neighbor-list size for the local search.
+const NEIGHBORS: usize = 12;
 
 pub fn find_shortest_tour_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_option =
@@ -334,8 +334,8 @@ fn closed_tour(dist: &[Vec<f64>]) -> Vec<usize> {
   } else if n <= EXACT_MAX {
     held_karp(dist, 0, None)
   } else {
-    let mut tour = nearest_neighbour_tour(dist);
-    optimise_tour(dist, &mut tour);
+    let mut tour = nearest_neighbor_tour(dist);
+    optimize_tour(dist, &mut tour);
     let start = tour.iter().position(|&c| c == 0).unwrap_or(0);
     tour.rotate_left(start);
     tour
@@ -361,8 +361,8 @@ fn open_path(dist: &[Vec<f64>], s: usize, t: usize) -> Vec<usize> {
   let mut pinned = dist.to_vec();
   pinned[s][t] = big;
   pinned[t][s] = big;
-  let mut tour = nearest_neighbour_tour_from(&pinned, s);
-  optimise_tour(&pinned, &mut tour);
+  let mut tour = nearest_neighbor_tour_from(&pinned, s);
+  optimize_tour(&pinned, &mut tour);
   let start = tour.iter().position(|&c| c == s).unwrap_or(0);
   tour.rotate_left(start);
   if tour.last() != Some(&t) {
@@ -434,11 +434,11 @@ fn held_karp(
   order
 }
 
-fn nearest_neighbour_tour(dist: &[Vec<f64>]) -> Vec<usize> {
-  nearest_neighbour_tour_from(dist, 0)
+fn nearest_neighbor_tour(dist: &[Vec<f64>]) -> Vec<usize> {
+  nearest_neighbor_tour_from(dist, 0)
 }
 
-fn nearest_neighbour_tour_from(dist: &[Vec<f64>], start: usize) -> Vec<usize> {
+fn nearest_neighbor_tour_from(dist: &[Vec<f64>], start: usize) -> Vec<usize> {
   let n = dist.len();
   let mut visited = vec![false; n];
   let mut tour = Vec::with_capacity(n);
@@ -465,12 +465,12 @@ fn tour_length(dist: &[Vec<f64>], tour: &[usize]) -> f64 {
 }
 
 /// Iterated local search: a 2-opt/Or-opt local optimum is perturbed by a
-/// double-bridge move and re-optimised, keeping the result when it is
+/// double-bridge move and re-optimized, keeping the result when it is
 /// shorter. The kicks come from a fixed-seed generator so the tour is
 /// reproducible.
-fn optimise_tour(dist: &[Vec<f64>], tour: &mut Vec<usize>) {
-  let neighbours = neighbour_lists(dist);
-  improve_tour(dist, &neighbours, tour);
+fn optimize_tour(dist: &[Vec<f64>], tour: &mut Vec<usize>) {
+  let neighbors = neighbor_lists(dist);
+  improve_tour(dist, &neighbors, tour);
   let n = tour.len();
   if n < 8 {
     return;
@@ -497,7 +497,7 @@ fn optimise_tour(dist: &[Vec<f64>], tour: &mut Vec<usize>) {
     cand.extend_from_slice(&tour[p2..p3]);
     cand.extend_from_slice(&tour[p1..p2]);
     cand.extend_from_slice(&tour[p3..]);
-    improve_tour(dist, &neighbours, &mut cand);
+    improve_tour(dist, &neighbors, &mut cand);
     let len = tour_length(dist, &cand);
     if len < best_len - 1e-10 {
       best_len = len;
@@ -506,9 +506,9 @@ fn optimise_tour(dist: &[Vec<f64>], tour: &mut Vec<usize>) {
   }
 }
 
-/// Each city's `NEIGHBOURS` nearest other cities, closest first. Uses
+/// Each city's `NEIGHBORS` nearest other cities, closest first. Uses
 /// `select_nth_unstable_by` so building the lists is O(n²), not O(n² log n).
-fn neighbour_lists(dist: &[Vec<f64>]) -> Vec<Vec<usize>> {
+fn neighbor_lists(dist: &[Vec<f64>]) -> Vec<Vec<usize>> {
   let n = dist.len();
   let by_dist = |i: usize| {
     move |a: &usize, b: &usize| {
@@ -520,9 +520,9 @@ fn neighbour_lists(dist: &[Vec<f64>]) -> Vec<Vec<usize>> {
   (0..n)
     .map(|i| {
       let mut others: Vec<usize> = (0..n).filter(|&j| j != i).collect();
-      if others.len() > NEIGHBOURS {
-        others.select_nth_unstable_by(NEIGHBOURS, by_dist(i));
-        others.truncate(NEIGHBOURS);
+      if others.len() > NEIGHBORS {
+        others.select_nth_unstable_by(NEIGHBORS, by_dist(i));
+        others.truncate(NEIGHBORS);
       }
       others.sort_by(by_dist(i));
       others
@@ -530,11 +530,11 @@ fn neighbour_lists(dist: &[Vec<f64>]) -> Vec<Vec<usize>> {
     .collect()
 }
 
-/// 2-opt and Or-opt moves over each city's nearest neighbours, repeated until
+/// 2-opt and Or-opt moves over each city's nearest neighbors, repeated until
 /// no move shortens the tour.
 fn improve_tour(
   dist: &[Vec<f64>],
-  neighbours: &[Vec<usize>],
+  neighbors: &[Vec<usize>],
   tour: &mut [usize],
 ) {
   let n = tour.len();
@@ -559,7 +559,7 @@ fn improve_tour(
       let a = tour[i];
       let a_next = tour[(i + 1) % n];
       let d_a = dist[a][a_next];
-      for &c in &neighbours[a] {
+      for &c in &neighbors[a] {
         if dist[a][c] >= d_a {
           break;
         }
@@ -593,7 +593,7 @@ fn improve_tour(
           let k = (pos[c] + n - i) % n;
           k < seg_len
         };
-        for &c in &neighbours[first] {
+        for &c in &neighbors[first] {
           if in_seg(c) {
             continue;
           }
@@ -639,7 +639,7 @@ fn improve_tour(
 /// holding one list of 1-based indices. The shortest closed tour is the
 /// curve when no step of it is much longer than the others; otherwise it is
 /// cut at its longest step into an open path. A closed curve is written the
-/// way Wolfram writes it, starting and ending at the neighbour of point 1
+/// way Wolfram writes it, starting and ending at the neighbor of point 1
 /// that precedes it (`{{2, 1, 6, 5, 4, 3, 2}}`); an open one runs from its
 /// lower-numbered end.
 pub fn find_curve_path_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

@@ -147,10 +147,10 @@ mod dot {
     );
   }
 
-  // Neighbours contract only where the pair evaluates; the rest stays one
+  // Neighbors contract only where the pair evaluates; the rest stays one
   // flat Dot instead of nesting as Dot[Dot[a, b], c].
   #[test]
-  fn dot_n_ary_contracts_evaluable_neighbours() {
+  fn dot_n_ary_contracts_evaluable_neighbors() {
     for (code, expected) in [
       ("Dot[a, b, c]", "Dot[a, b, c]"),
       (
@@ -1739,7 +1739,7 @@ mod cross {
       interpret("FullForm[Hold[a \u{2A2F} (b \u{2A2F} c)]]").unwrap(),
       "FullForm[Hold[Cross[a, Cross[b, c]]]]"
     );
-    // A parenthesised head still starts a fresh chain that the rest of the
+    // A parenthesized head still starts a fresh chain that the rest of the
     // operators extend.
     assert_eq!(
       interpret("FullForm[Hold[(a \u{2A2F} b) \u{2A2F} c \u{2A2F} d]]")
@@ -1765,7 +1765,7 @@ mod cross {
 // The legacy `VectorAnalysis` package functions — DotProduct, CrossProduct,
 // ScalarTripleProduct, Coordinates, SetCoordinates, CoordinatesToCartesian,
 // CoordinatesFromCartesian — are deliberately left unevaluated to match
-// wolframscript's `-code` mode behaviour, which does not load that legacy
+// wolframscript's `-code` mode behavior, which does not load that legacy
 // package.
 mod vector_analysis_unevaluated {
   use super::*;
@@ -8556,7 +8556,7 @@ mod cases {
   #[test]
   fn matrix_exp_3() {
     // Wolframscript-matched expectation. mathics rendered the φ symbol
-    // as the `\[Phi]` named-character escape and parenthesised `(I/2)`;
+    // as the `\[Phi]` named-character escape and parenthesized `(I/2)`;
     // wolframscript -code emits the literal Unicode `ϕ` (U+03D5) and
     // drops the redundant `(I/2)` parens because `*` already binds
     // tighter than `/`.
@@ -8592,7 +8592,7 @@ mod cases {
     // Three radii give a 3D box of shape (2ri+1).
     assert_case(r#"Dimensions[BoxMatrix[{1, 2, 1}]]"#, r#"{3, 5, 3}"#);
   }
-  // BoxMatrix[r, w] centres the box in a w-wide grid of zeros, clipping it
+  // BoxMatrix[r, w] centers the box in a w-wide grid of zeros, clipping it
   // when the grid is too small.
   #[test]
   fn box_matrix_in_a_width() {
@@ -8615,7 +8615,7 @@ mod cases {
       r#"{{1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}}"#,
     );
   }
-  // An even width has no centre cell, so the element straddles the two
+  // An even width has no center cell, so the element straddles the two
   // middle ones and comes out a cell wider than 2r+1.
   #[test]
   fn box_matrix_in_an_even_width() {
@@ -8713,7 +8713,7 @@ mod cases {
       r#"{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}, {{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}}"#,
     );
   }
-  // DiamondMatrix[r, w] centres the L1 ball the same way BoxMatrix centres
+  // DiamondMatrix[r, w] centers the L1 ball the same way BoxMatrix centers
   // its box, including the even-width straddle.
   #[test]
   fn diamond_matrix_in_a_width() {
@@ -12020,7 +12020,7 @@ mod normalize {
   /// The exact integer path built `x/Sqrt[sum]` literally instead of
   /// evaluating it, so the components kept an unreduced radical:
   /// `Normalize[{3, 3}]` came out as `{3/Sqrt[18], 3/Sqrt[18]}` where
-  /// wolframscript gives `{1/Sqrt[2], 1/Sqrt[2]}`. The canonicalisation
+  /// wolframscript gives `{1/Sqrt[2], 1/Sqrt[2]}`. The canonicalization
   /// itself was already right — `3/Sqrt[18]` on its own evaluated to
   /// `1/Sqrt[2]`. Found by the differential fuzzer on `Normalize[{3, -5, 6}]`.
   #[test]

@@ -56,7 +56,7 @@ impl CGraph {
     Some(CGraph { n, edges, directed })
   }
 
-  /// Sorted, duplicate-free neighbour lists.
+  /// Sorted, duplicate-free neighbor lists.
   fn adjacency(&self) -> Vec<Vec<usize>> {
     let mut adj = vec![Vec::new(); self.n];
     for &(u, v) in &self.edges {
@@ -733,7 +733,7 @@ fn grid_graph(args: &[Expr]) -> Option<Expr> {
 /// `BooleanAlgebra[n]`: the Hasse diagram of the subsets of an n-set. Vertex
 /// `k` is the subset whose characteristic bits are those of `k - 1`; two
 /// vertices are joined when their subsets differ by one element. Subsets of
-/// equal size share a row (height = size), centred horizontally.
+/// equal size share a row (height = size), centered horizontally.
 fn boolean_algebra(args: &[Expr]) -> Option<Expr> {
   let [Expr::Integer(n)] = args else {
     return None;
@@ -967,7 +967,7 @@ fn gcd(a: i128, b: i128) -> i128 {
 
 /// `RadialEmbedding[g, v]` of a graph's adjacency: the vertices placed
 /// breadth first around `v` at the origin, each vertex's angular sector
-/// split evenly among its unplaced neighbours, a child one unit out at the
+/// split evenly among its unplaced neighbors, a child one unit out at the
 /// middle of its share.
 fn radial_points(g: &CGraph, center: usize) -> Vec<(f64, f64)> {
   let adj = g.adjacency();
@@ -1062,7 +1062,7 @@ fn radial_embedding(args: &[Expr]) -> Option<Expr> {
   Some(crate::helpers::call(GRAPH, parts))
 }
 
-/// Radial coordinates keep the centre's exact `{0, 0}`; every other vertex
+/// Radial coordinates keep the center's exact `{0, 0}`; every other vertex
 /// is a machine pair.
 fn radial_vertices(points: &[(f64, f64)], center: usize) -> Expr {
   Expr::List(
@@ -1300,7 +1300,7 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
       Some(Expr::List(components.into()))
     }
     // The vertices in the order a breadth-first search from `v` visits them
-    // (neighbours taken in increasing order); unreachable vertices are
+    // (neighbors taken in increasing order); unreachable vertices are
     // left out.
     ("Combinatorica`BreadthFirstTraversal", 2) => {
       let start = vertex_arg(&g, &args[1])?;
@@ -1441,7 +1441,7 @@ fn pt(x: f64, y: f64) -> Expr {
 /// `Graphics`: edges as lines, vertices as disks, and (for the labeled
 /// form) the vertex numbers. Per-edge `EdgeColor`, per-vertex `VertexColor`
 /// and the graph's `EdgeStyle`, `VertexStyle` and `VertexNumberPosition`
-/// options are honoured; the remaining options go to `Graphics`.
+/// options are honored; the remaining options go to `Graphics`.
 fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
   let (graph, extra) = args.split_first()?;
   let Expr::FunctionCall { name, args: gargs } = graph else {
@@ -1502,7 +1502,7 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
 
   let mut prims: Vec<Expr> = Vec::new();
   // An edge style that is a graphics directive (Thin, Arrowheads[…], a
-  // colour) applies to every edge.
+  // color) applies to every edge.
   if let Some(style) = option(gopts, "EdgeStyle")
     && !matches!(style, Expr::Identifier(n) if n == "Normal")
   {

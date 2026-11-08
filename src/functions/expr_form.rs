@@ -542,7 +542,7 @@ pub fn compose_expr(head: &str, children: &[Expr]) -> Expr {
 /// Woxi stores `2 + 3 I` as a Plus/Times tree, but its head is `Complex`
 /// and its FullForm is `Complex[2, 3]`. Every consumer that reports the
 /// canonical structure — the FullForm renderer below and the structured
-/// (Python) expression tree — recognises one through this function, so the
+/// (Python) expression tree — recognizes one through this function, so the
 /// two cannot disagree about what counts as a complex number.
 ///
 /// Returns exact parts as `(numerator, denominator)` pairs, or machine

@@ -19,7 +19,7 @@ use super::*;
 mod machine_specific {
   use super::*;
 
-  fn normalise(s: &str) -> String {
+  fn normalize(s: &str) -> String {
     s.chars()
       .filter(|c| !c.is_whitespace() && *c != '"')
       .collect()
@@ -34,7 +34,7 @@ mod machine_specific {
       ),
     };
     assert!(
-      normalise(&actual) == normalise(expected),
+      normalize(&actual) == normalize(expected),
       "output mismatch\n  input:    {input}\n  expected: {expected}\n  actual:   {actual}"
     );
   }

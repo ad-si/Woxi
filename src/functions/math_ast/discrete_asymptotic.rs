@@ -687,7 +687,7 @@ fn lead_series_coefficient(f: &Expr, spec: &[Expr], var: &str) -> Option<Lead> {
     return None;
   };
   // Candidate roots with their moduli; a ConditionalExpression family is
-  // sampled at its principal member and its neighbours.
+  // sampled at its principal member and its neighbors.
   let mut roots: Vec<(Expr, f64)> = Vec::new();
   for s in sols {
     let Expr::List(rules) = s else {

@@ -596,7 +596,7 @@ fn polynomial_reduce_multivar_symbolic(
       // reduced or moved to the remainder), so it can never recur — no
       // divisor's leading term divides it, and no future subtraction can
       // ever reintroduce a monomial this large. Moving it is therefore a
-      // plain append, with no merge-search or cancelling evaluator call
+      // plain append, with no merge-search or canceling evaluator call
       // needed on either side.
       remainder.push((lm_p.clone(), lc_p));
       p.remove(0);

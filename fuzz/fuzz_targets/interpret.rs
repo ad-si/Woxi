@@ -12,7 +12,7 @@ use libfuzzer_sys::fuzz_target;
 
 /// Heads that touch the filesystem, network, or environment. Inputs
 /// containing them are skipped so the fuzzer neither litters the disk nor
-/// mutates towards I/O instead of interpreter logic.
+/// mutates toward I/O instead of interpreter logic.
 ///
 /// `Socket` (matched as a substring, so it covers `SocketOpen`,
 /// `SocketListen`, `SocketConnect`, `SocketReadMessage`, …) is here
@@ -95,7 +95,7 @@ fuzz_target!(|data: &[u8]| {
   }
   // Definitions, memoized values and system variables live in thread-local
   // state that outlives one `interpret` call, so without this an input's
-  // behaviour depends on every input libFuzzer happened to run before it:
+  // behavior depends on every input libFuzzer happened to run before it:
   // findings stop reproducing from the artifact alone, and a leftover
   // definition can make a cheap program pathological — a memoized
   // `f[n_] := f[n] = …` that still meets an older, unmemoized definition of

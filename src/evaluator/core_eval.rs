@@ -536,7 +536,7 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     // point of `:=`. Set (`x = expr`) evaluates the RHS first, so the stored
     // value would only be a FunctionCall when evaluation didn't reduce it
     // (e.g. `x = Sin[a]` with `a` unbound); re-evaluating those on lookup is
-    // also the right behaviour (matches wolframscript: when `a` later gets a
+    // also the right behavior (matches wolframscript: when `a` later gets a
     // value, `x` picks it up).
     // An `InterpolatingFunction[…]` is finished data (an NDSolve or
     // Interpolation result): re-evaluating it would walk every tabulated
@@ -724,7 +724,7 @@ pub(crate) fn holds_argument_at(name: &str, index: usize) -> bool {
 
 /// Evaluate function arguments respecting Hold attributes.
 /// Returns the evaluated (or held) arguments based on the function's attributes.
-/// Held arguments still honour `Evaluate[expr]`: it forces evaluation of the
+/// Held arguments still honor `Evaluate[expr]`: it forces evaluation of the
 /// wrapped expression even though the surrounding head holds. HoldAllComplete
 /// is the exception — it suppresses Evaluate too.
 fn evaluate_args_with_hold(
@@ -780,7 +780,7 @@ fn evaluate_args_with_hold(
   }
 }
 
-/// Evaluate one non-held argument, honouring the rule that an `Unevaluated`
+/// Evaluate one non-held argument, honoring the rule that an `Unevaluated`
 /// wrapper *produced by* the evaluation is stripped and its content evaluated.
 ///
 /// Wolfram keeps the wrapper only when `Unevaluated[…]` is written literally in
@@ -1280,9 +1280,9 @@ fn is_valid_replace_rules(expr: &Expr) -> bool {
 /// shown as is.
 /// Whether `expr` is a literal `Return[val]` — what `Block`, `Module`, `While`
 /// and `For` hand back when a `Return` unwinds out of them. Wolfram lets such
-/// a `Return` keep travelling up through `CompoundExpression` and the loops
+/// a `Return` keep traveling up through `CompoundExpression` and the loops
 /// until a definition body consumes it, so every one of those boundaries has
-/// to recognise it.
+/// to recognize it.
 pub(crate) fn is_literal_return(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, args }
     if name == "Return" && args.len() == 1)
@@ -1835,7 +1835,7 @@ fn evaluate_expr_to_expr_uncached(
     Expr::SlotSequence(n) => Ok(Expr::SlotSequence(*n)),
     Expr::Constant(name) => {
       // After `Unprotect[c]; c = value`, the user has reassigned the
-      // built-in constant. Honour the new OwnValue if one was stored —
+      // built-in constant. Honor the new OwnValue if one was stored —
       // matching wolframscript's `Unprotect[Pi]; Pi = 3; Pi → 3`.
       if let Some(stored) = ENV.with(|e| e.borrow().get(name).cloned()) {
         match stored {
@@ -3655,7 +3655,7 @@ fn evaluate_expr_to_expr_uncached(
           };
           // Flatten Sequence even in held args (unless SequenceHold)
           let flattened = flatten_sequences(name, &resolved);
-          // Honour Evaluate[...] inside HoldAll wrappers like Hold and
+          // Honor Evaluate[...] inside HoldAll wrappers like Hold and
           // HoldForm — Evaluate forces evaluation of its argument even
           // through a hold. HoldComplete suppresses it (matching Wolfram).
           // The plotting heads are included so the common
@@ -3670,7 +3670,7 @@ fn evaluate_expr_to_expr_uncached(
               | "Reap"
               | "Manipulate"
               | "Animate"
-              // Table/Do honour a top-level Evaluate[...] body the same way
+              // Table/Do honor a top-level Evaluate[...] body the same way
               // the plotting heads do: the body is evaluated once with the
               // iterator still symbolic (e.g. so `Table[Evaluate[RSolve[…,n]]…,
               // {n,…}]` solves the recurrence once and then substitutes each n)
@@ -4411,7 +4411,7 @@ fn evaluate_expr_to_expr_uncached(
         }
 
         // Identical up to the display form and the identity of whatever it
-        // summarises (a Graph's `Graph[<v>, <e>]`, nested images).
+        // summarizes (a Graph's `Graph[<v>, <e>]`, nested images).
         let is_graph = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Graph");
         let identical = |a: &Expr, b: &Expr| {
           expr_to_string(a) + &crate::syntax::graphics_identity_suffix(a)
@@ -5269,7 +5269,7 @@ fn evaluate_expr_to_expr_uncached(
     Expr::Graphics { .. } => Ok(expr.clone()),
     Expr::CurriedCall { func, args } => {
       // Evaluate the curried call: f[a][b] -> apply f[a] to args.
-      // Honour Function[{params}, body, attrs] hold attributes so that
+      // Honor Function[{params}, body, attrs] hold attributes so that
       // Function[..., HoldAll][1+1] sees its arg unevaluated.
       // An `InterpolatingFunction[…]` head is inert, finished data (its
       // tabulated points are already numbers), so re-evaluating it would

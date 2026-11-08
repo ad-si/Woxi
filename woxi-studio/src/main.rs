@@ -391,7 +391,7 @@ enum Message {
   /// One coordinate of a Locator point moved.
   /// (cell_idx, ctrl_idx, point_idx, axis 0=x/1=y, value)
   ManipulateLocatorChanged(usize, usize, usize, u8, f64),
-  /// Add a point to a `LocatorAutoCreate` locator (at the range centre).
+  /// Add a point to a `LocatorAutoCreate` locator (at the range center).
   /// (cell_idx, ctrl_idx)
   ManipulateLocatorAdded(usize, usize),
   /// Remove a point from a `LocatorAutoCreate` locator.
@@ -970,7 +970,7 @@ impl WoxiStudio {
             iced::window::close(id)
           }
           Err(FileError::DialogClosed) => {
-            self.status = String::from("Save cancelled");
+            self.status = String::from("Save canceled");
             Task::none()
           }
           Err(FileError::IoError(e)) => {
@@ -1071,7 +1071,7 @@ impl WoxiStudio {
             }
           },
           Err(FileError::DialogClosed) => {
-            self.status = String::from("Open cancelled");
+            self.status = String::from("Open canceled");
           }
           Err(FileError::IoError(e)) => {
             self.status = format!("Error opening file: {e:?}");
@@ -1115,7 +1115,7 @@ impl WoxiStudio {
             self.is_dirty = false;
           }
           Err(FileError::DialogClosed) => {
-            self.status = String::from("Save cancelled");
+            self.status = String::from("Save canceled");
           }
           Err(FileError::IoError(e)) => {
             self.status = format!("Error saving: {e:?}");
@@ -1195,7 +1195,7 @@ impl WoxiStudio {
             self.status = format!("Exported: {}", path.display());
           }
           Err(FileError::DialogClosed) => {
-            self.status = String::from("Export cancelled");
+            self.status = String::from("Export canceled");
           }
           Err(FileError::IoError(e)) => {
             self.status = format!("Error exporting: {e:?}");
@@ -1886,7 +1886,7 @@ impl WoxiStudio {
             self.status = format!("Saved graphic: {}", path.display());
           }
           Err(FileError::DialogClosed) => {
-            self.status = String::from("Save cancelled");
+            self.status = String::from("Save canceled");
           }
           Err(FileError::IoError(e)) => {
             self.status = format!("Error saving graphic: {e:?}");
@@ -2045,7 +2045,7 @@ impl WoxiStudio {
             ..
           } = control
         {
-          // New points appear at the range centre, ready to drag.
+          // New points appear at the range center, ready to drag.
           points.push(((*x_min + *x_max) / 2.0, (*y_min + *y_max) / 2.0));
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
@@ -4159,7 +4159,7 @@ fn manipulate_label_widget<'a>(
   enabled: bool,
 ) -> Element<'a, Message> {
   const SIZE: f32 = 12.0;
-  // A disabled control's label is dimmed to match the greyed-out widget.
+  // A disabled control's label is dimmed to match the grayed-out widget.
   let color = move |theme: &Theme| {
     if enabled {
       text::Style::default()
@@ -4178,7 +4178,7 @@ fn manipulate_label_widget<'a>(
       .into();
   }
 
-  // rich_text spans carry a fixed color, so a disabled label uses a muted grey
+  // rich_text spans carry a fixed color, so a disabled label uses a muted gray
   // (theme-agnostic) rather than the theme-derived color used above — that
   // override takes priority over a `Style[…]`-given color so a disabled
   // control still reads as disabled.
@@ -4246,8 +4246,8 @@ const SETTER_BAR_MAX_CHOICES: usize = 5;
 /// How wide, in characters summed over every label, a SetterBar of at most
 /// [`SETTER_BAR_MAX_CHOICES`] choices may be. Past this the row of buttons no
 /// longer fits the control panel and Wolfram falls back to a PopupMenu. The
-/// sampled Demonstrations bracket it: five figure names totalling 55
-/// characters are a bar, five error descriptions totalling 72 are a dropdown.
+/// sampled Demonstrations bracket it: five figure names totaling 55
+/// characters are a bar, five error descriptions totaling 72 are a dropdown.
 const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
 
 /// Maximum number of *compact* choices — every label at most
@@ -4382,7 +4382,7 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     // A control whose `Enabled` condition currently evaluates to `False` is
-    // greyed out and swallows interaction (see `Message::Noop`).
+    // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
       .control_is_enabled
       .get(ctrl_idx)
@@ -4468,7 +4468,7 @@ fn render_manipulate_widget<'a>(
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
         // `ControlType -> Slider` over a discrete domain: a slider that
         // steps through the choices by index, which is how Wolfram draws a
-        // twenty-entry colour-scheme picker. Dragging sends the choice at
+        // twenty-entry color-scheme picker. Dragging sends the choice at
         // the new index, so the update handler needs no special case.
         if *as_slider && value_labels.len() > 1 {
           let last = value_labels.len() - 1;
@@ -5314,7 +5314,7 @@ fn render_display_node<'a>(
       // `discrete_choice_label` is lossy and two choices can render the
       // same label (e.g. `1 -> "A", 2 -> "A"`).
       //
-      // A trailing `Enabled -> cond` that currently reads `False` greys the
+      // A trailing `Enabled -> cond` that currently reads `False` grays the
       // dropdown out and swallows selection, the same treatment a top-level
       // control's `Enabled` condition gets (see `disabled_slider_style`).
       let enabled = *enabled;
@@ -5351,7 +5351,7 @@ fn render_display_node<'a>(
       // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
       // dragging writes `lval = <value>` back, followed by the statements of
       // an enclosing `EventHandler`'s click/drag actions. A trailing
-      // `Enabled -> cond` reading `False` greys it out and swallows drags.
+      // `Enabled -> cond` reading `False` grays it out and swallows drags.
       let enabled = *enabled;
       let target = target.clone();
       let after = after.clone();
@@ -6626,7 +6626,7 @@ fn setter_button_style(
   }
 }
 
-/// Greyed style for a Manipulate slider whose control is currently disabled
+/// Grayed style for a Manipulate slider whose control is currently disabled
 /// (its `Enabled` condition is `False`): the rail and handle drop to muted
 /// surface colors so the widget reads as inactive.
 fn disabled_slider_style(
@@ -6655,7 +6655,7 @@ fn disabled_slider_style(
   }
 }
 
-/// Greyed style for a Manipulate display-element `PopupMenu` whose `Enabled`
+/// Grayed style for a Manipulate display-element `PopupMenu` whose `Enabled`
 /// condition currently reads `False`: text, handle and border drop to muted
 /// surface colors, matching `disabled_slider_style`'s treatment of a
 /// disabled top-level control.
@@ -11297,7 +11297,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
-    // bound to a point list drives the polygon, with icon-labelled
+    // bound to a point list drives the polygon, with icon-labeled
     // SetterBar choices. The widget must expose the points as a live
     // Locator control, render the graphic, and re-render after a point
     // moves or is added/removed (the LocatorAutoCreate interactions).
@@ -11336,7 +11336,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "{{2., 2.}, {8., 2.}, {8., 8.}}",
       "locator points bind as machine reals"
     );
-    // The icon-labelled SetterBar choice carries its rendered SVG.
+    // The icon-labeled SetterBar choice carries its rendered SVG.
     match &state.controls[1] {
       manipulate::ControlState::Discrete {
         value_labels,
@@ -11747,8 +11747,8 @@ Manipulate[
     assert_eq!(labels, vec!["sin(x)", "|sin(x)|", "x\u{00B2}"]);
   }
 
-  /// A labelled `{{c, init, "lbl"}, colour, ImageSize -> Tiny}` spec is a
-  /// full colour picker on the initial colour, not a two-swatch toggle.
+  /// A labeled `{{c, init, "lbl"}, color, ImageSize -> Tiny}` spec is a
+  /// full color picker on the initial color, not a two-swatch toggle.
   #[test]
   fn color_bound_with_initial_builds_a_color_picker() {
     let state = instantiate_stored_manipulate(
@@ -11763,7 +11763,7 @@ Manipulate[
         assert_eq!(name, "c");
         assert_eq!(current, "RGBColor[0, 0.5, 0]");
       }
-      other => panic!("expected one colour control, got {other:?}"),
+      other => panic!("expected one color control, got {other:?}"),
     }
   }
 
@@ -11842,8 +11842,8 @@ Cell[BoxData["standalone output"], "Output"]
   }
 
   #[test]
-  fn stored_manipulate_control_initialised_from_its_default_variable() {
-    // The saved DynamicModule initialises a control from a separate
+  fn stored_manipulate_control_initialized_from_its_default_variable() {
+    // The saved DynamicModule initializes a control from a separate
     // `…Def$$` default variable listed after it. Regression: the saved value
     // arrived as the unbound symbol `nDef$$`, so the control never opened on
     // its default and the body's `If[n == 2, …]` stayed unevaluated.
@@ -12019,7 +12019,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`hidden$$ = False}, \"…\"]"], "Out
   ///   offered `\:03b1` … `\:03bc` instead of α … μ;
   /// - the body `Style[Column[…], size, Hue[…]]` fell back to the plain
   ///   text echo of the column instead of drawing it at the asked-for size
-  ///   and colour;
+  ///   and color;
   /// - an explicit `ControlType -> SetterBar` was ignored once the choice
   ///   list grew past what the automatic split puts in a bar.
   #[test]
@@ -12788,7 +12788,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 6, $CellContext`step$$ = 
     );
     assert!(widget.graphics_handle.is_some());
 
-    // The preset buttons and the two labelled sliders must all show up as
+    // The preset buttons and the two labeled sliders must all show up as
     // controls; the `Style[...]`/`Delimiter` headings must not be dropped.
     let button_labels: Vec<&str> = widget
       .controls
@@ -12822,7 +12822,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 6, $CellContext`step$$ = 
   /// End-to-end regression for the shape of Demonstration that solves a
   /// delay differential equation inside a helper whose history is stated
   /// through a local holding `t /; t <= 0` (the condition variable is a
-  /// dummy, and the local is initialised in the enclosing scope), plotting
+  /// dummy, and the local is initialized in the enclosing scope), plotting
   /// the delayed and undelayed solutions together.
   #[test]
   fn delay_equation_notebook_opens_with_its_widget() {
@@ -12863,7 +12863,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1, $CellContext`delay$$ = 1},
     // hinged dissection: an initialization cell defines the pieces and a
     // `helper[k_, opts___]` wrapper that forwards its options to
     // `Graphics`, and the Manipulate swings each piece with `Rotate` about
-    // its own hinge, driven by a labelled slider.
+    // its own hinge, driven by a labeled slider.
     let nb_src = r#"Notebook[{
 Cell[BoxData["squareA = Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}];\nsquareB = Polygon[{{1, 0}, {2, 0}, {2, 1}, {1, 1}}];\nswing[k_, opts___] := Graphics[{RGBColor[1, 0, 0], squareA, RGBColor[0, 0, 1], Rotate[squareB, k Pi/2, {1, 0}]}, opts]"], "Input"],
 Cell[CellGroupData[{
@@ -12899,7 +12899,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 0.}, \"…\"]"], "Output"]
         assert_eq!(label, "swing");
         assert_eq!((*min, *max, *current), (0.0, 1.0, 0.0));
       }
-      other => panic!("expected one labelled slider, got {other:?}"),
+      other => panic!("expected one labeled slider, got {other:?}"),
     }
 
     // The iced handle doesn't expose its bytes, so re-render the body
@@ -12923,7 +12923,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 0.}, \"…\"]"], "Output"]
       .expect("the pieces must render")
     };
 
-    // The helper's `opts___` reaches Graphics, so ImageSize is honoured.
+    // The helper's `opts___` reaches Graphics, so ImageSize is honored.
     assert!(widget.graphics_handle.is_some());
     let unswung = render(&widget);
     assert!(
@@ -13595,7 +13595,7 @@ Cell[BoxData[
   fn quicksort_manipulate_builds_all_four_controls() {
     // End-to-end regression for the "Quicksort versus Selection Sort"
     // Demonstration. Its fourth control is a custom one — `{{li, init, ""},
-    // Button[…] &}` — which used to be unrecognised, and an unrecognised
+    // Button[…] &}` — which used to be unrecognized, and an unrecognized
     // control makes the whole widget fail to build.
     let code = "Manipulate[\
       Row[{t, v, k, Length[li]}], \
@@ -13639,7 +13639,7 @@ Cell[BoxData[
   fn sphericon_nets_manipulate_draws_every_face() {
     // End-to-end regression for the "Nets for Polyhedral Approximations of
     // the Sphericon" Demonstration. Its controls sit in a `Row` of
-    // `Control@…` entries, one of which is a colour picker, and the net is
+    // `Control@…` entries, one of which is a color picker, and the net is
     // a single `Polygon` holding a *list* of triangles.
     woxi::interpret(
       "pir2D[n_] := With[{fi = 2 ArcSin[Sin[Pi/(2 n)]/Sqrt[2]]}, \
@@ -13668,7 +13668,7 @@ Cell[BoxData[
     assert!(state.graphics_handle.is_some(), "the net must render");
 
     // The division slider and the net/surface setter both survive sharing
-    // a `Row` with the colour control — which is itself now a real
+    // a `Row` with the color control — which is itself now a real
     // `ColorSlider` widget (`{{col, Red, "color"}, Red}` has one possible
     // value with an explicit initial matching it, so it renders a full hue
     // gradient rather than being baked into the body as a fixed constant).
@@ -13694,7 +13694,7 @@ Cell[BoxData[
   ///
   /// Four things had to be fixed together for it to come out: the
   /// unbounded primitives drew nothing at all in 3D, `Sphere` with a list
-  /// of centres collapsed to one sphere at the origin, `((a ⨯ b) ⨯ a)`
+  /// of centers collapsed to one sphere at the origin, `((a ⨯ b) ⨯ a)`
   /// parsed as the three-argument `Cross[a, b, a]` (an error for 3D
   /// vectors), and `NumberForm` left the numbers of a symbolic expression
   /// alone while a negative real coefficient printed as `+ -2. y`.
@@ -13784,7 +13784,7 @@ Cell[BoxData[
       closed.contains("stroke=\"rgb(0,0,255)\""),
       "the infinite line must be drawn"
     );
-    // Both marker spheres are there — the list of centres is a sphere
+    // Both marker spheres are there — the list of centers is a sphere
     // each, not one stray sphere at the origin. Each is tessellated the
     // same way, so the scene holds twice one sphere's triangles.
     let one_sphere = woxi::interpret_with_stdout(
@@ -13797,7 +13797,7 @@ Cell[BoxData[
     assert_eq!(
       black_faces(&closed),
       2 * black_faces(&one_sphere),
-      "both centres must get a sphere"
+      "both centers must get a sphere"
     );
 
     // Turning the checkbox on adds the green plane, clipped to the box.
@@ -13828,7 +13828,7 @@ Cell[BoxData[
     // "CircularEmbedding"` and drawn edge by edge with an
     // `EdgeShapeFunction`, plus a second slider whose maximum follows the
     // first. Without the shape function the plot came out as the default
-    // grey arrows instead of the greyed-out dashed lines.
+    // gray arrows instead of the grayed-out dashed lines.
     let code = "Manipulate[\
       edges = Rule @@@ Flatten[Table[{a, b}, {a, k - 1}, {b, k - 1}], 1]; \
       marked = Rule @@@ Transpose[{Range[k], Mod[Range[k]^p, k, 1]}]; \
@@ -13893,7 +13893,7 @@ Cell[BoxData[
     // hidden `ControlType -> None` cache of the computed edges, and a
     // `GraphPlot` colored edge by edge via the legacy `GraphPlot` option
     // `EdgeRenderingFunction` (not `Graph`'s `EdgeShapeFunction`), which
-    // Woxi silently dropped, always drawing the default grey arrows.
+    // Woxi silently dropped, always drawing the default gray arrows.
     let code = "Manipulate[\
       edges = Table[i -> Mod[3 i + 1, n], {i, 1, n}]; \
       Pane[GraphPlot[edges, Method -> \"CircularEmbedding\", \
@@ -13950,19 +13950,19 @@ Cell[BoxData[
     assert_eq!(
       colors(&with_option),
       std::collections::HashSet::from(["rgb(255,0,0)", "rgb(128,128,128)"]),
-      "PrimeQ must split the edges into red and grey arrows: {with_option}"
+      "PrimeQ must split the edges into red and gray arrows: {with_option}"
     );
   }
 
   /// End-to-end regression for the shape the "Recursive Exercises"
   /// Demonstrations share: a recursive family of nested `Disk`s whose
-  /// level setter offers fewer levels once the 3D view is on, a colour
+  /// level setter offers fewer levels once the 3D view is on, a color
   /// index picked by a slider over a twenty-entry list, and two controls
-  /// greyed out while the 3D view is showing.
+  /// grayed out while the 3D view is showing.
   ///
   /// Both control shapes were wrong before: the level setter kept all six
   /// choices in 3D (its list was resolved once, at build time), and the
-  /// twenty-entry colour list became a dropdown because nothing carried
+  /// twenty-entry color list became a dropdown because nothing carried
   /// the `ControlType -> Slider` request through to the widget.
   #[test]
   fn nested_disks_manipulate_follows_its_dependent_controls() {
@@ -14014,22 +14014,22 @@ Cell[BoxData[
         other => panic!("expected a discrete control, got {other:?}"),
       };
 
-    // Flat: six levels, and the colour picker asks for a slider rather
+    // Flat: six levels, and the color picker asks for a slider rather
     // than the dropdown twenty choices would otherwise get.
     assert_eq!(discrete(&state, 0).0.len(), 6);
     assert_eq!(discrete(&state, 0).1, 1, "level starts at 2");
-    let (colours, colour_index, colour_slider) = discrete(&state, 3);
-    assert_eq!(colours.len(), 20);
-    assert_eq!(colour_index, 0);
-    assert!(colour_slider, "ControlType -> Slider must reach the widget");
+    let (colors, color_index, color_slider) = discrete(&state, 3);
+    assert_eq!(colors.len(), 20);
+    assert_eq!(color_index, 0);
+    assert!(color_slider, "ControlType -> Slider must reach the widget");
     assert_eq!(
       state.control_is_enabled,
       vec![true, true, true, true],
-      "nothing is greyed out while the flat view is showing"
+      "nothing is grayed out while the flat view is showing"
     );
 
     // Switching to 3D narrows the level setter to three choices, keeps the
-    // selected level (2 is still offered), and greys out the two controls
+    // selected level (2 is still offered), and grays out the two controls
     // whose `Enabled` conditions read the 3D flag.
     if let manipulate::ControlState::Discrete { current_index, .. } =
       &mut state.controls[1]
@@ -14044,7 +14044,7 @@ Cell[BoxData[
     assert_eq!(
       state.control_is_enabled,
       vec![true, true, false, false],
-      "thickness and colour are disabled in 3D"
+      "thickness and color are disabled in 3D"
     );
 
     // Switching back restores all six levels.
@@ -14529,7 +14529,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     )
     .unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr)
-      .expect("the overscript-labelled Manipulate must build a widget");
+      .expect("the overscript-labeled Manipulate must build a widget");
     assert!(
       state.error.is_none(),
       "body must evaluate cleanly: {:?}",
@@ -14570,7 +14570,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     )
     .unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr)
-      .expect("the subscript-labelled Setter must build a widget");
+      .expect("the subscript-labeled Setter must build a widget");
     assert!(
       state.error.is_none(),
       "body must evaluate cleanly: {:?}",
@@ -14608,7 +14608,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     )
     .unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr)
-      .expect("the TraditionalForm-labelled PopupMenu must build a widget");
+      .expect("the TraditionalForm-labeled PopupMenu must build a widget");
     assert!(
       state.error.is_none(),
       "body must evaluate cleanly: {:?}",
@@ -17198,7 +17198,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       other => panic!("expected trigger, got {other:?}"),
     }
     assert_eq!(woxi::interpret("U[[1, 1, 1]]").unwrap(), "0.3125");
-    // Once running (time != 0), the Enabled condition greys the SetterBar.
+    // Once running (time != 0), the Enabled condition grays the SetterBar.
     assert!(!state.control_is_enabled[0]);
 
     // Pressing the reset button rewinds the trigger and restores the
@@ -17335,7 +17335,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   #[test]
   fn label_char_count_uses_visible_glyphs() {
     // A short styled label counts its rendered glyphs (m₁ = 2), while a
-    // suppressed one (`{{θ, 0, ""}, …}`) counts nothing — an unlabelled
+    // suppressed one (`{{θ, 0, ""}, …}`) counts nothing — an unlabeled
     // control already carries its variable name as the label, so an empty
     // label is the author's explicit "no caption". The widest of these
     // drives the shared label-column width, so a row of single-glyph
@@ -18055,7 +18055,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, \"…\"]"], "Output"]
   /// End-to-end regression for the shape the space-filling-polyhedra
   /// Demonstrations share: a cell built from a face-index/vertex-list
   /// solid, repeated over a three-index `Table` of `Translate`s, with one
-  /// "direction" slider per lattice axis and an opacity slider per colour.
+  /// "direction" slider per lattice axis and an opacity slider per color.
   /// The scene here is a two-cube cell of our own rather than any
   /// published Demonstration's polyhedron data.
   ///
@@ -18983,7 +18983,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`d$$ = 30.}, \"…\"]"], "Output"]
 
   /// End-to-end regression for the "Goldbach Conjecture" Demonstration: a
   /// `Column` of the decompositions over a `ListPlot` whose axes are
-  /// labelled with explicit ticks.
+  /// labeled with explicit ticks.
   #[test]
   fn goldbach_notebook_opens_with_its_widget() {
     let nb_src = r##"Notebook[{
@@ -20114,7 +20114,7 @@ Cell[BoxData[
       .find(|t| t.starts_with("Manipulate["))
       .expect("the Manipulate cell must load");
     // The operator reads as a derivative of the expression that follows it,
-    // parenthesised so its coefficient stays a product. The diffusivity is
+    // parenthesized so its coefficient stays a product. The diffusivity is
     // the symbol `\[ScriptCapitalD]`, which is Wolfram's private-use script
     // capital D (U+F773).
     assert!(
@@ -20269,7 +20269,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = -5}, \"\\[Ellipsis]\"]"], "Ou
   }
 
   /// End-to-end regression for the "Dedekind Cut" Demonstration: circles at
-  /// every distinct rational `p/q < 1` for `p, q` up to a bound, coloured by
+  /// every distinct rational `p/q < 1` for `p, q` up to a bound, colored by
   /// which side of the cut they fall on, over a disk at the cut radius.
   ///
   /// It already worked; this pins it. The rational set, the cut radius and
@@ -20481,7 +20481,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ax$$ = 1.53, $CellContext`ay$$ = 0.
     assert!(widget.graphics_handle.is_some(), "the arrows must draw");
     assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
 
-    // Six labelled sliders in two groups of three, split by the
+    // Six labeled sliders in two groups of three, split by the
     // `Delimiter`, each with its own default, range and step.
     let expected = [
       ("ax", 1.53),
@@ -20583,7 +20583,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`step$$ = 1}, \"\\[Ellipsis]\"]"], "
     );
     assert!(widget.graphics_handle.is_some(), "the histogram must draw");
 
-    // One labelled slider walking the recorded snapshots.
+    // One labeled slider walking the recorded snapshots.
     assert_eq!(widget.controls.len(), 1);
     match &widget.controls[0] {
       manipulate::ControlState::Continuous {
@@ -20710,7 +20710,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 2, $CellContext`b$$ = 3, $Cel
   }
 
   /// End-to-end regression for "Binomial Probability Distribution": a
-  /// stem plot of the binomial PDF, titled and with both axes labelled.
+  /// stem plot of the binomial PDF, titled and with both axes labeled.
   /// The unjoined `ListPlot` path drew no labels at all.
   #[test]
   fn binomial_distribution_notebook_labels_its_plot() {
@@ -20922,7 +20922,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 4}, \"\\[Ellipsis]\"]"], "Out
   /// public "Permafrost" one models the same physics): a 1-D heat equation
   /// solved by `NDSolve` with two space-dependent boundary conditions and a
   /// time-dependent seasonal one, then swept into a frost/thaw boundary
-  /// with `ContourPlot`. `NDSolve` used to only recognise its own
+  /// with `ContourPlot`. `NDSolve` used to only recognize its own
   /// three-positional-argument ODE/DAE form; the four-argument
   /// `NDSolve[eqns, u, {t, t0, t1}, {x, x0, x1}]` PDE shape (two
   /// independent variables) fell straight through to an unevaluated
@@ -21019,7 +21019,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fam$$ = 1}, \"\\[Ellipsis]\"]"], "O
   /// is a `GraphPlot` over `Table[i -> Mod[a i, m], {i, 0, m - 1}]`, with
   /// two `Appearance -> "Labeled"` sliders for the modulus and the
   /// multiplier, a `Delimiter`, and a Boolean picklist that switches the
-  /// nodes between labelled `Text` and plain `Tooltip`-ed `Point`s through
+  /// nodes between labeled `Text` and plain `Tooltip`-ed `Point`s through
   /// `VertexRenderingFunction`.
   ///
   /// The Manipulate is written here rather than lifted from the published
@@ -21046,7 +21046,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Out
     );
     assert!(widget.graphics_handle.is_some(), "the diagram must draw");
 
-    // Two labelled sliders, the `Delimiter` separator row, then the
+    // Two labeled sliders, the `Delimiter` separator row, then the
     // Boolean picklist.
     match &widget.controls[..] {
       [
@@ -21097,7 +21097,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Out
       .expect("the body must produce a graphic")
     };
 
-    // Unlabelled, every one of the `m` residues is drawn as a point in
+    // Unlabeled, every one of the `m` residues is drawn as a point in
     // the function's own dark blue — not as the default vertex disk.
     let points = render(8, 3, "False");
     assert_eq!(
@@ -21105,12 +21105,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Out
       8,
       "each residue is a Darker[Blue, .7] point: {points}"
     );
-    // Labelled, each node is its own residue's numeral instead.
-    let labelled = render(8, 3, "True");
+    // Labeled, each node is its own residue's numeral instead.
+    let labeled = render(8, 3, "True");
     for residue in 0..8 {
       assert!(
-        labelled.contains(&format!(">{residue}<")),
-        "residue {residue} is labelled: {labelled}"
+        labeled.contains(&format!(">{residue}<")),
+        "residue {residue} is labeled: {labeled}"
       );
     }
     // Both controls reach the graph: a different modulus draws a
@@ -21390,7 +21390,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`pieceSpin$$ = {0., 0.}}, \"\\[Ellip
 
   /// A slider captioned with a small picture beside its words
   /// (`Dynamic[Row[{Pane[ArrayPlot[…], 80], "word"}, Spacer[6]]]`) is
-  /// labelled by the words alone, not the picture's `-Graphics-` placeholder.
+  /// labeled by the words alone, not the picture's `-Graphics-` placeholder.
   #[test]
   fn slider_caption_with_a_picture_keeps_only_its_words() {
     let nb_src = r##"Notebook[{
@@ -21802,11 +21802,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`time$$ = 25}, \"\\[Ellipsis]\"]"], 
     };
     let published = render(25.0);
     // The frame the notebook asks for: `PlotRange -> {{-7, 7}, {0, 25},
-    // {-20, 20}}` with all three axes labelled.
+    // {-20, 20}}` with all three axes labeled.
     for text in [">-5<", ">20<", ">-20<", "t (s)", "(rad/s)"] {
       assert!(published.contains(text), "expected {text} in the frame");
     }
-    // A trajectory is a long polyline of coloured segments, not a handful.
+    // A trajectory is a long polyline of colored segments, not a handful.
     assert!(
       published.matches("<line").count() > 500,
       "expected a resolved trajectory, got {} segments",
@@ -22154,14 +22154,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`phi$$ = 0.78}, \"\\[Ellipsis]\"]"],
   }
 
   /// End-to-end regression for a Demonstration that draws a vector field:
-  /// a grid of short arrows, each coloured by looking its value up in a
+  /// a grid of short arrows, each colored by looking its value up in a
   /// named gradient through `ColorData[scheme, "ColorFunction"]`, inside a
   /// `Graphics` whose margins come from `ImagePadding`. All three used to
-  /// fail together — the colour lookup was unimplemented so every arrow
+  /// fail together — the color lookup was unimplemented so every arrow
   /// came out black, the padding was ignored, and the arrowheads were
   /// shrunk to fit shafts barely longer than themselves.
   #[test]
-  fn vector_field_manipulate_colours_its_arrows() {
+  fn vector_field_manipulate_colors_its_arrows() {
     let nb_src = r##"Notebook[{
 Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}, {x, -r, r, 2 r/n}, {y, -r, r, 2 r/n}]; Graphics[{Arrowheads[1./(2 n)], Map[{ColorData[scheme, \"ColorFunction\"][Norm[#[[2]]]/(Sqrt[2] r)], Arrow[{#[[1]], #[[1]] + s #[[2]]/Max[Norm[#[[2]]], 0.001]}]} &, pts, {2}]}, PlotRange -> All, Frame -> True, ImageSize -> {320, 300}, ImagePadding -> {{25, 25}, {25, 25}}]], {{scheme, \"RedBlueTones\", \"colors\"}, {\"RedBlueTones\", \"Rainbow\", \"SunsetColors\"}}, {{r, 3, \"domain size\"}, 1, 6}, {{n, 8, \"resolution\"}, 4, 12, 1}]"], "Input"]
 }]"##;
@@ -22192,12 +22192,12 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     .expect("the body must produce a graphic");
     // `ImagePadding -> {{25, 25}, {25, 25}}` leaves 320-50 by 300-50 for the
     // frame; the field's square data keeps a square 250x250 drawing area,
-    // centred in that space (10px of slack on each side horizontally).
+    // centered in that space (10px of slack on each side horizontally).
     assert!(
       svg.contains("translate(35,25)"),
       "the padding must place the drawing area: {svg:.400}"
     );
-    // Each arrow is coloured from the gradient, so the fill colours are
+    // Each arrow is colored from the gradient, so the fill colors are
     // many and none of them is the default black.
     let fills: std::collections::BTreeSet<&str> = svg
       .split("<polygon")
@@ -22207,7 +22207,7 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
       .collect();
     assert!(
       fills.len() > 5,
-      "the gradient must colour the arrows, got {fills:?}"
+      "the gradient must color the arrows, got {fills:?}"
     );
     assert!(
       !fills.contains("rgb(0,0,0)"),
@@ -22537,7 +22537,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
 
   /// End-to-end regression for the "Regular Polygon Rolling on a Catenary"
   /// Demonstration: a `k`-gon rolls along a chain of catenary arches, its
-  /// centre tracing the straight line the arches are cut for, with optional
+  /// center tracing the straight line the arches are cut for, with optional
   /// fans of earlier positions under constant angular and constant horizontal
   /// velocity.
   ///
@@ -22928,17 +22928,17 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = 0}, \"\\[Ellipsis]\"]"], "Out
     };
 
     // At rest: four catenary arches (`per` runs -1..2) plus the straight line
-    // the polygon rolls along, the polygon itself, and the white centre dot.
+    // the polygon rolls along, the polygon itself, and the white center dot.
     let square = render("0", 4, "False", "False", "False");
     assert_eq!(square.matches("<polyline").count(), 5, "{square}");
     assert_eq!(square.matches("<polygon").count(), 1, "{square}");
     assert_eq!(square.matches("<ellipse").count(), 1, "{square}");
-    // The rolling polygon is grey and the centre dot white.
+    // The rolling polygon is gray and the center dot white.
     assert!(square.contains("fill=\"rgb(128,128,128)\""), "{square}");
     assert!(square.contains("fill=\"rgb(255,255,255)\""), "{square}");
 
     // Each overlay adds one outline and one marker per step of a 33-step
-    // table (`t` from -3 to 1, and 1 to 5, by 1/8), in its own colour.
+    // table (`t` from -3 to 1, and 1 to 5, by 1/8), in its own color.
     let fans = render("2", 5, "True", "True", "False");
     assert_eq!(fans.matches("<polyline").count(), 5 + 33 + 33, "{fans}");
     assert_eq!(fans.matches("<ellipse").count(), 1 + 33 + 33, "{fans}");
@@ -23050,7 +23050,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ChooseControlMode$$ = 1}, \"\\[Elli
   }
 
   /// End-to-end regression for the "Thermodynamic Consistency Test Based on
-  /// Differential Residuals" Demonstration: four vapour-liquid equilibrium
+  /// Differential Residuals" Demonstration: four vapor-liquid equilibrium
   /// datasets, each shown as a pressure diagram, an x-y diagram, or the
   /// differential-residual consistency test, with the measured points drawn
   /// as `PlotMarkers` glyphs and the +/-0.1 acceptance band as an `Epilog`.
@@ -23116,7 +23116,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
 
     // The pressure diagram marks the 9 measured points of the MEK-toluene
     // mixture plus the two pure-component ends, on both the liquid and the
-    // vapour branch, with red and blue diamonds.
+    // vapor branch, with red and blue diamonds.
     let pressure = render(2, 1);
     assert_eq!(glyphs(&pressure, "\u{25c6}"), 22, "{pressure}");
     // The x-y diagram of the chloroform mixture marks its 11 points in
@@ -23198,7 +23198,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     let diagram = render(3);
     assert!(
       diagram.contains("stroke=\"rgb(0,0,255)\""),
-      "ContourStyle must colour the boundary"
+      "ContourStyle must color the boundary"
     );
     for text in [">rate</text>", ">level</text>", ">here</text>"] {
       assert!(diagram.contains(text), "missing {text} in the diagram view");
@@ -24037,7 +24037,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
   /// `ParametricPlot`, `FindMinimum`/`FindMaximum`, and a labeled `Slider`
   /// drive the rendered curve.
   ///
-  /// None of these three PDE shapes were previously recognised at all —
+  /// None of these three PDE shapes were previously recognized at all —
   /// the chained equality left the equation count short of what a
   /// single-unknown role needs, the Robin flux's own-value references had
   /// no compiled variable to bind to, and the shared boundary condition
@@ -26813,7 +26813,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
   /// downloaded straight from a share link carries, with no Input-cell
   /// source to fall back on (see [`instantiate_manipulate_from_box_dump`]) —
   /// can declare a helper variable whose "Specifications" entry names no
-  /// range, no discrete choice list and no colour: just `{{var, value},
+  /// range, no discrete choice list and no color: just `{{var, value},
   /// "someTag"}`, where the tag is an internal type marker the front end
   /// uses (`"function"` for a `Compile`d helper only ever called from the
   /// body) rather than a real control domain. Before this test's fix such a
@@ -27361,17 +27361,17 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
 
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    let labelled = render(&state);
+    let labeled = render(&state);
     assert!(
-      labelled.contains("perimeter =") && labelled.contains("area ="),
+      labeled.contains("perimeter =") && labeled.contains("area ="),
       "switching both toggles on must draw the two readout rows"
     );
     // Vertices (-4, 3), (5, -2), (-2, -5): the shoelace determinant is
     // |9*(-8) - 2*(-5)| / 2 = 31, an exact value that must still print all
     // six figures its precision claims.
     assert!(
-      labelled.contains("31.0000"),
-      "an exact area must show its full precision, got: {labelled}"
+      labeled.contains("31.0000"),
+      "an exact area must show its full precision, got: {labeled}"
     );
 
     // Dragging a vertex changes both the outline and the readouts.
@@ -27385,7 +27385,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     let dragged = render(&state);
     assert_ne!(
-      labelled, dragged,
+      labeled, dragged,
       "moving a locator must change the rendered triangle"
     );
     assert!(
@@ -29382,7 +29382,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
         assert_eq!(s_name, "s");
         assert_eq!((*n_current, *s_current), (30.0, 5.0));
       }
-      other => panic!("expected two labelled sliders, got {other:?}"),
+      other => panic!("expected two labeled sliders, got {other:?}"),
     }
 
     // The earlier standalone Input cells (the helper definitions) already
@@ -30135,7 +30135,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   /// trailing `Enabled -> cond` the same way top-level controls do and
   /// carrying the resolved flag on `DisplayNode::Popup`, which Woxi
   /// Studio's `pick_list` rendering and the Playground's `<select>`
-  /// rendering both now grey out and stop routing selections through.
+  /// rendering both now gray out and stop routing selections through.
   #[test]
   fn embedded_popup_menu_respects_its_own_enabled_condition() {
     let expr = woxi::interpret_to_expr(
@@ -30908,7 +30908,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     let expr =
       woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
     let state = manipulate::ManipulateState::from_expr(&expr)
-      .expect("four labelled sliders and a checkbox should build a widget");
+      .expect("four labeled sliders and a checkbox should build a widget");
     assert!(
       state.error.is_none(),
       "body must evaluate cleanly: {:?}",
@@ -32078,7 +32078,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
 
     // All three curves of the `ParametricPlot3D` must actually be drawn —
     // the trajectory and its two coordinate projections each keep their own
-    // `PlotStyle` colour, which is what says the three-element curve list
+    // `PlotStyle` color, which is what says the three-element curve list
     // was not mistaken for a single curve's three components.
     let trajectory_view = render(&state);
     for (color, which) in [

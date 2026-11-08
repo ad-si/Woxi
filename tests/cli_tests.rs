@@ -170,7 +170,7 @@ fn input_string_reads_successive_lines() {
 #[test]
 fn input_string_returns_end_of_file_when_stdin_is_exhausted() {
   // Past the last line — and with a closed stdin — the result is `EndOfFile`,
-  // the behaviour wolframscript shows when there is nothing left to read.
+  // the behavior wolframscript shows when there is nothing left to read.
   let (stdout, stderr, ok) =
     run_eval_with_input("{InputString[], InputString[]}", "only\n");
   assert!(ok, "woxi eval failed: stderr={stderr}");

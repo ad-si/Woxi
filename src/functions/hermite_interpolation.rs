@@ -5,9 +5,9 @@
 //!
 //! As in wolframscript, the piece used on `[x_i, x_{i+1}]` is the polynomial
 //! that matches every value and derivative given at both ends. While that is
-//! fewer than `order + 1` conditions, whole neighbouring points join it, the
+//! fewer than `order + 1` conditions, whole neighboring points join it, the
 //! right-hand one first and then alternating sides. Plain values on four
-//! points thus give the familiar centred cubic, and `f, f'` at each end give
+//! points thus give the familiar centered cubic, and `f, f'` at each end give
 //! the cubic Hermite piece whatever the `InterpolationOrder`.
 
 use crate::InterpreterError;

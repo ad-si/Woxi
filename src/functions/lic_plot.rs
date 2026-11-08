@@ -1,7 +1,7 @@
 //! `LineIntegralConvolutionPlot[{vx, vy}, {x, …}, {y, …}]` (or with a
 //! `{{vx, vy}, {"noise", w, h}}` texture spec): white noise smeared along
 //! the field's streamlines — each pixel the average of the noise over a
-//! short streamline through it — shaded by the colour function, as a
+//! short streamline through it — shaded by the color function, as a
 //! `Graphics` of one `Raster`.
 
 use crate::InterpreterError;
@@ -214,7 +214,7 @@ pub fn line_integral_convolution_plot_ast(
     }
   }
 
-  // The field at every pixel centre, rows from the bottom up.
+  // The field at every pixel center, rows from the bottom up.
   let px = (x1 - x0) / w as f64;
   let py = (y1 - y0) / h as f64;
   let mut field_at = vec![(f64::NAN, f64::NAN); w * h];
@@ -285,7 +285,7 @@ pub fn line_integral_convolution_plot_ast(
     .max(1e-9);
   let shade = |t: f64| (0.5 + (t - mean) / (4.0 * sd)).clamp(0.0, 1.0);
 
-  // Colours from the colour function, applied on a coarse grid (a general
+  // Colors from the color function, applied on a coarse grid (a general
   // function of x, y, vx, vy and the norm costs an evaluation each).
   let (nlo, nhi) = norms
     .iter()
@@ -340,7 +340,7 @@ pub fn line_integral_convolution_plot_ast(
             .and_then(|c| crate::functions::graphics::parse_color(&c))
             .map_or((1.0, 1.0, 1.0), |c| (c.r, c.g, c.b))
         }
-        // Wolfram's default colours the field from brown (weak) to cream
+        // Wolfram's default colors the field from brown (weak) to cream
         // (strong); `"SiennaTones"` over 0.4..0.8 of the rescaled norm
         // follows its gradient to within a few percent.
         (None, None) => {

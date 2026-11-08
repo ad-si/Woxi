@@ -452,8 +452,8 @@ const COMMA_INK: f64 = 5.2;
 const CONTINUATION_INDENT: f64 = 8.3;
 const MAX_LINE_WIDTH: f64 = 1008.5;
 const LINE_SPACING: f64 = 1.25;
-// How far the text baseline sits below the centre line the pictures are
-// centred on (the math axis of the surrounding text).
+// How far the text baseline sits below the center line the pictures are
+// centered on (the math axis of the surrounding text).
 const BASELINE_BELOW_AXIS: f64 = 2.86;
 
 enum Atom {
@@ -499,7 +499,7 @@ impl Atom {
       Atom::Picture { w, .. } => *w,
     }
   }
-  /// The extent above the line's axis (pictures centre on it unless they
+  /// The extent above the line's axis (pictures center on it unless they
   /// name their own baseline).
   fn above(&self) -> f64 {
     match self {
@@ -611,7 +611,7 @@ fn balanced_lines(widths: &[f64]) -> Vec<usize> {
 }
 
 /// Draws `{cell₁, cell₂, …}` the way a notebook shows a list holding
-/// pictures: each picture at its own size, centred on the line's text
+/// pictures: each picture at its own size, centered on the line's text
 /// axis, separated by commas, nested lists with their own braces, and the
 /// whole wrapped onto several lines when it is wider than the page.
 pub fn list_layout_svg(cells: Vec<ListCell>) -> Option<String> {

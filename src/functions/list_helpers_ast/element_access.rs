@@ -2348,7 +2348,7 @@ pub fn replace_part_heads_ast(
     }
     // Put the parts back the way `parts_and_head` took them apart, so a rule
     // stays an `Expr::Rule` rather than coming back as a `Rule[…]` call that
-    // every later reader would have to recognise separately.
+    // every later reader would have to recognize separately.
     if let Some(new_head) = new_head {
       return Ok(match new_head {
         Expr::Identifier(ref h) => {

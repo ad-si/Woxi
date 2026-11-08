@@ -61,7 +61,7 @@ pub fn dispatch_evaluation_control(
     }
     // `HoldCompleteForm` is `HoldForm`'s HoldAllComplete sibling: it keeps its
     // argument unevaluated for display (`HoldCompleteForm[2 + 3]` prints as
-    // `HoldCompleteForm[2 + 3]`) and, unlike `HoldForm`, does not honour a
+    // `HoldCompleteForm[2 + 3]`) and, unlike `HoldForm`, does not honor a
     // wrapping `Evaluate` — see the HoldAllComplete attribute in
     // `attributes.rs`, which is what suppresses argument evaluation.
     "HoldCompleteForm" if !args.is_empty() => {
@@ -621,9 +621,9 @@ pub fn dispatch_evaluation_control(
         vec![args[0].clone(), Expr::Integer(0)],
       )));
     }
-    // The three centre-plus-radius-pair regions normalize to their full form
+    // The three center-plus-radius-pair regions normalize to their full form
     // `head[center, {rinner, router}]`: the default shell is {1/2, 1}, a bare
-    // radius pair gets the origin as its centre, and a single radius r means
+    // radius pair gets the origin as its center, and a single radius r means
     // {r/2, r} — except for `Torus`, where wolframscript leaves `Torus[r]`
     // alone. `Annulus` is the 2-D member, so its origin has two coordinates.
     // (wolframscript-verified, symbolic radii included.)
@@ -678,7 +678,7 @@ pub fn dispatch_evaluation_control(
         Expr::List(coords.iter().map(|c| point(*c)).collect::<Vec<_>>().into())
       };
       let defaults = match name {
-        // A single corner/centre at the origin; the size stays implicit.
+        // A single corner/center at the origin; the size stays implicit.
         "Sphere" | "Ball" | "Cuboid" => vec![point([0, 0, 0])],
         // The unit-radius z-axis segment from -1 to 1.
         "Cylinder" | "Cone" | "Tube" => {
@@ -688,7 +688,7 @@ pub fn dispatch_evaluation_control(
         "Parallelepiped" => {
           vec![point([0, 0, 0]), points(&[[1, 0, 0], [1, 1, 0], [1, 1, 1]])]
         }
-        // A square base of side 2 centred on the origin, apex at z = 1.
+        // A square base of side 2 centered on the origin, apex at z = 1.
         "Pyramid" => vec![points(&[
           [-1, -1, 0],
           [1, -1, 0],
@@ -1220,7 +1220,7 @@ fn release_hold_rec(e: &Expr) -> Expr {
 }
 
 /// Pick the smallest NumericArray dtype that fits every element in the
-/// (possibly nested) list `e`. Currently recognises only
+/// (possibly nested) list `e`. Currently recognizes only
 /// `UnsignedInteger8` — the type wolframscript uses by default for
 /// integer matrices in the 0..=255 range. Returns None when the payload
 /// isn't a list of suitable values.

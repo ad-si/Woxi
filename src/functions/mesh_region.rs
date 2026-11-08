@@ -963,7 +963,7 @@ fn ear_clip(pts: &[(f64, f64)], indices: &[usize]) -> Option<Vec<[usize; 3]>> {
       let (a, b, c) = (at(ia)?, at(ib)?, at(ic)?);
       let turn = cross(a, b, c);
       // A vertex on a straight stretch is no ear; it is clipped as the
-      // corner of a neighbouring ear instead, so it stays a vertex of the
+      // corner of a neighboring ear instead, so it stays a vertex of the
       // triangulation (dropping it would leave it in the middle of a
       // triangle's edge — a hole's corner, say).
       if turn == 0.0 {

@@ -161,7 +161,7 @@ pub(super) fn plain_factor_product(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   factors.sort_by(|a, b| super::arithmetic::times_factor_order(a, b));
-  // Equal neighbours would merge into a power.
+  // Equal neighbors would merge into a power.
   if !factors
     .windows(2)
     .all(|w| super::arithmetic::times_factor_order(w[0], w[1]).is_lt())
@@ -329,7 +329,7 @@ pub(super) fn plain_call_sum(args: &[Expr]) -> Option<Expr> {
       .unwrap_or_else(|| a.len().cmp(&b.len()))
   };
   keyed.sort_by(|(a, _), (b, _)| order(a, b));
-  // Equal neighbours are like terms, which combine.
+  // Equal neighbors are like terms, which combine.
   if keyed.windows(2).any(|w| order(&w[0].0, &w[1].0).is_eq()) {
     return None;
   }

@@ -3,7 +3,7 @@
 //!
 //! Each axis is binned by `HistogramList` (the canonical 1D binning) on
 //! that coordinate, then the points are counted into the cells. Cells are
-//! grouped by height, each group in the colour of its height scaled to
+//! grouped by height, each group in the color of its height scaled to
 //! `0..1` over the heights that occur, as wolframscript draws them.
 
 use crate::InterpreterError;
@@ -12,7 +12,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::helpers::{call, call1, rule_expr, unevaluated};
 use crate::syntax::Expr;
 
-/// The default colour gradient, decoded from wolframscript: piecewise
+/// The default color gradient, decoded from wolframscript: piecewise
 /// linear in LAB between these four stops at 0, 1/3, 2/3 and 1.
 const GRADIENT: [[f64; 3]; 4] = [
   [0.2374577454874495, 0.4502326479674301, -0.29344758919909575],

@@ -1735,7 +1735,7 @@ mod tests {
     /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
     /// renderer used to draw regardless.
     #[test]
-    fn list_plot_honours_axes_option() {
+    fn list_plot_honors_axes_option() {
       let with_axes = woxi::interpret(
         r#"ExportString[ListPlot[{{-1., -1.}, {1., 1.}}, Axes -> True], "SVG"]"#,
       )
@@ -2322,7 +2322,7 @@ mod tests {
       assert!(svg.contains(" leaves"), "expected the row's text: {svg}");
       assert!(
         svg.contains("font-size=\"16\"") && svg.contains("rgb(0,0,255)"),
-        "the caption keeps the size and colour it asks for: {svg}"
+        "the caption keeps the size and color it asks for: {svg}"
       );
       // A styled picture is still the picture.
       let styled = svg_of("Style[Graphics[{Disk[]}], Blue]");
@@ -2356,7 +2356,7 @@ mod tests {
     }
 
     #[test]
-    fn styled_grid_still_colours_its_frame() {
+    fn styled_grid_still_colors_its_frame() {
       // The directives of a styled `Grid` reach its frame and dividers, not
       // only its cells, so unwrapping `Style` must leave that path alone.
       let svg = svg_of(
@@ -2370,7 +2370,7 @@ mod tests {
 
     #[test]
     fn grid_spans_a_picture_across_its_columns() {
-      // A picture merged over two columns with `SpanFromLeft` is centred
+      // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
       // leaving a blank placeholder cell beside it.
       let svg = svg_of(
@@ -2426,7 +2426,7 @@ mod tests {
       );
       assert!(!svg.contains("Pane["), "no source text: {svg}");
       assert!(svg.contains("font-size=\"40\""), "styled cells: {svg}");
-      assert!(svg.contains("rx=\"5.0\""), "RoundingRadius honoured: {svg}");
+      assert!(svg.contains("rx=\"5.0\""), "RoundingRadius honored: {svg}");
       assert!(
         svg.contains("<svg x=\"25.0\" y=\"25.0\""),
         "FrameMargins: {svg}"
@@ -2514,8 +2514,8 @@ mod tests {
 
     #[test]
     fn parametric_plot3d_plot_style_tube_draws_a_tube() {
-      // `PlotStyle -> {colour, Tube[r]}` asks for the curve itself to be
-      // drawn as a tube of radius `r`. The colour still applies; only the
+      // `PlotStyle -> {color, Tube[r]}` asks for the curve itself to be
+      // drawn as a tube of radius `r`. The color still applies; only the
       // `Tube` directive changes the shape.
       let tube = svg_of(
         "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
@@ -2527,7 +2527,7 @@ mod tests {
       );
       assert!(
         tube.contains("fill=\"rgb(2"),
-        "the tube keeps the PlotStyle colour: {tube}"
+        "the tube keeps the PlotStyle color: {tube}"
       );
       // Without the directive the same curve is still a plain line.
       let line = svg_of(
@@ -2546,17 +2546,17 @@ mod tests {
       // does — the canvas grows by the label strip rather than the drawing
       // area shrinking.
       let plain = svg_of("Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}]");
-      let labelled = svg_of(
+      let labeled = svg_of(
         "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, \
          PlotLabel -> \"Torus Knot\"]",
       );
       assert!(
-        labelled.contains("Torus Knot"),
-        "expected the plot label: {labelled}"
+        labeled.contains("Torus Knot"),
+        "expected the plot label: {labeled}"
       );
       assert!(
         !plain.contains("<text"),
-        "an unlabelled picture gains no text: {plain}"
+        "an unlabeled picture gains no text: {plain}"
       );
       let height = |svg: &str| -> u32 {
         let header = &svg[..svg.find('>').unwrap()];
@@ -2564,9 +2564,9 @@ mod tests {
         rest[..rest.find('"').unwrap()].parse().unwrap()
       };
       assert_eq!(
-        height(&labelled),
+        height(&labeled),
         height(&plain) + 26,
-        "the canvas grows by the label strip: {labelled}"
+        "the canvas grows by the label strip: {labeled}"
       );
       // `PlotLabel -> None` is how a picture asks to stay untitled.
       let none =
@@ -2595,7 +2595,7 @@ mod tests {
     #[test]
     fn graphics3d_plot_label_typesets_its_expression() {
       // The label is typeset like any other, so a `Style[Row[…]]` shows the
-      // row's text at the size and colour it asks for.
+      // row's text at the size and color it asks for.
       let svg = svg_of(
         "Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, \
          PlotLabel -> Style[Row[{\"Lotus \", \"Kolam\"}], FontSize -> 18, \
@@ -2607,7 +2607,7 @@ mod tests {
       );
       assert!(
         svg.contains("font-size=\"18\"") && svg.contains("rgb(0,0,255)"),
-        "expected the label's own size and colour: {svg}"
+        "expected the label's own size and color: {svg}"
       );
     }
 
@@ -2968,7 +2968,7 @@ mod tests {
     }
 
     #[test]
-    fn high_order_derivative_uses_a_parenthesised_order() {
+    fn high_order_derivative_uses_a_parenthesized_order() {
       // Past three, the marks stop being countable and Wolfram spells the
       // order out: `f⁽⁴⁾`.
       let boxes = tf("Derivative[4][f]");
@@ -3280,7 +3280,7 @@ mod tests {
           "{code} needs both scripts: {boxes}"
         );
       }
-      // JacobiP has two of them, written as a parenthesised pair.
+      // JacobiP has two of them, written as a parenthesized pair.
       let boxes = tf("JacobiP[n, a, b, x]");
       assert!(boxes.contains("SubsuperscriptBox"), "{boxes}");
       assert!(
@@ -3299,7 +3299,7 @@ mod tests {
       assert!(!boxes.contains("Factorial"), "no head name: {boxes}");
       // A compound argument keeps its parentheses: (n+1)!
       let boxes = tf("(n + 1)!");
-      assert!(boxes.contains("\"(\""), "argument parenthesised: {boxes}");
+      assert!(boxes.contains("\"(\""), "argument parenthesized: {boxes}");
     }
 
     // `Row[{…}]` is a display wrapper: it concatenates its parts, so the
@@ -3455,8 +3455,8 @@ mod tests {
       }
     }
 
-    /// Every vertex-dot centre in `svg`, in document order.
-    fn circle_centres(svg: &str) -> Vec<(f64, f64)> {
+    /// Every vertex-dot center in `svg`, in document order.
+    fn circle_centers(svg: &str) -> Vec<(f64, f64)> {
       svg
         .split("<ellipse ")
         .skip(1)
@@ -3478,14 +3478,14 @@ mod tests {
     fn layered_graph_plot_lays_a_chain_out_in_a_line() {
       let svg =
         svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 3 -> 4, 4 -> 5}, Left]"#);
-      let centres = circle_centres(&svg);
-      assert_eq!(centres.len(), 5, "one vertex circle each: {svg}");
-      let y0 = centres[0].1;
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 5, "one vertex circle each: {svg}");
+      let y0 = centers[0].1;
       assert!(
-        centres.iter().all(|(_, y)| (y - y0).abs() < 1.0),
-        "a chain lies on one row: {centres:?}"
+        centers.iter().all(|(_, y)| (y - y0).abs() < 1.0),
+        "a chain lies on one row: {centers:?}"
       );
-      let mut xs: Vec<f64> = centres.iter().map(|(x, _)| *x).collect();
+      let mut xs: Vec<f64> = centers.iter().map(|(x, _)| *x).collect();
       xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
       let step = xs[1] - xs[0];
       assert!(step > 1.0, "vertices are spread apart: {xs:?}");
@@ -3500,14 +3500,14 @@ mod tests {
     /// Roots go on the edge the second argument names, and the layers grow
     /// away from it: `Top` stacks the chain vertically instead.
     #[test]
-    fn layered_graph_plot_honours_the_root_position() {
+    fn layered_graph_plot_honors_the_root_position() {
       let svg = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 3 -> 4}, Top]"#);
-      let centres = circle_centres(&svg);
-      assert_eq!(centres.len(), 4);
-      let x0 = centres[0].0;
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 4);
+      let x0 = centers[0].0;
       assert!(
-        centres.iter().all(|(x, _)| (x - x0).abs() < 1.0),
-        "with the roots on top the chain runs down one column: {centres:?}"
+        centers.iter().all(|(x, _)| (x - x0).abs() < 1.0),
+        "with the roots on top the chain runs down one column: {centers:?}"
       );
     }
 
@@ -3516,9 +3516,9 @@ mod tests {
     #[test]
     fn layered_graph_plot_splits_a_branch_across_rows() {
       let svg = svg_of(r#"LayeredGraphPlot[{1 -> 2, 2 -> 3, 2 -> 4}, Left]"#);
-      let centres = circle_centres(&svg);
-      assert_eq!(centres.len(), 4);
-      let mut by_x = centres.clone();
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 4);
+      let mut by_x = centers.clone();
       by_x.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
       // The two children share the last layer, so they share an x and
       // straddle the row their parent sits on.
@@ -3558,11 +3558,11 @@ mod tests {
            Method -> "CircularEmbedding"]"#,
       );
       let on_a_circle = |svg: &str| {
-        let centres = circle_centres(svg);
-        assert_eq!(centres.len(), 6, "one vertex circle each: {svg}");
-        let cx = centres.iter().map(|(x, _)| x).sum::<f64>() / 6.0;
-        let cy = centres.iter().map(|(_, y)| y).sum::<f64>() / 6.0;
-        let radii: Vec<f64> = centres
+        let centers = circle_centers(svg);
+        assert_eq!(centers.len(), 6, "one vertex circle each: {svg}");
+        let cx = centers.iter().map(|(x, _)| x).sum::<f64>() / 6.0;
+        let cy = centers.iter().map(|(_, y)| y).sum::<f64>() / 6.0;
+        let radii: Vec<f64> = centers
           .iter()
           .map(|(x, y)| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt())
           .collect();
@@ -3586,17 +3586,17 @@ mod tests {
         r#"GraphPlot[{1 -> 2, 2 -> 3, 3 -> 4}, Method -> "CircularEmbedding",
            GraphLayout -> "LayeredDigraphEmbedding"]"#,
       );
-      let centres = circle_centres(&svg);
-      assert_eq!(centres.len(), 4);
-      let x0 = centres[0].0;
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 4);
+      let x0 = centers[0].0;
       assert!(
-        centres.iter().all(|(x, _)| (x - x0).abs() < 1.0),
-        "the layered embedding stacks the chain in one column: {centres:?}"
+        centers.iter().all(|(x, _)| (x - x0).abs() < 1.0),
+        "the layered embedding stacks the chain in one column: {centers:?}"
       );
     }
 
     /// `EdgeShapeFunction -> f` draws every edge with `f[{pt, …}, edge]`
-    /// instead of the built-in arrow. A Demonstration uses this to grey out
+    /// instead of the built-in arrow. A Demonstration uses this to gray out
     /// the edges it is not highlighting.
     #[test]
     fn edge_shape_function_replaces_the_drawn_edge() {
@@ -3623,7 +3623,7 @@ mod tests {
     /// `EdgeRenderingFunction` is `GraphPlot`'s older name for the same
     /// option, predating `Graph` and `EdgeShapeFunction` — Demonstrations
     /// authored before `Graph` existed still use it, and it was previously
-    /// silently ignored, always drawing the default grey arrows.
+    /// silently ignored, always drawing the default gray arrows.
     #[test]
     fn edge_rendering_function_replaces_the_drawn_edge() {
       let svg = svg_of(
@@ -3781,7 +3781,7 @@ mod tests {
         !svg.contains("<polyline") && !svg.contains("<polygon"),
         "no edge is drawn: {svg}"
       );
-      assert_eq!(circle_centres(&svg).len(), 3, "the vertices stay: {svg}");
+      assert_eq!(circle_centers(&svg).len(), 3, "the vertices stay: {svg}");
     }
 
     /// The rule form names the edges it applies to; the rest keep the
@@ -3826,7 +3826,7 @@ mod tests {
 
     /// `VertexRenderingFunction -> f` draws every vertex with
     /// `f[{x, y}, name]` instead of the built-in disk. A Demonstration
-    /// uses this to swap the plain node for a coloured point.
+    /// uses this to swap the plain node for a colored point.
     #[test]
     fn vertex_rendering_function_replaces_the_drawn_vertex() {
       let svg = svg_of(
@@ -3834,7 +3834,7 @@ mod tests {
            VertexRenderingFunction -> ({Red, Rectangle[# - 0.05, # + 0.05]} &)]"#,
       );
       assert!(
-        circle_centres(&svg).is_empty(),
+        circle_centers(&svg).is_empty(),
         "the default disks are gone once the shape is ours: {svg}"
       );
       assert_eq!(
@@ -3845,7 +3845,7 @@ mod tests {
       assert_eq!(
         svg.matches(r#"fill="rgb(255,0,0)""#).count(),
         3,
-        "and each takes the colour the function set: {svg}"
+        "and each takes the color the function set: {svg}"
       );
     }
 
@@ -3859,7 +3859,7 @@ mod tests {
            VertexRenderingFunction -> (Disk[#, 0.05] &)]"#,
       );
       // The two pictures pad differently around different marker sizes, so
-      // the centres are compared within each drawing's own bounding box.
+      // the centers are compared within each drawing's own bounding box.
       let normalized = |pts: Vec<(f64, f64)>| {
         let (x0, x1, y0, y1) = pts.iter().fold(
           (f64::MAX, f64::MIN, f64::MAX, f64::MIN),
@@ -3876,8 +3876,8 @@ mod tests {
           })
           .collect::<Vec<_>>()
       };
-      let defaults = normalized(circle_centres(&plain));
-      let points = normalized(circle_centres(&drawn));
+      let defaults = normalized(circle_centers(&plain));
+      let points = normalized(circle_centers(&drawn));
       assert_eq!(points.len(), defaults.len(), "{drawn}");
       for (p, d) in points.iter().zip(&defaults) {
         assert!(
@@ -3898,7 +3898,7 @@ mod tests {
       for name in ["1", "2", "3"] {
         assert!(
           svg.contains(&format!(">{name}<")),
-          "every vertex is labelled with its own name: {svg}"
+          "every vertex is labeled with its own name: {svg}"
         );
       }
     }
@@ -3926,14 +3926,14 @@ mod tests {
       let svg = svg_of(
         r#"GraphPlot[{1 -> 2, 2 -> 3}, VertexRenderingFunction -> None]"#,
       );
-      assert!(circle_centres(&svg).is_empty(), "no vertex is drawn: {svg}");
+      assert!(circle_centers(&svg).is_empty(), "no vertex is drawn: {svg}");
       assert!(svg.contains("<polyline"), "the edges stay: {svg}");
     }
 
     /// A graph plot is sized by its `ImageSize`, so a Demonstration can ask
     /// for a wide, short strip.
     #[test]
-    fn graph_plot_honours_image_size() {
+    fn graph_plot_honors_image_size() {
       let svg = svg_of(
         r#"LayeredGraphPlot[{1 -> 2, 2 -> 3}, Left, ImageSize -> {200, 50}]"#,
       );
@@ -3967,12 +3967,12 @@ mod tests {
       );
     }
 
-    /// Only the labelled edges take room: an unlabelled array plot keeps
+    /// Only the labeled edges take room: an unlabeled array plot keeps
     /// its size exactly.
     #[test]
     fn array_plot_without_frame_labels_is_unpadded() {
       let plain = svg_of(r#"ArrayPlot[{{0, 1}, {1, 0}}]"#);
-      let labelled = svg_of(
+      let labeled = svg_of(
         r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", ""}, {"", "top"}}]"#,
       );
       let width = |svg: &str| -> u32 {
@@ -3997,17 +3997,17 @@ mod tests {
           .parse()
           .unwrap()
       };
-      assert_eq!(width(&plain), width(&labelled), "a top label adds no width");
+      assert_eq!(width(&plain), width(&labeled), "a top label adds no width");
       assert!(
-        height(&labelled) > height(&plain),
+        height(&labeled) > height(&plain),
         "a top label adds height: {} vs {}",
-        height(&labelled),
+        height(&labeled),
         height(&plain)
       );
     }
 
     /// A `Grid` whose rows hold different things still lines its columns
-    /// up: the caption under a picture is centred on that picture, not
+    /// up: the caption under a picture is centered on that picture, not
     /// packed against the left edge.
     #[test]
     fn grid_columns_line_up_across_mixed_rows() {
@@ -4015,9 +4015,9 @@ mod tests {
         r#"Grid[{{Graphics[{Disk[]}], Graphics[{Disk[]}]},
                  {Text["aa"], Text["bb"]}}]"#,
       );
-      // Each cell is a nested <svg x=… width=…>; a cell is centred in its
-      // column, so it is the centres that have to agree.
-      let centres: Vec<f64> = svg
+      // Each cell is a nested <svg x=… width=…>; a cell is centered in its
+      // column, so it is the centers that have to agree.
+      let centers: Vec<f64> = svg
         .split("<svg x=\"")
         .skip(1)
         .filter_map(|t| {
@@ -4032,14 +4032,14 @@ mod tests {
           Some(x + w / 2.0)
         })
         .collect();
-      assert_eq!(centres.len(), 4, "four cells: {svg}");
+      assert_eq!(centers.len(), 4, "four cells: {svg}");
       assert!(
-        (centres[0] - centres[2]).abs() < 1.0,
-        "the caption is centred on the picture above it: {centres:?}"
+        (centers[0] - centers[2]).abs() < 1.0,
+        "the caption is centered on the picture above it: {centers:?}"
       );
       assert!(
-        (centres[1] - centres[3]).abs() < 1.0,
-        "and so is the second column's: {centres:?}"
+        (centers[1] - centers[3]).abs() < 1.0,
+        "and so is the second column's: {centers:?}"
       );
     }
 
@@ -4396,7 +4396,7 @@ mod grid_item_style_tests {
   }
 
   #[test]
-  fn row_colours_apply_to_each_row() {
+  fn row_colors_apply_to_each_row() {
     let f = fills(
       "ExportString[Grid[{{1, 2}, {3, 4}}, ItemStyle -> {Automatic, {Red, White}}], \"SVG\"]",
     );
@@ -4412,7 +4412,7 @@ mod grid_item_style_tests {
   }
 
   #[test]
-  fn column_colours_apply_to_each_column() {
+  fn column_colors_apply_to_each_column() {
     let f = fills(
       "ExportString[Grid[{{1, 2}, {3, 4}}, ItemStyle -> {{Blue, Green}, Automatic}], \"SVG\"]",
     );

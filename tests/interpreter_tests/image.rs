@@ -23,7 +23,7 @@ mod image_core {
   }
 
   /// An image's pixels show as blocks, never smoothed, like WL: the SVG
-  /// embeds the pixels enlarged by nearest-neighbour sampling to 300 dpi of
+  /// embeds the pixels enlarged by nearest-neighbor sampling to 300 dpi of
   /// the shown size and asks for pixelated scaling — also for images in a
   /// `GraphicsRow` (regression: a 16 × 16 image was drawn as a smooth
   /// gradient).
@@ -127,7 +127,7 @@ mod image_core {
     );
   }
 
-  // An alpha channel is allowed on top of the colour components.
+  // An alpha channel is allowed on top of the color components.
   #[test]
   fn image_color_space_allows_alpha_channel() {
     clear_state();
@@ -410,7 +410,7 @@ mod image_core {
       "{Image3D[NumericArray[{{{0., 0.125}, {0.25, 0.375}}, {{0.5, 0.625}, {0.75, 1.}}}, \"Real32\"], \"Real32\", Background -> GrayLevel[0], ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0, 255}}}, \"UnsignedInteger8\"], \"Byte\", ColorSpace -> Automatic, Interleaving -> None], Image3D[NumericArray[{{{0.5, 0.20000000298023224}}}, \"Real32\"], \"Real32\", ColorSpace -> \"Grayscale\", Interleaving -> None], Image3D[NumericArray[{{{{1., 0., 0.}, {0., 1., 0.}}}}, \"Real32\"], \"Real32\", ColorSpace -> Automatic, Interleaving -> True]}"
     );
     // The filter preserves the total mass of a single bright voxel and
-    // spreads it symmetrically over the neighbouring voxels. (An image is
+    // spreads it symmetrically over the neighboring voxels. (An image is
     // an atom; ImageData reads the voxels.)
     assert_eq!(
       interpret(
@@ -672,7 +672,7 @@ mod image_core {
     );
   }
 
-  // Bit type is recognised when explicit, even though NumericArray uses
+  // Bit type is recognized when explicit, even though NumericArray uses
   // UnsignedInteger8 storage underneath.
   #[test]
   fn image_constructor_bit_with_options() {
@@ -845,7 +845,7 @@ mod image_core {
   }
 
   // Any other angle: the whole-pixel bounding box, each pixel sampling the
-  // source under its centre scaled to the exact box, black outside.
+  // source under its center scaled to the exact box, black outside.
   #[test]
   fn image_rotate_arbitrary_angle() {
     clear_state();
@@ -1103,7 +1103,7 @@ mod image_processing {
   }
 
   // An image goes through a lookup table: entry min(floor(1024 x), 1023),
-  // the function at i/imax, bytes ceil(256 c) - 1; colour images go to
+  // the function at i/imax, bytes ceil(256 c) - 1; color images go to
   // grayscale first, integer image types index by their raw values.
   #[test]
   fn colorize_image_lookup_table() {
@@ -1324,7 +1324,7 @@ mod image_processing {
     );
   }
 
-  // An integer image keeps its quantisation: every adjusted `"Byte"` pixel
+  // An integer image keeps its quantization: every adjusted `"Byte"` pixel
   // is some n/255 and every `"Bit16"` one some n/65535, whichever
   // adjustment produced it (wolframscript-verified).
   #[test]
@@ -1755,7 +1755,7 @@ mod image_processing {
   }
 
   // Dilation on an Image: replace each pixel with the max of its
-  // (2r+1)×(2r+1) neighbourhood, clipped at the boundaries. Erosion is
+  // (2r+1)×(2r+1) neighborhood, clipped at the boundaries. Erosion is
   // the same with min; Opening / Closing compose the two.
   #[test]
   fn dilation_image_grayscale() {
@@ -2370,7 +2370,7 @@ mod image_processing {
   }
 
   // Default ImageRotate[image] is a Pi/2 counter-clockwise rotation.
-  // For a 2x2 image, pixel data is reorganised but precision is
+  // For a 2x2 image, pixel data is reorganized but precision is
   // preserved (no Byte quantization round-trip).
   #[test]
   fn image_rotate_default_is_pi_over_two_ccw() {
@@ -3131,7 +3131,7 @@ mod image_processing {
   }
 
   // Sharpen is the unsharp mask `image + 2 (image - Blur[image, r])`, so
-  // its impulse response is `3` at the centre minus twice the Blur
+  // its impulse response is `3` at the center minus twice the Blur
   // kernel. The taps agree with wolframscript within the Real32 pixels
   // they are stored in.
   #[test]
@@ -3618,7 +3618,7 @@ mod image_processing {
     );
   }
 
-  // Min has the same channel-collapsing behaviour.
+  // Min has the same channel-collapsing behavior.
   #[test]
   fn image_apply_min_rgb_returns_grayscale() {
     clear_state();
@@ -4053,7 +4053,7 @@ mod image_processing {
     );
   }
 
-  // Blur preserves the channel count and image type (no quantisation
+  // Blur preserves the channel count and image type (no quantization
   // round-trip through the image crate's u8 buffer).
   #[test]
   fn blur_preserves_channels_and_type() {
@@ -5245,7 +5245,7 @@ mod image_advanced {
   }
 
   // Grayscale (single-channel) input: wolframscript reports the dominant
-  // shades as `GrayLevel[v]`. The exact centre values come from f64
+  // shades as `GrayLevel[v]`. The exact center values come from f64
   // averaging so we tolerate the standard rounding drift.
   #[test]
   fn dominant_colors_grayscale_two() {
@@ -7427,7 +7427,7 @@ mod morphological_components {
   use super::*;
 
   // Labels connected foreground components with consecutive integers in
-  // raster order; the default connectivity is 8-way (corner neighbours join).
+  // raster order; the default connectivity is 8-way (corner neighbors join).
   #[test]
   fn eight_connectivity_default() {
     // Diagonal pixels are one component under 8-connectivity.
@@ -7768,7 +7768,7 @@ mod image_pad {
   }
 
   #[test]
-  fn colour_images_pad_per_channel() {
+  fn color_images_pad_per_channel() {
     const RGB: &str = "rgb = Image[{{{1., 0., 0.}, {0., 1., 0.}}}]; ";
     assert_eq!(
       interpret(&format!("{RGB}ImageData[ImagePad[rgb, 1]]")).unwrap(),
@@ -7921,10 +7921,10 @@ mod image_crop_to_size {
 mod image_measurements {
   use super::*;
 
-  /// The grey image the statistics below are taken over: samples 0, 1, 0.5
+  /// The gray image the statistics below are taken over: samples 0, 1, 0.5
   /// and 0.25.
-  const GREY: &str = "Image[{{0., 1.}, {0.5, 0.25}}]";
-  /// A two-pixel colour image, red then green.
+  const GRAY: &str = "Image[{{0., 1.}, {0.5, 0.25}}]";
+  /// A two-pixel color image, red then green.
   const RGB: &str = "Image[{{{1., 0., 0.}, {0., 1., 0.}}}]";
 
   /// The result of `code`, written the way `InputForm` writes it.
@@ -7949,10 +7949,10 @@ mod image_measurements {
       ("StandardDeviation", "0.42695628191498325"),
       ("MinMax", "{0., 1.}"),
     ] {
-      assert_eq!(measure(GREY, property), expected, "{property}");
-      // For a grey image the intensity measures read the same samples.
+      assert_eq!(measure(GRAY, property), expected, "{property}");
+      // For a gray image the intensity measures read the same samples.
       assert_eq!(
-        measure(GREY, &format!("{property}Intensity")),
+        measure(GRAY, &format!("{property}Intensity")),
         expected,
         "{property}Intensity"
       );
@@ -7960,31 +7960,31 @@ mod image_measurements {
   }
 
   // Entropy and Energy are taken over the histogram of distinct PIXELS, so a
-  // colour pixel counts once however many channels it carries.
+  // color pixel counts once however many channels it carries.
   #[test]
   fn the_information_measures_count_pixels() {
     clear_state();
     // Four distinct samples, each once: Log[4].
-    assert_eq!(measure(GREY, "Entropy"), "1.3862943611198906");
-    assert_eq!(measure(GREY, "Energy"), "0.25");
+    assert_eq!(measure(GRAY, "Entropy"), "1.3862943611198906");
+    assert_eq!(measure(GRAY, "Energy"), "0.25");
     // Two distinct values, twice each: Log[2] and 2 (1/2)^2.
     assert_eq!(
       measure("Image[{{0., 0.}, {1., 1.}}]", "Entropy"),
       "0.6931471805599453"
     );
     assert_eq!(measure("Image[{{0., 0.}, {1., 1.}}]", "Energy"), "0.5");
-    // Two distinct colour pixels, not six pooled samples.
+    // Two distinct color pixels, not six pooled samples.
     assert_eq!(measure(RGB, "Entropy"), "0.6931471805599453");
     assert_eq!(measure(RGB, "Energy"), "0.5");
   }
 
-  // The centre of mass of the intensities, over pixel centres measured from
+  // The center of mass of the intensities, over pixel centers measured from
   // the bottom left.
   #[test]
   fn the_intensity_centroid_is_weighted_by_brightness() {
     clear_state();
     assert_eq!(
-      measure(GREY, "IntensityCentroid"),
+      measure(GRAY, "IntensityCentroid"),
       "{1.2142857142857142, 1.0714285714285714}"
     );
     assert_eq!(
@@ -7994,7 +7994,7 @@ mod image_measurements {
   }
 
   #[test]
-  fn a_colour_image_is_measured_channel_by_channel() {
+  fn a_color_image_is_measured_channel_by_channel() {
     clear_state();
     for (property, expected) in [
       ("Mean", "{0.5, 0.5, 0.}"),
@@ -8016,17 +8016,17 @@ mod image_measurements {
   fn the_structural_properties_describe_the_array() {
     clear_state();
     for (image, property, expected) in [
-      (GREY, "Channels", "1"),
-      (GREY, "ColorSpace", "Automatic"),
-      (GREY, "Dimensions", "{2, 2}"),
-      (GREY, "ImageDimensions", "{2, 2}"),
-      (GREY, "AspectRatio", "1"),
-      (GREY, "DataType", "\"Real32\""),
-      (GREY, "DataRange", "{0., 1.}"),
-      (GREY, "Interleaving", "None"),
-      (GREY, "SampleDepth", "32"),
-      (GREY, "Transparency", "False"),
-      // A colour image carries its channel count in Dimensions, and
+      (GRAY, "Channels", "1"),
+      (GRAY, "ColorSpace", "Automatic"),
+      (GRAY, "Dimensions", "{2, 2}"),
+      (GRAY, "ImageDimensions", "{2, 2}"),
+      (GRAY, "AspectRatio", "1"),
+      (GRAY, "DataType", "\"Real32\""),
+      (GRAY, "DataRange", "{0., 1.}"),
+      (GRAY, "Interleaving", "None"),
+      (GRAY, "SampleDepth", "32"),
+      (GRAY, "Transparency", "False"),
+      // A color image carries its channel count in Dimensions, and
       // interleaves.
       (RGB, "Channels", "3"),
       (RGB, "Dimensions", "{1, 2, 3}"),
@@ -8043,14 +8043,14 @@ mod image_measurements {
     clear_state();
     assert_eq!(
       form(&format!(
-        "ImageMeasurements[{GREY}, {{\"Mean\", \"Total\"}}]"
+        "ImageMeasurements[{GRAY}, {{\"Mean\", \"Total\"}}]"
       )),
       "{0.4375, 1.75}"
     );
     // The names it knows are a measurement of their own.
     assert_eq!(
       form(&format!(
-        "Take[ImageMeasurements[{GREY}, \"Properties\"], 3]"
+        "Take[ImageMeasurements[{GRAY}, \"Properties\"], 3]"
       )),
       "{\"AspectRatio\", \"Channels\", \"ColorSpace\"}"
     );
@@ -8079,7 +8079,7 @@ mod image_measurements {
   fn a_name_it_does_not_know_is_reported() {
     clear_state();
     let result =
-      interpret_with_stdout(&format!("ImageMeasurements[{GREY}, \"Bogus\"]"))
+      interpret_with_stdout(&format!("ImageMeasurements[{GRAY}, \"Bogus\"]"))
         .unwrap();
     assert!(
       result
@@ -8090,7 +8090,7 @@ mod image_measurements {
       result.warnings
     );
     let result =
-      interpret_with_stdout(&format!("ImageMeasurements[{GREY}]")).unwrap();
+      interpret_with_stdout(&format!("ImageMeasurements[{GRAY}]")).unwrap();
     assert!(
       result
         .warnings
@@ -8113,9 +8113,9 @@ mod mean_filter_and_difference {
   }
 
   #[test]
-  fn the_mean_filter_averages_a_clipped_neighbourhood() {
+  fn the_mean_filter_averages_a_clipped_neighborhood() {
     clear_state();
-    // The centre sees all nine samples, four of them 1: 4/9, which the
+    // The center sees all nine samples, four of them 1: 4/9, which the
     // image's own Real32 precision reports as 0.4444444477558136.
     assert_eq!(
       form(
@@ -8177,7 +8177,7 @@ mod mean_filter_and_difference {
          Image[{{1., 1.}, {0., 0.}}]]]",
         "{{1., 0.}, {0.5, 0.25}}",
       ),
-      // Colour images difference channel by channel.
+      // Color images difference channel by channel.
       (
         "ImageData[ImageDifference[Image[{{{1., 0., 0.}}}], \
          Image[{{{0., 1., 0.}}}]]]",
@@ -8239,12 +8239,12 @@ mod mean_filter_and_difference {
   }
 }
 
-// ImageFilter, and the colour space a converted image records. Values
+// ImageFilter, and the color space a converted image records. Values
 // verified against wolframscript.
 mod image_filter_and_color_space {
   use super::*;
 
-  /// A checkerboard whose corners see the same window as its centre once the
+  /// A checkerboard whose corners see the same window as its center once the
   /// edges are repeated.
   const CHECKER: &str = "Image[{{0., 1., 0.}, {1., 0., 1.}, {0., 1., 0.}}]";
 
@@ -8338,7 +8338,7 @@ mod image_filter_and_color_space {
   // A converted image records the space it was converted to; one that was
   // never converted has none.
   #[test]
-  fn a_converted_image_records_its_colour_space() {
+  fn a_converted_image_records_its_color_space() {
     clear_state();
     for (code, expected) in [
       ("ImageColorSpace[Image[{{0., 1.}}]]", "Automatic"),
@@ -8377,8 +8377,8 @@ mod color_data_gradients {
   use super::*;
 
   /// Indexed scheme 30, the muted earth tones a puzzle Demonstration paints
-  /// its board with. Like schemes 2 and 3 it is a fixed nine-colour palette
-  /// that cycles, index 0 landing on the last colour. Every value is
+  /// its board with. Like schemes 2 and 3 it is a fixed nine-color palette
+  /// that cycles, index 0 landing on the last color. Every value is
   /// wolframscript's.
   #[test]
   fn color_data_indexed_scheme_30() {
@@ -8391,7 +8391,7 @@ mod color_data_gradients {
       woxi::interpret("Length[ColorData[30, \"ColorList\"]]").unwrap(),
       "9"
     );
-    // Past its end it wraps, and index 0 is the last colour.
+    // Past its end it wraps, and index 0 is the last color.
     for pair in [
       "ColorData[30, 10] === ColorData[30, 1]",
       "ColorData[30, 0] === ColorData[30, 9]",
@@ -8478,7 +8478,7 @@ mod color_data_gradients {
 
   /// Indexed scheme 35, the orange-to-red palette (by way of yellow-green
   /// and indigo) a Demonstration's `ListPlot` colors its series with. Like
-  /// scheme 30 it is a fixed ten-colour palette that cycles. Every value is
+  /// scheme 30 it is a fixed ten-color palette that cycles. Every value is
   /// cross-checked byte-for-byte between Wolfram's own `ColorData`
   /// documentation gallery and a Demonstration's rendered snapshot, two
   /// independent Wolfram-produced renders that agree exactly.
@@ -8493,7 +8493,7 @@ mod color_data_gradients {
       woxi::interpret("Length[ColorData[35, \"ColorList\"]]").unwrap(),
       "10"
     );
-    // Past its end it wraps, and index 0 is the last colour.
+    // Past its end it wraps, and index 0 is the last color.
     for pair in [
       "ColorData[35, 11] === ColorData[35, 1]",
       "ColorData[35, 0] === ColorData[35, 10]",
@@ -8522,7 +8522,7 @@ mod color_data_gradients {
   }
 
   // Regression: `ColorData["WL14DefaultDensityGradient"]`, the default
-  // colour function of DensityPlot and ContourPlot, was unknown. It is a
+  // color function of DensityPlot and ContourPlot, was unknown. It is a
   // `"ThemeGradients"` LAB blend of the four stops its `"BlendArgument"`
   // lists (wolframscript's values).
   #[test]
@@ -8546,7 +8546,7 @@ mod color_data_gradients {
        0.3783642915277907, 0.4813038070805067], LABColor[0.9735241229755421, \
        -0.05249018370661607, 0.31994142972937545]}]"
     );
-    // Its colour at t is the blend of the stops, however it is asked for.
+    // Its color at t is the blend of the stops, however it is asked for.
     assert_eq!(
       interpret(
         "g = \"WL14DefaultDensityGradient\"; \
@@ -8559,7 +8559,7 @@ mod color_data_gradients {
     );
   }
 
-  // `ColorData["HTML", name]` is the CSS colour of that name — the scheme a
+  // `ColorData["HTML", name]` is the CSS color of that name — the scheme a
   // Demonstrations palette reaches for. Regression: it stayed unevaluated
   // and reported the head as unimplemented.
   #[test]
@@ -8831,7 +8831,7 @@ mod demonstration_image_filters {
     );
   }
 
-  // ImageApply keeps the source's colour space, so shifting the hue channel
+  // ImageApply keeps the source's color space, so shifting the hue channel
   // of an HSB image yields an HSB image that converts back to RGB correctly.
   #[test]
   fn image_apply_keeps_hsb_space_and_converts_back() {
@@ -8851,7 +8851,7 @@ mod demonstration_image_filters {
     );
   }
 
-  // An HSB image is displayed as the colours it encodes, not as raw RGB.
+  // An HSB image is displayed as the colors it encodes, not as raw RGB.
   #[test]
   fn hsb_image_exports_same_pixels_as_rgb_original() {
     clear_state();
@@ -9178,7 +9178,7 @@ mod demonstration_image_filters {
     );
   }
 
-  // Correcting for a green cast pushes neutral gray towards magenta,
+  // Correcting for a green cast pushes neutral gray toward magenta,
   // because the green channel is the one being scaled down relative to the
   // others.
   #[test]
@@ -9433,7 +9433,7 @@ mod demonstration_image_filters {
       interpret("ImageLevels[Image[{{0, 1}, {1, 1}}], 2]").unwrap(),
       "{{0., 1}, {0.5, 3}}"
     );
-    // n bins [k/n, (k+1)/n) labelled by their lower edge; 256 of them by
+    // n bins [k/n, (k+1)/n) labeled by their lower edge; 256 of them by
     // default even for a byte image; "Byte" and All count values.
     assert_eq!(
       interpret(
@@ -9493,7 +9493,7 @@ mod demonstration_image_filters {
       .unwrap(),
       "True"
     );
-    // A single dark pixel is outvoted by its bright neighbours.
+    // A single dark pixel is outvoted by its bright neighbors.
     assert_eq!(
       interpret(
         "Max[ImageData[ImageEffect[Image[{{1., 1., 1.}, {1., 0., 1.}, \
@@ -9614,7 +9614,7 @@ mod image_size_option {
   }
 
   // `ColorData["WebSafe"]["#RRGGBB"]` tints Demonstrations graphics with a
-  // web-safe colour. Regression: it stayed unevaluated.
+  // web-safe color. Regression: it stayed unevaluated.
   #[test]
   fn color_data_web_safe_hex_colors() {
     clear_state();
@@ -9681,10 +9681,10 @@ mod rasterize_any_expression {
     );
   }
 
-  // An alpha image of another size is centred (offsets rounded half to
+  // An alpha image of another size is centered (offsets rounded half to
   // even from the bottom left); a graphic is rasterized at its size.
   #[test]
-  fn set_alpha_channel_centres_other_sizes() {
+  fn set_alpha_channel_centers_other_sizes() {
     clear_state();
     assert_eq!(
       interpret(
@@ -9715,7 +9715,7 @@ mod rasterize_any_expression {
       "{Image, True, {Integer}, True}"
     );
     // "BoundingBox": {width, height, baseline from the top}; a graphic's
-    // baseline is its centre, text's lies below the middle.
+    // baseline is its center, text's lies below the middle.
     assert_eq!(
       interpret(
         "{b1 = Rasterize[Graphics[Disk[]], \"BoundingBox\"], \
@@ -9947,7 +9947,7 @@ mod morphology_3d {
   }
 
   /// Regression: the InputForm named the image type after the array type
-  /// (`"UnsignedInteger8"` instead of `"Byte"`) and dropped the colour space.
+  /// (`"UnsignedInteger8"` instead of `"Byte"`) and dropped the color space.
   #[test]
   fn input_form_names_the_image_type() {
     assert_eq!(
@@ -11080,7 +11080,7 @@ mod gabor {
   // `Show[image, ImageSize -> …]` shows the image scaled to fit the
   // bounding box (aspect ratio kept) instead of ignoring the option.
   #[test]
-  fn show_image_honours_image_size() {
+  fn show_image_honors_image_size() {
     clear_state();
     let sized = interpret(
       "ExportString[Show[Image[Table[0.5, {40}, {60}]], \

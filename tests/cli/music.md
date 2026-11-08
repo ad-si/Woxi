@@ -262,7 +262,7 @@ Graphics
 ```
 
 Every note becomes a rounded bar from its onset to its end (in whole notes),
-centred on its MIDI number; a chord gives one bar per tone.
+centered on its MIDI number; a chord gives one bar per tone.
 
 ```scrut
 $ wo 'Cases[MusicPlot[MusicChord[{"C4", "E4", "G4"}]], Rectangle[{_, lo_}, __] :> lo + 0.4, Infinity]'

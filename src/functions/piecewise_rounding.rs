@@ -141,7 +141,7 @@ fn interval_of(assum: &Expr) -> Option<(Expr, Bound, Bound)> {
       } if operands.len() == operators.len() + 1 => {
         for (k, op) in operators.iter().enumerate() {
           let (a, b) = (&operands[k], &operands[k + 1]);
-          // Normalise to `left < right` / `left <= right`.
+          // Normalize to `left < right` / `left <= right`.
           let (l, r, closed) = match op {
             ComparisonOp::Less => (a, b, false),
             ComparisonOp::LessEqual => (a, b, true),

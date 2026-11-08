@@ -1296,7 +1296,7 @@ pub fn evaluate_poly(coeffs: &[i128], x: i128) -> i128 {
 ///
 /// The rational-root search asks for the divisors of the same coefficient
 /// once per candidate root, and a `Simplify` over an expression with big
-/// rational coefficients — the exact probe points a `Limit` walks towards
+/// rational coefficients — the exact probe points a `Limit` walks toward
 /// its target, for one — repeats that for every subexpression it rewrites.
 /// One `Limit[(z - 1) Zeta[z], z -> 1]` asked for the divisors of the same
 /// seventeen 11-to-35-digit numbers 800 times over, and each miss walks a
@@ -1886,7 +1886,7 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Turn a factored expression into wolframscript's `{{factor, exponent}, …}`
 /// form. Shared by `FactorList` and `FactorSquareFreeList`, which differ only
-/// in which factoriser produced the input.
+/// in which factorizer produced the input.
 fn factored_expr_to_list(
   factored: &Expr,
   canonical_order: bool,
@@ -1928,7 +1928,7 @@ fn factored_expr_to_list(
 /// Give every polynomial factor a positive leading coefficient, moving the
 /// sign into the numeric content.
 ///
-/// wolframscript's `FactorList` normalises factors this way: `1 - x` is
+/// wolframscript's `FactorList` normalizes factors this way: `1 - x` is
 /// `{{-1, 1}, {-1 + x, 1}}`, not `{{1, 1}, {1 - x, 1}}`. `decompose_product`
 /// only pulls out a numeric *content*, so a factor whose content is ±1 —
 /// `Factor[-(1 + x)]` is the bare sum `-1 - x` — reaches here with the sign
@@ -4300,7 +4300,7 @@ fn homogeneous_cyclotomic(d: u64, a: &str, b: &str) -> Expr {
   } else {
     build_sum(terms)
   };
-  // Canonicalise term order via expand_and_combine (no actual expansion happens
+  // Canonicalize term order via expand_and_combine (no actual expansion happens
   // since terms are already monomials).
   expand_and_combine(&sum)
 }
@@ -4529,7 +4529,7 @@ fn build_multivariate_result(overall: i128, factors: &[(Expr, usize)]) -> Expr {
   } else if result_factors.len() == 1 {
     result_factors.remove(0)
   } else {
-    // Canonicalise the Times ordering so e.g. `Factor[x a == x b + x c]`
+    // Canonicalize the Times ordering so e.g. `Factor[x a == x b + x c]`
     // produces `(b + c)*x` rather than `x*(b + c)`. The factor-specific
     // sort above (by constant term/degree/term-count) is right for
     // grouping and sign placement but doesn't match Wolfram's display
@@ -5047,7 +5047,7 @@ mod tests {
 
   #[test]
   fn memoizing_the_divisors_does_not_change_them() {
-    // Including the numbers a `Limit` towards a pole asks about again and
+    // Including the numbers a `Limit` toward a pole asks about again and
     // again — the exact rationals of its probe points, up to 35 digits.
     for n in [
       0,

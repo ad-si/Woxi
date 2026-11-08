@@ -1,6 +1,6 @@
 // Argument forms of the remaining charts and 3-D list plots found missing by
 // the reference-page parameter sweep (round 5). Graphics are checked by
-// their structure — primitives, labels, colours — not by their full SVG text.
+// their structure — primitives, labels, colors — not by their full SVG text.
 
 use super::*;
 
@@ -242,7 +242,7 @@ mod chart_labels_and_legends {
        PlotStyle -> {Red, Green, Blue}, PlotLegends -> Automatic]",
     );
     assert_texts(&s, &["ka", "kb", "kc"]);
-    // The frame widens for the legend; each legend swatch has its colour.
+    // The frame widens for the legend; each legend swatch has its color.
     assert!(view_width(&s) > view_width(&plain));
     assert!(fills(&s, "255,0,0") >= 1);
     assert!(fills(&s, "0,0,255") >= 1);
@@ -337,7 +337,7 @@ mod chart_labels_and_legends {
   #[test]
   fn rectangle_chart_callout_labels_sit_above_the_bars() {
     // A callout label sits a fixed number of points above the top of its
-    // rectangle, as an Offset from the top centre.
+    // rectangle, as an Offset from the top center.
     assert_eq!(
       interpret(
         "Cases[RectangleChart[<|\"a\" -> {1, 1}, \"b\" -> {1, 2}|>, \
@@ -389,7 +389,7 @@ mod list_line_plot_3d {
     let s = svg(
       "ListLinePlot3D[Table[Table[Sin[i j k/10.], {i, 4}, {j, 6}], {k, 2}]]",
     );
-    // Two datasets → two curve colours, each drawn by four row curves.
+    // Two datasets → two curve colors, each drawn by four row curves.
     assert!(s.contains("stroke=\"rgb(55,138,184)\""));
     assert!(s.contains("stroke=\"rgb(218,144,33)\""));
     assert!(!s.contains("stroke=\"rgb(104,161,48)\""));

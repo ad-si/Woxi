@@ -1,4 +1,4 @@
-//! Guard the conformance catalogue's Markdown against Scrut fence ambiguity.
+//! Guard the conformance catalog's Markdown against Scrut fence ambiguity.
 
 #[test]
 fn conformance_gaps_have_unambiguous_scrut_fences() {

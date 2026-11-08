@@ -521,7 +521,7 @@ mod re_tests {
   /// A real-valued function call is its own real part, so an exponential
   /// whose imaginary exponent is one of them splits. Without this
   /// `E^(I ArcTan[2/3])` stayed unexpanded while `E^(I Sqrt[2])` — a
-  /// `Power`, recognised by a different branch — expanded.
+  /// `Power`, recognized by a different branch — expanded.
   #[test]
   fn a_function_valued_real_exponent_splits() {
     assert_eq!(

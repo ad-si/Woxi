@@ -6,7 +6,7 @@ icon: lucide/image
 
 Woxi provides a minimal set of image-construction and -introspection
 functions from the Wolfram Language. Most examples below use a 2×2
-matrix of greyscale values as a stand-in for a real image file.
+matrix of grayscale values as a stand-in for a real image file.
 
 - [`Image`](images/Image.md)
 - [`ImageQ`](images/ImageQ.md)

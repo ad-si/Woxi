@@ -296,7 +296,7 @@ fn symbolic_count_definite(
 
 /// Whether `expr` references any identifier named in `vars`, looking through
 /// every syntactic wrapper (`a[[i]]`, `f@x`, `f/@list`, `f@@list`, …) so a
-/// later iterator's bound is recognised as depending on an earlier iterator
+/// later iterator's bound is recognized as depending on an earlier iterator
 /// variable no matter how the reference is written — e.g. the inner
 /// `{x, 0, nl[[dn1]] - 1}` of `Table[…, {dn1, ...}, {x, 0, nl[[dn1]] - 1}]`
 /// depends on `dn1` through a `Part` node, not a bare identifier. Exhaustive
@@ -758,7 +758,7 @@ pub(crate) fn nth_iterator_value(
 /// before this rounding tolerance was added). Snapping a ratio that is
 /// within a relative `1e-9` of an integer to that integer fixes the
 /// boundary without affecting a ratio that is genuinely non-integral
-/// (which still truncates towards `min` exactly as `Range` requires).
+/// (which still truncates toward `min` exactly as `Range` requires).
 pub(crate) fn range_step_count(ratio: f64) -> i128 {
   let rounded = ratio.round();
   if (ratio - rounded).abs() <= 1e-9 * rounded.abs().max(1.0) {
@@ -1139,8 +1139,8 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // Terms are compared by magnitude, and the direction of travel comes
-    // from the factor: a factor bigger than 1 grows towards the bound and
-    // a smaller one shrinks towards it. Comparing magnitudes is what stops
+    // from the factor: a factor bigger than 1 grows toward the bound and
+    // a smaller one shrinks toward it. Comparing magnitudes is what stops
     // a negative factor one term early -- `PowerRange[1, 5, -2]` is
     // `{1, -2, 4}`, not `{1, -2, 4, -8}` -- and what makes a range whose
     // bounds run against the factor come back empty.
@@ -3177,7 +3177,7 @@ fn sparse_rules_with_background(data: &Expr) -> Option<(Expr, Option<Expr>)> {
       if !pos.is_empty() && pos.iter().all(|p| expr_to_string(p) == "_"));
     if is_blank_position {
       // It matches every position, so — the first matching rule winning —
-      // no rule after it can take effect, nor count towards the
+      // no rule after it can take effect, nor count toward the
       // dimensions: `SparseArray[{{1, 1} -> 1, {_, _} -> 5, {2, 2} -> 3}]`
       // is the 1×1 array {{1}}.
       changed = true;

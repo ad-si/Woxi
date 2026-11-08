@@ -6585,7 +6585,7 @@ mod inverse_survival_function {
 }
 
 // ErlangDistribution[k, λ] is identical to GammaDistribution[k, 1/λ]
-// (Erlang parameterises by rate, Gamma by scale). Every property reuses the
+// (Erlang parameterizes by rate, Gamma by scale). Every property reuses the
 // Gamma machinery; the bare head stays unevaluated like wolframscript.
 mod erlang_distribution {
   use super::*;

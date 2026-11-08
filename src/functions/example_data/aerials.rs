@@ -12,7 +12,7 @@ use super::rng::{Noise, Rng};
 /// The layout of one aerial view.
 #[derive(Clone, Copy)]
 struct Layout {
-  /// Water: the side it lies on (direction it extends towards, radians;
+  /// Water: the side it lies on (direction it extends toward, radians;
   /// 0 = right, π/2 = down) and how much of the frame it covers.
   water: Option<(f64, f64)>,
   /// Share of the land covered by town.
@@ -21,7 +21,7 @@ struct Layout {
   fields: bool,
   /// Relief strength of hills.
   hills: f64,
-  /// Runways: centre (fractions) and direction.
+  /// Runways: center (fractions) and direction.
   runway: Option<(f64, f64, f64)>,
   /// A bridge across the water: from and to (fractions).
   bridge: Option<((f64, f64), (f64, f64))>,

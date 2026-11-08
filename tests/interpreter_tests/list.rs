@@ -1653,7 +1653,7 @@ mod tensor_product {
 
   // InputForm and FullForm keep the U+F3DA operator form (matching
   // wolframscript), not the head form `TensorProduct[...]`. Operands that
-  // bind looser than the product are parenthesised.
+  // bind looser than the product are parenthesized.
   #[test]
   fn input_form_keeps_operator() {
     assert_eq!(
@@ -1668,7 +1668,7 @@ mod tensor_product {
       interpret("FullForm[TensorProduct[a, b]]").unwrap(),
       "FullForm[a \u{F3DA} b]"
     );
-    // Plus operand is parenthesised in both OutputForm and InputForm.
+    // Plus operand is parenthesized in both OutputForm and InputForm.
     assert_eq!(
       interpret("TensorProduct[a + b, c]").unwrap(),
       "(a + b) \u{F3DA} c"
@@ -1840,7 +1840,7 @@ mod find_peaks {
   }
 
   // A plateau that runs into a list boundary is reported at that boundary
-  // index rather than at the plateau's centre, and only counts at all when it
+  // index rather than at the plateau's center, and only counts at all when it
   // is at most two elements long.
   #[test]
   fn boundary_plateaus_report_the_boundary_index() {
@@ -1860,7 +1860,7 @@ mod find_peaks {
       interpret("FindPeaks[{6, 6, 6, 1, 1, 6}]").unwrap(),
       "{{6, 6}}"
     );
-    // An interior plateau still reports its centre, however wide.
+    // An interior plateau still reports its center, however wide.
     assert_eq!(
       interpret("FindPeaks[{1, 1, 5, 5, 1, 1}]").unwrap(),
       "{{7/2, 5}}"
@@ -10926,7 +10926,7 @@ mod part_span {
       interpret("ToString[(Hold[l[[5 ;; 2]]]), InputForm]").unwrap(),
       "Hold[l[[5 ;; 2]]]"
     );
-    // Nested Span argument is parenthesised on re-render.
+    // Nested Span argument is parenthesized on re-render.
     assert_eq!(
       interpret("ToString[Span[1, Span[2, 3]], InputForm]").unwrap(),
       "1 ;; (2 ;; 3)"
@@ -12071,7 +12071,7 @@ mod join_non_list {
       .unwrap(),
       "{{1, 3}, {2, 2}, {3, 1}}"
     );
-    // partialQ prunes: no two equal neighbours.
+    // partialQ prunes: no two equal neighbors.
     assert_eq!(
       interpret(
         "Combinatorica`Backtrack[{{1, 2}, {1, 2}, {1, 2}}, Length[#] < 2 || Last[#] =!= #[[-2]] &, True &, All]"
@@ -13901,7 +13901,7 @@ mod max_min_detect {
   // detection (flat zones grouped diagonally).
   #[test]
   fn matrix_eight_connected() {
-    // Diagonal neighbours join a flat zone, so {2, 2} is one region.
+    // Diagonal neighbors join a flat zone, so {2, 2} is one region.
     assert_eq!(interpret("MaxDetect[{{1, 2, 1}}]").unwrap(), "{{0, 1, 0}}");
     assert_eq!(
       interpret("MaxDetect[{{1, 2, 1}, {2, 3, 2}, {1, 2, 1}}]").unwrap(),
@@ -17047,7 +17047,7 @@ mod take_largest {
 
   #[test]
   fn missing_values_excluded() {
-    // Default behaviour (mirrors Wolfram's ExcludedForms -> {_Missing}):
+    // Default behavior (mirrors Wolfram's ExcludedForms -> {_Missing}):
     // Missing[...] entries are skipped, so the result is drawn only from
     // the numeric portion of the list.
     assert_eq!(
@@ -24134,7 +24134,7 @@ mod nearest_rejects_unusable_data {
       interpret("Nearest[{}, {1, 2}]").unwrap(),
       "Nearest[{}, {1, 2}]"
     );
-    // The labelled rule form too.
+    // The labeled rule form too.
     assert_eq!(
       interpret("Nearest[{} -> {}, 1]").unwrap(),
       "Nearest[{} -> {}, 1]"
@@ -24309,10 +24309,10 @@ mod to_packed_array {
     );
   }
 
-  /// The real type argument numericises every exact leaf, rationals and
+  /// The real type argument numericizes every exact leaf, rationals and
   /// symbolic constants included.
   #[test]
-  fn explicit_real_type_numericises_exact_leaves() {
+  fn explicit_real_type_numericizes_exact_leaves() {
     assert_eq!(
       interpret("Developer`ToPackedArray[{1/2, 3/2}, Real]").unwrap(),
       "{0.5, 1.5}"

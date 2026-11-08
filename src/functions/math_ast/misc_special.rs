@@ -353,7 +353,7 @@ fn mittag_leffler_negative_axis(alpha: f64, x: f64) -> Option<f64> {
       .sum()
   };
   // u^(1/α) is not smooth at 0 for non-integer 1/α: grade the first panel
-  // geometrically towards 0.
+  // geometrically toward 0.
   let mut sum = gl(0.0, h * 2f64.powi(-40));
   for j in (0..40).rev() {
     sum += gl(h * 2f64.powi(-j - 1), h * 2f64.powi(-j));
@@ -1341,7 +1341,7 @@ fn struve_arg_to_f64(e: &Expr) -> Option<f64> {
 ///   StruveH[ 3/2, z] = (Sqrt[2 Pi]/z^(3/2) + Sqrt[Pi/2] Sqrt[z])/Pi
 ///                      + Sqrt[2/Pi] (-(Cos[z]/z) - Sin[z])/Sqrt[z]
 ///   StruveH[-3/2, z] = -(Sqrt[2/Pi] (-Cos[z] + Sin[z]/z)/Sqrt[z])
-/// (and the StruveL analogues with Cos/Sin -> Cosh/Sinh and the appropriate
+/// (and the StruveL analogs with Cos/Sin -> Cosh/Sinh and the appropriate
 /// signs). Returns None for orders this routine does not cover.
 fn struve_half_integer_closed_form(
   is_l: bool,

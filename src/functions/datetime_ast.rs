@@ -292,7 +292,7 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
 
-  // Recognised calendar and granularity tags among the trailing DateObject
+  // Recognized calendar and granularity tags among the trailing DateObject
   // elements. A non-Gregorian source calendar isn't supported → unevaluated.
   let is_calendar = |s: &str| {
     matches!(
@@ -2943,7 +2943,7 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated);
   }
 
-  // Every accepted spec is normalised through DateList, which returns
+  // Every accepted spec is normalized through DateList, which returns
   // `{y, m, d, h, min, sec}`; anything it cannot parse is not a date.
   let components = match date_list_ast(std::slice::from_ref(&spec)) {
     Ok(list) => extract_date_components(&list).filter(|c| c.len() >= 3),

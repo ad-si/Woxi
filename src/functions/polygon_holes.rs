@@ -86,7 +86,7 @@ fn point_in_triangle(
 /// through a bridge edge, yielding a single ring that traces both.
 ///
 /// The bridge starts at the hole's rightmost vertex `m` and runs to a
-/// vertex of `outer` that `m` can see: cast a ray from `m` towards +x, take
+/// vertex of `outer` that `m` can see: cast a ray from `m` toward +x, take
 /// the first outer edge it meets and that edge's right-hand endpoint `p`,
 /// then — if any reflex outer vertex blocks the segment `m…p` — replace `p`
 /// by the blocking vertex closest in angle to the ray.

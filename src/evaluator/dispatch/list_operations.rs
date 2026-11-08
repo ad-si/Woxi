@@ -720,8 +720,8 @@ fn array_filter(
 
 // MaxDetect/MinDetect (1-arg): binary mask of regional extrema. A maximal run
 // of equal values is a regional maximum (resp. minimum) when both
-// out-of-run neighbours are strictly smaller (resp. larger); a run at the
-// boundary treats the missing neighbour as satisfying the condition.
+// out-of-run neighbors are strictly smaller (resp. larger); a run at the
+// boundary treats the missing neighbor as satisfying the condition.
 fn regional_extrema(values: &[f64], find_max: bool) -> Vec<Expr> {
   let n = values.len();
   let mut result = vec![Expr::Integer(0); n];
@@ -772,7 +772,7 @@ fn parse_numeric_matrix(items: &[Expr]) -> Option<Vec<Vec<f64>>> {
 }
 
 /// 2-D regional extrema (MaxDetect / MinDetect on a matrix): a 0/1 mask marking
-/// each 8-connected flat zone whose every external neighbour is strictly lower
+/// each 8-connected flat zone whose every external neighbor is strictly lower
 /// (maxima) or strictly higher (minima) than the zone's value.
 fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
   let h = mat.len();
@@ -818,7 +818,7 @@ fn regional_extrema_2d(mat: &[Vec<f64>], find_max: bool) -> Expr {
           }
         }
       }
-      // A flat zone is an extremum unless an external neighbour beats it.
+      // A flat zone is an extremum unless an external neighbor beats it.
       let mut is_extremum = true;
       'scan: for &(cy, cx) in &cells {
         for (dy, dx) in OFF {
@@ -3822,7 +3822,7 @@ pub fn dispatch_list_operations(
           if matches!(coeff, Expr::Integer(0)) {
             continue;
           }
-          let coeff_normalised = if matches!(
+          let coeff_normalized = if matches!(
             coeff,
             Expr::FunctionCall { name, args } if name == "SeriesData" && args.len() == 6
           ) {
@@ -3859,10 +3859,10 @@ pub fn dispatch_list_operations(
           // Build c * x^n in Mathematica's canonical form:
           // Rational[-a,b]*x^n => -(a*x^n)/b  which prints as -(a*x^n)/b
           let term = match base_pow {
-            None => coeff_normalised,
+            None => coeff_normalized,
             Some(bp) => {
               // Evaluate the Times to get canonical form
-              let t = times2(coeff_normalised, bp);
+              let t = times2(coeff_normalized, bp);
               match evaluate_expr_to_expr(&t) {
                 Ok(v) => v,
                 Err(e) => return Some(Err(e)),
@@ -6071,7 +6071,7 @@ pub fn dispatch_list_operations(
     }
     // Indexed[expr, i]            ≡ Part[expr, i]     for a concrete List expr
     // Indexed[expr, {i, j, ...}]  ≡ Part[expr, i, j, ...]
-    // Otherwise the call stays unevaluated, with the index normalised
+    // Otherwise the call stays unevaluated, with the index normalized
     // into a singleton list (matching wolframscript's canonical form).
     "Indexed" if args.len() == 2 => {
       let unevaluated_with_list_index = || {
@@ -7887,7 +7887,7 @@ pub fn dispatch_list_operations(
       ));
     }
     "CenterArray" if (1..=3).contains(&args.len()) => {
-      // Normalise to (a, nspec, pad).
+      // Normalize to (a, nspec, pad).
       let (a, nspec, pad) = if args.len() == 1 {
         (Expr::Integer(1), args[0].clone(), Expr::Integer(0))
       } else if args.len() == 2 {
@@ -8207,7 +8207,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(bool_expr(found)));
       }
     }
-    // Cycles[{cyc1, ...}] — canonicalise: drop length-1 cycles, rotate
+    // Cycles[{cyc1, ...}] — canonicalize: drop length-1 cycles, rotate
     // each cycle to start with its smallest element, sort cycles by
     // that first element. Matches Mathematica's canonical form so
     // structurally distinct inputs like Cycles[{{4, 10, 2, 5}, {9}}]
@@ -8524,7 +8524,7 @@ pub fn dispatch_list_operations(
       }));
     }
     "PermutationLength" if args.len() == 1 => {
-      // Cycles form: sum of cycle lengths (Cycles canonicalises away
+      // Cycles form: sum of cycle lengths (Cycles canonicalizes away
       // length-1 cycles, so every listed element is moved).
       if let Some(cycles) = cycles_arg(&args[0]) {
         let total: i128 = cycles.iter().map(|c| c.len() as i128).sum();
@@ -9831,8 +9831,8 @@ fn nearest_distance(a: &Expr, b: &Expr) -> Option<f64> {
   }
 }
 
-/// Lift a colour expression to a 3-element RGB float vector.
-/// Recognises `RGBColor[r, g, b]`, `RGBColor[r, g, b, a]` (alpha
+/// Lift a color expression to a 3-element RGB float vector.
+/// Recognizes `RGBColor[r, g, b]`, `RGBColor[r, g, b, a]` (alpha
 /// dropped), and `GrayLevel[g]` (mapped to `[g, g, g]`).
 fn color_to_rgb(e: &Expr) -> Option<[f64; 3]> {
   if let Expr::FunctionCall { name, args } = e {
@@ -9915,7 +9915,7 @@ fn distance_function_option(options: &[Expr]) -> Option<Expr> {
 ///
 /// `DistanceFunction -> f` measures with `f[element, target]` instead of the
 /// built-in metric, which is what lets a named metric (`ManhattanDistance`),
-/// a pure function, or `EditDistance` on strings choose the neighbour. The
+/// a pure function, or `EditDistance` on strings choose the neighbor. The
 /// remaining options are accepted and ignored.
 fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (positional, options) = split_nearest_options(args);
@@ -10035,7 +10035,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(v) => {
       // `{point1 -> label1, point2 -> label2, …}` is the list-of-rules
       // form: split into separate point and label vectors. If every
-      // element is a `Rule` / `RuleDelayed`, treat this as the labelled
+      // element is a `Rule` / `RuleDelayed`, treat this as the labeled
       // form so the result is drawn from the labels rather than the
       // points themselves.
       let all_rules = !v.is_empty()
@@ -10081,7 +10081,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and return a list of results — `Nearest[items, {t1, t2, …}]` →
   // `{Nearest[items, t1], Nearest[items, t2], …}`. This handles e.g.
   // `Nearest[{colors…}, {Orange, Gray}]` where each target is itself
-  // a colour. We skip this branch when `target` matches `items[0]`
+  // a color. We skip this branch when `target` matches `items[0]`
   // dimensionally as a single vector (the common scalar-list case).
   // A target list nested deeper threads level by level (`f[{{x}}]` is
   // `{{f[x]}}`).
@@ -11021,7 +11021,7 @@ fn list_convolve_overhang(
     return Ok(Expr::List(vec![].into()));
   }
 
-  // Normalise a (possibly negative) kernel index into 1..=m.
+  // Normalize a (possibly negative) kernel index into 1..=m.
   let norm = |k: i128| -> Option<usize> {
     let pos = if k < 0 { m as i128 + 1 + k } else { k };
     if (1..=m as i128).contains(&pos) {
@@ -11107,7 +11107,7 @@ fn list_correlate_overhang(
     return Ok(Expr::List(vec![].into()));
   }
 
-  // Normalise a (possibly negative) kernel index into 1..=m.
+  // Normalize a (possibly negative) kernel index into 1..=m.
   let norm = |k: i128| -> Option<usize> {
     let pos = if k < 0 { m as i128 + 1 + k } else { k };
     if (1..=m as i128).contains(&pos) {

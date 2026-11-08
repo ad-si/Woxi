@@ -1710,7 +1710,7 @@ fn build_partial_solution(
 ) -> Option<Expr> {
   let order = roots.len();
   let free_count = order - ics.len();
-  // Generalising beyond a single free parameter requires solving a
+  // Generalizing beyond a single free parameter requires solving a
   // multivariate symbolic system; keep the implementation focused on the
   // shapes wolframscript actually surfaces in tests for now.
   if free_count != 1 || order != 2 || ics.len() != 1 {

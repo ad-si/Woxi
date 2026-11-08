@@ -1,6 +1,6 @@
 # `Graphics3D`
 
-3D analogue of `Graphics`. Primitives include `Cuboid`, `Sphere`,
+3D analog of `Graphics`. Primitives include `Cuboid`, `Sphere`,
 `Cylinder`, `Cone`, `Line`, `Polygon`, `Tube`, `Point`.
 
 ```scrut
@@ -58,8 +58,8 @@ Graphics3D
 ```
 
 `Sphere[{p1, p2, …}, r]` is a whole set of spheres of radius `r`, one per
-centre — how a scene marks several points at once, and the same drawing as
-one `Sphere` per centre:
+center — how a scene marks several points at once, and the same drawing as
+one `Sphere` per center:
 
 ```scrut
 $ wo 'Head[Graphics3D[Sphere[{{1, 0, 0}, {-1, 0, 0}}, 0.5]]]'

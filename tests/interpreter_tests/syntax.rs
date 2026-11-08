@@ -206,7 +206,7 @@ mod prefix_apply_assignment {
   fn at_form_as_downvalue_lhs() {
     // `f @ x = rhs` must parse the LHS as `f[x]` (FunctionCall) so the
     // downvalue assignment path accepts it. Previously the `@` infix branch
-    // built an `Expr::PrefixApply` that Set didn't recognise, erroring with
+    // built an `Expr::PrefixApply` that Set didn't recognize, erroring with
     // "First argument of Set must be an identifier, part extract, or function
     // call".
     assert_eq!(interpret(r#"del2@banana = "phone""#).unwrap(), "phone");
@@ -423,10 +423,10 @@ mod trailing_semicolon {
   }
 
   /// Printing the operator is only correct with the operator's
-  /// parenthesisation: `Divide[Subtract[a, b], c]` as `a - b/c` would
+  /// parenthesization: `Divide[Subtract[a, b], c]` as `a - b/c` would
   /// re-parse as something else entirely.
   #[test]
-  fn held_operator_call_spellings_parenthesise() {
+  fn held_operator_call_spellings_parenthesize() {
     assert_eq!(
       interpret("Hold[Power[Divide[a, b], 2]]").unwrap(),
       "Hold[(a/b)^2]"
@@ -493,7 +493,7 @@ mod trailing_semicolon {
     assert_eq!(to_string("Hold[Minus[a]]"), "Hold[-a]");
     assert_eq!(to_string("Hold[List[1, 2]]"), "Hold[{1, 2}]");
     assert_eq!(to_string("Hold[List[]]"), "Hold[{}]");
-    // The parenthesisation comes from the operator nodes too.
+    // The parenthesization comes from the operator nodes too.
     assert_eq!(to_string("Hold[Power[Divide[a, b], 2]]"), "Hold[(a/b)^2]");
     assert_eq!(
       to_string("Hold[Divide[Subtract[a, b], c]]"),
@@ -548,7 +548,7 @@ mod unary_minus_parsing {
     assert_eq!(interpret("-0.5^2").unwrap(), "-0.25");
     // Scientific-notation literals behave the same.
     assert_eq!(interpret("-1.5*^3^2").unwrap(), "-2.25*^6");
-    // Matches the long-standing integer behaviour.
+    // Matches the long-standing integer behavior.
     assert_eq!(interpret("-10^2").unwrap(), "-100");
     // A negative real literal NOT before `^` is still a signed literal.
     assert_eq!(interpret("-10.0").unwrap(), "-10.");
@@ -1289,7 +1289,7 @@ mod operator_shorthand_parens {
     assert_eq!(interpret("{1, 2} . {3, 4} 2").unwrap(), "22");
     // Power (590) over Times: `2 x ^ 3` is `2 (x^3)`.
     assert_eq!(interpret("2 x^3 /. x -> 2").unwrap(), "16");
-    // A product with no tighter neighbour is untouched.
+    // A product with no tighter neighbor is untouched.
     assert_eq!(interpret("2 x + 1 /. x -> 3").unwrap(), "7");
     assert_eq!(interpret("-2 x /. x -> 3").unwrap(), "-6");
   }
@@ -1325,7 +1325,7 @@ mod operator_shorthand_parens {
       interpret("f[2]^2 Times @@ {3, 4} /. f -> Identity").unwrap(),
       "48"
     );
-    // Without a tighter neighbour the product is unchanged.
+    // Without a tighter neighbor the product is unchanged.
     assert_eq!(interpret("Length[{a, b}] x /. x -> 5").unwrap(), "10");
   }
 
@@ -8422,7 +8422,7 @@ mod line_continuation {
   #[test]
   fn replace_all_across_newline() {
     // Regression: `/.` (ReplaceAll) at end of line must continue on the
-    // next line. Previously insert_statement_separators didn't recognise
+    // next line. Previously insert_statement_separators didn't recognize
     // `.` as a continuation char when preceded by `/`.
     assert_eq!(interpret("{1, 2, 3} /.\n  1 -> 10").unwrap(), "{10, 2, 3}");
   }
@@ -8484,7 +8484,7 @@ mod line_continuation {
 /// operators as `->`, `:>`, `==`, `!=`, `<=`, `>=`: Wolfram-authored source
 /// (`.wl`/`.wls` files, `ToExpression["..."]`, literal REPL input) may use
 /// either. Previously only some named-character operators (`\[Element]`,
-/// `\[And]`, …) were recognised by the grammar; this comparison/rule family
+/// `\[And]`, …) were recognized by the grammar; this comparison/rule family
 /// fell through to `NamedCharIdentifier`, so `Mesh \[Rule] None` parsed as
 /// implicit multiplication `Mesh * None * Rule` instead of `Rule[Mesh,
 /// None]`. (Note this never affected `.nb` notebook loading, which
@@ -9192,7 +9192,7 @@ mod rotation_matrix {
   }
 
   // RotationTransform[t, {u, v}] rotates in the plane of u and v in any
-  // dimension; it used to read {u, v} as a 2D centre.
+  // dimension; it used to read {u, v} as a 2D center.
   #[test]
   fn rotation_transform_in_a_plane() {
     assert_eq!(
@@ -10304,7 +10304,7 @@ mod out_shortcut {
   }
 
   #[test]
-  fn out_negative_or_zero_normalises_to_out_zero() {
+  fn out_negative_or_zero_normalizes_to_out_zero() {
     assert_eq!(interpret("Out[-1]").unwrap(), "Out[0]");
     assert_eq!(interpret("Out[-5]").unwrap(), "Out[0]");
     assert_eq!(interpret("Out[0]").unwrap(), "Out[0]");
@@ -12417,7 +12417,7 @@ mod rule_head_replacement {
 }
 
 // A held `Not` and a held leading minus are written with their operators, the
-// way wolframscript writes them, and parenthesised wherever the operator would
+// way wolframscript writes them, and parenthesized wherever the operator would
 // otherwise reach past what it negates. Values verified against wolframscript.
 mod held_prefix_operators {
   use super::*;
@@ -12444,7 +12444,7 @@ mod held_prefix_operators {
   }
 
   #[test]
-  fn a_negation_is_parenthesised_wherever_it_would_reach_too_far() {
+  fn a_negation_is_parenthesized_wherever_it_would_reach_too_far() {
     clear_state();
     for (body, expected) in [
       // Arithmetic, comparison, `;;`, `!` and application all bind tighter
@@ -12491,7 +12491,7 @@ mod held_prefix_operators {
   }
 
   #[test]
-  fn a_leading_minus_is_parenthesised_where_it_would_swallow_a_factor() {
+  fn a_leading_minus_is_parenthesized_where_it_would_swallow_a_factor() {
     clear_state();
     for (body, expected) in [
       // `-(a + b)` printed as `-a + b` would re-parse as `(-a) + b`.
@@ -12769,7 +12769,7 @@ mod replace_after_applied_anonymous_function {
     assert_eq!(interpret("(# + 1) &[2] //. 3 -> 9").unwrap(), "9");
     // Without a replacement the application is unchanged.
     assert_eq!(interpret("(# + 1) &[2]").unwrap(), "3");
-    // And the parenthesised spelling still agrees.
+    // And the parenthesized spelling still agrees.
     assert_eq!(interpret("((# + 1) &)[2] /. 3 -> 9").unwrap(), "9");
   }
 
@@ -13349,7 +13349,7 @@ mod trailing_amp_continuation {
 
   #[test]
   fn a_bare_trailing_amp_still_wraps_the_whole_sequence() {
-    // Unchanged behaviour: without a continuation the `&` closes the
+    // Unchanged behavior: without a continuation the `&` closes the
     // sequence, as `TrackingFunction -> (a = #; b = 0; &)` needs.
     assert_eq!(
       interpret("FullForm[Hold[(a = #; b = 0; &)]]").unwrap(),
@@ -13629,15 +13629,15 @@ mod rule_replacement_conditions {
   }
 
   #[test]
-  fn the_guard_is_honoured_when_the_rule_is_applied() {
+  fn the_guard_is_honored_when_the_rule_is_applied() {
     assert_eq!(interpret("ReplaceAll[3, x_ :> 5 /; x > 2]").unwrap(), "5");
     assert_eq!(interpret("ReplaceAll[1, x_ :> 5 /; x > 2]").unwrap(), "1");
   }
 }
 
-/// A parenthesised product is one factor of the implicit chain around it, so
+/// A parenthesized product is one factor of the implicit chain around it, so
 /// a division in front of it divides by the whole product.
-mod parenthesised_products_in_implicit_chains {
+mod parenthesized_products_in_implicit_chains {
   use super::*;
 
   #[test]

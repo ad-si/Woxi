@@ -731,7 +731,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // The element part must be a list; otherwise emit DeleteElements::invl and
-  // return the canonicalised `Infinity -> arg` form wolframscript produces.
+  // return the canonicalized `Infinity -> arg` form wolframscript produces.
   let Expr::List(elems) = elems_expr else {
     crate::emit_message(&format!(
       "DeleteElements::invl: The argument {} is not a list.",

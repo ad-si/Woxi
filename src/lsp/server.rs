@@ -934,7 +934,7 @@ fn is_definition_name(document: &Document, token: Token) -> bool {
 fn initialize_result() -> Value {
   json!({
     "capabilities": {
-      // Full sync: documents are small and re-tokenising one is far
+      // Full sync: documents are small and re-tokenizing one is far
       // cheaper than tracking incremental edits correctly.
       "textDocumentSync": { "openClose": true, "change": 1 },
       "hoverProvider": true,

@@ -9,7 +9,7 @@
 //!
 //! with a (possibly complex) initial profile and `u[t, xmin] == u[t, xmax]`
 //! is solved by the method of lines: a Fourier pseudospectral
-//! discretisation in space (FFT on a power-of-two grid) and classical RK4
+//! discretization in space (FFT on a power-of-two grid) and classical RK4
 //! in time. The right-hand side `u_t = R(u, u_x, u_xx, t, x)` is split into
 //! real and imaginary parts once, symbolically, so the time loop only
 //! evaluates compiled real expressions of `Re[u]` and `Im[u]`.
@@ -416,7 +416,7 @@ fn try_solve(
 }
 
 /// In-place radix-2 FFT of a power-of-two length sequence; the inverse
-/// transform includes the `1/n` normalisation.
+/// transform includes the `1/n` normalization.
 fn fft(re: &mut [f64], im: &mut [f64], inverse: bool) {
   let n = re.len();
   let mut j = 0;

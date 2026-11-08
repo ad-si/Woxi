@@ -2,9 +2,9 @@
 //!
 //! A handful of classic networks are real: they are assembled from the
 //! publications they come from (`resources/network_graphs.txt.gz`) and carry
-//! the names Wolfram's catalogue lists them under, so a script that asks for
+//! the names Wolfram's catalog lists them under, so a script that asks for
 //! one of them by name gets the same network from either engine. Every other
-//! catalogued network is generated (see [`generated`]) with the vertex and
+//! cataloged network is generated (see [`generated`]) with the vertex and
 //! edge counts, directedness and degree statistics of the original.
 
 use std::sync::LazyLock;
@@ -24,7 +24,7 @@ struct NetworkGraph {
   edges: Vec<(usize, usize)>,
 }
 
-/// The bundled `"NetworkGraph"` datasets, in catalogue order.
+/// The bundled `"NetworkGraph"` datasets, in catalog order.
 ///
 /// The resource is a line-oriented text file: one `:name`, `:description`,
 /// `:source`, `:vertices` (a `|`-separated list) and `:edges` (a
@@ -87,7 +87,7 @@ static NETWORK_GRAPHS: LazyLock<Vec<NetworkGraph>> = LazyLock::new(|| {
   out
 });
 
-/// A second spelling Wolfram resolves to a catalogue name, so that a script
+/// A second spelling Wolfram resolves to a catalog name, so that a script
 /// written against either one runs: `ExampleData[{"NetworkGraph",
 /// "ZacharysKarateClub"}]` and `…"ZacharyKarateClub"…` are the same network.
 const NETWORK_GRAPH_ALIASES: &[(&str, &str)] = &[
@@ -95,13 +95,13 @@ const NETWORK_GRAPH_ALIASES: &[(&str, &str)] = &[
   ("BooksAboutUSPolitics", "USPoliticsBooks"),
 ];
 
-/// The catalogue name `name` stands for, resolving the alternative
+/// The catalog name `name` stands for, resolving the alternative
 /// spellings above.
 fn resolve_network_graph_name(name: &str) -> &str {
   NETWORK_GRAPH_ALIASES
     .iter()
     .find(|(alias, _)| *alias == name)
-    .map_or(name, |(_, catalogue)| *catalogue)
+    .map_or(name, |(_, catalog)| *catalog)
 }
 
 /// The dataset named by `name`, if it is bundled.

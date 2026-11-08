@@ -8,12 +8,12 @@
 //! of the plotting area by however far the boxes reach past it:
 //!
 //! - frame tick labels sit 3 pt outside the frame (the y labels right
-//!   aligned, the x labels hanging below), centred on their ticks;
+//!   aligned, the x labels hanging below), centered on their ticks;
 //! - axis tick labels sit 3 pt beside their axis the same way, so they
 //!   only need room where the axis runs close to the plot's edge;
 //! - a `FrameLabel` sits 6 pt beyond the tick labels of its edge;
 //! - the x `AxesLabel` starts 8 pt past the right end of the x axis,
-//!   centred on it; the y `AxesLabel` sits 6 pt above the y axis, centred
+//!   centered on it; the y `AxesLabel` sits 6 pt above the y axis, centered
 //!   on it;
 //! - every side keeps at least 0.5 pt once a frame or an axis is drawn,
 //!   and the right and bottom sides one more point;
@@ -575,8 +575,8 @@ impl Decorations {
     const R: usize = 1;
     const B: usize = 2;
     const T: usize = 3;
-    // Horizontal labels centred on ticks along a horizontal edge, and
-    // vertically centred ones along a vertical edge, overhang the ends.
+    // Horizontal labels centered on ticks along a horizontal edge, and
+    // vertically centered ones along a vertical edge, overhang the ends.
     let along_x = |reach: &mut dyn FnMut(usize, f64), b: &LabelBox| {
       reach(L, b.width / 2.0 - b.frac * w);
       reach(R, b.width / 2.0 - (1.0 - b.frac) * w);
@@ -796,7 +796,7 @@ pub(crate) fn plot_title_band(
 
 /// What a 2D plot draws around its plotting area, for [`Decorations::solve`].
 ///
-/// `x_ticks`/`y_ticks` are the labelled ticks of the bottom/left edge (or
+/// `x_ticks`/`y_ticks` are the labeled ticks of the bottom/left edge (or
 /// the axes), `x`/`y` the axis scales, `origin` where the axes cross and
 /// `bottom_graphic_h` the height of a picture `FrameLabel` under the frame.
 pub(crate) fn plot_decorations(
@@ -1008,7 +1008,7 @@ mod tests {
                0.10</text></svg>";
     let out = keep_text_in_view(svg);
     assert_eq!(out.matches("x=\"20.6\"").count(), 2, "{out}");
-    // A centred label overhanging the right edge moves left.
+    // A centered label overhanging the right edge moves left.
     let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"398\" y=\"9\" \
                text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
     let out = keep_text_in_view(svg);

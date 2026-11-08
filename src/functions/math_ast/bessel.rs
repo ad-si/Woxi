@@ -181,12 +181,12 @@ fn half_int_bessel_i(
     return Ok(None);
   }
   let p = half_int_bessel_polynomial(m, z_expr, "Sinh", "Cosh", BesselSign::I)?;
-  // For multi-term polynomials wolframscript prints BesselI in the rationalised
+  // For multi-term polynomials wolframscript prints BesselI in the rationalized
   // form `Distribute[2*P, Plus] / (Sqrt[2*Pi] Sqrt[z])` instead of the bare
   // `Sqrt[2/Pi]*P/Sqrt[z]`. Single-term P (e.g. BesselI[1/2,z] = Sinh[z]) keeps
   // the original `Sqrt[2/Pi]*Sinh[z]/Sqrt[z]` form.
   if is_plus_expr(&p) {
-    Ok(Some(wrap_with_sqrt_factor_rationalised(&p, z_expr)?))
+    Ok(Some(wrap_with_sqrt_factor_rationalized(&p, z_expr)?))
   } else {
     Ok(Some(wrap_with_sqrt_factor(&p, z_expr)?))
   }
@@ -202,7 +202,7 @@ fn is_plus_expr(e: &Expr) -> bool {
   }
 }
 
-fn wrap_with_sqrt_factor_rationalised(
+fn wrap_with_sqrt_factor_rationalized(
   p: &Expr,
   z_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
@@ -226,7 +226,7 @@ enum BesselSign {
   I,
 }
 
-/// Compute `P_{m}` for the half-integer Bessel recurrence, parameterised on
+/// Compute `P_{m}` for the half-integer Bessel recurrence, parameterized on
 /// the two trig anchors (P_1 and P_{-1}) and the sign convention
 /// (J vs I family).
 fn half_int_bessel_polynomial(

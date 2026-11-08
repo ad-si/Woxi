@@ -649,7 +649,7 @@ impl ExprList {
 
 /// Iteration adapter that handles both internal representations.
 ///
-/// `imbl::vector::Iter` is parameterised by an extra
+/// `imbl::vector::Iter` is parameterized by an extra
 /// `P: SharedPointerKind` we don't want to expose, so we box-erase it
 /// (only on the Tree branch — Vec iteration stays inline).
 pub enum ExprListIter<'a> {

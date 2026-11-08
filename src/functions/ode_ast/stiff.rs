@@ -53,7 +53,7 @@ pub(super) fn rosenbrock_leg(
 
 /// [`rosenbrock_leg`] with its own tolerances, giving up after `max_steps`
 /// accepted plus rejected steps — for a right-hand side so expensive (a
-/// Newton solve per evaluation) that a leg crawling towards a singular
+/// Newton solve per evaluation) that a leg crawling toward a singular
 /// point must stop early.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn rosenbrock_leg_limited(
@@ -333,7 +333,7 @@ fn grade_points(
   if let Some(prev) = prev {
     let long = prev.h.abs();
     if long > GRADE * short {
-      // The end of the previous step, finer towards its end.
+      // The end of the previous step, finer toward its end.
       let Some(last) = points.pop() else { return };
       let mut offsets = Vec::new();
       let mut d = short * GRADE;
@@ -411,7 +411,7 @@ pub(super) const RODAS_CC: [[f64; 5]; 5] = [
 /// Jacobians, and the column groups (Curtis, Powell & Reid) whose columns
 /// touch disjoint rows, so that one evaluation of `f` differences a whole
 /// group. A method-of-lines system, each equation coupling a few
-/// neighbours, then costs a handful of evaluations per Jacobian instead of
+/// neighbors, then costs a handful of evaluations per Jacobian instead of
 /// one per unknown. The full Jacobian is recomputed every
 /// `JACOBIAN_PATTERN_REFRESH` uses and its pattern merged in, so an entry
 /// that happened to vanish where the pattern was taken is soon picked up.

@@ -280,7 +280,7 @@ mod row_visual_mode {
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
     assert!(svg.contains("fill=\"rgb(128,128,128)\""));
-    // The styled run is a tspan carrying the colour inside the text.
+    // The styled run is a tspan carrying the color inside the text.
     assert!(svg.contains(">hey<"));
   }
 

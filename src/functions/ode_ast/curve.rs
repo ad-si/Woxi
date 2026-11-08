@@ -9,7 +9,7 @@
 //!  x[0] == 1, y[0] == 0, x'[0] == 0, y'[0] == 1}
 //! ```
 //!
-//! traces a curve `g(y) == 0` parametrised by arclength. The tangent
+//! traces a curve `g(y) == 0` parameterized by arclength. The tangent
 //! `y'` solves `J_g(y) y' == 0` together with the derivative equations
 //! (Newton's method, started from the previous tangent so the direction
 //! stays continuous and the stated `y'(s0)` picks the orientation). The

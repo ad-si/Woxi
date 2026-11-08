@@ -181,7 +181,7 @@ FrontEnd. Several also need image fixtures or RNG seeding (noted).
 - `canny_edge_detector` — `EdgeDetect[Import[InputString[]]]` (also stdin/image).
 - `forest_fire` — `CellularAutomaton` + `MatrixPlot` + RNG.
 - `fractal_tree` — `Graphics[...]` line tree.
-- `greyscale_bars_display` — `CreateDocument[Graphics[...]]`.
+- `grayscale_bars_display` — `CreateDocument[Graphics[...]]`.
 - `guess_the_number_with_feedback` — `Input[]` + `CreateDialog` (also stdin).
 - `gui_maximum_window_dimensions` — `SystemInformation["Devices"]`.
 - `hello_world_graphical` — `CreateDialog["Hello world"]`.
@@ -315,7 +315,7 @@ non-deterministic part with a fixed value or a bounded loop.
 - `loops_infinite` — `While[True, Print@"SPAM"]`.
 - `pi` — endless digit stream + `Pause[.05]`.
 - `system_time` — `DateList[]`, `AbsoluteTime[]`.
-- `terminal_control_coloured_text` — `Run["tput setaf …"]`.
+- `terminal_control_colored_text` — `Run["tput setaf …"]`.
 - `terminal_control_cursor_movement` — `Run["tput …"]` (+ `RunThrough`).
 
 ✅ Done: `count_in_octal` — bounded the `While[True,…]` to `Do[…, {x, 0, 16}]`

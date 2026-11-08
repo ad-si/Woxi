@@ -276,7 +276,7 @@ mod graphics_primitives {
       svg.contains("stroke-dasharray"),
       "dashed bottom edge: {svg}"
     );
-    // Tick labels take their edge's colour.
+    // Tick labels take their edge's color.
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
     assert!(svg.contains("fill=\"rgb(0,170,0)\""), "{svg}");
   }
@@ -308,8 +308,8 @@ mod graphics_primitives {
       })
       .filter(|d| *d > 0.0)
       .collect();
-    // Labelled marks 1.5% of the geometric mean of the frame's sides,
-    // unlabelled ones three fifths of that.
+    // Labeled marks 1.5% of the geometric mean of the frame's sides,
+    // unlabeled ones three fifths of that.
     let major = lens.iter().copied().fold(0.0, f64::max);
     assert!(
       lens.iter().any(|d| (d - 0.6 * major).abs() < 0.02),
@@ -446,7 +446,7 @@ mod graphics_primitives {
   }
 
   #[test]
-  fn axes_labels_take_the_axes_style_colour() {
+  fn axes_labels_take_the_axes_style_color() {
     let svg = svg_of(
       "Graphics[Circle[{1, 1}, 1], Axes -> True, AxesLabel -> {\"x\", \"y\"}, \
        AxesStyle -> {Blue, Darker[Green]}]",
@@ -502,7 +502,7 @@ mod graphics_primitives {
     let svg = svg_of(
       "Graphics[Line[{{0, 0}, {4, 3}}], Axes -> True, AxesOrigin -> {1, 1}]",
     );
-    // 0 is labelled on the x axis, 1 (the crossing) on neither.
+    // 0 is labeled on the x axis, 1 (the crossing) on neither.
     assert!(svg.contains(">0</text>"), "{svg}");
     assert!(
       svg.contains(">0.0</text>") || svg.contains(">0.</text>"),
@@ -543,7 +543,7 @@ mod graphics_primitives {
       "Graphics[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}, \
        VertexColors -> {Red, Green, Blue, Yellow}]]",
     );
-    // Opaque facets are outlined in their own colour.
+    // Opaque facets are outlined in their own color.
     let facets = svg.matches("<polygon").count();
     assert!(facets > 100, "{facets}");
     let outlined = svg.matches("stroke-width=\"0.5\"").count();

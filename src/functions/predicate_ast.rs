@@ -2026,7 +2026,7 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Extract an exact rational (numerator, denominator) from an argument.
   // Returns Ok(Some(...)) for an exact number, Ok(None) for a symbolic value
-  // (stay unevaluated, no message), or Err-signalled `::exact` for a Real.
+  // (stay unevaluated, no message), or Err-signaled `::exact` for a Real.
   enum Exact {
     Rational(BigInt, BigInt),
     Inexact,

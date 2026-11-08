@@ -171,7 +171,7 @@ const ELEMENTS: &[&str] = &[
 
 /// Whether the first row names the columns. wolframscript reads it as a header
 /// only when it holds no number itself AND the rows below type as something
-/// other than text: `"a,b\n1,2"` is labelled, while `"1,2\n3,4"` (numbers up
+/// other than text: `"a,b\n1,2"` is labeled, while `"1,2\n3,4"` (numbers up
 /// top), `"a,b\nc,d"` and `"a,b\n1,2\nc,d"` (every column reads as a string)
 /// are not.
 fn has_header_row(rows: &[Vec<String>]) -> bool {
@@ -229,9 +229,9 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     };
   }
 
-  let labelled = has_header_row(rows);
+  let labeled = has_header_row(rows);
   let header = &rows[0];
-  let data_rows: &[Vec<String>] = if labelled { &rows[1..] } else { rows };
+  let data_rows: &[Vec<String>] = if labeled { &rows[1..] } else { rows };
   let num_cols = header.len();
   let num_data_rows = data_rows.len();
 
@@ -257,7 +257,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
     }
 
     "ColumnLabels" => {
-      if labelled {
+      if labeled {
         Expr::List(header.iter().map(|s| Expr::String(s.clone())).collect())
       } else {
         id_expr("None")
@@ -287,7 +287,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
           Expr::String(csv_column_type(&refs))
         })
         .collect();
-      if labelled {
+      if labeled {
         Expr::Association(
           header
             .iter()
@@ -302,7 +302,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
 
     "Dataset" => {
       // Without column labels the rows stay plain lists.
-      if !labelled {
+      if !labeled {
         let lists: Vec<Expr> = data_rows
           .iter()
           .map(|row| Expr::List(row.iter().map(|s| auto_convert(s)).collect()))

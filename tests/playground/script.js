@@ -502,7 +502,7 @@ function renderManipulate(item) {
     expectDisplays: false,
     // Controls with an `Enabled -> Dynamic[…]` option: `{condition, apply}`
     // in control order. `condition` is the boolean code ("" = always enabled);
-    // `apply(on)` greys the control's DOM in or out. Re-evaluated on every
+    // `apply(on)` grays the control's DOM in or out. Re-evaluated on every
     // binding change so a control can disable itself for the current state.
     enabledControls: [],
     // Controls belonging to a `PaneSelector` pane: `{condition, apply}` in
@@ -583,7 +583,7 @@ function renderManipulate(item) {
     })
   }
 
-  // Grey the controls an `Enabled -> Dynamic[…]` option has switched off in
+  // Gray the controls an `Enabled -> Dynamic[…]` option has switched off in
   // or out; show only the controls of the `PaneSelector` pane in force.
   function refreshEnabled(bindings) {
     refreshGated(widget.enabledControls, enabledRequests, bindings)
@@ -749,7 +749,7 @@ function renderManipulate(item) {
         // that first choice stays clickable: otherwise it would already be
         // the browser's selection and firing no `change` event).
         if (!matched) select.selectedIndex = -1
-        // A trailing `Enabled -> cond` currently reading `False` greys the
+        // A trailing `Enabled -> cond` currently reading `False` grays the
         // dropdown out and blocks selection, mirroring the checkbox case's
         // `disabled` treatment above.
         if (node.enabled === false) {
@@ -1223,7 +1223,7 @@ function renderManipulate(item) {
     controlsEl.appendChild(row)
   }
 
-  // Grey out any control that starts disabled for the initial bindings.
+  // Gray out any control that starts disabled for the initial bindings.
   widget.refreshEnabled(buildBindings())
 
   // An Animate/ListAnimate widget auto-plays: a play/pause button advances its

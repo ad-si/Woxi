@@ -81,7 +81,7 @@ fn notched_box() {
   );
 }
 
-// BarOrigin -> Left lays the boxes along the y axis, labelled on the left.
+// BarOrigin -> Left lays the boxes along the y axis, labeled on the left.
 #[test]
 fn bar_origin_left_is_horizontal() {
   assert_eq!(
@@ -96,7 +96,7 @@ fn bar_origin_left_is_horizontal() {
 }
 
 // BarOrigin -> Top hangs the boxes from the top: values are negated and the
-// frame is labelled with their magnitudes.
+// frame is labeled with their magnitudes.
 #[test]
 fn bar_origin_top_mirrors_values() {
   assert_eq!(

@@ -1238,10 +1238,10 @@ pub fn rat_reduce_bigint(n: &BigInt, d: &BigInt) -> (BigInt, BigInt) {
 const SQUARE_FACTOR_TRIAL_BOUND: u64 = 100_000;
 
 /// Past this size the leftover cofactor is left inside the radical rather
-/// than handed to the general factoriser: the work Pollard's rho needs grows
+/// than handed to the general factorizer: the work Pollard's rho needs grows
 /// as the fourth root of the number, so a bound keeps a stray big radicand
 /// from stalling an evaluation.
-const SQUARE_FACTOR_FACTORISE_BITS: u64 = 80;
+const SQUARE_FACTOR_FACTORIZE_BITS: u64 = 80;
 
 /// Extract the largest perfect-square factor from a positive integer:
 /// returns `(outside, inside)` with `n == outside^2 * inside`, so
@@ -1249,7 +1249,7 @@ const SQUARE_FACTOR_FACTORISE_BITS: u64 = 80;
 /// division, and whatever survives is factored properly, so a square factor
 /// too large to reach by trial division (`100003^2 * 115` →
 /// `100003 * Sqrt[115]`) still comes out. Only a cofactor past
-/// [`SQUARE_FACTOR_FACTORISE_BITS`] stays in `inside` unexamined.
+/// [`SQUARE_FACTOR_FACTORIZE_BITS`] stays in `inside` unexamined.
 ///
 /// This is the one place a radical is reduced. Every caller — `Sqrt` of an
 /// integer, of a rational, and the `c * Sqrt[r]` merge in `times_ast` —
@@ -1289,7 +1289,7 @@ pub fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
     let r = rest.sqrt();
     if &r * &r == rest {
       outside *= r;
-    } else if rest.bits() <= SQUARE_FACTOR_FACTORISE_BITS {
+    } else if rest.bits() <= SQUARE_FACTOR_FACTORIZE_BITS {
       let Some(rest_uint) = rest.to_biguint() else {
         return (outside, inside * rest);
       };
@@ -1999,7 +1999,7 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
 pub fn build_complex_float_expr_keep_real(re: f64, im: f64) -> Expr {
   let i_expr = id_expr("I");
   let im_abs = im.abs();
-  // Always materialise the coefficient as `Real * I` so the |coeff|==1 case
+  // Always materialize the coefficient as `Real * I` so the |coeff|==1 case
   // prints as `1.*I` rather than bare `I` — wolframscript's numeric form.
   let im_term = times2(Expr::Real(im_abs), i_expr);
   let re_expr = Expr::Real(re);

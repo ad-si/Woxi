@@ -449,7 +449,7 @@ mod polyhedron_data_tests {
   // It joins the list of known entities.
   #[test]
   fn polyhedron_data_all_lists_every_entity() {
-    // Catalogue-agnostic: names, sorted, holding every class's members.
+    // Catalog-agnostic: names, sorted, holding every class's members.
     assert_eq!(
       interpret(
         "With[{all = PolyhedronData[All]}, {Length[all] > 100, \
@@ -1140,7 +1140,7 @@ mod polyhedron_data_tests {
     );
   }
 
-  // The stella octangula as Wolfram catalogues it: the outer surface of the
+  // The stella octangula as Wolfram catalogs it: the outer surface of the
   // compound of two tetrahedra, 8 tips around an octahedron of edge 1/2.
   #[test]
   fn polyhedron_data_stella_octangula() {

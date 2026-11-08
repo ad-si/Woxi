@@ -1843,7 +1843,7 @@ pub fn string_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // Zero-width assertions can also match at the very end of the string
     // (e.g. WordBoundary after the final word character). The main loop
-    // stops at `i == s.len()`, so check that final position here. Honour the
+    // stops at `i == s.len()`, so check that final position here. Honor the
     // replacement limit so we don't exceed `max`.
     if max.is_none_or(|m| count < m)
       && zero_width_match(s, rules, s.len()).is_some()
@@ -2769,7 +2769,7 @@ fn regex_capture_name(name: &str) -> Option<String> {
 }
 
 /// Tracks pattern-variable bindings while translating a Wolfram string
-/// pattern to a regex. Repeated pattern names are realised as Wolfram-style
+/// pattern to a regex. Repeated pattern names are realized as Wolfram-style
 /// back-references: the second occurrence reuses the first occurrence's
 /// regex body (so e.g. `x : WordCharacter .. ~~ "-" ~~ x_` matches the same
 /// run on both sides of the dash), and the resulting (orig, dup) capture-name
@@ -2883,7 +2883,7 @@ fn caps_satisfy_constraints(
 
 /// The regex source for a string-pattern expression (with the `(?i)`
 /// case-insensitivity flag applied when requested) plus its back-reference
-/// constraints. Returns `None` when `expr` is not a recognised string pattern.
+/// constraints. Returns `None` when `expr` is not a recognized string pattern.
 fn string_pattern_regex_source(
   expr: &Expr,
   ignore_case: bool,
@@ -2901,7 +2901,7 @@ fn string_pattern_regex_source(
 
 /// Compile a string-pattern expression to a regex plus its back-reference
 /// constraints, applying the `(?i)` case-insensitivity flag when requested.
-/// Returns `None` when `expr` is not a recognised string pattern.
+/// Returns `None` when `expr` is not a recognized string pattern.
 fn compile_string_pattern(
   expr: &Expr,
   ignore_case: bool,
@@ -2984,7 +2984,7 @@ pub(crate) fn first_string_pattern_match(
 /// Find all non-empty match spans (byte ranges) of `re` in `s` that satisfy the
 /// back-reference `constraints`. Scans left to right; with `overlapping` it
 /// advances one character past each match start, otherwise past the whole
-/// match. This is the constraint-aware analogue of `re.find_iter`.
+/// match. This is the constraint-aware analog of `re.find_iter`.
 fn find_constraint_spans(
   re: &WoxiRegex,
   constraints: &[(String, String)],
@@ -3044,7 +3044,7 @@ impl Overlaps {
 
 /// Read the `Overlaps -> …` option out of the trailing arguments (which may
 /// also hold a count limit or other options), falling back to `default`.
-/// Unrecognised settings are ignored, as wolframscript ignores them too.
+/// Unrecognized settings are ignored, as wolframscript ignores them too.
 pub(crate) fn parse_overlaps_option(
   args: &[Expr],
   default: Overlaps,
@@ -3112,7 +3112,7 @@ fn all_overlap_spans(
   })?;
   let anchored = anchored_regex(pat)?;
   // `\A` / `\z` in the pattern itself would match at the edges of every probed
-  // slice, so honour them by pinning the start / end position instead.
+  // slice, so honor them by pinning the start / end position instead.
   let mut body = pat;
   while let Some(rest) = body.strip_prefix("(?") {
     // Skip leading bare flag groups like `(?s)` / `(?i)`; a `(?:`/`(?s:` group
@@ -6783,7 +6783,7 @@ fn tex_identifier_bare(name: &str) -> String {
     "False" => "\\text{False}".to_string(),
     // Single ASCII letter identifiers stay as-is
     s if s.len() == 1 => s.to_string(),
-    // Lower-case Greek NAMES carry the macro; the capitalised spellings are
+    // Lower-case Greek NAMES carry the macro; the capitalized spellings are
     // ordinary symbols in wolframscript (`Alpha` → `\text{Alpha}`), so only
     // the lower-case ones are listed here.
     "alpha" => "\\alpha".to_string(),
@@ -7355,7 +7355,7 @@ fn tex_times_nary_with(args: &[Expr], distribute_sign: bool) -> String {
     denom.into_iter().map(|(tex, _)| tex).collect()
   };
   // wolframscript moves the symbols and powers of an evaluated product in
-  // front of a parenthesised sum that has no constant term: `(a+b) c` is
+  // front of a parenthesized sum that has no constant term: `(a+b) c` is
   // `c (a+b)` and `x (a+b) c` is `c x (a+b)`, while the polynomial `(x+1) y`
   // keeps its order. A held product keeps its written order.
   let constant_free_sum = |e: &Expr| {
@@ -10206,7 +10206,7 @@ fn normalize_line_ends(src: &str) -> String {
 /// statement, so the program is a `CompoundExpression` whose last part is
 /// `Null` — `ToExpression["a := 1;", InputForm, Hold]` is `Hold[a := 1; ]`,
 /// not `Hold[a := 1]`. WLX reads a `.wlx` file statement by statement this
-/// way and matches on the trailing `Null` to find the names to localise.
+/// way and matches on the trailing `Null` to find the names to localize.
 fn parse_program_statements(src: &str) -> Option<Vec<Expr>> {
   use crate::Rule;
   let normalized = normalize_line_ends(src);
@@ -16750,7 +16750,7 @@ pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       use base64::Engine;
       let engine = base64::engine::general_purpose::STANDARD;
       match engine.decode(s) {
-        // Store the (canonicalised) base64 — Woxi's ByteArray representation.
+        // Store the (canonicalized) base64 — Woxi's ByteArray representation.
         Ok(bytes) => {
           Ok(call1("ByteArray", Expr::String(engine.encode(&bytes))))
         }
@@ -16770,7 +16770,7 @@ pub fn base_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// TextSentences["string"] — split a string into sentences.
 /// TextSentences["string", n] — first n sentences.
 ///
-/// Rule-based segmentation approximating Wolfram's NLP behaviour:
+/// Rule-based segmentation approximating Wolfram's NLP behavior:
 /// a sentence ends at a run of `.`/`!`/`?` (plus any closing quotes or
 /// brackets) followed by whitespace or end of input — unless the run is
 /// an ellipsis or the preceding token is an abbreviation.
@@ -18335,7 +18335,7 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // A span `i ;; j` selects a contiguous range of blocks. Only the
       // two-argument form is supported; a stepped span `i ;; j ;; k` is
-      // rejected (matching Wolfram's ::patt behaviour).
+      // rejected (matching Wolfram's ::patt behavior).
       Expr::FunctionCall { name, args }
         if name == "Span" && args.len() == 2 =>
       {

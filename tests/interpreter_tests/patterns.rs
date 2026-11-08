@@ -364,7 +364,7 @@ mod pattern_matching {
 
     #[test]
     fn position_with_infinity_levelspec() {
-      // Explicit Infinity matches the default behaviour.
+      // Explicit Infinity matches the default behavior.
       assert_eq!(
         interpret("Position[{a, {a, b}, {a, {a, b}}}, a, Infinity]").unwrap(),
         "{{1}, {2, 1}, {3, 1}, {3, 2, 1}}"
@@ -956,7 +956,7 @@ mod pattern_matching {
     }
 
     #[test]
-    fn bare_infix_parenthesised_rhs() {
+    fn bare_infix_parenthesized_rhs() {
       // Parens around the RHS allow it to be a function call.
       assert_eq!(
         interpret("ToString[FullForm[Hold[a?(f[x])]]]").unwrap(),
@@ -1046,7 +1046,7 @@ mod pattern_matching {
     }
   }
 
-  // Pattern variables inside Plus expressions must be parenthesised in
+  // Pattern variables inside Plus expressions must be parenthesized in
   // Wolfram's display form so the bare `_` in `a_.` can't bleed into the
   // surrounding `+`/`-` operator.
   mod patterns_inside_plus {
@@ -2509,7 +2509,7 @@ mod replace_list {
 
 // Optional-pattern (x_.) matching without a Default[...] rule. Without a
 // default value (and without OneIdentity on the head), matching a plain
-// atom against the two-slot pattern always fails — same behaviour in Woxi
+// atom against the two-slot pattern always fails — same behavior in Woxi
 // and wolframscript.
 mod optional_pattern_without_default {
   use super::*;
@@ -2676,7 +2676,7 @@ mod optional_pattern_without_default {
   }
 
   // Anonymous blanks inside one pattern used to collapse onto a single
-  // placeholder variable while the definition was normalised, so
+  // placeholder variable while the definition was normalized, so
   // `f[_Symbol | _Integer]` was stored (and matched) as
   // `f[_Symbol | _Symbol]`.
   #[test]
@@ -5269,7 +5269,7 @@ mod list_pattern_bindings_survive_hold_contexts {
   #[test]
   fn a_literal_part_of_a_literal_list_still_stays_held() {
     // A genuine `Part[…]` the user wrote (not synthesized by list-pattern
-    // destructuring) must keep its ordinary Hold behaviour.
+    // destructuring) must keep its ordinary Hold behavior.
     assert_eq!(
       interpret("Hold[{1, 2, 3}[[2]]]").unwrap(),
       "Hold[{1, 2, 3}[[2]]]"

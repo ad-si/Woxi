@@ -43,7 +43,7 @@ fn pair(a: f64, b: f64) -> Expr {
 const DEFAULT_STYLE: (f64, f64, f64) = (1.0, 0.835, 0.25);
 
 /// The fill of each of `n` datasets from a `ChartStyle` value: a named
-/// gradient sampled across the datasets, one colour, or a list cycled.
+/// gradient sampled across the datasets, one color, or a list cycled.
 pub(crate) fn chart_styles(spec: Option<&Expr>, n: usize) -> Vec<Expr> {
   let default = || {
     let (r, g, b) = DEFAULT_STYLE;
@@ -84,7 +84,7 @@ pub(crate) fn chart_styles(spec: Option<&Expr>, n: usize) -> Vec<Expr> {
   vec![spec.clone(); n]
 }
 
-/// The violin of one dataset centred at `x`: its density estimate at
+/// The violin of one dataset centered at `x`: its density estimate at
 /// `SAMPLES` heights across `[lo, hi]`, scaled to a half-width of at most
 /// `half_width`, traced up the right side and back down the left.
 fn violin(data: &[f64], x: f64, half_width: f64, smooth: bool) -> Vec<Expr> {
@@ -127,7 +127,7 @@ fn violin(data: &[f64], x: f64, half_width: f64, smooth: bool) -> Vec<Expr> {
 }
 
 /// The RGB channels of a chart fill, `None` for a style that is not a
-/// plain colour.
+/// plain color.
 fn fill_rgb(fill: &Expr) -> Option<(f64, f64, f64)> {
   let c = crate::functions::graphics::parse_color(fill)?;
   Some((c.r, c.g, c.b))
@@ -201,7 +201,7 @@ fn quantile_column(
 }
 
 /// `ChartElementFunction -> "Density"`: a bar over the data's range whose
-/// colour fades from the fill (where the kernel density estimate peaks)
+/// color fades from the fill (where the kernel density estimate peaks)
 /// to white (where it is lowest).
 fn density_column(
   sorted: &[f64],
@@ -417,7 +417,7 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .into(),
     ));
   }
-  // A tick (labelled by `ChartLabels`) under each violin, none on the top.
+  // A tick (labeled by `ChartLabels`) under each violin, none on the top.
   let bottom = Expr::List(
     (0..n)
       .map(|i| {

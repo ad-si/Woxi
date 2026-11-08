@@ -65,7 +65,7 @@ Quantity[1, "Meters"/("Kilograms"*"Seconds")]
 ```
 
 A unit that is only a negative power keeps that form, with the exponent
-parenthesised:
+parenthesized:
 
 ```scrut
 $ wo 'ToString[InputForm[Quantity[1, "Seconds"^-1]]]'

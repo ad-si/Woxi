@@ -1634,10 +1634,10 @@ fn arith(head: &str, a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
 
 /// The sample times a resampling specification asks for. `None` for the spec
 /// means "the series' own minimum increment over its full span". Returns
-/// `Ok(None)` when the spec is not one of the recognised numeric forms, so the
+/// `Ok(None)` when the spec is not one of the recognized numeric forms, so the
 /// caller can leave the call unevaluated.
 ///
-/// Recognised: a bare step `dt`, `{tmin, tmax}`, `{tmin, tmax, dt}`, and an
+/// Recognized: a bare step `dt`, `{tmin, tmax}`, `{tmin, tmax, dt}`, and an
 /// explicit list of stamps `{{t1, t2, …}}`.
 fn resample_times(
   pairs: &[(Expr, Expr)],

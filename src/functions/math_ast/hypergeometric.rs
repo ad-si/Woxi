@@ -192,7 +192,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
-  // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
+  // generalized binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
   if a_list.len() == 1 && b_list.is_empty() {
     // At z = 1 the value 0^(-a) depends on the sign of a, so a symbolic a
     // stays unevaluated, as in wolframscript.
@@ -354,7 +354,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Evaluating the upper-parameter shift `∏ᵢ (aᵢ+k)` *alone* — before
   // combining with z, the lower factors, or the running term — lets a
   // step like `(-1) · (a+1)` collapse to `Plus[-1, -a]`. Once that Plus
-  // joins a wider Times product, Times canonicalisation no longer
+  // joins a wider Times product, Times canonicalization no longer
   // distributes the −1 into it, so the result keeps Wolfram's canonical
   // `Times[−1, Plus[−1, −a], a, …]` shape rather than `Times[a, Plus[1,
   // a], …]`. Picks the smallest |negative integer| to keep the polynomial
@@ -503,7 +503,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // 3F2[{1, 1, 3}, {2, 2}, z] closed form. Derivation: collapsing the
   // Pochhammers gives Σ_{k≥0} (k+2)/(2(k+1)) z^k = (1/2)·(1/(1-z) - Log[1-z]/z).
-  // Wolfram normalises that to `(-z + Log[1-z] - z*Log[1-z])/(2*(-1+z)*z)`.
+  // Wolfram normalizes that to `(-z + Log[1-z] - z*Log[1-z])/(2*(-1+z)*z)`.
   if a_list.len() == 3
     && b_list.len() == 2
     && matches!(&a_list[0], Expr::Integer(1))
@@ -2166,7 +2166,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // Use the shorter terminating numerator before cancelling equal
+  // Use the shorter terminating numerator before canceling equal
   // parameters. Cancellation would discard termination at a denominator pole.
   let terminating = [a_int, b_int]
     .into_iter()
@@ -2205,7 +2205,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Gauss's endpoint value must precede logarithmic representations, whose
-  // separately evaluated terms can contain cancelling infinities at z = 1.
+  // separately evaluated terms can contain canceling infinities at z = 1.
   if let [
     Expr::Integer(a),
     Expr::Integer(b),
@@ -2825,7 +2825,7 @@ pub fn hypergeometric_2f1_continued(
   if cabs((z.0 - 1.0, z.1)) == 0.0 {
     return (f64::NAN, f64::NAN);
   }
-  // Start on the ray towards z, inside the series disc.
+  // Start on the ray toward z, inside the series disc.
   let start_r = 0.5;
   let start = (z.0 / r * start_r, z.1 / r * start_r);
   let (mut w, mut dw) =
@@ -3307,7 +3307,7 @@ fn hypergeometric_u_complex(
   let is_b_near_integer = b.1.abs() < 1e-12 && (b.0 - b_int).abs() < 1e-9;
   if is_b_near_integer {
     // Integer b is a removable singularity of the connection formula (the two
-    // Γ terms have cancelling poles). Real-axis evaluation at b ± h suffers
+    // Γ terms have canceling poles). Real-axis evaluation at b ± h suffers
     // catastrophic cancellation. Instead perturb b OFF the real axis into the
     // complex plane: U(a, b, z) is analytic in b, so evaluating at the pair
     // b₀ ± i·ε and averaging gives the real limit with error O(ε²) and no

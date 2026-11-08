@@ -281,13 +281,13 @@ mod association_part_assignment {
     assert_eq!(result, "<|x -> <|n -> 7|>|>");
   }
 
-  // `a[key] = value` on an association that a `Module` or `Block` localised
+  // `a[key] = value` on an association that a `Module` or `Block` localized
   // has to add the key, not install a DownValue on the local. The two stores
   // hold an association in different shapes and only one of them was
-  // recognised, so `Module[{a = <||>}, a["k"] = 1; a]` was `<||>` — which is
+  // recognized, so `Module[{a = <||>}, a["k"] = 1; a]` was `<||>` — which is
   // what made WLJS Notebook's `parseMiniYAML` return an empty header.
   #[test]
-  fn association_key_assignment_reaches_a_localised_association() {
+  fn association_key_assignment_reaches_a_localized_association() {
     assert_eq!(
       interpret(r#"Module[{a = <||>}, a["k"] = 1; a]"#).unwrap(),
       "<|k -> 1|>"
@@ -342,7 +342,7 @@ mod association_part_assignment {
       elapsed.as_secs() < 2,
       "2000 lookups beside a 200000-element entry took {elapsed:?}"
     );
-    // The same holds for a chained lookup and for a localised association.
+    // The same holds for a chained lookup and for a localized association.
     clear_state();
     interpret(r#"deep = <|"a" -> <|"b" -> 2, "rest" -> Range[200000]|>|>"#)
       .unwrap();

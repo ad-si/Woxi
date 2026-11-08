@@ -313,7 +313,7 @@ fn expr_to_rational(e: &Expr) -> Option<(i128, i128)> {
   }
 }
 
-/// Normalised rational (sign kept in the numerator).
+/// Normalized rational (sign kept in the numerator).
 #[derive(Clone, Copy)]
 struct Q {
   n: i128,
@@ -386,7 +386,7 @@ fn resolve_multivar(
   }
 
   let is_equation = matches!(op, ComparisonOp::Equal | ComparisonOp::NotEqual);
-  // Inequalities force real values; equations honour the stated domain.
+  // Inequalities force real values; equations honor the stated domain.
   let use_reals = over_reals || !is_equation;
 
   // Complex equation with a non-constant polynomial: a non-constant

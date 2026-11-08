@@ -2784,7 +2784,7 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("FindClusters", args));
   }
   // Pull out a DistanceFunction option from any trailing arg. Other
-  // recognised options (Method, CriterionFunction, …) are accepted
+  // recognized options (Method, CriterionFunction, …) are accepted
   // and silently ignored — the default algorithm is used regardless.
   let mut distance_fn: Option<Expr> = None;
   let mut k_arg: Option<&Expr> = None;
@@ -2792,7 +2792,7 @@ pub fn find_clusters_ast_n(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(fnexpr) = extract_distance_function_option(arg) {
       distance_fn = Some(fnexpr);
     } else if is_ignorable_findclusters_option(arg) {
-      // skip — unsupported but recognised; fall back to default
+      // skip — unsupported but recognized; fall back to default
     } else {
       k_arg = Some(arg);
     }
@@ -2940,7 +2940,7 @@ fn agglomerative_clusters(
   groups
 }
 
-/// Recognise `Method`, `CriterionFunction`, `PerformanceGoal`,
+/// Recognize `Method`, `CriterionFunction`, `PerformanceGoal`,
 /// `WorkingPrecision`, etc. — `FindClusters` options that Woxi
 /// accepts but doesn't use to switch algorithm.
 fn is_ignorable_findclusters_option(opt: &Expr) -> bool {
@@ -3120,7 +3120,7 @@ fn agglomerative_cluster_strings(items: &[Expr], k: usize) -> Expr {
         let ci = act[i];
         let cj = act[j];
         // Single-linkage: minimum pairwise distance between any items
-        // currently labelled `ci` vs any items labelled `cj`.
+        // currently labeled `ci` vs any items labeled `cj`.
         let mut min_d = u32::MAX;
         for p in 0..n {
           if cluster_of[p] != ci {

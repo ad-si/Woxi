@@ -1,20 +1,20 @@
 //! The lighting model every 3D renderer shades its facets with.
 //!
-//! Decoded against wolframscript by rasterising single polygons at known
+//! Decoded against wolframscript by rasterizing single polygons at known
 //! normals and reading back pixel values (see `conformance_gaps.md`,
 //! "Graphics3D lighting"):
 //!
-//! - `colour = glow + Σ ambient·c + Σ light·(c·max(0, n·l) + s·(n·h)^e)`,
+//! - `color = glow + Σ ambient·c + Σ light·(c·max(0, n·l) + s·(n·h)^e)`,
 //!   clipped to `[0, 1]` per channel, where `c` is the
-//!   surface colour, `s`/`e` its `Specularity`, `l` the unit vector towards
+//!   surface color, `s`/`e` its `Specularity`, `l` the unit vector toward
 //!   the light and `h` the Blinn half vector between `l` and the viewer.
 //!   The highlight only appears where the light reaches the face.
 //! - Faces are lit two-sided: a normal pointing away from the viewer is
 //!   turned round first.
-//! - A `"Directional"` light at a single point `p` shines from `p` towards
+//! - A `"Directional"` light at a single point `p` shines from `p` toward
 //!   the origin of `p`'s own coordinate system, so `ImageScaled[{2, 0, 2}]`
 //!   is the direction `{1, 0, 1}` in the camera frame (x right, y up, z
-//!   towards the viewer) whatever the size of the picture.
+//!   toward the viewer) whatever the size of the picture.
 //! - Arithmetic is on the sRGB channel values directly, no gamma.
 
 use crate::functions::graphics::parse_color;
@@ -28,7 +28,7 @@ pub(crate) type Rgb = [f64; 3];
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum LightPoint {
   World([f64; 3]),
-  /// `ImageScaled[{x, y, z}]`: x across the picture, y up it, z towards
+  /// `ImageScaled[{x, y, z}]`: x across the picture, y up it, z toward
   /// the viewer; `{0.5, 0.5, 0.5}` is the middle of the scene.
   View([f64; 3]),
 }
@@ -36,7 +36,7 @@ pub(crate) enum LightPoint {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Light {
   Ambient(Rgb),
-  /// Parallel light travelling from `from` towards `to`.
+  /// Parallel light traveling from `from` toward `to`.
   Directional {
     color: Rgb,
     from: LightPoint,
@@ -50,7 +50,7 @@ pub(crate) enum Light {
     attenuation: [f64; 3],
   },
   /// A point light restricted to a cone of half angle `half_angle` about
-  /// the direction towards `target`, fading as `cos^exponent` off its axis.
+  /// the direction toward `target`, fading as `cos^exponent` off its axis.
   Spot {
     color: Rgb,
     at: LightPoint,
@@ -77,13 +77,13 @@ fn view_dir_light(color: Rgb, p: [f64; 3]) -> Light {
   }
 }
 
-fn grey(g: f64) -> Rgb {
+fn gray(g: f64) -> Rgb {
   [g, g, g]
 }
 
 impl Lighting {
   /// `Lighting -> Automatic` (also `"Standard"`): an ambient term and four
-  /// coloured directional lights fixed relative to the camera.
+  /// colored directional lights fixed relative to the camera.
   pub(crate) fn standard() -> Self {
     Lighting {
       name: None,
@@ -97,15 +97,15 @@ impl Lighting {
     }
   }
 
-  /// `Lighting -> "Neutral"`: the same arrangement in colourless light.
+  /// `Lighting -> "Neutral"`: the same arrangement in colorless light.
   pub(crate) fn neutral() -> Self {
     Lighting {
       name: Some("Neutral".into()),
       lights: vec![
-        Light::Ambient(grey(0.35)),
-        view_dir_light(grey(0.37), [2.0, 0.0, 2.0]),
-        view_dir_light(grey(0.37), [2.0, 2.0, 2.0]),
-        view_dir_light(grey(0.37), [0.0, 2.0, 2.0]),
+        Light::Ambient(gray(0.35)),
+        view_dir_light(gray(0.37), [2.0, 0.0, 2.0]),
+        view_dir_light(gray(0.37), [2.0, 2.0, 2.0]),
+        view_dir_light(gray(0.37), [0.0, 2.0, 2.0]),
       ],
     }
   }
@@ -126,14 +126,14 @@ impl Lighting {
       },
       "Accent" => Lighting {
         name: None,
-        lights: vec![view_dir_light(grey(1.0), [1.0, 1.0, 4.0])],
+        lights: vec![view_dir_light(gray(1.0), [1.0, 1.0, 4.0])],
       },
       "ThreePoint" => Lighting {
         name: None,
         lights: vec![
-          view_dir_light(grey(0.85), [1.0, 1.0, 2.0]),
-          view_dir_light(grey(0.4), [-1.0, -2.0, 2.0]),
-          view_dir_light(grey(0.1), [0.5, 2.0, -1.0]),
+          view_dir_light(gray(0.85), [1.0, 1.0, 2.0]),
+          view_dir_light(gray(0.4), [-1.0, -2.0, 2.0]),
+          view_dir_light(gray(0.1), [0.5, 2.0, -1.0]),
         ],
       },
       _ => return None,
@@ -142,7 +142,7 @@ impl Lighting {
     Some(lighting)
   }
 
-  /// Read a `Lighting` value. `Automatic` and anything unrecognised come
+  /// Read a `Lighting` value. `Automatic` and anything unrecognized come
   /// back as `None` — the caller's default light set applies — as
   /// wolframscript ignores a malformed value (`Lighting -> Red` renders
   /// exactly like the default). `Lighting -> None` is the empty set: only
@@ -165,10 +165,10 @@ impl Lighting {
 
   /// The light set of the `index`-th surface of a plot under the default
   /// theme (WL's `System`PlotThemeDump`$ThemeDefaultLighting`), with its
-  /// colour and specular exponent: the plot palette's colour lit by a
+  /// color and specular exponent: the plot palette's color lit by a
   /// darkened copy of itself, cycling after ten surfaces.
   pub(crate) fn plot_theme(index: usize) -> (Rgb, f64, Lighting) {
-    // (colour, Specularity exponent, Darker amount, Lighter amount of the
+    // (color, Specularity exponent, Darker amount, Lighter amount of the
     // ambient term, override of the middle light).
     const THEME: [(Rgb, f64, f64, f64, Option<Rgb>); 10] = [
       ([0.880722, 0.611041, 0.142051], 3.0, 0.7, 0.05, None),
@@ -416,7 +416,7 @@ fn parse_light(expr: &Expr) -> Option<Light> {
 /// The camera and scene placement the lights are positioned against.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ViewFrame {
-  /// Screen right, screen up and the direction towards the viewer, as
+  /// Screen right, screen up and the direction toward the viewer, as
   /// unit vectors in the renderer's coordinates.
   pub right: [f64; 3],
   pub up: [f64; 3],
@@ -472,13 +472,13 @@ impl ViewFrame {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Material {
   pub color: Rgb,
-  /// `Specularity[colour, exponent]`.
+  /// `Specularity[color, exponent]`.
   pub specular: Option<(Rgb, f64)>,
-  /// `Glow[colour]`.
+  /// `Glow[color]`.
   pub glow: Option<Rgb>,
 }
 
-/// The colour of a facet with `normal` at `position` under `lighting`.
+/// The color of a facet with `normal` at `position` under `lighting`.
 pub(crate) fn shade(
   material: &Material,
   normal: [f64; 3],
@@ -628,7 +628,7 @@ mod tests {
 
   #[test]
   fn blinn_highlight() {
-    // Black face, grey light along the view axis, normal tilted 0.4 rad:
+    // Black face, gray light along the view axis, normal tilted 0.4 rad:
     // wolframscript reads 0.392 = 0.5 cos(0.4)^3.
     let m = Material {
       color: [0.0; 3],
@@ -637,7 +637,7 @@ mod tests {
     };
     let l = Lighting {
       name: None,
-      lights: vec![view_dir_light(grey(0.5), [0.0, 0.0, 2.0])],
+      lights: vec![view_dir_light(gray(0.5), [0.0, 0.0, 2.0])],
     };
     let c = shade(
       &m,

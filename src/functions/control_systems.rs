@@ -172,7 +172,7 @@ fn split_delay(e: &Expr, var: &str) -> Result<(Expr, Expr), InterpreterError> {
 }
 
 /// The numerator and denominator of one transfer-function element. A
-/// ratio of polynomials keeps its own (no common factor is cancelled, as in
+/// ratio of polynomials keeps its own (no common factor is canceled, as in
 /// wolframscript); anything else is combined with `Together`. A delay
 /// stays in the numerator.
 fn element_parts(

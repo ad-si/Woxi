@@ -64,7 +64,7 @@ fn extract_grouped_decor(
 }
 
 /// What the wrappers of one chart data element add to its value:
-/// `Style[v, colour]` colours it, `Labeled[v, label]` names it and
+/// `Style[v, color]` colors it, `Labeled[v, label]` names it and
 /// `Around[v, δ]` gives it an error interval `(low, high)`.
 #[derive(Clone, Default, Debug)]
 pub(crate) struct DatumDecor {
@@ -372,7 +372,7 @@ impl StyledLabel {
   }
 
   /// The same, with each further line of a stacked label placed below the
-  /// first — centred on `cx` (the anchor the enclosing `<text>` uses) and
+  /// first — centered on `cx` (the anchor the enclosing `<text>` uses) and
   /// `line_height` render units apart.
   pub(crate) fn svg_scaled_stacked(
     &self,
@@ -565,7 +565,7 @@ pub(crate) fn parse_style_directive_args(
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
-  // bold in Wolfram, while the colour and size still reach through. A
+  // bold in Wolfram, while the color and size still reach through. A
   // `Style` inside the `Text` applies as written.
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
@@ -805,7 +805,7 @@ pub(crate) struct ChartOptions {
   pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
-  /// `FrameLabel -> {bottom, left}`: centred outside the plot area, where an
+  /// `FrameLabel -> {bottom, left}`: centered outside the plot area, where an
   /// [`Self::axes_label`] sits at the far end of its axis.
   pub frame_label: Option<(String, String)>,
   pub chart_style: Vec<Color>,
@@ -851,9 +851,9 @@ pub(crate) struct ChartOptions {
   pub bar_edge: Option<((u8, u8, u8), f64, f64)>,
   /// `Epilog -> {…}` graphics primitives (already evaluated), drawn over the
   /// finished chart. Coordinates are the chart's own: the first bar group is
-  /// centred at `x = 1`, values run along `y`.
+  /// centered at `x = 1`, values run along `y`.
   pub epilog: Vec<Expr>,
-  /// `ColorFunction -> f`: colours each element by `f` of its value.
+  /// `ColorFunction -> f`: colors each element by `f` of its value.
   pub color_function: Option<Expr>,
   /// `ColorFunctionScaling -> False` hands `f` the raw values instead of
   /// values rescaled to 0..1.
@@ -916,7 +916,7 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     }
     // A typesetting wrapper only chooses how its content is set, not what
     // it says — a Demonstration writes `AxesLabel -> TraditionalForm /@ {t,
-    // y}`, and dropping the wrapper would leave both axes unlabelled.
+    // y}`, and dropping the wrapper would leave both axes unlabeled.
     Expr::FunctionCall { name, args }
       if name == "FormBox" && args.len() == 2 =>
     {
@@ -1320,7 +1320,7 @@ fn applied_label(e: &Expr) -> Option<String> {
     // is applied in round brackets under its traditional name (`Re(Z)`,
     // `sin(x)`), with its arguments set as labels so
     // `Sin[Subscript[k, 1] x]` reads `sin(k₁ x)`.
-    // (Each argument is labelled once: testing them first and labelling
+    // (Each argument is labeled once: testing them first and labeling
     // them again doubled the work at every level of a nested label.)
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       let parts: Vec<String> =
@@ -2521,7 +2521,7 @@ const WATERMELON_COLORS_GRADIENT: [(f64, f64, f64); 8] = [
 ];
 
 /// The chart palette of `PlotTheme -> "Business"`: wolframscript blends it
-/// across the bars (these are its colours for eight bars, `t = i/7`).
+/// across the bars (these are its colors for eight bars, `t = i/7`).
 const BUSINESS_THEME_GRADIENT: [(f64, f64, f64); 8] = [
   (0.973, 0.6454, 0.1729),
   (0.9498571428571428, 0.5343142857142857, 0.23538571428571428),
@@ -2691,10 +2691,10 @@ pub(crate) fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
   }
 }
 
-/// With `ColorFunction -> f` and no explicit `ChartStyle`, colour each chart
+/// With `ColorFunction -> f` and no explicit `ChartStyle`, color each chart
 /// element by `f` of its value — rescaled to 0..1 over the values unless
 /// `ColorFunctionScaling -> False`. `values` holds one value per element, in
-/// the order `chart_style` colours them.
+/// the order `chart_style` colors them.
 pub(crate) fn apply_color_function(opts: &mut ChartOptions, values: &[f64]) {
   let Some(cf) = opts.color_function.clone() else {
     return;
@@ -2851,7 +2851,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.plot_label = Some(sl);
           }
         }
-        // The two differ in placement: a `FrameLabel` sits centred outside
+        // The two differ in placement: a `FrameLabel` sits centered outside
         // the bottom/left edge, an `AxesLabel` at the far end of its axis.
         "AxesLabel" | "FrameLabel" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -3016,8 +3016,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               opts.chart_style_scheme = scheme_name(&val);
             }
             _ => {
-              // A `Directive[colour, EdgeForm[…], …]` colours the elements
-              // with its colour (and edges them, see `bar_edge`).
+              // A `Directive[color, EdgeForm[…], …]` colors the elements
+              // with its color (and edges them, see `bar_edge`).
               let color = parse_color(&val).or_else(|| match &val {
                 Expr::FunctionCall { name, args } if name == "Directive" => {
                   args.iter().find_map(parse_color)
@@ -3079,16 +3079,16 @@ pub(crate) fn invalid_dataset(head: &str, args: &[Expr]) -> Expr {
 /// Rewrite a chart call whose data is an `Association` (or temporal data) into the equivalent
 /// list form. The values become the data — a nested association (or an
 /// association of lists) gives one group / dataset per key — and the keys
-/// fill in every `Automatic` labelling option:
+/// fill in every `Automatic` labeling option:
 ///
 /// - `ChartLabels -> Automatic` / `PlotLabels -> Automatic` (also inside
 ///   `Placed[Automatic, …]` or `Callout[Automatic, …]`) names
 ///   the groups by the outer keys; with nested associations it is
 ///   `{outerKeys, innerKeys}`.
 /// - `ChartLegends -> Automatic` / `PlotLegends -> Automatic` name the
-///   colours: the inner keys of a nested association (its bars or sectors),
+///   colors: the inner keys of a nested association (its bars or sectors),
 ///   otherwise the keys. With `datasets_legended` (`Histogram`, whose
-///   colours are its datasets) they are always the outer keys.
+///   colors are its datasets) they are always the outer keys.
 ///
 /// `TimeSeries` / `TemporalData` data become their values, the time stamps
 /// being ignored; `WeightedData` / `EventData` their values, the weights and
@@ -3301,7 +3301,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     groups.len()
   };
-  // A function colours the bars of a flat list, one per value.
+  // A function colors the bars of a flat list, one per value.
   if bars_per_group <= 1 {
     let values: Vec<f64> =
       groups.iter().filter_map(|g| g.first().copied()).collect();
@@ -3437,7 +3437,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &opts.chart_style,
     &opts.chart_legends,
     opts.legend_layout,
-    // PlotRange is in chart coordinates (first bar centred at x = 1).
+    // PlotRange is in chart coordinates (first bar centered at x = 1).
     opts.plot_range_x.map(|(lo, hi)| (lo - 0.5, hi - 0.5)),
     opts.plot_range_y,
     &bar_labels,
@@ -3452,7 +3452,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// The `EdgeForm[spec]` inside a chart style (`ChartBaseStyle`,
 /// `ChartStyle`, possibly within a `Directive` or list) as the bars' edge:
-/// colour (black unless given), stroke width in render units and opacity
+/// color (black unless given), stroke width in render units and opacity
 /// (WL's default chart edge's unless given).
 pub(crate) fn chart_edge_form(
   value: &Expr,
@@ -4063,10 +4063,10 @@ pub(crate) enum PairedLook {
   /// their labels; the magnitude axes reach 5% past the largest bar.
   Histogram,
   /// `PairedSmoothHistogram`: value ticks point away from the gap and are
-  /// labelled just right of its left edge; the magnitude axes end at the
+  /// labeled just right of its left edge; the magnitude axes end at the
   /// largest density.
   Smooth,
-  /// `PairedBarChart`: like `Histogram`, but the value axes are unlabelled
+  /// `PairedBarChart`: like `Histogram`, but the value axes are unlabeled
   /// and marked (3 pt) only at the ends of the bars.
   Bar,
 }
@@ -4137,7 +4137,7 @@ impl PairedValueAxis {
     largest.max(f64::MIN_POSITIVE) * r / (1.0 - r)
   }
 
-  /// The axes of a paired chart whose halves start `gap` from the centre
+  /// The axes of a paired chart whose halves start `gap` from the center
   /// and whose magnitude axes end `extent` from it: a value axis on each
   /// side of the gap and a magnitude axis under each half. Tick marks are
   /// 4 (major) and 2.5 (minor) printer points long at the default image
@@ -4292,7 +4292,7 @@ fn paired_magnitude_step(span: f64) -> f64 {
 }
 
 /// The major tick step of a `PairedBarChart`'s magnitude axes, which reach
-/// `extent` from the centre: the 1, 2, 2.5 or 5 × 10^k that cuts `extent`
+/// `extent` from the center: the 1, 2, 2.5 or 5 × 10^k that cuts `extent`
 /// into closest to three intervals (read off wolframscript).
 fn paired_bar_magnitude_step(extent: f64) -> f64 {
   if !(extent.is_finite() && extent > 0.0) {
@@ -4335,7 +4335,7 @@ fn paired_ticks(lo: f64, hi: f64, step: f64) -> (Vec<(f64, String)>, Vec<f64>) {
 }
 
 /// The bars of a vertical `BarChart` as `Graphics[{Rectangle[…], …}, opts]`
-/// in chart coordinates (the first bar centred at x = 1), so `Show` can lay
+/// in chart coordinates (the first bar centered at x = 1), so `Show` can lay
 /// other plots over the chart instead of dropping one of them. Only the
 /// options that shape the frame and axes are carried over.
 fn bar_chart_structure(
@@ -4406,7 +4406,7 @@ fn bar_chart_structure(
     }
   }
   // `ChartLabels` name the groups below the baseline (one label per group,
-  // centred on it).
+  // centered on it).
   if !opts.chart_labels.is_empty() {
     let mut labels: Vec<Expr> = vec![Expr::FunctionCall {
       name: "GrayLevel".to_string(),
@@ -4552,7 +4552,7 @@ fn labeling_function_label(
     other => (other, None),
   };
   // `Style[expr, …]` only chooses how the label is set, so its content is
-  // what gets labelled (and therefore number-formatted); a result of `Null`
+  // what gets labeled (and therefore number-formatted); a result of `Null`
   // (`If[#1 != 0, …]` with a false condition) means "no label here".
   let mut inner = inner;
   while let Expr::FunctionCall { name, args } = inner {
@@ -4684,9 +4684,9 @@ pub(crate) fn parse_sector_origin(args: &[Expr]) -> (f64, bool, f64) {
 }
 
 /// WL's `"GlassSector"` shading: the saturation and brightness of the
-/// sector's colour (in HSB) are scaled by these factors at 21 evenly
+/// sector's color (in HSB) are scaled by these factors at 21 evenly
 /// spaced steps from the sector's inner to its outer radius (read off the
-/// vertex colours wolframscript builds), keeping the hue.
+/// vertex colors wolframscript builds), keeping the hue.
 const GLASS_SECTOR_SATURATION: [f64; 21] = [
   0.9426751592356689,
   0.4758620689655173,
@@ -4734,7 +4734,7 @@ const GLASS_SECTOR_BRIGHTNESS: [f64; 21] = [
   0.611764705882353,
 ];
 
-/// The `<defs>` of a `"GlassSector"` sector's radial gradient (centred on
+/// The `<defs>` of a `"GlassSector"` sector's radial gradient (centered on
 /// the pie at `(cx, cy)`, the sector reaching from `r_in` to `r_out`) and
 /// its id. The id is derived from the gradient, so equal sectors share it.
 fn glass_sector_gradient(
@@ -4777,7 +4777,7 @@ fn glass_sector_gradient(
   )
 }
 
-/// An 8-bit RGB colour as hue, saturation and brightness in `0..=1`.
+/// An 8-bit RGB color as hue, saturation and brightness in `0..=1`.
 fn rgb_to_hsb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
   let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
   let max = r.max(g).max(b);
@@ -4796,7 +4796,7 @@ fn rgb_to_hsb(r: u8, g: u8, b: u8) -> (f64, f64, f64) {
   (h, s, max)
 }
 
-/// Hue, saturation and brightness in `0..=1` as an 8-bit RGB colour.
+/// Hue, saturation and brightness in `0..=1` as an 8-bit RGB color.
 fn hsb_to_rgb(h: f64, s: f64, v: f64) -> (u8, u8, u8) {
   let h6 = (h.rem_euclid(1.0)) * 6.0;
   let i = h6.floor();
@@ -4833,7 +4833,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let mut opts = parse_chart_options(args);
-  // `Style[v, colour]` / `Labeled[v, label]` wrappers, one per slice.
+  // `Style[v, color]` / `Labeled[v, label]` wrappers, one per slice.
   let decor: Vec<Vec<DatumDecor>> = {
     let groups = extract_grouped_decor(&args[0]).unwrap_or_default();
     if groups.iter().all(|g| g.len() == 1) && rows.len() == 1 {
@@ -5162,7 +5162,7 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let lx = cx + r_label * mid_angle.cos();
         let ly = cy + r_label * mid_angle.sin();
         // A stacked (`Column`) label puts each line on its own `tspan`,
-        // the block as a whole centred on the wedge.
+        // the block as a whole centered on the wedge.
         let lines: Vec<&str> = label.text.split('\n').collect();
         let line_height = 14.4;
         let first_dy = -line_height * (lines.len() as f64 - 1.0) / 2.0;
@@ -5258,8 +5258,8 @@ fn pie_slice_label_svg(
   mid_angle: f64,
 ) -> String {
   // Where along the slice's radial band the text sits. A solid wedge has no
-  // inner edge, so its band starts at the centre and the centred label pulls
-  // in to 0.6 of the radius — far enough out that neighbouring labels don't
+  // inner edge, so its band starts at the center and the centered label pulls
+  // in to 0.6 of the radius — far enough out that neighboring labels don't
   // collide at the hub.
   let band = |f: f64| {
     if r_in <= 1e-9 {
@@ -5273,7 +5273,7 @@ fn pie_slice_label_svg(
     Some("RadialInner") => band(0.25),
     Some("RadialOuter") => band(0.85),
     _ if callout => r_out * 1.06,
-    // "RadialCenter" and every other placement centre the label in its band.
+    // "RadialCenter" and every other placement center the label in its band.
     _ => {
       if r_in <= 1e-9 {
         r_out * 0.6
@@ -5286,7 +5286,7 @@ fn pie_slice_label_svg(
   let lx = cx + r_label * dx;
   let ly = cy + r_label * dy;
   // A callout's text grows away from the pie, so it anchors on the side
-  // facing the centre; an inside label is centred on its point.
+  // facing the center; an inside label is centered on its point.
   let anchor = if !callout {
     "middle"
   } else if dx >= 0.0 {
@@ -5315,8 +5315,8 @@ fn pie_slice_label_svg(
 /// Renders a 3D bar chart with each bar drawn as a colored cuboid.
 /// `BarChart3D` as Wolfram draws it: a unit-wide, unit-deep block per
 /// value, side by side in their groups (`ChartLayout -> "Stacked"` piles a
-/// group's values into one column), coloured by their place in the group —
-/// or, for a flat list, all in the first colour unless `ChartStyle` names
+/// group's values into one column), colored by their place in the group —
+/// or, for a flat list, all in the first color unless `ChartStyle` names
 /// one per bar.
 fn bar_chart_3d_graphics(
   groups: &[Vec<f64>],
@@ -5858,7 +5858,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   const SEG_PER_TURN: usize = 64;
 
   let mut labels: Vec<Label3D> = Vec::new();
-  // The colour of each slice of the first ring, by data position.
+  // The color of each slice of the first ring, by data position.
   // Without a `ChartStyle`, the 3D charts' own palette.
   let slice_color = |i: usize| {
     if opts.chart_style.is_empty() {
@@ -5900,7 +5900,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if ring_idx == 0 {
         element_colors[i] = base_color;
         // `ChartLabels` of a single pie sit on the top face, radially
-        // centred on their slice.
+        // centered on their slice.
         if n_rings == 1
           && let Some(label) = opts.chart_labels.get(i)
         {
@@ -5955,7 +5955,7 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result(svg))
 }
 
-/// The label of a 3-D sector: centred at radius `r`, angle `angle` on the
+/// The label of a 3-D sector: centered at radius `r`, angle `angle` on the
 /// sector's top face `z`.
 fn sector_label_3d(
   r: f64,
@@ -6083,7 +6083,7 @@ fn render_3d_triangles(
   svg
 }
 
-/// A chart label of a 3-D chart: its text centred on the projected anchor
+/// A chart label of a 3-D chart: its text centered on the projected anchor
 /// point `at`, shifted down by `dy` pixels.
 struct Label3D {
   at: (f64, f64),
@@ -6092,7 +6092,7 @@ struct Label3D {
 }
 
 /// Add a `ChartLegends` / `PlotLegends` column of swatches (entry `i`
-/// coloured `color(i)`) to the right of a finished chart SVG. The chart
+/// colored `color(i)`) to the right of a finished chart SVG. The chart
 /// keeps its place and size while the frame widens to fit the legend, as
 /// with `PieChart`.
 pub(crate) fn with_chart_legend(
@@ -7991,7 +7991,7 @@ fn candle_half_width(n: usize) -> f64 {
 /// CandlestickChart[{{date1, {o1, h1, l1, c1}}, …}] — one candle per entry
 /// at index positions 1, 2, …: a body from open to close, green when the
 /// close is not below the open and red otherwise, with wicks to the high
-/// and the low, over a horizontal axis labelled with the day of the month
+/// and the low, over a horizontal axis labeled with the day of the month
 /// and horizontal grid lines, built as WL's `Graphics`.
 pub fn candlestick_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -8170,7 +8170,7 @@ pub fn candlestick_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// WordCloud[words], WordCloud[<|w1 -> wt1, …|>], WordCloud[{wt1 -> w1, …}],
 /// WordCloud[{{w1, wt1}, …}] or WordCloud["text"] — horizontal words sized
-/// by weight (or frequency), packed around the heaviest one and coloured by
+/// by weight (or frequency), packed around the heaviest one and colored by
 /// rank with `ColorData[116]`, as WL does.
 pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use std::collections::HashMap;
@@ -8258,7 +8258,7 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Heaviest first, ties alphabetically: this rank picks the colour.
+  // Heaviest first, ties alphabetically: this rank picks the color.
   weighted.sort_by(|a, b| {
     b.1
       .partial_cmp(&a.1)
@@ -8326,7 +8326,7 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Pack the `(word, font size)`s of a word cloud on an Archimedean spiral
-/// around the origin, the first at the centre (y up). Each word is tested
+/// around the origin, the first at the center (y up). Each word is tested
 /// glyph by glyph against the glyphs already placed, using the ink boxes of
 /// the face the text is drawn in, so no two words overlap. Returns each
 /// word's baseline origin and its placed glyph boxes.
@@ -8337,7 +8337,7 @@ fn place_cloud_words(
   let mut taken: Vec<Vec<GlyphBox>> = Vec::with_capacity(words.len());
   for &(word, size) in words {
     let boxes = word_glyph_boxes(word, size);
-    // Centre the word's ink on the spiral point.
+    // Center the word's ink on the spiral point.
     let (bx0, bx1, by0, by1) = glyph_boxes_extent(boxes.iter());
     let (ox, oy) = (-(bx0 + bx1) / 2.0, -(by0 + by1) / 2.0);
     let mut s = 0usize;

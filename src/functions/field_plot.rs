@@ -74,7 +74,7 @@ fn evaluate_scalar(
 
 /// Split a stream-density field into its vector part and, for the
 /// `{{vx, vy}, s}` form, the scalar `s` that shades the background. The form
-/// is recognised by a first element that evaluates to a two-component
+/// is recognized by a first element that evaluates to a two-component
 /// vector at the corner of the plot range.
 fn split_vector_and_density<'a>(
   spec: &'a Expr,
@@ -145,7 +145,7 @@ fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
   }
 }
 
-/// Draw a field plot's `PlotLabel`, centred above its plot area.
+/// Draw a field plot's `PlotLabel`, centered above its plot area.
 fn inject_field_plot_label(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
@@ -274,8 +274,8 @@ struct DensityContourOptions {
   color_function_scaling: bool,
   contours: ContourSpec,
   contour_shading: bool,
-  /// `ContourShading -> {c1, c2, …}`: the colours of the bands from the
-  /// bottom up (cycled); empty for the colour function's.
+  /// `ContourShading -> {c1, c2, …}`: the colors of the bands from the
+  /// bottom up (cycled); empty for the color function's.
   contour_shading_colors: Vec<(u8, u8, u8)>,
   /// `Mesh -> n`: how many mesh lines each mesh function contributes.
   mesh: Option<usize>,
@@ -285,7 +285,7 @@ struct DensityContourOptions {
   /// `MeshStyle -> style`: how the mesh lines are drawn.
   mesh_style: Option<crate::functions::plot::SeriesStyle>,
   /// `ContourStyle -> {Thick, Blue}`: how the contour lines are drawn.
-  /// `None` keeps the default thin dark-grey line.
+  /// `None` keeps the default thin dark-gray line.
   contour_style: Option<crate::functions::plot::SeriesStyle>,
   /// `ContourStyle -> {{Black, Thick}, {Red, Thick}}`: one style per
   /// contour function, cycled when there are more functions than styles.
@@ -320,11 +320,11 @@ struct DensityContourOptions {
   /// The explicit `Contours -> {…}` levels as written, so a label of an
   /// exact level stays exact.
   contour_level_exprs: Vec<(f64, Expr)>,
-  /// `PlotLegends -> Automatic`: a colour bar right of the plot with one
-  /// swatch per shaded band, labelled at the contour levels.
+  /// `PlotLegends -> Automatic`: a color bar right of the plot with one
+  /// swatch per shaded band, labeled at the contour levels.
   bar_legend: bool,
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
-  /// range): the values the colours span, instead of the sampled ones.
+  /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
@@ -339,9 +339,9 @@ struct DensityContourOptions {
 enum Clipping {
   /// `None` (Wolfram's default): the cell is left blank.
   Blank,
-  /// `Automatic`: the colour of the end of the range it is beyond.
+  /// `Automatic`: the color of the end of the range it is beyond.
   Saturate,
-  /// A colour (or `{below, above}` colours); `None` leaves that side blank.
+  /// A color (or `{below, above}` colors); `None` leaves that side blank.
   Colors(Option<(u8, u8, u8)>, Option<(u8, u8, u8)>),
 }
 
@@ -433,7 +433,7 @@ impl DensityContourOptions {
       .map(|e| (e, self.color_function_scaling))
   }
 
-  /// How the contour bands are coloured.
+  /// How the contour bands are colored.
   fn band_coloring(&self) -> BandColoring<'_> {
     BandColoring {
       color_function: self.color_function.as_deref(),
@@ -706,7 +706,7 @@ pub(crate) fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
 }
 
 impl DensityContourOptions {
-  /// The stroke colour, weight and extra SVG attributes (its opacity) of
+  /// The stroke color, weight and extra SVG attributes (its opacity) of
   /// the contour lines: whatever `ContourStyle` asked for, otherwise WL's
   /// default `Directive[GrayLevel[0], Opacity[0.5]]` at 1 point (opaque
   /// without shading).
@@ -780,7 +780,7 @@ impl DensityContourOptions {
       super::graphics::Color::to_svg_rgb,
     );
     let weight = points(style.thickness.unwrap_or(CONTOUR_LINE_WEIGHT));
-    // A style without a colour keeps the default's translucency.
+    // A style without a color keeps the default's translucency.
     let opacity = style.opacity.unwrap_or(if style.color.is_some() {
       1.0
     } else {
@@ -934,7 +934,7 @@ fn field_frame_layout(
     .map_or(0.0, |(_, size)| size.unwrap_or(14.0) * 1.35);
   let width = opts.svg_width as f64;
   let aspect = opts.aspect_ratio;
-  // The last x label is centred on its tick and the top y label on its own,
+  // The last x label is centered on its tick and the top y label on its own,
   // so either may reach past the frame's end; the padding then grows by
   // the overhang (from WL: `ImageSize -> 200` gives a right padding of 4.4).
   let last_x_half = x_ticks
@@ -974,7 +974,7 @@ fn field_frame_layout(
     fh + top + bottom + title
   };
   // A frame narrower than the room it was given (an explicit height) is
-  // centred in it.
+  // centered in it.
   let x0 = left + ((width - left - right) - fw).max(0.0) / 2.0;
   let y0 = top + title + ((height - top - bottom - title) - fh).max(0.0) / 2.0;
   FieldFrameLayout {
@@ -1196,7 +1196,7 @@ fn contour_label_points(
     let segments =
       marching_squares_segments(grid, level, x0, y0, cell_w, cell_h);
     // Every separate line of the level carries its own label, as in
-    // Wolfram; neighbouring levels put theirs a third of the way along
+    // Wolfram; neighboring levels put theirs a third of the way along
     // their lines from opposite ends, so labels of nested lines do not
     // stack up in one column.
     let along = if k % 2 == 0 { 1.0 / 3.0 } else { 2.0 / 3.0 };
@@ -1211,7 +1211,7 @@ fn contour_label_points(
 }
 
 /// `ContourLabels -> True`: write each contour's level on each of its
-/// lines, centred on the line with a light halo so it stays legible over
+/// lines, centered on the line with a light halo so it stays legible over
 /// the shading.
 fn push_contour_labels(
   svg: &mut String,
@@ -1242,8 +1242,8 @@ fn push_contour_labels(
 /// Extra display-pixel width a bar legend adds right of the plot.
 const BAR_LEGEND_STRIP: u32 = 53;
 
-/// `PlotLegends -> Automatic`: widen the picture and draw a vertical colour
-/// bar with one swatch per contour band (lowest at the bottom), labelled at
+/// `PlotLegends -> Automatic`: widen the picture and draw a vertical color
+/// bar with one swatch per contour band (lowest at the bottom), labeled at
 /// the contour levels — Wolfram's `BarLegend`.
 fn push_bar_legend(
   svg: &mut String,
@@ -1334,10 +1334,10 @@ fn push_bar_legend(
 pub(crate) const BAR_LEGEND_HEIGHT: f64 = 200.0;
 
 /// A `BarLegend[{colors, {min, max}}]` (or `BarLegend[colors]` over 0..1):
-/// a vertical colour bar `bar_height` display pixels tall, labelled to its
-/// right. `colors` is a gradient name or a colour function of the rescaled
+/// a vertical color bar `bar_height` display pixels tall, labeled to its
+/// right. `colors` is a gradient name or a color function of the rescaled
 /// value. A second argument `{c1, c2, …}` makes it discrete: one band per
-/// interval between the contours, labelled at the contours. `LegendLabel`
+/// interval between the contours, labeled at the contours. `LegendLabel`
 /// is drawn above the bar.
 pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let (colors, (lo, hi)) = match args.first()? {
@@ -1375,7 +1375,7 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     }
     _ => None,
   };
-  // A colour function gets the values themselves, unless the legend says
+  // A color function gets the values themselves, unless the legend says
   // `ColorFunctionScaling -> True` (as a plot's own legend does).
   let scaling = option("ColorFunctionScaling")
     .is_some_and(|v| matches!(&*v, Expr::Identifier(s) if s == "True"));
@@ -1409,7 +1409,7 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let y_of =
     |v: f64| top + bar_height * (1.0 - ((v - lo) / span).clamp(0.0, 1.0));
 
-  // Labelled values, and the unlabelled minor tick values between them.
+  // Labeled values, and the unlabeled minor tick values between them.
   let step = crate::functions::plot::nice_step(span, 5);
   let (majors, minors): (Vec<f64>, Vec<f64>) = if let Some(cs) = &contours {
     (cs.clone(), Vec::new())
@@ -1475,7 +1475,7 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       ));
     }
   } else {
-    // Interpolate between colour samples in SVG, avoiding visible band edges.
+    // Interpolate between color samples in SVG, avoiding visible band edges.
     let mut stops = String::new();
     for k in 0..=64 {
       let t = k as f64 / 64.0;
@@ -1734,8 +1734,8 @@ fn embed_grid_image(
   embed_color_image(svg, &colors, x0, y0, w, h);
 }
 
-/// The colour of each grid cell (`grid[col][row]`, row 0 at the bottom) on
-/// a colour scale spanning `range`; a cell without a value, or one outside
+/// The color of each grid cell (`grid[col][row]`, row 0 at the bottom) on
+/// a color scale spanning `range`; a cell without a value, or one outside
 /// the range that `clipping` leaves blank, has none.
 fn cell_colors(
   grid: &[Vec<f64>],
@@ -1785,7 +1785,7 @@ fn cell_colors(
     .collect()
 }
 
-/// Embed a grid of cell colours (`colors[col][row]`, row 0 at the bottom;
+/// Embed a grid of cell colors (`colors[col][row]`, row 0 at the bottom;
 /// `None` transparent) as an image filling the given plot rectangle.
 fn embed_color_image(
   svg: &mut String,
@@ -2068,7 +2068,7 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
   regions
 }
 
-/// The colour of band `b`, from the value at its middle.
+/// The color of band `b`, from the value at its middle.
 fn band_color(
   band: usize,
   levels: &[f64],
@@ -2077,7 +2077,7 @@ fn band_color(
   coloring: &BandColoring,
 ) -> (u8, u8, u8) {
   // `ContourShading -> {c1, c2, …}` paints the bands from the bottom up,
-  // cycling through the colours.
+  // cycling through the colors.
   if !coloring.shading.is_empty() {
     return coloring.shading[band % coloring.shading.len()];
   }
@@ -2085,8 +2085,8 @@ fn band_color(
   bounds.push(v_min);
   bounds.extend_from_slice(levels);
   bounds.push(v_max);
-  // As in Wolfram, the lowest band takes the colour of the bottom of the
-  // range, the highest that of the top, and every other band the colour of
+  // As in Wolfram, the lowest band takes the color of the bottom of the
+  // range, the highest that of the top, and every other band the color of
   // its middle.
   let last = bounds.len() - 2;
   let value = if band == 0 && last > 0 {
@@ -2104,8 +2104,8 @@ fn band_color(
   )
 }
 
-/// How the bands between contours are coloured: `ContourShading -> {…}`
-/// colours, else the colour function at each band's value.
+/// How the bands between contours are colored: `ContourShading -> {…}`
+/// colors, else the color function at each band's value.
 struct BandColoring<'a> {
   color_function: Option<&'a str>,
   color_function_expr: Option<(&'a Expr, bool)>,
@@ -2199,9 +2199,9 @@ fn contour_band_primitives(
           Expr::Real(color.2 as f64 / 255.0),
         ],
       );
-      // Edged in its own colour, so neighbouring bands meet without an
+      // Edged in its own color, so neighboring bands meet without an
       // antialiasing seam — the same trick the SVG renderer plays with a
-      // stroke in the fill colour.
+      // stroke in the fill color.
       items.push(call1("EdgeForm", rgb.clone()));
       items.push(rgb);
       last_color = Some(color);
@@ -2548,8 +2548,8 @@ fn push_mesh_grids(
   }
 }
 
-/// The mesh lines as data-space `Line` primitives under a light grey
-/// thin-line style, in their own list so the grey does not leak onto
+/// The mesh lines as data-space `Line` primitives under a light gray
+/// thin-line style, in their own list so the gray does not leak onto
 /// whatever is drawn after them. Empty when there are no mesh lines.
 fn mesh_structure_items(
   mesh_grids: &[MeshGrid],
@@ -2662,7 +2662,7 @@ fn contour_structure_items(
   mesh: Vec<Expr>,
 ) -> Vec<Expr> {
   let mut structure_items: Vec<Expr> = Vec::new();
-  // The shaded bands go underneath, in their own list so their colours do
+  // The shaded bands go underneath, in their own list so their colors do
   // not leak onto the mesh and contour lines drawn over them.
   if opts.contour_shading {
     let bands = contour_band_primitives(
@@ -2680,7 +2680,7 @@ fn contour_structure_items(
       structure_items.push(Expr::List(bands.into()));
     }
   }
-  // Mesh lines next, in their own list so their grey does not leak onto
+  // Mesh lines next, in their own list so their gray does not leak onto
   // the contours drawn after them.
   structure_items.extend(mesh);
   structure_items.extend(style);
@@ -2876,9 +2876,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colours
+  // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colors
   // span; cells beyond it follow `ClippingStyle` (blank by default).
-  // Otherwise the colours span the sampled values.
+  // Otherwise the colors span the sampled values.
   let (v_min, v_max) = opts
     .value_range
     .unwrap_or_else(|| robust_value_range(&samples));
@@ -2934,10 +2934,10 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
 
-  // The coloured cells as a `Raster` spanning the plotted domain (rows from
+  // The colored cells as a `Raster` spanning the plotted domain (rows from
   // the bottom up), so `Show` can lay other graphics over the density
   // instead of setting the two pictures side by side. Cells without a
-  // colour stay transparent.
+  // color stay transparent.
   // A body with no numeric values (an equation, say) leaves the plot blank:
   // no raster, but the empty frame still merges under `Show`.
   let raster = colors.as_ref().map(|colors| {
@@ -2988,7 +2988,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(graphic);
   }
   // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
-  // After]]`, as in Wolfram: a colour bar over the plotted value range,
+  // After]]`, as in Wolfram: a color bar over the plotted value range,
   // which `Show` keeps when it merges the plot with other graphics.
   let colors = match (&opts.color_function, &opts.color_function_expr) {
     (_, Some(f)) => f.clone(),
@@ -3002,7 +3002,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]
     .into(),
   )];
-  // The plot's colour function takes rescaled values, and so does its bar.
+  // The plot's color function takes rescaled values, and so does its bar.
   if opts.color_function_expr.is_some() && opts.color_function_scaling {
     bar_args.push(rule_expr(id_expr("ColorFunctionScaling"), bool_expr(true)));
   }
@@ -3278,7 +3278,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       // As in Wolfram, the levels are chosen over the whole plot range and
-      // the colours over the part a `RegionFunction` keeps.
+      // the colors over the part a `RegionFunction` keeps.
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
       {
@@ -3567,7 +3567,7 @@ fn contour_plot_equations(
   for (body, style_index) in bodies {
     let style = opts.style_for_contour(*style_index);
     // An equation's curve is drawn like a `Plot` curve: the next palette
-    // colour at `AbsoluteThickness[2]`, unless `ContourStyle` says otherwise.
+    // color at `AbsoluteThickness[2]`, unless `ContourStyle` says otherwise.
     let series_color = style.and_then(|s| s.color).map_or(
       crate::functions::plot::PLOT_COLORS
         [*style_index % crate::functions::plot::PLOT_COLORS.len()],
@@ -3651,7 +3651,7 @@ fn contour_plot_equations(
         .collect();
       if points.len() >= 2 {
         // The curve carries its `ContourStyle` into the series too, so a
-        // `Show[{ContourPlot[…], …}]` re-render keeps the colour and weight
+        // `Show[{ContourPlot[…], …}]` re-render keeps the color and weight
         // the standalone picture was drawn with.
         series.push(crate::syntax::PlotSeriesData {
           points,
@@ -3792,8 +3792,8 @@ const REGION_PLOT_ONLY_OPTIONS: &[&str] = &[
 /// RegionPlot[{pred1, pred2, …}, …]
 ///
 /// Each predicate's region is traced as exact boundary loops and drawn the
-/// way Wolfram draws it: filled at 30% opacity in its `ColorData[97]` colour
-/// (or its `PlotStyle`), with the boundary stroked in the same colour. The
+/// way Wolfram draws it: filled at 30% opacity in its `ColorData[97]` color
+/// (or its `PlotStyle`), with the boundary stroked in the same color. The
 /// picture is assembled as `Graphics[…]` primitives and rendered by the
 /// shared Graphics renderer, so every `Graphics` option (`Axes`,
 /// `AxesOrigin`, `GridLines`, `Frame`, `ImageSize`, …) applies, and
@@ -3838,11 +3838,11 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None => Vec::new(),
   };
   // `BoundaryStyle -> None` drops the outline; any other explicit value
-  // replaces the default stroke in the region's colour.
+  // replaces the default stroke in the region's color.
   let boundary_style = option("BoundaryStyle")
     .filter(|s| !matches!(s, Expr::Identifier(n) if n == "Automatic"));
 
-  // `ColorFunction -> f` colours the region pointwise by `f[x, y]` (the
+  // `ColorFunction -> f` colors the region pointwise by `f[x, y]` (the
   // coordinates scaled to 0..1 over the plot range unless
   // `ColorFunctionScaling -> False`) instead of filling it with one flat tint.
   let color_function = option("ColorFunction").filter(
@@ -3898,7 +3898,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let palette = crate::functions::plot::PLOT_COLORS;
     let style = (!plot_styles.is_empty())
       .then(|| plot_styles[k % plot_styles.len()].clone());
-    // The face takes the `PlotStyle` colour when it names one; the default
+    // The face takes the `PlotStyle` color when it names one; the default
     // outline keeps the palette's either way.
     let palette_color = rgb_color(palette[k % palette.len()]);
     let color = style
@@ -4156,11 +4156,11 @@ fn region_mesh_lines(
   lines
 }
 
-/// Cells per axis of a `ColorFunction`-coloured `RegionPlot`.
+/// Cells per axis of a `ColorFunction`-colored `RegionPlot`.
 const REGION_PLOT_COLOR_CELLS: usize = 60;
 
-/// The `{color, Rectangle[…]}` cells of a `ColorFunction`-coloured region:
-/// every cell of an `n × n` grid whose centre satisfies `pred` is filled with
+/// The `{color, Rectangle[…]}` cells of a `ColorFunction`-colored region:
+/// every cell of an `n × n` grid whose center satisfies `pred` is filled with
 /// `cf[x, y]`, the coordinates scaled to 0..1 over the plot range when
 /// `scaling` is set.
 fn region_plot_color_cells(
@@ -4223,8 +4223,8 @@ fn region_plot_color_cells(
   cells
 }
 
-/// The colour a `PlotStyle` entry names — the entry itself, or the last
-/// colour inside a `Directive[…]`/list of directives — as `RGBColor[…]`.
+/// The color a `PlotStyle` entry names — the entry itself, or the last
+/// color inside a `Directive[…]`/list of directives — as `RGBColor[…]`.
 fn style_color(style: &Expr) -> Option<Expr> {
   match style {
     Expr::List(items) => items.iter().rev().find_map(style_color),
@@ -4464,7 +4464,7 @@ fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
 }
 
 /// Removes the points of a closed loop that lie on the straight line
-/// between their neighbours, so a straight boundary is a single edge.
+/// between their neighbors, so a straight boundary is a single edge.
 fn drop_collinear_points(ring: &[(f64, f64)], tol: f64) -> Vec<(f64, f64)> {
   let mut pts = ring.to_vec();
   loop {
@@ -4488,7 +4488,7 @@ fn drop_collinear_points(ring: &[(f64, f64)], tol: f64) -> Vec<(f64, f64)> {
     if keep.iter().all(|&k| k) {
       return pts;
     }
-    // Drop every other removable point per pass so two neighbouring
+    // Drop every other removable point per pass so two neighboring
     // removals never both rely on each other.
     let mut removed_prev = false;
     let mut next = Vec::with_capacity(len);
@@ -4567,15 +4567,15 @@ pub(crate) fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
   polygons
 }
 
-/// How `VectorPlot` colours and shapes its vectors, from
+/// How `VectorPlot` colors and shapes its vectors, from
 /// `VectorColorFunction`, `VectorColorFunctionScaling`, `VectorStyle` and
 /// `VectorScaling`.
 struct VectorArrowStyle {
-  /// `VectorColorFunction`: the colour of each vector.
+  /// `VectorColorFunction`: the color of each vector.
   color_function: VectorColoring,
   /// `VectorColorFunctionScaling -> False` passes the raw arguments.
   scaling: bool,
-  /// `VectorStyle -> color`: the colour of every vector when
+  /// `VectorStyle -> color`: the color of every vector when
   /// `VectorColorFunction -> None`.
   color: Option<(u8, u8, u8)>,
   /// `VectorStyle -> "Segment"`: plain segments without arrowheads.
@@ -4589,7 +4589,7 @@ struct VectorArrowStyle {
 enum VectorColoring {
   /// `Automatic`: the magnitude on `"WL12DefaultVectorGradient"`.
   Default,
-  /// `None`: the `VectorStyle` colour (Wolfram's default blue otherwise).
+  /// `None`: the `VectorStyle` color (Wolfram's default blue otherwise).
   Plain,
   /// A gradient name.
   Named(String),
@@ -4681,11 +4681,11 @@ fn parse_vector_points(args: &[Expr], start: usize) -> VectorPointsSpec {
 /// the pixel length of an arrow.
 ///
 /// The points form a staggered (hexagonal) lattice along the longer side:
-/// rows of `n` points at the cell centres alternate with rows of `n - 1`
+/// rows of `n` points at the cell centers alternate with rows of `n - 1`
 /// at the cell edges, starting with a full row. With a count `n` the rows
-/// are `√3/2` cells apart and centred across the shorter side; with
+/// are `√3/2` cells apart and centered across the shorter side; with
 /// `{nx, ny}` the smaller count of rows spans the first to the last cell
-/// centre. Every arrow is `0.9 / max(n, 12)` of the longer side.
+/// center. Every arrow is `0.9 / max(n, 12)` of the longer side.
 fn vector_sample_points(
   spec: VectorPointsSpec,
   width: f64,
@@ -4763,7 +4763,7 @@ fn sample_vector_field(
 /// The arrows of a vector field as `{Arrowheads[…], {color, Arrow[…]}}`
 /// primitives in data coordinates, the way Wolfram's `VectorPlot` builds
 /// them: each arrow `arrow_len` pixels long (scaled by the magnitude under
-/// `VectorScaling -> Automatic`), centred on its sample point and pointing
+/// `VectorScaling -> Automatic`), centered on its sample point and pointing
 /// along the vector as the axes display it, with a head half its length.
 /// Zero vectors are left out.
 fn vector_arrow_primitives(
@@ -5269,7 +5269,7 @@ fn rgb_color((r, g, b): (u8, u8, u8)) -> Expr {
 
 /// The streamlines `StreamPlot` and `StreamDensityPlot` draw over the
 /// domain, as primitives in data coordinates: evenly spaced streamlines of
-/// the field `body`, each a run of arrows coloured by the flow speed, styled
+/// the field `body`, each a run of arrows colored by the flow speed, styled
 /// by the plot's `StreamPoints`, `StreamColorFunction`, `StreamStyle` and
 /// `RegionFunction` options among `options`.
 fn stream_primitives(
@@ -5279,7 +5279,7 @@ fn stream_primitives(
   options: &[Expr],
 ) -> Vec<Expr> {
   // `StreamStyle -> color` paints every streamline alike; the default
-  // cycles through the plot colours.
+  // cycles through the plot colors.
   let stream_color = options.iter().find_map(|a| match a {
     Expr::Rule {
       pattern,
@@ -5349,7 +5349,7 @@ fn stream_primitives(
 
   // Each streamline is drawn as a run of arrows, each 8% of the plot range
   // long with its head at the end (shorter at a streamline's end, with a
-  // proportionally smaller head), coloured by the flow speed through it.
+  // proportionally smaller head), colored by the flow speed through it.
   const SEGMENT: f64 = 0.08;
   let normalized_len = |a: (f64, f64), b: (f64, f64)| {
     let du = (b.0 - a.0) / (x_max - x_min);
@@ -5388,10 +5388,10 @@ fn stream_primitives(
       (lo.min(*s), hi.max(*s))
     });
 
-  // By default the speed picks a colour on WL12DefaultVectorGradient, which
-  // overrides a `StreamStyle` colour as in Wolfram. `StreamColorFunction ->
-  // None` draws every streamline in the `StreamStyle` colour (or the first
-  // plot colour); a gradient name or a function replaces the default one.
+  // By default the speed picks a color on WL12DefaultVectorGradient, which
+  // overrides a `StreamStyle` color as in Wolfram. `StreamColorFunction ->
+  // None` draws every streamline in the `StreamStyle` color (or the first
+  // plot color); a gradient name or a function replaces the default one.
   let color_function = option_rule(options, "StreamColorFunction");
   let color_of = |speed: f64| -> (u8, u8, u8) {
     let t = if speed_max > speed_min {
@@ -6036,7 +6036,7 @@ fn smooth_density_surface(
 }
 
 /// ReliefPlot[array] - shaded relief of a matrix of heights: each cell is
-/// coloured by its height and darkened or lightened by how its slope
+/// colored by its height and darkened or lightened by how its slope
 /// faces the light (`LightingAngle`). The first matrix row is at the
 /// bottom unless `DataReversed -> True`; `DataRange` places the matrix.
 pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7244,7 +7244,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Draw the frame around the entire plot: a 0.5 pt line centred half a
+    // Draw the frame around the entire plot: a 0.5 pt line centered half a
     // point inside the picture's edge, as WL draws it.
     if !frame_hidden && (frame_forced || !mesh) {
       let b0 = (s as i32) / 4;
@@ -7314,7 +7314,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       frame_ticks.left =
         automatic_array_ticks(y0, y1, n_rows, !data_reversed, 0.0);
     } else {
-      // Without a `DataRange` the axes count cells, labelled on all four
+      // Without a `DataRange` the axes count cells, labeled on all four
       // edges (rows from the top unless `DataReversed`).
       let axis = |n: usize, reversed: bool| -> Vec<FrameTickLabel> {
         array_index_ticks(n, ticks_with_ends)
@@ -7345,7 +7345,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &frame_ticks,
     &tick_style,
   );
-  let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
+  let buf = frame_labeled_svg(&buf, svg_width, svg_height, &frame_labels);
   let buf = if let Some(label_svg) = parse_field_plot_label_graphic(args, 1) {
     with_graphic_label_above(&buf, &label_svg)
   } else {
@@ -7840,7 +7840,7 @@ fn frame_ticked_svg(
   );
   let x_of = |pos: f64| ml + (pad_l + pos - 0.5) / total_cols * w;
   let y_of = |pos: f64| mt + (pad_t + pos - 0.5) / total_rows * h;
-  // Short tick marks pointing out of the frame at every labelled position.
+  // Short tick marks pointing out of the frame at every labeled position.
   const MARK: f64 = 4.0;
   let mark = |x1: f64, y1: f64, x2: f64, y2: f64| {
     format!(
@@ -7935,7 +7935,7 @@ fn svg_root_size(svg: &str) -> Option<(f64, f64)> {
 }
 
 /// Set a graphic used as a `PlotLabel` above a finished picture: the label
-/// graphic keeps its own size, centred in a strip above the picture, and the
+/// graphic keeps its own size, centered in a strip above the picture, and the
 /// canvas widens if the label is wider than the picture.
 fn with_graphic_label_above(svg: &str, label_svg: &str) -> String {
   let (Some((w, h)), Some((lw, lh))) =
@@ -8000,11 +8000,11 @@ fn with_plot_label_above(
 /// Put a plot's `FrameLabel` text around an already-rendered picture.
 ///
 /// The picture keeps its size and is inset into a larger canvas with just
-/// enough room on each labelled edge for one line of text. Left and right
+/// enough room on each labeled edge for one line of text. Left and right
 /// labels are rotated to run along their edge, the way Wolfram sets them:
 /// counter-clockwise on the left, clockwise on the right, so each reads
 /// from the outside in. Returns `svg` unchanged when there is no label.
-fn frame_labelled_svg(
+fn frame_labeled_svg(
   svg: &str,
   width: u32,
   height: u32,
@@ -8308,7 +8308,7 @@ fn evaluate_complex_at(
 }
 
 /// The LAB stops of Wolfram's cyclic `"MidShiftBalancedHue"` gradient
-/// (from `ColorData["MidShiftBalancedHue", "BlendArgument"]`): the colour
+/// (from `ColorData["MidShiftBalancedHue", "BlendArgument"]`): the color
 /// `ComplexPlot` gives the argument of `f`, rescaled from `{-π, π}`.
 pub(crate) const MID_SHIFT_BALANCED_HUE: [(f64, f64, f64); 11] = [
   (
@@ -8368,7 +8368,7 @@ pub(crate) const MID_SHIFT_BALANCED_HUE: [(f64, f64, f64); 11] = [
   ),
 ];
 
-/// How `ComplexPlot` shades the argument colour by the value of `f`: the
+/// How `ComplexPlot` shades the argument color by the value of `f`: the
 /// `ColorFunction` names Wolfram defines (`Automatic` is `"LocalMaxAbs"`).
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum ComplexShading {
@@ -8423,7 +8423,7 @@ fn quantile_of(sorted: &[f64], q: f64) -> f64 {
   sorted[k - 1]
 }
 
-/// Wolfram's `ComplexPlot` colouring of the values `values` (`None` where
+/// Wolfram's `ComplexPlot` coloring of the values `values` (`None` where
 /// `f` has no number): the argument on `"MidShiftBalancedHue"`, shaded by
 /// `shading` as `ComplexPlotsDump`complexArrayPlotRasterGenerate` does.
 fn complex_shaded_colors(
@@ -8526,14 +8526,14 @@ fn complex_shaded_colors(
 /// ComplexPlot[f, {z, zmin, zmax}]
 /// Domain coloring visualization of a complex function, framed like
 /// DensityPlot: the argument of `f` picks a hue on `"MidShiftBalancedHue"`
-/// and its magnitude shades it (towards white where `|f|` is large, by
+/// and its magnitude shades it (toward white where `|f|` is large, by
 /// default), sampled on Wolfram's raster (144 points across, 400 for the
 /// cyclic shadings).
 pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = &args[0];
   let (zvar, re_min, re_max, im_min, im_max) =
     parse_complex_iterator(&args[1], "ComplexPlot")?;
-  // The colouring is ours; the rest of `parse_density_contour_options`
+  // The coloring is ours; the rest of `parse_density_contour_options`
   // (frame, labels, image size, epilog) applies as for DensityPlot.
   let shading = match option_rule(&args[2..], "ColorFunction") {
     Some(Expr::String(name)) => {
@@ -8566,7 +8566,7 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.truncate(pos);
   }
 
-  // Sample the cell centres, column by column from the left, each column
+  // Sample the cell centers, column by column from the left, each column
   // from the bottom.
   let mut values = Vec::with_capacity(grid_size * grid_size);
   for i in 0..grid_size {

@@ -18,7 +18,7 @@ mod date_charts {
 
   /// Regression: CandlestickChart stayed unevaluated.
   #[test]
-  fn candlestick_chart_colours_and_axis() {
+  fn candlestick_chart_colors_and_axis() {
     clear_state();
     let data = "{{DateObject[{2024, 1, 1}], {10, 12, 9, 11}}, \
                 {DateObject[{2024, 1, 2}], {12.5, 13, 11, 11.5}}}";
@@ -27,7 +27,7 @@ mod date_charts {
       "Graphics"
     );
     // A rising candle is green, a falling one red; the axis sits 10.35 %
-    // of the value range below the lowest low and is labelled by day.
+    // of the value range below the lowest low and is labeled by day.
     assert_eq!(
       interpret(&format!(
         "Cases[CandlestickChart[{data}], RGBColor[r_, _, _] :> \
@@ -74,7 +74,7 @@ fn export_svg(expr: &str) -> String {
 }
 
 /// The y-axis tick labels of a rendered plot, top to bottom. Plotters draws
-/// an empty `<text>` for every minor tick, so only the labelled ones are kept.
+/// an empty `<text>` for every minor tick, so only the labeled ones are kept.
 fn y_tick_labels(svg: &str) -> Vec<String> {
   let mut labels: Vec<(i64, String)> = svg
     .split("<text ")
@@ -343,7 +343,7 @@ mod graphics {
 
     #[test]
     fn graph_summary_explicit_two_arg_form() {
-      // Graph[{v…}, {e…}] form also summarises with vertex/edge counts.
+      // Graph[{v…}, {e…}] form also summarizes with vertex/edge counts.
       assert_eq!(
         interpret(
           "Graph[{1, 2, 3, 4}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], \
@@ -670,18 +670,18 @@ mod graphics {
       insta::assert_snapshot!(export_svg("Graphics[{Sphere[{0, 0}]}]"));
     }
 
-    // `Sphere[{p1, p2, …}, r]` is one sphere of radius `r` per centre.
+    // `Sphere[{p1, p2, …}, r]` is one sphere of radius `r` per center.
     #[test]
     fn sphere_accepts_a_list_of_centers() {
       let svg = export_svg("Graphics[{Sphere[{{0, 0}, {3, 0}, {6, 0}}, 1]}]");
       assert_eq!(
         svg.matches("<ellipse").count(),
         3,
-        "one circle per centre:\n{svg}"
+        "one circle per center:\n{svg}"
       );
     }
 
-    // `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius
+    // `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each center its own radius
     // instead of one shared radius for the whole set.
     #[test]
     fn sphere_accepts_a_list_of_radii() {
@@ -710,7 +710,7 @@ mod graphics {
       );
     }
 
-    // A three-dimensional centre belongs to a `Graphics3D` and contributes
+    // A three-dimensional center belongs to a `Graphics3D` and contributes
     // nothing to a flat picture — not even a plot range.
     #[test]
     fn sphere_with_3d_center_draws_nothing_in_2d() {
@@ -721,13 +721,13 @@ mod graphics {
       );
     }
 
-    // `Circumsphere` of three planar points returns `Sphere[centre, r]`, and
+    // `Circumsphere` of three planar points returns `Sphere[center, r]`, and
     // that is what a Demonstration hands to `Graphics` to draw a circumcircle.
     #[test]
     fn circumsphere_of_planar_points_draws_the_circumcircle() {
       let svg =
         export_svg("Graphics[{Circumsphere[{{0, 0}, {4, 0}, {0, 3}}]}]");
-      // Centre {2, 3/2}, radius 5/2: a round circle filling the picture.
+      // Center {2, 3/2}, radius 5/2: a round circle filling the picture.
       assert!(
         svg.contains("<ellipse") && svg.contains("fill=\"none\""),
         "circumcircle should be stroked:\n{svg}"
@@ -1500,7 +1500,7 @@ mod graphics {
 
     /// An inset `size` is the width of the whole chart picture, and the
     /// chart's white plate must not paint over what it overlaps — a pie
-    /// inset used to fill its whole `size` and hide its neighbours.
+    /// inset used to fill its whole `size` and hide its neighbors.
     #[test]
     fn a_chart_inset_is_scaled_as_a_whole_without_its_plate() {
       let svg = export_svg(
@@ -1627,7 +1627,7 @@ mod graphics {
         nested.contains("width=\"212.67\""),
         "the plot is sized in the enclosing coordinates: {nested}"
       );
-      // The plot's own (0, 0) lands on the anchor {3, -2}: the plot centre
+      // The plot's own (0, 0) lands on the anchor {3, -2}: the plot center
       // sits half its width right of it.
       assert!(
         nested.contains("x=\"326.08\""),
@@ -1669,7 +1669,7 @@ mod graphics {
         );
       }
       // The picture is half the 359px drawing area wide; its corner, not
-      // its centre, sits on the anchor.
+      // its center, sits on the anchor.
       assert!(
         corner("{Left, Top}").contains("<svg x=\"-179.50\" y=\"-179.50\"")
       );
@@ -1683,7 +1683,7 @@ mod graphics {
 
     /// `Inset[image, pos, {0, 0}, size]` puts the image's own lower-left
     /// pixel corner on `pos` (an image is measured in pixels), not its
-    /// centre; `{w, h}` names its upper-right corner.
+    /// center; `{w, h}` names its upper-right corner.
     #[test]
     fn an_image_inset_with_a_numeric_object_anchor_pins_that_pixel() {
       let inset = |opos: &str| {
@@ -1692,7 +1692,7 @@ mod graphics {
            {opos}, 1]}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
         ))
       };
-      // The picture is centred in a copy padded to twice its far side of the
+      // The picture is centered in a copy padded to twice its far side of the
       // anchor; the shift says which half of that pad the image occupies.
       // Lower-left corner on the origin: the image lies up and to the right.
       assert!(inset("{0, 0}").contains("translate(2.00,0.00)"));
@@ -1745,7 +1745,7 @@ mod graphics {
     /// Either half of an anchor may be symbolic: a Demonstration pins its
     /// inset with `{0.8, Center}` — four-fifths along the x axis, halfway
     /// up the y one. An unresolved half used to drop the whole position and
-    /// centre the inset in the plot.
+    /// center the inset in the plot.
     #[test]
     fn an_inset_anchor_takes_symbolic_coordinates() {
       let anchor = |pos: &str| -> (f64, f64) {
@@ -1773,7 +1773,7 @@ mod graphics {
       };
       // `Center` in either slot is the midpoint of that axis' range, so
       // `{0.8, Center}` lands where the fully numeric `{0.8, 5}` does — and
-      // well left of the plot's own centre.
+      // well left of the plot's own center.
       assert_eq!(anchor("{0.8, Center}"), anchor("{0.8, 5}"));
       assert!(
         anchor("{0.8, Center}").0 < anchor("{5, Center}").0,
@@ -2057,11 +2057,11 @@ mod graphics {
     }
 
     /// `FaceForm` sets only the fill of area primitives (Disk, Polygon,
-    /// Rectangle); unlike a bare colour directive, it must not recolour a
+    /// Rectangle); unlike a bare color directive, it must not recolor a
     /// `Text` that follows it. A random Wolfram Demonstration notebook
     /// (Stapler Puzzle) hit this: `{FaceForm[Yellow], Disk[...],
     /// Text[Style[1, Bold], ...]}` rendered the digit in the disk's own
-    /// fill colour, making it invisible against the disk.
+    /// fill color, making it invisible against the disk.
     #[test]
     fn face_form_does_not_recolor_text() {
       let svg = export_svg(
@@ -2086,7 +2086,7 @@ mod graphics {
     }
 
     /// `FaceForm[Opacity[a]]` makes only area primitives translucent: the
-    /// current colour is kept, a `Text` after it stays opaque, and a later
+    /// current color is kept, a `Text` after it stays opaque, and a later
     /// general `Opacity` directive supersedes it. Hit by the Quotients and
     /// Remainders Wheel demo, whose wedges rendered fully opaque.
     #[test]
@@ -2115,8 +2115,8 @@ mod graphics {
       assert!(!text.contains("opacity"), "Text stays opaque: {text}");
     }
 
-    /// A bare colour directive (not wrapped in `FaceForm`) is the general
-    /// "current colour" and does recolour the `Text` that follows it,
+    /// A bare color directive (not wrapped in `FaceForm`) is the general
+    /// "current color" and does recolor the `Text` that follows it,
     /// unlike `FaceForm`.
     #[test]
     fn bare_color_directive_does_recolor_text() {
@@ -2129,7 +2129,7 @@ mod graphics {
         .expect("a text label");
       assert!(
         text.contains("fill=\"rgb(0,0,255)\""),
-        "Text after a bare colour directive should take that colour: {text}"
+        "Text after a bare color directive should take that color: {text}"
       );
     }
 
@@ -2160,7 +2160,7 @@ mod graphics {
       );
     }
 
-    /// `EdgeForm[Directive[…]]` (and nested lists) carry the same colour
+    /// `EdgeForm[Directive[…]]` (and nested lists) carry the same color
     /// and width as the bare form.
     #[test]
     fn edge_form_accepts_directive_wrapper() {
@@ -2210,7 +2210,7 @@ mod graphics {
     }
 
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
-    /// width alone strokes black, a colour alone strokes at width 1, and
+    /// width alone strokes black, a color alone strokes at width 1, and
     /// an `EdgeForm` that names neither draws no edge at all — which is
     /// what makes `EdgeForm[If[outline, Thin, None]]` a working toggle.
     #[test]
@@ -2677,7 +2677,7 @@ mod graphics {
       assert!(!svg.contains("Sum["), "{svg}");
     }
 
-    /// The lines of a multi-line label are centred on its anchor.
+    /// The lines of a multi-line label are centered on its anchor.
     #[test]
     fn text_multiline_is_vertically_centered() {
       let svg = export_svg(
@@ -2744,9 +2744,10 @@ mod graphics {
         "Graphics[{Text[\"abc\", {1, 0}, {1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
       );
       assert!(right.contains("text-anchor=\"end\""), "{right}");
-      let centred = export_svg("Graphics[{Text[\"abc\", {0, 0}]}]");
+      let centered = export_svg("Graphics[{Text[\"abc\", {0, 0}]}]");
       assert!(
-        centred.contains("<text") && centred.contains("text-anchor=\"middle\"")
+        centered.contains("<text")
+          && centered.contains("text-anchor=\"middle\"")
       );
     }
 
@@ -2810,7 +2811,7 @@ mod graphics {
         .unwrap_or_else(|| panic!("no background panel in {svg}"));
       assert!(
         panel.contains("fill=\"rgb(255,255,255)\""),
-        "the panel takes the background colour: {panel}"
+        "the panel takes the background color: {panel}"
       );
     }
 
@@ -2833,7 +2834,7 @@ mod graphics {
     }
 
     /// `Background` styles a label, not the primitives beside it — a shape
-    /// under the same `Style` keeps its own colour and grows no panel.
+    /// under the same `Style` keeps its own color and grows no panel.
     #[test]
     fn style_background_does_not_paint_behind_shapes() {
       let svg = export_svg(
@@ -2914,7 +2915,7 @@ mod graphics {
             {0.5, 0.5}]}, PlotRange -> {{-3, 3}, {-3, 3}}]",
       );
       assert!(!svg.contains("-Graphics-"), "the inset must draw: {svg}");
-      // The disk is an ellipse of the requested size, centred on {1, 1};
+      // The disk is an ellipse of the requested size, centered on {1, 1};
       // the square is a smaller rectangle at {-1, -1}.
       let ellipse = svg
         .lines()
@@ -3096,7 +3097,7 @@ mod graphics {
     }
 
     #[test]
-    fn pie_chart_of_association_of_quantities_draws_labelled_slices() {
+    fn pie_chart_of_association_of_quantities_draws_labeled_slices() {
       // Regression: an Association (and `Quantity` values) was rejected with
       // `PieChart::ldata`. Slices take the values; `ChartLabels -> Automatic`
       // uses the keys.
@@ -3297,7 +3298,7 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
-    /// A wide tick label centred on the right end of the x axis keeps its
+    /// A wide tick label centered on the right end of the x axis keeps its
     /// whole width inside the image instead of being clipped.
     #[test]
     fn right_end_tick_label_stays_inside_the_image() {
@@ -3748,7 +3749,7 @@ mod graphics {
         assert!(svg.contains("rx=\"5.00\" ry=\"5.00\""), "{svg}");
       }
 
-      // A `TableForm` of `Grid`s labelling a point lays the grids out as a
+      // A `TableForm` of `Grid`s labeling a point lays the grids out as a
       // table, not as the literal source `Grid[{{…}}]`.
       #[test]
       fn text_label_table_form_of_grids_is_laid_out() {
@@ -3972,7 +3973,7 @@ mod graphics {
     /// missing or came out wrong at some point; this keeps the whole figure
     /// together.
     #[test]
-    fn labelled_cyclic_polygon_draws_circle_chords_and_masked_labels() {
+    fn labeled_cyclic_polygon_draws_circle_chords_and_masked_labels() {
       let svg = export_svg(
         "Show[{
            Graphics[{Circumsphere[{{14, 0}, {0, 0}, {5, 12}}]}],
@@ -4087,11 +4088,11 @@ mod graphics {
       assert_ne!(pair, flat, "the vector pair must actually rotate");
     }
 
-    /// A `Plot` Epilog `Text[label, pt, {ox, oy}]` honours its offset: the
+    /// A `Plot` Epilog `Text[label, pt, {ox, oy}]` honors its offset: the
     /// anchor sits on the label's left/right edge for `{∓1, 0}` instead of
-    /// the label always being centred on the point.
+    /// the label always being centered on the point.
     #[test]
-    fn plot_epilog_text_honours_offset() {
+    fn plot_epilog_text_honors_offset() {
       let text_of = |off: &str| {
         let svg = export_svg(&format!(
           "Plot[x, {{x, 0, 10}}, Epilog -> Text[\"label\", {{2, 5}}{off}]]"
@@ -4492,7 +4493,7 @@ mod graphics {
     use super::*;
 
     /// Number of plotted data marks/curves, told apart from axes and ticks
-    /// by the default first plot colour.
+    /// by the default first plot color.
     fn curve_marks(svg: &str) -> usize {
       svg.matches("#3D99CC").count()
     }
@@ -4623,8 +4624,8 @@ mod plot3d {
     assert!(rect < square, "{rect} !< {square}");
   }
 
-  /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], colour]]`
-  /// colours and thins out the surface, both when drawn on its own and when
+  /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], color]]`
+  /// colors and thins out the surface, both when drawn on its own and when
   /// `Show` re-renders it from its symbolic form.
   #[test]
   fn color_function_directive_sets_color_and_opacity() {
@@ -4690,7 +4691,7 @@ mod plot3d {
 
   /// A `Texture` in a `SphericalPlot3D` `PlotStyle` paints the surface with
   /// the image, placed by `TextureCoordinateFunction` (repeating outside the
-  /// unit square) — not with the plot's default height colouring.
+  /// unit square) — not with the plot's default height coloring.
   #[test]
   fn spherical_plot_paints_a_texture() {
     let plot = |opts: &str| {
@@ -4721,7 +4722,7 @@ mod plot3d {
   }
 
   /// SphericalPlot3D is drawn with the data's own proportions (WL's
-  /// `BoxRatios -> Automatic`) and honours `PlotRange`, `Boxed` and `Axes`
+  /// `BoxRatios -> Automatic`) and honors `PlotRange`, `Boxed` and `Axes`
   /// like any `Graphics3D`; regression: a sphere came out as a flat disc in
   /// a box, whatever those options said.
   #[test]
@@ -4940,7 +4941,7 @@ mod plot3d {
     /// `PlotRange -> {{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds all
     /// three axes. Only the two-element (z-only) form used to be read, so
     /// this full form was ignored: a surface that shoots off past the box
-    /// was drawn whole, and the vertical axis was labelled with the data's
+    /// was drawn whole, and the vertical axis was labeled with the data's
     /// own extent instead of the range asked for.
     #[test]
     fn plot_range_bounds_all_three_axes() {
@@ -4975,7 +4976,7 @@ mod plot3d {
     }
 
     // `AxesLabel` was never read at all: a `Plot3D` surface always drew
-    // an unlabelled box, same as `ListPlot3D`.
+    // an unlabeled box, same as `ListPlot3D`.
     #[test]
     fn axes_label_names_all_three_axes() {
       let svg = export_svg(
@@ -5031,12 +5032,12 @@ mod plot3d {
         .and_then(|s| s.split('"').next())
         .and_then(|s| s.parse().ok())
         .expect("x attribute");
-      assert!(x >= 0.0, "z label centre is off the canvas: {tag}");
+      assert!(x >= 0.0, "z label center is off the canvas: {tag}");
     }
 
-    /// Every `<polygon>` fill colour appearing in the SVG, as `(r, g, b)`
+    /// Every `<polygon>` fill color appearing in the SVG, as `(r, g, b)`
     /// triples — parsed straight out of the `fill="rgb(r,g,b)"` attribute so
-    /// a test can check the lit colours a surface actually rendered with.
+    /// a test can check the lit colors a surface actually rendered with.
     fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
       svg
         .split("<polygon ")
@@ -5051,8 +5052,8 @@ mod plot3d {
         .collect()
     }
 
-    /// Without `PlotStyle`, `Plot3D` colours a surface by height (a rainbow
-    /// gradient); this must stay the *only* thing that produces colour, so
+    /// Without `PlotStyle`, `Plot3D` colors a surface by height (a rainbow
+    /// gradient); this must stay the *only* thing that produces color, so
     /// this baseline call is the regression guard the `PlotStyle` tests
     /// below diff against — any accidental change to the no-`PlotStyle`
     /// path would also show up in the `paraboloid`/`trig_function` snapshots
@@ -5064,8 +5065,8 @@ mod plot3d {
     /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
     /// rendered surface (only the symbolic `GraphicsComplex` structure used
     /// it): the picture stayed the default height-based rainbow no matter
-    /// what colour was asked for. The rendered fills must now be shaded
-    /// versions of the requested colour instead.
+    /// what color was asked for. The rendered fills must now be shaded
+    /// versions of the requested color instead.
     #[test]
     fn plotstyle_color_changes_rendered_fill() {
       let styled = export_svg(
@@ -5077,8 +5078,8 @@ mod plot3d {
         styled,
         "PlotStyle must change the rendered SVG"
       );
-      // The default lights are coloured, so a facet turned to the red one
-      // reads redder than the requested colour (wolframscript's render
+      // The default lights are colored, so a facet turned to the red one
+      // reads redder than the requested color (wolframscript's render
       // shows the same brown flanks); on average the surface still reads
       // green over blue, unlike the default orange.
       let colors = fill_colors(&styled);
@@ -5093,7 +5094,7 @@ mod plot3d {
     }
 
     /// `PlotStyle -> {c1, c2}` on a multi-surface `Plot3D[{f1, f2}, ...]`
-    /// gives each surface its own colour, cycling through the list.
+    /// gives each surface its own color, cycling through the list.
     #[test]
     fn plotstyle_list_gives_each_surface_its_own_color() {
       let svg = export_svg(
@@ -5125,8 +5126,8 @@ mod plot3d {
     }
 
     /// A `Specularity` directive mixed into `PlotStyle` adds a highlight on
-    /// top of the requested colour rather than repainting the surface with
-    /// the highlight's own colour (mirrors the `Graphics3D` behaviour). A
+    /// top of the requested color rather than repainting the surface with
+    /// the highlight's own color (mirrors the `Graphics3D` behavior). A
     /// rippled surface's facet normals rarely line up with the exact
     /// light/view bisector the way a full sphere's do, so this checks for a
     /// clear brightening rather than the near-white peak the `Graphics3D`
@@ -5152,14 +5153,14 @@ mod plot3d {
       assert!(
         shiny_max > plain_max + 30,
         "Specularity[White, …] should brighten some facet well past the \
-         matte surface's own colour, got {plain_max} -> {shiny_max}"
+         matte surface's own color, got {plain_max} -> {shiny_max}"
       );
     }
 
-    /// `Lighting -> "Neutral"` uses colourless lights, so a surface with no
-    /// colour directive is grey-white instead of the default blue.
+    /// `Lighting -> "Neutral"` uses colorless lights, so a surface with no
+    /// color directive is gray-white instead of the default blue.
     #[test]
-    fn neutral_lighting_leaves_uncoloured_surfaces_grey() {
+    fn neutral_lighting_leaves_uncoloured_surfaces_gray() {
       let default = export_svg("Graphics3D[Cuboid[]]");
       let neutral = export_svg("Graphics3D[Cuboid[], Lighting -> \"Neutral\"]");
       assert!(
@@ -5170,7 +5171,7 @@ mod plot3d {
       assert_eq!(faces.len(), 12, "a cuboid is twelve triangles");
       assert!(
         faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
-        "neutral lighting should stay grey, got {faces:?}"
+        "neutral lighting should stay gray, got {faces:?}"
       );
     }
 
@@ -5343,7 +5344,7 @@ mod plot3d {
       // The audit's Export case: write a NumericArray-backed RGB image
       // to a JPEG file, get back the filename. Previously the audit
       // harness hit ARG_MAX before the image could even reach Export;
-      // pin the behaviour here from a Rust test so the full path is
+      // pin the behavior here from a Rust test so the full path is
       // exercised.
       let path = temp_file("woxi_test_export_image_numericarray.jpg");
       let _ = std::fs::remove_file(&path);
@@ -5550,7 +5551,7 @@ mod plot3d {
     /// `ParametricPlot` was ignored (the curve stayed one flat color); it
     /// receives the curve parameter as its third argument.
     #[test]
-    fn parametric_plot_honours_color_function() {
+    fn parametric_plot_honors_color_function() {
       clear_state();
       let svg = |opts: &str| {
         interpret(&format!(
@@ -5622,7 +5623,7 @@ mod plot3d {
       assert_eq!(result, "201");
     }
 
-    /// A `ColorFunction` returning a bare `{r, g, b}` list colours the facets
+    /// A `ColorFunction` returning a bare `{r, g, b}` list colors the facets
     /// with that RGB value (a sampled texture) instead of being ignored.
     #[test]
     fn parametric_plot3d_surface_color_function_rgb_list() {
@@ -5637,7 +5638,7 @@ mod plot3d {
     /// so the curve was always drawn in one flat color instead of being
     /// colored along its length.
     #[test]
-    fn parametric_curve_honours_color_function() {
+    fn parametric_curve_honors_color_function() {
       clear_state();
       // Distinct colors along the curve, driven by the scaled z coordinate.
       let result = interpret(
@@ -5667,7 +5668,7 @@ mod plot3d {
     /// Regression: `ParametricPlot3D` surfaces ignored `RegionFunction`, so
     /// cylinders meant to have holes cut into them were drawn solid.
     #[test]
-    fn parametric_surface_honours_region_function() {
+    fn parametric_surface_honors_region_function() {
       clear_state();
       let result = interpret(
         "Length[Cases[ParametricPlot3D[{t, Cos[u], Sin[u]}, {t, -3, 3}, \
@@ -5692,7 +5693,7 @@ mod plot3d {
     /// (`PlotPoints -> 15`) took minutes to draw instead of staying
     /// interactive.
     #[test]
-    fn parametric_surface_honours_plot_points() {
+    fn parametric_surface_honors_plot_points() {
       clear_state();
       for (n, points) in [("4", 16), ("7", 49), ("{5, 5}", 25)] {
         let result = interpret(&format!(
@@ -5705,11 +5706,11 @@ mod plot3d {
     }
 
     /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex baked a
-    /// height colour into every facet, so a colour directive placed before
+    /// height color into every facet, so a color directive placed before
     /// it (the bimetal-strip layers) was overridden. Default facets carry
-    /// no colour; an explicit `PlotStyle` colour still does.
+    /// no color; an explicit `PlotStyle` color still does.
     #[test]
-    fn extracted_parametric_surface_has_no_baked_default_colour() {
+    fn extracted_parametric_surface_has_no_baked_default_color() {
       clear_state();
       let plain = interpret(
         "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
@@ -5918,7 +5919,7 @@ mod plot3d {
         ));
       }
 
-      /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples —
+      /// Every `<polygon>` fill color in the SVG, as `(r, g, b)` triples —
       /// see the identical helper documented in `plot3d::options`.
       fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
         svg
@@ -5937,7 +5938,7 @@ mod plot3d {
       /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
       /// rendered surface: only `First[RevolutionPlot3D[...]]`'s symbolic
       /// `GraphicsComplex` respected it, so the picture stayed the default
-      /// height-based rainbow no matter what colour was requested.
+      /// height-based rainbow no matter what color was requested.
       #[test]
       fn plotstyle_color_changes_rendered_fill() {
         let baseline = export_svg("RevolutionPlot3D[{t^2, t}, {t, 0, 2}]");
@@ -6015,7 +6016,7 @@ mod plot3d {
       #[test]
       fn color_function_colors_each_facet_from_six_arguments() {
         // `ColorFunction` receives `{x, y, z, theta, phi, r}` per facet; the
-        // colours reach both the symbolic form and the rendered SVG.
+        // colors reach both the symbolic form and the rendered SVG.
         let code = "SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}, PlotPoints -> 9, ColorFunctionScaling -> False, ColorFunction -> Function[{x, y, z, t, p, r}, If[z > 0, RGBColor[1, 0, 0], RGBColor[0, 0, 1]]]]";
         assert_eq!(
           interpret(&format!(
@@ -6636,7 +6637,7 @@ mod plot3d {
     }
 
     #[test]
-    fn plot_label_inline_swatch_graphic_is_a_coloured_dot() {
+    fn plot_label_inline_swatch_graphic_is_a_colored_dot() {
       for color in ["Red", "Blue"] {
         let svg = export_svg(&format!(
           "Graphics3D[Sphere[], PlotLabel -> Row[{{Graphics[{{{color}, Disk[]}}, ImageSize -> 10], \" x\"}}]]"
@@ -6679,7 +6680,7 @@ mod plot3d {
     /// The red component of every shaded facet's fill, so a test can talk
     /// about how dark or bright a surface came out. Only `<polygon>` fills
     /// count — the white background `<rect>` is not part of the shading.
-    /// The red channel of every flat facet fill and of every colour a
+    /// The red channel of every flat facet fill and of every color a
     /// smoothly shaded facet's gradient runs through.
     fn fill_reds(svg: &str) -> Vec<u32> {
       let flat = svg.split("<polygon ").skip(1).filter_map(|tag| {
@@ -6720,11 +6721,11 @@ mod plot3d {
       assert!(!shown.contains(">4.5</text>"));
     }
 
-    /// `Specularity[colour, n]` describes a surface's *highlight*, not its
-    /// body colour: a sphere given `{GrayLevel[.25], Specularity[White, 10]}`
-    /// (the Kepler's-conjecture cannonball stack) stays dark grey and gains a
+    /// `Specularity[color, n]` describes a surface's *highlight*, not its
+    /// body color: a sphere given `{GrayLevel[.25], Specularity[White, 10]}`
+    /// (the Kepler's-conjecture cannonball stack) stays dark gray and gains a
     /// bright spot, rather than being repainted white by the directive's own
-    /// colour.
+    /// color.
     #[test]
     fn specularity_adds_a_highlight_without_repainting_the_surface() {
       let plain =
@@ -6735,11 +6736,11 @@ mod plot3d {
       );
       let darkest = |svg: &str| fill_reds(svg).into_iter().min().unwrap_or(0);
       let brightest = |svg: &str| fill_reds(svg).into_iter().max().unwrap_or(0);
-      // The unlit side keeps the surface's own dark grey either way.
+      // The unlit side keeps the surface's own dark gray either way.
       assert_eq!(
         darkest(&plain),
         darkest(&shiny),
-        "the highlight must not lighten the surface's own colour"
+        "the highlight must not lighten the surface's own color"
       );
       // A matte dark sphere never approaches white; a shiny one does.
       assert!(
@@ -6748,7 +6749,7 @@ mod plot3d {
         brightest(&plain)
       );
       // Under the default lights the peak is wolframscript's (225, 213,
-      // 147): the highlight is the coloured lights' own sum.
+      // 147): the highlight is the colored lights' own sum.
       assert!(
         brightest(&shiny) > 200,
         "Specularity[White, …] should add a bright highlight, got {}",
@@ -6774,7 +6775,7 @@ mod plot3d {
     }
 
     /// `Specularity` means nothing in 2D, but it must still be consumed
-    /// there: its colour used to leak through as the fill of the primitives
+    /// there: its color used to leak through as the fill of the primitives
     /// that followed.
     #[test]
     fn specularity_is_inert_in_2d() {
@@ -7051,8 +7052,8 @@ mod plot3d {
     }
 
     /// `Sphere[{p1, p2, …}, r]` is a set of spheres of that radius, one per
-    /// centre — how a scene marks several points at once. The list of
-    /// centres used to fail to parse as a point, leaving a single stray
+    /// center — how a scene marks several points at once. The list of
+    /// centers used to fail to parse as a point, leaving a single stray
     /// sphere at the origin.
     #[test]
     fn sphere_accepts_a_list_of_centers() {
@@ -7066,10 +7067,10 @@ mod plot3d {
             "Graphics3D[{Sphere[{1, 0, 0}, 0.5], Sphere[{-1, 0, 0}, 0.5]}, \
              PlotRange -> 3]"
           ),
-          "{head} with a list of centres draws one sphere per centre"
+          "{head} with a list of centers draws one sphere per center"
         );
       }
-      // The single-centre and no-argument forms are unchanged.
+      // The single-center and no-argument forms are unchanged.
       assert_eq!(
         export_svg("Graphics3D[{Sphere[]}, PlotRange -> 3]"),
         export_svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, PlotRange -> 3]")
@@ -7101,7 +7102,7 @@ mod plot3d {
       );
     }
 
-    /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
+    /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each center its own radius,
     /// rather than one shared radius for the whole set — how a particle
     /// system with varying particle sizes is drawn in one call. A radius
     /// list used to fail to parse as a number and fall back to radius 1
@@ -7121,7 +7122,7 @@ mod plot3d {
           "{head} with a list of radii draws each sphere at its own radius"
         );
       }
-      // A radius list must match the centres one-for-one to be used this
+      // A radius list must match the centers one-for-one to be used this
       // way; a mismatched length falls back to reading it as one shared
       // (if non-numeric, unit) radius rather than panicking on the zip.
       assert_eq!(
@@ -7133,14 +7134,14 @@ mod plot3d {
           "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, 1]}, \
            PlotRange -> 3]"
         ),
-        "a radius list whose length doesn't match the centres falls back \
+        "a radius list whose length doesn't match the centers falls back \
          to a unit radius per sphere"
       );
     }
 
     /// `Text[expr, {x, y, z}]` labels a point of a 3D scene, drawn flat at
     /// the projection of its point. It used to be dropped entirely, so a
-    /// labelled schematic arrived with no lettering at all.
+    /// labeled schematic arrived with no lettering at all.
     #[test]
     fn text_labels_a_point_of_the_scene() {
       let svg = export_svg(
@@ -7183,7 +7184,7 @@ mod plot3d {
           .and_then(|(v, _)| v.parse().ok())
           .expect("a positioned label")
       };
-      let centred = text_y(
+      let centered = text_y(
         "Graphics3D[{Sphere[], Text[\"A\", {0, 0, 1}]}, Boxed -> False]",
       );
       let above = text_y(
@@ -7191,8 +7192,8 @@ mod plot3d {
          Boxed -> False]",
       );
       assert!(
-        above < centred,
-        "a negative vertical offset lifts the label: {above} vs {centred}"
+        above < centered,
+        "a negative vertical offset lifts the label: {above} vs {centered}"
       );
     }
 
@@ -7259,7 +7260,7 @@ mod plot3d {
         "Graphics3D[Polygon[{{0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}}], \
          Boxed -> False]",
       );
-      // Two triangles, each stroked in its own fill colour …
+      // Two triangles, each stroked in its own fill color …
       let filled: Vec<&str> =
         svg.lines().filter(|l| l.starts_with("<polygon")).collect();
       assert_eq!(filled.len(), 2, "{svg}");
@@ -7309,7 +7310,7 @@ mod plot3d {
         "3"
       );
       // Five, not four: `Sphere[]` has evaluated to `Sphere[{0, 0, 0}]`, so
-      // the deepest path runs Graphics3D → list → Sphere → the centre → a
+      // the deepest path runs Graphics3D → list → Sphere → the center → a
       // coordinate.
       assert_eq!(
         interpret(
@@ -7328,7 +7329,7 @@ mod plot3d {
       );
     }
 
-    // A `Tube` inside a GraphicsComplex takes its centre lines as vertex
+    // A `Tube` inside a GraphicsComplex takes its center lines as vertex
     // indices, so it must draw exactly like the same tubes on explicit
     // coordinates instead of vanishing.
     #[test]
@@ -7347,7 +7348,7 @@ mod plot3d {
       assert_eq!(indexed, explicit);
     }
 
-    // A `Sphere` inside a GraphicsComplex takes its centre as a vertex
+    // A `Sphere` inside a GraphicsComplex takes its center as a vertex
     // index (the radius may be a one-element list), so it must draw exactly
     // like the same sphere on explicit coordinates instead of collapsing
     // onto the origin.
@@ -7460,13 +7461,13 @@ mod plot3d {
       }
     }
 
-    /// `Scale[g, s]` without a centre scales `g` about the centre of its
+    /// `Scale[g, s]` without a center scales `g` about the center of its
     /// own bounding box, so the content stays where it is and only changes
     /// size. Regression: the 3D path scaled about the origin, which
-    /// dragged everything towards it — two protons a bond length apart
+    /// dragged everything toward it — two protons a bond length apart
     /// collapsed into one blob.
     #[test]
-    fn graphics3d_scale_is_about_the_content_centre() {
+    fn graphics3d_scale_is_about_the_content_center() {
       // The marker at -2 fixes the framing so both scenes are drawn to the
       // same scale; the sphere at +2 is the one being shrunk.
       let scene = |body: &str| {
@@ -7479,19 +7480,19 @@ mod plot3d {
         scene("Sphere[{2,0,0}, 0.5]"),
         "a uniform Scale only changes the radius, not the position"
       );
-      // An explicit centre is still honoured: about the origin the sphere
+      // An explicit center is still honored: about the origin the sphere
       // moves to x = 1.
       assert_eq!(
         scene("Scale[Sphere[{2,0,0}, 1], 1/2, {0,0,0}]"),
         scene("Sphere[{1,0,0}, 0.5]"),
-        "an explicit Scale centre overrides the content centre"
+        "an explicit Scale center overrides the content center"
       );
     }
 
     /// `Scale[g, s, {Left, Bottom}]` scales about a corner of the content's
     /// bounding box, so the lower-left corner stays put. Regression: the
     /// symbolic position was ignored and the content scaled about its
-    /// centre instead, which scattered a Demonstration's fractal tiles.
+    /// center instead, which scattered a Demonstration's fractal tiles.
     #[test]
     fn graphics_scale_about_a_bounding_box_corner() {
       let scene = |body: &str| {
@@ -7561,14 +7562,14 @@ mod plot3d {
       );
     }
 
-    /// `EdgeForm[colour]` outlines a face in that colour. On a cylinder
+    /// `EdgeForm[color]` outlines a face in that color. On a cylinder
     /// only the two end circles are outlines — the cuts along its length
     /// are internal — which is how `{Opacity[0], EdgeForm[Black],
     /// Cylinder[…]}` draws an unfilled circle in space (a Demonstration's
     /// electron orbit). Regression: curved primitives dropped every edge,
     /// so the circle was invisible.
     #[test]
-    fn graphics3d_edge_form_colour_outlines_a_cylinder() {
+    fn graphics3d_edge_form_color_outlines_a_cylinder() {
       let svg = export_svg(
         "Graphics3D[{Opacity[0], EdgeForm[Black], \
          Cylinder[{{0,0,0},{0,0,0.001}}, 0.5]}, Boxed -> False]",
@@ -7581,14 +7582,14 @@ mod plot3d {
       );
       assert!(
         outlines.iter().all(|l| l.contains("stroke=\"rgb(0,0,0)\"")),
-        "the rim takes the EdgeForm colour: {outlines:?}"
+        "the rim takes the EdgeForm color: {outlines:?}"
       );
       assert!(
         outlines.iter().all(|l| !l.contains("opacity=")),
         "an outline stays opaque around a transparent face: {outlines:?}"
       );
-      // Without an edge colour a cylinder still has its rims outlined in
-      // the default edge grey (as wolframscript draws them), but none of
+      // Without an edge color a cylinder still has its rims outlined in
+      // the default edge gray (as wolframscript draws them), but none of
       // its facet cuts.
       let plain = export_svg(
         "Graphics3D[Cylinder[{{0,0,0},{0,0,0.001}}, 0.5], Boxed -> False]",
@@ -7744,7 +7745,7 @@ mod plot3d {
 
     /// `Rotate[g, theta, w, p]` turns `g` about the axis `w` through the
     /// point `p` — the four-argument 3D form. Regression: only the
-    /// three-argument form was recognised, so a net whose flaps fold about
+    /// three-argument form was recognized, so a net whose flaps fold about
     /// their shared edges (the "Non Placet Net of a Dodecahedron"
     /// Demonstration) never moved.
     #[test]
@@ -7761,8 +7762,8 @@ mod plot3d {
         scene(&format!("Rotate[{square}, 1., {{0,1,0}}, {{1,0,0}}]"));
       let about_origin = scene(&format!("Rotate[{square}, 1., {{0,1,0}}]"));
       assert!(hinged.matches("<polygon").count() >= 2, "{hinged}");
-      assert_ne!(hinged, about_origin, "the rotation centre must be honoured");
-      // A zero angle is the identity, centre or no centre.
+      assert_ne!(hinged, about_origin, "the rotation center must be honored");
+      // A zero angle is the identity, center or no center.
       assert_eq!(
         scene(&format!("Rotate[{square}, 0., {{0,1,0}}, {{1,0,0}}]")),
         scene(square)
@@ -7882,7 +7883,7 @@ mod plot3d {
       );
     }
 
-    /// `FaceForm[front, back]` colours the two sides of a face
+    /// `FaceForm[front, back]` colors the two sides of a face
     /// differently: the upward-facing square below shows `front`, the
     /// downward-facing one `back`.
     #[test]
@@ -7896,7 +7897,7 @@ mod plot3d {
       // default lights.
       assert!(svg.contains("fill=\"rgb(0,0,169)\""), "{svg}");
       assert!(svg.contains("fill=\"rgb(255,220,0)\""), "{svg}");
-      // A one-argument FaceForm colours both sides the same.
+      // A one-argument FaceForm colors both sides the same.
       let one = export_svg(
         "Graphics3D[{FaceForm[Blue], \
          Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}], \
@@ -7980,7 +7981,7 @@ mod plot3d {
         )
       };
       // The screen extent of the polygons whose fill leans to one channel
-      // (the lighting model darkens them, so the exact colour varies).
+      // (the lighting model darkens them, so the exact color varies).
       let extent = |svg: &str, red_bar: bool| -> (f64, f64, f64, f64) {
         let (mut x0, mut x1, mut y0, mut y1) =
           (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
@@ -8697,7 +8698,7 @@ mod plot3d {
     /// used to be taken for a single triple whose "components" were lists,
     /// so every sample came out non-numeric and the plot failed with
     /// "parametric function produced no finite values". Each curve keeps its
-    /// own `PlotStyle` colour, which is what says all three were drawn.
+    /// own `PlotStyle` color, which is what says all three were drawn.
     #[test]
     fn three_curves_from_ndsolve_shaped_replace_all() {
       let svg = export_svg(
@@ -9159,7 +9160,7 @@ mod plot3d {
 
     /// `Text[Framed[Column[{...}]], pos]` boxes a *stacked* label — the
     /// `Framed` background must grow to cover every line, not just the
-    /// first, and must not be centred on the anchor of the (already
+    /// first, and must not be centered on the anchor of the (already
     /// shifted-up) first line, which would push it too high and leave it
     /// too short for the lines below.
     #[test]
@@ -9204,8 +9205,8 @@ mod plot3d {
       let expected_y = py - font_size / 2.0;
       assert!(
         (rect_y - expected_y).abs() < 1.0,
-        "box must start half a line above the first line's own centre, \
-         not be centred on it: got y {rect_y}, expected {expected_y} \
+        "box must start half a line above the first line's own center, \
+         not be centered on it: got y {rect_y}, expected {expected_y} \
          (py={py}): {rect}"
       );
     }
@@ -9625,7 +9626,7 @@ mod plot3d {
     }
 
     #[test]
-    fn raster_honours_opacity_directive() {
+    fn raster_honors_opacity_directive() {
       let svg = export_svg("Graphics[{Opacity[.5], Raster[{{0, 1}, {1, 0}}]}]");
       assert!(svg.contains(r#"fill-opacity="0.5""#), "{svg}");
     }
@@ -9646,7 +9647,7 @@ mod plot3d {
     // `PlotLabel :> Which[t == 1100, "…", True, ""]`. Regression: every
     // option reader matched `Rule` only, so the delayed form was dropped.
     #[test]
-    fn delayed_rule_options_are_honoured() {
+    fn delayed_rule_options_are_honored() {
       // …on Graphics, on Show, and on the function/list plotters.
       assert!(
         export_svg(r#"Graphics[{Disk[]}, PlotLabel :> "hi"]"#).contains(">hi<")
@@ -9705,7 +9706,7 @@ mod plot3d {
     }
 
     // Explicit `FrameTicks` on the right and top edge of a `Plot` frame are
-    // marked and labelled, whether written as `{pos, label}` pairs or as
+    // marked and labeled, whether written as `{pos, label}` pairs or as
     // plain positions.
     #[test]
     fn plot_frame_ticks_label_the_right_and_top_edges() {
@@ -9837,7 +9838,7 @@ mod plot3d {
     }
 
     // Bare tick positions in a plot's `FrameTicks` are evaluated, so a tick
-    // set from variables is labelled with its value, not the expression.
+    // set from variables is labeled with its value, not the expression.
     #[test]
     fn plot_frame_ticks_evaluate_bare_positions() {
       let svg = export_svg(
@@ -9852,7 +9853,7 @@ mod plot3d {
       assert!(!svg.contains("N[0.5"), "{svg}");
     }
 
-    // `ListPlot` honours explicit `{position, label}` ticks on the bottom
+    // `ListPlot` honors explicit `{position, label}` ticks on the bottom
     // and left frame edges, as `Plot` does, instead of the automatic ones.
     #[test]
     fn list_plot_frame_ticks_use_explicit_labels() {
@@ -9909,7 +9910,7 @@ mod plot3d {
     }
 
     // `Frame -> False` on a density or contour plot leaves out the box and
-    // its tick labels, so only the coloured image remains.
+    // its tick labels, so only the colored image remains.
     #[test]
     fn frame_false_on_density_and_contour_plots() {
       for plot in ["DensityPlot", "ContourPlot"] {
@@ -10272,7 +10273,7 @@ mod plot3d {
           .collect::<Vec<_>>()
       };
       // The axes cross at the corner, so neither runs past the x axis's 0,
-      // which stays labelled.
+      // which stays labeled.
       assert_eq!(ticks("{{0, 1}, {1}}"), ["0", "1", "1"]);
       assert_eq!(ticks("None"), [] as [std::string::String; 0]);
       // A `{pos, label}` pair carries its own text.
@@ -10301,7 +10302,7 @@ mod plot3d {
         out.dedup();
         out
       };
-      // Positions 1..5 labelled with the even numbers they stand for.
+      // Positions 1..5 labeled with the even numbers they stand for.
       let ticks = labels(
         "ListPlot[{1, 1, 2, 2, 3}, PlotRange -> All, \
          Ticks -> {Transpose[{Range[5], 2 + 2 Range[5]}], Range[3]}]",
@@ -10334,13 +10335,13 @@ mod plot3d {
       assert!(svg.contains(">-π<"), "expected a -π tick label: {svg}");
       assert!(
         !svg.contains("3.14159"),
-        "a symbolic tick must not be labelled by value: {svg}"
+        "a symbolic tick must not be labeled by value: {svg}"
       );
       // A literal position still labels itself.
       assert!(svg.contains(">-1<"), "expected a -1 tick label: {svg}");
     }
 
-    /// A tick given as a bare position is labelled with that *expression*
+    /// A tick given as a bare position is labeled with that *expression*
     /// typeset, not with its decimal expansion — a Demonstration divides a
     /// wave's axis with `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` and
     /// expects to read the multiples of π back. A literal number still
@@ -10378,9 +10379,9 @@ mod plot3d {
       // No tick reads as the number π/2 works out to.
       assert!(
         !ticks.iter().any(|t| t.starts_with("1.57")),
-        "a symbolic tick must not be labelled by value: {ticks:?}"
+        "a symbolic tick must not be labeled by value: {ticks:?}"
       );
-      // Literal positions keep labelling themselves.
+      // Literal positions keep labeling themselves.
       for expected in ["-1", "1"] {
         assert!(ticks.contains(&expected.to_string()), "{ticks:?}");
       }
@@ -10392,7 +10393,7 @@ mod plot3d {
         assert!(computed.contains(&expected.to_string()), "{computed:?}");
       }
       // An axis carrying explicit ticks marks only what it names: the
-      // automatic majors used to leave unlabelled stubs between them.
+      // automatic majors used to leave unlabeled stubs between them.
       let svg = export_svg(
         "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {True, False}, \
          Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
@@ -10654,7 +10655,7 @@ mod plot3d {
 
     /// Axes under `ImageSize -> {w, h}` keep the shape of the plot range, like
     /// a frame does, instead of widening the range until it fills the size:
-    /// no tick is labelled beyond the requested range.
+    /// no tick is labeled beyond the requested range.
     #[test]
     fn axes_under_a_fixed_image_size_do_not_extend_the_plot_range() {
       let svg = export_svg(
@@ -10667,7 +10668,7 @@ mod plot3d {
         .filter_map(|l| l.split('>').nth(1)?.split('<').next())
         .collect();
       // The x axis runs along the bottom edge, so the y axis does not cross
-      // below it and its `0` stays labelled.
+      // below it and its `0` stays labeled.
       assert_eq!(labels, ["-2", "0", "2", "4", "6", "8", "10"]);
     }
 
@@ -10797,11 +10798,11 @@ mod plot3d {
       }
     }
 
-    /// A `Grid` of pictures centres a narrow row in the widest one, which
+    /// A `Grid` of pictures centers a narrow row in the widest one, which
     /// is what Wolfram's default `Alignment` does — a small diagram stacked
     /// over a wide plot sits over its middle, not against the left edge.
     #[test]
-    fn a_grid_centres_a_narrow_row_of_graphics() {
+    fn a_grid_centers_a_narrow_row_of_graphics() {
       let svg = export_svg(
         "Grid[{{Graphics[{Disk[]}, ImageSize -> 60]}, \
          {Graphics[{Rectangle[]}, ImageSize -> 200]}}]",
@@ -10823,10 +10824,10 @@ mod plot3d {
         })
         .collect();
       assert_eq!(cells.len(), 2, "one cell per row: {svg}");
-      let centre = |(x, w): (f64, f64)| x + w / 2.0;
+      let center = |(x, w): (f64, f64)| x + w / 2.0;
       assert!(
-        (centre(cells[0]) - centre(cells[1])).abs() < 1.0,
-        "the rows are not on the same centre line: {cells:?}"
+        (center(cells[0]) - center(cells[1])).abs() < 1.0,
+        "the rows are not on the same center line: {cells:?}"
       );
     }
 
@@ -10870,7 +10871,7 @@ mod plot3d {
     }
 
     /// A `Button` inside a picture draws as the button itself — a rounded
-    /// plate with the label centred — not as its own source text. Its
+    /// plate with the label centered — not as its own source text. Its
     /// action is held, so building the picture must not run it: the six
     /// pour buttons of a puzzle Demonstration would otherwise all fire
     /// every time the board is drawn.
@@ -10901,7 +10902,7 @@ mod plot3d {
 
     /// A `Button` whose label is a picture, laid out as a `Grid` cell, shows
     /// that picture at the button's `ImageSize` (not the `-Graphics-`
-    /// placeholder plate) and draws a blank-labelled one at that size too.
+    /// placeholder plate) and draws a blank-labeled one at that size too.
     #[test]
     fn a_grid_button_with_a_picture_label_draws_the_picture() {
       let svg = export_svg(
@@ -10923,7 +10924,7 @@ mod plot3d {
 
     /// A `Button` whose label is a raster image, laid out as a `Grid` cell,
     /// shows the image (not the `-Image-` placeholder plate), and a
-    /// `Background` paints the plate of a blank-labelled one.
+    /// `Background` paints the plate of a blank-labeled one.
     #[test]
     fn a_grid_button_with_an_image_label_draws_the_image() {
       let svg = export_svg(
@@ -10965,7 +10966,7 @@ mod plot3d {
       );
     }
 
-    /// `\[Implies]` (U+F523) and its private-use neighbours were drawn as
+    /// `\[Implies]` (U+F523) and its private-use neighbors were drawn as
     /// blank boxes; they now substitute the nearest standard character.
     #[test]
     fn implies_and_short_arrow_glyphs_are_drawn_as_standard_characters() {
@@ -11072,7 +11073,7 @@ mod plot3d {
 
     /// Wolfram writes an `AxesLabel` at the end of its axis — the x label
     /// past the right edge, the y label above the top — and a `Style`
-    /// around it carries its colour and slant into the label.
+    /// around it carries its color and slant into the label.
     #[test]
     fn graphics_axes_label_sits_at_the_axis_ends() {
       let svg = export_svg(
@@ -11227,7 +11228,7 @@ mod plot3d {
         "x AxesLabel overflows the canvas ({state_x} on a {canvas_w} wide \
          canvas): {state}"
       );
-      // The y label is centred on the y axis, so its left half must stay
+      // The y label is centered on the y axis, so its left half must stay
       // right of the canvas' left edge (x = 0).
       let visits = text_tag("visits");
       let visits_x = margin_left + attr(&visits, "x");
@@ -11266,11 +11267,11 @@ mod plot3d {
       );
     }
 
-    /// A named style brings its size and colour from the stylesheet:
+    /// A named style brings its size and color from the stylesheet:
     /// `Style[…, "Section"]` is large and orange, `"Label"` small and
     /// black. Measured against wolframscript's own rendering.
     #[test]
-    fn named_styles_carry_their_size_and_colour() {
+    fn named_styles_carry_their_size_and_color() {
       let attrs = |style: &str| {
         let svg = export_svg(&format!(
           "Graphics[{{Text[Style[\"hi\", {style}], {{0, 0}}]}}]"
@@ -11324,7 +11325,7 @@ mod plot3d {
       assert!(svg.contains(">A Disk</text>"), "label must render: {svg}");
     }
 
-    // Outside `[10^-5, 10^6)` a tick is labelled in scientific notation, as
+    // Outside `[10^-5, 10^6)` a tick is labeled in scientific notation, as
     // in the Wolfram Language. Regression: a frequency axis running to
     // 6*10^15 — the "Lorentz Oscillator Model" Demonstration's — spelled
     // every label out as `2000000000000000`.
@@ -11392,7 +11393,7 @@ mod plot3d {
         ticks("Plot[x, {x, 0, 100}]"),
         ["0", "20", "40", "60", "80", "100"]
       );
-      // Small values keep enough decimals to tell neighbours apart.
+      // Small values keep enough decimals to tell neighbors apart.
       assert_eq!(
         ticks("Plot[x, {x, 0, 0.001}]"),
         ["0.0000", "0.0002", "0.0004", "0.0006", "0.0008", "0.0010"]
@@ -11410,7 +11411,7 @@ mod plot3d {
       assert!(svg.contains(">\n0.0\n</text>") || svg.contains(">0.0<"));
     }
 
-    // A tick set spaced far below 10^-5 is labelled in scientific
+    // A tick set spaced far below 10^-5 is labeled in scientific
     // notation. Regression: every label of a `0` to `1.2*10^-35` axis
     // rounded to an integer and read `0`.
     #[test]
@@ -11423,7 +11424,7 @@ mod plot3d {
       }
     }
 
-    // Enough decimals to tell neighbouring ticks apart. Regression: a
+    // Enough decimals to tell neighboring ticks apart. Regression: a
     // 0.0002 step rendered every label as `0.0`.
     #[test]
     fn small_step_ticks_keep_their_decimals() {
@@ -11450,7 +11451,7 @@ mod plot3d {
 
     /// A scatter plot draws its own axes, and used to draw no labels at all:
     /// `PlotLabel` and `AxesLabel` were silently dropped by the unjoined
-    /// `ListPlot` path while the line path honoured both.
+    /// `ListPlot` path while the line path honored both.
     #[test]
     fn scatter_plot_draws_its_labels() {
       let svg = export_svg(
@@ -11484,7 +11485,7 @@ mod plot3d {
     /// `Tooltip[label, hint]` prints as its first argument — the hint only
     /// shows on hover — so an axis label written that way must still be
     /// drawn. It used to disappear entirely, leaving the plot of the
-    /// cube-emptying Demonstration with an unlabelled y axis.
+    /// cube-emptying Demonstration with an unlabeled y axis.
     #[test]
     fn axes_label_through_a_tooltip_still_prints() {
       for wrapper in [
@@ -11505,7 +11506,7 @@ mod plot3d {
     /// A typesetting wrapper picks how a label is set, not what it says, so
     /// an axis label written through one still prints. A Demonstration
     /// writes `AxesLabel -> TraditionalForm /@ {t, y}`, which used to leave
-    /// both axes unlabelled.
+    /// both axes unlabeled.
     #[test]
     fn axes_label_through_a_typeset_form_still_prints() {
       for form in [
@@ -11536,7 +11537,7 @@ mod plot3d {
       assert!(svg.contains(">{a, b}</text>"), "{svg}");
     }
 
-    /// A wide y label centred on an axis that sits near the left edge would
+    /// A wide y label centered on an axis that sits near the left edge would
     /// run off the image, so it slides right until it fits.
     #[test]
     fn wide_axes_label_stays_inside_the_image() {
@@ -11553,7 +11554,7 @@ mod plot3d {
           .unwrap_or_else(|| panic!("y label missing: {svg}"));
         assert!(
           tag.contains("text-anchor=\"middle\""),
-          "y label stays centred: {tag}"
+          "y label stays centered: {tag}"
         );
         tag
           .split("x=\"")
@@ -11564,7 +11565,7 @@ mod plot3d {
       };
       let narrow = y_label_x("\"y\"", "y<");
       let wide = y_label_x("{aaa, bbb, ccc, ddd, eee}", "{aaa,");
-      // The narrow label fits centred on the axis; the wide one has to slide
+      // The narrow label fits centered on the axis; the wide one has to slide
       // right so its left half stays on the canvas. At 10 pt over a 25
       // character label that is well past 600 render units.
       assert!(
@@ -11580,7 +11581,7 @@ mod plot3d {
     /// The Wolfram Language writes an `AxesLabel` at the *end* of its axis:
     /// the x label just past the right edge and level with the axis, the y
     /// label above the top of the vertical axis, upright. A `FrameLabel` is
-    /// the one that sits centred outside the plot area.
+    /// the one that sits centered outside the plot area.
     #[test]
     fn axes_label_sits_at_the_end_of_its_axis() {
       let svg = export_svg(r#"Plot[x, {x, 0, 1}, AxesLabel -> {"XL", "YL"}]"#);
@@ -11616,10 +11617,10 @@ mod plot3d {
       assert!(!y_attrs.contains("rotate("), "an AxesLabel is upright");
     }
 
-    /// A `FrameLabel` keeps the centred placement, so the two options stay
+    /// A `FrameLabel` keeps the centered placement, so the two options stay
     /// distinguishable (they used to share one field).
     #[test]
-    fn frame_label_stays_centred_outside_the_plot() {
+    fn frame_label_stays_centered_outside_the_plot() {
       let svg = export_svg(
         r#"ListLinePlot[{1, 4, 9}, Frame -> True, FrameLabel -> {"XF", "YF"}]"#,
       );
@@ -11903,8 +11904,8 @@ mod plot3d {
 
     #[test]
     fn plot_labeled_ticks_are_longer_than_unlabeled() {
-      // Labelled (major) ticks are 4 px long and the unlabelled ones between
-      // them 2.4 px, as Wolfram draws them. The range [0, 2 Pi] has labelled
+      // Labeled (major) ticks are 4 px long and the unlabeled ones between
+      // them 2.4 px, as Wolfram draws them. The range [0, 2 Pi] has labeled
       // x ticks at 0, 1, …, 6 (WL 15 steps the axes by 1 here, not 2).
       let svg = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
       let attr = |tag: &str, name: &str| -> f64 {
@@ -11929,10 +11930,10 @@ mod plot3d {
           .filter(|(v, l)| *v == vertical && (l - len).abs() < 0.5)
           .count()
       };
-      assert_eq!(count(true, 40.0), 7, "labelled x ticks: {svg}");
-      assert!(count(true, 24.0) > 4, "unlabelled x ticks: {svg}");
-      assert!(count(false, 40.0) >= 3, "labelled y ticks: {svg}");
-      assert!(count(false, 24.0) > 4, "unlabelled y ticks: {svg}");
+      assert_eq!(count(true, 40.0), 7, "labeled x ticks: {svg}");
+      assert!(count(true, 24.0) > 4, "unlabeled x ticks: {svg}");
+      assert!(count(false, 40.0) >= 3, "labeled y ticks: {svg}");
+      assert!(count(false, 24.0) > 4, "unlabeled y ticks: {svg}");
     }
 
     /// The axes cross at the origin when it lies inside the plot range,
@@ -12168,10 +12169,10 @@ mod plot3d {
       assert_eq!(mixed, "#FF0000");
     }
 
-    /// `LabelStyle`'s colour paints the tick labels over `AxesStyle` (and
+    /// `LabelStyle`'s color paints the tick labels over `AxesStyle` (and
     /// `TicksStyle`), as in WL 15; the axis lines keep `AxesStyle`.
     #[test]
-    fn label_style_colours_tick_labels_over_axes_style() {
+    fn label_style_colors_tick_labels_over_axes_style() {
       let svg = export_svg(
         "Plot[Sinc[x], {x, 0, 10}, AxesStyle -> Blue, LabelStyle -> Red, \
          TicksStyle -> Green]",
@@ -12410,13 +12411,13 @@ mod plot3d {
       assert!(svg.contains("#00FF00"), "curve must be green: {svg}");
       assert!(
         !svg.contains("#3D99CC"),
-        "the default palette colour must not win: {svg}"
+        "the default palette color must not win: {svg}"
       );
     }
 
     #[test]
     fn plot_style_list_still_cycles_over_several_plot_curves() {
-      // Curve 1 takes `Thick` (keeping the default colour), curve 2 `Green`.
+      // Curve 1 takes `Thick` (keeping the default color), curve 2 `Green`.
       let svg = export_svg(
         r#"Plot[{Sin[x], Cos[x]}, {x, 0, 6}, PlotStyle -> {Thick, Green}]"#,
       );
@@ -12532,15 +12533,15 @@ mod plot3d {
     }
 
     /// Plotters drops the last of its key points on a range with a negative
-    /// minimum, leaving the topmost major tick drawn but unlabelled.
+    /// minimum, leaving the topmost major tick drawn but unlabeled.
     #[test]
-    fn the_topmost_major_tick_is_labelled() {
+    fn the_topmost_major_tick_is_labeled() {
       assert!(
         y_tick_labels(&export_svg(
           "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {-2, 3}}]"
         ))
         .contains(&"3".to_string()),
-        "the tick at the top of the range must be labelled"
+        "the tick at the top of the range must be labeled"
       );
     }
 
@@ -13428,12 +13429,12 @@ mod plot3d {
 
     /// `Around` error bars: "Fences" (the default) caps each end 3 pt to
     /// either side, "Bars" draws the bars alone, and `IntervalMarkersStyle`
-    /// recolours them.
+    /// recolors them.
     #[test]
     fn interval_markers_bars_and_style() {
-      let count = |code: &str, colour: &str| {
+      let count = |code: &str, color: &str| {
         export_svg(code)
-          .matches(&format!("stroke=\"{colour}\""))
+          .matches(&format!("stroke=\"{color}\""))
           .count()
       };
       let data = "{Around[1, 0.2], Around[2, 0.3]}";
@@ -13489,11 +13490,11 @@ mod plot3d {
       assert_eq!(xs[1], xs[5], "{xs:?}");
     }
 
-    /// A list plot's filling stems take a two-colour `{below, above}`
+    /// A list plot's filling stems take a two-color `{below, above}`
     /// `FillingStyle` by side of the reference, and a `Dashed` style draws
-    /// them dashed (WL 15: 4 pt dashes, fully opaque with a colour).
+    /// them dashed (WL 15: 4 pt dashes, fully opaque with a color).
     #[test]
-    fn list_plot_filling_stems_two_colours_and_dashes() {
+    fn list_plot_filling_stems_two_colors_and_dashes() {
       let svg = export_svg(
         "ListPlot[Table[{x, Sin[x]}, {x, 1, 6}], Filling -> Axis, \
          FillingStyle -> {Red, Blue}]",
@@ -13540,7 +13541,7 @@ mod plot3d {
       assert!(small.contains("r=\"21\""), "{small}");
     }
 
-    /// `Style[point, colour]` colours that one dot; the innermost `Style`
+    /// `Style[point, color]` colors that one dot; the innermost `Style`
     /// wins over its dataset's, and a dataset's over one around all the
     /// data (WL 15).
     #[test]
@@ -13810,8 +13811,8 @@ mod plot3d {
     }
 
     /// `Show` merging several filled plots keeps each one's own
-    /// `FillingStyle`: three normal curves shaded in three colours stay
-    /// three colours, where the first plot's style used to be applied to
+    /// `FillingStyle`: three normal curves shaded in three colors stay
+    /// three colors, where the first plot's style used to be applied to
     /// all of them.
     #[test]
     fn each_merged_plot_keeps_its_own_filling_style() {
@@ -13829,7 +13830,7 @@ mod plot3d {
         .filter_map(|p| p.split('"').next())
         .collect();
       assert_eq!(fills.len(), 2, "one fill per curve: {svg}");
-      assert_ne!(fills[0], fills[1], "both fills came out the same colour");
+      assert_ne!(fills[0], fills[1], "both fills came out the same color");
     }
 
     #[test]
@@ -14180,7 +14181,7 @@ mod plot3d {
     }
 
     // `PlotMarkers -> {Graphics[…], s}` insets the picture at every point
-    // (WL's `Inset[g, pt, Automatic, Scaled[s]]`) in the series colour.
+    // (WL's `Inset[g, pt, Automatic, Scaled[s]]`) in the series color.
     #[test]
     fn list_plot_graphics_markers_are_inset() {
       let svg = export_svg(
@@ -14225,7 +14226,7 @@ mod plot3d {
     }
 
     // In a `PlotLayout`, each panel shows its dataset's `Labeled` label as
-    // a title centred inside its top (it used to sit clipped at the last
+    // a title centered inside its top (it used to sit clipped at the last
     // point, and the second panel's was missing).
     #[test]
     fn plot_layout_row_labeled_datasets_title_their_panels() {
@@ -14335,7 +14336,7 @@ mod plot3d {
       assert_eq!(svg.matches("<circle").count(), 3);
     }
 
-    // Center steps are centred on their points and the markers sit on the
+    // Center steps are centered on their points and the markers sit on the
     // data points, once each (not at both step ends).
     #[test]
     fn list_step_plot_center_markers_on_data_points() {
@@ -14408,7 +14409,7 @@ mod plot3d {
       assert!(shown.contains("epilog"), "the epilog must be drawn");
       assert!(
         shown.contains(">0.010</text>") && shown.contains(">100</text>"),
-        "log y decades must stay labelled after Show"
+        "log y decades must stay labeled after Show"
       );
       assert!(!plain.contains("epilog"));
     }
@@ -14433,7 +14434,7 @@ mod plot3d {
         y.contains(">10<tspan baseline-shift=\"super\"")
           && y.contains(">4</tspan></text>")
           && y.contains(">10</tspan></text>"),
-        "log y decades must be labelled on the frame"
+        "log y decades must be labeled on the frame"
       );
       let x = export_svg(
         "ListLogLogPlot[{{10, 10}, {1000, 1000}}, Frame -> True, Axes -> False]",
@@ -14931,7 +14932,7 @@ Graphics[{Text[\"hi\", {0.2, 0.2}]}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
 
     // Regression: a curve-to-curve `Filling -> {i -> {{j}, style}}` must
     // survive `Show` merging the plot with other graphics, drawn as a
-    // polygon between the two curves in the requested colour.
+    // polygon between the two curves in the requested color.
     #[test]
     fn show_keeps_filling_between_curves() {
       let svg = export_svg(
@@ -14944,8 +14945,8 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       );
     }
 
-    // A curve coloured by a `ColorFunction` of (x, y, t) merges as its
-    // coloured runs: re-rendering used to call the function with only
+    // A curve colored by a `ColorFunction` of (x, y, t) merges as its
+    // colored runs: re-rendering used to call the function with only
     // (x, y) (Function::fpct) and lose the gradient.
     #[test]
     fn show_merges_color_function_parametric_curve() {
@@ -14998,7 +14999,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// symbolic and the picture empty.
     #[test]
     fn parametric_plot_two_parameters_list_of_regions_and_region_function() {
-      // Two bodies make two filled meshes in the first two plot colours.
+      // Two bodies make two filled meshes in the first two plot colors.
       let svg = export_svg(
         "ParametricPlot[{{u, v}, {u + 3, v}}, {u, 0, 1}, {v, 0, 1}]",
       );
@@ -15048,7 +15049,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `ColorFunction` paints each cell of a two-parameter region in the
-    /// opaque color the function gives at the cell's centre.
+    /// opaque color the function gives at the cell's center.
     #[test]
     fn parametric_plot_two_parameters_color_function() {
       let svg = export_svg(
@@ -15122,12 +15123,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         quads > 100,
         "the region is a filled mesh, got {quads} quads"
       );
-      // Filled translucently in the default plot colour, with the image of
+      // Filled translucently in the default plot color, with the image of
       // the parameter rectangle's boundary stroked on top.
       assert!(svg.contains("fill-opacity=\"0.3\""), "{svg}");
       assert!(svg.contains("<polyline"), "no boundary curve: {svg}");
       // The image spans x in [0, 2] and y in [-1, 1]: both axes must be
-      // labelled out that far, and no further. The 0.5-spaced ticks all
+      // labeled out that far, and no further. The 0.5-spaced ticks all
       // carry one decimal, the way Wolfram labels a tick set.
       for tick in ["2.0", "-1.0", "1.0"] {
         assert!(
@@ -15155,7 +15156,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// `PlotStyle` travels with the curve into a `Show`: colour *and*
+    /// `PlotStyle` travels with the curve into a `Show`: color *and*
     /// weight. Both used to be reset to the plot defaults on merge, so a
     /// Demonstration's thick red trajectory came out a thin blue one.
     #[test]
@@ -15327,7 +15328,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// `rendered_graphics` unconditionally. `x^2 + y^2 < 1` and its
     /// complement `x^2 + y^2 > 1` together fill nearly all of the plot
     /// range (everything but a thin boundary ring), so overlaying both
-    /// region fills draws far more of the default region colour than
+    /// region fills draws far more of the default region color than
     /// either one alone.
     #[test]
     fn show_merges_two_opaque_region_plots() {
@@ -15681,7 +15682,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// `Ticks` positions given as bare expressions are labelled with the
+    /// `Ticks` positions given as bare expressions are labeled with the
     /// expression, not its numeric value — through `Show`, which re-renders
     /// the plot as graphics, just as in the plot itself.
     #[test]
@@ -15815,7 +15816,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         ));
         assert!(
           svg.contains("stroke=\"rgb(255,0,0)\""),
-          "the rule should have recoloured the curve of {target}: {svg}"
+          "the rule should have recolored the curve of {target}: {svg}"
         );
       }
       // A rule that matches nothing leaves the plot exactly as it was.
@@ -15853,7 +15854,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "the grid should be laid out, not printed: {svg}"
       );
       assert!(svg.contains(">first row<"), "got: {svg}");
-      // The further rows sit on their own lines, centred under the first.
+      // The further rows sit on their own lines, centered under the first.
       assert!(
         svg.contains("<tspan") && svg.contains("second row</tspan>"),
         "expected the second row on its own line: {svg}"
@@ -15877,7 +15878,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">π<"), "expected a π tick label");
       assert!(
         !svg.contains("3.14159"),
-        "π ticks should not be labelled numerically"
+        "π ticks should not be labeled numerically"
       );
     }
 
@@ -15936,7 +15937,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "PolarPlot[2 Cos[3 t], {t, 0, Pi}, PolarAxes -> True, \
          PolarGridLines -> {None, Automatic}]",
       );
-      // The radial ticks are labelled with machine reals, as in Wolfram.
+      // The radial ticks are labeled with machine reals, as in Wolfram.
       assert!(svg.contains(">1.<") && svg.contains(">2.<"), "{svg}");
       assert!(!svg.contains("°"));
     }
@@ -15957,7 +15958,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     /// The value axis is drawn like a `Plot` axis: tick marks pointing
     /// into the chart (right of the axis), minor marks between the
-    /// labelled ones, the `0` labelled; the bars' outer edges get marks
+    /// labeled ones, the `0` labeled; the bars' outer edges get marks
     /// hanging 6 pt below the x axis. Regression: plotters' outward marks
     /// ran into the labels and the edge marks were missing.
     #[test]
@@ -16118,7 +16119,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `BarOrigin -> Top` hangs the bars from an axis at the top, the value
-    /// axis labelled with the magnitudes growing downwards.
+    /// axis labeled with the magnitudes growing downwards.
     #[test]
     fn bar_chart_bar_origin_top_hangs_bars_from_the_top() {
       let svg = export_svg("BarChart[{5, 3, 8}, BarOrigin -> Top]");
@@ -16129,7 +16130,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">8</text>") && !svg.contains(">-"), "{svg}");
     }
 
-    /// `Style[v, colour]` colours its bar and `Labeled[v, label]` names it
+    /// `Style[v, color]` colors its bar and `Labeled[v, label]` names it
     /// below the axis. Regression: both wrappers were dropped.
     #[test]
     fn bar_chart_style_and_labeled_data_wrappers() {
@@ -16203,7 +16204,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `ChartElementFunction -> "FadingRectangle"` fills each bar with a
-    /// horizontal gradient of its colour.
+    /// horizontal gradient of its color.
     #[test]
     fn bar_chart_fading_rectangle_gradient() {
       let svg = export_svg(
@@ -16317,7 +16318,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn bar_chart_frame_ticks_bar_middles() {
       let svg = export_svg("BarChart[{5, 3, 8, 2, 6}, Frame -> True]");
-      let centres: Vec<i64> = bar_rects(&svg)
+      let centers: Vec<i64> = bar_rects(&svg)
         .iter()
         .zip(svg.split("<rect").skip(2))
         .map(|(b, tag)| {
@@ -16333,7 +16334,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           (b.0 as f64 + w / 2.0).round() as i64
         })
         .collect();
-      assert_eq!(centres.len(), 5, "{svg}");
+      assert_eq!(centers.len(), 5, "{svg}");
       let ticks: Vec<i64> = svg_lines(&svg)
         .iter()
         .filter(|(x1, y1, x2, y2)| x1 == x2 && (y2 - y1).abs() < 30.0)
@@ -16341,11 +16342,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .collect();
       // Bottom and top edge.
       assert_eq!(ticks.len(), 10, "{svg}");
-      for c in &centres {
+      for c in &centers {
         assert_eq!(
           ticks.iter().filter(|t| (*t - c).abs() <= 1).count(),
           2,
-          "{centres:?} {ticks:?}"
+          "{centers:?} {ticks:?}"
         );
       }
     }
@@ -16399,7 +16400,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
-    /// `PairedBarChart` draws a magnitude axis under each half, labelled
+    /// `PairedBarChart` draws a magnitude axis under each half, labeled
     /// outwards from the gap.
     #[test]
     fn paired_bar_chart_has_magnitude_axes() {
@@ -16430,7 +16431,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `ChartElementFunction -> "GlassSector"` shades every sector with a
-    /// radial gradient of its colour.
+    /// radial gradient of its color.
     #[test]
     fn pie_chart_glass_sector_gradient() {
       let svg = export_svg(
@@ -16640,7 +16641,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(wedges.iter().all(|w| w.matches(" A").count() == 2), "{svg}");
     }
 
-    /// `Style[v, colour]` colours its slice and `Labeled[v, label]` labels
+    /// `Style[v, color]` colors its slice and `Labeled[v, label]` labels
     /// it. Regression: the wrappers' styles and labels were dropped.
     #[test]
     fn pie_chart_style_and_labeled_data_wrappers() {
@@ -16668,14 +16669,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       let plain = export_svg("PieChart[{1, 1}, ChartLabels -> {\"a\", \"b\"}]");
       // The first slice spans the upper half; its bisector points straight
-      // up, so the label's x stays at the centre — compare the y instead.
+      // up, so the label's x stays at the center — compare the y instead.
       let label_y = |svg: &str| -> f64 {
         let t = svg.split("<text").nth(1).unwrap();
         let y = t.split(" y=\"").nth(1).unwrap();
         y[..y.find('"').unwrap()].parse().unwrap()
       };
       assert!((label_x(&outer) - label_x(&plain)).abs() < 1.0);
-      // Radius 147: 0.85 r above the centre vs 0.6 r.
+      // Radius 147: 0.85 r above the center vs 0.6 r.
       assert!(
         (label_y(&outer) - (180.0 - 0.85 * 147.0)).abs() < 1.0,
         "{outer}"
@@ -16686,7 +16687,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// `ChartStyle -> "Rainbow"` colours a `RectangleChart`'s rectangles
+    /// `ChartStyle -> "Rainbow"` colors a `RectangleChart`'s rectangles
     /// with the scheme sampled evenly. Regression: all were default yellow.
     #[test]
     fn rectangle_chart_named_color_scheme() {
@@ -16702,7 +16703,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `SectorChart` lays its `{angle, radius}` sectors out in data order
-    /// from π clockwise, coloured in data order, the largest radius filling
+    /// from π clockwise, colored in data order, the largest radius filling
     /// the (square) frame.
     #[test]
     fn sector_chart_data_order_and_radii() {
@@ -16736,7 +16737,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn pie_chart_labeling_function() {
       // `LabelingFunction -> f` labels every slice with `f[value]`; a bare
-      // function centres the label in its wedge.
+      // function centers the label in its wedge.
       let svg = export_svg("PieChart[{1, 2, 3}, LabelingFunction -> (# &)]");
       for v in &["1", "2", "3"] {
         assert!(
@@ -16747,7 +16748,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         svg.matches("<line").count(),
         0,
-        "a centred label needs no leader line"
+        "a centered label needs no leader line"
       );
     }
 
@@ -16755,7 +16756,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn pie_chart_labeling_function_percentages() {
       // The percentage form a Demonstration writes: the number form inside
       // the `Row` is applied, and `"RadialCallout"` puts the text outside
-      // the pie on a leader line, anchored away from the centre.
+      // the pie on a leader line, anchored away from the center.
       let svg = export_svg(
         r#"PieChart[{0.25, 0.75},
              LabelingFunction ->
@@ -16789,7 +16790,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "PieChart[{{1, 1, 1, 1}}, LabelingFunction -> (Placed[#, \"{pos}\"] &)]"
         ));
         // The first slice starts at the negative x axis, so its label sits
-        // left of and above the centre of the 360x360 frame.
+        // left of and above the center of the 360x360 frame.
         let x: f64 = svg
           .split("<text x=\"")
           .nth(1)
@@ -17058,7 +17059,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!((b[2].1 + b[2].2 - b[0].1).abs() <= 1, "{b:?}");
     }
 
-    /// A `ChartStyle -> Directive[colour, EdgeForm[…]]` colours and edges
+    /// A `ChartStyle -> Directive[color, EdgeForm[…]]` colors and edges
     /// the bars.
     #[test]
     fn histogram_chart_style_directive_with_edge_form() {
@@ -17116,7 +17117,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// A `FrameLabel` keeps the centred placement: below the axis and
+    /// A `FrameLabel` keeps the centered placement: below the axis and
     /// rotated in the left gutter.
     #[test]
     fn histogram_frame_label_is_placed_differently() {
@@ -17331,7 +17332,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn deeply_nested_chart_label_is_set_in_linear_time() {
-      // Labelling each argument of a built-in head twice made a label of
+      // Labeling each argument of a built-in head twice made a label of
       // depth d cost 2^d; 28 nested Sin took half a minute.
       let start = std::time::Instant::now();
       let svg =
@@ -18241,7 +18242,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// (the picture grows for a `PlotLabel` and chart labels: wolframscript
     /// makes these 360 x 224 and 360 x 245), the y gutter only holds the
     /// tick labels, and the headroom above the tallest bar is
-    /// `Scaled[0.05]`, so a chart up to 7 is labelled every 1 and one up
+    /// `Scaled[0.05]`, so a chart up to 7 is labeled every 1 and one up
     /// to 8 every 2. Regression: a fixed 65 pt gutter and 10% headroom
     /// left the bars small.
     #[test]
@@ -18255,16 +18256,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         assert!(plain.contains(&format!(">{label}</text>")), "{label}");
       }
       assert!(!plain.contains(">7</text>"));
-      let labelled = export_svg(
+      let labeled = export_svg(
         "BarChart[{3, 7, 1, 5}, ChartLabels -> {\"a\", \"b\", \"c\", \"d\"}, \
          PlotLabel -> \"Styled bar chart\"]",
       );
       assert!(
-        labelled.contains("<svg width=\"360\" height=\"244\""),
-        "{labelled}"
+        labeled.contains("<svg width=\"360\" height=\"244\""),
+        "{labeled}"
       );
       for label in 1..=7 {
-        assert!(labelled.contains(&format!(">{label}</text>")));
+        assert!(labeled.contains(&format!(">{label}</text>")));
       }
     }
 
@@ -18295,7 +18296,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
       // Plot area left edge ~197 (the y axis: the "250" labels plus their
       // 3 pt gap), right edge ~3517 (width ~3320). With x ∈ [0, 50] in
-      // chart coordinates (bar i centred at i + 1), bar i spans [i + 0.6,
+      // chart coordinates (bar i centered at i + 1), bar i spans [i + 0.6,
       // i + 1.4], so the first bar starts at ~197 + 0.6/50 * 3320 ≈ 235
       // and the last (i=19) at ~197 + 19.6/50 * 3320 ≈ 1498 — i.e. the
       // bars only cover ~38% of the plot width.
@@ -18499,7 +18500,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// The blocks are the shaded `GraphicsComplex`es wolframscript
-    /// builds: six faces each, coloured from the bar's colour to a light
+    /// builds: six faces each, colored from the bar's color to a light
     /// tint and a dark shade.
     #[test]
     fn bar_chart_3d_basic() {
@@ -18531,7 +18532,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `ChartLayout -> "Stacked"` piles each group's values into one
-    /// column, coloured by their place in the group.
+    /// column, colored by their place in the group.
     #[test]
     fn bar_chart_3d_stacked_piles_the_group() {
       clear_state();
@@ -18547,10 +18548,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// A flat list draws every bar in the first colour; groups colour by
+    /// A flat list draws every bar in the first color; groups color by
     /// position, from the 3D charts' palette.
     #[test]
-    fn bar_chart_3d_default_colours() {
+    fn bar_chart_3d_default_colors() {
       clear_state();
       assert_eq!(
         interpret(
@@ -18761,7 +18762,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `PlotLegends -> Automatic` makes `DensityPlot` a `Legended` plot
-    /// with a colour bar over the plotted value range, as in Wolfram;
+    /// with a color bar over the plotted value range, as in Wolfram;
     /// `Show` keeps the legend when merging, and the bar is drawn beside
     /// the plot.
     #[test]
@@ -18785,19 +18786,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "{Legended, True, Graphics}"
       );
       let svg = export_svg("s");
-      // One merged plot (its density raster) plus a continuous colour bar.
+      // One merged plot (its density raster) plus a continuous color bar.
       assert_eq!(svg.matches("<image").count(), 1);
       assert!(
         svg.contains("fill=\"url(#woxiLegendGradient"),
-        "no colour bar"
+        "no color bar"
       );
       assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
     }
 
-    /// `PlotRange -> {zmin, zmax}` stretches the colours over exactly that
+    /// `PlotRange -> {zmin, zmax}` stretches the colors over exactly that
     /// range; a value beyond it is left blank by default and drawn per
-    /// `ClippingStyle` otherwise (`Automatic`: the end colour; a colour:
-    /// that colour), as in Wolfram.
+    /// `ClippingStyle` otherwise (`Automatic`: the end color; a color:
+    /// that color), as in Wolfram.
     #[test]
     fn density_plot_plot_range_clips_values() {
       clear_state();
@@ -18810,7 +18811,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         ))
         .unwrap()
       };
-      // The middle cell, centred at x = 4.95, just below the scale midpoint.
+      // The middle cell, centered at x = 4.95, just below the scale midpoint.
       let mid = "{250, 251, 235, 255}";
       assert_eq!(
         cells(""),
@@ -19077,7 +19078,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!plot(", BoundaryStyle -> None").contains(red));
     }
 
-    /// `ContourStyle` colours and thickens the contour lines. Both the
+    /// `ContourStyle` colors and thickens the contour lines. Both the
     /// function form and the equation form draw through it — the equation
     /// form is how a Demonstration draws a stability boundary.
     #[test]
@@ -19091,7 +19092,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         let svg = export_svg(expr);
         assert!(
           svg.contains("stroke=\"rgb(0,0,255)\""),
-          "ContourStyle colour missing from {expr}"
+          "ContourStyle color missing from {expr}"
         );
         // `Thick` is 2 display pixels; the default contour line is thinner
         // than one, so the styled stroke must be clearly wider.
@@ -19139,7 +19140,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// Without a `ContourStyle`, WL 15 draws an equation's curve like a
-    /// `Plot` curve (the first palette colour, `AbsoluteThickness[2]`) and
+    /// `Plot` curve (the first palette color, `AbsoluteThickness[2]`) and
     /// the level curves of a function as 1 point black lines, translucent
     /// (`Opacity[0.5]`) over the shading and solid without it.
     #[test]
@@ -19224,7 +19225,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// Regression: `PlotLegends -> BarLegend[…]` was ignored. As in WL the
     /// plot comes back as `Legended[plot, Placed[BarLegend[…], After]]`,
     /// also when the legend is held in a variable, and a bare BarLegend's
-    /// colour function gets the values themselves (not rescaled to 0..1).
+    /// color function gets the values themselves (not rescaled to 0..1).
     #[test]
     fn plot_legends_bar_legend_gives_legended() {
       clear_state();
@@ -19408,7 +19409,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// A region bounded by straight lines is traced exactly: the crossings
     /// are bisected on the predicate rather than left on the sample grid,
     /// and the corner where the two lines meet (inside a grid cell) is
-    /// restored instead of bevelled.
+    /// restored instead of beveled.
     #[test]
     fn region_plot_linear_region_is_exact() {
       clear_state();
@@ -19433,7 +19434,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `RegionPlot[{p1, p2, …}, …]` draws one region per predicate, each in
-    /// its own `ColorData[97]` colour. Regression: a list of predicates
+    /// its own `ColorData[97]` color. Regression: a list of predicates
     /// drew nothing at all.
     #[test]
     fn region_plot_list_of_predicates() {
@@ -19535,7 +19536,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// An infinite `Plot` range is drawn over WL's compact coordinate
-    /// u = (√(1 + (x/5)²) - 1)/(x/5): the axis runs -1..1, labelled -∞, -20,
+    /// u = (√(1 + (x/5)²) - 1)/(x/5): the axis runs -1..1, labeled -∞, -20,
     /// …, 20, ∞ at the original values' positions.
     #[test]
     fn plot_infinite_range_uses_wolfram_compactification() {
@@ -19558,8 +19559,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       };
       // 10 sits at u = (√5 - 1)/2 ≈ 0.618 of the half-axis from 0 to ∞.
       let (ten, inf) = (x_of("10"), x_of("\u{221E}"));
-      let centre = f64::midpoint(x_of("-\u{221E}"), inf);
-      let frac = (ten - centre) / (inf - centre);
+      let center = f64::midpoint(x_of("-\u{221E}"), inf);
+      let frac = (ten - center) / (inf - center);
       assert!((frac - 0.618).abs() < 0.01, "{frac}");
     }
 
@@ -19595,7 +19596,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     /// Wolfram draws a graphic's axes in front of its primitives, with
     /// tick marks pointing into the picture (up from the x axis, right of
-    /// the y axis) and unlabelled minor marks between the labelled ones.
+    /// the y axis) and unlabeled minor marks between the labeled ones.
     /// Regression: a `Disk` hid the axes, and the marks were crosses.
     #[test]
     fn graphics_axes_sit_in_front_with_inward_ticks() {
@@ -19636,7 +19637,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `AxesStyle` restyles the axis lines: a thickness alone keeps the
-    /// default grey, a colour recolours them, and `{xStyle, yStyle}` styles
+    /// default gray, a color recolors them, and `{xStyle, yStyle}` styles
     /// each axis separately.
     #[test]
     fn graphics_axes_style() {
@@ -19677,7 +19678,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(per_axis[1].contains("rgb(0,0,255)"), "{per_axis:?}");
     }
 
-    /// `PlotStyle` colours a region's fill and its default outline;
+    /// `PlotStyle` colors a region's fill and its default outline;
     /// `BoundaryStyle -> None` drops the outline.
     #[test]
     fn region_plot_plot_style_and_boundary_style() {
@@ -19688,7 +19689,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            PlotStyle -> Red][[1]], _EdgeForm, Infinity]"
         )
         .unwrap(),
-        // The outline keeps the palette colour, as in Wolfram.
+        // The outline keeps the palette color, as in Wolfram.
         "{EdgeForm[{RGBColor[0.23921568627450981, 0.6, 0.8], \
          AbsoluteThickness[1.6]}]}"
       );
@@ -19827,7 +19828,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // magnitude and drawn as near-invisible specks in a pink-to-green
       // gradient. Wolfram draws every arrow 0.9/16 of the plot wide
       // (`VectorScaling -> None`) on a 16-across staggered lattice,
-      // coloured by magnitude on "WL12DefaultVectorGradient", with a head
+      // colored by magnitude on "WL12DefaultVectorGradient", with a head
       // half the arrow's length.
       assert_eq!(
         interpret(
@@ -19913,7 +19914,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn vector_plot3d_color_function() {
-      // The arrows are lit solids, so the colour is read off the
+      // The arrows are lit solids, so the color is read off the
       // primitives rather than the shaded SVG.
       assert_eq!(
         interpret(
@@ -19942,7 +19943,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn vector_plot3d_multiple_fields() {
-      // Each field is drawn in its own plot colour.
+      // Each field is drawn in its own plot color.
       assert_eq!(
         interpret(
           "Length[Union[Cases[VectorPlot3D[{{x, y, z}, {-y, x, 0}}, \
@@ -20388,9 +20389,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn stream_plot_epilog_and_stream_style() {
-      // As in Wolfram, the default speed colouring wins over a
-      // `StreamStyle` colour; only `StreamColorFunction -> None` lets the
-      // `StreamStyle` colour through.
+      // As in Wolfram, the default speed coloring wins over a
+      // `StreamStyle` color; only `StreamColorFunction -> None` lets the
+      // `StreamStyle` color through.
       let svg = export_svg(
         "StreamPlot[{-y, x}, {x, -3, 3}, {y, -3, 3}, \
            Epilog -> {Orange, Disk[{0, 0}, 1]}, StreamStyle -> Black]",
@@ -20405,9 +20406,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// `StreamDensityPlot` shades the speed on Wolfram's orange-to-yellow
-    /// `WL12DefaultVectorDensityGradient` (its end colours are
+    /// `WL12DefaultVectorDensityGradient` (its end colors are
     /// RGB(204, 102, 41) and RGB(255, 237, 128)), and draws the same
-    /// speed-coloured arrows as `StreamPlot` on top.
+    /// speed-colored arrows as `StreamPlot` on top.
     #[test]
     fn stream_density_plot_uses_wolfram_vector_density_gradient() {
       use base64::Engine as _;
@@ -20438,11 +20439,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(near(right, [255, 237, 128]), "{right:?}");
     }
 
-    /// Streamlines are evenly spaced, drawn as runs of arrows coloured by
+    /// Streamlines are evenly spaced, drawn as runs of arrows colored by
     /// the flow speed (slow violet, fast orange on Wolfram's default
     /// vector gradient), and `StreamPoints` sets their density.
     #[test]
-    fn stream_plot_draws_even_speed_coloured_arrows() {
+    fn stream_plot_draws_even_speed_colored_arrows() {
       clear_state();
       let lines = |opts: &str| {
         interpret(&format!(
@@ -20557,7 +20558,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    // The tick at the very edge of the plot range used to be centred on the
+    // The tick at the very edge of the plot range used to be centered on the
     // boundary, so half of `-1.0` fell outside the picture and it read as
     // `1.0`. It now sits far enough inside to stay whole.
     #[test]
@@ -20571,10 +20572,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .find(|chunk| chunk.ends_with(">-1"))
         .and_then(|chunk| chunk.rsplit("<text x=\"").next())
         .and_then(|rest| rest.split('"').next())
-        .expect("an x tick labelled -1.0")
+        .expect("an x tick labeled -1.0")
         .parse()
         .expect("a numeric x attribute");
-      // The label is centred on its tick at the left end of the axis; the
+      // The label is centered on its tick at the left end of the axis; the
       // padding left of the drawing area holds its left half (11.9 pt
       // wide in Arial).
       let offset: f64 = svg
@@ -20641,7 +20642,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn array_plot_frame_is_half_a_point_wide() {
-      // WL draws the frame as a 0.5 pt GrayLevel[0.4] line, centred half a
+      // WL draws the frame as a 0.5 pt GrayLevel[0.4] line, centered half a
       // point inside the edge (5 render units at the 10x scale).
       let svg = export_svg("ArrayPlot[{{0, 1}, {1, 0}}]");
       assert!(
@@ -21446,7 +21447,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("<polyline"), "the contour must survive: {svg}");
       assert!(svg.contains("<polygon"), "the arrow head must draw: {svg}");
       // The plot's own options come along, so the axes are drawn. The
-      // 0.5-spaced ticks are labelled to a common precision, as Wolfram
+      // 0.5-spaced ticks are labeled to a common precision, as Wolfram
       // labels them.
       assert!(svg.contains(">1.0</text>"), "axis ticks expected: {svg}");
     }
@@ -21653,9 +21654,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     use super::*;
 
     /// `Mod` of a complex function used to stay unevaluated, so every sample
-    /// was dropped and the domain colouring came out fully transparent.
+    /// was dropped and the domain coloring came out fully transparent.
     #[test]
-    fn complex_plot_of_complex_mod_is_coloured() {
+    fn complex_plot_of_complex_mod_is_colored() {
       let svg = export_svg("ComplexPlot[Mod[z^-2, 2], {z, -1 - I, 1 + I}]");
       let b64 = svg
         .split("data:image/png;base64,")
@@ -21670,7 +21671,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let opaque = img.pixels().filter(|p| p.0[3] == 255).count();
       assert!(
         opaque * 2 > img.pixels().count(),
-        "expected most samples to be coloured, got {opaque}"
+        "expected most samples to be colored, got {opaque}"
       );
     }
 
@@ -22037,11 +22038,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    // `Column[{picture, legend}, Center]` centres the narrow legend under
+    // `Column[{picture, legend}, Center]` centers the narrow legend under
     // the wide picture; the generic layout composition packed every row to
     // the left regardless of the alignment asked for.
     #[test]
-    fn a_column_of_pictures_honours_its_alignment() {
+    fn a_column_of_pictures_honors_its_alignment() {
       let x_of = |code: &str| -> Vec<f64> {
         export_svg(code)
           .lines()
@@ -22056,7 +22057,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         x_of(&format!("Column[{items}, Center]")),
         vec![0.0, 80.0],
-        "the narrow item centres in the column"
+        "the narrow item centers in the column"
       );
       assert_eq!(
         x_of(&format!("Column[{items}, Right]")),
@@ -22228,7 +22229,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("<ellipse"), "dynamic body must draw: {svg}");
     }
 
-    // `Background -> colour` on a graphics `Text` paints a panel behind the
+    // `Background -> color` on a graphics `Text` paints a panel behind the
     // label, which is what keeps a value readable over whatever it sits on.
     #[test]
     fn a_text_background_paints_a_panel() {
@@ -22247,7 +22248,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(
         backed.contains("fill=\"rgb(255,255,255)\""),
-        "painted in the colour asked for: {backed}"
+        "painted in the color asked for: {backed}"
       );
       // It is also read off the `Style` the label is wrapped in.
       let styled = export_svg(
@@ -22508,7 +22509,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     // the origin, so each marker is that picture moved onto its point. This
     // is how a Demonstration labels the vertices it lets you drag.
     #[test]
-    fn locator_pane_honours_a_custom_appearance() {
+    fn locator_pane_honors_a_custom_appearance() {
       let svg = export_svg(
         "LocatorPane[{{0.3, 0.3}, {0.7, 0.7}}, \
          Graphics[{}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200], \
@@ -22518,7 +22519,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       for label in ["1", "2"] {
         assert!(
           svg.contains(&format!(">{label}</text>")),
-          "locator {label} must be labelled: {svg}"
+          "locator {label} must be labeled: {svg}"
         );
       }
       assert!(
@@ -22679,7 +22680,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     // `EdgeForm[]` asks for faces with no outline at all — how a dissection
-    // shows its pieces as flat colour. wolframscript draws no near-black
+    // shows its pieces as flat color. wolframscript draws no near-black
     // pixel for such a face; Woxi outlined it regardless.
     #[test]
     fn edge_form_none_suppresses_the_outline() {
@@ -22745,13 +22746,13 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     // rgb(64, 64, 64)). Woxi drew it at 9% black, which was all but
     // invisible — the panels of a solar array read as one blob.
     #[test]
-    fn a_face_outline_is_wolframs_grey() {
+    fn a_face_outline_is_wolframs_gray() {
       let svg = export_svg(
         "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}],          Boxed -> False]",
       );
       assert!(
         svg.contains("stroke=\"rgb(64,64,64)\" stroke-width=\"1\""),
-        "the outline is solid grey, a pixel wide: {svg}"
+        "the outline is solid gray, a pixel wide: {svg}"
       );
     }
 
@@ -22813,7 +22814,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     // A face with a real outline still gets it: the hairline is what keeps
-    // neighbouring faces of a solid visually distinct.
+    // neighboring faces of a solid visually distinct.
     #[test]
     fn flat_faces_keep_their_outline() {
       for code in [
@@ -23009,7 +23010,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   }
 
   /// Regression: `Plot` and `ParametricPlot` ignored `FrameTicks -> None`
-  /// and kept labelling the frame edges.
+  /// and kept labeling the frame edges.
   #[test]
   fn frame_ticks_none_drops_the_frame_tick_labels() {
     for plot in [
@@ -23390,7 +23391,7 @@ mod graphics_list {
   }
 
   /// Regression: a cell carrying its own numeric `ImageSize` kept that
-  /// absolute size while its neighbours were fitted to the shared column
+  /// absolute size while its neighbors were fitted to the shared column
   /// width, so a padded `GraphicsGrid` showed one oversized picture among
   /// tiny cells. The cell's size only contributes its aspect ratio.
   #[test]
@@ -24284,7 +24285,7 @@ mod show {
     );
   }
 
-  /// The fill colour of the largest polygon in an SVG.
+  /// The fill color of the largest polygon in an SVG.
   fn orange_fill(svg: &str) -> String {
     svg
       .split("<polygon ")
@@ -24394,9 +24395,9 @@ mod show {
 
   /// Two plots merged by `Show` render through the ordinary plot renderer,
   /// so the first plot's frame and labels survive and each curve keeps the
-  /// colour its own `PlotStyle` gave it.
+  /// color its own `PlotStyle` gave it.
   #[test]
-  fn show_of_two_plots_keeps_frame_labels_and_curve_colours() {
+  fn show_of_two_plots_keeps_frame_labels_and_curve_colors() {
     clear_state();
     let svg = export_svg(
       r#"Show[
@@ -24425,7 +24426,7 @@ mod show {
     );
     assert!(svg.contains("#FF0000"), "the line survives: {svg}");
     // Points overlaid on lines are drawn as epilog primitives, which spell
-    // their colour `rgb(...)`.
+    // their color `rgb(...)`.
     assert!(
       svg.contains("rgb(0,0,255)"),
       "the scatter points survive: {svg}"
@@ -24914,7 +24915,7 @@ mod list_plot_3d {
   // model): its `Manipulate` draws a `ListPlot3D` surface with an explicit
   // `PlotRange -> {zmin, zmax}` meant to clip a numerically unstable
   // outlier corner out of view. `ListPlot3D` never read `PlotRange` at
-  // all — the vertical axis was always labelled with the raw data extent,
+  // all — the vertical axis was always labeled with the raw data extent,
   // so a spike far outside the intended range stretched the whole box
   // instead of being clipped to it.
 
@@ -24928,7 +24929,7 @@ mod list_plot_3d {
     );
     assert!(
       svg.contains(">2</text>"),
-      "the axis must be labelled with the PlotRange max: {svg}"
+      "the axis must be labeled with the PlotRange max: {svg}"
     );
     assert!(
       !svg.contains(">100</text>") && !svg.contains(">50</text>"),
@@ -25534,8 +25535,8 @@ mod graphics_grid {
     assert!(height > 100.0, "cells must not collapse to a strip: {svg}");
   }
 
-  /// A computed `ImageSize` (`0.75*{w, h}`) is honoured, and a negative
-  /// `Spacings` doesn't make neighbouring cells overlap.
+  /// A computed `ImageSize` (`0.75*{w, h}`) is honored, and a negative
+  /// `Spacings` doesn't make neighboring cells overlap.
   #[test]
   fn computed_image_size_and_negative_spacing() {
     let svg = export_svg(
@@ -26091,10 +26092,10 @@ mod graphics_grid {
 
   /// A `Style[Grid[…], …]` reached through `Text`/`Pane` unwrapping must
   /// still take the *whole-directives* styled path `render_grid_if_needed`
-  /// already gives a bare `Style[Grid[…], …]` — which colours the frame and
+  /// already gives a bare `Style[Grid[…], …]` — which colors the frame and
   /// dividers, not only the cells. Distributing the directives over the
   /// cells first (as `Column`/`Row` need) would leave the frame at its
-  /// default colour instead.
+  /// default color instead.
   #[test]
   fn styled_text_wrapped_grid_frame_color_matches_bare_style() {
     clear_state();
@@ -26248,7 +26249,7 @@ mod line_legend {
   }
 
   #[test]
-  fn line_legend_honours_thickness_and_dashing_directives() {
+  fn line_legend_honors_thickness_and_dashing_directives() {
     clear_state();
     let svg = export_svg(
       "LineLegend[{Red, {Thickness[Large], Blue}, \
@@ -26506,8 +26507,8 @@ mod grid_frame_and_background {
   }
 
   /// A line-style directive as a position spec (`1 -> Thin`, `2 -> Thick`)
-  /// still rules that line. Regression: only colours and `True` were
-  /// recognised, so a grid ruled with `Thin`/`Thick` came out with no lines.
+  /// still rules that line. Regression: only colors and `True` were
+  /// recognized, so a grid ruled with `Thin`/`Thick` came out with no lines.
   #[test]
   fn dividers_accept_line_style_directives() {
     let svg = export_svg(
@@ -26520,9 +26521,9 @@ mod grid_frame_and_background {
     assert_eq!(horizontal, 1, "middle only: {svg}");
   }
 
-  /// `Directive[colour, style]` rules the line in that colour.
+  /// `Directive[color, style]` rules the line in that color.
   #[test]
-  fn dividers_directive_keeps_its_colour() {
+  fn dividers_directive_keeps_its_color() {
     let svg = export_svg(
       r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{2 -> Directive[Red, Thick]}, None}]"#,
     );
@@ -26531,7 +26532,7 @@ mod grid_frame_and_background {
 
   /// A bare style as the whole `Dividers` value rules every line on both
   /// axes in that style. Regression: only `All`/`True`/`Center` and lists
-  /// were recognised, so `Dividers -> Directive[Orange, Thick]` drew nothing.
+  /// were recognized, so `Dividers -> Directive[Orange, Thick]` drew nothing.
   #[test]
   fn dividers_bare_style_rules_every_line() {
     for spec in ["Directive[Orange, Thick, Dashed]", "Orange"] {
@@ -26688,7 +26689,7 @@ mod grid_frame_and_background {
   }
 
   /// `SpanFromLeft` means "the cell to my left continues here": it draws
-  /// nothing, its neighbour is laid out across the merged columns, and the
+  /// nothing, its neighbor is laid out across the merged columns, and the
   /// divider between them is interrupted. Regression: the symbol's name was
   /// printed as the cell's text.
   #[test]
@@ -26699,7 +26700,7 @@ mod grid_frame_and_background {
       !svg.contains("SpanFromLeft"),
       "the symbol must not print: {svg}"
     );
-    // "a" is centred across both columns, so it sits at the grid's midpoint
+    // "a" is centered across both columns, so it sits at the grid's midpoint
     // rather than in the middle of the first column (where "b" is).
     let x_of = |label: &str| -> f64 {
       svg
@@ -26712,7 +26713,7 @@ mod grid_frame_and_background {
     };
     assert!(
       x_of("a") > x_of("b"),
-      "the spanning cell centres across both columns: {svg}"
+      "the spanning cell centers across both columns: {svg}"
     );
     // The divider between the columns stops at the spanned row: it is drawn
     // as a segment starting below the first row, not the full height.
@@ -26723,7 +26724,7 @@ mod grid_frame_and_background {
   }
 
   /// `SpanFromAbove` is the vertical counterpart: the cell above continues
-  /// down into the row, so it draws nothing, its neighbour is centred over
+  /// down into the row, so it draws nothing, its neighbor is centered over
   /// both rows, and the divider between them is interrupted across that
   /// column. Regression: the symbol's name was printed as the cell's text.
   #[test]
@@ -26743,11 +26744,11 @@ mod grid_frame_and_background {
         .and_then(|v| v.parse().ok())
         .unwrap_or_else(|| panic!("{label} missing: {svg}"))
     };
-    // "a" is centred across both rows, so it sits below "b" (which is
-    // centred in the first row alone) and above "c" (the second row).
+    // "a" is centered across both rows, so it sits below "b" (which is
+    // centered in the first row alone) and above "c" (the second row).
     assert!(
       y_of("b") < y_of("a") && y_of("a") < y_of("c"),
-      "the spanning cell centres across both rows: {svg}"
+      "the spanning cell centers across both rows: {svg}"
     );
     // The inner divider only covers the second column: the first column's
     // stretch of it would cut through the merged cell.
@@ -26825,7 +26826,7 @@ mod grid_frame_and_background {
   }
 
   /// A ragged row still sits on the grid's background for its full width,
-  /// and columns sharing a colour are painted as one rectangle so their
+  /// and columns sharing a color are painted as one rectangle so their
   /// shared edges do not antialias into visible seams.
   #[test]
   fn background_covers_every_column_of_a_ragged_row() {
@@ -27100,7 +27101,7 @@ mod grid_rasterize {
   fn panel_places_labels_above_and_below_its_content() {
     // Regression: `Panel[content, {top, bottom}, {Top, Bottom}]` dropped
     // both labels (and printed the call as source text) because only a
-    // `Style`d caption was recognised.
+    // `Style`d caption was recognized.
     clear_state();
     let svg = woxi::interpret_with_stdout(
       "Panel[Graphics[Disk[]], {\"headline\", \"footnote\"}, {Top, Bottom}]",
@@ -27122,10 +27123,10 @@ mod grid_rasterize {
   }
 
   #[test]
-  fn framed_pane_cell_takes_the_pane_size_and_honours_frame_style_none() {
+  fn framed_pane_cell_takes_the_pane_size_and_honors_frame_style_none() {
     // Regression: a `Framed[Pane[Text[…], {w, h}], FrameStyle -> None]`
     // grid cell shrank to the text and always drew a gray border, so a
-    // coloured-square table collapsed to a few clipped pixels.
+    // colored-square table collapsed to a few clipped pixels.
     clear_state();
     let svg = woxi::interpret_with_stdout(
       "Text[Grid[{{Framed[Pane[Text[Style[1, 20]], {100, 60}], \
@@ -28573,7 +28574,7 @@ mod blend {
     );
   }
 
-  // Tick values past the i64 range used to panic while being labelled.
+  // Tick values past the i64 range used to panic while being labeled.
   #[test]
   fn plot_with_huge_values_renders() {
     assert_eq!(
@@ -28767,7 +28768,7 @@ mod blend {
 mod graphics_complex {
   use super::*;
 
-  // A vertex-coloured 3D complex resolves each facet without copying the
+  // A vertex-colored 3D complex resolves each facet without copying the
   // whole facet list for it (quadratic in the facet count for the meshes
   // a notebook stores).
   #[test]
@@ -28967,7 +28968,7 @@ mod graphics_complex_normal {
         .unwrap(),
       "20"
     );
-    // Neighbouring faces of the unfolding share points.
+    // Neighboring faces of the unfolding share points.
     assert_eq!(
       interpret(r#"Length[PolyhedronData["Cube", "NetFaces"][[1]]] < 4*6"#)
         .unwrap(),
@@ -29212,10 +29213,10 @@ mod log_log_plot {
 
   /// A range bounded by powers of ten labels both bounding decades.
   #[test]
-  fn decade_bounds_are_labelled() {
+  fn decade_bounds_are_labeled() {
     let svg = export_svg("LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]");
     // Bottom-edge labels: 0.1, 0.5, 1, 5, 10, as `Charting`ScaledTicks`
-    // places them (the left edge has its own). They are the centred labels
+    // places them (the left edge has its own). They are the centered labels
     // of the lowest row.
     let ys: Vec<f64> = svg
       .lines()
@@ -29377,9 +29378,9 @@ mod contour_plot_3d {
   }
 
   #[test]
-  fn style_list_of_colour_and_opacity_is_translucent() {
-    // A list or nested `Directive` mixing a colour with `Opacity` keeps the
-    // opacity, exactly like `Directive[colour, Opacity[o]]` does.
+  fn style_list_of_color_and_opacity_is_translucent() {
+    // A list or nested `Directive` mixing a color with `Opacity` keeps the
+    // opacity, exactly like `Directive[color, Opacity[o]]` does.
     for style in [
       "{RGBColor[0, 0, 1], Opacity[0.4]}",
       "{Directive[{RGBColor[0, 0, 1], Opacity[0.4]}]}",
@@ -29421,7 +29422,7 @@ mod contour_plot_3d {
   fn background_option_evaluates_its_color_expression() {
     // The 3D plot heads hold their arguments, so a `Background` built from
     // variables (as a Manipulate control would supply) must be evaluated
-    // before it is read as a colour.
+    // before it is read as a color.
     for call in [
       "p = 0.5; ParametricPlot3D[{u, v, 0}, {u, 0, 1}, {v, 0, 1}, \
        Background -> RGBColor[p, p, p], PlotPoints -> 3]",
@@ -29774,7 +29775,7 @@ mod rule_plot {
     );
   }
 
-  // One inset per rule (the cell, an arrow, the block) between light grey
+  // One inset per rule (the cell, an arrow, the block) between light gray
   // rules; the insets keep their plot range's aspect.
   #[test]
   fn substitution_system_insets() {
@@ -29812,11 +29813,11 @@ mod rule_plot {
 
   #[test]
   fn totalistic_rule_draws_one_case_per_neighborhood_sum() {
-    // 3 colours, radius 1: sums 0..6 -> 7 cases x 4 cells = 28 rectangles
+    // 3 colors, radius 1: sums 0..6 -> 7 cases x 4 cells = 28 rectangles
     // plus the clip-path rect.
     let svg = export_svg("RulePlot[CellularAutomaton[{1261, {3, 1}}]]");
     assert_eq!(svg.matches("<rect").count(), 29);
-    // 2 colours, radius 2: sums 0..5 -> 6 cases x 6 cells.
+    // 2 colors, radius 2: sums 0..5 -> 6 cases x 6 cells.
     let svg = export_svg("RulePlot[CellularAutomaton[{20, {2, 1}, 2}]]");
     assert_eq!(svg.matches("<rect").count(), 37);
   }
@@ -30792,7 +30793,7 @@ mod parametric_plot3d {
     );
   }
 
-  /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples — see
+  /// Every `<polygon>` fill color in the SVG, as `(r, g, b)` triples — see
   /// the identical helper documented in `plot3d::options`.
   fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
     svg
@@ -30809,7 +30810,7 @@ mod parametric_plot3d {
 
   /// `PlotStyle -> RGBColor[...]` used to be silently ignored by the
   /// rendered surface (the 2-iterator form): the picture stayed the default
-  /// height-based rainbow no matter what colour was requested.
+  /// height-based rainbow no matter what color was requested.
   #[test]
   fn plotstyle_color_changes_rendered_fill() {
     let baseline = export_svg(
@@ -30830,7 +30831,7 @@ mod parametric_plot3d {
   }
 
   /// `PlotStyle -> {c1, c2}` on `ParametricPlot3D[{{...}, {...}}, ...]`
-  /// (multiple surfaces) gives each surface its own colour, cycling
+  /// (multiple surfaces) gives each surface its own color, cycling
   /// through the list.
   #[test]
   fn plotstyle_list_gives_each_surface_its_own_color() {
@@ -30866,9 +30867,9 @@ mod parametric_plot3d {
   /// Regression (Wolfram Demonstration "Strips of Equal Width on a Sphere
   /// Have Equal Surface Areas"): `MeshFunctions`, `Mesh` and `MeshShading`
   /// together are how a `ParametricPlot3D` surface is dissected into
-  /// coloured bands — each facet is coloured by which region of the mesh
+  /// colored bands — each facet is colored by which region of the mesh
   /// function's range (partitioned at `Mesh`'s sorted break values) its
-  /// average point falls in, cycling through `MeshShading`'s colours in
+  /// average point falls in, cycling through `MeshShading`'s colors in
   /// that same order. This used to be silently ignored, leaving every
   /// surface the default height-based rainbow no matter what was asked for.
   #[test]
@@ -30891,8 +30892,8 @@ mod parametric_plot3d {
 
   /// Regression (Wolfram Demonstration on cumulative sums and change
   /// detection): `ListLinePlot` with `MeshFunctions`, `Mesh` and
-  /// `MeshShading` colours the stretches of the curve between mesh values
-  /// instead of drawing a single default-coloured line.
+  /// `MeshShading` colors the stretches of the curve between mesh values
+  /// instead of drawing a single default-colored line.
   #[test]
   fn list_line_plot_mesh_shading_colors_curve_segments() {
     let svg = export_svg(
@@ -30909,7 +30910,7 @@ mod parametric_plot3d {
   }
 
   /// A step-valued mesh function (`Boole[#1 >= m]`) splits the curve into a
-  /// left and a right part with the first and second shading colours.
+  /// left and a right part with the first and second shading colors.
   #[test]
   fn list_line_plot_mesh_shading_with_step_mesh_function() {
     let svg = export_svg(
@@ -30922,7 +30923,7 @@ mod parametric_plot3d {
   }
 
   /// `Mesh -> {{v1, v2, ...}}` with more than one break value partitions
-  /// the surface into as many regions as `MeshShading` gives colours,
+  /// the surface into as many regions as `MeshShading` gives colors,
   /// cycling through them in ascending order of the mesh function's value.
   #[test]
   fn mesh_shading_with_multiple_breaks_uses_every_color() {
@@ -30946,7 +30947,7 @@ mod parametric_plot3d {
     );
   }
 
-  /// `MeshFunctions -> {f}` (a singleton list) must colour regions the same
+  /// `MeshFunctions -> {f}` (a singleton list) must color regions the same
   /// way the bare pure function `MeshFunctions -> f` does.
   #[test]
   fn mesh_functions_singleton_list_matches_bare_function() {
@@ -31076,11 +31077,11 @@ mod parametric_plot3d {
 
   /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
   /// `ParametricPlot3D`'s facet shading only ever painted `PlotStyle ->
-  /// FaceForm[front, back]`'s `front` colour — it built a `StyleState3D`
+  /// FaceForm[front, back]`'s `front` color — it built a `StyleState3D`
   /// that carried `back_color` (as `Graphics3D`'s own polygon shading
   /// already reads), but never consulted a facet's orientation relative
   /// to the camera the way that shading does. A closed tube shows some
-  /// facets from behind no matter how it is turned, so the back colour
+  /// facets from behind no matter how it is turned, so the back color
   /// never appeared at all.
   #[test]
   fn face_form_shades_the_far_side_a_different_color() {
@@ -31100,7 +31101,7 @@ mod parametric_plot3d {
   }
 
   /// A one-argument `PlotStyle -> FaceForm[color]` (no separate back
-  /// colour) must still colour every facet the same, regardless of which
+  /// color) must still color every facet the same, regardless of which
   /// way it faces.
   #[test]
   fn face_form_single_argument_colors_both_sides_the_same() {
@@ -31365,13 +31366,13 @@ mod timeline_plot {
       "TimelinePlot[{DateObject[{2000}], DateObject[{2005}], \
        DateObject[{2010}]}]",
     );
-    // One dot (in the plot colour, on a white halo) per date event.
+    // One dot (in the plot color, on a white halo) per date event.
     assert_eq!(
       svg.matches("fill=\"rgb(61,153,204)\"/>").count(),
       3,
       "Expected three point markers, got: {svg}"
     );
-    // Unlabelled dates get no callouts, as in Wolfram; the axis carries
+    // Unlabeled dates get no callouts, as in Wolfram; the axis carries
     // the years.
     assert!(!svg.contains("rx="), "{svg}");
     assert!(svg.contains(">2000<") && svg.contains(">2010<"), "{svg}");
@@ -31764,7 +31765,7 @@ mod periodic_table_plot {
     let svg = export_svg("PeriodicTablePlot[]");
     // The group 2/3 gutter of periods 6/7 and the detached series rows
     // carry * / ** insertion markers: 1 + 2 + 1 + 2 asterisk glyphs, all
-    // centred in the gutter (x = 2 * CELL + GUTTER / 2 = 218).
+    // centered in the gutter (x = 2 * CELL + GUTTER / 2 = 218).
     let markers: Vec<&str> =
       svg.lines().filter(|l| l.contains(">*</text>")).collect();
     assert_eq!(
@@ -31775,11 +31776,11 @@ mod periodic_table_plot {
     for line in &markers {
       assert!(
         line.contains("x=\"218.0\""),
-        "Expected marker centred in the group 2/3 gutter, got: {line}"
+        "Expected marker centered in the group 2/3 gutter, got: {line}"
       );
     }
     // Lu and Lr keep their main-table group-3 position, shifted right of
-    // the gutter (cell centre x = 2 * CELL + GUTTER + CELL / 2 = 286);
+    // the gutter (cell center x = 2 * CELL + GUTTER + CELL / 2 = 286);
     // the detached rows hold only 57-70 and 89-102.
     for sym in ["Lu", "Lr"] {
       let line = svg
@@ -31791,7 +31792,7 @@ mod periodic_table_plot {
         "Expected {sym} right of the gutter at x=286, got: {line}"
       );
     }
-    // Groups 1 and 2 stay left of the gutter (Ba cell centre x = 150).
+    // Groups 1 and 2 stay left of the gutter (Ba cell center x = 150).
     let ba = svg
       .lines()
       .find(|l| l.contains(">Ba</text>"))
@@ -31815,7 +31816,7 @@ mod periodic_table_plot {
       svg.contains("#c9f3d9"),
       "Expected d-block color for highlighted iron"
     );
-    assert!(svg.contains(">Fe</text>"), "Iron should still be labelled");
+    assert!(svg.contains(">Fe</text>"), "Iron should still be labeled");
   }
 
   #[test]
@@ -32023,7 +32024,7 @@ mod manipulate {
   }
 
   #[test]
-  fn labelled_defaults() {
+  fn labeled_defaults() {
     // {{u, uinit, ulbl}, umin, umax}: label prints unquoted in OutputForm.
     assert_eq!(
       interpret("Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {{a, 2, \"Multiplier\"}, 1, 4}, {{b, 0, \"Phase Parameter\"}, 0, 10}]").unwrap(),
@@ -32677,7 +32678,7 @@ mod manipulate {
         ..
       } => {
         assert_eq!(name, "p");
-        // Default unit-square range, locator starting at its centre.
+        // Default unit-square range, locator starting at its center.
         assert_eq!((*x_min, *y_min), (0.0, 0.0));
         assert_eq!((*x_max, *y_max), (1.0, 1.0));
         assert_eq!((*x_initial, *y_initial), (0.5, 0.5));
@@ -33102,10 +33103,10 @@ mod manipulate {
 
   /// The Roots-of-the-Bernoulli-Polynomials Demonstration lays its two
   /// controls out with `Row[{Control@{…}, Spacer[…], Control@{…}}]`: a
-  /// labelled slider and a `{True, False}` picker. Both must survive the
+  /// labeled slider and a `{True, False}` picker. Both must survive the
   /// Row wrapper with their bounds, step and initial value intact.
   #[test]
-  fn spec_row_of_labelled_slider_and_boolean_picker() {
+  fn spec_row_of_labeled_slider_and_boolean_picker() {
     let expr = interpret_to_expr(
       "Manipulate[{n, flag}, \
        Row[{Control@{{n, 20, \"roots\"}, 1, 60, 1, Appearance -> \"Labeled\"}, \
@@ -33148,10 +33149,10 @@ mod manipulate {
     }
   }
 
-  /// `{{u, uinit, ulbl}, colour, opts…}` — a colour bound names no choice
+  /// `{{u, uinit, ulbl}, color, opts…}` — a color bound names no choice
   /// list, so Wolfram draws the full swatch-plus-picker `ColorSlider`
-  /// opened on the explicit initial colour (not a two-swatch toggle between
-  /// it and the listed colour), whatever the option tail or labelling.
+  /// opened on the explicit initial color (not a two-swatch toggle between
+  /// it and the listed color), whatever the option tail or labeling.
   #[test]
   fn spec_color_bound_with_explicit_initial_is_a_color_control() {
     for spec_src in [
@@ -33176,9 +33177,9 @@ mod manipulate {
     }
   }
 
-  /// `{u, colour}` names no domain: the bare `{u, uinit}` form picks the
-  /// widget from the type of `uinit`, and for a colour that is the
-  /// full-gradient colour control starting on that colour — not a fixed
+  /// `{u, color}` names no domain: the bare `{u, uinit}` form picks the
+  /// widget from the type of `uinit`, and for a color that is the
+  /// full-gradient color control starting on that color — not a fixed
   /// binding baked into the body.
   #[test]
   fn spec_single_color_form_without_explicit_initial_is_a_color_control() {
@@ -33196,16 +33197,16 @@ mod manipulate {
       ] => {
         assert_eq!(name, "c");
         assert_eq!(initial, "RGBColor[0.49, 0, 0]");
-        // With no labelled head the variable's own name is the label.
+        // With no labeled head the variable's own name is the label.
         assert_eq!(label, "c");
       }
-      other => panic!("expected a colour control, got {other:?}"),
+      other => panic!("expected a color control, got {other:?}"),
     }
   }
 
-  /// The same bare colour spec carrying a trailing control option
+  /// The same bare color spec carrying a trailing control option
   /// (`ImageSize -> Tiny`, the Demonstrations idiom for a compact swatch)
-  /// is still a colour control: options are stripped before the domain is
+  /// is still a color control: options are stripped before the domain is
   /// read, so they never turn the spec into a fixed binding.
   #[test]
   fn spec_single_color_form_with_trailing_option_is_a_color_control() {
@@ -33227,13 +33228,13 @@ mod manipulate {
         assert_eq!(initial, "RGBColor[0.1, 0.2, 0.9]");
         assert_eq!(slider_name, "opacity");
       }
-      other => panic!("expected a colour control and a slider, got {other:?}"),
+      other => panic!("expected a color control and a slider, got {other:?}"),
     }
-    // The colour is driven by the control, so it must not be bound as a
+    // The color is driven by the control, so it must not be bound as a
     // constant in the body the way a fixed value would be.
     assert!(
       !spec.body_code.contains("RGBColor"),
-      "the colour must stay a live control variable: {}",
+      "the color must stay a live control variable: {}",
       spec.body_code
     );
   }
@@ -33286,7 +33287,7 @@ mod manipulate {
   /// are dropped, and a Manipulate-level `ControlType -> {…}` assigns one
   /// type per *control*. A marker must therefore not consume a slot of
   /// that list, or every control after the first would be typed by its
-  /// neighbour's entry.
+  /// neighbor's entry.
   #[test]
   fn spec_grid_span_markers_do_not_shift_global_control_types() {
     let expr = interpret_to_expr(
@@ -33428,7 +33429,7 @@ mod manipulate {
     }
   }
 
-  /// `\[WarningSign]` and its neighbours in Wolfram's pictograph block are
+  /// `\[WarningSign]` and its neighbors in Wolfram's pictograph block are
   /// characters like any other: a control label that warns a choice is slow
   /// draws the sign, not the escape it was written with.
   #[test]
@@ -33521,7 +33522,7 @@ mod manipulate {
 
   /// A `Setter` / `Toggler` control type offers one widget per value, the
   /// way `SetterBar` and `RadioButton` already do. Before these were
-  /// recognised as control-type names they were read as a *bound*, the
+  /// recognized as control-type names they were read as a *bound*, the
   /// spec failed to parse, and — because one unparsable spec aborts the
   /// whole extraction — the entire Manipulate fell back to a text echo.
   #[test]
@@ -33687,7 +33688,7 @@ mod manipulate {
 
   /// `ControlType -> Slider` over a *choice list* keeps the choices but
   /// asks for a slider that steps through them by index — how Wolfram
-  /// draws a twenty-entry colour-scheme picker. Without the flag the
+  /// draws a twenty-entry color-scheme picker. Without the flag the
   /// frontends fell back to a dropdown, since twenty entries are far too
   /// many for a setter bar.
   #[test]
@@ -34369,7 +34370,7 @@ mod manipulate {
           *orientation,
           woxi::functions::graphics::ControlOrientation::Horizontal
         );
-        // Unlabelled control → a single upright run of the variable name.
+        // Unlabeled control → a single upright run of the variable name.
         assert_eq!(label_runs.len(), 1);
         assert_eq!(label_runs[0].text, "x");
         assert!(!label_runs[0].italic);
@@ -34498,7 +34499,7 @@ mod manipulate {
   }
 
   #[test]
-  fn spec_labelled_with_initial() {
+  fn spec_labeled_with_initial() {
     let expr = interpret_to_expr(
       "Manipulate[Plot[Sin[a*x + b], {x, 0, 6}], {{a, 2, \"Multiplier\"}, 1, 4}, {{b, 0, \"Phase Parameter\"}, 0, 10}]",
     )
@@ -35063,7 +35064,7 @@ mod manipulate {
   /// `SaveDefinitions`, `ControlPlacement`) that name no variable and must
   /// not become controls of their own.
   #[test]
-  fn spec_labelled_stepped_sliders_beside_layout_options() {
+  fn spec_labeled_stepped_sliders_beside_layout_options() {
     let slider = |name: &str, initial: &str| {
       format!(
         "{{{{{name}, {initial}, Style[\"{name}\", Italic]}}, -10, 10, 1, \
@@ -36086,7 +36087,7 @@ mod manipulate {
   /// End-to-end regression for the shape a "waveform and sound" Wolfram
   /// Demonstration has: a `Grid` body pairing typeset headings with a
   /// multi-curve `Plot` and a `Play` carrying a `SampleRate` option, driven
-  /// by sliders whose labels are `Style`d in colour.
+  /// by sliders whose labels are `Style`d in color.
   #[test]
   fn spec_grid_of_plot_and_sound_demonstration_manipulate() {
     clear_state();
@@ -36119,7 +36120,7 @@ mod manipulate {
       })
       .collect();
     assert_eq!(names, vec!["f", "a", "g", "b", "window"]);
-    // A `Style[label, Red]` control label keeps its colour.
+    // A `Style[label, Red]` control label keeps its color.
     match &spec.controls[0] {
       ManipulateControl::Continuous { label_runs, .. } => {
         assert_eq!(label_runs.len(), 1);
@@ -37455,7 +37456,7 @@ mod manipulate {
   // widget instead of describing a range. The Demonstrations idiom is a
   // `Button` that resets the variable, so the row is the button and the
   // variable becomes live state the action can write into. Regression: the
-  // form was unrecognised, so the whole widget failed to build.
+  // form was unrecognized, so the whole widget failed to build.
   #[test]
   fn custom_control_function_builds_a_button() {
     let expr = woxi::interpret_to_expr(
@@ -37484,24 +37485,24 @@ mod manipulate {
     );
   }
 
-  // `{{u, colour, label}, colour}` is a colour control — wolframscript
+  // `{{u, color, label}, color}` is a color control — wolframscript
   // renders a full-gradient `ColorSlider` over it (there being only one
   // possible value to alternate with is what makes the domain "any
-  // colour" rather than "one of these two" — see the 2-swatch case in
-  // `parse_manipulate_control`'s "Colour form" branch for the alternative).
+  // color" rather than "one of these two" — see the 2-swatch case in
+  // `parse_manipulate_control`'s "Color form" branch for the alternative).
   // Regression: this shape used to make `extract_manipulate_spec` give up
   // on the whole control (dropping every other control with it) and, once
   // that was fixed, to silently bind the variable without ever building a
   // widget for it.
   #[test]
-  fn colour_control_renders_a_color_slider() {
+  fn color_control_renders_a_color_slider() {
     let expr = woxi::interpret_to_expr(
       "Manipulate[{col, Disk[]}, {{n, 3, \"division\"}, 2, 20, 1}, \
        Control@{{col, Red, \"color\"}, Red}]",
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    // Both the division slider and the colour control survive…
+    // Both the division slider and the color control survive…
     match &spec.controls[..] {
       [
         ManipulateControl::Continuous { name: n, .. },
@@ -37517,10 +37518,10 @@ mod manipulate {
         assert_eq!(initial, "RGBColor[1, 0, 0]");
       }
       other => {
-        panic!("expected a slider and a colour control, got {other:?}")
+        panic!("expected a slider and a color control, got {other:?}")
       }
     }
-    // …and the colour is in scope for the body at its initial value. A
+    // …and the color is in scope for the body at its initial value. A
     // visible widget's initial value travels via `manipulate_initial_bindings`
     // (installed at evaluation time through `with_scoped_globals`), unlike a
     // `Fixed` control's value, which is baked directly into `body_code` as a
@@ -37531,12 +37532,12 @@ mod manipulate {
       bindings
         .iter()
         .any(|(name, value)| name == "col" && value == "RGBColor[1, 0, 0]"),
-      "the colour binding is missing: {bindings:?}"
+      "the color binding is missing: {bindings:?}"
     );
     let json = manipulate_spec_to_json(&spec);
     assert!(
       json.contains(r#""kind":"color""#),
-      "the colour control must render as a widget: {json}"
+      "the color control must render as a widget: {json}"
     );
   }
 
@@ -37583,7 +37584,7 @@ mod manipulate {
     }
   }
 
-  // A choice labelled with a text `Column[…]` is a multi-line *text* label.
+  // A choice labeled with a text `Column[…]` is a multi-line *text* label.
   // Regression: evaluating it produced the typeset echo of its own source,
   // which the widget then showed as an icon.
   #[test]
@@ -37616,7 +37617,7 @@ mod manipulate {
   #[test]
   fn spec_keplers_second_law_demonstration() {
     // The full Manipulate cell of the "Kepler's Second Law" Demonstration
-    // notebook: four labelled sliders (two bounded by the period P), a
+    // notebook: four labeled sliders (two bounded by the period P), a
     // Trigger on t, and a body that renders an SVG under the initial
     // bindings.
     let expr = interpret_to_expr(
@@ -37692,7 +37693,7 @@ mod manipulate {
   // variable before plotting it, with three `Appearance -> "Labeled"`
   // sliders driving `MeshFunctions`/`Mesh` cutting planes on the surface and
   // a fourth control switching which surface is shown via a pick list whose
-  // choices are `TraditionalForm[Row[{…}]]`-labelled formulas.
+  // choices are `TraditionalForm[Row[{…}]]`-labeled formulas.
   #[test]
   fn spec_surface_mesh_planes_with_function_list_picker() {
     let expr = interpret_to_expr(
@@ -37773,7 +37774,7 @@ mod manipulate {
   // bounds. All three must extract into a working panel: the Row-wrapped
   // slider becomes an ordinary control, the readout becomes a display
   // element (not a failed control that takes the others down with it —
-  // see the "one unrecognised control spec" note above), and the choice
+  // see the "one unrecognized control spec" note above), and the choice
   // list becomes a discrete control.
   #[test]
   fn spec_row_wrapped_slider_with_dynamic_readout_and_named_choices() {
@@ -39459,7 +39460,7 @@ mod cases {
     // The scraped expectation is wolframscript's exact symbolic
     // form for \`Hypergeometric1F1[3, 4, 10^10]\` — Woxi's CAS
     // produces a structurally different (but mathematically
-    // equivalent) factorisation. Verifying equivalence symbolically
+    // equivalent) factorization. Verifying equivalence symbolically
     // overflows on the huge integer constants in this test (\`10^10\`
     // induces a \`100000000020000000002\` numerator), and the
     // numeric value (\`~3*10^4342944809\`) overflows \`f64\`.
@@ -41461,7 +41462,7 @@ mod revolution_plot3d_part_extraction {
     assert!(svg.contains("<polygon"), "the surface must draw");
   }
 
-  /// `ColorFunction -> Function[{x, y, z}, …]` colours each facet from its
+  /// `ColorFunction -> Function[{x, y, z}, …]` colors each facet from its
   /// world coordinates (`ColorFunctionScaling -> False`), so a height split
   /// paints two distinct regions instead of the default height gradient.
   #[test]
@@ -41619,7 +41620,7 @@ mod text_offset {
 
   /// `Text[expr, pos, offset]` names which point of the label's own box
   /// sits at `pos`, so the label moves the other way. Regression: the
-  /// offset was dropped and every label came out centred on its point.
+  /// offset was dropped and every label came out centered on its point.
   #[test]
   fn offset_moves_the_label_off_its_point() {
     clear_state();
@@ -41636,11 +41637,11 @@ mod text_offset {
         .and_then(|n| n.parse().ok())
         .expect("the label must carry a y coordinate")
     };
-    let centred = y_of("{0, 0}");
+    let centered = y_of("{0, 0}");
     // Offset {0, -1} puts the point at the label's bottom, so the label is
     // above it — a smaller y in SVG, which counts downwards.
-    assert!(y_of("{0, -1}") < centred);
-    assert!(y_of("{0, 1}") > centred);
+    assert!(y_of("{0, -1}") < centered);
+    assert!(y_of("{0, 1}") > centered);
     // The alignment symbols mean the same thing.
     assert_eq!(y_of("{Center, Bottom}"), y_of("{0, -1}"));
     assert_eq!(y_of("{Center, Top}"), y_of("{0, 1}"));
@@ -41745,7 +41746,7 @@ mod list_plot_markers_and_epilog {
     );
   }
 
-  /// The `<text>` glyphs a rendered plot draws, with their fill colour.
+  /// The `<text>` glyphs a rendered plot draws, with their fill color.
   fn marker_glyphs(svg: &str) -> Vec<(String, String)> {
     svg
       .split("<text ")
@@ -41768,7 +41769,7 @@ mod list_plot_markers_and_epilog {
   }
 
   #[test]
-  fn a_styled_marker_draws_its_glyph_in_its_own_colour() {
+  fn a_styled_marker_draws_its_glyph_in_its_own_color() {
     clear_state();
     let svg = export_svg(
       "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Style[\"A\", Red, 18]]",
@@ -41780,7 +41781,7 @@ mod list_plot_markers_and_epilog {
     assert_eq!(markers.len(), 2, "one glyph per data point: {svg}");
     assert!(
       markers.iter().all(|(_, fill)| fill == "#FF0000"),
-      "the Style colour wins over the series colour: {svg}"
+      "the Style color wins over the series color: {svg}"
     );
     // The glyph replaces the dot rather than joining it.
     assert_eq!(svg.matches("<circle").count(), 0, "{svg}");
@@ -41819,7 +41820,7 @@ mod list_plot_markers_and_epilog {
       "no glyph text: {svg}"
     );
     // WL 15 cycles circle, up-triangle, diamond, …: white-filled outlines
-    // stroked 1.5 pt wide in the series colour.
+    // stroked 1.5 pt wide in the series color.
     let outlined = |stroke: &str| {
       svg
         .matches(&format!("stroke=\"{stroke}\" stroke-width=\"15\""))
@@ -41856,7 +41857,7 @@ mod list_plot_markers_and_epilog {
           .unwrap()
       })
       .collect();
-    assert_eq!(colors.len(), 2, "each series keeps its own colour: {svg}");
+    assert_eq!(colors.len(), 2, "each series keeps its own color: {svg}");
   }
 
   #[test]
@@ -41977,7 +41978,7 @@ mod list_plot_markers_and_epilog {
 }
 
 /// The layout a Demonstration builds its output with: a `Column` whose rows
-/// hold several plots side by side, each framed, squared and labelled as a
+/// hold several plots side by side, each framed, squared and labeled as a
 /// function of the plot variable.
 mod demonstration_plot_layout {
   use super::*;
@@ -42075,7 +42076,7 @@ mod demonstration_plot_layout {
     );
   }
 
-  /// `Graphics` honours `ImagePadding` too, not just the plot functions:
+  /// `Graphics` honors `ImagePadding` too, not just the plot functions:
   /// the padding replaces the gutters the frame and its tick labels would
   /// otherwise claim, so the drawing area sits exactly where it says.
   #[test]
@@ -42088,7 +42089,7 @@ mod demonstration_plot_layout {
     assert!(
       // (The drawing area is a hair shorter than wide — the y range is
       // padded by 0.02 of the x span, the x range by 1/48 — and sits
-      // centred.)
+      // centered.)
       svg.contains("translate(25.00,25.12)"),
       "the drawing area starts at the named padding: {svg:.400}"
     );
@@ -42204,13 +42205,13 @@ mod demonstration_plot_layout {
 /// the right edge and clipped whatever sat at the far side.
 #[test]
 fn an_axis_through_the_middle_needs_no_gutter() {
-  let centred = export_svg(
+  let centered = export_svg(
     "Graphics[{Point[{0, 0}]}, Axes -> True, \
      PlotRange -> {{-3, 3}, {-3, 3}}, ImageSize -> {400, 400}]",
   );
   assert!(
-    centred.contains("translate(7."),
-    "axes through the middle keep the small padding: {centred}"
+    centered.contains("translate(7."),
+    "axes through the middle keep the small padding: {centered}"
   );
   // With the range wholly positive the y axis sits at the left edge and its
   // labels need the full gutter.
@@ -42255,7 +42256,7 @@ fn named_font_sizes_in_a_style() {
 
 /// `Text[…]` sets its content in the graphic's own text style, so the weight
 /// and slant it would inherit are reset — Wolfram draws `Style[Text["a"],
-/// Bold]` plain — while the colour and size still reach through. A `Style`
+/// Bold]` plain — while the color and size still reach through. A `Style`
 /// written inside the `Text` applies as written.
 #[test]
 fn a_text_wrapper_resets_the_font_face() {
@@ -42275,7 +42276,7 @@ fn a_text_wrapper_resets_the_font_face() {
     !italic_outside.contains("font-style=\"italic\""),
     "Text resets the inherited slant: {italic_outside}"
   );
-  // Without the wrapper the directive applies, and colour and size reach
+  // Without the wrapper the directive applies, and color and size reach
   // through the wrapper either way.
   let bold_direct = export_svg(
     "Plot[0, {x, 0, 1}, PlotLabel -> Style[\"abc\", Bold], ImageSize -> 200]",
@@ -42284,7 +42285,7 @@ fn a_text_wrapper_resets_the_font_face() {
     bold_direct.contains("font-weight=\"bold\""),
     "a bare Style is still bold: {bold_direct}"
   );
-  let coloured = export_svg(
+  let colored = export_svg(
     "Plot[0, {x, 0, 1}, PlotLabel -> Style[Text[\"abc\"], Red, 24], \
      ImageSize -> 200]",
   );
@@ -42296,9 +42297,9 @@ fn a_text_wrapper_resets_the_font_face() {
     rest[..rest.find('"').unwrap()].parse().unwrap()
   };
   assert!(
-    coloured.contains("rgb(255,0,0)")
-      && label_font(&coloured) > label_font(&bold_direct),
-    "colour and size reach through Text: {coloured}"
+    colored.contains("rgb(255,0,0)")
+      && label_font(&colored) > label_font(&bold_direct),
+    "color and size reach through Text: {colored}"
   );
   // A Style inside the Text applies as written.
   let bold_inside = export_svg(
@@ -42661,7 +42662,7 @@ fn test_infinite_line_is_clipped_to_the_plot_range() {
 }
 
 #[test]
-fn test_sphere_with_several_centres_draws_one_sphere_each() {
+fn test_sphere_with_several_centers_draws_one_sphere_each() {
   clear_state();
   let many = export_svg("Graphics3D[Sphere[{{1, 0, 0}, {-1, 0, 0}}, 0.5]]");
   let separate =
@@ -42681,7 +42682,7 @@ fn test_highlight_graph_draws_the_highlighted_parts_red() {
     export_svg("HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], 1 <-> 2]");
   assert_eq!(one_edge.matches("rgb(179,0,0)").count(), 1);
 
-  // `Style[part, colour]` inside the specification picks the colour.
+  // `Style[part, color]` inside the specification picks the color.
   clear_state();
   let styled = export_svg(
     "HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], \
@@ -42981,8 +42982,8 @@ mod grid_text_in_graphics {
       svg[start..].split('"').next().unwrap().parse().unwrap()
     };
     let (c, d) = (x_of("c"), x_of("d"));
-    // "right" is centred over the two columns it spans, so it lies between
-    // the centres of those columns (not at the grid's right edge).
+    // "right" is centered over the two columns it spans, so it lies between
+    // the centers of those columns (not at the grid's right edge).
     let r = x_of("right");
     assert!(c < r && r < d, "{svg}");
   }
@@ -43148,7 +43149,7 @@ mod grid_text_in_graphics {
   #[test]
   fn grid_rows_grow_with_larger_styled_text() {
     // A 20pt label needs more room than the default 14pt row; the first
-    // row's text must not be centred so near the top that it is clipped.
+    // row's text must not be centered so near the top that it is clipped.
     let svg = interpret(
       r#"ExportString[Grid[{{Style["a", 20]}, {Style["b", 20]}}], "SVG"]"#,
     )
@@ -43248,10 +43249,10 @@ mod grid_text_in_graphics {
     assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
   }
 
-  /// A grid of text-labelled buttons (a keyboard of character keys) draws
+  /// A grid of text-labeled buttons (a keyboard of character keys) draws
   /// each key as a plate with its own pressable hit region.
   #[test]
-  fn graphics_grid_draws_text_labelled_buttons() {
+  fn graphics_grid_draws_text_labeled_buttons() {
     let svg = export_svg(
       "GraphicsGrid[Partition[Map[Button[#, AppendTo[msg, #]] &, CharacterRange[\"a\", \"f\"]], 3]]",
     );
@@ -43627,7 +43628,7 @@ fn graphics3d_draws_solids_given_by_their_corners() {
 #[test]
 fn framed_plot_draws_inward_major_and_minor_ticks_on_all_edges() {
   // Wolfram marks a frame on all four edges with ticks pointing into the
-  // plot: a major at each labelled value and four minors between them.
+  // plot: a major at each labeled value and four minors between them.
   let svg = export_svg("Plot[x, {x, 0, 30}, Frame -> True, PlotRange -> All]");
   let ticks: Vec<[f64; 4]> = svg
     .split("<line x1=\"")
@@ -43687,7 +43688,7 @@ fn plot_labels_fill_string_form_slots() {
 #[test]
 fn graphics_layouts_paint_their_background_behind_every_cell() {
   // `Background` on GraphicsRow/Column/Grid fills the whole layout, so the
-  // gaps between cells take the colour instead of staying white.
+  // gaps between cells take the color instead of staying white.
   for layout in [
     "GraphicsRow[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
     "GraphicsColumn[{Graphics[Disk[]], Graphics[Disk[]]}, Background -> Black]",
@@ -43707,7 +43708,7 @@ fn graphics_layouts_paint_their_background_behind_every_cell() {
 }
 
 #[test]
-fn graphics3d_edge_form_directive_sets_outline_colour_and_width() {
+fn graphics3d_edge_form_directive_sets_outline_color_and_width() {
   // `EdgeForm[Directive[…]]` (and a list of directives) styles a solid's
   // outline, including through `Opacity` on the faces; without a
   // thickness the outline keeps its default hairline.
@@ -43735,7 +43736,7 @@ fn graphics3d_draws_platonic_solids_at_wolfram_vertices() {
   // Each solid's drawn corners must be exactly where the projected
   // wolframscript vertices (`MeshCoordinates[DiscretizeGraphics[…]]`) land
   // under the same fixed view — covering the default placement, rotation
-  // `{θ, ϕ}`, a centre, and an edge length.
+  // `{θ, ϕ}`, a center, and an edge length.
   let view = "PlotRange -> {{-3, 3}, {-3, 3}, {-3, 3}}, \
               ViewPoint -> {1.3, -2.4, 2}, ImageSize -> 400";
   let corners = |svg: &str, tag: &str| -> Vec<(f64, f64)> {
@@ -43896,7 +43897,7 @@ fn text_with_rotated_label_turns_the_text() {
 #[test]
 fn styled_axes_label_keeps_font_directives() {
   // `Style[label, Italic]` in an AxesLabel kept only its text, dropping the
-  // slant/weight/colour, in every plot family that takes the option.
+  // slant/weight/color, in every plot family that takes the option.
   for plot in [
     "ListPlot[{1, 2, 3}",
     "ListLinePlot[{1, 2, 3}",
@@ -43929,7 +43930,7 @@ fn styled_axes_label_keeps_font_directives() {
 #[test]
 fn axes_label_row_keeps_styled_parts() {
   // `Row[{Style[…, color], " and ", Style[…, color]}]` as an AxesLabel is a
-  // multi-coloured legend-like label; every part keeps its own colour.
+  // multi-colored legend-like label; every part keeps its own color.
   for plot in [
     "ListPlot[{1, 2, 3}",
     "ListLinePlot[{1, 2, 3}",
@@ -44483,7 +44484,7 @@ mod static_dynamic_controls {
   }
 
   /// `Style[prim, size, color]` in a Graphics3D list styles only its own
-  /// primitive: the colour must not leak onto the next label, and the size
+  /// primitive: the color must not leak onto the next label, and the size
   /// applies to the `Text` inside.
   #[test]
   fn graphics3d_style_wrapped_text_is_scoped() {
@@ -44602,7 +44603,7 @@ fn explicit_plot_range_clips_content_in_widened_drawing_area() {
 #[test]
 fn lone_text_label_is_not_clipped_to_its_picture() {
   // Regression: a `Text` label wider than its picture (its extent does not
-  // count towards an automatic plot range) was cut off at the picture's
+  // count toward an automatic plot range) was cut off at the picture's
   // edge, both at top level and inside a `GraphicsGrid` cell.
   let svg = export_svg(
     "Graphics[Text[\"a long label that is wide\", {0, 0}, {-1, 0}]]",
@@ -44648,15 +44649,15 @@ fn pane_pads_small_content_to_its_fixed_box() {
   // Regression: `Pane[content, {w, h}]` reserves the whole box, so content
   // smaller than it is placed by an explicit `Alignment`, not left in the
   // top-left corner of its natural size.
-  let centred = export_svg(
+  let centered = export_svg(
     "Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}, \
      Alignment -> {Center, Center}]",
   );
   assert!(
-    centred.contains("<svg width=\"400\" height=\"300\""),
-    "{centred}"
+    centered.contains("<svg width=\"400\" height=\"300\""),
+    "{centered}"
   );
-  assert!(centred.contains("translate(150.0 120.0)"), "{centred}");
+  assert!(centered.contains("translate(150.0 120.0)"), "{centered}");
   let default =
     export_svg("Pane[Graphics[Circle[], ImageSize -> {100, 60}], {400, 300}]");
   // Without an `Alignment` the content sits in the top-left corner of the
@@ -45366,7 +45367,7 @@ mod grid_repeating_decimal_alignment {
   /// over every column after the first. The repeating pattern was expanded
   /// after the column widths were measured, so decimal columns were sized
   /// as if they were not aligned and their numbers spilled over the
-  /// neighbouring frame line.
+  /// neighboring frame line.
   #[test]
   fn decimal_cells_stay_inside_their_column() {
     let svg = export_svg(
@@ -45488,7 +45489,7 @@ mod surface_vertex_colors {
   fn parametric_plot3d_color_function_colors_facets() {
     clear_state();
     // `ColorFunction -> f` receives `{x, y, z, u, v}` (raw with
-    // `ColorFunctionScaling -> False`) and colours each facet.
+    // `ColorFunctionScaling -> False`) and colors each facet.
     let r = interpret(
       "p = ParametricPlot3D[{Cos[t] Sin[q], Sin[t] Sin[q], -Cos[q]}, \
        {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, \
@@ -45520,7 +45521,7 @@ mod surface_vertex_colors {
   #[test]
   fn graphics_complex_vertex_colors_color_polygons_in_3d() {
     clear_state();
-    // A stored complex colours its facets by their vertices' `VertexColors`
+    // A stored complex colors its facets by their vertices' `VertexColors`
     // (given as bare `{r, g, b}` triples too) instead of the default fill.
     for colors in [
       "{Red, Green, Blue, Yellow}",
@@ -45539,7 +45540,7 @@ mod surface_vertex_colors {
   #[test]
   fn text_past_automatic_range_keeps_label_inside_canvas() {
     clear_state();
-    // A label centred beyond the primitives' extent widens the picture
+    // A label centered beyond the primitives' extent widens the picture
     // instead of being cut off at the left edge.
     for (x, side) in [(-0.4, "left"), (1.4, "right")] {
       let svg = interpret(&format!(
@@ -45794,7 +45795,7 @@ mod framed_graphics_fits_data_shape {
        PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> {500, 300}, \
        FrameTicks -> {Range[-2, 2], Range[-2, 2]}]",
     );
-    // Five labels per labelled edge, none on top / right, no automatic ones.
+    // Five labels per labeled edge, none on top / right, no automatic ones.
     assert_eq!(svg.matches("</text>").count(), 10, "{svg}");
     assert!(!svg.contains(">-1.5<"), "{svg}");
   }
@@ -45877,7 +45878,7 @@ mod circle_arc_extent {
   }
 
   #[test]
-  fn quarter_arc_with_offset_centre_is_square() {
+  fn quarter_arc_with_offset_center_is_square() {
     let (w, h) = view_box("Graphics[Circle[{3, 5}, 2, {0, Pi/2}]]");
     assert!((w - h).abs() < 1.0, "{w} x {h}");
   }
@@ -45951,7 +45952,7 @@ mod grid_item_style_rules {
   }
 
   #[test]
-  fn cell_rules_colour_individual_cells() {
+  fn cell_rules_color_individual_cells() {
     let svg = export_svg(GRID);
     assert!(text_of(&svg, "2").contains("rgb(255,0,0)"), "{svg}");
     let one = text_of(&svg, "1");
@@ -46009,7 +46010,7 @@ mod rectangle_chart {
   }
 
   #[test]
-  fn several_datasets_are_inset_and_coloured_by_position() {
+  fn several_datasets_are_inset_and_colored_by_position() {
     assert_eq!(
       interpret(
         "Cases[RectangleChart[{{{1, 2}, {1, 3}}, {{1, 1}, {2, 2}}}], Rectangle[a_, __] :> a[[1]], Infinity]"
@@ -46024,7 +46025,7 @@ mod rectangle_chart {
       .unwrap(),
       "{RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95], RGBColor[1., 0.835, 0.25], RGBColor[0., 0.665, 0.95]}"
     );
-    // A single dataset uses the first colour throughout.
+    // A single dataset uses the first color throughout.
     assert_eq!(
       interpret(
         "Union[Cases[RectangleChart[{{1, 2}, {1, 3}}], Directive[_EdgeForm, c_RGBColor] :> c, Infinity]]"
@@ -46249,7 +46250,7 @@ mod plots_with_nothing_to_draw {
   /// Regression: ReliefPlot drew the first matrix row at the top (WL puts
   /// it at the bottom, like `ListDensityPlot`), bilinearly blended the
   /// cells, and turned a `LightingAngle -> None` plot flat gray instead of
-  /// colouring it by height.
+  /// coloring it by height.
   #[test]
   fn relief_plot_first_row_at_bottom_with_flat_cells() {
     let m = "{{0, 0, 0, 0}, {0, 0, 0, 0}, {1, 1, 1, 1}, {1, 1, 1, 1}}";
@@ -46262,7 +46263,7 @@ mod plots_with_nothing_to_draw {
     // Height 1 (pale yellow) on top, height 0 (dark purple) at the bottom.
     assert!(luma(top) > luma(bottom) + 300, "{top:?} vs {bottom:?}");
     // Cells are flat: the pixel just above the middle edge is still the
-    // top colour.
+    // top color.
     assert_eq!(img.get_pixel(w / 2, h / 2 - 1).0, top);
     assert_eq!(img.get_pixel(w / 2, h / 2).0, bottom);
     // `DataReversed -> True` puts the first row on top.
@@ -46550,7 +46551,7 @@ mod box_width_with_embedded_style {
     )
     .unwrap();
     assert!(svg.contains("<ellipse"), "picture missing: {svg}");
-    assert!(svg.contains("rgb(255,0,0)"), "picture colour lost: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "picture color lost: {svg}");
     assert!(!svg.contains("<rect x=\"13"), "rectangle was filled: {svg}");
   }
 }
@@ -46570,7 +46571,7 @@ mod text_wider_than_canvas {
   #[test]
   fn overlong_label_does_not_collapse_the_plot_range() {
     // A label wider than the picture cannot be fitted by widening the
-    // range; trying anyway squashed every other label onto the centre.
+    // range; trying anyway squashed every other label onto the center.
     let svg = interpret(
       r#"ExportString[Graphics[{Text[Row[Table["H  ", 100]]], Text["b", {-550, -450}], Text["c", {540, -450}]}, ImageSize -> {600, 400}], "SVG"]"#,
     )
@@ -46820,7 +46821,7 @@ mod styled_text_and_computed_options_in_graphics_layouts {
   use super::*;
 
   #[test]
-  fn styled_text_cell_keeps_its_colour_and_size() {
+  fn styled_text_cell_keeps_its_color_and_size() {
     clear_state();
     let svg =
       export_svg("GraphicsGrid[{{Style[1, 16, Red], Style[2, 16, Blue]}}]");
@@ -46830,10 +46831,10 @@ mod styled_text_and_computed_options_in_graphics_layouts {
   }
 
   #[test]
-  fn styled_text_exports_with_its_colour() {
+  fn styled_text_exports_with_its_color() {
     clear_state();
     let svg = export_svg("Style[5, 16, Red]");
-    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "colour lost: {svg}");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "color lost: {svg}");
   }
 
   #[test]
@@ -46880,10 +46881,10 @@ mod plain_bar_chart_tree {
 mod generalized_bar_chart {
   use super::*;
 
-  // Bars centred on their position, in the bars' own arithmetic; the
+  // Bars centered on their position, in the bars' own arithmetic; the
   // package's names exist once it is loaded.
   #[test]
-  fn bars_are_centred_on_their_position() {
+  fn bars_are_centered_on_their_position() {
     assert_eq!(
       interpret(
         "Needs[\"BarCharts`\"]; ToString[First[BarCharts`GeneralizedBarChart[{{0, 3, 1}, {2, 5, 0.5}}]], InputForm]"
@@ -47307,7 +47308,7 @@ mod word_cloud_text {
       // Three distinct weights: sizes run linearly from 10 to 70 units.
       assert!((big / low - 7.0).abs() < 0.05, "{code}: {big} {low}");
       assert!((mid / low - 4.0).abs() < 0.05, "{code}: {mid} {low}");
-      // Colours follow ColorData[116] by rank; all words are horizontal.
+      // Colors follow ColorData[116] by rank; all words are horizontal.
       assert!(svg.contains("fill=\"rgb(61,153,204)\""), "{svg}");
       assert!(svg.contains("fill=\"rgb(242,160,36)\""), "{svg}");
       assert!(!svg.contains("rotate("), "{svg}");
@@ -47722,7 +47723,7 @@ mod wl_table_layout {
 
   #[test]
   fn traditional_form_determinant_grid_spacing_and_bars() {
-    // GridBox: columns 0.8 em apart and centred, rows 1.33 em apart; the
+    // GridBox: columns 0.8 em apart and centered, rows 1.33 em apart; the
     // determinant bars are hairlines set 0.45 em off the grid, stopping
     // 0.12 em short of its top and bottom.
     let svg = interpret(
@@ -47787,8 +47788,8 @@ mod wl_table_layout {
     .unwrap();
     assert!(!svg.contains(">1/2<"), "{svg}");
     assert!(svg.contains("<line"), "{svg}");
-    // A centred long number puts its digit-group gaps in as thin spaces,
-    // which a rasterizer counts when it centres the text (resvg leaves
+    // A centered long number puts its digit-group gaps in as thin spaces,
+    // which a rasterizer counts when it centers the text (resvg leaves
     // `dx` shifts out of the anchoring and pushed the number off the edge).
     let svg = interpret(
       "ExportString[TableForm[{{1307674368000}}, TableAlignments -> Center], \"SVG\"]",
@@ -48206,7 +48207,7 @@ mod list_plot_wl15_ranges {
       svg.contains("fill=\"rgb(0,0,0)\" fill-opacity=\"0.700\""),
       "{svg}"
     );
-    // Orange open markers: the first colour of the theme palette.
+    // Orange open markers: the first color of the theme palette.
     assert_eq!(
       svg
         .matches("stroke=\"#FF6600\" stroke-width=\"15\"")
@@ -48479,7 +48480,7 @@ mod plot_area_aspect {
 }
 
 /// Regressions found by comparing Woxi's plots with wolframscript's
-/// side by side (missing elements, wrong colours, raw-expression labels).
+/// side by side (missing elements, wrong colors, raw-expression labels).
 mod plot_content_regressions {
   use super::*;
 
@@ -48494,21 +48495,21 @@ mod plot_content_regressions {
   }
 
   /// `PlotLegends -> SwatchLegend[{styles}, {labels}]` draws squares in the
-  /// legend's own colours, not line swatches in the series colours.
+  /// legend's own colors, not line swatches in the series colors.
   #[test]
-  fn swatch_legend_uses_its_own_colours() {
+  fn swatch_legend_uses_its_own_colors() {
     let svg = export_svg(
       r#"Plot[Sin[x], {x, 0, 5}, PlotLegends -> SwatchLegend[{Blue, Red}, {"a", "b"}]]"#,
     );
     assert!(svg.contains("<rect") && svg.contains("fill=\"rgb(0,0,255)\""));
     assert!(svg.contains("fill=\"rgb(255,0,0)\""));
-    // No line swatch in the second series colour.
+    // No line swatch in the second series color.
     assert!(!svg.contains("stroke=\"rgb(242,160,36)\""));
   }
 
-  /// `SwatchLegend[{labels}]` keeps the series colours but draws squares.
+  /// `SwatchLegend[{labels}]` keeps the series colors but draws squares.
   #[test]
-  fn swatch_legend_without_styles_uses_series_colours() {
+  fn swatch_legend_without_styles_uses_series_colors() {
     let svg = export_svg(
       r#"Plot[{Sin[x], Cos[x]}, {x, 0, 5}, PlotLegends -> SwatchLegend[{"a", "b"}]]"#,
     );
@@ -48560,7 +48561,7 @@ mod plot_content_regressions {
   fn style_wrapped_datasets_keep_their_style() {
     let svg = export_svg("ListPlot[{Style[{1, 2, 3}, Green], {4, 5, 6}}]");
     assert!(svg.contains(r##"fill="#00FF00""##));
-    // The unstyled dataset keeps the second default colour.
+    // The unstyled dataset keeps the second default color.
     assert!(svg.contains(r##"fill="#F2A024""##));
     let svg = export_svg("ListPlot[Style[{{1, 2, 3}, {4, 5, 6}}, Blue]]");
     assert!(svg.contains(r##"fill="#0000FF""##));
@@ -49012,7 +49013,7 @@ mod frame_ticks_per_edge {
   }
 
   #[test]
-  fn a_tick_style_colours_its_mark_only() {
+  fn a_tick_style_colors_its_mark_only() {
     let svg = list_plot(
       "FrameTicks -> {{Automatic, Automatic}, {{{50, a, 0.1, Red}, {180, \
        b, 0.1, Blue}}, Automatic}}",
@@ -49099,7 +49100,7 @@ mod frame_ticks_per_edge {
   }
 
   #[test]
-  fn frame_style_colours_the_frame_not_the_axis() {
+  fn frame_style_colors_the_frame_not_the_axis() {
     let svg = list_plot("Joined -> True, FrameStyle -> Directive[Red]");
     assert!(
       svg.contains("stroke=\"#666666\" stroke-width=\"2\""),
@@ -49153,7 +49154,7 @@ mod curve_labels_and_legends {
         "Plot[Callout[n^Sin[n], \"label\", {pos}], {{n, 1, 10}}]"
       ));
       assert!(svg.contains(">label</text>"), "{pos}");
-      // One leader on a white halo; the label is not in the series colour.
+      // One leader on a white halo; the label is not in the series color.
       assert_eq!(svg.matches("<path d=\"M").count(), 2, "{pos}");
       assert!(svg.contains("stroke=\"#AAAAAA\""), "{pos}");
       assert!(!svg.contains("fill=\"rgb(61,153,204)\">label"), "{pos}");
@@ -49257,10 +49258,10 @@ mod curve_labels_and_legends {
   fn highlighted_ball_draws_marker_and_value_bubble() {
     let svg =
       export_svg("Plot[Highlighted[Sinc[x], Placed[\"Ball\", 2]], {x, 0, 10}]");
-    // White halo and series-coloured dot.
+    // White halo and series-colored dot.
     assert!(svg.contains("fill=\"#FFFFFF\"/>"));
     assert!(svg.contains("fill=\"rgb(61,153,204)\"/>"));
-    // The bubble in a pale tint of the curve colour, edged in it.
+    // The bubble in a pale tint of the curve color, edged in it.
     assert!(
       svg.contains("fill=\"rgb(226,240,247)\" stroke=\"rgb(61,153,204)\"")
     );
@@ -49523,7 +49524,7 @@ mod list_plot_data_forms {
 
   // `MultiaxisArrangement` gives the series their own framed y axes, the
   // left one for series 1 and 2 (to 30), the right one for series 3 (to
-  // 100), each edge drawn in its series' colours.
+  // 100), each edge drawn in its series' colors.
   #[test]
   fn list_plot_multiaxis_arrangement() {
     let svg = export_svg(
@@ -49595,7 +49596,7 @@ mod list_plot_data_forms {
 }
 
 /// WL's default lights (`Lighting -> Automatic`) and the plots' default
-/// theme materials. Every colour here is the one wolframscript's own
+/// theme materials. Every color here is the one wolframscript's own
 /// rasterization reads for the same face.
 mod default_lighting {
   use super::*;
@@ -49610,8 +49611,8 @@ mod default_lighting {
   const SQUARE: &str = "Polygon[{{0,0,0},{1,0,0},{1,1,0},{0,1,0}}]";
 
   #[test]
-  fn graphics3d_face_is_white_under_the_coloured_default_lights() {
-    // The ambient term and four coloured directional lights tint a white
+  fn graphics3d_face_is_white_under_the_colored_default_lights() {
+    // The ambient term and four colored directional lights tint a white
     // face looked at from the default view point: cream, not blue.
     assert_eq!(
       fills(
@@ -49650,7 +49651,7 @@ mod default_lighting {
   }
 
   #[test]
-  fn color_function_colours_are_lit_by_neutral_lights() {
+  fn color_function_colors_are_lit_by_neutral_lights() {
     assert!(
       fills(
         "Plot3D[0, {x, 0, 1}, {y, 0, 1}, Mesh -> None, ColorFunction -> \
@@ -49661,7 +49662,7 @@ mod default_lighting {
   }
 
   #[test]
-  fn named_color_function_colours_a_surface_by_height() {
+  fn named_color_function_colors_a_surface_by_height() {
     let svg = export_svg(
       "Plot3D[x, {x, 0, 1}, {y, 0, 1}, Mesh -> None, ColorFunction -> \
        \"Rainbow\"]",
@@ -49672,7 +49673,7 @@ mod default_lighting {
 
   #[test]
   fn lighting_option_replaces_the_lights() {
-    // A single ambient light shows the face's own colour times the light.
+    // A single ambient light shows the face's own color times the light.
     assert_eq!(
       fills(
         &format!(
@@ -49698,7 +49699,7 @@ mod default_lighting {
 
   #[test]
   fn lighting_inside_a_directive_overrides_the_scene() {
-    // A view-fixed light straight from the viewer shows the full colour.
+    // A view-fixed light straight from the viewer shows the full color.
     assert_eq!(
       fills(
         &format!(
@@ -49713,8 +49714,8 @@ mod default_lighting {
   }
 
   #[test]
-  fn plot_style_colour_is_matte_under_the_default_lights() {
-    // `PlotStyle -> colour` drops the theme's highlight and own lights:
+  fn plot_style_color_is_matte_under_the_default_lights() {
+    // `PlotStyle -> color` drops the theme's highlight and own lights:
     // wolframscript's flat LightBlue sheet reads (231, 207, 169).
     assert!(
       fills(
@@ -49792,10 +49793,10 @@ mod field_plot_conformance {
   }
 
   #[test]
-  fn complex_plot_default_colours_are_pastel() {
-    // Regression: the default colouring was a dark saturated HSB hue.
+  fn complex_plot_default_colors_are_pastel() {
+    // Regression: the default coloring was a dark saturated HSB hue.
     // Wolfram's "MidShiftBalancedHue" of the argument is lightened
-    // towards white where |f| is large: the corner of z^2 is pale.
+    // toward white where |f| is large: the corner of z^2 is pale.
     let svg = export_svg("ComplexPlot[z, {z, -2 - 2 I, 2 + 2 I}]");
     assert!(svg.contains("<image"), "{svg}");
   }
@@ -49832,7 +49833,7 @@ mod field_plot_conformance {
   }
 
   #[test]
-  fn contour_shading_list_colours_the_bands() {
+  fn contour_shading_list_colors_the_bands() {
     let svg = export_svg(
       "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, Contours -> 4, ContourShading -> {Red, Green}]",
     );
@@ -49883,7 +49884,7 @@ mod field_plot_conformance {
   }
 
   #[test]
-  fn re_im_plot_draws_the_imaginary_part_dotted_in_the_same_colour() {
+  fn re_im_plot_draws_the_imaginary_part_dotted_in_the_same_color() {
     let svg = export_svg("ReImPlot[Sqrt[x^2 - 1], {x, -2, 2}]");
     assert!(svg.contains("stroke-dasharray"), "{svg}");
     assert!(!svg.contains("rgb(242,160,36)"), "{svg}");
@@ -50180,7 +50181,7 @@ mod ranges_and_ticks {
 
   #[test]
   fn explicit_plot_style_keeps_the_theme_thickness() {
-    // "Business" draws 3 pt curves; an explicit PlotStyle only recolours.
+    // "Business" draws 3 pt curves; an explicit PlotStyle only recolors.
     let themed = export_svg(
       "Plot[Sin[x], {x, 0, 1}, PlotTheme -> \"Business\", PlotStyle -> Red]",
     );
@@ -50206,7 +50207,7 @@ mod ranges_and_ticks {
       .expect("red face");
     let face = face.split('>').next().unwrap();
     assert!(!face.contains("fill-opacity"), "{face}");
-    // The outline keeps the default palette colour.
+    // The outline keeps the default palette color.
     assert!(svg.contains("stroke=\"rgb(61,153,204)\""), "{svg}");
     // The default face stays translucent.
     let default =
@@ -50273,7 +50274,7 @@ mod arrowhead_shape {
     let end = shaft[shaft.len() - 1];
     // The frame is 399 wide, so the tip is at x = 399 and the head is
     // 79.8 long; a quarter of it is 19.95. Its default butt cap does
-    // not project beyond the centreline endpoint.
+    // not project beyond the centerline endpoint.
     assert!((end.0 - 379.05).abs() < 0.1, "{shaft:?}");
   }
 
@@ -50389,7 +50390,7 @@ mod stream_plot3d_seeds {
   #[test]
   fn extra_seeds_come_from_the_middle_of_the_finer_lattice() {
     // `StreamPoints -> 10`: the eight corners of the 2×2×2 lattice, then
-    // two points of the 4×4×4 lattice nearest the centre — the helices of
+    // two points of the 4×4×4 lattice nearest the center — the helices of
     // radius 0.38 about the axis, never a wide one (as wolframscript).
     let radii = interpret(
       "Round[Max[Norm[Most[#]] & /@ #], 0.01] & /@ Cases[StreamPlot3D[{-y, \

@@ -58,7 +58,7 @@ mod image_size {
   use super::*;
 
   // `ImageSize -> {w, h}` fixes the image, but the plotting area keeps its
-  // default 1/GoldenRatio shape inside it (WL centres it vertically); it
+  // default 1/GoldenRatio shape inside it (WL centers it vertically); it
   // does not stretch to the square.
   #[test]
   fn fixed_size_keeps_default_aspect_ratio() {
@@ -259,7 +259,7 @@ mod grid_lines {
 mod list_polar_plot {
   use super::*;
 
-  /// Centres of the `<circle>` data points.
+  /// Centers of the `<circle>` data points.
   fn circles(svg: &str) -> Vec<(f64, f64)> {
     svg
       .split("<circle ")
@@ -748,7 +748,7 @@ mod automatic_image_padding {
       frame.iter().any(|&(x, y)| x == 3357.0 && y == 142.0),
       "{frame:?}"
     );
-    // Only the bottom edge labelled.
+    // Only the bottom edge labeled.
     assert_eq!(
       size(&format!(
         "ListPlot[{sin}, Frame -> True, FrameTicks -> {{{{None, None}}, \

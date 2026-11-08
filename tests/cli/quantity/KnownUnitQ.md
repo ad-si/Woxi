@@ -1,3 +1,3 @@
 # `KnownUnitQ`
 
-Tests whether an expression is a recognised unit specification.
+Tests whether an expression is a recognized unit specification.

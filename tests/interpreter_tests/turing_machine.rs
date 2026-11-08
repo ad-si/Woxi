@@ -5,7 +5,7 @@ mod turing_machine {
 
   // A head position may be any integer — off the given cells on an
   // infinite tape, counted round a cyclic one — and `{n, s}` names a
-  // two-colour machine (Demonstration
+  // two-color machine (Demonstration
   // TheFirst1936ElegantBinaryTuringMachines; a position 0 stopped the
   // evaluation).
   #[test]

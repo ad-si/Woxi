@@ -102,7 +102,7 @@ mod now {
 
   #[test]
   fn date_object_day_granularity_remains() {
-    // Existing behaviour: DateObject[{y, m, d}] stays at Day.
+    // Existing behavior: DateObject[{y, m, d}] stays at Day.
     assert_eq!(
       interpret("DateObject[{2022, 12, 5}]").unwrap(),
       "DateObject[{2022, 12, 5}, Day]"
@@ -414,7 +414,7 @@ mod get {
   }
 
   // A relative file name resolves against the virtual working directory, so
-  // `SetDirectory` before a `Get` is honoured.
+  // `SetDirectory` before a `Get` is honored.
   #[test]
   fn relative_name_resolves_against_the_current_directory() {
     clear_state();
@@ -2024,7 +2024,7 @@ mod unimplemented_warnings {
   ///   must be flagged (catches forgetting to mark a new function as ✅)
   #[test]
   fn functions_csv_is_valid_rfc4180() {
-    // Every row must have 6 columns once quoted fields are honoured.
+    // Every row must have 6 columns once quoted fields are honored.
     for (i, line) in include_str!("../../functions.csv").lines().enumerate() {
       let mut in_quotes = false;
       let mut commas = 0;
@@ -3776,7 +3776,7 @@ mod read {
   #[test]
   fn read_list_negative_count_returns_unevaluated() {
     // wolframscript rejects negative counts with ReadList::intnm;
-    // woxi mirrors the behaviour by emitting the message and leaving
+    // woxi mirrors the behavior by emitting the message and leaving
     // the call unevaluated rather than silently reading.
     clear_state();
     let result =
@@ -6678,7 +6678,7 @@ mod file_names {
     std::fs::remove_dir_all(&root).ok();
   }
 
-  // A list of directories honours the level count as well.
+  // A list of directories honors the level count as well.
   #[test]
   fn level_count_applies_to_a_list_of_directories() {
     let root = nested_tree("level_list");
@@ -7117,7 +7117,7 @@ mod input_function {
 
   // Embedders of the library (this harness, the wasm playground, the Jupyter
   // kernel) don't hand stdin to the interpreter, so Input/InputString return
-  // EndOfFile — matching wolframscript's behaviour when stdin is closed. The
+  // EndOfFile — matching wolframscript's behavior when stdin is closed. The
   // CLI does enable stdin reading; that path is covered by the
   // `input_string_*` / `run_script_prompts_*` tests in tests/cli_tests.rs.
 
@@ -8671,7 +8671,7 @@ mod cases {
   // CoordinatesFromCartesian) are deliberately left unevaluated to match
   // wolframscript's `-code` mode. The earlier sequence-style tests that
   // expected computed values have been removed; the symbolic-unevaluated
-  // behaviour is covered in tests/interpreter_tests/linear_algebra.rs.
+  // behavior is covered in tests/interpreter_tests/linear_algebra.rs.
   #[test]
   fn expr_1() {
     // Wolframscript-matched expectation. mathics quoted the string
@@ -10096,7 +10096,7 @@ mod csv_header_inference {
         r#"<|"a" -> "Integer64", "b" -> "Integer64", "c" -> "Integer64"|>"#,
       ),
       // A missing final newline changes nothing about the types. Wolfram
-      // types the last column of a labelled table as "String" whenever the
+      // types the last column of a labeled table as "String" whenever the
       // text does not end in a newline, even though the very same import
       // reads that field as an integer -- see EXACT_EXPR_SKIP in
       // tests/wolframscript/verify_unit_tests.ts.
@@ -11040,7 +11040,7 @@ mod command_file_specs {
 
   // Naming a file's own format selects no element, so it imports exactly
   // as the format-less call does. This used to yield `$Failed[]` because
-  // the format name travelled on as an element name.
+  // the format name traveled on as an element name.
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn import_format_name_is_not_an_element() {
@@ -11066,7 +11066,7 @@ mod command_file_specs {
 }
 
 // `Get` gained the file-searching, error-recovery and result-shape
-// behaviour that reading a real package tree needs. Regression tests for
+// behavior that reading a real package tree needs. Regression tests for
 // <https://github.com/ad-si/Woxi/issues/603>.
 mod get_from_files {
   use super::*;
@@ -11598,8 +11598,8 @@ mod import_pdf {
 }
 
 /// A path is a list of names or the string that spells it out, so
-/// `FileNameJoin` takes either: given a string it normalises the path —
-/// which is how WLX's importer canonicalises the path it stores in a
+/// `FileNameJoin` takes either: given a string it normalizes the path —
+/// which is how WLX's importer canonicalizes the path it stores in a
 /// component. Verified against wolframscript.
 mod file_name_join_on_a_string {
   use super::*;
@@ -11739,7 +11739,7 @@ mod to_expression_graphics_box {
   }
 
   #[test]
-  fn graphics_box_keeps_colour_of_primitives() {
+  fn graphics_box_keeps_color_of_primitives() {
     assert_eq!(
       interpret(
         "ToExpression[GraphicsBox[{Blue, LineBox[{{0, 0}, {1, 1}}]}]][[1]]"

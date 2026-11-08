@@ -9,8 +9,8 @@ Graphics
 
 `LabelingFunction -> f` labels every wedge with `f[value]`. Wrapping the
 result in `Placed[label, position]` decides where along the wedge's radius
-the label sits: `"RadialCenter"` (the default) centres it, `"RadialInner"`
-and `"RadialOuter"` push it towards the hub or the rim, and
+the label sits: `"RadialCenter"` (the default) centers it, `"RadialInner"`
+and `"RadialOuter"` push it toward the hub or the rim, and
 `"RadialCallout"` puts it outside the pie on a leader line.
 
 ```scrut

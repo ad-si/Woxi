@@ -607,7 +607,7 @@ mod interpreter_tests {
   fn test_percent_history_in_visual_mode() {
     // In visual mode (woxi-studio), `%` should resolve to the previous
     // `interpret_with_stdout` call's top-level result so cells like
-    // `N[%]` work as expected. CLI mode keeps wolframscript's behaviour
+    // `N[%]` work as expected. CLI mode keeps wolframscript's behavior
     // of returning `Out[0]` (no history), which is exercised elsewhere.
     clear_state();
     woxi::clear_last_output();
@@ -1991,8 +1991,8 @@ mod interpreter_tests {
     // surfaces with an explicit per-surface `PlotStyle` list inside a
     // `Show[{…}]` (the shape a "sheets stacked along an axis" Demonstration
     // uses, e.g. one built from the Riemann surface of the logarithm) lost
-    // the requested colours: merging `Plot3D`'s symbolic structure into
-    // `Show` recoloured every surface with the automatic height-based
+    // the requested colors: merging `Plot3D`'s symbolic structure into
+    // `Show` recolored every surface with the automatic height-based
     // rainbow instead of honoring `PlotStyle`.
     clear_state();
     let svg = interpret_with_stdout(
@@ -2004,14 +2004,14 @@ mod interpreter_tests {
     .graphics
     .expect("Show should produce a graphics SVG");
     assert!(
-      // LightBlue under the default coloured lights, as wolframscript's
+      // LightBlue under the default colored lights, as wolframscript's
       // rasterization reads the flat sheets.
       svg.contains("rgb(231,207,169)"),
-      "the two LightBlue surfaces must keep their PlotStyle colour:\n{svg}"
+      "the two LightBlue surfaces must keep their PlotStyle color:\n{svg}"
     );
     assert!(
       svg.contains("rgb(255,220,0)"),
-      "the Yellow surface must keep its PlotStyle colour:\n{svg}"
+      "the Yellow surface must keep its PlotStyle color:\n{svg}"
     );
   }
 
@@ -2043,7 +2043,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_contour_plot_bar_legend_and_contour_labels() {
-    // `PlotLegends -> Automatic` widens the picture by a colour-bar strip
+    // `PlotLegends -> Automatic` widens the picture by a color-bar strip
     // and `ContourLabels -> True` writes each level on its contour line.
     clear_state();
     let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
@@ -2148,7 +2148,7 @@ mod interpreter_tests {
   fn test_contour_plot_equations_use_per_contour_directives() {
     // Regression: `ContourStyle -> {Directive[…], Directive[…]}` on an
     // equation-form ContourPlot styled every curve alike (the default
-    // grey); each Directive must style its own equation's curve, and a
+    // gray); each Directive must style its own equation's curve, and a
     // `Dashed` inside it must draw a dashed line.
     clear_state();
     let svg = interpret_with_stdout(
@@ -3501,7 +3501,7 @@ mod interpreter_tests {
     assert!(!svg.contains(">1.2<"), "axes must stop at 1: {svg}");
     assert!(
       svg.contains("translate(80.00,85.00)"),
-      "square plot centred: {svg:.300}"
+      "square plot centered: {svg:.300}"
     );
   }
 
@@ -3792,7 +3792,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_inset_plot_honors_object_position() {
-    // Regression: `Inset[plot, pos, opos, size]` centred the plot on `pos`
+    // Regression: `Inset[plot, pos, opos, size]` centered the plot on `pos`
     // and ignored `opos`, the point of the plot's own data coordinates that
     // lands on `pos` — both inside `Graphics` and in a plot's `Epilog`.
     let unit =
@@ -3811,12 +3811,12 @@ mod interpreter_tests {
        PlotRange -> {{-3, 3}, {-2, 2}}, \
        Epilog -> Inset[u, {0, 0}, OPOS, 1]]";
     for wrap in [in_graphics, in_epilog] {
-      let centred = render(wrap, "{0, 0}");
+      let centered = render(wrap, "{0, 0}");
       let default = render(wrap, "Automatic");
       let right_edge = render(wrap, "{1, 0}");
       let left_edge = render(wrap, "{-1, 0}");
-      assert_eq!(centred, default, "{wrap}");
-      assert_ne!(centred, right_edge, "{wrap}");
+      assert_eq!(centered, default, "{wrap}");
+      assert_ne!(centered, right_edge, "{wrap}");
       assert_ne!(right_edge, left_edge, "{wrap}");
     }
   }
@@ -3875,7 +3875,7 @@ mod interpreter_tests {
       // The middle of the 143 px drawing area (a bare picture keeps a
       // point on its right and bottom).
       svg.contains("<text x=\"71.50\" y=\"71.50\""),
-      "label not centred: {svg}"
+      "label not centered: {svg}"
     );
   }
 
@@ -4727,7 +4727,7 @@ mod interpreter_tests {
     // 30 x 20 and `ImageSize -> {400, 400}` widened the y range to make the
     // drawing square, so the frame showed y ticks (-5, 25) outside the
     // requested range. The drawing must instead keep the requested range and
-    // stay centred in the box with the data's shape.
+    // stay centered in the box with the data's shape.
     clear_state();
     let svg = interpret(
       "ExportString[Graphics[Disk[{3, 3}, 1], PlotRange -> {{-10, 20}, {0, 20}}, Frame -> True, ImageSize -> {400, 400}], \"SVG\"]",
@@ -4741,7 +4741,7 @@ mod interpreter_tests {
     // `g1 = Graphics[...]` with an elongated bounding box (a vertical stack
     // of shapes) keeps its own tall shape in a `GraphicsGrid`, as in
     // wolframscript; an `ImageSize -> {w, h}` is the size of the whole grid,
-    // the cells centred in it — not a box the tall cells blow out.
+    // the cells centered in it — not a box the tall cells blow out.
     clear_state();
     let svg = interpret(
       "g1 = Graphics[{Yellow, Table[Disk[{0, n}, 0.4], {n, 0, 3, 1}]}]; \
@@ -5189,7 +5189,7 @@ mod interpreter_tests {
       .expect("svg must declare a height");
     let mut found_x_tick = false;
     for line in svg.lines() {
-      // The x tick labels: centred on their ticks.
+      // The x tick labels: centered on their ticks.
       if !line.starts_with("<text") || !line.contains("text-anchor=\"middle\"")
       {
         continue;
@@ -5449,7 +5449,7 @@ mod interpreter_tests {
       interpret("ToString[FullForm[Hold[x = y = a /. b = 1]]]").unwrap(),
       "Hold[Set[x, Set[y, Set[ReplaceAll[a, b], 1]]]]"
     );
-    // A parenthesised assignment is an ordinary operand: the suffix
+    // A parenthesized assignment is an ordinary operand: the suffix
     // applies to all of it.
     assert_eq!(
       interpret("ToString[FullForm[Hold[(a = 1) /. b]]]").unwrap(),
@@ -6282,7 +6282,7 @@ mod interpreter_tests {
   }
 
   #[test]
-  fn condition_stays_looser_than_its_neighbours() {
+  fn condition_stays_looser_than_its_neighbors() {
     // The precedence move must not disturb the operators on either side:
     // a guard still absorbs a whole comparison / boolean test on its right,
     // and a definition's RHS still absorbs the guard.
@@ -6502,7 +6502,7 @@ mod interpreter_tests {
     clear_state();
     // A 2-simplex is a triangle; Insphere[Simplex[...]] must match the
     // Triangle[...] wrapper form. 3-4-5 right triangle → incircle of radius 1
-    // centred at {1, 1}; 6-8-10 right triangle → radius 2 centred at {2, 2}.
+    // centered at {1, 1}; 6-8-10 right triangle → radius 2 centered at {2, 2}.
     assert_eq!(
       interpret("Insphere[Simplex[{{0, 0}, {4, 0}, {0, 3}}]]").unwrap(),
       "Sphere[{1, 1}, 1]"

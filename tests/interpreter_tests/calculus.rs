@@ -842,7 +842,7 @@ mod integrate_with_sum {
   }
 
   /// `Sin[a x] Sin[b x]` with `a != b` is the same-argument product's
-  /// same-argument neighbour: the double-angle identity above only applies
+  /// same-argument neighbor: the double-angle identity above only applies
   /// when both factors share one argument, so a genuinely different pair
   /// of frequencies needs the product-to-sum identity
   /// `Sin[A] Sin[B] = (Cos[A-B] - Cos[A+B]) / 2` instead. This is the
@@ -1041,7 +1041,7 @@ mod definite_integrals {
   fn log_sin_wrong_bounds_stays_unevaluated() {
     // The table entry must not misfire on other bounds. (wolframscript
     // returns a PolyLog closed form here, which woxi doesn't support yet —
-    // falling through unevaluated is the safe behaviour.)
+    // falling through unevaluated is the safe behavior.)
     assert_eq!(
       interpret("Integrate[Log[Sin[x]], {x, 0, 1}]").unwrap(),
       "Integrate[Log[Sin[x]], {x, 0, 1}]"
@@ -1273,7 +1273,7 @@ mod definite_integrals {
   #[test]
   fn divergent_integral_returns_unevaluated() {
     // Improper integrals that diverge at an infinite bound stay unevaluated,
-    // matching wolframscript's Integrate::idiv behaviour. Regression for
+    // matching wolframscript's Integrate::idiv behavior. Regression for
     // mathics calculus.py:1006.
     assert_eq!(
       interpret("Integrate[1, {x, Infinity, 0}]").unwrap(),
@@ -1304,7 +1304,7 @@ mod definite_integrals {
   // An `Assumptions -> cond` option (and other option rules) must be treated as
   // an option, not as an extra integration variable. Previously the option was
   // swallowed by the multivariate path, yielding a nested `Integrate[Integrate[
-  // …, Assumptions -> …], …]`. The Assumptions option is honoured via the same
+  // …, Assumptions -> …], …]`. The Assumptions option is honored via the same
   // mechanism as `Assuming[…]`.
   #[test]
   fn definite_integral_with_assumptions_option() {
@@ -1926,7 +1926,7 @@ mod differentiate_plus_times {
   }
 
   // A sum or a product of symbols is likewise not a valid variable — the old
-  // behaviour returned 0 (sum) or 1 (self-equal product).
+  // behavior returned 0 (sum) or 1 (self-equal product).
   #[test]
   fn derivative_wrt_compound_emits_ivar() {
     clear_state();
@@ -4043,7 +4043,7 @@ mod limit {
   }
 
   // Rational-function limits at infinity whose value is a non-integer rational
-  // (the ratio of leading coefficients) are now recognised.
+  // (the ratio of leading coefficients) are now recognized.
   #[test]
   fn limit_rational_function_at_infinity() {
     assert_eq!(
@@ -5388,7 +5388,7 @@ mod nintegrate {
     );
   }
 
-  // A loose AccuracyGoal / PrecisionGoal is honoured (it used to be ignored
+  // A loose AccuracyGoal / PrecisionGoal is honored (it used to be ignored
   // and the strict default tolerance forced thousands of evaluations).
   #[test]
   fn nintegrate_accuracy_and_precision_goal() {
@@ -5611,7 +5611,7 @@ mod nintegrate {
   }
 
   // An integrand that blows up at an endpoint is integrated by tanh-sinh
-  // quadrature, whose nodes crowd towards the endpoints and whose weights
+  // quadrature, whose nodes crowd toward the endpoints and whose weights
   // vanish there, so the endpoint itself is never sampled. Adaptive Simpson
   // needs an endpoint value and used to substitute one from just inside the
   // interval, which made that one sample enormous: these were off by anything
@@ -7569,7 +7569,7 @@ mod find_minimum {
     // y0}}]`; each variable spec is its own positional argument instead
     // of being wrapped together. Previously only `args[1]` was read for
     // variable specs, so `y` stayed completely unbound here and the
-    // trailing spec was silently treated as an (unrecognised) option.
+    // trailing spec was silently treated as an (unrecognized) option.
     clear_state();
     let result =
       interpret("FindMinimum[(x - 1)^2 + (y - 2)^2, {x, 0}, {y, 0}]").unwrap();
@@ -8799,7 +8799,7 @@ mod dsolve {
     );
   }
 
-  // Regression: a constant factor in front of a parenthesised sum, as in
+  // Regression: a constant factor in front of a parenthesized sum, as in
   // `y'[t] == k (a - y[t] + f[t])` (Newton's law of cooling with a driven
   // ambient temperature), made the term classifier give up, so DSolve
   // returned unevaluated. Checked by substituting the solution back.
@@ -8926,7 +8926,7 @@ FreeQ[sol, E]}"
   // null space of the system evaluated there). Found while checking
   // whether Woxi Studio could open a real Wolfram Demonstration whose
   // Manipulate solves a Foucault-pendulum-style coupled ODE system —
-  // previously DSolve only recognised one dependent function and left any
+  // previously DSolve only recognized one dependent function and left any
   // `{y1[t], y2[t], …}` system unevaluated.
   mod coupled_linear_ode_system {
     use super::*;
@@ -9566,7 +9566,7 @@ mod ndsolve {
     );
   }
 
-  // An arclength-parametrised curve that ends well inside a wide domain
+  // An arclength-parameterized curve that ends well inside a wide domain
   // (the quarter circle y == Sqrt[1 - x^2] ends at x == ±1) is traced with
   // steps that shrink near the end instead of failing at the first nominal
   // step (the arc-length continuation Demonstrations integrate over
@@ -9601,7 +9601,7 @@ mod ndsolve {
     );
   }
 
-  // A highly eccentric Kepler orbit passes close to the centre once per
+  // A highly eccentric Kepler orbit passes close to the center once per
   // period; the integration must stay accurate there, so that the orbit
   // closes again after exactly one period.
   #[test]
@@ -11034,7 +11034,7 @@ mod ndsolve {
   #[test]
   fn symbolic_initial_condition_value() {
     // An exact symbolic IC value (like the trebuchet's
-    // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericise.
+    // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericize.
     let result = interpret(
       "s = NDSolve[{y'[t] == 0, y[0] == -ArcCos[31/40]}, y, {t, 0, 1}]; \
        (y /. s[[1]])[1.0]",
@@ -11459,7 +11459,7 @@ mod ndsolve {
     assert!(result.contains("<svg"), "Got: {result}");
   }
 
-  /// The Neumann analogue of `pde_heat_equation_preserves_a_harmonic_steady_state`:
+  /// The Neumann analog of `pde_heat_equation_preserves_a_harmonic_steady_state`:
   /// a linear ramp `u = x` is a steady state of `u_t == u_xx` (its second
   /// derivative is zero) whose own slope is `1` everywhere, so it's also
   /// consistent with a zero-flux Dirichlet start (`u(t, 0) == 0`) and a
@@ -11481,7 +11481,7 @@ mod ndsolve {
   /// A coefficient (here a Nusselt-style parabolic velocity profile,
   /// `Vmax (1 - (x/L)^2)`) multiplying the evolution equation's time
   /// derivative — the shape a convection-diffusion-reaction transport
-  /// equation across a falling liquid film takes — must be recognised and
+  /// equation across a falling liquid film takes — must be recognized and
   /// divided out. The velocity profile vanishes exactly at the channel
   /// wall (`x == L`), which is also where the zero-flux Neumann condition
   /// sits, so this doubles as a regression test for that degenerate
@@ -11562,7 +11562,7 @@ mod ndsolve {
   /// `NDSolve` demonstration commonly uses to state an initial condition
   /// and a same-valued Dirichlet boundary condition in one equation —
   /// must expand into both conditions rather than leaving the whole
-  /// system unrecognised (three equation items don't fit any single
+  /// system unrecognized (three equation items don't fit any single
   /// unknown's required four). With a zero-flux wall at the other end,
   /// a uniform initial profile matching the shared boundary value is a
   /// fixed point of the heat equation, so it must stay exactly at that
@@ -12054,7 +12054,7 @@ mod ndsolve {
   /// *velocity* condition is only four equations, the parabolic branch's
   /// own exact count — but that branch's `Derivative[1, 0]` evolution
   /// matcher doesn't match a bare `Derivative[2, 0]` term, so neither
-  /// branch recognises the shape and the call is left unevaluated rather
+  /// branch recognizes the shape and the call is left unevaluated rather
   /// than panicking or guessing a velocity.
   #[test]
   fn pde_hyperbolic_missing_velocity_initial_condition_stays_unevaluated() {
@@ -14275,7 +14275,7 @@ mod inverse_laplace_transform {
     );
   }
 
-  // An unrecognised transform stays unevaluated with the original third
+  // An unrecognized transform stays unevaluated with the original third
   // argument rather than leaking the internal placeholder variable.
   #[test]
   fn third_argument_expression_unevaluated() {
@@ -15152,7 +15152,7 @@ mod trig_to_exp {
     assert_eq!(interpret("TrigToExp[Sech[x]]").unwrap(), "2/(E^(-x) + E^x)");
   }
 
-  // InputForm parenthesises imaginary coefficients: `(-I)*x`, `(I/2)*x`.
+  // InputForm parenthesizes imaginary coefficients: `(-I)*x`, `(I/2)*x`.
   // OutputForm (the bare echo above) keeps the bare `-I*x` / `I/2*x` form.
   #[test]
   fn imaginary_coefficient_input_form() {
@@ -15370,7 +15370,7 @@ mod interpolation {
     assert!((val - 4.0).abs() < 0.001, "Expected 4.0, got {val}");
   }
 
-  // Exact symbolic data values (e.g. Sin[1], Sin[2]) are numericised via N,
+  // Exact symbolic data values (e.g. Sin[1], Sin[2]) are numericized via N,
   // matching wolframscript. Previously these raised a hard "cannot convert
   // ... to numeric value" error. Values verified against wolframscript.
   #[test]
@@ -15801,7 +15801,7 @@ mod list_interpolation {
 // the shape `Flatten[Table[Table[{x, y, f[x, y]}, {y, ys}], {x, xs}], 1]`
 // (or the equivalent built with `Join`) produces. Regression: this used to
 // raise "cannot convert {1., 1., 2.} to a numeric value" because the triple
-// format wasn't recognised at all; the distinct x/y coordinates now recover
+// format wasn't recognized at all; the distinct x/y coordinates now recover
 // the grid so it interpolates the same way `ListInterpolation`'s implicit
 // integer grid does.
 mod interpolation_2d_scattered {
@@ -15889,7 +15889,7 @@ mod interpolation_2d_scattered {
     );
   }
 
-  // A per-axis `InterpolationOrder -> {orderX, orderY}` is honoured
+  // A per-axis `InterpolationOrder -> {orderX, orderY}` is honored
   // separately for each dimension.
   #[test]
   fn per_axis_interpolation_order() {
@@ -18862,7 +18862,7 @@ mod cases {
     );
   }
   // Derivatives of the other cylinder functions: Y/HankelH like J (subtract),
-  // I adds the neighbours, K adds and negates.
+  // I adds the neighbors, K adds and negates.
   #[test]
   fn d_bessel_y_i_k_hankel() {
     assert_case(r#"D[BesselY[0, x], x]"#, r#"-BesselY[1, x]"#);
@@ -19246,7 +19246,7 @@ mod ndeigenvalues_diffusion_line {
   // For 1D Laplacian (DiffusionPDETerm) on Line[{{a}, {b}}] with the
   // default Neumann boundary condition, the eigenvalues are (kπ/L)²
   // for k = 0, 1, 2, … where L = b - a. Both Wolfram's finite elements and
-  // Woxi's finite differences return them with small discretisation
+  // Woxi's finite differences return them with small discretization
   // errors.
 
   fn parse_list(s: &str) -> Vec<f64> {
@@ -21167,7 +21167,7 @@ mod interpolation_exact_and_derivative {
   }
 
   // The interpolation order picks the stencil, so a lower order gives the
-  // straight-line value between the neighbouring points.
+  // straight-line value between the neighboring points.
   #[test]
   fn interpolation_order_selects_the_stencil() {
     assert_eq!(
@@ -21671,14 +21671,14 @@ mod bounded_oscillation_extrema {
   }
 }
 
-mod cancelling_poles {
+mod canceling_poles {
   use super::*;
 
   // Two terms that each diverge at the point but cancel: the sum is combined
   // over a common denominator before any numerical probe, which would lose
   // the cancellation between two ~1/h terms (wolframscript-verified).
   #[test]
-  fn sum_of_cancelling_poles() {
+  fn sum_of_canceling_poles() {
     assert_eq!(
       interpret("Limit[1/(z - 1) - 1/(z^2 - z), z -> 1]").unwrap(),
       "1"
@@ -21788,7 +21788,7 @@ mod asymptotic_comparisons {
       interpret("AsymptoticLess[2, 3, x -> Infinity]").unwrap(),
       "False"
     );
-    // A limit point other than infinity is honoured.
+    // A limit point other than infinity is honored.
     assert_eq!(
       interpret("AsymptoticLess[x, x^2, x -> 1]").unwrap(),
       "False"
@@ -22175,7 +22175,7 @@ mod limits_of_power_sums_at_infinity {
   }
 
   #[test]
-  fn cancelling_leading_terms_defer_to_the_other_paths() {
+  fn canceling_leading_terms_defer_to_the_other_paths() {
     // Sqrt[x^2 + x] - x has both leading terms of order 1 with coefficients
     // that cancel, so the leading-order analysis declines and the
     // conjugate-difference path answers.
@@ -22858,7 +22858,7 @@ mod ndsolve_delay_equations {
     assert_eq!(interpret(code).unwrap(), "92/125");
   }
 
-  /// A history condition may use any constant, and a parameterised
+  /// A history condition may use any constant, and a parameterized
   /// delay inside a coupled system works as well.
   #[test]
   fn coupled_system_with_delay_and_history() {
@@ -22935,7 +22935,7 @@ mod ndsolve_delay {
   /// The history condition's variable has to be the independent variable —
   /// wolframscript leaves `z[s /; s <= 0] == 1` unevaluated — but the
   /// condition can arrive through a variable holding it, as a Module local
-  /// initialised to `t /; t <= 0`.
+  /// initialized to `t /; t <= 0`.
   #[test]
   fn ndsolve_delay_history_condition_variable() {
     clear_state();
@@ -23608,7 +23608,7 @@ mod interpolation_with_derivatives {
   }
 
   #[test]
-  fn higher_order_draws_in_neighbours_right_first() {
+  fn higher_order_draws_in_neighbors_right_first() {
     assert_eq!(
       interpret(
         "f = Interpolation[{{{0}, 1, 0}, {{1}, 3, 1}, {{2}, 2, 0}, {{3}, 5, 2}, {{4}, 4, -1}}, InterpolationOrder -> 5]; {f[1.5], f[0.5], f[3.5], f[2.5]}"
@@ -25337,7 +25337,7 @@ mod d_with_symbolic_exponents {
   use super::*;
 
   #[test]
-  fn quotient_with_symbolic_powers_is_not_cancelled() {
+  fn quotient_with_symbolic_powers_is_not_canceled() {
     // Regression: Cancel over powers like ((x - c)/b)^(a - 1) blew up in
     // the polynomial GCD search (20 s). wolframscript's D leaves the
     // chain-rule quotient as it is.
@@ -25378,7 +25378,7 @@ mod ndsolve_with_interpolated_coupling {
   use super::*;
 
   // A chain of stages coupled through a piecewise-linear lookup table: each
-  // residual mentions only its neighbours' derivatives, and the table is
+  // residual mentions only its neighbors' derivatives, and the table is
   // queried far outside its data while the iteration settles.
   #[test]
   fn chain_of_stages_matches_closed_form_for_linear_table() {
@@ -25555,7 +25555,7 @@ mod sub_values_holding_tables {
 }
 
 // Series at Infinity: Log[x] rides in the coefficients, constants join a
-// series about any centre, elementary functions of a series are series,
+// series about any center, elementary functions of a series are series,
 // and Gamma over its Stirling approximation expands through LogGamma
 // (Demonstration AsymptoticExpansionsForSomeSpecialFunctions hung here).
 mod series_asymptotic_products {
@@ -26266,7 +26266,7 @@ mod series_rational_function {
 }
 
 // D keeps the signs of the factors it produced: a rational coefficient is
-// not cancelled into the denominator (`(-1 + z)` for `(1 - z)`).
+// not canceled into the denominator (`(-1 + z)` for `(1 - z)`).
 mod d_keeps_factor_signs {
   use super::*;
 

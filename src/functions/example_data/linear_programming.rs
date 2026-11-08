@@ -110,10 +110,10 @@ fn build(entry: &Entry) -> Option<Problem> {
   while count < nnz && guard < nnz * 20 + 1000 {
     guard += 1;
     let i = rng.below(k);
-    let centre = (i * n / k) as i64;
+    let center = (i * n / k) as i64;
     let spread = (n as f64 * 0.2).max(3.0) as i64;
     let j =
-      (centre + rng.int_in(-spread, spread)).clamp(0, n as i64 - 1) as usize;
+      (center + rng.int_in(-spread, spread)).clamp(0, n as i64 - 1) as usize;
     let j = if rng.chance(0.1) { rng.below(n) } else { j };
     if place(&mut rows, i, j, &mut rng) {
       count += 1;

@@ -333,10 +333,10 @@ enum BoundError {
   BothInfinite,
 }
 
-/// A single lower/upper bound entry. Infinities are recognised through the
+/// A single lower/upper bound entry. Infinities are recognized through the
 /// printed form, which is where the several internal shapes of `-Infinity`
 /// (`DirectedInfinity`, a negated symbol, `Times[-1, Infinity]`) are already
-/// normalised to one token.
+/// normalized to one token.
 fn parse_bound(e: &Expr) -> Option<Bound> {
   if let Some(r) = expr_to_rat(e) {
     return Some(Bound::Finite(r));

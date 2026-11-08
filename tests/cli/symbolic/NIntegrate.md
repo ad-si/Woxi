@@ -8,7 +8,7 @@ $ wo 'NIntegrate[x^2, {x, 0, 1}]'
 ```
 
 An integrand that blows up at an endpoint is still integrated accurately — the
-nodes crowd towards the endpoints and the endpoint itself is never sampled:
+nodes crowd toward the endpoints and the endpoint itself is never sampled:
 
 ```scrut
 $ wo 'NIntegrate[1/Sqrt[x], {x, 0, 1}]'

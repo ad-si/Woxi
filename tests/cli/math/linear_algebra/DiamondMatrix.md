@@ -7,7 +7,7 @@ $ wo 'DiamondMatrix[2]'
 {{0, 0, 1, 0, 0}, {0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {0, 1, 1, 1, 0}, {0, 0, 1, 0, 0}}
 ```
 
-A second argument centres the diamond in a grid of zeros that wide:
+A second argument centers the diamond in a grid of zeros that wide:
 
 ```scrut
 $ wo 'DiamondMatrix[1, 5]'

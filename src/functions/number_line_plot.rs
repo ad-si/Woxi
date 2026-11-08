@@ -106,7 +106,7 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Take the labels off `NumberLinePlot[data -> labels, …]` and turn an
 /// association into its values (one series per value that is a list, or a
 /// single series of scalar values). Returns the arguments with plain data
-/// first, plus `(value, label)` for every labelled point of that data.
+/// first, plus `(value, label)` for every labeled point of that data.
 fn split_number_line_labels(args: &[Expr]) -> (Vec<Expr>, Vec<(f64, String)>) {
   let mut args = args.to_vec();
   let mut labels = Vec::new();
@@ -650,7 +650,7 @@ fn draw_arrow(
 }
 
 /// Draw an endpoint marker: a filled disk for an included endpoint, a
-/// ring around the background colour for an excluded one. `sf` is render
+/// ring around the background color for an excluded one. `sf` is render
 /// pixels per point.
 fn draw_endpoint(
   svg: &mut String,

@@ -86,7 +86,7 @@ pub fn dendrogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             full_width = fw;
           }
         }
-        // Recognised Graphics / clustering options that don't change
+        // Recognized Graphics / clustering options that don't change
         // the algorithm are accepted and ignored.
         _ => {}
       }
@@ -489,7 +489,7 @@ fn render_dendrogram_svg(
   let n_leaves = order.len();
 
   // Abstract coordinates: `u` spreads the leaves across [0, 1] (first leaf
-  // at 0) and `v` is the merge height normalised to [0, 1].
+  // at 0) and `v` is the merge height normalized to [0, 1].
   let h_max = nodes
     .iter()
     .map(|nd| nd.height)

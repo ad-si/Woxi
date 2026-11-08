@@ -210,7 +210,7 @@ fn is_clean_polynomial(e: &Expr) -> bool {
 /// The negation of `t` when `t` is a negative term — a unary minus, or a
 /// product with a negative numeric leading (or trailing) coefficient. Returns
 /// None for a term that is not negative. Both the `Times[…]` call form and the
-/// `*` binary-operator form are recognised, since `Expand` produces either.
+/// `*` binary-operator form are recognized, since `Expand` produces either.
 fn negate_if_negative(t: &Expr) -> Option<Expr> {
   // `Rational[-p, q]` → `Rational[p, q]`, the coefficient form `-x^2/2` takes.
   let negate_ratio = |e: &Expr| -> Option<Expr> {
@@ -266,7 +266,7 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
   }
 }
 
-/// A positive rational as a normalised `(numerator, denominator)` pair.
+/// A positive rational as a normalized `(numerator, denominator)` pair.
 type Rat = (i128, i128);
 
 fn rat_mul(a: Rat, b: Rat) -> Rat {

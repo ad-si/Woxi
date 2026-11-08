@@ -945,7 +945,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         }
         si = rat_reduce(si.0, si.1);
         // The constant stays one opaque component: products keep it by name
-        // (Seconds*SpeedOfLight) instead of cancelling its base units while
+        // (Seconds*SpeedOfLight) instead of canceling its base units while
         // dropping its magnitude.
         return Some(CompoundUnitInfo {
           components: vec![(name.clone(), 1)],
@@ -1498,7 +1498,7 @@ fn normalize_unit(mut unit: Expr) -> Expr {
       // Temperature scales canonicalize to their Wolfram output spelling:
       // "Celsius" -> "DegreesCelsius", "Fahrenheit" -> "DegreesFahrenheit",
       // "Kelvin" -> "Kelvins". Done before the general unit lookup because
-      // these scales are recognised only via temperature_scale, not
+      // these scales are recognized only via temperature_scale, not
       // get_unit_info.
       if let Some(scale) = temperature_scale(&Expr::String(s.clone())) {
         return str_expr(temp_output_unit(scale));
@@ -1801,7 +1801,7 @@ pub fn quantity_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // Must be a Quantity[magnitude, unit] with a unit specification that
-  // KnownUnitQ would accept (matching wolframscript's stricter behaviour —
+  // KnownUnitQ would accept (matching wolframscript's stricter behavior —
   // Quantity[3, "Maters"] fails because "Maters" is unknown, even though
   // the head is Quantity).
   let result = match is_quantity(&args[0]) {
@@ -1813,12 +1813,12 @@ pub fn quantity_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── CompatibleUnitQ ────────────────────────────────────────────────────────
 
-/// Recursive helper: returns true iff `unit` is a recognised Wolfram unit
+/// Recursive helper: returns true iff `unit` is a recognized Wolfram unit
 /// specification. Accepts the dimensionless constant `1`, canonical-plural
 /// string unit names ("Feet", "Meters", ...), and products / divisions /
 /// integer powers of such strings. Rejects everything else — including
 /// symbols, numeric literals other than 1, singular forms ("Foot"), and
-/// lowercase aliases ("meter") — matching wolframscript's behaviour.
+/// lowercase aliases ("meter") — matching wolframscript's behavior.
 fn known_unit_q_recursive(unit: &Expr) -> bool {
   match unit {
     Expr::Integer(n) => *n == 1,
@@ -2386,7 +2386,7 @@ pub fn try_quantity_times(
       };
     }
 
-    // If all units cancelled out, return bare magnitude
+    // If all units canceled out, return bare magnitude
     if matches!(&final_unit, Expr::Integer(1)) {
       Some(Ok(new_mag))
     } else {
@@ -2601,7 +2601,7 @@ pub fn try_quantity_power(
   if let Some((p, q)) = expr_to_rational(exp)
     && let Some(new_unit) = power_unit_expr(unit, p, q)
   {
-    // If all units cancelled out, return bare magnitude
+    // If all units canceled out, return bare magnitude
     if matches!(&new_unit, Expr::Integer(1)) {
       return Some(Ok(new_mag));
     }

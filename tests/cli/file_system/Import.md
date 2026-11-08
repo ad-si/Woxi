@@ -5,7 +5,7 @@
 Both route through the same format back-ends as `ImportString` and
 `ExportString`, and accept the same options.
 
-Common recognised formats include `"CSV"`, `"TSV"`, `"JSON"`, `"Text"`,
+Common recognized formats include `"CSV"`, `"TSV"`, `"JSON"`, `"Text"`,
 `"Lines"`, `"PNG"`, `"SVG"`, and `"String"`.
 
 ### Common options

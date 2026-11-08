@@ -26,5 +26,5 @@ That one is deliberately not a testcase. Wolfram reports an unusable socket
 as a `Failure[…]` object rather than as a printed line plus `$Failed`, and it
 connects lazily, so `SocketReadMessage` on this very input waits for a first
 byte that never comes and never returns at all — see "Sockets" in the
-conformance gaps. The behaviour above is covered by the unit tests in
+conformance gaps. The behavior above is covered by the unit tests in
 `tests/interpreter_tests/sockets.rs` instead.

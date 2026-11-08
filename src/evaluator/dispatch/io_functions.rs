@@ -936,7 +936,7 @@ fn advance_stream_position(id: usize, new_position: usize) {
 /// A context name — `"MyPaclet`"` — is looked up in the loaded paclet
 /// directories and then along `$Path`; anything else is a file name, resolved
 /// against the virtual working directory so a preceding `SetDirectory` is
-/// honoured the way it is in wolframscript. `None` when no such file exists.
+/// honored the way it is in wolframscript. `None` when no such file exists.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn resolve_get_target(name: &str) -> Option<std::path::PathBuf> {
   resolve_get_target_in(name, &[])
@@ -2852,9 +2852,9 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::String(file_name_join(pieces, sep))));
         }
       }
-      // A single string is a path already; joining it normalises it —
+      // A single string is a path already; joining it normalizes it —
       // `FileNameJoin["a//b/"]` is `"a/b"` — which is how WLX's importer
-      // canonicalises the path it stores in a component. Windows reads
+      // canonicalizes the path it stores in a component. Windows reads
       // either separator, so both split a path there; on Unix a backslash
       // is an ordinary character in a file name.
       if let Expr::String(path) = &args[0] {
@@ -5274,7 +5274,7 @@ fn file_name_matches(patterns: &[Expr], file_name: &str) -> bool {
 /// `levels` directory levels.
 ///
 /// `dir` is resolved against the working directory that `Directory[]`
-/// reports, so a preceding `SetDirectory` is honoured, but it keeps its
+/// reports, so a preceding `SetDirectory` is honored, but it keeps its
 /// spelling in the result: `FileNames["*", "sub"]` reports `sub/a.txt`,
 /// while the current directory reports the bare name.
 #[cfg(not(target_arch = "wasm32"))]
@@ -5637,7 +5637,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
-  // And a bare `BarLegend[…]` colour bar, when its spec can be drawn.
+  // And a bare `BarLegend[…]` color bar, when its spec can be drawn.
   if let Expr::FunctionCall { name, args } = expr
     && name == "BarLegend"
     && crate::functions::field_plot::bar_legend_svg(
@@ -5807,7 +5807,7 @@ fn locator_marker(
     |prims: &Expr| call("Translate", vec![prims.clone(), point.clone()]);
   // An `Appearance` picture with a numeric `ImageSize -> n` is `n` pixels
   // across whatever the pane's coordinates are, so its primitives are scaled
-  // about their own centre to that fraction of the pane (taken as 360 pixels
+  // about their own center to that fraction of the pane (taken as 360 pixels
   // across `span`) before being moved to the locator.
   let sized = |g: &Expr, prims: Expr| -> Expr {
     let Expr::FunctionCall { name, args } = g else {
@@ -5830,9 +5830,9 @@ fn locator_marker(
         }
         let k = n * span / 360.0 / extent;
         let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
-        let centre = Expr::List(vec![num(cx), num(cy)].into());
-        let scaled = call("Scale", vec![prims, num(k), centre]);
-        // Move the (scaled-in-place) marker's centre onto the locator.
+        let center = Expr::List(vec![num(cx), num(cy)].into());
+        let scaled = call("Scale", vec![prims, num(k), center]);
+        // Move the (scaled-in-place) marker's center onto the locator.
         call(
           "Translate",
           vec![
@@ -6300,7 +6300,7 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
       .filter(|cells| !cells.is_empty())
       .collect(),
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
-    // `Row[{a, b, …}, sep]` sets `sep` between neighbouring items.
+    // `Row[{a, b, …}, sep]` sets `sep` between neighboring items.
     "Row" if args.len() >= 2 => {
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
@@ -6953,7 +6953,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // it wraps, so its directives are pushed into the layout's items and
     // the item renderer applies them there. A styled `Grid`/`TableForm`/
     // `MatrixForm` is left to the arm below, which hands the directives to
-    // the table renderer whole — they colour its frame and dividers (or set
+    // the table renderer whole — they color its frame and dividers (or set
     // its cells' font), not only what pushing them cell-by-cell would reach.
     Expr::FunctionCall { name, args }
       if name == "Style"
@@ -6967,7 +6967,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         &args[0],
         &args[1..],
       );
-      // Styled text (`Style[5, 16, Red]`) keeps its size and colour: the
+      // Styled text (`Style[5, 16, Red]`) keeps its size and color: the
       // row renderer applies the directives to the text it sets.
       if pushed.is_none()
         && !matches!(&args[0], Expr::Graphics { .. })
@@ -7080,8 +7080,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           || expr_to_svg(expr),
         );
       }
-      // `Column` places its own items, so an alignment argument is honoured
-      // — `Column[{picture, legend}, Center]` centres the narrow legend
+      // `Column` places its own items, so an alignment argument is honored
+      // — `Column[{picture, legend}, Center]` centers the narrow legend
       // under the wide picture. The generic composition below packs every
       // row to the left instead.
       if name == "Column"
@@ -7098,7 +7098,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // caption.
       // A `Grid` with merged cells (`SpanFromLeft`/`SpanFromAbove`) needs
       // the table engine, which sizes the columns and rows a span covers
-      // and centres its content across them; the picture compositor below
+      // and centers its content across them; the picture compositor below
       // only knows one cell per slot.
       if name == "Grid"
         && layout_rows(name, args).iter().flatten().any(|c| {
@@ -7190,7 +7190,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     }
     // Legended[graphics, legend]: a `BarLegend` (optionally `Placed`) is
     // drawn right of the graphics, its bar 5/8 of their height, as Wolfram
-    // places a plot's colour bar. Other legends are baked into the wrapped
+    // places a plot's color bar. Other legends are baked into the wrapped
     // graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }
       if name == "Legended" && !args.is_empty() =>

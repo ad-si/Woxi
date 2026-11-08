@@ -172,7 +172,7 @@ fn dynamic_image_to_expr(img: &image::DynamicImage) -> Expr {
 ///
 /// `display_size` is the `ImageSize` the image is shown at. As in WL, the
 /// pixels are shown as blocks, never smoothed: the embedded raster is
-/// enlarged by nearest-neighbour sampling to (at least) 300 dpi of the
+/// enlarged by nearest-neighbor sampling to (at least) 300 dpi of the
 /// displayed size, which is what WL's SVG export embeds, and marked for
 /// pixelated scaling.
 pub fn image_to_html_img(
@@ -203,7 +203,7 @@ pub(crate) const IMAGE_RENDERING_ATTRS: &str =
   " image-rendering='optimizeSpeed' style='image-rendering:pixelated'";
 
 /// An image's pixels as a base64 PNG for showing at `shown` points, its
-/// pixels enlarged into blocks by nearest-neighbour sampling to WL's
+/// pixels enlarged into blocks by nearest-neighbor sampling to WL's
 /// 300 dpi (see [`image_block_factor`]).
 pub(crate) fn blocky_png_base64(
   width: u32,
@@ -763,7 +763,7 @@ fn color_space_option(opts: &[Expr]) -> Option<String> {
   })
 }
 
-/// How many colour components a named colour space has, ignoring alpha.
+/// How many color components a named color space has, ignoring alpha.
 /// `None` for a name Woxi does not know, which then goes unchecked.
 fn color_space_components(name: &str) -> Option<u8> {
   match name {
@@ -1583,7 +1583,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   // wolframscript treats both Image and Image3D as valid inputs and
-  // returns Automatic when no explicit colour space is set on the
+  // returns Automatic when no explicit color space is set on the
   // image (the common case for inputs built from raw NumericArrays).
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
@@ -1592,7 +1592,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   if is_valid_image3d(&args[0]) {
-    // An explicit ColorSpace option, else the slices' colour space.
+    // An explicit ColorSpace option, else the slices' color space.
     if let Expr::FunctionCall { args: a, .. } = &args[0] {
       for opt in a.iter().skip(1) {
         if let Expr::Rule {
@@ -1992,7 +1992,7 @@ impl BinarizeMethod {
   }
 }
 
-/// A 256-bin histogram of values in `[0, 1]`, normalised to sum to 1.
+/// A 256-bin histogram of values in `[0, 1]`, normalized to sum to 1.
 fn gray_histogram(values: &[f64]) -> Vec<f64> {
   const BINS: usize = 256;
   let mut histogram = vec![0.0; BINS];
@@ -2007,7 +2007,7 @@ fn gray_histogram(values: &[f64]) -> Vec<f64> {
   histogram
 }
 
-/// Kapur's method: the split maximising the summed entropy of the two
+/// Kapur's method: the split maximizing the summed entropy of the two
 /// classes. Returns the last bin that is black.
 fn max_entropy_bin(histogram: &[f64]) -> usize {
   let entropy = |range: std::ops::Range<usize>| -> f64 {
@@ -2028,7 +2028,7 @@ fn max_entropy_bin(histogram: &[f64]) -> usize {
 }
 
 /// Kittler–Illingworth minimum error thresholding: fit two Gaussians to
-/// the classes either side of each split and minimise the criterion.
+/// the classes either side of each split and minimize the criterion.
 /// Returns the last bin that is black.
 fn minimum_error_bin(histogram: &[f64]) -> usize {
   let stats = |range: std::ops::Range<usize>| -> Option<(f64, f64)> {
@@ -2519,7 +2519,7 @@ pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// A scalar volume `Image3D[{{{v, …}, …}, …}, opts]`: its dimensions
 /// (depth, rows, columns as nested), the values in row-major order and the
 /// trailing options. Leaves may be any exact or inexact numeric constant.
-/// `None` for anything else (stacks of images, colour volumes, …).
+/// `None` for anything else (stacks of images, color volumes, …).
 fn image3d_scalar_volume(
   e: &Expr,
 ) -> Option<([usize; 3], Vec<f64>, Vec<Expr>)> {
@@ -2694,7 +2694,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Adjust::Curve(expr_to_f64(&args[1])?, 0.0, 1.0)
   };
 
-  // Real32 images store f32-quantised values in an f64 buffer. Round
+  // Real32 images store f32-quantized values in an f64 buffer. Round
   // each pixel to its f32 representation before the computation and
   // again on the way out so the result matches wolframscript's f32
   // image arithmetic.
@@ -2764,7 +2764,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     data.iter().map(|&v| apply(v)).collect()
   };
 
-  // An integer image stores quantised levels, and wolframscript rounds the
+  // An integer image stores quantized levels, and wolframscript rounds the
   // adjusted values back onto that grid — an adjusted `"Byte"` pixel is
   // always some n/255, an adjusted `"Bit16"` one some n/65535.
   let levels = match image_type {
@@ -3003,7 +3003,7 @@ pub fn image_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ImageLevels[image] / ImageLevels[image, spec] — `{value, count}` pairs for
 /// the pixel values of each channel. A single-channel image gives one flat
 /// list of pairs, a multichannel image one such list per channel. With `n`
-/// the range splits into n bins `[k/n, (k+1)/n)` labelled by their lower
+/// the range splits into n bins `[k/n, (k+1)/n)` labeled by their lower
 /// edge (the top value counting in the last); without a spec a bit image
 /// counts its two values `0` and `1` and every other image uses 256 bins;
 /// `"Byte"` counts the 256 byte values and `All` every distinct value.
@@ -3334,7 +3334,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0
   } else {
     // Any other angle: the bounding box of the turned image, each pixel
-    // taking the source pixel under its centre (black outside), the way
+    // taking the source pixel under its center (black outside), the way
     // wolframscript resamples.
     let (sin, cos) = angle.sin_cos();
     let (wf, hf) = (w as f64, h as f64);
@@ -3345,7 +3345,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut out = Vec::with_capacity(nw * nh * ch);
     for r in 0..nh {
       for c in 0..nw {
-        // Output pixel centre relative to the centre, y pointing up, scaled
+        // Output pixel center relative to the center, y pointing up, scaled
         // from the whole-pixel canvas back to the exact bounding box.
         let dx = (c as f64 + 0.5 - nw as f64 / 2.0) * bw / nw as f64;
         let dy = (nh as f64 / 2.0 - (r as f64 + 0.5)) * bh / nh as f64;
@@ -4361,7 +4361,7 @@ pub fn image_trim_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Canny pipeline on top of `GradientFilter`'s derivative-of-Gaussian
 /// gradient (shared through `plane_gradient`, so there is one gradient
 /// in the codebase): thin the gradient magnitude to single-pixel ridges
-/// by suppressing every pixel that a neighbour along the gradient
+/// by suppressing every pixel that a neighbor along the gradient
 /// direction beats, then keep what clears the threshold. The default
 /// threshold is `FindThreshold[GradientFilter[image, r]]`, the same
 /// 256-bin cluster-variance split wolframscript uses; an explicit `t`
@@ -4532,7 +4532,7 @@ pub fn edge_detect_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // A connected (8-neighbour) run of ridge pixels is an edge when its
+  // A connected (8-neighbor) run of ridge pixels is an edge when its
   // strongest pixel reaches the threshold; the whole run is kept.
   let mut result = vec![0.0_f64; w * h];
   let mut seen = vec![false; w * h];
@@ -4639,7 +4639,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let num_pixels = w * h;
 
       // Single-channel (grayscale) image: cluster luminance values and
-      // emit `GrayLevel[v]` per cluster centre.
+      // emit `GrayLevel[v]` per cluster center.
       if ch == 1 {
         let mut grays: Vec<[f64; 1]> = Vec::with_capacity(num_pixels);
         for i in 0..num_pixels {
@@ -4688,7 +4688,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// 1-D k-means for grayscale `DominantColors`. Centres are sorted in
+/// 1-D k-means for grayscale `DominantColors`. Centers are sorted in
 /// ascending value order so the output list is deterministic.
 fn kmeans_1d(pixels: &[[f64; 1]], k: usize, max_iters: usize) -> Vec<[f64; 1]> {
   if pixels.is_empty() || k == 0 {
@@ -4979,7 +4979,7 @@ pub fn image_apply_ast(
     }
   }
 
-  // The result stays in the source's colour space (an HSB image mapped
+  // The result stays in the source's color space (an HSB image mapped
   // through `f` is still HSB) unless `f` changed the channel count.
   Ok(Expr::Image {
     color_space: if out_ch == ch { *color_space } else { None },
@@ -5196,7 +5196,7 @@ fn rgb_to_cmyk(r: f64, g: f64, b: f64) -> (f64, f64, f64, f64) {
 }
 
 /// ColorConvert[img, "Grayscale"] - Convert between color spaces
-/// The static name a converted image records as its colour space, or `None`
+/// The static name a converted image records as its color space, or `None`
 /// for one that is not named.
 fn color_space_tag(space: &str) -> Option<&'static str> {
   Some(match space {
@@ -5212,7 +5212,7 @@ fn color_space_tag(space: &str) -> Option<&'static str> {
   })
 }
 
-/// The same image, recorded as being in `tag`'s colour space.
+/// The same image, recorded as being in `tag`'s color space.
 fn retag(image: &Expr, tag: Option<&'static str>) -> Expr {
   match image {
     Expr::Image {
@@ -5778,9 +5778,9 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     offset_y = (bh as f64 - (py - qy) - oh as f64).round() as i64;
   }
 
-  // Porter–Duff compositing on the colour channels: with image and overlay
+  // Porter–Duff compositing on the color channels: with image and overlay
   // opacities αi, αo, the result has opacity a αo (1 - αi) + b αi (1 - αo)
-  // + c αi αo, and the colours weighted the same way (the overlap showing
+  // + c αi αo, and the colors weighted the same way (the overlap showing
   // the overlay). A {image, α} overlay is faded by α. An image without an
   // alpha channel keeps none; its pixels are the premultiplied result.
   let base_alpha = has_alpha_channel(*ch1, *cs1);
@@ -5873,7 +5873,7 @@ fn pointwise_image_op(
     )));
   }
 
-  // Real32 images store f32-quantised values in an f64 buffer; perform the
+  // Real32 images store f32-quantized values in an f64 buffer; perform the
   // op in f32 so results match wolframscript's f32 image arithmetic.
   let apply = |a: f64, b: f64, is_real32: bool| -> f64 {
     if is_real32 {
@@ -6467,7 +6467,7 @@ pub fn gradient_filter_ast(
 
   // Image input: separable 2D gradient.
   //   1. Build the 1D smooth kernel `T_k = exp(-σ²)·I_k(σ²)`
-  //      (normalised, length 2·radius+1).
+  //      (normalized, length 2·radius+1).
   //   2. Build the 1D derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`
   //      — chosen so applying D to a unit ramp recovers its slope.
   //   3. For each pixel compute
@@ -6641,9 +6641,9 @@ impl GradientKernels {
 }
 
 /// 1D Gaussian derivative kernel `D[k] = -k·T[k] / Σ_j j²·T[j]`. The
-/// denominator normalises the kernel so that applying it to a unit
+/// denominator normalizes the kernel so that applying it to a unit
 /// ramp (`{0, 1, 2, …}`) recovers slope 1 — wolframscript uses the
-/// same normalisation.
+/// same normalization.
 fn gradient_filter_derivative_kernel(smooth: &[f64]) -> Vec<f64> {
   let len = smooth.len();
   let radius = (len.saturating_sub(1) / 2) as i64;
@@ -6697,15 +6697,15 @@ pub fn laplacian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .map(|i| wide[i - 1] - 2.0 * wide[i] + wide[i + 1])
     .collect();
   // Truncating the kernel must not leak a constant response, so the
-  // centre tap absorbs the truncation error and the taps sum to zero.
-  let centre = axis.radius;
+  // center tap absorbs the truncation error and the taps sum to zero.
+  let center = axis.radius;
   let others: f64 = second
     .iter()
     .enumerate()
-    .filter(|(i, _)| *i != centre)
+    .filter(|(i, _)| *i != center)
     .map(|(_, v)| v)
     .sum();
-  second[centre] = -others;
+  second[center] = -others;
   let convolve = crate::functions::math_ast::convolve_edge_padded;
   let along_rows = |source: &[f64], kernel: &[f64]| {
     let mut out = vec![0.0; w * h];
@@ -6913,7 +6913,7 @@ fn median_filter_body(args: &[Expr]) -> Expr {
 /// wolframscript). Non-integer radii emit MeanFilter::bdrad and the
 /// expression is returned unevaluated.
 pub fn mean_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  // MeanFilter[Image, r] — the mean of each clipped neighbourhood, per
+  // MeanFilter[Image, r] — the mean of each clipped neighborhood, per
   // channel, on the pixel buffer. Samples land back in the image's own
   // precision, which for the usual Real32 image is what rounds 4/9 to
   // 0.4444444477558136 the way wolframscript reports it.
@@ -7003,11 +7003,11 @@ fn quantize_image(image: Expr) -> Expr {
   }
 }
 
-/// `ImageFilter[f, image, r]` — `f` applied to the range-`r` neighbourhood of
+/// `ImageFilter[f, image, r]` — `f` applied to the range-`r` neighborhood of
 /// every pixel, in each channel. Unlike the aggregating filters, the window is
 /// always the full `(2r+1)` square: the image is extended by repeating its
 /// edge samples rather than clipped, so a corner sees as many values as the
-/// centre does.
+/// center does.
 pub fn image_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let echo = || Ok(unevaluated("ImageFilter", args));
   if args.len() != 3 {
@@ -7143,7 +7143,7 @@ pub fn image_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// StandardDeviationFilter[data, r] — like MeanFilter but each window is
-/// summarised by its (sample) StandardDeviation. Results are exact when the
+/// summarized by its (sample) StandardDeviation. Results are exact when the
 /// input is exact. A window of a single element has no sample standard
 /// deviation, so a zero range — or data with only one element — reports
 /// `StandardDeviationFilter::shlen` rather than letting `StandardDeviation`
@@ -8011,7 +8011,7 @@ fn gaussian_filter_image(
 /// Build the 1D Gaussian-filter kernel of half-width `radius` and
 /// standard deviation `sigma` using the Bessel-based discrete
 /// Gaussian: `T_k(t) = exp(-t)·I_k(t)` with `t = sigma²`. The kernel is
-/// emitted for `k ∈ [-radius, radius]` and normalised to sum to 1 —
+/// emitted for `k ∈ [-radius, radius]` and normalized to sum to 1 —
 /// this matches wolframscript's `GaussianMatrix[{radius, sigma}]`
 /// values byte-for-byte (e.g. `{0.0994, 0.8012, 0.0994}` for r=1).
 fn gaussian_filter_kernel(radius: usize, sigma: f64) -> Vec<f64> {
@@ -8294,7 +8294,7 @@ pub fn image_periodogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (w, h) = (*width as usize, *height as usize);
   let mut ch = *channels as usize;
-  // Transparency is dropped; a bit image is analysed as gray levels.
+  // Transparency is dropped; a bit image is analyzed as gray levels.
   let color = if ch == 2 || ch == 4 { ch - 1 } else { ch };
   let _ = image_type;
 
@@ -8667,7 +8667,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   // An image is colored through a lookup table, the way wolframscript
-  // does it: a colour image is taken to grayscale, values are clipped to
+  // does it: a color image is taken to grayscale, values are clipped to
   // [0, 1], and a pixel x takes the table entry i = min(floor(1024 x),
   // 1023) (for an integer image type its raw integer value). The table
   // runs up to imax, the largest entry used, and is filled in full, after
@@ -9562,10 +9562,10 @@ pub fn morphological_graph_ast(
   let on_arc: Vec<bool> = (0..w * h)
     .map(|i| skeleton[i] && !is_vertex_pixel[i])
     .collect();
-  let neighbours = |i: usize| -> Vec<usize> {
+  let neighbors = |i: usize| -> Vec<usize> {
     let (y, x) = ((i / w) as i64, (i % w) as i64);
     let mut out = Vec::with_capacity(8);
-    // Orthogonal neighbours first: a chain steps along them when it can.
+    // Orthogonal neighbors first: a chain steps along them when it can.
     for (dy, dx) in [
       (-1, 0),
       (0, -1),
@@ -9590,7 +9590,7 @@ pub fn morphological_graph_ast(
     let Some(from) = vertex_of[start] else {
       continue;
     };
-    for first in neighbours(start) {
+    for first in neighbors(start) {
       if let Some(to) = vertex_of[first] {
         // Two vertices side by side.
         if to != from {
@@ -9604,7 +9604,7 @@ pub fn morphological_graph_ast(
       visited[first] = true;
       let (mut prev, mut cur, mut steps) = (start, first, 1i128);
       loop {
-        let next = neighbours(cur);
+        let next = neighbors(cur);
         if let Some(&end) = next
           .iter()
           .find(|&&n| n != prev && n != start && vertex_of[n].is_some())
@@ -9638,7 +9638,7 @@ pub fn morphological_graph_ast(
       let mut stack = vec![i];
       visited[i] = true;
       while let Some(p) = stack.pop() {
-        for n in neighbours(p) {
+        for n in neighbors(p) {
           if on_arc[n] && !visited[n] {
             visited[n] = true;
             stack.push(n);
@@ -10179,7 +10179,7 @@ pub fn delete_small_components_ast(
   Ok(Expr::List(out.into()))
 }
 
-/// ComponentMeasurements[labelmatrix, property] measures each labelled
+/// ComponentMeasurements[labelmatrix, property] measures each labeled
 /// component of a label matrix (each distinct nonzero value is a component).
 /// Returns a list of `label -> value` rules sorted by label. Supported
 /// properties: "Count" (pixel count), "Area" (count as a real), and "Label"
@@ -10300,7 +10300,7 @@ pub fn component_measurements_ast(
   Ok(Expr::List(rules.into()))
 }
 
-/// Gray levels of an image as rows of pixels (top row first); colour
+/// Gray levels of an image as rows of pixels (top row first); color
 /// images use the channel mean. `None` for anything that is not an image.
 fn image_gray_matrix(e: &Expr) -> Option<Vec<Vec<f64>>> {
   let Expr::Image {
@@ -10390,7 +10390,7 @@ pub fn morphological_perimeter_ast(
 /// consecutive integers assigned in raster order of first appearance.
 /// Connectivity is 8-way by default; `CornerNeighbors -> False` selects 4-way.
 /// `MorphologicalComponents` of a rank-3 array: voxels above the threshold
-/// labelled by connected component in scan order, 26-connected (6 with
+/// labeled by connected component in scan order, 26-connected (6 with
 /// `CornerNeighbors -> False`). `None` for anything but a numeric rank-3
 /// array.
 fn morphological_components_3d(
@@ -10870,7 +10870,7 @@ enum EdtMetric {
   Chessboard,
 }
 
-/// Exact city-block (4-neighbour) or chessboard (8-neighbour) distance to
+/// Exact city-block (4-neighbor) or chessboard (8-neighbor) distance to
 /// the nearest zero-cost pixel, by a forward and a backward sweep.
 fn chamfer_distance(
   cost: &[f64],
@@ -11570,7 +11570,7 @@ fn threshold_one(x: &Expr, t: &Expr) -> Expr {
   if xf.abs() <= tf { zero } else { x.clone() }
 }
 
-/// Return (numerator, denominator) for an Integer or Rational, normalised
+/// Return (numerator, denominator) for an Integer or Rational, normalized
 /// so the denominator is positive. Real values return None.
 fn as_rational(e: &Expr) -> Option<(i64, i64)> {
   match e {
@@ -12643,7 +12643,7 @@ fn fit_image_to_cell(
 /// with the same width, height, channels, and image type. Concatenates
 /// the f64 buffers directly, preserving precision and image type.
 fn try_assemble_same_shape(outer: &[Expr]) -> Option<Expr> {
-  // Normalise to a 2D grid: if any item is a list, all must be lists.
+  // Normalize to a 2D grid: if any item is a list, all must be lists.
   let is_2d = outer.iter().all(|e| matches!(e, Expr::List(_)));
   let rows: Vec<&[Expr]> = if is_2d {
     let mut out: Vec<&[Expr]> = Vec::with_capacity(outer.len());
@@ -13127,7 +13127,7 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
     return match elem.as_str() {
       "Image" => image(),
-      // The colour channels as bytes.
+      // The color channels as bytes.
       "Data" => eval(call(
         "ImageData",
         vec![
@@ -13137,7 +13137,7 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )),
       "RasterSize" => eval(call("ImageDimensions", vec![image()?])),
       // {width, height, baseline}: the extent in printer's points and the
-      // baseline's distance from the top. Graphics sit on their centre
+      // baseline's distance from the top. Graphics sit on their center
       // (BaselinePosition -> Axis); a line of text or a formula on its
       // ascent, three quarters of the line height.
       "BoundingBox" => {
@@ -14391,7 +14391,7 @@ fn cmc_distance(
     let h = b1.atan2(a1) * to_deg;
     if h < 0.0 { h + 360.0 } else { h }
   };
-  // The CMC formula uses h1 (the reference colour's hue).
+  // The CMC formula uses h1 (the reference color's hue).
   let cos = |deg: f64| (deg / to_deg).cos();
   let t = if (164.0..345.0).contains(&h1) {
     0.56 + (0.2 * cos(h1 + 168.0)).abs()
@@ -14723,7 +14723,7 @@ fn image_measurement(
   let real = |v: f64| Expr::Real(v);
   let count = data.len().max(1) as f64;
   // The histogram the information measures are taken over counts distinct
-  // PIXELS, not distinct samples — a colour pixel is one observation however
+  // PIXELS, not distinct samples — a color pixel is one observation however
   // many channels it carries.
   let pixels = (data.len() / ch.max(1)).max(1) as f64;
   let _ = count;
@@ -14774,8 +14774,8 @@ fn image_measurement(
         .into(),
       )
     })),
-    // The intensity measures read the grey level, which for a single-channel
-    // image is the sample itself. A colour image would need its luma, which
+    // The intensity measures read the gray level, which for a single-channel
+    // image is the sample itself. A color image would need its luma, which
     // is not handled here.
     "MeanIntensity"
     | "TotalIntensity"
@@ -14815,7 +14815,7 @@ fn image_measurement(
     )),
     // The histogram's own squared weight.
     "Energy" => Some(real(histogram().iter().map(|p| p * p).sum())),
-    // The centre of mass of the intensities, over pixel centres measured from
+    // The center of mass of the intensities, over pixel centers measured from
     // the bottom left.
     "IntensityCentroid" if ch == 1 => {
       let total: f64 = data.iter().sum();
@@ -15111,7 +15111,7 @@ pub fn image_forward_transformation_ast(
     out.extend_from_slice(&background);
   }
 
-  // Source sample at continuous pixel position (u, v) (pixel centres at +½).
+  // Source sample at continuous pixel position (u, v) (pixel centers at +½).
   let sample = |u: f64, v: f64, dst: &mut [f64]| {
     let fx = (u - 0.5).clamp(0.0, sw as f64 - 1.0);
     let fy = (v - 0.5).clamp(0.0, sh as f64 - 1.0);
@@ -15264,7 +15264,7 @@ pub fn image_perspective_transformation_ast(
 }
 
 /// ImageTransformation[img, f] — build an image whose every pixel takes the
-/// colour `img` has at the point `f` maps that pixel's position to.
+/// color `img` has at the point `f` maps that pixel's position to.
 ///
 /// `f` receives an `{x, y}` point of the output (in `PlotRange` coordinates,
 /// y pointing up) and returns a point of the input (in `DataRange`
@@ -15385,7 +15385,7 @@ pub fn image_transformation_ast(
           _ => None,
         })
         .filter(|(sx, sy)| sx.is_finite() && sy.is_finite());
-      // Continuous source pixel position (pixel centres at +½, y down).
+      // Continuous source pixel position (pixel centers at +½, y down).
       let uv = source.map(|(sx, sy)| {
         (
           (sx - data_range[0]) / dw * sw as f64,
@@ -15511,7 +15511,7 @@ fn primitive_bounds(e: &Expr, bounds: &mut Option<[f64; 4]>) {
 
 /// Expand one `HighlightImage` annotation into plain graphics primitives:
 /// `ImageMarker[pts, graphic]` places a copy of `graphic` (in image pixel
-/// units) centred on each point; anything else is already a primitive.
+/// units) centered on each point; anything else is already a primitive.
 fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
   match mark {
     Expr::List(items) => {
@@ -15530,7 +15530,7 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
         return;
       }
       let prims = &gargs[0];
-      let centre = if let Some(r) =
+      let center = if let Some(r) =
         option_value(&gargs[1..], "PlotRange").and_then(range_pair_of_pairs)
       {
         (f64::midpoint(r[0], r[1]), f64::midpoint(r[2], r[3]))
@@ -15569,7 +15569,7 @@ fn highlight_primitives(mark: &Expr, out: &mut Vec<Expr>) {
           vec![
             prims.clone(),
             Expr::List(
-              vec![Expr::Real(x - centre.0), Expr::Real(y - centre.1)].into(),
+              vec![Expr::Real(x - center.0), Expr::Real(y - center.1)].into(),
             ),
           ],
         ));
@@ -16273,7 +16273,7 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ch = *channels as usize;
   let (wf, hf) = (w as f64, h as f64);
 
-  // Foreground pixels in image coordinates (pixel centres, y upwards).
+  // Foreground pixels in image coordinates (pixel centers, y upwards).
   let mut points: Vec<(f64, f64)> = Vec::new();
   for row in 0..h {
     for col in 0..w {
@@ -16426,7 +16426,7 @@ pub fn image_lines_ast(all_args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(lines.into()))
 }
 
-/// The number of colour channels of a colour space, `None` when the space
+/// The number of color channels of a color space, `None` when the space
 /// is unknown (an `Automatic` image has no alpha channel to tell apart).
 fn color_space_channels(space: Option<&str>) -> Option<u8> {
   match space? {
@@ -16437,7 +16437,7 @@ fn color_space_channels(space: Option<&str>) -> Option<u8> {
 }
 
 /// Whether the image's last channel is an alpha channel: one past what its
-/// (explicit) colour space needs.
+/// (explicit) color space needs.
 fn has_alpha_channel(channels: u8, space: Option<&str>) -> bool {
   color_space_channels(space).is_some_and(|n| channels == n + 1)
 }
@@ -16476,7 +16476,7 @@ pub fn alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// RemoveAlphaChannel[image] drops the alpha channel;
 /// RemoveAlphaChannel[image, color] first composites the image over a
-/// background of that colour. An image without one is returned as is.
+/// background of that color. An image without one is returned as is.
 pub fn remove_alpha_channel_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -16564,7 +16564,7 @@ pub fn set_alpha_channel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let alpha = |i: usize| -> Option<f64> {
     match args.get(1) {
       None => Some(1.0),
-      // An alpha image of another size sits centred on the image, zero
+      // An alpha image of another size sits centered on the image, zero
       // outside it.
       Some(Expr::Image {
         width: aw,

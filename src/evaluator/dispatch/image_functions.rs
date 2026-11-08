@@ -551,9 +551,9 @@ fn import_json(
 
 /// Import a Netpbm (PPM / PGM / PBM / PNM) file.
 ///
-/// Matches wolframscript's behaviour for the two common failure modes:
+/// Matches wolframscript's behavior for the two common failure modes:
 /// emits `Import::nffil` when the path doesn't exist and `Import::fmterr`
-/// when the file is present but its contents aren't a recognisable Netpbm
+/// when the file is present but its contents aren't a recognizable Netpbm
 /// stream. Both cases return `$Failed`. The `image` crate isn't built
 /// with the `pnm` feature, so even well-formed PPMs currently return
 /// `$Failed` after the magic-byte check passes — but without the error
@@ -1408,7 +1408,7 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
-      // ColorData["HTML" | "Legacy", "ColorRules"]: every name -> colour,
+      // ColorData["HTML" | "Legacy", "ColorRules"]: every name -> color,
       // in table order.
       if let (Expr::String(scheme), Expr::String(property)) =
         (&args[0], &args[1])
@@ -1460,7 +1460,7 @@ pub fn dispatch_image_functions(
       {
         return Some(Ok(color));
       }
-      // ColorData["Atoms", element]: the colour an element is drawn in a
+      // ColorData["Atoms", element]: the color an element is drawn in a
       // molecular model, looked up by symbol or atomic number.
       if let Expr::String(scheme) = &args[0]
         && scheme == "Atoms"
@@ -1468,7 +1468,7 @@ pub fn dispatch_image_functions(
       {
         return Some(Ok(color));
       }
-      // ColorData["HTML", name]: the named CSS colour.
+      // ColorData["HTML", name]: the named CSS color.
       if let (Expr::String(scheme), Expr::String(color_name)) =
         (&args[0], &args[1])
         && scheme == "HTML"
@@ -1523,7 +1523,7 @@ pub fn dispatch_image_functions(
         )));
       }
       // A theme gradient (`"WL14DefaultDensityGradient"`, the plots'
-      // default colour function): its properties, and its colour at t as
+      // default color function): its properties, and its color at t as
       // the `LABColor` blend of its stops.
       if let Expr::String(scheme) = &args[0]
         && let Some(stops) = theme_gradient_stops(scheme)
@@ -1717,7 +1717,7 @@ pub fn dispatch_image_functions(
         )));
       }
       // ColorData["WebSafe"]: applying it to a hex code (`"#99CC00"`) gives
-      // the web-safe colour, via the two-argument form.
+      // the web-safe color, via the two-argument form.
       if matches!(&args[0], Expr::String(s) if s == "WebSafe") {
         let sample = Expr::Function {
           body: Box::new(call(
@@ -2855,7 +2855,7 @@ pub fn dispatch_image_functions(
   None
 }
 
-/// The `"HTML"` named-colour scheme: the CSS colour names with the exact
+/// The `"HTML"` named-color scheme: the CSS color names with the exact
 /// values wolframscript reports. A Demonstrations palette reaches for these
 /// by name (`ColorData["HTML", "SlateBlue"]`), and the lookup ignores case
 /// the way `ColorData` does.
@@ -3003,7 +3003,7 @@ const HTML_COLORS: &[(&str, f64, f64, f64)] = &[
   ("YellowGreen", 0.6039215686274509, 0.803921568627451, 0.19607843137254902),
 ];
 
-/// The `"Crayola"` named-colour scheme, with the values wolframscript reports.
+/// The `"Crayola"` named-color scheme, with the values wolframscript reports.
 #[rustfmt::skip]
 const CRAYOLA_COLORS: &[(&str, f64, f64, f64)] = &[
   ("Almond", 0.9372549019607843, 0.8705882352941177, 0.803921568627451),
@@ -3142,7 +3142,7 @@ const CRAYOLA_COLORS: &[(&str, f64, f64, f64)] = &[
   ("YellowOrange", 1.0, 0.6823529411764706, 0.25882352941176473),
 ];
 
-/// The `"WebSafe"` named-colour scheme: the 216 `#RRGGBB` web-safe colours, in wolframscript's order.
+/// The `"WebSafe"` named-color scheme: the 216 `#RRGGBB` web-safe colors, in wolframscript's order.
 #[rustfmt::skip]
 const WEBSAFE_COLORS: &[(&str, f64, f64, f64)] = &[
   ("#FFFFFF", 1.0, 1.0, 1.0),
@@ -3363,7 +3363,7 @@ const WEBSAFE_COLORS: &[(&str, f64, f64, f64)] = &[
   ("#000000", 0.0, 0.0, 0.0),
 ];
 
-/// The `"GeologicAges"` named-colour scheme: the standard colours of the geologic time units, as wolframscript reports them (six digits).
+/// The `"GeologicAges"` named-color scheme: the standard colors of the geologic time units, as wolframscript reports them (six digits).
 #[rustfmt::skip]
 const GEOLOGICAGES_COLORS: &[(&str, f64, f64, f64)] = &[
   ("Phanerozoic", 0.690196, 0.886275, 0.819608),
@@ -3438,7 +3438,7 @@ const GEOLOGICAGES_COLORS: &[(&str, f64, f64, f64)] = &[
   ("Hadean", 0.5, 0.5, 0.56),
 ];
 
-/// The machine-number named-colour tables beyond HTML and Legacy.
+/// The machine-number named-color tables beyond HTML and Legacy.
 fn named_color_table(
   scheme: &str,
 ) -> Option<&'static [(&'static str, f64, f64, f64)]> {
@@ -3450,7 +3450,7 @@ fn named_color_table(
   }
 }
 
-/// `ColorData["HTML", name]` → the named CSS colour as an `RGBColor`.
+/// `ColorData["HTML", name]` → the named CSS color as an `RGBColor`.
 fn html_named_color(name: &str) -> Option<(f64, f64, f64)> {
   HTML_COLORS
     .iter()
@@ -3458,7 +3458,7 @@ fn html_named_color(name: &str) -> Option<(f64, f64, f64)> {
     .map(|&(_, r, g, b)| (r, g, b))
 }
 
-/// The `"Legacy"` named-colour scheme. Despite the overlapping names it is
+/// The `"Legacy"` named-color scheme. Despite the overlapping names it is
 /// *not* the CSS table: it is the old `Graphics`Colors`` package's palette,
 /// whose channels are stored to six digits and miss the exact `n/255` values
 /// by ~1e-5 (`Wheat` is `0.960799`, not `245/255 = 0.960784`). It also carries
@@ -3666,7 +3666,7 @@ const LEGACY_COLORS: &[(&str, f64, f64, f64, u8)] = &[
   ("Zinc", 0.990005, 0.97, 1.0, 0b000),
 ];
 
-/// Element symbols in atomic-number order with their `"Atoms"` colour
+/// Element symbols in atomic-number order with their `"Atoms"` color
 /// channels as wolframscript stores them (an exact `0` stays exact).
 const ATOM_COLORS: [(&str, [&str; 3]); 118] = [
   ("H", ["0.65", "0.7", "0.7"]),
@@ -3789,7 +3789,7 @@ const ATOM_COLORS: [(&str, [&str; 3]); 118] = [
   ("Og", ["0.635401", "0.0528", "0.226184"]),
 ];
 
-/// `ColorData["Atoms", element]` → the element's colour, for an element
+/// `ColorData["Atoms", element]` → the element's color, for an element
 /// given by symbol (`"O"`) or atomic number (`8`).
 fn atom_color(element: &Expr) -> Option<Expr> {
   let channels = match element {
@@ -3817,7 +3817,7 @@ fn atom_color(element: &Expr) -> Option<Expr> {
   ))
 }
 
-/// `ColorData["Legacy", name]` → the named legacy colour as an `RGBColor`,
+/// `ColorData["Legacy", name]` → the named legacy color as an `RGBColor`,
 /// with each channel already exact-or-inexact as wolframscript stores it.
 fn legacy_named_color(name: &str) -> Option<Expr> {
   let &(_, r, g, b, exact) = LEGACY_COLORS

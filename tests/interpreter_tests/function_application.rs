@@ -982,7 +982,7 @@ mod parallel_map {
   }
 
   // ParallelMap[f, expr, levelspec] should behave like Map[f, expr,
-  // levelspec] (we don't actually parallelise in Woxi). With levelspec
+  // levelspec] (we don't actually parallelize in Woxi). With levelspec
   // 2, f is applied at levels 1 AND 2, so the squared leaves get
   // squared again by the outer mapping into the list.
   #[test]
@@ -1450,7 +1450,7 @@ mod sub_value_assignments {
   #[test]
   fn set_delayed_sub_value_returns_null() {
     // f[1][x_] := x is a SubValue assignment; return Null so the CLI shows
-    // no output (matches wolframscript's surface behaviour).
+    // no output (matches wolframscript's surface behavior).
     clear_state();
     assert_eq!(interpret("freshSubA[1][x_] := x").unwrap(), "\0");
   }
@@ -3908,7 +3908,7 @@ mod negative_levels_and_compound_heads {
   }
 }
 
-// Setting[expr] evaluates to expr; an inline colour control gives its colour.
+// Setting[expr] evaluates to expr; an inline color control gives its color.
 mod setting {
   use super::*;
 

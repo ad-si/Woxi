@@ -106,6 +106,6 @@ feature areas of each version that Woxi does **not** support.
 
 Where a function *is* implemented, its output should match `wolframscript`
 character for character.
-[The known exceptions](mathematica/conformance_gaps.md) are catalogued
+[The known exceptions](mathematica/conformance_gaps.md) are cataloged
 separately — each one verified against the Wolfram Language, but not fixed
 yet.

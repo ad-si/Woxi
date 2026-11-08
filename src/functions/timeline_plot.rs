@@ -59,7 +59,7 @@ fn parse_events(arg: &Expr) -> Vec<TimelineEvent> {
 
   let mut events = Vec::new();
   match &evaluated {
-    // Association: each key -> value pair is a labelled event.
+    // Association: each key -> value pair is a labeled event.
     Expr::Association(pairs) => {
       for (key, val) in pairs {
         if let Some(mut ev) = event_from_date(val) {
@@ -123,7 +123,7 @@ fn parse_one_event(item: &Expr) -> Option<TimelineEvent> {
   }
 }
 
-/// Build an unlabelled event from a date-like expression.
+/// Build an unlabeled event from a date-like expression.
 fn event_from_date(expr: &Expr) -> Option<TimelineEvent> {
   let evaluated = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
 
@@ -224,8 +224,8 @@ fn est_text_width(label: &str, font_size: f64) -> f64 {
     * font_size
 }
 
-/// `TimelinePlot`'s date ticks, as `(time, label)` for the labelled ones
-/// plus the unlabelled minor ones: month ticks (`"Mar 2020"`) a step of
+/// `TimelinePlot`'s date ticks, as `(time, label)` for the labeled ones
+/// plus the unlabeled minor ones: month ticks (`"Mar 2020"`) a step of
 /// 1, 2, 3 or 6 months apart with a tick every month between, or year
 /// ticks over long spans; under two months the generic date ticks.
 fn timeline_ticks(x_min: f64, x_max: f64) -> (Vec<(f64, String)>, Vec<f64>) {
@@ -364,9 +364,9 @@ fn render_timeline_svg(
   // The plot area (`AspectRatio -> 1/10` without labels) holds the levels
   // at heights 1, 2, … over a range padded to `levels + 1/2` and by 5%
   // above; labels add a band of callouts above it.
-  let labelled = events.iter().any(|e| e.label.is_some());
+  let labeled = events.iter().any(|e| e.label.is_some());
   let range = (n_levels as f64 + 0.5) * 1.05;
-  let (unit, plot_top) = if labelled {
+  let (unit, plot_top) = if labeled {
     (16.41, 60.57)
   } else {
     (w / 10.0 / range, 0.0)
@@ -459,7 +459,7 @@ fn render_timeline_svg(
   }
 
   // The date axis: a hairline across the picture with ticks pointing up,
-  // labelled below.
+  // labeled below.
   line(
     &mut body,
     (axis_x0, axis_y),

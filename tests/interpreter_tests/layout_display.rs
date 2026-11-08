@@ -47,7 +47,7 @@ mod layout_display {
       .collect()
   }
 
-  /// Regression: a `Background` row list `{c1, …}` coloured every row
+  /// Regression: a `Background` row list `{c1, …}` colored every row
   /// cyclically; like any explicit spec list it names only the first rows.
   #[test]
   fn grid_background_row_list_is_not_cyclic() {
@@ -159,7 +159,7 @@ mod layout_display {
     assert!(svg.contains("font-weight=\"300\""), "{svg}");
   }
 
-  /// A bare `BarLegend` is drawn as a colour bar with labelled ticks (it
+  /// A bare `BarLegend` is drawn as a color bar with labeled ticks (it
   /// printed its own source); a contour list makes it discrete, and
   /// `LegendLabel` sits above the bar.
   #[test]
@@ -376,7 +376,7 @@ mod layout_display {
   }
 
   /// Regression: a `Dividers` entry's thickness and dashing were dropped;
-  /// only its colour was drawn.
+  /// only its color was drawn.
   #[test]
   fn grid_divider_thickness_and_dashing() {
     let svg = svg_of(
@@ -439,7 +439,7 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
-  /// `Highlighted` defaults to Wolfram's yellow and honours `Background`.
+  /// `Highlighted` defaults to Wolfram's yellow and honors `Background`.
   #[test]
   fn highlighted_background_option() {
     let svg = svg_of("Row[{Highlighted[\"a\", Background -> LightGreen]}]");

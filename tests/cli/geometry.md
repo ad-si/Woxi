@@ -134,7 +134,7 @@ RegionProduct[Disk[{0, 0}], Disk[{0, 0}]]
 ## `CircularArcThrough`
 
 The arc of the circle through the given points, written as a `Circle` running
-from the smallest of their angles about the centre to the largest.
+from the smallest of their angles about the center to the largest.
 
 ```scrut
 $ wo 'CircularArcThrough[{{1, 0}, {0, 1}, {-1, 0}}]'

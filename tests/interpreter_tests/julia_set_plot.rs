@@ -1,7 +1,7 @@
 use super::*;
 
 // The filled Julia set of z^2 + c as a Raster over the plot range: escape
-// time coloured through wolframscript's palette, the set itself black.
+// time colored through wolframscript's palette, the set itself black.
 #[test]
 fn quadratic_raster_pixels() {
   assert_eq!(

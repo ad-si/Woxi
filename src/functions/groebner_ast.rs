@@ -180,7 +180,7 @@ fn poly_sub_scaled(p: &Poly, q: &Poly, c: &Frac, m: &Mono) -> Option<Poly> {
 
 /// Fully reduce p modulo the basis (all terms, not just the leading one):
 /// terms no leading monomial divides are moved to the remainder, the rest are
-/// cancelled in place.
+/// canceled in place.
 fn reduce_field(p: &Poly, basis: &[Poly]) -> Option<Poly> {
   let leads: Vec<Option<(Mono, Frac)>> = basis
     .iter()

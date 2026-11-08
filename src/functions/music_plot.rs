@@ -182,7 +182,7 @@ fn list(items: Vec<Expr>) -> Expr {
 }
 
 /// The primitives of one voice: a rounded rectangle per sounding tone and an
-/// invisible line spanning each rest (so rests still count towards the plot
+/// invisible line spanning each rest (so rests still count toward the plot
 /// range), styled in the voice's color.
 fn voice_primitives(voice: &VoiceTimeline, color: (f64, f64, f64)) -> Expr {
   let pitches: Vec<i128> =
@@ -256,10 +256,10 @@ fn find_divisions(a: i128, b: i128, n: i128) -> Vec<i128> {
   }
 }
 
-/// The time-axis ticks: every measure start labelled with its measure number,
-/// plus unlabelled quarter-note ticks (and eighth-note ticks for at most three
+/// The time-axis ticks: every measure start labeled with its measure number,
+/// plus unlabeled quarter-note ticks (and eighth-note ticks for at most three
 /// measures). Beyond six measures only a selection of measure numbers is
-/// labelled.
+/// labeled.
 fn time_ticks(roll: &Roll) -> Vec<Expr> {
   let tick = |x: f64, label: Expr, len: f64| {
     list(vec![
@@ -301,7 +301,7 @@ fn time_ticks(roll: &Roll) -> Vec<Expr> {
   ticks
 }
 
-/// The pitch-axis ticks: every C and G labelled with its name and octave.
+/// The pitch-axis ticks: every C and G labeled with its name and octave.
 fn pitch_ticks(lo: f64, hi: f64) -> Vec<Expr> {
   let mut ticks = Vec::new();
   let first = (lo / 12.0).floor() as i128 - 1;
@@ -378,7 +378,7 @@ pub fn music_plot(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   );
 
   // A narrow pitch range is shown in a fixed seven-semitone window around its
-  // centre; a wider one spans the notes, the time axis sitting just below.
+  // center; a wider one spans the notes, the time axis sitting just below.
   let (lo, hi) = (roll.pitch_range.0 as f64, roll.pitch_range.1 as f64);
   let (origin_y, y_range, tick_range) = if hi - lo < 7.0 {
     let c = f64::midpoint(lo, hi);
@@ -590,7 +590,7 @@ pub fn score_sheet_music_svg(score: &Expr) -> Option<String> {
   let staff = music_staff_svg(score)?;
   let (staff_w, staff_h) =
     (svg_attr(&staff, "width")?, svg_attr(&staff, "height")?);
-  // Tall enough for both buttons; shorter notation is centred vertically.
+  // Tall enough for both buttons; shorter notation is centered vertically.
   let height = staff_h.max(STOP_BUTTON.1 + BUTTON_RADIUS + 8.0);
   let staff_x = BUTTON_COLUMN_W + 8.0;
   let width = staff_x + staff_w;
@@ -615,7 +615,7 @@ pub const PANEL_W: f64 = 440.0;
 const ROLL_H: f64 = 124.0;
 const FOOTER_LINE_H: f64 = 22.0;
 const BUTTON_COLUMN_W: f64 = 46.0;
-/// Centres of the play and stop buttons in front of a displayed score, for
+/// Centers of the play and stop buttons in front of a displayed score, for
 /// hosts that make them clickable (see [`score_audio`]).
 pub const PLAY_BUTTON: (f64, f64) =
   (BUTTON_COLUMN_W / 2.0, ROLL_H / 2.0 - 19.0);

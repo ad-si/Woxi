@@ -2,11 +2,11 @@ use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 
 /// `BoxMatrix[r, w]` / `DiamondMatrix[r, w]`: the structuring element of
-/// radius `r` centred in a grid `w` wide along each dimension, zero
+/// radius `r` centered in a grid `w` wide along each dimension, zero
 /// elsewhere. Both radius and width may be given per dimension.
 ///
 /// The grid is addressed in doubled coordinates `d = |2 i - (w + 1)|`, which
-/// keeps the centre exact for an even width — there the centre falls between
+/// keeps the center exact for an even width — there the center falls between
 /// two cells and the element ends up one cell wider, so `BoxMatrix[0, 4]`
 /// covers a 2 x 2 block rather than a single one. The threshold along a
 /// dimension is `t = 2 r + (w + 1) mod 2`; a box keeps the cells with
@@ -225,7 +225,7 @@ pub fn dispatch_linear_algebra_functions(
       ));
     }
     // Dot[x] returns its single argument unchanged; Dot[a, b, c, …] contracts
-    // neighbours left-to-right, but only where a pair actually evaluates —
+    // neighbors left-to-right, but only where a pair actually evaluates —
     // Dot is Flat, so `Dot[a, m1, m2]` becomes `Dot[a, m1.m2]` and
     // `Dot[a, b, c]` stays flat rather than nesting as `Dot[Dot[a, b], c]`.
     "Dot" if args.len() == 1 => {
@@ -1607,7 +1607,7 @@ pub fn dispatch_linear_algebra_functions(
     // The legacy `VectorAnalysis` package functions — DotProduct,
     // CrossProduct, ScalarTripleProduct, Coordinates, SetCoordinates,
     // CoordinatesToCartesian, CoordinatesFromCartesian — are deliberately
-    // left unevaluated to match wolframscript's `-code` behaviour, which
+    // left unevaluated to match wolframscript's `-code` behavior, which
     // does not load that legacy package.
     "TensorWedge" if !args.is_empty() => {
       return Some(crate::functions::linear_algebra_ast::tensor_wedge_ast(
@@ -2693,7 +2693,7 @@ pub fn dispatch_linear_algebra_functions(
     }
     // ScalingTransform[{s1, s2, ...}] or ScalingTransform[{s1, s2, ...}, {c1, c2, ...}]
     // A list of factors scales along each axis; the optional second argument
-    // is then the centre. A scalar factor instead takes a direction vector,
+    // is then the center. A scalar factor instead takes a direction vector,
     // handled by the arm below.
     "ScalingTransform"
       if (args.len() == 1 || args.len() == 2)
@@ -2738,7 +2738,7 @@ pub fn dispatch_linear_algebra_functions(
     }
     // ScalingTransform[s, v] scales by s along the direction of v, leaving
     // the perpendicular directions alone: M = I + (s - 1) (v⊗v)/(v·v).
-    // A third argument centres it at that point, giving the translation
+    // A third argument centers it at that point, giving the translation
     // p - M·p.
     "ScalingTransform" if args.len() == 2 || args.len() == 3 => {
       let uneval = || Some(Ok(unevaluated("ScalingTransform", args)));
@@ -2941,7 +2941,7 @@ pub fn dispatch_linear_algebra_functions(
             // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
             row.push(simplify(m_entry(i, j)));
           }
-          // Translation column p - M·p, zero when there is no centre.
+          // Translation column p - M·p, zero when there is no center.
           row.push(match &center {
             Some(c) => simplify(plus(
               std::iter::once(c[i].clone())
@@ -3987,7 +3987,7 @@ pub fn dispatch_linear_algebra_functions(
       if let Some(n) = expr_to_i128(&args[0])
         && n > 0
       {
-        // wolframscript materialises FourierMatrix for n up to about
+        // wolframscript materializes FourierMatrix for n up to about
         // 600 and switches to a lazy StructuredArray placeholder above
         // that. Woxi enumerates each (j, k) entry symbolically, so the
         // 640k symbolic Cos/Sin calls for n=800 would otherwise time
@@ -4840,7 +4840,7 @@ fn matrix_minimal_polynomial(
     if let Some(Expr::List(coeffs)) = basis.first()
       && coeffs.len() == k + 1
     {
-      // Normalise to monic by dividing through by the leading coefficient.
+      // Normalize to monic by dividing through by the leading coefficient.
       let lead = coeffs[k].clone();
       let mut terms: Vec<Expr> = Vec::with_capacity(k + 1);
       for (i, c) in coeffs.iter().enumerate() {
@@ -4945,7 +4945,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
     return None;
   }
 
-  // Build the result matrix, initialised to zero.
+  // Build the result matrix, initialized to zero.
   let zero = Expr::Integer(0);
   let mut result: Vec<Vec<Expr>> = vec![vec![zero.clone(); size]; size];
 
@@ -4988,7 +4988,7 @@ fn matrix_power_block_symbolic(rows: &[Expr], n_expr: &Expr) -> Option<Expr> {
 }
 
 /// Closed form for `M^n` of a 2×2 matrix with distinct eigenvalues
-/// via the diagonalisation `M^n = c_1·λ_1^n + c_2·λ_2^n` where
+/// via the diagonalization `M^n = c_1·λ_1^n + c_2·λ_2^n` where
 /// `c_1 = (M − λ_2 I)/(λ_1 − λ_2)` and `c_2 = (λ_1 I − M)/(λ_1 − λ_2)`.
 ///
 /// Only handles 2×2 integer-entry blocks with a negative discriminant
@@ -5036,7 +5036,7 @@ fn matrix_power_2x2_symbolic_block(
   }
 
   // Build `Power[Complex[re, im], n]` directly so Woxi doesn't
-  // canonicalise it through `Power[Times[-1, I], n] → Times[-1,
+  // canonicalize it through `Power[Times[-1, I], n] → Times[-1,
   // Power[I, n]]`, which is mathematically wrong for symbolic n.
   let lam_power = |re: i128, im: i128| -> Expr {
     let base = if re == 0 && im == 1 {

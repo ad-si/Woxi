@@ -56,7 +56,7 @@ fn automatic_spacing(n: usize) -> f64 {
   1.0 / (0.645 + 0.1453 * (n.max(1) - 1) as f64)
 }
 
-/// Geometry of `n` boxes centred on 1, 2, …, n.
+/// Geometry of `n` boxes centered on 1, 2, …, n.
 #[derive(Clone, Copy)]
 pub(crate) struct BoxSlots {
   /// Half the width of a box.
@@ -79,7 +79,7 @@ impl BoxSlots {
       .unwrap_or_else(|| automatic_spacing(n));
     let half = 0.5 / (1.0 + s);
     let gap = 0.5 - half;
-    // A lone box gets a whole slot either side; more boxes settle towards
+    // A lone box gets a whole slot either side; more boxes settle toward
     // half a gap (fitted to WL 15).
     let mut outer = gap + (1.0 - gap) * (-1.829 * (n.max(1) - 1) as f64).exp();
     if !whisker_caps {
@@ -106,11 +106,11 @@ pub(crate) fn bar_spacing_value(value: &Expr) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64(v)
 }
 
-/// Category ticks (one per box, labelled by `labels`) for the frame edge
-/// facing the category axis, and the unlabelled ticks of the edge opposite.
+/// Category ticks (one per box, labeled by `labels`) for the frame edge
+/// facing the category axis, and the unlabeled ticks of the edge opposite.
 pub(crate) fn category_frame_ticks(n: usize, labels: &[Expr]) -> (Expr, Expr) {
   let len = || list(vec![Expr::Real(0.008), Expr::Integer(0)]);
-  let labelled = (0..n)
+  let labeled = (0..n)
     .flat_map(|i| {
       let pos = || Expr::Real((i + 1) as f64);
       let mut ticks = vec![list(vec![
@@ -133,7 +133,7 @@ pub(crate) fn category_frame_ticks(n: usize, labels: &[Expr]) -> (Expr, Expr) {
       ])
     })
     .collect();
-  (list(labelled), list(plain))
+  (list(labeled), list(plain))
 }
 
 /// Where the boxes grow from.
@@ -208,12 +208,12 @@ pub(crate) fn chart_frame_ticks(
   _value_range: (f64, f64),
 ) -> Expr {
   let (cat, cat_opposite) = category_frame_ticks(n, labels);
-  let value = |labelled: bool| {
+  let value = |labeled: bool| {
     if origin.mirrored() {
       let reverse =
         crate::syntax::string_to_expr("-# &").expect("reverse scaling parses");
       call(
-        if labelled {
+        if labeled {
           "Charting`ScaledTicks"
         } else {
           "Charting`ScaledFrameTicks"

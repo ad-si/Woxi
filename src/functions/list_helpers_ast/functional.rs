@@ -265,7 +265,7 @@ pub(crate) fn peak_runs(
     }
     let v = vals[i];
     let len = (j - i + 1) as f64;
-    // The neighbours: real ones, the padding constant, or none at a
+    // The neighbors: real ones, the padding constant, or none at a
     // boundary.
     let left = if i > 0 { Some(vals[i - 1]) } else { padding };
     let right = if j + 1 < n {
@@ -338,12 +338,12 @@ pub(crate) fn peak_padding(args: &[Expr]) -> Result<Option<f64>, ()> {
 /// list.
 ///
 /// A peak is a maximal run of equal values that strictly exceeds its real
-/// neighbours, reported as `{position, value}`. Which runs count, and where
+/// neighbors, reported as `{position, value}`. Which runs count, and where
 /// they are reported, depends on whether the run touches a list boundary
 /// (all wolframscript-verified):
 ///
 /// * A run strictly inside the list is reported at the mean of its 1-based
-///   indices, so a flat plateau yields a half-integer centre:
+///   indices, so a flat plateau yields a half-integer center:
 ///   `FindPeaks[{1,3,3,1}]` is `{{5/2, 3}}`.
 /// * A run touching exactly one boundary is reported at that boundary index —
 ///   `FindPeaks[{3,3,1}]` is `{{1, 3}}`, not `{{3/2, 3}}` — and only counts at
@@ -352,8 +352,8 @@ pub(crate) fn peak_padding(args: &[Expr]) -> Result<Option<f64>, ()> {
 ///
 /// The sharpness cut-off keeps only peaks whose sharpness reaches it. For a run
 /// of length `L` strictly inside the list that is `dl` above its left
-/// neighbour and `dr` above its right one, the sharpness is `(dl + dr)/L`; for
-/// a boundary run, whose only real neighbour it clears by `d`, it is `2d/L^2`
+/// neighbor and `dr` above its right one, the sharpness is `(dl + dr)/L`; for
+/// a boundary run, whose only real neighbor it clears by `d`, it is `2d/L^2`
 /// (so `2d` for a single element and `d/2` for two). The threshold keeps only
 /// peaks whose value reaches it. Either may be given as `{value, scale}` to
 /// name the smoothing scale it is measured at.
@@ -490,7 +490,7 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let mut peaks: Vec<Expr> = Vec::new();
   for run in peak_runs(&vals, sharpness.0, threshold.0, padding) {
-    // `twice_pos` is twice the reported position, so a plateau centred
+    // `twice_pos` is twice the reported position, so a plateau centered
     // between two indices keeps its exact half-integer position.
     let pos = if run.twice_pos % 2 == 0 {
       Expr::Integer((run.twice_pos / 2) as i128)
@@ -1037,7 +1037,7 @@ pub fn nest_while_ast(
   max_iterations: Option<i128>,
   extra_n: i128,
 ) -> Result<Expr, InterpreterError> {
-  // We always materialise the full history when `extra_n` could need it,
+  // We always materialize the full history when `extra_n` could need it,
   // so that negative `extra_n` can step back through previously seen values.
   let history = nest_while_history(func, init, test, m, max_iterations)?;
   let len = history.len() as i128;

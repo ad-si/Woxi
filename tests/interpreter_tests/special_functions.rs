@@ -2579,15 +2579,15 @@ mod cases {
   fn three_j_symbol_eq_neg_recip_sqrt() {
     // Regression: result must compare equal to -(1/(3 Sqrt[2])).
     // Previously failed because Sqrt[1/2] yielded BinaryOp Divide(1, Sqrt[2])
-    // while the RHS normalised to Power[2, -1/2].
+    // while the RHS normalized to Power[2, -1/2].
     assert_case(
       r#"ThreeJSymbol[{2, 1}, {2, 2}, {4, -3}] == -(1 / (3 Sqrt[2]))"#,
       r#"True"#,
     );
   }
   #[test]
-  fn sqrt_one_over_n_normalised() {
-    // Sqrt[1/n] must normalise to Power[n, -1/2] like Wolfram, not
+  fn sqrt_one_over_n_normalized() {
+    // Sqrt[1/n] must normalize to Power[n, -1/2] like Wolfram, not
     // BinaryOp Divide(1, Sqrt[n]).
     assert_case(r#"Sqrt[1/2] == 1/Sqrt[2]"#, r#"True"#);
     assert_case(r#"Head[Sqrt[1/2]]"#, r#"Power"#);
@@ -3669,7 +3669,7 @@ mod cases {
     assert_case("Beta[-1, 2]", "ComplexInfinity");
     assert_case("Beta[-1, 5]", "ComplexInfinity");
     assert_case("Beta[-1, -1]", "ComplexInfinity");
-    // Cancelling poles give the finite analytic-continuation value.
+    // Canceling poles give the finite analytic-continuation value.
     assert_case("Beta[-2, 1]", "-1/2");
     assert_case("Beta[1, -2]", "-1/2");
     assert_case("Beta[-3, 2]", "1/6");
@@ -3689,7 +3689,7 @@ mod cases {
     assert_case("Beta[20, 20]", "1/1378465288200");
     assert_case("Beta[100, 2]", "1/10100");
     assert_case("Beta[50, 50]", "1/2522283613639104833370312431400");
-    // The cancelling-pole branch (one non-positive argument) is BigInt too.
+    // The canceling-pole branch (one non-positive argument) is BigInt too.
     assert_case("Beta[-30, 5]", "-1/712530");
   }
 

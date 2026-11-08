@@ -529,7 +529,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A system of several equations with machine coefficients is solved the
   // way wolframscript does it: rationalize, solve exactly, numericize. The
   // inexact elimination drops branches — a factor `x1` that a machine
-  // coefficient keeps from cancelling cleanly loses the `x1 -> 0` family
+  // coefficient keeps from canceling cleanly loses the `x1 -> 0` family
   // (PhasePlaneAnalysisOfABiochemicalReactor). Only coefficients that are
   // close to simple rationals are taken this way: a machine number such as a
   // computed coordinate rationalizes to a 53-bit fraction whose radicals
@@ -653,7 +653,7 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let numerized = nsolve_numerize(&symbolic)?;
   // An elimination that ran into an infinity (radicals of machine numbers
-  // squared into huge cancelling terms) proves nothing: drop such
+  // squared into huge canceling terms) proves nothing: drop such
   // solutions, and with none left search numerically.
   let numerized = match numerized {
     Expr::List(ref sols) if sols.iter().any(has_non_finite_value) => {
@@ -805,7 +805,7 @@ fn complex_number_expr(re: f64, im: f64) -> Expr {
 /// Newton iterations on `{p, q} == 0` from an approximate common root, in
 /// complex arithmetic. Repeated roots of the elimination polynomial only
 /// give a few digits; the system itself is usually regular there. `None`
-/// when the Jacobian is singular or the iteration leaves the neighbourhood.
+/// when the Jacobian is singular or the iteration leaves the neighborhood.
 fn polish_pair_root(
   polys: &[Expr],
   vars: &[String],
@@ -1075,7 +1075,7 @@ fn filter_real_nsolve_solutions(expr: Expr) -> Expr {
 /// wolframscript lists NSolve roots ordered by ascending real part, breaking
 /// ties by ascending imaginary part (the symbolic Solve order they inherit is
 /// not numerically sorted). Only reorder when every solution is a single
-/// numeric `var -> value` rule; non-numericised solutions are left untouched.
+/// numeric `var -> value` rule; non-numericized solutions are left untouched.
 ///
 /// Multi-variable systems come out of wolframscript's numerical
 /// polynomial-system path (Gröbner elimination plus eigenvalue root-finding),
@@ -2017,7 +2017,7 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
   }
   // Evaluate p(z) for complex z using Horner's scheme with FMA.
   // The FMA-based form is more accurate near a root and helps the polish
-  // step distinguish the correctly-rounded f64 from its neighbour.
+  // step distinguish the correctly-rounded f64 from its neighbor.
   let eval_p = |zr: f64, zi: f64| -> (f64, f64) {
     let mut re = monic[n];
     let mut im = 0.0;
@@ -2034,7 +2034,7 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
     (re, im)
   };
 
-  // Initialise n distinct roots on a circle.
+  // Initialize n distinct roots on a circle.
   // Use complex base 0.4 + 0.9i as in classic Durand-Kerner.
   let base_r = 0.4_f64;
   let base_i = 0.9_f64;
@@ -2307,7 +2307,7 @@ pub fn solve_values_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// NSolveValues[eqns, vars] / NSolveValues[eqns, vars, domain] — the numeric
-/// analogue of SolveValues: the variable VALUES from NSolve rather than the
+/// analog of SolveValues: the variable VALUES from NSolve rather than the
 /// `{var -> value}` rules. A single variable yields a flat list of values; a
 /// list of variables yields a list of value-lists (one per solution), in the
 /// order the variables are given.
@@ -5725,7 +5725,7 @@ fn solve_modular(
     ],
   ))?;
   // `False` means no solutions; `True` means every value works, which Reduce
-  // does not report for a modular system, so anything else unrecognised leaves
+  // does not report for a modular system, so anything else unrecognized leaves
   // the call alone rather than guessing.
   match &reduced {
     Expr::Identifier(s) if s == "False" => {
@@ -7612,11 +7612,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let divide = |num: &Expr| -> Expr {
         let quotient = solve_divide(num, &two_a);
         if common(num) > 1
-          && let Ok(cancelled) = super::cancel_ast(std::slice::from_ref(
+          && let Ok(canceled) = super::cancel_ast(std::slice::from_ref(
             &eval_expr(quotient.clone()),
           ))
         {
-          return cancelled;
+          return canceled;
         }
         eval_expr(quotient)
       };
@@ -8010,7 +8010,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// loses a variable and stays a polynomial system.
 ///
 /// Returns `None` for anything this cannot settle — a non-polynomial or
-/// parameterised equation, a system that stays underdetermined, a polynomial
+/// parameterized equation, a system that stays underdetermined, a polynomial
 /// Woxi cannot solve in radicals — which leaves the caller on its previous
 /// path.
 /// True if `expr` carries a subexpression that is neither arithmetic
@@ -8083,7 +8083,7 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
     // (`q[[1]]`, `f[1]`) is such a parameter too even though it is not a
     // symbol — without this, a system whose coefficients are all opaque
     // looked parameter-free and went down the resultant path, which
-    // returned the uncancelled quotients the general elimination path
+    // returned the uncanceled quotients the general elimination path
     // reports as the plain `{{x -> q[[1]], y -> q[[2]]}}`.
     let mut free = Vec::new();
     collect_solve_vars(&poly, &mut free);
@@ -8391,7 +8391,7 @@ fn poly_system_solutions(
 /// any extra copies of such a point are the artifact, not a real
 /// multiplicity — where the Jacobian is singular, every copy is kept.
 ///
-/// A second line of defence: a system whose variables have to be
+/// A second line of defense: a system whose variables have to be
 /// eliminated against each other no longer reports a multiplicity at all
 /// (see `coupled_variables`), so nothing should reach here with copies to
 /// drop.
@@ -8917,7 +8917,7 @@ fn substitute_values(expr: &Expr, vars: &[String], values: &[Expr]) -> Expr {
 /// An exact substitution may leave a root such as `Sqrt[7]/2` in a form that
 /// does not collapse to a literal zero, and an inexact one never lands on
 /// zero exactly, so the residual is weighed against the size of the terms it
-/// cancelled between.
+/// canceled between.
 fn poly_vanishes_at(poly: &Expr, vars: &[String], values: &[Expr]) -> bool {
   let substituted = substitute_values(poly, vars, values);
   if is_zero_expr(&substituted) {
@@ -8926,7 +8926,7 @@ fn poly_vanishes_at(poly: &Expr, vars: &[String], values: &[Expr]) -> bool {
   let Some((re, im)) = try_extract_complex_f64(&substituted) else {
     return false;
   };
-  // The size of the terms that cancelled is the rounding error to expect, so
+  // The size of the terms that canceled is the rounding error to expect, so
   // measure each term of the polynomial itself at the point: the evaluated
   // sum has already lost them (`1.4e15 - 1.4e15 + 1.` is just `1.`).
   let mut scale: f64 = 1.0;
@@ -11138,7 +11138,7 @@ fn try_solve_inverse_function(
         call1("Tan", val.clone())
       }
       // ArcXxxDegrees[inner] == val → inner == Xxx[val Degree]. The
-      // degree-flavoured arc functions invert to ordinary trig functions
+      // degree-flavored arc functions invert to ordinary trig functions
       // applied to `val * Degree`.
       "ArcSinDegrees" | "ArcCosDegrees" | "ArcTanDegrees" | "ArcCotDegrees"
       | "ArcSecDegrees" | "ArcCscDegrees" => {
@@ -13191,7 +13191,7 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Root[f, k, 0] is the exact form (same as Root[f, k]). Root[f, k, 1]
   // requests fast numerical evaluation — we leave it symbolic for now,
-  // matching wolframscript's behaviour when it cannot simplify to a
+  // matching wolframscript's behavior when it cannot simplify to a
   // closed form.
   if args.len() == 3 && !matches!(&args[2], Expr::Integer(0 | 1)) {
     return Ok(unevaluated("Root", args));
@@ -13895,7 +13895,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return find_root_ast(&single);
   }
 
-  // Parse the options we honour: Method -> "Secant" picks the secant iteration,
+  // Parse the options we honor: Method -> "Secant" picks the secant iteration,
   // and MaxIterations caps the number of steps. The rest are accepted and
   // ignored (see the note on AccuracyGoal/PrecisionGoal below).
   let mut use_secant = false;
@@ -14297,7 +14297,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Re-evaluate the LHS so a held variable name with an OwnValue (e.g.
   // `x = "I am the result!"; FindRoot[…, {x, 1}]`) gets surfaced as that
   // bound value in the returned rule, matching wolframscript's
-  // `{I am the result! -> 1.149…}` behaviour.
+  // `{I am the result! -> 1.149…}` behavior.
   let lhs_ident = Expr::Identifier(var);
   let lhs =
     crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
@@ -17296,7 +17296,7 @@ fn minimize_single_var(
   // search never sees it (d/dx Abs = Sign is never zero). Add those breakpoints
   // as candidate minimizers so e.g. Minimize[Abs[x - 3], x] -> {0, {x -> 3}}.
   // Only keep a breakpoint that is a genuine local minimum (the objective does
-  // not dip below it in a small neighbourhood); this rejects concave kinks such
+  // not dip below it in a small neighborhood); this rejects concave kinks such
   // as the maximum of -Abs[x], where the true minimum is unbounded.
   let eval_num = |xval: &Expr| -> Option<f64> {
     minimize_eval_exact(&f_inner, var, xval)
@@ -20653,7 +20653,7 @@ fn two_point_brent_minimum(
   if fm < fa && fm < fb {
     (ax, bx, cx) = (a, m, b);
   } else {
-    // Downhill from the higher start towards (and past) the lower one.
+    // Downhill from the higher start toward (and past) the lower one.
     let (mut p, mut fp, mut q, mut fq) = if fb <= fa {
       (a, fa, b, fb)
     } else {
@@ -20831,9 +20831,9 @@ fn find_minimum_inner(
   let evaluation_monitor = find_option(&args[2..], "EvaluationMonitor");
 
   // Trailing arguments are options (e.g. MaxIterations -> 2,
-  // Method -> "Newton"). They aren't honoured yet, but we accept them
+  // Method -> "Newton"). They aren't honored yet, but we accept them
   // silently rather than aborting so call shapes match Wolfram.
-  // Only the first two positional arguments drive the optimisation.
+  // Only the first two positional arguments drive the optimization.
   //
   // `{f}` (a one-element list) is `{f, constraints...}` with zero
   // constraints — plain unconstrained `f`, same as writing it bare. Unwrap
@@ -21119,7 +21119,7 @@ fn find_minimum_inner(
   // Pre-flight: if f doesn't reduce to a real number at the starting
   // point (e.g. contains an unbound symbol like phi[x]), emit
   // {func_name}::nrnum and return the call unevaluated. Matches
-  // wolframscript's behaviour and lets script chains keep flowing
+  // wolframscript's behavior and lets script chains keep flowing
   // instead of aborting with a hard "Cannot evaluate numerically".
   if eval_obj(f, &x).is_err() {
     let mut substituted = f.clone();
@@ -21321,7 +21321,7 @@ fn find_minimum_inner(
       // Signed Hessian
       let mut hess = vec![vec![0.0; n]; n];
       if hess_exprs.is_empty() {
-        // Forward differences of the symbolic gradient, symmetrised.
+        // Forward differences of the symbolic gradient, symmetrized.
         for j in 0..n {
           let step = 1e-6 * (1.0 + x[j].abs());
           let mut shifted = x.clone();
@@ -21971,7 +21971,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
         // A factor this function cannot decompose (e.g. the `1/(1+z)` inside
         // `z/(1+z)`) reports itself back as a "coefficient" that still
         // contains `var` — its (-1)-power sentinel, meant to signal
-        // "unrecognised structure", is indistinguishable from a genuine
+        // "unrecognized structure", is indistinguishable from a genuine
         // negative power once it has combined multiplicatively with a real
         // `var^1` factor elsewhere in the same term (1 + -1 = 0, disguising a
         // rational term as a constant one). Requiring the reported
@@ -22720,7 +22720,7 @@ fn nminimize_ast_impl(
   if has_coupling_constraint {
     // The grid sampler below only understands per-variable box bounds, so a
     // coupling constraint would be silently ignored. Always run the numeric
-    // penalty-method optimizer, which honours arbitrary constraints.
+    // penalty-method optimizer, which honors arbitrary constraints.
     let numeric =
       nminimize_penalty(&objective, &constraints, &vars, maximize).ok();
 
@@ -22918,10 +22918,10 @@ fn nminimize_ast_impl(
         break;
       }
     } else {
-      // The centre, then a Halton sequence over the box.
-      let centre: Vec<f64> =
+      // The center, then a Halton sequence over the box.
+      let center: Vec<f64> =
         sb.iter().map(|&(lo, hi)| f64::midpoint(lo, hi)).collect();
-      visit(&centre);
+      visit(&center);
       let primes = first_primes(n);
       for k in 1..=HALTON_POINTS {
         let pt: Vec<f64> = sb
@@ -23317,7 +23317,7 @@ fn nminimize_ast_impl(
   //
   // That cleanup only matters for small, closed-form objectives. On a large
   // one (e.g. an option-pricing formula with nested `Erfc` terms) the exact
-  // solver's factoring and cancelling never finishes, so the numeric optimum
+  // solver's factoring and canceling never finishes, so the numeric optimum
   // stands on its own.
   let sym_name = if maximize { "Maximize" } else { "Minimize" };
   // A radical of the unknowns in several variables (a sum of distances,
@@ -23391,7 +23391,7 @@ const SYMBOLIC_REFINEMENT_MAX_LEAVES: usize = 150;
 /// orders of magnitude too slow to afford a thorough search. Compiling the
 /// arithmetic once into this closed enum makes each evaluation a few hundred
 /// floating-point ops, so many restarts / iterations stay cheap. Anything the
-/// compiler doesn't recognise yields `None`, and the caller falls back to the
+/// compiler doesn't recognize yields `None`, and the caller falls back to the
 /// slow AST path.
 pub(crate) enum NumNode {
   Const(f64),
@@ -23423,7 +23423,7 @@ pub(crate) enum NumNode {
     Option<std::rc::Rc<crate::functions::ode_ast::NumericGrid>>,
     Vec<Self>,
   ),
-  // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
+  // A subexpression compile_numeric doesn't otherwise recognize (e.g. a
   // distribution's CDF/PDF), evaluated via the full AST evaluator with the
   // current point substituted in. Isolating just this piece — rather than
   // failing the whole compile and re-cloning/substituting/evaluating the
@@ -24089,7 +24089,7 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           .collect::<Option<Vec<_>>>()
           .filter(|nodes| !nodes.is_empty())
           .map(|nodes| fold_binary(nodes, f64::max)),
-        // An unrecognised function (e.g. CDF of a distribution) still
+        // An unrecognized function (e.g. CDF of a distribution) still
         // compiles: it's isolated in a `Fallback` node rather than failing
         // the whole expression's compilation.
         _ => Some(NumNode::Fallback(
@@ -24125,7 +24125,7 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         args.iter().map(&c).collect::<Option<_>>()?,
       ))
     }
-    // Anything else unrecognised (comparisons, curried calls, …) also falls
+    // Anything else unrecognized (comparisons, curried calls, …) also falls
     // back in isolation rather than failing the whole compile.
     _ => Some(NumNode::Fallback(
       std::rc::Rc::new(expr.clone()),
@@ -25152,7 +25152,7 @@ fn condition_atoms(
 /// slack `t` of the strict inequalities (`a.x + c > 0` becomes
 /// `a.x + c >= t`; capped at 1 where it is unbounded) so that a positive
 /// optimum proves them satisfiable and a zero optimum, like an infeasible
-/// program, proves there is no instance. The largest slack centres a
+/// program, proves there is no instance. The largest slack centers a
 /// bounded interval: `3 < x < 10` gives `x -> 13/2`. Further instances are
 /// the extreme points of the same system with the slack fixed at half its
 /// optimum, which keeps them strictly inside, and then midpoints of those.
@@ -25298,7 +25298,7 @@ fn find_instance_linear(
   };
   let slack_between = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
 
-  // The largest slack, which centres a bounded interval; where it can grow
+  // The largest slack, which centers a bounded interval; where it can grow
   // without bound it is capped at 1.
   let mut objective = vec![Expr::Integer(0); k + 1];
   objective[k] = Expr::Integer(-1);
@@ -25425,7 +25425,7 @@ fn find_instance_numerical(
     }
     // Nothing inside the scan window: the solution set may be a ray or an
     // interval far from the origin (e.g. `x > 1000`). Probe growing
-    // magnitudes, then bisect back towards the origin to land on the
+    // magnitudes, then bisect back toward the origin to land on the
     // integer closest to it.
     if results.is_empty() {
       let holds = |v: i128| {

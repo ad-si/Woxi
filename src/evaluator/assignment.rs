@@ -76,7 +76,7 @@ fn pattern_head_tag(expr: &Expr) -> Option<String> {
 
 /// Return the head symbol of a `Format` LHS pattern so the rule can be keyed
 /// in `FORMAT_VALUES`. For `F[x_]` returns `Some("F")`; for a bare symbol
-/// returns the symbol name. Returns None for unrecognised shapes.
+/// returns the symbol name. Returns None for unrecognized shapes.
 fn format_pattern_head(pat: &Expr) -> Option<String> {
   match pat {
     Expr::Identifier(s) => Some(s.clone()),
@@ -2967,7 +2967,7 @@ fn downvalue_arg_info(
           // `Pattern[name, OptionsPattern[…]]` — named OptionsPattern
           // (e.g. `opt:OptionsPattern[]`) matches zero or more Rule
           // arguments. The slot keeps the `__opts{i}` synthetic name so
-          // the option-bindings collector recognises it, and the
+          // the option-bindings collector recognizes it, and the
           // user-visible name is rewritten to that slot in the body, so
           // `f[opts : OptionsPattern[]] := {opts}` splices the options
           // it matched — the idiom for passing them on whole.
@@ -6709,7 +6709,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     (name.clone(), args.clone())
   } else {
     // Atomic LHS (e.g. `a ^= 3`): wolframscript emits UpSet::normal and
-    // leaves the call unevaluated. Match that behaviour rather than
+    // leaves the call unevaluated. Match that behavior rather than
     // aborting with an InterpreterError.
     crate::emit_message(&format!(
       "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}.",

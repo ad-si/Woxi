@@ -18,7 +18,7 @@ pub struct Sketch {
   pub h: f64,
 }
 
-/// Colours used across scenes.
+/// Colors used across scenes.
 pub mod col {
   use super::super::raster::{Rgb, rgb8};
   pub const STONE: Rgb = rgb8(200, 175, 120);

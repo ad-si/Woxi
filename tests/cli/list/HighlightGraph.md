@@ -25,8 +25,8 @@ $ wo 'Length[AnnotationValue[HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], 1 <-> 2],
 1
 ```
 
-`Style[part, directives]` inside the specification picks the colour for that
-part, which is how a graph is coloured by a per-vertex quantity. The parts
+`Style[part, directives]` inside the specification picks the color for that
+part, which is how a graph is colored by a per-vertex quantity. The parts
 themselves are recorded without their styles.
 
 ```scrut

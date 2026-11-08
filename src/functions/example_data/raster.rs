@@ -14,7 +14,7 @@ pub type Rgb = [f64; 3];
 pub const BLACK: Rgb = [0.0, 0.0, 0.0];
 pub const WHITE: Rgb = [1.0, 1.0, 1.0];
 
-/// Linear interpolation between two colours.
+/// Linear interpolation between two colors.
 pub fn mix(a: Rgb, b: Rgb, t: f64) -> Rgb {
   let t = t.clamp(0.0, 1.0);
   [
@@ -24,7 +24,7 @@ pub fn mix(a: Rgb, b: Rgb, t: f64) -> Rgb {
   ]
 }
 
-/// Scale a colour's brightness.
+/// Scale a color's brightness.
 pub fn shade(c: Rgb, f: f64) -> Rgb {
   [
     (c[0] * f).clamp(0.0, 1.0),
@@ -33,7 +33,7 @@ pub fn shade(c: Rgb, f: f64) -> Rgb {
   ]
 }
 
-/// A colour from 8-bit components.
+/// A color from 8-bit components.
 pub const fn rgb8(r: u8, g: u8, b: u8) -> Rgb {
   [r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0]
 }
@@ -53,14 +53,14 @@ pub enum Paint<'a> {
     p1: (f64, f64),
     c1: Rgb,
   },
-  /// A radial gradient from `c0` at the centre to `c1` at `radius`.
+  /// A radial gradient from `c0` at the center to `c1` at `radius`.
   Radial {
     center: (f64, f64),
     radius: f64,
     c0: Rgb,
     c1: Rgb,
   },
-  /// An arbitrary colour per pixel.
+  /// An arbitrary color per pixel.
   Fn(&'a dyn Fn(f64, f64) -> Rgb),
 }
 
@@ -89,7 +89,7 @@ impl Paint<'_> {
 }
 
 /// An RGB drawing surface; `(0, 0)` is the top-left corner, `x` grows to
-/// the right and `y` downwards, pixel centres sit at half-integers.
+/// the right and `y` downwards, pixel centers sit at half-integers.
 pub struct Canvas {
   pub width: usize,
   pub height: usize,
@@ -141,7 +141,7 @@ impl Canvas {
     }
   }
 
-  /// Rewrite every pixel: `f(x, y, colour) -> colour`.
+  /// Rewrite every pixel: `f(x, y, color) -> color`.
   pub fn map(&mut self, f: impl Fn(f64, f64, Rgb) -> Rgb) {
     for y in 0..self.height {
       for x in 0..self.width {
@@ -424,7 +424,7 @@ impl Canvas {
   }
 
   /// Match the recorded statistics gently, for drawn scenes: one common
-  /// contrast scale (from the luma spread) keeps the colours' relations,
+  /// contrast scale (from the luma spread) keeps the colors' relations,
   /// then each channel's mean is shifted to its recorded mean.
   pub fn match_stats_soft(&mut self, means: &[f64], sds: &[f64]) {
     let n = (self.width * self.height).max(1) as f64;

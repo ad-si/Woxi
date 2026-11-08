@@ -1,5 +1,5 @@
 //! `AngularGauge`, `ClockGauge`, `HorizontalGauge`, `VerticalGauge` and
-//! `ThermometerGauge`: the `Graphics` wolframscript draws for each — a grey
+//! `ThermometerGauge`: the `Graphics` wolframscript draws for each — a gray
 //! bezel or scale line, major and minor tick marks with `FindDivisions`
 //! labels, and a red needle, pointer or mercury column at the value.
 //!
@@ -44,7 +44,7 @@ const GRAY_25: &str =
 const LINEAR_FONT: &str = "FontSize -> 10, FontFamily -> \"Helvetica\"";
 const DIAL_FONT: &str = "FontSize -> Scaled[0.07], FontFamily -> \"Helvetica\"";
 
-/// The colour of the `i`-th marker (0-based): hues `9/10 φ⁻¹` apart
+/// The color of the `i`-th marker (0-based): hues `9/10 φ⁻¹` apart
 /// (modulo 0.9) from `0.9/60`, at saturation and brightness 0.73.
 pub(crate) fn series_color(i: usize) -> Expr {
   let phi = f64::midpoint(1.0, 5f64.sqrt());
@@ -215,8 +215,8 @@ fn scale_divisions(args: &[Expr]) -> Result<Option<(i128, i128)>, ()> {
   }
 }
 
-/// The colours of the markers: `GaugeStyle` (one or a list), else the
-/// default series colours.
+/// The colors of the markers: `GaugeStyle` (one or a list), else the
+/// default series colors.
 fn marker_colors(args: &[Expr], n: usize) -> Vec<String> {
   let styles: Vec<Expr> = match &option(args, "GaugeStyle") {
     Some(Expr::List(items)) => items.to_vec(),
@@ -299,7 +299,7 @@ fn circle_points(r: f64, start: f64, n: usize) -> String {
   format!("{{{}}}", pts.join(", "))
 }
 
-/// The dial's white face and grey bezel ring, starting at angle `start`.
+/// The dial's white face and gray bezel ring, starting at angle `start`.
 fn dial_face(start: f64) -> String {
   let inner = circle_points(1.0, start, 100);
   let outer = circle_points(1.07, start, 102);
@@ -449,7 +449,7 @@ fn clock_time(
 }
 
 /// `ClockGauge[time]`: a clock face with an hour tick and label per hour, a
-/// minute tick between, red hour and minute hands and a grey second hand.
+/// minute tick between, red hour and minute hands and a gray second hand.
 pub fn clock_gauge_ast(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -458,7 +458,7 @@ pub fn clock_gauge_ast(
   };
   let quarter = std::f64::consts::FRAC_PI_2;
   let at = |turns: f64| quarter - turns * std::f64::consts::TAU;
-  // The scale runs from 0 to 12 o'clock, both at the top: 0 is labelled
+  // The scale runs from 0 to 12 o'clock, both at the top: 0 is labeled
   // with an empty string under the 12.
   let major: Vec<f64> = (0..=12).map(|k| at(f64::from(k) / 12.0)).collect();
   let minor: Vec<f64> = (0..60)
@@ -659,7 +659,7 @@ pub fn linear_gauge_ast(
   Ok(Some(graphics(&parts.join(", "), args, false, GRAY_25)?))
 }
 
-/// The red, green, blue of a colour expression, if it is one.
+/// The red, green, blue of a color expression, if it is one.
 fn rgb_of(color: &Expr) -> Option<(f64, f64, f64)> {
   let rgb = eval(call(
     "ColorConvert",
@@ -679,7 +679,7 @@ fn rgb_of(color: &Expr) -> Option<(f64, f64, f64)> {
   }
 }
 
-/// Hue and saturation of an RGB colour.
+/// Hue and saturation of an RGB color.
 fn hue_saturation((r, g, b): (f64, f64, f64)) -> (f64, f64) {
   let max = r.max(g).max(b);
   let min = r.min(g).min(b);
@@ -777,8 +777,8 @@ pub fn thermometer_gauge_ast(
     pt(x0, t),
     pt(x1, t)
   ));
-  // The bulb: a fan from a highlight above and left of its centre, its rim
-  // shaded from the column's colour at the top to 0.3 brightness at the
+  // The bulb: a fan from a highlight above and left of its center, its rim
+  // shaded from the column's color at the top to 0.3 brightness at the
   // bottom.
   let n = 50;
   let mut bulb_pts = vec![pt(cx - bulb_r / 4.0, bottom + bulb_r / 2.0)];

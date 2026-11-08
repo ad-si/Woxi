@@ -1,4 +1,4 @@
-//! Plot styling and labelling options checked against wolframscript (WL 15):
+//! Plot styling and labeling options checked against wolframscript (WL 15):
 //! plot themes, legend placement and titles, `ImageSize -> UpTo[n]`,
 //! `BaselinePosition -> Axis`, insets of plots, axis and grid styles.
 use super::*;
@@ -47,11 +47,8 @@ mod plot_theme {
     assert!(svg.contains("stroke-dasharray=\"60.0,20.0\""), "{svg}");
     assert!(svg.contains("stroke-dasharray=\"20.0,20.0\""), "{svg}");
     assert!(!svg.contains("stroke-linecap=\"round\""), "{svg}");
-    assert!(!svg.contains("#3D99CC"), "no default palette colour");
-    assert!(
-      !svg.contains("rgb(61,153,204)"),
-      "no default palette colour"
-    );
+    assert!(!svg.contains("#3D99CC"), "no default palette color");
+    assert!(!svg.contains("rgb(61,153,204)"), "no default palette color");
   }
 
   /// `"Dark"` draws in the Scientific palette at 2 points.
@@ -183,7 +180,7 @@ fn baseline_position_axis_aligns_a_list() {
   assert_eq!(cells.len(), 2, "{svg}");
   let ((y1, h1), (y2, _)) = (cells[0], cells[1]);
   assert!(y2 - y1 > h1 / 2.0, "{cells:?}");
-  // Without the option both are centred on the line.
+  // Without the option both are centered on the line.
   let svg = svg_of("{Plot[x, {x, 0, 1}], Plot[x, {x, -1, 0}]}");
   let cells = nested_y_h(&svg);
   assert!((cells[0].0 - cells[1].0).abs() < 2.0, "{cells:?}");
@@ -239,7 +236,7 @@ fn epilog_disk_with_offset_radius() {
 mod axes {
   use super::*;
 
-  /// The axis labels take their axis's `AxesStyle` colour, the tick marks
+  /// The axis labels take their axis's `AxesStyle` color, the tick marks
   /// its thickness, and `TicksStyle`'s bare number sizes the tick labels.
   #[test]
   fn axes_style_reaches_labels_and_ticks() {
@@ -289,7 +286,7 @@ mod sampling {
 mod styles {
   use super::*;
 
-  /// A grid line given its own colour keeps the default grid opacity.
+  /// A grid line given its own color keeps the default grid opacity.
   #[test]
   fn styled_grid_line_keeps_default_opacity() {
     let svg = svg_of(

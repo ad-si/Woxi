@@ -129,7 +129,7 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// `3 - y`).
 ///
 /// Equal counts — `(-t + y)^2` against `(t - y)^2`, five nodes either way —
-/// are broken in favour of the form that does not open with a minus sign,
+/// are broken in favor of the form that does not open with a minus sign,
 /// which is the one wolframscript prints (`Simplify[(-t + y)^2]` answers
 /// `(t - y)^2`).
 fn simplest_signed_difference(a: &Expr, b: &Expr) -> Expr {
@@ -217,7 +217,7 @@ fn gaussian_shape(expr: &Expr, x_var: &str) -> Option<(Frac, Expr, Expr)> {
   // share of `-a·shift²` arrives term by term (`-2 s^2 - 6 s t - 9 t^2/2`)
   // while `correction` is still the folded `(2 s + 3 t)^2/2`. Unexpanded the
   // two never meet and a compound shift leaves its whole square behind in
-  // the exponent instead of cancelling to the plain normalization constant.
+  // the exponent instead of canceling to the plain normalization constant.
   let correction =
     times2(frac_to_expr(a), pow2(shift.clone(), Expr::Integer(2)));
   let log_k = crate::evaluator::evaluate_expr_to_expr(&call1(

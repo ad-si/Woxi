@@ -1,6 +1,6 @@
 //! `RulePlot[CellularAutomaton[spec]]` — the picture of a cellular
 //! automaton's rule: one small diagram per neighborhood, the cells of the
-//! neighborhood in a row with the cell they produce centred underneath.
+//! neighborhood in a row with the cell they produce centered underneath.
 
 use crate::InterpreterError;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -13,7 +13,7 @@ const MAX_CASES: usize = 4096;
 
 /// `(rule, colors, radius, totalistic)` of a numeric `CellularAutomaton[spec]`
 /// rule. `spec` is `n`, `{n, k, r}`, or `{n, {k, …}, r}`; `k` defaults to 2
-/// and `r` to 1. A `{k, 1}` colour entry marks a totalistic rule, whose
+/// and `r` to 1. A `{k, 1}` color entry marks a totalistic rule, whose
 /// result depends only on the sum of the neighborhood.
 fn parse_rule_spec(spec: &Expr) -> Option<(Expr, usize, usize, bool)> {
   let small = |e: &Expr| match e {
@@ -117,7 +117,7 @@ pub fn rule_plot_graphics(
     let mut digits = vec![0usize; width];
     let mut rest = code;
     if totalistic {
-      // Representative neighborhood: the sum spent on the largest colours
+      // Representative neighborhood: the sum spent on the largest colors
       // first, leftmost.
       for d in &mut digits {
         *d = rest.min(k - 1);
@@ -130,7 +130,7 @@ pub fn rule_plot_graphics(
       }
     }
     // The canonical `CellularAutomaton` evaluates the rule on a cyclic
-    // row exactly one neighborhood wide, so its centre cell is the result.
+    // row exactly one neighborhood wide, so its center cell is the result.
     let init = Expr::List(
       digits
         .iter()
@@ -179,7 +179,7 @@ fn half(n: i64) -> String {
 /// `RulePlot[SubstitutionSystem[{v -> rhs, …}]]`, as wolframscript draws
 /// it: one inset per rule — the cell, an arrow and the block it becomes (a
 /// 2D rule), or the cell above the row it becomes (a 1D rule) — side by
-/// side between light grey rules. Colours run from white (0) to black (the
+/// side between light gray rules. Colors run from white (0) to black (the
 /// largest value).
 fn substitution_system_plot(
   rules: &Expr,

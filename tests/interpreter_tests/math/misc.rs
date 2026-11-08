@@ -2359,7 +2359,7 @@ mod radical_coefficient_merge {
       "InputForm[Sqrt[15485599740329]]",
       "15485599740329 == 999983 * 15485863, square-free"
     );
-    // The same factorisation reaches the rational form.
+    // The same factorization reaches the rational form.
     assert_eq!(
       interpret("InputForm[Sqrt[1150069001035/4]]").unwrap(),
       "InputForm[(100003*Sqrt[115])/2]"
@@ -2679,7 +2679,7 @@ mod quotient_term_plus_order {
   }
 
   // D keeps a chain-rule reciprocal composed — no integer-content
-  // cancellation through the squared denominator — while still cancelling
+  // cancellation through the squared denominator — while still canceling
   // shared SYMBOLIC factors (differential fuzzer, seed
   // 15005068122302321648; all wolframscript-verified).
   #[test]

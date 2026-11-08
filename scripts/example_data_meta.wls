@@ -3,7 +3,7 @@
    Woxi's generated ExampleData.
 
    Woxi does not bundle Wolfram's example data. It generates stand-in data
-   whose *structure* matches: the catalogue, the property names, the head and
+   whose *structure* matches: the catalog, the property names, the head and
    shape of every value, and summary statistics (dimensions, counts, sample
    rates, column types, value ranges, ...). This script records exactly that
    structure from a wolframscript installation, and never the data itself:
@@ -136,7 +136,7 @@ imageStats[img_] := With[{d = ImageData[img, "Real"]},
     If[ImageChannels[img] == 1, {round[Mean[px]], round[StandardDeviation[px]]},
       {round /@ Mean[px], round /@ StandardDeviation[px]}]]];
 (* how well the image tiles: mean jump across the wrap-around seam relative to
-   the mean jump between neighbouring pixels *)
+   the mean jump between neighboring pixels *)
 tileStats[img_] := With[{d = ImageData[ColorConvert[img, "Grayscale"], "Real"]},
   round /@ {Mean[Abs[d[[1]] - d[[-1]]]] / Max[10^-6, Mean[Abs[d[[1]] - d[[2]]]]],
     Mean[Abs[d[[All, 1]] - d[[All, -1]]]] / Max[10^-6, Mean[Abs[d[[All, 1]] - d[[All, 2]]]]]}];
@@ -183,7 +183,7 @@ collect[coll_, names_, exact_, extra_] := Module[{entries, props, cols, rows, li
 run[coll_, names_, exact_, extra_] := With[{t = collect[coll, names, exact, extra]},
   emit[coll, t[[1]], t[[2]]]];
 
-catalogue[coll_] := Last /@ ExampleData[coll];
+catalog[coll_] := Last /@ ExampleData[coll];
 
 (* ---- per-collection specs ---- *)
 imageExtra = <|
@@ -193,23 +193,23 @@ imageExtra = <|
   "@Stats" -> (imageStats[ExampleData[#]] &),
   "@Tile" -> (tileStats[ExampleData[#]] &)|>;
 
-(* retired entries: no longer in the catalogue, still served with an
+(* retired entries: no longer in the catalog, still served with an
    ExampleData::obsolete warning *)
 obsolete["TestImage"] = {"Lena", "TestPattern"};
-spec["TestImage"] := {Join[catalogue["TestImage"], obsolete["TestImage"]],
+spec["TestImage"] := {Join[catalog["TestImage"], obsolete["TestImage"]],
   {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"},
   Append[imageExtra, "@Obsolete" -> (Quiet[Check[ExampleData[#]; False, True,
     ExampleData::obsolete], ExampleData::obsolete] &)]};
-spec["AerialImage"] := {catalogue["AerialImage"],
+spec["AerialImage"] := {catalog["AerialImage"],
   {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"}, imageExtra};
-spec["Texture"] := {catalogue["Texture"],
+spec["Texture"] := {catalog["Texture"],
   {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"}, imageExtra};
-spec["ColorTexture"] := {catalogue["ColorTexture"],
+spec["ColorTexture"] := {catalog["ColorTexture"],
   {"BitDepth", "ColorSpace", "DataType", "ImageSize", "Name"}, imageExtra};
 
-(* frame sub-entries are not in the catalogue but can be requested *)
-withFrames[coll_] := Join[catalogue[coll],
-  Flatten[Last /@ safe[ExampleData[{coll, #}, "Frames"]] & /@ catalogue[coll]]];
+(* frame sub-entries are not in the catalog but can be requested *)
+withFrames[coll_] := Join[catalog[coll],
+  Flatten[Last /@ safe[ExampleData[{coll, #}, "Frames"]] & /@ catalog[coll]]];
 spec["TestImageSet"] := {withFrames["TestImageSet"],
   {"ColorSpace", "Frames", "ImageSize", "BitDepth", "ImageResolution", "StandardName", "Name"},
   <|"@Stats" -> (If[ImageQ[ExampleData[#]], imageStats[ExampleData[#]], None] &)|>};
@@ -218,7 +218,7 @@ spec["TestAnimation"] := {withFrames["TestAnimation"],
   <|"@Stats" -> (If[ImageQ[ExampleData[#, "Image"]], imageStats[ExampleData[#, "Image"]], None] &),
     "@AnimationForm" -> (With[{a = ExampleData[#, "Animation"]},
       If[Head[a] === Manipulate, sk[a /. Graphics[r_Raster, o___] :> Graphics[Raster, o]], None]] &)|>};
-spec["TestImage3D"] := {catalogue["TestImage3D"], {"DataType", "ImageSize", "Name"},
+spec["TestImage3D"] := {catalog["TestImage3D"], {"DataType", "ImageSize", "Name"},
   <|"@Stats" -> (With[{d = Flatten[ImageData[ExampleData[#], "Real"]]},
       round /@ {Mean[d], StandardDeviation[d]}] &),
     "@Options" -> (DeleteCases[Options[ExampleData[#]], MetaInformation -> _] &)|>};
@@ -227,26 +227,26 @@ audioExtra = <|
   "@Stats" -> (With[{d = Flatten[AudioData[ExampleData[#, "Audio"]]]},
      round /@ {Sqrt[Mean[d^2]], Max[Abs[d]], Mean[d]}] &),
   "@AudioOptions" -> (Options[ExampleData[#, "Audio"]] &)|>;
-spec["Audio"] := {catalogue["Audio"],
+spec["Audio"] := {catalog["Audio"],
   {"Channels", "Duration", "Name", "SampleRate"}, audioExtra};
-spec["Sound"] := {catalogue["Sound"],
+spec["Sound"] := {catalog["Sound"],
   {"Channels", "Duration", "Name", "SampleRate"}, audioExtra};
 
-spec["Geometry3D"] := {catalogue["Geometry3D"],
+spec["Geometry3D"] := {catalog["Geometry3D"],
   {"BoundingBox", "ConnectedComponents", "Name", "PolygonCount"},
   <|"@FaceSizes" -> (Tally[Length /@ ExampleData[#, "PolygonData"]] &),
     "@Graphics3D" -> (With[{g = ExampleData[#, "Graphics3D"]},
       sk[g /. GraphicsComplex[v_, rest___] :> GraphicsComplex[Length[v], rest]]] &),
     "@Graphics3DOptions" -> (Options[ExampleData[#, "Graphics3D"]] &)|>};
 
-spec["Dataset"] := {catalogue["Dataset"], {"Schema"},
+spec["Dataset"] := {catalog["Dataset"], {"Schema"},
   <|"@Keys" -> (With[{n = Normal[ExampleData[#]]},
       Which[AssociationQ[n], {Keys[n], Union @@ (Keys /@ Select[Values[n], AssociationQ])},
         ListQ[n] && AssociationQ[First[n]], {Length[n], Keys[First[n]]}, True, None]] &),
     "@Stats" -> (With[{n = Normal[ExampleData[#]]},
       If[ListQ[n] && AllTrue[n, AssociationQ], colStats[Values /@ n], None]] &)|>};
 
-spec["Text"] := {catalogue["Text"], {"Author", "FullTitle", "Language", "Title"},
+spec["Text"] := {catalog["Text"], {"Author", "FullTitle", "Language", "Title"},
   <|"@Counts" -> (With[{s = ExampleData[#, "String"], l = ExampleData[#, "Lines"],
        f = ExampleData[#, "FormattedText"]},
       {StringLength[s], Length[ExampleData[#, "Words"]], Length[l],
@@ -257,7 +257,7 @@ spec["Text"] := {catalogue["Text"], {"Author", "FullTitle", "Language", "Title"}
     "@Cells" -> (With[{nb = ExampleData[#, "NotebookExpression"]},
       Tally[Cases[nb, Cell[_, style_String, ___] :> style, Infinity]]] &)|>};
 
-spec["Statistics"] := {catalogue["Statistics"],
+spec["Statistics"] := {catalog["Statistics"],
   {"ApplicationAreas", "ColumnHeadings", "ColumnTypes", "DataType", "Dimensions",
    "Name", "ObservationCount"},
   <|"@Stats" -> (colStats[ExampleData[#]] &),
@@ -267,7 +267,7 @@ spec["Statistics"] := {catalogue["Statistics"],
     "@EventForm" -> (With[{ev = ExampleData[#, "EventData"]},
       If[MissingQ[ev], None, sk[ev]]] &)|>};
 
-spec["MachineLearning"] := {catalogue["MachineLearning"],
+spec["MachineLearning"] := {catalog["MachineLearning"],
   {"Dimensions", "LearningTask", "MissingData", "Name", "VariableTypes"},
   <|"@Stats" -> (With[{d = ExampleData[#, "Data"]},
       {colStats[Replace[d[[All, 1]], {a_Association :> Values[a], x_ /; !ListQ[x] :> {x}}, {1}]],
@@ -293,12 +293,12 @@ lpExtra[kind_] := <|
      {numStats[d[[1]]], numStats[ed[#, "ConstraintMatrix"]["NonzeroValues"]]}] &),
   "@Variables" -> (With[{v = Variables[First[ed[#, "Equations"]]]},
      {Length[v], Take[v, UpTo[3]]}] &)|>;
-spec["LinearProgramming"] := {catalogue["LinearProgramming"], {"Collection", "Dimensions", "Name"},
+spec["LinearProgramming"] := {catalog["LinearProgramming"], {"Collection", "Dimensions", "Name"},
   lpExtra["LinearProgramming"]};
-spec["LinearOptimization"] := {catalogue["LinearOptimization"], {"Collection", "Dimensions", "Name"},
+spec["LinearOptimization"] := {catalog["LinearOptimization"], {"Collection", "Dimensions", "Name"},
   lpExtra["LinearOptimization"]};
 
-spec["NetworkGraph"] := {catalogue["NetworkGraph"],
+spec["NetworkGraph"] := {catalog["NetworkGraph"],
   {"ByteCount", "EdgeCount", "EdgeProperty", "Name", "StandardName", "VertexCount", "VertexProperty"},
   <|"@Graph" -> (With[{g = ExampleData[#, "FullGraph"]},
       {DirectedGraphQ[g], WeightedGraphQ[g], MultigraphQ[g], LoopFreeGraphQ[g],

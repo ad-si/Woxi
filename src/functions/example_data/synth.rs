@@ -1,5 +1,5 @@
 //! A small audio synthesizer for generated example sounds: tones with
-//! harmonics and ADSR envelopes, coloured noise, filters, formant speech,
+//! harmonics and ADSR envelopes, colored noise, filters, formant speech,
 //! chirps and percussion. Everything renders into `Vec<f64>` samples in
 //! `[-1, 1]`.
 
@@ -256,7 +256,7 @@ impl Resonator {
   }
 }
 
-/// The colours of noise by spectral slope.
+/// The colors of noise by spectral slope.
 pub enum NoiseColor {
   White,
   Pink,
@@ -265,7 +265,7 @@ pub enum NoiseColor {
   Violet,
 }
 
-/// `n` samples of coloured noise, normalized to unit peak.
+/// `n` samples of colored noise, normalized to unit peak.
 pub fn colored_noise(rng: &mut Rng, n: usize, color: &NoiseColor) -> Vec<f64> {
   let white: Vec<f64> = (0..n + 2).map(|_| rng.range(-1.0, 1.0)).collect();
   let mut out: Vec<f64> = match color {

@@ -594,7 +594,7 @@ mod sum {
   }
 
   // The Mercator series written with the base in the denominator: 1/(b^k k) and
-  // b^(-k)/k must be recognised as base 1/b, e.g. Sum[1/(2^k k)] = Log[2].
+  // b^(-k)/k must be recognized as base 1/b, e.g. Sum[1/(2^k k)] = Log[2].
   #[test]
   fn infinite_sum_logarithmic_reciprocal_base() {
     assert_eq!(
@@ -880,7 +880,7 @@ mod sum {
       interpret("Sum[n, {n, 1, 10}, {Method -> Automatic}]").unwrap(),
       "55"
     );
-    // The real iterators are still recognised alongside an option.
+    // The real iterators are still recognized alongside an option.
     assert_eq!(
       interpret("Sum[n m, {n, 1, 2}, {m, 1, 3}, Method -> Automatic]").unwrap(),
       "18"

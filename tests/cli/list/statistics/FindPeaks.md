@@ -8,7 +8,7 @@ $ wo 'FindPeaks[{1, 3, 5, 6, 6, 4, 3, 2, 4, 7, 3, 2, 4, 2, 2, 1}]'
 ```
 
 A flat plateau inside the list is reported at the mean of its positions, so a
-two-wide one has a half-integer centre:
+two-wide one has a half-integer center:
 
 ```scrut
 $ wo 'FindPeaks[{1, 3, 3, 1}]'
@@ -28,7 +28,7 @@ $ wo 'FindPeaks[{3, 3, 3, 1}]'
 {}
 ```
 
-The third argument is a minimum sharpness — the drops to both neighbours added
+The third argument is a minimum sharpness — the drops to both neighbors added
 up and divided by the plateau width:
 
 ```scrut

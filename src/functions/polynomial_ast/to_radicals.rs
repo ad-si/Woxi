@@ -61,7 +61,7 @@ fn to_radicals_inner(
       Ok(expr.clone())
     }
     // Root[f&, k] or Root[f&, k, type] — evaluate to get the radical form.
-    // Wolfram canonicalises 2-arg Root to a 3-arg form with type 0; treat
+    // Wolfram canonicalizes 2-arg Root to a 3-arg form with type 0; treat
     // both shapes the same here.
     Expr::FunctionCall { name, args }
       if name == "Root" && (args.len() == 2 || args.len() == 3) =>

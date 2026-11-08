@@ -1048,10 +1048,10 @@ script_test!(
   script_color_of_a_screen_pixel,
   "color_of_a_screen_pixel.wls"
 );
-script_test!(script_colour_bars_display, "colour_bars_display.wls");
+script_test!(script_color_bars_display, "color_bars_display.wls");
 script_test!(
-  script_colour_pinstripe_display,
-  "colour_pinstripe_display.wls"
+  script_color_pinstripe_display,
+  "color_pinstripe_display.wls"
 );
 script_test!(
   script_constrained_random_points_on_a_circle,

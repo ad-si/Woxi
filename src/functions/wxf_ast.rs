@@ -235,7 +235,7 @@ fn write_expr(out: &mut Vec<u8>, expr: &Expr) -> Option<()> {
             is_real_numeric_literal(a) || numeric_complex_parts(a).is_some()
           });
         let folded = crate::functions::math_ast::times_ast(&numeric).ok()?;
-        // If the imaginary parts cancelled (e.g. I*I), `folded` is real and
+        // If the imaginary parts canceled (e.g. I*I), `folded` is real and
         // the ordinary path below serializes it correctly.
         if numeric_complex_parts(&folded).is_some() {
           if symbolic.is_empty() {

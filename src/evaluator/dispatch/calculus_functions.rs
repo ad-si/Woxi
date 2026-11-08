@@ -38,7 +38,7 @@ fn contains_unresolved_derivative(expr: &Expr, func_name: &str) -> bool {
 }
 
 /// Build the right-nested multiplication chain that wolframscript prints for
-/// `Derivative[n][# ^ k &]` and the multivariate analogues. For n > k the
+/// `Derivative[n][# ^ k &]` and the multivariate analogs. For n > k the
 /// function collapses to `0`. For n <= k the chain has n integer factors
 /// `k * (k-1) * … * (k-n+1)` wrapping the residual power: `1` when
 /// `k - n == 0`, `var_expr` when `k - n == 1`, and `var_expr^(k-n)` otherwise.
@@ -612,7 +612,7 @@ pub fn dispatch_calculus_functions(
         && let Some(den) = crate::functions::math_ast::expr_to_i128(&sd_args[5])
         && den > 0
       {
-        // Normalise q to (num, denom) with denom > 0. The index may be given
+        // Normalize q to (num, denom) with denom > 0. The index may be given
         // as a bare Integer/Rational exponent or as a `{x, x0, n}` spec, in
         // which case the exponent n is used (matching wolframscript, e.g.
         // SeriesCoefficient[Series[Exp[x], {x, 0, 10}], {x, 0, 5}] == 1/120).
@@ -1464,7 +1464,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         }
       }
       // Cosh/Sinh produce a difference-of-squares denominator `s^2 - a^2`;
-      // after the shift wolframscript canonicalises those inconsistently
+      // after the shift wolframscript canonicalizes those inconsistently
       // (factoring the Cosh case, expanding the Sinh case), so decline the
       // shift there and leave the call unevaluated rather than emit a
       // form-divergent result.
@@ -1829,7 +1829,7 @@ fn inverse_laplace_time_shift(
 
 /// Two-variable inverse Laplace transform L^-1_{p, q}[F](x, y).
 ///
-/// We don't implement the general Efros theorem; instead we recognise a
+/// We don't implement the general Efros theorem; instead we recognize a
 /// small library of F shapes whose closed-form inverses are documented
 /// in standard references and match wolframscript:
 ///
@@ -3844,7 +3844,7 @@ fn fourier_transform(
   }
 }
 
-/// Multidimensional Fourier transform — currently only recognises the
+/// Multidimensional Fourier transform — currently only recognizes the
 /// 2-D radial identity F[1/Sqrt[x² + y²], {x, y}, {u, v}] = 1/Sqrt[u² + v²].
 fn fourier_transform_multi(
   expr: &Expr,
@@ -4507,7 +4507,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
 
   if let Some((fname, fargs)) = as_func_args(expr) {
     // F^-1[Sinc[w]] = (Sqrt[Pi/2] * (Sign[1 - t] + Sign[1 + t])) / 2.
-    // Recovers the indicator of (-1, 1) (mod the Sqrt[2π] normalisation)
+    // Recovers the indicator of (-1, 1) (mod the Sqrt[2π] normalization)
     // since Sinc is the forward transform of UnitBox[t/2].
     if fname == "Sinc"
       && fargs.len() == 1
@@ -6684,7 +6684,7 @@ fn fourier_sin_cos_transform_inner(
   }
 
   // FST[Cos[c*t]/t, t, w] = (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]) for c > 0.
-  // For numeric Real w, wolframscript materialises the result as
+  // For numeric Real w, wolframscript materializes the result as
   // `Real + 0.*I` (a complex zero), so reproduce that form here.
   if is_sin && let Some(c) = extract_cos_at_over_t(expr, t) {
     let c_minus_w = make_plus(vec![
@@ -7156,7 +7156,7 @@ fn contains_identifier(expr: &Expr, name: &str) -> bool {
 }
 
 /// If expr = -a * t where a doesn't depend on t, return a.
-/// Recognise `Cos[c*t] / t` (any equivalent form) and return `c`. Returns
+/// Recognize `Cos[c*t] / t` (any equivalent form) and return `c`. Returns
 /// `Some(Integer(1))` for the bare `Cos[t]/t` case. `c` must be constant
 /// in `t`.
 fn extract_cos_at_over_t(expr: &Expr, t: &str) -> Option<Expr> {

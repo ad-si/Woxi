@@ -32,7 +32,7 @@ pub(crate) fn resolve_charting_frame_ticks(
     {
       return spec.clone();
     }
-    let labelled = name == "Charting`ScaledTicks";
+    let labeled = name == "Charting`ScaledTicks";
     let Expr::List(pair) = &args[0] else {
       return spec.clone();
     };
@@ -62,7 +62,7 @@ pub(crate) fn resolve_charting_frame_ticks(
           Some(Expr::List(
             vec![
               Expr::Real(pos),
-              if labelled {
+              if labeled {
                 Expr::Integer(pct)
               } else {
                 Expr::String(String::new())
@@ -81,7 +81,7 @@ pub(crate) fn resolve_charting_frame_ticks(
           Expr::List(
             vec![
               Expr::Real(pos),
-              Expr::String(if labelled { label } else { String::new() }),
+              Expr::String(if labeled { label } else { String::new() }),
             ]
             .into(),
           )
@@ -553,7 +553,7 @@ fn smooth(v: &[f64], width: f64, n: i32, flag: bool) -> f64 {
   sign * closest
 }
 
-/// `smoothValue`: snap every value to its nice neighbour, keeping signs.
+/// `smoothValue`: snap every value to its nice neighbor, keeping signs.
 fn smooth_value(linear: bool, v: &[f64], values: &[f64]) -> Vec<f64> {
   if values.is_empty() {
     return Vec::new();

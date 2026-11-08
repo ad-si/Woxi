@@ -20,7 +20,7 @@ fn graphic_short_form(s: &str) -> Option<&'static str> {
   }
 }
 
-fn normalise(s: &str) -> String {
+fn normalize(s: &str) -> String {
   let s = if s == "\0" { "Null" } else { s };
   s.chars()
     .filter(|c| !c.is_whitespace() && *c != '"')
@@ -196,7 +196,7 @@ fn first_top_level_star(s: &str) -> Option<usize> {
 }
 
 fn outputs_match(a: &str, b: &str) -> bool {
-  if normalise(a) == normalise(b) {
+  if normalize(a) == normalize(b) {
     return true;
   }
   if let (Some(x), Some(y)) = (parse_pure_float(a), parse_pure_float(b)) {
@@ -818,7 +818,7 @@ fn sparse_array_equiv(
   a: &ParsedSparseArrayStr,
   b: &ParsedSparseArrayStr,
 ) -> bool {
-  if normalise(&a.dims) != normalise(&b.dims) {
+  if normalize(&a.dims) != normalize(&b.dims) {
     return false;
   }
   if !outputs_match(&a.default, &b.default) {

@@ -9,7 +9,7 @@ mod graph_functions_accept_edge_rule_lists {
 
   #[test]
   fn adjacency_list_of_a_rule_list() {
-    // Neighbours in either direction, in the graph's vertex order
+    // Neighbors in either direction, in the graph's vertex order
     assert_eq!(
       interpret(
         "AdjacencyList[{1 -> 3, 2 -> 1, 3 -> 6, 4 -> 6, 1 -> 5, 5 -> 4, 6 -> 1}, 1]"

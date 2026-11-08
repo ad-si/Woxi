@@ -4,7 +4,7 @@
 //! Every unknown `u_j[t, x]` is sampled on a uniform grid in `x`; spatial
 //! derivatives become finite-difference stencils (Fornberg weights, of
 //! `"DifferenceOrder"` 4 by default like Wolfram's `"TensorProductGrid"`,
-//! centred in the interior and shifted one-sided towards the ends). Each
+//! centered in the interior and shifted one-sided toward the ends). Each
 //! evolution equation may combine the time derivatives of several unknowns
 //! linearly, `Σ_j m_ij(x) ∂u_j/∂t == f_i(u, u_x, u_xx, …, t, x)`, so the
 //! semi-discrete system is `M y' == F(t, y)` with a block-diagonal mass
@@ -28,7 +28,7 @@ use super::stiff::{RODAS_A, RODAS_C, RODAS_CC, RODAS_D, RODAS_GAMMA};
 use super::*;
 
 /// Options of `Method -> {"MethodOfLines", "SpatialDiscretization" ->
-/// {"TensorProductGrid", …}}` the grid honours.
+/// {"TensorProductGrid", …}}` the grid honors.
 #[derive(Clone, Default)]
 pub(super) struct MolOptions {
   pub min_points: Option<usize>,
@@ -1146,7 +1146,7 @@ fn solve_pde_mol_inner(
   var_names.push(x_name.to_string());
   let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
   // `∂e/∂v`; `D` of a piecewise coefficient leaves `If[cond, 0, 0]`
-  // factors behind, collapsed so the result is recognised as constant.
+  // factors behind, collapsed so the result is recognized as constant.
   let partial = |e: &Expr, v: &str| -> Result<Expr, InterpreterError> {
     let d = ev(call("D", vec![e.clone(), Expr::Identifier(v.to_string())]))?;
     ev(collapse_identical_if_branches(&d))

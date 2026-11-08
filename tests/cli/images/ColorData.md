@@ -53,7 +53,7 @@ $ wo 'Blend["TemperatureMap", 0]'
 RGBColor[0.178927, 0.305394, 0.933501]
 ```
 
-The `"HTML"` scheme is the CSS colour names:
+The `"HTML"` scheme is the CSS color names:
 
 ```scrut
 $ wo 'ColorData["HTML", "SlateBlue"]'

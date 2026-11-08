@@ -225,10 +225,10 @@ mod column_visual_mode {
 
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
-  /// `Manipulate` body — is a large, coloured column. It used to fall back
-  /// to the plain-text echo of the column, at the default size and colour.
+  /// `Manipulate` body — is a large, colored column. It used to fall back
+  /// to the plain-text echo of the column, at the default size and color.
   #[test]
-  fn styled_column_renders_at_the_style_size_and_colour() {
+  fn styled_column_renders_at_the_style_size_and_color() {
     clear_state();
     let result =
       interpret_with_stdout("Style[Column[{\"a\", \"bb\"}, Center], 65, Red]")

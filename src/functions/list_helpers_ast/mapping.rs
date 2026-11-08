@@ -46,7 +46,7 @@ pub(crate) fn splice_mapped_results(
 /// Map[f, <|a -> 1, b -> 2|>] -> <|a -> f[1], b -> f[2]|>
 pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
   // A tree is an atom: there is nothing to map over. (A SparseArray keeps
-  // its array behaviour and is handled by the caller.)
+  // its array behavior and is handled by the caller.)
   if crate::functions::predicate_ast::is_fully_atomic_object(list) {
     return Ok(list.clone());
   }

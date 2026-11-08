@@ -10,7 +10,7 @@ SequenceCases[x, y]
 ```
 
 The `Overlaps` option controls how much of the list a match may share with its
-neighbours. The default keeps matches disjoint, `Overlaps -> True` reports the
+neighbors. The default keeps matches disjoint, `Overlaps -> True` reports the
 longest match at every start position, and `Overlaps -> All` reports *every*
 match at every start position:
 

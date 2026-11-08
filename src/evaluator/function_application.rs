@@ -696,7 +696,7 @@ fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
 ///
 /// For each slot index `i` with `n_i > 0` we substitute `Slot(i)` for a fresh
 /// dummy and try to factor the current expression as `c * dummy_i^p` where
-/// `c` is constant in `dummy_i`. If the factorisation succeeds we replace
+/// `c` is constant in `dummy_i`. If the factorization succeeds we replace
 /// the `dummy_i^p` part with the wolframscript-style right-nested chain
 /// `p*((p-1)*…*dummy_i^(p-n_i))` (or `0` when `n_i > p`). When the body
 /// can't be peeled apart that way we fall back to `differentiate_expr`
@@ -2746,7 +2746,7 @@ pub fn apply_curried_call(
           if numeric && params.len() == args.len() =>
         {
           // A fit evaluates each set of parameter values (the current
-          // estimate and its finite-difference neighbours) at every data
+          // estimate and its finite-difference neighbors) at every data
           // point in turn, so the latest few solves are kept instead of
           // repeating the integration per point.
           thread_local! {
@@ -3547,7 +3547,7 @@ pub fn apply_curried_call(
           }
         }
         // `Derivative[n1, …, nk][Function[{x1, …, xk}, body]]` — the
-        // named-parameter analogue of the slot-based case above. Each
+        // named-parameter analog of the slot-based case above. Each
         // order lines up with the parameter at the same position, so no
         // slot renumbering is needed; a mismatched parameter count is left
         // unevaluated (falls through to the generic CurriedCall below).
@@ -3790,7 +3790,7 @@ pub fn apply_curried_call(
       } else if name == "Function" && func_args.len() >= 2 {
         // Function[{params...}, body, attrs?][args...] — substitute params
         // with args in body and evaluate. Hold attributes on the 3rd arg
-        // are honoured by the caller (see function_hold_attributes); here
+        // are honored by the caller (see function_hold_attributes); here
         // we just bind and evaluate.
         let params: Vec<String> = match &func_args[0] {
           Expr::List(items) => items

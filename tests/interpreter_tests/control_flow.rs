@@ -3966,13 +3966,13 @@ mod cases {
     // `Nearest[{Blue -> "blue", …}, {Orange, Gray}]` — Woxi now
     // supports the list-of-rules form (split into separate
     // points/labels), the multi-target form (recurse per target), and
-    // colour distances (Euclidean on the RGB triple, with GrayLevel
+    // color distances (Euclidean on the RGB triple, with GrayLevel
     // lifted to {g, g, g}). Orange resolves to "red" cleanly, but
     // Gray sits equidistant from all four named primaries under plain
     // RGB Euclidean distance (each ≈ 0.866), so Woxi's default
     // tied-for-closest fallback returns `{blue, white, red, green}`
     // instead of wolframscript's `{white}` (Wolfram likely
-    // tie-breaks by perceptual distance / a different colour space).
+    // tie-breaks by perceptual distance / a different color space).
     // Verify the documented contract: a length-2 list whose first
     // element is `{"red"}` and whose second element is a non-empty
     // list of strings containing `"white"`.
@@ -4066,7 +4066,7 @@ mod cases {
     // wolframscript's \`\$ContextPath\` from a session that had
     // previously loaded an \`apackage\` package; wolframscript itself
     // ships with \`{WolframScript\`, System\`, Global\`}\`. Mathics
-    // (and Woxi) initialise \`\$ContextPath\` to
+    // (and Woxi) initialize \`\$ContextPath\` to
     // \`{"System\`", "Global\`"}\`. Verify the documented contract:
     // a list of strings that always includes \`System\`\`.
     assert_case(

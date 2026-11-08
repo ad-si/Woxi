@@ -1388,7 +1388,7 @@ pub fn try_interval_max(
 // ─── CenteredInterval helpers ───────────────────────────────────────────
 
 /// Box operations on CenteredInterval inputs (treated as axis-aligned
-/// rectangles in C — real centre and radius produce a degenerate
+/// rectangles in C — real center and radius produce a degenerate
 /// rectangle on the real axis).
 #[derive(Copy, Clone)]
 enum BoxOp {
@@ -1483,9 +1483,9 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
   let cim = eval_divide(&eval_add(&im_lo, &im_hi), &two);
   let rre = eval_divide(&eval_sub(&re_hi, &re_lo), &two);
   let rim = eval_divide(&eval_sub(&im_hi, &im_lo), &two);
-  let centre = combine_complex(&cre, &cim);
+  let center = combine_complex(&cre, &cim);
   let radius = combine_complex(&rre, &rim);
-  call("CenteredInterval", vec![centre, radius])
+  call("CenteredInterval", vec![center, radius])
 }
 
 /// The largest (or smallest) of `xs`. An empty list has no extremum, so it

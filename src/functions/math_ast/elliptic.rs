@@ -1009,7 +1009,7 @@ fn elliptic_theta_prime_numeric(a: u32, z: f64, q: f64) -> f64 {
 /// Defined for τ in the upper half-plane (Im(τ) > 0) by
 ///   η(τ) = e^(πiτ/12) * Product[(1 - e^(2πinτ)), {n, 1, ∞}].
 ///
-/// We also recognise the exact value η(i) = Γ(1/4)/(2*π^(3/4)).
+/// We also recognize the exact value η(i) = Γ(1/4)/(2*π^(3/4)).
 pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -1241,7 +1241,7 @@ fn weierstrass_cm_invariants(
   w2e: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
   // Evaluate the (possibly transcendental) half-periods to complex floats via
-  // N[…] so ratios like Exp[I π/3] or (1 + I Sqrt[3])/2 are recognised.
+  // N[…] so ratios like Exp[I π/3] or (1 + I Sqrt[3])/2 are recognized.
   let to_complex = |e: &Expr| -> Option<(f64, f64)> {
     let n = call1("N", e.clone());
     let r = crate::evaluator::evaluate_expr_to_expr(&n).ok()?;

@@ -432,7 +432,7 @@ fn format_part_access(base: &str, spec: &str) -> String {
 /// an inline `\!\(\*…\)` segment inside a string) into the evaluable
 /// expression it typesets (`Subscript[p, 0]`), including the `RowBox[{…}]`
 /// a flat run of source typesets to. Returns None when `s` is not one of the
-/// recognised typeset box heads.
+/// recognized typeset box heads.
 pub fn box_source_to_expression(s: &str) -> Option<String> {
   let s = s.trim();
   // `RowBox[{…}]` is the box form of a plain run of source, which is what
@@ -825,7 +825,7 @@ fn render_checkbox(args: &[String], with_label: bool) -> String {
   }
 }
 
-/// Recognise the typeset box heads that the FrontEnd uses to pretty-print
+/// Recognize the typeset box heads that the FrontEnd uses to pretty-print
 /// expressions (`FractionBox`, `SuperscriptBox`, `SqrtBox`, `TagBox`,
 /// `GridBox`, …) and convert them back into evaluable InputForm text.
 ///
@@ -870,7 +870,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         let unit_arg = parts[3].trim();
         // A compound unit (e.g. `Newtons Meters^2 / Kilograms^2`) is encoded
         // as nested typeset boxes (`FractionBox`, `RowBox`, `SuperscriptBox`,
-        // …) rather than a single string literal — recognisable by the
+        // …) rather than a single string literal — recognizable by the
         // presence of a box head's `[`. Recursing through the general
         // box-to-InputForm converter rebuilds it as a proper string-arithmetic
         // unit expression (`"Newtons" ("Meters"^2/"Kilograms"^2)`); treating
@@ -1083,7 +1083,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     return Some(match head {
       // `FractionBox[a, b]` → `((a)/(b))`. The parentheses preserve operator
       // precedence around composite numerators / denominators, and the outer
-      // pair keeps the quotient one operand of a tighter-binding neighbour
+      // pair keeps the quotient one operand of a tighter-binding neighbor
       // (`Ceiling /@ FractionBox[l, d]` is `Ceiling /@ (l/d)`).
       "FractionBox" if args.len() == 2 => {
         format!("(({})/({}))", conv(&args[0]), conv(&args[1]))
@@ -1156,7 +1156,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       // The outer pair keeps the power one operand of a tighter-binding
-      // neighbour: `f /@ SuperscriptBox[rx, n]` is `f /@ (rx^n)`.
+      // neighbor: `f /@ SuperscriptBox[rx, n]` is `f /@ (rx^n)`.
       "SuperscriptBox" if args.len() == 2 => {
         format!("(({})^({}))", conv(&args[0]), conv(&args[1]))
       }
@@ -1352,14 +1352,14 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         }
       }
       // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
-      // render a checkbox glyph, labelled with the `on` alternative when
+      // render a checkbox glyph, labeled with the `on` alternative when
       // it is a string (`CheckboxBox[False, {False, "Mathematics"}]` →
       // `☐ Mathematics`).
       "CheckboxBox" if !args.is_empty() => render_checkbox(&args, true),
-      // An inline colour control reads back as the control it displays:
+      // An inline color control reads back as the control it displays:
       // `MakeExpression[ColorSetterBox[c, "SwatchSpectrum"]]` is
       // `ColorSlider[c]` (The 2001 CSO Mortality Tables Demonstration stores
-      // `Setting[ColorSetterBox[…]]` as its background colour).
+      // `Setting[ColorSetterBox[…]]` as its background color).
       "ColorSetterBox" if !args.is_empty() => {
         format!("ColorSlider[{}]", args[0].trim())
       }
@@ -1769,7 +1769,7 @@ fn split_iterator_assignment(s: &str) -> Option<(&str, &str)> {
   None
 }
 
-/// Recognise a typeset big-operator box (`UnderoverscriptBox["\[Sum]",
+/// Recognize a typeset big-operator box (`UnderoverscriptBox["\[Sum]",
 /// under, over]`, or the `UnderscriptBox` form with no upper limit) and
 /// return its evaluable head together with the iterator specification.
 ///
@@ -2160,7 +2160,7 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
       && let Some(vars) = partial_derivative_vars(part)
     {
       let body = extract_rowbox_content(&parts[i + 1..].join(","));
-      // Parenthesised: the operator is usually juxtaposed with a
+      // Parenthesized: the operator is usually juxtaposed with a
       // coefficient (`u ∂ₓc`), and `uD[…]` would read as a call to a
       // symbol named `uD` rather than a product.
       result.push_str(&format!("(D[{body}, {vars}])"));
@@ -2192,7 +2192,7 @@ fn extract_row(s: &str, newline_ends_statement: bool) -> String {
       i += 3;
       continue;
     }
-    // A symbol immediately followed by a parenthesised, comma-separated
+    // A symbol immediately followed by a parenthesized, comma-separated
     // argument list — `RowBox[{"\[Psi]", "(", RowBox[{"x", ",", "0"}],
     // ")"}]` — is the FrontEnd's TraditionalForm-input rendering of function
     // application (textbook notation `f(x, y)` for `f[x, y]`), which the
@@ -2412,10 +2412,10 @@ fn is_bare_named_char(part: &str, name: &str) -> bool {
   part == format!("\"\\[{name}]\"")
 }
 
-/// The comma-separated arguments of a parenthesised call's box, if `s` (the
+/// The comma-separated arguments of a parenthesized call's box, if `s` (the
 /// box between a function-application `"("` and `")"`) is a `RowBox` whose
 /// own top-level elements are joined by at least one bare `","` — i.e. it
-/// really is an argument list, not a single parenthesised expression.
+/// really is an argument list, not a single parenthesized expression.
 fn paren_call_arglist(s: &str) -> Option<Vec<String>> {
   let inner = s.strip_prefix("RowBox[")?;
   let inner = &inner[..inner.len().saturating_sub(1)];
@@ -4201,7 +4201,7 @@ pub fn extract_saved_manipulate_variables(
 }
 
 /// Replace a saved value that is just another saved variable's `name$$`
-/// (a control initialised from its default, e.g. `` $CellContext`n$$ =
+/// (a control initialized from its default, e.g. `` $CellContext`n$$ =
 /// $CellContext`nDef$$ ``) by that variable's own value, so the control
 /// opens on the default instead of an unbound `nDef$$` symbol. Chains are
 /// followed; a reference to an unknown or cyclic variable is left as is.
@@ -7042,7 +7042,7 @@ Cell["Chapter 2", "Chapter"]
     let s = r#"BoxData[RowBox[{SubscriptBox["\[PartialD]", RowBox[{"x", ",", "x"}]], RowBox[{"c", "[", RowBox[{"x", ",", "t"}], "]"}]}]]"#;
     assert_eq!(extract_cell_content(s), "(D[c[x,t], x,x])");
     // The operator is usually juxtaposed with a coefficient, so the call is
-    // parenthesised — `u D[…]` must stay a product, not become a symbol
+    // parenthesized — `u D[…]` must stay a product, not become a symbol
     // named `uD`.
     let s = r#"BoxData[RowBox[{"u", RowBox[{SubscriptBox["\[PartialD]", "x"], RowBox[{"c", "[", RowBox[{"x", ",", "t"}], "]"}]}]}]]"#;
     assert_eq!(extract_cell_content(s), "u(D[c[x,t], x])");
@@ -7120,7 +7120,7 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "2({{a}, {b}})");
   }
 
-  /// A symbol immediately followed by a parenthesised, comma-separated
+  /// A symbol immediately followed by a parenthesized, comma-separated
   /// argument list (`RowBox[{"\[Psi]", "(", RowBox[{"x", ",", "0"}],
   /// ")"}]`) is the FrontEnd's TraditionalForm-input rendering of function
   /// application — textbook notation `f(x, y)` for `f[x, y]` — since a bare
@@ -7140,7 +7140,7 @@ Cell["Chapter 2", "Chapter"]
     let s = r#"BoxData[RowBox[{"\[Psi]", "(", RowBox[{"x", ",", RowBox[{"y", "+", "1"}]}], ")"}]]"#;
     assert_eq!(extract_cell_content(s), "ψ[x, y+1]");
     // A single argument has no comma to disambiguate it from ordinary
-    // parenthesised multiplication, so it is left as valid, equivalent
+    // parenthesized multiplication, so it is left as valid, equivalent
     // `f(x)` syntax rather than reinterpreted as a call.
     let s = r#"BoxData[RowBox[{"f", "(", "x", ")"}]]"#;
     assert_eq!(extract_cell_content(s), "f(x)");
@@ -7172,7 +7172,7 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "Power[0.5, Power[1.5, -1]]");
   }
 
-  /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
+  /// A parenthesized group (literal `"("`/`")"` box tokens, as the FrontEnd
   /// writes them to force grouping) that is itself followed by a property
   /// call — `(expr)["Prop"]` — must keep its parens when reconstructed as
   /// InputForm text, or the trailing `[...]` rebinds to the group's last
@@ -7182,7 +7182,7 @@ Cell["Chapter 2", "Chapter"]
   /// Demonstration whose `NDSolve` result was queried with `(r /.
   /// sol[[1,1]])["Domain"]`.
   #[test]
-  fn test_parenthesised_group_before_property_call_keeps_parens() {
+  fn test_parenthesized_group_before_property_call_keeps_parens() {
     let s = r#"BoxData[RowBox[{
       RowBox[{"(",
         RowBox[{"a", "/.",
@@ -7230,7 +7230,7 @@ Cell["Chapter 2", "Chapter"]
   /// `\[UpEquilibrium]` (⥮) and `\[ReverseUpEquilibrium]` (⥯) are the
   /// same-spin-pair glyphs a Demonstrations electron-configuration diagram
   /// draws its spin arrows with. They were missing from the named-character
-  /// table, so a labelled cell fell back to printing the literal escape
+  /// table, so a labeled cell fell back to printing the literal escape
   /// `\[UpEquilibrium]` instead of the glyph.
   #[test]
   fn test_up_equilibrium_named_character_renders_as_unicode() {
@@ -8003,7 +8003,7 @@ Cell["Chapter 2", "Chapter"]
       stored_output_checkbox_text(content).unwrap(),
       "[ ] Mathematics\n[x] Life Sciences\n[ ] Systems, Models & Methods"
     );
-    // A lone unlabelled checkbox (the compatibility pickers) still renders.
+    // A lone unlabeled checkbox (the compatibility pickers) still renders.
     assert_eq!(
       stored_output_checkbox_text("{{{{\u{2611}}}}}").unwrap(),
       "[x]"
@@ -8040,7 +8040,7 @@ Cell["Chapter 2", "Chapter"]
       "\u{2610} Triangles"
     );
     // A row whose caption is wrapped in collapsible chrome has no flat
-    // rendering; fall back to the leading element (the labelled checkbox).
+    // rendering; fall back to the leading element (the labeled checkbox).
     assert_eq!(
       extract_cell_content(
         r#"BoxData[TemplateBox[{CheckboxBox[False, {False, "Mathematics"}], "\" \"", StyleBox[DynamicModuleBox[{Typeset`var$$ = False}, PaneSelectorBox[{False -> "\"Mathematics\""}, Dynamic[Typeset`var$$]]]]}, "RowDefault"]]"#
@@ -8215,7 +8215,7 @@ Cell["Chapter 2", "Chapter"]
     );
   }
 
-  /// A power typeset as a superscript is one operand of its neighbours:
+  /// A power typeset as a superscript is one operand of its neighbors:
   /// `f /@ rx^n` maps over the power, not the power of a map
   /// (InversiveGeometryVIISpiderEyes).
   #[test]
@@ -8503,7 +8503,7 @@ Cell["Chapter 2", "Chapter"]
  Editable->False,
  CellID->687519280,ExpressionUUID->"39c481cb-843d-42b3-8aef-160cab90e699""#;
     let cell = parse_single_cell(s);
-    // Unmodelled styles fall back to Text for rendering.
+    // Unmodeled styles fall back to Text for rendering.
     assert_eq!(cell.style, CellStyle::Text);
     assert_eq!(cell.content, "hello world");
   }
@@ -9034,7 +9034,7 @@ yf4GL4DwC5VA4w
 
   #[test]
   fn test_extract_saved_manipulate_variables_resolves_default_references() {
-    // A control initialised from its own default variable, which is listed
+    // A control initialized from its own default variable, which is listed
     // later (and a chain through two defaults), must open on that default
     // rather than an unbound `nDef$$` symbol.
     let dump = "DynamicModuleBox[{$CellContext`n$$ = $CellContext`nDef$$, \
@@ -9902,7 +9902,7 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
   }
 
   #[test]
-  fn line_break_inside_a_row_multiplies_its_neighbours() {
+  fn line_break_inside_a_row_multiplies_its_neighbors() {
     // Inside a row a "\n" is layout, so `0` and the assignment row after it
     // multiply, with the assignment kept as its own factor: wolframscript
     // reads `RowBox[{"0", "\n", RowBox[{"b", "=", …}]}]` as `0*(b = …)`
@@ -10198,7 +10198,7 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
     // A control whose variable is a Greek letter is dumped as
     // `\[Alpha]$$`; the uniquification suffix used to survive because the
     // character before `$$` is the escape's closing bracket, leaving the
-    // control labelled `α$$`.
+    // control labeled `α$$`.
     let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[1, \
       StandardForm, \"Body\" :> $CellContext`\\[Alpha]$$ + $CellContext`k$$, \
       \"Specifications\" :> {{{$CellContext`\\[Alpha]$$, {0.2, 0}}, {-1, -1}, \
@@ -10259,11 +10259,11 @@ Cell[BoxData[
     assert_eq!(extract_cell_content(s), "(s=x;)/.para");
   }
 
-  /// Operator tokens from neighbouring boxes are kept apart so they do not
+  /// Operator tokens from neighboring boxes are kept apart so they do not
   /// read back as one longer operator (Demonstration CoulombWavefunctions:
   /// `(view!) == "complex"` became the unparsable `view!=="complex"`).
   #[test]
-  fn neighbouring_operator_tokens_do_not_fuse() {
+  fn neighboring_operator_tokens_do_not_fuse() {
     let s = r#"BoxData[RowBox[{RowBox[{"view", "!"}], "\[Equal]", "\"\<complex\>\""}]]"#;
     let text = extract_cell_content(s);
     assert_eq!(text, "view! ==\"complex\"");

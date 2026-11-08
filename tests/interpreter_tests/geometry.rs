@@ -3147,7 +3147,7 @@ mod computational_geometry_convex_hull {
     );
   }
 
-  // The legacy adjacency-list triangulation: the neighbours of each point
+  // The legacy adjacency-list triangulation: the neighbors of each point
   // counter-clockwise, in the order the package's divide-and-conquer merge
   // leaves them.
   #[test]
@@ -3210,7 +3210,7 @@ mod computational_geometry_convex_hull {
     );
   }
 
-  // One finite vertex (the circumcentre) followed by a ray per hull edge,
+  // One finite vertex (the circumcenter) followed by a ray per hull edge,
   // exact for exact points; the ray's second point is its tail.
   #[test]
   fn voronoi_diagram_vertices_rays_and_cells() {
@@ -3242,7 +3242,7 @@ mod computational_geometry_convex_hull {
     );
   }
 
-  // Collinear sites: a pair of rays between each two neighbours.
+  // Collinear sites: a pair of rays between each two neighbors.
   #[test]
   fn voronoi_diagram_collinear_sites() {
     assert_eq!(
@@ -3503,7 +3503,7 @@ mod convex_hull_mesh {
   /// coplanar facets the way wolframscript's may — see
   /// `tests/cli/comparison/mathematica/conformance_gaps.md`). Fewer than 4
   /// affinely independent points (coplanar, collinear, too few, or
-  /// coincident) stay unevaluated, the 3D analogue of the 2D cases above.
+  /// coincident) stay unevaluated, the 3D analog of the 2D cases above.
   mod three_d {
     use super::*;
 
@@ -4408,7 +4408,7 @@ mod scaling_transform {
     );
   }
 
-  // A third argument centres the scaling at that point, so the translation
+  // A third argument centers the scaling at that point, so the translation
   // column becomes p - M.p and the point is fixed.
   #[test]
   fn scalar_factor_about_a_point() {
@@ -4424,7 +4424,7 @@ mod scaling_transform {
       interpret("ScalingTransform[2, {1, 1}, {1, 1}]").unwrap(),
       "TransformationFunction[{{3/2, 1/2, -1}, {1/2, 3/2, -1}, {0, 0, 1}}]"
     );
-    // The centre really is fixed.
+    // The center really is fixed.
     assert_eq!(
       interpret("ScalingTransform[2, {1, 1}, {1, 1}][{1, 1}]").unwrap(),
       "{1, 1}"
@@ -4432,9 +4432,9 @@ mod scaling_transform {
   }
 
   // A list of factors keeps its old meaning: the second argument is the
-  // centre, not a direction.
+  // center, not a direction.
   #[test]
-  fn factor_list_second_argument_is_the_centre() {
+  fn factor_list_second_argument_is_the_center() {
     assert_eq!(
       interpret("ScalingTransform[{2, 3}, {5, 5}]").unwrap(),
       "TransformationFunction[{{2, 0, -5}, {0, 3, -10}, {0, 0, 1}}]"
@@ -4531,7 +4531,7 @@ mod shearing_transform_about_a_point {
     );
   }
 
-  // Without a centre the origin is fixed, as before.
+  // Without a center the origin is fixed, as before.
   #[test]
   fn origin_form_is_unchanged() {
     assert_eq!(
@@ -5641,7 +5641,7 @@ mod circumscribed_ball {
     );
   }
 
-  // Four dimensions: the support set has five points and the exact centre needs
+  // Four dimensions: the support set has five points and the exact center needs
   // big-integer rational arithmetic (i128 used to overflow and panic here).
   #[test]
   fn four_dimensional_points() {
@@ -6452,7 +6452,7 @@ mod graphics_object_regions {
 
   #[test]
   fn torus_stays_symbolic() {
-    // `Torus[]` fills in its default centre and radii, like `SphericalShell`.
+    // `Torus[]` fills in its default center and radii, like `SphericalShell`.
     assert_eq!(interpret("Torus[]").unwrap(), "Torus[{0, 0, 0}, {1/2, 1}]");
     assert_eq!(
       interpret("FilledTorus[{0, 0, 0}, {1, 2}]").unwrap(),
@@ -6646,9 +6646,9 @@ mod graphics_object_regions {
     );
   }
 
-  // AxisObject draws its curve in the AxisStyle (over BaseStyle) colour.
+  // AxisObject draws its curve in the AxisStyle (over BaseStyle) color.
   #[test]
-  fn axis_object_uses_axis_style_colour() {
+  fn axis_object_uses_axis_style_color() {
     let svg = interpret(
       "ExportString[Graphics[{AxisObject[Line[{{0, 0}, {1, 1}}], {0, 1}, AxisStyle -> Blue, BaseStyle -> Red]}], \"SVG\"]",
     )
@@ -9073,7 +9073,7 @@ mod region_product {
 }
 
 // CircularArcThrough. The arc of the circle through the given points, written
-// as a Circle running from the smallest of their angles about the centre to
+// as a Circle running from the smallest of their angles about the center to
 // the largest. Values verified against wolframscript.
 mod circular_arc_through {
   use super::*;
@@ -9100,7 +9100,7 @@ mod circular_arc_through {
         "CircularArcThrough[{{-1, 0}, {0, 1}, {1, 0}}]",
         "Circle[{0, 0}, 1, {0, Pi}]",
       ),
-      // A centre away from the origin, and a radius that stays a radical.
+      // A center away from the origin, and a radius that stays a radical.
       (
         "CircularArcThrough[{{1, 1}, {2, 2}, {3, 1}}]",
         "Circle[{2, 1}, 1, {0, Pi}]",
@@ -9109,7 +9109,7 @@ mod circular_arc_through {
         "CircularArcThrough[{{1, 0}, {0, 1}, {2, 3}}]",
         "Circle[{3/2, 3/2}, Sqrt[5/2], {ArcTan[3], Pi + ArcTan[3]}]",
       ),
-      // Radicals in the coordinates cancel to an exact centre.
+      // Radicals in the coordinates cancel to an exact center.
       (
         "CircularArcThrough[{{Sqrt[2], 0}, {1, 1}, {0, Sqrt[2]}}]",
         "Circle[{0, 0}, Sqrt[2], {0, Pi/2}]",
@@ -9145,7 +9145,7 @@ mod circular_arc_through {
   }
 
   #[test]
-  fn a_named_centre_and_radius_are_taken_as_given() {
+  fn a_named_center_and_radius_are_taken_as_given() {
     clear_state();
     for (code, expected) in [
       (
@@ -9219,7 +9219,7 @@ mod circular_arc_through {
       "expected ::spec, got {:?}",
       result.warnings
     );
-    // A centre or radius that does not fit leaves the call standing, without
+    // A center or radius that does not fit leaves the call standing, without
     // a message.
     for (code, expected) in [
       (
@@ -9434,11 +9434,11 @@ mod zero_argument_region_defaults {
   use super::*;
 
   #[test]
-  fn centre_only_solids_sit_at_the_origin() {
+  fn center_only_solids_sit_at_the_origin() {
     assert_eq!(interpret("Sphere[]").unwrap(), "Sphere[{0, 0, 0}]");
     assert_eq!(interpret("Ball[]").unwrap(), "Ball[{0, 0, 0}]");
     assert_eq!(interpret("Cuboid[]").unwrap(), "Cuboid[{0, 0, 0}]");
-    // A centre that was given stays untouched, radius or not.
+    // A center that was given stays untouched, radius or not.
     assert_eq!(interpret("Sphere[{1, 2, 3}]").unwrap(), "Sphere[{1, 2, 3}]");
     assert_eq!(
       interpret("Sphere[{1, 2, 3}, 2]").unwrap(),
@@ -9485,7 +9485,7 @@ mod zero_argument_region_defaults {
 
   #[test]
   fn annulus_and_torus_normalize_like_spherical_shell() {
-    // `Annulus` is the 2-D member, so its centre has two coordinates.
+    // `Annulus` is the 2-D member, so its center has two coordinates.
     assert_eq!(interpret("Annulus[]").unwrap(), "Annulus[{0, 0}, {1/2, 1}]");
     assert_eq!(
       interpret("Annulus[{1, 3}]").unwrap(),

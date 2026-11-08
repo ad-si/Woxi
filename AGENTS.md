@@ -41,6 +41,9 @@ There is 3 levels of tests:
 
 **Follow those rules:**
 
+- Use American English spelling in documentation, comments, messages, and
+    identifiers. Preserve external API names, quoted titles, and input data
+    whose spelling is required for compatibility.
 - Whenever you change something, add unit tests for it.
 - When fixing a bug, always add a regression test so the bug wont't occur again.
 - Always run `make test` after any changes to rule out any regressions.
@@ -61,7 +64,7 @@ There is 3 levels of tests:
     `/.` and `ReplaceAll`, `OrderingBy` and `Ordering`).
     Duplicates drift apart and are a common cause of divergences.
     Always delegate to the single canonical implementation.
-- Verified-but-unfixed divergences from `wolframscript` are catalogued in
+- Verified-but-unfixed divergences from `wolframscript` are cataloged in
     `tests/cli/comparison/mathematica/conformance_gaps.md`.
     Check there before investigating one, and record new ones there.
 - `scrut test tests/cli` runs each testcase from an isolated temporary

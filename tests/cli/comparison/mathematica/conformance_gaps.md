@@ -105,7 +105,7 @@ woxi eval 'ToString[Hold[Backslash[-a, b]], InputForm]'             # Hold[-a �
 
 Woxi groups `-a/b` as `-(a/b)` where wolframscript groups it as `(-a)/b` — a
 parse-precedence difference rather than a rendering one. `Hold[-1/x]` prints
-`-1/x` where wolframscript canonicalises to `-x^(-1)`. `- -x` and `!!a` are
+`-1/x` where wolframscript canonicalizes to `-x^(-1)`. `- -x` and `!!a` are
 parse errors in Woxi (the grammar forbids a second prefix operator).
 
 ### `ToString` renders 1D where wolframscript renders 2D ASCII art
@@ -360,7 +360,7 @@ operands themselves are parenthesized by precedence).
 
 WL renders a `\!\(\*…\)` box segment *anywhere* in a string as
 `DisplayForm[<box>]` in terminal OutputForm; Woxi only does it when the string
-*starts* with the segment. Generalising it would break plot labels, whose SVG
+*starts* with the segment. Generalizing it would break plot labels, whose SVG
 renderer typesets the raw markers — the real fix needs a "terminal text" vs
 "text handed to a typesetter" distinction the form system does not have.
 
@@ -556,7 +556,7 @@ parameters and rounding.
 `FunctionExpand[Gamma[0, z]]` is `-ExpIntegralEi[-z] + (-Log[-z^(-1)] +
 Log[-z])/2 - Log[z]` in WL and `(-Log[-z^(-1)] + Log[-z])/2 -
 ExpIntegralEi[-z] - Log[z]` in Woxi — same three terms, different order. WL
-compares a `c (p + q)` term against its neighbours using the sum's **last**
+compares a `c (p + q)` term against its neighbors using the sum's **last**
 (greatest) element: `Aa[z] + (Log[w] + Log[y])/2` keeps `Aa[z]` first because
 `Log[y] > Aa[z]`, while `ExpIntegralEi[-z] + (b + c)/2` puts the sum first
 because `c < ExpIntegralEi[-z]`. Woxi's `Plus` comparator always puts the
@@ -977,7 +977,7 @@ woxi eval 'Head[Overflow[]]'                                # Overflow
 ```
 
 Between `10^5` and the `$MaxNumber` boundary Woxi also keeps a rational power
-symbolic (`2^(10^10/3)` stays `2^(10000000000/3)`) where WL materialises the
+symbolic (`2^(10^10/3)` stays `2^(10000000000/3)`) where WL materializes the
 extracted integer factor.
 
 ### Positive and Sign underflow on a rational below the double range
@@ -1674,8 +1674,8 @@ The last ULP of `atanh`, `acos`, `asinh`, `tan`, `tanh` and friends differs
 between macOS and Linux, so a full-precision string assertion is
 platform-dependent: `Cot[0.3]` is `3.232728143765828` on macOS and
 `3.2327281437658275` on the Linux of CI, and `Coth[0.8]` ends in `66` versus
-`63`. The same 1-ULP FMA difference flips a single 8-bit colour channel in
-`ComplexPlot` domain-colouring output at an exact `x.5` boundary.
+`63`. The same 1-ULP FMA difference flips a single 8-bit color channel in
+`ComplexPlot` domain-coloring output at an exact `x.5` boundary.
 
 A test that cares about the last bit therefore has to assert the *property*
 rather than the digits: compare the reciprocal against the reciprocal
@@ -1946,7 +1946,7 @@ takes the factor back out at the end, and `integrate_ast`'s simplify pass
 re-collects it even when the rule distributes it. wolframscript is not
 consistent about this either — it collects `Integrate[x^4/(3*x^2 + 1), x]`
 into `(-3*x + 3*x^3 + Sqrt[3]*ArcTan[Sqrt[3]*x])/27` and distributes the
-neighbouring cases — so there is no rule here to copy.
+neighboring cases — so there is no rule here to copy.
 
 The same convention shows up whenever the result is a `Plus` with a shared
 numeric content: `Integrate[(2 + 2*x)/(-3 + 3*x - 5*x^2), x]` is
@@ -2308,7 +2308,7 @@ initial value of the k-th variable — and matches it term for term, secular
 
 - Coefficients that are not a small rational or the square root of one stay
   as machine reals, and a radical that both a numerator and a denominator
-  carry is not cancelled (`(Sqrt[3]*E^(2*t) − …)/(3*Sqrt[3]*E^t)` where WL
+  carry is not canceled (`(Sqrt[3]*E^(2*t) − …)/(3*Sqrt[3]*E^t)` where WL
   writes `(E^((3*t)/2) − …)/(3*E^(t/2))`).
 - A system with inexact coefficients (a Foucault-pendulum-style rotational
   coupling with a `0.1` rate) gets a clean trigonometric answer here. WL's
@@ -2326,7 +2326,7 @@ initial value of the k-th variable — and matches it term for term, secular
 
 `DSolve[u_xx + u_y == 0]` (the heat equation) is unevaluated; WL falls back to
 a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
-`a == 0` or `c == 0` WL also writes the characteristics unnormalised
+`a == 0` or `c == 0` WL also writes the characteristics unnormalized
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
 ### `DSolve` gaps met by Demonstrations
@@ -2345,13 +2345,13 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
   `(2 C[1] Cos[2 x] + Sin[2 x])/2`); Woxi leaves it as a sum
   (`C[1] Cos[2 x] + Sin[2 x]/2`).
 - A condition combining values at a point (`y[0] + y'[0] == 1`) is not
-  recognised.
+  recognized.
 
 ### `NDSolve`'s PDE branch is 1-D
 
 PDEs first order in one variable and one-dimensional in the other solve by
 the method of lines (`src/functions/ode_ast/pde_mol.rs`): `"DifferenceOrder"`
-4 stencils on a uniform grid (sized from the initial profiles, honouring
+4 stencils on a uniform grid (sized from the initial profiles, honoring
 `"MinPoints"`/`"MaxPoints"`), Rodas4 in time. Coupled systems, several time
 derivatives in one equation, evolution coefficients that vanish at a wall,
 any boundary condition form (Dirichlet, Neumann, Robin, coupled fluxes,
@@ -2397,7 +2397,7 @@ Wolfram Demonstration like
 [*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
 needs. The hyperbolic branch only supports a single dependent function.
 
-On the symbolic side `DSolve` recognises three first-order two-variable PDE
+On the symbolic side `DSolve` recognizes three first-order two-variable PDE
 shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
 among them.
 
@@ -2879,7 +2879,7 @@ With symbols wolframscript cancels and factors further:
 
 ```sh
 wolframscript -code 'TriangleCenter[{{0, 0}, {a, 0}, {b, c}}, "Orthocenter"]'  # {b, ((a - b)*b)/c}
-woxi eval 'TriangleCenter[{{0, 0}, {a, 0}, {b, c}}, "Orthocenter"]'            # the uncancelled barycentric quotient
+woxi eval 'TriangleCenter[{{0, 0}, {a, 0}, {b, c}}, "Orthocenter"]'            # the uncanceled barycentric quotient
 ```
 
 The rule is not `Together[ExpandAll[…]]` alone (that matches the
@@ -2941,7 +2941,7 @@ rewrite the head) against Woxi's `!(a && b && c)`, and
 BDD variable order is not always alphabetical.
 
 `BooleanFunction[k, n]` and `BooleanMinterms`/`BooleanMaxterms` with an integer
-variable count normalise to the opaque `BooleanFunction["BDD" -> …]` object —
+variable count normalize to the opaque `BooleanFunction["BDD" -> …]` object —
 **implemented**, encoding verified against WL for every function of 1, 3 and 4
 variables and a sample of 5. The only remaining divergence is the too-few-
 arguments case: `BooleanFunction[7, 2][True]` and `BooleanFunction[7, 2, {a}]`
@@ -3132,7 +3132,7 @@ Neville theta values are 1–2 ULP off wolframscript on some points.
 complex for a characteristic value in an unstable region (a complex
 characteristic exponent). Woxi returns a **real** value there. For a stable
 `(a, q)` with a non-integer exponent Woxi takes wolframscript's Floquet
-normalisation (unit-norm Fourier coefficients) and agrees; for an integer
+normalization (unit-norm Fourier coefficients) and agrees; for an integer
 exponent (the periodic `ce`/`se`) it keeps the `y(0) = 1` / `y'(0) = √a`
 scaling.
 
@@ -3206,7 +3206,7 @@ Woxi's straightforward splitting is the sensible answer. **Not reproducible.**
 
 ### `Hash[expr]` for non-strings
 
-wolframscript hashes an internal serialisation: `Hash[1, "CRC32"]` is
+wolframscript hashes an internal serialization: `Hash[1, "CRC32"]` is
 3017272578 and `Hash[{1,2}, "CRC32"]` is 1789268987, matching CRC32 of neither
 the WXF, the InputForm text, the FullForm text, nor an integer encoding.
 Strings and `ByteArray`s are special-cased to raw bytes and **do** match, as do
@@ -3380,7 +3380,7 @@ woxi eval 'MovingMap[Mean, {1,2,3,4,5}, 2]'            # {2, 3, 4}
 The trigger is the applied function, not the window: `MovingMap[Total, …]`
 stays exact in both. `Mean[{1,2,3}]` is exact on its own, yet WL floats it
 inside `MovingMap`. Which functions WL numericizes is not determinable without
-a large probe; Woxi's exact behaviour is arguably the better one.
+a large probe; Woxi's exact behavior is arguably the better one.
 **Not reproducible.**
 
 ### Robust statistics that iterate
@@ -3466,7 +3466,7 @@ not reproducible independently (`{{1,2},{3,4}}` — WL puts −0.372 first, Woxi
 
 `SmithDecomposition`'s `u` and `v` differ the same way, and WL sometimes keeps
 a **negative** diagonal entry in `s` (`{{1,0},{0,-2}}` stays) while Woxi always
-normalises to the canonical non-negative SNF — six probe rounds produced no
+normalizes to the canonical non-negative SNF — six probe rounds produced no
 rule. Woxi's answer is the mathematically canonical one. **Not reproducible.**
 
 ### `JordanReduce` scope
@@ -3549,7 +3549,7 @@ wolframscript -code 'RotationMatrix[Pi, {0, 0, x}]'
 # {{-((x Conjugate[x])/Abs[x]^2), 0, 0}, {0, -1, 0}, {0, 0, (x Conjugate[x])/Abs[x]^2}}
 ```
 
-Note the asymmetry — entry (1,1) keeps the un-cancelled `x Conjugate[x]/Abs[x]^2`
+Note the asymmetry — entry (1,1) keeps the un-canceled `x Conjugate[x]/Abs[x]^2`
 (which is just `1`) while entry (2,2) is a plain `-1`, so the two diagonal
 entries of the *same* rotation print differently. A fully symbolic axis
 `{a, b, c}` produces roughly 8 KB of nested `Conjugate[1/Sqrt[a Conjugate[a] +
@@ -3619,7 +3619,7 @@ WL counts an expression rewritten into a new one in place (a symbol
 whose value is another symbol, a call whose rule returns another call
 at the top) against `$IterationLimit`; only a rewrite nested inside a
 subexpression (`x = x + 1`, `z = {z}`) goes against `$RecursionLimit`.
-Woxi has only the recursion limit in general (`$IterationLimit` is honoured
+Woxi has only the recursion limit in general (`$IterationLimit` is honored
 for a few rules that rewrite to themselves), so both kinds end with
 `RecursionLimit`.
 
@@ -3695,7 +3695,7 @@ its step display (`$LoadShowSteps = True`, `Steps`) works. On a 30-integral
 sample 27 answers are character-for-character `wolframscript`'s and the
 other 3 are the same function written another way; the
 *IntWithStepsOfTeXForm* notebook reproduces three of its four examples
-exactly. What is left, all of it ordinary Woxi behaviour rather than
+exactly. What is left, all of it ordinary Woxi behavior rather than
 anything about the package:
 
 - **Loading takes about a minute** against roughly twenty seconds under
@@ -3860,7 +3860,7 @@ woxi eval 'NestWhile[#/2 &, 16, UnsameQ, 2]'                                    
 
 Successive halvings of 16 are never `SameQ`, so this iterates forever in
 wolframscript. Woxi silently stops after about 10 000 iterations and returns
-the value it had reached, which is neither wolframscript's behaviour nor an
+the value it had reached, which is neither wolframscript's behavior nor an
 error.
 
 ### `Return` unwinds through ordinary argument evaluation
@@ -3977,7 +3977,7 @@ is not recoverable.
 `Context["zzz`abc"]` returns `"zzz`"` in Woxi; wolframscript reports
 `Context::notfound` and stays unevaluated.
 
-### `Module` rename artefacts and `InformationData`
+### `Module` rename artifacts and `InformationData`
 
 `Module` locals are named `loc$1` here and `loc$` in wolframscript (and the
 counter value is a session number that can never be pinned), and
@@ -4137,7 +4137,7 @@ woxi eval 'AssociationThread[3, {1, 2}]'                # AssociationThread[3, {
 
 A scalar *value* is shared across the keys, but a scalar *key* against a list
 of values keeps only the last value, which is peculiar enough that
-generalising from two examples would be guessing. Left unevaluated on purpose;
+generalizing from two examples would be guessing. Left unevaluated on purpose;
 it echoes rather than aborting.
 
 ### Mixed association/list set operations
@@ -4251,7 +4251,7 @@ unevaluated.
 
 Valid objects with no message, but unmeasured — silently unevaluated. An
 interval-form `SoundNote` has absolute-placement semantics that are also not
-modelled.
+modeled.
 
 ### `InterpolatingFunction`'s raw InputForm
 
@@ -4398,7 +4398,7 @@ aborting). WL supports look-around and `\1`.
 
 ### `Longest`/`Shortest` in a definition
 
-The rule path (`/.`, `Cases`, `MatchQ`) honours them; the **definition** path
+The rule path (`/.`, `Cases`, `MatchQ`) honors them; the **definition** path
 strips them, so `f[Longest[x__], y__] := …` splits shortest-first.
 
 ### Unimplemented argument forms found by diffing against `SyntaxInformation`
@@ -4987,7 +4987,7 @@ loads it silently.
 
 `Graphics[…, Axes -> True, ImageSize -> {400, 400}]` lays its plotting area out
 from x = 0 with only a right-hand margin, so the tick label at the range
-minimum is centred on x = 0 and half of it falls outside the canvas; the
+minimum is centered on x = 0 and half of it falls outside the canvas; the
 topmost y label is clipped the same way. Wolfram insets the area far enough for
 both. This is the `Graphics` renderer, not the one `Plot` uses.
 
@@ -5037,7 +5037,7 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
 - `ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6}]` has 201 line points in
   Woxi and 284 in wolframscript (adaptive refinement). A curve clipped away
   by `PlotRange` still leaves a `Line` in Woxi.
-- wolframscript wraps the surface's `GraphicsComplex` in a list and colours a
+- wolframscript wraps the surface's `GraphicsComplex` in a list and colors a
   `ColorFunction` surface with `VertexColors`, so `p[[1, 2]]` is not a list
   of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
 - `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
@@ -5085,7 +5085,7 @@ reproduce wolframscript's primitive tree:
   derived. A chart with several datasets or with options still emits plain
   `{RGBColor[…], Rectangle[…]}` pairs.
 - `RectangleChart3D` boxes are `GraphicsComplex` polygons at wolframscript's
-  corners, above an invisible base plate. The faces carry a plain colour
+  corners, above an invisible base plate. The faces carry a plain color
   instead of wolframscript's `VertexColors` shading (and its
   `LightDarkSwitched` pairs), and the scaled backdrop polygons, face grids
   and options are missing.
@@ -5097,7 +5097,7 @@ reproduce wolframscript's primitive tree:
 - `BulletGauge` builds wolframscript's tree. Two details differ: a
   reference marker's matrix entry (`-0.07499999999999996`) changes in its
   last digits with the marker position in wolframscript, and the series
-  colours from the third series on drift in the last digit. The colours
+  colors from the third series on drift in the last digit. The colors
   are hues `0.9/φ` apart modulo 0.9, at saturation and brightness 0.73.
   Minor ticks (`ScaleDivisions -> {n, m}`) are not drawn. The renderer
   draws `Scaled[{dx, dy}, p]` and `Offset[d, p]` points at `p`, so the
@@ -5115,9 +5115,9 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
   choice of place; WL's `PlotRangePadding` for labels comes out a little
   larger (`Scaled[0.0809] + extent/250 pt` fits its numbers), so Woxi's
   range ends short of WL's next tick. The callout positions come from a
-  greedy search, not WL's optimiser, so the leader directions differ.
+  greedy search, not WL's optimizer, so the leader directions differ.
 - Series-end labels that crowd each other are spread apart evenly, where
-  WL's leaders bend by their own optimiser.
+  WL's leaders bend by their own optimizer.
 - A `Legended` dataset of `ListPlot` draws its legend entry, but the
   result is a `Graphics`, not WL's `Legended[Graphics[…],
   Placed[PointLegend[…], After]]`.
@@ -5134,13 +5134,13 @@ as the fraction `1/x`.
 With the same scene both engines place every primitive identically, but:
 
 - **Lighting** follows WL's model (`src/functions/lighting3d.rs`, decoded by
-  rasterising single polygons at known normals with wolframscript and
-  validated on random unseen orientations, to within 1/255): colour = glow +
+  rasterizing single polygons at known normals with wolframscript and
+  validated on random unseen orientations, to within 1/255): color = glow +
   Σ ambient·c + Σ light·(c·max(0, n·l) + s·(n·h)^e), clipped per channel, with
   faces lit two-sided and `"Directional"` lights at `ImageScaled[p]` pointing
   along `p` in the camera frame. `Lighting -> Automatic` is WL's ambient plus
-  four coloured lights, plots use the default theme's per-surface material
-  (`System`PlotThemeDump`$ThemeDefaultLighting`: palette colour, its own
+  four colored lights, plots use the default theme's per-surface material
+  (`System`PlotThemeDump`$ThemeDefaultLighting`: palette color, its own
   darkened lights, `Specularity[White, 3 | 6]`), a `ColorFunction` surface is
   lit by `"Neutral"` lights, and explicit specs (`"Ambient"`, `"Directional"`,
   `"Point"`, `"Spot"`, the named sets, `None`, and `Lighting` inside a
@@ -5152,15 +5152,15 @@ With the same scene both engines place every primitive identically, but:
     face (local viewer); Woxi's is the same everywhere. A highlight on a large
     flat face can sit a little off (up to a few levels of 255).
   - `"Spot"` lights are implemented from the documentation's form (cone half
-    angle, `cos^s` falloff, default target the scene centre) but were not
+    angle, `cos^s` falloff, default target the scene center) but were not
     measured against wolframscript; `"Point"` lights are, without
     attenuation.
-  - `MeshShading` colours are lit like a `PlotStyle` colour; not measured.
+  - `MeshShading` colors are lit like a `PlotStyle` color; not measured.
   - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
     lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
     WL 15 gradient bar style is not implemented.
 - **Projection.** Woxi's camera is now a perspective one like Wolfram's (the
-  eye `|ViewPoint|` box sides from the box centre; a `ViewPoint` with an
+  eye `|ViewPoint|` box sides from the box center; a `ViewPoint` with an
   infinite component is orthographic). An explicit `ViewAngle` still sets the
   scale from the orthographic law above, so a wide angle (≳30°) can leave the
   silhouette a few percent off. The 3D charts (`chart.rs`) keep their own
@@ -5173,7 +5173,7 @@ directional, point or spot light that reaches the face (never for ambient
 light). `Specularity[s]` without an exponent falls off as `(n·h)^1.5` in
 wolframscript (fitted over four angles; every explicit exponent is used as
 given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
-colours — wolframscript draws no highlight even though the plot's style names
+colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
 ### `SphericalRegion -> True` shrinks about 17 % more than Wolfram
@@ -5190,7 +5190,7 @@ A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangl
 clip path and affine matrix), but the image is not lit: Wolfram shades it with
 the scene lighting. Textured concave or holed polygons render as plain
 default-blue faces. This cannot be checked against wolframscript by diffing SVG
-(it rasterises 3D output).
+(it rasterizes 3D output).
 
 ### Some `Complex*` plot functions are unimplemented
 
@@ -5215,7 +5215,7 @@ geographiclib (both the Rust crate and the canonical Python reference) by a few
 to tens of ULP. **Not reproducible** with this library.
 
 `Entity["City", …]` resolves to the region centroid, because the offline
-country database has no city-level data — Munich resolves to Bavaria's centre
+country database has no city-level data — Munich resolves to Bavaria's center
 rather than WL's actual Munich coordinates. `GeoNearest` returns a human name
 where WL returns its canonical entity id.
 
@@ -5236,7 +5236,7 @@ overlays clickable areas on them.)
 
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
-- One unrecognised control spec makes the **entire** `Manipulate` give up, so a
+- One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
 
@@ -5271,7 +5271,7 @@ woxi eval 'NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < 4], {p, -2, 2}, {q, 1, 5}
 ### Woxi's own SVG cannot be compared
 
 `wolframscript`'s `ExportString[…, "SVG"]` is always cairo output — `pt` units,
-text as glyph outlines, `rgb(%)` colours — for every graphics type. A test that
+text as glyph outlines, `rgb(%)` colors — for every graphics type. A test that
 prints raw SVG can never match. Assert the meaning instead (`Area[Polygon[…]]`
 rather than counting `<polygon>` tags).
 
@@ -5367,7 +5367,7 @@ accepted, but the picture is the same as without it.
 - `ScalingFunctions` other than `"Log"`/`"Log10"`/`None` (e.g. `"Reverse"`,
   `"Log2"`, `"SignedLog"`), and `ScalingFunctions` on `ParametricPlot`.
 - `Graphics`: `PlotRegion`, `RotateLabel`, `AlignmentPoint`,
-  `BaselinePosition`, `FormatType`; `LabelStyle` sets only the colour.
+  `BaselinePosition`, `FormatType`; `LabelStyle` sets only the color.
 - `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
   `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
@@ -5414,7 +5414,7 @@ Still different:
   WL's is scaled (`{0.008, 0}`) and varies with the chart.
 - `PieChart` of several datasets keeps the plain pie's outer radius; WL's
   rings fill a little more of the frame.
-- A log x axis (`Histogram[…, {"Log", n}]`) is labelled `0.05, 0.1, 0.5, …`
+- A log x axis (`Histogram[…, {"Log", n}]`) is labeled `0.05, 0.1, 0.5, …`
   where WL writes `0.010, 0.100, 1, 10`.
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
@@ -5423,7 +5423,7 @@ Still different:
 
 `Mesh`, `MeshFunctions`, `MeshStyle` and `MeshShading` on the curves of
 `Plot`, joined `ListPlot` and `ListLinePlot` match wolframscript in the mesh
-point positions, counts, colours and radii, except for:
+point positions, counts, colors and radii, except for:
 
 - `MeshShading` with several mesh functions. Both take a rank-`k` array, and
   both reject a flat list (`MeshShading::colshd`, which Woxi does not print).
@@ -5469,7 +5469,7 @@ Found comparing the pictures of the Wolfram-Language-Graphics-Tests suite
   box width (39 pt for "2"/"0.45", 56 pt for "2.5"/"2500") follows no rule
   found, Woxi sizes it as both numbers plus 11 pt.
 - `PlotLayout` panels of labeled datasets (`ListPlot[{Labeled[d1, "a"],
-  Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centres each label at the
+  Labeled[d2, "b"]}, PlotLayout -> "Row"]`): WL centers each label at the
   top of its panel; Woxi draws it as the panel's end label.
 - Graphics `PlotMarkers` (`PlotMarkers -> {{Graphics[…], size}, …}`) and
   `PlotMarkers -> Automatic` shapes draw the default dot.
@@ -5677,7 +5677,7 @@ CAT02/plain-von-Kries cone matrices.
 A *two*-channel image (gray plus alpha) diverges outright: Woxi balances the
 gray channel and drops the alpha, wolframscript mixes the two channels into
 something that is not the balance of either. Same family as the four-channel
-`ColorConvert` entry below — an unusual channel count with no colour space to
+`ColorConvert` entry below — an unusual channel count with no color space to
 go by.
 
 ### `Pruning[image]` picks the other pixel of a final pair
@@ -5700,7 +5700,7 @@ alike in every other case tried, so the rule wolframscript really uses is
 something else again — it is not raster order, reverse raster order, or
 distance from the component's centroid.
 
-### `ColorConvert` of a four-channel image with no colour space
+### `ColorConvert` of a four-channel image with no color space
 
 ```sh
 wolframscript -code 'ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}], "RGB"]]'
@@ -5758,8 +5758,8 @@ woxi eval 'TotalVariationFilter[{1, 2, 3, 4, 100}, -1]'
 These return the right expression and only the message is missing, so they are
 conformance gaps rather than wrong answers. `Blur` and `ImageMultiply["x"]` are
 missing `::bdrad` and `::bdarg` for the same reason. Note that
-`TotalVariationFilter`'s second argument is a regularisation parameter, not a
-neighbourhood range, so it does not share the other filters' validation.
+`TotalVariationFilter`'s second argument is a regularization parameter, not a
+neighborhood range, so it does not share the other filters' validation.
 
 More than the documented number of arguments gives `::argt` in Woxi where
 wolframscript routes through its options machinery and gives `nonopt` —
@@ -5788,11 +5788,11 @@ produces a gradient magnitude that is *exactly* constant across six pixels.
 wolframscript keeps alternating ones there; Woxi's non-maximum suppression
 keeps the whole plateau.
 
-No rule over the magnitudes of the two neighbours can tell index 3 from index 4
+No rule over the magnitudes of the two neighbors can tell index 3 from index 4
 in that run — both have equal magnitudes on both sides — so the tie-break uses
 information that could not be identified from the outputs. Every
 non-degenerate case matches, over 15 reference cases spanning 1D and 2D shapes,
-colour and Byte images, and explicit thresholds. **Not reproducible.**
+color and Byte images, and explicit thresholds. **Not reproducible.**
 
 ### LaplacianGaussianFilter and DerivativeFilter are unimplemented
 
@@ -5804,15 +5804,15 @@ wolframscript -code 'First[ImageData[DerivativeFilter[Image[{{0., 0., 0., 1., 0.
 ```
 
 Both are feature gaps rather than divergences. Neither can reuse
-`GradientFilter` directly: `DerivativeFilter` normalises its kernel
+`GradientFilter` directly: `DerivativeFilter` normalizes its kernel
 differently (the impulse responses do not agree up to a scale factor), and
 `LaplacianGaussianFilter`'s three-tap response at radius 1 is a scaled second
 difference rather than the second-derivative-of-Gaussian kernel the name
 suggests.
 
-### Colour-space tags do not propagate
+### Color-space tags do not propagate
 
-`ImageTake` and `ImagePartition` propagate an image's colour-space tag;
+`ImageTake` and `ImagePartition` propagate an image's color-space tag;
 `Blur`, `ImageAdjust`, blends, morphological operations and `ImageResize` all
 construct an untagged image. Wolfram probably propagates — each needs its own
 probe.
@@ -5848,7 +5848,7 @@ tables (names, RGB values and per-channel exactness) plus the shape of the
 Echoes unevaluated; a median-cut palette choice would likely be a
 selection-artifact problem.
 
-### `ImageMeasurements` intensity on colour images
+### `ImageMeasurements` intensity on color images
 
 WL takes the luma and carries its Real32 rounding (`MinIntensity` of pure red
 is `0.29899999499320984`); those measures are left unevaluated in Woxi.
@@ -5940,7 +5940,7 @@ recoverable from outside.
 Woxi bundles the named entities it can answer every property for, plus the
 parametrized families (`{"Complete", n}`, `{"Cycle", n}`, `{"Path", n}`,
 `{"Star", n}`, `{"Wheel", n}`, `{"CompleteBipartite", {m, k}}`). Names,
-vertex labelling and edge order follow Wolfram's, and an unknown entity gets
+vertex labeling and edge order follow Wolfram's, and an unknown entity gets
 the same `GraphData::notent` message and unevaluated result — but
 `Length[GraphData[]]` is 14 against WL's 12474, and any entity outside the
 bundled set is a `notent` where WL answers. Only the ~760-entry property list
@@ -6019,7 +6019,7 @@ each of those on the transposed graph) tops out at 67/115 — no candidate fits.
 The order in fact does not depend on the graph alone. `Graph[{4,1,2,7,3,6,5},
 {6->7}]` and `Graph[{1,2,3,4,5,6,7}, {6->7}]` both give `{3,6,7,1,2,5,4}`, so
 `VertexList` order is mostly ignored; but `Graph[{7,6,5,4,3,2,1}, {6->7}]`
-gives `{3,6,7,1,5,2,4}`, and relabelling the same graph to the matching
+gives `{3,6,7,1,5,2,4}`, and relabeling the same graph to the matching
 strings gives `{c,d,e,f,g,b,a}`. That is WL's internal vertex hashing showing
 through, and it is deterministic per run but not derivable. Woxi always
 returns the lexicographically smallest topological order (Kahn's algorithm,
@@ -6092,7 +6092,7 @@ internal hash order. Woxi keeps input order.
 - **`"CircularEmbedding"` order** (default `"OptimalOrder" -> True`): the
   order does not depend on the order the edges are listed in. Woxi walks
   the graph depth-first from the first vertex, trying the highest-numbered
-  neighbour first and following directed edges forwards only; in a tree
+  neighbor first and following directed edges forwards only; in a tree
   whose walk ends in exactly two dead ends the walk's first run is turned
   round. The same reversal now applies to directed cycles with one chord
   and two DFS dead ends: directed cycles with a chord from
@@ -6131,8 +6131,8 @@ internal hash order. Woxi keeps input order.
   for a graph of more than 20 vertices or with small vertices. The
   switch-over is read off a handful of graphs (cycles of 20 and 21
   vertices, a path of 11); it is not exactly WL's rule.
-- **`CommunityGraphPlot`** draws WL's look (grey closed-spline rings round
-  each community, WL's community colours) but its own layout: each
+- **`CommunityGraphPlot`** draws WL's look (gray closed-spline rings round
+  each community, WL's community colors) but its own layout: each
   community is laid out as its own graph and the communities as the
   vertices of the graph of communities, turned so linked vertices face
   each other. WL bends the chain of three triangles of the comparison test
@@ -6229,7 +6229,7 @@ Woxi keeps the input, so `MeshCells[mr, 1]` and
 `PropertyValue[{mr, 1}, MeshCellMeasure]` list the same edges in a different
 order. The 2-D mesh renderer also ignores `MeshCellStyle`,
 `MeshCellHighlight` and `MeshCellLabel` (cells are drawn in the default
-colour).
+color).
 
 ### `FindCurvePath` finds one curve where Wolfram may find several
 
@@ -6253,7 +6253,7 @@ woxi eval '{RegionDimension[Tube[{{0,0,0},{0,0,2}}]], …}'
 are there). `Torus` has `RegionMeasure` — `RegionMeasure[Torus[{0,0,0},{1,3}]]`
 is `8*Pi^2`, correct — but `Area`/`SurfaceArea` do not route a 2-dimensional
 region to it the way they do for `Sphere`. `Hexahedron`'s volume is only
-computed from the centre-and-edge Platonic form, not from the eight-vertex
+computed from the center-and-edge Platonic form, not from the eight-vertex
 form its default expands to, which needs a general decomposition rather than
 a table entry. Independent of how the region was written: the zero-argument
 default forms diverge for the same reason the explicit ones do.
@@ -6262,7 +6262,7 @@ default forms diverge for the same reason the explicit ones do.
 
 `TriangleCenter[Triangle[{{0,0,0},{4,0,0},{0,3,0}}], "Circumcenter"]` is
 `{2, 3/2, 0}` in Woxi; wolframscript handles only the planar case and leaves
-the call unevaluated. Deliberate — the 3D centre is well defined.
+the call unevaluated. Deliberate — the 3D center is well defined.
 
 ### `ConvexHullMesh`'s 3D facet order and rotation is qhull's
 
@@ -6460,11 +6460,11 @@ match. Every value a pattern read *returns* agrees, including a whole
 sequence of them — WLJS Notebook's `.wln` reader is four pattern reads on one
 stream and gives identical text on both. Only mixing a pattern read with a
 plain read on the same stream diverges, which is why Woxi keeps the
-self-consistent behaviour rather than emulating the buffer.
+self-consistent behavior rather than emulating the buffer.
 
 ### `ExampleData` content is generated by design
 
-Woxi serves Wolfram's whole `ExampleData` catalogue — all 19 collections and
+Woxi serves Wolfram's whole `ExampleData` catalog — all 19 collections and
 their entries, the same property names, the same head and shape of every value
 and the same metadata (image sizes, channels and types, sample rates and
 lengths, vertex and face counts, matrix dimensions and nonzero counts, table
@@ -6512,7 +6512,7 @@ Known structural gaps:
 - The retired `"TestImage"` entries `"Lena"` and `"TestPattern"` (no longer
   listed, still served with `ExampleData::obsolete`) were added to the table
   by hand from the USC-SIPI originals they came from (4.2.04, 512 × 512 RGB;
-  testpat.1k, 1024 × 1024 gray; both sizes and colour types confirmed
+  testpat.1k, 1024 × 1024 gray; both sizes and color types confirmed
   against wolframscript). Their histogram statistics are estimates, not
   recorded from wolframscript.
 
@@ -6563,15 +6563,15 @@ only literal lists are comparable.
 
 ### CSV `ColumnTypes`
 
-wolframscript types the last column of a labelled table as `"String"` when the
+wolframscript types the last column of a labeled table as `"String"` when the
 text does not end in a newline, contradicting its own import of the same field
-as an integer. It also changes its CSV behaviour mid-session once any `"Table"`
-import has run — `HeaderLines` is ignored in a cold kernel and honoured after,
+as an integer. It also changes its CSV behavior mid-session once any `"Table"`
+import has run — `HeaderLines` is ignored in a cold kernel and honored after,
 and booleans are coerced in a cold kernel and left as strings after. Woxi
-implements the cold-kernel behaviour and stays newline-agnostic.
+implements the cold-kernel behavior and stays newline-agnostic.
 **Not reproducible.**
 
-Its `ColumnTypes` **values** are self-contradictory in the labelled two-column
+Its `ColumnTypes` **values** are self-contradictory in the labeled two-column
 case as well: `"a,b\n1,2"` types the last column as String although it holds
 numbers, while `"a,b,c\n1,2,3"` types all three `Integer64`.
 
@@ -6696,7 +6696,7 @@ bug, not the (already fixed) `#0@` self-reference.
 
 The TCP socket functions (`SocketOpen`, `SocketConnect`, `SocketListen`,
 `SocketReadMessage`, `SocketReadyQ`, `SocketWaitNext`, `SocketWaitAll`,
-`Sockets`) were implemented against behaviour recorded from wolframscript in
+`Sockets`) were implemented against behavior recorded from wolframscript in
 advance. The entries below are the parts of that surface **no wolframscript
 run has confirmed**: the machine Woxi is developed on has no Wolfram Engine, so
 these are Woxi's choices, not verified matches. Check each one against
@@ -6751,7 +6751,7 @@ wider difference in how the two report a bad socket.
 `Data` and `DataBytes` are delayed association entries (`key :> value`), so a
 handler that only reads `DataByteArray` pays neither the text decoding nor one
 `Expr` per byte. Which of the keys wolframscript delays is unverified; the
-laziness itself is what the recorded behaviour called for.
+laziness itself is what the recorded behavior called for.
 
 ### `SocketWaitNext` and `SocketWaitAll` on a timeout
 
@@ -6818,7 +6818,7 @@ instead and answers `The socket object … is invalid or not open.` plus
 `$Failed`.
 
 `tests/cli/sockets/SocketReadMessage.md` used to run exactly that as a
-testcase; it now shows it as an untested example and leaves the behaviour to
+testcase; it now shows it as an untested example and leaves the behavior to
 the unit tests, because no bound on the call makes it conform. Never run it
 against wolframscript: a stuck `wolframscript`
 holds the single license slot, so every *later* invocation fails with the
@@ -6852,7 +6852,7 @@ Handlers run on the thread that evaluates Wolfram code — the only thread that
 may touch an `Expr` — so they fire where evaluation waits: `Pause`, a blocking
 socket read, `SocketWaitNext`/`SocketWaitAll`, `SocketReadyQ` with a timeout,
 and between statements. A long computation with no such point defers every
-handler until it ends. The recorded wolframscript behaviour agrees (a handler
+handler until it ends. The recorded wolframscript behavior agrees (a handler
 observably fired during a later blocking call rather than at write time), but
 only for that one case.
 
@@ -6915,7 +6915,7 @@ proportions differ from wolframscript. Named edge shapes other than
   ColorFunction -> (RGBColor[#, #, #] &)]` gives byte 192, wolframscript
   191. No index rule that fits these also fits a dense sweep of other
   values, where `min(floor(1024 x), 1023)` matches.
-- On an integer-type image with no `ColorFunction` (label colouring)
+- On an integer-type image with no `ColorFunction` (label coloring)
   `Colorize` stays unevaluated.
 
 ## PolyhedronData["BilinskiDodecahedron", ...]
@@ -6955,7 +6955,7 @@ they may be ordered or simplified differently from Wolfram's.
 ### `PolyhedronData["GreatIcosahedron", …]` ordering and volume are unverified
 
 Vertices reuse the small stellated dodecahedron's order and faces are the 20
-outward-wound unit triangles of mutual second neighbours, derived from the
+outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
@@ -6996,7 +6996,7 @@ in the `Logarithmic Integral on the Critical Line` Demonstration).
 
 `WordData[word]` (parts of speech, definitions) ships no data in Woxi, so it
 stays unevaluated. The `Oulipo: Wordshift + 7` Demonstration needs it (its
-`Manipulate` is initialised from it together with an `ExampleData` text,
+`Manipulate` is initialized from it together with an `ExampleData` text,
 which Woxi generates), so only its static content and stored output render. `DictionaryLookup` works
 against the bundled word list, which may differ from Wolfram's dictionary.
 
@@ -7062,8 +7062,8 @@ to, but not the same as, the original's.
 
 `GraphUtilities`HamiltonianCycles` searches the graph's sparse adjacency matrix
 in its stored order. `UndirectedGraph[g]` of a directed `g` keeps, in Wolfram,
-the storage order of `Transpose[m] + m` — every vertex's in-neighbours of `g`
-before its out-neighbours — while a `Graph` built from the same edges is stored
+the storage order of `Transpose[m] + m` — every vertex's in-neighbors of `g`
+before its out-neighbors — while a `Graph` built from the same edges is stored
 ascending. Woxi's graphs carry no storage order, so it searches the
 `UndirectedGraph` result ascending and can report other cycles first (the same
 set with `All`).
@@ -7072,14 +7072,14 @@ set with `All`).
 
 A `Grid` cell holding `Rotate[Text["Value"], 90 Degree]` (the usual vertical
 axis label beside a `GraphicsGrid`, as in the `Intramarginal Rent`
-Demonstration) is drawn unrotated. Rotation is honoured for plot labels
+Demonstration) is drawn unrotated. Rotation is honored for plot labels
 (`PlotLabel`/`AxesLabel`) but not for `Grid` cell content.
 
 ## Combinatorica graph functions and `{"Prism", n}` (unverified against wolframscript)
 
 `Combinatorica`FromUnorderedPairs`, `V`, `ToAdjacencyLists`,
 `ConnectedComponents`, `BreadthFirstTraversal[g, v]` and `ShortestPath` were
-written from the package's documented behaviour (as needed by the `Two Points
+written from the package's documented behavior (as needed by the `Two Points
 on a Polyhedron` Demonstration) and could not be checked against a real kernel:
 the circular-embedding vertex coordinates, the tie-breaking order of the
 traversal/shortest path, and the `Level`/`Edge` flags of
@@ -7169,7 +7169,7 @@ printed form of the result differs.
 {{d, Default} -> MeshCellHighlight | MeshCellLabel -> …}` option
 wolframscript adds. Woxi now renders mesh cells and explicit `MeshCellLabel`
 options, but does not yet apply the stored `MeshCellHighlight` and
-`MeshCellLabel` properties from `HighlightMesh`. wolframscript's echo also normalises the mesh itself (machine
+`MeshCellLabel` properties from `HighlightMesh`. wolframscript's echo also normalizes the mesh itself (machine
 coordinates, `{Polygon[…]}` cells), which Woxi does not.
 
 ## ``ComputationalGeometry`VoronoiDiagram`` of machine points: last digits
@@ -7195,11 +7195,11 @@ diagonal it returns ten lines, Woxi one. The peak picking is not decoded, so
 the two `Round[First /@ ImageLines[…]]` cases are skip-listed.
 
 Decoded so far, from the lines wolframscript returns for w × h images: the
-accumulator has `Round[d] - 1` distance bins over the diagonal `d`, centred
-on the image centre, and `2 Round[π d/(4√2)] + 1` angle bins at
+accumulator has `Round[d] - 1` distance bins over the diagonal `d`, centered
+on the image center, and `2 Round[π d/(4√2)] + 1` angle bins at
 `(k + 1/2) π/n`. A single 20-pixel column comes back as 12 lines with
 normals between 150° and 24°. Most of them are not local maxima of a plain
-vote count under any pixel-centre or rounding convention tried, so the
+vote count under any pixel-center or rounding convention tried, so the
 voting itself (weights, prior edge detection or smoothing) is still unknown.
 `MaxFeatures -> 1` returns the default list's second line, so the list is
 not ordered by strength either.
@@ -7282,7 +7282,7 @@ returns as exactly `0.` can be about `1*^-16` in Woxi.
 ### `Interpolation` ignores `PeriodicInterpolation -> True`
 
 wolframscript's periodic interpolation wraps the argument into the data's
-period and takes the cubic's neighbours across the seam:
+period and takes the cubic's neighbors across the seam:
 `Interpolation[{{0, 1}, {1, 2}, {2, 0}, {3, 1}}, PeriodicInterpolation -> True]`
 gives 1.6875 at 0.5 (the window {-1, 0, 1, 2} with the value at -1 taken from
 2) and the same at 3.5. Woxi interpolates the data as it stands (2.25 at 0.5)
@@ -7307,7 +7307,7 @@ form. `Fit` with such responses uses wolframscript's form, `s_j (P_j1 y_1 +
 ### `NDSolve` ignores the `"FixedStep"` sub-method
 
 `Method -> {"FixedStep", Method -> "ExplicitEuler"}` (or any other
-sub-method) is accepted but not honoured: Woxi integrates with its own
+sub-method) is accepted but not honored: Woxi integrates with its own
 accurate scheme. For `y'[t] == -y[t], y[0] == 1` on `{t, 0, 1}` with
 `StartingStepSize -> 0.1`, WL's explicit Euler gives `y[1] = 0.9^10 =
 0.348678`, while Woxi returns `0.367879`. Step-size stability demonstrations
@@ -7449,10 +7449,10 @@ element. Only the digits of an over-long integer are shortened
 ## ImageRotate: exact pixel-corner ties at an arbitrary angle
 
 `ImageRotate` at an angle that is not a right angle samples the source pixel
-under each output pixel centre. When that point falls exactly on a source
-pixel corner (the canvas centre of an even-sized image on an odd canvas),
+under each output pixel center. When that point falls exactly on a source
+pixel corner (the canvas center of an even-sized image on an odd canvas),
 wolframscript's choice depends on its transform's rounding noise:
-`ImageRotate[Image[{{1, 0}, {0, 1}}, "Byte"], 1]` has a `0` in the centre,
+`ImageRotate[Image[{{1, 0}, {0, 1}}, "Byte"], 1]` has a `0` in the center,
 Woxi takes the lower-right pixel (`1`). At `Pi/4` both pick the lower-right.
 
 ## Exact `Eigenvectors` with quadratic-surd components: unreduced form
@@ -7591,7 +7591,7 @@ woxi eval 'EdgeList[CanonicalGraph[PetersenGraph[]]][[;; 3]]'
 # {1 <-> 2, 1 <-> 3, 1 <-> 4}
 ```
 
-Woxi orders vertices by their refined degree colouring and settles the ties
+Woxi orders vertices by their refined degree coloring and settles the ties
 left over with the lexicographically smallest edge list. That reproduces
 wolframscript's labels for graphs that degree refinement separates (paths,
 stars, trees, cycles, complete bipartite graphs) but not for vertex-transitive
@@ -7643,7 +7643,7 @@ images), so they are not implemented yet:
   3-argument series-in-`x` form is not implemented, so neither is the `Reals`
   filter on top of it.
 - `CircleThrough[pts, q]` / `CircleThrough[pts, q, r]` with points that are not
-  all at distance `r` from `q` stay unevaluated; wolframscript's behaviour
+  all at distance `r` from `q` stay unevaluated; wolframscript's behavior
   there is unverified.
 
 ## Parameter sweep 4 (ODEs & calculus): open items
@@ -8037,8 +8037,8 @@ Verified against the reference pages, but not (fully) implemented:
   nested association `<|"group a" -> <|"a" -> {1, 1}, …|>, …|>`) draws no
   sectors; only one dataset is supported.
 - `ChartLabels` / `PlotLabels` of multi-ring `PieChart3D` / `SectorChart3D`
-  (the ring names) are not drawn; only a single pie/ring is labelled.
-- With an explicit `ChartStyle` list, `PieChart3D` colours its slices in
+  (the ring names) are not drawn; only a single pie/ring is labeled.
+- With an explicit `ChartStyle` list, `PieChart3D` colors its slices in
   size order rather than data order (the slices are drawn smallest first).
 - `EventData[values, censoring]` is not implemented, so a chart of it prints
   the "not yet implemented" notice (the chart itself draws the values).
@@ -8262,7 +8262,7 @@ from a stated rule or needs missing machinery:
   (alternating ends between levels); WL's label placement differs.
 - `ComplexPlot`: WL's SVG export frames the data rectangle with a thin
   black box (an edge of its texture-mapped polygon); Woxi does not.
-- `LineIntegralConvolutionPlot`: the default colouring approximates WL's
+- `LineIntegralConvolutionPlot`: the default coloring approximates WL's
   brown-to-cream magnitude gradient with `"SiennaTones"` over 0.4..0.8 of
   the rescaled norm (within a few percent); the noise texture and its
   intensity mapping are Woxi's own, so pixels never match.
@@ -8649,9 +8649,9 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   snapshots, so it is left for a dedicated pass.
 - `Line` strokes use butt caps; wolframscript draws `stroke-linecap:square`
   (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
-- Graphics frames are drawn 1 pt wide in the theme grey; wolframscript uses
+- Graphics frames are drawn 1 pt wide in the theme gray; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
-- `GraphicsGrid[…, ImageSize -> 400]` of labelled graphics is 456 pt tall
+- `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
@@ -8715,7 +8715,7 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
   draws a minus sign (`−10`). Continuous bars now use SVG gradients.
 
-## Plot styling and labelling options (graphics comparison sweep, 2026-11)
+## Plot styling and labeling options (graphics comparison sweep, 2026-11)
 
 - Structured mathematical plot titles and legend entries now use native
   layout boxes, including stacked fractions, binomials and joined radicals.
@@ -8726,7 +8726,7 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Callout[f, label, Above]` puts the label straight above its anchor with
   a vertical leader; WL offsets it to the side along a curved leader.
   `PlotLabels -> Automatic` leaders are straight where WL draws a dog-leg,
-  and a `Placed[label, Above]` at the first point of a curve is centred on
+  and a `Placed[label, Above]` at the first point of a curve is centered on
   it (overlapping the y axis) where WL keeps it clear of the axis.
 - `PlotPoints -> n, MaxRecursion -> 0` samples evenly; WL jitters the
   initial samples, so the polyline vertices differ.
@@ -8789,26 +8789,26 @@ ListContourPlot3D, StreamPlot3D, perspective camera and picture size,
 PlotRange clipping of curved solids, ViewPoint -> Top/Front, cylinder and
 cone bounds/rims, VertexColors, Plot3D's BoundaryStyle/Mesh/MeshStyle/
 MeshFunctions/MeshShading/RegionFunction/Filling/PlotLegends, smooth
-RegionPlot3D, per-level ContourPlot3D colours, solid VectorPlot3D arrows,
+RegionPlot3D, per-level ContourPlot3D colors, solid VectorPlot3D arrows,
 GraphPlot3D of a Graph. Later: smooth (Gouraud) shading of curved
 primitives and plot surfaces — each facet is lit at its corners and filled
 with an SVG linear gradient, the least-squares single-direction fit of the
-three corner colours (rms error about 0.1–1.2 levels of 255 under the
-default coloured lights, at most ~6 on a coarse surface) —, coplanar faces
+three corner colors (rms error about 0.1–1.2 levels of 255 under the
+default colored lights, at most ~6 on a coarse surface) —, coplanar faces
 drawn in primitive order, lines ordered against large faces, rounded `Tube`
 ends and corners and the slim `Arrow[Tube]` head, upright z axis label,
 `EdgeForm[Dashed]` with an inherited edge style, `FaceGrids`, `AxesEdge`,
-unlabelled ticks, ContourPlot3D's default mesh and gradient normals,
+unlabeled ticks, ContourPlot3D's default mesh and gradient normals,
 scattered ListPlot3D drawn on its own triangulation, BarChart3D /
 RectangleChart3D / Histogram3D / BubbleChart3D built as wolframscript's
-`Graphics3D`, PieChart3D's view, colours and smooth wall. What still
+`Graphics3D`, PieChart3D's view, colors and smooth wall. What still
 differs:
 
-- Smooth shading interpolates colours linearly across a facet (Gouraud), so
-  a sharp highlight or the edge of a coloured light still shows the
+- Smooth shading interpolates colors linearly across a facet (Gouraud), so
+  a sharp highlight or the edge of a colored light still shows the
   facets faintly where wolframscript (an embedded raster) lights per pixel.
   A gradient varies along one direction only; where the red, green and
-  blue gradients of a facet point different ways (coloured lights), the
+  blue gradients of a facet point different ways (colored lights), the
   fill is their best single-direction approximation.
 - Curved surfaces cost SVG size: a lone sphere is ~200 KB (68 KB flat), a
   50 x 50 Plot3D ~1.6 MB (0.8 MB), ContourPlot3D with its mesh ~2 MB.
@@ -8819,21 +8819,21 @@ differs:
   by depth), and axis lines are drawn over the scene rather than hidden
   behind it.
 - StreamPlot3D seeds: wolframscript starts from a lattice 10% inside the
-  box and tops it up from the twice-as-fine lattice, nearest the centre
+  box and tops it up from the twice-as-fine lattice, nearest the center
   first, whatever the field — as Woxi does. Among the points equally far
-  from the centre wolframscript's order is lattice order with the
+  from the center wolframscript's order is lattice order with the
   all-negative point last (`StreamPoints -> 10` adds `(-,-,+)` and
   `(-,+,-)` of the inner 2×2×2 cube); Woxi keeps plain lattice order, so
-  it adds `(-,-,-)` and `(-,-,+)`. Lines stop at the box only; WL's colour
+  it adds `(-,-,-)` and `(-,-,+)`. Lines stop at the box only; WL's color
   scaling over the lines is approximated by the drawn lines' magnitude
   range.
 - VectorPlot3D: wolframscript places its arrows on a jittered layout (221
   of them by default, 64 for `VectorPoints -> 4`); Woxi uses the cell
-  centres of an n³ grid (n = 6 by default). Heads are hexagonal.
+  centers of an n³ grid (n = 6 by default). Heads are hexagonal.
 - SliceDensityPlot3D: wolframscript jitters its sample positions randomly
-  (the centre planes sit at e.g. `x = 0.00053`), so `x y z` on
+  (the center planes sit at e.g. `x = 0.00053`), so `x y z` on
   `"CenterPlanes"` shows a gradient of tiny random-sign values; Woxi samples
-  the planes exactly and draws one colour. Slice outlines are not drawn.
+  the planes exactly and draws one color. Slice outlines are not drawn.
 - ListPlot3D `InterpolationOrder -> 0` (flat tiles with gaps between
   them, and WL's automatic outlier clipping of the z range) is not
   implemented: Woxi draws the interpolated surface.
@@ -8851,7 +8851,7 @@ differs:
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
-  are ignored. A translucent `EdgeForm` colour is faded towards white
+  are ignored. A translucent `EdgeForm` color is faded toward white
   rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
   Back}` (BubbleChart3D's partial box) draws the whole box.
 - 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
@@ -9349,7 +9349,7 @@ and `-4*(-5+12*Log[3/2])` in Wolfram. These are exactly equal, but the
 numeric content and sign remain grouped differently.
 The minimized `Hypergeometric2F1[1,1,4,1]` endpoint bug is fixed: the
 Gauss endpoint formula returns `3/2` before the logarithmic closed form
-can produce cancelling infinities.
+can produce canceling infinities.
 
 ### FullSimplify combines a radical sum into a nested square root
 

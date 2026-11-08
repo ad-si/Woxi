@@ -85,7 +85,7 @@ impl FontBBox {
   pub fn half_width(&self, scale: f64) -> f64 {
     (self.x_max - self.x_min) / 2.0 * scale
   }
-  /// The horizontal centre of the box, scaled to user units.
+  /// The horizontal center of the box, scaled to user units.
   pub fn center_x(&self, scale: f64) -> f64 {
     f64::midpoint(self.x_min, self.x_max) * scale
   }

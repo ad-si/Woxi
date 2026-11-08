@@ -229,7 +229,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// True iff `expr` mentions the imaginary unit `I` (either as the symbol
-/// `I` or the literal `Complex[0, 1]`). Used to recognise expressions that
+/// `I` or the literal `Complex[0, 1]`). Used to recognize expressions that
 /// are syntactically real (no I anywhere) so unit-magnitude shortcuts in
 /// `Sign` can fire safely.
 fn mentions_imaginary_unit(expr: &Expr) -> bool {
@@ -380,7 +380,7 @@ fn collect_times_factors<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) -> bool {
 }
 
 /// True iff `expr` is a value with zero real part and a non-zero
-/// imaginary part — i.e. it lies on the imaginary axis. Recognised forms:
+/// imaginary part — i.e. it lies on the imaginary axis. Recognized forms:
 ///   - `I` itself
 ///   - `Complex[0, n]` (the canonical pure-imaginary literal)
 ///   - `Times[..., I, ...]` where every non-`I` factor is syntactically
@@ -926,7 +926,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return power_two(&flipped, &make_rational(-1, 2));
   }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
-  // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
+  // canonicalization (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")
     || matches!(&args[0],
       Expr::UnaryOp { op: UnaryOperator::Minus, operand }
@@ -1241,7 +1241,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(outside_expr)
       } else {
         // The radicand is an evaluated product, so it has the canonical
-        // shape later passes (the coefficient-into-radical merge) recognise.
+        // shape later passes (the coefficient-into-radical merge) recognize.
         let inside_expr = if inside.len() == 1 {
           inside.remove(0)
         } else {
@@ -2543,7 +2543,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// `Round[x]` for a real `x` via the exact `Floor[x + 1/2]`, stepping back
-/// to the even neighbour on an exact tie. `None` when `Floor` does not reach
+/// to the even neighbor on an exact tie. `None` when `Floor` does not reach
 /// an integer.
 fn round_exact(x: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let eval_call = crate::evaluator::evaluate_function_call_ast;
@@ -3099,7 +3099,7 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Gaussian quotient = Round[z/w], rounding the complex quotient
       // component-wise (round-half-to-even). This matches wolframscript and
       // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
-      // Round and evaluating it also normalises the display to `a + b*I`.
+      // Round and evaluating it also normalizes the display to `a + b*I`.
       let quotient = div2(args[0].clone(), args[1].clone());
       let round_quot = call1("Round", quotient);
       crate::evaluator::evaluate_expr_to_expr(&round_quot)
@@ -3332,7 +3332,7 @@ fn try_symbolic_complex_rounding(
   build_complex_result(fr, fi).ok()
 }
 
-/// IntegerPart[x] - Integer part (truncation towards zero)
+/// IntegerPart[x] - Integer part (truncation toward zero)
 pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
@@ -3365,7 +3365,7 @@ pub fn integer_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
         && *d != 0
       {
-        // Truncate towards zero
+        // Truncate toward zero
         return Ok(Expr::Integer(n / d));
       }
       Ok(unevaluated("IntegerPart", args))

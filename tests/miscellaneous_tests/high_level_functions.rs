@@ -2358,7 +2358,7 @@ mod high_level_functions {
     }
 
     /// A factor whose content is ±1 keeps its sign inside the polynomial
-    /// unless it is normalised out — the same gap `FactorList` had.
+    /// unless it is normalized out — the same gap `FactorList` had.
     #[test]
     fn unit_content_moves_into_the_unit_entry() {
       assert_eq!(
@@ -2991,7 +2991,7 @@ mod high_level_functions {
         interpret("ToString[AccountingForm[1000000.]]").unwrap(),
         "1000000."
       );
-      // Negatives are parenthesised, still without scientific notation.
+      // Negatives are parenthesized, still without scientific notation.
       assert_eq!(
         interpret("ToString[AccountingForm[-1234567.]]").unwrap(),
         "(1234567.)"
@@ -6102,7 +6102,7 @@ mod high_level_functions {
 
       #[test]
       fn test_findcycle_on_graph_object() {
-        // Accepts a Graph[...] wrapper and honours its vertex order.
+        // Accepts a Graph[...] wrapper and honors its vertex order.
         assert_eq!(
           interpret(
             "Apply[List, \
@@ -6407,7 +6407,7 @@ mod high_level_functions {
     }
 
     #[test]
-    fn test_directed_edges_honoured() {
+    fn test_directed_edges_honored() {
       assert_eq!(
         interpret("GraphDistance[Graph[{1,2,3},{1->2,2->3}],1,3]").unwrap(),
         "2"

@@ -3674,7 +3674,7 @@ pub fn diagonal_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut row = vec![zero.clone(); size];
     if k >= 0 {
       // Super-diagonal: element j goes at row j, column j + k. Bounds-check
-      // the column so an explicit size that clips the diagonal is honoured.
+      // the column so an explicit size that clips the diagonal is honored.
       if i < n && i + k_abs < size {
         row[i + k_abs] = promote(&diag[i]);
       }
@@ -10290,7 +10290,7 @@ pub fn root_approximant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// coefficients, choosing the branch `k` whose numeric value is closest to `x`,
 /// and let the evaluator simplify it (to a radical / rational when possible).
 fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
-  // Trim any trailing zero coefficients and normalise the sign so the leading
+  // Trim any trailing zero coefficients and normalize the sign so the leading
   // coefficient is positive (matching wolframscript's Root polynomials).
   let mut c = coeffs.to_vec();
   while c.len() > 1 && *c.last().unwrap() == 0 {
@@ -10336,7 +10336,7 @@ fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
   };
 
   // Pick the root index k (1-based, wolframscript's ordering) whose numeric
-  // value is closest to x, by numericising each Root[func, k, 0].
+  // value is closest to x, by numericizing each Root[func, k, 0].
   let make_root = |k: usize| {
     call(
       "Root",
@@ -10460,7 +10460,7 @@ fn fit_parameter_bounds(
           i += 2;
         }
       }
-      // `Less[a, b, c]` is `a < b < c`: every neighbouring pair links.
+      // `Less[a, b, c]` is `a < b < c`: every neighboring pair links.
       "Less" | "LessEqual" | "Greater" | "GreaterEqual" => {
         for pair in args.windows(2) {
           apply(&pair[0], &name, &pair[1]);
@@ -12048,7 +12048,7 @@ fn linear_model_fit_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// least-squares fit whose basis is taken literally (no implicit constant
 /// term) and whose result is a list of `RegressionCommon\`` rules.
 /// `ParameterTable` holds a `TableForm` of the estimate / standard error /
-/// t-statistic / p-value rows labelled by the basis functions.
+/// t-statistic / p-value rows labeled by the basis functions.
 pub fn regress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Ok(unevaluated("LinearRegression`Regress", args));
@@ -14203,7 +14203,7 @@ fn jacobi_svd_with_tolerance(
 /// `SingularValueDecomposition[A]` — closed-form 2×2 SVD for a numeric
 /// matrix. Returns `{U, Σ, V}` with `A = U.Σ.V'`, matching wolframscript:
 /// V's columns are the right singular vectors of A^T A, U's columns are
-/// `A V / σ`, and each singular vector is normalised so its first
+/// `A V / σ`, and each singular vector is normalized so its first
 /// component is non-positive.
 pub fn singular_value_decomposition_ast(
   args: &[Expr],
@@ -17865,7 +17865,7 @@ pub fn linear_solve_modulus_ast(
 
 /// Least-squares Savitzky-Golay smoothing kernel of radius `r` and polynomial
 /// degree `k` over a window of `2 r + 1` points. Returns the machine-precision
-/// weights that evaluate the fitted polynomial at the window centre.
+/// weights that evaluate the fitted polynomial at the window center.
 fn sg_kernel(r: usize, k: usize) -> Option<Vec<f64>> {
   let m = 2 * r + 1;
   let ncols = (k + 1).min(m);
@@ -18456,7 +18456,7 @@ enum SymmetryError {
 /// Parse a symmetry specification for a rank-`rank` tensor into its kind and
 /// its 1-based slots. `None` is the `Symmetrize` default: full `Symmetric`
 /// symmetry over every slot. The slots come back sorted, matching
-/// wolframscript's canonicalisation of `Symmetric[{2, 1}]` to
+/// wolframscript's canonicalization of `Symmetric[{2, 1}]` to
 /// `Symmetric[{1, 2}]`.
 fn parse_symmetry(
   spec: Option<&Expr>,

@@ -163,7 +163,7 @@ fn lines(entry: &Entry) -> Vec<String> {
   out
 }
 
-/// Move words between neighbouring lines so line lengths vary like real
+/// Move words between neighboring lines so line lengths vary like real
 /// text without changing the total.
 fn jitter(sizes: &mut [usize], rng: &mut Rng) {
   for i in 0..sizes.len().saturating_sub(1) {

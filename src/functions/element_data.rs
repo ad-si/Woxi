@@ -2436,9 +2436,9 @@ fn get_property(elem: &Element, property: &str) -> Expr {
       ),
       None => missing_not_available(),
     },
-    // Properties we recognise by name but don't yet have tabulated data for —
-    // mirror Mathematica's behaviour of returning Missing[NotAvailable] so
-    // callers can distinguish "unknown datum" from "unrecognised property".
+    // Properties we recognize by name but don't yet have tabulated data for —
+    // mirror Mathematica's behavior of returning Missing[NotAvailable] so
+    // callers can distinguish "unknown datum" from "unrecognized property".
     "SpecificHeat"
     | "BrinellHardness"
     | "BulkModulus"
@@ -2459,7 +2459,7 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     | "VaporizationHeat"
     | "VickersHardness"
     | "YoungModulus"
-    // Same "recognised but not tabulated" treatment, for properties kept out
+    // Same "recognized but not tabulated" treatment, for properties kept out
     // of `SUPPORTED_PROPERTIES` alongside `StableIsotopes` below (it isn't
     // verified whether wolframscript's `ElementData["Properties"]` lists
     // them, so they stay out of that enumeration while still answering).

@@ -2,7 +2,7 @@
 //! the package's own procedures step by step so that every index list comes
 //! out in the order wolframscript gives (the order is part of the result:
 //! a hull starts at a particular corner, an adjacency list at a particular
-//! neighbour).
+//! neighbor).
 
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -56,12 +56,12 @@ fn polar_sort(coords: &[[f64; 2]]) -> Vec<usize> {
     sum[0] += p[0];
     sum[1] += p[1];
   }
-  let centre = [sum[0] / n as f64, sum[1] / n as f64];
+  let center = [sum[0] / n as f64, sum[1] / n as f64];
   let mut keyed: Vec<(f64, f64, usize)> = coords
     .iter()
     .enumerate()
     .map(|(i, p)| {
-      let d = [p[0] - centre[0], p[1] - centre[1]];
+      let d = [p[0] - center[0], p[1] - center[1]];
       let angle = if d[0] == 0.0 && d[1] == 0.0 {
         0.0
       } else {
@@ -313,13 +313,13 @@ fn collinear_set(set: &[[f64; 2]]) -> bool {
   })
 }
 
-/// The package's `PolarSort` of labelled points about their centroid (or a
-/// given centre): by the angle in [0, 2 Pi), then by distance.
-fn polar_sort_labelled(
+/// The package's `PolarSort` of labeled points about their centroid (or a
+/// given center): by the angle in [0, 2 Pi), then by distance.
+fn polar_sort_labeled(
   l: &[(usize, [f64; 2])],
-  centre: Option<[f64; 2]>,
+  center: Option<[f64; 2]>,
 ) -> Vec<(usize, [f64; 2])> {
-  let origin = centre.unwrap_or_else(|| {
+  let origin = center.unwrap_or_else(|| {
     let mut sum = [0.0, 0.0];
     for (_, p) in l {
       sum[0] += p[0];
@@ -447,8 +447,7 @@ fn del(s: &[[f64; 2]]) -> Option<Triangulation> {
       })
     }
     3 => {
-      let sorted =
-        polar_sort_labelled(&[(1, s[0]), (2, s[1]), (3, s[2])], None);
+      let sorted = polar_sort_labeled(&[(1, s[0]), (2, s[1]), (3, s[2])], None);
       let mut hull: Vec<usize> = sorted.iter().map(|p| p.0).collect();
       let max_x = sorted.iter().map(|p| p.1[0]).fold(f64::MIN, f64::max);
       let min_y = sorted
@@ -798,7 +797,7 @@ fn distinct_sorted(points: &[[f64; 2]]) -> Vec<(usize, [f64; 2])> {
   unique
 }
 
-/// The triangulation as the package returns it: `{label, neighbours}` per
+/// The triangulation as the package returns it: `{label, neighbors}` per
 /// distinct point (by label) and the hull, counter-clockwise from the
 /// lowest rightmost point. None for collinear or too few points.
 #[allow(clippy::type_complexity)]
@@ -936,7 +935,7 @@ fn sign_of_area_expr(
   }))
 }
 
-/// The package's `circlecenter`: the circumcentre from the dot products.
+/// The package's `circlecenter`: the circumcenter from the dot products.
 fn circle_center(
   p1: &Expr,
   p2: &Expr,
@@ -1071,7 +1070,7 @@ fn ray_tail(
   })
 }
 
-/// An element of a Voronoi polygon before relabelling: a Delaunay triangle
+/// An element of a Voronoi polygon before relabeling: a Delaunay triangle
 /// (a true vertex) or a hull edge with the triangle it borders (a quasi
 /// vertex, the start of a ray).
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -1107,7 +1106,7 @@ fn voronoi_general(
     if let Some(hp) = position_of(hull, *delvert1) {
       let a = hull[(hp + lhull - 2) % lhull];
       let b = hull[hp % lhull];
-      // The pair {a, b} of neighbours spans the hull gap.
+      // The pair {a, b} of neighbors spans the hull gap.
       let Some(pos) = (0..k).find(|&i| list[i] == a && list[(i + 1) % k] == b)
       else {
         return Ok(None);
@@ -1232,7 +1231,7 @@ fn voronoi_general(
 }
 
 /// `VoronoiDiagram` of collinear points: a pair of rays between each two
-/// neighbouring distinct points.
+/// neighboring distinct points.
 fn voronoi_collinear(items: &[Expr]) -> Result<Expr, InterpreterError> {
   // Distinct points in sorted order, each with its first position.
   let sorted = ev(call1("Sort", Expr::List(items.to_vec().into())))?;

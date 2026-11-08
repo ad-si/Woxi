@@ -17,9 +17,9 @@ pub(crate) const AXIS_TICK_FONT: f64 =
   crate::functions::plot_padding::TICK_FONT;
 /// Stroke width of the axis lines and tick marks, in display pixels.
 const AXIS_STROKE: f64 = 0.2;
-/// Length of a labelled tick mark, in display pixels (Wolfram draws 4).
+/// Length of a labeled tick mark, in display pixels (Wolfram draws 4).
 pub(crate) const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
-/// Length of an unlabelled tick mark, in display pixels (Wolfram draws 2.4).
+/// Length of an unlabeled tick mark, in display pixels (Wolfram draws 2.4).
 pub(crate) const AXIS_MINOR_TICK_LEN: f64 = 2.4;
 
 /// How far, in points, the other axis may run past the crossing on the
@@ -106,8 +106,8 @@ pub(crate) fn axes_crossing_px(
   (x0 + x.frac(origin.0) * w, y0 + h - y.frac(origin.1) * h)
 }
 
-/// The tick marks of one axis: the labelled ones with their SVG label
-/// markup, and the unlabelled ones between them.
+/// The tick marks of one axis: the labeled ones with their SVG label
+/// markup, and the unlabeled ones between them.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct AxisTicks {
   pub majors: Vec<(f64, String)>,
@@ -236,7 +236,7 @@ pub(crate) struct OriginAxes<'a> {
   /// Keep the y label that sits on the x axis (a chart's `0`), which a
   /// plot drops.
   pub keep_y_label_on_x_axis: bool,
-  /// `LabelStyle`'s colour: it paints the tick labels over both
+  /// `LabelStyle`'s color: it paints the tick labels over both
   /// `AxesStyle` and `TicksStyle`.
   pub label_color: Option<&'a str>,
   /// The tick-label font size, in points (`TicksStyle -> 14`).
@@ -249,7 +249,7 @@ pub(crate) struct OriginAxes<'a> {
 /// the y axis its full height at `origin.0`. Tick marks point into the
 /// plot (up from the x axis, right from the y axis); labels sit below the x
 /// axis and left of the y axis. A label that would collide with the other
-/// axis is dropped, which is how the shared `0` at a centred origin
+/// axis is dropped, which is how the shared `0` at a centered origin
 /// disappears from both (see [`crossing_label_blocked`]).
 pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   let (x0, y0, w, h) = a.area;

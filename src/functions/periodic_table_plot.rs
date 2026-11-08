@@ -9,7 +9,7 @@ use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 /// is rendered in these units and scaled to the requested pixel size via the
 /// SVG `viewBox`, so all layout math stays in simple integers.
 const CELL: f64 = 100.0;
-/// Inner gap between a cell's border and the coloured tile.
+/// Inner gap between a cell's border and the colored tile.
 const PAD: f64 = 6.0;
 /// Extra horizontal gap between groups 2 and 3 (columns >= 2 shift right
 /// by this much) hosting the `*` / `**` series-insertion markers.
@@ -52,7 +52,7 @@ fn element_cell(elem: &ElementLayout) -> Cell {
   }
 }
 
-/// Colour for an element tile based on its block, adapted to the theme.
+/// Color for an element tile based on its block, adapted to the theme.
 fn block_color(block: &str, dark: bool) -> &'static str {
   if dark {
     match block {
@@ -73,7 +73,7 @@ fn block_color(block: &str, dark: bool) -> &'static str {
   }
 }
 
-/// Tile colours for the `"Phase"` property plot: (gas, solid, liquid,
+/// Tile colors for the `"Phase"` property plot: (gas, solid, liquid,
 /// missing). The light palette matches wolframscript's legend swatches.
 fn phase_palette(
   dark: bool,
@@ -85,7 +85,7 @@ fn phase_palette(
   }
 }
 
-/// Colour for an element tile in the `"Phase"` plot.
+/// Color for an element tile in the `"Phase"` plot.
 fn phase_color(phase: Option<&str>, dark: bool) -> &'static str {
   let (gas, solid, liquid, missing) = phase_palette(dark);
   match phase {
@@ -96,7 +96,7 @@ fn phase_color(phase: Option<&str>, dark: bool) -> &'static str {
   }
 }
 
-/// Theme-dependent colours: (background, faded tile, text, faded text, border).
+/// Theme-dependent colors: (background, faded tile, text, faded text, border).
 fn theme_colors(
   dark: bool,
 ) -> (
@@ -119,7 +119,7 @@ fn cell_x(col: f64) -> f64 {
   col * CELL + if col >= 2.0 { GUTTER } else { 0.0 }
 }
 
-/// Draw `count` vertically stacked asterisks centred in the group 2/3
+/// Draw `count` vertically stacked asterisks centered in the group 2/3
 /// gutter, in row `row` — the insertion markers linking the gutter to the
 /// detached lanthanide/actinide rows.
 fn push_series_marker(body: &mut String, row: f64, count: usize, color: &str) {
@@ -129,7 +129,7 @@ fn push_series_marker(body: &mut String, row: f64, count: usize, color: &str) {
   let top = cy - step * (count as f64 - 1.0) / 2.0;
   for i in 0..count {
     // The asterisk glyph's ink sits high in the em box; push the baseline
-    // below the target centre so the mark looks centred.
+    // below the target center so the mark looks centered.
     body.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"40\" fill=\"{}\">*</text>\n",
@@ -141,14 +141,14 @@ fn push_series_marker(body: &mut String, row: f64, count: usize, color: &str) {
 }
 
 /// Draw the phase legend under the table: a "phase at STP" title pill
-/// above a centred row of colour swatches labelled gas / solid / liquid /
+/// above a centered row of color swatches labeled gas / solid / liquid /
 /// — (phase not available).
 fn push_phase_legend(body: &mut String, vb_w: f64, dark: bool) {
   let (gas, solid, liquid, missing) = phase_palette(dark);
   let (_, _, text, _, border) = theme_colors(dark);
   let pill_bg = if dark { "#333333" } else { "#ececec" };
 
-  // Title pill, centred.
+  // Title pill, centered.
   let (pill_w, pill_h) = (300.0, 60.0);
   let cx = vb_w / 2.0;
   let pill_y = 9.85 * CELL;
@@ -170,7 +170,7 @@ fn push_phase_legend(body: &mut String, vb_w: f64, dark: bool) {
     text,
   ));
 
-  // Swatch row, laid out as one centred group.
+  // Swatch row, laid out as one centered group.
   let entries: [(&str, &str); 4] = [
     (gas, "gas"),
     (solid, "solid"),
@@ -419,7 +419,7 @@ pub fn periodic_table_plot_ast(
       num_fill,
       elem.atomic_number,
     ));
-    // Element symbol, centred.
+    // Element symbol, centered.
     body.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"40\" font-weight=\"bold\" \
@@ -460,9 +460,9 @@ pub fn periodic_table_plot_ast(
   Ok(graphics)
 }
 
-/// Wrap the phase-coloured table in `Legended[…, Placed[SwatchLegend[…],
+/// Wrap the phase-colored table in `Legended[…, Placed[SwatchLegend[…],
 /// Below]]`, the expression wolframscript returns for
-/// `PeriodicTablePlot["Phase"]` (the swatch colours are wolframscript's
+/// `PeriodicTablePlot["Phase"]` (the swatch colors are wolframscript's
 /// exact values).
 fn phase_legended(graphics: Expr) -> Expr {
   let rgb = |r: f64, g: f64, b: f64| {

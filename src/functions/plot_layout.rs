@@ -16,7 +16,7 @@ use crate::functions::plot::{
 use crate::functions::plot_axes::{AXIS_TICK_FONT, AxisScale, AxisTicks};
 use crate::syntax::Expr;
 
-/// Space between neighbouring panels, in points.
+/// Space between neighboring panels, in points.
 const PANEL_GAP: f64 = 5.0;
 /// Length of a frame tick mark (drawn inwards), in points.
 const TICK_LEN: f64 = 2.9;
@@ -142,7 +142,7 @@ fn layout_box(
   }
 }
 
-/// The labelled ticks of a panel axis over `range`: the smallest step of
+/// The labeled ticks of a panel axis over `range`: the smallest step of
 /// 1, 2, 2.5 or 5 × 10^k that leaves at most five ticks in the range (WL's
 /// panel tick function labels 0, 2.5, …, 10 where a lone plot has 0, 2, …,
 /// 10). Explicit, logarithmic and date ticks keep the plot's usual ones.

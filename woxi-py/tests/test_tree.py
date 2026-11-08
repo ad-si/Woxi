@@ -79,7 +79,7 @@ class TestAtoms:
         assert tree("{{1, 2}, {3}}") == [[1, 2], [3]]
 
 
-class TestNormalisation:
+class TestNormalization:
     """Operator forms report their FullForm heads, not the parser's AST."""
 
     @pytest.mark.parametrize(
@@ -274,7 +274,7 @@ class TestPythonToExpr:
 
     def test_converts_tree_just_inside_depth_limit(self):
         # Regression: the native conversion used to overflow the stack in
-        # unoptimised builds well before reaching its 5000-level limit.
+        # unoptimized builds well before reaching its 5000-level limit.
         deep = Symbol("x")
         for _ in range(4990):
             deep = wl.f(deep)
@@ -298,7 +298,7 @@ class TestParseExpr:
         assert woxi.parse_expr("1 + 1") == Expr(Symbol("Plus"), [1, 1])
         assert woxi.evaluate("1 + 1").expr == 2
 
-    def test_normalises_operators(self):
+    def test_normalizes_operators(self):
         assert woxi.parse_expr("a/b") == Expr(
             Symbol("Times"),
             [Symbol("a"), Expr(Symbol("Power"), [Symbol("b"), -1])],

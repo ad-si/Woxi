@@ -3970,7 +3970,7 @@ fn evaluate_function_call_ast_inner(
           ));
         }
       }
-      // Wolfram draws K4 as a triangle around its centre, every other
+      // Wolfram draws K4 as a triangle around its center, every other
       // complete graph as a regular polygon.
       let layout = if n == 4 {
         str_expr("StarEmbedding")
@@ -5299,7 +5299,7 @@ fn evaluate_function_call_ast_inner(
     }
     // Only forward when args[0] is a list of edges or an already-built
     // Graph[…]; otherwise keep the symbolic head (matches Woxi's
-    // long-standing "stay unevaluated" wrapper behaviour for opaque
+    // long-standing "stay unevaluated" wrapper behavior for opaque
     // arguments like a bare symbol).
     let looks_like_graph_input = match &args[0] {
       Expr::List(_) => true,
@@ -5425,10 +5425,10 @@ fn evaluate_function_call_ast_inner(
       } else {
         unevaluated("Graph", &forwarded)
       };
-      // Evaluate the embedded Graph so any rules/edges are normalised
+      // Evaluate the embedded Graph so any rules/edges are normalized
       // into the canonical {vertex_list, edge_list, opts…} form, then
       // explicitly render to Graphics. Unlike plain `Graph[…]`, the
-      // GraphPlot family is a visualisation primitive and so should
+      // GraphPlot family is a visualization primitive and so should
       // print as the `-Graphics-` placeholder rather than the
       // `Graph[<n>, <m>]` data-structure summary.
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&graph_expr)?;
@@ -5460,7 +5460,7 @@ fn evaluate_function_call_ast_inner(
         });
         return Ok(unevaluated(name, args));
       }
-      // A plain `GraphPlot` (no styling, labelling or rendering options)
+      // A plain `GraphPlot` (no styling, labeling or rendering options)
       // evaluates to Wolfram's symbolic GraphicsComplex picture.
       let option_name = |o: &Expr| match o {
         Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
@@ -7409,7 +7409,7 @@ fn evaluate_function_call_ast_inner(
   // GraphDistance[g, s, t] — length of the shortest path from s to t.
   // GraphDistance[g, s] — list of distances from s to every vertex,
   //   ordered as in VertexList[g].
-  // Unreachable vertices yield Infinity. Directed edges are honoured;
+  // Unreachable vertices yield Infinity. Directed edges are honored;
   // undirected edges are traversable in both directions. If any vertex
   // argument is not a vertex of the graph, the call stays unevaluated.
   if name == "GraphDistance"
@@ -7584,7 +7584,7 @@ fn evaluate_function_call_ast_inner(
   // GraphDistanceMatrix[g] — matrix whose (i, j) entry is the shortest-path
   // distance from vertex i to vertex j (both ordered as in VertexList[g]).
   // Unreachable pairs yield Infinity; the diagonal is 0. Directed edges are
-  // honoured; undirected edges are traversable in both directions. An empty
+  // honored; undirected edges are traversable in both directions. An empty
   // graph stays unevaluated (matching wolframscript).
   if name == "GraphDistanceMatrix"
     && args.len() == 1
@@ -7813,7 +7813,7 @@ fn evaluate_function_call_ast_inner(
         .iter()
         .map(|d| d.iter().filter(|&&x| x >= 0).copied().max().unwrap_or(0))
         .collect();
-      // Radius/diameter/centre/periphery are only finite/non-empty when the
+      // Radius/diameter/center/periphery are only finite/non-empty when the
       // graph is strongly connected (every vertex reaches every other).
       let strongly_connected =
         all_dists.iter().all(|d| d.iter().all(|&x| x >= 0));
@@ -8144,7 +8144,7 @@ fn evaluate_function_call_ast_inner(
   // RadialityCentrality[graph] — for each vertex v,
   //   (sum over reachable w of (D + 1 - d(v, w))) / ((n - 1) * D)
   // where D is the largest finite directed shortest-path distance. Distances
-  // honour edge direction (undirected edges point both ways).
+  // honor edge direction (undirected edges point both ways).
   if name == "RadialityCentrality"
     && args.len() == 1
     && let Expr::FunctionCall {
@@ -8337,7 +8337,7 @@ fn evaluate_function_call_ast_inner(
       idx.insert(expr_to_string(v), i);
     }
     // Katz centrality solves x = alpha A^T x + beta, i.e. a vertex gains
-    // centrality from its in-neighbours. Edge u -> v therefore contributes to
+    // centrality from its in-neighbors. Edge u -> v therefore contributes to
     // adj[v][u]; undirected edges contribute both ways.
     let mut adj = vec![vec![0.0_f64; n]; n];
     for e in edges {
@@ -9094,7 +9094,7 @@ fn evaluate_function_call_ast_inner(
       // Check if graph is directed or undirected. A Rule-form edge (a -> b)
       // is a directed edge in wolframscript, just like DirectedEdge[a, b];
       // only an explicit vertex list leaves edges in Rule form, so this must
-      // be recognised or such graphs misroute to the undirected branch.
+      // be recognized or such graphs misroute to the undirected branch.
       let is_directed = edges.iter().any(|e| {
         matches!(e, Expr::FunctionCall { name, .. } if name == "DirectedEdge")
           || matches!(e, Expr::Rule { .. })
@@ -13378,7 +13378,7 @@ fn is_connected_pg(graph: &petgraph::graph::UnGraph<usize, ()>) -> bool {
 }
 
 /// BFS from start vertex using petgraph, return all distances.
-/// All-pairs shortest-path distances honouring edge direction: directed edges
+/// All-pairs shortest-path distances honoring edge direction: directed edges
 /// only point forwards, undirected edges point both ways. `result[s][t]` is
 /// the hop distance from `s` to `t`, `0` for `s == t`, and `-1` when `t` is
 /// unreachable from `s`.
@@ -16907,9 +16907,9 @@ fn weak_components(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
 
 /// The Hamiltonian-cycle search behind `GraphUtilities\`HamiltonianCycles`:
 /// a depth-first search from the first vertex over the symmetrized adjacency
-/// matrix — in a directed graph each vertex tries its in-neighbours
-/// (ascending), then its out-neighbours, a vertex only once — stopping after
-/// `limit` cycles. A cycle is found once per orientation. The out-neighbours
+/// matrix — in a directed graph each vertex tries its in-neighbors
+/// (ascending), then its out-neighbors, a vertex only once — stopping after
+/// `limit` cycles. A cycle is found once per orientation. The out-neighbors
 /// of a rule list come in the order its rules give them (the package's sparse
 /// matrix keeps that order); those of a `Graph`, Combinatorica graph or
 /// matrix ascend.
@@ -17031,7 +17031,7 @@ fn hamiltonian_cycles(
     }
   }
   // Whether the path can still close into a Hamiltonian cycle: with two or
-  // more vertices left, each needs two neighbours among the remaining
+  // more vertices left, each needs two neighbors among the remaining
   // vertices and the path's ends, and the remaining vertices must hang
   // together off the path's last vertex. Only dead branches are cut, so the
   // cycles still come out in search order.
@@ -17093,7 +17093,7 @@ fn hamiltonian_cycles(
   ) -> bool {
     let n = adj.len();
     let inside = |x: usize| !on_path[x] || x == start || x == last;
-    let neighbours = |v: usize| {
+    let neighbors = |v: usize| {
       adj[v].iter().copied().filter(move |&x| inside(x)).chain(
         (v == last && last != start)
           .then_some(start)
@@ -17111,7 +17111,7 @@ fn hamiltonian_cycles(
     time += 1;
     let mut root_children = 0;
     let mut stack: Vec<(usize, Vec<usize>, usize)> =
-      vec![(last, neighbours(last).collect(), 0)];
+      vec![(last, neighbors(last).collect(), 0)];
     while let Some((v, ns, i)) = stack.last_mut() {
       let v = *v;
       if *i < ns.len() {
@@ -17125,7 +17125,7 @@ fn hamiltonian_cycles(
           if v == last {
             root_children += 1;
           }
-          let wn: Vec<usize> = neighbours(w).collect();
+          let wn: Vec<usize> = neighbors(w).collect();
           stack.push((w, wn, 0));
         } else if w != parent[v] {
           low[v] = low[v].min(disc[w]);

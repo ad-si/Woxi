@@ -2102,7 +2102,7 @@ fn zeta_zero_smooth_count(t: f64) -> f64 {
 /// (t_{-k} = -t_k); k = 0 has no zero.
 ///
 /// Two stages: first bisect the cheap smooth counting formula
-/// `zeta_zero_smooth_count` to jump straight to the neighbourhood of t_k
+/// `zeta_zero_smooth_count` to jump straight to the neighborhood of t_k
 /// (O(log) calls, each O(1)) rather than linearly scanning from t = 0 —
 /// scanning from 0 with an O(t)-per-call Z evaluation would cost O(t_k²)
 /// overall, impractically slow once k is more than a few thousand. Then
@@ -2571,7 +2571,7 @@ pub fn riemann_siegel_theta_ast(
   // arguments unevaluated to mirror wolframscript.
   if let Expr::Real(t) = &args[0] {
     let v = riemann_siegel_theta_numeric(*t);
-    // Normalise negative zero to positive zero (theta(0) = 0).
+    // Normalize negative zero to positive zero (theta(0) = 0).
     let v = if v == 0.0 { 0.0 } else { v };
     return Ok(Expr::Real(v));
   }

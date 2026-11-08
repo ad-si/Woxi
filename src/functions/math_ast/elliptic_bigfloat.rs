@@ -409,7 +409,7 @@ pub(crate) fn mittag_leffler_bigfloat(
           - crate::functions::math_ast::lgamma(af * k as f64 + bf)
             / std::f64::consts::LN_2
           < peak - 8.0;
-      // The cancelled sum keeps `bits` significant bits: terms below its
+      // The canceled sum keeps `bits` significant bits: terms below its
       // last one no longer matter.
       if past_peak && te < bf_exp(&sum) - bits as i64 - 8 {
         small += 1;
@@ -433,7 +433,7 @@ pub(crate) fn mittag_leffler_bigfloat(
   }
 }
 
-/// `1/Γ(x)` (0 at the poles), memoised per thread: the Mittag-Leffler
+/// `1/Γ(x)` (0 at the poles), memoized per thread: the Mittag-Leffler
 /// recurrence needs the same few starting values at every point of a plot.
 fn cached_rgamma(
   x: &BigFloat,

@@ -56,7 +56,7 @@ True
 ```
 
 `PlotMarkers` draws a glyph at every data point instead of the round dot.
-`Style` around the marker gives it a colour and a font size, and a list of
+`Style` around the marker gives it a color and a font size, and a list of
 markers is cycled over the datasets:
 
 ```scrut

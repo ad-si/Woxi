@@ -20,7 +20,7 @@
 //! - code actions, which correct a misspelled built-in in one place or
 //!   throughout the file.
 //!
-//! Everything is derived from a forgiving tokeniser rather than the full
+//! Everything is derived from a forgiving tokenizer rather than the full
 //! parser, so the answers stay useful while a file is mid-edit and does
 //! not parse.
 //!

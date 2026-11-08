@@ -41,7 +41,7 @@ pub fn evaluate_rule_delayed_ast(
 }
 
 /// PatternTest[pattern, test]: a plain blank pattern becomes the native
-/// `p_?test` node (so the test is honoured when it is used on the left of a
+/// `p_?test` node (so the test is honored when it is used on the left of a
 /// definition, exactly as for the sugar form); anything else stays symbolic.
 #[inline(never)]
 pub fn evaluate_pattern_test_ast(

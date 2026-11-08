@@ -126,12 +126,12 @@ fn fit(
           .collect()
       };
       let (mf, mt) = (mean(from), mean(to));
-      let centred = |ps: &[Vec<f64>], c: &[f64]| -> Vec<Vec<f64>> {
+      let centered = |ps: &[Vec<f64>], c: &[f64]| -> Vec<Vec<f64>> {
         ps.iter()
           .map(|p| p.iter().zip(c).map(|(a, b)| a - b).collect())
           .collect()
       };
-      let (p, q) = (centred(from, &mf), centred(to, &mt));
+      let (p, q) = (centered(from, &mf), centered(to, &mt));
       let spread: f64 = p.iter().flatten().map(|v| v * v).sum();
       let (rotation, trace) = if d == 2 {
         let (mut dot, mut cross) = (0.0, 0.0);

@@ -819,7 +819,7 @@ pub fn list_depth(expr: &Expr) -> usize {
 /// array mixing integers and reals is therefore *not* packed and comes back
 /// unchanged, just like ragged nesting, rationals or symbols.
 ///
-/// The observable behaviour comes from the optional second argument, which
+/// The observable behavior comes from the optional second argument, which
 /// asks for `Integer`, `Real` or `Complex`: every leaf is converted to that
 /// type when all of them can be represented in it, and the expression is
 /// returned unchanged when one cannot.

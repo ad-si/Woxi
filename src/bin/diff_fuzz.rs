@@ -898,7 +898,7 @@ const PURE_FNS: &[&str] = &["#^2 &", "# + 1 &", "2*# &", "-# &", "Abs[#] &"];
 const PRED_FNS: &[&str] = &["EvenQ", "OddQ", "PrimeQ", "# > 0 &", "# < 2 &"];
 const STR_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCXYZ0123456789 ";
 /// Blank patterns for Cases/Count/Position/DeleteCases. `Expr::Raw`
-/// parenthesises what it prints, which is harmless around a pattern.
+/// parenthesizes what it prints, which is harmless around a pattern.
 const TYPE_PATS: &[&str] =
   &["_", "_Integer", "_Real", "_String", "_Rational", "_List"];
 /// Builtins passed as a bare operator head (Apply, Fold, Outer, …).
@@ -1172,7 +1172,7 @@ fn gen_exact_num(rng: &mut Rng) -> Expr {
   }
 }
 
-/// Argument for the trigonometric family, weighted towards rational
+/// Argument for the trigonometric family, weighted toward rational
 /// multiples of Pi — the values with closed forms, and therefore the ones
 /// where a CAS can disagree with another CAS.
 fn gen_trig_arg(rng: &mut Rng) -> Expr {
@@ -1538,7 +1538,7 @@ enum Oracle {
 /// The shrinker reaches such snippets routinely — hoisting an argument out
 /// of a call leaves bare negative literals — and the resulting transport
 /// failure looks exactly like a divergence, so shrinking would then run off
-/// towards a reproducer that is not one. Parenthesising changes nothing
+/// toward a reproducer that is not one. Parenthesizing changes nothing
 /// semantically, and both tools get the identical string.
 fn cli_safe(code: &str) -> String {
   if code.starts_with('-') {
@@ -2243,12 +2243,12 @@ mod tests {
     assert_eq!(segments[2], None);
   }
 
-  /// A snippet starting with `-` must be parenthesised before it reaches
+  /// A snippet starting with `-` must be parenthesized before it reaches
   /// either CLI: `wolframscript -code -2` takes the snippet for a flag and
   /// fails, which the harness would otherwise report as a divergence.
   /// Shrinking produces such snippets routinely.
   #[test]
-  fn leading_minus_is_parenthesised() {
+  fn leading_minus_is_parenthesized() {
     assert_eq!(cli_safe("-2"), "(-2)");
     assert_eq!(cli_safe("-Sqrt[2]"), "(-Sqrt[2])");
     assert_eq!(cli_safe("Plus[1, 2]"), "Plus[1, 2]");

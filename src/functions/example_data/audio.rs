@@ -7,7 +7,7 @@
 //! their typical pitch (single notes, or scales for `"…Scale"` entries),
 //! speech as formant-filtered pulse trains, birds as chirps, percussion as
 //! decaying noise bursts, room impulse responses as decaying noise, and the
-//! test signals (noise colours, square waves, sweeps, bursts) exactly.
+//! test signals (noise colors, square waves, sweeps, bursts) exactly.
 
 use std::f64::consts::TAU;
 

@@ -37,7 +37,7 @@ mod axes_and_ticks_style {
   use super::*;
 
   #[test]
-  fn plot_axes_style_colours_axes_ticks_and_labels() {
+  fn plot_axes_style_colors_axes_ticks_and_labels() {
     let plain = svg("Plot[Sin[x], {x, 0, 6}]");
     assert_eq!(count(&plain, "stroke", RED_RGB), 0);
     let s = svg("Plot[Sin[x], {x, 0, 6}, AxesStyle -> Red]");
@@ -89,7 +89,7 @@ mod axes_and_ticks_style {
   }
 
   #[test]
-  fn graphics_ticks_style_colours_tick_marks_and_labels() {
+  fn graphics_ticks_style_colors_tick_marks_and_labels() {
     let plain = svg("Graphics[{Disk[]}, Axes -> True]");
     assert_eq!(count(&plain, "stroke", RED_RGB), 0);
     let s = svg("Graphics[{Disk[]}, Axes -> True, TicksStyle -> Red]");
@@ -114,13 +114,13 @@ mod frame_style {
   use super::*;
 
   #[test]
-  fn plot_frame_style_colours_and_thickens_the_frame() {
+  fn plot_frame_style_colors_and_thickens_the_frame() {
     let s = svg(
       "Plot[Sin[x], {x, 0, 6}, Frame -> True, \
        FrameStyle -> Directive[Red, Thick]]",
     );
     assert!(s.contains("stroke=\"#FF0000\" stroke-width=\"20\""), "{s}");
-    // Frame tick labels take the frame's colour.
+    // Frame tick labels take the frame's color.
     assert!(count(&s, "fill", RED_HEX) > 0);
   }
 
@@ -137,7 +137,7 @@ mod frame_style {
     let s = svg("Graphics[{Disk[]}, Frame -> True, FrameStyle -> Red]");
     assert!(s.contains("fill=\"none\" stroke=\"rgb(255,0,0)\""), "{s}");
     let t = svg("Graphics[{Disk[]}, Frame -> True, FrameTicksStyle -> Red]");
-    // The border keeps its colour; the tick marks and labels turn red.
+    // The border keeps its color; the tick marks and labels turn red.
     assert!(!t.contains("fill=\"none\" stroke=\"rgb(255,0,0)\""));
     assert!(count(&t, "stroke", RED_RGB) > 4);
     assert!(count(&t, "fill", RED_RGB) > 2);
@@ -148,7 +148,7 @@ mod label_and_base_style {
   use super::*;
 
   #[test]
-  fn graphics_label_style_colours_the_plot_label() {
+  fn graphics_label_style_colors_the_plot_label() {
     let s = svg("Graphics[{Disk[]}, PlotLabel -> \"hi\", LabelStyle -> Red]");
     assert!(s.contains(&format!("fill=\"{RED_RGB}\"")), "{s}");
     assert!(texts(&s).iter().any(|t| t.contains("hi")));
@@ -166,7 +166,7 @@ mod label_and_base_style {
     assert_eq!(
       blue,
       svg("Graphics[{Blue, Line[{{0, 0}, {1, 1}}]}]"),
-      "explicit colour must win"
+      "explicit color must win"
     );
   }
 }
@@ -187,7 +187,7 @@ mod mesh {
   }
 
   #[test]
-  fn mesh_style_colours_the_mesh_points() {
+  fn mesh_style_colors_the_mesh_points() {
     let s = svg("Plot[Sin[x], {x, 0, 6}, Mesh -> 5, MeshStyle -> Red]");
     let red_circles = s
       .split("<circle")
@@ -388,7 +388,7 @@ mod mesh {
     for (i, c) in st.iter().enumerate() {
       assert_eq!(c, if i % 2 == 0 { "#FF0000" } else { "#0000FF" });
     }
-    // The mesh points keep the curve's colour.
+    // The mesh points keep the curve's color.
     assert_eq!(count_fill(&s, "#3D99CC"), 10);
     // `None` leaves gaps; a three-entry list cycles.
     let gaps =
@@ -434,7 +434,7 @@ mod mesh {
 
   #[test]
   fn mesh_shading_keeps_the_plot_style() {
-    // `Automatic` stretches draw in the PlotStyle colour.
+    // `Automatic` stretches draw in the PlotStyle color.
     let auto = svg(
       "Plot[Sin[x], {x, 0, 10}, Mesh -> 10, \
        PlotStyle -> Directive[Thick, Yellow], MeshFunctions -> {#1 &}, \
@@ -453,7 +453,7 @@ mod mesh {
     assert_eq!(st.len(), 11);
     assert!(st.iter().all(|p| p.1 == "0.5"), "{st:?}");
     assert!(dots(&op).iter().all(|d| d.2 == "0.5"));
-    // `ColorFunction` colours the `Automatic` stretches and the dots.
+    // `ColorFunction` colors the `Automatic` stretches and the dots.
     let cf = svg(
       "Plot[Sin[x], {x, 0, 10}, Mesh -> 10, MeshFunctions -> {#1 &}, \
        MeshShading -> {StandardGray, Automatic}, \
@@ -553,7 +553,7 @@ mod charts {
   use super::*;
 
   #[test]
-  fn bar_chart_color_function_colours_by_value() {
+  fn bar_chart_color_function_colors_by_value() {
     let s = svg("BarChart[{1, 2, 3}, ColorFunction -> (RGBColor[#, 0, 0] &)]");
     // The values rescale to 0, 1/2 and 1.
     for c in ["#000000", "#800000", "#FF0000"] {
@@ -643,7 +643,7 @@ mod layout_boxes {
   }
 
   #[test]
-  fn grid_frame_style_colours_the_frame() {
+  fn grid_frame_style_colors_the_frame() {
     let s = svg("Grid[{{1, 2}, {3, 4}}, Frame -> All, FrameStyle -> Red]");
     assert_eq!(count(&s, "stroke", RED_RGB), 6);
   }

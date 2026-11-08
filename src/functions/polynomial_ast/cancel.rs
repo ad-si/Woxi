@@ -11,16 +11,16 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Cancel expects exactly 1 argument".into(),
     ));
   }
-  // A sum is cancelled term by term, as in Wolfram:
+  // A sum is canceled term by term, as in Wolfram:
   // Cancel[(x^2 - 1)/(x - 1) + 1/y] is 1 + x + 1/y.
   if let Expr::FunctionCall { name, args: terms } = &args[0]
     && name == "Plus"
   {
-    let cancelled = terms
+    let canceled = terms
       .iter()
       .map(|t| cancel_ast(std::slice::from_ref(t)))
       .collect::<Result<Vec<_>, _>>()?;
-    return crate::evaluator::evaluate_function_call_ast("Plus", &cancelled);
+    return crate::evaluator::evaluate_function_call_ast("Plus", &canceled);
   }
   // A unit numerator has nothing to cancel: wolframscript returns the
   // fraction unchanged — Cancel[1/(2 - 2*x)] stays (2 - 2*x)^(-1) and
@@ -39,7 +39,7 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result = cancel_expr(&args[0]);
   // wolframscript presents Cancel results with the denominator content
   // hoisted — Cancel[(x+1)/(4*x+5*x^2)] → (1+x)/(x*(4+5*x)) — and when
-  // nothing actually cancelled it preserves the input's factored
+  // nothing actually canceled it preserves the input's factored
   // denominator shape: Cancel[(x+1)/((x-1)(x+2))] keeps the product
   // (differential fuzzer, seed 7037214829039037119; wolframscript-verified).
   let (rn, rd) = super::together::extract_num_den(&result);
@@ -57,7 +57,7 @@ pub fn cancel_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       == expr_to_string(&expand_and_combine(&input_d));
   let base = if unchanged {
     // Preserve only the denominator's grouping. The numerator still needs
-    // Cancel's canonical content and sign, even when no factor cancelled.
+    // Cancel's canonical content and sign, even when no factor canceled.
     div2(rn, input_d)
   } else {
     result
@@ -165,7 +165,7 @@ fn cancel_expr_with_opaque_fallback(
   expr: &Expr,
   canonicalize_sign: bool,
 ) -> Expr {
-  // The direct path may reshape a quotient without cancelling anything
+  // The direct path may reshape a quotient without canceling anything
   // (reordering a numerator it could not factor), so the opaque-atom
   // attempt is always made and the smaller result wins.
   let direct = cancel_expr_impl(expr, canonicalize_sign);
@@ -193,7 +193,7 @@ fn cancel_expr_with_opaque_fallback(
 /// `r^(3/4)` — by reading them as powers of one new variable `u = r^(1/4)`:
 /// `(a r^(7/4) + b r^(11/4))/(c r^(3/4))` has the common factor `u^3`. The
 /// radicals are put back afterwards (`u^4` is `r` again) and the quotient
-/// cancelled once more over the original symbols.
+/// canceled once more over the original symbols.
 pub(super) fn cancel_via_radical_variables(
   expr: &Expr,
   canonicalize_sign: bool,
@@ -297,11 +297,11 @@ pub(super) fn cancel_via_radical_variables(
   let abstracted =
     crate::evaluator::evaluate_expr_to_expr(&replace(expr, &bases, &names))
       .ok()?;
-  let cancelled = cancel_expr_impl(&abstracted, canonicalize_sign);
-  if expr_to_string(&cancelled) == expr_to_string(&abstracted) {
+  let canceled = cancel_expr_impl(&abstracted, canonicalize_sign);
+  if expr_to_string(&canceled) == expr_to_string(&abstracted) {
     return None;
   }
-  let mut restored = cancelled;
+  let mut restored = canceled;
   for ((base, _, l), name) in bases.iter().zip(&names) {
     let root = Expr::FunctionCall {
       name: "Power".to_string(),
@@ -319,7 +319,7 @@ pub(super) fn cancel_via_radical_variables(
 
 /// Cancel a quotient whose "variables" are opaque subexpressions the
 /// polynomial engine cannot take directly (`f[1]`, `q[[1]]`, `Sin[a]`, …),
-/// by abstracting each into a fresh symbol, cancelling that, and putting
+/// by abstracting each into a fresh symbol, canceling that, and putting
 /// them back. `(f[1] f[2] - f[2]^2)/(f[1] - f[2])` cancels to `f[2]` the
 /// same way `(a b - b^2)/(a - b)` cancels to `b`.
 ///
@@ -347,11 +347,11 @@ fn cancel_via_opaque_atoms(
   for (atom, name) in atoms.iter().zip(&names) {
     abstracted = super::solve::substitute_expr(&abstracted, atom, name);
   }
-  let cancelled = cancel_expr_impl(&abstracted, canonicalize_sign);
-  if expr_to_string(&cancelled) == expr_to_string(&abstracted) {
+  let canceled = cancel_expr_impl(&abstracted, canonicalize_sign);
+  if expr_to_string(&canceled) == expr_to_string(&abstracted) {
     return None;
   }
-  let mut restored = cancelled;
+  let mut restored = canceled;
   for (atom, name) in atoms.iter().zip(&names) {
     restored = super::solve::substitute_expr(&restored, name, atom);
   }
@@ -639,7 +639,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
             let mut den_map = factor_base_exp(&den_factors);
 
             // Cancel: subtract common factor exponents from denominator
-            let mut cancelled_from_num: Vec<(String, i128)> = Vec::new();
+            let mut canceled_from_num: Vec<(String, i128)> = Vec::new();
             for (key, _, cf_exp) in &cf_map {
               if let Some(den_entry) =
                 den_map.iter_mut().find(|(k, _, _)| k == key)
@@ -647,17 +647,17 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
                 let cancel_exp = (*cf_exp).min(den_entry.2);
                 if cancel_exp > 0 {
                   den_entry.2 -= cancel_exp;
-                  cancelled_from_num.push((key.clone(), cancel_exp));
+                  canceled_from_num.push((key.clone(), cancel_exp));
                 }
               }
             }
 
-            if !cancelled_from_num.is_empty() {
-              // Rebuild numerator: divide each term by cancelled factors
+            if !canceled_from_num.is_empty() {
+              // Rebuild numerator: divide each term by canceled factors
               let mut new_terms = Vec::new();
               for term in &terms {
                 let mut t_factors = collect_multiplicative_factors(term);
-                for (cancel_key, cancel_exp) in &cancelled_from_num {
+                for (cancel_key, cancel_exp) in &canceled_from_num {
                   let mut remaining = *cancel_exp;
                   let mut new_factors = Vec::new();
                   for f in t_factors {
@@ -761,7 +761,7 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
       let result = cancel_symbolic_factors(&num, &den);
       let (res_num, res_den) = super::together::extract_num_den(&result);
       if matches!(&res_den, Expr::Integer(1)) {
-        // Fully cancelled (not a fraction anymore)
+        // Fully canceled (not a fraction anymore)
         return result;
       }
       // Still a fraction — only accept if something actually changed
@@ -1109,7 +1109,7 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
   }
 
   if !changed && !numeric_changed {
-    // Nothing was cancelled, return original
+    // Nothing was canceled, return original
     return make_divide(num.clone(), den.clone());
   }
 

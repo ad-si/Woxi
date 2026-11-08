@@ -3,14 +3,14 @@
 //! A curved surface is lit at its vertices, each with a normal averaged
 //! from the faces around it (or the exact one of an analytic primitive),
 //! and every triangle is filled with an SVG `linearGradient` that
-//! reproduces the colours interpolated between its corners.
+//! reproduces the colors interpolated between its corners.
 //!
 //! A linear gradient varies along one screen direction only, so it is
-//! exact when the colour over the triangle changes along one direction —
-//! all three channels together. Under coloured lights the red, green and
+//! exact when the color over the triangle changes along one direction —
+//! all three channels together. Under colored lights the red, green and
 //! blue gradients point different ways; the fill then uses the direction
-//! and slopes that minimise the squared colour error over the triangle's
-//! area (the best rank-1 approximation of the colour's screen gradient,
+//! and slopes that minimize the squared color error over the triangle's
+//! area (the best rank-1 approximation of the color's screen gradient,
 //! weighted by the triangle's second moment).
 
 use crate::functions::plot3d::Point3D;
@@ -229,7 +229,7 @@ pub(crate) type ExactNormalFn = dyn Fn(usize, Point3D, Vec3, Point3D) -> Vec3;
 pub(crate) type ExactNormal<'a> =
   &'a (dyn Fn(usize, Point3D, Vec3, Point3D) -> Vec3 + 'a);
 
-/// The lit colour at each corner of the triangles of one smooth surface.
+/// The lit color at each corner of the triangles of one smooth surface.
 /// `exact` gives the surface's true normals (an analytic primitive);
 /// otherwise normals are averaged from the faces. `shade(i, normal,
 /// point)` lights corner `point` of triangle `i`; `toward` points at the
@@ -323,7 +323,7 @@ pub(crate) fn round_solid_normal(
   }
 }
 
-/// A linear gradient across a triangle: the colours at `from` and `to`,
+/// A linear gradient across a triangle: the colors at `from` and `to`,
 /// and the rms error of the fit (in 0–255 units, over the triangle's
 /// area, averaged over the channels).
 pub(crate) struct GradientFit {
@@ -337,7 +337,7 @@ pub(crate) struct GradientFit {
 }
 
 /// The best linear gradient for a triangle with screen corners `pts` and
-/// corner colours `colors`; `None` when the colour hardly changes over the
+/// corner colors `colors`; `None` when the color hardly changes over the
 /// triangle (a flat fill does) or the triangle is degenerate.
 pub(crate) fn fit_gradient(
   pts: [(f64, f64); 3],
@@ -352,7 +352,7 @@ pub(crate) fn fit_gradient(
   if det.abs() < 1e-9 * span * span {
     return None;
   }
-  // The colour's screen gradient A (one row per channel): A·e = Δc.
+  // The color's screen gradient A (one row per channel): A·e = Δc.
   // E⁻¹ for E = [e1 e2] (columns).
   let inv = [[e2.1 / det, -e2.0 / det], [-e1.1 / det, e1.0 / det]];
   let mut a = [[0.0; 2]; 3];
@@ -364,14 +364,14 @@ pub(crate) fn fit_gradient(
       d1 * inv[0][1] + d2 * inv[1][1],
     ];
   }
-  let centre = (
+  let center = (
     (pts[0].0 + pts[1].0 + pts[2].0) / 3.0,
     (pts[0].1 + pts[1].1 + pts[2].1) / 3.0,
   );
   // Second moment of the triangle about its centroid, M = L·Lᵀ.
   let mut m = [0.0; 3]; // m11, m12, m22
   for p in pts {
-    let (dx, dy) = (p.0 - centre.0, p.1 - centre.1);
+    let (dx, dy) = (p.0 - center.0, p.1 - center.1);
     m[0] += dx * dx / 12.0;
     m[1] += dx * dy / 12.0;
     m[2] += dy * dy / 12.0;
@@ -398,7 +398,7 @@ pub(crate) fn fit_gradient(
     s22 += r[1] * r[1];
   }
   let total = s11 + s22;
-  // The colour change over the triangle (rms, 0–255 units).
+  // The color change over the triangle (rms, 0–255 units).
   if total.sqrt() * 255.0 < 0.35 {
     return None;
   }
@@ -422,7 +422,7 @@ pub(crate) fn fit_gradient(
   let v1 = (w[0] - l21 * v2) / l11;
   let s: Vec<f64> = pts
     .iter()
-    .map(|p| v1 * (p.0 - centre.0) + v2 * (p.1 - centre.1))
+    .map(|p| v1 * (p.0 - center.0) + v2 * (p.1 - center.1))
     .collect();
   let smin = s.iter().copied().fold(f64::INFINITY, f64::min);
   let smax = s.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -433,7 +433,7 @@ pub(crate) fn fit_gradient(
   let mean: Vec<f64> = (0..3)
     .map(|k| (colors[0][k] + colors[1][k] + colors[2][k]) / 3.0)
     .collect();
-  let at = |t: f64| (centre.0 + v1 * t / vv, centre.1 + v2 * t / vv);
+  let at = |t: f64| (center.0 + v1 * t / vv, center.1 + v2 * t / vv);
   let color_at =
     |t: f64| [0, 1, 2].map(|k| (mean[k] + u[k] * t).clamp(0.0, 1.0));
   Some(GradientFit {
@@ -445,7 +445,7 @@ pub(crate) fn fit_gradient(
   })
 }
 
-/// The largest per-channel difference between corner colours that is still
+/// The largest per-channel difference between corner colors that is still
 /// filled flat.
 const FLAT_SPREAD: u8 = 2;
 
@@ -462,8 +462,8 @@ fn hex(c: [f64; 3]) -> String {
 }
 
 /// A true affine RGB field when the channels vary in different directions.
-/// A single linear SVG gradient has only one colour direction; fitting one
-/// separately to neighbouring triangles makes their shared edge discontinuous.
+/// A single linear SVG gradient has only one color direction; fitting one
+/// separately to neighboring triangles makes their shared edge discontinuous.
 fn rgb_triangle_pattern(
   pts: [(f64, f64); 3],
   colors: [(u8, u8, u8); 3],
@@ -518,9 +518,9 @@ fn rgb_triangle_pattern(
 
 impl GradientDefs {
   /// The SVG paint for a triangle with screen corners `pts` and corner
-  /// colours `colors`: `url(#…)` of a linear gradient (written to `out`
+  /// colors `colors`: `url(#…)` of a linear gradient (written to `out`
   /// the first time it is needed), or `None` when a flat fill in the
-  /// average colour is as good.
+  /// average color is as good.
   pub(crate) fn paint(
     &mut self,
     out: &mut String,
@@ -579,7 +579,7 @@ mod tests {
 
   #[test]
   fn affine_single_direction_is_exact() {
-    // Colour changes along x only, every channel the same way.
+    // Color changes along x only, every channel the same way.
     let pts = [(0.0, 0.0), (10.0, 0.0), (0.0, 10.0)];
     let colors = [[0.0, 0.2, 0.4], [1.0, 0.7, 0.4], [0.0, 0.2, 0.4]];
     let fit = fit_gradient(pts, colors).unwrap();

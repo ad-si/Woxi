@@ -600,7 +600,7 @@ export function buildWolframScript(
   // Woxi runs each case in a fresh process. Collect every name any case in
   // this batch unprotects, remember its definitions once up front, and put
   // them back before each case. Restoring — rather than clearing — is what
-  // keeps `Red` the colour it was born as.
+  // keeps `Red` the color it was born as.
   // `Unprotect` names the symbol either bare (`Unprotect[Red]`) or as a
   // string (`Unprotect["Style"]`) — both have to be restored, or a later
   // `Unprotect["Style"]` case answers `{}` where a fresh kernel answers
@@ -816,7 +816,7 @@ const APPROX_MATCH = new Set([
 // relative) instead of being skipped. Each is a case where Woxi's double is
 // the correctly rounded (or exact) one and wolframscript's is not — see
 // "Machine special-function values differ in the last digits" and its
-// neighbours in conformance_gaps.md — or where both engines iterate to a
+// neighbors in conformance_gaps.md — or where both engines iterate to a
 // root and stop in different places.
 const NEAR_MATCH = new Set([
   // Guard-precision AGM rounds correctly; Wolfram's machine iteration is
@@ -845,7 +845,7 @@ const NEAR_MATCH = new Set([
   // The event time comes out as 6.000000000000001 in wolframscript.
   "Reap[NDSolve[{x'[t] == 1, x[0] == 0, WhenEvent[Mod[t, 2] == 0, Sow[{t, x[t]}]]}, x, {t, 0, 7}]][[2]]",
   // Woxi projects onto the circle exactly; wolframscript's iterative
-  // minimisation stops ~3e-10 short.
+  // minimization stops ~3e-10 short.
   "RegionNearest[ImplicitRegion[x^2 + y^2 == 1, {x, y}], {3., 4.}]",
   // wolframscript's FFT round-off: 6.249999999999998 for the exact 6.25.
   "PeriodogramArray[{1, 2, 3, 1, 4}, 2]",
@@ -1247,8 +1247,8 @@ function main() {
     // An expression that *measures* exported SVG is as
     // implementation-specific as the SVG itself, and the plain-SVG filter
     // further down only catches results that are the SVG. wolframscript
-    // writes colours as `rgb(70.000763%,0%,0%)` where Woxi writes
-    // `rgb(255,0,0)`, so counting a colour, a tag or a length can never
+    // writes colors as `rgb(70.000763%,0%,0%)` where Woxi writes
+    // `rgb(255,0,0)`, so counting a color, a tag or a length can never
     // agree even when both renderers draw the same picture.
     /\bExportString\[[\s\S]*"SVG"/,
     /\bStack\[/,        // Returns internal evaluation stack (different call frames per implementation)
@@ -1407,7 +1407,7 @@ function main() {
     /\bShortTimeFourier\[/,
 
     // GeoRegionValuePlot: same family as the Head[GeoGraphics] entry — Woxi
-    // returns bare Graphics with the colour scale drawn into the picture,
+    // returns bare Graphics with the color scale drawn into the picture,
     // wolframscript a Legended[GeoGraphics[…], Placed[BarLegend[…], …]].
     /\bGeoRegionValuePlot\[/,
   ];
@@ -1541,7 +1541,7 @@ function main() {
     // by substituting parameters and rounding.
     "Variance[GompertzMakehamDistribution[l, x]]",
     // ExampleData[{"TestImage", …}] returns the photograph in wolframscript;
-    // Woxi bundles the name catalogue but not the pixels, which are not ours
+    // Woxi bundles the name catalog but not the pixels, which are not ours
     // to redistribute (see conformance_gaps.md).
     'ExampleData[{"TestImage", "Couple"}]',
     // ImageDeconvolve: wolframscript's result is shifted by a pixel and its
@@ -1553,7 +1553,7 @@ function main() {
     'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> {"Tikhonov", 0.01}]]',
     'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "Wiener"]]',
     'ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "RichardsonLucy"]',
-    // Same for ExampleData[{"Geometry3D", …}]: the catalogue is bundled, the
+    // Same for ExampleData[{"Geometry3D", …}]: the catalog is bundled, the
     // meshes are Wolfram's and are not.
     'ExampleData[{"Geometry3D", "Cow"}]',
     'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]',
@@ -1570,7 +1570,7 @@ function main() {
     "FindIntegerNullVector[{2, 6}]",
     // 3D rotation about a symbolic axis: wolframscript returns an unsimplified
     // artifact of its internal Gram-Schmidt rather than a canonical form — the
-    // (1,1) entry keeps an un-cancelled x*Conjugate[x]/Abs[x]^2 (i.e. 1) while
+    // (1,1) entry keeps an un-canceled x*Conjugate[x]/Abs[x]^2 (i.e. 1) while
     // the (2,2) entry of the same rotation is a plain -1, and a fully symbolic
     // {a, b, c} axis expands to ~8 KB of nested Conjugate[...] terms that are
     // singular on the coordinate axes. There is no stable reference form to
@@ -1733,7 +1733,7 @@ function main() {
     "Exp[I Pi / 3]",
     "Exp[I Pi / 6]",
     "Exp[I Pi / 4]",
-    // Pattern formatter difference: Wolfram parenthesises typed
+    // Pattern formatter difference: Wolfram parenthesizes typed
     // patterns inside Plus/Times (`(a_.) + (b_)`); Woxi keeps them bare.
     "a_. + b_",
     "a_. - b_",
@@ -2032,7 +2032,7 @@ function main() {
     // Wolfram Sign[x] + x*Sign'[x].
     "D[x Sign[x], x]",
 
-    // PermutationProduct prints with the private-use centred-dot infix glyph
+    // PermutationProduct prints with the private-use centered-dot infix glyph
     // (U+F3DE); Woxi keeps the call symbolic with the standard head.
     "PermutationProduct[{2, 1, 4}, {1, 3, 2}]",
 
@@ -2429,7 +2429,7 @@ function main() {
     // with a different radical nesting (Woxi `Sqrt[5/8 + Sqrt[5]/8]`, Wolfram
     // `5/Sqrt[50 - 10*Sqrt[5]]`) — the same folding difference as the
     // `PolyhedronData["Icosahedron", "Volume"]` entry above. The property and
-    // solid catalogues are the subset Woxi implements against Wolfram's full
+    // solid catalogs are the subset Woxi implements against Wolfram's full
     // curated database, like `ElementData["Properties"]`.
     "PolyhedronData[\"Icosahedron\", \"VertexCoordinates\"]",
     "PolyhedronData[\"Properties\"]",
@@ -2444,14 +2444,14 @@ function main() {
     //     Print[ToString[{ImportString["a,b\n1,2", "CSV", "HeaderLines" -> 1],
     //       ImportString["true,false", "CSV"]}, InputForm]]'
     // against the same line without the warm-up. Woxi implements the
-    // cold-kernel behaviour, which is what these expressions see on their own;
+    // cold-kernel behavior, which is what these expressions see on their own;
     // the io.rs cases only differ once ~20 earlier cases share the batch.
     // Same "no single stable reference" situation as Attributes[ParallelDo].
     "ToString[ImportString[\"a,b\\n1,2\", \"CSV\", \"HeaderLines\" -> 1], InputForm]",
     "ToString[ImportString[\"true,false\", \"CSV\"], InputForm]",
     "ToString[ImportString[\"True,FALSE,tRue,yes\", \"CSV\"], InputForm]",
 
-    // `"ColumnTypes"` of a labelled table whose text does not end in a newline:
+    // `"ColumnTypes"` of a labeled table whose text does not end in a newline:
     // Wolfram reports the last column as "String" no matter what is in it,
     // while the same import reads that field as a number. Reproduce with
     //   wolframscript -code 'ToString[{ImportString["a,b,c\n1,2,3", "CSV"],
@@ -2521,11 +2521,11 @@ function main() {
     "MidDate[{DateObject[{2024, 12, 30, 18, 1, 56.77401781082153}], DateObject[{2024, 4, 8, 12, 54, 47.175180435180664}], DateObject[{2024, 8, 13, 22, 45, 35.52135992050171}]}]",
 
     // Woxi bundles its own NetworkGraph data and exposes properties
-    // wolframscript's catalogue does not have ("VertexList", "EdgeRules",
-    // "AdjacencyMatrix"). Deliberate: the catalogue is Wolfram's.
+    // wolframscript's catalog does not have ("VertexList", "EdgeRules",
+    // "AdjacencyMatrix"). Deliberate: the catalog is Wolfram's.
     'ExampleData[{"NetworkGraph", "ZacharyKarateClub"}, "VertexList"][[1 ;; 3]]',
     'ExampleData[{"NetworkGraph", "LesMiserables"}, "VertexList"][[1 ;; 2]]',
-    // The mirror image: a name Wolfram's catalogue has but whose data Woxi does
+    // The mirror image: a name Wolfram's catalog has but whose data Woxi does
     // not bundle stays unevaluated (that is what the unit test pins), while
     // wolframscript returns the actual 325,729-vertex web graph — a 51 MB
     // InputForm that no comparison can use. See conformance_gaps.md.
@@ -2697,7 +2697,7 @@ function main() {
     "CountryData[\"CzechRepublic\", \"FullName\"]",
     "CountryData[\"Italy\", \"Polygon\"] === CountryData[\"Italy\", \"SchematicPolygon\"]",
 
-    // The cases below are catalogued under "Unit-test conformance sweep
+    // The cases below are cataloged under "Unit-test conformance sweep
     // (misc cluster, 2026-11)" in conformance_gaps.md.
     // Audio`Waveform is Woxi's stand-in for the sound player of a
     // Demonstration notebook; a plain kernel has no definition for it.
@@ -2854,7 +2854,7 @@ function main() {
     // A symbolic axis: wolframscript's general rotation formula carries
     // Conjugate and Abs of every component, unsimplified.
     "RotationMatrix[t, {a, 1, 0}]",
-    // Root[{f, x0}] keeps an ~20-digit x0 in wolframscript (catalogued under
+    // Root[{f, x0}] keeps an ~20-digit x0 in wolframscript (cataloged under
     // "Transcendental Root[{f, x0}] objects").
     "{Solve[2^x + 3^x == 5, x, Reals], Solve[2^x + 3^x == 10, x, Reals], Solve[3^x + 5^x == 8 x, x, Reals], Solve[E^x + 2^x == 0, x, Reals], N[t /. Solve[2/2^t + 2/3^t == 1, t, Reals]]}",
   ]);

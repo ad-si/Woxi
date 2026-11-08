@@ -29,9 +29,9 @@ enum Sampler {
   Box(Point, Point),
   /// `origin + s*u + t*v` for uniform s, t.
   Parallelogram(Point, Point, Point),
-  /// Elliptical disk sector: centre, radii, angle range.
+  /// Elliptical disk sector: center, radii, angle range.
   Disk(Point, [f64; 2], [f64; 2]),
-  /// Elliptical arc: centre, radii, angle range.
+  /// Elliptical arc: center, radii, angle range.
   Arc(Point, [f64; 2], [f64; 2]),
   /// Solid ball or sphere surface in any dimension.
   Ball(Point, f64, bool),
@@ -109,7 +109,7 @@ impl Parametrization {
 /// other parameters, so it still has to be checked per sample.
 fn condition_bounds(cond: &Expr, var: &str) -> Option<(f64, f64, bool)> {
   use crate::syntax::ComparisonOp;
-  // Normalise to an operand chain with `<`/`<=` (or `>`/`>=`) between them.
+  // Normalize to an operand chain with `<`/`<=` (or `>`/`>=`) between them.
   let (operands, ascending): (Vec<&Expr>, bool) = match cond {
     Expr::Comparison {
       operands,
@@ -667,7 +667,7 @@ fn region_sampler(region: &Expr) -> Option<Sampler> {
       Some(Sampler::Ball(c, r, name == "Sphere"))
     }
     "ParametricRegion" => {
-      // Canonicalise `ParametricRegion[f, {{u, a, b}, …}]` first.
+      // Canonicalize `ParametricRegion[f, {{u, a, b}, …}]` first.
       match &evaluate_expr_to_expr(region).ok()? {
         Expr::FunctionCall { name: h, args: a } if h == "ParametricRegion" => {
           parametric_sampler(a)
@@ -806,7 +806,7 @@ fn sample_direct(sampler: &Sampler, rng: &mut dyn rand::Rng) -> Point {
     }
     Sampler::Arc(c, r, a) => {
       // Uniform in arc length: accept an angle with probability
-      // proportional to the speed of the parametrisation there.
+      // proportional to the speed of the parameterization there.
       let max_speed = r[0].abs().max(r[1].abs());
       loop {
         let th = a[0] + (a[1] - a[0]) * uniform(rng);

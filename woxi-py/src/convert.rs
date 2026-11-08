@@ -8,7 +8,7 @@
 //! shape — atoms plus `Expr(head, args)` nodes — which is a stable contract
 //! and matches what `wolframclient` users expect.
 //!
-//! The normalisation itself is *not* reimplemented here: everything that is
+//! The normalization itself is *not* reimplemented here: everything that is
 //! not an atom goes through `woxi::functions::expr_form::decompose_expr`,
 //! the same decomposition `FullForm` and pattern matching use.
 
@@ -28,7 +28,7 @@ use woxi::syntax::Expr as WExpr;
 /// for anything a real evaluation produces, shallow enough that the native
 /// frames cannot overflow the stack. The recursive conversions push their
 /// children with plain loops rather than `collect()`: the iterator adapters
-/// add a dozen frames per level, which in an unoptimised build overflowed
+/// add a dozen frames per level, which in an unoptimized build overflowed
 /// the 8 MiB main-thread stack before this limit was reached.
 const MAX_DEPTH: usize = 5000;
 

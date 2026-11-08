@@ -3,7 +3,7 @@
 //! arbitrary-precision `LegendreP[ν, x]`, `LaguerreL[ν, (λ,) x]`,
 //! `HermiteH[ν, x]`, `Fibonacci[ν, x]` and `QPochhammer[a, q, n]`.
 //!
-//! The polynomials are generalised through their hypergeometric forms
+//! The polynomials are generalized through their hypergeometric forms
 //! (DLMF 14.3.1, 18.5.12, 18.5.13 / 13.2.38), summed by [`pfq_bigfloat`] with
 //! guard bits grown until the series' cancellation is absorbed. Machine values
 //! are rounded from a 64-bit result.
@@ -43,7 +43,7 @@ fn rgamma(
   BigFloat::from_i32(1, wp).div(&gamma_bigfloat(z, wp, rm, cc), wp, rm)
 }
 
-/// The generalised hypergeometric series `pFq(a; b; z)` summed at `wp` bits.
+/// The generalized hypergeometric series `pFq(a; b; z)` summed at `wp` bits.
 /// Returns the sum together with the number of bits its largest term exceeds
 /// it by (the bits lost to cancellation), or `None` when a lower parameter is
 /// a pole, or when the series does not converge within the term budget.

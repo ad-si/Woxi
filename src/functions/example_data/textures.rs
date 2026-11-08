@@ -7,9 +7,9 @@
 //! the original's do — but drawn from noise, cells and strokes, never from
 //! the original's pixels. Most recipes produce a brightness field; the
 //! caller maps it onto the recorded per-channel mean and spread, which gives
-//! the original's colours (a two-tone pattern's field is the motif mask, so
-//! it becomes exactly two colours). A few multi-coloured entries (flowers,
-//! rust, fur) are painted in colour directly.
+//! the original's colors (a two-tone pattern's field is the motif mask, so
+//! it becomes exactly two colors). A few multi-colored entries (flowers,
+//! rust, fur) are painted in color directly.
 
 use std::f64::consts::{PI, TAU};
 
@@ -106,7 +106,7 @@ impl Field {
   }
 }
 
-/// Random points with a grid index for nearest-neighbour queries (cells,
+/// Random points with a grid index for nearest-neighbor queries (cells,
 /// stones, grains). `aspect` stretches cells horizontally (> 1) or
 /// vertically (< 1).
 pub struct Cells {
@@ -292,7 +292,7 @@ fn brick_at(b: &Bricks, noise: &Noise, u: f64, v: f64) -> f64 {
   }
 }
 
-/// Perspective: pattern coordinates seen on a wall receding towards the
+/// Perspective: pattern coordinates seen on a wall receding toward the
 /// right (`k > 0`) or left (`k < 0`); rows converge on the vanishing side.
 fn recede(x: f64, y: f64, w: f64, h: f64, k: f64) -> (f64, f64) {
   let t = if k >= 0.0 { x / w } else { 1.0 - x / w };
@@ -306,7 +306,7 @@ fn recede(x: f64, y: f64, w: f64, h: f64, k: f64) -> (f64, f64) {
 }
 
 /// The recipe for one texture entry: a brightness field, or `None` for
-/// names without one (handled by the colour painter).
+/// names without one (handled by the color painter).
 #[allow(clippy::too_many_lines)]
 fn field(
   name: &str,
@@ -754,7 +754,7 @@ fn field(
       f.band((0.03 * hf) as usize, false, 0.0);
       f
     }
-    // Colour textures with a brightness recipe.
+    // Color textures with a brightness recipe.
     "Amboyna" | "Vavona" => wood(
       w,
       h,
@@ -900,7 +900,7 @@ struct WoodKind {
   cathedral: bool,
   /// Open pores: short dark dashes along the grain.
   pores: bool,
-  /// Centre of a knot (fractions of width and height).
+  /// Center of a knot (fractions of width and height).
   knot: Option<(f64, f64)>,
   /// Burl: grain swirling around many small eyes.
   burl: f64,
@@ -969,7 +969,7 @@ fn wood(
     } else {
       rings
     };
-    // Pore-wood boards (oak, ash) show mostly fibre, the figure only faintly.
+    // Pore-wood boards (oak, ash) show mostly fiber, the figure only faintly.
     let figure = if k.pores { 0.08 } else { 0.3 };
     let fiber = noise2.perlin(across / 1.5, along / 25.0)
       * if k.pores { 0.2 } else { 0.12 };
@@ -1011,7 +1011,7 @@ fn mosaic(
   let (wf, hf) = (w as f64, h as f64);
   match variant {
     3 => Field::new(w, h, |x, y| {
-      // Finer squares towards the bottom right.
+      // Finer squares toward the bottom right.
       let (u, v) = (x / wf, y / hf);
       let level = if v < 0.5 {
         4.0
@@ -1549,7 +1549,7 @@ fn pattern(name: &str, w: usize, h: usize, rng: &mut Rng) -> Option<Field> {
   Some(f)
 }
 
-/// Multi-coloured entries painted in colour.
+/// Multi-colored entries painted in color.
 fn painted(
   name: &str,
   w: usize,
@@ -1591,7 +1591,7 @@ fn painted(
     }
     "CatFur" => {
       // Tabby stripes running top to bottom, fanning out slightly from the
-      // top centre; hairs follow the same direction.
+      // top center; hairs follow the same direction.
       let (cx, cy) = (wf / 2.0, -hf * 0.8);
       let angle_at = |x: f64, y: f64| (x - cx).atan2(y - cy);
       c.fill(&Paint::Fn(&|x, y| {
@@ -1624,7 +1624,7 @@ fn painted(
       for _ in 0..(wf * hf / (62.0 * s).powi(2)) as usize + 10 {
         let (x, y) = (rng.range(0.0, wf), rng.range(0.0, hf));
         let r = rng.range(14.0, 24.0) * s;
-        // A rosette: broken ring of blotches around a slightly darker centre.
+        // A rosette: broken ring of blotches around a slightly darker center.
         c.ellipse(
           x,
           y,

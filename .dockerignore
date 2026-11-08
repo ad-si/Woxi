@@ -16,7 +16,7 @@ tests/playground/pkg
 tests/_*
 tests/scripts/_*
 
-# Generated artefacts and scratch files
+# Generated artifacts and scratch files
 factorials
 mathics
 examples

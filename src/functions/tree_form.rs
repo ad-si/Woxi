@@ -244,7 +244,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut primitives: Vec<Expr> = Vec::new();
 
   // Draw edges first (so they appear behind boxes and text), in
-  // Wolfram's greyish brown `RGBColor[0.55, 0.45, 0.45]`.
+  // Wolfram's grayish brown `RGBColor[0.55, 0.45, 0.45]`.
   primitives.push(call(
     "RGBColor",
     vec![Expr::Real(0.55), Expr::Real(0.45), Expr::Real(0.45)],
@@ -270,7 +270,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let hw = box_half_width(&node.label);
       let hh = box_half_height;
 
-      // Every node: a light yellow box with a grey outline.
+      // Every node: a light yellow box with a gray outline.
       primitives
         .push(call("EdgeForm", vec![call1("GrayLevel", Expr::Real(0.5))]));
       primitives.push(call(
@@ -713,7 +713,7 @@ pub fn tree_object_ast(args: &[Expr]) -> Option<Expr> {
     })
     .unwrap_or(LayerDirection::Top);
 
-  /// Levels sit a little further apart than neighbouring leaves.
+  /// Levels sit a little further apart than neighboring leaves.
   const LEVEL_STEP: f64 = 1.2;
   let pts: Vec<(f64, f64)> = tidy_tree(&children, 0)
     .into_iter()

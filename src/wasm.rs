@@ -512,7 +512,7 @@ pub fn evaluate_manipulate(body: &str, bindings_json: &str) -> String {
 /// `conditions_json` is a JSON string array aligned with the control list;
 /// an empty string marks a control with no condition (always enabled).
 /// `bindings_json` is the same JSON object of variable bindings used by
-/// `evaluate_manipulate`. Used by the Playground to grey out controls that a
+/// `evaluate_manipulate`. Used by the Playground to gray out controls that a
 /// `Enabled -> Dynamic[…]` option has switched off for the current state.
 #[wasm_bindgen]
 pub fn evaluate_manipulate_enabled(

@@ -2617,7 +2617,7 @@ mod minus_plus {
     assert_eq!(interpret("a - MinusPlus[b]").unwrap(), "a - (\u{2213}b)");
   }
 
-  // The same parenthesisation applies in InputForm, which has its own renderer.
+  // The same parenthesization applies in InputForm, which has its own renderer.
   #[test]
   fn nested_in_subtraction_input_form() {
     assert_eq!(
@@ -5533,7 +5533,7 @@ mod boolean_function {
 
   // BooleanFunction[k, n] is an opaque object carrying the reduced ordered
   // binary decision diagram of the function, exactly as wolframscript
-  // serialises it: the leading ±n is the variable count signed by the root's
+  // serializes it: the leading ±n is the variable count signed by the root's
   // complement bit, and each following triple is a node {var, then, else}
   // in the order a then-branch-first walk from the root reaches them. A
   // branch refers to the |v|-th such node, negated when negative, with ±1

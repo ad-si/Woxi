@@ -608,7 +608,7 @@ pub fn coefficient_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .and_then(|together| {
       crate::evaluator::evaluate_function_call_ast("Cancel", &[together])
     }) {
-      Ok(cancelled) if is_polynomial(&cancelled) => cancelled,
+      Ok(canceled) if is_polynomial(&canceled) => canceled,
       _ => normalized,
     }
   };

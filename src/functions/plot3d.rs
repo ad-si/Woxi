@@ -33,7 +33,7 @@ pub(crate) struct Camera {
 }
 
 /// The eye of a perspective [`Camera`]: it sits `distance` from `center`
-/// towards the viewer.
+/// toward the viewer.
 #[derive(Clone, Copy)]
 pub(crate) struct Perspective {
   pub center: [f64; 3],
@@ -72,7 +72,7 @@ impl Camera {
     Some((right, cross(d, right)))
   }
 
-  /// The direction from `p` towards the eye: the view direction for an
+  /// The direction from `p` toward the eye: the view direction for an
   /// orthographic camera, the line to the eye for a perspective one.
   pub(crate) fn toward_viewer(&self, p: Point3D) -> [f64; 3] {
     let (sa, ca) = self.azimuth.sin_cos();
@@ -103,7 +103,7 @@ impl Camera {
   }
 
   /// The camera frame lights fixed to the view (`ImageScaled`) are placed
-  /// in: the screen basis `project` draws with and the direction towards
+  /// in: the screen basis `project` draws with and the direction toward
   /// the viewer. The scene placement defaults to a box of side 2 about
   /// the origin, which is what the plots normalize their data into.
   pub(crate) fn view_frame(&self) -> ViewFrame {
@@ -143,7 +143,7 @@ impl Default for Camera {
       elevation: 0.63, // ~36 degrees
       vertical: Camera::DEFAULT_VERTICAL,
       // The plots normalize their box into [-1, 1] (x and y), so the eye
-      // is |ViewPoint| times that side of 2 from its centre.
+      // is |ViewPoint| times that side of 2 from its center.
       perspective: Some(Perspective {
         center: [0.0; 3],
         distance: 2.0 * {
@@ -166,8 +166,8 @@ pub(crate) struct Triangle {
   /// outline edges are stroked, so a face with more than three corners
   /// does not show the diagonals it was split along.
   pub boundary: [bool; 3],
-  /// The colour `EdgeForm[colour]` asked outline edges to be drawn in.
-  /// `None` keeps the renderer's default dark grey. An explicit colour is
+  /// The color `EdgeForm[color]` asked outline edges to be drawn in.
+  /// `None` keeps the renderer's default dark gray. An explicit color is
   /// also drawn at full opacity, so an outline stays visible around a
   /// transparent face.
   pub edge_color: Option<(u8, u8, u8)>,
@@ -180,7 +180,7 @@ pub(crate) struct Triangle {
   /// The image painted over a polygon's triangle, when a `Texture` is in
   /// force and the polygon carries `VertexTextureCoordinates`.
   pub texture: Option<TriangleTexture>,
-  /// The lit colour at each corner, for a curved surface shaded smoothly:
+  /// The lit color at each corner, for a curved surface shaded smoothly:
   /// the triangle is filled with a gradient between them (see
   /// `smooth_shading`). `None` fills it flat in `color`.
   pub vertex_colors: Option<[(u8, u8, u8); 3]>,
@@ -241,7 +241,7 @@ fn side_of_plane(
   camera: &Camera,
 ) -> Option<bool> {
   let mut n = triangle_normal(plane[0], plane[1], plane[2]);
-  // Towards the eye from the plane: the same everywhere for an
+  // Toward the eye from the plane: the same everywhere for an
   // orthographic camera, the line to the eye for a perspective one.
   let view = camera.toward_viewer(plane[0]);
   if n[0] * view[0] + n[1] * view[1] + n[2] * view[2] < 0.0 {
@@ -555,20 +555,20 @@ fn clip_polygon_by_plane(
 
 /// One triangle of a plotted surface to shade smoothly: where it sits in
 /// the scene's triangle list, its corners in the space it is lit in, and
-/// the per-facet style (a `ColorFunction` or `MeshShading` colour) it was
+/// the per-facet style (a `ColorFunction` or `MeshShading` color) it was
 /// drawn with.
 struct SmoothFacet {
   index: usize,
   world: [Point3D; 3],
   style: Option<StyleState3D>,
   /// The surface's own style when it varies by facet (a `MeshShading`
-  /// colour over a `PlotStyle`).
+  /// color over a `PlotStyle`).
   plot_style: Option<StyleState3D>,
 }
 
 /// Re-lights the triangles of one surface at their corners, with normals
 /// averaged over the surface, so each is filled with a gradient instead of
-/// one flat colour. `shade(facet, normal, point)` lights one corner.
+/// one flat color. `shade(facet, normal, point)` lights one corner.
 fn shade_smoothly(
   triangles: &mut [Triangle],
   facets: &[SmoothFacet],
@@ -604,7 +604,7 @@ fn shade_smoothly_with(
   }
 }
 
-/// The mean of three corner colours: a smoothly shaded triangle's flat
+/// The mean of three corner colors: a smoothly shaded triangle's flat
 /// stand-in.
 pub(crate) fn average_color(colors: [(u8, u8, u8); 3]) -> (u8, u8, u8) {
   let m = |a: u8, b: u8, c: u8| {
@@ -614,8 +614,8 @@ pub(crate) fn average_color(colors: [(u8, u8, u8); 3]) -> (u8, u8, u8) {
   (m(a.0, b.0, c.0), m(a.1, b.1, c.1), m(a.2, b.2, c.2))
 }
 
-/// The colour at point `p` of triangle `tri` (in its plane), blended
-/// barycentrically from the corner colours.
+/// The color at point `p` of triangle `tri` (in its plane), blended
+/// barycentrically from the corner colors.
 fn interpolate_corner_color(
   tri: &[Point3D; 3],
   colors: [(u8, u8, u8); 3],
@@ -841,16 +841,16 @@ fn painter_order(
 struct MeshLine {
   endpoints: [Point3D; 2],
   projected: [(f64, f64); 2],
-  /// The SVG `stroke` colour and width; `None` is the default
+  /// The SVG `stroke` color and width; `None` is the default
   /// translucent hairline.
   stroke: Option<(String, f64)>,
-  /// Depth of the segment's midpoint, pulled slightly towards the viewer
+  /// Depth of the segment's midpoint, pulled slightly toward the viewer
   /// (see [`MESH_DEPTH_BIAS`]): the renderer paints it among the surface
   /// triangles, so a line behind a hill is hidden by it.
   depth: f64,
 }
 
-/// How far a mesh segment's depth is pulled towards the viewer, in the
+/// How far a mesh segment's depth is pulled toward the viewer, in the
 /// normalized box units: enough that it is painted after the facets it
 /// lies on (whose centroids sit a fraction of a cell off the line), not so
 /// much that it shows through a fold in front of it.
@@ -871,7 +871,7 @@ fn mesh_segment(p0: Point3D, p1: Point3D, camera: &Camera) -> MeshLine {
   }
 }
 
-/// A [`mesh_segment`] stroked as `style` gives it (its colour, opacity and
+/// A [`mesh_segment`] stroked as `style` gives it (its color, opacity and
 /// thickness), falling back to `default` for what it leaves out.
 fn styled_mesh_segment(
   p0: Point3D,
@@ -1186,7 +1186,7 @@ pub(crate) fn project(p: Point3D, cam: &Camera) -> (f64, f64) {
   };
   // Foreshortening about the point the camera looks at: a point nearer the
   // eye than that point's plane is spread out from it, a farther one drawn
-  // in towards it.
+  // in toward it.
   let c = Point3D {
     x: eye.center[0],
     y: eye.center[1],
@@ -1212,7 +1212,7 @@ fn project_orthographic(p: Point3D, cam: &Camera) -> (f64, f64) {
     );
   }
   // Straight down (or up) the z axis the screen basis is degenerate — the
-  // vertical `{0, 0, 1}` the camera is levelled against points at the
+  // vertical `{0, 0, 1}` the camera is leveled against points at the
   // viewer — so Wolfram falls back to the plain top view: x to the right
   // and y up, mirrored when the view is from below. Without this the
   // picture came out turned a quarter turn from Wolfram's.
@@ -1290,7 +1290,7 @@ fn rgb_f64(c: (u8, u8, u8)) -> [f64; 3] {
   [c.0 as f64 / 255.0, c.1 as f64 / 255.0, c.2 as f64 / 255.0]
 }
 
-/// The surface a facet is drawn with: its colour plus whatever
+/// The surface a facet is drawn with: its color plus whatever
 /// `Specularity` and `Glow` the style carries.
 pub(crate) fn facet_material(
   color: (u8, u8, u8),
@@ -1796,7 +1796,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
   // The style `ColorFunction` gives the facet over grid cell `(i, j)`,
-  // evaluated at the cell's centre.
+  // evaluated at the cell's center.
   let cell_color_style = |grid: &[Vec<f64>], i: usize, j: usize| {
     color_fn.is_set().then_some(())?;
     let corners = [
@@ -1874,7 +1874,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               continue;
             };
             let facet_style = cell_color_style(grid, i, j);
-            // Colour and polygon travel in a sublist so the directive does
+            // Color and polygon travel in a sublist so the directive does
             // not leak onto the quads drawn after it.
             let mut quad: Vec<Expr> = Vec::new();
             if let Some(style) = &facet_style {
@@ -2112,9 +2112,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       |tri: [[f64; 3]; 3],
        all_triangles: &mut Vec<Triangle>,
        facets: &mut Vec<SmoothFacet>| {
-        let centre =
+        let center =
           [0, 1, 2].map(|d| (tri[0][d] + tri[1][d] + tri[2][d]) / 3.0);
-        // `MeshShading` colours each patch between mesh lines by its
+        // `MeshShading` colors each patch between mesh lines by its
         // index along every mesh function.
         let mut shading_style: Option<StyleState3D> = None;
         if let Some(shading) = &mesh_shading {
@@ -2122,7 +2122,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .iter()
             .zip(&levels)
             .map(|(f, lv)| {
-              let v = f.eval(centre);
+              let v = f.eval(center);
               lv.iter().filter(|l| **l <= v).count()
             })
             .collect();
@@ -2147,7 +2147,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let normal = triangle_normal(v0, v1, v2);
         let cell_style = if color_fn.is_set() {
           color_fn
-            .style_at(centre, [(x_min, x_max), (y_min, y_max), (z_lo, z_hi)])
+            .style_at(center, [(x_min, x_max), (y_min, y_max), (z_lo, z_hi)])
         } else {
           None
         };
@@ -2311,7 +2311,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // `Filling` hangs a translucent grey wall from the surface's outer edge
+  // `Filling` hangs a translucent gray wall from the surface's outer edge
   // down (or up) to the filling height.
   if let Some(spec) = &filling {
     let to = match spec {
@@ -2333,8 +2333,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
             depth: depth(tri_center(v0, v1, v2), &camera),
-            // Wolfram's `FillingStyle -> Opacity[0.5]` grey, flattened onto
-            // the white page: neighbouring translucent pieces would leave
+            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
+            // the white page: neighboring translucent pieces would leave
             // seams where their edges overlap.
             color: (178, 178, 178),
             opacity: 1.0,
@@ -2480,7 +2480,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 #[allow(clippy::too_many_arguments)]
 /// The SVG paint a triangle is filled with: a gradient between its lit
-/// corner colours when it is smoothly shaded, else its flat colour. A
+/// corner colors when it is smoothly shaded, else its flat color. A
 /// gradient's definition is written to `svg` (once) before the polygon
 /// that uses it.
 pub(crate) fn triangle_paint(
@@ -2620,7 +2620,7 @@ fn generate_svg(
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
     let corners = bounding_box_corners_with_ratios(box_ratios);
     if marketing_planes {
-      // The three rear faces form the theme's grey scene backdrop.
+      // The three rear faces form the theme's gray scene backdrop.
       let (sa, ca) = camera.azimuth.sin_cos();
       let (se, _) = camera.elevation.sin_cos();
       let faces = [
@@ -2783,8 +2783,8 @@ fn generate_svg(
           "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"#00000060\" stroke-width=\"0.5\"{opacity_attr}/>\n"
         ));
       } else {
-        // A translucent triangle's own-colour hairline overlaps its
-        // neighbours' and darkens every shared seam, tracing the
+        // A translucent triangle's own-color hairline overlaps its
+        // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
         // opaque triangle needs it to close the anti-aliasing gap.
         let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
@@ -3326,7 +3326,7 @@ fn draw_axes_on_box_with_ticks(
     extent.add(sx0, sy0);
     extent.add(sx1, sy1);
 
-    // The axis label sits centred on the axis, clear of the tick labels
+    // The axis label sits centered on the axis, clear of the tick labels
     // already sitting there — where Wolfram puts it.
     if let Some(label) = axes_labels[ai].as_deref().filter(|l| !l.is_empty()) {
       let (dx, dy) = (sx1 - sx0, sy1 - sy0);
@@ -3350,7 +3350,7 @@ fn draw_axes_on_box_with_ticks(
           .unwrap_or(1) as f64;
         let half_w = tick_chars * font_size as f64 * 0.3;
         let half_h = font_size as f64 * 0.5;
-        // …plus half of the label's own box, so `offset` can centre it
+        // …plus half of the label's own box, so `offset` can center it
         // just past them. Wolfram sets every axis label upright, the z
         // axis's too.
         let own_w = label_half_width(label, font_size);
@@ -3494,7 +3494,7 @@ impl AxesExtent {
   }
 
   /// A text run of `chars` characters anchored at `(x, y)` (`anchor` as
-  /// SVG's `text-anchor`, vertically centred).
+  /// SVG's `text-anchor`, vertically centered).
   fn add_text(
     &mut self,
     x: f64,
@@ -3518,7 +3518,7 @@ impl AxesExtent {
 /// projected box and the axes' tick labels sticking out of it. With the
 /// picture `width` x `height` (`height` `None` to fit it to the box) and
 /// the box spanning `p` (projected units), this returns the scale and the
-/// pixel position of the box's projected centre, and the final size.
+/// pixel position of the box's projected center, and the final size.
 /// `extent_at` reports where the axes land for a trial framing.
 fn fit_3d_frame(
   width: u32,
@@ -3540,7 +3540,7 @@ fn fit_3d_frame(
     };
     let scale =
       ((w as f64 - pad_w) / p_width).min((h as f64 - pad_h) / p_height);
-    // The box is centred in the room the pads leave.
+    // The box is centered in the room the pads leave.
     let cx = pads[0] + (w as f64 - pad_w) / 2.0;
     let cy = pads[2] + (h as f64 - pad_h) / 2.0;
     result = (scale, cx, cy, w, h);
@@ -3567,7 +3567,7 @@ fn fit_3d_frame(
   result
 }
 
-/// How far from the axis line the tick labels are centred.
+/// How far from the axis line the tick labels are centered.
 const TICK_LABEL_OFFSET: f64 = 10.0;
 
 /// The font size of 3D tick labels (Wolfram's are smaller than its
@@ -3760,7 +3760,7 @@ fn evaluate_vector3d(
 }
 
 /// `VectorPlot3D`'s default picture: one `Arrow[Tube[{a, b}], r]` per sample
-/// point (the cell centres of an `n`³ grid, or the given points), its
+/// point (the cell centers of an `n`³ grid, or the given points), its
 /// length proportional to the magnitude (the longest 0.7 of a cell), drawn
 /// through `Graphics3D` with Wolfram's axes and 1 x 1 x 1 box.
 fn vector_plot3d_solid(
@@ -3774,7 +3774,7 @@ fn vector_plot3d_solid(
   let n = n.max(1);
   let [(xv, x0, x1), (yv, y0, y1), (zv, z0, z1)] = axes;
   let sides = [x1 - x0, y1 - y0, z1 - z0];
-  let centres: Vec<(f64, f64, f64)> = if let Some(p) = points {
+  let centers: Vec<(f64, f64, f64)> = if let Some(p) = points {
     p.to_vec()
   } else {
     let at =
@@ -3793,10 +3793,10 @@ fn vector_plot3d_solid(
     }
     v
   };
-  // Each sample: field index, centre, vector, magnitude.
+  // Each sample: field index, center, vector, magnitude.
   let mut samples = Vec::new();
   for (f, body) in bodies.iter().enumerate() {
-    for &(x, y, z) in &centres {
+    for &(x, y, z) in &centers {
       if let Some((a, b, c)) = evaluate_vector3d(body, xv, yv, zv, x, y, z) {
         let m = (a * a + b * b + c * c).sqrt();
         if m > 1e-15 {
@@ -4120,7 +4120,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The default look, as wolframscript draws it: solid arrows (a tube
-  // with a cone head) centred on points spread through the box, coloured
+  // with a cone head) centered on points spread through the box, colored
   // by magnitude along "WL12DefaultVectorGradient", in a 1 x 1 x 1 box.
   // Styled or tube-marked fields keep the line-arrow renderer below.
   if vector_markers == "Arrow"
@@ -4601,7 +4601,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// `StreamPlot3D[{vx, vy, vz}, {x, x0, x1}, {y, y0, y1}, {z, z0, z1}]`:
 /// streamlines of a 3D vector field, traced both ways from a lattice of
-/// seed points until they leave the box, each coloured along its length by
+/// seed points until they leave the box, each colored along its length by
 /// the field's magnitude ("WL12DefaultVectorGradient", the default
 /// `StreamColorFunction`, scaled over the drawn lines).
 pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -4669,7 +4669,7 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `StreamPoints -> n` asks for n streamlines: a k×k×k lattice spanning
   // the middle 80% of each side (k³ ≤ n), topped up from the lattice twice
-  // as fine, nearest the centre of the box first — the order wolframscript
+  // as fine, nearest the center of the box first — the order wolframscript
   // seeds them in, whatever the field.
   let count = match option("StreamPoints")
     .map(|e| evaluate_expr_to_expr(e).unwrap_or(e.clone()))
@@ -4704,9 +4704,9 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut seeds = lattice(k);
   seeds.truncate(count);
   if seeds.len() < count {
-    // Distance from the centre in units of each side, so the order does
+    // Distance from the center in units of each side, so the order does
     // not depend on the box's proportions; ties keep lattice order.
-    let off_centre = |p: &[f64; 3]| -> f64 {
+    let off_center = |p: &[f64; 3]| -> f64 {
       (0..3)
         .map(|d| {
           let (lo, hi) = bounds[d];
@@ -4727,7 +4727,7 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
     let keys: Vec<i64> = extra
       .iter()
-      .map(|p| (off_centre(p) * 1e9).round() as i64)
+      .map(|p| (off_center(p) * 1e9).round() as i64)
       .collect();
     let mut order: Vec<usize> = (0..extra.len()).collect();
     order.sort_by_key(|&i| keys[i]);
@@ -4815,7 +4815,7 @@ pub fn stream_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     trace_seed(*seed, &mut lines);
   }
 
-  // Colour by magnitude, scaled over the drawn lines.
+  // Color by magnitude, scaled over the drawn lines.
   let magnitudes: Vec<Vec<f64>> = lines
     .iter()
     .map(|l| l.iter().map(|p| field(*p).map_or(0.0, v_len)).collect())
@@ -5254,7 +5254,7 @@ fn clip_plane_to_box(
     f64::midpoint(bounds[1].0, bounds[1].1),
     f64::midpoint(bounds[2].0, bounds[2].1),
   ];
-  // Project the box centre onto the plane so the quad is centred on the
+  // Project the box center onto the plane so the quad is centered on the
   // part of it the box can actually see.
   let unit_n = v_scale(normal, 1.0 / v_len(normal));
   let base = v_add(center, v_scale(unit_n, -v_dot(unit_n, v_sub(center, p))));
@@ -5577,7 +5577,7 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
 #[derive(Clone, Debug)]
 struct StyleState3D {
   color: Option<(u8, u8, u8)>,
-  /// `FaceForm[front, back]`: the colour of faces turned away from the
+  /// `FaceForm[front, back]`: the color of faces turned away from the
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
   opacity: f64,
@@ -5587,10 +5587,10 @@ struct StyleState3D {
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
   capped: bool,
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
-  /// which is how a dissection shows its pieces as flat colour.
+  /// which is how a dissection shows its pieces as flat color.
   edges: bool,
-  /// The colour `EdgeForm[colour]` asks outlines to be drawn in. `None`
-  /// leaves them the renderer's default dark grey. An explicit colour also
+  /// The color `EdgeForm[color]` asks outlines to be drawn in. `None`
+  /// leaves them the renderer's default dark gray. An explicit color also
   /// makes the outline opaque and is what turns a curved primitive's
   /// silhouette on: `{Opacity[0], EdgeForm[Black], Cylinder[…]}` is the
   /// Demonstrations idiom for an unfilled circle in space.
@@ -5599,12 +5599,12 @@ struct StyleState3D {
   edge_width: Option<f64>,
   /// `EdgeForm[Dashed]`: the outline's dash pattern.
   edge_dashing: Option<Vec<f64>>,
-  /// `Specularity[colour, exponent]`: the highlight a shiny surface throws
-  /// back at the viewer, as `(colour, exponent)`. `None` is the default
+  /// `Specularity[color, exponent]`: the highlight a shiny surface throws
+  /// back at the viewer, as `(color, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
   specular: Option<((u8, u8, u8), f64)>,
-  /// `Glow[colour]`: light the surface emits on its own, added on top of
-  /// the lit colour (`Glow[White]` renders a face plain white whatever its
+  /// `Glow[color]`: light the surface emits on its own, added on top of
+  /// the lit color (`Glow[White]` renders a face plain white whatever its
   /// angle to the lamp). `None` is a non-emissive surface.
   glow: Option<(u8, u8, u8)>,
   /// `Lighting -> spec` inside a `Directive`: the lights this surface is
@@ -5620,13 +5620,13 @@ struct StyleState3D {
   /// of the image width, negative (stored) is an absolute size in printer's
   /// points. `None` draws the default 3px dot.
   point_size: Option<f64>,
-  /// `Texture[image]`: surfaces coloured by sampling this image at each
+  /// `Texture[image]`: surfaces colored by sampling this image at each
   /// facet's texture coordinates.
   texture: Option<std::sync::Arc<image::RgbImage>>,
   /// `VertexTextureCoordinates` of the polygon being added: one `(u, v)`
   /// per corner, placing `texture` on it.
   texture_coords: Option<std::sync::Arc<Vec<(f64, f64)>>>,
-  /// `VertexColors` of the polygon or line being added: one RGB colour per
+  /// `VertexColors` of the polygon or line being added: one RGB color per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
   /// `Arrowheads[s]`: the arrowhead length as a fraction of the picture's
@@ -5712,13 +5712,13 @@ enum Primitive3D {
   /// `Text[expr, {x, y, z}, offset]`: a label pinned to a point of the
   /// scene. Text does not turn with the camera — it is drawn flat, facing
   /// the viewer, at the projection of its point, which is what makes a
-  /// labelled 3D schematic readable from any view.
+  /// labeled 3D schematic readable from any view.
   Text3D {
     /// The label as SVG `<text>` content (already typeset and escaped).
     label: String,
     pos: Point3D,
     /// Which point of the label's own box sits at `pos`, from -1
-    /// (left/bottom) to 1 (right/top). `(0, 0)` centres it.
+    /// (left/bottom) to 1 (right/top). `(0, 0)` centers it.
     offset: (f64, f64),
     font_size: f64,
     /// Character count of the visible text, for placing the box an
@@ -5726,7 +5726,7 @@ enum Primitive3D {
     width_chars: usize,
     /// A label laid out as a table (a `Column` holding a `Grid`) is a
     /// picture rather than a text run: its SVG and natural size, drawn
-    /// centred on the label's anchor.
+    /// centered on the label's anchor.
     picture: Option<(String, f64, f64)>,
     style: StyleState3D,
   },
@@ -5746,8 +5746,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   use crate::functions::math_ast::expr_to_f64;
 
   // {Red, Thick, Opacity[.4], …} – apply each element as a sub-directive.
-  // This precedes the colour parse, which would otherwise read a list of
-  // directives as its one colour and drop the rest (the opacity).
+  // This precedes the color parse, which would otherwise read a list of
+  // directives as its one color and drop the rest (the opacity).
   if let Expr::List(items) = expr {
     for it in items {
       apply_3d_directive(it, style);
@@ -5799,8 +5799,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     return true;
   }
 
-  // FaceForm[front] colours both sides; FaceForm[front, back] gives the
-  // side turned away from the viewer its own colour.
+  // FaceForm[front] colors both sides; FaceForm[front, back] gives the
+  // side turned away from the viewer its own color.
   if let Expr::FunctionCall { name, args } = expr
     && name == "FaceForm"
     && !args.is_empty()
@@ -5897,19 +5897,19 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
-      // `Specularity[colour]` / `Specularity[colour, exponent]` makes the
-      // surfaces that follow shiny. It never repaints them: the colour it
+      // `Specularity[color]` / `Specularity[color, exponent]` makes the
+      // surfaces that follow shiny. It never repaints them: the color it
       // carries is the *highlight's*, so it must be consumed here rather
       // than fall through to the generic recursion, which would pick the
-      // colour up and use it as the face colour (a Demonstration's
+      // color up and use it as the face color (a Demonstration's
       // `{GrayLevel[.25], Specularity[White, 10], Sphere[…]}` would render
-      // white instead of dark grey).
+      // white instead of dark gray).
       "Specularity" if !args.is_empty() => {
         style.specular = parse_specularity(args);
         return true;
       }
-      // `Glow[colour]` makes the surfaces that follow emit light of their
-      // own; like `Specularity` its colour never repaints the face.
+      // `Glow[color]` makes the surfaces that follow emit light of their
+      // own; like `Specularity` its color never repaints the face.
       "Glow" if args.len() == 1 => {
         style.glow = parse_glow(&args[0]);
         return true;
@@ -5941,7 +5941,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       // `EdgeForm[]` (and `EdgeForm[None]`) asks for faces with no outline;
-      // any other form keeps the default edge. A colour or thickness among
+      // any other form keeps the default edge. A color or thickness among
       // the arguments — `EdgeForm[Black]`, `EdgeForm[{Thick, Red}]`,
       // `EdgeForm[Directive[Red, AbsoluteThickness[2]]]` — also styles the
       // outline.
@@ -5963,8 +5963,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
           }
         }
         // A translucent edge (`EdgeForm[{Black, Opacity[0.1]}]`, the faint
-        // outline of a 3D chart's bars) is drawn in its colour faded
-        // towards the white page.
+        // outline of a 3D chart's bars) is drawn in its color faded
+        // toward the white page.
         if edge.opacity < 1.0
           && let Some((r, g, b)) = edge.color
         {
@@ -6084,7 +6084,7 @@ fn dash3d_attr(
   )
 }
 
-/// Read a `Glow[…]` colour (or grey level) into the emitted RGB; black emits
+/// Read a `Glow[…]` color (or gray level) into the emitted RGB; black emits
 /// nothing and so is `None`.
 fn parse_glow(arg: &Expr) -> Option<(u8, u8, u8)> {
   use crate::functions::graphics::parse_color;
@@ -6104,9 +6104,9 @@ fn parse_glow(arg: &Expr) -> Option<(u8, u8, u8)> {
   (rgb != (0, 0, 0)).then_some(rgb)
 }
 
-/// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
-/// The reflectance may be a colour (`Specularity[White, 10]`) or a plain
-/// number standing for that grey level (`Specularity[.5]`); the exponent
+/// Read a `Specularity[…]` argument list into `(highlight color, exponent)`.
+/// The reflectance may be a color (`Specularity[White, 10]`) or a plain
+/// number standing for that gray level (`Specularity[.5]`); the exponent
 /// defaults to 1.5 (measured: `Specularity[s]` falls off as `(n·h)^1.5`,
 /// while every explicit exponent is used as given). A reflectance of zero (black) means a matte
 /// surface, i.e. no highlight at all.
@@ -6137,9 +6137,9 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
 }
 
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
-/// the style (colour and, for `Directive[Opacity[o], colour]`, opacity) it
+/// the style (color and, for `Directive[Opacity[o], color]`, opacity) it
 /// gives the facet at a point. A named gradient (`ColorFunction ->
-/// "Rainbow"`) colours by the scaled height, as WL's surfaces do.
+/// "Rainbow"`) colors by the scaled height, as WL's surfaces do.
 #[derive(Default)]
 struct FacetColorFunction {
   function: Option<Expr>,
@@ -6221,7 +6221,7 @@ impl FacetColorFunction {
 /// Resolve which entry of a `PlotStyle` style list a surface uses, cycling
 /// through fewer styles than surfaces (`PlotStyle -> {Red, Blue}` on three
 /// surfaces gives Red, Blue, Red). `None` — an absent or empty list — means
-/// `PlotStyle` was not given, so callers keep their default colouring.
+/// `PlotStyle` was not given, so callers keep their default coloring.
 fn plot_style_for_surface(
   styles: &[StyleState3D],
   surface_idx: usize,
@@ -6248,7 +6248,7 @@ fn surface_opacity_directive(
 /// Split a `PlotStyle` option value into one style item per plotted
 /// object (a surface or a curve), mirroring
 /// [`crate::functions::plot::parse_plot_style`]'s disambiguation for 2D
-/// `Plot`: with more than one object, a flat list of colours/directives is
+/// `Plot`: with more than one object, a flat list of colors/directives is
 /// read as one style per object (`PlotStyle -> {Red, Blue}`); a single
 /// style — one bare directive, or a list that mixes directives for a
 /// single style, like `{RGBColor[...], Opacity[.5]}` — applies to every
@@ -6336,29 +6336,29 @@ pub(crate) fn lighting_option(opts: &[Expr]) -> Option<Lighting> {
 /// What a facet is drawn with when no style says otherwise.
 #[derive(Clone, Copy)]
 pub(crate) enum SurfaceDefault {
-  /// The `index`-th surface of a plot: the default theme's colour,
+  /// The `index`-th surface of a plot: the default theme's color,
   /// `Specularity` and lights for it (`Lighting::plot_theme`).
   Theme(usize),
-  /// A plain colour under the scene's lights, as `Graphics3D` primitives
-  /// without a colour directive are drawn (white).
+  /// A plain color under the scene's lights, as `Graphics3D` primitives
+  /// without a color directive are drawn (white).
   Plain((u8, u8, u8)),
 }
 
 /// Shade one plot facet the way WL's default plot theme styles it:
 ///
-/// - with a `ColorFunction` colour (`color_fn`), that colour under
+/// - with a `ColorFunction` color (`color_fn`), that color under
 ///   `"Neutral"` lights. WL's style still names `Specularity[White, 3]`,
-///   but the colours arrive as `VertexColors`, which render without the
+///   but the colors arrive as `VertexColors`, which render without the
 ///   highlight (measured: a sloped facet reads `c · 0.9`, no white);
-/// - with a `PlotStyle` that sets a colour, that colour, matte unless the
+/// - with a `PlotStyle` that sets a color, that color, matte unless the
 ///   style asks for `Specularity`, under the scene's lights;
 /// - otherwise the surface's `default` material, keeping any `Opacity`,
 ///   `Specularity` or `Glow` the style adds.
 ///
 /// A `Lighting` option replaces the default lights in every case, and a
 /// `Lighting` inside the style replaces both. `PlotStyle -> FaceForm[front,
-/// back]` colours a facet turned away from the viewer with `back`. Returns
-/// the colour and the opacity to draw it with.
+/// back]` colors a facet turned away from the viewer with `back`. Returns
+/// the color and the opacity to draw it with.
 fn shade_facet(
   default: SurfaceDefault,
   color_fn: Option<&StyleState3D>,
@@ -6427,8 +6427,8 @@ fn shade_facet(
 
 /// The directives that give a plot surface's symbolic `Graphics3D` the
 /// look [`shade_facet`] renders it with, as WL writes them: the default
-/// theme's `Directive[Specularity[White, e], colour, Lighting -> …]`, the
-/// colour of a `PlotStyle`, or — under a `ColorFunction`, whose colours
+/// theme's `Directive[Specularity[White, e], color, Lighting -> …]`, the
+/// color of a `PlotStyle`, or — under a `ColorFunction`, whose colors
 /// sit on the facets — the `"Neutral"` lights. A `Lighting` option
 /// is written into the directive in place of the theme's own lights.
 fn surface_style_directives(
@@ -6956,8 +6956,8 @@ fn parse_3d_affine_transforms(expr: &Expr) -> Vec<Affine3> {
 /// its arguments (past the wrapped graphics). `Translate` with a list of
 /// offset vectors produces one transform per copy; the others produce one.
 ///
-/// `content_center` is the centre of the wrapped graphics' bounding box:
-/// `Scale[g, s]` without an explicit centre scales *about that point*, not
+/// `content_center` is the center of the wrapped graphics' bounding box:
+/// `Scale[g, s]` without an explicit center scales *about that point*, not
 /// about the origin, so `Scale[Sphere[{1.4, 0, 0}], 0.07]` leaves the
 /// sphere where it is and only shrinks it.
 fn parse_3d_transforms(
@@ -7021,8 +7021,8 @@ fn parse_3d_transforms(
   }
 }
 
-/// Centre of the bounding box of already-collected primitives, the point
-/// `Scale[g, s]` scales about when no centre is given. An empty collection
+/// Center of the bounding box of already-collected primitives, the point
+/// `Scale[g, s]` scales about when no center is given. An empty collection
 /// has no box, so it falls back to the origin.
 fn content_center(prims: &[Primitive3D]) -> [f64; 3] {
   if prims.is_empty() {
@@ -7184,8 +7184,8 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// (`Polygon`/`Line`/`Point`/`Arrow`/`Tube`/`Sphere` arguments) with the coordinates they
 /// refer to, leaving everything else untouched.
 ///
-/// With `colors` (the complex's `VertexColors`, one colour per point) each
-/// `Polygon` facet is drawn in the mean colour of its vertices. With
+/// With `colors` (the complex's `VertexColors`, one color per point) each
+/// `Polygon` facet is drawn in the mean color of its vertices. With
 /// `tex` (its `VertexTextureCoordinates`, one `(u, v)` per point) each
 /// facet carries the coordinates of its own corners.
 fn resolve_complex_indices(
@@ -7209,7 +7209,7 @@ fn resolve_complex_indices(
       other => other.clone(),
     }
   }
-  // The facet's mean vertex colour as an `RGBColor`, for the 1-based index
+  // The facet's mean vertex color as an `RGBColor`, for the 1-based index
   // list `indices`.
   fn facet_color(indices: &Expr, colors: &[(f64, f64, f64)]) -> Option<Expr> {
     let Expr::List(items) = indices else {
@@ -7330,7 +7330,7 @@ fn resolve_complex_indices(
   }
 }
 
-/// The per-point colours of a `GraphicsComplex`'s `VertexColors -> {…}`
+/// The per-point colors of a `GraphicsComplex`'s `VertexColors -> {…}`
 /// option, as unit-range RGB triples.
 fn complex_vertex_colors(
   options: &[Expr],
@@ -7365,7 +7365,7 @@ fn complex_vertex_colors(
       .iter()
       .map(|c| {
         // A bare `{r, g, b}` triple (what a stored complex holds) is an
-        // RGB colour too.
+        // RGB color too.
         if let Expr::List(rgb) = c
           && rgb.len() == 3
           && let Some(v) = rgb
@@ -7518,9 +7518,9 @@ fn collect_3d_primitives(
       match name.as_str() {
         "Sphere" | "Ball" => {
           // `Sphere[{p1, p2, …}, r]` is a whole set of spheres of the same
-          // radius, one per centre — how a scene marks several points at
-          // once. A single `{x, y, z}` is the one-centre case of that.
-          // `Sphere[{p1, p2, …}, {r1, r2, …}]` instead gives each centre
+          // radius, one per center — how a scene marks several points at
+          // once. A single `{x, y, z}` is the one-center case of that.
+          // `Sphere[{p1, p2, …}, {r1, r2, …}]` instead gives each center
           // its own radius (a common way to plot a particle system whose
           // particles vary in size).
           let origin = Point3D {
@@ -7732,8 +7732,8 @@ fn collect_3d_primitives(
             && let Some(colors) =
               vertex_colors.filter(|c| c.len() == pts.len() && pts.len() >= 2)
           {
-            // `VertexColors` on a line blends its colour along it: each
-            // segment is drawn in the mean of its two end colours.
+            // `VertexColors` on a line blends its color along it: each
+            // segment is drawn in the mean of its two end colors.
             for (w, c) in pts.windows(2).zip(colors.windows(2)) {
               let q = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
               let mut seg_style = style.clone();
@@ -8296,7 +8296,7 @@ fn collect_3d_primitives(
             }
           }
         }
-        // `Style[prims, directives…]` applies its directives (colours, a
+        // `Style[prims, directives…]` applies its directives (colors, a
         // numeric font size, …) to its first argument only, so they must
         // not leak into the primitives that follow it in the enclosing list.
         "Style" if args.len() >= 2 => {
@@ -8640,7 +8640,7 @@ fn collect_raster3d(
 ) {
   let num =
     |e: &Expr| try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()));
-  // A voxel: one value, or its colour channels.
+  // A voxel: one value, or its color channels.
   enum Cell {
     Value(f64),
     Channels(Vec<f64>),
@@ -8759,7 +8759,7 @@ fn collect_raster3d(
         let mut voxel_style = style.clone();
         // Voxels are cells of one volume, not outlined boxes.
         voxel_style.edges = false;
-        // A volume's transfer function already supplies its emitted colour.
+        // A volume's transfer function already supplies its emitted color.
         // Lighting its tessellation exposes artificial diagonal facet seams.
         voxel_style.lighting = Some(Lighting {
           lights: vec![crate::functions::lighting3d::Light::Ambient([1.0; 3])],
@@ -8808,7 +8808,7 @@ fn collect_raster3d(
 }
 
 /// Replace the `ColorData["name"][t]` calls Woxi's `ColorData` leaves
-/// unevaluated (the default density gradient) by the gradient's colour.
+/// unevaluated (the default density gradient) by the gradient's color.
 fn resolve_named_gradients(expr: &Expr) -> Expr {
   if let Expr::CurriedCall { func, args } = expr
     && let Expr::FunctionCall { name, args: cd } = func.as_ref()
@@ -9261,7 +9261,7 @@ const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// tessellators and the call site that rebuilds their rim-edge flags.
 const CYLINDER_SIDES: usize = 24;
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
-/// vertex, where neighbouring facets meet at their own normals; finer
+/// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
 const CONE_SIDES: usize = 48;
 
@@ -9298,7 +9298,7 @@ fn tessellate_capsule(
     v_scale(c, 1.0 / v_len(c))
   };
   let w = v_cross(a, u);
-  // Rings from the pole behind p1 to the pole beyond p2: (centre, offset
+  // Rings from the pole behind p1 to the pole beyond p2: (center, offset
   // along the axis from it, ring radius).
   let mut rings: Vec<([f64; 3], f64, f64)> = Vec::new();
   let (c1, c2) = ([p1.x, p1.y, p1.z], [p2.x, p2.y, p2.z]);
@@ -9537,8 +9537,8 @@ fn tessellate_cylinder(
   if capped {
     // The `p1` disk's outward normal points against the axis, so its fan
     // needs the opposite winding from `p2`'s (see `tessellate_cone` for the
-    // same reasoning): `(centre, ring[i+1], ring[i])` there vs.
-    // `(centre, ring[i], ring[i+1])` here.
+    // same reasoning): `(center, ring[i+1], ring[i])` there vs.
+    // `(center, ring[i], ring[i+1])` here.
     for i in 0..n {
       tris.push((*p1, rings[0][(i + 1) % n], rings[0][i]));
     }
@@ -9708,7 +9708,7 @@ fn tessellate_tube(
     // tessellated face spans an outsized fraction of the tube's length
     // (see `side_subdivision_steps`). The normal/binormal frame doesn't
     // need to change along a straight run, so the interpolated rings just
-    // reuse this vertex's frame; only the centre and radius move.
+    // reuse this vertex's frame; only the center and radius move.
     if i + 1 < keep.len() {
       let idx_next = keep[i + 1];
       let seg_len = norm(sub(&points[idx_next], &points[idx]));
@@ -9735,7 +9735,7 @@ fn tessellate_tube(
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
   if capped {
     const CAP_RINGS: usize = 6;
-    let cap = |ring: &[Point3D], centre: Point3D, out: (f64, f64, f64)| {
+    let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
       (1..=CAP_RINGS)
         .map(|j| {
           let theta = std::f64::consts::FRAC_PI_2 * j as f64 / CAP_RINGS as f64;
@@ -9743,11 +9743,11 @@ fn tessellate_tube(
           ring
             .iter()
             .map(|q| {
-              let r = norm(sub(q, &centre));
+              let r = norm(sub(q, &center));
               Point3D {
-                x: centre.x + (q.x - centre.x) * c + out.0 * r * s,
-                y: centre.y + (q.y - centre.y) * c + out.1 * r * s,
-                z: centre.z + (q.z - centre.z) * c + out.2 * r * s,
+                x: center.x + (q.x - center.x) * c + out.0 * r * s,
+                y: center.y + (q.y - center.y) * c + out.1 * r * s,
+                z: center.z + (q.z - center.z) * c + out.2 * r * s,
               }
             })
             .collect::<Vec<_>>()
@@ -9906,7 +9906,7 @@ fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
 /// `eye` looking at `target`: a point at camera-space `(x, y, z)` (`z`
 /// the distance along the view axis) becomes `(x/z, -1/z, y/z)`. What lies
 /// behind the camera is dropped; a sphere keeps its round outline with the
-/// radius it has at its centre's distance.
+/// radius it has at its center's distance.
 fn perspective_warp(
   prims: &mut Vec<Primitive3D>,
   eye: [f64; 3],
@@ -10123,7 +10123,7 @@ fn resolve_scaled_sphere_radii(
     return;
   }
   let bounds = plot_range.unwrap_or_else(|| {
-    // Scaled spheres contribute their centres only.
+    // Scaled spheres contribute their centers only.
     let probe: Vec<Primitive3D> = prims
       .iter()
       .map(|p| match p {
@@ -10361,7 +10361,7 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   ]
 }
 
-/// Radius of the sphere centred on `center` that encloses every primitive.
+/// Radius of the sphere centered on `center` that encloses every primitive.
 ///
 /// Wolfram's `SphericalRegion -> True` scales the picture so this sphere
 /// fits the display area. It is the sphere around the *contents*, not
@@ -10870,7 +10870,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       bounds[2].1 - bounds[2].0,
     ];
     // Every axis is brought down to the tightest of the requested
-    // proportions, so honouring them never inflates the picture.
+    // proportions, so honoring them never inflates the picture.
     let unit = (0..3)
       .filter(|&i| extents[i].is_finite() && extents[i] > 0.0)
       .map(|i| extents[i] / ratios[i])
@@ -10923,7 +10923,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Tessellate all primitives into triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut triangle_vertices: Vec<[Point3D; 3]> = Vec::new();
-  // A face without a colour directive is white; the coloured default
+  // A face without a color directive is white; the colored default
   // lights are what tint it.
   let base_color = (0xFF_u8, 0xFF_u8, 0xFF_u8);
   let scene = {
@@ -11152,8 +11152,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Triangles that approximate a curved surface have no outline edges at
     // all: Wolfram draws no facet edges on a sphere, cylinder, cone, tube
     // or torus. Every edge is an internal cut, so the hairline that closes
-    // the anti-aliasing seam between neighbours is drawn in the surface's
-    // own colour rather than the usual dark one — otherwise a small sphere
+    // the anti-aliasing seam between neighbors is drawn in the surface's
+    // own color rather than the usual dark one — otherwise a small sphere
     // reads as speckled instead of smooth.
     let smooth_surface = matches!(
       prim,
@@ -11177,9 +11177,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     let tri_count = tris.len();
-    // A convex polygon with `VertexColors` blends the corner colours across
+    // A convex polygon with `VertexColors` blends the corner colors across
     // each fan triangle (corners 0, i + 1, i + 2), drawn as a fine grid of
-    // sub-triangles each in its interpolated colour.
+    // sub-triangles each in its interpolated color.
     let vertex_colors = match prim {
       Primitive3D::Polygon3D {
         points,
@@ -11192,8 +11192,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(colors) = vertex_colors {
-      // A flat face is lit the same everywhere but for its colour, so the
-      // lit colour is linear across it: each fan triangle is lit at its
+      // A flat face is lit the same everywhere but for its color, so the
+      // lit color is linear across it: each fan triangle is lit at its
       // corners and filled with the gradient between them.
       for (i, (v0, v1, v2)) in tris.into_iter().enumerate() {
         let boundary = if !prim_style.edges {
@@ -11329,8 +11329,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       // `EdgeForm[]` asks for faces with no outline, so every edge counts
-      // as an internal cut and is stroked in the face's own colour. A
-      // curved primitive that was given an explicit edge colour keeps the
+      // as an internal cut and is stroked in the face's own color. A
+      // curved primitive that was given an explicit edge color keeps the
       // silhouette flags computed above — its facet cuts stay internal,
       // but its end circles are drawn.
       let outlined_smooth =
@@ -11649,7 +11649,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let span = 2.0 * view_distance * (theta / 2.0).tan() * view_box_side;
     if span > 0.0 && span.is_finite() {
       scale = svg_width.min(svg_height) as f64 / span;
-      // The view centres on the middle of the displayed box, not on
+      // The view centers on the middle of the displayed box, not on
       // whatever part of it the contents happen to occupy.
       let (bcx, bcy) = project(
         Point3D {
@@ -11668,7 +11668,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // The warped scene is in units of the camera's tangent plane, so the
-  // field of view alone sets the scale, with the view axis at the centre.
+  // field of view alone sets the scale, with the view axis at the center.
   if perspective {
     let theta = view_angle.unwrap_or(35.0_f64.to_radians());
     scale = svg_width.min(svg_height) as f64 / (2.0 * (theta / 2.0).tan());
@@ -12011,7 +12011,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
-      // The outline colour: the default dark grey unless `EdgeForm[colour]`
+      // The outline color: the default dark gray unless `EdgeForm[color]`
       // named one. `Opacity` tints the face only — the outline is drawn by
       // the default `EdgeForm`, which stays opaque — so the outline of a
       // transparent face still shows. That is what makes
@@ -12027,16 +12027,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         String::new()
       };
       // The hairline stroke closes the anti-aliasing seam between
-      // neighbouring triangles. Where the seam is an internal cut of a
+      // neighboring triangles. Where the seam is an internal cut of a
       // fan-triangulated polygon it is stroked in the triangle's own
-      // colour instead, so the face reads as one flat surface.
+      // color instead, so the face reads as one flat surface.
       if tri.boundary == [true; 3] && tri.edge_dashing.is_none() {
         svg.push_str(&format!(
           "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{fill_opacity_attr}/>\n"
         ));
       } else {
-        // A translucent triangle's own-colour hairline overlaps its
-        // neighbours' and darkens every shared seam, tracing the
+        // A translucent triangle's own-color hairline overlaps its
+        // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
         // opaque triangle needs it to close the anti-aliasing gap.
         let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
@@ -12118,7 +12118,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if lines.len() == 1 {
           body.push_str(&lines[0]);
         } else {
-          // The block of lines is centred on the anchor point.
+          // The block of lines is centered on the anchor point.
           let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
           for (i, line) in lines.iter().enumerate() {
             let dy = if i == 0 { first_dy } else { line_height };
@@ -12346,7 +12346,7 @@ fn parse_axes_labels(
 }
 
 /// The SVG markup of one `AxesLabel` entry. `None` for `None` — the way an
-/// axis asks to stay unlabelled. Everything else is typeset by the shared
+/// axis asks to stay unlabeled. Everything else is typeset by the shared
 /// label renderer, so a label written in the FrontEnd as linear syntax
 /// (`"\!\(\*FractionBox[\(d\[Theta]\), \(dt\)]\) (rad/s)"`) draws as the
 /// fraction it stands for.
@@ -12368,8 +12368,8 @@ fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
 }
 
 /// The height of the strip a `PlotLabel` reserves above a 3-D picture.
-/// Matches the strip the 2-D renderer reserves, so a labelled `Graphics`
-/// and a labelled `Graphics3D` set their titles at the same height.
+/// Matches the strip the 2-D renderer reserves, so a labeled `Graphics`
+/// and a labeled `Graphics3D` set their titles at the same height.
 const PLOT_LABEL_STRIP: u32 = 26;
 
 /// The typeset label of the `PlotLabel` an option list carries, or `None`
@@ -12408,7 +12408,7 @@ fn plot_label_styled(
   None
 }
 
-/// Parse a `Background -> colour` value. The 3D plotting heads hold their
+/// Parse a `Background -> color` value. The 3D plotting heads hold their
 /// arguments, so the value may still be an unevaluated expression such as
 /// `RGBColor[r, g, b]` over control variables; evaluate it first.
 fn parse_background_color(
@@ -12458,7 +12458,7 @@ fn with_background_option(svg: String, opts: &[Expr]) -> String {
 }
 
 /// Set a 3-D picture's `PlotLabel` above it. The finished SVG is nested,
-/// untouched, into a canvas one label strip taller, with the label centred
+/// untouched, into a canvas one label strip taller, with the label centered
 /// in the strip — the projection inside was scaled to the picture's own
 /// size, so growing the canvas rather than the drawing area leaves it
 /// exactly as it was. Returns `svg` unchanged when there is no label.
@@ -12737,8 +12737,8 @@ fn list_plot3d_datasets(data: &Expr) -> Option<Vec<Expr>> {
 }
 
 /// `ListPlot3D[{m1, m2, …}, opts]`: every dataset is plotted on its own and
-/// the surfaces are combined with `Show`, each in the colour its
-/// `PlotStyle` entry gives (cycling), or the default plot colours.
+/// the surfaces are combined with `Show`, each in the color its
+/// `PlotStyle` entry gives (cycling), or the default plot colors.
 /// The point and curve colors of `ListPointPlot3D`/`ListLinePlot3D` in
 /// WL 15 (their themes' `"DefaultPlotStyle"`): the 2D plot palette at 90%
 /// brightness.
@@ -12846,10 +12846,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // same as `Plot3D`.
   let mut z_clip: Option<(f64, f64)> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
-  // `PlotStyle`: the surface's colour (and opacity, specularity, …); empty
+  // `PlotStyle`: the surface's color (and opacity, specularity, …); empty
   // keeps the height gradient.
   let mut plot_styles: Vec<StyleState3D> = Vec::new();
-  // `MeshStyle`: the colour, opacity and thickness of the mesh lines.
+  // `MeshStyle`: the color, opacity and thickness of the mesh lines.
   let mut mesh_style: Option<StyleState3D> = None;
 
   for opt in &args[1..] {
@@ -13287,7 +13287,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .0
     });
     // A Delaunay triangle can span many grid cells; drawn whole, it sorts
-    // by one centroid depth against its neighbours and the mesh lines
+    // by one centroid depth against its neighbors and the mesh lines
     // across it. Pieces about three grid cells across keep the
     // depth sort as fine as on a gridded surface.
     for (tri, facet) in base.into_iter().zip(&base_facets) {
@@ -13705,7 +13705,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
       .sum::<f64>()
         / 4.0;
-      // A `ColorFunction` colours each quad; otherwise the surface's
+      // A `ColorFunction` colors each quad; otherwise the surface's
       // directives above do.
       match color_at(avg_z_norm).and_then(|st| st.color) {
         Some((cr, cg, cb)) => complex_content.push(Expr::List(
@@ -14235,7 +14235,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
-  // at the facet's centre in world coordinates; it takes precedence over
+  // at the facet's center in world coordinates; it takes precedence over
   // `PlotStyle`.
   let x_range = if axis_is_z {
     (-global_r_max, global_r_max)
@@ -15070,7 +15070,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       color_fn.is_set(),
       &scene,
     ));
-    // A `ColorFunction` colours each face on its own; otherwise one polygon
+    // A `ColorFunction` colors each face on its own; otherwise one polygon
     // holds every face.
     if color_fn.is_set() {
       for (quad, style) in quads.into_iter().zip(&quad_styles) {
@@ -15243,7 +15243,7 @@ fn march_tetra(
   // The six tetrahedra of a cube wind alternately, so a triangle's vertex
   // order says nothing about which way it faces. Orient every emitted
   // triangle so its normal points toward the side where the field is above
-  // `level`; `FaceForm[front, back]` then colours a connected surface
+  // `level`; `FaceForm[front, back]` then colors a connected surface
   // consistently instead of speckling it.
   let centroid = |idx: &[usize]| -> [f64; 3] {
     let n = idx.len().max(1) as f64;
@@ -15343,7 +15343,7 @@ fn replace_canvas_background(svg: &str, (r, g, b): (u8, u8, u8)) -> String {
 /// ContourPlot3D[f == c, {x, xmin, xmax}, {y, ymin, ymax}, {z, zmin, zmax}]
 /// draws the implicit surface `f == c` (a bare expression, or one lacking
 /// `== c`, is its own zero contour). A list of equations draws each
-/// surface together, as `ContourStyle` colours them.
+/// surface together, as `ContourStyle` colors them.
 pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   CONTOUR3D_COMPILED.with(|c| *c.borrow_mut() = None);
   if args.len() < 4 {
@@ -15811,7 +15811,7 @@ fn contour3d_render(
         break;
       }
       for (level_idx, &level) in levels.iter().enumerate() {
-        // Each level surface takes the next colour of the plot theme, as in
+        // Each level surface takes the next color of the plot theme, as in
         // wolframscript (orange, blue, green, …).
         let theme_idx = surf_idx * levels.len() + level_idx;
         // This level's triangles, as one Polygon of vertex-index triples.
@@ -16223,7 +16223,7 @@ fn contour3d_render(
     !image_height_is_explicit(opts),
     opts,
   )?;
-  // `Background -> colour` repaints the canvas rectangle drawn first.
+  // `Background -> color` repaints the canvas rectangle drawn first.
   let svg = match background {
     Some(bg) => replace_canvas_background(&svg, bg),
     None => svg,
@@ -16344,7 +16344,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Evaluate the data argument
   let evaled_data = evaluate_expr_to_expr(&args[0])?;
   // `data -> {label1, label2, …}` labels the points of the data in order;
-  // `LabelingFunction -> None` (or `Tooltip`) leaves them unlabelled.
+  // `LabelingFunction -> None` (or `Tooltip`) leaves them unlabeled.
   let hide_labels = args[1..].iter().any(|opt| {
     matches!(opt, Expr::Rule { pattern, replacement }
       if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LabelingFunction")
@@ -16376,7 +16376,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Parse data: a list of {x, y, z} triples, a matrix of heights, or a list
-  // of such datasets (each one drawn in its own colour).
+  // of such datasets (each one drawn in its own color).
   let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
   if let Expr::List(outer) = &evaled_data {
     match point_plot3d_dataset(outer) {
@@ -16522,7 +16522,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // scatter camera above understands.
   let structure = {
     // `PlotStyle -> style` (or a list of per-dataset styles) prepends its
-    // directives — e.g. `PointSize[…]` or a colour — to each dataset's
+    // directives — e.g. `PointSize[…]` or a color — to each dataset's
     // points, same as the surface plots' `plot_style_items` already does.
     let plot_style_per_dataset: Option<Vec<Expr>> =
       args[1..].iter().find_map(|opt| match opt {
@@ -16849,12 +16849,12 @@ pub fn list_line_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // Each curve is one polyline through its points (in data order), drawn
-  // in the colour of the dataset it belongs to.
+  // in the color of the dataset it belongs to.
   let mut datasets: Vec<Vec<(f64, f64, f64)>> = Vec::new();
   let mut curve_colors: Vec<usize> = Vec::new();
   if let Expr::List(outer) = &evaled_data {
     // `{m1, m2, …}` of height matrices: each matrix is one dataset, all of
-    // its rows sharing a colour.
+    // its rows sharing a color.
     let is_matrix_of_heights = |e: &Expr| {
       matches!(e, Expr::List(rows) if !rows.is_empty()
         && rows.iter().all(|r| matches!(r, Expr::List(vs)
@@ -17310,7 +17310,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `TextureCoordinateFunction -> f`: maps a facet to the point of a
   // `Texture` image painted there.
   let mut texture_fn: Option<Expr> = None;
-  // `ColorFunction -> f`: colours each facet by
+  // `ColorFunction -> f`: colors each facet by
   // `f[x, y, z, theta, phi, r]`. With `ColorFunctionScaling` (the default)
   // x, y, z and the angles arrive rescaled to 0..1 over their ranges.
   let mut color_fn: Option<Expr> = None;
@@ -17721,8 +17721,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   };
-  // `ColorFunction`: the colour of every facet, from `f` at the facet's
-  // centroid and its centre in parameter space.
+  // `ColorFunction`: the color of every facet, from `f` at the facet's
+  // centroid and its center in parameter space.
   let facet_colors: Vec<Vec<Option<(u8, u8, u8)>>> = surface_tris
     .iter()
     .enumerate()
@@ -17883,8 +17883,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ),
         )
       };
-      // A `ColorFunction` colours facets individually: consecutive facets
-      // of one colour share a coloured `Polygon`.
+      // A `ColorFunction` colors facets individually: consecutive facets
+      // of one color share a colored `Polygon`.
       let colors = &facet_colors[surface_idx];
       let polygon_expr = if colors.iter().any(Option::is_some) {
         let mut runs: Vec<Expr> = Vec::new();
@@ -17919,8 +17919,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         polygon_of(&tri_indices)
       };
       // The surface's style wraps its polygons: the default theme's
-      // material, a `PlotStyle` colour, or the neutral lights a
-      // `ColorFunction`'s facet colours are lit under.
+      // material, a `PlotStyle` color, or the neutral lights a
+      // `ColorFunction`'s facet colors are lit under.
       let mut directives = surface_style_directives(
         surface_idx,
         plot_style_for_surface(&plot_styles, surface_idx),
@@ -17975,7 +17975,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
         gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
       }
-      // The mesh: thin dark grey lines (the edges drawn alike).
+      // The mesh: thin dark gray lines (the edges drawn alike).
       let (edges, interior) = &surface_mesh[surface_idx];
       let line_of = |pts: &Vec<Point3D>| {
         call1(
@@ -18033,7 +18033,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ── Standalone rendering: the symbolic form drawn by `Graphics3D`, so
   // `PlotRange`, `BoxRatios` (the data's own proportions by default),
   // `Boxed`, `Axes` and the view options behave as they do for any 3D
-  // graphic. An unstyled surface takes the next colour of WL 15's
+  // graphic. An unstyled surface takes the next color of WL 15's
   // `DefaultPlotStyle`. ──
   let render_items: Vec<Expr> = complexes.clone();
   // The options only the plot itself reads stay behind.
@@ -18363,7 +18363,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (0.40950000000000003, 0.63, 0.189),
     (0.8302733999999999, 0.3470634, 0.18826110000000001),
   ];
-  // A function's own `Style` does not change its palette colour: it wraps
+  // A function's own `Style` does not change its palette color: it wraps
   // its points (and, as wolframscript does it, every function's stems take
   // the last such style).
   let own_styles: Vec<Option<Expr>> =
@@ -18593,14 +18593,14 @@ fn discrete_plot3d_options(
 /// Split a `PlotStyle` value into the `Tube[…]` directive it carries (as
 /// that `Tube`'s arguments after the curve — its radius, when given) and
 /// what remains of the style. `Tube` asks for a shape rather than a
-/// colour, so it has to be lifted out of the directive list and applied to
+/// color, so it has to be lifted out of the directive list and applied to
 /// the curve itself. Returns `(None, style)` when there is no `Tube`.
 fn take_tube_directive(style: &Expr) -> (Option<Vec<Expr>>, Expr) {
   match style {
     Expr::FunctionCall { name, args } if name == "Tube" => {
       (Some(args.to_vec()), Expr::List(vec![].into()))
     }
-    // `{colour, Tube[r]}` and `Directive[colour, Tube[r]]` both group
+    // `{color, Tube[r]}` and `Directive[color, Tube[r]]` both group
     // directives, so look inside either for the `Tube`.
     Expr::List(items) => {
       let (tube, kept) = partition_tube(items);
@@ -18622,7 +18622,7 @@ fn take_tube_directive(style: &Expr) -> (Option<Vec<Expr>>, Expr) {
 
 /// The `Tube[…]` among a list of directives (its arguments) and the other
 /// directives, searched one level down as well so that a nested grouping
-/// (`{colour, Directive[Tube[r]]}`) is found too.
+/// (`{color, Directive[Tube[r]]}`) is found too.
 fn partition_tube(items: &[Expr]) -> (Option<Vec<Expr>>, Vec<Expr>) {
   let mut tube: Option<Vec<Expr>> = None;
   let mut kept: Vec<Expr> = Vec::with_capacity(items.len());
@@ -18731,7 +18731,7 @@ fn parametric_plot3d_curve_ast(
 
   // `PlotStyle -> Tube[r]` asks for the curve to be drawn as a tube of
   // radius `r` instead of as a line — how a Demonstration gives a knot its
-  // thickness. It is not a colour or a thickness, so it comes out of the
+  // thickness. It is not a color or a thickness, so it comes out of the
   // style list and turns each sampled polyline into a `Tube` instead.
   let (tube_args, plot_style) = match plot_style {
     Some(ps) => {
@@ -19370,16 +19370,16 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut show_axes = true;
   let mut plot_style_expr: Option<&Expr> = None;
   // `MeshFunctions -> {f}` / `Mesh -> {{v1, v2, ...}}` / `MeshShading ->
-  // {c1, c2, ...}`: colour each facet by which region of `f`'s range
+  // {c1, c2, ...}`: color each facet by which region of `f`'s range
   // (partitioned at the sorted break values) its average point falls in,
-  // cycling through `MeshShading`'s colours in that same order. Only a
+  // cycling through `MeshShading`'s colors in that same order. Only a
   // single mesh function is supported; a nested `Mesh` value for more than
   // one keeps just the first function's break list.
   let mut mesh_function: Option<Expr> = None;
   let mut mesh_breaks: Vec<f64> = Vec::new();
   let mut mesh_shading: Vec<Option<(u8, u8, u8)>> = Vec::new();
   // `MeshStyle -> None`: the facet grid drawn by `mesh_mode`'s default
-  // `EdgeForm[]` is suppressed, leaving flat colour with no outline —
+  // `EdgeForm[]` is suppressed, leaving flat color with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
@@ -19403,7 +19403,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `RegionFunction -> f`: keep only the parts of the surface where
   // `f[x, y, z, u, v]` is `True`.
   let mut region_fn: Option<Expr> = None;
-  // `ColorFunction -> f`: colour each facet by `f[x, y, z, u, v]`. With
+  // `ColorFunction -> f`: color each facet by `f[x, y, z, u, v]`. With
   // `ColorFunctionScaling` (the default) x, y and z arrive rescaled to 0..1
   // over the plotted region and u, v over their parameter intervals.
   let mut surface_color_fn: Option<Expr> = None;
@@ -19508,7 +19508,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "MeshShading" => {
           // The value is often computed rather than written literally
           // (`MeshShading -> Which[cond1, {c1, c2}, cond2, {c3, c4}, ...]`
-          // picking a colour list from the current mesh breaks), so it must
+          // picking a color list from the current mesh breaks), so it must
           // be evaluated before checking its shape.
           let resolved = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
@@ -19713,8 +19713,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The box is normalized to ±box_ratios, so the eye stands back by that.
   let camera = Camera::for_box(box_ratios);
 
-  // `ColorFunction`: the colour of facet `(i, j)`, from `f` at the facet's
-  // mean point and its centre in parameter space.
+  // `ColorFunction`: the color of facet `(i, j)`, from `f` at the facet's
+  // mean point and its center in parameter space.
   let facet_colors: Vec<Vec<Vec<Option<(u8, u8, u8)>>>> = all_surface_points
     .iter()
     .map(|sg| {
@@ -19761,7 +19761,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               };
               let mut value = evaluate_expr_to_expr(&call).ok()?;
               // A bare `{r, g, b}` list (a sampled texture) stands for the
-              // colour `RGBColor[r, g, b]`.
+              // color `RGBColor[r, g, b]`.
               if let Expr::List(channels) = &value
                 && channels.len() == 3
                 && channels.iter().all(|c| try_eval_to_f64(c).is_some())
@@ -19856,17 +19856,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               )
               .and_then(|val| {
                 let region = mesh_breaks.iter().filter(|&&b| b <= val).count();
-                // More regions than colours: cycle, the same convention
-                // `PlotStyle`'s per-surface colours already use.
+                // More regions than colors: cycle, the same convention
+                // `PlotStyle`'s per-surface colors already use.
                 mesh_shading
                   .get(region % mesh_shading.len())
                   .copied()
                   .flatten()
               })
             });
-            // Only an explicit colour (`PlotStyle`, `MeshShading`) is baked
+            // Only an explicit color (`PlotStyle`, `MeshShading`) is baked
             // into a facet. Facets of the default look carry none, like
-            // wolframscript's `ParametricPlot3D[…][[1]]`, so a colour
+            // wolframscript's `ParametricPlot3D[…][[1]]`, so a color
             // directive placed before the extracted complex still applies.
             let explicit = facet_colors[surface_idx][i][j].or_else(|| {
               match plot_style_for_surface(&plot_styles, surface_idx) {
@@ -19991,9 +19991,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
 
         // `MeshFunctions`/`Mesh`/`MeshShading`: override a facet's default
-        // default colour with the region colour its average `(x, y,
+        // default color with the region color its average `(x, y,
         // z)` falls in — only when there is no `PlotStyle` for this surface,
-        // matching Phase 1's `content` colouring above.
+        // matching Phase 1's `content` coloring above.
         let mesh_facet_color = |a: (f64, f64, f64),
                                 b: (f64, f64, f64),
                                 c: (f64, f64, f64)|
@@ -20011,8 +20011,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             avg_z,
           )?;
           let region = mesh_breaks.iter().filter(|&&br| br <= val).count();
-          // More regions than colours: cycle, the same convention
-          // `PlotStyle`'s per-surface colours already use.
+          // More regions than colors: cycle, the same convention
+          // `PlotStyle`'s per-surface colors already use.
           mesh_shading
             .get(region % mesh_shading.len())
             .copied()
@@ -20024,8 +20024,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v0 = normalize(a);
           let v1 = normalize(b);
           let v2 = normalize(c);
-          // A `ColorFunction` colour is lit like WL's, under neutral
-          // lights; a `MeshShading` colour like a `PlotStyle` one.
+          // A `ColorFunction` color is lit like WL's, under neutral
+          // lights; a `MeshShading` color like a `PlotStyle` one.
           let cf_style =
             facet_colors[surface_idx][i][j].map(|c| StyleState3D {
               color: Some(c),
@@ -20079,8 +20079,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v0 = normalize(a);
           let v1 = normalize(b);
           let v2 = normalize(c);
-          // A `ColorFunction` colour is lit like WL's, under neutral
-          // lights; a `MeshShading` colour like a `PlotStyle` one.
+          // A `ColorFunction` color is lit like WL's, under neutral
+          // lights; a `MeshShading` color like a `PlotStyle` one.
           let cf_style =
             facet_colors[surface_idx][i][j].map(|c| StyleState3D {
               color: Some(c),
@@ -20461,7 +20461,7 @@ mod march_cube_orientation_tests {
 
   /// Every triangle of a level surface faces toward the side where the
   /// field exceeds the level — whichever of the cube's six tetrahedra
-  /// produced it — so `FaceForm[front, back]` colours it consistently.
+  /// produced it — so `FaceForm[front, back]` colors it consistently.
   #[test]
   fn triangles_face_toward_higher_field_values() {
     let n = 6;
@@ -20669,7 +20669,7 @@ pub fn absolute_plot_range_3d(g: &Expr) -> Option<[(f64, f64); 3]> {
 ///
 /// An array of `{x, y, z}` rows (`Table[{x, y, z}, {u, …}, {v, …}]`) is
 /// joined cell by cell; a plain list of points is wrapped in its convex
-/// hull. `ColorFunction -> Function[{x, y, z}, …]` colours every triangle
+/// hull. `ColorFunction -> Function[{x, y, z}, …]` colors every triangle
 /// at its centroid, with the coordinates rescaled to 0..1 over the point
 /// set unless `ColorFunctionScaling -> False`. The remaining options go to
 /// the `Graphics3D`.

@@ -9,7 +9,7 @@ mod transfer_function_model {
   use super::*;
 
   // A model is kept as `{nums, den}`: one shared denominator when every
-  // element has it, a matrix of them otherwise; nothing is cancelled.
+  // element has it, a matrix of them otherwise; nothing is canceled.
   #[test]
   fn normal_form() {
     for (input, expected) in [

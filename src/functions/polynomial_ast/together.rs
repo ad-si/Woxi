@@ -193,7 +193,7 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Complex") {
     return expr.clone();
   }
-  // A fraction that cancelled to a numeric scalar can come back
+  // A fraction that canceled to a numeric scalar can come back
   // unevaluated (Times[-1, Power[2, -1]] renders -(1/2)); wolframscript
   // shows the plain rational -1/2 (differential fuzzer, seed
   // 6342268670418763375). Symbolic constants (E, Pi) don't evaluate to a
@@ -373,7 +373,7 @@ pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
   // ((1 + x + x^2)^(-1)), but the reciprocal of a PRODUCT — whether the
   // content hoist created it or it arrived factored — displays as a
   // fraction: Together[1/(2 + 2*x)] → 1/(2*(1 + x)), Together of a
-  // fraction cancelling to 1/(4*x) → 1/(4*x), never (4*x)^(-1)
+  // fraction canceling to 1/(4*x) → 1/(4*x), never (4*x)^(-1)
   // (wolframscript-verified).
   if let Some(base) = reciprocal_base(expr) {
     let new_den = hoist_denominator_content(base);
@@ -750,7 +750,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             name: rname,
             args: rargs,
           } if rname == "Rational" && rargs.len() == 2 => {
-            // Denominator is always positive after make_rational normalisation
+            // Denominator is always positive after make_rational normalization
             num_factors.push(rargs[0].clone());
             den_factors.push(rargs[1].clone());
           }
@@ -1724,7 +1724,7 @@ fn make_fraction(num: Expr, den: Expr) -> Expr {
 
 /// wolframscript's Together pulls the numeric content out of a polynomial
 /// result (e.g. 2 + 2 x -> 2 (1 + x)), matching FactorTerms. Applied only to
-/// the fully-cancelled polynomial output of a fraction.
+/// the fully-canceled polynomial output of a fraction.
 fn factor_numeric_content(poly: &Expr) -> Expr {
   crate::evaluator::evaluate_function_call_ast(
     "FactorTerms",
@@ -1771,9 +1771,9 @@ fn try_reduce_to_polynomial(num: &Expr, den: &Expr) -> Option<Expr> {
   if vars.len() > 2 {
     return None;
   }
-  let cancelled = cancel_expr_keep_quotient_sign(&frac);
-  if matches!(extract_num_den(&cancelled).1, Expr::Integer(1)) {
-    Some(factor_numeric_content(&cancelled))
+  let canceled = cancel_expr_keep_quotient_sign(&frac);
+  if matches!(extract_num_den(&canceled).1, Expr::Integer(1)) {
+    Some(factor_numeric_content(&canceled))
   } else {
     None
   }
@@ -1913,7 +1913,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
     // *variable* denominator must still flow through the num/den logic below:
     // distributing a scalar into a combined fraction yields a single term
     // like `3 * (2 a)/((a-I x)(a+I x))` whose numerator needs folding to
-    // `6 a`, and `x * (x+y)/(x y)` needs its common `x` cancelled.
+    // `6 a`, and `x * (x+y)/(x y)` needs its common `x` canceled.
     //
     // A purely *constant* denominator (e.g. `(-4 (-3+2 x))/13`) is left
     // alone: re-combining would expand the numerator, but wolframscript keeps
@@ -1968,7 +1968,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
         })
     });
     if !is_foldable_product {
-      // A lone fraction is still GCD-cancelled when it reduces to a polynomial
+      // A lone fraction is still GCD-canceled when it reduces to a polynomial
       // (Together[(x^2-1)/(x-1)] -> 1 + x). Only commit when a denominator was
       // present and fully divided out; otherwise keep the form unchanged so
       // factored/constant denominators are preserved.
@@ -1981,10 +1981,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
       // A lone fraction over a bare polynomial denominator may still share a
       // polynomial factor (e.g. (x^2+x)/(x^2-1) -> x/(x-1)); cancel the GCD.
       if is_plus_polynomial(&ed) && single_variable_fraction(&en, &ed) {
-        let cancelled =
-          super::cancel::cancel_expr_keep_quotient_sign(&expr_rec);
-        if expr_to_string(&cancelled) != expr_to_string(&expr_rec) {
-          return cancelled;
+        let canceled = super::cancel::cancel_expr_keep_quotient_sign(&expr_rec);
+        if expr_to_string(&canceled) != expr_to_string(&expr_rec) {
+          return canceled;
         }
       }
       // A FACTORED denominator (e.g. the preprocessed -2*(-x + x^3), or
@@ -2004,9 +2003,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
           en.clone(),
           crate::functions::polynomial_ast::expand::expand_and_combine(&ed),
         );
-        let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
-        if expr_to_string(&cancelled) != expr_to_string(&frac) {
-          return cancelled;
+        let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+        if expr_to_string(&canceled) != expr_to_string(&frac) {
+          return canceled;
         }
       }
       // A numeric-content wrapper on the denominator (x/(4*(x^2 + x^3)),
@@ -2018,9 +2017,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
         && single_variable_fraction(&en, &ed_bare)
       {
         let frac = div2(en.clone(), ed_bare.clone());
-        let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
-        if expr_to_string(&cancelled) != expr_to_string(&frac) {
-          return cancelled;
+        let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+        if expr_to_string(&canceled) != expr_to_string(&frac) {
+          return canceled;
         }
       }
       // A nested purely numeric denominator folds to a single number:
@@ -2301,14 +2300,14 @@ pub fn together_expr(expr: &Expr) -> Expr {
     ) && !crate::functions::predicate_ast::is_numeric_q(&gcd)
       && matches!(&gcd, Expr::FunctionCall { name, .. } if name == "Plus")
     {
-      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&div2(
+      let canceled = super::cancel::cancel_expr_keep_quotient_sign(&div2(
         combined_num.clone(),
         combined_den.clone(),
       ));
-      if expr_to_string(&cancelled)
+      if expr_to_string(&canceled)
         != expr_to_string(&div2(combined_num.clone(), combined_den.clone()))
       {
-        return cancelled;
+        return canceled;
       }
     }
     // Try to cancel common monomial factors between numerator and denominator
@@ -2334,9 +2333,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
       && single_variable_fraction(&simplified_num, &simplified_den)
     {
       let frac = div2(simplified_num.clone(), simplified_den.clone());
-      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
-      if expr_to_string(&cancelled) != expr_to_string(&frac) {
-        return cancelled;
+      let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+      if expr_to_string(&canceled) != expr_to_string(&frac) {
+        return canceled;
       }
     }
     // A FACTORED single-variable denominator can still share a polynomial
@@ -2352,9 +2351,9 @@ pub fn together_expr(expr: &Expr) -> Expr {
       && fraction_has_polynomial_gcd(&simplified_num, &simplified_den)
     {
       let frac = div2(simplified_num.clone(), simplified_den.clone());
-      let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
-      if expr_to_string(&cancelled) != expr_to_string(&frac) {
-        return cancelled;
+      let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
+      if expr_to_string(&canceled) != expr_to_string(&frac) {
+        return canceled;
       }
     }
     if matches!(&simplified_den, Expr::Integer(1)) {
@@ -3006,7 +3005,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
     return (num.clone(), den.clone());
   }
 
-  // Check which common factors also appear in the denominator and can be cancelled
+  // Check which common factors also appear in the denominator and can be canceled
   let den_factors = flatten_times_args(std::slice::from_ref(den));
   let mut den_map: Vec<(String, Expr, i128)> = Vec::new();
   for f in &den_factors {
@@ -3041,7 +3040,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
     }
   }
 
-  // Determine how much of each common factor can be cancelled with the denominator
+  // Determine how much of each common factor can be canceled with the denominator
   let mut cancel_map: Vec<(String, i128)> = Vec::new();
   for (key, _, num_exp) in &common {
     if let Some((_, _, den_exp)) = den_map.iter().find(|(k, _, _)| k == key) {
@@ -3056,7 +3055,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
     return (num.clone(), den.clone());
   }
 
-  // Divide each numerator term by the cancelled factors
+  // Divide each numerator term by the canceled factors
   let mut new_terms = Vec::new();
   for term in &terms {
     let mut t_factors: Vec<Expr> =
@@ -3128,7 +3127,7 @@ fn cancel_common_monomial_factors(num: &Expr, den: &Expr) -> (Expr, Expr) {
     expand_and_combine(&build_sum(new_terms))
   };
 
-  // Build new denominator: reduce exponents of cancelled factors
+  // Build new denominator: reduce exponents of canceled factors
   let mut new_den_factors: Vec<Expr> = Vec::new();
   // Keep integer factors
   for f in &den_factors {

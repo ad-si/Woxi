@@ -1,8 +1,8 @@
 //! `ExampleData` — example datasets, generated rather than bundled.
 //!
-//! Wolfram ships a large catalogue of example data grouped into collections
+//! Wolfram ships a large catalog of example data grouped into collections
 //! (`"TestImage"`, `"NetworkGraph"`, `"Statistics"`, …). Woxi serves the
-//! same catalogue with the same call forms:
+//! same catalog with the same call forms:
 //!
 //! - `ExampleData[]` — the collections.
 //! - `ExampleData["coll"]` — the `{"coll", "name"}` entries of a collection.
@@ -10,9 +10,9 @@
 //! - `ExampleData[{"coll", "name"}, "prop"]` — one property of it, with
 //!   `"Properties"` listing them.
 //!
-//! The *structure* matches wolframscript exactly — the catalogue, property
+//! The *structure* matches wolframscript exactly — the catalog, property
 //! names, the head and shape of every value, and the metadata (dimensions,
-//! counts, sample rates, colour spaces, column names and types, …) — because
+//! counts, sample rates, color spaces, column names and types, …) — because
 //! that is what scripts depend on. The *content* is invented: photographs
 //! are crude drawings, 3D scans rough models, recordings synthesized sound,
 //! books generated text, tables generated numbers with similar statistics.
@@ -119,12 +119,12 @@ impl Entry<'_> {
   }
 
   /// Every sub-entry is a row of its own; `{"TestImageSet", "Oxford2011_01"}`
-  /// is requested like any other entry but not listed in the catalogue.
+  /// is requested like any other entry but not listed in the catalog.
   fn listed(&self) -> bool {
     !matches!(self.stat("@Listed"), Some(Expr::Identifier(ref s)) if s == "False")
   }
 
-  /// Entries Wolfram has retired from the catalogue but still serves with
+  /// Entries Wolfram has retired from the catalog but still serves with
   /// an `ExampleData::obsolete` warning (`{"TestImage", "Lena"}`).
   fn obsolete(&self) -> bool {
     matches!(self.stat("@Obsolete"), Some(Expr::Identifier(ref s)) if s == "True")
@@ -176,7 +176,7 @@ fn generator(collection: &str) -> Option<&'static dyn Collection> {
 }
 
 /// A collection without generated values ("SpatialPointData", whose
-/// catalogue is a fixed value): only what the table records is served.
+/// catalog is a fixed value): only what the table records is served.
 struct MetadataOnly;
 
 impl Collection for MetadataOnly {
@@ -206,10 +206,10 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       notcoll(&args[0]);
       return echo();
     };
-    if let Some(value) = fixed_catalogue(table) {
+    if let Some(value) = fixed_catalog(table) {
       return Ok(value);
     }
-    return Ok(catalogue(collection, table));
+    return Ok(catalog(collection, table));
   }
 
   // ExampleData[{"coll", "name"}] / ExampleData[{"coll", "name"}, "prop"]
@@ -228,10 +228,10 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     notcoll(&spec[0]);
     return echo();
   };
-  // A collection whose catalogue is a fixed value (`$Failed` for
+  // A collection whose catalog is a fixed value (`$Failed` for
   // "SpatialPointData", which needs Wolfram's server) answers every
   // request with it.
-  if let Some(value) = fixed_catalogue(table) {
+  if let Some(value) = fixed_catalog(table) {
     return Ok(value);
   }
   let generator = generator(collection).unwrap_or(&MetadataOnly);
@@ -314,8 +314,8 @@ fn property_value(
 }
 
 /// The recorded value of `ExampleData["coll"]` for a collection whose
-/// catalogue is not a list of entries.
-fn fixed_catalogue(table: &Table) -> Option<Expr> {
+/// catalog is not a list of entries.
+fn fixed_catalog(table: &Table) -> Option<Expr> {
   if table.columns().first().map(String::as_str) != Some("@Catalogue") {
     return None;
   }
@@ -324,7 +324,7 @@ fn fixed_catalogue(table: &Table) -> Option<Expr> {
 }
 
 /// `ExampleData["coll"]`.
-fn catalogue(collection: &str, table: &Table) -> Expr {
+fn catalog(collection: &str, table: &Table) -> Expr {
   Expr::List(
     table
       .rows()

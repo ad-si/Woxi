@@ -142,7 +142,7 @@ cast_possible_truncation = "allow"
 cast_possible_wrap = "allow"
 cast_precision_loss = "allow"
 cast_lossless = "allow"
-# Tables of mathematical constants, colour values and named-character code
+# Tables of mathematical constants, color values and named-character code
 # points are transcribed from their sources digit for digit; inserting `_`
 # separators would obscure that correspondence.
 unreadable_literal = "allow"
@@ -187,7 +187,7 @@ needless_raw_string_hashes = "allow"
 # `evaluator/dispatch/arg_count.rs`), and character tables as one arm per
 # code point. The arms are alphabetical and individually commented; merging
 # the ones that currently share a body into `|` chains would destroy both
-# properties and churn every time a single symbol's behaviour diverges.
+# properties and churn every time a single symbol's behavior diverges.
 match_same_arms = "allow"
 # SVG, notebook and box-form emitters build their output with
 # `s.push_str(&format!(…))`. `write!` would return a `fmt::Error` that a

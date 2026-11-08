@@ -68,7 +68,7 @@ thread_local! {
     const { std::cell::Cell::new(None) };
 }
 
-/// Normalise `n/d`: reduced over Q, or the residue `n * d^-1 mod p` (as
+/// Normalize `n/d`: reduced over Q, or the residue `n * d^-1 mod p` (as
 /// `(residue, 1)`) under a modulus. A denominator divisible by `p` has no
 /// inverse; callers avoid producing one (`try_decompose_step` skips outer
 /// degrees divisible by `p`).
@@ -404,7 +404,7 @@ fn try_decompose_step(f: &[Rat], s: usize) -> Option<(Vec<Rat>, Vec<Rat>)> {
 
 /// `try_decompose_step` over GF(p) when `p` divides the outer degree `r`.
 /// The inner polynomial cannot be solved for there, and wolframscript only
-/// recognises the monomial one: `f` is a polynomial in `x^s` when every
+/// recognizes the monomial one: `f` is a polynomial in `x^s` when every
 /// exponent it has is a multiple of `s` (`x^6 + x^2 + 2` modulo 3 is
 /// `{2 + x + x^3, x^2}`, while the also-valid `(x^3 + x) ∘ (x^3 + x)` modulo
 /// 3 is not found).

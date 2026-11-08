@@ -766,7 +766,7 @@ fn clip_to_region_function(
     if i > 0 && inside[i] != inside[i - 1] {
       let (x_prev, y_prev) = points[i - 1];
       if y_prev.is_finite() && y.is_finite() {
-        // Bisect towards the boundary between the two samples.
+        // Bisect toward the boundary between the two samples.
         let (mut a, mut b) = (x_prev, x);
         let a_inside = inside[i - 1];
         for _ in 0..30 {
@@ -928,7 +928,7 @@ fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
   }
 }
 
-/// Whether the step from `a` to `b` between neighbouring samples is a pole
+/// Whether the step from `a` to `b` between neighboring samples is a pole
 /// rather than a steep stretch of curve, for the y range `[lo, hi]`: both
 /// lie on opposite sides, each more than a range height beyond its edge. A
 /// steep but continuous curve stays within a range height of the edges.
@@ -991,7 +991,7 @@ fn has_step_function(body: &Expr) -> bool {
 }
 
 /// The x positions where the sampled curve `points` of `body` jumps: each
-/// pair of neighbouring samples with different values is bisected towards
+/// pair of neighboring samples with different values is bisected toward
 /// the larger change, and a gap that stays open once the interval has
 /// shrunk to nothing is a discontinuity (a continuous stretch closes up).
 fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
@@ -1180,7 +1180,7 @@ fn clip_segments_to_y_range(
           // Both outside — check if the line passes through the range
           // (e.g. one above y_max and the other below y_min)
           // A pole (e.g. `1/x` at 0) also jumps from one side to the other
-          // between neighbouring samples, but both samples lie far outside
+          // between neighboring samples, but both samples lie far outside
           // the range (a full range height or more); that gap must not be
           // bridged by a vertical line. A steep but continuous curve stays
           // within a range height of the boundaries.
@@ -1835,7 +1835,7 @@ fn nice_date_step(range_seconds: f64) -> f64 {
 /// The SVG for an `AxesLabel`, placed the way the Wolfram Language does: the
 /// x label just past the right end of the x axis and level with it, the y
 /// label above the top of the y axis. (A `FrameLabel`, by contrast, is
-/// centred outside the plot area — see the callers.)
+/// centered outside the plot area — see the callers.)
 ///
 /// `area` is the plotting rectangle `(x0, y0, w, h)` in render units and
 /// `range` the data range `(x_min, x_max, y_min, y_max)` it maps, so the
@@ -1887,7 +1887,7 @@ pub(crate) fn axes_label_svg_at(
   };
   let mut svg = String::new();
   if show_x_axis && !x_label.is_empty() {
-    // 8 pt past the end of the axis, vertically centred on it.
+    // 8 pt past the end of the axis, vertically centered on it.
     let k = font_size / plot_padding::LABEL_FONT;
     let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
     // A label wider than the room left of the canvas edge (an
@@ -1921,7 +1921,7 @@ pub(crate) fn axes_label_svg_at(
     ));
   }
   if show_y_axis && !y_label.is_empty() {
-    // Centred over the top of the y axis, but never so far left that the
+    // Centered over the top of the y axis, but never so far left that the
     // label runs off the image — a wide one (`{a, b, c, d}`) over an axis
     // that sits near the left edge slides right until it fits, the way
     // Wolfram keeps an axis label inside the graphic.
@@ -2015,7 +2015,7 @@ fn format_scientific_tick(v: f64) -> String {
 
 pub(crate) fn format_tick(v: f64) -> String {
   // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
-  // scientific notation — a frequency axis running to 6*10^15 is labelled
+  // scientific notation — a frequency axis running to 6*10^15 is labeled
   // `2x10^15` with real superscript digits, not `2000000000000000`. The
   // exponent uses the Unicode superscripts so it survives as plain text.
   // A value that is an integer within float noise prints as that integer —
@@ -2030,7 +2030,7 @@ pub(crate) fn format_tick(v: f64) -> String {
   if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
     return format_scientific_tick(v);
   }
-  // Enough decimals to tell neighbouring ticks apart — a 0.0002 step used
+  // Enough decimals to tell neighboring ticks apart — a 0.0002 step used
   // to render every label as `0.0`.
   let s = format!("{v:.6}");
   s.trim_end_matches('0').trim_end_matches('.').to_string()
@@ -2125,7 +2125,7 @@ fn inject_major_tick_extensions(
   );
 }
 
-/// Label the major ticks plotters left unlabelled.
+/// Label the major ticks plotters left unlabeled.
 ///
 /// Plotters picks its own key points from a range and a count hint, and on a
 /// range with a negative minimum it drops the last one — `PlotRange -> {-1,
@@ -2444,7 +2444,7 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
     let in_range =
       |f: f64| hi > lo && f.is_finite() && (-1e-9..=1.0 + 1e-9).contains(&f);
     let paint = &l.paints[edge];
-    // (fraction, inward length, outward length, colour, width, label)
+    // (fraction, inward length, outward length, color, width, label)
     let mut ticks: Vec<(f64, f64, f64, RGBColor, f64, Option<&str>)> =
       Vec::new();
     match &l.edges[edge] {
@@ -3234,7 +3234,7 @@ pub(crate) enum LegendPosition {
   Bottom,
   /// `Placed[…, Before | Left]`: beside the plot on the left.
   Left,
-  /// `Placed[…, {x, y}]`: inside the image, centred at this scaled
+  /// `Placed[…, {x, y}]`: inside the image, centered at this scaled
   /// position (fractions of its width and height, from the bottom left).
   Inside(f64, f64),
   /// `Placed[…, {Right, Top}]` and the like: inside the image, the
@@ -3345,10 +3345,10 @@ pub(crate) struct PlotOptions {
   /// `LegendFunction -> Frame`: the legend is framed.
   pub legend_frame: bool,
   /// `LegendLabel -> title` of an `XLegend[…]`: the legend's title,
-  /// centred above a column of entries.
+  /// centered above a column of entries.
   pub legend_label: Option<String>,
   /// `BaselinePosition -> Axis`: a list or row of pictures lines this one
-  /// up on its horizontal axis rather than its centre.
+  /// up on its horizontal axis rather than its center.
   pub baseline_axis: bool,
   /// Show evenly spaced horizontal grid lines (automatic).
   pub grid_lines_y: bool,
@@ -3383,7 +3383,7 @@ pub(crate) struct PlotOptions {
   /// symbolic, rather than re-evaluating it at every sample point.
   pub evaluated: bool,
   /// Labels on the bottom and left frame edges (`FrameLabel`). These sit
-  /// centred outside the plot area, unlike an [`Self::axes_label`], which
+  /// centered outside the plot area, unlike an [`Self::axes_label`], which
   /// Wolfram writes at the far end of its axis.
   pub frame_label_bottom: Option<String>,
   pub frame_label_left: Option<String>,
@@ -3457,8 +3457,8 @@ pub(crate) struct PlotOptions {
   pub error_bars: Vec<Vec<((f64, f64), (f64, f64))>>,
   /// How the `error_bars` uncertainties are rendered.
   pub interval_markers: IntervalMarkers,
-  /// `IntervalMarkersStyle -> colour`: the colour of the uncertainty bars
-  /// (else the series colour).
+  /// `IntervalMarkersStyle -> color`: the color of the uncertainty bars
+  /// (else the series color).
   pub interval_markers_color: Option<RGBColor>,
   /// The original data points per series when the drawn curve differs from
   /// the data (e.g. `InterpolationOrder` step/spline curves). Anchors
@@ -3523,8 +3523,8 @@ pub(crate) struct PlotOptions {
   /// The `PointSize` (a fraction of the image width) of scatter dots whose
   /// style sets none; `None` = the fixed 3 px radius dot.
   pub default_point_size: Option<f64>,
-  /// Points of a list plot written `Style[point, colour]`: per series, each
-  /// such point's coordinates and the colour its dot takes (over the
+  /// Points of a list plot written `Style[point, color]`: per series, each
+  /// such point's coordinates and the color its dot takes (over the
   /// series' own).
   pub point_colors: Vec<Vec<((f64, f64), (u8, u8, u8))>>,
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
@@ -3533,7 +3533,7 @@ pub(crate) struct PlotOptions {
   /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
   /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
-  /// colour and thickness of its tick marks, and the colour of its labels.
+  /// color and thickness of its tick marks, and the color of its labels.
   pub frame_ticks_styles: [Option<SeriesStyle>; 4],
   /// Set when the bottom `FrameLabel` is a `Grid[…]`/`TableForm[…]` — a
   /// picture to embed under the frame instead of the plain-text
@@ -3555,10 +3555,10 @@ pub(crate) struct PlotOptions {
   /// `FrameStyle` per frame edge (bottom, left, top, right): the style of
   /// the edge, its tick marks and its tick labels.
   pub frame_styles: [Option<SeriesStyle>; 4],
-  /// Coloured stretches drawn over frame edges, as (edge, from, to,
-  /// colour) with the stretch given in fractions of the edge from its
+  /// Colored stretches drawn over frame edges, as (edge, from, to,
+  /// color) with the stretch given in fractions of the edge from its
   /// bottom/left end: the axes of `MultiaxisArrangement`, an axis shared by
-  /// several series split evenly among their colours.
+  /// several series split evenly among their colors.
   pub frame_edge_segments: Vec<(usize, f64, f64, WoxiColor)>,
   /// The `MultiaxisArrangement` axes standing outside the frame's left
   /// and right edges, in order outward from each.
@@ -3626,7 +3626,7 @@ pub(crate) struct LabelStyleSpec {
 
 impl LabelStyleSpec {
   /// Read a `LabelStyle` / `FrameTicksStyle` value; `None` when it sets
-  /// none of the colour, size and weight.
+  /// none of the color, size and weight.
   pub(crate) fn parse(value: &Expr) -> Option<Self> {
     let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
     let items: Vec<Expr> = match &val {
@@ -4132,7 +4132,7 @@ fn resolve_grid_lines(
 
 /// The grid lines of one axis spanning `min..max`: [`resolve_grid_lines`]
 /// on a linear axis; on a log axis the explicit lines, or the automatic
-/// ones at the labelled log ticks.
+/// ones at the labeled log ticks.
 fn resolve_axis_grid_lines(
   explicit: &[GridLine],
   automatic: bool,
@@ -4331,7 +4331,7 @@ pub(crate) fn plot_labels_svg(
       pitch,
     )
   };
-  // Bottom/left FrameLabel: centred outside the plot area, 6 pt beyond
+  // Bottom/left FrameLabel: centered outside the plot area, 6 pt beyond
   // the tick labels of their edge.
   let bottom_label_top = axis_y + room_bottom + gap;
   let mut bottom_text_h = 0.0;
@@ -4406,7 +4406,7 @@ pub(crate) fn plot_labels_svg(
     y_scale,
     opts.axes_origin_point(x_scale, y_scale),
   );
-  // Each axis label takes its axis's `AxesStyle` colour unless
+  // Each axis label takes its axis's `AxesStyle` color unless
   // `LabelStyle` gives one.
   let axis_fill = |i: usize| -> Option<String> {
     if label_style_color.is_some() {
@@ -4500,7 +4500,7 @@ pub(crate) fn plot_labels_svg(
     ));
   }
 
-  // PlotLabel: centred over the plotting area in its own band at the top.
+  // PlotLabel: centered over the plotting area in its own band at the top.
   if let Some(sl) = &opts.plot_label
     && !sl.text.is_empty()
   {
@@ -4570,7 +4570,7 @@ pub(crate) fn plot_labels_svg(
       sl.svg_scaled_stacked(sf, cx, title_pitch)
     };
     if !sl.segments.is_empty() {
-      // Centre the line on the band the tallest picture claims.
+      // Center the line on the band the tallest picture claims.
       let ty = ty + sl.extra_line_count() as f64 * title_pitch / 2.0;
       labels_svg.push_str(&inline_segments_svg(
         &sl.segments,
@@ -4594,8 +4594,8 @@ pub(crate) fn plot_labels_svg(
 }
 
 /// A title made of text runs and small inline pictures, laid out left to
-/// right and centred on `cx`. `ty` is the text baseline; each picture is
-/// centred on the text's x-height line. Lengths are in render units, with
+/// right and centered on `cx`. `ty` is the text baseline; each picture is
+/// centered on the text's x-height line. Lengths are in render units, with
 /// `sf` render units per nominal point.
 fn inline_segments_svg(
   segments: &[crate::functions::chart::LabelSegment],
@@ -4697,7 +4697,7 @@ fn explicit_ticks_in_axis_space(
 /// finished plot, as WL's `Inset[g, pt, Automatic, Scaled[s]]`: the
 /// picture keeps its aspect ratio inside a box of `s` times the plot
 /// area's width and height (a named size is that many points square, no
-/// size the inset's natural 180 pt), drawn in the series colour.
+/// size the inset's natural 180 pt), drawn in the series color.
 /// `area` is the plot region in render pixels (left, top, width, height).
 fn inject_graphics_markers(
   buf: &mut String,
@@ -4719,7 +4719,7 @@ fn inject_graphics_markers(
     let (r, g, b) = marker
       .color
       .unwrap_or_else(|| series_color(&opts.plot_style, idx));
-    // The series style (its colour and 2 pt lines) is the inset's default
+    // The series style (its color and 2 pt lines) is the inset's default
     // style; `thickness` is in the inset's own points.
     let styled = |thickness: Option<f64>| match graphic {
       Expr::FunctionCall { name, args } if !args.is_empty() => {
@@ -5201,7 +5201,7 @@ fn generate_svg_with_options(
   let mut svg_height = opts.svg_height;
   let full_width = opts.full_width;
   let (show_x_axis, show_y_axis) = opts.axes;
-  // A framed plot carries its ticks on the frame edges, so they are labelled
+  // A framed plot carries its ticks on the frame edges, so they are labeled
   // whether or not the axes themselves are drawn — `Frame -> True, Axes ->
   // False` is the standard framed look, and it used to come out bare.
   let (tick_axis_x, tick_axis_y) = if opts.frame {
@@ -5229,7 +5229,7 @@ fn generate_svg_with_options(
     .plot_label
     .as_ref()
     .is_some_and(|sl| !sl.text.is_empty());
-  // A `FrameLabel` sits centred outside the bottom/left edge; an `AxesLabel`
+  // A `FrameLabel` sits centered outside the bottom/left edge; an `AxesLabel`
   // sits at the far end of its axis, so it needs room to the right and above
   // instead.
   let has_x_axis_label = opts
@@ -5427,7 +5427,7 @@ fn generate_svg_with_options(
   //
   // An explicit image height (`ImageSize -> {w, h}` or `{Automatic, h}`)
   // is kept instead: the plotting area keeps its `AspectRatio` (the default
-  // 1/GoldenRatio when unset) inside the fixed image, centred along the
+  // 1/GoldenRatio when unset) inside the fixed image, centered along the
   // axis with room to spare, and a free width follows from the height.
   // `AspectRatio -> Full` stretches the area over the whole image.
   let h_margins =
@@ -5665,7 +5665,7 @@ fn generate_svg_with_options(
         // are solid by default; dashing needs an explicit style.)
         // WL 15: `GridLinesStyle -> Directive[GrayLevel[0.5, 0.4]]`.
         let grid_color = RGBColor(0x80, 0x80, 0x80).mix(0.4);
-        // A line coloured on its own keeps the default style's opacity,
+        // A line colored on its own keeps the default style's opacity,
         // as WL's `{2, Directive[Blue, Thick]}` draws at 0.4 alpha.
         let grid_alpha = |rgb: Option<(u8, u8, u8)>| {
           if rgb.is_some() && opts.grid_lines_style.is_none() {
@@ -6060,7 +6060,7 @@ fn generate_svg_with_options(
           opts.mesh_by_parameter,
           &opts.mesh_parameters,
         );
-        // (position, radius, colour, opacity) of every curve's mesh points.
+        // (position, radius, color, opacity) of every curve's mesh points.
         let mut pending_mesh_dots: Vec<((f64, f64), u32, (u8, u8, u8), f64)> =
           Vec::new();
         for (series_idx, points) in all_points.iter().enumerate() {
@@ -6414,7 +6414,7 @@ fn generate_svg_with_options(
               let pick = |f: &dyn Fn(&SeriesStyle) -> Option<f64>| {
                 layers.iter().flatten().find_map(|s| f(s))
               };
-              // The curve's colour (its `ColorFunction` colour there),
+              // The curve's color (its `ColorFunction` color there),
               // unless `MeshStyle` or the mesh value's style sets one.
               let rgb = layers
                 .iter()
@@ -6507,8 +6507,8 @@ fn generate_svg_with_options(
     // rounding error and drops the last one (`Plot[Sin[x], …, Frame ->
     // True]` lost its `1.0` label), so the points are handed over
     // explicitly.
-    let frame_key_points = |lo: f64, hi: f64, labelled: bool| -> Vec<f64> {
-      if !labelled || hi <= lo || !(hi - lo).is_finite() {
+    let frame_key_points = |lo: f64, hi: f64, labeled: bool| -> Vec<f64> {
+      if !labeled || hi <= lo || !(hi - lo).is_finite() {
         return Vec::new();
       }
       let minor = minor_tick_step(axis_tick_step(hi - lo));
@@ -6656,7 +6656,7 @@ fn generate_svg_with_options(
         - x_label_area as f64,
     );
     let mut edges = opts.frame_tick_edges.clone();
-    // A date axis's automatic ticks are its calendar dates, labelled at
+    // A date axis's automatic ticks are its calendar dates, labeled at
     // the bottom and marked only at the top.
     if opts.date_axis && opts.ticks_x.is_none() {
       for edge in [0, 2] {
@@ -7228,7 +7228,7 @@ fn inject_plot_labels(
       placed[i].4 = min_y;
     }
   }
-  // Re-centre a spread group on its curve ends.
+  // Re-center a spread group on its curve ends.
   if let (Some(first), Some(last)) = (placed.first(), placed.last()) {
     let shift = ((first.3 + last.3) - (first.4 + last.4)) / 2.0;
     if shift < 0.0 {
@@ -7348,7 +7348,7 @@ fn label_candidates(
       let elbow = at(8.0);
       let side = if cos.abs() < 1e-9 { 0.0 } else { cos.signum() };
       let (leader, bbox) = if side == 0.0 {
-        // Straight up or down: the box sits centred on the leader's end.
+        // Straight up or down: the box sits centered on the leader's end.
         let top = if sin > 0.0 { elbow.1 - bh } else { elbow.1 };
         (
           vec![start, elbow],
@@ -8206,7 +8206,7 @@ pub(crate) fn render_merged_plot_source(
     .filter(|s| s.is_scatter == all_scatter)
     .collect();
 
-  // Each series carries the colour its own plot resolved, so `PlotStyle`
+  // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
   opts.plot_style = drawn
     .iter()
@@ -8253,7 +8253,7 @@ pub(crate) fn render_merged_plot_source(
     })
     .collect();
   // Each merged plot keeps the fill it asked for: three normal curves
-  // filled to the axis in three colours stay three colours, rather than all
+  // filled to the axis in three colors stay three colors, rather than all
   // taking the first plot's.
   opts.filling_styles = drawn
     .iter()
@@ -8365,7 +8365,7 @@ fn scatter_overlay_primitives(
     "Point",
     Expr::List(finite.into_iter().map(point).collect::<Vec<_>>().into()),
   ));
-  // Point labels sit above and right of their points, in the text colour;
+  // Point labels sit above and right of their points, in the text color;
   // near the right end of the data they flip to the left so they stay
   // inside the plot, as in a standalone `ListPlot`.
   let (x_lo, x_hi) = series
@@ -8433,12 +8433,12 @@ pub(crate) enum BarLabelPlacement {
 pub(crate) struct BarChartLook {
   /// `Axes -> False` hides the axis lines.
   pub axes: bool,
-  /// `AxesStyle`: the colour and stroke width (render units) of the axes
+  /// `AxesStyle`: the color and stroke width (render units) of the axes
   /// and their tick labels.
   pub axes_color: Option<RGBColor>,
   pub axes_width: Option<u32>,
   /// `Frame -> True` draws a border round the plotting area, in the
-  /// `FrameStyle` colour and width.
+  /// `FrameStyle` color and width.
   pub frame: bool,
   pub frame_color: Option<RGBColor>,
   pub frame_width: Option<u32>,
@@ -8449,16 +8449,16 @@ pub(crate) struct BarChartLook {
   pub aspect_ratio: Option<f64>,
   /// `ChartLayout`: how the bars of a group share its slot.
   pub layout: BarLayout,
-  /// Per-bar colours from `Style[v, colour]` data wrappers, in drawing
+  /// Per-bar colors from `Style[v, color]` data wrappers, in drawing
   /// order (overriding `ChartStyle` and the default palette).
   pub bar_colors: Vec<Option<(u8, u8, u8)>>,
   /// Per-bar error intervals `(low, high)` from `Around[v, δ]` data, in
-  /// drawing order, drawn as capped error bars at each bar's centre.
+  /// drawing order, drawn as capped error bars at each bar's center.
   pub error_bars: Vec<Option<(f64, f64)>>,
   /// `BarOrigin -> Top`: the values are drawn negated (hanging from the
-  /// top) and the value axis is labelled with their magnitudes.
+  /// top) and the value axis is labeled with their magnitudes.
   pub value_axis_negated: bool,
-  /// The bars' `EdgeForm` (`ChartBaseStyle` / `ChartStyle`): colour,
+  /// The bars' `EdgeForm` (`ChartBaseStyle` / `ChartStyle`): color,
   /// stroke width in render units and opacity.
   pub edge: Option<((u8, u8, u8), f64, f64)>,
   /// `ChartElementFunction -> "FadingRectangle"` / `"GlassRectangle"`.
@@ -8470,7 +8470,7 @@ pub(crate) struct BarChartLook {
   /// Hide the value frame stroke and tick marks while keeping its labels.
   pub hide_value_frame: bool,
   /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
-  /// `(colour, opacity, width in points, dash pattern in points)`.
+  /// `(color, opacity, width in points, dash pattern in points)`.
   pub value_grid: Option<((u8, u8, u8), f64, f64, Option<(f64, f64)>)>,
 }
 
@@ -8505,9 +8505,9 @@ impl Default for BarChartLook {
 pub(crate) enum BarElement {
   #[default]
   Rectangle,
-  /// A horizontal fade from the bar colour to a light tint of it.
+  /// A horizontal fade from the bar color to a light tint of it.
   FadingRectangle,
-  /// A glassy highlight over the bar colour.
+  /// A glassy highlight over the bar color.
   GlassRectangle,
 }
 
@@ -8991,7 +8991,7 @@ pub(crate) fn generate_bar_svg(
     svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
     render_height = svg_height * RESOLUTION_SCALE;
   }
-  // `AxesStyle` recolours the axes; `Axes -> False` hides them.
+  // `AxesStyle` recolors the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
 
   let mut custom_elements = Vec::new();
@@ -9086,7 +9086,7 @@ pub(crate) fn generate_bar_svg(
       }
     }
 
-    // `Around[v, δ]` data: a capped error bar at each bar's centre.
+    // `Around[v, δ]` data: a capped error bar at each bar's center.
     for (rect, err) in rects.iter().zip(&look.error_bars) {
       let Some((lo, hi)) = *err else { continue };
       let cx = f64::midpoint(rect.x0, rect.x1);
@@ -9231,7 +9231,7 @@ pub(crate) fn generate_bar_svg(
   }
 
   // A frame carries the value ticks on its left edge (and mirrors them,
-  // unlabelled, on its right one) in place of the axes.
+  // unlabeled, on its right one) in place of the axes.
   if look.axes || look.frame {
     let axis_hex = format!(
       "#{:02X}{:02X}{:02X}",
@@ -9300,7 +9300,7 @@ pub(crate) fn generate_bar_svg(
     let px = |v: f64| plot_x0 + x_scale.frac(v) * plot_w;
     if show_ticks && n > 0 && look.frame {
       // A frame is ticked (inwards, on its bottom and top edges) at each
-      // bar's centre and, a little longer, in the middle of each gap
+      // bar's center and, a little longer, in the middle of each gap
       // between groups.
       let [_, _, bottom, top] = look.frame_sides;
       let mut marks: Vec<(f64, f64)> = rects
@@ -9332,7 +9332,7 @@ pub(crate) fn generate_bar_svg(
     } else if show_ticks && n > 0 {
       // The x axis carries no labels, only marks hanging below it: 6 pt at
       // the outer edges of the bars and at both edges of each gap between
-      // groups, and 4 pt at the edges of each labelled bar.
+      // groups, and 4 pt at the edges of each labeled bar.
       let mut mark = |x: f64, len: f64| {
         axes_svg.push_str(&format!(
           "<line x1=\"{x:.1}\" y1=\"{axis_y:.1}\" x2=\"{x:.1}\" \
@@ -9361,7 +9361,7 @@ pub(crate) fn generate_bar_svg(
         }
       }
     }
-    // The frame's right edge mirrors the value ticks, unlabelled and
+    // The frame's right edge mirrors the value ticks, unlabeled and
     // pointing into the plot.
     if look.frame && look.frame_sides[1] && show_ticks {
       let right = plot_x0 + plot_w;
@@ -9396,7 +9396,7 @@ pub(crate) fn generate_bar_svg(
   let title_font_size = sf * CHART_TITLE_FONT;
 
   // `Epilog` primitives are written in chart coordinates, where the first bar
-  // group is centred at `x = 1`; the axis here puts it at `0.5`.
+  // group is centered at `x = 1`; the axis here puts it at `0.5`.
   if !epilog.is_empty()
     && let Some(pos) = buf.rfind("</svg>")
   {
@@ -9537,7 +9537,7 @@ pub(crate) fn generate_bar_svg(
       }
     }
 
-    // FrameLabel: centred outside the bottom/left edge.
+    // FrameLabel: centered outside the bottom/left edge.
     if let Some(x_label) = frame_label_x {
       let cx = plot_x0 + plot_w / 2.0;
       let base_y = axis_y
@@ -9679,7 +9679,7 @@ pub(crate) fn chart_legend_column_width(labels: &[String], sf: f64) -> f64 {
   (CHART_LEGEND_LEFT + widest + CHART_LEGEND_RIGHT) * sf
 }
 
-/// A column of chart legend entries (entry `i` coloured `color(i)`) set
+/// A column of chart legend entries (entry `i` colored `color(i)`) set
 /// beside a chart image whose right edge is at `x` and whose vertical
 /// middle is `center_y`, as WL places it: a little above the middle.
 pub(crate) fn chart_legend_column_svg(
@@ -9711,7 +9711,7 @@ pub(crate) fn chart_legend_column_svg(
     .collect()
 }
 
-/// One chart legend entry (`ChartLegends` / `PlotLegends`): a colour swatch
+/// One chart legend entry (`ChartLegends` / `PlotLegends`): a color swatch
 /// edged like WL's (half a point of 64% black) with its top-left corner at
 /// `(x, y)`, and the label beside it on the swatch's baseline.
 pub(crate) fn chart_legend_entry_svg(
@@ -10868,7 +10868,7 @@ fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
   (vb_w - margin_left - margin_right - y_label_area).max(vb_w * 0.5)
 }
 
-/// The legend swatch of series `si` centred vertically on `y` and starting
+/// The legend swatch of series `si` centered vertically on `y` and starting
 /// at `x`: a short line for a joined series, the point marker for one
 /// drawn as points (a list plot's `PointLegend`).
 fn legend_swatch_svg(
@@ -10943,7 +10943,7 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
   }
 
   let sf = RESOLUTION_SCALE as f64;
-  // Legend labels are black (the title colour in dark mode), not the gray
+  // Legend labels are black (the title color in dark mode), not the gray
   // of the tick labels.
   let label_fill = if crate::is_dark_mode() {
     plot_theme().4
@@ -11236,7 +11236,7 @@ fn legend_label_width(opts: &PlotOptions, label: &str, font_size: f64) -> f64 {
   }
 }
 
-/// A legend entry's label, starting at `x` and centred vertically on `y`:
+/// A legend entry's label, starting at `x` and centered vertically on `y`:
 /// its text, or for a `"Placeholder"` legend its number in italics on a
 /// pale yellow box with a dotted golden edge.
 fn legend_label_svg(
@@ -11459,7 +11459,7 @@ pub(crate) fn histogram_plot_source(
     let counts = histogram_bin_counts(d, &bin_edges);
     let heights = histogram_bin_heights(&counts, &bin_edges, height);
     // Trace every bar — up its left edge, across its top, down its right
-    // edge — so the outline also separates neighbouring bars. Filling to
+    // edge — so the outline also separates neighboring bars. Filling to
     // the axis paints the bars.
     let mut points = Vec::with_capacity(num_bins * 4);
     for i in 0..num_bins {
@@ -11934,7 +11934,7 @@ pub(crate) fn generate_histogram_svg(
     let mut labels_svg = String::new();
     let axis_y = plot_y0 + plot_h;
 
-    // FrameLabel: centred outside the bottom/left edge.
+    // FrameLabel: centered outside the bottom/left edge.
     if let Some((x_label, y_label)) = &opts.frame_label {
       if !x_label.is_empty() {
         let cx = plot_x0 + plot_w / 2.0;
@@ -12072,7 +12072,7 @@ pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
 pub(crate) enum FrameEdgeTicks {
   /// No tick marks and no labels.
   None,
-  /// The automatic tick marks, unlabelled (`Automatic` on the top and the
+  /// The automatic tick marks, unlabeled (`Automatic` on the top and the
   /// right edge).
   Marks,
   /// The automatic tick marks with their labels.
@@ -12082,7 +12082,7 @@ pub(crate) enum FrameEdgeTicks {
 }
 
 impl FrameEdgeTicks {
-  /// `FrameTicks -> Automatic`: the bottom and left edges labelled, the top
+  /// `FrameTicks -> Automatic`: the bottom and left edges labeled, the top
   /// and right ones marked only (bottom, left, top, right).
   pub(crate) fn defaults() -> [Self; 4] {
     [Self::Labeled, Self::Labeled, Self::Marks, Self::Marks]
@@ -12230,9 +12230,9 @@ fn add_bar_borders(buf: &mut String, stroke_width: u32) {
 }
 
 /// Give the bar `<rect>`s (every one after the background, as left by
-/// [`add_bar_borders`]) an explicit `EdgeForm` — `(colour, width in render
+/// [`add_bar_borders`]) an explicit `EdgeForm` — `(color, width in render
 /// units, opacity)` — and the shading of a named `ChartElementFunction`: a
-/// horizontal gradient of the bar's own colour, defined once per bar.
+/// horizontal gradient of the bar's own color, defined once per bar.
 pub(crate) fn restyle_bar_rects(
   buf: &mut String,
   edge: Option<((u8, u8, u8), f64, f64)>,
@@ -12283,7 +12283,7 @@ pub(crate) fn restyle_bar_rects(
         ((rgb >> 8) & 0xFF) as f64,
         (rgb & 0xFF) as f64,
       );
-      // Blend the colour toward white (t > 0) or black (t < 0).
+      // Blend the color toward white (t > 0) or black (t < 0).
       let tint = |t: f64| {
         let ch = |v: f64| {
           if t >= 0.0 {
@@ -12677,7 +12677,7 @@ pub(crate) fn series_color_expr(
 pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   // Try as a color first
   if let Some(c) = parse_color(expr) {
-    // A translucent colour (`Transparent`, `RGBColor[r, g, b, a]`) fades the
+    // A translucent color (`Transparent`, `RGBColor[r, g, b, a]`) fades the
     // curve by its alpha.
     if c.a < 1.0 {
       style.opacity = Some(c.a);
@@ -12826,7 +12826,7 @@ const DEFAULT_MARKER_SIZE: f64 = 10.0;
 
 /// The shapes `PlotMarkers -> "OpenMarkers"` cycles over the series (in WL
 /// 15's order): white-filled outlines rather than the default filled dot,
-/// so overlapping series stay distinguishable by outline as well as colour.
+/// so overlapping series stay distinguishable by outline as well as color.
 /// Each is named by its glyph and drawn by [`open_marker_outline`].
 const OPEN_MARKER_GLYPHS: [&str; 5] = ["○", "△", "◇", "□", "▽"];
 
@@ -12963,15 +12963,15 @@ enum GlyphOutline {
 }
 
 /// The baseline of a text marker lies this many font sizes below its data
-/// point (WL centres the glyph's line box on the point).
+/// point (WL centers the glyph's line box on the point).
 const TEXT_MARKER_BASELINE: f64 = 0.347;
 
 /// Plotters writes a font size `s` into the SVG as `s / 1.24`.
 const PLOTTERS_FONT_SCALE: f64 = 1.24;
 
-/// Draw the `PlotMarkers` glyph `marker` at each of `points`, centred on
+/// Draw the `PlotMarkers` glyph `marker` at each of `points`, centered on
 /// the point: text at the marker's size, or for an `"OpenMarkers"` shape a
-/// white-filled outline stroked 1.5 pt wide in `rgb` (the series colour).
+/// white-filled outline stroked 1.5 pt wide in `rgb` (the series color).
 fn draw_marker_glyphs<DB, CT>(
   chart: &mut plotters::prelude::ChartContext<DB, CT>,
   points: &[(f64, f64)],
@@ -13108,7 +13108,7 @@ where
     }
     return Ok(());
   }
-  // Any other text sits horizontally centred with its baseline
+  // Any other text sits horizontally centered with its baseline
   // `TEXT_MARKER_BASELINE` sizes below the point; plotters' `VPos::Top`
   // puts the baseline 0.76 em below the anchor.
   let style = ("sans-serif", marker.size * scale * PLOTTERS_FONT_SCALE)
@@ -13133,7 +13133,7 @@ where
 }
 
 /// Read one `PlotMarkers` entry: a glyph, optionally wrapped in `Style`
-/// (which may carry a colour and a font size in any order) or paired with
+/// (which may carry a color and a font size in any order) or paired with
 /// its size as `{marker, size}`. Anything else (a `Graphics` marker, say)
 /// gives `None`, which leaves that series on plain round points.
 fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
@@ -13173,7 +13173,7 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
-    // `Style[marker, directives…]` — a colour and/or a font size.
+    // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -13285,7 +13285,7 @@ pub(crate) fn parse_plot_markers(
       .collect();
   }
   // `{m1, m2, …}` is per-series unless it is the `{marker, size}` pair,
-  // which `parse_one_marker` recognises.
+  // which `parse_one_marker` recognizes.
   if let Expr::List(items) = &val
     && parse_one_marker(&val).is_none()
   {
@@ -13368,8 +13368,8 @@ where
     fs => fill_paint(fs, (r, g, b)),
   }
   .stroke_width(RESOLUTION_SCALE);
-  // A two-colour `{below, above}` style paints the stems of points under
-  // their reference in the first colour.
+  // A two-color `{below, above}` style paints the stems of points under
+  // their reference in the first color.
   let below_style =
     fill_style
       .and_then(|fs| fs.below_color)
@@ -13434,7 +13434,7 @@ where
   }
 
   // `PlotMarkers` replaces the round dot with its glyph, drawn
-  // centred on the point at the size the marker spec asks for.
+  // centered on the point at the size the marker spec asks for.
   if let Some(marker) = series_marker(&opts.plot_markers, series_idx) {
     draw_marker_glyphs(chart, &finite_pts, marker, (r, g, b))?;
   } else {
@@ -13834,9 +13834,9 @@ pub(crate) fn expand_plot_theme(
     .iter()
     .filter_map(|o| crate::syntax::string_to_expr(o).ok())
     .collect();
-  // An explicit `PlotStyle` replaces the theme's colours but keeps the
+  // An explicit `PlotStyle` replaces the theme's colors but keeps the
   // rest of its curve style (the thick butt-capped lines of "Business"):
-  // each given style is drawn over the theme's non-colour directives.
+  // each given style is drawn over the theme's non-color directives.
   if given.contains("PlotStyle")
     && let Some(base) = table.iter().find_map(theme_curve_base)
   {
@@ -13874,7 +13874,7 @@ pub(crate) fn expand_plot_theme(
   (explicit, simple_ticks)
 }
 
-/// The non-colour directives of a theme's `PlotStyle` (from its first
+/// The non-color directives of a theme's `PlotStyle` (from its first
 /// entry): what an explicit `PlotStyle` keeps of the theme.
 fn theme_curve_base(opt: &Expr) -> Option<Vec<Expr>> {
   let Expr::Rule {
@@ -14097,7 +14097,7 @@ pub(crate) struct FrameEdgePaint {
 /// The paint of each frame edge (bottom, left, top, right). The line takes
 /// its `FrameStyle` (else the theme's `gray` at one display pixel); the
 /// tick marks their `FrameTicksStyle` over the `FrameStyle`; the labels the
-/// colour of the `FrameTicksStyle`, else of the `FrameStyle`, else of the
+/// color of the `FrameTicksStyle`, else of the `FrameStyle`, else of the
 /// `LabelStyle`.
 pub(crate) fn frame_edge_paints(
   opts: &PlotOptions,
@@ -14148,7 +14148,7 @@ pub(crate) fn parse_axis_pair_styles(value: &Expr) -> [Option<SeriesStyle>; 2] {
   }
 }
 
-/// The SVG stroke colour and width (in render units, `sf` per display pixel)
+/// The SVG stroke color and width (in render units, `sf` per display pixel)
 /// a style gives a line, falling back to `color` / `width` for whatever it
 /// leaves unset.
 pub(crate) fn style_stroke(
@@ -14345,8 +14345,8 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
 
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
 /// parallel to the left (`edge` 1) or right (3) frame edge carrying its own
-/// ticks (in the plot's y coordinates), coloured in stretches like
-/// [`PlotOptions::frame_edge_segments`] (fractions of the height, colour).
+/// ticks (in the plot's y coordinates), colored in stretches like
+/// [`PlotOptions::frame_edge_segments`] (fractions of the height, color).
 #[derive(Clone, Debug)]
 pub(crate) struct ExtraFrameAxis {
   pub edge: usize,
@@ -14365,7 +14365,7 @@ pub(crate) struct ExplicitTick {
   /// How far the mark reaches into and out of the plot, as fractions of the
   /// plot width; `None` gives it the automatic major tick length, inward.
   pub len: Option<(f64, f64)>,
-  /// The mark's own style (`{pos, label, len, Red}`); it never colours the
+  /// The mark's own style (`{pos, label, len, Red}`); it never colors the
   /// label.
   pub style: Option<SeriesStyle>,
 }
@@ -14376,7 +14376,7 @@ pub(crate) fn parse_explicit_tick_entries(
   value: &Expr,
 ) -> Option<Vec<ExplicitTick>> {
   // A spec written out as a list keeps its entries as written: a tick is
-  // labelled with the expression standing at it, and `3 Pi/2` set as one
+  // labeled with the expression standing at it, and `3 Pi/2` set as one
   // fraction is not the same reading as the `(3/2) Pi` it evaluates to.
   // Anything else (a symbol, a `Table[…]`) has to be worked out first.
   let val = match value {
@@ -14439,7 +14439,7 @@ pub(crate) fn parse_explicit_tick_entries(
 /// A bare tick position that evaluates to a plain number (`rate - vac` with
 /// both set, `N[f[x], 4]`) is that number, as plot options are evaluated
 /// before the plot reads them. A symbolic result (`3 Pi/2`) keeps the form it
-/// was written in so it is labelled as typed.
+/// was written in so it is labeled as typed.
 fn numeric_tick_value(e: &Expr) -> Expr {
   match evaluate_expr_to_expr(e) {
     Ok(
@@ -14466,7 +14466,7 @@ fn tick_position(e: &Expr) -> Option<f64> {
 /// The `<text>` content drawn at a tick given as a bare position rather than
 /// as a `{pos, label}` pair. Wolfram labels such a tick with the position
 /// *expression*, typeset — `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` reads
-/// "0", "π/2", "π", "3π/2", "2π" — so only a literal number is labelled by
+/// "0", "π/2", "π", "3π/2", "2π" — so only a literal number is labeled by
 /// its value; anything symbolic is set the way the expression is written.
 pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
   fn is_literal_number(e: &Expr) -> bool {
@@ -15961,7 +15961,7 @@ fn scaled_plot_body(
 /// coordinates of `scale`, whose displayed range is `range`; returns the
 /// range to draw. A log axis goes back to original coordinates and is
 /// drawn as a native log axis, crossed by the other axis at its low end.
-/// Any other scaled axis stays scaled and is labelled with
+/// Any other scaled axis stays scaled and is labeled with
 /// `Charting`ScaledTicks`; without a place for the original 0 it is
 /// crossed at its low end too.
 pub(crate) fn finish_scaled_axis(
@@ -16073,7 +16073,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut legends_expressions = false;
   // `PlotLegends -> AllExpressions` legends a lone curve as well.
   let mut legends_all_expressions = false;
-  // `PlotLabels -> Automatic | "Expressions"`: each curve is labelled with
+  // `PlotLabels -> Automatic | "Expressions"`: each curve is labeled with
   // its expression.
   let mut labels_expressions = false;
   // `EvaluationMonitor :> expr` — evaluated (with the plot variable bound)
@@ -16225,7 +16225,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &mut PlotRangeOverrides::default(),
         );
       }
-      // The compactified axis is labelled with original values.
+      // The compactified axis is labeled with original values.
       if transform.is_some() && plot_opts.ticks_x.is_none() {
         plot_opts.ticks_x = Some(infinite_range_ticks(raw_min, raw_max));
       }

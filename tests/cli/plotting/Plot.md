@@ -49,7 +49,7 @@ True
 Tick labels follow the Wolfram Language's rules: a value outside
 `[10^-5, 10^6)` is written in scientific notation (`6×10¹⁵`, not
 `6000000000000000`), and inside that range the labels stay plain with
-enough decimals to tell neighbouring ticks apart (`0.0002`). Either way
+enough decimals to tell neighboring ticks apart (`0.0002`). Either way
 the plot exports:
 
 ```scrut
@@ -70,7 +70,7 @@ $ wo 'StringContainsQ[ExportString[Plot[E^x, {x, 0, 10}, PlotRange -> All], "SVG
 True
 ```
 
-A tick given as a bare position is labelled with that expression rather
+A tick given as a bare position is labeled with that expression rather
 than with its decimal expansion, so an axis divided into multiples of π
 reads back as multiples of π:
 

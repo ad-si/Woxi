@@ -6,8 +6,8 @@
 //! shared renderer. Layout follows wolframscript: rectangles stand on the axis
 //! from x = 0, separated by a gap of 0.1 - 0.001 n for n rectangles in all
 //! (`BarSpacing -> s` sets it, `None` removes it); with several datasets each
-//! starts 0.1 in and datasets are 0.2 apart, and the default colours run by
-//! position within a dataset (a single dataset is drawn in the first colour).
+//! starts 0.1 in and datasets are 0.2 apart, and the default colors run by
+//! position within a dataset (a single dataset is drawn in the first color).
 //! Each 2D bar is wrapped the way wolframscript's chart holds it:
 //! `{style, Tooltip[StatusArea[Charting`DelayedMouseEffect[Rectangle[…,
 //! "RoundingRadius" -> 0], effect], {w, h}], Style[{w, h}, {}]]}`.
@@ -18,7 +18,7 @@ use crate::functions::math_ast::try_eval_to_f64;
 use crate::helpers::unevaluated;
 use crate::syntax::Expr;
 
-/// wolframscript's default chart colours, by position within a dataset.
+/// wolframscript's default chart colors, by position within a dataset.
 const PALETTE: [(f64, f64, f64); 15] =
   crate::functions::chart::CHART_COLORS_RGB;
 
@@ -116,8 +116,8 @@ fn chart_style_for(style: Option<&Expr>, pos: usize, multi: bool) -> Expr {
     other => other.clone(),
   };
   match style {
-    // The default colours only vary across datasets, by position; a single
-    // dataset is drawn in the first colour throughout.
+    // The default colors only vary across datasets, by position; a single
+    // dataset is drawn in the first color throughout.
     None | Some(Expr::Identifier(_) | Expr::String(_)) => {
       palette_color(if multi { pos } else { 0 })
     }
@@ -208,8 +208,8 @@ pub fn rectangle_chart_ast(
   }
   let n_sets = sets.len();
   let multi = n_sets > 1;
-  // A named colour scheme (`ChartStyle -> "Rainbow"`) is sampled evenly,
-  // one colour per element of a dataset — the list of them then cycles
+  // A named color scheme (`ChartStyle -> "Rainbow"`) is sampled evenly,
+  // one color per element of a dataset — the list of them then cycles
   // like any explicit `ChartStyle` list.
   if let Some(Expr::String(scheme)) = &chart_style
     && let Some(controls) = crate::functions::chart::named_color_scheme(scheme)
@@ -499,7 +499,7 @@ pub fn rectangle_chart_ast(
   let mut opts = passthrough.clone();
   if three_d {
     // Wolfram's 3D chart frame: seen almost from the front, the value
-    // axis on the right, the blocks' extents as unlabelled ticks below.
+    // axis on the right, the blocks' extents as unlabeled ticks below.
     let group_of: Vec<usize> = sets
       .iter()
       .enumerate()
@@ -532,7 +532,7 @@ pub fn rectangle_chart_ast(
       }
     }
   } else {
-    // A frame replaces the value axis, and its bottom edge is labelled by
+    // A frame replaces the value axis, and its bottom edge is labeled by
     // the `ChartLabels` rather than by numeric ticks.
     if !has.contains("Axes") {
       let flag =
@@ -611,7 +611,7 @@ pub fn rectangle_chart_ast(
 
 /// `` BarCharts`GeneralizedBarChart[{{x1, h1, w1}, …}] `` — the legacy
 /// package chart, once the package is loaded: a bar of height `h` and width
-/// `w` centred at `x`, each drawn as `{style, EdgeForm[Opacity[0.5]],
+/// `w` centered at `x`, each drawn as `{style, EdgeForm[Opacity[0.5]],
 /// Rectangle[…]}` in the bars' own arithmetic, in a `Graphics` with axes.
 /// `` BarCharts`BarStyle `` gives the style (the package's blue
 /// `Hue[0.67, 0.45, 0.65]` by default); other options pass through to

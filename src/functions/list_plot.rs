@@ -892,7 +892,7 @@ fn data_units(data: &Expr) -> (Option<String>, Option<String>) {
   }
 }
 
-/// `AxesLabel -> Automatic` on quantity data: each axis labelled with the
+/// `AxesLabel -> Automatic` on quantity data: each axis labeled with the
 /// abbreviation of its unit (`QuantityForm[unit, "PlotLabel"]`).
 fn automatic_unit_axes_label(data: &Expr) -> Option<(String, String)> {
   let (x, y) = data_units(data);
@@ -1020,7 +1020,7 @@ fn parse_multiaxis(args: &[Expr], n: usize) -> Option<Vec<MultiAxis>> {
 /// Draw the series on the y axes of `MultiaxisArrangement`: every axis
 /// gets the automatic range of its own series, each series is mapped from
 /// its axis's range onto the first (left) one's, and the frame's left and
-/// right edges carry the ticks of their axis, coloured like its series.
+/// right edges carry the ticks of their axis, colored like its series.
 fn apply_multiaxis(
   args: &[Expr],
   err_series: &mut [Vec<ErrPoint>],
@@ -1110,7 +1110,7 @@ fn apply_multiaxis(
         style: None,
       }
     }));
-    // A shared axis is split evenly among its series' colours, the first
+    // A shared axis is split evenly among its series' colors, the first
     // at the top.
     let shares = axis.series.len() as f64;
     let segments: Vec<(f64, f64, crate::functions::graphics::Color)> = axis
@@ -1445,7 +1445,7 @@ struct ParsedOptions {
   plot_range_all: (bool, bool),
   /// `LabelingFunction -> None` (or `Tooltip`): no static point labels drawn.
   hide_point_labels: bool,
-  /// `LabelingFunction -> f`: every point labelled `f[{x, y}, {i, j}]` (its
+  /// `LabelingFunction -> f`: every point labeled `f[{x, y}, {i, j}]` (its
   /// coordinates, and its dataset's and its own index).
   labeling_function: Option<Expr>,
   /// `LabelingSize -> w`: a label wider than `w` points is left to a
@@ -1463,11 +1463,11 @@ struct ParsedOptions {
 
 thread_local! {
   /// Set while `DateListPlot` draws through the list-plot machinery: the
-  /// x values are AbsoluteTime seconds, labelled as dates.
+  /// x values are AbsoluteTime seconds, labeled as dates.
   static DATE_AXIS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Run `f` with the list plots it draws labelling their x axis with dates.
+/// Run `f` with the list plots it draws labeling their x axis with dates.
 pub(crate) fn with_date_axis<T>(f: impl FnOnce() -> T) -> T {
   struct Reset(bool);
   impl Drop for Reset {
@@ -1838,7 +1838,7 @@ enum StepPosition {
   Right,
   /// The step ends at its point.
   Left,
-  /// The step is centred on its point.
+  /// The step is centered on its point.
   Center,
 }
 
@@ -1858,7 +1858,7 @@ impl StepPosition {
 }
 
 /// The staircase `ListStepPlot` draws through one series: each value is
-/// held over its own x interval, delimited by the neighbouring points
+/// held over its own x interval, delimited by the neighboring points
 /// (`Right`: up to the next point, `Left`: from the previous one,
 /// `Center`: between the midpoints). The open end steps reuse the width
 /// of the adjacent gap (half of it for `Center`); a lone point gets a
@@ -2278,7 +2278,7 @@ fn list_plot_ranges(
 }
 
 /// Widen the automatic ranges so the point labels fit at their first-choice
-/// places, as WL makes room for them. `data` are the labelled points (the
+/// places, as WL makes room for them. `data` are the labeled points (the
 /// labels run parallel to them).
 fn widen_for_point_labels(
   opts: &PlotOptions,
@@ -2498,7 +2498,7 @@ fn render_panel_layout(
         idx,
       );
       // A panel shows its series' label (`PlotLabels` or a `Labeled`
-      // dataset) as a title centred inside its top edge, its baseline
+      // dataset) as a title centered inside its top edge, its baseline
       // 11.6 pt below the frame as in wolframscript, rather than at the
       // curve's end.
       if !opts.plot_labels.is_empty() {
@@ -2622,7 +2622,7 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
           } else {
             base[i % base.len()].clone()
           };
-          // An unstyled entry keeps the default palette colour of its slot.
+          // An unstyled entry keeps the default palette color of its slot.
           if style.color.is_none() {
             let (r, g, b) = crate::functions::plot::PLOT_COLORS
               [i % crate::functions::plot::PLOT_COLORS.len()];
@@ -2648,8 +2648,8 @@ fn apply_styled_datasets(data: &Expr, opts: &mut PlotOptions) {
 
 /// The points of a list plot's data written `Style[point, dirs…]` (`{1,
 /// Style[2, Red], 3}`, `Style[{x, y}, Hue[t]]`): per dataset, the parsed
-/// coordinates of each such point and the colour it is drawn in. The
-/// innermost `Style` wins, so a point's own colour beats its dataset's.
+/// coordinates of each such point and the color it is drawn in. The
+/// innermost `Style` wins, so a point's own color beats its dataset's.
 fn styled_point_colors(
   data: &Expr,
   series: &[Vec<(f64, f64)>],

@@ -246,7 +246,7 @@ fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
 
 /// `PlotLegends -> BarLegend[…]` on a plot gives `Legended[plot,
 /// Placed[BarLegend[…], After]]`, as in Wolfram: the plot is drawn without
-/// the option and the colour bar set beside it by `Legended`, so every plot
+/// the option and the color bar set beside it by `Legended`, so every plot
 /// shares the one `BarLegend` renderer.
 fn with_bar_legend(
   name: &str,
@@ -525,7 +525,7 @@ pub fn dispatch_plotting(
       new_args.push(reim_list);
       new_args.extend(args[1..].iter().cloned());
       // Wolfram draws each function's real and imaginary parts in the
-      // function's colour, the imaginary part dotted.
+      // function's color, the imaginary part dotted.
       let styled = args[2..].iter().any(|opt| {
         crate::functions::graphics::option_name_value(opt)
           .is_some_and(|(name, _)| name == "PlotStyle")
@@ -613,7 +613,7 @@ pub fn dispatch_plotting(
         crate::functions::field_plot::contour_plot_ast(&new_args)
       }))
     }
-    // AbsArgPlot[f, {x, xmin, xmax}, opts...] plots Abs[f] coloured by
+    // AbsArgPlot[f, {x, xmin, xmax}, opts...] plots Abs[f] colored by
     // Arg[f] on the cyclic "MidShiftBalancedHue" gradient (red where f is
     // positive, cyan where it is negative), as Wolfram does: it is Plot of
     // Abs[f] with that ColorFunction.
@@ -844,7 +844,7 @@ pub fn dispatch_plotting(
       // `ListLinePlot[list]` prints the message and leaves the
       // expression symbolic.
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
-        // A TimeSeries / TemporalData, an Association or labelled
+        // A TimeSeries / TemporalData, an Association or labeled
         // `data -> labels` is a valid (non-List) data source, and so is a display wrapper
         // (`Tooltip`, `Style`, ...) around any of those.
         Ok(evaluated)

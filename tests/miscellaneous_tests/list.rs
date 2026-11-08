@@ -1383,7 +1383,7 @@ mod list {
 
   #[test]
   fn inverse_permutation_cycles() {
-    // Basic two-cycle inversion: each cycle is reversed, then canonicalised
+    // Basic two-cycle inversion: each cycle is reversed, then canonicalized
     // so its smallest element comes first and cycles are sorted by their
     // smallest element.
     assert_eq!(
@@ -1578,7 +1578,7 @@ mod list {
 
   #[test]
   fn permutation_power_list() {
-    // List-form permutations (regression coverage for existing behaviour).
+    // List-form permutations (regression coverage for existing behavior).
     assert_eq!(
       interpret("PermutationPower[{2, 3, 1}, 3]").unwrap(),
       "{1, 2, 3}"
@@ -1995,9 +1995,9 @@ mod list {
   }
 
   #[test]
-  fn indexed_symbolic_normalises_to_list_index() {
+  fn indexed_symbolic_normalizes_to_list_index() {
     // A non-list argument cannot be indexed concretely, so the call
-    // stays symbolic — but the integer index is canonicalised into a
+    // stays symbolic — but the integer index is canonicalized into a
     // singleton list, matching wolframscript.
     assert_eq!(interpret("Indexed[x, 1]").unwrap(), "Indexed[x, {1}]");
   }
@@ -2284,7 +2284,7 @@ mod list {
       interpret("Dimensions[GaussianMatrix[{2, 1}]]").unwrap(),
       "{5, 5}"
     );
-    // Weights normalise to 1.
+    // Weights normalize to 1.
     assert_eq!(
       interpret("Round[Total[Flatten[GaussianMatrix[2]]]]").unwrap(),
       "1"
@@ -2389,7 +2389,7 @@ mod list {
   }
 
   #[test]
-  fn cycles_canonicalisation() {
+  fn cycles_canonicalization() {
     // Cycles drops length-1 cycles, rotates each cycle so the smallest
     // element comes first, and sorts cycles by that first element.
     assert_eq!(
@@ -2585,7 +2585,7 @@ mod list {
 
   #[test]
   fn stable_mean_type_zero_symbolic() {
-    // Type-0 parametrisation: Mean = mu - beta*sigma*Tan[Pi*alpha/2]
+    // Type-0 parameterization: Mean = mu - beta*sigma*Tan[Pi*alpha/2]
     // when 1 < alpha <= 2; otherwise Indeterminate.
     assert_eq!(
       interpret("Mean[StableDistribution[0, a, b, m, s]]").unwrap(),
@@ -2595,7 +2595,7 @@ mod list {
 
   #[test]
   fn stable_mean_type_one_symbolic() {
-    // Type-1 parametrisation: Mean = mu when 1 < alpha <= 2;
+    // Type-1 parameterization: Mean = mu when 1 < alpha <= 2;
     // otherwise Indeterminate.
     assert_eq!(
       interpret("Mean[StableDistribution[1, a, b, m, s]]").unwrap(),
@@ -2606,7 +2606,7 @@ mod list {
   #[test]
   fn stable_variance_symbolic() {
     // Variance is finite only for alpha == 2 (Gaussian limit) for both
-    // type-0 and type-1 parametrisations.
+    // type-0 and type-1 parameterizations.
     assert_eq!(
       interpret("Variance[StableDistribution[0, a, b, m, s]]").unwrap(),
       "Piecewise[{{2*s^2, a == 2}}, Indeterminate]"
@@ -3517,7 +3517,7 @@ mod list {
       interpret("SubsetReplace[{1, 2, 3, 4}, {a_, b_, c_} :> a]").unwrap(),
       "{1, 4}"
     );
-    // Conditions on the pattern are honoured.
+    // Conditions on the pattern are honored.
     assert_eq!(
       interpret(
         "SubsetReplace[{1, 2, 3, 4, 5, 6}, {a_, b_} /; a < b :> a + b]"

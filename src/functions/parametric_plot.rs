@@ -189,8 +189,8 @@ const MAX_REFINEMENT_DEPTH: usize = 6;
 type Sample = (f64, Option<Vec<(f64, f64)>>);
 
 /// Whether the middle of a sampled triple is far enough off the straight
-/// line between its neighbours that the interval needs more points. The
-/// measure is the deviation relative to the neighbours' separation, so it
+/// line between its neighbors that the interval needs more points. The
+/// measure is the deviation relative to the neighbors' separation, so it
 /// is independent of the coordinate scale.
 fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
   let (Some(ra), Some(rb), Some(rc)) = (&a.1, &b.1, &c.1) else {
@@ -268,7 +268,7 @@ where
       for (left, right) in [(&triple[0], &triple[1]), (&triple[1], &triple[2])]
       {
         let mid = f64::midpoint(left.0, right.0);
-        // Neighbouring triples share an interval, so the same midpoint
+        // Neighboring triples share an interval, so the same midpoint
         // comes up twice; skipping it saves evaluating the body again.
         if mid > left.0
           && mid < right.0
@@ -749,7 +749,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else {
     // A non-list body (e.g. `f[t]` or `BSplineFunction[…][t]`) is a curve
-    // whose coordinate pair only materialises once `t` is numeric; sample
+    // whose coordinate pair only materializes once `t` is numeric; sample
     // the whole expression instead of decomposing it into components.
     vec![CurveSrc::Whole(body)]
   };
@@ -865,7 +865,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `ColorFunction -> f` colors the curve along its length by `f[x, y, t]`:
   // draw it as runs of constant color, one series per run. A `Show` merge
-  // gets the coloured runs, since the parameter `f` needs is gone by then.
+  // gets the colored runs, since the parameter `f` needs is gone by then.
   let mut colored_runs: Option<(Vec<Vec<(f64, f64)>>, Vec<SeriesStyle>)> = None;
   let svg = if let Some(cf) = plot_opts.color_function.take() {
     let (runs, colors, owners) = color_function_series(
@@ -907,7 +907,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
   // with other graphics (re-rendering the curves as Line primitives). The
-  // style goes with them: a curve merged by `Show` keeps the colour and
+  // style goes with them: a curve merged by `Show` keeps the color and
   // weight `PlotStyle` gave it, as it does when drawn on its own.
   let mut options = source_options(args);
   let (points, styles) = match &colored_runs {
@@ -964,7 +964,7 @@ fn evaluate_at_uv(
 
 /// `ParametricPlot[{fx, fy}, {u, umin, umax}, {v, vmin, vmax}]` — the image
 /// of the parameter rectangle, drawn the way Wolfram draws it: the quads of
-/// the sampled grid filled at 30% opacity in the plot colour, with the image
+/// the sampled grid filled at 30% opacity in the plot color, with the image
 /// of the rectangle's boundary stroked on top.
 ///
 /// The picture is assembled as a `Graphics[…]` of primitives rather than
@@ -1035,7 +1035,7 @@ fn parametric_region_ast(
     _ => body,
   };
   // `{{fx1, fy1}, {fx2, fy2}, …}` is several regions drawn in one plot, each
-  // in the next colour of the cycle.
+  // in the next color of the cycle.
   // A one-element list `{{fx, fy}}` is a single region.
   let bodies: Vec<&Expr> = match body {
     Expr::List(items)
@@ -1078,13 +1078,13 @@ fn parametric_region_ast(
 
 /// `Mesh -> {m, n}`, `MeshStyle` and `MeshShading` of a two-parameter
 /// `ParametricPlot`: how many mesh lines cut each parameter range, how they
-/// are drawn, and the colours of the cells between them.
+/// are drawn, and the colors of the cells between them.
 struct RegionMesh {
   lines_u: usize,
   lines_v: usize,
   style_u: Expr,
   style_v: Expr,
-  /// `MeshShading` colours, rows following `u` and columns `v`.
+  /// `MeshShading` colors, rows following `u` and columns `v`.
   shading: Vec<Vec<Option<Expr>>>,
 }
 
@@ -1128,7 +1128,7 @@ fn region_mesh_spec(opt_args: &[Expr]) -> Option<RegionMesh> {
       vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)],
     ))
   };
-  // A list of rows is a 2D array of colours; a flat list of colours is a
+  // A list of rows is a 2D array of colors; a flat list of colors is a
   // single row.
   let shading: Vec<Vec<Option<Expr>>> = match option("MeshShading").as_ref() {
     Some(Expr::List(rows))
@@ -1207,7 +1207,7 @@ fn parametric_region_allows(
 
 /// Emit the quad with `corners` (images of the parameter cell starting at
 /// `origin` with size `step`, in the order `(0,0) (1,0) (1,1) (0,1)`), first
-/// splitting it into four while the image of its centre or an edge midpoint
+/// splitting it into four while the image of its center or an edge midpoint
 /// strays more than `tolerance` from the bilinear interpolation of the
 /// corners and `depth` allows.
 fn refine_region_cell(
@@ -1250,12 +1250,12 @@ fn refine_region_cell(
       }
     }
     if bent && !holed {
-      let [bottom, right, top, left, centre] = images;
+      let [bottom, right, top, left, center] = images;
       let sub = [
-        ([corners[0], bottom, centre, left], (u0, v0)),
-        ([bottom, corners[1], right, centre], (u0 + hu, v0)),
-        ([centre, right, corners[2], top], (u0 + hu, v0 + hv)),
-        ([left, centre, top, corners[3]], (u0, v0 + hv)),
+        ([corners[0], bottom, center, left], (u0, v0)),
+        ([bottom, corners[1], right, center], (u0 + hu, v0)),
+        ([center, right, corners[2], top], (u0 + hu, v0 + hv)),
+        ([left, center, top, corners[3]], (u0, v0 + hv)),
       ];
       for (quad, o) in sub {
         refine_region_cell(
@@ -1276,7 +1276,7 @@ fn refine_region_cell(
 
 /// The primitives (filled quads plus stroked boundary) of one region body.
 /// One filled cell of a two-parameter `ParametricPlot`, with the image
-/// (`xy`) and parameter (`uv`) coordinates of its centre for `ColorFunction`.
+/// (`xy`) and parameter (`uv`) coordinates of its center for `ColorFunction`.
 struct RegionQuad {
   polygon: Expr,
   xy: (f64, f64),
@@ -1432,7 +1432,7 @@ fn parametric_region_layer(
       quads
     };
   let mesh = region_mesh_spec(opt_args);
-  // The faces take the `PlotStyle` colour, the palette's by default.
+  // The faces take the `PlotStyle` color, the palette's by default.
   let face_rgb = plot_opts
     .plot_style
     .get(layer)
@@ -1447,7 +1447,7 @@ fn parametric_region_layer(
   let mut mesh_lines: Vec<Expr> = Vec::new();
   if let Some(mesh) = &mesh {
     // Every cell between consecutive mesh lines is filled on its own, in the
-    // colour `MeshShading` assigns it (cycling through the array), and the
+    // color `MeshShading` assigns it (cycling through the array), and the
     // mesh lines themselves are the images of the iso-`u` / iso-`v` lines.
     let (cells_u, cells_v) = (mesh.lines_u + 1, mesh.lines_v + 1);
     let cell_grid = (grid / cells_u.max(cells_v)).max(4);
@@ -1568,7 +1568,7 @@ fn parametric_region_layer(
     mesh_cells
   } else if let Some(cf) = &plot_opts.color_function {
     // `ColorFunction -> f` paints every cell in the (opaque) color `f`
-    // gives at the cell's centre; cells of one color share a group.
+    // gives at the cell's center; cells of one color share a group.
     let scale = |v: f64, lo: f64, hi: f64| {
       if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
     };
@@ -1635,7 +1635,7 @@ fn parametric_region_layer(
     vec![Expr::List(face_group.into())]
   };
   items.append(&mut mesh_lines);
-  // The outline is always drawn thin in the palette colour, whatever
+  // The outline is always drawn thin in the palette color, whatever
   // `PlotStyle` makes of the faces, as in Wolfram.
   if border.len() > 1 {
     let (r, g, b) = crate::functions::plot::PLOT_COLORS_RGB
@@ -1717,7 +1717,7 @@ impl PolarAxesSpec {
   /// ticks every π/36) pointing outwards; the grid has a spoke every π/12
   /// and a circle at every radial tick inside the axis; and the radial
   /// axis runs up from the origin with ticks every major and fifth of a
-  /// major on its right, labelled at the majors.
+  /// major on its right, labeled at the majors.
   fn prolog(&self, r_max: f64) -> (Vec<Expr>, f64) {
     use crate::functions::plot_axes::{AxisScale, AxisTicks};
     use std::f64::consts::PI;
@@ -1928,7 +1928,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
   // with other graphics (re-rendering the curves as Line primitives). The
-  // style goes with them: a curve merged by `Show` keeps the colour and
+  // style goes with them: a curve merged by `Show` keeps the color and
   // weight `PlotStyle` gave it, as it does when drawn on its own.
   let source = build_plot_source(
     &all_points,

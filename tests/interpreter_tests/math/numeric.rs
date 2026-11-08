@@ -1735,7 +1735,7 @@ mod cases {
 
   /// `N` leaves an exact rational exponent alone: `N[x^2]` is `x^2`, not
   /// `x^2.`. Numericizing the exponent stops `Solve`/`NSolve` from
-  /// recognising `N[poly]` as a polynomial at all.
+  /// recognizing `N[poly]` as a polynomial at all.
   #[test]
   fn n_keeps_exact_integer_exponents() {
     assert_eq!(interpret("N[x^2]").unwrap(), "x^2");
@@ -2396,8 +2396,8 @@ mod reciprocal_trig_last_bit {
 mod exact_roots {
   use super::*;
 
-  /// `CubeRoot` and `Surd` numericised anything their exactness test did not
-  /// recognise as an integer or a rational, so a symbolic constant or a
+  /// `CubeRoot` and `Surd` numericized anything their exactness test did not
+  /// recognize as an integer or a rational, so a symbolic constant or a
   /// rational came back as a machine real. Only machine-precision input
   /// licenses a numeric answer. Found by the differential fuzzer on
   /// `CubeRoot[E]`.
@@ -2493,10 +2493,10 @@ mod exact_roots {
   }
 
   /// The inexact cases go through `Power` like the exact ones, so they share
-  /// its `Surd::noneg`/`Power::infy` behaviour instead of silently returning
+  /// its `Surd::noneg`/`Power::infy` behavior instead of silently returning
   /// an unevaluated call or a real `Infinity`.
   #[test]
-  fn inexact_bases_share_the_exact_error_behaviour() {
+  fn inexact_bases_share_the_exact_error_behavior() {
     assert_eq!(interpret("Surd[-8., 2]").unwrap(), "Indeterminate");
     assert_eq!(interpret("Surd[-8., -2]").unwrap(), "Indeterminate");
     assert_eq!(interpret("Surd[0., -3]").unwrap(), "ComplexInfinity");

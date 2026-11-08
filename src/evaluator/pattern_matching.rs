@@ -1155,7 +1155,7 @@ fn try_ast_pattern_replace_single(
 }
 
 /// Instantiate a rule's right-hand side once its pattern has matched:
-/// substitute the bindings, evaluate, and honour a `/;` guard on the
+/// substitute the bindings, evaluate, and honor a `/;` guard on the
 /// replacement. `x_ :> body /; test` only applies when `test` comes out
 /// True with the bindings in place; otherwise the rule is passed over as if
 /// it had not matched (`None`). The guard may also sit inside the scoping
@@ -3949,7 +3949,7 @@ struct SeqInfo {
   greedy: bool,
 }
 
-/// Recognise `OptionsPattern[]` / `OptionsPattern[{a -> v1, …}]` and return
+/// Recognize `OptionsPattern[]` / `OptionsPattern[{a -> v1, …}]` and return
 /// the optional default-rule list. Returns `None` when the pattern isn't an
 /// OptionsPattern.
 fn match_options_pattern(pat: &Expr) -> Option<Vec<Expr>> {
@@ -4379,7 +4379,7 @@ fn match_sequence_window(
 /// b___}` picks the longest run of integers anywhere in the list, rather than
 /// the longest run that happens to start where a left-to-right `a___` stopped.
 /// So when such a pattern sits behind another sequence pattern it has to drive
-/// the search instead of being driven by its neighbours.
+/// the search instead of being driven by its neighbors.
 fn ordering_sequence_index(pat_args: &[Expr]) -> Option<usize> {
   let idx = pat_args.iter().position(|p| {
     matches!(p, Expr::FunctionCall { name, args }
@@ -5958,7 +5958,7 @@ fn match_pattern_impl(
       {
         let expr_args = expr_args.as_slice();
         // Build a proper Pattern node from the head string so any head
-        // constraint (e.g. `b_Integer`) is honoured, not just the name.
+        // constraint (e.g. `b_Integer`) is honored, not just the name.
         let (hp_name, hp_head, hp_blank) =
           crate::evaluator::assignment::extract_pattern_info(
             &Expr::Identifier(pat_name.clone()),

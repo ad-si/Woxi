@@ -111,7 +111,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// A machine's rule: a Wolfram rule number decoded into a transition table,
 /// or an explicit list of `{state, color} -> {state', color', offset}` rules
-/// (patterns allowed, states and colours any expressions).
+/// (patterns allowed, states and colors any expressions).
 enum MachineRule {
   Numbered {
     rule_num: u64,
@@ -225,7 +225,7 @@ fn parse_rule_spec(
 ) -> Result<(u64, usize, usize), InterpreterError> {
   match expr {
     Expr::Integer(n) => Ok((*n as u64, 2, 2)),
-    // `{n, s}`: two colours.
+    // `{n, s}`: two colors.
     Expr::List(items) if items.len() == 2 => {
       let (Expr::Integer(n), Expr::Integer(s)) = (&items[0], &items[1]) else {
         return Err(InterpreterError::EvaluationError(
@@ -356,7 +356,7 @@ fn decode_rule(
 
 /// The background of an `{state, {cells, background}}` initial condition, or
 /// `None` when the tape is an ordinary finite (cyclic) list. The background is
-/// a single colour or a non-empty list of colours repeated periodically.
+/// a single color or a non-empty list of colors repeated periodically.
 fn infinite_tape_background(init: &Expr) -> Option<Expr> {
   let Expr::List(items) = init else { return None };
   if items.len() != 2 {
@@ -365,15 +365,15 @@ fn infinite_tape_background(init: &Expr) -> Option<Expr> {
   let Expr::List(tape) = &items[1] else {
     return None;
   };
-  // `{cells, background}`: a list of cells followed by a single colour.
+  // `{cells, background}`: a list of cells followed by a single color.
   (tape.len() == 2
     && matches!(&tape[0], Expr::List(_))
     && background_pattern(&tape[1]).is_some())
   .then(|| tape[1].clone())
 }
 
-/// The colours of a background spec: one colour, or a non-empty list of
-/// colours that repeats periodically in both directions.
+/// The colors of a background spec: one color, or a non-empty list of
+/// colors that repeats periodically in both directions.
 fn background_pattern(bg: &Expr) -> Option<Vec<Expr>> {
   match bg {
     Expr::List(items) if !items.is_empty() => Some(items.to_vec()),
@@ -410,9 +410,9 @@ fn turing_machine_infinite(args: &[Expr]) -> Result<Expr, InterpreterError> {
   rule.warn_initial_state(&args[1], &state);
   let displacement = head_displacement(&args[1]);
 
-  // Content index of the cell at offset 0, and the initial colour anywhere:
+  // Content index of the cell at offset 0, and the initial color anywhere:
   // the background is aligned so the content's first cell holds the
-  // pattern's first colour.
+  // pattern's first color.
   let origin = start_pos - 1;
   let initial = |x: i64| -> Expr {
     let i = x + origin;

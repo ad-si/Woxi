@@ -2253,7 +2253,7 @@ mod parts_of_held_expressions {
   }
 }
 
-// The reported attributes of the built-ins, and the behaviour that follows from
+// The reported attributes of the built-ins, and the behavior that follows from
 // them.
 mod builtin_attribute_table {
   use super::*;
@@ -2458,7 +2458,7 @@ mod default_protection {
 
   #[test]
   fn assert_matches_wolframscript() {
-    // Assert is HoldAllComplete and unprotected, unlike the neighbouring
+    // Assert is HoldAllComplete and unprotected, unlike the neighboring
     // HoldAll builtins it used to be grouped with.
     assert_eq!(
       interpret("Attributes[Assert]").unwrap(),

@@ -1,5 +1,5 @@
 //! `ScalingFunctions` and the log plots, checked against wolframscript
-//! (WL 15): scaled axes are drawn in scaled coordinates and labelled with
+//! (WL 15): scaled axes are drawn in scaled coordinates and labeled with
 //! the ticks of `Charting`ScaledTicks`.
 use super::*;
 
@@ -20,7 +20,7 @@ fn y_labels(svg: &str) -> Vec<(f64, String)> {
     .collect()
 }
 
-/// The `(x, text)` of every centred (x axis) tick label.
+/// The `(x, text)` of every centered (x axis) tick label.
 fn x_labels(svg: &str) -> Vec<(f64, String)> {
   svg
     .lines()
@@ -91,7 +91,7 @@ fn log_axis_is_crossed_at_its_low_end() {
   // (about 0.25), not through 1.
   let s = svg("Plot[Abs[Gamma[z]], {z, -4, 8}, ScalingFunctions -> \"Log\"]");
   let y = y_labels(&s);
-  let one = y.iter().find(|(_, t)| t == "1").expect("1 is labelled").0;
+  let one = y.iter().find(|(_, t)| t == "1").expect("1 is labeled").0;
   // The x labels hang below the axis.
   let axis_y = s
     .lines()
