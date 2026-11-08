@@ -8883,12 +8883,12 @@ uses `x + y + z` so it exercises actual gradients without depending on
 Wolfram's random perturbations of the slice positions. Exact zero slices
 remain exact in Woxi.
 
-The headless Wolfram Engine initially exported the front-end-only
-``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]`` boxes for finite
+The headless Wolfram Engine initially exported the front-end-only boxes
+containing ``FE`Evaluate[FEPrivate`TruncateStringToWidth[…]]`` for finite
 `LabelingSize` instead of the graph. This reference-generation problem was
-resolved in the graphics comparison harness: within `UsingFrontEnd`, a scoped
-``FE`Evaluate`` definition sends the truncation operation to
-``MathLink`CallFrontEnd[FrontEnd`Value[...]]`` before SVG export. The original
+resolved in the graphics comparison harness: within `UsingFrontEnd`,
+a scoped ``FE`Evaluate`` definition sends the truncation operation
+to ``MathLink`CallFrontEnd[FrontEnd`Value[...]]`` before SVG export. The original
 `LabelingSize -> 30` example now exports a 190 pt high graphic without internal
 code. Woxi renders the truncated labels, keeping short labels intact.
 
@@ -9151,16 +9151,16 @@ containing only isolated squares.
 
 ### N of constants prints different guard digits
 
-In the same run, `N[E, 22]` prints
-``2.71828182845904523536028747135266249776`22.`` in Woxi and
-``2.71828182845904523536028746877783245151`22.`` in Wolfram.
+In the same run, `N[E, 22]` prints these values:
+Woxi prints ``2.71828182845904523536028747135266249776`22.`` and
+Wolfram prints ``2.71828182845904523536028746877783245151`22.``.
 The requested 22 digits agree; the extra displayed working digits do not.
 This remains a byte-for-byte output gap, separate from the small-rational
 binary-grid rounding cases documented above.
 
-Diff-fuzz seed 1794003161694997000 also found `N[Pi, 23]`: Woxi prints
-``3.1415926535897932384626433832795028842`23.`` and Wolfram prints
-``3.14159265358979323846264338327950288582`23.``. Again the requested
+Diff-fuzz seed 1794003161694997000 also found `N[Pi, 23]`:
+Woxi prints ``3.1415926535897932384626433832795028842`23.`` and
+Wolfram prints ``3.14159265358979323846264338327950288582`23.``. Again the requested
 digits agree, but the extra guard digits differ (verified 2026-11-06).
 
 Seed 1794032979590698000 also found `N[E,19]`: the requested digits
@@ -9168,8 +9168,8 @@ agree, while Wolfram's printed extra digits begin `...235319747...`
 and Woxi's begin `...235360287...`. This is the same guard-digit issue.
 
 The minimized case exposes a separate precision-boundary gap: `N[Pi, 0]`
-emits `N::precbd` and remains unevaluated in Woxi; Wolfram returns
-```0``-0.49714987269413446```. Negative requested precision emits
+emits `N::precbd` and remains unevaluated in Woxi;
+Wolfram returns ```0``-0.49714987269413446```. Negative requested precision emits
 `N::precsm` in Wolfram and uses zero precision. Positive fractional
 precisions below one are now accepted in Woxi; zero-precision accuracy
 tracking remains unimplemented.
