@@ -18274,9 +18274,9 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         extent = discrete_extent(&evaluate_expr_to_expr(replacement)?);
       }
       Expr::Identifier(n) if n == "Filling" => {
-        filling = match replacement {
-          Expr::Identifier(v) if v == "None" || v == "False" => None,
-          other => Some(other.clone()),
+        filling = match evaluate_expr_to_expr(replacement)? {
+          Expr::Identifier(ref v) if v == "None" || v == "False" => None,
+          other => Some(other),
         };
       }
       Expr::Identifier(n) if n == "PlotStyle" => {
@@ -18389,8 +18389,15 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (k, pts) in datasets.iter().enumerate() {
       let mut group = vec![colors[k].clone()];
       group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
-      let bottom = base.unwrap_or(0.0);
+      let Some(bottom) = base else {
+        continue;
+      };
       for &(x, y, z) in pts {
+        // Wolfram omits zero-valued bars at a zero filling level, but
+        // retains degenerate bars at nonzero filling levels.
+        if z == 0.0 && bottom == 0.0 {
+          continue;
+        }
         group.push(call(
           "Cuboid",
           vec![triple(x - xl, y - yl, z), triple(x + xr, y + yr, bottom)],

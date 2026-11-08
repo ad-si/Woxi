@@ -460,6 +460,52 @@ mod discrete_plot_3d_forms {
   }
 
   #[test]
+  fn bars_omit_zero_values_only_at_zero_filling_level() {
+    assert_eq!(
+      interpret(
+        "Count[DiscretePlot3D[i + j, {i, 0, 2}, {j, 0, 2}, \
+         ExtentSize -> Full], _Cuboid, Infinity]"
+      )
+      .unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Count[DiscretePlot3D[i + j, {i, -1, 1}, {j, -1, 1}, \
+         ExtentSize -> Full, Filling -> f], _Cuboid, Infinity], \
+         {f, {Axis, Bottom, Top, 1, 0, None}}]"
+      )
+      .unwrap(),
+      "{6, 9, 9, 9, 6, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Count[DiscretePlot3D[i + j, {i, 0, 2}, {j, 0, 2}, \
+         ExtentSize -> Full, Filling -> f], _Cuboid, Infinity], \
+         {f, {Axis, Bottom, Top, 0, 1, None}}]"
+      )
+      .unwrap(),
+      "{8, 8, 9, 8, 9, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Count[DiscretePlot3D[i - j, {i, -1, 1}, {j, -1, 1}, \
+         ExtentSize -> e], _Cuboid, Infinity], {e, {Full, Right, 1/2}}]"
+      )
+      .unwrap(),
+      "{6, 6, 6}"
+    );
+    assert_eq!(
+      interpret(
+        "Count[DiscretePlot3D[{i + j, i - j}, {i, -1, 1}, {j, -1, 1}, \
+         ExtentSize -> Full], _Cuboid, Infinity]"
+      )
+      .unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
   fn numeric_extent_size_uses_plot_units() {
     assert_eq!(
       interpret(
