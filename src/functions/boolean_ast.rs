@@ -202,9 +202,7 @@ fn negate_comparison_op(op: ComparisonOp) -> Option<ComparisonOp> {
 /// drop `False`, count `True` parity, cancel syntactically-identical operand
 /// pairs (a ⊻ a = False), and return the surviving operands in canonical
 /// order together with whether an odd number of `True` operands remained.
-fn reduce_xor_operands(
-  args: &[Expr],
-) -> Result<(Vec<Expr>, bool), InterpreterError> {
+fn reduce_xor_operands(args: &[Expr]) -> (Vec<Expr>, bool) {
   let mut true_count = 0;
   let mut remaining: Vec<Expr> = Vec::new();
   for arg in args {
@@ -230,7 +228,26 @@ fn reduce_xor_operands(
   // wolframscript reports the surviving operands in canonical order
   // (Xor[b, a] -> Xor[a, b]).
   remaining.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
-  Ok((remaining, true_count % 2 == 1))
+  (remaining, true_count % 2 == 1)
+}
+
+#[cfg(test)]
+mod xor_reduction_tests {
+  use super::*;
+
+  #[test]
+  fn duplicate_cancellation_preserves_true_parity() {
+    for true_count in 0..6 {
+      for copies in 0..6 {
+        let mut args = vec![Expr::Identifier("a".into()); copies];
+        args.extend(vec![bool_expr(true); true_count]);
+        args.push(bool_expr(false));
+        let (remaining, odd) = reduce_xor_operands(&args);
+        assert_eq!(remaining.len(), copies % 2);
+        assert_eq!(odd, true_count % 2 == 1);
+      }
+    }
+  }
 }
 
 pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -243,7 +260,7 @@ pub fn xor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(args[0].clone());
   }
 
-  let (remaining, odd_true) = reduce_xor_operands(args)?;
+  let (remaining, odd_true) = reduce_xor_operands(args);
 
   if remaining.is_empty() {
     return Ok(bool_expr(odd_true));
@@ -267,7 +284,7 @@ pub fn xnor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Xnor is the negation of Xor: reduce the operands the same way, then wrap
   // them in the Xnor head and apply the extra outer negation.
-  let (remaining, odd_true) = reduce_xor_operands(args)?;
+  let (remaining, odd_true) = reduce_xor_operands(args);
 
   // No surviving operands: Xnor[] of an even True count is True, odd is False.
   if remaining.is_empty() {

@@ -2695,7 +2695,7 @@ mod null_space {
       );
     }
     assert_eq!(interpret("NullSpace[m]").unwrap(), "NullSpace[m]");
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
     assert_eq!(interpret("NullSpace[{{}}]").unwrap(), "{}");
   }
 

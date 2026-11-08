@@ -8428,6 +8428,8 @@ pub(crate) enum BarLabelPlacement {
 
 /// Generate SVG for a bar chart using plotters.
 /// The appearance options of a vertical `BarChart`.
+// These flags mirror independent Wolfram options, not mutually exclusive states.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct BarChartLook {
   /// `Axes -> False` hides the axis lines.
   pub axes: bool,

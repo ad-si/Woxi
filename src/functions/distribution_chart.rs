@@ -519,7 +519,9 @@ mod review_density_tests {
       let Expr::List(colors) = replacement.as_ref() else {
         panic!()
       };
-      for pair in colors.chunks_exact(2) {
+      let (pairs, remainder) = colors.as_chunks::<2>();
+      assert_eq!(remainder.len(), 0);
+      for pair in pairs {
         assert_eq!(fill_rgb(&pair[0]), fill_rgb(&pair[1]));
       }
       let blue = |i| fill_rgb(&colors[i]).unwrap().2;

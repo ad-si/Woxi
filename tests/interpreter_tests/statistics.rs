@@ -11,7 +11,7 @@ fn standardized_moments_handle_degenerate_data_without_arithmetic_messages() {
     }
     let empty = interpret_with_stdout(&format!("{head}[{{}}]")).unwrap();
     assert_eq!(empty.result, format!("{head}[{{}}]"));
-    assert!(empty.warnings.is_empty());
+    assert_eq!(empty.warnings, Vec::<String>::new());
     for data in ["{2}", "{{1, 2}}", "{{}, {}}"] {
       let code = format!("{head}[{data}]");
       let result = interpret_with_stdout(&code).unwrap();
@@ -33,7 +33,7 @@ fn standardized_moments_handle_degenerate_data_without_arithmetic_messages() {
         "{Indeterminate, 1}"
       }
     );
-    assert!(matrix.warnings.is_empty());
+    assert_eq!(matrix.warnings, Vec::<String>::new());
   }
 }
 

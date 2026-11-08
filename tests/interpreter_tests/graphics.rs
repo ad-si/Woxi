@@ -50697,7 +50697,7 @@ mod graphics_review_regressions {
         l.contains("<polyline") && l.contains("stroke=\"rgb(102,102,102)\"")
       })
       .collect();
-    assert!(!category_lines.is_empty());
+    assert_ne!(category_lines.len(), 0);
     assert!(
       category_lines
         .iter()

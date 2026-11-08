@@ -2275,8 +2275,7 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && a > 0
     && b > 0
     && c > 0
-    && ((c - a <= 0 || c - b <= 0)
-      || ((c - a == 1 || c - b == 1) && c - a > 0 && c - b > 0))
+    && (c - a <= 1 || c - b <= 1)
   {
     let new_a = c - a;
     let new_b = c - b;

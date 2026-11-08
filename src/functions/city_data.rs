@@ -159,7 +159,12 @@ mod tests {
     assert!(!CITIES.is_empty());
     for city in CITIES.iter() {
       assert!(aliases.insert(normalize(&city.name)));
-      assert!(!city.entities.is_empty());
+      assert_ne!(
+        city.entities.len(),
+        0,
+        "{} has no entity identifiers",
+        city.name
+      );
       assert!(
         city
           .entities

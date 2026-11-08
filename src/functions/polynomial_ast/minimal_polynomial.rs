@@ -1104,7 +1104,7 @@ fn poly_matrix_determinant(matrix: &[Vec<Vec<i128>>]) -> Option<Vec<i128>> {
         .collect()
     })
     .collect();
-  let det = poly_matrix_determinant_big(&big)?;
+  let det = poly_matrix_determinant_big(&big);
   // Strip the content before narrowing: the resultant carries a large common
   // factor that `make_primitive_monic` would divide out anyway, and dropping
   // it here is often what makes the coefficients fit at all.
@@ -1125,15 +1125,13 @@ fn poly_matrix_determinant(matrix: &[Vec<Vec<i128>>]) -> Option<Vec<i128>> {
 /// fraction-free (Bareiss) elimination, and the polynomial is interpolated
 /// back through those points: `deg + 1` cubic-time integer determinants
 /// instead of a factorial number of polynomial ones.
-fn poly_matrix_determinant_big(
-  matrix: &[Vec<Vec<BigInt>>],
-) -> Option<Vec<BigInt>> {
+fn poly_matrix_determinant_big(matrix: &[Vec<Vec<BigInt>>]) -> Vec<BigInt> {
   let n = matrix.len();
   if n == 0 {
-    return Some(vec![BigInt::from(1)]);
+    return vec![BigInt::from(1)];
   }
   if n == 1 {
-    return Some(matrix[0][0].clone());
+    return matrix[0][0].clone();
   }
   // Every term of the permutation expansion takes one entry per row, so the
   // determinant's degree is at most the sum of the per-row maxima.
@@ -1151,7 +1149,7 @@ fn poly_matrix_determinant_big(
       integer_matrix_determinant_big(evaluated)
     })
     .collect();
-  Some(interpolate_at_integers_big(&samples))
+  interpolate_at_integers_big(&samples)
 }
 
 /// Index of the highest non-zero coefficient (`0` for the zero polynomial).
@@ -3405,6 +3403,18 @@ pub fn expand_algebraic_numbers(e: &Expr) -> Option<Expr> {
 #[cfg(test)]
 mod eval_poly_rational_tests {
   use super::*;
+
+  #[test]
+  fn polynomial_determinant_handles_empty_scalar_and_singular_matrices() {
+    assert_eq!(poly_matrix_determinant_big(&[]), vec![BigInt::from(1)]);
+    for constant in -3..=3 {
+      let p = vec![BigInt::from(constant), BigInt::from(1)];
+      assert_eq!(poly_matrix_determinant_big(&[vec![p.clone()]]), p);
+      let row = vec![p.clone(), p];
+      let det = poly_matrix_determinant_big(&[row.clone(), row]);
+      assert!(det.iter().all(|c| *c == BigInt::from(0)));
+    }
+  }
 
   // A high-degree candidate root no longer overflows i128.
   #[test]
