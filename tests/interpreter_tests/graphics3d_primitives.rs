@@ -534,13 +534,17 @@ mod plot3d_options {
     );
     let colours = fills(&s);
     let reddish = colours.iter().any(|c| {
-      let v: Vec<u8> =
-        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      let v: Vec<u8> = c
+        .split(',')
+        .map(|x| x.trim().parse::<u8>().unwrap())
+        .collect();
       v[0] > 150 && v[1] < 60
     });
     let yellowish = colours.iter().any(|c| {
-      let v: Vec<u8> =
-        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      let v: Vec<u8> = c
+        .split(',')
+        .map(|x| x.trim().parse::<u8>().unwrap())
+        .collect();
       v[0] > 150 && v[1] > 150 && v[2] < 60
     });
     assert!(reddish && yellowish, "{colours:?}");
@@ -652,8 +656,10 @@ mod level_surfaces {
     // Blue appears only among several levels.
     let bluish = |set: &std::collections::BTreeSet<String>| {
       set.iter().any(|c| {
-        let v: Vec<u8> =
-          c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+        let v: Vec<u8> = c
+          .split(',')
+          .map(|x| x.trim().parse::<u8>().unwrap())
+          .collect();
         u16::from(v[2]) > u16::from(v[0]) + 40
       })
     };
