@@ -2,6 +2,9 @@
 
 # Unreleased
 
+- Fixed Python and WebAssembly builds of the bundled `CityData` loader by
+    declaring its Serde dependency and derive support independently of CLI
+    features. CI now checks both library build configurations.
 - The JupyterLite kernel extension now targets JupyterLite 0.8. It was built
     against the 0.5 plugin API (`@jupyterlite/server`), which current
     JupyterLite releases no longer provide.

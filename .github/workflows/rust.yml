@@ -10,6 +10,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Compile the library without CLI feature unification. This catches
+  # dependencies accidentally supplied only by the CLI or test harness.
+  library:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, wasm32-unknown-unknown]
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ matrix.target }}
+    - uses: Swatinem/rust-cache@v2
+    - name: Check library feature isolation
+      env:
+        TARGET: ${{ matrix.target }}
+      run: |
+        if [ "$TARGET" = wasm32-unknown-unknown ]; then
+          cargo check --locked --lib --no-default-features --features wasm --target "$TARGET"
+        else
+          cargo check --locked --lib --no-default-features --target "$TARGET"
+        fi
+
   # Formatting and lint gates — mirror `make format-check` / `make lint`,
   # i.e. the two halves of `make format`. Fails the build when a workspace
   # crate is unformatted or clippy reports any warning.

@@ -252,6 +252,9 @@ rand = "0.10"
 runtimelib = { version = "3.0", features = ["tokio-runtime"], optional = true }
 rustyline = { version = "19", optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"] }
+# CityData deserializes bundled JSON in every build, including Python and
+# WASM. Do not rely on CLI dependencies to enable Serde's derive macros.
+serde = { version = "1", features = ["alloc", "derive"] }
 snailquote = "0.3.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"], optional = true }
@@ -328,7 +331,6 @@ chrono-tz = "0.10"
 aho-corasick = "1"
 bitflags = { version = "2", features = ["std"] }
 either = { version = "1", features = ["use_std"] }
-serde = { version = "1", features = ["alloc"] }
 
 [dev-dependencies]
 base64 = "0.23"
