@@ -9,6 +9,7 @@ mod miscellaneous_tests {
   mod list;
   mod parser;
   mod precision_display;
+  mod release_versions;
   mod svg_rendering;
   mod wikidata;
 }

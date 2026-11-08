@@ -541,12 +541,12 @@ clean:
 
 .PHONY: release
 release:
-	@echo '1. `cai changelog <first-commit-hash>`'
-	@echo '2. `git add ./changelog.md && git commit -m "Update changelog"`'
-	@echo '3. `cargo release major / minor / patch`'
+	@echo '1. Prepare versions and release notes using docs/releasing.md.'
+	@echo '2. Run the release checks there, review the diff, and commit on main.'
+	@echo '3. Publish dependency crates before woxi; push the version tag (starts PyPI).'
 	@echo '4. Create a new GitHub release at https://github.com/ad-si/Woxi/releases/new'
 	@echo '5. Wait for the "Release" workflow to attach the Woxi and' \
-		'Woxi Studio binaries (publishing the release triggers it)'
+		'Woxi Studio binaries; verify PyPI, publish npm, and verify the website.'
 	@echo "6. Announce release on \n" \
 		"   - https://x.com \n" \
 		"   - https://bsky.app \n" \
