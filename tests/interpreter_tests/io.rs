@@ -6774,8 +6774,10 @@ mod file_names {
   // spelled out as "." prefixes every name with it.
   #[test]
   fn dot_directory_keeps_relative_paths() {
+    // Two levels reach src/lib.rs without traversing build artifacts or
+    // virtualenvs, whose size must not determine this regression's runtime.
     let result = interpret(
-      r#"MemberQ[FileNames["lib.rs", ".", Infinity], "./src/lib.rs" | ".\\src\\lib.rs"]"#,
+      r#"MemberQ[FileNames["lib.rs", ".", 2], "./src/lib.rs" | ".\\src\\lib.rs"]"#,
     )
     .unwrap();
     assert_eq!(result, "True");
