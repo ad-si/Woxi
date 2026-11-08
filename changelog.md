@@ -2,6 +2,23 @@
 
 # Unreleased
 
+# 2026-11-08 - 0.4.0
+
+## Highlights
+
+- Stronger symbolic algebra: complete multivariate factorization, improved
+    equation solving, and more faithful integer `Reduce` results.
+- Better notebook compatibility in Woxi Studio, including interactive
+    `Manipulate` controls, dynamic labels, and mathematical typesetting.
+- More faithful graphics: plot ranges, mesh shading, chart labels, 3D
+    primitives, and layouts now match more Wolfram Demonstrations.
+- Safer Python expression-tree conversion, with recursion limits instead of
+    crashes for deeply nested input.
+- Updated JupyterLite 0.8 integration and refreshed dependencies across the
+    Rust, Python, and browser distributions.
+
+## Detailed changes
+
 - Fixed Python and WebAssembly builds of the bundled `CityData` loader by
     declaring its Serde dependency and derive support independently of CLI
     features. CI now checks both library build configurations.
