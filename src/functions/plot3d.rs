@@ -18137,7 +18137,7 @@ fn discrete_extent(spec: &Expr) -> Option<([f64; 4], bool)> {
       let (yl, yr) = side(&axes[1])?;
       Some(([xl, xr, yl, yr], false))
     }
-    _ => None,
+    other => num(other).map(|s| ([s / 2.0; 4], false)),
   }
 }
 
@@ -18271,7 +18271,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     match pattern {
       Expr::Identifier(n) if n == "ExtentSize" => {
-        extent = discrete_extent(replacement);
+        extent = discrete_extent(&evaluate_expr_to_expr(replacement)?);
       }
       Expr::Identifier(n) if n == "Filling" => {
         filling = match replacement {

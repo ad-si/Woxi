@@ -460,6 +460,20 @@ mod discrete_plot_3d_forms {
   }
 
   #[test]
+  fn numeric_extent_size_uses_plot_units() {
+    assert_eq!(
+      interpret(
+        "Table[First[Cases[DiscretePlot3D[i, {i, 2, 4, 2}, {j, 1}, \
+         ExtentSize -> e], _Cuboid, Infinity]], {e, {1/2, 2, Scaled[1/2]}}]"
+      )
+      .unwrap(),
+      "{Cuboid[{1.75, 0.75, 2.}, {2.25, 1.25, 0.}], \
+       Cuboid[{1., 0., 2.}, {3., 2., 0.}], \
+       Cuboid[{1.5, 0.75, 2.}, {2.5, 1.25, 0.}]}"
+    );
+  }
+
+  #[test]
   fn style_wrappers_colour_their_function() {
     assert_eq!(
       interpret(
