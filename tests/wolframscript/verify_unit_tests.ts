@@ -819,6 +819,10 @@ const APPROX_MATCH = new Set([
 // neighbours in conformance_gaps.md — or where both engines iterate to a
 // root and stop in different places.
 const NEAR_MATCH = new Set([
+  // Guard-precision AGM rounds correctly; Wolfram's machine iteration is
+  // a few ulps away (documented in conformance_gaps.md).
+  "ArithmeticGeometricMean[1.8, 1.2]",
+  "ArithmeticGeometricMean[3.0, 7.0]",
   // Automatic plot-range arithmetic differs by a few ulps between the
   // two engines; preserve the whole structure and compare its numbers.
   "{PlotRange[ListPlot[Range[10]]], PlotRange[Plot[x, {x, 2, 10}]], PlotRange[ListLinePlot[{3, 5, 4}]]}",

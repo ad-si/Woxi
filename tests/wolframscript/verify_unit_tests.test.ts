@@ -79,6 +79,16 @@ test("uncompleted comparisons do not count as passes", () => {
   );
 });
 
+test("machine AGM comparisons retain structure and use numeric tolerance", () => {
+  for (const expr of ["ArithmeticGeometricMean[1.8, 1.2]", "ArithmeticGeometricMean[3.0, 7.0]"]) {
+    const script = buildWolframScript([{idx: 0, key: expr, expr: "x = 1; " + expr, woxiResult: "1."}]);
+    assert.ok(script.includes("!WX`NearQ[WX`ee$$, WX`rr$$]"));
+  }
+  const exact = "ArithmeticGeometricMean[1, 2]";
+  const script = buildWolframScript([{idx: 0, key: exact, expr: exact, woxiResult: exact}]);
+  assert.ok(script.includes("WX`rr$$ =!= WX`ee$$"));
+});
+
 test("MatrixPlot reference resolves the light palette in a scoped block", () => {
   const expr = "MatrixPlot[{{0, 0}}][[1, 1]]";
   const script = buildWolframScript([{idx: 0, key: expr, expr, woxiResult: "1"}]);
