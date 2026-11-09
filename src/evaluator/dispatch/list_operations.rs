@@ -6306,7 +6306,9 @@ pub fn dispatch_list_operations(
         match e {
           Expr::FunctionCall { name, args } if !args.is_empty() => {
             match name.as_str() {
-              "Dynamic" => args[0].clone(),
+              // A Dynamic inside a Dynamic settles too:
+              // Setting[Dynamic[f[Dynamic[a]]]] is f[a].
+              "Dynamic" => settle(&args[0]),
               "Slider" | "VerticalSlider" | "Slider2D" | "IntervalSlider"
               | "Checkbox" | "CheckboxBar" | "InputField" | "PopupMenu"
               | "ActionMenu" | "SetterBar" | "RadioButtonBar" | "Toggler"
