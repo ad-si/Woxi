@@ -3510,6 +3510,115 @@ pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(truth_table_to_expr(&table, &vars[..n]))
 }
 
+/// BooleanFunction[{{b1, …, bn} -> v, …}] — the Boolean function given by
+/// rules whose left sides are lists of 1/0/True/False or `_` (any value).
+/// The first rule matching an input decides its value. Inputs no rule
+/// covers are "don't care": a subcube of the inputs (read with the first
+/// variable outermost) whose specified values all agree takes that value,
+/// and a half with nothing specified copies its sibling, so the variable
+/// drops out — wolframscript's choice, e.g. `{{1, 1} -> 1, {0, 0} -> 0}`
+/// is the first variable and `{{1, _} -> 1}` is `True`.
+pub fn boolean_function_rules_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let bspec = || {
+    crate::emit_message(&format!(
+      "BooleanFunction::bspec: {} is not a valid BooleanFunction specification.",
+      crate::syntax::format_expr(
+        &unevaluated("BooleanFunction", args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    Ok(unevaluated("BooleanFunction", args))
+  };
+  let Expr::List(rules) = &args[0] else {
+    return bspec();
+  };
+  let bit = |e: &Expr| match e {
+    Expr::Integer(1) => Some(true),
+    Expr::Integer(0) => Some(false),
+    Expr::Identifier(s) if s == "True" => Some(true),
+    Expr::Identifier(s) if s == "False" => Some(false),
+    _ => None,
+  };
+  // Each rule as (per-variable constraint, value); `None` matches anything.
+  let mut parsed: Vec<(Vec<Option<bool>>, bool)> = Vec::new();
+  for r in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = r
+    else {
+      return bspec();
+    };
+    let (Expr::List(lhs), Some(value)) =
+      (pattern.as_ref(), bit(replacement.as_ref()))
+    else {
+      return bspec();
+    };
+    let mut constraint = Vec::with_capacity(lhs.len());
+    for e in lhs {
+      match e {
+        Expr::Pattern {
+          name,
+          head: None,
+          blank_type: 1,
+        } if name.is_empty() => constraint.push(None),
+        Expr::FunctionCall { name, args }
+          if name == "Blank" && args.is_empty() =>
+        {
+          constraint.push(None);
+        }
+        other => match bit(other) {
+          Some(b) => constraint.push(Some(b)),
+          None => return bspec(),
+        },
+      }
+    }
+    parsed.push((constraint, value));
+  }
+  let Some(n) = parsed.first().map(|(c, _)| c.len()) else {
+    return bspec();
+  };
+  if n == 0 || n > 24 || parsed.iter().any(|(c, _)| c.len() != n) {
+    return bspec();
+  }
+  // The specified truth table: entry i is the input whose variable j is
+  // bit n - 1 - j of i.
+  let spec: Vec<Option<bool>> = (0..(1usize << n))
+    .map(|i| {
+      parsed.iter().find_map(|(constraint, value)| {
+        constraint
+          .iter()
+          .enumerate()
+          .all(|(j, c)| c.is_none_or(|b| b == ((i >> (n - 1 - j)) & 1 == 1)))
+          .then_some(*value)
+      })
+    })
+    .collect();
+  /// Resolve the don't-cares of one subcube; `None` when it has no
+  /// specified entry at all.
+  fn resolve(spec: &[Option<bool>]) -> Option<Vec<bool>> {
+    let mut known = spec.iter().flatten();
+    let first = *known.next()?;
+    if known.all(|v| *v == first) {
+      return Some(vec![first; spec.len()]);
+    }
+    let (lo, hi) = spec.split_at(spec.len() / 2);
+    let (lo, hi) = match (resolve(lo), resolve(hi)) {
+      (Some(lo), Some(hi)) => (lo, hi),
+      (Some(lo), None) => (lo.clone(), lo),
+      (None, Some(hi)) => (hi.clone(), hi),
+      (None, None) => {
+        unreachable!("a subcube with entries has a half with one")
+      }
+    };
+    Some([lo, hi].concat())
+  }
+  let table = resolve(&spec).unwrap_or_else(|| vec![false; spec.len()]);
+  Ok(bdd_object(&table, n))
+}
+
 /// BooleanMinimize[expr] or BooleanMinimize[expr, form] - Find the minimal
 /// sum-of-products form, or with `"CNF"` the minimal product-of-sums form.
 pub fn boolean_minimize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

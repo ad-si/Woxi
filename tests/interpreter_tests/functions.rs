@@ -5486,6 +5486,53 @@ mod byte_array_to_string {
 mod boolean_function {
   use super::*;
 
+  // BooleanFunction[{lhs -> v, …}]: first match wins, unspecified inputs
+  // are don't-cares (all values from wolframscript).
+  #[test]
+  fn rule_list_specification() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "bf = BooleanFunction[{{_, 1, _} -> 0, {_, 0, _} -> 1}]; \
+         {ToString[bf, InputForm], BooleanTable[bf], bf[True, False, True]}"
+      )
+      .unwrap(),
+      "{BooleanFunction[\"BDD\" -> {-3, 1, 1, -1}], {False, False, True, True, False, False, True, True}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[BooleanFunction[{{1, 1} -> 1, {1, 0} -> 0, {0, 1} -> 0, \
+         {0, 0} -> 0}], InputForm]"
+      )
+      .unwrap(),
+      "BooleanFunction[\"BDD\" -> {2, 0, 2, -1, 1, 1, -1}]"
+    );
+    assert_eq!(
+      interpret(
+        "BooleanTable /@ {BooleanFunction[{{1, _} -> 1}], \
+         BooleanFunction[{{1, 1} -> 1, {0, 0} -> 0}], \
+         BooleanFunction[{{1, 0, 1} -> 1, {0, 1, 1} -> 0, {1, 1, 0} -> 1}], \
+         BooleanFunction[{{1, _} -> 0, {1, 1} -> 1}], \
+         BooleanFunction[{{True, _} -> True, {_, False} -> True}]}"
+      )
+      .unwrap(),
+      "{{True, True, True, True}, {True, True, False, False}, \
+{True, True, True, True, False, False, False, False}, \
+{False, False, False, False}, {True, True, True, True}}"
+    );
+  }
+
+  #[test]
+  fn rule_list_specification_rejects_non_lists() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("BooleanFunction[{1 -> 1, 0 -> 0}]").unwrap();
+    assert_eq!(r.result, "BooleanFunction[{1 -> 1, 0 -> 0}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "BooleanFunction::bspec: BooleanFunction[{1 -> 1, 0 -> 0}] is not a valid BooleanFunction specification."
+    )));
+  }
+
   // BooleanFunction[n, k][b1, …, bk] returns bit `v` of `n`, where `v` is the
   // arguments read as binary (first arg most significant, True = 1).
   #[test]
