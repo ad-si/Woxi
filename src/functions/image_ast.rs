@@ -13346,28 +13346,6 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
   Ok(dynamic_image_to_expr(&img))
 }
 
-/// Download a URL and import as image (CLI only — uses curl)
-#[cfg(not(target_arch = "wasm32"))]
-pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
-  let output = std::process::Command::new("curl")
-    .args(["-fsSL", "--max-time", "15", url])
-    .output()
-    .map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Import: failed to run curl: {e}"
-      ))
-    })?;
-  if !output.status.success() {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    return Err(InterpreterError::EvaluationError(format!(
-      "Import: failed to download \"{}\": {}",
-      url,
-      stderr.trim()
-    )));
-  }
-  import_image_from_bytes(&output.stdout)
-}
-
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
 /// Populate a usvg font database with the embedded fallback fonts and wire

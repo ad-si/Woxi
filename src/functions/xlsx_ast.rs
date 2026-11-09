@@ -113,6 +113,23 @@ pub fn download_url(url: &str) -> Result<Vec<u8>, InterpreterError> {
   Ok(output.stdout)
 }
 
+/// The body at a URL the way `Import` sees it: whatever the server sends,
+/// an HTTP error page included. `None` (after `Import::nfurl`, as
+/// wolframscript reports it) when nothing could be retrieved.
+pub fn fetch_url_for_import(url: &str) -> Option<Vec<u8>> {
+  let output = std::process::Command::new("curl")
+    .args(["-sSL", "--max-time", "30", url])
+    .output()
+    .ok()
+    .filter(|o| o.status.success() && !o.stdout.is_empty());
+  if output.is_none() {
+    crate::emit_message(&format!(
+      "Import::nfurl: Unable to retrieve data from {url}. Consult Internal`$LastInternalFailure for potential information."
+    ));
+  }
+  output.map(|o| o.stdout)
+}
+
 /// Import an xlsx/xls/xlsb/ods file with an optional element selector.
 ///
 /// Supported element forms:

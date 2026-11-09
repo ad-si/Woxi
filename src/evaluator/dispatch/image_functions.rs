@@ -2054,11 +2054,34 @@ pub fn dispatch_image_functions(
             );
           }
         }
+        // Anything else is read like a file of the same name: the body is
+        // saved to a temporary file with the URL's extension and imported
+        // from there (an image, an XML document, …).
         #[cfg(not(target_arch = "wasm32"))]
         {
-          return Some(crate::functions::image_ast::import_image_from_url(
-            &path,
-          ));
+          let Some(bytes) =
+            crate::functions::xlsx_ast::fetch_url_for_import(&path)
+          else {
+            return Some(Ok(fail_expr()));
+          };
+          if ext.is_empty() || ext.contains('/') {
+            return Some(crate::functions::image_ast::import_image_from_bytes(
+              &bytes,
+            ));
+          }
+          let Ok(temp) = crate::utils::create_temp_file(&ext) else {
+            return Some(Ok(fail_expr()));
+          };
+          if std::fs::write(&temp, &bytes).is_err() {
+            let _ = std::fs::remove_file(&temp);
+            return Some(Ok(fail_expr()));
+          }
+          let result = dispatch_image_functions(
+            "Import",
+            &[Expr::String(temp.to_string_lossy().into_owned())],
+          );
+          let _ = std::fs::remove_file(&temp);
+          return result;
         }
         #[cfg(target_arch = "wasm32")]
         {

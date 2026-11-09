@@ -6614,6 +6614,20 @@ Its `ColumnTypes` **values** are self-contradictory in the labeled two-column
 case as well: `"a,b\n1,2"` types the last column as String although it holds
 numbers, while `"a,b,c\n1,2,3"` types all three `Integer64`.
 
+### `Import` of a URL whose body is an HTML error page
+
+`Import` reads a URL's body whatever the HTTP status, and wolframscript
+then imports it by its content: a 404 page behind an image URL comes back
+as the page's plain text. Woxi saves the body under the URL's extension and
+imports that file, so the page fails to decode as an image and gives
+`$Failed`; Woxi has no `"HTML"` importer to read it with:
+
+```sh
+# Import["http://www.spore.com/static/image/500/291/274/500291274701_lrg.png"]
+#   WL "Not Found  \nThe requested URL was not found on this server."
+#   Woxi $Failed
+```
+
 ### `Import` element lists
 
 WL's element list for CSV names `EventSeries` and `TimeSeries`, which Woxi does
