@@ -602,8 +602,17 @@ fn image_constructor_base(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unwrap to the nested list and pick up the dtype if not already given.
   // RawArray (the legacy spelling embedded in `CompressedData` payloads,
   // e.g. from `Image[CompressedData["…"]]` in saved notebooks) puts the
-  // type string first and the data second.
+  // type string first and the data second. A `SparseArray` is read as
+  // the dense array it stands for.
+  let densified;
   let raw_arg = match &args[0] {
+    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+      densified = crate::evaluator::evaluate_expr_to_expr(&call(
+        "Normal",
+        vec![args[0].clone()],
+      ))?;
+      &densified
+    }
     Expr::FunctionCall {
       name: ra_name,
       args: ra_args,
@@ -984,11 +993,43 @@ pub fn image3d_slices_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// along the depth axis. `ClipRange -> {{x0, x1}, {y0, y1}, {z0, z1}}` is in
 /// voxel coordinates and `All` keeps an axis whole. Returns
 /// `(width, height, channels, data)`.
+/// The flat picture a visual host draws for an `Image3D` volume (see
+/// `image3d_stack_projection`), as an `Image`.
+pub fn image3d_projection_image(e: &Expr) -> Option<Expr> {
+  let (width, height, channels, data) = image3d_stack_projection(e)?;
+  Some(Expr::Image {
+    color_space: None,
+    display_size: None,
+    width,
+    height,
+    channels,
+    data: Arc::new(data),
+    image_type: ImageType::Real32,
+  })
+}
+
 pub fn image3d_stack_projection(e: &Expr) -> Option<(u32, u32, u8, Vec<f64>)> {
-  let (dims, channels, _) = image_stack_info(e)?;
-  let Expr::FunctionCall { args, .. } = e else {
+  let Expr::FunctionCall { name, args } = e else {
     return None;
   };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  // A volume given by its data projects like the stack of its slices.
+  if image_stack_info(e).is_none() {
+    let slices = image3d_slices(e)?;
+    let mut stack = vec![Expr::List(slices.into())];
+    stack.extend(
+      args[1..]
+        .iter()
+        .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        .cloned(),
+    );
+    let stack = call("Image3D", stack);
+    image_stack_info(&stack)?;
+    return image3d_stack_projection(&stack);
+  }
+  let (dims, channels, _) = image_stack_info(e)?;
   let Expr::List(slices) = &args[0] else {
     return None;
   };
@@ -2089,6 +2130,9 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Sharpen expects 1 or 2 arguments".into(),
     ));
   }
+  if let Some(volume) = sharpen_volume(args) {
+    return Ok(volume);
+  }
   let Some((vertical, horizontal)) = blur_radius_axes("Sharpen", args) else {
     return Ok(unevaluated("Sharpen", args));
   };
@@ -2612,6 +2656,226 @@ fn image3d_from_volume(
   let mut args = vec![volume];
   args.extend(opts);
   call("Image3D", args)
+}
+
+/// A volume `Image3D[data, rest…]` with any number of channels: a scalar
+/// volume (rank-3 data, one channel) or an interleaved color volume
+/// (rank-4 data `{{{{c1, c2, …}, …}, …}, …}`). Gives the dimensions
+/// `[depth, rows, columns]`, the channel count, the values in row-major
+/// order (channels innermost) and the remaining arguments.
+fn image3d_channel_volume(
+  e: &Expr,
+) -> Option<([usize; 3], usize, Vec<f64>, Vec<Expr>)> {
+  if let Some((dims, vals, opts)) = image3d_scalar_volume(e) {
+    return Some((dims, 1, vals, opts));
+  }
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  if name != "Image3D" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(planes) = &args[0] else {
+    return None;
+  };
+  let mut dims = [planes.len(), 0, 0];
+  let mut channels = 0;
+  let mut vals = Vec::new();
+  for (i, plane) in planes.iter().enumerate() {
+    let Expr::List(rows) = plane else {
+      return None;
+    };
+    if i == 0 {
+      dims[1] = rows.len();
+    } else if rows.len() != dims[1] {
+      return None;
+    }
+    for (j, row) in rows.iter().enumerate() {
+      let Expr::List(voxels) = row else {
+        return None;
+      };
+      if i == 0 && j == 0 {
+        dims[2] = voxels.len();
+      } else if voxels.len() != dims[2] {
+        return None;
+      }
+      for voxel in voxels {
+        let Expr::List(cs) = voxel else {
+          return None;
+        };
+        if channels == 0 {
+          channels = cs.len();
+        }
+        if cs.len() != channels || channels == 0 {
+          return None;
+        }
+        for c in cs {
+          vals.push(crate::functions::math_ast::try_eval_to_f64(c)?);
+        }
+      }
+    }
+  }
+  if vals.is_empty() {
+    return None;
+  }
+  Some((dims, channels, vals, args[1..].to_vec()))
+}
+
+/// Rebuild `Image3D[data, opts]` from row-major values with `channels`
+/// values per voxel.
+fn image3d_from_channels(
+  dims: [usize; 3],
+  channels: usize,
+  vals: &[f64],
+  opts: Vec<Expr>,
+) -> Expr {
+  if channels == 1 {
+    return image3d_from_volume(dims, vals, opts);
+  }
+  let [d0, d1, d2] = dims;
+  let at = |i: usize, j: usize, k: usize| {
+    let base = ((i * d1 + j) * d2 + k) * channels;
+    Expr::List(
+      (0..channels)
+        .map(|c| Expr::Real(vals[base + c]))
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  let volume = Expr::List(
+    (0..d0)
+      .map(|i| {
+        Expr::List(
+          (0..d1)
+            .map(|j| Expr::List((0..d2).map(|k| at(i, j, k)).collect()))
+            .collect(),
+        )
+      })
+      .collect(),
+  );
+  let mut args = vec![volume];
+  args.extend(opts);
+  call("Image3D", args)
+}
+
+/// Filter a volume (`channels` values per voxel, row-major) with a
+/// separable kernel per axis (`kernels[0]` along the depth, then rows, then
+/// columns), padding by repeating the edge voxel.
+fn convolve_volume_separable(
+  dims: [usize; 3],
+  channels: usize,
+  vals: &[f64],
+  kernels: [&[f64]; 3],
+) -> Vec<f64> {
+  let [_, d1, d2] = dims;
+  let strides = [d1 * d2 * channels, d2 * channels, channels];
+  let mut cur = vals.to_vec();
+  for (axis, &len) in dims.iter().enumerate() {
+    let stride = strides[axis];
+    let mut next = cur.clone();
+    for start in 0..cur.len() {
+      // Visit each line once, from its first element along `axis`.
+      if !(start / stride).is_multiple_of(len) {
+        continue;
+      }
+      let line: Vec<f64> = (0..len).map(|t| cur[start + t * stride]).collect();
+      let out =
+        crate::functions::math_ast::convolve_edge_padded(&line, kernels[axis]);
+      for (t, v) in out.into_iter().enumerate() {
+        next[start + t * stride] = v;
+      }
+    }
+    cur = next;
+  }
+  cur
+}
+
+/// The positional pixel type of `Image3D[data, "Byte", …]`, if any.
+fn image3d_positional_type(rest: &[Expr]) -> Option<ImageType> {
+  match rest.first() {
+    Some(Expr::String(s)) => match s.as_str() {
+      "Bit" => Some(ImageType::Bit),
+      "Byte" => Some(ImageType::Byte),
+      "Bit16" => Some(ImageType::Bit16),
+      "Real32" => Some(ImageType::Real32),
+      "Real64" | "Real" => Some(ImageType::Real64),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// `Sharpen[vol, r]` of an `Image3D` volume: `3 vol - 2 GaussianFilter[vol,
+/// r]` (the radius capped at half of each axis, as for images), rounded
+/// back onto the grid of an integer pixel type.
+fn sharpen_volume(args: &[Expr]) -> Option<Expr> {
+  let (dims, channels, vals, rest) = image3d_channel_volume(&args[0])?;
+  let radius = match args.get(1) {
+    None => 2.0,
+    Some(r) => {
+      crate::functions::math_ast::try_eval_to_f64(r).filter(|r| *r >= 0.0)?
+    }
+  };
+  let kernels: Vec<Vec<f64>> = dims
+    .iter()
+    .map(|&n| {
+      let cap = (n as f64 / 2.0).ceil().max(1.0);
+      let axis = gaussian_axis_from_radius(radius.min(cap));
+      gaussian_filter_kernel(axis.radius, axis.sigma)
+    })
+    .collect();
+  let blurred = convolve_volume_separable(
+    dims,
+    channels,
+    &vals,
+    [&kernels[0], &kernels[1], &kernels[2]],
+  );
+  let levels = match image3d_positional_type(&rest) {
+    Some(ImageType::Byte) => Some(255.0),
+    Some(ImageType::Bit16) => Some(65535.0),
+    _ => None,
+  };
+  // An integer-typed volume holds its raw levels (0‥255 for "Byte").
+  let sharpened: Vec<f64> = vals
+    .iter()
+    .zip(&blurred)
+    .map(|(v, b)| {
+      let s = 3.0 * v - 2.0 * b;
+      match levels {
+        Some(l) => s.round().clamp(0.0, l),
+        None => s,
+      }
+    })
+    .collect();
+  let volume = image3d_from_channels(dims, channels, &sharpened, rest);
+  Some(if levels.is_some() {
+    integer_voxels(volume)
+  } else {
+    volume
+  })
+}
+
+/// `Image3D[data, …]` with the (whole-valued) voxels of `data` as integers,
+/// the way an integer-typed volume stores its levels.
+fn integer_voxels(volume: Expr) -> Expr {
+  fn to_int(e: &Expr) -> Expr {
+    match e {
+      Expr::List(items) => Expr::List(items.iter().map(to_int).collect()),
+      Expr::Real(r) => Expr::Integer(*r as i128),
+      other => other.clone(),
+    }
+  }
+  match &volume {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      let mut args = args.to_vec();
+      args[0] = to_int(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    _ => volume,
+  }
 }
 
 pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7829,30 +8093,23 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let kernel = gaussian_filter_kernel(radius, sigma);
 
   // Scalar volume: the separable kernel runs along each of the three axes.
-  if let Some((dims, vals, opts)) = image3d_scalar_volume(&args[0]) {
-    let [d0, d1, d2] = dims;
-    let strides = [d1 * d2, d2, 1];
-    let mut cur = vals;
-    for (axis, &len) in dims.iter().enumerate() {
-      let stride = strides[axis];
-      let mut next = cur.clone();
-      for start in 0..cur.len() {
-        // Visit each line once, from its first element along `axis`.
-        if (start / stride) % len != 0 {
-          continue;
-        }
-        let line: Vec<f64> =
-          (0..len).map(|t| cur[start + t * stride]).collect();
-        let out =
-          crate::functions::math_ast::convolve_edge_padded(&line, &kernel);
-        for (t, v) in out.into_iter().enumerate() {
-          next[start + t * stride] = v;
-        }
-      }
-      cur = next;
+  // Like an image, an integer-typed volume filters to real voxels.
+  if let Some((dims, channels, vals, mut opts)) =
+    image3d_channel_volume(&args[0])
+  {
+    let cur = convolve_volume_separable(
+      dims,
+      channels,
+      &vals,
+      [&kernel, &kernel, &kernel],
+    );
+    if matches!(
+      image3d_positional_type(&opts),
+      Some(ImageType::Bit | ImageType::Byte | ImageType::Bit16)
+    ) {
+      opts.remove(0);
     }
-    debug_assert_eq!(cur.len(), d0 * d1 * d2);
-    return Ok(image3d_from_volume(dims, &cur, opts));
+    return Ok(image3d_from_channels(dims, channels, &cur, opts));
   }
 
   // List input (1D).
@@ -8604,29 +8861,46 @@ pub fn relief_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   })
 }
 
-pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if let Expr::List(rows) = &args[0]
-    && !rows.is_empty()
-    && let Some(first_row) = rows.first()
-    && let Expr::List(first_cols) = first_row
-    && rows.iter().all(|r| {
-      matches!(r, Expr::List(cols)
-        if cols.len() == first_cols.len()
-          && cols.iter().all(|c| matches!(c, Expr::Integer(_))))
-    })
-  {
-    let height = rows.len() as u32;
-    let width = first_cols.len() as u32;
-    let mut labels: Vec<i64> = Vec::with_capacity((width * height) as usize);
-    for row in rows {
-      if let Expr::List(cols) = row {
-        for c in cols {
-          if let Expr::Integer(n) = c {
-            labels.push(*n as i64);
-          }
-        }
+/// The labels of a rectangular integer matrix (rank 2) or integer array
+/// of rank 3, in row-major order, with the array's dimensions.
+fn integer_label_array(e: &Expr) -> Option<(Vec<usize>, Vec<i64>)> {
+  fn collect(
+    e: &Expr,
+    depth: usize,
+    dims: &mut Vec<usize>,
+    out: &mut Vec<i64>,
+  ) -> Option<()> {
+    match e {
+      Expr::Integer(n) if depth == dims.len() => {
+        out.push(i64::try_from(*n).ok()?);
+        Some(())
       }
+      Expr::List(items) if depth < dims.len() => {
+        if dims[depth] == 0 {
+          dims[depth] = items.len();
+        }
+        if items.is_empty() || items.len() != dims[depth] {
+          return None;
+        }
+        items
+          .iter()
+          .try_for_each(|i| collect(i, depth + 1, dims, out))
+      }
+      _ => None,
     }
+  }
+  for rank in [2usize, 3] {
+    let mut dims = vec![0; rank];
+    let mut labels = Vec::new();
+    if collect(e, 0, &mut dims, &mut labels).is_some() {
+      return Some((dims, labels));
+    }
+  }
+  None
+}
+
+pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some((dims, labels)) = integer_label_array(&args[0]) {
     let max = labels.iter().copied().max().unwrap_or(0).max(1) as f64;
     let color_function = option_value(&args[1..], "ColorFunction")
       .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"));
@@ -8656,11 +8930,25 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       data.extend([r, g, b]);
     }
+    // A rank-3 label array colors into an RGB byte volume.
+    if let [depth, rows, columns] = dims[..] {
+      let levels: Vec<f64> = data.iter().map(|v| (v * 255.0).round()).collect();
+      return Ok(integer_voxels(image3d_from_channels(
+        [depth, rows, columns],
+        3,
+        &levels,
+        vec![
+          Expr::String("Byte".into()),
+          rule_expr(id_expr("ColorSpace"), Expr::String("RGB".into())),
+          rule_expr(id_expr("Interleaving"), id_expr("True")),
+        ],
+      )));
+    }
     return Ok(Expr::Image {
       color_space: None,
       display_size: None,
-      width,
-      height,
+      width: dims[1] as u32,
+      height: dims[0] as u32,
       channels: 3,
       data: Arc::new(data),
       image_type: ImageType::Byte,
@@ -9278,6 +9566,84 @@ fn thin_to_skeleton(fg: &mut [bool], w: usize, h: usize) {
       break;
     }
   }
+}
+
+/// Thin a foreground mask the way `Thinning` does by default: the
+/// two-subiteration parallel algorithm of Lam, Lee and Suen (1992), with
+/// everything beyond the border background (`Padding -> 0`). With the
+/// neighbors x1…x8 counterclockwise from the east, a pixel is deleted
+/// when its crossing number is 1, min(n1, n2) is 2 or 3, and — in the first
+/// subiteration — (x2 ∨ x3 ∨ ¬x8) ∧ x1 is false, or — in the second —
+/// (x6 ∨ x7 ∨ ¬x4) ∧ x5 is false.
+fn lam_lee_suen_thinning(fg: &mut [bool], w: usize, h: usize) {
+  // Clockwise ring from `pixel_ring` (N, NE, E, SE, S, SW, W, NW) turned
+  // into x1…x8 (E, NE, N, NW, W, SW, S, SE).
+  const FROM_RING: [usize; 8] = [2, 1, 0, 7, 6, 5, 4, 3];
+  loop {
+    let mut changed = false;
+    for second in [false, true] {
+      let mut doomed = Vec::new();
+      for y in 0..h {
+        for x in 0..w {
+          if !fg[y * w + x] {
+            continue;
+          }
+          let ring = pixel_ring(fg, w, h, y, x);
+          let n: [bool; 8] = FROM_RING.map(|i| ring[i]);
+          // x(i) for i = 1…8, wrapping around.
+          let xi = |i: usize| n[(i - 1) % 8];
+          let crossing = (1..=4)
+            .filter(|&i| !xi(2 * i - 1) && (xi(2 * i) || xi(2 * i + 1)))
+            .count();
+          let n1 = (1..=4).filter(|&k| xi(2 * k - 1) || xi(2 * k)).count();
+          let n2 = (1..=4).filter(|&k| xi(2 * k) || xi(2 * k + 1)).count();
+          if crossing != 1 || !(2..=3).contains(&n1.min(n2)) {
+            continue;
+          }
+          let protected = if second {
+            (xi(6) || xi(7) || !xi(4)) && xi(5)
+          } else {
+            (xi(2) || xi(3) || !xi(8)) && xi(1)
+          };
+          if !protected {
+            doomed.push(y * w + x);
+          }
+        }
+      }
+      changed |= !doomed.is_empty();
+      for i in doomed {
+        fg[i] = false;
+      }
+    }
+    if !changed {
+      break;
+    }
+  }
+}
+
+/// Thinning[image] — the one-pixel-wide skeleton of the foreground (pixels
+/// above 1/2) of a binary image, as an image of the same type.
+pub fn thinning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let (Some((w, h, gray)), Expr::Image { image_type, .. }) =
+    (image_gray_plane(&args[0]), &args[0])
+  else {
+    crate::emit_message(&format!(
+      "Thinning::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("Thinning", args));
+  };
+  let mut fg: Vec<bool> = gray.iter().map(|&v| v > 0.5).collect();
+  lam_lee_suen_thinning(&mut fg, w, h);
+  Ok(Expr::Image {
+    color_space: None,
+    display_size: None,
+    width: w as u32,
+    height: h as u32,
+    channels: 1,
+    data: Arc::new(fg.iter().map(|&b| if b { 1.0 } else { 0.0 }).collect()),
+    image_type: *image_type,
+  })
 }
 
 /// A key that orders `f64`s the way `f64::total_cmp` does.

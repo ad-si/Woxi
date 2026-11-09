@@ -5462,6 +5462,9 @@ fn is_rasterizable_frame(expr: &Expr) -> bool {
 fn is_inline_graphic(expr: &Expr) -> bool {
   match expr {
     Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, .. } if name == "Image3D" => {
+      crate::functions::image_ast::image3d_stack_projection(expr).is_some()
+    }
     Expr::FunctionCall { name, args }
       if (name == "Legended" || name == "Pane" || name == "Mouseover")
         && !args.is_empty() =>
@@ -6743,6 +6746,13 @@ fn is_display_box(expr: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
+  }
+  // A volume is drawn as its flat projection.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Image3D")
+    && let Some(image) =
+      crate::functions::image_ast::image3d_projection_image(expr)
+  {
+    return expr_to_svg(&image);
   }
   match expr {
     // `picture -> picture` is typeset as the pictures around an arrow.

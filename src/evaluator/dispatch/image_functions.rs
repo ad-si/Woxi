@@ -997,6 +997,36 @@ pub fn dispatch_image_functions(
     "ImageType" if args.len() == 1 => {
       return Some(crate::functions::image_ast::image_type_ast(args));
     }
+    // Image3D[vol, opts…] of an existing volume rewraps its data, the new
+    // options joining the volume's own.
+    "Image3D"
+      if args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name, args: inner }
+          if name == "Image3D" && !inner.is_empty())
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      let Expr::FunctionCall { args: inner, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut merged: Vec<Expr> = inner.to_vec();
+      for opt in &args[1..] {
+        let key_of = |o: &Expr| match o {
+          Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+            Some(crate::syntax::expr_to_string(pattern))
+          }
+          _ => None,
+        };
+        let key = key_of(opt);
+        merged.retain(|o| key_of(o) != key);
+        merged.push(opt.clone());
+      }
+      return Some(Ok(Expr::FunctionCall {
+        name: "Image3D".to_string(),
+        args: merged.into(),
+      }));
+    }
     "Image3DSlices" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::image_ast::image3d_slices_ast(args));
     }
@@ -1088,6 +1118,9 @@ pub fn dispatch_image_functions(
     }
     "MorphologicalGraph" if !args.is_empty() => {
       return Some(crate::functions::image_ast::morphological_graph_ast(args));
+    }
+    "Thinning" if args.len() == 1 => {
+      return Some(crate::functions::image_ast::thinning_ast(args));
     }
     "Pruning" if !args.is_empty() => {
       return Some(crate::functions::image_ast::pruning_ast(args));
