@@ -158,6 +158,21 @@ main {
   border-right: 1px solid var(--border);
 }
 
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+#githubLink {
+  display: flex;
+  color: var(--text-muted);
+}
+
+#githubLink:hover {
+  color: var(--text);
+}
+
 #themeBtn {
   background: none;
   border: 1px solid var(--border);
