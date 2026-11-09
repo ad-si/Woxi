@@ -498,6 +498,131 @@ pub fn legacy_graph_plot(
   ))
 }
 
+/// The picture of Wolfram's pre-version-6 `GraphPlot`, which it still
+/// draws when the `Method` list carries one of that implementation's
+/// suboptions (`MaxIterations`, `"Rotation"`): `Graphics[Annotation[
+/// GraphicsComplex[coords, {{RGBColor[0.5, 0, 0], Line[edges]}, vertices},
+/// {}], VertexCoordinateRules -> coords], opts]`, with the coordinates
+/// shifted to start at 0 and the edges in their given order. Vertices are
+/// `Tooltip[Point[i], v]`, or framed labels under `VertexLabeling -> True`.
+/// Demonstrations read the layout back from the annotation
+/// (`VertexCoordinateRules /. g[[1, 2]]`).
+pub fn pre_v6_graph_plot(
+  vertices: &[Expr],
+  edges: &[Expr],
+  coords: &[(f64, f64)],
+  vertex_labeling: bool,
+  opts: Vec<Expr>,
+) -> Option<Expr> {
+  use crate::helpers::{call, call1, rule_expr};
+  if coords.len() != vertices.len() || vertices.is_empty() {
+    return None;
+  }
+  let index_of = |v: &Expr| {
+    vertices
+      .iter()
+      .position(|u| crate::evaluator::pattern_matching::expr_equal(u, v))
+  };
+  let mut lines = Vec::with_capacity(edges.len());
+  for e in edges {
+    let (a, b, _) = edge_endpoints(e)?;
+    let (i, j) = (index_of(&a)? + 1, index_of(&b)? + 1);
+    lines.push(Expr::List(
+      vec![Expr::Integer(i as i128), Expr::Integer(j as i128)].into(),
+    ));
+  }
+  let (min_x, min_y) = coords
+    .iter()
+    .fold((f64::INFINITY, f64::INFINITY), |(mx, my), &(x, y)| {
+      (mx.min(x), my.min(y))
+    });
+  let points = Expr::List(
+    coords
+      .iter()
+      .map(|&(x, y)| {
+        Expr::List(vec![Expr::Real(x - min_x), Expr::Real(y - min_y)].into())
+      })
+      .collect(),
+  );
+  let rgb = |r: f64, g: f64, b: f64| {
+    let c = |v: f64| {
+      if v == 0.0 || v == 1.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
+    };
+    call("RGBColor", vec![c(r), c(g), c(b)])
+  };
+  let vertex_group: Vec<Expr> = if vertex_labeling {
+    vertices
+      .iter()
+      .enumerate()
+      .map(|(i, v)| {
+        call(
+          "Text",
+          vec![
+            call(
+              "Framed",
+              vec![
+                v.clone(),
+                Expr::List(
+                  vec![
+                    rule_expr(id_expr("Background"), rgb(1.0, 1.0, 0.8)),
+                    rule_expr(id_expr("FrameStyle"), rgb(0.94, 0.85, 0.36)),
+                    rule_expr(id_expr("FrameMargins"), id_expr("Automatic")),
+                  ]
+                  .into(),
+                ),
+              ],
+            ),
+            Expr::Integer(i as i128 + 1),
+          ],
+        )
+      })
+      .collect()
+  } else {
+    std::iter::once(rgb(0.0, 0.0, 0.7))
+      .chain(vertices.iter().enumerate().map(|(i, v)| {
+        call(
+          "Tooltip",
+          vec![call1("Point", Expr::Integer(i as i128 + 1)), v.clone()],
+        )
+      }))
+      .collect()
+  };
+  let complex = call(
+    "GraphicsComplex",
+    vec![
+      points.clone(),
+      Expr::List(
+        vec![
+          Expr::List(
+            vec![
+              // Unlike the vertex colors, Wolfram writes this one in reals.
+              call(
+                "RGBColor",
+                vec![Expr::Real(0.5), Expr::Real(0.0), Expr::Real(0.0)],
+              ),
+              call1("Line", Expr::List(lines.into())),
+            ]
+            .into(),
+          ),
+          Expr::List(vertex_group.into()),
+        ]
+        .into(),
+      ),
+      Expr::List(vec![].into()),
+    ],
+  );
+  let mut args = vec![call(
+    "Annotation",
+    vec![complex, rule_expr(id_expr("VertexCoordinateRules"), points)],
+  )];
+  args.extend(opts);
+  Some(call("Graphics", args))
+}
+
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
