@@ -13575,6 +13575,75 @@ const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
 /// How many times one Newton step may be halved before it is accepted anyway.
 const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
 
+/// The point `x + t d` a backtracking line search on the merit function
+/// `f^2/2` accepts along the (possibly cut back) Newton direction `d`:
+/// the full step when it decreases the merit sufficiently (Armijo,
+/// 10^-4), else the minimizer of the quadratic, then cubic, model of the
+/// merit, kept within [t/10, t/2] of the previous trial.
+fn find_root_line_search(
+  func: &Expr,
+  var: &str,
+  x: f64,
+  fx: f64,
+  fpx: f64,
+  d: f64,
+) -> f64 {
+  const ALPHA: f64 = 1e-4;
+  let phi0 = 0.5 * fx * fx;
+  let slope = fx * fpx * d;
+  if slope >= 0.0 {
+    return x + d;
+  }
+  let merit = |t: f64| {
+    find_root_eval_at(func, var, x + t * d)
+      .ok()
+      .filter(|v| v.is_finite())
+      .map(|v| 0.5 * v * v)
+  };
+  let mut t = 1.0;
+  // The previous trial and its merit, for the cubic model.
+  let mut prev: Option<(f64, f64)> = None;
+  for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+    let Some(phi) = merit(t) else {
+      prev = None;
+      t *= 0.5;
+      continue;
+    };
+    if phi <= phi0 + ALPHA * t * slope {
+      return x + t * d;
+    }
+    let next = match prev {
+      None => -slope / (2.0 * (phi - phi0 - slope)),
+      Some((t2, phi2)) => {
+        let r1 = phi - phi0 - t * slope;
+        let r2 = phi2 - phi0 - t2 * slope;
+        let a = (r1 / (t * t) - r2 / (t2 * t2)) / (t - t2);
+        let b = (-t2 * r1 / (t * t) + t * r2 / (t2 * t2)) / (t - t2);
+        let cubic = if a == 0.0 {
+          -slope / (2.0 * b)
+        } else {
+          let disc = b * b - 3.0 * a * slope;
+          if disc < 0.0 {
+            0.5 * t
+          } else if b <= 0.0 {
+            (-b + disc.sqrt()) / (3.0 * a)
+          } else {
+            -slope / (b + disc.sqrt())
+          }
+        };
+        cubic.min(0.5 * t)
+      }
+    };
+    prev = Some((t, phi));
+    t = if next.is_finite() {
+      next.max(0.1 * t)
+    } else {
+      0.5 * t
+    };
+  }
+  x + t * d
+}
+
 /// A root of `f` inside the bracket `(a, fa)`, `(b, fb)` (`fa`, `fb` of
 /// opposite signs) by Brent's method, as in Numerical Recipes' `zbrent`:
 /// inverse quadratic interpolation or a secant step when it stays well
@@ -14272,6 +14341,38 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       break;
     }
     let step = fx / fpx;
+    // In a search region the Newton step is first cut back to the region's
+    // edge (no point outside it is ever evaluated) and then shortened by a
+    // quadratic/cubic backtracking line search on the merit function
+    // f^2/2, as wolframscript does: from 95 in [65, 96] a step that would
+    // reach 52.4 is cut to 65, and the worse residual there is interpolated
+    // to 81.26.
+    if let Some((lo, hi)) = bounds {
+      let target = (x - step).clamp(lo, hi);
+      let d = target - x;
+      if d == 0.0 {
+        let real = |v: f64| {
+          crate::syntax::format_expr(
+            &Expr::Real(v),
+            crate::syntax::ExprForm::Output,
+          )
+        };
+        crate::emit_message(&format!(
+          "FindRoot::reged: The point {{{}}} is at the edge of the search \
+           region {{{}, {}}} in coordinate 1 and the computed search \
+           direction points outside the region.",
+          real(x),
+          real(lo),
+          real(hi)
+        ));
+        converged = true;
+        break;
+      }
+      previous = Some(x);
+      x = find_root_line_search(&func, &var, x, fx, fpx, d);
+      fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
+      continue;
+    }
     // Backtrack while the step overshoots into a worse residual.
     let mut trial = x - step;
     let mut shrink = 1.0;

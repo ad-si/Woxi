@@ -11408,6 +11408,54 @@ mod linear_programming {
 mod find_root {
   use super::*;
 
+  // In a search region a Newton step is cut back to the region's edge
+  // and then shortened by a quadratic/cubic line search, so no point
+  // outside the region is evaluated
+  // (TXYAndXYDiagramsForBinaryVaporLiquidEquilibriumVLEInFlashDru).
+  #[test]
+  fn bounded_newton_stays_in_the_region() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "tx = Interpolation[Transpose[{{96.58, 93.66, 91., 88.56, 86.31, \
+         84.22, 82.28, 80.47, 78.77, 77.17, 75.66, 74.23, 72.88, 71.6, \
+         70.38, 69.21, 68.1, 67.03, 66.01, 65.03, 64.09}, Range[0, 1, 0.05]}]]; \
+         ty = Interpolation[Transpose[{{96.58, 95.57, 94.52, 93.45, 92.33, \
+         91.17, 89.97, 88.72, 87.42, 86.06, 84.64, 83.14, 81.56, 79.89, \
+         78.12, 76.23, 74.21, 72.02, 69.63, 67.01, 64.09}, Range[0, 1, 0.05]}]]; \
+         Reap[FindRoot[2. == (ty[t] - 0.5)/(0.5 - tx[t]), {t, 95, 65, 96}, \
+         StepMonitor :> Sow[t]]] /. {r_, {s_}} :> {r, Take[s, 2]}"
+      )
+      .unwrap(),
+      "{{t -> 78.56728425768658}, {81.26210104102717, 80.77216360676098}}"
+    );
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("dmval"))
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Reap[FindRoot[Sin[x] - 0.5, {x, 1, 0, 1.2}, StepMonitor :> Sow[x]]]"
+      )
+      .unwrap(),
+      "{{x -> 0.5235987755982989}, {{0.36800013418556066, \
+       0.5183136441498523, 0.5235907856809277, 0.5235987755798704, \
+       0.5235987755982989}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 3, 2.5, 4}]").unwrap(),
+      "{x -> 2.5}"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "FindRoot::reged: The point {2.5} is at the edge of the search region \
+       {2.5, 4.} in coordinate 1 and the computed search direction points \
+       outside the region."
+    )));
+  }
+
   // An entry of the held equation list may splice in several equations
   // (ShearAngleModelsForObliqueMetalCutting).
   #[test]
