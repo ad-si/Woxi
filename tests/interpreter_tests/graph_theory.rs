@@ -7672,6 +7672,27 @@ mod graph_annotations {
   }
 
   #[test]
+  fn set_property_accepts_a_list_of_rules() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = SetProperty[Graph[{1 <-> 2, 2 <-> 3}], \
+         {VertexLabels -> \"Name\", EdgeStyle -> Red}]; \
+         {GraphQ[g], Length[EdgeList[g]], Sort[Keys[Options[g]]]}"
+          .replace("         ", "")
+          .as_str()
+      )
+      .unwrap(),
+      "{True, 2, {EdgeStyle, VertexLabels}}"
+    );
+    assert_eq!(
+      interpret("Head[GraphPlot[SetProperty[HararyGraph[3, 9], {VertexLabels -> \"Name\"}]]]")
+        .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
   fn a_property_can_be_set_on_an_edge() {
     clear_state();
     assert_eq!(
