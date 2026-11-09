@@ -22,15 +22,10 @@ pub(super) fn dispatch_timeseries_functions(
     }
     "TimeSeriesWindow" => Some(timeseries_ast::time_series_window_ast(args)),
     "WeakStationarity" => Some(timeseries_ast::weak_stationarity_ast(args)),
-    // `Length` of a TimeSeries reports the arity of the underlying
-    // `TemporalData` object, which is always 4 (`TemporalData[tag, dataspec,
-    // bool, version]`) — independent of the number of data points.
-    "Length"
-      if args.len() == 1
-        && timeseries_ast::time_series_pairs(&args[0]).is_some() =>
-    {
-      Some(Ok(Expr::Integer(4)))
-    }
+    // `Length` of a TimeSeries counts its time stamps in WL 15
+    // (`Length[TimeSeries[{1, 2, 3}]]` is 3).
+    "Length" if args.len() == 1 => timeseries_ast::time_series_pairs(&args[0])
+      .map(|pairs| Ok(Expr::Integer(pairs.len() as i128))),
     // `Values[ts]` is the value path; `Normal[ts]` is the explicit
     // `{{date, value}, …}` list with each stamp as an `Instant` DateObject.
     "Values"

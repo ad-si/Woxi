@@ -1603,6 +1603,22 @@ mod graphics {
       assert!(svg.contains("rotate(-90.0000)"), "{svg}");
     }
 
+    /// `Inset[Magnify[g, s], pos]` embeds the picture scaled by `s`. It
+    /// used to print `Magnify[-Image-, s]` as text.
+    #[test]
+    fn a_magnified_image_inset_is_embedded_scaled() {
+      let svg = export_svg(
+        "Graphics[Inset[Magnify[Rotate[Image[{{0, 1}, {1, 0}}], 0.], 3.5], \
+         {0, 0}]]",
+      );
+      assert!(
+        !svg.contains("Magnify[") && svg.contains("<image"),
+        "the image must be drawn, not named: {svg}"
+      );
+      assert!(svg.contains("scale(3.500000)"), "{svg}");
+      assert!(svg.contains("width=\"7.00\""), "{svg}");
+    }
+
     /// `Inset[Show[RegionPlot[…], Graphics[…]], pos, opos, size]` embeds the
     /// framed plot whole: folding its primitives into the enclosing picture
     /// used to drop the frame and strand a point drawn in the plot's
@@ -24345,6 +24361,20 @@ mod show {
     );
   }
 
+  // The list of graphics evaluates as a list, so a variable whose value
+  // is `Nothing` drops out instead of reaching Show (Show::gcomb).
+  #[test]
+  fn show_list_drops_a_nothing_valued_variable() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Module[{a = Graphics[Disk[]], b = If[False, 1, Nothing]}, \
+       ToString[Show[{a, b}], InputForm]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Graphics[Disk[{0, 0}]]");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // A symbol without a value is no graphic: Show stays unevaluated.
   #[test]
   fn show_of_a_symbol_cannot_combine() {
@@ -32162,6 +32192,18 @@ mod manipulate {
     );
   }
 
+  /// A DynamicModule that builds its own control panel is a valid
+  /// Manipulate argument (wolframscript: no message).
+  #[test]
+  fn dynamic_module_control_panel_is_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x + y, {x, 0, 1}, \
+       DynamicModule[{c}, c = Control[{{y, 1}, 0, 2}]; Column[{c}]]];",
+    )
+    .unwrap();
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+  }
+
   #[test]
   fn initialization_option_is_not_vsform() {
     // Regression: `Initialization :> …` is a Manipulate option, not a
@@ -32270,6 +32312,28 @@ mod manipulate {
     manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
+
+  // Wolfram localizes controls lexically: a rule in the body that rebinds a
+  // control name shadows it, so its right side is not the control's value
+  // (`Entity["Isotope", isotope_] -> isotope` in IsotopeDecay.nb).
+  #[test]
+  fn body_rule_rebinding_a_control_name_shadows_it() {
+    let bindings = vec![("x".to_string(), "5".to_string())];
+    let code = manipulate_block_code(
+      "{x, f[3] /. f[x_] -> x, g[2] /. g[x_] :> x + 1, Hold[h[x_] = x]}",
+      &bindings,
+    );
+    clear_state();
+    assert_eq!(interpret(&code).unwrap(), "{5, 3, 3, Hold[h[x$_] = x$]}");
+    // A body with no pattern named after a control passes through as is.
+    assert_eq!(
+      woxi::functions::graphics::shield_control_rebinding_rules(
+        "f[xs_] -> x",
+        &["x".to_string()],
+      ),
+      "f[xs_] -> x"
+    );
+  }
 
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.

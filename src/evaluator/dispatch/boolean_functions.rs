@@ -194,6 +194,13 @@ pub fn dispatch_boolean_functions(
     "BooleanTable" => {
       return Some(crate::functions::boolean_ast::boolean_table_ast(args));
     }
+    "BooleanFunction"
+      if args.len() == 1 && matches!(&args[0], Expr::List(_)) =>
+    {
+      return Some(crate::functions::boolean_ast::boolean_function_rules_ast(
+        args,
+      ));
+    }
     "BooleanFunction" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::boolean_ast::boolean_function_ast(args));
     }

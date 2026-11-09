@@ -511,6 +511,56 @@ fn quantity_q_unknown_unit_false() {
 }
 
 #[test]
+fn quantity_q_count_percent_and_money_units() {
+  assert_eq!(
+    interpret(
+      r#"QuantityQ /@ {Quantity[3, "People"], Quantity[3, "Percent"], Quantity[3, "USDollars"], Quantity[3, "People"/"Kilometers"^2]}"#
+    )
+    .unwrap(),
+    "{True, True, True, True}"
+  );
+  assert_eq!(
+    interpret(r#"UnitDimensions /@ {"People", "USDollars", "Percent"}"#)
+      .unwrap(),
+    "{{{PersonUnit, 1}}, {{MoneyUnit, 1}}, {}}"
+  );
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[50, "Percent"]]"#).unwrap(),
+    "1/2"
+  );
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[3, "Meters"/"Kilometers"]]"#).unwrap(),
+    "3/1000"
+  );
+}
+
+/// Any SI prefix on an SI unit is a known unit; non-SI units only take
+/// the prefixes Wolfram lists for them (`Picofeet` is not a unit).
+#[test]
+fn si_prefixed_units() {
+  assert_eq!(
+    interpret(
+      r#"KnownUnitQ /@ {"Picometers", "Gigawatts", "Kiloelectronvolts", "Femtoseconds", "Picofeet", "PicoMeters"}"#
+    )
+    .unwrap(),
+    "{True, True, True, True, False, False}"
+  );
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[3, "Picometers"]]"#).unwrap(),
+    "Quantity[3/1000000000000, Meters]"
+  );
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[1, "Picometers"], "Nanometers"]"#)
+      .unwrap(),
+    "Quantity[1/1000, Nanometers]"
+  );
+  assert_eq!(
+    interpret(r#"UnitConvert[Quantity[5, "Kiloelectronvolts"]]"#).unwrap(),
+    "Quantity[801088317/1000000000000000000000000, (Kilograms*Meters^2)/Seconds^2]"
+  );
+}
+
+#[test]
 fn quantity_q_compound_known_unit_true() {
   assert_eq!(
     interpret(r#"QuantityQ[Quantity[3, "Meters"/"Seconds"]]"#).unwrap(),

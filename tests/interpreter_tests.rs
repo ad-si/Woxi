@@ -760,6 +760,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_held_compound_assignment_operand_keeps_parentheses() {
+    // `+=`, `-=`, `*=` and `/=` bind looser than arithmetic too: the quotient
+    // `(s += x)/(t += y)` printed without them re-parses as
+    // `s += x/t += y` (a Demonstration's RSI computation).
+    clear_state();
+    for (code, expected) in [
+      (
+        "Hold[c = (s += x/b)/(t += y)]",
+        "Hold[c = (s += x/b)/(t += y)]",
+      ),
+      ("Hold[(s += 1) t]", "Hold[(s += 1)*t]"),
+      ("Hold[(s -= 1)^2]", "Hold[(s -= 1)^2]"),
+      ("Hold[a + (s *= 2)]", "Hold[a + (s *= 2)]"),
+      ("Hold[2/(s /= 3)]", "Hold[2/(s /= 3)]"),
+      ("Hold[-(s += 1)]", "Hold[-(s += 1)]"),
+      ("Hold[(s += 1) && b]", "Hold[(s += 1) && b]"),
+      ("Hold[(s += 1) /. a -> b]", "Hold[(s += 1) /. a -> b]"),
+      ("Hold[s += a /. b]", "Hold[s += a /. b]"),
+      ("Hold[f[s += 1]]", "Hold[f[s += 1]]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
   fn test_arrow_named_characters_decode() {
     // The vertical/double arrow family must decode to Unicode (the
     // Demonstrations notebooks use \[DoubleDownArrow] as a "maps to"

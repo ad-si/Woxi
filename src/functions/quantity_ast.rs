@@ -13,6 +13,10 @@ enum Dimension {
   AmountOfSubstance,
   Information,
   Temperature,
+  /// Wolfram's "PersonUnit" (`People`).
+  Person,
+  /// Wolfram's "MoneyUnit" (`USDollars`).
+  Money,
 }
 
 /// Conversion factor to SI base unit as a rational (numerator, denominator).
@@ -592,10 +596,115 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       dimensions: dims(&[(Information, 1)]),
       to_si: (8_796_093_022_208, 1),
     },
+    // ── Counts, ratios, money ─────────────────────────────────────────
+    "People" => UnitInfo {
+      dimensions: dims(&[(Dimension::Person, 1)]),
+      to_si: (1, 1),
+    },
+    "USDollars" => UnitInfo {
+      dimensions: dims(&[(Dimension::Money, 1)]),
+      to_si: (1, 1),
+    },
+    "Percent" => UnitInfo {
+      dimensions: BTreeMap::new(),
+      to_si: (1, 100),
+    },
 
-    _ => return None,
+    _ => return si_prefixed_unit_info(name),
   };
   Some(info)
+}
+
+/// The SI prefixes Wolfram spells in unit names, with their powers of ten.
+const SI_PREFIXES: &[(&str, i32)] = &[
+  ("Quecto", -30),
+  ("Ronto", -27),
+  ("Yocto", -24),
+  ("Zepto", -21),
+  ("Atto", -18),
+  ("Femto", -15),
+  ("Pico", -12),
+  ("Nano", -9),
+  ("Micro", -6),
+  ("Milli", -3),
+  ("Centi", -2),
+  ("Deci", -1),
+  ("Deca", 1),
+  ("Hecto", 2),
+  ("Kilo", 3),
+  ("Mega", 6),
+  ("Giga", 9),
+  ("Tera", 12),
+  ("Peta", 15),
+  ("Exa", 18),
+  ("Zetta", 21),
+  ("Yotta", 24),
+  ("Ronna", 27),
+  ("Quetta", 30),
+];
+
+/// The SI units that take any SI prefix (`Picometers`, `Gigawatts`,
+/// `Kiloelectronvolts`). Non-SI units only take the prefixes listed for
+/// them explicitly in [`get_unit_info`].
+const SI_PREFIXABLE_UNITS: &[&str] = &[
+  "Meters",
+  "Grams",
+  "Seconds",
+  "Amperes",
+  "Kelvins",
+  "Moles",
+  "Newtons",
+  "Pascals",
+  "Joules",
+  "Electronvolts",
+  "Watts",
+  "Volts",
+  "Coulombs",
+  "Farads",
+  "Ohms",
+  "Henries",
+  "Hertz",
+  "Teslas",
+  "Liters",
+];
+
+/// A unit named by an SI prefix on an SI unit, scaled from the base unit.
+fn si_prefixed_unit_info(name: &str) -> Option<UnitInfo> {
+  let (prefix, exponent) = SI_PREFIXES
+    .iter()
+    .find(|(p, _)| name.starts_with(p) && name.len() > p.len())?;
+  let rest = &name[prefix.len()..];
+  let mut chars = rest.chars();
+  let first = chars.next()?;
+  // `Picometers`, not `PicoMeters`.
+  if !first.is_lowercase() {
+    return None;
+  }
+  let base: String = first.to_uppercase().chain(chars).collect();
+  if !SI_PREFIXABLE_UNITS.contains(&base.as_str()) {
+    return None;
+  }
+  let info = get_unit_info(&base)?;
+  let scale = 10i128.checked_pow(exponent.unsigned_abs())?;
+  let (num, den) = info.to_si;
+  let (num, den) = if *exponent >= 0 {
+    (num.checked_mul(scale)?, den)
+  } else {
+    (num, den.checked_mul(scale)?)
+  };
+  let g = gcd_i128(num, den);
+  Some(UnitInfo {
+    dimensions: info.dimensions,
+    to_si: (num / g, den / g),
+  })
+}
+
+fn gcd_i128(a: i128, b: i128) -> i128 {
+  let (mut a, mut b) = (a.abs(), b.abs());
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a.max(1)
 }
 
 /// Try to resolve a lowercase unit name by capitalizing the first letter.
@@ -1570,6 +1679,13 @@ fn is_pure_number(expr: &Expr) -> bool {
 
 fn make_quantity(magnitude: Expr, unit: Expr) -> Expr {
   let unit = normalize_unit(unit);
+  // A numeric dimensionless quantity is its magnitude, as evaluating
+  // `Quantity[3, 1]` gives `3` (`UnitConvert[Quantity[50, "Percent"]]`).
+  if matches!(unit, Expr::Integer(1))
+    && crate::functions::predicate_ast::is_numeric_q(&magnitude)
+  {
+    return magnitude;
+  }
   call("Quantity", vec![magnitude, unit])
 }
 
@@ -1921,6 +2037,8 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
       AmountOfSubstance => "Moles",
       Information => "Bits",
       Dimension::Temperature => "Kelvins",
+      Dimension::Person => "People",
+      Dimension::Money => "USDollars",
     }
   };
   // Collect positive and negative exponents
@@ -2112,7 +2230,7 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (preserves the user's target unit naming)
       // UnitConvert normalizes the target to canonical form
       let norm_target = normalize_unit_for_output(target.clone());
-      Ok(call("Quantity", vec![new_mag, norm_target]))
+      Ok(make_quantity(new_mag, norm_target))
     } else {
       // Fallback: return unevaluated
       Ok(unevaluated("UnitConvert", args))
@@ -2170,6 +2288,8 @@ pub fn unit_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Dimension::AmountOfSubstance => ("AmountUnit", 1),
       Dimension::Information => ("InformationUnit", 1),
       Dimension::Temperature => ("TemperatureUnit", 1),
+      Dimension::Person => ("PersonUnit", 1),
+      Dimension::Money => ("MoneyUnit", 1),
     };
     *acc.entry(name).or_insert(0) += exp * factor;
   }

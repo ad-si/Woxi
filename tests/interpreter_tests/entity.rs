@@ -387,6 +387,22 @@ mod city_data_tests {
       interpret("CityData[\"paris\", \"Country\"]").unwrap(),
       "Entity[Country, France]"
     );
+    // `{All, country}` lists the country's bundled cities, largest first
+    // (GeoNames cities of at least 100 000 people).
+    assert_eq!(
+      interpret("CityData[{All, \"China\"}][[;; 2]]").unwrap(),
+      "{Entity[City, {Shanghai, Shanghai, China}], \
+       Entity[City, {Chongqing, Chongqing, China}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[CityData[{All, \"China\"}]] > 100 && \
+         AllTrue[CityData[#, \"Population\"] & /@ \
+           Take[CityData[{All, \"Japan\"}], 5], Head[#] === Quantity &]"
+      )
+      .unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("CityData[Entity[\"City\", {\"Berlin\", \"Berlin\", \"Germany\"}], \"Latitude\"]")
         .unwrap(),
@@ -456,12 +472,12 @@ mod country_data_tests {
     clear_state();
     assert_eq!(
       interpret("Interpreter[\"Country\"][\"USA\"]").unwrap(),
-      "Entity[Country, United States]"
+      "Entity[Country, UnitedStates]"
     );
     clear_state();
     assert_eq!(
       interpret("Interpreter[\"Country\"][\"Bosnia & Herzegovina\"]").unwrap(),
-      "Entity[Country, Bosnia and Herzegovina]"
+      "Entity[Country, BosniaHerzegovina]"
     );
   }
 
@@ -621,12 +637,78 @@ mod country_data_tests {
     );
   }
 
+  // World Bank statistics under the Wolfram Language's entity names.
+  #[test]
+  fn country_data_statistics_and_classes() {
+    clear_state();
+    assert_eq!(
+      interpret("CountryData[\"USA\"]").unwrap(),
+      "Entity[Country, UnitedStates]"
+    );
+    assert_eq!(interpret("Length[CountryData[]]").unwrap(), "249");
+    assert_eq!(interpret("Length[CountryData[All]]").unwrap(), "249");
+    assert_eq!(
+      interpret("Head[CountryData[\"Belgium\", \"LandArea\"]]").unwrap(),
+      "Quantity"
+    );
+    // WL's Shape: Graphics[{fill, EdgeForm[Black], Polygon[{rings}]}].
+    assert_eq!(
+      interpret(
+        "s = CountryData[\"Belgium\", \"Shape\"]; \
+         {Head[s], Head[s[[1, 3]]], ArrayDepth[s[[1, 3, 1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Polygon, 3}"
+    );
+    assert_eq!(
+      interpret("CountryData[\"Continents\"]").unwrap(),
+      "{EntityClass[Country, Africa], EntityClass[Country, Antarctica], \
+       EntityClass[Country, Asia], EntityClass[Country, Europe], \
+       EntityClass[Country, NorthAmerica], EntityClass[Country, Oceania], \
+       EntityClass[Country, SouthAmerica]}"
+    );
+    assert_eq!(
+      interpret("CountryData[\"UnitedStates\", \"Continent\"]").unwrap(),
+      "EntityClass[Country, NorthAmerica]"
+    );
+    assert_eq!(
+      interpret("CountryData[\"UnitedStates\", \"UNCode\"]").unwrap(),
+      "USA"
+    );
+    assert_eq!(
+      interpret("CountryData[\"UnitedStates\", {\"Population\", 2008}]")
+        .unwrap(),
+      "Quantity[304093966, People]"
+    );
+    assert_eq!(
+      interpret("Head[CountryData[\"Ghana\", {{\"GDP\"}, {1970, 1972}}]]")
+        .unwrap(),
+      "TimeSeries"
+    );
+    assert_eq!(
+      interpret(
+        "Length[CountryData[\"Africa\", \"Population\"]] == \
+         Length[CountryData[\"Africa\"]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"Germany\", \"BorderingCountries\"]").unwrap(),
+      "{Entity[Country, Austria], Entity[Country, Belgium], \
+       Entity[Country, CzechRepublic], Entity[Country, Denmark], \
+       Entity[Country, France], Entity[Country, Luxembourg], \
+       Entity[Country, Netherlands], Entity[Country, Poland], \
+       Entity[Country, Switzerland]}"
+    );
+  }
+
   #[test]
   fn country_data_population() {
     clear_state();
     assert_eq!(
       interpret("CountryData[\"Qatar\", \"Population\"]").unwrap(),
-      "Quantity[2695122, People]"
+      "Quantity[2857822, People]"
     );
   }
 
@@ -688,7 +770,10 @@ mod country_data_tests {
     clear_state();
     assert_eq!(interpret("Length[CountryData[\"EU\"]]").unwrap(), "27");
     assert_eq!(
-      interpret("MemberQ[CountryData[\"EU\"], \"CzechRepublic\"]").unwrap(),
+      interpret(
+        "MemberQ[CountryData[\"EU\"], Entity[\"Country\", \"CzechRepublic\"]]"
+      )
+      .unwrap(),
       "True"
     );
     assert_eq!(
@@ -705,11 +790,11 @@ mod country_data_tests {
     );
     assert_eq!(
       interpret("CountryData[\"Italy\", \"FullName\"]").unwrap(),
-      "Italy"
+      "Italian Republic"
     );
     assert_eq!(
       interpret("CountryData[\"CzechRepublic\", \"FullName\"]").unwrap(),
-      "CzechRepublic"
+      "Czech Republic"
     );
     assert_eq!(
       interpret(

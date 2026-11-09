@@ -479,6 +479,58 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   )
 }
 
+/// `TetGenLink\`TetGenConvexHull[{{x, y, z}, …}]` → `{points, triangles}`:
+/// every input point as a machine real (interior ones included, so the
+/// indices are the input positions) and the hull's boundary triangles. TetGen
+/// winds each triangle so that its right-hand normal points *into* the hull.
+/// The triangles come out in TetGen's own internal order, which this
+/// incremental hull does not reproduce; the set of faces and their
+/// orientation are the same. Fewer than four affinely independent points give
+/// `TetGenConvexHull::tetfc` and `$Failed`.
+pub fn tetgen_convex_hull_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  const NAME: &str = "TetGenLink`TetGenConvexHull";
+  let [Expr::List(pts)] = args else {
+    return Ok(unevaluated(NAME, args));
+  };
+  let mut coords: Vec<(f64, f64, f64)> = Vec::with_capacity(pts.len());
+  for p in pts {
+    let Expr::List(c) = p else {
+      return Ok(unevaluated(NAME, args));
+    };
+    let [x, y, z] = c.as_slice() else {
+      return Ok(unevaluated(NAME, args));
+    };
+    let (Some(x), Some(y), Some(z)) =
+      (try_eval_to_f64(x), try_eval_to_f64(y), try_eval_to_f64(z))
+    else {
+      return Ok(unevaluated(NAME, args));
+    };
+    coords.push((x, y, z));
+  }
+  let Some(triangles) = convex_hull_3d(&coords) else {
+    crate::emit_message(&format!(
+      "TetGenConvexHull::tetfc: A convex hull could not be found from the \
+       points {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  };
+  let points = coords
+    .iter()
+    .map(|&(x, y, z)| {
+      Expr::List(vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into())
+    })
+    .collect::<Vec<_>>();
+  let index = |i: usize| Expr::Integer(i as i128 + 1);
+  let faces = triangles
+    .iter()
+    .map(|&[a, b, c]| Expr::List(vec![index(a), index(c), index(b)].into()))
+    .collect::<Vec<_>>();
+  Ok(Expr::List(
+    vec![Expr::List(points.into()), Expr::List(faces.into())].into(),
+  ))
+}
+
 /// The faces of the 3D convex hull of `points` as outward-wound polygons
 /// (coplanar triangles merged), or `None` when the points span no volume.
 pub(crate) fn convex_hull_polygons(

@@ -6688,6 +6688,44 @@ fn inset_primitives(
       return Some(prims);
     }
   }
+  // `Inset[Magnify[g, s], …]` shows the embedded picture scaled by `s`
+  // (1 by default); the inset occupies the scaled box, centered on the
+  // anchor.
+  if let Expr::FunctionCall {
+    name: magnify,
+    args: margs,
+  } = &args[0]
+    && magnify == "Magnify"
+    && (margs.len() == 1 || margs.len() == 2)
+    && !matches!(margs[0], Expr::String(_))
+    && let Some(scale) = match margs.get(1) {
+      Some(factor) => crate::functions::math_ast::try_eval_to_f64(factor),
+      None => Some(1.0),
+    }
+    && scale > 0.0
+  {
+    let mut inner_args = args.to_vec();
+    inner_args[0] = margs[0].clone();
+    if let Some(mut prims) = inset_primitives(&inner_args, errors) {
+      if let [
+        Primitive::InsetGraphic {
+          svg, w, h, size, ..
+        },
+      ] = prims.as_mut_slice()
+      {
+        let (sw, sh) = (*w * scale, *h * scale);
+        *svg = format!(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{sw:.2}\" \
+           height=\"{sh:.2}\" viewBox=\"0 0 {sw:.2} {sh:.2}\">\
+           <g transform=\"scale({scale:.6})\">{svg}</g></svg>"
+        );
+        *size = size.map(|(a, b)| (a * scale, b * scale));
+        (*w, *h) = (sw, sh);
+        return Some(prims);
+      }
+      return Some(prims);
+    }
+  }
   // An `Automatic` position is the plot's origin, the same point a missing
   // one falls back to when the object is folded in below.
   let anchor = match args.get(1) {
@@ -20359,6 +20397,22 @@ fn clip_segment_to_y_range(
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Show's arguments reach it held, but Show is not HoldAll in Wolfram
+  // Language: a list of graphics evaluates as a list first, so a `Nothing`
+  // element (e.g. a variable set to `If[c, g, Nothing]`) is dropped.
+  let evaluated: Vec<Expr>;
+  let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::List(_))) {
+    evaluated = args
+      .iter()
+      .map(|a| match a {
+        Expr::List(_) => evaluate_expr_to_expr(a),
+        other => Ok(other.clone()),
+      })
+      .collect::<Result<_, _>>()?;
+    &evaluated
+  } else {
+    args
+  };
   // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
   // graphic inside and keeps its legend on the result, as Wolfram does:
   // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
@@ -22739,7 +22793,48 @@ fn is_plain_text_item(item: &Expr) -> bool {
   }
 }
 
+thread_local! {
+  /// Set by a caller whose display construct reports its cells' formatting
+  /// messages even though it is laid out as a grid (`TableForm`).
+  static LOUD_GRID_CELLS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` (which renders a grid) so that the grid's cells report the
+/// messages their formatting raises, the way `TableForm` does.
+pub fn with_loud_grid_cells<T>(f: impl FnOnce() -> T) -> T {
+  let previous = LOUD_GRID_CELLS.with(|l| l.replace(true));
+  let result = f();
+  LOUD_GRID_CELLS.with(|l| l.set(previous));
+  result
+}
+
 fn grid_svg_styled_internal(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+  outer_style: &GridStyle,
+) -> Result<String, InterpreterError> {
+  // Wolfram builds a `GridBox` quietly: a message raised while formatting a
+  // cell (`NumberForm::reqsigz` for `Grid[{{NumberForm[2191.36, 2]}}]`) is
+  // not reported, unlike the same cell in a `Row`, `Column`, `TableForm` or
+  // `MatrixForm`. Only the outermost grid consults the flag; grids nested in
+  // its cells are plain `Grid`s again.
+  let loud = LOUD_GRID_CELLS.with(|l| l.replace(false));
+  if parens || loud {
+    let result =
+      grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
+    LOUD_GRID_CELLS.with(|l| l.set(loud));
+    return result;
+  }
+  crate::push_quiet();
+  let result =
+    grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
+  crate::pop_quiet();
+  result
+}
+
+fn grid_svg_styled_internal_reporting(
   args: &[Expr],
   group_gaps: &[usize],
   parens: bool,
@@ -30858,6 +30953,10 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "MenuView"
             | "StatusArea"
             | "PopupView"
+            // A `DynamicModule` building its own control panel (its
+            // `Control[…]`s set up as local variables, as in the "Legal
+            // Incoherence" Demonstration) is accepted too.
+            | "DynamicModule"
         ) =>
       {
         out_args.push(spec.clone());
@@ -41190,19 +41289,55 @@ pub fn manipulate_block_code(
   // built-in symbol (`False` from `"Button 1" -> {b1, {False, True}}`) is
   // never a variable to bind.
   let mut seen = std::collections::HashSet::new();
-  let binding_parts: Vec<String> = bindings
+  let bound: Vec<&(String, String)> = bindings
     .iter()
     .filter(|(_, value)| !crate::is_frozen_graphic(value))
     .filter(|(name, _)| {
       !crate::evaluator::functions::is_builtin_symbol(name)
         && seen.insert(name.clone())
     })
-    .map(|(name, value)| format!("{name} = {value}"))
     .collect();
-  if binding_parts.is_empty() {
+  if bound.is_empty() {
     return body_code.to_string();
   }
-  format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
+  let binding_parts: Vec<String> = bound
+    .iter()
+    .map(|(name, value)| format!("{name} = {value}"))
+    .collect();
+  let names: Vec<String> = bound.iter().map(|(n, _)| n.clone()).collect();
+  let body = shield_control_rebinding_rules(body_code, &names);
+  format!("Block[{{{}}}, {}]", binding_parts.join(", "), body)
+}
+
+/// Wolfram localizes Manipulate controls lexically, so a rule in the body
+/// that rebinds a control name (`Entity["Isotope", isotope_] -> isotope`)
+/// shadows it. [`manipulate_block_code`] binds controls with a Block, so
+/// such rules get their own pattern variables renamed first (see
+/// `shield_rules_rebinding`). Only bodies that spell a pattern named after
+/// a control (`isotope_`) are re-read; the rest pass through untouched.
+pub fn shield_control_rebinding_rules(
+  body_code: &str,
+  names: &[String],
+) -> String {
+  let has_pattern = names.iter().any(|n| {
+    body_code.match_indices(n.as_str()).any(|(i, _)| {
+      let before_ok = body_code[..i]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !(c.is_alphanumeric() || c == '$' || c == '`'));
+      before_ok && body_code[i + n.len()..].starts_with('_')
+    })
+  });
+  if !has_pattern {
+    return body_code.to_string();
+  }
+  let Ok(expr) = crate::parse_to_expr(body_code) else {
+    return body_code.to_string();
+  };
+  match crate::evaluator::scoping::shield_rules_rebinding(&expr, names) {
+    Some(shielded) => crate::syntax::expr_to_source_form(&shielded),
+    None => body_code.to_string(),
+  }
 }
 
 /// Evaluate a control's `Enabled` condition and report whether the control
@@ -42299,6 +42434,30 @@ fn display_expr_to_node(
           ) =>
       {
         display_expr_to_node(&args[0], bindings, probes, ons)
+      }
+      // `Text@Switch[v, …]` (also `If`/`Which`): the branch chosen by the
+      // current control values is laid out like the bare container when it
+      // is one (`Row`/`Column`/`Grid`), so nested layouts and controls stay
+      // live instead of printing as source.
+      "Text"
+        if args.len() == 1
+          && !bindings.is_empty()
+          && matches!(
+            &args[0],
+            Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Switch" | "If" | "Which")
+          )
+          && let Some(chosen) = eval_display_in_scope(&args[0], bindings)
+          && matches!(
+            &chosen,
+            Expr::FunctionCall { name, .. }
+              if matches!(
+                name.as_str(),
+                "Row" | "Column" | "Grid" | "Panel" | "Framed"
+              )
+          ) =>
+      {
+        display_expr_to_node(&chosen, bindings, probes, ons)
       }
       // A cell around an expression shows just the expression.
       "ExpressionCell" if !args.is_empty() => {

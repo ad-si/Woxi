@@ -253,16 +253,13 @@ fn normalize(name: &str) -> String {
 /// display name, or `None` if the country is unknown. Used to key geographic
 /// geometry to the knowledge base.
 pub fn canonical_name(name: &str) -> Option<&'static str> {
-  lookup(name).map(|c| c.canonical)
+  legacy(name).map(|c| c.canonical)
 }
 
 /// All countries as `Entity["Country", canonical]` — the built-in "Country"
 /// `EntityList`/`EntityValue["Entities"]` knowledge base.
 pub fn country_entities() -> Vec<Expr> {
-  COUNTRIES
-    .iter()
-    .map(|c| call("Entity", vec![str_expr("Country"), str_expr(c.canonical)]))
-    .collect()
+  RECORDS.iter().map(|r| entity(r.entity)).collect()
 }
 
 /// Countries (by canonical name) in which each language is an official
@@ -287,12 +284,6 @@ static COUNTRY_CLASSES: &[(&str, &[&str])] = &[
   ("EU", &["Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg", "Malta", "Netherlands", "Poland", "Portugal", "Romania", "Slovakia", "Slovenia", "Spain", "Sweden"]),
   ("Europe", &["Albania", "Andorra", "Austria", "Belarus", "Belgium", "Bosnia and Herzegovina", "Bulgaria", "Croatia", "Cyprus", "Czech Republic", "Denmark", "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Iceland", "Ireland", "Italy", "Kosovo", "Latvia", "Liechtenstein", "Lithuania", "Luxembourg", "Malta", "Moldova", "Monaco", "Montenegro", "Netherlands", "North Macedonia", "Norway", "Poland", "Portugal", "Romania", "Russia", "San Marino", "Serbia", "Slovakia", "Slovenia", "Spain", "Sweden", "Switzerland", "Ukraine", "United Kingdom", "Vatican City"]),
 ];
-
-/// The Wolfram-style standard name of a country: the canonical name with its
-/// spaces removed (`"UnitedKingdom"`), as returned for class members.
-fn standard_name(canonical: &str) -> String {
-  canonical.chars().filter(|c| *c != ' ').collect()
-}
 
 /// Resolve a free-form country name to its dataset entry. Names written
 /// without spaces (`"CzechRepublic"`) resolve like their spaced forms.
@@ -319,6 +310,344 @@ fn lookup(name: &str) -> Option<&'static Country> {
 
 use crate::functions::element_data::make_quantity;
 
+/// First year of the yearly series in `resources/country_data.tsv.gz`.
+const FIRST_YEAR: i64 = 1960;
+
+/// One row of `resources/country_data.tsv.gz` (World Bank statistics under
+/// the Wolfram Language's entity names; see `scripts/gen_country_data.py`).
+struct Record {
+  entity: &'static str,
+  iso3: &'static str,
+  name: &'static str,
+  full_name: &'static str,
+  continents: Vec<&'static str>,
+  area: Option<f64>,
+  land_area: Option<f64>,
+  population: Vec<Option<f64>>,
+  gdp: Vec<Option<f64>>,
+}
+
+static RECORDS: std::sync::LazyLock<Vec<Record>> =
+  std::sync::LazyLock::new(|| {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let compressed = include_bytes!("../../resources/country_data.tsv.gz");
+    let mut text = String::new();
+    GzDecoder::new(&compressed[..])
+      .read_to_string(&mut text)
+      .expect("country_data.tsv.gz is valid gzip");
+    let text: &'static str = Box::leak(text.into_boxed_str());
+    let series = |s: &str| -> Vec<Option<f64>> {
+      s.split(',').map(|v| v.parse().ok()).collect()
+    };
+    text
+      .lines()
+      .filter(|l| !l.starts_with('#') && !l.is_empty())
+      .filter_map(|line| {
+        let f: Vec<&'static str> = line.split('\t').collect();
+        (f.len() == 9).then(|| Record {
+          entity: f[0],
+          iso3: f[1],
+          name: f[2],
+          full_name: f[3],
+          continents: f[4].split(',').filter(|c| !c.is_empty()).collect(),
+          area: f[5].parse().ok(),
+          land_area: f[6].parse().ok(),
+          population: series(f[7]),
+          gdp: series(f[8]),
+        })
+      })
+      .collect()
+  });
+
+fn squash(s: &str) -> String {
+  normalize(s).replace(' ', "")
+}
+
+/// The statistics row of a country given by entity name (`"UnitedStates"`),
+/// display name, official name or any alias of the legacy table.
+fn record(name: &str) -> Option<&'static Record> {
+  let records = &*RECORDS;
+  if let Some(r) = records.iter().find(|r| r.entity == name) {
+    return Some(r);
+  }
+  let key = squash(name);
+  if key.is_empty() {
+    return None;
+  }
+  records
+    .iter()
+    .find(|r| {
+      squash(r.entity) == key
+        || squash(r.name) == key
+        || squash(r.full_name) == key
+    })
+    .or_else(|| {
+      let canonical = squash(lookup(name)?.canonical);
+      records
+        .iter()
+        .find(|r| squash(r.name) == canonical || squash(r.entity) == canonical)
+        .or_else(|| {
+          // The legacy table's aliases name the record (`"Congo"` is the
+          // `"Republic of the Congo"`).
+          let c = lookup(name)?;
+          records.iter().find(|r| {
+            c.aliases.iter().any(|a| {
+              squash(a) == squash(r.name) || squash(a) == squash(r.entity)
+            })
+          })
+        })
+    })
+}
+
+/// The legacy entry (population, aliases, geometry key) of a country named
+/// any way `record` understands.
+fn legacy(name: &str) -> Option<&'static Country> {
+  lookup(name).or_else(|| {
+    let r = record(name)?;
+    lookup(r.name).or_else(|| lookup(r.full_name))
+  })
+}
+
+/// The Wolfram Language entity name (`"UnitedStates"`) of a country named
+/// any way the knowledge base understands.
+pub fn wl_entity_name(name: &str) -> Option<&'static str> {
+  record(name)
+    .map(|r| r.entity)
+    .or_else(|| legacy(name).map(|c| c.canonical))
+}
+
+/// The Wolfram Language entity name of a legacy country.
+fn entity_name(canonical: &'static str) -> &'static str {
+  record(canonical).map_or(canonical, |r| r.entity)
+}
+
+fn latest(series: &[Option<f64>]) -> Option<(i64, f64)> {
+  series
+    .iter()
+    .enumerate()
+    .rev()
+    .find_map(|(i, v)| v.map(|v| (FIRST_YEAR + i as i64, v)))
+}
+
+fn at_year(series: &[Option<f64>], year: i64) -> Option<f64> {
+  let i = usize::try_from(year - FIRST_YEAR).ok()?;
+  series.get(i).copied().flatten()
+}
+
+/// A yearly statistic as a Quantity, or `None` when the table has no such
+/// series.
+fn series_of(r: &'static Record, prop: &str) -> Option<Vec<Option<f64>>> {
+  match prop {
+    "Population" => Some(r.population.clone()),
+    "GDP" => Some(r.gdp.clone()),
+    "GDPPerCapita" => Some(
+      r.gdp
+        .iter()
+        .zip(&r.population)
+        .map(|(g, p)| match (g, p) {
+          (Some(g), Some(p)) if *p > 0.0 => Some(g / p),
+          _ => None,
+        })
+        .collect(),
+    ),
+    _ => None,
+  }
+}
+
+fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
+  let parsed = crate::functions::string_ast::parse_program_to_expr(src)?;
+  crate::evaluator::evaluate_expr_to_expr(&parsed)
+}
+
+/// `Quantity[value, unit]` with a compound unit written as WL source.
+fn quantity_in(value: Expr, unit_src: &str) -> Result<Expr, InterpreterError> {
+  Ok(call("Quantity", vec![value, eval_wl(unit_src)?]))
+}
+
+fn statistic_quantity(
+  prop: &str,
+  value: f64,
+) -> Result<Expr, InterpreterError> {
+  match prop {
+    "Population" => Ok(make_quantity(
+      Expr::Integer(value.round() as i128),
+      "People",
+    )),
+    "GDP" => quantity_in(Expr::Real(value), "\"USDollars\"/\"Years\""),
+    _ => quantity_in(Expr::Real(value), "\"USDollars\"/(\"People\"*\"Years\")"),
+  }
+}
+
+/// `CountryData[c, {{prop}, {y1, y2}}]` — the statistic over the years
+/// as a `TimeSeries` of `{{year}, value}` pairs.
+fn time_series(
+  r: &'static Record,
+  prop: &str,
+  from: i64,
+  to: i64,
+) -> Result<Expr, InterpreterError> {
+  let Some(series) = series_of(r, prop) else {
+    return Ok(missing("NotAvailable", prop));
+  };
+  let pairs: Vec<Expr> = (from..=to)
+    .filter_map(|y| {
+      let v = at_year(&series, y)?;
+      let v = if prop == "Population" {
+        Expr::Integer(v.round() as i128)
+      } else {
+        Expr::Real(v)
+      };
+      Some(Expr::List(
+        vec![Expr::List(vec![Expr::Integer(y as i128)].into()), v].into(),
+      ))
+    })
+    .collect();
+  if pairs.is_empty() {
+    return Ok(missing("NotAvailable", prop));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "TimeSeries",
+    vec![Expr::List(pairs.into())],
+  ))
+}
+
+/// Properties answered from the statistics table.
+fn record_property(
+  r: &'static Record,
+  property: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  Ok(Some(match property {
+    "Name" => str_expr(r.name),
+    "FullName" => str_expr(r.full_name),
+    "StandardName" => str_expr(r.entity),
+    "UNCode" if r.iso3.len() == 3 => str_expr(r.iso3),
+    "Continent" => match r.continents.first() {
+      Some(c) => call("EntityClass", vec![str_expr("Country"), str_expr(c)]),
+      None => missing("NotApplicable", property),
+    },
+    "Area" | "LandArea" => {
+      match if property == "Area" {
+        r.area
+      } else {
+        r.land_area
+      } {
+        Some(a) => quantity_in(Expr::Real(a), "\"Kilometers\"^2")?,
+        None => missing("NotAvailable", property),
+      }
+    }
+    "Population" | "GDP" | "GDPPerCapita" => {
+      match series_of(r, property).as_deref().and_then(latest) {
+        Some((_, v)) => statistic_quantity(property, v)?,
+        None => missing("NotAvailable", property),
+      }
+    }
+    "Flag" => missing("NotAvailable", property),
+    _ => return Ok(None),
+  }))
+}
+
+/// `Entity["Country", name]` objects of every country whose continent list
+/// contains `continent`.
+fn continent_members(continent: &str) -> Vec<Expr> {
+  RECORDS
+    .iter()
+    .filter(|r| r.continents.contains(&continent))
+    .map(|r| entity(r.entity))
+    .collect()
+}
+
+fn continents() -> Vec<&'static str> {
+  // Antarctica is a continent class even though no country belongs to it.
+  let mut out: Vec<&'static str> = vec!["Antarctica"];
+  for r in RECORDS.iter() {
+    for c in &r.continents {
+      if !out.contains(c) {
+        out.push(c);
+      }
+    }
+  }
+  out.sort_unstable();
+  out
+}
+
+/// Members of a class name: a continent, `"Countries"`, or one of the
+/// static classes (`"EU"`, `"Europe"`).
+fn class_members(class: &str) -> Option<Vec<Expr>> {
+  if class == "Countries" {
+    return Some(country_entities());
+  }
+  if continents().contains(&class) {
+    return Some(continent_members(class));
+  }
+  let members = COUNTRY_CLASSES
+    .iter()
+    .find_map(|(c, ms)| (*c == class).then_some(ms))?;
+  let mut names: Vec<&'static str> =
+    members.iter().map(|m| entity_name(m)).collect();
+  names.sort_unstable();
+  Some(names.into_iter().map(entity).collect())
+}
+
+/// Borders between countries: two countries border when their Natural Earth
+/// outlines share a vertex.
+fn bordering_countries(r: &'static Record) -> Option<Expr> {
+  use std::collections::{HashMap, HashSet};
+  static ADJ: std::sync::OnceLock<HashMap<&'static str, Vec<&'static str>>> =
+    std::sync::OnceLock::new();
+  let adj = ADJ.get_or_init(|| {
+    let mut owners: HashMap<(i32, i32), HashSet<&'static str>> = HashMap::new();
+    for rec in RECORDS.iter() {
+      let Some(rings) =
+        crate::functions::geographics::country_outline_rings(Some(rec.name))
+          .or_else(|| {
+            crate::functions::geographics::country_outline_rings(Some(
+              rec.full_name,
+            ))
+          })
+      else {
+        continue;
+      };
+      for ring in rings {
+        for &(lon, lat) in ring {
+          owners
+            .entry(((lon * 100.0).round() as i32, (lat * 100.0).round() as i32))
+            .or_default()
+            .insert(rec.entity);
+        }
+      }
+    }
+    let mut adj: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
+    for set in owners.values() {
+      if set.len() < 2 {
+        continue;
+      }
+      for a in set {
+        for b in set {
+          if a != b {
+            let list = adj.entry(a).or_default();
+            if !list.contains(b) {
+              list.push(b);
+            }
+          }
+        }
+      }
+    }
+    for list in adj.values_mut() {
+      list.sort_unstable();
+    }
+    adj
+  });
+  crate::functions::geographics::country_outline_rings(Some(r.name))?;
+  Some(Expr::List(
+    adj
+      .get(r.entity)
+      .map(|l| l.iter().map(|e| entity(e)).collect::<Vec<_>>())
+      .unwrap_or_default()
+      .into(),
+  ))
+}
+
 fn missing(reason: &str, name: &str) -> Expr {
   call("Missing", vec![str_expr(reason), str_expr(name)])
 }
@@ -338,7 +667,35 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
     // Territories outside the sovereign list (e.g. Antarctica).
     return crate::functions::geographics::country_schematic_coordinates(name);
   }
-  let country = lookup(name)?;
+  let rec = record(name);
+  if let Some(r) = rec {
+    match property {
+      "CenterCoordinates" => {
+        if let Some((lat, lon)) =
+          crate::functions::geographics::country_center(r.name).or_else(|| {
+            crate::functions::geographics::country_center(r.full_name)
+          })
+        {
+          return Some(Expr::List(
+            vec![Expr::Real(lat), Expr::Real(lon)].into(),
+          ));
+        }
+      }
+      "BorderingCountries" => {
+        return Some(
+          bordering_countries(r)
+            .unwrap_or_else(|| missing("NotAvailable", property)),
+        );
+      }
+      _ => {}
+    }
+    if let Ok(Some(v)) = record_property(r, property) {
+      return Some(v);
+    }
+  }
+  let Some(country) = legacy(name) else {
+    return rec.map(|_| missing("NotAvailable", property));
+  };
   if let Some(lang) = property.strip_suffix("Speaking")
     && let Some(countries) = LANGUAGE_COUNTRIES
       .iter()
@@ -361,7 +718,10 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       .unwrap_or_else(|| missing("NotAvailable", property)),
     );
   }
-  if property == "SchematicCoordinates" {
+  if property == "SchematicCoordinates"
+    || property == "Coordinates"
+    || property == "FullCoordinates"
+  {
     return Some(
       crate::functions::geographics::country_schematic_coordinates(
         country.canonical,
@@ -374,7 +734,44 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
       make_quantity(Expr::Integer(country.population as i128), "People")
     }
     "Name" => str_expr(country.canonical),
-    "FullName" => str_expr(&standard_name(country.canonical)),
+    "FullName" => str_expr(country.canonical),
+    // WL's `Graphics[{fill, EdgeForm[Black], Polygon[{ring, …}]}]`, here
+    // with the rings in plain {lon, lat} degrees.
+    "Shape" => match crate::functions::geographics::country_outline_rings(Some(
+      country.canonical,
+    )) {
+      Some(rings) if !rings.is_empty() => {
+        let rings: Vec<Expr> = rings
+          .iter()
+          .map(|ring| {
+            Expr::List(
+              ring
+                .iter()
+                .map(|&(lon, lat)| {
+                  Expr::List(
+                    vec![Expr::Real(lon as f64), Expr::Real(lat as f64)].into(),
+                  )
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect();
+        eval_wl("{RGBColor[0.896, 0.8878, 0.8548], EdgeForm[GrayLevel[0]]}")
+          .map_or_else(
+            |_| missing("NotAvailable", property),
+            |style| {
+              let mut prims = match &style {
+                Expr::List(items) => items.to_vec(),
+                other => vec![other.clone()],
+              };
+              prims.push(call("Polygon", vec![Expr::List(rings.into())]));
+              call("Graphics", vec![Expr::List(prims.into())])
+            },
+          )
+      }
+      _ => missing("NotAvailable", property),
+    },
     _ => missing("NotAvailable", property),
   })
 }
@@ -390,7 +787,7 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .enumerate()
     .map(|(i, a)| match (i, a) {
       (0, Expr::FunctionCall { name, args: ea })
-        if name == "Entity"
+        if (name == "Entity" || name == "EntityClass")
           && ea.len() == 2
           && matches!(&ea[0], Expr::String(t) if t == "Country") =>
       {
@@ -402,28 +799,98 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &normalized[..];
   match args {
     [] => Ok(Expr::List(country_entities().into())),
-    [Expr::String(class)]
-      if COUNTRY_CLASSES.iter().any(|(c, _)| c == class) =>
-    {
-      let members = COUNTRY_CLASSES
-        .iter()
-        .find_map(|(c, ms)| (c == class).then_some(ms))
-        .unwrap();
-      let mut names: Vec<String> =
-        members.iter().map(|m| standard_name(m)).collect();
-      names.sort();
-      Ok(Expr::List(
-        names.iter().map(|n| str_expr(n)).collect::<Vec<_>>().into(),
-      ))
+    [Expr::Identifier(all)] if all == "All" => {
+      Ok(Expr::List(country_entities().into()))
     }
-    [Expr::String(name)] => Ok(match lookup(name) {
-      Some(c) => entity(c.canonical),
-      None => missing("UnknownCountry", name),
+    [Expr::Identifier(all), prop] if all == "All" => {
+      let values = country_entities()
+        .iter()
+        .map(|m| country_data_ast(&[m.clone(), prop.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(Expr::List(values.into()))
+    }
+    [Expr::String(s)] if s == "Continents" => Ok(Expr::List(
+      continents()
+        .into_iter()
+        .map(|c| call("EntityClass", vec![str_expr("Country"), str_expr(c)]))
+        .collect::<Vec<_>>()
+        .into(),
+    )),
+    [Expr::String(class)]
+      if class_members(class).is_some() && record(class).is_none() =>
+    {
+      Ok(Expr::List(class_members(class).unwrap().into()))
+    }
+    [Expr::String(name)] => Ok(match record(name) {
+      Some(r) => entity(r.entity),
+      None => match lookup(name) {
+        Some(c) => entity(c.canonical),
+        None => missing("UnknownCountry", name),
+      },
     }),
+    // A class with a property maps it over the members.
+    [Expr::String(class), prop]
+      if record(class).is_none() && class_members(class).is_some() =>
+    {
+      let members = class_members(class).unwrap();
+      let values = members
+        .iter()
+        .map(|m| country_data_ast(&[m.clone(), prop.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(Expr::List(values.into()))
+    }
     [Expr::String(name), Expr::String(property)] => Ok(
       country_property(name, property)
         .unwrap_or_else(|| missing("UnknownCountry", name)),
     ),
+    // `{prop, year}`: the statistic in that year.
+    [Expr::String(name), Expr::List(spec)]
+      if matches!(spec.as_slice(), [Expr::String(_), Expr::Integer(_)]) =>
+    {
+      let (Expr::String(prop), Expr::Integer(year)) = (&spec[0], &spec[1])
+      else {
+        unreachable!()
+      };
+      let Some(r) = record(name) else {
+        return Ok(missing("UnknownCountry", name));
+      };
+      match series_of(r, prop).and_then(|s| at_year(&s, *year as i64)) {
+        Some(v) => statistic_quantity(prop, v),
+        None if series_of(r, prop).is_some() => {
+          Ok(missing("NotAvailable", prop))
+        }
+        None => Ok(unevaluated("CountryData", args)),
+      }
+    }
+    // `{{prop}, {y1, y2}}` / `{{prop, currency}, {y1, y2}}` / `{prop, {y1,
+    // y2}}`: the statistic over those years as a TimeSeries.
+    [Expr::String(name), Expr::List(spec)]
+      if spec.len() == 2
+        && matches!(&spec[1], Expr::List(ys) if ys.len() == 2
+          && ys.iter().all(|y| matches!(y, Expr::Integer(_)))) =>
+    {
+      let prop = match &spec[0] {
+        Expr::String(p) => p.clone(),
+        Expr::List(ps) => match ps.first() {
+          Some(Expr::String(p)) => p.clone(),
+          _ => return Ok(unevaluated("CountryData", args)),
+        },
+        _ => return Ok(unevaluated("CountryData", args)),
+      };
+      let Expr::List(ys) = &spec[1] else {
+        unreachable!()
+      };
+      let (Expr::Integer(a), Expr::Integer(b)) = (&ys[0], &ys[1]) else {
+        unreachable!()
+      };
+      match record(name) {
+        Some(r) if series_of(r, &prop).is_some() => {
+          time_series(r, &prop, *a as i64, *b as i64)
+        }
+        Some(_) => Ok(missing("NotAvailable", &prop)),
+        None => Ok(missing("UnknownCountry", name)),
+      }
+    }
     [Expr::String(name), Expr::List(spec)]
       if spec.len() == 2
         && matches!(&spec[0], Expr::String(p) if p == "Shape" || p == "Polygon") =>
@@ -476,8 +943,9 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn entity(canonical: &str) -> Expr {
-  call("Entity", vec![str_expr("Country"), str_expr(canonical)])
+fn entity(name: &str) -> Expr {
+  let name = legacy(name).map_or(name, |c| entity_name(c.canonical));
+  call("Entity", vec![str_expr("Country"), str_expr(name)])
 }
 
 /// Parse `val` according to a scalar Interpreter type. Returns `None` when the

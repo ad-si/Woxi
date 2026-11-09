@@ -7121,7 +7121,7 @@ mod high_level_functions {
       );
       assert_eq!(
         interpret("GeoNearest[\"Country\", GeoPosition[{40, -100}]]").unwrap(),
-        "{Entity[Country, United States]}"
+        "{Entity[Country, UnitedStates]}"
       );
       assert_eq!(
         interpret("GeoNearest[\"Country\", GeoPosition[{35.7, 139.7}]]")
@@ -7135,7 +7135,7 @@ mod high_level_functions {
       // Natural Earth's "Dem. Rep. Congo" resolves to the canonical name.
       assert_eq!(
         interpret("GeoNearest[\"Country\", GeoPosition[{-2, 23}]]").unwrap(),
-        "{Entity[Country, Democratic Republic of the Congo]}"
+        "{Entity[Country, DemocraticRepublicCongo]}"
       );
     }
 

@@ -2270,6 +2270,16 @@ pub(crate) fn resolve_element(
   find_element(identifier).map(|elem| (elem.atomic_number, elem.standard_name))
 }
 
+/// The atomic symbol (`"Th"`) and standard name of element `z`.
+pub(crate) fn element_symbol_and_name(
+  z: i128,
+) -> Option<(&'static str, &'static str)> {
+  ELEMENTS
+    .iter()
+    .find(|e| e.atomic_number == z)
+    .map(|e| (e.abbreviation, e.standard_name))
+}
+
 /// Look up an element by name (case-insensitive), abbreviation, atomic
 /// number, or `Entity["Element", name]`.
 fn find_element(identifier: &Expr) -> Option<&'static Element> {

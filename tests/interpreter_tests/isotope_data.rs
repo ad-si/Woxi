@@ -147,10 +147,60 @@ Entity[\"Isotope\", \"Hydrogen3\"]}]"
       "{EntityProperty[Isotope, AtomicMass], \
        EntityProperty[Isotope, AtomicNumber], \
        EntityProperty[Isotope, BindingEnergy], \
+       EntityProperty[Isotope, BranchingRatios], \
+       EntityProperty[Isotope, DaughterNuclides], \
+       EntityProperty[Isotope, DecayModes], \
+       EntityProperty[Isotope, HalfLife], \
        EntityProperty[Isotope, IsotopeAbundance], \
+       EntityProperty[Isotope, Lifetime], \
        EntityProperty[Isotope, MassNumber], \
        EntityProperty[Isotope, NeutronNumber], \
-       EntityProperty[Isotope, StandardName]}"
+       EntityProperty[Isotope, Stable], \
+       EntityProperty[Isotope, StandardName], \
+       EntityProperty[Isotope, Symbol]}"
+    );
+  }
+
+  // The NUBASE2020 chart: every ground state, its half-life and decay.
+  #[test]
+  fn nuclide_chart_decays() {
+    clear_state();
+    assert_eq!(
+      interpret("IsotopeData[\"Carbon\"][[{1, -1}]]").unwrap(),
+      "{Entity[Isotope, Carbon8], Entity[Isotope, Carbon23]}"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Thorium209\", \"DaughterNuclides\"]").unwrap(),
+      "{Entity[Isotope, Radium205], Entity[Isotope, Actinium209]}"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Uranium238\", \"DaughterNuclides\"]").unwrap(),
+      "{Entity[Isotope, Thorium234], Missing[Variable], \
+       Entity[Isotope, Plutonium238]}"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Uranium238\", \"DecayModes\"]").unwrap(),
+      "{alpha emission, spontaneous fission, double beta decay}"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Thorium209\", \"HalfLife\"]").unwrap(),
+      "Quantity[60., Milliseconds]"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Carbon12\", \"HalfLife\"]").unwrap(),
+      "Quantity[Infinity, Seconds]"
+    );
+    assert_eq!(
+      interpret("IsotopeData[\"Carbon12\", \"DecayModes\"]").unwrap(),
+      "Missing[NotApplicable]"
+    );
+    assert_eq!(
+      interpret(
+        "IsotopeData[\"Thorium209\", \"Symbol\"] === \
+         Row[{Superscript[\"\", 209], \"Th\"}]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 

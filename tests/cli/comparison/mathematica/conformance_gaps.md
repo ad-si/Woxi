@@ -530,6 +530,21 @@ implemented for `Sort` and `Order` but not for the `Plus` comparator, which is
 the delicate one (it is not strictly transitive and its sort is wrapped in a
 panic guard with a string-key fallback).
 
+The same rule decides a sum over a reciprocal symbol and the factors of a
+product with a sum and a call:
+
+```sh
+wolframscript -code 'e*u + (a + b)/u'          # (a + b)/u + e*u
+woxi eval 'e*u + (a + b)/u'                    # e*u + (a + b)/u
+wolframscript -code 'c*v + (a + b)/u'          # (a + b)/u + c*v
+woxi eval 'c*v + (a + b)/u'                    # c*v + (a + b)/u
+wolframscript -code 'f[z] (a + Cos[z])'        # (a + Cos[z])*f[z]
+woxi eval 'f[z] (a + Cos[z])'                  # f[z]*(a + Cos[z])
+```
+
+`D[MathieuCPrime[a, q, z], z]` shows the second one: WL prints
+`(-a + 2*q*Cos[2*z])*MathieuC[a, q, z]`, Woxi the factors swapped.
+
 ### A power of a function call sorts before everything
 
 ```sh
@@ -2417,9 +2432,14 @@ first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
 leaves the region the equations are defined on.
 
-Woxi does not compute consistent initial values (`NDSolve::ivres`): it takes
-the given ones as they are, so a DAE started off its constraints differs from
-WL's from the start.
+Woxi does not compute consistent initial values: it takes the given ones as
+they are, so a DAE started off its constraints differs from WL's from the
+start. Only a given initial derivative of an unknown's full differential
+order is checked: it is replaced by the value the system determines, with
+`NDSolve::ivres` when the two differ. A condition on a function eliminated by
+a constraint is dropped without that check (WL reports `ivres` for
+`{y'[t] == x[t], x[t] == y[t], y[0] == 1, x'[0] == 3}`, Woxi is silent), and
+an over-specified pure ODE stays unevaluated without WL's `NDSolve::ndnco`.
 
 ### `NDSolve` of a distillation-column DAE
 
@@ -4046,6 +4066,24 @@ maximum a front end shows (this is the shape of the "Function Explorer 3D"
 Demonstration), and Woxi Studio reads its controls out of exactly this
 expression. A `0` conformant with wolframscript would leave that
 Demonstration with an empty slider.
+
+### `Manipulate` controls are bound dynamically, not lexically
+
+Wolfram's `DynamicModule` renames a Manipulate's control variables in its
+body (and `Initialization`), so a function defined elsewhere that mentions
+a control's name sees the global symbol, not the control's value. Woxi binds
+controls with `Block` (or as scoped globals in Woxi Studio), so such a
+function does see the value. The visible case, a rule in the body that
+rebinds a control name (`Entity["Isotope", isotope_] -> isotope`), is
+handled by renaming that rule's own variables first (`isotope$_ ->
+isotope$`); a global function reading a control name is not.
+
+### A shadowed later specification of a nested multi-spec `With`
+
+`With[{x = 5}, Hold[With[{y = x}, {x = 1}, {x, y}]]]` is
+`Hold[With[{y = 5}, {x = 1}, {x, y}]]` in wolframscript; Woxi renames the
+inner `y` to `y$` because it does not see that the later `{x = 1}` shadows
+the outer `x` in the body.
 
 ### `Get` returns raw text
 
@@ -6172,15 +6210,16 @@ pre-built tube mesh.
 
 ## Chemistry data
 
-### `IsotopeData` carries NIST's isotope table, not the full ~3000-nuclide chart
+### `IsotopeData`: NUBASE2020 chart with NIST masses and abundances
 
-Like `GraphData`'s atlas slice above, Woxi bundles the isotopes from NIST's
-"Atomic Weights and Isotopic Compositions for All Elements" (the same table
-`ElementData["…", "AtomicWeight"]` is built from): one or two naturally
-occurring isotopes for every element that has any, plus the longest-lived
-known isotope for every element that has none — 354 isotopes total, against
-Wolfram's own curated chart of roughly 3000. An isotope outside that set is
-unrecognized where WL answers it.
+`IsotopeData` lists the 3557 ground states of the NUBASE2020 evaluation
+(`resources/isotope_data.tsv.gz`), WL lists 3558. Half-lives, decay modes,
+branching ratios and daughters are NUBASE2020's, which can differ from WL's
+curated values in the last digits and in modes NUBASE marks as uncertain
+(`?` becomes `Missing["Unknown"]` in `"BranchingRatios"`). Atomic masses are
+NIST's where NIST lists the isotope and computed from NUBASE's mass excess
+otherwise; values are machine reals rather than WL's precision-tagged
+numbers.
 
 `ElementData[…, "StableIsotopes"]` draws from the same table and applies the
 same coarser cut: an isotope counts as "stable" when NIST reports a measured
@@ -6214,9 +6253,9 @@ tabulated representative composition and the best-measurement range it sits
 in).
 
 `IsotopeData["Properties"]` lists the `EntityProperty["Isotope", …]` objects
-Woxi answers — seven, against the roughly sixty of Wolfram's curated chart
-(decay modes, half-lives, magnetic moments, medical applications, …). Same
-story as `ElementData["Properties"]`.
+Woxi answers — fourteen, against the roughly sixty of Wolfram's curated
+chart (magnetic moments, medical applications, …). Same story as
+`ElementData["Properties"]`.
 
 ## Geometry and regions
 
@@ -8307,6 +8346,11 @@ from a stated rule or needs missing machinery:
   are not implemented (3DCoordinateSystemTransformations).
 - `FindIndependentEdgeSet` is not implemented
   (SpreadsheetLikeSolutionOfLargeScaleSystemsOfEquations).
+- `Import` of a URL that answers with an HTTP error is a hard evaluation
+  error (`Import: failed to download …: … returned error: 404`); Wolfram
+  imports the error page by its content, so
+  `Import["http://www.spore.com/static/image/500/076/115/500076115030_lrg.png"]`
+  is the text `Not Found …` (3DSporeCreations, whose data is offline).
 
 ### Eigenvalues of equal magnitude are ordered by float noise
 
@@ -8400,12 +8444,37 @@ for point.
 
 ### CountryData curated data
 
-WL 15's `CountryData["EU"]` lists `Entity["Country", …]` objects (Woxi:
-names), `CountryData["Italy", "FullName"]` is the official
-`"Italian Republic"` (Woxi: the common name), and the shape and polygon
-properties come from WL's finer outlines with its own nesting, so tests over
-their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ. These
-need WL's curated country data.
+Woxi's `CountryData` uses WL's entity names and classes, but its numbers
+come from the World Bank (`resources/country_data.tsv.gz`, CC BY 4.0), so
+populations, GDPs and areas differ from WL's own curated values (US area:
+WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
+World Bank year rather than WL's rounded estimate. Yearly series are
+returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
+`DateObject`s). The shape and polygon properties come from Natural Earth's
+1:110m outlines, coarser than WL's and with their own nesting, so tests over
+their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
+`"BorderingCountries"` is derived from shared outline vertices and misses
+borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
+
+### CityData beyond the verified cities
+
+Besides the Wolfram-verified cities of `city_data.json`, `CityData` knows
+the GeoNames cities (CC BY 4.0) of at least 100 000 people. Their entity
+names are GeoNames' ASCII names in CamelCase, so regions can be spelled
+differently from WL (`"NorthHolland"` where WL writes `"NoordHolland"`),
+their populations are GeoNames' figures, and `CityData[{All, country}]`
+lists only those cities (WL lists every town it knows).
+
+### ChemicalData curated data
+
+`ChemicalData` covers ~200 compounds from PubChem
+(`resources/chemical_data.tsv.gz`). Atom order, bonds and 2-D coordinates
+match WL (both use PubChem's records); the 3-D conformer
+(`"AtomPositions"`, `"MoleculePlot"`) is PubChem's and differs from WL's,
+the molecular weights carry PubChem's precision (butane 58.12, WL
+58.124), `"FormulaDisplay"` is the Hill formula instead of WL's condensed
+structural formula, `"LogAcidityConstant"` is the first pKa PubChem states
+(conjugate-acid values for amines), and the drawings are Woxi's own.
 
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
@@ -8485,8 +8554,9 @@ variables (`0.49999999999999956`), constrained `FindMaximum` stopping points
 (`1.0000000026163025`), `NIntegrate` (`0.5000000000000006`), `LinearSolve`
 least-squares and minimum-norm solutions, `FindFit`, `NonlinearModelFit`,
 `GeneralizedLinearModelFit`, machine `Eigenvalues`, `QPochhammer`, `Erfc` and
-`InverseErf`, and a `RecurrenceTable` solved for its leading terms
-(`72.49999999999999`). The conformance harness compares these with
+`InverseErf`, the normal-approximation p-values of `MannWhitneyTest` past 40
+values (`0.14538130875888647` against `0.14538130875888652`), and a
+`RecurrenceTable` solved for its leading terms (`72.49999999999999`). The conformance harness compares these with
 `NEAR_MATCH` (relative 10^-8). Where a rounding step magnifies the difference
 (`Round[…, 10^-6]` of an ANOVA sum on a tie, the `L` of a bounded
 `FindMaximum` rounded to 10^-6) the cases are skipped.

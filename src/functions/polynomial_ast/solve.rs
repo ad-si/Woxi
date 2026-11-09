@@ -3829,6 +3829,29 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !nonlinear && found(&result) > 0 {
       return Ok(result);
     }
+    // A univariate system (one unknown, no parameters, any number of
+    // equations and inequalities) is solved numerically by wolframscript,
+    // without the warning (`Solve[{x^2 == 2.5, x > 0}, x]`).
+    let univariate = matches!(vars.as_slice(), [Expr::Identifier(v)] if {
+      let operands: Vec<Expr> = parts
+        .iter()
+        .flat_map(|p| match p {
+          Expr::Comparison { operands, .. } => operands.clone(),
+          other => vec![other.clone()],
+        })
+        .collect();
+      matches!(
+        crate::evaluator::evaluate_function_call_ast(
+          "Variables",
+          &[Expr::List(operands.into())],
+        ),
+        Ok(Expr::List(ref vs))
+          if matches!(vs.as_slice(), [Expr::Identifier(w)] if w == v)
+      )
+    });
+    if univariate && found(&result) > 0 {
+      return Ok(result);
+    }
     let exact_result = {
       let _numeric = NumericRootsScope::new();
       solve_ast_entry(&[exact, args[1].clone()])?
@@ -3854,7 +3877,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Identifier(ref t)) if t == "True"
         )
       });
-      if !in_nsolve() && polynomial {
+      if !in_nsolve() && polynomial && !univariate {
         crate::emit_message(
           "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
         );
@@ -3971,6 +3994,274 @@ fn has_inexact_exponent(expr: &Expr) -> bool {
 /// interval (`f[t] == 0 && 0 <= t <= 1`): its real roots there, found
 /// numerically, as wolframscript reports them (with Solve::ratnz when it
 /// finds any). None for anything else, including polynomial equations.
+/// `Solve[f == g, x, Reals]` for an exp-log equation with machine
+/// coefficients (`Exp[x] == 3.5 x`, `x Log[x] == 0.3`, `2.^x == x^2`):
+/// built from `x`, numbers, `+`, `*`, powers with constant exponents,
+/// powers of positive constants, `Exp` and `Log`, such an equation has
+/// finitely many real roots. wolframscript solves the rationalized system
+/// exactly and numericizes the roots, with Solve::ratnz; here they are
+/// bracketed by sign changes on a grid over the whole line (`x = Sinh[u]`,
+/// up to 10^12), refined, and polished at 40 digits on the rationalized
+/// equation so they round as wolframscript's do. A grid point where the
+/// residual nearly touches zero without changing sign (a double root)
+/// gives up: such roots cannot be told from near misses. `None` for
+/// anything else.
+fn solve_real_exp_log_inexact(args: &[Expr]) -> Option<Expr> {
+  let [
+    eq @ Expr::Comparison {
+      operands,
+      operators,
+    },
+    var @ Expr::Identifier(name),
+  ] = args
+  else {
+    return None;
+  };
+  if operands.len() != 2 || !matches!(operators[0], ComparisonOp::Equal) {
+    return None;
+  }
+  if !crate::functions::math_ast::contains_inexact_real(eq) {
+    return None;
+  }
+  let residual = minus2(operands[0].clone(), operands[1].clone());
+  fn exp_log(e: &Expr, var: &str) -> bool {
+    use crate::functions::calculus_ast::is_constant_wrt;
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => true,
+      Expr::Constant(c) => matches!(c.as_str(), "E" | "Pi"),
+      Expr::Identifier(n) => n == var || matches!(n.as_str(), "E" | "Pi"),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Plus" | "Times" => args.iter().all(|a| exp_log(a, var)),
+        "Rational" | "Complex" => is_constant_wrt(e, var),
+        "Exp" | "Log" | "Sqrt" if args.len() == 1 => exp_log(&args[0], var),
+        "Power" if args.len() == 2 => {
+          exp_log(&args[0], var)
+            && exp_log(&args[1], var)
+            && (is_constant_wrt(&args[1], var)
+              || is_constant_wrt(&args[0], var))
+        }
+        _ => false,
+      },
+      Expr::BinaryOp { op, left, right } => match op {
+        crate::syntax::BinaryOperator::Power => {
+          exp_log(left, var)
+            && exp_log(right, var)
+            && (is_constant_wrt(right, var) || is_constant_wrt(left, var))
+        }
+        _ => exp_log(left, var) && exp_log(right, var),
+      },
+      Expr::UnaryOp { operand, .. } => exp_log(operand, var),
+      _ => false,
+    }
+  }
+  if !exp_log(&residual, name)
+    || crate::functions::calculus_ast::is_constant_wrt(&residual, name)
+  {
+    return None;
+  }
+  // Polynomials have their own methods.
+  if matches!(
+    crate::evaluator::evaluate_function_call_ast(
+      "PolynomialQ",
+      &[residual.clone(), var.clone()],
+    ),
+    Ok(Expr::Identifier(ref t)) if t == "True"
+  ) {
+    return None;
+  }
+  let eval_at = |x: f64| -> Option<f64> {
+    let substituted = substitute_expr(&residual, var, &Expr::Real(x));
+    let evaled =
+      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+    try_eval_to_f64(&evaled).filter(|v| v.is_finite())
+  };
+  const SAMPLES: usize = 6000;
+  let u_max = 1e12f64.asinh();
+  let mut xs: Vec<f64> = (0..=SAMPLES)
+    .map(|i| (-u_max + 2.0 * u_max * i as f64 / SAMPLES as f64).sinh())
+    .collect();
+  xs.push(0.0);
+  xs.sort_by(f64::total_cmp);
+  xs.dedup();
+  let points: Vec<(f64, Option<f64>)> =
+    xs.iter().map(|&x| (x, eval_at(x))).collect();
+  // A residual dipping towards zero at a sample between two of the same
+  // sign may hide a double root (or a pair of close ones): give up.
+  for w in points.windows(3) {
+    if let [(xp, Some(fp)), (_, Some(f)), (xq, Some(fq))] = *w
+      && f != 0.0
+      && f.signum() == fp.signum()
+      && f.signum() == fq.signum()
+      && f.abs() < fp.abs()
+      && f.abs() < fq.abs()
+    {
+      // Golden-section search for the smallest |residual| in between.
+      let (mut a, mut b) = (xp, xq);
+      let g = 0.5 * (5f64.sqrt() - 1.0);
+      let mut least = f.abs();
+      for _ in 0..80 {
+        let c = b - g * (b - a);
+        let d = a + g * (b - a);
+        let (Some(fc), Some(fd)) = (eval_at(c), eval_at(d)) else {
+          break;
+        };
+        least = least.min(fc.abs()).min(fd.abs());
+        if fc.signum() != f.signum() || fd.signum() != f.signum() {
+          // Two close simple roots: the grid cannot separate them.
+          return None;
+        }
+        if fc.abs() < fd.abs() {
+          b = d;
+        } else {
+          a = c;
+        }
+      }
+      if least <= 1e-10 * fp.abs().max(fq.abs()) {
+        return None;
+      }
+    }
+  }
+  // A sample where the residual is exactly zero is a root only when its
+  // neighbors are not: a run of zeros is underflow (`E^x (x - 1.5)` far
+  // to the left).
+  let isolated_zero = |i: usize| {
+    points[i].1 == Some(0.0)
+      && (i == 0 || points[i - 1].1.is_some_and(|f| f != 0.0))
+      && points
+        .get(i + 1)
+        .is_none_or(|p| p.1.is_some_and(|f| f != 0.0))
+  };
+  if points.iter().any(|(_, f)| *f == Some(0.0))
+    && (0..points.len()).any(|i| points[i].1 == Some(0.0) && !isolated_zero(i))
+  {
+    // Underflow on a whole stretch: the scan cannot see roots there.
+    let zeros: Vec<usize> = (0..points.len())
+      .filter(|&i| points[i].1 == Some(0.0))
+      .collect();
+    let at_ends = zeros.iter().all(|&i| {
+      points[..=i].iter().all(|p| p.1 == Some(0.0))
+        || points[i..].iter().all(|p| p.1 == Some(0.0))
+    });
+    if !at_ends {
+      return None;
+    }
+  }
+  let mut roots: Vec<f64> = Vec::new();
+  for (i, pair) in points.windows(2).enumerate() {
+    let ((a, Some(fa)), (b, Some(fb))) = (pair[0], pair[1]) else {
+      continue;
+    };
+    if fa == 0.0 {
+      if isolated_zero(i) {
+        roots.push(a);
+      }
+      continue;
+    }
+    if fb == 0.0 || fa.signum() == fb.signum() {
+      continue;
+    }
+    // Bisection to the last bit.
+    let (mut lo, mut hi, mut flo) = (a, b, fa);
+    loop {
+      let m = f64::midpoint(lo, hi);
+      if m <= lo || m >= hi {
+        break;
+      }
+      let fm = eval_at(m)?;
+      if fm == 0.0 {
+        lo = m;
+        hi = m;
+        break;
+      }
+      if fm.signum() == flo.signum() {
+        lo = m;
+        flo = fm;
+      } else {
+        hi = m;
+      }
+    }
+    let root = f64::midpoint(lo, hi);
+    // A sign change across a pole is no root: the residual there is huge.
+    let froot = eval_at(root).unwrap_or(f64::INFINITY);
+    if froot.abs() > 1e-6 * fa.abs().max(fb.abs()).max(1.0) {
+      continue;
+    }
+    roots.push(root);
+  }
+  if isolated_zero(points.len() - 1) {
+    roots.push(points.last()?.0);
+  }
+  if roots.is_empty() {
+    return Some(Expr::List(Vec::new().into()));
+  }
+  // Polish each root at 40 digits on the rationalized residual.
+  let exact = crate::evaluator::evaluate_function_call_ast(
+    "Rationalize",
+    &[residual.clone(), Expr::Integer(0)],
+  )
+  .ok()?;
+  let derivative =
+    crate::functions::calculus_ast::differentiate_expr(&exact, name).ok()?;
+  let n40 = |e: Expr| {
+    crate::evaluator::evaluate_function_call_ast("N", &[e, Expr::Integer(40)])
+  };
+  let mut rules = Vec::new();
+  for root in roots {
+    let mut x = crate::evaluator::evaluate_function_call_ast(
+      "SetPrecision",
+      &[Expr::Real(root), Expr::Integer(40)],
+    )
+    .ok()?;
+    for _ in 0..3 {
+      let Ok(fx) = quietly(|| n40(substitute_expr(&exact, var, &x))) else {
+        break;
+      };
+      let Ok(dfx) = quietly(|| n40(substitute_expr(&derivative, var, &x)))
+      else {
+        break;
+      };
+      if try_eval_to_f64(&fx) == Some(0.0) {
+        break;
+      }
+      if !try_eval_to_f64(&dfx).is_some_and(|d| d != 0.0) {
+        break;
+      }
+      let Ok(next) = crate::evaluator::evaluate_function_call_ast(
+        "Subtract",
+        &[
+          x.clone(),
+          Expr::FunctionCall {
+            name: "Divide".into(),
+            args: vec![fx, dfx].into(),
+          },
+        ],
+      ) else {
+        break;
+      };
+      if try_eval_to_f64(&next).is_none() {
+        break;
+      }
+      x = next;
+    }
+    let value = try_eval_to_f64(&x).unwrap_or(root);
+    // The polished root has to stay in its bracket's neighborhood.
+    let value = if (value - root).abs() <= 1e-8 * root.abs().max(1.0) {
+      value
+    } else {
+      root
+    };
+    rules.push(Expr::List(
+      vec![rule_expr(var.clone(), Expr::Real(value))].into(),
+    ));
+  }
+  if !in_nsolve() {
+    crate::emit_message(
+      "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
+    );
+  }
+  Some(Expr::List(rules.into()))
+}
+
 fn solve_bounded_inexact_transcendental(args: &[Expr]) -> Option<Expr> {
   if args.len() != 2
     || !crate::functions::math_ast::contains_inexact_real(&args[0])
@@ -6419,6 +6710,14 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If another domain is specified, solve without domain first, then filter.
   // Non-affine integer equations also use this established algebraic path.
   if let Some(ref dom) = domain {
+    // An exp-log equation with machine coefficients over the reals takes
+    // wolframscript's exact route (Solve::ratnz) even where an inexact
+    // closed form exists.
+    if dom == "Reals"
+      && let Some(roots) = solve_real_exp_log_inexact(&args[..2])
+    {
+      return Ok(roots);
+    }
     // Over the reals the solutions found are all there are: wolframscript
     // reports no use of inverse functions.
     let base_solutions = {
@@ -13552,6 +13851,75 @@ const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
 /// How many times one Newton step may be halved before it is accepted anyway.
 const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
 
+/// The point `x + t d` a backtracking line search on the merit function
+/// `f^2/2` accepts along the (possibly cut back) Newton direction `d`:
+/// the full step when it decreases the merit sufficiently (Armijo,
+/// 10^-4), else the minimizer of the quadratic, then cubic, model of the
+/// merit, kept within [t/10, t/2] of the previous trial.
+fn find_root_line_search(
+  func: &Expr,
+  var: &str,
+  x: f64,
+  fx: f64,
+  fpx: f64,
+  d: f64,
+) -> f64 {
+  const ALPHA: f64 = 1e-4;
+  let phi0 = 0.5 * fx * fx;
+  let slope = fx * fpx * d;
+  if slope >= 0.0 {
+    return x + d;
+  }
+  let merit = |t: f64| {
+    find_root_eval_at(func, var, x + t * d)
+      .ok()
+      .filter(|v| v.is_finite())
+      .map(|v| 0.5 * v * v)
+  };
+  let mut t = 1.0;
+  // The previous trial and its merit, for the cubic model.
+  let mut prev: Option<(f64, f64)> = None;
+  for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+    let Some(phi) = merit(t) else {
+      prev = None;
+      t *= 0.5;
+      continue;
+    };
+    if phi <= phi0 + ALPHA * t * slope {
+      return x + t * d;
+    }
+    let next = match prev {
+      None => -slope / (2.0 * (phi - phi0 - slope)),
+      Some((t2, phi2)) => {
+        let r1 = phi - phi0 - t * slope;
+        let r2 = phi2 - phi0 - t2 * slope;
+        let a = (r1 / (t * t) - r2 / (t2 * t2)) / (t - t2);
+        let b = (-t2 * r1 / (t * t) + t * r2 / (t2 * t2)) / (t - t2);
+        let cubic = if a == 0.0 {
+          -slope / (2.0 * b)
+        } else {
+          let disc = b * b - 3.0 * a * slope;
+          if disc < 0.0 {
+            0.5 * t
+          } else if b <= 0.0 {
+            (-b + disc.sqrt()) / (3.0 * a)
+          } else {
+            -slope / (b + disc.sqrt())
+          }
+        };
+        cubic.min(0.5 * t)
+      }
+    };
+    prev = Some((t, phi));
+    t = if next.is_finite() {
+      next.max(0.1 * t)
+    } else {
+      0.5 * t
+    };
+  }
+  x + t * d
+}
+
 /// A root of `f` inside the bracket `(a, fa)`, `(b, fb)` (`fa`, `fb` of
 /// opposite signs) by Brent's method, as in Numerical Recipes' `zbrent`:
 /// inverse quadratic interpolation or a secant step when it stays well
@@ -14249,6 +14617,38 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       break;
     }
     let step = fx / fpx;
+    // In a search region the Newton step is first cut back to the region's
+    // edge (no point outside it is ever evaluated) and then shortened by a
+    // quadratic/cubic backtracking line search on the merit function
+    // f^2/2, as wolframscript does: from 95 in [65, 96] a step that would
+    // reach 52.4 is cut to 65, and the worse residual there is interpolated
+    // to 81.26.
+    if let Some((lo, hi)) = bounds {
+      let target = (x - step).clamp(lo, hi);
+      let d = target - x;
+      if d == 0.0 {
+        let real = |v: f64| {
+          crate::syntax::format_expr(
+            &Expr::Real(v),
+            crate::syntax::ExprForm::Output,
+          )
+        };
+        crate::emit_message(&format!(
+          "FindRoot::reged: The point {{{}}} is at the edge of the search \
+           region {{{}, {}}} in coordinate 1 and the computed search \
+           direction points outside the region.",
+          real(x),
+          real(lo),
+          real(hi)
+        ));
+        converged = true;
+        break;
+      }
+      previous = Some(x);
+      x = find_root_line_search(&func, &var, x, fx, fpx, d);
+      fire_step_monitor(step_monitor, std::slice::from_ref(&var), &[x]);
+      continue;
+    }
     // Backtrack while the step overshoots into a worse residual.
     let mut trial = x - step;
     let mut shrink = 1.0;

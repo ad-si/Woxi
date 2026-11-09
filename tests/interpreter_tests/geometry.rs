@@ -1,5 +1,71 @@
 use super::*;
 
+mod tetgen_convex_hull {
+  use super::*;
+
+  #[test]
+  fn undefined_until_the_package_is_loaded() {
+    clear_state();
+    assert_eq!(
+      interpret("TetGenLink`TetGenConvexHull[{{0, 0, 0}}]").unwrap(),
+      "TetGenLink`TetGenConvexHull[{{0, 0, 0}}]"
+    );
+  }
+
+  #[test]
+  fn keeps_every_point_and_winds_faces_inward() {
+    clear_state();
+    // A unit tetrahedron with an interior point: all five points come back
+    // as reals, and the four faces (wound so their right-hand normal points
+    // into the hull, as TetGen does) only use the corners.
+    let code = "Get[\"TetGenLink`\"]; \
+      {pts, faces} = TetGenLink`TetGenConvexHull[\
+        {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1/10, 1/10, 1/10}}]; \
+      {pts, Sort[RotateLeft[#, Ordering[#, 1][[1]] - 1] & /@ faces], \
+       Union[Sign[Dot[Cross[pts[[#[[2]]]] - pts[[#[[1]]]], \
+         pts[[#[[3]]]] - pts[[#[[1]]]]], \
+         {0.25, 0.25, 0.25} - pts[[#[[1]]]]]] & /@ faces]}";
+    assert_eq!(
+      interpret(code).unwrap(),
+      "{{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}, \
+       {0.1, 0.1, 0.1}}, {{1, 2, 3}, {1, 3, 4}, {1, 4, 2}, {2, 4, 3}}, {1}}"
+    );
+  }
+
+  #[test]
+  fn cube_has_twelve_triangles() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Get[\"TetGenLink`\"]; \
+         Length[Last[TetGenLink`TetGenConvexHull[\
+           Tuples[{-1, 1}, 3] + RandomReal[10^-6, {8, 3}]]]]"
+      )
+      .unwrap(),
+      "12"
+    );
+  }
+
+  #[test]
+  fn coplanar_points_fail() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Get[\"TetGenLink`\"]; \
+       TetGenLink`TetGenConvexHull[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result.warnings.iter().any(|w| w.starts_with(
+        "TetGenConvexHull::tetfc: A convex hull could not be found from the \
+         points {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}."
+      )),
+      "{:?}",
+      result.warnings
+    );
+  }
+}
+
 mod area {
   use super::*;
 

@@ -11537,6 +11537,32 @@ mod mathieu_s {
   }
 
   #[test]
+  fn mathieu_derivatives_in_z() {
+    assert_eq!(
+      interpret("D[MathieuC[a, q, z], z]").unwrap(),
+      "MathieuCPrime[a, q, z]"
+    );
+    assert_eq!(
+      interpret("D[MathieuC[a, q, z^2], z]").unwrap(),
+      "2*z*MathieuCPrime[a, q, z^2]"
+    );
+    assert_eq!(
+      interpret("D[MathieuCPrime[a, q, z], z] /. MathieuC[a, q, z] -> 1")
+        .unwrap(),
+      "-a + 2*q*Cos[2*z]"
+    );
+    assert_eq!(
+      interpret("D[MathieuSPrime[a, q, 2 z], z] /. MathieuS[a, q, 2 z] -> 1")
+        .unwrap(),
+      "2*(-a + 2*q*Cos[4*z])"
+    );
+    assert_eq!(
+      interpret("Derivative[1][Function[x, MathieuS[a, q, 3 x]]]").unwrap(),
+      "Function[x, 3*MathieuSPrime[a, q, 3*x]]"
+    );
+  }
+
+  #[test]
   fn mathieu_c_prime_q_zero_at_origin() {
     let val = parse_real(&interpret("MathieuCPrime[3, 0, 0]").unwrap());
     assert!(

@@ -3941,6 +3941,21 @@ mod setting {
       "ColorSetterBox[RGBColor[1, 0, 0], SwatchSpectrum]"
     );
   }
+
+  // Nested Dynamic objects settle as well before the result is evaluated
+  // (wolframscript: 11, 1 and Hold[a]).
+  #[test]
+  fn nested_dynamic_settles() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = 1; f[x_Integer] := x + 10; b = Dynamic[f[Dynamic[a]]]; \
+         {Setting[b], Setting[Dynamic[Dynamic[a]]], Setting[Hold[Dynamic[a]]]}"
+      )
+      .unwrap(),
+      "{11, 1, Hold[a]}"
+    );
+  }
 }
 
 // Regressions from the "Sudoku Game" Demonstration notebook.

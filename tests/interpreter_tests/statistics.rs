@@ -1,5 +1,150 @@
 use super::*;
 
+mod mann_whitney_test {
+  use super::*;
+
+  fn close(code: &str, expected: f64) {
+    clear_state();
+    let got: f64 = interpret(code).unwrap().parse().unwrap();
+    assert!(
+      (got - expected).abs() <= 1e-12 * expected.abs(),
+      "{code}: {got} vs {expected}"
+    );
+  }
+
+  #[test]
+  fn small_samples_use_the_tie_free_u_distribution() {
+    clear_state();
+    // Exact p-values count strictly beyond the observed U.
+    assert_eq!(
+      interpret(
+        "a = {1.2, 3.4, 2.2, 5.1, 0.3}; b = {2.5, 6.1, 4.4, 7.7}; \
+         {MannWhitneyTest[{a, b}], MannWhitneyTest[{a, b}, 0, \
+         \"TestStatistic\"], MannWhitneyTest[{a, b}, 1]}"
+      )
+      .unwrap(),
+      "{0.06349206349206349, 3., 0.015873015873015872}"
+    );
+    // Ties do not change the distribution, only the observed U.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{MannWhitneyTest[{{1, 1, 2, 2, 3, 4, 4, 5}, {2, 3, 3, 5, 6, 6}}], \
+         MannWhitneyTest[{{1, 2, 3}, {1, 2, 3}}], \
+         MannWhitneyTest[{{1, 2, 3}, {1, 2, 3, 4}}]}"
+      )
+      .unwrap(),
+      "{0.10789210789210789, 0.7, 0.4}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "d = {{1, 2, 3, 4}, {2.5, 7, 8}}; \
+         {MannWhitneyTest[d, 0, \"PValue\", AlternativeHypothesis -> \"Less\"], \
+         MannWhitneyTest[d, 0, \"PValue\", AlternativeHypothesis -> \"Greater\"], \
+         MannWhitneyTest[d, 0, {\"PValue\", \"TestStatistic\"}], \
+         MannWhitneyTest[{{1, 2, 3, 4}, {6, 7, 8}}, 0, \"PValue\", \
+         AlternativeHypothesis -> \"Less\"]}"
+      )
+      .unwrap(),
+      "{0.05714285714285714, 0.8857142857142857, {0.11428571428571428, 2.}, 0.}"
+    );
+  }
+
+  #[test]
+  fn large_samples_use_the_shifted_normal_approximation() {
+    // Past 40 values: half a unit away from the mean when the first sample
+    // is at least as large, towards it otherwise; capped at an exact 1.
+    close(
+      "MannWhitneyTest[{Range[50], Range[26] + 2.5}]",
+      0.006730916565531216,
+    );
+    close(
+      "MannWhitneyTest[{Range[15], Range[26] + 2.5}]",
+      0.0016145866268426486,
+    );
+    close(
+      "MannWhitneyTest[{Range[30], Range[25] + 3.5}]",
+      0.666447524317362,
+    );
+    close(
+      "MannWhitneyTest[{Range[40], Range[30] + 2.5}, 0, \"PValue\", \
+       AlternativeHypothesis -> \"Less\"]",
+      0.8116930076561807,
+    );
+    close(
+      "MannWhitneyTest[{Range[30], Range[40] + 2.5}, 0, \"PValue\", \
+       AlternativeHypothesis -> \"Greater\"]",
+      0.9957146724256545,
+    );
+    clear_state();
+    assert_eq!(
+      interpret("MannWhitneyTest[{Range[20] + 10, Range[40]}]").unwrap(),
+      "1"
+    );
+    // With ties the variance is tie-corrected.
+    close(
+      "MannWhitneyTest[{Join[Range[30], Range[30]], Range[25] + 3}]",
+      0.8056279646916784,
+    );
+    close(
+      "MannWhitneyTest[{Range[30], Join[Range[25], Range[25]] + 3}]",
+      0.8075206670569994,
+    );
+  }
+
+  #[test]
+  fn conclusions_and_tables() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "x = Range[40]; y = Range[30] + 22.5; \
+         {MannWhitneyTest[{x, y}, -3.1, \"TestConclusion\", \
+         SignificanceLevel -> 0.01], \
+         MannWhitneyTest[{x, y}, 0, \"TestConclusion\", \
+         AlternativeHypothesis -> \"Greater\"], \
+         MannWhitneyTest[{x, y}, 0, \"ShortTestConclusion\"]}"
+      )
+      .unwrap(),
+      "{The null hypothesis that the median difference is -3.1 is rejected \
+       at the 1. percent level based on the Mann\u{2010}Whitney test., The \
+       null hypothesis that the median difference is less than or equal to \
+       0 is not rejected at the 5 percent level based on the \
+       Mann\u{2010}Whitney test., Reject}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "MannWhitneyTest[{{1, 2, 3, 4}, {2.5, 7, 8}}, 0, \"TestDataTable\"]"
+      )
+      .unwrap(),
+      "Grid[{{, Statistic, P\u{2010}Value}, {Mann\u{2010}Whitney, 2., \
+       0.11428571428571428}}, Alignment -> {Left, Automatic}, Dividers -> \
+       {{2 -> GrayLevel[0.7]}, {2 -> GrayLevel[0.7]}}, Spacings -> Automatic]"
+    );
+  }
+
+  #[test]
+  fn invalid_input_stays_unevaluated_with_a_message() {
+    clear_state();
+    let result =
+      interpret_with_stdout("MannWhitneyTest[{{1, 2, 3, 4}, {a, 7, 8}}]")
+        .unwrap();
+    assert_eq!(result.result, "MannWhitneyTest[{{1, 2, 3, 4}, {a, 7, 8}}]");
+    assert!(result.warnings[0].starts_with("MannWhitneyTest::rctndmln"));
+    clear_state();
+    let result =
+      interpret_with_stdout("MannWhitneyTest[{{1, 2}, {3, 4}}, 0, \"Bogus\"]")
+        .unwrap();
+    assert_eq!(result.result, "MannWhitneyTest[{{1, 2}, {3, 4}}, 0, Bogus]");
+    assert_eq!(
+      result.warnings[0],
+      "MannWhitneyTest::invprp: The argument Bogus is not a valid property. \
+       Specify \"Properties\" to obtain a list of valid properties."
+    );
+  }
+}
+
 #[test]
 fn standardized_moments_handle_degenerate_data_without_arithmetic_messages() {
   for head in ["Skewness", "Kurtosis"] {

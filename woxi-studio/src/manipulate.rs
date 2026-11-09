@@ -750,8 +750,20 @@ impl ManipulateState {
       })
       .collect();
     let control_is_visible = vec![true; controls.len()];
+    // The studio installs control values as globals (see
+    // `with_scoped_globals`), not lexically like Wolfram, so a rule in the
+    // body that rebinds a control name gets its own variables first.
+    let control_names: Vec<String> = controls
+      .iter()
+      .map(|c| c.name().to_string())
+      .filter(|n| !n.is_empty())
+      .collect();
+    let body = woxi::functions::graphics::shield_control_rebinding_rules(
+      &spec.body_code,
+      &control_names,
+    );
     let mut state = ManipulateState {
-      body: spec.body_code,
+      body,
       initialization: spec.initialization,
       controls,
       state: spec.state,
@@ -5804,6 +5816,24 @@ mod mapped_layout_tests {
       })
       .expect("discrete control");
     assert_eq!(labels, vec!["1/2", "11/2"]);
+  }
+
+  /// `Text@Switch[mode, …]` whose chosen branch is a `Row` holding a `Column`
+  /// lays the branch out as nested containers instead of printing the
+  /// nested `Column[{…}]` call as source.
+  #[test]
+  fn text_switch_branch_lays_out_nested_row_and_column() {
+    let node = build_manipulate_display(
+      r#"Text@Switch[sh,
+        1, Row[{Column[Table[Row[{ToString[i], ". ", "x"}], {i, 1, 2}]],
+          Spacer[30], Column[{"Axiom", "y"}]}],
+        2, "two"]"#,
+      &[("sh".to_string(), "1".to_string())],
+    );
+    let dump = format!("{node:?}");
+    assert!(!dump.contains("Column["), "{dump}");
+    assert!(dump.contains("Axiom"), "{dump}");
+    assert!(dump.contains("Spacer"), "{dump}");
   }
 
   /// `SpanFromLeft` in a display `Grid` is layout, not a cell to draw.

@@ -232,16 +232,22 @@ pub fn dispatch_linear_algebra_functions(
       return Some(Ok(args[0].clone()));
     }
     "Dot" if args.len() >= 3 => {
-      let mut operands: Vec<Expr> = vec![args[0].clone()];
-      for next in &args[1..] {
-        let last = operands.pop().unwrap();
-        match crate::functions::linear_algebra_ast::dot_ast(&[
-          last.clone(),
-          next.clone(),
-        ]) {
+      // Operands are moved, not cloned: a deep copy (and the matching drop)
+      // of every intermediate matrix product used to cost more than the
+      // products themselves.
+      let dot = crate::functions::linear_algebra_ast::dot_ast;
+      let mut operands: Vec<Expr> = match dot(&args[..2]) {
+        Ok(Expr::FunctionCall { ref name, .. }) if name == "Dot" => {
+          vec![args[0].clone(), args[1].clone()]
+        }
+        Ok(v) => vec![v],
+        e => return Some(e),
+      };
+      for next in &args[2..] {
+        let pair = [operands.pop().unwrap(), next.clone()];
+        match dot(&pair) {
           Ok(Expr::FunctionCall { ref name, .. }) if name == "Dot" => {
-            operands.push(last);
-            operands.push(next.clone());
+            operands.extend(pair);
           }
           Ok(v) => operands.push(v),
           e => return Some(e),

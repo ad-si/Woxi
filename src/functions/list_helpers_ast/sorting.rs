@@ -14,9 +14,28 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
   if let Some(v) = try_eval_to_f64_with_infinity(e) {
     return Some((v, 0.0));
   }
-  // Check if expression contains I (complex unit)
-  let s = expr_to_string(e);
-  if !s.contains('I') {
+  // Every complex form below involves the imaginary unit (or an explicit
+  // `Complex[…]`); checked structurally, as rendering the expression to a
+  // string for this made machine complex arithmetic (`Dot` of complex
+  // matrices calls this per element) dominated by formatting.
+  fn mentions_imaginary_unit(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(n) | Expr::Constant(n) => n == "I",
+      Expr::FunctionCall { name, .. } if name == "Complex" => true,
+      Expr::Integer(_) | Expr::Real(_) | Expr::BigFloat(..) => false,
+      Expr::List(items) | Expr::FunctionCall { args: items, .. } => {
+        items.iter().any(mentions_imaginary_unit)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        mentions_imaginary_unit(left) || mentions_imaginary_unit(right)
+      }
+      Expr::UnaryOp { operand, .. } => mentions_imaginary_unit(operand),
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(mentions_imaginary_unit),
+    }
+  }
+  if !mentions_imaginary_unit(e) {
     return None;
   }
   match e {

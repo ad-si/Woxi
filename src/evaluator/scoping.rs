@@ -227,7 +227,8 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let local_names: Vec<String> =
     local_vars.iter().map(|v| v.name.clone()).collect();
-  let mut body_owned = shield_nested_scopes(body_expr, &local_names);
+  let (mut body_owned, shadowed) =
+    shield_nested_scopes(body_expr, &local_names);
   for (var, init) in local_vars.iter().zip(init_values) {
     let var_name = &var.name;
     let fresh = crate::functions::scoping::unique_symbol(var_name);
@@ -243,6 +244,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
   }
+  let body_owned = restore_shadowed_names(body_owned, &shadowed);
   let body_expr = &body_owned;
 
   // Evaluate body. Wolfram leaves Return[val] symbolic at Module's
@@ -1303,9 +1305,11 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   let local_names: Vec<String> =
     bindings.iter().map(|(name, _)| name.clone()).collect();
-  let shielded = shield_nested_scopes(body_expr, &local_names);
-  let mut substituted =
-    crate::syntax::substitute_variables(&shielded, &binding_refs);
+  let (shielded, shadowed) = shield_nested_scopes(body_expr, &local_names);
+  let mut substituted = restore_shadowed_names(
+    crate::syntax::substitute_variables(&shielded, &binding_refs),
+    &shadowed,
+  );
   // Large arrays in the body are shared, so the loops and functions that
   // copy it (Table, Map) copy pointers.
   share_large_lists(&mut substituted, 0);
@@ -1706,12 +1710,141 @@ fn resolve_span(args: &[Expr], len: i64) -> Result<Vec<i64>, InterpreterError> {
 /// control, a Block) cannot leak in: `Module[{a}, Hold[f[t_] = D[a[t], t]]]`
 /// is `Hold[f[t$_] = D[a$n[t$], t$]]`. Constructs that mention no local
 /// are left as written.
-pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
-  // Nothing to shield where no local is mentioned; the copy keeps shared
-  // lists shared.
-  if !mentions_any_symbol(expr, locals) {
+///
+/// An inner construct that rebinds a local shadows it: that local is not
+/// substituted inside, and when no other local reaches the construct it is
+/// left exactly as written (`With[{x = 1}, Hold[f[x_] -> x]]` stays
+/// `Hold[f[x_] -> x]`). Since the callers substitute by plain renaming,
+/// such shadowing names are hidden under a sentinel spelling here and
+/// must be restored with [`restore_shadowed_names`] once the locals have
+/// been substituted.
+pub(crate) fn shield_nested_scopes(
+  expr: &Expr,
+  locals: &[String],
+) -> (Expr, Vec<String>) {
+  let mut shadowed = Vec::new();
+  let out = shield_nested_scopes_rec(expr, locals, &mut shadowed);
+  shadowed.sort();
+  shadowed.dedup();
+  (out, shadowed)
+}
+
+/// Rename, inside `expr`, the pattern variables of every immediate rule or
+/// assignment (`->`, `=`, `^=`) that rebinds one of `names` (`x` → `x$`).
+///
+/// For code run under `Block[{x = …}, …]` that stands in for lexical
+/// scoping: Wolfram localizes a Manipulate's controls lexically, so in
+/// `Entity["Isotope", x_] -> x` the rule's own `x` shadows the control and
+/// its right side stays the bare symbol. Under a Block the right side would
+/// evaluate to the control's value instead. Delayed forms (`:>`, `:=`) and
+/// `Function` substitute their variables lexically and need no renaming.
+/// Returns None when no rule needed renaming.
+pub(crate) fn shield_rules_rebinding(
+  expr: &Expr,
+  names: &[String],
+) -> Option<Expr> {
+  let changed = std::cell::Cell::new(false);
+  let out = shield_rules_rebinding_rec(expr, names, &changed);
+  changed.get().then_some(out)
+}
+
+fn shield_rules_rebinding_rec(
+  expr: &Expr,
+  names: &[String],
+  changed: &std::cell::Cell<bool>,
+) -> Expr {
+  if !mentions_any_symbol(expr, names) {
     return expr.clone();
   }
+  let rebound = |lhs: &Expr| -> Vec<String> {
+    let mut pats = Vec::new();
+    collect_pattern_names(lhs, &mut pats);
+    pats.retain(|p| names.contains(p));
+    pats.sort();
+    pats.dedup();
+    pats
+  };
+  let eager_lhs = match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Rule" | "Set" | "UpSet")
+        && args.len() == 2 =>
+    {
+      Some(&args[0])
+    }
+    Expr::Rule { pattern, .. } => Some(pattern.as_ref()),
+    _ => None,
+  };
+  let renamed;
+  let expr = match eager_lhs.map(rebound) {
+    Some(pats) if !pats.is_empty() => {
+      let mut e = expr.clone();
+      for p in &pats {
+        e = crate::syntax::rename_symbol(&e, p, &format!("{p}$"));
+      }
+      changed.set(true);
+      renamed = e;
+      &renamed
+    }
+    _ => expr,
+  };
+  crate::syntax::map_children(expr, &|c| {
+    shield_rules_rebinding_rec(c, names, changed)
+  })
+}
+
+/// The spelling a shadowing name hides under while the enclosing locals are
+/// substituted. The private-use character cannot occur in a parsed symbol.
+fn shadow_sentinel(name: &str) -> String {
+  format!("{name}\u{F0000}")
+}
+
+/// Undo the sentinel spelling [`shield_nested_scopes`] gave to the names
+/// that inner scoping constructs bind and that shadow a local.
+pub(crate) fn restore_shadowed_names(expr: Expr, shadowed: &[String]) -> Expr {
+  shadowed.iter().fold(expr, |e, name| {
+    crate::syntax::rename_symbol(&e, &shadow_sentinel(name), name)
+  })
+}
+
+fn shield_nested_scopes_rec(
+  expr: &Expr,
+  all_locals: &[String],
+  shadowed: &mut Vec<String>,
+) -> Expr {
+  // Nothing to shield where no local is mentioned; the copy keeps shared
+  // lists shared.
+  if !mentions_any_symbol(expr, all_locals) {
+    return expr.clone();
+  }
+  // Block scopes dynamically: its variables are the global symbols
+  // themselves, so a Module around it never renames them
+  // (`Module[{m}, Block[{a}, {a -> m}]]` is `{a -> 1}` for `m = 1`).
+  let dynamic =
+    matches!(expr, Expr::FunctionCall { name, .. } if name == "Block");
+  let bound = if dynamic {
+    None
+  } else {
+    scope_bound_names(expr)
+  };
+  // Locals the construct rebinds are shadowed inside it: they neither
+  // reach it nor get substituted there.
+  let shadowing: Vec<String> = bound
+    .iter()
+    .flatten()
+    .filter(|n| all_locals.contains(n))
+    .cloned()
+    .collect();
+  let narrowed: Vec<String>;
+  let locals: &[String] = if shadowing.is_empty() {
+    all_locals
+  } else {
+    narrowed = all_locals
+      .iter()
+      .filter(|n| !shadowing.contains(n))
+      .cloned()
+      .collect();
+    &narrowed
+  };
   // An inner Module/With/Block counts as reached only through its body:
   // a local in an initializer is substituted outside the inner scope.
   // A rule or definition is reached through its right side or a condition
@@ -1750,14 +1883,53 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
     } => rule_reached(pattern, replacement),
     _ => mentions_any_symbol(expr, locals),
   };
-  // Block scopes dynamically: its variables are the global symbols
-  // themselves, so a Module around it never renames them
-  // (`Module[{m}, Block[{a}, {a -> m}]]` is `{a -> 1}` for `m = 1`).
-  let dynamic =
-    matches!(expr, Expr::FunctionCall { name, .. } if name == "Block");
-  if let Some(bound) = scope_bound_names(expr)
+  if !reached && !shadowing.is_empty() {
+    // Only shadowed: leave the construct as written, hiding the shadowing
+    // names from the substitution that follows.
+    shadowed.extend(shadowing.iter().cloned());
+    let hide = |e: &Expr| {
+      shadowing.iter().fold(e.clone(), |e, name| {
+        crate::syntax::rename_symbol(&e, name, &shadow_sentinel(name))
+      })
+    };
+    // An inner Module/With's initializers belong to the enclosing scope
+    // (`With[{x = 5}, With[{x = x + 1}, x]]` reads the outer `x`), so only
+    // its declared names and body are hidden; the initializers are still
+    // shielded and substituted.
+    if let Expr::FunctionCall { name, args } = expr
+      && matches!(name.as_str(), "Module" | "With")
+      && let Some(Expr::List(vars)) = args.first()
+    {
+      let new_vars: Vec<Expr> = vars
+        .iter()
+        .map(|v| match v {
+          Expr::FunctionCall {
+            name: set,
+            args: sa,
+          } if (set == "Set" || set == "SetDelayed") && sa.len() == 2 => {
+            Expr::FunctionCall {
+              name: set.clone(),
+              args: vec![
+                hide(&sa[0]),
+                shield_nested_scopes_rec(&sa[1], all_locals, shadowed),
+              ]
+              .into(),
+            }
+          }
+          other => hide(other),
+        })
+        .collect();
+      let mut new_args = vec![Expr::List(new_vars.into())];
+      new_args.extend(args[1..].iter().map(&hide));
+      return Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      };
+    }
+    return hide(expr);
+  }
+  if let Some(bound) = bound
     && reached
-    && !dynamic
   {
     let rename_all = |e: &Expr| {
       let mut e = e.clone();
@@ -1766,7 +1938,7 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
         // becomes `x$1$`).
         // …unless it is itself one of the locals being substituted: an
         // inner binding of the same name must still shadow it.
-        if !name.ends_with('$') || locals.contains(name) {
+        if !name.ends_with('$') || all_locals.contains(name) {
           e = crate::syntax::rename_symbol(&e, name, &format!("{name}$"));
         }
       }
@@ -1804,11 +1976,19 @@ pub(crate) fn shield_nested_scopes(expr: &Expr, locals: &[String]) -> Expr {
       }
       _ => rename_all(expr),
     };
-    return crate::syntax::map_children(&renamed, &|c| {
-      shield_nested_scopes(c, locals)
+    let shadowed_cell = std::cell::RefCell::new(std::mem::take(shadowed));
+    let out = crate::syntax::map_children(&renamed, &|c| {
+      shield_nested_scopes_rec(c, locals, &mut shadowed_cell.borrow_mut())
     });
+    *shadowed = shadowed_cell.into_inner();
+    return out;
   }
-  crate::syntax::map_children(expr, &|c| shield_nested_scopes(c, locals))
+  let shadowed_cell = std::cell::RefCell::new(std::mem::take(shadowed));
+  let out = crate::syntax::map_children(expr, &|c| {
+    shield_nested_scopes_rec(c, all_locals, &mut shadowed_cell.borrow_mut())
+  });
+  *shadowed = shadowed_cell.into_inner();
+  out
 }
 
 /// The variables a scoping construct binds, or None for anything else.

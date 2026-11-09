@@ -3110,6 +3110,37 @@ mod expand_all {
 mod collect_tests {
   use super::*;
 
+  // A power target collects every power of its base whose exponent is an
+  // integer multiple of the target's, negative ones included
+  // (OpticalFilterWithSinusoidallyVaryingPermittivityUsingMathieu).
+  #[test]
+  fn collect_by_power_targets() {
+    assert_eq!(
+      interpret("Collect[a E^z + b E^z + c E^(-z) + d E^(-z), E^z]").unwrap(),
+      "(c + d)/E^z + (a + b)*E^z"
+    );
+    assert_eq!(
+      interpret(
+        "Collect[TrigToExp[a Cos[k x] + b Sin[k x]], \
+         {E^(I k x), E^(-I k x)}]"
+      )
+      .unwrap(),
+      "(a/2 + I/2*b)/E^(I*k*x) + (a/2 - I/2*b)*E^(I*k*x)"
+    );
+    assert_eq!(
+      interpret("Collect[a/u + b/u + c, 1/u]").unwrap(),
+      "c + (a + b)/u"
+    );
+    assert_eq!(
+      interpret("Collect[a x^2 + b x^4 + c x^4 + d x^3, x^2]").unwrap(),
+      "a*x^2 + d*x^3 + (b + c)*x^4"
+    );
+    assert_eq!(
+      interpret("Collect[a f[x]^2 + b f[x]^2 + c, f[x]^2]").unwrap(),
+      "c + (a + b)*f[x]^2"
+    );
+  }
+
   // A list is collected element by element
   // (CurvatureExtremaForConstrainedBezierCurves).
   #[test]
@@ -7342,6 +7373,85 @@ mod solve_ratnz_only_for_polynomial_systems {
     assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
   }
 
+  /// An exp-log equation with machine coefficients over the reals is
+  /// solved for all its real roots, rounded as wolframscript's exact
+  /// route rounds them, with Solve::ratnz
+  /// (ContinuousStirredTankReactorThatLosesCooling).
+  #[test]
+  fn real_exp_log_equations() {
+    let solve = |input: &str| {
+      clear_state();
+      let out = interpret(input).unwrap();
+      let ratnz = woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"));
+      (out, ratnz)
+    };
+    assert_eq!(
+      solve("Solve[Exp[x] == 3.5 x, x, Reals]"),
+      (
+        "{{x -> 0.44654268551263593}, {x -> 1.8885974120298281}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[Log[x] == 0.2 x, x, Reals]"),
+      (
+        "{{x -> 1.2958555090953687}, {x -> 12.713206788867632}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[2.^x == x^2, x, Reals]"),
+      (
+        "{{x -> -0.766664695962123}, {x -> 2.}, {x -> 4.}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[Exp[x] (x - 1.5) == 0, x, Reals]"),
+      ("{{x -> 1.5}}".into(), true)
+    );
+    assert_eq!(
+      solve("Solve[Exp[x] == -1. - x^2, x, Reals]"),
+      ("{}".into(), false)
+    );
+    assert_eq!(
+      solve(
+        "Solve[(70000000000/(E^(4330.045706038009/T)*(2 + \
+         70000/E^(4330.045706038009/T))) + 3800*(325 - T) - \
+         3000*(-350 + T))/15000 == 0, T, Reals]"
+      ),
+      ("{{T -> 365.49893230547883}}".into(), true)
+    );
+  }
+
+  /// A univariate system (one unknown, any number of equations and
+  /// inequalities, no parameters) is solved numerically without
+  /// Solve::ratnz; systems in several unknowns still report it
+  /// (TheobaldsNonagonToTriangleDissection).
+  #[test]
+  fn univariate_systems_are_quiet() {
+    let ratnz = |input: &str| {
+      clear_state();
+      interpret(input).unwrap();
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"))
+    };
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{x^2 == 2.5, x > 0}, x]").unwrap(),
+      "{{x -> 1.5811388300841895}}"
+    );
+    assert!(!ratnz("Solve[{x^2 == 2.5, x > 0}, x];"));
+    assert!(!ratnz("Solve[{x^2 == 2.5, x > 0}, {x}];"));
+    assert!(!ratnz("Solve[{0.43 + (0.94 - 1.*t)^2 == 4.65, t > 0}, t];"));
+    assert!(!ratnz("Solve[{x^2 == 2.25, x^3 == 3.375}, x];"));
+    assert!(ratnz("Solve[{x^2 + y^2 == 1.5, x - y == 0.3}, {x, y}];"));
+    assert!(ratnz("Solve[{x^2 + y == 2.5, y > 0, y == x}, {x, y}];"));
+  }
+
   /// A system with machine exponents that are simple fractions (a
   /// Cobb-Douglas Lagrangian) is solved with exact exponents and
   /// numericized; it used to stop half-way with Solve::svars.
@@ -11381,6 +11491,54 @@ mod linear_programming {
 
 mod find_root {
   use super::*;
+
+  // In a search region a Newton step is cut back to the region's edge
+  // and then shortened by a quadratic/cubic line search, so no point
+  // outside the region is evaluated
+  // (TXYAndXYDiagramsForBinaryVaporLiquidEquilibriumVLEInFlashDru).
+  #[test]
+  fn bounded_newton_stays_in_the_region() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "tx = Interpolation[Transpose[{{96.58, 93.66, 91., 88.56, 86.31, \
+         84.22, 82.28, 80.47, 78.77, 77.17, 75.66, 74.23, 72.88, 71.6, \
+         70.38, 69.21, 68.1, 67.03, 66.01, 65.03, 64.09}, Range[0, 1, 0.05]}]]; \
+         ty = Interpolation[Transpose[{{96.58, 95.57, 94.52, 93.45, 92.33, \
+         91.17, 89.97, 88.72, 87.42, 86.06, 84.64, 83.14, 81.56, 79.89, \
+         78.12, 76.23, 74.21, 72.02, 69.63, 67.01, 64.09}, Range[0, 1, 0.05]}]]; \
+         Reap[FindRoot[2. == (ty[t] - 0.5)/(0.5 - tx[t]), {t, 95, 65, 96}, \
+         StepMonitor :> Sow[t]]] /. {r_, {s_}} :> {r, Take[s, 2]}"
+      )
+      .unwrap(),
+      "{{t -> 78.56728425768658}, {81.26210104102717, 80.77216360676098}}"
+    );
+    assert!(
+      !woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("dmval"))
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Reap[FindRoot[Sin[x] - 0.5, {x, 1, 0, 1.2}, StepMonitor :> Sow[x]]]"
+      )
+      .unwrap(),
+      "{{x -> 0.5235987755982989}, {{0.36800013418556066, \
+       0.5183136441498523, 0.5235907856809277, 0.5235987755798704, \
+       0.5235987755982989}}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("FindRoot[x^2 - 2, {x, 3, 2.5, 4}]").unwrap(),
+      "{x -> 2.5}"
+    );
+    assert!(woxi::get_captured_messages_raw().iter().any(|m| m.contains(
+      "FindRoot::reged: The point {2.5} is at the edge of the search region \
+       {2.5, 4.} in coordinate 1 and the computed search direction points \
+       outside the region."
+    )));
+  }
 
   // An entry of the held equation list may splice in several equations
   // (ShearAngleModelsForObliqueMetalCutting).

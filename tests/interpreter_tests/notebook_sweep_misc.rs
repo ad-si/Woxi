@@ -2,6 +2,36 @@
 //! semantic bugs that surfaced as generic Part/list/argument messages.
 use super::*;
 
+mod chart_dataset_wrappers {
+  use super::*;
+
+  // A Tooltip around the whole dataset only adds a hover label; the chart
+  // is drawn from the data (MolecularPieCharts).
+  #[test]
+  fn pie_chart_of_tooltip_wrapped_dataset() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Head[PieChart[Tooltip[{8, 10, 4, 2}, "tip"]]]"#).unwrap(),
+      "Graphics"
+    );
+  }
+
+  // QuantityForm is an inert display wrapper in script mode.
+  #[test]
+  fn quantity_form_stays_as_written() {
+    clear_state();
+    let out = interpret_with_stdout(
+      r#"QuantityForm[Quantity[3, "Meters"], "Abbreviation"]"#,
+    )
+    .unwrap();
+    assert_eq!(
+      out.result,
+      "QuantityForm[Quantity[3, Meters], Abbreviation]"
+    );
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+  }
+}
+
 mod same_q_without_rendering {
   use super::*;
 

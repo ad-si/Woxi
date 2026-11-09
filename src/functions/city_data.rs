@@ -17,11 +17,66 @@ struct City {
   population: i64,
 }
 
+/// The verified cities of `city_data.json` first, then every other city of
+/// at least 100 000 people from GeoNames (`resources/cities.tsv.gz`, see
+/// `scripts/gen_city_data.py`).
 static CITIES: std::sync::LazyLock<Vec<City>> =
   std::sync::LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../resources/city_data.json"))
-      .expect("bundled city data is valid")
+    let mut cities: Vec<City> =
+      serde_json::from_str(include_str!("../../resources/city_data.json"))
+        .expect("bundled city data is valid");
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let compressed = include_bytes!("../../resources/cities.tsv.gz");
+    let mut text = String::new();
+    GzDecoder::new(&compressed[..])
+      .read_to_string(&mut text)
+      .expect("cities.tsv.gz is valid gzip");
+    let verified = cities.len();
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+      let f: Vec<&str> = line.split('\t').collect();
+      if f.len() < 7 {
+        continue;
+      }
+      let id = [f[0].to_string(), f[1].to_string(), f[2].to_string()];
+      // A verified city keeps its own (Wolfram-checked) identity.
+      if cities[..verified].iter().any(|c| {
+        c.entities.first().is_some_and(|e| {
+          normalize(&e[0]) == normalize(&id[0])
+            && normalize(&e[2]) == normalize(&id[2])
+        })
+      }) {
+        continue;
+      }
+      let (Ok(lat), Ok(lon), Ok(population)) =
+        (f[4].parse(), f[5].parse(), f[6].parse())
+      else {
+        continue;
+      };
+      cities.push(City {
+        name: f[0].to_string(),
+        label: if f[3].is_empty() { f[0] } else { f[3] }.to_string(),
+        entities: vec![id],
+        coordinates: [lat, lon],
+        population,
+      });
+    }
+    cities
   });
+
+/// `CityData[{All, country}]`: the country's cities, largest first.
+fn cities_of_country(country: &str) -> Vec<Expr> {
+  let key = normalize(country);
+  let mut found: Vec<(&City, &[String; 3])> = CITIES
+    .iter()
+    .filter_map(|c| {
+      let id = c.entities.first()?;
+      (normalize(&id[2]) == key).then_some((c, id))
+    })
+    .collect();
+  found.sort_by_key(|(c, _)| std::cmp::Reverse(c.population));
+  found.into_iter().map(|(_, id)| entity(id)).collect()
+}
 
 fn normalize(s: &str) -> String {
   s.chars()
@@ -115,6 +170,26 @@ fn property(city: &City, id: &[String; 3], prop: &str) -> Expr {
 
 pub fn city_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unchanged = || Ok(call("CityData", args.to_vec()));
+  if let [Expr::List(spec)] = args
+    && let [Expr::Identifier(all), country] = spec.as_slice()
+    && all == "All"
+  {
+    let name = match country {
+      Expr::String(s) => s.clone(),
+      Expr::FunctionCall { name, args: ea }
+        if name == "Entity" && ea.len() == 2 =>
+      {
+        match &ea[1] {
+          Expr::String(s) => s.clone(),
+          _ => return unchanged(),
+        }
+      }
+      _ => return unchanged(),
+    };
+    let name = crate::functions::country_data::wl_entity_name(&name)
+      .map_or(name, str::to_string);
+    return Ok(Expr::List(cities_of_country(&name).into()));
+  }
   match args {
     [spec] => {
       let Some(found) = matches(spec) else {
@@ -158,7 +233,8 @@ mod tests {
     let mut aliases = std::collections::HashSet::new();
     assert!(!CITIES.is_empty());
     for city in CITIES.iter() {
-      assert!(aliases.insert(normalize(&city.name)));
+      // Names repeat across countries; a full identity never does.
+      assert!(aliases.insert(city.entities[0].join("|")), "{}", city.name);
       assert_ne!(
         city.entities.len(),
         0,

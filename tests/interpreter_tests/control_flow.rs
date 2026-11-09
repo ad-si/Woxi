@@ -5242,6 +5242,47 @@ mod nested_scope_renaming {
     );
   }
 
+  /// An inner construct that rebinds a local shadows it and is left as
+  /// written unless another local is substituted into it.
+  #[test]
+  fn inner_scopes_that_only_shadow_a_local_stay_as_written() {
+    assert_eq!(
+      interpret("x =.; Module[{x = 1}, f[x_] -> x]").unwrap(),
+      "f[x_] -> x"
+    );
+    assert_eq!(
+      interpret("x =.; f[3] /. Module[{x = 1}, f[x_] -> x]").unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("x =.; Module[{x = 1}, Function[x, x + 1]]").unwrap(),
+      "Function[x, x + 1]"
+    );
+    assert_eq!(
+      interpret("x =.; y =.; Module[{x = 1}, Hold[f[x_, y_] :> x + y]]")
+        .unwrap(),
+      "Hold[f[x_, y_] :> x + y]"
+    );
+    assert_eq!(
+      interpret(
+        "x =.; y =.; With[{x = 1}, Hold[{f[x_] -> x, g[y_] -> x + y}]]"
+      )
+      .unwrap(),
+      "Hold[{f[x_] -> x, g[y$_] -> 1 + y$}]"
+    );
+    assert_eq!(
+      interpret("x =.; y =.; With[{x = 1}, Hold[Module[{x, y}, x + y]]]")
+        .unwrap(),
+      "Hold[Module[{x, y}, x + y]]"
+    );
+    // Reached through another local: the shadowing name is renamed too.
+    assert_eq!(
+      interpret("x =.; y =.; With[{x = 1, y = 2}, Hold[f[x_] -> x + y]]")
+        .unwrap(),
+      "Hold[f[x$_] -> x$ + 2]"
+    );
+  }
+
   #[test]
   fn an_outer_block_value_does_not_leak_in() {
     assert_eq!(
