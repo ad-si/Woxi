@@ -9748,16 +9748,24 @@ fn prints_as_not(e: &Expr) -> bool {
     if name == "Not" && args.len() == 1)
 }
 
-/// Whether `e` prints as an assignment (`=`, `:=`, `^=`, `^:=`) or a `;`
-/// sequence — forms that bind looser than every arithmetic operator and so
-/// need parentheses when they are an operand of one.
+/// Whether `e` prints as an assignment (`=`, `:=`, `^=`, `^:=`, `+=`, `-=`,
+/// `*=`, `/=`) or a `;` sequence — forms that bind looser than every
+/// arithmetic operator and so need parentheses when they are an operand of
+/// one: `(s += x)/(t += y)`, not `s += x/t += y`.
 fn is_loose_assignment(e: &Expr) -> bool {
   match e {
     Expr::CompoundExpr(_) => true,
     Expr::FunctionCall { name, args } => {
       (matches!(
         name.as_str(),
-        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+        "Set"
+          | "SetDelayed"
+          | "UpSet"
+          | "UpSetDelayed"
+          | "AddTo"
+          | "SubtractFrom"
+          | "TimesBy"
+          | "DivideBy"
       ) && args.len() == 2)
         || (name == "CompoundExpression" && args.len() >= 2)
     }
@@ -9838,7 +9846,10 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "PlusMinus" | "MinusPlus" if args.len() == 1 => Some(39),
       // `=`, `:=`, `^=` and `^:=` print infix and bind looser than every
       // operator shorthand except `;` and `&`.
-      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" if args.len() == 2 => {
+      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" | "AddTo"
+      | "SubtractFrom" | "TimesBy" | "DivideBy"
+        if args.len() == 2 =>
+      {
         Some(6)
       }
       // Heads that also print infix once evaluated (`a && b` keeps the head
@@ -14858,17 +14869,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         "//."
       };
-      let looser = |e: &Expr| {
-        matches!(e, Expr::Function { .. } | Expr::CompoundExpr(_))
-          || matches!(
-            e,
-            Expr::FunctionCall { name, args }
-              if matches!(
-                name.as_str(),
-                "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-              ) && args.len() == 2
-          )
-      };
+      let looser =
+        |e: &Expr| matches!(e, Expr::Function { .. }) || is_loose_assignment(e);
       let lhs_str = expr_to_input_form(lhs);
       let lhs_str = if looser(lhs) {
         format!("({lhs_str})")
