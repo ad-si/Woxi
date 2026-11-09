@@ -98,7 +98,7 @@ fn sizes_expr(v: f64) -> Expr {
   }
 }
 
-fn palette_color(i: usize) -> Expr {
+pub(crate) fn palette_color(i: usize) -> Expr {
   let (r, g, b) = PALETTE[i % PALETTE.len()];
   call(
     "RGBColor",
@@ -110,7 +110,11 @@ fn palette_color(i: usize) -> Expr {
 /// `ChartStyle` value: a single directive applies to all elements, a list
 /// cycles over positions, and a list entry that is itself a list combines
 /// its directives.
-fn chart_style_for(style: Option<&Expr>, pos: usize, multi: bool) -> Expr {
+pub(crate) fn chart_style_for(
+  style: Option<&Expr>,
+  pos: usize,
+  multi: bool,
+) -> Expr {
   let as_directive = |e: &Expr| match e {
     Expr::List(ds) => call("Directive", ds.to_vec()),
     other => other.clone(),

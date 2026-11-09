@@ -16378,25 +16378,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           .parse()
           .unwrap()
       };
-      for (plain, legended) in [
+      // The swatch edges are as translucent as the chart's own: 0.637 for
+      // the bars, the bubbles' `Opacity[0.3]` for a BubbleChart.
+      for (plain, legended, edge) in [
         (
           "BarChart[{{1, 2}, {2, 1}}]",
           "BarChart[{{1, 2}, {2, 1}}, ChartLegends -> {\"a\", \"b\"}]",
+          "stroke-opacity=\"0.637\"",
         ),
         (
           "Histogram[{{1, 2, 2, 3}, {3, 4, 4}}, {1}]",
           "Histogram[{{1, 2, 2, 3}, {3, 4, 4}}, {1}, ChartLegends -> {\"a\", \"b\"}]",
+          "stroke-opacity=\"0.637\"",
         ),
         (
           "BubbleChart[{{{1, 2, 3}, {2, 4, 1}}, {{1, 4, 2}, {3, 3, 3}}}]",
           "BubbleChart[{{{1, 2, 3}, {2, 4, 1}}, {{1, 4, 2}, {3, 3, 3}}}, \
            ChartLegends -> {\"a\", \"b\"}]",
+          "stroke-opacity=\"0.3\" stroke-width=\"1\"/>",
         ),
       ] {
         let (p, l) = (export_svg(plain), export_svg(legended));
         assert_eq!(height(&p), height(&l), "{legended}");
         assert!(width(&l) > width(&p) + 20.0, "{legended}");
-        assert_eq!(l.matches("stroke-opacity=\"0.637\"").count(), 2, "{l}");
+        assert_eq!(l.matches(edge).count(), 2, "{l}");
       }
     }
 
@@ -17393,15 +17398,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          Table[{i, i + 1, 1}, {i, 3}], \
          Table[{i, i + 2, 1}, {i, 3}]}]",
       );
-      // 3 datasets × 3 points = 9 bubbles; each bubble emits two <circle>
-      // elements (filled body + black border).
-      assert_eq!(
-        svg.matches("<circle").count(),
-        18,
-        "expected 18 circles (9 bubbles × 2) in multi-dataset BubbleChart: {svg}"
-      );
+      // 3 datasets × 3 points = 9 bubbles, each one `Disk` (an ellipse).
+      assert_eq!(svg.matches("<ellipse").count(), 9, "{svg}");
       // Each dataset gets its own color from the default palette.
-      for color in ["#FFD540", "#00AAF2", "#60BF00"] {
+      for color in ["rgb(255,213,64)", "rgb(0,170,242)", "rgb(96,191,0)"] {
         assert!(
           svg.contains(color),
           "multi-dataset BubbleChart should use color {color}: {svg}"
@@ -17409,120 +17409,116 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
-    /// BubbleChart[] must render labeled axes by default — the SVG should
-    /// contain numeric tick labels, axis lines, and the bubbles themselves.
+    /// BubbleChart is a framed, square `Graphics` of `Disk`s, padded by
+    /// `Scaled[0.05]` around the bubbles, as in wolframscript.
     #[test]
-    fn bubble_chart_has_default_axes() {
+    fn bubble_chart_is_framed_square_graphics() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{1, 5, 3}, {4, 6, 9}}], \
+           r : ((AspectRatio | Frame | PlotRangePadding) -> _) :> r, \
+           Infinity]"
+        )
+        .unwrap(),
+        "{AspectRatio -> 1, Frame -> True, PlotRangePadding -> \
+         {{Scaled[0.05], Scaled[0.05]}, {Scaled[0.05], Scaled[0.05]}}}"
+      );
+      // Tick labels on the frame.
       let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
-      // Tick labels from the numeric axes — plotters emits each tick as a
-      // <text>\n{value}\n</text> element, so look for the value between a
-      // `>` and a newline. At least one of the data-range integers should
-      // appear as a tick.
-      let has_tick_label = ["1.0", "2.0", "3.0", "4.0", "5.0"]
-        .iter()
-        .any(|t| svg.contains(&format!(">\n{t}\n</text>")));
-      assert!(
-        has_tick_label,
-        "BubbleChart should render numeric tick labels, got: {svg}"
-      );
-      // Axis line drawn by plotters (polyline stroke) should be present.
-      assert!(
-        svg.contains("<polyline"),
-        "BubbleChart should render axis lines: {svg}"
-      );
-      // Bubble circles should still be present.
-      assert!(svg.contains("<circle"));
-    }
-
-    /// BubbleChart closes the plot rectangle on all four sides: in addition
-    /// to the bottom and left axes, a top line and right line (each with
-    /// their own tick marks) should appear by default.
-    #[test]
-    fn bubble_chart_has_top_right_frame() {
-      let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
-      // Plot area in the default 360x335 layout spans (750, 100)-(3500, 2850)
-      // in render-space units.
-      assert!(
-        svg.contains(
-          "<line x1=\"750.0\" y1=\"100.0\" x2=\"3500.0\" y2=\"100.0\""
-        ),
-        "BubbleChart should render a top frame line: {svg}"
-      );
-      assert!(
-        svg.contains(
-          "<line x1=\"3500.0\" y1=\"100.0\" x2=\"3500.0\" y2=\"2850.0\""
-        ),
-        "BubbleChart should render a right frame line: {svg}"
-      );
-      // Top ticks extend upward (y2 < y1 = 100) and right ticks extend
-      // rightward (x2 > x1 = 3500); check for at least one of each.
-      assert!(
-        svg.contains("y1=\"100.0\" x2=\"3500.0\" y2=\"30.0\"")
-          || svg.contains("y1=\"100.0\"") && svg.contains("y2=\"60.0\""),
-        "BubbleChart top axis should draw tick marks: {svg}"
-      );
-      assert!(
-        svg.contains("x1=\"3500.0\"")
-          && (svg.contains("x2=\"3540.0\"") || svg.contains("x2=\"3570.0\"")),
-        "BubbleChart right axis should draw tick marks: {svg}"
-      );
-    }
-
-    /// BubbleChart must leave visual breathing room between every bubble and
-    /// the plot frame. Regression for: with a max-size bubble (z == z_max)
-    /// sitting at a data extremum, the previous 10%-data padding left the
-    /// bubble only ~3 display pixels from the frame, which on the rendered
-    /// SVG reads as overlap.
-    #[test]
-    fn bubble_chart_bubbles_stay_inside_frame() {
-      // Largest bubble (z = 5) is at (1, 2) — the data min in x and the
-      // data min in y. In the default 360x335 layout the plot area spans
-      // x=[750, 3500], y=[100, 2850] in render-space units.
-      let svg = export_svg("BubbleChart[{{1, 2, 5}, {4, 5, 1}, {2, 3, 5}}]");
-
-      // Parse every `<circle cx="..." cy="..." r="...">` and check that no
-      // bubble's bounding box crosses any of the four frame lines.
-      let re = regex::Regex::new(
-        r#"<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)""#,
-      )
-      .unwrap();
-      let (left, right, top, bottom) = (750.0, 3500.0, 100.0, 2850.0);
-      let mut worst = f64::INFINITY;
-      for caps in re.captures_iter(&svg) {
-        let cx: f64 = caps[1].parse().unwrap();
-        let cy: f64 = caps[2].parse().unwrap();
-        let r: f64 = caps[3].parse().unwrap();
-        let gaps = [
-          cx - r - left,
-          right - (cx + r),
-          cy - r - top,
-          bottom - (cy + r),
-        ];
-        for g in gaps {
-          if g < worst {
-            worst = g;
-          }
-        }
+      for t in ["1.0", "2.0", "3.0", "4.0"] {
+        assert!(svg.contains(&format!(">{t}</text>")), "missing tick {t}");
       }
-      // Expect at least ~30 render-pixels (3 display-pixels) of breathing
-      // room. The implementation targets 40 render-pixels (4 * sf).
-      assert!(
-        worst >= 30.0,
-        "BubbleChart left a bubble too close to the frame: worst gap = \
-         {worst:.1} render-pixels (expected >= 30)"
+    }
+
+    /// The bubbles' semi-axes are a tenth of the data span along each axis
+    /// for the largest `z`, with area proportional to `z`; the plot range
+    /// just encloses them, and they are drawn largest first (wolframscript's
+    /// values).
+    #[test]
+    fn bubble_chart_bubble_geometry() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{1, 5, 3}, {4, 6, 9}}], Disk[c_, r_] :> \
+           {c, Round[10^6 r]}, Infinity]"
+        )
+        .unwrap(),
+        "{{{4., 6.}, {300000, 100000}}, {{1., 5.}, {173205, 57735}}}"
+      );
+      assert_eq!(
+        interpret(
+          "Round[10^6 Cases[BubbleChart[{{1, 5, 3}, {4, 6, 9}}], \
+           (PlotRange -> r_) :> r, Infinity]]"
+        )
+        .unwrap(),
+        "{{{826795, 4300000}, {4942265, 6100000}}}"
       );
     }
 
-    /// BubbleChart has a square *plot area* by default. Because the y-axis
-    /// label column (~65 px) is wider than the x-axis label row (~40 px),
-    /// the outer SVG is 25 px shorter than wide so the inner cartesian
-    /// region comes out square.
+    /// `BubbleSizes -> {smin, smax}` sets the smallest and largest bubble
+    /// diameters as fractions of the data span, interpolating in Sqrt[z].
+    #[test]
+    fn bubble_chart_bubble_sizes() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{1, 2, 3}, {2, 3, 4}, {4, 1, 1}}, \
+           BubbleSizes -> {0.05, 0.2}], Disk[_, r_] :> Round[10^6 r], \
+           Infinity]"
+        )
+        .unwrap(),
+        "{{300000, 200000}, {239711, 159808}, {75000, 50000}}"
+      );
+    }
+
+    /// Bubbles with `z <= 0` are not drawn but still count towards the
+    /// span; an axis without spread measures the radii in twice its value.
+    #[test]
+    fn bubble_chart_nonpositive_sizes_and_flat_axis() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{1, 2, 3}, {1, 4, -2}, {1, 5, 0}}], \
+           Disk[c_, r_] :> {c, Round[10^6 r]}, Infinity]"
+        )
+        .unwrap(),
+        "{{{1., 2.}, {200000, 300000}}}"
+      );
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{0, -3, 3}}], Disk[_, r_] :> \
+           Round[10^6 r], Infinity]"
+        )
+        .unwrap(),
+        "{{200000, 600000}}"
+      );
+    }
+
+    /// A `ChartStyle` list cycles over the points of a single dataset.
+    #[test]
+    fn bubble_chart_style_list_cycles_over_points() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[BubbleChart[{{1, 2, 3}, {2, 3, 4}, {3, 1, 2}}, \
+           ChartStyle -> {Red, Blue}], {Directive[_, c_], Disk[p_, _]} :> \
+           {p, c}, Infinity]"
+        )
+        .unwrap(),
+        "{{{2., 3.}, RGBColor[0, 0, 1]}, {{1., 2.}, RGBColor[1, 0, 0]}, \
+         {{3., 1.}, RGBColor[1, 0, 0]}}"
+      );
+    }
+
+    /// BubbleChart has a square plot area by default: wolframscript's
+    /// default picture is 360 × 357.5 points.
     #[test]
     fn bubble_chart_default_square() {
       let svg = export_svg("BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}]");
       assert!(
-        svg.contains("width=\"360\" height=\"335\""),
-        "BubbleChart default should give a square plot area (360x335 outer SVG), got: {}",
+        svg.starts_with("<svg width=\"360\" height=\"357\""),
+        "BubbleChart default should give a square plot area: {}",
         &svg[..200.min(svg.len())]
       );
     }
@@ -17539,13 +17535,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// The chart is framed and has no axes, so — as in wolframscript — an
+    /// `AxesLabel` is not drawn.
     #[test]
-    fn bubble_chart_axes_label() {
+    fn bubble_chart_axes_label_not_drawn() {
       let svg = export_svg(
         r#"BubbleChart[{{1, 2, 3}, {4, 5, 1}, {2, 3, 5}}, AxesLabel -> {"xs", "ys"}]"#,
       );
-      assert!(svg.contains(">xs<"), "missing x axis label: {svg}");
-      assert!(svg.contains(">ys<"), "missing y axis label: {svg}");
+      assert!(!svg.contains(">xs<"), "x axis label drawn: {svg}");
+      assert!(!svg.contains(">ys<"), "y axis label drawn: {svg}");
     }
 
     #[test]
@@ -17583,37 +17581,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.matches("<rect").count() >= 5, "bars missing: {svg}");
     }
 
-    /// BubbleChart should accept an Association whose values are each a
-    /// single `{x,y,z}` triple — each key becomes its own dataset (and,
-    /// with `ChartLegends -> Automatic`, its own legend entry).
+    /// An Association whose values are single `{x,y,z}` triples is one
+    /// dataset whose points are named by the keys — as in wolframscript, it
+    /// is drawn in one color and `ChartLegends -> Automatic` adds no legend.
     #[test]
     fn bubble_chart_association_single_triples() {
       let svg = export_svg(
         r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
       );
-      // One bubble per key; each bubble emits two <circle> elements
-      // (filled body + black border).
-      assert_eq!(
-        svg.matches("<circle").count(),
-        8,
-        "expected 8 circles (4 bubbles × 2) in Association BubbleChart: {svg}"
-      );
-      // Legend label text for each key.
+      assert_eq!(svg.matches("<ellipse").count(), 4, "{svg}");
+      assert_eq!(svg.matches("fill=\"rgb(255,213,64)\"").count(), 4, "{svg}");
       for key in ["a", "b", "c", "d"] {
-        assert!(
-          svg.contains(&format!(">{key}<")),
-          "expected legend entry {key:?}: {svg}"
-        );
+        assert!(!svg.contains(&format!(">{key}<")), "legend entry {key:?}");
       }
-      // Each dataset gets its own color from the default palette —
-      // assert that at least four distinct palette colors are used.
-      let distinct_colors = ["#FFD540", "#00AAF2", "#60BF00", "#FF5E1A"];
-      for color in distinct_colors {
-        assert!(
-          svg.contains(color),
-          "Association BubbleChart should use color {color}: {svg}"
-        );
-      }
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"Head[BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}|>, ChartLegends -> Automatic]]"#
+        )
+        .unwrap(),
+        "Graphics"
+      );
     }
 
     /// BubbleChart with an Association whose values are themselves lists of
@@ -17624,41 +17612,26 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg(
         r#"BubbleChart[<|"x" -> {{1, 1, 1}, {2, 2, 1}}, "y" -> {{3, 3, 1}, {4, 4, 1}, {5, 5, 1}}|>, ChartLegends -> Automatic]"#,
       );
-      // 2 + 3 = 5 bubbles total; each bubble emits two <circle> elements
-      // (filled body + black border).
-      assert_eq!(
-        svg.matches("<circle").count(),
-        10,
-        "expected 10 circles (5 bubbles × 2) in Association BubbleChart with list values: {svg}"
-      );
+      assert_eq!(svg.matches("<ellipse").count(), 5, "{svg}");
+      assert_eq!(svg.matches("fill=\"rgb(255,213,64)\"").count(), 3, "{svg}");
+      assert_eq!(svg.matches("fill=\"rgb(0,170,242)\"").count(), 4, "{svg}");
       assert!(svg.contains(">x<"));
       assert!(svg.contains(">y<"));
     }
 
     /// Regression: the legend swatches next to a BubbleChart must visually
-    /// match the bubbles. Bubbles are rendered fully opaque with a black
-    /// border, so each swatch should also be fully opaque with a black
-    /// stroke — otherwise the legend looks noticeably different from the
-    /// bubbles it labels.
+    /// match the bubbles, edge translucency included.
     #[test]
     fn bubble_chart_legend_swatches_match_bubble_style() {
       let svg = export_svg(
-        r#"BubbleChart[<|"a" -> {3, 1, 5}, "b" -> {2, 2, 4}, "c" -> {1, 2, 3}, "d" -> {2, 1.5, 8}|>, ChartLegends -> Automatic]"#,
+        r#"BubbleChart[<|"x" -> {{1, 1, 1}, {2, 2, 1}}, "y" -> {{3, 3, 1}}|>, ChartLegends -> Automatic]"#,
       );
-      // Bubble fill circles should be fully opaque — sanity-check that the
-      // bubbles are not rendered with reduced opacity.
-      assert!(
-        !svg.contains(r#"<circle cx="#) || !svg.contains(r#"opacity="0.7""#),
-        "bubble circles should not carry opacity=\"0.7\": {svg}"
-      );
-      // Each legend swatch should carry WL's black edge so it visually
-      // matches the bordered bubbles.
-      let swatch_count = svg
-        .matches(r#"stroke="black" stroke-opacity="0.637""#)
-        .count();
-      assert!(
-        swatch_count >= 4,
-        "expected all 4 legend swatches to carry a black stroke, got {swatch_count}: {svg}"
+      let edge = r#"stroke="rgb(0,0,0)" stroke-opacity="0.3""#;
+      assert_eq!(
+        svg.matches(&format!("<rect x=\"3\" y=\"3\" width=\"8\" height=\"8\" fill=\"rgb(255,213,64)\" {edge}")).count()
+          + svg.matches(&format!("<rect x=\"3\" y=\"3\" width=\"8\" height=\"8\" fill=\"rgb(0,170,242)\" {edge}")).count(),
+        2,
+        "{svg}"
       );
     }
 
@@ -25003,6 +24976,34 @@ mod tree_form_graphics {
     assert!(svg.contains("width=\"500\""), "expected width 500: {svg}");
   }
 
+  /// Regression: an `ImageSize` scales the whole tree, labels included, so
+  /// a squeezed tree (a `GraphicsRow` cell) keeps its labels inside their
+  /// boxes instead of drawing full-size text over shrunken boxes.
+  #[test]
+  fn tree_form_image_size_scales_labels() {
+    clear_state();
+    let font_size = |code: &str| -> f64 {
+      let svg = interpret(code).unwrap();
+      svg
+        .split("font-size=\"")
+        .find_map(|s| {
+          let v = s.split('"').next()?;
+          s.contains(">Plus<").then(|| v.parse().ok())?
+        })
+        .unwrap()
+    };
+    let natural =
+      font_size("ExportString[TreeForm[a + b^2 + c^3 + d], \"SVG\"]");
+    let small = font_size(
+      "ExportString[TreeForm[a + b^2 + c^3 + d, ImageSize -> 150], \"SVG\"]",
+    );
+    // The natural picture is 360 wide, so 150 shrinks it to 5/12.
+    assert!(
+      (small - natural * 150.0 / 360.0).abs() < 0.1,
+      "label size {small} at width 150 vs {natural} at 360"
+    );
+  }
+
   #[test]
   fn tree_form_nested() {
     clear_state();
@@ -25427,6 +25428,38 @@ mod graphics_row {
       nested_count,
       &svg[..svg.len().min(200)]
     );
+  }
+
+  /// Regression: squeezed into a `GraphicsRow` cell, a BubbleChart stays
+  /// square — it used to come out wide and flat, its fixed-size bubbles
+  /// and tick labels crowding the plot.
+  #[test]
+  fn bubble_chart_cell_stays_square() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "GraphicsRow[{BubbleChart[{{1,5,3},{4,6,9}}], \
+         Graph[{a->b,b->a,b<->b}], TreeForm[a+b^2+c^3+d]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let cell = svg
+      .match_indices("<svg ")
+      .nth(1)
+      .map(|(i, _)| &svg[i..])
+      .unwrap();
+    let attr = |name: &str| -> f64 {
+      cell
+        .split(&format!(" {name}=\""))
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    let (w, h) = (attr("width"), attr("height"));
+    assert!((w - h).abs() <= 0.05 * w, "BubbleChart cell {w} x {h}");
   }
 }
 

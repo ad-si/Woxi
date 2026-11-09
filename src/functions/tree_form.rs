@@ -217,7 +217,63 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (clamped_w, actual_fs.min(max_fs))
   };
 
-  let font_size_int = (font_size.round() as i128).max(8);
+  // A user-supplied `ImageSize` (number or `{w, h}`) overrides the computed
+  // width. Wolfram scales the whole tree picture to it, labels included, so
+  // they keep fitting their boxes (a `GraphicsRow` cell squeezes a tree this
+  // way).
+  let user_image_size = args[1..].iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ImageSize") => {
+      match replacement.as_ref() {
+        e @ (Expr::Integer(_) | Expr::Real(_)) => Some(e.clone()),
+        Expr::List(items)
+          if items.len() == 2
+            && items
+              .iter()
+              .all(|i| matches!(i, Expr::Integer(_) | Expr::Real(_))) =>
+        {
+          Some(Expr::List(items.clone()))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  let font_size_expr = match &user_image_size {
+    None => Expr::Integer((font_size.round() as i128).max(8)),
+    Some(size) => {
+      let num = |e: &Expr| match e {
+        Expr::Integer(n) => *n as f64,
+        Expr::Real(f) => *f,
+        _ => image_width as f64,
+      };
+      let coord_y_min = layout
+        .iter()
+        .map(|n| n.y - box_half_height)
+        .fold(f64::INFINITY, f64::min);
+      let coord_y_max = layout
+        .iter()
+        .map(|n| n.y + box_half_height)
+        .fold(f64::NEG_INFINITY, f64::max);
+      // The picture's height at its own width, from the data's proportions.
+      let natural_h =
+        image_width as f64 * (coord_y_max - coord_y_min).max(0.01) / coord_w;
+      let scale = match size {
+        Expr::List(wh) => {
+          (num(&wh[0]) / image_width as f64).min(num(&wh[1]) / natural_h)
+        }
+        w => num(w) / image_width as f64,
+      };
+      let scaled = (font_size.round().max(8.0) * scale * 10.0).round() / 10.0;
+      if scaled.fract() == 0.0 {
+        Expr::Integer(scaled as i128)
+      } else {
+        Expr::Real(scaled)
+      }
+    }
+  };
 
   // `VertexLabeling -> False` displays each vertex as a plain point instead
   // of a labeled box; any other setting (including the default) keeps the
@@ -302,10 +358,7 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for node in &layout {
       let style = call(
         "Style",
-        vec![
-          Expr::String(node.label.clone()),
-          Expr::Integer(font_size_int),
-        ],
+        vec![Expr::String(node.label.clone()), font_size_expr.clone()],
       );
       let xy = Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into());
       primitives.push(call("Text", vec![style, xy]));
@@ -332,31 +385,8 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build Graphics[{primitives...}, ImageSize -> width]
   let content = Expr::List(primitives.into());
-  // A user-supplied `ImageSize` (number or `{w, h}`) overrides the computed width.
-  let image_size = args[1..]
-    .iter()
-    .find_map(|a| match a {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ImageSize") =>
-      {
-        match replacement.as_ref() {
-          e @ (Expr::Integer(_) | Expr::Real(_)) => Some(e.clone()),
-          Expr::List(items)
-            if items.len() == 2
-              && items
-                .iter()
-                .all(|i| matches!(i, Expr::Integer(_) | Expr::Real(_))) =>
-          {
-            Some(Expr::List(items.clone()))
-          }
-          _ => None,
-        }
-      }
-      _ => None,
-    })
-    .unwrap_or(Expr::Integer(image_width as i128));
+  let image_size =
+    user_image_size.unwrap_or(Expr::Integer(image_width as i128));
   let image_size_opt = rule_expr(id_expr("ImageSize"), image_size);
 
   graphics_ast(&[content, image_size_opt])

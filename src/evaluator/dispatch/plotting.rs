@@ -1323,7 +1323,7 @@ pub fn dispatch_plotting(
       crate::functions::rectangle_chart::rectangle_chart_ast(args, true),
     ),
     "BubbleChart" if !args.is_empty() => {
-      Some(crate::functions::chart::bubble_chart_ast(args))
+      Some(crate::functions::bubble_chart::bubble_chart_ast(args))
     }
     "BubbleChart3D" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::chart3d::bubble_chart_3d_ast(args)

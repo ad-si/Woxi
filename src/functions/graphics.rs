@@ -2035,9 +2035,17 @@ fn marker_legend_svg(args: &[Expr], round: bool) -> Option<String> {
     let color = color.to_svg_rgb();
     // Without an explicit `EdgeForm` color the swatch edge is translucent
     // black, as in Wolfram's legends.
+    // An `EdgeForm[Directive[GrayLevel[0], Opacity[0.3]]]` keeps its
+    // translucency, so the swatch matches the chart element it names.
     let edge = edge.map_or_else(
       || "stroke=\"black\" stroke-opacity=\"0.3\"".to_string(),
-      |e| format!("stroke=\"{}\"", e.to_svg_rgb()),
+      |e| {
+        if e.a < 1.0 {
+          format!("stroke=\"{}\" stroke-opacity=\"{}\"", e.to_svg_rgb(), e.a)
+        } else {
+          format!("stroke=\"{}\"", e.to_svg_rgb())
+        }
+      },
     );
     let fill_opacity = if opacity < 1.0 {
       format!(" fill-opacity=\"{opacity}\"")

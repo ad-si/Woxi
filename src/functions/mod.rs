@@ -19,6 +19,7 @@ pub mod audio_ast;
 pub mod biosequence;
 pub mod boolean_ast;
 pub mod box_whisker_chart;
+pub mod bubble_chart;
 pub mod bullet_gauge;
 pub mod calculus_ast;
 pub mod caputo_d;
