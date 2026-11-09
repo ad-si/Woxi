@@ -4225,6 +4225,11 @@ fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
   };
   let mut renames: Vec<(Expr, String)> = Vec::new();
   for entry in entries {
+    // A derivative of a plain symbol in any written form
+    // (`Derivative[1][y][t]` as nested calls) names no compound head.
+    if derivative_dep_item(entry, &x_name).is_some() {
+      continue;
+    }
     let head = match entry {
       // `Subscript[c, 1][t]` — applied form of a compound head.
       Expr::CurriedCall { func, args }
@@ -4288,8 +4293,27 @@ fn rename_keyed_heads(
   keyed: &[(&Expr, String, &String)],
   renames: &[(Expr, String)],
 ) -> Expr {
+  // `renders_as` for each head, but with this node rendered at most once:
+  // a discretized system has as many heads as unknowns, and rendering the
+  // node again for every one of them made the rename quadratic.
+  let mut rendered: Option<String> = None;
   for (head, key, fresh) in keyed {
-    if crate::syntax::renders_as(expr, head, key) {
+    let applicable = match head {
+      Expr::FunctionCall {
+        name: target_name,
+        args: target_args,
+      } if key
+        .strip_prefix(target_name.as_str())
+        .is_some_and(|rest| rest.starts_with('[')) =>
+      {
+        matches!(expr, Expr::FunctionCall { name, args }
+          if name == target_name && args.len() == target_args.len())
+      }
+      _ => true,
+    };
+    if applicable
+      && *rendered.get_or_insert_with(|| expr_to_string(expr)) == *key
+    {
       return Expr::Identifier((*fresh).clone());
     }
   }
@@ -4464,6 +4488,36 @@ fn rename_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
 fn restore_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
   if renames.is_empty() {
     return expr.clone();
+  }
+  // `Derivative[k][fresh][x]` (a requested derivative's rule) back to
+  // `Derivative[0, k][head][index, x]`, the inverse of the rename.
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 1
+    && let Expr::CurriedCall {
+      func: deriv_head,
+      args: fname_args,
+    } = func.as_ref()
+    && fname_args.len() == 1
+    && let Expr::Identifier(fname) = &fname_args[0]
+    && let Some(r) = renames.iter().find(|r| r.fresh == *fname)
+    && let Expr::FunctionCall {
+      name: deriv_name,
+      args: orders,
+    } = deriv_head.as_ref()
+    && deriv_name == "Derivative"
+    && orders.len() == 1
+  {
+    let other = restore_indexed_vars(&args[0], renames);
+    return Expr::CurriedCall {
+      func: Box::new(Expr::CurriedCall {
+        func: Box::new(call(
+          "Derivative",
+          vec![Expr::Integer(0), orders[0].clone()],
+        )),
+        args: vec![Expr::Identifier(r.head.clone())],
+      }),
+      args: vec![r.index.clone(), other],
+    };
   }
   if let Expr::FunctionCall { name, args } = expr
     && args.len() == 1
@@ -6301,17 +6355,28 @@ fn ndsolve_system(
   // (a distillation column whose bubble-point temperatures are also
   // differentiated) is integrated without the message.
   let algebraic_unknowns = !index_reduced && funcs.iter().any(|f| f.order == 0);
-  // Every requested derivative must be of a function actually being
-  // solved for, and of an order already carried in its state vector
-  // (0..order-1); the highest derivative itself isn't stored there.
-  for (name, order, _) in &deriv_requests {
-    let Some(f) = funcs.iter().find(|f| &f.name == name) else {
-      return Ok(None);
-    };
-    if *order >= f.order {
+  // Every requested derivative must be of a function being solved for —
+  // integrated, or recovered from a constraint. (One carried in the state
+  // vector is read from it, the highest one from the system itself, and
+  // any other is the derivative of the function's interpolation.)
+  for (name, _, _) in &deriv_requests {
+    let known = funcs.iter().any(|f| &f.name == name)
+      || eliminated
+        .iter()
+        .chain(implicit.iter())
+        .any(|(f, _)| &f.name == name);
+    if !known {
       return Ok(None);
     }
   }
+  // A differential-algebraic system (one with constraints) determines its
+  // own consistent initial derivatives: a condition on a derivative of an
+  // unknown's full order is checked against them rather than refused.
+  let is_dae = index_reduced
+    || !eliminated.is_empty()
+    || !implicit.is_empty()
+    || funcs.iter().any(|f| f.order == 0);
+  let mut checked_ics: Vec<(String, f64)> = Vec::new();
 
   // Classify the conditions by the distinct points they're given at. One
   // shared point is an initial value problem (the ordinary case, handled
@@ -6427,6 +6492,12 @@ fn ndsolve_system(
       // no equation differentiates) is fixed by the constraints anyway;
       // Wolfram accepts it as the consistent starting value.
       if f.order == 0 && *order == 0 {
+        continue;
+      }
+      if is_dae && *order >= f.order {
+        if *order == f.order {
+          checked_ics.push((f.name.clone(), *val));
+        }
         continue;
       }
       if *order >= f.order || f.ics[*order].is_some() {
@@ -6563,6 +6634,40 @@ fn ndsolve_system(
       (NumFn::Compiled(e, memo, _), coeffs) => NumFn::Compiled(e, memo, coeffs),
       (symbolic, _) => symbolic,
     });
+  }
+  // A given full-order initial derivative of a DAE that differs from the
+  // one the system determines is replaced by it, which Wolfram reports.
+  if !checked_ics.is_empty() {
+    let mut state = vec![0.0; n_state];
+    for (fi, f) in funcs.iter().enumerate() {
+      for k in 0..f.order {
+        state[state_offset[fi] + k] = f.ics[k].unwrap_or(0.0);
+      }
+    }
+    let consistent = solve_highest_derivatives_cached(
+      &residuals,
+      funcs.len(),
+      x0,
+      &state,
+      None,
+    )
+    .is_some_and(|high| {
+      checked_ics.iter().all(|(name, val)| {
+        funcs
+          .iter()
+          .position(|f| &f.name == name)
+          .is_some_and(|fi| (high[fi] - val).abs() <= 1e-8 * (1.0 + val.abs()))
+      })
+    });
+    if !consistent {
+      crate::emit_message(
+        "NDSolve::ivres: NDSolve has computed initial values that give a \
+         zero residual for the differential-algebraic system, but some \
+         components are different from those specified. If you need them \
+         to be satisfied, giving initial conditions for all dependent \
+         variables and their derivatives is recommended.",
+      );
+    }
   }
   // A delay equation reads earlier values of the solution: before the
   // initial point those are the (constant) history conditions, afterwards
@@ -7007,19 +7112,33 @@ fn ndsolve_system(
   // Extra rules for `Derivative[k][f]` entries requested alongside `f`:
   // the same points, just read from the state slot the derivative already
   // occupies (`f`'s state runs f, f', …, f^(order-1) from `state_offset`).
+  // The highest derivative is read from the system's own solve at each
+  // point; any other one (of a function recovered from a constraint, say)
+  // is the derivative of the function's interpolation, once that exists.
+  let mut deferred_derivs: Vec<(String, usize, bool)> = Vec::new();
   for (name, order, function_form) in &deriv_requests {
-    let fi = funcs.iter().position(|f| &f.name == name).unwrap();
+    let Some(fi) = funcs
+      .iter()
+      .position(|f| &f.name == name && *order <= f.order)
+    else {
+      deferred_derivs.push((name.clone(), *order, *function_form));
+      continue;
+    };
     let domain = Expr::List(
       vec![Expr::List(vec![Expr::Real(x_lo), Expr::Real(x_hi)].into())].into(),
     );
+    let full_order = *order == funcs[fi].order;
     let data = Expr::List(
       points
         .iter()
-        .map(|(x, s)| {
-          Expr::List(
-            vec![Expr::Real(*x), Expr::Real(s[state_offset[fi] + order])]
-              .into(),
-          )
+        .enumerate()
+        .map(|(i, (x, s))| {
+          let value = if full_order {
+            highest(i).map_or(f64::NAN, |h| h[fi])
+          } else {
+            s[state_offset[fi] + order]
+          };
+          Expr::List(vec![Expr::Real(*x), Expr::Real(value)].into())
         })
         .collect(),
     );
@@ -7169,6 +7288,47 @@ fn ndsolve_system(
         },
         Expr::CurriedCall {
           func: Box::new(interp),
+          args: vec![Expr::Identifier(x_name.clone())],
+        },
+      )
+    });
+  }
+  for (name, order, function_form) in &deferred_derivs {
+    // The function's own InterpolatingFunction, from its rule.
+    let interp = rules.iter().find_map(|r| {
+      if rule_target_name(r) != Some(name.as_str()) {
+        return None;
+      }
+      match r {
+        Expr::Rule { replacement, .. } => match replacement.as_ref() {
+          Expr::CurriedCall { func, .. } => Some(func.as_ref().clone()),
+          other => Some(other.clone()),
+        },
+        _ => None,
+      }
+    });
+    let Some(interp) = interp else {
+      return Ok(None);
+    };
+    let derivative =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::CurriedCall {
+        func: Box::new(call("Derivative", vec![Expr::Integer(*order as i128)])),
+        args: vec![interp],
+      })?;
+    let deriv_pattern = Expr::CurriedCall {
+      func: Box::new(call("Derivative", vec![Expr::Integer(*order as i128)])),
+      args: vec![Expr::Identifier(name.clone())],
+    };
+    rules.push(if *function_form {
+      rule_expr(deriv_pattern, derivative)
+    } else {
+      rule_expr(
+        Expr::CurriedCall {
+          func: Box::new(deriv_pattern),
+          args: vec![Expr::Identifier(x_name.clone())],
+        },
+        Expr::CurriedCall {
+          func: Box::new(derivative),
           args: vec![Expr::Identifier(x_name.clone())],
         },
       )

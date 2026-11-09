@@ -25245,6 +25245,56 @@ mod differentiate_wrt_derivative {
       "6065"
     );
   }
+
+  // A DAE takes a full-order initial derivative as a guess: consistent it
+  // is silent, inconsistent it is replaced with NDSolve::ivres (as WL).
+  #[test]
+  fn ndsolve_dae_full_order_initial_derivative() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 (y[1.] /. First[NDSolve[{y'[t] == x[t], x[t] == y[t], \
+         y[0] == 1, y'[0] == 1}, {x, y}, {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "2718282"
+    );
+    let r = woxi::interpret_with_stdout(
+      "Round[10^6 (y[1.] /. First[NDSolve[{y'[t] == x[t], x[t] == y[t], \
+       y[0] == 1, y'[0] == 5}, {x, y}, {t, 0, 1}]])]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "2718282");
+    assert!(
+      r.warnings.iter().any(|w| w.starts_with("NDSolve::ivres")),
+      "{:?}",
+      r.warnings
+    );
+  }
+
+  // Requested derivatives: the highest one, and the derivatives of
+  // indexed-family unknowns (`Derivative[0, 1][u][i, t]`).
+  #[test]
+  fn ndsolve_requested_derivatives() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{y'[t] == x[t], x'[t] == -y[t], y[0] == 1, x[0] == 0}, \
+         {y[t], x[t], y'[t]}, {t, 0, 1}]; \
+         Round[10^6 ({y[t], y'[t]} /. First[s] /. t -> 0.5)]"
+      )
+      .unwrap(),
+      "{877583, -479426}"
+    );
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{Derivative[0, 1][u][1, t] == u[2, t], \
+         Derivative[0, 1][u][2, t] == -u[1, t], u[1, 0] == 1, u[2, 0] == 0}, \
+         {u[1, t], u[2, t], Derivative[0, 1][u][1, t]}, {t, 0, 1}]; \
+         Round[10^6 (Derivative[0, 1][u][1, t] /. First[s] /. t -> 0.5)]"
+      )
+      .unwrap(),
+      "-479426"
+    );
+  }
 }
 
 mod fourier_sequence_transform {
