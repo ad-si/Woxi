@@ -2707,3 +2707,36 @@ fn arctanh_machine_endpoints_are_indeterminate() {
     assert!(output.warnings.is_empty(), "{code}: {:?}", output.warnings);
   }
 }
+
+// A radical over a sum keeps its integer content under evaluation; Simplify
+// takes the square part out unless that raises the complexity, and Solve's
+// quadratic formula takes it out (all wolframscript-verified).
+mod radical_sum_content {
+  use super::*;
+
+  #[test]
+  fn evaluation_keeps_the_content() {
+    assert_eq!(
+      interpret(
+        "{Sqrt[4 - 4 k], Sqrt[8 + 4 x], Sqrt[4 + 4 Sqrt[2]], Sqrt[12 + 4 Pi], \
+         1/Sqrt[4 - 4 k], Sqrt[4 (1 - k)], Sqrt[4 + 4 I]}"
+      )
+      .unwrap(),
+      "{Sqrt[4 - 4*k], Sqrt[8 + 4*x], Sqrt[4 + 4*Sqrt[2]], Sqrt[12 + 4*Pi], \
+       1/Sqrt[4 - 4*k], 2*Sqrt[1 - k], 2*Sqrt[1 + I]}"
+    );
+  }
+
+  #[test]
+  fn simplify_takes_it_out_unless_more_complex() {
+    assert_eq!(
+      interpret(
+        "{Simplify[Sqrt[4 + 36 t^2 + 36 t^4]], Simplify[Sqrt[8 + 4 x]], \
+         Simplify[Sqrt[4 - 4 k]], Simplify[1/Sqrt[4 + 36 t^2 + 36 t^4]]}"
+      )
+      .unwrap(),
+      "{2*Sqrt[1 + 9*t^2 + 9*t^4], 2*Sqrt[2 + x], Sqrt[4 - 4*k], \
+       1/Sqrt[4 + 36*t^2 + 36*t^4]}"
+    );
+  }
+}

@@ -1264,9 +1264,6 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // E.g. Sqrt[4 + 36*t^2 + 36*t^4] → 2*Sqrt[1 + 9*t^2 + 9*t^4]
     _ if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus") =>
     {
-      if let Some(result) = try_sqrt_plus_gcd(&args[0]) {
-        return Ok(result);
-      }
       if let Some(result) = try_sqrt_gaussian(&args[0]) {
         return Ok(result);
       }
@@ -1476,10 +1473,12 @@ fn extract_int_coeff(term: &Expr) -> Option<(i128, Expr)> {
   }
 }
 
-/// Try to simplify Sqrt[Plus[...]] by extracting the GCD of integer coefficients.
-/// If the GCD is a perfect square, factor it out.
-/// E.g. Sqrt[4 + 36*t^2 + 36*t^4] → 2*Sqrt[1 + 9*t^2 + 9*t^4]
-fn try_sqrt_plus_gcd(expr: &Expr) -> Option<Expr> {
+/// `Sqrt` of a sum with the square part of its integer content taken out:
+/// `Sqrt[4 + 36*t^2 + 36*t^4]` → `2*Sqrt[1 + 9*t^2 + 9*t^4]`. Evaluation
+/// keeps such a radical as it is (wolframscript's `Sqrt[4 - 4*k]`); `Solve`
+/// writes its roots this way, and `Simplify` offers it as a candidate.
+/// `None` when the content has no square factor.
+pub fn sqrt_extracting_square_content(expr: &Expr) -> Option<Expr> {
   let terms = match expr {
     Expr::FunctionCall { name, args } if name == "Plus" => args,
     _ => return None,

@@ -7863,8 +7863,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let disc_eval = crate::evaluator::evaluate_expr_to_expr(&discriminant)
         .unwrap_or(discriminant.clone());
       // Try to evaluate Sqrt of the discriminant symbolically
-      let sqrt_disc_raw = crate::functions::sqrt_ast(&[disc_eval])
-        .unwrap_or_else(|_| make_sqrt(discriminant.clone()));
+      let sqrt_disc_raw =
+        crate::functions::math_ast::sqrt_extracting_square_content(&disc_eval)
+          .map(Ok)
+          .unwrap_or_else(|| crate::functions::sqrt_ast(&[disc_eval]))
+          .unwrap_or_else(|_| make_sqrt(discriminant.clone()));
       let sqrt_disc = crate::evaluator::evaluate_expr_to_expr(&sqrt_disc_raw)
         .unwrap_or(sqrt_disc_raw);
       // Evaluate numerators first so complex arithmetic simplifies before dividing

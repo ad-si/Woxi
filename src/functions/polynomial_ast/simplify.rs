@@ -5541,6 +5541,7 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
   // a single Log when that reduces its digit-aware complexity measure.
   let assumed = try_merge_logs(&assumed).unwrap_or(assumed);
+  let assumed = try_radical_square_content(&assumed).unwrap_or(assumed);
   // Idempotence for And/Or of repeated predicates that BooleanMinimize leaves
   // opaque: Simplify[a > 2 && a > 2] -> a > 2, Simplify[a == 1 || a == 1] ->
   // a == 1. Only collapses when every operand of a connective is identical,
@@ -9968,6 +9969,12 @@ fn contains_symbols(e: &Expr) -> bool {
 
 pub fn simplify_expr(expr: &Expr) -> Expr {
   let normal = simplify_expr_inner(expr);
+  // A radical over a sum loses the square part of its integer content when
+  // that makes the result simpler: `Simplify[Sqrt[4 + 36 t^2 + 36 t^4]]` is
+  // `2*Sqrt[1 + 9*t^2 + 9*t^4]`, `Simplify[Sqrt[4 - 4 k]]` stays.
+  if let Some(extracted) = try_radical_square_content(&normal) {
+    return extracted;
+  }
   // Converse power-reduction identity: α(1 ∓ Cos[w]) → 2α·Sin/Cos[w/2]^2.
   // wolframscript's Simplify collapses e.g. (1 - Cos[2 x])/2 to Sin[x]^2, so
   // offer the power form as a candidate and keep it when it has fewer leaves.
@@ -9977,6 +9984,65 @@ pub fn simplify_expr(expr: &Expr) -> Expr {
     return reduced;
   }
   normal
+}
+
+/// `expr` with its radicals' square content taken out (see
+/// `extract_radical_square_content`) unless that raises the complexity:
+/// wolframscript takes it on a tie (`Sqrt[8 + 4 x]` and `2 Sqrt[2 + x]` both
+/// count 9).
+fn try_radical_square_content(expr: &Expr) -> Option<Expr> {
+  let extracted = extract_radical_square_content(expr)?;
+  let extracted = crate::evaluator::evaluate_expr_to_expr(&extracted).ok()?;
+  (wl_simplify_count(&extracted) <= wl_simplify_count(expr))
+    .then_some(extracted)
+}
+
+/// `expr` with every `Sqrt[sum]` (also as a reciprocal) rewritten by
+/// `sqrt_extracting_square_content`; `None` when there is none to rewrite.
+fn extract_radical_square_content(expr: &Expr) -> Option<Expr> {
+  fn rewrite(e: &Expr, changed: &std::cell::Cell<bool>) -> Expr {
+    let power = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((&args[0], &args[1]))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref(), right.as_ref())),
+      _ => None,
+    };
+    let half_sign = |exp: &Expr| match exp {
+      Expr::FunctionCall { name, args: r }
+        if name == "Rational" && r.len() == 2 =>
+      {
+        match (&r[0], &r[1]) {
+          (Expr::Integer(n), Expr::Integer(2)) if n.abs() == 1 => Some(*n),
+          _ => None,
+        }
+      }
+      _ => None,
+    };
+    if let Some((base, exp)) = power
+      && matches!(base, Expr::FunctionCall { name, .. } if name == "Plus")
+      && let Some(sign) = half_sign(exp)
+      && let Some(root) =
+        crate::functions::math_ast::sqrt_extracting_square_content(base)
+    {
+      changed.set(true);
+      return if sign > 0 {
+        root
+      } else {
+        crate::functions::math_ast::make_divide(Expr::Integer(1), root)
+      };
+    }
+    crate::syntax::map_children(e, &|c| rewrite(c, changed))
+  }
+  let changed = std::cell::Cell::new(false);
+  let rewritten = rewrite(expr, &changed);
+  changed.get().then_some(rewritten)
 }
 
 fn simplify_expr_inner(expr: &Expr) -> Expr {
