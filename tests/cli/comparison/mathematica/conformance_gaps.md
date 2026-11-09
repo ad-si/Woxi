@@ -2432,9 +2432,14 @@ first-order derivative equations (a unit-speed condition): it is traced as an
 implicit curve by arclength continuation, and ends early where the curve
 leaves the region the equations are defined on.
 
-Woxi does not compute consistent initial values (`NDSolve::ivres`): it takes
-the given ones as they are, so a DAE started off its constraints differs from
-WL's from the start.
+Woxi does not compute consistent initial values: it takes the given ones as
+they are, so a DAE started off its constraints differs from WL's from the
+start. Only a given initial derivative of an unknown's full differential
+order is checked: it is replaced by the value the system determines, with
+`NDSolve::ivres` when the two differ. A condition on a function eliminated by
+a constraint is dropped without that check (WL reports `ivres` for
+`{y'[t] == x[t], x[t] == y[t], y[0] == 1, x'[0] == 3}`, Woxi is silent), and
+an over-specified pure ODE stays unevaluated without WL's `NDSolve::ndnco`.
 
 ### `NDSolve` of a distillation-column DAE
 
