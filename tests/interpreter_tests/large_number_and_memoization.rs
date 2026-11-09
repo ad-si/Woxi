@@ -78,6 +78,37 @@ mod large_number_and_memoization {
       // One pattern rule + one memoized value for k[5].
       assert_eq!(out, "2");
     }
+
+    // `=` and `:=` for the same literal left-hand side replace each other,
+    // whichever comes first (the memoized value lives in a separate table).
+    #[test]
+    fn set_and_set_delayed_replace_each_other() {
+      clear_state();
+      assert_eq!(
+        interpret("q[1] = 1; q[1] := 2; {q[1], DownValues[q]}").unwrap(),
+        "{2, {HoldPattern[q[1]] :> 2}}"
+      );
+      clear_state();
+      assert_eq!(
+        interpret("u[a] := 1; u[a] = 2; {u[a], DownValues[u]}").unwrap(),
+        "{2, {HoldPattern[u[a]] :> 2}}"
+      );
+      clear_state();
+      // The left-hand side's arguments are evaluated before comparing.
+      assert_eq!(interpret("s = r; g[r] = 1; g[s] := 2; g[r]").unwrap(), "2");
+      clear_state();
+      assert_eq!(
+        interpret("v[1, 2] := 3; v[1, 2] = 4; v[1, 3] = 5; DownValues[v]")
+          .unwrap(),
+        "{HoldPattern[v[1, 2]] :> 4, HoldPattern[v[1, 3]] :> 5}"
+      );
+      clear_state();
+      assert_eq!(
+        interpret("f[x_] := f[x] = x^2; f[3]; f[3] := 0; DownValues[f]")
+          .unwrap(),
+        "{HoldPattern[f[3]] :> 0, HoldPattern[f[x_]] :> (f[x] = x^2)}"
+      );
+    }
   }
 
   // Plus of rationals whose numerator/denominator exceed i128 must still

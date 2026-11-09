@@ -327,6 +327,42 @@ pub(crate) fn same_rule_lhs(a: &StoredRule, b: &StoredRule) -> bool {
 /// is NOT a literal-argument marker, so it is excluded — otherwise an
 /// all-blank list rule like `f[{a_, b_}]` would be treated as a literal
 /// definition and wrongly jump ahead of more specific overloads.
+/// The literal arguments of a rule whose every condition is a literal-argument
+/// SameQ (`f[3, a] := …` lowers to `_dv0 === 3`, `_dv1 === a`), or `None` when
+/// the rule has a pattern argument or a guard.
+fn literal_rule_args(
+  params: &[String],
+  conditions: &[Option<Expr>],
+) -> Option<Vec<Expr>> {
+  if conditions.is_empty() || conditions.len() != params.len() {
+    return None;
+  }
+  conditions
+    .iter()
+    .map(|c| match c {
+      Some(c @ Expr::Comparison { operands, .. })
+        if operands.len() == 2 && condition_is_literal_arg(params, c) =>
+      {
+        Some(operands[1].clone())
+      }
+      _ => None,
+    })
+    .collect()
+}
+
+/// Drop the `Set` value stored for `func[args…]` (kept in `MEMO_VALUES`), so
+/// that a later `func[args…] := …` for the same literal left-hand side
+/// replaces it, as one definition replaces another in Wolfram.
+fn forget_memo_value(func_name: &str, args: &[Expr]) {
+  crate::MEMO_VALUES.with(|m| {
+    let mut map = m.borrow_mut();
+    if let Some(cache) = map.get_mut(func_name) {
+      let key = crate::memo_key(cache, args);
+      cache.remove(&key);
+    }
+  });
+}
+
 fn condition_is_literal_arg(params: &[String], c: &Expr) -> bool {
   let Expr::Comparison {
     operators,
@@ -4145,6 +4181,20 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // mark of an earlier read that found the value fully evaluated.
         let mut rhs_value = rhs_value;
         crate::evaluator::core_eval::share_large_lists(&mut rhs_value, 0);
+        // So is a delayed definition for the same literal arguments
+        // (`f[1] := 2; f[1] = 3` leaves only `f[1] = 3`).
+        crate::FUNC_DEFS.with(|m| {
+          if let Some(entry) = m.borrow_mut().get_mut(func_name.as_str()) {
+            entry.retain(|(p, c, _, _, _, _)| {
+              literal_rule_args(p, c).is_none_or(|stored| {
+                stored.len() != arg_exprs.len()
+                  || !stored.iter().zip(&arg_exprs).all(|(a, b)| {
+                    crate::evaluator::pattern_matching::expr_equal(a, b)
+                  })
+              })
+            });
+          }
+        });
         crate::MEMO_VALUES.with(|m| {
           let mut map = m.borrow_mut();
           let cache = map.entry(func_name.clone()).or_default();
@@ -4968,6 +5018,12 @@ pub fn set_delayed_ast(
         })
         .unwrap_or(stored_rule_count)
     };
+
+    // A delayed definition replaces an immediate one (`f[1] = 2; f[1] := 3`)
+    // for the same literal arguments.
+    if let Some(args) = literal_rule_args(&params, &conditions) {
+      forget_memo_value(func_name, &args);
+    }
 
     crate::FUNC_DEFS.with(|m| {
       let mut defs = m.borrow_mut();
