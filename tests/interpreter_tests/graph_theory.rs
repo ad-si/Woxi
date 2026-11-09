@@ -8424,6 +8424,69 @@ mod graph_data {
     .unwrap();
     assert_eq!(result, "True");
   }
+
+  // Möbius ladders, prisms and antiprisms are built from their
+  // definitions; the edge list matches wolframscript's labeling.
+  #[test]
+  fn ladder_prism_and_antiprism_families() {
+    assert_eq!(
+      interpret("GraphData[{\"MoebiusLadder\", 4}, \"EdgeRules\"]").unwrap(),
+      "{1 -> 2, 1 -> 5, 1 -> 8, 2 -> 3, 2 -> 6, 3 -> 4, 3 -> 7, 4 -> 5, \
+       4 -> 8, 5 -> 6, 6 -> 7, 7 -> 8}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"MoebiusLadder\", 4}, \"StandardName\"]").unwrap(),
+      "WagnerGraph"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Prism\", 4}, \"StandardName\"]").unwrap(),
+      "CubicalGraph"
+    );
+    assert_eq!(
+      interpret(
+        "{GraphData[{\"Prism\", 5}, \"EdgeCount\"], \
+         GraphData[{\"Antiprism\", 5}, \"EdgeCount\"]}"
+      )
+      .unwrap(),
+      "{15, 20}"
+    );
+  }
+
+  // Polyhedral graphs are the skeletons of PolyhedronData's solids.
+  #[test]
+  fn polyhedral_skeleton_graphs() {
+    assert_eq!(
+      interpret(
+        "{GraphData[\"SmallTriakisOctahedralGraph\", \"VertexCount\"], \
+         GraphData[\"SmallTriakisOctahedralGraph\", \"EdgeCount\"], \
+         GraphData[\"SmallTriakisOctahedralGraph\", \"Name\"]}"
+      )
+      .unwrap(),
+      "{14, 36, small triakis octahedral graph}"
+    );
+    assert_eq!(
+      interpret("MemberQ[GraphData[\"Polyhedral\"], \"CuboctahedralGraph\"]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CuboctahedralGraph\", \"Degrees\"]").unwrap(),
+      "{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4}"
+    );
+  }
+
+  #[test]
+  fn structural_classes_are_tested_per_graph() {
+    assert_eq!(
+      interpret(
+        "{MemberQ[GraphData[\"Bipartite\"], \"CubicalGraph\"], \
+         MemberQ[GraphData[\"Bipartite\"], \"PetersenGraph\"], \
+         GraphData[\"PetersenGraph\", \"Planar\"]}"
+      )
+      .unwrap(),
+      "{True, False, False}"
+    );
+  }
 }
 
 mod graph_utilities_package {

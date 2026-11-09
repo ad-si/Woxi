@@ -630,6 +630,20 @@ mod country_data_tests {
       "Entity[Country, UnitedStates]"
     );
     assert_eq!(interpret("Length[CountryData[]]").unwrap(), "249");
+    assert_eq!(interpret("Length[CountryData[All]]").unwrap(), "249");
+    assert_eq!(
+      interpret("Head[CountryData[\"Belgium\", \"LandArea\"]]").unwrap(),
+      "Quantity"
+    );
+    // WL's Shape: Graphics[{fill, EdgeForm[Black], Polygon[{rings}]}].
+    assert_eq!(
+      interpret(
+        "s = CountryData[\"Belgium\", \"Shape\"]; \
+         {Head[s], Head[s[[1, 3]]], ArrayDepth[s[[1, 3, 1]]]}"
+      )
+      .unwrap(),
+      "{Graphics, Polygon, 3}"
+    );
     assert_eq!(
       interpret("CountryData[\"Continents\"]").unwrap(),
       "{EntityClass[Country, Africa], EntityClass[Country, Antarctica], \

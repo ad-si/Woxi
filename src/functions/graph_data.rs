@@ -31,6 +31,25 @@ enum GraphSpec {
   Star(usize),
   Wheel(usize),
   CompleteBipartite(usize, usize),
+  /// A ladder of `n` rungs whose ends are joined with a half twist.
+  MoebiusLadder(usize),
+  /// The n-gonal prism: two n-cycles joined by rungs.
+  Prism(usize),
+  /// The n-gonal antiprism: two n-cycles joined by a zigzag band.
+  Antiprism(usize),
+  /// The skeleton of a solid PolyhedronData knows, by its graph name.
+  Skeleton(&'static str),
+}
+
+include!("graph_data_skeletons.rs");
+
+/// The solid whose skeleton a skeleton graph is (the first listed when
+/// several solids share a skeleton).
+fn skeleton_solid(graph: &str) -> Option<&'static str> {
+  SKELETON_GRAPHS
+    .iter()
+    .find(|(g, ..)| *g == graph)
+    .map(|&(_, solid, _)| solid)
 }
 
 /// The named entities that are not one of the parametrized families, with
@@ -216,6 +235,7 @@ static ALIAS_GRAPHS: &[(&str, &str, GraphSpec)] = &[
     "utility graph",
     GraphSpec::CompleteBipartite(3, 3),
   ),
+  ("WagnerGraph", "Wagner graph", GraphSpec::MoebiusLadder(4)),
 ];
 
 /// The names `GraphData[]` enumerates. Wolfram's own list has ~12500 entries
@@ -227,8 +247,10 @@ fn all_names() -> Vec<&'static str> {
     .iter()
     .map(|&(name, ..)| name)
     .chain(ALIAS_GRAPHS.iter().map(|(name, ..)| *name))
+    .chain(SKELETON_GRAPHS.iter().map(|&(name, ..)| name))
     .collect();
   names.sort_unstable();
+  names.dedup();
   names
 }
 
@@ -247,6 +269,9 @@ fn canonical(spec: &GraphSpec) -> GraphSpec {
     GraphSpec::CompleteBipartite(1, 2) => GraphSpec::Path(3),
     GraphSpec::CompleteBipartite(1, k) => GraphSpec::Star(k + 1),
     GraphSpec::CompleteBipartite(2, 2) => GraphSpec::Cycle(4),
+    GraphSpec::MoebiusLadder(3) => GraphSpec::CompleteBipartite(3, 3),
+    GraphSpec::Prism(4) => GraphSpec::Special("CubicalGraph"),
+    GraphSpec::Antiprism(3) => GraphSpec::Special("OctahedralGraph"),
     ref other => other.clone(),
   }
 }
@@ -271,6 +296,12 @@ fn resolve(arg: &Expr) -> Option<GraphSpec> {
         .iter()
         .find(|&&(n, ..)| n == name)
         .map(|&(n, ..)| GraphSpec::Special(n))
+        .or_else(|| {
+          SKELETON_GRAPHS
+            .iter()
+            .find(|&&(n, ..)| n == name)
+            .map(|&(n, ..)| GraphSpec::Skeleton(n))
+        })
     }
     Expr::List(items) => match items.as_ref() {
       [Expr::String(family), Expr::Integer(n)] if *n >= 1 => {
@@ -281,6 +312,9 @@ fn resolve(arg: &Expr) -> Option<GraphSpec> {
           "Path" => Some(GraphSpec::Path(n)),
           "Star" if n >= 2 => Some(GraphSpec::Star(n)),
           "Wheel" if n >= 4 => Some(GraphSpec::Wheel(n)),
+          "MoebiusLadder" if n >= 3 => Some(GraphSpec::MoebiusLadder(n)),
+          "Prism" if n >= 3 => Some(GraphSpec::Prism(n)),
+          "Antiprism" if n >= 3 => Some(GraphSpec::Antiprism(n)),
           _ => None,
         }
       }
@@ -303,7 +337,80 @@ fn resolve(arg: &Expr) -> Option<GraphSpec> {
 /// Vertex count and 1-based edge list, in Wolfram's vertex labeling and
 /// (sorted) edge order.
 fn vertices_and_edges(spec: &GraphSpec) -> (usize, Vec<(usize, usize)>) {
+  // A family member Wolfram files under a named graph has that graph's
+  // labeling (`{"Prism", 4}` is the cubical graph).
+  if let canon @ GraphSpec::Special(_) = canonical(spec)
+    && canon != *spec
+  {
+    return vertices_and_edges(&canon);
+  }
+  let sorted = |n: usize, mut edges: Vec<(usize, usize)>| {
+    for e in edges.iter_mut() {
+      if e.0 > e.1 {
+        *e = (e.1, e.0);
+      }
+    }
+    edges.sort_unstable();
+    edges.dedup();
+    (n, edges)
+  };
   match *spec {
+    // The 2n-cycle with each vertex joined to the opposite one.
+    GraphSpec::MoebiusLadder(n) => {
+      let m = 2 * n;
+      let mut edges: Vec<(usize, usize)> =
+        (1..=m).map(|i| (i, i % m + 1)).collect();
+      edges.extend((1..=n).map(|i| (i, i + n)));
+      sorted(m, edges)
+    }
+    GraphSpec::Prism(n) => {
+      let mut edges = Vec::new();
+      for i in 1..=n {
+        edges.push((i, i % n + 1));
+        edges.push((n + i, n + i % n + 1));
+        edges.push((i, n + i));
+      }
+      sorted(2 * n, edges)
+    }
+    GraphSpec::Antiprism(n) => {
+      let mut edges = Vec::new();
+      for i in 1..=n {
+        edges.push((i, i % n + 1));
+        edges.push((n + i, n + i % n + 1));
+        edges.push((i, n + i));
+        edges.push((i % n + 1, n + i));
+      }
+      sorted(2 * n, edges)
+    }
+    GraphSpec::Skeleton(name) => {
+      let solid = str_expr(skeleton_solid(name).unwrap_or(name));
+      let query = |prop: &str| {
+        crate::functions::polyhedron_data::polyhedron_data_ast(&[
+          solid.clone(),
+          str_expr(prop),
+        ])
+      };
+      let n = match query("VertexCount") {
+        Ok(Expr::Integer(n)) => n as usize,
+        _ => 0,
+      };
+      let edges: Vec<(usize, usize)> = match &query("EdgeIndices") {
+        Ok(Expr::List(items)) => items
+          .iter()
+          .filter_map(|e| match e {
+            Expr::List(ab) => match ab.as_slice() {
+              [Expr::Integer(a), Expr::Integer(b)] => {
+                Some((*a as usize, *b as usize))
+              }
+              _ => None,
+            },
+            _ => None,
+          })
+          .collect(),
+        _ => vec![],
+      };
+      sorted(n, edges)
+    }
     GraphSpec::Special(name) => {
       let &(_, _, n, edges) =
         SPECIAL_GRAPHS.iter().find(|&&(s, ..)| s == name).unwrap();
@@ -354,7 +461,7 @@ fn vertices_and_edges(spec: &GraphSpec) -> (usize, Vec<(usize, usize)>) {
 /// the spec itself otherwise (`{"Cycle", 6}` has no name of its own).
 fn standard_name(spec: &GraphSpec) -> Expr {
   let canon = canonical(spec);
-  if let GraphSpec::Special(name) = canon {
+  if let GraphSpec::Special(name) | GraphSpec::Skeleton(name) = canon {
     return str_expr(name);
   }
   if let Some((name, ..)) = ALIAS_GRAPHS.iter().find(|(_, _, s)| *s == canon) {
@@ -375,6 +482,10 @@ fn spec_expr(spec: &GraphSpec) -> Expr {
     GraphSpec::Path(n) => pair("Path", n),
     GraphSpec::Star(n) => pair("Star", n),
     GraphSpec::Wheel(n) => pair("Wheel", n),
+    GraphSpec::MoebiusLadder(n) => pair("MoebiusLadder", n),
+    GraphSpec::Prism(n) => pair("Prism", n),
+    GraphSpec::Antiprism(n) => pair("Antiprism", n),
+    GraphSpec::Skeleton(name) => str_expr(name),
     GraphSpec::CompleteBipartite(m, k) => Expr::List(
       vec![
         str_expr("CompleteBipartite"),
@@ -409,6 +520,22 @@ fn readable_name(spec: &GraphSpec) -> String {
     GraphSpec::Wheel(n) => format!("{n}\u{2010}wheel graph"),
     GraphSpec::CompleteBipartite(m, k) => {
       format!("({m},{k})\u{2010}complete bipartite graph")
+    }
+    GraphSpec::MoebiusLadder(n) => {
+      format!("{n}\u{2010}M\u{f6}bius ladder graph")
+    }
+    GraphSpec::Prism(n) => format!("{n}\u{2010}prism graph"),
+    GraphSpec::Antiprism(n) => format!("{n}\u{2010}antiprism graph"),
+    // "SmallTriakisOctahedralGraph" is the "small triakis octahedral graph".
+    GraphSpec::Skeleton(name) => {
+      let mut out = String::new();
+      for (i, c) in name.chars().enumerate() {
+        if c.is_uppercase() && i > 0 {
+          out.push(' ');
+        }
+        out.extend(c.to_lowercase());
+      }
+      out
     }
     GraphSpec::Special(_) => unreachable!("handled above"),
   }
@@ -461,8 +588,90 @@ fn graph_property(
     "Graph" => Some(Ok(graph_expr(spec))),
     "Name" => Some(Ok(Expr::String(readable_name(spec)))),
     "StandardName" => Some(Ok(standard_name(spec))),
-    _ => None,
+    "EdgeIndices" => {
+      let (_, edges) = vertices_and_edges(spec);
+      Some(Ok(Expr::List(
+        edges
+          .iter()
+          .map(|&(a, b)| {
+            Expr::List(
+              vec![Expr::Integer(a as i128), Expr::Integer(b as i128)].into(),
+            )
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )))
+    }
+    "Degrees" => Some(eval_on_graph(spec, "VertexDegree")),
+    // Woxi's own layout and drawings of the graph (wolframscript's come
+    // from its curated embeddings).
+    "VertexCoordinates" => Some(eval_on_graph(spec, "GraphEmbedding")),
+    "Image" => Some(eval_on_graph(spec, "GraphPlot")),
+    "Image3D" => Some(eval_on_graph(spec, "GraphPlot3D")),
+    "DegreeSequence" => {
+      Some(eval_on_graph(spec, "VertexDegree").and_then(|d| {
+        crate::evaluator::evaluate_expr_to_expr(&call("ReverseSort", vec![d]))
+      }))
+    }
+    "Regular" => Some(eval_on_graph(spec, "VertexDegree").map(|d| {
+      let regular = match &d {
+        Expr::List(items) => {
+          let degrees: Vec<String> = items
+            .iter()
+            .map(crate::syntax::expr_to_input_form)
+            .collect();
+          degrees.windows(2).all(|w| w[0] == w[1])
+        }
+        _ => false,
+      };
+      Expr::Identifier(if regular { "True" } else { "False" }.into())
+    })),
+    _ => class_predicate(prop).map(|q| eval_on_graph(spec, q)),
   }
+}
+
+/// The graph-theoretic test behind a Boolean property / class name.
+fn class_predicate(class: &str) -> Option<&'static str> {
+  Some(match class {
+    "Connected" => "ConnectedGraphQ",
+    "Planar" => "PlanarGraphQ",
+    "Bipartite" => "BipartiteGraphQ",
+    "Eulerian" => "EulerianGraphQ",
+    "Tree" => "TreeGraphQ",
+    _ => return None,
+  })
+}
+
+fn eval_on_graph(
+  spec: &GraphSpec,
+  function: &str,
+) -> Result<Expr, InterpreterError> {
+  crate::evaluator::evaluate_expr_to_expr(&call1(function, graph_expr(spec)))
+}
+
+/// `GraphData[class]`: the known graphs in a class. "Polyhedral" is the
+/// skeletons of convex solids; the structural classes are decided by
+/// testing every known graph.
+fn class_members(class: &str) -> Option<Vec<&'static str>> {
+  let names = all_names();
+  let test = |name: &str, prop: &str| {
+    resolve(&str_expr(name))
+      .and_then(|spec| graph_property(&spec, prop))
+      .and_then(Result::ok)
+      .is_some_and(|v| matches!(v, Expr::Identifier(ref t) if t == "True"))
+  };
+  Some(match class {
+    "Polyhedral" => names
+      .into_iter()
+      .filter(|n| SKELETON_GRAPHS.iter().any(|&(g, _, p)| g == *n && p))
+      .collect(),
+    "Nonplanar" => names.into_iter().filter(|n| !test(n, "Planar")).collect(),
+    "Regular" => names.into_iter().filter(|n| test(n, "Regular")).collect(),
+    _ => {
+      class_predicate(class)?;
+      names.into_iter().filter(|n| test(n, class)).collect()
+    }
+  })
 }
 
 pub fn graph_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -473,6 +682,30 @@ pub fn graph_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Wolfram lists 764 properties; Woxi lists the ones it answers.
     [Expr::String(p)] if p == "Properties" => {
       Ok(Expr::List(PROPERTIES.iter().map(|p| str_expr(p)).collect()))
+    }
+    [Expr::String(class)] if resolve(&args[0]).is_none() => {
+      match class_members(class) {
+        Some(members) => {
+          return Ok(Expr::List(members.into_iter().map(str_expr).collect()));
+        }
+        None => {
+          crate::emit_message(&format!(
+            "GraphData::notent: {class} is not a known entity, class or tag for GraphData. Use GraphData[] for a list of entities."
+          ));
+          unevaluated_call()
+        }
+      }
+    }
+    // A class with a property maps the property over the members.
+    [Expr::String(class), prop @ Expr::String(_)]
+      if resolve(&args[0]).is_none() && class_members(class).is_some() =>
+    {
+      let members = class_members(class).unwrap();
+      let values = members
+        .into_iter()
+        .map(|m| graph_data_ast(&[str_expr(m), prop.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(Expr::List(values.into()))
     }
     [entity] | [entity, _] => {
       let Some(spec) = resolve(entity) else {
