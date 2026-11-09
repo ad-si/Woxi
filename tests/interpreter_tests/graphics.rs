@@ -32176,6 +32176,18 @@ mod manipulate {
     );
   }
 
+  /// A DynamicModule that builds its own control panel is a valid
+  /// Manipulate argument (wolframscript: no message).
+  #[test]
+  fn dynamic_module_control_panel_is_not_vsform() {
+    let out = woxi::interpret_with_stdout(
+      "Manipulate[x + y, {x, 0, 1}, \
+       DynamicModule[{c}, c = Control[{{y, 1}, 0, 2}]; Column[{c}]]];",
+    )
+    .unwrap();
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+  }
+
   #[test]
   fn initialization_option_is_not_vsform() {
     // Regression: `Initialization :> …` is a Manipulate option, not a

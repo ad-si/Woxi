@@ -30874,6 +30874,10 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "MenuView"
             | "StatusArea"
             | "PopupView"
+            // A `DynamicModule` building its own control panel (its
+            // `Control[…]`s set up as local variables, as in the "Legal
+            // Incoherence" Demonstration) is accepted too.
+            | "DynamicModule"
         ) =>
       {
         out_args.push(spec.clone());
