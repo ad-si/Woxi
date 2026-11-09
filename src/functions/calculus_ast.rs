@@ -3219,6 +3219,30 @@ fn thread_list_product(factors: &[&Expr]) -> Option<Expr> {
   }
 }
 
+/// `dm` times the derivative of an elliptic integral w.r.t. its parameter,
+/// given as a `template` in the placeholder parameter `m$Ell` (and the
+/// amplitude or characteristic `p$Ell`), instantiated with the actual
+/// arguments and evaluated.
+fn elliptic_parameter_derivative(
+  template: &str,
+  p: Option<&Expr>,
+  m: &Expr,
+  dm: Expr,
+) -> Result<Expr, InterpreterError> {
+  let template = crate::syntax::string_to_expr(template)?;
+  let mut bindings: Vec<(&str, &Expr)> = vec![("m$Ell", m)];
+  if let Some(p) = p {
+    bindings.push(("p$Ell", p));
+  }
+  let deriv = crate::syntax::substitute_variables(&template, &bindings);
+  let full = if matches!(dm, Expr::Integer(1)) {
+    deriv
+  } else {
+    call("Times", vec![dm, deriv])
+  };
+  crate::evaluator::evaluate_expr_to_expr(&full)
+}
+
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   match expr {
     // Constants
@@ -4288,10 +4312,48 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Ok(simplify(times2(dz, result)))
           }
         }
+        // Complete elliptic integrals and EllipticPi[n, m] w.r.t. the
+        // parameter m (the closed forms WL returns), times m':
+        //   EllipticK'[m] = (EllipticE[m] - (1 - m) EllipticK[m])/(2 (1 - m) m)
+        //   EllipticE'[m] = (EllipticE[m] - EllipticK[m])/(2 m)
+        // A derivative of EllipticPi w.r.t. its characteristic n is left
+        // unevaluated.
+        "EllipticK" | "EllipticE" if args.len() == 1 => {
+          let dm = differentiate(&args[0], var)?;
+          if matches!(dm, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let template = if name == "EllipticK" {
+            "(EllipticE[m$Ell] - (1 - m$Ell)*EllipticK[m$Ell])/(2*(1 - m$Ell)*m$Ell)"
+          } else {
+            "(EllipticE[m$Ell] - EllipticK[m$Ell])/(2*m$Ell)"
+          };
+          elliptic_parameter_derivative(template, None, &args[0], dm)
+        }
+        "EllipticPi" if args.len() == 2 => {
+          let dn = differentiate(&args[0], var)?;
+          let dm = differentiate(&args[1], var)?;
+          if matches!(dn, Expr::Integer(0)) && matches!(dm, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          if !matches!(dn, Expr::Integer(0)) {
+            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
+          }
+          elliptic_parameter_derivative(
+            "(EllipticE[m$Ell]/(-1 + m$Ell) + EllipticPi[p$Ell, m$Ell])/(2*(-m$Ell + p$Ell))",
+            Some(&args[0]),
+            &args[1],
+            dm,
+          )
+        }
         // Incomplete elliptic integrals w.r.t. the amplitude phi:
         //   D[EllipticF[phi, m], phi] = 1 / Sqrt[1 - m Sin[phi]^2]
         //   D[EllipticE[phi, m], phi] = Sqrt[1 - m Sin[phi]^2]
-        // A derivative w.r.t. the parameter m is left unevaluated.
+        // and w.r.t. the parameter m:
+        //   D[EllipticE[phi, m], m] = (EllipticE[phi, m] - EllipticF[phi, m])/(2 m)
+        //   D[EllipticF[phi, m], m] = -EllipticE[phi, m]/(2 (-1 + m) m)
+        //     - EllipticF[phi, m]/(2 m)
+        //     + Sin[2 phi]/(4 (-1 + m) Sqrt[1 - m Sin[phi]^2])
         "EllipticF" | "EllipticE" if args.len() == 2 => {
           let dphi = differentiate(&args[0], var)?;
           let dm = differentiate(&args[1], var)?;
@@ -4300,7 +4362,34 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           if !matches!(dm, Expr::Integer(0)) {
-            return Ok(call("D", vec![expr.clone(), id_expr(var)]));
+            let template = if name == "EllipticE" {
+              "(EllipticE[p$Ell, m$Ell] - EllipticF[p$Ell, m$Ell])/(2*m$Ell)"
+            } else {
+              "-1/2*EllipticE[p$Ell, m$Ell]/((-1 + m$Ell)*m$Ell) - EllipticF[p$Ell, m$Ell]/(2*m$Ell) + Sin[2*p$Ell]/(4*(-1 + m$Ell)*Sqrt[1 - m$Ell*Sin[p$Ell]^2])"
+            };
+            let m_part = elliptic_parameter_derivative(
+              template,
+              Some(&args[0]),
+              &args[1],
+              dm,
+            )?;
+            if matches!(dphi, Expr::Integer(0)) {
+              return Ok(m_part);
+            }
+            // Both arguments depend on var: add the amplitude part.
+            let phi_only = call(
+              name,
+              vec![args[0].clone(), Expr::Identifier("m$EllFixed".to_string())],
+            );
+            let phi_part = crate::syntax::substitute_variable(
+              &differentiate(&phi_only, var)?,
+              "m$EllFixed",
+              &args[1],
+            );
+            return crate::evaluator::evaluate_expr_to_expr(&call(
+              "Plus",
+              vec![phi_part, m_part],
+            ));
           }
           // 1 - m Sin[phi]^2
           let inner = crate::evaluator::evaluate_expr_to_expr(&minus2(

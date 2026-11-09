@@ -6467,6 +6467,58 @@ mod erf {
     assert_eq!(interpret("D[EllipticF[phi, m], a]").unwrap(), "0");
   }
 
+  // Elliptic integrals differentiated w.r.t. the parameter m (closed forms
+  // as returned by wolframscript).
+  #[test]
+  fn d_elliptic_parameter() {
+    assert_eq!(
+      interpret("D[EllipticK[m], m]").unwrap(),
+      "(EllipticE[m] - (1 - m)*EllipticK[m])/(2*(1 - m)*m)"
+    );
+    assert_eq!(
+      interpret("D[EllipticE[m], m]").unwrap(),
+      "(EllipticE[m] - EllipticK[m])/(2*m)"
+    );
+    assert_eq!(
+      interpret("D[EllipticE[p, m], m]").unwrap(),
+      "(EllipticE[p, m] - EllipticF[p, m])/(2*m)"
+    );
+    assert_eq!(
+      interpret("D[EllipticF[p, m], m]").unwrap(),
+      "-1/2*EllipticE[p, m]/((-1 + m)*m) - EllipticF[p, m]/(2*m) + \
+       Sin[2*p]/(4*(-1 + m)*Sqrt[1 - m*Sin[p]^2])"
+    );
+    assert_eq!(
+      interpret("D[EllipticPi[n, m], m]").unwrap(),
+      "(EllipticE[m]/(-1 + m) + EllipticPi[n, m])/(2*(-m + n))"
+    );
+    assert_eq!(
+      interpret("D[EllipticK[x^2], x]").unwrap(),
+      "(EllipticE[x^2] - (1 - x^2)*EllipticK[x^2])/(x*(1 - x^2))"
+    );
+    assert_eq!(
+      interpret("Derivative[1][EllipticK]").unwrap(),
+      "(EllipticE[#1] - (1 - #1)*EllipticK[#1])/(2*(1 - #1)*#1) & "
+    );
+  }
+
+  // Regression: FindRoot near the m -> 1 singularity of EllipticK/EllipticE
+  // needs the symbolic parameter derivative; without it the start point was
+  // reported as non-numeric (FindRoot::nlnum).
+  #[test]
+  fn find_root_elliptic_near_singularity() {
+    assert_eq!(
+      interpret(
+        "Abs[(e /. FindRoot[(EllipticE[e]/(1 - e^2) - EllipticK[e])/\
+         (EllipticK[e] - EllipticE[e]) == 4.2333333333333325, \
+         {e, 99999999/100000000}, MaxIterations -> 1000]) - \
+         0.9489881646873574] < 10^-12"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // PolyLog[n, z]' = PolyLog[n-1, z]/z; ExpIntegralE[n, z]' = -ExpIntegralE[n-1, z].
   #[test]
   fn d_polylog_and_exp_integral_e() {
