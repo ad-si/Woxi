@@ -1393,6 +1393,26 @@ mod number_form_options {
   }
 
   #[test]
+  fn grid_cells_format_quietly() {
+    // Wolfram builds a GridBox without reporting its cells' formatting
+    // messages, while Row, Column and TableForm do report them.
+    let reqsigz = |code: &str| {
+      clear_state();
+      interpret_with_stdout(code)
+        .unwrap()
+        .warnings
+        .iter()
+        .any(|m| m.starts_with("NumberForm::reqsigz"))
+    };
+    assert!(!reqsigz("Grid[{{NumberForm[2191.36, 2]}}]"));
+    assert!(!reqsigz("Grid[{{NumberForm[2191.36, {3, 2}], 1}}]"));
+    assert!(!reqsigz("Column[{Grid[{{NumberForm[2191.36, 2]}}]}]"));
+    assert!(reqsigz("Row[{NumberForm[2191.36, 2]}]"));
+    assert!(reqsigz("TableForm[{{NumberForm[2191.36, 2]}}]"));
+    assert!(reqsigz("MatrixForm[{{NumberForm[2191.36, 2]}}]"));
+  }
+
+  #[test]
   fn padded_form_warns_when_precision_is_below_the_integer_digits() {
     clear_state();
     let result =

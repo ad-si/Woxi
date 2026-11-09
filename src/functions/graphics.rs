@@ -22755,7 +22755,48 @@ fn is_plain_text_item(item: &Expr) -> bool {
   }
 }
 
+thread_local! {
+  /// Set by a caller whose display construct reports its cells' formatting
+  /// messages even though it is laid out as a grid (`TableForm`).
+  static LOUD_GRID_CELLS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` (which renders a grid) so that the grid's cells report the
+/// messages their formatting raises, the way `TableForm` does.
+pub fn with_loud_grid_cells<T>(f: impl FnOnce() -> T) -> T {
+  let previous = LOUD_GRID_CELLS.with(|l| l.replace(true));
+  let result = f();
+  LOUD_GRID_CELLS.with(|l| l.set(previous));
+  result
+}
+
 fn grid_svg_styled_internal(
+  args: &[Expr],
+  group_gaps: &[usize],
+  parens: bool,
+  outer_style: &GridStyle,
+) -> Result<String, InterpreterError> {
+  // Wolfram builds a `GridBox` quietly: a message raised while formatting a
+  // cell (`NumberForm::reqsigz` for `Grid[{{NumberForm[2191.36, 2]}}]`) is
+  // not reported, unlike the same cell in a `Row`, `Column`, `TableForm` or
+  // `MatrixForm`. Only the outermost grid consults the flag; grids nested in
+  // its cells are plain `Grid`s again.
+  let loud = LOUD_GRID_CELLS.with(|l| l.replace(false));
+  if parens || loud {
+    let result =
+      grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
+    LOUD_GRID_CELLS.with(|l| l.set(loud));
+    return result;
+  }
+  crate::push_quiet();
+  let result =
+    grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
+  crate::pop_quiet();
+  result
+}
+
+fn grid_svg_styled_internal_reporting(
   args: &[Expr],
   group_gaps: &[usize],
   parens: bool,

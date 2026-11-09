@@ -4409,11 +4409,13 @@ pub(crate) fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
           render_inline_display_wrapper(&args[0])
         };
       };
-      let result = if group_gaps.is_empty() {
-        functions::graphics::grid_ast(&grid_args)
-      } else {
-        functions::graphics::grid_ast_with_gaps(&grid_args, &group_gaps)
-      };
+      let result = functions::graphics::with_loud_grid_cells(|| {
+        if group_gaps.is_empty() {
+          functions::graphics::grid_ast(&grid_args)
+        } else {
+          functions::graphics::grid_ast_with_gaps(&grid_args, &group_gaps)
+        }
+      });
       match result {
         Ok(result) => result,
         Err(_) => expr,
