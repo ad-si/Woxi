@@ -7342,6 +7342,32 @@ mod solve_ratnz_only_for_polynomial_systems {
     assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
   }
 
+  /// A univariate system (one unknown, any number of equations and
+  /// inequalities, no parameters) is solved numerically without
+  /// Solve::ratnz; systems in several unknowns still report it
+  /// (TheobaldsNonagonToTriangleDissection).
+  #[test]
+  fn univariate_systems_are_quiet() {
+    let ratnz = |input: &str| {
+      clear_state();
+      interpret(input).unwrap();
+      woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"))
+    };
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{x^2 == 2.5, x > 0}, x]").unwrap(),
+      "{{x -> 1.5811388300841895}}"
+    );
+    assert!(!ratnz("Solve[{x^2 == 2.5, x > 0}, x];"));
+    assert!(!ratnz("Solve[{x^2 == 2.5, x > 0}, {x}];"));
+    assert!(!ratnz("Solve[{0.43 + (0.94 - 1.*t)^2 == 4.65, t > 0}, t];"));
+    assert!(!ratnz("Solve[{x^2 == 2.25, x^3 == 3.375}, x];"));
+    assert!(ratnz("Solve[{x^2 + y^2 == 1.5, x - y == 0.3}, {x, y}];"));
+    assert!(ratnz("Solve[{x^2 + y == 2.5, y > 0, y == x}, {x, y}];"));
+  }
+
   /// A system with machine exponents that are simple fractions (a
   /// Cobb-Douglas Lagrangian) is solved with exact exponents and
   /// numericized; it used to stop half-way with Solve::svars.

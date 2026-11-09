@@ -3829,6 +3829,29 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !nonlinear && found(&result) > 0 {
       return Ok(result);
     }
+    // A univariate system (one unknown, no parameters, any number of
+    // equations and inequalities) is solved numerically by wolframscript,
+    // without the warning (`Solve[{x^2 == 2.5, x > 0}, x]`).
+    let univariate = matches!(vars.as_slice(), [Expr::Identifier(v)] if {
+      let operands: Vec<Expr> = parts
+        .iter()
+        .flat_map(|p| match p {
+          Expr::Comparison { operands, .. } => operands.clone(),
+          other => vec![other.clone()],
+        })
+        .collect();
+      matches!(
+        crate::evaluator::evaluate_function_call_ast(
+          "Variables",
+          &[Expr::List(operands.into())],
+        ),
+        Ok(Expr::List(ref vs))
+          if matches!(vs.as_slice(), [Expr::Identifier(w)] if w == v)
+      )
+    });
+    if univariate && found(&result) > 0 {
+      return Ok(result);
+    }
     let exact_result = {
       let _numeric = NumericRootsScope::new();
       solve_ast_entry(&[exact, args[1].clone()])?
@@ -3854,7 +3877,7 @@ fn solve_ast_exact_parts(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Ok(Expr::Identifier(ref t)) if t == "True"
         )
       });
-      if !in_nsolve() && polynomial {
+      if !in_nsolve() && polynomial && !univariate {
         crate::emit_message(
           "Solve::ratnz: Solve was unable to solve the system with inexact coefficients. The answer was obtained by solving a corresponding exact system and numericizing the result.",
         );
