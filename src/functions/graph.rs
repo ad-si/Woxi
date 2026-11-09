@@ -11562,6 +11562,21 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(original());
   }
+  // A list of rules sets each property in turn.
+  if let Expr::List(rules) = &args[1]
+    && !rules.is_empty()
+    && rules.iter().all(|r| matches!(r, Expr::Rule { .. }))
+  {
+    let mut current = args[0].clone();
+    for rule in rules {
+      current = graph_set_property_ast(&[current, rule.clone()])?;
+      if matches!(&current, Expr::FunctionCall { name, .. } if name == "SetProperty")
+      {
+        return Ok(original());
+      }
+    }
+    return Ok(current);
+  }
   let Expr::Rule {
     pattern,
     replacement,
