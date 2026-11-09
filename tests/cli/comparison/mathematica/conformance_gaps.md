@@ -6192,15 +6192,16 @@ pre-built tube mesh.
 
 ## Chemistry data
 
-### `IsotopeData` carries NIST's isotope table, not the full ~3000-nuclide chart
+### `IsotopeData`: NUBASE2020 chart with NIST masses and abundances
 
-Like `GraphData`'s atlas slice above, Woxi bundles the isotopes from NIST's
-"Atomic Weights and Isotopic Compositions for All Elements" (the same table
-`ElementData["…", "AtomicWeight"]` is built from): one or two naturally
-occurring isotopes for every element that has any, plus the longest-lived
-known isotope for every element that has none — 354 isotopes total, against
-Wolfram's own curated chart of roughly 3000. An isotope outside that set is
-unrecognized where WL answers it.
+`IsotopeData` lists the 3557 ground states of the NUBASE2020 evaluation
+(`resources/isotope_data.tsv.gz`), WL lists 3558. Half-lives, decay modes,
+branching ratios and daughters are NUBASE2020's, which can differ from WL's
+curated values in the last digits and in modes NUBASE marks as uncertain
+(`?` becomes `Missing["Unknown"]` in `"BranchingRatios"`). Atomic masses are
+NIST's where NIST lists the isotope and computed from NUBASE's mass excess
+otherwise; values are machine reals rather than WL's precision-tagged
+numbers.
 
 `ElementData[…, "StableIsotopes"]` draws from the same table and applies the
 same coarser cut: an isotope counts as "stable" when NIST reports a measured
@@ -6234,9 +6235,9 @@ tabulated representative composition and the best-measurement range it sits
 in).
 
 `IsotopeData["Properties"]` lists the `EntityProperty["Isotope", …]` objects
-Woxi answers — seven, against the roughly sixty of Wolfram's curated chart
-(decay modes, half-lives, magnetic moments, medical applications, …). Same
-story as `ElementData["Properties"]`.
+Woxi answers — fourteen, against the roughly sixty of Wolfram's curated
+chart (magnetic moments, medical applications, …). Same story as
+`ElementData["Properties"]`.
 
 ## Geometry and regions
 

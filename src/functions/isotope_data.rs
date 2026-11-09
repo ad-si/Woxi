@@ -1,13 +1,12 @@
 use super::*;
 use crate::functions::element_data::resolve_element;
 
-/// Data for a single isotope, sourced from NIST's "Atomic Weights and
-/// Isotopic Compositions for All Elements" (see the `ISOTOPES` table below
-/// for the citation). Woxi bundles the isotopes NIST lists for computing
-/// standard atomic weights — one or two naturally occurring isotopes per
-/// element that has any, plus the longest-lived known isotope for every
-/// element that has none — not the ~3000-nuclide chart Wolfram's own
-/// `IsotopeData` answers for. See `conformance_gaps.md` for the details.
+/// Data for a single isotope. The isotopes are the NUBASE2020 ground states
+/// (`CHART`, from `resources/isotope_data.tsv.gz`); atomic masses and
+/// abundances come from NIST's "Atomic Weights and Isotopic Compositions for
+/// All Elements" (the `ISOTOPES` table below) where NIST lists the isotope.
+/// See `conformance_gaps.md` for the details.
+#[derive(Clone, Copy)]
 struct Isotope {
   atomic_number: i128,
   element_name: &'static str,
@@ -2511,6 +2510,270 @@ fn missing_not_available() -> Expr {
   call1("Missing", str_expr("NotAvailable"))
 }
 
+/// One ground-state nuclide of the NUBASE2020 chart
+/// (`resources/isotope_data.tsv.gz`, see `scripts/gen_isotope_data.py`).
+struct ChartRow {
+  /// Mass excess in keV.
+  mass_excess: Option<f64>,
+  /// `None` for stable nuclides; `Some(None)` when the half-life is unknown.
+  half_life: Option<Option<(f64, &'static str)>>,
+  /// NUBASE decay codes (`"A"`, `"B-"`, `"SF"`, …) with their branching
+  /// ratio in percent when stated.
+  modes: Vec<(&'static str, Option<f64>)>,
+}
+
+static CHART: std::sync::LazyLock<
+  std::collections::HashMap<(i128, i128), ChartRow>,
+> = std::sync::LazyLock::new(|| {
+  use flate2::read::GzDecoder;
+  use std::io::Read;
+  let compressed = include_bytes!("../../resources/isotope_data.tsv.gz");
+  let mut text = String::new();
+  GzDecoder::new(&compressed[..])
+    .read_to_string(&mut text)
+    .expect("isotope_data.tsv.gz is valid gzip");
+  let text: &'static str = Box::leak(text.into_boxed_str());
+  let mut chart = std::collections::HashMap::new();
+  for line in text.lines().filter(|l| !l.starts_with('#')) {
+    let f: Vec<&'static str> = line.split('\t').collect();
+    if f.len() < 6 {
+      continue;
+    }
+    let (Ok(z), Ok(a)) = (f[0].parse::<i128>(), f[1].parse::<i128>()) else {
+      continue;
+    };
+    let half_life = match f[3] {
+      "stbl" => None,
+      v => Some(
+        v.trim_start_matches(['<', '>', '~'])
+          .parse::<f64>()
+          .ok()
+          .map(|x| (x, f[4])),
+      ),
+    };
+    let modes = f[5]
+      .split(';')
+      .filter(|m| !m.is_empty())
+      .map(|m| {
+        let end = m.find(['=', '<', '>', '~', ' ']).unwrap_or(m.len());
+        let ratio = m[end..]
+          .trim_start_matches(['=', '<', '>', '~'])
+          .split(' ')
+          .next()
+          .and_then(|v| v.parse::<f64>().ok());
+        (&m[..end], ratio)
+      })
+      .collect();
+    chart.insert(
+      (z, a),
+      ChartRow {
+        mass_excess: f[2].parse().ok(),
+        half_life,
+        modes,
+      },
+    );
+  }
+  chart
+});
+
+/// Every isotope: the NUBASE2020 ground states, with NIST's atomic masses
+/// and abundances where NIST lists the isotope, sorted by (Z, A).
+static ALL_ISOTOPES: std::sync::LazyLock<Vec<Isotope>> =
+  std::sync::LazyLock::new(|| {
+    let mut out: Vec<Isotope> = Vec::new();
+    for (&(z, a), row) in CHART.iter() {
+      let nist = ISOTOPES
+        .iter()
+        .find(|i| i.atomic_number == z && i.mass_number == a);
+      let element_name = match nist {
+        Some(i) => i.element_name,
+        None => match ISOTOPES.iter().find(|i| i.atomic_number == z) {
+          Some(i) => i.element_name,
+          None => continue,
+        },
+      };
+      let atomic_mass = match (nist, row.mass_excess) {
+        (Some(i), _) => i.atomic_mass,
+        (None, Some(me)) => a as f64 + me / (U_TO_MEV * 1000.0),
+        (None, None) => a as f64,
+      };
+      out.push(Isotope {
+        atomic_number: z,
+        element_name,
+        mass_number: a,
+        atomic_mass,
+        abundance: nist.and_then(|i| i.abundance),
+      });
+    }
+    for i in ISOTOPES {
+      if !CHART.contains_key(&(i.atomic_number, i.mass_number)) {
+        out.push(Isotope { ..*i });
+      }
+    }
+    out.sort_by_key(|i| (i.atomic_number, i.mass_number));
+    out
+  });
+
+/// WL's name for a NUBASE decay code, and the change (ΔZ, ΔA) it makes;
+/// `None` for the change of a fission.
+fn decay_mode(code: &str) -> Option<(&'static str, Option<(i128, i128)>)> {
+  Some(match code {
+    "A" => ("alpha emission", Some((-2, -4))),
+    "B-" => ("electron emission", Some((1, 0))),
+    "B+" => ("positron emission", Some((-1, 0))),
+    "EC" | "e+" => ("electron capture", Some((-1, 0))),
+    "2B-" => ("double beta decay", Some((2, 0))),
+    "2B+" | "2EC" => ("double beta decay", Some((-2, 0))),
+    "n" => ("neutron emission", Some((0, -1))),
+    "2n" => ("two-neutron emission", Some((0, -2))),
+    "3n" => ("three-neutron emission", Some((0, -3))),
+    "p" => ("proton emission", Some((-1, -1))),
+    "2p" => ("two-proton emission", Some((-2, -2))),
+    "B-n" => ("electron + delayed neutron", Some((1, -1))),
+    "B-2n" => ("electron + delayed 2 neutrons", Some((1, -2))),
+    "B-3n" => ("electron + delayed 3 neutrons", Some((1, -3))),
+    "B-4n" => ("electron + delayed 4 neutrons", Some((1, -4))),
+    "B-d" => ("electron + delayed deuteron", Some((0, -2))),
+    "B-t" => ("electron + delayed triton", Some((0, -3))),
+    "B-A" => ("electron + delayed \u{3b1}", Some((-1, -4))),
+    "B-nA" => ("electron + delayed neutron, \u{3b1}", Some((-1, -5))),
+    "B-SF" => ("electron + delayed fission", None),
+    "B+p" => ("positron + delayed proton", Some((-2, -1))),
+    "B+2p" => ("positron + delayed 2 protons", Some((-3, -2))),
+    "B+3p" => ("positron + delayed 3 protons", Some((-4, -3))),
+    "B+A" => ("positron + delayed \u{3b1}", Some((-3, -4))),
+    "B+pA" => ("positron + delayed proton, \u{3b1}", Some((-4, -5))),
+    "B+SF" => ("positron + delayed fission", None),
+    "SF" => ("spontaneous fission", None),
+    _ => {
+      // Cluster emission: the code names the cluster (`"14C"`, `"24Ne"`).
+      let digits: String =
+        code.chars().take_while(|c| c.is_ascii_digit()).collect();
+      let symbol = &code[digits.len()..];
+      let a: i128 = digits.parse().ok()?;
+      let z = (1..=118).find(|&z| {
+        crate::functions::element_data::element_symbol_and_name(z)
+          .is_some_and(|(s, _)| s == symbol)
+      })?;
+      ("cluster emission", Some((-z, -a)))
+    }
+  })
+}
+
+/// Seconds in each NUBASE half-life unit, and the WL unit it is shown in
+/// with its scale (`ky` is shown as thousands of years).
+fn half_life_unit(unit: &str) -> Option<(&'static str, f64)> {
+  Some(match unit {
+    "ys" => ("Yoctoseconds", 1.0),
+    "zs" => ("Zeptoseconds", 1.0),
+    "as" => ("Attoseconds", 1.0),
+    "fs" => ("Femtoseconds", 1.0),
+    "ps" => ("Picoseconds", 1.0),
+    "ns" => ("Nanoseconds", 1.0),
+    "us" => ("Microseconds", 1.0),
+    "ms" => ("Milliseconds", 1.0),
+    "s" => ("Seconds", 1.0),
+    "m" => ("Minutes", 1.0),
+    "h" => ("Hours", 1.0),
+    "d" => ("Days", 1.0),
+    "y" => ("Years", 1.0),
+    "ky" => ("Years", 1e3),
+    "My" => ("Years", 1e6),
+    "Gy" => ("Years", 1e9),
+    "Ty" => ("Years", 1e12),
+    "Py" => ("Years", 1e15),
+    "Ey" => ("Years", 1e18),
+    "Zy" => ("Years", 1e21),
+    "Yy" => ("Years", 1e24),
+    _ => return None,
+  })
+}
+
+/// The chart properties: half-life, lifetime, decay modes and daughters.
+fn chart_property(iso: &Isotope, property: &str) -> Option<Expr> {
+  let row = CHART.get(&(iso.atomic_number, iso.mass_number))?;
+  let quantity = crate::functions::element_data::make_quantity;
+  let missing = |r: &str| call1("Missing", str_expr(r));
+  let modes: Vec<(
+    &str,
+    Option<f64>,
+    Option<(&'static str, Option<(i128, i128)>)>,
+  )> = row
+    .modes
+    .iter()
+    .filter(|(c, _)| *c != "IT")
+    .map(|&(c, r)| (c, r, decay_mode(c)))
+    .collect();
+  Some(match property {
+    "HalfLife" | "Lifetime" => match row.half_life {
+      None => quantity(Expr::Identifier("Infinity".to_string()), "Seconds"),
+      Some(Some((value, unit))) => match half_life_unit(unit) {
+        Some((wl_unit, scale)) => {
+          let v = value * scale;
+          let v = if property == "Lifetime" {
+            v / std::f64::consts::LN_2
+          } else {
+            v
+          };
+          quantity(Expr::Real(v), wl_unit)
+        }
+        None => missing("Unknown"),
+      },
+      Some(None) => missing("Unknown"),
+    },
+    "Stable" => Expr::Identifier(
+      if row.half_life.is_none() {
+        "True"
+      } else {
+        "False"
+      }
+      .to_string(),
+    ),
+    "DecayModes" if row.half_life.is_none() => missing("NotApplicable"),
+    "DecayModes" => Expr::List(
+      modes
+        .iter()
+        .map(|(c, _, m)| match m {
+          Some((name, _)) => str_expr(name),
+          None => str_expr(c),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    "BranchingRatios" if row.half_life.is_none() => missing("NotApplicable"),
+    "BranchingRatios" => Expr::List(
+      modes
+        .iter()
+        .map(|(_, r, _)| match r {
+          Some(r) => quantity(Expr::Real(*r), "Percent"),
+          None => missing("Unknown"),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    "DaughterNuclides" => Expr::List(
+      modes
+        .iter()
+        .map(|(_, _, m)| match m {
+          Some((_, Some((dz, da)))) => {
+            let (z, a) = (iso.atomic_number + dz, iso.mass_number + da);
+            match ALL_ISOTOPES
+              .iter()
+              .find(|i| i.atomic_number == z && i.mass_number == a)
+            {
+              Some(d) => isotope_entity(d),
+              None => missing("NotAvailable"),
+            }
+          }
+          _ => missing("Variable"),
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => return None,
+  })
+}
+
 /// Canonical isotope name Woxi's entity uses: the parent element's standard
 /// name followed by the mass number, e.g. `"Carbon12"`.
 fn canonical_name(iso: &Isotope) -> String {
@@ -2534,7 +2797,7 @@ fn isotope_entity(iso: &'static Isotope) -> Expr {
 }
 
 fn find_isotope_by_name(name: &str) -> Option<&'static Isotope> {
-  ISOTOPES.iter().find(|iso| canonical_name(iso) == name)
+  ALL_ISOTOPES.iter().find(|iso| canonical_name(iso) == name)
 }
 
 /// Resolves an isotope specifier: `Entity["Isotope", name]`, a bare
@@ -2562,7 +2825,7 @@ fn find_isotope(identifier: &Expr) -> Option<&'static Isotope> {
       else {
         return None;
       };
-      ISOTOPES.iter().find(|iso| {
+      ALL_ISOTOPES.iter().find(|iso| {
         iso.atomic_number == *atomic_number && iso.mass_number == *mass_number
       })
     }
@@ -2571,7 +2834,7 @@ fn find_isotope(identifier: &Expr) -> Option<&'static Isotope> {
 }
 
 fn isotopes_for_element(atomic_number: i128) -> Vec<&'static Isotope> {
-  let mut isos: Vec<&'static Isotope> = ISOTOPES
+  let mut isos: Vec<&'static Isotope> = ALL_ISOTOPES
     .iter()
     .filter(|iso| iso.atomic_number == atomic_number)
     .collect();
@@ -2607,10 +2870,17 @@ static SUPPORTED_PROPERTIES: &[&str] = &[
   "AtomicMass",
   "AtomicNumber",
   "BindingEnergy",
+  "BranchingRatios",
+  "DaughterNuclides",
+  "DecayModes",
+  "HalfLife",
   "IsotopeAbundance",
+  "Lifetime",
   "MassNumber",
   "NeutronNumber",
+  "Stable",
   "StandardName",
+  "Symbol",
 ];
 
 /// A NIST isotopic composition (a fraction of 1) as a percentage, without
@@ -2655,14 +2925,33 @@ fn get_isotope_property(iso: &Isotope, property: &str) -> Expr {
       "Megaelectronvolts",
     ),
     "StandardName" => Expr::String(canonical_name(iso)),
-    _ => missing_not_available(),
+    // `Row[{Superscript["", 209], "Th"}]`, the mass number as a prescript.
+    "Symbol" => match crate::functions::element_data::element_symbol_and_name(
+      iso.atomic_number,
+    ) {
+      Some((sym, _)) => call(
+        "Row",
+        vec![Expr::List(
+          vec![
+            call(
+              "Superscript",
+              vec![str_expr(""), Expr::Integer(iso.mass_number)],
+            ),
+            str_expr(sym),
+          ]
+          .into(),
+        )],
+      ),
+      None => missing_not_available(),
+    },
+    _ => chart_property(iso, property).unwrap_or_else(missing_not_available),
   }
 }
 
 /// All bundled isotopes as `Entity["Isotope", name]`, sorted by (atomic
 /// number, mass number) — the "All" / no-argument answer.
 fn all_isotope_entities() -> Vec<Expr> {
-  let mut isos: Vec<&'static Isotope> = ISOTOPES.iter().collect();
+  let mut isos: Vec<&'static Isotope> = ALL_ISOTOPES.iter().collect();
   isos.sort_by_key(|iso| (iso.atomic_number, iso.mass_number));
   isos.into_iter().map(isotope_entity).collect()
 }
@@ -2733,7 +3022,7 @@ pub fn isotope_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // `IsotopeData[All, property]` maps the property over every isotope,
       // in the same order `IsotopeData[All]` lists them.
       if matches!(&args[0], Expr::Identifier(s) if s == "All") {
-        let mut isos: Vec<&'static Isotope> = ISOTOPES.iter().collect();
+        let mut isos: Vec<&'static Isotope> = ALL_ISOTOPES.iter().collect();
         isos.sort_by_key(|iso| (iso.atomic_number, iso.mass_number));
         let values: Vec<Expr> = isos
           .into_iter()
