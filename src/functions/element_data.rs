@@ -2352,7 +2352,8 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     "StandardName" => str_expr(elem.standard_name),
     "Abbreviation" => str_expr(elem.abbreviation),
     "AtomicNumber" => Expr::Integer(elem.atomic_number),
-    "AtomicWeight" => {
+    // "AtomicMass" is accepted as another name for the atomic weight.
+    "AtomicWeight" | "AtomicMass" => {
       let prec = ATOMIC_WEIGHT_PRECISIONS[(elem.atomic_number - 1) as usize];
       make_quantity(
         Expr::BigFloat(elem.atomic_weight.to_string(), prec),

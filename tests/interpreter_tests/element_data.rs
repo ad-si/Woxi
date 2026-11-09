@@ -3,6 +3,20 @@ use super::*;
 mod element_data_tests {
   use super::*;
 
+  // "AtomicMass" is another name for "AtomicWeight" (Demonstration
+  // ChemicalAbundancesAndProperties asks for it).
+  #[test]
+  fn atomic_mass_is_the_atomic_weight() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"InputForm[{ElementData["Oxygen", "AtomicMass"], ElementData["Technetium", "AtomicMass"]}]"#
+      )
+      .unwrap(),
+      "InputForm[{Quantity[15.999`5., AtomicMassUnit], Quantity[97.`2., AtomicMassUnit]}]"
+    );
+  }
+
   #[test]
   fn element_data_by_name_returns_entity() {
     clear_state();
