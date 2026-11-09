@@ -530,6 +530,21 @@ implemented for `Sort` and `Order` but not for the `Plus` comparator, which is
 the delicate one (it is not strictly transitive and its sort is wrapped in a
 panic guard with a string-key fallback).
 
+The same rule decides a sum over a reciprocal symbol and the factors of a
+product with a sum and a call:
+
+```sh
+wolframscript -code 'e*u + (a + b)/u'          # (a + b)/u + e*u
+woxi eval 'e*u + (a + b)/u'                    # e*u + (a + b)/u
+wolframscript -code 'c*v + (a + b)/u'          # (a + b)/u + c*v
+woxi eval 'c*v + (a + b)/u'                    # c*v + (a + b)/u
+wolframscript -code 'f[z] (a + Cos[z])'        # (a + Cos[z])*f[z]
+woxi eval 'f[z] (a + Cos[z])'                  # f[z]*(a + Cos[z])
+```
+
+`D[MathieuCPrime[a, q, z], z]` shows the second one: WL prints
+`(-a + 2*q*Cos[2*z])*MathieuC[a, q, z]`, Woxi the factors swapped.
+
 ### A power of a function call sorts before everything
 
 ```sh

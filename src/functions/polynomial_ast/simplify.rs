@@ -13686,6 +13686,22 @@ fn match_cos_linear_term(term: &Expr) -> Option<(Expr, Expr)> {
 /// `α(1 + Cos[w]) = 2α·Cos[w/2]^2`). Matches for any expression `α` and angle
 /// `w`, so `(1 - Cos[2 x])/2 → Sin[x]^2` and `a (1 + Cos[2 x])/2 → a Cos[x]^2`.
 fn try_cos_power_reduction(expr: &Expr) -> Option<Expr> {
+  // Expanding is costly for large products; without a cosine there is
+  // nothing to reduce.
+  fn has_cos(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        (name == "Cos" && args.len() == 1) || args.iter().any(has_cos)
+      }
+      Expr::BinaryOp { left, right, .. } => has_cos(left) || has_cos(right),
+      Expr::UnaryOp { operand, .. } => has_cos(operand),
+      Expr::List(items) => items.iter().any(has_cos),
+      _ => false,
+    }
+  }
+  if !has_cos(expr) {
+    return None;
+  }
   let expanded = expand_and_combine(expr);
   let terms = collect_additive_terms(&expanded);
   if terms.len() < 2 {

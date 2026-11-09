@@ -3110,6 +3110,37 @@ mod expand_all {
 mod collect_tests {
   use super::*;
 
+  // A power target collects every power of its base whose exponent is an
+  // integer multiple of the target's, negative ones included
+  // (OpticalFilterWithSinusoidallyVaryingPermittivityUsingMathieu).
+  #[test]
+  fn collect_by_power_targets() {
+    assert_eq!(
+      interpret("Collect[a E^z + b E^z + c E^(-z) + d E^(-z), E^z]").unwrap(),
+      "(c + d)/E^z + (a + b)*E^z"
+    );
+    assert_eq!(
+      interpret(
+        "Collect[TrigToExp[a Cos[k x] + b Sin[k x]], \
+         {E^(I k x), E^(-I k x)}]"
+      )
+      .unwrap(),
+      "(a/2 + I/2*b)/E^(I*k*x) + (a/2 - I/2*b)*E^(I*k*x)"
+    );
+    assert_eq!(
+      interpret("Collect[a/u + b/u + c, 1/u]").unwrap(),
+      "c + (a + b)/u"
+    );
+    assert_eq!(
+      interpret("Collect[a x^2 + b x^4 + c x^4 + d x^3, x^2]").unwrap(),
+      "a*x^2 + d*x^3 + (b + c)*x^4"
+    );
+    assert_eq!(
+      interpret("Collect[a f[x]^2 + b f[x]^2 + c, f[x]^2]").unwrap(),
+      "c + (a + b)*f[x]^2"
+    );
+  }
+
   // A list is collected element by element
   // (CurvatureExtremaForConstrainedBezierCurves).
   #[test]

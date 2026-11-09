@@ -47,6 +47,44 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return collect_ast(&call);
     }
+    // Compound targets (`q[x]`, `E^z`, `1/u`) are replaced by placeholder
+    // symbols, collected over, and restored.
+    if vars.iter().any(|v| {
+      !matches!(v, Expr::Identifier(_))
+        && (power_parts(v).is_some() || matches!(v, Expr::FunctionCall { .. }))
+    }) {
+      let mut substituted = args[0].clone();
+      let mut placeholders = Vec::new();
+      let mut targets = Vec::new();
+      for (i, v) in vars.iter().enumerate() {
+        if matches!(v, Expr::Identifier(_)) {
+          placeholders.push(v.clone());
+          continue;
+        }
+        let placeholder = id_expr(&format!("__collect_target_{i}__"));
+        substituted = match power_parts(v) {
+          Some((base, exponent)) => {
+            substitute_power_target(&substituted, base, exponent, &placeholder)
+          }
+          None => substitute_expr_local(&substituted, v, &placeholder),
+        };
+        placeholders.push(placeholder.clone());
+        targets.push((placeholder, v.clone()));
+      }
+      let mut call = vec![substituted, Expr::List(placeholders.into())];
+      if let Some(h) = head {
+        call.push(h.clone());
+      }
+      let mut result = collect_ast(&call)?;
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "Collect")
+      {
+        return Ok(unevaluated("Collect", args));
+      }
+      for (placeholder, target) in &targets {
+        result = substitute_expr_local(&result, placeholder, target);
+      }
+      return crate::evaluator::evaluate_expr_to_expr(&result);
+    }
     // Collect by first variable, then recursively by remaining
     // For multi-variable collect with head, apply head at the innermost level
     let first_call = vec![args[0].clone(), vars[0].clone()];
@@ -62,6 +100,27 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
     }
     return collect_in_coefficients(&first_collected, &vars[0], &remaining);
+  }
+  // A power target `b^e` (`E^(I k x)`, `1/u`) collects every power of
+  // `b` whose exponent is an integer multiple of `e`, as powers of the
+  // target (wolframscript: `Collect[a E^z + c E^-z + d E^-z, E^z]` is
+  // `(c + d)/E^z + a E^z`).
+  if let Some((base, exponent)) = power_parts(&args[1])
+    && !matches!(base, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+  {
+    let placeholder_id = id_expr("__collect_power_target__");
+    let substituted =
+      substitute_power_target(&args[0], base, exponent, &placeholder_id);
+    let mut sub_call = vec![substituted, placeholder_id.clone()];
+    if let Some(h) = head {
+      sub_call.push(h.clone());
+    }
+    let result = collect_ast(&sub_call)?;
+    if matches!(&result, Expr::FunctionCall { name, .. } if name == "Collect") {
+      return Ok(unevaluated("Collect", args));
+    }
+    let restored = substitute_expr_local(&result, &placeholder_id, &args[1]);
+    return crate::evaluator::evaluate_expr_to_expr(&restored);
   }
   let var = match &args[1] {
     Expr::Identifier(name) => name.as_str(),
@@ -613,6 +672,92 @@ fn build_times_chain(factors: &[Expr]) -> Expr {
 
 /// Recursively replace every occurrence of `from` with `to` in `expr`,
 /// using structural equality (via pretty-printed form).
+/// `(base, exponent)` of a power `b^e`, in either representation.
+fn power_parts(expr: &Expr) -> Option<(&Expr, &Expr)> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      Some((&args[0], &args[1]))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => Some((left, right)),
+    _ => None,
+  }
+}
+
+/// Replaces every power `base^f` of `expr` whose exponent is an integer
+/// multiple `k` of `exponent` (the bare `base` counting as `f = 1`) with
+/// `placeholder^k`.
+fn substitute_power_target(
+  expr: &Expr,
+  base: &Expr,
+  exponent: &Expr,
+  placeholder: &Expr,
+) -> Expr {
+  let base_key = expr_to_string(base);
+  let multiple = |f: &Expr| -> Option<i128> {
+    let ratio = crate::evaluator::evaluate_function_call_ast(
+      "Cancel",
+      &[Expr::FunctionCall {
+        name: "Times".into(),
+        args: vec![
+          f.clone(),
+          Expr::FunctionCall {
+            name: "Power".into(),
+            args: vec![exponent.clone(), Expr::Integer(-1)].into(),
+          },
+        ]
+        .into(),
+      }],
+    )
+    .ok()?;
+    match ratio {
+      Expr::Integer(k) if k != 0 => Some(k),
+      _ => None,
+    }
+  };
+  let as_power = |k: i128| {
+    if k == 1 {
+      placeholder.clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Power".into(),
+        args: vec![placeholder.clone(), Expr::Integer(k)].into(),
+      }
+    }
+  };
+  if expr_to_string(expr) == base_key
+    && let Some(k) = multiple(&Expr::Integer(1))
+  {
+    return as_power(k);
+  }
+  if let Some((b, f)) = power_parts(expr)
+    && expr_to_string(b) == base_key
+    && let Some(k) = multiple(f)
+  {
+    return as_power(k);
+  }
+  let recurse =
+    |e: &Expr| substitute_power_target(e, base, exponent, placeholder);
+  match expr {
+    Expr::List(items) => Expr::List(items.iter().map(recurse).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(recurse).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, recurse(left), recurse(right))
+    }
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(recurse(operand)),
+    },
+    _ => expr.clone(),
+  }
+}
+
 fn substitute_expr_local(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
   if expr_to_string(expr) == expr_to_string(from) {
     return to.clone();

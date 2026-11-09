@@ -4225,6 +4225,49 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Ok(simplify(times2(dz, result)))
           }
         }
+        // MathieuC[a, q, z] -> MathieuCPrime[a, q, z] z' (likewise for
+        // MathieuS); the primes follow from Mathieu's equation
+        // y'' = (2 q Cos[2 z] - a) y. Only for characteristic values and
+        // parameters free of the variable.
+        "MathieuC" | "MathieuS" | "MathieuCPrime" | "MathieuSPrime"
+          if args.len() == 3
+            && is_constant_wrt(&args[0], var)
+            && is_constant_wrt(&args[1], var) =>
+        {
+          let dz = differentiate(&args[2], var)?;
+          if matches!(dz, Expr::Integer(0)) {
+            return Ok(Expr::Integer(0));
+          }
+          let result = match name.as_str() {
+            "MathieuC" => call_expr("MathieuCPrime", args),
+            "MathieuS" => call_expr("MathieuSPrime", args),
+            prime => {
+              let base = if prime == "MathieuCPrime" {
+                "MathieuC"
+              } else {
+                "MathieuS"
+              };
+              let factor =
+                crate::evaluator::evaluate_expr_to_expr(&plus(vec![
+                  times(vec![Expr::Integer(-1), args[0].clone()]),
+                  times(vec![
+                    Expr::Integer(2),
+                    args[1].clone(),
+                    call1(
+                      "Cos",
+                      times(vec![Expr::Integer(2), args[2].clone()]),
+                    ),
+                  ]),
+                ]))?;
+              times2(factor, call_expr(base, args))
+            }
+          };
+          Ok(if matches!(dz, Expr::Integer(1)) {
+            simplify(result)
+          } else {
+            simplify(times2(dz, result))
+          })
+        }
         // CosIntegral[z] -> Cos[z]/z, SinhIntegral[z] -> Sinh[z]/z,
         // CoshIntegral[z] -> Cosh[z]/z, each times z'.
         "CosIntegral" | "SinhIntegral" | "CoshIntegral" if args.len() == 1 => {
