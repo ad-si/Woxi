@@ -1320,6 +1320,159 @@ pub fn nintegrate_over_mesh(
 /// of a graphic as one `MeshRegion` — the coordinates (as machine reals,
 /// shared corners merged) and one cell primitive per kind listing every
 /// cell of that kind. `None` for a graphic with other primitives.
+/// `RegionBoundary[region]` for the primitive regions: a filled polygon
+/// (`Polygon`, `Rectangle`, `Triangle`, plane only) is bounded by its
+/// closed outline `Line`, a `Disk`/`Ball` by its `Circle`/`Sphere`, a
+/// `Cuboid` by its six faces (in Wolfram's order), and a `Point` or full
+/// `Circle` is its own boundary. `None` for anything else.
+pub fn region_boundary(region: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let list = |v: Vec<Expr>| Expr::List(v.into());
+  let point_dim = |p: &Expr| match p {
+    Expr::List(c) if c.iter().all(|v| !matches!(v, Expr::List(_))) => {
+      Some(c.len())
+    }
+    _ => None,
+  };
+  // A closed loop through `ring`'s points.
+  let closed = |ring: &[Expr]| -> Option<Expr> {
+    if ring.len() < 3 || !ring.iter().all(|p| point_dim(p) == Some(2)) {
+      return None;
+    }
+    let mut pts = ring.to_vec();
+    pts.push(ring[0].clone());
+    Some(list(pts))
+  };
+  let origin = |n: usize| list(vec![Expr::Integer(0); n]);
+  let corner = |c: &Expr| match c {
+    Expr::List(v) => Some(v.to_vec()),
+    _ => None,
+  };
+  match (name.as_str(), args.as_slice()) {
+    ("Polygon", [Expr::List(items)]) => {
+      if items.first().and_then(point_dim).is_some() {
+        Some(call("Line", vec![closed(items)?]))
+      } else {
+        let rings: Option<Vec<Expr>> = items
+          .iter()
+          .map(|r| match r {
+            Expr::List(ring) => closed(ring),
+            _ => None,
+          })
+          .collect();
+        Some(call("Line", vec![list(rings?)]))
+      }
+    }
+    ("Triangle", [Expr::List(pts)]) if pts.len() == 3 => {
+      Some(call("Line", vec![closed(pts)?]))
+    }
+    ("Rectangle", [] | [_] | [_, _]) => {
+      let lo = args.first().cloned().unwrap_or_else(|| origin(2));
+      let lo = corner(&lo).filter(|c| c.len() == 2)?;
+      let hi = match args.get(1) {
+        Some(h) => corner(h).filter(|c| c.len() == 2)?,
+        None => lo
+          .iter()
+          .map(|v| crate::helpers::plus(vec![v.clone(), Expr::Integer(1)]))
+          .collect(),
+      };
+      let p = |x: &Expr, y: &Expr| list(vec![x.clone(), y.clone()]);
+      let hi: Vec<Expr> = hi
+        .iter()
+        .map(|v| {
+          crate::evaluator::evaluate_expr_to_expr(v).unwrap_or(v.clone())
+        })
+        .collect();
+      Some(call(
+        "Line",
+        vec![list(vec![
+          p(&lo[0], &lo[1]),
+          p(&hi[0], &lo[1]),
+          p(&hi[0], &hi[1]),
+          p(&lo[0], &hi[1]),
+          p(&lo[0], &lo[1]),
+        ])],
+      ))
+    }
+    ("Disk" | "Ball" | "Circle", [] | [_] | [_, _]) => {
+      let n = if name == "Ball" { 3 } else { 2 };
+      let center = args.first().cloned().unwrap_or_else(|| origin(n));
+      if point_dim(&center) != Some(n) {
+        return None;
+      }
+      // Only a full circle bounds itself.
+      let radius = args.get(1).cloned().unwrap_or(Expr::Integer(1));
+      let head = if name == "Ball" { "Sphere" } else { "Circle" };
+      Some(call(head, vec![center, radius]))
+    }
+    ("Point", [_]) => Some(region.clone()),
+    ("Cuboid", [] | [_] | [_, _]) => {
+      let lo = args.first().cloned().unwrap_or_else(|| origin(3));
+      let lo = corner(&lo).filter(|c| c.len() == 3)?;
+      let hi: Vec<Expr> = match args.get(1) {
+        Some(h) => corner(h).filter(|c| c.len() == 3)?,
+        None => lo
+          .iter()
+          .map(|v| crate::helpers::plus(vec![v.clone(), Expr::Integer(1)]))
+          .collect(),
+      };
+      let hi: Vec<Expr> = hi
+        .iter()
+        .map(|v| {
+          crate::evaluator::evaluate_expr_to_expr(v).unwrap_or(v.clone())
+        })
+        .collect();
+      let (x0, y0, z0, x1, y1, z1) =
+        (&lo[0], &lo[1], &lo[2], &hi[0], &hi[1], &hi[2]);
+      let p = |x: &Expr, y: &Expr, z: &Expr| {
+        list(vec![x.clone(), y.clone(), z.clone()])
+      };
+      let faces = vec![
+        list(vec![
+          p(x1, y0, z0),
+          p(x1, y1, z0),
+          p(x0, y1, z0),
+          p(x0, y0, z0),
+        ]),
+        list(vec![
+          p(x0, y0, z0),
+          p(x0, y1, z0),
+          p(x0, y1, z1),
+          p(x0, y0, z1),
+        ]),
+        list(vec![
+          p(x0, y1, z0),
+          p(x1, y1, z0),
+          p(x1, y1, z1),
+          p(x0, y1, z1),
+        ]),
+        list(vec![
+          p(x1, y1, z0),
+          p(x1, y0, z0),
+          p(x1, y0, z1),
+          p(x1, y1, z1),
+        ]),
+        list(vec![
+          p(x1, y0, z0),
+          p(x0, y0, z0),
+          p(x0, y0, z1),
+          p(x1, y0, z1),
+        ]),
+        list(vec![
+          p(x0, y0, z1),
+          p(x0, y1, z1),
+          p(x1, y1, z1),
+          p(x1, y0, z1),
+        ]),
+      ];
+      Some(call("Polygon", vec![list(faces)]))
+    }
+    _ => None,
+  }
+}
+
 pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
   let graphic = match &args[0] {
     g @ Expr::Graphics { .. } => {
@@ -1330,7 +1483,7 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
   let Expr::FunctionCall { name, args: gargs } = &graphic else {
     return None;
   };
-  if name != "Graphics" || gargs.is_empty() {
+  if !matches!(name.as_str(), "Graphics" | "Graphics3D") || gargs.is_empty() {
     return None;
   }
   let mut coords: Vec<Vec<f64>> = Vec::new();
@@ -1349,12 +1502,16 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
   // cells of that size.
   let edge_length = max_cell_measure(&args[1..])
     .and_then(crate::functions::fem2d::edge_length_for_max_cell_measure);
+  // `complex` holds a `GraphicsComplex`'s points, which its primitives
+  // refer to by (1-based) index; they are numbered, like any vertex, in
+  // the order the cells first use them.
   fn walk(
     e: &Expr,
     coords: &mut Vec<Vec<f64>>,
     index: &mut std::collections::HashMap<Vec<u64>, usize>,
     cells: &mut Vec<(&'static str, Vec<Expr>)>,
     edge_length: Option<f64>,
+    complex: Option<&[Vec<f64>]>,
   ) -> Option<()> {
     let mut id_of = |p: Vec<f64>| {
       let key: Vec<u64> = p.iter().map(|v| (v + 0.0).to_bits()).collect();
@@ -1365,12 +1522,31 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       }
       Expr::Integer(i as i128 + 1)
     };
+    // A vertex: coordinates, or an index into the enclosing complex.
+    let vertex =
+      |p: &Expr, id_of: &mut dyn FnMut(Vec<f64>) -> Expr| match (p, complex) {
+        (Expr::Integer(k), Some(pts)) => {
+          let k = usize::try_from(*k).ok()?.checked_sub(1)?;
+          pts.get(k).cloned().map(id_of)
+        }
+        _ => point(p).map(id_of),
+      };
     match e {
       Expr::List(items) => {
         for item in items {
-          walk(item, coords, index, cells, edge_length)?;
+          walk(item, coords, index, cells, edge_length, complex)?;
         }
         Some(())
+      }
+      Expr::FunctionCall { name, args }
+        if name == "GraphicsComplex" && args.len() >= 2 =>
+      {
+        let Expr::List(pts) = &args[0] else {
+          return None;
+        };
+        let pts: Vec<Vec<f64>> =
+          pts.iter().map(point).collect::<Option<Vec<_>>>()?;
+        walk(&args[1], coords, index, cells, edge_length, Some(&pts))
       }
       Expr::FunctionCall { name, args }
         if matches!(name.as_str(), "Polygon" | "Line" | "Point")
@@ -1380,8 +1556,12 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
           return None;
         };
         // One cell (a list of points), or several.
+        let is_vertex = |p: &Expr| {
+          point(p).is_some()
+            || (complex.is_some() && matches!(p, Expr::Integer(_)))
+        };
         let groups: Vec<&Expr> =
-          if items.first().and_then(point).is_some() || name == "Point" {
+          if items.first().is_some_and(is_vertex) || name == "Point" {
             vec![&args[0]]
           } else {
             items.iter().collect()
@@ -1396,11 +1576,11 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
           let Expr::List(pts) = g else { return None };
           if kind == "Point" {
             for p in pts {
-              new_cells.push(id_of(point(p)?));
+              new_cells.push(vertex(p, &mut id_of)?);
             }
           } else {
             let ids: Option<Vec<Expr>> =
-              pts.iter().map(|p| point(p).map(&mut id_of)).collect();
+              pts.iter().map(|p| vertex(p, &mut id_of)).collect();
             new_cells.push(Expr::List(ids?.into()));
           }
         }
@@ -1488,6 +1668,8 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
             | "AbsolutePointSize"
             | "Directive"
             | "Dashing"
+            | "Specularity"
+            | "Glow"
         ) =>
       {
         Some(())
@@ -1496,7 +1678,14 @@ pub fn discretize_graphics_ast(args: &[Expr]) -> Option<Expr> {
       _ => None,
     }
   }
-  walk(&gargs[0], &mut coords, &mut index, &mut cells, edge_length)?;
+  walk(
+    &gargs[0],
+    &mut coords,
+    &mut index,
+    &mut cells,
+    edge_length,
+    None,
+  )?;
   if coords.is_empty() || cells.is_empty() {
     return None;
   }

@@ -9749,6 +9749,48 @@ mod triangulate_mesh {
     );
   }
 
+  #[test]
+  fn discretize_graphics_3d_polyhedron() {
+    // A Graphics3D of a GraphicsComplex (PolyhedronData's form) is a
+    // surface mesh whose points are numbered in the order the faces first
+    // use them (Demonstration RollingPolyhedronAndCenterOfGravityPlot).
+    assert_eq!(
+      interpret(
+        "m = DiscretizeGraphics[PolyhedronData[\"Cube\"]]; \
+         {Head[m], Length[MeshCoordinates[m]], MeshCells[m, 2], \
+         First[MeshPrimitives[m, 2]]}"
+      )
+      .unwrap(),
+      "{MeshRegion, 8, {Polygon[{1, 2, 3, 4}], Polygon[{1, 4, 5, 6}], \
+       Polygon[{1, 6, 7, 2}], Polygon[{2, 7, 8, 3}], Polygon[{8, 7, 6, 5}], \
+       Polygon[{3, 8, 5, 4}]}, Polygon[{{0.5, 0.5, 0.5}, {-0.5, 0.5, 0.5}, \
+       {-0.5, -0.5, 0.5}, {0.5, -0.5, 0.5}}]}"
+    );
+  }
+
+  #[test]
+  fn region_boundary_of_primitives() {
+    assert_eq!(
+      interpret(
+        "RegionBoundary /@ {Polygon[{{0, 0}, {1, 0}, {0, 1}}], Disk[{1, 2}, 3], \
+         Ball[], Rectangle[{0, 0}, {2, 1}], Point[{0, 0}]}"
+      )
+      .unwrap(),
+      "{Line[{{0, 0}, {1, 0}, {0, 1}, {0, 0}}], Circle[{1, 2}, 3], \
+       Sphere[{0, 0, 0}, 1], Line[{{0, 0}, {2, 0}, {2, 1}, {0, 1}, {0, 0}}], \
+       Point[{0, 0}]}"
+    );
+    assert_eq!(
+      interpret("RegionBoundary[Cuboid[]][[1, 1]]").unwrap(),
+      "{{1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("RegionBoundary[Polygon[{{{0, 0}, {1, 0}, {0, 1}}, {{2, 2}, {3, 2}, {2, 3}}}]]")
+        .unwrap(),
+      "Line[{{{0, 0}, {1, 0}, {0, 1}, {0, 0}}, {{2, 2}, {3, 2}, {2, 3}, {2, 2}}}]"
+    );
+  }
+
   // The polygons of a graphic as one MeshRegion, shared corners merged.
   #[test]
   fn discretize_graphics_polygons() {

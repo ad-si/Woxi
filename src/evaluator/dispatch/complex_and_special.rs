@@ -1804,6 +1804,12 @@ pub fn dispatch_complex_and_special(
           .unwrap_or_else(|| unevaluated("RegionBounds", args)),
       ));
     }
+    "RegionBoundary" if args.len() == 1 => {
+      return Some(Ok(
+        crate::functions::mesh_region::region_boundary(&args[0])
+          .unwrap_or_else(|| unevaluated("RegionBoundary", args)),
+      ));
+    }
     "RegionDimension" if args.len() == 1 => {
       return Some(compute_region_dimension(strip_region_wrapper(&args[0])));
     }
