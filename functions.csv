@@ -227,7 +227,7 @@ NDSolve,"Solves ordinary differential equations numerically (including vector-va
 Integers,"Domain symbol representing the set of integers",✅,pure,4.0,158
 Large,"Named size symbol used as option value for ImageSize and Style",✅,pure,6.0,159
 Limit,"Computes the limit of an expression",✅,pure,1.0,160
-CountryData,"Returns properties (e.g. Population or FullName or Polygon or language flags or a projected map via the Shape property) or the list of countries or the members of a class (EU or Europe) from a bundled static dataset",✅,pure,6.0,161
+CountryData,"Returns properties (Population/GDP/Area/FullName/Continent/BorderingCountries/Polygon/yearly series as TimeSeries) of countries or the members of a class (continents or EU) from bundled World Bank and Natural Earth data",✅,pure,6.0,161
 AstronomicalData,"Classic (pre-Entity) solar-system data: an index 1-9 names a major body Mercury..Pluto; the ""Position"" property (with an optional date) gives its heliocentric position from two-body Keplerian elements",✅,pure,6.0,161
 Sequence,"Represents a sequence of arguments that are automatically spliced into any function",✅,pure,3.0,162
 Optional,"Represents a pattern with an optional default value — present arguments fill the slots from the left",✅,pure,1.0,164
@@ -347,7 +347,7 @@ IdentityMatrix,"Creates an identity matrix of given size",✅,pure,1.0,295
 IntegerDigits,"Returns list of digits of an integer",✅,pure,2.0,296
 StringExpression,"Represents a string pattern formed by concatenating string pattern objects",✅,pure,5.1,298
 Repeated,"Pattern that matches one or more repetitions",✅,pure,1.0,299
-ChemicalData,"",🚫,,6.0,300
+ChemicalData,"Returns structure (VertexTypes/EdgeRules/AtomPositions) names formulas MoleculePlot and structure diagrams of a bundled slice of PubChem compounds",✅,pure,6.0,300
 RandomVariate,"Generates pseudorandom variates from a distribution as a scalar list or array of given dimensions",✅,contextual,8.0,301
 Cylinder,"3D cylinder graphics primitive",✅,none,6.0,302
 Graph,"Yields a graph with vertices and edges rendered as SVG",✅,effectful,8.0,303
@@ -3515,7 +3515,7 @@ LayerSizeFunction,"",,,6.0,3566
 LegendAppearance,"",🚫,,7.0,3566
 LineBreakChart,"",🚫,,8.0,3566
 ListDeconvolve,"",,,8.0,3566
-QuantityForm,"",,,9.0,3566
+QuantityForm,"Inert display wrapper for quantities",✅,pure,9.0,3566
 RandomPolygon,"",,,12.0,3566
 RowAlignments,"",,,3.0,3566
 ScaleRanges,"",,,9.0,3566

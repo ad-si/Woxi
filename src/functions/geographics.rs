@@ -305,6 +305,11 @@ fn find_country(name: &str) -> Option<&'static GazetteerCountry> {
     .map(|&i| &g.countries[i])
 }
 
+/// The geographic center `(lat, lon)` of a country, from the gazetteer.
+pub fn country_center(name: &str) -> Option<(f64, f64)> {
+  country_centroid(name)
+}
+
 /// The geographic center `(lat, lon)` of a country.
 fn country_centroid(name: &str) -> Option<(f64, f64)> {
   let c = find_country(name)?;
@@ -1295,7 +1300,7 @@ fn point_in_country(lat: f64, lon: f64, polys: &[Polygon]) -> bool {
 /// falling back to the raw Natural Earth name for non-sovereign territories.
 fn country_entity(c: &Country) -> Expr {
   let name =
-    crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))
+    crate::functions::country_data::wl_entity_name(fixup_ne_name(&c.name))
       .unwrap_or(c.name.as_str());
   call("Entity", vec![str_expr("Country"), str_expr(name)])
 }

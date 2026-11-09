@@ -8425,12 +8425,28 @@ for point.
 
 ### CountryData curated data
 
-WL 15's `CountryData["EU"]` lists `Entity["Country", …]` objects (Woxi:
-names), `CountryData["Italy", "FullName"]` is the official
-`"Italian Republic"` (Woxi: the common name), and the shape and polygon
-properties come from WL's finer outlines with its own nesting, so tests over
-their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ. These
-need WL's curated country data.
+Woxi's `CountryData` uses WL's entity names and classes, but its numbers
+come from the World Bank (`resources/country_data.tsv.gz`, CC BY 4.0), so
+populations, GDPs and areas differ from WL's own curated values (US area:
+WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
+World Bank year rather than WL's rounded estimate. Yearly series are
+returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
+`DateObject`s). The shape and polygon properties come from Natural Earth's
+1:110m outlines, coarser than WL's and with their own nesting, so tests over
+their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
+`"BorderingCountries"` is derived from shared outline vertices and misses
+borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
+
+### ChemicalData curated data
+
+`ChemicalData` covers ~200 compounds from PubChem
+(`resources/chemical_data.tsv.gz`). Atom order, bonds and 2-D coordinates
+match WL (both use PubChem's records); the 3-D conformer
+(`"AtomPositions"`, `"MoleculePlot"`) is PubChem's and differs from WL's,
+the molecular weights carry PubChem's precision (butane 58.12, WL
+58.124), `"FormulaDisplay"` is the Hill formula instead of WL's condensed
+structural formula, `"LogAcidityConstant"` is the first pKa PubChem states
+(conjugate-acid values for amines), and the drawings are Woxi's own.
 
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
