@@ -253,6 +253,7 @@ const STANDARD_DISTRIBUTION_CONTEXTS: &[&str] = &[
   "ResourceLocator",
   "StatisticalPlots",
   "SymbolicC",
+  "TetGenLink",
   "Units",
   "VariationalMethods",
   "VectorAnalysis",

@@ -6120,6 +6120,13 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::shortest_tour::find_shortest_tour_ast(args);
   }
 
+  // `TetGenLink``: the convex hull of a 3D point set as points and
+  // boundary triangles. Like every package function it is defined only once
+  // the package is loaded.
+  if name == "TetGenLink`TetGenConvexHull" && package_loaded("TetGenLink`") {
+    return crate::functions::convex_hull::tetgen_convex_hull_ast(args);
+  }
+
   // The legacy `Polytopes`` package: regular polygons with their vertices
   // on the unit circle (`Vertices`), and radii for unit edge length.
   // The functions are the package's own symbols, so a name read before the

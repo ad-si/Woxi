@@ -6457,3 +6457,4 @@ Combinatorica`CodeToLabeledTree,"The labeled tree with a given Pruefer code",✅
 Combinatorica`RadialEmbedding,"A Combinatorica graph with its vertices laid out breadth first around a center",✅,pure,6.0,
 Combinatorica`ConnectedQ,"Whether a Combinatorica graph is (weakly or strongly) connected",✅,pure,6.0,
 Combinatorica`Vertices,"The vertex coordinates of a Combinatorica graph (with All the vertices with their options)",✅,pure,6.0,
+TetGenLink`TetGenConvexHull,"Convex hull of a 3D point set as the points and the inward-wound boundary triangles (after Get[TetGenLink`])",✅,pure,8.0,
