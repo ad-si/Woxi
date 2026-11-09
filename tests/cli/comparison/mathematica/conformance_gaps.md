@@ -8307,6 +8307,11 @@ from a stated rule or needs missing machinery:
   are not implemented (3DCoordinateSystemTransformations).
 - `FindIndependentEdgeSet` is not implemented
   (SpreadsheetLikeSolutionOfLargeScaleSystemsOfEquations).
+- `Import` of a URL that answers with an HTTP error is a hard evaluation
+  error (`Import: failed to download …: … returned error: 404`); Wolfram
+  imports the error page by its content, so
+  `Import["http://www.spore.com/static/image/500/076/115/500076115030_lrg.png"]`
+  is the text `Not Found …` (3DSporeCreations, whose data is offline).
 
 ### Eigenvalues of equal magnitude are ordered by float noise
 
@@ -8485,8 +8490,9 @@ variables (`0.49999999999999956`), constrained `FindMaximum` stopping points
 (`1.0000000026163025`), `NIntegrate` (`0.5000000000000006`), `LinearSolve`
 least-squares and minimum-norm solutions, `FindFit`, `NonlinearModelFit`,
 `GeneralizedLinearModelFit`, machine `Eigenvalues`, `QPochhammer`, `Erfc` and
-`InverseErf`, and a `RecurrenceTable` solved for its leading terms
-(`72.49999999999999`). The conformance harness compares these with
+`InverseErf`, the normal-approximation p-values of `MannWhitneyTest` past 40
+values (`0.14538130875888647` against `0.14538130875888652`), and a
+`RecurrenceTable` solved for its leading terms (`72.49999999999999`). The conformance harness compares these with
 `NEAR_MATCH` (relative 10^-8). Where a rounding step magnifies the difference
 (`Round[…, 10^-6]` of an ANOVA sum on a tie, the `L` of a bounded
 `FindMaximum` rounded to 10^-6) the cases are skipped.
