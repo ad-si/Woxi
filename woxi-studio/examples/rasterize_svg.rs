@@ -10,6 +10,7 @@ fn main() {
   let data = std::fs::read(&input).expect("read svg");
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
+  woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
   let opts = resvg::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
     ..Default::default()

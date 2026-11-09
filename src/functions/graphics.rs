@@ -31446,6 +31446,11 @@ pub enum ManipulateControl {
     /// variable is read back, so e.g. `Clip[Round[#], …]` validation runs
     /// exactly as Wolfram would.
     write_callback: Option<String>,
+    /// Whether the bound point is a machine-real pair (a `Locator`
+    /// promoted to a 2D control: dragging yields reals, so integral
+    /// coordinates keep their trailing dot and arithmetic on them stays
+    /// numeric instead of piling up exact radicals).
+    real: bool,
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -33474,6 +33479,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       y_initial,
       label: var,
       write_callback: None,
+      real: false,
     });
   }
 
@@ -33509,6 +33515,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       y_initial,
       label: var,
       write_callback: None,
+      real: false,
     });
   }
 
@@ -33551,6 +33558,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       y_initial,
       label: var,
       write_callback: None,
+      real: false,
     });
   }
 
@@ -37495,6 +37503,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     y_initial,
     label: var,
     write_callback: None,
+    real: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -37553,6 +37562,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     y_initial: f64::midpoint(y_min, y_max),
     label: "pos".to_string(),
     write_callback: None,
+    real: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -39623,6 +39633,7 @@ fn parse_manipulate_control(
           y_initial: y,
           label,
           write_callback: pane_callback,
+          real: true,
         },
         enabled,
         min_code: None,
@@ -39916,6 +39927,7 @@ fn parse_manipulate_control(
         y_initial,
         label,
         write_callback: None,
+        real: false,
       },
       enabled,
       min_code: None,
@@ -40984,14 +40996,23 @@ pub fn manipulate_initial_bindings(
         name,
         x_initial,
         y_initial,
+        real,
         ..
       } => Some((
         name.clone(),
-        format!(
-          "{{{}, {}}}",
-          format_f64_input(*x_initial),
-          format_f64_input(*y_initial)
-        ),
+        if *real {
+          format!(
+            "{{{}, {}}}",
+            format_f64_real(*x_initial),
+            format_f64_real(*y_initial)
+          )
+        } else {
+          format!(
+            "{{{}, {}}}",
+            format_f64_input(*x_initial),
+            format_f64_input(*y_initial)
+          )
+        },
       )),
       ManipulateControl::IntervalSlider {
         name,
@@ -41137,6 +41158,12 @@ pub fn format_point_list_input(points: &[(f64, f64)]) -> String {
     })
     .collect();
   format!("{{{}}}", parts.join(", "))
+}
+
+/// A machine-real `{x, y}` binding (`{-12., 11.}`) for a single draggable
+/// point.
+pub fn point_list_binding_real(x: f64, y: f64) -> String {
+  format!("{{{}, {}}}", format_f64_real(x), format_f64_real(y))
 }
 
 /// Format an f64 as a Wolfram machine-real literal: integral values keep a
