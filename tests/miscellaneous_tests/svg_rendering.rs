@@ -3145,9 +3145,13 @@ mod tests {
     }
 
     #[test]
-    fn piecewise_omits_the_zero_default() {
-      let boxes = tf("Piecewise[{{1, x < 0}}, 0]");
+    fn piecewise_default_row() {
+      // Any given default is a row, 0 included (wolframscript's
+      // `ToBoxes[Piecewise[{{1, x < 0}}], TraditionalForm]` has it too).
+      let boxes = tf("Piecewise[{{1, x < 0}}]");
       assert!(!boxes.contains("PiecewiseDefault"), "{boxes}");
+      let boxes = tf("Piecewise[{{1, x < 0}}, 0]");
+      assert!(boxes.contains("PiecewiseDefault"), "{boxes}");
       let boxes = tf("Piecewise[{{1, x < 0}}, 2]");
       assert!(boxes.contains("PiecewiseDefault"), "{boxes}");
     }

@@ -44267,9 +44267,10 @@ fn traditionalform_inline_fraction_parenthesizes_compound_sides() {
   let svg = markup(
     "TraditionalForm[u (1/(1 + u + v) + 1/((1 + u)^2 (u/(1 + u) + v)))]",
   );
-  assert!(svg.contains("1/(1+u+v)"), "{svg}");
-  assert!(svg.contains("u/(1+u)"), "{svg}");
-  assert!(!svg.contains("1/1+u"), "{svg}");
+  // (TraditionalForm writes the sums `u + v + 1` and `u + 1`.)
+  assert!(svg.contains("1/(u+v+1)"), "{svg}");
+  assert!(svg.contains("u/(u+1)"), "{svg}");
+  assert!(!svg.contains("1/u+v"), "{svg}");
   // A simple side stays bare.
   let simple = markup("TraditionalForm[a/b]");
   assert!(simple.contains("a/b"), "{simple}");

@@ -1342,18 +1342,28 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(call1("OutputForm", inner)));
     }
     // ToBoxes[expr] / ToBoxes[expr, form] — convert expression to box form
-    // Only StandardForm boxes are produced; other forms stay unevaluated.
+    // StandardForm boxes, or TraditionalForm ones wrapped in their FormBox;
+    // other forms stay unevaluated.
     "ToBoxes" if args.len() == 1 || args.len() == 2 => {
-      if args.len() == 2
-        && !matches!(&args[1], Expr::Identifier(f) if f == "StandardForm")
-      {
-        return Some(Ok(unevaluated(name, args)));
-      }
-      return Some(Ok(expr_to_box_form(&args[0])));
+      return Some(Ok(match args.get(1) {
+        None => expr_to_box_form(&args[0]),
+        Some(Expr::Identifier(f)) if f == "StandardForm" => {
+          expr_to_box_form(&args[0])
+        }
+        Some(Expr::Identifier(f)) if f == "TraditionalForm" => call(
+          "FormBox",
+          vec![expr_to_box_form_traditional_text(&args[0]), args[1].clone()],
+        ),
+        Some(_) => unevaluated(name, args),
+      }));
     }
     // MakeBoxes[expr] / MakeBoxes[expr, form] — convert unevaluated expression to box form
     // MakeBoxes has HoldAllComplete so its argument is not evaluated first.
     "MakeBoxes" if args.len() == 1 || args.len() == 2 => {
+      if matches!(args.get(1), Some(Expr::Identifier(f)) if f == "TraditionalForm")
+      {
+        return Some(Ok(expr_to_box_form_traditional_text(&args[0])));
+      }
       return Some(Ok(expr_to_box_form(&args[0])));
     }
     // RawBoxes[boxes] — wrapper that tells the display system to render boxes directly
@@ -4908,10 +4918,8 @@ fn tf_piecewise(args: &[Expr]) -> Expr {
       _ => None,
     })
     .collect();
-  // The implicit default `0` is no case of its own: wolframscript only
-  // writes a `True` row for any other default.
-  if let Some(default) = args.get(1).filter(|d| !matches!(d, Expr::Integer(0)))
-  {
+  // A given default, `0` included, is a `True` row of its own.
+  if let Some(default) = args.get(1) {
     rows.push(list(vec![
       tf(default),
       tf_box(
@@ -5874,10 +5882,28 @@ fn tf_times(expr: &Expr) -> Expr {
     };
     tf_box("FractionBox", vec![num, row_of(&denominators)])
   };
-  if negative {
-    tf_row(vec![tf_string("-"), body])
-  } else {
-    body
+  if !negative {
+    return body;
+  }
+  // The minus of a product of several factors goes on the first one:
+  // `-2 x` is `RowBox[{RowBox[{"-", "2"}], " ", "x"}]`; a lone factor or a
+  // fraction is negated as a whole.
+  match body {
+    Expr::FunctionCall { ref name, ref args }
+      if name == "RowBox"
+        && denominators.is_empty()
+        && numerators.len() > 1 =>
+    {
+      match args.first() {
+        Some(Expr::List(items)) if !items.is_empty() => {
+          let mut items: Vec<Expr> = items.to_vec();
+          items[0] = row_box(vec![tf_string("-"), items[0].clone()]);
+          row_box(items)
+        }
+        _ => tf_row(vec![tf_string("-"), body.clone()]),
+      }
+    }
+    _ => tf_row(vec![tf_string("-"), body]),
   }
 }
 
@@ -5934,23 +5960,446 @@ fn tf_plus(expr: &Expr) -> Expr {
   if terms.is_empty() {
     return tf_string("0");
   }
-  let mut items: Vec<Expr> = Vec::new();
-  for (i, (neg, term)) in terms.iter().enumerate() {
-    // A term whose own leading number is negative contributes the sign.
-    let (neg, term) = match negated_term(term) {
-      Some(positive) => (!*neg, positive),
-      None => (*neg, term.clone()),
-    };
-    if i == 0 {
-      if neg {
-        items.push(tf_string("-"));
+  // A held sum is set as written; a large one keeps its canonical order.
+  let held = TF_HELD.get();
+  let large = held
+    || matches!(
+      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(expr)),
+      Ok(Expr::Integer(n)) if n >= 795
+    );
+  // Wolfram's TraditionalForm starts from the order of its older
+  // typesetting: by descending power, numbers last, a two-term sum not
+  // leading with its negative term (a large sum keeps canonical order).
+  if !large {
+    terms.sort_by(|(_, a), (_, b)| {
+      let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
+      let (ka, kb) = (key(a), key(b));
+      ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+    });
+    let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
+    if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
+      terms.swap(0, 1);
+    }
+  }
+  // Each term as a sign and the box of its positive part — except the
+  // first, which keeps its own box less its first "-".
+  if held {
+    let mut items: Vec<Expr> = Vec::new();
+    for (i, (neg, term)) in terms.iter().enumerate() {
+      if i == 0 {
+        // The first term is set on its own: `-a`, `-2 x`.
+        if *neg {
+          items.push(tf_string("-"));
+        }
+        items.push(tf_operand(term));
+        continue;
       }
+      let (neg, term) = match negated_term(term) {
+        Some(positive) => (!*neg, positive),
+        None => (*neg, term.clone()),
+      };
+      items.push(tf_string(if neg { "-" } else { "+" }));
+      items.push(tf_operand(&term));
+    }
+    return tf_row(items);
+  }
+  let mut signed: Vec<(bool, Expr)> = terms
+    .iter()
+    .enumerate()
+    .map(|(i, (neg, term))| match negated_term(term) {
+      Some(positive) if i == 0 => {
+        let mut b = tf_operand(term);
+        if !tf_delete_first_minus(&mut b) {
+          b = tf_operand(&positive);
+        }
+        (!*neg, b)
+      }
+      Some(positive) => (!*neg, tf_operand(&positive)),
+      None => (*neg, tf_operand(term)),
+    })
+    .collect();
+  if signed.len() > 1 && !large {
+    // `TraditionalFormDump`ordplus`.
+    let order = tf_plus_order(&signed);
+    signed = order.into_iter().map(|i| signed[i].clone()).collect();
+    // A two-term sum does not lead with its negative term (unless only
+    // the positive one is imaginary): `x^2 - 1`, `cos(x) - x^4`.
+    if let [(true, b2), (false, b3)] = signed.as_slice()
+      && (!tf_free_of_imaginary(b2) || tf_free_of_imaginary(b3))
+    {
+      signed.swap(0, 1);
+    }
+  }
+  let mut items: Vec<Expr> = Vec::new();
+  for (i, (neg, term)) in signed.into_iter().enumerate() {
+    if i == 0 {
+      items.push(if neg {
+        // The leading minus wraps the term: `RowBox[{"-", RowBox[{t}]}]`.
+        let term = match term {
+          Expr::FunctionCall { ref name, .. } if name == "RowBox" => term,
+          other => row_box(vec![other]),
+        };
+        row_box(vec![tf_string("-"), term])
+      } else {
+        term
+      });
     } else {
       items.push(tf_string(if neg { "-" } else { "+" }));
+      items.push(term);
     }
-    items.push(tf_operand(&term));
   }
   tf_row(items)
+}
+
+/// Whether a term of a sum is a plain number (`2`, `-1/3`, `π`).
+fn tf_is_number(t: &Expr) -> bool {
+  crate::functions::predicate_ast::is_numeric_q(t)
+}
+
+/// A term's power in its variables for the older TraditionalForm order:
+/// exponents of symbols add up across a product (`x y` and `x^2` are 2,
+/// `√x` is 1/2, `1/x` is -1); numbers and other function calls count 0.
+fn tf_degree(t: &Expr) -> f64 {
+  match t {
+    Expr::Identifier(_) => {
+      if crate::functions::predicate_ast::is_numeric_q(t) {
+        0.0
+      } else {
+        1.0
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().map(tf_degree).sum()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => tf_degree(left) + tf_degree(right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => tf_degree(left) - tf_degree(right),
+    Expr::UnaryOp { operand, .. } => tf_degree(operand),
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      0.5 * tf_degree(&args[0])
+    }
+    _ => match crate::functions::graphics::as_power(t) {
+      Some((base, exp)) => {
+        match crate::functions::math_ast::try_eval_to_f64(exp) {
+          Some(k) => k * tf_degree(base),
+          None => 0.0,
+        }
+      }
+      None => 0.0,
+    },
+  }
+}
+
+/// Deletes the first `"-"` string in a box (depth first, left to right),
+/// keeping the row it was in; whether there was one.
+fn tf_delete_first_minus(b: &mut Expr) -> bool {
+  match b {
+    Expr::FunctionCall { args, .. } => {
+      let mut v: Vec<Expr> = args.to_vec();
+      for a in v.iter_mut() {
+        if tf_delete_first_minus(a) {
+          *args = v.into();
+          return true;
+        }
+      }
+      false
+    }
+    Expr::List(items) => {
+      let mut v: Vec<Expr> = items.to_vec();
+      if let Some(k) = v
+        .iter()
+        .position(|x| matches!(x, Expr::String(s) if s == "-"))
+        && v[..k].iter().all(|x| !tf_contains_minus(x))
+      {
+        v.remove(k);
+        *items = v.into();
+        return true;
+      }
+      for a in v.iter_mut() {
+        if tf_delete_first_minus(a) {
+          *items = v.into();
+          return true;
+        }
+      }
+      false
+    }
+    _ => false,
+  }
+}
+
+fn tf_contains_minus(b: &Expr) -> bool {
+  let mut found = false;
+  tf_visit_strings(b, &mut |s| found |= s == "-");
+  found
+}
+
+/// Whether a box mentions no imaginary unit.
+fn tf_free_of_imaginary(b: &Expr) -> bool {
+  let mut free = true;
+  tf_visit_strings(b, &mut |s| {
+    // \[ImaginaryI], as box text or as Woxi's drawn glyph.
+    if matches!(s, "\u{F74E}" | "\u{2148}" | "CTraditional") {
+      free = false;
+    }
+  });
+  free
+}
+
+/// Calls `f` on every string in a box tree.
+fn tf_visit_strings(b: &Expr, f: &mut impl FnMut(&str)) {
+  match b {
+    Expr::String(s) => f(s),
+    Expr::List(items) => items.iter().for_each(|i| tf_visit_strings(i, f)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().for_each(|i| tf_visit_strings(i, f))
+    }
+    _ => {}
+  }
+}
+
+/// The order Wolfram's TraditionalForm sets the terms of a sum in — a
+/// transcription of `TraditionalFormDump`ordplus`. Each term is keyed by
+/// the sorted "variable" strings of its box (anything but numbers, signs,
+/// parentheses and the constants π, ⅇ, ⅈ, ℽ), each paired with the
+/// exponents it is raised to (as negated character codes, so a higher
+/// power sorts first; no exponent at all sorts after any). Function names
+/// it knows (`sin`, `cos`, `log`, …) rank by a fixed table after the
+/// variables. The keys are then put in canonical order.
+fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
+  use crate::functions::list_helpers_ast::sorting::canonical_cmp;
+  let n = terms.len();
+  if n == 2 {
+    match (
+      tf_free_of_imaginary(&terms[0].1),
+      tf_free_of_imaginary(&terms[1].1),
+    ) {
+      (true, false) => return vec![0, 1],
+      (false, true) => return vec![1, 0],
+      _ => {}
+    }
+  }
+  const RANKED: [&str; 56] = [
+    "ln",
+    "log",
+    "sin",
+    "cos",
+    "tan",
+    "cot",
+    "csc",
+    "sec",
+    "sinh",
+    "cosh",
+    "tanh",
+    "coth",
+    "csch",
+    "sech",
+    "Gamma",
+    "Gamma2",
+    "Gamma3",
+    "GammaRegularized",
+    "GammaRegularized3",
+    "PolyGamma",
+    "PolyGamma2",
+    "Beta",
+    "Beta3",
+    "BetaRegularized",
+    "BetaRegularized4",
+    "InverseGammaRegularized",
+    "InverseGammaRegularized3",
+    "InverseBetaRegularized",
+    "InverseBetaRegularized4",
+    "BesselJ",
+    "BesselY",
+    "BesselI",
+    "BesselK",
+    "HankelH1",
+    "HankelH2",
+    "BesselJZero",
+    "BesselYZero",
+    "EllipticF",
+    "EllipticE",
+    "EllipticE2",
+    "EllipticPi",
+    "EllipticPi3",
+    "EllipticTheta",
+    "AiryAi",
+    "AiryAiPrime",
+    "AiryBi",
+    "AiryBiPrime",
+    "KelvinBer",
+    "KelvinBer2",
+    "KelvinBei",
+    "KelvinBei2",
+    "KelvinKer",
+    "KelvinKer2",
+    "KelvinKei",
+    "KelvinKei2",
+    "CTraditional",
+  ];
+  let is_variable = |s: &str| {
+    // π, \[ExponentialE], \[ImaginaryI], \[DoubledGamma] (as box text or
+    // as Woxi's drawn glyphs).
+    !matches!(
+      s,
+      "\u{03C0}"
+        | "\u{F74D}"
+        | "\u{F74E}"
+        | "\u{F74A}"
+        | "\u{2147}"
+        | "\u{2148}"
+        | "\u{213D}"
+    ) && !(!s.is_empty()
+      && s.chars().all(|c| "0123456789.`*^-+/() ".contains(c)))
+  };
+  // `offsetFunc`: Greek and some private-use letters sort as Latin ones.
+  let offset = |c: u32| -> u32 {
+    let between = |lo: u32, hi: u32| (lo..=hi).contains(&c);
+    let mut o = 0;
+    if between(913, 937) || between(945, 969) {
+      o += 848;
+    }
+    for (lo, hi, by) in [
+      (63154, 63179, 63057),
+      (63180, 63205, 63083),
+      (63206, 63231, 63109),
+      (63344, 63369, 63279),
+      (63396, 63421, 63331),
+      (63488, 63513, 63391),
+      (63514, 63539, 63449),
+    ] {
+      if between(lo, hi) {
+        o += by;
+      }
+    }
+    o
+  };
+  let int_list =
+    |v: Vec<i128>| Expr::List(v.into_iter().map(Expr::Integer).collect());
+  let keys: Vec<Vec<Expr>> = terms
+    .iter()
+    .map(|(_, b)| {
+      let mut names: Vec<String> = Vec::new();
+      tf_visit_strings(b, &mut |s| {
+        if is_variable(s) {
+          names.push(s.to_string());
+        }
+      });
+      let mut names: Vec<Expr> = names.into_iter().map(Expr::String).collect();
+      names.sort_by(canonical_cmp);
+      names.dedup_by(|a, b| canonical_cmp(a, b) == std::cmp::Ordering::Equal);
+      let mut pairs: Vec<(bool, Expr)> = names
+        .iter()
+        .map(|name| {
+          let Expr::String(eb) = name else {
+            unreachable!()
+          };
+          // The exponents `eb` carries anywhere in the term.
+          let mut exps: Vec<Expr> = Vec::new();
+          tf_superscripts_of(b, eb, &mut |e| {
+            let text = tf_exponent_text(e);
+            let codes: Vec<i128> =
+              text.chars().take(10).map(|c| -(c as i128)).collect();
+            let mut padded = vec![0; 10 - codes.len()];
+            padded.extend(codes);
+            exps.push(int_list(padded));
+          });
+          exps.sort_by(canonical_cmp);
+          exps
+            .dedup_by(|a, b| canonical_cmp(a, b) == std::cmp::Ordering::Equal);
+          let exps = if exps.is_empty() {
+            int_list(vec![-1; 10])
+          } else {
+            Expr::List(exps.into())
+          };
+          let shifted: String = eb
+            .chars()
+            .map(|c| char::from_u32(c as u32 - offset(c as u32)).unwrap_or(c))
+            .collect();
+          let (ranked, head) = match RANKED.iter().position(|r| *r == shifted) {
+            Some(k) => (
+              true,
+              crate::helpers::call(
+                "\u{23B5}",
+                vec![Expr::Integer(k as i128 + 1)],
+              ),
+            ),
+            None => (false, Expr::String(shifted)),
+          };
+          (ranked, Expr::List(vec![head, exps].into()))
+        })
+        .collect();
+      // Known functions go after the variables.
+      pairs.sort_by_key(|(ranked, _)| *ranked);
+      pairs.into_iter().map(|(_, p)| p).collect()
+    })
+    .collect();
+  let width = keys.iter().map(Vec::len).max().unwrap_or(0);
+  let pad = Expr::List(
+    vec![Expr::String("\u{23B5}".into()), Expr::String(String::new())].into(),
+  );
+  let keys: Vec<Expr> = keys
+    .into_iter()
+    .map(|mut k| {
+      k.resize(width, pad.clone());
+      Expr::List(k.into())
+    })
+    .collect();
+  let mut order: Vec<usize> = (0..n).collect();
+  order.sort_by(|&i, &j| canonical_cmp(&keys[i], &keys[j]));
+  order
+}
+
+/// Calls `f` on the exponent of every `SuperscriptBox[eb, e, …]` in a box.
+fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
+  match b {
+    Expr::FunctionCall { name, args } => {
+      if name == "SuperscriptBox"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::String(s) if s == eb)
+      {
+        f(&args[1]);
+      }
+      args.iter().for_each(|a| tf_superscripts_of(a, eb, f));
+    }
+    Expr::List(items) => {
+      items.iter().for_each(|a| tf_superscripts_of(a, eb, f))
+    }
+    _ => {}
+  }
+}
+
+/// The text Wolfram ranks an exponent box by: primes count as orders, a
+/// parenthesized derivative order is its number, anything else is the
+/// box's OutputForm.
+fn tf_exponent_text(e: &Expr) -> String {
+  match e {
+    Expr::String(s) if s == "\u{2032}" => "1".to_string(),
+    Expr::String(s) if s == "\u{2032}\u{2032}" => "2".to_string(),
+    Expr::FunctionCall { name, args }
+      if name == "TagBox"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Identifier(t) if t == "Derivative") =>
+    {
+      match &args[0] {
+        Expr::FunctionCall { args: inner, .. } => match inner.first() {
+          Some(Expr::List(parts)) if parts.len() == 3 => {
+            tf_exponent_text(&parts[1])
+          }
+          _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+        },
+        _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+      }
+    }
+    Expr::String(s) => s.clone(),
+    _ => crate::syntax::format_expr(e, crate::syntax::ExprForm::Output),
+  }
 }
 
 /// Render the iterator body of Sum/Product with the given large operator.
@@ -5985,7 +6434,11 @@ fn tf_big_operator(glyph: &str, args: &[Expr]) -> Expr {
     ops.push(tf_string(glyph));
   }
   let mut items = ops;
-  items.push(tf_thin_space());
+  // Wolfram's boxes put nothing between the operator and its operand; the
+  // space is only for Woxi's own drawing.
+  if !TF_BOX_TEXT.get() {
+    items.push(tf_thin_space());
+  }
   // A sum of terms as the operand is parenthesized: `∑ (a + b)`.
   if tf_is_additive(&args[0]) {
     items.push(tf_parens(tf(&args[0])));
@@ -6664,7 +7117,17 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {
-      call("TagBox", vec![tf(&args[0]), id_expr("HoldForm")])
+      struct Reset(bool);
+      impl Drop for Reset {
+        fn drop(&mut self) {
+          TF_HELD.set(self.0);
+        }
+      }
+      let inner = {
+        let _reset = Reset(TF_HELD.replace(true));
+        tf(&args[0])
+      };
+      call("TagBox", vec![inner, id_expr("HoldForm")])
     }
     // Wrappers that only hold or re-label their content: typeset what is
     // inside them.
@@ -7396,6 +7859,12 @@ fn tf(expr: &Expr) -> Expr {
 /// render as `head(args)`.
 pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
   tf(expr)
+}
+
+thread_local! {
+  /// Set while typesetting the inside of a `HoldForm`, whose sums keep the
+  /// order they were written in.
+  static TF_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 thread_local! {
