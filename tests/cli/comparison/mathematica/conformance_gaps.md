@@ -4067,6 +4067,24 @@ Demonstration), and Woxi Studio reads its controls out of exactly this
 expression. A `0` conformant with wolframscript would leave that
 Demonstration with an empty slider.
 
+### `Manipulate` controls are bound dynamically, not lexically
+
+Wolfram's `DynamicModule` renames a Manipulate's control variables in its
+body (and `Initialization`), so a function defined elsewhere that mentions
+a control's name sees the global symbol, not the control's value. Woxi binds
+controls with `Block` (or as scoped globals in Woxi Studio), so such a
+function does see the value. The visible case, a rule in the body that
+rebinds a control name (`Entity["Isotope", isotope_] -> isotope`), is
+handled by renaming that rule's own variables first (`isotope$_ ->
+isotope$`); a global function reading a control name is not.
+
+### A shadowed later specification of a nested multi-spec `With`
+
+`With[{x = 5}, Hold[With[{y = x}, {x = 1}, {x, y}]]]` is
+`Hold[With[{y = 5}, {x = 1}, {x, y}]]` in wolframscript; Woxi renames the
+inner `y` to `y$` because it does not see that the later `{x = 1}` shadows
+the outer `x` in the body.
+
 ### `Get` returns raw text
 
 `Get` returns an `Expr::Raw`, so `List @@ Get["PacletInfo.m"]` fails, and

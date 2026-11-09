@@ -744,8 +744,20 @@ impl ManipulateState {
       })
       .collect();
     let control_is_visible = vec![true; controls.len()];
+    // The studio installs control values as globals (see
+    // `with_scoped_globals`), not lexically like Wolfram, so a rule in the
+    // body that rebinds a control name gets its own variables first.
+    let control_names: Vec<String> = controls
+      .iter()
+      .map(|c| c.name().to_string())
+      .filter(|n| !n.is_empty())
+      .collect();
+    let body = woxi::functions::graphics::shield_control_rebinding_rules(
+      &spec.body_code,
+      &control_names,
+    );
     let mut state = ManipulateState {
-      body: spec.body_code,
+      body,
       initialization: spec.initialization,
       controls,
       state: spec.state,

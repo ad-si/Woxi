@@ -32297,6 +32297,28 @@ mod manipulate {
   };
   use woxi::interpret_to_expr;
 
+  // Wolfram localizes controls lexically: a rule in the body that rebinds a
+  // control name shadows it, so its right side is not the control's value
+  // (`Entity["Isotope", isotope_] -> isotope` in IsotopeDecay.nb).
+  #[test]
+  fn body_rule_rebinding_a_control_name_shadows_it() {
+    let bindings = vec![("x".to_string(), "5".to_string())];
+    let code = manipulate_block_code(
+      "{x, f[3] /. f[x_] -> x, g[2] /. g[x_] :> x + 1, Hold[h[x_] = x]}",
+      &bindings,
+    );
+    clear_state();
+    assert_eq!(interpret(&code).unwrap(), "{5, 3, 3, Hold[h[x$_] = x$]}");
+    // A body with no pattern named after a control passes through as is.
+    assert_eq!(
+      woxi::functions::graphics::shield_control_rebinding_rules(
+        "f[xs_] -> x",
+        &["x".to_string()],
+      ),
+      "f[xs_] -> x"
+    );
+  }
+
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.
   #[test]

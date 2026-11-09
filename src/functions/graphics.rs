@@ -41224,19 +41224,55 @@ pub fn manipulate_block_code(
   // built-in symbol (`False` from `"Button 1" -> {b1, {False, True}}`) is
   // never a variable to bind.
   let mut seen = std::collections::HashSet::new();
-  let binding_parts: Vec<String> = bindings
+  let bound: Vec<&(String, String)> = bindings
     .iter()
     .filter(|(_, value)| !crate::is_frozen_graphic(value))
     .filter(|(name, _)| {
       !crate::evaluator::functions::is_builtin_symbol(name)
         && seen.insert(name.clone())
     })
-    .map(|(name, value)| format!("{name} = {value}"))
     .collect();
-  if binding_parts.is_empty() {
+  if bound.is_empty() {
     return body_code.to_string();
   }
-  format!("Block[{{{}}}, {}]", binding_parts.join(", "), body_code)
+  let binding_parts: Vec<String> = bound
+    .iter()
+    .map(|(name, value)| format!("{name} = {value}"))
+    .collect();
+  let names: Vec<String> = bound.iter().map(|(n, _)| n.clone()).collect();
+  let body = shield_control_rebinding_rules(body_code, &names);
+  format!("Block[{{{}}}, {}]", binding_parts.join(", "), body)
+}
+
+/// Wolfram localizes Manipulate controls lexically, so a rule in the body
+/// that rebinds a control name (`Entity["Isotope", isotope_] -> isotope`)
+/// shadows it. [`manipulate_block_code`] binds controls with a Block, so
+/// such rules get their own pattern variables renamed first (see
+/// `shield_rules_rebinding`). Only bodies that spell a pattern named after
+/// a control (`isotope_`) are re-read; the rest pass through untouched.
+pub fn shield_control_rebinding_rules(
+  body_code: &str,
+  names: &[String],
+) -> String {
+  let has_pattern = names.iter().any(|n| {
+    body_code.match_indices(n.as_str()).any(|(i, _)| {
+      let before_ok = body_code[..i]
+        .chars()
+        .next_back()
+        .is_none_or(|c| !(c.is_alphanumeric() || c == '$' || c == '`'));
+      before_ok && body_code[i + n.len()..].starts_with('_')
+    })
+  });
+  if !has_pattern {
+    return body_code.to_string();
+  }
+  let Ok(expr) = crate::parse_to_expr(body_code) else {
+    return body_code.to_string();
+  };
+  match crate::evaluator::scoping::shield_rules_rebinding(&expr, names) {
+    Some(shielded) => crate::syntax::expr_to_source_form(&shielded),
+    None => body_code.to_string(),
+  }
 }
 
 /// Evaluate a control's `Enabled` condition and report whether the control
