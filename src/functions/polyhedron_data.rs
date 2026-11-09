@@ -1295,6 +1295,20 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `PolyhedronData[class, property]` maps the property over the class's
+  // members, in the order `PolyhedronData[class]` lists them.
+  if let [Expr::String(class), prop @ Expr::String(_)] = args
+    && find_polyhedron(class).is_none()
+    && let Some(list) = class_members(class)?
+    && let Expr::List(members) = &list
+  {
+    let values = members
+      .iter()
+      .map(|m| polyhedron_data_ast(&[m.clone(), prop.clone()]))
+      .collect::<Result<Vec<_>, _>>()?;
+    return Ok(Expr::List(values.into()));
+  }
+
   let info = match args.first() {
     Some(Expr::List(spec)) => match spec.as_slice() {
       // The degenerate members of a family are the Platonic solids:

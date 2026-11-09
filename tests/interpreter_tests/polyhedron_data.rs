@@ -1619,4 +1619,18 @@ mod polyhedron_data_tests {
       "{{0., 0., -0.816496580927726}, {0., 0., 0.816496580927726}}"
     );
   }
+
+  #[test]
+  fn class_with_property_maps_over_members() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"PolyhedronData["Antiprism"]"#).unwrap(),
+      "{{Antiprism, 4}, {Antiprism, 5}, {Antiprism, 6}, {Antiprism, 7}, \
+       {Antiprism, 8}, {Antiprism, 9}, {Antiprism, 10}, Octahedron}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Antiprism", "VertexCount"]"#).unwrap(),
+      "{8, 10, 12, 14, 16, 18, 20, 6}"
+    );
+  }
 }
