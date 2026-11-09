@@ -42408,6 +42408,30 @@ fn display_expr_to_node(
       {
         display_expr_to_node(&args[0], bindings, probes, ons)
       }
+      // `Text@Switch[v, …]` (also `If`/`Which`): the branch chosen by the
+      // current control values is laid out like the bare container when it
+      // is one (`Row`/`Column`/`Grid`), so nested layouts and controls stay
+      // live instead of printing as source.
+      "Text"
+        if args.len() == 1
+          && !bindings.is_empty()
+          && matches!(
+            &args[0],
+            Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Switch" | "If" | "Which")
+          )
+          && let Some(chosen) = eval_display_in_scope(&args[0], bindings)
+          && matches!(
+            &chosen,
+            Expr::FunctionCall { name, .. }
+              if matches!(
+                name.as_str(),
+                "Row" | "Column" | "Grid" | "Panel" | "Framed"
+              )
+          ) =>
+      {
+        display_expr_to_node(&chosen, bindings, probes, ons)
+      }
       // A cell around an expression shows just the expression.
       "ExpressionCell" if !args.is_empty() => {
         display_expr_to_node(&args[0], bindings, probes, ons)
