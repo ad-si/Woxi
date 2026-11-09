@@ -135,7 +135,7 @@ Collect,"Collects terms with the same powers of a variable",✅,pure,1.0,339
 Together,"Puts terms over a common denominator",✅,pure,1.0,455
 Apart,"Decomposes a rational expression into partial fractions",✅,pure,1.0,683
 Cancel,"Cancels common factors in a rational expression",✅,pure,1.0,1229
-CityData,"Returns matching city entities or properties from a bundled static table; latitude and longitude carry angular units",✅,pure,6.0,69
+CityData,"Returns matching city entities (incl. CityData[{All country}]) or properties from a bundled table of verified cities plus GeoNames cities of at least 100000 people; latitude and longitude carry angular units",✅,pure,6.0,69
 ImageSize,"Option specifying the display size of graphics and other objects",✅,none,3.0,70
 AxesLabel,"Option specifying labels for the axes of a plot",✅,pure,1.0,71
 Graphics,"Creates a 2D graphics object",✅,pure,1.0,72

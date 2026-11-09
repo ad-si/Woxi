@@ -387,6 +387,22 @@ mod city_data_tests {
       interpret("CityData[\"paris\", \"Country\"]").unwrap(),
       "Entity[Country, France]"
     );
+    // `{All, country}` lists the country's bundled cities, largest first
+    // (GeoNames cities of at least 100 000 people).
+    assert_eq!(
+      interpret("CityData[{All, \"China\"}][[;; 2]]").unwrap(),
+      "{Entity[City, {Shanghai, Shanghai, China}], \
+       Entity[City, {Chongqing, Chongqing, China}]}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[CityData[{All, \"China\"}]] > 100 && \
+         AllTrue[CityData[#, \"Population\"] & /@ \
+           Take[CityData[{All, \"Japan\"}], 5], Head[#] === Quantity &]"
+      )
+      .unwrap(),
+      "True"
+    );
     assert_eq!(
       interpret("CityData[Entity[\"City\", {\"Berlin\", \"Berlin\", \"Germany\"}], \"Latitude\"]")
         .unwrap(),

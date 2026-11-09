@@ -8438,6 +8438,15 @@ their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
 borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
 
+### CityData beyond the verified cities
+
+Besides the Wolfram-verified cities of `city_data.json`, `CityData` knows
+the GeoNames cities (CC BY 4.0) of at least 100 000 people. Their entity
+names are GeoNames' ASCII names in CamelCase, so regions can be spelled
+differently from WL (`"NorthHolland"` where WL writes `"NoordHolland"`),
+their populations are GeoNames' figures, and `CityData[{All, country}]`
+lists only those cities (WL lists every town it knows).
+
 ### ChemicalData curated data
 
 `ChemicalData` covers ~200 compounds from PubChem
