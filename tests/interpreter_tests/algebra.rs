@@ -10558,6 +10558,42 @@ mod nsolve {
     assert!(r.warnings.iter().any(|w| w.starts_with("Solve::ifun:")));
   }
 
+  // Wolfram's numeric inverse runs FindRoot from 0.365626 (then
+  // -0.523097, …) and keeps the first converged root, not the first root in
+  // the domain. Demonstration TrajectoryOfATennisServe solves for the
+  // bounce of a curve that starts on the court (y == 0 at t == 0): the
+  // answer is the later crossing, not t == 0.
+  #[test]
+  fn interpolating_function_root_from_wolframs_starting_points() {
+    assert_eq!(
+      interpret(
+        "b = Interpolation[{{0, -1.}, {0.1, 0.}, {0.2, 1.}, {0.4, 1.2}, \
+         {0.6, 1.1}, {0.8, 1.}, {0.95, 0.}, {1, -0.5}}]; \
+         Round[10^6 {t /. Quiet[Solve[b[t] == 0, t]][[1]], \
+         t /. Quiet[Solve[b[t] == 0.5, t]][[1]]}]"
+      )
+      .unwrap(),
+      "{950000, 888802}"
+    );
+    assert_eq!(
+      interpret(
+        "f = Interpolation[Table[{t, t (0.7 - t)}, {t, 0, 1, 0.05}]]; \
+         Round[10^6 t /. Quiet[NSolve[f[t] == 0, t]][[1]]]"
+      )
+      .unwrap(),
+      "700000"
+    );
+    // Without a root in the domain, a monotone function is inverted on its
+    // extrapolation.
+    assert_eq!(
+      interpret(
+        "Quiet[Solve[Interpolation[{{0, 1.}, {1, 2.}, {2, 3.}}][t] == 0, t]]"
+      )
+      .unwrap(),
+      "{{t -> -1.}}"
+    );
+  }
+
   #[test]
   fn linear_equation() {
     assert_eq!(interpret("NSolve[x - 5 == 0, x]").unwrap(), "{{x -> 5.}}");
