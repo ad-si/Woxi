@@ -2456,6 +2456,9 @@ fn evaluate_function_call_ast_inner(
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
     }
+    "ChemicalData" => {
+      return crate::functions::chemical_data::chemical_data_ast(args);
+    }
     "GraphData" => {
       return crate::functions::graph_data::graph_data_ast(args);
     }
@@ -13047,6 +13050,9 @@ fn evaluate_function_call_ast_inner(
         | "AlgebraicNumber"
         // A biological sequence object: the String* family reads it.
         | "BioSequence"
+        // A display wrapper for quantities; wolframscript's script mode
+        // prints it as written (`QuantityForm[Quantity[3, Meters], …]`).
+        | "QuantityForm"
     )
   {
     let args_str = args

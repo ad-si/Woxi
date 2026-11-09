@@ -26,6 +26,7 @@ pub mod caputo_d;
 pub mod cellular_automaton_ast;
 pub mod chart;
 pub mod chart3d;
+pub mod chemical_data;
 pub mod city_data;
 pub mod code_parser;
 pub mod color_blend;

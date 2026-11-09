@@ -4823,6 +4823,17 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(new_args) = chart_data_args(args, false) {
     return pie_chart_ast(&new_args);
   }
+  // A `Tooltip[data, tip, …]` around the whole dataset only adds a hover
+  // label, which a static rendering has no place for: chart the data.
+  if let Some(Expr::FunctionCall { name, args: inner }) = args.first()
+    && name == "Tooltip"
+    && !inner.is_empty()
+    && matches!(&inner[0], Expr::List(_))
+  {
+    let mut new_args = args.to_vec();
+    new_args[0] = inner[0].clone();
+    return pie_chart_ast(&new_args);
+  }
   let Ok(rows) = extract_pie_rows(&args[0]) else {
     return Ok(invalid_dataset("PieChart", args));
   };

@@ -18,6 +18,7 @@ mod interpreter_tests {
   use path_helpers::*;
 
   mod astronomy;
+  mod chemical_data;
   mod dataset;
   mod datetime;
   mod distributions;

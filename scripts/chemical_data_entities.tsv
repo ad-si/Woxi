@@ -1,0 +1,204 @@
+# entity	PubChem CID	name  (identifiers only; see gen_chemical_data.py)
+1,2FluorobenzylPiperazine	796168	1-(2-fluorobenzyl)piperazine
+1,3BisIsocyanatomethylCyclohexane	53172	1,3-bis(isocyanatomethyl)cyclohexane
+1,3FluorobenzylPiperazine	903813	1-(3-fluorobenzyl)piperazine
+1,4BisAcryloylPiperazine	193422	1,4-bis(acryloyl)piperazine
+1,4FluorobenzylPiperazine	796563	1-(4-fluorobenzyl)piperazine
+1Propanol	1031	N-propanol
+2Amino6Ethoxybenzothiazole	7192	2-amino-6-ethoxybenzothiazole
+2Phenylbenzimidazole	12855	2-phenylbenzimidazole
+2Propanol	3776	isopropanol
+3,4AminophenylBenzonitrile	1051654	3-(4-aminophenyl)benzonitrile
+3BocAminoPyridine	10932321	3-(boc-amino)pyridine
+4,3AminophenylBenzonitrile	2756353	4-(3-aminophenyl)benzonitrile
+4,4AminophenylBenzonitrile	97193	4-(4-aminophenyl)benzonitrile
+4AcetylphenylThiourea	2735266	(4-acetylphenyl)thiourea
+4BocAminoPyridine	9990210	4-(boc-amino)pyridine
+4Methyl1,10Phenanthroline	93149	4-methyl-1,10-phenanthroline
+5Ethoxy2Mercaptobenzimidazole	790793	5-ethoxy-2-mercaptobenzimidazole
+5Methyl1,10Phenanthroline	72791	5-methyl-1,10-phenanthroline
+9Acridinamine	7019	9-acridinamine
+9FluorenoneHydrazone	83627	9-fluorenone hydrazone
+Acetamide	178	acetamide
+Acetaminophen	1983	acetaminophen
+AceticAcid	176	acetic acid
+Acetone	180	acetone
+Acetophenone	7410	acetophenone
+Acetylthioacetophenone	849558	acetylthioacetophenone
+AcryloylChloride	13140	acryloyl chloride
+Aldosterone	5839	aldosterone
+Alpha-Pinene	6654	(+/-)-alpha-pinene
+AlphaTocopherol	2116	α-tocopherol
+Alprazolam	2118	alprazolam
+AluminumHydroxide	10176082	aluminum hydroxide
+AluminumNitride	90455	aluminum nitride
+AluminumOxide	9989226	aluminum oxide
+Amoxicillin	2171	amoxicillin
+Amphetamine	3007	amphetamine
+Amygdalin	2180	amygdalin
+Aspirin	2244	aspirin
+Atropine	3661	atropine
+BariumHydride	83513	barium hydride
+Bentyl	3042	dicycloverine
+Benzil	8651	benzil
+Benzocaine	2337	benzocaine
+BerylliumHydroxide	25879	beryllium hydroxide
+BerylliumOxide	14775	beryllium oxide
+Beta-Carotene	573	beta-carotene
+BromicAcid	24445	bromic acid
+Butane	7843	butane
+Caffeine	2519	caffeine
+CalciumHydride	105052	calcium hydride
+CalciumHydroxide	14777	calcium hydroxide
+CalciumNitrite	159695	calcium nitrite
+CalciumOxide	14778	calcium oxide
+Cantharidin	5944	cantharidin
+Capsaicin	1548943	capsaicin
+CarbonicAcid	767	carbonic acid
+Celebrex	2662	celecoxib
+Chlorine	24526	chlorine
+Cholesterol	304	cholesterol
+Cicutoxin	10463	cicutoxin
+Cinnamaldehyde	637511	cinnamic aldehyde
+Ciprofloxacin	80971	3-quinolinecarboxylic acid
+Cis1,2Dichloroethylene	643833	cis-1,2-dichloroethylene
+CitricAcid	311	citric acid
+CobaltHydroxide	10129900	cobalt hydroxide
+CobaltousSulfide	14832	cobaltous sulfide
+Colchicine	6167	colchicine
+CopperIHydride	3335333	copper(I) hydride
+Cortisone	222786	cortisone
+Cytosine	597	cytosine
+DAlphaTocopherol	2116	D-alpha-tocopherol
+DGlucose	206	D-(+)-glucose
+DLTartaricAcid	439655	tartaric acid
+DMinusTartaricAcid	439655	D-tartaric acid
+Decane	15600	decane
+Dexamethasone	451600	dexamethasone
+Diazodiphenylmethane	61230	diazodiphenylmethane
+Diethylamine	8021	diethylamine
+Dihydrocodeinone	5284569	dihydrocodeinone
+Dinitromethane	61172	dinitromethane
+Dodecane	8182	dodecane
+Dopamine	681	dopamine
+Droperidol	3168	droperidol
+Ethane	6324	ethane
+EthylAcetate	8857	ethyl acetate
+EthylAlcohol	702	ethanol
+EthylEther	3283	ethyl ether
+EthylMethylEther	10903	ethyl methyl ether
+Eugenol	3314	eugenol
+Flagyl	4173	metronidazole
+Fluconazole	3365	fluconazole
+FluoroaceticAcid	5237	fluoroacetic acid
+Fluoxetine	3386	fluoxetine
+FormicAcid	284	formic acid
+FurfurylSulfide	61659	difurfuryl sulfide
+GalliumNitride	117559	gallium nitride
+GibberellicAcid	641659	gibberellic acid
+Heptane	8900	N-heptane
+Hexane	8058	N-hexane
+Hydralazine	3637	hydralazine
+HydrofluoricAcid	14917	hydrofluoric acid
+Hydrogen	783	hydrogen
+HydrogenBromide	260	hydrogen bromide
+HydrogenChloride	313	hydrogen chloride
+HydrogenFluoride	16211014	hydrogen fluoride
+HydrogenIodide	24841	hydrogen iodide
+HydrogenPeroxide	784	hydrogen peroxide
+HydrogenSelenide	533	hydrogen selenide
+HydrogenSulfide	402	hydrogen sulfide
+Ibuprofen	3672	ibuprofen
+Isooctane	10907	2,2,4-trimethylpentane
+Isopropanol	3776	isopropanol
+LAscorbicAcid	54670067	ascorbic acid
+LGlucose	206	L-glucose
+LPlusLacticAcid	107689	L-(+)-lactic acid
+LPlusTartaricAcid	444305	L-tartaric acid
+Lidocaine	3676	lidocaine
+Lindane	727	lindane
+LithiumHydride	62714	lithium hydride
+LithiumHydroxide	3939	lithium hydroxide
+LithiumHypochlorite	61690	lithium hypochlorite
+LithiumOxide	166630	lithium oxide
+Loratadine	3957	loratadine
+Lorazepam	3958	lorazepam
+Magnesium	5462224	magnesium
+MagnesiumHydride	107663	magnesium hydride
+MagnesiumHydroxide	14791	magnesium hydroxide
+MagnesiumOxide	14792	magnesium oxide
+MagnesiumSulfide	10129888	magnesium sulfide
+Malonaldehyde	10964	malonaldehyde
+ManganeseHydroxide	73965	manganese hydroxide
+Methane	297	methane
+MethylMagnesiumChloride	12670	methylmagnesium chloride
+Methylphenidate	4158	methylphenidate
+Niacin	938	niacin
+NitricAcid	944	nitric acid
+NitricOxide	145068	nitric oxide
+Nitrogen	947	nitrogen
+NitrousAcid	24529	nitrous acid
+NitrousOxide	948	nitrous oxide
+Nonane	8141	nonane
+Norethindrone	4536	norethindrone
+Octane	356	octane
+Omeprazole	9568614	omeprazole
+Oxycodone	5284603	oxycodone
+Oxygen	977	oxygen
+PantothenicAcid	988	pantothenic acid
+Parathion	991	parathion
+Pentadecane	12391	pentadecane
+Pentane	8003	N-pentane
+PerchloricAcid	24247	perchloric acid
+Phentermine	4771	phentermine
+PhosphorousAcid	107909	phosphorous acid
+Piracetam	4843	piracetam
+PotassiumArsenite	61616	potassium arsenite
+PotassiumFluoride	522689	potassium fluoride
+PotassiumHydride	82127	potassium hydride
+PotassiumHydroxide	6093213	potassium hydroxide
+PotassiumNitrite	516910	potassium nitrite
+Procaine	4914	procaine
+Propane	6334	propane
+Propofol	4943	propofol
+Propranolol	4946	propranolol
+Pyridoxine	1054	pyridoxine
+Quinine	8549	quinine
+Riboflavin	1072	riboflavin
+Rohypnol	3380	flunitrazepam
+SilverNitrite	160904	silver nitrite
+SodiumBisulfite	656672	sodium bisulfite
+SodiumChloride	5234	sodium chloride
+SodiumChlorite	23668197	sodium chlorite
+SodiumHydride	24758	sodium hydride
+SodiumHydroxide	14798	sodium hydroxide
+SodiumHypochlorite	24340	sodium hypochlorite
+SodiumNitrite	23668193	sodium nitrite
+SodiumOxide	73971	sodium oxide
+SodiumSulfide	14804	sodium sulfide
+SodiumSulfite	24437	sodium sulfite
+StrontiumHydride	83606	strontium hydride
+Strychnine	5304	strychnine
+Sucrose	7566553	sucrose
+Sulfamethoxazole	5329	sulfamethoxazole
+SulfuricAcid	1118	sulfuric acid
+SulfurousAcid	1100	sulfurous acid
+Testosterone	5408	testosterone
+Tetradecane	12389	N-tetradecane
+Thymine	1135	thymine
+TitaniumIIHydride	197094	titanium hydride
+TitaniumNitride	93091	titanium nitride
+Trans1,2Dichloroethylene	638186	trans-1,2-dichloroethylene
+Tridecane	12388	tridecane
+Trimethoprim	5578	trimethoprim
+Tylenol	1983	acetaminophen
+Undecane	14257	undecane
+Valium	3016	diazepam
+Vanillin	1183	vanillin
+VinylCarbamate	27492	vinyl carbamate
+VitaminA	1071	vitamin A
+VitaminB1	6042	vitamin B1
+VitaminB4	190	adenine
+VitaminD2	7067801	vitamin D2
+VitaminD3	5280795	vitamin D3
+Water	962	water
