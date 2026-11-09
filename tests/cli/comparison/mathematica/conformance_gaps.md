@@ -8612,13 +8612,26 @@ sparse `LinearSolve` whose residual stays above `10^-12` in wolframscript.
   `(4*Cos[x]^3*Cos[2*x] + …)/12` there and `(3*Cos[x]*Cos[2*x] +
   Cos[2*x]*Cos[3*x] + …)/12` in Woxi (equal values), and likewise the
   initial value problem with `Sin[x]` forcing.
-- Euler equations (`x^2 y'' + x y' - y == 0`, `x^2 y'' + y == 0`) and other
-  variable-coefficient equations that are not exact
+- Cauchy–Euler equations are solved, but a forcing power that resonates
+  with a root (`x^2 y'' + x y' - 4 y == x^2`, wolframscript
+  `C[1]/x^2 + x^2*C[2] + (-x^2 + 4*x^2*Log[x])/16`) stays unevaluated.
+  Other variable-coefficient equations that are not exact
   (`x y'' + 2 y' + x y == 0`) stay unevaluated, and so does a system that
-  reduces to one (`{y' == 2 z, z' == -y/(2 x^2)}`). wolframscript labels the
-  constants of some Euler solutions in its own way
-  (`x^2*C[2]*Cos[3*Log[x]] + x^2*C[1]*Sin[3*Log[x]]`,
-  `C[1]/x^2 + (2*C[2]*Log[x])/x^2`).
+  reduces to one (`{y' == 2 z, z' == -y/(2 x^2)}`).
+- A boundary-value problem whose parameter makes it an eigenvalue problem
+  (`{x^2 y'' + x y' + (2 + l) y == 0, y'[1] == 0, y'[2] == 0}`) is solved
+  for generic `l` only, `{{y[x] -> 0}}`; wolframscript returns a
+  `Piecewise` of `C[1]*Cos[Sqrt[2 + l]*Log[x]]` under the eigenvalue
+  conditions (`l == (4*n^2*Pi^2 - 2*Log[2]^2)/Log[2]^2`, `n` an integer).
+- Damped pairs of characteristic roots are written term by term with
+  wolframscript's constant numbering only at second order; a higher-order
+  equation keeps them factored (`y'''' + 4 y == 0`:
+  `E^t*(C[1]*Cos[t] + C[2]*Sin[t]) + (C[3]*Cos[t] + C[4]*Sin[t])/E^t`,
+  wolframscript `(C[1]*Cos[t])/E^t + E^t*C[4]*Cos[t] + (C[2]*Sin[t])/E^t +
+  E^t*C[3]*Sin[t]`).
+- `x y'' == 1` gives `x*(-1 + Log[x]) + C[1] + x*C[2]`; wolframscript
+  sorts the product holding a call after `C[1]` (`C[1] + x*C[2] +
+  x*(-1 + Log[x])`), but `x*(1 + y)` before it.
 - A boundary-value solution over a denominator built from powers of `E` has
   its signs normalized differently: `{y'' == y, y[0] == 1, y[1] == 0}` is
   `-((-E^2 + E^(2*x))/(E^x*(-1 + E^2)))` in wolframscript and

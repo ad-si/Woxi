@@ -34,15 +34,23 @@ pub fn dsolve_ast_with_head(
   // An ODE Woxi can't classify/solve should stay unevaluated (like
   // wolframscript for genuinely unsolvable equations) rather than leaking an
   // internal "DSolve: …" error to the user.
-  // Nested lists of equations (`{{eqns…}, {conditions…}}`) are one system.
+  // Nested lists of equations (`{{eqns…}, {conditions…}}`) are one system,
+  // and so is a conjunction (`y''[x] + y[x] == 0 && y[0] == 1`).
+  let is_and =
+    |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "And");
   let flat_args;
   let solved_args = match args.first() {
-    Some(Expr::List(items))
-      if items.iter().any(|i| matches!(i, Expr::List(_))) =>
+    Some(first)
+      if is_and(first)
+        || matches!(first, Expr::List(items)
+          if items.iter().any(|i| matches!(i, Expr::List(_)) || is_and(i))) =>
     {
       fn flatten(e: &Expr, out: &mut Vec<Expr>) {
         match e {
           Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
+          Expr::FunctionCall { name, args } if name == "And" => {
+            args.iter().for_each(|i| flatten(i, out))
+          }
           other => out.push(other.clone()),
         }
       }
@@ -674,6 +682,10 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   } else if max_order == 2
     && let Some(solution) = solve_exact_second_order(&terms, &x_name)?
+  {
+    solution
+  } else if max_order == 2
+    && let Some(solution) = solve_cauchy_euler(&terms, &x_name)?
   {
     solution
   } else {
@@ -11841,7 +11853,12 @@ fn solve_constant_coefficient_ode(
   let roots = find_characteristic_roots(&coeffs, max_order)?;
 
   // Build the general homogeneous solution
-  let homogeneous = build_homogeneous_solution(&roots, x_name);
+  // A second-order equation's damped pair is written out term by term,
+  // its constants numbered as wolframscript numbers them.
+  let damped_swap = (max_order == 2 && coeffs[2] != 0.0).then(|| {
+    damped_pair_swaps_constants(coeffs[1] / coeffs[2], coeffs[0] / coeffs[2])
+  });
+  let homogeneous = build_homogeneous_solution(&roots, x_name, damped_swap);
 
   // If there's no forcing term, we're done
   if forcing.is_none() || matches!(&forcing, Some(Expr::Integer(0))) {
@@ -12415,9 +12432,240 @@ fn solve_symbolic_second_order(
   Ok(Some(eval(&solution)?))
 }
 
+/// The Cauchy–Euler equation `a2 x^2 y'' + a1 x y' + a0 y + f == 0` (in any
+/// scaling: `y'' + y'/x - 4 y/x^2 == 0` too), with the `a`s free of `x` and
+/// a polynomial forcing `f`. With `x = E^t` it has constant coefficients,
+/// so its solutions are powers of `x` (characteristic equation
+/// `r^2 + p r + q == 0`, `p = a1/a2 - 1`, `q = a0/a2`) written the way
+/// wolframscript writes them:
+///   * distinct real roots: `C[1] x^r1 + C[2] x^r2`, the smaller root first;
+///   * a double root: `C[1] x^r + C[2] Abs[r] x^r Log[x]`;
+///   * complex roots `α ± I β`: `x^α (C[2] Cos[β Log[x]] + C[1] Sin[β Log[x]])`
+///     with the constants swapped exactly as in the constant-coefficient
+///     case (see `damped_pair_swaps_constants`), expanded;
+///   * symbolic coefficients with `p == 0`: `C[1] Cos[s Log[x]] +
+///     C[2] Sin[s Log[x]]`, `s = PowerExpand[Sqrt[q]]`, and otherwise the
+///     powers of the symbolic roots.
+/// A forcing `Σ k_m x^m` adds `-Σ k_m x^m / P(m)` over one denominator,
+/// `P(m) = m^2 + p m + q`; a resonant power (`P(m) == 0`) is left alone.
+fn solve_cauchy_euler(
+  terms: &[OdeTerm],
+  x_name: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::functions::calculus_ast::is_constant_wrt;
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+  let coefficient = |order: i32| -> Result<Expr, InterpreterError> {
+    eval(&plus(
+      terms
+        .iter()
+        .filter(|t| t.order == order)
+        .map(|t| t.coefficient.clone())
+        .chain(std::iter::once(Expr::Integer(0)))
+        .collect(),
+    ))
+  };
+  let (a2, a1, a0, f) = (
+    coefficient(2)?,
+    coefficient(1)?,
+    coefficient(0)?,
+    coefficient(-1)?,
+  );
+  if matches!(a2, Expr::Integer(0)) || matches!(a0, Expr::Integer(0)) {
+    return Ok(None);
+  }
+  let x = id_expr(x_name);
+  let simplify = |e: Expr| eval(&call1("Simplify", e));
+  // Scaled to `x^2 y'' + b x y' + q y + g == 0`.
+  let b = simplify(div2(times2(x.clone(), a1), a2.clone()))?;
+  let q = simplify(div2(
+    times2(pow2(x.clone(), Expr::Integer(2)), a0),
+    a2.clone(),
+  ))?;
+  if !is_constant_wrt(&b, x_name) || !is_constant_wrt(&q, x_name) {
+    return Ok(None);
+  }
+  let p = eval(&plus2(b, Expr::Integer(-1)))?;
+  let numeric = |e: &Expr| eval_to_f64(e).ok();
+  let c = |i: i128| call1("C", Expr::Integer(i));
+  let log_x = call1("Log", x.clone());
+  let x_pow = |r: &Expr| pow2(x.clone(), r.clone());
+  let trig =
+    |head: &str, beta: &Expr| call1(head, times2(beta.clone(), log_x.clone()));
+
+  let homogeneous = match (numeric(&p), numeric(&q)) {
+    (Some(pn), Some(qn)) => {
+      let disc = eval(&plus2(
+        pow2(p.clone(), Expr::Integer(2)),
+        times2(Expr::Integer(-4), q.clone()),
+      ))?;
+      let disc_n = pn * pn - 4.0 * qn;
+      let half = |e: Expr| div2(e, Expr::Integer(2));
+      let minus_p = times2(Expr::Integer(-1), p.clone());
+      if disc_n.abs() < 1e-12 * (1.0 + pn * pn + qn.abs()) {
+        let r = eval(&half(minus_p))?;
+        plus2(
+          times2(c(1), x_pow(&r)),
+          times(vec![
+            c(2),
+            call1("Abs", r.clone()),
+            x_pow(&r),
+            log_x.clone(),
+          ]),
+        )
+      } else if disc_n > 0.0 {
+        let sq = call1("Sqrt", disc);
+        let r1 = simplify(half(plus2(
+          minus_p.clone(),
+          times2(Expr::Integer(-1), sq.clone()),
+        )))?;
+        let r2 = simplify(half(plus2(minus_p, sq)))?;
+        plus2(times2(c(1), x_pow(&r1)), times2(c(2), x_pow(&r2)))
+      } else {
+        let alpha = eval(&half(minus_p))?;
+        let beta =
+          simplify(half(call1("Sqrt", times2(Expr::Integer(-1), disc))))?;
+        if matches!(alpha, Expr::Integer(0)) {
+          plus2(
+            times2(c(1), trig("Cos", &beta)),
+            times2(c(2), trig("Sin", &beta)),
+          )
+        } else {
+          let (cos_c, sin_c) = if damped_pair_swaps_constants(pn, qn) {
+            (c(2), c(1))
+          } else {
+            (c(1), c(2))
+          };
+          plus2(
+            times(vec![x_pow(&alpha), cos_c, trig("Cos", &beta)]),
+            times(vec![x_pow(&alpha), sin_c, trig("Sin", &beta)]),
+          )
+        }
+      }
+    }
+    _ if matches!(p, Expr::Integer(0)) => {
+      let s = eval(&call1("PowerExpand", call1("Sqrt", q.clone())))?;
+      plus2(times2(c(1), trig("Cos", &s)), times2(c(2), trig("Sin", &s)))
+    }
+    (_, q_num) => {
+      // r = -p/2 ∓ Sqrt[p^2/4 - q]; a symbolic `q` is factored out of
+      // the bracket as wolframscript does (`(-(1/Sqrt[k]) -
+      // Sqrt[1 - k]/Sqrt[k])*Sqrt[k]`).
+      let half_p = eval(&div2(p.clone(), Expr::Integer(2)))?;
+      let rad = eval(&call1(
+        "Expand",
+        plus2(
+          pow2(half_p.clone(), Expr::Integer(2)),
+          times2(Expr::Integer(-1), q.clone()),
+        ),
+      ))?;
+      let root = |sign: i128| -> Result<Expr, InterpreterError> {
+        let sq = call1("Sqrt", rad.clone());
+        if q_num.is_some() {
+          eval(&call1(
+            "Together",
+            plus2(
+              times2(Expr::Integer(-1), half_p.clone()),
+              times2(Expr::Integer(sign), sq),
+            ),
+          ))
+        } else {
+          // Halved only when that leaves no fractions: `p == 2` gives
+          // `(-(1/Sqrt[k]) ∓ Sqrt[1 - k]/Sqrt[k])*Sqrt[k]`, `p == a - 1`
+          // `((-((-1 + a)/Sqrt[b]) ∓ Sqrt[1 - 2*a + a^2 - 4*b]/Sqrt[b])*
+          // Sqrt[b])/2`.
+          let integral = |e: &Expr| {
+            eval(&call1("Denominator", call1("Together", e.clone())))
+              .is_ok_and(|d| matches!(d, Expr::Integer(1)))
+          };
+          let (lin, sq, scale) = if integral(&half_p) && integral(&rad) {
+            (half_p.clone(), sq, Expr::Integer(1))
+          } else {
+            let full_rad = eval(&call1(
+              "Expand",
+              plus2(
+                pow2(p.clone(), Expr::Integer(2)),
+                times2(Expr::Integer(-4), q.clone()),
+              ),
+            ))?;
+            (
+              p.clone(),
+              call1("Sqrt", full_rad),
+              div2(Expr::Integer(1), Expr::Integer(2)),
+            )
+          };
+          let sqrt_q = call1("Sqrt", q.clone());
+          eval(&times(vec![
+            scale,
+            plus2(
+              times2(Expr::Integer(-1), div2(lin, sqrt_q.clone())),
+              times2(Expr::Integer(sign), div2(sq, sqrt_q.clone())),
+            ),
+            sqrt_q,
+          ]))
+        }
+      };
+      plus2(
+        times2(c(1), x_pow(&root(-1)?)),
+        times2(c(2), x_pow(&root(1)?)),
+      )
+    }
+  };
+
+  // The polynomial forcing, scaled like the equation.
+  let solution = if matches!(f, Expr::Integer(0)) {
+    homogeneous
+  } else {
+    let g = eval(&call1(
+      "Expand",
+      div2(times2(pow2(x.clone(), Expr::Integer(2)), f), a2),
+    ))?;
+    let coeffs = eval(&call("CoefficientList", vec![g.clone(), x.clone()]))?;
+    let Expr::List(ref coeffs) = coeffs else {
+      return Ok(None);
+    };
+    if !crate::functions::polynomial_ast::is_polynomial(&g, x_name) {
+      return Ok(None);
+    }
+    let mut particular = Vec::new();
+    for (m, k) in coeffs.iter().enumerate() {
+      if matches!(k, Expr::Integer(0)) {
+        continue;
+      }
+      let m = Expr::Integer(m as i128);
+      let pm = simplify(plus(vec![
+        pow2(m.clone(), Expr::Integer(2)),
+        times2(p.clone(), m.clone()),
+        q.clone(),
+      ]))?;
+      if matches!(pm, Expr::Integer(0)) {
+        return Ok(None);
+      }
+      particular.push(times(vec![
+        Expr::Integer(-1),
+        k.clone(),
+        pow2(x.clone(), m),
+        pow2(pm, Expr::Integer(-1)),
+      ]));
+    }
+    let particular = eval(&call1("Together", plus(particular)))?;
+    plus2(particular, homogeneous)
+  };
+  Ok(Some(eval(&solution)?))
+}
+
+/// Whether wolframscript attaches `C[2]` to the cosine of a damped complex
+/// pair `α ± I β` (`α != 0`) of `r^2 + p r + q == 0`: it numbers the
+/// constants after the first root of `Solve`, which has the negative
+/// imaginary part, except for `r^2 - r + 1` whose roots `(-1)^(1/3)` and
+/// `-(-1)^(2/3)` come the other way round.
+fn damped_pair_swaps_constants(p: f64, q: f64) -> bool {
+  !((p + 1.0).abs() < 1e-12 && (q - 1.0).abs() < 1e-12)
+}
+
 fn build_homogeneous_solution(
   roots: &[(f64, f64, usize)],
   x_name: &str,
+  damped_swap: Option<bool>,
 ) -> Expr {
   let x = id_expr(x_name);
   let mut terms: Vec<Expr> = Vec::new();
@@ -12457,6 +12705,25 @@ fn build_homogeneous_solution(
       c_idx += 1;
       let c2 = make_c(c_idx);
       c_idx += 1;
+
+      if real.abs() > 1e-10
+        && let Some(swap) = damped_swap
+      {
+        // `(C[2]*Cos[2*x])/E^x + (C[1]*Sin[2*x])/E^x`.
+        let (cos_c, sin_c) = if swap { (c2, c1) } else { (c1, c2) };
+        let exp_term = make_exp_term(*real, x_name);
+        terms.push(times(vec![
+          exp_term.clone(),
+          cos_c,
+          make_trig_term("Cos", *imag, x_name),
+        ]));
+        terms.push(times(vec![
+          exp_term,
+          sin_c,
+          make_trig_term("Sin", *imag, x_name),
+        ]));
+        continue;
+      }
 
       let cos_term = times2(c1, make_trig_term("Cos", *imag, x_name));
       let sin_term = times2(c2, make_trig_term("Sin", *imag, x_name));
@@ -12599,9 +12866,17 @@ fn solve_first_order_linear(
 
   // Normalize: y' + P(x)*y = Q(x)
   // P(x) = a0/a1, Q(x) = -forcing/a1
-  let p_expr = crate::functions::calculus_ast::simplify(div2(a0, a1.clone()));
-  let q_expr =
-    crate::functions::calculus_ast::simplify(div2(negate_expr(&forcing), a1));
+  // The quotients are evaluated first, so `x/x^2` is `1/x` and not a
+  // power of `x^2` whose integral `Log[x^2]/2` leaves `Sqrt[x^2]` in the
+  // solution.
+  let quotient = |n: Expr, d: Expr| {
+    let q = div2(n, d);
+    crate::functions::calculus_ast::simplify(
+      crate::evaluator::evaluate_expr_to_expr(&q).unwrap_or(q),
+    )
+  };
+  let p_expr = quotient(a0, a1.clone());
+  let q_expr = quotient(negate_expr(&forcing), a1);
 
   // Check for special cases
 
@@ -12764,6 +13039,43 @@ fn solve_second_order_without_unknown(
   terms: &[OdeTerm],
   x_name: &str,
 ) -> Result<Option<Expr>, InterpreterError> {
+  // `a(x) y'' + f(x) == 0` integrates twice: `C[1] + x C[2]` plus the
+  // double integral of `-f/a` (`x^2 y'' == 1` gives `C[1] + x*C[2] -
+  // Log[x]`).
+  if !terms.iter().any(|t| t.order == 1 || t.order == 0) {
+    let sum_of = |order: i32| {
+      plus(
+        terms
+          .iter()
+          .filter(|t| t.order == order)
+          .map(|t| t.coefficient.clone())
+          .chain(std::iter::once(Expr::Integer(0)))
+          .collect(),
+      )
+    };
+    let eval = crate::evaluator::evaluate_expr_to_expr;
+    let q = eval(&call1(
+      "Together",
+      div2(negate_expr(&sum_of(-1)), sum_of(2)),
+    ))?;
+    let x = id_expr(x_name);
+    let homogeneous = plus2(make_c(1), times2(x.clone(), make_c(2)));
+    if matches!(q, Expr::Integer(0)) {
+      return Ok(Some(homogeneous));
+    }
+    let integrate =
+      |e: Expr| crate::functions::calculus_ast::integrate_ast(&[e, x.clone()]);
+    let is_unevaluated = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Integrate");
+    let once = integrate(q)?;
+    if is_unevaluated(&once) {
+      return Ok(None);
+    }
+    let twice = integrate(once)?;
+    if is_unevaluated(&twice) {
+      return Ok(None);
+    }
+    return Ok(Some(plus2(homogeneous, twice)));
+  }
   let reduced: Vec<OdeTerm> = terms
     .iter()
     .map(|t| OdeTerm {

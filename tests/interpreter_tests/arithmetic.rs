@@ -700,6 +700,33 @@ mod arithmetic {
       assert_eq!(interpret("x^2 + (a + b) x^3").unwrap(), "x^2 + (a + b)*x^3");
     }
 
+    // A sum whose last term holds a reciprocal power of a positive power's
+    // base goes first (wolframscript-verified).
+    #[test]
+    fn sum_topped_by_reciprocal_power_leads_the_power() {
+      let cases = [
+        ("Sqrt[k]*(a + b/Sqrt[k])", "(a + b/Sqrt[k])*Sqrt[k]"),
+        ("k*(a + b/k)", "(a + b/k)*k"),
+        ("Sqrt[k]*(a + b c/Sqrt[k])", "(a + (b*c)/Sqrt[k])*Sqrt[k]"),
+        ("Sqrt[k] (a + b/k)", "(a + b/k)*Sqrt[k]"),
+        (
+          "Sqrt[k] (1/Sqrt[k] + Sqrt[1-k]/Sqrt[k])",
+          "(1/Sqrt[k] + Sqrt[1 - k]/Sqrt[k])*Sqrt[k]",
+        ),
+        ("k^2*(a + b k)", "k^2*(a + b*k)"),
+        ("k (1 + x/k^2)", "k*(1 + x/k^2)"),
+        ("k (a + f[b]/k)", "k*(a + f[b]/k)"),
+        ("(x + 1/Sqrt[k]) Sqrt[k]", "Sqrt[k]*(1/Sqrt[k] + x)"),
+      ];
+      for (input, expected) in cases {
+        assert_eq!(
+          interpret(&format!("Hold[{input}] // ReleaseHold")).unwrap(),
+          expected,
+          "{input}"
+        );
+      }
+    }
+
     #[test]
     fn sum_vs_sum_factor_order_by_top_coefficients() {
       assert_eq!(

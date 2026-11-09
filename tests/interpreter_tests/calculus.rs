@@ -9438,6 +9438,208 @@ Round[N[closed] - N[numeric], 10^-6]"
       "Got: {result}"
     );
   }
+
+  // All expectations below are wolframscript's output.
+  fn euler(a: &str, b: &str, c: &str) -> String {
+    interpret(&format!(
+      "DSolve[({a}) x^2 y''[x] + ({b}) x y'[x] + ({c}) y[x] == 0, y[x], x]"
+    ))
+    .unwrap()
+  }
+
+  #[test]
+  fn cauchy_euler_real_roots() {
+    assert_eq!(euler("1", "0", "-2"), "{{y[x] -> C[1]/x + x^2*C[2]}}");
+    assert_eq!(euler("2", "1", "-1"), "{{y[x] -> C[1]/Sqrt[x] + x*C[2]}}");
+    assert_eq!(
+      euler("1", "1", "-2"),
+      "{{y[x] -> C[1]/x^Sqrt[2] + x^Sqrt[2]*C[2]}}"
+    );
+    assert_eq!(
+      euler("1", "0", "-3/4"),
+      "{{y[x] -> C[1]/Sqrt[x] + x^(3/2)*C[2]}}"
+    );
+  }
+
+  #[test]
+  fn cauchy_euler_double_root_scales_the_log_by_the_root() {
+    assert_eq!(euler("1", "3", "1"), "{{y[x] -> C[1]/x + (C[2]*Log[x])/x}}");
+    assert_eq!(
+      euler("1", "5", "4"),
+      "{{y[x] -> C[1]/x^2 + (2*C[2]*Log[x])/x^2}}"
+    );
+    assert_eq!(
+      euler("4", "0", "1"),
+      "{{y[x] -> Sqrt[x]*C[1] + (Sqrt[x]*C[2]*Log[x])/2}}"
+    );
+    assert_eq!(euler("1", "-1", "1"), "{{y[x] -> x*C[1] + x*C[2]*Log[x]}}");
+  }
+
+  #[test]
+  fn cauchy_euler_complex_roots() {
+    assert_eq!(
+      euler("1", "1", "5"),
+      "{{y[x] -> C[1]*Cos[Sqrt[5]*Log[x]] + C[2]*Sin[Sqrt[5]*Log[x]]}}"
+    );
+    assert_eq!(
+      euler("1", "3", "5"),
+      "{{y[x] -> (C[2]*Cos[2*Log[x]])/x + (C[1]*Sin[2*Log[x]])/x}}"
+    );
+    assert_eq!(
+      euler("1", "0", "3"),
+      "{{y[x] -> Sqrt[x]*C[2]*Cos[(Sqrt[11]*Log[x])/2] + \
+       Sqrt[x]*C[1]*Sin[(Sqrt[11]*Log[x])/2]}}"
+    );
+    // r^2 - r + 1: the one damped pair whose constants are not swapped.
+    assert_eq!(
+      euler("1", "0", "1"),
+      "{{y[x] -> Sqrt[x]*C[1]*Cos[(Sqrt[3]*Log[x])/2] + \
+       Sqrt[x]*C[2]*Sin[(Sqrt[3]*Log[x])/2]}}"
+    );
+  }
+
+  #[test]
+  fn cauchy_euler_symbolic_coefficients() {
+    assert_eq!(
+      euler("1", "1", "2 + l"),
+      "{{y[x] -> C[1]*Cos[Sqrt[2 + l]*Log[x]] + \
+       C[2]*Sin[Sqrt[2 + l]*Log[x]]}}"
+    );
+    assert_eq!(
+      euler("1", "1", "-k^2"),
+      "{{y[x] -> C[1]*Cosh[k*Log[x]] + I*C[2]*Sinh[k*Log[x]]}}"
+    );
+    assert_eq!(
+      euler("2", "2", "k"),
+      "{{y[x] -> C[1]*Cos[(Sqrt[k]*Log[x])/Sqrt[2]] + \
+       C[2]*Sin[(Sqrt[k]*Log[x])/Sqrt[2]]}}"
+    );
+    assert_eq!(
+      euler("1", "a", "1"),
+      "{{y[x] -> x^((1 - a - Sqrt[-3 - 2*a + a^2])/2)*C[1] + \
+       x^((1 - a + Sqrt[-3 - 2*a + a^2])/2)*C[2]}}"
+    );
+    assert_eq!(
+      euler("1", "3", "k"),
+      "{{y[x] -> x^((-(1/Sqrt[k]) - Sqrt[1 - k]/Sqrt[k])*Sqrt[k])*C[1] + \
+       x^((-(1/Sqrt[k]) + Sqrt[1 - k]/Sqrt[k])*Sqrt[k])*C[2]}}"
+    );
+    assert_eq!(
+      euler("1", "4", "k"),
+      "{{y[x] -> x^(((-3/Sqrt[k] - Sqrt[9 - 4*k]/Sqrt[k])*Sqrt[k])/2)*C[1] + \
+       x^(((-3/Sqrt[k] + Sqrt[9 - 4*k]/Sqrt[k])*Sqrt[k])/2)*C[2]}}"
+    );
+    assert_eq!(
+      euler("1", "a", "b"),
+      "{{y[x] -> x^(((-((-1 + a)/Sqrt[b]) - Sqrt[1 - 2*a + a^2 - 4*b]/Sqrt[b])\
+       *Sqrt[b])/2)*C[1] + x^(((-((-1 + a)/Sqrt[b]) + \
+       Sqrt[1 - 2*a + a^2 - 4*b]/Sqrt[b])*Sqrt[b])/2)*C[2]}}"
+    );
+  }
+
+  #[test]
+  fn cauchy_euler_divided_form_forcing_and_conditions() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y'[x]/x - 4 y[x]/x^2 == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[1]/x^2 + x^2*C[2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] + x y'[x] - y[x] == 4, y[x], x]").unwrap(),
+      "{{y[x] -> -4 + C[1]/x + x*C[2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] - 2 y[x] == x, y[x], x]").unwrap(),
+      "{{y[x] -> -1/2*x + C[1]/x + x^2*C[2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] + x y'[x] - 4 y[x] == x^3 + 1, y[x], x]")
+        .unwrap(),
+      "{{y[x] -> (-5 + 4*x^3)/20 + C[1]/x^2 + x^2*C[2]}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolve[{x^2 y''[x] + 3 x y'[x] + y[x] == 0, y[1] == 2, y'[1] == 1}, \
+         y[x], x]"
+      )
+      .unwrap(),
+      "{{y[x] -> (2 + 3*Log[x])/x}}"
+    );
+    assert_eq!(
+      interpret(
+        "DSolve[{x^2 y''[x] - 2 y[x] == 0, y[1] == 1, y[2] == 3}, y[x], x]"
+      )
+      .unwrap(),
+      "{{y[x] -> (2 + 5*x^3)/(7*x)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] + x y'[x] + 4 y[x] == 0, y, x]").unwrap(),
+      "{{y -> Function[{x}, C[1]*Cos[2*Log[x]] + C[2]*Sin[2*Log[x]]]}}"
+    );
+  }
+
+  #[test]
+  fn damped_constant_coefficient_pair_is_written_term_by_term() {
+    assert_eq!(
+      interpret("DSolve[y''[t] + 2 y'[t] + 5 y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> (C[2]*Cos[2*t])/E^t + (C[1]*Sin[2*t])/E^t}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[t] - y'[t] + 3 y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> E^(t/2)*C[2]*Cos[(Sqrt[11]*t)/2] + \
+       E^(t/2)*C[1]*Sin[(Sqrt[11]*t)/2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[2 y''[t] - 2 y'[t] + 2 y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> E^(t/2)*C[1]*Cos[(Sqrt[3]*t)/2] + \
+       E^(t/2)*C[2]*Sin[(Sqrt[3]*t)/2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[t] + y'[t] + y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> (C[2]*Cos[(Sqrt[3]*t)/2])/E^(t/2) + \
+       (C[1]*Sin[(Sqrt[3]*t)/2])/E^(t/2)}}"
+    );
+    assert_eq!(
+      interpret("DSolve[y''[t] + 2 y'[t] + 5 y[t] == 3, y[t], t]").unwrap(),
+      "{{y[t] -> 3/5 + (C[2]*Cos[2*t])/E^t + (C[1]*Sin[2*t])/E^t}}"
+    );
+  }
+
+  #[test]
+  fn equations_without_the_unknown_itself() {
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] + x y'[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[2] + C[1]*Log[x]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] == 0, y[x], x]").unwrap(),
+      "{{y[x] -> C[1] + x*C[2]}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 y''[x] == 1, y[x], x]").unwrap(),
+      "{{y[x] -> C[1] + x*C[2] - Log[x]}}"
+    );
+  }
+
+  #[test]
+  fn first_order_integrating_factor_of_a_power_quotient() {
+    // x/x^2 is 1/x: the integrating factor is x, not Sqrt[x^2].
+    assert_eq!(
+      interpret("DSolve[x^2 v'[x] + x v[x] == 0, v[x], x]").unwrap(),
+      "{{v[x] -> C[1]/x}}"
+    );
+    assert_eq!(
+      interpret("DSolve[x^2 v'[x] + x v[x] == x, v[x], x]").unwrap(),
+      "{{v[x] -> 1 + C[1]/x}}"
+    );
+  }
+
+  #[test]
+  fn conditions_joined_with_and() {
+    assert_eq!(
+      interpret("DSolve[y''[x] + y[x] == 0 && y[0] == 1, y[x], x]").unwrap(),
+      "{{y[x] -> Cos[x] + C[2]*Sin[x]}}"
+    );
+  }
 }
 
 mod ndsolve {

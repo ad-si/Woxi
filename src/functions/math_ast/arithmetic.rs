@@ -7840,6 +7840,15 @@ fn order_factor_vs_additive(
   {
     return Ordering::Less;
   }
+  // A sum topped by a reciprocal power of a positive power's base leads
+  // it: `(a + b/k)*k`, `(a + (b*c)/Sqrt[k])*Sqrt[k]`, `(a + b/k)*Sqrt[k]`
+  // — but `k^2*(a + b*k)` (wolframscript-verified).
+  if let (Some(f), Some(h)) = (fe, he)
+    && f > 0.0
+    && h < 0.0
+  {
+    return Ordering::Greater;
+  }
   // A sum topped by a reciprocal power leads a symbolic power of the same
   // base: `(1 + n^(-1))*n^a`, `(1 + 1/(12*n))*n^(1/2 + n)`
   // (wolframscript-verified; `n^n*(1 + n)` keeps the factor first).
