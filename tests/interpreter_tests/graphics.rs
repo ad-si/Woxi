@@ -1603,6 +1603,22 @@ mod graphics {
       assert!(svg.contains("rotate(-90.0000)"), "{svg}");
     }
 
+    /// `Inset[Magnify[g, s], pos]` embeds the picture scaled by `s`. It
+    /// used to print `Magnify[-Image-, s]` as text.
+    #[test]
+    fn a_magnified_image_inset_is_embedded_scaled() {
+      let svg = export_svg(
+        "Graphics[Inset[Magnify[Rotate[Image[{{0, 1}, {1, 0}}], 0.], 3.5], \
+         {0, 0}]]",
+      );
+      assert!(
+        !svg.contains("Magnify[") && svg.contains("<image"),
+        "the image must be drawn, not named: {svg}"
+      );
+      assert!(svg.contains("scale(3.500000)"), "{svg}");
+      assert!(svg.contains("width=\"7.00\""), "{svg}");
+    }
+
     /// `Inset[Show[RegionPlot[…], Graphics[…]], pos, opos, size]` embeds the
     /// framed plot whole: folding its primitives into the enclosing picture
     /// used to drop the frame and strand a point drawn in the plot's

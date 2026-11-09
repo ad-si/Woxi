@@ -6688,6 +6688,44 @@ fn inset_primitives(
       return Some(prims);
     }
   }
+  // `Inset[Magnify[g, s], …]` shows the embedded picture scaled by `s`
+  // (1 by default); the inset occupies the scaled box, centered on the
+  // anchor.
+  if let Expr::FunctionCall {
+    name: magnify,
+    args: margs,
+  } = &args[0]
+    && magnify == "Magnify"
+    && (margs.len() == 1 || margs.len() == 2)
+    && !matches!(margs[0], Expr::String(_))
+    && let Some(scale) = match margs.get(1) {
+      Some(factor) => crate::functions::math_ast::try_eval_to_f64(factor),
+      None => Some(1.0),
+    }
+    && scale > 0.0
+  {
+    let mut inner_args = args.to_vec();
+    inner_args[0] = margs[0].clone();
+    if let Some(mut prims) = inset_primitives(&inner_args, errors) {
+      if let [
+        Primitive::InsetGraphic {
+          svg, w, h, size, ..
+        },
+      ] = prims.as_mut_slice()
+      {
+        let (sw, sh) = (*w * scale, *h * scale);
+        *svg = format!(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{sw:.2}\" \
+           height=\"{sh:.2}\" viewBox=\"0 0 {sw:.2} {sh:.2}\">\
+           <g transform=\"scale({scale:.6})\">{svg}</g></svg>"
+        );
+        *size = size.map(|(a, b)| (a * scale, b * scale));
+        (*w, *h) = (sw, sh);
+        return Some(prims);
+      }
+      return Some(prims);
+    }
+  }
   // An `Automatic` position is the plot's origin, the same point a missing
   // one falls back to when the object is folded in below.
   let anchor = match args.get(1) {
