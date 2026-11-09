@@ -5798,6 +5798,24 @@ mod mapped_layout_tests {
     assert_eq!(labels, vec!["1/2", "11/2"]);
   }
 
+  /// `Text@Switch[mode, …]` whose chosen branch is a `Row` holding a `Column`
+  /// lays the branch out as nested containers instead of printing the
+  /// nested `Column[{…}]` call as source.
+  #[test]
+  fn text_switch_branch_lays_out_nested_row_and_column() {
+    let node = build_manipulate_display(
+      r#"Text@Switch[sh,
+        1, Row[{Column[Table[Row[{ToString[i], ". ", "x"}], {i, 1, 2}]],
+          Spacer[30], Column[{"Axiom", "y"}]}],
+        2, "two"]"#,
+      &[("sh".to_string(), "1".to_string())],
+    );
+    let dump = format!("{node:?}");
+    assert!(!dump.contains("Column["), "{dump}");
+    assert!(dump.contains("Axiom"), "{dump}");
+    assert!(dump.contains("Spacer"), "{dump}");
+  }
+
   /// `SpanFromLeft` in a display `Grid` is layout, not a cell to draw.
   #[test]
   fn display_grid_span_marker_draws_nothing() {
