@@ -24345,6 +24345,20 @@ mod show {
     );
   }
 
+  // The list of graphics evaluates as a list, so a variable whose value
+  // is `Nothing` drops out instead of reaching Show (Show::gcomb).
+  #[test]
+  fn show_list_drops_a_nothing_valued_variable() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Module[{a = Graphics[Disk[]], b = If[False, 1, Nothing]}, \
+       ToString[Show[{a, b}], InputForm]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Graphics[Disk[{0, 0}]]");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // A symbol without a value is no graphic: Show stays unevaluated.
   #[test]
   fn show_of_a_symbol_cannot_combine() {

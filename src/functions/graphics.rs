@@ -20359,6 +20359,22 @@ fn clip_segment_to_y_range(
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // Show's arguments reach it held, but Show is not HoldAll in Wolfram
+  // Language: a list of graphics evaluates as a list first, so a `Nothing`
+  // element (e.g. a variable set to `If[c, g, Nothing]`) is dropped.
+  let evaluated: Vec<Expr>;
+  let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::List(_))) {
+    evaluated = args
+      .iter()
+      .map(|a| match a {
+        Expr::List(_) => evaluate_expr_to_expr(a),
+        other => Ok(other.clone()),
+      })
+      .collect::<Result<_, _>>()?;
+    &evaluated
+  } else {
+    args
+  };
   // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
   // graphic inside and keeps its legend on the result, as Wolfram does:
   // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
