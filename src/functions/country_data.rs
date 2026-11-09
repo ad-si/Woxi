@@ -322,6 +322,7 @@ struct Record {
   full_name: &'static str,
   continents: Vec<&'static str>,
   area: Option<f64>,
+  land_area: Option<f64>,
   population: Vec<Option<f64>>,
   gdp: Vec<Option<f64>>,
 }
@@ -344,15 +345,16 @@ static RECORDS: std::sync::LazyLock<Vec<Record>> =
       .filter(|l| !l.starts_with('#') && !l.is_empty())
       .filter_map(|line| {
         let f: Vec<&'static str> = line.split('\t').collect();
-        (f.len() == 8).then(|| Record {
+        (f.len() == 9).then(|| Record {
           entity: f[0],
           iso3: f[1],
           name: f[2],
           full_name: f[3],
           continents: f[4].split(',').filter(|c| !c.is_empty()).collect(),
           area: f[5].parse().ok(),
-          population: series(f[6]),
-          gdp: series(f[7]),
+          land_area: f[6].parse().ok(),
+          population: series(f[7]),
+          gdp: series(f[8]),
         })
       })
       .collect()
@@ -524,10 +526,16 @@ fn record_property(
       Some(c) => call("EntityClass", vec![str_expr("Country"), str_expr(c)]),
       None => missing("NotApplicable", property),
     },
-    "Area" => match r.area {
-      Some(a) => quantity_in(Expr::Real(a), "\"Kilometers\"^2")?,
-      None => missing("NotAvailable", property),
-    },
+    "Area" | "LandArea" => {
+      match if property == "Area" {
+        r.area
+      } else {
+        r.land_area
+      } {
+        Some(a) => quantity_in(Expr::Real(a), "\"Kilometers\"^2")?,
+        None => missing("NotAvailable", property),
+      }
+    }
     "Population" | "GDP" | "GDPPerCapita" => {
       match series_of(r, property).as_deref().and_then(latest) {
         Some((_, v)) => statistic_quantity(property, v)?,
@@ -566,7 +574,7 @@ fn continents() -> Vec<&'static str> {
 /// Members of a class name: a continent, `"Countries"`, or one of the
 /// static classes (`"EU"`, `"Europe"`).
 fn class_members(class: &str) -> Option<Vec<Expr>> {
-  if class == "Countries" || class == "All" {
+  if class == "Countries" {
     return Some(country_entities());
   }
   if continents().contains(&class) {
@@ -727,11 +735,42 @@ pub fn country_property(name: &str, property: &str) -> Option<Expr> {
     }
     "Name" => str_expr(country.canonical),
     "FullName" => str_expr(country.canonical),
-    "Shape" => match crate::functions::geographics::country_schematic_polygon(
+    // WL's `Graphics[{fill, EdgeForm[Black], Polygon[{ring, …}]}]`, here
+    // with the rings in plain {lon, lat} degrees.
+    "Shape" => match crate::functions::geographics::country_outline_rings(Some(
       country.canonical,
-    ) {
-      Some(p) => call("Graphics", vec![p]),
-      None => missing("NotAvailable", property),
+    )) {
+      Some(rings) if !rings.is_empty() => {
+        let rings: Vec<Expr> = rings
+          .iter()
+          .map(|ring| {
+            Expr::List(
+              ring
+                .iter()
+                .map(|&(lon, lat)| {
+                  Expr::List(
+                    vec![Expr::Real(lon as f64), Expr::Real(lat as f64)].into(),
+                  )
+                })
+                .collect::<Vec<_>>()
+                .into(),
+            )
+          })
+          .collect();
+        eval_wl("{RGBColor[0.896, 0.8878, 0.8548], EdgeForm[GrayLevel[0]]}")
+          .map_or_else(
+            |_| missing("NotAvailable", property),
+            |style| {
+              let mut prims = match &style {
+                Expr::List(items) => items.to_vec(),
+                other => vec![other.clone()],
+              };
+              prims.push(call("Polygon", vec![Expr::List(rings.into())]));
+              call("Graphics", vec![Expr::List(prims.into())])
+            },
+          )
+      }
+      _ => missing("NotAvailable", property),
     },
     _ => missing("NotAvailable", property),
   })
@@ -760,6 +799,16 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &normalized[..];
   match args {
     [] => Ok(Expr::List(country_entities().into())),
+    [Expr::Identifier(all)] if all == "All" => {
+      Ok(Expr::List(country_entities().into()))
+    }
+    [Expr::Identifier(all), prop] if all == "All" => {
+      let values = country_entities()
+        .iter()
+        .map(|m| country_data_ast(&[m.clone(), prop.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      Ok(Expr::List(values.into()))
+    }
     [Expr::String(s)] if s == "Continents" => Ok(Expr::List(
       continents()
         .into_iter()

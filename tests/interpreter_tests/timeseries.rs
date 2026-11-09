@@ -312,16 +312,21 @@ mod time_series {
   }
 
   #[test]
-  fn length_is_temporal_data_arity() {
-    // A TimeSeries materializes as a 4-argument TemporalData object in WL, so
-    // its Length is always 4 — not the number of data points.
+  fn length_counts_time_stamps() {
+    // WL 15 counts a TimeSeries's time stamps (regression: Woxi used to
+    // answer the TemporalData arity, 4).
     assert_eq!(
       interpret("Length[TimeSeries[{{1, 10}, {2, 20}}]]").unwrap(),
-      "4"
+      "2"
     );
     assert_eq!(
       interpret("Length[TimeSeries[{{1, 10}, {2, 20}, {3, 30}}]]").unwrap(),
-      "4"
+      "3"
+    );
+    assert_eq!(
+      interpret("Length[TimeSeries[{{{2001}, 1}, {{2002}, 2}, {{2003}, 3}}]]")
+        .unwrap(),
+      "3"
     );
   }
 

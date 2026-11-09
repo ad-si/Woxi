@@ -6,7 +6,7 @@ Source: World Bank Open Data, World Development Indicators
 (https://data.worldbank.org), licensed CC BY 4.0
 (https://www.worldbank.org/en/about/legal/terms-of-use-for-datasets).
 Indicators: SP.POP.TOTL (population), NY.GDP.MKTP.CD (GDP, current US$),
-AG.SRF.TOTL.K2 (surface area, km^2).
+AG.SRF.TOTL.K2 (surface area, km^2), AG.LND.TOTL.K2 (land area, km^2).
 
 Input: scripts/country_data_entities.tsv with the columns
     entity  iso3  name  fullname  continents
@@ -15,8 +15,9 @@ names only; no statistics). `continents` lists the continent classes the
 country belongs to, its primary continent first.
 
 Output columns (tab separated, one country per line):
-    entity iso3 name fullname continents area population gdp
+    entity iso3 name fullname continents area landarea population gdp
   area        latest surface area in km^2, or empty
+  landarea    latest land area in km^2, or empty
   population  yearly values FIRST_YEAR..LAST_YEAR, comma separated, empty
               entries for missing years
   gdp         likewise, in current US dollars
@@ -71,6 +72,7 @@ def main():
     pop = indicator("SP.POP.TOTL")
     gdp = indicator("NY.GDP.MKTP.CD")
     area = indicator("AG.SRF.TOTL.K2")
+    land = indicator("AG.LND.TOTL.K2")
     years = range(FIRST_YEAR, LAST_YEAR + 1)
     lines = [
         "# Source: World Bank World Development Indicators, CC BY 4.0. "
@@ -81,8 +83,11 @@ def main():
         entity, iso3, name, fullname, continents = line.split("\t")
         a = area.get(iso3, {})
         latest_area = a[max(a)] if a else None
+        la = land.get(iso3, {})
+        latest_land = la[max(la)] if la else None
         lines.append("\t".join([
             entity, iso3, name, fullname, continents, num(latest_area),
+            num(latest_land),
             ",".join(num(pop.get(iso3, {}).get(y)) for y in years),
             ",".join(num(gdp.get(iso3, {}).get(y)) for y in years),
         ]))
