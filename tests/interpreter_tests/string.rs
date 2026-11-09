@@ -4708,6 +4708,27 @@ mod string_split_edge {
   }
 
   #[test]
+  fn split_multiple_literal_delimiters() {
+    assert_eq!(
+      interpret(r#"StringSplit["α<t>βγ</t>δ<t>", {"<t>", "</t>"}]"#).unwrap(),
+      "{α, βγ, δ}"
+    );
+    assert_eq!(
+      interpret(r#"StringSplit["a,b.c,d", {",", "."}, 2]"#).unwrap(),
+      "{a, b.c,d}"
+    );
+    // Regression: each scan step used to re-collect the whole remainder,
+    // so splitting a long text with a delimiter list was quadratic.
+    assert_eq!(
+      interpret(
+        r#"Length[StringSplit[StringJoin[Table["abc<type>x</type>def", {50000}]], {"<type>", "</type>"}]]"#
+      )
+      .unwrap(),
+      "100001"
+    );
+  }
+
+  #[test]
   fn split_threads_list_with_delim() {
     assert_eq!(
       interpret(r#"StringSplit[{"a-b-c", "x-y"}, "-"]"#).unwrap(),

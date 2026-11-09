@@ -1136,34 +1136,30 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // (mirroring `splitn`), matching wolframscript.
     let mut sorted_delims = delims.clone();
     sorted_delims.sort_by_key(|b| std::cmp::Reverse(b.len()));
+    // Byte offsets into `s` (always on char boundaries), so each step is
+    // O(delimiter length) rather than re-collecting the remainder.
     let mut result = Vec::new();
-    let mut current = String::new();
-    let chars: Vec<char> = s.chars().collect();
+    let mut piece_start = 0;
     let mut i = 0;
-    while i < chars.len() {
+    while i < s.len() {
       if let Some(n) = max_parts
         && result.len() == n - 1
       {
-        current.extend(&chars[i..]);
         break;
       }
-      let remaining: String = chars[i..].iter().collect();
-      let mut matched = false;
-      for d in &sorted_delims {
-        if !d.is_empty() && remaining.starts_with(d.as_str()) {
-          result.push(Expr::String(current.clone()));
-          current.clear();
-          i += d.chars().count();
-          matched = true;
-          break;
-        }
-      }
-      if !matched {
-        current.push(chars[i]);
-        i += 1;
+      let remaining = &s[i..];
+      if let Some(d) = sorted_delims
+        .iter()
+        .find(|d| !d.is_empty() && remaining.starts_with(d.as_str()))
+      {
+        result.push(str_expr(&s[piece_start..i]));
+        i += d.len();
+        piece_start = i;
+      } else {
+        i += remaining.chars().next().map_or(1, char::len_utf8);
       }
     }
-    result.push(Expr::String(current));
+    result.push(str_expr(&s[piece_start..]));
     result
   };
   // Leading/trailing empty pieces are only dropped when no explicit maximum
