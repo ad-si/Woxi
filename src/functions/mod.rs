@@ -84,6 +84,7 @@ pub mod lighting3d;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod list_plot;
+pub mod mann_whitney_test;
 pub mod map_projection;
 pub mod math_ast;
 pub mod memory;

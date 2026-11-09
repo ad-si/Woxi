@@ -3280,7 +3280,7 @@ AggregationLayer,"",🚫,,11.1,3306
 AlgebraicNumberNorm,"Norm of an algebraic number (product of its conjugates over the rationals)",✅,pure,6.0,3306
 LightingAngle,"",🚫,,6.0,3306
 LineIntegralConvolutionScale,"",,,7.0,3306
-MannWhitneyTest,"",,,8.0,3306
+MannWhitneyTest,"Mann-Whitney U test of the median difference of two samples (exact up to 40 values then normal approximation)",✅,pure,8.0,3306
 PageRankCentrality,"PageRank centrality of graph vertices with damping factor alpha",✅,pure,8.0,3306
 PowerModList,"List of successive power-mod values",✅,none,6.0,3306
 StreamColorFunctionScaling,"",,,7.0,3306

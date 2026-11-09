@@ -1278,6 +1278,11 @@ pub fn dispatch_math_functions(
     "ZTest" if !args.is_empty() && args.len() <= 4 => {
       return Some(crate::functions::math_ast::ztest_ast(args));
     }
+    "MannWhitneyTest" if !args.is_empty() => {
+      return Some(crate::functions::mann_whitney_test::mann_whitney_test_ast(
+        args,
+      ));
+    }
     "VarianceEquivalenceTest" if !args.is_empty() => {
       return Some(
         crate::functions::variance_equivalence_test::variance_equivalence_test_ast(
