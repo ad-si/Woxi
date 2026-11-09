@@ -905,6 +905,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "LinearSolve" => Some((1, 3)),
     "LiouvilleLambda" => Some((1, 1)),
     "ListConvolve" => Some((2, 6)),
+    "ListDeconvolve" => Some((2, usize::MAX)),
     "ListCorrelate" => Some((2, 6)),
     "FourierSequenceTransform" => Some((3, 4)),
     "ListFourierSequenceTransform" => Some((2, 4)),

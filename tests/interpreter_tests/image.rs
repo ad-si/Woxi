@@ -2904,36 +2904,33 @@ mod image_processing {
     );
   }
 
-  // ImageDeconvolve inverts ImageConvolve in the frequency domain (a
-  // regularized inverse filter shared by the "DampedLS"/"Tikhonov"/
-  // "Wiener" methods). A 1×1 identity kernel is the cleanest correctness
-  // check: its DFT is exactly 1 everywhere, so deconvolving with it should
-  // recover the input, up to the tiny default regularization term.
+  // ImageDeconvolve runs ListDeconvolve's spectral core on each channel
+  // after wolframscript's own input preparation: an image narrower than 3
+  // is padded by one pixel (Padding, default "Reversed"), and a 1×1 kernel
+  // is padded to 2×2 with the 1 in its lower right corner, i.e. off-center
+  // — so a 1×1 identity kernel does not reproduce a one-row image.
   #[test]
-  fn image_deconvolve_identity_kernel_recovers_input() {
+  fn image_deconvolve_small_image_and_kernel() {
     clear_state();
     assert_eq!(
       interpret("ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]")
         .unwrap(),
-      "{{0.09990009665489197, 0.4995005130767822, 0.8991008996963501}}"
+      "{{0.5, 0.6560975313186646, 0.6073170900344849}}"
     );
     assert_eq!(
       interpret(
         "ImageData[ImageDeconvolve[Image[{{0.1, 0.2}, {0.3, 0.4}}], {{1}}]]"
       )
       .unwrap(),
-      "{{0.09990009665489197, 0.19980019330978394}, \
-       {0.2997002899646759, 0.39960038661956787}}"
+      "{{0.2800000011920929, 0.2800000011920929}, \
+       {0.2800000011920929, 0.2800000011920929}}"
     );
   }
 
-  // With `Padding -> "Periodic"` on both sides, deconvolving a manually
-  // (circularly) box-blurred row with the same box kernel recovers the
-  // original row closely — the boundary convention that `ImageConvolve`
-  // itself doesn't expose an option for, so the forward blur here is
-  // computed by hand to match.
+  // A 1×3 kernel is padded to 2×3 rows and — a wolframscript quirk —
+  // loses its last column, deconvolving with {{0, 0}, {1/3, 1/3}}.
   #[test]
-  fn image_deconvolve_recovers_periodic_box_blur() {
+  fn image_deconvolve_kernel_trim_quirk() {
     clear_state();
     assert_eq!(
       interpret(
@@ -2942,14 +2939,42 @@ mod image_processing {
          {{1, 1, 1}}/3, Padding -> \"Periodic\"]]"
       )
       .unwrap(),
-      "{{0.8959326148033142, 0.10306838899850845, 0.8959326148033142, \
-       0.10306838899850845}}"
+      "{{0.75, 0.75, 0.75, 0.75}}"
     );
   }
 
-  // Method -> {"Tikhonov", λ} takes an explicit regularization parameter
-  // instead of the automatic one; a larger λ damps the inverse filter
-  // more, moving the result further from an exact (unregularized) inverse.
+  // On an image of at least 3×3 with an odd kernel, ImageDeconvolve is
+  // ListDeconvolve of the image data (Real32-rounded).
+  #[test]
+  fn image_deconvolve_matches_list_deconvolve() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "img = Image[{{0.1, 0.5, 0.9, 0.3}, {0.2, 0.8, 0.4, 0.6}, \
+         {0.7, 0.3, 0.5, 0.1}, {0.9, 0.2, 0.6, 0.4}}]; \
+         k = {{0, 1/8., 0}, {1/8., 1/2., 1/8.}, {0, 1/8., 0}}; \
+         {Round[10^6 First[ImageData[ImageDeconvolve[img, k]]]], \
+          Round[10^6 First[ListDeconvolve[k, ImageData[img]]]], \
+          Round[10^6 First[ImageData[ImageDeconvolve[img, k, \
+            Method -> \"Wiener\"]]]]}"
+      )
+      .unwrap(),
+      "{{377694, 461189, 510930, 488888}, {377694, 461189, 510930, 488888}, \
+       {-578055, 777050, 1150687, 301219}}"
+    );
+    // Integer types round the result in their own units.
+    assert_eq!(
+      interpret(
+        "ImageData[ImageDeconvolve[Image[{{1, 0, 1}, {0, 1, 0}, {1, 1, 0}}, \
+         \"Byte\"], {{0, 1/8., 0}, {1/8., 1/2., 1/8.}, {0, 1/8., 0}}], \
+         \"Byte\"]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}, {1, 1, 0}, {1, 1, 0}}"
+    );
+  }
+
+  // Method -> {"Tikhonov", λ} takes an explicit regularization parameter.
   #[test]
   fn image_deconvolve_method_option() {
     clear_state();
@@ -2959,7 +2984,7 @@ mod image_processing {
          Method -> {\"Tikhonov\", 0.01}]]"
       )
       .unwrap(),
-      "{{0.09900990128517151, 0.49504950642585754, 0.8910890817642212}}"
+      "{{0.49994999170303345, 0.899910032749176, 0.899910032749176}}"
     );
     assert_eq!(
       interpret(
@@ -2967,8 +2992,21 @@ mod image_processing {
          Method -> \"Wiener\"]]"
       )
       .unwrap(),
-      "{{0.09990009665489197, 0.4995005130767822, 0.8991008996963501}}"
+      "{{0.49504950642585754, 0.8910890817642212, 0.8910890817642212}}"
     );
+  }
+
+  #[test]
+  fn image_deconvolve_messages() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "ImageDeconvolve[Image[{{0.1, 0.5}}], {1, 2, 1}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "ImageDeconvolve[-Image-, {1, 2, 1}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "ImageDeconvolve::klinv: Expecting an Image object or an array of real numbers of rank 2 or 3 instead of {1, 2, 1}."
+    )));
   }
 
   // The iterative methods ("RichardsonLucy", "TSVD", "Hybrid",

@@ -15592,6 +15592,134 @@ mod position_index {
   }
 }
 
+mod list_deconvolve {
+  use super::*;
+
+  // Port of wolframscript's spectral methods; outputs rounded to 10^-8
+  // because the transforms' last bits differ.
+  fn rounded(code: &str) -> String {
+    interpret(&format!("Round[10^8 ({code})]")).unwrap()
+  }
+
+  #[test]
+  fn damped_least_squares_symmetric_kernel() {
+    // A symmetric kernel goes through the discrete cosine transform; the
+    // default regularization parameter is chosen by GCV.
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1/4., 1/2., 1/4.}, {0., 1., 3., 2., 5., 4., 1., 0., 2., 1.}]"
+      ),
+      "{13301104, 103362477, 228694933, 341086579, 396887802, 331422733, \
+       184799128, 94365353, 94085506, 111994384}"
+    );
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1/4., 1/2., 1/4.}, {0., 1., 3., 2., 5., 4., 1., 0., 2., 1.}, \
+         Method -> {\"DampedLS\", 10.}]"
+      ),
+      "{189303690, 192326778, 196715838, 200134081, 200532232, 196874145, \
+       190137372, 182845154, 177122382, 174008327}"
+    );
+  }
+
+  #[test]
+  fn asymmetric_kernel_uses_the_dft() {
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1, 2, 5}, {1, 2, 3, 4, 1, 2}, Method -> {\"DampedLS\", 0.3}]"
+      ),
+      "{13566821, 31227441, 69492784, 6807908, 32594065, 8810981}"
+    );
+    assert_eq!(
+      rounded("ListDeconvolve[{1, 2, 5}, {1, 2, 3, 4, 1, 2}]"),
+      "{22360832, 32700084, 38109843, 30268879, 21905712, 17154649}"
+    );
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1, 2, 5}, {1, 2, 3, 4, 1, 2}, Method -> \"Tikhonov\"]"
+      ),
+      "{14432999, 26178294, 49817362, 12639955, 23971358, 8024522}"
+    );
+    // An even-length kernel gets a trailing zero.
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1, 2}, {1, 2, 3}, Method -> {\"DampedLS\", 0.3}]"
+      ),
+      "{40419948, 40419948, 119160105}"
+    );
+  }
+
+  #[test]
+  fn wiener_and_tsvd() {
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{1, 2, 1}, {1, 2, 3, 7, 1, 2, 9}, Method -> \"Wiener\"]"
+      ),
+      "{-803056217, 750062349, -540612914, 666894255, -115686588, -332898816, \
+       999907549}"
+    );
+    assert_eq!(
+      interpret(
+        "ListDeconvolve[{1, 2, 5}, {1, 2, 3, 4, 1, 2}, Method -> \"TSVD\"]"
+      )
+      .unwrap(),
+      "{0., 0., 0., 0., 0., 0.}"
+    );
+  }
+
+  #[test]
+  fn matrices() {
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{{1, 2}, {3, 1}}, {{1, 2, 3}, {4, 1, 2}, {0, 1, 1}}]"
+      ),
+      "{{23717852, 23109468, 23499919}, {24817063, 24603373, 24431066}, \
+       {23774722, 23054931, 23277319}}"
+    );
+    assert_eq!(
+      rounded(
+        "ListDeconvolve[{{1, 2, 1}, {2, 4, 2}, {1, 2, 1}}, \
+         {{1, 2, 3, 1}, {4, 1, 2, 2}, {0, 1, 1, 5}, {1, 1, 1, 1}}]"
+      ),
+      "{{11392848, 11975457, 12804094, 13218655}, \
+       {10094917, 10770461, 12193617, 13441831}, \
+       {7531905, 8601737, 10770461, 12808318}, \
+       {5596626, 6894168, 9262056, 11392848}}"
+    );
+  }
+
+  #[test]
+  fn messages() {
+    let r =
+      interpret_with_stdout("ListDeconvolve[{1, 2, 3, 4}, {1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "ListDeconvolve[{1, 2, 3, 4}, {1, 2, 3}]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ListDeconvolve::kldims"))
+    );
+    let r = interpret_with_stdout(
+      "ListDeconvolve[{1, 2, 1}, {1, 2, 3}, Method -> {\"DampedLS\", -1}]",
+    )
+    .unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "ListDeconvolve::param: The value of regularization parameter -1 should be a non-negative real number or Automatic."
+    )));
+    let r =
+      interpret_with_stdout("ListDeconvolve[{a, 2, 1}, {1, 2, 3}]").unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "ListDeconvolve::arginv: Expecting a nonempty real numeric array instead of {a, 2, 1}."
+    )));
+    let r =
+      interpret_with_stdout("ListDeconvolve[{1, 2, 1}, {1, 2, 3}, 3]").unwrap();
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.contains("ListDeconvolve::nonopt"))
+    );
+  }
+}
+
 mod list_convolve {
   use super::*;
 

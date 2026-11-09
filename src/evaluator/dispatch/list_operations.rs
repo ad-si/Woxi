@@ -6742,6 +6742,11 @@ pub fn dispatch_list_operations(
       }
       return dispatch_list_operations(name, &packed);
     }
+    "ListDeconvolve" if args.len() >= 2 => {
+      return Some(crate::functions::list_deconvolve::list_deconvolve_ast(
+        args,
+      ));
+    }
     // ListConvolve[kernel, list] — discrete convolution
     "ListConvolve" if args.len() == 2 => {
       return Some(list_convolve_ast(&args[0], &args[1]));

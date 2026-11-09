@@ -4230,6 +4230,24 @@ mod find_fit {
     );
   }
 
+  // A large expression as the variable (an InterpolatingFunction over 2001
+  // points, as in Demonstration AnalysisOfChromatographicData) is replaced
+  // by a symbol once instead of being compared at every data point: the fit
+  // took minutes.
+  #[test]
+  fn large_expression_as_variable() {
+    assert_eq!(
+      interpret(
+        "g = Interpolation[Table[{t, t}, {t, 0., 20., 0.01}]]; \
+         data = Table[{t, 3 Exp[-(t - 5)^2/2]}, {t, 0., 20., 0.01}]; \
+         Round[10^6 ({a, m} /. FindFit[data, a Exp[-(g - m)^2/2], \
+         {{a, 2.}, {m, 4.5}}, g])]"
+      )
+      .unwrap(),
+      "{3000000, 5000000}"
+    );
+  }
+
   // A model that compiles is evaluated with its parameter gradient in
   // machine arithmetic at every data point (Demonstration
   // DeconvolutionOfAChromatogram fits 8 parameters to 20001 points: 47 s

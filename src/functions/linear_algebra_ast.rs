@@ -10707,14 +10707,33 @@ fn find_fit_weighted(
       ],
     ));
   }
+  // Such a variable is swapped for a fresh symbol once, up front: the fit
+  // then substitutes (or compiles) a plain symbol instead of comparing a
+  // possibly huge expression at every data point of every iteration.
+  let mut model_owned = model.clone();
+  let vars: Vec<Expr> = vars
+    .into_iter()
+    .enumerate()
+    .map(|(i, v)| {
+      if matches!(v, Expr::Identifier(_)) {
+        return v;
+      }
+      let symbol = Expr::Identifier(format!("FindFit$var{i}"));
+      model_owned = crate::functions::polynomial_ast::substitute_expr(
+        &model_owned,
+        &v,
+        &symbol,
+      );
+      symbol
+    })
+    .collect();
+  let model = &model_owned;
   let replace_var = |e: &Expr, var: &Expr, value: &Expr| -> Expr {
     match var {
       Expr::Identifier(name) => {
         crate::syntax::substitute_variable(e, name, value)
       }
-      other => {
-        crate::functions::polynomial_ast::substitute_expr(e, other, value)
-      }
+      _ => e.clone(),
     }
   };
 

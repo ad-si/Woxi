@@ -83,6 +83,7 @@ pub mod lattice_data;
 pub mod lic_plot;
 pub mod lighting3d;
 pub mod linear_algebra_ast;
+pub mod list_deconvolve;
 pub mod list_helpers_ast;
 pub mod list_plot;
 pub mod mann_whitney_test;

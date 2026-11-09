@@ -5727,7 +5727,7 @@ pub fn inverse_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Core discrete cosine transform of a real list `u`.
 /// `m` selects the DCT method: 1, 2 (default), 3, or 4.
 /// Mirrors the normalization used by Wolfram's `FourierDCT`.
-fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
+pub(crate) fn dct_core(u: &[f64], m: i64) -> Vec<f64> {
   let n = u.len();
   let nf = n as f64;
   let pi = std::f64::consts::PI;
