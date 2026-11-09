@@ -47432,6 +47432,45 @@ mod graphics3d_overlay_and_atom_colors {
     assert!(!export_svg("Graphics3D[Sphere[]]").contains("Label"));
   }
 
+  // ColorData["Atoms", "Image"] is Wolfram's periodic table in the scheme's
+  // colors (Demonstration PeriodicTableIn3D takes its cells apart);
+  // "Range" lists the elements and ColorData["Atoms"] applies to one.
+  #[test]
+  fn atoms_color_scheme_image_and_range() {
+    assert_eq!(
+      interpret(
+        "g = ColorData[\"Atoms\", \"Image\"]; \
+         {Length[g], Dimensions[g[[1, 2]]], g[[1, 1]], Options[g]}"
+      )
+      .unwrap(),
+      "{2, {10, 18}, EdgeForm[Opacity[0.1]], \
+       {ContentSelectable -> False, PlotRangePadding -> None}}"
+    );
+    assert_eq!(
+      interpret("InputForm[ColorData[\"Atoms\", \"Image\"][[1, 2, 9, 4]]]")
+        .unwrap(),
+      "InputForm[{RGBColor[0.894824, 0.731424, 0.325131], \
+       Rectangle[{3.55, 1.55}, {4.45, 2.45}], \
+       Inset[Ce, {4, 2}, Alignment -> {Center, Center}]}]"
+    );
+    // Period 7 has a gap where the actinides are taken out.
+    assert_eq!(
+      interpret(
+        "{ColorData[\"Atoms\", \"Image\"][[1, 2, 7, 3]], \
+         ColorData[\"Atoms\", \"Image\"][[1, 2, 7, 4, 3, 1]]}"
+      )
+      .unwrap(),
+      "{{}, Rf}"
+    );
+    assert_eq!(
+      interpret(
+        "{ColorData[\"Atoms\"][6], Length[First[ColorData[\"Atoms\", \"Range\"]]]}"
+      )
+      .unwrap(),
+      "{RGBColor[0.4, 0.4, 0.4], 118}"
+    );
+  }
+
   // ColorData["Atoms", element] by symbol or atomic number.
   #[test]
   fn atoms_color_scheme() {

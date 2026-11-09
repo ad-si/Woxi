@@ -1501,6 +1501,25 @@ pub fn dispatch_image_functions(
       {
         return Some(Ok(color));
       }
+      // ColorData["Atoms", "Range"]: the element symbols; "Image": the
+      // periodic table in the scheme's colors.
+      if let (Expr::String(scheme), Expr::String(property)) =
+        (&args[0], &args[1])
+        && scheme == "Atoms"
+      {
+        match property.as_str() {
+          "Range" => {
+            return Some(Ok(Expr::List(
+              vec![Expr::List(
+                ATOM_COLORS.iter().map(|(sym, _)| str_expr(sym)).collect(),
+              )]
+              .into(),
+            )));
+          }
+          "Image" => return Some(Ok(atoms_periodic_table())),
+          _ => {}
+        }
+      }
       // ColorData["HTML", name]: the named CSS color.
       if let (Expr::String(scheme), Expr::String(color_name)) =
         (&args[0], &args[1])
@@ -1750,18 +1769,21 @@ pub fn dispatch_image_functions(
         )));
       }
       // ColorData["WebSafe"]: applying it to a hex code (`"#99CC00"`) gives
-      // the web-safe color, via the two-argument form.
-      if matches!(&args[0], Expr::String(s) if s == "WebSafe") {
+      // the web-safe color, via the two-argument form; likewise
+      // ColorData["Atoms"] applied to an element.
+      if let Expr::String(scheme) = &args[0]
+        && matches!(scheme.as_str(), "WebSafe" | "Atoms")
+      {
         let sample = Expr::Function {
           body: Box::new(call(
             "ColorData",
-            vec![str_expr("WebSafe"), Expr::Slot(1)],
+            vec![str_expr(scheme), Expr::Slot(1)],
           )),
         };
         return Some(Ok(call(
           "ColorDataFunction",
           vec![
-            str_expr("WebSafe"),
+            str_expr(scheme),
             str_expr("Named"),
             Expr::List(vec![].into()),
             sample,
@@ -3844,6 +3866,100 @@ const ATOM_COLORS: [(&str, [&str; 3]); 118] = [
   ("Ts", ["0.635401", "0.056628", "0.226184"]),
   ("Og", ["0.635401", "0.0528", "0.226184"]),
 ];
+
+/// `ColorData["Atoms", "Image"]`: Wolfram's periodic table in the scheme's
+/// colors — `Graphics[{EdgeForm[Opacity[0.1]], rows}, {ContentSelectable ->
+/// False, PlotRangePadding -> None}]` with 10 rows of 18 cells (periods 1 to
+/// 7 from y = 10 down, an empty row, then the lanthanides and actinides at
+/// y = 2 and 1 in columns 3 to 17). A cell is `{color, Rectangle[…],
+/// Inset[symbol, {x, y}, Alignment -> {Center, Center}]}`, or `{}`.
+fn atoms_periodic_table() -> Expr {
+  // (column, row) of element z (1-based).
+  let place = |z: usize| -> (usize, usize) {
+    match z {
+      1 => (1, 10),
+      2 => (18, 10),
+      3..=4 => (z - 2, 9),
+      5..=10 => (z + 8, 9),
+      11..=12 => (z - 10, 8),
+      13..=18 => (z, 8),
+      19..=36 => (z - 18, 7),
+      37..=54 => (z - 36, 6),
+      55..=56 => (z - 54, 5),
+      57..=71 => (z - 54, 2),
+      72..=86 => (z - 68, 5),
+      87..=88 => (z - 86, 4),
+      89..=103 => (z - 86, 1),
+      _ => (z - 100, 4),
+    }
+  };
+  let mut grid = vec![vec![Expr::List(vec![].into()); 18]; 10];
+  for z in 1..=ATOM_COLORS.len() {
+    let (col, row) = place(z);
+    let (x, y) = (col as f64, row as f64);
+    let rule = |k: &str, v: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(k.to_string())),
+      replacement: Box::new(v),
+    };
+    let point =
+      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+    let center = Expr::Identifier("Center".to_string());
+    grid[10 - row][col - 1] = Expr::List(
+      vec![
+        atom_color(&Expr::Integer(z as i128)).unwrap(),
+        call(
+          "Rectangle",
+          vec![point(x - 0.45, y - 0.45), point(x + 0.45, y + 0.45)],
+        ),
+        call(
+          "Inset",
+          vec![
+            str_expr(ATOM_COLORS[z - 1].0),
+            Expr::List(
+              vec![Expr::Integer(col as i128), Expr::Integer(row as i128)]
+                .into(),
+            ),
+            rule("Alignment", Expr::List(vec![center.clone(), center].into())),
+          ],
+        ),
+      ]
+      .into(),
+    );
+  }
+  let rows = Expr::List(
+    grid
+      .into_iter()
+      .map(|cells| Expr::List(cells.into()))
+      .collect(),
+  );
+  call(
+    "Graphics",
+    vec![
+      Expr::List(
+        vec![
+          call("EdgeForm", vec![call("Opacity", vec![Expr::Real(0.1)])]),
+          rows,
+        ]
+        .into(),
+      ),
+      Expr::List(
+        vec![
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier(
+              "ContentSelectable".to_string(),
+            )),
+            replacement: Box::new(Expr::Identifier("False".to_string())),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("PlotRangePadding".to_string())),
+            replacement: Box::new(Expr::Identifier("None".to_string())),
+          },
+        ]
+        .into(),
+      ),
+    ],
+  )
+}
 
 /// `ColorData["Atoms", element]` → the element's color, for an element
 /// given by symbol (`"O"`) or atomic number (`8`).
