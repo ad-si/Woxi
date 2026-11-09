@@ -1604,14 +1604,33 @@ fn machine_complex_dot(a: &Expr, b: &Expr) -> Option<Expr> {
   if ma[0].len() != mb.len() {
     return None;
   }
+  // Row-times-matrix accumulation: each entry still sums its products in
+  // index order k (so results match the plain inner-product fold), but
+  // products with an exactly zero factor contribute nothing and are skipped
+  // — a `DiagonalMatrix` or other sparse operand then costs O(n²), not O(n³).
+  let width = mb[0].len();
+  let nonzero_cols: Vec<Vec<usize>> = mb
+    .iter()
+    .map(|r| {
+      (0..width)
+        .filter(|&j| r[j] != (0.0, 0.0))
+        .collect::<Vec<usize>>()
+    })
+    .collect();
   Some(list(
     ma.iter()
       .map(|row| {
-        list(
-          (0..mb[0].len())
-            .map(|j| out(dot(&mut (0..row.len()).map(|k| (row[k], mb[k][j])))))
-            .collect(),
-        )
+        let mut acc = vec![(0.0, 0.0); width];
+        for (k, &x) in row.iter().enumerate() {
+          if x == (0.0, 0.0) {
+            continue;
+          }
+          for &j in &nonzero_cols[k] {
+            let p = mul(x, mb[k][j]);
+            acc[j] = (acc[j].0 + p.0, acc[j].1 + p.1);
+          }
+        }
+        list(acc.into_iter().map(out).collect())
       })
       .collect(),
   ))

@@ -104,6 +104,31 @@ mod dot {
     );
   }
 
+  // Machine complex products with a sparse (diagonal) operand skip the zero
+  // products; results, including signed-zero parts, match wolframscript.
+  #[test]
+  fn dot_machine_complex_with_diagonal() {
+    assert_eq!(
+      interpret(
+        "a = {{1.5 + 2. I, -0.5 I}, {3., 1. - 1. I}}; \
+         d = DiagonalMatrix[{2. + I, -1.}]; v = {1. I, 2.}; \
+         ToString[{a.d, Dot[a, d, v], d.a}, InputForm]"
+      )
+      .unwrap(),
+      "{{{1. + 5.5*I, 0. + 0.5*I}, {6. + 3.*I, -1. + 1.*I}}, \
+       {-5.5 + 2.*I, -5. + 8.*I}, \
+       {{1. + 5.5*I, 0.5 - 1.*I}, {-3. + 0.*I, -1. + 1.*I}}}"
+    );
+  }
+
+  #[test]
+  fn dot_three_with_unevaluated_pair() {
+    assert_eq!(
+      interpret("Dot[{{1, 2}, {3, 4}}, {{1, 0}, {0, 1}}, a, {1, 1}]").unwrap(),
+      "{{1, 2}, {3, 4}} . a . {1, 1}"
+    );
+  }
+
   #[test]
   fn dot_multiple_symbolic_chains() {
     assert_eq!(interpret("Dot[a, b, c]").unwrap(), "a . b . c");
