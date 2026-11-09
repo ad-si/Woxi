@@ -345,7 +345,7 @@ fn vertices_and_edges(spec: &GraphSpec) -> (usize, Vec<(usize, usize)>) {
     return vertices_and_edges(&canon);
   }
   let sorted = |n: usize, mut edges: Vec<(usize, usize)>| {
-    for e in edges.iter_mut() {
+    for e in &mut edges {
       if e.0 > e.1 {
         *e = (e.1, e.0);
       }
@@ -684,16 +684,13 @@ pub fn graph_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(PROPERTIES.iter().map(|p| str_expr(p)).collect()))
     }
     [Expr::String(class)] if resolve(&args[0]).is_none() => {
-      match class_members(class) {
-        Some(members) => {
-          return Ok(Expr::List(members.into_iter().map(str_expr).collect()));
-        }
-        None => {
-          crate::emit_message(&format!(
-            "GraphData::notent: {class} is not a known entity, class or tag for GraphData. Use GraphData[] for a list of entities."
-          ));
-          unevaluated_call()
-        }
+      if let Some(members) = class_members(class) {
+        Ok(Expr::List(members.into_iter().map(str_expr).collect()))
+      } else {
+        crate::emit_message(&format!(
+          "GraphData::notent: {class} is not a known entity, class or tag for GraphData. Use GraphData[] for a list of entities."
+        ));
+        unevaluated_call()
       }
     }
     // A class with a property maps the property over the members.
