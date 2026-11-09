@@ -7373,6 +7373,59 @@ mod solve_ratnz_only_for_polynomial_systems {
     assert!(ratnz("Solve[z^3 + 0.5 a z + 1 == 0, z];"));
   }
 
+  /// An exp-log equation with machine coefficients over the reals is
+  /// solved for all its real roots, rounded as wolframscript's exact
+  /// route rounds them, with Solve::ratnz
+  /// (ContinuousStirredTankReactorThatLosesCooling).
+  #[test]
+  fn real_exp_log_equations() {
+    let solve = |input: &str| {
+      clear_state();
+      let out = interpret(input).unwrap();
+      let ratnz = woxi::get_captured_messages_raw()
+        .iter()
+        .any(|m| m.contains("ratnz"));
+      (out, ratnz)
+    };
+    assert_eq!(
+      solve("Solve[Exp[x] == 3.5 x, x, Reals]"),
+      (
+        "{{x -> 0.44654268551263593}, {x -> 1.8885974120298281}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[Log[x] == 0.2 x, x, Reals]"),
+      (
+        "{{x -> 1.2958555090953687}, {x -> 12.713206788867632}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[2.^x == x^2, x, Reals]"),
+      (
+        "{{x -> -0.766664695962123}, {x -> 2.}, {x -> 4.}}".into(),
+        true
+      )
+    );
+    assert_eq!(
+      solve("Solve[Exp[x] (x - 1.5) == 0, x, Reals]"),
+      ("{{x -> 1.5}}".into(), true)
+    );
+    assert_eq!(
+      solve("Solve[Exp[x] == -1. - x^2, x, Reals]"),
+      ("{}".into(), false)
+    );
+    assert_eq!(
+      solve(
+        "Solve[(70000000000/(E^(4330.045706038009/T)*(2 + \
+         70000/E^(4330.045706038009/T))) + 3800*(325 - T) - \
+         3000*(-350 + T))/15000 == 0, T, Reals]"
+      ),
+      ("{{T -> 365.49893230547883}}".into(), true)
+    );
+  }
+
   /// A univariate system (one unknown, any number of equations and
   /// inequalities, no parameters) is solved numerically without
   /// Solve::ratnz; systems in several unknowns still report it
