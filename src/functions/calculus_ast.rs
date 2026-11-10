@@ -10744,14 +10744,14 @@ fn rewrite_subexprs(
   Some(match expr {
     Expr::FunctionCall { name, args } => {
       let mut new_args = Vec::with_capacity(args.len());
-      for a in args.iter() {
+      for a in args {
         new_args.push(rewrite_subexprs(a, f)?);
       }
       call(name, new_args)
     }
     Expr::List(items) => {
       let mut new_items = Vec::with_capacity(items.len());
-      for a in items.iter() {
+      for a in items {
         new_items.push(rewrite_subexprs(a, f)?);
       }
       Expr::List(new_items.into())
@@ -10936,7 +10936,7 @@ fn try_integrate_multiple_angle_trig(expr: &Expr, var: &str) -> Option<Expr> {
     {
       let expanded = crate::evaluator::evaluate_function_call_ast(
         "TrigExpand",
-        &[e.clone()],
+        std::slice::from_ref(e),
       )
       .ok()?;
       changed = true;
