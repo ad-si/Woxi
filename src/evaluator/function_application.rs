@@ -2748,35 +2748,37 @@ pub fn apply_curried_call(
           // A fit evaluates each set of parameter values (the current
           // estimate and its finite-difference neighbors) at every data
           // point in turn, so the latest few solves are kept instead of
-          // repeating the integration per point.
+          // repeating the integration per point. The keys are compared as
+          // expressions (formatting the function at every call cost more
+          // than the lookups saved), and a result's large lists are shared,
+          // so that handing out a solution of a large system copies
+          // pointers rather than every tabulated point.
+          type Recent = Vec<(Expr, Vec<Expr>, Expr)>;
           thread_local! {
-            static RECENT_PARAMETRIC: std::cell::RefCell<Vec<(String, Expr)>> =
+            static RECENT_PARAMETRIC: std::cell::RefCell<Recent> =
               const { std::cell::RefCell::new(Vec::new()) };
           }
-          let key = format!(
-            "{}|{}",
-            crate::syntax::expr_to_string(&func_args[0]),
-            args
-              .iter()
-              .map(crate::syntax::expr_to_string)
-              .collect::<Vec<_>>()
-              .join(",")
-          );
+          let same = crate::evaluator::pattern_matching::expr_equal;
           if let Some(hit) = RECENT_PARAMETRIC.with(|c| {
             c.borrow()
               .iter()
-              .find(|(k, _)| *k == key)
-              .map(|(_, v)| v.clone())
+              .find(|(f, vals, _)| {
+                vals.len() == args.len()
+                  && vals.iter().zip(args).all(|(a, b)| same(a, b))
+                  && same(f, &func_args[0])
+              })
+              .map(|(_, _, v)| v.clone())
           }) {
             return Ok(hit);
           }
-          let result = apply_curried_call(&func_args[0], args)?;
+          let mut result = apply_curried_call(&func_args[0], args)?;
+          crate::evaluator::core_eval::share_large_lists(&mut result, 0);
           RECENT_PARAMETRIC.with(|c| {
             let mut recent = c.borrow_mut();
             if recent.len() >= 8 {
               recent.remove(0);
             }
-            recent.push((key, result.clone()));
+            recent.push((func_args[0].clone(), args.to_vec(), result.clone()));
           });
           Ok(result)
         }

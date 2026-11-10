@@ -3701,6 +3701,92 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && a1.len() == a2.len()
         && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
     }
+    // Functions, rules and the other operator nodes compare structurally
+    // as well: rendering a pure function whose body holds a whole system of
+    // equations (a `ParametricFunction` looked up in a cache per call) to
+    // text cost far more than walking it.
+    (
+      Expr::Rule {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::Rule {
+        pattern: p2,
+        replacement: r2,
+      },
+    )
+    | (
+      Expr::RuleDelayed {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::RuleDelayed {
+        pattern: p2,
+        replacement: r2,
+      },
+    )
+    | (
+      Expr::ReplaceAll {
+        expr: p1,
+        rules: r1,
+      },
+      Expr::ReplaceAll {
+        expr: p2,
+        rules: r2,
+      },
+    )
+    | (
+      Expr::ReplaceRepeated {
+        expr: p1,
+        rules: r1,
+      },
+      Expr::ReplaceRepeated {
+        expr: p2,
+        rules: r2,
+      },
+    )
+    | (Expr::Map { func: p1, list: r1 }, Expr::Map { func: p2, list: r2 })
+    | (
+      Expr::Apply { func: p1, list: r1 },
+      Expr::Apply { func: p2, list: r2 },
+    )
+    | (
+      Expr::MapApply { func: p1, list: r1 },
+      Expr::MapApply { func: p2, list: r2 },
+    )
+    | (
+      Expr::PrefixApply { func: p1, arg: r1 },
+      Expr::PrefixApply { func: p2, arg: r2 },
+    )
+    | (
+      Expr::Part {
+        expr: p1,
+        index: r1,
+      },
+      Expr::Part {
+        expr: p2,
+        index: r2,
+      },
+    ) => expr_equal(p1, p2) && expr_equal(r1, r2),
+    (Expr::Function { body: b1 }, Expr::Function { body: b2 }) => {
+      expr_equal(b1, b2)
+    }
+    (
+      Expr::NamedFunction {
+        params: p1,
+        body: b1,
+        bracketed: k1,
+      },
+      Expr::NamedFunction {
+        params: p2,
+        body: b2,
+        bracketed: k2,
+      },
+    ) => p1 == p2 && k1 == k2 && expr_equal(b1, b2),
+    (Expr::CompoundExpr(x1), Expr::CompoundExpr(x2)) => {
+      x1.len() == x2.len()
+        && x1.iter().zip(x2.iter()).all(|(x, y)| expr_equal(x, y))
+    }
     (
       Expr::Pattern {
         name: n1,
@@ -3800,16 +3886,6 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
     {
       false
     }
-    (
-      Expr::Part {
-        expr: e1,
-        index: i1,
-      },
-      Expr::Part {
-        expr: e2,
-        index: i2,
-      },
-    ) => expr_equal(e1, e2) && expr_equal(i1, i2),
     // A number against an expression that cannot print as one (it holds a
     // symbol or a call that is no arithmetic): `1` against
     // `-InterpolatingFunction[…][t]` rendered the whole table per sample.

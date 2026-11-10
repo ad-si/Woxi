@@ -3724,6 +3724,21 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // Functions, rules and operator nodes compare structurally.
+  #[test]
+  fn same_q_of_functions_rules_and_operator_nodes() {
+    assert_eq!(
+      interpret(
+        "{SameQ[Function[{x}, x + 1], Function[{x}, x + 1]], \
+          SameQ[Function[{x}, x + 1], Function[{x}, x + 2]], \
+          SameQ[a -> 1, a -> 1.], Hold[f /@ x] === Hold[f /@ x], \
+          Hold[a; b] === Hold[a; c]}"
+      )
+      .unwrap(),
+      "{True, False, False, True, False}"
+    );
+  }
+
   // Expressions with compound heads order by head, then by arguments.
   #[test]
   fn compound_heads_by_head_then_arguments() {

@@ -25079,6 +25079,21 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // A ParametricNDSolveValue function evaluated at alternating parameter
+  // values (a fit's finite differences) answers from its recent solves.
+  #[test]
+  fn parametric_solution_at_alternating_parameters() {
+    assert_eq!(
+      interpret(
+        "pf = ParametricNDSolveValue[{y'[t] == -a y[t], y[0] == 1}, y, \
+         {t, 0, 1}, {a}]; \
+         Round[10^6 Table[pf[k][1.], {k, {1., 2., 1., 2.}}]]"
+      )
+      .unwrap(),
+      "{367879, 135335, 367879, 135335}"
+    );
+  }
+
   // A right-hand side that runs the interpreter at every evaluation is
   // integrated with adaptive steps, each piece ending where a state event
   // fires: the event stops the leg before the singularity at t = 1/2, in a
