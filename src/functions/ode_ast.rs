@@ -49,7 +49,7 @@ pub fn dsolve_ast_with_head(
         match e {
           Expr::List(items) => items.iter().for_each(|i| flatten(i, out)),
           Expr::FunctionCall { name, args } if name == "And" => {
-            args.iter().for_each(|i| flatten(i, out))
+            args.iter().for_each(|i| flatten(i, out));
           }
           other => out.push(other.clone()),
         }
@@ -12446,6 +12446,7 @@ fn solve_symbolic_second_order(
 ///   * symbolic coefficients with `p == 0`: `C[1] Cos[s Log[x]] +
 ///     C[2] Sin[s Log[x]]`, `s = PowerExpand[Sqrt[q]]`, and otherwise the
 ///     powers of the symbolic roots.
+///
 /// A forcing `Σ k_m x^m` adds `-Σ k_m x^m / P(m)` over one denominator,
 /// `P(m) = m^2 + p m + q`; a resonant power (`P(m) == 0`) is left alone.
 fn solve_cauchy_euler(
