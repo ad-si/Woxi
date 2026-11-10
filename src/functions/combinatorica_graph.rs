@@ -688,6 +688,79 @@ fn complete_graph(args: &[Expr]) -> Option<Expr> {
   }
 }
 
+/// `EmptyGraph[n]` / `EmptyGraph[n, True]`: the edgeless (undirected, or
+/// directed) graph on `n` vertices placed on the circular embedding.
+fn empty_graph(args: &[Expr]) -> Option<Expr> {
+  let (n, directed) = match args {
+    [Expr::Integer(n)] => (*n, false),
+    [Expr::Integer(n), Expr::Identifier(d)] if d == "True" || d == "False" => {
+      (*n, d == "True")
+    }
+    _ => return None,
+  };
+  if n == 0 {
+    return Some(crate::helpers::call(
+      GRAPH,
+      vec![Expr::List(vec![].into()), Expr::List(vec![].into())],
+    ));
+  }
+  if !(1..=2000).contains(&n) {
+    return None;
+  }
+  Some(circular_graph(n, Vec::new(), directed))
+}
+
+/// `AddEdges[g, {u, v}]` / `AddEdges[g, {{u1, v1}, …}]`: `g` with the named
+/// edges appended after its existing ones (an undirected edge is stored with
+/// its smaller vertex first). Every endpoint must be a vertex of `g`.
+fn add_edges(args: &[Expr]) -> Option<Expr> {
+  let [graph, spec] = args else {
+    return None;
+  };
+  let g = CGraph::parse(graph)?;
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let pair = |e: &Expr| match e {
+    Expr::List(p) => match p.as_slice() {
+      [Expr::Integer(a), Expr::Integer(b)] => Some((*a, *b)),
+      _ => None,
+    },
+    _ => None,
+  };
+  let wanted: Vec<(i128, i128)> = match pair(spec) {
+    Some(p) => vec![p],
+    None => items.iter().map(pair).collect::<Option<_>>()?,
+  };
+  let n = g.n as i128;
+  if wanted
+    .iter()
+    .any(|&(a, b)| a < 1 || b < 1 || a > n || b > n)
+  {
+    return None;
+  }
+  let Expr::FunctionCall { name, args: gargs } = graph else {
+    return None;
+  };
+  let Expr::List(edges) = &gargs[0] else {
+    return None;
+  };
+  let mut new_edges = edges.to_vec();
+  for (a, b) in wanted {
+    let (a, b) = if g.directed {
+      (a, b)
+    } else {
+      (a.min(b), a.max(b))
+    };
+    new_edges.push(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())].into(),
+    ));
+  }
+  let mut parts = gargs.to_vec();
+  parts[0] = Expr::List(new_edges.into());
+  Some(crate::helpers::call(name, parts))
+}
+
 /// `GridGraph[n, m]`: the product of paths on n and m vertices — vertex
 /// `(j - 1) n + i` at `{i, j}`, the edges of each row first, then those
 /// joining consecutive rows (Combinatorica's `GraphProduct`).
@@ -1148,6 +1221,12 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   }
   if name == "Combinatorica`CompleteGraph" {
     return complete_graph(args);
+  }
+  if name == "Combinatorica`EmptyGraph" {
+    return empty_graph(args);
+  }
+  if name == "Combinatorica`AddEdges" {
+    return add_edges(args);
   }
   if name == "Combinatorica`GridGraph" {
     return grid_graph(args);

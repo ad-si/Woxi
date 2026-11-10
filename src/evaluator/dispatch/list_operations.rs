@@ -3458,6 +3458,8 @@ pub fn dispatch_list_operations(
     | "Combinatorica`ExactRandomGraph"
     | "Combinatorica`DeleteEdges"
     | "Combinatorica`CompleteGraph"
+    | "Combinatorica`EmptyGraph"
+    | "Combinatorica`AddEdges"
     | "Combinatorica`GridGraph"
     | "Combinatorica`BooleanAlgebra"
     | "Combinatorica`InduceSubgraph"

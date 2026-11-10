@@ -25744,6 +25744,21 @@ mod combinatorica_random_graph {
   }
 
   #[test]
+  fn combinatorica_empty_graph_and_add_edges() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = AddEdges[EmptyGraph[5], {{1, 3}, {5, 3}}]; \
+         {V[EmptyGraph[5]], M[EmptyGraph[5]], Edges[g], V[g], \
+          Edges[AddEdges[g, {2, 4}]], \
+          Edges[AddEdges[EmptyGraph[3, True], {{3, 1}}]]}"
+      )
+      .unwrap(),
+      "{5, 0, {{1, 3}, {3, 5}}, 5, {{1, 3}, {3, 5}, {2, 4}}, {{3, 1}}}"
+    );
+  }
+
+  #[test]
   fn combinatorica_delete_edges_and_all_pairs_shortest_path() {
     // FromUnorderedPairs keeps duplicate pairs in their given order.
     assert_eq!(
