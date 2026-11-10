@@ -5776,10 +5776,27 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
   }
   let start = content.find("GraphicsBox[")?;
   let source = box_source_to_graphics_expr(&content[start..]);
+  graphics_source_svg(&source)
+}
+
+/// Render a cell whose content is already an evaluable `Graphics[…]`
+/// expression. The parser rebuilds this form for graphics stored in a
+/// non-Output cell (e.g. a `Text`-style cell holding a `GraphicsBox`, as
+/// Demonstrations use for a pasted figure). `None` for any other content
+/// or when the expression fails to evaluate to graphics.
+pub fn stored_graphics_expr_svg(content: &str) -> Option<String> {
+  let content = content.trim();
+  if !content.starts_with("Graphics[") || !content.ends_with(']') {
+    return None;
+  }
+  graphics_source_svg(content)
+}
+
+fn graphics_source_svg(source: &str) -> Option<String> {
   if !source.starts_with("Graphics[") {
     return None;
   }
-  let expr = crate::parse_to_expr(&source).ok()?;
+  let expr = crate::parse_to_expr(source).ok()?;
   let crate::syntax::Expr::FunctionCall { name, args } = &expr else {
     return None;
   };
@@ -7960,6 +7977,24 @@ Cell["Chapter 2", "Chapter"]
   ExpressionUUID->"00000000-0000-0000-0000-000000000001"], "."}"#;
     let rendered = extract_textdata(text_data);
     assert_eq!(rendered, "solid: -Graphics3D-.");
+  }
+
+  #[test]
+  fn test_stored_graphics_expr_svg_renders_text_cell_graphics() {
+    // A `Text`-style cell holding a `GraphicsBox` parses to an evaluable
+    // `Graphics[…]` expression, which must still render as a picture.
+    let nb = parse_notebook(
+      "Notebook[{Cell[BoxData[GraphicsBox[{RGBColor[1, 0, 0], \
+       PointBox[{{0, 0}, {1, 1}}]}]], \"Text\"]}]",
+    )
+    .unwrap();
+    let flat = nb.flat_cells();
+    let cell = flat[0].1;
+    assert_eq!(cell.style, CellStyle::Text);
+    let svg = stored_graphics_expr_svg(&cell.content).expect("renders");
+    assert!(svg.contains("<circle"), "{svg}");
+    assert!(stored_graphics_expr_svg("Hello world").is_none());
+    assert!(stored_graphics_expr_svg("Graphics[{x").is_none());
   }
 
   #[test]
