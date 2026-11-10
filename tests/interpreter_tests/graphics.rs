@@ -50934,3 +50934,277 @@ mod graphics_review_regressions {
     }
   }
 }
+
+/// Divergences found while plotting a bar chart for slides.
+mod bar_chart_slide_conformance {
+  use super::*;
+
+  /// The `rotate(…)` angles of the `<text>` elements of `svg`, in order.
+  fn text_rotations(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.trim_start().starts_with("<text"))
+      .filter_map(|l| {
+        let at = l.find("rotate(")? + "rotate(".len();
+        l[at..]
+          .split(|c: char| c == ' ' || c == ',' || c == ')')
+          .next()?
+          .parse()
+          .ok()
+      })
+      .collect()
+  }
+
+  /// The `font-size` of the first `<text>` whose content is `content`.
+  fn font_size_of(svg: &str, content: &str) -> f64 {
+    let close = format!(">{content}</text>");
+    let line = svg
+      .lines()
+      .find(|l| l.contains(&close))
+      .unwrap_or_else(|| panic!("no text {content:?} in {svg}"));
+    let at = line.find("font-size=\"").unwrap() + "font-size=\"".len();
+    line[at..].split('"').next().unwrap().parse().unwrap()
+  }
+
+  fn svg_height(svg: &str) -> f64 {
+    let at = svg.find("height=\"").unwrap() + "height=\"".len();
+    svg[at..].split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// `Text[expr, pos, offset, dir]` reads `dir` in screen space (y up):
+  /// `{1, 1}` is 45 degrees and `{1, 1000}` nearly vertical whatever the
+  /// plot range and aspect ratio. Regression: `dir` was scaled by each
+  /// axis' pixels per unit like a data-space vector, so on this range
+  /// `{1, 1}` came out nearly flat and `{1, 1000}` at about 45 degrees.
+  #[test]
+  fn text_direction_is_screen_space_on_a_non_square_range() {
+    let svg = export_svg(
+      "Graphics[{Text[Style[\"a\", 30], {1, -50}, {1, 0}, {1, 1}], \
+       Text[Style[\"b\", 30], {2.5, -50}, {1, 0}, {1, 1000}], \
+       Text[\"c\", {1, 500}, {0, 0}, {0, 1}], \
+       Text[\"d\", {2, 500}, {0, 0}, {-1, -1}], \
+       Text[\"e\", {2, 0}, {0, 0}, {1, -1}], \
+       Text[\"f\", {2, 900}]}, \
+       PlotRange -> {{0, 3}, {-1500, 1100}}, ImageSize -> 600, \
+       AspectRatio -> 0.6]",
+    );
+    let angles = text_rotations(&svg);
+    assert_eq!(angles.len(), 5, "the Automatic one stays flat: {svg}");
+    let expected = [-45.0, -89.943, -90.0, 135.0, 45.0];
+    for (got, want) in angles.iter().zip(expected) {
+      assert!((got - want).abs() < 0.01, "{angles:?} vs {expected:?}");
+    }
+  }
+
+  /// The same holds for `Text` in a `Plot`'s or a `BarChart`'s `Epilog`,
+  /// which used to ignore the direction altogether.
+  #[test]
+  fn epilog_text_direction_is_screen_space() {
+    for plot in [
+      "Plot[x, {x, 0, 1}, PlotRange -> {0, 1000}, \
+       Epilog -> {Text[\"tilted\", {0.5, 500}, {0, 0}, {1, 1}]}]",
+      "BarChart[{100, 300, 200}, \
+       Epilog -> {Text[\"tilted\", {2, 150}, {0, 0}, {1, 1}]}]",
+    ] {
+      let svg = export_svg(plot);
+      let line = svg
+        .lines()
+        .find(|l| l.contains(">tilted</text>"))
+        .unwrap_or_else(|| panic!("no label in {svg}"));
+      assert!(line.contains("rotate(-45.000"), "{plot}: {line}");
+    }
+    let flat =
+      export_svg("Plot[x, {x, 0, 1}, Epilog -> {Text[\"flat\", {0.5, 0.5}]}]");
+    let line = flat.lines().find(|l| l.contains(">flat</text>")).unwrap();
+    assert!(!line.contains("rotate("), "{line}");
+  }
+
+  /// `Style[label, size]`, `TicksStyle`, `LabelStyle`, `AxesLabel` and
+  /// `PlotLabel` sizes all reach a `BarChart`'s labels. Regression: every
+  /// label was drawn at the default 10 pt (12 pt title).
+  #[test]
+  fn bar_chart_label_font_sizes() {
+    let svg = export_svg(
+      "BarChart[{1, 3, 2}, \
+       ChartLabels -> {Style[\"a\", 30], Style[\"b\", 30], Style[\"c\", 30]}, \
+       TicksStyle -> Directive[FontSize -> 30], \
+       AxesLabel -> {\"\", Style[\"Commits\", 30]}, \
+       PlotLabel -> Style[\"Title\", 20, Bold], ImageSize -> 600]",
+    );
+    for label in ["a", "b", "c", "Commits", "3.0"] {
+      assert_eq!(font_size_of(&svg, label), 300.0, "{label}: {svg}");
+    }
+    assert_eq!(font_size_of(&svg, "Title"), 200.0);
+    assert!(svg.contains("font-weight=\"bold\">Title<"), "{svg}");
+  }
+
+  /// `Style[label, size]` beats `TicksStyle`, which beats `LabelStyle`.
+  #[test]
+  fn bar_chart_label_style_precedence() {
+    let svg = export_svg(
+      "BarChart[{1, 3, 2}, ChartLabels -> {Style[\"a\", 20], \"b\", \"c\"}, \
+       LabelStyle -> 14, TicksStyle -> 18, AxesLabel -> {None, \"n\"}, \
+       PlotLabel -> \"T\"]",
+    );
+    assert_eq!(font_size_of(&svg, "a"), 200.0);
+    assert_eq!(font_size_of(&svg, "b"), 140.0);
+    assert_eq!(font_size_of(&svg, "n"), 140.0);
+    assert_eq!(font_size_of(&svg, "T"), 140.0);
+    assert_eq!(font_size_of(&svg, "3.0"), 180.0);
+    // `LabelStyle` alone sizes the tick labels too.
+    let svg = export_svg("BarChart[{1, 3, 2}, LabelStyle -> 14]");
+    assert_eq!(font_size_of(&svg, "3.0"), 140.0);
+  }
+
+  /// `LabelStyle` sizes the tick labels of an unframed `Plot`'s axes, as
+  /// it does a framed one's, and the padding grows to hold them.
+  /// Regression: only a frame's tick labels followed it.
+  #[test]
+  fn plot_label_style_sizes_axis_tick_labels() {
+    let plain = export_svg("Plot[x, {x, 0, 1}]");
+    let styled = export_svg("Plot[x, {x, 0, 1}, LabelStyle -> 20]");
+    assert_eq!(font_size_of(&styled, "0.2"), 200.0, "{styled}");
+    // The bottom padding holds the taller x tick labels.
+    let label_y = |svg: &str| {
+      let line = svg.lines().find(|l| l.contains(">0.2</text>")).unwrap();
+      let at = line.find(" y=\"").unwrap() + 4;
+      line[at..]
+        .split('"')
+        .next()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap()
+    };
+    let below = |svg: &str| svg_height(svg) * 10.0 - label_y(svg);
+    assert!(below(&styled) > below(&plain) + 10.0, "{styled}");
+    // `TicksStyle` still wins over it.
+    let ticks =
+      export_svg("Plot[x, {x, 0, 1}, LabelStyle -> 20, TicksStyle -> 12]");
+    assert_eq!(font_size_of(&ticks, "0.2"), 120.0, "{ticks}");
+  }
+
+  /// Larger labels grow the automatic padding: the plotting area keeps its
+  /// aspect ratio, so the picture gets taller.
+  #[test]
+  fn bar_chart_padding_grows_with_label_size() {
+    let small = export_svg(
+      "BarChart[{1, 3, 2}, ChartLabels -> {\"a\", \"b\", \"c\"}, \
+       ImageSize -> 600]",
+    );
+    let large = export_svg(
+      "BarChart[{1, 3, 2}, ChartLabels -> {\"a\", \"b\", \"c\"}, \
+       LabelStyle -> 30, ImageSize -> 600]",
+    );
+    assert!(svg_height(&large) > svg_height(&small) + 10.0);
+  }
+
+  /// The x position of the y axis line and the y of the x axis line.
+  fn axis_lines(svg: &str) -> (f64, f64) {
+    let num = |l: &str, attr: &str| -> f64 {
+      let at = l.find(&format!("{attr}=\"")).unwrap() + attr.len() + 2;
+      l[at..].split('"').next().unwrap().parse().unwrap()
+    };
+    let lines: Vec<&str> =
+      svg.lines().filter(|l| l.starts_with("<line")).collect();
+    let y_axis = lines
+      .iter()
+      .find(|l| {
+        num(l, "x1") == num(l, "x2") && num(l, "y2") - num(l, "y1") > 500.0
+      })
+      .unwrap();
+    let x_axis = lines
+      .iter()
+      .find(|l| {
+        num(l, "y1") == num(l, "y2") && num(l, "x2") - num(l, "x1") > 1000.0
+      })
+      .unwrap();
+    (num(y_axis, "x1"), num(x_axis, "y1"))
+  }
+
+  /// An explicit `ImagePadding` sets the margins round the plotting area.
+  /// Regression: `BarChart` dropped the option.
+  #[test]
+  fn bar_chart_image_padding() {
+    let svg = export_svg(
+      "BarChart[{1, 3, 2}, ImagePadding -> {{90, 10}, {60, 10}}, \
+       ImageSize -> 600]",
+    );
+    let h = svg_height(&svg);
+    let (left, axis_y) = axis_lines(&svg);
+    assert!((left - 900.0).abs() < 1.0, "{left}");
+    assert!((axis_y - (h - 60.0) * 10.0).abs() < 1.0, "{axis_y} of {h}");
+    // A single number pads every side; `All` leaves a side automatic.
+    let svg = export_svg("BarChart[{1, 3, 2}, ImagePadding -> 50]");
+    let (left, axis_y) = axis_lines(&svg);
+    assert!((left - 500.0).abs() < 1.0, "{left}");
+    assert!((axis_y - (svg_height(&svg) - 50.0) * 10.0).abs() < 1.0);
+    let auto = export_svg("BarChart[{1, 3, 2}]");
+    let mixed = export_svg(
+      "BarChart[{1, 3, 2}, ImagePadding -> {{70, All}, {All, All}}]",
+    );
+    assert!((axis_lines(&mixed).0 - 700.0).abs() < 1.0);
+    let bottom = |svg: &str| svg_height(svg) * 10.0 - axis_lines(svg).1;
+    assert!((bottom(&mixed) - bottom(&auto)).abs() < 1.0);
+  }
+
+  /// A `PlotRange` reaching below 0 extends the plotting area down to it,
+  /// so an `Epilog` label there is drawn inside the picture.
+  #[test]
+  fn bar_chart_negative_plot_range_bound() {
+    for range in [
+      "{-0.4, 3.3}",
+      "{{0.5, 3.5}, {-0.4, 3.3}}",
+      "{All, {-0.4, 3.3}}",
+    ] {
+      let svg = export_svg(&format!(
+        "BarChart[{{1, 3, 2}}, PlotRange -> {range}, \
+         Epilog -> {{Text[Style[\"below\", 20], {{2, -0.2}}]}}]"
+      ));
+      let h = svg_height(&svg) * 10.0;
+      let line = svg.lines().find(|l| l.contains(">below</text>")).unwrap();
+      let at = line.find(" y=\"").unwrap() + 4;
+      let y: f64 = line[at..].split('"').next().unwrap().parse().unwrap();
+      // The x axis (y = 0) sits above the label, which fits in the image.
+      let (_, axis_y) = axis_lines(&svg);
+      assert!(y > axis_y && y + 100.0 < h, "{range}: {y} {axis_y} {h}");
+    }
+  }
+
+  /// A zero-area `Rectangle` with an `EdgeForm` draws its edge as a line.
+  /// Regression: it became a `<rect>` with a zero side, which SVG does not
+  /// draw at all.
+  #[test]
+  fn degenerate_rectangle_keeps_its_edge() {
+    let svg = export_svg(
+      "Graphics[{EdgeForm[Black], Blue, Rectangle[{0, 0}, {1, 0}], \
+       Rectangle[{2, 0}, {3, 1}]}]",
+    );
+    assert!(
+      svg.contains("<path d=\"M 7.18,121.77 L 122.06,121.77\" fill=\"none\" stroke=\"rgb(0,0,0)\""),
+      "{svg}"
+    );
+    assert_eq!(svg.matches("<rect x=\"236.94\"").count(), 1);
+    // Without an edge there is nothing to draw either way.
+    let svg = export_svg("Graphics[{Blue, Rectangle[{0, 0}, {1, 0}]}]");
+    assert!(!svg.contains("<path"), "{svg}");
+  }
+
+  /// `Text` without a `FontFamily` exports with WL's sans-serif default
+  /// on the element itself, so viewers that ignore the embedded stylesheet
+  /// do not fall back to a serif face; an explicit family is kept.
+  #[test]
+  fn graphics_text_exports_a_sans_serif_family() {
+    let svg = export_svg(
+      "Graphics[{Text[Style[\"Abc\", 30], {0, 0}], \
+       Text[Style[\"x\", FontFamily -> \"Courier\"], {1, 1}]}]",
+    );
+    let abc = svg.lines().find(|l| l.contains(">Abc</text>")).unwrap();
+    assert!(
+      abc.contains("font-family=\"Atkinson Hyperlegible Next, sans-serif\""),
+      "{abc}"
+    );
+    let x = svg.lines().find(|l| l.contains(">x</text>")).unwrap();
+    assert_eq!(x.matches("font-family=").count(), 1, "{x}");
+    assert!(x.contains("Courier"), "{x}");
+  }
+}

@@ -989,9 +989,10 @@ enum Primitive {
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
-    /// `Text[expr, pos, offset, direction]`'s fourth argument: a data-space
-    /// vector the label's baseline is rotated to run parallel to (e.g. the
-    /// local tangent of a curve it annotates). `None` for the unrotated
+    /// `Text[expr, pos, offset, direction]`'s fourth argument: a
+    /// screen-space vector (y up) the label's baseline is rotated to run
+    /// parallel to. Like Wolfram's, its angle ignores the plot range and
+    /// aspect ratio, so `{1, 1}` is always 45 degrees. `None` for the unrotated
     /// (horizontal) default — including when the argument is omitted or
     /// written `Automatic`.
     direction: Option<(f64, f64)>,
@@ -7338,8 +7339,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   };
   let offset = args.get(2).and_then(text_offset).unwrap_or((0.0, 0.0));
   // `Text[expr, pos, offset, direction]`: rotate the label so its baseline
-  // runs parallel to `direction`, a vector in the same data coordinates as
-  // `pos`. Left `None` for the common `Automatic`/omitted case.
+  // runs parallel to `direction`, a screen-space vector (y up) whose angle
+  // does not depend on the plot range's scaling. Left `None` for the common
+  // `Automatic`/omitted case.
   let direction = args
     .get(3)
     .and_then(text_direction)
@@ -11721,6 +11723,19 @@ fn render_primitive(
       } else {
         String::new()
       };
+      // A degenerate rectangle (zero width or height) still has its edge
+      // drawn as a line, as in Wolfram; SVG renders nothing at all for a
+      // `<rect>` with a zero side, so it becomes a path.
+      let degenerate = sw.abs() < 0.005 || sh.abs() < 0.005;
+      if degenerate && stroke_color.is_some() {
+        out.push_str(&format!(
+          "<path d=\"M {sx:.2},{sy:.2} L {:.2},{:.2}\" fill=\"none\"{}/>\n",
+          sx + sw,
+          sy + sh,
+          stroke_attr,
+        ));
+        return;
+      }
       out.push_str(&format!(
         "<rect x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\"{corner_attr} fill=\"{}\"{}{}/>\n",
         color.to_svg_rgb(),
@@ -12158,9 +12173,10 @@ fn render_primitive(
       let anchor_x = coord_x(ax, bb, svg_w) + style.text_pixel_shift.0;
       let anchor_y = coord_y(ay, bb, svg_h) - style.text_pixel_shift.1;
       // A fourth `direction` argument tilts the label's baseline to match
-      // that vector — carried in data coordinates, so it has to go through
-      // the same x/y pixel-per-unit scaling `coord_x`/`coord_y` apply (and
-      // the same y-flip) before it becomes a screen-space angle. The offset
+      // that vector. Wolfram reads it in screen space (y up): its angle is
+      // taken as is, without the per-axis pixel-per-unit scaling of
+      // `coord_x`/`coord_y`, so `{1, 1}` is 45 degrees whatever the plot
+      // range and aspect ratio — only the y-flip of SVG applies. The offset
       // is measured along that same tilted baseline (its local x-axis) and
       // perpendicular to it (its local y-axis), not along the fixed screen
       // axes — so a label offset "backward" along a rotated direction is
@@ -12171,9 +12187,7 @@ fn render_primitive(
         matches!(direction, Some((dx, dy)) if *dx != 0.0 || *dy != 0.0);
       let angle = if has_direction {
         let (dx, dy) = direction.unwrap();
-        let px = dx * svg_w / bb.width();
-        let py = -dy * svg_h / bb.height();
-        py.atan2(px)
+        (-dy).atan2(dx)
       } else {
         0.0
       };

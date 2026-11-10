@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6308
 expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
@@ -23,15 +22,15 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 <line x1="117.0" y1="156.4" x2="117.9" y2="154.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="122.4" y1="158.6" x2="123.3" y2="156.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="30.5" y1="122.3" x2="32.0" y2="118.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="26.9" y="131.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1.0</text>
+<text x="26.9" y="131.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="52.7" y1="131.0" x2="54.2" y2="127.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="49.0" y="140.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1.5</text>
+<text x="49.0" y="140.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.5</text>
 <line x1="76.2" y1="140.3" x2="77.7" y2="136.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="72.5" y="149.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2.0</text>
+<text x="72.5" y="149.6" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.0</text>
 <line x1="101.2" y1="150.2" x2="102.7" y2="146.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="97.6" y="159.5" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2.5</text>
+<text x="97.6" y="159.5" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.5</text>
 <line x1="127.9" y1="160.7" x2="129.4" y2="157.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="124.2" y="170.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">3.0</text>
+<text x="124.2" y="170.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">3.0</text>
 <line x1="127.9" y1="160.7" x2="170.4" y2="96.7" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="130.5" y1="156.8" x2="132.6" y2="158.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="133.0" y1="153.0" x2="135.1" y2="154.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -50,15 +49,15 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 <line x1="166.9" y1="101.9" x2="169.0" y2="103.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="168.7" y1="99.3" x2="170.8" y2="100.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="127.9" y1="160.7" x2="131.2" y2="162.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="132.9" y="164.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.0</text>
+<text x="132.9" y="164.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="140.3" y1="142.0" x2="143.7" y2="144.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="145.3" y="145.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.5</text>
+<text x="145.3" y="145.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.5</text>
 <line x1="151.4" y1="125.3" x2="154.8" y2="127.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="156.4" y="128.6" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2.0</text>
+<text x="156.4" y="128.6" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.0</text>
 <line x1="161.4" y1="110.2" x2="164.7" y2="112.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="166.4" y="113.6" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2.5</text>
+<text x="166.4" y="113.6" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.5</text>
 <line x1="170.4" y1="96.7" x2="173.7" y2="98.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="175.4" y="100.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">3.0</text>
+<text x="175.4" y="100.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">3.0</text>
 <line x1="30.5" y1="122.3" x2="25.0" y2="87.1" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="30.4" y1="121.0" x2="32.8" y2="120.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="29.9" y1="118.5" x2="32.4" y2="118.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -72,9 +71,9 @@ expression: "export_svg(\"ListPointPlot3D[{{1,1,1},{2,2,8},{3,3,27}}, ImageSize 
 <line x1="25.7" y1="91.4" x2="28.2" y2="91.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="25.2" y1="88.6" x2="27.7" y2="88.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="28.7" y1="110.7" x2="32.7" y2="110.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="22.8" y="111.6" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">10</text>
+<text x="22.8" y="111.6" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">10</text>
 <line x1="26.6" y1="97.1" x2="30.5" y2="96.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="20.6" y="98.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">20</text>
+<text x="20.6" y="98.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">20</text>
 <line x1="86.0" y1="71.1" x2="86.0" y2="69.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="86.0" y1="71.1" x2="89.9" y2="72.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="86.0" y1="69.6" x2="85.9" y2="68.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>

@@ -861,19 +861,48 @@ pub(crate) struct ChartOptions {
 }
 
 /// A chart label with optional rotation angle (in radians).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct ChartLabel {
   pub text: String,
   /// Rotation angle in radians (0.0 = no rotation, negative = clockwise).
   pub rotation: f64,
+  /// The font size a `Style[label, size]` wrapper gives the label, in
+  /// points; `None` keeps the chart's (`LabelStyle`) default.
+  pub font_size: Option<f64>,
+  /// `Style[label, Bold]`.
+  pub bold: bool,
 }
 
 impl ChartLabel {
   pub(crate) fn plain(text: String) -> Self {
     Self {
       text,
-      rotation: 0.0,
+      ..Self::default()
     }
+  }
+}
+
+/// The font size and weight the `Style[…]` wrappers around a label give it
+/// (looking through `Rotate`, `Text`, `Tooltip` and the like). An inner
+/// `Style` wins over an outer one, as it is the one applied to the text.
+pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let (bold, _, _, size) = parse_style_directive_args(&args[1..]);
+      let (inner_size, inner_bold) = label_font_style(&args[0]);
+      (inner_size.or(size), bold || inner_bold)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Rotate" | "Text" | "Tooltip" | "Annotation" | "Pane" | "Placed"
+      ) && !args.is_empty() =>
+    {
+      label_font_style(&args[0])
+    }
+    _ => (None, false),
   }
 }
 
@@ -1352,9 +1381,12 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
     )
     .unwrap_or(0.0);
+    let (font_size, bold) = label_font_style(&args[0]);
     return Some(ChartLabel {
       text,
       rotation: angle,
+      font_size,
+      bold,
     });
   }
   // A sublist inside `ChartLabels` names a whole level of the chart (group
@@ -1364,7 +1396,12 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     return None;
   }
   // Plain label
-  expr_to_label(e).map(ChartLabel::plain)
+  let (font_size, bold) = label_font_style(e);
+  expr_to_label(e).map(|text| ChartLabel {
+    font_size,
+    bold,
+    ..ChartLabel::plain(text)
+  })
 }
 
 /// Locate a `Placed[labels, position, ...]` spec inside a `ChartLabels` value.
@@ -3394,10 +3431,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if opts.chart_labels.is_empty() && decor.iter().all(|g| g.len() == 1) {
       opts.chart_labels = decor
         .iter()
-        .map(|g| ChartLabel {
-          text: g[0].label.clone().unwrap_or_default(),
-          rotation: 0.0,
-        })
+        .map(|g| ChartLabel::plain(g[0].label.clone().unwrap_or_default()))
         .collect();
       if opts.chart_labels.iter().all(|l| l.text.is_empty()) {
         opts.chart_labels.clear();
@@ -3601,6 +3635,29 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       "AspectRatio" => {
         look.aspect_ratio = try_eval_to_f64(&value).filter(|r| *r > 0.0);
+      }
+      // The label fonts: `LabelStyle` sizes every label, `TicksStyle` the
+      // tick labels, and a `Style[label, size]` wrapper its own label.
+      "LabelStyle" => {
+        look.label_style =
+          crate::functions::plot::LabelStyleSpec::parse(&value);
+      }
+      "TicksStyle" => {
+        look.ticks_style =
+          crate::functions::plot::LabelStyleSpec::parse(&value);
+      }
+      "AxesLabel" | "FrameLabel" => {
+        if let Expr::List(items) = &value
+          && items.len() == 2
+          && !items.iter().all(|i| matches!(i, Expr::List(_)))
+        {
+          look.axes_label_fonts =
+            [label_font_style(&items[0]).0, label_font_style(&items[1]).0];
+        }
+      }
+      "ImagePadding" => {
+        look.image_padding =
+          crate::functions::plot::parse_image_padding_sides(&value);
       }
       // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
       "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {

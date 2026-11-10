@@ -8472,6 +8472,16 @@ pub(crate) struct BarChartLook {
   /// `GridLines -> {…, Automatic}`: horizontal lines at the value ticks, as
   /// `(color, opacity, width in points, dash pattern in points)`.
   pub value_grid: Option<((u8, u8, u8), f64, f64, Option<(f64, f64)>)>,
+  /// `LabelStyle`: the font size, color and weight of every label.
+  pub label_style: Option<LabelStyleSpec>,
+  /// `TicksStyle`: the tick labels' font, over `LabelStyle`'s.
+  pub ticks_style: Option<LabelStyleSpec>,
+  /// The font sizes `Style[label, size]` gives the x and y `AxesLabel`
+  /// (or `FrameLabel`).
+  pub axes_label_fonts: [Option<f64>; 2],
+  /// An explicit `ImagePadding` (left, right, bottom, top in points); a
+  /// `None` side is automatic.
+  pub image_padding: Option<[Option<f64>; 4]>,
 }
 
 impl Default for BarChartLook {
@@ -8496,6 +8506,10 @@ impl Default for BarChartLook {
       frame_sides: [true; 4],
       hide_value_frame: false,
       value_grid: None,
+      label_style: None,
+      ticks_style: None,
+      axes_label_fonts: [None, None],
+      image_padding: None,
     }
   }
 }
@@ -8843,7 +8857,6 @@ pub(crate) fn generate_bar_svg(
   });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
-  let s = RESOLUTION_SCALE as i32;
   let sf = RESOLUTION_SCALE as f64;
 
   // Extra space for labels
@@ -8857,21 +8870,70 @@ pub(crate) fn generate_bar_svg(
   let has_plot_label = plot_label.is_some_and(|sl| !sl.text.is_empty());
 
   let has_value_labels = bar_labels.iter().any(|s| !s.is_empty());
+  // The label fonts, in points: a `Style[label, size]` wrapper beats
+  // `TicksStyle` (tick labels only), which beats `LabelStyle` (every
+  // label), which beats WL's defaults.
+  let label_style_font = look.label_style.and_then(|st| st.font_size);
+  let tick_font_pt = look
+    .ticks_style
+    .and_then(|st| st.font_size)
+    .or(label_style_font)
+    .unwrap_or(plot_padding::TICK_FONT);
+  let label_font_pt = label_style_font.unwrap_or(CHART_LABEL_FONT);
+  let chart_label_font_pt = chart_labels
+    .iter()
+    .filter_map(|l| l.font_size)
+    .fold(label_font_pt, f64::max);
+  let axes_font_pt = look
+    .axes_label_fonts
+    .map(|f| f.or(label_style_font).unwrap_or(CHART_LABEL_FONT));
+  let title_font_pt = plot_label
+    .and_then(|sl| sl.font_size)
+    .or(label_style_font)
+    .unwrap_or(CHART_TITLE_FONT);
+  let title_k = title_font_pt / CHART_TITLE_FONT;
+  // The `LabelStyle` / `TicksStyle` colors of the labels.
+  let label_style_fill = look
+    .label_style
+    .and_then(|st| st.color)
+    .map(super::graphics::Color::to_svg_rgb);
+  let tick_style_fill = look
+    .ticks_style
+    .and_then(|st| st.color)
+    .map(super::graphics::Color::to_svg_rgb)
+    .or_else(|| label_style_fill.clone());
+  let label_bold = look.label_style.is_some_and(|st| st.bold);
+  // An explicit `ImagePadding` side, in render units.
+  let explicit_pad = |i: usize| {
+    look
+      .image_padding
+      .and_then(|p| p[i])
+      .map(|v| v.max(0.0) * sf)
+  };
   // WL 15 leaves only the room the labels take: half a point above the
   // plotting area, a strip for a `PlotLabel`.
   // Half a point above the plotting area (whose own `Scaled[0.05]`
   // headroom tops the tallest bar), more for value labels above the bars.
-  let top_margin = if has_plot_label {
-    14 * s
-  } else if has_value_labels {
-    4 * s
-  } else if look.value_axis_negated {
-    // Room for the half of the `0` label that rises above the top axis.
-    4 * s
+  let top_margin = if let Some(t) = explicit_pad(3) {
+    t.round() as i32
   } else {
-    s / 2
-  } + plot_label_extra_lines(plot_label) as i32 * 20 * s
-    + if axes_label_y.is_some() { 20 * s } else { 0 };
+    (if has_plot_label {
+      14.0 * title_k * sf
+    } else if has_value_labels {
+      4.0 * sf
+    } else if look.value_axis_negated {
+      // Room for the half of the `0` label that rises above the top axis.
+      4.0 * sf
+    } else {
+      sf / 2.0
+    } + plot_label_extra_lines(plot_label) as f64 * 20.0 * title_k * sf
+      + if axes_label_y.is_some() {
+        20.0 * axes_font_pt[1] / CHART_LABEL_FONT * sf
+      } else {
+        0.0
+      })
+    .round() as i32
+  };
   let has_rotated_labels = chart_labels.iter().any(|l| l.rotation.abs() > 0.01);
   // Only content drawn below the axis consumes bottom margin. Chart labels do
   // so only when positioned Below; Center/Above labels sit on the bars and
@@ -8881,10 +8943,14 @@ pub(crate) fn generate_bar_svg(
     has_chart_labels && matches!(chart_label_position, LabelPosition::Below);
   let mut bottom_extra = 0.0_f64;
   if labels_below {
+    // A label's baseline sits 1.5 em below the axis and its descenders
+    // reach a quarter em further, past the 7.5 pt the ticks' margin
+    // holds; 10 pt labels take 10 pt more (50 pt rotated).
+    let f = chart_label_font_pt;
     bottom_extra += if has_rotated_labels {
-      50.0 * sf
+      5.0 * f * sf
     } else {
-      10.0 * sf
+      (1.75 * f - 7.5).max(f) * sf
     };
   }
   if has_value_labels && bar_label_placement == BarLabelPlacement::Below {
@@ -8897,10 +8963,24 @@ pub(crate) fn generate_bar_svg(
     bottom_extra += 30.0 * sf;
   }
   if frame_label_x.is_some() {
-    bottom_extra += 24.0 * sf;
+    bottom_extra += 24.0 * axes_font_pt[0] / CHART_LABEL_FONT * sf;
   }
-  // The bars' group ticks hang 6 points below the axis.
-  let x_label_area = (5.5 * sf) as u32 + bottom_extra as u32;
+  // The bars' group ticks hang 6 points below the axis. An explicit
+  // `ImagePadding` replaces the whole margin (and the side margins below).
+  let margin_bottom = if explicit_pad(2).is_some() {
+    0.0
+  } else {
+    BAR_SIDE_MARGIN * sf
+  };
+  let margin_left = if explicit_pad(0).is_some() {
+    0.0
+  } else {
+    BAR_SIDE_MARGIN * sf
+  };
+  let mut x_label_area = explicit_pad(2)
+    .map_or((5.5 * sf) as u32 + bottom_extra as u32, |b| {
+      b.round() as u32
+    });
   // The y axis and its ticks, drawn the way an unframed `Plot` draws them
   // (`plot_axes::origin_axes_svg`): marks pointing into the chart, labels
   // right-aligned 3 pt left of the axis.
@@ -8931,11 +9011,13 @@ pub(crate) fn generate_bar_svg(
     crate::functions::plot_axes::AxisTicks::new(y_scale, false, None)
   };
   // The y tick labels need their own width plus the gap to the axis.
-  let y_label_area = if show_ticks {
+  let y_label_area = if let Some(l) = explicit_pad(0) {
+    l.round() as u32
+  } else if show_ticks {
     let widest = y_ticks
       .majors
       .iter()
-      .map(|(_, l)| plot_padding::tick_label_width(l, plot_padding::TICK_FONT))
+      .map(|(_, l)| plot_padding::tick_label_width(l, tick_font_pt))
       .fold(0.0, f64::max);
     (((widest + plot_padding::TICK_LABEL_GAP) * sf - BAR_SIDE_MARGIN * sf)
       .max(2.0 * sf)) as u32
@@ -8945,16 +9027,21 @@ pub(crate) fn generate_bar_svg(
 
   let (bg_color, dark_gray, _light_gray, label_fill, title_default_fill) =
     plot_theme();
+  let label_fill: &str = label_style_fill.as_deref().unwrap_or(label_fill);
+  let title_default_fill: &str =
+    label_style_fill.as_deref().unwrap_or(title_default_fill);
 
   // Reserve extra right margin for chart legends
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
     // The label is drawn at `font_size`; ~0.62 em per character covers the
     // proportional font with a little slack.
-    8.0 * sf
+    let k = axes_font_pt[0] / CHART_LABEL_FONT;
+    8.0 * k * sf
       + crate::functions::graphics::box_string_visible_len(label) as f64
         * 0.62
         * sf
         * 18.0
+        * k
   }) as u32;
   // WL runs the x axis 2% of the plotting width past the last bar slot
   // and keeps 1.5 pt beyond that: r = 1.5 + 0.02 (W - left - r).
@@ -8962,7 +9049,14 @@ pub(crate) fn generate_bar_svg(
     let r = (1.5 * sf + 0.02 * (render_width as f64 - left)) / 1.02;
     r - 1.5 * sf
   };
-  let x_axis_overrun = axis_overrun(BAR_SIDE_MARGIN * sf + y_label_area as f64);
+  let x_axis_overrun = match (explicit_pad(0), explicit_pad(1)) {
+    // With both sides given the plot range, including the axis' 2%
+    // padding past the last bar, spans what the padding leaves.
+    (Some(l), Some(r)) => {
+      (render_width as f64 - l - r).max(0.0) * (1.0 - 1.0 / 1.02)
+    }
+    _ => axis_overrun(margin_left + y_label_area as f64),
+  };
   // A column legend is set beside the finished image (see the end).
   let column_legend = !chart_legends.is_empty() && !row_legend;
   let legend_color = |i: usize| {
@@ -8975,18 +9069,74 @@ pub(crate) fn generate_bar_svg(
       (ch(c.r), ch(c.g), ch(c.b))
     }
   };
-  let legend_margin_right =
-    (x_axis_overrun + 1.5 * sf) as u32 + axes_label_margin_right;
+  let legend_margin_right = match explicit_pad(1) {
+    Some(r) => (x_axis_overrun + r) as u32,
+    None => (x_axis_overrun + 1.5 * sf) as u32 + axes_label_margin_right,
+  };
 
   // `AspectRatio -> r` makes the plotting area (not the whole image) r times
   // as tall as it is wide; the image grows or shrinks around it.
+  // Tick labels larger than the default (a big `TicksStyle` /
+  // `LabelStyle` font) overhang the plotting area further at its top and
+  // bottom: the automatic padding, laid out for the default size, grows by
+  // the extra overhang, as WL's does.
+  let mut top_margin = top_margin;
+  if show_ticks
+    && (look.axes || look.frame)
+    && tick_font_pt > plot_padding::TICK_FONT
+  {
+    let half_h = plot_padding::line_height(tick_font_pt) / 2.0 * sf;
+    let default_half_h =
+      plot_padding::line_height(plot_padding::TICK_FONT) / 2.0 * sf;
+    // How much further than a default label one `distance` from the edge
+    // reaches out.
+    let extra = |distance: f64| {
+      (half_h - distance).max(0.0) - (default_half_h - distance).max(0.0)
+    };
+    let plot_h_est = match look.aspect_ratio {
+      Some(r) => {
+        (render_width as f64
+          - margin_left
+          - legend_margin_right as f64
+          - y_label_area as f64)
+          .max(1.0)
+          * r
+      }
+      None => {
+        render_height as f64
+          - top_margin as f64
+          - margin_bottom
+          - x_label_area as f64
+      }
+    }
+    .max(1.0);
+    let fracs = y_ticks.majors.iter().map(|(v, _)| y_scale.frac(*v));
+    let (lo, hi) = fracs
+      .filter(|f| f.is_finite() && (-1e-9..=1.0 + 1e-9).contains(f))
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), f| {
+        (lo.min(f), hi.max(f))
+      });
+    // The margins the default labels leave beside the ticks alone: half a
+    // point above, the tick marks' 5.5 pt (and the side margin) below.
+    if hi.is_finite() && explicit_pad(3).is_none() {
+      let need = sf / 2.0 + extra((1.0 - hi) * plot_h_est);
+      if need > top_margin as f64 {
+        top_margin = need.ceil() as i32;
+      }
+    }
+    if lo.is_finite() && explicit_pad(2).is_none() {
+      let need = (BAR_SIDE_MARGIN + 5.5) * sf + extra(lo * plot_h_est);
+      if need > margin_bottom + x_label_area as f64 {
+        x_label_area = (need - margin_bottom).ceil() as u32;
+      }
+    }
+  }
   if let Some(r) = look.aspect_ratio {
     let area_w = render_width as f64
-      - BAR_SIDE_MARGIN * sf
+      - margin_left
       - legend_margin_right as f64
       - y_label_area as f64;
-    let margins_v =
-      top_margin as f64 + BAR_SIDE_MARGIN * sf + x_label_area as f64;
+    let margins_v = top_margin as f64 + margin_bottom + x_label_area as f64;
     let target = area_w.max(1.0) * r + margins_v;
     svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
     render_height = svg_height * RESOLUTION_SCALE;
@@ -9006,8 +9156,8 @@ pub(crate) fn generate_bar_svg(
     let mut chart = ChartBuilder::on(&root)
       .margin_top(top_margin as u32)
       .margin_right(legend_margin_right)
-      .margin_bottom((BAR_SIDE_MARGIN * sf) as u32)
-      .margin_left((BAR_SIDE_MARGIN * sf) as u32)
+      .margin_bottom(margin_bottom as u32)
+      .margin_left(margin_left as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_min..x_max, y_min..y_max)
@@ -9103,7 +9253,7 @@ pub(crate) fn generate_bar_svg(
       // fraction of the plotting width 3 pt takes.
       let cap = 3.0 * sf * (x_max - x_min)
         / (render_width as f64
-          - (BAR_SIDE_MARGIN * sf + y_label_area as f64)
+          - (margin_left + y_label_area as f64)
           - legend_margin_right as f64);
       for y in [lo, hi] {
         chart
@@ -9183,17 +9333,14 @@ pub(crate) fn generate_bar_svg(
   );
 
   // Compute plot area coordinates (same logic as generate_axes_only_opts)
-  let margin_left = BAR_SIDE_MARGIN * sf;
   let margin_top = top_margin as f64;
   let margin_right = legend_margin_right as f64;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = margin_top;
   let plot_w =
     render_width as f64 - margin_left - margin_right - y_label_area as f64;
-  let plot_h = render_height as f64
-    - margin_top
-    - BAR_SIDE_MARGIN * sf
-    - x_label_area as f64;
+  let plot_h =
+    render_height as f64 - margin_top - margin_bottom - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
   if !custom_elements.is_empty() {
     let fragment = crate::functions::graphics::primitives_svg_fragment(
@@ -9284,8 +9431,8 @@ pub(crate) fn generate_bar_svg(
         axes_style: &axes_style,
         ticks_style: &[None, None],
         keep_y_label_on_x_axis: true,
-        label_color: None,
-        tick_font: crate::functions::plot_axes::AXIS_TICK_FONT,
+        label_color: tick_style_fill.as_deref(),
+        tick_font: tick_font_pt,
       },
     );
     let axis_y = plot_y0 + plot_h - y_scale.frac(origin.1) * plot_h;
@@ -9392,8 +9539,9 @@ pub(crate) fn generate_bar_svg(
 
   // WL 15 sets chart labels at the tick-label size and the PlotLabel a
   // little larger.
-  let font_size = sf * CHART_LABEL_FONT;
-  let title_font_size = sf * CHART_TITLE_FONT;
+  let font_size = sf * label_font_pt;
+  let title_font_size = sf * title_font_pt;
+  let [x_axes_font, y_axes_font] = axes_font_pt.map(|f| f * sf);
 
   // `Epilog` primitives are written in chart coordinates, where the first bar
   // group is centered at `x = 1`; the axis here puts it at `0.5`.
@@ -9434,6 +9582,12 @@ pub(crate) fn generate_bar_svg(
       let map_y_val =
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
       for (i, label) in chart_labels.iter().enumerate().take(n) {
+        let font_size = label.font_size.map_or(font_size, |f| f * sf);
+        let weight = if label.bold || label_bold {
+          " font-weight=\"bold\""
+        } else {
+          ""
+        };
         let cx = map_x_val(i as f64 + 0.5);
         // For Above/Center positioning, use the max value in the group
         let group_max = group_top(i);
@@ -9479,14 +9633,14 @@ pub(crate) fn generate_bar_svg(
           // the bar horizontally instead of hanging to one side of the baseline.
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{weight} \
              fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ly:.1})\">{}</text>\n",
             crate::functions::graphics::box_string_to_svg(&label.text)
           ));
         } else {
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
-             font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+             font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{weight} \
              fill=\"{fill}\">{}</text>\n",
             crate::functions::graphics::box_string_to_svg(&label.text)
           ));
@@ -9540,41 +9694,47 @@ pub(crate) fn generate_bar_svg(
     // FrameLabel: centered outside the bottom/left edge.
     if let Some(x_label) = frame_label_x {
       let cx = plot_x0 + plot_w / 2.0;
+      let label_rows = chart_label_font_pt * sf;
       let base_y = axis_y
         + if has_chart_labels {
-          font_size * 1.5 + font_size * 1.3
+          label_rows * 1.5 + x_axes_font * 1.3
         } else {
-          font_size * 1.5
+          x_axes_font * 1.5
         };
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         font-family=\"sans-serif\" font-size=\"{x_axes_font:.0}\" \
          fill=\"{label_fill}\">{}</text>\n",
         crate::functions::graphics::box_string_to_svg(x_label)
       ));
     }
     if let Some(y_label) = frame_label_y {
       let cy = plot_y0 + plot_h / 2.0;
-      let lx = margin_left + font_size * 0.8;
+      let lx = margin_left + y_axes_font * 0.8;
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         font-family=\"sans-serif\" font-size=\"{y_axes_font:.0}\" \
          fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
         crate::functions::graphics::box_string_to_svg(y_label)
       ));
     }
 
     // AxesLabel: at the far end of each axis, as in a `Plot`.
-    labels_svg.push_str(&axes_label_svg(
-      axes_label
-        .map(|(x, y)| (x.to_string(), y.to_string()))
-        .as_ref(),
-      (plot_x0, plot_y0, plot_w, plot_h),
-      (0.0, groups.len() as f64, y_min, y_max),
-      (true, true),
-      font_size,
-      label_fill,
-    ));
+    // Each axis label has its own font size.
+    for (show, axes_font) in
+      [((true, false), x_axes_font), ((false, true), y_axes_font)]
+    {
+      labels_svg.push_str(&axes_label_svg(
+        axes_label
+          .map(|(x, y)| (x.to_string(), y.to_string()))
+          .as_ref(),
+        (plot_x0, plot_y0, plot_w, plot_h),
+        (0.0, groups.len() as f64, y_min, y_max),
+        show,
+        axes_font,
+        label_fill,
+      ));
+    }
 
     // PlotLabel: centered above the chart
     if let Some(sl) = plot_label
@@ -9585,11 +9745,11 @@ pub(crate) fn generate_bar_svg(
       let ty = margin_top
         - title_font_size * 0.5
         - if axes_label_y.is_some() {
-          font_size * 1.2
+          y_axes_font * 1.2
         } else {
           0.0
         };
-      let fs = sl.font_size.map_or(title_font_size, |f| f * sf);
+      let fs = title_font_size;
       // A stacked title grows upwards: its last line stays where a one-line
       // title would sit, so whatever shares the top margin below it (the y
       // `AxesLabel`) is not written over.
@@ -9599,7 +9759,7 @@ pub(crate) fn generate_bar_svg(
         .as_ref()
         .map_or_else(|| title_default_fill.to_string(), |c| c.to_svg_rgb());
       let mut style_attrs = String::new();
-      if sl.bold {
+      if sl.bold || label_bold {
         style_attrs.push_str(" font-weight=\"bold\"");
       }
       if sl.italic {
@@ -14544,15 +14704,28 @@ fn padded_margins(
 /// `{{left, right}, {bottom, top}}`, `None`/`0` (no padding) and
 /// `Automatic`/`All` (which keep the automatic margins, i.e. `None` here).
 pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
-  fn side(e: &Expr) -> Option<f64> {
+  let [l, r, b, t] = parse_image_padding_sides(value)?;
+  Some([l?, r?, b?, t?])
+}
+
+/// `ImagePadding` as (left, right, bottom, top) in points, each side
+/// `None` where it is automatic (`All`/`Automatic`, which may also be
+/// given per side: `{{40, All}, {All, 10}}`). `None` for a fully automatic
+/// or unreadable value.
+pub(crate) fn parse_image_padding_sides(
+  value: &Expr,
+) -> Option<[Option<f64>; 4]> {
+  // `Some(None)` for an automatic side, `None` for an unreadable one.
+  fn side(e: &Expr) -> Option<Option<f64>> {
     match e {
-      Expr::Identifier(v) if v == "None" => Some(0.0),
-      _ => crate::functions::graphics::expr_to_f64(e),
+      Expr::Identifier(v) if v == "None" => Some(Some(0.0)),
+      Expr::Identifier(v) if v == "All" || v == "Automatic" => Some(None),
+      _ => crate::functions::graphics::expr_to_f64(e).map(Some),
     }
   }
-  match value {
-    Expr::Identifier(v) if v == "Automatic" || v == "All" => None,
-    Expr::Identifier(v) if v == "None" => Some([0.0; 4]),
+  let sides = match value {
+    Expr::Identifier(v) if v == "Automatic" || v == "All" => return None,
+    Expr::Identifier(v) if v == "None" => [Some(0.0); 4],
     Expr::List(pairs) if pairs.len() == 2 => {
       let (Expr::List(lr), Expr::List(bt)) = (&pairs[0], &pairs[1]) else {
         // `{h, v}` is not a Wolfram form, so a two-element list of numbers
@@ -14562,10 +14735,11 @@ pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
       if lr.len() != 2 || bt.len() != 2 {
         return None;
       }
-      Some([side(&lr[0])?, side(&lr[1])?, side(&bt[0])?, side(&bt[1])?])
+      [side(&lr[0])?, side(&lr[1])?, side(&bt[0])?, side(&bt[1])?]
     }
-    _ => side(value).map(|p| [p; 4]),
-  }
+    _ => [side(value)?; 4],
+  };
+  sides.iter().any(Option::is_some).then_some(sides)
 }
 
 /// The edges of a plot frame that are drawn.

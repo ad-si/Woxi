@@ -944,9 +944,38 @@ fn render_item(
             .as_ref()
             .map_or(0, super::chart::StyledLabel::extra_line_count)
             as f64;
-          py -= extra_lines * line_height / 2.0;
-          py += off_y * (font_size + extra_lines * line_height) / 2.0;
-          if extra_lines == 0.0 && off_x == -1.0 {
+          // `Text[label, pt, offset, {dx, dy}]` turns the baseline to run
+          // along `{dx, dy}`, read in screen space (y up) as in `Graphics`:
+          // its angle does not depend on the plot's x/y scaling. The offset
+          // is then measured along the turned baseline and across it.
+          let direction = args
+            .get(3)
+            .and_then(point2)
+            .filter(|(dx, dy)| *dx != 0.0 || *dy != 0.0)
+            .map(|(dx, dy)| (-dy).atan2(dx));
+          let mut rotate_attr = String::new();
+          if let Some(angle) = direction {
+            let chars = styled.as_ref().map_or_else(
+              || expr_to_output(body).chars().count(),
+              super::chart::StyledLabel::max_line_chars,
+            ) as f64;
+            let half_w = chars * font_size * 0.55 / 2.0;
+            let half_h = f64::midpoint(font_size, extra_lines * line_height);
+            let (ux, uy) = (angle.cos(), angle.sin());
+            let (vx, vy) = (-uy, ux);
+            px += -off_x * half_w * ux + off_y * half_h * vx;
+            py += -off_x * half_w * uy + off_y * half_h * vy;
+            rotate_attr = format!(
+              " transform=\"rotate({:.3} {px:.1} {py:.1})\"",
+              angle.to_degrees()
+            );
+          } else {
+            py -= extra_lines * line_height / 2.0;
+            py += off_y * (font_size + extra_lines * line_height) / 2.0;
+          }
+          if direction.is_some() {
+            // Centered on the point computed above.
+          } else if extra_lines == 0.0 && off_x == -1.0 {
             text_anchor = "start";
           } else if extra_lines == 0.0 && off_x == 1.0 {
             text_anchor = "end";
@@ -1005,7 +1034,7 @@ fn render_item(
           out.push_str(&format!(
             "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{font_size:.0}\" {fill}>{label}</text>\n",
+             font-size=\"{font_size:.0}\" {fill}{rotate_attr}>{label}</text>\n",
           ));
         }
       }
