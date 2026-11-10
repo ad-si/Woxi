@@ -4068,6 +4068,28 @@ mod tests {
       );
     }
 
+    /// A grid whose cells are all `Tooltip`-wrapped plots is a layout of
+    /// pictures: the notebook hosts get the whole grid composed, not just
+    /// the last plot drawn while evaluating it.
+    #[test]
+    fn a_grid_of_tooltip_wrapped_plots_renders_as_one_graphic() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{Tooltip[ArrayPlot[{{0, 1}, {1, 0}}], "first"],
+                      Tooltip[ArrayPlot[{{1, 0}, {0, 1}}], "second"]},
+                     {Tooltip[ListPlot[{1, 2, 3}], "third"], SpanFromAbove}},
+                    Frame -> All], {500, 375}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the panel is a graphic");
+      assert!(
+        svg.matches("<svg x=").count() >= 3,
+        "every plot of the grid is placed: {svg}"
+      );
+      for tip in ["first", "second", "third"] {
+        assert!(!svg.contains(tip), "tooltip text {tip} leaked: {svg}");
+      }
+    }
+
     /// A grid cell `Text@Style[TraditionalForm[note == "…"], size]` whose
     /// string holds `\!\(\*…\)` linear syntax is typeset (a superscript is
     /// drawn), not printed as the escape source.
