@@ -25079,6 +25079,23 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // A right-hand side with I in it but real values compiles with complex
+  // arithmetic, its tangents and reciprocal functions included, instead of
+  // being split into real and imaginary parts symbolically.
+  #[test]
+  fn complex_written_real_right_hand_side_compiles() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 (x[1.] /. First[NDSolve[{x'[t] == \
+         (Exp[I 0.5] Tanh[x[t]] + Exp[-I 0.5] Tanh[x[t]])/2 + \
+         Sech[x[t]] Exp[I 0.3] - Sech[x[t]] Exp[I 0.3] + \
+         Cot[1 + x[t]^2] Sec[x[t]] (1 + 0 I), x[0] == 0.5}, x, {t, 0, 1}]])]"
+      )
+      .unwrap(),
+      "941078"
+    );
+  }
+
   // A ParametricNDSolveValue function evaluated at alternating parameter
   // values (a fit's finite differences) answers from its recent solves.
   #[test]

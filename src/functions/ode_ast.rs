@@ -11742,6 +11742,14 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
         "Cos" => Some(Cx::cos),
         "Sinh" => Some(Cx::sinh),
         "Cosh" => Some(Cx::cosh),
+        "Tan" => Some(|z: Cx| z.sin().mul(z.cos().recip())),
+        "Cot" => Some(|z: Cx| z.cos().mul(z.sin().recip())),
+        "Sec" => Some(|z: Cx| z.cos().recip()),
+        "Csc" => Some(|z: Cx| z.sin().recip()),
+        "Tanh" => Some(|z: Cx| z.sinh().mul(z.cosh().recip())),
+        "Coth" => Some(|z: Cx| z.cosh().mul(z.sinh().recip())),
+        "Sech" => Some(|z: Cx| z.cosh().recip()),
+        "Csch" => Some(|z: Cx| z.sinh().recip()),
         _ => None,
       };
       if let Some(f) = unary
