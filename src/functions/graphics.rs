@@ -41313,16 +41313,30 @@ pub fn manipulate_block_code(
   }
   // A frozen graphic has no source form; it stays a global. A variable
   // that several controls share is bound once (its first control), and a
-  // built-in symbol (`False` from `"Button 1" -> {b1, {False, True}}`) is
-  // never a variable to bind.
+  // built-in value (`False` from `"Button 1" -> {b1, {False, True}}`) is
+  // never a variable to bind. A built-in function's name is: a control
+  // variable called `Tree` is localized like any other.
+  let is_builtin_value = |name: &str| {
+    matches!(
+      name,
+      "True"
+        | "False"
+        | "None"
+        | "Null"
+        | "Automatic"
+        | "All"
+        | "Inherited"
+        | "Infinity"
+        | "ComplexInfinity"
+        | "Indeterminate"
+        | "I"
+    )
+  };
   let mut seen = std::collections::HashSet::new();
   let bound: Vec<&(String, String)> = bindings
     .iter()
     .filter(|(_, value)| !crate::is_frozen_graphic(value))
-    .filter(|(name, _)| {
-      !crate::evaluator::functions::is_builtin_symbol(name)
-        && seen.insert(name.clone())
-    })
+    .filter(|(name, _)| !is_builtin_value(name) && seen.insert(name.clone()))
     .collect();
   if bound.is_empty() {
     return body_code.to_string();
@@ -46028,6 +46042,28 @@ mod manipulate_hidden_state_var_tests {
   /// to the literal text `ControlType -> None` instead of `Null`. This is
   /// a self-authored, construct-equivalent example (an invented variable
   /// name) — not the Demonstration's own code, which is copyrighted.
+  /// A hidden state variable may be named like a built-in symbol (`Tree`):
+  /// the Manipulate localizes it like any other.
+  #[test]
+  fn hidden_state_var_named_like_a_builtin() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{x, Tree}, {x, 1, 3, 1}, {{Tree, {}}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.state, vec![("Tree".to_string(), "{}".to_string())]);
+    // The body is evaluated with it bound, while a built-in value never is.
+    let code = manipulate_block_code(
+      "Tree = Append[Tree, 1]",
+      &[
+        ("Tree".to_string(), "{}".to_string()),
+        ("False".to_string(), "1".to_string()),
+      ],
+    );
+    assert!(code.starts_with("Block[{Tree = {}}"), "{code}");
+    assert_eq!(crate::interpret(&code).unwrap(), "{1}");
+  }
+
   #[test]
   fn domain_less_hidden_state_var_defaults_to_null_not_the_option_rule() {
     let expr = crate::parse_to_expr(
