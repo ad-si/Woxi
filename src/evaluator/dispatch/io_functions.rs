@@ -5739,6 +5739,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
       lays_out_a_graphic(&args[0])
     }
+    // `Tooltip[expr, tip]` displays `expr`; the tip only appears on hover.
+    // A grid whose cells are all tooltip-wrapped plots is a layout of
+    // pictures like any other.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip" && !args.is_empty() =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
     // `Text[expr]` displays `expr`, so a matrix inside it is a picture too.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       lays_out_a_graphic(&args[0])
