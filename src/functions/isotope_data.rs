@@ -2648,7 +2648,7 @@ fn decay_mode(code: &str) -> Option<(&'static str, Option<(i128, i128)>)> {
     _ => {
       // Cluster emission: the code names the cluster (`"14C"`, `"24Ne"`).
       let digits: String =
-        code.chars().take_while(|c| c.is_ascii_digit()).collect();
+        code.chars().take_while(char::is_ascii_digit).collect();
       let symbol = &code[digits.len()..];
       let a: i128 = digits.parse().ok()?;
       let z = (1..=118).find(|&z| {
