@@ -7881,13 +7881,19 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   match image_type {
     ImageType::Real64 | ImageType::Real32 => {
-      out_data.iter_mut().for_each(|v| *v = *v as f32 as f64);
+      for v in &mut out_data {
+        *v = *v as f32 as f64;
+      }
     }
     ImageType::Byte => {
-      out_data.iter_mut().for_each(|v| *v = quantize(255.0)(*v));
+      for v in &mut out_data {
+        *v = quantize(255.0)(*v);
+      }
     }
     ImageType::Bit16 => {
-      out_data.iter_mut().for_each(|v| *v = quantize(65535.0)(*v));
+      for v in &mut out_data {
+        *v = quantize(65535.0)(*v);
+      }
     }
     ImageType::Bit => out_data.iter_mut().for_each(|v| *v = quantize(1.0)(*v)),
   }

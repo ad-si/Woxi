@@ -6652,8 +6652,8 @@ impl<'a> RuleSet<'a> {
       // A derivative is stored flat but is the curried
       // `Derivative[n][f][x]`.
       Expr::FunctionCall { name, .. } => {
-        !heads.contains(name.as_str())
-          && !(name == "Derivative" && heads.contains(CURRIED_HEAD))
+        !(heads.contains(name.as_str())
+          || (name == "Derivative" && heads.contains(CURRIED_HEAD)))
       }
       Expr::CurriedCall { .. } => !heads.contains(CURRIED_HEAD),
       _ => false,
