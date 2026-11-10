@@ -72,6 +72,7 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Determine the data spec(s); `data -> labels` labels the points.
+  let styles = parse_plot_style_colors(&args[1..]);
   let (args, point_labels) = split_number_line_labels(args);
   let args = args.as_slice();
   let series = parse_number_line_args(args)?;
@@ -98,6 +99,7 @@ pub fn number_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_width,
     svg_height,
     full_width,
+    &styles,
   );
 
   Ok(crate::graphics_result(svg))
@@ -462,6 +464,7 @@ fn render_number_line_svg(
   svg_width: u32,
   svg_height: u32,
   full_width: bool,
+  styles: &[Option<String>],
 ) -> std::string::String {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
@@ -527,7 +530,13 @@ fn render_number_line_svg(
 
   // Draw each series row (first series closest to axis, rest stacked upward).
   for (row_idx, data) in series.iter().enumerate() {
-    let color = series_color(row_idx);
+    let color = if styles.is_empty() {
+      series_color(row_idx)
+    } else {
+      styles[row_idx % styles.len()]
+        .clone()
+        .unwrap_or_else(|| series_color(row_idx))
+    };
     let data_y = axis_y - (row_idx + 1) as f64 * row_spacing;
 
     match data {
@@ -688,6 +697,41 @@ fn theme_colors() -> (
     ("#1a1a1a", "#999999", "#444444", "#999", "#e0e0e0")
   } else {
     ("#ffffff", "#666666", "#cccccc", "#666", "#333")
+  }
+}
+
+/// The colors given by a `PlotStyle` option, cycled over the series: a
+/// single color styles every series, a list styles them in turn. An entry
+/// that is not a plain color keeps the default color of its series.
+fn parse_plot_style_colors(opts: &[Expr]) -> Vec<Option<String>> {
+  let style = opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
+      Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| *replacement.clone()),
+      )
+    }
+    _ => None,
+  });
+  let color_of = |e: &Expr| -> Option<String> {
+    let e = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Directive" && args.len() == 1 =>
+      {
+        &args[0]
+      }
+      other => other,
+    };
+    crate::functions::graphics::parse_color(e)
+      .map(super::graphics::Color::to_svg_rgb)
+  };
+  match &style {
+    Some(Expr::List(items)) => items.iter().map(color_of).collect(),
+    Some(other) => vec![color_of(other)],
+    None => Vec::new(),
   }
 }
 

@@ -21071,6 +21071,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     let svg = crate::functions::plot::render_merged_plot_source(&merged)?;
+    // Opaque pictures with no plot data of their own (a `NumberLinePlot`)
+    // shown together with plots are stacked over the merged plot instead
+    // of being dropped.
+    if !rendered_graphics.is_empty() {
+      let mut layers = vec![crate::graphics_result(svg.clone())];
+      layers.extend(rendered_graphics.iter().cloned());
+      if let Some(stacked) = overlay_rendered_graphics_svgs(&layers) {
+        return Ok(crate::graphics_result(stacked));
+      }
+    }
     return Ok(crate::graphics_result_with_source(svg, merged));
   }
 
