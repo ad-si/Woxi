@@ -285,7 +285,7 @@ fn fmin(f: impl Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
   let mut fv = fx;
   let mut fw = fx;
   let tol3 = tol / 3.0;
-  let mut xm = 0.5 * (a2 + b2);
+  let mut xm = f64::midpoint(a2, b2);
   let mut tol1 = EPS * x.abs() + tol3;
   let mut t2 = 2.0 * tol1;
   while (x - xm).abs() > t2 - 0.5 * (b2 - a2) {
@@ -352,7 +352,7 @@ fn fmin(f: impl Fn(f64) -> f64, a: f64, b: f64, tol: f64) -> f64 {
       v = u;
       fv = fu;
     }
-    xm = 0.5 * (a2 + b2);
+    xm = f64::midpoint(a2, b2);
     tol1 = EPS * x.abs() + tol3;
     t2 = 2.0 * tol1;
   }
@@ -904,7 +904,7 @@ fn deconvolve(head: &str, args: &[Expr]) -> Result<Expr, InterpreterError> {
           matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. })
         }) =>
       {
-        opts.extend(items.iter().cloned())
+        opts.extend(items.iter().cloned());
       }
       other => {
         msg(format!(

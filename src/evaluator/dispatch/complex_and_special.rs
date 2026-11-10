@@ -6109,7 +6109,7 @@ fn tf_delete_first_minus(b: &mut Expr) -> bool {
   match b {
     Expr::FunctionCall { args, .. } => {
       let mut v: Vec<Expr> = args.to_vec();
-      for a in v.iter_mut() {
+      for a in &mut v {
         if tf_delete_first_minus(a) {
           *args = v.into();
           return true;
@@ -6128,7 +6128,7 @@ fn tf_delete_first_minus(b: &mut Expr) -> bool {
         *items = v.into();
         return true;
       }
-      for a in v.iter_mut() {
+      for a in &mut v {
         if tf_delete_first_minus(a) {
           *items = v.into();
           return true;
@@ -6164,7 +6164,7 @@ fn tf_visit_strings(b: &Expr, f: &mut impl FnMut(&str)) {
     Expr::String(s) => f(s),
     Expr::List(items) => items.iter().for_each(|i| tf_visit_strings(i, f)),
     Expr::FunctionCall { args, .. } => {
-      args.iter().for_each(|i| tf_visit_strings(i, f))
+      args.iter().for_each(|i| tf_visit_strings(i, f));
     }
     _ => {}
   }
@@ -6375,7 +6375,7 @@ fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
       args.iter().for_each(|a| tf_superscripts_of(a, eb, f));
     }
     Expr::List(items) => {
-      items.iter().for_each(|a| tf_superscripts_of(a, eb, f))
+      items.iter().for_each(|a| tf_superscripts_of(a, eb, f));
     }
     _ => {}
   }

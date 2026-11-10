@@ -7764,16 +7764,17 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       m.clone()
     }
-    Some(other) => match crate::functions::math_ast::try_eval_to_f64(other) {
-      Some(v) => format!("{v}"),
-      None => {
+    Some(other) => {
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(other) {
+        format!("{v}")
+      } else {
         crate::emit_message(&format!(
           "ImageDeconvolve::padding: The value of the option Padding -> {} should be one of \"Fixed\", \"Periodic\", \"Reversed\", \"Reflected\", GrayLevel[level] or c, where c is any machine-sized number.",
           expr_to_string(other)
         ));
         return fail();
       }
-    },
+    }
   };
   let Some(settings) =
     crate::functions::list_deconvolve::method_settings("ImageDeconvolve", opts)
@@ -7883,10 +7884,10 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       out_data.iter_mut().for_each(|v| *v = *v as f32 as f64);
     }
     ImageType::Byte => {
-      out_data.iter_mut().for_each(|v| *v = quantize(255.0)(*v))
+      out_data.iter_mut().for_each(|v| *v = quantize(255.0)(*v));
     }
     ImageType::Bit16 => {
-      out_data.iter_mut().for_each(|v| *v = quantize(65535.0)(*v))
+      out_data.iter_mut().for_each(|v| *v = quantize(65535.0)(*v));
     }
     ImageType::Bit => out_data.iter_mut().for_each(|v| *v = quantize(1.0)(*v)),
   }

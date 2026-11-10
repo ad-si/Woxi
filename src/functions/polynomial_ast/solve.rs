@@ -475,8 +475,8 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
         "FindRoot",
         vec![
           Expr::Comparison {
-            operands: vec![difference.clone(), Expr::Integer(0)].into(),
-            operators: vec![ComparisonOp::Equal].into(),
+            operands: vec![difference.clone(), Expr::Integer(0)],
+            operators: vec![ComparisonOp::Equal],
           },
           Expr::List(vec![var.clone(), Expr::Real(start)].into()),
         ],
