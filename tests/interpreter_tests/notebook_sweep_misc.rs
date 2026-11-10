@@ -705,6 +705,26 @@ mod find_minimum_derivative_cache {
 mod optimize_inexact_constraints {
   use super::*;
 
+  // A one-variable constraint that is no plain bound is honored, and a
+  // reduced objective's unboundedness probed while trying the constraint
+  // boundaries is no message of the call.
+  #[test]
+  fn nonlinear_one_variable_constraints() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{First[NMaximize[{x^2, x^2 <= 4}, x]], \
+          Round[10^4 First[NMaximize[{x, x^2 <= 4}, x]]], \
+          Round[10^6 First[NMinimize[{x, 3 x^2 - 4 x - 2 <= 0}, x]]], \
+          Round[10^6 First[NMaximize[{x^2 + y^2, \
+            x + y == 1 && x^2 + 2 y^2 <= 4}, {x, y}]]]}"
+      )
+      .unwrap(),
+      "{4., 20000, -387426, 3480506}"
+    );
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
+  }
+
   // Machine reals that appear only in the constraints still make an
   // exact optimizer that gives up fall back to the numeric one, with the
   // Reals domain given or not.

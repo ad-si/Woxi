@@ -19645,6 +19645,18 @@ fn minimize_extract_linear_constraint(
   Some((coeffs, -constant, sense))
 }
 
+/// [`minimize_single_var`] as a probe for a candidate point: its verdicts
+/// (an unbounded reduced objective's natt) are not the answer to the call.
+fn minimize_probe_single_var(
+  f: &Expr,
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  crate::push_quiet();
+  let result = minimize_single_var(f, var, false, "Minimize");
+  crate::pop_quiet();
+  result
+}
+
 /// Minimize with linear constraints by trying constraint boundaries.
 /// For each linear constraint, substitute it as equality into f and minimize the
 /// resulting lower-dimensional problem.
@@ -19668,7 +19680,7 @@ fn minimize_constrained_boundary(
 
   // First try the unconstrained minimum
   if n == 1 {
-    if let Ok(result) = minimize_single_var(f, &vars[0], false, "Minimize")
+    if let Ok(result) = minimize_probe_single_var(f, &vars[0])
       && let Expr::List(items) = &result
       && items.len() == 2
       && let Some(fval) = minimize_try_f64(&items[0])
@@ -19766,8 +19778,7 @@ fn minimize_constrained_boundary(
       let rem_var = &remaining_vars[0];
       let rem_idx = vars.iter().position(|v| v == rem_var).unwrap();
 
-      if let Ok(result) =
-        minimize_single_var(&f_reduced, rem_var, false, "Minimize")
+      if let Ok(result) = minimize_probe_single_var(&f_reduced, rem_var)
         && let Expr::List(items) = &result
         && items.len() == 2
         && let Some(fval) = minimize_try_f64(&items[0])
@@ -23203,12 +23214,28 @@ fn nminimize_ast_impl(
   // variables overall but couples none of them, so it must still go to the
   // per-variable grid sampler (which detects the empty x-range as infeasible)
   // rather than the symbolic Minimize path.
+  // A one-variable constraint that is no plain bound (`x^2 <= 4`) cannot be
+  // read as a box either, so it takes the same constraint-honoring path.
+  let is_plain_bound = |c: &Expr| -> bool {
+    let Expr::Comparison { operands, .. } = c else {
+      return false;
+    };
+    operands.iter().all(|o| {
+      matches!(o, Expr::Identifier(n) if vars.contains(n))
+        || !vars
+          .iter()
+          .any(|v| crate::functions::polynomial_ast::contains_var(o, v))
+    })
+  };
   let has_coupling_constraint = flat_constraints.iter().any(|c| {
-    vars
+    let mentioned = vars
       .iter()
       .filter(|v| crate::functions::polynomial_ast::contains_var(c, v))
-      .count()
-      >= 2
+      .count();
+    mentioned >= 2
+      || (mentioned == 1
+        && !is_plain_bound(c)
+        && !matches!(c, Expr::FunctionCall { name, .. } if name == "Element"))
   });
   if has_coupling_constraint {
     // The grid sampler below only understands per-variable box bounds, so a
