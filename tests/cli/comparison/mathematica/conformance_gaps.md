@@ -3047,26 +3047,26 @@ Symbolic *means* are recognized; only the width has to be a number.
 The reference page gives `True` (one-argument `Clip` is odd); Woxi's
 `FullSimplify` leaves the equation unevaluated.
 
-### Which root `Solve` picks for an `InterpolatingFunction` equation
+### `Solve` of an `InterpolatingFunction` equation stays symbolic in WL
 
-`Solve`/`NSolve[f[t] == y, t]` with `f` an `InterpolatingFunction` invert it
-(`::ifun`) and return a single root. Woxi returns the first root in the
-domain; WL's choice is not the first, not FindRoot from the domain midpoint
-or an endpoint, and not the closest data point (**not reproducible** so far):
+`Solve[f[t] == y, t]` with `f` an `InterpolatingFunction` gives
+`{{t -> InverseFunction[f, 1, 1][y]}}` in WL, which only becomes a number
+under `N` (or when `y` is inexact); Woxi gives the number right away. The
+root itself agrees: both follow WL's `Reduce`NumericInverse`, which runs
+`FindRoot` from the starting points `0.365626, -0.523097, …` and keeps the
+first converged root (Woxi keeps one inside the domain first, then the first
+root found by scanning the domain, then one on the extrapolated curve).
+Where WL's and Woxi's `FindRoot` iterations differ (a Newton step far
+outside the domain of an NDSolve solution), WL may leave
+`InverseFunction[…][y]` unevaluated even under `N`, while Woxi returns the
+first root in the domain:
 
 ```sh
-# b = Interpolation[{{0, -1.}, {0.1, 0.}, {0.2, 1.}, {0.4, 1.2}, {0.6, 1.1},
-#                    {0.8, 1.}, {0.95, 0.}, {1, -0.5}}]
-# Quiet[Solve[b[t] == 0, t]]    WL {{t -> 0.95}}              Woxi {{t -> 0.1}}
-# Quiet[Solve[b[t] == 0.5, t]]  WL {{t -> 0.888802079832663}} Woxi {{t -> 0.147…}}
-# (with the same shape but {0.2, 0.}, {0.9, 0.} as the zeros, both give 0.2)
+# s = NDSolve[{y''[t] == -9.8, y[0] == 3, y'[0] == 10}, y, {t, 0, 3}]
+# Quiet[NSolve[(y /. s[[1]])[t] == 0, t]]
+#   WL {{t -> InverseFunction[InterpolatingFunction[…], 1, 1][0.]}}
+#   Woxi {{t -> 2.306284408328434}}
 ```
-
-WL also extrapolates a monotone function past its domain
-(`Solve[Interpolation[{{0, 1.}, {1, 2.}, {2, 3.}}][t] == 0, t]` is
-`{{t -> -1.}}`; Woxi gives `{}`). In TrajectoryOfATennisServe.nb this, plus
-WL's NDSolve storing `1.87*^-18` rather than the exact initial value `0` at
-`t == 0`, makes WL find the bounce at `t == 0.354` where Woxi finds `t == 0`.
 
 ## Special functions
 
@@ -6614,6 +6614,20 @@ Its `ColumnTypes` **values** are self-contradictory in the labeled two-column
 case as well: `"a,b\n1,2"` types the last column as String although it holds
 numbers, while `"a,b,c\n1,2,3"` types all three `Integer64`.
 
+### `Import` of a URL whose body is an HTML error page
+
+`Import` reads a URL's body whatever the HTTP status, and wolframscript
+then imports it by its content: a 404 page behind an image URL comes back
+as the page's plain text. Woxi saves the body under the URL's extension and
+imports that file, so the page fails to decode as an image and gives
+`$Failed`; Woxi has no `"HTML"` importer to read it with:
+
+```sh
+# Import["http://www.spore.com/static/image/500/291/274/500291274701_lrg.png"]
+#   WL "Not Found  \nThe requested URL was not found on this server."
+#   Woxi $Failed
+```
+
 ### `Import` element lists
 
 WL's element list for CSV names `EventSeries` and `TimeSeries`, which Woxi does
@@ -9506,3 +9520,14 @@ and `RealDigits[SetPrecision[0.8,80],10,16]`. Thus the extra digit is not
 obtained by directly extracting the exact binary input's decimal digits.
 Woxi currently promotes machine values from their shortest decimal string;
 the general machine digit-extraction and uncertainty rule remains unresolved.
+
+### Studio: Grid `ItemSize` with wider typeset cells
+
+A `Grid` with numeric `ItemSize -> {{w1, w2}}` and a column holding a wide
+`TraditionalForm` formula (for example a `Sqrt` of two stacked fractions)
+renders in Woxi Studio with the formula overflowing its fixed-width column
+and overlapping the neighbouring cell. Woxi also typesets `TraditionalForm`
+in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
+Times}`, which makes such cells roughly a third wider than in Wolfram.
+Not yet verified against the kernel's clipping/wrapping rule for
+over-wide items.

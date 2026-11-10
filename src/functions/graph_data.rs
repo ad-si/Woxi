@@ -685,12 +685,13 @@ pub fn graph_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     [Expr::String(class)] if resolve(&args[0]).is_none() => {
       if let Some(members) = class_members(class) {
-        return Ok(Expr::List(members.into_iter().map(str_expr).collect()));
+        Ok(Expr::List(members.into_iter().map(str_expr).collect()))
+      } else {
+        crate::emit_message(&format!(
+          "GraphData::notent: {class} is not a known entity, class or tag for GraphData. Use GraphData[] for a list of entities."
+        ));
+        unevaluated_call()
       }
-      crate::emit_message(&format!(
-        "GraphData::notent: {class} is not a known entity, class or tag for GraphData. Use GraphData[] for a list of entities."
-      ));
-      unevaluated_call()
     }
     // A class with a property maps the property over the members.
     [Expr::String(class), prop @ Expr::String(_)]

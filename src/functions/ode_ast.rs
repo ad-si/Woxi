@@ -1441,11 +1441,69 @@ pub fn ndsolve_ast_with_head(
     .map(total_derivative_to_derivative)
     .map(|e| expand_defined_derivatives(&e))
     .collect();
+  // While a plot samples its function, the same NDSolve call (held in the
+  // plotted expression, re-run at every point) is solved once.
+  let memo_key = (NDSOLVE_MEMO_DEPTH.with(std::cell::Cell::get) > 0
+    && !evaluated
+      .iter()
+      .any(|e| crate::functions::math_ast::expr_contains_head(e, "WhenEvent")))
+  .then(|| {
+    format!(
+      "{head}[{}]",
+      evaluated
+        .iter()
+        .map(expr_to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+    )
+  });
+  if let Some(key) = &memo_key
+    && let Some(hit) = NDSOLVE_MEMO.with(|m| m.borrow().get(key).cloned())
+  {
+    return Ok(hit);
+  }
   let previous = NDSOLVE_HEAD.with(|h| h.replace(head.to_string()));
   let result = ndsolve_ast_inner(&evaluated)
     .map(|expr| retag_unevaluated(expr, "NDSolve", head));
   NDSOLVE_HEAD.with(|h| *h.borrow_mut() = previous);
+  if let (Some(key), Ok(value)) = (memo_key, &result) {
+    NDSOLVE_MEMO.with(|m| m.borrow_mut().insert(key, value.clone()));
+  }
   result
+}
+
+thread_local! {
+  static NDSOLVE_MEMO_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+  static NDSOLVE_MEMO: std::cell::RefCell<
+    std::collections::HashMap<String, Expr>,
+  > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// While alive, `NDSolve`/`NDSolveValue` results are remembered by their
+/// (evaluated) arguments: a plot samples its function at hundreds of points,
+/// and an `NDSolve` call inside the held plotted expression would otherwise
+/// be solved again at every one. The memo is dropped with the outermost
+/// scope, so definitions changed between plots are seen.
+pub(crate) struct NDSolveMemoScope;
+
+impl NDSolveMemoScope {
+  pub(crate) fn new() -> Self {
+    NDSOLVE_MEMO_DEPTH.with(|d| d.set(d.get() + 1));
+    Self
+  }
+}
+
+impl Drop for NDSolveMemoScope {
+  fn drop(&mut self) {
+    let depth = NDSOLVE_MEMO_DEPTH.with(|d| {
+      d.set(d.get() - 1);
+      d.get()
+    });
+    if depth == 0 {
+      NDSOLVE_MEMO.with(|m| m.borrow_mut().clear());
+    }
+  }
 }
 
 thread_local! {

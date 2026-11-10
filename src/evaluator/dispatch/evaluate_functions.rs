@@ -5465,6 +5465,94 @@ fn evaluate_function_call_ast_inner(
         });
         return Ok(unevaluated(name, args));
       }
+      // A `Method` list carrying a suboption of the pre-version-6
+      // implementation (`MaxIterations`, `"Rotation"`) makes Wolfram draw
+      // with that implementation (see `pre_v6_graph_plot`).
+      let option_value = |key: &str| {
+        args[1..].iter().rev().find_map(|o| match o {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => {
+            Some(replacement.as_ref().clone())
+          }
+          _ => None,
+        })
+      };
+      if name == "GraphPlot"
+        && let Some(method_opt) = option_value("Method")
+        && let Expr::List(method) = &method_opt
+        && method.iter().any(|o| {
+          matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "MaxIterations")
+              || matches!(pattern.as_ref(), Expr::String(n) if n == "Rotation"))
+        })
+        && let Expr::FunctionCall {
+          name: en,
+          args: eargs,
+        } = &evaluated
+        && en == "Graph"
+        && eargs.len() >= 2
+        && let (Expr::List(vertices), Expr::List(edges)) = (&eargs[0], &eargs[1])
+      {
+        let mut layout_args = vec![eargs[0].clone(), eargs[1].clone()];
+        if let Some(m @ Expr::String(_)) = method.first() {
+          layout_args.push(rule_expr(id_expr("GraphLayout"), m.clone()));
+        }
+        let plot = crate::functions::graph::graph_plot_ast(&layout_args, false)?;
+        let coords: Option<Vec<(f64, f64)>> = match &plot {
+          Expr::FunctionCall { name: pn, args: pargs } if pn == "Graphics" => {
+            match pargs.first() {
+              Some(Expr::FunctionCall { name: cn, args: cargs })
+                if cn == "GraphicsComplex" =>
+              {
+                match cargs.first() {
+                  Some(Expr::List(pts)) => pts
+                    .iter()
+                    .map(|p| match p {
+                      Expr::List(xy) if xy.len() == 2 => Some((
+                        crate::functions::math_ast::try_eval_to_f64(&xy[0])?,
+                        crate::functions::math_ast::try_eval_to_f64(&xy[1])?,
+                      )),
+                      _ => None,
+                    })
+                    .collect(),
+                  _ => None,
+                }
+              }
+              _ => None,
+            }
+          }
+          _ => None,
+        };
+        let labeling = matches!(option_value("VertexLabeling"), Some(Expr::Identifier(ref b)) if b == "True");
+        let mut opts = vec![
+          rule_expr(id_expr("FrameTicks"), id_expr("None")),
+          rule_expr(id_expr("PlotRange"), id_expr("All")),
+          rule_expr(
+            id_expr("PlotRangePadding"),
+            call1("Scaled", Expr::Real(0.1)),
+          ),
+          rule_expr(
+            id_expr("AspectRatio"),
+            option_value("AspectRatio").unwrap_or_else(|| id_expr("Automatic")),
+          ),
+        ];
+        if let Some(size) = option_value("ImageSize") {
+          opts.push(rule_expr(id_expr("ImageSize"), size));
+        }
+        if let Some(coords) = coords
+          && let Some(plot) = crate::functions::graph::pre_v6_graph_plot(
+            vertices, edges, &coords, labeling, opts,
+          )
+        {
+          return Ok(plot);
+        }
+      }
       // A plain `GraphPlot` (no styling, labeling or rendering options)
       // evaluates to Wolfram's symbolic GraphicsComplex picture.
       let option_name = |o: &Expr| match o {

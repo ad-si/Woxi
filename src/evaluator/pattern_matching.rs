@@ -6649,11 +6649,21 @@ impl<'a> RuleSet<'a> {
       | Expr::String(_)
       | Expr::Identifier(_)
       | Expr::Constant(_) => true,
-      Expr::FunctionCall { name, .. } => !heads.contains(name.as_str()),
+      // A derivative is stored flat but is the curried
+      // `Derivative[n][f][x]`.
+      Expr::FunctionCall { name, .. } => {
+        !heads.contains(name.as_str())
+          && !(name == "Derivative" && heads.contains(CURRIED_HEAD))
+      }
+      Expr::CurriedCall { .. } => !heads.contains(CURRIED_HEAD),
       _ => false,
     }
   }
 }
+
+/// The pseudo-head a pattern with a compound head (`u[1][s]`) demands in a
+/// `RuleSet`; no symbol can be spelled like it.
+const CURRIED_HEAD: &str = "[curried]";
 
 /// The heads the rules' patterns demand, when every one is a plain `f[…]`
 /// call that can only match a call with that same head. `None` as soon as one
@@ -6674,6 +6684,26 @@ fn required_rule_heads<'a>(
       }
       other => *other,
     };
+    // A call with a compound head (`u[1][s]`, the unknowns of an NDSolve
+    // system) can only match another such call: it demands the pseudo-head
+    // `CURRIED_HEAD`, as long as its innermost head is no pattern.
+    if let Expr::CurriedCall { func, .. } = pattern {
+      let mut inner = func.as_ref();
+      while let Expr::CurriedCall { func, .. } = inner {
+        inner = func.as_ref();
+      }
+      match inner {
+        Expr::FunctionCall { name, .. } if !is_pattern_construct_head(name) => {
+          heads.insert(CURRIED_HEAD);
+          continue;
+        }
+        Expr::Identifier(_) => {
+          heads.insert(CURRIED_HEAD);
+          continue;
+        }
+        _ => return None,
+      }
+    }
     let Expr::FunctionCall { name, args } = pattern else {
       return None;
     };

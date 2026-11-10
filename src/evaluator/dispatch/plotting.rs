@@ -9,6 +9,7 @@ fn quiet_plot(
 ) -> Result<Expr, InterpreterError> {
   let snapshot = crate::snapshot_warnings();
   crate::push_quiet();
+  let _memo = crate::functions::ode_ast::NDSolveMemoScope::new();
   let result = f();
   crate::pop_quiet();
   crate::restore_warnings(snapshot);

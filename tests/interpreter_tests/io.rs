@@ -5308,6 +5308,62 @@ mod csv_import {
     format!("http://{addr}/matrix.csv")
   }
 
+  /// One-shot local HTTP server answering any request with `status` and
+  /// `body`; returns the base URL.
+  #[cfg(not(target_arch = "wasm32"))]
+  fn serve_body_once(status: &'static str, body: &'static str) -> String {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+      if let Ok((mut stream, _)) = listener.accept() {
+        let mut buf = [0u8; 1024];
+        let _ = stream.read(&mut buf);
+        let response = format!(
+          "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+          body.len()
+        );
+        let _ = stream.write_all(response.as_bytes());
+      }
+    });
+    format!("http://{addr}")
+  }
+
+  // A URL is imported like a file of the same name — an `.xml` document
+  // reads as an XMLObject (Demonstration 3DSporeCreations imports its
+  // models this way; they went to the image decoder and stopped the
+  // evaluation with "cannot decode image").
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_xml_from_url() {
+    let url = serve_body_once(
+      "200 OK",
+      "<?xml version=\"1.0\"?><model><id>7</id></model>",
+    );
+    assert_eq!(
+      interpret(&format!(r#"Cases[Import["{url}/m.xml"], XMLElement["id", _, {{v_}}] :> v, Infinity]"#))
+        .unwrap(),
+      "{7}"
+    );
+  }
+
+  // Nothing retrieved: Import::nfurl and $Failed, not an evaluation error.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn import_unreachable_url() {
+    let port = {
+      let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+      listener.local_addr().unwrap().port()
+    };
+    let url = format!("http://127.0.0.1:{port}/a.png");
+    let r =
+      woxi::interpret_with_stdout(&format!(r#"Import["{url}"]"#)).unwrap();
+    assert_eq!(r.result, "$Failed");
+    assert!(r.warnings.iter().any(|w| w == &format!(
+      "Import::nfurl: Unable to retrieve data from {url}. Consult Internal`$LastInternalFailure for potential information."
+    )));
+  }
+
   #[test]
   #[cfg(not(target_arch = "wasm32"))]
   fn import_csv_from_url_default() {

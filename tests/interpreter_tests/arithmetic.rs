@@ -8109,11 +8109,11 @@ mod cases {
       .unwrap()
     };
     assert!(boxes("Sum[a[n] + b[n], {n, 0, Infinity}]").contains(
-      r#""∞"], " ", RowBox[{"(", RowBox[{RowBox[{"a", "(", "n", ")"}], "+""#
+      r#""∞"], RowBox[{"(", RowBox[{RowBox[{"a", "(", "n", ")"}], "+""#
     ));
     assert!(
       boxes("Product[1 + 1/k^2, {k, 1, Infinity}]")
-        .contains(r#"" ", RowBox[{"(", RowBox[{"1", "+", FractionBox"#)
+        .contains(r#""∞"], RowBox[{"(", RowBox[{"1", "+", FractionBox"#)
     );
     assert!(boxes("Sum[a[k], {k, 1, n}]^2").contains(
       r#"SuperscriptBox[RowBox[{"(", RowBox[{UnderoverscriptBox["∑""#
@@ -8141,7 +8141,7 @@ mod cases {
   fn traditional_form_leading_negated_factor() {
     assert_case(
       r#"ToBoxes[TraditionalForm[HoldForm[Exp[-a x]]]]"#,
-      r#"TagBox[FormBox[TagBox[RowBox[{exp, (, RowBox[{-, RowBox[{a,  , x}]}], )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{exp, (, RowBox[{RowBox[{-, a}],  , x}], )}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
   }
 
@@ -8252,6 +8252,112 @@ mod cases {
     assert_eq!(
       held_traditional_boxes("E[x]"),
       "RowBox[{\"\u{F74D}\", \"(\", \"x\", \")\"}]"
+    );
+  }
+
+  /// TraditionalForm orders the terms of a sum as wolframscript's
+  /// `TraditionalFormDump`ordplus` does: by the variables of each term and
+  /// their powers, known functions (sin, cos, tan, log, …) in a fixed order
+  /// after plain variables, numbers last, and a two-term sum not leading
+  /// with its negative term. (Demonstration NewtonsMethod looks its
+  /// functions up by their `ToString[f, TraditionalForm]` text.)
+  #[test]
+  fn traditional_form_sum_order() {
+    let boxes = |code: &str| {
+      woxi::interpret(&format!(
+        "ToString[ToBoxes[{code}, TraditionalForm], InputForm]"
+      ))
+      .unwrap()
+    };
+    let cases = [
+      (
+        "3 Cos[x] + Sin[x]",
+        r#"FormBox[RowBox[{RowBox[{"sin", "(", "x", ")"}], "+", RowBox[{"3", " ", RowBox[{"cos", "(", "x", ")"}]}]}], TraditionalForm]"#,
+      ),
+      (
+        "Cos[9 x] + 5 x - 2",
+        r#"FormBox[RowBox[{RowBox[{"5", " ", "x"}], "+", RowBox[{"cos", "(", RowBox[{"9", " ", "x"}], ")"}], "-", "2"}], TraditionalForm]"#,
+      ),
+      (
+        "Cos[x] - x^4",
+        r#"FormBox[RowBox[{RowBox[{"cos", "(", "x", ")"}], "-", SuperscriptBox["x", "4"]}], TraditionalForm]"#,
+      ),
+      (
+        "Sin[12 x] - x^2 + 3",
+        r#"FormBox[RowBox[{RowBox[{"-", RowBox[{SuperscriptBox["x", "2"]}]}], "+", RowBox[{"sin", "(", RowBox[{"12", " ", "x"}], ")"}], "+", "3"}], TraditionalForm]"#,
+      ),
+      (
+        "1 + x + x^2 + x^3",
+        r#"FormBox[RowBox[{SuperscriptBox["x", "3"], "+", SuperscriptBox["x", "2"], "+", "x", "+", "1"}], TraditionalForm]"#,
+      ),
+      (
+        "Sin[x] + Cos[x] + Tan[x]",
+        r#"FormBox[RowBox[{RowBox[{"sin", "(", "x", ")"}], "+", RowBox[{"cos", "(", "x", ")"}], "+", RowBox[{"tan", "(", "x", ")"}]}], TraditionalForm]"#,
+      ),
+      (
+        "x^(1/2) + x^2 + 1",
+        r#"FormBox[RowBox[{SuperscriptBox["x", "2"], "+", SqrtBox["x"], "+", "1"}], TraditionalForm]"#,
+      ),
+      (
+        "x^n + x^2",
+        r#"FormBox[RowBox[{SuperscriptBox["x", "n"], "+", SuperscriptBox["x", "2"]}], TraditionalForm]"#,
+      ),
+      (
+        "1 - x",
+        r#"FormBox[RowBox[{"1", "-", "x"}], TraditionalForm]"#,
+      ),
+      (
+        "-1 - x",
+        r#"FormBox[RowBox[{RowBox[{"-", RowBox[{"x"}]}], "-", "1"}], TraditionalForm]"#,
+      ),
+      (
+        "-2 x - 1",
+        r#"FormBox[RowBox[{RowBox[{"-", RowBox[{RowBox[{"2"}], " ", "x"}]}], "-", "1"}], TraditionalForm]"#,
+      ),
+      (
+        "1 - x - y",
+        r#"FormBox[RowBox[{RowBox[{"-", RowBox[{"x"}]}], "-", "y", "+", "1"}], TraditionalForm]"#,
+      ),
+      (
+        "1 + I x",
+        "FormBox[RowBox[{\"1\", \"+\", RowBox[{\"\u{F74E}\", \" \", \"x\"}]}], TraditionalForm]",
+      ),
+      // A held sum keeps the order it was written in.
+      (
+        "HoldForm[1 + x + x^2]",
+        r#"FormBox[TagBox[RowBox[{"1", "+", "x", "+", SuperscriptBox["x", "2"]}], HoldForm], TraditionalForm]"#,
+      ),
+      (
+        "HoldForm[-2 x + 1]",
+        r#"FormBox[TagBox[RowBox[{RowBox[{RowBox[{"-", "2"}], " ", "x"}], "+", "1"}], HoldForm], TraditionalForm]"#,
+      ),
+      // The minus of a product goes on its first factor.
+      (
+        "-x Sin[x]",
+        r#"FormBox[RowBox[{RowBox[{"-", "x"}], " ", RowBox[{"sin", "(", "x", ")"}]}], TraditionalForm]"#,
+      ),
+      (
+        "-2/3 x",
+        r#"FormBox[RowBox[{"-", FractionBox[RowBox[{"2", " ", "x"}], "3"]}], TraditionalForm]"#,
+      ),
+    ];
+    for (code, expected) in cases {
+      assert_eq!(boxes(code), expected, "{code}");
+    }
+    assert_eq!(
+      woxi::interpret("MakeBoxes[x^2 - 1, TraditionalForm]").unwrap(),
+      "RowBox[{SuperscriptBox[x, 2], -, 1}]"
+    );
+    assert_eq!(
+      woxi::interpret(
+        "ToString[3 Cos[x] + Sin[x], TraditionalForm] === \
+         \"\\!\\(\\*FormBox[RowBox[{RowBox[{\\\"sin\\\", \\\"(\\\", \
+         \\\"x\\\", \\\")\\\"}], \\\"+\\\", RowBox[{\\\"3\\\", \\\" \\\", \
+         RowBox[{\\\"cos\\\", \\\"(\\\", \\\"x\\\", \\\")\\\"}]}]}], \
+         TraditionalForm]\\)\""
+      )
+      .unwrap(),
+      "True"
     );
   }
 

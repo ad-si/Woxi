@@ -7693,84 +7693,32 @@ fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
   })
 }
 
-/// Forward 2D DFT of a real `width × height` array (row-major), computed
-/// as separable 1D DFTs (rows, then columns) with `FourierParameters ->
-/// {1, 1}` (unscaled forward sum, `1/n` inverse) rather than `Fourier`'s
-/// own `{0, 1}` default — this is the convention under which pointwise
-/// multiplication in the transform domain is exactly circular convolution
-/// in the spatial domain, which the regularized inverse filter below
-/// relies on. `idft2d` is its exact inverse.
-fn dft2d(width: usize, height: usize, re: &[f64]) -> Vec<(f64, f64)> {
-  let mut data: Vec<(f64, f64)> = re.iter().map(|&v| (v, 0.0)).collect();
-  for y in 0..height {
-    let row = &data[y * width..(y + 1) * width];
-    let transformed =
-      crate::functions::math_ast::dft_core(row, 1.0, 1.0, false);
-    data[y * width..(y + 1) * width].copy_from_slice(&transformed);
-  }
-  let mut col = vec![(0.0, 0.0); height];
-  for x in 0..width {
-    for (y, slot) in col.iter_mut().enumerate() {
-      *slot = data[y * width + x];
-    }
-    let transformed =
-      crate::functions::math_ast::dft_core(&col, 1.0, 1.0, false);
-    for (y, value) in transformed.into_iter().enumerate() {
-      data[y * width + x] = value;
-    }
-  }
-  data
-}
-
-/// Inverse of [`dft2d`].
-fn idft2d(width: usize, height: usize, data: &[(f64, f64)]) -> Vec<(f64, f64)> {
-  let mut data = data.to_vec();
-  for y in 0..height {
-    let row = &data[y * width..(y + 1) * width];
-    let transformed = crate::functions::math_ast::dft_core(row, 1.0, 1.0, true);
-    data[y * width..(y + 1) * width].copy_from_slice(&transformed);
-  }
-  let mut col = vec![(0.0, 0.0); height];
-  for x in 0..width {
-    for (y, slot) in col.iter_mut().enumerate() {
-      *slot = data[y * width + x];
-    }
-    let transformed =
-      crate::functions::math_ast::dft_core(&col, 1.0, 1.0, true);
-    for (y, value) in transformed.into_iter().enumerate() {
-      data[y * width + x] = value;
-    }
-  }
-  data
-}
-
 /// ImageDeconvolve[image, ker] / ImageDeconvolve[image, ker, opts] —
 /// restores an image blurred by point-spread function `ker`, undoing what
 /// `ImageConvolve[image, ker]` would have done.
 ///
-/// Woxi implements the spectral method family — `Method -> "DampedLS"`
-/// (the default), `"Tikhonov"` and `"Wiener"` — as one regularized inverse
-/// filter in the frequency domain: `Fhat = conj(K)·G / (|K|² + λ)`, where
-/// `G` and `K` are the 2D DFTs of the (padded) image and the
-/// zero-centered PSF. `λ` is either the method's own numeric parameter
-/// (`Method -> {"Tikhonov", λ}`) or, when that parameter is `Automatic`
-/// or omitted, a small multiple of the kernel's peak spectral energy —
-/// Woxi's own heuristic, since Mathematica's automatic-λ selection isn't
-/// published. The iterative methods (`"TSVD"`, `"Hybrid"`,
-/// `"RichardsonLucy"`, `"SteepestDescent"`, `"TotalVariation"`) are not
-/// implemented and echo the call unevaluated.
+/// Wolfram's implementation (`Image`FilteringDump`iImageDeconvolve`)
+/// prepares its inputs and then runs, per channel, the spectral core of
+/// `ListDeconvolve` (methods "DampedLS", "Tikhonov", "TSVD", "Wiener"; the
+/// iterative ones are not implemented and stay unevaluated):
 ///
-/// `Padding` (default `"Reversed"`) controls how the image is extended by
-/// half the kernel size before the transform, reusing the same
-/// `"Fixed"`/`"Periodic"`/reflected boundary modes as `ImagePad` (Woxi maps
-/// `"Reversed"` to the reflected mode); the result is cropped back to the
-/// original dimensions.
+/// - a kernel dimension of even length grows by a zero row on top or a zero
+///   column on the right; a kernel narrower than 3 is zero-padded to 3,
+///   the extra row going on top and the extra column on the left first
+///   (and, a quirk reproduced here, its other axis then loses its last
+///   row or column);
+/// - an image narrower than 3, or one whose kernel had an even dimension,
+///   is padded by one pixel on every side with the `Padding` mode (default
+///   `"Reversed"`), and that border is cropped off the result;
+/// - the result takes the image's type back: real types keep machine-float
+///   (`Real32`-rounded) values, integer types round them.
 pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
       "ImageDeconvolve expects at least 2 arguments".into(),
     ));
   }
+  let fail = || Ok(unevaluated("ImageDeconvolve", args));
   let Expr::Image {
     color_space,
     display_size: _,
@@ -7782,103 +7730,167 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
   else {
     crate::emit_message(&format!(
-      "ImageDeconvolve::imginv: Expecting an image or graphics instead of {}.",
+      "ImageDeconvolve::imginv: Expecting an image instead of {}.",
       expr_to_string(&args[0])
     ));
-    return Ok(unevaluated("ImageDeconvolve", args));
+    return fail();
   };
-  let Some((krows, kcols, kernel)) = parse_numeric_matrix(&args[1]) else {
-    return Ok(unevaluated("ImageDeconvolve", args));
+  let Some((mut krows, mut kcols, mut kernel)) = parse_numeric_matrix(&args[1])
+  else {
+    crate::emit_message(&format!(
+      "ImageDeconvolve::klinv: Expecting an Image object or an array of real numbers of rank 2 or 3 instead of {}.",
+      expr_to_string(&args[1])
+    ));
+    return fail();
   };
-
-  let opts = &args[2..];
-  let (method_name, method_param): (String, Option<f64>) =
-    match option_value(opts, "Method") {
-      Some(Expr::String(s)) => (s.clone(), None),
-      Some(Expr::List(items)) if !items.is_empty() => {
-        let name = match &items[0] {
-          Expr::String(s) => s.clone(),
-          _ => "DampedLS".to_string(),
-        };
-        let param = items
-          .get(1)
-          .and_then(crate::functions::math_ast::try_eval_to_f64)
-          .filter(|p| *p > 0.0);
-        (name, param)
-      }
-      _ => ("DampedLS".to_string(), None),
-    };
-  if !matches!(method_name.as_str(), "DampedLS" | "Tikhonov" | "Wiener") {
-    // Iterative methods aren't implemented; echo the call rather than
-    // fabricate a result.
-    return Ok(unevaluated("ImageDeconvolve", args));
-  }
-  let padding_mode = match option_value(opts, "Padding") {
-    Some(Expr::String(s)) if s == "Fixed" => "Fixed",
-    Some(Expr::String(s)) if s == "Periodic" => "Periodic",
-    Some(Expr::String(s)) if s == "Reflected" => "Reflected",
-    _ => "Reversed", // the default, and anything unrecognized.
-  };
-
   let w = *width as usize;
   let h = *height as usize;
   let ch = *channels as usize;
-  let cy = krows / 2;
-  let cx = kcols / 2;
-  let pad_y = cy.min(h.saturating_sub(1));
-  let pad_x = cx.min(w.saturating_sub(1));
-  let pw = w + 2 * pad_x;
-  let ph = h + 2 * pad_y;
-
-  // Embed the PSF into a pw×ph array with its center at (0, 0), wrapping
-  // around — the standard placement for a circular-convolution kernel.
-  let mut kernel_full = vec![0.0_f64; pw * ph];
-  for ky in 0..krows {
-    for kx in 0..kcols {
-      let oy = (ky as isize - cy as isize).rem_euclid(ph as isize) as usize;
-      let ox = (kx as isize - cx as isize).rem_euclid(pw as isize) as usize;
-      kernel_full[oy * pw + ox] += kernel[ky * kcols + kx];
-    }
+  if krows > h || kcols > w {
+    crate::emit_message(
+      "ImageDeconvolve::kldims: The dimensions of a kernel cannot be larger than the dimensions of an image.",
+    );
+    return fail();
   }
-  let kernel_fft = dft2d(pw, ph, &kernel_full);
-  let max_k2 = kernel_fft
-    .iter()
-    .map(|&(re, im)| re * re + im * im)
-    .fold(0.0_f64, f64::max);
-  let lambda = method_param.unwrap_or(max_k2 * 1e-3).max(1e-12);
-
-  let mut out_data = vec![0.0_f64; data.len()];
-  let mut padded = vec![0.0_f64; pw * ph];
-  for c in 0..ch {
-    for py in 0..ph {
-      let sy =
-        image_pad_source(padding_mode, py as i64 - pad_y as i64, h as i64)
-          .unwrap_or(0) as usize;
-      for px in 0..pw {
-        let sx =
-          image_pad_source(padding_mode, px as i64 - pad_x as i64, w as i64)
-            .unwrap_or(0) as usize;
-        padded[py * pw + px] = data[(sy * w + sx) * ch + c];
+  let opts = &args[2..];
+  let padding = match option_value(opts, "Padding") {
+    None => "Reversed".to_string(),
+    Some(Expr::Identifier(a)) if a == "Automatic" => "Reversed".to_string(),
+    Some(Expr::String(m))
+      if matches!(
+        m.as_str(),
+        "Fixed" | "Periodic" | "Reflected" | "Reversed"
+      ) =>
+    {
+      m.clone()
+    }
+    Some(other) => {
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(other) {
+        format!("{v}")
+      } else {
+        crate::emit_message(&format!(
+          "ImageDeconvolve::padding: The value of the option Padding -> {} should be one of \"Fixed\", \"Periodic\", \"Reversed\", \"Reflected\", GrayLevel[level] or c, where c is any machine-sized number.",
+          expr_to_string(other)
+        ));
+        return fail();
       }
     }
-    let img_fft = dft2d(pw, ph, &padded);
-    let mut restored_fft = vec![(0.0, 0.0); pw * ph];
-    for i in 0..pw * ph {
-      let (kr, ki) = kernel_fft[i];
-      let (gr, gi) = img_fft[i];
-      let denom = kr * kr + ki * ki + lambda;
-      restored_fft[i] =
-        ((kr * gr + ki * gi) / denom, (kr * gi - ki * gr) / denom);
+  };
+  let Some(settings) =
+    crate::functions::list_deconvolve::method_settings("ImageDeconvolve", opts)
+  else {
+    return fail();
+  };
+
+  // The kernel: even dimensions grow by a zero row on top / a zero column
+  // on the right, then dimensions below 3 are padded towards 3.
+  let even = krows % 2 == 0 || kcols % 2 == 0;
+  // Pads (or, for a negative amount, trims) the kernel on each side.
+  let grow = |kernel: &[f64],
+              (rows, cols): (usize, usize),
+              (top, bottom, left, right): (isize, isize, isize, isize)|
+   -> (usize, usize, Vec<f64>) {
+    let nr = (rows as isize + top + bottom).max(0) as usize;
+    let nc = (cols as isize + left + right).max(0) as usize;
+    let mut out = vec![0.0; nr * nc];
+    for r in 0..nr {
+      for c in 0..nc {
+        let (sr, sc) = (r as isize - top, c as isize - left);
+        if (0..rows as isize).contains(&sr) && (0..cols as isize).contains(&sc)
+        {
+          out[r * nc + c] = kernel[sr as usize * cols + sc as usize];
+        }
+      }
     }
-    let restored = idft2d(pw, ph, &restored_fft);
+    (nr, nc, out)
+  };
+  (krows, kcols, kernel) = grow(
+    &kernel,
+    (krows, kcols),
+    (
+      isize::from(krows % 2 == 0),
+      0,
+      0,
+      isize::from(kcols % 2 == 0),
+    ),
+  );
+  // Wolfram pads `{{⌊w/2⌋, ⌊(w-1)/2⌋}, {⌊(h-1)/2⌋, ⌊h/2⌋}}` with w, h the
+  // shortfall below 3 — so an axis that is long enough (shortfall 0) loses
+  // its last column or row.
+  let (dw, dh) = (
+    3isize - (kcols as isize).min(3),
+    3isize - (krows as isize).min(3),
+  );
+  if dw > 0 || dh > 0 {
+    (krows, kcols, kernel) = grow(
+      &kernel,
+      (krows, kcols),
+      (
+        dh.div_euclid(2),
+        (dh - 1).div_euclid(2),
+        dw.div_euclid(2),
+        (dw - 1).div_euclid(2),
+      ),
+    );
+  }
+
+  // The image, padded by one pixel when it is small or the kernel was even.
+  let pad = usize::from(w < 3 || h < 3 || even);
+  let (pw, ph) = (w + 2 * pad, h + 2 * pad);
+  let fill = padding.parse::<f64>().ok();
+  let mut out_data = vec![0.0_f64; data.len()];
+  for c in 0..ch {
+    let mut plane = vec![0.0; pw * ph];
+    for y in 0..ph {
+      for x in 0..pw {
+        let sy = image_pad_source(&padding, y as i64 - pad as i64, h as i64);
+        let sx = image_pad_source(&padding, x as i64 - pad as i64, w as i64);
+        plane[y * pw + x] = match (sy, sx, fill) {
+          (Some(sy), Some(sx), _) => {
+            data[(sy as usize * w + sx as usize) * ch + c]
+          }
+          (_, _, Some(v)) => {
+            let (iy, ix) = (y as i64 - pad as i64, x as i64 - pad as i64);
+            if (0..h as i64).contains(&iy) && (0..w as i64).contains(&ix) {
+              data[(iy as usize * w + ix as usize) * ch + c]
+            } else {
+              v
+            }
+          }
+          _ => 0.0,
+        };
+      }
+    }
+    let restored = crate::functions::list_deconvolve::deconvolve_array(
+      &[krows, kcols],
+      &kernel,
+      &[ph, pw],
+      &plane,
+      settings,
+    );
     for y in 0..h {
       for x in 0..w {
-        let (re, _im) = restored[(y + pad_y) * pw + (x + pad_x)];
-        out_data[(y * w + x) * ch + c] = re;
+        out_data[(y * w + x) * ch + c] = restored[(y + pad) * pw + x + pad];
       }
     }
   }
-
+  // Back to the image's type: integer types round the values in their own
+  // units, real types keep Real32-rounded values.
+  let quantize = |levels: f64| {
+    move |v: f64| (v * levels).round().clamp(0.0, levels) / levels
+  };
+  match image_type {
+    ImageType::Real64 | ImageType::Real32 => {
+      out_data.iter_mut().for_each(|v| *v = *v as f32 as f64);
+    }
+    ImageType::Byte => {
+      out_data.iter_mut().for_each(|v| *v = quantize(255.0)(*v));
+    }
+    ImageType::Bit16 => {
+      out_data.iter_mut().for_each(|v| *v = quantize(65535.0)(*v));
+    }
+    ImageType::Bit => out_data.iter_mut().for_each(|v| *v = quantize(1.0)(*v)),
+  }
   Ok(Expr::Image {
     color_space: *color_space,
     display_size: None,
@@ -13333,28 +13345,6 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
     return Ok(fail_expr());
   };
   Ok(dynamic_image_to_expr(&img))
-}
-
-/// Download a URL and import as image (CLI only — uses curl)
-#[cfg(not(target_arch = "wasm32"))]
-pub fn import_image_from_url(url: &str) -> Result<Expr, InterpreterError> {
-  let output = std::process::Command::new("curl")
-    .args(["-fsSL", "--max-time", "15", url])
-    .output()
-    .map_err(|e| {
-      InterpreterError::EvaluationError(format!(
-        "Import: failed to run curl: {e}"
-      ))
-    })?;
-  if !output.status.success() {
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    return Err(InterpreterError::EvaluationError(format!(
-      "Import: failed to download \"{}\": {}",
-      url,
-      stderr.trim()
-    )));
-  }
-  import_image_from_bytes(&output.stdout)
 }
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────

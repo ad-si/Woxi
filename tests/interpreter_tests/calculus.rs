@@ -9645,6 +9645,24 @@ Round[N[closed] - N[numeric], 10^-6]"
 mod ndsolve {
   use super::*;
 
+  // A plot re-evaluates its held expression at every sample point; an
+  // NDSolve call in it is solved once per plot (Demonstration
+  // ReactionPathsOfWeiPraterComplexReactionNetworks plots 18 of them).
+  #[test]
+  fn solved_once_per_plot() {
+    assert_eq!(
+      interpret(
+        "g[t_?NumericQ] := (calls++; t); \
+         calls = 0; NDSolve[{y'[t] == g[t], y[0] == 0}, y, {t, 0, 1}]; \
+         single = calls; calls = 0; \
+         Plot[(y /. First[NDSolve[{y'[t] == g[t], y[0] == 0}, y, {t, 0, 1}]])[x], \
+         {x, 0, 1}]; {single > 0, calls == single}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   // Unknowns that stand for lists of component functions, with equations
   // between such lists, solve componentwise and report one rule per list
   // (ActionPotentialPropagationAlongMyelinatedAxons).

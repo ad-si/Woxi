@@ -367,9 +367,14 @@ fn solve_by_factor_list(
 }
 
 /// `Solve`/`NSolve[lhs == rhs, t]` with an InterpolatingFunction applied to
-/// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`,
-/// and gives the first root in its domain. The root is located by a scan of the
-/// domain for a sign change and refined by bisection.
+/// `t`: Wolfram inverts the interpolating function, reporting `head::ifun`.
+/// Its numeric inverse (`Reduce`NumericInverse`) runs `FindRoot` from a
+/// fixed list of starting points (0.365626, -0.523097, …) and keeps the
+/// first converged root — so a curve that starts on the value but crosses
+/// it again near 0.37 gives that crossing. Woxi does the same with the real
+/// starting points, keeping a root in the domain, and otherwise gives the
+/// first root in the domain, located by a scan for a sign change refined by
+/// bisection.
 fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
   fn domain_of(e: &Expr) -> Option<(f64, f64)> {
     if let Expr::CurriedCall { func, .. } = e
@@ -418,6 +423,77 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
   crate::emit_message(&format!(
     "{head}::ifun: Inverse functions are being used by {head}, so some solutions may not be found; use Reduce for complete solution information."
   ));
+  let rule = |t: f64| {
+    Expr::List(
+      vec![Expr::List(
+        vec![Expr::Rule {
+          pattern: Box::new(var.clone()),
+          replacement: Box::new(Expr::Real(t)),
+        }]
+        .into(),
+      )]
+      .into(),
+    )
+  };
+  // The crossing in `[a, b]` (where `g(a) = fa` and `g(b)` differ in sign),
+  // to machine precision.
+  let bisect = |mut a: f64, mut b: f64, mut fa: f64| -> Option<f64> {
+    for _ in 0..200 {
+      let m = f64::midpoint(a, b);
+      let fm = g(m)?;
+      if fm == 0.0 || (b - a) <= f64::EPSILON * m.abs().max(1.0) {
+        return Some(m);
+      }
+      if fm.signum() == fa.signum() {
+        a = m;
+        fa = fm;
+      } else {
+        b = m;
+      }
+    }
+    Some(f64::midpoint(a, b))
+  };
+  // A FindRoot result polished the same way, when a small bracket around
+  // it changes sign.
+  let polish = |t: f64| -> f64 {
+    let h = 1e-6 * (hi - lo);
+    match (g(t - h), g(t + h)) {
+      (Some(fa), Some(fb)) if fa.signum() != fb.signum() && fa != 0.0 => {
+        bisect(t - h, t + h, fa).unwrap_or(t)
+      }
+      _ => t,
+    }
+  };
+  let tolerance = 1e-3 * (hi - lo);
+  // A root found outside the domain (on the extrapolated curve) is the
+  // answer only when there is none inside.
+  let mut outside: Option<f64> = None;
+  for start in [0.365626, -0.523097] {
+    let find_root = crate::helpers::call1(
+      "Quiet",
+      crate::helpers::call(
+        "FindRoot",
+        vec![
+          Expr::Comparison {
+            operands: vec![difference.clone(), Expr::Integer(0)],
+            operators: vec![ComparisonOp::Equal],
+          },
+          Expr::List(vec![var.clone(), Expr::Real(start)].into()),
+        ],
+      ),
+    );
+    if let Ok(found) = crate::evaluator::evaluate_expr_to_expr(&find_root)
+      && let Expr::List(rules) = &found
+      && let [Expr::Rule { replacement, .. }] = rules.as_slice()
+      && let Some(t) = try_eval_to_f64(replacement)
+      && g(t).is_some_and(|v| v.abs() < 1e-10)
+    {
+      if (lo - tolerance..=hi + tolerance).contains(&t) {
+        return Some(rule(polish(t)));
+      }
+      outside.get_or_insert(t);
+    }
+  }
   const SAMPLES: usize = 2000;
   let mut prev_t = lo;
   let mut prev = g(lo)?;
@@ -431,41 +507,15 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
     if v == 0.0 {
       root = Some(t);
     } else if v.signum() != prev.signum() {
-      let (mut a, mut b, mut fa) = (prev_t, t, prev);
-      for _ in 0..200 {
-        let m = f64::midpoint(a, b);
-        let fm = g(m)?;
-        if fm == 0.0 || (b - a) <= f64::EPSILON * m.abs().max(1.0) {
-          a = m;
-          b = m;
-          break;
-        }
-        if fm.signum() == fa.signum() {
-          a = m;
-          fa = fm;
-        } else {
-          b = m;
-        }
-      }
-      root = Some(f64::midpoint(a, b));
+      root = Some(bisect(prev_t, t, prev)?);
     }
     prev_t = t;
     prev = v;
   }
-  Some(Expr::List(
-    root
-      .map(|t| {
-        Expr::List(
-          vec![Expr::Rule {
-            pattern: Box::new(var.clone()),
-            replacement: Box::new(Expr::Real(t)),
-          }]
-          .into(),
-        )
-      })
-      .into_iter()
-      .collect(),
-  ))
+  match root.or(outside) {
+    Some(t) => Some(rule(t)),
+    None => Some(Expr::List(vec![].into())),
+  }
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
