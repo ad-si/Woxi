@@ -7118,13 +7118,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // the table engine, which sizes the columns and rows a span covers
       // and centers its content across them; the picture compositor below
       // only knows one cell per slot.
+      // So does a `Grid` that places or sizes its cells itself
+      // (`Alignment -> Right`, `ItemSize -> {…}`): the compositor centers
+      // every cell at its natural size and would drop both options, and it
+      // would typeset a text cell beside a picture as math rather than as
+      // the grid's text.
       if name == "Grid"
-        && layout_rows(name, args).iter().flatten().any(|c| {
+        && (layout_rows(name, args).iter().flatten().any(|c| {
           matches!(c, Expr::Identifier(s) if matches!(
             s.as_str(),
             "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
           ))
-        })
+        }) || args[1..].iter().any(|opt| {
+          matches!(opt, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(k)
+              if k == "Alignment" || k == "ItemSize"))
+        }))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])
       {

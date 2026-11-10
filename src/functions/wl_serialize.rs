@@ -78,6 +78,18 @@ fn read_len_bytes<'a>(data: &'a [u8], pos: &mut usize) -> Option<&'a [u8]> {
   Some(slice)
 }
 
+/// The text of a string token. The serializer keeps it ASCII by writing
+/// every character outside that range as a hex escape (`\:014B` for "ŋ"),
+/// so the token is decoded with the same escape rules as a string literal.
+fn decode_string_token(s: &str) -> String {
+  if !s.contains('\\') {
+    return s.to_string();
+  }
+  let expanded = crate::expand_char_escapes(&format!("\"{s}\""));
+  let body = &expanded[1..expanded.len() - 1];
+  crate::syntax::decode_string_literal(body)
+}
+
 fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let tag = *data.get(*pos)?;
   *pos += 1;
@@ -90,7 +102,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     }
     b'S' => {
       let s = std::str::from_utf8(read_len_bytes(data, pos)?).ok()?;
-      Some(str_expr(s))
+      Some(str_expr(&decode_string_token(s)))
     }
     // An arbitrary-precision real, spelled as its input form
     // (`-4.`10.000000000000004`).
@@ -387,6 +399,24 @@ mod tests {
   #[test]
   fn reads_string_token() {
     assert_eq!(render(b"!boRS\x02\x00\x00\x00hi"), "\"hi\"");
+  }
+
+  #[test]
+  fn decodes_escapes_in_string_token() {
+    // `"b\:0252\:014Bk"`: the IPA letters arrive as `\:XXXX` escapes.
+    let data = b"!boRS\x0e\x00\x00\x00b\\:0252\\:014Bk";
+    let expr = deserialize(data);
+    assert!(
+      matches!(&expr, Some(Expr::String(s)) if s == "b\u{0252}\u{014B}k"),
+      "{expr:?}"
+    );
+    // An escaped backslash stays one literal backslash.
+    let data = b"!boRS\x08\x00\x00\x00a\\\\:0041";
+    let expr = deserialize(data);
+    assert!(
+      matches!(&expr, Some(Expr::String(s)) if s == "a\\:0041"),
+      "{expr:?}"
+    );
   }
 
   #[test]
