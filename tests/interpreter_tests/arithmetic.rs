@@ -8082,6 +8082,24 @@ mod cases {
     );
   }
 
+  /// A negative rational sets its minus sign before the fraction bar in
+  /// TraditionalForm, as in StandardForm, not in the numerator.
+  #[test]
+  fn traditional_form_negative_rational_sign_precedes_the_bar() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-5/2]]"#,
+      r#"TagBox[FormBox[RowBox[{-, FractionBox[5, 2]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[{-1/3, 2/7}]]"#,
+      r#"TagBox[FormBox[RowBox[{{, RowBox[{RowBox[{-, FractionBox[1, 3]}], ,, FractionBox[2, 7]}], }}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[-123456789012345678901234567891/7]]"#,
+      r#"TagBox[FormBox[RowBox[{-, FractionBox[123456789012345678901234567891, 7]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
   /// like `sin^n(x)`.
   #[test]
