@@ -4963,6 +4963,42 @@ mod replace_all_after_operators {
   }
 }
 
+/// A rule list of calls with a compound head (`u[i][s]`, the unknowns of an
+/// NDSolve system substituted at every step of
+/// TrackingTheFrankKamenetskiiProblem) is indexed like one of plain calls:
+/// such a rule can only match another compound-head call — or the flat
+/// `Derivative[n][f][x]` — and the rest is skipped without matching.
+mod replace_all_compound_head_rules {
+  use super::*;
+
+  #[test]
+  fn compound_head_rule_lists() {
+    assert_eq!(
+      interpret(
+        "{u[1][s], u[2][s], u[1]'[s], f[x], u[1][t], g[u[1][s]]} /. \
+         Thread[{u[1][s], u[2][s]} -> {10, 20}]"
+      )
+      .unwrap(),
+      "{10, 20, Derivative[1][u[1]][s], f[x], u[1][t], g[10]}"
+    );
+    assert_eq!(
+      interpret(
+        "{u[1][s], u[2][s], f[x], h[1][2][s]} /. {u[i_][s] :> i, f[y_] :> y^2}"
+      )
+      .unwrap(),
+      "{1, 2, x^2, h[1][2][s]}"
+    );
+    assert_eq!(
+      interpret(
+        "{u[1][s], Derivative[1][u[1]][s], Derivative[1][u][s]} /. \
+         {Derivative[1][u[1]][s] -> d, u[1][s] -> a}"
+      )
+      .unwrap(),
+      "{a, d, Derivative[1][u][s]}"
+    );
+  }
+}
+
 mod replace_all_derivative_heads {
   use super::*;
 
