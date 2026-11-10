@@ -1590,6 +1590,20 @@ impl ManipulateState {
       {
         render = Ok(content);
       }
+      // A body of plain `Text[expr]` (outside `Graphics`) shows as `expr`
+      // in the widget; the terminal prints the `Text[…]` call itself.
+      if matches!(&render, Ok(r) if r.graphics.is_none()
+        && r.result.starts_with("Text[")
+        && r.result.ends_with(']'))
+      {
+        let text_call = render.as_ref().map(|r| r.result.clone()).unwrap();
+        if let Ok(content) = woxi::interpret_with_stdout(&format!(
+          "If[Length[Hold[{text_call}][[1]]] === 1, First[{text_call}], $Failed]"
+        )) && content.result != "$Failed"
+        {
+          render = Ok(content);
+        }
+      }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()
@@ -3783,6 +3797,21 @@ mod tests {
          found): {svg}"
       );
     }
+  }
+
+  /// A Manipulate body of `Pane[Style[Text[expr], n], size]` shows the
+  /// wrapped value, not the `Text[…]` call.
+  #[test]
+  fn text_body_shows_wrapped_value() {
+    let code = r#"Manipulate[
+      Pane[Style[Text[Quiet[N[f[b, c], 32]]], 18], {350, 50}],
+      {{f, Plus}, {Plus -> "plus", Times -> "times"}},
+      {{b, 500.}, -100, 100}, {{c, 500.}, -100, 100}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state builds");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("1000."));
   }
 
   /// A Demonstration whose "zoom" checkbox is written `Tooltip[Control[{{z,
