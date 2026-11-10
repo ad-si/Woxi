@@ -8258,7 +8258,7 @@ fn parse_periodic_when_event(
 /// stop) restarts (or ends) the integration from the event.
 #[allow(clippy::type_complexity)]
 fn state_events_on_points(
-  mut leg: Vec<(f64, Vec<f64>)>,
+  leg: Vec<(f64, Vec<f64>)>,
   state_events: &StateEventCtx,
   funcs: &[SysFunc],
   state_offset: &[usize],
@@ -8271,6 +8271,36 @@ fn state_events_on_points(
   )
     -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  Ok(
+    state_events_on_points_flagged(
+      leg,
+      state_events,
+      funcs,
+      state_offset,
+      x_name,
+      x_to,
+      integrate,
+    )?
+    .map(|(points, _)| points),
+  )
+}
+
+/// [`state_events_on_points`], also telling whether an event's action
+/// stopped the integration.
+fn state_events_on_points_flagged(
+  mut leg: Vec<(f64, Vec<f64>)>,
+  state_events: &StateEventCtx,
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  x_name: &str,
+  x_to: f64,
+  integrate: &dyn Fn(
+    &[f64],
+    f64,
+    f64,
+  )
+    -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError>,
+) -> Result<Option<(Vec<(f64, Vec<f64>)>, bool)>, InterpreterError> {
   let value = |ev: &StateEvent, x: f64, s: &[f64]| {
     ev.value(x, s, funcs, state_events.var_names)
   };
@@ -8327,7 +8357,7 @@ fn state_events_on_points(
     }
     let Some((i, (te, state_at), ei)) = hit else {
       out.extend(leg[start + 1..].iter().cloned());
-      return Ok(Some(out));
+      return Ok(Some((out, false)));
     };
     out.extend(leg[start + 1..=i].iter().cloned());
     let outcome = state_events.events[ei].run(
@@ -8340,7 +8370,7 @@ fn state_events_on_points(
     )?;
     out.push((te, outcome.state.clone()));
     if outcome.stop {
-      return Ok(Some(out));
+      return Ok(Some((out, true)));
     }
     if outcome.state == state_at {
       // Carry on along the same points, from the event.
@@ -8355,7 +8385,7 @@ fn state_events_on_points(
           leg = rest;
           start = 0;
         }
-        None => return Ok(Some(out)),
+        None => return Ok(Some((out, false))),
       }
     }
   }
@@ -8526,6 +8556,91 @@ fn integrate_leg(
     adaptive_tried = true;
     if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
       return Ok(Some(leg));
+    }
+  }
+  // A right-hand side that runs the interpreter at every evaluation (a
+  // `G[v__?NumericQ, k_]` black box) costs milliseconds per evaluation, and
+  // the fixed grid takes 4 to 12 of them per each of its 1000 nominal steps:
+  // such a leg is integrated with adaptive steps from the start, which a
+  // smooth solution lets grow far past the grid's. Each piece of the leg
+  // ends at the first step a state event fires in, so that an event that
+  // stops the integration (before a singularity, say) is found before the
+  // steps run into the trouble beyond it.
+  if can_go_adaptive
+    && !adaptive_tried
+    && !costly
+    && residuals.iter().any(NumFn::is_interpreted)
+  {
+    adaptive_tried = true;
+    let crossing = |x0: f64, y0: &[f64], x1: f64, y1: &[f64]| {
+      state_events.events.iter().any(|ev| {
+        ev.active.get()
+          && matches!(
+            (state_value(ev, x0, y0), state_value(ev, x1, y1)),
+            (Some(g0), Some(g1)) if ev.fires(g0, g1)
+          )
+      })
+    };
+    // An event's reset hands back the state it leaves, and the next piece
+    // starts from there.
+    let restart = |s: &[f64], a: f64, _: f64| Ok(Some(vec![(a, s.to_vec())]));
+    let mut done: Vec<(f64, Vec<f64>)> = vec![points[0].clone()];
+    let mut progressed = false;
+    loop {
+      let (cx, cs) = done.last().cloned().unwrap_or_default();
+      let (piece, end) = stiff::dormand_prince_leg_until(
+        &rhs,
+        &cs,
+        cx,
+        x_to,
+        true,
+        &crossing,
+        ADAPTIVE_INTERIOR_POINTS,
+      )?;
+      let reached = piece.last().map_or(cx, |p| p.0);
+      let (piece, stopped) = if piece.len() > 1 {
+        state_events_on_points_flagged(
+          piece,
+          &state_events,
+          funcs,
+          state_offset,
+          x_name,
+          reached,
+          &restart,
+        )?
+        .unwrap_or_default()
+      } else {
+        (piece, false)
+      };
+      if piece.len() > 1 {
+        progressed = true;
+        done.extend(piece.into_iter().skip(1));
+      }
+      let (lx, ls) = done.last().cloned().unwrap_or_default();
+      use stiff::LegEnd;
+      match end {
+        _ if stopped => return Ok(Some(done)),
+        LegEnd::Done if lx == x_to => return Ok(Some(done)),
+        // A piece that got nowhere would only be taken again.
+        LegEnd::Done | LegEnd::Event if lx == cx => break,
+        LegEnd::Done | LegEnd::Event => continue,
+        // A stiff stretch: the rest goes to the stiff method, its events
+        // located on its points afterwards.
+        LegEnd::Stiff => {
+          return adaptive_with_events(&mut done, &ls, lx);
+        }
+        // The steps ran into a singularity: the leg ends there, as the
+        // grid's does.
+        LegEnd::Failed if progressed => {
+          crate::emit_message(&format!(
+            "NDSolve::ndsz: At {x_name} == {}, step size is effectively zero; \
+             singularity or stiff system suspected.",
+            crate::syntax::expr_to_string(&Expr::Real(lx))
+          ));
+          return Ok(Some(done));
+        }
+        LegEnd::Failed => break,
+      }
     }
   }
   let mut i = 0;
@@ -8836,6 +8951,11 @@ fn integrate_leg(
   }
   Ok(Some(points))
 }
+
+/// Points from the continuous extension inside each step of an adaptive
+/// leg, so that the interpolating solution is as accurate between the
+/// steps as at them.
+const ADAPTIVE_INTERIOR_POINTS: usize = 3;
 
 /// Local-error tolerances for the step-doubling refinement below, applied
 /// to the Richardson estimate `|full - two halves| / 15` of the two-half-step
@@ -9901,6 +10021,17 @@ impl NumFn {
     matches!(self, Self::Compiled(e, _, _) if e.has_implicit())
   }
 
+  /// Whether evaluating it runs the interpreter (a call compiled as an
+  /// `External` leaf, or a residual that does not compile at all), which
+  /// makes every evaluation orders of magnitude dearer than compiled
+  /// arithmetic.
+  fn is_interpreted(&self) -> bool {
+    match self {
+      Self::Compiled(e, _, _) => e.has_external(),
+      Self::Symbolic { .. } => true,
+    }
+  }
+
   fn is_costly(&self) -> bool {
     match self {
       Self::Compiled(e, _, _) => e.has_implicit(),
@@ -10632,35 +10763,49 @@ impl NExpr {
     }
   }
 
-  /// Whether an `Implicit` (Newton-solved) node appears anywhere inside.
-  fn has_implicit(&self) -> bool {
+  /// Whether a node satisfying `pred` appears anywhere inside.
+  fn any_node(&self, pred: &dyn Fn(&Self) -> bool) -> bool {
+    if pred(self) {
+      return true;
+    }
     match self {
-      Self::Implicit { .. } => true,
       Self::Add(items) | Self::Mul(items) => {
-        items.iter().any(Self::has_implicit)
+        items.iter().any(|e| e.any_node(pred))
       }
       Self::Pow(a, b) | Self::Fn2(_, a, b) => {
-        a.has_implicit() || b.has_implicit()
+        a.any_node(pred) || b.any_node(pred)
       }
-      Self::Neg(a) | Self::Fn1(_, a) => a.has_implicit(),
+      Self::Neg(a) | Self::Fn1(_, a) => a.any_node(pred),
       Self::If {
         lhs,
         rhs,
         then,
         otherwise,
         ..
-      } => [lhs, rhs, then, otherwise].iter().any(|e| e.has_implicit()),
-      Self::Interp1D { arg, .. } => arg.has_implicit(),
-      Self::InterpGrid { args, .. } => args.iter().any(Self::has_implicit),
+      } => [lhs, rhs, then, otherwise].iter().any(|e| e.any_node(pred)),
+      Self::Interp1D { arg, .. } => arg.any_node(pred),
+      Self::InterpGrid { args, .. } => args.iter().any(|e| e.any_node(pred)),
+      Self::Implicit { body, .. } => body.any_node(pred),
+      Self::Let { table, body, .. } => {
+        body.any_node(pred) || table.iter().any(|e| e.any_node(pred))
+      }
       Self::Const(_)
       | Self::Var(_)
       | Self::External { .. }
       | Self::ComplexReal(_)
       | Self::Delayed { .. } => false,
-      Self::Let { table, body, .. } => {
-        body.has_implicit() || table.iter().any(Self::has_implicit)
-      }
     }
+  }
+
+  /// Whether an `Implicit` (Newton-solved) node appears anywhere inside.
+  fn has_implicit(&self) -> bool {
+    self.any_node(&|e| matches!(e, Self::Implicit { .. }))
+  }
+
+  /// Whether an `External` node — a call the full evaluator computes at
+  /// every evaluation — appears anywhere inside.
+  fn has_external(&self) -> bool {
+    self.any_node(&|e| matches!(e, Self::External { .. }))
   }
 
   fn eval(&self, vars: &[f64]) -> f64 {

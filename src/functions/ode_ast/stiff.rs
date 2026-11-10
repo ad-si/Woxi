@@ -558,6 +558,83 @@ pub(super) fn dormand_prince_leg(
   x_to: f64,
   detect_stiffness: bool,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let (points, end) = dormand_prince_leg_until(
+    f,
+    init,
+    x_from,
+    x_to,
+    detect_stiffness,
+    &|_, _, _, _| false,
+    0,
+  )?;
+  Ok(matches!(end, LegEnd::Done).then_some(points))
+}
+
+/// How a [`dormand_prince_leg_until`] leg ended.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum LegEnd {
+  /// It reached `x_to`.
+  Done,
+  /// It stopped at the first point where `crossing` holds.
+  Event,
+  /// The error control found the system stiff.
+  Stiff,
+  /// The right-hand side failed or the step size collapsed.
+  Failed,
+}
+
+/// Coefficients of the Dormand–Prince pair's continuous extension (Hairer,
+/// Nørsett & Wanner, `dopri5`): the fourth-order interpolant inside a step.
+const DENSE: [f64; 7] = [
+  -12715105075.0 / 11282082432.0,
+  0.0,
+  87487479700.0 / 32700410799.0,
+  -10690763975.0 / 1880347072.0,
+  701980252875.0 / 199316789632.0,
+  -1453857185.0 / 822651844.0,
+  69997945.0 / 29380423.0,
+];
+
+/// The state at `x0 + theta h` inside the accepted step from `(x0, y0)` to
+/// `y1` whose seven stages are `k` (the last one at the step's end).
+fn dense_state(
+  y0: &[f64],
+  y1: &[f64],
+  k: &[Vec<f64>],
+  h: f64,
+  theta: f64,
+) -> Vec<f64> {
+  (0..y0.len())
+    .map(|i| {
+      let diff = y1[i] - y0[i];
+      let b = h * k[0][i] - diff;
+      let c = diff - h * k[6][i] - b;
+      let d = h * (0..7).map(|j| DENSE[j] * k[j][i]).sum::<f64>();
+      y0[i]
+        + theta * (diff + (1.0 - theta) * (b + theta * (c + (1.0 - theta) * d)))
+    })
+    .collect()
+}
+
+/// [`dormand_prince_leg`] that also ends at the first point where
+/// `crossing(x0, y0, x1, y1)` holds across a step — an event's condition
+/// turning true. The crossing is located on the step's continuous extension
+/// and the leg ends with a step to it. Returns the points reached, also when
+/// the leg could not be finished, and how it ended.
+///
+/// `interior` points from the continuous extension are added inside every
+/// step: an interpolation through the accepted points alone is far less
+/// accurate between them than the steps are at them.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn dormand_prince_leg_until(
+  f: &Rhs,
+  init: &[f64],
+  x_from: f64,
+  x_to: f64,
+  detect_stiffness: bool,
+  crossing: &dyn Fn(f64, &[f64], f64, &[f64]) -> bool,
+  interior: usize,
+) -> Result<(Vec<(f64, Vec<f64>)>, LegEnd), InterpreterError> {
   let (atol, rtol) = error_goals((ATOL, RTOL));
   const C: [f64; 7] =
     [0.0, 1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
@@ -605,14 +682,14 @@ pub(super) fn dormand_prince_leg(
   let n = init.len();
   let span = x_to - x_from;
   if span == 0.0 || n == 0 {
-    return Ok(Some(vec![(x_from, init.to_vec())]));
+    return Ok((vec![(x_from, init.to_vec())], LegEnd::Done));
   }
   let dir = span.signum();
   let mut x = x_from;
   let mut y = init.to_vec();
   let mut points = vec![(x, y.clone())];
   let Some(mut k0) = f(x, &y)? else {
-    return Ok(None);
+    return Ok((points, LegEnd::Failed));
   };
   let scale0 = y
     .iter()
@@ -630,11 +707,11 @@ pub(super) fn dormand_prince_leg(
 
   for _ in 0..MAX_EXPLICIT_STEPS {
     if (x_to - x) * dir <= h_min {
-      return Ok(Some(points));
+      return Ok((points, LegEnd::Done));
     }
     h = h.min((x_to - x).abs());
     if h < h_min {
-      return Ok(None);
+      return Ok((points, LegEnd::Failed));
     }
     let hs = h * dir;
     let mut k: Vec<Vec<f64>> = Vec::with_capacity(7);
@@ -662,7 +739,7 @@ pub(super) fn dormand_prince_leg(
     if failed {
       failures += 1;
       if failures > MAX_EVALUATION_FAILURES {
-        return Ok(None);
+        return Ok((points, LegEnd::Failed));
       }
       h /= 4.0;
       continue;
@@ -698,7 +775,7 @@ pub(super) fn dormand_prince_leg(
       calm_steps = 0;
       stiff_steps += 1;
       if stiff_steps >= 15 {
-        return Ok(None);
+        return Ok((points, LegEnd::Stiff));
       }
     } else {
       calm_steps += 1;
@@ -706,21 +783,97 @@ pub(super) fn dormand_prince_leg(
         stiff_steps = 0;
       }
     }
-    x += hs;
-    if (x_to - x) * dir <= h_min {
-      x = x_to;
+    let x_new = if (x_to - (x + hs)) * dir <= h_min {
+      x_to
+    } else {
+      x + hs
+    };
+    if crossing(x, &y, x_new, &y_new) {
+      // The first point of the step where the condition holds, bisected on
+      // the continuous extension, and a step to it.
+      let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+      for _ in 0..50 {
+        let mid = f64::midpoint(lo, hi);
+        let ym = dense_state(&y, &y_new, &k, hs, mid);
+        if crossing(x, &y, x + mid * hs, &ym) {
+          hi = mid;
+        } else {
+          lo = mid;
+        }
+      }
+      let (x_event, y_event) = if hi >= 1.0 {
+        (x_new, y_new.clone())
+      } else {
+        let he = hi * hs;
+        let mut ke: Vec<Vec<f64>> = vec![k[0].clone()];
+        for stage in 1..7 {
+          let ys: Vec<f64> = (0..n)
+            .map(|i| {
+              y[i]
+                + he * (0..stage).map(|j| A[stage][j] * ke[j][i]).sum::<f64>()
+            })
+            .collect();
+          match f(x + C[stage] * he, &ys)? {
+            Some(ks) if ks.iter().all(|v| v.is_finite()) => ke.push(ks),
+            _ => break,
+          }
+        }
+        let y_step = if ke.len() == 7 {
+          (0..n)
+            .map(|i| {
+              y[i] + he * (0..6).map(|j| A[6][j] * ke[j][i]).sum::<f64>()
+            })
+            .collect()
+        } else {
+          dense_state(&y, &y_new, &k, hs, hi)
+        };
+        (x + he, y_step)
+      };
+      for j in 1..=interior {
+        let theta = hi * j as f64 / (interior + 1) as f64;
+        points.push((x + theta * hs, dense_state(&y, &y_new, &k, hs, theta)));
+      }
+      points.push((x_event, y_event));
+      return Ok((points, LegEnd::Event));
     }
+    for j in 1..=interior {
+      let theta = j as f64 / (interior + 1) as f64;
+      points.push((x + theta * hs, dense_state(&y, &y_new, &k, hs, theta)));
+    }
+    x = x_new;
     y = y_new;
     k0 = k.pop().unwrap_or_default();
     points.push((x, y.clone()));
     h *= factor;
   }
-  Ok(None)
+  Ok((points, LegEnd::Failed))
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  // The leg stops where the condition first holds, located on the
+  // continuous extension: y' = y crosses 2 at log 2.
+  #[test]
+  fn dormand_prince_stops_at_a_crossing() {
+    let growth = |_: f64, y: &[f64]| Ok(Some(vec![y[0]]));
+    let (points, end) = dormand_prince_leg_until(
+      &growth,
+      &[1.0],
+      0.0,
+      5.0,
+      false,
+      &|_, _, _, y1| y1[0] >= 2.0,
+      0,
+    )
+    .unwrap();
+    assert_eq!(end, LegEnd::Event);
+    let (x, y) = points.last().unwrap();
+    // Within the fourth-order interpolant's error at the 1e-8 tolerance.
+    assert!((x - 2.0f64.ln()).abs() < 1e-7, "{x}");
+    assert!((y[0] - 2.0).abs() < 1e-7, "{y:?}");
+  }
 
   // The stiff method resolves a slow solution under a fast relaxation
   // (`y' = -10^5 (y - cos x)`) over a long leg without running out of steps.

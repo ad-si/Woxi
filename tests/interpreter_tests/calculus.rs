@@ -25079,6 +25079,27 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // A right-hand side that runs the interpreter at every evaluation is
+  // integrated with adaptive steps, each piece ending where a state event
+  // fires: the event stops the leg before the singularity at t = 1/2, in a
+  // few hundred evaluations instead of the fixed grid's thousands
+  // (wolframscript: 180).
+  #[test]
+  fn interpreted_right_hand_side_steps_adaptively_to_an_event() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cnt = 0; g[y_?NumericQ] := (cnt++; 1/(1 - y)); \
+         s = NDSolve[{y'[t] == g[y[t]], y[0] == 0, \
+         WhenEvent[y[t] > 0.9, \"StopIntegration\"]}, y, {t, 0, 1}]; \
+         {cnt < 1000, Round[10^5 (y[\"Domain\"] /. First[s])], \
+          Round[10^5 (y[0.3] /. First[s])]}"
+      )
+      .unwrap(),
+      "{True, {{0, 49500}}, 36754}"
+    );
+  }
+
   // An algebraic equation among differentiated unknowns (y == x^2 next to
   // 2 x' + y' == -x) is differentiated into y' == 2 x x' (index
   // reduction), and an initial value for an algebraic unknown is accepted.
