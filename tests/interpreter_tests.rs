@@ -3130,8 +3130,10 @@ mod interpreter_tests {
   /// the fractions `from` and `to` of the sound's length.
   fn wav_rms(wav: &[u8], from: f64, to: f64) -> f64 {
     let samples: Vec<f64> = wav[44..]
-      .chunks_exact(2)
-      .map(|b| i16::from_le_bytes([b[0], b[1]]) as f64)
+      .as_chunks::<2>()
+      .0
+      .iter()
+      .map(|b| i16::from_le_bytes(*b) as f64)
       .collect();
     let lo = (samples.len() as f64 * from) as usize;
     let hi = (samples.len() as f64 * to) as usize;
