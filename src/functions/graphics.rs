@@ -22044,8 +22044,18 @@ pub(crate) fn hide_svg_content(svg: &str) -> Option<String> {
 fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
   // Only an arithmetic value is typeset here; a wrapper (`Panel[…]`,
   // `Framed[…]`, `Row[…]`) has a drawing of its own.
-  let arithmetic = matches!(cell, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
-    || matches!(cell, Expr::FunctionCall { name, .. }
+  // A held value (`HoldForm[1/(a + 1/(b + …))]`, a continued fraction a
+  // `Fold` builds unevaluated) is typeset as the arithmetic it holds.
+  let held = match cell {
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    _ => cell,
+  };
+  let arithmetic = matches!(held, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
+    || matches!(held, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
   if !arithmetic {
     return None;
@@ -28661,7 +28671,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => match nested_layout_svg(&resolved) {
+        _ => match nested_layout_svg(&resolved)
+          .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
+        {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
             Cell::Svg {
@@ -29115,7 +29127,9 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => match nested_layout_svg(&resolved) {
+        _ => match nested_layout_svg(&resolved)
+          .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
+        {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
             Cell::Svg {

@@ -3651,6 +3651,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_row_and_column_items_with_a_quotient_stack_the_fraction() {
+    // Regression: a `Row`/`Column` item holding a symbolic quotient — or a
+    // held continued fraction a `Fold` builds with `HoldForm` — was printed
+    // as one line of `1/(a + 1/(b + …))` text instead of stacked fractions.
+    clear_state();
+    for code in [
+      "ExportString[Row[{1/(1 + x), \" = y\"}], \"SVG\"]",
+      "ExportString[Row[{2/3, \" of it\"}], \"SVG\"]",
+      "ExportString[Column[{\"a\", (p + q)/r}], \"SVG\"]",
+      "ExportString[Row[{Fold[HoldForm[1/(#2 + #1)] &, 0, {3, 2, 1}], \" = c\"}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(
+        svg.contains("<line"),
+        "expected a fraction line: {code}\n{svg}"
+      );
+      assert!(
+        !svg.contains(">1/(") && !svg.contains(">2/3<"),
+        "fraction was flattened: {code}\n{svg}"
+      );
+    }
+    // Items without a quotient keep their plain text.
+    let plain =
+      interpret("ExportString[Row[{x^2, \" = y\"}], \"SVG\"]").unwrap();
+    assert!(
+      !plain.contains("<line"),
+      "unexpected fraction line: {plain}"
+    );
+  }
+
+  #[test]
   fn test_grid_cell_padded_form_of_grid_draws_the_grid() {
     // Regression: `Text[PaddedForm[Grid[…], spec]]` as a grid cell printed
     // the inner `Grid[…]` source instead of drawing the table with its
