@@ -5722,24 +5722,104 @@ mod plot3d {
     }
 
     /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex baked a
-    /// height color into every facet, so a color directive placed before
-    /// it (the bimetal-strip layers) was overridden. Default facets carry
-    /// no color; an explicit `PlotStyle` color still does.
+    /// height color into every facet. Default facets carry no color of
+    /// their own; an explicit `PlotStyle` color still does.
     #[test]
-    fn extracted_parametric_surface_has_no_baked_default_color() {
+    fn extracted_parametric_surface_has_no_baked_facet_color() {
       clear_state();
       let plain = interpret(
         "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
-         PlotPoints -> 3][[1]], _RGBColor]",
+         PlotPoints -> 3][[1, 2]], {___, _RGBColor, _Polygon}]",
       )
       .unwrap();
       assert_eq!(plain, "True");
       let styled = interpret(
         "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
-         PlotPoints -> 3, PlotStyle -> Red][[1]], _RGBColor]",
+         PlotPoints -> 3, PlotStyle -> Red][[1, 2]], \
+         {___, _RGBColor, _Polygon}]",
       )
       .unwrap();
       assert_eq!(styled, "False");
+    }
+
+    /// Regression: the extracted complex of a `ParametricPlot3D` surface
+    /// lacked the default theme's `Directive` (color, specularity and
+    /// lights) that `Plot3D`'s carries, so a color placed before it in a
+    /// `Graphics3D` recolored the surface instead of leaving it orange.
+    #[test]
+    fn extracted_parametric_surface_keeps_theme_directive() {
+      clear_state();
+      let result = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3][[1, 2]], Directive[_Specularity, c_RGBColor, \
+         Lighting -> _] :> c]",
+      )
+      .unwrap();
+      assert_eq!(result, "{RGBColor[0.880722, 0.611041, 0.142051]}");
+      let second = interpret(
+        "Cases[ParametricPlot3D[{{u, v, u v}, {u, v, 1 + u v}}, {u, 0, 1}, \
+         {v, 0, 1}, PlotPoints -> 3][[1, 2, 2]], \
+         Directive[_, c_RGBColor, ___] :> c]",
+      )
+      .unwrap();
+      assert_eq!(second, "{RGBColor[0.368417, 0.506779, 0.709798]}");
+      // An outer color does not override the surface's own.
+      let svg = export_svg(
+        "Graphics3D[{RGBColor[1, 0, 1], ParametricPlot3D[{u, v, u v}, \
+         {u, 0, 1}, {v, 0, 1}, PlotPoints -> 5, Mesh -> None][[1]]}]",
+      );
+      // Every shaded facet is orange (blue well below green), none magenta.
+      let fills: Vec<[i32; 3]> = svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|rest| {
+          let inner = rest.split(')').next()?;
+          let c: Vec<i32> = inner
+            .split(',')
+            .filter_map(|v| v.trim().parse().ok())
+            .collect();
+          (c.len() == 3).then(|| [c[0], c[1], c[2]])
+        })
+        .collect();
+      assert!(!fills.is_empty(), "no shaded facets");
+      assert!(
+        fills
+          .iter()
+          .filter(|[r, g, b]| !(r == g && g == b))
+          .all(|[r, g, b]| r > g && g > b),
+        "the outer magenta recolored the surface: {fills:?}"
+      );
+    }
+
+    /// `BoundaryStyle -> style` outlines a parametric surface's domain:
+    /// as a `Line` in the extracted complex, and in the plot itself even
+    /// with `Mesh -> None`.
+    #[test]
+    fn parametric_surface_boundary_style() {
+      clear_state();
+      let lines = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Red][[1, 2]], \
+         {c_, Line[segs_]} :> {c, Length[segs]}]",
+      )
+      .unwrap();
+      assert_eq!(lines, "{{RGBColor[1, 0, 0], 8}}");
+      let none = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, Mesh -> None][[1]], _Line]",
+      )
+      .unwrap();
+      assert_eq!(none, "True");
+      let svg = export_svg(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> None, BoundaryStyle -> Red]",
+      );
+      assert!(svg.contains("rgb(255,0,0)"), "boundary not drawn");
+      let plain = export_svg(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> None]",
+      );
+      assert!(!plain.contains("rgb(255,0,0)"));
     }
 
     #[test]
@@ -45586,6 +45666,15 @@ mod surface_vertex_colors {
   #[test]
   fn parametric_plot3d_color_function_colors_facets() {
     clear_state();
+    // The facet colors are lit by neutral lights, as in `Plot3D`.
+    assert_eq!(
+      interpret(
+        "MatchQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         ColorFunction -> Hue, PlotPoints -> 3][[1, 2, 2]], Lighting -> _]"
+      )
+      .unwrap(),
+      "True"
+    );
     // `ColorFunction -> f` receives `{x, y, z, u, v}` (raw with
     // `ColorFunctionScaling -> False`) and colors each facet.
     let r = interpret(
@@ -45593,7 +45682,7 @@ mod surface_vertex_colors {
        {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, \
        ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), \
        ColorFunctionScaling -> False, PlotPoints -> 4]; \
-       Take[p[[1, 2]], {2, 3}]",
+       Take[p[[1, 2]], {3, 4}]",
     )
     .unwrap();
     assert_eq!(
