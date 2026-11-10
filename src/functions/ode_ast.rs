@@ -8623,7 +8623,8 @@ fn integrate_leg(
         LegEnd::Done if lx == x_to => return Ok(Some(done)),
         // A piece that got nowhere would only be taken again.
         LegEnd::Done | LegEnd::Event if lx == cx => break,
-        LegEnd::Done | LegEnd::Event => continue,
+        // Otherwise the next piece starts where this one ended.
+        LegEnd::Done | LegEnd::Event => {}
         // A stiff stretch: the rest goes to the stiff method, its events
         // located on its points afterwards.
         LegEnd::Stiff => {
