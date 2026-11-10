@@ -33984,10 +33984,73 @@ mod manipulate {
     assert_eq!(spec.state, vec![("picks".to_string(), "{}".to_string())],);
     assert_eq!(spec.displays.len(), 1);
     assert!(
-      spec.displays[0].starts_with("TogglerBar[Dynamic[picks]"),
+      spec.displays[0]
+        .starts_with("Row[{\"parts\", \" \", TogglerBar[Dynamic[picks]"),
       "{}",
       spec.displays[0]
     );
+  }
+
+  /// A multi-select `TogglerBar` control keeps its label (drawn to the left
+  /// of the bar, as Wolfram does) and its own `Enabled -> cond`, which is
+  /// re-checked against the live bindings: while `cond` is `False` every
+  /// toggle of the bar reports itself disabled.
+  #[test]
+  fn spec_toggler_bar_control_keeps_its_label_and_enabled_condition() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, picks}, \
+       {{mode, 1, \"mode\"}, {1 -> \"off\", 2 -> \"on\"}}, \
+       {{picks, {1}, \"picks\"}, Range[4], TogglerBar, Enabled -> mode == 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    assert_eq!(
+      spec.displays[0],
+      "Row[{\"picks\", \" \", TogglerBar[Dynamic[picks], {1, 2, 3, 4}, \
+       Enabled -> Dynamic[mode == 2]]}]"
+    );
+    let render = |mode: &str| {
+      let mut bindings = manipulate_initial_bindings(&spec);
+      bindings.retain(|(n, _)| n != "mode");
+      bindings.push(("mode".to_string(), mode.to_string()));
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::functions::graphics::render_manipulate_display(
+          &spec.displays[0],
+          &[],
+        )
+      })
+    };
+    let off = render("1");
+    assert!(off.contains("picks"), "the label is drawn: {off}");
+    assert_eq!(off.matches("\"kind\":\"toggler\"").count(), 4, "{off}");
+    assert_eq!(off.matches("\"enabled\":false").count(), 4, "{off}");
+    let on = render("2");
+    assert_eq!(on.matches("\"enabled\":true").count(), 4, "{on}");
+  }
+
+  /// An in-body `SetterBar[Dynamic[v], …, Enabled -> False]` draws every
+  /// button disabled, and one without the option stays enabled.
+  #[test]
+  fn spec_setterbar_display_honors_enabled_option() {
+    let render = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+      let bindings = manipulate_initial_bindings(&spec);
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::functions::graphics::render_manipulate_display(
+          &spec.displays[0],
+          &[],
+        )
+      })
+    };
+    let off = render(
+      "Manipulate[n, Row[{SetterBar[Dynamic[n], Range[3], Enabled -> False]}]]",
+    );
+    assert_eq!(off.matches("\"enabled\":false").count(), 3, "{off}");
+    let on = render("Manipulate[n, Row[{SetterBar[Dynamic[n], Range[3]]}]]");
+    assert_eq!(on.matches("\"enabled\":true").count(), 3, "{on}");
   }
 
   /// `ControlType -> CheckboxBar` (and `TogglerBar`) picks several of its

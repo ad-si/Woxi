@@ -40178,15 +40178,26 @@ fn parse_manipulate_control(
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
     };
-    let display = if appearance_vertical {
-      format!(
-        "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
-        crate::syntax::expr_to_source_form(&choices)
-      )
+    // The bar keeps the control's own `Enabled -> cond` (re-checked on every
+    // re-render, like a top-level control's) and its label, which Wolfram
+    // draws to the left of the bar.
+    let mut bar_options = String::new();
+    if appearance_vertical {
+      bar_options.push_str(", Appearance -> \"Vertical\"");
+    }
+    if let Some(cond) = &enabled {
+      bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
+    }
+    let bar = format!(
+      "TogglerBar[Dynamic[{name}], {}{bar_options}]",
+      crate::syntax::expr_to_source_form(&choices)
+    );
+    let display = if label.is_empty() {
+      bar
     } else {
       format!(
-        "TogglerBar[Dynamic[{name}], {}]",
-        crate::syntax::expr_to_source_form(&choices)
+        "Row[{{{}, \" \", {bar}}}]",
+        crate::syntax::expr_to_source_form(&Expr::String(label.clone()))
       )
     };
     return Some(ParsedControl::StateWithDisplay {
@@ -42282,11 +42293,14 @@ pub enum DisplayNode {
   /// One choice of a `TogglerBar[Dynamic[var], …]`: a toggle button that
   /// adds `value` to (or removes it from) the list variable. `mutation` is
   /// the ready-to-evaluate write-back assignment; `selected` is whether the
-  /// value is currently a member of the list.
+  /// value is currently a member of the list. `enabled` is the bar's
+  /// trailing `Enabled -> cond` option's live value (`True` when absent);
+  /// a disabled toggle is drawn grayed out and ignores presses.
   Toggler {
     label: Box<Self>,
     mutation: String,
     selected: bool,
+    enabled: bool,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -43327,6 +43341,7 @@ fn togglerbar_node(
   };
   // The current selection, for the per-choice `selected` state.
   let current = crate::evaluator::evaluate_expr_to_expr(&getter).ok();
+  let enabled = display_option_enabled(&args[2..]);
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -43362,6 +43377,7 @@ fn togglerbar_node(
       label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
       mutation,
       selected,
+      enabled,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -43426,6 +43442,7 @@ fn setterbar_node(
   let current = crate::evaluator::evaluate_expr_to_expr(lval)
     .ok()
     .map(|e| crate::syntax::expr_to_source_form(&e));
+  let enabled = display_option_enabled(&args[2..]);
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -43446,6 +43463,7 @@ fn setterbar_node(
       label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
       mutation,
       selected,
+      enabled,
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -43518,6 +43536,20 @@ fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
       }
     }
     _ => None,
+  })
+}
+
+/// Whether a display element's trailing options leave it enabled: its
+/// `Enabled -> cond` is evaluated against the live bindings, and anything but
+/// a `False` result (including a failed evaluation, or no option at all)
+/// keeps it enabled, matching `manipulate_condition_enabled`'s lenient
+/// default for top-level controls.
+fn display_option_enabled(options: &[Expr]) -> bool {
+  extract_enabled_condition(options).is_none_or(|cond| {
+    !matches!(
+      crate::evaluator::evaluate_expr_to_expr(cond),
+      Ok(Expr::Identifier(ref s)) if s == "False"
+    )
   })
 }
 
@@ -43668,15 +43700,8 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
     |e| crate::syntax::expr_to_source_form(&e),
   );
   // A trailing `Enabled -> cond`, evaluated against the same live bindings
-  // `current` just used. Anything but a `False` result — including a failed
-  // evaluation — leaves the popup enabled, matching
-  // `manipulate_condition_enabled`'s lenient default for top-level controls.
-  let enabled = extract_enabled_condition(&args[2..]).is_none_or(|cond| {
-    !matches!(
-      crate::evaluator::evaluate_expr_to_expr(cond),
-      Ok(Expr::Identifier(ref s)) if s == "False"
-    )
-  });
+  // `current` just used.
+  let enabled = display_option_enabled(&args[2..]);
   Some(DisplayNode::Popup {
     target,
     current,
@@ -43903,11 +43928,13 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       label,
       mutation,
       selected,
+      enabled,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
+      enabled,
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,
