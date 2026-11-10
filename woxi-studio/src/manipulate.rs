@@ -103,6 +103,8 @@ pub enum ControlState {
     /// candidate values pass through `(cb)[{x, y}]` — which typically
     /// rounds, clips, or rejects them — before the variable is read back.
     write_callback: Option<String>,
+    /// Machine-real pair (see `ManipulateControl::Slider2D::real`).
+    real: bool,
   },
   /// An interval slider binding its variable to a `{low, high}` pair.
   IntervalSlider {
@@ -239,8 +241,12 @@ impl ControlState {
           .cloned()
           .unwrap_or_else(|| "Null".to_string())
       }),
-      ControlState::Slider2D { x, y, .. } => {
-        format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
+      ControlState::Slider2D { x, y, real, .. } => {
+        if *real {
+          woxi::functions::graphics::point_list_binding_real(*x, *y)
+        } else {
+          format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
+        }
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
@@ -1984,6 +1990,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         x_initial,
         y_initial,
         write_callback,
+        real,
       } => ControlState::Slider2D {
         name: name.clone(),
         label: label.clone(),
@@ -1994,6 +2001,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         x: *x_initial,
         y: *y_initial,
         write_callback: write_callback.clone(),
+        real: *real,
       },
       ManipulateControl::IntervalSlider {
         name,
@@ -5908,6 +5916,26 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{}");
     state.controls[idx].set_current_from_code("{-5, -5}");
     assert_eq!(state.controls[idx].current_code(), "{-5., -5.}");
+  }
+
+  /// A promoted invisible `Locator` holds machine reals, so integral
+  /// coordinates bind as `{-12., 11.}`. Binding them as exact integers made
+  /// downstream geometry (distances, circumcenters) pile up unsimplified
+  /// radicals instead of staying numeric.
+  #[test]
+  fn promoted_invisible_locator_binds_machine_reals() {
+    let code = r#"Manipulate[
+      Graphics[{Point[p], Text[Norm[p], p]}, PlotRange -> {{-5, 5}, {-5, 5}}],
+      {{p, {2, 3}}, {-4, -4}, {4, 4}, Locator, Appearance -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let c = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "p")
+      .expect("p control");
+    assert_eq!(c.current_code(), "{2., 3.}");
   }
 }
 
