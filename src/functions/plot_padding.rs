@@ -748,14 +748,9 @@ pub(crate) fn plot_tick_font(
   opts
     .tick_label_style
     .and_then(|s| s.font_size)
-    // `LabelStyle` sizes the frame's tick labels too (the origin axes draw
-    // theirs at the fixed `AXIS_TICK_FONT`).
-    .or(
-      opts
-        .label_style
-        .filter(|_| opts.frame)
-        .and_then(|s| s.font_size),
-    )
+    // `LabelStyle` sizes every label, the tick labels of a frame and of
+    // the origin axes included.
+    .or(opts.label_style.and_then(|s| s.font_size))
     .unwrap_or(TICK_FONT)
 }
 

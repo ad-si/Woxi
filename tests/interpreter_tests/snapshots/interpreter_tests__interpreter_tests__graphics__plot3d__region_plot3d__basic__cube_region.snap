@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5404
 expression: "export_svg(\"RegionPlot3D[True, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]\")"
 ---
 <svg width="360" height="282" viewBox="0 0 360 282" xmlns="http://www.w3.org/2000/svg">
@@ -11795,15 +11794,15 @@ expression: "export_svg(\"RegionPlot3D[True, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]
 <line x1="222.1" y1="257.2" x2="223.0" y2="254.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="233.8" y1="261.8" x2="234.7" y2="259.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="35.7" y1="183.6" x2="37.1" y2="179.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="32.0" y="192.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1.0</text>
+<text x="32.0" y="192.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1.0</text>
 <line x1="83.4" y1="202.5" x2="84.9" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="79.8" y="211.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<text x="79.8" y="211.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="134.1" y1="222.5" x2="135.6" y2="218.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="130.5" y="231.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.0</text>
+<text x="130.5" y="231.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="188.1" y1="243.8" x2="189.6" y2="240.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="184.4" y="253.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<text x="184.4" y="253.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="245.6" y1="266.5" x2="247.0" y2="262.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="241.9" y="275.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1.0</text>
+<text x="241.9" y="275.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="245.6" y1="266.5" x2="337.2" y2="128.3" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="251.2" y1="258.0" x2="253.3" y2="259.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="256.7" y1="249.7" x2="258.7" y2="251.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11822,15 +11821,15 @@ expression: "export_svg(\"RegionPlot3D[True, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]
 <line x1="329.7" y1="139.7" x2="331.8" y2="141.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="333.5" y1="134.0" x2="335.6" y2="135.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="245.6" y1="266.5" x2="248.9" y2="268.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="250.6" y="269.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-1.0</text>
+<text x="250.6" y="269.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1.0</text>
 <line x1="272.4" y1="226.1" x2="275.7" y2="228.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="277.4" y="229.4" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-0.5</text>
+<text x="277.4" y="229.4" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="296.3" y1="190.0" x2="299.6" y2="192.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="301.3" y="193.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0.0</text>
+<text x="301.3" y="193.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="317.8" y1="157.6" x2="321.2" y2="159.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="322.8" y="160.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0.5</text>
+<text x="322.8" y="160.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="337.2" y1="128.3" x2="340.6" y2="130.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="342.2" y="131.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.0</text>
+<text x="342.2" y="131.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="35.7" y1="183.6" x2="23.7" y2="107.7" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="35.1" y1="180.1" x2="37.6" y2="179.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="34.6" y1="176.5" x2="37.0" y2="176.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11849,13 +11848,13 @@ expression: "export_svg(\"RegionPlot3D[True, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]
 <line x1="25.0" y1="115.8" x2="27.5" y2="115.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="24.3" y1="111.8" x2="26.8" y2="111.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="35.7" y1="183.6" x2="39.6" y2="183.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="29.7" y="184.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-1.0</text>
+<text x="29.7" y="184.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1.0</text>
 <line x1="32.8" y1="165.7" x2="36.8" y2="165.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="26.9" y="166.6" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-0.5</text>
+<text x="26.9" y="166.6" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="29.9" y1="147.1" x2="33.9" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="24.0" y="148.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0.0</text>
+<text x="24.0" y="148.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="26.9" y1="127.8" x2="30.8" y2="127.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="20.9" y="128.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0.5</text>
+<text x="20.9" y="128.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="23.7" y1="107.7" x2="27.7" y2="107.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="17.8" y="108.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">1.0</text>
+<text x="17.8" y="108.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 </svg>

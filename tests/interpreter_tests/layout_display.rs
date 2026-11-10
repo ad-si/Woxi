@@ -221,11 +221,17 @@ mod layout_display {
     }
     // Exercise the rasterizer used by the graphics review. An inherited
     // family must render identically to an explicit text family.
-    let svg =
+    // Export bakes the default family onto bare `<text>` elements;
+    // stripping it again leaves them inheriting the stylesheet's.
+    let explicit =
       svg_of("Plot3D[x+y,{x,0,1},{y,0,1},PlotPoints->3,MaxRecursion->0]");
-    let explicit = svg.replace(
-      "<text ",
-      "<text font-family=\"Atkinson Hyperlegible Next\" ",
+    assert!(
+      explicit
+        .contains(" font-family=\"Atkinson Hyperlegible Next, sans-serif\">")
+    );
+    let svg = explicit.replace(
+      " font-family=\"Atkinson Hyperlegible Next, sans-serif\">",
+      ">",
     );
     let rasterize = woxi::functions::image_ast::rasterize_svg;
     let actual = rasterize(&svg, 72.0).unwrap();

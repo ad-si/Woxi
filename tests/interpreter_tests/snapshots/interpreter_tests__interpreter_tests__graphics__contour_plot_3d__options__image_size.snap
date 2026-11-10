@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 29651
 expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\\n         {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="213" viewBox="0 0 200 213" xmlns="http://www.w3.org/2000/svg">
@@ -21014,11 +21013,11 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="124.1" y1="201.6" x2="125.0" y2="199.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="132.2" y1="205.0" x2="133.2" y2="202.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="42.6" y1="167.0" x2="44.2" y2="163.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="38.7" y="176.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<text x="38.7" y="176.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="77.9" y1="182.0" x2="79.5" y2="178.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="74.0" y="191.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="74.0" y="191.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="116.1" y1="198.2" x2="117.6" y2="194.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="112.2" y="207.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="112.2" y="207.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="136.3" y1="206.8" x2="185.1" y2="128.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="138.3" y1="203.6" x2="140.4" y2="204.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="142.2" y1="197.4" x2="144.3" y2="198.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -21033,11 +21032,11 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="181.1" y1="134.9" x2="183.2" y2="136.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="183.8" y1="130.5" x2="185.9" y2="131.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="145.9" y1="191.3" x2="149.3" y2="193.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="151.0" y="194.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-1</text>
+<text x="151.0" y="194.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="163.2" y1="163.6" x2="166.6" y2="165.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="168.3" y="166.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0</text>
+<text x="168.3" y="166.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="178.3" y1="139.4" x2="181.7" y2="141.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="183.4" y="142.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1</text>
+<text x="183.4" y="142.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="25.9" y1="159.9" x2="9.2" y2="54.0" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="25.5" y1="157.0" x2="27.9" y2="156.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="24.5" y1="151.0" x2="27.0" y2="150.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -21052,9 +21051,9 @@ expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1.5, 1.5}, \\
 <line x1="11.2" y1="66.4" x2="13.6" y2="66.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="9.9" y1="58.2" x2="12.3" y2="57.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="23.5" y1="144.8" x2="27.5" y2="144.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="17.6" y="145.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-1</text>
+<text x="17.6" y="145.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="18.3" y1="111.8" x2="22.3" y2="111.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="12.4" y="112.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0</text>
+<text x="12.4" y="112.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="12.4" y1="74.5" x2="16.4" y2="73.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="6.5" y="75.4" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">1</text>
+<text x="6.5" y="75.4" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 </svg>

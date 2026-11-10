@@ -7962,6 +7962,67 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
   )
 }
 
+/// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
+/// `<text>` element that neither sets a family itself nor inherits one from
+/// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
+/// the opening tag.
+fn with_default_text_family(svg: &str) -> String {
+  const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  let mut out = String::with_capacity(svg.len());
+  // One entry per open container element: whether it sets a family.
+  let mut stack: Vec<bool> = Vec::new();
+  let mut pos = 0usize;
+  let mut copied = 0usize;
+  while let Some(rel) = svg[pos..].find('<') {
+    let start = pos + rel;
+    let Some(end) = svg[start..].find('>').map(|e| start + e) else {
+      break;
+    };
+    let tag = &svg[start..=end];
+    pos = end + 1;
+    let name_of = |t: &str| {
+      t.trim_start_matches(['<', '/'])
+        .split(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .next()
+        .unwrap_or("")
+        .to_string()
+    };
+    if tag.starts_with("</") {
+      if matches!(name_of(tag).as_str(), "g" | "svg" | "text" | "a") {
+        stack.pop();
+      }
+      continue;
+    }
+    if tag.starts_with("<!") || tag.starts_with("<?") {
+      continue;
+    }
+    // `<style>` content is CSS, not markup.
+    if name_of(tag) == "style" && !tag.ends_with("/>") {
+      if let Some(close) = svg[pos..].find("</style>") {
+        pos += close + "</style>".len();
+      }
+      continue;
+    }
+    let name = name_of(tag);
+    if !matches!(name.as_str(), "g" | "svg" | "text" | "a") {
+      continue;
+    }
+    let has_family = tag.contains("font-family=");
+    let inherited = stack.iter().any(|&f| f);
+    if name == "text" && !has_family && !inherited {
+      let close_at = if tag.ends_with("/>") { end - 1 } else { end };
+      out.push_str(&svg[copied..close_at]);
+      out.push_str(ATTR);
+      copied = close_at;
+    }
+    if !tag.ends_with("/>") {
+      stack.push(has_family || (name == "text" && !inherited));
+    }
+  }
+  out.push_str(&svg[copied..]);
+  out
+}
+
 /// Embed the fonts an exported SVG uses so it renders identically without those
 /// fonts installed on the viewer's system.
 ///
@@ -8042,6 +8103,11 @@ fn embed_used_fonts(svg: &str) -> String {
       "font-family=\"monospace\"",
       "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
     );
+  // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
+  // the stylesheet's inherited default, which viewers that ignore
+  // `<style>` replace with their own (serif) face. Bake the default sans
+  // family onto it too, as WL's default graphics font is a sans-serif one.
+  let body = with_default_text_family(&body);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.
   let mut body = body;

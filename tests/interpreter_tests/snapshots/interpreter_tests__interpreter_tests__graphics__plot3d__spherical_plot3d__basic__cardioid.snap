@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6052
 expression: "export_svg(\"SphericalPlot3D[1 - Cos[theta], {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="362" viewBox="0 0 360 362" xmlns="http://www.w3.org/2000/svg">
@@ -23434,11 +23433,11 @@ expression: "export_svg(\"SphericalPlot3D[1 - Cos[theta], {theta, 0, Pi}, {phi, 
 <line x1="198.2" y1="340.0" x2="199.1" y2="337.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="231.9" y1="354.2" x2="232.9" y2="351.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="60.8" y1="282.1" x2="62.4" y2="278.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="57.0" y="291.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<text x="57.0" y="291.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="134.3" y1="313.1" x2="135.9" y2="309.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="130.5" y="322.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="130.5" y="322.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="214.9" y1="347.0" x2="216.4" y2="343.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="211.0" y="356.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="211.0" y="356.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="244.9" y1="359.7" x2="335.8" y2="213.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="251.0" y1="349.9" x2="253.1" y2="351.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="266.8" y1="324.6" x2="268.9" y2="325.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -23451,11 +23450,11 @@ expression: "export_svg(\"SphericalPlot3D[1 - Cos[theta], {theta, 0, Pi}, {phi, 
 <line x1="320.3" y1="238.4" x2="322.4" y2="239.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="331.8" y1="220.0" x2="333.9" y2="221.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="259.0" y1="337.0" x2="262.4" y2="339.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="264.1" y="340.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-1</text>
+<text x="264.1" y="340.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="295.2" y1="278.8" x2="298.6" y2="280.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="300.3" y="281.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0</text>
+<text x="300.3" y="281.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="326.1" y1="229.0" x2="329.5" y2="231.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="331.2" y="232.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1</text>
+<text x="331.2" y="232.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="36.6" y1="271.8" x2="8.4" y2="100.7" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="34.0" y1="256.4" x2="36.5" y2="256.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="31.9" y1="243.4" x2="34.4" y2="243.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -23467,9 +23466,9 @@ expression: "export_svg(\"SphericalPlot3D[1 - Cos[theta], {theta, 0, Pi}, {phi, 
 <line x1="15.2" y1="141.8" x2="17.7" y2="141.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="9.8" y1="108.8" x2="12.2" y2="108.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="36.1" y1="269.0" x2="40.1" y2="268.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="30.2" y="270.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-2</text>
+<text x="30.2" y="270.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
 <line x1="25.1" y1="202.3" x2="29.1" y2="201.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="19.2" y="203.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-1</text>
+<text x="19.2" y="203.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="12.5" y1="125.6" x2="16.5" y2="124.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="6.6" y="126.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0</text>
+<text x="6.6" y="126.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 </svg>

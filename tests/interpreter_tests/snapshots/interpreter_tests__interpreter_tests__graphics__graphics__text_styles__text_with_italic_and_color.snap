@@ -7,6 +7,6 @@ expression: "export_svg(\"Graphics[{Text[Style[\\\"Strahl\\\", 11, Italic, Blue]
 <clipPath id="plotClip_359x359"><rect x="0" y="0" width="359.00" height="359.00"/></clipPath>
 </defs>
 <g>
-<text x="179.50" y="179.50" fill="rgb(0,0,255)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central">Strahl</text>
+<text x="179.50" y="179.50" fill="rgb(0,0,255)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Strahl</text>
 </g>
 </svg>

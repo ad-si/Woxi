@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5864
 expression: "export_svg(\"RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="287" viewBox="0 0 360 287" xmlns="http://www.w3.org/2000/svg">
@@ -6957,11 +6956,11 @@ expression: "export_svg(\"RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]\")"
 <line x1="205.2" y1="264.3" x2="206.1" y2="261.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="244.9" y1="279.9" x2="245.8" y2="277.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="44.9" y1="201.0" x2="46.4" y2="197.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="41.2" y="210.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1</text>
+<text x="41.2" y="210.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="130.4" y1="234.7" x2="131.9" y2="231.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="126.8" y="244.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0</text>
+<text x="126.8" y="244.0" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="224.9" y1="272.0" x2="226.3" y2="268.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="221.2" y="281.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="221.2" y="281.3" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="250.0" y1="281.9" x2="348.3" y2="133.7" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="252.4" y1="278.3" x2="254.4" y2="279.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="271.0" y1="250.2" x2="273.1" y2="251.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -6974,11 +6973,11 @@ expression: "export_svg(\"RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]\")"
 <line x1="333.5" y1="156.0" x2="335.6" y2="157.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="346.7" y1="136.1" x2="348.8" y2="137.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="261.8" y1="264.0" x2="265.2" y2="266.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="266.8" y="267.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-1</text>
+<text x="266.8" y="267.3" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
 <line x1="304.4" y1="199.9" x2="307.7" y2="202.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="309.4" y="203.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0</text>
+<text x="309.4" y="203.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="340.2" y1="145.9" x2="343.6" y2="148.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="345.2" y="149.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1</text>
+<text x="345.2" y="149.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="24.8" y1="193.0" x2="12.0" y2="111.6" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="23.8" y1="187.0" x2="26.3" y2="186.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="22.9" y1="180.9" x2="25.3" y2="180.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -6990,11 +6989,11 @@ expression: "export_svg(\"RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]\")"
 <line x1="14.7" y1="129.2" x2="17.2" y2="128.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="13.7" y1="122.4" x2="16.1" y2="122.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="24.8" y1="193.0" x2="28.7" y2="192.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="18.9" y="194.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0</text>
+<text x="18.9" y="194.0" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
 <line x1="20.9" y1="168.4" x2="24.9" y2="167.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="15.0" y="169.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">2</text>
+<text x="15.0" y="169.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
 <line x1="16.8" y1="142.6" x2="20.8" y2="142.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="10.9" y="143.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">4</text>
+<text x="10.9" y="143.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="12.6" y1="115.6" x2="16.5" y2="114.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="6.6" y="116.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">6</text>
+<text x="6.6" y="116.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">6</text>
 </svg>

@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 30663
 expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="380" viewBox="0 0 360 380" xmlns="http://www.w3.org/2000/svg">
@@ -11530,15 +11529,15 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="226.8" y1="355.5" x2="227.7" y2="353.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="237.5" y1="360.1" x2="238.5" y2="357.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="53.2" y1="281.9" x2="54.8" y2="278.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="49.3" y="291.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-1.0</text>
+<text x="49.3" y="291.2" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1.0</text>
 <line x1="97.9" y1="300.9" x2="99.5" y2="297.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="94.0" y="310.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">-0.5</text>
+<text x="94.0" y="310.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="145.1" y1="320.9" x2="146.7" y2="317.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="141.2" y="330.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.0</text>
+<text x="141.2" y="330.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="195.2" y1="342.2" x2="196.8" y2="338.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="191.3" y="351.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">0.5</text>
+<text x="191.3" y="351.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="248.4" y1="364.7" x2="250.0" y2="361.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="244.5" y="373.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1.0</text>
+<text x="244.5" y="373.9" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="248.4" y1="364.7" x2="334.6" y2="226.4" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="253.6" y1="356.5" x2="255.7" y2="357.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="258.7" y1="348.3" x2="260.8" y2="349.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11557,13 +11556,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="327.5" y1="237.8" x2="329.6" y2="239.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="331.1" y1="231.9" x2="333.2" y2="233.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="273.4" y1="324.7" x2="276.8" y2="326.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="278.5" y="327.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">-0.5</text>
+<text x="278.5" y="327.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="295.9" y1="288.5" x2="299.3" y2="290.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="301.0" y="291.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0.0</text>
+<text x="301.0" y="291.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="316.2" y1="255.9" x2="319.6" y2="258.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="321.3" y="259.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">0.5</text>
+<text x="321.3" y="259.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="334.6" y1="226.4" x2="338.0" y2="228.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="339.7" y="229.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.0</text>
+<text x="339.7" y="229.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="53.2" y1="281.9" x2="23.7" y2="94.5" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="52.0" y1="274.1" x2="54.5" y2="273.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="50.7" y1="266.1" x2="53.2" y2="265.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -11582,13 +11581,13 @@ expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]
 <line x1="27.2" y1="116.6" x2="29.7" y2="116.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="25.5" y1="105.7" x2="28.0" y2="105.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="53.2" y1="281.9" x2="57.2" y2="281.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="47.3" y="282.9" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-1.0</text>
+<text x="47.3" y="282.9" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1.0</text>
 <line x1="46.8" y1="241.2" x2="50.8" y2="240.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="40.9" y="242.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">-0.5</text>
+<text x="40.9" y="242.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-0.5</text>
 <line x1="39.8" y1="196.8" x2="43.8" y2="196.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="33.9" y="197.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0.0</text>
+<text x="33.9" y="197.7" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.0</text>
 <line x1="32.2" y1="148.1" x2="36.1" y2="147.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="26.2" y="149.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">0.5</text>
+<text x="26.2" y="149.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0.5</text>
 <line x1="23.7" y1="94.5" x2="27.7" y2="93.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="17.8" y="95.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">1.0</text>
+<text x="17.8" y="95.5" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 </svg>

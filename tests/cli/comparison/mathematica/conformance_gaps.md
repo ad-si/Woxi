@@ -9004,6 +9004,39 @@ functions resolve against the numerical axis ranges.
 Finite `LabelingSize` now renders labels with Wolfram's Text-style width
 measure and three-dot truncation. The corresponding repaired reference is
 valid for reviewing Woxi's output.
+
+
+## Bar charts for slides (2026-11-10)
+
+Found rendering a commits-per-month `BarChart` for a slide deck. Fixed:
+`Text[expr, pos, offset, dir]` reads `dir` in screen space (in `Graphics` and
+in a plot's `Epilog`, which ignored it before); `BarChart` honors
+`Style[label, size]`, `TicksStyle`, `LabelStyle`, `AxesLabel` and
+`PlotLabel` sizes and an explicit `ImagePadding`; `LabelStyle` sizes an
+unframed `Plot`'s tick labels; a zero-area `Rectangle` keeps its `EdgeForm`
+line; exported `Text` carries a sans-serif `font-family` itself. A negative
+lower `PlotRange` bound on `BarChart` was already honored.
+
+These were not compared against `wolframscript` (none was available in the
+session) and still need checking:
+
+- `Text["2024-09", …]`: the `-` looks longer in wolframscript's PNGs. Woxi
+  draws the string's own hyphen-minus; whether WL typesets it as a minus sign
+  or en dash, or only its font's hyphen is wider, is open.
+- `|` in a bold `FontFamily -> "Helvetica"` `Text` is short in Woxi's PNG
+  export where the machine has Helvetica (whose bar spans only the cap
+  height); without Helvetica the rasterizer falls back to Atkinson
+  Hyperlegible, whose bar is full height. Likely a font, not a glyph-choice,
+  difference.
+- `GeometricTransformation`/`Scale` around a `Text` with a direction maps the
+  direction through the linear part (`{dx sx, dy sy}`), as for any vector.
+- `ImagePadding -> {{l, r}, {b, t}}` with an `All` side is honored per side
+  by `BarChart`; `Plot` treats any `All` side as a fully automatic padding.
+- `BarChart` `AxesLabel` / `FrameLabel` take only the size of their
+  `Style[…]` (not its color or weight), and big tick labels show the known
+  Arial-versus-Atkinson width gap more: at 30 pt the first glyph of a long
+  left tick label touches the image edge.
+
 ## Unit conformance follow-up (2026-11-06)
 
 Verified against Wolfram Engine 15.0.0 for Mac OS X ARM. The launcher did

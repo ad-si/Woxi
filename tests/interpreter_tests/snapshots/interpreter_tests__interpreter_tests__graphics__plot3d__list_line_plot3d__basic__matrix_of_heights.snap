@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6346
 expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 8}}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
@@ -19,13 +18,13 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="207.8" y1="293.7" x2="208.7" y2="291.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="222.6" y1="299.6" x2="223.5" y2="297.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="36.5" y1="226.1" x2="37.9" y2="222.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="32.8" y="235.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">1</text>
+<text x="32.8" y="235.4" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="98.1" y1="250.4" x2="99.6" y2="246.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="94.5" y="259.7" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">2</text>
+<text x="94.5" y="259.7" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
 <line x1="165.0" y1="276.8" x2="166.4" y2="273.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="161.3" y="286.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">3</text>
+<text x="161.3" y="286.1" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">3</text>
 <line x1="237.6" y1="305.5" x2="239.1" y2="301.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="234.0" y="314.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle">4</text>
+<text x="234.0" y="314.8" font-size="10" fill="rgb(102,102,102)" text-anchor="middle" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="237.6" y1="305.5" x2="325.5" y2="173.1" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="243.0" y1="297.4" x2="245.1" y2="298.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="248.3" y1="289.5" x2="250.4" y2="290.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -44,15 +43,15 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="318.3" y1="184.0" x2="320.4" y2="185.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="321.9" y1="178.5" x2="324.0" y2="179.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="237.6" y1="305.5" x2="241.0" y2="307.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="242.6" y="308.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.0</text>
+<text x="242.6" y="308.8" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.0</text>
 <line x1="263.3" y1="266.8" x2="266.7" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="268.3" y="270.1" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">1.5</text>
+<text x="268.3" y="270.1" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1.5</text>
 <line x1="286.3" y1="232.2" x2="289.6" y2="234.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="291.3" y="235.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2.0</text>
+<text x="291.3" y="235.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.0</text>
 <line x1="306.9" y1="201.2" x2="310.2" y2="203.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="311.9" y="204.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">2.5</text>
+<text x="311.9" y="204.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2.5</text>
 <line x1="325.5" y1="173.1" x2="328.8" y2="175.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="330.5" y="176.4" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle">3.0</text>
+<text x="330.5" y="176.4" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">3.0</text>
 <line x1="36.5" y1="226.1" x2="25.0" y2="153.3" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="36.5" y1="226.1" x2="38.9" y2="225.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="35.7" y1="221.2" x2="38.2" y2="220.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -66,13 +65,13 @@ expression: "export_svg(\"ListLinePlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}, {2, 4, 6, 
 <line x1="26.7" y1="164.4" x2="29.2" y2="164.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="25.9" y1="158.9" x2="28.3" y2="158.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="34.9" y1="216.3" x2="38.9" y2="215.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="29.0" y="217.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">2</text>
+<text x="29.0" y="217.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
 <line x1="31.8" y1="196.2" x2="35.7" y2="195.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="25.8" y="197.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">4</text>
+<text x="25.8" y="197.1" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="28.5" y1="175.2" x2="32.4" y2="174.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="22.5" y="176.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">6</text>
+<text x="22.5" y="176.2" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">6</text>
 <line x1="25.0" y1="153.3" x2="29.0" y2="152.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<text x="19.1" y="154.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle">8</text>
+<text x="19.1" y="154.3" font-size="10" fill="rgb(102,102,102)" text-anchor="end" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">8</text>
 <line x1="151.1" y1="120.3" x2="151.0" y2="117.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="151.1" y1="120.3" x2="159.1" y2="122.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="151.0" y1="117.2" x2="150.9" y2="114.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
