@@ -134,10 +134,12 @@ mod date_string_time_zone {
         "Block[{$TimeZone = 0}, {\
          DateString[3155673600, \"Time\", TimeZone -> \"Asia/Tokyo\"], \
          DateString[3155673600, {\"Hour\", \"Minute\"}, TimeZone -> -5], \
-         StringLength[DateString[\"Hour\", TimeZone -> \"Europe/Paris\"]]}]"
+         StringLength[DateString[\"Hour\", TimeZone -> \"Europe/Paris\"]], \
+         StringLength[DateString[{\"Hour\", \"Minute\"}, TimeZone -> -5]], \
+         StringLength[DateString[{\"Hour\", \"Minute\"}]]}]"
       )
       .unwrap(),
-      "{09:00:00, 1900, 2}"
+      "{09:00:00, 1900, 2, 4, 4}"
     );
   }
 }

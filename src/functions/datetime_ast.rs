@@ -2598,7 +2598,23 @@ fn is_known_date_format(s: &str) -> bool {
   )
 }
 
+/// True for a non-empty list made only of recognized format element names,
+/// e.g. `{"Hour", "Minute"}`; such a list formats the current date.
+fn is_format_list(e: &Expr) -> bool {
+  matches!(e, Expr::List(items) if !items.is_empty()
+    && items.iter().all(|i| matches!(i, Expr::String(s) if is_known_date_format(s))))
+}
+
 pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // DateString[{elements...}] formats the current date.
+  if let [list] = args
+    && is_format_list(list)
+  {
+    return date_string_ast(&[
+      Expr::Identifier("Now".to_string()),
+      list.clone(),
+    ]);
+  }
   // `TimeZone -> tz` expresses the date in zone `tz` before formatting:
   // DateString[date, fmt, TimeZone -> tz] and DateString[fmt, TimeZone -> tz]
   // (the latter formats the current date).
@@ -2609,6 +2625,7 @@ pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (date_args, fmt_args): (&[Expr], &[Expr]) = match rest {
       [] => (&[], &[]),
       [Expr::String(f)] if is_known_date_format(f) => (&[], rest),
+      [list] if is_format_list(list) => (&[], rest),
       _ => (&rest[..1], &rest[1..]),
     };
     let mut dl_args = date_args.to_vec();
