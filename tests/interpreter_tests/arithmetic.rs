@@ -10271,6 +10271,23 @@ qué tal?"; a/b//MakeBoxes"#,
 mod power_overflow {
   use woxi::interpret;
 
+  // A promoted integer power is taken by repeated squaring and a
+  // non-integer one through a cached logarithm of its base; both keep the
+  // values exact to their precision.
+  #[test]
+  fn promoted_powers_keep_their_values() {
+    assert_eq!(
+      interpret(
+        "{Precision[2.^2000], 2.^2000 == 2^2000, \
+          Round[10^10 ((2.^1000)^2.5/2^2500)], \
+          Round[10^10 (1.5^2000.5/1.5^2000)/Sqrt[1.5]], \
+          Round[10^10 (1.5^2000.5 + 1.5^2000.5)/1.5^2000.5]}"
+      )
+      .unwrap(),
+      "{15.653559774527023, True, 10000000000, 10000000000, 20000000000}"
+    );
+  }
+
   // A machine zero times a number promoted past the machine range is the
   // machine zero (wolframscript), not an arbitrary-precision zero.
   #[test]

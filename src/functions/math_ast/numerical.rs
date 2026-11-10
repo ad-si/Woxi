@@ -638,12 +638,46 @@ pub fn machine_power_out_of_range(
   let computed = with_astro_consts(|cc| {
     let base = BigFloat::from_f64(a, bits);
     let exponent = BigFloat::from_f64(b, bits);
-    let result = base.pow(&exponent, bits, rm, cc);
+    // An integer power is taken by repeated squaring. A non-integer one is
+    // `exp(b log a)`; the logarithm is most of its cost, and the same bases
+    // recur across a plot's samples (a row of a grid varies only the
+    // exponent), so the latest ones are kept.
+    let result = if integer_exponent {
+      bigfloat_powi(&base, b as i128, bits, rm)
+    } else {
+      let key = a.to_bits();
+      let log = RECENT_LOGS
+        .with(|c| {
+          c.borrow()
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
+        })
+        .unwrap_or_else(|| {
+          let log = base.ln(bits, rm, cc);
+          RECENT_LOGS.with(|c| {
+            let mut recent = c.borrow_mut();
+            if recent.len() >= 64 {
+              recent.remove(0);
+            }
+            recent.push((key, log.clone()));
+          });
+          log
+        });
+      log.mul(&exponent, bits, rm).exp(bits, rm, cc)
+    };
     let digits = wl_fraction_digits(&result, result_prec);
     bigfloat_to_string(&result, Some(digits), rm, cc)
       .map(|s| Expr::BigFloat(s, result_prec))
   });
   Some(computed.and_then(|r| r))
+}
+
+thread_local! {
+  /// The natural logarithms of the latest machine bases raised to a
+  /// non-integer power past the machine range, by their bits.
+  static RECENT_LOGS: std::cell::RefCell<Vec<(u64, astro_float::BigFloat)>> =
+    const { std::cell::RefCell::new(Vec::new()) };
 }
 
 thread_local! {
