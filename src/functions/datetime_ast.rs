@@ -2599,6 +2599,28 @@ fn is_known_date_format(s: &str) -> bool {
 }
 
 pub fn date_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `TimeZone -> tz` expresses the date in zone `tz` before formatting:
+  // DateString[date, fmt, TimeZone -> tz] and DateString[fmt, TimeZone -> tz]
+  // (the latter formats the current date).
+  if let Some((last, rest)) = args.split_last()
+    && let Expr::Rule { pattern, .. } = last
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TimeZone")
+  {
+    let (date_args, fmt_args): (&[Expr], &[Expr]) = match rest {
+      [] => (&[], &[]),
+      [Expr::String(f)] if is_known_date_format(f) => (&[], rest),
+      _ => (&rest[..1], &rest[1..]),
+    };
+    let mut dl_args = date_args.to_vec();
+    dl_args.push(last.clone());
+    let date_list = date_list_ast(&dl_args)?;
+    if !matches!(date_list, Expr::List(_)) {
+      return Ok(unevaluated("DateString", args));
+    }
+    let mut new_args = vec![date_list];
+    new_args.extend(fmt_args.iter().cloned());
+    return date_string_ast(&new_args);
+  }
   if args.is_empty()
     || (args.len() == 1
       && matches!(&args[0], Expr::Identifier(s) if s == "Now"))

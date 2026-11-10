@@ -122,6 +122,26 @@ mod absolute_time {
   }
 }
 
+mod date_string_time_zone {
+  use super::*;
+
+  // `TimeZone -> tz` expresses the date in zone `tz` before formatting.
+  #[test]
+  fn date_string_time_zone_option() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Block[{$TimeZone = 0}, {\
+         DateString[3155673600, \"Time\", TimeZone -> \"Asia/Tokyo\"], \
+         DateString[3155673600, {\"Hour\", \"Minute\"}, TimeZone -> -5], \
+         StringLength[DateString[\"Hour\", TimeZone -> \"Europe/Paris\"]]}]"
+      )
+      .unwrap(),
+      "{09:00:00, 1900, 2}"
+    );
+  }
+}
+
 mod date_list {
   use super::*;
 
