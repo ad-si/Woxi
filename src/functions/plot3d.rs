@@ -19318,15 +19318,6 @@ fn evaluate_parametric_at_uv(
   }
 }
 
-/// Implementation of ParametricPlot3D.
-///
-/// Two forms are supported:
-/// - Curve: `ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}, opts...]`
-///   Samples the curve and returns an unevaluated
-///   `Graphics3D[{<directives>, Line[{...}]}, opts]` so that `Show[]` can
-///   merge it with other 3D primitives.
-/// - Surface: `ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}, opts...]`
-///   Triangulates the surface and returns a fully rendered Graphics3D SVG.
 /// The grid steps along the four sides of a `[0, nu] x [0, nv]` sampling
 /// grid: the outline of a parametric surface's domain.
 fn parameter_domain_edges(
@@ -19340,6 +19331,15 @@ fn parameter_domain_edges(
   along_u.chain(along_v)
 }
 
+/// Implementation of ParametricPlot3D.
+///
+/// Two forms are supported:
+/// - Curve: `ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}, opts...]`
+///   Samples the curve and returns an unevaluated
+///   `Graphics3D[{<directives>, Line[{...}]}, opts]` so that `Show[]` can
+///   merge it with other 3D primitives.
+/// - Surface: `ParametricPlot3D[{fx, fy, fz}, {u, umin, umax}, {v, vmin, vmax}, opts...]`
+///   Triangulates the surface and returns a fully rendered Graphics3D SVG.
 pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
