@@ -32663,6 +32663,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     args[1..].iter().map(control_spec_variable).collect();
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
+  // An evaluated `Animate[…, AnimationRunning -> False]` carries the option
+  // in its control specification (`{x, 0, 1, AnimationRunning -> False,
+  // …}`), not among the Manipulate's own options.
+  if args[1..].iter().any(|spec| {
+    matches!(spec, Expr::List(items) if items.iter().any(|it| {
+      rule_option_name(it) == Some("AnimationRunning")
+        && matches!(it, Expr::Rule { replacement, .. }
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False"))
+    }))
+  }) {
+    animation_running = false;
+  }
   for spec in &args[1..] {
     // `ExpressionCell[content, …]` is the front end's wrapper around a
     // control row saved with the notebook (Demonstrations store their
@@ -40615,9 +40627,16 @@ fn parse_manipulate_control(
   // A `Trigger`/`Animator` control is a play button sweeping its variable
   // over the range: the widget animates that variable (a Trigger starts
   // paused, an Animator running).
+  // An Animator runs unless its spec says `AnimationRunning -> False` (as
+  // an evaluated `Animate[…, AnimationRunning -> False]` writes it).
+  let paused = items.iter().any(|it| {
+    matches!(it, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False"))
+  });
   let animate = match control_type.as_deref() {
     Some("Trigger") => Some(false),
-    Some("Animator") => Some(true),
+    Some("Animator") => Some(!paused),
     _ => None,
   };
   let orientation = if control_type.as_deref() == Some("VerticalSlider") {

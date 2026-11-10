@@ -6106,6 +6106,7 @@ fn repair_degenerate_ranges(
   else {
     return;
   };
+  let mut repaired: Vec<String> = Vec::new();
   for control in state.controls.iter_mut().filter(|c| degenerate(c)) {
     let Some(replacement) = rebuilt_state
       .controls
@@ -6134,7 +6135,13 @@ fn repair_degenerate_ranges(
       *max = *r_max;
       *step = *r_step;
       *current = current.clamp(*min, *max);
+      repaired.push(control.name().to_string());
     }
+  }
+  // The source bound that collapsed the range must not be re-resolved over
+  // the repaired one on the next evaluation.
+  for name in repaired {
+    state.drop_dynamic_bounds(&name);
   }
 }
 
@@ -11440,12 +11447,19 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
 
   #[test]
   fn animate_appearance_none_is_captured() {
-    // `Appearance -> None` hides the control rows in the widget view.
+    // `Appearance -> None` hides the control rows in the widget view. An
+    // `Animate` drops it as an unknown option when it evaluates to its
+    // `Manipulate` (as in wolframscript); a `Manipulate` keeps it.
+    let expr =
+      woxi::interpret_to_expr("Manipulate[x, {x, 0, 1}, Appearance -> None]")
+        .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.appearance_none);
     let expr =
       woxi::interpret_to_expr("Animate[x, {x, 0, 1}, Appearance -> None]")
         .unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
-    assert!(state.appearance_none);
+    assert!(state.animated && !state.appearance_none);
     // A plain Manipulate keeps its controls visible.
     let expr = woxi::interpret_to_expr("Manipulate[x, {x, 0, 1}]").unwrap();
     let state = manipulate::ManipulateState::from_expr(&expr).unwrap();

@@ -1800,6 +1800,13 @@ impl ManipulateState {
   /// Move each named continuous control to its freshly resolved bounds and
   /// clamp its value inside them, so a slider range follows the control it
   /// references (dragging Kepler's period `P` widens the time sliders).
+  /// Stop re-resolving `name`'s range from its source bounds: they could not
+  /// be evaluated here, and the range now comes from somewhere else (a
+  /// stored widget's own specification).
+  pub fn drop_dynamic_bounds(&mut self, name: &str) {
+    self.dynamic_bounds.retain(|(n, ..)| n != name);
+  }
+
   fn apply_dynamic_bounds(&mut self, resolved: &[ResolvedBound]) {
     for (name, new_min, new_max, new_step) in resolved {
       // A dynamic bound may belong to either a Continuous slider or a
