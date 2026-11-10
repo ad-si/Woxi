@@ -42,7 +42,8 @@ pub(crate) fn carlson_rf_bigfloat(
   if zeros > 1 {
     return None;
   }
-  let quarter = BigFloat::from_f64(0.25, wp);
+  let quarter =
+    crate::functions::math_ast::numerical::bigfloat_from_f64(0.25, wp);
   let three = int(3, wp);
   let (mut x, mut y, mut z) = (x.clone(), y.clone(), z.clone());
   let target = -(wp as i64) / 6 - 2;
@@ -128,7 +129,15 @@ pub(crate) fn elliptic_f_bigfloat(
   if !k.is_finite() || k.abs() > 1e15 {
     return None;
   }
-  let r = phi.sub(&pi.mul(&BigFloat::from_f64(k, wp), wp, rm), wp, rm);
+  let r = phi.sub(
+    &pi.mul(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(k, wp),
+      wp,
+      rm,
+    ),
+    wp,
+    rm,
+  );
   let s = r.sin(wp, rm, cc);
   let c = r.cos(wp, rm, cc);
   let one = int(1, wp);
@@ -145,7 +154,15 @@ pub(crate) fn elliptic_f_bigfloat(
     return Some(f);
   }
   let kk = elliptic_k_bigfloat(m, wp, rm, cc)?;
-  Some(f.add(&kk.mul(&BigFloat::from_f64(2.0 * k, wp), wp, rm), wp, rm))
+  Some(f.add(
+    &kk.mul(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(2.0 * k, wp),
+      wp,
+      rm,
+    ),
+    wp,
+    rm,
+  ))
 }
 
 /// The amplitude whose `F(·, m)` is the inverse function value.

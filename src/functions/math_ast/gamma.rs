@@ -544,7 +544,12 @@ pub fn gamma_fn(x: f64) -> f64 {
   }
   with_thread_consts(|cc| {
     let rm = astro_float::RoundingMode::ToEven;
-    let g = gamma_bigfloat(&astro_float::BigFloat::from_f64(x, 64), 64, rm, cc);
+    let g = gamma_bigfloat(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64),
+      64,
+      rm,
+      cc,
+    );
     bigfloat_to_f64_approx(&g)
   })
   .unwrap_or(f64::NAN)

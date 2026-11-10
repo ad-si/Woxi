@@ -2528,7 +2528,9 @@ pub fn dispatch_math_functions(
             ))));
           }
         };
-        let big = |v: f64| BigFloat::from_f64(v, bits);
+        let big = |v: f64| {
+          crate::functions::math_ast::numerical::bigfloat_from_f64(v, bits)
+        };
         let two = big(2.0);
         let one = big(1.0);
         // Complex sqrt of (a + b i): c = sqrt((|z|+a)/2), d = ±sqrt((|z|-a)/2).

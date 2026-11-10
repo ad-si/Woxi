@@ -19187,13 +19187,17 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if endpoint == 0.0 || offset.abs() > endpoint.abs() * 1e-8 {
       return eval_at(endpoint + offset);
     }
-    use astro_float::{BigFloat, RoundingMode};
+    use astro_float::RoundingMode;
     let rm = RoundingMode::ToEven;
-    let point = BigFloat::from_f64(endpoint, 512).add(
-      &BigFloat::from_f64(offset, 512),
-      512,
-      rm,
-    );
+    let point =
+      crate::functions::math_ast::numerical::bigfloat_from_f64(endpoint, 512)
+        .add(
+          &crate::functions::math_ast::numerical::bigfloat_from_f64(
+            offset, 512,
+          ),
+          512,
+          rm,
+        );
     let digits =
       crate::functions::math_ast::numerical::with_astro_consts(|cc| {
         crate::functions::math_ast::bigfloat_to_string(&point, None, rm, cc)

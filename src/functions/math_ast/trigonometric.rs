@@ -1069,7 +1069,10 @@ mod cr {
     else {
       return fallback(x);
     };
-    let r = f(&BigFloat::from_f64(x, BITS), &mut cc);
+    let r = f(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, BITS),
+      &mut cc,
+    );
     super::super::numerical::bigfloat_to_f64_approx(&r).unwrap_or(fallback(x))
   }
 

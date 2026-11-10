@@ -480,8 +480,10 @@ fn inverse_jacobi_numeric(kind: &str, v: &Expr, m: &Expr) -> Option<Expr> {
     } else if let Some((re, im)) = with_thread_consts(|cc| {
       let rm = astro_float::RoundingMode::ToEven;
       let bits = 128;
-      let x = astro_float::BigFloat::from_f64(vf, bits);
-      let mm = astro_float::BigFloat::from_f64(mf, bits);
+      let x =
+        crate::functions::math_ast::numerical::bigfloat_from_f64(vf, bits);
+      let mm =
+        crate::functions::math_ast::numerical::bigfloat_from_f64(mf, bits);
       let (re, im) = inverse_jacobi_bigfloat(kind, &x, &mm, bits, rm, cc)?;
       Some((bigfloat_to_f64_approx(&re)?, bigfloat_to_f64_approx(&im)?))
     }) {

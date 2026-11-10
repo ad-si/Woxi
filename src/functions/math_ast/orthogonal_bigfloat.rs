@@ -497,8 +497,10 @@ pub(crate) fn machine_from_bigfloat(
   }
   let bits = 64 + 64;
   let rm = RoundingMode::ToEven;
-  let bfs: Vec<BigFloat> =
-    args.iter().map(|&v| BigFloat::from_f64(v, bits)).collect();
+  let bfs: Vec<BigFloat> = args
+    .iter()
+    .map(|&v| crate::functions::math_ast::numerical::bigfloat_from_f64(v, bits))
+    .collect();
   let r = with_thread_consts(|cc| f(&bfs, bits, rm, cc))?;
   let v = bigfloat_to_f64_approx(&r)?;
   v.is_finite().then_some(v)

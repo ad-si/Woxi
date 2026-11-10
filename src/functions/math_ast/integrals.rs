@@ -92,7 +92,10 @@ fn cos_integral_numeric(z: f64) -> f64 {
       let (re, _) =
         crate::functions::math_ast::numerical::complex_exp_integral_ei(
           &BigFloat::from_i32(0, bits),
-          &BigFloat::from_f64(z.abs(), bits),
+          &crate::functions::math_ast::numerical::bigfloat_from_f64(
+            z.abs(),
+            bits,
+          ),
           bits,
           RoundingMode::ToEven,
           &mut cc,
@@ -795,7 +798,8 @@ fn hyperbolic_integral_numeric(z: f64, odd: bool) -> f64 {
   use astro_float::BigFloat;
   let value = machine_complex(|rm, cc| {
     with_cancellation_guard(64, |bits| {
-      let x = BigFloat::from_f64(z.abs(), bits);
+      let x =
+        crate::functions::math_ast::numerical::bigfloat_from_f64(z.abs(), bits);
       let Some(positive) = exp_integral_ei_bigfloat(&x, bits, rm, cc) else {
         return (None, 0);
       };
@@ -1116,7 +1120,8 @@ fn exp_integral_e_cf(
   let two = BigFloat::from_i32(2, w);
   let nu_m1 = nu.sub(&one, w, rm);
   let mut b = z.add(nu, w, rm);
-  let mut c = BigFloat::from_f64(1.0e300, w);
+  let mut c =
+    crate::functions::math_ast::numerical::bigfloat_from_f64(1.0e300, w);
   let mut d = one.div(&b, w, rm);
   let mut h = d.clone();
   for i in 1..(50 * w + 10_000) {
@@ -1348,9 +1353,11 @@ fn machine_complex(
 
 /// Machine E_ν(z) for real ν, z ≠ 0, as (re, im).
 pub fn exp_integral_e_f64(nu: f64, z: f64) -> Option<(f64, f64)> {
-  use astro_float::BigFloat;
   machine_complex(|rm, cc| {
-    let (nu, z) = (BigFloat::from_f64(nu, 64), BigFloat::from_f64(z, 64));
+    let (nu, z) = (
+      crate::functions::math_ast::numerical::bigfloat_from_f64(nu, 64),
+      crate::functions::math_ast::numerical::bigfloat_from_f64(z, 64),
+    );
     exp_integral_e_bigfloat(&nu, &z, 64, rm, cc)
   })
 }
@@ -1359,7 +1366,12 @@ pub fn exp_integral_e_f64(nu: f64, z: f64) -> Option<(f64, f64)> {
 pub fn exp_integral_ei_f64(x: f64) -> Option<f64> {
   use astro_float::BigFloat;
   machine_complex(|rm, cc| {
-    let v = exp_integral_ei_bigfloat(&BigFloat::from_f64(x, 64), 64, rm, cc)?;
+    let v = exp_integral_ei_bigfloat(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64),
+      64,
+      rm,
+      cc,
+    )?;
     Some((v, BigFloat::from_i32(0, 64)))
   })
   .map(|(re, _)| re)
@@ -1370,7 +1382,7 @@ pub fn exp_integral_ei_f64(x: f64) -> Option<f64> {
 pub fn log_integral_f64(x: f64) -> Option<(f64, f64)> {
   use astro_float::BigFloat;
   machine_complex(|rm, cc| {
-    let xb = BigFloat::from_f64(x, 64);
+    let xb = crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64);
     if x > 0.0 {
       let v = log_integral_bigfloat(&xb, 64, rm, cc)?;
       return Some((v, BigFloat::from_i32(0, 64)));
@@ -1385,9 +1397,11 @@ pub fn log_integral_f64(x: f64) -> Option<(f64, f64)> {
 
 /// Machine Gamma[a, z] for real a and real z ≠ 0, as (re, im).
 pub fn upper_incomplete_gamma_f64(a: f64, z: f64) -> Option<(f64, f64)> {
-  use astro_float::BigFloat;
   machine_complex(|rm, cc| {
-    let (a, z) = (BigFloat::from_f64(a, 64), BigFloat::from_f64(z, 64));
+    let (a, z) = (
+      crate::functions::math_ast::numerical::bigfloat_from_f64(a, 64),
+      crate::functions::math_ast::numerical::bigfloat_from_f64(z, 64),
+    );
     upper_incomplete_gamma_bigfloat(&a, &z, 64, rm, cc)
   })
 }

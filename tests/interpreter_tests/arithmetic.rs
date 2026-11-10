@@ -10271,6 +10271,20 @@ qué tal?"; a/b//MakeBoxes"#,
 mod power_overflow {
   use woxi::interpret;
 
+  // A subnormal machine number keeps its value in arbitrary-precision
+  // arithmetic (astro-float read it as half of it).
+  #[test]
+  fn subnormal_times_promoted_number() {
+    assert_eq!(
+      interpret(
+        "{Round[10^6 (8.^(-345.) * 10.^310)], \
+          Round[10^14 (4.9*^-320 * 10.^310)]}"
+      )
+      .unwrap(),
+      "{27162, 49001}"
+    );
+  }
+
   // A promoted integer power is taken by repeated squaring and a
   // non-integer one through a cached logarithm of its base; both keep the
   // values exact to their precision.

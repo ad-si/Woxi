@@ -470,8 +470,8 @@ pub fn bessel_f64(kind: BesselKind, nu: f64, x: f64) -> Option<f64> {
     let rm = RoundingMode::ToEven;
     let v = bessel_bigfloat(
       kind,
-      &BigFloat::from_f64(nu, 64),
-      &BigFloat::from_f64(x, 64),
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(nu, 64),
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64),
       64,
       rm,
       cc,
@@ -503,7 +503,7 @@ pub(crate) fn struve_bigfloat(
   // The asymptotic sum's smallest term is about e^(−x).
   if xf > 0.7 * (bits as f64 + 20.0) && xf > 1.5 * nuf * nuf {
     let w = bits + 64 + (xf.log2().max(0.0) as usize);
-    let half = BigFloat::from_f64(0.5, w);
+    let half = crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, w);
     let pi = cc.pi(w, rm);
     let half_x = x.div(&BigFloat::from_i32(2, w), w, rm);
     let a = nu.add(&half, w, rm); // ν + ½
@@ -563,8 +563,9 @@ pub(crate) fn struve_bigfloat(
   };
   let value = with_guard(bits, expected_loss, |w| {
     let one = BigFloat::from_i32(1, w);
-    let three_halves = BigFloat::from_f64(1.5, w);
-    let half = BigFloat::from_f64(0.5, w);
+    let three_halves =
+      crate::functions::math_ast::numerical::bigfloat_from_f64(1.5, w);
+    let half = crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, w);
     let half_x = x.div(&BigFloat::from_i32(2, w), w, rm);
     let mut ratio = half_x.mul(&half_x, w, rm);
     if !modified {
@@ -627,8 +628,8 @@ pub fn struve_f64(modified: bool, nu: f64, x: f64) -> Option<f64> {
     let rm = RoundingMode::ToEven;
     let v = struve_bigfloat(
       modified,
-      &BigFloat::from_f64(nu, 64),
-      &BigFloat::from_f64(x, 64),
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(nu, 64),
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64),
       64,
       rm,
       cc,
@@ -738,7 +739,7 @@ pub fn airy_f64(kind: AiryKind, x: f64) -> Option<f64> {
   crate::functions::math_ast::with_thread_consts(|cc| {
     let v = airy_bigfloat(
       kind,
-      &BigFloat::from_f64(x, 64),
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64),
       64,
       RoundingMode::ToEven,
       cc,

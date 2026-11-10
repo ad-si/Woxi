@@ -2257,7 +2257,9 @@ impl SinCosTurns {
     SinCosTurns {
       bits,
       two_pi,
-      quarter: BigFloat::from_f64(0.25, bits),
+      quarter: crate::functions::math_ast::numerical::bigfloat_from_f64(
+        0.25, bits,
+      ),
       inv_fact,
     }
   }
@@ -2271,7 +2273,11 @@ impl SinCosTurns {
     let q = (bigfloat_to_f64_nearest(x) * 4.0).round();
     let r = x
       .sub(
-        &self.quarter.mul(&BigFloat::from_f64(q, bits), bits, rm),
+        &self.quarter.mul(
+          &crate::functions::math_ast::numerical::bigfloat_from_f64(q, bits),
+          bits,
+          rm,
+        ),
         bits,
         rm,
       )
@@ -2329,7 +2335,8 @@ fn zeta_half_plus_it_accurate(
   let n: usize = (t.abs().ceil() as usize).max(30);
   let two_pi = cc.pi(bits, rm).mul(&BigFloat::from_u64(2, bits), bits, rm);
   // Turns per unit of ln n: t / (2π).
-  let turns = BigFloat::from_f64(t, bits).div(&two_pi, bits, rm);
+  let turns = crate::functions::math_ast::numerical::bigfloat_from_f64(t, bits)
+    .div(&two_pi, bits, rm);
   // ln n for 1 ≤ n ≤ N from the logarithms of the primes, via the smallest
   // prime factor: ln n = ln p + ln(n / p).
   let mut spf = vec![0usize; n + 1];
@@ -2367,11 +2374,15 @@ fn zeta_half_plus_it_accurate(
   let mut im = BigFloat::from_u64(0, bits);
   // n^{-1/2} from its f64 value by two division-free Newton steps
   // y ← y (3 - n y²) / 2, each doubling the 53 correct bits.
-  let half = BigFloat::from_f64(0.5, bits);
+  let half =
+    crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, bits);
   let three = BigFloat::from_u64(3, bits);
   let inv_sqrt = |i: usize| -> BigFloat {
     let nb = BigFloat::from_u64(i as u64, bits);
-    let mut y = BigFloat::from_f64(1.0 / (i as f64).sqrt(), bits);
+    let mut y = crate::functions::math_ast::numerical::bigfloat_from_f64(
+      1.0 / (i as f64).sqrt(),
+      bits,
+    );
     for _ in 0..2 {
       let r = three.sub(&nb.mul(&y.mul(&y, bits, rm), bits, rm), bits, rm);
       y = y.mul(&r, bits, rm).mul(&half, bits, rm);
@@ -2388,7 +2399,7 @@ fn zeta_half_plus_it_accurate(
   let sqrt_n = BigFloat::from_u64(n as u64, bits).sqrt(bits, rm);
   // N^{1-s} / (s - 1) with s - 1 = -1/2 + i t: multiply by the conjugate
   // (-1/2 - i t) and divide by |s - 1|^2 = 1/4 + t^2.
-  let tb = BigFloat::from_f64(t, bits);
+  let tb = crate::functions::math_ast::numerical::bigfloat_from_f64(t, bits);
   let a = sqrt_n.mul(&en_re, bits, rm);
   let b = sqrt_n.mul(&en_im, bits, rm);
   let den = half
@@ -2439,8 +2450,16 @@ fn zeta_half_plus_it_accurate(
     let term = cmul(rising, (mag * e_n.0, mag * e_n.1));
     corr = (corr.0 + term.0, corr.1 + term.1);
   }
-  re = re.add(&BigFloat::from_f64(corr.0, bits), bits, rm);
-  im = im.add(&BigFloat::from_f64(corr.1, bits), bits, rm);
+  re = re.add(
+    &crate::functions::math_ast::numerical::bigfloat_from_f64(corr.0, bits),
+    bits,
+    rm,
+  );
+  im = im.add(
+    &crate::functions::math_ast::numerical::bigfloat_from_f64(corr.1, bits),
+    bits,
+    rm,
+  );
   Some((re, im))
 }
 
@@ -2450,7 +2469,7 @@ fn zeta_half_plus_it_accurate(
 /// difference of the plain f64 evaluation serves. The step is applied in
 /// extended precision and the result rounded once to the nearest double.
 fn refine_zeta_zero(t0: f64) -> f64 {
-  use astro_float::{BigFloat, RoundingMode};
+  use astro_float::RoundingMode;
   let bits = 128usize;
   let rm = RoundingMode::ToEven;
   let Some((f_re, f_im)) = zeta_half_plus_it_accurate(t0) else {
@@ -2463,9 +2482,23 @@ fn refine_zeta_zero(t0: f64) -> f64 {
   // Re(f / df) = (f_re df_re + f_im df_im) / |df|^2.
   let df_norm = df.0 * df.0 + df.1 * df.1;
   let step = f_re
-    .mul(&BigFloat::from_f64(df.0 / df_norm, bits), bits, rm)
+    .mul(
+      &crate::functions::math_ast::numerical::bigfloat_from_f64(
+        df.0 / df_norm,
+        bits,
+      ),
+      bits,
+      rm,
+    )
     .add(
-      &f_im.mul(&BigFloat::from_f64(df.1 / df_norm, bits), bits, rm),
+      &f_im.mul(
+        &crate::functions::math_ast::numerical::bigfloat_from_f64(
+          df.1 / df_norm,
+          bits,
+        ),
+        bits,
+        rm,
+      ),
       bits,
       rm,
     );
@@ -2473,7 +2506,10 @@ fn refine_zeta_zero(t0: f64) -> f64 {
   if !step_f64.is_finite() || step_f64.abs() > 1e-6 * t0.abs().max(1.0) {
     return t0;
   }
-  bigfloat_to_f64_nearest(&BigFloat::from_f64(t0, bits).sub(&step, bits, rm))
+  bigfloat_to_f64_nearest(
+    &crate::functions::math_ast::numerical::bigfloat_from_f64(t0, bits)
+      .sub(&step, bits, rm),
+  )
 }
 
 /// Imaginary part of `ZetaZero[k, t]`: the `k`-th zero (counting from 1)

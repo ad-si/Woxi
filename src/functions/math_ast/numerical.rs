@@ -605,6 +605,20 @@ pub(crate) fn bigfloat_powi(
   }
 }
 
+/// `x` as an arbitrary-precision number of `bits` bits. astro-float reads a
+/// subnormal machine number with the exponent of a normal one, which halves
+/// it (`4.9*^-320 10.^310` came out as `2.45*^-10`), so one is scaled into
+/// the normal range first and back exactly afterwards.
+pub(crate) fn bigfloat_from_f64(x: f64, bits: usize) -> astro_float::BigFloat {
+  use astro_float::{BigFloat, RoundingMode};
+  if x != 0.0 && x.is_finite() && x.abs() < f64::MIN_POSITIVE {
+    let scaled = BigFloat::from_f64(x * 2f64.powi(64), bits);
+    let down = BigFloat::from_f64(2f64.powi(-64), bits);
+    return scaled.mul(&down, bits, RoundingMode::ToEven);
+  }
+  BigFloat::from_f64(x, bits)
+}
+
 /// Largest decimal exponent an overflowed machine real is promoted to.
 pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
 
@@ -616,7 +630,7 @@ pub fn machine_power_out_of_range(
   b: f64,
   integer_exponent: bool,
 ) -> Option<Result<Expr, InterpreterError>> {
-  use astro_float::{BigFloat, RoundingMode};
+  use astro_float::RoundingMode;
   if !(a > 0.0 && a.is_finite() && b.is_finite()) {
     return None;
   }
@@ -636,8 +650,10 @@ pub fn machine_power_out_of_range(
   };
   let bits = nominal_bits(MACHINE_PRECISION_DIGITS.ceil() as usize);
   let computed = with_astro_consts(|cc| {
-    let base = BigFloat::from_f64(a, bits);
-    let exponent = BigFloat::from_f64(b, bits);
+    let base =
+      crate::functions::math_ast::numerical::bigfloat_from_f64(a, bits);
+    let exponent =
+      crate::functions::math_ast::numerical::bigfloat_from_f64(b, bits);
     // An integer power is taken by repeated squaring. A non-integer one is
     // `exp(b log a)`; the logarithm is most of its cost, and the same bases
     // recur across a plot's samples (a row of a grid varies only the
@@ -889,7 +905,7 @@ pub fn polygamma_bigfloat(
   let int = |k: usize| BigFloat::from_u64(k as u64, wp);
   let factorial =
     |k: usize| (2..=k).fold(one.clone(), |f, j| f.mul(&int(j), wp, rm));
-  let half = BigFloat::from_f64(0.5, wp);
+  let half = crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, wp);
 
   // Σ 1/(z+k)ⁿ⁺¹ kept as one fraction, so the loop only multiplies.
   let mut x = z.clone();
@@ -1035,7 +1051,15 @@ pub fn hurwitz_zeta_bigfloat(
   let s_minus_1 = s.sub(&one, wp, rm);
   sum = sum
     .add(&x_neg_s.mul(&x, wp, rm).div(&s_minus_1, wp, rm), wp, rm)
-    .add(&x_neg_s.mul(&BigFloat::from_f64(0.5, wp), wp, rm), wp, rm);
+    .add(
+      &x_neg_s.mul(
+        &crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, wp),
+        wp,
+        rm,
+      ),
+      wp,
+      rm,
+    );
 
   let inv_x = one.div(&x, wp, rm);
   let inv_x2 = inv_x.mul(&inv_x, wp, rm);
@@ -1165,9 +1189,9 @@ pub(crate) fn with_thread_consts<T>(
 /// 64 guard bits) so it is accurate to the last bit (the f64 recurrence-plus-series loses up to ~40
 /// ulps to cancellation). `None` at a pole.
 pub fn polygamma_f64(n: usize, x: f64) -> Option<f64> {
-  use astro_float::{BigFloat, RoundingMode};
+  use astro_float::RoundingMode;
   with_thread_consts(|cc| {
-    let z = BigFloat::from_f64(x, 64);
+    let z = crate::functions::math_ast::numerical::bigfloat_from_f64(x, 64);
     let r = polygamma_bigfloat(n, &z, 64, RoundingMode::ToEven, cc)?;
     bigfloat_to_f64_approx(&r)
   })
@@ -1252,9 +1276,12 @@ pub(crate) fn ln_above_integer(
 /// Euler–Maclaurin sum loses digits — badly so for negative `s`, whose
 /// terms grow and cancel. `None` at a pole or for a complex value.
 pub fn hurwitz_zeta_f64(s: f64, a: f64, signed: bool) -> Option<f64> {
-  use astro_float::{BigFloat, RoundingMode};
+  use astro_float::RoundingMode;
   with_thread_consts(|cc| {
-    let (sb, ab) = (BigFloat::from_f64(s, 64), BigFloat::from_f64(a, 64));
+    let (sb, ab) = (
+      crate::functions::math_ast::numerical::bigfloat_from_f64(s, 64),
+      crate::functions::math_ast::numerical::bigfloat_from_f64(a, 64),
+    );
     let r =
       hurwitz_zeta_bigfloat(&sb, &ab, signed, 64, RoundingMode::ToEven, cc)?;
     bigfloat_to_f64_approx(&r)
@@ -1373,7 +1400,7 @@ pub(crate) fn gamma_bigfloat(
   let w = bits + (a_int as f64 * std::f64::consts::LOG2_E).ceil() as usize + 8;
 
   // Reflection: for z < 1/2 use Γ(z) = π / (sin(π·z) · Γ(1−z)).
-  let half = BigFloat::from_f64(0.5, w);
+  let half = crate::functions::math_ast::numerical::bigfloat_from_f64(0.5, w);
   if z_in.cmp(&half).is_some_and(|o| o < 0) {
     let pi = cc.pi(w, rm);
     let one_minus_z = BigFloat::from_i32(1, w).sub(z_in, w, rm);
@@ -2355,7 +2382,9 @@ pub fn expr_to_bigfloat(
       let s = n.to_string();
       Ok(BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc))
     }
-    Expr::Real(f) => Ok(BigFloat::from_f64(*f, bits)),
+    Expr::Real(f) => Ok(
+      crate::functions::math_ast::numerical::bigfloat_from_f64(*f, bits),
+    ),
     Expr::BigFloat(digits, _) => Ok(BigFloat::parse(
       digits,
       astro_float::Radix::Dec,
@@ -6979,9 +7008,9 @@ fn owen_t_bigfloat_split(
 /// value: worked out at 160 bits, since below x = 4 it is 1 - erf(x) and
 /// that subtraction cancels up to ~30 of them.
 pub(crate) fn erfc_f64_accurate(x: f64) -> Option<f64> {
-  use astro_float::{BigFloat, RoundingMode};
+  use astro_float::RoundingMode;
   with_thread_consts(|cc| {
-    let z = BigFloat::from_f64(x, 160);
+    let z = crate::functions::math_ast::numerical::bigfloat_from_f64(x, 160);
     let r = bigfloat_erfc(&z, 160, RoundingMode::ToEven, cc);
     bigfloat_to_f64_approx(&r)
   })
@@ -9061,7 +9090,8 @@ fn refine_real_root(
     }
     (p, dp)
   };
-  let mut x = BigFloat::from_f64(re0, wbits);
+  let mut x =
+    crate::functions::math_ast::numerical::bigfloat_from_f64(re0, wbits);
   // Newton's method roughly doubles the number of correct digits per step;
   // starting from a machine-precision (~53-bit) seed, enough steps to
   // double past `wbits` covers any working precision this function is
@@ -9102,8 +9132,8 @@ pub(crate) fn root_n_eval_arbitrary_complex(
     )
   };
   let mut x = (
-    BigFloat::from_f64(re0, wbits),
-    BigFloat::from_f64(im0, wbits),
+    crate::functions::math_ast::numerical::bigfloat_from_f64(re0, wbits),
+    crate::functions::math_ast::numerical::bigfloat_from_f64(im0, wbits),
   );
   let iterations = (wbits as f64 / 40.0).log2().ceil().max(1.0) as usize + 4;
   for _ in 0..iterations {
