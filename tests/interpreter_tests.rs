@@ -3668,6 +3668,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_grid_cell_number_form_of_styled_text_grid_draws_the_grid() {
+    // Regression: `NumberForm[Text[Style[Grid[…], n]], digits]` (the head
+    // `N`/`Chop` leave behind) printed the `Text[Grid[…]]` source, widening
+    // the enclosing row, instead of drawing the table.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{NumberForm[Text[Style[Grid[{{\"a\", 0.33333}}, Frame -> True], 11]], 3]}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Grid["), "grid source printed: {svg}");
+    assert!(!svg.contains("Text["), "text source printed: {svg}");
+    assert!(svg.contains(">0.333<"), "number not formatted: {svg}");
+  }
+
+  #[test]
   fn test_plot_label_row_with_option_does_not_print_the_option() {
     // Regression: `Row[{…}, ImageMargins -> 1]` in a `PlotLabel` took the
     // option for a separator and wrote `ImageMargins -> 1` between items.

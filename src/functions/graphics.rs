@@ -27717,7 +27717,10 @@ fn split_scientific_2d(text: &str) -> Option<(String, String)> {
 
 fn is_number_form_layout(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, .. }
-    if matches!(name.as_str(), "Grid" | "Column" | "Row"))
+    if matches!(name.as_str(), "Grid" | "Column" | "Row")
+      || (matches!(name.as_str(), "Text" | "Style")
+        && matches!(expr, Expr::FunctionCall { args, .. }
+          if args.first().is_some_and(is_number_form_layout))))
 }
 
 /// Apply a `NumberForm`-family wrapper (head `head`, extra arguments
@@ -27744,7 +27747,7 @@ fn number_form_layout_items(head: &str, spec: &[Expr], expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Grid" | "Column" | "Row" | "Item" | "Style"
+        "Grid" | "Column" | "Row" | "Item" | "Style" | "Text"
       ) && !args.is_empty() =>
     {
       let mut new_args = args.clone();
