@@ -701,3 +701,25 @@ mod find_minimum_derivative_cache {
     );
   }
 }
+
+mod optimize_inexact_constraints {
+  use super::*;
+
+  // Machine reals that appear only in the constraints still make an
+  // exact optimizer that gives up fall back to the numeric one, with the
+  // Reals domain given or not.
+  #[test]
+  fn reals_only_in_constraints() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = 0.3 x + 0.5 y + 0.8 z == 0. && \
+           0.9 x^2 + 0.3 x y + 0.4 y^2 + 0.2 y z + 0.15 z^2 == 1.; \
+         {Round[10^6 First[Maximize[{x^2 + y^2 + z^2, c}, {x, y, z}, Reals]]], \
+          Round[10^6 First[Minimize[{x^2 + y^2 + z^2, c}, {x, y, z}]]]}"
+      )
+      .unwrap(),
+      "{4342108, 1235341}"
+    );
+  }
+}

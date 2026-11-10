@@ -2122,16 +2122,14 @@ fn numeric_arg_extremum(name: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 /// True iff `expr` contains a machine-precision `Real` leaf.
+/// Whether a machine real appears anywhere in `expr`, constraints (`x + y
+/// == 1.`) included.
 fn contains_machine_real(expr: &Expr) -> bool {
   match expr {
     Expr::Real(_) => true,
-    Expr::BinaryOp { left, right, .. } => {
-      contains_machine_real(left) || contains_machine_real(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_machine_real(operand),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_machine_real),
-    Expr::List(items) => items.iter().any(contains_machine_real),
-    _ => false,
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_machine_real),
   }
 }
 
@@ -2149,7 +2147,12 @@ fn minimize_or_numeric_fallback(
     static IN_NUMERIC_FALLBACK: std::cell::Cell<bool> =
       const { std::cell::Cell::new(false) };
   }
-  let candidate = args.len() == 2
+  // The real domain is the numeric optimizer's own, so `Reals` given as a
+  // third argument leaves it a candidate.
+  let over_reals = args.len() == 2
+    || (args.len() == 3
+      && matches!(&args[2], Expr::Identifier(d) if d == "Reals"));
+  let candidate = over_reals
     && contains_machine_real(&args[0])
     && !IN_NUMERIC_FALLBACK.with(std::cell::Cell::get);
   if !candidate {
@@ -2179,7 +2182,7 @@ fn minimize_or_numeric_fallback(
     IN_NUMERIC_FALLBACK.with(|f| f.set(true));
     crate::push_quiet();
     let numeric =
-      crate::functions::polynomial_ast::nminimize_ast(args, maximize);
+      crate::functions::polynomial_ast::nminimize_ast(&args[..2], maximize);
     crate::pop_quiet();
     IN_NUMERIC_FALLBACK.with(|f| f.set(false));
     crate::restore_warnings(numeric_before);
