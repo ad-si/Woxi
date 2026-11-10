@@ -69,6 +69,162 @@ struct Note {
   start: f64,
   duration: f64,
   freqs: Vec<f64>,
+  timbre: Timbre,
+}
+
+/// How a voice's loudness evolves after its attack.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Decay {
+  /// Fades exponentially at this rate per note length (struck strings).
+  Relative(f64),
+  /// Fades exponentially at this rate per second, whatever the note length
+  /// (plucked strings, bells).
+  Absolute(f64),
+  /// Holds its level until the note ends (bowed, blown or organ tones).
+  Sustain,
+}
+
+/// The tone color of a `SoundNote` instrument: the relative strengths of
+/// its harmonic partials, how fast it starts and fades, and how much
+/// vibrato it carries.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Timbre {
+  /// Amplitude of partial `k + 1` (the fundamental first).
+  harmonics: &'static [f64],
+  /// Attack time in seconds.
+  attack: f64,
+  decay: Decay,
+  /// Vibrato depth as a fraction of the pitch (at 5.5 Hz).
+  vibrato: f64,
+}
+
+const PIANO: Timbre = Timbre {
+  harmonics: &[1.0, 0.3, 0.1],
+  attack: 0.005,
+  decay: Decay::Relative(2.5),
+  vibrato: 0.0,
+};
+const MALLET: Timbre = Timbre {
+  harmonics: &[1.0, 0.0, 0.0, 0.35, 0.0, 0.0, 0.0, 0.1],
+  attack: 0.002,
+  decay: Decay::Absolute(5.0),
+  vibrato: 0.0,
+};
+const PLUCKED: Timbre = Timbre {
+  harmonics: &[1.0, 0.6, 0.35, 0.2, 0.1, 0.05],
+  attack: 0.002,
+  decay: Decay::Absolute(3.0),
+  vibrato: 0.0,
+};
+const ORGAN: Timbre = Timbre {
+  harmonics: &[1.0, 0.6, 0.3, 0.4, 0.0, 0.2, 0.0, 0.15],
+  attack: 0.01,
+  decay: Decay::Sustain,
+  vibrato: 0.0,
+};
+const BOWED: Timbre = Timbre {
+  harmonics: &[1.0, 0.5, 0.33, 0.25, 0.2, 0.17, 0.14, 0.12],
+  attack: 0.08,
+  decay: Decay::Sustain,
+  vibrato: 0.004,
+};
+const BRASS: Timbre = Timbre {
+  harmonics: &[1.0, 0.85, 0.65, 0.5, 0.35, 0.22, 0.14, 0.08],
+  attack: 0.04,
+  decay: Decay::Sustain,
+  vibrato: 0.002,
+};
+const CLARINET: Timbre = Timbre {
+  harmonics: &[1.0, 0.0, 0.55, 0.0, 0.3, 0.0, 0.15],
+  attack: 0.03,
+  decay: Decay::Sustain,
+  vibrato: 0.0,
+};
+const REED: Timbre = Timbre {
+  harmonics: &[1.0, 0.9, 0.7, 0.5, 0.4, 0.25, 0.15],
+  attack: 0.03,
+  decay: Decay::Sustain,
+  vibrato: 0.003,
+};
+const BREATH: Timbre = Timbre {
+  harmonics: &[1.0, 0.12, 0.05],
+  attack: 0.06,
+  decay: Decay::Sustain,
+  vibrato: 0.004,
+};
+const SYNTH: Timbre = Timbre {
+  harmonics: &[1.0, 0.5, 0.33, 0.25, 0.2, 0.17],
+  attack: 0.01,
+  decay: Decay::Sustain,
+  vibrato: 0.0,
+};
+
+/// The timbre of a `SoundNote` instrument name (`"Piano"`, `"Violin"`,
+/// `"RockOrgan"`, `"GuitarNylon"`, …), classified by instrument family.
+/// Unrecognized names and the default instrument sound like a piano.
+fn instrument_timbre(instrument: Option<&Expr>) -> Timbre {
+  let Some(Expr::String(name)) = instrument else {
+    return PIANO;
+  };
+  let name = name.to_ascii_lowercase();
+  let has = |keys: &[&str]| keys.iter().any(|k| name.contains(k));
+  if has(&[
+    "musicbox",
+    "celesta",
+    "glockenspiel",
+    "vibraphone",
+    "marimba",
+    "xylophone",
+    "bell",
+    "kalimba",
+    "steeldrum",
+    "dulcimer",
+    "timpani",
+  ]) {
+    MALLET
+  } else if has(&["organ", "accordion", "harmonica", "bandoneon"]) {
+    ORGAN
+  } else if has(&["clarinet"]) {
+    CLARINET
+  } else if has(&[
+    "oboe",
+    "englishhorn",
+    "bassoon",
+    "sax",
+    "bagpipe",
+    "shanai",
+    "shenai",
+  ]) {
+    REED
+  } else if has(&[
+    "flute",
+    "piccolo",
+    "recorder",
+    "whistle",
+    "ocarina",
+    "shakuhachi",
+    "bottle",
+    "choir",
+    "voice",
+  ]) {
+    BREATH
+  } else if has(&["pizzicato"]) {
+    PLUCKED
+  } else if has(&["violin", "viola", "cello", "contrabass", "fiddle", "string"])
+  {
+    BOWED
+  } else if has(&["trumpet", "trombone", "tuba", "horn", "brass"]) {
+    BRASS
+  } else if has(&[
+    "guitar", "harp", "banjo", "sitar", "koto", "shamisen", "bass", "clavi",
+    "lute", "mandolin",
+  ]) {
+    PLUCKED
+  } else if has(&["synth", "lead", "pad"]) {
+    SYNTH
+  } else {
+    PIANO
+  }
 }
 
 /// Frequency (Hz) of a `SoundNote` pitch: a number of semitones above middle
@@ -152,6 +308,7 @@ fn collect_notes(expr: &Expr, cursor: &mut f64, out: &mut Vec<Note>) {
         start,
         duration,
         freqs,
+        timbre: instrument_timbre(args.get(2)),
       });
     }
     Expr::FunctionCall { args, .. } => {
@@ -168,36 +325,57 @@ fn collect_notes(expr: &Expr, cursor: &mut f64, out: &mut Vec<Note>) {
   }
 }
 
-/// Mix the voices into one sample buffer: a piano-like tone (a few
-/// harmonics under a fast attack and a decaying envelope) per pitch.
+/// Mix the voices into one sample buffer: per pitch, the harmonic partials
+/// of the note's instrument timbre under its attack/decay envelope. Partials
+/// above the Nyquist frequency are dropped so they do not alias.
 fn synthesize_notes(notes: &[Note]) -> Option<(Vec<f64>, u32)> {
+  const VIBRATO_HZ: f64 = 5.5;
   let end = notes
     .iter()
     .map(|n| n.start + n.duration)
     .fold(0.0_f64, f64::max);
   let rate = SAMPLE_RATE as f64;
+  let nyquist = rate / 2.0;
   let total = (end * rate).round() as usize;
   if notes.is_empty() || total == 0 {
     return None;
   }
   let mut samples = vec![0.0; total];
   for note in notes {
+    let timbre = &note.timbre;
     let first = (note.start.max(0.0) * rate).round() as usize;
     let count = (note.duration * rate).round() as usize;
-    let amp = 0.5 / (note.freqs.len().max(1) as f64).sqrt();
+    // Keep every timbre's peak level that of the piano's partials, so
+    // switching instruments changes the tone color, not the loudness.
+    let partial_sum: f64 = timbre.harmonics.iter().sum();
+    let amp = 0.5 / (note.freqs.len().max(1) as f64).sqrt()
+      * (PIANO.harmonics.iter().sum::<f64>() / partial_sum);
     for i in 0..count {
       let Some(slot) = samples.get_mut(first + i) else {
         break;
       };
       let t = i as f64 / rate;
-      let envelope = (t / 0.005).min(1.0)
-        * (-2.5 * t / note.duration).exp()
+      let fade = match timbre.decay {
+        Decay::Relative(r) => (-r * t / note.duration).exp(),
+        Decay::Absolute(r) => (-r * t).exp(),
+        Decay::Sustain => 1.0,
+      };
+      let envelope = (t / timbre.attack).min(1.0)
+        * fade
         * ((note.duration - t) / 0.01).clamp(0.0, 1.0);
       for f in &note.freqs {
-        let w = std::f64::consts::TAU * f * t;
-        *slot += amp
-          * envelope
-          * (w.sin() + 0.3 * (2.0 * w).sin() + 0.1 * (3.0 * w).sin());
+        // The phase of a tone whose frequency swings by `vibrato` around f.
+        let w = std::f64::consts::TAU * f * t
+          + timbre.vibrato * f / VIBRATO_HZ
+            * (1.0 - (std::f64::consts::TAU * VIBRATO_HZ * t).cos());
+        let mut tone = 0.0;
+        for (k, a) in timbre.harmonics.iter().enumerate() {
+          let n = (k + 1) as f64;
+          if *a != 0.0 && n * f < nyquist {
+            tone += a * (n * w).sin();
+          }
+        }
+        *slot += amp * envelope * tone;
       }
     }
   }
