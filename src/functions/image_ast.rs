@@ -10314,6 +10314,106 @@ pub fn morphological_binarize_ast(
 /// in the image coordinate system (x from the left edge, y up from the
 /// bottom edge, pixel centers at half-integers) with zero padding
 /// outside. Real32 images compute in f32, everything else in f64.
+/// `ImageValuePositions[image, val]` / `ImageValuePositions[image, val, d]`:
+/// the `{x, y}` pixel centers (x from the left, y from the bottom) of the
+/// pixels whose channels all lie within `d` (default 0) of `val`, row by row
+/// from the top. `val` is a number, a list of channel values, a color
+/// directive, or `"Max"`/`"Min"` (the brightest/darkest pixels of a
+/// single-channel image). A "Byte" image takes `val` on its 0–255 scale
+/// when it exceeds 1.
+pub fn image_value_positions_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = || unevaluated("ImageValuePositions", args);
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    ref data,
+    image_type,
+    ..
+  } = args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageValuePositions::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated());
+  };
+  let (w, h, ch) = (width as usize, height as usize, channels as usize);
+  let tolerance = match args.get(2) {
+    Some(d) => match crate::functions::math_ast::try_eval_to_f64(d) {
+      Some(v) if v >= 0.0 => v,
+      _ => return Ok(unevaluated()),
+    },
+    None => 0.0,
+  };
+  let pixel = |i: usize| &data[i * ch..(i + 1) * ch];
+  // "Max"/"Min" of a single-channel image.
+  let target: Vec<f64> = match &args[1] {
+    Expr::String(s) if (s == "Max" || s == "Min") && ch == 1 => {
+      let values = data.iter().copied();
+      let v = if s == "Max" {
+        values.fold(f64::NEG_INFINITY, f64::max)
+      } else {
+        values.fold(f64::INFINITY, f64::min)
+      };
+      vec![v]
+    }
+    Expr::List(items) => {
+      match items
+        .iter()
+        .map(crate::functions::math_ast::try_eval_to_f64)
+        .collect::<Option<Vec<f64>>>()
+      {
+        Some(v) if v.len() == ch => v,
+        _ => return Ok(unevaluated()),
+      }
+    }
+    other => {
+      if let Some(v) = crate::functions::math_ast::try_eval_to_f64(other) {
+        vec![v; ch]
+      } else if let Some((r, g, b, a)) = color_directive_to_rgb(other) {
+        match ch {
+          1 if r == g && g == b => vec![r],
+          1 => vec![0.299 * r + 0.587 * g + 0.114 * b],
+          3 => vec![r, g, b],
+          4 => vec![r, g, b, a.unwrap_or(1.0)],
+          _ => return Ok(unevaluated()),
+        }
+      } else {
+        return Ok(unevaluated());
+      }
+    }
+  };
+  let target: Vec<f64> =
+    if image_type == ImageType::Byte && target.iter().any(|v| *v > 1.0) {
+      target.iter().map(|v| v / 255.0).collect()
+    } else {
+      target
+    };
+  let mut positions = Vec::new();
+  for row in 0..h {
+    for col in 0..w {
+      let p = pixel(row * w + col);
+      let within = p
+        .iter()
+        .zip(&target)
+        .all(|(v, t)| (v - t).abs() <= tolerance + 1e-12 * t.abs().max(1.0));
+      if within {
+        positions.push(Expr::List(
+          vec![
+            Expr::Real(col as f64 + 0.5),
+            Expr::Real((h - row) as f64 - 0.5),
+          ]
+          .into(),
+        ));
+      }
+    }
+  }
+  Ok(Expr::List(positions.into()))
+}
+
 pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("ImageValue", args);
   let Expr::Image {

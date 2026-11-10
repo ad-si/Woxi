@@ -2187,7 +2187,7 @@ StringStartsQ,"Checks if a string starts with a specific substring; supports the
 BubbleChart3D,"Creates a 3D bubble chart visualization",✅,pure,7.0,2170
 OverwriteTarget,"Option specifying whether to overwrite an existing target file",🚫,None,11.0,2170
 EdgeDelete,"Delete one or more edges from a graph while keeping all vertices",✅,pure,8.0,2172
-ImageValuePositions,"Returns positions of pixels with a specified value in an image",🚫,None,9.0,2172
+ImageValuePositions,"Returns positions of pixels with a specified value in an image",✅,pure,9.0,2172
 ImageHistogram,"Plots the histogram of pixel values in an image",✅,pure,7.0,2174
 PasteButton,"Represents a button that pastes content when clicked",🚫,None,6.0,2174
 FindGraphCommunities,"Finds community structure in a graph",✅,pure,9.0,2179

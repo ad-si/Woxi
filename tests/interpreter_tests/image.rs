@@ -11311,3 +11311,33 @@ mod image3d_volumes {
     );
   }
 }
+
+mod image_value_positions {
+  use super::*;
+
+  // Pixel centers {x, y} (x from the left, y from the bottom), row by row
+  // from the top; a tolerance in the max-norm over the channels; color
+  // directives, "Max"/"Min", and a Byte image's 0-255 scale.
+  #[test]
+  fn positions_of_matching_pixels() {
+    assert_eq!(
+      interpret(
+        "i = Image[{{0, 1, 0}, {1, 1, 0}}]; \
+         c = Image[{{{1, 0, 0}, {0, 1, 0}}, {{1, 1, 1}, {1, 0, 0}}}]; \
+         c2 = Image[{{{1, 0.9, 1}, {1, 0.8, 0.8}, {0.9, 0.9, 0.9}}}]; \
+         b = Image[{{0, 255, 128}}, \"Byte\"]; \
+         {ImageValuePositions[i, 1], ImageValuePositions[c, Red], \
+          ImageValuePositions[i, GrayLevel[1]], \
+          ImageValuePositions[Image[{{0.5, 0.52, 0.9}}], 0.5, 0.05], \
+          ImageValuePositions[c2, {1, 1, 1}, 0.11], \
+          ImageValuePositions[Image[{{0.1, 0.9, 0.9}}], \"Max\"], \
+          ImageValuePositions[b, 255], ImageValuePositions[b, 1]}"
+      )
+      .unwrap(),
+      "{{{1.5, 1.5}, {0.5, 0.5}, {1.5, 0.5}}, {{0.5, 1.5}, {1.5, 0.5}}, \
+       {{1.5, 1.5}, {0.5, 0.5}, {1.5, 0.5}}, {{0.5, 0.5}, {1.5, 0.5}}, \
+       {{0.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}}, \
+       {{1.5, 0.5}}}"
+    );
+  }
+}

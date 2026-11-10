@@ -759,6 +759,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "ImageRotate" => Some((1, usize::MAX)),
     "ImageSubtract" => Some((2, usize::MAX)),
     "ImageValue" => Some((2, 3)),
+    "ImageValuePositions" => Some((2, 3)),
     "MorphologicalBinarize" => Some((1, 2)),
     "MorphologicalComponents" => Some((1, 3)),
     "WatershedComponents" => Some((1, 2)),
