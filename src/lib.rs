@@ -2317,24 +2317,14 @@ pub fn down_values_with_memo(
 /// Restores previously-saved global bindings when dropped, so `f` in
 /// [`with_scoped_globals`] cannot leak or lose bindings even on early return.
 struct ScopedGlobals {
-  saved: Vec<(String, Option<StoredValue>)>,
+  saved: Vec<evaluator::symbol_values::SymbolValues>,
 }
 
 impl Drop for ScopedGlobals {
   fn drop(&mut self) {
     // Restore in reverse installation order.
-    for (name, prev) in self.saved.drain(..).rev() {
-      ENV.with(|e| {
-        let mut env = e.borrow_mut();
-        match prev {
-          Some(v) => {
-            env.insert(name, v);
-          }
-          None => {
-            env.remove(&name);
-          }
-        }
-      });
+    for prev in self.saved.drain(..).rev() {
+      evaluator::symbol_values::restore_symbol_values(prev);
     }
   }
 }
@@ -2352,17 +2342,20 @@ pub fn with_scoped_globals<R>(
   bindings: &[(String, String)],
   f: impl FnOnce() -> R,
 ) -> R {
-  let mut saved: Vec<(String, Option<StoredValue>)> =
+  // Each name is localized as `Block` localizes it — its attributes too,
+  // so a control variable named like a protected built-in (`Tree`) can be
+  // assigned by the code that runs with it bound.
+  let mut saved: Vec<evaluator::symbol_values::SymbolValues> =
     Vec::with_capacity(bindings.len());
   for (name, value) in bindings {
     let evaluated = thaw_graphic(name, value)
       .or_else(|| scoped_binding_value(value))
       .unwrap_or_else(|| syntax::Expr::Identifier(name.clone()));
-    let prev = ENV.with(|e| {
+    saved.push(evaluator::symbol_values::take_symbol_values(name));
+    ENV.with(|e| {
       e.borrow_mut()
         .insert(name.clone(), StoredValue::ExprVal(evaluated))
     });
-    saved.push((name.clone(), prev));
   }
   let _guard = ScopedGlobals { saved };
   f()

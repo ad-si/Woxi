@@ -743,3 +743,29 @@ mod optimize_inexact_constraints {
     );
   }
 }
+
+mod scoped_globals_localize_builtins {
+  use super::*;
+
+  // A Manipulate's control values are installed as scoped globals; a
+  // control named like a protected built-in (`Tree`) is localized as Block
+  // localizes it, so code running with it bound can assign it, and the
+  // built-in is back afterwards.
+  #[test]
+  fn protected_name_is_assignable_while_bound() {
+    clear_state();
+    let result = woxi::with_scoped_globals(
+      &[("Tree".to_string(), "{}".to_string())],
+      || {
+        woxi::interpret("Tree = Append[Tree, 1]; Tree = Append[Tree, 2]; Tree")
+      },
+    )
+    .unwrap();
+    assert_eq!(result, "{1, 2}");
+    assert_eq!(
+      interpret("MemberQ[Attributes[Tree], Protected]").unwrap(),
+      "True"
+    );
+    assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
+  }
+}
