@@ -17133,6 +17133,23 @@ pub fn coordinate_transform_ast(
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
+  // A chart with parameters (`{"Bipolar", {a}}`) or another chart of the
+  // table maps to Cartesian coordinates through the chart table.
+  if let (
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+    Expr::List(pt),
+  ) = (&args[0], &args[1])
+    && matches!(replacement.as_ref(), Expr::String(d) if d == "Cartesian")
+    && !matches!(pattern.as_ref(), Expr::String(s)
+      if matches!(s.as_str(), "Polar" | "Spherical" | "Cylindrical"))
+    && let Some(mapping) =
+      crate::functions::coordinate_charts::to_cartesian(pattern, pt)
+  {
+    return Ok(mapping);
+  }
   let (src, dst) = match &args[0] {
     Expr::Rule {
       pattern,
@@ -17234,20 +17251,37 @@ pub fn coordinate_transform_data_ast(
   if args.len() != 2 && args.len() != 3 {
     return unevaluated();
   }
+  // An entry of `CoordinateTransformData[]`, `{from -> to, "Euclidean", n}`,
+  // stands for its transformation in dimension n.
+  let (transform, dim_hint) = match &args[0] {
+    Expr::List(items)
+      if items.len() == 3
+        && matches!(&items[0], Expr::Rule { .. })
+        && matches!(&items[1], Expr::String(m) if m == "Euclidean") =>
+    {
+      match &items[2] {
+        Expr::Integer(n) if *n > 0 => (&items[0], Some(*n as usize)),
+        _ => return unevaluated(),
+      }
+    }
+    other => (other, None),
+  };
   let (
     Expr::Rule {
       pattern,
       replacement,
     },
     Expr::String(property),
-  ) = (&args[0], &args[1])
+  ) = (transform, &args[1])
   else {
     return unevaluated();
   };
   let dimension = |system: &Expr| match system {
     Expr::String(s) if s == "Polar" => Some(2),
     Expr::String(s) if s == "Spherical" || s == "Cylindrical" => Some(3),
-    _ => None,
+    other => {
+      crate::functions::coordinate_charts::chart_dimension(other, dim_hint)
+    }
   };
   let Some(n) = dimension(pattern).or_else(|| dimension(replacement)) else {
     return unevaluated();
@@ -17258,7 +17292,7 @@ pub fn coordinate_transform_data_ast(
     .map(|i| Expr::Identifier(format!("CoordinateTransformData`x$${i}")))
     .collect();
   let point = Expr::List(symbols.clone().into());
-  let mapping = coordinate_transform_ast(&[args[0].clone(), point.clone()])?;
+  let mapping = coordinate_transform_ast(&[transform.clone(), point.clone()])?;
   if !matches!(mapping, Expr::List(_)) {
     return unevaluated();
   }

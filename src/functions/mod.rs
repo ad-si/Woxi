@@ -40,6 +40,7 @@ pub mod control_flow_ast;
 pub mod control_systems;
 pub mod convex_hull;
 pub mod convolve_ast;
+pub mod coordinate_charts;
 pub mod count_roots_ast;
 pub mod country_data;
 pub mod csv_ast;

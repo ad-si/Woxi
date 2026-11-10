@@ -1633,6 +1633,13 @@ pub fn dispatch_linear_algebra_functions(
     "SolidAngle" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::solid_angle_ast(args));
     }
+    "CoordinateTransformData" if args.is_empty() => {
+      if let Some(all) =
+        crate::functions::coordinate_charts::all_transformations()
+      {
+        return Some(Ok(all));
+      }
+    }
     "CoordinateTransformData" if args.len() == 2 || args.len() == 3 => {
       return Some(
         crate::functions::linear_algebra_ast::coordinate_transform_data_ast(

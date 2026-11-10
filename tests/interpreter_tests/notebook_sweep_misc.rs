@@ -769,3 +769,37 @@ mod scoped_globals_localize_builtins {
     assert_eq!(woxi::get_captured_messages_raw(), Vec::<String>::new());
   }
 }
+
+mod coordinate_transform_charts {
+  use super::*;
+
+  // CoordinateTransformData[] lists every transformation between charts of
+  // one dimension (a target's parameters renamed where they clash with the
+  // source's), and each entry maps its chart to Cartesian coordinates.
+  #[test]
+  fn listing_and_chart_mappings() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "all = CoordinateTransformData[]; \
+         {Length[all], Counts[all[[All, 3]]], \
+          ToString[all[[101]], InputForm, CharacterEncoding -> \"PrintableASCII\"]}"
+      )
+      .unwrap(),
+      "{278, <|2 -> 40, 3 -> 229, 1 -> 5, 4 -> 4|>, \
+       {{\"ConfocalParaboloidal\", {\\[FormalAlpha], \\[FormalBeta]}} -> \
+       {\"Confocal\", {\\[FormalAlpha][1], \\[FormalBeta][1], \\[FormalGamma]}}, \
+       \"Euclidean\", 3}}"
+    );
+    assert_eq!(
+      interpret(
+        "cs = Cases[CoordinateTransformData[], \
+           {R_[_, \"Cartesian\"], _, n_} /; n == 3]; \
+         ToString[CoordinateTransformData[cs[[1]], \"Mapping\"][{u, v, w}] /. \
+           \\[FormalA] -> a, InputForm]"
+      )
+      .unwrap(),
+      "{(a*Sinh[v])/(-Cos[u] + Cosh[v]), (a*Sin[u])/(-Cos[u] + Cosh[v]), w}"
+    );
+  }
+}
