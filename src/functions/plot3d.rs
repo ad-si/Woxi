@@ -15187,9 +15187,12 @@ pub(crate) fn evaluate_scalar_3d(
     let mut c = c.borrow_mut();
     if c.as_ref().is_none_or(|(k, _)| *k != key) {
       let vars = [xvar.to_string(), yvar.to_string(), zvar.to_string()];
-      let node =
-        crate::functions::polynomial_ast::solve::compile_numeric(body, &vars)
-          .filter(|n| !n.has_fallback());
+      let resolved = crate::functions::plot::symbol_body_value(body, &vars);
+      let node = crate::functions::polynomial_ast::solve::compile_numeric(
+        resolved.as_ref().unwrap_or(body),
+        &vars,
+      )
+      .filter(|n| !n.has_fallback());
       *c = Some((key, node));
     }
     c.as_ref()

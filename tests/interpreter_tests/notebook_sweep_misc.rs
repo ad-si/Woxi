@@ -604,6 +604,36 @@ mod plot_compiled_sampling {
     );
   }
 
+  // A replacement on such a symbol is applied to its value, with the plot
+  // variable localized even when it has a global value.
+  #[test]
+  fn replacement_on_a_symbol_body() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "S = m^2; c = 5; p = Plot[S /. m -> 2 c, {c, 0, 1}]; \
+         MinMax[Cases[p, Line[l_] :> l[[All, 2]], Infinity]]"
+      )
+      .unwrap(),
+      "{1.6659725114535607*^-15, 3.9999998367346956}"
+    );
+  }
+
+  // Reciprocal and inverse hyperbolic functions compile, so a contour
+  // surface of them is sampled numerically.
+  #[test]
+  fn hyperbolic_functions_compile() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[ContourPlot3D[Sech[x]^2 + Coth[y + 3] + ArcTanh[z/3], \
+          {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Contours -> {1.5}]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
   // A sample that machine arithmetic overflows on the way is evaluated with
   // Wolfram's promotion semantics (an overflow is kept, a machine underflow
   // is zero, a promoted number never underflows); one with a negative

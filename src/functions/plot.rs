@@ -438,6 +438,27 @@ thread_local! {
 /// symbol with the variables bound, which is the stored value with them
 /// substituted. `None` for any other body.
 pub(crate) fn symbol_body_value(body: &Expr, vars: &[String]) -> Option<Expr> {
+  // `S2 /. m -> 2 c` or `expr /. params`: the replacement applied to the
+  // (stored) expression, which is what each sample evaluates, with the plot
+  // variables localized as the plot binds them.
+  if let Expr::ReplaceAll { expr, rules } = body {
+    let value =
+      symbol_body_value(expr, vars).unwrap_or_else(|| expr.as_ref().clone());
+    let locals =
+      Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect());
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Block".to_string(),
+      args: vec![
+        locals,
+        Expr::ReplaceAll {
+          expr: Box::new(value),
+          rules: rules.clone(),
+        },
+      ]
+      .into(),
+    })
+    .ok();
+  }
   let mut current = body.clone();
   let mut resolved = false;
   for _ in 0..8 {

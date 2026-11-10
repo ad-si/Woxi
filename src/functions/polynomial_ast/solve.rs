@@ -24488,6 +24488,12 @@ pub(crate) fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
         "Sinh" => unary(f64::sinh, args),
         "Cosh" => unary(f64::cosh, args),
         "Tanh" => unary(f64::tanh, args),
+        "Sech" => unary(|x| 1.0 / x.cosh(), args),
+        "Csch" => unary(|x| 1.0 / x.sinh(), args),
+        "Coth" => unary(|x| 1.0 / x.tanh(), args),
+        "ArcSinh" => unary(f64::asinh, args),
+        "ArcCosh" => unary(f64::acosh, args),
+        "ArcTanh" => unary(f64::atanh, args),
         "Re" if args.len() == 1 => {
           real_or(|x| x, Some(super::complex_numeric::Part::Re), args)
         }
