@@ -10792,6 +10792,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
+  /// whose `PaneSelector` panes each wrap their sliders in a collapsible
+  /// `OpenerView[{title, Column[{Control[…], …}]}, True]`, and whose slider
+  /// labels are `Row[{name, Style["■", color]}, sep]` swatches. This is a
+  /// self-authored, construct-equivalent example.
+  ///
+  /// Coverage: only the selected pane's heading and sliders are shown, and
+  /// a label keeps its `Row` separator and its swatch's color.
+  #[test]
+  fn manipulate_pane_selector_of_opener_views() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{m, a, b}, {{m, 1, \"mode\"}, {1 -> \"whole\", \
+       2 -> \"part\"}}, PaneSelector[{\
+       1 -> OpenerView[{\"whole\", Column[{Control[{{a, 2, \
+       Row[{\"alpha\", Style[\"\\[FilledSquare]\", RGBColor[1, 0, 0]]}, \
+       \" \"]}, 0, 9, 1}]}]}, True], \
+       2 -> OpenerView[{\"part\", Column[{Control[{{b, 0.5}, 0, 1}]}]}, \
+       True]}, Dynamic[m]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let shown = |state: &manipulate::ManipulateState| -> Vec<String> {
+      state
+        .controls
+        .iter()
+        .zip(&state.control_is_visible)
+        .filter(|(_, visible)| **visible)
+        .map(|(c, _)| match c {
+          manipulate::ControlState::Heading { label, .. } => label.clone(),
+          c => c.name().to_string(),
+        })
+        .collect()
+    };
+    assert_eq!(shown(&state), vec!["m", "whole", "a"]);
+    let a = state.controls.iter().find(|c| c.name() == "a").unwrap();
+    let manipulate::ControlState::Continuous { label_runs, .. } = a else {
+      panic!("a must be a slider: {a:?}");
+    };
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "alpha \u{25A0}");
+    assert_eq!(label_runs.last().unwrap().color, Some((1.0, 0.0, 0.0)));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(shown(&state), vec!["m", "part", "b"]);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a histogram bin
   /// explorer) whose control grid holds a `Dynamic[If[mode, Control[…],
   /// Control[…]]]` cell: a different control per mode, the second a
