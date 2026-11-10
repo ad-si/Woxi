@@ -655,8 +655,10 @@ impl WoxiStudio {
           // decodes to something displayable (snapshot rasters, checkbox
           // grids); anything else keeps an ordinary editor below, so the
           // cell still survives a load/save round-trip either way.
-          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
-            && let Some(editor) = stored_output_editor(cell)
+          if matches!(
+            cell.style,
+            CellStyle::Output | CellStyle::Print | CellStyle::Text
+          ) && let Some(editor) = stored_output_editor(cell)
           {
             editors.push(editor);
             continue;
@@ -842,8 +844,10 @@ impl WoxiStudio {
             {
               editors.push(widget_dump_editor(cell, state));
               i += 1;
-            } else if matches!(cell.style, CellStyle::Output | CellStyle::Print)
-              && let Some(editor) = stored_output_editor(cell)
+            } else if matches!(
+              cell.style,
+              CellStyle::Output | CellStyle::Print | CellStyle::Text
+            ) && let Some(editor) = stored_output_editor(cell)
             {
               // A standalone stored output (no preceding Input) renders as
               // a graphic when it decodes to something displayable — e.g.
@@ -5647,6 +5651,11 @@ fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
   let svg = woxi::notebook::stored_output_image_svg(&cell.content)
     .or_else(|| {
       woxi::notebook::stored_output_vector_graphics_svg(&cell.content)
+    })
+    .or_else(|| {
+      matches!(cell.style, CellStyle::Text)
+        .then(|| woxi::notebook::stored_graphics_expr_svg(&cell.content))
+        .flatten()
     })
     .or_else(|| {
       woxi::notebook::stored_output_checkbox_text(&cell.content)
@@ -12727,6 +12736,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  #[test]
+  fn text_cell_holding_graphics_renders_as_stored_graphic() {
+    let nb = woxi::notebook::parse_notebook(
+      "Notebook[{Cell[BoxData[GraphicsBox[{RGBColor[1, 0, 0], \
+       PointBox[{{0, 0}, {1, 1}}]}]], \"Text\"]}]",
+    )
+    .unwrap();
+    let cell = match &nb.cells[0] {
+      CellEntry::Single(c) => c.clone(),
+      _ => panic!("expected a single cell"),
+    };
+    let editor = stored_output_editor(&cell)
+      .expect("a Text cell holding graphics must render as a picture");
+    assert!(editor.graphics_svg.expect("svg").contains("<circle"));
+    let plain = Cell {
+      content: "just prose".into(),
+      ..cell
+    };
+    assert!(stored_output_editor(&plain).is_none());
   }
 
   #[test]
