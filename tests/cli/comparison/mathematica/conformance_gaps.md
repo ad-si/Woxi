@@ -9553,3 +9553,14 @@ and `RealDigits[SetPrecision[0.8,80],10,16]`. Thus the extra digit is not
 obtained by directly extracting the exact binary input's decimal digits.
 Woxi currently promotes machine values from their shortest decimal string;
 the general machine digit-extraction and uncertainty rule remains unresolved.
+
+### Studio: Grid `ItemSize` with wider typeset cells
+
+A `Grid` with numeric `ItemSize -> {{w1, w2}}` and a column holding a wide
+`TraditionalForm` formula (for example a `Sqrt` of two stacked fractions)
+renders in Woxi Studio with the formula overflowing its fixed-width column
+and overlapping the neighbouring cell. Woxi also typesets `TraditionalForm`
+in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
+Times}`, which makes such cells roughly a third wider than in Wolfram.
+Not yet verified against the kernel's clipping/wrapping rule for
+over-wide items.

@@ -103,6 +103,8 @@ pub enum ControlState {
     /// candidate values pass through `(cb)[{x, y}]` — which typically
     /// rounds, clips, or rejects them — before the variable is read back.
     write_callback: Option<String>,
+    /// Machine-real pair (see `ManipulateControl::Slider2D::real`).
+    real: bool,
   },
   /// An interval slider binding its variable to a `{low, high}` pair.
   IntervalSlider {
@@ -239,8 +241,12 @@ impl ControlState {
           .cloned()
           .unwrap_or_else(|| "Null".to_string())
       }),
-      ControlState::Slider2D { x, y, .. } => {
-        format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
+      ControlState::Slider2D { x, y, real, .. } => {
+        if *real {
+          woxi::functions::graphics::point_list_binding_real(*x, *y)
+        } else {
+          format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
+        }
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
@@ -1590,6 +1596,20 @@ impl ManipulateState {
       {
         render = Ok(content);
       }
+      // A body of plain `Text[expr]` (outside `Graphics`) shows as `expr`
+      // in the widget; the terminal prints the `Text[…]` call itself.
+      if matches!(&render, Ok(r) if r.graphics.is_none()
+        && r.result.starts_with("Text[")
+        && r.result.ends_with(']'))
+      {
+        let text_call = render.as_ref().map(|r| r.result.clone()).unwrap();
+        if let Ok(content) = woxi::interpret_with_stdout(&format!(
+          "If[Length[Hold[{text_call}][[1]]] === 1, First[{text_call}], $Failed]"
+        )) && content.result != "$Failed"
+        {
+          render = Ok(content);
+        }
+      }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()
@@ -1984,6 +2004,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         x_initial,
         y_initial,
         write_callback,
+        real,
       } => ControlState::Slider2D {
         name: name.clone(),
         label: label.clone(),
@@ -1994,6 +2015,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         x: *x_initial,
         y: *y_initial,
         write_callback: write_callback.clone(),
+        real: *real,
       },
       ManipulateControl::IntervalSlider {
         name,
@@ -3783,6 +3805,21 @@ mod tests {
          found): {svg}"
       );
     }
+  }
+
+  /// A Manipulate body of `Pane[Style[Text[expr], n], size]` shows the
+  /// wrapped value, not the `Text[…]` call.
+  #[test]
+  fn text_body_shows_wrapped_value() {
+    let code = r#"Manipulate[
+      Pane[Style[Text[Quiet[N[f[b, c], 32]]], 18], {350, 50}],
+      {{f, Plus}, {Plus -> "plus", Times -> "times"}},
+      {{b, 500.}, -100, 100}, {{c, 500.}, -100, 100}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state builds");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("1000."));
   }
 
   /// A Demonstration whose "zoom" checkbox is written `Tooltip[Control[{{z,
@@ -5908,6 +5945,26 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{}");
     state.controls[idx].set_current_from_code("{-5, -5}");
     assert_eq!(state.controls[idx].current_code(), "{-5., -5.}");
+  }
+
+  /// A promoted invisible `Locator` holds machine reals, so integral
+  /// coordinates bind as `{-12., 11.}`. Binding them as exact integers made
+  /// downstream geometry (distances, circumcenters) pile up unsimplified
+  /// radicals instead of staying numeric.
+  #[test]
+  fn promoted_invisible_locator_binds_machine_reals() {
+    let code = r#"Manipulate[
+      Graphics[{Point[p], Text[Norm[p], p]}, PlotRange -> {{-5, 5}, {-5, 5}}],
+      {{p, {2, 3}}, {-4, -4}, {4, 4}, Locator, Appearance -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(state.error, None);
+    let c = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "p")
+      .expect("p control");
+    assert_eq!(c.current_code(), "{2., 3.}");
   }
 }
 

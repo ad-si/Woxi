@@ -6653,7 +6653,7 @@ impl<'a> RuleSet<'a> {
       // `Derivative[n][f][x]`.
       Expr::FunctionCall { name, .. } => {
         !heads.contains(name.as_str())
-          && !(name == "Derivative" && heads.contains(CURRIED_HEAD))
+          && (name != "Derivative" || !heads.contains(CURRIED_HEAD))
       }
       Expr::CurriedCall { .. } => !heads.contains(CURRIED_HEAD),
       _ => false,

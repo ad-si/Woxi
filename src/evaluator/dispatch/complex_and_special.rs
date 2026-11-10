@@ -6261,8 +6261,8 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
         | "\u{2147}"
         | "\u{2148}"
         | "\u{213D}"
-    ) && !(!s.is_empty()
-      && s.chars().all(|c| "0123456789.`*^-+/() ".contains(c)))
+    ) && (s.is_empty()
+      || !s.chars().all(|c| "0123456789.`*^-+/() ".contains(c)))
   };
   // `offsetFunc`: Greek and some private-use letters sort as Latin ones.
   let offset = |c: u32| -> u32 {
