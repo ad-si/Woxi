@@ -1582,13 +1582,14 @@ fn evaluate_function_call_ast_inner(
     // same name once the package is loaded. (Its `RandomTree` does not: in
     // Wolfram Language 14 the System symbol wins and the package's is never
     // defined.)
-    "CompleteGraph" | "GridGraph" | "InduceSubgraph" | "ListGraphs"
-    | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
+    "CompleteGraph" | "EmptyGraph" | "GridGraph" | "InduceSubgraph"
+    | "ListGraphs" | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
     | "BooleanAlgebra"
       if combinatorica_active() =>
     {
       match name {
         "CompleteGraph" => "Combinatorica`CompleteGraph",
+        "EmptyGraph" => "Combinatorica`EmptyGraph",
         "GridGraph" => "Combinatorica`GridGraph",
         "InduceSubgraph" => "Combinatorica`InduceSubgraph",
         "ListGraphs" => "Combinatorica`ListGraphs",
@@ -1624,6 +1625,7 @@ fn evaluate_function_call_ast_inner(
     | "ShowLabeledGraph"
     | "SetGraphOptions"
     | "DeleteEdges"
+    | "AddEdges"
     | "AllPairsShortestPath"
     | "Vertices"
       if combinatorica_active()
@@ -15557,6 +15559,7 @@ fn combinatorica_graph_name(name: &str) -> &'static str {
     "ShowGraph" => "Combinatorica`ShowGraph",
     "ShowLabeledGraph" => "Combinatorica`ShowLabeledGraph",
     "DeleteEdges" => "Combinatorica`DeleteEdges",
+    "AddEdges" => "Combinatorica`AddEdges",
     "AllPairsShortestPath" => "Combinatorica`AllPairsShortestPath",
     "Vertices" => "Combinatorica`Vertices",
     _ => "Combinatorica`ShortestPath",

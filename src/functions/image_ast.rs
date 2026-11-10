@@ -7895,7 +7895,11 @@ pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         *v = quantize(65535.0)(*v);
       }
     }
-    ImageType::Bit => out_data.iter_mut().for_each(|v| *v = quantize(1.0)(*v)),
+    ImageType::Bit => {
+      for v in &mut out_data {
+        *v = quantize(1.0)(*v);
+      }
+    }
   }
   Ok(Expr::Image {
     color_space: *color_space,
