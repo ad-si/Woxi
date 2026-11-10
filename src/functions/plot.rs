@@ -323,9 +323,11 @@ pub(crate) struct PlotBody2<'a> {
 
 impl<'a> PlotBody2<'a> {
   pub(crate) fn new(body: &'a Expr, xvar: &'a str, yvar: &'a str) -> Self {
+    let vars = [xvar.to_string(), yvar.to_string()];
+    let resolved = symbol_body_value(body, &vars);
     let compiled = crate::functions::ode_ast::CompiledReal::new(
-      body,
-      &[xvar.to_string(), yvar.to_string()],
+      resolved.as_ref().unwrap_or(body),
+      &vars,
     );
     Self {
       body,
@@ -336,11 +338,10 @@ impl<'a> PlotBody2<'a> {
   }
 
   pub(crate) fn at(&self, x: f64, y: f64) -> Option<f64> {
-    if let Some(c) = &self.compiled {
-      let v = c.eval(&[x, y]);
-      if v.is_finite() {
-        return Some(v);
-      }
+    if let Some(c) = &self.compiled
+      && let Some(sample) = c.sample(&[x, y])
+    {
+      return sample;
     }
     evaluate_symbolically_at_xy(self.body, self.xvar, self.yvar, x, y)
   }
@@ -360,11 +361,9 @@ pub(crate) fn evaluate_at_xy(
     other => other,
   };
   if let Some(c) = compiled_body(single, &[xvar.to_string(), yvar.to_string()])
+    && let Some(sample) = c.sample(&[xval, yval])
   {
-    let v = c.eval(&[xval, yval]);
-    if v.is_finite() {
-      return Some(v);
-    }
+    return sample;
   }
   evaluate_symbolically_at_xy(body, xvar, yvar, xval, yval)
 }
@@ -434,11 +433,40 @@ thread_local! {
   > = const { std::cell::RefCell::new(Vec::new()) };
 }
 
+/// A plot body that is a symbol holding an expression (`Plot3D[S4, …]`
+/// after `S4 = …`) stands for that expression: the plot evaluates the
+/// symbol with the variables bound, which is the stored value with them
+/// substituted. `None` for any other body.
+pub(crate) fn symbol_body_value(body: &Expr, vars: &[String]) -> Option<Expr> {
+  let mut current = body.clone();
+  let mut resolved = false;
+  for _ in 0..8 {
+    let Expr::Identifier(name) = &current else {
+      break;
+    };
+    if vars.iter().any(|v| v == name) {
+      break;
+    }
+    match crate::evaluator::stored_value_for_lookup(name) {
+      Some(crate::StoredValue::ExprVal(v)) => {
+        current = v;
+        resolved = true;
+      }
+      _ => break,
+    }
+  }
+  resolved.then_some(current)
+}
+
 /// The compiled form of `body` over `vars`, compiled on first use.
 fn compiled_body(
   body: &Expr,
   vars: &[String],
 ) -> Option<std::rc::Rc<crate::functions::ode_ast::CompiledReal>> {
+  // A symbol is compiled as the expression it holds, and cached under it,
+  // so that a reassigned symbol is compiled again.
+  let resolved = symbol_body_value(body, vars);
+  let body = resolved.as_ref().unwrap_or(body);
   let key = std::ptr::from_ref::<Expr>(body) as usize;
   if let Some(hit) = COMPILED_BODIES.with(|cache| {
     cache
@@ -501,11 +529,10 @@ pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
       evaluate_expr_to_expr(&substitute_var(body, var, &point)).ok()?;
     return try_eval_to_f64_lenient(&value);
   }
-  if let Some(c) = compiled_body(body, &[var.to_string()]) {
-    let v = c.eval(&[x]);
-    if v.is_finite() {
-      return Some(v);
-    }
+  if let Some(c) = compiled_body(body, &[var.to_string()])
+    && let Some(sample) = c.sample(&[x])
+  {
+    return sample;
   }
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;

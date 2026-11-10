@@ -11052,8 +11052,303 @@ impl CompiledReal {
     compile_numeric(expr, var_names).map(Self)
   }
 
+  /// The value at `values`. Where machine arithmetic leaves the machine
+  /// range on the way (`(4^k (2^k - 2))^m` for `m` in the hundreds, times an
+  /// `8^(-k m)` that underflows), the expression is evaluated again with
+  /// unbounded exponents, as Wolfram's promotion to arbitrary precision
+  /// would, instead of leaving the caller to evaluate it symbolically.
   pub(crate) fn eval(&self, values: &[f64]) -> f64 {
-    self.0.eval(values)
+    match self.sample(values) {
+      Some(Some(v)) => v,
+      _ => self.0.eval(values),
+    }
+  }
+
+  /// A plot's sample: `Some(Some(v))` for a real value, `Some(None)` for
+  /// one known not to be real (a plot leaves it out without evaluating it
+  /// symbolically), `None` when only symbolic evaluation can tell.
+  pub(crate) fn sample(&self, values: &[f64]) -> Option<Option<f64>> {
+    let v = self.0.eval(values);
+    if v.is_finite() {
+      return Some(Some(v));
+    }
+    let wide: Vec<Wide> = values
+      .iter()
+      .map(|x| Wide::new(*x))
+      .collect::<Option<_>>()?;
+    match self.0.eval_wide(&wide)? {
+      WideValue::Real(w) => {
+        let r = w.to_f64();
+        r.is_finite().then_some(Some(r))
+      }
+      WideValue::NonReal => Some(None),
+    }
+  }
+}
+
+/// A machine real whose exponent may exceed the machine range: `m 2^e` with
+/// `m` in `[0.5, 1)` (or zero). It follows Wolfram's machine arithmetic: a
+/// machine operation whose result passes the largest machine number is
+/// promoted to an arbitrary-precision number, one whose result falls below
+/// the smallest subnormal number is zero (`8.^-827.75`, `1.*^-200 1.*^-200`),
+/// and arithmetic on a promoted number stays promoted, never underflowing
+/// (`10.^x/10.^(x - 1)` is `10.` for `x` = 400).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Wide {
+  m: f64,
+  e: i64,
+  promoted: bool,
+}
+
+impl Wide {
+  const ZERO: Self = Self {
+    m: 0.0,
+    e: 0,
+    promoted: false,
+  };
+
+  /// The value of a finite machine real.
+  fn new(x: f64) -> Option<Self> {
+    x.is_finite().then(|| Self::raw(x, 0, false))
+  }
+
+  fn one() -> Self {
+    Self::raw(1.0, 0, false)
+  }
+
+  /// `m 2^e` normalized, with no range check.
+  fn raw(m: f64, e: i64, promoted: bool) -> Self {
+    if m == 0.0 || !m.is_finite() {
+      return Self::ZERO;
+    }
+    let bits = m.to_bits();
+    let biased = ((bits >> 52) & 0x7ff) as i64;
+    let (m, e) = if biased == 0 {
+      // Subnormal: scale into the normal range first.
+      let scaled = m * 2f64.powi(64);
+      let b = scaled.to_bits();
+      let r = ((b >> 52) & 0x7ff) as i64;
+      (
+        f64::from_bits((b & !(0x7ff << 52)) | (1022 << 52)),
+        e + r - 1022 - 64,
+      )
+    } else {
+      (
+        f64::from_bits((bits & !(0x7ff << 52)) | (1022 << 52)),
+        e + biased - 1022,
+      )
+    };
+    Self { m, e, promoted }
+  }
+
+  /// The result of an operation: a machine one (`promoted` false) is
+  /// promoted past the largest machine number and zero past the smallest
+  /// subnormal one, 2^-1074 = 0.5 * 2^-1073.
+  fn result(m: f64, e: i64, promoted: bool) -> Self {
+    let r = Self::raw(m, e, promoted);
+    if promoted || r.m == 0.0 {
+      r
+    } else if r.e > 1024 {
+      Self {
+        promoted: true,
+        ..r
+      }
+    } else if r.e < -1073 {
+      Self::ZERO
+    } else {
+      r
+    }
+  }
+
+  fn to_f64(self) -> f64 {
+    if self.m == 0.0 {
+      return 0.0;
+    }
+    if self.e > 1024 {
+      return self.m.signum() * f64::INFINITY;
+    }
+    // Two factors, so that neither overflows nor underflows on its own.
+    let half = self.e / 2;
+    self.m * 2f64.powi(half as i32) * 2f64.powi((self.e - half) as i32)
+  }
+
+  fn mul(self, other: Self) -> Self {
+    Self::result(
+      self.m * other.m,
+      self.e + other.e,
+      self.promoted || other.promoted,
+    )
+  }
+
+  fn add(self, other: Self) -> Self {
+    let promoted = self.promoted || other.promoted;
+    if self.m == 0.0 {
+      return Self { promoted, ..other };
+    }
+    if other.m == 0.0 {
+      return Self { promoted, ..self };
+    }
+    let (big, small) = if self.e >= other.e {
+      (self, other)
+    } else {
+      (other, self)
+    };
+    let d = big.e - small.e;
+    if d > 64 {
+      return Self { promoted, ..big };
+    }
+    Self::result(big.m + small.m * 2f64.powi(-(d as i32)), big.e, promoted)
+  }
+
+  fn neg(self) -> Self {
+    Self { m: -self.m, ..self }
+  }
+
+  fn recip(self) -> Option<Self> {
+    (self.m != 0.0).then(|| Self::result(1.0 / self.m, -self.e, self.promoted))
+  }
+
+  /// `self^p` for a machine exponent `p`.
+  fn pow(self, p: f64) -> Option<Self> {
+    if !p.is_finite() {
+      return None;
+    }
+    if p == 0.0 {
+      return Some(Self::one());
+    }
+    if self.m == 0.0 {
+      return (p > 0.0).then_some(Self::ZERO);
+    }
+    let integer = p.fract() == 0.0;
+    if self.m < 0.0 && !integer {
+      return None;
+    }
+    // Computed without range checks, then taken as one machine (or
+    // promoted) operation. Small integer powers by repeated squaring, the
+    // rest through the logarithm (whose error grows with the exponent, as
+    // the promoted number's precision shrinks).
+    let unchecked = Self {
+      promoted: true,
+      ..self
+    };
+    let r = if integer && p.abs() <= 1024.0 {
+      let mut n = p.abs() as u64;
+      let mut base = unchecked;
+      let mut acc = Self {
+        promoted: true,
+        ..Self::one()
+      };
+      while n > 0 {
+        if n & 1 == 1 {
+          acc = acc.mul(base);
+        }
+        base = base.mul(base);
+        n >>= 1;
+      }
+      if p < 0.0 { acc.recip()? } else { acc }
+    } else {
+      let log2 = self.m.abs().log2() + self.e as f64;
+      let l = p * log2;
+      if !l.is_finite() || l.abs() > 1e15 {
+        return None;
+      }
+      let k = l.floor();
+      let mut r = Self::raw(2f64.powf(l - k), k as i64, true);
+      if self.m < 0.0 && (p / 2.0).fract() != 0.0 {
+        r = r.neg();
+      }
+      r
+    };
+    Some(Self::result(r.m, r.e, self.promoted))
+  }
+}
+
+/// A value in [`Wide`] arithmetic, or the knowledge that it is not real:
+/// in machine arithmetic a negative number to a non-integer power is
+/// complex, and so is everything computed from it, except a product with
+/// zero (`0. (-2.)^0.5` is `0. + 0. I`, which a plot draws as zero).
+#[derive(Clone, Copy)]
+enum WideValue {
+  Real(Wide),
+  NonReal,
+}
+
+impl NExpr {
+  /// [`NExpr::eval`] in [`Wide`] arithmetic; `None` for a construct it
+  /// does not cover or a value no machine real can stand for.
+  fn eval_wide(&self, vars: &[Wide]) -> Option<WideValue> {
+    use WideValue::{NonReal, Real};
+    let real = |e: &Self| -> Option<Wide> {
+      match e.eval_wide(vars)? {
+        Real(w) => Some(w),
+        NonReal => None,
+      }
+    };
+    let machine = |e: &Self| -> Option<f64> {
+      let v = real(e)?.to_f64();
+      v.is_finite().then_some(v)
+    };
+    match self {
+      Self::Const(v) => Wide::new(*v).map(Real),
+      Self::Var(i) => vars.get(*i).copied().map(Real),
+      Self::Add(items) => {
+        let mut acc = Wide::ZERO;
+        let mut nonreal = false;
+        for e in items {
+          match e.eval_wide(vars)? {
+            Real(w) => acc = acc.add(w),
+            NonReal => nonreal = true,
+          }
+        }
+        Some(if nonreal { NonReal } else { Real(acc) })
+      }
+      Self::Mul(items) => {
+        let mut acc = Wide::one();
+        let mut nonreal = false;
+        for e in items {
+          match e.eval_wide(vars)? {
+            Real(w) => acc = acc.mul(w),
+            NonReal => nonreal = true,
+          }
+        }
+        Some(if acc.m == 0.0 {
+          Real(Wide::ZERO)
+        } else if nonreal {
+          NonReal
+        } else {
+          Real(acc)
+        })
+      }
+      Self::Neg(a) => Some(match a.eval_wide(vars)? {
+        Real(w) => Real(w.neg()),
+        NonReal => NonReal,
+      }),
+      Self::Pow(base, exp) => {
+        let p = machine(exp)?;
+        match base.eval_wide(vars)? {
+          Real(b) if b.m < 0.0 && p.fract() != 0.0 => Some(NonReal),
+          Real(b) => b.pow(p).map(Real),
+          NonReal if p == 0.0 => Some(Real(Wide::one())),
+          NonReal => Some(NonReal),
+        }
+      }
+      Self::Fn1(f, a) => Wide::new(f(machine(a)?)).map(Real),
+      Self::Fn2(f, a, b) => Wide::new(f(machine(a)?, machine(b)?)).map(Real),
+      Self::Let { base, table, body } => {
+        // A non-real table entry cannot be stored; such a body falls back.
+        let mut local: Vec<Wide> = vars[..(*base).min(vars.len())].to_vec();
+        local.resize(*base, Wide::ZERO);
+        for e in table {
+          let v = match e.eval_wide(&local)? {
+            Real(w) => w,
+            NonReal => return None,
+          };
+          local.push(v);
+        }
+        body.eval_wide(&local)
+      }
+      _ => None,
+    }
   }
 }
 

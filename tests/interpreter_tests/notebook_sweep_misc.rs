@@ -585,3 +585,67 @@ mod turing_machine_head_displacement {
     );
   }
 }
+
+mod plot_compiled_sampling {
+  use super::*;
+
+  // A symbol holding the plotted expression is compiled as that
+  // expression, and compiled again once it is reassigned.
+  #[test]
+  fn symbol_body_follows_its_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "S = x; a = Plot[S, {x, 0, 1}]; S = 2 x; b = Plot[S, {x, 0, 1}]; \
+         {a === b, MinMax[Cases[b, Line[l_] :> l[[All, 2]], Infinity]]}"
+      )
+      .unwrap(),
+      "{False, {4.081632653061224*^-8, 1.9999999591836735}}"
+    );
+  }
+
+  // A sample that machine arithmetic overflows on the way is evaluated with
+  // Wolfram's promotion semantics (an overflow is kept, a machine underflow
+  // is zero, a promoted number never underflows); one with a negative
+  // number to a non-integer power is complex, and left out unless a zero
+  // factor makes it 0. + 0. I.
+  #[test]
+  fn overflowing_and_complex_samples() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Round[MinMax[Cases[Plot[10.^x/10.^(x - 1), {x, 400, 410}], \
+           Line[l_] :> l[[All, 2]], Infinity]], 10^-6], \
+          MinMax[Cases[Plot[10.^x 10.^(1 - x), {x, 400, 410}], \
+           Line[l_] :> l[[All, 2]], Infinity]], \
+          Length[Cases[Plot[0. (-2.)^x, {x, 0.1, 0.9}], Line[_], Infinity]], \
+          Length[Cases[Plot[(-2.)^x, {x, 0.1, 0.9}], Line[_], Infinity]]}"
+      )
+      .unwrap(),
+      "{{10, 10}, {0., 0.}, 1, 0}"
+    );
+  }
+}
+
+mod numeric_base_power_products {
+  use super::*;
+
+  // Powers of numeric bases under one symbolic exponent multiply, an
+  // opposite exponent divides, and powers of one machine-real base add
+  // their exponents (wolframscript).
+  #[test]
+  fn numeric_bases_combine() {
+    assert_eq!(
+      interpret(
+        "{2^x 3^x, 2.^x 3^x, (-2)^x 3^x, (-2)^x (-3)^x, Pi^x 2^x, I^x 2^x, \
+          6^x/2^x, 2^x 3^x 5^(-x), 2^(-x) 3^(-x), E^x 2^x, \
+          2^Sqrt[x] 3^Sqrt[x], 2.^x 2.^y 3.^y, 2.^x 2.^(-x), 0.5^x 2.^x, \
+          1.^x, 10.^x 10.^(1 - x), 2.^x 4.^(x/2), 2^(2 x) 3^x}"
+      )
+      .unwrap(),
+      "{6^x, 6.^x, (-6)^x, (-3)^x*(-2)^x, (2*Pi)^x, (2*I)^x, 3^x, \
+       (6/5)^x, 6^(-x), (2*E)^x, 6^Sqrt[x], 2.^(x + y)*3.^y, 1., 1., 1., \
+       10., 2.^x*4.^(x/2), 2^(2*x)*3^x}"
+    );
+  }
+}

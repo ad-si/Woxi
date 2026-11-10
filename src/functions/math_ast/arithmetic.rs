@@ -9722,6 +9722,60 @@ fn split_scaled_powers_sharing_a_prime(
   Ok(out)
 }
 
+thread_local! {
+  /// The numerator times the denominator of the exact coefficient of the
+  /// product whose factors are being combined (1 when there is none).
+  static MERGE_COEFFICIENT: std::cell::Cell<u128> =
+    const { std::cell::Cell::new(1) };
+}
+
+/// [`combine_like_bases`] for the factors of a product whose exact numeric
+/// coefficient is `numer/denom`.
+fn combine_like_bases_with_coefficient(
+  args: Vec<Expr>,
+  numer: &BigInt,
+  denom: &BigInt,
+) -> Result<Vec<Expr>, InterpreterError> {
+  let part =
+    num_traits::ToPrimitive::to_u128((numer * denom).magnitude()).unwrap_or(0);
+  let previous = MERGE_COEFFICIENT.with(|c| c.replace(part));
+  let result = combine_like_bases(args);
+  MERGE_COEFFICIENT.with(|c| c.set(previous));
+  result
+}
+
+/// Whether the rational `base` shares a prime with the coefficient of the
+/// product being combined (an unknown, too large coefficient counts as
+/// sharing one).
+fn merged_base_shares_coefficient_prime(base: &Expr) -> bool {
+  let coefficient = MERGE_COEFFICIENT.with(std::cell::Cell::get);
+  if coefficient == 1 {
+    return false;
+  }
+  let part = match base {
+    Expr::Integer(n) => n.unsigned_abs(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) => {
+          p.unsigned_abs().saturating_mul(q.unsigned_abs())
+        }
+        _ => return false,
+      }
+    }
+    _ => return false,
+  };
+  if coefficient == 0 {
+    return true;
+  }
+  let (mut a, mut b) = (coefficient, part);
+  while b != 0 {
+    (a, b) = (b, a % b);
+  }
+  a > 1
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   combine_like_bases_depth(args, 0)
 }
@@ -9783,6 +9837,8 @@ fn combine_like_bases_depth(
       // to 2^(5/6). Merging different bases under one exponent is a separate,
       // branch-sensitive rule handled in the second pass.
       Expr::Integer(_) | Expr::BigInteger(_) => true,
+      // A machine real too: `2. 2.^x` is `2.^(1 + x)`.
+      Expr::Real(_) => true,
       Expr::FunctionCall { .. } => true,
       // A power base too: `Sqrt[E^x] Sqrt[E^x]` is `E^x`.
       Expr::BinaryOp {
@@ -9856,6 +9912,10 @@ fn combine_like_bases_depth(
         if is_inf {
           return Ok(vec![id_expr("Indeterminate")]);
         }
+        // A machine base leaves the machine one: `2.^x 2.^-x` is `1.`.
+        if matches!(base, Expr::Real(_)) {
+          result.push(Expr::Real(1.0));
+        }
         continue;
       }
       let merged = power_two(&base, &combined_exp)?;
@@ -9928,6 +9988,68 @@ fn combine_like_bases_depth(
       exp_i.as_ref(),
       Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2
     );
+    // Numeric bases under one symbolic exponent multiply: `2^x 3^x` is
+    // `6^x`, `E^x 2.^x` is `5.43656365691809^x`, and an opposite exponent
+    // divides, `2^x 3^x 5^(-x)` being `(6/5)^x`. As for a rational
+    // exponent, at most one base may be negative.
+    let numeric_base = |b: &Expr| {
+      numeric_like_with_idents(b)
+        || matches!(b, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+    };
+    if numeric_base(&base_i)
+      && !crate::functions::predicate_ast::is_numeric_q(&exp_i)
+    {
+      let exp_i = exp_i.into_owned();
+      let neg_exp_i = times_ast(&[Expr::Integer(-1), exp_i.clone()])?;
+      let mut negative_bases =
+        usize::from(negative_number_magnitude(&base_i).is_some());
+      let mut bases = vec![base_i.into_owned()];
+      let mut taken: Vec<usize> = Vec::new();
+      for j in (i + 1)..result.len() {
+        if used[j] {
+          continue;
+        }
+        let (base_j, exp_j) = extract_base_exponent(&result[j]);
+        if !numeric_base(&base_j) {
+          continue;
+        }
+        let same =
+          crate::evaluator::pattern_matching::expr_equal(&exp_j, &exp_i);
+        if !same
+          && !crate::evaluator::pattern_matching::expr_equal(&exp_j, &neg_exp_i)
+        {
+          continue;
+        }
+        if negative_number_magnitude(&base_j).is_some() {
+          if negative_bases > 0 {
+            continue;
+          }
+          negative_bases += 1;
+        }
+        bases.push(if same {
+          base_j
+        } else {
+          power_two(&base_j, &Expr::Integer(-1))?
+        });
+        taken.push(j);
+      }
+      if bases.len() == 1 {
+        combined.push(result[i].clone());
+        continue;
+      }
+      let product = times_ast(&bases)?;
+      // A coefficient sharing a prime with the merged base splits it again
+      // (`3 (2/3)^n` is `2^n 3^(1 - n)`), so such a merge is not made.
+      if merged_base_shares_coefficient_prime(&product) {
+        combined.push(result[i].clone());
+        continue;
+      }
+      for j in taken {
+        used[j] = true;
+      }
+      combined.push(power_two(&product, &exp_i)?);
+      continue;
+    }
     if !is_combinable_base || !is_rational_exp {
       combined.push(result[i].clone());
       continue;
@@ -11975,7 +12097,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // fraction, so a product like `-1 * 2^(-1/2) * 2^(-1/2)` reduces to
     // `Rational[-1, 2]` rather than the unfolded `Times[-1, 1/2]`.
     if symbolic_args.len() >= 2 {
-      symbolic_args = combine_like_bases(symbolic_args)?;
+      symbolic_args = combine_like_bases_with_coefficient(
+        symbolic_args,
+        &big_numer,
+        &big_denom,
+      )?;
       symbolic_args.retain(|a| match a {
         Expr::Integer(n) => {
           big_numer *= BigInt::from(*n);
@@ -12043,7 +12169,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(coeff_expr);
     }
 
-    symbolic_args = combine_like_bases(symbolic_args)?;
+    symbolic_args = combine_like_bases_with_coefficient(
+      symbolic_args,
+      &big_numer,
+      &big_denom,
+    )?;
     if let Some(product) =
       absorb_coefficient_into_powers(&coeff_expr, &symbolic_args)?
     {
@@ -12382,7 +12512,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Combine like bases: x^a * x^b → x^(a+b)
-  symbolic_args = combine_like_bases(symbolic_args)?;
+  symbolic_args = combine_like_bases_with_coefficient(
+    symbolic_args,
+    &BigInt::from(combined_numer),
+    &BigInt::from(combined_denom),
+  )?;
 
   // combine_like_bases can collapse symbolic powers into a pure number
   // (`2^(-1/2)*2^(-1/2) → 1/2`, `Sqrt[2]*Sqrt[2] → 2`). Fold any such exact
@@ -14441,6 +14575,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   }
   if matches!(base, Expr::Integer(1))
     && matches!(exp, Expr::Real(e) if e.is_finite())
+  {
+    return Ok(Expr::Real(1.0));
+  }
+  // A machine one to a symbolic power is the machine one, as `1^x` is 1
+  // (`0.5^x 2.^x` merges to it).
+  if matches!(base, Expr::Real(b) if *b == 1.0)
+    && !crate::functions::predicate_ast::is_numeric_q(exp)
+    && !matches!(exp, Expr::Identifier(s) | Expr::Constant(s)
+      if matches!(s.as_str(), "Infinity" | "ComplexInfinity" | "Indeterminate"))
   {
     return Ok(Expr::Real(1.0));
   }

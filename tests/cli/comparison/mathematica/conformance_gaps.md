@@ -608,6 +608,23 @@ symbol first in both. Same comparator as the entry above: WL keys the scaled
 sum on its last term (`x` ties with `x`, and a sum then sorts before the bare
 symbol, the `-1 + x < x` rule of `Sort`). Value identical, display only.
 
+### Two numeric-base powers whose exponents differ by a factor
+
+```sh
+wolframscript -code '4^x 2^(-2 x)'   # 1
+woxi eval '4^x 2^(-2 x)'             # 4^x/2^(2*x)
+wolframscript -code '2. 2.^x'        # 2.^(1 + x)
+woxi eval '2. 2.^x'                  # 2.*2.^x
+```
+
+Woxi multiplies numeric bases under an identical or opposite exponent
+(`2^x 3^x` is `6^x`, `6^x/2^x` is `3^x`) and adds the exponents of one base,
+machine reals included. WL also folds `4^x 2^(-2 x)` to 1 and `8^x 2^(-x)` to
+`4^x`, yet leaves `2^(2 x) 3^x` and `4^x 3^(2 x)` alone, so the exponent-ratio
+rule is not simply "pull the numeric factor into the base". A machine-real
+coefficient equal to a power's base (`2. 2.^x`) is split off as the numeric
+coefficient before the bases are grouped; an exact one (`2 2^x`) merges.
+
 ### A complex iterator with a fractional span
 
 ```sh
