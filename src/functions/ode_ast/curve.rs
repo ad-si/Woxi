@@ -22,10 +22,19 @@ use super::*;
 /// for the ordinary integrator.
 const NOMINAL_STEPS: f64 = 1000.0;
 const MAX_NEWTON_ITERATIONS: usize = 50;
+/// The longest step is the whole interval over this.
+const MAX_STEP_DIVISIONS: f64 = 10.0;
+/// Projected points from the step's cubic inside a step longer than the
+/// nominal one.
+const INTERIOR_POINTS: usize = 3;
 
 struct Curve {
   /// Residuals of the algebraic equations over `[x, y…, y'…]`.
   algebraic: Vec<NumFn>,
+  /// The algebraic residuals' derivatives in `y` (row per residual, `None`
+  /// where it does not read that unknown), when they could be taken
+  /// symbolically; otherwise the Jacobian is differenced.
+  algebraic_jacobian: Option<Vec<Vec<Option<NumFn>>>>,
   /// Residuals of the derivative equations over `[x, y…, y'…]`.
   derivative: Vec<NumFn>,
   n: usize,
@@ -60,6 +69,18 @@ impl Curve {
     x: f64,
     y: &[f64],
   ) -> Result<Vec<Vec<f64>>, InterpreterError> {
+    if let Some(rows) = &self.algebraic_jacobian {
+      let vars = self.vars(x, y, &vec![0.0; self.n]);
+      return rows
+        .iter()
+        .map(|row| {
+          row
+            .iter()
+            .map(|d| d.as_ref().map_or(Ok(0.0), |d| d.eval(&vars)))
+            .collect()
+        })
+        .collect();
+    }
     let mut jac = vec![vec![0.0; self.n]; self.algebraic.len()];
     let mut probe = y.to_vec();
     for j in 0..self.n {
@@ -195,53 +216,78 @@ impl Curve {
     if span == 0.0 {
       return Ok(points);
     }
-    // The nominal step, as for the ordinary integrator; a step that fails
-    // (the curve leaves the region where the equations are real, or a
-    // Newton solve does not converge) or turns the tangent too sharply is
-    // halved and retried, and the step grows back after successes. Where
-    // even a tiny step fails, the curve ends, like an `NDSolve` solution
-    // cut short at a singularity.
+    // The first step is the nominal one, as for the ordinary integrator;
+    // after that the error estimate sizes the steps, which a smooth curve
+    // lets grow up to a tenth of the interval. A step that fails (the curve
+    // leaves the region where the equations are real, or a Newton solve
+    // does not converge) or turns the tangent too sharply is halved and
+    // retried. Where even a tiny step fails, the curve ends, like an
+    // `NDSolve` solution cut short at a singularity.
     let nominal =
       span / (NOMINAL_STEPS * span.abs() / total_span).ceil().max(1.0);
     let min_step = nominal.abs() * 1e-9;
+    let max_step = total_span.abs() / MAX_STEP_DIVISIONS;
     let mut h = nominal;
     let mut x = x0;
     let mut y = y0.to_vec();
     let mut guess = p0.to_vec();
-    let mut successes = 0u32;
     while (x_end - x) * span.signum() > 0.0 {
-      let step = if (x + h - x_end) * span.signum() > 0.0 {
-        x_end - x
-      } else {
-        h
-      };
-      if let Some((y_new, tangent)) =
-        self.controlled_step(x, &y, &guess, step)?
-      {
-        if let Some((x_ev, y_ev, stop)) =
-          self.event_on_step(x, &y, &guess, step, &y_new, &tangent)?
-        {
-          points.push((x_ev, y_ev.clone()));
-          if stop {
-            return Ok(points);
-          }
-        }
-        x = if step == x_end - x { x_end } else { x + step };
-        y = y_new;
-        guess = tangent;
-        points.push((x, y.clone()));
-        successes += 1;
-        if successes >= 2 && h.abs() < nominal.abs() {
-          h = (h * 2.0).abs().min(nominal.abs()) * span.signum();
-          successes = 0;
-        }
-      } else {
-        successes = 0;
+      let last = (x + h - x_end) * span.signum() >= 0.0;
+      let step = if last { x_end - x } else { h };
+      let attempt = self.controlled_step(x, &y, &guess, step)?;
+      let Some((y_new, tangent, error)) = attempt else {
         h /= 2.0;
         if h.abs() < min_step {
           return Ok(points);
         }
+        continue;
+      };
+      // RK4's local error scales as the fifth power of the step.
+      let factor = (0.9 * error.powf(-0.2)).clamp(0.2, 4.0);
+      if error > 1.0 {
+        h *= factor;
+        if h.abs() < min_step {
+          return Ok(points);
+        }
+        continue;
       }
+      if let Some((x_ev, y_ev, stop)) =
+        self.event_on_step(x, &y, &guess, step, &y_new, &tangent)?
+      {
+        points.push((x_ev, y_ev.clone()));
+        if stop {
+          return Ok(points);
+        }
+      }
+      let x_new = if last { x_end } else { x + step };
+      // Points inside a long step, on the cubic through its ends with the
+      // tangents there, projected onto the curve: the interpolation through
+      // the steps' ends alone would be much less accurate between them.
+      if step.abs() > nominal.abs() {
+        for k in 1..=INTERIOR_POINTS {
+          let t = k as f64 / (INTERIOR_POINTS + 1) as f64;
+          let (h00, h10) =
+            ((1.0 + 2.0 * t) * (1.0 - t).powi(2), t * (1.0 - t).powi(2));
+          let (h01, h11) = (t * t * (3.0 - 2.0 * t), t * t * (t - 1.0));
+          let mut yi: Vec<f64> = (0..self.n)
+            .map(|j| {
+              h00 * y[j]
+                + h10 * step * guess[j]
+                + h01 * y_new[j]
+                + h11 * step * tangent[j]
+            })
+            .collect();
+          let xi = x + t * step;
+          if self.project(xi, &mut yi)? {
+            points.push((xi, yi));
+          }
+        }
+      }
+      x = x_new;
+      y = y_new;
+      guess = tangent;
+      points.push((x, y.clone()));
+      h = (step * factor).abs().min(max_step) * span.signum();
     }
     Ok(points)
   }
@@ -305,17 +351,17 @@ impl Curve {
     Ok(None)
   }
 
-  /// A step of length `h` whose local error is within tolerance: two half
-  /// steps, accepted when they agree with the whole step to the Richardson
-  /// estimate `|whole - halves| / 15 <= atol + rtol |y|`. `None` asks the
-  /// caller for a shorter step.
+  /// A step of length `h` as two half steps, with its local error: the
+  /// Richardson estimate `|whole - halves| / 15` relative to `atol + rtol
+  /// |y|`, within tolerance when at most 1. `None` when a stage fails.
+  #[allow(clippy::type_complexity)]
   fn controlled_step(
     &self,
     x: f64,
     y: &[f64],
     guess: &[f64],
     h: f64,
-  ) -> Result<Option<(Vec<f64>, Vec<f64>)>, InterpreterError> {
+  ) -> Result<Option<(Vec<f64>, Vec<f64>, f64)>, InterpreterError> {
     const RTOL: f64 = 1e-8;
     const ATOL: f64 = 1e-10;
     let Some((whole, _)) = self.rk4_step(x, y, guess, h)? else {
@@ -329,11 +375,14 @@ impl Curve {
     else {
       return Ok(None);
     };
-    let within = whole
+    // The Richardson estimate relative to the tolerance; a non-finite one
+    // counts as a failed step.
+    let error = whole
       .iter()
       .zip(&halves)
-      .all(|(a, b)| (a - b).abs() / 15.0 <= ATOL + RTOL * a.abs().max(b.abs()));
-    Ok(within.then_some((halves, tangent)))
+      .map(|(a, b)| (a - b).abs() / 15.0 / (ATOL + RTOL * a.abs().max(b.abs())))
+      .fold(0.0_f64, f64::max);
+    Ok(error.is_finite().then_some((halves, tangent, error)))
   }
 
   /// One RK4 step of length `h` along the curve, projected back onto it.
@@ -506,15 +555,55 @@ pub(super) fn ndsolve_implicit_curve(
   let mut var_names = vec![x_name.clone()];
   var_names.extend(funcs.iter().map(|f| placeholder_name(&f.name, 0)));
   var_names.extend(funcs.iter().map(|f| placeholder_name(&f.name, 1)));
-  let compile = |eqs: &[Expr]| -> Result<Vec<NumFn>, InterpreterError> {
+  let residuals = |eqs: &[Expr]| -> Result<Vec<Expr>, InterpreterError> {
     eqs
       .iter()
       .map(|eq| {
-        let residual =
-          substitute_function_values(&normalize_equation(eq)?, &funcs, x_name);
-        Ok(NumFn::new(residual, &var_names))
+        Ok(substitute_function_values(
+          &normalize_equation(eq)?,
+          &funcs,
+          x_name,
+        ))
       })
       .collect()
+  };
+  let compile = |eqs: &[Expr]| -> Result<Vec<NumFn>, InterpreterError> {
+    Ok(
+      residuals(eqs)?
+        .into_iter()
+        .map(|r| NumFn::new(r, &var_names))
+        .collect(),
+    )
+  };
+  // The algebraic residuals' derivatives in each unknown they read, taken
+  // once: differencing the Jacobian at every tangent and projection costs
+  // two evaluations of every residual per unknown.
+  let algebraic_jacobian = {
+    let unknowns = &var_names[1..=n];
+    residuals(&algebraic_eqs)?
+      .iter()
+      .map(|r| {
+        let mut read = Vec::new();
+        collect_var_refs(r, unknowns, &mut read);
+        (0..n)
+          .map(|j| {
+            if !read.iter().any(|(_, idx)| *idx == j) {
+              return Some(None);
+            }
+            let d = differentiate_expr(r, &unknowns[j]).ok()?;
+            if crate::functions::math_ast::expr_contains_head(&d, "D")
+              || crate::functions::math_ast::expr_contains_head(
+                &d,
+                "Derivative",
+              )
+            {
+              return None;
+            }
+            Some(Some(NumFn::new(d, &var_names)))
+          })
+          .collect::<Option<Vec<_>>>()
+      })
+      .collect::<Option<Vec<_>>>()
   };
   let events = raw_events
     .into_iter()
@@ -524,6 +613,7 @@ pub(super) fn ndsolve_implicit_curve(
   let derivative = compile(&derivative_eqs)?;
   let curve = Curve {
     algebraic,
+    algebraic_jacobian,
     derivative,
     n,
     events,
