@@ -50934,3 +50934,28 @@ mod graphics_review_regressions {
     }
   }
 }
+
+mod number_line_plot_overlay {
+  use super::*;
+
+  /// Regression: `NumberLinePlot` ignored `PlotStyle`.
+  #[test]
+  fn number_line_plot_honors_plot_style_colors() {
+    let svg = export_svg(
+      "NumberLinePlot[{x > 0, x < 0}, {x, -Pi, Pi}, \
+       PlotStyle -> {Blue, Red}]",
+    );
+    assert!(svg.contains("rgb(0,0,255)"), "blue series: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "red series: {svg}");
+  }
+
+  /// Regression: `Show[plot, numberLinePlot]` dropped the number line.
+  #[test]
+  fn show_stacks_number_line_plot_over_plot() {
+    let svg = export_svg(
+      "Show[Plot[x, {x, -Pi, Pi}], \
+       NumberLinePlot[{x > 0}, {x, -Pi, Pi}, PlotStyle -> {Purple}]]",
+    );
+    assert!(svg.contains("rgb(128,0,128)"), "number line kept: {svg}");
+  }
+}
