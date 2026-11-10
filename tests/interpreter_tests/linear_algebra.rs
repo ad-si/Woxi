@@ -5631,6 +5631,33 @@ mod linear_model_fit {
 mod nonlinear_model_fit {
   use super::*;
 
+  // Several independent variables: each data row is `{x1, …, xn, y}`
+  // (ParameterEstimationForAPackedBedReactor fits `model[i, t]`).
+  #[test]
+  fn several_independent_variables() {
+    assert_eq!(
+      interpret(
+        "fm = NonlinearModelFit[{{1, 1, 2.1}, {1, 2, 3.9}, {2, 3, 6.2}, \
+         {2, 1, 1}}, a x + b i, {a, b}, {i, x}]; \
+         {Round[10^6 ({a, b} /. fm[\"BestFitParameters\"])], \
+          Round[10^6 fm[2, 3]], Round[10^6 fm[\"ParameterErrors\"]], \
+          Round[10^6 fm[\"RSquared\"]]}"
+      )
+      .unwrap(),
+      "{{2434483, -637931}, 6027586, {210317, 257584}, 983448}"
+    );
+    assert_eq!(
+      interpret(
+        "g[a_?NumericQ][i_, x_] := a x + i; \
+         fm = NonlinearModelFit[{{1, 1, 2.1}, {1, 2, 3.9}, {2, 3, 6.2}, \
+         {2, 1, 1}}, {g[a][i, x]}, {{a, 1}}, {i, x}]; \
+         {Round[10^6 fm[1, 2]], Round[10^6 fm[\"ParameterErrors\"]]}"
+      )
+      .unwrap(),
+      "{3466667, {347797}}"
+    );
+  }
+
   // `{form}` is the model without constraints.
   #[test]
   fn single_element_model_list() {

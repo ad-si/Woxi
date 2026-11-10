@@ -10817,7 +10817,12 @@ fn find_fit_weighted(
       // A derivative D could not take (a model defined only for numeric
       // arguments) is differenced numerically instead: substituting the
       // parameter values into an unevaluated `D[…, k]` makes `k` a number.
-      .filter(|d| !crate::functions::math_ast::expr_contains_head(d, "D"))
+      // So is one left as a `Derivative` of such a function
+      // (`Derivative[1, 0][f][a, b][t]` for `f[a_?NumericQ, b_][t_]`).
+      .filter(|d| {
+        !crate::functions::math_ast::expr_contains_head(d, "D")
+          && !crate::functions::math_ast::expr_contains_head(d, "Derivative")
+      })
     })
     .collect();
 
@@ -12214,18 +12219,26 @@ fn student_t_two_tailed_p_value(dof: f64, t_stat: f64) -> Option<f64> {
 type NonlinearParameterStats =
   (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>, Vec<Vec<f64>>);
 
+/// `expr` with each independent variable replaced by its coordinate.
+fn substitute_fit_point(expr: &Expr, names: &[String], x: &[f64]) -> Expr {
+  names.iter().zip(x).fold(expr.clone(), |e, (n, v)| {
+    crate::syntax::substitute_variable(&e, n, &Expr::Real(*v))
+  })
+}
+
 fn nonlinear_parameter_stats(
   data: &Expr,
   model: &Expr,
   rules: &[Expr],
-  var_name: &str,
+  var_names: &[String],
 ) -> Option<NonlinearParameterStats> {
   let data_evaluated = evaluate_expr_to_expr(data).ok()?;
   let Expr::List(data_list) = &data_evaluated else {
     return None;
   };
   let (x_vals, y_vals) =
-    extract_fit_data(data_list, "NonlinearModelFit").ok()?;
+    extract_fit_data_multi(data_list, var_names.len(), "NonlinearModelFit")
+      .ok()?;
   let mut names = Vec::new();
   let mut values = Vec::new();
   for r in rules {
@@ -12246,9 +12259,8 @@ fn nonlinear_parameter_stats(
   if n <= m {
     return None;
   }
-  let eval_at = |x: f64, vals: &[f64]| -> Option<f64> {
-    let mut e =
-      crate::syntax::substitute_variable(model, var_name, &Expr::Real(x));
+  let eval_at = |x: &[f64], vals: &[f64]| -> Option<f64> {
+    let mut e = substitute_fit_point(model, var_names, x);
     for (nm, v) in names.iter().zip(vals) {
       e = crate::syntax::substitute_variable(&e, nm, &Expr::Real(*v));
     }
@@ -12274,11 +12286,10 @@ fn nonlinear_parameter_stats(
   let symbolic_jacobian = gradient.and_then(|g| {
     x_vals
       .iter()
-      .map(|&x| {
+      .map(|x| {
         g.iter()
           .map(|d| {
-            let at =
-              crate::syntax::substitute_variable(d, var_name, &Expr::Real(x));
+            let at = substitute_fit_point(d, var_names, x);
             try_eval_to_f64(&evaluate_expr_to_expr(&at).ok()?)
           })
           .collect::<Option<Vec<f64>>>()
@@ -12296,13 +12307,13 @@ fn nonlinear_parameter_stats(
       down[j] -= h;
       for i in 0..n {
         jac[i][j] =
-          (eval_at(x_vals[i], &up)? - eval_at(x_vals[i], &down)?) / (2.0 * h);
+          (eval_at(&x_vals[i], &up)? - eval_at(&x_vals[i], &down)?) / (2.0 * h);
       }
     }
   }
   let mut ss_res = 0.0;
   for i in 0..n {
-    ss_res += (y_vals[i] - eval_at(x_vals[i], &values)?).powi(2);
+    ss_res += (y_vals[i] - eval_at(&x_vals[i], &values)?).powi(2);
   }
   let dof = (n - m) as f64;
   let sigma2 = ss_res / dof;
@@ -12424,13 +12435,22 @@ pub fn nonlinear_model_fit_ast(
     return uneval();
   }
 
-  // The independent variable name (a bare symbol, or a single-element list).
-  let var_name = match var {
-    Expr::Identifier(n) => n.clone(),
-    Expr::List(items) if items.len() == 1 => match &items[0] {
-      Expr::Identifier(n) => n.clone(),
-      _ => return uneval(),
-    },
+  // The independent variables: a bare symbol or a list of symbols.
+  let var_names: Vec<String> = match var {
+    Expr::Identifier(n) => vec![n.clone()],
+    Expr::List(items) if !items.is_empty() => {
+      match items
+        .iter()
+        .map(|v| match v {
+          Expr::Identifier(n) => Some(n.clone()),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+      {
+        Some(names) => names,
+        None => return uneval(),
+      }
+    }
     _ => return uneval(),
   };
 
@@ -12446,45 +12466,43 @@ pub fn nonlinear_model_fit_ast(
   // no design matrix to read residuals off directly).
   let data_evaluated = evaluate_expr_to_expr(data)?;
   let goodness_of_fit = match &data_evaluated {
-    Expr::List(data_list) => extract_fit_data(data_list, "NonlinearModelFit")
-      .ok()
-      .map(|(x_vals, y_vals)| {
-        let n = x_vals.len();
-        let predicted: Vec<f64> = x_vals
-          .iter()
-          .map(|x| {
-            let at_x = crate::syntax::substitute_variable(
-              &fitted_expr,
-              &var_name,
-              &Expr::Real(*x),
-            );
-            evaluate_expr_to_expr(&at_x)
-              .ok()
-              .and_then(|e| try_eval_to_f64(&e))
-              .unwrap_or(f64::NAN)
-          })
-          .collect();
-        let residuals: Vec<f64> = y_vals
-          .iter()
-          .zip(&predicted)
-          .map(|(y, y_hat)| y - y_hat)
-          .collect();
-        let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
-        let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
-        let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
-        let r_squared = if ss_tot.abs() < 1e-30 {
-          1.0
-        } else {
-          1.0 - ss_res / ss_tot
-        };
-        let n_params = rules.len();
-        let adjusted_r_squared = if n > n_params && ss_tot.abs() > 1e-30 {
-          1.0 - (ss_res / (n - n_params) as f64) / (ss_tot / (n - 1) as f64)
-        } else {
-          r_squared
-        };
-        (residuals, predicted, r_squared, adjusted_r_squared)
-      }),
+    Expr::List(data_list) => {
+      extract_fit_data_multi(data_list, var_names.len(), "NonlinearModelFit")
+        .ok()
+        .map(|(x_vals, y_vals)| {
+          let n = x_vals.len();
+          let predicted: Vec<f64> = x_vals
+            .iter()
+            .map(|x| {
+              let at_x = substitute_fit_point(&fitted_expr, &var_names, x);
+              evaluate_expr_to_expr(&at_x)
+                .ok()
+                .and_then(|e| try_eval_to_f64(&e))
+                .unwrap_or(f64::NAN)
+            })
+            .collect();
+          let residuals: Vec<f64> = y_vals
+            .iter()
+            .zip(&predicted)
+            .map(|(y, y_hat)| y - y_hat)
+            .collect();
+          let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
+          let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
+          let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
+          let r_squared = if ss_tot.abs() < 1e-30 {
+            1.0
+          } else {
+            1.0 - ss_res / ss_tot
+          };
+          let n_params = rules.len();
+          let adjusted_r_squared = if n > n_params && ss_tot.abs() > 1e-30 {
+            1.0 - (ss_res / (n - n_params) as f64) / (ss_tot / (n - 1) as f64)
+          } else {
+            r_squared
+          };
+          (residuals, predicted, r_squared, adjusted_r_squared)
+        })
+    }
     _ => None,
   };
 
@@ -12494,9 +12512,14 @@ pub fn nonlinear_model_fit_ast(
     (str_expr("BestFitParameters"), param_rules.clone()),
     (
       str_expr("IndependentVariables"),
-      Expr::List(vec![Expr::Identifier(var_name.clone())].into()),
+      Expr::List(
+        var_names
+          .iter()
+          .map(|n| Expr::Identifier(n.clone()))
+          .collect(),
+      ),
     ),
-    (str_expr("VariableName"), Expr::String(var_name.clone())),
+    (str_expr("VariableName"), Expr::String(var_names[0].clone())),
     (str_expr("BestFit"), fitted_expr),
     (str_expr("Model"), model.clone()),
   ];
@@ -12562,7 +12585,7 @@ pub fn nonlinear_model_fit_ast(
   }
 
   if let Some((errors, t_stats, p_values, values, covariance)) =
-    nonlinear_parameter_stats(data, model, rules, &var_name)
+    nonlinear_parameter_stats(data, model, rules, &var_names)
   {
     let entries = Expr::List(
       (0..values.len())

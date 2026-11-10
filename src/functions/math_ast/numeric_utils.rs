@@ -2295,6 +2295,10 @@ pub fn expr_contains_head(expr: &Expr, head: &str) -> bool {
     }
     Expr::UnaryOp { operand, .. } => expr_contains_head(operand, head),
     Expr::List(items) => items.iter().any(|a| expr_contains_head(a, head)),
+    Expr::CurriedCall { func, args } => {
+      expr_contains_head(func, head)
+        || args.iter().any(|a| expr_contains_head(a, head))
+    }
     _ => false,
   }
 }

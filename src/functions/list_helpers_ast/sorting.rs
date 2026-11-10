@@ -446,6 +446,18 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       match (compound_head(a), compound_head(b)) {
         (true, false) => return std::cmp::Ordering::Greater,
         (false, true) => return std::cmp::Ordering::Less,
+        (true, true) => {
+          // Two of them order by their heads, then their arguments.
+          if let (Some((ha, aa)), Some((hb, ab))) =
+            (compound_head_view(a), compound_head_view(b))
+          {
+            let ord = canonical_cmp(&ha, &hb);
+            if ord != std::cmp::Ordering::Equal {
+              return ord;
+            }
+            return compare_same_head_args(aa, ab).cmp(&0).reverse();
+          }
+        }
         _ => {}
       }
 
@@ -1724,6 +1736,17 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   {
     return compare_same_head_args(aa, ab);
   }
+  // Two calls with compound heads (`h[f[a]][x]`, `f'[a]`) order by their
+  // heads first, then by their arguments.
+  if let (Some((ha, aa)), Some((hb, ab))) =
+    (compound_head_view(a), compound_head_view(b))
+  {
+    let ord = compare_exprs(&ha, &hb);
+    if ord != 0 {
+      return ord;
+    }
+    return compare_same_head_args(aa, ab);
+  }
   let (sa, sb) = (slot_as_call(a), slot_as_call(b));
   if sa.is_some() || sb.is_some() {
     return compare_exprs(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
@@ -2190,6 +2213,38 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         wolfram_string_order(&a_str, &b_str)
       }
     }
+  }
+}
+
+/// A call whose head is itself compound, as `(head, arguments)`. The
+/// single-index `Derivative[n][f][args…]` is held flat as
+/// `Derivative[n, f, args…]`, and is seen here as its curried shape.
+fn compound_head_view(e: &Expr) -> Option<(Expr, &[Expr])> {
+  match e {
+    Expr::CurriedCall { func, args } => Some((func.as_ref().clone(), args)),
+    Expr::FunctionCall { name, args } if name == "Derivative" => {
+      match args.len() {
+        2 => Some((
+          Expr::FunctionCall {
+            name: name.clone(),
+            args: vec![args[0].clone()].into(),
+          },
+          &args[1..],
+        )),
+        n if n >= 3 => Some((
+          Expr::CurriedCall {
+            func: Box::new(Expr::FunctionCall {
+              name: name.clone(),
+              args: vec![args[0].clone()].into(),
+            }),
+            args: vec![args[1].clone()],
+          },
+          &args[2..],
+        )),
+        _ => None,
+      }
+    }
+    _ => None,
   }
 }
 

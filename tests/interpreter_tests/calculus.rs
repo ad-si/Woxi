@@ -2295,6 +2295,48 @@ mod differentiate_nonconstants {
 mod derivative_prime_notation {
   use super::*;
 
+  // A head that depends on the variable contributes the derivative of the
+  // head applied to the same arguments.
+  #[test]
+  fn curried_head_depending_on_variable() {
+    assert_eq!(
+      interpret(
+        "{D[f[a][x], a], D[f[a, b][x], a], D[f[a^2][x], a], \
+          D[f[a][b][c], a], D[f[a][x], {a, 2}], D[(a f)[x], a]}"
+      )
+      .unwrap(),
+      "{Derivative[1][f][a][x], Derivative[1, 0][f][a, b][x], \
+       (2*a*Derivative[1][f][a^2])[x], Derivative[1][f][a][b][c], \
+       Derivative[2][f][a][x], f[x]}"
+    );
+    assert_eq!(
+      interpret("D[f[a][a], a]").unwrap(),
+      "Derivative[1][f[a]][a] + Derivative[1][f][a][a]"
+    );
+    assert_eq!(
+      interpret("D[f[a][g[a]], a]").unwrap(),
+      "Derivative[1][g][a]*Derivative[1][f[a]][g[a]] + \
+       Derivative[1][f][a][g[a]]"
+    );
+  }
+
+  // Applying an applied derivative is a new call, not more arguments.
+  #[test]
+  fn applied_derivative_applied_again() {
+    assert_eq!(
+      interpret(
+        "{Derivative[1][f][a][x], f'[a][x], Derivative[2][f][a][x][y]}"
+      )
+      .unwrap(),
+      "{Derivative[1][f][a][x], Derivative[1][f][a][x], \
+       Derivative[2][f][a][x][y]}"
+    );
+    assert_eq!(
+      interpret("Derivative[1][f][a][x] /. a -> 1.5").unwrap(),
+      "Derivative[1][f][1.5][x]"
+    );
+  }
+
   // A `_?NumericQ` function has no symbolic derivative; at an inexact
   // point (or under N) it is differentiated numerically.
   #[test]

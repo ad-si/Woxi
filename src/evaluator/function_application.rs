@@ -3772,6 +3772,15 @@ pub fn apply_curried_call(
             });
           }
         }
+        // `Derivative[n][f][a]` is held flat as `Derivative[n, f, a]`; a
+        // further application (`Derivative[1][f][a][x]`, the derivative of
+        // a curried function) is a new call, not more arguments of `f'`.
+        if name == "Derivative" && func_args.len() >= 3 {
+          return Ok(Expr::CurriedCall {
+            func: Box::new(func.clone()),
+            args: args.to_vec(),
+          });
+        }
         // Known operator-form functions: flatten curried call
         let mut new_args = func_args.clone();
         new_args.extend(args.iter().cloned());

@@ -3724,6 +3724,22 @@ mod sort_atomic_normal {
 mod sort_canonical {
   use super::*;
 
+  // Expressions with compound heads order by head, then by arguments.
+  #[test]
+  fn compound_heads_by_head_then_arguments() {
+    assert_eq!(
+      interpret(
+        "{Sort[{h[f[a]][a], h[g][x]}], Sort[{h[f][b], h[g][a]}], \
+          Sort[{h[z][a], h[f][a, b]}], Sort[{h[f][a], h[f][a, b], h[f][b]}], \
+          Sort[{Derivative[1][f[a]][g[a]], Derivative[1][g][a]}]}"
+      )
+      .unwrap(),
+      "{{h[g][x], h[f[a]][a]}, {h[f][b], h[g][a]}, {h[f][a, b], h[z][a]}, \
+       {h[f][a], h[f][b], h[f][a, b]}, \
+       {Derivative[1][g][a], Derivative[1][f[a]][g[a]]}}"
+    );
+  }
+
   // A sum whose greatest term is linear orders against a monomial by
   // variable, then by coefficient (wolframscript-verified).
   #[test]

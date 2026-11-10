@@ -5255,7 +5255,19 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if !args.is_empty() && is_constant_wrt(func.as_ref(), var) {
         return chain_rule_unknown_function(func.as_ref(), args, var);
       }
-      Ok(call("D", vec![expr.clone(), id_expr(var)]))
+      // A head that depends on the variable adds the derivative of the
+      // head applied to the same arguments: D[f[a][x], a] is
+      // Derivative[1][f][a][x], D[f[a][a], a] is
+      // Derivative[1][f[a]][a] + Derivative[1][f][a][a].
+      let head_term = Expr::CurriedCall {
+        func: Box::new(differentiate(func.as_ref(), var)?),
+        args: args.clone(),
+      };
+      if args.is_empty() || args.iter().all(|a| is_constant_wrt(a, var)) {
+        return Ok(head_term);
+      }
+      let arg_terms = chain_rule_unknown_function(func.as_ref(), args, var)?;
+      Ok(simplify(plus2(arg_terms, head_term)))
     }
 
     // Lists differentiate element-wise. The fallback below would fold a
