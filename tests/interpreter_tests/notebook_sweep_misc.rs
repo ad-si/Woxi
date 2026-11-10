@@ -679,3 +679,25 @@ mod numeric_base_power_products {
     );
   }
 }
+
+mod find_minimum_derivative_cache {
+  use super::*;
+
+  // The symbolic derivatives of an objective minimized again from another
+  // start are reused, and a different objective takes its own.
+  #[test]
+  fn repeated_and_different_objectives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = (x - 1)^2 + (y + 2)^4 + Cos[x y]; \
+         {Round[10^6 {x, y} /. FindMinimum[f, {{x, 0}, {y, 0}}][[2]]], \
+          Round[10^6 {x, y} /. FindMinimum[f, {{x, 2}, {y, -3}}][[2]]], \
+          Round[10^6 {x, y} /. FindMinimum[(x - 3)^2 + (y - 1)^2, \
+           {{x, 0}, {y, 0}}][[2]]]}"
+      )
+      .unwrap(),
+      "{{1232150, -2391083}, {1232150, -2391083}, {3000000, 1000000}}"
+    );
+  }
+}

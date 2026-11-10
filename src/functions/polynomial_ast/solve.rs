@@ -21201,6 +21201,15 @@ fn two_point_brent_minimum(
   fx.is_finite().then_some(x)
 }
 
+type Derivatives = Option<(Vec<Expr>, Vec<Vec<Expr>>)>;
+
+thread_local! {
+  /// The symbolic gradients and Hessians of the latest objectives minimized,
+  /// with their variables (`None` when they could not be taken).
+  static RECENT_DERIVATIVES: std::cell::RefCell<Vec<(Expr, Vec<String>, Derivatives)>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
 fn find_minimum_inner(
   args: &[Expr],
   maximize: bool,
@@ -21480,36 +21489,68 @@ fn find_minimum_inner(
   };
   let mut grad_exprs: Vec<Expr> = Vec::with_capacity(n);
   let mut hess_exprs: Vec<Vec<Expr>> = Vec::new();
-  let symbolic_derivatives: Option<()> = (|| {
-    if compiled_objective.is_some() {
-      return None;
-    }
-    for var in &vars {
-      let deriv =
-        crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
-      grad_exprs.push(simplify(deriv));
-    }
-    // The symbolic Hessian has n² entries, each differentiating an already
-    // large gradient; past a handful of variables that cost explodes (a
-    // 28-parameter regression objective never finishes), so the Newton step
-    // below differences the symbolic gradient numerically instead.
-    if n > SYMBOLIC_HESSIAN_MAX_VARS {
-      return Some(());
-    }
-    for i in 0..n {
-      let mut row = Vec::new();
-      for j in 0..n {
-        let h = crate::functions::calculus_ast::differentiate_expr(
-          &grad_exprs[i],
-          &vars[j],
-        )
-        .ok()?;
-        row.push(simplify(h));
+  // The same objective is often minimized from many starting points (a
+  // table of FindArgMin calls); its derivatives are taken once.
+  let cached = if compiled_objective.is_none() {
+    RECENT_DERIVATIVES.with(|c| {
+      c.borrow()
+        .iter()
+        .find(|(obj, vs, _)| {
+          *vs == vars && crate::evaluator::pattern_matching::expr_equal(obj, f)
+        })
+        .map(|(_, _, d)| d.clone())
+    })
+  } else {
+    None
+  };
+  let symbolic_derivatives: Option<()> = if let Some(d) = cached {
+    d.map(|(g, h)| {
+      grad_exprs = g;
+      hess_exprs = h;
+    })
+  } else {
+    let computed = (|| {
+      if compiled_objective.is_some() {
+        return None;
       }
-      hess_exprs.push(row);
+      for var in &vars {
+        let deriv =
+          crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
+        grad_exprs.push(simplify(deriv));
+      }
+      // The symbolic Hessian has n² entries, each differentiating an already
+      // large gradient; past a handful of variables that cost explodes (a
+      // 28-parameter regression objective never finishes), so the Newton step
+      // below differences the symbolic gradient numerically instead.
+      if n > SYMBOLIC_HESSIAN_MAX_VARS {
+        return Some(());
+      }
+      for i in 0..n {
+        let mut row = Vec::new();
+        for j in 0..n {
+          let h = crate::functions::calculus_ast::differentiate_expr(
+            &grad_exprs[i],
+            &vars[j],
+          )
+          .ok()?;
+          row.push(simplify(h));
+        }
+        hess_exprs.push(row);
+      }
+      Some(())
+    })();
+    if compiled_objective.is_none() {
+      let entry = computed.map(|()| (grad_exprs.clone(), hess_exprs.clone()));
+      RECENT_DERIVATIVES.with(|c| {
+        let mut recent = c.borrow_mut();
+        if recent.len() >= 4 {
+          recent.remove(0);
+        }
+        recent.push((f.clone(), vars.clone(), entry));
+      });
     }
-    Some(())
-  })();
+    computed
+  };
 
   // Evaluate expression at point
   // The objective, gradient and Hessian are evaluated at many points, so
