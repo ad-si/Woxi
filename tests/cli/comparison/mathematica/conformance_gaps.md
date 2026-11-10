@@ -625,6 +625,19 @@ rule is not simply "pull the numeric factor into the base". A machine-real
 coefficient equal to a power's base (`2. 2.^x`) is split off as the numeric
 coefficient before the bases are grouped; an exact one (`2 2^x`) merges.
 
+### Multivariate FindRoot from a start whose full Newton step overflows
+
+A 6-equation liquid-liquid equilibrium system (`Exp` of rational
+activity terms; IslandTypeLiquidLiquidEquilibriumDiagrams) started at
+`{x2 -> 0.1, x1 -> 0.2, xp2 -> 0.8, xp1 -> 0.1, L -> 0.05, Lp -> 0.5}`:
+wolframscript's first step is 1/80 of the Newton step (the merit at the
+full step is ~10^40) and it converges to `{x2 -> 0.0629, x1 -> 0.5137, …}`.
+Woxi's damped Newton halves the step to 1/64, settles in a local minimum
+of the merit function (~1.16) and returns the starting point; a quadratic
+and cubic Armijo search (as the single-variable form uses) and
+step clipping each converge elsewhere or not at all. WL's `"LineSearch"`
+step control (its curvature condition) would have to be matched.
+
 ### A complex iterator with a fractional span
 
 ```sh

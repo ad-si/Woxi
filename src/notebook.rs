@@ -1476,6 +1476,21 @@ fn extract_image_from_boxes(s: &str) -> Option<String> {
   let (inner, _) = find_matching_bracket(rest).ok()?;
   let iargs = split_top_level_commas(inner);
   let ty = extract_string_content(iargs.first()?.trim());
+  // The raster's data is always interleaved, `{h, w, c}`; the tag's
+  // `Interleaving -> False` is the image's own setting, under which the
+  // constructor reads channel-first data, so the channels are moved first.
+  let channel_first = iargs[1..].iter().any(|o| {
+    let o = normalize_whitespace(o);
+    o.replace(' ', "") == "Interleaving->False"
+  });
+  let data = if channel_first {
+    format!(
+      "With[{{data$ = {data}}}, If[ArrayDepth[data$] == 3, \
+       Transpose[data$, {{2, 3, 1}}], data$]]"
+    )
+  } else {
+    data
+  };
   let mut result = format!("Image[{data}, \"{ty}\"");
   for opt in &iargs[1..] {
     let opt = opt.trim();
@@ -7329,6 +7344,32 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "Image[{{{1, 2, 3}, {4, 5, 6}}}, \"Byte\", ColorSpace -> \"RGB\", \
        Interleaving -> True]"
+    );
+  }
+
+  #[test]
+  fn test_extract_image_raster_channel_first() {
+    // The raster is interleaved even when the image is not: its channels
+    // are moved first for the constructor that reads them channel-first.
+    let s = r#"GraphicsBox[
+       TagBox[RasterBox[{{{1., 0.5, 0.}, {0., 0.5, 1.}}}, {{0, 1}, {2, 0}}, {0, 1},
+         ColorFunction->RGBColor],
+        BoxForm`ImageTag["Real", ColorSpace -> "RGB", Interleaving -> False],
+        Selectable->False],
+       BaseStyle->"ImageGraphics"]"#;
+    let source = extract_cell_content(s);
+    assert_eq!(
+      source,
+      "Image[With[{data$ = {{{1., 0.5, 0.}, {0., 0.5, 1.}}}}, \
+       If[ArrayDepth[data$] == 3, Transpose[data$, {2, 3, 1}], data$]], \
+       \"Real\", ColorSpace -> \"RGB\", Interleaving -> False]"
+    );
+    assert_eq!(
+      crate::interpret(&format!(
+        "{{ImageDimensions[#], ImageData[#]}} &[{source}]"
+      ))
+      .unwrap(),
+      "{{2, 1}, {{{1., 0.5, 0.}, {0., 0.5, 1.}}}}"
     );
   }
 
