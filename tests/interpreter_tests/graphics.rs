@@ -50946,11 +50946,7 @@ mod bar_chart_slide_conformance {
       .filter(|l| l.trim_start().starts_with("<text"))
       .filter_map(|l| {
         let at = l.find("rotate(")? + "rotate(".len();
-        l[at..]
-          .split(|c: char| c == ' ' || c == ',' || c == ')')
-          .next()?
-          .parse()
-          .ok()
+        l[at..].split([' ', ',', ')']).next()?.parse().ok()
       })
       .collect()
   }
