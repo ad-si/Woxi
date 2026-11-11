@@ -7491,7 +7491,11 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
-  let italic_ranges = italic_text_ranges(content, &text);
+  let italic_ranges = if local_style.font_style == "italic" {
+    Vec::new()
+  } else {
+    italic_text_ranges(content, &text)
+  };
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -11323,14 +11327,13 @@ pub(crate) fn svg_escape(s: &str) -> String {
 /// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
 /// parts set in slanted type. Empty unless the label's styled runs flatten
 /// to exactly `text` (so the ranges are known to line up) and at least one
-/// run, but not all of them, is italic — a uniformly italic label is
-/// already covered by the primitive's own font style.
+/// run is italic. A label whose primitive is already set in slanted type
+/// (`Text[Style[…, Italic]]`) needs no ranges, but runs that are italic only
+/// through their own inner `Style`s (`Subscript[Style["t", Italic],
+/// Style["B", Italic]]`) still get them.
 fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
-  if flatten_label_runs(&runs) != text
-    || !runs.iter().any(|r| r.italic)
-    || runs.iter().all(|r| r.italic || r.text.is_empty())
-  {
+  if flatten_label_runs(&runs) != text || !runs.iter().any(|r| r.italic) {
     return Vec::new();
   }
   let mut ranges = Vec::new();
@@ -39498,44 +39501,49 @@ fn script_runs(
       }
     })
     .unwrap_or_default();
-  let script: String = args
-    .iter()
-    .skip(1)
-    .map(|a| {
-      let text = flatten_label_runs(&manipulate_label_runs(
-        &unquote_box_string(a),
-        false,
-      ));
-      if mark
-        && text
-          .chars()
-          .any(|c| unicode_script_char(c, false).is_none())
-      {
-        format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
-      } else if superscript
-        && marking
-        && text.chars().any(|c| unicode_script_char(c, true).is_none())
-      {
-        // No superscript glyphs for this exponent (`e^(j k L)`): write it
-        // out after a caret rather than as a garble of half-mapped letters.
-        if text.chars().count() > 1
-          && !args[1..].iter().all(|a| !label_is_compound(a))
-        {
-          format!("^({text})")
-        } else {
-          format!("^{text}")
+  // Each script keeps its own styled runs, so a `Style["B", Italic]`
+  // subscript stays slanted; how the script is set (Unicode script glyphs,
+  // a lowered marker, or a caret) is decided from its whole text.
+  for a in args.iter().skip(1) {
+    let script_runs = manipulate_label_runs(&unquote_box_string(a), false);
+    let text = flatten_label_runs(&script_runs);
+    let restyle = |runs: &mut Vec<LabelRun>, f: &dyn Fn(&str) -> String| {
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          text: f(&r.text),
+          ..r.clone()
         }
-      } else {
-        to_unicode_script(&text, superscript)
+      }));
+    };
+    if mark
+      && text
+        .chars()
+        .any(|c| unicode_script_char(c, false).is_none())
+    {
+      restyle(&mut runs, &|t| {
+        format!("{SUBSCRIPT_START}{t}{SUBSCRIPT_END}")
+      });
+    } else if superscript
+      && marking
+      && text.chars().any(|c| unicode_script_char(c, true).is_none())
+    {
+      // No superscript glyphs for this exponent (`e^(j k L)`): write it
+      // out after a caret rather than as a garble of half-mapped letters.
+      let grouped = text.chars().count() > 1
+        && !args[1..].iter().all(|a| !label_is_compound(a));
+      let plain = |t: &str| LabelRun {
+        text: t.to_string(),
+        italic: false,
+        ..Default::default()
+      };
+      runs.push(plain(if grouped { "^(" } else { "^" }));
+      restyle(&mut runs, &|t| t.to_string());
+      if grouped {
+        runs.push(plain(")"));
       }
-    })
-    .collect();
-  if !script.is_empty() {
-    runs.push(LabelRun {
-      text: script,
-      italic: false,
-      ..Default::default()
-    });
+    } else {
+      restyle(&mut runs, &|t| to_unicode_script(t, superscript));
+    }
   }
   runs
 }
