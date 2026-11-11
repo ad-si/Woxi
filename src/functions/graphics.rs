@@ -13785,11 +13785,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
-  // An explicit `PlotRange` still bounds what is drawn: the extra room this
-  // adds shows only the background, so remember the requested range for
-  // the clip rectangle below.
-  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
-  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
+  // Under Wolfram's default (`PlotRangeClipping -> False`) the extra room
+  // this adds shows whatever lies past an explicit `PlotRange` — only the
+  // image edge cuts it off. `PlotRangeClipping -> True` keeps the
+  // requested range as the bound, so remember it for the clip rectangle.
+  let clip_x = plot_range_x
+    .filter(|_| clipping_requested)
+    .map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y
+    .filter(|_| clipping_requested)
+    .map(|_| (bb.y_min, bb.y_max));
   // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
   // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centered in the requested size, rather than the range being
@@ -14015,8 +14020,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     seen
   };
-  // Clip primitives to the drawing area (`PlotRangeClipping -> Automatic`,
-  // Wolfram's default): a primitive whose coordinates fall outside the
+  // Clip primitives to the drawing area (`PlotRangeClipping -> True`, which
+  // plots ask for): a primitive whose coordinates fall outside the
   // plot range — an explicit `PlotRange` narrower than the data, an
   // Epilog/Prolog point placed past the frame, `ListPlot`'s automatic
   // outlier-cropping range — must be cut off at the frame edge rather than
