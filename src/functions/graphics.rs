@@ -22430,6 +22430,27 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
         parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
       });
     }
+    // A product with a picture among its factors (`"State 1: " g`, a
+    // caption multiplied onto an icon) typesets like any `Times`: its
+    // factors side by side, separated by a space — so the picture is drawn
+    // inline instead of collapsing the whole cell to `-Graphics-`.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && args.iter().any(|a| grid_cell_graphic(a).is_some()) =>
+    {
+      let mut items = Vec::with_capacity(args.len() * 2);
+      for (i, factor) in args.iter().enumerate() {
+        if i > 0 {
+          items.push(str_expr(" "));
+        }
+        items.push(factor.clone());
+      }
+      let row = Expr::List(items.into());
+      return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
+        parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
+      });
+    }
     Expr::Graphics { svg, .. } => svg.clone(),
     // A styled graphic is still a graphic.
     Expr::FunctionCall { name, args }
@@ -37102,9 +37123,31 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
           Some((name.clone(), crate::syntax::expr_to_source_form(init)))
         }
         Expr::Identifier(name) => {
-          let min = items.get(1)?;
-          expr_to_f64(min)?;
-          Some((name.clone(), crate::syntax::expr_to_source_form(min)))
+          let first = items.get(1)?;
+          // `{u, {c1, c2, …}}` (optionally followed by options or a control
+          // type): a choice control starts at its first choice — the
+          // left-hand side of a `value -> label` entry — so a sibling
+          // slider whose bounds read `u` resolves on the first pass.
+          if let Expr::List(choices) = first {
+            let only_options = items[2..].iter().all(|it| {
+              matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+                || matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+            });
+            if !only_options {
+              return None;
+            }
+            let value = match choices.first()? {
+              Expr::Rule { pattern, .. }
+              | Expr::RuleDelayed { pattern, .. } => pattern.as_ref(),
+              other => other,
+            };
+            return Some((
+              name.clone(),
+              crate::syntax::expr_to_source_form(value),
+            ));
+          }
+          expr_to_f64(first)?;
+          Some((name.clone(), crate::syntax::expr_to_source_form(first)))
         }
         _ => None,
       }
