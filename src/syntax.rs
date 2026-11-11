@@ -16437,10 +16437,41 @@ fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
   // definition or an upvalue is a statement of its own, and returning the
   // unparsed text for one meant evaluating it re-parsed to the same `Raw`
   // and spun forever.
+  //
+  // Statements joined by `;` (`a = 1; f[x_] = x;`) are one
+  // `CompoundExpression`, with a trailing `;` adding the final `Null`.
+  // Statements split only by a newline stay separate inputs; the first one
+  // is the expression read.
+  let mut stmts: Vec<Expr> = Vec::new();
+  let mut compound = false;
   for node in program.into_inner() {
-    if crate::is_statement_rule(node.as_rule()) {
-      return Ok(pair_to_expr(node));
+    match node.as_rule() {
+      rule if crate::is_statement_rule(rule) => {
+        if !stmts.is_empty() && !compound {
+          break;
+        }
+        compound = false;
+        stmts.push(pair_to_expr(node));
+      }
+      Rule::StatementSeparator if !node.as_str().is_empty() => {
+        compound = true;
+      }
+      Rule::StatementSeparator => {
+        if !stmts.is_empty() {
+          break;
+        }
+      }
+      Rule::TrailingSemicolon if !stmts.is_empty() => {
+        stmts.push(null_expr());
+      }
+      _ => {}
     }
+  }
+  if stmts.len() > 1 {
+    return Ok(Expr::CompoundExpr(stmts));
+  }
+  if let Some(stmt) = stmts.pop() {
+    return Ok(stmt);
   }
 
   // Fallback to Raw

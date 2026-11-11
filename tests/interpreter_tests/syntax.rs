@@ -319,6 +319,26 @@ mod trailing_semicolon {
   }
 
   #[test]
+  fn string_to_expr_reads_every_semicolon_separated_statement() {
+    // Top-level `a; f[x_] = x; b` is one CompoundExpression, not just `a`.
+    let expr = woxi::syntax::string_to_expr("a; f[x_] = x; b").unwrap();
+    assert_eq!(
+      woxi::functions::predicate_ast::expr_to_full_form(&expr),
+      "CompoundExpression[a, Set[f[Pattern[x, Blank[]]], x], b]"
+    );
+    let expr = woxi::syntax::string_to_expr("a; b;").unwrap();
+    assert_eq!(
+      woxi::functions::predicate_ast::expr_to_full_form(&expr),
+      "CompoundExpression[a, b, Null]"
+    );
+    let expr = woxi::syntax::string_to_expr("a + b").unwrap();
+    assert_eq!(
+      woxi::functions::predicate_ast::expr_to_full_form(&expr),
+      "Plus[a, b]"
+    );
+  }
+
+  #[test]
   fn compound_expression_without_trailing_semicolon() {
     // x = 5; x + 1 should show the final result
     assert_eq!(interpret("x = 5; x + 1").unwrap(), "6");
