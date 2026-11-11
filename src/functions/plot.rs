@@ -5406,23 +5406,28 @@ fn generate_svg_with_options(
         padding,
         (render_width, render_height),
         opts.aspect_ratio,
+        opts.aspect_full,
         sf,
       );
-      (
-        m.top as i32
-          + stacked_title_room(opts.plot_label.as_ref(), sf)
-          + stacked_label_shortfall(
-            opts.plot_label.as_ref(),
-            usize::from(has_top_label) + usize::from(axes_label_y.is_some()),
-            m.top as i32,
-            sf,
-          ),
-        m.bottom,
-        m.left,
-        0u32,
-        m.right,
-        0u32,
-      )
+      let stacked_below =
+        usize::from(has_top_label) + usize::from(axes_label_y.is_some());
+      let top = m.top as i32
+        + stacked_title_room(opts.plot_label.as_ref(), sf)
+        + stacked_label_shortfall(
+          opts.plot_label.as_ref(),
+          stacked_below,
+          m.top as i32,
+          sf,
+        );
+      // A lone `PlotLabel` sits above the padding: a top padding too small
+      // to hold it gives up plotting area instead of letting the title run
+      // into the frame (or, with no room at all, off the image).
+      let top = if stacked_below == 0 && decorations.title > 0.0 {
+        top.max(((padding[3] + decorations.title) * sf).ceil() as i32)
+      } else {
+        top
+      };
+      (top, m.bottom, m.left, 0u32, m.right, 0u32)
     }
     None => (
       top_margin,
@@ -8808,6 +8813,58 @@ const BAR_SIDE_MARGIN: f64 = 2.0;
 /// two groups, slightly longer than its bars' ticks.
 const FRAME_GROUP_TICK_LEN: f64 = 2.73;
 
+/// The lines of a chart label as (text, font size in points, fill): one per
+/// `\n`-separated line, a stacked (`Column`) label's lines each with its own
+/// `Style`.
+fn chart_label_lines(
+  label: &ChartLabel,
+  base_pt: f64,
+) -> Vec<(&str, f64, Option<String>)> {
+  label
+    .text
+    .split('\n')
+    .enumerate()
+    .map(|(i, line)| {
+      let style = label.line_styles.get(i);
+      (
+        line,
+        style.and_then(|st| st.font_size).unwrap_or(base_pt),
+        style
+          .and_then(|st| st.color)
+          .map(super::graphics::Color::to_svg_rgb),
+      )
+    })
+    .collect()
+}
+
+/// How far, in points, the center of a chart label hangs below the axis:
+/// the label's top just clears the axis. A rotated label's bounding box
+/// is taken as its half width along the slope plus its half height.
+fn chart_label_center_drop(
+  lines: &[(&str, f64, Option<String>)],
+  rotation: f64,
+) -> f64 {
+  let half_w = lines
+    .iter()
+    .map(|(t, size, _)| {
+      crate::functions::graphics::box_string_visible_len(t) as f64 * size * 0.6
+    })
+    .fold(0.0, f64::max)
+    / 2.0;
+  let half_h = chart_label_block_height(lines) / 2.0;
+  half_w * rotation.sin().abs() + half_h
+}
+
+/// Height, in points, of a chart label's stacked lines: the first line is
+/// one em, each further line adds its pitch of 1.2 em.
+fn chart_label_block_height(lines: &[(&str, f64, Option<String>)]) -> f64 {
+  lines
+    .iter()
+    .enumerate()
+    .map(|(i, (_, size, _))| if i == 0 { *size } else { 1.2 * size })
+    .sum()
+}
+
 pub(crate) fn generate_bar_svg(
   groups: &[Vec<f64>],
   svg_width: u32,
@@ -8963,7 +9020,18 @@ pub(crate) fn generate_bar_svg(
   // Half a point above the plotting area (whose own `Scaled[0.05]`
   // headroom tops the tallest bar), more for value labels above the bars.
   let top_margin = if let Some(t) = explicit_pad(3) {
-    t.round() as i32
+    // A `PlotLabel` sits above an explicit padding (taking its room from
+    // the plotting area) rather than being drawn off the top of the image.
+    let title_room = if has_plot_label {
+      (1.0 + plot_label_extra_lines(plot_label) as f64)
+        * 1.3
+        * title_font_pt
+        * sf
+        + axes_label_y.map_or(0.0, |_| 1.2 * axes_font_pt[1] * sf)
+    } else {
+      0.0
+    };
+    (t + title_room).round() as i32
   } else {
     (if has_plot_label {
       14.0 * title_k * sf
@@ -9025,9 +9093,25 @@ pub(crate) fn generate_bar_svg(
   } else {
     BAR_SIDE_MARGIN * sf
   };
+  // Rotated labels below the axis hang as far as their bounding boxes
+  // reach; an explicit bottom padding too small for them gives up
+  // plotting area rather than cutting them off at the image's edge.
+  let rotated_label_room = if labels_below && has_rotated_labels {
+    chart_labels
+      .iter()
+      .take(n)
+      .map(|l| {
+        let base = l.font_size.unwrap_or(label_font_pt);
+        2.0 * chart_label_center_drop(&chart_label_lines(l, base), l.rotation)
+      })
+      .fold(0.0, f64::max)
+      * sf
+  } else {
+    0.0
+  };
   let mut x_label_area = explicit_pad(2)
     .map_or((5.5 * sf) as u32 + bottom_extra as u32, |b| {
-      b.round() as u32
+      b.max(rotated_label_room).round() as u32
     });
   // The y axis and its ticks, drawn the way an unframed `Plot` draws them
   // (`plot_axes::origin_axes_svg`): marks pointing into the chart, labels
@@ -9631,6 +9715,7 @@ pub(crate) fn generate_bar_svg(
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
       for (i, label) in chart_labels.iter().enumerate().take(n) {
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
+        let lines = chart_label_lines(label, font_size / sf);
         let weight = if label.bold || label_bold {
           " font-weight=\"bold\""
         } else {
@@ -9658,39 +9743,78 @@ pub(crate) fn generate_bar_svg(
           LabelPosition::Below => {
             if is_rotated {
               // With text-anchor=middle and rotation, the left half of the
-              // text swings upward. Offset the pivot down so the highest point
-              // (pivot_y - half_width * sin(angle)) stays below the axis.
-              let char_width_estimate = font_size * 0.6;
-              let half_text_w =
-                crate::functions::graphics::box_string_visible_len(&label.text)
-                  as f64
-                  * char_width_estimate
-                  / 2.0;
-              let sin_a = svg_rotation_deg.to_radians().sin().abs();
-              let offset = half_text_w * sin_a + font_size * 0.5;
-              (axis_y + offset, label_fill)
+              // text swings upward. Offset the pivot down so the highest
+              // point stays below the axis.
+              (
+                axis_y + chart_label_center_drop(&lines, label.rotation) * sf,
+                label_fill,
+              )
             } else {
               (axis_y + font_size * 1.5, label_fill)
             }
           }
+        };
+        // A stacked label sets each line as its own `tspan` (SVG would run
+        // the lines together), with the line's own size and color.
+        let multi_line = lines.len() > 1;
+        let spans = |first_y: f64, central: bool| -> String {
+          let block_h = chart_label_block_height(&lines) * sf;
+          let mut out = String::new();
+          let mut y = if central {
+            first_y - block_h / 2.0
+          } else {
+            first_y
+          };
+          for (k, (text, size, line_fill)) in lines.iter().enumerate() {
+            let size_px = size * sf;
+            let ty = if central {
+              // Each line is centered on its own em box.
+              let pitch = if k == 0 { size_px } else { 1.2 * size_px };
+              let center = y + pitch - size_px / 2.0;
+              y += pitch;
+              center
+            } else {
+              if k > 0 {
+                y += 1.2 * size_px;
+              }
+              y
+            };
+            let fill_attr = line_fill
+              .as_ref()
+              .map(|f| format!(" fill=\"{f}\""))
+              .unwrap_or_default();
+            out.push_str(&format!(
+              "<tspan x=\"{cx:.1}\" y=\"{ty:.1}\" font-size=\"{size_px:.0}\"{fill_attr}>{}</tspan>",
+              crate::functions::graphics::box_string_to_svg(text)
+            ));
+          }
+          out
         };
         if is_rotated {
           // `dominant-baseline=central` centers the glyphs on `y` (not the
           // baseline); with `text-anchor=middle` the text is centered on the
           // pivot in both axes, so rotating about (cx, ly) keeps it centered on
           // the bar horizontally instead of hanging to one side of the baseline.
+          let content = if multi_line {
+            spans(ly, true)
+          } else {
+            crate::functions::graphics::box_string_to_svg(&label.text)
+          };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" dominant-baseline=\"central\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{weight} \
-             fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ly:.1})\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(&label.text)
+             fill=\"{fill}\" transform=\"rotate({svg_rotation_deg:.1},{cx:.1},{ly:.1})\">{content}</text>\n",
           ));
         } else {
+          let content = if multi_line {
+            spans(ly, false)
+          } else {
+            crate::functions::graphics::box_string_to_svg(&label.text)
+          };
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
              font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{weight} \
-             fill=\"{fill}\">{}</text>\n",
-            crate::functions::graphics::box_string_to_svg(&label.text)
+             fill=\"{fill}\">{content}</text>\n",
           ));
         }
       }
@@ -14726,6 +14850,7 @@ fn padded_margins(
   [left, right, bottom, top]: [f64; 4],
   (render_width, render_height): (u32, u32),
   aspect_ratio: Option<f64>,
+  aspect_full: bool,
   sf: f64,
 ) -> PaddedMargins {
   let (left, right, bottom, top) =
@@ -14733,7 +14858,11 @@ fn padded_margins(
   let avail_w = (render_width as f64 - left - right).max(0.0);
   let avail_h = (render_height as f64 - bottom - top).max(0.0);
   let ar = aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
-  let (plot_w, plot_h) = if ar <= 0.0 || avail_w * ar <= avail_h {
+  // `AspectRatio -> Full` stretches the plotting area over everything the
+  // padding leaves, with no slack to center it in.
+  let (plot_w, plot_h) = if aspect_full && aspect_ratio.is_none() {
+    (avail_w, avail_h)
+  } else if ar <= 0.0 || avail_w * ar <= avail_h {
     (avail_w, avail_w * ar)
   } else {
     (avail_h / ar, avail_h)
