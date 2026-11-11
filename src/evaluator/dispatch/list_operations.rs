@@ -6652,6 +6652,14 @@ pub fn dispatch_list_operations(
     "Nearest" if (2..=5).contains(&args.len()) => {
       return Some(nearest_ast(args));
     }
+    "Classify" if !args.is_empty() => {
+      return Some(crate::functions::classify::classify_ast(args));
+    }
+    "ClassifierMeasurements" if (2..=3).contains(&args.len()) => {
+      return Some(crate::functions::classify::classifier_measurements_ast(
+        args,
+      ));
+    }
     // ArrayPad[array, n] — pad with 0
     // ArrayPad[array, n, val] — pad with val
     // ArrayPad[array, {left, right}] — asymmetric padding

@@ -13132,6 +13132,11 @@ fn evaluate_function_call_ast_inner(
         // wolframscript's stored NearestFunction object: applying it runs
         // the `Nearest[…]` it records.
         | "NearestFunction"
+        // Trained classifiers and their test-set measurements: applying
+        // them classifies an example or reads a measure (see
+        // `functions::classify`).
+        | "ClassifierFunction"
+        | "ClassifierMeasurementsObject"
         // The container Empirical-, Histogram- and KernelMixtureDistribution
         // evaluate to, read by PDF, CDF, Quantile and the moments.
         | "DataDistribution"

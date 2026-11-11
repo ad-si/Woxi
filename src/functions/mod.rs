@@ -28,6 +28,7 @@ pub mod chart;
 pub mod chart3d;
 pub mod chemical_data;
 pub mod city_data;
+pub mod classify;
 pub mod code_parser;
 pub mod color_blend;
 pub mod combinatorica_graph;

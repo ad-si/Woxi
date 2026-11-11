@@ -168,6 +168,7 @@ x + 2*x^2 + x^3
 - [`Interpolation`](symbolic/Interpolation.md)
 - [`FindFit`](symbolic/FindFit.md)
 - [`FindClusters`](symbolic/FindClusters.md)
+- [`Classify`](symbolic/Classify.md)
 - [`MatrixExp`](symbolic/MatrixExp.md)
 - [`AsymptoticSolve`](symbolic/AsymptoticSolve.md)
 - [`CoefficientArrays`](symbolic/CoefficientArrays.md)

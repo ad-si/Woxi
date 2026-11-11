@@ -19,6 +19,7 @@ mod interpreter_tests {
 
   mod astronomy;
   mod chemical_data;
+  mod classify;
   mod dataset;
   mod datetime;
   mod distributions;
