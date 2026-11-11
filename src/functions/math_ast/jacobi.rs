@@ -16,6 +16,14 @@ pub fn jacobi_elliptic(u: f64, m: f64) -> (f64, f64, f64) {
     let c = 1.0 / u.cosh();
     return (s, c, c);
   }
+  if m > 1.0 {
+    // Reciprocal-parameter transformation (DLMF 22.17.2–4): with k = √m,
+    // sn(u|m) = sn(k u|1/m)/k, cn(u|m) = dn(k u|1/m), dn(u|m) = cn(k u|1/m).
+    // The AGM descent below only converges for m ≤ 1.
+    let k = m.sqrt();
+    let (sn, cn, dn) = jacobi_elliptic(k * u, 1.0 / m);
+    return (sn / k, dn, cn);
+  }
 
   // AGM iteration to compute the sequence of a_n, b_n, c_n
   let mut a = vec![1.0];
@@ -161,8 +169,9 @@ pub fn jacobi_dn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
 
-  // JacobiDN[u, 1] = Sech[u]
-  if is_expr_one(m) {
+  // JacobiDN[u, 1] = Sech[u] (a machine-number u and m are evaluated
+  // numerically below instead).
+  if is_expr_one(m) && !(has_real_arg(u, m) && expr_to_f64(u).is_some()) {
     return Ok(call1("Sech", u.clone()));
   }
 
@@ -206,8 +215,9 @@ pub fn jacobi_sn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(call1("Sin", u.clone()));
   }
 
-  // JacobiSN[u, 1] = Tanh[u]
-  if is_expr_one(m) {
+  // JacobiSN[u, 1] = Tanh[u] (a machine-number u and m are evaluated
+  // numerically below instead).
+  if is_expr_one(m) && !(has_real_arg(u, m) && expr_to_f64(u).is_some()) {
     return Ok(call1("Tanh", u.clone()));
   }
 
@@ -254,8 +264,9 @@ pub fn jacobi_cn_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(call1("Cos", u.clone()));
   }
 
-  // JacobiCN[u, 1] = Sech[u]
-  if is_expr_one(m) {
+  // JacobiCN[u, 1] = Sech[u] (a machine-number u and m are evaluated
+  // numerically below instead).
+  if is_expr_one(m) && !(has_real_arg(u, m) && expr_to_f64(u).is_some()) {
     return Ok(call1("Sech", u.clone()));
   }
 

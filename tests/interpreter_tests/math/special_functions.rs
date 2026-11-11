@@ -3281,6 +3281,41 @@ mod jacobi_cn {
       interpret("N[JacobiCN[2, 1/3]]").unwrap().parse().unwrap();
     assert!((result - (-0.21637836906745786)).abs() < 1e-10);
   }
+
+  /// For m > 1 the parameter is reduced through the reciprocal-parameter
+  /// transformation instead of yielding Indeterminate.
+  #[test]
+  fn parameter_above_one() {
+    let close = |code: &str, expected: f64| {
+      let v: f64 = interpret(code).unwrap().parse().unwrap();
+      assert!(
+        (v - expected).abs() < 1e-12,
+        "{code} = {v}, want {expected}"
+      );
+    };
+    close("JacobiSN[0.5, 3.]", 0.428046466015351);
+    close("JacobiCN[0.5, 3.]", 0.90375672773804);
+    close("JacobiDN[0.5, 3.]", 0.671065323791437);
+    close("JacobiSN[2., 4.]", -0.290100059906837);
+    close("JacobiCN[2., 4.]", 0.956996319346135);
+    close("JacobiDN[2., 4.]", -0.814473953523499);
+    close("JacobiCN[2., 1.0058]", 0.270127294758655);
+    close("JacobiDN[0.5, 1.00024]", 0.886792141220002);
+    close("N[JacobiCN[1/2, 3]]", 0.90375672773804);
+  }
+
+  /// A machine-number argument at m = 1 evaluates numerically rather than
+  /// returning an unevaluated Sech/Tanh of a real.
+  #[test]
+  fn inexact_parameter_one() {
+    assert_eq!(interpret("JacobiCN[0.5, 1.]").unwrap(), "0.886818883970074");
+    assert_eq!(interpret("JacobiDN[0.5, 1.]").unwrap(), "0.886818883970074");
+    assert_eq!(
+      interpret("JacobiSN[0.5, 1.]").unwrap(),
+      "0.46211715726000974"
+    );
+    assert_eq!(interpret("JacobiCN[x, 1]").unwrap(), "Sech[x]");
+  }
 }
 
 mod jacobi_sc {
