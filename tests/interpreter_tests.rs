@@ -5252,6 +5252,43 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_axes_label_newline_breaks_the_label_into_lines() {
+    // A newline in an AxesLabel string starts a new line, as in Wolfram:
+    // each line becomes its own `<tspan>` restarting at the label's x,
+    // instead of a raw newline that SVG collapses into a space.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x^2, {x, 0, 3}, \
+         AxesLabel -> {\"time\\n(s)\", \"first\\nsecond\\nthird\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let text_of = |needle: &str| {
+      svg
+        .lines()
+        .find(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("{needle} drawn: {svg}"))
+        .to_string()
+    };
+    let y_tag = text_of(">first<");
+    assert!(!y_tag.contains('\n'), "no raw newline: {y_tag}");
+    assert_eq!(y_tag.matches("<tspan x=").count(), 3, "{y_tag}");
+    assert!(y_tag.contains(">second</tspan>"), "{y_tag}");
+    assert!(y_tag.contains(">third</tspan>"), "{y_tag}");
+    let x_tag = text_of(">time<");
+    assert_eq!(x_tag.matches("<tspan x=").count(), 2, "{x_tag}");
+    assert!(x_tag.contains(">(s)</tspan>"), "{x_tag}");
+
+    // Each following line sits one positive line pitch below the last.
+    let pitches: Vec<f64> = y_tag
+      .split("dy=\"")
+      .skip(1)
+      .map(|p| p.split('"').next().unwrap().parse::<f64>().unwrap())
+      .collect();
+    assert_eq!(pitches[0], 0.0, "{y_tag}");
+    assert!(pitches[1] > 0.0 && pitches[1] == pitches[2], "{y_tag}");
+  }
+
+  #[test]
   fn test_axes_label_none_suppresses_that_axis_label() {
     // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
     // whose entry is the bare symbol `None`, not print the literal text
