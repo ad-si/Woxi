@@ -5231,6 +5231,25 @@ mod plot3d {
       );
     }
 
+    /// A bare `Lighting -> "Neutral"` among the primitives relights what
+    /// follows it in its list, and only there.
+    #[test]
+    fn lighting_rule_among_primitives_is_a_scoped_directive() {
+      let lit = export_svg("Graphics3D[{Lighting -> \"Neutral\", Cuboid[]}]");
+      let faces = fill_colors(&lit);
+      assert_eq!(faces.len(), 12, "a cuboid is twelve triangles");
+      assert!(
+        faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
+        "neutral lighting should stay gray, got {faces:?}"
+      );
+      let scoped =
+        export_svg("Graphics3D[{{Lighting -> \"Neutral\"}, Cuboid[]}]");
+      assert!(
+        fill_colors(&scoped).iter().any(|c| c.2 > c.0 + 20),
+        "the rule must not leak out of its list"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
