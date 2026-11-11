@@ -3113,6 +3113,46 @@ mod graphics {
     }
 
     #[test]
+    fn pie_chart_indexed_chart_style() {
+      // `ChartStyle -> n` colors slice `k` with `ColorData[n][k]`.
+      let svg = export_svg("PieChart[{1, 2, 3}, ChartStyle -> 52]");
+      for k in 1..=3 {
+        let color = interpret(&format!(
+          "ToString[Round[255 List @@ ColorData[52][{k}]]]"
+        ))
+        .unwrap();
+        let rgb = color
+          .trim_matches(|c| c == '{' || c == '}')
+          .replace(' ', "");
+        assert!(svg.contains(&format!("fill=\"rgb({rgb})\"")), "{k}: {svg}");
+      }
+      let bars = export_svg("BarChart[{1, 2}, ChartStyle -> 44]");
+      assert!(bars.contains("#B19E60"), "{bars}");
+      assert!(bars.contains("#74812D"), "{bars}");
+    }
+
+    #[test]
+    fn pie_chart_zero_value_has_no_slice_or_label() {
+      let svg = export_svg(
+        "PieChart[{1, 0, 2}, ChartLabels -> {\"one\", \"zero\", \"two\"}]",
+      );
+      assert_eq!(svg.matches("<path").count(), 2, "{svg}");
+      assert!(svg.contains(">one<") && svg.contains(">two<"), "{svg}");
+      assert!(!svg.contains("zero"), "{svg}");
+    }
+
+    #[test]
+    fn pie_chart_label_font_size_from_style() {
+      let svg = export_svg(
+        "PieChart[{1, 2}, ChartLabels -> {Style[\"a\", 30], \
+         Column[{Style[\"b\", 20], Style[\"c\", 20]}]}]",
+      );
+      assert!(svg.contains("font-size=\"30\" fill=\"black\">a<"), "{svg}");
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains("dy=\"24.00\">c<"), "{svg}");
+    }
+
+    #[test]
     fn pie_chart_of_association_of_quantities_draws_labeled_slices() {
       // Regression: an Association (and `Quantity` values) was rejected with
       // `PieChart::ldata`. Slices take the values; `ChartLabels -> Automatic`
@@ -38591,6 +38631,17 @@ mod cases {
     assert_case(
       r#"ColorData[]; ColorData["Gradients"]"#,
       r#"{"AlpineColors", "Aquamarine", "ArmyColors", "AtlanticColors", "AuroraColors", "AvocadoColors", "BeachColors", "BlueGreenYellow", "BrassTones", "BrightBands", "BrownCyanTones", "CandyColors", "CherryTones", "CMYKColors", "CoffeeTones", "DarkBands", "DarkRainbow", "DarkTerrain", "DeepSeaColors", "FallColors", "FruitPunchColors", "FuchsiaTones", "GrayTones", "GrayYellowTones", "GreenBrownTerrain", "GreenPinkTones", "IslandColors", "LakeColors", "LightTemperatureMap", "LightTerrain", "MintColors", "NeonColors", "Pastel", "PearlColors", "PigeonTones", "PlumColors", "Rainbow", "RedBlueTones", "RedGreenSplit", "RoseColors", "RustTones", "SandyTerrain", "SiennaTones", "SolarColors", "SouthwestColors", "StarryNightColors", "SunsetColors", "TemperatureMap", "ThermometerColors", "ValentineTones", "WatermelonColors"}"#,
+    );
+  }
+  #[test]
+  fn color_data_charting() {
+    assert_case(
+      r#"ColorData["Charting"]"#,
+      "{44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62}",
+    );
+    assert_case(
+      r#"ColorData[ColorData["Charting"][[9]]][1] === ColorData[52][1]"#,
+      "True",
     );
   }
   // Gradient control points are Mathematica's: uniform knots, except the

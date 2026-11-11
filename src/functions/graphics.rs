@@ -38351,10 +38351,22 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // holds, e.g. `{sin, (, x, )}`) reads the same way.
       // `GraphicsRow` lays its items out the same way; its pictures drop out.
       "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
-        Some(parts) => parts
-          .iter()
-          .flat_map(|p| manipulate_label_runs(p, italic))
-          .collect(),
+        Some(parts) => {
+          // `Row[{a, b, …}, sep]` puts `sep` between neighboring parts.
+          let separator = match (name.as_str(), args.get(1)) {
+            ("Row", Some(sep)) => manipulate_label_runs(sep, italic),
+            _ => Vec::new(),
+          };
+          parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| {
+              let mut runs = if i > 0 { separator.clone() } else { Vec::new() };
+              runs.extend(manipulate_label_runs(p, italic));
+              runs
+            })
+            .collect()
+        }
         _ => output_run(italic),
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations

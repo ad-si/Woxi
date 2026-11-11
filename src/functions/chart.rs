@@ -812,6 +812,9 @@ pub(crate) struct ChartOptions {
   /// Named color scheme (e.g. `"Pastel"`) given via `ChartStyle -> "name"`.
   /// Resolved to per-element colors once the element count is known.
   pub chart_style_scheme: Option<String>,
+  /// Indexed color scheme number given via `ChartStyle -> n`: element `k`
+  /// gets `ColorData[n][k]`, resolved once the element count is known.
+  pub chart_style_indexed: Option<i128>,
   pub chart_legends: Vec<String>,
   /// Set when the user passed `ChartLegends -> Automatic`. Callers that know
   /// how to derive default labels from the input (e.g. Association keys)
@@ -901,6 +904,16 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
       ) && !args.is_empty() =>
     {
       label_font_style(&args[0])
+    }
+    // A stacked or joined label (`Column[{Style[a, 16], Style[b, 16]}]`)
+    // takes the style of its first styled item.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Column" | "Row")
+        && let Some(Expr::List(items)) = args.first() =>
+    {
+      let size = items.iter().find_map(|item| label_font_style(item).0);
+      let bold = items.iter().any(|item| label_font_style(item).1);
+      (size, bold)
     }
     _ => (None, false),
   }
@@ -2725,7 +2738,26 @@ pub(crate) fn apply_color_scheme(opts: &mut ChartOptions, count: usize) {
     .and_then(named_color_scheme)
   {
     opts.chart_style = sample_gradient(controls, count.max(1));
+  } else if let Some(n) = opts.chart_style_indexed {
+    opts.chart_style = indexed_scheme_colors(n, count.max(1));
   }
+}
+
+/// The first `count` colors `ColorData[n][1]`, `ColorData[n][2]`, … of the
+/// indexed color scheme `n` (cycling as the scheme does).
+pub(crate) fn indexed_scheme_colors(n: i128, count: usize) -> Vec<Color> {
+  (1..=count as i128)
+    .map_while(|k| {
+      let color = Expr::FunctionCall {
+        name: "ColorData".to_string(),
+        args: vec![Expr::Integer(n), Expr::Integer(k)].into(),
+      };
+      evaluate_expr_to_expr(&color)
+        .ok()
+        .as_ref()
+        .and_then(parse_color)
+    })
+    .collect()
 }
 
 /// With `ColorFunction -> f` and no explicit `ChartStyle`, color each chart
@@ -2785,6 +2817,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     frame_label: None,
     chart_style: Vec::new(),
     chart_style_scheme: None,
+    chart_style_indexed: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
     legend_layout: LegendLayout::Column,
@@ -3045,6 +3078,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             // `ChartStyle -> ColorData["Pastel"]`. Each chart element gets a
             // distinct color sampled from the scheme's gradient. The actual
             // colors are resolved later, once the element count is known.
+            // An indexed color scheme, e.g. `ChartStyle -> 44`: element `k`
+            // gets `ColorData[44][k]`.
+            Expr::Integer(n) if !indexed_scheme_colors(*n, 1).is_empty() => {
+              opts.chart_style_indexed = Some(*n);
+            }
             _ if scheme_name(&val)
               .as_deref()
               .map(named_color_scheme)
@@ -5092,6 +5130,11 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // palette — the rings themselves carry the "dataset" distinction.
     for i in 0..row.len() {
       let val = row[i];
+      // A zero value has no wedge, so neither a slice nor its label is
+      // drawn (wolframscript leaves the label of a zero entry out).
+      if val == 0.0 {
+        continue;
+      }
       // Color and label are keyed by the original data index `i` (not the
       // draw order), matching wolframscript: `ChartStyle -> {c1, c2, ...}`
       // and `ChartLabels -> {l1, l2, ...}` align with the input values.
@@ -5232,7 +5275,8 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // A stacked (`Column`) label puts each line on its own `tspan`,
         // the block as a whole centered on the wedge.
         let lines: Vec<&str> = label.text.split('\n').collect();
-        let line_height = 14.4;
+        let font_size = label.font_size.unwrap_or(12.0);
+        let line_height = 1.2 * font_size;
         let first_dy = -line_height * (lines.len() as f64 - 1.0) / 2.0;
         let mut spans = String::new();
         for (k, line) in lines.iter().enumerate() {
@@ -5246,14 +5290,15 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
              dominant-baseline=\"central\" font-family=\"sans-serif\" \
-             font-size=\"12\" fill=\"black\">{}</text>\n",
+             font-size=\"{}\" fill=\"black\">{}</text>\n",
+            font_size,
             crate::functions::graphics::box_string_to_svg(&label.text)
           ));
         } else {
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
              dominant-baseline=\"central\" font-family=\"sans-serif\" \
-             font-size=\"12\" fill=\"black\">{spans}</text>\n"
+             font-size=\"{font_size}\" fill=\"black\">{spans}</text>\n"
           ));
         }
       }
