@@ -41955,6 +41955,29 @@ mod tube_and_cap_form {
     assert!(svg.contains("<polygon"), "the bent tube must draw");
   }
 
+  /// `CapForm -> form` in a primitive list acts like the `CapForm[form]`
+  /// directive, for tubes of constant and of varying radius.
+  #[test]
+  fn cap_form_rule_acts_as_directive() {
+    clear_state();
+    for tube in [
+      "Tube[{{0, 0, 0}, {0, 0, 1}}, 1]",
+      "Tube[{{0, 0, 0.2}, {0, 0, 2}}, {0.5, 1.5}]",
+    ] {
+      let open = export_svg(&format!("Graphics3D[{{CapForm[None], {tube}}}]"));
+      assert_eq!(
+        export_svg(&format!("Graphics3D[{{CapForm -> None, {tube}}}]")),
+        open,
+        "CapForm -> None must open {tube}"
+      );
+      assert_eq!(
+        export_svg(&format!("Graphics3D[{{CapForm -> \"Butt\", {tube}}}]")),
+        export_svg(&format!("Graphics3D[{{{tube}}}]")),
+        "CapForm -> \"Butt\" must keep {tube} capped"
+      );
+    }
+  }
+
   /// `CapForm[None]` leaves the ends open; the default closes them, so the
   /// two differ. Both still draw the tube itself.
   #[test]
