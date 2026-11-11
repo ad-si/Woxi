@@ -19318,6 +19318,19 @@ fn evaluate_parametric_at_uv(
   }
 }
 
+/// The grid steps along the four sides of a `[0, nu] x [0, nv]` sampling
+/// grid: the outline of a parametric surface's domain.
+fn parameter_domain_edges(
+  nu: usize,
+  nv: usize,
+) -> impl Iterator<Item = ((usize, usize), (usize, usize))> {
+  let along_u =
+    (0..nu).flat_map(move |i| [((i, 0), (i + 1, 0)), ((i, nv), (i + 1, nv))]);
+  let along_v =
+    (0..nv).flat_map(move |j| [((0, j), (0, j + 1)), ((nu, j), (nu, j + 1))]);
+  along_u.chain(along_v)
+}
+
 /// Implementation of ParametricPlot3D.
 ///
 /// Two forms are supported:
@@ -19385,6 +19398,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeForm[]` is suppressed, leaving flat color with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
+  // `BoundaryStyle -> style`: the outline along the edges of the parameter
+  // domain, drawn in `style` (black where it names no color). Left at its
+  // default, the outline is only drawn as part of the default mesh.
+  let mut boundary_style: Option<(Expr, StyleState3D)> = None;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
   // proportions regardless of the surface's actual extent along each axis.
   // Otherwise (Wolfram's default `Automatic`, unlike `Plot3D`'s
@@ -19441,6 +19458,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "ColorFunctionScaling" => {
           color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          boundary_style = match value {
+            Expr::Identifier(ref n) if n == "None" || n == "Automatic" => None,
+            other => {
+              let mut style = StyleState3D {
+                color: Some((0, 0, 0)),
+                ..StyleState3D::default()
+              };
+              apply_3d_directive(&other, &mut style);
+              Some((other, style))
+            }
+          };
         }
         Expr::Identifier(name) if name == "RegionFunction" => {
           region_fn = Some(
@@ -19823,6 +19855,16 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content.push(call0("EdgeForm"));
         }
         content.extend(surface_opacity_directive(&plot_styles, surface_idx));
+        // The look the standalone render shades the surface with (the
+        // default theme's color, specularity and lights), so the extracted
+        // complex keeps it wherever it is drawn — a color directive placed
+        // before it does not recolor it, as in wolframscript.
+        content.extend(surface_style_directives(
+          surface_idx,
+          plot_style_for_surface(&plot_styles, surface_idx),
+          surface_color_fn.is_some(),
+          &scene,
+        ));
         for i in 0..grid_u {
           for j in 0..grid_v {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -19902,6 +19944,28 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   ],
                 ),
                 polygon,
+              ]
+              .into(),
+            ));
+          }
+        }
+        if let Some((style_expr, _)) = &boundary_style {
+          let segments: Vec<Expr> = parameter_domain_edges(grid_u, grid_v)
+            .filter_map(|((i0, j0), (i1, j1))| {
+              Some(Expr::List(
+                vec![
+                  Expr::Integer(index_of[i0][j0]? as i128 + 1),
+                  Expr::Integer(index_of[i1][j1]? as i128 + 1),
+                ]
+                .into(),
+              ))
+            })
+            .collect();
+          if !segments.is_empty() {
+            content.push(Expr::List(
+              vec![
+                style_expr.clone(),
+                call1("Line", Expr::List(segments.into())),
               ]
               .into(),
             ));
@@ -20195,6 +20259,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &|i, j| sg[i][j].map(normalize),
         &segment,
       ));
+    }
+  }
+
+  if let Some((_, style)) = &boundary_style {
+    let normalize = |p: (f64, f64, f64)| -> Point3D {
+      Point3D {
+        x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
+        y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
+        z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
+      }
+    };
+    for sg in &all_surface_points {
+      for ((i0, j0), (i1, j1)) in parameter_domain_edges(grid_u, grid_v) {
+        if let (Some(a), Some(b)) = (sg[i0][j0], sg[i1][j1]) {
+          mesh_lines.push(styled_mesh_segment(
+            normalize(a),
+            normalize(b),
+            &camera,
+            Some(style),
+            ("rgb(0,0,0)", 0.75),
+          ));
+        }
+      }
     }
   }
 
