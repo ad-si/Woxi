@@ -9666,6 +9666,56 @@ mod plot3d {
   mod plot_options {
     use super::*;
 
+    /// The first `points="…"` attribute of an SVG: the frame's left edge
+    /// of a framed `Plot`.
+    fn first_polyline(svg: &str) -> &str {
+      svg
+        .split_once("points=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .trim()
+    }
+
+    /// `AspectRatio -> Full` with an explicit `ImagePadding` stretches the
+    /// frame over everything the padding leaves; it used to keep the
+    /// default golden ratio, centered in a much taller image.
+    #[test]
+    fn aspect_ratio_full_with_image_padding_fills_the_image() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> {410, 400}, \
+         AspectRatio -> Full, ImagePadding -> {{60, 20}, {75, 5}}]",
+      );
+      // The frame runs from 5 pt below the top to 75 pt above the bottom.
+      assert_eq!(first_polyline(&svg), "599,50 599,3249", "{svg}");
+    }
+
+    /// A one-line `PlotLabel` over a top `ImagePadding` too small to hold
+    /// it takes its room from the plotting area instead of overlapping
+    /// the frame.
+    #[test]
+    fn plot_label_above_tight_image_padding_clears_the_frame() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> {410, 400}, \
+         AspectRatio -> Full, ImagePadding -> {{60, 20}, {75, 5}}, \
+         PlotLabel -> \"t\"]",
+      );
+      let frame_top: f64 = first_polyline(&svg)
+        .split([',', ' '])
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+      // The title's band plus the 5 pt padding lie above the frame.
+      assert!(
+        frame_top > 150.0,
+        "frame top {frame_top} overlaps the title"
+      );
+      assert!(frame_top < 3249.0);
+    }
+
     #[test]
     fn plot_plot_label() {
       insta::assert_snapshot!(export_svg(
@@ -16122,6 +16172,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
   mod charts {
     use super::*;
+
+    /// A `Column` chart label stacks its lines (each in its own style)
+    /// and a rotated one turns as a block; the lines used to run together
+    /// into one line of text.
+    #[test]
+    fn bar_chart_column_label_stacks_styled_lines() {
+      let svg = export_svg(
+        "BarChart[{1, 2}, ChartLabels -> {Rotate[Column[{\"one\", \
+         Style[\"two\", 15, Red]}], Pi/4], Column[{\"a\", \"b\"}]}]",
+      );
+      let rotated = svg
+        .lines()
+        .find(|l| l.contains(">one</tspan>"))
+        .expect("rotated stacked label");
+      assert!(rotated.contains("rotate(-45.0"), "{rotated}");
+      assert!(
+        rotated.contains("font-size=\"150\" fill=\"rgb(255,0,0)\">two</tspan>"),
+        "{rotated}"
+      );
+      let upright = svg
+        .lines()
+        .find(|l| l.contains(">a</tspan>"))
+        .expect("upright stacked label");
+      assert!(upright.contains(">b</tspan>"), "{upright}");
+    }
+
+    /// A `PlotLabel` above a tight explicit top `ImagePadding` stays on the
+    /// image, and rotated labels below a tight bottom padding are not cut
+    /// off at the image's lower edge.
+    #[test]
+    fn bar_chart_labels_stay_inside_tight_image_padding() {
+      let svg = export_svg(
+        "BarChart[{1, 2}, ImageSize -> {190, 400}, AspectRatio -> Full, \
+         ImagePadding -> {{30, 10}, {20, 5}}, PlotLabel -> \"ttl\", \
+         ChartLabels -> {Rotate[\"a long label\", Pi/4], \"x\"}]",
+      );
+      let attr = |line: &str, name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        line
+          .split_once(key.as_str())
+          .unwrap()
+          .1
+          .split_once('"')
+          .unwrap()
+          .0
+          .parse()
+          .unwrap()
+      };
+      let title = svg
+        .lines()
+        .find(|l| l.contains(">ttl</text>"))
+        .expect("title");
+      assert!(
+        attr(title, "y") - 0.75 * attr(title, "font-size") >= 0.0,
+        "title is above the image: {title}"
+      );
+      let label = svg
+        .lines()
+        .find(|l| l.contains(">a long label</text>"))
+        .expect("rotated label");
+      // Its center hangs above the bottom edge by at least the half
+      // extent it reaches downwards.
+      let size = attr(label, "font-size");
+      let half_drop = 12.0 * size * 0.6 / 2.0
+        * (0.25_f64 * std::f64::consts::PI).sin()
+        + size / 2.0;
+      assert!(
+        attr(label, "y") + half_drop <= 4000.5,
+        "rotated label runs off the image: {label}"
+      );
+    }
 
     #[test]
     fn bar_chart_basic() {

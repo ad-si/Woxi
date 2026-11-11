@@ -874,6 +874,61 @@ pub(crate) struct ChartLabel {
   pub font_size: Option<f64>,
   /// `Style[label, Bold]`.
   pub bold: bool,
+  /// The styles of a stacked (`Column[{…}]`) label's lines, one per
+  /// `\n`-separated line of `text`; empty when the lines share the label's
+  /// style.
+  pub line_styles: Vec<LabelLineStyle>,
+}
+
+/// The `Style[line, size, color]` of one line of a stacked chart label.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub(crate) struct LabelLineStyle {
+  pub font_size: Option<f64>,
+  pub color: Option<Color>,
+}
+
+/// The per-line styles of a `Column[{…}]` label (looking through the
+/// `Style`/`Rotate` wrappers around it), or none when the label is not a
+/// column or no line has a style of its own.
+pub(crate) fn column_line_styles(e: &Expr) -> Vec<LabelLineStyle> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Style" | "Rotate" | "Text" | "Tooltip" | "Annotation" | "Pane"
+      ) && !args.is_empty() =>
+    {
+      column_line_styles(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return Vec::new();
+      };
+      // The same lines `expr_to_label` keeps, so the styles line up.
+      let styles: Vec<LabelLineStyle> = items
+        .iter()
+        .filter(|item| expr_to_label(item).is_some())
+        .map(|item| match item {
+          Expr::FunctionCall { name, args }
+            if name == "Style" && !args.is_empty() =>
+          {
+            let (_, _, color, font_size) =
+              parse_style_directive_args(&args[1..]);
+            LabelLineStyle { font_size, color }
+          }
+          _ => LabelLineStyle::default(),
+        })
+        .collect();
+      if styles.iter().all(|st| *st == LabelLineStyle::default()) {
+        Vec::new()
+      } else {
+        styles
+      }
+    }
+    _ => Vec::new(),
+  }
 }
 
 impl ChartLabel {
@@ -1400,6 +1455,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       rotation: angle,
       font_size,
       bold,
+      line_styles: column_line_styles(&args[0]),
     });
   }
   // A sublist inside `ChartLabels` names a whole level of the chart (group
@@ -1413,6 +1469,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
   expr_to_label(e).map(|text| ChartLabel {
     font_size,
     bold,
+    line_styles: column_line_styles(e),
     ..ChartLabel::plain(text)
   })
 }
