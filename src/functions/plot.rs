@@ -2030,14 +2030,13 @@ fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
   if lines.len() == 1 {
     return lines[0].clone();
   }
-  lines
-    .iter()
-    .enumerate()
-    .map(|(i, line)| {
-      let dy = if i == 0 { 0.0 } else { pitch };
-      format!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
-    })
-    .collect()
+  use std::fmt::Write;
+  let mut out = String::new();
+  for (i, line) in lines.iter().enumerate() {
+    let dy = if i == 0 { 0.0 } else { pitch };
+    let _ = write!(out, "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>");
+  }
+  out
 }
 
 /// Label a tick that belongs to a sequence of `step`-spaced ticks.
