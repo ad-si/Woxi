@@ -20535,20 +20535,8 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         "AbsoluteThickness",
         Expr::Real(sd.thickness.unwrap_or(1.5)),
       ));
-      if let Some(dashes) = &sd.dashing {
-        // Relative lengths become pixels of this plot's image, so the dashes
-        // keep their size whatever picture `Show` draws them into.
-        let px: Vec<Expr> = dashes
-          .iter()
-          .map(|d| {
-            Expr::Real(if *d < 0.0 {
-              -*d
-            } else {
-              *d * ps.image_size.0 as f64
-            })
-          })
-          .collect();
-        series_prims.push(call1("AbsoluteDashing", Expr::List(px.into())));
+      if let Some(dashing) = series_dashing_expr(sd, ps.image_size.0) {
+        series_prims.push(dashing);
       }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
@@ -20570,6 +20558,27 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     }
   }
   series_prims
+}
+
+/// The `AbsoluteDashing[…]` of a dashed plot series. Relative lengths
+/// become pixels of the plot's image (`image_width` wide), so the dashes keep
+/// their size whatever picture the curve is drawn into.
+pub(crate) fn series_dashing_expr(
+  sd: &crate::syntax::PlotSeriesData,
+  image_width: u32,
+) -> Option<Expr> {
+  let dashes = sd.dashing.as_ref()?;
+  let px: Vec<Expr> = dashes
+    .iter()
+    .map(|d| {
+      Expr::Real(if *d < 0.0 {
+        -*d
+      } else {
+        *d * f64::from(image_width)
+      })
+    })
+    .collect();
+  Some(call1("AbsoluteDashing", Expr::List(px.into())))
 }
 
 /// Clip a polyline to the horizontal band `lo <= y <= hi`, interpolating the
