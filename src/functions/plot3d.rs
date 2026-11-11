@@ -12059,6 +12059,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let width = style.thickness.unwrap_or(1.5);
       for seg in segments {
+        // On-screen length of the polyline drawn so far: a dash pattern
+        // runs continuously along the whole line instead of restarting
+        // at every vertex (which would turn a finely sampled dotted
+        // curve into a solid one).
+        let mut run_px = 0.0;
         for pair in seg.windows(2) {
           let (a, b) = (pair[0], pair[1]);
           // Total on-screen length of the *undivided* segment, so a dash
@@ -12084,10 +12089,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               width,
               opacity: style.opacity,
               dashing: style.dashing.clone(),
-              dash_offset: t0 * total_px,
+              dash_offset: run_px + t0 * total_px,
               dot_radius: None,
             });
           }
+          run_px += total_px;
         }
       }
     }

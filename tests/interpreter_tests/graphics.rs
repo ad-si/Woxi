@@ -7903,6 +7903,36 @@ mod plot3d {
       );
     }
 
+    /// A dash pattern runs continuously along a whole multi-vertex `Line`:
+    /// the offset used to restart at every vertex, so a finely sampled
+    /// dotted curve (e.g. a `ParametricPlot3D` with `PlotStyle -> Dotted`)
+    /// began a fresh dot at each sample and looked solid wherever the
+    /// samples crowded together on screen.
+    #[test]
+    fn graphics3d_dash_pattern_continues_across_vertices() {
+      let svg = export_svg(
+        "Graphics3D[{Dotted, Line[Table[{k, 0, 0}, {k, 0, 6}]]}, Boxed -> False]",
+      );
+      let offsets: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line ") && l.contains("stroke-dasharray"))
+        .filter_map(|l| {
+          let rest = l.split("stroke-dashoffset=\"").nth(1)?;
+          rest.split('"').next()?.parse().ok()
+        })
+        .collect();
+      assert!(offsets.len() > 6, "{svg}");
+      // Only the very first piece of the line starts the pattern afresh.
+      assert_eq!(
+        offsets.iter().filter(|o| **o == 0.0).count(),
+        1,
+        "{offsets:?}"
+      );
+      // The later pieces keep counting the distance along the line.
+      let max = offsets.iter().cloned().fold(0.0, f64::max);
+      assert!(max > 100.0, "{offsets:?}");
+    }
+
     /// `Dotted`/`DotDashed` are shorthands for specific `Dashing` patterns
     /// (mirroring 2D `Graphics`); `Dashing`/`AbsoluteDashing` set an
     /// explicit pattern, fractional-of-width or literal pixels
