@@ -2891,6 +2891,65 @@ mod graphics {
       );
     }
 
+    /// A rotated label offset to one end of its baseline (`{1, _}` or
+    /// `{-1, _}`) is pinned at that end by the renderer, turned about the
+    /// anchor, rather than shifted by an estimate of its width. Regression:
+    /// a vertical title meant to hang from the top edge came out pushed
+    /// down by the (overestimated) half-width of the text.
+    #[test]
+    fn rotated_text_edge_offset_pins_the_baseline_end() {
+      let line_of = |offset: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Text[\"a vertical title\", {{1, 1}}, {offset}, \
+             {{0, 1}}]}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ));
+        svg
+          .lines()
+          .find(|l| l.starts_with("<text"))
+          .unwrap_or_else(|| panic!("no text element in {svg}"))
+          .to_string()
+      };
+      let end = line_of("{1, 0}");
+      assert!(end.contains("text-anchor=\"end\""), "{end}");
+      assert!(end.contains("rotate(-90"), "{end}");
+      // The anchor point itself is the top edge (y = 0 in SVG space).
+      assert!(
+        end.contains("y=\"-0.00\"") || end.contains("y=\"0.00\""),
+        "{end}"
+      );
+      let start = line_of("{-1, 0}");
+      assert!(start.contains("text-anchor=\"start\""), "{start}");
+    }
+
+    /// `Style[text, TextAlignment -> Left]` lines up a multi-line label's
+    /// lines on their left edge (and `Right` on the right), as a
+    /// left-aligned `Column` does.
+    #[test]
+    fn style_text_alignment_aligns_multi_line_labels() {
+      let anchor_of = |alignment: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Style[{{Text[Style[\"one\\ntwo three\", \
+             TextAlignment -> {alignment}], {{0, 0}}]}}, \"Label\", 24]}}, \
+             PlotRange -> 2]"
+        ));
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<text"))
+          .unwrap_or_else(|| panic!("no text element in {svg}"))
+          .to_string();
+        assert!(line.contains("<tspan"), "lines stay stacked: {line}");
+        line
+          .split("text-anchor=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .unwrap()
+          .to_string()
+      };
+      assert_eq!(anchor_of("Left"), "start");
+      assert_eq!(anchor_of("Right"), "end");
+      assert_eq!(anchor_of("Center"), "middle");
+    }
+
     /// `Automatic` (or an omitted) direction leaves the label unrotated,
     /// and a `{1, 0}` (purely horizontal) direction is a no-op rotation.
     #[test]
