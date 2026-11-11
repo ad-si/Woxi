@@ -33205,9 +33205,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // A bare `Locator` (no corner bounds) moves over the picture the body
         // draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there
         // bounds the pad rather than a box padded around the start point.
+        // Without one, it is the range of the graphic the body actually
+        // draws at the initial control values (e.g. a `Show` of a
+        // `StreamPlot` over its stated domain).
         if bare_locator_spec(&spec)
-          && let Some(((x0, y0), (x1, y1))) =
-            args.first().and_then(find_plot_range)
+          && let Some(((x0, y0), (x1, y1))) = args.first().and_then(|body| {
+            find_plot_range(body)
+              .or_else(|| drawn_plot_range(body, &initial_bindings))
+          })
         {
           match &mut c {
             ManipulateControl::Slider2D {
@@ -37538,6 +37543,35 @@ fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
     return (lo, hi);
   }
   find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
+}
+
+/// The plot range of the first 2D graphic `body` produces when evaluated
+/// with the controls at `bindings` — the coordinate system a bare `Locator`
+/// is dragged over when nothing in the body states a `PlotRange`.
+fn drawn_plot_range(
+  body: &Expr,
+  bindings: &[(String, String)],
+) -> Option<((f64, f64), (f64, f64))> {
+  // `absolute_plot_range` gives `((xmin, xmax), (ymin, ymax))`; the
+  // callers want the corners `((xmin, ymin), (xmax, ymax))`.
+  fn corners(e: &Expr) -> Option<((f64, f64), (f64, f64))> {
+    let ((x0, x1), (y0, y1)) = absolute_plot_range(e)?;
+    (x1 > x0 && y1 > y0).then_some(((x0, y0), (x1, y1)))
+  }
+  fn first_graphic_range(e: &Expr) -> Option<((f64, f64), (f64, f64))> {
+    match e {
+      Expr::Graphics { is_3d: false, .. } => corners(e),
+      Expr::FunctionCall { name, .. } if name == "Graphics" => corners(e),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().find_map(first_graphic_range)
+      }
+      Expr::List(items) => items.iter().find_map(first_graphic_range),
+      _ => None,
+    }
+  }
+  let evaluated =
+    crate::with_scoped_globals(bindings, || evaluate_expr_to_expr(body).ok())?;
+  first_graphic_range(&evaluated)
 }
 
 /// Whether a Manipulate control spec is `{{p, init}, Locator, …options}`

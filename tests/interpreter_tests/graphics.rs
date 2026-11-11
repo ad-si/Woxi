@@ -32744,6 +32744,34 @@ mod manipulate {
     }
   }
 
+  // With no PlotRange stated anywhere, a bare Locator moves over the range
+  // of the graphic the body draws at the initial control values — not a
+  // small box padded around its start point.
+  #[test]
+  fn spec_bare_locator_uses_drawn_graphic_range() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[{Line[{{-k, -k}, {k, 2 k}}], Point[p]}], \
+       {{k, 6}, 1, 10}, {{p, {3, 0}}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[1] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-6.0, 6.0, -6.0, 12.0));
+        assert_eq!((*x_initial, *y_initial), (3.0, 0.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]
