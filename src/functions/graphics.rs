@@ -21166,6 +21166,38 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     };
     if first_graphic_is_plot == Some(true) {
+      // Like its other options, the merged graphic keeps the range the
+      // leading plot settled on: primitives reaching beyond it (a marker
+      // line from y = -10 to 10 over a curve within ±1) are clipped, not
+      // allowed to zoom the picture out. Only a `PlotRange` given to `Show`
+      // or an `All` asked of the plot spans everything shown.
+      let automatic_range = merged_options.iter().all(|o| {
+        !matches!(option_name_value(o), Some(("PlotRange", v))
+          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic"))
+      });
+      if automatic_range
+        && let Some(ps) = plot_sources.first()
+        && [ps.x_range, ps.y_range]
+          .iter()
+          .all(|r| r.0.is_finite() && r.1.is_finite() && r.0 < r.1)
+      {
+        merged_options
+          .retain(|o| !matches!(option_name_value(o), Some(("PlotRange", _))));
+        let span = |r: (f64, f64)| {
+          Expr::List(vec![Expr::Real(r.0), Expr::Real(r.1)].into())
+        };
+        merged_options.push(rule_expr(
+          id_expr("PlotRange"),
+          Expr::List(vec![span(ps.x_range), span(ps.y_range)].into()),
+        ));
+      }
+      // A plot clips what it draws to its range (`PlotRangeClipping ->
+      // True`), so a layer reaching past it is cut at the frame instead of
+      // spilling over the margins and the labels.
+      if !has_option(&merged_options, "PlotRangeClipping") {
+        merged_options
+          .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
+      }
       // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
       // horizontal extent stays that of the plotted domain.
       for opt in &mut merged_options {
