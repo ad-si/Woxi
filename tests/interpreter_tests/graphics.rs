@@ -45569,18 +45569,31 @@ fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
 }
 
 #[test]
-fn explicit_plot_range_clips_content_in_widened_drawing_area() {
-  // The wide picture widens the x range to keep circles round, but the
-  // requested range still bounds what is drawn.
+fn explicit_plot_range_shows_content_in_widened_drawing_area() {
+  // Regression: the wide picture widens the x range to keep circles round,
+  // and under the default `PlotRangeClipping -> False` that extra room shows
+  // what lies past the requested range (only the image edge cuts it off),
+  // as the front end draws it. Woxi clipped to the narrower range, leaving
+  // blank bands at the sides.
   let svg = export_svg(
     "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
      PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}]",
   );
   assert!(
-    svg.contains(
+    svg.contains("<rect x=\"0\" y=\"0\" width=\"549.00\" height=\"395.00\"/>"),
+    "{svg}"
+  );
+  // `PlotRangeClipping -> True` keeps the requested range as the bound.
+  let clipped = export_svg(
+    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
+     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}, \
+     PlotRangeClipping -> True]",
+  );
+  assert!(
+    clipped.contains(
       "<rect x=\"66.61\" y=\"0.00\" width=\"415.79\" height=\"395.00\"/>"
     ),
-    "{svg}"
+    "{clipped}"
   );
   // Without an explicit range the whole drawing area stays visible.
   let auto = export_svg("Graphics[{Rectangle[{-12, 0}, {12, 1}]}]");
