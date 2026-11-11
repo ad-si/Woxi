@@ -3017,7 +3017,7 @@ mod graphics {
       );
       assert!(!svg.contains("Spacer"), "{svg}");
       assert!(svg.contains(">top</tspan>"), "{svg}");
-      assert!(svg.contains("></tspan>"), "{svg}");
+      assert!(svg.contains(">&#160;</tspan>"), "{svg}");
       assert!(svg.contains(">bottom</tspan>"), "{svg}");
     }
 
