@@ -968,3 +968,52 @@ mod automatic_image_padding {
     assert!(tall > plain, "{tall} vs {plain}");
   }
 }
+
+/// A curve whose values are all far below 1 still gets a y range of its
+/// own instead of being taken for a constant and flattened onto 0.
+mod tiny_values {
+  use super::*;
+
+  fn tick_labels(svg: &str) -> Vec<String> {
+    svg
+      .split("<text ")
+      .skip(1)
+      .map(|t| {
+        let start = t.find('>').unwrap() + 1;
+        let end = start + t[start..].find("</text>").unwrap();
+        t[start..end].to_string()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn varying_curve_fills_the_plot() {
+    let svg = svg_of("Plot[10^-20 x, {x, 1, 2}, ImageSize -> 300]");
+    let (w, h) = curve_extent(&svg);
+    assert!(w > 2000.0, "curve width {w}");
+    assert!(h > 1000.0, "curve height {h}");
+    let labels = tick_labels(&svg);
+    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+    assert!(
+      !labels.iter().any(|l| l == "-1.0" || l == "1.0"),
+      "{labels:?}"
+    );
+  }
+
+  #[test]
+  fn tiny_exponential_curve_keeps_its_scale() {
+    let svg = svg_of("Plot[Exp[-100000/t], {t, 2600, 2700}, ImageSize -> 300]");
+    let (_, h) = curve_extent(&svg);
+    assert!(h > 1000.0, "curve height {h}");
+    let labels = tick_labels(&svg);
+    assert!(labels.iter().any(|l| l.contains("10⁻¹⁷")), "{labels:?}");
+  }
+
+  #[test]
+  fn tiny_constant_spans_zero_to_twice_its_value() {
+    let svg = svg_of("Plot[10^-20, {x, 0, 1}]");
+    let labels = tick_labels(&svg);
+    assert!(labels.iter().any(|l| l == "1×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+  }
+}
