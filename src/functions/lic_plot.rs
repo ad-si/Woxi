@@ -337,7 +337,9 @@ pub fn line_integral_convolution_plot_ast(
           };
           evaluate_expr_to_expr(&applied)
             .ok()
-            .and_then(|c| crate::functions::graphics::parse_color(&c))
+            .and_then(|c| {
+              crate::functions::graphics::parse_color_function_result(&c)
+            })
             .map_or((1.0, 1.0, 1.0), |c| (c.r, c.g, c.b))
         }
         // Wolfram's default colors the field from brown (weak) to cream

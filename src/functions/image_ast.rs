@@ -8862,7 +8862,7 @@ pub fn relief_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             func: Box::new(f.clone()),
             args: vec![Expr::Real(t)],
           })?;
-        match crate::functions::graphics::parse_color(&value) {
+        match crate::functions::graphics::parse_color_function_result(&value) {
           Some(c) => (c.r, c.g, c.b),
           None => return Ok(unevaluated("ReliefImage", args)),
         }

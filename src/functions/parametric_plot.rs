@@ -359,7 +359,7 @@ fn color_function_series(
     let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
     evaluate_expr_to_expr(&call)
       .ok()
-      .and_then(|r| crate::functions::graphics::parse_color(&r))
+      .and_then(|r| crate::functions::graphics::parse_color_function_result(&r))
       .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
   };
   let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -1599,7 +1599,9 @@ fn parametric_region_layer(
       };
       evaluate_expr_to_expr(&applied)
         .ok()
-        .and_then(|r| crate::functions::graphics::parse_color(&r))
+        .and_then(|r| {
+          crate::functions::graphics::parse_color_function_result(&r)
+        })
         .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
     };
     let mut groups: Vec<((u8, u8, u8), Vec<Expr>)> = Vec::new();

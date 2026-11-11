@@ -7939,9 +7939,9 @@ pub(crate) fn color_function_rgb(
     func: Box::new(cf.clone()),
     args,
   };
-  let c = evaluate_expr_to_expr(&call)
-    .ok()
-    .and_then(|r| parse_color(&r))?;
+  let c = evaluate_expr_to_expr(&call).ok().and_then(|r| {
+    crate::functions::graphics::parse_color_function_result(&r)
+  })?;
   let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
   Some((ch(c.r), ch(c.g), ch(c.b)))
 }
