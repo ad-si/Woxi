@@ -8901,6 +8901,29 @@ mod plot3d {
       assert!(svg.contains("stroke=\"#FF8000\""));
     }
 
+    /// A `Row` plot label typesets its items in TraditionalForm, as a
+    /// graphic's `FormatType` asks: `==` is `=`, a sum puts its constant
+    /// last, `Mod` is the infix `mod`, and relations and arrows are spaced.
+    #[test]
+    fn plot_label_row_items_are_traditional_form() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Style[Row[{Subscript[x, 0] == 5, \
+         \" \", Subscript[x, n + 1] -> Mod[2 Subscript[x, n] + c, m]}], 14]]",
+      );
+      assert!(svg.contains("</tspan> = 5 "), "{svg}");
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">n</tspan>+1</tspan> \u{2192} ("
+        ),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(") mod <tspan font-style=\"italic\">m</tspan>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("Mod["), "{svg}");
+    }
+
     /// A title whose first line is blank (`Row[{"\nTitle"}]`) is still drawn.
     #[test]
     fn plot_label_with_leading_newline_is_drawn() {

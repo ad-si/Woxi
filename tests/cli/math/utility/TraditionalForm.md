@@ -15,6 +15,14 @@ $ wo 'ToBoxes[TraditionalForm[n!]]'
 TagBox[FormBox[RowBox[{n, !}], TraditionalForm], TraditionalForm, Editable -> True]
 ```
 
+`Mod` is written as the infix operator `mod`, with a product operand in
+parentheses:
+
+```scrut
+$ wo 'ToBoxes[TraditionalForm[Mod[2 x, 7]]]'
+TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]
+```
+
 A special function carries its order as a subscript and any further index
 as a superscript — `LegendreP[n, x]` is written `Pₙ(x)` and
 `LegendreP[n, m, x]` is written `Pₙᵐ(x)`. Woxi writes that layout out as

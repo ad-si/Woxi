@@ -18506,6 +18506,26 @@ fn is_single_letter_symbol(s: &str) -> bool {
     if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
 }
 
+/// Infix box tokens drawn with a space on either side: relations, rule
+/// arrows and the `mod` word operator.
+fn is_spaced_box_operator(token: &str) -> bool {
+  matches!(
+    token,
+    "="
+      | "=="
+      | "\u{2260}"
+      | "<"
+      | ">"
+      | "\u{2264}"
+      | "\u{2265}"
+      | "\u{2192}"
+      | "\u{29F4}"
+      | "\u{F522}"
+      | "\u{F51F}"
+      | "mod"
+  )
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
@@ -18549,6 +18569,18 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           let mut result = String::new();
           for (i, item) in items.iter().enumerate() {
             let rendered = boxes_to_svg(item);
+            // A relation, an arrow or a word operator (`mod`) between two
+            // operands is set off by spaces, as the front end draws
+            // `x = 5`, `a → b` and `m mod n`.
+            if i > 0
+              && i + 1 < items.len()
+              && matches!(item, Expr::String(s) if is_spaced_box_operator(s))
+            {
+              result.push(' ');
+              result.push_str(&rendered);
+              result.push(' ');
+              continue;
+            }
             result.push_str(&rendered);
             // Add space after comma separators (bare "," strings)
             if rendered == "," && i + 1 < items.len() {
@@ -28111,8 +28143,9 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
         args: new_args,
       }
     }
+    // A `Spacer` is a gap in the layout, not an expression to typeset.
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Grid" | "TraditionalForm") =>
+      if matches!(name.as_str(), "Grid" | "TraditionalForm" | "Spacer") =>
     {
       expr.clone()
     }
