@@ -8153,11 +8153,16 @@ fn series_point_radius(
     .get(idx % plot_style.len().max(1))
     .and_then(|s| s.point_size)
     .or(opts.default_point_size);
-  match size {
-    Some(f) if f > 0.0 => (f * render_width as f64 * 0.5).round() as u32,
+  let radius = match size {
+    Some(f) if f >= 0.0 => (f * render_width as f64 * 0.5).round() as u32,
     Some(p) => (-p * 0.5 * RESOLUTION_SCALE as f64).round() as u32,
     None => 3 * RESOLUTION_SCALE,
-  }
+  };
+  // Never smaller than one pixel across, so `PointSize[0]` stays visible.
+  let min = (crate::functions::graphics::MIN_POINT_RADIUS
+    * RESOLUTION_SCALE as f64)
+    .round() as u32;
+  radius.max(min)
 }
 
 /// Whether series `idx` draws as a connected line rather than scattered

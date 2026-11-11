@@ -4589,4 +4589,47 @@ mod grid_item_style_tests {
       woxi::interpret(r#"ExportString[Grid[{{Row[{a, b}]}}], "SVG"]"#).unwrap();
     assert!(!plain.contains("<line"), "unexpected bar in {plain}");
   }
+
+  /// Every `r="…"` radius of the `<circle>` elements in `svg`.
+  fn circle_radii(svg: &str) -> Vec<f64> {
+    svg
+      .split("<circle")
+      .skip(1)
+      .filter_map(|c| {
+        let rest = c.split_once(" r=\"")?.1;
+        rest.split_once('"')?.0.parse().ok()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn test_point_size_zero_still_draws_visible_points() {
+    // `PointSize[0]` is the smallest drawable point, not an invisible one.
+    for code in [
+      r#"ExportString[Graphics[{PointSize[0], Point[{{0, 0}, {1, 1}}]}], "SVG"]"#,
+      r#"ExportString[Graphics[{AbsolutePointSize[0], Point[{0, 0}]}], "SVG"]"#,
+      r#"ExportString[ListPlot[{{1, 2}, {2, 3}, {3, 1}}, PlotStyle -> PointSize[0]], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      let radii = circle_radii(&svg);
+      assert!(!radii.is_empty(), "no points in {svg}");
+      assert!(radii.iter().all(|r| *r > 0.0), "invisible point in {svg}");
+    }
+  }
+
+  #[test]
+  fn test_inset_plot_keeps_its_background() {
+    // An inset `ListPlot` with `Background -> White` covers what lies
+    // behind it; one without a background stays transparent.
+    let inset = |opts: &str| {
+      woxi::interpret(&format!(
+        r#"ExportString[Graphics[{{Point[{{0, 0}}], Inset[ListPlot[{{{{1, 2}}, {{2, 3}}}}, Frame -> True{opts}], {{0, 0}}, Automatic, 1]}}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    let filled = inset(", Background -> White");
+    assert!(filled.contains("fill=\"#FFFFFF\""), "{filled}");
+    let plain = inset("");
+    assert!(!plain.contains("fill=\"#FFFFFF\""), "{plain}");
+  }
 }
