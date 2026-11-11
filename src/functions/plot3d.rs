@@ -873,6 +873,18 @@ fn mesh_segment(p0: Point3D, p1: Point3D, camera: &Camera) -> MeshLine {
 
 /// A [`mesh_segment`] stroked as `style` gives it (its color, opacity and
 /// thickness), falling back to `default` for what it leaves out.
+/// The width a surface's `BoundaryStyle` outline is drawn at unless the
+/// style sets its own: a hairline, thinner than a default 3D `Line`.
+const SURFACE_BOUNDARY_THICKNESS: f64 = 0.75;
+
+/// The `AbsoluteThickness` a surface's extracted outline (`plot[[1]]`)
+/// carries ahead of its style, so the outline keeps its hairline width when
+/// drawn by `Graphics3D` (whose bare lines are thicker) while a thickness
+/// in the user's `BoundaryStyle` still wins.
+fn boundary_thickness_expr() -> Expr {
+  call1("AbsoluteThickness", Expr::Real(SURFACE_BOUNDARY_THICKNESS))
+}
+
 fn styled_mesh_segment(
   p0: Point3D,
   p1: Point3D,
@@ -2401,7 +2413,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         to_box(*b),
         &camera,
         Some(style),
-        ("rgb(0,0,0)", 0.75),
+        ("rgb(0,0,0)", SURFACE_BOUNDARY_THICKNESS),
       ));
     }
   }
@@ -18079,7 +18091,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Real(b as f64 / 255.0),
           ],
         );
-        gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
+        gc_content.push(Expr::List(
+          vec![boundary_thickness_expr(), color_expr, line_expr].into(),
+        ));
       }
       // The mesh: thin dark gray lines (the edges drawn alike).
       let (edges, interior) = &surface_mesh[surface_idx];
@@ -20067,6 +20081,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if !segments.is_empty() {
             content.push(Expr::List(
               vec![
+                boundary_thickness_expr(),
                 style_expr.clone(),
                 call1("Line", Expr::List(segments.into())),
               ]
@@ -20381,7 +20396,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             normalize(b),
             &camera,
             Some(style),
-            ("rgb(0,0,0)", 0.75),
+            ("rgb(0,0,0)", SURFACE_BOUNDARY_THICKNESS),
           ));
         }
       }
