@@ -41071,6 +41071,15 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       discrete_choice_label_svg(&args[0])
     }
+    // `Magnify[label, s]` and `Rotate[label, θ]` wrap a text or picture
+    // label in a transform (a rotated, enlarged glyph on a setter button).
+    // Evaluating them keeps the call symbolic, so draw the transformed
+    // label the way a layout item is drawn.
+    Expr::FunctionCall { name, .. }
+      if name == "Magnify" || name == "Rotate" =>
+    {
+      nested_layout_svg(label).filter(|svg| svg.starts_with("<svg"))
+    }
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
     // its own source — which would put the label's InputForm on the button.
@@ -45790,6 +45799,32 @@ mod manipulate_traditional_form_choice_svg_tests {
           .expect("Pane[TraditionalForm[…]] must render an icon");
         assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
         assert!(value_label_svgs[2].is_none());
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A glyph label wrapped in `Magnify` / `Rotate` (a rotated, enlarged
+  /// triangle on a setter button) renders as a picture, not as the
+  /// `Magnify[Rotate[…]]` source text.
+  #[test]
+  fn magnified_and_rotated_glyph_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, a}, \
+       {a -> Magnify[\"\u{25BC}\", 2], \
+        b -> Magnify[Rotate[\"\u{25BC}\", 90 Degree], 2], \
+        c -> Rotate[\"\u{25BC}\", 140 Degree], \
+        d -> \"plain\"}, ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs, ..
+      } => {
+        for svg in &value_label_svgs[..3] {
+          let svg = svg.as_deref().expect("transformed glyph must be an icon");
+          assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        }
+        assert!(value_label_svgs[3].is_none());
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
