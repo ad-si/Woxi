@@ -10750,6 +10750,26 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(woxi::interpret("rateRR[3]").unwrap(), "6");
   }
 
+  /// The pattern variable shadowing a control may sit in a later statement
+  /// of the Initialization, after statements that never mention it.
+  #[test]
+  fn manipulate_initialization_pattern_variable_in_a_later_statement() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[forceLS[1, t], {{t, 0}, 0, 10}, \
+       Initialization :> (Clear[yLS]; kLS = 3; \
+       energyLS[y_, t_] = y^2 + kLS Cos[t] y; \
+       forceLS[y_, t_] = -D[energyLS[y, t], y];)]",
+    )
+    .expect("Manipulate should parse and hold");
+    let _state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("should build a ManipulateState");
+    assert_eq!(
+      woxi::interpret("forceLS[1, s]").unwrap(),
+      "-2 - 3*Cos[s]",
+      "the control's value was not substituted for the pattern variable"
+    );
+  }
+
   #[test]
   fn manipulate_initialization_sees_the_controls_initial_values() {
     // A DynamicModule's variables hold their values before its
