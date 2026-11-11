@@ -105,6 +105,49 @@ mod image_core {
     }
   }
 
+  // Regression: an image in a fixed-size `Pane` was shown at its own size,
+  // as if the pane weren't there. The pane reserves its whole box and
+  // places the picture by its `Alignment`, like a graphic in a pane.
+  #[test]
+  fn pane_wrapped_image_fills_the_pane_box() {
+    clear_state();
+    for (code, translate) in [
+      (
+        "Pane[Image[ConstantArray[0.5, {30, 20}]], {100, 80}, \
+         Alignment -> Center]",
+        "translate(40.0 0.0)",
+      ),
+      (
+        "Pane[Image[ConstantArray[0.5, {30, 20}]], ImageSize -> {100, 80}, \
+         Alignment -> {Right, Bottom}]",
+        "translate(80.0 50.0)",
+      ),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      let svg = r.graphics.expect("expected the image as graphics output");
+      assert!(
+        svg.starts_with("<svg width=\"100\" height=\"80\""),
+        "{code}: {svg}"
+      );
+      assert!(svg.contains(translate), "{code}: {svg}");
+      assert!(svg.contains("<image"), "{code}: {svg}");
+    }
+  }
+
+  // Regression: an image's SVG writes its size in single quotes
+  // (`width='20'`), which the pane layout didn't read, so `ExportString`
+  // placed the picture as if it were 100 x 30.
+  #[test]
+  fn exported_pane_places_an_image_by_its_size() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Image[ConstantArray[0.5, {30, 20}]], {100, 80}, \
+       Alignment -> {Right, Bottom}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("translate(80.0 50.0)"), "{svg}");
+  }
+
   // An explicit ColorSpace must agree with the channel count the data
   // actually has (one channel per component, plus an optional alpha).
   #[test]
