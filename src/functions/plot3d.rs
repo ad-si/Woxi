@@ -3501,7 +3501,7 @@ fn parse_ticks_style_3d(value: &Expr) -> [Option<String>; 3] {
   let color = |e: &Expr| {
     crate::functions::plot::parse_style_directives(e)
       .and_then(|style| style.color)
-      .map(|c| c.to_svg_rgb())
+      .map(super::graphics::Color::to_svg_rgb)
   };
   match &value {
     Expr::List(items) if items.len() == 3 => {
