@@ -11165,6 +11165,18 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
   }
 }
 
+/// The content of one `<tspan>` line of a multi-line SVG text block. An
+/// empty line gets a no-break space: SVG attaches a tspan's `dy` to its
+/// first character, so an empty tspan's offset is dropped, collapsing a
+/// blank line (and, for the first line, the block's centering shift).
+pub(crate) fn tspan_line(content: &str) -> &str {
+  if content.is_empty() {
+    "&#160;"
+  } else {
+    content
+  }
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   // `\[ExponentialE]` (U+F74D) would become `ℯ`, which the embedded fonts
   // lack; it is drawn as the double-struck `ⅇ` Wolfram shows.
@@ -12329,12 +12341,12 @@ fn render_primitive(
             out.push_str(&format!(
               "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
               -(lines.len() as f64 - 1.0) * fs / 2.0,
-              svg_escape(line)
+              tspan_line(&svg_escape(line))
             ));
           } else {
             out.push_str(&format!(
               "<tspan x=\"{sx:.2}\" dy=\"{fs}\">{}</tspan>",
-              svg_escape(line)
+              tspan_line(&svg_escape(line))
             ));
           }
         }
@@ -24351,6 +24363,7 @@ fn grid_svg_styled_internal_reporting(
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
             let dy = if k == 0 { 0.0 } else { lh };
+            let line = tspan_line(line);
             body.push_str(&format!(
               "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
             ));

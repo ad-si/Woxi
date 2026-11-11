@@ -5340,7 +5340,9 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let dy = if k == 0 { first_dy } else { line_height };
           spans.push_str(&format!(
             "<tspan x=\"{lx:.2}\" dy=\"{dy:.2}\">{}</tspan>",
-            crate::functions::graphics::box_string_to_svg(line)
+            crate::functions::graphics::tspan_line(
+              &crate::functions::graphics::box_string_to_svg(line)
+            )
           ));
         }
         if lines.len() == 1 {

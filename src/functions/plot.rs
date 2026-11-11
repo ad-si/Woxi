@@ -2034,6 +2034,7 @@ fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
   let mut out = String::new();
   for (i, line) in lines.iter().enumerate() {
     let dy = if i == 0 { 0.0 } else { pitch };
+    let line = crate::functions::graphics::tspan_line(line);
     let _ = write!(out, "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>");
   }
   out
@@ -4286,6 +4287,7 @@ fn stacked_lines_svg(label: &str, x: f64, line_height: f64) -> String {
   let mut out = String::new();
   for (i, line) in label.split('\n').enumerate() {
     let dy = if i == 0 { 0.0 } else { line_height };
+    let line = crate::functions::graphics::tspan_line(line);
     out.push_str(&format!(
       "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
     ));
