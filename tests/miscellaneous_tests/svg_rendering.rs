@@ -4448,6 +4448,30 @@ mod grid_item_style_tests {
   }
 
   #[test]
+  fn cell_rules_style_single_cells_and_blocks() {
+    // `{{rows}, {cols}} -> style` spans a block; `{i, j} -> style` one cell.
+    let f = fills(
+      "ExportString[Grid[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, ItemStyle -> \
+       {Automatic, Automatic, {{{2, 3}, {2, 2}} -> Red, {1, 3} -> Blue, \
+       {{1, 2}, 1} -> Green}}], \"SVG\"]",
+    );
+    assert_eq!(
+      f,
+      vec![
+        "rgb(0,255,0)",
+        "black",
+        "rgb(0,0,255)",
+        "rgb(0,255,0)",
+        "rgb(255,0,0)",
+        "black",
+        "black",
+        "rgb(255,0,0)",
+        "black"
+      ]
+    );
+  }
+
+  #[test]
   fn framed_array_plot_keeps_its_own_coordinate_space() {
     // An ArrayPlot draws at a multiple of its display size, so the nested
     // `<svg>` inside the frame needs the plot's viewBox to show all of it.
