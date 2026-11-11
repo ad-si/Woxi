@@ -977,3 +977,60 @@ fn raster_volume_colors_do_not_expose_triangle_lighting() {
       .contains("fill=\"rgb(255,0,0)\"")
   }));
 }
+
+mod per_axis_options {
+  use super::*;
+
+  // `PlotRange -> {{x0, x1}, All, All}` pins only the first axis; the
+  // others keep the extent of the contents.
+  #[test]
+  fn plot_range_mixing_intervals_and_all() {
+    for spec in ["{{0, 4}, All, All}", "{{0, 4}, Automatic, Full}"] {
+      assert_eq!(
+        svg(&format!(
+          "Graphics3D[Line[{{{{1, 0, 0}}, {{2, 2, 3}}}}], Axes -> True, \
+           PlotRange -> {spec}]"
+        )),
+        svg(
+          "Graphics3D[Line[{{1, 0, 0}, {2, 2, 3}}], Axes -> True, \
+           PlotRange -> {{0, 4}, {0, 2}, {0, 3}}]"
+        ),
+        "{spec}"
+      );
+    }
+  }
+
+  #[test]
+  fn plot_range_mixing_intervals_and_all_widens_the_box() {
+    // The pinned x interval reaches past the data, so its far tick shows.
+    let s = svg(
+      "Graphics3D[Line[{{1, 0, 0}, {2, 1, 1}}], Axes -> True, \
+       PlotRange -> {{0, 4}, All, All}]",
+    );
+    assert!(s.contains(">4<"), "{s}");
+  }
+
+  // `Axes -> {False, True, True}` draws the y and z axes only.
+  #[test]
+  fn axes_list_turns_off_single_axes() {
+    let all = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       AxesLabel -> {\"xx\", \"yy\", \"zz\"}]",
+    );
+    assert!(all.contains(">4<") && all.contains(">xx<"), "{all}");
+    let some = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> {False, True, True}, \
+       AxesLabel -> {\"xx\", \"yy\", \"zz\"}]",
+    );
+    assert!(!some.contains(">4<") && !some.contains(">xx<"), "{some}");
+    assert!(some.contains(">yy<") && some.contains(">zz<"), "{some}");
+  }
+
+  #[test]
+  fn axes_list_of_all_false_draws_no_axes() {
+    assert_eq!(
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> {False, False, False}]"),
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> False]")
+    );
+  }
+}

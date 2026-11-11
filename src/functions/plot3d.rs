@@ -2848,6 +2848,7 @@ fn generate_svg(
       &ticks,
       None,
       None,
+      [true; 3],
     );
   }
 
@@ -3008,6 +3009,7 @@ fn draw_axes_on_box(
     &[None, None, None],
     None,
     None,
+    [true; 3],
   )
 }
 
@@ -3092,6 +3094,7 @@ fn draw_axes_on_box_with_ticks(
   ticks: &[Option<TickList3D>; 3],
   crossing: Option<&[Option<f64>; 3]>,
   edges: Option<&AxesEdges>,
+  shown: [bool; 3],
 ) -> AxesExtent {
   let mut extent = AxesExtent::EMPTY;
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
@@ -3313,6 +3316,10 @@ fn draw_axes_on_box_with_ticks(
   for (ai, &(axis_origin, end, (val_min, val_max), flipped)) in
     axes.iter().enumerate()
   {
+    // `Axes -> {False, True, True}` leaves out the first axis entirely.
+    if !shown[ai] {
+      continue;
+    }
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -10449,9 +10456,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
   // pins each axis separately.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
-  // `PlotRange -> {zmin, zmax}`: pins the vertical axis only, the other two
-  // keep the extent of the contents (what a `Plot3D` carries into `Show`).
-  let mut z_only_range: Option<(f64, f64)> = None;
+  // `PlotRange -> {zmin, zmax}` pins the vertical axis only, the other two
+  // keep the extent of the contents (what a `Plot3D` carries into `Show`);
+  // `PlotRange -> {{x0, x1}, All, All}` pins only the axes given an
+  // interval.
+  let mut partial_range: Option<[Option<(f64, f64)>; 3]> = None;
   // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
   // box simply has the proportions of the data.
   let mut box_ratios: Option<[f64; 3]> = None;
@@ -10481,6 +10490,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
+  // Which of the three axes `Axes -> {bx, by, bz}` turns on.
+  let mut axes_shown = [true; 3];
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -10615,7 +10626,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
             && hi > lo
           {
-            z_only_range = Some((lo, hi));
+            partial_range = Some([None, None, Some((lo, hi))]);
+          } else if let Some(ranges) = parse_partial_axis_ranges(&value) {
+            partial_range = Some(ranges);
           }
         }
         // `BoxRatios -> {rx, ry, rz}` fixes the *shape* of the bounding
@@ -10663,12 +10676,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
-          Expr::Identifier(s) if s == "True" => show_axes = true,
-          // `Axes -> {True, True, False}`: drawn as long as any is on.
-          Expr::List(items) => {
-            show_axes = items
-              .iter()
-              .any(|i| matches!(i, Expr::Identifier(s) if s == "True"));
+          Expr::Identifier(s) if s == "True" => {
+            show_axes = true;
+            axes_shown = [true; 3];
+          }
+          // `Axes -> {True, True, False}`: only the axes set to `True`.
+          Expr::List(items) if items.len() == 3 => {
+            for (on, item) in axes_shown.iter_mut().zip(items.iter()) {
+              *on = matches!(item, Expr::Identifier(s) if s == "True");
+            }
+            show_axes = axes_shown.iter().any(|&on| on);
           }
           _ => {}
         },
@@ -10691,12 +10708,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
   if plot_range.is_none()
-    && let Some(z) = z_only_range
+    && let Some(partial) = partial_range
   {
-    let [x, y, _] = primitives_bounds(&prims);
-    if x.0.is_finite() && x.1.is_finite() && y.0.is_finite() && y.1.is_finite()
-    {
-      plot_range = Some([x, y, z]);
+    // The axes without an interval keep the extent of the contents.
+    let bounds = primitives_bounds(&prims);
+    let mut full = bounds;
+    for i in 0..3 {
+      if let Some(range) = partial[i] {
+        full[i] = range;
+      }
+    }
+    if full.iter().all(|(lo, hi)| lo.is_finite() && hi.is_finite()) {
+      plot_range = Some(full);
     }
   }
 
@@ -11608,6 +11631,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &tick_spec,
         axes_origin.as_ref().filter(|_| !show_box),
         axes_edge.as_ref(),
+        axes_shown,
       )
     })
   };
@@ -11913,6 +11937,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref(),
       axes_edge.as_ref(),
+      axes_shown,
     );
   }
   // Render triangles interleaved with box edges (painter's algorithm)
@@ -12204,6 +12229,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref().filter(|_| !show_box),
       axes_edge.as_ref(),
+      axes_shown,
     );
   }
 
@@ -12293,6 +12319,36 @@ fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
   let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
   Some((lo, hi))
+}
+
+/// `PlotRange -> {{x0, x1}, All, Automatic}`: an explicit interval for some
+/// axes, the extent of the contents (`All`, `Automatic`, `Full`) for the
+/// rest. `None` unless at least one axis gets an interval.
+fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut ranges = [None; 3];
+  for (slot, item) in ranges.iter_mut().zip(items.iter()) {
+    *slot = match item {
+      Expr::Identifier(s) if matches!(s.as_str(), "All" | "Automatic" | "Full") => {
+        None
+      }
+      Expr::List(pair) if pair.len() == 2 => {
+        let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
+        let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
+        if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
+          return None;
+        }
+        Some((lo, hi))
+      }
+      _ => return None,
+    };
+  }
+  ranges.iter().any(Option::is_some).then_some(ranges)
 }
 
 /// `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`: one explicit interval per
