@@ -4106,7 +4106,7 @@ pub(crate) fn contains_graphics_placeholder(expr: &syntax::Expr) -> bool {
 }
 
 /// Check if a list's items form a 3D structure (list of lists of lists)
-fn is_3d_list(items: &[syntax::Expr]) -> bool {
+pub(crate) fn is_3d_list(items: &[syntax::Expr]) -> bool {
   !items.is_empty()
     && items.iter().all(|item| {
       if let syntax::Expr::List(sub) = item {
@@ -4422,6 +4422,37 @@ pub(crate) fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// For 2D lists, render as a parenthesized matrix.
 /// For 3D lists, render each sub-matrix as a parenthesized matrix, stacked vertically.
 /// For 1D lists, render as a column vector with parentheses.
+/// The `Grid` arguments a 2D `MatrixForm` matrix (or a 1D list, shown as a
+/// column vector) is laid out with: centered cells, the options forwarded.
+/// `None` for data that isn't a non-empty 1D or 2D list.
+pub(crate) fn matrixform_grid_args(
+  data: &syntax::Expr,
+  opts: &[syntax::Expr],
+) -> Option<Vec<syntax::Expr>> {
+  let syntax::Expr::List(items) = data else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let grid_data = if items
+    .iter()
+    .all(|item| matches!(item, syntax::Expr::List(_)))
+  {
+    data.clone()
+  } else {
+    syntax::Expr::List(
+      items
+        .iter()
+        .map(|e| syntax::Expr::List(vec![e.clone()].into()))
+        .collect(),
+    )
+  };
+  let mut grid_args = vec![grid_data];
+  grid_args.extend(opts.iter().cloned());
+  Some(grid_args)
+}
+
 pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     syntax::Expr::FunctionCall { name, args }
@@ -4457,29 +4488,11 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             Err(_) => expr,
           }
         }
-        // 2D list: single matrix
+        // 2D list (a single matrix) or 1D list (a column vector)
         syntax::Expr::List(items)
-          if items
-            .iter()
-            .all(|item| matches!(item, syntax::Expr::List(_))) =>
+          if !items.is_empty()
+            && let Some(grid_args) = matrixform_grid_args(data, opts) =>
         {
-          let mut grid_args = vec![data.clone()];
-          grid_args.extend(opts.iter().cloned());
-          match functions::graphics::grid_ast_with_parens(&grid_args) {
-            Ok(result) => result,
-            Err(_) => expr,
-          }
-        }
-        // 1D list: column vector
-        syntax::Expr::List(items) if !items.is_empty() => {
-          let grid_data = syntax::Expr::List(
-            items
-              .iter()
-              .map(|e| syntax::Expr::List(vec![e.clone()].into()))
-              .collect(),
-          );
-          let mut grid_args = vec![grid_data];
-          grid_args.extend(opts.iter().cloned());
           match functions::graphics::grid_ast_with_parens(&grid_args) {
             Ok(result) => result,
             Err(_) => expr,
