@@ -3126,6 +3126,71 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + 8000 * 2);
   }
 
+  /// Root-mean-square level of the 16-bit samples in `wav[44..]` between
+  /// the fractions `from` and `to` of the sound's length.
+  fn wav_rms(wav: &[u8], from: f64, to: f64) -> f64 {
+    let samples: Vec<f64> = wav[44..]
+      .as_chunks::<2>()
+      .0
+      .iter()
+      .map(|b| i16::from_le_bytes(*b) as f64)
+      .collect();
+    let lo = (samples.len() as f64 * from) as usize;
+    let hi = (samples.len() as f64 * to) as usize;
+    let part = &samples[lo..hi];
+    (part.iter().map(|s| s * s).sum::<f64>() / part.len() as f64).sqrt()
+  }
+
+  #[test]
+  fn test_sound_note_instrument_changes_the_timbre() {
+    let piano = sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5, \"Piano\"]]");
+    // The piano is the default instrument, as is an unknown name.
+    assert_eq!(piano, sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5]]"));
+    assert_eq!(
+      piano,
+      sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5, \"NoSuchInstrument\"]]")
+    );
+    let others: Vec<Vec<u8>> = [
+      "Violin",
+      "Trumpet",
+      "MusicBox",
+      "RockOrgan",
+      "Clarinet",
+      "Flute",
+    ]
+    .iter()
+    .map(|i| {
+      sound_wav_bytes(&format!("Sound[SoundNote[\"A3\", 0.5, \"{i}\"]]"))
+    })
+    .collect();
+    for (i, a) in others.iter().enumerate() {
+      // Same pitch and length, different tone color.
+      assert_eq!(a.len(), piano.len());
+      assert_ne!(a, &piano, "instrument #{i} sounds like a piano");
+      for b in &others[i + 1..] {
+        assert_ne!(a, b, "two instrument families sound alike");
+      }
+    }
+    // A bowed string holds its tone where a struck piano string fades.
+    let violin = &others[0];
+    assert!(wav_rms(violin, 0.75, 0.95) > 1.5 * wav_rms(&piano, 0.75, 0.95));
+  }
+
+  #[test]
+  fn test_sound_note_instrument_appended_to_spans() {
+    // The instrument may be attached afterwards, e.g. by a control's value.
+    assert_eq!(
+      sound_wav_bytes(
+        "Sound[Append[#, \"Cello\"] & /@ {SoundNote[\"D2\", {0, 0.5}], \
+         SoundNote[\"A2\", {0.5, 1}]}]"
+      ),
+      sound_wav_bytes(
+        "Sound[{SoundNote[\"D2\", {0, 0.5}, \"Cello\"], \
+         SoundNote[\"A2\", {0.5, 1}, \"Cello\"]}]"
+      )
+    );
+  }
+
   /// A tab laid out as a `Grid` is drawn as the picture of the selected tab,
   /// not left as the symbolic `TabView[…]` text.
   #[test]

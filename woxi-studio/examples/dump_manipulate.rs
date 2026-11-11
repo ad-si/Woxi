@@ -182,8 +182,9 @@ fn main() {
         println!("  {line}");
       }
       println!(
-        "render: graphics={} text={:?} error={:?}",
+        "render: graphics={} sound={} text={:?} error={:?}",
         state.graphics_handle.is_some(),
+        state.body_sound.is_some(),
         state.text_output,
         state.error
       );
