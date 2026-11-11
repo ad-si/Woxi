@@ -4034,43 +4034,52 @@ fn render_date_object_if_needed(expr: syntax::Expr) -> syntax::Expr {
   expr
 }
 
-/// If `expr` is an Image, encode it as a base64 PNG `<img>` tag,
-/// capture it as graphics, and return `-Image-` identifier.
-fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
+/// The picture a notebook shows for an `Image` (or, in visual mode, a
+/// stacked `Image3D`'s flat projection): a base64 PNG wrapped in an SVG.
+/// `None` for anything else.
+fn image_display_svg(expr: &syntax::Expr) -> Option<String> {
   if let syntax::Expr::Image {
     width,
     height,
     channels,
-    ref data,
+    data,
     display_size,
     color_space,
     ..
   } = expr
   {
     let (channels, data) =
-      functions::image_ast::rgb_pixels(color_space, channels, data);
-    let html = functions::image_ast::image_to_html_img(
-      width,
-      height,
+      functions::image_ast::rgb_pixels(*color_space, *channels, data);
+    Some(functions::image_ast::image_to_html_img(
+      *width,
+      *height,
       channels,
       &data,
-      display_size,
-    );
-    capture_graphics(&html);
-    helpers::id_expr("-Image-")
+      *display_size,
+    ))
   } else if VISUAL_MODE.with(|v| *v.borrow())
     && let Some((width, height, channels, data)) =
-      functions::image_ast::image3d_stack_projection(&expr)
+      functions::image_ast::image3d_stack_projection(expr)
   {
     // A stacked Image3D has no volume renderer; visual hosts show the flat
     // projection of the (clipped) stack instead of the bare expression.
-    let html = functions::image_ast::image_to_html_img(
+    Some(functions::image_ast::image_to_html_img(
       width, height, channels, &data, None,
-    );
-    capture_graphics(&html);
-    helpers::id_expr("-Image-")
+    ))
   } else {
-    expr
+    None
+  }
+}
+
+/// If `expr` is an Image, encode it as a base64 PNG `<img>` tag,
+/// capture it as graphics, and return `-Image-` identifier.
+fn render_image_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match image_display_svg(&expr) {
+    Some(html) => {
+      capture_graphics(&html);
+      helpers::id_expr("-Image-")
+    }
+    None => expr,
   }
 }
 
@@ -4793,7 +4802,16 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
   // top-level Image now that the wrapper is gone, after the top-level
-  // image pass has already run.
+  // image pass has already run. It still takes up the pane's whole box,
+  // placed by the pane's `Alignment`, like any other picture in a pane.
+  if let Some((w, h, align, shrink)) = pane_box
+    && let Some(html) = image_display_svg(&expr)
+  {
+    capture_graphics(&functions::graphics::clip_svg_to_pane_box(
+      &html, w, h, align, false, shrink,
+    ));
+    return helpers::id_expr("-Image-");
+  }
   let expr = render_image_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);

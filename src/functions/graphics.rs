@@ -30171,23 +30171,31 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 
 /// Parse width and height from an SVG's root element attributes.
 pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
-  let w = svg
-    .find("width=\"")
-    .and_then(|i| {
-      let start = i + 7;
-      svg[start..].find('"').map(|end| &svg[start..start + end])
+  // Only the root `<svg …>` tag states the picture's size; a raster
+  // `Image` writes its attributes in single quotes (`width='20'`).
+  let root = svg.find("<svg").unwrap_or(0);
+  let tag_end = svg[root..].find('>').map_or(svg.len(), |i| root + i);
+  let tag = &svg[root..tag_end];
+  let attr_in = |tag: &str, name: &str| {
+    tag.match_indices(name).find_map(|(i, _)| {
+      // Skip `stroke-width=…` and the like: the name must start an
+      // attribute.
+      if i > 0 && !tag[..i].ends_with(char::is_whitespace) {
+        return None;
+      }
+      let rest = tag[i + name.len()..].strip_prefix('=')?;
+      let quote = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+      let value = &rest[1..];
+      value[..value.find(quote)?].parse::<f64>().ok()
     })
-    .and_then(|s| s.parse::<f64>().ok())
-    .unwrap_or(100.0);
-  let h = svg
-    .find("height=\"")
-    .and_then(|i| {
-      let start = i + 8;
-      svg[start..].find('"').map(|end| &svg[start..start + end])
-    })
-    .and_then(|s| s.parse::<f64>().ok())
-    .unwrap_or(30.0);
-  (w, h)
+  };
+  // A root tag without the attribute falls back to the first one anywhere.
+  let attr =
+    |name: &str| attr_in(tag, name).or_else(|| attr_in(&svg[root..], name));
+  (
+    attr("width").unwrap_or(100.0),
+    attr("height").unwrap_or(30.0),
+  )
 }
 
 /// ` viewBox="…"` for a nested `<svg>` that embeds `child`'s content: a
