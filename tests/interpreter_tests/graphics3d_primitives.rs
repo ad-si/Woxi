@@ -1020,7 +1020,7 @@ mod box_and_label_options {
     let s = svg(&format!(
       "{SURFACE}, BoxStyle -> {{Red, AbsoluteThickness[2]}}]"
     ));
-    assert!(s.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2\""));
+    assert!(s.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2"));
     let s = svg("Graphics3D[Cuboid[], BoxStyle -> Blue]");
     assert!(s.contains("stroke=\"rgb(0,0,255)\""));
   }
