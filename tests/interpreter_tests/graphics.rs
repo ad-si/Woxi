@@ -7929,7 +7929,7 @@ mod plot3d {
         "{offsets:?}"
       );
       // The later pieces keep counting the distance along the line.
-      let max = offsets.iter().cloned().fold(0.0, f64::max);
+      let max = offsets.iter().copied().fold(0.0, f64::max);
       assert!(max > 100.0, "{offsets:?}");
     }
 
