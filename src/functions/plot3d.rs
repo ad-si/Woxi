@@ -5933,6 +5933,20 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     return true;
   }
 
+  // `CapForm -> form` in a primitive list sets the cap form just like
+  // `CapForm[form]` does (an open `Tube` is often written this way).
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = expr
+    && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "CapForm")
+  {
+    return apply_3d_directive(
+      &call1("CapForm", replacement.as_ref().clone()),
+      style,
+    );
+  }
+
   // `Arrowheads[s]` (or `{{s, …}}`): the size of the heads of the arrows
   // that follow, as a fraction of the picture's width.
   if let Expr::FunctionCall { name, args } = expr
