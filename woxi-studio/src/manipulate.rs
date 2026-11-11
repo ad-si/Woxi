@@ -81,6 +81,9 @@ pub enum ControlState {
     /// when there are more choices than the automatic split would put in a
     /// bar.
     setter_bar: bool,
+    /// `ControlType -> RadioButton`/`RadioButtonBar`: draw the bar as radio
+    /// dots with their labels rather than segmented buttons.
+    radio: bool,
     /// `ControlType -> Slider`: render a slider stepping through the
     /// choices by index rather than a setter bar or dropdown.
     slider: bool,
@@ -1978,6 +1981,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         initial_overflow,
         popup,
         setter_bar,
+        radio,
         slider,
         vertical,
       } => ControlState::Discrete {
@@ -1998,6 +2002,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         overflow: initial_overflow.clone(),
         popup: *popup,
         setter_bar: *setter_bar,
+        radio: *radio,
         slider: *slider,
         vertical: *vertical,
       },

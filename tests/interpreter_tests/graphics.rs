@@ -35547,6 +35547,40 @@ mod manipulate {
     assert_eq!(flags, [(false, true), (false, false)]);
   }
 
+  /// `ControlType -> RadioButton` and `-> RadioButtonBar` force the bar like
+  /// `SetterBar` does, but are also flagged `radio`, so a frontend draws a
+  /// row of radio dots with labels rather than segmented buttons. A
+  /// Manipulate-level list assigns them positionally, next to a slider.
+  #[test]
+  fn spec_records_radio_button_control_types() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c, n}, {a, {\"x\", \"y\"}}, {b, {1, 2, 3}}, \
+       {c, {\"p\", \"q\"}}, {n, 0, 5, 1}, \
+       ControlType -> {RadioButton, RadioButtonBar, SetterBar, Manipulator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let flags: Vec<Option<(bool, bool)>> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete {
+          setter_bar, radio, ..
+        } => Some((*setter_bar, *radio)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      flags,
+      [
+        Some((true, true)),
+        Some((true, true)),
+        Some((true, false)),
+        None
+      ]
+    );
+  }
+
   /// A list value assigns one control type per spec, in the order the specs
   /// appear; a spec past the end of the list keeps its default.
   #[test]

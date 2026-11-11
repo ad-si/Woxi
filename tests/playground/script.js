@@ -913,7 +913,41 @@ function renderManipulate(item) {
       // `ControlType -> PopupMenu` always renders a dropdown and
       // `ControlType -> SetterBar` always renders the bar, matching Wolfram;
       // `rendersAsSetterBar` only decides for a spec that names no type.
-      if (
+      if (ctrl.radio) {
+        // `ControlType -> RadioButton`/`RadioButtonBar`: a row of radio dots,
+        // each followed by its choice label, as Wolfram draws it.
+        const bar = document.createElement("div")
+        bar.className = "manipulate-radiobar"
+        const group = `radio-${ctrl.name}-${Math.random().toString(36).slice(2)}`
+        const inputs = []
+        values.forEach((val, idx) => {
+          const item = document.createElement("label")
+          const input = document.createElement("input")
+          input.type = "radio"
+          input.name = group
+          input.checked = idx === ctrl.initialIndex
+          input.addEventListener("change", () => {
+            current[ctrl.name] = val
+            requestUpdate()
+          })
+          item.appendChild(input)
+          const iconSvg = ctrl.valueLabelSvgs?.[idx]
+          const caption = document.createElement("span")
+          if (iconSvg) caption.innerHTML = iconSvg
+          else caption.textContent = labels[idx] ?? val
+          item.appendChild(caption)
+          inputs.push(input)
+          bar.appendChild(item)
+        })
+        row.appendChild(bar)
+        widget.enabledControls.push({
+          condition: ctrl.enabledWhen || "",
+          apply: (on) => {
+            for (const i of inputs) i.disabled = !on
+            row.classList.toggle("disabled", !on)
+          },
+        })
+      } else if (
         ctrl.setterBar ||
         (rendersAsSetterBar(labels, ctrl.valueLabelSvgs) && !ctrl.popup)
       ) {
