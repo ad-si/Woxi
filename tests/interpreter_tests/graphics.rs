@@ -28199,6 +28199,36 @@ mod show_function {
   }
 
   #[test]
+  fn show_list_polar_plot_and_polar_plot_merges_into_one_svg() {
+    // Regression: ListPolarPlot carried no plot source, so Show stacked its
+    // separately rendered picture under the other graphics (three nested
+    // <svg> images with mismatched scales) instead of merging them.
+    let svg = export_svg(
+      "Show[ListPolarPlot[Table[{t, 2}, {t, 0, 6, 1}]], \
+       PolarPlot[1, {t, 0, 2 Pi}], PlotRange -> {{-3, 3}, {-3, 3}}]",
+    );
+    assert_eq!(svg.matches("<svg").count(), 1, "{svg}");
+    assert_eq!(svg.matches("<circle").count(), 7, "one dot per point");
+    assert!(
+      svg.contains("<polyline"),
+      "should contain the PolarPlot curve"
+    );
+  }
+
+  #[test]
+  fn show_list_polar_plot_keeps_data_points() {
+    // The merged graphic keeps the polar points converted to x/y.
+    assert_eq!(
+      interpret(
+        "Cases[Show[ListPolarPlot[{{0, 1}, {Pi/2, 2}}], \
+         Graphics[Circle[]]], Point[p_] :> Round[p, 0.01], Infinity]"
+      )
+      .unwrap(),
+      "{{{1., 0.}, {0., 2.}}}"
+    );
+  }
+
+  #[test]
   fn show_histogram_with_plot_overlays_both() {
     // Regression: Show[Histogram[...], Plot[...]] used to drop the histogram
     // and render only the plot. The histogram bars (filled step areas) and

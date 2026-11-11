@@ -1947,7 +1947,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The options a parametric plot keeps with its curves: the explicit ones
 /// plus `AspectRatio -> Automatic`, its default (WL lists it among the
 /// plot's options too), so a `Show` re-render keeps the plot's shape.
-fn source_options(args: &[Expr]) -> Vec<Expr> {
+pub(crate) fn source_options(args: &[Expr]) -> Vec<Expr> {
   let mut options = crate::functions::plot::explicit_options(args);
   let has_aspect = options.iter().any(|o| {
     matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }

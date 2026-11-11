@@ -3578,7 +3578,30 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &parsed.opts,
     )?
   };
-  Ok(crate::graphics_result(svg))
+  // Keep the converted points so `Show` can merge the plot with other
+  // graphics (a `PolarPlot` curve, `Graphics` primitives) into one image
+  // instead of stacking separately rendered pictures.
+  let opts = &parsed.opts;
+  let mut source = build_plot_source(
+    &polar_series,
+    &opts.plot_style,
+    x_range,
+    y_range,
+    (opts.svg_width, opts.svg_height),
+    &[!parsed.joined],
+    opts.filling,
+    opts.filling_style,
+    crate::functions::parametric_plot::source_options(args),
+  );
+  source.plot_range = opts.grid_interior;
+  crate::functions::plot::apply_markers_to_source(
+    &mut source,
+    &opts.plot_markers,
+  );
+  for series in &mut source.series {
+    series.point_size = series.point_size.or(opts.default_point_size);
+  }
+  Ok(crate::graphics_result_with_source(svg, source))
 }
 
 /// DiscretePlot[expr, {n, nmin, nmax}] or DiscretePlot[expr, {n, nmin, nmax, step}]
