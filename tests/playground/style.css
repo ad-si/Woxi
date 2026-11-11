@@ -787,6 +787,18 @@ pre.output-box {
   background: var(--border-color, #eee);
 }
 
+/* An `OpenerView[{label, content}]` header: a borderless disclosure toggle. */
+.manipulate-display-opener-header {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
 .status {
   position: fixed;
   top: 1rem;
