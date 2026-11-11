@@ -1000,13 +1000,16 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // frame labels as `Style["force (kN)", 12]`. The same holds for the
     // hover wrappers: `Tooltip[label, hint]` and `Annotation[label, …]`
     // print as `label`, with the second argument only shown on hover, so a
-    // label written that way must not vanish from the axis.
+    // label written that way must not vanish from the axis. A
+    // `Rotate[label, angle]` (a vertical axis label idiom) reads as its
+    // content too.
     Expr::FunctionCall { name, args }
       if (name == "Style"
         || name == "Text"
         || name == "Tooltip"
         || name == "Annotation"
-        || name == "Pane")
+        || name == "Pane"
+        || name == "Rotate")
         && !args.is_empty() =>
     {
       expr_to_label(&args[0])
