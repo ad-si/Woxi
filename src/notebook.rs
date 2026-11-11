@@ -631,7 +631,6 @@ fn derivative_tag_orders(s: &str) -> Option<Vec<String>> {
 /// `InterpretationBox[display, expr, …]` there its `expr`.
 fn template_box_interpretation(args: &[String]) -> Option<String> {
   let assoc = args.first()?.trim();
-  let inner = assoc.strip_prefix("<|")?.strip_suffix("|>")?;
   let function = args.iter().find_map(|a| {
     let (name, value) = a.split_once("->")?;
     (name.trim() == "InterpretationFunction").then_some(value.trim())
@@ -640,12 +639,7 @@ fn template_box_interpretation(args: &[String]) -> Option<String> {
     .split_once("Slot[\"")
     .and_then(|(_, rest)| rest.split_once("\"]"))
     .map(|(key, _)| key.to_string())?;
-  let value = split_top_level_commas(inner)
-    .into_iter()
-    .find_map(|entry| {
-      let (name, value) = entry.split_once("->")?;
-      (name.trim().trim_matches('"') == key).then_some(value.trim())
-    })?;
+  let value = template_box_assoc_entry(assoc, &key)?;
   if let Some(rest) = value.strip_prefix("InterpretationBox[")
     && let Ok((body, _)) = find_matching_bracket(rest)
     && let Some(expr) = split_top_level_commas(body).get(1)
@@ -653,6 +647,16 @@ fn template_box_interpretation(args: &[String]) -> Option<String> {
     return Some(strip_display_form_wrapper(expr.trim()));
   }
   Some(extract_cell_content(value))
+}
+
+/// The value stored under `key` in a `TemplateBox`'s association argument
+/// (`<|"key" -> value, …|>`).
+fn template_box_assoc_entry<'a>(assoc: &'a str, key: &str) -> Option<&'a str> {
+  let inner = assoc.trim().strip_prefix("<|")?.strip_suffix("|>")?;
+  split_top_level_commas(inner).into_iter().find_map(|entry| {
+    let (name, value) = entry.split_once("->")?;
+    (name.trim().trim_matches('"') == key).then_some(value.trim())
+  })
 }
 
 /// The visible text of the HTML page held by an `EmbeddedHTML["…"]` box
@@ -862,6 +866,15 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     }
     let tag = args.last().unwrap().trim();
     let tag = tag.trim_matches('"');
+    // The FrontEnd typesets a color directive as a swatch:
+    //   TemplateBox[<|"color" -> RGBColor[…]|>, "RGBColorSwatchTemplate"]
+    // (likewise `GrayLevel…`, `Hue…`, `CMYKColor…` swatches). It stands for
+    // the color held under its `"color"` key.
+    if tag.ends_with("ColorSwatchTemplate")
+      && let Some(color) = template_box_assoc_entry(&args[0], "color")
+    {
+      return Some(extract_cell_content(color));
+    }
     let parts = template_box_parts(&args[0]);
     if tag == "QuantityPrefix" || tag == "Quantity" {
       // First positional element is a list `{number, displayed_unit, unit_name, unit_id_string}`.
@@ -5973,6 +5986,20 @@ StyleDefinitions->"Default.nb"
       extract_cell_content(boxes).replace(' ', ""),
       "Sqrt[Root[-1-#^2+#^3&,1,0]]"
     );
+  }
+
+  /// Regression: a typeset color swatch in an Input cell read back as its
+  /// raw `<|"color" -> …|>` association, so the color directive was lost
+  /// and the following primitives were drawn in the default color.
+  #[test]
+  fn color_swatch_template_reads_back_as_its_color() {
+    let rgb = r#"RowBox[{"Graphics", "[", RowBox[{"{", RowBox[{TemplateBox[<|"color" -> RGBColor[0.25, 0.5, 0.75`]|>, "RGBColorSwatchTemplate"], ",", RowBox[{"Disk", "[", "]"}]}], "}"}], "]"}]"#;
+    assert_eq!(
+      extract_cell_content(rgb).replace(' ', ""),
+      "Graphics[{RGBColor[0.25,0.5,0.75`],Disk[]}]"
+    );
+    let gray = r#"TemplateBox[<|"color" -> GrayLevel[0.3]|>, "GrayLevelColorSwatchTemplate"]"#;
+    assert_eq!(extract_cell_content(gray), "GrayLevel[0.3]");
   }
 
   /// Regression: a control variable named with a private-use-area letter
