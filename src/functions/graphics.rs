@@ -7167,7 +7167,12 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
 /// Whether `expr` is a `Row`/`Column`/`TableForm` (possibly under a `Style`) that has a
 /// `Grid` somewhere among its items.
 fn layout_holds_grid(expr: &Expr) -> bool {
+  // A `MatrixForm`/`TableForm` (possibly under a number format, as in
+  // `NumberForm[MatrixForm[v], {3, 2}]`) is a grid picture as well.
   fn has_grid(e: &Expr) -> bool {
+    if crate::evaluator::is_table_form_layout(e) {
+      return true;
+    }
     match e {
       Expr::FunctionCall { name, args } => {
         name == "Grid" || args.iter().any(has_grid)
@@ -7180,6 +7185,7 @@ fn layout_holds_grid(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } if is_style_wrapper(name) => {
       args.first().is_some_and(layout_holds_grid)
     }
+    _ if crate::evaluator::is_table_form_layout(expr) => true,
     Expr::FunctionCall { name, args }
       if name == "Row" || name == "Column" || name == "TableForm" =>
     {
@@ -7296,9 +7302,31 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // values beside a point) is composed to its own picture and embedded
   // whole at the anchor; flattening it to one text run would lose the
   // table's rows, columns and dividers.
+  // The color directive in effect (`Red, Text[Row[{"v = ",
+  // MatrixForm[v]}], pos]`) colors the composed picture like any label.
+  let label_color = local_style.color;
+  let colored_body =
+    if (label_color.r, label_color.g, label_color.b) == (0.0, 0.0, 0.0) {
+      framed_body.clone()
+    } else {
+      call(
+        "Style",
+        vec![
+          framed_body.clone(),
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(label_color.r),
+              Expr::Real(label_color.g),
+              Expr::Real(label_color.b),
+            ],
+          ),
+        ],
+      )
+    };
   if frame_opts.is_empty()
     && args.len() == 2
-    && let Some((svg, w, h)) = layout_grid_picture(framed_body)
+    && let Some((svg, w, h)) = layout_grid_picture(&colored_body)
     && let Some((x, y, scaled)) = expr_to_anchor(&args[1])
   {
     prims.push(Primitive::InsetGraphic {
@@ -16849,6 +16877,42 @@ pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
   })
 }
 
+/// `<tspan{attrs}>{content}</tspan>` for a `Style` run. A `Style` around
+/// another one (`Style[Style["u", Italic], Red]`, which a styled `Row` makes
+/// of its styled items) merges into the inner run's single `tspan` instead
+/// of nesting a second one, the inner directives winning: renderers such as
+/// resvg reset the `dominant-baseline` of a doubly nested `tspan`, which
+/// lifted such a run above the rest of its line.
+fn wrap_style_tspan(attrs: &str, content: &str) -> String {
+  let sole_inner = content
+    .strip_prefix("<tspan")
+    .and_then(|rest| rest.strip_suffix("</tspan>"))
+    .filter(|inner| !inner.contains("<tspan") && !inner.contains("</tspan>"))
+    .and_then(|inner| inner.split_once('>'));
+  let Some((inner_attrs, body)) = sole_inner else {
+    return format!("<tspan{attrs}>{content}</tspan>");
+  };
+  // Attributes are ` name="value"` pairs; keep the outer ones the inner run
+  // does not set itself.
+  let names = |a: &str| -> Vec<String> {
+    a.split('"')
+      .step_by(2)
+      .filter_map(|chunk| chunk.trim().strip_suffix('='))
+      .map(str::to_string)
+      .collect()
+  };
+  let inner_names = names(inner_attrs);
+  let mut merged = String::new();
+  for pair in attrs.split_inclusive('"').collect::<Vec<_>>().chunks(2) {
+    let pair = pair.concat();
+    let name = pair.trim().split('=').next().unwrap_or("").to_string();
+    if !inner_names.contains(&name) {
+      merged.push_str(&pair);
+    }
+  }
+  format!("<tspan{merged}{inner_attrs}>{body}</tspan>")
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return expr_to_svg_markup(&styled);
@@ -17468,7 +17532,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           if attrs.is_empty() {
             content
           } else {
-            format!("<tspan{attrs}>{content}</tspan>")
+            wrap_style_tspan(&attrs, &content)
           }
         }
 
@@ -24109,7 +24173,12 @@ fn grid_svg_styled_internal_reporting(
     // middle 0.28 em from the outer edge.
     let (y0, y1) = (0.12 * font_size, total_height - 0.12 * font_size);
     let stroke_w = (0.04 * font_size).max(0.5);
-    let stroke_color = theme().stroke_default;
+    // The parentheses are glyphs of the matrix, so a `Style[…, color]`
+    // around it colors them along with the entries.
+    let styled_color = default_style.color.map(Color::to_svg_rgb);
+    let stroke_color = styled_color
+      .as_deref()
+      .unwrap_or_else(|| theme().stroke_default);
     let tip = 0.49 * font_size;
     // A cubic's middle lies 3/4 of the way to its control points.
     let bow = (tip - 0.28 * font_size) * 4.0 / 3.0;
@@ -28188,7 +28257,8 @@ pub(crate) fn style_pushed_into_layout(
     if matches!(e, Expr::Graphics { .. })
       || is_span_marker(e)
       || matches!(e, Expr::Identifier(n) if n == "Null")
-      || crate::evaluator::lays_out_a_graphic(e)
+      || (crate::evaluator::lays_out_a_graphic(e)
+        && !crate::evaluator::is_table_form_layout(e))
     {
       return e.clone();
     }

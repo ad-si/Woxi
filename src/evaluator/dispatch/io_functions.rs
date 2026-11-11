@@ -5677,11 +5677,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A number-format wrapper around one (`NumberForm[MatrixForm[m], {3, 2}]`)
+  // formats the cells of the same grid picture.
+  if matches!(expr, Expr::FunctionCall { name, .. } if is_number_format_head(name))
+    && distribute_format_over_tableform(expr).is_some()
+  {
+    return true;
+  }
   if matches!(expr, Expr::FunctionCall { name, args }
-    if name == "Style"
-      && args.len() >= 2
-      && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
-        if (inner == "TableForm" || inner == "MatrixForm") && !inner_args.is_empty()))
+    if name == "Style" && args.len() >= 2 && is_table_form_layout(&args[0]))
   {
     return true;
   }
@@ -7139,7 +7143,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !matches!(&args[0], Expr::FunctionCall { name, args }
           if matches!(name.as_str(), "Grid" | "TextGrid" | "TableForm" | "MatrixForm")
             && !args.is_empty())
-        && !is_traditional_matrix_form(&args[0]) =>
+        && !is_traditional_matrix_form(&args[0])
+        && distribute_format_over_tableform(&args[0]).is_none() =>
     {
       let pushed = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
@@ -7916,9 +7921,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           Expr::FunctionCall { name: inner, args: inner_args }
           if (inner == "TableForm" || inner == "MatrixForm")
             && !inner_args.is_empty()
-        ) || is_traditional_matrix_form(&args[0])) =>
+        ) || is_traditional_matrix_form(&args[0])
+          || distribute_format_over_tableform(&args[0]).is_some()) =>
     {
-      if let Some(svg) = styled_tableform_svg(&args[0], &args[1..]) {
+      // `Style[NumberForm[MatrixForm[m], spec], Red]`: the number format
+      // goes onto the cells of the styled grid.
+      let inner = distribute_format_over_tableform(&args[0])
+        .unwrap_or_else(|| args[0].clone());
+      if let Some(svg) = styled_tableform_svg(&inner, &args[1..]) {
         svg
       } else {
         expr_text_svg(expr)
@@ -7933,7 +7943,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && distribute_format_over_tableform(expr).is_some() =>
     {
       let table = distribute_format_over_tableform(expr).unwrap();
-      let rendered = crate::render_tableform_if_needed(table);
+      let rendered = if matches!(&table,
+        Expr::FunctionCall { name, .. } if name == "MatrixForm")
+      {
+        crate::render_matrixform_if_needed(table)
+      } else {
+        crate::render_tableform_if_needed(table)
+      };
       if let Expr::Graphics { svg, .. } = &rendered {
         svg.clone()
       } else {
@@ -7942,6 +7958,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     }
     other => expr_text_svg(other),
   }
+}
+
+/// `TableForm[data, …]` or `MatrixForm[data, …]`, possibly under number-format
+/// wrappers (`NumberForm[MatrixForm[m], {3, 2}]`): a grid picture that takes
+/// the font and color directives of a `Style` around it.
+pub(crate) fn is_table_form_layout(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "TableForm" || name == "MatrixForm") && !args.is_empty())
+    || matches!(expr, Expr::FunctionCall { name, .. } if is_number_format_head(name))
+      && distribute_format_over_tableform(expr).is_some()
 }
 
 /// Heads of number-display wrappers that format a value without changing it.
@@ -7958,9 +7984,9 @@ fn is_number_format_head(name: &str) -> bool {
 }
 
 /// If `expr` is one or more nested number-format wrappers around a
-/// `TableForm[data, opts…]`, push those wrappers down onto every data cell and
-/// return the rewritten `TableForm`. Returns `None` when no `TableForm` is
-/// found under the wrappers.
+/// `TableForm[data, opts…]` or `MatrixForm[data, opts…]`, push those wrappers
+/// down onto every data cell and return the rewritten table. Returns `None`
+/// when no such table is found under the wrappers.
 fn distribute_format_over_tableform(expr: &Expr) -> Option<Expr> {
   // Peel the format wrappers (outermost first), remembering each head and its
   // trailing arguments, until we reach the TableForm.
@@ -7975,7 +8001,8 @@ fn distribute_format_over_tableform(expr: &Expr) -> Option<Expr> {
         cur = &args[0];
       }
       Expr::FunctionCall { name, args }
-        if name == "TableForm" && !args.is_empty() =>
+        if (name == "TableForm" || name == "MatrixForm")
+          && !args.is_empty() =>
       {
         if wrappers.is_empty() {
           return None;
@@ -7996,7 +8023,7 @@ fn distribute_format_over_tableform(expr: &Expr) -> Option<Expr> {
         });
         let mut new_args = vec![new_data];
         new_args.extend(args[1..].iter().cloned());
-        return Some(call("TableForm", new_args));
+        return Some(call(name, new_args));
       }
       _ => return None,
     }
@@ -8085,7 +8112,15 @@ fn styled_tableform_svg(inner: &Expr, directives: &[Expr]) -> Option<String> {
     return None;
   };
   let style = crate::functions::graphics::parse_grid_style(directives);
-  let rendered = if head == "MatrixForm" || head == "TraditionalForm" {
+  let rendered = if head == "MatrixForm"
+    && inner_args[1..].iter().all(crate::syntax::is_rule_expr)
+    && !matches!(&inner_args[0], Expr::List(items) if crate::is_3d_list(items))
+    && let Some(grid_args) =
+      crate::matrixform_grid_args(&inner_args[0], &inner_args[1..])
+  {
+    // A styled matrix keeps the centered cells of an unstyled one.
+    crate::functions::graphics::grid_ast_styled_with_parens(&grid_args, &style)
+  } else if head == "MatrixForm" || head == "TraditionalForm" {
     // MatrixForm reshapes the same way as TableForm, but is drawn with
     // enclosing parentheses.
     let (grid_args, _gaps) = crate::tableform_grid_args(inner_args)?;

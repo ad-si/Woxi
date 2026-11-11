@@ -4707,4 +4707,90 @@ mod grid_item_style_tests {
     let plain = inset("");
     assert!(!plain.contains("fill=\"#FFFFFF\""), "{plain}");
   }
+
+  /// The `<path>` parentheses of a laid-out `MatrixForm` in `svg`.
+  fn paren_paths(svg: &str) -> Vec<&str> {
+    svg
+      .split("<path d=\"M ")
+      .skip(1)
+      .filter(|p| p.contains(" C "))
+      .collect()
+  }
+
+  #[test]
+  fn test_number_form_around_matrix_form_formats_the_cells() {
+    // `NumberForm[MatrixForm[v], {3, 2}]` draws the parenthesized column
+    // with every real padded to two decimals, not the flat source text.
+    let svg = woxi::interpret(
+      r#"ExportString[NumberForm[MatrixForm[{1., 0.333}], {3, 2}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+    assert!(svg.contains(">1.00</text>"), "{svg}");
+    assert!(svg.contains(">0.33</text>"), "{svg}");
+    assert!(!svg.contains("NumberForm"), "{svg}");
+  }
+
+  #[test]
+  fn test_number_formatted_matrix_in_row_is_laid_out() {
+    let svg = woxi::interpret(
+      r#"ExportString[Row[{"A = ", NumberForm[MatrixForm[{{1, 2.5}, {2, 1}}], {2, 1}]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+    assert!(svg.contains(">2.5</text>"), "{svg}");
+    assert!(!svg.contains("1     2.5"), "{svg}");
+  }
+
+  #[test]
+  fn test_styled_matrix_colors_its_parentheses() {
+    // The color of a `Style` reaches the parentheses as well as the
+    // entries, which stay centered like an unstyled matrix's.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Row[{"v = ", MatrixForm[{1, 22}]}], Blue], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 2, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(0,0,255)\"")),
+      "{svg}"
+    );
+    assert!(svg.contains("fill=\"rgb(0,0,255)\" text-anchor=\"middle\""));
+  }
+
+  #[test]
+  fn test_matrix_label_in_graphics_text_is_a_colored_matrix() {
+    // A `Text` label holding a matrix is typeset as one (with parentheses,
+    // in the color directive in effect), not as stacked lines of entries.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Red, Text[Row[{Style["u", Italic], " = ", NumberForm[MatrixForm[{1., 0.5}], {3, 2}]}], {0, 0}], Circle[]}], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 2, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(255,0,0)\"")),
+      "{svg}"
+    );
+    assert!(svg.contains(">0.50</text>"), "{svg}");
+    assert!(!svg.contains("<tspan x="), "{svg}");
+  }
+
+  #[test]
+  fn test_style_around_style_sets_one_tspan() {
+    // Nested `Style`s merge into one run (the inner directives win), so no
+    // doubly nested `tspan` loses its baseline in renderers like resvg.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Style["u", Italic, Blue], Red], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<tspan").count(), 1, "{svg}");
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\" fill=\"rgb(0,0,255)\">u</tspan>"
+      ),
+      "{svg}"
+    );
+  }
 }
