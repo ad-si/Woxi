@@ -4676,10 +4676,17 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
+    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
+    // instead of collapsing into one space.
+    let preserve_attr = if body.contains("  ") {
+      " xml:space=\"preserve\""
+    } else {
+      ""
+    };
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-         fill=\"{fill}\"{style_attrs}>{body}</text>\n",
+         fill=\"{fill}\"{style_attrs}{preserve_attr}>{body}</text>\n",
     ));
   }
 

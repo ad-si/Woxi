@@ -8924,6 +8924,20 @@ mod plot3d {
       assert!(!svg.contains("Mod["), "{svg}");
     }
 
+    /// A run of blanks in a plot title (`Row[{a, "    ", b}]`) is kept
+    /// rather than collapsed into a single space by the SVG renderer.
+    #[test]
+    fn plot_label_keeps_a_run_of_blanks() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Row[{\"left\", \"    \", \"right\"}]]",
+      );
+      let title = svg
+        .split("<text ")
+        .find(|t| t.contains("left    right"))
+        .expect("the plot title");
+      assert!(title.contains("xml:space=\"preserve\""), "{title}");
+    }
+
     /// A title whose first line is blank (`Row[{"\nTitle"}]`) is still drawn.
     #[test]
     fn plot_label_with_leading_newline_is_drawn() {
@@ -10617,8 +10631,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(p<tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) \
-           = 0.376953"
+          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
       );

@@ -18506,12 +18506,19 @@ fn is_single_letter_symbol(s: &str) -> bool {
     if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
 }
 
-/// Infix box tokens drawn with a space on either side: relations, rule
-/// arrows and the `mod` word operator.
+/// Infix box tokens drawn with a space on either side: relations,
+/// assignments, rule arrows and the `mod` word operator.
 fn is_spaced_box_operator(token: &str) -> bool {
   matches!(
     token,
-    "="
+    ":="
+      | "+="
+      | "-="
+      | "*="
+      | "/="
+      | "^="
+      | "^:="
+      | "="
       | "=="
       | "\u{2260}"
       | "<"
