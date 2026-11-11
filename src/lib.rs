@@ -6504,9 +6504,11 @@ pub(crate) fn expand_char_escapes(input: &str) -> String {
     let next = chars.get(i + 1).copied();
     // Inside strings, `\\` is a literal-backslash escape — preserve it so the
     // string parser still produces a single backslash.
-    if in_string && next == Some('\\') {
+    // Likewise `\"` is an escaped quote: it neither ends the string nor
+    // starts a new one, so it must not toggle the string state.
+    if in_string && let Some(escaped @ ('\\' | '"')) = next {
       result.push('\\');
-      result.push('\\');
+      result.push(escaped);
       i += 2;
       continue;
     }

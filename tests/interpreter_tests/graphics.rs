@@ -6703,6 +6703,23 @@ mod plot3d {
       );
     }
 
+    // Regression: a `Grid` with a picture in one cell still honors its
+    // `Alignment`, and its text cells are set as text (not as italic,
+    // monospaced math atoms).
+    #[test]
+    fn grid_alignment_beside_graphic_is_honored() {
+      let svg = export_svg(
+        "Grid[{{\"a\", Graphics[Disk[], ImageSize -> 20]}, {\"cccc\", \"d\"}}, Alignment -> Right]",
+      );
+      let texts: Vec<&str> = svg.split("<text").skip(1).collect();
+      assert_eq!(texts.len(), 3, "{svg}");
+      for text in texts {
+        assert!(text.contains("text-anchor=\"end\""), "{svg}");
+        assert!(!text.contains("italic"), "{svg}");
+        assert!(!text.contains("monospace"), "{svg}");
+      }
+    }
+
     // Regression: a per-cell `Background` rule on a spanning cell paints the
     // whole merged span, not just its first column.
     #[test]
