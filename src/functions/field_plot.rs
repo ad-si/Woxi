@@ -1640,7 +1640,7 @@ fn scaled_color(
     };
     if let Some(c) = evaluate_expr_to_expr(&call)
       .ok()
-      .and_then(|r| parse_color(&r))
+      .and_then(|r| crate::functions::graphics::parse_color_function_result(&r))
     {
       return (
         (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -4191,10 +4191,9 @@ fn region_plot_color_cells(
         func: Box::new(cf.clone()),
         args: vec![Expr::Real(ax), Expr::Real(ay)],
       };
-      let Some(color) = evaluate_expr_to_expr(&applied)
-        .ok()
-        .and_then(|r| parse_color(&r))
-      else {
+      let Some(color) = evaluate_expr_to_expr(&applied).ok().and_then(|r| {
+        crate::functions::graphics::parse_color_function_result(&r)
+      }) else {
         continue;
       };
       let rect = call(
@@ -4833,7 +4832,9 @@ fn vector_arrow_primitives(
         };
         evaluate_expr_to_expr(&call)
           .ok()
-          .and_then(|c| crate::functions::graphics::parse_color(&c))
+          .and_then(|c| {
+            crate::functions::graphics::parse_color_function_result(&c)
+          })
           .map_or_else(
             || crate::functions::plot::wl_default_vector_gradient(s),
             to_rgb,
@@ -5458,7 +5459,9 @@ fn stream_primitives(
         };
         evaluate_expr_to_expr(&call)
           .ok()
-          .and_then(|c| parse_color(&c))
+          .and_then(|c| {
+            crate::functions::graphics::parse_color_function_result(&c)
+          })
           .map_or_else(
             || crate::functions::plot::wl_default_vector_gradient(t),
             |c| {

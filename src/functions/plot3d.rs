@@ -3765,7 +3765,9 @@ impl ColorFn {
         };
         evaluate_expr_to_expr(&call)
           .ok()
-          .and_then(|r| parse_color(&r))
+          .and_then(|r| {
+            crate::functions::graphics::parse_color_function_result(&r)
+          })
           .map_or((0, 0, 0), |c| {
             (
               (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,

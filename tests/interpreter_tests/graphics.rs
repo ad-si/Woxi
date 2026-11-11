@@ -15332,6 +15332,50 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("fill-opacity=\"0.3\""), "{svg}");
     }
 
+    /// Regression: a `ColorFunction` returning a bare `{r, g, b}` list (e.g.
+    /// a `BSplineFunction` sampled over `ImageData`) painted every cell of a
+    /// two-parameter region black instead of in that RGB color.
+    #[test]
+    fn parametric_plot_two_parameters_color_function_rgb_list() {
+      let svg = export_svg(
+        "ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, \
+         ColorFunction -> ({#3, 0, 1 - #4} &), Mesh -> None, \
+         PlotPoints -> 2, MaxRecursion -> 0]",
+      );
+      assert!(svg.contains("fill=\"rgb(128,0,128)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(0,0,0)\""), "{svg}");
+    }
+
+    /// The same list form also colors an image sampled through a
+    /// `BSplineFunction` of its `ImageData`.
+    #[test]
+    fn parametric_plot_color_function_samples_image_data() {
+      let svg = export_svg(
+        "With[{c = BSplineFunction[ImageData[Image[{{{1., 0., 0.}, \
+         {1., 0., 0.}}, {{1., 0., 0.}, {1., 0., 0.}}}]], \
+         SplineDegree -> 1]}, ParametricPlot[{u, v}, {u, 0, 1}, \
+         {v, 0, 1}, ColorFunction -> (c[1 - #4, #3] &), Mesh -> None, \
+         PlotPoints -> 3, MaxRecursion -> 0]]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(0,0,0)\""), "{svg}");
+    }
+
+    /// An `{r, g, b}` list from `ColorFunction` colors a parametric curve
+    /// just like the equivalent `RGBColor`.
+    #[test]
+    fn parametric_curve_color_function_rgb_list() {
+      let list = export_svg(
+        "ParametricPlot[{t, t^2}, {t, 0, 1}, ColorFunction -> ({1, 0, 0} &)]",
+      );
+      let rgb = export_svg(
+        "ParametricPlot[{t, t^2}, {t, 0, 1}, \
+         ColorFunction -> (RGBColor[1, 0, 0] &)]",
+      );
+      assert!(list.contains("stroke=\"#FF0000\""), "{list}");
+      assert_eq!(list, rgb);
+    }
+
     /// `PlotPoints -> {nu, nv}` (also as an expression such as `k*{4, 4}`)
     /// sets the grid of a two-parameter region.
     #[test]

@@ -1653,6 +1653,26 @@ fn unpack_channels(
   }
 }
 
+/// The color a `ColorFunction` result stands for. Besides any color
+/// directive, a list of three or four numbers is read as `RGBColor` channels
+/// (`ColorFunction -> ({#1, #2, 0} &)` colors like `RGBColor[#1, #2, 0]`),
+/// so e.g. a `BSplineFunction` of `ImageData` can color a surface directly.
+pub(crate) fn parse_color_function_result(expr: &Expr) -> Option<Color> {
+  if let Expr::List(items) = expr
+    && matches!(items.len(), 3 | 4)
+  {
+    let ch: Option<Vec<f64>> = items.iter().map(expr_to_f64).collect();
+    let ch = ch?;
+    let c = Color::new(
+      ch[0].clamp(0.0, 1.0),
+      ch[1].clamp(0.0, 1.0),
+      ch[2].clamp(0.0, 1.0),
+    );
+    return Some(c.with_alpha(ch.get(3).copied().unwrap_or(1.0)));
+  }
+  parse_color(expr)
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
