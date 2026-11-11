@@ -994,7 +994,7 @@ fn example_property(c: &Classifier, x: &[f64], prop: &Expr) -> Option<Expr> {
       Some(probability_assoc(c, &c.probabilities(x)))
     }
     Expr::String(s) if s == "TopProbabilities" => {
-      top_probabilities(c, x, usize::MAX)
+      Some(top_probabilities(c, x, usize::MAX))
     }
     Expr::List(items) => match items.as_ref() {
       [Expr::String(s), class] if s == "Probability" => {
@@ -1003,7 +1003,7 @@ fn example_property(c: &Classifier, x: &[f64], prop: &Expr) -> Option<Expr> {
       }
       [Expr::String(s), n] if s == "TopProbabilities" => {
         let Expr::Integer(n) = n else { return None };
-        top_probabilities(c, x, usize::try_from(*n).ok()?)
+        Some(top_probabilities(c, x, usize::try_from(*n).ok()?))
       }
       _ => None,
     },
@@ -1012,7 +1012,7 @@ fn example_property(c: &Classifier, x: &[f64], prop: &Expr) -> Option<Expr> {
 }
 
 /// The classes with a non-negligible probability, most probable first.
-fn top_probabilities(c: &Classifier, x: &[f64], n: usize) -> Option<Expr> {
+fn top_probabilities(c: &Classifier, x: &[f64], n: usize) -> Expr {
   let p = c.probabilities(x);
   let mut order: Vec<usize> = (0..p.len()).collect();
   order.sort_by(|&a, &b| p[b].total_cmp(&p[a]));
@@ -1025,7 +1025,7 @@ fn top_probabilities(c: &Classifier, x: &[f64], n: usize) -> Option<Expr> {
       replacement: Box::new(Expr::Real(p[i])),
     })
     .collect();
-  Some(Expr::List(rules.into()))
+  Expr::List(rules.into())
 }
 
 /// `ClassifierFunction[…][input]` and `ClassifierFunction[…][input, prop]`.
