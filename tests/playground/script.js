@@ -708,6 +708,33 @@ function renderManipulate(item) {
         }
         return btn
       }
+      case "opener": {
+        // `OpenerView[{label, content}]`: a disclosure triangle beside the
+        // label; clicking it writes the flipped open state back and
+        // rebuilds the display so the content appears or disappears.
+        const div = document.createElement("div")
+        div.className = "manipulate-display-opener"
+        const header = document.createElement("button")
+        header.type = "button"
+        header.className = "manipulate-display-opener-header"
+        header.appendChild(
+          document.createTextNode(node.open ? "\u25BE " : "\u25B8 "),
+        )
+        if (node.label) header.appendChild(renderDisplayTree(node.label))
+        header.addEventListener("click", () => {
+          widget.structureDirty = true
+          requestUpdate([`${node.target} = ${node.open ? "False" : "True"}`])
+        })
+        div.appendChild(header)
+        if (node.open && node.content) {
+          const body = document.createElement("div")
+          body.className = "manipulate-display-opener-content"
+          body.style.paddingLeft = "16px"
+          body.appendChild(renderDisplayTree(node.content))
+          div.appendChild(body)
+        }
+        return div
+      }
       case "spacer": {
         const span = document.createElement("span")
         span.className = "manipulate-display-spacer"

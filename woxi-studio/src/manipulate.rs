@@ -4142,6 +4142,66 @@ mod tests {
     );
   }
 
+  /// A Manipulate whose trailing argument is an `OpenerView[{label,
+  /// graphic}]` aside below the sliders (the Demonstrations idiom for a
+  /// collapsible schematic). Independently written: different graphic,
+  /// label and variable.
+  ///
+  /// Regression coverage for the aside printing as its literal
+  /// `OpenerView[…]` source with the graphic dropped: it is now a closed
+  /// opener whose toggle shows the graphic.
+  #[test]
+  fn opener_view_aside_toggles_open() {
+    use woxi::functions::graphics::DisplayNode;
+    let code = r#"Manipulate[
+      Plot[Sin[k x], {x, 0, 3}],
+      {{k, 1, "frequency"}, 1, 4},
+      OpenerView[{"sketch", Graphics[{Thick, Line[{{0, 0}, {1, 1}}]}]}]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert_eq!(state.error, None, "{:?}", state.error);
+    let target = match state.display_trees.as_slice() {
+      [
+        DisplayNode::Opener {
+          open: false,
+          target,
+          ..
+        },
+      ] => target.clone(),
+      other => panic!("expected one closed opener, got {other:?}"),
+    };
+
+    state.apply_display_mutation(&format!("{target} = True"));
+    match state.display_trees.as_slice() {
+      [
+        DisplayNode::Opener {
+          open: true,
+          content,
+          ..
+        },
+      ] => assert!(
+        matches!(&**content, DisplayNode::Static { svg: Some(_), .. }),
+        "the opened aside should draw its graphic: {content:?}"
+      ),
+      other => panic!("expected an open opener, got {other:?}"),
+    }
+    // Moving a slider keeps the opener open.
+    state.apply_display_mutation("k = 2");
+    assert!(matches!(
+      state.display_trees.as_slice(),
+      [DisplayNode::Opener { open: true, .. }]
+    ));
+
+    state.apply_display_mutation(&format!("{target} = False"));
+    assert!(matches!(
+      state.display_trees.as_slice(),
+      [DisplayNode::Opener { open: false, .. }]
+    ));
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Crystal Lattices in Reciprocal Space") whose control panel is two
   /// collapsible `OpenerView[{label, content}]` sections: one of preset

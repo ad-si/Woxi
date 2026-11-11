@@ -5258,6 +5258,7 @@ fn display_node_plain_text(
     | DisplayNode::Slider { .. }
     | DisplayNode::Spacer { .. } => String::new(),
     DisplayNode::Popup { current, .. } => current.clone(),
+    DisplayNode::Opener { label, .. } => display_node_plain_text(label),
   }
 }
 
@@ -5470,6 +5471,39 @@ fn render_display_node<'a>(
         s = s.style(disabled_slider_style);
       }
       s.into()
+    }
+    DisplayNode::Opener {
+      label,
+      content,
+      open,
+      target,
+    } => {
+      // `OpenerView[{label, content}]`: a disclosure triangle beside the
+      // label; pressing it (or the label) writes the flipped open state
+      // back, and an open opener shows its content below.
+      let open = *open;
+      let toggle = Message::ManipulateDisplayToggled(
+        cell_idx,
+        format!("{target} = {}", if open { "False" } else { "True" }),
+      );
+      let header = button(
+        Row::new()
+          .spacing(4)
+          .align_y(Center)
+          .push(text(if open { "\u{25BE}" } else { "\u{25B8}" }).size(12))
+          .push(render_display_node(cell_idx, label)),
+      )
+      .padding(0)
+      .style(button::text)
+      .on_press(toggle);
+      let mut col = Column::new().spacing(4).push(header);
+      if open {
+        col = col.push(
+          container(render_display_node(cell_idx, content))
+            .padding(iced::Padding::ZERO.left(16)),
+        );
+      }
+      col.into()
     }
     DisplayNode::Spacer { width } => {
       space::Space::new().width(*width as f32).into()
@@ -16972,6 +17006,10 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         }
         DisplayNode::Button { label, .. }
         | DisplayNode::ActionMenu { label, .. } => walk(label, out),
+        DisplayNode::Opener { label, content, .. } => {
+          walk(label, out);
+          walk(content, out);
+        }
         DisplayNode::Checkbox { .. }
         | DisplayNode::Popup { .. }
         | DisplayNode::Slider { .. }
@@ -17011,6 +17049,10 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         DisplayNode::Toggler { label, .. }
         | DisplayNode::Button { label, .. }
         | DisplayNode::ActionMenu { label, .. } => walk(label, out),
+        DisplayNode::Opener { label, content, .. } => {
+          walk(label, out);
+          walk(content, out);
+        }
         DisplayNode::Checkbox { .. }
         | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }

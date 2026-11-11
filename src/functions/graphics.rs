@@ -42784,6 +42784,19 @@ pub enum DisplayNode {
     /// `VerticalSlider`: drawn running bottom-to-top.
     vertical: bool,
   },
+  /// A collapsible `OpenerView[{label, content}, open]`: a disclosure
+  /// triangle beside `label`, with `content` shown below it while `open`.
+  /// Clicking the triangle writes `target = True|False` back. `target` is
+  /// the `Dynamic[lval]` of the second argument when given; otherwise a
+  /// hidden per-opener state variable (see `opener_state_symbol`), whose
+  /// missing binding means the literal initial state (`False` by default).
+  /// A closed opener's `content` is not built and is an empty `Column`.
+  Opener {
+    label: Box<Self>,
+    content: Box<Self>,
+    open: bool,
+    target: String,
+  },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -42829,6 +42842,9 @@ pub fn build_manipulate_display(
       text: String::new(),
     };
   };
+  OPENER_SCOPE.with(|scope| {
+    scope.set((stable_text_hash(display_code), 0));
+  });
 
   // First pass: build the tree, collecting each checkbox's value-probe
   // expression (deferring `checked`). `Dynamic` layout wrappers still expand
@@ -42872,6 +42888,89 @@ fn eval_display_in_scope_str(
   bindings: &[(String, String)],
 ) -> Option<Expr> {
   crate::interpret_to_expr(&manipulate_block_code(code, bindings)).ok()
+}
+
+thread_local! {
+  /// `(hash of the display element's code, OpenerView ordinal)` while a
+  /// display tree is being built, naming each implicit opener's state.
+  static OPENER_SCOPE: std::cell::Cell<(u64, usize)> =
+    const { std::cell::Cell::new((0, 0)) };
+}
+
+/// FNV-1a hash of `text`: stable across runs, unlike `DefaultHasher`'s
+/// unspecified algorithm, so a saved opener state keeps its name.
+fn stable_text_hash(text: &str) -> u64 {
+  text.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+    (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+  })
+}
+
+/// The hidden state variable of the next `OpenerView` without a
+/// `Dynamic[lval]` open state: unique per display element (its code hash)
+/// and per opener inside it (its pre-order ordinal), and stable across
+/// re-evaluations so a toggled opener stays toggled.
+fn opener_state_symbol() -> String {
+  OPENER_SCOPE.with(|scope| {
+    let (hash, ordinal) = scope.get();
+    scope.set((hash, ordinal + 1));
+    format!("woxiOpenerState{hash:x}N{ordinal}")
+  })
+}
+
+/// Build the node for `OpenerView[{label, content}, open]`, or `None` when
+/// the first argument is not a `{label, content}` pair.
+fn opener_view_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let Some(Expr::List(pair)) = args.first() else {
+    return None;
+  };
+  let [label, content] = pair.as_slice() else {
+    return None;
+  };
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
+  let (target, open) = match args.get(1) {
+    // `OpenerView[…, Dynamic[lval]]`: the state lives in `lval`.
+    Some(Expr::FunctionCall {
+      name,
+      args: dyn_args,
+    }) if name == "Dynamic" && !dyn_args.is_empty() => {
+      let open = eval_display_in_scope(&dyn_args[0], bindings)
+        .is_some_and(|v| is_true(&v));
+      (crate::syntax::expr_to_source_form(&dyn_args[0]), open)
+    }
+    initial => {
+      // The hidden state is a Manipulate binding (Studio) or an installed
+      // global (Playground); while it holds no boolean, the literal initial
+      // state applies.
+      let target = opener_state_symbol();
+      let open = match eval_display_in_scope(
+        &Expr::Identifier(target.clone()),
+        bindings,
+      ) {
+        Some(Expr::Identifier(ref v)) if v == "True" || v == "False" => {
+          v == "True"
+        }
+        _ => initial.is_some_and(is_true),
+      };
+      (target, open)
+    }
+  };
+  let label = display_expr_to_node(label, bindings, probes, ons);
+  let content = if open {
+    display_expr_to_node(content, bindings, probes, ons)
+  } else {
+    DisplayNode::Column(Vec::new())
+  };
+  Some(DisplayNode::Opener {
+    label: Box::new(label),
+    content: Box::new(content),
+    open,
+    target,
+  })
 }
 
 /// Recursively convert a display expression into a `DisplayNode`. Each
@@ -43133,6 +43232,10 @@ fn display_expr_to_node(
           )
         }
         _ => static_leaf_node(expr, bindings),
+      },
+      "OpenerView" => match opener_view_node(args, bindings, probes, ons) {
+        Some(node) => node,
+        None => static_leaf_node(expr, bindings),
       },
       "Spacer" if !args.is_empty() => DisplayNode::Spacer {
         width: spacer_width(&args[0]),
@@ -44161,6 +44264,10 @@ fn assign_checkbox_state(
     | DisplayNode::ActionMenu { label, .. } => {
       assign_checkbox_state(label, flags, idx);
     }
+    DisplayNode::Opener { label, content, .. } => {
+      assign_checkbox_state(label, flags, idx);
+      assign_checkbox_state(content, flags, idx);
+    }
     DisplayNode::Checkbox { checked, .. } => {
       if let Some(f) = flags.get(*idx) {
         *checked = *f;
@@ -44427,6 +44534,17 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         after_json.join(","),
       )
     }
+    DisplayNode::Opener {
+      label,
+      content,
+      open,
+      target,
+    } => format!(
+      r#"{{"kind":"opener","label":{},"content":{},"open":{open},"target":"{}"}}"#,
+      display_node_to_json(label),
+      display_node_to_json(content),
+      json_escape_manipulate(target),
+    ),
     DisplayNode::Spacer { width } => {
       format!(r#"{{"kind":"spacer","width":{width}}}"#)
     }

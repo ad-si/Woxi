@@ -37712,6 +37712,88 @@ mod manipulate {
     assert_eq!(widths, vec![10.0, 10.0]);
   }
 
+  /// `OpenerView[{label, content}]` is a collapsible section (closed by
+  /// default), not its literal source with the content dropped.
+  #[test]
+  fn display_opener_view_is_a_collapsible_section() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let code = "OpenerView[{\"diagram\", Graphics[{Circle[{0, 0}, r]}]}]";
+    let bindings = [("r".to_string(), "1".to_string())];
+    let DisplayNode::Opener {
+      label,
+      content,
+      open,
+      target,
+    } = build_manipulate_display(code, &bindings)
+    else {
+      panic!("OpenerView should build an opener node");
+    };
+    assert!(!open, "OpenerView starts closed");
+    assert!(
+      matches!(&*label, DisplayNode::Text { runs } if runs[0].text == "diagram"),
+      "{label:?}"
+    );
+    assert!(matches!(&*content, DisplayNode::Column(c) if c.is_empty()));
+
+    // Writing its hidden state variable opens it, and the content is drawn
+    // with the live bindings. The state's name is stable across rebuilds.
+    let mut open_bindings = bindings.to_vec();
+    open_bindings.push((target.clone(), "True".to_string()));
+    let DisplayNode::Opener {
+      content,
+      open,
+      target: reopened_target,
+      ..
+    } = build_manipulate_display(code, &open_bindings)
+    else {
+      panic!("OpenerView should build an opener node");
+    };
+    assert!(open);
+    assert_eq!(reopened_target, target);
+    assert!(
+      matches!(&*content, DisplayNode::Static { svg: Some(_), .. }),
+      "{content:?}"
+    );
+  }
+
+  #[test]
+  fn display_opener_view_initial_and_dynamic_state() {
+    use woxi::functions::graphics::build_manipulate_display;
+    // A literal `True` second argument starts it open.
+    let tree =
+      build_manipulate_display("OpenerView[{\"a\", \"b\"}, True]", &[]);
+    assert!(matches!(tree, DisplayNode::Opener { open: true, .. }));
+
+    // `Dynamic[lval]` keeps the state in `lval`, which a toggle writes.
+    let tree = build_manipulate_display(
+      "OpenerView[{\"a\", \"b\"}, Dynamic[show]]",
+      &[("show".to_string(), "True".to_string())],
+    );
+    let DisplayNode::Opener { open, target, .. } = tree else {
+      panic!("OpenerView should build an opener node: {tree:?}");
+    };
+    assert!(open);
+    assert_eq!(target, "show");
+
+    // Two openers in one display get distinct state variables.
+    let tree = build_manipulate_display(
+      "Column[{OpenerView[{\"a\", 1}], OpenerView[{\"b\", 2}]}]",
+      &[],
+    );
+    let DisplayNode::Column(children) = tree else {
+      panic!("expected a column: {tree:?}");
+    };
+    let targets: Vec<&String> = children
+      .iter()
+      .filter_map(|n| match n {
+        DisplayNode::Opener { target, .. } => Some(target),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(targets.len(), 2);
+    assert_ne!(targets[0], targets[1]);
+  }
+
   #[test]
   fn display_invisible_is_not_shown_as_source() {
     use woxi::functions::graphics::build_manipulate_display;
