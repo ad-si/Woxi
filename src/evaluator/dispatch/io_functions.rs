@@ -6528,6 +6528,81 @@ fn pane_row_piece(item: &Expr) -> Option<(String, Option<Vec<Expr>>)> {
   }
 }
 
+/// One unbreakable piece of re-flowed `Pane` text: its source, the columns
+/// it takes up, and the `Row` item it came from.
+#[derive(Clone)]
+struct PaneTextUnit {
+  text: String,
+  cols: usize,
+  idx: usize,
+}
+
+/// Split `text` into the units `wrap_pane_text` lays out: single characters,
+/// except that an embedded linear-syntax box (`\!\(\*SubscriptBox[\(d\),
+/// \(1\)]\)`) stays whole, counted at the width of the text it shows.
+fn pane_text_units(text: &str) -> Vec<(String, usize)> {
+  use crate::syntax::{box_escape_closer, box_escape_opener};
+  let chars: Vec<char> = text.chars().collect();
+  let mut units = Vec::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if let Some(open) = box_escape_opener(&chars, i)
+      && let Some(close) = box_escape_closer(&chars, i + open)
+    {
+      // The closing `\)` is one marker character or a backslash pair.
+      let end = if chars[close] == '\\' {
+        close + 2
+      } else {
+        close + 1
+      };
+      let end = end.min(chars.len());
+      let source: String = chars[i..end].iter().collect();
+      units.push((source.clone(), linear_syntax_shown_len(&source)));
+      i = end;
+    } else {
+      units.push((chars[i].to_string(), 1));
+      i += 1;
+    }
+  }
+  units
+}
+
+/// About how many characters a linear-syntax box shows: its text with the
+/// escapes, box heads, brackets, separators and quotes left out.
+fn linear_syntax_shown_len(source: &str) -> usize {
+  let chars: Vec<char> = source.chars().collect();
+  let mut n = 0;
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    if c == '\\' {
+      i += 2;
+      continue;
+    }
+    // The private-use markers a string holds its escapes as.
+    if ('\u{F700}'..='\u{F8FF}').contains(&c) {
+      i += 1;
+      continue;
+    }
+    if c.is_ascii_alphabetic() {
+      // A box head (`SubscriptBox[`) shows nothing.
+      let start = i;
+      while i < chars.len() && chars[i].is_ascii_alphanumeric() {
+        i += 1;
+      }
+      if chars.get(i) != Some(&'[') {
+        n += i - start;
+      }
+      continue;
+    }
+    if !matches!(c, '[' | ']' | ',' | '"' | ' ') {
+      n += 1;
+    }
+    i += 1;
+  }
+  n.max(1)
+}
+
 /// A numeric `Pane` size component (`Expr::Integer`/`Expr::Real`). `None`
 /// for `Automatic`, `Full`, or anything else that leaves that dimension
 /// unconstrained, so a size like `{400, Automatic}` is left for the
@@ -6541,22 +6616,74 @@ pub(crate) fn wrap_pane_text(
   width: f64,
   font_size: f64,
 ) -> Option<Expr> {
+  wrap_pane_text_at(content, width, font_size, false)
+}
+
+/// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
+/// break a word too long for a line in two.
+fn wrap_pane_text_at(
+  content: &Expr,
+  width: f64,
+  font_size: f64,
+  whole_words: bool,
+) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
-      let inner = wrap_pane_text(&args[0], width, size)?;
+      let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
-    "Text" if args.len() == 1 => wrap_pane_text(&args[0], width, font_size),
+    "Text" if args.len() == 1 => {
+      wrap_pane_text_at(&args[0], width, font_size, whole_words)
+    }
+    // `TraditionalForm` only changes how math in the text is typeset; the
+    // re-flowed lines keep it.
+    "TraditionalForm" if args.len() == 1 => Some(call1(
+      "TraditionalForm",
+      wrap_pane_text_at(&args[0], width, font_size, whole_words)?,
+    )),
+    // A `Column` of prose re-flows item by item: each line of text (a
+    // `Row` of strings, or one string under `Style`) breaks at the width
+    // on its own, at spaces only, and items that are no text (or hold a
+    // word wider than the pane) are kept as they are.
+    "Column" if !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut changed = false;
+      let wrapped: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let flowed = if pane_row_piece(item).is_some() {
+            wrap_pane_text_at(
+              &call1("Row", Expr::List(vec![item.clone()].into())),
+              width,
+              font_size,
+              true,
+            )
+          } else {
+            wrap_pane_text_at(item, width, font_size, true)
+          };
+          changed |= flowed.is_some();
+          flowed.unwrap_or_else(|| item.clone())
+        })
+        .collect();
+      if !changed {
+        return None;
+      }
+      let mut new_args = vec![Expr::List(wrapped.into())];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Column", new_args))
+    }
     // An inner size-less `Pane` (e.g. a `Switch` branch under a sized outer
     // `Pane[Text[…], {w, h}]`) is looked through; its options are kept.
     "Pane" if !args.is_empty() => {
-      let inner = wrap_pane_text(&args[0], width, font_size)?;
+      let inner = wrap_pane_text_at(&args[0], width, font_size, whole_words)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
@@ -6565,38 +6692,73 @@ pub(crate) fn wrap_pane_text(
       let Expr::List(items) = &args[0] else {
         return None;
       };
-      // Every character remembers which item (and so which `Style`) it
-      // came from, so the styling survives the re-flow.
+      // Every unit of text (a character, or a whole embedded `\!\(…\)`
+      // box, which must not be split) remembers which item (and so which
+      // `Style`) it came from, so the styling survives the re-flow.
       let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
-      let mut chars: Vec<(char, usize)> = Vec::new();
+      let mut units: Vec<PaneTextUnit> = Vec::new();
       for item in items {
         let (text, directives) = pane_row_piece(item)?;
         let idx = styles.len();
         styles.push(directives);
-        chars.extend(text.chars().map(|c| (c, idx)));
+        units.extend(
+          pane_text_units(&text)
+            .into_iter()
+            .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
+        );
       }
-      // A glyph is about 0.6 em wide.
-      let per_line = ((width / (font_size * 0.6)).floor() as usize).max(1);
-      if chars.len() <= per_line && !chars.iter().any(|(c, _)| *c == '\n') {
+      // The line holds as many glyphs as fit at its largest font size
+      // (a piece's own `Style` size, else the surrounding one).
+      let line_size = styles
+        .iter()
+        .map(|d| d.as_deref().and_then(style_font_size).unwrap_or(font_size))
+        .fold(0.0_f64, f64::max);
+      let line_size = if line_size > 0.0 {
+        line_size
+      } else {
+        font_size
+      };
+      let per_line = ((width
+        / (line_size * crate::functions::graphics::MONO_ADVANCE))
+        .floor() as usize)
+        .max(1);
+      let is_newline = |u: &PaneTextUnit| u.text == "\n";
+      let total: usize = units.iter().map(|u| u.cols).sum();
+      if total <= per_line && !units.iter().any(is_newline) {
         return None;
       }
-      let mut lines: Vec<Vec<(char, usize)>> = Vec::new();
-      for hard in chars.split(|(c, _)| *c == '\n') {
+      let mut lines: Vec<Vec<PaneTextUnit>> = Vec::new();
+      for hard in units.split(is_newline) {
         let mut rest = hard;
-        while rest.len() > per_line {
-          // Break after the last space that fits, else mid-word.
-          match rest[..=per_line].iter().rposition(|(c, _)| *c == ' ') {
+        loop {
+          // The longest run of units that fits on the line.
+          let mut cols = 0;
+          let mut fit = 0;
+          for u in rest {
+            if cols + u.cols > per_line {
+              break;
+            }
+            cols += u.cols;
+            fit += 1;
+          }
+          if fit == rest.len() {
+            lines.push(rest.to_vec());
+            break;
+          }
+          // Break at the last space that fits, else mid-word.
+          match rest[..=fit].iter().rposition(|u| u.text == " ") {
             Some(p) if p > 0 => {
               lines.push(rest[..p].to_vec());
               rest = &rest[p + 1..];
             }
+            _ if whole_words => return None,
             _ => {
-              lines.push(rest[..per_line].to_vec());
-              rest = &rest[per_line..];
+              let n = fit.max(1);
+              lines.push(rest[..n].to_vec());
+              rest = &rest[n..];
             }
           }
         }
-        lines.push(rest.to_vec());
       }
       let rows: Vec<Expr> = lines
         .iter()
@@ -6604,14 +6766,12 @@ pub(crate) fn wrap_pane_text(
           let mut pieces: Vec<Expr> = Vec::new();
           let mut i = 0;
           while i < line.len() {
-            let idx = line[i].1;
-            let run: String = line[i..]
-              .iter()
-              .take_while(|(_, k)| *k == idx)
-              .map(|(c, _)| *c)
-              .collect();
-            i += run.chars().count();
-            let text = Expr::String(run);
+            let idx = line[i].idx;
+            let run: Vec<&PaneTextUnit> =
+              line[i..].iter().take_while(|u| u.idx == idx).collect();
+            i += run.len();
+            let text =
+              Expr::String(run.iter().map(|u| u.text.as_str()).collect());
             pieces.push(match &styles[idx] {
               Some(d) => {
                 let mut a = vec![text];
