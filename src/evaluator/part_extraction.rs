@@ -680,8 +680,14 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
             source.image_size.0,
           ));
         }
-        style.push(draw);
-        let mut prims = vec![Expr::List(style.into())];
+        // One `Directive`, as in Wolfram's plot primitives, so the line
+        // stays the second element of its group.
+        let style = if style.len() == 1 {
+          style.remove(0)
+        } else {
+          call("Directive", style)
+        };
+        let mut prims = vec![Expr::List(vec![style, draw].into())];
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =
