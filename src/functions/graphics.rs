@@ -22596,7 +22596,8 @@ fn grid_bg_range(expr: &Expr) -> Option<(usize, usize)> {
 }
 
 /// The `(rows, columns)` block named by the left side of a per-cell
-/// `{rows, columns} -> value` rule in a `Grid` `Background` or `Frame` spec.
+/// `{rows, columns} -> value` rule in a `Grid` `Background`, `Frame` or
+/// `ItemStyle` spec.
 fn grid_rule_block(pattern: &Expr) -> Option<((usize, usize), (usize, usize))> {
   match pattern {
     Expr::List(pos) if pos.len() == 2 => {
@@ -22674,7 +22675,9 @@ fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
 /// The directives `ItemStyle -> {columnSpec, rowSpec, {{i, j} -> style, …}}`
 /// gives the cell in (1-based) row `i`, column `j`. A column or row spec is a
 /// single style for every position, a list cycled over the positions, or a
-/// list of `k -> style` rules. Cell rules apply last.
+/// list of `k -> style` rules. Cell rules apply last; their left side names a
+/// single cell `{i, j}` or a block `{{i1, i2}, {j1, j2}}` (either axis may be
+/// a single index or a span).
 fn item_style_directives(
   specs: &[Expr],
   i: usize,
@@ -22714,10 +22717,9 @@ fn item_style_directives(
         pattern,
         replacement,
       } = rule
-        && let Expr::List(p) = pattern.as_ref()
-        && p.len() == 2
-        && matches!(&p[0], Expr::Integer(r) if *r as usize == i)
-        && matches!(&p[1], Expr::Integer(c) if *c as usize == j)
+        && let Some(((r0, r1), (c0, c1))) = grid_rule_block(pattern)
+        && (r0..=r1).contains(&i)
+        && (c0..=c1).contains(&j)
       {
         item_style_entry_directives(replacement, &mut out);
       }
