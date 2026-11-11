@@ -683,7 +683,10 @@ function renderManipulate(item) {
           ? "manipulate-display-toggler selected"
           : "manipulate-display-toggler"
         if (node.label) btn.appendChild(renderDisplayTree(node.label))
-        if (node.mutation) {
+        // A bar whose `Enabled -> cond` reads False is grayed out.
+        if (node.enabled === false) {
+          btn.disabled = true
+        } else if (node.mutation) {
           btn.addEventListener("click", () => {
             requestUpdate([node.mutation])
           })

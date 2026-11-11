@@ -4855,6 +4855,19 @@ mod compress {
     );
   }
 
+  // The binary payload keeps string tokens ASCII: a character outside that
+  // range is a `\\:XXXX` escape and a backslash or quote is escaped too.
+  #[test]
+  fn uncompress_binary_string_escapes() {
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[Uncompress[\"1:eJxTTMoPSmNiYGAoZgESPpnFJcF8QEZSjJWBkakRkDQ0ccoOZgcKVcTEVMYoVQEA99IKtQ==\"]]"
+      )
+      .unwrap(),
+      "{{98, 594, 331, 107}, {120, 92, 121, 34, 122}}"
+    );
+  }
+
   // wolframscript's binary payload stores an arbitrary-precision real as an
   // `R` token holding its input form.
   #[test]
@@ -15755,6 +15768,12 @@ mod form_wrappers_take_extra_arguments_silently {
     assert_eq!(decoded(r#""\[Alpha]""#), "{945}");
     // An escaped backslash stays a backslash.
     assert_eq!(decoded(r#""a\\:043e""#), "{97, 92, 58, 48, 52, 51, 101}");
+    // Regression: an escaped quote does not end the string, so the escaped
+    // backslash after it still stays a backslash.
+    assert_eq!(
+      decoded(r#""a\"\\:043e""#),
+      "{97, 34, 92, 58, 48, 52, 51, 101}"
+    );
   }
 }
 
