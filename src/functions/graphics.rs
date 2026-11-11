@@ -31673,6 +31673,10 @@ pub enum ManipulateControl {
     /// split would put in a bar. The heuristic only decides for a spec that
     /// stays silent.
     setter_bar: bool,
+    /// `ControlType -> RadioButton` or `-> RadioButtonBar`: draw the forced
+    /// bar (`setter_bar` is set too) as a row of radio dots, each followed
+    /// by its label, instead of a segmented SetterBar.
+    radio: bool,
     /// `ControlType -> Slider`: render a slider that steps through the
     /// choices by index, the way Wolfram draws a slider over a discrete
     /// domain. Without it a twenty-entry list would become a dropdown.
@@ -37514,6 +37518,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label_runs: Vec::new(),
     popup: false,
     setter_bar: false,
+    radio: false,
     slider: false,
     vertical: false,
   };
@@ -40487,6 +40492,10 @@ fn parse_manipulate_control(
             control_type.as_deref(),
             Some("Setter" | "SetterBar" | "RadioButton" | "RadioButtonBar")
           ),
+          radio: matches!(
+            control_type.as_deref(),
+            Some("RadioButton" | "RadioButtonBar")
+          ),
           slider: matches!(
             control_type.as_deref(),
             Some("Slider" | "VerticalSlider" | "Manipulator")
@@ -42108,6 +42117,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label_runs,
         popup,
         setter_bar,
+        radio,
         slider,
         vertical,
       } => {
@@ -42125,6 +42135,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         } else {
           ""
         };
+        let radio_json = if *radio { r#","radio":true"# } else { "" };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
         let vertical_json = if *vertical { r#","vertical":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
@@ -42159,7 +42170,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -42168,6 +42179,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           initial_index,
           popup_json,
           setter_bar_json,
+          radio_json,
           slider_json,
           vertical_json,
           svg_json,

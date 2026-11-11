@@ -519,6 +519,20 @@ pre.output-box {
 }
 
 /* Segmented SetterBar (a small set of discrete choices as toggle buttons) */
+.manipulate-radiobar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.manipulate-radiobar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
 .manipulate-setterbar {
   display: inline-flex;
   align-items: stretch;

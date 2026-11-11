@@ -11,8 +11,8 @@ use iced::overlay::menu;
 use iced::widget::operation::focus;
 use iced::widget::{
   Column, Row, button, checkbox, column, container, image, mouse_area, opaque,
-  pick_list, rich_text, row, rule, scrollable, slider, space, stack, svg, text,
-  text_editor,
+  pick_list, radio, rich_text, row, rule, scrollable, slider, space, stack,
+  svg, text, text_editor,
 };
 use iced::{
   Background, Border, Center, Color, Element, Fill, Font, Subscription, Task,
@@ -4460,6 +4460,7 @@ fn render_manipulate_widget<'a>(
         overflow,
         popup,
         setter_bar: force_setter_bar,
+        radio: as_radio,
         slider: as_slider,
         vertical: is_vertical,
       } => {
@@ -4540,7 +4541,66 @@ fn render_manipulate_widget<'a>(
         // display labels (rule right-hand sides); pressing one sends its
         // label, which the update handler maps back to an index. A disabled
         // control drops its press handlers so it can't be changed.
-        let control: Element<Message> = if *force_setter_bar
+        let control: Element<Message> = if *as_radio {
+          // `ControlType -> RadioButton`/`RadioButtonBar`: Wolfram draws a
+          // row of radio dots, each followed by its choice label, rather
+          // than the segmented SetterBar. A plain-text label rides in the
+          // radio itself (so clicking the text selects it too); an icon or
+          // styled label sits beside a bare dot.
+          let selected = (!has_overflow).then_some(*current_index);
+          let mut items: Vec<Element<Message>> =
+            Vec::with_capacity(value_labels.len());
+          for (i, choice_label) in value_labels.iter().enumerate() {
+            let choice = choice_label.clone();
+            let on_click = move |_: usize| {
+              if enabled {
+                Message::ManipulateDiscreteChanged(
+                  cell_idx,
+                  ctrl_idx,
+                  choice.clone(),
+                )
+              } else {
+                Message::Noop
+              }
+            };
+            let icon = value_label_svgs.get(i).and_then(|s| s.as_ref());
+            let styled_runs = value_label_runs.get(i).filter(|runs| {
+              runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+            });
+            let item: Element<Message> = match (icon, styled_runs) {
+              (None, None) => {
+                radio(choice_label.clone(), i, selected, on_click)
+                  .size(14)
+                  .spacing(4)
+                  .text_size(12)
+                  .into()
+              }
+              (Some(icon), _) => row![
+                radio("", i, selected, on_click).size(14).spacing(0),
+                svg::Svg::new(icon.clone())
+                  .width(iced::Length::Fixed(24.0))
+                  .height(iced::Length::Fixed(14.0)),
+              ]
+              .spacing(4)
+              .align_y(Center)
+              .into(),
+              (None, Some(runs)) => row![
+                radio("", i, selected, on_click).size(14).spacing(0),
+                rich_text(label_run_spans::<Message>(runs, Font::MONOSPACE))
+                  .size(12),
+              ]
+              .spacing(4)
+              .align_y(Center)
+              .into(),
+            };
+            items.push(item);
+          }
+          if *is_vertical {
+            Column::with_children(items).spacing(4).into()
+          } else {
+            Row::with_children(items).spacing(12).align_y(Center).into()
+          }
+        } else if *force_setter_bar
           || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
         {
           let is_vertical = *is_vertical;
@@ -22508,6 +22568,62 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
   /// choices are past that split (`renders_as_setter_bar` is false for this
   /// exact list above), so without the explicit type Woxi would draw a
   /// dropdown where Wolfram always draws the bar.
+  #[test]
+  fn radio_button_control_type_draws_radio_dots() {
+    // A Manipulate-level `ControlType -> {RadioButton, Manipulator}` makes
+    // the first control a row of radio dots (not a segmented SetterBar)
+    // and leaves the slider alone; picking a radio choice by its label
+    // updates the bound value like any other discrete control.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{shape, n}, {shape, {\"circle\", \"square\"}}, \
+       {{n, 2, \"count\"}, 1, 5, 1, Appearance -> \"Labeled\"}, \
+       ControlType -> {RadioButton, Manipulator}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          setter_bar,
+          radio,
+          popup,
+          value_labels,
+          ..
+        },
+        manipulate::ControlState::Continuous { .. },
+      ] => {
+        assert!(*radio && *setter_bar && !*popup);
+        assert_eq!(value_labels, &["circle", "square"]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    assert!(state.select_discrete(0, "square"));
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        assert_eq!(*current_index, 1)
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+  }
+
+  /// A plain `ControlType -> SetterBar` keeps its segmented buttons.
+  #[test]
+  fn setter_bar_control_type_is_not_radio() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[s, {s, {1, 2}}, ControlType -> SetterBar]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(matches!(
+      &state.controls[..],
+      [manipulate::ControlState::Discrete {
+        setter_bar: true,
+        radio: false,
+        ..
+      }]
+    ));
+  }
+
   #[test]
   fn radio_button_bar_control_type_forces_the_bar() {
     let expr = woxi::interpret_to_expr(
