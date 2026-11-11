@@ -245,4 +245,52 @@ mod evaluation_reuse {
       );
     }
   }
+
+  /// A plot body is compiled once and reused across its samples, with the
+  /// values of its other symbols folded in. The same body plotted again
+  /// under other values of those symbols — an enclosing `Table` iterator,
+  /// a reassigned parameter — must see the new values, not the ones it was
+  /// first compiled with.
+  mod compiled_plot_bodies {
+    use super::*;
+
+    #[test]
+    fn plot_in_a_table_sees_each_iterator_value() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Table[MinMax[Cases[Plot[Floor[(z - 1)/2], {t, 0, 1}], \
+           Line[p_] :> p[[All, 2]], Infinity]], {z, 5}]"
+        )
+        .unwrap(),
+        "{{0., 0.}, {0., 0.}, {1., 1.}, {1., 1.}, {2., 2.}}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_in_a_table_sees_each_iterator_value() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Table[MinMax[Cases[ParametricPlot[{t, n + Floor[n/2] + 0 t}, \
+           {t, 0, 1}], Line[p_] :> p[[All, 2]], Infinity]], {n, 4}]"
+        )
+        .unwrap(),
+        "{{1., 1.}, {3., 3.}, {4., 4.}, {6., 6.}}"
+      );
+    }
+
+    #[test]
+    fn plot_sees_a_reassigned_parameter() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "ys := MinMax[Cases[Plot[a, {x, 0, 1}], Line[p_] :> p[[All, 2]], \
+           Infinity]]; a = 1; first = ys; a = 3; {first, ys}"
+        )
+        .unwrap(),
+        "{{1., 1.}, {3., 3.}}"
+      );
+    }
+  }
 }

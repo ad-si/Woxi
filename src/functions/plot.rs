@@ -427,10 +427,76 @@ fn marker_in_view(x: f64, y: f64, xr: (f64, f64), yr: (f64, f64)) -> bool {
 
 thread_local! {
   /// Plot bodies compiled for numeric sampling, keyed by the body's address
-  /// (checked structurally, as the address may be reused) and variables.
-  static COMPILED_BODIES: std::cell::RefCell<
-    Vec<(usize, Expr, Vec<String>, Option<std::rc::Rc<crate::functions::ode_ast::CompiledReal>>)>,
-  > = const { std::cell::RefCell::new(Vec::new()) };
+  /// (checked structurally, as the address may be reused), the variables,
+  /// and the values its other symbols had when it was compiled.
+  static COMPILED_BODIES: std::cell::RefCell<Vec<CompiledBodyEntry>> =
+    const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A cached compiled plot body (see `COMPILED_BODIES`).
+struct CompiledBodyEntry {
+  key: usize,
+  body: Expr,
+  vars: Vec<String>,
+  /// The symbols of the body other than the plot variables, with the value
+  /// each had at compile time: compilation folds a symbol's value into a
+  /// constant, so the same body plotted for another value of an enclosing
+  /// iterator (`Table[Plot[Floor[n/2] + x, {x, 0, 1}], {n, 4}]`) must be
+  /// compiled again.
+  symbols: Vec<(String, Option<crate::StoredValue>)>,
+  compiled: Option<std::rc::Rc<crate::functions::ode_ast::CompiledReal>>,
+}
+
+/// The distinct symbols of `body` other than `vars`.
+fn free_body_symbols(body: &Expr, vars: &[String]) -> Vec<String> {
+  fn walk(e: &Expr, vars: &[String], out: &mut Vec<String>) {
+    if let Expr::Identifier(name) = e {
+      if !vars.iter().any(|v| v == name) && !out.contains(name) {
+        out.push(name.clone());
+      }
+      return;
+    }
+    for child in crate::syntax::expr_children(e) {
+      walk(child, vars, out);
+    }
+  }
+  let mut out = Vec::new();
+  walk(body, vars, &mut out);
+  out
+}
+
+fn stored_values_equal(
+  a: Option<&crate::StoredValue>,
+  b: Option<&crate::StoredValue>,
+) -> bool {
+  use crate::StoredValue as S;
+  use crate::evaluator::pattern_matching::expr_equal;
+  match (a, b) {
+    (None, None) => true,
+    (Some(S::ExprVal(x)), Some(S::ExprVal(y))) => expr_equal(x, y),
+    (Some(S::Raw(x)), Some(S::Raw(y))) => x == y,
+    (Some(S::Association(x)), Some(S::Association(y))) => {
+      x.len() == y.len()
+        && x
+          .iter()
+          .zip(y)
+          .all(|((kx, vx), (ky, vy))| kx == ky && expr_equal(vx, vy))
+    }
+    _ => false,
+  }
+}
+
+/// Whether every symbol still has the value it had when the entry was
+/// compiled.
+fn symbols_unchanged(symbols: &[(String, Option<crate::StoredValue>)]) -> bool {
+  crate::ENV.with(|e| {
+    let Ok(env) = e.try_borrow() else {
+      return false;
+    };
+    symbols
+      .iter()
+      .all(|(name, value)| stored_values_equal(env.get(name), value.as_ref()))
+  })
 }
 
 /// A plot body that is a symbol holding an expression (`Plot3D[S4, …]`
@@ -493,23 +559,44 @@ fn compiled_body(
     cache
       .borrow()
       .iter()
-      .find(|(k, e, v, _)| {
-        *k == key
-          && v.as_slice() == vars
-          && crate::evaluator::pattern_matching::expr_equal(e, body)
+      .find(|entry| {
+        entry.key == key
+          && entry.vars.as_slice() == vars
+          && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
+          && symbols_unchanged(&entry.symbols)
       })
-      .map(|(_, _, _, c)| c.clone())
+      .map(|entry| entry.compiled.clone())
   }) {
     return hit;
   }
+  let symbols = free_body_symbols(body, vars)
+    .into_iter()
+    .map(|name| {
+      let value = crate::ENV.with(|e| e.borrow().get(&name).cloned());
+      (name, value)
+    })
+    .collect();
   let compiled = crate::functions::ode_ast::CompiledReal::new(body, vars)
     .map(std::rc::Rc::new);
   COMPILED_BODIES.with(|cache| {
     let mut cache = cache.borrow_mut();
+    // An entry for the same body compiled under other symbol values is
+    // replaced rather than kept beside it.
+    cache.retain(|entry| {
+      !(entry.key == key
+        && entry.vars.as_slice() == vars
+        && crate::evaluator::pattern_matching::expr_equal(&entry.body, body))
+    });
     if cache.len() >= 32 {
       cache.remove(0);
     }
-    cache.push((key, body.clone(), vars.to_vec(), compiled.clone()));
+    cache.push(CompiledBodyEntry {
+      key,
+      body: body.clone(),
+      vars: vars.to_vec(),
+      symbols,
+      compiled: compiled.clone(),
+    });
   });
   compiled
 }

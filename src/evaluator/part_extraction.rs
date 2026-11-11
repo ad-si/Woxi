@@ -666,8 +666,22 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         );
         let rgb_expr = crate::functions::plot::rgb_u8_expr;
         let draw = call1(if s.is_scatter { "Point" } else { "Line" }, points);
-        let color = crate::functions::plot::series_color_expr(s);
-        let mut prims = vec![Expr::List(vec![color, draw].into())];
+        let mut style = vec![crate::functions::plot::series_color_expr(s)];
+        // A curve keeps its weight and dashes: the plot draws it with
+        // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
+        // extracted line is drawn the same way wherever it is placed.
+        if !s.is_scatter {
+          style.push(call1(
+            "AbsoluteThickness",
+            Expr::Real(s.thickness.unwrap_or(2.0)),
+          ));
+          style.extend(crate::functions::graphics::series_dashing_expr(
+            s,
+            source.image_size.0,
+          ));
+        }
+        style.push(draw);
+        let mut prims = vec![Expr::List(style.into())];
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =

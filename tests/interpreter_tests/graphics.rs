@@ -24839,6 +24839,32 @@ mod show {
     assert!(svg.contains("<path") || svg.contains("<polyline"), "{svg}");
   }
 
+  /// The curve extracted from a plot keeps the weight the plot draws it
+  /// with (`AbsoluteThickness[2]` by default), so redrawing it inside a
+  /// `Graphics[…]` does not thin it to the bare line default.
+  #[test]
+  fn first_of_a_plot_keeps_its_curve_thickness() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[First[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]], \
+         _AbsoluteThickness, Infinity]"
+      )
+      .unwrap(),
+      "{AbsoluteThickness[2.]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[First[Plot[Sin[t], {t, 0, 3}, \
+         PlotStyle -> AbsoluteThickness[5]]], _AbsoluteThickness, Infinity]"
+      )
+      .unwrap(),
+      "{AbsoluteThickness[5.]}"
+    );
+    let svg = export_svg("Graphics[First[Plot[Sin[t], {t, 0, 3}]]]");
+    assert!(svg.contains("stroke-width=\"2.00\""), "{svg}");
+  }
+
   /// `Show` merges the primitives of the graphics it is given, so a
   /// `Plot3D` surface has to be available as primitives too. Regression:
   /// the surface existed only as a rendering, so showing one together with
