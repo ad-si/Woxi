@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Check if an expression contains any float-valued components (Real or BigFloat).
@@ -632,20 +631,7 @@ fn hurwitz_zeta_numeric(s: f64, a: f64) -> f64 {
   sum += 0.5 * na.powf(-s);
 
   // Bernoulli corrections
-  let bof: [f64; 10] = [
-    1.0 / 12.0,
-    -1.0 / 720.0,
-    1.0 / 30240.0,
-    -1.0 / 1209600.0,
-    1.0 / 47900160.0,
-    -691.0 / 1307674368000.0,
-    7.0 / 523069747200.0,
-    -3617.0 / 10670622842880000.0,
-    43867.0 / 5109094217170944000.0,
-    -174611.0 / 802857662698291200000.0,
-  ];
-
-  for (p_idx, &coeff) in bof.iter().enumerate() {
+  for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     let mut rising = 1.0;
     for j in 0..(two_p - 1) {
@@ -846,20 +832,7 @@ pub fn zeta_numeric(s: f64) -> f64 {
   sum += 0.5 * nf.powf(-s);
 
   // Bernoulli corrections: B_{2p}/(2p)! * prod_{j=0}^{2p-2}(s+j) * N^{-(s+2p-1)}
-  let bof: [f64; 10] = [
-    1.0 / 12.0,                          // B_2/2!
-    -1.0 / 720.0,                        // B_4/4!
-    1.0 / 30240.0,                       // B_6/6!
-    -1.0 / 1209600.0,                    // B_8/8!
-    1.0 / 47900160.0,                    // B_10/10!
-    -691.0 / 1307674368000.0,            // B_12/12!
-    7.0 / 523069747200.0,                // B_14/14!
-    -3617.0 / 10670622842880000.0,       // B_16/16!
-    43867.0 / 5109094217170944000.0,     // B_18/18!
-    -174611.0 / 802857662698291200000.0, // B_20/20!
-  ];
-
-  for (p_idx, &coeff) in bof.iter().enumerate() {
+  for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     // Rising factorial: prod_{j=0}^{2p-2} (s+j)
     let mut rising = 1.0;
@@ -981,26 +954,20 @@ pub fn log_gamma_complex(re: f64, im: f64) -> (f64, f64) {
   let inv_z = cdiv((1.0, 0.0), z);
   let inv_z2 = cmul(inv_z, inv_z);
   let mut term = inv_z;
-  // 1/(12 z)
-  result = (result.0 + term.0 / 12.0, result.1 + term.1 / 12.0);
-  term = cmul(term, inv_z2);
-  // -1/(360 z^3)
-  result = (result.0 - term.0 / 360.0, result.1 - term.1 / 360.0);
-  term = cmul(term, inv_z2);
-  // 1/(1260 z^5)
-  result = (result.0 + term.0 / 1260.0, result.1 + term.1 / 1260.0);
-  term = cmul(term, inv_z2);
-  // -1/(1680 z^7)
-  result = (result.0 - term.0 / 1680.0, result.1 - term.1 / 1680.0);
-  term = cmul(term, inv_z2);
-  // 1/(1188 z^9)
-  result = (result.0 + term.0 / 1188.0, result.1 + term.1 / 1188.0);
-  term = cmul(term, inv_z2);
-  // -691/(360360 z^11)
-  result = (
-    result.0 - 691.0 * term.0 / 360360.0,
-    result.1 - 691.0 * term.1 / 360360.0,
-  );
+
+  // Bernoulli corrections
+  let coeffs = [
+    1.0 / 12.0,        // B_2/2
+    -1.0 / 360.0,      // B_4/4/3
+    1.0 / 1260.0,      // B_6/6/5
+    -1.0 / 1680.0,     // B_8/8/7
+    1.0 / 1188.0,      // B_10/10/9
+    -691.0 / 360360.0, // B_12/12/11
+  ];
+  for coeff in &coeffs {
+    result = (result.0 + term.0 * coeff, result.1 + term.1 * coeff);
+    term = cmul(term, inv_z2);
+  }
   // Undo the recurrence shift: subtract sum of logs we accumulated.
   (result.0 - acc_log.0, result.1 - acc_log.1)
 }
@@ -1034,16 +1001,16 @@ fn zeta_numeric_complex(s_re: f64, s_im: f64) -> (f64, f64) {
 
 /// `B_{2p}/(2p)!` for p = 1..10, the Euler–Maclaurin correction weights.
 const EM_BERNOULLI: [f64; 10] = [
-  1.0 / 12.0,
-  -1.0 / 720.0,
-  1.0 / 30240.0,
-  -1.0 / 1209600.0,
-  1.0 / 47900160.0,
-  -691.0 / 1307674368000.0,
-  7.0 / 523069747200.0,
-  -3617.0 / 10670622842880000.0,
-  43867.0 / 5109094217170944000.0,
-  -174611.0 / 802857662698291200000.0,
+  1.0 / 12.0,                          // B_2/2!
+  -1.0 / 720.0,                        // B_4/4!
+  1.0 / 30240.0,                       // B_6/6!
+  -1.0 / 1209600.0,                    // B_8/8!
+  1.0 / 47900160.0,                    // B_10/10!
+  -691.0 / 1307674368000.0,            // B_12/12!
+  7.0 / 523069747200.0,                // B_14/14!
+  -3617.0 / 10670622842880000.0,       // B_16/16!
+  43867.0 / 5109094217170944000.0,     // B_18/18!
+  -174611.0 / 802857662698291200000.0, // B_20/20!
 ];
 
 /// `Σ_{k=0}^{n-1} (a+k)^{-s}` plus the Euler–Maclaurin tail at `a + n`:
@@ -1072,6 +1039,7 @@ fn hurwitz_zeta_em_complex(
   let ns = cpow(an, (-s_re, -s_im));
   sum.0 += 0.5 * ns.0;
   sum.1 += 0.5 * ns.1;
+  // Bernoulli corrections
   for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     // Rising factorial: prod_{j=0}^{2p-2} (s+j)
@@ -2042,19 +2010,8 @@ fn zeta_half_plus_it(t: f64) -> (f64, f64) {
   sum.0 += 0.5 * ns.0;
   sum.1 += 0.5 * ns.1;
 
-  let bof: [f64; 10] = [
-    1.0 / 12.0,
-    -1.0 / 720.0,
-    1.0 / 30240.0,
-    -1.0 / 1209600.0,
-    1.0 / 47900160.0,
-    -691.0 / 1307674368000.0,
-    7.0 / 523069747200.0,
-    -3617.0 / 10670622842880000.0,
-    43867.0 / 5109094217170944000.0,
-    -174611.0 / 802857662698291200000.0,
-  ];
-  for (p_idx, &coeff) in bof.iter().enumerate() {
+  // Bernoulli corrections
+  for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     let mut rising = (1.0, 0.0);
     for j in 0..(two_p - 1) {
@@ -2427,20 +2384,8 @@ fn zeta_half_plus_it_accurate(
   );
   let nf = n as f64;
   let s = (0.5f64, t);
-  let bof: [f64; 10] = [
-    1.0 / 12.0,
-    -1.0 / 720.0,
-    1.0 / 30240.0,
-    -1.0 / 1209600.0,
-    1.0 / 47900160.0,
-    -691.0 / 1307674368000.0,
-    7.0 / 523069747200.0,
-    -3617.0 / 10670622842880000.0,
-    43867.0 / 5109094217170944000.0,
-    -174611.0 / 802857662698291200000.0,
-  ];
   let mut corr = (0.0f64, 0.0f64);
-  for (p_idx, &coeff) in bof.iter().enumerate() {
+  for (p_idx, &coeff) in EM_BERNOULLI.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     let mut rising = (1.0, 0.0);
     for j in 0..(two_p - 1) {

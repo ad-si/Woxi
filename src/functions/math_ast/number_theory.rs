@@ -1851,8 +1851,8 @@ pub fn digamma(mut x: f64) -> f64 {
     -691.0 / 32760.0, // B_12/12
     1.0 / 12.0,       // B_14/14
   ];
-  for i in 0..coeffs.len() {
-    result -= coeffs[i] / xpow;
+  for coeff in &coeffs {
+    result -= coeff / xpow;
     xpow *= x2;
   }
   result
