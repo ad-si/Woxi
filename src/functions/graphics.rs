@@ -6565,33 +6565,72 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     && name == "Text"
     && targs.len() == 1
   {
-    return Some(call("Text", vec![targs[0].clone(), pos.clone()]));
+    return Some(inset_text(&targs[0], pos, args));
   }
   None
+}
+
+/// `Text[obj, pos]` for an `Inset[Text[obj], pos, opos]`, carrying a
+/// symbolic `opos` (`{Center, Top}`, `{Left, Bottom}`, `Center`, …) along as
+/// the text's offset, so the named point of the label — not its center —
+/// sits on `pos`: `{Center, Top}` hangs a title from the top edge.
+fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
+  match inset_args.get(2).and_then(symbolic_alignment_offset) {
+    Some((dx, dy)) => call(
+      "Text",
+      vec![
+        obj.clone(),
+        pos.clone(),
+        Expr::List(vec![Expr::Integer(dx), Expr::Integer(dy)].into()),
+      ],
+    ),
+    None => call("Text", vec![obj.clone(), pos.clone()]),
+  }
+}
+
+/// A symbolic alignment as a `Text` offset: `Left`/`Bottom` are -1,
+/// `Center` 0 and `Right`/`Top` 1. A lone symbol names the horizontal
+/// side and centers vertically (`Center` centers both ways).
+fn symbolic_alignment_offset(spec: &Expr) -> Option<(i128, i128)> {
+  let side = |e: &Expr, horizontal: bool| match e {
+    Expr::Identifier(n) => match (n.as_str(), horizontal) {
+      ("Center", _) => Some(0),
+      ("Left", true) | ("Bottom", false) => Some(-1),
+      ("Right", true) | ("Top", false) => Some(1),
+      _ => None,
+    },
+    _ => None,
+  };
+  match spec {
+    Expr::List(items) if items.len() == 2 => {
+      Some((side(&items[0], true)?, side(&items[1], false)?))
+    }
+    single => Some((side(single, true)?, 0)),
+  }
 }
 
 /// `Inset[Style[Text[obj], dirs…], pos]` is `Style[Text[obj, pos], dirs…]`:
 /// like `text_primitive_inset`, but the `Style` wrappers around the `Text`
 /// are kept so their font directives still reach the label.
 fn styled_text_inset(args: &[Expr]) -> Option<Expr> {
-  fn rewrap(e: &Expr, pos: &Expr) -> Option<Expr> {
+  fn rewrap(e: &Expr, pos: &Expr, inset_args: &[Expr]) -> Option<Expr> {
     match e {
       Expr::FunctionCall { name, args: sargs }
         if is_style_wrapper(name) && !sargs.is_empty() =>
       {
         let mut new_args = sargs.to_vec();
-        new_args[0] = rewrap(&sargs[0], pos)?;
+        new_args[0] = rewrap(&sargs[0], pos, inset_args)?;
         Some(call(name, new_args))
       }
       Expr::FunctionCall { name, args: targs }
         if name == "Text" && targs.len() == 1 =>
       {
-        Some(call("Text", vec![targs[0].clone(), pos.clone()]))
+        Some(inset_text(&targs[0], pos, inset_args))
       }
       _ => None,
     }
   }
-  rewrap(args.first()?, args.get(1)?)
+  rewrap(args.first()?, args.get(1)?, args)
 }
 
 /// A `Grid` whose look cannot be had from flattened cell text — merged
@@ -38184,6 +38223,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       }]
     }
   };
+  // A machine real is shown the way a notebook displays it, to six
+  // significant digits: a `Range[0.1, 2, 0.1]` popup reads `0.3`, not the
+  // `0.30000000000000004` its exact binary value spells out in InputForm.
+  if matches!(expr, Expr::Real(_))
+    && let Some(text) = number_form_text(expr)
+  {
+    return vec![LabelRun {
+      text,
+      italic,
+      ..Default::default()
+    }];
+  }
   // `Derivative[n][f]` — a slider labeled `y'(0)` writes its `y'` this way.
   // The primes are upright even when the function they mark is italic.
   if let Some((func, order)) = as_derivative_of(expr) {
@@ -44787,6 +44838,32 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(value_labels, &["a", "b", "c"]);
         assert_eq!(*initial_index, 1);
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// Machine-real choices are labeled as a notebook displays them: the
+  /// `0.30000000000000004` that `Range[0.1, 1, 0.1]` computes reads `0.3`,
+  /// while the bound value keeps its exact InputForm.
+  #[test]
+  fn machine_real_choices_are_labeled_in_display_form() {
+    let s = spec("Manipulate[t, {{t, 0.5, \"step\"}, Range[0.1, 1, 0.1]}]");
+    match &s.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1."
+          ]
+        );
+        assert_eq!(values[2], "0.30000000000000004");
+        assert_eq!(*initial_index, 4);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
     }

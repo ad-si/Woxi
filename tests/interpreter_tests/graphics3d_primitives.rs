@@ -1090,3 +1090,64 @@ mod box_and_tick_styles {
     );
   }
 }
+
+mod box_and_label_options {
+  use super::*;
+
+  const SURFACE: &str = "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, \
+     Mesh -> None";
+
+  #[test]
+  fn plot3d_draws_its_epilog() {
+    let s = svg(&format!(
+      "{SURFACE}, Epilog -> Inset[Text[\"surface title\"], {{Center, Top}}, \
+       {{Center, Top}}]]"
+    ));
+    assert!(s.contains("surface title"));
+  }
+
+  #[test]
+  fn plot3d_draws_its_prolog() {
+    let s = svg(&format!(
+      "{SURFACE}, Prolog -> Text[\"backdrop\", Scaled[{{0.5, 0.5}}]]]"
+    ));
+    assert!(s.contains("backdrop"));
+  }
+
+  #[test]
+  fn dashed_box_style_dashes_the_box_edges() {
+    for expr in [
+      format!("{SURFACE}, BoxStyle -> {{Black, Dashed}}]"),
+      "Graphics3D[Cuboid[], BoxStyle -> Directive[Red, Dashed]]".to_string(),
+    ] {
+      assert!(
+        svg(&expr).contains("stroke-dasharray"),
+        "no dashed box edges for {expr}"
+      );
+    }
+    assert!(!svg(&format!("{SURFACE}]")).contains("stroke-dasharray"));
+  }
+
+  #[test]
+  fn box_style_color_and_thickness_apply_to_the_box_edges() {
+    let s = svg(&format!(
+      "{SURFACE}, BoxStyle -> {{Red, AbsoluteThickness[2]}}]"
+    ));
+    assert!(s.contains("stroke=\"rgb(255,0,0)\" stroke-width=\"2"));
+    let s = svg("Graphics3D[Cuboid[], BoxStyle -> Blue]");
+    assert!(s.contains("stroke=\"rgb(0,0,255)\""));
+  }
+
+  #[test]
+  fn label_style_font_size_sizes_the_tick_labels() {
+    for expr in [
+      format!("{SURFACE}, LabelStyle -> 16]"),
+      format!("{SURFACE}, LabelStyle -> {{FontSize -> 16, Bold}}]"),
+      "Graphics3D[Cuboid[], Axes -> True, LabelStyle -> 16]".to_string(),
+    ] {
+      let s = svg(&expr);
+      assert!(s.contains("font-size=\"16\""), "no 16pt labels for {expr}");
+      assert!(!s.contains("font-size=\"10\""), "10pt ticks left in {expr}");
+    }
+  }
+}

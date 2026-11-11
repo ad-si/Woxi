@@ -1171,6 +1171,47 @@ impl MeshFn {
 struct BoxEdge {
   endpoints: [Point3D; 2],
   depth: f64,
+  /// How far along its whole box edge (in pixels) this subdivision starts,
+  /// so a dashed `BoxStyle` runs continuously across the subdivisions.
+  dash_offset: f64,
+}
+
+/// How the edges of a 3-D picture's bounding box are drawn.
+struct BoxEdgeStyle {
+  color: String,
+  width: f64,
+  dashing: Option<Vec<f64>>,
+}
+
+/// `BoxStyle -> spec` (a color, `Dashed`, `Thickness[…]`, or a list /
+/// `Directive` of them): the stroke of the bounding box's edges, falling
+/// back to `default_color` and a 0.5px hairline for whatever it leaves out.
+fn box_edge_style(opts: &[Expr], default_color: &str) -> BoxEdgeStyle {
+  let mut style = StyleState3D::default();
+  if let Some(spec) = opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "BoxStyle") => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }) {
+    let spec = evaluate_expr_to_expr(&spec).unwrap_or(spec);
+    apply_3d_directive(&spec, &mut style);
+  }
+  BoxEdgeStyle {
+    color: style.color.map_or_else(
+      || default_color.to_string(),
+      |(r, g, b)| format!("rgb({r},{g},{b})"),
+    ),
+    width: style.thickness.unwrap_or(0.5),
+    dashing: style.dashing,
+  }
 }
 
 /// Number of grid cells between default mesh lines.
@@ -2559,11 +2600,34 @@ fn generate_svg(
   let p_cx = f64::midpoint(px_min, px_max);
   let p_cy = f64::midpoint(py_min, py_max);
   let bbox_for_axes = bounding_box_corners_with_ratios(box_ratios);
+  // All surface renderers share Graphics3D's explicit/automatic tick parser.
+  let ticks = options
+    .iter()
+    .rev()
+    .find_map(|option| match option {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern,Expr::Identifier(name) if name=="Ticks") => {
+        Some(parse_ticks_3d(
+          &evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone()),
+        ))
+      }
+      _ => None,
+    })
+    .unwrap_or([None, None, None]);
+  let look = AxesLook {
+    label_size: label_font_size(options),
+    ..AxesLook::default()
+  };
+  // The frame is fitted to the axes exactly as they are drawn below — the
+  // same ticks and label size — so wide or large tick labels stay inside.
   let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
     show_axes.then(|| {
       let to_svg =
         |px: f64, py: f64| (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale);
-      draw_axes_on_box(
+      draw_axes_on_box_with_ticks(
         &mut String::new(),
         camera,
         &to_svg,
@@ -2572,6 +2636,10 @@ fn generate_svg(
         y_range,
         z_range,
         axes_labels,
+        &ticks,
+        None,
+        None,
+        &look,
       )
     })
   };
@@ -2676,6 +2744,11 @@ fn generate_svg(
     for &(i, j) in &edge_pairs {
       let a = corners[i];
       let b = corners[j];
+      // On-screen length of the whole edge, so a dash pattern continues
+      // across its depth-sorting subdivisions instead of restarting.
+      let (pa, pb) = (project(a, camera), project(b, camera));
+      let ((ax, ay), (bx, by)) = (to_svg(pa.0, pa.1), to_svg(pb.0, pb.1));
+      let edge_px = (bx - ax).hypot(by - ay);
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
@@ -2688,6 +2761,7 @@ fn generate_svg(
         segments.push(BoxEdge {
           endpoints: [lerp(t0), lerp(t1)],
           depth: depth(lerp(tm), camera),
+          dash_offset: t0 * edge_px,
         });
       }
     }
@@ -2701,6 +2775,21 @@ fn generate_svg(
     (Vec::new(), String::new())
   };
   let (sorted_edges, axis_color) = box_edges;
+  let edge_style = box_edge_style(options, &axis_color);
+  let box_edge_svg = |edge: &BoxEdge,
+                      (x0, y0): (f64, f64),
+                      (x1, y1): (f64, f64)| {
+    format!(
+      "<line x1=\"{x0:.1}\" y1=\"{y0:.1}\" x2=\"{x1:.1}\" y2=\"{y1:.1}\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
+      edge_style.color,
+      edge_style.width,
+      dash3d_attr(
+        edge_style.dashing.as_ref(),
+        f64::from(svg_width),
+        edge.dash_offset
+      )
+    )
+  };
 
   // Mesh segments are painted among the triangles too, so the surface
   // hides the parts of the mesh it covers.
@@ -2758,9 +2847,7 @@ fn generate_svg(
           project(edge.endpoints[1], camera).0,
           project(edge.endpoints[1], camera).1,
         );
-        svg.push_str(&format!(
-          "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
-        ));
+        svg.push_str(&box_edge_svg(edge, (ex0, ey0), (ex1, ey1)));
         ei += 1;
       }
       // Emit triangle
@@ -2811,31 +2898,12 @@ fn generate_svg(
         project(edge.endpoints[1], camera).0,
         project(edge.endpoints[1], camera).1,
       );
-      svg.push_str(&format!(
-        "<line x1=\"{ex0:.1}\" y1=\"{ey0:.1}\" x2=\"{ex1:.1}\" y2=\"{ey1:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n"
-      ));
+      svg.push_str(&box_edge_svg(edge, (ex0, ey0), (ex1, ey1)));
       ei += 1;
     }
   }
 
-  // All surface renderers share Graphics3D's explicit/automatic tick parser.
   if show_axes {
-    let ticks = options
-      .iter()
-      .rev()
-      .find_map(|option| match option {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } if matches!(&**pattern,Expr::Identifier(name) if name=="Ticks") => {
-          Some(parse_ticks_3d(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| (**replacement).clone()),
-          ))
-        }
-        _ => None,
-      })
-      .unwrap_or([None, None, None]);
     draw_axes_on_box_with_ticks(
       &mut svg,
       camera,
@@ -2848,7 +2916,7 @@ fn generate_svg(
       &ticks,
       None,
       None,
-      &AxesLook::default(),
+      &look,
     );
   }
 
@@ -3099,7 +3167,10 @@ fn draw_axes_on_box_with_ticks(
   let mut extent = AxesExtent::EMPTY;
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
-  let font_size = 13;
+  // A `LabelStyle` font size sets both the axis labels and the tick labels.
+  let font_size = look.label_size.map_or(13, |s| s.round() as i32);
+  let tick_font_size =
+    look.label_size.map_or(TICK_FONT_SIZE, |s| s.round() as i32);
 
   // The box in scene coordinates. `mirror_*` flips a coordinate to the
   // opposite face, which is how each axis edge finds its far end.
@@ -3462,13 +3533,13 @@ fn draw_axes_on_box_with_ticks(
         };
         svg.push_str(&format!(
                     "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + ux * reach, ty + uy * reach, TICK_FONT_SIZE, tick_color, anchor, label
+                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor, label
                 ));
         extent.add_text(
           tx + ux * reach,
           ty + uy * reach,
           markup_char_count(&label),
-          TICK_FONT_SIZE as f64,
+          f64::from(tick_font_size),
           anchor,
         );
       }
@@ -3479,10 +3550,12 @@ fn draw_axes_on_box_with_ticks(
 
 /// How each of the three axes of a 3D box is drawn: whether it is shown
 /// at all (`Axes -> {bx, by, bz}`) and the color its ticks take
-/// (`TicksStyle`).
+/// (`TicksStyle`), and the size of its labels (`LabelStyle`).
 pub(crate) struct AxesLook {
   pub shown: [bool; 3],
   pub tick_colors: [Option<String>; 3],
+  /// The font size `LabelStyle` gives the axis and tick labels.
+  pub label_size: Option<f64>,
 }
 
 impl Default for AxesLook {
@@ -3490,6 +3563,7 @@ impl Default for AxesLook {
     AxesLook {
       shown: [true; 3],
       tick_colors: [None, None, None],
+      label_size: None,
     }
   }
 }
@@ -3619,6 +3693,24 @@ const TICK_LABEL_OFFSET: f64 = 10.0;
 /// The font size of 3D tick labels (Wolfram's are smaller than its
 /// axis labels).
 const TICK_FONT_SIZE: i32 = 10;
+
+/// The font size a `LabelStyle` option (`LabelStyle -> 16`,
+/// `{FontSize -> 14, Bold}`, …) gives a 3-D picture's axis and tick labels.
+fn label_font_size(opts: &[Expr]) -> Option<f64> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LabelStyle") => {
+      crate::functions::plot::LabelStyleSpec::parse(replacement)?.font_size
+    }
+    _ => None,
+  })
+}
 
 /// Half the width a text label takes at `font_size`, estimated from its
 /// character count — enough to keep labels from landing on each other.
@@ -4507,6 +4599,7 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         segs.push(BoxEdge {
           endpoints: [lerp(t0), lerp(t1)],
           depth: depth(lerp(tm), &camera),
+          dash_offset: 0.0,
         });
       }
     }
@@ -10531,7 +10624,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
-  let mut axes_look = AxesLook::default();
+  let mut axes_look = AxesLook {
+    label_size: label_font_size(&args[1..]),
+    ..AxesLook::default()
+  };
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -11775,6 +11871,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   const EDGE_SUBDIVISIONS: usize = 20;
   let mut sorted_edges: Vec<SceneEdge> = Vec::new();
   if show_box {
+    let edge_style = box_edge_style(&args[1..], &axis_color);
     let edge_pairs: [(usize, usize); 12] = [
       (0, 1),
       (0, 2),
@@ -11792,6 +11889,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for &(i, j) in &edge_pairs {
       let a = box_corners[i];
       let b = box_corners[j];
+      // On-screen length of the whole edge, so a dashed `BoxStyle` runs
+      // continuously across the depth-sorting subdivisions below.
+      let (pa, pb) = (project(a, &camera), project(b, &camera));
+      let ((ax, ay), (bx, by)) = (to_svg(pa.0, pa.1), to_svg(pb.0, pb.1));
+      let edge_px = (bx - ax).hypot(by - ay);
       for s in 0..EDGE_SUBDIVISIONS {
         let t0 = s as f64 / EDGE_SUBDIVISIONS as f64;
         let t1 = (s + 1) as f64 / EDGE_SUBDIVISIONS as f64;
@@ -11804,11 +11906,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sorted_edges.push(SceneEdge {
           endpoints: [lerp(t0), lerp(t1)],
           depth: depth(lerp(tm), &camera),
-          color: axis_color.clone(),
-          width: 0.5,
+          color: edge_style.color.clone(),
+          width: edge_style.width,
           opacity: 1.0,
-          dashing: None,
-          dash_offset: 0.0,
+          dashing: edge_style.dashing.clone(),
+          dash_offset: t0 * edge_px,
           dot_radius: None,
         });
       }
@@ -12279,11 +12381,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   svg.push_str("</svg>");
-  let svg = with_prolog_epilog(svg, &args[1..], svg_width, svg_height);
-  // A `PlotLabel` sets a title above the finished picture. `args[1..]` are
-  // the options; `args[0]` is the content, which may itself be a `Rule`
-  // (`Graphics3D[a -> b]` draws nothing but is legal) and must not be read
-  // as one.
+  // `Prolog`/`Epilog` layers and a `PlotLabel` title finish the picture.
+  // `args[1..]` are the options; `args[0]` is the content, which may itself
+  // be a `Rule` (`Graphics3D[a -> b]` draws nothing but is legal) and must
+  // not be read as one.
   let svg = with_plot_label(svg, &args[1..], svg_width, svg_height);
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
@@ -12578,12 +12679,22 @@ fn svg_header_size(svg: &str) -> Option<(u32, u32)> {
   Some((attr("width")?, attr("height")?))
 }
 
+/// Finish a rendered 3-D picture with its 2-D decorations: the `Prolog` /
+/// `Epilog` layers (see [`with_prolog_epilog`]), the `Background` and a
+/// `PlotLabel` title above it. Every 3-D renderer (`Graphics3D`, the
+/// `Plot3D` surface, …) goes through here so none of them drops an
+/// `Epilog` it was given.
 fn with_plot_label(
   svg: String,
   opts: &[Expr],
   width: u32,
   height: u32,
 ) -> String {
+  // The renderer may have fitted the picture's size to its contents, so
+  // the size it wrote wins over the requested one.
+  let (layer_width, layer_height) =
+    svg_header_size(&svg).unwrap_or((width, height));
+  let svg = with_prolog_epilog(svg, opts, layer_width, layer_height);
   let svg = with_background_option(svg, opts);
   let Some(styled) = plot_label_styled(opts) else {
     return svg;
@@ -16839,6 +16950,7 @@ fn generate_scatter_svg(
       sorted_edges.push(BoxEdge {
         endpoints: [lerp(t0), lerp(t1)],
         depth: depth(lerp(tm), camera),
+        dash_offset: 0.0,
       });
     }
   }
@@ -17312,6 +17424,7 @@ fn generate_line3d_svg(
       sorted_edges.push(BoxEdge {
         endpoints: [lerp(t0), lerp(t1)],
         depth: depth(lerp(tm), camera),
+        dash_offset: 0.0,
       });
     }
   }
