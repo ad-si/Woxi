@@ -729,7 +729,7 @@ fn label_lines(text: &str) -> usize {
 }
 
 /// Width of a label string (box markup allowed) at `size` points.
-fn label_width(text: &str, size: f64) -> f64 {
+pub(crate) fn label_width(text: &str, size: f64) -> f64 {
   text
     .split('\n')
     .map(|line| {

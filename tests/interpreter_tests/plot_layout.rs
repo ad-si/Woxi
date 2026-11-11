@@ -117,6 +117,29 @@ mod image_size {
     assert_eq!(width, 300.0);
     assert!(height > 250.0, "height {height}");
   }
+
+  /// The `font-size` of the horizontal axis label `<text …>{label}<`.
+  fn x_axis_label_font(svg: &str, label: &str) -> f64 {
+    let end = svg.find(&format!(">{label}</text>")).unwrap();
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let start = tag.find("font-size=\"").unwrap() + 11;
+    let stop = start + tag[start..].find('"').unwrap();
+    tag[start..stop].parse().unwrap()
+  }
+
+  // A narrow axis label fits the room the automatic padding reserved for
+  // it, so a square plot in a fixed image keeps it at the tick label size
+  // (it used to shrink when the plot was sized by the image height).
+  #[test]
+  fn narrow_axis_label_keeps_its_size_in_square_plot() {
+    for y_max in ["1700", "60", "10"] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 15}}, AspectRatio -> 1, AxesLabel -> {{t, v}}, \
+         PlotRange -> {{{{0, 30}}, {{0, {y_max}}}}}, ImageSize -> {{195, 200}}]"
+      ));
+      assert_eq!(x_axis_label_font(&svg, "t"), 100.0, "PlotRange max {y_max}");
+    }
+  }
 }
 
 mod filling_style {
