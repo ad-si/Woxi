@@ -2848,7 +2848,7 @@ fn generate_svg(
       &ticks,
       None,
       None,
-      [true; 3],
+      &AxesLook::default(),
     );
   }
 
@@ -3009,7 +3009,7 @@ fn draw_axes_on_box(
     &[None, None, None],
     None,
     None,
-    [true; 3],
+    &AxesLook::default(),
   )
 }
 
@@ -3094,7 +3094,7 @@ fn draw_axes_on_box_with_ticks(
   ticks: &[Option<TickList3D>; 3],
   crossing: Option<&[Option<f64>; 3]>,
   edges: Option<&AxesEdges>,
-  shown: [bool; 3],
+  look: &AxesLook,
 ) -> AxesExtent {
   let mut extent = AxesExtent::EMPTY;
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
@@ -3317,9 +3317,11 @@ fn draw_axes_on_box_with_ticks(
     axes.iter().enumerate()
   {
     // `Axes -> {False, True, True}` leaves out the first axis entirely.
-    if !shown[ai] {
+    if !look.shown[ai] {
       continue;
     }
+    // `TicksStyle` recolors this axis's tick marks and their labels.
+    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -3400,7 +3402,7 @@ fn draw_axes_on_box_with_ticks(
             };
             let (x, y) = project(p, camera);
             let (x, y) = to_svg(x, y);
-            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
+            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
           }
         }
       }
@@ -3433,7 +3435,7 @@ fn draw_axes_on_box_with_ticks(
 
         svg.push_str(&format!(
                     "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                    tx, ty, tx + perpx, ty + perpy, axis_color
+                    tx, ty, tx + perpx, ty + perpy, tick_color
                 ));
 
         // Place label on the outward side (away from box center)
@@ -3460,7 +3462,7 @@ fn draw_axes_on_box_with_ticks(
         };
         svg.push_str(&format!(
                     "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + ux * reach, ty + uy * reach, TICK_FONT_SIZE, axis_color, anchor, label
+                    tx + ux * reach, ty + uy * reach, TICK_FONT_SIZE, tick_color, anchor, label
                 ));
         extent.add_text(
           tx + ux * reach,
@@ -3473,6 +3475,43 @@ fn draw_axes_on_box_with_ticks(
     }
   }
   extent
+}
+
+/// How each of the three axes of a 3D box is drawn: whether it is shown
+/// at all (`Axes -> {bx, by, bz}`) and the color its ticks take
+/// (`TicksStyle`).
+pub(crate) struct AxesLook {
+  pub shown: [bool; 3],
+  pub tick_colors: [Option<String>; 3],
+}
+
+impl Default for AxesLook {
+  fn default() -> Self {
+    AxesLook {
+      shown: [true; 3],
+      tick_colors: [None, None, None],
+    }
+  }
+}
+
+/// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
+/// axes) gives the ticks of each axis.
+fn parse_ticks_style_3d(value: &Expr) -> [Option<String>; 3] {
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let color = |e: &Expr| {
+    crate::functions::plot::parse_style_directives(e)
+      .and_then(|style| style.color)
+      .map(|c| c.to_svg_rgb())
+  };
+  match &value {
+    Expr::List(items) if items.len() == 3 => {
+      [color(&items[0]), color(&items[1]), color(&items[2])]
+    }
+    other => {
+      let c = color(other);
+      [c.clone(), c.clone(), c]
+    }
+  }
 }
 
 /// The pixel rectangle `(x_min, x_max, y_min, y_max)` the axes and their
@@ -10490,8 +10529,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
-  // Which of the three axes `Axes -> {bx, by, bz}` turns on.
-  let mut axes_shown = [true; 3];
+  let mut axes_look = AxesLook::default();
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -10638,7 +10676,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
+          // A lone number `r` asks for equal sides, like `{r, r, r}`.
           if let Some(r) = eval_vec3(&value)
+            .or_else(|| try_eval_to_f64(&value).map(|r| [r; 3]))
             && r.iter().all(|v| *v > 0.0)
           {
             box_ratios = Some(r);
@@ -10678,19 +10718,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "False" => show_axes = false,
           Expr::Identifier(s) if s == "True" => {
             show_axes = true;
-            axes_shown = [true; 3];
+            axes_look.shown = [true; 3];
           }
           // `Axes -> {True, True, False}`: only the axes set to `True`.
           Expr::List(items) if items.len() == 3 => {
-            for (on, item) in axes_shown.iter_mut().zip(items.iter()) {
+            for (on, item) in axes_look.shown.iter_mut().zip(items.iter()) {
               *on = matches!(item, Expr::Identifier(s) if s == "True");
             }
-            show_axes = axes_shown.iter().any(|&on| on);
+            show_axes = axes_look.shown.iter().any(|&on| on);
           }
           _ => {}
         },
         "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
+        }
+        "TicksStyle" => {
+          axes_look.tick_colors = parse_ticks_style_3d(replacement);
         }
         _ => {}
       }
@@ -11631,7 +11674,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &tick_spec,
         axes_origin.as_ref().filter(|_| !show_box),
         axes_edge.as_ref(),
-        axes_shown,
+        &axes_look,
       )
     })
   };
@@ -11937,7 +11980,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref(),
       axes_edge.as_ref(),
-      axes_shown,
+      &axes_look,
     );
   }
   // Render triangles interleaved with box edges (painter's algorithm)
@@ -12229,7 +12272,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref().filter(|_| !show_box),
       axes_edge.as_ref(),
-      axes_shown,
+      &axes_look,
     );
   }
 
@@ -12334,7 +12377,9 @@ fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
   let mut ranges = [None; 3];
   for (slot, item) in ranges.iter_mut().zip(items.iter()) {
     *slot = match item {
-      Expr::Identifier(s) if matches!(s.as_str(), "All" | "Automatic" | "Full") => {
+      Expr::Identifier(s)
+        if matches!(s.as_str(), "All" | "Automatic" | "Full") =>
+      {
         None
       }
       Expr::List(pair) if pair.len() == 2 => {

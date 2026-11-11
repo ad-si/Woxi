@@ -1029,8 +1029,64 @@ mod per_axis_options {
   #[test]
   fn axes_list_of_all_false_draws_no_axes() {
     assert_eq!(
-      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> {False, False, False}]"),
+      svg(
+        "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> {False, False, False}]"
+      ),
       svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> False]")
+    );
+  }
+}
+
+mod box_and_tick_styles {
+  use super::*;
+
+  // A lone number asks for equal sides, like `{1, 1, 1}`.
+  #[test]
+  fn scalar_box_ratios_is_a_cube() {
+    assert_eq!(
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 2}}], BoxRatios -> 1]"),
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 2}}], BoxRatios -> {1, 1, 1}]")
+    );
+    assert_ne!(
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 2}}], BoxRatios -> 1]"),
+      svg("Graphics3D[Line[{{0, 0, 0}, {4, 1, 2}}]]")
+    );
+  }
+
+  // `TicksStyle -> {sx, sy, sz}` colors each axis's ticks and labels.
+  #[test]
+  fn ticks_style_colors_each_axis() {
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       TicksStyle -> {Red, Directive[14, Blue], None}]",
+    );
+    assert!(s.contains("stroke=\"rgb(255,0,0)\""), "{s}");
+    assert!(s.contains("fill=\"rgb(255,0,0)\""), "{s}");
+    assert!(s.contains("fill=\"rgb(0,0,255)\""), "{s}");
+  }
+
+  #[test]
+  fn single_ticks_style_colors_all_axes() {
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       TicksStyle -> Orange]",
+    );
+    let orange = "fill=\"rgb(255,128,0)\"";
+    assert!(s.matches(orange).count() >= 6, "{s}");
+  }
+
+  // Options of a parametric plot carry into `Show`, where a mixed
+  // `PlotRange` then widens one axis.
+  #[test]
+  fn parametric_plot_options_survive_show() {
+    let s = svg(
+      "Show[ParametricPlot3D[{t, Sin[t], Cos[t]}, {t, 0, 4}, \
+       TicksStyle -> {Red, Blue, Green}, BoxRatios -> 1], \
+       PlotRange -> {{0, 8}, All, All}]",
+    );
+    assert!(
+      s.contains("fill=\"rgb(255,0,0)\"") && s.contains(">8<"),
+      "{s}"
     );
   }
 }
