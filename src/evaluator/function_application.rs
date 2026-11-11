@@ -2800,6 +2800,22 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "ClassifierFunction"
+      || name == "ClassifierMeasurementsObject" =>
+    {
+      let applied = if name == "ClassifierFunction" {
+        crate::functions::classify::apply_classifier(func_args, args)
+      } else {
+        crate::functions::classify::apply_measurements(func_args, args)
+      };
+      Ok(applied.unwrap_or_else(|| Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      }))
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } if name == "FittedModel" && func_args.len() == 1 => {
       // FittedModel[assoc][x] — evaluate model or query property
       crate::functions::linear_algebra_ast::evaluate_fitted_model(

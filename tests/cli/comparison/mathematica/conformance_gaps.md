@@ -6481,6 +6481,17 @@ and is implemented. **Not reproducible.**
 order, both from an internal silhouette/gap heuristic. The explicit-k and
 `DistanceFunction` forms are correct. **Not reproducible.**
 
+### `Classify` probabilities and `ClassifierFunction` display
+
+Woxi trains its own small, deterministic models for each `Method` (for
+example a 16-unit tanh network, a 50-tree forest, an RBF SVM with Platt
+scaling), while WL tunes hyperparameters and uses randomized training. On
+well-separated data the decided classes agree, but `"Probabilities"`, the
+exact decision boundary, measures computed from them, and the `Automatic`
+method choice (Woxi always picks `"LogisticRegression"`) generally differ.
+A `ClassifierFunction` also prints as its stored association rather than
+WL's summary box. **Not reproducible.**
+
 ### `FindPeaks` with a non-zero smoothing scale
 
 `FindPeaks[list, σ]` is *not* `FindPeaks[GaussianFilter[list, σ]]`: at σ=2.2 the

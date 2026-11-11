@@ -1329,6 +1329,7 @@
     - [`FindArgMax`](symbolic/FindArgMax.md)
     - [`FindArgMin`](symbolic/FindArgMin.md)
     - [`FindClusters`](symbolic/FindClusters.md)
+    - [`Classify`](symbolic/Classify.md)
     - [`FindFit`](symbolic/FindFit.md)
     - [`FindInstance`](symbolic/FindInstance.md)
     - [`FindMaximum`](symbolic/FindMaximum.md)
