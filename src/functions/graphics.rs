@@ -18345,6 +18345,13 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         .strip_prefix('"')
         .and_then(|rest| rest.strip_suffix('"'))
         .unwrap_or(s);
+      // A string carrying inline `\!\(\*…\)` box notation (a
+      // `TraditionalForm[Style["a\!\(\*SubscriptBox[…]\)", …]]` label)
+      // is typeset like the same string drawn on its own, not printed as
+      // its escape source.
+      if inline_box_string_to_box_expr(unquoted).is_some() {
+        return box_string_to_svg(unquoted);
+      }
       // A quoted string is literal text, upright whatever the form.
       if unquoted.len() == s.len()
         && SINGLE_LETTER_ITALICS.with(std::cell::Cell::get)
@@ -18510,6 +18517,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let content = boxes_to_svg(&args[0]);
         let mut font_size_attr = String::new();
         let mut color_attr = String::new();
+        let mut weight_attr = "";
         for opt in &args[1..] {
           let (key, val) = match opt {
             Expr::Rule {
@@ -18521,6 +18529,18 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             {
               (&ra[0], &ra[1])
             }
+            // A bare number is the font size (`Style[x, 14]` boxes to
+            // `StyleBox[x, 14, …]`), `Bold` the weight.
+            Expr::Integer(_) | Expr::Real(_) => {
+              if let Some(sz) = expr_to_f64(opt).filter(|s| *s > 0.0) {
+                font_size_attr = format!(" font-size=\"{sz}\"");
+              }
+              continue;
+            }
+            Expr::Identifier(b) if b == "Bold" => {
+              weight_attr = " font-weight=\"bold\"";
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
@@ -18530,6 +18550,14 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
+              "FontWeight" => {
+                weight_attr = if matches!(val, Expr::Identifier(w) if w == "Bold")
+                {
+                  " font-weight=\"bold\""
+                } else {
+                  ""
+                };
+              }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
                   font_size_attr = format!(" font-size=\"{sz}\"");
@@ -18544,10 +18572,15 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             }
           }
         }
-        if font_size_attr.is_empty() && color_attr.is_empty() {
+        if font_size_attr.is_empty()
+          && color_attr.is_empty()
+          && weight_attr.is_empty()
+        {
           content
         } else {
-          format!("<tspan{font_size_attr}{color_attr}>{content}</tspan>")
+          format!(
+            "<tspan{font_size_attr}{color_attr}{weight_attr}>{content}</tspan>"
+          )
         }
       }
 

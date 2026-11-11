@@ -4590,6 +4590,36 @@ mod grid_item_style_tests {
     assert!(!plain.contains("<line"), "unexpected bar in {plain}");
   }
 
+  #[test]
+  fn test_traditional_form_styled_label_typesets_inline_box_notation() {
+    // A styled string with inline `\!\(\*SubscriptBox[…]\)` notation inside
+    // `TraditionalForm` draws the subscript, not the escape source.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{}, PlotLabel -> TraditionalForm[Text[Style["s\!\(\*SubscriptBox[\(b\), \(2\)]\) = " <> ToString[7], 13, Red]]]], "SVG"]"#,
+    )
+    .unwrap();
+    let text = svg.split_once("<text").unwrap().1;
+    assert!(!text.contains("SubscriptBox"), "{text}");
+    assert!(text.contains("baseline-shift=\"sub\""), "{text}");
+    assert!(text.contains(">2</tspan>"), "{text}");
+    assert!(text.contains(") = 7") || text.contains(" = 7"), "{text}");
+    assert!(text.contains("font-size=\"13\""), "{text}");
+  }
+
+  #[test]
+  fn test_traditional_form_style_keeps_bare_font_size_and_bold() {
+    // `Style[x, 15, Bold]` boxes to `StyleBox[x, 15, Bold, …]`; the bare
+    // number is the font size and `Bold` the weight.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{}, PlotLabel -> TraditionalForm[Style["word", 15, Bold, Blue]]], "SVG"]"#,
+    )
+    .unwrap();
+    let text = svg.split_once("<text").unwrap().1;
+    assert!(text.contains("font-size=\"15\""), "{text}");
+    assert!(text.contains("font-weight=\"bold\""), "{text}");
+    assert!(text.contains(">word</tspan>"), "{text}");
+  }
+
   /// Every `r="…"` radius of the `<circle>` elements in `svg`.
   fn circle_radii(svg: &str) -> Vec<f64> {
     svg
