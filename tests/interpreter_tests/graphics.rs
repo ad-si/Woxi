@@ -14978,6 +14978,47 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     }
 
+    // Regression: a plot shown first keeps its own range, as the merged
+    // graphic takes its options from the first graphic. A marker line far
+    // taller than the curve is clipped instead of zooming the picture out
+    // to y = ±10 (the ticks stay those of the plot alone).
+    #[test]
+    fn show_keeps_leading_plot_range_over_wider_primitives() {
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 1}, Frame -> True], \
+         Graphics[{Dashed, Line[{{1, -10}, {1, 10}}]}]]",
+      );
+      assert!(
+        svg.contains(">0.8</text>") && !svg.contains(">10</text>"),
+        "Show widened the plot range to the marker line: {svg}"
+      );
+      // …and clipped at the frame, as the plot's `PlotRangeClipping ->
+      // True` carries over, rather than spilling over the margins.
+      let line = svg
+        .split("<polyline")
+        .find(|p| p.contains("stroke-dasharray"))
+        .expect("marker line");
+      let group = &svg[..svg.find(line).unwrap()];
+      assert!(
+        group.rfind("<g clip-path=").unwrap_or(0)
+          > group.rfind("<g>").unwrap_or(0),
+        "the marker line is not clipped to the frame: {svg}"
+      );
+    }
+
+    // A `PlotRange` given to `Show` itself still spans every layer.
+    #[test]
+    fn show_own_plot_range_spans_primitives_over_plot() {
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 1}], \
+         Graphics[Line[{{1, -10}, {1, 10}}]], PlotRange -> All]",
+      );
+      assert!(
+        svg.contains(">10</text>") && svg.contains(">-10</text>"),
+        "Show[…, PlotRange -> All] cropped the marker line: {svg}"
+      );
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped
