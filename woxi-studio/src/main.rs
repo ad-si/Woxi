@@ -4271,6 +4271,20 @@ const SETTER_BAR_COMPACT_LABEL_CHARS: usize = 3;
 /// plus its value readout.
 const SIDE_PANEL_CONTROL_WIDTH: f32 = 230.0;
 
+/// Whether a discrete control renders as a checkbox. The Wolfram FrontEnd
+/// shows a checkbox for a bare boolean domain — `{v, {True, False}}` in
+/// either order — rather than a two-button setter. Labeling the choices
+/// (`{False -> "scaling function", True -> "wavelet"}`) asks for those
+/// labels to be shown, so such a domain stays a SetterBar whose buttons
+/// carry them; a checkbox would have nowhere to put them.
+fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
+  values.len() == 2
+    && values.iter().any(|v| v == "True")
+    && values.iter().any(|v| v == "False")
+    && value_labels.len() == values.len()
+    && value_labels.iter().zip(values).all(|(label, v)| label == v)
+}
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4498,15 +4512,13 @@ fn render_manipulate_widget<'a>(
           controls_col = controls_col.push(control_row);
           continue;
         }
-        // A boolean domain — `{v, {True, False}}` in either order — renders
-        // as a checkbox, matching the Wolfram FrontEnd (which shows a
-        // checkbox rather than a two-button setter for True/False).
+        // A bare boolean domain renders as a checkbox; see
+        // `renders_as_checkbox`.
         let bool_values: &[String] = values;
-        let is_bool_domain = !*popup
-          && bool_values.len() == 2
-          && bool_values.iter().any(|v| v == "True")
-          && bool_values.iter().any(|v| v == "False");
-        if is_bool_domain {
+        if !*popup
+          && !*force_setter_bar
+          && renders_as_checkbox(bool_values, value_labels)
+        {
           let checked = !has_overflow
             && bool_values.get(*current_index).is_some_and(|v| v == "True");
           // Toggling selects the other entry; the update handler maps the
@@ -22561,6 +22573,69 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
     assert!(renders_as_setter_bar(&icons, &handles));
   }
 
+  /// A bare `{True, False}` domain (either order) is a checkbox, but one
+  /// whose choices carry labels — `{False -> "scaling function", True ->
+  /// "wavelet"}`, inside a `Row[{Control[…]}]` as Demonstrations write it —
+  /// is a two-button SetterBar showing those labels, as the Wolfram
+  /// FrontEnd draws it. Regression: the labeled form became an unlabeled
+  /// checkbox, hiding which state was which.
+  #[test]
+  fn labeled_boolean_choices_render_as_a_setter_bar() {
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert!(renders_as_checkbox(
+      &s(&["True", "False"]),
+      &s(&["True", "False"])
+    ));
+    assert!(renders_as_checkbox(
+      &s(&["False", "True"]),
+      &s(&["False", "True"])
+    ));
+    assert!(!renders_as_checkbox(&s(&["0", "1"]), &s(&["0", "1"])));
+    assert!(!renders_as_checkbox(
+      &s(&["True", "False", "None"]),
+      &s(&["True", "False", "None"])
+    ));
+
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, flag}, \
+       Row[{Control[{{mode, False, \"\"}, \
+         {False -> \"first view\", True -> \"second view\"}}]}], \
+       {{flag, True, \"flag\"}, {True, False}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: mode_name,
+          values: mode_values,
+          value_labels: mode_labels,
+          popup: false,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: flag_name,
+          values: flag_values,
+          value_labels: flag_labels,
+          ..
+        },
+      ] => {
+        assert_eq!((mode_name.as_str(), flag_name.as_str()), ("mode", "flag"));
+        assert_eq!(mode_labels, &s(&["first view", "second view"]));
+        assert!(
+          !renders_as_checkbox(mode_values, mode_labels),
+          "labeled booleans must keep their labeled buttons"
+        );
+        assert!(renders_as_setter_bar(mode_labels, &[None, None]));
+        assert!(
+          renders_as_checkbox(flag_values, flag_labels),
+          "a bare True/False domain stays a checkbox"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// An explicit `ControlType -> RadioButtonBar` keeps its row of radio
   /// buttons even past the automatic SetterBar/PopupMenu split — the same
   /// forcing `ControlType -> SetterBar` already gets (see
@@ -33710,7 +33785,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`tau$$ = 14.1, $CellContext`showFram
             && values.as_slice() == ["True", "False"]
             && value_labels.as_slice() == ["on", "off"]
       ),
-      "control 1 should be the rule-form framing checkbox: {:?}",
+      "control 1 should be the rule-form framing setter: {:?}",
       widget.controls[1]
     );
 
