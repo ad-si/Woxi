@@ -7942,6 +7942,70 @@ mod plot3d {
       );
     }
 
+    /// `Rotate[g, {u, v}]` turns `g` by the rotation taking the direction
+    /// `u` onto `v` — the same as rotating about `u × v` by the angle
+    /// between them — and `Rotate[g, {u, v}, p]` does so about the point
+    /// `p`. Both used to leave the graphic unrotated in `Graphics3D`.
+    #[test]
+    fn graphics3d_rotate_direction_pair() {
+      let pole = "Cuboid[{-0.05, -0.05, -2}, {0.05, 0.05, 2}]";
+      let scene = |body: &str| {
+        export_svg(&format!(
+          "Graphics3D[{body}, Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           PlotRange -> {{{{-4, 4}}, {{-4, 4}}, {{-4, 4}}}}]"
+        ))
+      };
+      let pair = scene(&format!(
+        "Rotate[{pole}, {{{{0, 0, 1}}, {{0, Sin[1.], Cos[1.]}}}}]"
+      ));
+      assert_eq!(pair, scene(&format!("Rotate[{pole}, 1., {{-1, 0, 0}}]")));
+      assert_ne!(pair, scene(pole));
+      // Symbolic directions are fine as long as they are numeric.
+      assert_eq!(
+        scene(&format!(
+          "Rotate[{pole}, {{{{1, 0, 0}}, {{Cos[Pi/3], Sin[Pi/3], 0}}}}, \
+           {{1, 1, 0}}]"
+        )),
+        scene(&format!("Rotate[{pole}, Pi/3, {{0, 0, 1}}, {{1, 1, 0}}]"))
+      );
+    }
+
+    /// `Opacity` makes a textured face translucent just like a plain one,
+    /// and an opaque textured face is clipped slightly past its edges so
+    /// neighboring facets overlap instead of leaving light seams.
+    #[test]
+    fn graphics3d_textured_face_honors_opacity() {
+      let face = |directives: &str| {
+        export_svg(&format!(
+          "Graphics3D[{{{directives}Texture[Image[{{{{{{1, 0, 0}}, \
+           {{0, 0, 1}}}}}}]], Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, \
+           {{1, 1, 0}}, {{0, 1, 0}}}}, VertexTextureCoordinates -> \
+           {{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}}}]}}, Boxed -> False]"
+        ))
+      };
+      let translucent = face("Opacity[0.3], ");
+      assert!(
+        translucent.contains("clip-path=\"url(#tex0c")
+          && translucent.matches(" opacity=\"0.3\"><use").count() == 2,
+        "{translucent}"
+      );
+      let opaque = face("");
+      assert!(!opaque.contains(" opacity=\""), "{opaque}");
+      // The clip outlines of an opaque face differ from its exact corners.
+      let clip_points = |svg: &str| -> Vec<String> {
+        svg
+          .split("<clipPath")
+          .skip(1)
+          .map(|c| {
+            let i = c.find("points=\"").unwrap() + 8;
+            c[i..i + c[i..].find('"').unwrap()].to_string()
+          })
+          .collect()
+      };
+      assert_eq!(clip_points(&opaque).len(), 2);
+      assert_ne!(clip_points(&opaque), clip_points(&translucent));
+    }
+
     /// `Rotate[Cuboid[...], angle, axis]` used to rotate just the box's two
     /// corners and re-derive a new axis-aligned box from them — an
     /// approximation that, for a box thin in two dimensions and long in
