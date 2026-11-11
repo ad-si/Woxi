@@ -109,6 +109,35 @@ mod image_size {
     assert!((h / w - 2.0 / 1.08).abs() < 0.05, "ratio {}", h / w);
   }
 
+  // The list plots honor a fixed `ImageSize -> {w, h}` the same way:
+  // the image keeps both dimensions (it used to lose the height to the
+  // default aspect ratio, 450 x 283 instead of 450 x 300).
+  #[test]
+  fn list_plots_keep_explicit_image_size_pair() {
+    for plot in [
+      "ListPlot[{1, 4, 2, 5}, ImageSize -> {450, 300}]",
+      "ListLinePlot[{1, 4, 2, 5}, ImageSize -> {450, 300}]",
+      "ListPlot[{{1, 2}, {3, 5}}, Frame -> True, \
+       FrameLabel -> {\"x\", \"y\"}, ImageSize -> {450, 300}]",
+      "ListPlot[{1, 4, 2, 5}, ImageSize -> {200, 400}]",
+    ] {
+      let svg = svg_of(plot);
+      let expected = if plot.contains("{200, 400}") {
+        (200.0, 400.0)
+      } else {
+        (450.0, 300.0)
+      };
+      assert_eq!(svg_size(&svg), expected, "{plot}");
+    }
+  }
+
+  // `ImageSize -> {Automatic, h}` fixes the height of a list plot too.
+  #[test]
+  fn list_plot_fixed_height() {
+    let svg = svg_of("ListPlot[{1, 4, 2, 5}, ImageSize -> {Automatic, 300}]");
+    assert_eq!(svg_size(&svg).1, 300.0);
+  }
+
   // A bare width still derives the height from the aspect ratio.
   #[test]
   fn width_only_still_follows_aspect_ratio() {

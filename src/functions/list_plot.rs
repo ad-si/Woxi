@@ -1526,6 +1526,8 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.svg_width = w;
             opts.svg_height = h;
             opts.full_width = fw;
+            opts.image_size_explicit =
+              crate::functions::plot::image_size_explicit_dims(replacement);
             opts.image_size_value = Some(replacement.clone());
           }
         }

@@ -12976,7 +12976,7 @@ pub(crate) fn parse_image_size(
 /// Which dimensions an `ImageSize` value fixes: `(width, height)`. A bare
 /// width or a named size fixes the width only, `{w, h}` both, and
 /// `Automatic` in either slot of the pair leaves that one free.
-fn image_size_explicit_dims(value: &Expr) -> (bool, bool) {
+pub(crate) fn image_size_explicit_dims(value: &Expr) -> (bool, bool) {
   let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let fixed = |e: &Expr| {
     !matches!(e, Expr::Identifier(n) if n == "Automatic")
