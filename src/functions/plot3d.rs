@@ -7511,7 +7511,9 @@ fn collect_3d_primitives(
       }
       *style = saved;
     }
-    Expr::Identifier(_) => {
+    // A bare `Lighting -> spec` among the primitives acts like a directive:
+    // it relights what follows it in the enclosing list.
+    Expr::Identifier(_) | Expr::Rule { .. } => {
       apply_3d_directive(expr, style);
     }
     Expr::FunctionCall { name, args } => {
