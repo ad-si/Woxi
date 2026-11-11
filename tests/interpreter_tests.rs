@@ -4535,18 +4535,23 @@ mod interpreter_tests {
       "ExportString[Graphics[{Text[\"Q\", {0, 0}, {-1, 0}, {1, 0}], Text[\"Q\", {0, 0}, {-1, 0}, {0, 1}]}, ImageSize -> {100, 100}, PlotRange -> {{-1, 1}, {-1, 1}}, ImagePadding -> None], \"SVG\"]",
     )
     .unwrap();
-    // Direction {1, 0} (pointing right, unrotated baseline): offset -1
-    // shifts the label along x only, landing right of the anchor.
+    // Offset -1 pins the label's start (its left end along the baseline)
+    // at the anchor; the renderer turns it about that point, so it runs
+    // away from the anchor along its own direction.
+    // Direction {1, 0} (pointing right, unrotated baseline): the label
+    // starts at the anchor and extends to its right.
     assert!(
-      svg.contains("<text x=\"54.20\" y=\"50.00\""),
+      svg.contains(
+        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-0.000 50.00 50.00)\""
+      ),
       "unrotated offset in the wrong place: {svg}"
     );
     // Direction {0, 1} (baseline rotated 90 degrees to point up): the same
-    // offset -1 now shifts the label along the rotated baseline, i.e.
-    // vertically, landing above the anchor instead of to its right.
+    // offset now puts the start at the anchor with the label extending
+    // upward, along the rotated baseline, instead of to its right.
     assert!(
       svg.contains(
-        "<text x=\"50.00\" y=\"45.80\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"middle\" dominant-baseline=\"central\" transform=\"rotate(-90.000 50.00 45.80)\""
+        "<text x=\"50.00\" y=\"50.00\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"start\" dominant-baseline=\"central\" transform=\"rotate(-90.000 50.00 50.00)\""
       ),
       "offset was not rotated along with direction: {svg}"
     );

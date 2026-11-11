@@ -7227,6 +7227,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
   let mut content = framed_body;
+  let mut style_line_anchor: Option<&'static str> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
     && is_style_wrapper(name)
     && !sargs.is_empty()
@@ -7234,6 +7235,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     for d in style_directives_in_application_order(&sargs[1..]) {
       apply_directive(d, &mut local_style);
       apply_text_style_directive(d, &mut local_style);
+      if let Some(anchor) = text_alignment_line_anchor(d) {
+        style_line_anchor = anchor;
+      }
     }
     content = peel_label_rotate(&sargs[0], &mut rotation);
   }
@@ -7311,7 +7315,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
   }
   let text = graphics_text_content(content);
-  local_style.text_line_anchor = column_line_anchor(content);
+  // A `Column`'s own alignment wins over a `TextAlignment` the label's
+  // `Style` wrapper gives its lines.
+  local_style.text_line_anchor =
+    column_line_anchor(content).or(style_line_anchor);
 
   // `Offset[{dx, dy}, pos]` places the label `dx`, `dy` screen points from
   // `pos` (`pos` defaults to the origin of the plot).
@@ -7417,6 +7424,32 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 /// `Alignment -> …`) gives the lines of a label, as the SVG `text-anchor` of
 /// the block's edge; `None` for centered lines and for anything but a
 /// `Column`.
+/// The SVG `text-anchor` a `TextAlignment -> …` style directive gives the
+/// lines of a multi-line label: `Some(Some("start"))` for `Left`,
+/// `Some(Some("end"))` for `Right`, `Some(None)` for `Center` (the default
+/// centered lines), and `None` for any other directive.
+fn text_alignment_line_anchor(d: &Expr) -> Option<Option<&'static str>> {
+  let (key, value) = match d {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  if !matches!(key, Expr::Identifier(k) if k == "TextAlignment") {
+    return None;
+  }
+  match value {
+    Expr::Identifier(s) if s == "Left" => Some(Some("start")),
+    Expr::Identifier(s) if s == "Right" => Some(Some("end")),
+    Expr::Identifier(s) if s == "Center" => Some(None),
+    _ => None,
+  }
+}
+
 fn column_line_anchor(content: &Expr) -> Option<&'static str> {
   fn anchor_of(spec: &Expr) -> Option<&'static str> {
     match spec {
@@ -12205,7 +12238,11 @@ fn render_primitive(
       // A label pinned by its left or right edge (`{-1, _}` / `{1, _}`) is
       // anchored there by the renderer itself: the width estimate below is
       // only a guess, and one that is far off for text padded with blanks.
-      let edge_anchorable = !has_direction && !text.contains('\n');
+      // A rotated label is turned about that same edge point, so the
+      // renderer's anchoring holds along its tilted baseline too — unless
+      // a panel is painted behind it, which is laid out unrotated.
+      let edge_anchorable = !text.contains('\n')
+        && (!has_direction || (background.is_none() && frame.is_none()));
       let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
         ("start", 0.0)
       } else if offset.0 == 1.0 && edge_anchorable {
