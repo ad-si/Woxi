@@ -19230,6 +19230,15 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
+    // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
+    // content unrotated, as `expr_to_svg_markup` does, rather than the
+    // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
+    // wrapper is its content too, keeping a `Text[Style[…]]`'s styling.
+    Expr::FunctionCall { name, args }
+      if (name == "Rotate" || name == "Text") && !args.is_empty() =>
+    {
+      traditional_label(&args[0])
+    }
     _ if contains_visible_style(e) => {
       format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
     }

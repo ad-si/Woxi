@@ -5128,6 +5128,54 @@ mod plot3d {
       assert!(!svg.contains(">z<"));
     }
 
+    // An expression axis label is typeset in `TraditionalForm`, as on a
+    // 2-D plot: `x[t]` reads x(t) with italic letters, not `x[t]`.
+    #[test]
+    fn expression_axes_labels_use_traditional_form() {
+      for code in [
+        "ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 1}, \
+         AxesLabel -> {f[u], g[u], h[u]}]",
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {f[u], g[u], h[u]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(!svg.contains("f[u]"), "{code}: {svg}");
+        for name in ["f", "g", "h"] {
+          let label = format!(
+            "<tspan font-style=\"italic\">{name}</tspan>(\
+             <tspan font-style=\"italic\">u</tspan>)"
+          );
+          assert!(svg.contains(&label), "{code}: missing {label}: {svg}");
+        }
+      }
+      // A string label is still drawn as it is written.
+      let svg = export_svg(
+        "ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 1}, \
+         AxesLabel -> {\"f[u]\", None, None}]",
+      );
+      assert!(svg.contains(">f[u]<"), "{svg}");
+    }
+
+    // A `Rotate`-wrapped expression label typesets its content rather than
+    // a `Rotate(…)` call, on 2-D and 3-D plots alike.
+    #[test]
+    fn rotate_wrapped_expression_axes_label_typesets_content() {
+      let svg = export_svg(
+        "Plot[u, {u, 0, 1}, AxesLabel -> {None, Rotate[f[u], Pi/2]}]",
+      );
+      assert!(!svg.contains("Rotate"), "{svg}");
+      assert!(svg.contains(">f(u)<"), "{svg}");
+      let svg = export_svg(
+        "ParametricPlot3D[{Cos[u], Sin[u], u}, {u, 0, 1}, \
+         AxesLabel -> {None, None, Rotate[f[u], Pi/2]}]",
+      );
+      assert!(!svg.contains("Rotate"), "{svg}");
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">f</tspan>("),
+        "{svg}"
+      );
+    }
+
     // A long z-axis label is set upright beside the vertical axis, as
     // Wolfram sets it, and must not be pushed off the canvas.
     #[test]

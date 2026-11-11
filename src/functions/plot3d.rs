@@ -12632,7 +12632,8 @@ fn parse_axes_labels(
 /// axis asks to stay unlabeled. Everything else is typeset by the shared
 /// label renderer, so a label written in the FrontEnd as linear syntax
 /// (`"\!\(\*FractionBox[\(d\[Theta]\), \(dt\)]\) (rad/s)"`) draws as the
-/// fraction it stands for.
+/// fraction it stands for. A non-string expression is typeset in
+/// `TraditionalForm`, as on a 2-D plot (`x[t]` reads x(t)).
 fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
   match expr {
     Expr::Identifier(s) if s == "None" => None,
@@ -12643,8 +12644,19 @@ fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
         name.to_string(),
       ))
     }),
-    _ => {
+    Expr::String(_) => {
       let markup = crate::functions::graphics::expr_to_svg_markup(expr);
+      (!markup.is_empty()).then_some(markup)
+    }
+    _ => {
+      use crate::functions::graphics::{
+        STYLED_LABEL_MARKER, traditional_label,
+      };
+      let label = traditional_label(expr);
+      let markup = label
+        .strip_prefix(STYLED_LABEL_MARKER)
+        .map(str::to_string)
+        .unwrap_or(label);
       (!markup.is_empty()).then_some(markup)
     }
   }
