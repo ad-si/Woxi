@@ -17,14 +17,20 @@ pub(crate) const SMALL_DASH_PX: f64 = 4.0;
 /// The radius in pixels of a point drawn at `point_size`: a fraction of the
 /// image width, or — stored negative — an absolute size in printer's points
 /// (`AbsolutePointSize[6]` is a 6-pixel dot at every image size, measured
-/// from wolframscript's own SVG export).
+/// from wolframscript's own SVG export). A point is never drawn smaller
+/// than one pixel across, so `PointSize[0]` still shows a hairline dot,
+/// as it does in Wolfram's renderer.
 pub(crate) fn point_radius(point_size: f64, svg_w: f64) -> f64 {
-  if point_size < 0.0 {
+  let r = if point_size < 0.0 {
     -point_size * 0.5
   } else {
     point_size * svg_w * 0.5
-  }
+  };
+  r.max(MIN_POINT_RADIUS)
 }
+
+/// Half of the one-pixel minimum diameter of a drawn point.
+pub(crate) const MIN_POINT_RADIUS: f64 = 0.5;
 
 /// A named point size. `Small`/`Medium`/… name absolute sizes, like the
 /// named dash lengths do.
@@ -6426,18 +6432,16 @@ pub(crate) fn plot_inset_at_width(
   }
   let Expr::Graphics {
     is_3d: false,
-    source: Some(_),
+    source: Some(source),
     ..
   } = g
   else {
     return None;
   };
-  let background = graphics_options(g).is_some_and(|options| {
-    options.iter().any(|o| {
-      matches!(option_name_value(o), Some((n, v)) if n == "Background"
-        && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
-    })
-  });
+  // The plot's own call options carry its `Background` even when the
+  // rendering keeps no symbolic `Graphics[…]` form to read it from.
+  let background = sets_background(&source.options)
+    || graphics_options(g).is_some_and(|options| sets_background(&options));
   let shown = evaluate_expr_to_expr(&call(
     "Show",
     vec![
@@ -6459,6 +6463,14 @@ pub(crate) fn plot_inset_at_width(
   };
   let dims = parse_svg_dimensions(&svg)?;
   Some((svg, dims.nat_w, dims.nat_h))
+}
+
+/// Whether `options` give a `Background` other than `None`.
+fn sets_background(options: &[Expr]) -> bool {
+  options.iter().any(|o| {
+    matches!(option_name_value(o), Some((n, v)) if n == "Background"
+      && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
+  })
 }
 
 /// The numeric `{{xmin, xmax}, {ymin, ymax}}` of a graphic's `PlotRange`.
@@ -6524,10 +6536,7 @@ fn framed_plot_inset(
     ),
     _ => (px, py),
   };
-  let background = options.iter().any(|o| {
-    matches!(option_name_value(o), Some((n, v)) if n == "Background"
-      && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
-  });
+  let background = sets_background(&options);
   // WL insets a plot without a `Background` transparently.
   let svg = if background {
     svg.clone()
