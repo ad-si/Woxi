@@ -7263,7 +7263,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // MatrixForm[v]}], pos]`) colors the composed picture like any label.
   let label_color = local_style.color;
   let colored_body =
-    if (label_color.r, label_color.g, label_color.b) != (0.0, 0.0, 0.0) {
+    if (label_color.r, label_color.g, label_color.b) == (0.0, 0.0, 0.0) {
+      framed_body.clone()
+    } else {
       call(
         "Style",
         vec![
@@ -7278,8 +7280,6 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
           ),
         ],
       )
-    } else {
-      framed_body.clone()
     };
   if frame_opts.is_empty()
     && args.len() == 2
@@ -24066,7 +24066,7 @@ fn grid_svg_styled_internal_reporting(
     let stroke_w = (0.04 * font_size).max(0.5);
     // The parentheses are glyphs of the matrix, so a `Style[…, color]`
     // around it colors them along with the entries.
-    let styled_color = default_style.color.map(|c| c.to_svg_rgb());
+    let styled_color = default_style.color.map(Color::to_svg_rgb);
     let stroke_color = styled_color
       .as_deref()
       .unwrap_or_else(|| theme().stroke_default);
