@@ -1943,10 +1943,7 @@ pub(crate) fn axes_label_svg_at(
     // than being clipped.
     let label_font = match canvas_width {
       Some(cw) => {
-        let width = crate::functions::graphics::box_string_visible_len(x_label)
-          as f64
-          * font_size
-          * 0.55;
+        let width = widest_label_line_len(x_label) as f64 * font_size * 0.55;
         let room = cw - label_x;
         if width > room && room > 0.0 {
           (font_size * room / width).max(font_size * 0.6)
@@ -1956,16 +1953,17 @@ pub(crate) fn axes_label_svg_at(
       }
       None => font_size,
     };
+    // A multi-line label stays vertically centered on the axis.
+    let lines = label_markup_lines(x_label);
+    let pitch = plot_padding::line_pitch(label_font);
+    let first_baseline = axis_y + plot_padding::ascent(label_font)
+      - plot_padding::line_height(label_font) / 2.0
+      - (lines.len() - 1) as f64 * pitch / 2.0;
     svg.push_str(&format!(
-      "<text x=\"{label_x:.1}\" y=\"{:.1}\" text-anchor=\"start\" \
-       font-family=\"sans-serif\" \
+      "<text x=\"{label_x:.1}\" y=\"{first_baseline:.1}\" \
+       text-anchor=\"start\" font-family=\"sans-serif\" \
        font-size=\"{label_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
-      axis_y + plot_padding::ascent(label_font)
-        - plot_padding::line_height(label_font) / 2.0,
-      crate::functions::graphics::box_string_to_svg_scaled(
-        x_label,
-        RESOLUTION_SCALE as f64
-      )
+      join_label_lines(&lines, label_x, pitch)
     ));
   }
   if show_y_axis && !y_label.is_empty() {
@@ -1973,27 +1971,73 @@ pub(crate) fn axes_label_svg_at(
     // label runs off the image — a wide one (`{a, b, c, d}`) over an axis
     // that sits near the left edge slides right until it fits, the way
     // Wolfram keeps an axis label inside the graphic.
-    let half_width = crate::functions::graphics::box_string_visible_len(y_label)
-      as f64
-      * font_size
-      * 0.55
-      / 2.0;
+    let half_width =
+      widest_label_line_len(y_label) as f64 * font_size * 0.55 / 2.0;
     let lx = axis_x.max(half_width + font_size * 0.2);
+    // The last line sits 6 pt above the top of the axis; the lines of a
+    // multi-line label stack upward from it.
+    let lines = label_markup_lines(y_label);
+    let pitch = plot_padding::line_pitch(font_size);
+    let first_baseline = y0
+      - plot_padding::AXES_LABEL_GAP_Y * font_size / plot_padding::LABEL_FONT
+      - plot_padding::descent(font_size)
+      - (lines.len() - 1) as f64 * pitch;
     svg.push_str(&format!(
-      "<text x=\"{lx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-       fill=\"{label_fill}\">{}</text>\n",
-      // 6 pt above the top of the axis.
-      y0 - plot_padding::AXES_LABEL_GAP_Y * font_size
-        / plot_padding::LABEL_FONT
-        - plot_padding::descent(font_size),
-      crate::functions::graphics::box_string_to_svg_scaled(
-        y_label,
-        RESOLUTION_SCALE as f64
-      )
+      "<text x=\"{lx:.1}\" y=\"{first_baseline:.1}\" \
+       text-anchor=\"middle\" font-family=\"sans-serif\" \
+       font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
+      join_label_lines(&lines, lx, pitch)
     ));
   }
   svg
+}
+
+/// The SVG markup of an axis label, one entry per line of the label (a
+/// `"a\nb"` string has two).
+fn label_markup_lines(label: &str) -> Vec<String> {
+  let markup = crate::functions::graphics::box_string_to_svg_scaled(
+    label,
+    RESOLUTION_SCALE as f64,
+  );
+  if markup.contains('\n') {
+    crate::functions::graphics::split_markup_lines(&markup)
+  } else {
+    vec![markup]
+  }
+}
+
+/// The visible length, in characters, of the longest line of a label.
+fn widest_label_line_len(label: &str) -> usize {
+  if label.contains('\n') {
+    label_markup_lines(label)
+      .iter()
+      .map(|line| {
+        crate::functions::chart::svg_markup_visible_text(line)
+          .trim_end_matches('\u{a0}')
+          .chars()
+          .count()
+      })
+      .max()
+      .unwrap_or(0)
+  } else {
+    crate::functions::graphics::box_string_visible_len(label)
+  }
+}
+
+/// The content of a `<text>` holding `lines`: a single line as is, several
+/// as `<tspan>`s that each restart at `x`, `pitch` below the one before.
+fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
+  if lines.len() == 1 {
+    return lines[0].clone();
+  }
+  lines
+    .iter()
+    .enumerate()
+    .map(|(i, line)| {
+      let dy = if i == 0 { 0.0 } else { pitch };
+      format!("<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>")
+    })
+    .collect()
 }
 
 /// Label a tick that belongs to a sequence of `step`-spaced ticks.
