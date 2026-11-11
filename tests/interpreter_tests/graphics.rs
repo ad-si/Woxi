@@ -19812,6 +19812,81 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot_zero_arrowheads_draw_segments() {
+      // Regression: `VectorStyle -> Arrowheads[0]` still drew full arrows;
+      // headless arrows are plain segments, as with "Segment".
+      assert_eq!(
+        interpret(
+          "g = VectorPlot[{1, y}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, \
+             VectorStyle -> Arrowheads[0]]; \
+           {Length[Cases[g[[1]], _Line, Infinity]], \
+            Length[Cases[g[[1]], _Arrow, Infinity]]}"
+        )
+        .unwrap(),
+        "{18, 0}"
+      );
+    }
+
+    #[test]
+    fn vector_plot_stream_points_add_streamlines() {
+      clear_state();
+      // Regression: VectorPlot ignored `StreamPoints`, so no streamlines
+      // were drawn over the vectors. Without the option only the vectors
+      // remain.
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+             VectorPoints -> 4][[1]], _Line, Infinity]]"
+        )
+        .unwrap(),
+        "0"
+      );
+      let streams = interpret(
+        "Length[Union[Cases[VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+           VectorPoints -> 4, StreamPoints -> Coarse][[1]], \
+           Arrow[p_] /; Length[p] > 2 :> Round[p[[1, 2]], 0.001], \
+           Infinity]]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      assert!((8..=13).contains(&streams), "{streams} streamlines");
+      // `StreamScale -> None` draws whole headless streamlines.
+      assert_eq!(
+        interpret(
+          "g = VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, \
+             StreamPoints -> Coarse, StreamScale -> None, \
+             StreamColorFunction -> None, StreamStyle -> Red]; \
+           {Length[Cases[g[[1]], {RGBColor[1., 0., 0.], _Line}, Infinity]] \
+              > 5, MemberQ[g[[1]], {___, RGBColor[1., 0., 0.], _Arrow}, \
+              Infinity]}"
+        )
+        .unwrap(),
+        "{True, False}"
+      );
+    }
+
+    #[test]
+    fn stream_color_function_gets_position_and_velocity() {
+      clear_state();
+      // Regression: a `StreamColorFunction` function was called with the
+      // rescaled speed alone; Wolfram passes `x, y, vx, vy, |v|`, each
+      // rescaled to 0..1. Coloring a uniform flow by `x` alone must make
+      // the left end black and the right end white.
+      assert_eq!(
+        interpret(
+          "segs = SortBy[Cases[StreamPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+             StreamColorFunction -> Function[{x, y}, GrayLevel[x]]], \
+             {_Arrowheads, c_, Arrow[p_]} :> {Mean[p][[1]], List @@ c}, \
+             Infinity], First]; \
+           {Round[segs[[1, 2]], 0.2], Round[segs[[-1, 2]], 0.2]}"
+        )
+        .unwrap(),
+        "{{0., 0., 0.}, {1., 1., 1.}}"
+      );
+    }
+
+    #[test]
     fn vector_plot_arrows_have_wolfram_size_and_colors() {
       // Regression: the arrows were scaled to 40% of a grid cell by
       // magnitude and drawn as near-invisible specks in a pink-to-green
