@@ -3076,7 +3076,7 @@ mod graphics {
       );
       assert!(!svg.contains("Spacer"), "{svg}");
       assert!(svg.contains(">top</tspan>"), "{svg}");
-      assert!(svg.contains("></tspan>"), "{svg}");
+      assert!(svg.contains(">&#160;</tspan>"), "{svg}");
       assert!(svg.contains(">bottom</tspan>"), "{svg}");
     }
 
@@ -51919,5 +51919,31 @@ mod number_line_plot_overlay {
        NumberLinePlot[{x > 0}, {x, -Pi, Pi}, PlotStyle -> {Purple}]]",
     );
     assert!(svg.contains("rgb(128,0,128)"), "number line kept: {svg}");
+  }
+}
+
+mod multiline_text_blank_lines {
+  use super::*;
+
+  /// Regression: a blank row of a multi-line text block (an empty `{}`
+  /// row of a `Grid` inset) was written as an empty `<tspan>`. SVG drops
+  /// the `dy` of a tspan without characters, so blank lines collapsed and
+  /// a leading blank line lost the block's centering shift.
+  #[test]
+  fn blank_lines_keep_their_tspan_offset() {
+    let svg = export_svg(
+      "Graphics[{Inset[Style[Grid[{{}, {\"top\"}, {}, {\"bottom\"}}], 10], \
+       {0, 0}], Point[{1, 1}]}]",
+    );
+    assert!(svg.contains("<tspan"), "{svg}");
+    assert!(!svg.contains("\"></tspan>"), "empty tspan: {svg}");
+    assert_eq!(svg.matches(">&#160;</tspan>").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn blank_line_in_text_string_keeps_its_offset() {
+    let svg = export_svg("Graphics[Text[\"a\\n\\nb\", {0, 0}]]");
+    assert!(!svg.contains("\"></tspan>"), "empty tspan: {svg}");
+    assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
 }

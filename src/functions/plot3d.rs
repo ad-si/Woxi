@@ -12306,6 +12306,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
           for (i, line) in lines.iter().enumerate() {
             let dy = if i == 0 { first_dy } else { line_height };
+            let line = crate::functions::graphics::tspan_line(line);
             body.push_str(&format!(
               "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
             ));
