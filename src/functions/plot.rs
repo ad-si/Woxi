@@ -16982,12 +16982,14 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (y_data_min, y_data_max) =
     include_in_range((y_data_min, y_data_max), plot_opts.axes_origin.1);
   // A constant curve `c` gets the range from 0 to `2 c` (`-1..1` for 0),
-  // padded like any other.
+  // padded like any other. "Constant" is relative to the curve's own
+  // magnitude, so a curve of values around 1e-20 that still varies keeps
+  // its own range instead of collapsing onto 0.
   let (y_data_min, y_data_max) =
     if !scaling.1.as_ref().is_some_and(Scaling::is_log)
       && y_data_min.is_finite()
       && (y_data_max - y_data_min).abs()
-        <= f64::EPSILON * y_data_min.abs().max(1.0)
+        <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs())
     {
       let c = y_data_min;
       if c == 0.0 {
@@ -17034,11 +17036,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
   let y_span = y_data_max - y_data_min;
-  let padding = if y_span.abs() < f64::EPSILON {
-    1.0
-  } else {
-    y_span / 18.0
-  };
+  let padding =
+    if y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs()) {
+      1.0
+    } else {
+      y_span / 18.0
+    };
   let y_auto_min = y_data_min - padding;
   let y_auto_max = y_data_max + padding;
   let (y_auto_min, y_auto_max) =
