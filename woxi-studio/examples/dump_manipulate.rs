@@ -8,6 +8,8 @@
 //!
 //! When `svg-out-dir` is given, each widget's rendered SVG is written to
 //! `<svg-out-dir>/widget-<n>.svg` so the visual output can be inspected.
+//! Set `OVERRIDE="x=0.5,y=1"` to render the SVG with those control values
+//! in place of the initial ones (e.g. to compare against a stored snapshot).
 
 use std::path::PathBuf;
 
@@ -200,6 +202,14 @@ fn main() {
           .map(|c| (c.name().to_string(), c.current_code()))
           .collect();
         bindings.extend(state.state.iter().cloned());
+        if let Ok(ov) = std::env::var("OVERRIDE") {
+          for kv in ov.split(',') {
+            if let Some((k, v)) = kv.split_once('=') {
+              bindings.retain(|(n, _)| n != k);
+              bindings.push((k.to_string(), v.to_string()));
+            }
+          }
+        }
         let code = match state.initialization.as_deref() {
           Some(init) => format!("{init}; {}", state.body),
           None => state.body.clone(),

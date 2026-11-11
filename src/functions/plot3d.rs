@@ -6724,6 +6724,7 @@ fn emit_textured_triangle(
   svg: &mut String,
   tex: &TriangleTexture,
   corners: [(f64, f64); 3],
+  opacity: f64,
   ids: &mut Vec<(*const image::RgbImage, String)>,
 ) -> bool {
   use base64::Engine;
@@ -6768,12 +6769,51 @@ fn emit_textured_triangle(
     ids.push((key, id.clone()));
     id
   };
+  // Each facet is clipped on its own, so anti-aliasing leaves a faint
+  // light seam along every shared edge of an opaque textured surface,
+  // tracing its tessellation. Grow an opaque facet's clip a little past
+  // its edges so neighbors overlap; a translucent facet keeps its exact
+  // outline, since an overlap would darken every seam instead.
+  let clip_corners = if opacity < 1.0 {
+    corners
+  } else {
+    grow_triangle(corners, 0.5)
+  };
   let clip = format!("{id}c{}", svg.len());
+  let opacity_attr = if opacity < 1.0 {
+    format!(" opacity=\"{opacity}\"")
+  } else {
+    String::new()
+  };
   svg.push_str(&format!(
-    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
-    corners[0].0, corners[0].1, corners[1].0, corners[1].1, corners[2].0, corners[2].1
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    clip_corners[0].0,
+    clip_corners[0].1,
+    clip_corners[1].0,
+    clip_corners[1].1,
+    clip_corners[2].0,
+    clip_corners[2].1
   ));
   true
+}
+
+/// The triangle `corners` with every edge pushed `by` pixels outward.
+fn grow_triangle(corners: [(f64, f64); 3], by: f64) -> [(f64, f64); 3] {
+  let (cx, cy) = (
+    (corners[0].0 + corners[1].0 + corners[2].0) / 3.0,
+    (corners[0].1 + corners[1].1 + corners[2].1) / 3.0,
+  );
+  corners.map(|(x, y)| {
+    let (dx, dy) = (x - cx, y - cy);
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+      (x, y)
+    } else {
+      // Moving a corner `2·by` away from the centroid pushes the opposite
+      // sides out by at least about `by` for all but very thin triangles.
+      (x + dx / len * 2.0 * by, y + dy / len * 2.0 * by)
+    }
+  })
 }
 
 /// The linear part of a rotation by `angle` around the axis direction `w`
@@ -7131,7 +7171,25 @@ fn parse_3d_transforms(
       None
     }
     "Rotate" if !args.is_empty() => {
-      let angle = try_eval_to_f64(&evaluate_expr_to_expr(&args[0]).ok()?)?;
+      let first = evaluate_expr_to_expr(&args[0]).ok()?;
+      // Rotate[g, {u, v}] / Rotate[g, {u, v}, p]: the rotation taking the
+      // direction u onto v (about the origin or p). Delegate to the
+      // canonical RotationTransform so the two never drift apart.
+      if let Expr::List(pair) = &first
+        && pair.len() == 2
+        && pair.iter().all(|w| eval_vec3(w).is_some())
+        && args.len() <= 2
+      {
+        let mut rt_args = vec![first.clone()];
+        rt_args.extend(args.get(1).cloned());
+        let rt = Expr::FunctionCall {
+          name: "RotationTransform".to_string(),
+          args: rt_args.into(),
+        };
+        let transforms = parse_3d_affine_transforms(&rt);
+        return (transforms.len() == 1).then_some(transforms);
+      }
+      let angle = try_eval_to_f64(&first)?;
       match args.len() {
         // Rotate[g, θ, w]: axis direction w through the origin.
         // Rotate[g, θ, {p1, p2}]: axis through the points p1 and p2.
@@ -12165,7 +12223,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (x2, y2) = to_svg(tri.projected[2].0, tri.projected[2].1);
       if let Some(tex) = &tri.texture {
         let corners = [(x0, y0), (x1, y1), (x2, y2)];
-        if emit_textured_triangle(&mut svg, tex, corners, &mut texture_ids) {
+        if emit_textured_triangle(
+          &mut svg,
+          tex,
+          corners,
+          tri.opacity,
+          &mut texture_ids,
+        ) {
           let edge_stroke = match tri.edge_color {
             Some((er, eg, eb)) => format!("rgb({er},{eg},{eb})"),
             None => "rgb(64,64,64)".to_string(),
