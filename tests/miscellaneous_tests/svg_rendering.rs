@@ -1543,6 +1543,51 @@ mod tests {
     }
 
     #[test]
+    fn list_line_plot_joined_false_draws_unconnected_points() {
+      let count = |code: &str, tag: &str| {
+        woxi::interpret(code)
+          .expect("interpret should succeed")
+          .matches(tag)
+          .count()
+      };
+      // The default line plot draws no point markers ...
+      assert_eq!(
+        count(
+          r#"ExportString[ListLinePlot[{1, 3, 2, 4}], "SVG"]"#,
+          "<circle"
+        ),
+        0
+      );
+      // ... but `Joined -> False` leaves each data point a dot.
+      assert_eq!(
+        count(
+          r#"ExportString[ListLinePlot[{1, 3, 2, 4}, Joined -> False], "SVG"]"#,
+          "<circle"
+        ),
+        4
+      );
+      // With `Filling -> Axis` the unjoined points get stems, as in ListPlot.
+      assert_eq!(
+        woxi::interpret(
+          r#"ExportString[ListLinePlot[{5, 1, 4}, Joined -> False,
+            Filling -> Axis], "SVG"] ===
+            ExportString[ListPlot[{5, 1, 4}, Filling -> Axis], "SVG"]"#
+        )
+        .unwrap(),
+        "True"
+      );
+      // A per-series `Joined` list joins only the series marked True.
+      assert_eq!(
+        count(
+          r#"ExportString[ListLinePlot[{{1, 2, 3}, {3, 4, 5}},
+            Joined -> {True, False}], "SVG"]"#,
+          "<circle"
+        ),
+        3
+      );
+    }
+
+    #[test]
     fn list_line_plot_renders_plot_label() {
       let svg = woxi::interpret(
         r#"ExportString[ListLinePlot[{{1,2,3}}, PlotLabel -> "MyTitle"], "SVG"]"#,

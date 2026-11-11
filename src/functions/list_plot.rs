@@ -3245,8 +3245,28 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   list_plot_ast(&new_args)
 }
 
+/// Whether the first `Joined` option among the plot options `args[1..]`
+/// leaves some series unjoined: `Joined -> False` or a list with a `False`.
+fn unjoins_series(args: &[Expr]) -> bool {
+  let is_false = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "False");
+  args.iter().skip(1).find_map(|opt| {
+    crate::functions::graphics::option_name_value(opt)
+      .filter(|(name, _)| *name == "Joined")
+      .map(|(_, value)| match &*value {
+        Expr::List(items) => items.iter().any(is_false),
+        other => is_false(other),
+      })
+  }) == Some(true)
+}
+
 /// ListLinePlot[{y1, y2, ...}]
 pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // `Joined -> False` (or a per-series `Joined -> {…}` list that leaves a
+  // series unjoined) turns the line plot into a point plot: the points stay
+  // unconnected, and `Filling` draws stems, exactly as in `ListPlot`.
+  if unjoins_series(args) {
+    return list_plot_ast(args);
+  }
   let mut parsed = parse_plot_options(args);
   // Association keys don't label the points here: wolframscript draws key
   // labels for ListPlot but not for ListLinePlot.
