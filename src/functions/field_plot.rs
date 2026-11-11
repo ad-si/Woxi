@@ -4632,6 +4632,16 @@ fn parse_vector_arrow_style(args: &[Expr], start: usize) -> VectorArrowStyle {
     for d in &directives {
       if matches!(d, Expr::String(s) if s == "Segment") {
         style.segments = true;
+      } else if let Expr::FunctionCall { name, args } = d
+        && name == "Arrowheads"
+        && args.len() == 1
+      {
+        // `Arrowheads[0]` (or `Arrowheads[{}]`) draws headless arrows, the
+        // same plain segments as `"Segment"`.
+        style.segments |= match &args[0] {
+          Expr::List(items) => items.is_empty(),
+          size => try_eval_to_f64(size).is_some_and(|s| s == 0.0),
+        };
       } else if let Some(c) = crate::functions::graphics::parse_color(d) {
         style.color = Some((
           (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -4953,9 +4963,21 @@ fn render_sampled_vector_plot(
     sample_vector_field(field_at, parse_vector_points(args, start), &area);
   // Arrows in data coordinates, kept so `VectorPlot[…][[1]]` yields the
   // primitives a surrounding `Graphics[{…}]` can redraw.
-  let primitives =
+  let mut primitives =
     vector_arrow_primitives(&vectors, arrow_len, &area, &arrow_style);
   push_field_primitives_svg(&mut svg, &primitives, &area, "vectors");
+
+  // `StreamPoints` (other than the default `None`) adds streamlines over
+  // the vectors, as in Wolfram.
+  let opts_tail = &args[start.min(args.len())..];
+  if option_rule(opts_tail, "StreamPoints").is_some_and(
+    |p| !matches!(p, Expr::Identifier(s) if s == "None" || s == "False"),
+  ) {
+    let streams =
+      stream_primitives(field_at, (x_min, x_max), (y_min, y_max), opts_tail);
+    push_field_primitives_svg(&mut svg, &streams, &area, "streams");
+    primitives.extend(streams);
+  }
 
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
@@ -5347,80 +5369,124 @@ fn stream_primitives(
   let lines =
     crate::functions::streamlines::even_streamlines(&field, 1.0 / lines_across);
 
+  // By default the speed picks a color on WL12DefaultVectorGradient, which
+  // overrides a `StreamStyle` color as in Wolfram. `StreamColorFunction ->
+  // None` draws every streamline in the `StreamStyle` color (or the first
+  // plot color); a gradient name colors by the speed on that gradient, and
+  // a function gets `x, y, vx, vy, |v|` (each rescaled to 0..1 over the
+  // drawn streamlines unless `StreamColorFunctionScaling -> False`).
+  let color_function = option_rule(options, "StreamColorFunction")
+    .filter(|f| !matches!(f, Expr::Identifier(s) if s == "Automatic"));
+  let uniform_color =
+    matches!(color_function, Some(Expr::Identifier(s)) if s == "None");
+  let scaling = !matches!(
+    option_rule(options, "StreamColorFunctionScaling"),
+    Some(Expr::Identifier(s)) if s == "False"
+  );
+
   // Each streamline is drawn as a run of arrows, each 8% of the plot range
   // long with its head at the end (shorter at a streamline's end, with a
-  // proportionally smaller head), colored by the flow speed through it.
-  const SEGMENT: f64 = 0.08;
+  // proportionally smaller head). `StreamScale -> None` draws whole
+  // streamlines without heads instead, split into short pieces only so the
+  // color can follow the flow along them.
+  let headless = matches!(
+    option_rule(options, "StreamScale"),
+    Some(Expr::Identifier(s)) if s == "None"
+  );
+  let segment = match (headless, uniform_color) {
+    (false, _) => 0.08,
+    (true, false) => 0.02,
+    (true, true) => f64::INFINITY,
+  };
   let normalized_len = |a: (f64, f64), b: (f64, f64)| {
     let du = (b.0 - a.0) / (x_max - x_min);
     let dv = (b.1 - a.1) / (y_max - y_min);
     (du * du + dv * dv).sqrt()
   };
-  let mut segments: Vec<(Vec<(f64, f64)>, f64, f64)> = Vec::new();
+  let mut segments: Vec<(Vec<(f64, f64)>, f64)> = Vec::new();
   for line in &lines {
     let mut current = vec![line[0]];
     let mut length = 0.0;
     for pair in line.windows(2) {
       current.push(pair[1]);
       length += normalized_len(pair[0], pair[1]);
-      if length >= SEGMENT {
-        segments.push((
-          std::mem::replace(&mut current, vec![pair[1]]),
-          length,
-          0.0,
-        ));
+      if length >= segment {
+        segments.push((std::mem::replace(&mut current, vec![pair[1]]), length));
         length = 0.0;
       }
     }
     if current.len() > 1 {
-      segments.push((current, length, 0.0));
+      segments.push((current, length));
     }
   }
-  for (points, _, speed) in &mut segments {
-    let mid = points[points.len() / 2];
-    *speed = field
-      .at(mid.0, mid.1)
-      .map_or(0.0, |(vx, vy)| (vx * vx + vy * vy).sqrt());
-  }
-  let (speed_min, speed_max) = segments
-    .iter()
-    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), (_, _, s)| {
-      (lo.min(*s), hi.max(*s))
-    });
 
-  // By default the speed picks a color on WL12DefaultVectorGradient, which
-  // overrides a `StreamStyle` color as in Wolfram. `StreamColorFunction ->
-  // None` draws every streamline in the `StreamStyle` color (or the first
-  // plot color); a gradient name or a function replaces the default one.
-  let color_function = option_rule(options, "StreamColorFunction");
-  let color_of = |speed: f64| -> (u8, u8, u8) {
-    let t = if speed_max > speed_min {
-      (speed - speed_min) / (speed_max - speed_min)
-    } else {
-      0.5
-    };
+  // The color arguments `x, y, vx, vy, |v|` of each piece, at its middle.
+  let samples: Vec<[f64; 5]> = segments
+    .iter()
+    .map(|(points, _)| {
+      let (x, y) = points[points.len() / 2];
+      let (vx, vy) = field.at(x, y).unwrap_or((0.0, 0.0));
+      [x, y, vx, vy, vx.hypot(vy)]
+    })
+    .collect();
+  let mut ranges = [(f64::INFINITY, f64::NEG_INFINITY); 5];
+  for sample in &samples {
+    for (range, v) in ranges.iter_mut().zip(sample) {
+      *range = (range.0.min(*v), range.1.max(*v));
+    }
+  }
+  let rescale = |v: f64, (lo, hi): (f64, f64)| {
+    if hi > lo { (v - lo) / (hi - lo) } else { 0.5 }
+  };
+  let color_of = |sample: &[f64; 5]| -> (u8, u8, u8) {
+    let t = rescale(sample[4], ranges[4]);
     match color_function {
+      None => crate::functions::plot::wl_default_vector_gradient(t),
       Some(Expr::Identifier(s)) if s == "None" => {
         stream_color.unwrap_or((49, 122, 163))
       }
       Some(Expr::String(name)) => apply_named_color_function(name.as_str(), t),
-      Some(Expr::Identifier(s)) if s == "Automatic" => {
-        crate::functions::plot::wl_default_vector_gradient(t)
+      Some(f) => {
+        let args = sample
+          .iter()
+          .zip(ranges)
+          .map(|(&v, r)| Expr::Real(if scaling { rescale(v, r) } else { v }))
+          .collect();
+        let call = Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args,
+        };
+        evaluate_expr_to_expr(&call)
+          .ok()
+          .and_then(|c| parse_color(&c))
+          .map_or_else(
+            || crate::functions::plot::wl_default_vector_gradient(t),
+            |c| {
+              (
+                (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+              )
+            },
+          )
       }
-      Some(f) => scaled_color(t, speed, None, Some((f, true))),
-      None => crate::functions::plot::wl_default_vector_gradient(t),
     }
   };
-  let primitives: Vec<Expr> = segments
+  segments
     .into_iter()
-    .map(|(points, length, speed)| {
-      let head = 0.02 * (length / SEGMENT).min(1.0);
+    .zip(&samples)
+    .map(|((points, length), sample)| {
       let coords = Expr::List(
         points
           .into_iter()
           .map(|(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
           .collect(),
       );
+      let color = rgb_color(color_of(sample));
+      if headless {
+        return Expr::List(vec![color, call1("Line", coords)].into());
+      }
+      let head = 0.02 * (length / segment).min(1.0);
       Expr::List(
         vec![
           call1(
@@ -5430,14 +5496,13 @@ fn stream_primitives(
                 .into(),
             ),
           ),
-          rgb_color(color_of(speed)),
+          color,
           call1("Arrow", coords),
         ]
         .into(),
       )
     })
-    .collect();
-  primitives
+    .collect()
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
