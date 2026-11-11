@@ -44623,6 +44623,37 @@ mod static_dynamic_controls {
     assert!(svg.contains(">label<"), "label is drawn: {svg}");
   }
 
+  /// `Inset[Text[obj], pos, opos]` with a symbolic `opos` puts that point of
+  /// the label on `pos`, like `Text[obj, pos, offset]`: `{Center, Top}` hangs
+  /// the text below the top edge instead of centering it on the edge.
+  #[test]
+  fn inset_of_text_honors_a_symbolic_alignment() {
+    let frame = "PlotRange -> {{0, 1}, {0, 1}}, PlotRangePadding -> None, \
+       ImageSize -> {200, 100}";
+    for (opos, offset) in [
+      ("{Center, Top}", "{0, 1}"),
+      ("{Left, Bottom}", "{-1, -1}"),
+      ("{Right, Center}", "{1, 0}"),
+      ("Center", "{0, 0}"),
+    ] {
+      let inset = export_svg(&format!(
+        "Graphics[Inset[Text[\"t\"], {{0.5, 0.5}}, {opos}], {frame}]"
+      ));
+      let text = export_svg(&format!(
+        "Graphics[Text[\"t\", {{0.5, 0.5}}, {offset}], {frame}]"
+      ));
+      assert_eq!(inset, text, "Inset alignment {opos}");
+    }
+    let styled = export_svg(&format!(
+      "Graphics[Inset[Style[Text[\"t\"], Red], {{0.5, 1}}, {{Center, Top}}], \
+       {frame}]"
+    ));
+    let plain = export_svg(&format!(
+      "Graphics[Style[Text[\"t\", {{0.5, 1}}, {{0, 1}}], Red], {frame}]"
+    ));
+    assert_eq!(styled, plain);
+  }
+
   /// An explicit `AxesOrigin` is part of the automatic plot range, so the
   /// axes cross inside the picture instead of the data being zoomed in.
   #[test]

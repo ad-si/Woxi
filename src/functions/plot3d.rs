@@ -2600,11 +2600,31 @@ fn generate_svg(
   let p_cx = f64::midpoint(px_min, px_max);
   let p_cy = f64::midpoint(py_min, py_max);
   let bbox_for_axes = bounding_box_corners_with_ratios(box_ratios);
+  // All surface renderers share Graphics3D's explicit/automatic tick parser.
+  let ticks = options
+    .iter()
+    .rev()
+    .find_map(|option| match option {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern,Expr::Identifier(name) if name=="Ticks") => {
+        Some(parse_ticks_3d(
+          &evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone()),
+        ))
+      }
+      _ => None,
+    })
+    .unwrap_or([None, None, None]);
+  let label_size = label_font_size(options);
+  // The frame is fitted to the axes exactly as they are drawn below — the
+  // same ticks and label size — so wide or large tick labels stay inside.
   let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
     show_axes.then(|| {
       let to_svg =
         |px: f64, py: f64| (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale);
-      draw_axes_on_box(
+      draw_axes_on_box_with_ticks(
         &mut String::new(),
         camera,
         &to_svg,
@@ -2613,6 +2633,10 @@ fn generate_svg(
         y_range,
         z_range,
         axes_labels,
+        &ticks,
+        None,
+        None,
+        label_size,
       )
     })
   };
@@ -2876,24 +2900,7 @@ fn generate_svg(
     }
   }
 
-  // All surface renderers share Graphics3D's explicit/automatic tick parser.
   if show_axes {
-    let ticks = options
-      .iter()
-      .rev()
-      .find_map(|option| match option {
-        Expr::Rule {
-          pattern,
-          replacement,
-        } if matches!(&**pattern,Expr::Identifier(name) if name=="Ticks") => {
-          Some(parse_ticks_3d(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| (**replacement).clone()),
-          ))
-        }
-        _ => None,
-      })
-      .unwrap_or([None, None, None]);
     draw_axes_on_box_with_ticks(
       &mut svg,
       camera,
@@ -2906,7 +2913,7 @@ fn generate_svg(
       &ticks,
       None,
       None,
-      label_font_size(options),
+      label_size,
     );
   }
 
