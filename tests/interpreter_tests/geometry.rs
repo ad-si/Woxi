@@ -2662,6 +2662,112 @@ mod region_bounds {
 mod region_nearest {
   use super::*;
 
+  // Foot of the perpendicular onto an InfiniteLine / InfinitePlane, in both
+  // the through-points and the point-plus-directions forms.
+  #[test]
+  fn infinite_line_and_plane() {
+    assert_eq!(
+      interpret("RegionNearest[InfiniteLine[{{0, 0}, {1, 1}}], {1, 0}]")
+        .unwrap(),
+      "{1/2, 1/2}"
+    );
+    assert_eq!(
+      interpret("RegionNearest[InfiniteLine[{0, 0, 1}, {1, 0, 0}], {5, 2, 3}]")
+        .unwrap(),
+      "{5, 0, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionNearest[InfinitePlane[{{3, 0, 0}, {0, 0, 2}, {0, 1, 0}}], {0, 0, 0}]"
+      )
+      .unwrap(),
+      "{12/49, 36/49, 18/49}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionNearest[InfinitePlane[{0, 0, 1}, {{1, 0, 0}, {0, 1, 0}}], {1, 2, 3}]"
+      )
+      .unwrap(),
+      "{1, 2, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "RegionNearest[InfinitePlane[{0., 0, 1}, {{1, 0, 0}, {0, 1, 0}}], {1, 2, 3}]"
+      )
+      .unwrap(),
+      "{1., 2., 1.}"
+    );
+  }
+
+  #[test]
+  fn infinite_line_and_plane_distance() {
+    assert_eq!(
+      interpret("RegionDistance[InfiniteLine[{0, 0}, {1, 1}], {1, 0}]")
+        .unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDistance[InfinitePlane[{{3, 0, 0}, {0, 0, 2}, {0, 1, 0}}], {0, 0, 0}]"
+      )
+      .unwrap(),
+      "6/7"
+    );
+  }
+
+  // Degenerate (collinear) spanning points stay unevaluated.
+  #[test]
+  fn degenerate_infinite_plane() {
+    assert_eq!(
+      interpret(
+        "RegionNearest[InfinitePlane[{{0, 0, 0}, {1, 1, 1}, {2, 2, 2}}], {1, 0, 0}]"
+      )
+      .unwrap(),
+      "RegionNearest[InfinitePlane[{{0, 0, 0}, {1, 1, 1}, {2, 2, 2}}], {1, 0, 0}]"
+    );
+  }
+
+  // A line segment crossing an infinite flat meets it in a point.
+  #[test]
+  fn infinite_flat_line_intersection() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfinitePlane[{0, 0, 1}, {{1, 0, 0}, {0, 1, 0}}], Line[{{0, 0, 0}, {0, 0, 2}}]]"
+      )
+      .unwrap(),
+      "Point[{{0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Line[{{0., 0, 0}, {2, 2, 2}}], InfinitePlane[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]]"
+      )
+      .unwrap(),
+      "Point[{{0.3333333333333333, 0.3333333333333333, 0.3333333333333333}}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfinitePlane[{0, 0, 5}, {{1, 0, 0}, {0, 1, 0}}], Line[{{0, 0, 0}, {0, 0, 2}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[3]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0, 0}, {1, 1}}], Line[{{0, 1}, {1, 0}, {2, 3}}]]"
+      )
+      .unwrap(),
+      "Point[{{3/2, 3/2}, {1/2, 1/2}}]"
+    );
+    // Skew lines in 3D never meet.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0, 0, 0}, {1, 1, 0}}], Line[{{0, 1, 1}, {1, 0, 1}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[3]"
+    );
+  }
+
   #[test]
   fn unevaluated() {
     assert_eq!(

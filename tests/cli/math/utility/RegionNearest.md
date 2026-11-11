@@ -20,3 +20,10 @@ A `Rectangle` clamps the point into the box.
 $ wo 'RegionNearest[Rectangle[{0, 0}, {2, 2}], {3, 3}]'
 {2, 2}
 ```
+
+The nearest point of an infinite plane is the foot of the perpendicular:
+
+```scrut
+$ wo 'RegionNearest[InfinitePlane[{{3, 0, 0}, {0, 0, 2}, {0, 1, 0}}], {0, 0, 0}]'
+{12/49, 36/49, 18/49}
+```

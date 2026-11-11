@@ -9355,6 +9355,12 @@ fn compute_region_distance(
         .sqrt(),
     ));
   }
+  if let Some(nearest) = affine_flat_nearest(region, point) {
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "EuclideanDistance",
+      vec![point.clone(), nearest],
+    ));
+  }
   let Expr::FunctionCall { name, args } = region else {
     return unevaluated();
   };
@@ -9536,6 +9542,9 @@ fn compute_region_nearest(
         .collect::<Vec<_>>()
         .into(),
     ));
+  }
+  if let Some(nearest) = affine_flat_nearest(region, point) {
+    return Ok(nearest);
   }
   let pt: Vec<Expr> = pt.iter().cloned().collect();
   let n = pt.len();
@@ -17699,6 +17708,7 @@ fn compute_region_set_op(
       }
       "RegionIntersection" => match region_box_intersection(&acc, next)
         .or_else(|| region_line_intersection(&acc, next))
+        .or_else(|| region_flat_line_intersection(&acc, next))
         .or_else(|| region_polygon_intersection(&acc, next))
       {
         Some(region) => region,
@@ -19141,4 +19151,250 @@ fn information_property(sym: &str, property: &str) -> Expr {
     "Missing",
     vec![str_expr("UnknownProperty"), str_expr(property)],
   )
+}
+
+/// An `InfiniteLine` or `InfinitePlane` as an affine flat: a base point and
+/// its spanning direction vectors. Accepts both the through-points forms
+/// (`InfiniteLine[{p, q}]`, `InfinitePlane[{p, q, r}]`) and the
+/// point-plus-directions forms (`InfiniteLine[p, v]`, `InfinitePlane[p, {u, v}]`).
+fn affine_flat(region: &Expr) -> Option<(Vec<Expr>, Vec<Vec<Expr>>)> {
+  let Expr::FunctionCall { name, args } = region else {
+    return None;
+  };
+  let k = match name.as_str() {
+    "InfiniteLine" => 1,
+    "InfinitePlane" => 2,
+    _ => return None,
+  };
+  let vector = |e: &Expr| -> Option<Vec<Expr>> {
+    match e {
+      Expr::List(c)
+        if !c.is_empty() && c.iter().all(|x| !matches!(x, Expr::List(_))) =>
+      {
+        Some(c.to_vec())
+      }
+      _ => None,
+    }
+  };
+  let sub = |u: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    u.iter()
+      .zip(v)
+      .map(|(x, y)| minus2(x.clone(), y.clone()))
+      .collect()
+  };
+  let (origin, dirs) = match args.as_ref() {
+    [Expr::List(pts)] if pts.len() == k + 1 => {
+      let pts: Vec<Vec<Expr>> =
+        pts.iter().map(vector).collect::<Option<_>>()?;
+      let dirs = pts[1..].iter().map(|p| sub(p, &pts[0])).collect();
+      (pts[0].clone(), dirs)
+    }
+    [p, v] if k == 1 => (vector(p)?, vec![vector(v)?]),
+    [p, Expr::List(vs)] if k == 2 && vs.len() == 2 => {
+      (vector(p)?, vs.iter().map(vector).collect::<Option<_>>()?)
+    }
+    _ => return None,
+  };
+  let n = origin.len();
+  (dirs.iter().all(|d| d.len() == n)).then_some((origin, dirs))
+}
+
+/// The orthogonal projection of `w` onto the span of `dirs` (one or two
+/// linearly independent vectors), solved exactly from the Gram system so
+/// exact input stays exact. `None` for degenerate (dependent) directions.
+fn project_onto_span(dirs: &[Vec<Expr>], w: &[Expr]) -> Option<Vec<Expr>> {
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let dot = |u: &[Expr], v: &[Expr]| -> Expr {
+    plus(
+      u.iter()
+        .zip(v)
+        .map(|(x, y)| times2(x.clone(), y.clone()))
+        .collect(),
+    )
+  };
+  let is_zero = |e: &Expr| -> Option<bool> {
+    match ev(call("Equal", vec![e.clone(), Expr::Integer(0)]))? {
+      Expr::Identifier(ref s) if s == "True" => Some(true),
+      Expr::Identifier(ref s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+  let coefs: Vec<Expr> = match dirs {
+    [d] => {
+      let dd = ev(dot(d, d))?;
+      if is_zero(&dd)? {
+        return None;
+      }
+      vec![div2(dot(d, w), dd)]
+    }
+    [u, v] => {
+      let (a, b, c) = (dot(u, u), dot(u, v), dot(v, v));
+      let det = ev(minus2(
+        times2(a.clone(), c.clone()),
+        times2(b.clone(), b.clone()),
+      ))?;
+      if is_zero(&det)? {
+        return None;
+      }
+      let (uw, vw) = (dot(u, w), dot(v, w));
+      vec![
+        div2(
+          minus2(times2(c, uw.clone()), times2(b.clone(), vw.clone())),
+          det.clone(),
+        ),
+        div2(minus2(times2(a, vw), times2(b, uw)), det),
+      ]
+    }
+    _ => return None,
+  };
+  (0..w.len())
+    .map(|i| {
+      ev(plus(
+        coefs
+          .iter()
+          .zip(dirs)
+          .map(|(c, d)| times2(c.clone(), d[i].clone()))
+          .collect(),
+      ))
+    })
+    .collect()
+}
+
+/// `RegionNearest` for an `InfiniteLine` / `InfinitePlane`: the foot of the
+/// perpendicular from `point` onto the flat.
+fn affine_flat_nearest(region: &Expr, point: &Expr) -> Option<Expr> {
+  let (origin, dirs) = affine_flat(region)?;
+  let Expr::List(pt) = point else {
+    return None;
+  };
+  if pt.len() != origin.len() {
+    return None;
+  }
+  let w: Vec<Expr> = pt
+    .iter()
+    .zip(&origin)
+    .map(|(p, o)| minus2(p.clone(), o.clone()))
+    .collect();
+  let proj = project_onto_span(&dirs, &w)?;
+  let nearest: Vec<Expr> = origin
+    .iter()
+    .zip(proj)
+    .map(|(o, p)| plus2(o.clone(), p))
+    .collect();
+  crate::evaluator::evaluate_expr_to_expr(&Expr::List(nearest.into())).ok()
+}
+
+/// `RegionIntersection` of an `InfiniteLine` / `InfinitePlane` with a
+/// `Line` (polyline): the points where its segments cross the flat, as a
+/// multi-point `Point[{p1, …}]` (even for one inexact crossing) or an
+/// `EmptyRegion`. `None` (left symbolic) when a segment lies inside the flat.
+fn region_flat_line_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let (flat, line) = if affine_flat(a).is_some() {
+    (a, b)
+  } else {
+    (b, a)
+  };
+  let (origin, dirs) = affine_flat(flat)?;
+  let Expr::FunctionCall { name, args } = line else {
+    return None;
+  };
+  if name != "Line" || args.len() != 1 {
+    return None;
+  }
+  let Expr::List(pts) = &args[0] else {
+    return None;
+  };
+  let dims = origin.len();
+  let pts: Vec<Vec<Expr>> = pts
+    .iter()
+    .map(|p| match p {
+      Expr::List(c) if c.len() == dims => Some(c.to_vec()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if pts.len() < 2 {
+    return None;
+  }
+
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let sub = |u: &[Expr], v: &[Expr]| -> Vec<Expr> {
+    u.iter()
+      .zip(v)
+      .map(|(x, y)| minus2(x.clone(), y.clone()))
+      .collect()
+  };
+  let dot = |u: &[Expr], v: &[Expr]| -> Expr {
+    plus(
+      u.iter()
+        .zip(v)
+        .map(|(x, y)| times2(x.clone(), y.clone()))
+        .collect(),
+    )
+  };
+  let is_true = |e: Expr| -> Option<bool> {
+    match ev(e)? {
+      Expr::Identifier(ref s) if s == "True" => Some(true),
+      Expr::Identifier(ref s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+  // `Chop` absorbs the rounding noise of inexact input.
+  let is_zero =
+    |e: Expr| is_true(call("Equal", vec![call1("Chop", e), Expr::Integer(0)]));
+  // The component of a vector orthogonal to the flat.
+  let normal_part = |w: &[Expr]| -> Option<Vec<Expr>> {
+    let proj = project_onto_span(&dirs, w)?;
+    sub(w, &proj).into_iter().map(ev).collect()
+  };
+
+  let mut points: Vec<Vec<Expr>> = Vec::new();
+  for seg in pts.windows(2) {
+    let d = sub(&seg[1], &seg[0]);
+    let r0 = normal_part(&sub(&seg[0], &origin))?;
+    let rd = normal_part(&d)?;
+    let rdrd = ev(dot(&rd, &rd))?;
+    if is_zero(rdrd.clone())? {
+      // Parallel: a segment inside the flat is a segment overlap.
+      if is_zero(dot(&r0, &r0))? {
+        return None;
+      }
+      continue;
+    }
+    // Solve r0 + t rd == 0 in the least-squares sense, then check it holds.
+    let t = ev(div2(times2(Expr::Integer(-1), dot(&rd, &r0)), rdrd))?;
+    let residual: Vec<Expr> = r0
+      .iter()
+      .zip(&rd)
+      .map(|(x, y)| plus2(x.clone(), times2(t.clone(), y.clone())))
+      .collect();
+    if !is_zero(ev(dot(&residual, &residual))?)? {
+      continue;
+    }
+    if !(is_true(call("GreaterEqual", vec![t.clone(), Expr::Integer(0)]))?
+      && is_true(call("LessEqual", vec![t.clone(), Expr::Integer(1)]))?)
+    {
+      continue;
+    }
+    let pt: Vec<Expr> = (0..dims)
+      .map(|i| ev(plus2(seg[0][i].clone(), times2(t.clone(), d[i].clone()))))
+      .collect::<Option<_>>()?;
+    let key = expr_to_string(&Expr::List(pt.clone().into()));
+    if !points
+      .iter()
+      .any(|q| expr_to_string(&Expr::List(q.clone().into())) == key)
+    {
+      points.push(pt);
+    }
+  }
+  if points.is_empty() {
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  let list = Expr::List(
+    points
+      .into_iter()
+      .map(|p| Expr::List(p.into()))
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  Some(call1("Point", ev(call1("Reverse", call1("Sort", list)))?))
 }

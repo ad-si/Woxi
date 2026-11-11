@@ -19,3 +19,10 @@ A `Rectangle` measures the distance to the nearest edge or corner.
 $ wo 'RegionDistance[Rectangle[{0, 0}, {2, 2}], {3, 3}]'
 Sqrt[2]
 ```
+
+Distance to an infinite line:
+
+```scrut
+$ wo 'RegionDistance[InfiniteLine[{0, 0}, {1, 1}], {1, 0}]'
+1/Sqrt[2]
+```
