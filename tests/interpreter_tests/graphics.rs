@@ -2211,6 +2211,26 @@ mod graphics {
       assert!(!plain.contains("<tspan"), "{plain}");
     }
 
+    /// The italic parts of a multi-line `Text` label (a `Column` of `Row`s)
+    /// stay slanted on the line they fall on; they used to be dropped
+    /// for any label spanning more than one line.
+    #[test]
+    fn multi_line_text_label_keeps_italic_parts_per_line() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{Row[{Style[\"a\", Italic], \" = 1\"}], \
+         \"bc\", Row[{\"d = \", Style[\"e\", Italic]}]}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("\"><tspan font-style=\"italic\">a</tspan> = 1</tspan>"),
+        "{svg}"
+      );
+      assert!(svg.contains("\">bc</tspan>"), "{svg}");
+      assert!(
+        svg.contains("\">d = <tspan font-style=\"italic\">e</tspan></tspan>"),
+        "{svg}"
+      );
+    }
+
     /// `Null` typesets as nothing inside a `Row` — a Manipulate readout
     /// like `Row[{"rate ", If[cond, "x"], "%"}]` must not print "Null".
     #[test]

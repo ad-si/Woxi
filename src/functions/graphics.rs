@@ -11326,9 +11326,6 @@ pub(crate) fn svg_escape(s: &str) -> String {
 /// run, but not all of them, is italic — a uniformly italic label is
 /// already covered by the primitive's own font style.
 fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
-  if text.contains('\n') {
-    return Vec::new();
-  }
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
   if flatten_label_runs(&runs) != text
     || !runs.iter().any(|r| r.italic)
@@ -11346,6 +11343,23 @@ fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
     pos += len;
   }
   ranges
+}
+
+/// The part of `italic_ranges` (character ranges over a whole multi-line
+/// label) that falls on the line spanning characters `start..end`, shifted
+/// to be relative to that line.
+fn line_italic_ranges(
+  italic_ranges: &[(usize, usize)],
+  start: usize,
+  end: usize,
+) -> Vec<(usize, usize)> {
+  italic_ranges
+    .iter()
+    .filter_map(|&(a, b)| {
+      let (a, b) = (a.max(start), b.min(end));
+      (a < b).then(|| (a - start, b - start))
+    })
+    .collect()
 }
 
 /// [`svg_escape`] a single-line label, wrapping the characters inside
@@ -12458,19 +12472,28 @@ fn render_primitive(
           style.font_style,
           color.opacity_attr(),
         ));
+        // Character offset of the current line within `text`, so each
+        // line keeps the slanted parts (`Style[…, Italic]`) that fall on it.
+        let mut line_start = 0;
         for (i, line) in lines.iter().enumerate() {
+          let line_end = line_start + line.chars().count();
+          let markup = svg_escape_with_italics(
+            line,
+            &line_italic_ranges(italic_ranges, line_start, line_end),
+          );
+          line_start = line_end + 1;
           if i == 0 {
             // The block is centered on the anchor, so its first line sits
             // half of the remaining height above it.
             out.push_str(&format!(
               "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
               -(lines.len() as f64 - 1.0) * fs / 2.0,
-              tspan_line(&svg_escape(line))
+              tspan_line(&markup)
             ));
           } else {
             out.push_str(&format!(
               "<tspan x=\"{sx:.2}\" dy=\"{fs}\">{}</tspan>",
-              tspan_line(&svg_escape(line))
+              tspan_line(&markup)
             ));
           }
         }
@@ -31923,6 +31946,11 @@ pub enum ManipulateControl {
     /// conditions would collide on that one empty key); it is carried here
     /// instead. `None` means always enabled.
     enabled: Option<String>,
+    /// The code of a `Button[Dynamic[label], …]` caption (InputForm of the
+    /// `Dynamic`'s body), re-evaluated against the live bindings so the
+    /// button reads e.g. "next" or "show solution" depending on the state.
+    /// `None` for a static caption.
+    label_code: Option<String>,
   },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
@@ -33290,6 +33318,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if name == "Button" && args.len() >= 2 =>
       {
         let label_runs = manipulate_label_runs(&args[0], false);
+        let label_code = dynamic_button_label_code(&args[0]);
         let enabled = extract_enabled_condition(&args[2..])
           .map(crate::syntax::expr_to_source_form);
         let label = flatten_label_runs(&label_runs);
@@ -33310,6 +33339,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           label_runs,
           action,
           enabled,
+          label_code,
         });
         continue;
       }
@@ -33342,6 +33372,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               label_runs,
               action: crate::syntax::expr_to_source_form(replacement),
               enabled: None,
+              label_code: dynamic_button_label_code(pattern),
             });
             any = true;
           }
@@ -37387,6 +37418,19 @@ pub fn manipulate_eval_values_code(
   (!columns.0.is_empty()).then_some(columns)
 }
 
+/// The code of a `Dynamic[caption]` button label (the `Dynamic`'s body), or
+/// `None` for a static label.
+fn dynamic_button_label_code(label: &Expr) -> Option<String> {
+  match label {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      Some(crate::syntax::expr_to_source_form(&args[0]))
+    }
+    _ => None,
+  }
+}
+
 /// The caption code of a control spec `{{var, init, Dynamic[caption]}, …}`
 /// whose label follows other control variables, or `None` for a static one.
 fn dynamic_label_code(spec: &Expr) -> Option<String> {
@@ -40737,6 +40781,7 @@ fn parse_manipulate_control(
         label_runs: button_runs,
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
+        label_code: dynamic_button_label_code(&built_args[0]),
       },
     });
   }
@@ -42439,6 +42484,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label_runs,
         action,
         enabled: _,
+        label_code: _,
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,

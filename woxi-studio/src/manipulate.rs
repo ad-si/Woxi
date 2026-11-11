@@ -648,6 +648,10 @@ pub struct ManipulateState {
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
+  /// Per-control `Button[Dynamic[label], …]` caption code, parallel to
+  /// `controls`, re-typeset on every re-evaluation so the button's text
+  /// follows the live bindings. `None` for a static caption.
+  control_label_code: Vec<Option<String>>,
   /// Whether each control is currently interactive, recomputed on every
   /// re-evaluation from `control_enabled` against the live bindings. Parallel
   /// to `controls`; a control indexes in with its position.
@@ -738,6 +742,14 @@ impl ManipulateState {
       })
       .collect();
     let control_is_enabled = vec![true; controls.len()];
+    let control_label_code: Vec<Option<String>> = spec
+      .controls
+      .iter()
+      .map(|raw| match raw {
+        ManipulateControl::Button { label_code, .. } => label_code.clone(),
+        _ => None,
+      })
+      .collect();
     // …and with the pane it belongs to, for a `PaneSelector` control panel.
     // (a static text row has no variable, so it is filed under its label).
     let control_visible: Vec<Option<String>> = spec
@@ -797,6 +809,7 @@ impl ManipulateState {
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
+      control_label_code,
       control_is_enabled,
       control_visible,
       list_elements: spec.list_elements,
@@ -1547,6 +1560,7 @@ impl ManipulateState {
     let dynamic_bounds = self.dynamic_bounds.clone();
     let dynamic_values = self.dynamic_values.clone();
     let dynamic_labels = self.dynamic_labels.clone();
+    let control_label_code = self.control_label_code.clone();
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -1562,6 +1576,7 @@ impl ManipulateState {
       resolved_bounds,
       resolved_values,
       resolved_labels,
+      resolved_button_labels,
     ) = woxi::with_scoped_globals(&bindings, || {
       // The body runs *before* the captions are built: a Manipulate body
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
@@ -1672,6 +1687,16 @@ impl ManipulateState {
             .map(|runs| (name.clone(), runs))
         })
         .collect();
+      // And `Button[Dynamic[label], …]` captions ("next" / "show
+      // solution"), by control position since a button binds no name.
+      let button_labels: Vec<Option<Vec<LabelRun>>> = control_label_code
+        .iter()
+        .map(|code| {
+          code
+            .as_deref()
+            .and_then(woxi::functions::graphics::manipulate_eval_label_code)
+        })
+        .collect();
       (
         (render, raw_render),
         updated_bindings,
@@ -1681,6 +1706,7 @@ impl ManipulateState {
         resolved,
         values,
         labels,
+        button_labels,
       )
     });
     self.last_render = Some(raw_render);
@@ -1714,6 +1740,7 @@ impl ManipulateState {
     self.control_is_visible = visible;
     self.apply_dynamic_bounds(&resolved_bounds);
     self.apply_dynamic_labels(resolved_labels);
+    self.apply_button_labels(resolved_button_labels);
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
@@ -1849,6 +1876,23 @@ impl ManipulateState {
         std::mem::swap(min, max);
       }
       *current = current.clamp(*min, *max);
+    }
+  }
+
+  /// Retitle each `Button[Dynamic[label], …]` with its freshly typeset
+  /// caption (parallel to `controls`; `None` leaves a button as it is).
+  fn apply_button_labels(&mut self, resolved: Vec<Option<Vec<LabelRun>>>) {
+    for (ctrl, runs) in self.controls.iter_mut().zip(resolved) {
+      if let (
+        ControlState::Button {
+          label, label_runs, ..
+        },
+        Some(runs),
+      ) = (ctrl, runs)
+      {
+        *label = woxi::functions::graphics::manipulate_label_text(&runs);
+        *label_runs = runs;
+      }
     }
   }
 
@@ -2101,6 +2145,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label_runs,
         action,
         enabled: _,
+        label_code: _,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
@@ -3610,6 +3655,40 @@ mod tests {
   /// button never grays out once its own game-over condition holds,
   /// letting the underlying state run past the point the Demonstration
   /// means for it to stop.
+  /// A `Button[Dynamic[label], action]` caption follows the live bindings
+  /// (a "next" button that turns into "show solution" on the last step).
+  /// It used to show the `Dynamic`'s source code as its text.
+  #[test]
+  fn button_with_dynamic_label_follows_live_bindings() {
+    let code = r#"Manipulate[
+      Graphics[{}],
+      {{step, 1}, ControlType -> None},
+      Button[Dynamic[If[step >= 3, "show solution", "next"]],
+        step = step + 1]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Button { .. }))
+      .expect("a Button control");
+    let label = |s: &ManipulateState| match &s.controls[idx] {
+      ControlState::Button { label, .. } => label.clone(),
+      _ => unreachable!(),
+    };
+    assert_eq!(label(&state), "next");
+    for expected in ["next", "show solution"] {
+      let ControlState::Button { action, .. } = &state.controls[idx] else {
+        unreachable!()
+      };
+      let action = action.clone();
+      state.apply_button_action(&action);
+      assert_eq!(label(&state), expected);
+    }
+  }
+
   #[test]
   fn button_with_own_enabled_condition_disables_independently_of_sibling() {
     let code = r#"Manipulate[
