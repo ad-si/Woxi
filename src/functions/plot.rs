@@ -1940,10 +1940,12 @@ pub(crate) fn axes_label_svg_at(
     let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
     // A label wider than the room left of the canvas edge (an
     // `ImagePadding` can state less than it needs) shrinks to fit rather
-    // than being clipped.
+    // than being clipped. The width is measured the way the automatic
+    // padding measured it (per-glyph widths), so a label that exactly
+    // fills the room reserved for it keeps its size.
     let label_font = match canvas_width {
       Some(cw) => {
-        let width = widest_label_line_len(x_label) as f64 * font_size * 0.55;
+        let width = plot_padding::label_width(x_label, font_size);
         let room = cw - label_x;
         if width > room && room > 0.0 {
           (font_size * room / width).max(font_size * 0.6)
