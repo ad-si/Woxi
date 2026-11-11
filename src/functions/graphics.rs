@@ -38060,6 +38060,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       }]
     }
   };
+  // A machine real is shown the way a notebook displays it, to six
+  // significant digits: a `Range[0.1, 2, 0.1]` popup reads `0.3`, not the
+  // `0.30000000000000004` its exact binary value spells out in InputForm.
+  if matches!(expr, Expr::Real(_))
+    && let Some(text) = number_form_text(expr)
+  {
+    return vec![LabelRun {
+      text,
+      italic,
+      ..Default::default()
+    }];
+  }
   // `Derivative[n][f]` — a slider labeled `y'(0)` writes its `y'` this way.
   // The primes are upright even when the function they mark is italic.
   if let Some((func, order)) = as_derivative_of(expr) {
@@ -44615,6 +44627,32 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(value_labels, &["a", "b", "c"]);
         assert_eq!(*initial_index, 1);
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// Machine-real choices are labeled as a notebook displays them: the
+  /// `0.30000000000000004` that `Range[0.1, 1, 0.1]` computes reads `0.3`,
+  /// while the bound value keeps its exact InputForm.
+  #[test]
+  fn machine_real_choices_are_labeled_in_display_form() {
+    let s = spec("Manipulate[t, {{t, 0.5, \"step\"}, Range[0.1, 1, 0.1]}]");
+    match &s.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1."
+          ]
+        );
+        assert_eq!(values[2], "0.30000000000000004");
+        assert_eq!(*initial_index, 4);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
     }
