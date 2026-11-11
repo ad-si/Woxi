@@ -17,14 +17,20 @@ pub(crate) const SMALL_DASH_PX: f64 = 4.0;
 /// The radius in pixels of a point drawn at `point_size`: a fraction of the
 /// image width, or — stored negative — an absolute size in printer's points
 /// (`AbsolutePointSize[6]` is a 6-pixel dot at every image size, measured
-/// from wolframscript's own SVG export).
+/// from wolframscript's own SVG export). A point is never drawn smaller
+/// than one pixel across, so `PointSize[0]` still shows a hairline dot,
+/// as it does in Wolfram's renderer.
 pub(crate) fn point_radius(point_size: f64, svg_w: f64) -> f64 {
-  if point_size < 0.0 {
+  let r = if point_size < 0.0 {
     -point_size * 0.5
   } else {
     point_size * svg_w * 0.5
-  }
+  };
+  r.max(MIN_POINT_RADIUS)
 }
+
+/// Half of the one-pixel minimum diameter of a drawn point.
+pub(crate) const MIN_POINT_RADIUS: f64 = 0.5;
 
 /// A named point size. `Small`/`Medium`/… name absolute sizes, like the
 /// named dash lengths do.
@@ -6426,18 +6432,16 @@ pub(crate) fn plot_inset_at_width(
   }
   let Expr::Graphics {
     is_3d: false,
-    source: Some(_),
+    source: Some(source),
     ..
   } = g
   else {
     return None;
   };
-  let background = graphics_options(g).is_some_and(|options| {
-    options.iter().any(|o| {
-      matches!(option_name_value(o), Some((n, v)) if n == "Background"
-        && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
-    })
-  });
+  // The plot's own call options carry its `Background` even when the
+  // rendering keeps no symbolic `Graphics[…]` form to read it from.
+  let background = sets_background(&source.options)
+    || graphics_options(g).is_some_and(|options| sets_background(&options));
   let shown = evaluate_expr_to_expr(&call(
     "Show",
     vec![
@@ -6459,6 +6463,14 @@ pub(crate) fn plot_inset_at_width(
   };
   let dims = parse_svg_dimensions(&svg)?;
   Some((svg, dims.nat_w, dims.nat_h))
+}
+
+/// Whether `options` give a `Background` other than `None`.
+fn sets_background(options: &[Expr]) -> bool {
+  options.iter().any(|o| {
+    matches!(option_name_value(o), Some((n, v)) if n == "Background"
+      && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
+  })
 }
 
 /// The numeric `{{xmin, xmax}, {ymin, ymax}}` of a graphic's `PlotRange`.
@@ -6524,10 +6536,7 @@ fn framed_plot_inset(
     ),
     _ => (px, py),
   };
-  let background = options.iter().any(|o| {
-    matches!(option_name_value(o), Some((n, v)) if n == "Background"
-      && !matches!(v.as_ref(), Expr::Identifier(b) if b == "None"))
-  });
+  let background = sets_background(&options);
   // WL insets a plot without a `Background` transparently.
   let svg = if background {
     svg.clone()
@@ -21196,6 +21205,38 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     };
     if first_graphic_is_plot == Some(true) {
+      // Like its other options, the merged graphic keeps the range the
+      // leading plot settled on: primitives reaching beyond it (a marker
+      // line from y = -10 to 10 over a curve within ±1) are clipped, not
+      // allowed to zoom the picture out. Only a `PlotRange` given to `Show`
+      // or an `All` asked of the plot spans everything shown.
+      let automatic_range = merged_options.iter().all(|o| {
+        !matches!(option_name_value(o), Some(("PlotRange", v))
+          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic"))
+      });
+      if automatic_range
+        && let Some(ps) = plot_sources.first()
+        && [ps.x_range, ps.y_range]
+          .iter()
+          .all(|r| r.0.is_finite() && r.1.is_finite() && r.0 < r.1)
+      {
+        merged_options
+          .retain(|o| !matches!(option_name_value(o), Some(("PlotRange", _))));
+        let span = |r: (f64, f64)| {
+          Expr::List(vec![Expr::Real(r.0), Expr::Real(r.1)].into())
+        };
+        merged_options.push(rule_expr(
+          id_expr("PlotRange"),
+          Expr::List(vec![span(ps.x_range), span(ps.y_range)].into()),
+        ));
+      }
+      // A plot clips what it draws to its range (`PlotRangeClipping ->
+      // True`), so a layer reaching past it is cut at the frame instead of
+      // spilling over the margins and the labels.
+      if !has_option(&merged_options, "PlotRangeClipping") {
+        merged_options
+          .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
+      }
       // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
       // horizontal extent stays that of the plotted domain.
       for opt in &mut merged_options {
@@ -22083,8 +22124,18 @@ pub(crate) fn hide_svg_content(svg: &str) -> Option<String> {
 fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
   // Only an arithmetic value is typeset here; a wrapper (`Panel[…]`,
   // `Framed[…]`, `Row[…]`) has a drawing of its own.
-  let arithmetic = matches!(cell, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
-    || matches!(cell, Expr::FunctionCall { name, .. }
+  // A held value (`HoldForm[1/(a + 1/(b + …))]`, a continued fraction a
+  // `Fold` builds unevaluated) is typeset as the arithmetic it holds.
+  let held = match cell {
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    _ => cell,
+  };
+  let arithmetic = matches!(held, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
+    || matches!(held, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
   if !arithmetic {
     return None;
@@ -22625,7 +22676,8 @@ fn grid_bg_range(expr: &Expr) -> Option<(usize, usize)> {
 }
 
 /// The `(rows, columns)` block named by the left side of a per-cell
-/// `{rows, columns} -> value` rule in a `Grid` `Background` or `Frame` spec.
+/// `{rows, columns} -> value` rule in a `Grid` `Background`, `Frame` or
+/// `ItemStyle` spec.
 fn grid_rule_block(pattern: &Expr) -> Option<((usize, usize), (usize, usize))> {
   match pattern {
     Expr::List(pos) if pos.len() == 2 => {
@@ -22703,7 +22755,9 @@ fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
 /// The directives `ItemStyle -> {columnSpec, rowSpec, {{i, j} -> style, …}}`
 /// gives the cell in (1-based) row `i`, column `j`. A column or row spec is a
 /// single style for every position, a list cycled over the positions, or a
-/// list of `k -> style` rules. Cell rules apply last.
+/// list of `k -> style` rules. Cell rules apply last; their left side names a
+/// single cell `{i, j}` or a block `{{i1, i2}, {j1, j2}}` (either axis may be
+/// a single index or a span).
 fn item_style_directives(
   specs: &[Expr],
   i: usize,
@@ -22743,10 +22797,9 @@ fn item_style_directives(
         pattern,
         replacement,
       } = rule
-        && let Expr::List(p) = pattern.as_ref()
-        && p.len() == 2
-        && matches!(&p[0], Expr::Integer(r) if *r as usize == i)
-        && matches!(&p[1], Expr::Integer(c) if *c as usize == j)
+        && let Some(((r0, r1), (c0, c1))) = grid_rule_block(pattern)
+        && (r0..=r1).contains(&i)
+        && (c0..=c1).contains(&j)
       {
         item_style_entry_directives(replacement, &mut out);
       }
@@ -28700,7 +28753,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => match nested_layout_svg(&resolved) {
+        _ => match nested_layout_svg(&resolved)
+          .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
+        {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
             Cell::Svg {
@@ -29154,7 +29209,9 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
-        _ => match nested_layout_svg(&resolved) {
+        _ => match nested_layout_svg(&resolved)
+          .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
+        {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
             Cell::Svg {
@@ -33219,9 +33276,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // A bare `Locator` (no corner bounds) moves over the picture the body
         // draws, so an explicit `PlotRange -> {{x0, x1}, {y0, y1}}` there
         // bounds the pad rather than a box padded around the start point.
+        // Without one, it is the range of the graphic the body actually
+        // draws at the initial control values (e.g. a `Show` of a
+        // `StreamPlot` over its stated domain).
         if bare_locator_spec(&spec)
-          && let Some(((x0, y0), (x1, y1))) =
-            args.first().and_then(find_plot_range)
+          && let Some(((x0, y0), (x1, y1))) = args.first().and_then(|body| {
+            find_plot_range(body)
+              .or_else(|| drawn_plot_range(body, &initial_bindings))
+          })
         {
           match &mut c {
             ManipulateControl::Slider2D {
@@ -37554,6 +37616,35 @@ fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
   find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
 }
 
+/// The plot range of the first 2D graphic `body` produces when evaluated
+/// with the controls at `bindings` — the coordinate system a bare `Locator`
+/// is dragged over when nothing in the body states a `PlotRange`.
+fn drawn_plot_range(
+  body: &Expr,
+  bindings: &[(String, String)],
+) -> Option<((f64, f64), (f64, f64))> {
+  // `absolute_plot_range` gives `((xmin, xmax), (ymin, ymax))`; the
+  // callers want the corners `((xmin, ymin), (xmax, ymax))`.
+  fn corners(e: &Expr) -> Option<((f64, f64), (f64, f64))> {
+    let ((x0, x1), (y0, y1)) = absolute_plot_range(e)?;
+    (x1 > x0 && y1 > y0).then_some(((x0, y0), (x1, y1)))
+  }
+  fn first_graphic_range(e: &Expr) -> Option<((f64, f64), (f64, f64))> {
+    match e {
+      Expr::Graphics { is_3d: false, .. } => corners(e),
+      Expr::FunctionCall { name, .. } if name == "Graphics" => corners(e),
+      Expr::FunctionCall { args, .. } => {
+        args.iter().find_map(first_graphic_range)
+      }
+      Expr::List(items) => items.iter().find_map(first_graphic_range),
+      _ => None,
+    }
+  }
+  let evaluated =
+    crate::with_scoped_globals(bindings, || evaluate_expr_to_expr(body).ok())?;
+  first_graphic_range(&evaluated)
+}
+
 /// Whether a Manipulate control spec is `{{p, init}, Locator, …options}`
 /// with no explicit corner bounds and no pane drawn around it.
 fn bare_locator_spec(spec: &Expr) -> bool {
@@ -38402,10 +38493,22 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // holds, e.g. `{sin, (, x, )}`) reads the same way.
       // `GraphicsRow` lays its items out the same way; its pictures drop out.
       "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
-        Some(parts) => parts
-          .iter()
-          .flat_map(|p| manipulate_label_runs(p, italic))
-          .collect(),
+        Some(parts) => {
+          // `Row[{a, b, …}, sep]` puts `sep` between neighboring parts.
+          let separator = match (name.as_str(), args.get(1)) {
+            ("Row", Some(sep)) => manipulate_label_runs(sep, italic),
+            _ => Vec::new(),
+          };
+          parts
+            .iter()
+            .enumerate()
+            .flat_map(|(i, p)| {
+              let mut runs = if i > 0 { separator.clone() } else { Vec::new() };
+              runs.extend(manipulate_label_runs(p, italic));
+              runs
+            })
+            .collect()
+        }
         _ => output_run(italic),
       },
       // Column[{a, b, …}] — the same, but one part per line. Demonstrations
@@ -40229,15 +40332,26 @@ fn parse_manipulate_control(
       Some(init) => manipulate_value_to_input_form(init),
       None => "{}".to_string(),
     };
-    let display = if appearance_vertical {
-      format!(
-        "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
-        crate::syntax::expr_to_source_form(&choices)
-      )
+    // The bar keeps the control's own `Enabled -> cond` (re-checked on every
+    // re-render, like a top-level control's) and its label, which Wolfram
+    // draws to the left of the bar.
+    let mut bar_options = String::new();
+    if appearance_vertical {
+      bar_options.push_str(", Appearance -> \"Vertical\"");
+    }
+    if let Some(cond) = &enabled {
+      bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
+    }
+    let bar = format!(
+      "TogglerBar[Dynamic[{name}], {}{bar_options}]",
+      crate::syntax::expr_to_source_form(&choices)
+    );
+    let display = if label.is_empty() {
+      bar
     } else {
       format!(
-        "TogglerBar[Dynamic[{name}], {}]",
-        crate::syntax::expr_to_source_form(&choices)
+        "Row[{{{}, \" \", {bar}}}]",
+        crate::syntax::expr_to_source_form(&Expr::String(label.clone()))
       )
     };
     return Some(ParsedControl::StateWithDisplay {
@@ -41121,6 +41235,15 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // uniform size) shows whatever icon its content renders to.
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       discrete_choice_label_svg(&args[0])
+    }
+    // `Magnify[label, s]` and `Rotate[label, θ]` wrap a text or picture
+    // label in a transform (a rotated, enlarged glyph on a setter button).
+    // Evaluating them keeps the call symbolic, so draw the transformed
+    // label the way a layout item is drawn.
+    Expr::FunctionCall { name, .. }
+      if name == "Magnify" || name == "Rotate" =>
+    {
+      nested_layout_svg(label).filter(|svg| svg.starts_with("<svg"))
     }
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
@@ -42333,11 +42456,14 @@ pub enum DisplayNode {
   /// One choice of a `TogglerBar[Dynamic[var], …]`: a toggle button that
   /// adds `value` to (or removes it from) the list variable. `mutation` is
   /// the ready-to-evaluate write-back assignment; `selected` is whether the
-  /// value is currently a member of the list.
+  /// value is currently a member of the list. `enabled` is the bar's
+  /// trailing `Enabled -> cond` option's live value (`True` when absent);
+  /// a disabled toggle is drawn grayed out and ignores presses.
   Toggler {
     label: Box<Self>,
     mutation: String,
     selected: bool,
+    enabled: bool,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -43378,6 +43504,7 @@ fn togglerbar_node(
   };
   // The current selection, for the per-choice `selected` state.
   let current = crate::evaluator::evaluate_expr_to_expr(&getter).ok();
+  let enabled = display_option_enabled(&args[2..]);
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -43413,6 +43540,7 @@ fn togglerbar_node(
       label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
       mutation,
       selected,
+      enabled,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -43477,6 +43605,7 @@ fn setterbar_node(
   let current = crate::evaluator::evaluate_expr_to_expr(lval)
     .ok()
     .map(|e| crate::syntax::expr_to_source_form(&e));
+  let enabled = display_option_enabled(&args[2..]);
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -43497,6 +43626,7 @@ fn setterbar_node(
       label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
       mutation,
       selected,
+      enabled,
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -43569,6 +43699,20 @@ fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
       }
     }
     _ => None,
+  })
+}
+
+/// Whether a display element's trailing options leave it enabled: its
+/// `Enabled -> cond` is evaluated against the live bindings, and anything but
+/// a `False` result (including a failed evaluation, or no option at all)
+/// keeps it enabled, matching `manipulate_condition_enabled`'s lenient
+/// default for top-level controls.
+fn display_option_enabled(options: &[Expr]) -> bool {
+  extract_enabled_condition(options).is_none_or(|cond| {
+    !matches!(
+      crate::evaluator::evaluate_expr_to_expr(cond),
+      Ok(Expr::Identifier(ref s)) if s == "False"
+    )
   })
 }
 
@@ -43719,15 +43863,8 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
     |e| crate::syntax::expr_to_source_form(&e),
   );
   // A trailing `Enabled -> cond`, evaluated against the same live bindings
-  // `current` just used. Anything but a `False` result — including a failed
-  // evaluation — leaves the popup enabled, matching
-  // `manipulate_condition_enabled`'s lenient default for top-level controls.
-  let enabled = extract_enabled_condition(&args[2..]).is_none_or(|cond| {
-    !matches!(
-      crate::evaluator::evaluate_expr_to_expr(cond),
-      Ok(Expr::Identifier(ref s)) if s == "False"
-    )
-  });
+  // `current` just used.
+  let enabled = display_option_enabled(&args[2..]);
   Some(DisplayNode::Popup {
     target,
     current,
@@ -43954,11 +44091,13 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       label,
       mutation,
       selected,
+      enabled,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
+      enabled,
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,
@@ -45867,6 +46006,32 @@ mod manipulate_traditional_form_choice_svg_tests {
           .expect("Pane[TraditionalForm[…]] must render an icon");
         assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
         assert!(value_label_svgs[2].is_none());
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A glyph label wrapped in `Magnify` / `Rotate` (a rotated, enlarged
+  /// triangle on a setter button) renders as a picture, not as the
+  /// `Magnify[Rotate[…]]` source text.
+  #[test]
+  fn magnified_and_rotated_glyph_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, a}, \
+       {a -> Magnify[\"\u{25BC}\", 2], \
+        b -> Magnify[Rotate[\"\u{25BC}\", 90 Degree], 2], \
+        c -> Rotate[\"\u{25BC}\", 140 Degree], \
+        d -> \"plain\"}, ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs, ..
+      } => {
+        for svg in &value_label_svgs[..3] {
+          let svg = svg.as_deref().expect("transformed glyph must be an icon");
+          assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        }
+        assert!(value_label_svgs[3].is_none());
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

@@ -3126,6 +3126,71 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + 8000 * 2);
   }
 
+  /// Root-mean-square level of the 16-bit samples in `wav[44..]` between
+  /// the fractions `from` and `to` of the sound's length.
+  fn wav_rms(wav: &[u8], from: f64, to: f64) -> f64 {
+    let samples: Vec<f64> = wav[44..]
+      .as_chunks::<2>()
+      .0
+      .iter()
+      .map(|b| i16::from_le_bytes(*b) as f64)
+      .collect();
+    let lo = (samples.len() as f64 * from) as usize;
+    let hi = (samples.len() as f64 * to) as usize;
+    let part = &samples[lo..hi];
+    (part.iter().map(|s| s * s).sum::<f64>() / part.len() as f64).sqrt()
+  }
+
+  #[test]
+  fn test_sound_note_instrument_changes_the_timbre() {
+    let piano = sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5, \"Piano\"]]");
+    // The piano is the default instrument, as is an unknown name.
+    assert_eq!(piano, sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5]]"));
+    assert_eq!(
+      piano,
+      sound_wav_bytes("Sound[SoundNote[\"A3\", 0.5, \"NoSuchInstrument\"]]")
+    );
+    let others: Vec<Vec<u8>> = [
+      "Violin",
+      "Trumpet",
+      "MusicBox",
+      "RockOrgan",
+      "Clarinet",
+      "Flute",
+    ]
+    .iter()
+    .map(|i| {
+      sound_wav_bytes(&format!("Sound[SoundNote[\"A3\", 0.5, \"{i}\"]]"))
+    })
+    .collect();
+    for (i, a) in others.iter().enumerate() {
+      // Same pitch and length, different tone color.
+      assert_eq!(a.len(), piano.len());
+      assert_ne!(a, &piano, "instrument #{i} sounds like a piano");
+      for b in &others[i + 1..] {
+        assert_ne!(a, b, "two instrument families sound alike");
+      }
+    }
+    // A bowed string holds its tone where a struck piano string fades.
+    let violin = &others[0];
+    assert!(wav_rms(violin, 0.75, 0.95) > 1.5 * wav_rms(&piano, 0.75, 0.95));
+  }
+
+  #[test]
+  fn test_sound_note_instrument_appended_to_spans() {
+    // The instrument may be attached afterwards, e.g. by a control's value.
+    assert_eq!(
+      sound_wav_bytes(
+        "Sound[Append[#, \"Cello\"] & /@ {SoundNote[\"D2\", {0, 0.5}], \
+         SoundNote[\"A2\", {0.5, 1}]}]"
+      ),
+      sound_wav_bytes(
+        "Sound[{SoundNote[\"D2\", {0, 0.5}, \"Cello\"], \
+         SoundNote[\"A2\", {0.5, 1}, \"Cello\"]}]"
+      )
+    );
+  }
+
   /// A tab laid out as a `Grid` is drawn as the picture of the selected tab,
   /// not left as the symbolic `TabView[…]` text.
   #[test]
@@ -3648,6 +3713,37 @@ mod interpreter_tests {
       assert!(svg.contains("<line"), "expected a fraction line: {svg}");
       assert!(!svg.contains("x/y"), "fraction was flattened: {svg}");
     }
+  }
+
+  #[test]
+  fn test_row_and_column_items_with_a_quotient_stack_the_fraction() {
+    // Regression: a `Row`/`Column` item holding a symbolic quotient — or a
+    // held continued fraction a `Fold` builds with `HoldForm` — was printed
+    // as one line of `1/(a + 1/(b + …))` text instead of stacked fractions.
+    clear_state();
+    for code in [
+      "ExportString[Row[{1/(1 + x), \" = y\"}], \"SVG\"]",
+      "ExportString[Row[{2/3, \" of it\"}], \"SVG\"]",
+      "ExportString[Column[{\"a\", (p + q)/r}], \"SVG\"]",
+      "ExportString[Row[{Fold[HoldForm[1/(#2 + #1)] &, 0, {3, 2, 1}], \" = c\"}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(
+        svg.contains("<line"),
+        "expected a fraction line: {code}\n{svg}"
+      );
+      assert!(
+        !svg.contains(">1/(") && !svg.contains(">2/3<"),
+        "fraction was flattened: {code}\n{svg}"
+      );
+    }
+    // Items without a quotient keep their plain text.
+    let plain =
+      interpret("ExportString[Row[{x^2, \" = y\"}], \"SVG\"]").unwrap();
+    assert!(
+      !plain.contains("<line"),
+      "unexpected fraction line: {plain}"
+    );
   }
 
   #[test]
@@ -5153,6 +5249,43 @@ mod interpreter_tests {
       label_tag.contains("font-size=\"100\""),
       "label that fits keeps its size: {label_tag}"
     );
+  }
+
+  #[test]
+  fn test_axes_label_newline_breaks_the_label_into_lines() {
+    // A newline in an AxesLabel string starts a new line, as in Wolfram:
+    // each line becomes its own `<tspan>` restarting at the label's x,
+    // instead of a raw newline that SVG collapses into a space.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x^2, {x, 0, 3}, \
+         AxesLabel -> {\"time\\n(s)\", \"first\\nsecond\\nthird\"}], \"SVG\"]",
+    )
+    .unwrap();
+    let text_of = |needle: &str| {
+      svg
+        .lines()
+        .find(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("{needle} drawn: {svg}"))
+        .to_string()
+    };
+    let y_tag = text_of(">first<");
+    assert!(!y_tag.contains('\n'), "no raw newline: {y_tag}");
+    assert_eq!(y_tag.matches("<tspan x=").count(), 3, "{y_tag}");
+    assert!(y_tag.contains(">second</tspan>"), "{y_tag}");
+    assert!(y_tag.contains(">third</tspan>"), "{y_tag}");
+    let x_tag = text_of(">time<");
+    assert_eq!(x_tag.matches("<tspan x=").count(), 2, "{x_tag}");
+    assert!(x_tag.contains(">(s)</tspan>"), "{x_tag}");
+
+    // Each following line sits one positive line pitch below the last.
+    let pitches: Vec<f64> = y_tag
+      .split("dy=\"")
+      .skip(1)
+      .map(|p| p.split('"').next().unwrap().parse::<f64>().unwrap())
+      .collect();
+    assert_eq!(pitches[0], 0.0, "{y_tag}");
+    assert!(pitches[1] > 0.0 && pitches[1] == pitches[2], "{y_tag}");
   }
 
   #[test]

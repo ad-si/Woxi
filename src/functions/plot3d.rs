@@ -2617,7 +2617,10 @@ fn generate_svg(
       _ => None,
     })
     .unwrap_or([None, None, None]);
-  let label_size = label_font_size(options);
+  let look = AxesLook {
+    label_size: label_font_size(options),
+    ..AxesLook::default()
+  };
   // The frame is fitted to the axes exactly as they are drawn below — the
   // same ticks and label size — so wide or large tick labels stay inside.
   let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
@@ -2636,7 +2639,7 @@ fn generate_svg(
         &ticks,
         None,
         None,
-        label_size,
+        &look,
       )
     })
   };
@@ -2913,7 +2916,7 @@ fn generate_svg(
       &ticks,
       None,
       None,
-      label_size,
+      &look,
     );
   }
 
@@ -3074,7 +3077,7 @@ fn draw_axes_on_box(
     &[None, None, None],
     None,
     None,
-    None,
+    &AxesLook::default(),
   )
 }
 
@@ -3159,14 +3162,15 @@ fn draw_axes_on_box_with_ticks(
   ticks: &[Option<TickList3D>; 3],
   crossing: Option<&[Option<f64>; 3]>,
   edges: Option<&AxesEdges>,
-  label_size: Option<f64>,
+  look: &AxesLook,
 ) -> AxesExtent {
   let mut extent = AxesExtent::EMPTY;
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   // A `LabelStyle` font size sets both the axis labels and the tick labels.
-  let font_size = label_size.map_or(13, |s| s.round() as i32);
-  let tick_font_size = label_size.map_or(TICK_FONT_SIZE, |s| s.round() as i32);
+  let font_size = look.label_size.map_or(13, |s| s.round() as i32);
+  let tick_font_size =
+    look.label_size.map_or(TICK_FONT_SIZE, |s| s.round() as i32);
 
   // The box in scene coordinates. `mirror_*` flips a coordinate to the
   // opposite face, which is how each axis edge finds its far end.
@@ -3383,6 +3387,12 @@ fn draw_axes_on_box_with_ticks(
   for (ai, &(axis_origin, end, (val_min, val_max), flipped)) in
     axes.iter().enumerate()
   {
+    // `Axes -> {False, True, True}` leaves out the first axis entirely.
+    if !look.shown[ai] {
+      continue;
+    }
+    // `TicksStyle` recolors this axis's tick marks and their labels.
+    let tick_color = look.tick_colors[ai].as_deref().unwrap_or(&axis_color);
     let (sx0, sy0) = to_svg(
       project(axis_origin, camera).0,
       project(axis_origin, camera).1,
@@ -3463,7 +3473,7 @@ fn draw_axes_on_box_with_ticks(
             };
             let (x, y) = project(p, camera);
             let (x, y) = to_svg(x, y);
-            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{axis_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
+            svg.push_str(&format!("<line x1=\"{x:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{tick_color}\" stroke-width=\"0.5\"/>\n", x - dy / len * 2.5, y + dx / len * 2.5));
           }
         }
       }
@@ -3496,7 +3506,7 @@ fn draw_axes_on_box_with_ticks(
 
         svg.push_str(&format!(
                     "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                    tx, ty, tx + perpx, ty + perpy, axis_color
+                    tx, ty, tx + perpx, ty + perpy, tick_color
                 ));
 
         // Place label on the outward side (away from box center)
@@ -3523,7 +3533,7 @@ fn draw_axes_on_box_with_ticks(
         };
         svg.push_str(&format!(
                     "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + ux * reach, ty + uy * reach, tick_font_size, axis_color, anchor, label
+                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor, label
                 ));
         extent.add_text(
           tx + ux * reach,
@@ -3536,6 +3546,46 @@ fn draw_axes_on_box_with_ticks(
     }
   }
   extent
+}
+
+/// How each of the three axes of a 3D box is drawn: whether it is shown
+/// at all (`Axes -> {bx, by, bz}`) and the color its ticks take
+/// (`TicksStyle`), and the size of its labels (`LabelStyle`).
+pub(crate) struct AxesLook {
+  pub shown: [bool; 3],
+  pub tick_colors: [Option<String>; 3],
+  /// The font size `LabelStyle` gives the axis and tick labels.
+  pub label_size: Option<f64>,
+}
+
+impl Default for AxesLook {
+  fn default() -> Self {
+    AxesLook {
+      shown: [true; 3],
+      tick_colors: [None, None, None],
+      label_size: None,
+    }
+  }
+}
+
+/// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
+/// axes) gives the ticks of each axis.
+fn parse_ticks_style_3d(value: &Expr) -> [Option<String>; 3] {
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let color = |e: &Expr| {
+    crate::functions::plot::parse_style_directives(e)
+      .and_then(|style| style.color)
+      .map(super::graphics::Color::to_svg_rgb)
+  };
+  match &value {
+    Expr::List(items) if items.len() == 3 => {
+      [color(&items[0]), color(&items[1]), color(&items[2])]
+    }
+    other => {
+      let c = color(other);
+      [c.clone(), c.clone(), c]
+    }
+  }
 }
 
 /// The pixel rectangle `(x_min, x_max, y_min, y_max)` the axes and their
@@ -7600,7 +7650,9 @@ fn collect_3d_primitives(
       }
       *style = saved;
     }
-    Expr::Identifier(_) => {
+    // A bare `Lighting -> spec` among the primitives acts like a directive:
+    // it relights what follows it in the enclosing list.
+    Expr::Identifier(_) | Expr::Rule { .. } => {
       apply_3d_directive(expr, style);
     }
     Expr::FunctionCall { name, args } => {
@@ -10538,9 +10590,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Manipulate re-render). `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`
   // pins each axis separately.
   let mut plot_range: Option<[(f64, f64); 3]> = None;
-  // `PlotRange -> {zmin, zmax}`: pins the vertical axis only, the other two
-  // keep the extent of the contents (what a `Plot3D` carries into `Show`).
-  let mut z_only_range: Option<(f64, f64)> = None;
+  // `PlotRange -> {zmin, zmax}` pins the vertical axis only, the other two
+  // keep the extent of the contents (what a `Plot3D` carries into `Show`);
+  // `PlotRange -> {{x0, x1}, All, All}` pins only the axes given an
+  // interval.
+  let mut partial_range: Option<[Option<(f64, f64)>; 3]> = None;
   // `BoxRatios -> {rx, ry, rz}`; `None` is Wolfram's `Automatic`, where the
   // box simply has the proportions of the data.
   let mut box_ratios: Option<[f64; 3]> = None;
@@ -10570,6 +10624,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
+  let mut axes_look = AxesLook {
+    label_size: label_font_size(&args[1..]),
+    ..AxesLook::default()
+  };
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
@@ -10704,7 +10762,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else if let Some((lo, hi)) = parse_z_only_range(&value)
             && hi > lo
           {
-            z_only_range = Some((lo, hi));
+            partial_range = Some([None, None, Some((lo, hi))]);
+          } else if let Some(ranges) = parse_partial_axis_ranges(&value) {
+            partial_range = Some(ranges);
           }
         }
         // `BoxRatios -> {rx, ry, rz}` fixes the *shape* of the bounding
@@ -10714,7 +10774,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "BoxRatios" => {
           let value = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.as_ref().clone());
+          // A lone number `r` asks for equal sides, like `{r, r, r}`.
           if let Some(r) = eval_vec3(&value)
+            .or_else(|| try_eval_to_f64(&value).map(|r| [r; 3]))
             && r.iter().all(|v| *v > 0.0)
           {
             box_ratios = Some(r);
@@ -10752,17 +10814,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         "Axes" => match replacement.as_ref() {
           Expr::Identifier(s) if s == "False" => show_axes = false,
-          Expr::Identifier(s) if s == "True" => show_axes = true,
-          // `Axes -> {True, True, False}`: drawn as long as any is on.
-          Expr::List(items) => {
-            show_axes = items
-              .iter()
-              .any(|i| matches!(i, Expr::Identifier(s) if s == "True"));
+          Expr::Identifier(s) if s == "True" => {
+            show_axes = true;
+            axes_look.shown = [true; 3];
+          }
+          // `Axes -> {True, True, False}`: only the axes set to `True`.
+          Expr::List(items) if items.len() == 3 => {
+            for (on, item) in axes_look.shown.iter_mut().zip(items.iter()) {
+              *on = matches!(item, Expr::Identifier(s) if s == "True");
+            }
+            show_axes = axes_look.shown.iter().any(|&on| on);
           }
           _ => {}
         },
         "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
+        }
+        "TicksStyle" => {
+          axes_look.tick_colors = parse_ticks_style_3d(replacement);
         }
         _ => {}
       }
@@ -10780,12 +10849,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
   if plot_range.is_none()
-    && let Some(z) = z_only_range
+    && let Some(partial) = partial_range
   {
-    let [x, y, _] = primitives_bounds(&prims);
-    if x.0.is_finite() && x.1.is_finite() && y.0.is_finite() && y.1.is_finite()
-    {
-      plot_range = Some([x, y, z]);
+    // The axes without an interval keep the extent of the contents.
+    let bounds = primitives_bounds(&prims);
+    let mut full = bounds;
+    for i in 0..3 {
+      if let Some(range) = partial[i] {
+        full[i] = range;
+      }
+    }
+    if full.iter().all(|(lo, hi)| lo.is_finite() && hi.is_finite()) {
+      plot_range = Some(full);
     }
   }
 
@@ -11697,7 +11772,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &tick_spec,
         axes_origin.as_ref().filter(|_| !show_box),
         axes_edge.as_ref(),
-        label_font_size(&args[1..]),
+        &axes_look,
       )
     })
   };
@@ -12009,7 +12084,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref(),
       axes_edge.as_ref(),
-      label_font_size(&args[1..]),
+      &axes_look,
     );
   }
   // Render triangles interleaved with box edges (painter's algorithm)
@@ -12301,7 +12376,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &tick_spec,
       axes_origin.as_ref().filter(|_| !show_box),
       axes_edge.as_ref(),
-      label_font_size(&args[1..]),
+      &axes_look,
     );
   }
 
@@ -12390,6 +12465,38 @@ fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
   let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
   Some((lo, hi))
+}
+
+/// `PlotRange -> {{x0, x1}, All, Automatic}`: an explicit interval for some
+/// axes, the extent of the contents (`All`, `Automatic`, `Full`) for the
+/// rest. `None` unless at least one axis gets an interval.
+fn parse_partial_axis_ranges(expr: &Expr) -> Option<[Option<(f64, f64)>; 3]> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 3 {
+    return None;
+  }
+  let mut ranges = [None; 3];
+  for (slot, item) in ranges.iter_mut().zip(items.iter()) {
+    *slot = match item {
+      Expr::Identifier(s)
+        if matches!(s.as_str(), "All" | "Automatic" | "Full") =>
+      {
+        None
+      }
+      Expr::List(pair) if pair.len() == 2 => {
+        let lo = try_eval_to_f64(&evaluate_expr_to_expr(&pair[0]).ok()?)?;
+        let hi = try_eval_to_f64(&evaluate_expr_to_expr(&pair[1]).ok()?)?;
+        if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) {
+          return None;
+        }
+        Some((lo, hi))
+      }
+      _ => return None,
+    };
+  }
+  ranges.iter().any(Option::is_some).then_some(ranges)
 }
 
 /// `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`: one explicit interval per
@@ -19427,6 +19534,19 @@ fn evaluate_parametric_at_uv(
   }
 }
 
+/// The grid steps along the four sides of a `[0, nu] x [0, nv]` sampling
+/// grid: the outline of a parametric surface's domain.
+fn parameter_domain_edges(
+  nu: usize,
+  nv: usize,
+) -> impl Iterator<Item = ((usize, usize), (usize, usize))> {
+  let along_u =
+    (0..nu).flat_map(move |i| [((i, 0), (i + 1, 0)), ((i, nv), (i + 1, nv))]);
+  let along_v =
+    (0..nv).flat_map(move |j| [((0, j), (0, j + 1)), ((nu, j), (nu, j + 1))]);
+  along_u.chain(along_v)
+}
+
 /// Implementation of ParametricPlot3D.
 ///
 /// Two forms are supported:
@@ -19494,6 +19614,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeForm[]` is suppressed, leaving flat color with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
+  // `BoundaryStyle -> style`: the outline along the edges of the parameter
+  // domain, drawn in `style` (black where it names no color). Left at its
+  // default, the outline is only drawn as part of the default mesh.
+  let mut boundary_style: Option<(Expr, StyleState3D)> = None;
   // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
   // proportions regardless of the surface's actual extent along each axis.
   // Otherwise (Wolfram's default `Automatic`, unlike `Plot3D`'s
@@ -19550,6 +19674,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "ColorFunctionScaling" => {
           color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          boundary_style = match value {
+            Expr::Identifier(ref n) if n == "None" || n == "Automatic" => None,
+            other => {
+              let mut style = StyleState3D {
+                color: Some((0, 0, 0)),
+                ..StyleState3D::default()
+              };
+              apply_3d_directive(&other, &mut style);
+              Some((other, style))
+            }
+          };
         }
         Expr::Identifier(name) if name == "RegionFunction" => {
           region_fn = Some(
@@ -19932,6 +20071,16 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content.push(call0("EdgeForm"));
         }
         content.extend(surface_opacity_directive(&plot_styles, surface_idx));
+        // The look the standalone render shades the surface with (the
+        // default theme's color, specularity and lights), so the extracted
+        // complex keeps it wherever it is drawn — a color directive placed
+        // before it does not recolor it, as in wolframscript.
+        content.extend(surface_style_directives(
+          surface_idx,
+          plot_style_for_surface(&plot_styles, surface_idx),
+          surface_color_fn.is_some(),
+          &scene,
+        ));
         for i in 0..grid_u {
           for j in 0..grid_v {
             let (Some(a), Some(b), Some(c), Some(d)) = (
@@ -20011,6 +20160,28 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   ],
                 ),
                 polygon,
+              ]
+              .into(),
+            ));
+          }
+        }
+        if let Some((style_expr, _)) = &boundary_style {
+          let segments: Vec<Expr> = parameter_domain_edges(grid_u, grid_v)
+            .filter_map(|((i0, j0), (i1, j1))| {
+              Some(Expr::List(
+                vec![
+                  Expr::Integer(index_of[i0][j0]? as i128 + 1),
+                  Expr::Integer(index_of[i1][j1]? as i128 + 1),
+                ]
+                .into(),
+              ))
+            })
+            .collect();
+          if !segments.is_empty() {
+            content.push(Expr::List(
+              vec![
+                style_expr.clone(),
+                call1("Line", Expr::List(segments.into())),
               ]
               .into(),
             ));
@@ -20304,6 +20475,29 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &|i, j| sg[i][j].map(normalize),
         &segment,
       ));
+    }
+  }
+
+  if let Some((_, style)) = &boundary_style {
+    let normalize = |p: (f64, f64, f64)| -> Point3D {
+      Point3D {
+        x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
+        y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
+        z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
+      }
+    };
+    for sg in &all_surface_points {
+      for ((i0, j0), (i1, j1)) in parameter_domain_edges(grid_u, grid_v) {
+        if let (Some(a), Some(b)) = (sg[i0][j0], sg[i1][j1]) {
+          mesh_lines.push(styled_mesh_segment(
+            normalize(a),
+            normalize(b),
+            &camera,
+            Some(style),
+            ("rgb(0,0,0)", 0.75),
+          ));
+        }
+      }
     }
   }
 

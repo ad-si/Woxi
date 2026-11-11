@@ -5253,9 +5253,12 @@ fn render_display_node<'a>(
       label,
       mutation,
       selected,
+      enabled,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
-      // removes its value from the bound list variable.
+      // removes its value from the bound list variable. A bar whose
+      // `Enabled -> cond` reads `False` has no press handler, which iced
+      // draws in its grayed-out disabled style.
       let selected = *selected;
       let mutation = mutation.clone();
       button(render_display_node(cell_idx, label))
@@ -5269,7 +5272,10 @@ fn render_display_node<'a>(
           style.border.radius = 4.0.into();
           style
         })
-        .on_press(Message::ManipulateDisplayToggled(cell_idx, mutation))
+        .on_press_maybe(
+          enabled
+            .then(|| Message::ManipulateDisplayToggled(cell_idx, mutation)),
+        )
         .into()
     }
     DisplayNode::Button { label, action } => {
@@ -10789,6 +10795,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     // Pane 3 is the placeholder: the selector is the only row left.
     select(&mut state, 2);
     assert_eq!(state.control_is_visible, vec![true, false, false]);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
+  /// whose `PaneSelector` panes each wrap their sliders in a collapsible
+  /// `OpenerView[{title, Column[{Control[…], …}]}, True]`, and whose slider
+  /// labels are `Row[{name, Style["■", color]}, sep]` swatches. This is a
+  /// self-authored, construct-equivalent example.
+  ///
+  /// Coverage: only the selected pane's heading and sliders are shown, and
+  /// a label keeps its `Row` separator and its swatch's color.
+  #[test]
+  fn manipulate_pane_selector_of_opener_views() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{m, a, b}, {{m, 1, \"mode\"}, {1 -> \"whole\", \
+       2 -> \"part\"}}, PaneSelector[{\
+       1 -> OpenerView[{\"whole\", Column[{Control[{{a, 2, \
+       Row[{\"alpha\", Style[\"\\[FilledSquare]\", RGBColor[1, 0, 0]]}, \
+       \" \"]}, 0, 9, 1}]}]}, True], \
+       2 -> OpenerView[{\"part\", Column[{Control[{{b, 0.5}, 0, 1}]}]}, \
+       True]}, Dynamic[m]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let shown = |state: &manipulate::ManipulateState| -> Vec<String> {
+      state
+        .controls
+        .iter()
+        .zip(&state.control_is_visible)
+        .filter(|(_, visible)| **visible)
+        .map(|(c, _)| match c {
+          manipulate::ControlState::Heading { label, .. } => label.clone(),
+          c => c.name().to_string(),
+        })
+        .collect()
+    };
+    assert_eq!(shown(&state), vec!["m", "whole", "a"]);
+    let a = state.controls.iter().find(|c| c.name() == "a").unwrap();
+    let manipulate::ControlState::Continuous { label_runs, .. } = a else {
+      panic!("a must be a slider: {a:?}");
+    };
+    let text: String = label_runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "alpha \u{25A0}");
+    assert_eq!(label_runs.last().unwrap().color, Some((1.0, 0.0, 0.0)));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert_eq!(shown(&state), vec!["m", "part", "b"]);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -32405,6 +32463,63 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
       vec![false, true],
       "only the second choice stays selected after deselecting the first"
+    );
+  }
+
+  /// A multi-select `TogglerBar` control gated by `Enabled -> cond` on
+  /// another control (independently written, in the style of a
+  /// Demonstration that only lets a "step" bar be used in one mode). The bar
+  /// keeps its label, its toggles stay disabled while `cond` is `False`, and
+  /// they become pressable once the gating control flips.
+  #[test]
+  fn toggler_bar_control_follows_its_enabled_condition() {
+    use woxi::functions::graphics::DisplayNode;
+    fn toggler_flags(nodes: &[DisplayNode]) -> Vec<bool> {
+      fn walk(node: &DisplayNode, out: &mut Vec<bool>) {
+        match node {
+          DisplayNode::Toggler { enabled, .. } => out.push(*enabled),
+          DisplayNode::Row(items) | DisplayNode::Column(items) => {
+            items.iter().for_each(|n| walk(n, out))
+          }
+          DisplayNode::Panel(child) => walk(child, out),
+          _ => {}
+        }
+      }
+      let mut out = Vec::new();
+      nodes.iter().for_each(|n| walk(n, &mut out));
+      out
+    }
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{If[shape == 2, Disk[], Circle[]], \
+         Table[Point[{k, 0}], {k, marks}]}], \
+       {{shape, 1, \"shape\"}, {1 -> \"ring\", 2 -> \"disk\"}}, \
+       {{marks, {1}, \"marks\"}, Range[3], TogglerBar, \
+         Enabled -> shape == 2}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let labels: String = state
+      .display_trees
+      .iter()
+      .map(display_node_plain_text)
+      .collect();
+    assert!(
+      labels.contains("marks"),
+      "the bar keeps its label: {labels:?}"
+    );
+    assert_eq!(
+      toggler_flags(&state.display_trees),
+      vec![false; 3],
+      "the bar starts disabled while shape == 1"
+    );
+    assert!(state.select_discrete(0, "disk"));
+    state.reevaluate();
+    assert_eq!(
+      toggler_flags(&state.display_trees),
+      vec![true; 3],
+      "selecting the disk enables the bar"
     );
   }
 

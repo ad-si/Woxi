@@ -1773,6 +1773,14 @@ pub fn dispatch_image_functions(
           names.iter().map(|n| str_expr(n)).collect(),
         )));
       }
+      // ColorData["Charting"]: the indexed schemes made for charts, 44–62
+      // (so `ColorData[ColorData["Charting"][[k]]]` colors a chart like
+      // `ChartStyle -> 43 + k`).
+      if let Expr::String(s) = &args[0]
+        && s == "Charting"
+      {
+        return Some(Ok(Expr::List((44..=62).map(Expr::Integer).collect())));
+      }
       // ColorData["WebSafe"]: applying it to a hex code (`"#99CC00"`) gives
       // the web-safe color, via the two-argument form; likewise
       // ColorData["Atoms"] applied to an element.

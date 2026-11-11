@@ -4280,6 +4280,47 @@ mod tests {
         "small content is placed in the whole box: {svg}"
       );
     }
+
+    /// The prose lines of a `Column` (here under `TraditionalForm`, as a
+    /// Demonstration typesets its explanation) break at a fixed `Pane`'s
+    /// width, at their own `Style` size, instead of being cut off at its
+    /// right edge; the items that are no text stay as they are.
+    #[test]
+    fn column_text_in_a_fixed_pane_wraps_at_its_width() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[TraditionalForm[Column[{Style["one two three four five six seven eight nine ten", 12], x^2}]], {100, 200}], "SVG"]"#,
+      )
+      .unwrap();
+      for line in ["one two three", "four five six", "seven eight", "nine ten"]
+      {
+        assert!(svg.contains(&format!(">{line}</text>")), "{line}: {svg}");
+      }
+      assert!(svg.contains(">x</text>"), "the formula is kept: {svg}");
+    }
+
+    /// An embedded `\!\(…\)` box in re-flowed `Pane` text is one unit as
+    /// wide as what it shows: the subscripts are neither split nor counted
+    /// at the length of their markup.
+    #[test]
+    fn pane_text_wraps_around_embedded_boxes_whole() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"Pick \!\(\*SubscriptBox[\(d\), \(1\)]\) or \!\(\*SubscriptBox[\(d\), \(2\)]\) and then go"}], {100, 200}], "SVG"]"#,
+      )
+      .unwrap();
+      let sub = |n: u8| {
+        format!("d<tspan baseline-shift=\"sub\" font-size=\"70%\">{n}</tspan>")
+      };
+      assert!(
+        svg.contains(&format!(">Pick {} or</text>", sub(1))),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(&format!(">{} and then</text>", sub(2))),
+        "{svg}"
+      );
+      assert!(svg.contains(">go</text>"), "{svg}");
+      assert!(!svg.contains("SubscriptBox"), "no raw markup: {svg}");
+    }
   }
 
   // ── Display-only wrappers in text markup ──
@@ -4448,6 +4489,30 @@ mod grid_item_style_tests {
   }
 
   #[test]
+  fn cell_rules_style_single_cells_and_blocks() {
+    // `{{rows}, {cols}} -> style` spans a block; `{i, j} -> style` one cell.
+    let f = fills(
+      "ExportString[Grid[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, ItemStyle -> \
+       {Automatic, Automatic, {{{2, 3}, {2, 2}} -> Red, {1, 3} -> Blue, \
+       {{1, 2}, 1} -> Green}}], \"SVG\"]",
+    );
+    assert_eq!(
+      f,
+      vec![
+        "rgb(0,255,0)",
+        "black",
+        "rgb(0,0,255)",
+        "rgb(0,255,0)",
+        "rgb(255,0,0)",
+        "black",
+        "black",
+        "rgb(255,0,0)",
+        "black"
+      ]
+    );
+  }
+
+  #[test]
   fn framed_array_plot_keeps_its_own_coordinate_space() {
     // An ArrayPlot draws at a multiple of its display size, so the nested
     // `<svg>` inside the frame needs the plot's viewBox to show all of it.
@@ -4523,5 +4588,48 @@ mod grid_item_style_tests {
     let plain =
       woxi::interpret(r#"ExportString[Grid[{{Row[{a, b}]}}], "SVG"]"#).unwrap();
     assert!(!plain.contains("<line"), "unexpected bar in {plain}");
+  }
+
+  /// Every `r="…"` radius of the `<circle>` elements in `svg`.
+  fn circle_radii(svg: &str) -> Vec<f64> {
+    svg
+      .split("<circle")
+      .skip(1)
+      .filter_map(|c| {
+        let rest = c.split_once(" r=\"")?.1;
+        rest.split_once('"')?.0.parse().ok()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn test_point_size_zero_still_draws_visible_points() {
+    // `PointSize[0]` is the smallest drawable point, not an invisible one.
+    for code in [
+      r#"ExportString[Graphics[{PointSize[0], Point[{{0, 0}, {1, 1}}]}], "SVG"]"#,
+      r#"ExportString[Graphics[{AbsolutePointSize[0], Point[{0, 0}]}], "SVG"]"#,
+      r#"ExportString[ListPlot[{{1, 2}, {2, 3}, {3, 1}}, PlotStyle -> PointSize[0]], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      let radii = circle_radii(&svg);
+      assert!(!radii.is_empty(), "no points in {svg}");
+      assert!(radii.iter().all(|r| *r > 0.0), "invisible point in {svg}");
+    }
+  }
+
+  #[test]
+  fn test_inset_plot_keeps_its_background() {
+    // An inset `ListPlot` with `Background -> White` covers what lies
+    // behind it; one without a background stays transparent.
+    let inset = |opts: &str| {
+      woxi::interpret(&format!(
+        r#"ExportString[Graphics[{{Point[{{0, 0}}], Inset[ListPlot[{{{{1, 2}}, {{2, 3}}}}, Frame -> True{opts}], {{0, 0}}, Automatic, 1]}}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    let filled = inset(", Background -> White");
+    assert!(filled.contains("fill=\"#FFFFFF\""), "{filled}");
+    let plain = inset("");
+    assert!(!plain.contains("fill=\"#FFFFFF\""), "{plain}");
   }
 }

@@ -3113,6 +3113,46 @@ mod graphics {
     }
 
     #[test]
+    fn pie_chart_indexed_chart_style() {
+      // `ChartStyle -> n` colors slice `k` with `ColorData[n][k]`.
+      let svg = export_svg("PieChart[{1, 2, 3}, ChartStyle -> 52]");
+      for k in 1..=3 {
+        let color = interpret(&format!(
+          "ToString[Round[255 List @@ ColorData[52][{k}]]]"
+        ))
+        .unwrap();
+        let rgb = color
+          .trim_matches(|c| c == '{' || c == '}')
+          .replace(' ', "");
+        assert!(svg.contains(&format!("fill=\"rgb({rgb})\"")), "{k}: {svg}");
+      }
+      let bars = export_svg("BarChart[{1, 2}, ChartStyle -> 44]");
+      assert!(bars.contains("#B19E60"), "{bars}");
+      assert!(bars.contains("#74812D"), "{bars}");
+    }
+
+    #[test]
+    fn pie_chart_zero_value_has_no_slice_or_label() {
+      let svg = export_svg(
+        "PieChart[{1, 0, 2}, ChartLabels -> {\"one\", \"zero\", \"two\"}]",
+      );
+      assert_eq!(svg.matches("<path").count(), 2, "{svg}");
+      assert!(svg.contains(">one<") && svg.contains(">two<"), "{svg}");
+      assert!(!svg.contains("zero"), "{svg}");
+    }
+
+    #[test]
+    fn pie_chart_label_font_size_from_style() {
+      let svg = export_svg(
+        "PieChart[{1, 2}, ChartLabels -> {Style[\"a\", 30], \
+         Column[{Style[\"b\", 20], Style[\"c\", 20]}]}]",
+      );
+      assert!(svg.contains("font-size=\"30\" fill=\"black\">a<"), "{svg}");
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains("dy=\"24.00\">c<"), "{svg}");
+    }
+
+    #[test]
     fn pie_chart_of_association_of_quantities_draws_labeled_slices() {
       // Regression: an Association (and `Quantity` values) was rejected with
       // `PieChart::ldata`. Slices take the values; `ChartLabels -> Automatic`
@@ -5191,6 +5231,25 @@ mod plot3d {
       );
     }
 
+    /// A bare `Lighting -> "Neutral"` among the primitives relights what
+    /// follows it in its list, and only there.
+    #[test]
+    fn lighting_rule_among_primitives_is_a_scoped_directive() {
+      let lit = export_svg("Graphics3D[{Lighting -> \"Neutral\", Cuboid[]}]");
+      let faces = fill_colors(&lit);
+      assert_eq!(faces.len(), 12, "a cuboid is twelve triangles");
+      assert!(
+        faces.iter().all(|c| c.0 == c.1 && c.1 == c.2),
+        "neutral lighting should stay gray, got {faces:?}"
+      );
+      let scoped =
+        export_svg("Graphics3D[{{Lighting -> \"Neutral\"}, Cuboid[]}]");
+      assert!(
+        fill_colors(&scoped).iter().any(|c| c.2 > c.0 + 20),
+        "the rule must not leak out of its list"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
@@ -5722,24 +5781,104 @@ mod plot3d {
     }
 
     /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex baked a
-    /// height color into every facet, so a color directive placed before
-    /// it (the bimetal-strip layers) was overridden. Default facets carry
-    /// no color; an explicit `PlotStyle` color still does.
+    /// height color into every facet. Default facets carry no color of
+    /// their own; an explicit `PlotStyle` color still does.
     #[test]
-    fn extracted_parametric_surface_has_no_baked_default_color() {
+    fn extracted_parametric_surface_has_no_baked_facet_color() {
       clear_state();
       let plain = interpret(
         "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
-         PlotPoints -> 3][[1]], _RGBColor]",
+         PlotPoints -> 3][[1, 2]], {___, _RGBColor, _Polygon}]",
       )
       .unwrap();
       assert_eq!(plain, "True");
       let styled = interpret(
         "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
-         PlotPoints -> 3, PlotStyle -> Red][[1]], _RGBColor]",
+         PlotPoints -> 3, PlotStyle -> Red][[1, 2]], \
+         {___, _RGBColor, _Polygon}]",
       )
       .unwrap();
       assert_eq!(styled, "False");
+    }
+
+    /// Regression: the extracted complex of a `ParametricPlot3D` surface
+    /// lacked the default theme's `Directive` (color, specularity and
+    /// lights) that `Plot3D`'s carries, so a color placed before it in a
+    /// `Graphics3D` recolored the surface instead of leaving it orange.
+    #[test]
+    fn extracted_parametric_surface_keeps_theme_directive() {
+      clear_state();
+      let result = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3][[1, 2]], Directive[_Specularity, c_RGBColor, \
+         Lighting -> _] :> c]",
+      )
+      .unwrap();
+      assert_eq!(result, "{RGBColor[0.880722, 0.611041, 0.142051]}");
+      let second = interpret(
+        "Cases[ParametricPlot3D[{{u, v, u v}, {u, v, 1 + u v}}, {u, 0, 1}, \
+         {v, 0, 1}, PlotPoints -> 3][[1, 2, 2]], \
+         Directive[_, c_RGBColor, ___] :> c]",
+      )
+      .unwrap();
+      assert_eq!(second, "{RGBColor[0.368417, 0.506779, 0.709798]}");
+      // An outer color does not override the surface's own.
+      let svg = export_svg(
+        "Graphics3D[{RGBColor[1, 0, 1], ParametricPlot3D[{u, v, u v}, \
+         {u, 0, 1}, {v, 0, 1}, PlotPoints -> 5, Mesh -> None][[1]]}]",
+      );
+      // Every shaded facet is orange (blue well below green), none magenta.
+      let fills: Vec<[i32; 3]> = svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|rest| {
+          let inner = rest.split(')').next()?;
+          let c: Vec<i32> = inner
+            .split(',')
+            .filter_map(|v| v.trim().parse().ok())
+            .collect();
+          (c.len() == 3).then(|| [c[0], c[1], c[2]])
+        })
+        .collect();
+      assert!(!fills.is_empty(), "no shaded facets");
+      assert!(
+        fills
+          .iter()
+          .filter(|[r, g, b]| !(r == g && g == b))
+          .all(|[r, g, b]| r > g && g > b),
+        "the outer magenta recolored the surface: {fills:?}"
+      );
+    }
+
+    /// `BoundaryStyle -> style` outlines a parametric surface's domain:
+    /// as a `Line` in the extracted complex, and in the plot itself even
+    /// with `Mesh -> None`.
+    #[test]
+    fn parametric_surface_boundary_style() {
+      clear_state();
+      let lines = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Red][[1, 2]], \
+         {c_, Line[segs_]} :> {c, Length[segs]}]",
+      )
+      .unwrap();
+      assert_eq!(lines, "{{RGBColor[1, 0, 0], 8}}");
+      let none = interpret(
+        "FreeQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, Mesh -> None][[1]], _Line]",
+      )
+      .unwrap();
+      assert_eq!(none, "True");
+      let svg = export_svg(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> None, BoundaryStyle -> Red]",
+      );
+      assert!(svg.contains("rgb(255,0,0)"), "boundary not drawn");
+      let plain = export_svg(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> None]",
+      );
+      assert!(!plain.contains("rgb(255,0,0)"));
     }
 
     #[test]
@@ -6581,6 +6720,23 @@ mod plot3d {
         !svg.contains("SpanFrom"),
         "SpanFromLeft must not be drawn as text:\n{svg}"
       );
+    }
+
+    // Regression: a `Grid` with a picture in one cell still honors its
+    // `Alignment`, and its text cells are set as text (not as italic,
+    // monospaced math atoms).
+    #[test]
+    fn grid_alignment_beside_graphic_is_honored() {
+      let svg = export_svg(
+        "Grid[{{\"a\", Graphics[Disk[], ImageSize -> 20]}, {\"cccc\", \"d\"}}, Alignment -> Right]",
+      );
+      let texts: Vec<&str> = svg.split("<text").skip(1).collect();
+      assert_eq!(texts.len(), 3, "{svg}");
+      for text in texts {
+        assert!(text.contains("text-anchor=\"end\""), "{svg}");
+        assert!(!text.contains("italic"), "{svg}");
+        assert!(!text.contains("monospace"), "{svg}");
+      }
     }
 
     // Regression: a per-cell `Background` rule on a spanning cell paints the
@@ -9509,6 +9665,56 @@ mod plot3d {
 
   mod plot_options {
     use super::*;
+
+    /// The first `points="…"` attribute of an SVG: the frame's left edge
+    /// of a framed `Plot`.
+    fn first_polyline(svg: &str) -> &str {
+      svg
+        .split_once("points=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0
+        .trim()
+    }
+
+    /// `AspectRatio -> Full` with an explicit `ImagePadding` stretches the
+    /// frame over everything the padding leaves; it used to keep the
+    /// default golden ratio, centered in a much taller image.
+    #[test]
+    fn aspect_ratio_full_with_image_padding_fills_the_image() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> {410, 400}, \
+         AspectRatio -> Full, ImagePadding -> {{60, 20}, {75, 5}}]",
+      );
+      // The frame runs from 5 pt below the top to 75 pt above the bottom.
+      assert_eq!(first_polyline(&svg), "599,50 599,3249", "{svg}");
+    }
+
+    /// A one-line `PlotLabel` over a top `ImagePadding` too small to hold
+    /// it takes its room from the plotting area instead of overlapping
+    /// the frame.
+    #[test]
+    fn plot_label_above_tight_image_padding_clears_the_frame() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> {410, 400}, \
+         AspectRatio -> Full, ImagePadding -> {{60, 20}, {75, 5}}, \
+         PlotLabel -> \"t\"]",
+      );
+      let frame_top: f64 = first_polyline(&svg)
+        .split([',', ' '])
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+      // The title's band plus the 5 pt padding lie above the frame.
+      assert!(
+        frame_top > 150.0,
+        "frame top {frame_top} overlaps the title"
+      );
+      assert!(frame_top < 3249.0);
+    }
 
     #[test]
     fn plot_plot_label() {
@@ -14978,6 +15184,47 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       assert!(r.warnings.is_empty(), "{:?}", r.warnings);
     }
 
+    // Regression: a plot shown first keeps its own range, as the merged
+    // graphic takes its options from the first graphic. A marker line far
+    // taller than the curve is clipped instead of zooming the picture out
+    // to y = ±10 (the ticks stay those of the plot alone).
+    #[test]
+    fn show_keeps_leading_plot_range_over_wider_primitives() {
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 1}, Frame -> True], \
+         Graphics[{Dashed, Line[{{1, -10}, {1, 10}}]}]]",
+      );
+      assert!(
+        svg.contains(">0.8</text>") && !svg.contains(">10</text>"),
+        "Show widened the plot range to the marker line: {svg}"
+      );
+      // …and clipped at the frame, as the plot's `PlotRangeClipping ->
+      // True` carries over, rather than spilling over the margins.
+      let line = svg
+        .split("<polyline")
+        .find(|p| p.contains("stroke-dasharray"))
+        .expect("marker line");
+      let group = &svg[..svg.find(line).unwrap()];
+      assert!(
+        group.rfind("<g clip-path=").unwrap_or(0)
+          > group.rfind("<g>").unwrap_or(0),
+        "the marker line is not clipped to the frame: {svg}"
+      );
+    }
+
+    // A `PlotRange` given to `Show` itself still spans every layer.
+    #[test]
+    fn show_own_plot_range_spans_primitives_over_plot() {
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 1}], \
+         Graphics[Line[{{1, -10}, {1, 10}}]], PlotRange -> All]",
+      );
+      assert!(
+        svg.contains(">10</text>") && svg.contains(">-10</text>"),
+        "Show[…, PlotRange -> All] cropped the marker line: {svg}"
+      );
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped
@@ -15966,6 +16213,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
   mod charts {
     use super::*;
+
+    /// A `Column` chart label stacks its lines (each in its own style)
+    /// and a rotated one turns as a block; the lines used to run together
+    /// into one line of text.
+    #[test]
+    fn bar_chart_column_label_stacks_styled_lines() {
+      let svg = export_svg(
+        "BarChart[{1, 2}, ChartLabels -> {Rotate[Column[{\"one\", \
+         Style[\"two\", 15, Red]}], Pi/4], Column[{\"a\", \"b\"}]}]",
+      );
+      let rotated = svg
+        .lines()
+        .find(|l| l.contains(">one</tspan>"))
+        .expect("rotated stacked label");
+      assert!(rotated.contains("rotate(-45.0"), "{rotated}");
+      assert!(
+        rotated.contains("font-size=\"150\" fill=\"rgb(255,0,0)\">two</tspan>"),
+        "{rotated}"
+      );
+      let upright = svg
+        .lines()
+        .find(|l| l.contains(">a</tspan>"))
+        .expect("upright stacked label");
+      assert!(upright.contains(">b</tspan>"), "{upright}");
+    }
+
+    /// A `PlotLabel` above a tight explicit top `ImagePadding` stays on the
+    /// image, and rotated labels below a tight bottom padding are not cut
+    /// off at the image's lower edge.
+    #[test]
+    fn bar_chart_labels_stay_inside_tight_image_padding() {
+      let svg = export_svg(
+        "BarChart[{1, 2}, ImageSize -> {190, 400}, AspectRatio -> Full, \
+         ImagePadding -> {{30, 10}, {20, 5}}, PlotLabel -> \"ttl\", \
+         ChartLabels -> {Rotate[\"a long label\", Pi/4], \"x\"}]",
+      );
+      let attr = |line: &str, name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        line
+          .split_once(key.as_str())
+          .unwrap()
+          .1
+          .split_once('"')
+          .unwrap()
+          .0
+          .parse()
+          .unwrap()
+      };
+      let title = svg
+        .lines()
+        .find(|l| l.contains(">ttl</text>"))
+        .expect("title");
+      assert!(
+        attr(title, "y") - 0.75 * attr(title, "font-size") >= 0.0,
+        "title is above the image: {title}"
+      );
+      let label = svg
+        .lines()
+        .find(|l| l.contains(">a long label</text>"))
+        .expect("rotated label");
+      // Its center hangs above the bottom edge by at least the half
+      // extent it reaches downwards.
+      let size = attr(label, "font-size");
+      let half_drop = 12.0 * size * 0.6 / 2.0
+        * (0.25_f64 * std::f64::consts::PI).sin()
+        + size / 2.0;
+      assert!(
+        attr(label, "y") + half_drop <= 4000.5,
+        "rotated label runs off the image: {label}"
+      );
+    }
 
     #[test]
     fn bar_chart_basic() {
@@ -19809,6 +20127,81 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "{svg}"
       );
       assert!(!svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn vector_plot_zero_arrowheads_draw_segments() {
+      // Regression: `VectorStyle -> Arrowheads[0]` still drew full arrows;
+      // headless arrows are plain segments, as with "Segment".
+      assert_eq!(
+        interpret(
+          "g = VectorPlot[{1, y}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, \
+             VectorStyle -> Arrowheads[0]]; \
+           {Length[Cases[g[[1]], _Line, Infinity]], \
+            Length[Cases[g[[1]], _Arrow, Infinity]]}"
+        )
+        .unwrap(),
+        "{18, 0}"
+      );
+    }
+
+    #[test]
+    fn vector_plot_stream_points_add_streamlines() {
+      clear_state();
+      // Regression: VectorPlot ignored `StreamPoints`, so no streamlines
+      // were drawn over the vectors. Without the option only the vectors
+      // remain.
+      assert_eq!(
+        interpret(
+          "Length[Cases[VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+             VectorPoints -> 4][[1]], _Line, Infinity]]"
+        )
+        .unwrap(),
+        "0"
+      );
+      let streams = interpret(
+        "Length[Union[Cases[VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+           VectorPoints -> 4, StreamPoints -> Coarse][[1]], \
+           Arrow[p_] /; Length[p] > 2 :> Round[p[[1, 2]], 0.001], \
+           Infinity]]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      assert!((8..=13).contains(&streams), "{streams} streamlines");
+      // `StreamScale -> None` draws whole headless streamlines.
+      assert_eq!(
+        interpret(
+          "g = VectorPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, VectorPoints -> 4, \
+             StreamPoints -> Coarse, StreamScale -> None, \
+             StreamColorFunction -> None, StreamStyle -> Red]; \
+           {Length[Cases[g[[1]], {RGBColor[1., 0., 0.], _Line}, Infinity]] \
+              > 5, MemberQ[g[[1]], {___, RGBColor[1., 0., 0.], _Arrow}, \
+              Infinity]}"
+        )
+        .unwrap(),
+        "{True, False}"
+      );
+    }
+
+    #[test]
+    fn stream_color_function_gets_position_and_velocity() {
+      clear_state();
+      // Regression: a `StreamColorFunction` function was called with the
+      // rescaled speed alone; Wolfram passes `x, y, vx, vy, |v|`, each
+      // rescaled to 0..1. Coloring a uniform flow by `x` alone must make
+      // the left end black and the right end white.
+      assert_eq!(
+        interpret(
+          "segs = SortBy[Cases[StreamPlot[{1, 0}, {x, 0, 1}, {y, 0, 1}, \
+             StreamColorFunction -> Function[{x, y}, GrayLevel[x]]], \
+             {_Arrowheads, c_, Arrow[p_]} :> {Mean[p][[1]], List @@ c}, \
+             Infinity], First]; \
+           {Round[segs[[1, 2]], 0.2], Round[segs[[-1, 2]], 0.2]}"
+        )
+        .unwrap(),
+        "{{0., 0., 0.}, {1., 1., 1.}}"
+      );
     }
 
     #[test]
@@ -32513,6 +32906,34 @@ mod manipulate {
     }
   }
 
+  // With no PlotRange stated anywhere, a bare Locator moves over the range
+  // of the graphic the body draws at the initial control values — not a
+  // small box padded around its start point.
+  #[test]
+  fn spec_bare_locator_uses_drawn_graphic_range() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[{Line[{{-k, -k}, {k, 2 k}}], Point[p]}], \
+       {{k, 6}, 1, 10}, {{p, {3, 0}}, Locator}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[1] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-6.0, 6.0, -6.0, 12.0));
+        assert_eq!((*x_initial, *y_initial), (3.0, 0.0));
+      }
+      other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
   // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
   // control itself — including one whose bounds name sibling controls.
   #[test]
@@ -33984,10 +34405,73 @@ mod manipulate {
     assert_eq!(spec.state, vec![("picks".to_string(), "{}".to_string())],);
     assert_eq!(spec.displays.len(), 1);
     assert!(
-      spec.displays[0].starts_with("TogglerBar[Dynamic[picks]"),
+      spec.displays[0]
+        .starts_with("Row[{\"parts\", \" \", TogglerBar[Dynamic[picks]"),
       "{}",
       spec.displays[0]
     );
+  }
+
+  /// A multi-select `TogglerBar` control keeps its label (drawn to the left
+  /// of the bar, as Wolfram does) and its own `Enabled -> cond`, which is
+  /// re-checked against the live bindings: while `cond` is `False` every
+  /// toggle of the bar reports itself disabled.
+  #[test]
+  fn spec_toggler_bar_control_keeps_its_label_and_enabled_condition() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, picks}, \
+       {{mode, 1, \"mode\"}, {1 -> \"off\", 2 -> \"on\"}}, \
+       {{picks, {1}, \"picks\"}, Range[4], TogglerBar, Enabled -> mode == 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    assert_eq!(
+      spec.displays[0],
+      "Row[{\"picks\", \" \", TogglerBar[Dynamic[picks], {1, 2, 3, 4}, \
+       Enabled -> Dynamic[mode == 2]]}]"
+    );
+    let render = |mode: &str| {
+      let mut bindings = manipulate_initial_bindings(&spec);
+      bindings.retain(|(n, _)| n != "mode");
+      bindings.push(("mode".to_string(), mode.to_string()));
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::functions::graphics::render_manipulate_display(
+          &spec.displays[0],
+          &[],
+        )
+      })
+    };
+    let off = render("1");
+    assert!(off.contains("picks"), "the label is drawn: {off}");
+    assert_eq!(off.matches("\"kind\":\"toggler\"").count(), 4, "{off}");
+    assert_eq!(off.matches("\"enabled\":false").count(), 4, "{off}");
+    let on = render("2");
+    assert_eq!(on.matches("\"enabled\":true").count(), 4, "{on}");
+  }
+
+  /// An in-body `SetterBar[Dynamic[v], …, Enabled -> False]` draws every
+  /// button disabled, and one without the option stays enabled.
+  #[test]
+  fn spec_setterbar_display_honors_enabled_option() {
+    let render = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+      let bindings = manipulate_initial_bindings(&spec);
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::functions::graphics::render_manipulate_display(
+          &spec.displays[0],
+          &[],
+        )
+      })
+    };
+    let off = render(
+      "Manipulate[n, Row[{SetterBar[Dynamic[n], Range[3], Enabled -> False]}]]",
+    );
+    assert_eq!(off.matches("\"enabled\":false").count(), 3, "{off}");
+    let on = render("Manipulate[n, Row[{SetterBar[Dynamic[n], Range[3]]}]]");
+    assert_eq!(on.matches("\"enabled\":true").count(), 3, "{on}");
   }
 
   /// `ControlType -> CheckboxBar` (and `TogglerBar`) picks several of its
@@ -38591,6 +39075,17 @@ mod cases {
     assert_case(
       r#"ColorData[]; ColorData["Gradients"]"#,
       r#"{"AlpineColors", "Aquamarine", "ArmyColors", "AtlanticColors", "AuroraColors", "AvocadoColors", "BeachColors", "BlueGreenYellow", "BrassTones", "BrightBands", "BrownCyanTones", "CandyColors", "CherryTones", "CMYKColors", "CoffeeTones", "DarkBands", "DarkRainbow", "DarkTerrain", "DeepSeaColors", "FallColors", "FruitPunchColors", "FuchsiaTones", "GrayTones", "GrayYellowTones", "GreenBrownTerrain", "GreenPinkTones", "IslandColors", "LakeColors", "LightTemperatureMap", "LightTerrain", "MintColors", "NeonColors", "Pastel", "PearlColors", "PigeonTones", "PlumColors", "Rainbow", "RedBlueTones", "RedGreenSplit", "RoseColors", "RustTones", "SandyTerrain", "SiennaTones", "SolarColors", "SouthwestColors", "StarryNightColors", "SunsetColors", "TemperatureMap", "ThermometerColors", "ValentineTones", "WatermelonColors"}"#,
+    );
+  }
+  #[test]
+  fn color_data_charting() {
+    assert_case(
+      r#"ColorData["Charting"]"#,
+      "{44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62}",
+    );
+    assert_case(
+      r#"ColorData[ColorData["Charting"][[9]]][1] === ColorData[52][1]"#,
+      "True",
     );
   }
   // Gradient control points are Mathematica's: uniform knots, except the
@@ -45617,6 +46112,15 @@ mod surface_vertex_colors {
   #[test]
   fn parametric_plot3d_color_function_colors_facets() {
     clear_state();
+    // The facet colors are lit by neutral lights, as in `Plot3D`.
+    assert_eq!(
+      interpret(
+        "MatchQ[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         ColorFunction -> Hue, PlotPoints -> 3][[1, 2, 2]], Lighting -> _]"
+      )
+      .unwrap(),
+      "True"
+    );
     // `ColorFunction -> f` receives `{x, y, z, u, v}` (raw with
     // `ColorFunctionScaling -> False`) and colors each facet.
     let r = interpret(
@@ -45624,7 +46128,7 @@ mod surface_vertex_colors {
        {t, 0, 2 Pi}, {q, 0, Pi}, Mesh -> None, \
        ColorFunction -> (RGBColor[#4/7, #5/4, 0.3] &), \
        ColorFunctionScaling -> False, PlotPoints -> 4]; \
-       Take[p[[1, 2]], {2, 3}]",
+       Take[p[[1, 2]], {3, 4}]",
     )
     .unwrap();
     assert_eq!(
