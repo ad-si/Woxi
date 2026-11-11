@@ -3164,6 +3164,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     frame_label: None,
     chart_style: Vec::new(),
     chart_style_scheme: None,
+    chart_style_indexed: None,
     chart_legends: Vec::new(),
     chart_legends_auto: false,
     legend_layout: crate::functions::plot::LegendLayout::Column,

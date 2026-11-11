@@ -2019,7 +2019,7 @@ pub(crate) fn double_escaped_box_escape(src: &str) -> Option<String> {
 /// The length in chars of the `\!\(\*` opener at `i`, in either of its
 /// spellings (backslashes as read from source, private-use markers as a
 /// string carries them), or `None` when no escape starts there.
-fn box_escape_opener(chars: &[char], i: usize) -> Option<usize> {
+pub(crate) fn box_escape_opener(chars: &[char], i: usize) -> Option<usize> {
   use crate::functions::string_ast::{BOX_OPEN, BOX_SEP, BOX_START};
   let mut len = 0;
   for (backslashed, marker) in
@@ -2035,7 +2035,7 @@ fn box_escape_opener(chars: &[char], i: usize) -> Option<usize> {
 }
 
 /// The index of the `\)` that closes the escape opened before `from`.
-fn box_escape_closer(chars: &[char], from: usize) -> Option<usize> {
+pub(crate) fn box_escape_closer(chars: &[char], from: usize) -> Option<usize> {
   use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN};
   let mut depth = 0usize;
   let mut i = from;

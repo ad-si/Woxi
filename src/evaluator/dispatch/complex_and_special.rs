@@ -7317,7 +7317,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_piecewise(args)
     }
     "Power" if args.len() == 2 => tf_power(&args[0], &args[1]),
-    "Rational" if args.len() == 2 => tf_fraction(&args[0], &args[1]),
+    // A negative rational sets its sign before the bar, `-5/2` as
+    // `RowBox[{"-", FractionBox["5", "2"]}]`, as in StandardForm.
+    "Rational" if args.len() == 2 => match &args[0] {
+      Expr::Integer(p) if *p < 0 => tf_row(vec![
+        tf_string("-"),
+        tf_fraction(&Expr::Integer(-p), &args[1]),
+      ]),
+      Expr::BigInteger(p) if p.sign() == num_bigint::Sign::Minus => tf_row(vec![
+        tf_string("-"),
+        tf_fraction(&Expr::BigInteger(-p), &args[1]),
+      ]),
+      _ => tf_fraction(&args[0], &args[1]),
+    },
     "Times" if args.len() >= 2 => tf_times(&unevaluated("Times", args)),
     "Plus" if args.len() >= 2 => tf_plus(&unevaluated("Plus", args)),
     "Divide" if args.len() == 2 => tf_fraction(&args[0], &args[1]),

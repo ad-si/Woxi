@@ -1052,6 +1052,15 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     integrate(&expanded, &var_name)
   });
+  // Last resorts that re-enter `Integrate` on a rewritten integrand, so
+  // their result is already in its final, evaluated form.
+  if integral.is_none()
+    && let Some(result) = try_integrate_by_apart(&args[0], &var_name)
+      .or_else(|| try_integrate_exp_substitution(&args[0], &var_name))
+      .or_else(|| try_integrate_multiple_angle_trig(&args[0], &var_name))
+  {
+    return Ok(result);
+  }
   match integral {
     Some(result) => {
       let simplified = simplify(result);
@@ -10720,6 +10729,237 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
     _ => None,
   }
+}
+
+/// Rebuild `expr` bottom-up, letting `f` replace a sub-expression first.
+/// `f` returns `Some(Some(e))` to substitute `e`, `Some(None)` to descend
+/// into the children, and `None` to give up on the whole rewrite.
+fn rewrite_subexprs(
+  expr: &Expr,
+  f: &mut dyn FnMut(&Expr) -> Option<Option<Expr>>,
+) -> Option<Expr> {
+  if let Some(replacement) = f(expr)? {
+    return Some(replacement);
+  }
+  Some(match expr {
+    Expr::FunctionCall { name, args } => {
+      let mut new_args = Vec::with_capacity(args.len());
+      for a in args {
+        new_args.push(rewrite_subexprs(a, f)?);
+      }
+      call(name, new_args)
+    }
+    Expr::List(items) => {
+      let mut new_items = Vec::with_capacity(items.len());
+      for a in items {
+        new_items.push(rewrite_subexprs(a, f)?);
+      }
+      Expr::List(new_items.into())
+    }
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rewrite_subexprs(left, f)?),
+      right: Box::new(rewrite_subexprs(right, f)?),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rewrite_subexprs(operand, f)?),
+    },
+    other => other.clone(),
+  })
+}
+
+/// The exponent `k·var` of `E^(k·var)` (or `Exp[k·var]`) as the reduced
+/// rational `k = (p, q)`; `None` for any other expression.
+fn exp_of_rational_multiple(expr: &Expr, var: &str) -> Option<(i128, i128)> {
+  let exponent = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Constant(c) if c == "E") =>
+    {
+      &args[1]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Constant(c) if c == "E") => right,
+    Expr::FunctionCall { name, args } if name == "Exp" && args.len() == 1 => {
+      &args[0]
+    }
+    _ => return None,
+  };
+  let coeff = try_match_linear_arg(exponent, var)?;
+  let coeff = crate::evaluator::evaluate_expr_to_expr(&coeff).ok()?;
+  let (p, q) = decompose_rational_coeff(&coeff)?;
+  (p != 0).then_some((p, q))
+}
+
+/// ∫ R(E^(g·x)) dx for a function R in which `x` occurs only through
+/// exponentials `E^(k·x)` with rational `k`: substitute `u = E^(g·x)`
+/// (`g` the greatest common divisor of the `k`), integrate
+/// `R(u)/(g·u)` in `u`, and substitute back. Covers e.g.
+/// `∫ E^(2x)/(1 + E^x) dx = E^x - Log[1 + E^x]`.
+fn try_integrate_exp_substitution(expr: &Expr, var: &str) -> Option<Expr> {
+  let mut ks: Vec<(i128, i128)> = Vec::new();
+  rewrite_subexprs(expr, &mut |e| {
+    if let Some(k) = exp_of_rational_multiple(e, var) {
+      ks.push(k);
+      return Some(Some(e.clone()));
+    }
+    match e {
+      Expr::Identifier(name) if name == var => None,
+      Expr::Identifier(_)
+      | Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(_, _)
+      | Expr::String(_)
+      | Expr::Constant(_)
+      | Expr::FunctionCall { .. }
+      | Expr::List(_)
+      | Expr::BinaryOp { .. }
+      | Expr::UnaryOp { .. } => Some(None),
+      _ if is_constant_wrt(e, var) => Some(Some(e.clone())),
+      _ => None,
+    }
+  })?;
+  if ks.is_empty() {
+    return None;
+  }
+  // g = gcd(numerators) / lcm(denominators)
+  let (gp, gq) = ks.iter().fold((0i128, 1i128), |(ap, aq), &(bp, bq)| {
+    let l = aq / gcd_i128(aq, bq) * bq;
+    (gcd_i128(ap, bp), l)
+  });
+  if gp == 0 {
+    return None;
+  }
+  let u_name = format!("{var}$expsubst");
+  let u = id_expr(&u_name);
+  let substituted = rewrite_subexprs(expr, &mut |e| {
+    let Some((p, q)) = exp_of_rational_multiple(e, var) else {
+      return Some(None);
+    };
+    // (p/q) / (gp/gq) is an integer by construction of g.
+    let n = (p * gq) / (q * gp);
+    Some(Some(if n == 1 {
+      u.clone()
+    } else {
+      pow2(u.clone(), Expr::Integer(n))
+    }))
+  })?;
+  if !is_constant_wrt(&substituted, var) {
+    return None;
+  }
+  let g = if gq == 1 {
+    Expr::Integer(gp)
+  } else {
+    call("Rational", vec![Expr::Integer(gp), Expr::Integer(gq)])
+  };
+  let integrand_u = crate::evaluator::evaluate_expr_to_expr(&times(vec![
+    substituted,
+    pow2(times2(g.clone(), u.clone()), Expr::Integer(-1)),
+  ]))
+  .ok()?;
+  let primitive = crate::evaluator::evaluate_function_call_ast(
+    "Integrate",
+    &[integrand_u, u.clone()],
+  )
+  .ok()?;
+  if expr_mentions_head(&primitive, "Integrate") {
+    return None;
+  }
+  // Log[u] is Log[E^(g x)] = g x along the real line, which is how
+  // wolframscript writes it (∫ 1/(1 + E^x) dx = x - Log[1 + E^x]).
+  let linear = times2(g.clone(), id_expr(var));
+  let primitive = rewrite_subexprs(&primitive, &mut |e| {
+    Some(match e {
+      Expr::FunctionCall { name, args }
+        if name == "Log"
+          && args.len() == 1
+          && matches!(&args[0], Expr::Identifier(n) if *n == u_name) =>
+      {
+        Some(linear.clone())
+      }
+      _ => None,
+    })
+  })?;
+  let back = crate::syntax::substitute_variable(
+    &primitive,
+    &u_name,
+    &pow2(const_expr("E"), times2(g, id_expr(var))),
+  );
+  crate::evaluator::evaluate_expr_to_expr(&back).ok()
+}
+
+/// ∫ p(x)/q(x) dx for a rational function the partial-fraction rules
+/// above miss in its given shape (e.g. `1/(x^2 (1 + x))`): decompose it
+/// with `Apart` and integrate the decomposition term by term.
+fn try_integrate_by_apart(expr: &Expr, var: &str) -> Option<Expr> {
+  let eval = |name: &str, args: Vec<Expr>| {
+    crate::evaluator::evaluate_function_call_ast(name, &args).ok()
+  };
+  let together = eval("Together", vec![expr.clone()])?;
+  let num = eval("Numerator", vec![together.clone()])?;
+  let den = eval("Denominator", vec![together])?;
+  if is_constant_wrt(&den, var)
+    || !crate::functions::polynomial_ast::is_polynomial(&num, var)
+    || !crate::functions::polynomial_ast::is_polynomial(&den, var)
+  {
+    return None;
+  }
+  let apart = eval("Apart", vec![expr.clone(), id_expr(var)])?;
+  if expr_str_eq(&apart, expr)
+    || !matches!(&apart, Expr::FunctionCall { name, .. } if name == "Plus")
+  {
+    return None;
+  }
+  let primitive = eval("Integrate", vec![apart, id_expr(var)])?;
+  (!expr_mentions_head(&primitive, "Integrate")).then_some(primitive)
+}
+
+/// ∫ f dx for a trigonometric integrand with multiple angles
+/// (`Sin[n x]`, `Cos[n x]` for an integer `n ≥ 2`): expand those into
+/// powers of `Sin[x]` and `Cos[x]`, distribute, and integrate the
+/// resulting sum term by term. Covers e.g. `∫ Cos[2x] Tan[x] dx`.
+fn try_integrate_multiple_angle_trig(expr: &Expr, var: &str) -> Option<Expr> {
+  let mut changed = false;
+  let rewritten = rewrite_subexprs(expr, &mut |e| {
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(name.as_str(), "Sin" | "Cos")
+      && args.len() == 1
+      && let Some(coeff) = try_match_linear_arg(&args[0], var)
+      && let Expr::Integer(n) = coeff
+      && (2..=12).contains(&n.abs())
+    {
+      let expanded = crate::evaluator::evaluate_function_call_ast(
+        "TrigExpand",
+        std::slice::from_ref(e),
+      )
+      .ok()?;
+      changed = true;
+      return Some(Some(expanded));
+    }
+    Some(None)
+  })?;
+  if !changed {
+    return None;
+  }
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&rewritten).ok()?;
+  let expanded =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated])
+      .ok()?;
+  let primitive = crate::evaluator::evaluate_function_call_ast(
+    "Integrate",
+    &[expanded, id_expr(var)],
+  )
+  .ok()?;
+  if expr_mentions_head(&primitive, "Integrate") {
+    return None;
+  }
+  Some(primitive)
 }
 
 /// Simplify an expression

@@ -27815,3 +27815,56 @@ fn trig_to_exp_expands_low_degree_products_of_shared_angles() {
     assert_eq!(interpret(&code).unwrap(), expected, "{code}");
   }
 }
+
+mod integrate_substitution_fallbacks {
+  use super::*;
+
+  // x only occurs through E^(k x): substitute u = E^(g x).
+  #[test]
+  fn rational_function_of_exponentials() {
+    for (code, expected) in [
+      ("Integrate[E^(2x)/(1 + E^x), x]", "E^x - Log[1 + E^x]"),
+      ("Integrate[-(E^(2x)/(1 + E^x)), x]", "-E^x + Log[1 + E^x]"),
+      ("Integrate[E^x/(1 + E^(2x)), x]", "ArcTan[E^x]"),
+      ("Integrate[E^(x/2)/(1 + E^x), x]", "2*ArcTan[E^(x/2)]"),
+      ("Integrate[1/(1 + E^x), x]", "x - Log[1 + E^x]"),
+      (
+        "Integrate[E^(-x)/(1 + E^x), x]",
+        "-E^(-x) - x + Log[1 + E^x]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  // x outside an exponential keeps the integral unevaluated.
+  #[test]
+  fn variable_outside_exponential_is_not_substituted() {
+    assert_eq!(
+      interpret("Integrate[x E^x/(1 + E^x), x]").unwrap(),
+      "Integrate[(E^x*x)/(1 + E^x), x]"
+    );
+  }
+
+  // A rational function the direct rules miss goes through Apart.
+  #[test]
+  fn rational_function_via_partial_fractions() {
+    assert_eq!(
+      interpret("Integrate[1/(u^2 (1 + u)), u]").unwrap(),
+      "-u^(-1) - Log[u] + Log[1 + u]"
+    );
+  }
+
+  // Multiple angles are expanded into Sin[x] and Cos[x] first.
+  #[test]
+  fn multiple_angle_trig() {
+    for (code, expected) in [
+      ("Integrate[Cos[2x] Tan[x], x]", "-Cos[x]^2 + Log[Cos[x]]"),
+      ("Integrate[-(Cos[2x] Tan[x]), x]", "Cos[x]^2 - Log[Cos[x]]"),
+      ("Integrate[Sin[2x] Csc[x]^2, x]", "2*Log[Sin[x]]"),
+      ("Integrate[Sin[2x] Sec[x], x]", "-2*Cos[x]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
