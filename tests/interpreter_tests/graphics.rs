@@ -5859,7 +5859,7 @@ mod plot3d {
       let lines = interpret(
         "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
          PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Red][[1, 2]], \
-         {c_, Line[segs_]} :> {c, Length[segs]}]",
+         {_AbsoluteThickness, c_, Line[segs_]} :> {c, Length[segs]}]",
       )
       .unwrap();
       assert_eq!(lines, "{{RGBColor[1, 0, 0], 8}}");
@@ -5879,6 +5879,40 @@ mod plot3d {
          PlotPoints -> 5, Mesh -> None]",
       );
       assert!(!plain.contains("rgb(255,0,0)"));
+    }
+
+    /// An extracted surface outline keeps the hairline width the plot
+    /// draws it at when a `Graphics3D` renders it, rather than the
+    /// thicker width of a bare 3D `Line`; a thickness the `BoundaryStyle`
+    /// names itself still wins.
+    #[test]
+    fn extracted_parametric_surface_boundary_keeps_hairline_width() {
+      clear_state();
+      let widths = |style: &str| -> std::collections::BTreeSet<String> {
+        let svg = export_svg(&format!(
+          "Graphics3D[ParametricPlot3D[{{Sin[w], s, Cos[w]}}, {{w, 0, 1}}, \
+           {{s, 0, 1}}, Mesh -> None, BoundaryStyle -> {style}][[1]]]"
+        ));
+        svg
+          .split("stroke=\"rgb(0,0,0)\" stroke-width=\"")
+          .skip(1)
+          .map(|rest| rest.split('"').next().unwrap().to_string())
+          .collect()
+      };
+      let plain = widths("Black");
+      assert!(!plain.is_empty(), "boundary not drawn");
+      for w in &plain {
+        assert!(w.parse::<f64>().unwrap() < 1.0, "outline too thick: {w}");
+      }
+      let thick = widths("Directive[Black, AbsoluteThickness[3]]");
+      assert_eq!(thick.into_iter().collect::<Vec<_>>(), vec!["3.0"]);
+      let extracted = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 3, Mesh -> None, BoundaryStyle -> Black][[1]], \
+         {t_AbsoluteThickness, _, _Line} :> t, Infinity]",
+      )
+      .unwrap();
+      assert_eq!(extracted, "{AbsoluteThickness[0.75]}");
     }
 
     #[test]
