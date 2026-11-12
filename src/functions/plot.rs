@@ -2032,9 +2032,7 @@ pub(crate) fn axes_label_svg_at(
     )
   };
   let picture_size = crate::functions::graphics::axes_label_picture_size;
-  if show_x_axis
-    && let Some((_, h)) = picture_size(x_label)
-  {
+  if show_x_axis && let Some((_, h)) = picture_size(x_label) {
     // 8 pt past the end of the axis, vertically centered on it.
     let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
     svg.push_str(&picture(x_label, label_x, axis_y - h * k / 2.0));
@@ -2072,9 +2070,7 @@ pub(crate) fn axes_label_svg_at(
       join_label_lines(&lines, label_x, pitch)
     ));
   }
-  if show_y_axis
-    && let Some((pw, ph)) = picture_size(y_label)
-  {
+  if show_y_axis && let Some((pw, ph)) = picture_size(y_label) {
     // Centered over the top of the y axis, 6 pt above it, and kept inside
     // the image.
     let lx = axis_x.max(pw * k / 2.0 + font_size * 0.2);
