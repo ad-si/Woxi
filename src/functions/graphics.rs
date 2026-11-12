@@ -10745,6 +10745,20 @@ fn graphics_decorations(
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
+      let length = |s: &String| {
+        if s.is_empty() {
+          return 0.0;
+        }
+        axes_label_picture_size(s).map_or_else(
+          || {
+            let size = crate::functions::plot_padding::markup_font_size(s)
+              .unwrap_or(LABEL_FONT);
+            crate::functions::plot_padding::label_width(s, size)
+          },
+          |(w, _)| w,
+        )
+      };
+      d.frame_label_lengths = [length(b), length(l), length(t), length(r)];
     }
   } else if axes.0 || axes.1 {
     d.axes = axes;
@@ -13936,8 +13950,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let fixed_h =
     ((explicit_size && size_names_height) || capped_tall).then_some(svg_h);
-  let pad = decorations.solve(svg_w, |w| match fixed_h {
-    Some(h) => (h - 16.0).min(w * drawing_aspect),
+  let pad = decorations.solve(svg_w, |w, pad| match fixed_h {
+    Some(h) => {
+      (h - 16.0f64.max(pad.bottom + pad.above())).min(w * drawing_aspect)
+    }
     None => w * drawing_aspect,
   });
   let (margin_left, margin_right, margin_bottom, margin_top) =
