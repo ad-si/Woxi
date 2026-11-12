@@ -3132,13 +3132,11 @@ fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
   let vanishes = |value: &Expr| {
     denominators.iter().any(|den| {
       let at = crate::syntax::substitute_variable(den, var, value);
-      matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Integer(0))
-      ) || matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Real(r)) if r == 0.0
-      )
+      match crate::evaluator::evaluate_expr_to_expr(&at) {
+        Ok(Expr::Integer(0)) => true,
+        Ok(Expr::Real(r)) => r == 0.0,
+        _ => false,
+      }
     })
   };
   let kept: Vec<Expr> = solutions
@@ -6363,7 +6361,12 @@ fn solve_rational_system(
 /// and the numerator brought back to machine numbers.
 fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::math_ast::numeric_utils::contains_inexact_real;
-  if !contains_inexact_real(poly) {
+  // Only an equation in `var` alone with real machine coefficients: the
+  // exact rationalization is costly, and the eliminations of a system
+  // produce many branch equations with parameters or complex coefficients.
+  let mut symbols = std::collections::HashSet::new();
+  super::simplify::collect_variables(poly, &mut symbols);
+  if !contains_inexact_real(poly) || symbols.iter().any(|s| s != var) {
     return None;
   }
   // Only a sum in a denominator can share a factor with the numerator that
