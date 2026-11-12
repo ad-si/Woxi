@@ -853,6 +853,18 @@ The values are equal. `TrigReduce[Tan[x]^2]` conforms; WL keeps `Sec[…]^2`
 as a factor once the sum around it reduces to it, and distributes it over
 the reduced terms of a larger sum.
 
+### `TrigExpand` of a `Tan` sum keeps a constant term apart
+
+```sh
+wolframscript -code 'TrigExpand[1 + Tan[2 x]]'
+# Cos[x]^2/(Cos[x]^2 - Sin[x]^2) + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2) - Sin[x]^2/(Cos[x]^2 - Sin[x]^2)
+woxi eval 'TrigExpand[1 + Tan[2 x]]'
+# 1 + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2)
+```
+
+Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
+the common denominator and splits it by the numerator's monomials.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -2136,6 +2148,31 @@ and not to `Integrate[Sin[2*x + 1], x]`, which it leaves as
 applies to `Integrate[Log[2*x + 3], x]` and `Integrate[ArcTan[2*x + 1], x]`,
 where wolframscript expands the product and drops the resulting constant.
 
+
+### `Integrate[p[x]/(x + b), x]` collects the primitive over a common denominator
+
+```sh
+wolframscript -code 'Integrate[(1 + x^2)/(2 + x), x]'   # -6 - 2*x + x^2/2 + 5*Log[2 + x]
+woxi eval 'Integrate[(1 + x^2)/(2 + x), x]'             # (-12 - 4*x + x^2 + 10*Log[2 + x])/2
+wolframscript -code 'Integrate[(1 + x + x^2)/(1 + x), x]'   # -x + (1 + x)^2/2 + Log[1 + x]
+woxi eval 'Integrate[(1 + x + x^2)/(1 + x), x]'             # (-1 + x^2 + 2*Log[1 + x])/2
+```
+
+Found by the differential fuzzer (2026-11-12). With a monic linear
+denominator WL sometimes expands the substituted primitive and sometimes
+keeps `(1 + x)^2/2`; the rule is not decoded. Non-monic denominators
+(`(1 + x^2)/(2 + 3 x)`) conform.
+
+### `Integrate` of a product of cosines uses the product-to-sum form
+
+```sh
+wolframscript -code 'Integrate[Cos[x y] Cos[x], x]'   # (-(Cos[x*y]*Sin[x]) + y*Cos[x]*Sin[x*y])/(-1 + y^2)
+woxi eval 'Integrate[Cos[x y] Cos[x], x]'             # Sin[x - x*y]/(2*(1 - y)) + Sin[x + x*y]/(2*(1 + y))
+```
+
+The values are equal. Products with a `Tan` factor
+(`Integrate[Sin[x y] Tan[x], x]`, a `Hypergeometric2F1` sum in WL) stay
+unevaluated.
 
 ### `Integrate[Log[Sin[x]], …]` is unimplemented
 

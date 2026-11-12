@@ -4103,6 +4103,12 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       return order;
     }
   }
+  // A quotient over a sum against a term with no sum in it at all orders as
+  // `Sort` does: `y^3/(c - y) + y^4` but `y^4 + y^3/(c^2 - y^2)`, and
+  // `Sin[x]^2 + Sin[x]/(Cos[x]^2 - Sin[x]^2)` (TrigExpand output).
+  if let Some(ord) = quotient_over_sum_vs_sum_free_order(a, b) {
+    return ord;
+  }
   // Symbols times a power of a sum free of them (`a/(1 + c)`, `z Sqrt[2 +
   // c]`) order as `Order` does — from the last factor back, so the power
   // decides and then the symbols: `-(a/(1 + c)) + x/(1 + c)`, `a/(2 + c) +
@@ -5224,6 +5230,54 @@ fn wl_summands(e: &Expr) -> Vec<Cow<'_, Expr>> {
 /// A product of symbols and one power of a sum (any exponent but 1) that
 /// mentions none of them, with a numeric coefficient at most:
 /// `-(a/(1 + c))`, `z Sqrt[1 + c]`. Not `x/(1 + x)`, `(a + b)/(1 + c)`.
+/// `Sort` order for a term with a factor `sum^(-n)` against a term free of
+/// sums; `None` for any other pair.
+fn quotient_over_sum_vs_sum_free_order(
+  a: &Expr,
+  b: &Expr,
+) -> Option<std::cmp::Ordering> {
+  fn contains_sum(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Plus" || args.iter().any(contains_sum)
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      } => true,
+      Expr::BinaryOp { left, right, .. } => {
+        contains_sum(left) || contains_sum(right)
+      }
+      Expr::UnaryOp { operand, .. } => contains_sum(operand),
+      _ => false,
+    }
+  }
+  fn over_sum(e: &Expr) -> bool {
+    let (_, factors) = wl_coeff_and_factors(e);
+    factors.len() > 1
+      && factors.iter().any(|f| {
+        let (base, exp) = wl_base_exp(f);
+        contains_sum(base) && matches!(exp.as_ref(), Expr::Integer(k) if *k < 0)
+      })
+  }
+  // Numbers and bare symbols keep their own rules (and `Sort` itself still
+  // misplaces a symbol against `1/(E^x*(1 + E^x))`).
+  let excluded = |e: &Expr| {
+    crate::functions::predicate_ast::is_numeric_q(e)
+      || matches!(e, Expr::Identifier(_))
+  };
+  if excluded(a) || excluded(b) {
+    return None;
+  }
+  let applies =
+    (over_sum(a) && !contains_sum(b)) || (over_sum(b) && !contains_sum(a));
+  if !applies {
+    return None;
+  }
+  let order = crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+  (order != std::cmp::Ordering::Equal).then_some(order)
+}
+
 fn symbols_times_power_of_sum(e: &Expr) -> bool {
   if !algebraic_only(e) {
     return false;

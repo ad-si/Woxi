@@ -990,6 +990,28 @@ mod plus_radical_like_terms {
   }
 }
 
+// A quotient over a sum against a power or product with no sum in it
+// orders as `Sort` does.
+mod plus_quotient_over_sum_ordering {
+  use super::*;
+
+  #[test]
+  fn follows_sort_order() {
+    assert_eq!(interpret("y^4 + y^3/(c - y)").unwrap(), "y^3/(c - y) + y^4");
+    assert_eq!(interpret("y^2 + y/(c - y)").unwrap(), "y/(c - y) + y^2");
+    assert_eq!(
+      interpret("y^4 + y^3/(c^2 - y^2)").unwrap(),
+      "y^4 + y^3/(c^2 - y^2)"
+    );
+    assert_eq!(
+      interpret("Sin[x]/(Cos[x]^2 - Sin[x]^2) + Sin[x]^2").unwrap(),
+      "Sin[x]^2 + Sin[x]/(Cos[x]^2 - Sin[x]^2)"
+    );
+    // A bare symbol keeps its own rule.
+    assert_eq!(interpret("x + 1/(a + b)").unwrap(), "(a + b)^(-1) + x");
+  }
+}
+
 mod plus_call_led_ordering {
   use super::*;
 
