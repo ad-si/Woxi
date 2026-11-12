@@ -2610,3 +2610,111 @@ mod association_entry_printing {
     );
   }
 }
+
+mod extract_delayed_entries {
+  use super::*;
+
+  // A delayed entry is extracted unevaluated when a head holds it, and
+  // evaluated otherwise.
+  #[test]
+  fn extract_takes_a_delayed_value_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\"a\" :> 1 + 1, \"b\" -> 2|>; \
+         ToString[{Extract[a, Key[\"a\"], Hold], Extract[a, {1}, Hold], \
+           Extract[a, \"a\"], Extract[a, {{1}, {2}}, Hold], \
+           Extract[{a}, {1, \"a\"}, Hold]}, InputForm]"
+      )
+      .unwrap(),
+      "{Hold[1 + 1], Hold[1 + 1], 2, {Hold[1 + 1], Hold[2]}, Hold[1 + 1]}"
+    );
+  }
+
+  #[test]
+  fn extract_descends_into_a_delayed_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\"a\" :> {1 + 1, 3}|>; \
+         ToString[{Extract[a, {\"a\", 1}, Hold], Extract[a, {\"a\", 1}]}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Hold[1 + 1], 2}"
+    );
+  }
+}
+
+mod association_fuzz_findings {
+  use super::*;
+
+  #[test]
+  fn key_sort_uses_canonical_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "KeySort[<|\"b\" -> 3, x -> 4, 1 -> 0, \"a\" -> 0, \"B\" -> 5|>]"
+      )
+      .unwrap(),
+      "<|1 -> 0, a -> 0, b -> 3, B -> 5, x -> 4|>"
+    );
+  }
+
+  // Repeated keys keep the first position and the last value; KeyTake
+  // takes a key asked for twice once, at its last position.
+  #[test]
+  fn repeated_keys_merge() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{AssociationThread[{\"a\", x, x}, {1, 2, 3}], \
+          KeyTake[<|a -> 1, b -> 2|>, {b, a, b}], \
+          KeyTake[<|a -> 1, b -> 2, c -> 3|>, {c, a}]}"
+      )
+      .unwrap(),
+      "{<|a -> 1, x -> 3|>, <|a -> 1, b -> 2|>, <|c -> 3, a -> 1|>}"
+    );
+  }
+
+  #[test]
+  fn max_flattens_list_values() {
+    clear_state();
+    assert_eq!(
+      interpret("{Max[<|x -> {1, 2}|>], Min[<|a -> {3, 1}, b -> 2|>]}")
+        .unwrap(),
+      "{2, 1}"
+    );
+  }
+
+  // AssociateTo updates a part of a variable, and reports any other
+  // target that is not a symbol.
+  #[test]
+  fn associate_to_parts_and_bad_targets() {
+    clear_state();
+    assert_eq!(
+      interpret("x = {<|a -> 1|>}; AssociateTo[x[[1]], b -> 2]; x").unwrap(),
+      "{<|a -> 1, b -> 2|>}"
+    );
+    clear_state();
+    let result = interpret_with_stdout(
+      "{AssociateTo[f[y], a -> 1], AssociateTo[5, a -> 1], \
+        AssociateTo[{1}, a -> 1], AssociateTo[undefinedQ, a -> 1]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.warnings,
+      vec![
+        "AssociateTo::invak: The argument f[y] is not a valid Association."
+          .to_string(),
+        "AssociateTo::rvalue: 5 is not a variable with a value, so its value \
+         cannot be changed."
+          .to_string(),
+        "AssociateTo::wrsym: Symbol List is Protected.".to_string(),
+        "AssociateTo::blnoval: The symbol undefinedQ at position 1 should have \
+         an immediate value defined."
+          .to_string()
+      ]
+    );
+  }
+}

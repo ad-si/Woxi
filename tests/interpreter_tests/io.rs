@@ -11805,3 +11805,450 @@ mod to_expression_graphics_box {
     );
   }
 }
+
+mod line_reading {
+  use super::*;
+
+  // ReadLine skips blank lines and leaves the separator after the line
+  // unread; Read[s, String] also skips blank lines but takes the separator.
+  #[test]
+  fn read_line_skips_blank_lines_and_leaves_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\nb\\n\\nc\\nd\"]; \
+         ToString[{ReadLine[s], ReadLine[s], ReadLine[s], ReadString[s]}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{\"a\", \"b\", \"c\", \"\\nd\"}"
+    );
+  }
+
+  #[test]
+  fn read_line_reaches_end_of_file_through_trailing_separators() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r[str_, n_] := (s = StringToStream[str]; Table[ReadLine[s], n]); \
+         ToString[{r[\"\\n\\na\\n\", 2], r[\"\\n\\n\", 1], \
+           r[\"a\\r\\nb\\r\\n\\r\\nc\", 4]}, InputForm]"
+      )
+      .unwrap(),
+      "{{\"a\", EndOfFile}, {EndOfFile}, {\"a\", \"b\", \"c\", EndOfFile}}"
+    );
+  }
+
+  #[test]
+  fn read_string_type_consumes_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\n\\nb\"]; \
+         t = StringToStream[\"a\\n\\nb\"]; \
+         ToString[{Read[s, String], Read[s, String], Read[s, String], \
+           Read[t, String], ReadString[t]}, InputForm]"
+      )
+      .unwrap(),
+      "{\"a\", \"b\", EndOfFile, \"a\", \"\\nb\"}"
+    );
+  }
+
+  #[test]
+  fn read_line_leaves_the_position_before_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\nb\"]; {ReadLine[s], StreamPosition[s]}"
+      )
+      .unwrap(),
+      "{a, 1}"
+    );
+  }
+}
+
+mod byte_array_encodings {
+  use super::*;
+
+  #[test]
+  fn byte_array_to_string_decodes_in_the_given_encoding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToCharacterCode[ByteArrayToString[ByteArray[{194, 128}], \"ISOLatin1\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{194, 128}]]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{233, 128}], \"WindowsANSI\"]]}"
+      )
+      .unwrap(),
+      "{{194, 128}, {128}, {233, 8364}}"
+    );
+  }
+
+  #[test]
+  fn string_to_byte_array_encodes_in_the_given_encoding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Normal[StringToByteArray[FromCharacterCode[233], \"ISOLatin1\"]], \
+          Normal[StringToByteArray[FromCharacterCode[233], \"MacintoshRoman\"]], \
+          Normal[StringToByteArray[FromCharacterCode[233]]]}"
+      )
+      .unwrap(),
+      "{{233}, {142}, {195, 169}}"
+    );
+  }
+
+  #[test]
+  fn an_unrepresentable_character_leaves_the_call_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[StringToByteArray[FromCharacterCode[8364], \"ISOLatin1\"]]"
+      )
+      .unwrap(),
+      "StringToByteArray"
+    );
+  }
+
+  #[test]
+  fn an_unknown_encoding_leaves_the_call_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Head[ByteArrayToString[ByteArray[{65}], \"Foo\"]], \
+          Head[StringToByteArray[\"a\", \"Foo\"]]}"
+      )
+      .unwrap(),
+      "{ByteArrayToString, StringToByteArray}"
+    );
+  }
+}
+
+mod input_form_escapes {
+  use super::*;
+
+  #[test]
+  fn backspace_and_form_feed_escapes_are_read_back() {
+    clear_state();
+    assert_eq!(
+      interpret("ToCharacterCode[\"a\\bb\\fc\"]").unwrap(),
+      "{97, 8, 98, 12, 99}"
+    );
+    clear_state();
+    // InputForm writes them, so Compress / ToExpression must read them.
+    assert_eq!(
+      interpret(
+        "{ToCharacterCode[Uncompress[Compress[FromCharacterCode[{233, 12, 8}]]]], \
+          ToCharacterCode[ToExpression[ToString[FromCharacterCode[{8, 12}], \
+          InputForm]]]}"
+      )
+      .unwrap(),
+      "{{233, 12, 8}, {8, 12}}"
+    );
+  }
+
+  #[test]
+  fn backspace_and_form_feed_are_spelled_out() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FromCharacterCode[{8, 9, 12}], InputForm]").unwrap(),
+      "\"\\b\\t\\f\""
+    );
+  }
+}
+
+mod stream_reads {
+  use super::*;
+
+  fn read(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // ReadList on an open stream is Read repeated from where the stream
+  // stands, and leaves it at the end.
+  #[test]
+  fn read_list_reads_on_from_the_stream_position() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"-3.5\\nc22\"]; \
+          {ReadList[s, Character, 3], ReadList[s, Character, 3], \
+           ReadList[s, Word], ReadList[s, Word], StreamPosition[s]})"
+      ),
+      "{{\"-\", \"3\", \".\"}, {\"5\", \"\\n\", \"c\"}, {\"22\"}, {}, 8}"
+    );
+  }
+
+  #[test]
+  fn read_list_stops_at_the_first_failure() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"2,2c,-3.5\"]; {ReadList[s, Number], StreamPosition[s]})"
+      ),
+      "{{2, $Failed}, 1}"
+    );
+    assert_eq!(
+      read("ReadList[StringToStream[\"1\\n;\\n2\"]]"),
+      "{1, $Failed}"
+    );
+  }
+
+  #[test]
+  fn read_byte_reads_raw_bytes() {
+    assert_eq!(
+      read("(s = StringToStream[\" -3\"]; Table[Read[s, Byte], 4])"),
+      "{32, 45, 51, EndOfFile}"
+    );
+  }
+
+  #[test]
+  fn a_list_of_types_at_the_end_is_end_of_file() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"x y\\r2\\n\"]; Table[Read[s, {Word, Word}], 3])"
+      ),
+      "{{\"x\", \"y\"}, {\"2\", EndOfFile}, EndOfFile}"
+    );
+  }
+
+  #[test]
+  fn a_list_of_types_fails_as_a_whole() {
+    assert_eq!(
+      read(
+        "{ReadList[StringToStream[\"ax b\"], {Word, Number}], \
+          ReadList[StringToStream[\"ax\"], {Word, Number}]}"
+      ),
+      "{{$Failed}, {{\"ax\", EndOfFile}}}"
+    );
+  }
+
+  #[test]
+  fn a_record_read_leaves_its_separator() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\",\\nc \\nc\\r\\r\\r\"]; {Table[Read[s, Record], 3], StreamPosition[s]})"
+      ),
+      "{{\",\", \"c \", \"c\"}, 6}"
+    );
+  }
+
+  #[test]
+  fn null_records_and_words_through_read() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"a\\nb\\n\\nc\"]; \
+          t = StringToStream[\"x::y\"]; \
+          {Table[Read[s, Record, NullRecords -> True], 5], \
+           Table[Read[t, Word, WordSeparators -> {\":\"}, NullWords -> True], 4]})"
+      ),
+      "{{\"a\", \"b\", \"\", \"c\", EndOfFile}, {\"x\", \"\", \"y\", EndOfFile}}"
+    );
+  }
+
+  // An expression runs to the next line break, \r included; a blank or
+  // comment-only line reads as Null.
+  #[test]
+  fn expression_reads_split_lines_and_read_blank_ones_as_null() {
+    assert_eq!(
+      read(
+        "Map[(s = StringToStream[#]; r = Table[Read[s], 3]; Close[s]; r) &, \
+         {\"c\\rb2\", \"1\\n \\n2\", \" \\n\", \"(*c*)\\n\", \"\\n\\n\"}]"
+      ),
+      "{{c, b2, EndOfFile}, {1, Null, 2}, {Null, EndOfFile, EndOfFile}, \
+       {Null, EndOfFile, EndOfFile}, {EndOfFile, EndOfFile, EndOfFile}}"
+    );
+  }
+
+  #[test]
+  fn a_failed_read_says_why() {
+    clear_state();
+    let result =
+      interpret_with_stdout("s = StringToStream[\"ca\"]; Read[s, Number]")
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Read::readn: Invalid real number found when reading from \
+         StringToStream[ca]."
+          .to_string()
+      ]
+    );
+  }
+
+  // The stream's text hangs below the column it starts at, the way a
+  // multi-line string prints inside a message.
+  #[test]
+  fn a_multi_line_stream_is_laid_out_in_the_message() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "s = StringToStream[\"1\\n;\\n22\"]; {Read[s], Read[s]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.warnings,
+      vec![format!(
+        "Read::readt: Invalid input found when reading ; from \
+         StringToStream[1 ].\n{pad};\n{pad}22",
+        pad = " ".repeat(68)
+      )]
+    );
+  }
+}
+
+mod character_encodings {
+  use super::*;
+
+  fn run(code: &str) -> String {
+    clear_state();
+    interpret(code).unwrap()
+  }
+
+  // A byte an encoding gives no character is U+F200 + byte.
+  #[test]
+  fn undefined_bytes_decode_to_private_use_characters() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[ByteArrayToString[ByteArray[{65, 246}], \"ASCII\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{0, 10, 127}], \"PrintableASCII\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{128, 129}], \"WindowsANSI\"]]}"
+      ),
+      "{{65, 62198}, {61952, 10, 62079}, {8364, 62081}}"
+    );
+  }
+
+  // wolframscript's MacintoshRoman table is the classic one.
+  #[test]
+  fn macintosh_roman_follows_wolframscripts_table() {
+    assert_eq!(
+      run(
+        "ToCharacterCode[ByteArrayToString[ByteArray[{181, 198, 215, 218, 219, 240}], \
+         \"MacintoshRoman\"]]"
+      ),
+      "{956, 916, 9671, 8725, 164, 65023}"
+    );
+  }
+
+  #[test]
+  fn an_unrepresentable_character_code_is_none() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[FromCharacterCode[{65, 8364, 233}], \"ISOLatin1\"], \
+          ToCharacterCode[FromCharacterCode[{127, 10, 0}], \"PrintableASCII\"], \
+          ToCharacterCode[FromCharacterCode[{8364, 8226}], \"WindowsANSI\"], \
+          ToCharacterCode[FromCharacterCode[62152], \"ASCII\"]}"
+      ),
+      "{{65, None, 233}, {None, 10, None}, {128, 149}, {None}}"
+    );
+  }
+
+  // Codes below 256 are bytes in the encoding; larger ones are characters.
+  #[test]
+  fn from_character_code_decodes_bytes_in_the_encoding() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[FromCharacterCode[{200, 128, 130}, \"WindowsANSI\"]], \
+          ToCharacterCode[FromCharacterCode[{200, 300}, \"ISOLatin1\"]], \
+          ToCharacterCode[FromCharacterCode[{215}, \"MacintoshRoman\"]], \
+          ToCharacterCode[FromCharacterCode[{195, 169, 300}, \"UTF8\"]]}"
+      ),
+      "{{200, 8364, 8218}, {200, 300}, {9671}, {233, 300}}"
+    );
+  }
+
+  // A byte sequence that is not UTF-8 is reported and its first byte kept;
+  // decoding resumes right after it.
+  #[test]
+  fn invalid_utf8_keeps_the_bytes_and_says_so() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ToCharacterCode[ByteArrayToString[ByteArray[{220, 195, 169, 192, 128}]]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{220, 233, 0}");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "$CharacterEncoding::utf8: The byte sequence {220, 195} could not be \
+         interpreted as a character in the UTF-8 character encoding."
+          .to_string()
+      ]
+    );
+  }
+}
+
+mod export_string_bytes {
+  use super::*;
+
+  fn run(code: &str) -> String {
+    clear_state();
+    interpret(code).unwrap()
+  }
+
+  // ExportString hands back the UTF-8 bytes of a text format as characters.
+  #[test]
+  fn text_formats_come_back_as_utf8_bytes() {
+    assert_eq!(
+      run(
+        "s = FromCharacterCode[{233, 8364}]; \
+         {ToCharacterCode[ExportString[s, \"Text\"]], \
+          ToCharacterCode[ExportString[{{s}}, \"CSV\"]], \
+          ToCharacterCode[ExportString[s, \"Table\"]]}"
+      ),
+      "{{195, 169, 226, 130, 172}, {34, 195, 169, 226, 130, 172, 34, 10}, \
+       {195, 169, 226, 130, 172}}"
+    );
+  }
+
+  #[test]
+  fn json_escapes_control_characters() {
+    assert_eq!(
+      run("ExportString[FromCharacterCode[{0, 8, 12, 27, 127, 65}], \"JSON\"]"),
+      "\"\\u0000\\b\\f\\u001b\\u007fA\""
+    );
+  }
+
+  // ImportString reads those bytes back, so the two round-trip.
+  #[test]
+  fn import_string_decodes_the_bytes() {
+    assert_eq!(
+      run(
+        "s = FromCharacterCode[{233, 8364, 65}]; \
+         ToCharacterCode /@ {ImportString[ExportString[s, \"JSON\"], \"JSON\"], \
+           ImportString[ExportString[s, \"Text\"], \"Text\"], \
+           ImportString[FromCharacterCode[{195, 169, 233}], \"Text\"], \
+           ImportString[FromCharacterCode[{195, 169}], \"String\"]}"
+      ),
+      "{{233, 8364, 65}, {233, 8364, 65}, {233, 233}, {195, 169}}"
+    );
+  }
+
+  // FullForm writes the control characters InputForm leaves raw in octal.
+  #[test]
+  fn full_form_writes_control_characters_in_octal() {
+    assert_eq!(
+      run("ToString[FullForm[FromCharacterCode[{0, 8, 27, 31, 127}]]]"),
+      "\"\\000\\b\\[RawEscape]\\037\\177\""
+    );
+  }
+}
+
+mod to_string_not {
+  use super::*;
+
+  // The space before `!` belongs to the printed layout; ToString's text has
+  // none.
+  #[test]
+  fn to_string_writes_not_without_a_leading_space() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToCharacterCode /@ {ToString[!x], ToString[{1, !x}], ToString[f[!x]]}"
+      )
+      .unwrap(),
+      "{{33, 120}, {123, 49, 44, 32, 33, 120, 125}, {102, 91, 33, 120, 93}}"
+    );
+    clear_state();
+    assert_eq!(interpret("{!x, f[!x]}").unwrap(), "{ !x, f[ !x]}");
+  }
+}

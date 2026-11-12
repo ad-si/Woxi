@@ -2052,6 +2052,48 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A machine real in base 10 has the 16 significant digits of its exact
+  // binary value, correctly rounded — which is what wolframscript lists
+  // (RealDigits[972.94] ends in …0, 1). An explicit length cuts those 16
+  // short (RealDigits[0.125, 10, 2] is {1, 2}, not rounded), and digits
+  // past them are Indeterminate.
+  if let Expr::Real(f) = expr
+    && base == 10
+    && *f != 0.0
+    && f.is_finite()
+  {
+    let text = format!("{:.15e}", f.abs());
+    let (mantissa, exp) = text.split_once('e').unwrap_or((&text, "0"));
+    let digits16: Vec<i128> = mantissa
+      .bytes()
+      .filter(u8::is_ascii_digit)
+      .map(|b| i128::from(b - b'0'))
+      .collect();
+    let exponent = exp.parse::<i128>().unwrap_or(0) + 1;
+    // The digit in front of 10^power.
+    let digit_at = |power: i128| -> Expr {
+      let index = exponent - 1 - power;
+      if index < 0 {
+        Expr::Integer(0)
+      } else {
+        usize::try_from(index)
+          .ok()
+          .and_then(|i| digits16.get(i))
+          .map_or_else(
+            || Expr::Identifier("Indeterminate".into()),
+            |d| Expr::Integer(*d),
+          )
+      }
+    };
+    let first = start_pos.unwrap_or(exponent - 1);
+    let digits: Vec<Expr> = (0..num_digits as i128)
+      .map(|k| digit_at(first - k))
+      .collect();
+    return Ok(Expr::List(
+      vec![Expr::List(digits.into()), Expr::Integer(first + 1)].into(),
+    ));
+  }
+
   // Determine sign and work with absolute value
   let is_negative = match expr {
     Expr::Integer(n) => *n < 0,
@@ -2683,11 +2725,20 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if n.is_zero() {
       return Ok(Expr::Integer(0));
     }
+    // The digit count d has b^(d-1) <= |n| < b^d. Dividing by b once per
+    // digit was quadratic (43 s for 3^1000000); instead start from a
+    // lower estimate taken from the bit length and raise it until b^d
+    // passes |n|, which takes a power and a step or two.
     let base_big = BigInt::from(base_i128);
-    let mut abs_n = if n < BigInt::zero() { -n } else { n };
-    let mut count = 0i128;
-    while abs_n > BigInt::zero() {
-      abs_n /= &base_big;
+    let abs_n = if n < BigInt::zero() { -n } else { n };
+    let bits = abs_n.bits() as f64;
+    let estimate =
+      (((bits - 1.0) * 2f64.ln() / (base_i128 as f64).ln()).floor() as i64 - 1)
+        .max(0);
+    let mut count = estimate as i128;
+    let mut power = num_traits::pow(base_big.clone(), estimate as usize);
+    while power <= abs_n {
+      power *= &base_big;
       count += 1;
     }
     return Ok(Expr::Integer(count));
@@ -3928,7 +3979,10 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (i, u) in units.iter().enumerate() {
       let u = as_f64(u);
       if i + 1 == units.len() {
-        result.push(Expr::Real(rem / u));
+        // The last multiple is the remainder times the reciprocal of the
+        // unit — wolframscript's rounding, an ulp off a plain division at
+        // times (NumberDecompose[227.4622, {1, 0.1, 0.01}] ends 6.219999999999571).
+        result.push(Expr::Real(rem * (1.0 / u)));
       } else {
         let q = (rem / u).trunc();
         result.push(Expr::Integer(q as i128));

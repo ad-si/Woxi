@@ -5193,6 +5193,36 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           tf_string("]"),
         ]);
       }
+      // The infix `m mod n` is the call `Mod[m, n]`; parentheses around an
+      // operand only grouped it.
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+        && let [m, Expr::String(op), n] = &items[..]
+        && op == "mod"
+      {
+        let ungroup = |e: &Expr| match e {
+          Expr::FunctionCall { name, args } if name == "RowBox" => {
+            match &args[..] {
+              [Expr::List(inner)] => match &inner[..] {
+                [Expr::String(open), body, Expr::String(close)]
+                  if open == "(" && close == ")" =>
+                {
+                  body.clone()
+                }
+                _ => e.clone(),
+              },
+              _ => e.clone(),
+            }
+          }
+          _ => e.clone(),
+        };
+        return row_box(vec![
+          str_expr("Mod"),
+          tf_string("["),
+          row_box(vec![ungroup(m), tf_string(","), ungroup(n)]),
+          tf_string("]"),
+        ]);
+      }
       // TraditionalForm writes an equation with a bare `=`, and reads that
       // token back as `==` (a `Set` would assign instead of typeset).
       if name == "RowBox"
@@ -7704,6 +7734,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         _ => "\u{21C0}",
       };
       tf_box("OverscriptBox", vec![tf(&args[0]), tf_string(mark)])
+    }
+    // `Mod[m, n]` is the infix `m mod n`, with a sum, product or negative
+    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`.
+    "Mod" if args.len() == 2 => {
+      let operand = |e: &Expr| {
+        if tf_needs_paren_factor(e) || tf_is_product_node(e) {
+          tf_parens(tf(e))
+        } else {
+          tf(e)
+        }
+      };
+      tf_row(vec![operand(&args[0]), tf_string("mod"), operand(&args[1])])
     }
     // `AngleBracket[a, b]` is typeset as `〈a, b〉`.
     "AngleBracket" if !args.is_empty() => {

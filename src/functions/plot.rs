@@ -2021,7 +2021,22 @@ pub(crate) fn axes_label_svg_at(
     return String::new();
   };
   let mut svg = String::new();
-  if show_x_axis && !x_label.is_empty() {
+  // A stacked-fraction label is a picture typeset at the label font's
+  // point size; it scales up to render units and takes the label color.
+  let k = font_size / plot_padding::LABEL_FONT;
+  let picture = |markup: &str, x: f64, y: f64| {
+    let theme_fill = crate::functions::graphics::theme().text_primary;
+    format!(
+      "<g transform=\"translate({x:.1},{y:.1}) scale({k:.3})\">{}</g>\n",
+      markup.replace(theme_fill, label_fill)
+    )
+  };
+  let picture_size = crate::functions::graphics::axes_label_picture_size;
+  if show_x_axis && let Some((_, h)) = picture_size(x_label) {
+    // 8 pt past the end of the axis, vertically centered on it.
+    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
+    svg.push_str(&picture(x_label, label_x, axis_y - h * k / 2.0));
+  } else if show_x_axis && !x_label.is_empty() {
     // 8 pt past the end of the axis, vertically centered on it.
     let k = font_size / plot_padding::LABEL_FONT;
     let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
@@ -2055,7 +2070,13 @@ pub(crate) fn axes_label_svg_at(
       join_label_lines(&lines, label_x, pitch)
     ));
   }
-  if show_y_axis && !y_label.is_empty() {
+  if show_y_axis && let Some((pw, ph)) = picture_size(y_label) {
+    // Centered over the top of the y axis, 6 pt above it, and kept inside
+    // the image.
+    let lx = axis_x.max(pw * k / 2.0 + font_size * 0.2);
+    let top = y0 - plot_padding::AXES_LABEL_GAP_Y * k - ph * k;
+    svg.push_str(&picture(y_label, lx - pw * k / 2.0, top));
+  } else if show_y_axis && !y_label.is_empty() {
     // Centered over the top of the y axis, but never so far left that the
     // label runs off the image — a wide one (`{a, b, c, d}`) over an axis
     // that sits near the left edge slides right until it fits, the way
@@ -3713,6 +3734,9 @@ pub(crate) struct PlotOptions {
   pub label_style: Option<LabelStyleSpec>,
   /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
+  /// The font size a `FrameStyle -> size` (or `Directive[…, size]`) gives
+  /// the frame's labels and tick labels, over `LabelStyle`.
+  pub frame_font_size: Option<f64>,
   /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
   /// color and thickness of its tick marks, and the color of its labels.
   pub frame_ticks_styles: [Option<SeriesStyle>; 4],
@@ -3939,6 +3963,7 @@ impl Default for PlotOptions {
       point_colors: Vec::new(),
       label_style: None,
       tick_label_style: None,
+      frame_font_size: None,
       frame_ticks_styles: [None, None, None, None],
       joined_per_series: None,
       axes_style: [None, None],
@@ -4765,10 +4790,17 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
+    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
+    // instead of collapsing into one space.
+    let preserve_attr = if body.contains("  ") {
+      " xml:space=\"preserve\""
+    } else {
+      ""
+    };
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-         fill=\"{fill}\"{style_attrs}>{body}</text>\n",
+         fill=\"{fill}\"{style_attrs}{preserve_attr}>{body}</text>\n",
     ));
   }
 
@@ -12183,6 +12215,13 @@ pub(crate) fn generate_histogram_svg(
       plot_padding::tick_label_width(l, plot_padding::TICK_FONT) / 2.0
     });
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
+    // A stacked-fraction picture is typeset at `LABEL_FONT` and drawn
+    // scaled to `font_size`.
+    if let Some((w, _)) =
+      crate::functions::graphics::axes_label_picture_size(label)
+    {
+      return 8.0 * sf + w * sf * CHART_LABEL_FONT / plot_padding::LABEL_FONT;
+    }
     // The label is drawn at `font_size`; ~0.62 em per character covers the
     // proportional font with a little slack.
     8.0 * sf
@@ -15841,12 +15880,12 @@ pub(crate) fn apply_common_plot_option(
       if let Expr::List(items) = &val
         && !items.is_empty()
       {
-        let x = crate::functions::graphics::styled_axis_label(&items[0])
+        let x = crate::functions::graphics::axes_label_entry(&items[0])
           .unwrap_or_default();
         // `{xlabel}` names the x axis only.
         let y = items
           .get(1)
-          .and_then(crate::functions::graphics::styled_axis_label)
+          .and_then(crate::functions::graphics::axes_label_entry)
           .unwrap_or_default();
         plot_opts.axes_label = Some((x, y));
       }
@@ -15991,6 +16030,8 @@ pub(crate) fn apply_common_plot_option(
     }
     "FrameStyle" => {
       plot_opts.frame_styles = parse_frame_edge_styles(replacement);
+      plot_opts.frame_font_size =
+        LabelStyleSpec::parse(replacement).and_then(|s| s.font_size);
       hide_transparent_frame_edges(replacement, plot_opts);
     }
     "MeshStyle" => {

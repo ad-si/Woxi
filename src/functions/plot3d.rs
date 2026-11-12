@@ -6151,13 +6151,13 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
             "Tiny" => style.thickness = Some(0.5),
             _ => {
               if let Some(t) = expr_to_f64(&args[0]) {
-                // Relative thickness: fraction of plot width (~360 px)
-                style.thickness = Some(t * 360.0);
+                // Relative thickness: a fraction of the picture's width.
+                style.thickness = Some(t * scene_image_width());
               }
             }
           }
         } else if let Some(t) = expr_to_f64(&args[0]) {
-          style.thickness = Some(t * 360.0);
+          style.thickness = Some(t * scene_image_width());
         }
         return true;
       }
@@ -9629,6 +9629,20 @@ fn cylinder_max_subdivisions(
 const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
 thread_local! {
+  /// Width in pixels of the `Graphics3D` currently being collected, which
+  /// a relative `Thickness[t]` is a fraction of.
+  static SCENE_IMAGE_WIDTH: std::cell::Cell<f64> =
+    const { std::cell::Cell::new(DEFAULT_SIZE as f64) };
+}
+
+/// The width a relative `Thickness[t]` is measured against: that of the
+/// picture being drawn (`ImageSize -> {400, 400}` makes `Thickness[0.01]`
+/// 4 pixels wide).
+fn scene_image_width() -> f64 {
+  SCENE_IMAGE_WIDTH.get()
+}
+
+thread_local! {
   /// Number of `Tube`s in the `Graphics3D` currently being collected, so
   /// each can size its tessellation to the crowd it is drawn in.
   static SCENE_TUBE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -10588,73 +10602,21 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   ]
 }
 
-/// Radius of the sphere centered on `center` that encloses every primitive.
+/// Width, in scene units at the depth of the box center, that
+/// `SphericalRegion -> True` maps onto the shorter side of the picture.
 ///
-/// Wolfram's `SphericalRegion -> True` scales the picture so this sphere
-/// fits the display area. It is the sphere around the *contents*, not
-/// around their bounding box: a lone `Sphere[]` keeps its size (radius 1)
-/// instead of shrinking to the box's half-diagonal.
-fn enclosing_sphere_radius(prims: &[Primitive3D], center: Point3D) -> f64 {
-  let dist = |p: &Point3D| {
-    ((p.x - center.x).powi(2)
-      + (p.y - center.y).powi(2)
-      + (p.z - center.z).powi(2))
-    .sqrt()
-  };
-  let mut radius: f64 = 0.0;
-  for prim in prims {
-    match prim {
-      Primitive3D::Sphere {
-        center: c,
-        radius: r,
-        ..
-      } => radius = radius.max(dist(c) + r),
-      Primitive3D::Cylinder {
-        p1, p2, radius: r, ..
-      }
-      | Primitive3D::Cone {
-        p1, p2, radius: r, ..
-      } => {
-        for p in [p1, p2] {
-          radius = radius.max(dist(p) + r);
-        }
-      }
-      Primitive3D::Cuboid { p_min, p_max, .. } => {
-        for x in [p_min.x, p_max.x] {
-          for y in [p_min.y, p_max.y] {
-            for z in [p_min.z, p_max.z] {
-              radius = radius.max(dist(&Point3D { x, y, z }));
-            }
-          }
-        }
-      }
-      Primitive3D::Text3D { pos, .. } => {
-        radius = radius.max(dist(pos));
-      }
-      Primitive3D::Polygon3D { points, .. }
-      | Primitive3D::Point3DPrim { points, .. }
-      | Primitive3D::Arrow3D { points, .. } => {
-        for pt in points {
-          radius = radius.max(dist(pt));
-        }
-      }
-      Primitive3D::Line3D { segments, .. } => {
-        for seg in segments {
-          for pt in seg {
-            radius = radius.max(dist(pt));
-          }
-        }
-      }
-      Primitive3D::Surface3D { tris, .. } => {
-        for (a, b, c) in tris {
-          for pt in [a, b, c] {
-            radius = radius.max(dist(pt));
-          }
-        }
-      }
+/// Wolfram chooses the camera's opening angle so the sphere of `radius`
+/// around the displayed box just fits: seen from `distance` away the
+/// sphere fills a cone of half-angle `asin(r / d)`, which crosses the plane
+/// through its center `r · d / √(d² − r²)` from the axis. An orthographic
+/// view (no `distance`) sees the sphere at its true size.
+fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
+  match distance {
+    Some(d) if d.is_finite() && d > radius => {
+      2.0 * radius * d / (d * d - radius * radius).sqrt()
     }
+    _ => 2.0 * radius,
   }
-  radius
 }
 
 /// Graphics3D[primitives, options...]
@@ -10932,6 +10894,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
+  SCENE_IMAGE_WIDTH.set(svg_width as f64);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
   if plot_range.is_none()
@@ -11803,31 +11766,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_max = 1.0;
   }
 
-  // `SphericalRegion -> True` fits the enclosing sphere of the contents
-  // (of the box, when `PlotRange` pins one) instead of their projected
-  // outline. The sphere projects to the same circle from every direction,
+  // `SphericalRegion -> True` frames the picture by the sphere drawn
+  // around the displayed box rather than by the projected outline of the
+  // contents. The sphere projects to the same circle from every direction,
   // so the scale no longer follows the view angle or a moving shape.
+  // Wolfram widens the camera's field of view until that sphere just fits
+  // (see `spherical_region_span`); the resulting span replaces the fitted
+  // scale below.
+  let mut sphere_span: Option<f64> = None;
   if spherical_region && !perspective {
     let center = Point3D {
       x: f64::midpoint(x3_min, x3_max),
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let radius = if plot_range.is_some() {
-      ((x3_max - x3_min).powi(2)
-        + (y3_max - y3_min).powi(2)
-        + (z3_max - z3_min).powi(2))
-      .sqrt()
-        / 2.0
-    } else {
-      enclosing_sphere_radius(&prims, center)
-    };
-    if radius > 0.0 {
+    let radius = ((x3_max - x3_min).powi(2)
+      + (y3_max - y3_min).powi(2)
+      + (z3_max - z3_min).powi(2))
+    .sqrt()
+      / 2.0;
+    if radius > 0.0 && radius.is_finite() {
+      let span = spherical_region_span(
+        radius,
+        camera.perspective.as_ref().map(|p| p.distance),
+      );
+      sphere_span = Some(span);
       let (pcx, pcy) = project(center, &camera);
-      px_min = px_min.min(pcx - radius);
-      px_max = px_max.max(pcx + radius);
-      py_min = py_min.min(pcy - radius);
-      py_max = py_max.max(pcy + radius);
+      px_min = px_min.min(pcx - span / 2.0);
+      px_max = px_max.max(pcx + span / 2.0);
+      py_min = py_min.min(pcy - span / 2.0);
+      py_max = py_max.max(pcy + span / 2.0);
     }
   }
 
@@ -11915,6 +11883,25 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(c) = view_center {
         (p_cx, p_cy) = look_at(c);
       }
+    }
+  }
+
+  if let Some(span) = sphere_span
+    && view_angle.is_none()
+  {
+    scale = svg_width.min(svg_height) as f64 / span;
+    let (bcx, bcy) = project(
+      Point3D {
+        x: f64::midpoint(x3_min, x3_max),
+        y: f64::midpoint(y3_min, y3_max),
+        z: f64::midpoint(z3_min, z3_max),
+      },
+      &camera,
+    );
+    p_cx = bcx;
+    p_cy = bcy;
+    if let Some(c) = view_center {
+      (p_cx, p_cy) = look_at(c);
     }
   }
 

@@ -1510,6 +1510,16 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // With the default tolerance a machine real beyond 2^38 is left as it
+  // is, integral or not, as wolframscript does: Rationalize[2.5*^11] is
+  // 250000000000 but Rationalize[3.*^11] stays 3.*^11.
+  if args.len() == 1
+    && matches!(&args[0], Expr::Real(_))
+    && x.abs() > 2f64.powi(38)
+  {
+    return Ok(args[0].clone());
+  }
+
   // For integers, just return the integer
   if x.fract() == 0.0 {
     return Ok(Expr::Integer(x as i128));

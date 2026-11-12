@@ -2410,7 +2410,12 @@ mod interpreter_tests {
         "ExportString[{plot}, PlotLabel -> Row[{{\"given \", HoldForm[X = x], \" and \", HoldForm[Y += 1]}}]], \"SVG\"]"
       );
       let svg = interpret(&code).unwrap();
-      assert!(svg.contains("given X = x and Y += 1"), "{plot}: {svg}");
+      // Single-letter symbols are set in italic tspans (TraditionalForm);
+      // compare the visible text.
+      let text = svg
+        .replace("<tspan font-style=\"italic\">", "")
+        .replace("</tspan>", "");
+      assert!(text.contains("given X = x and Y += 1"), "{plot}: {svg}");
       assert!(!svg.contains("Set[X"), "{plot}: {svg}");
     }
   }

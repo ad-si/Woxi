@@ -555,8 +555,20 @@ pub fn dispatch_math_functions(
     "QuotientRemainder" if args.len() == 2 => {
       // QuotientRemainder[n, 0] stays unevaluated (wolframscript), unlike the
       // 2-list {Quotient, Mod} we would otherwise assemble.
+      // A numeric dividend also gets QuotientRemainder::divz.
       if crate::functions::math_ast::is_literal_zero(&args[1]) {
-        return Some(Ok(unevaluated("QuotientRemainder", args)));
+        let call = unevaluated("QuotientRemainder", args);
+        if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
+          crate::emit_message(&crate::syntax::message_with_expr_2d(
+            &format!(
+              "QuotientRemainder::divz: The argument {} in ",
+              crate::syntax::expr_to_string(&args[1])
+            ),
+            &call,
+            " should be nonzero.",
+          ));
+        }
+        return Some(Ok(call));
       }
       let q = match crate::functions::math_ast::quotient_ast(args) {
         Ok(v) => v,
