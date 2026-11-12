@@ -8349,7 +8349,7 @@ mod tilde_infix {
     // ~~ (StringExpression) should still work
     assert_eq!(
       interpret(r#"FullForm[Hold["a" ~~ "b"]]"#).unwrap(),
-      r#"FullForm[Hold["a"~~"b"]]"#
+      r#"FullForm[Hold[StringExpression[a, b]]]"#
     );
   }
 
@@ -14866,5 +14866,44 @@ fn held_plus_preserves_leading_subtract_call_formatting() {
     ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// Held syntax prints in OutputForm: strings lose their quotes everywhere,
+// also inside a pure function's body, a `FullForm[…]` wrapper and `@`/`//`
+// applications, whose slot and part heads need no parentheses. Found by the
+// differential fuzzer's held-syntax mode.
+mod held_syntax_output_form {
+  use super::*;
+
+  #[test]
+  fn strings_unquoted() {
+    assert_eq!(interpret(r#"Hold["ab" &]"#).unwrap(), "Hold[ab & ]");
+    assert_eq!(
+      interpret(r#"InputForm[{"a" &}]"#).unwrap(),
+      "InputForm[{a & }]"
+    );
+    assert_eq!(interpret(r#"FullForm["a"]"#).unwrap(), "FullForm[a]");
+    assert_eq!(
+      interpret(r#"FullForm[Hold[f["a"]]]"#).unwrap(),
+      "FullForm[Hold[f[a]]]"
+    );
+    assert_eq!(
+      interpret(r#"FullForm["a" + b]"#).unwrap(),
+      "FullForm[a + b]"
+    );
+    // ToString[…, InputForm] keeps the quotes.
+    assert_eq!(
+      interpret(r#"ToString[Hold["ab" &], InputForm]"#).unwrap(),
+      r#"Hold["ab" & ]"#
+    );
+  }
+
+  #[test]
+  fn application_heads() {
+    assert_eq!(interpret(r#"Hold["" // #2]"#).unwrap(), "Hold[#2[]]");
+    assert_eq!(interpret("Hold[a // #[[3]]]").unwrap(), "Hold[#1[[3]][a]]");
+    assert_eq!(interpret(r#"Hold[#2 @ "s"]"#).unwrap(), "Hold[#2[s]]");
+    assert_eq!(interpret("Hold[(a + b) @ c]").unwrap(), "Hold[(a + b)[c]]");
   }
 }

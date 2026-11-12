@@ -129,7 +129,11 @@ destructuring, recursion, memoization, `Set` vs `SetDelayed`,
 `TagSetDelayed`, attributes), `If`/`Which`/`Switch`/`Do`/`Catch`/`Reap`/
 `Break`/`Return`, rules with `/.` and `//.`, structural and string
 patterns, Part and Span syntax, association literals, comparison chains
-and boolean operators. Those programs keep two invariants the tests in
+and boolean operators. A tenth of those are held syntax trees: random operator expressions over
+every precedence level, wrapped in `Hold`, `HoldForm` or `FullForm[Hold[…]]`
+so nothing evaluates and the output is the printer's rendering of what the
+parser built. `--kind lang` and `--kind held` generate only those cases.
+Those programs keep two invariants the tests in
 `lang.rs` check: symbols that receive definitions are cleared at the
 start of the program that assigns them, and free symbols (`x`, `p`, …)
 are never left with a value — the batch prefilter runs many cases in one

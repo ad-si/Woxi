@@ -238,7 +238,7 @@ fn gen_word_str(rng: &mut Rng) -> Expr {
 
 impl Generator {
   pub(super) fn gen_lang(&self, rng: &mut Rng) -> Expr {
-    match rng.below(10) {
+    match rng.below(12) {
       0 => Self::gen_operator_arith(rng, 3),
       1 => gen_application(rng),
       2 => Self::gen_scoping(rng),
@@ -246,7 +246,8 @@ impl Generator {
       5 => self.gen_control_flow(rng),
       6 | 7 => self.gen_rules_and_patterns(rng),
       8 => Self::gen_part_syntax(rng),
-      _ => Self::gen_logic_and_strings(rng),
+      9 => Self::gen_logic_and_strings(rng),
+      _ => gen_held_syntax(rng),
     }
   }
 
@@ -767,6 +768,84 @@ impl Generator {
         vec![gen_bool_leaf(rng)],
       ),
     }
+  }
+}
+
+/// Binary operators for held syntax trees: every precedence level from
+/// `;;` and `=` up to `^` and `@`, so printing them back has to parenthesize
+/// correctly. `.` is generated separately: next to an integer `1 . 2` would
+/// read as a decimal point.
+const HELD_INFIX: &[&str] = &[
+  " + ", " - ", " * ", " / ", " ^ ", " == ", " != ", " < ", " >= ", " === ",
+  " && ", " || ", " -> ", " :> ", " /. ", " //. ", " = ", " := ", " <> ",
+  " ;; ", " @ ", " /@ ", " @@ ", " // ", " ~~ ", " | ", " ** ", " @* ", " /* ",
+  " /; ", " ^= ", " += ", " @@@ ",
+];
+
+/// A random operator-syntax tree, wrapped so that nothing evaluates:
+/// `Hold[…]`, `HoldForm[…]` or `FullForm[Hold[…]]`. The output is the
+/// printer's rendering of what the parser built, so a mismatch is a
+/// precedence or parenthesization difference.
+pub(super) fn gen_held_syntax(rng: &mut Rng) -> Expr {
+  let tree = gen_held_tree(rng, 3);
+  match rng.below(3) {
+    0 => call("Hold", vec![tree]),
+    1 => call("HoldForm", vec![tree]),
+    _ => call("FullForm", vec![call("Hold", vec![tree])]),
+  }
+}
+
+fn gen_held_tree(rng: &mut Rng, depth: u32) -> Expr {
+  const LEAVES: &[&str] =
+    &["a", "b", "c", "f", "x", "x_", "_Integer", "#", "#2"];
+  if depth == 0 || rng.chance(1, 4) {
+    return match rng.below(6) {
+      0 | 1 | 2 => sym(*rng.pick(LEAVES)),
+      3 => int(rng.range(-3, 9)),
+      4 => Expr::Str((*rng.pick(&["s", "ab", ""])).into()),
+      _ => Expr::Rational(rng.range(-3, 3), rng.range(2, 5)),
+    };
+  }
+  match rng.below(12) {
+    0..=5 => {
+      let op = *rng.pick(HELD_INFIX);
+      infix(
+        op,
+        vec![gen_held_tree(rng, depth - 1), gen_held_tree(rng, depth - 1)],
+      )
+    }
+    6 => {
+      let n = 3;
+      let op = *rng.pick(&[" + ", " * ", " && ", " == ", " < "]);
+      infix(op, (0..n).map(|_| gen_held_tree(rng, depth - 1)).collect())
+    }
+    7 => infix(
+      " . ",
+      vec![
+        sym(*rng.pick(&["a", "b", "c"])),
+        sym(*rng.pick(&["a", "b", "c"])),
+      ],
+    ),
+    8 => {
+      let (pre, post) =
+        *rng.pick(&[("- ", ""), ("!", ""), ("", "!"), ("", " &")]);
+      Expr::Unary(pre, Box::new(gen_held_tree(rng, depth - 1)), post)
+    }
+    9 => call(
+      *rng.pick(&["f", "g", "Plus", "Times", "Power", "List", "Rule"]),
+      (0..1 + rng.below(2))
+        .map(|_| gen_held_tree(rng, depth - 1))
+        .collect(),
+    ),
+    10 => Expr::Index(
+      Box::new(gen_held_tree(rng, depth - 1)),
+      vec![int(rng.range(1, 3))],
+    ),
+    _ => Expr::List(
+      (0..rng.below(3))
+        .map(|_| gen_held_tree(rng, depth - 1))
+        .collect(),
+    ),
   }
 }
 

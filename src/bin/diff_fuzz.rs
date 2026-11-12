@@ -66,6 +66,12 @@ struct Cli {
   #[arg(long, default_value_t = 4)]
   max_depth: u32,
 
+  /// Which cases to generate: "all" (the default mix), "lang" (only
+  /// language-construct programs) or "held" (only held syntax trees, which
+  /// test parsing and printing)
+  #[arg(long, default_value = "all")]
+  kind: String,
+
   /// Oracle: "auto", "wolframscript", or "woxi" (self-check)
   #[arg(long, default_value = "auto")]
   oracle: String,
@@ -967,6 +973,15 @@ const ASSOC_KEYS: &[&str] = &["a", "b", "c", "d"];
 struct Generator {
   specs: Vec<&'static FnSpec>,
   max_depth: u32,
+  kind: CaseKind,
+}
+
+/// The `--kind` of cases to generate.
+#[derive(Clone, Copy, PartialEq)]
+enum CaseKind {
+  All,
+  Lang,
+  Held,
 }
 
 impl Generator {
@@ -981,13 +996,22 @@ impl Generator {
         spec.name
       );
     }
-    Generator { specs, max_depth }
+    Generator {
+      specs,
+      max_depth,
+      kind: CaseKind::All,
+    }
   }
 
   fn gen_case(&self, rng: &mut Rng) -> Expr {
     // Mostly spec-driven calls; a third language-construct programs (see
     // `lang.rs`); occasionally bare data or a bounded Part/Take (which
     // need index/list coupling a static spec can't say).
+    match self.kind {
+      CaseKind::Lang => return self.gen_lang(rng),
+      CaseKind::Held => return lang::gen_held_syntax(rng),
+      CaseKind::All => {}
+    }
     match rng.below(20) {
       0 => Self::gen_part(rng),
       1 => Self::gen_take(rng),
@@ -2011,7 +2035,16 @@ fn main() {
   let csv_path =
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("functions.csv");
   let implemented = load_implemented(&csv_path);
-  let generator = Generator::new(&implemented, cli.max_depth);
+  let mut generator = Generator::new(&implemented, cli.max_depth);
+  generator.kind = match cli.kind.as_str() {
+    "all" => CaseKind::All,
+    "lang" => CaseKind::Lang,
+    "held" => CaseKind::Held,
+    other => {
+      eprintln!("unknown --kind '{other}' (expected all|lang|held)");
+      std::process::exit(2);
+    }
+  };
   if generator.specs.is_empty() {
     eprintln!("error: no usable functions left after the functions.csv check");
     std::process::exit(2);

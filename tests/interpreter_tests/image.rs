@@ -8615,7 +8615,7 @@ mod color_data_gradients {
         .unwrap(),
       "InputForm[ColorDataFunction[WL14DefaultDensityGradient, \
        ThemeGradients, {0, 1}, \
-       Blend[\"WL14DefaultDensityGradient\", #1] & ]]"
+       Blend[WL14DefaultDensityGradient, #1] & ]]"
     );
     assert_eq!(
       interpret(

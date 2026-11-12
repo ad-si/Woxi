@@ -13607,14 +13607,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
-      let func_str = format_expr(func, ExprForm::Input);
-      let arg_str = format_expr(arg, ExprForm::Input);
-      // Parenthesize func if it's complex (not a simple identifier or function call)
+      let func_str = format_expr(func, form);
+      let arg_str = format_expr(arg, form);
+      // Parenthesize func if it's complex (not a simple identifier, call,
+      // slot or part — `#2[x]`, `a[[1]][x]` need none)
       let func_display = match func.as_ref() {
         head if prints_as_not(head) => format!("({func_str})"),
         Expr::Identifier(_)
         | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. } => func_str,
+        | Expr::CurriedCall { .. }
+        | Expr::Slot(_)
+        | Expr::SlotSequence(_)
+        | Expr::Part { .. } => func_str,
         _ => format!("({func_str})"),
       };
       format!("{func_display}[{arg_str}]")
@@ -13622,13 +13626,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     Expr::Postfix { expr, func } => {
       // Display as function-call form (matching wolframscript): `x // f` is
       // semantically `f[x]`, so render as such inside Hold/FullForm output.
-      let func_str = format_expr(func, ExprForm::Input);
-      let arg_str = format_expr(expr, ExprForm::Input);
+      let func_str = format_expr(func, form);
+      let arg_str = format_expr(expr, form);
       let func_display = match func.as_ref() {
         head if prints_as_not(head) => format!("({func_str})"),
         Expr::Identifier(_)
         | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. } => func_str,
+        | Expr::CurriedCall { .. }
+        | Expr::Slot(_)
+        | Expr::SlotSequence(_)
+        | Expr::Part { .. } => func_str,
         _ => format!("({func_str})"),
       };
       format!("{func_display}[{arg_str}]")
@@ -13654,7 +13661,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // a `;` compound — has to be parenthesized, or `(a; b) &` would print
       // as `a; b & ` and re-parse as `CompoundExpression[a, b &]`, which is
       // a different (and, once slots are involved, badly broken) tree.
-      let body_str = format_expr(body, ExprForm::Input);
+      let body_str = format_expr(body, form);
       if function_body_needs_parens(body) {
         format!("({body_str}) & ")
       } else {
@@ -14280,16 +14287,7 @@ fn flatten_times_recursive(expr: &Expr, out: &mut Vec<Expr>) {
 fn contains_string(expr: &Expr) -> bool {
   match expr {
     Expr::String(_) => true,
-    Expr::List(items) => items.iter().any(contains_string),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_string),
-    Expr::Association(items) => items
-      .iter()
-      .any(|(k, v)| contains_string(k) || contains_string(v)),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_string(left) || contains_string(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_string(operand),
-    _ => false,
+    _ => expr_children(expr).into_iter().any(contains_string),
   }
 }
 
@@ -14603,6 +14601,16 @@ impl Drop for FullFormGuard {
 fn full_form_inner(expr: &Expr) -> String {
   let _guard = FullFormGuard(IN_FULL_FORM.with(|c| c.replace(true)));
   expr_to_input_form(expr)
+}
+
+/// The inner of a top-level `FullForm[…]` wrapper: InputForm, except that
+/// strings print without quotes — wolframscript shows the wrapper's content
+/// in OutputForm, so `FullForm[f["a"]]` prints `FullForm[f[a]]`.
+fn full_form_wrapper_inner(expr: &Expr) -> String {
+  if !contains_string(expr) {
+    return expr_to_input_form(expr);
+  }
+  expr_to_output(expr)
 }
 
 /// RAII guard that restores the previous `IN_OUTPUT_FORM` value on drop.
@@ -20124,13 +20132,13 @@ pub fn top_level_output(expr: &Expr) -> String {
             | Expr::SlotSequence(_)
         )
       {
-        return format!("FullForm[{}]", expr_to_input_form(&args[0]));
+        return format!("FullForm[{}]", full_form_wrapper_inner(&args[0]));
       }
       // Default: wolframscript always keeps the `FullForm[…]` wrapper at
       // the top level, with the inner expression rendered in InputForm
       // (e.g. `FullForm[Foo[x]]` → `FullForm[Foo[x]]`,
       // `FullForm[a <-> b]` → `FullForm[a <-> b]`). Stick with that.
-      format!("FullForm[{}]", expr_to_input_form(&args[0]))
+      format!("FullForm[{}]", full_form_wrapper_inner(&args[0]))
     }
     // `HoldForm[expr]` at the top level keeps its wrapper —
     // `wolframscript -code 'HoldForm[1 + 2 + 3]'` prints `HoldForm[1 + 2 + 3]`
