@@ -23028,6 +23028,55 @@ fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
 /// Convert a WL alignment identifier to SVG text-anchor value.
 /// The `"."` string maps to the pseudo-anchor `"decimal"`, handled specially
 /// so numbers in the column line up on their decimal point.
+/// The vertical part of an `Alignment` spec: `Top` and `Bottom` pin a
+/// cell's content to that edge of its row; `Center`, `Baseline`, `Axis` and
+/// anything else keep the default centering (`None`).
+fn vertical_alignment(expr: &Expr) -> Option<&'static str> {
+  match expr {
+    Expr::Identifier(val) => match val.as_str() {
+      "Top" => Some("top"),
+      "Bottom" => Some("bottom"),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// Per-row vertical alignments from the row part of a Grid `Alignment`
+/// spec: one symbol for every row, or a list with one entry per row
+/// (a nested list repeats cyclically over the remaining rows).
+fn row_vertical_alignments(
+  spec: &Expr,
+  num_rows: usize,
+) -> Vec<Option<&'static str>> {
+  match spec {
+    Expr::List(items) => {
+      let explicit: Vec<_> = items
+        .iter()
+        .take_while(|it| !matches!(it, Expr::List(_)))
+        .map(vertical_alignment)
+        .collect();
+      let repeating: Vec<_> = items
+        .iter()
+        .find_map(|it| match it {
+          Expr::List(rep) => Some(rep.iter().map(vertical_alignment).collect()),
+          _ => None,
+        })
+        .unwrap_or_default();
+      (0..num_rows)
+        .map(|i| match explicit.get(i) {
+          Some(a) => *a,
+          None if !repeating.is_empty() => {
+            repeating[(i - explicit.len()) % repeating.len()]
+          }
+          None => None,
+        })
+        .collect()
+    }
+    other => vec![vertical_alignment(other); num_rows],
+  }
+}
+
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
@@ -23571,6 +23620,7 @@ fn grid_svg_styled_internal_reporting(
   // `Item[content, opts…]` sets one cell's own `Alignment`, `Background`
   // and `Frame`, over the grid's; note them before the wrapper comes off.
   let mut item_aligns: Vec<((usize, usize), &'static str)> = Vec::new();
+  let mut item_valigns: Vec<((usize, usize), &'static str)> = Vec::new();
   let mut item_backgrounds: Vec<((usize, usize), Color)> = Vec::new();
   let mut item_frames: Vec<((usize, usize), (usize, usize))> = Vec::new();
   for (i, row) in rows.iter().enumerate() {
@@ -23590,6 +23640,11 @@ fn grid_svg_styled_internal_reporting(
             };
             if matches!(h, Expr::Identifier(_)) {
               item_aligns.push(((i, j), alignment_to_anchor(h)));
+            }
+            if let Expr::List(pair) = value
+              && let Some(v) = pair.get(1).and_then(vertical_alignment)
+            {
+              item_valigns.push(((i, j), v));
             }
           }
           "Background" => {
@@ -23688,6 +23743,8 @@ fn grid_svg_styled_internal_reporting(
   let mut row_bg_has_repeating = false;
   let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
   let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
+  // `Alignment -> {h, v}`: where each row's cells sit vertically.
+  let mut row_valigns: Vec<Option<&'static str>> = Vec::new();
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
   let mut col_align_has_repeating = false;
@@ -23943,6 +24000,9 @@ fn grid_svg_styled_internal_reporting(
           Expr::List(items) => {
             // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
+            if let Some(row_spec) = items.get(1) {
+              row_valigns = row_vertical_alignments(row_spec, rows.len());
+            }
             if let Some(first) = items.first() {
               match first {
                 Expr::String(s) if s == "." => alignment_h = "decimal",
@@ -24791,6 +24851,24 @@ fn grid_svg_styled_internal_reporting(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
+      // `Alignment -> {h, Top | Bottom}` (on the grid or the cell's `Item`)
+      // pins the content to that edge of the row's content area, inside
+      // the cell padding.
+      let valign = item_valigns
+        .iter()
+        .find(|(pos, _)| *pos == (i, j))
+        .map(|(_, a)| *a)
+        .or_else(|| row_valigns.get(i).copied().flatten());
+      let content_top = content_y_starts[i] + pad_y / 2.0;
+      let content_bottom =
+        content_y_starts[last_row] + row_heights[last_row] - pad_y / 2.0;
+      // Top of a block of height `h` placed by `valign`, or `None` when
+      // the default placement applies.
+      let valigned_top = |h: f64| match valign {
+        Some("top") => Some(content_top),
+        Some("bottom") => Some(content_bottom - h),
+        _ => None,
+      };
 
       // A graphic cell is drawn as a nested <svg> at its own size,
       // centered in the cell.
@@ -24807,10 +24885,12 @@ fn grid_svg_styled_internal_reporting(
           _ => x_offset + (col_w - nat_w) / 2.0,
         };
         let vis_h = cell_bottom - cell_top;
-        let gy = cell_top
-          + row_anchors[i].map_or((vis_h - nat_h) / 2.0, |a| {
-            a - graphic_content_anchor(cell, nat_h)
-          });
+        let gy = valigned_top(nat_h).unwrap_or_else(|| {
+          cell_top
+            + row_anchors[i].map_or((vis_h - nat_h) / 2.0, |a| {
+              a - graphic_content_anchor(cell, nat_h)
+            })
+        });
         svg.push_str(&format!(
           "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
           parsed.view_box, parsed.inner_content
@@ -24835,7 +24915,8 @@ fn grid_svg_styled_internal_reporting(
           let draw_h = (*ih as f64) * scale;
           let ix = x_offset + col_pad_left[j];
           let vis_h = cell_bottom - cell_top;
-          let iy = cell_top + (vis_h - draw_h) / 2.0;
+          let iy = valigned_top(draw_h)
+            .unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
 
           // Encode image as base64 PNG, its pixels shown as blocks.
           let b64 = crate::functions::image_ast::blocky_png_base64(
@@ -24959,6 +25040,20 @@ fn grid_svg_styled_internal_reporting(
         // A line break starts a new line: one `<tspan>` per line, the block
         // centered on the cell. Stacked fractions are drawn elsewhere.
         let multiline = markup.contains('\n') && !has_fraction(cell);
+        // A vertically aligned text block is centered on its own lines
+        // placed at the row's top or bottom edge.
+        let cy = {
+          let extra_lines = if multiline {
+            split_markup_lines(&markup).len().saturating_sub(1) as f64
+          } else {
+            0.0
+          };
+          let line_h = fs + pad_y;
+          let block_h = line_h
+            + extra_lines * markup_line_height(&markup, fs)
+            - pad_y;
+          valigned_top(block_h).map_or(cy, |top| top + block_h / 2.0 - 1.0)
+        };
         let (text_y, markup) = if multiline {
           let lh = markup_line_height(&markup, fs);
           let lines = split_markup_lines(&markup);

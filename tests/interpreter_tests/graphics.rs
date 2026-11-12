@@ -7023,6 +7023,74 @@ mod plot3d {
       }
     }
 
+    /// The `y` of each nested `<svg>` picture in a grid's SVG, in order.
+    fn nested_svg_ys(svg: &str) -> Vec<f64> {
+      svg
+        .split("<svg")
+        .skip(2)
+        .filter_map(|r| r.split("y=\"").nth(1))
+        .filter_map(|r| r.split('"').next())
+        .filter_map(|v| v.parse().ok())
+        .collect()
+    }
+
+    // Regression: the row part of `Alignment -> {h, v}` places a short
+    // picture at the top or bottom of a row made tall by a taller one,
+    // instead of always centering it.
+    #[test]
+    fn grid_vertical_alignment_places_graphics() {
+      let grid = |v: &str| {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+      };
+      let top = nested_svg_ys(&grid("Top"));
+      let center = nested_svg_ys(&grid("Center"));
+      let bottom = nested_svg_ys(&grid("Bottom"));
+      assert_eq!(top.len(), 2);
+      // The tall picture fills the row, so the short one shares its top
+      // edge when top-aligned and its bottom edge when bottom-aligned.
+      assert!((top[1] - top[0]).abs() < 1e-6, "{top:?}");
+      assert!((bottom[1] - (bottom[0] + 40.0)).abs() < 1e-6, "{bottom:?}");
+      assert!((center[1] - (center[0] + 20.0)).abs() < 1e-6, "{center:?}");
+    }
+
+    // A per-row list (and `Item`'s own `Alignment`) aligns rows/cells
+    // individually.
+    #[test]
+    fn grid_vertical_alignment_per_row_and_item() {
+      let per_row = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}, {Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}, Alignment -> {Center, {Top, Bottom}}]",
+      ));
+      assert_eq!(per_row.len(), 4);
+      assert!((per_row[1] - per_row[0]).abs() < 1e-6, "{per_row:?}");
+      assert!((per_row[3] - (per_row[2] + 40.0)).abs() < 1e-6, "{per_row:?}");
+      let item = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Item[Graphics[Disk[], ImageSize -> 20], Alignment -> {Center, Bottom}]}}]",
+      ));
+      assert!((item[1] - (item[0] + 40.0)).abs() < 1e-6, "{item:?}");
+    }
+
+    // Top-aligned text in a tall row sits at the row's top edge.
+    #[test]
+    fn grid_vertical_alignment_places_text() {
+      let text_y = |v: &str| -> f64 {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], \"a\"}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+        .split("<text")
+        .nth(1)
+        .and_then(|r| r.split("y=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+      };
+      let (top, center, bottom) =
+        (text_y("Top"), text_y("Center"), text_y("Bottom"));
+      assert!(top < center && center < bottom, "{top} {center} {bottom}");
+      assert!((center - top - (bottom - center)).abs() < 1e-6);
+    }
+
     // Regression: a per-cell `Background` rule on a spanning cell paints the
     // whole merged span, not just its first column.
     #[test]
