@@ -13967,11 +13967,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let h = (svg_h - margin_bottom - margin_top).max(1.0);
         (h / drawing_aspect, h)
       }
-      // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
-      // only a minimum: the drawing area keeps its `AspectRatio` inside
-      // what the padding leaves, and the room left over is split evenly
-      // between the two sides of the short axis.
-      Some(r) if size_names_height && image_padding.is_some() => {
+      // Under `ImageSize -> {w, h}` the drawing area keeps its
+      // `AspectRatio` inside what the margins (automatic or `ImagePadding`,
+      // which is then only a minimum) leave, and the room left over is
+      // split evenly between the two sides of the short axis.
+      Some(r) if size_names_height => {
         let avail_h = (svg_h - margin_bottom - margin_top).max(1.0);
         let (pw, ph) = if w * r <= avail_h {
           (w, w * r)
@@ -15603,6 +15603,27 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now
       "OverscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
+        // A bar accent (`_`, or a hyphen/minus typed as the overscript, the
+        // antiquark b̄) is drawn as a rule spanning the base, not as a
+        // raised dash glyph.
+        if is_bar_accent_box(&args[1]) {
+          let sw = (font_size * 0.06).max(0.6);
+          let gap = font_size * 0.12;
+          let line_y = sw;
+          let base_y = line_y + gap;
+          let elements = format!(
+            "<path d=\"M 0.00 {line_y:.2} L {:.2} {line_y:.2}\" fill=\"none\" \
+             stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>{}",
+            base.width,
+            base.translate(0.0, base_y)
+          );
+          return BoxLayout {
+            width: base.width,
+            height: base_y + base.height,
+            baseline: base_y + base.baseline,
+            elements,
+          };
+        }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
@@ -17870,8 +17891,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "Overscript" | "Underscript" if args.len() == 2 => {
           let base_markup = expr_to_svg_markup(&args[0]);
           let accent_markup = expr_to_svg_markup(&args[1]);
-          let is_bar_accent = matches!(&args[1],
-            Expr::String(s) if s == "_" || s == "-" || s == "\u{2013}");
+          let is_bar_accent = is_bar_accent_box(&args[1]);
           if is_bar_accent {
             let deco = if name == "Overscript" {
               "overline"
@@ -18796,6 +18816,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // OverscriptBox[base, over] → base with overscript
       "OverscriptBox" if args.len() >= 2 => {
         let base_svg = boxes_to_svg(&args[0]);
+        if is_bar_accent_box(&args[1]) {
+          return format!(
+            "<tspan text-decoration=\"overline\">{base_svg}</tspan>"
+          );
+        }
         let over_svg = boxes_to_svg(&args[1]);
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
@@ -19686,9 +19711,31 @@ fn accent_text(base: &str, accent: &str, over: bool) -> String {
   }
 }
 
+/// Whether an over/underscript box is a plain horizontal-bar accent: `_`,
+/// a macron or overline, or a hyphen/minus/en dash typed as the script.
+/// Such a script is drawn as a rule spanning the base (x̄, b̄).
+fn is_bar_accent_box(script: &Expr) -> bool {
+  let Expr::String(s) = script else {
+    return false;
+  };
+  let s = s.trim();
+  let s = s
+    .strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .unwrap_or(s)
+    .trim();
+  matches!(
+    s,
+    "_" | "-" | "\u{2212}" | "\u{2013}" | "\u{00AF}" | "\u{203E}"
+  )
+}
+
 fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
   Some(match (accent, over) {
-    ("_" | "\u{203E}" | "\u{00AF}", true) => ('\u{0305}', true),
+    // A hyphen or minus sign over a base is drawn as a bar, like `_`.
+    ("_" | "-" | "\u{2212}" | "\u{203E}" | "\u{00AF}", true) => {
+      ('\u{0305}', true)
+    }
     ("_" | "\u{203E}" | "\u{00AF}", false) => ('\u{0332}', true),
     (".", true) => ('\u{0307}', false),
     ("..", true) => ('\u{0308}', false),
@@ -39619,10 +39666,7 @@ fn marked_subscript_box_runs(
   let base = crate::notebook::render_boxes_text(&expr_to_string(base));
   let script = crate::notebook::render_boxes_text(&expr_to_string(script));
   let script = script.trim();
-  if script
-    .chars()
-    .all(|c| unicode_script_char(c, false).is_some())
-  {
+  if !picture_subscript_needs_lowering(script) {
     return None;
   }
   Some(vec![
@@ -39798,6 +39842,21 @@ fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
   out
 }
 
+/// Whether a subscript in a picture label must be lowered with a `<tspan>`
+/// rather than folded into Unicode subscript glyphs. Only the digit and
+/// operator subscripts (`₀`–`₉`, `₊`, `₌`, …) are reliably present in the
+/// fonts an SVG renders with; the letter subscripts Unicode defines (`ₐ`,
+/// `ₘ`, `ₓ`, `ᵦ`, …) are missing from most of them, so a label like
+/// `Subscript["θ", max]` came out with each letter drawn from a different
+/// fallback font at its own size. Wolfram typesets a real lowered, smaller
+/// script, so any subscript carrying a letter (or a character with no
+/// subscript glyph at all) is lowered instead.
+fn picture_subscript_needs_lowering(script: &str) -> bool {
+  script
+    .chars()
+    .any(|c| c.is_alphabetic() || unicode_script_char(c, false).is_none())
+}
+
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
 
@@ -39854,11 +39913,7 @@ fn script_runs(
         }
       }));
     };
-    if mark
-      && text
-        .chars()
-        .any(|c| unicode_script_char(c, false).is_none())
-    {
+    if mark && picture_subscript_needs_lowering(&text) {
       restyle(&mut runs, &|t| {
         format!("{SUBSCRIPT_START}{t}{SUBSCRIPT_END}")
       });
@@ -47241,7 +47296,13 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
     {
       let mut x_range = None;
       let mut y_range = None;
-      for opt in &args[1..] {
+      // `Graphics[prims, opt -> v, …]` and `Graphics[prims, {opt -> v, …}]`
+      // are the same graphic.
+      let opts = args[1..].iter().flat_map(|a| match a {
+        Expr::List(items) => items.iter().collect::<Vec<_>>(),
+        other => vec![other],
+      });
+      for opt in opts {
         if let Expr::Rule {
           pattern,
           replacement,

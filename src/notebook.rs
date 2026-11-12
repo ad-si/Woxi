@@ -3298,7 +3298,11 @@ pub(crate) fn combining_accent(over: &str) -> Option<&'static str> {
     "~" | "\\[Tilde]" | "\u{223C}" => Some("\u{0303}"),
     "." => Some("\u{0307}"),
     ".." => Some("\u{0308}"),
-    "_" | "\\[Macron]" | "\u{00AF}" => Some("\u{0304}"),
+    // A hand-typed hyphen or minus over a letter (`b` with `-` above, the
+    // antiquark b̄) is drawn as a bar, just like `_`.
+    "_" | "-" | "\u{2212}" | "\\[Minus]" | "\\[Macron]" | "\u{00AF}" => {
+      Some("\u{0304}")
+    }
     "\\[RightVector]" | "\u{21C0}" => Some("\u{20D7}"),
     _ => None,
   }
@@ -9699,6 +9703,27 @@ Cell[TextData[{
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "x\u{0302}+y\u{0304}+z\u{20D7}");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// A hyphen typed as the overscript (a Demonstration's antiquark control
+  /// label `"b\!\(\*OverscriptBox[\(b\), \(-\)]\)"`) is a bar over the
+  /// letter, not an exponent: it must read `bb̄`, not `bb^(-)`.
+  #[test]
+  fn test_hyphen_overscript_renders_as_bar() {
+    let nb = r#"Notebook[{
+Cell[TextData[{
+ Cell[BoxData[
+  RowBox[{"b", OverscriptBox["b", "-"], "+", OverscriptBox["t", "\[Minus]"]}]],
+  "InlineMath"]
+}], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "bb\u{0304}+t\u{0304}");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
