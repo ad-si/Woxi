@@ -3857,7 +3857,7 @@ fn collect_primitives(
 /// integer contents are `GraphicsComplex` indices rather than data to leave
 /// alone — the set `Normal[GraphicsComplex[…]]` and 3D `GraphicsComplex`
 /// rendering both need to recognize.
-const POINT_TAKING_PRIMITIVES: &[&str] = &[
+pub(crate) const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Point",
   "Line",
   "Polygon",
@@ -3870,6 +3870,13 @@ const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Tube",
   "Sphere",
   "Simplex",
+  "Cylinder",
+  "Cone",
+  "Capsule",
+  "Tetrahedron",
+  "Hexahedron",
+  "Pyramid",
+  "Prism",
 ];
 
 /// `Normal[GraphicsComplex[pts, data, opts]]`: substitute each integer index
@@ -28593,6 +28600,49 @@ fn render_tabular_svg_grid(
   Some(svg)
 }
 
+/// `Style[picture, opts…, Magnification -> m]` — a `Graphics`,
+/// `Graphics3D` or `Image` shown at `m` times its size, the whole drawing
+/// (text, point sizes, thicknesses) scaled alike, as the FrontEnd
+/// magnifies it. `None` unless every argument after the picture is an
+/// option and one of them is a positive numeric `Magnification`.
+pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style"
+    || args.len() < 2
+    || !args[1..].iter().all(|a| option_kv(a).is_some())
+  {
+    return None;
+  }
+  let m = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "Magnification")
+    .and_then(|(_, v)| expr_to_f64(v))
+    .filter(|m| m.is_finite() && *m > 0.0)?;
+  let svg = match &args[0] {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    Expr::Image { .. } => crate::evaluator::expr_to_svg(&args[0]),
+    _ => return None,
+  };
+  if !svg.contains("<svg") {
+    return None;
+  }
+  let (w, h) = parse_svg_wh(&svg);
+  if w <= 0.0 || h <= 0.0 {
+    return None;
+  }
+  let is_3d = matches!(&args[0], Expr::Graphics { is_3d: true, .. });
+  Some(Expr::Graphics {
+    svg: resize_svg_root(&svg, w * m, h * m),
+    is_3d,
+    source: None,
+    head: None,
+    structure: None,
+  })
+}
+
 /// Resolve a `Column`/`Row` display item for rendering: release a held
 /// `Dynamic[…]` (a static rendering shows its current value; front-ends
 /// re-evaluate the whole display on interaction) and unwrap a top-level
@@ -28648,6 +28698,15 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
           None => false,
         }
       }
+      // `Style[picture, Magnification -> m]` draws the picture `m` times
+      // its size.
+      "Style" => match magnified_picture(&current) {
+        Some(picture) => {
+          current = picture;
+          continue;
+        }
+        None => false,
+      },
       // `PaddedForm[Grid[…], spec]` & co. format the numbers inside the
       // layout; the layout itself is drawn as usual.
       "NumberForm" | "PaddedForm" | "AccountingForm"
@@ -31464,15 +31523,79 @@ pub(crate) fn pane_picture_is_auto_sized(content: &Expr) -> bool {
   }
 }
 
+/// An automatically sized `Graphics`/`Graphics3D` larger than a
+/// `width` x `height` box, redrawn at the largest size (same aspect ratio)
+/// that fits it. Redrawing — rather than scaling the finished drawing down —
+/// keeps font sizes, point sizes and thicknesses absolute, as in the
+/// FrontEnd. `None` when the picture isn't automatically sized, already
+/// fits, or its symbolic form isn't known.
+fn fit_auto_sized_picture_to_box(
+  content: &Expr,
+  width: f64,
+  height: f64,
+) -> Option<Expr> {
+  if !pane_picture_is_auto_sized(content) {
+    return None;
+  }
+  let (name, args, natural_w, natural_h) = match content {
+    Expr::Graphics { svg, structure, .. } => {
+      let Some(Expr::FunctionCall { name, args }) = structure.as_deref() else {
+        return None;
+      };
+      let (w, h) = parse_svg_wh(svg);
+      (name, args, w, h)
+    }
+    Expr::FunctionCall { name, args } => {
+      let captured = crate::captured_graphics_count();
+      let (w, h) = parse_svg_wh(&crate::evaluator::expr_to_svg(content));
+      crate::truncate_captured_graphics(captured);
+      (name, args, w, h)
+    }
+    _ => return None,
+  };
+  if natural_w <= 0.0
+    || natural_h <= 0.0
+    || (natural_w <= width && natural_h <= height)
+  {
+    return None;
+  }
+  let scale = (width / natural_w).min(height / natural_h);
+  let mut new_args = args.to_vec();
+  new_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::List(
+      vec![
+        Expr::Real((natural_w * scale).floor()),
+        Expr::Real((natural_h * scale).floor()),
+      ]
+      .into(),
+    )),
+  });
+  Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  })
+}
+
 /// A plot sized relative to its container — `ImageSize -> Full` or
 /// `Scaled[s]` — redrawn for a `Pane[…, {width, height}]`: `Full` fills
 /// the box, `Scaled[s]` (or `Scaled[{sx, sy}]`) takes that fraction of its
-/// width (and height). `None` for anything else.
+/// width (and height). An automatically sized picture larger than the box
+/// is redrawn at the largest size that fits it, so its `Text` keeps its
+/// absolute font size the way the FrontEnd sets it, rather than shrinking
+/// along with a scaled-down drawing. `None` for anything else.
 pub(crate) fn size_plot_to_pane(
   content: &Expr,
   width: f64,
   height: f64,
 ) -> Option<Expr> {
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  if let Some(fitted) = fit_auto_sized_picture_to_box(content, width, height) {
+    return Some(fitted);
+  }
   let Expr::Graphics {
     source: Some(source),
     ..
@@ -31489,10 +31612,6 @@ pub(crate) fn size_plot_to_pane(
     }
     _ => None,
   })?;
-  let rule = |name: &str, value: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
-  };
   let mut options = Vec::new();
   match size {
     Expr::Identifier(n) if n == "Full" => {
@@ -31555,9 +31674,26 @@ pub(crate) fn clip_svg_to_pane_box(
     let x = (width - natural_w) * align.0;
     let y = (height - natural_h) * align.1;
     let root = svg.find("<svg").unwrap_or(0);
+    // Text running past the picture's own edges (a wide caption in a
+    // picture shrunk to the box) is still drawn; the box clips it.
+    let picture = &svg[root..];
+    let picture = match picture.find('>') {
+      Some(end) if !picture[..end].contains("overflow=") => {
+        let end = if picture[..end].ends_with('/') {
+          end - 1
+        } else {
+          end
+        };
+        format!(
+          "{} overflow=\"visible\"{}",
+          &picture[..end],
+          &picture[end..]
+        )
+      }
+      _ => picture.to_string(),
+    };
     return format!(
-      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{}\n</g>\n</svg>",
-      &svg[root..]
+      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
     );
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a

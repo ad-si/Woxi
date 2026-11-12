@@ -4673,6 +4673,15 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       args: new_args.into(),
     });
   }
+  // A `Pane[picture, {width, height}]` item reserves its whole box in the
+  // layout, the picture placed in it by the Pane's `Alignment` — peeling
+  // the Pane off would set the bare picture at its own size instead.
+  if pane_fixed_size(expr).is_some() && evaluator::lays_out_a_graphic(expr) {
+    let rendered = render_visual_display_pipeline(expr);
+    if matches!(rendered, syntax::Expr::Graphics { .. }) {
+      return rendered;
+    }
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

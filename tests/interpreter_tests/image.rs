@@ -115,7 +115,8 @@ mod image_core {
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], {100, 80}, \
          Alignment -> Center]",
-        "translate(40.0 0.0)",
+        // A lone `Center` centers on both axes.
+        "translate(40.0 25.0)",
       ),
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], ImageSize -> {100, 80}, \
