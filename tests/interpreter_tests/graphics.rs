@@ -1603,6 +1603,46 @@ mod graphics {
       assert!(svg.contains("rotate(-90.0000)"), "{svg}");
     }
 
+    /// A rotated object is not a graphic, so `Inset[Rotate[g, θ], pos,
+    /// opos]` reads `opos` as an offset in the turned box — `{0, 0}` is its
+    /// center — not as a point of `g`'s own coordinates. It used to pad the
+    /// plot for its data point `(0, 0)`, stretching and shifting the turned
+    /// picture off its anchor.
+    #[test]
+    fn a_rotated_plot_inset_aligns_opos_in_the_turned_box() {
+      let inset = |opos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Circle[]}}, Epilog -> Inset[Rotate[Plot[Sin[x], \
+           {{x, 0, 6}}, Axes -> False, PlotRange -> {{-3, 1}}, \
+           ImageSize -> {{80, 20}}], Pi/2], {{0, 0}}{opos}]]"
+        ))
+      };
+      let centered = inset("");
+      assert_eq!(
+        inset(", {0, 0}"),
+        centered,
+        "{{0, 0}} is the turned box's center"
+      );
+      let nested = |svg: &str| {
+        svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .expect("a nested picture")
+          .0
+          .to_string()
+      };
+      // `{-1, -1}` puts the turned box's lower left corner on the anchor:
+      // the picture is padded to twice its size, keeping that corner at the
+      // center.
+      let corner = nested(&inset(", {-1, -1}"));
+      assert!(
+        corner.contains("width=\"40.00\"")
+          && corner.contains("height=\"160.00\""),
+        "{corner}"
+      );
+    }
+
     /// `Inset[Magnify[g, s], pos]` embeds the picture scaled by `s`. It
     /// used to print `Magnify[-Image-, s]` as text.
     #[test]
@@ -7160,6 +7200,72 @@ mod plot3d {
         assert!(!text.contains("italic"), "{svg}");
         assert!(!text.contains("monospace"), "{svg}");
       }
+    }
+
+    /// The displayed picture of `code` (the SVG a notebook front end shows).
+    fn displayed_svg(code: &str) -> String {
+      woxi::interpret_with_stdout(code)
+        .unwrap()
+        .graphics
+        .expect("a displayed picture")
+    }
+
+    /// The `y` of the first nested picture (a graphic cell) in `svg`.
+    fn first_cell_picture_y(svg: &str) -> f64 {
+      svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("y=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("a graphic cell")
+    }
+
+    // Regression: a text row holding a superscript was only as tall as its
+    // font, so the raised script was cut off at the top of the grid.
+    #[test]
+    fn grid_text_row_with_superscript_leaves_room_for_the_script() {
+      let row = |text: &str| {
+        displayed_svg(&format!(
+          "Grid[{{{{Style[{text}, 16]}}, {{Graphics[Circle[], \
+           ImageSize -> 50]}}}}]"
+        ))
+      };
+      let plain = first_cell_picture_y(&row("Row[{\"Na\", \"x\"}]"));
+      let svg = row("Row[{\"Na\", Superscript[\"x\", \"+\"]}]");
+      let raised = first_cell_picture_y(&svg);
+      assert!(raised > plain + 5.0, "{plain} vs {raised}: {svg}");
+      // The text is centered on its row (nudged up by 1 for ascenders):
+      // half the row must hold half the line plus the script's shift.
+      let text_y: f64 = svg
+        .split("<text")
+        .nth(1)
+        .and_then(|s| s.split("y=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(text_y + 1.0 >= 16.0 * (0.5 + 1.0 / 3.0), "{svg}");
+    }
+
+    // Regression: a `Spacer` before a part with its own spans (an italic
+    // letter, a superscript) wrapped the whole part in one `<tspan dx>`;
+    // resvg then raised every character before the nested superscript.
+    #[test]
+    fn row_spacer_gap_does_not_nest_the_following_spans() {
+      let svg = displayed_svg(
+        "Grid[{{Row[{\"Na\", Spacer[8], Row[{\"2\", Style[\"s\", Italic], \
+         Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
+      );
+      assert!(svg.contains("<tspan dx=\"8.00\">2</tspan>"), "{svg}");
+      // A part that starts with a span takes the gap on that span.
+      let svg = displayed_svg(
+        "Grid[{{Row[{\"Na\", Spacer[8], Row[{Style[\"s\", Italic], \
+         Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
+      );
+      assert!(
+        svg.contains("<tspan dx=\"8.00\" font-style=\"italic\">s</tspan>"),
+        "{svg}"
+      );
     }
 
     // Regression: a per-cell `Background` rule on a spanning cell paints the

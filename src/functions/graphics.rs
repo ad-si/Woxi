@@ -5351,6 +5351,32 @@ pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
 /// The line height of text markup: 1.2 times its largest `font-size`
 /// (a percentage size such as a subscript's does not count), at least the
 /// `base` size.
+/// `markup` moved right by `gap` points (a `Spacer` before it in a `Row`).
+///
+/// Only the first run of characters carries the `dx`: wrapping the whole
+/// markup in one `<tspan dx>` would nest its own spans (a superscript, an
+/// italic letter) inside it, and resvg then raises every character of the
+/// wrapper that precedes a nested `baseline-shift` — `[He]2s²` would draw
+/// its `s` as part of the superscript.
+fn markup_with_leading_gap(markup: &str, gap: f64) -> String {
+  let lead = markup.find('<').unwrap_or(markup.len());
+  if lead > 0 {
+    let (text, rest) = markup.split_at(lead);
+    return format!("<tspan dx=\"{gap:.2}\">{text}</tspan>{rest}");
+  }
+  if let Some(rest) = markup.strip_prefix("<tspan")
+    && rest.starts_with([' ', '>'])
+    && !rest[..rest.find('>').unwrap_or(rest.len())].contains(" dx=")
+  {
+    return format!("<tspan dx=\"{gap:.2}\"{rest}");
+  }
+  format!("<tspan dx=\"{gap:.2}\">{markup}</tspan>")
+}
+
+/// How far a `baseline-shift="super"`/`"sub"` script moves off the
+/// baseline, in ems of the surrounding text (the SVG renderers' default).
+const SCRIPT_SHIFT_EM: f64 = 1.0 / 3.0;
+
 fn markup_line_height(markup: &str, base: f64) -> f64 {
   let mut largest = base;
   for part in markup.split("font-size=\"").skip(1) {
@@ -6831,7 +6857,7 @@ fn inset_primitives(
       Some(if scaled {
         (x, 1.0 - y)
       } else {
-        ((x + 1.0) / 2.0, (1.0 - y) / 2.0)
+        (f64::midpoint(x, 1.0), (1.0 - y) / 2.0)
       })
     });
     if inner_args.len() > 2 {
@@ -18407,9 +18433,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                 expr_to_svg_markup(part)
               };
               if pending_gap > 0.0 {
-                out.push_str(&format!(
-                  "<tspan dx=\"{pending_gap:.2}\">{markup}</tspan>"
-                ));
+                out.push_str(&markup_with_leading_gap(&markup, pending_gap));
                 pending_gap = 0.0;
               } else {
                 out.push_str(&markup);
@@ -24753,11 +24777,18 @@ fn grid_svg_styled_internal_reporting(
       if grid_cell_graphic(cell).is_none() && !has_fraction(cell) {
         let style = extract_cell_style(cell);
         let markup = expr_to_svg_markup(style.content);
+        let base = style.font_size.unwrap_or(font_size);
         if markup.contains('\n') {
-          let base = style.font_size.unwrap_or(font_size);
           let lines = markup.split('\n').count() as f64;
           cell_h =
             cell_h.max(pad_y + lines * markup_line_height(&markup, base));
+        } else if markup.contains("baseline-shift=\"super\"")
+          || markup.contains("baseline-shift=\"sub\"")
+        {
+          // A raised (or lowered) script reaches past the line's own
+          // glyphs; the text is centered on its row, so the row grows by
+          // the shift on both sides to keep the script inside it.
+          cell_h = cell_h.max(pad_y + base * (1.0 + 2.0 * SCRIPT_SHIFT_EM));
         }
       }
       // A graphic cell keeps its own height.
