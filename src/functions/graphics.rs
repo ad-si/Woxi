@@ -39564,10 +39564,7 @@ fn marked_subscript_box_runs(
   let base = crate::notebook::render_boxes_text(&expr_to_string(base));
   let script = crate::notebook::render_boxes_text(&expr_to_string(script));
   let script = script.trim();
-  if script
-    .chars()
-    .all(|c| unicode_script_char(c, false).is_some())
-  {
+  if script.chars().all(drawn_subscript_glyph) {
     return None;
   }
   Some(vec![
@@ -39799,11 +39796,7 @@ fn script_runs(
         }
       }));
     };
-    if mark
-      && text
-        .chars()
-        .any(|c| unicode_script_char(c, false).is_none())
-    {
+    if mark && !text.chars().all(drawn_subscript_glyph) {
       restyle(&mut runs, &|t| {
         format!("{SUBSCRIPT_START}{t}{SUBSCRIPT_END}")
       });
@@ -39994,6 +39987,17 @@ pub(crate) fn to_unicode_script_digits(s: &str, superscript: bool) -> String {
       }
     })
     .collect()
+}
+
+/// Whether a subscript character in a picture label is folded into its
+/// Unicode subscript glyph rather than lowered with a `<tspan>`. Only the
+/// digits and signs (U+2080–U+208E) qualify: the Latin and Greek subscript
+/// letters (`ₐ`, `ₓ`, `ᵦ`) live in blocks most text fonts omit, so the
+/// renderer substitutes a fallback font for them (and for the base letter
+/// shaped with them), which makes `lₐ` look unlike a lowered `l_b` next
+/// to it. Lowering every letter keeps all such labels in one font.
+fn drawn_subscript_glyph(c: char) -> bool {
+  !c.is_alphabetic() && unicode_script_char(c, false).is_some()
 }
 
 /// Unicode sub-/superscript for a single character, if one exists.
