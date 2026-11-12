@@ -28417,8 +28417,31 @@ pub(crate) fn axes_label_markup(expr: &Expr) -> String {
 /// string or any expression without a fraction, which keep their text
 /// rendering.
 pub(crate) fn fraction_label_svg(expr: &Expr, size: f64) -> Option<String> {
-  if matches!(expr, Expr::String(_)) {
-    return None;
+  match expr {
+    Expr::String(_) => return None,
+    // `Rotate[label, angle]` shows its label: the angle is no part of it.
+    Expr::FunctionCall { name, args } if name == "Rotate" && !args.is_empty() => {
+      return fraction_label_svg(&args[0], size);
+    }
+    // Styling and layout wrappers keep their own label rendering.
+    Expr::FunctionCall { name, .. }
+      if is_style_wrapper(name)
+        || matches!(
+          name.as_str(),
+          "Text"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Tooltip"
+            | "Annotation"
+            | "Labeled"
+            | "Framed"
+            | "Pane"
+        ) =>
+    {
+      return None;
+    }
+    _ => {}
   }
   let boxes =
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(

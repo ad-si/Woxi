@@ -5198,6 +5198,12 @@ mod plot3d {
         assert!(!svg.contains("/ca(0)"), "{code}: {svg}");
         assert!(!svg.contains("c[a]"), "{code}: {svg}");
       }
+      // A rotated fraction label typesets the fraction, not the angle.
+      let svg = export_svg(
+        "Plot[u, {u, 0, 1}, AxesLabel -> {None, Rotate[u/w, Pi/2]}]",
+      );
+      assert!(!svg.contains("Rotate"), "{svg}");
+      assert!(svg.contains("<svg xmlns"), "{svg}");
       // A plain expression label keeps its text rendering.
       let svg = export_svg("Plot[u, {u, 0, 1}, AxesLabel -> {u, v}]");
       assert!(svg.contains(">u</text>"), "{svg}");
