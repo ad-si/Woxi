@@ -7288,4 +7288,45 @@ mod number_theory_fuzz_edge_cases {
       "{0, 0, 0, 0, Binomial[x, -1], 1 + 5*I}"
     );
   }
+
+  // NextPrime[n, 0] is n for a prime n and unevaluated otherwise.
+  #[test]
+  fn next_prime_with_a_zero_step() {
+    assert_eq!(
+      interpret(
+        "{NextPrime[2, 0], NextPrime[-3, 0], NextPrime[97, 0], NextPrime[10, 0], \
+          NextPrime[1, 0], NextPrime[2.5, 0], NextPrime[x, 0]}"
+      )
+      .unwrap(),
+      "{2, -3, 97, NextPrime[10, 0], NextPrime[1, 0], NextPrime[2.5, 0], NextPrime[x, 0]}"
+    );
+  }
+
+  #[test]
+  fn binomial_with_k_zero_keeps_inexactness() {
+    assert_eq!(
+      interpret(
+        "{Binomial[-2.5, 0], Binomial[2.5 + I, 0], Binomial[x, 0], Binomial[1/2, 0], \
+          Binomial[3, 0.], Binomial[x, 0.]}"
+      )
+      .unwrap(),
+      "{1., 1., 1, 1, 1., 1.}"
+    );
+  }
+
+  // A numeric dividend with a zero divisor gets QuotientRemainder::divz.
+  #[test]
+  fn quotient_remainder_by_zero() {
+    let (result, w) = warnings("QuotientRemainder[3, 0.]");
+    assert_eq!(result, "QuotientRemainder[3, 0.]");
+    assert_eq!(
+      w,
+      vec![
+        "QuotientRemainder::divz: The argument 0. in QuotientRemainder[3, 0.] should be nonzero."
+      ]
+    );
+    let (result, w) = warnings("QuotientRemainder[x, 0]");
+    assert_eq!(result, "QuotientRemainder[x, 0]");
+    assert!(w.is_empty(), "{w:?}");
+  }
 }

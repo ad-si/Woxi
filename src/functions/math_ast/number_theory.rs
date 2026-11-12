@@ -4953,6 +4953,10 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1)
     });
   }
+  // Binomial[n, 0.] is 1. for every n, symbolic or not.
+  if matches!(&args[1], Expr::Real(k) if *k == 0.0) {
+    return Ok(Expr::Real(1.0));
+  }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     (Some(n), Some(k)) => Ok(bigint_to_expr(binomial_coeff_big(n, k))),
     (None, Some(k)) if k >= 0 => {
@@ -4961,7 +4965,17 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Works for Rational n, symbolic n, etc.
       let k = k as usize;
       if k == 0 {
-        return Ok(Expr::Integer(1));
+        // An inexact number n gives an inexact 1 (Binomial[-2.5, 0] is 1.).
+        let inexact =
+          crate::functions::predicate_ast::is_numeric_expr(&args[0])
+            && crate::functions::math_ast::numeric_utils::contains_inexact_real(
+              &args[0],
+            );
+        return Ok(if inexact {
+          Expr::Real(1.0)
+        } else {
+          Expr::Integer(1)
+        });
       }
       // Compute falling factorial: n * (n-1) * ... * (n-k+1)
       let mut numer_factors: Vec<Expr> = Vec::with_capacity(k);
@@ -5759,6 +5773,18 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     1
   };
+
+  // NextPrime[n, 0] is n itself when n is a (possibly negative) prime and
+  // stays unevaluated otherwise.
+  if k == 0 {
+    let prime = expr_to_bigint(&args[0])
+      .is_some_and(|n| is_prime_bigint(&n.magnitude().clone().into()));
+    return Ok(if prime {
+      args[0].clone()
+    } else {
+      unevaluated("NextPrime", args)
+    });
+  }
 
   // Handle BigInteger separately (only supports k=1 / forward)
   if let Expr::BigInteger(n) = &args[0] {
