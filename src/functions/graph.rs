@@ -1391,6 +1391,10 @@ fn graph_render(
       None
     };
 
+    // `GraphPlot`'s legacy `EdgeRenderingFunction` is handed the edge's
+    // label as its third argument and draws it itself (or not at all), so
+    // the default label at the middle of the edge is left out.
+    let label_drawn_by_shape = edge_arg_as_list && shape.is_some();
     match shape {
       Some((EdgeShape::Hidden, ..)) => {}
       Some((EdgeShape::Named(name, settings), ..)) => match name.as_str() {
@@ -1497,7 +1501,11 @@ fn graph_render(
     // `EdgeLabels -> {edge -> label, …}` (and GraphPlot's `{edge, label}`
     // pairs) set the label at the middle of the edge, unless the edge
     // already carries a `Labeled[…]` one.
-    if edge_data.label.is_none() && si != di && !edge_labels.is_empty() {
+    if edge_data.label.is_none()
+      && si != di
+      && !edge_labels.is_empty()
+      && !label_drawn_by_shape
+    {
       let named = |idx: petgraph::graph::NodeIndex| {
         unwrap_vertex_style(&vertices[graph[idx]]).0.clone()
       };

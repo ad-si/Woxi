@@ -667,6 +667,29 @@ mod graph_plot_labeled_edges {
     assert!(svg.contains("rgb(255,0,0)"));
     assert!(svg.contains("rgb(0,255,255)"));
   }
+
+  /// The legacy `EdgeRenderingFunction` draws the label itself (it gets it
+  /// as `#3`), so the default label at the middle of the edge is left out.
+  #[test]
+  fn edge_rendering_function_replaces_default_label() {
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{{1 -> 2, \"x\"}, {2 -> 3, \"y\"}, {3 -> 1, \"z\"}}, \
+         EdgeRenderingFunction -> ({Line[#1]} &)], _Text, Infinity]"
+      )
+      .unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{{1 -> 2, \"x\"}, {2 -> 3, \"y\"}, {3 -> 1, \"z\"}}, \
+         EdgeRenderingFunction -> ({Line[#1], Text[#3, Mean[#1]]} &)], \
+         Text[s_, _] :> s, Infinity]"
+      )
+      .unwrap(),
+      "{x, y, z}"
+    );
+  }
 }
 
 /// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
@@ -8676,6 +8699,46 @@ mod graph_utilities_package {
     assert_eq!(
       interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),
       "{a, b, c}"
+    );
+  }
+
+  /// The package's functions also take `GraphPlot`'s labeled edges
+  /// `{u -> v, label}`; the labels are not vertices.
+  #[test]
+  fn vertex_list_of_labeled_rule_list() {
+    assert_eq!(
+      interpret(
+        "GraphUtilities`VertexList[{{a -> b, \"x\"}, {b -> c, \"y\"}, c -> d}]"
+      )
+      .unwrap(),
+      "{a, b, c, d}"
+    );
+  }
+
+  /// `CommunityStructurePartition` / `CommunityStructureAssignment` are the
+  /// communities of maximal modularity (`FindGraphCommunities`), the latter
+  /// as each vertex's community number in `VertexList` order.
+  #[test]
+  fn community_structure_of_two_triangles() {
+    let g = "{{a -> b, 1}, {b -> c, 1}, {c -> a, 1}, {d -> e, 2}, \
+             {e -> f, 2}, {f -> d, 2}, {c -> d, 3}}";
+    assert_eq!(
+      interpret(&format!("GraphUtilities`CommunityStructurePartition[{g}]"))
+        .unwrap(),
+      "{{a, b, c}, {d, e, f}}"
+    );
+    assert_eq!(
+      interpret(&format!("GraphUtilities`CommunityStructureAssignment[{g}]"))
+        .unwrap(),
+      "{1, 1, 1, 2, 2, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "GraphUtilities`CommunityStructureAssignment[{f -> e, e -> d, d -> f, \
+         d -> c, c -> b, b -> a, a -> c}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 2, 2, 2}"
     );
   }
 

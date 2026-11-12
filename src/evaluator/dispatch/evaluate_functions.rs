@@ -1385,23 +1385,60 @@ fn evaluate_function_call_ast_inner(
   }
 
   // `GraphUtilities\`` works on a graph given as a plain list of rules
-  // (`{1 -> 2, 2 -> 3}`). Build the equivalent `Graph` and delegate to the
-  // built-in graph functions instead of reimplementing them.
+  // (`{1 -> 2, 2 -> 3}`), whose items may also be labeled edges the way
+  // `GraphPlot` takes them (`{1 -> 2, "label"}`), or on a `Graph`. Build
+  // the equivalent `Graph` and delegate to the built-in graph functions
+  // instead of reimplementing them.
   if let Some(short) = name.strip_prefix("GraphUtilities`")
-    && matches!(short, "VertexList" | "PageRanks" | "ClosenessCentrality")
+    && matches!(
+      short,
+      "VertexList"
+        | "PageRanks"
+        | "ClosenessCentrality"
+        | "CommunityStructureAssignment"
+        | "CommunityStructurePartition"
+    )
     && args.len() == 1
-    && matches!(&args[0], Expr::List(_))
+    && let Some(graph) = graph_utilities_graph(&args[0])?
   {
-    let graph = crate::evaluator::evaluate_expr_to_expr(&call1(
-      "Graph",
-      args[0].clone(),
-    ))?;
     let vertices = crate::evaluator::evaluate_expr_to_expr(&call1(
       "VertexList",
       graph.clone(),
     ))?;
     return match short {
       "VertexList" => Ok(vertices),
+      // The communities of maximal modularity (`FindGraphCommunities`),
+      // either as the vertex lists themselves or as each vertex's 1-based
+      // community number, in `VertexList` order.
+      "CommunityStructurePartition" | "CommunityStructureAssignment" => {
+        let communities = crate::evaluator::evaluate_expr_to_expr(&call1(
+          "FindGraphCommunities",
+          graph,
+        ))?;
+        let Expr::List(groups) = &communities else {
+          return Ok(unevaluated(name, args));
+        };
+        if short == "CommunityStructurePartition" {
+          return Ok(communities);
+        }
+        let Expr::List(vs) = &vertices else {
+          return Ok(unevaluated(name, args));
+        };
+        let number = |v: &Expr| {
+          groups.iter().position(
+            |g| matches!(g, Expr::List(members) if members.iter().any(|m| crate::functions::boolean_ast::same_q_pair(m, v))),
+          )
+        };
+        match vs.iter().map(number).collect::<Option<Vec<_>>>() {
+          Some(ks) => Ok(Expr::List(
+            ks.into_iter()
+              .map(|k| Expr::Integer(k as i128 + 1))
+              .collect::<Vec<_>>()
+              .into(),
+          )),
+          None => Ok(unevaluated(name, args)),
+        }
+      }
       // Not the built-in's (n - 1)/Σd: the package's closeness is the
       // reciprocal of the distance sum, and 0. for a vertex that cannot
       // reach every other one.
@@ -17345,4 +17382,40 @@ fn simplify_symbolic_permutation_product(args: &[Expr]) -> Option<Expr> {
     1 => out.pop().unwrap(),
     _ => call("PermutationProduct", out),
   })
+}
+
+/// The `Graph` a `GraphUtilities\`` function reads its argument as: a
+/// `Graph[…]` itself, or a list of rules whose items may also be labeled
+/// edges `{a -> b, label}` (the label is dropped). `None` for anything
+/// else.
+fn graph_utilities_graph(g: &Expr) -> Result<Option<Expr>, InterpreterError> {
+  let is_rule = |e: &Expr| {
+    matches!(e, Expr::Rule { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2)
+  };
+  match g {
+    Expr::FunctionCall { name, .. } if name == "Graph" => Ok(Some(g.clone())),
+    Expr::List(items) => {
+      let rules = items.iter().map(|item| match item {
+        Expr::List(parts) if parts.len() == 2 && is_rule(&parts[0]) => {
+          Some(parts[0].clone())
+        }
+        rule if is_rule(rule) => Some(rule.clone()),
+        _ => None,
+      });
+      let Some(rules) = rules.collect::<Option<Vec<_>>>() else {
+        return Ok(None);
+      };
+      let graph = crate::evaluator::evaluate_expr_to_expr(&call1(
+        "Graph",
+        Expr::List(rules.into()),
+      ))?;
+      Ok(
+        matches!(&graph, Expr::FunctionCall { name, .. } if name == "Graph")
+          .then_some(graph),
+      )
+    }
+    _ => Ok(None),
+  }
 }
