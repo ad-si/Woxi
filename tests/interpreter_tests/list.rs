@@ -26491,3 +26491,38 @@ mod shift_register_sequence {
     );
   }
 }
+
+mod drop_step_ranges {
+  use super::*;
+
+  // A stepped Drop range that does not fit the list is reported and left
+  // unevaluated; it used to abort the whole evaluation with a hard error.
+  #[test]
+  fn an_out_of_range_step_spec_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout("Drop[{c}, {5, -1, -1}]").unwrap();
+    assert_eq!(result.result, "Drop[{c}, {5, -1, -1}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Drop::drop: Cannot drop positions 5 through -1 in {c}.".to_string()
+      ]
+    );
+  }
+
+  // Drop reads {m, n, s} exactly as Take does.
+  #[test]
+  fn drop_validates_ranges_like_take() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[{Drop[{a, b, c}, {5, 2, 1}], Drop[{a, b, c}, {4, 3, 1}], \
+          Drop[{a, b, c}, {2, 0, -1}], Drop[{a, b, c}, {0, 2, 1}], \
+          Drop[{a, b, c, d}, {1, -1, 2}], Drop[{a, b, c, d}, {-1, 1, -2}]}]"
+      )
+      .unwrap(),
+      "{Drop[{a, b, c}, {5, 2, 1}], {a, b, c}, Drop[{a, b, c}, {2, 0, -1}], \
+       Drop[{a, b, c}, {0, 2, 1}], {b, d}, {a, c}}"
+    );
+  }
+}

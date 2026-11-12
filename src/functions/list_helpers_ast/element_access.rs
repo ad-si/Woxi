@@ -540,6 +540,46 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Emit the Take::take / Drop::drop message for an invalid position range.
+/// The 0-based positions `{start, end, step}` picks from a list of `len`
+/// elements, as Take and Drop read the spec, or `None` when it does not fit
+/// the list (which they report). Negative endpoints count from the end. An
+/// adjacent reversed range (end == start - step) is empty; an empty span may
+/// sit one past either end — `Take[list, {n + 1, -1}]` on a list of n
+/// elements is `{}`, which is how a quicksort partition asks for
+/// "everything after the last pivot".
+pub(crate) fn step_range_positions(
+  len: i128,
+  start: i128,
+  end: i128,
+  step: i128,
+) -> Option<Vec<usize>> {
+  if step == 0 {
+    return None;
+  }
+  let real_start = if start < 0 { len + start + 1 } else { start };
+  let real_end = if end < 0 { len + end + 1 } else { end };
+  let adjacent_empty = real_end == real_start - step;
+  let in_range =
+    real_start >= 1 && real_end >= 1 && real_start <= len && real_end <= len;
+  let empty_in_range = real_start >= 1
+    && real_start <= len + 1
+    && real_end >= 0
+    && real_end <= len;
+  let proper = (step > 0 && real_end >= real_start)
+    || (step < 0 && real_end <= real_start);
+  if !((in_range && proper) || (adjacent_empty && (in_range || empty_in_range)))
+  {
+    return None;
+  }
+  let mut positions = Vec::new();
+  let mut i = real_start;
+  while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
+    positions.push((i - 1) as usize);
+    i += step;
+  }
+  Some(positions)
+}
+
 pub(crate) fn take_drop_message(
   fname: &str,
   from: i128,
@@ -815,36 +855,10 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         } else {
           1
         };
-        let real_start = if start < 0 { len + start + 1 } else { start };
-        let real_end = if end < 0 { len + end + 1 } else { end };
-        // An adjacent reversed range (end == start - step) is an empty
-        // take; anything further reversed or out of range is an error.
-        // An empty span may sit one past either end — `Take[list, {n + 1,
-        // -1}]` on a list of n elements is `{}`, which is how a quicksort
-        // partition asks for "everything after the last pivot".
-        let adjacent_empty = step != 0 && real_end == real_start - step;
-        let in_range = real_start >= 1
-          && real_end >= 1
-          && real_start <= len
-          && real_end <= len;
-        let empty_in_range = real_start >= 1
-          && real_start <= len + 1
-          && real_end >= 0
-          && real_end <= len;
-        let proper = step != 0
-          && ((step > 0 && real_end >= real_start)
-            || (step < 0 && real_end <= real_start));
-        if step != 0
-          && ((in_range && proper)
-            || (adjacent_empty && (in_range || empty_in_range)))
-        {
-          let mut result = Vec::new();
-          let mut i = real_start;
-          while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
-            result.push(items[(i - 1) as usize].clone());
-            i += step;
-          }
-          return Ok(wrap(result));
+        if let Some(positions) = step_range_positions(len, start, end, step) {
+          return Ok(wrap(
+            positions.into_iter().map(|i| items[i].clone()).collect(),
+          ));
         }
         if step != 0 {
           take_drop_message("Take", start, end, list);
@@ -1025,40 +1039,14 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         expr_to_i128(&spec[2]),
       )
     {
-      if step == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Drop: step cannot be zero".into(),
-        ));
-      }
-      let start_idx = if m > 0 { m - 1 } else { len + m };
-      let end_idx = if n_end > 0 { n_end - 1 } else { len + n_end };
-      let mut to_drop = std::collections::HashSet::new();
-      let mut i = start_idx;
-      if step > 0 {
-        while i <= end_idx {
-          if i < 0 || i >= len {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Drop: position {} is out of range for list of length {}",
-              i + 1,
-              len
-            )));
-          }
-          to_drop.insert(i as usize);
-          i += step;
-        }
-      } else {
-        while i >= end_idx {
-          if i < 0 || i >= len {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Drop: position {} is out of range for list of length {}",
-              i + 1,
-              len
-            )));
-          }
-          to_drop.insert(i as usize);
-          i += step;
-        }
-      }
+      // The same positions Take would pick, validated the same way (a zero
+      // step was already reported as ::seqs).
+      let Some(positions) = step_range_positions(len, m, n_end, step) else {
+        take_drop_message("Drop", m, n_end, list);
+        return Ok(call("Drop", vec![list.clone(), n.clone()]));
+      };
+      let to_drop: std::collections::HashSet<usize> =
+        positions.into_iter().collect();
       let result: Vec<Expr> = items
         .iter()
         .enumerate()
