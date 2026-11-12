@@ -5290,13 +5290,17 @@ given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
 colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
-### `SphericalRegion -> True` shrinks about 17 % more than Wolfram
+### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
-On a cylinder from `{0,0,0}` to `{10,0,0}` at `ImageSize -> {550, 350}` the
-trimmed figure width is 324 px in Wolfram and 268 px in Woxi; **without** the
-option both are 532. Working backwards, Wolfram behaves as if it fit the
-enclosing sphere into 399 px of a 550×350 frame — neither dimension, nor their
-mean, diagonal or geometric mean. What radius it normalizes by was not decoded.
+Woxi frames the picture by the sphere around the (2 %-padded) bounding box
+and widens the perspective view until that sphere fits. That reproduces the
+proportions Wolfram draws across differently shaped scenes. It also matches
+the shrink ratio of a cylinder from `{0,0,0}` to `{10,0,0}` at
+`ImageSize -> {550, 350}` (324/532 in Wolfram, 331/550 in Woxi). In absolute
+terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
+(a `Show` of a `ParametricPlot3D` and `Graphics3D`) all came out 6–7 % larger
+in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
+per side instead of 2 %. Where the extra margin comes from was not decoded.
 
 ### `Texture` and `VertexTextureCoordinates`
 
