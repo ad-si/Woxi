@@ -9590,9 +9590,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = instantiate_stored_manipulate(code, "")
       .expect("the ActionMenu Manipulate must build a widget");
     assert!(state.error.is_none(), "render failed: {:?}", state.error);
-    // A Locator's point binds machine reals from the start (see
-    // `promoted_invisible_locator_binds_machine_reals`).
-    assert_eq!(state.text_output.as_deref(), Some("{0, {0., 0.}}"));
+    // A Locator keeps its exact initial point until it is dragged (see
+    // `promoted_invisible_locator_binds_machine_reals_once_dragged`).
+    assert_eq!(state.text_output.as_deref(), Some("{0, {0, 0}}"));
 
     // The menu shows up as one ActionMenu display node carrying both items
     // with their own held action, not a frozen text dump of the source.
@@ -9620,7 +9620,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let cw_action = items[0].1.clone();
     state.apply_button_action(&cw_action);
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    assert_eq!(state.text_output.as_deref(), Some("{1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{1, {0, 0}}"));
 
     // A second, different item keeps working against the now-updated state.
     let ccw_action = state
@@ -9633,7 +9633,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .expect("the ActionMenu must still be present after re-render");
     state.apply_button_action(&ccw_action);
     state.apply_button_action(&ccw_action);
-    assert_eq!(state.text_output.as_deref(), Some("{-1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -27732,12 +27732,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     );
 
     // Dragging a vertex changes both the outline and the readouts.
-    if let manipulate::ControlState::Slider2D { x, y, .. } =
-      &mut state.controls[0]
-    {
-      *x = 6.0;
-      *y = 7.0;
-    }
+    state.slider2d_change(0, 0, 6.0);
+    state.slider2d_change(0, 1, 7.0);
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     let dragged = render(&state);
@@ -27745,9 +27741,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       labeled, dragged,
       "moving a locator must change the rendered triangle"
     );
+    // A dragged point is a machine-real pair, so `N[…, 6]` of the new
+    // area (|(-1)(-12) - (-8)(-9)| / 2 = 30) stays a machine real.
     assert!(
-      !dragged.contains("31.0000"),
-      "the area readout must follow the moved vertex"
+      dragged.contains(">30.<"),
+      "the area readout must follow the moved vertex as a machine real, \
+       got: {dragged}"
     );
   }
 

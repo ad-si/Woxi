@@ -32422,6 +32422,10 @@ pub enum ManipulateControl {
     /// coordinates keep their trailing dot and arithmetic on them stays
     /// numeric instead of piling up exact radicals).
     real: bool,
+    /// The initial point was given with exact coordinates (`{-4, 3}`).
+    /// Wolfram binds the variable to that exact value until the point is
+    /// first dragged, so a `real` control starts out exact.
+    exact_initial: bool,
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -34476,6 +34480,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -34512,6 +34517,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -34555,6 +34561,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -38565,6 +38572,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: var,
     write_callback: None,
     real: false,
+    exact_initial: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -38624,6 +38632,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: "pos".to_string(),
     write_callback: None,
     real: false,
+    exact_initial: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -38760,6 +38769,14 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// unwrapped the same way a scalar bound already is, or it fails to match
 /// `Expr::List` below and the caller's `?` on the resulting `None` drops
 /// the entire control from the panel instead of just widening it.
+/// Whether `e` is a pair of integers, the exact value a Locator keeps
+/// until it is first dragged.
+fn is_exact_pair(e: &Expr) -> bool {
+  let (e, _) = manipulate_bound_expr(e);
+  matches!(e, Expr::List(l) if l.len() == 2
+    && l.iter().all(|c| matches!(c, Expr::Integer(_))))
+}
+
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   let (e, _) = manipulate_bound_expr(e);
   match e {
@@ -40758,6 +40775,7 @@ fn parse_manipulate_control(
           label,
           write_callback: pane_callback,
           real: true,
+          exact_initial: is_exact_pair(&evaluated),
         },
         enabled,
         min_code: None,
@@ -41052,6 +41070,7 @@ fn parse_manipulate_control(
         label,
         write_callback: None,
         real: false,
+        exact_initial: false,
       },
       enabled,
       min_code: None,
@@ -42153,10 +42172,11 @@ pub fn manipulate_initial_bindings(
         x_initial,
         y_initial,
         real,
+        exact_initial,
         ..
       } => Some((
         name.clone(),
-        if *real {
+        if *real && !*exact_initial {
           format!(
             "{{{}, {}}}",
             format_f64_real(*x_initial),
