@@ -29576,8 +29576,71 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  if let Some(grid_args) = column_as_grid_args(args) {
+    return grid_svg_with_gaps(&grid_args, &[]).ok();
+  }
   let svg = column_layout_svg(args)?;
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
+}
+
+/// A `Column` ruled with `Dividers` is a one-column `Grid`: restate it as
+/// the `Grid` arguments (each item in its own row, the positional
+/// alignment and spacing turned into `Alignment`/`Spacings` options) so the
+/// one grid renderer draws the dividers at their positions. Columns
+/// without `Dividers` keep their own layout.
+fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let rest = args.get(1..).unwrap_or(&[]);
+  if items.is_empty()
+    || !rest
+      .iter()
+      .filter_map(option_kv)
+      .any(|(k, _)| k == "Dividers")
+  {
+    return None;
+  }
+  let rule = |key: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(key.to_string())),
+    replacement: Box::new(value),
+  };
+  let rows = items.iter().map(|it| Expr::List(vec![it.clone()].into()));
+  let mut grid_args = vec![Expr::List(rows.collect::<Vec<_>>().into())];
+  let positional: Vec<&Expr> =
+    rest.iter().filter(|a| option_kv(a).is_none()).collect();
+  let has_option =
+    |key: &str| rest.iter().filter_map(option_kv).any(|(k, _)| k == key);
+  // `Column`'s default alignment is `Left`; a `Grid` centers its items.
+  if !has_option("Alignment") {
+    let align = positional
+      .first()
+      .map_or_else(|| Expr::Identifier("Left".to_string()), |a| (*a).clone());
+    grid_args.push(rule("Alignment", align));
+  }
+  // A `Column`'s spacing is the vertical gap only.
+  if let Some(s) = positional.get(1) {
+    grid_args.push(rule(
+      "Spacings",
+      Expr::List(
+        vec![Expr::Identifier("Automatic".to_string()), (*s).clone()].into(),
+      ),
+    ));
+  }
+  for opt in rest.iter().filter(|a| option_kv(a).is_some()) {
+    match option_kv(opt) {
+      Some(("Spacings", v)) if !matches!(v, Expr::List(_)) => {
+        grid_args.push(rule(
+          "Spacings",
+          Expr::List(
+            vec![Expr::Identifier("Automatic".to_string()), v.clone()].into(),
+          ),
+        ))
+      }
+      _ => grid_args.push(opt.clone()),
+    }
+  }
+  Some(grid_args)
 }
 
 /// Paint the box options of a `Column`/`Row` around its laid-out `svg`:
