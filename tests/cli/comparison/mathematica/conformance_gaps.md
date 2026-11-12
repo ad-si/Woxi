@@ -5300,9 +5300,11 @@ With the same scene both engines place every primitive identically, but:
     face (local viewer); Woxi's is the same everywhere. A highlight on a large
     flat face can sit a little off (up to a few levels of 255).
   - `"Spot"` lights are implemented from the documentation's form (cone half
-    angle, `cos^s` falloff, default target the scene center) but were not
-    measured against wolframscript; `"Point"` lights are, without
-    attenuation.
+    angle, `cos^s` falloff, default target the scene center, `{c0, c1, c2}`
+    attenuation) but were not measured against wolframscript; `"Point"`
+    lights are, without attenuation. A fifth element that is not a
+    `{c0, c1, c2}` list leaves the spot unattenuated, which matches a
+    Demonstration snapshot's spot brightness.
   - `MeshShading` colors are lit like a `PlotStyle` color; not measured.
   - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
     lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
@@ -6261,7 +6263,11 @@ internal hash order. Woxi keeps input order.
   1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
-  image, and WL draws long edges as splines through the layers.
+  image, and WL draws long edges as splines through the layers. The
+  automatic layout of a connected directed acyclic graph with several
+  undirected cycles (a Hasse diagram) is layered the same way, with the
+  layers one unit apart; WL centers each layer, Woxi packs it from the
+  left.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs

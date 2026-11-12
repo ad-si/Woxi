@@ -18,7 +18,7 @@
 //! - Arithmetic is on the sRGB channel values directly, no gamma.
 
 use crate::functions::graphics::parse_color;
-use crate::functions::math_ast::expr_to_f64;
+use crate::functions::math_ast::try_eval_to_f64;
 use crate::syntax::Expr;
 
 pub(crate) type Rgb = [f64; 3];
@@ -50,13 +50,15 @@ pub(crate) enum Light {
     attenuation: [f64; 3],
   },
   /// A point light restricted to a cone of half angle `half_angle` about
-  /// the direction toward `target`, fading as `cos^exponent` off its axis.
+  /// the direction toward `target`, fading as `cos^exponent` off its axis
+  /// and with distance as a `Point` light does.
   Spot {
     color: Rgb,
     at: LightPoint,
     target: LightPoint,
     half_angle: f64,
     exponent: f64,
+    attenuation: [f64; 3],
   },
 }
 
@@ -327,9 +329,9 @@ fn parse_light_point(expr: &Expr) -> Option<LightPoint> {
   let vec3 = |e: &Expr| -> Option<[f64; 3]> {
     match e {
       Expr::List(v) if v.len() == 3 => Some([
-        expr_to_f64(&v[0])?,
-        expr_to_f64(&v[1])?,
-        expr_to_f64(&v[2])?,
+        try_eval_to_f64(&v[0])?,
+        try_eval_to_f64(&v[1])?,
+        try_eval_to_f64(&v[2])?,
       ]),
       _ => None,
     }
@@ -357,6 +359,17 @@ fn parse_light_pair(expr: &Expr) -> Option<(LightPoint, Option<LightPoint>)> {
   }
 }
 
+/// The `{c0, c1, c2}` of a light that keeps its strength at any distance.
+const NO_ATTENUATION: [f64; 3] = [1.0, 0.0, 0.0];
+
+/// The intensity factor `1 / (c0 + c1 d + c2 d²)` at distance `d`, or None
+/// where the denominator is not positive.
+fn attenuate(attenuation: &[f64; 3], dist: f64) -> Option<f64> {
+  let falloff =
+    attenuation[0] + attenuation[1] * dist + attenuation[2] * dist * dist;
+  (falloff > 0.0).then(|| 1.0 / falloff)
+}
+
 fn parse_light(expr: &Expr) -> Option<Light> {
   let Expr::List(items) = expr else {
     return None;
@@ -379,11 +392,11 @@ fn parse_light(expr: &Expr) -> Option<Light> {
     ("Point", 3 | 4) => {
       let at = parse_light_point(&items[2])?;
       let attenuation = match items.get(3) {
-        None => [1.0, 0.0, 0.0],
+        None => NO_ATTENUATION,
         Some(Expr::List(c)) if c.len() == 3 => [
-          expr_to_f64(&c[0])?,
-          expr_to_f64(&c[1])?,
-          expr_to_f64(&c[2])?,
+          try_eval_to_f64(&c[0])?,
+          try_eval_to_f64(&c[1])?,
+          try_eval_to_f64(&c[2])?,
         ],
         Some(_) => return None,
       };
@@ -393,13 +406,25 @@ fn parse_light(expr: &Expr) -> Option<Light> {
         attenuation,
       })
     }
-    ("Spot", 4) => {
+    ("Spot", 4 | 5) => {
       let (at, target) = parse_light_pair(&items[2])?;
+      // `{c0, c1, c2}` attenuates with distance. Wolfram also accepts
+      // other values in this place (a Demonstration passes a bare number)
+      // and then draws the spot at full strength, as measured from its
+      // rendered snapshot.
+      let attenuation = match items.get(4) {
+        Some(Expr::List(c)) if c.len() == 3 => [
+          try_eval_to_f64(&c[0])?,
+          try_eval_to_f64(&c[1])?,
+          try_eval_to_f64(&c[2])?,
+        ],
+        _ => NO_ATTENUATION,
+      };
       let (half_angle, exponent) = match &items[3] {
         Expr::List(v) if v.len() == 2 => {
-          (expr_to_f64(&v[0])?, expr_to_f64(&v[1])?)
+          (try_eval_to_f64(&v[0])?, try_eval_to_f64(&v[1])?)
         }
-        e => (expr_to_f64(e)?, 1.0),
+        e => (try_eval_to_f64(e)?, 1.0),
       };
       Some(Light::Spot {
         color,
@@ -407,6 +432,7 @@ fn parse_light(expr: &Expr) -> Option<Light> {
         target: target.unwrap_or(LightPoint::View([0.5; 3])),
         half_angle,
         exponent,
+        attenuation,
       })
     }
     _ => None,
@@ -544,13 +570,10 @@ pub(crate) fn shade(
         attenuation,
       } => {
         let d = sub(frame.place(*at), position);
-        let dist = dot(d, d).sqrt();
-        let falloff =
-          attenuation[0] + attenuation[1] * dist + attenuation[2] * dist * dist;
-        if let Some(l) = normalize(d)
-          && falloff > 0.0
+        if let (Some(l), Some(k)) =
+          (normalize(d), attenuate(attenuation, dot(d, d).sqrt()))
         {
-          add(&mut out, *color, 1.0 / falloff, l);
+          add(&mut out, *color, k, l);
         }
       }
       Light::Spot {
@@ -559,6 +582,7 @@ pub(crate) fn shade(
         target,
         half_angle,
         exponent,
+        attenuation,
       } => {
         let src = frame.place(*at);
         let (Some(l), Some(axis)) = (
@@ -568,8 +592,11 @@ pub(crate) fn shade(
           continue;
         };
         let cos_off = -dot(l, axis);
-        if cos_off >= half_angle.cos() {
-          add(&mut out, *color, cos_off.max(0.0).powf(*exponent), l);
+        let d = sub(src, position);
+        if cos_off >= half_angle.cos()
+          && let Some(k) = attenuate(attenuation, dot(d, d).sqrt())
+        {
+          add(&mut out, *color, k * cos_off.max(0.0).powf(*exponent), l);
         }
       }
     }

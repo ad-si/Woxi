@@ -131,6 +131,26 @@ mod image_size {
     }
   }
 
+  // A rotated left `FrameLabel` longer than a short fixed-size frame is
+  // tall stays inside the image: the padding grows by the label's
+  // overhang past the frame's ends, so the frame shrinks (WL: about 83 pt
+  // tall in a 213 x 132 image, instead of 94 pt with the label running off
+  // the top). `Style[label, 12]` is measured at 12 pt.
+  #[test]
+  fn long_rotated_frame_label_fits_fixed_size() {
+    let svg = svg_of(
+      "ListLinePlot[{{0, 0}, {1, 2.5}}, PlotRange -> {{0, 1}, {0, 2.5}}, \
+       Frame -> True, FrameLabel -> {{Style[\"force (arbitrary units)\", 12], \
+       \"\"}, {Style[\"deformation (arbitrary units)\", 12], \"\"}}, \
+       ImageSize -> {213, 132}]",
+    );
+    assert_eq!(svg_size(&svg), (213.0, 132.0));
+    let (_, h) = curve_extent(&svg);
+    // The SVG is drawn at 10 render units per point.
+    let h = h / 10.0;
+    assert!((80.0..88.0).contains(&h), "frame height {h}");
+  }
+
   // `ImageSize -> {Automatic, h}` fixes the height of a list plot too.
   #[test]
   fn list_plot_fixed_height() {

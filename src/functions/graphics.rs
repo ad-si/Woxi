@@ -5455,7 +5455,55 @@ fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
     }
     _ => false,
   };
-  arithmetic && has_script_head(expr)
+  arithmetic && (has_script_head(expr) || is_raised_power(expr))
+}
+
+/// Is `e` a power that typesets as a raised exponent (`a^2`, `x^n`,
+/// `Style[a, Italic]^15`) rather than as a quotient or a root?
+fn is_raised_power(e: &Expr) -> bool {
+  let raised = |exp: &Expr| match exp {
+    Expr::Integer(k) => *k > 1,
+    Expr::Identifier(_) | Expr::String(_) => true,
+    _ => false,
+  };
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Power"
+        && args.len() == 2
+        && raised(&args[1])
+        && !has_quotient_power(&args[0])
+    }
+    Expr::BinaryOp { op, left, right } => {
+      matches!(op, BinaryOperator::Power)
+        && raised(right)
+        && !has_quotient_power(left)
+    }
+    _ => false,
+  }
+}
+
+/// Does `e` hold a power that typesets as a fraction or a root (`x^-1`,
+/// `x^(1/2)`), which a one-line run of scripts cannot show?
+fn has_quotient_power(e: &Expr) -> bool {
+  let quotient = |exp: &Expr| {
+    !matches!(exp, Expr::Integer(k) if *k > 0)
+      && !matches!(exp, Expr::Identifier(_) | Expr::String(_))
+  };
+  match e {
+    Expr::FunctionCall { name, args } => {
+      (name == "Power" && args.len() == 2 && quotient(&args[1]))
+        || args.iter().any(has_quotient_power)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      (matches!(op, BinaryOperator::Power | BinaryOperator::Divide)
+        && quotient(right))
+        || matches!(op, BinaryOperator::Divide)
+        || has_quotient_power(left)
+        || has_quotient_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_quotient_power(operand),
+    _ => false,
+  }
 }
 
 fn graphics_text_content(expr: &Expr) -> String {
@@ -7315,12 +7363,23 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
+  //
+  // A nested `Text[content]` (a label written `Text[Style[x, 16]]`, as a
+  // graph's `VertexLabels` often are) and a `Tooltip[content, tip]` (whose
+  // tip a static picture cannot show) only wrap the content, so the
+  // `Style` inside them still applies.
   let mut content = framed_body;
   let mut style_line_anchor: Option<&'static str> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
-    && is_style_wrapper(name)
     && !sargs.is_empty()
   {
+    if (name == "Text" && sargs.len() == 1) || name == "Tooltip" {
+      content = &sargs[0];
+      continue;
+    }
+    if !is_style_wrapper(name) {
+      break;
+    }
     for d in style_directives_in_application_order(&sargs[1..]) {
       apply_directive(d, &mut local_style);
       apply_text_style_directive(d, &mut local_style);
@@ -10764,6 +10823,20 @@ fn graphics_decorations(
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
+      let length = |s: &String| {
+        if s.is_empty() {
+          return 0.0;
+        }
+        axes_label_picture_size(s).map_or_else(
+          || {
+            let size = crate::functions::plot_padding::markup_font_size(s)
+              .unwrap_or(LABEL_FONT);
+            crate::functions::plot_padding::label_width(s, size)
+          },
+          |(w, _)| w,
+        )
+      };
+      d.frame_label_lengths = [length(b), length(l), length(t), length(r)];
     }
   } else if axes.0 || axes.1 {
     d.axes = axes;
@@ -14013,8 +14086,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let fixed_h =
     ((explicit_size && size_names_height) || capped_tall).then_some(svg_h);
-  let pad = decorations.solve(svg_w, |w| match fixed_h {
-    Some(h) => (h - 16.0).min(w * drawing_aspect),
+  let pad = decorations.solve(svg_w, |w, pad| match fixed_h {
+    Some(h) => {
+      (h - 16.0f64.max(pad.bottom + pad.above())).min(w * drawing_aspect)
+    }
     None => w * drawing_aspect,
   });
   let (margin_left, margin_right, margin_bottom, margin_top) =
@@ -21069,19 +21144,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Show's arguments reach it held, but Show is not HoldAll in Wolfram
   // Language: a list of graphics evaluates as a list first, so a `Nothing`
   // element (e.g. a variable set to `If[c, g, Nothing]`) is dropped.
-  let evaluated: Vec<Expr>;
-  let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::List(_))) {
-    evaluated = args
-      .iter()
-      .map(|a| match a {
-        Expr::List(_) => evaluate_expr_to_expr(a),
-        other => Ok(other.clone()),
-      })
-      .collect::<Result<_, _>>()?;
-    &evaluated
-  } else {
-    args
-  };
+  // Options evaluate too: `Lighting -> lights` uses the value of `lights`,
+  // and a symbol holding `Sequence[opt1, opt2]` splices its options in.
+  let mut evaluated: Vec<Expr> = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::List(_) | Expr::Rule { .. } => {
+        evaluated.push(evaluate_expr_to_expr(a)?);
+      }
+      Expr::Identifier(_) => match &evaluate_expr_to_expr(a)? {
+        Expr::FunctionCall { name, args: items } if name == "Sequence" => {
+          evaluated.extend(items.iter().cloned());
+        }
+        _ => evaluated.push(a.clone()),
+      },
+      other => evaluated.push(other.clone()),
+    }
+  }
+  let args: &[Expr] = &evaluated;
   // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
   // graphic inside and keeps its legend on the result, as Wolfram does:
   // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
@@ -22081,10 +22161,25 @@ fn grid_ast_internal(
   // A grid whose cells are all graphics is a layout of pictures, not of
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
-  if !parens
-    && let Some(rows) = grid_of_graphics_svgs(args)
-    && let Some(combined) = combine_graphics_svgs(&rows)
-  {
+  if !parens && let Some(rows) = grid_of_graphics_svgs(args) {
+    // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
+    // are honored by the one layout `expr_to_svg` gives a `Grid` holding
+    // pictures; the bare composition below would silently drop them.
+    if args.len() > 1 {
+      let grid = Expr::FunctionCall {
+        name: "Grid".to_string(),
+        args: args.to_vec().into(),
+      };
+      let svg = crate::evaluator::expr_to_svg(&grid);
+      if !svg.is_empty() {
+        crate::clear_captured_graphics();
+        return Ok(crate::graphics_result(svg));
+      }
+    }
+    let Some(combined) = combine_graphics_svgs(&rows) else {
+      let svg = grid_svg_internal(args, group_gaps, parens)?;
+      return Ok(crate::graphics_result(svg));
+    };
     crate::clear_captured_graphics();
     return Ok(crate::graphics_result(with_grid_background(
       combined,
@@ -25776,17 +25871,17 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
 // ── Combine multiple Graphics SVGs into a grid ─────────────────────────
 
 /// Parsed metadata from an SVG element
-struct ParsedSvg {
+pub(crate) struct ParsedSvg {
   view_box: String,
   inner_content: String,
   /// Natural display width from the root `width="..."` attribute, if present.
   /// Falls back to the viewBox width when the attribute is missing. Used by
   /// `combine_svgs_grid` to pick a default total width that lets each cell
   /// render near its native size instead of being scaled down to illegibility.
-  nat_w: f64,
+  pub(crate) nat_w: f64,
   /// Natural display height from the root `height="..."` attribute, if
   /// present. Falls back to the viewBox height when the attribute is missing.
-  nat_h: f64,
+  pub(crate) nat_h: f64,
 }
 
 /// Parse a numeric attribute value like `width="360"` or `height="225px"` from
@@ -26021,7 +26116,7 @@ pub(crate) fn embed_svg_in_rect(
 }
 
 /// Parse width, height, and viewBox from an SVG string
-fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
+pub(crate) fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG
   // wrapper produced for `Image[…]`) synthesizes it from width/height so
   // raster images can take part in GraphicsRow/Column/Grid layouts.
@@ -30280,7 +30375,9 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
           Expr::List(dims) if dims.len() == 2 => {
             Some((expr_to_f64(&dims[0])?, expr_to_f64(&dims[1])?))
           }
-          other => Some((expr_to_f64(other)?, 14.0 * 1.2)),
+          // A width alone leaves the height to the content, which the
+          // `Pane`'s own renderer wraps and sizes (see `framed_box_to_svg`).
+          _ => None,
         })
         .or_else(|| pane_content_size(&args[0])),
     },
@@ -30290,6 +30387,25 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
       pane_content_size(&args[0])
     }
     _ => None,
+  }
+}
+
+/// Whether `expr` is a `Pane` that sets a width alone (`Pane[e, w]`,
+/// `Pane[e, ImageSize -> w]`), possibly under `Text`/`Style`/`Deploy`/`Item`.
+fn width_only_pane(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  match name.as_str() {
+    "Pane" if !args.is_empty() => {
+      crate::evaluator::dispatch::io_functions::pane_fixed_size(args).is_none()
+        && crate::evaluator::dispatch::io_functions::pane_width_only(args)
+          .is_some()
+    }
+    "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+      width_only_pane(&args[0])
+    }
+    _ => false,
   }
 }
 
@@ -30503,6 +30619,21 @@ fn framed_box_to_svg(
   // is drawn and framed, rather than printed as its own source text.
   let (inner_svg, inner_w, inner_h) = match inner_svg {
     None if crate::evaluator::lays_out_a_graphic(content) => {
+      let svg = crate::evaluator::expr_to_svg(content);
+      if svg.starts_with("<svg") {
+        let (w, h) = parse_svg_wh(&svg);
+        (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
+
+  // A text in a `Pane` of a given width (`Framed[Text@Pane[…, 300]]`) is
+  // wrapped at that width by the pane's own renderer and framed as drawn.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None if width_only_pane(content) => {
       let svg = crate::evaluator::expr_to_svg(content);
       if svg.starts_with("<svg") {
         let (w, h) = parse_svg_wh(&svg);
@@ -32428,6 +32559,10 @@ pub enum ManipulateControl {
     /// coordinates keep their trailing dot and arithmetic on them stays
     /// numeric instead of piling up exact radicals).
     real: bool,
+    /// The initial point was given with exact coordinates (`{-4, 3}`).
+    /// Wolfram binds the variable to that exact value until the point is
+    /// first dragged, so a `real` control starts out exact.
+    exact_initial: bool,
   },
   /// An interval control (`ControlType -> IntervalSlider`). Binds its
   /// variable to a 2-vector `{low, high}` describing the selected range.
@@ -34482,6 +34617,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -34518,6 +34654,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -34561,6 +34698,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       label: var,
       write_callback: None,
       real: false,
+      exact_initial: false,
     });
   }
 
@@ -35998,14 +36136,16 @@ fn contains_body_button(expr: &Expr) -> bool {
   }
 }
 
-/// Replace every `TogglerBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
+/// Replace every `TogglerBar`/`CheckboxBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
 /// …]` in a Manipulate body with `Nothing`, pushing each one's InputForm onto
 /// `displays` so the front-end renders it as a live widget instead of a
 /// static picture.
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if (name == "TogglerBar" || name == "Checkbox")
+      if (name == "TogglerBar"
+        || name == "CheckboxBar"
+        || name == "Checkbox")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: dname, args: dargs })
@@ -38571,6 +38711,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: var,
     write_callback: None,
     real: false,
+    exact_initial: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -38630,6 +38771,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     label: "pos".to_string(),
     write_callback: None,
     real: false,
+    exact_initial: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -38766,6 +38908,14 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// unwrapped the same way a scalar bound already is, or it fails to match
 /// `Expr::List` below and the caller's `?` on the resulting `None` drops
 /// the entire control from the panel instead of just widening it.
+/// Whether `e` is a pair of integers, the exact value a Locator keeps
+/// until it is first dragged.
+fn is_exact_pair(e: &Expr) -> bool {
+  let (e, _) = manipulate_bound_expr(e);
+  matches!(e, Expr::List(l) if l.len() == 2
+    && l.iter().all(|c| matches!(c, Expr::Integer(_))))
+}
+
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
   let (e, _) = manipulate_bound_expr(e);
   match e {
@@ -39492,7 +39642,33 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     Expr::String(s) => {
       inline_box_label_runs(s, italic).unwrap_or_else(|| output_run(italic))
     }
-    _ => output_run(italic),
+    // A label is typeset in StandardForm, which draws the named constants
+    // of a number as their glyphs: an angle choice `15 Degree` reads
+    // `15 °` and `Pi/2` reads `π/2`, not their OutputForm names. Only a
+    // label free of strings is rewritten, so text that merely spells a
+    // constant's name (`f["I"]`) keeps it.
+    _ => {
+      if crate::syntax::expr_to_source_form(expr).contains('"') {
+        return output_run(italic);
+      }
+      // `ToString` spaces a product the way the notebook does (`15 Degree`);
+      // a quotient it stacks over several lines keeps the one-line
+      // OutputForm (`Pi/2`) instead.
+      let mut runs = match crate::functions::string_ast::to_string_ast(
+        std::slice::from_ref(expr),
+      ) {
+        Ok(Expr::String(ref s)) if !s.contains('\n') => vec![LabelRun {
+          text: s.clone(),
+          italic,
+          ..Default::default()
+        }],
+        _ => output_run(italic),
+      };
+      for run in &mut runs {
+        run.text = typeset_constants_in_text(&run.text);
+      }
+      runs
+    }
   }
 }
 
@@ -40467,10 +40643,13 @@ fn parse_manipulate_control(
       // A string label still goes through the label renderer: it may carry
       // inline `\!\(\*SubscriptBox[…]\)` typesetting.
       // A caption indexing a notebook list (`names[[3]]`) shows the element,
-      // so it is resolved against the current definitions first.
+      // and one built by an `Initialization`-defined helper
+      // (`styler["n"]` with `styler = Style[#, Italic] &`) shows what the
+      // helper makes, so it is resolved against the current definitions
+      // first.
       let lbl = match head_items.get(2) {
         Some(other) => match resolve_choice_label(other) {
-          Some(resolved @ Expr::String(_)) => {
+          Some(resolved @ (Expr::String(_) | Expr::FunctionCall { .. })) => {
             manipulate_label_runs(&resolved, false)
           }
           _ => manipulate_label_runs(other, false),
@@ -40738,6 +40917,7 @@ fn parse_manipulate_control(
           label,
           write_callback: pane_callback,
           real: true,
+          exact_initial: is_exact_pair(&evaluated),
         },
         enabled,
         min_code: None,
@@ -41032,6 +41212,7 @@ fn parse_manipulate_control(
         label,
         write_callback: None,
         real: false,
+        exact_initial: false,
       },
       enabled,
       min_code: None,
@@ -41154,8 +41335,11 @@ fn parse_manipulate_control(
     if let Some(cond) = &enabled {
       bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
     }
+    // Keep the requested head: a `CheckboxBar` draws checkboxes, a
+    // `TogglerBar` toggle buttons.
+    let bar_head = control_type.as_deref().unwrap_or("TogglerBar");
     let bar = format!(
-      "TogglerBar[Dynamic[{name}], {}{bar_options}]",
+      "{bar_head}[Dynamic[{name}], {}{bar_options}]",
       crate::syntax::expr_to_source_form(&choices)
     );
     let display = if label.is_empty() {
@@ -41438,7 +41622,7 @@ fn parse_manipulate_control(
   if let Some(built) = &built
     && let Ok(evaluated) = evaluate_expr_to_expr(built)
     && let Expr::FunctionCall { name: ev_name, .. } = &evaluated
-    && ev_name == "TogglerBar"
+    && (ev_name == "TogglerBar" || ev_name == "CheckboxBar")
   {
     let value = explicit_initial
       .as_ref()
@@ -42133,10 +42317,11 @@ pub fn manipulate_initial_bindings(
         x_initial,
         y_initial,
         real,
+        exact_initial,
         ..
       } => Some((
         name.clone(),
-        if *real {
+        if *real && !*exact_initial {
           format!(
             "{{{}, {}}}",
             format_f64_real(*x_initial),
@@ -43285,6 +43470,9 @@ pub enum DisplayNode {
     mutation: String,
     selected: bool,
     enabled: bool,
+    /// The choice belongs to a `CheckboxBar`, which Wolfram draws as a
+    /// checkbox followed by its label rather than as a toggle button.
+    checkbox: bool,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -43836,8 +44024,9 @@ fn display_expr_to_node(
       }
       // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
       // buttons; clicking one adds/removes its value from the list `var`.
-      "TogglerBar" if args.len() >= 2 => {
-        match togglerbar_node(args, bindings, probes, ons) {
+      "TogglerBar" | "CheckboxBar" if args.len() >= 2 => {
+        let checkbox = name == "CheckboxBar";
+        match togglerbar_node(args, checkbox, bindings, probes, ons) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -44389,6 +44578,7 @@ fn find_unique_assignment_target(expr: &Expr) -> Option<String> {
 /// static rendering (as it does for any other shape it doesn't recognize).
 fn togglerbar_node(
   args: &[Expr],
+  checkbox: bool,
   bindings: &[(String, String)],
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
@@ -44465,6 +44655,7 @@ fn togglerbar_node(
       mutation,
       selected,
       enabled,
+      checkbox,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -44551,6 +44742,7 @@ fn setterbar_node(
       mutation,
       selected,
       enabled,
+      checkbox: false,
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -45020,12 +45212,14 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       mutation,
       selected,
       enabled,
+      checkbox,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
       enabled,
+      checkbox,
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,
@@ -45746,6 +45940,24 @@ mod manipulate_dynamic_control_list_tests {
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
       }
       other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A control caption built by a helper the notebook defined
+  /// (`labelStyle["n"]` with `labelStyle = Style[#, Italic] &`) shows what
+  /// the helper makes — an italic `n` — not the unevaluated call.
+  #[test]
+  fn helper_built_control_caption_is_evaluated() {
+    let _ = crate::interpret_with_stdout("captionHelper = Style[#, Italic] &;");
+    let s = spec("Manipulate[k, {{k, 3, captionHelper[\"k\"]}, 1, 10, 1}]");
+    match &s.controls[0] {
+      ManipulateControl::Continuous {
+        label, label_runs, ..
+      } => {
+        assert_eq!(label, "k");
+        assert!(label_runs.iter().all(|r| r.italic), "{label_runs:?}");
+      }
+      other => panic!("expected a Continuous control, got {other:?}"),
     }
   }
 
@@ -47009,6 +47221,30 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// An unlabeled choice that is an angle (`15 Degree`) reads the way a
+  /// notebook typesets it, with the degree sign, not as its InputForm,
+  /// and so do other named constants (`Pi/2` reads `π/2`).
+  #[test]
+  fn choice_labels_typeset_degree_angles() {
+    let control = discrete_control(
+      "Manipulate[a, {{a, 45 Degree, \"angle\"}, \
+        {15 Degree, 45 Degree, Pi/2, 2 Pi}, ControlType -> RadioButton}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(value_labels, &["15 °", "45 °", "π/2", "2 π"]);
+        assert_eq!(values[0], "15*Degree");
+        assert_eq!(*initial_index, 1);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
