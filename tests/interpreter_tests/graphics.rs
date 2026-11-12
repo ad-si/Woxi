@@ -21658,10 +21658,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg(
         "ArrayPlot[{Range[0, 1000]}, AspectRatio -> 1/4, ImageSize -> {500, 200}]",
       );
+      // The plot is 500 x 125, centered in the 500 x 200 `ImageSize` box.
       assert!(
-        svg.starts_with("<svg width=\"500\" height=\"125\""),
+        svg.starts_with("<svg width=\"500\" height=\"200\""),
         "unexpected header: {}",
         svg.lines().next().unwrap_or("")
+      );
+      assert!(
+        svg.contains("y=\"38\" width=\"500\" height=\"125\""),
+        "{svg}"
       );
       let tall = export_svg("ArrayPlot[{{1, 2}, {3, 4}}, AspectRatio -> 2]");
       assert!(!tall.starts_with("<svg width=\"0\""));
@@ -21669,24 +21674,73 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
     #[test]
     fn array_plot_image_size_pair_is_a_bounding_box() {
-      // Regression: `ImageSize -> {w, h}` bounds the picture; a nearly
-      // square grid used to overflow the height.
+      // Regression: `ImageSize -> {w, h}` bounds the plot; a nearly
+      // square grid used to overflow the height. The picture keeps the
+      // whole `{w, h}` box, with the plot centered in it the way the front
+      // end shows it (a narrow plot is not shrunk to its own width).
+      let header = |svg: &str| -> (String, String) {
+        let mut lines = svg.lines();
+        let outer = lines.next().unwrap_or("").to_string();
+        let inner = lines.next().unwrap_or("").to_string();
+        (outer, inner)
+      };
       let square = export_svg(
         "ArrayPlot[{{1, 0}, {0, 1}}, Frame -> False, ImageSize -> {500, 325}]",
       );
+      let (outer, inner) = header(&square);
       assert!(
-        square.starts_with("<svg width=\"326\" height=\"325\""),
-        "unexpected header: {}",
-        square.lines().next().unwrap_or("")
+        outer.starts_with("<svg width=\"500\" height=\"325\""),
+        "{outer}"
+      );
+      assert!(
+        inner.starts_with("<svg x=\"87\" y=\"0\" width=\"326\" height=\"325\""),
+        "{inner}"
       );
       let wide = export_svg(
         "ArrayPlot[{{1, 0, 1, 1}}, Frame -> False, ImageSize -> {500, 325}]",
       );
-      assert!(wide.starts_with("<svg width=\"500\" height=\"139\""));
+      let (outer, inner) = header(&wide);
+      assert!(
+        outer.starts_with("<svg width=\"500\" height=\"325\""),
+        "{outer}"
+      );
+      assert!(
+        inner.starts_with("<svg x=\"0\" y=\"93\" width=\"500\" height=\"139\""),
+        "{inner}"
+      );
       let tall = export_svg(
         "ArrayPlot[{{1}, {0}, {1}, {1}}, Frame -> False, ImageSize -> {500, 200}]",
       );
-      assert!(tall.starts_with("<svg width=\"56\" height=\"200\""));
+      let (outer, inner) = header(&tall);
+      assert!(
+        outer.starts_with("<svg width=\"500\" height=\"200\""),
+        "{outer}"
+      );
+      assert!(
+        inner.starts_with("<svg x=\"222\" y=\"0\" width=\"56\" height=\"200\""),
+        "{inner}"
+      );
+      // A single size is not a box: the picture takes the plot's shape.
+      let single =
+        export_svg("ArrayPlot[{{1}, {0}, {1}, {1}}, ImageSize -> 100]");
+      assert!(
+        !single.starts_with("<svg width=\"100\" height=\"100\""),
+        "{single}"
+      );
+    }
+
+    #[test]
+    fn framed_array_plot_keeps_image_size_box() {
+      // Regression: a tall array in `Framed[ArrayPlot[…, ImageSize ->
+      // {375, 375}]]` was framed at its own narrow width instead of the
+      // square box.
+      let svg = export_svg(
+        "Framed[ArrayPlot[Table[Mod[i + j, 2], {i, 57}, {j, 50}], Frame -> False, ImageSize -> {375, 375}]]",
+      );
+      assert!(
+        svg.starts_with("<svg width=\"385\" height=\"385\""),
+        "{svg}"
+      );
     }
 
     #[test]
@@ -26979,6 +27033,32 @@ mod graphics_grid {
     .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">label</text>"), "{svg}");
+  }
+
+  /// Regression: a displayed `Grid` of pictures dropped its options, so
+  /// `Frame -> All` drew no lines (and `FrameStyle` no color) — while the
+  /// same grid inside a `Column` was framed.
+  #[test]
+  fn grid_of_graphics_keeps_frame_options() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[Disk[], ImageSize -> 20], \
+              Graphics[Disk[], ImageSize -> 10]}}, \
+            Frame -> All, FrameStyle -> Gray]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    // Top, bottom, and three vertical rules (outer edges and the divider).
+    assert_eq!(svg.matches("<line").count(), 5, "{svg}");
+    assert!(svg.contains("stroke=\"rgb(128,128,128)\""), "{svg}");
+    // Without options the pictures are still composed without a frame.
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[Disk[], ImageSize -> 20], \
+              Graphics[Disk[], ImageSize -> 10]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(svg.matches("<line").count(), 0, "{svg}");
   }
 
   /// `Overlay[{expr1, expr2, ...}]` stacks its items on top of each other

@@ -21935,10 +21935,25 @@ fn grid_ast_internal(
   // A grid whose cells are all graphics is a layout of pictures, not of
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
-  if !parens
-    && let Some(rows) = grid_of_graphics_svgs(args)
-    && let Some(combined) = combine_graphics_svgs(&rows)
-  {
+  if !parens && let Some(rows) = grid_of_graphics_svgs(args) {
+    // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
+    // are honored by the one layout `expr_to_svg` gives a `Grid` holding
+    // pictures; the bare composition below would silently drop them.
+    if args.len() > 1 {
+      let grid = Expr::FunctionCall {
+        name: "Grid".to_string(),
+        args: args.to_vec().into(),
+      };
+      let svg = crate::evaluator::expr_to_svg(&grid);
+      if !svg.is_empty() {
+        crate::clear_captured_graphics();
+        return Ok(crate::graphics_result(svg));
+      }
+    }
+    let Some(combined) = combine_graphics_svgs(&rows) else {
+      let svg = grid_svg_internal(args, group_gaps, parens)?;
+      return Ok(crate::graphics_result(svg));
+    };
     crate::clear_captured_graphics();
     return Ok(crate::graphics_result(with_grid_background(
       combined,
@@ -25630,17 +25645,17 @@ fn dataset_list_to_svg(items: &[Expr]) -> Option<String> {
 // ── Combine multiple Graphics SVGs into a grid ─────────────────────────
 
 /// Parsed metadata from an SVG element
-struct ParsedSvg {
+pub(crate) struct ParsedSvg {
   view_box: String,
   inner_content: String,
   /// Natural display width from the root `width="..."` attribute, if present.
   /// Falls back to the viewBox width when the attribute is missing. Used by
   /// `combine_svgs_grid` to pick a default total width that lets each cell
   /// render near its native size instead of being scaled down to illegibility.
-  nat_w: f64,
+  pub(crate) nat_w: f64,
   /// Natural display height from the root `height="..."` attribute, if
   /// present. Falls back to the viewBox height when the attribute is missing.
-  nat_h: f64,
+  pub(crate) nat_h: f64,
 }
 
 /// Parse a numeric attribute value like `width="360"` or `height="225px"` from
@@ -25875,7 +25890,7 @@ pub(crate) fn embed_svg_in_rect(
 }
 
 /// Parse width, height, and viewBox from an SVG string
-fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
+pub(crate) fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
   // Extract the viewBox attribute; an SVG without one (e.g. the base64-PNG
   // wrapper produced for `Image[…]`) synthesizes it from width/height so
   // raster images can take part in GraphicsRow/Column/Grid layouts.

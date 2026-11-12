@@ -7622,7 +7622,61 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let structure = call("Graphics", structure_args);
+  let buf = match explicit_image_size_box(args, 1) {
+    Some((box_w, box_h)) => letterbox_svg(buf, box_w, box_h),
+    None => buf,
+  };
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`
+/// when both sides are explicit numbers. Such a pair fixes the size of the
+/// whole picture: a plot of another shape is drawn inside it, centered,
+/// rather than shrinking the picture to the plot.
+fn explicit_image_size_box(args: &[Expr], start: usize) -> Option<(u32, u32)> {
+  args.iter().skip(start).find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      match &value {
+        Expr::List(items) if items.len() == 2 => {
+          let w = try_eval_to_f64(&items[0]).filter(|v| *v > 0.0)?;
+          let h = try_eval_to_f64(&items[1]).filter(|v| *v > 0.0)?;
+          Some((w.round() as u32, h.round() as u32))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  })
+}
+
+/// Center `svg` in a `box_w` x `box_h` canvas when it is smaller than that
+/// in either dimension (the way the front end places a picture whose
+/// `ImageSize -> {w, h}` box has another shape than its plot).
+fn letterbox_svg(svg: String, box_w: u32, box_h: u32) -> String {
+  let Some(dims) = crate::functions::graphics::parse_svg_dimensions(&svg)
+  else {
+    return svg;
+  };
+  let (w, h) = (dims.nat_w, dims.nat_h);
+  let (bw, bh) = (f64::from(box_w), f64::from(box_h));
+  if w >= bw - 0.5 && h >= bh - 0.5 {
+    return svg;
+  }
+  let (out_w, out_h) = (bw.max(w), bh.max(h));
+  let Some(rest) = svg.strip_prefix("<svg") else {
+    return svg;
+  };
+  format!(
+    "<svg width=\"{out_w}\" height=\"{out_h}\" viewBox=\"0 0 {out_w} {out_h}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n<svg x=\"{}\" y=\"{}\"{rest}</svg>",
+    ((out_w - w) / 2.0).round(),
+    ((out_h - h) / 2.0).round(),
+  )
 }
 
 /// One explicit frame tick: a position in the plot's coordinates, its label
