@@ -3586,6 +3586,49 @@ mod tests {
     assert_eq!(bounds, Some((1.0, 15.0, 2.0)));
   }
 
+  /// A custom control `{{e, init, "end"}, Dynamic[Manipulator[#, {s + 1,
+  /// n, 1}, …]]&}` is the same slider as `{{e, init, "end"}, s + 1, n, 1}`:
+  /// it gets a visible row whose range follows the other controls.
+  /// Regression: the `Manipulator` builder (and its extra `Dynamic`
+  /// wrapper) left `e` a hidden state variable with no slider at all.
+  #[test]
+  fn manipulator_builder_becomes_slider_following_other_controls() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{n, s, e},
+        {{n, 10, \"size\"}, 5, 30, 1},
+        {{s, 2, \"start\"}, 1, 4, 1},
+        {{e, s + 3, \"end\"},
+          Dynamic[Manipulator[#, {s + 1, n, 1}, Appearance -> \"Labeled\"]] &}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        } if name == "e" => Some((label.clone(), *min, *max, *current)),
+        _ => None,
+      })
+    };
+    assert_eq!(bounds(&state), Some(("end".to_string(), 3.0, 10.0, 5.0)));
+    for c in state.controls.iter_mut() {
+      if let ControlState::Continuous { name, current, .. } = c
+        && name == "n"
+      {
+        *current = 20.0;
+      }
+    }
+    state.reevaluate();
+    assert_eq!(bounds(&state), Some(("end".to_string(), 3.0, 20.0, 5.0)));
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —

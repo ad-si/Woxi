@@ -41261,12 +41261,24 @@ fn parse_manipulate_control(
   };
   // `Slider[Dynamic[v], {min, max, step}, opts…]&` builds exactly the
   // slider the plain `{{v, init, label}, min, max, step, opts…}` spec
-  // declares, so restate the spec that way.
+  // declares, so restate the spec that way. A `Manipulator` (a slider with
+  // step buttons and an optional value field) restates the same way, and a
+  // builder may wrap the widget in further `Dynamic[…]`s so its range can
+  // follow other controls (`Dynamic[Manipulator[#, {v + 1, n, 1}]]&`) —
+  // the restated spec's bounds already re-resolve against the live
+  // bindings, so those wrappers carry no extra meaning.
+  let mut built_widget = built.as_ref();
+  while let Some(Expr::FunctionCall { name: n, args: a }) = built_widget
+    && n == "Dynamic"
+    && a.len() == 1
+  {
+    built_widget = Some(&a[0]);
+  }
   if let Some(Expr::FunctionCall {
     name: built_name,
     args: built_args,
-  }) = &built
-    && built_name == "Slider"
+  }) = built_widget
+    && matches!(built_name.as_str(), "Slider" | "Manipulator")
     && built_args.len() >= 2
     && matches!(
       &built_args[0],
