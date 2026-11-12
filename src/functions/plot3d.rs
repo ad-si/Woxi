@@ -2970,10 +2970,15 @@ fn image_height_is_explicit(opts: &[Expr]) -> bool {
       replacement,
     } => match pattern.as_ref() {
       Expr::Identifier(n) if n == "ImageSize" => {
-        matches!(
-          replacement.as_ref(),
-          Expr::List(items) if items.len() == 2
-        ) || matches!(replacement.as_ref(), Expr::Identifier(f) if f == "Full")
+        // The plot holds its options: `ImageSize -> size` or `0.5 size`
+        // still has to be evaluated to its `{w, h}`.
+        let value = match replacement.as_ref() {
+          Expr::List(_) => replacement.as_ref().clone(),
+          other => crate::evaluator::evaluate_expr_to_expr(other)
+            .unwrap_or_else(|_| other.clone()),
+        };
+        matches!(&value, Expr::List(items) if items.len() == 2)
+          || matches!(&value, Expr::Identifier(f) if f == "Full")
       }
       Expr::Identifier(n) if n == "AspectRatio" => true,
       _ => false,

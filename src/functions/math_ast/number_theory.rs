@@ -2765,8 +2765,8 @@ fn fibonacci_pair(n: u128) -> (BigInt, BigInt) {
     let c = &a * (&two_b - &a); // F(2k)
     let d = &a * &a + &b * &b; // F(2k + 1)
     if (n >> bit) & 1 == 1 {
-      a = d.clone();
-      b = c + d;
+      b = &c + &d;
+      a = d;
     } else {
       a = c;
       b = d;
