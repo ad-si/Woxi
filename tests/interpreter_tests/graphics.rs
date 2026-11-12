@@ -30039,6 +30039,34 @@ mod graphics_complex_normal {
     );
   }
 
+  /// Regression: the end points of a `Cylinder`/`Cone` in a complex stayed
+  /// indices, so a ball-and-stick model drew its atoms but no bonds.
+  #[test]
+  fn cylinder_and_cone_indices_are_resolved() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 2, 0}}, \
+         {Cylinder[{1, 2}, 0.5], Cone[{3, 1}, 1]}]]"
+      )
+      .unwrap(),
+      "{Cylinder[{{0, 0, 0}, {1, 0, 0}}, 0.5], Cone[{{0, 2, 0}, {0, 0, 0}}, 1]}"
+    );
+  }
+
+  #[test]
+  fn indexed_cylinders_draw_like_explicit_ones() {
+    let indexed = export_svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {4, 0, 0}, {0, 3, 1}}, \
+       {Sphere[1, 0.5], Cylinder[{1, 2}, 0.2], Cylinder[{1, 3}, 0.2]}]]",
+    );
+    let explicit = export_svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 0.5], \
+       Cylinder[{{0, 0, 0}, {4, 0, 0}}, 0.2], \
+       Cylinder[{{0, 0, 0}, {0, 3, 1}}, 0.2]}]",
+    );
+    assert_eq!(indexed, explicit);
+  }
+
   #[test]
   fn multi_primitives_are_split() {
     assert_eq!(
@@ -53100,6 +53128,86 @@ mod overscript_bar_accent {
     assert!(
       svg.contains(">b\u{0305}</text>"),
       "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
+    );
+  }
+}
+
+mod pane_layout {
+  use super::*;
+
+  fn studio_svg(code: &str) -> String {
+    clear_state();
+    woxi::interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("a rendered picture")
+  }
+
+  /// Regression: a `Column` of fixed-size `Pane`s dropped the panes and set
+  /// each automatically sized graphic at its full default size, so the
+  /// boxes lost their width, height and centering.
+  #[test]
+  fn column_items_keep_their_pane_boxes() {
+    let svg = studio_svg(
+      "Column[{\
+         Pane[Graphics[Text[Style[\"title\", 24], {0, 1}]], \
+           ImageSize -> {600, 75}, Alignment -> Center], \
+         Pane[Graphics[Disk[]], ImageSize -> {600, 300}, Alignment -> Center]}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"600\" height=\"375\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("width=\"600.0\" height=\"75.0\"")
+        && svg.contains("width=\"600.0\" height=\"300.0\""),
+      "each pane keeps its box: {svg}"
+    );
+    // The pictures shrink to fit their boxes and sit centered in them.
+    assert!(
+      svg.contains("<g transform=\"translate(262.5 0.0)\">"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("<g transform=\"translate(150.0 0.0)\">"),
+      "{svg}"
+    );
+  }
+
+  /// An automatically sized graphic shrunk to fit a `Pane` is redrawn at
+  /// that size, so its text keeps its absolute font size instead of being
+  /// scaled down with the drawing.
+  #[test]
+  fn shrunk_graphic_keeps_its_font_size() {
+    let svg = studio_svg(
+      "Pane[Graphics[Text[Style[\"title\", 24], {0, 1}]], \
+       ImageSize -> {600, 75}, Alignment -> Center]",
+    );
+    assert!(
+      svg.contains("viewBox=\"0 0 75 75\"") && svg.contains("font-size=\"24\""),
+      "{svg}"
+    );
+  }
+
+  /// Regression: `Style[picture, Magnification -> m]` drew the picture at
+  /// its own size.
+  #[test]
+  fn magnification_scales_pictures() {
+    for picture in [
+      "Graphics[Disk[], ImageSize -> 50]",
+      "Graphics3D[Sphere[], ImageSize -> 50]",
+    ] {
+      let svg = studio_svg(&format!("Style[{picture}, Magnification -> 3]"));
+      assert!(svg.starts_with("<svg width=\"150.0\""), "{picture}: {svg}");
+    }
+    let svg = studio_svg(
+      "Pane[Style[Image[ConstantArray[0.5, {10, 10}], ImageSize -> 40], \
+       Magnification -> 2], ImageSize -> {200, 100}, Alignment -> Center]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"200\" height=\"100\"")
+        && svg.contains("width=\"80.0\" height=\"80.0\""),
+      "{svg}"
     );
   }
 }

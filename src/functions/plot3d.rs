@@ -7490,7 +7490,8 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 }
 
 /// Replace the 1-based vertex indices inside a `GraphicsComplex` primitive
-/// (`Polygon`/`Line`/`Point`/`Arrow`/`Tube`/`Sphere` arguments) with the coordinates they
+/// (the point argument of `Polygon`, `Line`, `Sphere`, `Cylinder`, … — see
+/// `POINT_TAKING_PRIMITIVES`) with the coordinates they
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one color per point) each
@@ -7598,10 +7599,8 @@ fn resolve_complex_indices(
       }
     }
     Expr::FunctionCall { name, args }
-      if (matches!(
-        name.as_str(),
-        "Polygon" | "Line" | "Point" | "Arrow" | "Tube"
-      ) || name == "Sphere")
+      if crate::functions::graphics::POINT_TAKING_PRIMITIVES
+        .contains(&name.as_str())
         && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();

@@ -1034,6 +1034,13 @@ fn extract_typeset_box(s: &str) -> Option<String> {
     // instead of embedding raw, un-evaluable box syntax.
     return Some(box_source_to_graphics_expr(s));
   }
+  // The same holds for an inline `Graphics3D[…]` literal (`Graphics3DBox`
+  // of `SphereBox`, `CylinderBox`, `GraphicsComplex3DBox`, …), e.g. a
+  // precomputed molecule model stored in an initialization cell.
+  if s.starts_with("Graphics3DBox[") && split_args("Graphics3DBox", s).is_some()
+  {
+    return Some(box_source_to_graphics_expr(s));
+  }
   for head in [
     "FractionBox",
     "SuperscriptBox",
@@ -5684,19 +5691,23 @@ pub fn box_source_to_graphics_expr(s: &str) -> String {
     return box_source_to_graphics_expr(first);
   }
 
-  if let Some(args) = box_call("GraphicsBox")
-    && let Some(first) = args.first()
+  for (box_head, head) in
+    [("GraphicsBox", "Graphics"), ("Graphics3DBox", "Graphics3D")]
   {
-    let body = box_source_to_graphics_expr(first);
-    let rest_args: Vec<String> = args[1..]
-      .iter()
-      .map(|a| box_source_to_graphics_expr(a))
-      .collect();
-    return if rest_args.is_empty() {
-      format!("Graphics[{body}]")
-    } else {
-      format!("Graphics[{body}, {}]", rest_args.join(", "))
-    };
+    if let Some(args) = box_call(box_head)
+      && let Some(first) = args.first()
+    {
+      let body = box_source_to_graphics_expr(first);
+      let rest_args: Vec<String> = args[1..]
+        .iter()
+        .map(|a| box_source_to_graphics_expr(a))
+        .collect();
+      return if rest_args.is_empty() {
+        format!("{head}[{body}]")
+      } else {
+        format!("{head}[{body}, {}]", rest_args.join(", "))
+      };
+    }
   }
 
   if let Some(args) = box_call("FilledCurveBox")
@@ -5745,6 +5756,20 @@ pub fn box_source_to_graphics_expr(s: &str) -> String {
     ("PolygonBox", "Polygon"),
     ("CircleBox", "Circle"),
     ("ArrowBox", "Arrow"),
+    // The 3-D counterparts the FrontEnd writes inside a `Graphics3DBox`.
+    ("Point3DBox", "Point"),
+    ("Line3DBox", "Line"),
+    ("Polygon3DBox", "Polygon"),
+    ("Arrow3DBox", "Arrow"),
+    ("SphereBox", "Sphere"),
+    ("CylinderBox", "Cylinder"),
+    ("ConeBox", "Cone"),
+    ("CuboidBox", "Cuboid"),
+    ("TubeBox", "Tube"),
+    ("GraphicsComplexBox", "GraphicsComplex"),
+    ("GraphicsComplex3DBox", "GraphicsComplex"),
+    ("GraphicsGroupBox", "GraphicsGroup"),
+    ("GraphicsGroup3DBox", "GraphicsGroup"),
   ] {
     if let Some(args) = box_call(box_head) {
       let converted: Vec<String> = args
@@ -7418,6 +7443,25 @@ Cell["Chapter 2", "Chapter"]
       ))
       .unwrap(),
       "{{2, 1}, {{{1., 0.5, 0.}, {0., 0.5, 1.}}}}"
+    );
+  }
+
+  /// Regression: an inline `Graphics3D[…]` literal (a precomputed
+  /// ball-and-stick model in an initialization cell) kept its raw
+  /// `Graphics3DBox` syntax, which evaluates to nothing drawable.
+  #[test]
+  fn test_extract_inline_graphics3d_literal() {
+    let s = "Graphics3DBox[\n  {EdgeForm[None], \n   GraphicsComplex3DBox[{{0, 0, 0}, {1, 0, 0}}, {\n     {RGBColor[1, 0, 0], SphereBox[1, 0.3]}, \n     {GrayLevel[0.5], CylinderBox[{1, 2}, 0.1]}}]},\n  Boxed->False,\n  ImageSize->100]";
+    let source = extract_cell_content(s);
+    assert_eq!(
+      source,
+      "Graphics3D[{EdgeForm[None], GraphicsComplex[{{0, 0, 0}, {1, 0, 0}}, \
+       {{RGBColor[1, 0, 0], Sphere[1, 0.3]}, {GrayLevel[0.5], \
+       Cylinder[{1, 2}, 0.1]}}]}, Boxed->False, ImageSize->100]"
+    );
+    assert_eq!(
+      crate::interpret(&format!("Head[{source}]")).unwrap(),
+      "Graphics3D"
     );
   }
 
