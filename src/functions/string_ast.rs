@@ -4530,6 +4530,17 @@ fn decimal_form_default(f: f64) -> String {
   }
   let neg = f < 0.0;
   let ax = f.abs();
+  // From 10^16 up every machine real is an integer, and wolframscript shows
+  // its shortest digits padded with zeros — 2.9732*^23 is
+  // 297320000000000000000000., not the binary value 297319999999999989514240.
+  if ax >= 1e16 && ax.is_finite() {
+    let digits = format!("{ax}");
+    return if neg {
+      format!("-{digits}.")
+    } else {
+      format!("{digits}.")
+    };
+  }
   let m = ax.log10().floor() as i64;
   // Decimal places implied by 6 significant figures; never negative, so the
   // integer part is always shown in full.
@@ -5366,7 +5377,16 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rendered = match inner_args.get(1) {
       None => match &inner_args[0] {
         Expr::Integer(i) => Some(i.to_string()),
-        Expr::Real(f) => Some(decimal_form_default(*f)),
+        Expr::Real(f) => {
+          // From 2^53 up the integer digits are more than machine precision.
+          if f.abs() >= 2f64.powi(53) {
+            crate::emit_message(
+              "DecimalForm::reqsigz: Requested number precision is lower \
+               than number of digits shown; padding with zeros.",
+            );
+          }
+          Some(decimal_form_default(*f))
+        }
         _ => None,
       },
       Some(Expr::Integer(n)) => {
@@ -5764,11 +5784,34 @@ fn round_real_to_6_sig_digits(f: f64) -> f64 {
   if f == 0.0 || !f.is_finite() {
     return f;
   }
-  // Round to 6 significant digits via scientific formatting. Multiplying by a
-  // 10^k factor (which is not exactly representable in f64) loses precision —
-  // e.g. 1.5e10 would round-trip to 1.4999999999999998e10. Formatting to 5
-  // digits after the point in `e` notation rounds correctly.
-  format!("{f:.5e}").parse().unwrap_or(f)
+  round_shortest_digits(f, 6)
+}
+
+/// `f` rounded to `n` significant digits the way wolframscript rounds for
+/// display: half up on its shortest decimal digits, not on the binary value
+/// behind them — 0.1234565 (binary 0.12345649999…) shows as 0.123457.
+/// (Multiplying by 10^k instead would add error of its own: 1.5e10 would
+/// come back as 1.4999999999999998e10.)
+pub(crate) fn round_shortest_digits(f: f64, n: usize) -> f64 {
+  if f == 0.0 || !f.is_finite() || n == 0 {
+    return f;
+  }
+  let shortest = format!("{:e}", f.abs());
+  let (mantissa, exponent) =
+    shortest.split_once('e').unwrap_or((&shortest, "0"));
+  let digits: Vec<u8> = mantissa.bytes().filter(u8::is_ascii_digit).collect();
+  if digits.len() <= n {
+    return f;
+  }
+  let mut kept: u128 = digits[..n]
+    .iter()
+    .fold(0, |acc, d| acc * 10 + u128::from(d - b'0'));
+  if digits[n] >= b'5' {
+    kept += 1;
+  }
+  let exponent: i64 = exponent.parse().unwrap_or(0) - (n as i64 - 1);
+  let magnitude: f64 = format!("{kept}e{exponent}").parse().unwrap_or(f.abs());
+  if f < 0.0 { -magnitude } else { magnitude }
 }
 
 /// Render an arbitrary-precision number the way `ToString` does: drop the
@@ -17453,6 +17496,11 @@ thread_local! {
 /// significant digits of machine display (`100.` is "100.0", `123456.` stays
 /// "123456.").
 fn text_string_real(f: f64) -> String {
+  // From 10^16 up TextString keeps six significant digits, padded with
+  // zeros (9.87654321*^20 is "987654000000000000000.").
+  if f.abs() >= 1e16 && f.is_finite() {
+    return decimal_form_default(round_shortest_digits(f, 6));
+  }
   let mut s = decimal_form_default(f);
   if s.ends_with('.')
     && s
@@ -18180,6 +18228,17 @@ pub(crate) fn number_form_family_to_string(
        digits shown; padding with zeros.",
     ));
   }
+  // Without a precision AccountingForm shows every integer digit of a
+  // machine real, which is more than machine precision from 2^53 up.
+  if spec.is_none()
+    && head == "AccountingForm"
+    && matches!(value, Expr::Real(f) if f.abs() >= 2f64.powi(53))
+  {
+    crate::emit_message(&format!(
+      "{head}::reqsigz: Requested number precision is lower than number of \
+       digits shown; padding with zeros.",
+    ));
+  }
   if let Some(Expr::Integer(n)) = spec {
     let reqsigz = if head == "AccountingForm" {
       integer_digit_count(value).is_some_and(|d| (*n as i64) < d)
@@ -18333,6 +18392,21 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
     Some(Expr::Integer(n)) => *n as i64,
     Some(_) => return None,
   };
+  // An engineering mantissa has one to three integer digits (123.456 ×
+  // 10^6); asking for fewer pads them with zeros, which wolframscript
+  // reports.
+  if head == "EngineeringForm"
+    && positional.len() == 2
+    && let Expr::Real(f) = positional[0]
+    && *f != 0.0
+    && f.is_finite()
+    && n < f.abs().log10().floor().rem_euclid(3.0) as i64 + 1
+  {
+    crate::emit_message(
+      "EngineeringForm::reqsigz: Requested number precision is lower than \
+       number of digits shown; padding with zeros.",
+    );
+  }
   let opts = number_form_options(head, inner);
   render_form_threaded(positional[0], |x| {
     let (mantissa, exp) = if head == "ScientificForm" {

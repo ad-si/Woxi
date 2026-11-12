@@ -15945,3 +15945,73 @@ mod integer_string_roman {
     );
   }
 }
+
+mod large_real_digits {
+  use super::*;
+
+  // From 10^16 up a machine real shows its shortest digits padded with
+  // zeros, never its binary expansion; TextString keeps six of them.
+  #[test]
+  fn large_reals_pad_their_shortest_digits() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[AccountingForm[2.9732*^23]], ToString[DecimalForm[1.5*^20]], \
+          TextString[2.9732*^23], TextString[9.87654321*^20], \
+          TextString[9.87654321234*^15]}"
+      )
+      .unwrap(),
+      "{297320000000000000000000., 150000000000000000000, \
+       297320000000000000000000., 987654000000000000000., 9876543212340000.}"
+    );
+  }
+
+  // Showing every integer digit from 2^53 up is more than machine
+  // precision, which AccountingForm and DecimalForm report.
+  #[test]
+  fn more_digits_than_machine_precision_are_reported() {
+    clear_state();
+    let quiet =
+      interpret_with_stdout("ToString[AccountingForm[1.234*^15]]").unwrap();
+    assert!(quiet.warnings.is_empty());
+    clear_state();
+    let loud = interpret_with_stdout("ToString[DecimalForm[9.9*^15]]").unwrap();
+    assert_eq!(
+      loud.warnings,
+      vec![
+        "DecimalForm::reqsigz: Requested number precision is lower than \
+         number of digits shown; padding with zeros."
+          .to_string()
+      ]
+    );
+  }
+
+  // An engineering mantissa has one to three integer digits; asking for
+  // fewer is reported.
+  #[test]
+  fn engineering_form_reports_padding() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{ToString[EngineeringForm[12345678., 1]], \
+        ToString[EngineeringForm[1234., 2]]}",
+    )
+    .unwrap();
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].starts_with("EngineeringForm::reqsigz"));
+  }
+
+  // Display rounds half up on the shortest digits, not on the binary value:
+  // 0.1234565 is 0.12345649999… in binary.
+  #[test]
+  fn display_rounds_the_shortest_digits_half_up() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[0.1234565], ToString[3.060105*^9, TeXForm], \
+          ToString[-9.9999995]}"
+      )
+      .unwrap(),
+      "{0.123457, 3.06011\\times 10^9, -10.}"
+    );
+  }
+}
