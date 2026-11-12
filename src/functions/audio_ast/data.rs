@@ -290,8 +290,7 @@ pub fn resample_to_len(xs: &[f64], new_len: usize) -> Vec<f64> {
 pub fn import_audio_file(path: &str) -> Result<Expr, InterpreterError> {
   let ext = std::path::Path::new(path)
     .extension()
-    .map(|e| e.to_string_lossy().to_lowercase())
-    .unwrap_or_default();
+    .map_or_default(|e| e.to_string_lossy().to_lowercase());
   if matches!(ext.as_str(), "wav" | "wave") {
     let bytes = std::fs::read(crate::vfs::resolve(path)).map_err(|e| {
       InterpreterError::EvaluationError(format!(
@@ -543,7 +542,7 @@ fn audio_argument(name: &str, args: &[Expr]) -> Option<AudioData> {
   if audio.is_none() {
     crate::emit_message(&format!(
       "{name}::audio: Expecting an audio object instead of {}.",
-      args.first().map(expr_to_string).unwrap_or_default()
+      args.first().map_or_default(expr_to_string)
     ));
   }
   audio

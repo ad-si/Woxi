@@ -83,10 +83,7 @@ fn table_shape(sk: &Expr) -> Option<(usize, Option<usize>)> {
 }
 
 fn columns(entry: &Entry) -> Vec<Column> {
-  entry
-    .stat("@Stats")
-    .map(|s| parse_columns(&s))
-    .unwrap_or_default()
+  entry.stat("@Stats").map_or_default(|s| parse_columns(&s))
 }
 
 fn numeric_spec(cols: &[Column], j: usize) -> NumSpec {
@@ -167,18 +164,16 @@ fn data_elements(entry: &Entry) -> Option<Expr> {
 
 /// The numeric cells of each row.
 fn numeric_rows(entry: &Entry) -> Vec<Vec<Expr>> {
-  rows(entry)
-    .map(|(r, _)| {
-      r.into_iter()
-        .map(|row| {
-          row
-            .into_iter()
-            .filter(|c| matches!(c, Expr::Integer(_) | Expr::Real(_)))
-            .collect()
-        })
-        .collect()
-    })
-    .unwrap_or_default()
+  rows(entry).map_or_default(|(r, _)| {
+    r.into_iter()
+      .map(|row| {
+        row
+          .into_iter()
+          .filter(|c| matches!(c, Expr::Integer(_) | Expr::Real(_)))
+          .collect()
+      })
+      .collect()
+  })
 }
 
 /// The value path of a temporal property with `k` points of dimension `d`
@@ -270,7 +265,7 @@ fn temporal(entry: &Entry, column: &str, kind: &str) -> Option<Expr> {
   };
   let path_dims = match fields.first() {
     Some(Expr::FunctionCall { name, args }) if name == "Arr" => {
-      args.first().map(dims).unwrap_or_default()
+      args.first().map_or_default(dims)
     }
     _ => Vec::new(),
   };

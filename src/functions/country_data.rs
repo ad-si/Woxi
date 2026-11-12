@@ -642,8 +642,7 @@ fn bordering_countries(r: &'static Record) -> Option<Expr> {
   Some(Expr::List(
     adj
       .get(r.entity)
-      .map(|l| l.iter().map(|e| entity(e)).collect::<Vec<_>>())
-      .unwrap_or_default()
+      .map_or_default(|l| l.iter().map(|e| entity(e)).collect::<Vec<_>>())
       .into(),
   ))
 }

@@ -1468,17 +1468,13 @@ fn render_exclusion_marks(
         if lo <= hi {
           let (r, g, b) = rgb(style);
           let width = style.thickness.unwrap_or(1.0) * scale;
-          let dash = style
-            .dashing
-            .as_ref()
-            .map(|d| {
-              let lens: Vec<String> = d
-                .iter()
-                .map(|&l| format!("{:.1}", dash_len(l, render_w, scale)))
-                .collect();
-              format!(" stroke-dasharray=\"{}\"", lens.join(","))
-            })
-            .unwrap_or_default();
+          let dash = style.dashing.as_ref().map_or_default(|d| {
+            let lens: Vec<String> = d
+              .iter()
+              .map(|&l| format!("{:.1}", dash_len(l, render_w, scale)))
+              .collect();
+            format!(" stroke-dasharray=\"{}\"", lens.join(","))
+          });
           if (py(hi) - py(lo)).abs() < 0.5 {
             // The zero-length line WL strokes with square caps: a square
             // as wide as the line.
@@ -2670,7 +2666,7 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
       FrameEdgeTicks::None => continue,
       spec @ (FrameEdgeTicks::Marks | FrameEdgeTicks::Labeled) => {
         let axis = if horizontal { l.auto[0] } else { l.auto[1] };
-        for (frac, major) in axis.map(auto_ticks).unwrap_or_default() {
+        for (frac, major) in axis.map_or_default(auto_ticks) {
           let len = if major { major_len } else { minor_len };
           ticks.push((frac, len, 0.0, paint.mark, paint.mark_width, None));
         }
@@ -8260,13 +8256,12 @@ fn apply_color_function_gradients(
         .split("points=\"")
         .nth(1)
         .and_then(|rest| rest.split('"').next())
-        .map(|pts| {
+        .map_or_default(|pts| {
           pts
             .split_whitespace()
             .filter_map(|xy| xy.split(',').next()?.parse::<f64>().ok())
             .collect()
-        })
-        .unwrap_or_default();
+        });
       let (x1, x2) = xs
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
@@ -9990,8 +9985,7 @@ pub(crate) fn generate_bar_svg(
             };
             let fill_attr = line_fill
               .as_ref()
-              .map(|f| format!(" fill=\"{f}\""))
-              .unwrap_or_default();
+              .map_or_default(|f| format!(" fill=\"{f}\""));
             out.push_str(&format!(
               "<tspan x=\"{cx:.1}\" y=\"{ty:.1}\" font-size=\"{size_px:.0}\"{fill_attr}>{}</tspan>",
               crate::functions::graphics::box_string_to_svg(text)
@@ -13322,8 +13316,7 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
             .map(|d| -d.abs().max(0.1))
             .collect(),
           other => try_eval_to_f64(other)
-            .map(|d| vec![-d.abs().max(0.1); 2])
-            .unwrap_or_default(),
+            .map_or_default(|d| vec![-d.abs().max(0.1); 2]),
         };
         if !dashes.is_empty() {
           style.dashing = Some(dashes);
@@ -13934,10 +13927,11 @@ where
   let stem_dashes = fill_style.and_then(|fs| fs.dashing);
   let stem_targets: Vec<((f64, f64), f64)> =
     match series_fill_target(opts, series_idx) {
-      FillTarget::Level(level) => level
-        .reference_y(y_min, y_max)
-        .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
-        .unwrap_or_default(),
+      FillTarget::Level(level) => {
+        level.reference_y(y_min, y_max).map_or_default(|ref_y| {
+          finite_pts.iter().map(|&p| (p, ref_y)).collect()
+        })
+      }
       FillTarget::Series(target_idx) => {
         if target_idx != series_idx
           && let Some(target) = all_series.get(target_idx)
@@ -15693,8 +15687,7 @@ fn parse_plot_label_entries(value: &Expr) -> Vec<Option<PlotLabelEntry>> {
     Expr::Association(pairs) => pairs
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == "Lists"))
-      .map(|(_, v)| parse_plot_label_entries(v))
-      .unwrap_or_default(),
+      .map_or_default(|(_, v)| parse_plot_label_entries(v)),
     // Filled in from the curves' expressions by the plot itself.
     Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
     Expr::String(s) if s == "Expressions" => Vec::new(),

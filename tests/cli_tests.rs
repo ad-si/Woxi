@@ -9,14 +9,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn woxi_bin() -> PathBuf {
-  // Build path: target/<profile>/woxi alongside the test binary.
-  let mut path = std::env::current_exe().unwrap();
-  path.pop(); // remove the test executable name
-  if path.ends_with("deps") {
-    path.pop();
-  }
-  path.push("woxi");
-  path
+  // Cargo builds the `woxi` binary for integration tests and names its
+  // path here; guessing it from the test executable's location breaks
+  // whenever Cargo changes its build-directory layout.
+  PathBuf::from(env!("CARGO_BIN_EXE_woxi"))
 }
 
 fn run_eval(args: &[&str]) -> (String, String, bool) {
@@ -1019,9 +1015,10 @@ fn install_kernel_works_outside_a_source_checkout() {
   );
 
   // The staged copy is a temporary and must not be left behind.
-  let leftovers: Vec<_> = std::fs::read_dir(dir.join("tmp"))
-    .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
-    .unwrap_or_default();
+  let leftovers: Vec<_> =
+    std::fs::read_dir(dir.join("tmp")).map_or_default(|entries| {
+      entries.filter_map(Result::ok).map(|e| e.path()).collect()
+    });
   assert!(
     leftovers.is_empty(),
     "staging directories left behind: {leftovers:?}"

@@ -3395,10 +3395,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     Rule::PatternOptionalDefaultSimple => {
       // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
       let mut inner = pair.into_inner();
-      let name = inner
-        .next()
-        .map(|p| p.as_str().to_string())
-        .unwrap_or_default();
+      let name = inner.next().map_or_default(|p| p.as_str().to_string());
       Expr::PatternOptional {
         name,
         head: None,
@@ -4458,14 +4455,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
   let trailing_prime_order_fce =
     trailing_prime_idx.map(|i| inner_pairs[i].as_str().len());
   let post_prime_bracket_args: Vec<Vec<Expr>> = trailing_prime_idx
-    .map(|i| {
+    .map_or_default(|i| {
       inner_pairs[i + 1..]
         .iter()
         .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
         .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
         .collect()
-    })
-    .unwrap_or_default();
+    });
 
   // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
   let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
