@@ -3970,7 +3970,10 @@ pub fn number_decompose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for (i, u) in units.iter().enumerate() {
       let u = as_f64(u);
       if i + 1 == units.len() {
-        result.push(Expr::Real(rem / u));
+        // The last multiple is the remainder times the reciprocal of the
+        // unit — wolframscript's rounding, an ulp off a plain division at
+        // times (NumberDecompose[227.4622, {1, 0.1, 0.01}] ends 6.219999999999571).
+        result.push(Expr::Real(rem * (1.0 / u)));
       } else {
         let q = (rem / u).trunc();
         result.push(Expr::Integer(q as i128));

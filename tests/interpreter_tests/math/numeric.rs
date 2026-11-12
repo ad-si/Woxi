@@ -2608,3 +2608,21 @@ mod real_digits_machine_reals {
     );
   }
 }
+
+mod number_decompose_rounding {
+  use super::*;
+
+  // The last multiple is the remainder times the reciprocal of the unit,
+  // which is how wolframscript rounds it.
+  #[test]
+  fn last_multiple_uses_the_reciprocal() {
+    assert_eq!(
+      interpret(
+        "{NumberDecompose[7.896483374993132, {1, 0.1, 0.01}], \
+          NumberDecompose[227.4622, {1, 0.1, 0.01}]}"
+      )
+      .unwrap(),
+      "{{7, 8, 9.648337499313154}, {227, 4, 6.219999999999571}}"
+    );
+  }
+}

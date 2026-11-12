@@ -16015,3 +16015,22 @@ mod large_real_digits {
     );
   }
 }
+
+mod padded_form_scientific {
+  use super::*;
+
+  // PaddedForm pads a scientific mantissa to its n digit columns plus a
+  // sign and a point column, as it does in fixed notation.
+  #[test]
+  fn scientific_mantissa_is_padded() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[PaddedForm[1.93672*^-23, {4, 2}]], \
+          ToString[PaddedForm[-1.94*^-23, {4, 2}]]}"
+      )
+      .unwrap(),
+      "{           -23\n  1.94 × 10,            -23\n -1.94 × 10}"
+    );
+  }
+}

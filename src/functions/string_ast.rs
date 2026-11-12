@@ -17951,13 +17951,19 @@ fn number_form_family_scalar(
     },
   };
 
-  // Scientific notation carries no padded field: the 2D form is assembled
-  // straight from the mantissa.
+  // In scientific notation the 2D form is assembled straight from the
+  // mantissa, which PaddedForm[x, {n, f}] still pads to its n digit
+  // columns plus a sign and a point column ("  1.94 × 10^-23").
   if let Some(e) = exp {
     let mut mantissa = format!("{sign}{int_body}");
     if had_point || !frac_digits.is_empty() {
       mantissa.push_str(&opts.point);
       mantissa.push_str(&frac_digits);
+    }
+    if head == "PaddedForm"
+      && let Some((n, _)) = fixed
+    {
+      mantissa = pad_left(&mantissa, n.max(0) as usize + 2, &opts.lpad);
     }
     return Some(sci_parts_to_2d_string(&mantissa, Some(e)));
   }
