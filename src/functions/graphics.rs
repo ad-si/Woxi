@@ -17925,7 +17925,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           match crate::functions::string_ast::number_form_family_to_string(
             name, args,
           ) {
-            Some(s) => svg_escape(s.replace('\n', " ").trim()),
+            Some(s) => svg_escape(&number_form_display_line(name, &s)),
             None => expr_to_svg_markup(&args[0]),
           }
         }
@@ -18761,7 +18761,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         match crate::functions::string_ast::number_form_family_to_string(
           name, args,
         ) {
-          Some(s) => s.replace('\n', " ").trim().chars().count() as f64,
+          Some(s) => number_form_display_line(name, &s).chars().count() as f64,
           None => estimate_display_width(&args[0]),
         }
       }
@@ -23555,6 +23555,36 @@ fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
 /// of `n`: `{s1, s2, …}` names only the first positions, while
 /// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
 /// between the explicit leading and trailing entries.
+/// The fixed size an `ItemSize` dimension gives position `pos` (0-based)
+/// of `n`: a number for every position, or a per-position list (in the
+/// `Grid` spec form); `Automatic`/`All` and non-positive sizes leave it to
+/// the content. Shared by `Grid` and `Column`.
+fn item_size_entry_at(
+  spec: Option<&Expr>,
+  pos: usize,
+  n: usize,
+) -> Option<f64> {
+  let entry = match spec? {
+    Expr::List(items) => grid_spec_entry_at(items, pos + 1, n)?,
+    single => single,
+  };
+  expr_to_f64(entry).filter(|v| *v > 0.0)
+}
+
+/// The one-line text a formatted `NumberForm`/`PaddedForm`/`AccountingForm`
+/// displays as. Multi-line 2-D forms are flattened and edge whitespace is
+/// trimmed, except the leading padding that is the whole point of a
+/// `PaddedForm`: WL keeps it, so `Row[{"x", PaddedForm[6., {3, 2}]}]`
+/// shows `x  6.00`.
+fn number_form_display_line(name: &str, formatted: &str) -> String {
+  let line = formatted.replace('\n', " ");
+  if name == "PaddedForm" {
+    line.trim_end().to_string()
+  } else {
+    line.trim().to_string()
+  }
+}
+
 fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
   let Some(rep_at) = items.iter().position(|e| matches!(e, Expr::List(_)))
   else {
@@ -24525,14 +24555,9 @@ fn grid_svg_styled_internal_reporting(
   // The fixed size `ItemSize` gives position `pos` (0-based) of `n`: a
   // number for every position, or a per-position list; `Automatic`/`All`
   // leave it to the content.
-  let item_size_at =
-    |spec: &Option<Expr>, pos: usize, n: usize| -> Option<f64> {
-      let entry = match spec.as_ref()? {
-        Expr::List(items) => grid_spec_entry_at(items, pos + 1, n)?,
-        single => single,
-      };
-      expr_to_f64(entry).filter(|v| *v > 0.0)
-    };
+  let item_size_at = |spec: &Option<Expr>, pos: usize, n: usize| {
+    item_size_entry_at(spec.as_ref(), pos, n)
+  };
   // Text wider than a fixed column wraps onto further lines.
   if item_size_w.is_some() {
     for row in &mut rows {
@@ -29662,6 +29687,21 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     0.0
   };
 
+  // `ItemSize -> w` or `{w, h}`: every item is `w` ems wide and at least
+  // `h` lines tall, as in a one-column `Grid`.
+  let (item_size_w, item_size_h) = match args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ItemSize")
+    .map(|(_, v)| v)
+  {
+    Some(Expr::List(dims)) if dims.len() == 2 => {
+      (Some(&dims[0]), Some(&dims[1]))
+    }
+    Some(other) => (Some(other), None),
+    None => (None, None),
+  };
+
   let char_width: f64 = 14.0 * MONO_ADVANCE;
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
@@ -29746,13 +29786,21 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       }
     })
     .fold(0.0_f64, f64::max);
+  let col_width = item_size_entry_at(item_size_w, 0, 1)
+    .map_or(col_width, |w| w * font_size + pad_x);
 
   // Per-row heights
+  let n_items = cells.len();
   let row_heights: Vec<f64> = cells
     .iter()
-    .map(|c| match c {
-      Cell::Svg { height, .. } => *height,
-      Cell::Text(e) => text_style(e, font_size).1 + pad_y,
+    .enumerate()
+    .map(|(i, c)| {
+      let natural = match c {
+        Cell::Svg { height, .. } => *height,
+        Cell::Text(e) => text_style(e, font_size).1 + pad_y,
+      };
+      item_size_entry_at(item_size_h, i, n_items)
+        .map_or(natural, |h| natural.max(h * font_size + pad_y))
     })
     .collect();
 
