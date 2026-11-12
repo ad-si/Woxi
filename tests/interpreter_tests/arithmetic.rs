@@ -8100,6 +8100,28 @@ mod cases {
     );
   }
 
+  /// `Mod[m, n]` is the infix `m mod n` in TraditionalForm, with a product
+  /// or sum operand in parentheses, and reads back as the `Mod` call.
+  #[test]
+  fn traditional_form_mod_is_infix() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[x, 7]]]"#,
+      r#"TagBox[FormBox[RowBox[{x, mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[2 x, m]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, m}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[x, a + b]]]"#,
+      r#"TagBox[FormBox[RowBox[{x, mod, RowBox[{(, RowBox[{a, +, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToExpression["\!\(\*FormBox[RowBox[{RowBox[{\"(\", RowBox[{\"2\", \" \", \"x\"}], \")\"}], \"mod\", \"7\"}], TraditionalForm]\)"]"#,
+      r#"Mod[2*x, 7]"#,
+    );
+  }
+
   /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
   /// like `sin^n(x)`.
   #[test]

@@ -8999,6 +8999,43 @@ mod plot3d {
       assert!(svg.contains("stroke=\"#FF8000\""));
     }
 
+    /// A `Row` plot label typesets its items in TraditionalForm, as a
+    /// graphic's `FormatType` asks: `==` is `=`, a sum puts its constant
+    /// last, `Mod` is the infix `mod`, and relations and arrows are spaced.
+    #[test]
+    fn plot_label_row_items_are_traditional_form() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Style[Row[{Subscript[x, 0] == 5, \
+         \" \", Subscript[x, n + 1] -> Mod[2 Subscript[x, n] + c, m]}], 14]]",
+      );
+      assert!(svg.contains("</tspan> = 5 "), "{svg}");
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">n</tspan>+1</tspan> \u{2192} ("
+        ),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(") mod <tspan font-style=\"italic\">m</tspan>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("Mod["), "{svg}");
+    }
+
+    /// A run of blanks in a plot title (`Row[{a, "    ", b}]`) is kept
+    /// rather than collapsed into a single space by the SVG renderer.
+    #[test]
+    fn plot_label_keeps_a_run_of_blanks() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Row[{\"left\", \"    \", \"right\"}]]",
+      );
+      let title = svg
+        .split("<text ")
+        .find(|t| t.contains("left    right"))
+        .expect("the plot title");
+      assert!(title.contains("xml:space=\"preserve\""), "{title}");
+    }
+
     /// A title whose first line is blank (`Row[{"\nTitle"}]`) is still drawn.
     #[test]
     fn plot_label_with_leading_newline_is_drawn() {
@@ -10692,8 +10729,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(p<tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) \
-           = 0.376953"
+          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
       );

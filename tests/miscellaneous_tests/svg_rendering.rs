@@ -759,7 +759,7 @@ mod tests {
       };
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
-      assert_eq!(svg, "a&lt;b", "Comparison box SVG");
+      assert_eq!(svg, "a &lt; b", "Comparison box SVG");
     }
 
     // ── BinaryOp variants (boxes) ──
