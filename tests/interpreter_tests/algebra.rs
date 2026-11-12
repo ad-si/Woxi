@@ -5478,6 +5478,59 @@ mod symbolic_equal {
 mod solve {
   use super::*;
 
+  // A factor of the denominator that machine arithmetic leaves only
+  // approximately in the numerator is cancelled exactly, so no spurious
+  // roots appear beside the removable pole.
+  #[test]
+  fn machine_rational_equation_has_no_roots_beside_the_pole() {
+    assert_eq!(
+      interpret(
+        "Length[Solve[(0.5/(1 - x/3))/((2 + 0.5/(1 - x/3))^2 + 1.) == x/10, x]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret(
+        "Round[10^6 x /. Solve[(0.5/(1 - x/3))/((2 + 0.5/(1 - x/3))^2 + 1.) \
+         == x/10, x]]"
+      )
+      .unwrap(),
+      "{840926, 3179537 - 770087*I, 3179537 + 770087*I}"
+    );
+  }
+
+  #[test]
+  fn machine_quadratic_with_removable_pole() {
+    assert_eq!(
+      interpret("Solve[(x^2 - 1.)/(x - 1) == 3, x]").unwrap(),
+      "{{x -> 2.}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 - 1.)/(x - 1) == 2 x^2, x]").unwrap(),
+      "{{x -> -0.5}}"
+    );
+  }
+
+  // Cancelling the whole denominator leaves the numerator to solve, and a
+  // root where the original denominator vanishes is no solution.
+  #[test]
+  fn exact_equation_with_removable_pole() {
+    assert_eq!(
+      interpret("Solve[(x^2 - 1)/(x - 1) == 3, x]").unwrap(),
+      "{{x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[(x^2 - 1)/(x - 1) == y, x]").unwrap(),
+      "{{x -> -1 + y}}"
+    );
+    assert_eq!(interpret("Solve[(x^2 - 1)/(x - 1) == 2, x]").unwrap(), "{}");
+    assert_eq!(
+      interpret("Solve[(x^2 - 1)/(x - 1) == 2 x^2, x]").unwrap(),
+      "{{x -> -1/2}}"
+    );
+  }
+
   // A polynomial with arbitrary-precision coefficients is solved
   // numerically rather than factored over its exact rational image.
   #[test]
