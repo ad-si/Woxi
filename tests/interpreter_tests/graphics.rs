@@ -5500,6 +5500,81 @@ mod plot3d {
       );
     }
 
+    /// The distinct fill colors of a white square seen and lit head-on by
+    /// `light`.
+    fn square_under(light: &str) -> Vec<(u32, u32, u32)> {
+      let mut colors = fill_colors(&export_svg(&format!(
+        "Graphics3D[{{White, Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, \
+         {{1, 1, 0}}, {{-1, 1, 0}}}}]}}, Lighting -> {{{light}}}, \
+         ViewPoint -> {{0, 0, 3}}]"
+      )));
+      colors.dedup();
+      colors
+    }
+
+    /// A `"Spot"` light's half angle can be exact (`Pi/4`), and a fifth
+    /// element is its attenuation. Regression: an exact angle or a fifth
+    /// element made the whole `Lighting` spec fall back to the default
+    /// colored lights.
+    #[test]
+    fn spot_light_with_exact_angle_and_attenuation() {
+      let white = vec![(253, 253, 253)];
+      assert_eq!(
+        square_under(r#"{"Spot", White, {{0, 0, 5}, {0, 0, 0}}, Pi/4}"#),
+        white
+      );
+      // Wolfram draws a spot with a non-list fifth element unattenuated.
+      assert_eq!(
+        square_under(
+          r#"{"Spot", White, {{0, 0, 5}, {0, 0, 0}}, {Pi/4, 1}, 2}"#
+        ),
+        white
+      );
+      // `{c0, c1, c2}` dims the light as `1 / (c0 + c1 d + c2 d²)`.
+      let dim = square_under(
+        r#"{"Spot", White, {{0, 0, 5}, {0, 0, 0}}, {Pi/4, 1}, {0, 0, 1}}"#,
+      );
+      assert_eq!(dim.len(), 1, "{dim:?}");
+      let (r, g, b) = dim[0];
+      assert!(r == g && g == b && r > 0 && r < 40, "{dim:?}");
+    }
+
+    /// `Show` evaluates its options: `Lighting -> lights` uses the value of
+    /// `lights`, and a symbol holding a `Sequence` of options splices them
+    /// in. Regression: both kept `Show`'s argument unevaluated, so the
+    /// lights were ignored.
+    #[test]
+    fn show_evaluates_its_options() {
+      clear_state();
+      let lit = |code: &str| {
+        interpret(&format!(
+          "lights = {{{{\"Ambient\", GrayLevel[0.3]}}}}; \
+           opts = Sequence[Lighting -> lights, Boxed -> False]; \
+           g = Graphics3D[Cuboid[]]; ToString[InputForm[{code}]]"
+        ))
+        .unwrap()
+      };
+      let expected = "Lighting -> {{\"Ambient\", GrayLevel[0.3]}}";
+      let out = lit("Show[g, Lighting -> lights]");
+      assert!(out.contains(expected), "{out}");
+      let out = lit("Show[g, opts]");
+      assert!(
+        out.contains(expected) && out.contains("Boxed -> False"),
+        "{out}"
+      );
+      // The cuboid is drawn under those lights: plain gray.
+      clear_state();
+      let svg = export_svg(
+        "lights = {{\"Ambient\", White}}; \
+         Show[Graphics3D[{Gray, Cuboid[]}], Lighting -> lights]",
+      );
+      let faces = fill_colors(&svg);
+      assert!(
+        !faces.is_empty() && faces.iter().all(|c| *c == (128, 128, 128)),
+        "{faces:?}"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
