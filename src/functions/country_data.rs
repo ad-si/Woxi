@@ -542,9 +542,39 @@ fn record_property(
         None => missing("NotAvailable", property),
       }
     }
-    "Flag" => missing("NotAvailable", property),
+    "Flag" => match flag_png(r.entity) {
+      Some(png) => crate::functions::image_ast::import_image_from_bytes(&png)?,
+      None => missing("NotAvailable", property),
+    },
     _ => return Ok(None),
   }))
+}
+
+/// Base64-encoded PNG flags keyed by entity name, from
+/// `resources/country_flags.tsv.gz` (see `scripts/gen_country_flags.py`).
+static FLAGS: std::sync::LazyLock<
+  std::collections::HashMap<&'static str, &'static str>,
+> = std::sync::LazyLock::new(|| {
+  use flate2::read::GzDecoder;
+  use std::io::Read;
+  let compressed = include_bytes!("../../resources/country_flags.tsv.gz");
+  let mut text = String::new();
+  GzDecoder::new(&compressed[..])
+    .read_to_string(&mut text)
+    .expect("country_flags.tsv.gz is valid gzip");
+  let text: &'static str = Box::leak(text.into_boxed_str());
+  text
+    .lines()
+    .filter(|l| !l.starts_with('#'))
+    .filter_map(|l| l.split_once('\t'))
+    .collect()
+});
+
+/// The decoded PNG bytes of a country's flag.
+fn flag_png(entity: &str) -> Option<Vec<u8>> {
+  use base64::Engine as _;
+  let b64 = FLAGS.get(entity)?;
+  base64::engine::general_purpose::STANDARD.decode(b64).ok()
 }
 
 /// `Entity["Country", name]` objects of every country whose continent list
