@@ -18104,6 +18104,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `AxesLabel -> {xlabel}` names the x axis only, as in `Plot`.
+    #[test]
+    fn histogram_single_axes_label() {
+      let svg =
+        export_svg(r#"Histogram[{1, 2, 2, 3, 3, 3}, AxesLabel -> {"time"}]"#);
+      assert!(svg.contains(">time</text>"), "x-axis label missing: {svg}");
+      let svg = export_svg(r#"BarChart[{1, 2, 3}, AxesLabel -> {"items"}]"#);
+      assert!(svg.contains(">items</text>"), "x-axis label missing: {svg}");
+    }
+
     /// A `FrameLabel` keeps the centered placement: below the axis and
     /// rotated in the left gutter.
     #[test]
