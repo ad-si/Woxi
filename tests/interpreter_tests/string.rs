@@ -6936,12 +6936,52 @@ mod to_string_machine_reals {
 
   // ToString rounds machine reals to 6 significant digits (OutputForm), but
   // must not introduce precision artifacts: 15000000000. is exactly 1.5*^10.
+  // Out of fixed range the exponent is set raised above `m 10`.
   #[test]
   fn large_reals_use_clean_scientific() {
-    assert_eq!(interpret("ToString[15000000000.]").unwrap(), "1.5*^10");
-    assert_eq!(interpret("ToString[12000000000.]").unwrap(), "1.2*^10");
-    assert_eq!(interpret("ToString[2.0*^10]").unwrap(), "2.*^10");
-    assert_eq!(interpret("ToString[123456789012.]").unwrap(), "1.23457*^11");
+    assert_eq!(
+      interpret("ToString[15000000000.]").unwrap(),
+      "      10\n1.5 10"
+    );
+    assert_eq!(
+      interpret("ToString[12000000000.]").unwrap(),
+      "      10\n1.2 10"
+    );
+    assert_eq!(interpret("ToString[2.0*^10]").unwrap(), "     10\n2. 10");
+    assert_eq!(
+      interpret("ToString[123456789012.]").unwrap(),
+      "          11\n1.23457 10"
+    );
+  }
+
+  #[test]
+  fn scientific_reals_inside_an_expression() {
+    assert_eq!(
+      interpret("{ToString[{1.5*^6, 2}], ToString[2.55046*^-28]}").unwrap(),
+      "{       6\n{1.5 10 , 2},           -28\n2.55046 10}"
+    );
+  }
+
+  // An arbitrary-precision real switches to scientific form at the same
+  // magnitudes, and wherever its integer part outgrows its precision.
+  #[test]
+  fn arbitrary_precision_reals_in_scientific_form() {
+    assert_eq!(
+      interpret("ToString[N[10^5/3, 20]]").unwrap(),
+      "33333.333333333333333"
+    );
+    assert_eq!(
+      interpret("ToString[N[10^6/3, 5]]").unwrap(),
+      "         5\n3.3333 10"
+    );
+    assert_eq!(
+      interpret("ToString[N[10^20/26, 16]]").unwrap(),
+      "                    18\n3.846153846153846 10"
+    );
+    assert_eq!(
+      interpret("ToString[N[9999999/10, 3]]").unwrap(),
+      "       6\n1.00 10"
+    );
   }
 
   #[test]
@@ -15839,6 +15879,208 @@ mod linear_syntax_string_delimiters {
     assert_eq!(
       interpret("\"\\<phase portrait\\>\" == \"phase portrait\"").unwrap(),
       "True"
+    );
+  }
+}
+
+mod integer_string_roman {
+  use super::*;
+
+  #[test]
+  fn plain_numerals_repeat_m_below_five_thousand() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{IntegerString[0, \"Roman\"], IntegerString[-1, \"Roman\"], \
+          IntegerString[3999, \"Roman\"], IntegerString[4321, \"Roman\"]}"
+      )
+      .unwrap(),
+      "{N, I, MMMCMXCIX, MMMMCCCXXI}"
+    );
+  }
+
+  // Larger numbers put their thousands under a vinculum, written as
+  // overscript boxes; the bars nest and distribute over groups.
+  #[test]
+  fn thousands_go_under_a_vinculum() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[{IntegerString[9000, \"Roman\"], \
+          IntegerString[906915, \"Roman\"], IntegerString[5004000, \"Roman\"], \
+          IntegerString[123456789, \"Roman\"]}, InputForm]"
+      )
+      .unwrap(),
+      "{\"\\!\\(\\(\\\"IX\\\"\\)\\&_\\)\", \"\\!\\(\\(\\\"CMV\\\"\\)\\&_\\)MCMXV\", \
+       \"\\!\\(\\(\\(\\(\\\"V\\\"\\)\\&_\\)\\)\\&_\\)MMMM\", \
+       \"\\!\\(\\(\\(\\(\\\"CXX\\\"\\)\\&_\\)\\)\\&_\\)\\!\\(\\(\\\"MMMCDLV\\\"\\)\\&_\\)MDCCLXXXIX\"}"
+    );
+  }
+
+  // A non-integer number is reported whatever the numeric system; a
+  // rational argument used to abort the evaluation with a hard error.
+  #[test]
+  fn a_non_integer_is_reported_for_named_systems_too() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{IntegerString[2.5, \"Roman\"], IntegerString[x, \"Base64\"]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "{IntegerString[2.5, Roman], IntegerString[x, Base64]}"
+    );
+    assert_eq!(
+      result.warnings,
+      vec![
+        "IntegerString::int: Integer expected at position 1 in \
+         IntegerString[2.5, Roman]."
+          .to_string()
+      ]
+    );
+    clear_state();
+    assert_eq!(
+      interpret("IntegerString[1/2, \"Base64\"]").unwrap(),
+      "IntegerString[1/2, Base64]"
+    );
+  }
+}
+
+mod large_real_digits {
+  use super::*;
+
+  // From 10^16 up a machine real shows its shortest digits padded with
+  // zeros, never its binary expansion; TextString keeps six of them.
+  #[test]
+  fn large_reals_pad_their_shortest_digits() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[AccountingForm[2.9732*^23]], ToString[DecimalForm[1.5*^20]], \
+          TextString[2.9732*^23], TextString[9.87654321*^20], \
+          TextString[9.87654321234*^15]}"
+      )
+      .unwrap(),
+      "{297320000000000000000000., 150000000000000000000, \
+       297320000000000000000000., 987654000000000000000., 9876543212340000.}"
+    );
+  }
+
+  // Showing every integer digit from 2^53 up is more than machine
+  // precision, which AccountingForm and DecimalForm report.
+  #[test]
+  fn more_digits_than_machine_precision_are_reported() {
+    clear_state();
+    let quiet =
+      interpret_with_stdout("ToString[AccountingForm[1.234*^15]]").unwrap();
+    assert_eq!(quiet.warnings, Vec::<String>::new());
+    clear_state();
+    let loud = interpret_with_stdout("ToString[DecimalForm[9.9*^15]]").unwrap();
+    assert_eq!(
+      loud.warnings,
+      vec![
+        "DecimalForm::reqsigz: Requested number precision is lower than \
+         number of digits shown; padding with zeros."
+          .to_string()
+      ]
+    );
+  }
+
+  // An engineering mantissa has one to three integer digits; asking for
+  // fewer is reported.
+  #[test]
+  fn engineering_form_reports_padding() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{ToString[EngineeringForm[12345678., 1]], \
+        ToString[EngineeringForm[1234., 2]]}",
+    )
+    .unwrap();
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].starts_with("EngineeringForm::reqsigz"));
+  }
+
+  // Display rounds half up on the shortest digits, not on the binary value:
+  // 0.1234565 is 0.12345649999… in binary.
+  #[test]
+  fn display_rounds_the_shortest_digits_half_up() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[0.1234565], ToString[3.060105*^9, TeXForm], \
+          ToString[-9.9999995]}"
+      )
+      .unwrap(),
+      "{0.123457, 3.06011\\times 10^9, -10.}"
+    );
+  }
+}
+
+mod padded_form_scientific {
+  use super::*;
+
+  // PaddedForm pads a scientific mantissa to its n digit columns plus a
+  // sign and a point column, as it does in fixed notation.
+  #[test]
+  fn scientific_mantissa_is_padded() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToString[PaddedForm[1.93672*^-23, {4, 2}]], \
+          ToString[PaddedForm[-1.94*^-23, {4, 2}]]}"
+      )
+      .unwrap(),
+      "{           -23\n  1.94 × 10,            -23\n -1.94 × 10}"
+    );
+  }
+}
+
+mod to_string_span {
+  use super::*;
+
+  // ToString's text writes a span with its operator; the display keeps
+  // the head form.
+  #[test]
+  fn to_string_writes_spans_with_the_operator() {
+    clear_state();
+    assert_eq!(
+      interpret("{ToString[{1 ;; 2}], ToString[f[1 ;; -1 ;; 2]], {1 ;; 2}}")
+        .unwrap(),
+      "{{1 ;; 2}, f[1 ;; -1 ;; 2], {Span[1, 2]}}"
+    );
+  }
+}
+
+mod string_split_and_take_edges {
+  use super::*;
+
+  // All keeps the empty pieces at either end.
+  #[test]
+  fn string_split_all_keeps_edge_pieces() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[{StringSplit[\",a,,b,\", \",\", All], StringSplit[\",a,,b,\", \",\"], \
+          StringSplit[\"\", \",\" -> \"SEP\"], StringSplit[\"\", \",\" -> \"SEP\", All]}, \
+          InputForm]"
+      )
+      .unwrap(),
+      "{{\"\", \"a\", \"\", \"b\", \"\"}, {\"a\", \"\", \"b\"}, {}, {\"\"}}"
+    );
+  }
+
+  // StringTake and StringDrop read {m, n, s} exactly as Take does.
+  #[test]
+  fn string_take_steps_like_take() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Quiet[{StringTake[\"\", {1, -1, 2}], StringTake[\"abcdef\", {5, 6, -2}], \
+          StringDrop[\"abcdef\", {1, -1, 2}], StringTake[\"abcdef\", {4, 6, -2}]}], \
+          InputForm]"
+      )
+      .unwrap(),
+      "{\"\", \"\", \"bdf\", StringTake[\"abcdef\", {4, 6, -2}]}"
     );
   }
 }

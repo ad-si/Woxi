@@ -8100,6 +8100,28 @@ mod cases {
     );
   }
 
+  /// `Mod[m, n]` is the infix `m mod n` in TraditionalForm, with a product
+  /// or sum operand in parentheses, and reads back as the `Mod` call.
+  #[test]
+  fn traditional_form_mod_is_infix() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[x, 7]]]"#,
+      r#"TagBox[FormBox[RowBox[{x, mod, 7}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[2 x, m]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{(, RowBox[{2,  , x}], )}], mod, m}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Mod[x, a + b]]]"#,
+      r#"TagBox[FormBox[RowBox[{x, mod, RowBox[{(, RowBox[{a, +, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToExpression["\!\(\*FormBox[RowBox[{RowBox[{\"(\", RowBox[{\"2\", \" \", \"x\"}], \")\"}], \"mod\", \"7\"}], TraditionalForm]\)"]"#,
+      r#"Mod[2*x, 7]"#,
+    );
+  }
+
   /// A held `Exp[…]` raised to a power is `exp^n(x)` in TraditionalForm,
   /// like `sin^n(x)`.
   #[test]
@@ -8319,6 +8341,12 @@ mod cases {
       (
         "x^n + x^2",
         r#"FormBox[RowBox[{SuperscriptBox["x", "n"], "+", SuperscriptBox["x", "2"]}], TraditionalForm]"#,
+      ),
+      // Powers of a parenthesized (shifted) variable rank by their
+      // exponent too, as a Taylor expansion about a point is written.
+      (
+        "3 + 12 (x - 1) + 14 (x - 1)^2 + 2 (x - 1)^4",
+        r#"FormBox[RowBox[{RowBox[{"2", " ", SuperscriptBox[RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}], "4"]}], "+", RowBox[{"14", " ", SuperscriptBox[RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}], "2"]}], "+", RowBox[{"12", " ", RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}]}], "+", "3"}], TraditionalForm]"#,
       ),
       (
         "1 - x",
@@ -15985,5 +16013,23 @@ fn order_products_independently_of_stored_denominator_position() {
         assert_eq!(interpret(&code).unwrap(), expected, "{code}");
       }
     }
+  }
+}
+
+mod rationalize_large_reals {
+  use super::*;
+
+  // With the default tolerance a machine real beyond 2^38 stays a real.
+  #[test]
+  fn reals_beyond_two_to_the_38_stay_reals() {
+    assert_eq!(
+      interpret(
+        "{Rationalize[2.5*^11], Rationalize[2.^38], Rationalize[3.*^11], \
+          Rationalize[-2.75*^11], Rationalize[4.7*^19], Rationalize[4.7*^19, 0]}"
+      )
+      .unwrap(),
+      "{250000000000, 274877906944, 3.*^11, -2.75*^11, 4.7*^19, \
+       47000000000000000000}"
+    );
   }
 }

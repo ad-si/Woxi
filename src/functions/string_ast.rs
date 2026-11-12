@@ -452,19 +452,24 @@ fn string_take_drop(
         emit_seqs(fname, args);
         return Ok(unevaluated());
       }
-      let real_start = if m >= 0 { m } else { len + m + 1 };
-      let real_end = if n >= 0 { n } else { len + n + 1 };
-      if real_end == real_start - step {
-        return Ok(empty_or_all(true));
-      }
-      let in_range = real_start >= 1
-        && real_end >= 1
-        && real_start <= len
-        && real_end <= len;
-      let proper = (step > 0 && real_end >= real_start)
-        || (step < 0 && real_end <= real_start);
-      if in_range && proper {
-        Ok(take(real_start as usize, real_end as usize, step))
+      // The positions list Take would pick from a list of this length.
+      if let Some(positions) =
+        crate::functions::list_helpers_ast::step_range_positions(
+          len, m, n, step,
+        )
+      {
+        let picked: std::collections::HashSet<usize> =
+          positions.iter().copied().collect();
+        Ok(Expr::String(if is_take {
+          positions.iter().map(|&i| chars[i]).collect()
+        } else {
+          chars
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !picked.contains(i))
+            .map(|(_, c)| c)
+            .collect()
+        }))
       } else {
         string_take_drop_message(fname, m, n, s);
         Ok(unevaluated())
@@ -829,6 +834,11 @@ fn string_split_with_replacement(
   max_parts: Option<usize>,
   ignore_case: bool,
 ) -> Result<Expr, InterpreterError> {
+  // The empty string has no pieces and no delimiters — unless a count (or
+  // All) asks for every piece, empty ones included.
+  if s.is_empty() && max_parts.is_none() {
+    return Ok(Expr::List(Vec::new().into()));
+  }
   let mut compiled: Vec<(WoxiRegex, Option<String>, Option<&Expr>)> =
     Vec::with_capacity(rules.len());
   for (lhs, rhs) in rules {
@@ -946,11 +956,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extract max parts (3rd arg if integer) and options from remaining args
+  // `All` keeps every piece, the empty ones at either end included — like
+  // an unlimited count of pieces.
   let (max_parts, option_start) = if args.len() >= 3 {
-    if let Expr::Integer(n) = &args[2] {
-      (Some(*n as usize), 3)
-    } else {
-      (None, 2)
+    match &args[2] {
+      Expr::Integer(n) => (Some(*n as usize), 3),
+      Expr::Identifier(a) if a == "All" => (Some(usize::MAX), 3),
+      _ => (None, 2),
     }
   } else {
     (None, 2)
@@ -4530,6 +4542,17 @@ fn decimal_form_default(f: f64) -> String {
   }
   let neg = f < 0.0;
   let ax = f.abs();
+  // From 10^16 up every machine real is an integer, and wolframscript shows
+  // its shortest digits padded with zeros — 2.9732*^23 is
+  // 297320000000000000000000., not the binary value 297319999999999989514240.
+  if ax >= 1e16 && ax.is_finite() {
+    let digits = format!("{ax}");
+    return if neg {
+      format!("-{digits}.")
+    } else {
+      format!("{digits}.")
+    };
+  }
   let m = ax.log10().floor() as i64;
   // Decimal places implied by 6 significant figures; never negative, so the
   // integer part is always shown in full.
@@ -4944,11 +4967,17 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A few heads print differently under ToString than in the bare
   // script-mode echo (`MessageName` is the one that matters); the renderers
   // tell the two apart by this flag.
-  let result = crate::syntax::rendering_for_to_string(|| {
-    to_string_ast_inner(&args[..positional])
-  })?;
   let input_form =
     matches!(args.get(1), Some(Expr::Identifier(f)) if f == "InputForm");
+  let result = crate::syntax::rendering_for_to_string(|| {
+    if input_form {
+      to_string_ast_inner(&args[..positional])
+    } else {
+      crate::syntax::rendering_to_string_output(|| {
+        to_string_ast_inner(&args[..positional])
+      })
+    }
+  })?;
   Ok(match (&result, encoding) {
     (Expr::String(text), Some(encoding)) => {
       Expr::String(encode_to_string_text(text, &encoding, input_form))
@@ -5360,7 +5389,16 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rendered = match inner_args.get(1) {
       None => match &inner_args[0] {
         Expr::Integer(i) => Some(i.to_string()),
-        Expr::Real(f) => Some(decimal_form_default(*f)),
+        Expr::Real(f) => {
+          // From 2^53 up the integer digits are more than machine precision.
+          if f.abs() >= 2f64.powi(53) {
+            crate::emit_message(
+              "DecimalForm::reqsigz: Requested number precision is lower \
+               than number of digits shown; padding with zeros.",
+            );
+          }
+          Some(decimal_form_default(*f))
+        }
         _ => None,
       },
       Some(Expr::Integer(n)) => {
@@ -5718,7 +5756,13 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // significant figures, matching wolframscript: `ToString[N[Pi, 5]]` is
   // "3.1416" (not "3.1415") and `ToString[N[999/1000, 2]]` is "1.0".
   if let Expr::BigFloat(digits, prec) = &args[0] {
-    return Ok(Expr::String(format_bigfloat_for_to_string(digits, *prec)));
+    let text = format_bigfloat_for_to_string(digits, *prec);
+    // In scientific form the exponent is set raised, as for a machine real.
+    return Ok(Expr::String(if text.contains("*^") {
+      crate::syntax::expr_to_output_form_2d(&Expr::Raw(text))
+    } else {
+      text
+    }));
   }
 
   // Default (no form or unrecognized form): OutputForm.
@@ -5752,11 +5796,34 @@ fn round_real_to_6_sig_digits(f: f64) -> f64 {
   if f == 0.0 || !f.is_finite() {
     return f;
   }
-  // Round to 6 significant digits via scientific formatting. Multiplying by a
-  // 10^k factor (which is not exactly representable in f64) loses precision —
-  // e.g. 1.5e10 would round-trip to 1.4999999999999998e10. Formatting to 5
-  // digits after the point in `e` notation rounds correctly.
-  format!("{f:.5e}").parse().unwrap_or(f)
+  round_shortest_digits(f, 6)
+}
+
+/// `f` rounded to `n` significant digits the way wolframscript rounds for
+/// display: half up on its shortest decimal digits, not on the binary value
+/// behind them — 0.1234565 (binary 0.12345649999…) shows as 0.123457.
+/// (Multiplying by 10^k instead would add error of its own: 1.5e10 would
+/// come back as 1.4999999999999998e10.)
+pub(crate) fn round_shortest_digits(f: f64, n: usize) -> f64 {
+  if f == 0.0 || !f.is_finite() || n == 0 {
+    return f;
+  }
+  let shortest = format!("{:e}", f.abs());
+  let (mantissa, exponent) =
+    shortest.split_once('e').unwrap_or((&shortest, "0"));
+  let digits: Vec<u8> = mantissa.bytes().filter(u8::is_ascii_digit).collect();
+  if digits.len() <= n {
+    return f;
+  }
+  let mut kept: u128 = digits[..n]
+    .iter()
+    .fold(0, |acc, d| acc * 10 + u128::from(d - b'0'));
+  if digits[n] >= b'5' {
+    kept += 1;
+  }
+  let exponent: i64 = exponent.parse().unwrap_or(0) - (n as i64 - 1);
+  let magnitude: f64 = format!("{kept}e{exponent}").parse().unwrap_or(f.abs());
+  if f < 0.0 { -magnitude } else { magnitude }
 }
 
 /// Render an arbitrary-precision number the way `ToString` does: drop the
@@ -5772,15 +5839,42 @@ fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
   };
   let prec_digits = prec.round() as i64;
   if prec_digits > 0 {
-    format!(
-      "{}{}",
-      sign,
-      crate::round_significant(body, prec_digits as usize)
-    )
+    let fixed = crate::round_significant(body, prec_digits as usize);
+    let text =
+      scientific_if_out_of_range(&fixed, prec_digits as usize).unwrap_or(fixed);
+    format!("{sign}{text}")
   } else {
     // Non-positive precision (e.g. an accuracy form): keep the digits.
     format!("{sign}{body}")
   }
+}
+
+/// A rounded fixed-point expansion (`"3846153846153846000."`) rewritten as
+/// `mantissa*^exponent` when wolframscript writes it in scientific form:
+/// from 10^6 up, below 10^-5, and wherever the integer part has more
+/// digits than the precision (`N[10^6/3, 5]` is `3.3333*^5`). The
+/// mantissa keeps `precision` significant digits.
+fn scientific_if_out_of_range(fixed: &str, precision: usize) -> Option<String> {
+  let (int_part, frac_part) = fixed.split_once('.').unwrap_or((fixed, ""));
+  let (exponent, significant): (i64, String) =
+    if int_part.trim_start_matches('0').is_empty() {
+      let zeros = frac_part.bytes().take_while(|b| *b == b'0').count();
+      if zeros == frac_part.len() {
+        return None;
+      }
+      (-(zeros as i64) - 1, frac_part[zeros..].to_string())
+    } else {
+      let int_part = int_part.trim_start_matches('0');
+      (int_part.len() as i64 - 1, format!("{int_part}{frac_part}"))
+    };
+  let out_of_range =
+    !(-5..6).contains(&exponent) || exponent + 1 > precision as i64;
+  if !out_of_range {
+    return None;
+  }
+  let digits: String = significant.chars().take(precision.max(1)).collect();
+  let (first, rest) = digits.split_at(1);
+  Some(format!("{first}.{rest}*^{exponent}"))
 }
 
 /// Recursively replace each `Expr::Real(f)` in `expr` with its
@@ -9087,6 +9181,7 @@ pub const BOX_START: char = '\u{f7c1}'; // \!
 pub const BOX_OPEN: char = '\u{f7c9}'; // \(
 pub const BOX_SEP: char = '\u{f7c8}'; // \*
 pub const BOX_CLOSE: char = '\u{f7c0}'; // \)
+pub const BOX_OVER: char = '\u{f7c7}'; // \&
 
 /// One piece of a string that mixes literal text with inline box segments.
 /// `is_box` marks a piece whose `text` is a bare box-expression source such
@@ -10785,12 +10880,17 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     e == "utf8"
   });
 
+  // A known encoding gives the bytes of each character in it (None for
+  // one it lacks); without one the codes are the characters' own.
+  let charset = encoding.as_deref().and_then(ByteCharset::from_name);
   let codes_for = |s: &str| -> Vec<Expr> {
     if is_utf8 {
       s.as_bytes()
         .iter()
         .map(|b| Expr::Integer(*b as i128))
         .collect()
+    } else if let Some(charset) = charset {
+      charset.character_codes(s)
     } else {
       s.chars().map(|c| Expr::Integer(c as i128)).collect()
     }
@@ -10981,18 +11081,63 @@ fn integer_to_base64_string(n: &Expr) -> Result<String, InterpreterError> {
   Ok(String::from_utf8(digits).expect("ASCII alphabet"))
 }
 
-/// Encode a positive integer as a Roman numeral string. Wolfram's
-/// `IntegerString[n, "Roman"]` uses the standard subtractive form for
-/// 1..3999 and an OverscriptBox-based "vinculum" form for larger values;
-/// we implement the plain subtractive form (sufficient for the
-/// 1..3999 range), and fall back to the unevaluated head for inputs
-/// outside that range.
-fn integer_to_roman_string(n: i128) -> Option<String> {
-  if !(1..=3999).contains(&n) {
-    return None;
+/// `IntegerString[n, "Roman"]`, as wolframscript writes it: the sign is
+/// dropped, 0 is `N`, numbers below 5000 are plain (4000 is `MMMM`), and a
+/// larger number puts its thousands under a vinculum — an overscript bar,
+/// written as the linear box syntax `\!\(\(\"IX\"\)\&_\)` — keeping in the
+/// plain tail the thousands that `M`, or `V` under the bar, cannot take
+/// over (906915 is overlined CMV, then MCMXV). Bars nest for millions.
+fn integer_to_roman_string(n: i128) -> String {
+  let groups = roman_groups(n.unsigned_abs());
+  let mut out = String::new();
+  for (level, text) in groups {
+    if level == 0 {
+      out.push_str(&text);
+      continue;
+    }
+    // \(\"text\"\)\&_, then \(\( … \)\)\&_ per further bar.
+    let mut boxed = format!("{BOX_OPEN}\"{text}\"{BOX_CLOSE}{BOX_OVER}_");
+    for _ in 1..level {
+      boxed =
+        format!("{BOX_OPEN}{BOX_OPEN}{boxed}{BOX_CLOSE}{BOX_CLOSE}{BOX_OVER}_");
+    }
+    out.push(BOX_START);
+    out.push(BOX_OPEN);
+    out.push_str(&boxed);
+    out.push(BOX_CLOSE);
   }
-  let mut n = n as u32;
-  let table: &[(u32, &str)] = &[
+  out
+}
+
+/// The Roman numeral of `n` as (number of bars, text) groups, most
+/// significant first.
+fn roman_groups(n: u128) -> Vec<(usize, String)> {
+  if n == 0 {
+    return vec![(0, "N".to_string())];
+  }
+  if n < 5000 {
+    return vec![(0, plain_roman(n))];
+  }
+  let thousands_digit = (n / 1000) % 10;
+  let kept_thousands = match thousands_digit {
+    0..=4 => thousands_digit,
+    5..=8 => thousands_digit - 5,
+    _ => 0,
+  };
+  let tail = n % 1000 + kept_thousands * 1000;
+  let mut groups: Vec<(usize, String)> = roman_groups((n - tail) / 1000)
+    .into_iter()
+    .map(|(level, text)| (level + 1, text))
+    .collect();
+  if tail > 0 {
+    groups.push((0, plain_roman(tail)));
+  }
+  groups
+}
+
+/// The subtractive form, with as many `M`s as the thousands need.
+fn plain_roman(mut n: u128) -> String {
+  let table: &[(u128, &str)] = &[
     (1000, "M"),
     (900, "CM"),
     (500, "D"),
@@ -11014,7 +11159,7 @@ fn integer_to_roman_string(n: i128) -> Option<String> {
       n -= *v;
     }
   }
-  Some(out)
+  out
 }
 
 /// IntegerString[n] or IntegerString[n, base] or IntegerString[n, base, length] - convert integer to string
@@ -11023,6 +11168,26 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "IntegerString expects 1, 2, or 3 arguments".into(),
     ));
+  }
+
+  // Position 1 must be an integer, whatever the base or numeric system;
+  // explicit non-integer numbers (even integral reals like 2., rationals,
+  // complex numbers) emit ::int, symbols and constants stay silent.
+  if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_)) {
+    let is_explicit_non_integer =
+      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
+        || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+        || crate::functions::predicate_ast::is_complex_number(&args[0]);
+    if is_explicit_non_integer {
+      // The call is quoted in 2D, so a rational is set as a fraction.
+      crate::emit_message(&crate::syntax::message_with_expr_2d(
+        "IntegerString::int: Integer expected at position 1 in ",
+        &unevaluated("IntegerString", args),
+        ".",
+      ));
+    }
+    return Ok(unevaluated("IntegerString", args));
   }
 
   // Wolfram accepts a named "numeric system" as the base, e.g.
@@ -11035,11 +11200,9 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = match name.as_str() {
       "Base64" => integer_to_base64_string(&args[0])?,
       "Roman" => {
-        let Some(s) =
-          expr_to_int(&args[0]).ok().and_then(integer_to_roman_string)
+        let Some(s) = expr_to_int(&args[0]).ok().map(integer_to_roman_string)
         else {
-          // Unsupported range / non-integer — leave unevaluated rather
-          // than guess at the vinculum/OverscriptBox encoding.
+          // An integer beyond 128 bits.
           return Ok(unevaluated("IntegerString", args));
         };
         s
@@ -11057,22 +11220,6 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("IntegerString", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
-
-  // Position 1 must be an integer; explicit non-integer numbers (even
-  // integral reals like 2.) emit ::int, symbols stay silent.
-  if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_)) {
-    let is_explicit_non_integer =
-      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
-        || matches!(&args[0], Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2);
-    if is_explicit_non_integer {
-      crate::emit_message(&format!(
-        "IntegerString::int: Integer expected at position 1 in {}.",
-        show(&unevaluated())
-      ));
-    }
-    return Ok(unevaluated());
-  }
 
   // Position 2: an explicit base outside 2..36 emits ::basf; symbolic
   // bases stay silently unevaluated.
@@ -14465,6 +14612,16 @@ impl TextReadOptions {
     self.null_records = true;
   }
 
+  /// Whether `NullWords -> True` is in effect.
+  pub(crate) fn null_words(&self) -> bool {
+    self.null_words
+  }
+
+  /// Whether `NullRecords -> True` is in effect.
+  pub(crate) fn null_records(&self) -> bool {
+    self.null_records
+  }
+
   /// The `WordSeparators` in effect.
   pub(crate) fn word_separators(&self) -> &[String] {
     &self.word_separators
@@ -14473,7 +14630,7 @@ impl TextReadOptions {
   /// The records of `text` from byte `start` on, as (start, end, next)
   /// offsets: the record spans start..end and the following one starts at
   /// next.
-  fn record_spans(
+  pub(crate) fn record_spans(
     &self,
     text: &str,
     start: usize,
@@ -14583,14 +14740,57 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ReadList", args));
   };
 
-  let text = readlist_get_text(&positional[0])?;
-
   // Determine the read type (default: Expression)
+  let default_type = id_expr("Expression");
   let read_type = if positional.len() >= 2 {
     &positional[1]
   } else {
-    &id_expr("Expression")
+    &default_type
   };
+  // An open stream is read from where it stands, one Read at a time, and
+  // left at the end: ReadList is exactly Read repeated.
+  let stream_id = match &positional[0] {
+    Expr::FunctionCall { name, args }
+      if name == "InputStream" && args.len() == 2 =>
+    {
+      match &args[1] {
+        Expr::Integer(id) => usize::try_from(*id).ok(),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let stream_max = match positional.get(2) {
+    None => Some(None),
+    Some(Expr::Integer(n)) if *n >= 0 => Some(Some(*n as usize)),
+    Some(_) => None,
+  };
+  if let (Some(id), Some(max)) = (stream_id, stream_max)
+    && !read_opts.record_lists
+    && let Some(result) =
+      crate::evaluator::dispatch::io_functions::read_list_from_stream(
+        id, read_type, &read_opts, max,
+      )
+  {
+    return Ok(result);
+  }
+
+  let text = readlist_get_text(&positional[0])?;
+  // Any other source is read the same way, from its start.
+  if !read_opts.record_lists
+    && let Some(max) = stream_max
+  {
+    let source = match &positional[0] {
+      Expr::String(path) => path.clone(),
+      _ => format!("StringToStream[{text}]"),
+    };
+    return Ok(
+      crate::evaluator::dispatch::io_functions::read_list_text(
+        &text, 0, read_type, &read_opts, max, &source,
+      )
+      .0,
+    );
+  }
 
   // Optional max count: must be a non-negative machine integer when
   // given. Match wolframscript on rejection: emit `ReadList::intnm`
@@ -16469,33 +16669,51 @@ pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(rules.into()))
 }
 
-/// The Mac OS Roman characters of the bytes 0x80–0xFF.
-const MACINTOSH_ROMAN_HIGH: [char; 128] = [
-  'Ä', 'Å', 'Ç', 'É', 'Ñ', 'Ö', 'Ü', 'á', 'à', 'â', 'ä', 'ã', 'å', 'ç', 'é',
-  'è', 'ê', 'ë', 'í', 'ì', 'î', 'ï', 'ñ', 'ó', 'ò', 'ô', 'ö', 'õ', 'ú', 'ù',
-  'û', 'ü', '†', '°', '¢', '£', '§', '•', '¶', 'ß', '®', '©', '™', '´', '¨',
-  '≠', 'Æ', 'Ø', '∞', '±', '≤', '≥', '¥', 'µ', '∂', '∑', '∏', 'π', '∫', 'ª',
-  'º', 'Ω', 'æ', 'ø', '¿', '¡', '¬', '√', 'ƒ', '≈', '∆', '«', '»', '…',
-  '\u{a0}', 'À', 'Ã', 'Õ', 'Œ', 'œ', '–', '—', '“', '”', '‘', '’', '÷', '◊',
-  'ÿ', 'Ÿ', '⁄', '€', '‹', '›', 'ﬁ', 'ﬂ', '‡', '·', '‚', '„', '‰', 'Â', 'Ê',
-  'Á', 'Ë', 'È', 'Í', 'Î', 'Ï', 'Ì', 'Ó', 'Ô', '\u{f8ff}', 'Ò', 'Ú', 'Û', 'Ù',
-  'ı', 'ˆ', '˜', '¯', '˘', '˙', '˚', '¸', '˝', '˛', 'ˇ',
+/// Where wolframscript puts a byte an encoding gives no character: the
+/// private-use character U+F200 + byte, which encodes back to nothing.
+const UNDEFINED_BYTE_BASE: u32 = 0xF200;
+
+/// The characters of the bytes 0x80–0xFF in MacintoshRoman, as
+/// wolframscript's table has them — the classic Mac OS Roman set, with ¤
+/// rather than € at 0xDB, Greek μ and Δ, ◇ at 0xD7 and U+FDFF for the Apple
+/// logo.
+const MACINTOSH_ROMAN_HIGH: [u32; 128] = [
+  0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1, 0x00E0,
+  0x00E2, 0x00E4, 0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8, 0x00EA, 0x00EB,
+  0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3, 0x00F2, 0x00F4, 0x00F6,
+  0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC, 0x2020, 0x00B0, 0x00A2, 0x00A3,
+  0x00A7, 0x2022, 0x00B6, 0x00DF, 0x00AE, 0x00A9, 0x2122, 0x00B4, 0x00A8,
+  0x2260, 0x00C6, 0x00D8, 0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x03BC,
+  0x2202, 0x2211, 0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x03A9, 0x00E6,
+  0x00F8, 0x00BF, 0x00A1, 0x00AC, 0x221A, 0x0192, 0x2248, 0x0394, 0x00AB,
+  0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3, 0x00D5, 0x0152, 0x0153, 0x2013,
+  0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25C7, 0x00FF, 0x0178,
+  0x2215, 0x00A4, 0x2039, 0x203A, 0xFB01, 0xFB02, 0x2021, 0x00B7, 0x201A,
+  0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1, 0x00CB, 0x00C8, 0x00CD, 0x00CE,
+  0x00CF, 0x00CC, 0x00D3, 0x00D4, 0xFDFF, 0x00D2, 0x00DA, 0x00DB, 0x00D9,
+  0x0131, 0x02C6, 0x02DC, 0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD,
+  0x02DB, 0x02C7,
 ];
 
-/// The Windows-1252 characters of the bytes 0x80–0x9F (the rest of the
-/// code page agrees with ISO Latin-1).
-const WINDOWS_ANSI_C1: [char; 32] = [
-  '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ',
-  '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜',
-  '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
+/// The characters of the bytes 0x80–0x9F in WindowsANSI (code page 1252);
+/// the five bytes it leaves undefined are U+F200 + byte. From 0xA0 on the
+/// code page agrees with ISO Latin-1.
+const WINDOWS_ANSI_C1: [u32; 32] = [
+  0x20AC, 0xF281, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+  0x2030, 0x0160, 0x2039, 0x0152, 0xF28D, 0x017D, 0xF28F, 0xF290, 0x2018,
+  0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161,
+  0x203A, 0x0153, 0xF29D, 0x017E, 0x0178,
 ];
 
-/// A single-byte character encoding, as named by `CharacterEncoding`.
+/// A character encoding, as named by `CharacterEncoding` or the encoding
+/// argument of `ToCharacterCode`, `FromCharacterCode`, `ByteArrayToString`
+/// and `StringToByteArray`.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ByteCharset {
   Utf8,
   Latin1,
   Ascii,
+  PrintableAscii,
   MacintoshRoman,
   WindowsAnsi,
 }
@@ -16506,63 +16724,173 @@ impl ByteCharset {
     Some(match name {
       "UTF-8" | "UTF8" => Self::Utf8,
       "ISOLatin1" | "ISO8859-1" => Self::Latin1,
-      "ASCII" | "PrintableASCII" => Self::Ascii,
+      "ASCII" => Self::Ascii,
+      "PrintableASCII" => Self::PrintableAscii,
       "MacintoshRoman" => Self::MacintoshRoman,
       "WindowsANSI" => Self::WindowsAnsi,
       _ => return None,
     })
   }
 
-  /// The bytes of `c`, falling back to UTF-8 for a character the encoding
-  /// has no byte for.
-  fn encode_char(self, c: char, out: &mut Vec<u8>) {
-    let code = c as u32;
-    let byte = match self {
-      Self::Utf8 => None,
-      _ if code < 0x80 => Some(code as u8),
-      Self::Latin1 if code < 0x100 => Some(code as u8),
-      Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH
-        .iter()
-        .position(|&m| m == c)
-        .map(|i| 0x80 + i as u8),
-      Self::WindowsAnsi => WINDOWS_ANSI_C1
-        .iter()
-        .position(|&m| m == c)
-        .map(|i| 0x80 + i as u8)
-        .or_else(|| (0xA0..0x100).contains(&code).then_some(code as u8)),
-      _ => None,
-    };
-    if let Some(b) = byte {
-      out.push(b);
-    } else {
-      let mut buf = [0u8; 4];
-      out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+  /// The character code a byte stands for in a single-byte encoding.
+  fn byte_char(self, b: u8) -> u32 {
+    let undefined = UNDEFINED_BYTE_BASE + u32::from(b);
+    match self {
+      Self::Utf8 | Self::Latin1 => u32::from(b),
+      Self::Ascii if b < 0x80 => u32::from(b),
+      Self::PrintableAscii if matches!(b, b'\n' | b'\r' | 0x20..=0x7E) => {
+        u32::from(b)
+      }
+      Self::Ascii | Self::PrintableAscii => undefined,
+      _ if b < 0x80 => u32::from(b),
+      Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH[usize::from(b - 0x80)],
+      Self::WindowsAnsi if b < 0xA0 => WINDOWS_ANSI_C1[usize::from(b - 0x80)],
+      Self::WindowsAnsi => u32::from(b),
     }
   }
 
-  pub(crate) fn encode(self, s: &str) -> Vec<u8> {
+  /// The byte a character is in a single-byte encoding, if it has one.
+  fn char_byte(self, c: char) -> Option<u8> {
+    let code = c as u32;
+    (0..=255u8).find(|&b| {
+      let mapped = self.byte_char(b);
+      mapped == code && mapped != UNDEFINED_BYTE_BASE + u32::from(b)
+    })
+  }
+
+  /// The bytes of `c`, or `None` when the encoding has none for it.
+  fn encode_char(self, c: char) -> Option<Vec<u8>> {
+    match self {
+      Self::Utf8 => {
+        let mut buf = [0u8; 4];
+        Some(c.encode_utf8(&mut buf).as_bytes().to_vec())
+      }
+      _ => self.char_byte(c).map(|b| vec![b]),
+    }
+  }
+
+  /// The character codes `ToCharacterCode[s, encoding]` gives: the bytes of
+  /// each character, `None` for one the encoding cannot represent.
+  pub(crate) fn character_codes(self, s: &str) -> Vec<Expr> {
     let mut out = Vec::with_capacity(s.len());
     for c in s.chars() {
-      self.encode_char(c, &mut out);
+      match self.encode_char(c) {
+        Some(bytes) => {
+          out.extend(bytes.into_iter().map(|b| Expr::Integer(i128::from(b))));
+        }
+        None => out.push(Expr::Identifier("None".to_string())),
+      }
     }
     out
   }
 
-  pub(crate) fn decode(self, bytes: &[u8]) -> String {
-    let high = |b: u8| -> char {
-      match self {
-        Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH[(b - 0x80) as usize],
-        Self::WindowsAnsi if b < 0xA0 => WINDOWS_ANSI_C1[(b - 0x80) as usize],
-        _ => b as char,
+  /// The bytes of `s`, falling back to UTF-8 for a character the encoding
+  /// has no byte for.
+  pub(crate) fn encode(self, s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      if let Some(bytes) = self.encode_char(c) {
+        out.extend(bytes);
+      } else {
+        let mut buf = [0u8; 4];
+        out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
       }
-    };
-    match self {
-      Self::Utf8 => String::from_utf8_lossy(bytes).to_string(),
-      _ => bytes
-        .iter()
-        .map(|&b| if b < 0x80 { b as char } else { high(b) })
-        .collect(),
     }
+    out
+  }
+
+  /// The bytes of `s`, or the first character the encoding cannot
+  /// represent.
+  pub(crate) fn encode_strict(self, s: &str) -> Result<Vec<u8>, char> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      out.extend(self.encode_char(c).ok_or(c)?);
+    }
+    Ok(out)
+  }
+
+  /// Decode bytes quietly.
+  pub(crate) fn decode(self, bytes: &[u8]) -> String {
+    let codes: Vec<u32> = bytes.iter().map(|b| u32::from(*b)).collect();
+    self.decode_codes(&codes, false)
+  }
+
+  /// Decode bytes the way `ByteArrayToString` does, reporting each byte
+  /// sequence that is not UTF-8.
+  pub(crate) fn decode_reporting(self, bytes: &[u8]) -> String {
+    let codes: Vec<u32> = bytes.iter().map(|b| u32::from(*b)).collect();
+    self.decode_codes(&codes, true)
+  }
+
+  /// Decode character codes the way `FromCharacterCode[codes, encoding]`
+  /// does: codes below 256 are bytes in the encoding, larger ones are
+  /// characters already. In UTF-8, a sequence that does not decode is
+  /// reported (when `report`), its first byte kept as the character of that
+  /// code, and decoding resumes right after it. Structurally sound
+  /// sequences decode even when overlong, as in wolframscript.
+  pub(crate) fn decode_codes(self, codes: &[u32], report: bool) -> String {
+    let push = |out: &mut String, code: u32| {
+      out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
+    };
+    let mut out = String::with_capacity(codes.len());
+    if self != Self::Utf8 {
+      for &code in codes {
+        match u8::try_from(code) {
+          Ok(b) => push(&mut out, self.byte_char(b)),
+          Err(_) => push(&mut out, code),
+        }
+      }
+      return out;
+    }
+    let continuation = |c: u32| (0x80..=0xBF).contains(&c);
+    let mut i = 0;
+    while i < codes.len() {
+      let lead = codes[i];
+      let (need, initial) = match lead {
+        0..=0x7F | 0x100.. => {
+          push(&mut out, lead);
+          i += 1;
+          continue;
+        }
+        0xC0..=0xDF => (1, lead & 0x1F),
+        0xE0..=0xEF => (2, lead & 0x0F),
+        0xF0..=0xF7 => (3, lead & 0x07),
+        _ => (0, 0),
+      };
+      let mut got = 0;
+      while got < need
+        && i + 1 + got < codes.len()
+        && continuation(codes[i + 1 + got])
+      {
+        got += 1;
+      }
+      if need > 0 && got == need {
+        let code = codes[i + 1..=i + need]
+          .iter()
+          .fold(initial, |acc, c| (acc << 6) | (c & 0x3F));
+        push(&mut out, code);
+        i += need + 1;
+        continue;
+      }
+      if report {
+        // The bytes tried: the lead, its continuations, and the byte that
+        // broke the sequence, if there was one.
+        let end = (i + got + 2).min(codes.len());
+        let end = if need == 0 { i + 1 } else { end };
+        let shown = codes[i..end]
+          .iter()
+          .map(u32::to_string)
+          .collect::<Vec<_>>()
+          .join(", ");
+        crate::emit_message(&format!(
+          "$CharacterEncoding::utf8: The byte sequence {{{shown}}} could not be \
+           interpreted as a character in the UTF-8 character encoding."
+        ));
+      }
+      push(&mut out, lead);
+      i += 1;
+    }
+    out
   }
 }
 
@@ -16625,7 +16953,7 @@ fn percent_decode_with(s: &str, charset: ByteCharset) -> String {
 }
 
 /// StringToByteArray[string] - convert a string to a ByteArray (UTF-8 encoding)
-/// StringToByteArray[string, encoding] - with specified encoding (only UTF-8 supported)
+/// StringToByteArray[string, encoding] - encoded in that encoding
 pub fn string_to_byte_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -16637,16 +16965,36 @@ pub fn string_to_byte_array_ast(
   let Expr::String(s) = &args[0] else {
     return Ok(unevaluated("StringToByteArray", args));
   };
-  // Encode as UTF-8 bytes and create ByteArray
-  let bytes = s.as_bytes();
+  let charset = match args.get(1) {
+    None => ByteCharset::Utf8,
+    Some(Expr::String(name)) => match ByteCharset::from_name(name) {
+      Some(charset) => charset,
+      None => return Ok(unevaluated("StringToByteArray", args)),
+    },
+    Some(_) => return Ok(unevaluated("StringToByteArray", args)),
+  };
+  let bytes = match charset.encode_strict(s) {
+    Ok(bytes) => bytes,
+    Err(c) => {
+      let Some(Expr::String(name)) = args.get(1) else {
+        unreachable!("UTF-8 encodes every character")
+      };
+      crate::emit_message(&format!(
+        "StringToByteArray::notinenc: The character '{c}' (code point {}) \
+         cannot be represented in character encoding {name}.",
+        c as u32
+      ));
+      return Ok(unevaluated("StringToByteArray", args));
+    }
+  };
   use base64::Engine;
   let engine = base64::engine::general_purpose::STANDARD;
-  let b64 = engine.encode(bytes);
+  let b64 = engine.encode(&bytes);
   Ok(call1("ByteArray", Expr::String(b64)))
 }
 
 /// ByteArrayToString[bytearray] - convert a ByteArray to a string (UTF-8 decoding)
-/// ByteArrayToString[bytearray, encoding] - with specified encoding (only UTF-8 supported)
+/// ByteArrayToString[bytearray, encoding] - decoded in that encoding
 pub fn byte_array_to_string_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -16683,7 +17031,17 @@ pub fn byte_array_to_string_ast(
         return Ok(unevaluated("ByteArrayToString", args));
       }
     };
-    return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
+    // The encoding decides how the bytes read; one Woxi does not know
+    // leaves the call unevaluated.
+    let charset = match args.get(1) {
+      None => ByteCharset::Utf8,
+      Some(Expr::String(name)) => match ByteCharset::from_name(name) {
+        Some(charset) => charset,
+        None => return Ok(unevaluated("ByteArrayToString", args)),
+      },
+      Some(_) => return Ok(unevaluated("ByteArrayToString", args)),
+    };
+    return Ok(Expr::String(charset.decode_reporting(&bytes)));
   }
   crate::emit_message(&format!(
     "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",
@@ -17149,6 +17507,11 @@ thread_local! {
 /// significant digits of machine display (`100.` is "100.0", `123456.` stays
 /// "123456.").
 fn text_string_real(f: f64) -> String {
+  // From 10^16 up TextString keeps six significant digits, padded with
+  // zeros (9.87654321*^20 is "987654000000000000000.").
+  if f.abs() >= 1e16 && f.is_finite() {
+    return decimal_form_default(round_shortest_digits(f, 6));
+  }
   let mut s = decimal_form_default(f);
   if s.ends_with('.')
     && s
@@ -17599,13 +17962,19 @@ fn number_form_family_scalar(
     },
   };
 
-  // Scientific notation carries no padded field: the 2D form is assembled
-  // straight from the mantissa.
+  // In scientific notation the 2D form is assembled straight from the
+  // mantissa, which PaddedForm[x, {n, f}] still pads to its n digit
+  // columns plus a sign and a point column ("  1.94 × 10^-23").
   if let Some(e) = exp {
     let mut mantissa = format!("{sign}{int_body}");
     if had_point || !frac_digits.is_empty() {
       mantissa.push_str(&opts.point);
       mantissa.push_str(&frac_digits);
+    }
+    if head == "PaddedForm"
+      && let Some((n, _)) = fixed
+    {
+      mantissa = pad_left(&mantissa, n.max(0) as usize + 2, &opts.lpad);
     }
     return Some(sci_parts_to_2d_string(&mantissa, Some(e)));
   }
@@ -17876,6 +18245,17 @@ pub(crate) fn number_form_family_to_string(
        digits shown; padding with zeros.",
     ));
   }
+  // Without a precision AccountingForm shows every integer digit of a
+  // machine real, which is more than machine precision from 2^53 up.
+  if spec.is_none()
+    && head == "AccountingForm"
+    && matches!(value, Expr::Real(f) if f.abs() >= 2f64.powi(53))
+  {
+    crate::emit_message(&format!(
+      "{head}::reqsigz: Requested number precision is lower than number of \
+       digits shown; padding with zeros.",
+    ));
+  }
   if let Some(Expr::Integer(n)) = spec {
     let reqsigz = if head == "AccountingForm" {
       integer_digit_count(value).is_some_and(|d| (*n as i64) < d)
@@ -18029,6 +18409,21 @@ fn exponent_form_to_string(head: &str, inner: &[Expr]) -> Option<String> {
     Some(Expr::Integer(n)) => *n as i64,
     Some(_) => return None,
   };
+  // An engineering mantissa has one to three integer digits (123.456 ×
+  // 10^6); asking for fewer pads them with zeros, which wolframscript
+  // reports.
+  if head == "EngineeringForm"
+    && positional.len() == 2
+    && let Expr::Real(f) = positional[0]
+    && *f != 0.0
+    && f.is_finite()
+    && n < f.abs().log10().floor().rem_euclid(3.0) as i64 + 1
+  {
+    crate::emit_message(
+      "EngineeringForm::reqsigz: Requested number precision is lower than \
+       number of digits shown; padding with zeros.",
+    );
+  }
   let opts = number_form_options(head, inner);
   render_form_threaded(positional[0], |x| {
     let (mantissa, exp) = if head == "ScientificForm" {

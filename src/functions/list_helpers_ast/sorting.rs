@@ -1378,7 +1378,9 @@ fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
     na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
   } else {
-    ka.cmp(&kb)
+    // Anything else in canonical order, as Sort has it: the head `f` comes
+    // before `Integer`, which a byte comparison of the text put first.
+    canonical_cmp(a, b)
   }
 }
 

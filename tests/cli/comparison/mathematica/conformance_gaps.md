@@ -16,6 +16,44 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `Rationalize[x, dx]` sometimes picks a different approximation
+
+Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
+random `Rationalize[x, dx]` calls. In the rest wolframscript passes over the
+first continued-fraction semiconvergent within `dx` for a later one closer
+to `x` — `Rationalize[-1.1864498315073577, 1/7]` is `-6/5` (error 0.014)
+rather than `-5/4` (error 0.064), `Rationalize[-18.74513989, 0.001]` is
+`-881/47` rather than `-806/43` — without a rule that fits all cases
+(neither "convergents only", which gets 158, nor "semiconvergents with
+k ≥ a/2", which gets 189). The default tolerance, including leaving machine
+reals beyond 2^38 unchanged, agrees.
+
+### The sixteenth digit of `RealDigits` of a machine real
+
+`RealDigits[x]` of a machine real gives the 16 significant digits of the
+exact binary value, correctly rounded, and an explicit length truncates
+those (fuzzed against wolframscript on 2026-11-12: 285 of 300 random calls
+agree). In the rest wolframscript's sixteenth digit is one off the correctly
+rounded one — `RealDigits[9648.194244925962]` ends in `…6, 3` although the
+value is `9648.19424492596226…`, and `RealDigits[0.40866721094200176]` ends in
+`…1, 7` for `0.408667210942001757…` — and for some values it stops a digit
+early with `Indeterminate` (`RealDigits[0.9150242254297728, 10, 17]`).
+That points to a limited-precision conversion whose exact rule has not
+been decoded.
+
+`ToString[N[1/1000000, 20]]` shows 19 mantissa digits in wolframscript and
+20 in Woxi: wolframscript stores the number in binary, just below 10^-6,
+while Woxi's arbitrary-precision reals are decimal.
+
+### `ToString` does not bracket a `!` inside a sum or a difference
+
+wolframscript's OutputForm text brackets a prefix `Not` that is an
+operand of `+` or `-`: `ToString[a + !x]` is `"a + (!x)"`, `ToString[b - !x]`
+is `"b - (!x)"`. Woxi's printed form brackets it (`a + ( !x)`) but its
+`ToString` text gives `"a + !x"`. (`ToString` drops the space before `!` as
+wolframscript does — `ToString[{1, !x}]` is `"{1, !x}"` — while the InputForm
+text keeps it: `ToString[!x, InputForm]` is `" !x"`.)
+
 Woxi and Wolfram usually agree on the *value* and disagree on how it is
 printed. This is by far the largest group.
 
@@ -830,6 +868,17 @@ OS. glibc rounds `Cos[2.0943951023931953]` (`N[2 Pi/3]`) correctly to
 (`CompleteGraph[3]`, …) show it on Linux. Matching Wolfram everywhere would
 need its own trigonometric kernel.
 
+### Machine `Binomial` of a real with an integer k
+
+Woxi computes `Binomial[x, k]` for a machine real `x` and an integer
+`k >= 0` as the falling factorial over `k!`, so `Binomial[-2.5, 3]` is
+`-6.5625`, the exact value. wolframscript goes through its own Gamma or
+log-Gamma kernel and gives `-6.562499999999997`; likewise
+`Binomial[7.5, 2]` is `24.375000000000036` there, while
+`Binomial[2.5, 3]` is exactly `0.3125`. Neither a plain Gamma ratio nor
+the exponential of log-Gamma differences (computed with libm) reproduces
+all of these, so the kernel is not identified.
+
 ### Machine ArcTanh differs from high-precision rounding
 
 Seed `1794077442250731000` (2026-11-07) found `ArcTanh[-0.7]`:
@@ -1178,24 +1227,21 @@ Seed 1794021370602620000 (2026-11-07) found `LogGamma[0.8]`: Woxi
 returns `0.15205967839983756`, Wolfram returns `0.15205967839983753`,
 and `N[N[LogGamma[SetPrecision[0.8,70]],60]]` agrees with Woxi.
 
-### Machine arithmetic-geometric means differ from high-precision rounding
+### Machine arithmetic-geometric means near the largest double
 
-Verified on 2026-11-07 while investigating seed 1794021370602620000.
-AGM now preserves exact input values and uses guard precision throughout the
-iteration, fixing `ArithmeticGeometricMean[3.9,9/5]` and intermediate
-product overflow/underflow. Some Wolfram machine results remain less accurate:
-`ArithmeticGeometricMean[1.8,1.2]` is `1.4848082617417828` in Wolfram,
-versus the high-precision rounded value `1.4848082617417826` in Woxi.
-For `ArithmeticGeometricMean[3.,7.]`, Wolfram returns `4.789013583140951`
-and Woxi returns the correctly rounded `4.789013583140952`.
-`ArithmeticGeometricMean[1.*^-200,2.*^-200]` underflows to zero in Wolfram;
-its high-precision evaluation agrees with Woxi's `1.4567910310469068*^-200`.
-These checks retain machine arguments' exact binary values via `SetPrecision`.
+Machine `ArithmeticGeometricMean` was decoded on 2026-11-12 (305 random
+pairs, all identical): wolframscript iterates `(a + b)/2`, `Sqrt[a b]` in
+plain double precision until the two meet or stop changing — which is why
+`ArithmeticGeometricMean[1.8,1.2]` is `1.4848082617417828`, an ulp above the
+correctly rounded value, and why `ArithmeticGeometricMean[1.*^-200,2.*^-200]`
+underflows to `0.`. A product that overflows is redone on power-of-two
+scaled arguments. Woxi does the same. What still differs: when `a + b`
+itself overflows (`ArithmeticGeometricMean[1.7*^308, 1.*^308]`)
+wolframscript leaves machine arithmetic and returns an arbitrary-precision
+real (`1.32681987170197985785387862205807354459`16.078…*^308`), while Woxi
+returns the machine value.
 
-Seed 1794045270718263000 also finds `ArithmeticGeometricMean[12,3.9]`:
-Woxi gives `7.385115155519322`, matching the rounded 80-digit reference,
-while Wolfram's direct machine result is `7.385115155519321`.
-The same seed finds `LogIntegral[3.]`: Woxi's `2.1635885946671918`
+Seed 1794045270718263000 finds `LogIntegral[3.]`: Woxi's `2.1635885946671918`
 agrees with the rounded 80-digit reference, while Wolfram's direct
 machine result is `2.163588594667192`.
 
@@ -5244,13 +5290,17 @@ given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
 colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
-### `SphericalRegion -> True` shrinks about 17 % more than Wolfram
+### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
-On a cylinder from `{0,0,0}` to `{10,0,0}` at `ImageSize -> {550, 350}` the
-trimmed figure width is 324 px in Wolfram and 268 px in Woxi; **without** the
-option both are 532. Working backwards, Wolfram behaves as if it fit the
-enclosing sphere into 399 px of a 550×350 frame — neither dimension, nor their
-mean, diagonal or geometric mean. What radius it normalizes by was not decoded.
+Woxi frames the picture by the sphere around the (2 %-padded) bounding box
+and widens the perspective view until that sphere fits. That reproduces the
+proportions Wolfram draws across differently shaped scenes. It also matches
+the shrink ratio of a cylinder from `{0,0,0}` to `{10,0,0}` at
+`ImageSize -> {550, 350}` (324/532 in Wolfram, 331/550 in Woxi). In absolute
+terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
+(a `Show` of a `ParametricPlot3D` and `Graphics3D`) all came out 6–7 % larger
+in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
+per side instead of 2 %. Where the extra margin comes from was not decoded.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6516,6 +6566,35 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 ## Import, export, units and system
 
+### Character encodings: lone surrogates, and strict JSON imports
+
+`ToCharacterCode`, `FromCharacterCode`, `ByteArrayToString`,
+`StringToByteArray`, `ExportString` and `ImportString` were fuzzed against
+wolframscript on 2026-11-12 (every byte of every 8-bit encoding, and 500
+random string calls; all agree). What still differs:
+
+- A UTF-8 sequence that decodes to a surrogate (`{237, 160, 128}`) gives
+  the character 55296 in wolframscript; a Rust string cannot hold a lone
+  surrogate, so Woxi gives U+FFFD.
+- `ImportString[…, "JSON"]` decodes UTF-8 leniently in Woxi; wolframscript
+  rejects a string holding a character above 255 (`General::
+  jsonoutofrangeunicode`) or an invalid byte sequence and fails.
+
+### `Read` / `ReadList` messages about text with `\r`, tabs or stray commas
+
+Stream reads were fuzzed against wolframscript on 2026-11-12 (1,050 random
+texts and read sequences over `StringToStream`, `OpenRead` and file names;
+all values and positions agree). Two kinds of message still differ:
+
+- A `Read::readt` / `ReadList::readt` message whose text contains a
+  carriage return or a tab: wolframscript lays the string out as a 2D box
+  in which `\r` breaks the line too, so its layout differs from Woxi's,
+  which only breaks at `\n`.
+- `ReadList` of a file whose text has a comma with nothing beside it
+  (`c1{1,`) also prints wolframscript's parser warning `Syntax::com:
+  Warning: comma encountered with no adjacent expression. …  (line 1 of
+  "file")` before the `readt` message; Woxi prints only the `readt`.
+
 ### A plain read after a pattern read still sees the rest of the stream
 
 `ReadString[stream, patt]` returns the text before the first match of `patt`
@@ -6796,24 +6875,45 @@ run has confirmed**: the machine Woxi is developed on has no Wolfram Engine, so
 these are Woxi's choices, not verified matches. Check each one against
 wolframscript before writing a conformance test on it.
 
-### Property *values* are unverified
+### Property values
 
-The property *names* are the recorded ones —
-`sock["Properties"]` gives `ConnectedClients`, `DestinationHostname`,
-`DestinationIPAddress`, `DestinationPort`, `DirectionType`, `InprocQ`,
-`Protocol`, `Scheme`, `SocketListener`, `Type`, `UUID`, and
-`lis["Properties"]` gives `CharacterEncoding`, `HandlerFunctions`,
-`HandlerFunctionsKeys`, `RecordSeparators`, `Socket` — but only
-`DestinationPort` was ever seen with a value. Woxi answers `"TCP"` for
-`Protocol`, `"tcp"` for `Scheme`, `"ZMQ_STREAM"` for `Type`, `"Server"` /
-`"Client"` for `DirectionType`, `False` for `InprocQ`, `"UTF-8"` for
-`CharacterEncoding` and `{}` for `RecordSeparators`. Wolfram's socket layer is
-built on ZeroMQ, so the last three in particular may well read differently.
+Checked against wolframscript 15.0 (2026-11-11): `Type` is `None` for every
+TCP socket, a listener's `CharacterEncoding` is `"UTF8"` and its
+`RecordSeparators` is `None`, and a handler's `TimeStamp` is a `DateObject`
+— Woxi now answers all of these the same way. `ConnectedClients` on a TCP
+*client* is `None` in wolframscript and still `{}` in Woxi.
 
 `c["SourcePort"]` returning `{}` *was* recorded, so Woxi answers `{}` for every
-property it does not keep. Whether wolframscript does the same for an
-arbitrary unknown property, or only for the ones it knows about but leaves
-empty, is untested.
+property a TCP socket does not keep. (A ZeroMQ socket answers an unknown
+property with an `invalidGetOption` failure, verified.)
+
+### ZeroMQ
+
+ZeroMQ sockets were checked against wolframscript 15.0 and, on the wire,
+against libzmq 4.3.5 (pyzmq) on 2026-11-11. What still differs:
+
+- `ZMQ_STREAM` is not implemented: `SocketOpen`/`SocketConnect` give a
+  `zmqinvcmd` failure for it.
+- Only the `tcp://` transport exists. `inproc://` and `ipc://` addresses
+  give a `zmqinvcmd` failure ("Protocol not supported"); wolframscript
+  supports both.
+- wolframscript accepts a port above 65535 (`SocketOpen[{"127.0.0.1",
+  70000}, "ZMQ_PAIR"]` binds, apparently modulo 2^16); Woxi refuses it with
+  an `addrspec` failure.
+- After `SocketOpen["tcp://*:port", …]` wolframscript cannot read its own
+  address properties back (they come out as `Missing["NotAvailable", …]`);
+  Woxi reports the wildcard address.
+- `"ZMQ_FD"` is the descriptor of Woxi's listening socket or current
+  connection, not libzmq's signaler descriptor; both are arbitrary numbers.
+- Socket options other than `"Subscribe"`, `"Unsubscribe"` and `"Identity"`
+  are recorded and read back but have no effect (high-water marks, linger,
+  heartbeats, CURVE/PLAIN security, …). Only the NULL security mechanism is
+  spoken.
+- `SocketConnect` waits up to a second for the first connection attempt, so
+  an endpoint that is already listening is connected when it returns;
+  libzmq connects entirely in the background.
+- An XPUB passes subscriptions on without `ZMQ_XPUB_VERBOSE` semantics: only
+  the first subscription to a topic and the last cancellation of one.
 
 ### Handler associations for events other than `"DataReceived"`
 
@@ -8821,6 +8921,11 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
   wolframscript); the same sum at a `Grid` cell or `Row` item level is not
   covered.
+- A TraditionalForm expression drawn in a graphic's text (a polynomial
+  `PlotLabel` such as `x^3 - 2 x^2 - 3 x`) has no space around its infix
+  operators: Woxi draws `x³-2x²-3x`, Wolfram's front end `x³ − 2x² − 3x`.
+  The box-to-SVG renderer is shared with output cells, whose tests expect
+  tight operators, so spacing them only inside graphics needs its own pass.
 
 ## Layout and form wrappers (graphics comparison sweep, 2026-11)
 

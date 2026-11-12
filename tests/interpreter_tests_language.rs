@@ -66,4 +66,5 @@ mod interpreter_tests {
   mod rosetta_script_fixes;
   mod sockets;
   mod syntax;
+  mod zmq_sockets;
 }

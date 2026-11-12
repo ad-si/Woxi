@@ -210,6 +210,17 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
   try_eval_to_f64(chart_datum_expr(e))
 }
 
+/// A graphic's `FormatType` is `TraditionalForm`, so each item of a
+/// `Row`/`Column`/`Grid` label is typeset in it: `x == 5` reads `x = 5`,
+/// `1 + n` reads `n + 1` and `Mod[a, m]` reads `a mod m`.
+fn traditional_label_layout(expr: &Expr) -> Expr {
+  if crate::functions::graphics::is_traditional_layout(expr) {
+    crate::functions::graphics::traditionalize_layout_items(expr)
+  } else {
+    expr.clone()
+  }
+}
+
 /// Typeset a label expression into its first line plus the lines after it.
 /// A newline inside the label (`Row[{"a", "\n", "b"}]`, a multi-line string)
 /// starts a new line, which an SVG `<text>` would otherwise collapse.
@@ -561,6 +572,37 @@ pub(crate) fn parse_style_directive_args(
   (bold, italic, color, font_size)
 }
 
+/// A label expression with every sum in it (bare, or an item of a `Row`,
+/// `Column` or `Style`) wrapped in `TraditionalForm`. A graphic's
+/// `FormatType` is `TraditionalForm`, so `x^3 - 2 x^2 - 3 x` in a plot
+/// label runs from its highest power down rather than in the canonical
+/// `-3 x - 2 x^2 + x^3` order.
+fn traditional_sums(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Plus" => {
+      call("TraditionalForm", vec![expr.clone()])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args = args.to_vec();
+      if let Expr::List(items) = &args[0] {
+        new_args[0] = Expr::List(items.iter().map(traditional_sums).collect());
+      }
+      call(name, new_args)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = traditional_sums(&args[0]);
+      call(name, new_args)
+    }
+    other => other.clone(),
+  }
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -717,7 +759,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let (markup, rest) = markup_and_extra_lines(other);
+          let (markup, rest) = markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          ));
           extra_lines = rest;
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
@@ -745,7 +789,11 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         match crate::functions::graphics::traditional_application_markup(other)
         {
           Some(markup) => (markup, Vec::new()),
-          None => markup_and_extra_lines(other),
+          // A sum reads as `TraditionalForm` sets it, so a polynomial runs
+          // from its highest power down (`x^3 - 2 x^2`).
+          None => markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          )),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
       // A picture taller than a line of text claims the room of the blank
@@ -985,7 +1033,12 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // the literal text "None". A quoted `"None"` still goes through the
     // `Expr::String` arm above and prints as-is.
     Expr::Identifier(s) if s == "None" => None,
-    Expr::Identifier(s) => Some(s.clone()),
+    // A built-in constant symbol (`Infinity`) is set as its glyph (`∞`), the
+    // same way the `Expr::Constant` arm below does.
+    Expr::Identifier(s) => Some(
+      crate::functions::graphics::typeset_constant_glyph(s)
+        .map_or_else(|| s.clone(), str::to_string),
+    ),
     Expr::Integer(_) | Expr::BigInteger(_) => Some(expr_to_string(e)),
     // A real reads as `ToString` prints it (six significant digits), so a
     // computed `Round[x, 0.1]` labels as `-0.6`, not `-0.6000000000000001`.
@@ -1155,6 +1208,38 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       };
       let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
       Some(parts.join("\n"))
+    }
+    // `Labeled[content, label]` stacks its label below (the default,
+    // `Bottom`) or above (`Top`) the content, like a two-row `Column` —
+    // the same layout `expr_to_svg_markup_lines` gives a `PlotLabel`.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && (args.len() == 2 || args.len() == 3)
+        && matches!(args.get(2), None | Some(Expr::Identifier(_))) =>
+    {
+      let on_top = match args.get(2) {
+        None => false,
+        Some(Expr::Identifier(p)) if p == "Bottom" => false,
+        Some(Expr::Identifier(p)) if p == "Top" => true,
+        // Side positions set the label beside the content on one line.
+        Some(Expr::Identifier(p)) if p == "Left" || p == "Right" => {
+          let content = expr_to_label(&args[0]).unwrap_or_default();
+          let label = expr_to_label(&args[1]).unwrap_or_default();
+          return Some(if p == "Left" {
+            format!("{label} {content}")
+          } else {
+            format!("{content} {label}")
+          });
+        }
+        _ => return None,
+      };
+      let content = expr_to_label(&args[0]).unwrap_or_default();
+      let label = expr_to_label(&args[1]).unwrap_or_default();
+      Some(if on_top {
+        format!("{label}\n{content}")
+      } else {
+        format!("{content}\n{label}")
+      })
     }
     // A mathematical constant is set as its glyph (`π`), the way a graphic's
     // text does.

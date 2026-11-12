@@ -328,10 +328,53 @@ fn with_bar_legend(
   )
 }
 
+/// The arguments with every option list (`{PlotStyle -> Red, …}`, possibly
+/// nested) after the first argument spliced in as separate options, or
+/// `None` when there is none. A plot's `OptionsPattern[]` accepts its
+/// options grouped in lists, as in `ListPlot[data, {PlotStyle -> Red}]`.
+fn with_spliced_option_lists(args: &[Expr]) -> Option<Vec<Expr>> {
+  fn is_option_list(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => {
+        !items.is_empty()
+          && items.iter().all(|i| {
+            matches!(i, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+              || is_option_list(i)
+          })
+      }
+      _ => false,
+    }
+  }
+  fn splice(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| splice(i, out)),
+      other => out.push(other.clone()),
+    }
+  }
+  if !args.iter().skip(1).any(is_option_list) {
+    return None;
+  }
+  let mut out = vec![args[0].clone()];
+  for arg in &args[1..] {
+    if is_option_list(arg) {
+      splice(arg, &mut out);
+    } else {
+      out.push(arg.clone());
+    }
+  }
+  Some(out)
+}
+
 pub fn dispatch_plotting(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  if (name.ends_with("Plot") || name.ends_with("Plot3D"))
+    && args.len() >= 2
+    && let Some(spliced) = with_spliced_option_lists(args)
+  {
+    return dispatch_plotting(name, &spliced);
+  }
   if PLLD_HEADS.contains(&name)
     && args.len() >= 2
     && let Some(renamed) = with_symbol_iterators(args)

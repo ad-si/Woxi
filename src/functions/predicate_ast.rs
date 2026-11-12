@@ -18,7 +18,7 @@ pub fn number_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Check if an expression is a numeric quantity (Integer, Real, Rational, Complex)
-fn is_numeric_expr(expr: &Expr) -> bool {
+pub fn is_numeric_expr(expr: &Expr) -> bool {
   match expr {
     Expr::Integer(_)
     | Expr::BigInteger(_)

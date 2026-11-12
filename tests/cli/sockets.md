@@ -4,8 +4,8 @@ icon: lucide/plug
 
 # Sockets
 
-Woxi implements the Wolfram Language's TCP socket functions natively,
-over `std::net` — no external library and no event loop of its own.
+Woxi implements the Wolfram Language's TCP and ZeroMQ socket functions
+natively, over `std::net` — no external library and no event loop of its own.
 
 A socket is a `SocketObject`, printed with its UUID:
 `SocketOpen` binds and listens (its UUID carries a `TCPSERVER-` prefix),
@@ -26,6 +26,7 @@ which is also how wolframscript behaves.
 - [`SocketListen`](sockets/SocketListen.md)
 - [`SocketReadMessage`](sockets/SocketReadMessage.md)
 - [`Sockets`](sockets/Sockets.md)
+- [ZeroMQ](sockets/ZeroMQ.md)
 
 ## Throughput
 

@@ -404,6 +404,23 @@ mod row_visual_mode {
     }
   }
 
+  // A `Row` nested inside a TraditionalForm expression (as a left-hand
+  // side `P(x)` of an equation) draws as its parts, not as the text of its
+  // row template.
+  #[test]
+  fn traditional_form_nested_row_draws_its_parts() {
+    clear_state();
+    for code in [
+      "ExportString[TraditionalForm[Row[{Style[\"P\", Italic], \"(\", x,        \")\"}] == x^2 + 1], \"SVG\"]",
+      "ExportString[TraditionalForm[f[Row[{a, b}]]], \"SVG\"]",
+      "ExportString[TraditionalForm[Row[{a, b}] + 1], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(!svg.contains("TemplateBox"), "{code}: {svg}");
+      assert!(!svg.contains("RowDefault"), "{code}: {svg}");
+    }
+  }
+
   #[test]
   fn row_empty_list_passthrough() {
     clear_state();

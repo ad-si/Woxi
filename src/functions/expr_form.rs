@@ -591,6 +591,23 @@ pub fn full_form_text(expr: &Expr) -> String {
   crate::syntax::ascii_character_escapes(&render_full_form(expr)).into_owned()
 }
 
+/// The control characters InputForm leaves raw, the way FullForm writes
+/// them: three octal digits (`\000` … `\037`, `\177`), except ESC, which
+/// has a name.
+fn full_form_control_escapes(s: &str) -> String {
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '\u{1b}' => out.push_str("\\[RawEscape]"),
+      '\u{0}'..='\u{1f}' | '\u{7f}' => {
+        out.push_str(&format!("\\{:03o}", c as u32));
+      }
+      c => out.push(c),
+    }
+  }
+  out
+}
+
 pub fn render_full_form(expr: &Expr) -> String {
   // Complex numbers are stored as Plus/Times trees internally but display
   // as Complex[re, im], so this must come before the general decomposition.
@@ -618,7 +635,8 @@ pub fn render_full_form(expr: &Expr) -> String {
   }
   // A string is written as its quoted, escaped literal: `f["a\"b"]`.
   if let Expr::String(s) = expr {
-    return format!("\"{}\"", crate::syntax::escape_string_for_input_form(s));
+    let escaped = crate::syntax::escape_string_for_input_form(s);
+    return format!("\"{}\"", full_form_control_escapes(&escaped));
   }
   if let Some(graph) = crate::functions::graph::graph_display_form(expr) {
     return render_full_form(&graph);

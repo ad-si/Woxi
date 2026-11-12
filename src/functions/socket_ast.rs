@@ -107,6 +107,29 @@ struct SocketEntry {
   /// Why a `SocketConnect` never got a connection. Reported on first use,
   /// because wolframscript's `SocketConnect` says nothing at the time.
   connect_error: Option<String>,
+  /// The ZeroMQ side of a `"ZMQ"` socket. Such a socket has no `stream` or
+  /// `listener` of its own: its connections live inside the
+  /// [`zmtp::ZmqSocket`](super::zmtp::ZmqSocket).
+  zmq: Option<ZmqEntry>,
+}
+
+/// What a ZeroMQ socket keeps on the evaluator's side.
+#[cfg(not(target_arch = "wasm32"))]
+struct ZmqEntry {
+  socket: Arc<super::zmtp::ZmqSocket>,
+  /// `"tcp"` or `"TCP"`, depending on how the address was spelled — the
+  /// `"Scheme"` property reports it verbatim.
+  scheme: String,
+  /// `ZMQ_LAST_ENDPOINT`: `"tcp://host:port"`.
+  last_endpoint: String,
+  /// `"DestinationIPAddress"`: an `IPAddress[…]` when the host resolved,
+  /// otherwise the host as given (`"0.0.0.0"` stays a plain string).
+  ip: Expr,
+  /// The listening descriptor of a bound socket, for `ZMQ_FD`.
+  fd: Option<i128>,
+  /// Option values set with `SetOptions`, by `ZMQ_…` name, as they read
+  /// back through the getters.
+  options: Vec<(String, Expr)>,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -136,7 +159,9 @@ struct ListenerEntry {
 #[cfg(not(target_arch = "wasm32"))]
 enum EventKind {
   Accepted,
-  Data(Vec<u8>),
+  /// A chunk of incoming bytes, and whether it ends its message — always
+  /// for TCP, and for the last part of a multipart ZeroMQ message.
+  Data(Vec<u8>, bool),
   Closed,
   Error(String),
 }
@@ -231,6 +256,9 @@ pub fn clear_sockets() {}
 fn shutdown_entry(entry: &mut SocketEntry) {
   if let Some(stream) = entry.stream.take() {
     let _ = stream.shutdown(std::net::Shutdown::Both);
+  }
+  if let Some(zmq) = &entry.zmq {
+    zmq.socket.close();
   }
   entry.listener = None;
   entry.closed = true;
@@ -327,14 +355,17 @@ struct Endpoint {
   port: u16,
 }
 
-/// The protocol names the second argument of `SocketOpen` / `SocketConnect`
-/// may carry, matched case-insensitively. Every one of them is served over
-/// TCP here — that is the only transport implemented, and it is what
-/// wolframscript's own `sock["Type"]` reports for a plain socket anyway.
+/// What the protocol argument of `SocketOpen` / `SocketConnect` asks for.
 #[cfg(not(target_arch = "wasm32"))]
-const SOCKET_PROTOCOLS: [&str; 14] = [
-  "TCP",
-  "ZMQ",
+enum SocketSpec {
+  Tcp,
+  /// A ZeroMQ socket of the given `zmq.h` type (`"ZMQ_PUB"`, …).
+  Zmq(String),
+}
+
+/// The ZeroMQ socket types wolframscript accepts, `ZMQ_STREAM` included.
+#[cfg(not(target_arch = "wasm32"))]
+const ZMQ_TYPES: [&str; 12] = [
   "ZMQ_PAIR",
   "ZMQ_PUB",
   "ZMQ_SUB",
@@ -349,70 +380,86 @@ const SOCKET_PROTOCOLS: [&str; 14] = [
   "ZMQ_STREAM",
 ];
 
-/// Why an argument list is not an endpoint.
+/// Read a protocol specification the way wolframscript's `socketspecs`
+/// does: `"TCP"`, `{"TCP"}`, `"ZMQ"` (a PAIR socket), `"ZMQ_SUB"`,
+/// `"zmq_sub"`, `{"ZMQ", "Subscribe"}`, `{"ZMQ", "SUB"}`, … The type is
+/// case-insensitive and may be spelled out (`"Publish"`, `"Request"`, …).
+/// Anything else is a `noproto` failure, or `invproto` for a ZMQ type that
+/// does not exist.
 #[cfg(not(target_arch = "wasm32"))]
-enum EndpointError {
-  /// Not an endpoint at all, so the call stays unevaluated.
-  Unparsable,
-  /// A second argument that is not one of `SOCKET_PROTOCOLS`, spelled as
-  /// the failure reports it.
-  BadProtocol(String),
-}
-
-/// Read an endpoint out of the argument list.
-///
-/// The second argument is the *protocol*, not a port:
-/// `SocketConnect["127.0.0.1", 8000]` is a protocol error in wolframscript,
-/// not a host/port pair — the pair is written `{"127.0.0.1", 8000}`.
-#[cfg(not(target_arch = "wasm32"))]
-fn parse_endpoint(
-  args: &[Expr],
-  default_host: &str,
-) -> Result<Endpoint, EndpointError> {
-  let (spec, protocol) = match args {
-    [spec] => (spec, None),
-    [spec, protocol] => (spec, Some(protocol)),
-    _ => return Err(EndpointError::Unparsable),
-  };
-  if let Some(protocol) = protocol {
-    let name = match protocol {
-      Expr::String(s) => s.clone(),
-      other => expr_to_string(other),
-    };
-    if !SOCKET_PROTOCOLS
-      .iter()
-      .any(|known| known.eq_ignore_ascii_case(&name))
-    {
-      return Err(EndpointError::BadProtocol(name));
-    }
-  }
-  let port_endpoint = |port: &i128| {
-    Some(Endpoint {
-      host: default_host.to_string(),
-      port: u16::try_from(*port).ok()?,
-    })
-  };
-  let endpoint = match spec {
-    Expr::Integer(port) => port_endpoint(port),
-    Expr::String(spec) => parse_host_port(spec, default_host),
+fn socket_spec(head: &str, protocol: &Expr) -> Result<SocketSpec, Expr> {
+  match protocol {
     Expr::List(items) => match &items.iter().collect::<Vec<_>>()[..] {
-      [Expr::String(host), Expr::Integer(port)] => {
-        u16::try_from(*port).ok().map(|port| Endpoint {
-          host: host.clone(),
-          port,
-        })
+      [Expr::String(single)] => socket_spec_string(head, single),
+      [Expr::String(protocol), Expr::String(kind)] => {
+        zmq_spec(head, protocol, kind)
       }
-      _ => None,
+      _ => Err(no_protocol(head, &expr_to_string(protocol))),
     },
-    _ => None,
-  };
-  endpoint.ok_or(EndpointError::Unparsable)
+    Expr::String(spec) => socket_spec_string(head, spec),
+    other => Err(no_protocol(head, &expr_to_string(other))),
+  }
 }
 
-/// The `Failure` wolframscript answers with for an unsupported protocol.
 #[cfg(not(target_arch = "wasm32"))]
-fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
-  let template = call("MessageName", vec![id_expr(head), str_expr("noproto")]);
+fn socket_spec_string(head: &str, spec: &str) -> Result<SocketSpec, Expr> {
+  if spec.eq_ignore_ascii_case("TCP") {
+    return Ok(SocketSpec::Tcp);
+  }
+  // Only a *leading* "ZMQ_" or "ZMQ" counts; anything else is not a
+  // protocol at all.
+  let upper = spec.to_ascii_uppercase();
+  if upper.starts_with("ZMQ_") {
+    zmq_spec(head, "ZMQ", &spec[4..])
+  } else if upper.starts_with("ZMQ") {
+    Ok(SocketSpec::Zmq("ZMQ_PAIR".to_string()))
+  } else {
+    Err(no_protocol(head, spec))
+  }
+}
+
+/// `{protocol, type}`: the type, with any missing `ZMQ_` prefix added and
+/// the long names folded to the `zmq.h` ones.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_spec(
+  head: &str,
+  protocol: &str,
+  kind: &str,
+) -> Result<SocketSpec, Expr> {
+  let joined = format!("{}_{kind}", protocol.to_ascii_uppercase());
+  let upper = joined.to_ascii_uppercase();
+  let full = if upper.starts_with("ZMQ_") {
+    upper
+  } else {
+    format!("ZMQ_{upper}")
+  };
+  let full = match full.as_str() {
+    "ZMQ_PUBLISH" => "ZMQ_PUB".to_string(),
+    "ZMQ_SUBSCRIBE" => "ZMQ_SUB".to_string(),
+    "ZMQ_REQUEST" => "ZMQ_REQ".to_string(),
+    "ZMQ_REPLY" => "ZMQ_REP".to_string(),
+    "ZMQ_XPUBLISH" => "ZMQ_XPUB".to_string(),
+    "ZMQ_XSUBSCRIBE" => "ZMQ_XSUB".to_string(),
+    _ => full,
+  };
+  if protocol.eq_ignore_ascii_case("ZMQ") && ZMQ_TYPES.contains(&full.as_str())
+  {
+    Ok(SocketSpec::Zmq(full))
+  } else {
+    Err(sockets_failure(
+      head,
+      "invproto",
+      vec![str_expr(protocol), str_expr(kind)],
+    ))
+  }
+}
+
+/// `Failure["SocketsLink", <|"MessageTemplate" :> head::tag, …|>]`, the
+/// object wolframscript's socket functions return instead of printing a
+/// message.
+#[cfg(not(target_arch = "wasm32"))]
+fn sockets_failure(head: &str, tag: &str, params: Vec<Expr>) -> Expr {
+  let template = call("MessageName", vec![id_expr(head), str_expr(tag)]);
   let key = str_expr("MessageTemplate");
   call(
     "Failure",
@@ -420,13 +467,191 @@ fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
       str_expr("SocketsLink"),
       Expr::Association(vec![
         (key.clone(), rule_delayed_expr(key, template)),
-        (
-          str_expr("MessageParameters"),
-          Expr::List(vec![str_expr(protocol)].into()),
-        ),
+        (str_expr("MessageParameters"), Expr::List(params.into())),
       ]),
     ],
   )
+}
+
+/// The failure for a protocol specification that names no protocol.
+#[cfg(not(target_arch = "wasm32"))]
+fn no_protocol(head: &str, protocol: &str) -> Expr {
+  sockets_failure(head, "noproto", vec![str_expr(protocol)])
+}
+
+/// Read a TCP endpoint: `8000`, `"host:port"`, `"tcp://host:port"` or
+/// `{"host", 8000}`. The protocol is not part of it — that is the second
+/// argument, so `SocketConnect["127.0.0.1", 8000]` is a protocol error, not
+/// a host/port pair.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_endpoint(spec: &Expr, default_host: &str) -> Option<Endpoint> {
+  match spec {
+    Expr::Integer(port) => Some(Endpoint {
+      host: default_host.to_string(),
+      port: u16::try_from(*port).ok()?,
+    }),
+    Expr::String(spec) => parse_host_port(spec, default_host),
+    Expr::List(items) => match &items.iter().collect::<Vec<_>>()[..] {
+      [Expr::String(host), Expr::Integer(port)] => Some(Endpoint {
+        host: host.clone(),
+        port: u16::try_from(*port).ok()?,
+      }),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+/// A ZeroMQ endpoint. `port` is `None` for `*`, "any free port", which only
+/// a bound socket may ask for.
+#[cfg(not(target_arch = "wasm32"))]
+struct ZmqAddress {
+  /// As wolframscript records it: `"tcp"` when the address named its
+  /// transport (or was a bare port), `"TCP"` when it had to be assumed.
+  scheme: String,
+  host: String,
+  port: Option<u16>,
+}
+
+/// Read a ZeroMQ address: `5556`, `"tcp://host:5556"`, `"host:5556"`,
+/// `{"host", 5556}`, `{IPAddress["…"], 5556}`, `Automatic`, or `*` for the
+/// port of a socket being bound. `localhost` is recorded as `127.0.0.1`,
+/// the way wolframscript's host parser rewrites it.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_zmq_address(
+  head: &str,
+  spec: &Expr,
+  connecting: bool,
+) -> Result<ZmqAddress, Expr> {
+  let addrspec = |reason: &str| {
+    sockets_failure(head, "addrspec", vec![spec.clone(), str_expr(reason)])
+  };
+  let invalid = || addrspec("the domain or port is invalid or missing");
+  let port_of = |text: &str| -> Result<Option<u16>, Expr> {
+    if text == "*" {
+      return Ok(None);
+    }
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+      return Err(invalid());
+    }
+    text.parse::<u16>().map(Some).map_err(|_| invalid())
+  };
+  let host_of = |host: &str| {
+    if host.eq_ignore_ascii_case("localhost") {
+      "127.0.0.1".to_string()
+    } else {
+      host.to_string()
+    }
+  };
+  let address = match spec {
+    Expr::Integer(port) => ZmqAddress {
+      scheme: "tcp".to_string(),
+      host: "127.0.0.1".to_string(),
+      port: Some(u16::try_from(*port).map_err(|_| invalid())?),
+    },
+    Expr::Identifier(name) if name == "Automatic" => ZmqAddress {
+      scheme: "tcp".to_string(),
+      host: "127.0.0.1".to_string(),
+      port: None,
+    },
+    Expr::String(text) => {
+      let (scheme, rest) = match text.find("://") {
+        Some(at) => (text[..at].to_string(), &text[at + 3..]),
+        None => ("TCP".to_string(), text.as_str()),
+      };
+      if !scheme.eq_ignore_ascii_case("tcp") {
+        // `inproc://` and `ipc://` have no TCP connection behind them.
+        return Err(sockets_failure(
+          head,
+          "zmqinvcmd",
+          vec![str_expr("Protocol not supported")],
+        ));
+      }
+      let (host, port) = if let Some(inner) = rest.strip_prefix('[') {
+        let close = inner.find(']').ok_or_else(invalid)?;
+        (&inner[..close], inner[close + 1..].strip_prefix(':'))
+      } else {
+        match rest.rfind(':') {
+          Some(colon) => (&rest[..colon], Some(&rest[colon + 1..])),
+          None => (rest, None),
+        }
+      };
+      let Some(port) = port else {
+        return Err(addrspec("it is missing the port specification"));
+      };
+      if host.is_empty() {
+        return Err(invalid());
+      }
+      ZmqAddress {
+        scheme,
+        host: host_of(host),
+        port: port_of(port)?,
+      }
+    }
+    Expr::List(items) => {
+      let items: Vec<&Expr> = items.iter().collect();
+      let [host, port] = items[..] else {
+        return Err(invalid());
+      };
+      let host = match host {
+        Expr::String(h) => h.clone(),
+        Expr::FunctionCall { name, args }
+          if name == "IPAddress" && args.len() == 1 =>
+        {
+          match &args[0] {
+            Expr::String(h) => h.clone(),
+            _ => return Err(invalid()),
+          }
+        }
+        _ => return Err(invalid()),
+      };
+      let port = match port {
+        Expr::Integer(p) => Some(u16::try_from(*p).map_err(|_| invalid())?),
+        Expr::String(p) => port_of(p)?,
+        _ => return Err(invalid()),
+      };
+      ZmqAddress {
+        scheme: "TCP".to_string(),
+        host: host_of(&host),
+        port,
+      }
+    }
+    _ => return Err(invalid()),
+  };
+  if connecting && address.port.is_none() {
+    return Err(addrspec(
+      "the port must be a valid Integer when connecting a socket",
+    ));
+  }
+  Ok(address)
+}
+
+/// `"DestinationIPAddress"` of a ZeroMQ socket: the first address the host
+/// resolves to, or the host itself when it does not resolve (which is how
+/// the wildcard `0.0.0.0` comes out).
+#[cfg(not(target_arch = "wasm32"))]
+fn resolved_ip(host: &str) -> Expr {
+  if host == "0.0.0.0" || host == "*" {
+    return str_expr(host);
+  }
+  match (host, 0).to_socket_addrs().ok().and_then(|mut a| a.next()) {
+    Some(addr) => call1(
+      "IPAddress",
+      Expr::String(addr.ip().to_canonical().to_string()),
+    ),
+    None => str_expr(host),
+  }
+}
+
+/// The operating system's text for an error, without Rust's
+/// `" (os error N)"` suffix — the way libzmq's `zmq_strerror` reads.
+#[cfg(not(target_arch = "wasm32"))]
+fn os_error_text(err: &std::io::Error) -> String {
+  let text = err.to_string();
+  match text.find(" (os error") {
+    Some(at) => text[..at].to_string(),
+    None => text,
+  }
 }
 
 /// Split `"host:port"`, `"tcp://host:port"` or a bare `"port"`.
@@ -475,12 +700,15 @@ fn register(uuid: &str, entry: SocketEntry) -> Expr {
 /// system for a free one, which `sock["DestinationPort"]` then reports.
 #[cfg(not(target_arch = "wasm32"))]
 fn socket_open(args: &[Expr]) -> Expr {
-  let endpoint = match parse_endpoint(args, "127.0.0.1") {
-    Ok(endpoint) => endpoint,
-    Err(EndpointError::BadProtocol(protocol)) => {
-      return bad_protocol_failure("SocketOpen", &protocol);
+  if let Some(protocol) = args.get(1) {
+    match socket_spec("SocketOpen", protocol) {
+      Err(failure) => return failure,
+      Ok(SocketSpec::Zmq(kind)) => return zmq_open(&args[0], &kind),
+      Ok(SocketSpec::Tcp) => {}
     }
-    Err(EndpointError::Unparsable) => return unevaluated("SocketOpen", args),
+  }
+  let Some(endpoint) = parse_endpoint(&args[0], "127.0.0.1") else {
+    return unevaluated("SocketOpen", args);
   };
   let listener =
     match TcpListener::bind((endpoint.host.as_str(), endpoint.port)) {
@@ -512,6 +740,7 @@ fn socket_open(args: &[Expr]) -> Expr {
       eof: false,
       closed: false,
       connect_error: None,
+      zmq: None,
     },
   )
 }
@@ -525,14 +754,15 @@ fn socket_open(args: &[Expr]) -> Expr {
 /// is parked in `connect_error` until the first operation asks for it.
 #[cfg(not(target_arch = "wasm32"))]
 fn socket_connect(args: &[Expr]) -> Expr {
-  let endpoint = match parse_endpoint(args, "127.0.0.1") {
-    Ok(endpoint) => endpoint,
-    Err(EndpointError::BadProtocol(protocol)) => {
-      return bad_protocol_failure("SocketConnect", &protocol);
+  if let Some(protocol) = args.get(1) {
+    match socket_spec("SocketConnect", protocol) {
+      Err(failure) => return failure,
+      Ok(SocketSpec::Zmq(kind)) => return zmq_connect(&args[0], &kind),
+      Ok(SocketSpec::Tcp) => {}
     }
-    Err(EndpointError::Unparsable) => {
-      return unevaluated("SocketConnect", args);
-    }
+  }
+  let Some(endpoint) = parse_endpoint(&args[0], "127.0.0.1") else {
+    return unevaluated("SocketConnect", args);
   };
   let resolved: Vec<SocketAddr> = (endpoint.host.as_str(), endpoint.port)
     .to_socket_addrs()
@@ -579,6 +809,127 @@ fn socket_connect(args: &[Expr]) -> Expr {
       eof: false,
       closed: false,
       connect_error: error,
+      zmq: None,
+    },
+  )
+}
+
+/// The ZeroMQ type to run, or the failure for `ZMQ_STREAM`, the one type
+/// whose raw-TCP framing is not implemented.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_type(head: &str, kind: &str) -> Result<super::zmtp::ZmqType, Expr> {
+  super::zmtp::ZmqType::from_name(kind).ok_or_else(|| {
+    sockets_failure(
+      head,
+      "zmqinvcmd",
+      vec![str_expr("ZMQ_STREAM sockets are not supported")],
+    )
+  })
+}
+
+/// `SocketOpen[address, {"ZMQ", type}]` — bind a ZeroMQ socket.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_open(spec: &Expr, kind: &str) -> Expr {
+  let head = "SocketOpen";
+  let zmq_kind = match zmq_type(head, kind) {
+    Ok(k) => k,
+    Err(failure) => return failure,
+  };
+  let address = match parse_zmq_address(head, spec, false) {
+    Ok(a) => a,
+    Err(failure) => return failure,
+  };
+  // libzmq's `*` host is every interface.
+  let bind_host = if address.host == "*" {
+    "0.0.0.0"
+  } else {
+    address.host.as_str()
+  };
+  let bound = match super::zmtp::ZmqSocket::bind(
+    zmq_kind,
+    bind_host,
+    address.port.unwrap_or(0),
+  ) {
+    Ok(bound) => bound,
+    Err(err) => {
+      return sockets_failure(
+        head,
+        "zmqinvcmd",
+        vec![Expr::String(os_error_text(&err))],
+      );
+    }
+  };
+  let port = bound.local.port();
+  register(
+    &new_uuid(false),
+    SocketEntry {
+      role: SocketRole::Server,
+      stream: None,
+      listener: None,
+      dest_ip: address.host.clone(),
+      dest_port: i128::from(port),
+      parent: None,
+      children: Vec::new(),
+      listener_id: None,
+      read_buffer: Vec::new(),
+      eof: false,
+      closed: false,
+      connect_error: None,
+      zmq: Some(ZmqEntry {
+        socket: bound.socket,
+        // A bound socket reports the scheme of its last endpoint, which
+        // libzmq always spells in lower case.
+        scheme: "tcp".to_string(),
+        last_endpoint: format!("tcp://{bind_host}:{port}"),
+        ip: resolved_ip(&address.host),
+        fd: Some(bound.fd),
+        options: Vec::new(),
+      }),
+      dest_host: address.host,
+    },
+  )
+}
+
+/// `SocketConnect[address, {"ZMQ", type}]` — connect a ZeroMQ socket. As in
+/// libzmq the connection is made (and remade) in the background; a peer
+/// that is already listening is connected by the time this returns.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_connect(spec: &Expr, kind: &str) -> Expr {
+  let head = "SocketConnect";
+  let zmq_kind = match zmq_type(head, kind) {
+    Ok(k) => k,
+    Err(failure) => return failure,
+  };
+  let address = match parse_zmq_address(head, spec, true) {
+    Ok(a) => a,
+    Err(failure) => return failure,
+  };
+  let port = address.port.unwrap_or(0);
+  let socket = super::zmtp::ZmqSocket::connect(zmq_kind, &address.host, port);
+  register(
+    &new_uuid(false),
+    SocketEntry {
+      role: SocketRole::Client,
+      stream: None,
+      listener: None,
+      dest_ip: address.host.clone(),
+      dest_port: i128::from(port),
+      parent: None,
+      children: Vec::new(),
+      listener_id: None,
+      read_buffer: Vec::new(),
+      eof: false,
+      closed: false,
+      connect_error: None,
+      zmq: Some(ZmqEntry {
+        socket,
+        scheme: address.scheme,
+        last_endpoint: format!("tcp://{}:{port}", address.host),
+        ip: resolved_ip(&address.host),
+        fd: None,
+        options: Vec::new(),
+      }),
+      dest_host: address.host,
     },
   )
 }
@@ -711,10 +1062,11 @@ fn socket_listen(args: &[Expr]) -> Expr {
         entry.role,
         entry.listener.clone(),
         entry.stream.clone(),
+        entry.zmq.as_ref().map(|z| z.socket.clone()),
       )
     })
   });
-  let Some((closed, role, listener, stream)) = listener_state else {
+  let Some((closed, role, listener, stream, zmq)) = listener_state else {
     invalid_socket_message(&uuid);
     return fail_expr();
   };
@@ -756,6 +1108,21 @@ fn socket_listen(args: &[Expr]) -> Expr {
   });
 
   let tx = BUS.with(|bus| bus.tx.clone());
+  // A ZeroMQ socket delivers whole messages, part by part; its connection
+  // threads post them as they arrive.
+  if let Some(zmq) = zmq {
+    let source = uuid.clone();
+    zmq.set_listener(Box::new(move |bytes, complete| {
+      post_event(
+        &tx,
+        SocketEvent {
+          socket: source.clone(),
+          kind: EventKind::Data(bytes, complete),
+        },
+      );
+    }));
+    return call1("SocketListener", Expr::Integer(id));
+  }
   match role {
     SocketRole::Server => {
       if let Some(listener) = listener {
@@ -859,7 +1226,7 @@ fn spawn_read_thread(
       let read = (&*stream).read(&mut buffer);
       let event = match read {
         Ok(0) => EventKind::Closed,
-        Ok(n) => EventKind::Data(buffer[..n].to_vec()),
+        Ok(n) => EventKind::Data(buffer[..n].to_vec(), true),
         Err(err)
           if matches!(
             err.kind(),
@@ -872,7 +1239,7 @@ fn spawn_read_thread(
         }
         Err(err) => EventKind::Error(err.to_string()),
       };
-      let last = !matches!(event, EventKind::Data(_));
+      let last = !matches!(event, EventKind::Data(..));
       if !post_event(
         &tx,
         SocketEvent {
@@ -1026,6 +1393,7 @@ fn register_accepted() {
           eof: false,
           closed: false,
           connect_error: None,
+          zmq: None,
         },
       );
     }
@@ -1062,7 +1430,7 @@ fn handle_event(event: &SocketEvent) -> Option<String> {
   }
   let event_name = match &event.kind {
     EventKind::Accepted => "Accepted",
-    EventKind::Data(_) => DATA_RECEIVED,
+    EventKind::Data(..) => DATA_RECEIVED,
     EventKind::Closed => "Closed",
     EventKind::Error(_) => "Error",
   };
@@ -1100,15 +1468,23 @@ fn handle_event(event: &SocketEvent) -> Option<String> {
 /// are the ones wolframscript passes.
 #[cfg(not(target_arch = "wasm32"))]
 fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
-  let timestamp = crate::functions::datetime_ast::absolute_time_ast(&[])
-    .unwrap_or(Expr::Real(0.0));
+  // wolframscript stamps an event with the whole second it arrived in, as
+  // a date: FromUnixTime[seconds].
+  let seconds = std::time::SystemTime::now()
+    .duration_since(std::time::UNIX_EPOCH)
+    .map_or(0, |d| d.as_secs());
+  let timestamp = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "FromUnixTime",
+    Expr::Integer(i128::from(seconds)),
+  ))
+  .unwrap_or(Expr::Integer(i128::from(seconds)));
   let mut pairs = vec![
     (str_expr("TimeStamp"), timestamp),
     (str_expr("SourceSocket"), socket_expr(&event.socket)),
     (str_expr("Socket"), socket_expr(listen_socket)),
   ];
   match &event.kind {
-    EventKind::Data(bytes) => {
+    EventKind::Data(bytes, complete) => {
       use base64::Engine;
       let byte_array = call1(
         "ByteArray",
@@ -1119,13 +1495,16 @@ fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
       // build one `Expr` per byte of it.
       pairs.push(delayed(
         "Data",
-        call1("ByteArrayToString", byte_array.clone()),
+        call(
+          "ByteArrayToString",
+          vec![byte_array.clone(), str_expr(LISTENER_ENCODING)],
+        ),
       ));
       pairs.push(delayed("DataBytes", call1("Normal", byte_array.clone())));
       pairs.push((str_expr("DataByteArray"), byte_array));
       pairs.push((
         str_expr("MultipartComplete"),
-        crate::helpers::bool_expr(true),
+        crate::helpers::bool_expr(*complete),
       ));
     }
     EventKind::Error(message) => {
@@ -1147,6 +1526,106 @@ fn delayed(key: &str, value: Expr) -> (Expr, Expr) {
 // ---------------------------------------------------------------------------
 // Blocking reads and writes
 // ---------------------------------------------------------------------------
+
+/// The ZeroMQ socket behind an open `"ZMQ"` socket object.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_zmq(uuid: &str) -> Option<Arc<super::zmtp::ZmqSocket>> {
+  with_registry(|reg| {
+    let entry = reg.entries.get(uuid)?;
+    if entry.closed {
+      return None;
+    }
+    entry.zmq.as_ref().map(|z| z.socket.clone())
+  })
+}
+
+/// Move the messages that have arrived on a ZeroMQ socket into its stream
+/// buffer, back to back. With `block`, wait for at least one, letting the
+/// socket handlers run meanwhile.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_fill_buffer(
+  uuid: &str,
+  zmq: &super::zmtp::ZmqSocket,
+  block: bool,
+) -> usize {
+  loop {
+    let mut moved = 0;
+    while let Some(message) = zmq.try_receive(true) {
+      moved += message.len();
+      with_registry(|reg| {
+        if let Some(entry) = reg.entries.get_mut(uuid) {
+          entry.read_buffer.extend_from_slice(&message);
+        }
+      });
+    }
+    if moved > 0 || !block || is_closed(uuid) {
+      return moved;
+    }
+    zmq.wait_input(WAIT_SLICE);
+    drain_events();
+  }
+}
+
+/// `SocketReadMessage` on a ZeroMQ socket: one whole message (all its parts
+/// joined) or, with `"Multipart" -> False`, one part of it. Without
+/// blocking, an empty byte array says nothing was there.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_read_message(
+  zmq: &super::zmtp::ZmqSocket,
+  blocking: bool,
+  multipart: bool,
+) -> Expr {
+  if !zmq.kind.can_receive() {
+    return sockets_failure(
+      "SocketObject",
+      "zmqwriteonly",
+      vec![str_expr(zmq.kind.name())],
+    );
+  }
+  loop {
+    if let Some(message) = zmq.try_receive(multipart) {
+      return byte_array(&message);
+    }
+    if !blocking {
+      return byte_array(&[]);
+    }
+    zmq.wait_input(WAIT_SLICE);
+    drain_events();
+  }
+}
+
+/// The failure wolframscript gives for a stream function a ZeroMQ socket
+/// type cannot serve: reading from PUB or PUSH, writing to SUB or PULL, and
+/// `Write`/`WriteLine` on REQ and REP, whose two separate messages would
+/// break the strict request-reply alternation.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn socket_function_unsupported(uuid: &str, function: &str) -> Option<Expr> {
+  let kind = open_zmq(uuid)?.kind;
+  let writes = ["Write", "WriteString", "BinaryWrite", "WriteLine"];
+  let reads = [
+    "Read",
+    "ReadString",
+    "ReadByteArray",
+    "ReadList",
+    "BinaryRead",
+    "BinaryReadList",
+    "ReadLine",
+  ];
+  use super::zmtp::ZmqType;
+  let refused = match kind {
+    ZmqType::Sub | ZmqType::Pull => writes.contains(&function),
+    ZmqType::Req | ZmqType::Rep => matches!(function, "Write" | "WriteLine"),
+    ZmqType::Pub | ZmqType::Push => reads.contains(&function),
+    _ => false,
+  };
+  refused.then(|| {
+    sockets_failure(
+      "SocketObject",
+      "fctnotsupported",
+      vec![str_expr(kind.name()), id_expr(function)],
+    )
+  })
+}
 
 /// Why a socket operation could not go ahead. Both cases print the same
 /// free-text line wolframscript prints; they are kept apart only so the
@@ -1187,6 +1666,9 @@ fn usable_stream(uuid: &str) -> Result<Arc<TcpStream>, SocketUnusable> {
 /// and this thread would be sitting in `read`.
 #[cfg(not(target_arch = "wasm32"))]
 fn fill_buffer(uuid: &str, block: bool) -> Result<usize, SocketUnusable> {
+  if let Some(zmq) = open_zmq(uuid) {
+    return Ok(zmq_fill_buffer(uuid, &zmq, block));
+  }
   let stream = usable_stream(uuid)?;
   if block {
     let _ = stream.set_read_timeout(Some(WAIT_SLICE));
@@ -1272,6 +1754,12 @@ fn at_eof(uuid: &str) -> bool {
 /// the end of the file.
 #[cfg(not(target_arch = "wasm32"))]
 fn read_to_close(uuid: &str) -> Result<Vec<u8>, SocketUnusable> {
+  // A ZeroMQ socket never closes from the far end; its stream "ends"
+  // wherever the messages that have arrived so far end.
+  if open_zmq(uuid).is_some() {
+    fill_buffer(uuid, false)?;
+    return Ok(take_buffered(uuid, None));
+  }
   while !at_eof(uuid) {
     if fill_buffer(uuid, true)? == 0 {
       break;
@@ -1293,11 +1781,28 @@ fn read_available(uuid: &str) -> Result<Vec<u8>, SocketUnusable> {
 /// Send bytes down a socket.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn socket_write_bytes(uuid: &str, bytes: &[u8]) -> bool {
+  socket_write_parts(uuid, &[bytes])
+}
+
+/// Send what one write call produced, in the pieces it produced them. A TCP
+/// socket gets the bytes back to back; a ZeroMQ socket gets one message per
+/// non-empty piece, the way wolframscript's socket streams flush — `Write`
+/// and `WriteLine` send the text and the newline as two messages, and an
+/// empty write sends nothing.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn socket_write_parts(uuid: &str, parts: &[&[u8]]) -> bool {
+  if let Some(zmq) = open_zmq(uuid) {
+    for part in parts.iter().filter(|p| !p.is_empty()) {
+      zmq.send(vec![part.to_vec()]);
+    }
+    return true;
+  }
+  let bytes = parts.concat();
   let Ok(stream) = usable_stream(uuid) else {
     return false;
   };
   if let Ok(()) = (&*stream)
-    .write_all(bytes)
+    .write_all(&bytes)
     .and_then(|()| (&*stream).flush())
   {
     true
@@ -1317,6 +1822,9 @@ pub fn socket_write_bytes(uuid: &str, bytes: &[u8]) -> bool {
 fn socket_ready(uuid: &str) -> bool {
   if buffered_len(uuid) > 0 || at_eof(uuid) {
     return true;
+  }
+  if let Some(zmq) = open_zmq(uuid) {
+    return zmq.has_input();
   }
   let stream = with_registry(|reg| {
     let entry = reg.entries.get(uuid)?;
@@ -1425,6 +1933,7 @@ fn socket_close(uuid: &str) -> Expr {
     invalid_socket_message(uuid);
     return fail_expr();
   }
+  crate::evaluator::dispatch::io_functions::close_socket_streams(uuid);
   // Closing the socket a listener was set up on ends the listener; closing
   // one connection it accepted only ends that connection, which is what an
   // echo handler does when it is finished with a client.
@@ -1476,6 +1985,9 @@ fn stop_listener(id: i128) -> bool {
     for socket in reg.entries.values_mut() {
       if socket.listener_id == Some(id) {
         socket.listener_id = None;
+        if let Some(zmq) = &socket.zmq {
+          zmq.socket.clear_listener();
+        }
       }
     }
   });
@@ -1517,8 +2029,10 @@ fn string_list(items: &[&str]) -> Expr {
   Expr::List(items.iter().map(|s| str_expr(s)).collect())
 }
 
-/// `SocketObject[…]["property"]`. An unknown property gives the empty list,
-/// which is what wolframscript answers for one it does not keep.
+/// `SocketObject[…]["property"]`. A TCP socket answers an unknown property
+/// with the empty list; a ZeroMQ socket also knows every gettable libzmq
+/// option (`"Linger"`, `"ZMQ_LINGER"`, `"Rcvhwm"`, …) and rejects anything
+/// else with an `invalidGetOption` failure.
 ///
 /// A closed socket answers nothing at all: wolframscript rejects *every*
 /// query on it — `"DestinationPort"` as much as `"UUID"` or `"Properties"` —
@@ -1532,49 +2046,636 @@ pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
   if is_closed(uuid) {
     return Some(fail_expr());
   }
-  if property == "Properties" {
-    return Some(string_list(&SOCKET_PROPERTIES));
+  if !with_registry(|reg| reg.entries.contains_key(uuid)) {
+    return None;
   }
-  let empty = || Expr::List(Vec::new().into());
-  with_registry(|reg| {
-    let entry = reg.entries.get(uuid)?;
-    Some(match property {
-      "ConnectedClients" => Expr::List(
-        entry
-          .children
-          .iter()
-          .map(|c| socket_expr(c))
-          .collect::<Vec<_>>()
-          .into(),
-      ),
-      "DestinationHostname" => Expr::String(entry.dest_host.clone()),
-      "DestinationIPAddress" => {
-        call1("IPAddress", Expr::String(entry.dest_ip.clone()))
-      }
-      "DestinationPort" => Expr::Integer(entry.dest_port),
-      "DirectionType" => Expr::String(
-        match entry.role {
-          SocketRole::Server => "Server",
-          SocketRole::Client | SocketRole::Accepted => "Client",
-        }
-        .to_string(),
-      ),
-      // True only for ZeroMQ's in-process transport, which has no TCP
-      // socket behind it at all.
-      "InprocQ" => crate::helpers::bool_expr(false),
-      "Protocol" => str_expr("TCP"),
-      "Scheme" => str_expr("tcp"),
-      // A socket nobody is listening on reports `None`, not the empty list
-      // an unknown property gives.
-      "SocketListener" => entry.listener_id.map_or_else(
-        || id_expr("None"),
-        |id| call1("SocketListener", Expr::Integer(id)),
-      ),
-      "Type" => str_expr("ZMQ_STREAM"),
-      "UUID" => str_expr(uuid),
-      _ => empty(),
+  if property == "Properties" {
+    return Some(socket_properties_list(uuid));
+  }
+  Some(socket_options(uuid, &[property.to_string()]))
+}
+
+/// `SocketObject[…][{"p1", "p2", …}]`, also what `Options[sock, …]` asks.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn socket_property_list(uuid: &str, names: &[Expr]) -> Option<Expr> {
+  if is_closed(uuid) {
+    return Some(fail_expr());
+  }
+  if !with_registry(|reg| reg.entries.contains_key(uuid)) {
+    return None;
+  }
+  let names = names
+    .iter()
+    .map(|n| match n {
+      Expr::String(s) => Some(s.clone()),
+      _ => None,
     })
+    .collect::<Option<Vec<_>>>()?;
+  if names.is_empty() {
+    return Some(Expr::List(Vec::new().into()));
+  }
+  Some(socket_options(uuid, &names))
+}
+
+/// `Options[sock]`: every property, as sorted rules.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn socket_all_options(uuid: &str) -> Option<Expr> {
+  if is_closed(uuid) {
+    return Some(fail_expr());
+  }
+  if !with_registry(|reg| reg.entries.contains_key(uuid)) {
+    return None;
+  }
+  let names = match &socket_properties_list(uuid) {
+    Expr::List(items) => items
+      .iter()
+      .filter_map(|n| match n {
+        Expr::String(s) => Some(s.clone()),
+        _ => None,
+      })
+      .collect::<Vec<_>>(),
+    _ => Vec::new(),
+  };
+  Some(socket_options(uuid, &names))
+}
+
+/// The ZeroMQ options `sock["Properties"]` lists on top of the TCP ones:
+/// every gettable option except those libzmq only answers for particular
+/// builds or socket types.
+#[cfg(not(target_arch = "wasm32"))]
+const ZMQ_PROPERTY_OPTIONS: [&str; 40] = [
+  "ZMQ_AFFINITY",
+  "ZMQ_BACKLOG",
+  "ZMQ_CONNECT_TIMEOUT",
+  "ZMQ_EVENTS",
+  "ZMQ_FD",
+  "ZMQ_HANDSHAKE_IVL",
+  "ZMQ_IMMEDIATE",
+  "ZMQ_INVERT_MATCHING",
+  "ZMQ_IPV4ONLY",
+  "ZMQ_IPV6",
+  "ZMQ_LAST_ENDPOINT",
+  "ZMQ_LINGER",
+  "ZMQ_MAXMSGSIZE",
+  "ZMQ_MECHANISM",
+  "ZMQ_MULTICAST_HOPS",
+  "ZMQ_MULTICAST_MAXTPDU",
+  "ZMQ_PLAIN_PASSWORD",
+  "ZMQ_PLAIN_SERVER",
+  "ZMQ_PLAIN_USERNAME",
+  "ZMQ_RATE",
+  "ZMQ_RCVBUF",
+  "ZMQ_RCVHWM",
+  "ZMQ_RCVMORE",
+  "ZMQ_RCVTIMEO",
+  "ZMQ_RECONNECT_IVL",
+  "ZMQ_RECONNECT_IVL_MAX",
+  "ZMQ_RECOVERY_IVL",
+  "ZMQ_SNDBUF",
+  "ZMQ_SNDHWM",
+  "ZMQ_SNDTIMEO",
+  "ZMQ_SOCKS_PROXY",
+  "ZMQ_TCP_KEEPALIVE",
+  "ZMQ_TCP_KEEPALIVE_CNT",
+  "ZMQ_TCP_KEEPALIVE_IDLE",
+  "ZMQ_TCP_KEEPALIVE_INTVL",
+  "ZMQ_TCP_MAXRT",
+  "ZMQ_TOS",
+  "ZMQ_TYPE",
+  "ZMQ_USE_FD",
+  "ZMQ_ZAP_DOMAIN",
+];
+
+/// `sock["Properties"]`: the TCP property names, and for a ZeroMQ socket
+/// its option names after them (the two blocks are each sorted, and the
+/// `ZMQ_` names sort after the others).
+#[cfg(not(target_arch = "wasm32"))]
+fn socket_properties_list(uuid: &str) -> Expr {
+  let zmq =
+    with_registry(|reg| reg.entries.get(uuid).is_some_and(|e| e.zmq.is_some()));
+  let mut names: Vec<&str> = SOCKET_PROPERTIES.to_vec();
+  if zmq {
+    names.extend(ZMQ_PROPERTY_OPTIONS);
+  }
+  string_list(&names)
+}
+
+/// libzmq's spelling of an option name: `"ReconnectIvlMax"` becomes
+/// `"ZMQ_RECONNECT_IVL_MAX"`; a name that already is one stays as it is.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_option_name(name: &str) -> String {
+  if name.starts_with("ZMQ_")
+    && (zmq_get_default(name).is_some()
+      || ZMQ_SET_OPTIONS.iter().any(|(n, _)| *n == name))
+  {
+    return name.to_string();
+  }
+  let mut out = String::from("ZMQ_");
+  let mut previous_lower = false;
+  for c in name.chars() {
+    if previous_lower && c.is_ascii_uppercase() {
+      out.push('_');
+    }
+    previous_lower = c.is_ascii_lowercase();
+    out.extend(c.to_uppercase());
+  }
+  out
+}
+
+/// The CamelCase name an option is reported under: `"ZMQ_RECONNECT_IVL"`
+/// becomes `"ReconnectIvl"`.
+#[cfg(not(target_arch = "wasm32"))]
+fn camel_option_name(name: &str) -> String {
+  name
+    .to_ascii_lowercase()
+    .split('_')
+    .skip(1)
+    .map(|part| {
+      let mut chars = part.chars();
+      chars.next().map_or_else(String::new, |first| {
+        first.to_ascii_uppercase().to_string() + chars.as_str()
+      })
+    })
+    .collect()
+}
+
+/// What a gettable libzmq option reads as before anything set it — the
+/// values wolframscript's bundled libzmq reports. `None` for a name that is
+/// not a gettable option; options whose value depends on the socket's state
+/// (`ZMQ_EVENTS`, `ZMQ_FD`, …) are filled in by [`zmq_option_value`].
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_get_default(name: &str) -> Option<Expr> {
+  let int = |n: i128| Some(Expr::Integer(n));
+  match name {
+    "ZMQ_AFFINITY"
+    | "ZMQ_CONNECT_TIMEOUT"
+    | "ZMQ_IMMEDIATE"
+    | "ZMQ_INVERT_MATCHING"
+    | "ZMQ_IPV4ONLY"
+    | "ZMQ_IPV6"
+    | "ZMQ_MECHANISM"
+    | "ZMQ_PLAIN_SERVER"
+    | "ZMQ_RECONNECT_IVL_MAX"
+    | "ZMQ_TCP_MAXRT"
+    | "ZMQ_THREAD_SAFE"
+    | "ZMQ_TOS" => int(0),
+    "ZMQ_BACKLOG" | "ZMQ_RATE" | "ZMQ_RECONNECT_IVL" => int(100),
+    "ZMQ_HANDSHAKE_IVL" => int(30000),
+    "ZMQ_MAXMSGSIZE"
+    | "ZMQ_RCVBUF"
+    | "ZMQ_RCVTIMEO"
+    | "ZMQ_SNDBUF"
+    | "ZMQ_SNDTIMEO"
+    | "ZMQ_TCP_KEEPALIVE"
+    | "ZMQ_TCP_KEEPALIVE_CNT"
+    | "ZMQ_TCP_KEEPALIVE_IDLE"
+    | "ZMQ_TCP_KEEPALIVE_INTVL"
+    | "ZMQ_USE_FD"
+    | "ZMQ_LINGER" => int(-1),
+    "ZMQ_MULTICAST_HOPS" => int(1),
+    "ZMQ_MULTICAST_MAXTPDU" => int(1500),
+    "ZMQ_RCVHWM" | "ZMQ_SNDHWM" => int(1000),
+    "ZMQ_RECOVERY_IVL" => int(10000),
+    "ZMQ_IDENTITY" | "ZMQ_PLAIN_PASSWORD" | "ZMQ_PLAIN_USERNAME"
+    | "ZMQ_SOCKS_PROXY" | "ZMQ_ZAP_DOMAIN" => Some(str_expr("")),
+    // CURVE keys read back Z85-encoded, all zeros while unset.
+    "ZMQ_CURVE_PUBLICKEY" | "ZMQ_CURVE_SECRETKEY" | "ZMQ_CURVE_SERVERKEY" => {
+      Some(Expr::String("0".repeat(40)))
+    }
+    "ZMQ_EVENTS" | "ZMQ_FD" | "ZMQ_LAST_ENDPOINT" | "ZMQ_RCVMORE"
+    | "ZMQ_TYPE" => Some(Expr::Integer(0)),
+    // Gettable in principle, but the bundled libzmq is built without
+    // GSSAPI and VMCI, so asking fails.
+    "ZMQ_GSSAPI_PLAINTEXT"
+    | "ZMQ_GSSAPI_PRINCIPAL"
+    | "ZMQ_GSSAPI_SERVER"
+    | "ZMQ_GSSAPI_SERVICE_PRINCIPAL"
+    | "ZMQ_VMCI_BUFFER_SIZE"
+    | "ZMQ_VMCI_BUFFER_MIN_SIZE"
+    | "ZMQ_VMCI_BUFFER_MAX_SIZE"
+    | "ZMQ_VMCI_CONNECT_TIMEOUT" => Some(fail_expr()),
+    _ => None,
+  }
+}
+
+/// The current value of a gettable option, `Err` with the failure for one
+/// that cannot be read, `None` for a name that is not a gettable option.
+#[cfg(not(target_arch = "wasm32"))]
+fn zmq_option_value(
+  entry: &SocketEntry,
+  name: &str,
+) -> Option<Result<Expr, Expr>> {
+  let zmq = entry.zmq.as_ref()?;
+  let default = zmq_get_default(name)?;
+  if matches!(default, Expr::Identifier(ref f) if f == "$Failed") {
+    return Some(Err(sockets_failure(
+      "SocketObject",
+      "zmqinvcmd",
+      vec![str_expr("Invalid argument")],
+    )));
+  }
+  if let Some((_, value)) = zmq.options.iter().find(|(n, _)| n == name) {
+    return Some(Ok(value.clone()));
+  }
+  use super::zmtp::ZmqType;
+  let socket = &zmq.socket;
+  Some(Ok(match name {
+    "ZMQ_EVENTS" => Expr::Integer(
+      i128::from(socket.has_input()) | (i128::from(socket.writable()) << 1),
+    ),
+    "ZMQ_FD" => {
+      Expr::Integer(zmq.fd.or_else(|| socket.peer_fd()).unwrap_or(-1))
+    }
+    "ZMQ_LAST_ENDPOINT" => Expr::String(zmq.last_endpoint.clone()),
+    "ZMQ_RCVMORE" => crate::helpers::bool_expr(socket.receive_more()),
+    "ZMQ_TYPE" => Expr::Integer(socket.kind.code()),
+    // wolframscript turns lingering off for subscribers.
+    "ZMQ_LINGER" if matches!(socket.kind, ZmqType::Sub | ZmqType::XSub) => {
+      Expr::Integer(0)
+    }
+    _ => default,
+  }))
+}
+
+/// A property every socket has, whatever its protocol.
+#[cfg(not(target_arch = "wasm32"))]
+fn common_property(
+  reg: &Registry,
+  entry: &SocketEntry,
+  uuid: &str,
+  property: &str,
+) -> Option<Expr> {
+  let zmq = entry.zmq.as_ref();
+  let clients = |server: &SocketEntry| {
+    Expr::List(
+      server
+        .children
+        .iter()
+        .map(|c| socket_expr(c))
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  Some(match property {
+    // A TCP server lists the connections it accepted, and so does each of
+    // those connections (they share the server's registration); everything
+    // else has none.
+    "ConnectedClients" => match (zmq, entry.role) {
+      (None, SocketRole::Server) => clients(entry),
+      (None, SocketRole::Accepted) => entry
+        .parent
+        .as_ref()
+        .and_then(|p| reg.entries.get(p))
+        .map_or_else(|| id_expr("None"), clients),
+      _ => id_expr("None"),
+    },
+    "DestinationHostname" => Expr::String(entry.dest_host.clone()),
+    "DestinationIPAddress" => match zmq {
+      Some(z) => z.ip.clone(),
+      None => call1("IPAddress", Expr::String(entry.dest_ip.clone())),
+    },
+    "DestinationPort" => Expr::Integer(entry.dest_port),
+    "DirectionType" => Expr::String(
+      match entry.role {
+        SocketRole::Server => "Server",
+        SocketRole::Client | SocketRole::Accepted => "Client",
+      }
+      .to_string(),
+    ),
+    // True only for ZeroMQ's in-process transport, which has no TCP
+    // socket behind it at all.
+    "InprocQ" => crate::helpers::bool_expr(false),
+    "Protocol" => str_expr(if zmq.is_some() { "ZMQ" } else { "TCP" }),
+    "Scheme" => {
+      Expr::String(zmq.map_or_else(|| "tcp".to_string(), |z| z.scheme.clone()))
+    }
+    // A socket nobody is listening on reports `None`, not the empty list
+    // an unknown property gives.
+    "SocketListener" => entry.listener_id.map_or_else(
+      || id_expr("None"),
+      |id| call1("SocketListener", Expr::Integer(id)),
+    ),
+    // A plain TCP socket has no ZeroMQ type.
+    "Type" => {
+      zmq.map_or_else(|| id_expr("None"), |z| str_expr(z.socket.kind.name()))
+    }
+    "UUID" => str_expr(uuid),
+    _ => return None,
   })
+}
+
+/// wolframscript's `getSocketOptions`: look each name up as a common
+/// property or (on a ZeroMQ socket) a libzmq option, and give a single value
+/// for a single name, sorted rules otherwise. A TCP socket silently skips
+/// names it does not know.
+#[cfg(not(target_arch = "wasm32"))]
+fn socket_options(uuid: &str, names: &[String]) -> Expr {
+  let found = with_registry(|reg| -> Result<Vec<Expr>, Expr> {
+    let Some(entry) = reg.entries.get(uuid) else {
+      return Ok(Vec::new());
+    };
+    let mut rules = Vec::new();
+    for name in names {
+      if let Some(value) = common_property(reg, entry, uuid, name) {
+        rules.push(rule_expr(str_expr(name), value));
+      } else if entry.zmq.is_some() {
+        let option = zmq_option_name(name);
+        match zmq_option_value(entry, &option) {
+          Some(Ok(value)) => {
+            rules
+              .push(rule_expr(Expr::String(camel_option_name(&option)), value));
+          }
+          Some(Err(failure)) => return Err(failure),
+          None => {
+            return Err(sockets_failure(
+              "SocketObject",
+              "invalidGetOption",
+              vec![str_expr(name)],
+            ));
+          }
+        }
+      }
+    }
+    Ok(rules)
+  });
+  let mut rules = match found {
+    Ok(rules) => rules,
+    Err(failure) => return failure,
+  };
+  if rules.len() == 1 {
+    if let Expr::Rule { replacement, .. } = &rules[0] {
+      return (**replacement).clone();
+    }
+    return Expr::List(Vec::new().into());
+  }
+  rules.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
+  Expr::List(rules.into())
+}
+
+/// How `SetOptions` checks an option value before handing it to libzmq.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+enum OptionKind {
+  /// A machine integer.
+  Int,
+  /// An integer from 0 to 2^64 - 1.
+  Unsigned,
+  Text,
+  /// A list of byte values.
+  Bytes,
+  /// `All`, a string, a byte array or a list of byte values.
+  Topic,
+}
+
+/// Every option `SetOptions` accepts on a socket, by libzmq name.
+#[cfg(not(target_arch = "wasm32"))]
+const ZMQ_SET_OPTIONS: &[(&str, OptionKind)] = {
+  use OptionKind::{Bytes, Int, Text, Topic, Unsigned};
+  &[
+    ("ZMQ_AFFINITY", Unsigned),
+    ("ZMQ_BACKLOG", Int),
+    ("ZMQ_CONNECT_RID", Bytes),
+    ("ZMQ_CONFLATE", Int),
+    ("ZMQ_CONNECT_TIMEOUT", Int),
+    ("ZMQ_CURVE_PUBLICKEY", Bytes),
+    ("ZMQ_CURVE_SECRETKEY", Bytes),
+    ("ZMQ_CURVE_SERVER", Int),
+    ("ZMQ_CURVE_SERVERKEY", Bytes),
+    ("ZMQ_GSSAPI_PLAINTEXT", Int),
+    ("ZMQ_GSSAPI_PRINCIPAL", Text),
+    ("ZMQ_GSSAPI_SERVER", Int),
+    ("ZMQ_GSSAPI_SERVICE_PRINCIPAL", Text),
+    ("ZMQ_HANDSHAKE_IVL", Int),
+    ("ZMQ_HEARTBEAT_IVL", Int),
+    ("ZMQ_HEARTBEAT_TIMEOUT", Int),
+    ("ZMQ_HEARTBEAT_TTL", Int),
+    ("ZMQ_IDENTITY", Bytes),
+    ("ZMQ_IMMEDIATE", Int),
+    ("ZMQ_INVERT_MATCHING", Int),
+    ("ZMQ_IPV6", Int),
+    ("ZMQ_LINGER", Int),
+    ("ZMQ_MAXMSGSIZE", Int),
+    ("ZMQ_MULTICAST_HOPS", Int),
+    ("ZMQ_MULTICAST_MAXTPDU", Int),
+    ("ZMQ_PLAIN_PASSWORD", Text),
+    ("ZMQ_PLAIN_SERVER", Int),
+    ("ZMQ_PLAIN_USERNAME", Text),
+    ("ZMQ_USE_FD", Int),
+    ("ZMQ_PROBE_ROUTER", Int),
+    ("ZMQ_RATE", Int),
+    ("ZMQ_RCVBUF", Int),
+    ("ZMQ_RCVHWM", Int),
+    ("ZMQ_RCVTIMEO", Int),
+    ("ZMQ_RECONNECT_IVL", Int),
+    ("ZMQ_RECONNECT_IVL_MAX", Int),
+    ("ZMQ_RECOVERY_IVL", Int),
+    ("ZMQ_REQ_CORRELATE", Int),
+    ("ZMQ_REQ_RELAXED", Int),
+    ("ZMQ_ROUTER_HANDOVER", Int),
+    ("ZMQ_ROUTER_MANDATORY", Int),
+    ("ZMQ_ROUTER_RAW", Int),
+    ("ZMQ_SNDBUF", Int),
+    ("ZMQ_SNDHWM", Int),
+    ("ZMQ_SNDTIMEO", Int),
+    ("ZMQ_SOCKS_PROXY", Text),
+    ("ZMQ_STREAM_NOTIFY", Int),
+    ("ZMQ_SUBSCRIBE", Topic),
+    ("ZMQ_TCP_KEEPALIVE", Int),
+    ("ZMQ_TCP_KEEPALIVE_CNT", Int),
+    ("ZMQ_TCP_KEEPALIVE_IDLE", Int),
+    ("ZMQ_TCP_KEEPALIVE_INTVL", Int),
+    ("ZMQ_TCP_MAXRT", Int),
+    ("ZMQ_TOS", Int),
+    ("ZMQ_UNSUBSCRIBE", Topic),
+    ("ZMQ_XPUB_VERBOSE", Int),
+    ("ZMQ_XPUB_VERBOSER", Int),
+    ("ZMQ_XPUB_MANUAL", Int),
+    ("ZMQ_XPUB_NODROP", Int),
+    ("ZMQ_XPUB_WELCOME_MSG", Bytes),
+    ("ZMQ_ZAP_DOMAIN", Text),
+    ("ZMQ_TCP_ACCEPT_FILTER", Bytes),
+    ("ZMQ_IPC_FILTER_GID", Int),
+    ("ZMQ_IPC_FILTER_PID", Int),
+    ("ZMQ_IPC_FILTER_UID", Int),
+    ("ZMQ_IPV4ONLY", Int),
+    ("ZMQ_VMCI_BUFFER_SIZE", Unsigned),
+    ("ZMQ_VMCI_BUFFER_MIN_SIZE", Unsigned),
+    ("ZMQ_VMCI_BUFFER_MAX_SIZE", Unsigned),
+    ("ZMQ_VMCI_CONNECT_TIMEOUT", Int),
+  ]
+};
+
+/// The bytes of a list of byte values, if that is what `expr` is.
+#[cfg(not(target_arch = "wasm32"))]
+fn byte_list(expr: &Expr) -> Option<Vec<u8>> {
+  match expr {
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::Integer(b) => u8::try_from(*b).ok(),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  }
+}
+
+/// The bytes of a `ByteArray[…]`.
+#[cfg(not(target_arch = "wasm32"))]
+fn byte_array_bytes(expr: &Expr) -> Option<Vec<u8>> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "ByteArray" && args.len() == 1 =>
+    {
+      let Expr::String(b64) = &args[0] else {
+        return None;
+      };
+      use base64::Engine;
+      base64::engine::general_purpose::STANDARD.decode(b64).ok()
+    }
+    _ => None,
+  }
+}
+
+/// Whether `value` passes the check wolframscript applies to `kind`.
+#[cfg(not(target_arch = "wasm32"))]
+fn option_value_ok(kind: OptionKind, value: &Expr) -> bool {
+  match kind {
+    OptionKind::Int => {
+      matches!(value, Expr::Integer(n) if i64::try_from(*n).is_ok())
+    }
+    OptionKind::Unsigned => {
+      matches!(value, Expr::Integer(n) if u64::try_from(*n).is_ok())
+    }
+    OptionKind::Text => matches!(value, Expr::String(_)),
+    OptionKind::Bytes => byte_list(value).is_some(),
+    OptionKind::Topic => {
+      matches!(value, Expr::String(_))
+        || matches!(value, Expr::Identifier(a) if a == "All")
+        || byte_array_bytes(value).is_some()
+        || byte_list(value).is_some()
+    }
+  }
+}
+
+/// The value as wolframscript passes it on, and reports it back: strings
+/// and integers as they are, byte arrays and byte lists as the string of
+/// those characters. `None` for a value that has no such form (`All` for
+/// anything but `"Subscribe"`).
+#[cfg(not(target_arch = "wasm32"))]
+fn normalized_option_value(option: &str, value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::Identifier(a) if a == "All" && option == "ZMQ_SUBSCRIBE" => {
+      Some(str_expr(""))
+    }
+    Expr::String(_) | Expr::Integer(_) => Some(value.clone()),
+    Expr::List(_) => {
+      let codes = byte_list(value)?;
+      Some(Expr::String(codes.iter().map(|b| char::from(*b)).collect()))
+    }
+    _ => {
+      let bytes = byte_array_bytes(value)?;
+      Some(Expr::String(bytes.iter().map(|b| char::from(*b)).collect()))
+    }
+  }
+}
+
+/// The bytes a subscription topic or identity stands for.
+#[cfg(not(target_arch = "wasm32"))]
+fn option_bytes(value: &Expr) -> Vec<u8> {
+  match value {
+    Expr::String(s) => s.as_bytes().to_vec(),
+    other => byte_list(other)
+      .or_else(|| byte_array_bytes(other))
+      .unwrap_or_default(),
+  }
+}
+
+/// `SetOptions[sock, name -> value, …]`. Every option is checked before
+/// any is applied, so one bad option leaves the socket untouched. Returns
+/// the options as set, or the failure. `"Subscribe"`, `"Unsubscribe"` and
+/// `"Identity"` take effect; every other value is recorded and reads back
+/// through the getters.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn socket_set_options(uuid: &str, rules: &[Expr]) -> Option<Expr> {
+  if is_closed(uuid) {
+    return Some(fail_expr());
+  }
+  if !with_registry(|reg| reg.entries.contains_key(uuid)) {
+    return None;
+  }
+  let head = "SocketObject";
+  let mut accepted: Vec<(String, Expr, Expr)> = Vec::new();
+  for rule in rules {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = rule
+    else {
+      return None;
+    };
+    let invalid_name =
+      || sockets_failure(head, "invalidOptionName", vec![(**pattern).clone()]);
+    let Expr::String(name) = &**pattern else {
+      return Some(invalid_name());
+    };
+    let option = zmq_option_name(name);
+    let Some((_, kind)) = ZMQ_SET_OPTIONS.iter().find(|(n, _)| *n == option)
+    else {
+      return Some(invalid_name());
+    };
+    if !option_value_ok(*kind, replacement) {
+      return Some(sockets_failure(
+        head,
+        "invalidOptionValue",
+        vec![(**pattern).clone(), (**replacement).clone()],
+      ));
+    }
+    let Some(normalized) = normalized_option_value(&option, replacement) else {
+      return Some(sockets_failure(
+        head,
+        "invalidOptionValue",
+        vec![Expr::String(option), (**replacement).clone()],
+      ));
+    };
+    accepted.push((option, normalized, (**replacement).clone()));
+  }
+  let zmq = open_zmq(uuid);
+  let mut reported = Vec::new();
+  for (option, normalized, original) in accepted {
+    if let Some(zmq) = &zmq {
+      match option.as_str() {
+        "ZMQ_SUBSCRIBE" => zmq.subscribe(true, &option_bytes(&original)),
+        "ZMQ_UNSUBSCRIBE" => zmq.subscribe(false, &option_bytes(&original)),
+        "ZMQ_IDENTITY" => zmq.set_identity(option_bytes(&original)),
+        _ => {}
+      }
+      if zmq_get_default(&option).is_some() {
+        let stored = (option.clone(), normalized.clone());
+        with_registry(|reg| {
+          if let Some(z) =
+            reg.entries.get_mut(uuid).and_then(|e| e.zmq.as_mut())
+          {
+            z.options.retain(|(n, _)| *n != option);
+            z.options.push(stored);
+          }
+        });
+      }
+    }
+    // An empty subscription — `All` or `""` — is reported under libzmq's
+    // own name, with `All` as its value.
+    let empty_topic = matches!(&normalized, Expr::String(t) if t.is_empty());
+    reported.push(if option == "ZMQ_SUBSCRIBE" && empty_topic {
+      rule_expr(str_expr("ZMQ_SUBSCRIBE"), id_expr("All"))
+    } else {
+      rule_expr(Expr::String(camel_option_name(&option)), normalized)
+    });
+  }
+  Some(Expr::List(reported.into()))
 }
 
 /// `SocketListener[…]["property"]`.
@@ -1583,33 +2684,80 @@ pub fn listener_property(id: i128, property: &str) -> Option<Expr> {
   if property == "Properties" {
     return Some(string_list(&LISTENER_PROPERTIES));
   }
-  let empty = || Expr::List(Vec::new().into());
-  LISTENERS.with(|l| {
+  let found = LISTENERS.with(|l| {
     let listeners = l.borrow();
     let entry = listeners.get(&id)?;
     Some(match property {
-      "CharacterEncoding" => str_expr("UTF-8"),
-      "HandlerFunctions" => Expr::Association(
+      "CharacterEncoding" => Ok(str_expr(LISTENER_ENCODING)),
+      "HandlerFunctions" => Ok(Expr::Association(
         entry
           .handlers
           .iter()
           .map(|(name, f)| (Expr::String(name.clone()), f.clone()))
           .collect(),
-      ),
-      "HandlerFunctionsKeys" => Expr::List(
+      )),
+      "HandlerFunctionsKeys" => Ok(Expr::List(
         entry
           .handler_keys
           .iter()
           .map(|k| Expr::String(k.clone()))
           .collect::<Vec<_>>()
           .into(),
-      ),
-      "RecordSeparators" => empty(),
-      "Socket" => socket_expr(&entry.socket),
-      _ => empty(),
+      )),
+      // Unset, records are whatever arrives in one piece.
+      "RecordSeparators" => Ok(id_expr("None")),
+      "Socket" => Ok(socket_expr(&entry.socket)),
+      // Anything else is a question about the socket being listened to.
+      _ => Err(entry.socket.clone()),
     })
-  })
+  })?;
+  match found {
+    Ok(value) => Some(value),
+    Err(socket) => socket_property(&socket, property),
+  }
 }
+
+/// The options `Options[SocketListen]` declares, which is what
+/// `Options[listener]` and `listener[{}]` report.
+#[cfg(not(target_arch = "wasm32"))]
+const LISTENER_OPTIONS: [&str; 4] = [
+  "CharacterEncoding",
+  "HandlerFunctions",
+  "HandlerFunctionsKeys",
+  "RecordSeparators",
+];
+
+/// `listener[{"p1", "p2", …}]`: a rule per name, keyed as asked; a single
+/// name gives just its value. `listener[{}]` and `Options[listener]` give
+/// the `SocketListen` options, keyed by their symbols.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn listener_property_list(id: i128, names: &[Expr]) -> Option<Expr> {
+  LISTENERS
+    .with(|l| l.borrow().contains_key(&id))
+    .then_some(())?;
+  let names: Vec<Expr> = if names.is_empty() {
+    LISTENER_OPTIONS.iter().map(|n| id_expr(n)).collect()
+  } else {
+    names.to_vec()
+  };
+  let value_of = |name: &Expr| match name {
+    Expr::String(n) | Expr::Identifier(n) => listener_property(id, n),
+    _ => None,
+  };
+  if let [only] = names.as_slice() {
+    return value_of(only);
+  }
+  let rules = names
+    .iter()
+    .map(|name| Some(rule_expr(name.clone(), value_of(name)?)))
+    .collect::<Option<Vec<_>>>()?;
+  Some(Expr::List(rules.into()))
+}
+
+/// The character encoding a listener decodes `"Data"` with:
+/// wolframscript's `$CharacterEncoding`.
+#[cfg(not(target_arch = "wasm32"))]
+const LISTENER_ENCODING: &str = "UTF8";
 
 // ---------------------------------------------------------------------------
 // Dispatch
@@ -1630,31 +2778,42 @@ fn end_of_file() -> Expr {
   id_expr("EndOfFile")
 }
 
-/// Read one line, waiting for as much of it as the peer still owes.
+/// Read one line, waiting for as much of it as the peer still owes. Lines
+/// are read the way wolframscript reads them from any stream: blank lines
+/// are skipped, and the separator ending the line is left unread unless
+/// `consume` (`Read[sock, String]` takes it, `ReadLine` does not).
 #[cfg(not(target_arch = "wasm32"))]
-fn read_line(uuid: &str) -> Result<Option<String>, SocketUnusable> {
+fn read_line(
+  uuid: &str,
+  consume: bool,
+) -> Result<Option<String>, SocketUnusable> {
   loop {
     let found = with_registry(|reg| {
-      reg
-        .entries
-        .get(uuid)
-        .and_then(|e| e.read_buffer.iter().position(|b| *b == b'\n'))
+      let buffer = &reg.entries.get(uuid)?.read_buffer;
+      let start = buffer.iter().position(|b| !matches!(b, b'\n' | b'\r'))?;
+      let end = start
+        + buffer[start..]
+          .iter()
+          .position(|b| matches!(b, b'\n' | b'\r'))?;
+      let next = if buffer[end..].starts_with(b"\r\n") {
+        end + 2
+      } else {
+        end + 1
+      };
+      Some((start, end, next))
     });
-    if let Some(index) = found {
-      let mut line = take_buffered(uuid, Some(index + 1));
-      line.pop();
-      if line.last() == Some(&b'\r') {
-        line.pop();
+    if let Some((start, end, next)) = found {
+      let line = take_buffered(uuid, Some(end));
+      if consume {
+        take_buffered(uuid, Some(next - end));
       }
-      return Ok(Some(String::from_utf8_lossy(&line).into_owned()));
+      return Ok(Some(String::from_utf8_lossy(&line[start..]).into_owned()));
     }
     if at_eof(uuid) || fill_buffer(uuid, true)? == 0 {
       let rest = take_buffered(uuid, None);
-      return Ok(if rest.is_empty() {
-        None
-      } else {
-        Some(String::from_utf8_lossy(&rest).into_owned())
-      });
+      let text = String::from_utf8_lossy(&rest);
+      let text = text.trim_start_matches(['\n', '\r']);
+      return Ok((!text.is_empty()).then(|| text.to_string()));
     }
   }
 }
@@ -1688,6 +2847,54 @@ fn dispatch_native(
   // The socket argument the stream functions would be reading or writing,
   // so a file-shaped call never lands in the socket code by accident.
   let socket_arg = args.first().and_then(socket_object_uuid);
+  // A ZeroMQ socket type that cannot serve this stream function says so
+  // before anything is read.
+  if let Some(uuid) = &socket_arg
+    && matches!(name, "ReadString" | "ReadLine" | "BinaryReadList" | "Read")
+    && let Some(failure) = socket_function_unsupported(uuid, name)
+  {
+    return Some(Ok(failure));
+  }
+  // SocketReadMessage[sock, "Blocking" -> b, "Multipart" -> m] on a
+  // ZeroMQ socket reads one message.
+  if name == "SocketReadMessage"
+    && let Some(uuid) = &socket_arg
+    && let Some(zmq) = open_zmq(uuid)
+  {
+    let mut blocking = true;
+    let mut multipart = true;
+    for option in &args[1..] {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = option
+      else {
+        return Some(Ok(unevaluated(name, args)));
+      };
+      let key = match &**pattern {
+        Expr::String(k) | Expr::Identifier(k) => k.as_str(),
+        _ => return Some(Ok(unevaluated(name, args))),
+      };
+      let value = match &**replacement {
+        Expr::Identifier(v) if v == "True" => Some(true),
+        Expr::Identifier(v) if v == "False" => Some(false),
+        _ => None,
+      };
+      // A value that is not a boolean falls back to the default, as in
+      // wolframscript (which also warns).
+      match key {
+        "Blocking" => blocking = value.unwrap_or(true),
+        "Multipart" => multipart = value.unwrap_or(true),
+        "MultipartComplete" => {}
+        _ => return Some(Ok(unevaluated(name, args))),
+      }
+    }
+    return Some(Ok(zmq_read_message(&zmq, blocking, multipart)));
+  }
   match name {
     "SocketOpen" if (1..=2).contains(&args.len()) => {
       Some(Ok(socket_open(args)))
@@ -1759,27 +2966,11 @@ fn dispatch_native(
     "SocketWaitAll" if (1..=2).contains(&args.len()) => {
       Some(Ok(socket_wait(name, args, true)))
     }
-    // Sockets[] — every socket still open, oldest first.
-    // Sockets["TCP"] — the same, since TCP is the only transport.
-    "Sockets" if args.len() <= 1 => {
-      if let Some(arg) = args.first()
-        && !matches!(arg, Expr::String(s) if s == "TCP")
-      {
-        return Some(Ok(unevaluated(name, args)));
-      }
-      register_accepted();
-      let open = with_registry(|reg| {
-        reg
-          .order
-          .iter()
-          .filter(|uuid| {
-            reg.entries.get(*uuid).is_some_and(|entry| !entry.closed)
-          })
-          .map(|uuid| socket_expr(uuid))
-          .collect::<Vec<_>>()
-      });
-      Some(Ok(Expr::List(open.into())))
-    }
+    // Sockets[] — the sockets opened here, oldest first. Sockets[filter]
+    // narrows them by "TCP", "ZMQ", "Client", "Server", "Local" or
+    // "Remote"; Sockets[All] adds the connections servers accepted;
+    // Sockets[{"ZMQ", type}] picks one ZeroMQ socket type.
+    "Sockets" if args.len() <= 2 => Some(Ok(sockets(args))),
     "Close" if args.len() == 1 && socket_arg.is_some() => {
       Some(Ok(socket_close(&socket_arg?)))
     }
@@ -1812,7 +3003,7 @@ fn dispatch_native(
     }
     "ReadLine" if args.len() == 1 && socket_arg.is_some() => {
       let uuid = socket_arg?;
-      Some(Ok(match read_line(&uuid) {
+      Some(Ok(match read_line(&uuid, false) {
         Err(SocketUnusable) => fail_expr(),
         Ok(None) => end_of_file(),
         Ok(Some(line)) => Expr::String(line),
@@ -1853,7 +3044,7 @@ fn dispatch_native(
             Expr::String(String::from_utf8_lossy(&[byte]).into_owned())
           }
         },
-        "String" | "Record" => match read_line(&uuid) {
+        "String" | "Record" => match read_line(&uuid, true) {
           Err(SocketUnusable) => fail_expr(),
           Ok(None) => end_of_file(),
           Ok(Some(line)) => Expr::String(line),
@@ -1863,6 +3054,57 @@ fn dispatch_native(
     }
     _ => None,
   }
+}
+
+/// `Sockets[…]`, filtered the way wolframscript's `getFilteredSockets`
+/// does.
+#[cfg(not(target_arch = "wasm32"))]
+fn sockets(args: &[Expr]) -> Expr {
+  register_accepted();
+  // (protocol, ZeroMQ type) of each open socket, plus whether it is a
+  // connection a server accepted ("Remote") and its direction.
+  let filter: Box<dyn Fn(&SocketEntry) -> bool> = match args {
+    [] => Box::new(|e| e.role != SocketRole::Accepted),
+    [Expr::Identifier(all)] if all == "All" => Box::new(|_| true),
+    [Expr::String(filter)] => match filter.as_str() {
+      "Client" => Box::new(|e| e.role != SocketRole::Server),
+      "Server" => Box::new(|e| e.role == SocketRole::Server),
+      "TCP" => Box::new(|e| e.zmq.is_none()),
+      "ZMQ" => Box::new(|e| e.zmq.is_some()),
+      "WS" | "WSS" => Box::new(|_| false),
+      "Local" => Box::new(|e| e.role != SocketRole::Accepted),
+      "Remote" => Box::new(|e| e.role == SocketRole::Accepted),
+      other => return no_protocol("Sockets", other),
+    },
+    _ => {
+      let spec = if args.len() == 2 {
+        Expr::List(args.to_vec().into())
+      } else {
+        args[0].clone()
+      };
+      match socket_spec("Sockets", &spec) {
+        Err(failure) => return failure,
+        Ok(SocketSpec::Tcp) => Box::new(|e| e.zmq.is_none()),
+        Ok(SocketSpec::Zmq(kind)) => Box::new(move |e| {
+          e.zmq.as_ref().is_some_and(|z| z.socket.kind.name() == kind)
+        }),
+      }
+    }
+  };
+  let open = with_registry(|reg| {
+    reg
+      .order
+      .iter()
+      .filter(|uuid| {
+        reg
+          .entries
+          .get(*uuid)
+          .is_some_and(|entry| !entry.closed && filter(entry))
+      })
+      .map(|uuid| socket_expr(uuid))
+      .collect::<Vec<_>>()
+  });
+  Expr::List(open.into())
 }
 
 /// One byte, waiting for it if need be. `None` once the peer has closed.
@@ -1885,5 +3127,25 @@ pub fn socket_property(_uuid: &str, _property: &str) -> Option<Expr> {
 
 #[cfg(target_arch = "wasm32")]
 pub fn listener_property(_id: i128, _property: &str) -> Option<Expr> {
+  None
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn socket_property_list(_uuid: &str, _names: &[Expr]) -> Option<Expr> {
+  None
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn socket_all_options(_uuid: &str) -> Option<Expr> {
+  None
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn socket_set_options(_uuid: &str, _rules: &[Expr]) -> Option<Expr> {
+  None
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn listener_property_list(_id: i128, _names: &[Expr]) -> Option<Expr> {
   None
 }

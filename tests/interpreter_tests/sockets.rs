@@ -99,22 +99,29 @@ mod sockets {
     }
 
     // The second argument is the *protocol*, not a port — so the host/port
-    // pair has to be written as a list. Every ZeroMQ spelling is served over
-    // TCP here, and anything else is the documented `noproto` failure.
+    // pair has to be written as a list. `"ZMQ"` alone is a ZeroMQ PAIR
+    // socket; anything else is the documented `noproto` failure.
     #[test]
     fn the_second_argument_is_the_protocol() {
       clear_state();
       let result = interpret(
         "srv = SocketOpen[0]; port = srv[\"DestinationPort\"]; \
-         Map[Head[SocketConnect[{\"127.0.0.1\", port}, #]] &, \
-             {\"TCP\", \"tcp\", \"ZMQ\", \"ZMQ_PAIR\", \"ZMQ_STREAM\"}]",
+         Map[SocketConnect[{\"127.0.0.1\", port}, #][\"Protocol\"] &, \
+             {\"TCP\", \"tcp\", {\"TCP\"}, \"ZMQ\", \"ZMQ_PAIR\"}]",
       )
       .unwrap();
-      assert_eq!(
-        result,
-        "{SocketObject, SocketObject, SocketObject, SocketObject, \
-         SocketObject}"
-      );
+      assert_eq!(result, "{TCP, TCP, TCP, ZMQ, ZMQ}");
+    }
+
+    #[test]
+    fn a_tcp_socket_has_no_zeromq_type() {
+      clear_state();
+      let result = interpret(
+        "srv = SocketOpen[0]; \
+         {srv[\"Type\"], SocketConnect[srv[\"DestinationPort\"]][\"Type\"]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{None, None}");
     }
 
     #[test]
@@ -691,6 +698,57 @@ mod sockets {
         ),
       );
       assert_eq!(interpret(&script).unwrap(), "{got:one, got:two}");
+    }
+  }
+
+  mod listener_options {
+    use super::*;
+
+    #[test]
+    fn a_listener_reports_its_socket_listen_options() {
+      clear_state();
+      let result = interpret(
+        "srv = SocketOpen[0]; l = SocketListen[srv, f]; \
+         {l[{\"CharacterEncoding\", \"RecordSeparators\"}], Keys[Options[l]], \
+          l[{\"CharacterEncoding\"}], l[\"DestinationPort\"] === \
+          srv[\"DestinationPort\"]}",
+      )
+      .unwrap();
+      assert_eq!(
+        result,
+        "{{CharacterEncoding -> UTF8, RecordSeparators -> None}, \
+         {CharacterEncoding, HandlerFunctions, HandlerFunctionsKeys, \
+         RecordSeparators}, UTF8, True}"
+      );
+    }
+
+    #[test]
+    fn a_handler_gets_a_date_and_utf8_data() {
+      clear_state();
+      let script = format!(
+        "got = {{}}; {setup} WriteString[c, \"x\"]; {wait} \
+         {{Head[got[[1]][\"TimeStamp\"]], \
+           ToString[Extract[got[[1]], Key[\"Data\"], Hold], InputForm]}}",
+        setup = echo_setup("AppendTo[got, #] &"),
+        wait = wait_until("got =!= {}"),
+      );
+      assert_eq!(
+        interpret(&script).unwrap(),
+        "{DateObject, Hold[ByteArrayToString[ByteArray[\"eA==\"], \"UTF8\"]]}"
+      );
+    }
+
+    #[test]
+    fn connected_clients_by_socket_role() {
+      clear_state();
+      let script = format!(
+        "seen = Null; {setup} WriteString[c, \"x\"]; {wait} \
+         {{c[\"ConnectedClients\"], seen[\"ConnectedClients\"] === {{seen}}, \
+           srv[\"ConnectedClients\"] === {{seen}}}}",
+        setup = echo_setup("(seen = #[\"SourceSocket\"]) &"),
+        wait = wait_until("seen =!= Null"),
+      );
+      assert_eq!(interpret(&script).unwrap(), "{None, True, True}");
     }
   }
 }

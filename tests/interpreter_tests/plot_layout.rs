@@ -1069,3 +1069,175 @@ mod tiny_values {
     assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
   }
 }
+
+mod labeled_frame_label {
+  use super::*;
+
+  /// The text of every `<text>` element (and its `<tspan>` lines), in order.
+  fn text_lines(svg: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for chunk in svg.split("<text ").skip(1) {
+      let body =
+        &chunk[chunk.find('>').unwrap() + 1..chunk.find("</text>").unwrap()];
+      for part in body.split('<') {
+        let text = part.rsplit('>').next().unwrap_or(part).trim();
+        if !text.is_empty() && !text.starts_with('/') {
+          out.push(text.to_string());
+        }
+      }
+    }
+    out
+  }
+
+  #[test]
+  fn labeled_stacks_its_label_below_the_content() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"a\", \"b\", \
+       Labeled[NumberForm[88.5321, {5, 1}], \"mileage\"], \"\"}]",
+    );
+    let lines = text_lines(&svg);
+    assert!(!lines.iter().any(|l| l.contains("Labeled")), "{lines:?}");
+    let value = lines.iter().position(|l| l == "88.5").expect("value");
+    assert_eq!(lines.get(value + 1).map(String::as_str), Some("mileage"));
+  }
+
+  #[test]
+  fn labeled_top_stacks_its_label_above_the_content() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, \
+       FrameLabel -> {Labeled[\"t\", \"unit\", Top], \"y\"}]",
+    );
+    let lines = text_lines(&svg);
+    let label = lines.iter().position(|l| l == "unit").expect("label");
+    assert_eq!(lines.get(label + 1).map(String::as_str), Some("t"));
+  }
+
+  #[test]
+  fn labeled_axes_label_stacks_too() {
+    let svg =
+      svg_of("Plot[x, {x, 0, 1}, AxesLabel -> {Labeled[\"t\", \"s\"], \"y\"}]");
+    let lines = text_lines(&svg);
+    assert!(!lines.iter().any(|l| l.contains("Labeled")), "{lines:?}");
+    let content = lines.iter().position(|l| l == "t").expect("content");
+    assert_eq!(lines.get(content + 1).map(String::as_str), Some("s"));
+  }
+}
+
+mod base_style {
+  use super::*;
+
+  fn font_sizes(svg: &str) -> Vec<f64> {
+    svg
+      .split("font-size=\"")
+      .skip(1)
+      .map(|s| s[..s.find('"').unwrap()].parse::<f64>().unwrap())
+      .collect()
+  }
+
+  #[test]
+  fn base_style_font_size_reaches_every_label() {
+    for spec in ["12", "{12}", "{FontSize -> 12}"] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {{\"a\", \"b\"}}, \
+         BaseStyle -> {spec}]"
+      ));
+      let sizes = font_sizes(&svg);
+      assert_ne!(sizes, [] as [f64; 0]);
+      assert!(
+        sizes.iter().all(|s| (s - 120.0).abs() < 1e-6),
+        "{spec}: {sizes:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn label_style_overrides_base_style_whichever_comes_first() {
+    for opts in [
+      "BaseStyle -> 12, LabelStyle -> 14",
+      "LabelStyle -> 14, BaseStyle -> 12",
+    ] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {{\"a\"}}, {opts}]"
+      ));
+      let sizes = font_sizes(&svg);
+      assert!(
+        sizes.iter().all(|s| (s - 140.0).abs() < 1e-6),
+        "{opts}: {sizes:?}"
+      );
+    }
+  }
+}
+
+mod clipped_plot_range_sampling {
+  use super::*;
+
+  /// How many points of the default-colored curve are drawn.
+  fn curve_points(svg: &str) -> usize {
+    polyline_points(svg, "#3D99CC").len()
+  }
+
+  // A curve whose samples span far more than an explicit `PlotRange` must
+  // still be refined within the visible window: a cubic on {x, -10, 10}
+  // clipped to {-10, 10} draws as a smooth curve, not a polygon of the
+  // dozen initial samples that fall inside the window.
+  #[test]
+  fn cubic_refined_inside_clipped_range() {
+    let svg =
+      svg_of("Plot[x^3 - 2 x^2 - 3 x, {x, -10, 10}, PlotRange -> {-10, 10}]");
+    let n = curve_points(&svg);
+    assert!(n >= 35, "only {n} curve points: {svg}");
+  }
+
+  #[test]
+  fn quadratic_refined_inside_clipped_range() {
+    let svg = svg_of("Plot[x^2 + 5, {x, -20, 20}, PlotRange -> {0, 10}]");
+    let n = curve_points(&svg);
+    assert!(n >= 35, "only {n} curve points: {svg}");
+  }
+}
+
+mod traditional_plot_label {
+  use super::*;
+
+  /// The SVG `<text>` element holding the plot title.
+  fn title(svg: &str) -> String {
+    let start = svg.rfind("<text ").unwrap();
+    let end = start + svg[start..].find("</text>").unwrap();
+    let tag = &svg[start..end];
+    // Strip the markup, keep the visible text.
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in tag.chars() {
+      match c {
+        '<' => in_tag = true,
+        '>' => in_tag = false,
+        _ if !in_tag => out.push(c),
+        _ => {}
+      }
+    }
+    out
+  }
+
+  // A graphic's `FormatType` is `TraditionalForm`, so a polynomial in the
+  // label runs from its highest power down.
+  #[test]
+  fn polynomial_label_descending() {
+    let svg = svg_of("Plot[x, {x, 0, 1}, PlotLabel -> x^3 - 2 x^2 - 3 x]");
+    assert_eq!(title(&svg), "x3-2\u{2009}x2-3\u{2009}x");
+  }
+
+  #[test]
+  fn polynomial_inside_row_label_descending() {
+    let svg =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"g = \", 1 + y + y^2}]]");
+    assert_eq!(title(&svg), "g = y2+y+1");
+  }
+
+  #[test]
+  fn polynomial_inside_styled_row_label_descending() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[{\"g = \", x + x^2}], Bold]]",
+    );
+    assert_eq!(title(&svg), "g = x2+x");
+  }
+}

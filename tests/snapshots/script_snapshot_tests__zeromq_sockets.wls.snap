@@ -1,0 +1,15 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+{ZMQ_REP, ZMQ_REQ, Server, Client}
+answer to question 1
+answer to question 2
+answer to question 3
+{"xy", "z", "qr", "\n"}
+{Subscribe -> news}
+news: hello
+False
+Failure["SocketsLink", <|"MessageTemplate" :> SocketObject::fctnotsupported, "MessageParameters" -> {"ZMQ_SUB", WriteString}|>]
+{6, 1}
+{True, True, True, True, True, True}

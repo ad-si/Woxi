@@ -872,7 +872,8 @@ impl BBox {
 
 use crate::functions::plot_padding::{
   AXES_LABEL_GAP_X, AXES_LABEL_GAP_Y, FRAME_LABEL_GAP, LABEL_FONT, TICK_FONT,
-  TICK_LABEL_GAP, TITLE_FONT, ascent, descent, line_height, line_pitch,
+  TICK_LABEL_GAP, TITLE_FONT, ascent, block_height, descent, line_height,
+  line_pitch,
 };
 
 // ── Primitives ───────────────────────────────────────────────────────────
@@ -7491,7 +7492,11 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
-  let italic_ranges = italic_text_ranges(content, &text);
+  let italic_ranges = if local_style.font_style == "italic" {
+    Vec::new()
+  } else {
+    italic_text_ranges(content, &text)
+  };
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -11222,10 +11227,12 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
   }
   let negative = f.is_sign_negative();
   let sign = if negative { "-" } else { "" };
-  // Round to 6 significant figures: `{:.5e}` yields one integer digit plus five
-  // fractional digits (six total), with proper round-half-to-even carrying that
-  // can bump the exponent (`999999.6` → `1.00000e6`).
-  let sci = format!("{:.5e}", f.abs());
+  // Round to 6 significant figures the way wolframscript displays them (half
+  // up on the shortest digits, see `round_shortest_digits`); `{:.5e}` then
+  // writes the rounded value, already carried into the exponent when it
+  // overflowed (`999999.6` → `1.00000e6`).
+  let rounded = crate::functions::string_ast::round_shortest_digits(f.abs(), 6);
+  let sci = format!("{rounded:.5e}");
   let (mantissa_s, exp_s) = sci.split_once('e').unwrap_or((&sci, "0"));
   let exp: i64 = exp_s.parse().unwrap_or(0);
   let digits: String =
@@ -11323,14 +11330,13 @@ pub(crate) fn svg_escape(s: &str) -> String {
 /// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
 /// parts set in slanted type. Empty unless the label's styled runs flatten
 /// to exactly `text` (so the ranges are known to line up) and at least one
-/// run, but not all of them, is italic — a uniformly italic label is
-/// already covered by the primitive's own font style.
+/// run is italic. A label whose primitive is already set in slanted type
+/// (`Text[Style[…, Italic]]`) needs no ranges, but runs that are italic only
+/// through their own inner `Style`s (`Subscript[Style["t", Italic],
+/// Style["B", Italic]]`) still get them.
 fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
-  if flatten_label_runs(&runs) != text
-    || !runs.iter().any(|r| r.italic)
-    || runs.iter().all(|r| r.italic || r.text.is_empty())
-  {
+  if flatten_label_runs(&runs) != text || !runs.iter().any(|r| r.italic) {
     return Vec::new();
   }
   let mut ranges = Vec::new();
@@ -13210,6 +13216,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
+  // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
+  // a picture with its natural width and height.
+  let mut plot_label_picture: Option<(String, f64, f64)> = None;
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
   // `FrameLabel -> {bottom, left}` (or the nested four-edge form), as SVG
@@ -13329,6 +13338,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
+            other if plot_label_layout_svg(other).is_some() => {
+              let (svg, w, h) =
+                plot_label_layout_svg(other).expect("checked by the guard");
+              // Reserve as many title lines as the picture is tall.
+              let mut lines = 1;
+              while block_height(lines, TITLE_FONT) < h {
+                lines += 1;
+              }
+              plot_label = Some(vec![String::new(); lines]);
+              plot_label_picture = Some((svg, w, h));
+            }
             other => {
               let lines = expr_to_svg_markup_lines(other);
               if lines.iter().any(|l| !l.is_empty()) {
@@ -14125,7 +14145,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // PlotLabel: centered above the drawing area, in the reserved strip. It
   // arrives already typeset as SVG markup (sub/superscript tspans included).
-  if let Some(lines) = &plot_label {
+  if let (Some(lines), Some((picture, w, h))) =
+    (&plot_label, &plot_label_picture)
+  {
+    let cx = margin_left + svg_w / 2.0;
+    let title_top = match image_padding {
+      Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
+      None => 0.0,
+    };
+    // A picture wider than the graphic shrinks to fit, keeping its shape.
+    let scale = ((total_width - 8.0) / w).clamp(0.0, 1.0);
+    let (w, h) = (w * scale, h * scale);
+    let band = block_height(lines.len(), TITLE_FONT);
+    let fill =
+      label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb);
+    svg.push_str(&format!(
+      "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
+      embed_svg_centered(picture, cx, title_top + band / 2.0, w, h)
+    ));
+  } else if let Some(lines) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     // A title wider than the picture (a long `Row` of text and numbers)
     // shrinks to fit instead of being clipped at both edges.
@@ -15133,6 +15171,15 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
+/// The elements of a `TemplateBox`: a list, or a `List[…]` call.
+fn template_box_items(e: &Expr) -> Option<&[Expr]> {
+  match e {
+    Expr::List(items) => Some(items),
+    Expr::FunctionCall { name, args } if name == "List" => Some(args),
+    _ => None,
+  }
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -15182,14 +15229,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // `TemplateBox[{…}, "RowDefault"]`, the box text of a `Row`, draws as
       // its parts in a row, a string part as its text.
+      // Its elements may also arrive as a `List[…]` call, the spelling
+      // TraditionalForm box text uses.
       "TemplateBox"
         if args.len() == 2
           && matches!(&args[1], Expr::String(t) if t == "RowDefault")
-          && matches!(&args[0], Expr::List(_)) =>
+          && template_box_items(&args[0]).is_some() =>
       {
-        let Expr::List(items) = &args[0] else {
-          unreachable!("guarded by the match arm")
-        };
+        let items = template_box_items(&args[0]).unwrap();
         let parts: Vec<Expr> = items
           .iter()
           .map(|item| match item {
@@ -15644,12 +15691,15 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // `AutoDelete -> True`) are display pass-throughs.
       "InterpretationBox" if args.len() >= 2 => layout_box(&args[0], font_size),
 
-      // StyleBox — apply FontSize, FontColor, and Background from options
+      // StyleBox — apply FontSize, FontColor, Background, FontWeight and
+      // FontSlant from options
       "StyleBox" if !args.is_empty() => {
         let mut effective_font_size = font_size;
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
         let mut bold = false;
+        let mut show_contents = true;
+        let mut italic = false;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -15677,6 +15727,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               bold = true;
               continue;
             }
+            Expr::Identifier(i) if i == "Italic" => {
+              italic = true;
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 font_color = Some(color);
@@ -15689,6 +15743,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "FontWeight" => {
                 bold = matches!(val, Expr::Identifier(w) if w == "Bold");
               }
+              "FontSlant" => {
+                italic = matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Italic" || v == "Oblique");
+              }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
                   effective_font_size = sz;
@@ -15700,11 +15758,23 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "Background" => {
                 background = parse_color(val);
               }
+              // `ShowContents -> False` (the box of `Invisible[…]`) keeps
+              // the content's room but paints nothing.
+              "ShowContents" => {
+                show_contents =
+                  !matches!(val, Expr::Identifier(v) if v == "False");
+              }
               _ => {}
             }
           }
         }
         let content = layout_box(&args[0], effective_font_size);
+        if !show_contents {
+          return BoxLayout {
+            elements: String::new(),
+            ..content
+          };
+        }
         let mut elements = String::new();
         // Background rectangle behind content
         if let Some(bg) = background {
@@ -15725,6 +15795,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
         if bold {
           elements = format!("<g font-weight=\"bold\">{elements}</g>");
+        }
+        if italic {
+          elements = format!("<g font-style=\"italic\">{elements}</g>");
         }
         BoxLayout {
           elements,
@@ -18534,6 +18607,33 @@ fn is_single_letter_symbol(s: &str) -> bool {
     if c.is_alphabetic() && !('\u{2145}'..='\u{2149}').contains(&c))
 }
 
+/// Infix box tokens drawn with a space on either side: relations,
+/// assignments, rule arrows and the `mod` word operator.
+fn is_spaced_box_operator(token: &str) -> bool {
+  matches!(
+    token,
+    ":="
+      | "+="
+      | "-="
+      | "*="
+      | "/="
+      | "^="
+      | "^:="
+      | "="
+      | "=="
+      | "\u{2260}"
+      | "<"
+      | ">"
+      | "\u{2264}"
+      | "\u{2265}"
+      | "\u{2192}"
+      | "\u{29F4}"
+      | "\u{F522}"
+      | "\u{F51F}"
+      | "mod"
+  )
+}
+
 pub fn boxes_to_svg(expr: &Expr) -> String {
   match expr {
     // Atoms: in box form, atoms are always Expr::String
@@ -18577,6 +18677,18 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           let mut result = String::new();
           for (i, item) in items.iter().enumerate() {
             let rendered = boxes_to_svg(item);
+            // A relation, an arrow or a word operator (`mod`) between two
+            // operands is set off by spaces, as the front end draws
+            // `x = 5`, `a → b` and `m mod n`.
+            if i > 0
+              && i + 1 < items.len()
+              && matches!(item, Expr::String(s) if is_spaced_box_operator(s))
+            {
+              result.push(' ');
+              result.push_str(&rendered);
+              result.push(' ');
+              continue;
+            }
             result.push_str(&rendered);
             // Add space after comma separators (bare "," strings)
             if rendered == "," && i + 1 < items.len() {
@@ -18718,6 +18830,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let mut font_size_attr = String::new();
         let mut color_attr = String::new();
         let mut weight_attr = "";
+        let mut slant_attr = "";
         for opt in &args[1..] {
           let (key, val) = match opt {
             Expr::Rule {
@@ -18741,6 +18854,10 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
               weight_attr = " font-weight=\"bold\"";
               continue;
             }
+            Expr::Identifier(i) if i == "Italic" => {
+              slant_attr = " font-style=\"italic\"";
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
@@ -18754,6 +18871,15 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
                 weight_attr = if matches!(val, Expr::Identifier(w) if w == "Bold")
                 {
                   " font-weight=\"bold\""
+                } else {
+                  ""
+                };
+              }
+              "FontSlant" => {
+                slant_attr = if matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Italic" || v == "Oblique")
+                {
+                  " font-style=\"italic\""
                 } else {
                   ""
                 };
@@ -18775,11 +18901,12 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         if font_size_attr.is_empty()
           && color_attr.is_empty()
           && weight_attr.is_empty()
+          && slant_attr.is_empty()
         {
           content
         } else {
           format!(
-            "<tspan{font_size_attr}{color_attr}{weight_attr}>{content}</tspan>"
+            "<tspan{font_size_attr}{color_attr}{weight_attr}{slant_attr}>{content}</tspan>"
           )
         }
       }
@@ -19300,6 +19427,48 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
   }
 }
 
+/// A `PlotLabel` that sets a two-dimensional layout inline — a matrix from
+/// `MatrixForm`, or the boxes of `ToString[m . x, TraditionalForm]` in a
+/// `Row` — typeset as a picture with its natural size, the way Wolfram
+/// draws the label in `TraditionalForm`. A title stacked as a `Column` or
+/// `Grid` stays a block of text lines (see `expr_to_svg_markup_lines`).
+fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  if !label_sets_matrix(expr) {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, TITLE_FONT);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  let svg = layout_to_svg(&layout, "currentColor");
+  let (w, h) = svg_natural_size(&svg)?;
+  Some((svg, w, h))
+}
+
+/// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
+/// or a string carrying the `\!\(\*…\)` box text of a grid (what
+/// `ToString[m . x, TraditionalForm]` returns). Items of a `Column`, `Grid`
+/// or `TableForm` are set as lines of text instead, so they are not
+/// searched.
+fn label_sets_matrix(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(s) => {
+      s.contains("GridBox[") && inline_box_string_to_box_expr(s).is_some()
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "MatrixForm" => matches!(args.first(), Some(Expr::List(rows))
+        if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))),
+      "Column" | "Grid" | "TableForm" | "Labeled" => false,
+      _ => args.iter().any(label_sets_matrix),
+    },
+    Expr::List(items) => items.iter().any(label_sets_matrix),
+    _ => false,
+  }
+}
+
 /// Structured mathematical labels need a picture host instead of a text span.
 pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
   let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
@@ -19362,6 +19531,12 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
     crate::evaluator::dispatch::complex_and_special::tf_known_func(name)
       .map_or_else(|| svg_escape(name), str::to_string);
   Some(format!("{head}({})", parts.join(", ")))
+}
+
+/// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
+/// stacked-fraction picture (see [`fraction_label_svg`]).
+pub fn axes_label_entry(e: &Expr) -> Option<String> {
+  fraction_label_svg(e, LABEL_FONT).or_else(|| styled_axis_label(e))
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
@@ -22426,6 +22601,27 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
         ]
         .into(),
       );
+      return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
+        parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
+      });
+    }
+    // A product with a picture among its factors (`"State 1: " g`, a
+    // caption multiplied onto an icon) typesets like any `Times`: its
+    // factors side by side, separated by a space — so the picture is drawn
+    // inline instead of collapsing the whole cell to `-Graphics-`.
+    Expr::FunctionCall { name, args }
+      if name == "Times"
+        && args.len() >= 2
+        && args.iter().any(|a| grid_cell_graphic(a).is_some()) =>
+    {
+      let mut items = Vec::with_capacity(args.len() * 2);
+      for (i, factor) in args.iter().enumerate() {
+        if i > 0 {
+          items.push(str_expr(" "));
+        }
+        items.push(factor.clone());
+      }
+      let row = Expr::List(items.into());
       return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
         parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
       });
@@ -28157,8 +28353,9 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
         args: new_args,
       }
     }
+    // A `Spacer` is a gap in the layout, not an expression to typeset.
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Grid" | "TraditionalForm") =>
+      if matches!(name.as_str(), "Grid" | "TraditionalForm" | "Spacer") =>
     {
       expr.clone()
     }
@@ -28399,7 +28596,59 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 /// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
 /// anything else the usual text markup.
 pub(crate) fn axes_label_markup(expr: &Expr) -> String {
-  inline_fraction_string_svg(expr).unwrap_or_else(|| expr_to_svg_markup(expr))
+  inline_fraction_string_svg(expr)
+    .or_else(|| fraction_label_svg(expr, LABEL_FONT))
+    .unwrap_or_else(|| expr_to_svg_markup(expr))
+}
+
+/// An axis label expression that TraditionalForm typesets as a stacked
+/// fraction — `Subscript[c, p]/Subscript[c, a][0]` reads as c_p over
+/// c_a(0), the way Wolfram labels plot axes — laid out at `size` points
+/// through the box layout as a picture (a nested `<svg>`). `None` for a
+/// string or any expression without a fraction, which keep their text
+/// rendering.
+pub(crate) fn fraction_label_svg(expr: &Expr, size: f64) -> Option<String> {
+  match expr {
+    Expr::String(_) => return None,
+    // `Rotate[label, angle]` shows its label: the angle is no part of it.
+    Expr::FunctionCall { name, args }
+      if name == "Rotate" && !args.is_empty() =>
+    {
+      return fraction_label_svg(&args[0], size);
+    }
+    // Styling and layout wrappers keep their own label rendering.
+    Expr::FunctionCall { name, .. }
+      if is_style_wrapper(name)
+        || matches!(
+          name.as_str(),
+          "Text"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Tooltip"
+            | "Annotation"
+            | "Labeled"
+            | "Framed"
+            | "Pane"
+        ) =>
+    {
+      return None;
+    }
+    _ => {}
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      expr,
+    );
+  if !box_has_fraction(&boxes) {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, size);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
 }
 
 /// Width and height of an axes label that [`axes_label_markup`] typeset as a
@@ -28598,6 +28847,13 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
     && crate::evaluator::lays_out_a_graphic(expr)
   {
     return Some(crate::evaluator::expr_to_svg(expr));
+  }
+  // A product with a picture among its factors (`"State 1: " g`) is laid
+  // out the way a grid cell holding one is: its factors side by side.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
+    && let Some((svg, _, _)) = grid_cell_graphic(expr)
+  {
+    return Some(svg);
   }
   if let Expr::FunctionCall { name, args } = expr {
     let args: Vec<Expr> = args.iter().cloned().collect();
@@ -37102,9 +37358,31 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
           Some((name.clone(), crate::syntax::expr_to_source_form(init)))
         }
         Expr::Identifier(name) => {
-          let min = items.get(1)?;
-          expr_to_f64(min)?;
-          Some((name.clone(), crate::syntax::expr_to_source_form(min)))
+          let first = items.get(1)?;
+          // `{u, {c1, c2, …}}` (optionally followed by options or a control
+          // type): a choice control starts at its first choice — the
+          // left-hand side of a `value -> label` entry — so a sibling
+          // slider whose bounds read `u` resolves on the first pass.
+          if let Expr::List(choices) = first {
+            let only_options = items[2..].iter().all(|it| {
+              matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+                || matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+            });
+            if !only_options {
+              return None;
+            }
+            let value = match choices.first()? {
+              Expr::Rule { pattern, .. }
+              | Expr::RuleDelayed { pattern, .. } => pattern.as_ref(),
+              other => other,
+            };
+            return Some((
+              name.clone(),
+              crate::syntax::expr_to_source_form(value),
+            ));
+          }
+          expr_to_f64(first)?;
+          Some((name.clone(), crate::syntax::expr_to_source_form(first)))
         }
         _ => None,
       }
@@ -39519,40 +39797,45 @@ fn script_runs(
       }
     })
     .unwrap_or_default();
-  let script: String = args
-    .iter()
-    .skip(1)
-    .map(|a| {
-      let text = flatten_label_runs(&manipulate_label_runs(
-        &unquote_box_string(a),
-        false,
-      ));
-      if mark && picture_subscript_needs_lowering(&text) {
-        format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
-      } else if superscript
-        && marking
-        && text.chars().any(|c| unicode_script_char(c, true).is_none())
-      {
-        // No superscript glyphs for this exponent (`e^(j k L)`): write it
-        // out after a caret rather than as a garble of half-mapped letters.
-        if text.chars().count() > 1
-          && !args[1..].iter().all(|a| !label_is_compound(a))
-        {
-          format!("^({text})")
-        } else {
-          format!("^{text}")
+  // Each script keeps its own styled runs, so a `Style["B", Italic]`
+  // subscript stays slanted; how the script is set (Unicode script glyphs,
+  // a lowered marker, or a caret) is decided from its whole text.
+  for a in args.iter().skip(1) {
+    let script_runs = manipulate_label_runs(&unquote_box_string(a), false);
+    let text = flatten_label_runs(&script_runs);
+    let restyle = |runs: &mut Vec<LabelRun>, f: &dyn Fn(&str) -> String| {
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          text: f(&r.text),
+          ..r.clone()
         }
-      } else {
-        to_unicode_script(&text, superscript)
+      }));
+    };
+    if mark && picture_subscript_needs_lowering(&text) {
+      restyle(&mut runs, &|t| {
+        format!("{SUBSCRIPT_START}{t}{SUBSCRIPT_END}")
+      });
+    } else if superscript
+      && marking
+      && text.chars().any(|c| unicode_script_char(c, true).is_none())
+    {
+      // No superscript glyphs for this exponent (`e^(j k L)`): write it
+      // out after a caret rather than as a garble of half-mapped letters.
+      let grouped = text.chars().count() > 1
+        && !args[1..].iter().all(|a| !label_is_compound(a));
+      let plain = |t: &str| LabelRun {
+        text: t.to_string(),
+        italic: false,
+        ..Default::default()
+      };
+      runs.push(plain(if grouped { "^(" } else { "^" }));
+      restyle(&mut runs, &|t| t.to_string());
+      if grouped {
+        runs.push(plain(")"));
       }
-    })
-    .collect();
-  if !script.is_empty() {
-    runs.push(LabelRun {
-      text: script,
-      italic: false,
-      ..Default::default()
-    });
+    } else {
+      restyle(&mut runs, &|t| to_unicode_script(t, superscript));
+    }
   }
   runs
 }

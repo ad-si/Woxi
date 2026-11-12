@@ -1242,8 +1242,14 @@ pub fn constant_array_ast(
 
   if !has_symbolic {
     // Build the nested constant array from the innermost dimension outward.
+    // Each level is shared before it is repeated, so the n copies of a
+    // row are n pointers to one copy-on-write list rather than n deep
+    // copies: ConstantArray[{1, 0, 0}, {1000, 1000}] used to cost 350 MB.
     let mut result = elem.clone();
     for &n in concrete_dims.iter().rev() {
+      if let Expr::List(items) = &mut result {
+        items.share();
+      }
       result = Expr::List(vec![result; n].into());
     }
     return Ok(result);

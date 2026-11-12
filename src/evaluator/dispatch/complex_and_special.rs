@@ -5193,6 +5193,36 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           tf_string("]"),
         ]);
       }
+      // The infix `m mod n` is the call `Mod[m, n]`; parentheses around an
+      // operand only grouped it.
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+        && let [m, Expr::String(op), n] = &items[..]
+        && op == "mod"
+      {
+        let ungroup = |e: &Expr| match e {
+          Expr::FunctionCall { name, args } if name == "RowBox" => {
+            match &args[..] {
+              [Expr::List(inner)] => match &inner[..] {
+                [Expr::String(open), body, Expr::String(close)]
+                  if open == "(" && close == ")" =>
+                {
+                  body.clone()
+                }
+                _ => e.clone(),
+              },
+              _ => e.clone(),
+            }
+          }
+          _ => e.clone(),
+        };
+        return row_box(vec![
+          str_expr("Mod"),
+          tf_string("["),
+          row_box(vec![ungroup(m), tf_string(","), ungroup(n)]),
+          tf_string("]"),
+        ]);
+      }
       // TraditionalForm writes an equation with a bare `=`, and reads that
       // token back as `==` (a `Set` would assign instead of typeset).
       if name == "RowBox"
@@ -6362,14 +6392,17 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
   order
 }
 
-/// Calls `f` on the exponent of every `SuperscriptBox[eb, e, …]` in a box.
+/// Calls `f` on the exponent of every `SuperscriptBox[base, e, …]` in a box
+/// whose base mentions `eb`: a bare `x^2` as well as a parenthesized
+/// `(x - 1)^2`, so powers of a shifted variable rank by their degree.
 fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
   match b {
     Expr::FunctionCall { name, args } => {
-      if name == "SuperscriptBox"
-        && args.len() >= 2
-        && matches!(&args[0], Expr::String(s) if s == eb)
-      {
+      if name == "SuperscriptBox" && args.len() >= 2 && {
+        let mut found = false;
+        tf_visit_strings(&args[0], &mut |s| found |= s == eb);
+        found
+      } {
         f(&args[1]);
       }
       args.iter().for_each(|a| tf_superscripts_of(a, eb, f));
@@ -7159,6 +7192,23 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
     }
+    // `Invisible[expr]` keeps the room `expr` takes but draws nothing: its
+    // box is the content's, with `ShowContents -> False`.
+    "Invisible" if args.len() == 1 => {
+      let body = if TF_BOX_TEXT.get() {
+        tf(&args[0])
+      } else {
+        tf_display(&args[0])
+      };
+      call(
+        "StyleBox",
+        vec![
+          body,
+          rule_expr(id_expr("ShowContents"), bool_expr(false)),
+          rule_expr(id_expr("StripOnInput"), bool_expr(false)),
+        ],
+      )
+    }
     // In box *text* a `Row` is the FrontEnd's row template: `RowDefault` for
     // the plain form, and one of two separator variants — the plural one
     // carries a string separator twice, as the text it draws and as the
@@ -7687,6 +7737,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         _ => "\u{21C0}",
       };
       tf_box("OverscriptBox", vec![tf(&args[0]), tf_string(mark)])
+    }
+    // `Mod[m, n]` is the infix `m mod n`, with a sum, product or negative
+    // operand in parentheses: `Mod[2 x, 7]` reads `(2 x) mod 7`.
+    "Mod" if args.len() == 2 => {
+      let operand = |e: &Expr| {
+        if tf_needs_paren_factor(e) || tf_is_product_node(e) {
+          tf_parens(tf(e))
+        } else {
+          tf(e)
+        }
+      };
+      tf_row(vec![operand(&args[0]), tf_string("mod"), operand(&args[1])])
     }
     // `AngleBracket[a, b]` is typeset as `〈a, b〉`.
     "AngleBracket" if !args.is_empty() => {

@@ -708,6 +708,7 @@ fn adaptive_sample(
   max_total: usize,
   max_depth: usize,
   monitor: Option<&Expr>,
+  visible_y: Option<(f64, f64)>,
 ) -> Vec<(f64, f64)> {
   // Evaluate one sample, firing the `EvaluationMonitor :> expr` hook (with
   // the plot variable bound to x) first, e.g. so `Sow[{x, f[x]}]` records
@@ -743,7 +744,11 @@ fn adaptive_sample(
   // relative test below alone keeps halving the near-flat stretches around
   // every extremum. The height is the 5th..95th percentile spread of the
   // initial samples, so a pole does not flatten the rest of the curve.
-  let visible_bend = {
+  // An explicit `PlotRange -> {ymin, ymax}` narrower than the curve is the
+  // visible height instead: a cubic on `{x, -10, 10}` clipped to
+  // `{-10, 10}` must bend smoothly within that window, even though its
+  // samples span ±1000.
+  let curve_bend = {
     let mut ys: Vec<f64> = points
       .iter()
       .map(|p| p.1)
@@ -756,6 +761,10 @@ fn adaptive_sample(
     } else {
       0.0
     }
+  };
+  let visible_bend = match visible_y {
+    Some((lo, hi)) => curve_bend.min((hi - lo).abs() * 1e-3),
+    None => curve_bend,
   };
 
   // Adaptive refinement passes, one level of `MaxRecursion` each.
@@ -778,7 +787,15 @@ fn adaptive_sample(
         continue;
       }
 
-      let needs_refine = if !y0.is_finite() || !y1.is_finite() {
+      // A stretch whose ends both lie past the same edge of an explicit
+      // `PlotRange` is clipped away, so refining it only spends samples.
+      let off_screen = visible_y.is_some_and(|(lo, hi)| {
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
+        (y0 > hi && y1 > hi) || (y0 < lo && y1 < lo)
+      });
+      let needs_refine = if off_screen {
+        false
+      } else if !y0.is_finite() || !y1.is_finite() {
         // Refine where the curve starts or stops existing to find the
         // boundary; a stretch with no values at all has nothing to find.
         y0.is_finite() || y1.is_finite()
@@ -2021,7 +2038,22 @@ pub(crate) fn axes_label_svg_at(
     return String::new();
   };
   let mut svg = String::new();
-  if show_x_axis && !x_label.is_empty() {
+  // A stacked-fraction label is a picture typeset at the label font's
+  // point size; it scales up to render units and takes the label color.
+  let k = font_size / plot_padding::LABEL_FONT;
+  let picture = |markup: &str, x: f64, y: f64| {
+    let theme_fill = crate::functions::graphics::theme().text_primary;
+    format!(
+      "<g transform=\"translate({x:.1},{y:.1}) scale({k:.3})\">{}</g>\n",
+      markup.replace(theme_fill, label_fill)
+    )
+  };
+  let picture_size = crate::functions::graphics::axes_label_picture_size;
+  if show_x_axis && let Some((_, h)) = picture_size(x_label) {
+    // 8 pt past the end of the axis, vertically centered on it.
+    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
+    svg.push_str(&picture(x_label, label_x, axis_y - h * k / 2.0));
+  } else if show_x_axis && !x_label.is_empty() {
     // 8 pt past the end of the axis, vertically centered on it.
     let k = font_size / plot_padding::LABEL_FONT;
     let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
@@ -2055,7 +2087,13 @@ pub(crate) fn axes_label_svg_at(
       join_label_lines(&lines, label_x, pitch)
     ));
   }
-  if show_y_axis && !y_label.is_empty() {
+  if show_y_axis && let Some((pw, ph)) = picture_size(y_label) {
+    // Centered over the top of the y axis, 6 pt above it, and kept inside
+    // the image.
+    let lx = axis_x.max(pw * k / 2.0 + font_size * 0.2);
+    let top = y0 - plot_padding::AXES_LABEL_GAP_Y * k - ph * k;
+    svg.push_str(&picture(y_label, lx - pw * k / 2.0, top));
+  } else if show_y_axis && !y_label.is_empty() {
     // Centered over the top of the y axis, but never so far left that the
     // label runs off the image — a wide one (`{a, b, c, d}`) over an axis
     // that sits near the left edge slides right until it fits, the way
@@ -3711,8 +3749,14 @@ pub(crate) struct PlotOptions {
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
+  /// The `LabelStyle` and `BaseStyle` values as given, kept apart so
+  /// `label_style` combines them the same way whichever option comes first.
+  pub label_style_sources: [Option<LabelStyleSpec>; 2],
   /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
+  /// The font size a `FrameStyle -> size` (or `Directive[…, size]`) gives
+  /// the frame's labels and tick labels, over `LabelStyle`.
+  pub frame_font_size: Option<f64>,
   /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
   /// color and thickness of its tick marks, and the color of its labels.
   pub frame_ticks_styles: [Option<SeriesStyle>; 4],
@@ -3822,6 +3866,19 @@ impl LabelStyleSpec {
       font_size,
       bold,
     })
+  }
+
+  /// `top` laid over `base`: each property `top` sets wins, the rest come
+  /// from `base`.
+  pub(crate) fn layered(base: Option<Self>, top: Option<Self>) -> Option<Self> {
+    match (base, top) {
+      (Some(b), Some(t)) => Some(Self {
+        color: t.color.or(b.color),
+        font_size: t.font_size.or(b.font_size),
+        bold: t.bold || b.bold,
+      }),
+      (b, t) => t.or(b),
+    }
   }
 }
 
@@ -3938,7 +3995,9 @@ impl Default for PlotOptions {
       default_point_size: None,
       point_colors: Vec::new(),
       label_style: None,
+      label_style_sources: [None, None],
       tick_label_style: None,
+      frame_font_size: None,
       frame_ticks_styles: [None, None, None, None],
       joined_per_series: None,
       axes_style: [None, None],
@@ -4765,10 +4824,17 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
+    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
+    // instead of collapsing into one space.
+    let preserve_attr = if body.contains("  ") {
+      " xml:space=\"preserve\""
+    } else {
+      ""
+    };
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-         fill=\"{fill}\"{style_attrs}>{body}</text>\n",
+         fill=\"{fill}\"{style_attrs}{preserve_attr}>{body}</text>\n",
     ));
   }
 
@@ -12183,6 +12249,13 @@ pub(crate) fn generate_histogram_svg(
       plot_padding::tick_label_width(l, plot_padding::TICK_FONT) / 2.0
     });
   let axes_label_margin_right = axes_label_x.map_or(0.0, |label| {
+    // A stacked-fraction picture is typeset at `LABEL_FONT` and drawn
+    // scaled to `font_size`.
+    if let Some((w, _)) =
+      crate::functions::graphics::axes_label_picture_size(label)
+    {
+      return 8.0 * sf + w * sf * CHART_LABEL_FONT / plot_padding::LABEL_FONT;
+    }
     // The label is drawn at `font_size`; ~0.62 em per character covers the
     // proportional font with a little slack.
     8.0 * sf
@@ -12947,9 +13020,10 @@ pub(crate) fn parse_image_size(
   // arithmetic expression never reached the evaluator: `ImageSize ->
   // 400 {1, 1}` — the way a Demonstration asks for a square picture —
   // arrives as `Times[400, {1, 1}]`. Evaluate it once so the shapes below
-  // see the `{400, 400}` they understand.
+  // see the `{400, 400}` they understand. A variable (`ImageSize -> size`)
+  // likewise still names its value.
   let evaluated = match value {
-    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } => {
+    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } | Expr::Identifier(_) => {
       evaluate_expr_to_expr(value).ok()
     }
     _ => None,
@@ -14878,11 +14952,17 @@ pub(crate) fn parse_explicit_tick_entries(
         // before it is read as text.
         let label_expr =
           evaluate_expr_to_expr(&pair[1]).unwrap_or_else(|_| pair[1].clone());
-        let label = crate::functions::chart::expr_to_label(&label_expr)
-          .map_or_else(
-            || crate::functions::graphics::svg_escape(&format_tick(pos)),
-            |text| crate::functions::graphics::box_string_to_svg(&text),
-          );
+        // An expression the plain-text label reader has no reading for
+        // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
+        // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
+        // tick "-∞", not with the position.
+        let label = match crate::functions::chart::expr_to_label(&label_expr) {
+          Some(text) => crate::functions::graphics::box_string_to_svg(&text),
+          None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
+            crate::functions::graphics::svg_escape(&format_tick(pos))
+          }
+          None => crate::functions::graphics::expr_to_svg_markup(&label_expr),
+        };
         Some(ExplicitTick {
           pos,
           label,
@@ -15812,6 +15892,16 @@ pub(crate) fn apply_common_plot_option(
 ) -> bool {
   match name {
     "ImageSize" => {
+      // A plot holds its options, so `ImageSize -> size` naming a variable
+      // (`size = {380, 290}`) arrives unevaluated.
+      let evaluated;
+      let replacement = if matches!(replacement, Expr::Identifier(_)) {
+        evaluated = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.clone());
+        &evaluated
+      } else {
+        replacement
+      };
       if let Some((w, h, fw)) =
         parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       {
@@ -15841,12 +15931,12 @@ pub(crate) fn apply_common_plot_option(
       if let Expr::List(items) = &val
         && !items.is_empty()
       {
-        let x = crate::functions::graphics::styled_axis_label(&items[0])
+        let x = crate::functions::graphics::axes_label_entry(&items[0])
           .unwrap_or_default();
         // `{xlabel}` names the x axis only.
         let y = items
           .get(1)
-          .and_then(crate::functions::graphics::styled_axis_label)
+          .and_then(crate::functions::graphics::axes_label_entry)
           .unwrap_or_default();
         plot_opts.axes_label = Some((x, y));
       }
@@ -15991,6 +16081,8 @@ pub(crate) fn apply_common_plot_option(
     }
     "FrameStyle" => {
       plot_opts.frame_styles = parse_frame_edge_styles(replacement);
+      plot_opts.frame_font_size =
+        LabelStyleSpec::parse(replacement).and_then(|s| s.font_size);
       hide_transparent_frame_edges(replacement, plot_opts);
     }
     "MeshStyle" => {
@@ -16038,7 +16130,21 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.frame_ticks_styles = parse_frame_edge_styles(replacement);
     }
     "LabelStyle" => {
-      plot_opts.label_style = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style_sources[0] = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style = LabelStyleSpec::layered(
+        plot_opts.label_style_sources[1],
+        plot_opts.label_style_sources[0],
+      );
+    }
+    // `BaseStyle -> {12}` / `BaseStyle -> {FontSize -> 12, Red}` styles all
+    // of the plot's text: the tick, frame and axes labels and the title.
+    // A `LabelStyle` setting the same property takes precedence.
+    "BaseStyle" => {
+      plot_opts.label_style_sources[1] = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style = LabelStyleSpec::layered(
+        plot_opts.label_style_sources[1],
+        plot_opts.label_style_sources[0],
+      );
     }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" || s == "False" => {
@@ -16236,6 +16342,27 @@ fn expand_list_valued_body(body: &Expr, var: &str, x: f64) -> Option<Expr> {
   }
 }
 
+/// A curve named by a symbol whose value is a list of curves (`f = {Sin[x]}`
+/// or `f = Tooltip[{Sin[x]}]`, as `Tooltip[y[x] /. sol]` gives): the value,
+/// so that its curves are split out like an explicit list's.
+fn resolve_list_valued_symbol(body: &Expr, var: &str) -> Option<Expr> {
+  let Expr::Identifier(name) = body else {
+    return None;
+  };
+  if name == var {
+    return None;
+  }
+  let value = eval_body_var_symbolic(body, var);
+  let is_list = match &value {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, args } => {
+      name == "Tooltip" && matches!(args.first(), Some(Expr::List(_)))
+    }
+    _ => false,
+  };
+  (is_list && expr_mentions_var(&value, var)).then_some(value)
+}
+
 /// A body that applies replacement rules to the plot variable — `y[t] /.
 /// sol` — has to be replaced while the variable is still symbolic: once
 /// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
@@ -16316,6 +16443,14 @@ pub(crate) fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
       for it in items {
         flatten_plot_bodies(it, out);
       }
+    }
+    // `Tooltip[{f, g, …}, …]` inside the curve list (e.g. `Tooltip[y[x] /.
+    // sol]`, where the replacement yields a list) tooltips each curve; the
+    // tooltip itself draws nothing, so its curves join the list.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      flatten_plot_bodies(&args[0], out);
     }
     _ => out.push(e),
   }
@@ -16835,6 +16970,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect(),
       ),
       _ => expand_generated_bodies(body, var)
+        .or_else(|| resolve_list_valued_symbol(body, var))
         .or_else(|| resolve_replaced_body(body, var))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
         .unwrap_or_else(|| body.clone()),
@@ -16988,6 +17124,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       max_total,
       max_depth,
       monitor.as_ref(),
+      // A y scaling function maps the range too; only a plain one is used.
+      if scaling.1.is_none() {
+        plot_range_y
+      } else {
+        None
+      },
     );
     // `Exclusions -> Automatic` breaks the curve where a step function in
     // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
