@@ -31276,9 +31276,26 @@ pub(crate) fn clip_svg_to_pane_box(
     let x = (width - natural_w) * align.0;
     let y = (height - natural_h) * align.1;
     let root = svg.find("<svg").unwrap_or(0);
+    // Text running past the picture's own edges (a wide caption in a
+    // picture shrunk to the box) is still drawn; the box clips it.
+    let picture = &svg[root..];
+    let picture = match picture.find('>') {
+      Some(end) if !picture[..end].contains("overflow=") => {
+        let end = if picture[..end].ends_with('/') {
+          end - 1
+        } else {
+          end
+        };
+        format!(
+          "{} overflow=\"visible\"{}",
+          &picture[..end],
+          &picture[end..]
+        )
+      }
+      _ => picture.to_string(),
+    };
     return format!(
-      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{}\n</g>\n</svg>",
-      &svg[root..]
+      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
     );
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a

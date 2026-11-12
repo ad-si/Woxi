@@ -53196,6 +53196,18 @@ mod pane_layout {
       svg.contains("viewBox=\"0 0 75 75\"") && svg.contains("font-size=\"24\""),
       "{svg}"
     );
+    // A caption wider than the shrunk picture still shows in the box.
+    assert!(svg.contains("overflow=\"visible\""), "{svg}");
+  }
+
+  /// A lone `Alignment -> Center` centers a `Pane`'s content on both axes.
+  #[test]
+  fn center_alignment_centers_vertically_too() {
+    let svg = studio_svg(
+      "Pane[Graphics[Disk[], ImageSize -> 50], {200, 100}, \
+       Alignment -> Center]",
+    );
+    assert!(svg.contains("translate(75.0 25.0)"), "{svg}");
   }
 
   /// Regression: `Style[picture, Magnification -> m]` drew the picture at
