@@ -6395,7 +6395,7 @@ fn tex_pattern_text(name: &str, head: Option<&str>, blanks: u8) -> String {
   format!(
     "\\text{{{}${blanks}${}}}",
     tex_escape_text(name),
-    head.map(tex_escape_text).unwrap_or_default()
+    head.map_or_default(tex_escape_text)
   )
 }
 
@@ -16275,8 +16275,7 @@ fn is_dictionary_word(s: &str, ignore_case: bool) -> bool {
       let mut chars = w.chars();
       let capitalized: String = chars
         .next()
-        .map(|c| c.to_uppercase().chain(chars).collect())
-        .unwrap_or_default();
+        .map_or_default(|c| c.to_uppercase().chain(chars).collect());
       s == *w || s == capitalized || s == w.to_uppercase()
     })
 }
@@ -17598,7 +17597,7 @@ fn text_string_render(expr: &Expr) -> Option<String> {
       return Some(
         match TEXT_STRING_OPTIONS.with(|o| o.borrow().missing.clone()) {
           Some(s) => s,
-          None => args.first().map(text_string_part).unwrap_or_default(),
+          None => args.first().map_or_default(text_string_part),
         },
       );
     }

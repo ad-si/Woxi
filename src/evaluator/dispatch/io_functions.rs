@@ -358,8 +358,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let path = env
         .iter()
         .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.as_str());
       let Some(found) = std::env::split_paths(path)
         .map(|dir| dir.join(program))
         .find(|candidate| candidate.is_file())
@@ -7689,8 +7688,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           ))
         }) || args[1..].iter().any(|opt| {
           matches!(opt, Expr::Rule { pattern, .. }
-            if matches!(pattern.as_ref(), Expr::Identifier(k)
-              if k == "Alignment" || k == "ItemSize"))
+          if matches!(pattern.as_ref(), Expr::Identifier(k)
+            if matches!(
+              k.as_str(),
+              "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
+            )))
         }))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])

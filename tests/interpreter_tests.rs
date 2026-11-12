@@ -3922,6 +3922,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_lowers_letter_subscripts_alike() {
+    // A letter with a Unicode subscript glyph (`a` -> `ₐ`) used to be folded
+    // into that glyph while one without (`b`) was lowered, so `l_a` drew in
+    // a fallback font next to a lowered `l_b`. Every letter subscript is now
+    // lowered the same way; digits keep their Unicode glyphs.
+    for letter in ["a", "b", "x", "i"] {
+      clear_state();
+      let svg = interpret(&format!(
+        "ExportString[Graphics[Text[\"\\!\\(\\*SubscriptBox[\\(l\\), \\({letter}\\)]\\)\", {{0, 0}}]], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(
+        svg.contains(&format!(
+          ">l<tspan baseline-shift=\"sub\" font-size=\"70%\">{letter}</tspan><"
+        )),
+        "{letter}: {svg}"
+      );
+    }
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Subscript[x, i], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>"),
+      "{svg}"
+    );
+    assert!(!svg.contains('ᵢ'), "{svg}");
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a

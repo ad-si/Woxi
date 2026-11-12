@@ -454,10 +454,9 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
             if crate::functions::graphics::named_dashing(s).is_some() =>
           {
             crate::functions::graphics::named_dashing(s)
-              .map(|(dash, gap)| vec![-dash, -gap])
-              .unwrap_or_default()
+              .map_or_default(|(dash, gap)| vec![-dash, -gap])
           }
-          other => dash_len(other).map(|d| vec![d, d]).unwrap_or_default(),
+          other => dash_len(other).map_or_default(|d| vec![d, d]),
         };
         style.dashing = if dashes.is_empty() {
           None

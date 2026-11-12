@@ -387,9 +387,9 @@ impl Server {
   fn completion(&self, params: &Value) -> Result<Value, (i64, String)> {
     let (document, offset) = self.document_and_offset(params)?;
     // The word being typed: the part of the symbol left of the cursor.
-    let prefix = symbol_at(&document.tokens, offset)
-      .map(|token| &document.text[token.start..offset.max(token.start)])
-      .unwrap_or_default();
+    let prefix = symbol_at(&document.tokens, offset).map_or_default(|token| {
+      &document.text[token.start..offset.max(token.start)]
+    });
     let lowercase_prefix = prefix.to_lowercase();
 
     let mut items: Vec<Value> = Vec::new();
@@ -672,8 +672,7 @@ impl Server {
     let only: Vec<&str> = params
       .pointer("/context/only")
       .and_then(Value::as_array)
-      .map(|kinds| kinds.iter().filter_map(Value::as_str).collect())
-      .unwrap_or_default();
+      .map_or_default(|kinds| kinds.iter().filter_map(Value::as_str).collect());
 
     // Every misspelling in the file, and the correction for it.
     let corrections: Vec<(super::analysis::Diagnostic, &'static str)> =

@@ -178,6 +178,11 @@ pub struct PlotSource {
   /// Sampled x extent used when Show recomputes PlotRange -> All. A
   /// function plot's displayed interval includes unsampled endpoints.
   pub data_x_range: Option<(f64, f64)>,
+  /// The height/width ratio of the plotting area the plot was drawn with,
+  /// when it is fixed independently of `ImageSize` (`Plot`'s default
+  /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
+  /// `None` = the ratio follows from `image_size`.
+  pub aspect_ratio: Option<f64>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
@@ -3395,10 +3400,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
     Rule::PatternOptionalDefaultSimple => {
       // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
       let mut inner = pair.into_inner();
-      let name = inner
-        .next()
-        .map(|p| p.as_str().to_string())
-        .unwrap_or_default();
+      let name = inner.next().map_or_default(|p| p.as_str().to_string());
       Expr::PatternOptional {
         name,
         head: None,
@@ -4458,14 +4460,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
   let trailing_prime_order_fce =
     trailing_prime_idx.map(|i| inner_pairs[i].as_str().len());
   let post_prime_bracket_args: Vec<Vec<Expr>> = trailing_prime_idx
-    .map(|i| {
+    .map_or_default(|i| {
       inner_pairs[i + 1..]
         .iter()
         .take_while(|p| matches!(p.as_rule(), Rule::BracketArgs))
         .map(|bracket| bracket.clone().into_inner().map(pair_to_expr).collect())
         .collect()
-    })
-    .unwrap_or_default();
+    });
 
   // Collect the function call's BracketArgs (consecutive BracketArgs after name, before any suffix)
   let fc_bracket_args: Vec<Vec<Expr>> = inner_pairs
@@ -9317,15 +9318,18 @@ fn format_times_with_denominator(
     format!("({inner})")
   };
 
-  // Format denominator
+  // Format denominator. A quotient (`b/c`, `Rational[1, 3]`) in the
+  // denominator is grouped too: `a/(b/c)`, never `a/b/c`, which reads back
+  // as `(a/b)/c`.
   let needs_parens = |e: &Expr| -> bool {
-    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times" || name == "Rational")
       || matches!(
         e,
         Expr::BinaryOp {
           op: BinaryOperator::Plus
             | BinaryOperator::Minus
-            | BinaryOperator::Times,
+            | BinaryOperator::Times
+            | BinaryOperator::Divide,
           ..
         }
       )
