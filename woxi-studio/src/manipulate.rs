@@ -5545,6 +5545,38 @@ mod tests {
     assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
   }
 
+  /// A slider whose bounds name *choice-list* controls declared after it
+  /// (`{k, 0, Floor[(m n)^2 / 10], 1}` next to `{m, {2, 3}}`) is built with
+  /// those controls at their first choice and follows them when they change.
+  /// Regression: the choice controls had no initial value while the bounds
+  /// were read, so the slider was dropped and `k` became a hidden variable.
+  #[test]
+  fn slider_bound_follows_later_choice_controls() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{k, m, n},
+        {{k, 0, \"code\"}, 0, Min[50, (m n)^2] - 1, 1, Enabled -> m n > 4},
+        {m, {2, 3}},
+        {n, {2 -> \"two\", 3 -> \"three\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let bounds = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Continuous { name, min, max, .. } if name == "k" => {
+          Some((*min, *max))
+        }
+        _ => None,
+      })
+    };
+    assert_eq!(bounds(&state), Some((0.0, 15.0)));
+    let m_idx = state.controls.iter().position(|c| c.name() == "m").unwrap();
+    assert!(state.select_discrete(m_idx, "3"));
+    state.reevaluate();
+    assert_eq!(bounds(&state), Some((0.0, 35.0)));
+  }
+
   /// A message-typing Demonstration: a `Column` of a reset `Button`, a
   /// `GraphicsGrid` of character `Button`s, `Dynamic` read-outs of the typed
   /// string and a conditional `Plot`, driven by a hidden list variable.

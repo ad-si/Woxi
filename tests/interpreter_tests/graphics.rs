@@ -52296,4 +52296,29 @@ mod multiline_text_blank_lines {
     assert!(!svg.contains("\"></tspan>"), "empty tspan: {svg}");
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
+
+  /// A caption multiplied onto a picture (`"State 1: " Graphics[…]`) is a
+  /// `Times` that typesets as its factors side by side, so the picture is
+  /// drawn inline in a `Column`, `Row`, or `Grid`. Regression: it printed
+  /// `-Graphics-` text in place of the picture.
+  #[test]
+  fn times_of_caption_and_graphic_draws_picture_inline() {
+    for layout in [
+      "Column[{ITEM}]",
+      "Row[{ITEM}]",
+      "Grid[{{ITEM}}]",
+      "Text@Column[{ITEM}]",
+    ] {
+      let item = "\"Label: \" Graphics[Disk[], ImageSize -> 15]";
+      let code =
+        format!("ExportString[{}, \"SVG\"]", layout.replace("ITEM", item));
+      let svg = woxi::interpret(&code).unwrap();
+      assert!(!svg.contains("-Graphics-"), "{layout}: placeholder: {svg}");
+      assert!(svg.contains("Label:"), "{layout}: caption missing: {svg}");
+      assert!(
+        svg.contains("<ellipse") || svg.contains("<circle"),
+        "{layout}: picture missing: {svg}"
+      );
+    }
+  }
 }

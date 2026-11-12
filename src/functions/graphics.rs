@@ -28620,6 +28620,13 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
   {
     return Some(crate::evaluator::expr_to_svg(expr));
   }
+  // A product with a picture among its factors (`"State 1: " g`) is laid
+  // out the way a grid cell holding one is: its factors side by side.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
+    && let Some((svg, _, _)) = grid_cell_graphic(expr)
+  {
+    return Some(svg);
+  }
   if let Expr::FunctionCall { name, args } = expr {
     let args: Vec<Expr> = args.iter().cloned().collect();
     if args.is_empty() {
