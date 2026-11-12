@@ -52297,3 +52297,44 @@ mod multiline_text_blank_lines {
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
 }
+
+mod plot_tooltip_list_and_image_size_variable {
+  use super::*;
+
+  /// Regression: `Tooltip[{f, …}]` inside a plot's curve list (what
+  /// `Tooltip[y[x] /. sol]` gives for a `DSolve` solution) was sampled as
+  /// one list-valued curve and drew nothing; each of its curves is drawn.
+  #[test]
+  fn tooltip_of_a_list_inside_the_curve_list() {
+    let svg = export_svg(
+      "a = Tooltip[{Sin[x]}]; b = Tooltip[{Cos[x]}]; \
+       Plot[{a, b, x}, {x, 0, 5}]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 3, "{svg}");
+    let svg =
+      export_svg("Plot[{Tooltip[{Sin[x], Cos[x]}, \"t\"], x}, {x, 0, 5}]");
+    assert_eq!(svg.matches("<polyline").count(), 3, "{svg}");
+    let svg = export_svg("c = {Cos[x], 2 x}; Plot[{c, x}, {x, 0, 5}]");
+    assert_eq!(svg.matches("<polyline").count(), 3, "{svg}");
+  }
+
+  /// Regression: `ImageSize -> size` naming a variable was ignored by the
+  /// held plot functions, which fell back to the default size.
+  #[test]
+  fn image_size_given_by_a_variable() {
+    for expr in [
+      "Plot[Sin[x], {x, 0, 4}, ImageSize -> size]",
+      "DiscretePlot[n, {n, 1, 5}, ImageSize -> size]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, ImageSize -> size]",
+    ] {
+      let svg = export_svg(&format!("size = {{380, 290}}; {expr}"));
+      assert!(
+        svg.starts_with("<svg width=\"380\" height=\"290\""),
+        "expected a 380x290 picture for {expr}, got: {}",
+        &svg[..svg.len().min(80)]
+      );
+    }
+    let svg = export_svg("w = 300; Plot[Sin[x], {x, 0, 4}, ImageSize -> w]");
+    assert!(svg.starts_with("<svg width=\"300\""), "{}", &svg[..80]);
+  }
+}

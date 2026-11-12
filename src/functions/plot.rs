@@ -12947,9 +12947,10 @@ pub(crate) fn parse_image_size(
   // arithmetic expression never reached the evaluator: `ImageSize ->
   // 400 {1, 1}` — the way a Demonstration asks for a square picture —
   // arrives as `Times[400, {1, 1}]`. Evaluate it once so the shapes below
-  // see the `{400, 400}` they understand.
+  // see the `{400, 400}` they understand. A variable (`ImageSize -> size`)
+  // likewise still names its value.
   let evaluated = match value {
-    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } => {
+    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } | Expr::Identifier(_) => {
       evaluate_expr_to_expr(value).ok()
     }
     _ => None,
@@ -15812,6 +15813,16 @@ pub(crate) fn apply_common_plot_option(
 ) -> bool {
   match name {
     "ImageSize" => {
+      // A plot holds its options, so `ImageSize -> size` naming a variable
+      // (`size = {380, 290}`) arrives unevaluated.
+      let evaluated;
+      let replacement = if matches!(replacement, Expr::Identifier(_)) {
+        evaluated = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.clone());
+        &evaluated
+      } else {
+        replacement
+      };
       if let Some((w, h, fw)) =
         parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       {
@@ -16236,6 +16247,27 @@ fn expand_list_valued_body(body: &Expr, var: &str, x: f64) -> Option<Expr> {
   }
 }
 
+/// A curve named by a symbol whose value is a list of curves (`f = {Sin[x]}`
+/// or `f = Tooltip[{Sin[x]}]`, as `Tooltip[y[x] /. sol]` gives): the value,
+/// so that its curves are split out like an explicit list's.
+fn resolve_list_valued_symbol(body: &Expr, var: &str) -> Option<Expr> {
+  let Expr::Identifier(name) = body else {
+    return None;
+  };
+  if name == var {
+    return None;
+  }
+  let value = eval_body_var_symbolic(body, var);
+  let is_list = match &value {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, args } => {
+      name == "Tooltip" && matches!(args.first(), Some(Expr::List(_)))
+    }
+    _ => false,
+  };
+  (is_list && expr_mentions_var(&value, var)).then_some(value)
+}
+
 /// A body that applies replacement rules to the plot variable — `y[t] /.
 /// sol` — has to be replaced while the variable is still symbolic: once
 /// sampling puts a number in `t`, the rule `y[t] -> …` no longer matches
@@ -16316,6 +16348,14 @@ pub(crate) fn flatten_plot_bodies<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
       for it in items {
         flatten_plot_bodies(it, out);
       }
+    }
+    // `Tooltip[{f, g, …}, …]` inside the curve list (e.g. `Tooltip[y[x] /.
+    // sol]`, where the replacement yields a list) tooltips each curve; the
+    // tooltip itself draws nothing, so its curves join the list.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      flatten_plot_bodies(&args[0], out);
     }
     _ => out.push(e),
   }
@@ -16835,6 +16875,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect(),
       ),
       _ => expand_generated_bodies(body, var)
+        .or_else(|| resolve_list_valued_symbol(body, var))
         .or_else(|| resolve_replaced_body(body, var))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
         .unwrap_or_else(|| body.clone()),
