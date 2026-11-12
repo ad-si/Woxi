@@ -23,8 +23,7 @@ pub struct MachineLearning;
 fn sizes(entry: &Entry) -> (usize, usize) {
   let s = entry
     .stat("@Sizes")
-    .map(|s| super::images::numbers(&s))
-    .unwrap_or_default();
+    .map_or_default(|s| super::images::numbers(&s));
   (
     s.first().copied().unwrap_or(0.0) as usize,
     s.get(1).copied().unwrap_or(0.0) as usize,

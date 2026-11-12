@@ -1205,20 +1205,14 @@ pub fn dispatch_predicate_functions(
         _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let rules: Vec<Expr> = crate::evaluator::assignment::N_VALUES.with(|m| {
-        m.borrow()
-          .get(&head)
-          .map(|entries| {
-            entries
-              .iter()
-              .map(|(lhs, rhs)| {
-                rule_delayed_expr(
-                  call1("HoldPattern", lhs.clone()),
-                  rhs.clone(),
-                )
-              })
-              .collect()
-          })
-          .unwrap_or_default()
+        m.borrow().get(&head).map_or_default(|entries| {
+          entries
+            .iter()
+            .map(|(lhs, rhs)| {
+              rule_delayed_expr(call1("HoldPattern", lhs.clone()), rhs.clone())
+            })
+            .collect()
+        })
       });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1229,20 +1223,17 @@ pub fn dispatch_predicate_functions(
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::SUB_VALUES.with(|m| {
-          m.borrow()
-            .get(&head)
-            .map(|entries| {
-              entries
-                .iter()
-                .map(|(lhs, rhs)| {
-                  rule_delayed_expr(
-                    call1("HoldPattern", lhs.clone()),
-                    rhs.clone(),
-                  )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+          m.borrow().get(&head).map_or_default(|entries| {
+            entries
+              .iter()
+              .map(|(lhs, rhs)| {
+                rule_delayed_expr(
+                  call1("HoldPattern", lhs.clone()),
+                  rhs.clone(),
+                )
+              })
+              .collect()
+          })
         });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1253,31 +1244,28 @@ pub fn dispatch_predicate_functions(
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::FORMAT_VALUES.with(|m| {
-          m.borrow()
-            .get(&head)
-            .map(|entries| {
-              entries
-                .iter()
-                .map(|(form, lhs, rhs)| {
-                  // OutputForm rules use the LHS pattern verbatim;
-                  // box-form rules wrap the LHS in
-                  // `MakeBoxes[lhs, FORM]` (Wolfram's canonical form).
-                  let pattern_inner = if form == "OutputForm" {
-                    lhs.clone()
-                  } else {
-                    call(
-                      "MakeBoxes",
-                      vec![lhs.clone(), Expr::Identifier(form.clone())],
-                    )
-                  };
-                  rule_delayed_expr(
-                    call1("HoldPattern", pattern_inner),
-                    rhs.clone(),
+          m.borrow().get(&head).map_or_default(|entries| {
+            entries
+              .iter()
+              .map(|(form, lhs, rhs)| {
+                // OutputForm rules use the LHS pattern verbatim;
+                // box-form rules wrap the LHS in
+                // `MakeBoxes[lhs, FORM]` (Wolfram's canonical form).
+                let pattern_inner = if form == "OutputForm" {
+                  lhs.clone()
+                } else {
+                  call(
+                    "MakeBoxes",
+                    vec![lhs.clone(), Expr::Identifier(form.clone())],
                   )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+                };
+                rule_delayed_expr(
+                  call1("HoldPattern", pattern_inner),
+                  rhs.clone(),
+                )
+              })
+              .collect()
+          })
         });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1361,29 +1349,26 @@ pub fn dispatch_predicate_functions(
         // FUNC_DEFS) are reconstructed here as HoldPattern[f[args]] :> value
         // rules so DownValues still reports them.
         let memo_rules: Vec<Expr> = crate::MEMO_VALUES.with(|m| {
-          m.borrow()
-            .get(sym)
-            .map(|cache| {
-              // In canonical order of the left-hand sides, as Wolfram lists
-              // its hashed literal definitions.
-              let mut entries: Vec<_> = cache.values().collect();
-              entries.sort_by(|(a, _), (b, _)| {
-                crate::functions::list_helpers_ast::sorting::canonical_cmp(
-                  &call(sym.as_str(), a.clone()),
-                  &call(sym.as_str(), b.clone()),
+          m.borrow().get(sym).map_or_default(|cache| {
+            // In canonical order of the left-hand sides, as Wolfram lists
+            // its hashed literal definitions.
+            let mut entries: Vec<_> = cache.values().collect();
+            entries.sort_by(|(a, _), (b, _)| {
+              crate::functions::list_helpers_ast::sorting::canonical_cmp(
+                &call(sym.as_str(), a.clone()),
+                &call(sym.as_str(), b.clone()),
+              )
+            });
+            entries
+              .into_iter()
+              .map(|(arg_exprs, value)| {
+                rule_delayed_expr(
+                  call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
+                  value.clone(),
                 )
-              });
-              entries
-                .into_iter()
-                .map(|(arg_exprs, value)| {
-                  rule_delayed_expr(
-                    call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
-                    value.clone(),
-                  )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+              })
+              .collect()
+          })
         });
         if func_defs.is_empty() && memo_rules.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));

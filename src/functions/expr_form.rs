@@ -404,8 +404,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       };
       let blank_args: Vec<Expr> = head
         .as_ref()
-        .map(|h| vec![Expr::Identifier(h.clone())])
-        .unwrap_or_default();
+        .map_or_default(|h| vec![Expr::Identifier(h.clone())]);
       // An anonymous pattern is the bare blank: `_Integer` is
       // `Blank[Integer]`, not `Pattern[, Blank[Integer]]`.
       if name.is_empty() {
@@ -431,8 +430,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         "Blank",
         head
           .as_ref()
-          .map(|h| vec![Expr::Identifier(h.clone())])
-          .unwrap_or_default(),
+          .map_or_default(|h| vec![Expr::Identifier(h.clone())]),
       );
       // `_.` is `Optional[Blank[]]`; only a named `x_.` wraps in `Pattern`.
       let pattern = if name.is_empty() {

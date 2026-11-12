@@ -399,8 +399,7 @@ fn handshake(
   let identity = props
     .into_iter()
     .find(|(n, _)| n.eq_ignore_ascii_case("Identity"))
-    .map(|(_, v)| v)
-    .unwrap_or_default();
+    .map_or_default(|(_, v)| v);
   Ok(PeerHello { identity })
 }
 

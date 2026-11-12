@@ -131,6 +131,26 @@ mod image_size {
     }
   }
 
+  // A rotated left `FrameLabel` longer than a short fixed-size frame is
+  // tall stays inside the image: the padding grows by the label's
+  // overhang past the frame's ends, so the frame shrinks (WL: about 83 pt
+  // tall in a 213 x 132 image, instead of 94 pt with the label running off
+  // the top). `Style[label, 12]` is measured at 12 pt.
+  #[test]
+  fn long_rotated_frame_label_fits_fixed_size() {
+    let svg = svg_of(
+      "ListLinePlot[{{0, 0}, {1, 2.5}}, PlotRange -> {{0, 1}, {0, 2.5}}, \
+       Frame -> True, FrameLabel -> {{Style[\"force (arbitrary units)\", 12], \
+       \"\"}, {Style[\"deformation (arbitrary units)\", 12], \"\"}}, \
+       ImageSize -> {213, 132}]",
+    );
+    assert_eq!(svg_size(&svg), (213.0, 132.0));
+    let (_, h) = curve_extent(&svg);
+    // The SVG is drawn at 10 render units per point.
+    let h = h / 10.0;
+    assert!((80.0..88.0).contains(&h), "frame height {h}");
+  }
+
   // `ImageSize -> {Automatic, h}` fixes the height of a list plot too.
   #[test]
   fn list_plot_fixed_height() {
@@ -1165,6 +1185,103 @@ mod base_style {
         "{opts}: {sizes:?}"
       );
     }
+  }
+}
+
+mod base_style_labels {
+  use super::*;
+
+  /// The opening `<text …>` tag of each text element whose content starts
+  /// with `content`.
+  fn text_tags<'a>(svg: &'a str, content: &str) -> Vec<&'a str> {
+    svg
+      .match_indices("<text ")
+      .filter_map(|(i, _)| {
+        let end = i + svg[i..].find('>')?;
+        let rest = &svg[end + 1..];
+        let body = rest
+          .strip_prefix("<tspan font-size=\"18\">")
+          .unwrap_or(rest);
+        body.starts_with(content).then_some(&svg[i..=end])
+      })
+      .collect()
+  }
+
+  fn attr(tag: &str, name: &str) -> Option<f64> {
+    let start = tag.find(&format!(" {name}=\""))? + name.len() + 3;
+    tag[start..start + tag[start..].find('"')?].parse().ok()
+  }
+
+  // The list plots read `BaseStyle` like `Plot` does: its size reaches
+  // the frame labels and tick labels.
+  #[test]
+  fn list_plots_honor_base_style_font_size() {
+    for head in ["ListPlot", "ListLinePlot"] {
+      let svg = svg_of(&format!(
+        "{head}[{{1, 2, 1.5}}, Frame -> True, FrameLabel -> {{\"a\", \"b\"}}, \
+         BaseStyle -> {{18}}]"
+      ));
+      let tags = text_tags(&svg, "a");
+      assert_eq!(tags.len(), 1, "{head}: {svg}");
+      assert_eq!(attr(tags[0], "font-size"), Some(180.0), "{head}");
+    }
+  }
+
+  // `BaseStyle -> {…, Italic}` (or `LabelStyle -> Italic`) slants the
+  // frame labels and the title of a plot.
+  #[test]
+  fn italic_base_style_slants_plot_labels() {
+    for code in [
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"a\", \"b\"}, \
+       PlotLabel -> \"T\", BaseStyle -> {14, Italic}]",
+      "ListLinePlot[{1, 2, 1.5}, Frame -> True, \
+       FrameLabel -> {\"a\", \"b\"}, PlotLabel -> \"T\", \
+       LabelStyle -> Italic]",
+    ] {
+      let svg = svg_of(code);
+      for label in ["a", "b", "T"] {
+        let tags = text_tags(&svg, label);
+        assert_eq!(tags.len(), 1, "{code}: {label}");
+        assert!(tags[0].contains("font-style=\"italic\""), "{code}: {label}");
+      }
+    }
+  }
+
+  // A `Graphics` (as `Show` of a plot returns) sets its frame labels and
+  // title in the `BaseStyle` size and slant.
+  #[test]
+  fn graphics_frame_labels_follow_base_style() {
+    for code in [
+      "Graphics[Line[{{0, 0}, {1, 1}}], Frame -> True, \
+       FrameLabel -> {\"a\", \"b\"}, PlotLabel -> \"T\", \
+       BaseStyle -> {18, Italic}]",
+      "Show[ListLinePlot[{1, 2, 1.5}, Frame -> True, \
+       FrameLabel -> {\"a\", \"b\"}, PlotLabel -> \"T\", \
+       BaseStyle -> {18, Italic}], Graphics[Line[{{1, 1}, {2, 1}}]]]",
+    ] {
+      let svg = svg_of(code);
+      for label in ["a", "b", "T"] {
+        let tags = text_tags(&svg, label);
+        assert_eq!(tags.len(), 1, "{code}: {label}");
+        assert_eq!(attr(tags[0], "font-size"), Some(18.0), "{code}: {label}");
+        assert!(tags[0].contains("font-style=\"italic\""), "{code}: {label}");
+      }
+    }
+  }
+
+  // A title piece styled larger than the default title font
+  // (`Style["T", 18]`) gets a band tall enough for it: its baseline sits
+  // a full 18-point ascent below the top instead of being cut off.
+  #[test]
+  fn graphics_title_band_fits_a_larger_styled_title() {
+    let svg = svg_of(
+      "Show[ListLinePlot[{1, 2, 1.5}, PlotLabel -> Style[\"T\", 18]], \
+       Graphics[Line[{{1, 1}, {2, 1}}]]]",
+    );
+    let tags = text_tags(&svg, "T");
+    assert_eq!(tags.len(), 1, "{svg}");
+    let y = attr(tags[0], "y").unwrap();
+    assert!(y >= 18.0 * 1854.0 / 2048.0 - 0.01, "{y}");
   }
 }
 

@@ -900,12 +900,11 @@ fn automatic_unit_axes_label(data: &Expr) -> Option<(String, String)> {
     return None;
   }
   let label = |u: Option<String>| {
-    u.map(|u| {
+    u.map_or_default(|u| {
       crate::functions::quantity_ast::unit_abbreviation(&u)
         .map(str::to_string)
         .unwrap_or(u)
     })
-    .unwrap_or_default()
   };
   Some((label(x), label(y)))
 }
@@ -1619,6 +1618,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "FrameTicks"
         | "FrameTicksStyle"
         | "LabelStyle"
+        | "BaseStyle"
         | "Mesh"
         | "MeshFunctions"
         | "MeshShading"
@@ -3134,6 +3134,9 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
+  source.aspect_ratio = source
+    .aspect_ratio
+    .or_else(|| crate::functions::plot::drawn_aspect_ratio(opts));
   source.log_y = opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,
@@ -3372,6 +3375,9 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = parsed.opts.grid_interior;
   source.log_x = parsed.opts.log_x;
+  source.aspect_ratio = source
+    .aspect_ratio
+    .or_else(|| crate::functions::plot::drawn_aspect_ratio(&parsed.opts));
   source.log_y = parsed.opts.log_y;
   crate::functions::plot::apply_markers_to_source(
     &mut source,

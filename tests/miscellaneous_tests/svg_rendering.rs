@@ -2441,6 +2441,66 @@ mod tests {
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
     }
 
+    /// The `y` of the nested `<svg>` with the given `width`.
+    fn picture_y(svg: &str, width: &str) -> f64 {
+      svg
+        .split("<svg x=\"")
+        .find(|chunk| chunk.contains(&format!("width=\"{width}\"")))
+        .and_then(|chunk| chunk.split("y=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("picture y")
+    }
+
+    /// The `y` of the `<text>` element drawing `label`.
+    fn text_y(svg: &str, label: &str) -> f64 {
+      svg
+        .split("<text ")
+        .find(|chunk| chunk.contains(&format!(">{label}</text>")))
+        .and_then(|chunk| chunk.split("y=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("text y")
+    }
+
+    #[test]
+    fn grid_vertical_alignment_places_items_at_top_or_bottom() {
+      // `Alignment -> {h, v}` puts a short item against the top or bottom
+      // of a row made tall by another item, instead of centering it.
+      let grid = |align: &str| {
+        svg_of(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> {{20, 20}}], \
+           Graphics[Disk[], ImageSize -> {{60, 100}}], \"ab\"}}}}, \
+           Alignment -> {align}]"
+        ))
+      };
+      let tall_y = picture_y(&grid("{Left, Top}"), "60.0");
+
+      let top = grid("{Left, Top}");
+      assert_eq!(picture_y(&top, "20.0"), tall_y, "{top}");
+      assert!(text_y(&top, "ab") < 20.0, "text at the top: {top}");
+
+      let bottom = grid("{Left, Bottom}");
+      assert_eq!(picture_y(&bottom, "20.0"), tall_y + 80.0, "{bottom}");
+      assert!(text_y(&bottom, "ab") > 80.0, "text at the bottom: {bottom}");
+
+      // The vertical default stays centered.
+      let center = grid("Left");
+      assert_eq!(picture_y(&center, "20.0"), tall_y + 40.0, "{center}");
+    }
+
+    #[test]
+    fn grid_item_vertical_alignment_overrides_the_grid() {
+      let svg = svg_of(
+        "Grid[{{Item[Graphics[Disk[], ImageSize -> {20, 20}], \
+         Alignment -> {Center, Bottom}], \
+         Graphics[Disk[], ImageSize -> {60, 100}]}}, \
+         Alignment -> {Left, Top}]",
+      );
+      let tall_y = picture_y(&svg, "60.0");
+      assert_eq!(picture_y(&svg, "20.0"), tall_y + 80.0, "{svg}");
+    }
+
     #[test]
     fn grid_cell_locator_pane_over_a_dynamic_picture_is_drawn() {
       let svg = svg_of(
@@ -2763,12 +2823,49 @@ mod tests {
     }
 
     #[test]
+    fn unboxed_graphics3d_is_framed_by_its_invisible_box() {
+      // Wolfram frames a 3D picture by its bounding box whether or not the
+      // box is drawn, so hiding it leaves the contents exactly where they
+      // were: same picture size, same polygons, with margins where the
+      // box corners stick out past the contents.
+      for shape in [
+        "Polygon[Table[{Cos[t], Sin[t], 4}, {t, 0, 2 Pi, Pi/8}]], \
+         Polygon[Table[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi, Pi/8}]]",
+        "Polygon[Table[{Cos[t], Sin[t], Abs[Sin[3 t]]/2}, \
+         {t, 0, 2 Pi, Pi/12}]]",
+      ] {
+        let polygons = |svg: &str| -> Vec<String> {
+          let mut v: Vec<String> = svg
+            .split("<polygon points=\"")
+            .skip(1)
+            .map(|p| p.split('"').next().unwrap().to_string())
+            .collect();
+          v.sort();
+          v
+        };
+        let size = |svg: &str| svg.split('>').next().unwrap().to_string();
+        let boxed =
+          svg_of(&format!("Graphics3D[{{{shape}}}, ImageSize -> 300]"));
+        let unboxed = svg_of(&format!(
+          "Graphics3D[{{{shape}}}, Boxed -> False, ImageSize -> 300]"
+        ));
+        assert_eq!(size(&boxed), size(&unboxed));
+        assert!(!polygons(&unboxed).is_empty(), "{unboxed}");
+        assert_eq!(polygons(&boxed), polygons(&unboxed));
+        let (w, h) = ink_extent(&unboxed);
+        assert!(w < 290.0 || h < 290.0, "contents must not fill the frame");
+      }
+    }
+
+    #[test]
     fn spherical_region_scales_by_the_bounding_box_sphere() {
       // `SphericalRegion -> True` fits the sphere drawn around the 3D
-      // bounding box, not the contents' projected outline. A unit sphere's
-      // box is the cube [-1, 1]³, whose circumsphere is √3 times as wide,
-      // so the ball shrinks (a little less than √3: perspective widens the
-      // view just enough for the circumsphere to fit).
+      // bounding box, not the projected box itself. A unit sphere's box is
+      // the cube [-1, 1]³, whose circumsphere is √3 times as wide as the
+      // ball, so the ball spans a little more than 1/√3 of the frame
+      // (perspective widens the view just enough for the circumsphere to
+      // fit). Without the option the frame hugs the projected cube, which
+      // is narrower than its circumsphere, so the ball is drawn larger.
       let with = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
          Boxed -> False, ImageSize -> 200]",
@@ -2776,29 +2873,32 @@ mod tests {
       let without = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], Boxed -> False, ImageSize -> 200]",
       ));
-      let ratio = with.0 / without.0;
+      let ratio = with.0 / 200.0;
       assert!(
         (0.5..0.6).contains(&ratio),
-        "expected about a 1/√3 shrink, got {ratio}: {with:?} vs {without:?}"
+        "expected about a 1/√3 shrink, got {ratio}: {with:?}"
+      );
+      assert!(
+        with.0 < without.0 * 0.9,
+        "the circumsphere frame must draw the ball smaller: \
+         {with:?} vs {without:?}"
       );
 
-      // A flat square, seen face on, fills the frame without the option.
-      // Its box is given the range {-1, 1} along the flat axis (as Wolfram
-      // does), so with the option the frame spans that box's circumsphere
-      // (radius √3 after 2% padding), seen from 3 box sides away.
+      // A flat square seen face on. Its box is given the range {-1, 1}
+      // along the flat axis (as Wolfram does), so with the option the
+      // frame spans that box's circumsphere (radius √3 after 2% padding),
+      // seen from 3 box sides away.
       let flat = "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, \
                   {-1, 1, 0}}], Boxed -> False, ImageSize -> 200, \
-                  ViewPoint -> {0, 0, 3}";
-      let with =
-        ink_extent(&svg_of(&format!("{flat}, SphericalRegion -> True]")));
-      let without = ink_extent(&svg_of(&format!("{flat}]")));
-      let ratio = with.0 / without.0;
+                  ViewPoint -> {0, 0, 3}, SphericalRegion -> True]";
+      let with = ink_extent(&svg_of(flat));
+      let ratio = with.0 / 200.0;
       let r = 1.02 * 3f64.sqrt();
       let d = 6.0;
       let expected = 2.0 / (2.0 * r * d / (d * d - r * r).sqrt());
       assert!(
         (ratio - expected).abs() < 0.03,
-        "expected a {expected} shrink, got {ratio}: {with:?} vs {without:?}"
+        "expected a {expected} shrink, got {ratio}: {with:?}"
       );
     }
 
