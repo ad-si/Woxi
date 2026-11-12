@@ -10351,6 +10351,24 @@ mod plot3d {
       );
     }
 
+    // A `{position, label}` tick whose label is an expression the plain
+    // text reader has no reading for (`-Infinity`) is typeset as that
+    // expression, not labeled with its position.
+    #[test]
+    fn frame_ticks_label_typesets_infinity() {
+      let svg = export_svg(
+        r#"ListLinePlot[{1, 2, 3}, Frame -> True,
+          FrameTicks -> {{{{1.25, -Infinity}, {2.75, Infinity}}, None},
+            {Automatic, None}}]"#,
+      );
+      assert!(svg.contains(">-∞</text>"), "missing -∞ label: {svg}");
+      assert!(svg.contains(">∞</text>"), "missing ∞ label: {svg}");
+      assert!(
+        !svg.contains(">1.25</text>") && !svg.contains(">2.75</text>"),
+        "the position must not stand in for the label: {svg}"
+      );
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]
