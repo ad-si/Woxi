@@ -1839,7 +1839,10 @@ fn simplify_sorted_dnf(expr: &Expr) -> Expr {
         .filter(|(k, v)| units.iter().any(|(uk, up)| uk == *k && *up != v.0))
         .map(|(k, _)| k.clone())
         .collect();
-      if !struck.is_empty() && struck.len() < set.len() {
+      if struck.len() == set.len() {
+        return bool_expr(true);
+      }
+      if !struck.is_empty() {
         for k in struck {
           set.remove(&k);
         }
@@ -2095,15 +2098,16 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
     c.iter().map(|(k, p, _)| (k.clone(), *p)).collect()
   };
 
-  // A one-literal conjunction l strikes ¬l from every other conjunction:
-  // `a || (!a && b && c)` is `a || (b && c)`.
   loop {
+    let mut changed = false;
+    // A one-literal conjunction l strikes ¬l from every other conjunction:
+    // `a || (!a && b && c)` is `a || (b && c)`. One struck empty means the
+    // units already cover everything: the whole Or is True.
     let units: Vec<(String, bool)> = clauses
       .iter()
       .filter(|c| c.len() == 1)
       .map(|c| (c[0].0.clone(), c[0].1))
       .collect();
-    let mut changed = false;
     for clause in &mut clauses {
       if clause.len() < 2 {
         continue;
@@ -2112,11 +2116,36 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
       let stays = |lit: &(String, bool, Expr)| {
         !units.iter().any(|(k, p)| *k == lit.0 && *p != lit.1)
       };
-      if clause.iter().filter(|l| stays(l)).count() == 0 {
-        continue;
+      if !clause.iter().any(&stays) {
+        return bool_expr(true);
       }
       clause.retain(|l| stays(l));
       changed |= clause.len() != before;
+    }
+    // Two conjunctions alike but for one complemented literal merge:
+    // `(a && b) || (a && !b)` is `a`.
+    'merge: for i in 0..clauses.len() {
+      for j in i + 1..clauses.len() {
+        let (ci, cj) = (&clauses[i], &clauses[j]);
+        if ci.len() != cj.len()
+          || ci.iter().zip(cj.iter()).any(|(x, y)| x.0 != y.0)
+        {
+          continue;
+        }
+        let differing: Vec<usize> =
+          (0..ci.len()).filter(|&k| ci[k].1 != cj[k].1).collect();
+        if let [k] = differing.as_slice() {
+          let mut merged = ci.clone();
+          merged.remove(*k);
+          if merged.is_empty() {
+            return bool_expr(true);
+          }
+          clauses.remove(j);
+          clauses[i] = merged;
+          changed = true;
+          break 'merge;
+        }
+      }
     }
     if !changed {
       break;
@@ -2725,6 +2754,23 @@ fn distribute_or_over_and(expr: &Expr) -> Expr {
 /// Negate a boolean literal, collapsing double negation: `Not[x] -> x`,
 /// `x -> Not[x]`.
 fn bc_negate_literal(e: &Expr) -> Expr {
+  // A comparison negates to its complement: `!(x > 1)` is `x <= 1`.
+  if let Expr::Comparison { .. } = e
+    && let Ok(negated) = crate::evaluator::evaluate_function_call_ast(
+      "Not",
+      std::slice::from_ref(e),
+    )
+    && !matches!(
+      &negated,
+      Expr::UnaryOp {
+        op: UnaryOperator::Not,
+        ..
+      }
+    )
+    && !matches!(&negated, Expr::FunctionCall { name, .. } if name == "Not")
+  {
+    return negated;
+  }
   match e {
     Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
       args[0].clone()
@@ -2965,33 +3011,27 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Helper: sort literals within And/Or clauses, and the clauses themselves,
   // for canonical output. wolframscript orders literals by the variable they
   // mention whether or not it is negated — `(a || !b)`, not `(!b || a)` — and
-  // orders clauses by the variables they mention before their polarities, so
+  // orders clauses literal by literal, a negated one first, so
   // `(!a || b) && (a || !b)` and not the other way round.
   fn sort_boolean_expr(expr: &Expr) -> Expr {
     /// The variable each literal mentions and whether it is negated, with a
-    /// negated literal sorting first.
-    fn sort_key(e: &Expr) -> (Vec<String>, Vec<u8>) {
+    /// negated literal sorting first, literal by literal:
+    /// `(!a || !b || c) && (a || b)`.
+    fn sort_key(e: &Expr) -> Vec<(String, u8)> {
       match e {
         Expr::FunctionCall { name, args } if name == "Or" || name == "And" => {
-          let mut names = Vec::with_capacity(args.len());
-          let mut polarities = Vec::with_capacity(args.len());
-          for arg in args {
-            let (n, p) = sort_key(arg);
-            names.extend(n);
-            polarities.extend(p);
-          }
-          (names, polarities)
+          args.iter().flat_map(sort_key).collect()
         }
         Expr::FunctionCall { name, args }
           if name == "Not" && args.len() == 1 =>
         {
-          (vec![expr_to_string(&args[0])], vec![0])
+          vec![(expr_to_string(&args[0]), 0)]
         }
         Expr::UnaryOp {
           op: UnaryOperator::Not,
           operand,
-        } => (vec![expr_to_string(operand)], vec![0]),
-        _ => (vec![expr_to_string(e)], vec![1]),
+        } => vec![(expr_to_string(operand), 0)],
+        _ => vec![(expr_to_string(e), 1)],
       }
     }
     match expr {
@@ -3114,7 +3154,8 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
 
   let clauses: Vec<&Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "And" => args.iter().collect(),
-    _ => return expr.clone(),
+    // A lone clause still loses its repeated literals.
+    single => vec![single],
   };
   let mut reduced: Vec<(Vec<(bool, String)>, Expr)> = Vec::new();
   for clause in clauses {
@@ -3163,7 +3204,10 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
           !units.contains(&(!negated, name.clone()))
         })
         .collect();
-      if kept.len() == keys.len() || kept.is_empty() {
+      if kept.is_empty() {
+        return bool_expr(false);
+      }
+      if kept.len() == keys.len() {
         continue;
       }
       let literals: Vec<Expr> = match &*clause {

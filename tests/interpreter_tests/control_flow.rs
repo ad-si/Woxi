@@ -5495,4 +5495,24 @@ mod boolean_fuzz_edge_cases {
       "{{1, 2}, {a, b}}"
     );
   }
+
+  // A DNF merges terms differing in one literal, a fully covered DNF is
+  // True, a lone CNF clause loses repeats, CNF clauses order literal by
+  // literal (negated first), and a negated comparison is its complement.
+  #[test]
+  fn normal_form_merging_and_ordering() {
+    assert_eq!(
+      interpret(
+        "{BooleanConvert[(a && b) || (a && !b) || (!a && b)], \
+          BooleanConvert[(a && b && c) || (a && b && !c)], \
+          BooleanConvert[a || a || b || b, \"CNF\"], \
+          BooleanConvert[(c && a) || Xor[a, b], \"CNF\"], \
+          BooleanConvert[x > 1 || Implies[a, b], \"AND\"], \
+          LogicalExpand[Xor[a, b] || Implies[a, b]]}"
+      )
+      .unwrap(),
+      "{a || b, a && b, a || b, ( !a ||  !b || c) && (a || b), \
+       \x20!(a &&  !b && x <= 1), True}"
+    );
+  }
 }
