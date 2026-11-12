@@ -52870,6 +52870,85 @@ mod plot_tooltip_list_and_image_size_variable {
   }
 }
 
+mod display_form_fraction_boxes_in_layouts {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The number of stacked fraction bars (`<line …>`) in a picture.
+  fn bars(svg: &str) -> usize {
+    svg.matches("<line ").count()
+  }
+
+  /// Regression: a `Row` of `DisplayForm[FractionBox[…]]` items printed
+  /// each fraction as the one-line text `1/2`, sized from the source text
+  /// of the wrapper (a ~300 pt wide row for two small fractions).
+  #[test]
+  fn row_items_stack_their_fractions() {
+    let svg = svg_of(
+      "Row[{DisplayForm[FractionBox[1, 2]], DisplayForm[FractionBox[3, 4]]}, \
+       Spacer[4]]",
+    );
+    assert_eq!(bars(&svg), 2, "{svg}");
+    assert!(!svg.contains("1/2"), "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(width < 60.0, "row too wide: {width}");
+  }
+
+  #[test]
+  fn column_items_stack_their_fractions() {
+    let svg = svg_of(
+      "Column[{DisplayForm[FractionBox[a, b]], DisplayForm[FractionBox[c, d]]}]",
+    );
+    assert_eq!(bars(&svg), 2, "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+  }
+
+  /// A `Style` around the displayed box sets the size it is typeset at.
+  #[test]
+  fn styled_display_form_fraction_is_stacked_at_its_size() {
+    let svg = svg_of("Style[DisplayForm[FractionBox[1, 2]], 18]");
+    assert_eq!(bars(&svg), 1, "{svg}");
+    assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+    assert!(!svg.contains("1/2"), "{svg}");
+  }
+
+  /// Regression: a `Graphics` `Text` label laid out as a `Column` of `Row`s
+  /// of displayed fraction boxes flattened every fraction to its
+  /// numerator and denominator side by side (`12` for 1/2).
+  #[test]
+  fn graphics_text_label_stacks_displayed_fractions() {
+    let svg = svg_of(
+      "Graphics[Text[Style[Column[{\
+         Row[{DisplayForm[FractionBox[1, 1]]}, Spacer[4]], \
+         Row[{DisplayForm[FractionBox[1, 2]], DisplayForm[FractionBox[2, 1]]}, \
+           Spacer[4]]}, Center], 18]]]",
+    );
+    assert_eq!(bars(&svg), 3, "{svg}");
+    assert!(!svg.contains(">12<"), "{svg}");
+    assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+  }
+
+  /// A box shown through `DisplayForm` without a fraction keeps its
+  /// one-line typesetting in a layout.
+  #[test]
+  fn display_form_subscript_in_row_stays_inline() {
+    let svg = svg_of("Row[{DisplayForm[SubscriptBox[x, 2]], 3}]");
+    assert_eq!(bars(&svg), 0, "{svg}");
+    assert!(svg.contains("baseline-shift=\"sub\""), "{svg}");
+    assert!(!svg.contains("SubscriptBox"), "{svg}");
+  }
+}
+
 mod overscript_bar_accent {
   use super::*;
 
