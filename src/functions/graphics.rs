@@ -15575,6 +15575,27 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now
       "OverscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
+        // A bar accent (`_`, or a hyphen/minus typed as the overscript, the
+        // antiquark b̄) is drawn as a rule spanning the base, not as a
+        // raised dash glyph.
+        if is_bar_accent_box(&args[1]) {
+          let sw = (font_size * 0.06).max(0.6);
+          let gap = font_size * 0.12;
+          let line_y = sw;
+          let base_y = line_y + gap;
+          let elements = format!(
+            "<path d=\"M 0.00 {line_y:.2} L {:.2} {line_y:.2}\" fill=\"none\" \
+             stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>{}",
+            base.width,
+            base.translate(0.0, base_y)
+          );
+          return BoxLayout {
+            width: base.width,
+            height: base_y + base.height,
+            baseline: base_y + base.baseline,
+            elements,
+          };
+        }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
@@ -17842,8 +17863,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "Overscript" | "Underscript" if args.len() == 2 => {
           let base_markup = expr_to_svg_markup(&args[0]);
           let accent_markup = expr_to_svg_markup(&args[1]);
-          let is_bar_accent = matches!(&args[1],
-            Expr::String(s) if s == "_" || s == "-" || s == "\u{2013}");
+          let is_bar_accent = is_bar_accent_box(&args[1]);
           if is_bar_accent {
             let deco = if name == "Overscript" {
               "overline"
@@ -18768,6 +18788,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // OverscriptBox[base, over] → base with overscript
       "OverscriptBox" if args.len() >= 2 => {
         let base_svg = boxes_to_svg(&args[0]);
+        if is_bar_accent_box(&args[1]) {
+          return format!(
+            "<tspan text-decoration=\"overline\">{base_svg}</tspan>"
+          );
+        }
         let over_svg = boxes_to_svg(&args[1]);
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
@@ -19658,9 +19683,31 @@ fn accent_text(base: &str, accent: &str, over: bool) -> String {
   }
 }
 
+/// Whether an over/underscript box is a plain horizontal-bar accent: `_`,
+/// a macron or overline, or a hyphen/minus/en dash typed as the script.
+/// Such a script is drawn as a rule spanning the base (x̄, b̄).
+fn is_bar_accent_box(script: &Expr) -> bool {
+  let Expr::String(s) = script else {
+    return false;
+  };
+  let s = s.trim();
+  let s = s
+    .strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .unwrap_or(s)
+    .trim();
+  matches!(
+    s,
+    "_" | "-" | "\u{2212}" | "\u{2013}" | "\u{00AF}" | "\u{203E}"
+  )
+}
+
 fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
   Some(match (accent, over) {
-    ("_" | "\u{203E}" | "\u{00AF}", true) => ('\u{0305}', true),
+    // A hyphen or minus sign over a base is drawn as a bar, like `_`.
+    ("_" | "-" | "\u{2212}" | "\u{203E}" | "\u{00AF}", true) => {
+      ('\u{0305}', true)
+    }
     ("_" | "\u{203E}" | "\u{00AF}", false) => ('\u{0332}', true),
     (".", true) => ('\u{0307}', false),
     ("..", true) => ('\u{0308}', false),
