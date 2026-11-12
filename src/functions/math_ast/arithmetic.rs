@@ -11778,8 +11778,31 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `x*(2. + I)` is left untouched; an all-exact product like `Pi*(2 + I)`
   // lacks an inexact factor and stays symbolic.
   if args.len() >= 2 {
-    let float_parts: Vec<Option<(f64, f64)>> =
-      args.iter().map(try_extract_complex_float).collect();
+    // An exact numeric factor with a complex value (`Log[1 + I]`) beside a
+    // machine number is taken numerically too: `2.5 Log[1 + I]` is
+    // `0.866… + 1.963… I`, as `2.5 Sqrt[2]` is `3.535…`.
+    let inexact_present = args.iter().any(|a| {
+      super::numeric_utils::contains_inexact_real(a)
+        && crate::functions::predicate_ast::is_numeric_q(a)
+    });
+    let float_parts: Vec<Option<(f64, f64)>> = args
+      .iter()
+      .map(|a| {
+        try_extract_complex_float(a).or_else(|| {
+          if !inexact_present
+            || !crate::functions::predicate_ast::is_numeric_q(a)
+          {
+            return None;
+          }
+          let n = crate::evaluator::evaluate_function_call_ast(
+            "N",
+            std::slice::from_ref(a),
+          )
+          .ok()?;
+          try_extract_complex_float(&n)
+        })
+      })
+      .collect();
     if float_parts.iter().all(std::option::Option::is_some) {
       // A machine complex number keeps its imaginary part even when it is
       // `0.` (`-2.2 + 0.*I`), so such a factor still makes the product
@@ -13293,10 +13316,11 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
     && re.is_finite()
     && im.is_finite()
   {
-    return Some(plus2(
-      Expr::Real(re / y),
-      times2(Expr::Real(im / y), id_expr("I")),
-    ));
+    // Built through Plus/Times so it lands on the same canonical form as
+    // the operator path (`Divide[I, -2.5]` is `0. - 0.4*I`, not a raw sum
+    // with a negative coefficient).
+    let product = times_ast(&[Expr::Real(im / y), id_expr("I")]).ok()?;
+    return plus_ast(&[Expr::Real(re / y), product]).ok();
   }
   // A machine real over an exact number divides once by the divisor's
   // machine value (`Divide[7., 10]` is `0.7`), where `7./10` multiplies by
@@ -14256,7 +14280,7 @@ fn emit_power_indet(tag: &str, base: &str, exp: &str) {
 /// with that direction (`Infinity` is 1, `-Infinity` is -1), `None` for
 /// `ComplexInfinity` (an infinity of unknown direction), and no result at all
 /// for a finite expression.
-fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
+pub(crate) fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
   if matches!(expr, Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity")
   {
     return Some(Some(Expr::Integer(1)));

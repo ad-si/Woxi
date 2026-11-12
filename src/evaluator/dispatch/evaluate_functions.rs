@@ -2116,6 +2116,18 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // A numeric function of Indeterminate is Indeterminate, whatever the
+  // other arguments and however many there are (`Gamma[Indeterminate]`,
+  // `Quotient[1, Indeterminate]`, `Sin[x, Indeterminate]`).
+  if args
+    .iter()
+    .any(|a| matches!(a, Expr::Identifier(s) | Expr::Constant(s) if s == "Indeterminate"))
+    && crate::evaluator::attributes::get_builtin_attributes(name)
+      .contains(crate::evaluator::attributes::Attributes::NumericFunction)
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // Check argument count for known built-in functions
   if let Some(result) = arg_count::check_arg_count(name, args) {
     return result;

@@ -16154,3 +16154,94 @@ mod rationalize_large_reals {
     );
   }
 }
+
+// Exact-arithmetic edge cases found by differential fuzzing.
+mod exact_arithmetic_fuzz_edge_cases {
+  use super::*;
+
+  // A numeric function of Indeterminate is Indeterminate, whatever the arity.
+  #[test]
+  fn numeric_functions_of_indeterminate() {
+    assert_eq!(
+      interpret(
+        "{Re[Indeterminate], Gamma[Indeterminate], Mod[Indeterminate, 2], \
+          Quotient[1, Indeterminate], Arg[Indeterminate], Surd[Indeterminate, 3], \
+          RealSign[Indeterminate], UnitStep[Indeterminate], Sin[Indeterminate, 2], \
+          Sin[{Indeterminate}], AbsArg[Indeterminate], f[Indeterminate]}"
+      )
+      .unwrap(),
+      "{Indeterminate, Indeterminate, Indeterminate, Indeterminate, Indeterminate, \
+       Indeterminate, Indeterminate, Indeterminate, Indeterminate, {Indeterminate}, \
+       {Indeterminate, Indeterminate}, f[Indeterminate]}"
+    );
+  }
+
+  // The parts, argument and square root of an infinity follow its direction.
+  #[test]
+  fn parts_of_infinities() {
+    assert_eq!(
+      interpret(
+        "{Re[-Infinity], Re[I Infinity], Im[-Infinity], Im[I Infinity], \
+          Im[(1 + I) Infinity], Re[ComplexInfinity], AbsArg[-Infinity], \
+          Sqrt[-Infinity], Sqrt[-I Infinity]}"
+      )
+      .unwrap(),
+      "{-Infinity, 0, 0, Infinity, Infinity, Indeterminate, {Infinity, Pi}, \
+       DirectedInfinity[I], DirectedInfinity[-(-1)^(3/4)]}"
+    );
+    let r = woxi::interpret_with_stdout("Arg[ComplexInfinity]").unwrap();
+    assert_eq!(r.result, "Interval[{-Pi, Pi}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Arg::indet: Indeterminate expression Arg[ComplexInfinity] encountered."
+      ]
+    );
+  }
+
+  // Divide with a machine denominator lands on the canonical complex form.
+  #[test]
+  fn divide_complex_by_machine_real() {
+    assert_eq!(
+      interpret(
+        "{ToString[Divide[I, -2.5], InputForm], Divide[I, -2.5] === I/-2.5}"
+      )
+      .unwrap(),
+      "{0. - 0.4*I, True}"
+    );
+  }
+
+  // An exact complex-valued factor beside a machine number is numericized.
+  #[test]
+  fn machine_times_exact_complex_value() {
+    assert_eq!(
+      interpret(
+        "{Head[2.5 Log[1 + I]], Head[Log[1 + I, -2.5]], 2.5 x Log[1 + I]}"
+      )
+      .unwrap(),
+      "{Complex, Complex, 2.5*x*Log[1 + I]}"
+    );
+  }
+
+  // A complex quotient rounds by an explicit number and floors by a divisor
+  // such as Sqrt[2]; Mod follows Quotient.
+  #[test]
+  fn complex_quotient_and_mod() {
+    assert_eq!(
+      interpret(
+        "{Quotient[3 + 2 I, 2], Quotient[1 + I, 2], Quotient[1 + I, 1.4], \
+          Quotient[1 + I, Sqrt[2]], Quotient[1 + I, 2^(1/3)], Mod[1 + I, Sqrt[2]], \
+          Mod[3 + 2 I, 2], Mod[7 + 3 I, 2]}"
+      )
+      .unwrap(),
+      "{2 + I, 0, 1 + I, 0, 0, 1 + I, -1, -1 - I}"
+    );
+    let r = woxi::interpret_with_stdout("Mod[Sqrt[2], 0.]").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Mod::indet: Indeterminate expression Mod[Sqrt[2], 0.] encountered."
+      ]
+    );
+  }
+}

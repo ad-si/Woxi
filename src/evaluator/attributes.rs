@@ -702,7 +702,7 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     | "AbsArg" | "Divisors" | "PrimitiveRoot"
     | "Numerator" | "Denominator" | "MoebiusMu"
     | "CompositeQ" | "RomanNumeral" | "FactorInteger"
-    | "Resultant" | "Unitize" | "UnitStep" | "FactorSquareFree"
+    | "Resultant" | "Unitize" | "FactorSquareFree"
     | "PrimePi" | "BitGet" | "BitSet" | "BitClear" | "PowerMod"
     | "JacobiSymbol" | "IntegerExponent" | "CarmichaelLambda"
     | "IntegerLength" | "ContinuedFraction" | "MinimalPolynomial"
@@ -867,6 +867,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     "And" | "Or" => A::Flat | A::HoldAll | A::OneIdentity | A::Protected,
     "Xor" => A::Flat | A::OneIdentity | A::Orderless | A::Protected,
     "Equivalent" | "Majority" | "Xnor" => A::Orderless | A::Protected,
+    "UnitStep" => {
+      A::Listable | A::NumericFunction | A::Orderless | A::Protected
+    }
     // Nand / Nor short-circuit like And / Or, so they hold their arguments.
     "Nand" | "Nor" => A::HoldAll | A::Protected,
 
