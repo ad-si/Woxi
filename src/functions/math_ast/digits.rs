@@ -2725,11 +2725,20 @@ pub fn integer_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if n.is_zero() {
       return Ok(Expr::Integer(0));
     }
+    // The digit count d has b^(d-1) <= |n| < b^d. Dividing by b once per
+    // digit was quadratic (43 s for 3^1000000); instead start from a
+    // lower estimate taken from the bit length and raise it until b^d
+    // passes |n|, which takes a power and a step or two.
     let base_big = BigInt::from(base_i128);
-    let mut abs_n = if n < BigInt::zero() { -n } else { n };
-    let mut count = 0i128;
-    while abs_n > BigInt::zero() {
-      abs_n /= &base_big;
+    let abs_n = if n < BigInt::zero() { -n } else { n };
+    let bits = abs_n.bits() as f64;
+    let estimate =
+      (((bits - 1.0) * 2f64.ln() / (base_i128 as f64).ln()).floor() as i64 - 1)
+        .max(0);
+    let mut count = estimate as i128;
+    let mut power = num_traits::pow(base_big.clone(), estimate as usize);
+    while power <= abs_n {
+      power *= &base_big;
       count += 1;
     }
     return Ok(Expr::Integer(count));

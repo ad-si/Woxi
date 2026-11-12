@@ -7155,3 +7155,43 @@ fn agm_rounds_after_convergence_without_intermediate_overflow() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+mod big_fibonacci_and_integer_length {
+  use super::*;
+
+  // Fibonacci and LucasL use fast doubling: F(10^6) used to take 14 s.
+  #[test]
+  fn large_fibonacci_and_lucas_numbers_are_fast() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{Mod[Fibonacci[123457], 1000000007], Mod[LucasL[123457], 1000000007], \
+          IntegerLength[Fibonacci[200000]], Fibonacci[-7], LucasL[-7]}"
+      )
+      .unwrap(),
+      "{121341177, 82023885, 41798, 13, -29}"
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(10));
+  }
+
+  #[test]
+  fn an_unreachable_index_overflows() {
+    assert_eq!(interpret("Fibonacci[10^20 + 1]").unwrap(), "Overflow[]");
+  }
+
+  // IntegerLength counts digits from the bit length rather than dividing
+  // once per digit (43 s for 3^1000000).
+  #[test]
+  fn integer_length_of_huge_numbers() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{IntegerLength[3^1000000], IntegerLength[10^100], IntegerLength[10^100 - 1], \
+          IntegerLength[2^64, 2], IntegerLength[2^64 - 1, 2], IntegerLength[256, 16]}"
+      )
+      .unwrap(),
+      "{477122, 101, 100, 65, 64, 3}"
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(10));
+  }
+}

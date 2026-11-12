@@ -998,23 +998,20 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(n_raw) = expr_to_i128(&args[0]) else {
     return Ok(unevaluated("LucasL", args));
   };
+  // As for Fibonacci, an index this large cannot be computed.
+  if n_raw.unsigned_abs() >= 1 << 36 {
+    return Ok(call("Overflow", vec![]));
+  }
   let negate = n_raw < 0 && n_raw % 2 != 0;
   let n = n_raw.unsigned_abs() as usize;
   // L(0) = 2, L(1) = 1, L(n) = L(n-1) + L(n-2)
   if n == 0 {
     return Ok(Expr::Integer(2));
   }
-  let result = if n == 1 {
-    BigInt::from(1)
-  } else {
-    let mut a = BigInt::from(2);
-    let mut b = BigInt::from(1);
-    for _ in 2..=n {
-      let c = &a + &b;
-      a = b;
-      b = c;
-    }
-    b
+  // L(n) = 2 F(n + 1) - F(n), from the fast-doubling Fibonacci pair.
+  let result: BigInt = {
+    let (f, f_next) = fibonacci_pair(n as u128);
+    (f_next << 1) - f
   };
   Ok(bigint_to_expr(if negate { -result } else { result }))
 }
@@ -2674,6 +2671,9 @@ pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match expr_to_i128(&args[0]) {
+    // An index this large has a result of tens of gigabytes; wolframscript
+    // answers Overflow[] for Fibonacci[10^20 + 1] rather than compute it.
+    Some(n) if n.unsigned_abs() >= 1 << 36 => Ok(call("Overflow", vec![])),
     Some(n) => {
       if n < 0 {
         let pos_n = (-n) as u128;
@@ -2756,17 +2756,29 @@ fn fibonacci_polynomial_ast(
 }
 
 fn fibonacci_number_bigint(n: u128) -> BigInt {
-  if n == 0 {
-    return BigInt::from(0);
+  fibonacci_pair(n).0
+}
+
+/// (F(n), F(n + 1)) by fast doubling — F(2k) = F(k) (2 F(k+1) - F(k)),
+/// F(2k+1) = F(k)^2 + F(k+1)^2 — walking the bits of n from the top: a
+/// logarithmic number of multiplications. Adding the terms one by one
+/// took 14 s for F(10^6); this takes a fraction of a second.
+fn fibonacci_pair(n: u128) -> (BigInt, BigInt) {
+  let mut a = BigInt::from(0); // F(k)
+  let mut b = BigInt::from(1); // F(k + 1)
+  for bit in (0..128 - n.leading_zeros()).rev() {
+    let two_b = &b << 1;
+    let c = &a * (&two_b - &a); // F(2k)
+    let d = &a * &a + &b * &b; // F(2k + 1)
+    if (n >> bit) & 1 == 1 {
+      a = d.clone();
+      b = c + d;
+    } else {
+      a = c;
+      b = d;
+    }
   }
-  let mut a = BigInt::from(0);
-  let mut b = BigInt::from(1);
-  for _ in 1..n {
-    let tmp = &a + &b;
-    a = b;
-    b = tmp;
-  }
-  b
+  (a, b)
 }
 
 /// FactorInteger[n] - Returns the prime factorization of n
