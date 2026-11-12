@@ -148,6 +148,14 @@ fn is_curve_or_group(expr: &Expr) -> bool {
 /// is the same test `collect_curves` uses to pick its grouping branch,
 /// exposed separately so a caller can tell that branch apart from the
 /// ambiguous `{fx, fy}` single-curve fallback *before* descending.
+/// Number of elements of a list (0 for a non-list).
+fn list_len(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => items.len(),
+    _ => 0,
+  }
+}
+
 fn is_curve_group(expr: &Expr) -> bool {
   matches!(expr, Expr::List(items) if !items.is_empty() && items.iter().all(is_curve_or_group))
 }
@@ -714,6 +722,18 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !evaluated_group_ok
     && slots_yield_points(body, &var_name, f64::midpoint(t_min, t_max));
   let from_group = body_is_group || evaluated_group_ok || vector_pair;
+  // How many top-level curve slots the group has. A group of exactly one
+  // slot (`{{fx, fy}}`, the shape `Evaluate[{x[t], y[t]} /. NDSolve[…]]`
+  // produces) is styled like a lone curve.
+  let group_slot_count = if body_is_group {
+    list_len(body)
+  } else if evaluated_group_ok {
+    evaluated_body.as_ref().map_or(0, list_len)
+  } else if vector_pair {
+    2
+  } else {
+    0
+  };
 
   let curves: Vec<CurveSrc> = if nonlist_ok {
     nonlist_curves
@@ -852,8 +872,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (data_x, data_y) = compute_data_ranges(&all_points);
   // A `PlotStyle` list applied to a single curve is one combined directive
   // set, not a per-curve cycle: `ParametricPlot[c, …, PlotStyle -> {Thick,
-  // Red}]` draws one thick red curve.
-  if all_points.len() == 1 && !from_group {
+  // Red}]` draws one thick red curve. A group with a single slot counts as
+  // a single curve; one with more slots keeps its per-slot cycle even when
+  // only one of them was drawn.
+  if all_points.len() == 1 && (!from_group || group_slot_count == 1) {
     plot_opts.plot_style =
       crate::functions::plot::collapse_style_for_single_series(
         &plot_opts.plot_style,

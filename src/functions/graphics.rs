@@ -13939,11 +13939,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let h = (svg_h - margin_bottom - margin_top).max(1.0);
         (h / drawing_aspect, h)
       }
-      // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
-      // only a minimum: the drawing area keeps its `AspectRatio` inside
-      // what the padding leaves, and the room left over is split evenly
-      // between the two sides of the short axis.
-      Some(r) if size_names_height && image_padding.is_some() => {
+      // Under `ImageSize -> {w, h}` the drawing area keeps its
+      // `AspectRatio` inside what the margins (automatic or `ImagePadding`,
+      // which is then only a minimum) leave, and the room left over is
+      // split evenly between the two sides of the short axis.
+      Some(r) if size_names_height => {
         let avail_h = (svg_h - margin_bottom - margin_top).max(1.0);
         let (pw, ph) = if w * r <= avail_h {
           (w, w * r)

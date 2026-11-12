@@ -10064,6 +10064,70 @@ mod plot3d {
       assert_eq!(first_polyline(&svg), "599,50 599,3249", "{svg}");
     }
 
+    /// A `PlotStyle` list applied to a one-element curve group
+    /// (`{{fx, fy}}`, the shape `{x[t], y[t]} /. NDSolve[…]` produces)
+    /// is one combined directive set, as for a lone curve: the curve is
+    /// both thick and purple. It used to take only the first directive.
+    #[test]
+    fn parametric_plot_single_slot_group_combines_plot_style() {
+      let svg = export_svg(
+        "ParametricPlot[{{t, t^2}}, {t, 0, 1}, \
+         PlotStyle -> {Thickness[0.01], RGBColor[1, 0, 1]}]",
+      );
+      assert!(svg.contains("stroke=\"#FF00FF\""), "{svg}");
+      // Two slots keep the per-curve cycle: the first slot is only thick.
+      let svg = export_svg(
+        "ParametricPlot[{{t, t^2}, {t, t^3}}, {t, 0, 1}, \
+         PlotStyle -> {Thickness[0.01], RGBColor[1, 0, 1]}]",
+      );
+      assert_eq!(svg.matches("stroke=\"#FF00FF\"").count(), 1, "{svg}");
+    }
+
+    /// `ImageSize -> {w, h}` with `ImagePadding` keeps the image size
+    /// asked for; an `AspectRatio` shapes the plotting area inside it
+    /// rather than resizing the image.
+    #[test]
+    fn image_size_with_image_padding_keeps_height() {
+      for code in [
+        "ParametricPlot[{t, t^2}, {t, 0, 1}, ImageSize -> {400, 250}, \
+         ImagePadding -> {{70, 70}, {25, 18}}]",
+        "Plot[t, {t, 0, 1}, ImageSize -> {400, 250}, AspectRatio -> 1, \
+         ImagePadding -> 20]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.starts_with("<svg width=\"400\" height=\"250\""),
+          "{code}: {}",
+          &svg[..80]
+        );
+      }
+    }
+
+    /// `Graphics[…, ImageSize -> {w, h}, AspectRatio -> r]` centers a
+    /// drawing area of ratio `r` in the image instead of stretching it to
+    /// the full height and width.
+    #[test]
+    fn graphics_image_size_pair_keeps_aspect_ratio() {
+      let svg = export_svg(
+        "Graphics[Line[{{0, 0}, {1, 1}}], ImageSize -> {400, 200}, \
+         AspectRatio -> 1]",
+      );
+      assert!(svg.starts_with("<svg width=\"400\" height=\"200\""));
+      let pts: Vec<f64> = svg
+        .split_once("points=\"")
+        .unwrap()
+        .1
+        .split('"')
+        .next()
+        .unwrap()
+        .split([',', ' '])
+        .map(|v| v.parse().unwrap())
+        .collect();
+      let (w, h) = ((pts[2] - pts[0]).abs(), (pts[3] - pts[1]).abs());
+      assert!((w - h).abs() < 2.0, "drawing area {w} x {h} is not square");
+      assert!(w < 210.0, "drawing area {w} wide fills the image");
+    }
+
     /// A one-line `PlotLabel` over a top `ImagePadding` too small to hold
     /// it takes its room from the plotting area instead of overlapping
     /// the frame.
