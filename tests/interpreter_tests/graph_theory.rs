@@ -10190,3 +10190,39 @@ mod community_graph_plot {
     );
   }
 }
+
+mod automatic_layout_of_dags {
+  use super::*;
+
+  /// A connected directed acyclic graph with several undirected cycles (a
+  /// Hasse diagram such as the divisor lattice of 20) is drawn in layers,
+  /// each vertex one layer below the longest chain leading to it, rather
+  /// than by a spring embedding.
+  #[test]
+  fn divisor_lattice_is_layered() {
+    let g = "Graph[{1 -> 2, 1 -> 5, 2 -> 4, 2 -> 10, 5 -> 10, 4 -> 20, \
+             10 -> 20}]";
+    assert_eq!(
+      interpret(&format!("Last /@ GraphEmbedding[{g}]")).unwrap(),
+      "{3., 2., 2., 1., 1., 0.}"
+    );
+  }
+
+  #[test]
+  fn larger_dag_keeps_unit_layer_spacing() {
+    // The divisors of 60 under "divides with a prime quotient": five
+    // layers, spaced one unit apart.
+    let code = "With[{d = Divisors[60]}, Union[Last /@ GraphEmbedding[\
+                Graph[d, Select[Flatten[Outer[DirectedEdge, d, d]], \
+                Divisible[#[[2]], #[[1]]] && PrimeQ[#[[2]]/#[[1]]] &]]]]]";
+    assert_eq!(interpret(code).unwrap(), "{0., 1., 2., 3., 4.}");
+  }
+
+  /// A directed graph with a cycle still gets the spring embedding.
+  #[test]
+  fn cyclic_digraph_is_not_layered() {
+    let code = "Length[Union[Last /@ GraphEmbedding[Graph[{1 -> 2, 2 -> 3, \
+                3 -> 1, 1 -> 4, 4 -> 2, 3 -> 4}]]]]";
+    assert_eq!(interpret(code).unwrap(), "4");
+  }
+}

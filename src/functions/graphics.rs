@@ -5439,7 +5439,55 @@ fn is_arithmetic_with_scripts(expr: &Expr) -> bool {
     }
     _ => false,
   };
-  arithmetic && has_script_head(expr)
+  arithmetic && (has_script_head(expr) || is_raised_power(expr))
+}
+
+/// Is `e` a power that typesets as a raised exponent (`a^2`, `x^n`,
+/// `Style[a, Italic]^15`) rather than as a quotient or a root?
+fn is_raised_power(e: &Expr) -> bool {
+  let raised = |exp: &Expr| match exp {
+    Expr::Integer(k) => *k > 1,
+    Expr::Identifier(_) | Expr::String(_) => true,
+    _ => false,
+  };
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Power"
+        && args.len() == 2
+        && raised(&args[1])
+        && !has_quotient_power(&args[0])
+    }
+    Expr::BinaryOp { op, left, right } => {
+      matches!(op, BinaryOperator::Power)
+        && raised(right)
+        && !has_quotient_power(left)
+    }
+    _ => false,
+  }
+}
+
+/// Does `e` hold a power that typesets as a fraction or a root (`x^-1`,
+/// `x^(1/2)`), which a one-line run of scripts cannot show?
+fn has_quotient_power(e: &Expr) -> bool {
+  let quotient = |exp: &Expr| {
+    !matches!(exp, Expr::Integer(k) if *k > 0)
+      && !matches!(exp, Expr::Identifier(_) | Expr::String(_))
+  };
+  match e {
+    Expr::FunctionCall { name, args } => {
+      (name == "Power" && args.len() == 2 && quotient(&args[1]))
+        || args.iter().any(has_quotient_power)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      (matches!(op, BinaryOperator::Power | BinaryOperator::Divide)
+        && quotient(right))
+        || matches!(op, BinaryOperator::Divide)
+        || has_quotient_power(left)
+        || has_quotient_power(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_quotient_power(operand),
+    _ => false,
+  }
 }
 
 fn graphics_text_content(expr: &Expr) -> String {
@@ -7292,12 +7340,23 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
+  //
+  // A nested `Text[content]` (a label written `Text[Style[x, 16]]`, as a
+  // graph's `VertexLabels` often are) and a `Tooltip[content, tip]` (whose
+  // tip a static picture cannot show) only wrap the content, so the
+  // `Style` inside them still applies.
   let mut content = framed_body;
   let mut style_line_anchor: Option<&'static str> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
-    && is_style_wrapper(name)
     && !sargs.is_empty()
   {
+    if (name == "Text" && sargs.len() == 1) || name == "Tooltip" {
+      content = &sargs[0];
+      continue;
+    }
+    if !is_style_wrapper(name) {
+      break;
+    }
     for d in style_directives_in_application_order(&sargs[1..]) {
       apply_directive(d, &mut local_style);
       apply_text_style_directive(d, &mut local_style);
@@ -40301,10 +40360,13 @@ fn parse_manipulate_control(
       // A string label still goes through the label renderer: it may carry
       // inline `\!\(\*SubscriptBox[…]\)` typesetting.
       // A caption indexing a notebook list (`names[[3]]`) shows the element,
-      // so it is resolved against the current definitions first.
+      // and one built by an `Initialization`-defined helper
+      // (`styler["n"]` with `styler = Style[#, Italic] &`) shows what the
+      // helper makes, so it is resolved against the current definitions
+      // first.
       let lbl = match head_items.get(2) {
         Some(other) => match resolve_choice_label(other) {
-          Some(resolved @ Expr::String(_)) => {
+          Some(resolved @ (Expr::String(_) | Expr::FunctionCall { .. })) => {
             manipulate_label_runs(&resolved, false)
           }
           _ => manipulate_label_runs(other, false),
@@ -45580,6 +45642,24 @@ mod manipulate_dynamic_control_list_tests {
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
       }
       other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A control caption built by a helper the notebook defined
+  /// (`labelStyle["n"]` with `labelStyle = Style[#, Italic] &`) shows what
+  /// the helper makes — an italic `n` — not the unevaluated call.
+  #[test]
+  fn helper_built_control_caption_is_evaluated() {
+    let _ = crate::interpret_with_stdout("captionHelper = Style[#, Italic] &;");
+    let s = spec("Manipulate[k, {{k, 3, captionHelper[\"k\"]}, 1, 10, 1}]");
+    match &s.controls[0] {
+      ManipulateControl::Continuous {
+        label, label_runs, ..
+      } => {
+        assert_eq!(label, "k");
+        assert!(label_runs.iter().all(|r| r.italic), "{label_runs:?}");
+      }
+      other => panic!("expected a Continuous control, got {other:?}"),
     }
   }
 

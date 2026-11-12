@@ -6261,7 +6261,11 @@ internal hash order. Woxi keeps input order.
   1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
-  image, and WL draws long edges as splines through the layers.
+  image, and WL draws long edges as splines through the layers. The
+  automatic layout of a connected directed acyclic graph with several
+  undirected cycles (a Hasse diagram) is layered the same way, with the
+  layers one unit apart; WL centers each layer, Woxi packs it from the
+  left.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
