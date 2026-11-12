@@ -15987,3 +15987,21 @@ fn order_products_independently_of_stored_denominator_position() {
     }
   }
 }
+
+mod rationalize_large_reals {
+  use super::*;
+
+  // With the default tolerance a machine real beyond 2^38 stays a real.
+  #[test]
+  fn reals_beyond_two_to_the_38_stay_reals() {
+    assert_eq!(
+      interpret(
+        "{Rationalize[2.5*^11], Rationalize[2.^38], Rationalize[3.*^11], \
+          Rationalize[-2.75*^11], Rationalize[4.7*^19], Rationalize[4.7*^19, 0]}"
+      )
+      .unwrap(),
+      "{250000000000, 274877906944, 3.*^11, -2.75*^11, 4.7*^19, \
+       47000000000000000000}"
+    );
+  }
+}

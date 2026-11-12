@@ -6551,7 +6551,7 @@ pub fn arithmetic_geometric_mean_ast(
   if let (Some(a), Some(b)) = (fa, fb)
     && inexact
     && ((a > 0.0 && b > 0.0) || (a < 0.0 && b < 0.0))
-    && let Some(value) = agm(&args[0], &args[1])
+    && let Some(value) = agm(a, b)
   {
     return Ok(Expr::Real(if a < 0.0 { -value } else { value }));
   }
@@ -6560,43 +6560,40 @@ pub fn arithmetic_geometric_mean_ast(
   Ok(unevaluated("ArithmeticGeometricMean", args))
 }
 
-/// Compute AGM with guard precision, rounding only the converged result.
-fn agm(a: &Expr, b: &Expr) -> Option<f64> {
-  use astro_float::{BigFloat, RoundingMode};
-  const BITS: usize = 192;
-  let mut constants = super::numerical::astro_consts().ok()?;
-  let mut arithmetic = super::numerical::expr_to_bigfloat(
-    a,
-    BITS,
-    RoundingMode::ToEven,
-    &mut constants,
-  )
-  .ok()?
-  .abs();
-  let mut geometric = super::numerical::expr_to_bigfloat(
-    b,
-    BITS,
-    RoundingMode::ToEven,
-    &mut constants,
-  )
-  .ok()?
-  .abs();
-  let two = BigFloat::from_i32(2, BITS);
-  for _ in 0..100 {
-    let next_arithmetic = arithmetic
-      .add(&geometric, BITS, RoundingMode::ToEven)
-      .div(&two, BITS, RoundingMode::ToEven);
-    let next_geometric = arithmetic
-      .mul(&geometric, BITS, RoundingMode::ToEven)
-      .sqrt(BITS, RoundingMode::ToEven);
-    let converged = next_arithmetic.cmp(&arithmetic) == Some(0);
-    arithmetic = next_arithmetic;
-    geometric = next_geometric;
-    if converged {
-      break;
+/// The machine arithmetic-geometric mean of two positive reals, computed
+/// the way wolframscript computes it: plain double-precision iteration of
+/// a' = (a + b)/2, b' = Sqrt[a b] until the two meet or stop changing. That
+/// is not always the correctly rounded value (AGM[1.8, 1.2] comes out one
+/// ulp high), and a product that underflows takes the result to 0 — both
+/// as in wolframscript. A product that *overflows* is redone on arguments
+/// scaled by a power of two, which is exact, and scaled back.
+fn agm(a: f64, b: f64) -> Option<f64> {
+  fn iterate(mut a: f64, mut b: f64) -> f64 {
+    // Each step at least halves the gap once the values are close, and a
+    // subnormal pair underflows to zero within a few thousand halvings.
+    for _ in 0..4096 {
+      let next_a = f64::midpoint(a, b);
+      let next_b = (a * b).sqrt();
+      if next_a == next_b || (next_a == a && next_b == b) {
+        return next_a;
+      }
+      a = next_a;
+      b = next_b;
     }
+    a
   }
-  super::numerical::bigfloat_to_f64_approx(&arithmetic)
+  let (a, b) = (a.abs(), b.abs());
+  let value = iterate(a, b);
+  if value.is_finite() {
+    return Some(value);
+  }
+  let exponent = a.max(b).log2().ceil() as i32;
+  // In two halves, so that 2^1024 (for arguments near the largest double)
+  // never has to exist on its own.
+  let scale = |x: f64, e: i32| x * 2f64.powi(e / 2) * 2f64.powi(e - e / 2);
+  let value =
+    scale(iterate(scale(a, -exponent), scale(b, -exponent)), exponent);
+  value.is_finite().then_some(value)
 }
 
 /// Compute q(n) - number of partitions into distinct parts

@@ -4065,13 +4065,33 @@ pub fn dispatch_list_operations(
       }
       return Some(array_rules_ast(args));
     }
+    // TakeDrop[list, spec] is {Take[list, spec], Drop[list, spec]} — but a
+    // spec that does not fit is TakeDrop's own ::iseq, not the messages of
+    // the two halves.
     "TakeDrop" if args.len() == 2 => {
+      crate::push_quiet();
       let taken = list_helpers_ast::take_multi_ast(&args[0], &args[1..]);
       let dropped = list_helpers_ast::drop_ast(&args[0], &args[1]);
-      return Some(match (taken, dropped) {
-        (Ok(t), Ok(d)) => Ok(Expr::List(vec![t, d].into())),
-        (Err(e), _) | (_, Err(e)) => Err(e),
-      });
+      crate::pop_quiet();
+      let (taken, dropped) = match (taken, dropped) {
+        (Ok(t), Ok(d)) => (t, d),
+        (Err(e), _) | (_, Err(e)) => return Some(Err(e)),
+      };
+      let refused = |e: &Expr, head: &str| matches!(e, Expr::FunctionCall { name, .. } if name == head);
+      if refused(&taken, "Take") || refused(&dropped, "Drop") {
+        let length = match &args[0] {
+          Expr::List(items) => items.len(),
+          Expr::FunctionCall { args: a, .. } => a.len(),
+          _ => return Some(Ok(unevaluated("TakeDrop", args))),
+        };
+        crate::emit_message(&format!(
+          "TakeDrop::iseq: Invalid sequence specification {} for an \
+           expression of length {length}.",
+          crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output)
+        ));
+        return Some(Ok(unevaluated("TakeDrop", args)));
+      }
+      return Some(Ok(Expr::List(vec![taken, dropped].into())));
     }
     "ArrayFlatten" if args.len() == 1 => {
       return Some(Ok(array_flatten_ast(&args[0], args)));
@@ -9189,6 +9209,27 @@ fn array_pad_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => return Ok(unevaluated()),
   };
+
+  // A ragged list is padded only as deep as it is a full array: as a
+  // vector, its rows left as they are ({{1, 2}, {3}} → {0, {1, 2}, {3}, 0}).
+  if let Expr::List(items) = arr
+    && items.iter().any(|i| matches!(i, Expr::List(_)))
+    && left >= 0
+    && right >= 0
+    && !matches!(pad_val, Expr::List(_))
+    && matches!(
+      crate::evaluator::evaluate_function_call_ast(
+        "ArrayDepth",
+        std::slice::from_ref(arr),
+      ),
+      Ok(Expr::Integer(1))
+    )
+  {
+    let mut padded = vec![pad_val.clone(); left as usize];
+    padded.extend(items.iter().cloned());
+    padded.extend(std::iter::repeat_n(pad_val.clone(), right as usize));
+    return Ok(Expr::List(padded.into()));
+  }
 
   pad_array(arr, left, right, &pad_val)
 }

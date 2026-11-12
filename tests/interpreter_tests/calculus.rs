@@ -27868,3 +27868,58 @@ mod integrate_substitution_fallbacks {
     }
   }
 }
+
+mod series_unusable_order {
+  use super::*;
+
+  #[test]
+  fn an_order_that_is_not_a_machine_integer_is_reported() {
+    clear_state();
+    let result = interpret_with_stdout("Series[x, {x, 0, !10}]").unwrap();
+    assert_eq!(result.result, "Series[x, {x, 0,  !10}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Series::serlim: Series order specification !10 is not a \
+         machine-sized integer."
+          .to_string()
+      ]
+    );
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Series[x, {x, 0, 2.5}]")
+        .unwrap()
+        .warnings,
+      vec![
+        "Series::serlim: Series order specification 2.5 is not a \
+         machine-sized integer."
+          .to_string()
+      ]
+    );
+  }
+
+  // A Series left unevaluated inside another one in the same variable is
+  // expanded as the function it is a series of. Treating it as an unknown
+  // function of x made the chain rule run through its iterator, growing
+  // exponentially with the order: this took minutes (found by fuzzing).
+  #[test]
+  fn a_nested_unevaluated_series_expands_as_its_function() {
+    clear_state();
+    assert_eq!(
+      interpret("Quiet[Series[h[Series[Cos[x], {x, 0, a}], x], {x, 0, 1}]]")
+        .unwrap(),
+      "SeriesData[x, 0, {h[1, 0], Derivative[0, 1][h][1, 0]}, 0, 2, 1]"
+    );
+    clear_state();
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "Quiet[Series[Sin[x], {x, 0, 8}] g[Series[Cos[x], {x, 0, !10}], x]]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("SeriesData[x, 0, {g[1, 0], "),
+      "{result}"
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(20));
+  }
+}

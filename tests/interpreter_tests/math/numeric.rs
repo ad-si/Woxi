@@ -2576,3 +2576,53 @@ mod exact_roots {
     assert!(r.warnings.iter().any(|w| w.contains("CubeRoot::preal")));
   }
 }
+
+mod real_digits_machine_reals {
+  use super::*;
+
+  // A machine real lists the 16 significant digits of its exact binary
+  // value, correctly rounded: 972.94 is 972.940000000000054…, so its
+  // sixteenth digit is 1, and 240.6 is 240.5999999999999943…, so it is 0.
+  #[test]
+  fn sixteen_correctly_rounded_digits() {
+    assert_eq!(
+      interpret("{RealDigits[972.94], RealDigits[-240.6]}").unwrap(),
+      "{{{9, 7, 2, 9, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, 3}, \
+       {{2, 4, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 3}}"
+    );
+  }
+
+  // An explicit length cuts those sixteen short without rounding again,
+  // and digits past them are Indeterminate.
+  #[test]
+  fn an_explicit_length_truncates_the_sixteen() {
+    assert_eq!(
+      interpret(
+        "{RealDigits[0.125, 10, 2], RealDigits[-396.0003, 10, 7], \
+          RealDigits[0.1, 10, 18], RealDigits[0.1, 10, 5, -3]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, 0}, {{3, 9, 6, 0, 0, 0, 3}, 3}, \
+       {{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Indeterminate, \
+       Indeterminate}, 0}, {{0, 0, 0, 0, 0}, -2}}"
+    );
+  }
+}
+
+mod number_decompose_rounding {
+  use super::*;
+
+  // The last multiple is the remainder times the reciprocal of the unit,
+  // which is how wolframscript rounds it.
+  #[test]
+  fn last_multiple_uses_the_reciprocal() {
+    assert_eq!(
+      interpret(
+        "{NumberDecompose[7.896483374993132, {1, 0.1, 0.01}], \
+          NumberDecompose[227.4622, {1, 0.1, 0.01}]}"
+      )
+      .unwrap(),
+      "{{7, 8, 9.648337499313154}, {227, 4, 6.219999999999571}}"
+    );
+  }
+}
