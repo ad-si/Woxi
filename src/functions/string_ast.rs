@@ -16540,6 +16540,22 @@ impl ByteCharset {
     }
   }
 
+  /// The bytes of `s`, or the first character the encoding cannot
+  /// represent.
+  pub(crate) fn encode_strict(self, s: &str) -> Result<Vec<u8>, char> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      let before = out.len();
+      self.encode_char(c, &mut out);
+      // A single-byte encoding that wrote more than one byte fell back to
+      // UTF-8: it has no byte for the character.
+      if self != Self::Utf8 && out.len() - before != 1 {
+        return Err(c);
+      }
+    }
+    Ok(out)
+  }
+
   pub(crate) fn encode(self, s: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(s.len());
     for c in s.chars() {
@@ -16625,7 +16641,7 @@ fn percent_decode_with(s: &str, charset: ByteCharset) -> String {
 }
 
 /// StringToByteArray[string] - convert a string to a ByteArray (UTF-8 encoding)
-/// StringToByteArray[string, encoding] - with specified encoding (only UTF-8 supported)
+/// StringToByteArray[string, encoding] - encoded in that encoding
 pub fn string_to_byte_array_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -16637,16 +16653,36 @@ pub fn string_to_byte_array_ast(
   let Expr::String(s) = &args[0] else {
     return Ok(unevaluated("StringToByteArray", args));
   };
-  // Encode as UTF-8 bytes and create ByteArray
-  let bytes = s.as_bytes();
+  let charset = match args.get(1) {
+    None => ByteCharset::Utf8,
+    Some(Expr::String(name)) => match ByteCharset::from_name(name) {
+      Some(charset) => charset,
+      None => return Ok(unevaluated("StringToByteArray", args)),
+    },
+    Some(_) => return Ok(unevaluated("StringToByteArray", args)),
+  };
+  let bytes = match charset.encode_strict(s) {
+    Ok(bytes) => bytes,
+    Err(c) => {
+      let Some(Expr::String(name)) = args.get(1) else {
+        unreachable!("UTF-8 encodes every character")
+      };
+      crate::emit_message(&format!(
+        "StringToByteArray::notinenc: The character '{c}' (code point {}) \
+         cannot be represented in character encoding {name}.",
+        c as u32
+      ));
+      return Ok(unevaluated("StringToByteArray", args));
+    }
+  };
   use base64::Engine;
   let engine = base64::engine::general_purpose::STANDARD;
-  let b64 = engine.encode(bytes);
+  let b64 = engine.encode(&bytes);
   Ok(call1("ByteArray", Expr::String(b64)))
 }
 
 /// ByteArrayToString[bytearray] - convert a ByteArray to a string (UTF-8 decoding)
-/// ByteArrayToString[bytearray, encoding] - with specified encoding (only UTF-8 supported)
+/// ByteArrayToString[bytearray, encoding] - decoded in that encoding
 pub fn byte_array_to_string_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -16683,7 +16719,17 @@ pub fn byte_array_to_string_ast(
         return Ok(unevaluated("ByteArrayToString", args));
       }
     };
-    return Ok(Expr::String(String::from_utf8_lossy(&bytes).to_string()));
+    // The encoding decides how the bytes read; one Woxi does not know
+    // leaves the call unevaluated.
+    let charset = match args.get(1) {
+      None => ByteCharset::Utf8,
+      Some(Expr::String(name)) => match ByteCharset::from_name(name) {
+        Some(charset) => charset,
+        None => return Ok(unevaluated("ByteArrayToString", args)),
+      },
+      Some(_) => return Ok(unevaluated("ByteArrayToString", args)),
+    };
+    return Ok(Expr::String(charset.decode(&bytes)));
   }
   crate::emit_message(&format!(
     "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",

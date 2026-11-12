@@ -2694,6 +2694,34 @@ pub fn apply_curried_call(
         })
       }
     }
+    // SocketObject[uuid][{"p1", "p2", …}] / SocketListener[id][{…}] —
+    // several properties at once.
+    Expr::FunctionCall {
+      name,
+      args: obj_args,
+    } if (name == "SocketObject" || name == "SocketListener")
+      && obj_args.len() == 1
+      && args.len() == 1
+      && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(names) = &args[0] else {
+        unreachable!()
+      };
+      let names: Vec<Expr> = names.iter().cloned().collect();
+      let value = match (name.as_str(), &obj_args[0]) {
+        ("SocketObject", Expr::String(uuid)) => {
+          crate::functions::socket_ast::socket_property_list(uuid, &names)
+        }
+        ("SocketListener", Expr::Integer(id)) => {
+          crate::functions::socket_ast::listener_property_list(*id, &names)
+        }
+        _ => None,
+      };
+      Ok(value.unwrap_or_else(|| Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      }))
+    }
     // SocketObject[uuid]["property"] / SocketListener[id]["property"].
     Expr::FunctionCall {
       name,

@@ -2853,6 +2853,15 @@ fn evaluate_function_call_ast_inner(
     }
     let render =
       |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+    // SetOptions[sock, name -> value, …] sets socket options. Only loose
+    // rules qualify; a list of them is the generic "not a symbol" case.
+    if let Some(uuid) =
+      crate::functions::socket_ast::socket_object_uuid(&args[0])
+      && let Some(result) =
+        crate::functions::socket_ast::socket_set_options(&uuid, &args[1..])
+    {
+      return Ok(result);
+    }
     let Expr::Identifier(head) = &args[0] else {
       crate::emit_message(&format!(
         "SetOptions::sstm: Argument {} is not a symbol or a stream.",

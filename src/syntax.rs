@@ -14243,6 +14243,10 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       '\n' => escaped.push_str("\\n"),
       '\t' => escaped.push_str("\\t"),
       '\r' => escaped.push_str("\\r"),
+      // Backspace and form feed are the other two control characters
+      // wolframscript spells out; the rest stay raw.
+      '\u{8}' => escaped.push_str("\\b"),
+      '\u{c}' => escaped.push_str("\\f"),
       '\u{F7CD}' => escaped.push_str("\\`"),
       c => escaped.push(c),
     }

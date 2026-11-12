@@ -19,6 +19,11 @@ enum StreamKind {
   // what is written to it into the command's standard input.
   #[cfg(not(target_arch = "wasm32"))]
   CommandSink(std::rc::Rc<RefCell<CommandSinkState>>),
+  // The output stream wolframscript opens on a socket the first time
+  // something is written to it, named `"out-<uuid>"`. Writing to it writes
+  // to the socket.
+  #[cfg(not(target_arch = "wasm32"))]
+  Socket(String),
 }
 
 /// State of a `"!command"` stream: the running child process plus the part
@@ -663,6 +668,7 @@ fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
       match get_stream_kind(*id as usize)?.0 {
         StreamKind::File(path) => Some(WriteTarget::File(path)),
         StreamKind::CommandSink(state) => Some(WriteTarget::Sink(state)),
+        StreamKind::Socket(uuid) => Some(WriteTarget::Socket(uuid)),
         // Neither a string stream nor the read end of a pipe is writable.
         StreamKind::Text(_) | StreamKind::Command(_) => None,
       }
@@ -681,6 +687,38 @@ fn io_write_targets(expr: &Expr) -> Option<Vec<WriteTarget>> {
     Expr::List(items) => items.iter().map(io_write_target).collect(),
     _ => io_write_target(expr).map(|target| vec![target]),
   }
+}
+
+/// The failure a ZeroMQ socket among the targets gives for `caller` —
+/// writing to a SUB or PULL socket, say — before anything is written.
+#[cfg(not(target_arch = "wasm32"))]
+fn socket_write_refusal(targets: &[WriteTarget], caller: &str) -> Option<Expr> {
+  targets.iter().find_map(|target| match target {
+    WriteTarget::Socket(uuid) => {
+      crate::functions::socket_ast::socket_function_unsupported(uuid, caller)
+    }
+    _ => None,
+  })
+}
+
+/// Send what one write produced, in the pieces it produced it: a body and
+/// a terminator for `Write` and `WriteLine`. Every target but a socket gets
+/// the pieces back to back; a ZeroMQ socket sends each as its own message.
+#[cfg(not(target_arch = "wasm32"))]
+fn write_targets_parts(
+  targets: &[WriteTarget],
+  parts: &[&[u8]],
+  caller: &str,
+) -> Result<(), InterpreterError> {
+  for target in targets {
+    match target {
+      WriteTarget::Socket(uuid) => {
+        crate::functions::socket_ast::socket_write_parts(uuid, parts);
+      }
+      other => write_target_bytes(other, &parts.concat(), caller)?,
+    }
+  }
+  Ok(())
 }
 
 /// Send `bytes` to every target of a channel, in order.
@@ -715,12 +753,18 @@ fn write_string_to_channel(
       other => text.push_str(&expr_to_string(other)),
     }
   }
-  text.push_str(terminator);
 
   let Some(targets) = io_write_targets(&args[0]) else {
     return Ok(unevaluated(caller, args));
   };
-  write_targets_bytes(&targets, text.as_bytes(), caller)?;
+  if let Some(failure) = socket_write_refusal(&targets, caller) {
+    return Ok(failure);
+  }
+  write_targets_parts(
+    &targets,
+    &[text.as_bytes(), terminator.as_bytes()],
+    caller,
+  )?;
   Ok(null_expr())
 }
 
@@ -828,6 +872,36 @@ fn register_stream(name: String, kind: StreamKind) -> usize {
   id
 }
 
+/// The output stream of a socket, opened on first use: what `BinaryWrite`
+/// on a socket hands back, as `OutputStream["out-<uuid>", n]`.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn socket_output_stream(uuid: &str) -> Expr {
+  let name = format!("out-{uuid}");
+  let existing = STREAM_REGISTRY.with(|reg| {
+    reg.borrow().values().find_map(|s| match &s.kind {
+      StreamKind::Socket(u) if u == uuid => Some(s.id),
+      _ => None,
+    })
+  });
+  let id = existing.unwrap_or_else(|| {
+    register_stream(name.clone(), StreamKind::Socket(uuid.to_string()))
+  });
+  Expr::FunctionCall {
+    name: "OutputStream".to_string(),
+    args: vec![Expr::String(name), Expr::Integer(id as i128)].into(),
+  }
+}
+
+/// Close the streams of a socket that is being closed.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn close_socket_streams(uuid: &str) {
+  STREAM_REGISTRY.with(|reg| {
+    reg
+      .borrow_mut()
+      .retain(|_, s| !matches!(&s.kind, StreamKind::Socket(u) if u == uuid));
+  });
+}
+
 /// Close a stream by ID, returning the stream name and kind if it was open
 fn close_stream(id: usize) -> Option<(String, StreamKind)> {
   STREAM_REGISTRY
@@ -866,6 +940,9 @@ fn get_stream_content(id: usize) -> Option<(String, usize)> {
     // Nothing was ever read into a command sink.
     #[cfg(not(target_arch = "wasm32"))]
     StreamKind::CommandSink(_) => String::new(),
+    // A socket's output stream is write-only.
+    #[cfg(not(target_arch = "wasm32"))]
+    StreamKind::Socket(_) => String::new(),
   };
   Some((content, position))
 }
@@ -882,7 +959,7 @@ fn get_stream_bytes(id: usize) -> Option<Vec<u8>> {
       command_stream_read_all(&mut state);
       Some(state.buffer.clone())
     }
-    StreamKind::CommandSink(_) => Some(Vec::new()),
+    StreamKind::CommandSink(_) | StreamKind::Socket(_) => Some(Vec::new()),
   }
 }
 
@@ -893,9 +970,17 @@ fn get_stream_bytes(id: usize) -> Option<Vec<u8>> {
 fn get_stream_line_content(id: usize) -> Option<(String, usize)> {
   if let Some((StreamKind::Command(state), position)) = get_stream_kind(id) {
     let mut state = state.borrow_mut();
-    while !state.eof
-      && !state.buffer[position.min(state.buffer.len())..].contains(&b'\n')
-    {
+    // Wait for a whole line past the separators a previous ReadLine left
+    // unread.
+    let has_line = |buffer: &[u8]| {
+      let rest = &buffer[position.min(buffer.len())..];
+      let start = rest
+        .iter()
+        .position(|b| !matches!(b, b'\n' | b'\r'))
+        .unwrap_or(rest.len());
+      rest[start..].contains(&b'\n')
+    };
+    while !state.eof && !has_line(&state.buffer) {
       command_stream_read_line(&mut state);
     }
     return Some((
@@ -3120,6 +3205,9 @@ pub fn dispatch_io_functions(
       let Some(targets) = io_write_targets(&args[0]) else {
         return Some(Ok(unevaluated()));
       };
+      if let Some(failure) = socket_write_refusal(&targets, "BinaryWrite") {
+        return Some(Ok(failure));
+      }
       let bytes: Vec<u8> = if args.len() == 3 {
         // Explicit type spec — either a single type string applied to
         // every value or a list of per-element types.
@@ -3196,6 +3284,11 @@ pub fn dispatch_io_functions(
       };
       if let Err(e) = write_targets_bytes(&targets, &bytes, "BinaryWrite") {
         return Some(Err(e));
+      }
+      // On a socket, BinaryWrite answers with the socket's output stream,
+      // the way wolframscript writes through one.
+      if let [WriteTarget::Socket(uuid)] = targets.as_slice() {
+        return Some(Ok(socket_output_stream(uuid)));
       }
       return Some(Ok(args[0].clone()));
     }
@@ -3438,6 +3531,11 @@ pub fn dispatch_io_functions(
               command_sink_close(&state);
               return Some(Ok(Expr::String(name)));
             }
+            // Closing a socket's output stream leaves the socket open.
+            #[cfg(not(target_arch = "wasm32"))]
+            Some((name, StreamKind::Socket(_))) => {
+              return Some(Ok(Expr::String(name)));
+            }
             None => {
               let stream_str = expr_to_string(&args[0]);
               crate::emit_message(&format!("{stream_str} is not open."));
@@ -3595,25 +3693,18 @@ pub fn dispatch_io_functions(
       };
 
       let remaining = &content[position.min(content.len())..];
-      if remaining.is_empty() {
+      let Some(record) = line_record(remaining) else {
+        if let Some(id) = stream_id {
+          advance_stream_position(id, content.len());
+        }
         return Some(Ok(id_expr("EndOfFile")));
-      }
-
-      // Find end of line
-      let (line, advance) = if let Some(idx) = remaining.find('\n') {
-        (&remaining[..idx], idx + 1)
-      } else {
-        (remaining, remaining.len())
       };
-
-      let result = str_expr(line);
-
-      // Advance position if it's a stream
+      // The separator ending the line stays unread, as in wolframscript;
+      // the next read skips it along with any blank lines.
       if let Some(id) = stream_id {
-        advance_stream_position(id, position + advance);
+        advance_stream_position(id, position + record.end);
       }
-
-      return Some(Ok(result));
+      return Some(Ok(str_expr(&remaining[record.start..record.end])));
     }
     // Skip[stream, type] / Skip[stream, type, n] — read and discard `n`
     // (default 1) values of the given type, advancing the stream position.
@@ -3743,12 +3834,15 @@ pub fn dispatch_io_functions(
       let Some(targets) = io_write_targets(&args[0]) else {
         return Some(Ok(unevaluated("Write", args)));
       };
+      if let Some(failure) = socket_write_refusal(&targets, "Write") {
+        return Some(Ok(failure));
+      }
       let mut content = String::new();
       for arg in &args[1..] {
         content.push_str(&expr_to_string(arg));
       }
-      content.push('\n');
-      if let Err(e) = write_targets_bytes(&targets, content.as_bytes(), "Write")
+      if let Err(e) =
+        write_targets_parts(&targets, &[content.as_bytes(), b"\n"], "Write")
       {
         return Some(Err(e));
       }
@@ -4425,6 +4519,41 @@ pub fn dispatch_io_functions(
 
 /// Helper for Read: read a single value of a given type from remaining stream content.
 /// Returns (result_expr, bytes_consumed).
+/// Where the next line of text lies in `remaining`, read the way
+/// wolframscript's `ReadLine` and `Read[stream, String]` read one: leading
+/// record separators (`"\r\n"`, `"\n"`, `"\r"`) are skipped — so blank
+/// lines never come back as `""` — and the line runs up to the next
+/// separator. `None` once only separators (or nothing) remain.
+pub(crate) struct LineRecord {
+  /// Byte offset where the line starts.
+  pub start: usize,
+  /// Byte offset just past the line, before its separator.
+  pub end: usize,
+  /// Byte offset just past the separator.
+  pub next: usize,
+}
+
+pub(crate) fn line_record(remaining: &str) -> Option<LineRecord> {
+  let bytes = remaining.as_bytes();
+  let mut start = 0;
+  while start < bytes.len() && matches!(bytes[start], b'\n' | b'\r') {
+    start += 1;
+  }
+  if start == bytes.len() {
+    return None;
+  }
+  let end = bytes[start..]
+    .iter()
+    .position(|b| matches!(b, b'\n' | b'\r'))
+    .map_or(bytes.len(), |i| start + i);
+  let next = if bytes[end..].starts_with(b"\r\n") {
+    end + 2
+  } else {
+    (end + 1).min(bytes.len())
+  };
+  Some(LineRecord { start, end, next })
+}
+
 fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
   read_single_type_with(
     remaining,
@@ -4504,13 +4633,14 @@ fn read_single_type_with(
       }
       (fail_expr(), skipped)
     }
-    "String" => {
-      // Read until newline
-      let end = remaining.find('\n').unwrap_or(remaining.len());
-      let line = &remaining[..end];
-      let advance = if end < remaining.len() { end + 1 } else { end };
-      (str_expr(line), advance)
-    }
+    // Unlike ReadLine, Read[stream, String] consumes the separator after
+    // the line. Both skip blank lines.
+    "String" => match line_record(remaining) {
+      Some(record) => {
+        (str_expr(&remaining[record.start..record.end]), record.next)
+      }
+      None => (id_expr("EndOfFile"), remaining.len()),
+    },
     "Character" => {
       let ch = remaining.chars().next().unwrap();
       (Expr::String(ch.to_string()), ch.len_utf8())

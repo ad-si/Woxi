@@ -6796,24 +6796,45 @@ run has confirmed**: the machine Woxi is developed on has no Wolfram Engine, so
 these are Woxi's choices, not verified matches. Check each one against
 wolframscript before writing a conformance test on it.
 
-### Property *values* are unverified
+### Property values
 
-The property *names* are the recorded ones —
-`sock["Properties"]` gives `ConnectedClients`, `DestinationHostname`,
-`DestinationIPAddress`, `DestinationPort`, `DirectionType`, `InprocQ`,
-`Protocol`, `Scheme`, `SocketListener`, `Type`, `UUID`, and
-`lis["Properties"]` gives `CharacterEncoding`, `HandlerFunctions`,
-`HandlerFunctionsKeys`, `RecordSeparators`, `Socket` — but only
-`DestinationPort` was ever seen with a value. Woxi answers `"TCP"` for
-`Protocol`, `"tcp"` for `Scheme`, `"ZMQ_STREAM"` for `Type`, `"Server"` /
-`"Client"` for `DirectionType`, `False` for `InprocQ`, `"UTF-8"` for
-`CharacterEncoding` and `{}` for `RecordSeparators`. Wolfram's socket layer is
-built on ZeroMQ, so the last three in particular may well read differently.
+Checked against wolframscript 15.0 (2026-11-11): `Type` is `None` for every
+TCP socket, a listener's `CharacterEncoding` is `"UTF8"` and its
+`RecordSeparators` is `None`, and a handler's `TimeStamp` is a `DateObject`
+— Woxi now answers all of these the same way. `ConnectedClients` on a TCP
+*client* is `None` in wolframscript and still `{}` in Woxi.
 
 `c["SourcePort"]` returning `{}` *was* recorded, so Woxi answers `{}` for every
-property it does not keep. Whether wolframscript does the same for an
-arbitrary unknown property, or only for the ones it knows about but leaves
-empty, is untested.
+property a TCP socket does not keep. (A ZeroMQ socket answers an unknown
+property with an `invalidGetOption` failure, verified.)
+
+### ZeroMQ
+
+ZeroMQ sockets were checked against wolframscript 15.0 and, on the wire,
+against libzmq 4.3.5 (pyzmq) on 2026-11-11. What still differs:
+
+- `ZMQ_STREAM` is not implemented: `SocketOpen`/`SocketConnect` give a
+  `zmqinvcmd` failure for it.
+- Only the `tcp://` transport exists. `inproc://` and `ipc://` addresses
+  give a `zmqinvcmd` failure ("Protocol not supported"); wolframscript
+  supports both.
+- wolframscript accepts a port above 65535 (`SocketOpen[{"127.0.0.1",
+  70000}, "ZMQ_PAIR"]` binds, apparently modulo 2^16); Woxi refuses it with
+  an `addrspec` failure.
+- After `SocketOpen["tcp://*:port", …]` wolframscript cannot read its own
+  address properties back (they come out as `Missing["NotAvailable", …]`);
+  Woxi reports the wildcard address.
+- `"ZMQ_FD"` is the descriptor of Woxi's listening socket or current
+  connection, not libzmq's signaler descriptor; both are arbitrary numbers.
+- Socket options other than `"Subscribe"`, `"Unsubscribe"` and `"Identity"`
+  are recorded and read back but have no effect (high-water marks, linger,
+  heartbeats, CURVE/PLAIN security, …). Only the NULL security mechanism is
+  spoken.
+- `SocketConnect` waits up to a second for the first connection attempt, so
+  an endpoint that is already listening is connected when it returns;
+  libzmq connects entirely in the background.
+- An XPUB passes subscriptions on without `ZMQ_XPUB_VERBOSE` semantics: only
+  the first subscription to a topic and the last cancellation of one.
 
 ### Handler associations for events other than `"DataReceived"`
 

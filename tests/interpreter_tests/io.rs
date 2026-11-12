@@ -11805,3 +11805,134 @@ mod to_expression_graphics_box {
     );
   }
 }
+
+mod line_reading {
+  use super::*;
+
+  // ReadLine skips blank lines and leaves the separator after the line
+  // unread; Read[s, String] also skips blank lines but takes the separator.
+  #[test]
+  fn read_line_skips_blank_lines_and_leaves_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\nb\\n\\nc\\nd\"]; \
+         ToString[{ReadLine[s], ReadLine[s], ReadLine[s], ReadString[s]}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{\"a\", \"b\", \"c\", \"\\nd\"}"
+    );
+  }
+
+  #[test]
+  fn read_line_reaches_end_of_file_through_trailing_separators() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r[str_, n_] := (s = StringToStream[str]; Table[ReadLine[s], n]); \
+         ToString[{r[\"\\n\\na\\n\", 2], r[\"\\n\\n\", 1], \
+           r[\"a\\r\\nb\\r\\n\\r\\nc\", 4]}, InputForm]"
+      )
+      .unwrap(),
+      "{{\"a\", EndOfFile}, {EndOfFile}, {\"a\", \"b\", \"c\", EndOfFile}}"
+    );
+  }
+
+  #[test]
+  fn read_string_type_consumes_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\n\\nb\"]; \
+         t = StringToStream[\"a\\n\\nb\"]; \
+         ToString[{Read[s, String], Read[s, String], Read[s, String], \
+           Read[t, String], ReadString[t]}, InputForm]"
+      )
+      .unwrap(),
+      "{\"a\", \"b\", EndOfFile, \"a\", \"\\nb\"}"
+    );
+  }
+
+  #[test]
+  fn read_line_leaves_the_position_before_the_separator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = StringToStream[\"a\\nb\"]; {ReadLine[s], StreamPosition[s]}"
+      )
+      .unwrap(),
+      "{a, 1}"
+    );
+  }
+}
+
+mod byte_array_encodings {
+  use super::*;
+
+  #[test]
+  fn byte_array_to_string_decodes_in_the_given_encoding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{ToCharacterCode[ByteArrayToString[ByteArray[{194, 128}], \"ISOLatin1\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{194, 128}]]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{233, 128}], \"WindowsANSI\"]]}"
+      )
+      .unwrap(),
+      "{{194, 128}, {128}, {233, 8364}}"
+    );
+  }
+
+  #[test]
+  fn string_to_byte_array_encodes_in_the_given_encoding() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Normal[StringToByteArray[FromCharacterCode[233], \"ISOLatin1\"]], \
+          Normal[StringToByteArray[FromCharacterCode[233], \"MacintoshRoman\"]], \
+          Normal[StringToByteArray[FromCharacterCode[233]]]}"
+      )
+      .unwrap(),
+      "{{233}, {142}, {195, 169}}"
+    );
+  }
+
+  #[test]
+  fn an_unrepresentable_character_leaves_the_call_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[StringToByteArray[FromCharacterCode[8364], \"ISOLatin1\"]]"
+      )
+      .unwrap(),
+      "StringToByteArray"
+    );
+  }
+
+  #[test]
+  fn an_unknown_encoding_leaves_the_call_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Head[ByteArrayToString[ByteArray[{65}], \"Foo\"]], \
+          Head[StringToByteArray[\"a\", \"Foo\"]]}"
+      )
+      .unwrap(),
+      "{ByteArrayToString, StringToByteArray}"
+    );
+  }
+}
+
+mod input_form_escapes {
+  use super::*;
+
+  #[test]
+  fn backspace_and_form_feed_are_spelled_out() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FromCharacterCode[{8, 9, 12}], InputForm]").unwrap(),
+      "\"\\b\\t\\f\""
+    );
+  }
+}
