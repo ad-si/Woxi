@@ -33904,6 +33904,45 @@ mod manipulate {
     }
   }
 
+  // A custom control `{{e, init, lbl}, Dynamic[Manipulator[#, {lo, hi,
+  // step}, …]]&}` is the plain slider `{{e, init, lbl}, lo, hi, step}`,
+  // its bounds following the sibling controls they name.
+  #[test]
+  fn spec_manipulator_builder_is_a_slider() {
+    let expr = interpret_to_expr(
+      "Manipulate[{n, s, e}, {{n, 10}, 5, 30, 1}, {{s, 2}, 1, 4, 1}, \
+       {{e, s + 3, \"end\"}, \
+       Dynamic[Manipulator[#, {s + 1, n, 1}, Appearance -> \"Labeled\"]] &}, \
+       {{f, 0.5}, Manipulator[#, {0, 1}] &}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let sliders: Vec<_> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          initial,
+          ..
+        } => Some((name.as_str(), label.as_str(), *min, *max, *step, *initial)),
+        _ => None,
+      })
+      .collect();
+    assert!(
+      sliders.contains(&("e", "end", 3.0, 10.0, Some(1.0), 5.0)),
+      "got {sliders:?}"
+    );
+    assert!(
+      sliders.contains(&("f", "f", 0.0, 1.0, None, 0.5)),
+      "got {sliders:?}"
+    );
+  }
+
   // A slider whose range runs along the imaginary axis is a control over the
   // imaginary coefficient; the variable binds the complex number.
   #[test]
