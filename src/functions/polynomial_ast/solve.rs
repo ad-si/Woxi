@@ -7495,7 +7495,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if let Some(numerator) = plain_numerator {
       numerator
-    } else if let Some(numerator) = inexact_cleared_numerator(&poly) {
+    } else if let Some(numerator) = super::eliminate::contains_var(
+      &super::together::extract_num_den(&together).1,
+      var,
+    )
+    .then(|| inexact_cleared_numerator(&poly))
+    .flatten()
+    {
       numerator
     } else {
       let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
