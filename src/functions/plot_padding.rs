@@ -1122,6 +1122,41 @@ mod tests {
   }
 
   #[test]
+  fn frame_label_longer_than_its_edge_overhangs_both_ends() {
+    // A left `FrameLabel` 110 pt long on a frame 80 pt tall reaches 15 pt
+    // past the frame's top and bottom; the right `FrameLabel` the same on
+    // a frame half as wide as a long bottom label.
+    let mut d = frame_sin();
+    d.frame_labels[1] = Some(line_height(LABEL_FONT));
+    d.frame_label_lengths[1] = 110.0;
+    let e = d.extents(200.0, 80.0);
+    assert!((e[3] - 15.0).abs() < 1e-9, "{e:?}");
+    assert!(e[2] >= 15.0, "{e:?}");
+    d.frame_labels[0] = Some(line_height(LABEL_FONT));
+    d.frame_label_lengths[0] = 300.0;
+    let e = d.extents(200.0, 80.0);
+    assert!((e[0] - 50.0).abs() < 1e-9, "{e:?}");
+    assert!((e[1] - 50.0).abs() < 1e-9, "{e:?}");
+    // A label shorter than its edge adds nothing along it.
+    let mut short = frame_sin();
+    short.frame_labels[1] = Some(line_height(LABEL_FONT));
+    short.frame_label_lengths[1] = 40.0;
+    assert_eq!(
+      short.extents(200.0, 80.0)[3],
+      frame_sin().extents(200.0, 80.0)[3]
+    );
+  }
+
+  #[test]
+  fn markup_font_size_reads_the_largest_tspan_size() {
+    assert_eq!(
+      markup_font_size("<tspan font-size=\"12\">force</tspan>"),
+      Some(12.0)
+    );
+    assert_eq!(markup_font_size("plain"), None);
+  }
+
+  #[test]
   fn small_frame_pads_for_overhanging_end_labels() {
     let ar = 1.0 / f64::midpoint(1.0, 5f64.sqrt());
     let pad = frame_sin().solve(180.0, |w, _| w * ar);
