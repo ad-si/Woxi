@@ -5346,6 +5346,17 @@ terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
 in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
 per side instead of 2 %. Where the extra margin comes from was not decoded.
 
+A flat scene points the other way. A twisted band of radius 3 around the
+z-axis has a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with
+the default `ViewPoint`, it is about 1.36× *larger* in four Wolfram snapshots
+(78 % of the width) than in Woxi (58 %). Matching that would take a framing
+sphere of radius about 3.4. That is smaller than any sphere around this box
+(the x-y diagonal alone gives 4.24), and only a little larger than the
+contents' own enclosing sphere (radius 3). The cube- and bar-shaped
+calibrations above fit the box sphere, so no single rule tried so far
+(box sphere, contents sphere, longer vs. shorter image side) reproduces
+all of them.
+
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle

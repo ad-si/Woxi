@@ -9,10 +9,22 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn woxi_bin() -> PathBuf {
-  // Cargo builds the binary for integration tests and passes its path. The
-  // test executable's own location is not a reliable guide: newer Cargo
-  // versions keep test binaries in a separate build directory.
-  PathBuf::from(env!("CARGO_BIN_EXE_woxi"))
+  // Cargo hands integration tests the path of each binary it built for
+  // them. Newer Cargo keeps test executables under
+  // `target/<profile>/build/<pkg>/<hash>/out/`, so the binary can no longer
+  // be found next to the test executable.
+  if let Some(path) = option_env!("CARGO_BIN_EXE_woxi") {
+    return PathBuf::from(path);
+  }
+  // Without the `cli` feature the binary isn't built for the tests; fall
+  // back to target/<profile>/woxi alongside the test binary.
+  let mut path = std::env::current_exe().unwrap();
+  path.pop(); // remove the test executable name
+  if path.ends_with("deps") {
+    path.pop();
+  }
+  path.push("woxi");
+  path
 }
 
 fn run_eval(args: &[&str]) -> (String, String, bool) {
