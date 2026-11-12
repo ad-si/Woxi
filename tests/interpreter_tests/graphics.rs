@@ -46495,6 +46495,65 @@ mod static_dynamic_controls {
     assert!(height < 400.0, "plot must not be stretched: {svg}");
   }
 
+  /// The width / height of the plotting area's clip rectangle.
+  fn clip_area(svg: &str) -> (f64, f64) {
+    let rect = svg
+      .split("<clipPath")
+      .nth(1)
+      .and_then(|r| r.split("<rect").nth(1))
+      .expect("clip rectangle");
+    let attr = |name: &str| -> f64 {
+      rect
+        .split(&format!(" {name}=\""))
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("clip size")
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `Show[ListPlot[…, ImageSize -> {w, h}], g]` keeps the plot's
+  /// 1/GoldenRatio frame centered in the fixed image instead of stretching
+  /// it to the image's own (here square) shape.
+  #[test]
+  fn show_of_plot_with_fixed_image_height_keeps_the_plot_shape() {
+    for (size, plot) in [
+      ("{400, 400}", "ListPlot[{{0, 0}, {17, 1}}, Joined -> True"),
+      ("{300, 500}", "ListPlot[{{0, 0}, {3, 2}, {5, 1}}"),
+      ("{500, 400}", "Plot[Sin[x], {x, 0, 10}"),
+    ] {
+      let svg = export_svg(&format!(
+        "Show[{plot}, ImageSize -> {size}, Frame -> True], \
+         Graphics[{{Opacity[0.25], Rectangle[{{0, 0}}, {{1, 1}}]}}]]"
+      ));
+      assert!(
+        svg.contains(&format!(
+          "width=\"{}\"",
+          size.trim_matches(['{', '}']).split(", ").next().unwrap()
+        )),
+        "keeps the requested image size: {svg}"
+      );
+      let (w, h) = clip_area(&svg);
+      let ratio = h / w;
+      assert!(
+        (ratio - 0.618).abs() < 0.02,
+        "{plot}: frame ratio {ratio} is not 1/GoldenRatio: {svg}"
+      );
+    }
+  }
+
+  /// An explicit `AspectRatio` on the plot still wins inside a fixed image.
+  #[test]
+  fn show_of_plot_with_fixed_image_height_keeps_its_aspect_ratio() {
+    let svg = export_svg(
+      "Show[ListPlot[{{0, 0}, {4, 1}}, ImageSize -> {400, 400}, \
+       AspectRatio -> 1/3, Frame -> True], Graphics[Point[{1, 1}]]]",
+    );
+    let (w, h) = clip_area(&svg);
+    assert!((h / w - 1.0 / 3.0).abs() < 0.02, "ratio {}: {svg}", h / w);
+  }
+
   /// A `NumberForm[x, n]` caption inside a widget shows the formatted
   /// number, not the source of the unevaluated head.
   #[test]
