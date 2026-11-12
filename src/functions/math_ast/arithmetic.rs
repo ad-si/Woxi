@@ -12018,9 +12018,10 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .sum();
       let product = bigfloat_times(&numericized)?;
       return Ok(match &product {
-        Expr::BigFloat(digits, _) if total_rel_err > 0.0 => {
-          Expr::BigFloat(digits.clone(), -total_rel_err.log10())
-        }
+        Expr::BigFloat(digits, _) if total_rel_err > 0.0 => Expr::BigFloat(
+          digits.clone(),
+          crate::clamp_to_precision_bounds(-total_rel_err.log10()),
+        ),
         _ => product,
       });
     }
@@ -17945,11 +17946,11 @@ fn bigfloat_plus(args: &[Expr]) -> Expr {
   // Precision of a sum of (scaled) value `v`: the digits of `v` its error
   // leaves.
   let precision_of = |v: f64| {
-    if v.abs() < 1e-300 || sum_error <= 0.0 {
+    crate::clamp_to_precision_bounds(if v.abs() < 1e-300 || sum_error <= 0.0 {
       min_prec()
     } else {
       (v.abs().log10() - sum_error.log10()).max(1.0)
-    }
+    })
   };
 
   // Compute the value itself. When every summand can be evaluated to an
@@ -18161,7 +18162,9 @@ fn try_bigfloat_power(
   };
 
   let rm = RoundingMode::ToEven;
-  let bits = nominal_bits(base_prec.ceil() as usize);
+  let result_prec =
+    crate::clamp_to_precision_bounds(base_prec - exp_val.abs().log10());
+  let bits = nominal_bits(base_prec.max(result_prec).ceil() as usize);
   let mut cc = match crate::functions::math_ast::numerical::astro_consts() {
     Ok(c) => c,
     Err(e) => {
@@ -18202,7 +18205,6 @@ fn try_bigfloat_power(
     }
   };
 
-  let result_prec = base_prec - exp_val.abs().log10();
   let digits = wl_fraction_digits(&result, result_prec);
   let result_str = match bigfloat_to_string(&result, Some(digits), rm, &mut cc)
   {
@@ -18354,13 +18356,13 @@ fn bigfloat_times(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let min_contrib = contribs.iter().copied().fold(f64::INFINITY, f64::min);
   let total_rel_err: f64 = contribs.iter().map(|p| 10f64.powf(-p)).sum();
-  let result_prec = if total_rel_err > 0.0 {
+  let result_prec = crate::clamp_to_precision_bounds(if total_rel_err > 0.0 {
     -total_rel_err.log10()
   } else {
     min_contrib
-  };
+  });
 
-  let bits = nominal_bits(min_contrib.ceil() as usize);
+  let bits = nominal_bits(min_contrib.max(result_prec).ceil() as usize);
   let rm = RoundingMode::ToEven;
   let mut cc = crate::functions::math_ast::numerical::astro_consts()
     .map_err(|e| InterpreterError::EvaluationError(format!("{e}")))?;

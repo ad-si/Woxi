@@ -16287,3 +16287,76 @@ mod exact_arithmetic_fuzz_edge_cases {
     );
   }
 }
+
+mod precision_bounds {
+  use woxi::interpret;
+
+  // `Block[{$MinPrecision = p, $MaxPrecision = p}, …]` fixes the working
+  // precision of arbitrary-precision arithmetic: an iteration keeps all `p`
+  // digits instead of losing some at every subtraction.
+  #[test]
+  fn fixed_precision_iteration_keeps_all_digits() {
+    assert_eq!(
+      interpret(
+        "Block[{$MinPrecision = 30, $MaxPrecision = 30}, ToString /@ NestList[(# + 3/#)/2 &, SetPrecision[3, 30], 4]]"
+      )
+      .unwrap(),
+      "{3.00000000000000000000000000000, 2.00000000000000000000000000000, 1.75000000000000000000000000000, 1.73214285714285714285714285714, 1.73205081001472754050073637703}"
+    );
+    assert_eq!(
+      interpret(
+        "Block[{$MinPrecision = 50, $MaxPrecision = 50}, Precision /@ NestList[# - (#^2 - 5)/(2 #) &, SetPrecision[5, 50], 6]]"
+      )
+      .unwrap(),
+      "{50., 50., 50., 50., 50., 50., 50.}"
+    );
+  }
+
+  #[test]
+  fn min_precision_raises_canceling_sums_and_powers() {
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, Precision[N[Pi, 30] - 3]]")
+        .unwrap(),
+      "40."
+    );
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 29}, Precision[N[E, 30]^1000]]")
+        .unwrap(),
+      "29."
+    );
+    // Already above the bound: unchanged.
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 25}, Precision[N[E, 30]^1000]]")
+        .unwrap(),
+      "27."
+    );
+  }
+
+  #[test]
+  fn max_precision_caps_arithmetic_results() {
+    assert_eq!(
+      interpret(
+        "Block[{$MaxPrecision = 20}, Precision /@ {N[Pi, 30] + 1, N[Pi, 30] * 2, N[Pi, 30]^2}]"
+      )
+      .unwrap(),
+      "{20., 20., 20.}"
+    );
+    assert_eq!(
+      interpret("Block[{$MaxPrecision = 20}, ToString[N[Pi, 30]^2]]").unwrap(),
+      "9.8696044010893586188"
+    );
+  }
+
+  #[test]
+  fn bounds_leave_machine_numbers_and_defaults_alone() {
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, Precision[1.5 + 2.5]]").unwrap(),
+      "MachinePrecision"
+    );
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, 1]; Precision[N[Pi, 30] - 3]")
+        .unwrap(),
+      "28.653890848257205"
+    );
+  }
+}
