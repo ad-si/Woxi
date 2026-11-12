@@ -7064,7 +7064,10 @@ mod plot3d {
       ));
       assert_eq!(per_row.len(), 4);
       assert!((per_row[1] - per_row[0]).abs() < 1e-6, "{per_row:?}");
-      assert!((per_row[3] - (per_row[2] + 40.0)).abs() < 1e-6, "{per_row:?}");
+      assert!(
+        (per_row[3] - (per_row[2] + 40.0)).abs() < 1e-6,
+        "{per_row:?}"
+      );
       let item = nested_svg_ys(&export_svg(
         "Grid[{{Graphics[Disk[], ImageSize -> 60], Item[Graphics[Disk[], ImageSize -> 20], Alignment -> {Center, Bottom}]}}]",
       ));

@@ -22024,6 +22024,7 @@ fn grid_ast_internal(
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
   if !parens
+    && !has_item_alignment(args)
     && let Some(rows) = grid_of_graphics_svgs(args)
     && let Some(combined) = combine_graphics_svgs(&rows)
   {
@@ -22035,6 +22036,30 @@ fn grid_ast_internal(
   }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Whether a cell of `Grid`'s matrix is an `Item[…, Alignment -> …]`: the
+/// picture layout centers every cell, so such a grid takes the full grid
+/// layout, which places each cell by its own alignment.
+pub fn has_item_alignment(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  rows
+    .iter()
+    .flat_map(|row| match row {
+      Expr::List(cells) => cells.iter().collect::<Vec<_>>(),
+      single => vec![single],
+    })
+    .any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Item"
+          && args
+            .iter()
+            .skip(1)
+            .filter_map(option_kv)
+            .any(|(key, _)| key == "Alignment"))
+    })
 }
 
 /// The rendered SVG of every cell, when `Grid`'s first argument is a
@@ -24915,8 +24940,8 @@ fn grid_svg_styled_internal_reporting(
           let draw_h = (*ih as f64) * scale;
           let ix = x_offset + col_pad_left[j];
           let vis_h = cell_bottom - cell_top;
-          let iy = valigned_top(draw_h)
-            .unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
+          let iy =
+            valigned_top(draw_h).unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
 
           // Encode image as base64 PNG, its pixels shown as blocks.
           let b64 = crate::functions::image_ast::blocky_png_base64(
@@ -25049,9 +25074,8 @@ fn grid_svg_styled_internal_reporting(
             0.0
           };
           let line_h = fs + pad_y;
-          let block_h = line_h
-            + extra_lines * markup_line_height(&markup, fs)
-            - pad_y;
+          let block_h =
+            line_h + extra_lines * markup_line_height(&markup, fs) - pad_y;
           valigned_top(block_h).map_or(cy, |top| top + block_h / 2.0 - 1.0)
         };
         let (text_y, markup) = if multiline {
