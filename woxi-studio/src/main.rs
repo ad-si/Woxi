@@ -32772,7 +32772,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       out
     }
     let nb_src = r#"Notebook[{
-Cell[BoxData["Manipulate[Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 2}], Gray, If[MemberQ[extras, halo], {Line[Table[{1/2 + Cos[s], 1/2 + Sin[s], 3}, {s, 0, 2 Pi, Pi/8}]]}, Sequence @@ {}]}, Boxed -> False, ViewAngle -> Pi/12, ViewPoint -> {h Cos[w], h Sin[w], 1}], {{w, Pi, "turn"}, 0, 2 Pi}, {{h, 4, "height"}, 2, 6, ControlPlacement -> Left, ControlType -> VerticalSlider}, {{extras, {halo}, ""}, {halo -> "show halo"}, ControlType -> CheckboxBar}]"], "Input"]
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 2}], Gray, If[MemberQ[extras, halo], {Line[Table[{1/2 + Cos[s], 1/2 + Sin[s], 3}, {s, 0, 2 Pi, Pi/8}]]}, Sequence @@ {}]}, Boxed -> False, ViewAngle -> Pi/12, ViewPoint -> {h Cos[w], h Sin[w], 1}], {{w, Pi, "turn"}, 0, 2 Pi}, {{h, 4, "height"}, 2, 6, ControlPlacement -> Left, ControlType -> VerticalSlider}, {{extras, {halo}, ""}, {halo -> "show halo"}, ControlType -> CheckboxBar}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
 }]"#;
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
     let editors = WoxiStudio::editors_from_notebook(&nb);
