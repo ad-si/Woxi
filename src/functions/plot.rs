@@ -3734,6 +3734,9 @@ pub(crate) struct PlotOptions {
   pub label_style: Option<LabelStyleSpec>,
   /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
+  /// The font size a `FrameStyle -> size` (or `Directive[…, size]`) gives
+  /// the frame's labels and tick labels, over `LabelStyle`.
+  pub frame_font_size: Option<f64>,
   /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
   /// color and thickness of its tick marks, and the color of its labels.
   pub frame_ticks_styles: [Option<SeriesStyle>; 4],
@@ -3960,6 +3963,7 @@ impl Default for PlotOptions {
       point_colors: Vec::new(),
       label_style: None,
       tick_label_style: None,
+      frame_font_size: None,
       frame_ticks_styles: [None, None, None, None],
       joined_per_series: None,
       axes_style: [None, None],
@@ -16026,6 +16030,8 @@ pub(crate) fn apply_common_plot_option(
     }
     "FrameStyle" => {
       plot_opts.frame_styles = parse_frame_edge_styles(replacement);
+      plot_opts.frame_font_size =
+        LabelStyleSpec::parse(replacement).and_then(|s| s.font_size);
       hide_transparent_frame_edges(replacement, plot_opts);
     }
     "MeshStyle" => {
