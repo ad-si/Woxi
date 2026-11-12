@@ -23028,6 +23028,29 @@ fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
 /// Convert a WL alignment identifier to SVG text-anchor value.
 /// The `"."` string maps to the pseudo-anchor `"decimal"`, handled specially
 /// so numbers in the column line up on their decimal point.
+/// Vertical placement of a `Grid` item within its row.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum VAlign {
+  Top,
+  Center,
+  Bottom,
+}
+
+/// The vertical part of an `Alignment` spec: `Top`, `Bottom`, or one of the
+/// centering values (`Center`, `Baseline`, `Axis`). Per-row lists are not
+/// read here.
+fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
+  match expr {
+    Expr::Identifier(val) => match val.as_str() {
+      "Top" => Some(VAlign::Top),
+      "Bottom" => Some(VAlign::Bottom),
+      "Center" | "Baseline" | "Axis" => Some(VAlign::Center),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
@@ -23571,6 +23594,7 @@ fn grid_svg_styled_internal_reporting(
   // `Item[content, opts…]` sets one cell's own `Alignment`, `Background`
   // and `Frame`, over the grid's; note them before the wrapper comes off.
   let mut item_aligns: Vec<((usize, usize), &'static str)> = Vec::new();
+  let mut item_v_aligns: Vec<((usize, usize), VAlign)> = Vec::new();
   let mut item_backgrounds: Vec<((usize, usize), Color)> = Vec::new();
   let mut item_frames: Vec<((usize, usize), (usize, usize))> = Vec::new();
   for (i, row) in rows.iter().enumerate() {
@@ -23590,6 +23614,11 @@ fn grid_svg_styled_internal_reporting(
             };
             if matches!(h, Expr::Identifier(_)) {
               item_aligns.push(((i, j), alignment_to_anchor(h)));
+            }
+            if let Expr::List(pair) = value
+              && let Some(v) = pair.get(1).and_then(vertical_alignment)
+            {
+              item_v_aligns.push(((i, j), v));
             }
           }
           "Background" => {
@@ -23687,6 +23716,8 @@ fn grid_svg_styled_internal_reporting(
   let mut row_bg_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_bg_has_repeating = false;
   let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
+  // `Alignment -> {h, v}`: where an item sits vertically in its row.
+  let mut alignment_v = VAlign::Center;
   let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
@@ -23943,6 +23974,9 @@ fn grid_svg_styled_internal_reporting(
           Expr::List(items) => {
             // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
+            if let Some(v) = items.get(1).and_then(vertical_alignment) {
+              alignment_v = v;
+            }
             if let Some(first) = items.first() {
               match first {
                 Expr::String(s) if s == "." => alignment_h = "decimal",
@@ -24791,6 +24825,23 @@ fn grid_svg_styled_internal_reporting(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
+      // A `Top` or `Bottom` vertical alignment puts an item of height `h`
+      // against that edge of its rows' content area (inside the cell
+      // padding); the result is the item's top edge, or `None` when the
+      // item stays centered.
+      let v_align = item_v_aligns
+        .iter()
+        .find(|(pos, _)| *pos == (i, j))
+        .map_or(alignment_v, |(_, a)| *a);
+      let content_top = content_y_starts[i];
+      let content_bottom = content_y_starts[last_row] + row_heights[last_row];
+      let aligned_top = |h: f64| -> Option<f64> {
+        match v_align {
+          VAlign::Center => None,
+          VAlign::Top => Some(content_top + pad_y / 2.0),
+          VAlign::Bottom => Some(content_bottom - pad_y / 2.0 - h),
+        }
+      };
 
       // A graphic cell is drawn as a nested <svg> at its own size,
       // centered in the cell.
@@ -24807,10 +24858,12 @@ fn grid_svg_styled_internal_reporting(
           _ => x_offset + (col_w - nat_w) / 2.0,
         };
         let vis_h = cell_bottom - cell_top;
-        let gy = cell_top
-          + row_anchors[i].map_or((vis_h - nat_h) / 2.0, |a| {
-            a - graphic_content_anchor(cell, nat_h)
-          });
+        let gy = aligned_top(nat_h).unwrap_or_else(|| {
+          cell_top
+            + row_anchors[i].map_or((vis_h - nat_h) / 2.0, |a| {
+              a - graphic_content_anchor(cell, nat_h)
+            })
+        });
         svg.push_str(&format!(
           "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
           parsed.view_box, parsed.inner_content
@@ -24835,7 +24888,8 @@ fn grid_svg_styled_internal_reporting(
           let draw_h = (*ih as f64) * scale;
           let ix = x_offset + col_pad_left[j];
           let vis_h = cell_bottom - cell_top;
-          let iy = cell_top + (vis_h - draw_h) / 2.0;
+          let iy =
+            aligned_top(draw_h).unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
 
           // Encode image as base64 PNG, its pixels shown as blocks.
           let b64 = crate::functions::image_ast::blocky_png_base64(
@@ -24962,7 +25016,11 @@ fn grid_svg_styled_internal_reporting(
         let (text_y, markup) = if multiline {
           let lh = markup_line_height(&markup, fs);
           let lines = split_markup_lines(&markup);
-          let top = cy - (lines.len() as f64 - 1.0) / 2.0 * lh;
+          let block_h = lines.len() as f64 * lh;
+          let top = aligned_top(block_h)
+            .map_or(cy - (lines.len() as f64 - 1.0) / 2.0 * lh, |t| {
+              t + lh / 2.0
+            });
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
             let dy = if k == 0 { 0.0 } else { lh };
@@ -24973,7 +25031,8 @@ fn grid_svg_styled_internal_reporting(
           }
           (top, body)
         } else {
-          (cy, markup)
+          let lh = markup_line_height(&markup, fs);
+          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0), markup)
         };
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",

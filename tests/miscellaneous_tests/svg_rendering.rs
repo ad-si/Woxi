@@ -2441,6 +2441,66 @@ mod tests {
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
     }
 
+    /// The `y` of the nested `<svg>` with the given `width`.
+    fn picture_y(svg: &str, width: &str) -> f64 {
+      svg
+        .split("<svg x=\"")
+        .find(|chunk| chunk.contains(&format!("width=\"{width}\"")))
+        .and_then(|chunk| chunk.split("y=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("picture y")
+    }
+
+    /// The `y` of the `<text>` element drawing `label`.
+    fn text_y(svg: &str, label: &str) -> f64 {
+      svg
+        .split("<text ")
+        .find(|chunk| chunk.contains(&format!(">{label}</text>")))
+        .and_then(|chunk| chunk.split("y=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("text y")
+    }
+
+    #[test]
+    fn grid_vertical_alignment_places_items_at_top_or_bottom() {
+      // `Alignment -> {h, v}` puts a short item against the top or bottom
+      // of a row made tall by another item, instead of centering it.
+      let grid = |align: &str| {
+        svg_of(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> {{20, 20}}], \
+           Graphics[Disk[], ImageSize -> {{60, 100}}], \"ab\"}}}}, \
+           Alignment -> {align}]"
+        ))
+      };
+      let tall_y = picture_y(&grid("{Left, Top}"), "60.0");
+
+      let top = grid("{Left, Top}");
+      assert_eq!(picture_y(&top, "20.0"), tall_y, "{top}");
+      assert!(text_y(&top, "ab") < 20.0, "text at the top: {top}");
+
+      let bottom = grid("{Left, Bottom}");
+      assert_eq!(picture_y(&bottom, "20.0"), tall_y + 80.0, "{bottom}");
+      assert!(text_y(&bottom, "ab") > 80.0, "text at the bottom: {bottom}");
+
+      // The vertical default stays centered.
+      let center = grid("Left");
+      assert_eq!(picture_y(&center, "20.0"), tall_y + 40.0, "{center}");
+    }
+
+    #[test]
+    fn grid_item_vertical_alignment_overrides_the_grid() {
+      let svg = svg_of(
+        "Grid[{{Item[Graphics[Disk[], ImageSize -> {20, 20}], \
+         Alignment -> {Center, Bottom}], \
+         Graphics[Disk[], ImageSize -> {60, 100}]}}, \
+         Alignment -> {Left, Top}]",
+      );
+      let tall_y = picture_y(&svg, "60.0");
+      assert_eq!(picture_y(&svg, "20.0"), tall_y + 80.0, "{svg}");
+    }
+
     #[test]
     fn grid_cell_locator_pane_over_a_dynamic_picture_is_drawn() {
       let svg = svg_of(
