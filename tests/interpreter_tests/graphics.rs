@@ -13367,6 +13367,34 @@ mod plot3d {
       assert_eq!(attr("rx"), attr("ry"), "disk must stay round: {svg}");
     }
 
+    /// The plot range is widened once, to the shape of the area the
+    /// padding leaves, so the content is as large as that area allows.
+    /// Regression: it was first widened to the whole picture's shape and
+    /// then widened again for the padded area, shrinking a 20 × 9 range in
+    /// a 450 × 200 area to 19.57 instead of 22.22 points per unit.
+    #[test]
+    fn image_padding_widens_the_plot_range_only_once() {
+      let svg = export_svg(
+        "Graphics[Disk[], PlotRange -> {{-10, 10}, {-5, 4}}, \
+         ImageSize -> {450, 230}, ImagePadding -> {{0, 0}, {0, 30}}]",
+      );
+      // min(450 / 20, 200 / 9) = 22.22 points per unit; the range's
+      // vertical middle (-1/2) sits halfway down the 200-point area.
+      assert!(
+        svg.contains(r#"cx="225.00" cy="88.89" rx="22.22" ry="22.22""#),
+        "the disk must fill the padded area's height: {svg}"
+      );
+      // The same holds when the padding is on the left and right instead.
+      let svg = export_svg(
+        "Graphics[Disk[], PlotRange -> {{-4, 5}, {-10, 10}}, \
+         ImageSize -> {230, 450}, ImagePadding -> {{30, 0}, {0, 0}}]",
+      );
+      assert!(
+        svg.contains(r#"rx="22.22" ry="22.22""#),
+        "the disk must fill the padded area's width: {svg}"
+      );
+    }
+
     /// Every label of a tick set carries the decimals its step needs, so a
     /// 0.5-spaced axis reads `-1.0, -0.5, 0.0, 0.5, 1.0` — the origin
     /// included — while an integer-spaced one stays bare. Verified against
