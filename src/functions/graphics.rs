@@ -6737,6 +6737,30 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
   has_span || has_chrome
 }
 
+/// Embedded inset pictures always center on their anchor. To put the point
+/// at fractions `(fx, fy)` (from the left, from the top) of the picture on
+/// the anchor instead, pad the picture to twice that point's distance to
+/// its far sides, so the point becomes the padded picture's center.
+fn pad_inset_to_anchor(
+  svg: &mut String,
+  w: &mut f64,
+  h: &mut f64,
+  size: &mut Option<(f64, f64)>,
+  fx: f64,
+  fy: f64,
+) {
+  let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
+  let (pw, ph) = (*w * kx, *h * ky);
+  let (ox, oy) = (pw / 2.0 - fx * *w, ph / 2.0 - fy * *h);
+  *svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
+     height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
+     <g transform=\"translate({ox:.2},{oy:.2})\">{svg}</g></svg>"
+  );
+  *size = size.map(|(sw, sh)| (sw * kx, sh * ky));
+  (*w, *h) = (pw, ph);
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -6786,6 +6810,12 @@ fn inset_primitives(
   // `Inset[Rotate[g, θ], …]` turns the whole embedded picture by θ
   // (counterclockwise) about its center; the inset then occupies the
   // bounding box of the turned picture, still centered on the anchor.
+  //
+  // The rotated object is no longer a graphic, so an `opos` does not name
+  // a point of `g`'s own coordinates: it is aligned like a `Text` offset,
+  // in the turned box, `{0, 0}` being its center and `{±1, ±1}` its
+  // corners. The inner picture is therefore embedded centered and the
+  // alignment applied to the turned box afterward.
   if let Expr::FunctionCall {
     name: rotate,
     args: rargs,
@@ -6796,10 +6826,32 @@ fn inset_primitives(
   {
     let mut inner_args = args.to_vec();
     inner_args[0] = rargs[0].clone();
+    let rotated_anchor = args.get(2).and_then(|opos| {
+      let (x, y, scaled) = expr_to_anchor(opos)?;
+      Some(if scaled {
+        (x, 1.0 - y)
+      } else {
+        ((x + 1.0) / 2.0, (1.0 - y) / 2.0)
+      })
+    });
+    if inner_args.len() > 2 {
+      inner_args[2] = Expr::List(
+        vec![
+          Expr::Identifier("Center".to_string()),
+          Expr::Identifier("Center".to_string()),
+        ]
+        .into(),
+      );
+    }
     if let Some(mut prims) = inset_primitives(&inner_args, errors) {
       if let [
         Primitive::InsetGraphic {
-          svg, w, h, size, ..
+          svg,
+          w,
+          h,
+          size,
+          source,
+          ..
         },
       ] = prims.as_mut_slice()
       {
@@ -6818,6 +6870,12 @@ fn inset_primitives(
         );
         *size = size.map(|(sw, sh)| (sw * cos + sh * sin, sw * sin + sh * cos));
         (*w, *h) = (rw, rh);
+        if let Some((fx, fy)) = rotated_anchor
+          .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
+        {
+          pad_inset_to_anchor(svg, w, h, size, fx, fy);
+          *source = None;
+        }
       }
       return Some(prims);
     }
@@ -7030,16 +7088,7 @@ fn inset_primitives(
       x += (0.5 - fx) * sw;
       y += (fy - 0.5) * sh;
     } else if let Some((fx, fy)) = object_anchor {
-      let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
-      let (pw, ph) = (w * kx, h * ky);
-      let (ox, oy) = (pw / 2.0 - fx * w, ph / 2.0 - fy * h);
-      svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
-         height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
-         <g transform=\"translate({ox:.2},{oy:.2})\">{svg}</g></svg>"
-      );
-      size = size.map(|(sw, sh)| (sw * kx, sh * ky));
-      (w, h) = (pw, ph);
+      pad_inset_to_anchor(&mut svg, &mut w, &mut h, &mut size, fx, fy);
       source = None;
     }
     return Some(vec![Primitive::InsetGraphic {
