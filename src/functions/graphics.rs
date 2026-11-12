@@ -7363,6 +7363,34 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     });
     return;
   }
+  // A label whose layout shows a typeset fraction box (`Column[{Row[{
+  // DisplayForm[FractionBox[1, 2]], …}]}]`) is composed to a picture the
+  // same way, so each fraction stacks its numerator over its denominator.
+  if frame_opts.is_empty()
+    && label_holds_displayed_fraction_box(content)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let svg = crate::evaluator::expr_to_svg(&colored_body);
+    if svg.starts_with("<svg")
+      && let Some(dims) = parse_svg_dimensions(&svg)
+    {
+      prims.push(Primitive::InsetGraphic {
+        svg,
+        x,
+        y,
+        w: dims.nat_w,
+        h: dims.nat_h,
+        scaled,
+        size: None,
+        size_scaled: false,
+        source: None,
+      });
+      return;
+    }
+  }
   // A label written as a `Row` of styled parts — the `f(x)` a
   // Demonstration writes beside a point — carries its font directives on
   // the parts rather than on the label itself. The label is drawn as one
@@ -28116,9 +28144,10 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   let mut standard = false;
   while let Expr::FunctionCall { name, args } = &current {
     let pass_through = match name.as_str() {
-      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
-        args.len() == 1
-      }
+      "Text" | "TraditionalForm" | "StandardForm" => args.len() == 1,
+      // `DisplayForm[box]` typesets the box tree: peeling it would leave a
+      // bare `FractionBox[…]` that the layout renderers print as source.
+      "DisplayForm" => args.len() == 1 && !is_box_display_wrapper(name, args),
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
@@ -28667,8 +28696,8 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 }
 
 /// A (possibly `Style`d) string whose inline box notation holds a fraction,
-/// typeset through the box layout so the numerator stacks over the
-/// denominator. `None` for any other item, which keeps its text rendering.
+/// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
+/// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   let (content, size) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
@@ -28677,10 +28706,16 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
     }
     other => (other, 14.0),
   };
-  let Expr::String(text) = content else {
-    return None;
+  // The boxes are spelled either as inline `\!\(\*…\)` notation in a
+  // string or as a box tree shown through `DisplayForm`/`RawBoxes`
+  // (`DisplayForm[FractionBox[1, 2]]`).
+  let boxes = match content {
+    Expr::String(text) => inline_box_string_to_box_expr(text)?,
+    Expr::FunctionCall { name, args } if is_box_display_wrapper(name, args) => {
+      args[0].clone()
+    }
+    _ => return None,
   };
-  let boxes = inline_box_string_to_box_expr(text)?;
   if !box_has_fraction(&boxes) {
     return None;
   }
@@ -28690,6 +28725,26 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// Whether `expr` — a label, possibly a `Row`/`Column` layout under `Style`
+/// wrappers — shows a box tree holding a fraction through `DisplayForm` or
+/// `RawBoxes` somewhere among its items. Such a label is typeset as a
+/// picture: flattening it to one text run would spell the fraction's
+/// numerator and denominator side by side.
+fn label_holds_displayed_fraction_box(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if is_box_display_wrapper(name, args) => {
+      box_has_fraction(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) || name == "Row" || name == "Column" =>
+    {
+      args.iter().any(label_holds_displayed_fraction_box)
+    }
+    Expr::List(items) => items.iter().any(label_holds_displayed_fraction_box),
+    _ => false,
+  }
 }
 
 /// A word of a paragraph set from inline `StyleBox` notation.
