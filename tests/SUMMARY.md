@@ -1635,6 +1635,7 @@
   - [`SocketListen`](sockets/SocketListen.md)
   - [`SocketReadMessage`](sockets/SocketReadMessage.md)
   - [`Sockets`](sockets/Sockets.md)
+  - [ZeroMQ](sockets/ZeroMQ.md)
 - [Contexts & Packages](contexts.md)
   - [Rubi](rubi.md)
 - [Scripting](scripting.md)

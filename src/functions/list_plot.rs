@@ -1683,12 +1683,12 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           if let Expr::List(items) = &val
             && !items.is_empty()
           {
-            let x = crate::functions::graphics::styled_axis_label(&items[0])
+            let x = crate::functions::graphics::axes_label_entry(&items[0])
               .unwrap_or_default();
             // `{xlabel}` names the x axis only.
             let y = items
               .get(1)
-              .and_then(crate::functions::graphics::styled_axis_label)
+              .and_then(crate::functions::graphics::axes_label_entry)
               .unwrap_or_default();
             opts.axes_label = Some((x, y));
           }

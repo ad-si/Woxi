@@ -210,6 +210,17 @@ fn chart_datum_value(e: &Expr) -> Option<f64> {
   try_eval_to_f64(chart_datum_expr(e))
 }
 
+/// A graphic's `FormatType` is `TraditionalForm`, so each item of a
+/// `Row`/`Column`/`Grid` label is typeset in it: `x == 5` reads `x = 5`,
+/// `1 + n` reads `n + 1` and `Mod[a, m]` reads `a mod m`.
+fn traditional_label_layout(expr: &Expr) -> Expr {
+  if crate::functions::graphics::is_traditional_layout(expr) {
+    crate::functions::graphics::traditionalize_layout_items(expr)
+  } else {
+    expr.clone()
+  }
+}
+
 /// Typeset a label expression into its first line plus the lines after it.
 /// A newline inside the label (`Row[{"a", "\n", "b"}]`, a multi-line string)
 /// starts a new line, which an SVG `<text>` would otherwise collapse.
@@ -748,8 +759,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let other = traditional_sums(other);
-          let (markup, rest) = markup_and_extra_lines(&other);
+          let (markup, rest) = markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          ));
           extra_lines = rest;
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
@@ -779,7 +791,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           Some(markup) => (markup, Vec::new()),
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
-          None => markup_and_extra_lines(&traditional_sums(other)),
+          None => markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          )),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
       // A picture taller than a line of text claims the room of the blank

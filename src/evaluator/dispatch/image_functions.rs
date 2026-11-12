@@ -2611,6 +2611,26 @@ pub fn dispatch_image_functions(
         } else {
           ("CSV", None)
         };
+      // A text format reads the string as the bytes ExportString makes:
+      // UTF-8 sequences decode, any other character stays as it is — so
+      // ImportString[ExportString[s, f], f] gives s back.
+      let content = if matches!(
+        format,
+        "Text"
+          | "Lines"
+          | "List"
+          | "CSV"
+          | "TSV"
+          | "Table"
+          | "JSON"
+          | "RawJSON"
+      ) {
+        let codes: Vec<u32> = content.chars().map(|c| c as u32).collect();
+        crate::functions::string_ast::ByteCharset::Utf8
+          .decode_codes(&codes, false)
+      } else {
+        content
+      };
       // An element the format does not offer is reported and fails the import.
       let unknown_element = |element: &str, format: &str| {
         crate::emit_message(&format!(

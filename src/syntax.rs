@@ -10175,6 +10175,28 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   };
   let is_output = form == ExprForm::Output;
 
+  // ToString's OutputForm text writes a span with its operator (`1 ;; 2`),
+  // although the printed display keeps the head form `Span[1, 2]`.
+  if is_output
+    && IN_TO_STRING_OUTPUT.with(std::cell::Cell::get)
+    && let Expr::FunctionCall { name, args } = expr
+    && name == "Span"
+    && (args.len() == 2 || args.len() == 3)
+  {
+    return args
+      .iter()
+      .map(|a| {
+        let s = fmt(a);
+        if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
+          format!("({s})")
+        } else {
+          s
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(" ;; ");
+  }
+
   if let Some(rewritten) = operator_call_node(expr) {
     return format_expr(&rewritten, form);
   }
@@ -13314,10 +13336,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // So does anything else that binds looser than `!`: ` !(a /. b)`.
         let needs_parens = needs_parens
           || printed_infix_precedence(operand).is_some_and(|p| p < 20);
-        if needs_parens {
-          format!(" !({inner})")
+        // The space is the printed 2D layout's; the text ToString makes
+        // has none: ToString[{1, !x}] is "{1, !x}".
+        let space = if IN_TO_STRING_OUTPUT.with(std::cell::Cell::get) {
+          ""
         } else {
-          format!(" !{inner}")
+          " "
+        };
+        if needs_parens {
+          format!("{space}!({inner})")
+        } else {
+          format!("{space}!{inner}")
         }
       } else {
         // Minus needs parens around Plus, Minus, Times, Divide and around
@@ -14224,7 +14253,9 @@ fn contains_string(expr: &Expr) -> bool {
 /// Named-character sequences (`\[Name]`) are preserved as-is, while
 /// other backslashes are doubled.
 pub(crate) fn escape_string_for_input_form(s: &str) -> String {
-  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  use crate::functions::string_ast::{
+    BOX_CLOSE, BOX_OPEN, BOX_OVER, BOX_SEP, BOX_START,
+  };
   let mut escaped = String::with_capacity(s.len() + 10);
   let chars: Vec<char> = s.chars().collect();
   let mut i = 0;
@@ -14235,6 +14266,7 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       c if c == BOX_OPEN => escaped.push_str("\\("),
       c if c == BOX_SEP => escaped.push_str("\\*"),
       c if c == BOX_CLOSE => escaped.push_str("\\)"),
+      c if c == BOX_OVER => escaped.push_str("\\&"),
       // Every backslash is escaped, `\[Name]` text included: the string
       // holding the six characters `\[Pi]` is `"\\[Pi]"`, as in
       // wolframscript (a named character itself is stored as its code point).
@@ -14243,6 +14275,10 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       '\n' => escaped.push_str("\\n"),
       '\t' => escaped.push_str("\\t"),
       '\r' => escaped.push_str("\\r"),
+      // Backspace and form feed are the other two control characters
+      // wolframscript spells out; the rest stay raw.
+      '\u{8}' => escaped.push_str("\\b"),
+      '\u{c}' => escaped.push_str("\\f"),
       '\u{F7CD}' => escaped.push_str("\\`"),
       c => escaped.push(c),
     }
@@ -14437,6 +14473,12 @@ thread_local! {
   /// apart.
   static IN_TO_STRING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
+  /// True while `ToString` renders its OutputForm text (not InputForm),
+  /// which drops the space the printed layout puts before a prefix `!`:
+  /// `ToString[{1, !x}]` is `"{1, !x}"`, `ToString[!x, InputForm]` is
+  /// `" !x"`.
+  static IN_TO_STRING_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
   /// True while rendering the inner expression of a `FullForm[…]` wrapper.
   /// FullForm reuses `expr_to_input_form` to render its argument, but Span must
   /// stay in head form there (`FullForm[1 ;; 4]` prints `FullForm[Span[1, 4]]`)
@@ -14472,6 +14514,19 @@ pub fn rendering_for_to_string<T>(render: impl FnOnce() -> T) -> T {
   }
   let _guard = Restore(IN_TO_STRING.with(std::cell::Cell::get));
   IN_TO_STRING.with(|f| f.set(true));
+  render()
+}
+
+/// Run `render` as ToString's OutputForm text (see `IN_TO_STRING_OUTPUT`).
+pub fn rendering_to_string_output<T>(render: impl FnOnce() -> T) -> T {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      IN_TO_STRING_OUTPUT.with(|f| f.set(self.0));
+    }
+  }
+  let _guard = Restore(IN_TO_STRING_OUTPUT.with(std::cell::Cell::get));
+  IN_TO_STRING_OUTPUT.with(|f| f.set(true));
   render()
 }
 
@@ -16249,6 +16304,15 @@ pub fn decode_string_literal(raw: &str) -> String {
           chars.next();
           result.push('\r');
         }
+        // Backspace and form feed, as InputForm writes them.
+        Some(&'b') => {
+          chars.next();
+          result.push('\u{8}');
+        }
+        Some(&'f') => {
+          chars.next();
+          result.push('\u{c}');
+        }
         Some(&'\\') => {
           chars.next();
           result.push('\\');
@@ -16282,6 +16346,11 @@ pub fn decode_string_literal(raw: &str) -> String {
         Some(&'*') => {
           chars.next();
           result.push(crate::functions::string_ast::BOX_SEP);
+        }
+        // `\&` sets the next box above the one before (an overscript).
+        Some(&'&') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_OVER);
         }
         Some(&'\n') => {
           chars.next();
@@ -18520,6 +18589,19 @@ fn derivative_shorthand(expr: &Expr) -> Option<String> {
 }
 
 /// Convert an expression to a 2D TextBox for OutputForm rendering.
+/// A number written `m*^e` set the way 2D OutputForm sets it: the mantissa,
+/// a space and `10`, with the exponent raised — `ToString[1.5*^6]` is
+/// `"      6\n1.5 10"`. Anything else stays on one line.
+fn scientific_textbox(text: &str) -> TextBox {
+  match text.split_once("*^") {
+    Some((mantissa, exponent)) => TextBox::superscript(
+      &TextBox::atom(&format!("{mantissa} 10")),
+      &TextBox::atom(exponent),
+    ),
+    None => TextBox::atom(text),
+  }
+}
+
 fn expr_to_textbox(expr: &Expr) -> TextBox {
   // Derivative[n][f][args] → f'[args], f''[args], ... in OutputForm.
   if let Some(short) = derivative_shorthand(expr) {
@@ -18528,10 +18610,10 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
   match expr {
     Expr::Integer(n) => TextBox::atom(&n.to_string()),
     Expr::BigInteger(n) => TextBox::atom(&n.to_string()),
-    Expr::Real(f) => TextBox::atom(&format_real(*f)),
+    Expr::Real(f) => scientific_textbox(&format_real(*f)),
     Expr::String(s) => TextBox::atom(s),
     Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
-    Expr::Raw(s) => TextBox::atom(s),
+    Expr::Raw(s) => scientific_textbox(s),
     // `HoldForm` is invisible in 2D OutputForm at any depth:
     // `ToString[OutputForm[Hold[HoldForm[1/3]]]]` sets `Hold[1/3]` as a
     // fraction without the wrapper.
