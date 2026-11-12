@@ -43173,6 +43173,63 @@ mod revolution_plot3d_part_extraction {
     assert!(svg.contains("<polygon"), "the surface must draw");
   }
 
+  /// `Show` takes the options of the first graphic it is given, so a
+  /// revolution surface shown with other graphics keeps its own `Boxed`
+  /// and `Axes`. Regression: the symbolic form carried no options, so the
+  /// shown surface came back boxed and with the default picture.
+  #[test]
+  fn show_inherits_the_plot_options() {
+    clear_state();
+    let inherited = export_svg(
+      "Show[RevolutionPlot3D[t, {t, 0, 1}, Boxed -> False, Axes -> False], \
+       Graphics3D[Point[{0, 0, 0.5}]]]",
+    );
+    let explicit = export_svg(
+      "Show[RevolutionPlot3D[t, {t, 0, 1}, Boxed -> False, Axes -> False], \
+       Graphics3D[Point[{0, 0, 0.5}]], Boxed -> False, Axes -> False]",
+    );
+    assert_eq!(inherited, explicit);
+    let boxed = export_svg(
+      "Show[RevolutionPlot3D[t, {t, 0, 1}, Axes -> False], \
+       Graphics3D[Point[{0, 0, 0.5}]]]",
+    );
+    assert_ne!(inherited, boxed);
+  }
+
+  /// The plot's range travels with it too: what lies outside it is cut
+  /// off when the plot is shown together with other graphics.
+  #[test]
+  fn show_inherits_the_plot_range() {
+    clear_state();
+    let svg = export_svg(
+      "Show[RevolutionPlot3D[t, {t, 0, 1}], \
+       Graphics3D[{Text[\"outside\", {0, 0, 5}], Text[\"inside\", {0, 0, 0.5}]}]]",
+    );
+    assert!(svg.contains("inside"), "{svg}");
+    assert!(!svg.contains("outside"), "{svg}");
+  }
+
+  /// The surface keeps its mesh and shading when shown with other
+  /// graphics, the way it looks on its own.
+  #[test]
+  fn show_keeps_the_mesh_and_shading() {
+    clear_state();
+    let structure = interpret(
+      "g = RevolutionPlot3D[t, {t, 0, 1}][[1]]; \
+       {Count[g, _Line, Infinity] > 0, Count[g, _Directive, Infinity] > 0}",
+    )
+    .unwrap();
+    assert_eq!(structure, "{True, True}");
+    assert_eq!(
+      interpret(
+        "Count[RevolutionPlot3D[t, {t, 0, 1}, Mesh -> None][[1]], _Line, \
+         Infinity]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   /// `ColorFunction -> Function[{x, y, z}, …]` colors each facet from its
   /// world coordinates (`ColorFunctionScaling -> False`), so a height split
   /// paints two distinct regions instead of the default height gradient.
