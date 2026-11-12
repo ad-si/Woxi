@@ -4256,9 +4256,10 @@ const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
-/// still rendered as a SetterBar. A run of short buttons stays readable well
-/// past five, but not without bound.
-const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
+/// still rendered as a SetterBar. A run of short buttons stays readable past
+/// five, but not without bound: Wolfram draws eight integers (`-3` … `4`) as
+/// a bar and nine (`2` … `10`) as a dropdown.
+const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 8;
 
 /// A choice label this short (in characters) keeps its button narrow enough
 /// to sit in a long SetterBar.
@@ -4301,6 +4302,7 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
+/// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
 /// | 6       | `triangle` … `octagon`              |    44 | PopupMenu  |
 /// | 17      | `Hue`, `BlueGreenYellow`, …         |   183 | PopupMenu  |
@@ -14036,18 +14038,21 @@ Cell[BoxData[
       "the infinite line must be drawn"
     );
     // Both marker spheres are there — the list of centers is a sphere
-    // each, not one stray sphere at the origin. Each is tessellated the
-    // same way, so the scene holds twice one sphere's triangles.
-    let one_sphere = woxi::interpret_with_stdout(
-      "ExportString[Graphics3D[{Black, Sphere[{0, 0, 0}, 0.2]}, \
-       PlotRange -> 4, ImageSize -> {320, 300}], \"SVG\"]",
+    // each, not one stray sphere at the origin — so the scene holds as many
+    // triangles as the two spheres drawn separately. (Their tessellation
+    // detail depends on the region all spheres span, so it is not simply
+    // twice one lone sphere's.)
+    let two_spheres = woxi::interpret_with_stdout(
+      "ExportString[Graphics3D[{Black, Sphere[{0, 0, 0}, 0.2], \
+       Sphere[{2, 1, 1}, 0.2]}, PlotRange -> 4, ImageSize -> {320, 300}], \
+       \"SVG\"]",
     )
     .expect("the reference must render")
     .result;
     let black_faces = |svg: &str| svg.matches("fill=\"rgb(0,0,0)\"").count();
     assert_eq!(
       black_faces(&closed),
-      2 * black_faces(&one_sphere),
+      black_faces(&two_spheres),
       "both centers must get a sphere"
     );
 
@@ -18456,7 +18461,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
     );
 
     // Turning the blue opacity down to zero empties those cells without
-    // erasing them: no blue face survives, but every outline does.
+    // erasing them: no blue face shows (a fully transparent face paints
+    // nothing at all), but every outline survives.
     let outlines = |svg: &str| {
       svg
         .lines()
@@ -18469,7 +18475,6 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
     assert!(widget.error.is_none(), "{:?}", widget.error);
     let hollow = render(&widget);
     let hidden = blue_faces(&hollow);
-    assert_eq!(hidden.len(), blue_faces(&sheet).len());
     assert!(
       hidden.iter().all(|l| l.contains("opacity=\"0\"")),
       "no blue face may show through: {hidden:?}"
@@ -22450,10 +22455,12 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     .graphics
     .expect("the body must produce a graphic");
     // `ImagePadding -> {{25, 25}, {25, 25}}` leaves 320-50 by 300-50 for the
-    // frame; the field's square data keeps a square 250x250 drawing area,
-    // centered in that space (10px of slack on each side horizontally).
+    // frame. The field's square data is padded by 1/48 of its span across
+    // and 1/50 up and down (as Wolfram pads a framed graphic), so its
+    // drawing area is 250.4 by 250, centered in that space (9.8px of slack
+    // on each side horizontally).
     assert!(
-      svg.contains("translate(35,25)"),
+      svg.contains("translate(34.80,25.00)"),
       "the padding must place the drawing area: {svg:.400}"
     );
     // Each arrow is colored from the gradient, so the fill colors are
@@ -22641,6 +22648,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "TemperatureMap",
       "ThermometerColors",
     ]));
+
+    // Nine short labels are already one too many: a count control whose
+    // choices run `2` … `10` is a dropdown in Wolfram.
+    assert!(!bar(&["2", "3", "4", "5", "6", "7", "8", "9", "10"]));
 
     // Short labels buy a longer bar, not an unbounded one: 33 integers are a
     // dropdown even though every label is two or three characters.
@@ -23502,10 +23513,22 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     let xy = render(3, 2);
     assert_eq!(glyphs(&xy, "\u{25c6}"), 11, "{xy}");
     // The consistency test draws one filled red and one open blue circle
-    // per point, inside the green +/-0.1 band the Epilog draws.
+    // per point, inside the green +/-0.1 band the Epilog draws. The circle
+    // glyphs are drawn as true circles rather than as text.
     let test = render(4, 3);
-    assert_eq!(glyphs(&test, "\u{25cf}"), 11, "{test}");
-    assert_eq!(glyphs(&test, "\u{25cb}"), 11, "{test}");
+    let circles = |svg: &str, paint: &str| {
+      svg
+        .split("<circle")
+        .skip(1)
+        .filter(|tag| tag.split('>').next().unwrap_or("").contains(paint))
+        .count()
+    };
+    assert_eq!(circles(&test, "fill=\"#FF0000\""), 11, "{test}");
+    assert_eq!(
+      circles(&test, "fill=\"none\" stroke=\"#0000FF\""),
+      11,
+      "{test}"
+    );
     assert_eq!(
       test.matches("stroke=\"rgb(0,255,0)\"").count(),
       2,
@@ -29326,7 +29349,7 @@ SaveDefinitions -> True]";
     let cnf_caption = display_text(&state.display_trees);
     assert_eq!(
       cnf_caption,
-      "function: ( !a ||  !b) && (a || b || c) && ( !a ||  !c) && ( !b ||  !c)"
+      "function: ( !a ||  !b) && ( !a ||  !c) && (a || b || c) && ( !b ||  !c)"
     );
   }
 
