@@ -3288,6 +3288,52 @@ mod graphics {
       );
     }
 
+    /// A lowercase-letter subscript (`max`, `x`, `ab`) in a picture label is
+    /// lowered with a `<tspan>` like any other script. It used to be folded
+    /// into Unicode letter subscripts (`ₘₐₓ`), which most fonts lack, so
+    /// each letter was drawn from a different fallback font at its own size.
+    /// Digit subscripts keep their well-supported Unicode glyphs.
+    #[test]
+    fn text_lowers_letter_subscripts_instead_of_unicode_glyphs() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{Subscript[\"θ\", max], \" = 1\"}], 24], \
+         {0, 0}], Text[Subscript[\"v\", \"x\"], {1, 0}], \
+         Text[Subscript[\"p\", 12], {2, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          ">θ<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan> = 1<"
+        ),
+        "the θ_max label: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">v<tspan baseline-shift=\"sub\" font-size=\"70%\">x</tspan><"
+        ),
+        "the v_x label: {svg}"
+      );
+      assert!(svg.contains(">p\u{2081}\u{2082}<"), "the p₁₂ label: {svg}");
+      for glyph in ['\u{2098}', '\u{2090}', '\u{2093}'] {
+        assert!(!svg.contains(glyph), "no Unicode letter subscript: {svg}");
+      }
+    }
+
+    /// The same lowering reaches a `Graphics3D` `Epilog` overlay, which is
+    /// drawn as a 2D picture over the scene.
+    #[test]
+    fn graphics3d_epilog_lowers_letter_subscripts() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], Epilog -> Inset[Text[Style[Row[\
+         {Subscript[\"θ\", max], \" = 2\"}], 24]], Scaled[{0.5, 0.5}]]]",
+      );
+      assert!(
+        svg.contains(
+          ">θ<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan> = 2<"
+        ),
+        "the θ_max label: {svg}"
+      );
+    }
+
     /// A product or power holding scripted symbols inside a `Text` is set on
     /// one line with the scripts shifted, not as the two-line OutputForm box
     /// that printed `Subscript[t, 1]` literally.

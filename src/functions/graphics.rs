@@ -39286,10 +39286,7 @@ fn marked_subscript_box_runs(
   let base = crate::notebook::render_boxes_text(&expr_to_string(base));
   let script = crate::notebook::render_boxes_text(&expr_to_string(script));
   let script = script.trim();
-  if script
-    .chars()
-    .all(|c| unicode_script_char(c, false).is_some())
-  {
+  if !picture_subscript_needs_lowering(script) {
     return None;
   }
   Some(vec![
@@ -39465,6 +39462,21 @@ fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
   out
 }
 
+/// Whether a subscript in a picture label must be lowered with a `<tspan>`
+/// rather than folded into Unicode subscript glyphs. Only the digit and
+/// operator subscripts (`₀`–`₉`, `₊`, `₌`, …) are reliably present in the
+/// fonts an SVG renders with; the letter subscripts Unicode defines (`ₐ`,
+/// `ₘ`, `ₓ`, `ᵦ`, …) are missing from most of them, so a label like
+/// `Subscript["θ", max]` came out with each letter drawn from a different
+/// fallback font at its own size. Wolfram typesets a real lowered, smaller
+/// script, so any subscript carrying a letter (or a character with no
+/// subscript glyph at all) is lowered instead.
+fn picture_subscript_needs_lowering(script: &str) -> bool {
+  script
+    .chars()
+    .any(|c| c.is_alphabetic() || unicode_script_char(c, false).is_none())
+}
+
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
 
@@ -39515,11 +39527,7 @@ fn script_runs(
         &unquote_box_string(a),
         false,
       ));
-      if mark
-        && text
-          .chars()
-          .any(|c| unicode_script_char(c, false).is_none())
-      {
+      if mark && picture_subscript_needs_lowering(&text) {
         format!("{SUBSCRIPT_START}{text}{SUBSCRIPT_END}")
       } else if superscript
         && marking
