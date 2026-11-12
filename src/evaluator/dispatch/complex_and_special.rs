@@ -7192,7 +7192,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       call(
         "TemplateBox",
-        vec![Expr::List(elements.into()), str_expr(template)],
+        vec![call("List", elements), str_expr(template)],
       )
     }
     // `Column[{a, b, …}]` stacks its items, each typeset on its own line
