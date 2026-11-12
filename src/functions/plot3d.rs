@@ -11014,6 +11014,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(
       |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
     );
+
+    // Points, and text anchored at a point, outside the box are not drawn
+    // (e.g. a label placed above a plot whose range `Show` inherits).
+    let slack = |(lo, hi): (f64, f64)| 1e-9 * (hi - lo).abs().max(1.0);
+    let inside_range = |p: &Point3D| {
+      [p.x, p.y, p.z]
+        .iter()
+        .zip(bounds.iter())
+        .all(|(&v, &(lo, hi))| {
+          let s = slack((lo, hi));
+          v >= lo - s && v <= hi + s
+        })
+    };
+    for prim in &mut prims {
+      if let Primitive3D::Point3DPrim { points, .. } = prim {
+        points.retain(|p| inside_range(p));
+      }
+    }
+    prims.retain(|p| match p {
+      Primitive3D::Point3DPrim { points, .. } => !points.is_empty(),
+      Primitive3D::Text3D { pos, .. } => inside_range(pos),
+      _ => true,
+    });
   }
 
   // The symbolic form carried on the rendered result so that Part can
@@ -14452,73 +14475,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
-  // `First[RevolutionPlot3D[…]]` is the surface itself, in world
-  // coordinates, so it can be re-drawn inside another `Graphics3D` (the
-  // way the notebooks that build solids out of plot slices do).  The
-  // rendering below works in normalized coordinates and is unaffected.
-  let surfaces: Vec<Expr> = grids
-    .iter()
-    .map(|grid| {
-      let mut index_of: Vec<Vec<Option<usize>>> =
-        vec![vec![None; n_theta + 1]; n_t + 1];
-      let mut point_exprs: Vec<Expr> = Vec::new();
-      for (i, row) in grid.iter().enumerate() {
-        for (j, cell) in row.iter().enumerate() {
-          if let Some(p) = cell {
-            index_of[i][j] = Some(point_exprs.len());
-            point_exprs.push(Expr::List(
-              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
-            ));
-          }
-        }
-      }
-      let mut quads: Vec<Expr> = Vec::new();
-      for i in 0..n_t {
-        for j in 0..n_theta {
-          if let (Some(a), Some(b), Some(c), Some(d)) = (
-            index_of[i][j],
-            index_of[i + 1][j],
-            index_of[i + 1][j + 1],
-            index_of[i][j + 1],
-          ) {
-            quads.push(Expr::List(
-              [a, b, c, d]
-                .iter()
-                .map(|&k| Expr::Integer(k as i128 + 1))
-                .collect::<Vec<_>>()
-                .into(),
-            ));
-          }
-        }
-      }
-      // The plot's own picture draws no outline on the sampling quads, so
-      // the extracted surface must not pick up the default polygon edge
-      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
-      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
-      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
-      // lifts it out of the plot keeps the translucency it asked for.
-      match &plot_style {
-        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
-        Some(other) => content.push(other.clone()),
-        None => {}
-      }
-      content.push(call1("Polygon", Expr::List(quads.into())));
-      call(
-        "GraphicsComplex",
-        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      )
-    })
-    .collect();
-  let structure = call1(
-    "Graphics3D",
-    if surfaces.len() == 1 {
-      surfaces.into_iter().next().unwrap()
-    } else {
-      Expr::List(surfaces.into())
-    },
-  );
-
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
     1.0
@@ -14743,6 +14699,178 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   }
+
+  // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
+  // `First[RevolutionPlot3D[…]]` is the surface itself, in world
+  // coordinates, so it can be re-drawn inside another `Graphics3D` (the
+  // way the notebooks that build solids out of plot slices do).  The
+  // rendering below works in normalized coordinates and is unaffected.
+  let surfaces: Vec<Expr> = grids
+    .iter()
+    .map(|grid| {
+      let mut index_of: Vec<Vec<Option<usize>>> =
+        vec![vec![None; n_theta + 1]; n_t + 1];
+      let mut point_exprs: Vec<Expr> = Vec::new();
+      for (i, row) in grid.iter().enumerate() {
+        for (j, cell) in row.iter().enumerate() {
+          if let Some(p) = cell {
+            index_of[i][j] = Some(point_exprs.len());
+            point_exprs.push(Expr::List(
+              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+            ));
+          }
+        }
+      }
+      let mut quads: Vec<Expr> = Vec::new();
+      for i in 0..n_t {
+        for j in 0..n_theta {
+          if let (Some(a), Some(b), Some(c), Some(d)) = (
+            index_of[i][j],
+            index_of[i + 1][j],
+            index_of[i + 1][j + 1],
+            index_of[i][j + 1],
+          ) {
+            quads.push(Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            ));
+          }
+        }
+      }
+      // The plot's own picture draws no outline on the sampling quads, so
+      // the extracted surface must not pick up the default polygon edge
+      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
+      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
+      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
+      // lifts it out of the plot keeps the translucency it asked for.
+      match &plot_style {
+        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
+        Some(other) => content.push(other.clone()),
+        None => {}
+      }
+      // The color and lighting the standalone render shades the surface
+      // with, so `Show[RevolutionPlot3D[…], g]` keeps the surface's look.
+      if !color_fn.is_set() {
+        content.extend(surface_style_directives(
+          0,
+          render_style.as_ref(),
+          false,
+          &scene,
+        ));
+      }
+      content.push(call1("Polygon", Expr::List(quads.into())));
+      // The mesh, every `MESH_STEP`-th line of constant t and of
+      // constant θ, as the standalone render rules it.
+      if mesh_mode == MeshMode::Default {
+        let mut segments: Vec<Expr> = Vec::new();
+        let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+          if let (Some(a), Some(b)) = (a, b) {
+            segments.push(Expr::List(
+              vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+                .into(),
+            ));
+          }
+        };
+        let rows = |n: usize| (0..=n).step_by(MESH_STEP).chain([n]);
+        let mut seen_rows = std::collections::BTreeSet::new();
+        for i in rows(n_t).filter(|i| seen_rows.insert(*i)) {
+          for j in 0..n_theta {
+            push_segment(index_of[i][j], index_of[i][j + 1]);
+          }
+        }
+        let mut seen_cols = std::collections::BTreeSet::new();
+        for j in rows(n_theta).filter(|j| seen_cols.insert(*j)) {
+          for i in 0..n_t {
+            push_segment(index_of[i][j], index_of[i + 1][j]);
+          }
+        }
+        if !segments.is_empty() {
+          content.push(Expr::List(
+            vec![
+              call1("Opacity", Expr::Real(0.63)),
+              call(
+                "RGBColor",
+                vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+              ),
+              call1("AbsoluteThickness", Expr::Real(0.5)),
+              call1("Line", Expr::List(segments.into())),
+            ]
+            .into(),
+          ));
+        }
+      }
+      call(
+        "GraphicsComplex",
+        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+      )
+    })
+    .collect();
+  // The plot's own options travel with the surface: `Show` takes the
+  // options of the first graphic it is given, so a revolution surface
+  // shown with other graphics keeps its box, axes, proportions and range
+  // instead of falling back to a bare `Graphics3D`'s defaults.
+  let mut structure_args = vec![if surfaces.len() == 1 {
+    surfaces.into_iter().next().unwrap()
+  } else {
+    Expr::List(surfaces.into())
+  }];
+  let option_name = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  // A height-only `PlotRange -> {zmin, zmax}` is spelled out below in full.
+  structure_args.extend(
+    args[opt_start..]
+      .iter()
+      .filter(|o| {
+        option_name(o).as_deref() != Some("PlotRange")
+          || matches!(o, Expr::Rule { replacement, .. }
+            if matches!(replacement.as_ref(), Expr::List(r) if r.len() == 3))
+      })
+      .cloned(),
+  );
+  let names = |opt: &str| {
+    structure_args
+      .iter()
+      .any(|o| option_name(o).as_deref() == Some(opt))
+  };
+  let real_pair =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  let mut defaults: Vec<Expr> = Vec::new();
+  if !names("Axes") {
+    defaults.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names("BoxRatios") {
+    defaults.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
+      ),
+    ));
+  }
+  if !names("PlotRange") {
+    defaults.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(
+        vec![
+          real_pair(x_range.0, x_range.1),
+          real_pair(y_range.0, y_range.1),
+          real_pair(z_axis_min, z_axis_max),
+        ]
+        .into(),
+      ),
+    ));
+  }
+  structure_args.extend(defaults);
+  let structure = call("Graphics3D", structure_args);
 
   let svg = generate_svg(
     &all_triangles,
