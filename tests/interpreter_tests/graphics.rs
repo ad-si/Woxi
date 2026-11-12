@@ -1716,6 +1716,49 @@ mod graphics {
       assert!(inset("{2, 2}").contains("translate(0.00,2.00)"));
     }
 
+    /// `Inset[Graphics[…], pos, {Center, Bottom}, {w, h}]` folds the
+    /// picture's primitives in with its bottom-center on `pos`. The symbolic
+    /// `opos` used to be ignored, centering the picture on `pos` instead, so
+    /// its lower half hung below the plot range and was clipped away.
+    #[test]
+    fn a_folded_graphics_inset_honors_a_symbolic_object_anchor() {
+      let inset = |opos: &str, plot_range: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[Graphics[{{Rectangle[{{0, 0}}, {{10, 20}}]}}{plot_range}], \
+           {{5, 0}}, {opos}, {{10, 20}}]}}, PlotRange -> {{{{0, 40}}, {{0, 20}}}}, \
+           ImageSize -> 400]"
+        ))
+      };
+      // The rectangle fills the whole height of the plot.
+      for plot_range in ["", ", PlotRange -> {{0, 10}, {0, 20}}"] {
+        let svg = inset("{Center, Bottom}", plot_range);
+        assert!(
+          svg.contains(
+            "<rect x=\"0.00\" y=\"0.00\" width=\"99.75\" height=\"199.50\""
+          ),
+          "bottom-center should sit on the anchor ({plot_range}):\n{svg}"
+        );
+      }
+      // `{Center, Top}` hangs it below the anchor (out of the plot range).
+      let svg = inset("{Center, Top}", "");
+      assert!(
+        svg.contains("y=\"199.50\" width=\"99.75\" height=\"199.50\""),
+        "top-center should sit on the anchor:\n{svg}"
+      );
+      // An explicit `PlotRange` is the frame the `size` box shows and `opos`
+      // is measured across: the range, twice the rectangle's height, shrinks
+      // to fit the box, and its bottom (below the rectangle) lands on the
+      // anchor, so the rectangle fills the upper half.
+      let svg =
+        inset("{Center, Bottom}", ", PlotRange -> {{0, 10}, {-20, 20}}");
+      assert!(
+        svg.contains(
+          "<rect x=\"24.94\" y=\"0.00\" width=\"49.88\" height=\"99.75\""
+        ),
+        "the explicit plot range should frame the inset:\n{svg}"
+      );
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
@@ -7000,6 +7043,36 @@ mod plot3d {
       assert!(
         svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
         "Graphics3D SVG missing stacked second PlotLabel line:\n{svg}"
+      );
+    }
+
+    /// `PlotLabel -> Graphics[…]` draws the picture above the graphic at its
+    /// own size; it used to be printed as `Graphics[…]` source text.
+    #[test]
+    fn plot_label_graphic_is_drawn_as_a_picture() {
+      for label in [
+        "Graphics[{Red, Rectangle[]}, ImageSize -> 30]",
+        "Graphics[Raster[{{0, 1}, {1, 0}}], ImageSize -> {41, 40}]",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[Disk[], PlotLabel -> {label}, ImageSize -> 200]"
+        ));
+        assert!(
+          !svg.contains("Graphics[") && !svg.contains("Rectangle["),
+          "the label must not leak as source text:\n{svg}"
+        );
+        assert!(
+          svg.matches("<svg").count() >= 2,
+          "the label should be embedded as its own picture:\n{svg}"
+        );
+      }
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Graphics[{Red, Rectangle[]}, ImageSize -> 30], \
+         ImageSize -> 200]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(255,0,0)\""),
+        "the label picture keeps its colors:\n{svg}"
       );
     }
 

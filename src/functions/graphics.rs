@@ -1444,6 +1444,23 @@ pub(crate) fn inset_object_fraction(
   Some(((ox - x0) / (x1 - x0), 1.0 - (oy - y0) / (y1 - y0)))
 }
 
+/// The explicit `PlotRange` of a two-dimensional picture given as an inset
+/// object, as `((x_min, x_max), (y_min, y_max))`; `None` when the picture
+/// leaves its range to its primitives.
+fn inset_object_frame(object: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  let object = peel_style_wrapper(object);
+  let explicit = graphics_options(object).is_some_and(|opts| {
+    opts
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some((n, _)) if n == "PlotRange"))
+  });
+  if !explicit {
+    return None;
+  }
+  let ((x0, x1), (y0, y1)) = absolute_plot_range(object)?;
+  (x1 > x0 && y1 > y0).then_some(((x0, x1), (y0, y1)))
+}
+
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
 /// the point of the plot range it names.
 fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
@@ -7070,11 +7087,12 @@ fn inset_primitives(
   if bb.is_empty() {
     return None;
   }
-  let (cx, cy) = (
-    f64::midpoint(bb.x_min, bb.x_max),
-    f64::midpoint(bb.y_min, bb.y_max),
-  );
-  let (w, h) = (bb.x_max - bb.x_min, bb.y_max - bb.y_min);
+  // The object's frame: its explicit `PlotRange` (which is what a `size`
+  // box shows), else the extent of its primitives.
+  let ((fx0, fx1), (fy0, fy1)) = inset_object_frame(&args[0])
+    .unwrap_or(((bb.x_min, bb.x_max), (bb.y_min, bb.y_max)));
+  let (cx, cy) = (f64::midpoint(fx0, fx1), f64::midpoint(fy0, fy1));
+  let (w, h) = (fx1 - fx0, fy1 - fy0);
 
   // `size` may be `{w, h}`, a single number (both sides), or Automatic.
   let (target_w, target_h) = parse_inset_target_size(args);
@@ -7112,8 +7130,14 @@ fn inset_primitives(
 
   let pos = args.get(1).and_then(expr_to_point).unwrap_or((0.0, 0.0));
   // `opos` names the point of the object that lands on `pos`, in the
-  // object's own coordinates (Automatic = its center).
-  let (ox, oy) = args.get(2).and_then(expr_to_point).unwrap_or((cx, cy));
+  // object's own coordinates (Automatic = its center). A symbolic corner
+  // (`{Center, Bottom}`) or a `Scaled` fraction is measured across the
+  // object's frame: its explicit `PlotRange`, else its primitives' extent.
+  let (ox, oy) = match args.get(2).and_then(expr_to_anchor) {
+    Some((fx, fy, true)) => (fx0 + fx * w, fy0 + fy * h),
+    Some((x, y, false)) => (x, y),
+    None => (cx, cy),
+  };
 
   let placed = inner
     .iter()
@@ -13338,9 +13362,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
-            other if plot_label_layout_svg(other).is_some() => {
-              let (svg, w, h) =
-                plot_label_layout_svg(other).expect("checked by the guard");
+            other
+              if plot_label_graphic_svg(other)
+                .or_else(|| plot_label_layout_svg(other))
+                .is_some() =>
+            {
+              let (svg, w, h) = plot_label_graphic_svg(other)
+                .or_else(|| plot_label_layout_svg(other))
+                .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
               while block_height(lines, TITLE_FONT) < h {
@@ -19425,6 +19454,39 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
     Some(svg) => format!("{STYLED_LABEL_MARKER}{svg}"),
     None => traditional_label(expr),
   }
+}
+
+/// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or
+/// an `Image`): drawn at its own natural size above the graphic instead of
+/// being printed as `Graphics[…]` source text.
+fn plot_label_graphic_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  let svg = match peel_style_wrapper(expr) {
+    Expr::Graphics { svg, is_3d, .. } => {
+      if *is_3d {
+        strip_default_background_plate(svg)
+      } else {
+        svg.clone()
+      }
+    }
+    image @ Expr::Image { .. } => crate::evaluator::expr_to_svg(image),
+    // The option value is held, so it can still be the symbolic call.
+    call @ Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      let svg = crate::evaluator::expr_to_svg(call);
+      if name == "Graphics3D" {
+        strip_default_background_plate(&svg)
+      } else {
+        svg
+      }
+    }
+    _ => return None,
+  };
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, h) = svg_natural_size(&svg)?;
+  (w > 0.0 && h > 0.0).then_some((svg, w, h))
 }
 
 /// A `PlotLabel` that sets a two-dimensional layout inline — a matrix from
