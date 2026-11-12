@@ -2621,28 +2621,22 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Prime requires an exact positive integer index. wolframscript rejects
   // every Real argument with Prime::intpp, even an integer-valued one like
   // 3.0, so do NOT coerce Reals to integers here.
-  match expr_to_i128(&args[0]) {
-    Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n))),
-    Some(_) => {
-      // Concrete non-positive integer: emit message like wolframscript
-      let arg_str = expr_to_string(&args[0]);
-      crate::emit_message(&format!(
-        "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
-      ));
-      Ok(unevaluated)
-    }
-    None => {
-      // Concrete non-integer numeric (e.g. 1.5): emit message like wolframscript
-      // Symbolic arguments return unevaluated silently
-      if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
-        let arg_str = expr_to_string(&args[0]);
-        crate::emit_message(&format!(
-          "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
-        ));
-      }
-      Ok(unevaluated)
-    }
+  if let Some(n) = expr_to_i128(&args[0])
+    && n >= 1
+  {
+    return Ok(Expr::Integer(nth_prime(n)));
   }
+  // Every other number (non-positive integer, rational, real, complex) is
+  // rejected with Prime::intpp; non-numbers such as Pi, Sqrt[2] or x stay
+  // unevaluated silently.
+  if crate::functions::predicate_ast::is_numeric_expr(&args[0]) {
+    crate::emit_message(&crate::syntax::message_with_expr_2d(
+      "Prime::intpp: Positive integer argument expected in ",
+      &unevaluated,
+      ".",
+    ));
+  }
+  Ok(unevaluated)
 }
 
 /// Fibonacci[n] - Returns the nth Fibonacci number.
@@ -4985,6 +4979,22 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       divide_ast(&[numer, denom])
     }
     _ => {
+      // A non-real numeric n with a negative integer k puts the pole of
+      // Gamma[k+1] in the denominator while Gamma[n+1] stays finite, so the
+      // coefficient is exactly 0 (Binomial[3 + 2 I, -1] == 0).
+      let k_negative_integer = match &args[1] {
+        Expr::Real(k) => *k < 0.0 && k.fract() == 0.0,
+        other => expr_to_i128(other).is_some_and(|k| k < 0),
+      };
+      if k_negative_integer
+        && crate::functions::predicate_ast::is_numeric_q(&args[0])
+        && crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(
+          &args[0],
+        )
+        .is_some_and(|(_, im)| im != 0.0)
+      {
+        return Ok(Expr::Integer(0));
+      }
       // Try Real evaluation using Gamma function
       let n_f64 = match &args[0] {
         Expr::Real(f) => Some(*f),
@@ -5325,34 +5335,33 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(unevaluated("PowerMod", args));
       }
-      if exp < BigInt::from(0) {
-        // Negative exponent: need modular inverse
-        // Try i128 path for mod_inverse
-        use num_traits::ToPrimitive;
-        match (base.to_i128(), modulus.to_i128()) {
-          (Some(b), Some(m)) => {
-            if let Some(inv) = mod_inverse(b, m) {
-              let pos_exp = (-exp).to_u128().unwrap_or(0);
-              let result =
-                mod_pow_unsigned(inv as u128, pos_exp, m.unsigned_abs());
-              Ok(Expr::Integer(result as i128))
-            } else {
-              crate::emit_message(&format!(
-                "PowerMod::ninv: {} is not invertible modulo {}.",
-                expr_to_string(&args[0]),
-                expr_to_string(&args[2])
-              ));
-              Ok(unevaluated("PowerMod", args))
-            }
-          }
-          _ => Ok(unevaluated("PowerMod", args)),
+      use num_traits::{One, Signed};
+      // b^0 is 1 for every modulus, reduced into the modulus' range, so
+      // PowerMod[3, 0, -7] is Mod[1, -7] == -6.
+      if exp.is_zero() {
+        return Ok(bigint_to_expr(
+          (BigInt::one() % &modulus + &modulus) % &modulus,
+        ));
+      }
+      // Any other power with a negative modulus stays unevaluated.
+      if modulus.is_negative() {
+        return Ok(unevaluated("PowerMod", args));
+      }
+      let reduced = (base % &modulus + &modulus) % &modulus;
+      let base = if exp.is_negative() {
+        if let Some(inv) = reduced.modinv(&modulus) {
+          inv
+        } else {
+          // The message names the base already reduced modulo m.
+          crate::emit_message(&format!(
+            "PowerMod::ninv: {reduced} is not invertible modulo {modulus}."
+          ));
+          return Ok(unevaluated("PowerMod", args));
         }
       } else {
-        let result = base.modpow(&exp, &modulus);
-        // Ensure non-negative result
-        let result = ((result % &modulus) + &modulus) % &modulus;
-        Ok(bigint_to_expr(result))
-      }
+        reduced
+      };
+      Ok(bigint_to_expr(base.modpow(&exp.abs(), &modulus)))
     }
     _ => Ok(unevaluated("PowerMod", args)),
   }
@@ -5457,6 +5466,19 @@ fn power_mod_root_ast(
     ));
     return unevaluated();
   }
+  let no_root = || {
+    crate::emit_message(&format!(
+      "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
+      n,
+      expr_to_string(&args[0]),
+      expr_to_string(&args[2])
+    ));
+    unevaluated()
+  };
+  // wolframscript finds no root for any negative modulus.
+  if m.sign() == num_bigint::Sign::Minus {
+    return no_root();
+  }
   let m_abs = m.magnitude().clone();
   let Some(m_u) = m_abs.to_u128() else {
     return unevaluated();
@@ -5495,15 +5517,7 @@ fn power_mod_root_ast(
   match smallest {
     Some(x) if n == 2 => Ok(Expr::Integer(x as i128)),
     Some(_) => unevaluated(),
-    None => {
-      crate::emit_message(&format!(
-        "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
-        n,
-        expr_to_string(&args[0]),
-        expr_to_string(&args[2])
-      ));
-      unevaluated()
-    }
+    None => no_root(),
   }
 }
 
