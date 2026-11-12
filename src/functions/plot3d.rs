@@ -16055,6 +16055,13 @@ fn contour3d_render(
   let mut mesh_all = false;
   // `Mesh -> None` drops the default mesh (the sampling grid's planes).
   let mut mesh_none = false;
+  // `Mesh -> n` (or one count / list of values per axis): the surfaces are
+  // cut by planes at those x, y and z values instead of the grid's.
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  // `MeshStyle -> s` or `{s1, s2, s3}` (cycled over the x, y and z mesh
+  // lines); `MeshStyle -> None` hides the mesh.
+  let mut mesh_styles: Vec<Expr> = Vec::new();
+  let mut mesh_style_none = false;
 
   for opt in opts {
     if let Expr::Rule {
@@ -16112,6 +16119,24 @@ fn contour3d_render(
             replacement.as_ref(),
             Expr::Identifier(n) if n == "None" || n == "False"
           );
+          mesh_levels = if mesh_all || mesh_none {
+            None
+          } else {
+            parse_mesh_levels(replacement)
+          };
+        }
+        Expr::Identifier(name) if name == "MeshStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_style_none =
+            matches!(&value, Expr::Identifier(n) if n == "None");
+          let automatic =
+            matches!(&value, Expr::Identifier(n) if n == "Automatic");
+          mesh_styles = if mesh_style_none || automatic {
+            Vec::new()
+          } else {
+            plot_style_items(&value, 3)
+          };
         }
         Expr::Identifier(name) if name == "Contours" => {
           let resolved = evaluate_expr_to_expr(replacement)
@@ -16591,26 +16616,69 @@ fn contour3d_render(
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
-  // The default mesh: where the planes of the initial sampling grid cut
-  // the surfaces (those on the box faces trace the surfaces' rims).
+  // The mesh: where planes of constant x, y and z cut the surfaces. By
+  // default those are the planes of the initial sampling grid (those on
+  // the box faces trace the surfaces' rims); `Mesh -> n` puts `n` planes
+  // per axis evenly across the surfaces' extent (its ends excluded), and
+  // explicit values put them there.
   let mut mesh_lines: Vec<MeshLine> = Vec::new();
-  if !mesh_none && !mesh_all {
+  // The same segments in plot coordinates, per axis, for the structure.
+  let mut mesh_world: [Vec<[[f64; 3]; 2]>; 3] = Default::default();
+  if !mesh_none && !mesh_all && !mesh_style_none {
     let to_norm = |p: [f64; 3]| Point3D {
       x: nx(p[0]),
       y: ny(p[1]),
       z: nz(p[2]),
     };
-    let planes: [Vec<f64>; 3] = [
-      (0..=cells[0]).map(|i| x_min + i as f64 * x_step).collect(),
-      (0..=cells[1]).map(|i| y_min + i as f64 * y_step).collect(),
-      (0..=cells[2]).map(|i| z_min + i as f64 * z_step).collect(),
-    ];
+    let planes: [Vec<f64>; 3] = std::array::from_fn(|axis| {
+      let (lo, step) =
+        [(x_min, x_step), (y_min, y_step), (z_min, z_step)][axis];
+      let Some(levels) = &mesh_levels else {
+        return (0..=cells[axis]).map(|i| lo + i as f64 * step).collect();
+      };
+      let spec = if levels.len() == 1 {
+        levels.first()
+      } else {
+        levels.get(axis)
+      };
+      match spec {
+        Some(MeshLevels::Count(n)) => {
+          let (lo, hi) = world_triangles
+            .iter()
+            .flat_map(|(t, _)| t.iter())
+            .map(|p| [p.x, p.y, p.z][axis])
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+              (lo.min(v), hi.max(v))
+            });
+          if lo < hi {
+            (1..=*n)
+              .map(|k| lo + (hi - lo) * k as f64 / (*n + 1) as f64)
+              .collect()
+          } else {
+            Vec::new()
+          }
+        }
+        Some(MeshLevels::Values(values)) => values.clone(),
+        None => Vec::new(),
+      }
+    });
+    let axis_styles: [Option<StyleState3D>; 3] = std::array::from_fn(|axis| {
+      (!mesh_styles.is_empty()).then(|| {
+        let mut style = StyleState3D::default();
+        apply_3d_directive(&mesh_styles[axis % mesh_styles.len()], &mut style);
+        style
+      })
+    });
     for (tri, _) in &world_triangles {
       let t = tri.map(|p| [p.x, p.y, p.z]);
       for (axis, values) in planes.iter().enumerate() {
+        if values.is_empty() {
+          continue;
+        }
         let lo = t.iter().map(|p| p[axis]).fold(f64::INFINITY, f64::min);
         let hi = t.iter().map(|p| p[axis]).fold(f64::NEG_INFINITY, f64::max);
-        let tol = 1e-9 * (values.last().unwrap_or(&1.0) - values[0]).abs();
+        let span = [x_max - x_min, y_max - y_min, z_max - z_min][axis];
+        let tol = 1e-9 * span.abs();
         for &c in values.iter().filter(|&&c| c >= lo - tol && c <= hi + tol) {
           // The corners on the plane, and where edges cross it.
           let mut ends: Vec<[f64; 3]> = Vec::new();
@@ -16628,11 +16696,18 @@ fn contour3d_render(
             a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() <= tol)
           });
           if ends.len() == 2 {
-            mesh_lines.push(mesh_segment(
-              to_norm(ends[0]),
-              to_norm(ends[1]),
-              &camera,
-            ));
+            let (p0, p1) = (to_norm(ends[0]), to_norm(ends[1]));
+            mesh_lines.push(match &axis_styles[axis] {
+              Some(style) => styled_mesh_segment(
+                p0,
+                p1,
+                &camera,
+                Some(style),
+                ("#000000a0", 0.5),
+              ),
+              None => mesh_segment(p0, p1, &camera),
+            });
+            mesh_world[axis].push([ends[0], ends[1]]);
           }
         }
       }
@@ -16676,6 +16751,28 @@ fn contour3d_render(
     // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
     if !mesh_all {
       content.insert(0, call0("EdgeForm"));
+    }
+    // The mesh lines, one group per axis in its `MeshStyle`, so that the
+    // plot keeps them when drawn by `Show` or `Graphics3D`. They are given
+    // as explicit coordinates, which the complex's indices leave alone.
+    for (axis, segments) in mesh_world.iter().enumerate() {
+      if segments.is_empty() {
+        continue;
+      }
+      let point = |p: &[f64; 3]| Expr::List(p.map(Expr::Real).to_vec().into());
+      let lines: Vec<Expr> = segments
+        .iter()
+        .map(|[a, b]| Expr::List(vec![point(a), point(b)].into()))
+        .collect();
+      let mut group = vec![call1("AbsoluteThickness", Expr::Real(0.5))];
+      if mesh_styles.is_empty() {
+        group.push(call1("Opacity", Expr::Real(0.63)));
+        group.push(call1("GrayLevel", Expr::Integer(0)));
+      } else {
+        group.push(mesh_styles[axis % mesh_styles.len()].clone());
+      }
+      group.push(call1("Line", Expr::List(lines.into())));
+      content.push(Expr::List(group.into()));
     }
     let complex = call(
       "GraphicsComplex",

@@ -30556,6 +30556,71 @@ mod contour_plot_3d {
   }
 
   #[test]
+  fn mesh_count_cuts_each_axis_that_many_times() {
+    // `Mesh -> n` cuts the surface with n planes per axis, evenly spaced
+    // across its extent, and the lines are kept in the GraphicsComplex.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = First[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, Mesh -> 3, PlotPoints -> 12]]; \
+         lines = Cases[c[[2]], Line[l_] :> l, Infinity]; \
+         xs = Union[Round[Cases[lines[[1]], {x_, _, _} :> x, {2}], 0.01]]; \
+         {Head[c], Length[lines], Length[xs], xs == -Reverse[xs]}"
+      )
+      .unwrap(),
+      "{GraphicsComplex, 3, 3, True}"
+    );
+  }
+
+  #[test]
+  fn mesh_style_list_is_cycled_over_the_axes() {
+    // `MeshStyle -> {s1, s2}` styles the x lines s1, the y lines s2 and
+    // the z lines s1 again.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "c = First[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, Mesh -> 2, MeshStyle -> {Blue, Red}, \
+         PlotPoints -> 10]]; \
+         Cases[c[[2]], {___, s_, Line[_]} :> s, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[0, 0, 1], RGBColor[1, 0, 0], RGBColor[0, 0, 1]}"
+    );
+    let svg = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Mesh -> 2, MeshStyle -> {Blue, Red}, PlotPoints -> 10]",
+    );
+    assert!(svg.contains("<line") && svg.contains("stroke=\"rgb(0,0,255)\""));
+    assert!(svg.contains("stroke=\"rgb(255,0,0)\""));
+  }
+
+  #[test]
+  fn mesh_style_none_hides_the_mesh() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Length[Cases[First[ContourPlot3D[x^2 + y^2 + z^2 == 1, \
+         {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> 4, MeshStyle -> None, \
+         PlotPoints -> 8]], _Line, Infinity]]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn shown_contour_surface_keeps_its_mesh() {
+    // `Show` draws the plot from its structure, which must carry the mesh.
+    let svg = export_svg(
+      "Show[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -1, 1}, {y, -1, 1}, \
+       {z, -1, 1}, Mesh -> 3, MeshStyle -> Red, PlotPoints -> 10]]",
+    );
+    assert!(svg.contains("rgb(255,0,0)"), "the mesh must be drawn");
+  }
+
+  #[test]
   fn extracted_surface_has_no_polygon_outline() {
     // `plot[[1]]` re-rendered in a `Graphics3D` must not outline every
     // surface triangle with the default polygon edge.
