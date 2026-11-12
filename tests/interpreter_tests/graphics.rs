@@ -33529,6 +33529,49 @@ mod manipulate {
     }
   }
 
+  // A hidden point driven by an in-body `LocatorPane[Dynamic[p, cb], …]` is
+  // promoted to a 2D control; corner bounds referencing another control
+  // (`{-n, -n}`, `{n, 0}`) resolve against that control's initial value.
+  #[test]
+  fn spec_promoted_hidden_locator_bounds_use_other_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[LocatorPane[Dynamic[p, (p = Round[#]) &], \
+       Graphics[Point[p]]], {{n, 5}, 1, 10, 1}, \
+       {{p, {1, -2}}, {-n, -n}, {n, 0}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let slider = spec
+      .controls
+      .iter()
+      .find(|c| matches!(c, ManipulateControl::Slider2D { .. }))
+      .expect("promoted 2D control");
+    match slider {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        write_callback,
+        ..
+      } => {
+        assert_eq!(name, "p");
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-5.0, 5.0, -5.0, 0.0));
+        assert_eq!((*x_initial, *y_initial), (1.0, -2.0));
+        assert!(
+          write_callback
+            .as_deref()
+            .is_some_and(|cb| cb.contains("Round")),
+          "got {write_callback:?}"
+        );
+      }
+      _ => unreachable!(),
+    }
+  }
+
   // A slider whose range runs along the imaginary axis is a control over the
   // imaginary coefficient; the variable binds the complex number.
   #[test]

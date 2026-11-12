@@ -34166,12 +34166,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .cloned()
             .chain(std::iter::once(id_expr("Locator")))
             .collect();
+          // Corner bounds may reference other controls (`{-n, -n}` with a
+          // slider `n`), so resolve them against the initial control values
+          // like every other spec rather than in an empty scope.
+          let promoted = Expr::List(promoted.into());
           if let Some(ParsedControl::Visible {
             control: mut c,
             enabled: enabled2,
             ..
-          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
-          {
+          }) = crate::with_scoped_globals(&initial_bindings, || {
+            parse_manipulate_control(&promoted, &sibling_names)
+          }) {
             if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
               write_callback.clone_from(callback);
             }
