@@ -2763,10 +2763,12 @@ mod tests {
     }
 
     #[test]
-    fn spherical_region_scales_by_the_enclosing_sphere() {
-      // `SphericalRegion -> True` fits the sphere that encloses the
-      // contents instead of their projected outline. A sphere is its own
-      // enclosing sphere, so it keeps its size either way.
+    fn spherical_region_scales_by_the_bounding_box_sphere() {
+      // `SphericalRegion -> True` fits the sphere drawn around the 3D
+      // bounding box, not the contents' projected outline. A unit sphere's
+      // box is the cube [-1, 1]³, whose circumsphere is √3 times as wide,
+      // so the ball shrinks (a little less than √3: perspective widens the
+      // view just enough for the circumsphere to fit).
       let with = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
          Boxed -> False, ImageSize -> 200]",
@@ -2774,10 +2776,10 @@ mod tests {
       let without = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], Boxed -> False, ImageSize -> 200]",
       ));
-      // (The tessellated outline sits a little inside the true sphere.)
+      let ratio = with.0 / without.0;
       assert!(
-        (with.0 - without.0).abs() < 2.0,
-        "a sphere must not shrink: {with:?} vs {without:?}"
+        (0.5..0.6).contains(&ratio),
+        "expected about a 1/√3 shrink, got {ratio}: {with:?} vs {without:?}"
       );
 
       // A flat square, seen face on, fills the frame without the option
@@ -2790,9 +2792,43 @@ mod tests {
       let without = ink_extent(&svg_of(&format!("{flat}]")));
       let ratio = with.0 / without.0;
       assert!(
-        (ratio - 1.0 / 2f64.sqrt()).abs() < 0.02,
+        (ratio - 1.0 / 2f64.sqrt()).abs() < 0.03,
         "expected a 1/√2 shrink, got {ratio}: {with:?} vs {without:?}"
       );
+    }
+
+    #[test]
+    fn spherical_region_sphere_surrounds_the_box_not_the_contents() {
+      // Two disks a distance apart: the contents' own enclosing sphere is
+      // smaller than the one around their bounding box (it misses the
+      // box's corners), and Wolfram frames by the latter. Wolfram draws
+      // a pair of unit circles this far apart about 55% as wide as a
+      // 400×400 picture.
+      let rings = "Graphics3D[{Polygon[Table[{Cos[t], Sin[t], 0}, \
+                   {t, 0, 2 Pi, Pi/50}]], Polygon[Table[{Cos[t], Sin[t], 2}, \
+                   {t, 0, 2 Pi, Pi/50}]]}, Boxed -> False, \
+                   SphericalRegion -> True, ImageSize -> {400, 400}]";
+      let (w, _) = ink_extent(&svg_of(rings));
+      assert!(
+        (200.0..240.0).contains(&w),
+        "rings should span about 55% of the width, got {w}"
+      );
+    }
+
+    #[test]
+    fn relative_thickness_follows_the_3d_image_width() {
+      // `Thickness[t]` is a fraction of the picture's width, so at
+      // `ImageSize -> 400` a `Thickness[0.015]` line is 6 pixels wide.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.015], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> 400]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.015], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> 200]",
+      );
+      assert!(svg.contains("stroke-width=\"3.0\""), "{svg}");
     }
 
     #[test]
