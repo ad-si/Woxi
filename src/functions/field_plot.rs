@@ -3332,7 +3332,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args,
     (x_min, x_max),
     (y_min, y_max),
-    false,
+    true,
   );
 
   // Use plotters for axes
@@ -3733,12 +3733,28 @@ fn contour_plot_equations(
     source_options.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   }
   // `Graphics[prims, {opts}]`, as Wolfram's: `g[[2]]` is the option list
-  // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot).
+  // (`Graphics[g[[1]], g[[2]]]` rebuilds a plot). Like the scalar form, it
+  // carries the sampled domain as its `PlotRange`, so the frame spans the
+  // whole `{x, …}`/`{y, …}` region rather than only the drawn curves.
+  let mut structure_options: Vec<Expr> = source_options
+    .iter()
+    .filter(|o| {
+      crate::functions::graphics::option_name_value(o).map(|(name, _)| name)
+        != Some("PlotRange")
+    })
+    .cloned()
+    .collect();
+  let pair =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  structure_options.push(rule_expr(
+    id_expr("PlotRange"),
+    Expr::List(vec![pair(x_min, x_max), pair(y_min, y_max)].into()),
+  ));
   let structure = call(
     "Graphics",
     vec![
       Expr::List(vec![contour_graphics_complex(&structure_items)].into()),
-      Expr::List(source_options.clone().into()),
+      Expr::List(structure_options.into()),
     ],
   );
   let source = crate::syntax::PlotSource {

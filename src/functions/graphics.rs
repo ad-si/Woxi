@@ -47241,7 +47241,13 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
     {
       let mut x_range = None;
       let mut y_range = None;
-      for opt in &args[1..] {
+      // `Graphics[prims, opt -> v, …]` and `Graphics[prims, {opt -> v, …}]`
+      // are the same graphic.
+      let opts = args[1..].iter().flat_map(|a| match a {
+        Expr::List(items) => items.iter().collect::<Vec<_>>(),
+        other => vec![other],
+      });
+      for opt in opts {
         if let Expr::Rule {
           pattern,
           replacement,
