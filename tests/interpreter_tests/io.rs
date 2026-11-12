@@ -11936,3 +11936,142 @@ mod input_form_escapes {
     );
   }
 }
+
+mod stream_reads {
+  use super::*;
+
+  fn read(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ToString[{code}, InputForm]")).unwrap()
+  }
+
+  // ReadList on an open stream is Read repeated from where the stream
+  // stands, and leaves it at the end.
+  #[test]
+  fn read_list_reads_on_from_the_stream_position() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"-3.5\\nc22\"]; \
+          {ReadList[s, Character, 3], ReadList[s, Character, 3], \
+           ReadList[s, Word], ReadList[s, Word], StreamPosition[s]})"
+      ),
+      "{{\"-\", \"3\", \".\"}, {\"5\", \"\\n\", \"c\"}, {\"22\"}, {}, 8}"
+    );
+  }
+
+  #[test]
+  fn read_list_stops_at_the_first_failure() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"2,2c,-3.5\"]; {ReadList[s, Number], StreamPosition[s]})"
+      ),
+      "{{2, $Failed}, 1}"
+    );
+    assert_eq!(
+      read("ReadList[StringToStream[\"1\\n;\\n2\"]]"),
+      "{1, $Failed}"
+    );
+  }
+
+  #[test]
+  fn read_byte_reads_raw_bytes() {
+    assert_eq!(
+      read("(s = StringToStream[\" -3\"]; Table[Read[s, Byte], 4])"),
+      "{32, 45, 51, EndOfFile}"
+    );
+  }
+
+  #[test]
+  fn a_list_of_types_at_the_end_is_end_of_file() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"x y\\r2\\n\"]; Table[Read[s, {Word, Word}], 3])"
+      ),
+      "{{\"x\", \"y\"}, {\"2\", EndOfFile}, EndOfFile}"
+    );
+  }
+
+  #[test]
+  fn a_list_of_types_fails_as_a_whole() {
+    assert_eq!(
+      read(
+        "{ReadList[StringToStream[\"ax b\"], {Word, Number}], \
+          ReadList[StringToStream[\"ax\"], {Word, Number}]}"
+      ),
+      "{{$Failed}, {{\"ax\", EndOfFile}}}"
+    );
+  }
+
+  #[test]
+  fn a_record_read_leaves_its_separator() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\",\\nc \\nc\\r\\r\\r\"]; {Table[Read[s, Record], 3], StreamPosition[s]})"
+      ),
+      "{{\",\", \"c \", \"c\"}, 6}"
+    );
+  }
+
+  #[test]
+  fn null_records_and_words_through_read() {
+    assert_eq!(
+      read(
+        "(s = StringToStream[\"a\\nb\\n\\nc\"]; \
+          t = StringToStream[\"x::y\"]; \
+          {Table[Read[s, Record, NullRecords -> True], 5], \
+           Table[Read[t, Word, WordSeparators -> {\":\"}, NullWords -> True], 4]})"
+      ),
+      "{{\"a\", \"b\", \"\", \"c\", EndOfFile}, {\"x\", \"\", \"y\", EndOfFile}}"
+    );
+  }
+
+  // An expression runs to the next line break, \r included; a blank or
+  // comment-only line reads as Null.
+  #[test]
+  fn expression_reads_split_lines_and_read_blank_ones_as_null() {
+    assert_eq!(
+      read(
+        "Map[(s = StringToStream[#]; r = Table[Read[s], 3]; Close[s]; r) &, \
+         {\"c\\rb2\", \"1\\n \\n2\", \" \\n\", \"(*c*)\\n\", \"\\n\\n\"}]"
+      ),
+      "{{c, b2, EndOfFile}, {1, Null, 2}, {Null, EndOfFile, EndOfFile}, \
+       {Null, EndOfFile, EndOfFile}, {EndOfFile, EndOfFile, EndOfFile}}"
+    );
+  }
+
+  #[test]
+  fn a_failed_read_says_why() {
+    clear_state();
+    let result =
+      interpret_with_stdout("s = StringToStream[\"ca\"]; Read[s, Number]")
+        .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Read::readn: Invalid real number found when reading from \
+         StringToStream[ca]."
+          .to_string()
+      ]
+    );
+  }
+
+  // The stream's text hangs below the column it starts at, the way a
+  // multi-line string prints inside a message.
+  #[test]
+  fn a_multi_line_stream_is_laid_out_in_the_message() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "s = StringToStream[\"1\\n;\\n22\"]; {Read[s], Read[s]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.warnings,
+      vec![format!(
+        "Read::readt: Invalid input found when reading ; from \
+         StringToStream[1 ].\n{pad};\n{pad}22",
+        pad = " ".repeat(68)
+      )]
+    );
+  }
+}

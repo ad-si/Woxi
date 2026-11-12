@@ -14465,6 +14465,16 @@ impl TextReadOptions {
     self.null_records = true;
   }
 
+  /// Whether `NullWords -> True` is in effect.
+  pub(crate) fn null_words(&self) -> bool {
+    self.null_words
+  }
+
+  /// Whether `NullRecords -> True` is in effect.
+  pub(crate) fn null_records(&self) -> bool {
+    self.null_records
+  }
+
   /// The `WordSeparators` in effect.
   pub(crate) fn word_separators(&self) -> &[String] {
     &self.word_separators
@@ -14473,7 +14483,7 @@ impl TextReadOptions {
   /// The records of `text` from byte `start` on, as (start, end, next)
   /// offsets: the record spans start..end and the following one starts at
   /// next.
-  fn record_spans(
+  pub(crate) fn record_spans(
     &self,
     text: &str,
     start: usize,
@@ -14583,14 +14593,57 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ReadList", args));
   };
 
-  let text = readlist_get_text(&positional[0])?;
-
   // Determine the read type (default: Expression)
+  let default_type = id_expr("Expression");
   let read_type = if positional.len() >= 2 {
     &positional[1]
   } else {
-    &id_expr("Expression")
+    &default_type
   };
+  // An open stream is read from where it stands, one Read at a time, and
+  // left at the end: ReadList is exactly Read repeated.
+  let stream_id = match &positional[0] {
+    Expr::FunctionCall { name, args }
+      if name == "InputStream" && args.len() == 2 =>
+    {
+      match &args[1] {
+        Expr::Integer(id) => usize::try_from(*id).ok(),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let stream_max = match positional.get(2) {
+    None => Some(None),
+    Some(Expr::Integer(n)) if *n >= 0 => Some(Some(*n as usize)),
+    Some(_) => None,
+  };
+  if let (Some(id), Some(max)) = (stream_id, stream_max)
+    && !read_opts.record_lists
+    && let Some(result) =
+      crate::evaluator::dispatch::io_functions::read_list_from_stream(
+        id, read_type, &read_opts, max,
+      )
+  {
+    return Ok(result);
+  }
+
+  let text = readlist_get_text(&positional[0])?;
+  // Any other source is read the same way, from its start.
+  if !read_opts.record_lists
+    && let Some(max) = stream_max
+  {
+    let source = match &positional[0] {
+      Expr::String(path) => path.clone(),
+      _ => format!("StringToStream[{text}]"),
+    };
+    return Ok(
+      crate::evaluator::dispatch::io_functions::read_list_text(
+        &text, 0, read_type, &read_opts, max, &source,
+      )
+      .0,
+    );
+  }
 
   // Optional max count: must be a non-negative machine integer when
   // given. Match wolframscript on rejection: emit `ReadList::intnm`

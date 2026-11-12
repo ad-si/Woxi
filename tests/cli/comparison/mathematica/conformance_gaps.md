@@ -6513,6 +6513,21 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 ## Import, export, units and system
 
+### `Read` / `ReadList` messages about text with `\r`, tabs or stray commas
+
+Stream reads were fuzzed against wolframscript on 2026-11-12 (1,050 random
+texts and read sequences over `StringToStream`, `OpenRead` and file names;
+all values and positions agree). Two kinds of message still differ:
+
+- A `Read::readt` / `ReadList::readt` message whose text contains a
+  carriage return or a tab: wolframscript lays the string out as a 2D box
+  in which `\r` breaks the line too, so its layout differs from Woxi's,
+  which only breaks at `\n`.
+- `ReadList` of a file whose text has a comma with nothing beside it
+  (`c1{1,`) also prints wolframscript's parser warning `Syntax::com:
+  Warning: comma encountered with no adjacent expression. …  (line 1 of
+  "file")` before the `readt` message; Woxi prints only the `readt`.
+
 ### A plain read after a pattern read still sees the rest of the stream
 
 `ReadString[stream, patt]` returns the text before the first match of `patt`
