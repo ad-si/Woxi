@@ -16,6 +16,18 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `Rationalize[x, dx]` sometimes picks a different approximation
+
+Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
+random `Rationalize[x, dx]` calls. In the rest wolframscript passes over the
+first continued-fraction semiconvergent within `dx` for a later one closer
+to `x` — `Rationalize[-1.1864498315073577, 1/7]` is `-6/5` (error 0.014)
+rather than `-5/4` (error 0.064), `Rationalize[-18.74513989, 0.001]` is
+`-881/47` rather than `-806/43` — without a rule that fits all cases
+(neither "convergents only", which gets 158, nor "semiconvergents with
+k ≥ a/2", which gets 189). The default tolerance, including leaving machine
+reals beyond 2^38 unchanged, agrees.
+
 ### The sixteenth digit of `RealDigits` of a machine real
 
 `RealDigits[x]` of a machine real gives the 16 significant digits of the
