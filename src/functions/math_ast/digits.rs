@@ -2052,6 +2052,48 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A machine real in base 10 has the 16 significant digits of its exact
+  // binary value, correctly rounded — which is what wolframscript lists
+  // (RealDigits[972.94] ends in …0, 1). An explicit length cuts those 16
+  // short (RealDigits[0.125, 10, 2] is {1, 2}, not rounded), and digits
+  // past them are Indeterminate.
+  if let Expr::Real(f) = expr
+    && base == 10
+    && *f != 0.0
+    && f.is_finite()
+  {
+    let text = format!("{:.15e}", f.abs());
+    let (mantissa, exp) = text.split_once('e').unwrap_or((&text, "0"));
+    let digits16: Vec<i128> = mantissa
+      .bytes()
+      .filter(u8::is_ascii_digit)
+      .map(|b| i128::from(b - b'0'))
+      .collect();
+    let exponent = exp.parse::<i128>().unwrap_or(0) + 1;
+    // The digit in front of 10^power.
+    let digit_at = |power: i128| -> Expr {
+      let index = exponent - 1 - power;
+      if index < 0 {
+        Expr::Integer(0)
+      } else {
+        usize::try_from(index)
+          .ok()
+          .and_then(|i| digits16.get(i))
+          .map_or_else(
+            || Expr::Identifier("Indeterminate".into()),
+            |d| Expr::Integer(*d),
+          )
+      }
+    };
+    let first = start_pos.unwrap_or(exponent - 1);
+    let digits: Vec<Expr> = (0..num_digits as i128)
+      .map(|k| digit_at(first - k))
+      .collect();
+    return Ok(Expr::List(
+      vec![Expr::List(digits.into()), Expr::Integer(first + 1)].into(),
+    ));
+  }
+
   // Determine sign and work with absolute value
   let is_negative = match expr {
     Expr::Integer(n) => *n < 0,

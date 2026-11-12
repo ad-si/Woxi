@@ -5724,7 +5724,13 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // significant figures, matching wolframscript: `ToString[N[Pi, 5]]` is
   // "3.1416" (not "3.1415") and `ToString[N[999/1000, 2]]` is "1.0".
   if let Expr::BigFloat(digits, prec) = &args[0] {
-    return Ok(Expr::String(format_bigfloat_for_to_string(digits, *prec)));
+    let text = format_bigfloat_for_to_string(digits, *prec);
+    // In scientific form the exponent is set raised, as for a machine real.
+    return Ok(Expr::String(if text.contains("*^") {
+      crate::syntax::expr_to_output_form_2d(&Expr::Raw(text))
+    } else {
+      text
+    }));
   }
 
   // Default (no form or unrecognized form): OutputForm.
@@ -5778,15 +5784,42 @@ fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
   };
   let prec_digits = prec.round() as i64;
   if prec_digits > 0 {
-    format!(
-      "{}{}",
-      sign,
-      crate::round_significant(body, prec_digits as usize)
-    )
+    let fixed = crate::round_significant(body, prec_digits as usize);
+    let text =
+      scientific_if_out_of_range(&fixed, prec_digits as usize).unwrap_or(fixed);
+    format!("{sign}{text}")
   } else {
     // Non-positive precision (e.g. an accuracy form): keep the digits.
     format!("{sign}{body}")
   }
+}
+
+/// A rounded fixed-point expansion (`"3846153846153846000."`) rewritten as
+/// `mantissa*^exponent` when wolframscript writes it in scientific form:
+/// from 10^6 up, below 10^-5, and wherever the integer part has more
+/// digits than the precision (`N[10^6/3, 5]` is `3.3333*^5`). The
+/// mantissa keeps `precision` significant digits.
+fn scientific_if_out_of_range(fixed: &str, precision: usize) -> Option<String> {
+  let (int_part, frac_part) = fixed.split_once('.').unwrap_or((fixed, ""));
+  let (exponent, significant): (i64, String) =
+    if int_part.trim_start_matches('0').is_empty() {
+      let zeros = frac_part.bytes().take_while(|b| *b == b'0').count();
+      if zeros == frac_part.len() {
+        return None;
+      }
+      (-(zeros as i64) - 1, frac_part[zeros..].to_string())
+    } else {
+      let int_part = int_part.trim_start_matches('0');
+      (int_part.len() as i64 - 1, format!("{int_part}{frac_part}"))
+    };
+  let out_of_range =
+    !(-5..6).contains(&exponent) || exponent + 1 > precision as i64;
+  if !out_of_range {
+    return None;
+  }
+  let digits: String = significant.chars().take(precision.max(1)).collect();
+  let (first, rest) = digits.split_at(1);
+  Some(format!("{first}.{rest}*^{exponent}"))
 }
 
 /// Recursively replace each `Expr::Real(f)` in `expr` with its

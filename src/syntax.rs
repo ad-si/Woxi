@@ -18559,6 +18559,19 @@ fn derivative_shorthand(expr: &Expr) -> Option<String> {
 }
 
 /// Convert an expression to a 2D TextBox for OutputForm rendering.
+/// A number written `m*^e` set the way 2D OutputForm sets it: the mantissa,
+/// a space and `10`, with the exponent raised — `ToString[1.5*^6]` is
+/// `"      6\n1.5 10"`. Anything else stays on one line.
+fn scientific_textbox(text: &str) -> TextBox {
+  match text.split_once("*^") {
+    Some((mantissa, exponent)) => TextBox::superscript(
+      &TextBox::atom(&format!("{mantissa} 10")),
+      &TextBox::atom(exponent),
+    ),
+    None => TextBox::atom(text),
+  }
+}
+
 fn expr_to_textbox(expr: &Expr) -> TextBox {
   // Derivative[n][f][args] → f'[args], f''[args], ... in OutputForm.
   if let Some(short) = derivative_shorthand(expr) {
@@ -18567,10 +18580,10 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
   match expr {
     Expr::Integer(n) => TextBox::atom(&n.to_string()),
     Expr::BigInteger(n) => TextBox::atom(&n.to_string()),
-    Expr::Real(f) => TextBox::atom(&format_real(*f)),
+    Expr::Real(f) => scientific_textbox(&format_real(*f)),
     Expr::String(s) => TextBox::atom(s),
     Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
-    Expr::Raw(s) => TextBox::atom(s),
+    Expr::Raw(s) => scientific_textbox(s),
     // `HoldForm` is invisible in 2D OutputForm at any depth:
     // `ToString[OutputForm[Hold[HoldForm[1/3]]]]` sets `Hold[1/3]` as a
     // fraction without the wrapper.

@@ -6936,12 +6936,52 @@ mod to_string_machine_reals {
 
   // ToString rounds machine reals to 6 significant digits (OutputForm), but
   // must not introduce precision artifacts: 15000000000. is exactly 1.5*^10.
+  // Out of fixed range the exponent is set raised above `m 10`.
   #[test]
   fn large_reals_use_clean_scientific() {
-    assert_eq!(interpret("ToString[15000000000.]").unwrap(), "1.5*^10");
-    assert_eq!(interpret("ToString[12000000000.]").unwrap(), "1.2*^10");
-    assert_eq!(interpret("ToString[2.0*^10]").unwrap(), "2.*^10");
-    assert_eq!(interpret("ToString[123456789012.]").unwrap(), "1.23457*^11");
+    assert_eq!(
+      interpret("ToString[15000000000.]").unwrap(),
+      "      10\n1.5 10"
+    );
+    assert_eq!(
+      interpret("ToString[12000000000.]").unwrap(),
+      "      10\n1.2 10"
+    );
+    assert_eq!(interpret("ToString[2.0*^10]").unwrap(), "     10\n2. 10");
+    assert_eq!(
+      interpret("ToString[123456789012.]").unwrap(),
+      "          11\n1.23457 10"
+    );
+  }
+
+  #[test]
+  fn scientific_reals_inside_an_expression() {
+    assert_eq!(
+      interpret("{ToString[{1.5*^6, 2}], ToString[2.55046*^-28]}").unwrap(),
+      "{       6\n{1.5 10 , 2},           -28\n2.55046 10}"
+    );
+  }
+
+  // An arbitrary-precision real switches to scientific form at the same
+  // magnitudes, and wherever its integer part outgrows its precision.
+  #[test]
+  fn arbitrary_precision_reals_in_scientific_form() {
+    assert_eq!(
+      interpret("ToString[N[10^5/3, 20]]").unwrap(),
+      "33333.333333333333333"
+    );
+    assert_eq!(
+      interpret("ToString[N[10^6/3, 5]]").unwrap(),
+      "         5\n3.3333 10"
+    );
+    assert_eq!(
+      interpret("ToString[N[10^20/26, 16]]").unwrap(),
+      "                    18\n3.846153846153846 10"
+    );
+    assert_eq!(
+      interpret("ToString[N[9999999/10, 3]]").unwrap(),
+      "       6\n1.00 10"
+    );
   }
 
   #[test]

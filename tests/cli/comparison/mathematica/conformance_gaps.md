@@ -16,6 +16,23 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### The sixteenth digit of `RealDigits` of a machine real
+
+`RealDigits[x]` of a machine real gives the 16 significant digits of the
+exact binary value, correctly rounded, and an explicit length truncates
+those (fuzzed against wolframscript on 2026-11-12: 285 of 300 random calls
+agree). In the rest wolframscript's sixteenth digit is one off the correctly
+rounded one — `RealDigits[9648.194244925962]` ends in `…6, 3` although the
+value is `9648.19424492596226…`, and `RealDigits[0.40866721094200176]` ends in
+`…1, 7` for `0.408667210942001757…` — and for some values it stops a digit
+early with `Indeterminate` (`RealDigits[0.9150242254297728, 10, 17]`).
+That points to a limited-precision conversion whose exact rule has not
+been decoded.
+
+`ToString[N[1/1000000, 20]]` shows 19 mantissa digits in wolframscript and
+20 in Woxi: wolframscript stores the number in binary, just below 10^-6,
+while Woxi's arbitrary-precision reals are decimal.
+
 ### `ToString` does not bracket a `!` inside a sum or a difference
 
 wolframscript's OutputForm text brackets a prefix `Not` that is an
