@@ -52334,3 +52334,81 @@ mod multiline_text_blank_lines {
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
 }
+
+mod styled_label_scripts {
+  use super::*;
+
+  #[test]
+  fn italic_subscript_stays_italic() {
+    // Regression: a `Style[…, Italic]` script was flattened into one plain
+    // run, so `t_B` drew its subscript upright.
+    let svg =
+      export_svg("Graphics[Text[Subscript[\"t\", Style[\"B\", Italic]]]]");
+    assert!(
+      svg.contains(
+        ">t<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan></tspan></text>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn italic_superscript_stays_italic() {
+    let svg =
+      export_svg("Graphics[Text[Superscript[\"t\", Style[\"n\", Italic]]]]");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">ⁿ</tspan>"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn italic_script_inside_row_label() {
+    let svg = export_svg(
+      "Graphics[Text[Row[{Style[\"c\", Italic], \" \", \
+       Subscript[Style[\"t\", Italic], Style[\"A\", Italic]]}]]]",
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">c</tspan> \
+         <tspan font-style=\"italic\">t</tspan><tspan font-style=\"italic\">\
+         <tspan baseline-shift=\"sub\" font-size=\"70%\">A</tspan></tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn uniformly_italic_script_label_is_slanted() {
+    // Every run is italic through its own inner `Style`, so the primitive
+    // itself stays upright and the ranges must carry the slant.
+    let svg = export_svg(
+      "Graphics[Text[Subscript[Style[\"t\", Italic], Style[\"B\", Italic]]]]",
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">t</tspan>"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan></tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn outer_italic_style_adds_no_extra_tspans() {
+    let svg =
+      export_svg("Graphics[Text[Style[Subscript[\"t\", \"B\"], Italic]]]");
+    assert!(svg.contains("font-style=\"italic\""), "{svg}");
+    assert!(
+      svg.contains(
+        ">t<tspan baseline-shift=\"sub\" font-size=\"70%\">B</tspan></text>"
+      ),
+      "{svg}"
+    );
+  }
+}
