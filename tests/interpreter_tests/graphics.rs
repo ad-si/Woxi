@@ -28270,6 +28270,43 @@ mod grid_rasterize {
     assert!(!svg.contains("stroke=\"rgb(190,190,190)\""), "{svg}");
   }
 
+  /// Regression: `Column`'s `ItemSize` was ignored, so framed columns in a
+  /// table came out as wide as their own text instead of one fixed size.
+  #[test]
+  fn column_item_size_fixes_item_width_and_minimum_height() {
+    clear_state();
+    let column_svg = |items: &str, opts: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "Column[{{{items}}}, Background -> Orange, Frame -> True{opts}]"
+      ))
+      .unwrap()
+      .graphics
+      .expect("framed Column should draw")
+    };
+    // 11 ems at the 14 pt base size plus the 12 px item padding, and two
+    // items of at least 2 lines (28 px plus 8 px padding) each.
+    let short = column_svg("\"a\", \"b\"", ", ItemSize -> {11, 2}");
+    assert!(
+      short.starts_with("<svg width=\"166\" height=\"72\""),
+      "{short}"
+    );
+    let long =
+      column_svg("Style[\"abcdef\", 24, Bold], \"\"", ", ItemSize -> {11, 2}");
+    assert!(
+      long.starts_with("<svg width=\"166\" height=\"72\""),
+      "{long}"
+    );
+    // A bare width fixes only the width; the height stays the content's.
+    let width_only = column_svg("\"a\", \"b\"", ", ItemSize -> 5");
+    assert!(
+      width_only.starts_with("<svg width=\"82\" height=\"44\""),
+      "{width_only}"
+    );
+    // Without ItemSize the column still hugs its content.
+    let natural = column_svg("\"a\", \"b\"", "");
+    assert!(!natural.starts_with("<svg width=\"166\""), "{natural}");
+  }
+
   #[test]
   fn panel_in_a_column_keeps_its_background_option() {
     clear_state();
