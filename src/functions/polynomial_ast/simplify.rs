@@ -5472,7 +5472,7 @@ fn decide_list_scalar_equations(expr: &Expr) -> Option<Expr> {
       } if operands.len() == 2
         && matches!(
           operators.as_slice(),
-          [ComparisonOp::Equal] | [ComparisonOp::NotEqual]
+          [ComparisonOp::Equal | ComparisonOp::NotEqual]
         )
         && ((matches!(&operands[0], Expr::List(_))
           && is_scalar_number(&operands[1]))
