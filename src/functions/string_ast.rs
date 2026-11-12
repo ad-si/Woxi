@@ -9126,6 +9126,7 @@ pub const BOX_START: char = '\u{f7c1}'; // \!
 pub const BOX_OPEN: char = '\u{f7c9}'; // \(
 pub const BOX_SEP: char = '\u{f7c8}'; // \*
 pub const BOX_CLOSE: char = '\u{f7c0}'; // \)
+pub const BOX_OVER: char = '\u{f7c7}'; // \&
 
 /// One piece of a string that mixes literal text with inline box segments.
 /// `is_box` marks a piece whose `text` is a bare box-expression source such
@@ -11025,18 +11026,63 @@ fn integer_to_base64_string(n: &Expr) -> Result<String, InterpreterError> {
   Ok(String::from_utf8(digits).expect("ASCII alphabet"))
 }
 
-/// Encode a positive integer as a Roman numeral string. Wolfram's
-/// `IntegerString[n, "Roman"]` uses the standard subtractive form for
-/// 1..3999 and an OverscriptBox-based "vinculum" form for larger values;
-/// we implement the plain subtractive form (sufficient for the
-/// 1..3999 range), and fall back to the unevaluated head for inputs
-/// outside that range.
+/// `IntegerString[n, "Roman"]`, as wolframscript writes it: the sign is
+/// dropped, 0 is `N`, numbers below 5000 are plain (4000 is `MMMM`), and a
+/// larger number puts its thousands under a vinculum — an overscript bar,
+/// written as the linear box syntax `\!\(\(\"IX\"\)\&_\)` — keeping in the
+/// plain tail the thousands that `M`, or `V` under the bar, cannot take
+/// over (906915 is overlined CMV, then MCMXV). Bars nest for millions.
 fn integer_to_roman_string(n: i128) -> Option<String> {
-  if !(1..=3999).contains(&n) {
-    return None;
+  let groups = roman_groups(n.unsigned_abs());
+  let mut out = String::new();
+  for (level, text) in groups {
+    if level == 0 {
+      out.push_str(&text);
+      continue;
+    }
+    // \(\"text\"\)\&_, then \(\( … \)\)\&_ per further bar.
+    let mut boxed = format!("{BOX_OPEN}\"{text}\"{BOX_CLOSE}{BOX_OVER}_");
+    for _ in 1..level {
+      boxed =
+        format!("{BOX_OPEN}{BOX_OPEN}{boxed}{BOX_CLOSE}{BOX_CLOSE}{BOX_OVER}_");
+    }
+    out.push(BOX_START);
+    out.push(BOX_OPEN);
+    out.push_str(&boxed);
+    out.push(BOX_CLOSE);
   }
-  let mut n = n as u32;
-  let table: &[(u32, &str)] = &[
+  Some(out)
+}
+
+/// The Roman numeral of `n` as (number of bars, text) groups, most
+/// significant first.
+fn roman_groups(n: u128) -> Vec<(usize, String)> {
+  if n == 0 {
+    return vec![(0, "N".to_string())];
+  }
+  if n < 5000 {
+    return vec![(0, plain_roman(n))];
+  }
+  let thousands_digit = (n / 1000) % 10;
+  let kept_thousands = match thousands_digit {
+    0..=4 => thousands_digit,
+    5..=8 => thousands_digit - 5,
+    _ => 0,
+  };
+  let tail = n % 1000 + kept_thousands * 1000;
+  let mut groups: Vec<(usize, String)> = roman_groups((n - tail) / 1000)
+    .into_iter()
+    .map(|(level, text)| (level + 1, text))
+    .collect();
+  if tail > 0 {
+    groups.push((0, plain_roman(tail)));
+  }
+  groups
+}
+
+/// The subtractive form, with as many `M`s as the thousands need.
+fn plain_roman(mut n: u128) -> String {
+  let table: &[(u128, &str)] = &[
     (1000, "M"),
     (900, "CM"),
     (500, "D"),
@@ -11058,7 +11104,7 @@ fn integer_to_roman_string(n: i128) -> Option<String> {
       n -= *v;
     }
   }
-  Some(out)
+  out
 }
 
 /// IntegerString[n] or IntegerString[n, base] or IntegerString[n, base, length] - convert integer to string
@@ -11067,6 +11113,26 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "IntegerString expects 1, 2, or 3 arguments".into(),
     ));
+  }
+
+  // Position 1 must be an integer, whatever the base or numeric system;
+  // explicit non-integer numbers (even integral reals like 2., rationals,
+  // complex numbers) emit ::int, symbols and constants stay silent.
+  if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_)) {
+    let is_explicit_non_integer =
+      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
+        || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+        || crate::functions::predicate_ast::is_complex_number(&args[0]);
+    if is_explicit_non_integer {
+      // The call is quoted in 2D, so a rational is set as a fraction.
+      crate::emit_message(&crate::syntax::message_with_expr_2d(
+        "IntegerString::int: Integer expected at position 1 in ",
+        &unevaluated("IntegerString", args),
+        ".",
+      ));
+    }
+    return Ok(unevaluated("IntegerString", args));
   }
 
   // Wolfram accepts a named "numeric system" as the base, e.g.
@@ -11082,8 +11148,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let Some(s) =
           expr_to_int(&args[0]).ok().and_then(integer_to_roman_string)
         else {
-          // Unsupported range / non-integer — leave unevaluated rather
-          // than guess at the vinculum/OverscriptBox encoding.
+          // An integer beyond 128 bits.
           return Ok(unevaluated("IntegerString", args));
         };
         s
@@ -11101,22 +11166,6 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("IntegerString", args);
   let show =
     |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
-
-  // Position 1 must be an integer; explicit non-integer numbers (even
-  // integral reals like 2.) emit ::int, symbols stay silent.
-  if !matches!(&args[0], Expr::Integer(_) | Expr::BigInteger(_)) {
-    let is_explicit_non_integer =
-      matches!(&args[0], Expr::Real(_) | Expr::BigFloat(..))
-        || matches!(&args[0], Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2);
-    if is_explicit_non_integer {
-      crate::emit_message(&format!(
-        "IntegerString::int: Integer expected at position 1 in {}.",
-        show(&unevaluated())
-      ));
-    }
-    return Ok(unevaluated());
-  }
 
   // Position 2: an explicit base outside 2..36 emits ::basf; symbolic
   // bases stay silently unevaluated.

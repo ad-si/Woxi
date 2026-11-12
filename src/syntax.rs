@@ -14231,7 +14231,9 @@ fn contains_string(expr: &Expr) -> bool {
 /// Named-character sequences (`\[Name]`) are preserved as-is, while
 /// other backslashes are doubled.
 pub(crate) fn escape_string_for_input_form(s: &str) -> String {
-  use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+  use crate::functions::string_ast::{
+    BOX_CLOSE, BOX_OPEN, BOX_OVER, BOX_SEP, BOX_START,
+  };
   let mut escaped = String::with_capacity(s.len() + 10);
   let chars: Vec<char> = s.chars().collect();
   let mut i = 0;
@@ -14242,6 +14244,7 @@ pub(crate) fn escape_string_for_input_form(s: &str) -> String {
       c if c == BOX_OPEN => escaped.push_str("\\("),
       c if c == BOX_SEP => escaped.push_str("\\*"),
       c if c == BOX_CLOSE => escaped.push_str("\\)"),
+      c if c == BOX_OVER => escaped.push_str("\\&"),
       // Every backslash is escaped, `\[Name]` text included: the string
       // holding the six characters `\[Pi]` is `"\\[Pi]"`, as in
       // wolframscript (a named character itself is stored as its code point).
@@ -16321,6 +16324,11 @@ pub fn decode_string_literal(raw: &str) -> String {
         Some(&'*') => {
           chars.next();
           result.push(crate::functions::string_ast::BOX_SEP);
+        }
+        // `\&` sets the next box above the one before (an overscript).
+        Some(&'&') => {
+          chars.next();
+          result.push(crate::functions::string_ast::BOX_OVER);
         }
         Some(&'\n') => {
           chars.next();

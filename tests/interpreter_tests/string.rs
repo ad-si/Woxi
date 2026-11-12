@@ -15882,3 +15882,66 @@ mod linear_syntax_string_delimiters {
     );
   }
 }
+
+mod integer_string_roman {
+  use super::*;
+
+  #[test]
+  fn plain_numerals_repeat_m_below_five_thousand() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{IntegerString[0, \"Roman\"], IntegerString[-1, \"Roman\"], \
+          IntegerString[3999, \"Roman\"], IntegerString[4321, \"Roman\"]}"
+      )
+      .unwrap(),
+      "{N, I, MMMCMXCIX, MMMMCCCXXI}"
+    );
+  }
+
+  // Larger numbers put their thousands under a vinculum, written as
+  // overscript boxes; the bars nest and distribute over groups.
+  #[test]
+  fn thousands_go_under_a_vinculum() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[{IntegerString[9000, \"Roman\"], \
+          IntegerString[906915, \"Roman\"], IntegerString[5004000, \"Roman\"], \
+          IntegerString[123456789, \"Roman\"]}, InputForm]"
+      )
+      .unwrap(),
+      "{\"\\!\\(\\(\\\"IX\\\"\\)\\&_\\)\", \"\\!\\(\\(\\\"CMV\\\"\\)\\&_\\)MCMXV\", \
+       \"\\!\\(\\(\\(\\(\\\"V\\\"\\)\\&_\\)\\)\\&_\\)MMMM\", \
+       \"\\!\\(\\(\\(\\(\\\"CXX\\\"\\)\\&_\\)\\)\\&_\\)\\!\\(\\(\\\"MMMCDLV\\\"\\)\\&_\\)MDCCLXXXIX\"}"
+    );
+  }
+
+  // A non-integer number is reported whatever the numeric system; a
+  // rational argument used to abort the evaluation with a hard error.
+  #[test]
+  fn a_non_integer_is_reported_for_named_systems_too() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{IntegerString[2.5, \"Roman\"], IntegerString[x, \"Base64\"]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "{IntegerString[2.5, Roman], IntegerString[x, Base64]}"
+    );
+    assert_eq!(
+      result.warnings,
+      vec![
+        "IntegerString::int: Integer expected at position 1 in \
+         IntegerString[2.5, Roman]."
+          .to_string()
+      ]
+    );
+    clear_state();
+    assert_eq!(
+      interpret("IntegerString[1/2, \"Base64\"]").unwrap(),
+      "IntegerString[1/2, Base64]"
+    );
+  }
+}
