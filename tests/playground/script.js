@@ -675,6 +675,26 @@ function renderManipulate(item) {
         return input
       }
       case "toggler": {
+        // One choice of a CheckboxBar[Dynamic[var], …]: a checkbox followed
+        // by its label.
+        if (node.checkbox) {
+          const wrap = document.createElement("label")
+          wrap.className = "manipulate-display-checkbox-choice"
+          const input = document.createElement("input")
+          input.type = "checkbox"
+          input.checked = !!node.selected
+          input.className = "manipulate-display-checkbox"
+          if (node.enabled === false) {
+            input.disabled = true
+          } else if (node.mutation) {
+            input.addEventListener("change", () => {
+              requestUpdate([node.mutation])
+            })
+          }
+          wrap.appendChild(input)
+          if (node.label) wrap.appendChild(renderDisplayTree(node.label))
+          return wrap
+        }
         // One choice of a TogglerBar[Dynamic[var], …]: clicking adds or
         // removes its value from the bound list variable.
         const btn = document.createElement("button")

@@ -11102,6 +11102,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     prims.retain(
       |p| !matches!(p, Primitive3D::Surface3D { tris, .. } if tris.is_empty()),
     );
+
+    // Points, and text anchored at a point, outside the box are not drawn
+    // (e.g. a label placed above a plot whose range `Show` inherits).
+    let slack = |(lo, hi): (f64, f64)| 1e-9 * (hi - lo).abs().max(1.0);
+    let inside_range = |p: &Point3D| {
+      [p.x, p.y, p.z]
+        .iter()
+        .zip(bounds.iter())
+        .all(|(&v, &(lo, hi))| {
+          let s = slack((lo, hi));
+          v >= lo - s && v <= hi + s
+        })
+    };
+    for prim in &mut prims {
+      if let Primitive3D::Point3DPrim { points, .. } = prim {
+        points.retain(|p| inside_range(p));
+      }
+    }
+    prims.retain(|p| match p {
+      Primitive3D::Point3DPrim { points, .. } => !points.is_empty(),
+      Primitive3D::Text3D { pos, .. } => inside_range(pos),
+      _ => true,
+    });
   }
 
   // The symbolic form carried on the rendered result so that Part can
@@ -11855,11 +11878,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Include box corners in the projected bounding box — always when the
-  // box is drawn, and also for a fixed PlotRange so the zoom level does
-  // not follow the contents, or when the contents alone project to no
-  // area (a line seen side on). A pinned region is framed by its box
-  // alone: content reaching beyond it (a long axis cylinder, a big
+  // Include box corners in the projected bounding box. Wolfram frames the
+  // picture by the bounding box whether or not it is drawn: with
+  // `Boxed -> False` the box is merely invisible, so a dome or a tall
+  // solid keeps the margins its box corners leave around it instead of
+  // being blown up to touch the edges. A pinned region is framed by its
+  // box alone: content reaching beyond it (a long axis cylinder, a big
   // sphere) is cut off by the picture rather than shrinking it.
   if plot_range.is_some() {
     px_min = f64::INFINITY;
@@ -11867,8 +11891,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  let degenerate = !(px_max - px_min > 1e-9 && py_max - py_min > 1e-9);
-  if show_box || plot_range.is_some() || degenerate {
+  {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -14570,73 +14593,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
-  // `First[RevolutionPlot3D[…]]` is the surface itself, in world
-  // coordinates, so it can be re-drawn inside another `Graphics3D` (the
-  // way the notebooks that build solids out of plot slices do).  The
-  // rendering below works in normalized coordinates and is unaffected.
-  let surfaces: Vec<Expr> = grids
-    .iter()
-    .map(|grid| {
-      let mut index_of: Vec<Vec<Option<usize>>> =
-        vec![vec![None; n_theta + 1]; n_t + 1];
-      let mut point_exprs: Vec<Expr> = Vec::new();
-      for (i, row) in grid.iter().enumerate() {
-        for (j, cell) in row.iter().enumerate() {
-          if let Some(p) = cell {
-            index_of[i][j] = Some(point_exprs.len());
-            point_exprs.push(Expr::List(
-              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
-            ));
-          }
-        }
-      }
-      let mut quads: Vec<Expr> = Vec::new();
-      for i in 0..n_t {
-        for j in 0..n_theta {
-          if let (Some(a), Some(b), Some(c), Some(d)) = (
-            index_of[i][j],
-            index_of[i + 1][j],
-            index_of[i + 1][j + 1],
-            index_of[i][j + 1],
-          ) {
-            quads.push(Expr::List(
-              [a, b, c, d]
-                .iter()
-                .map(|&k| Expr::Integer(k as i128 + 1))
-                .collect::<Vec<_>>()
-                .into(),
-            ));
-          }
-        }
-      }
-      // The plot's own picture draws no outline on the sampling quads, so
-      // the extracted surface must not pick up the default polygon edge
-      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
-      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
-      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
-      // lifts it out of the plot keeps the translucency it asked for.
-      match &plot_style {
-        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
-        Some(other) => content.push(other.clone()),
-        None => {}
-      }
-      content.push(call1("Polygon", Expr::List(quads.into())));
-      call(
-        "GraphicsComplex",
-        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      )
-    })
-    .collect();
-  let structure = call1(
-    "Graphics3D",
-    if surfaces.len() == 1 {
-      surfaces.into_iter().next().unwrap()
-    } else {
-      Expr::List(surfaces.into())
-    },
-  );
-
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
     1.0
@@ -14861,6 +14817,178 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   }
+
+  // ── Symbolic structure: GraphicsComplex[points, {style…, Polygon[quads]}] ──
+  // `First[RevolutionPlot3D[…]]` is the surface itself, in world
+  // coordinates, so it can be re-drawn inside another `Graphics3D` (the
+  // way the notebooks that build solids out of plot slices do).  The
+  // rendering below works in normalized coordinates and is unaffected.
+  let surfaces: Vec<Expr> = grids
+    .iter()
+    .map(|grid| {
+      let mut index_of: Vec<Vec<Option<usize>>> =
+        vec![vec![None; n_theta + 1]; n_t + 1];
+      let mut point_exprs: Vec<Expr> = Vec::new();
+      for (i, row) in grid.iter().enumerate() {
+        for (j, cell) in row.iter().enumerate() {
+          if let Some(p) = cell {
+            index_of[i][j] = Some(point_exprs.len());
+            point_exprs.push(Expr::List(
+              vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+            ));
+          }
+        }
+      }
+      let mut quads: Vec<Expr> = Vec::new();
+      for i in 0..n_t {
+        for j in 0..n_theta {
+          if let (Some(a), Some(b), Some(c), Some(d)) = (
+            index_of[i][j],
+            index_of[i + 1][j],
+            index_of[i + 1][j + 1],
+            index_of[i][j + 1],
+          ) {
+            quads.push(Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            ));
+          }
+        }
+      }
+      // The plot's own picture draws no outline on the sampling quads, so
+      // the extracted surface must not pick up the default polygon edge
+      // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
+      let mut content: Vec<Expr> = vec![call0("EdgeForm")];
+      // `PlotStyle -> Opacity[…]` belongs to the surface, so a caller that
+      // lifts it out of the plot keeps the translucency it asked for.
+      match &plot_style {
+        Some(Expr::List(items)) => content.extend(items.iter().cloned()),
+        Some(other) => content.push(other.clone()),
+        None => {}
+      }
+      // The color and lighting the standalone render shades the surface
+      // with, so `Show[RevolutionPlot3D[…], g]` keeps the surface's look.
+      if !color_fn.is_set() {
+        content.extend(surface_style_directives(
+          0,
+          render_style.as_ref(),
+          false,
+          &scene,
+        ));
+      }
+      content.push(call1("Polygon", Expr::List(quads.into())));
+      // The mesh, every `MESH_STEP`-th line of constant t and of
+      // constant θ, as the standalone render rules it.
+      if mesh_mode == MeshMode::Default {
+        let mut segments: Vec<Expr> = Vec::new();
+        let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+          if let (Some(a), Some(b)) = (a, b) {
+            segments.push(Expr::List(
+              vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+                .into(),
+            ));
+          }
+        };
+        let rows = |n: usize| (0..=n).step_by(MESH_STEP).chain([n]);
+        let mut seen_rows = std::collections::BTreeSet::new();
+        for i in rows(n_t).filter(|i| seen_rows.insert(*i)) {
+          for j in 0..n_theta {
+            push_segment(index_of[i][j], index_of[i][j + 1]);
+          }
+        }
+        let mut seen_cols = std::collections::BTreeSet::new();
+        for j in rows(n_theta).filter(|j| seen_cols.insert(*j)) {
+          for i in 0..n_t {
+            push_segment(index_of[i][j], index_of[i + 1][j]);
+          }
+        }
+        if !segments.is_empty() {
+          content.push(Expr::List(
+            vec![
+              call1("Opacity", Expr::Real(0.63)),
+              call(
+                "RGBColor",
+                vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+              ),
+              call1("AbsoluteThickness", Expr::Real(0.5)),
+              call1("Line", Expr::List(segments.into())),
+            ]
+            .into(),
+          ));
+        }
+      }
+      call(
+        "GraphicsComplex",
+        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+      )
+    })
+    .collect();
+  // The plot's own options travel with the surface: `Show` takes the
+  // options of the first graphic it is given, so a revolution surface
+  // shown with other graphics keeps its box, axes, proportions and range
+  // instead of falling back to a bare `Graphics3D`'s defaults.
+  let mut structure_args = vec![if surfaces.len() == 1 {
+    surfaces.into_iter().next().unwrap()
+  } else {
+    Expr::List(surfaces.into())
+  }];
+  let option_name = |o: &Expr| match o {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  // A height-only `PlotRange -> {zmin, zmax}` is spelled out below in full.
+  structure_args.extend(
+    args[opt_start..]
+      .iter()
+      .filter(|o| {
+        option_name(o).as_deref() != Some("PlotRange")
+          || matches!(o, Expr::Rule { replacement, .. }
+            if matches!(replacement.as_ref(), Expr::List(r) if r.len() == 3))
+      })
+      .cloned(),
+  );
+  let names = |opt: &str| {
+    structure_args
+      .iter()
+      .any(|o| option_name(o).as_deref() == Some(opt))
+  };
+  let real_pair =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  let mut defaults: Vec<Expr> = Vec::new();
+  if !names("Axes") {
+    defaults.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names("BoxRatios") {
+    defaults.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
+      ),
+    ));
+  }
+  if !names("PlotRange") {
+    defaults.push(rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(
+        vec![
+          real_pair(x_range.0, x_range.1),
+          real_pair(y_range.0, y_range.1),
+          real_pair(z_axis_min, z_axis_max),
+        ]
+        .into(),
+      ),
+    ));
+  }
+  structure_args.extend(defaults);
+  let structure = call("Graphics3D", structure_args);
 
   let svg = generate_svg(
     &all_triangles,
@@ -16054,6 +16182,13 @@ fn contour3d_render(
   let mut mesh_all = false;
   // `Mesh -> None` drops the default mesh (the sampling grid's planes).
   let mut mesh_none = false;
+  // `Mesh -> n` (or one count / list of values per axis): the surfaces are
+  // cut by planes at those x, y and z values instead of the grid's.
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  // `MeshStyle -> s` or `{s1, s2, s3}` (cycled over the x, y and z mesh
+  // lines); `MeshStyle -> None` hides the mesh.
+  let mut mesh_styles: Vec<Expr> = Vec::new();
+  let mut mesh_style_none = false;
 
   for opt in opts {
     if let Expr::Rule {
@@ -16111,6 +16246,24 @@ fn contour3d_render(
             replacement.as_ref(),
             Expr::Identifier(n) if n == "None" || n == "False"
           );
+          mesh_levels = if mesh_all || mesh_none {
+            None
+          } else {
+            parse_mesh_levels(replacement)
+          };
+        }
+        Expr::Identifier(name) if name == "MeshStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_style_none =
+            matches!(&value, Expr::Identifier(n) if n == "None");
+          let automatic =
+            matches!(&value, Expr::Identifier(n) if n == "Automatic");
+          mesh_styles = if mesh_style_none || automatic {
+            Vec::new()
+          } else {
+            plot_style_items(&value, 3)
+          };
         }
         Expr::Identifier(name) if name == "Contours" => {
           let resolved = evaluate_expr_to_expr(replacement)
@@ -16590,26 +16743,69 @@ fn contour3d_render(
       .unwrap_or(std::cmp::Ordering::Equal)
   });
 
-  // The default mesh: where the planes of the initial sampling grid cut
-  // the surfaces (those on the box faces trace the surfaces' rims).
+  // The mesh: where planes of constant x, y and z cut the surfaces. By
+  // default those are the planes of the initial sampling grid (those on
+  // the box faces trace the surfaces' rims); `Mesh -> n` puts `n` planes
+  // per axis evenly across the surfaces' extent (its ends excluded), and
+  // explicit values put them there.
   let mut mesh_lines: Vec<MeshLine> = Vec::new();
-  if !mesh_none && !mesh_all {
+  // The same segments in plot coordinates, per axis, for the structure.
+  let mut mesh_world: [Vec<[[f64; 3]; 2]>; 3] = Default::default();
+  if !mesh_none && !mesh_all && !mesh_style_none {
     let to_norm = |p: [f64; 3]| Point3D {
       x: nx(p[0]),
       y: ny(p[1]),
       z: nz(p[2]),
     };
-    let planes: [Vec<f64>; 3] = [
-      (0..=cells[0]).map(|i| x_min + i as f64 * x_step).collect(),
-      (0..=cells[1]).map(|i| y_min + i as f64 * y_step).collect(),
-      (0..=cells[2]).map(|i| z_min + i as f64 * z_step).collect(),
-    ];
+    let planes: [Vec<f64>; 3] = std::array::from_fn(|axis| {
+      let (lo, step) =
+        [(x_min, x_step), (y_min, y_step), (z_min, z_step)][axis];
+      let Some(levels) = &mesh_levels else {
+        return (0..=cells[axis]).map(|i| lo + i as f64 * step).collect();
+      };
+      let spec = if levels.len() == 1 {
+        levels.first()
+      } else {
+        levels.get(axis)
+      };
+      match spec {
+        Some(MeshLevels::Count(n)) => {
+          let (lo, hi) = world_triangles
+            .iter()
+            .flat_map(|(t, _)| t.iter())
+            .map(|p| [p.x, p.y, p.z][axis])
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+              (lo.min(v), hi.max(v))
+            });
+          if lo < hi {
+            (1..=*n)
+              .map(|k| lo + (hi - lo) * k as f64 / (*n + 1) as f64)
+              .collect()
+          } else {
+            Vec::new()
+          }
+        }
+        Some(MeshLevels::Values(values)) => values.clone(),
+        None => Vec::new(),
+      }
+    });
+    let axis_styles: [Option<StyleState3D>; 3] = std::array::from_fn(|axis| {
+      (!mesh_styles.is_empty()).then(|| {
+        let mut style = StyleState3D::default();
+        apply_3d_directive(&mesh_styles[axis % mesh_styles.len()], &mut style);
+        style
+      })
+    });
     for (tri, _) in &world_triangles {
       let t = tri.map(|p| [p.x, p.y, p.z]);
       for (axis, values) in planes.iter().enumerate() {
+        if values.is_empty() {
+          continue;
+        }
         let lo = t.iter().map(|p| p[axis]).fold(f64::INFINITY, f64::min);
         let hi = t.iter().map(|p| p[axis]).fold(f64::NEG_INFINITY, f64::max);
-        let tol = 1e-9 * (values.last().unwrap_or(&1.0) - values[0]).abs();
+        let span = [x_max - x_min, y_max - y_min, z_max - z_min][axis];
+        let tol = 1e-9 * span.abs();
         for &c in values.iter().filter(|&&c| c >= lo - tol && c <= hi + tol) {
           // The corners on the plane, and where edges cross it.
           let mut ends: Vec<[f64; 3]> = Vec::new();
@@ -16627,11 +16823,18 @@ fn contour3d_render(
             a.iter().zip(b.iter()).all(|(x, y)| (x - y).abs() <= tol)
           });
           if ends.len() == 2 {
-            mesh_lines.push(mesh_segment(
-              to_norm(ends[0]),
-              to_norm(ends[1]),
-              &camera,
-            ));
+            let (p0, p1) = (to_norm(ends[0]), to_norm(ends[1]));
+            mesh_lines.push(match &axis_styles[axis] {
+              Some(style) => styled_mesh_segment(
+                p0,
+                p1,
+                &camera,
+                Some(style),
+                ("#000000a0", 0.5),
+              ),
+              None => mesh_segment(p0, p1, &camera),
+            });
+            mesh_world[axis].push([ends[0], ends[1]]);
           }
         }
       }
@@ -16675,6 +16878,28 @@ fn contour3d_render(
     // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
     if !mesh_all {
       content.insert(0, call0("EdgeForm"));
+    }
+    // The mesh lines, one group per axis in its `MeshStyle`, so that the
+    // plot keeps them when drawn by `Show` or `Graphics3D`. They are given
+    // as explicit coordinates, which the complex's indices leave alone.
+    for (axis, segments) in mesh_world.iter().enumerate() {
+      if segments.is_empty() {
+        continue;
+      }
+      let point = |p: &[f64; 3]| Expr::List(p.map(Expr::Real).to_vec().into());
+      let lines: Vec<Expr> = segments
+        .iter()
+        .map(|[a, b]| Expr::List(vec![point(a), point(b)].into()))
+        .collect();
+      let mut group = vec![call1("AbsoluteThickness", Expr::Real(0.5))];
+      if mesh_styles.is_empty() {
+        group.push(call1("Opacity", Expr::Real(0.63)));
+        group.push(call1("GrayLevel", Expr::Integer(0)));
+      } else {
+        group.push(mesh_styles[axis % mesh_styles.len()].clone());
+      }
+      group.push(call1("Line", Expr::List(lines.into())));
+      content.push(Expr::List(group.into()));
     }
     let complex = call(
       "GraphicsComplex",

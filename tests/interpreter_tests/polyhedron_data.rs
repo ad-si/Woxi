@@ -296,9 +296,9 @@ mod polyhedron_data_tests {
   fn polyhedron_data_properties_include_data_properties() {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
-      "{Circumradius, Classes, EdgeCount, EdgeIndices, Edges, FaceCount, \
-       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, Name, NetCoordinates, NetFaceIndices, NetFaces, \
-       Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
+      "{Circumradius, Classes, Dual, EdgeCount, EdgeIndices, Edges, FaceCount, \
+       FaceCountRules, FaceIndices, Faces, Image, Inradius, Insphere, Midradius, Name, NetCoordinates, NetFaceIndices, NetFaces, \
+       NetImage, Skeleton, SkeletonGraph, SkeletonImage, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
 
@@ -1631,6 +1631,120 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Antiprism", "VertexCount"]"#).unwrap(),
       "{8, 10, 12, 14, 16, 18, 20, 6}"
+    );
+  }
+
+  #[test]
+  fn dual_of_named_solids() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData[#, "Dual"] & /@ {"Cube", "Octahedron", "Tetrahedron",
+          "Cuboctahedron", "TriakisTetrahedron", "GreatIcosahedron"}"#
+      )
+      .unwrap(),
+      "{Octahedron, Cube, Tetrahedron, RhombicDodecahedron, \
+       TruncatedTetrahedron, GreatStellatedDodecahedron}"
+    );
+    // Every Archimedean solid's dual is an Archimedean dual and back.
+    assert_eq!(
+      interpret(
+        r#"Sort[PolyhedronData[#, "Dual"] & /@ PolyhedronData["Archimedean"]] ===
+          PolyhedronData["ArchimedeanDual"] &&
+          (PolyhedronData[PolyhedronData[#, "Dual"], "Dual"] & /@
+            PolyhedronData["Archimedean"]) === PolyhedronData["Archimedean"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn dual_of_families_and_missing() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData[#, "Dual"] & /@ {{"Prism", 5}, {"Dipyramid", 3},
+          {"Pyramid", 4}}"#
+      )
+      .unwrap(),
+      "{{Dipyramid, 5}, {Prism, 3}, {Pyramid, 4}}"
+    );
+    // Trapezohedra (the antiprisms' duals) are not among the known solids.
+    assert_eq!(
+      interpret(r#"PolyhedronData[{"Antiprism", 6}, "Dual"]"#).unwrap(),
+      "Missing[NotAvailable]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["SquareCupola", "Dual"]"#).unwrap(),
+      "Missing[NotAvailable]"
+    );
+  }
+
+  #[test]
+  fn dual_name_annotation() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["TruncatedCube", "Dual", "Name"],
+          PolyhedronData[PolyhedronData["Dodecahedron", "Dual", "Name"], "Name"],
+          Head[PolyhedronData["SquareCupola", "Dual", "Name"]]}"#
+      )
+      .unwrap(),
+      "{SmallTriakisOctahedron, icosahedron, Missing}"
+    );
+  }
+
+  #[test]
+  fn image_properties() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"{Head[PolyhedronData["Cube", "Image"]],
+          PolyhedronData["Cube", "Image"] === PolyhedronData["Cube"],
+          Head[PolyhedronData["Cuboctahedron", "SkeletonImage"]],
+          Head[PolyhedronData["Cuboctahedron", "NetImage"]]}"#
+      )
+      .unwrap(),
+      "{Graphics3D, True, Graphics, Graphics}"
+    );
+    // The skeleton drawing holds one line per edge and one point per vertex.
+    assert_eq!(
+      interpret(
+        r#"g = PolyhedronData["Dodecahedron", "SkeletonImage"];
+          {Length[Cases[g, Line[e_] :> e, Infinity][[1]]],
+           Length[Cases[g, Point[p_] :> p, Infinity][[1]]],
+           Length[Cases[g, GraphicsComplex[pts_, ___] :> pts, Infinity][[1, 1]]]}"#
+      )
+      .unwrap(),
+      "{30, 20, 2}"
+    );
+    // The net image draws one polygon per face.
+    assert_eq!(
+      interpret(
+        r#"Length[Cases[PolyhedronData["Octahedron", "NetImage"],
+          Polygon[f_] :> f, Infinity][[1]]]"#
+      )
+      .unwrap(),
+      "8"
+    );
+  }
+
+  // Regression: unfolding a non-convex (pentagram) face placed every vertex
+  // on the far side of the shared edge, which distorted the star.
+  #[test]
+  fn net_keeps_pentagram_faces_congruent() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"net = PolyhedronData["SmallStellatedDodecahedron", "NetFaces"];
+          pts = net[[1]]; fs = net[[2, 1]];
+          {Length[fs], Union[Round[Flatten[Map[
+            Norm[pts[[#[[1]]]] - pts[[#[[2]]]]] &,
+            Partition[#, 2, 1, 1] & /@ fs, {2}]], 10^-6]]}"#
+      )
+      .unwrap(),
+      "{12, {1}}"
     );
   }
 }

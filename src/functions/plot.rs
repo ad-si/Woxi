@@ -3843,6 +3843,7 @@ pub(crate) struct LabelStyleSpec {
   pub color: Option<WoxiColor>,
   pub font_size: Option<f64>,
   pub bold: bool,
+  pub italic: bool,
 }
 
 impl LabelStyleSpec {
@@ -3855,12 +3856,13 @@ impl LabelStyleSpec {
       Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
       other => vec![other.clone()],
     };
-    let (bold, _, color, font_size) =
+    let (bold, italic, color, font_size) =
       crate::functions::chart::parse_style_directive_args(&items);
-    (color.is_some() || font_size.is_some() || bold).then_some(Self {
+    (color.is_some() || font_size.is_some() || bold || italic).then_some(Self {
       color,
       font_size,
       bold,
+      italic,
     })
   }
 
@@ -3872,6 +3874,7 @@ impl LabelStyleSpec {
         color: t.color.or(b.color),
         font_size: t.font_size.or(b.font_size),
         bold: t.bold || b.bold,
+        italic: t.italic || b.italic,
       }),
       (b, t) => t.or(b),
     }
@@ -4544,10 +4547,16 @@ pub(crate) fn plot_labels_svg(
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
-  let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
-    " font-weight=\"bold\""
-  } else {
-    ""
+  // `LabelStyle` / `BaseStyle` weight and slant of the labels and title.
+  let label_weight = {
+    let mut attrs = String::new();
+    if opts.label_style.is_some_and(|s| s.bold) {
+      attrs.push_str(" font-weight=\"bold\"");
+    }
+    if opts.label_style.is_some_and(|s| s.italic) {
+      attrs.push_str(" font-style=\"italic\"");
+    }
+    attrs
   };
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
@@ -4768,7 +4777,7 @@ pub(crate) fn plot_labels_svg(
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
     }
-    if sl.italic {
+    if sl.italic || opts.label_style.is_some_and(|s| s.italic) {
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;
@@ -5548,10 +5557,9 @@ fn generate_svg_with_options(
     let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
     let fixed_h = (opts.image_size_explicit.1 || opts.aspect_full)
       .then_some(svg_height as f64);
-    decorations.solve(svg_width as f64, |w| match fixed_h {
-      Some(h) => {
-        (h - 16.0).min(if opts.aspect_full { f64::MAX } else { w * ar })
-      }
+    decorations.solve(svg_width as f64, |w, pad| match fixed_h {
+      Some(h) => (h - 16.0f64.max(pad.bottom + pad.above()))
+        .min(if opts.aspect_full { f64::MAX } else { w * ar }),
       None => w * ar,
     })
   });
@@ -7972,7 +7980,21 @@ pub(crate) fn build_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   }
+}
+
+/// The height/width ratio of the plotting area a plot with these options is
+/// drawn with when that ratio does not follow from its image size: an
+/// explicit numeric `AspectRatio`, else the 1/GoldenRatio default (which
+/// `ImageSize -> {w, h}` letterboxes rather than stretches). `None` for
+/// `AspectRatio -> Automatic` or `Full`, whose shape depends on the data or
+/// the frame.
+pub(crate) fn drawn_aspect_ratio(opts: &PlotOptions) -> Option<f64> {
+  if opts.aspect_automatic || opts.aspect_full {
+    return None;
+  }
+  Some(opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO))
 }
 
 /// The option rules a graphics function was called with, verbatim, so
@@ -12040,6 +12062,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   })
 }
 
@@ -17194,7 +17217,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
     // picture and merge it as the layer without curves that it is.
-    let source = build_plot_source(
+    let mut source = build_plot_source(
       &[],
       &plot_opts.plot_style,
       x_display,
@@ -17205,6 +17228,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plot_opts.filling_style,
       crate::functions::plot::explicit_options(args),
     );
+    source.aspect_ratio = drawn_aspect_ratio(&plot_opts);
     return Ok(crate::graphics_result_with_source(svg, source));
   }
 
@@ -17415,6 +17439,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = plot_opts.unpadded_range;
+  source.aspect_ratio = drawn_aspect_ratio(&plot_opts);
   source.data_x_range = all_points
     .iter()
     .flatten()
