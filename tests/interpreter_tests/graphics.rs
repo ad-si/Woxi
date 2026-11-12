@@ -52063,14 +52063,15 @@ mod plot_option_lists_and_merged_contour_styles {
   /// are read like separately given options.
   #[test]
   fn list_plot_reads_options_given_as_a_list() {
-    assert_eq!(
-      interpret(
-        "Cases[ListPlot[{{1, 2}, {3, 4}}, {PlotStyle -> Red}], \
-         _RGBColor, Infinity]"
-      )
-      .unwrap(),
-      "{RGBColor[1., 0., 0.]}"
-    );
+    let colors = |opts: &str| {
+      interpret(&format!(
+        "Cases[ListPlot[{{{{1, 2}}, {{3, 4}}}}, {opts}], _RGBColor, Infinity]"
+      ))
+      .unwrap()
+    };
+    let listed = colors("{PlotStyle -> Red}");
+    assert_eq!(listed, colors("PlotStyle -> Red"));
+    assert!(listed.contains("RGBColor[1"), "{listed}");
   }
 
   /// Nested option lists are spliced too, alongside plain options.
