@@ -2116,6 +2116,18 @@ fn evaluate_function_call_ast_inner(
     }
   }
 
+  // A numeric function of Indeterminate is Indeterminate, whatever the
+  // other arguments and however many there are (`Gamma[Indeterminate]`,
+  // `Quotient[1, Indeterminate]`, `Sin[x, Indeterminate]`).
+  if args
+    .iter()
+    .any(|a| matches!(a, Expr::Identifier(s) | Expr::Constant(s) if s == "Indeterminate"))
+    && crate::evaluator::attributes::get_builtin_attributes(name)
+      .contains(crate::evaluator::attributes::Attributes::NumericFunction)
+  {
+    return Ok(Expr::Identifier("Indeterminate".to_string()));
+  }
+
   // Check argument count for known built-in functions
   if let Some(result) = arg_count::check_arg_count(name, args) {
     return result;
@@ -2141,6 +2153,40 @@ fn evaluate_function_call_ast_inner(
     rewritten[position] =
       Expr::List(vec![Expr::Integer(0), id_expr("Infinity")].into());
     return evaluate_function_call_ast(name, &rewritten);
+  }
+  // `{}` there is an empty list of options (except in Level): the default
+  // level applies, `Map[f, {1}, {}]` is `Map[f, {1}]`.
+  if let Some(position) = level_position
+    && name != "Level"
+    && matches!(args.get(position), Some(Expr::List(items)) if items.is_empty())
+  {
+    let mut rest = args.to_vec();
+    rest.remove(position);
+    return evaluate_function_call_ast(name, &rest);
+  }
+  // Any other level specification must be `n`, `{n}` or `{m, n}` (an
+  // option such as `Heads -> True`, or a list of options, may stand in its
+  // place).
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  if let Some(position) = level_position
+    && let Some(spec) = args.get(position)
+    && !is_option(spec)
+    // `{}` is an empty list of options everywhere but in Level.
+    && !matches!(spec, Expr::List(items) if items.iter().all(is_option)
+      && (name != "Level" || !items.is_empty()))
+    && !crate::functions::list_helpers_ast::is_level_spec(spec)
+  {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(format!(
+        "{name}::level: Level specification "
+      )),
+      crate::syntax::MessagePiece::Expr(spec),
+      crate::syntax::MessagePiece::Text(
+        " is not of the form n, {n} or {m, n}.".to_string(),
+      ),
+    ]));
+    return Ok(crate::helpers::unevaluated(name, args));
   }
 
   if matches!(name, "Table" | "ParallelTable" | "Do" | "ParallelDo")
@@ -5412,10 +5458,26 @@ fn evaluate_function_call_ast_inner(
           Expr::List(edge_labels.into()),
         ));
       }
+      // `LayerSizeFunction -> f` sizes the layers of the drawing; it
+      // belongs to the layered embedding, not to the Graph.
+      let is_layer_size = |a: &Expr| {
+        matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LayerSizeFunction"))
+      };
+      let layer_size = args[1..].iter().rev().find_map(|a| match a {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if layered && is_layer_size(a) =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
       forwarded.extend(
         args[1..]
           .iter()
           .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+          .filter(|a| !(layered && is_layer_size(a)))
           .cloned(),
       );
       // `GraphPlot[g, Method -> "CircularEmbedding"]` names the embedding
@@ -5434,10 +5496,29 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
+      // `TreePlot[g, Center]` puts the root in the middle and the deeper
+      // layers on circles around it, the root being the one vertex
+      // nothing points at (else the graph center).
+      let radial = name == "TreePlot"
+        && matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center");
       if layered {
-        let mut spec = vec![str_expr("LayeredDigraphEmbedding")];
-        if let Some(v) = root_vertex {
-          spec.push(rule_expr(str_expr("RootVertex"), v.clone()));
+        let mut spec = vec![str_expr(if radial {
+          "RadialEmbedding"
+        } else {
+          "LayeredDigraphEmbedding"
+        })];
+        let root = root_vertex.cloned().or_else(|| {
+          if radial {
+            crate::functions::graph::unique_source_vertex(&args[0])
+          } else {
+            None
+          }
+        });
+        if let Some(v) = root {
+          spec.push(rule_expr(str_expr("RootVertex"), v));
+        }
+        if let Some(f) = layer_size {
+          spec.push(rule_expr(str_expr("LayerSizeFunction"), f));
         }
         if let Some(dir) = root_pos {
           spec.push(rule_expr(str_expr("Orientation"), id_expr(dir.symbol())));

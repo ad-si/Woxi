@@ -7688,6 +7688,21 @@ mod nsolve_drops_extraneous_radical_solutions {
 mod reduce_univariate_polynomial_inequalities {
   use super::*;
 
+  // An inequality restricts the variable to the reals: complex roots of
+  // the equation are dropped, without ::nord messages.
+  #[test]
+  fn equation_with_an_inequality_drops_complex_roots() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("Reduce[x^4 == 16 && x > 0, x]").unwrap();
+    assert_eq!(r.result, "x == 2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let r =
+      woxi::interpret_with_stdout("Solve[x^4 == 16 && x > 0, x]").unwrap();
+    assert_eq!(r.result, "{{x -> 2}}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // Any polynomial in one variable with numeric coefficients: its real
   // roots split the line, and runs of pieces where it holds are joined in
   // Wolfram's interval form.
@@ -20184,6 +20199,22 @@ mod primitive_polynomial_q {
 
 mod inequality_display {
   use super::*;
+
+  // A false numeric pair decides the chain; true numeric pairs at either
+  // end are dropped, one in the middle stays.
+  #[test]
+  fn numeric_pairs_of_an_inequality() {
+    assert_eq!(
+      interpret(
+        "{Inequality[x, LessEqual, 1, Less, 2], Inequality[x, LessEqual, 3, Less, 2], \
+          Inequality[x, Less, 1, Less, 2, LessEqual, y], \
+          Inequality[1, Less, 2, LessEqual, x, Less, y], Inequality[1, Less, 2, LessEqual, x]}"
+      )
+      .unwrap(),
+      "{x <= 1, False, Inequality[x, Less, 1, Less, 2, LessEqual, y], \
+       Inequality[2, LessEqual, x, Less, y], 2 <= x}"
+    );
+  }
 
   #[test]
   fn mixed_strictness_keeps_head() {

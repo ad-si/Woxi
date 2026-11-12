@@ -3455,6 +3455,109 @@ mod infinity_comparisons {
     assert_eq!(interpret("1 < DirectedInfinity[-1]").unwrap(), "False");
   }
 
+  // Ordering a non-real number against another number gives ::nord naming
+  // the non-real operand; a symbolic partner compares nothing.
+  #[test]
+  fn non_real_order_comparisons_emit_nord() {
+    let run = |code: &str| {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      (r.result, r.warnings)
+    };
+    assert_eq!(
+      run("2 I < 1"),
+      (
+        "2*I < 1".to_string(),
+        vec!["Less::nord: Invalid comparison with 2 I attempted.".to_string()]
+      )
+    );
+    assert_eq!(
+      run("1. I <= 2"),
+      (
+        "0. + 1.*I <= 2".to_string(),
+        vec![
+          "LessEqual::nord: Invalid comparison with 0. + 1. I attempted."
+            .to_string()
+        ]
+      )
+    );
+    assert_eq!(
+      run("Sqrt[-2] > 0").1,
+      vec!["Greater::nord: Invalid comparison with I Sqrt[2] attempted."]
+    );
+    // The held prefix is dropped and the remainder is evaluated again.
+    let (result, w) = run("1 < 2 < 1 + I");
+    assert_eq!(result, "2 < 1 + I");
+    assert_eq!(w.len(), 2, "{w:?}");
+    // No numeric partner, or a contradiction found first: no message.
+    for (code, expected) in [
+      ("x < I", "x < I"),
+      ("I < x < 2", "I < x < 2"),
+      ("1 < I < 0", "False"),
+    ] {
+      let (result, w) = run(code);
+      assert_eq!(result, expected, "{code}");
+      assert!(w.is_empty(), "{code}: {w:?}");
+    }
+  }
+
+  // A string term sorts after the numbers and before every symbolic term.
+  #[test]
+  fn strings_in_a_sum() {
+    assert_eq!(
+      interpret(
+        "{\"s\" + x, x + \"s\", \"s\" + 2 x, f[x] + \"s\", 1 + \"s\", \"b\" + x + \"a\" + 1}"
+      )
+      .unwrap(),
+      "{s + x, s + x, s + 2*x, s + f[x], 1 + s, 1 + a + b + x}"
+    );
+  }
+
+  // The real arguments still reduce to their extreme one beside a non-real
+  // number, and the smaller call is evaluated (and reported) again.
+  #[test]
+  fn max_reduces_reals_beside_non_real_numbers() {
+    for (code, result, count) in [
+      ("Max[I, 1]", "Max[I, 1]", 1),
+      ("Max[I, 1, 2]", "Max[I, 2]", 2),
+      ("Max[I, x, 1]", "Max[I, 1, x]", 1),
+      ("Max[ComplexInfinity, 1, 2]", "Max[2, ComplexInfinity]", 2),
+      ("Min[Sqrt[-2], 1, 2]", "Min[1, I*Sqrt[2]]", 2),
+      ("Min[I, 2 I, x, 1, 2]", "Min[I, 2*I, 1, 2, x]", 1),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, result, "{code}");
+      assert_eq!(r.warnings.len(), count, "{code}: {:?}", r.warnings);
+    }
+  }
+
+  // Max names each non-real argument in canonical order, Min in reverse;
+  // Min over plain arguments without ComplexInfinity names the whole call.
+  #[test]
+  fn min_max_nord_naming_and_order() {
+    let warnings =
+      |code: &str| woxi::interpret_with_stdout(code).unwrap().warnings;
+    assert_eq!(
+      warnings("Max[2 I, I, 1]"),
+      vec![
+        "Max::nord: Invalid comparison with I attempted.",
+        "Max::nord: Invalid comparison with 2 I attempted."
+      ]
+    );
+    assert_eq!(
+      warnings("Min[ComplexInfinity, 2 I, x]"),
+      vec![
+        "Min::nord: Invalid comparison with ComplexInfinity attempted.",
+        "Min::nord: Invalid comparison with 2 I attempted."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("Min[2, 1 + I, x]").unwrap();
+    assert_eq!(r.result, "Min[1 + I, 2, x]");
+    assert_eq!(
+      r.warnings,
+      vec!["Min::nord: Invalid comparison with Min[1 + I, 2, x] attempted."]
+    );
+  }
+
   // Numeric complex constants compare by real and imaginary part; a symbol
   // anywhere keeps the comparison open.
   #[test]
@@ -9359,6 +9462,24 @@ mod cases {
   #[test]
   fn leaf_count_1() {
     assert_case(r#"LeafCount[1 + x + y^a]"#, r#"6"#);
+  }
+  // A complex number is the atom-like Complex[re, im], and a sum holds
+  // its numeric part as one complex number.
+  #[test]
+  fn leaf_count_and_full_form_of_complex_numbers() {
+    assert_eq!(
+      woxi::interpret(
+        "{LeafCount[I], LeafCount[2 + 3 I], LeafCount[1 + 2 I, Heads -> False], \
+          LeafCount[x + I], LeafCount[x + 2 + 3 I], LeafCount[f[I]]}"
+      )
+      .unwrap(),
+      "{3, 3, 2, 5, 5, 4}"
+    );
+    assert_eq!(
+      woxi::interpret("ToString[FullForm[{x + 2 + 3 I, x + 1/2 + I/3}]]")
+        .unwrap(),
+      "List[Plus[Complex[2, 3], x], Plus[Complex[Rational[1, 2], Rational[1, 3]], x]]"
+    );
   }
   #[test]
   fn leaf_count_2() {
@@ -16030,6 +16151,139 @@ mod rationalize_large_reals {
       .unwrap(),
       "{250000000000, 274877906944, 3.*^11, -2.75*^11, 4.7*^19, \
        47000000000000000000}"
+    );
+  }
+}
+
+// Exact-arithmetic edge cases found by differential fuzzing.
+mod exact_arithmetic_fuzz_edge_cases {
+  use super::*;
+
+  // A numeric function of Indeterminate is Indeterminate, whatever the arity.
+  #[test]
+  fn numeric_functions_of_indeterminate() {
+    assert_eq!(
+      interpret(
+        "{Re[Indeterminate], Gamma[Indeterminate], Mod[Indeterminate, 2], \
+          Quotient[1, Indeterminate], Arg[Indeterminate], Surd[Indeterminate, 3], \
+          RealSign[Indeterminate], UnitStep[Indeterminate], Sin[Indeterminate, 2], \
+          Sin[{Indeterminate}], AbsArg[Indeterminate], f[Indeterminate]}"
+      )
+      .unwrap(),
+      "{Indeterminate, Indeterminate, Indeterminate, Indeterminate, Indeterminate, \
+       Indeterminate, Indeterminate, Indeterminate, Indeterminate, {Indeterminate}, \
+       {Indeterminate, Indeterminate}, f[Indeterminate]}"
+    );
+  }
+
+  // The parts, argument and square root of an infinity follow its direction.
+  #[test]
+  fn parts_of_infinities() {
+    assert_eq!(
+      interpret(
+        "{Re[-Infinity], Re[I Infinity], Im[-Infinity], Im[I Infinity], \
+          Im[(1 + I) Infinity], Re[ComplexInfinity], AbsArg[-Infinity], \
+          Sqrt[-Infinity], Sqrt[-I Infinity]}"
+      )
+      .unwrap(),
+      "{-Infinity, 0, 0, Infinity, Infinity, Indeterminate, {Infinity, Pi}, \
+       DirectedInfinity[I], DirectedInfinity[-(-1)^(3/4)]}"
+    );
+    let r = woxi::interpret_with_stdout("Arg[ComplexInfinity]").unwrap();
+    assert_eq!(r.result, "Interval[{-Pi, Pi}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Arg::indet: Indeterminate expression Arg[ComplexInfinity] encountered."
+      ]
+    );
+  }
+
+  // Divide with a machine denominator lands on the canonical complex form.
+  #[test]
+  fn divide_complex_by_machine_real() {
+    assert_eq!(
+      interpret(
+        "{ToString[Divide[I, -2.5], InputForm], Divide[I, -2.5] === I/-2.5}"
+      )
+      .unwrap(),
+      "{0. - 0.4*I, True}"
+    );
+  }
+
+  // An exact complex-valued factor beside a machine number is numericized.
+  #[test]
+  fn machine_times_exact_complex_value() {
+    assert_eq!(
+      interpret(
+        "{Head[2.5 Log[1 + I]], Head[Log[1 + I, -2.5]], 2.5 x Log[1 + I]}"
+      )
+      .unwrap(),
+      "{Complex, Complex, 2.5*x*Log[1 + I]}"
+    );
+  }
+
+  // A complex quotient rounds by an explicit number and floors by a divisor
+  // such as Sqrt[2]; Mod follows Quotient.
+  #[test]
+  fn complex_quotient_and_mod() {
+    assert_eq!(
+      interpret(
+        "{Quotient[3 + 2 I, 2], Quotient[1 + I, 2], Quotient[1 + I, 1.4], \
+          Quotient[1 + I, Sqrt[2]], Quotient[1 + I, 2^(1/3)], Mod[1 + I, Sqrt[2]], \
+          Mod[3 + 2 I, 2], Mod[7 + 3 I, 2]}"
+      )
+      .unwrap(),
+      "{2 + I, 0, 1 + I, 0, 0, 1 + I, -1, -1 - I}"
+    );
+    let r = woxi::interpret_with_stdout("Mod[Sqrt[2], 0.]").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Mod::indet: Indeterminate expression Mod[Sqrt[2], 0.] encountered."
+      ]
+    );
+  }
+
+  // Sign of an exact complex number with an irrational modulus is the
+  // primitive Gaussian integer along it over its norm's root.
+  #[test]
+  fn sign_of_exact_complex_numbers() {
+    assert_eq!(
+      interpret(
+        "{Sign[1/2 + I/3], Sign[2 + 2 I], Sign[-1/2 - I/3], Sign[2 - 6 I], Sign[3 + 4 I]}"
+      )
+      .unwrap(),
+      "{(3 + 2*I)/Sqrt[13], (1 + I)/Sqrt[2], (-3 - 2*I)/Sqrt[13], (1 - 3*I)/Sqrt[10], \
+       3/5 + (4*I)/5}"
+    );
+  }
+
+  // Machine zeros and complex numbers.
+  #[test]
+  fn machine_zero_and_complex_numbers() {
+    assert_eq!(
+      interpret(
+        "{Times[2 - 3 I, 0.], 0. I, 0. x, Power[0, 1/2 + I/3], Power[0., 1/2 + I/3], \
+          Power[0, 1. + I]}"
+      )
+      .unwrap(),
+      "{0. + 0.*I, 0. + 0.*I, 0., 0, 0. + 0.*I, 0. + 0.*I}"
+    );
+    let r = woxi::interpret_with_stdout("Power[0, -1 + I]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  #[test]
+  fn real_sign_of_infinities_and_symbolic_quotient() {
+    assert_eq!(
+      interpret(
+        "{RealSign[Infinity], RealSign[-Infinity], Quotient[Sqrt[2], 1.5 + 2. I], \
+          Mod[Sqrt[2], 1.5 + 2. I]}"
+      )
+      .unwrap(),
+      "{1, -1, -I, -0.5857864376269049 + 1.5*I}"
     );
   }
 }

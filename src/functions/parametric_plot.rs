@@ -148,6 +148,14 @@ fn is_curve_or_group(expr: &Expr) -> bool {
 /// is the same test `collect_curves` uses to pick its grouping branch,
 /// exposed separately so a caller can tell that branch apart from the
 /// ambiguous `{fx, fy}` single-curve fallback *before* descending.
+/// Number of elements of a list (0 for a non-list).
+fn list_len(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => items.len(),
+    _ => 0,
+  }
+}
+
 fn is_curve_group(expr: &Expr) -> bool {
   matches!(expr, Expr::List(items) if !items.is_empty() && items.iter().all(is_curve_or_group))
 }
@@ -590,6 +598,116 @@ fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
   samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
 }
 
+/// The `RegionFunction -> f` value of a curve plot's options, evaluated
+/// once; `None` when absent or the default `True &`.
+fn curve_region_function(opt_args: &[Expr]) -> Option<Expr> {
+  // Match the name before reading the value: reading a `:>` option
+  // evaluates it, which would fire e.g. an `EvaluationMonitor`.
+  let value = opt_args.iter().find_map(|opt| {
+    let (Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }) = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RegionFunction")
+    {
+      return None;
+    }
+    let (_, value) = crate::functions::graphics::option_name_value(opt)?;
+    Some(value.into_owned())
+  })?;
+  if matches!(&value, Expr::Function { body }
+    if matches!(body.as_ref(), Expr::Identifier(t) if t == "True"))
+  {
+    return None;
+  }
+  Some(evaluate_expr_to_expr(&value).unwrap_or(value))
+}
+
+/// Whether `region` (a `RegionFunction -> f` value, called as
+/// `f[x, y, t]` for a curve) accepts the point sampled at `t`.
+fn parametric_curve_allows(region: &Expr, (x, y): (f64, f64), t: f64) -> bool {
+  if !x.is_finite() || !y.is_finite() {
+    return false;
+  }
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
+}
+
+/// Drop the points of sampled curves that `RegionFunction -> region`
+/// rejects (they become `NaN` gaps), and locate each boundary between an
+/// accepted and a rejected sample by bisection in the parameter, so the
+/// drawn pieces end where the region does rather than at the last sample
+/// inside it.
+fn clip_samples_to_region<F>(
+  samples: Vec<Sample>,
+  region: &Expr,
+  sample_at: &F,
+) -> Vec<Sample>
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  let inside_mask = |t: f64, row: &Option<Vec<(f64, f64)>>| -> Vec<bool> {
+    row.as_ref().map_or_else(Vec::new, |r| {
+      r.iter()
+        .map(|&p| parametric_curve_allows(region, p, t))
+        .collect()
+    })
+  };
+  let mask_row = |row: Option<Vec<(f64, f64)>>, inside: &[bool]| {
+    row.map(|r| {
+      r.into_iter()
+        .zip(inside)
+        .map(|(p, &ok)| if ok { p } else { (f64::NAN, f64::NAN) })
+        .collect::<Vec<_>>()
+    })
+  };
+  let masks: Vec<Vec<bool>> = samples
+    .iter()
+    .map(|(t, row)| inside_mask(*t, row))
+    .collect();
+  let mut out: Vec<Sample> = Vec::with_capacity(samples.len() + 8);
+  let mut prev_t = f64::NAN;
+  for (i, (t, row)) in samples.into_iter().enumerate() {
+    if i > 0 && masks[i - 1].len() == masks[i].len() {
+      let mut edges: Vec<f64> = Vec::new();
+      for (k, (&was, &is)) in masks[i - 1].iter().zip(&masks[i]).enumerate() {
+        if was == is {
+          continue;
+        }
+        // Bisect toward the parameter where curve `k` crosses the edge.
+        let (mut a, mut b) = (prev_t, t);
+        for _ in 0..30 {
+          let m = f64::midpoint(a, b);
+          let m_inside = sample_at(m)
+            .and_then(|r| r.get(k).copied())
+            .is_some_and(|p| parametric_curve_allows(region, p, m));
+          if m_inside == was {
+            a = m;
+          } else {
+            b = m;
+          }
+        }
+        edges.push(if was { a } else { b });
+      }
+      edges.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+      for edge in edges {
+        let edge_row = sample_at(edge);
+        let edge_mask = inside_mask(edge, &edge_row);
+        out.push((edge, mask_row(edge_row, &edge_mask)));
+      }
+    }
+    prev_t = t;
+    out.push((t, mask_row(row, &masks[i])));
+  }
+  out
+}
+
 /// ParametricPlot[{fx[t], fy[t]}, {t, tmin, tmax}]
 /// Whether `body` is a two-slot list whose slots each evaluate, at the
 /// parameter value `t`, to a numeric coordinate pair — i.e. it denotes two
@@ -714,6 +832,18 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !evaluated_group_ok
     && slots_yield_points(body, &var_name, f64::midpoint(t_min, t_max));
   let from_group = body_is_group || evaluated_group_ok || vector_pair;
+  // How many top-level curve slots the group has. A group of exactly one
+  // slot (`{{fx, fy}}`, the shape `Evaluate[{x[t], y[t]} /. NDSolve[…]]`
+  // produces) is styled like a lone curve.
+  let group_slot_count = if body_is_group {
+    list_len(body)
+  } else if evaluated_group_ok {
+    evaluated_body.as_ref().map_or(0, list_len)
+  } else if vector_pair {
+    2
+  } else {
+    0
+  };
 
   let curves: Vec<CurveSrc> = if nonlist_ok {
     nonlist_curves
@@ -764,11 +894,16 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
   let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(curves.len());
   let excluded = exclusion_roots(&args[2..], &var_name, t_min, t_max);
+  // `RegionFunction -> f`: only the stretches of the curve where
+  // `f[x, y, t]` is True are drawn. Evaluated once, like `Plot` does.
+  let region_function = curve_region_function(&args[2..]);
 
   for curve in &curves {
     // Each sample yields one coordinate pair, or one pair per curve when
     // the whole body is sampled (e.g. `ReIm[{c1, c2, c3}]`).
-    let mut samples = match curve {
+    let mut fx_storage = None;
+    let mut fy_storage = None;
+    let pair = match curve {
       CurveSrc::Pair(fx, fy) => {
         // ParametricPlot is HoldFirst-like, so a curve component passed as
         // a bare symbol or a `Part` extraction (e.g. `s[[1, 1, 2]]` off a
@@ -784,52 +919,52 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // expands to its definition (and reveals the variable) before
         // per-sample substitution — mirroring `Plot`'s own fix for the
         // same shape of body.
-        let fx_storage;
         let fx: &Expr =
           if crate::functions::plot::expr_mentions_var(fx, &var_name) {
             fx
           } else {
-            fx_storage =
-              crate::functions::plot::eval_body_var_symbolic(fx, &var_name);
-            &fx_storage
+            fx_storage.insert(crate::functions::plot::eval_body_var_symbolic(
+              fx, &var_name,
+            ))
           };
-        let fy_storage;
         let fy: &Expr =
           if crate::functions::plot::expr_mentions_var(fy, &var_name) {
             fy
           } else {
-            fy_storage =
-              crate::functions::plot::eval_body_var_symbolic(fy, &var_name);
-            &fy_storage
+            fy_storage.insert(crate::functions::plot::eval_body_var_symbolic(
+              fy, &var_name,
+            ))
           };
-        adaptive_samples(
-          |t| {
-            fire_monitor(t);
-            match (
-              evaluate_at_point(fx, &var_name, t),
-              evaluate_at_point(fy, &var_name, t),
-            ) {
-              (Some(x), Some(y)) => Some(vec![(x, y)]),
-              _ => None,
-            }
-          },
-          t_min,
-          t_max,
-          num_samples,
-          max_total,
-        )
+        Some((fx, fy))
       }
-      CurveSrc::Whole(b) => adaptive_samples(
-        |t| {
-          fire_monitor(t);
-          sample_whole_rows(b, &var_name, t)
-        },
-        t_min,
-        t_max,
-        num_samples,
-        max_total,
-      ),
+      CurveSrc::Whole(_) => None,
     };
+    // Each sample yields one coordinate pair, or one pair per curve when
+    // the whole body is sampled (e.g. `ReIm[{c1, c2, c3}]`).
+    let sample_at = |t: f64| match (pair, curve) {
+      (Some((fx, fy)), _) => match (
+        evaluate_at_point(fx, &var_name, t),
+        evaluate_at_point(fy, &var_name, t),
+      ) {
+        (Some(x), Some(y)) => Some(vec![(x, y)]),
+        _ => None,
+      },
+      (None, CurveSrc::Whole(b)) => sample_whole_rows(b, &var_name, t),
+      (None, CurveSrc::Pair(..)) => None,
+    };
+    let mut samples = adaptive_samples(
+      |t| {
+        fire_monitor(t);
+        sample_at(t)
+      },
+      t_min,
+      t_max,
+      num_samples,
+      max_total,
+    );
+    if let Some(region) = &region_function {
+      samples = clip_samples_to_region(samples, region, &sample_at);
+    }
     insert_exclusion_gaps(&mut samples, &excluded);
     let (series, params) = samples_to_series(samples);
     all_params.extend(std::iter::repeat_n(params, series.len()));
@@ -852,8 +987,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (data_x, data_y) = compute_data_ranges(&all_points);
   // A `PlotStyle` list applied to a single curve is one combined directive
   // set, not a per-curve cycle: `ParametricPlot[c, …, PlotStyle -> {Thick,
-  // Red}]` draws one thick red curve.
-  if all_points.len() == 1 && !from_group {
+  // Red}]` draws one thick red curve. A group with a single slot counts as
+  // a single curve; one with more slots keeps its per-slot cycle even when
+  // only one of them was drawn.
+  if all_points.len() == 1 && (!from_group || group_slot_count == 1) {
     plot_opts.plot_style =
       crate::functions::plot::collapse_style_for_single_series(
         &plot_opts.plot_style,

@@ -2708,10 +2708,21 @@ fn reduce_and(
             for ineq in inequalities.iter().chain(other.iter()) {
               let subst =
                 crate::syntax::substitute_variable(ineq, var, &rhs_val);
+              // Quietly: ordering a complex candidate reports ::nord. An
+              // inequality restricts the variable to the reals, so such a
+              // candidate is dropped (`x^4 == 16 && x > 0` is `x == 2`).
+              crate::push_quiet();
               let evaled = crate::evaluator::evaluate_expr_to_expr(&subst);
-              if let Ok(result) = evaled
-                && matches!(&result, Expr::Identifier(s) if s == "False")
-              {
+              crate::pop_quiet();
+              let decided_true =
+                matches!(&evaled, Ok(Expr::Identifier(s)) if s == "True");
+              let decided_false =
+                matches!(&evaled, Ok(Expr::Identifier(s)) if s == "False");
+              let unorderable = !decided_true
+                && matches!(ineq, Expr::Comparison { .. })
+                && crate::functions::math_ast::unorderable_display(&rhs_val)
+                  .is_some();
+              if decided_false || unorderable {
                 satisfies = false;
                 break;
               }

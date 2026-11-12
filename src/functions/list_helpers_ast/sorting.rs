@@ -259,6 +259,21 @@ pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
       "RuleDelayed",
       vec![pattern.as_ref().clone(), replacement.as_ref().clone()],
     )),
+    // `!a` is `Not[a]`, and the logical operators are their calls, so they
+    // sort by head like any other compound expression.
+    Expr::UnaryOp {
+      op: UnaryOperator::Not,
+      operand,
+    } => Some(call("Not", vec![operand.as_ref().clone()])),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And | crate::syntax::BinaryOperator::Or,
+      ..
+    } => match crate::functions::expr_form::decompose_expr(e) {
+      crate::functions::expr_form::ExprForm::Composite { head, children } => {
+        Some(call(&head, children))
+      }
+      crate::functions::expr_form::ExprForm::Atom(_) => None,
+    },
     _ => None,
   }
 }

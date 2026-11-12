@@ -9679,6 +9679,102 @@ mod wolfram_graph_layouts {
   }
 
   #[test]
+  fn radial_embedding_layer_size_function_spaces_the_rings() {
+    // Ring k lies f[k] beyond ring k - 1: 1/3 and then 1/9 out.
+    assert_eq!(
+      interpret(
+        "Round[GraphEmbedding[Graph[{1 -> 2, 2 -> 3}, GraphLayout -> \
+         {\"RadialEmbedding\", \"RootVertex\" -> 1, \
+         \"LayerSizeFunction\" -> (3^-# &)}]], 0.001]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 0.5}, {0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn layered_embedding_layer_size_function_sizes_each_layer() {
+    assert_eq!(
+      interpret(
+        "GraphEmbedding[Graph[{1 -> 2, 2 -> 3, 3 -> 4}, GraphLayout -> \
+         {\"LayeredDigraphEmbedding\", \
+         \"LayerSizeFunction\" -> (1/2^# &)}]]"
+      )
+      .unwrap(),
+      "{{0., 0.875}, {0., 0.375}, {0., 0.125}, {0., 0.}}"
+    );
+    // A non-numeric layer size falls back to one unit.
+    assert_eq!(
+      interpret(
+        "GraphEmbedding[Graph[{1 -> 2, 2 -> 3}, GraphLayout -> \
+         {\"LayeredDigraphEmbedding\", \"LayerSizeFunction\" -> (x &)}]]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 1.}, {0., 0.}}"
+    );
+  }
+
+  /// The vertex centers of a drawing, read off its SVG, rounded.
+  fn svg_vertex_centers(code: &str) -> Vec<(i64, i64)> {
+    let out = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    out
+      .split("<ellipse ")
+      .skip(1)
+      .map(|e| {
+        let attr = |name: &str| {
+          let start = e.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          let len = e[start..].find('"').unwrap();
+          e[start..start + len].parse::<f64>().unwrap().round() as i64
+        };
+        (attr("cx"), attr("cy"))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn tree_plot_center_draws_the_tree_radially() {
+    // The root sits in the middle with its three children evenly around
+    // it, the first one just past the top (at 150 degrees), then 270 and
+    // 30 degrees.
+    let pts = svg_vertex_centers("TreePlot[{1 -> 2, 1 -> 3, 1 -> 4}, Center]");
+    assert_eq!(pts.len(), 4, "{pts:?}");
+    let (cx, cy) = pts[0];
+    let dist: Vec<i64> = pts[1..]
+      .iter()
+      .map(|&(x, y)| (((x - cx).pow(2) + (y - cy).pow(2)) as f64).sqrt() as i64)
+      .collect();
+    assert!(dist.iter().all(|d| (d - dist[0]).abs() <= 1), "{pts:?}");
+    assert!(pts[1].0 < cx && pts[1].1 < cy, "{pts:?}");
+    assert!(pts[2].0 == cx && pts[2].1 > cy, "{pts:?}");
+    assert!(pts[3].0 > cx && pts[3].1 < cy, "{pts:?}");
+  }
+
+  #[test]
+  fn tree_plot_center_roots_the_tree_at_its_source() {
+    // Vertex 2 is the graph center, but the radial drawing hangs from
+    // vertex 1, which nothing points at.
+    let pts =
+      svg_vertex_centers("TreePlot[{1 -> 2, 2 -> 3, 2 -> 4, 2 -> 5}, Center]");
+    let root = pts[0];
+    // Its one child takes the whole turn, so it lands straight below.
+    let below_root = pts[1].0 == root.0 && pts[1].1 > root.1;
+    assert!(below_root, "{pts:?}");
+  }
+
+  #[test]
+  fn tree_plot_layer_size_function_shrinks_the_layers() {
+    // A path drawn from the top: each layer half as deep as the one
+    // before it, so the gaps between the vertices halve.
+    let pts = svg_vertex_centers(
+      "TreePlot[{1 -> 2, 2 -> 3, 3 -> 4}, Top, LayerSizeFunction -> (1/2^# &)]",
+    );
+    let gaps: Vec<i64> = pts.windows(2).map(|w| w[1].1 - w[0].1).collect();
+    assert_eq!(gaps.len(), 3, "{pts:?}");
+    assert!((gaps[0] - 2 * gaps[1]).abs() <= 2, "{gaps:?}");
+    assert!((gaps[1] - 2 * gaps[2]).abs() <= 2, "{gaps:?}");
+  }
+
+  #[test]
   fn spiral_embedding_climbs_evenly() {
     // One vertex per equal step up a sphere seen from the side.
     assert_eq!(

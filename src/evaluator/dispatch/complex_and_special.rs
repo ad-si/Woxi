@@ -1305,8 +1305,16 @@ pub fn dispatch_complex_and_special(
     "Replace" if args.len() == 3 || args.len() == 4 => {
       // Replace[expr, rules, levelspec] or
       // Replace[expr, rules, levelspec, Heads -> True]
+      // `Replace[expr, rules, Heads -> True]`: the option stands in the
+      // level slot, which keeps its default `{0}`.
+      let option_in_level_slot = matches!(&args[2], Expr::Rule { .. });
+      let level = if option_in_level_slot {
+        Expr::List(vec![Expr::Integer(0)].into())
+      } else {
+        args[2].clone()
+      };
       let heads_on = args
-        .get(3)
+        .get(if option_in_level_slot { 2 } else { 3 })
         .is_some_and(|opt| {
           matches!(opt,
             Expr::Rule { pattern, replacement }
@@ -1320,7 +1328,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(unevaluated("Replace", args)));
       }
       return Some(
-        apply_replace_with_level_ast(&args[0], rules, &args[2], heads_on)
+        apply_replace_with_level_ast(&args[0], rules, &level, heads_on)
           .and_then(|r| evaluate_expr_to_expr(&r)),
       );
     }

@@ -2123,6 +2123,61 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_unshaded_contour_plot_keeps_sampled_domain_as_plot_range() {
+    // Regression: a `ContourPlot` without shading has only its curves as
+    // geometry, so its range (and that of a `Show` built on it) shrank to
+    // the curves instead of the `{x, …}`/`{y, …}` region that was sampled.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PlotRange[ContourPlot[x^2 - y, {x, -1, 1}, {y, -3, 3}, \
+         Contours -> {0}, ContourShading -> False]]"
+      )
+      .unwrap(),
+      "{{-1., 1.}, {-3., 3.}}"
+    );
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ContourPlot[x - y^2, {x, -2, 5}, {y, -4, 4}, \
+         Contours -> {0}, ContourShading -> False], \
+         Graphics[Point[{0, 0}]]]]"
+      )
+      .unwrap(),
+      "{{-2., 5.}, {-4., 4.}}"
+    );
+  }
+
+  #[test]
+  fn test_contour_plot_equation_keeps_sampled_domain_as_plot_range() {
+    clear_state();
+    assert_eq!(
+      interpret("PlotRange[ContourPlot[x^2 == y, {x, -1, 1}, {y, -3, 3}]]")
+        .unwrap(),
+      "{{-1., 1.}, {-3., 3.}}"
+    );
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ContourPlot[x^2 == y, {x, -1, 1}, {y, -3, 3}], \
+         Graphics[Point[{0, 0}]]]]"
+      )
+      .unwrap(),
+      "{{-1., 1.}, {-3., 3.}}"
+    );
+  }
+
+  #[test]
+  fn test_plot_range_reads_graphics_option_list() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PlotRange[Graphics[Point[{0, 0}], {PlotRange -> {{0, 1}, {0, 2}}}]]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {0., 2.}}"
+    );
+  }
+
+  #[test]
   fn test_show_contour_plot_with_directive_list_contour_style() {
     // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
     // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List

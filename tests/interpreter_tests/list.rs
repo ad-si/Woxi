@@ -21939,7 +21939,7 @@ mod subsets_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
-        "Subsets::nninfseq: Position 2 of Subsets[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
+        "Subsets::nninfseq: Position 2 of Subsets[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer."
       )),
       "expected nninfseq message, got {msgs:?}"
     );
@@ -21978,7 +21978,7 @@ mod permutations_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
-        "Permutations::nninfseq: Position 2 of Permutations[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer."
+        "Permutations::nninfseq: Position 2 of Permutations[{a, b, c}, -1] must be All, Infinity, nmax, {nmin}, {nmin, nmax} or {nmin, nmax, dn}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer."
       )),
       "expected nninfseq message, got {msgs:?}"
     );

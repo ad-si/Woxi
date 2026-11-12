@@ -2044,21 +2044,33 @@ pub fn inner_ast(
     Err(InterpreterError::EvaluationError(msg))
       if msg.contains("incompatible dimensions") =>
     {
-      let l1_len = match list1 {
-        Expr::List(items) => items.len(),
-        _ => 0,
+      // The contracted dimensions are the last of the first argument and
+      // the first of the second.
+      let dims = |e: &Expr| -> Vec<i128> {
+        match &crate::evaluator::evaluate_function_call_ast(
+          "Dimensions",
+          std::slice::from_ref(e),
+        ) {
+          Ok(Expr::List(ds)) => ds.iter().filter_map(expr_to_i128).collect(),
+          _ => vec![],
+        }
       };
-      let l2_len = match list2 {
-        Expr::List(items) => items.len(),
-        _ => 0,
-      };
-      crate::emit_message(&format!(
-        "Inner::incom: Length {} of dimension 1 in {} is incommensurate with length {} of dimension 1 in {}.",
-        l1_len,
-        expr_to_string(list1),
-        l2_len,
-        expr_to_string(list2),
-      ));
+      let d1 = dims(list1);
+      let l1_len = d1.last().copied().unwrap_or(0);
+      let l2_len = dims(list2).first().copied().unwrap_or(0);
+      use crate::syntax::MessagePiece;
+      crate::emit_message(&crate::syntax::format_message_pieces(&[
+        MessagePiece::Text(format!(
+          "Inner::incom: Length {l1_len} of dimension {} in ",
+          d1.len().max(1)
+        )),
+        MessagePiece::Expr(list1),
+        MessagePiece::Text(format!(
+          " is incommensurate with length {l2_len} of dimension 1 in "
+        )),
+        MessagePiece::Expr(list2),
+        MessagePiece::Text(".".to_string()),
+      ]));
       Ok(call(
         "Inner",
         vec![f.clone(), list1.clone(), list2.clone(), g.clone()],

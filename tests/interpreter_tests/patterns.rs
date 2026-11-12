@@ -7404,3 +7404,168 @@ mod list_pattern_sequences_in_definitions {
     );
   }
 }
+
+// Pattern edge cases found by differential fuzzing.
+mod pattern_fuzz_edge_cases {
+  use super::*;
+
+  // FreeQ, Cases and the other boolean pattern tests share MatchQ's matcher,
+  // so a repeated name has to bind the same value everywhere.
+  #[test]
+  fn repeated_names_must_agree_in_free_q() {
+    assert_eq!(interpret("FreeQ[{1, 2}, {x_, x_}]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[{f[x, y], I}, {x_, x_}]").unwrap(), "True");
+    assert_eq!(interpret("FreeQ[{a, {1, 1}}, {x_, x_}]").unwrap(), "False");
+  }
+
+  // Pick keeps the whole expression when the selector matches, drops an
+  // atomic non-matching part, and reports incompatible shapes once.
+  #[test]
+  fn pick_matches_the_selector_at_every_level() {
+    assert_eq!(interpret("Pick[{3/4}, {}, _List]").unwrap(), "{3/4}");
+    assert_eq!(
+      interpret("Pick[{f[], g[1]}, {{}, h[f[1], 2], {}}, x_]").unwrap(),
+      "{f[], g[1]}"
+    );
+    assert_eq!(interpret("Pick[{1, 2}, {{1}, 1}, 1]").unwrap(), "{2}");
+    assert_eq!(
+      interpret("Pick[f[1, 2, 3], g[0, 1, 1], 1]").unwrap(),
+      "f[2, 3]"
+    );
+    assert_eq!(interpret("{Pick[{1, 2}, 5, 1]}").unwrap(), "{}");
+    assert_eq!(
+      interpret("Pick[<|a -> 1, b -> 2|>, {1, 0}, 1]").unwrap(),
+      "<|a -> 1|>"
+    );
+    let r =
+      woxi::interpret_with_stdout("Pick[{1, {2, 3}, 4}, {1, {0, 1, 1}, 1}, 1]")
+        .unwrap();
+    assert_eq!(r.result, "Pick[{1, {2, 3}, 4}, {1, {0, 1, 1}, 1}, 1]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Pick::incomp: Expressions {1, {2, 3}, 4} and {1, {0, 1, 1}, 1} have \
+         incompatible shapes."
+      ]
+    );
+  }
+
+  // An optional element may match nothing, so the subsequence can be shorter.
+  #[test]
+  fn sequence_cases_with_an_optional_element() {
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3}, {x_:0, _}]").unwrap(),
+      "{{1, 2}, {3}}"
+    );
+    assert_eq!(
+      interpret("SequenceCases[{1, 2, 3}, {x_:0, _} :> x]").unwrap(),
+      "{1, 0}"
+    );
+    assert_eq!(
+      interpret("SequenceReplace[{1, 2, 3}, {x_:0, y_} :> f[x, y]]").unwrap(),
+      "{f[1, 2], f[0, 3]}"
+    );
+  }
+
+  // `name : body` extends over every operator binding tighter than `:`.
+  #[test]
+  fn named_pattern_body_extends_right() {
+    for (code, expected) in [
+      ("p : _^2", "Hold[Pattern[p, Power[Blank[], 2]]]"),
+      ("p : _ + 1", "Hold[Pattern[p, Plus[Blank[], 1]]]"),
+      ("p : a b", "Hold[Pattern[p, Times[a, b]]]"),
+      (
+        "a + p : _^2",
+        "Hold[Plus[a, Pattern[p, Power[Blank[], 2]]]]",
+      ),
+      (
+        "f[p : _^2 + 1 -> x]",
+        "Hold[f[Rule[Pattern[p, Plus[Power[Blank[], 2], 1]], x]]]",
+      ),
+      (
+        "p : _ ~~ b",
+        "Hold[StringExpression[Pattern[p, Blank[]], b]]",
+      ),
+      ("(x : a) | b", "Hold[Alternatives[Pattern[x, a], b]]"),
+      ("(p : _)^2", "Hold[Power[Pattern[p, Blank[]], 2]]"),
+      (
+        "x : a | b : v",
+        "Hold[Optional[Pattern[x, Alternatives[a, b]], v]]",
+      ),
+      (
+        "x : a + _ : c",
+        "Hold[Optional[Pattern[x, Plus[a, Blank[]]], c]]",
+      ),
+    ] {
+      assert_eq!(
+        interpret(&format!("ToString[FullForm[Hold[{code}]]]")).unwrap(),
+        expected,
+        "{code}"
+      );
+    }
+  }
+
+  // Only named and optional patterns are bracketed as operands.
+  #[test]
+  fn pattern_operands_in_input_form() {
+    assert_eq!(
+      interpret(
+        "ToString[Hold[x_Integer | x_Real, _Integer | _Real, _^2, a + _, \
+          {_Integer..}, (x_)^2, p : _^2, _*2, (x__) + (y_), _ .., _?f + 1, \
+          x_?f + 1, _. + 1, Optional[_, 1] | 2, x_ == 1, _ && x_, -x_, !x_], \
+          InputForm]"
+      )
+      .unwrap(),
+      "Hold[(x_Integer) | (x_Real), _Integer | _Real, _^2, a + _, \
+       {_Integer..}, (x_)^2, p:_^2, _*2, (x__) + (y_), _ .., _?f + 1, \
+       (x_)?f + 1, (_.) + 1, (_:1) | 2, (x_) == 1, _ && (x_), -(x_),  !(x_)]"
+    );
+  }
+
+  // A list of rules, nested or empty, is a set of options.
+  #[test]
+  fn options_pattern_matches_lists_of_rules() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[{}, OptionsPattern[]], MatchQ[{a -> 1}, OptionsPattern[]], \
+          MatchQ[{{a -> 1}}, OptionsPattern[]], MatchQ[a -> 1, OptionsPattern[]], \
+          MatchQ[{1}, OptionsPattern[]]}"
+      )
+      .unwrap(),
+      "{True, True, True, True, False}"
+    );
+  }
+
+  // Rational and complex numbers are atoms to Pick.
+  #[test]
+  fn pick_treats_rationals_as_atoms() {
+    assert_eq!(
+      interpret("Pick[{3/4, {1, 2}}, {f[x], f[x, y]}, Except[_List, _?AtomQ]]")
+        .unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret("Pick[{3/4, h[f[1], 2], {1, 2}}, {f[x], 2.5, Pi}, _String]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  // A condition is evaluated once per candidate binding, so its messages
+  // and side effects are not repeated.
+  #[test]
+  fn condition_is_tested_once_per_candidate() {
+    let r = woxi::interpret_with_stdout("MatchQ[I, x_ /; x > 1]").unwrap();
+    assert_eq!(r.result, "False");
+    assert_eq!(
+      r.warnings,
+      vec!["Greater::nord: Invalid comparison with I attempted."]
+    );
+    let r = woxi::interpret_with_stdout(
+      "MatchQ[{1, 2, 1}, {a___, b_, c_, d___} /; (Print[{b, c}]; b > c)]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "True");
+    assert_eq!(r.stdout, "{1, 2}\n{2, 1}\n");
+  }
+}

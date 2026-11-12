@@ -96,7 +96,7 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let Some(sizes) = sizes else {
     crate::emit_message(&format!(
-      "Permutations::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer.",
+      "Permutations::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer.",
       show(&original())
     ));
     return Ok(original());
@@ -577,7 +577,7 @@ pub fn subsets_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let Some(sizes) = sizes else {
     crate::emit_message(&format!(
-      "Subsets::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is non-negative integer or Infinity and dn is a nonzero integer.",
+      "Subsets::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer.",
       show(&original())
     ));
     return Ok(original());

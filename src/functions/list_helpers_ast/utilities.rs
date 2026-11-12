@@ -392,3 +392,55 @@ pub fn is_nothing(e: &Expr) -> bool {
 pub fn is_atom_expr(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))
 }
+
+/// Whether `spec` has the shape of a level specification: `All`, `n`, `{n}`
+/// or `{m, n}`, each bound an integer or a signed `Infinity`.
+pub fn is_level_spec(spec: &Expr) -> bool {
+  if matches!(spec, Expr::Identifier(s) | Expr::Constant(s) if s == "All") {
+    return true;
+  }
+  fn bound(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::Identifier(s) | Expr::Constant(s) => s == "Infinity",
+      Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1 =>
+      {
+        matches!(args[0], Expr::Integer(1 | -1))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        matches!(args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        matches!(operand.as_ref(), Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      }
+      _ => false,
+    }
+  }
+  match spec {
+    Expr::List(items) => {
+      matches!(items.len(), 1 | 2) && items.iter().all(bound)
+    }
+    other => bound(other),
+  }
+}
+
+/// `Thread::tdlen` for a listable combination of lists of unequal length,
+/// with the expression laid out the way messages show it (`3/4` as a 2D
+/// fraction, strings without quotes).
+pub fn emit_thread_tdlen(expr: &Expr) {
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(
+      "Thread::tdlen: Objects of unequal length in ".to_string(),
+    ),
+    MessagePiece::Expr(expr),
+    MessagePiece::Text(" cannot be combined.".to_string()),
+  ]));
+}
