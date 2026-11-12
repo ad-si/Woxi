@@ -35038,7 +35038,7 @@ mod manipulate {
     assert_eq!(spec.displays.len(), 1);
     assert!(
       spec.displays[0]
-        .starts_with("Row[{\"parts\", \" \", TogglerBar[Dynamic[picks]"),
+        .starts_with("Row[{\"parts\", \" \", CheckboxBar[Dynamic[picks]"),
       "{}",
       spec.displays[0]
     );
@@ -35133,7 +35133,7 @@ mod manipulate {
     );
     assert_eq!(spec.displays.len(), 1);
     assert!(
-      spec.displays[0].starts_with("TogglerBar[Dynamic[picks]"),
+      spec.displays[0].starts_with("CheckboxBar[Dynamic[picks]"),
       "{}",
       spec.displays[0]
     );
@@ -35149,6 +35149,77 @@ mod manipulate {
     assert_eq!(json.matches("\"selected\":true").count(), 2, "{json}");
     assert_eq!(json.matches("\"selected\":false").count(), 1, "{json}");
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
+    // Every choice is drawn as a checkbox, not a toggle button.
+    assert_eq!(json.matches("\"checkbox\":true").count(), 3, "{json}");
+  }
+
+  /// A `CheckboxBar` control draws a checkbox per choice (as Wolfram does),
+  /// while a `TogglerBar` control keeps its toggle buttons; both toggle the
+  /// value's membership in the bound list.
+  #[test]
+  fn spec_checkbox_bar_draws_checkboxes_and_toggler_bar_buttons() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn togglers(node: &DisplayNode, out: &mut Vec<(bool, bool)>) {
+      match node {
+        DisplayNode::Toggler {
+          selected, checkbox, ..
+        } => out.push((*selected, *checkbox)),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            togglers(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    for (control_type, checkbox) in
+      [("CheckboxBar", true), ("TogglerBar", false)]
+    {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[opts, {{{{opts, {{b}}, \"\"}}, \
+         {{a -> \"first\", b -> \"second\"}}, \
+         ControlType -> {control_type}}}]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("multi-choice bar");
+      assert_eq!(spec.displays.len(), 1);
+      assert!(
+        spec.displays[0].starts_with(&format!("{control_type}[Dynamic[opts]")),
+        "{}",
+        spec.displays[0]
+      );
+      let bindings = manipulate_initial_bindings(&spec);
+      let node = woxi::with_scoped_globals(&bindings, || {
+        build_manipulate_display(&spec.displays[0], &[])
+      });
+      let mut found = Vec::new();
+      togglers(&node, &mut found);
+      assert_eq!(
+        found,
+        vec![(false, checkbox), (true, checkbox)],
+        "{control_type}: {node:?}"
+      );
+    }
+  }
+
+  /// A `CheckboxBar[Dynamic[v], …]` written in the Manipulate body is lifted
+  /// out into a live display, like a body `TogglerBar`, instead of being
+  /// drawn as a static picture.
+  #[test]
+  fn spec_body_checkbox_bar_becomes_a_live_display() {
+    let expr = interpret_to_expr(
+      "Manipulate[Column[{CheckboxBar[Dynamic[sel], {1, 2, 3}], sel}], \
+       {{sel, {2}}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.displays.len(), 1, "{:?}", spec.displays);
+    assert!(
+      spec.displays[0].starts_with("CheckboxBar[Dynamic[sel]"),
+      "{}",
+      spec.displays[0]
+    );
+    assert!(!spec.body_code.contains("CheckboxBar"), "{}", spec.body_code);
   }
 
   /// A `SetterBar[Dynamic[var], choices]` written directly as (part of) an
