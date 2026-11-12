@@ -872,7 +872,8 @@ impl BBox {
 
 use crate::functions::plot_padding::{
   AXES_LABEL_GAP_X, AXES_LABEL_GAP_Y, FRAME_LABEL_GAP, LABEL_FONT, TICK_FONT,
-  TICK_LABEL_GAP, TITLE_FONT, ascent, descent, line_height, line_pitch,
+  TICK_LABEL_GAP, TITLE_FONT, ascent, block_height, descent, line_height,
+  line_pitch,
 };
 
 // ── Primitives ───────────────────────────────────────────────────────────
@@ -13215,6 +13216,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_range_y: Option<(f64, f64)> = None;
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
+  // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
+  // a picture with its natural width and height.
+  let mut plot_label_picture: Option<(String, f64, f64)> = None;
   // `AxesLabel -> {xlabel, ylabel}`, already typeset as SVG markup.
   let mut axes_label: Option<(String, String)> = None;
   // `FrameLabel -> {bottom, left}` (or the nested four-edge form), as SVG
@@ -13334,6 +13338,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
+            other if plot_label_layout_svg(other).is_some() => {
+              let (svg, w, h) =
+                plot_label_layout_svg(other).expect("checked by the guard");
+              // Reserve as many title lines as the picture is tall.
+              let mut lines = 1;
+              while block_height(lines, TITLE_FONT) < h {
+                lines += 1;
+              }
+              plot_label = Some(vec![String::new(); lines]);
+              plot_label_picture = Some((svg, w, h));
+            }
             other => {
               let lines = expr_to_svg_markup_lines(other);
               if lines.iter().any(|l| !l.is_empty()) {
@@ -14130,7 +14145,25 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // PlotLabel: centered above the drawing area, in the reserved strip. It
   // arrives already typeset as SVG markup (sub/superscript tspans included).
-  if let Some(lines) = &plot_label {
+  if let (Some(lines), Some((picture, w, h))) =
+    (&plot_label, &plot_label_picture)
+  {
+    let cx = margin_left + svg_w / 2.0;
+    let title_top = match image_padding {
+      Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
+      None => 0.0,
+    };
+    // A picture wider than the graphic shrinks to fit, keeping its shape.
+    let scale = ((total_width - 8.0) / w).clamp(0.0, 1.0);
+    let (w, h) = (w * scale, h * scale);
+    let band = block_height(lines.len(), TITLE_FONT);
+    let fill =
+      label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb);
+    svg.push_str(&format!(
+      "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
+      embed_svg_centered(picture, cx, title_top + band / 2.0, w, h)
+    ));
+  } else if let Some(lines) = &plot_label {
     let cx = margin_left + svg_w / 2.0;
     // A title wider than the picture (a long `Row` of text and numbers)
     // shrinks to fit instead of being clipped at both edges.
@@ -15656,6 +15689,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
         let mut bold = false;
+        let mut show_contents = true;
         let mut italic = false;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
@@ -15715,11 +15749,23 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "Background" => {
                 background = parse_color(val);
               }
+              // `ShowContents -> False` (the box of `Invisible[…]`) keeps
+              // the content's room but paints nothing.
+              "ShowContents" => {
+                show_contents =
+                  !matches!(val, Expr::Identifier(v) if v == "False");
+              }
               _ => {}
             }
           }
         }
         let content = layout_box(&args[0], effective_font_size);
+        if !show_contents {
+          return BoxLayout {
+            elements: String::new(),
+            ..content
+          };
+        }
         let mut elements = String::new();
         // Background rectangle behind content
         if let Some(bg) = background {
@@ -19369,6 +19415,48 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
   match structured_label_svg(expr) {
     Some(svg) => format!("{STYLED_LABEL_MARKER}{svg}"),
     None => traditional_label(expr),
+  }
+}
+
+/// A `PlotLabel` that sets a two-dimensional layout inline — a matrix from
+/// `MatrixForm`, or the boxes of `ToString[m . x, TraditionalForm]` in a
+/// `Row` — typeset as a picture with its natural size, the way Wolfram
+/// draws the label in `TraditionalForm`. A title stacked as a `Column` or
+/// `Grid` stays a block of text lines (see `expr_to_svg_markup_lines`).
+fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  if !label_sets_matrix(expr) {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, TITLE_FONT);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  let svg = layout_to_svg(&layout, "currentColor");
+  let (w, h) = svg_natural_size(&svg)?;
+  Some((svg, w, h))
+}
+
+/// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
+/// or a string carrying the `\!\(\*…\)` box text of a grid (what
+/// `ToString[m . x, TraditionalForm]` returns). Items of a `Column`, `Grid`
+/// or `TableForm` are set as lines of text instead, so they are not
+/// searched.
+fn label_sets_matrix(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(s) => {
+      s.contains("GridBox[") && inline_box_string_to_box_expr(s).is_some()
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "MatrixForm" => matches!(args.first(), Some(Expr::List(rows))
+        if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))),
+      "Column" | "Grid" | "TableForm" | "Labeled" => false,
+      _ => args.iter().any(label_sets_matrix),
+    },
+    Expr::List(items) => items.iter().any(label_sets_matrix),
+    _ => false,
   }
 }
 
