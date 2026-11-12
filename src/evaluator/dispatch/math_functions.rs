@@ -499,9 +499,11 @@ pub fn dispatch_math_functions(
           // Let Listable attribute handle threading
         }
         _ => {
-          // Real-valued numeric x (Pi, Sqrt[2] - 3, …): decide the sign by its
-          // numeric value. Complex or symbolic x stays unevaluated.
-          if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+          // Real-valued numeric x (Pi, Sqrt[2] - 3, ±Infinity, …): decide the
+          // sign by its numeric value. Complex or symbolic x stays
+          // unevaluated.
+          if let Some(v) =
+            crate::functions::math_ast::try_eval_to_f64_with_infinity(&args[0])
           {
             return Some(Ok(Expr::Integer(if v > 0.0 {
               1

@@ -630,9 +630,25 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(build_complex_expr(srn, srd, sin, sid));
         }
       } else {
-        // |z| is irrational: Sign[z] = z / Sqrt[|z|^2]
-        // = (a + b*I) / Sqrt[|z|^2]
-        // Build (a + b*I) * (1/Sqrt[|z|^2])
+        // |z| is irrational: Sign[z] = g / Sqrt[|g|^2] for the primitive
+        // Gaussian integer g along z (clear the denominators, then the
+        // common content): Sign[1/2 + I/3] is (3 + 2 I)/Sqrt[13].
+        fn gcd(a: i128, b: i128) -> i128 {
+          if b == 0 { a.abs() } else { gcd(b, a % b) }
+        }
+        let l = rd / gcd(rd, id) * id;
+        let (gre, gim) = (rn * (l / rd), in_ * (l / id));
+        let c = gcd(gre, gim).max(1);
+        let (gre, gim) = (gre / c, gim / c);
+        if let Some(norm) = gre
+          .checked_mul(gre)
+          .and_then(|a| gim.checked_mul(gim).and_then(|b| a.checked_add(b)))
+        {
+          return crate::evaluator::evaluate_expr_to_expr(&div2(
+            build_complex_expr(gre, 1, gim, 1),
+            make_sqrt(Expr::Integer(norm)),
+          ));
+        }
         let z_expr = build_complex_expr(rn, rd, in_, id);
         let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
         return Ok(div2(z_expr, abs_expr));
@@ -3084,10 +3100,12 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // component-wise (round-half-to-even). This matches wolframscript and
       // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
       // Round and evaluating it also normalizes the display to `a + b*I`.
-      // A divisor that is no explicit number (`Sqrt[2]`, `2^(1/3)`) floors
-      // instead: `Quotient[1 + I, Sqrt[2]]` is 0.
+      // An operand that is no explicit number (`Sqrt[2]`, `2^(1/3)`) floors
+      // instead: `Quotient[1 + I, Sqrt[2]]` is 0, and
+      // `Quotient[Sqrt[2], 1.5 + 2. I]` is -I.
       let explicit_number =
-        crate::functions::predicate_ast::is_numeric_expr(&args[1]);
+        crate::functions::predicate_ast::is_numeric_expr(&args[0])
+          && crate::functions::predicate_ast::is_numeric_expr(&args[1]);
       let quotient = div2(args[0].clone(), args[1].clone());
       let rounded =
         call1(if explicit_number { "Round" } else { "Floor" }, quotient);

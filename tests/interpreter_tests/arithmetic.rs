@@ -16244,4 +16244,46 @@ mod exact_arithmetic_fuzz_edge_cases {
       ]
     );
   }
+
+  // Sign of an exact complex number with an irrational modulus is the
+  // primitive Gaussian integer along it over its norm's root.
+  #[test]
+  fn sign_of_exact_complex_numbers() {
+    assert_eq!(
+      interpret(
+        "{Sign[1/2 + I/3], Sign[2 + 2 I], Sign[-1/2 - I/3], Sign[2 - 6 I], Sign[3 + 4 I]}"
+      )
+      .unwrap(),
+      "{(3 + 2*I)/Sqrt[13], (1 + I)/Sqrt[2], (-3 - 2*I)/Sqrt[13], (1 - 3*I)/Sqrt[10], \
+       3/5 + (4*I)/5}"
+    );
+  }
+
+  // Machine zeros and complex numbers.
+  #[test]
+  fn machine_zero_and_complex_numbers() {
+    assert_eq!(
+      interpret(
+        "{Times[2 - 3 I, 0.], 0. I, 0. x, Power[0, 1/2 + I/3], Power[0., 1/2 + I/3], \
+          Power[0, 1. + I]}"
+      )
+      .unwrap(),
+      "{0. + 0.*I, 0. + 0.*I, 0., 0, 0. + 0.*I, 0. + 0.*I}"
+    );
+    let r = woxi::interpret_with_stdout("Power[0, -1 + I]").unwrap();
+    assert_eq!(r.result, "ComplexInfinity");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  #[test]
+  fn real_sign_of_infinities_and_symbolic_quotient() {
+    assert_eq!(
+      interpret(
+        "{RealSign[Infinity], RealSign[-Infinity], Quotient[Sqrt[2], 1.5 + 2. I], \
+          Mod[Sqrt[2], 1.5 + 2. I]}"
+      )
+      .unwrap(),
+      "{1, -1, -I, -0.5857864376269049 + 1.5*I}"
+    );
+  }
 }

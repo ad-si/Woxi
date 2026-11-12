@@ -11872,6 +11872,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if re != 0.0 || explicit_complex {
           return Ok(build_complex_float_expr_keep_real(re, im));
         }
+        // A machine zero times a complex number is the machine complex
+        // zero: `0. (2 - 3 I)` is `0. + 0.*I`.
+        if im == 0.0 {
+          return Ok(super::numeric_utils::machine_complex_result(re, im));
+        }
       }
     }
   }
@@ -14514,6 +14519,32 @@ fn is_big_zero(e: &Expr) -> bool {
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // Zero to a complex power with a positive real part vanishes: exactly when
+  // everything is exact (`0^(1/2 + I/3)` is 0), else as the machine complex
+  // zero (`0.^(1/2 + I/3)`, `0^(1. + I)` are `0. + 0.*I`).
+  if (matches!(base, Expr::Integer(0))
+    || matches!(base, Expr::Real(z) if *z == 0.0))
+    && let Some((re, im)) =
+      crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(exp)
+    && im != 0.0
+    && re != 0.0
+  {
+    // A negative real part divides by zero.
+    if re < 0.0 {
+      crate::emit_message(&format_power_infy_2d(
+        &expr_to_string(base),
+        &expr_to_string(exp),
+      ));
+      return Ok(id_expr("ComplexInfinity"));
+    }
+    let inexact = matches!(base, Expr::Real(_))
+      || super::numeric_utils::contains_inexact_real(exp);
+    return Ok(if inexact {
+      super::numeric_utils::machine_complex_result(0.0, 0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
   {
