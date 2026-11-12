@@ -16188,6 +16188,32 @@ pub fn has_fraction(expr: &Expr) -> bool {
     {
       false
     }
+    // Only the displayed content of a styling or framing wrapper can hold a
+    // fraction: its remaining arguments are directives and options (e.g. the
+    // `RGBColor[0, 2/3, 0]` of `Darker[Green]`) or a tooltip that is never
+    // drawn in place.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Style" | "Framed" | "Pane" | "Panel" | "Item" | "Tooltip"
+      ) && !args.is_empty() =>
+    {
+      has_fraction(&args[0])
+    }
+    // A color directive renders as a swatch, never as a stacked fraction.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "RGBColor"
+          | "GrayLevel"
+          | "Hue"
+          | "CMYKColor"
+          | "LABColor"
+          | "XYZColor"
+      ) =>
+    {
+      false
+    }
     Expr::FunctionCall { args, .. } => args.iter().any(has_fraction),
     Expr::List(items) => items.iter().any(has_fraction),
     Expr::BinaryOp { left, right, .. } => {
@@ -31090,6 +31116,26 @@ pub(crate) fn clip_svg_to_pane_box(
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");
+  // The alignment still applies along an axis the content fits in: a table
+  // taller than its Pane stays horizontally centered under
+  // `Alignment -> {Center, Top}`, and only the overflowing axis is pinned
+  // to the Pane's origin.
+  let align = align.unwrap_or((0.0, 0.0));
+  let x = if natural_w < width {
+    (width - natural_w) * align.0
+  } else {
+    0.0
+  };
+  let y = if natural_h < height {
+    (height - natural_h) * align.1
+  } else {
+    0.0
+  };
+  let inner = if x == 0.0 && y == 0.0 {
+    inner.to_string()
+  } else {
+    format!("<g transform=\"translate({x:.1} {y:.1})\">\n{inner}\n</g>")
+  };
   format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
   )
