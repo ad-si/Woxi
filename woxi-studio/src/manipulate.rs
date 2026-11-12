@@ -2595,6 +2595,42 @@ mod tests {
     );
   }
 
+  /// A slider and a setter row placed side by side with `Row[{Control[…],
+  /// Spacer[…], Control[…]}]` drive one variable, and the body draws a
+  /// pixel-constrained, frameless `ArrayPlot` of cellular-automaton runs.
+  #[test]
+  fn row_controls_share_variable_for_pixel_constrained_array_plot() {
+    let code = r#"Manipulate[
+      SeedRandom[s];
+      ArrayPlot[Transpose[CellularAutomaton[r, #, t] & /@
+          RandomInteger[1, {3, 12}]][[All, 1]],
+        ImageSize -> {200, 100}, PixelConstrained -> True, Frame -> None],
+      Row[{Control[{{r, 30}, 0, 255, 1, Appearance -> "Labeled"}],
+        Spacer[10], Control[{{r, 30}, {30, 90, 110}}]}],
+      Row[{Control[{{t, 20}, 10, 40, 1, Appearance -> "Labeled"}],
+        Spacer[10], Control[{s, 0, 100, 1, Appearance -> "Labeled"}]}]]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "array plot must render, got text {:?}",
+      state.text_output
+    );
+    let value = |name: &str| {
+      state
+        .bindings()
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v)
+    };
+    assert_eq!(value("r").as_deref(), Some("30"));
+    assert_eq!(value("t").as_deref(), Some("20"));
+    assert_eq!(value("s").as_deref(), Some("0"));
+  }
+
   /// A hidden `ControlType -> None` variable is bound when Initialization
   /// runs, also when a control's spec depends on what Initialization sets
   /// (`Control[{{n, top/4}, 2^Range[4, k]}]` with `top = 2^k` there).
