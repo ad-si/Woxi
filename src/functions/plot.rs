@@ -3711,6 +3711,9 @@ pub(crate) struct PlotOptions {
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
+  /// The `LabelStyle` and `BaseStyle` values as given, kept apart so
+  /// `label_style` combines them the same way whichever option comes first.
+  pub label_style_sources: [Option<LabelStyleSpec>; 2],
   /// `FrameTicksStyle -> …`: font size of the tick labels.
   pub tick_label_style: Option<LabelStyleSpec>,
   /// `FrameTicksStyle -> …` per frame edge (bottom, left, top, right): the
@@ -3822,6 +3825,19 @@ impl LabelStyleSpec {
       font_size,
       bold,
     })
+  }
+
+  /// `top` laid over `base`: each property `top` sets wins, the rest come
+  /// from `base`.
+  pub(crate) fn layered(base: Option<Self>, top: Option<Self>) -> Option<Self> {
+    match (base, top) {
+      (Some(b), Some(t)) => Some(Self {
+        color: t.color.or(b.color),
+        font_size: t.font_size.or(b.font_size),
+        bold: t.bold || b.bold,
+      }),
+      (b, t) => t.or(b),
+    }
   }
 }
 
@@ -3938,6 +3954,7 @@ impl Default for PlotOptions {
       default_point_size: None,
       point_colors: Vec::new(),
       label_style: None,
+      label_style_sources: [None, None],
       tick_label_style: None,
       frame_ticks_styles: [None, None, None, None],
       joined_per_series: None,
@@ -16038,7 +16055,21 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.frame_ticks_styles = parse_frame_edge_styles(replacement);
     }
     "LabelStyle" => {
-      plot_opts.label_style = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style_sources[0] = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style = LabelStyleSpec::layered(
+        plot_opts.label_style_sources[1],
+        plot_opts.label_style_sources[0],
+      );
+    }
+    // `BaseStyle -> {12}` / `BaseStyle -> {FontSize -> 12, Red}` styles all
+    // of the plot's text: the tick, frame and axes labels and the title.
+    // A `LabelStyle` setting the same property takes precedence.
+    "BaseStyle" => {
+      plot_opts.label_style_sources[1] = LabelStyleSpec::parse(replacement);
+      plot_opts.label_style = LabelStyleSpec::layered(
+        plot_opts.label_style_sources[1],
+        plot_opts.label_style_sources[0],
+      );
     }
     "Ticks" => match replacement {
       Expr::Identifier(s) if s == "None" || s == "False" => {
