@@ -17645,6 +17645,32 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
       || unorderable.iter().any(|d| {
         !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
       });
+    if has_non_real && args.iter().any(|a| matches!(a, Expr::List(_))) {
+      // Each list is compared within itself first. One that holds a
+      // non-real number among other elements fails there and is reported
+      // whole, and the call stays as written (sorted); otherwise the lists
+      // dissolve into their elements: `Max[{f[x]}, I]` is `Max[I, f[x]]`.
+      let failing: Vec<&Expr> = args
+        .iter()
+        .filter(|a| {
+          matches!(a, Expr::List(_)) && {
+            let inner = flatten_lists(std::slice::from_ref(*a));
+            inner.len() >= 2
+              && inner.iter().any(|e| unorderable_display(e).is_some())
+          }
+        })
+        .collect();
+      if failing.is_empty() {
+        let flat: Vec<Expr> = items.iter().map(|e| (*e).clone()).collect();
+        return extremum_ast(&flat, is_max);
+      }
+      for list in failing {
+        emit_nord(crate::syntax::MessagePiece::Expr(list));
+      }
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
+      return Ok(call(head, kept));
+    }
     if has_non_real {
       let mut kept = args.to_vec();
       canonical(&mut kept);

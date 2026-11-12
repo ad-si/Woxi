@@ -2142,6 +2142,16 @@ fn evaluate_function_call_ast_inner(
       Expr::List(vec![Expr::Integer(0), id_expr("Infinity")].into());
     return evaluate_function_call_ast(name, &rewritten);
   }
+  // `{}` there is an empty list of options (except in Level): the default
+  // level applies, `Map[f, {1}, {}]` is `Map[f, {1}]`.
+  if let Some(position) = level_position
+    && name != "Level"
+    && matches!(args.get(position), Some(Expr::List(items)) if items.is_empty())
+  {
+    let mut rest = args.to_vec();
+    rest.remove(position);
+    return evaluate_function_call_ast(name, &rest);
+  }
   // Any other level specification must be `n`, `{n}` or `{m, n}` (an
   // option such as `Heads -> True`, or a list of options, may stand in its
   // place).
@@ -2150,7 +2160,9 @@ fn evaluate_function_call_ast_inner(
   if let Some(position) = level_position
     && let Some(spec) = args.get(position)
     && !is_option(spec)
-    && !matches!(spec, Expr::List(items) if !items.is_empty() && items.iter().all(is_option))
+    // `{}` is an empty list of options everywhere but in Level.
+    && !matches!(spec, Expr::List(items) if items.iter().all(is_option)
+      && (name != "Level" || !items.is_empty()))
     && !crate::functions::list_helpers_ast::is_level_spec(spec)
   {
     crate::emit_message(&crate::syntax::format_message_pieces(&[

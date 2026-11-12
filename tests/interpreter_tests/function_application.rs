@@ -4262,4 +4262,59 @@ mod functional_fuzz_edge_cases {
       ]
     );
   }
+
+  // `{}` in the level slot is an empty option list (Level excepted).
+  #[test]
+  fn empty_option_list_in_the_level_slot() {
+    assert_eq!(
+      interpret(
+        "{Map[f, {1}, {}], Total[{1, 2}, {}], Apply[f, {{1}}, {}], Cases[{1}, _, {}]}"
+      )
+      .unwrap(),
+      "{{f[1]}, 3, f[{1}], {1}}"
+    );
+    let r = woxi::interpret_with_stdout("Level[{1}, {}]").unwrap();
+    assert_eq!(r.result, "Level[{1}, {}]");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  // A list holding a non-real number among other elements fails Max on its
+  // own and is reported whole; other lists dissolve into their elements.
+  #[test]
+  fn max_of_lists_with_non_real_numbers() {
+    let r = woxi::interpret_with_stdout("Max[{I, 3}, {1}]").unwrap();
+    assert_eq!(r.result, "Max[{1}, {I, 3}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Max::nord: Invalid comparison with {I, 3} attempted."]
+    );
+    assert_eq!(interpret("Quiet[Max[{f[x]}, I]]").unwrap(), "Max[I, f[x]]");
+    assert_eq!(interpret("Quiet[Max[{I}, {2}]]").unwrap(), "Max[I, 2]");
+  }
+
+  // The contracted dimensions are the last of the first argument and the
+  // first of the second.
+  #[test]
+  fn inner_incommensurate_dimensions() {
+    let r = woxi::interpret_with_stdout(
+      "Inner[Times, {{-1, 4, 1}, {-2, 1, 2}}, {{1, 3}, {-2, 0}}, Plus]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Inner::incom: Length 3 of dimension 2 in {{-1, 4, 1}, {-2, 1, 2}} is \
+         incommensurate with length 2 of dimension 1 in {{1, 3}, {-2, 0}}."
+      ]
+    );
+  }
+
+  // Operate reaches a list's head, List.
+  #[test]
+  fn operate_on_a_list_head() {
+    assert_eq!(
+      interpret("{Operate[#^2 &, {1, 2}, 1], Operate[p, {1, 2}]}").unwrap(),
+      "{(List^2)[1, 2], p[List][1, 2]}"
+    );
+  }
 }

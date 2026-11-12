@@ -265,12 +265,14 @@ fn is_infinity_symbol(e: &Expr) -> bool {
 /// position <pos> in <call>.` and return the unevaluated call.
 fn intnm_message(name: &str, args: &[Expr], pos: usize) -> Expr {
   let call = unevaluated(name, args);
-  crate::emit_message(&format!(
-    "{}::intnm: Non-negative machine-sized integer expected at position {} in {}.",
-    name,
-    pos,
-    crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-  ));
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(format!(
+      "{name}::intnm: Non-negative machine-sized integer expected at position {pos} in "
+    )),
+    MessagePiece::Expr(&call),
+    MessagePiece::Text(".".to_string()),
+  ]));
   call
 }
 
@@ -5711,6 +5713,15 @@ pub fn dispatch_list_operations(
                 args: args.clone(),
               }
             }
+            // A list's head is `List`: Operate[p, {1, 2}] is p[List][1, 2].
+            Expr::List(items) => Expr::CurriedCall {
+              func: Box::new(wrap_head_at_depth(
+                &Expr::Identifier("List".to_string()),
+                p,
+                depth - 1,
+              )),
+              args: items.to_vec(),
+            },
             _ => expr.clone(),
           }
         }

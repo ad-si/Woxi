@@ -812,12 +812,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
 
     if step_n == 0 {
-      let call = unevaluated("Range", args);
-      crate::emit_message(&format!(
-        "Range::range: Range specification in {} does not have appropriate bounds.",
-        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-      ));
-      return Ok(call);
+      return Ok(range_bounds_failure(args));
     }
 
     let mut results = Vec::new();
@@ -938,12 +933,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // range using the numeric count and render each element symbolically.
     if min_f.is_none() || max_f.is_none() {
       if let Some(0.0) = step_f {
-        let call = unevaluated("Range", args);
-        crate::emit_message(&format!(
-          "Range::range: Range specification in {} does not have appropriate bounds.",
-          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-        ));
-        return Ok(call);
+        return Ok(range_bounds_failure(args));
       }
       // ratio = (max - min) / step
       let ratio_expr = times(vec![
@@ -987,24 +977,14 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Fully symbolic with no way to determine length — leave
       // unevaluated like Mathematica, with its message.
-      let call = unevaluated("Range", args);
-      crate::emit_message(&format!(
-        "Range::range: Range specification in {} does not have appropriate bounds.",
-        crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-      ));
-      return Ok(call);
+      return Ok(range_bounds_failure(args));
     }
 
     if let (Some(min_val), Some(max_val), Some(step_val)) =
       (min_f, max_f, step_f)
     {
       if step_val == 0.0 {
-        let call = unevaluated("Range", args);
-        crate::emit_message(&format!(
-          "Range::range: Range specification in {} does not have appropriate bounds.",
-          crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-        ));
-        return Ok(call);
+        return Ok(range_bounds_failure(args));
       }
       let count = range_step_count((max_val - min_val) / step_val) + 1;
       if count <= 0 {
@@ -1031,12 +1011,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     // A bound or step that is no number (`Range[0, 1, f[x]]`).
-    let call = unevaluated("Range", args);
-    crate::emit_message(&format!(
-      "Range::range: Range specification in {} does not have appropriate bounds.",
-      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-    ));
-    return Ok(call);
+    return Ok(range_bounds_failure(args));
   }
 
   // Fallback to f64 for Real arguments
@@ -1049,12 +1024,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (as_f64(&min_expr), as_f64(&max_expr), as_f64(&step_expr));
 
   if step == 0.0 {
-    let call = unevaluated("Range", args);
-    crate::emit_message(&format!(
-      "Range::range: Range specification in {} does not have appropriate bounds.",
-      crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
-    ));
-    return Ok(call);
+    return Ok(range_bounds_failure(args));
   }
 
   // Output elements are Real only when `min` or `step` is Real.
@@ -4442,4 +4412,17 @@ pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
     )),
     _ => None,
   }
+}
+
+/// `Range::range` for bounds or a step Range cannot use, leaving the call
+/// unevaluated; the call is laid out like other messages (`7/2` in 2D).
+fn range_bounds_failure(args: &[Expr]) -> Expr {
+  let call = unevaluated("Range", args);
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text("Range::range: Range specification in ".to_string()),
+    MessagePiece::Expr(&call),
+    MessagePiece::Text(" does not have appropriate bounds.".to_string()),
+  ]));
+  call
 }

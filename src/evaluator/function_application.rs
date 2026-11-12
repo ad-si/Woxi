@@ -682,16 +682,21 @@ fn emit_unfilled_slot_message(body: &Expr, args: &[Expr]) {
   let Some(n) = first_unfilled(body, args.len()) else {
     return;
   };
-  let body_str = crate::syntax::expr_to_message_form(body);
-  let args_str: Vec<String> = args
-    .iter()
-    .map(crate::syntax::expr_to_message_form)
-    .collect();
-  crate::emit_message(&format!(
-    "Function::slotn: Slot number {n} in {body_str} &  cannot be filled from \
-     ({body_str} & )[{}].",
-    args_str.join(", ")
-  ));
+  let function = Expr::Function {
+    body: Box::new(body.clone()),
+  };
+  let application = Expr::CurriedCall {
+    func: Box::new(function.clone()),
+    args: args.to_vec(),
+  };
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(format!("Function::slotn: Slot number {n} in ")),
+    MessagePiece::Expr(&function),
+    MessagePiece::Text(" cannot be filled from ".to_string()),
+    MessagePiece::Expr(&application),
+    MessagePiece::Text(".".to_string()),
+  ]));
 }
 
 fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
