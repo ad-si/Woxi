@@ -630,9 +630,25 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(build_complex_expr(srn, srd, sin, sid));
         }
       } else {
-        // |z| is irrational: Sign[z] = z / Sqrt[|z|^2]
-        // = (a + b*I) / Sqrt[|z|^2]
-        // Build (a + b*I) * (1/Sqrt[|z|^2])
+        // |z| is irrational: Sign[z] = g / Sqrt[|g|^2] for the primitive
+        // Gaussian integer g along z (clear the denominators, then the
+        // common content): Sign[1/2 + I/3] is (3 + 2 I)/Sqrt[13].
+        fn gcd(a: i128, b: i128) -> i128 {
+          if b == 0 { a.abs() } else { gcd(b, a % b) }
+        }
+        let l = rd / gcd(rd, id) * id;
+        let (gre, gim) = (rn * (l / rd), in_ * (l / id));
+        let c = gcd(gre, gim).max(1);
+        let (gre, gim) = (gre / c, gim / c);
+        if let Some(norm) = gre
+          .checked_mul(gre)
+          .and_then(|a| gim.checked_mul(gim).and_then(|b| a.checked_add(b)))
+        {
+          return crate::evaluator::evaluate_expr_to_expr(&div2(
+            build_complex_expr(gre, 1, gim, 1),
+            make_sqrt(Expr::Integer(norm)),
+          ));
+        }
         let z_expr = build_complex_expr(rn, rd, in_, id);
         let abs_expr = make_sqrt(make_rational(abs2_n, abs2_d));
         return Ok(div2(z_expr, abs_expr));
@@ -798,6 +814,14 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Sqrt expects exactly 1 argument".into(),
     ));
+  }
+  // An infinity raises its direction: `Sqrt[-Infinity]` is
+  // `DirectedInfinity[I]`, as Power gives it.
+  if crate::functions::math_ast::infinity_direction(&args[0]).is_some() {
+    return crate::functions::math_ast::power_two(
+      &args[0],
+      &crate::functions::math_ast::make_rational(1, 2),
+    );
   }
   // Sqrt is monotonic increasing on [0, ∞): map it over each interval span.
   if let Some(r) =
@@ -1632,10 +1656,12 @@ fn reject_non_real_base(head: &str, args: &[Expr]) -> Option<Expr> {
   if im == 0.0 && try_eval_to_f64(&args[0]).is_some() {
     return None;
   }
-  crate::emit_message(&format!(
-    "{head}::preal: The parameter {} should be real valued.",
-    crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
-  ));
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(format!("{head}::preal: The parameter ")),
+    MessagePiece::Expr(&args[0]),
+    MessagePiece::Text(" should be real valued.".to_string()),
+  ]));
   Some(unevaluated(head, args))
 }
 
@@ -2640,6 +2666,18 @@ fn infinite_mod_quotient(
   }))
 }
 
+/// `Mod::indet` for a zero modulus, naming the call as written (`0` or `0.`)
+/// and laid out like other messages.
+fn mod_indet_message(args: &[Expr]) {
+  use crate::syntax::MessagePiece;
+  let call = unevaluated("Mod", args);
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text("Mod::indet: Indeterminate expression ".to_string()),
+    MessagePiece::Expr(&call),
+    MessagePiece::Text(" encountered.".to_string()),
+  ]));
+}
+
 pub fn mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(format!(
@@ -2713,10 +2751,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   // wolframscript. The numeric branches below also guard against zero, but
   // this catches the case where m is symbolic and never reaches them.
   if is_literal_zero(n) {
-    crate::emit_message(&format!(
-      "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-      expr_to_string(m)
-    ));
+    mod_indet_message(&[m.clone(), n.clone()]);
     return Ok(id_expr("Indeterminate"));
   }
   // BigInteger fast-path so `Mod[2^200, 10^100]` doesn't fall through
@@ -2735,10 +2770,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if let (Some(mb), Some(nb)) = (m_big, n_big) {
     use num_traits::Zero;
     if nb.is_zero() {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        expr_to_string(m)
-      ));
+      mod_indet_message(&[m.clone(), n.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     let rem: BigInt = ((&mb % &nb) + &nb) % &nb;
@@ -2755,10 +2787,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   {
     if nn == 0 && nd != 0 {
       // Mod[m, 0] => Indeterminate
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        expr_to_string(m)
-      ));
+      mod_indet_message(&[m.clone(), n.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     // Convert to common denominator: m = mn/md, n = nn/nd
@@ -2781,10 +2810,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     && let (Some(_), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n))
   {
     if b == 0.0 {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        expr_to_string(m)
-      ));
+      mod_indet_message(&[m.clone(), n.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
@@ -2796,41 +2822,32 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
-  // Gaussian Mod: when at least one operand is genuinely complex, wolframscript
-  // uses Mod[m, n] = m - n*Round[m/n], rounding the complex quotient
-  // component-wise (round-half-to-even). Real operands are handled above, so
-  // this only fires for Gaussian integers/rationals, e.g.
-  // Mod[7 + 3*I, 2] = -1 - I.
-  if let (Some((_, (m_im, _))), Some((_, (n_im, _)))) =
-    (try_extract_complex_exact(m), try_extract_complex_exact(n))
-    && (m_im != 0 || n_im != 0)
-  {
-    let quotient = div2(m.clone(), n.clone());
-    let round_quot = call1("Round", quotient);
-    let result = minus2(m.clone(), times2(n.clone(), round_quot));
-    return crate::evaluator::evaluate_expr_to_expr(&result);
-  }
-
-  // Gaussian Mod with machine-real parts, e.g. Mod[3.5 + 4.2*I, 2] =
-  // -0.5 + 0.2*I: the same m - n*Round[m/n] rule applied to numeric complex
-  // operands.
-  if let (Some((_, m_im)), Some((_, n_im))) =
-    (try_extract_complex_f64(m), try_extract_complex_f64(n))
-    && (m_im != 0.0 || n_im != 0.0)
-  {
-    let quotient = div2(m.clone(), n.clone());
-    let round_quot = call1("Round", quotient);
-    let result = minus2(m.clone(), times2(n.clone(), round_quot));
+  // Gaussian Mod: when at least one operand is genuinely complex,
+  // Mod[m, n] = m - n*Quotient[m, n], with Quotient deciding how the complex
+  // quotient is rounded (component-wise Round for an explicit number,
+  // Floor for a divisor like Sqrt[2]): Mod[7 + 3*I, 2] = -1 - I,
+  // Mod[3.5 + 4.2*I, 2] = -0.5 + 0.2*I, Mod[1 + I, Sqrt[2]] = 1 + I.
+  let complex_exact = matches!(
+    (try_extract_complex_exact(m), try_extract_complex_exact(n)),
+    (Some((_, (m_im, _))), Some((_, (n_im, _)))) if m_im != 0 || n_im != 0
+  );
+  let complex_machine = matches!(
+    (try_extract_complex_f64(m), try_extract_complex_f64(n)),
+    (Some((_, m_im)), Some((_, n_im))) if m_im != 0.0 || n_im != 0.0
+  );
+  if complex_exact || complex_machine {
+    let quotient = crate::evaluator::evaluate_function_call_ast(
+      "Quotient",
+      &[m.clone(), n.clone()],
+    )?;
+    let result = minus2(m.clone(), times2(n.clone(), quotient));
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
   // Float fallback
   if let (Some(a), Some(b)) = (try_eval_to_f64(m), try_eval_to_f64(n)) {
     if b == 0.0 {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
-        expr_to_string(m)
-      ));
+      mod_indet_message(&[m.clone(), n.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     let remainder = a % b;
@@ -2871,11 +2888,7 @@ fn mod_contains_inexact(expr: &Expr) -> bool {
 fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
   // Mod[m, 0, d] => Indeterminate for any m (including symbolic).
   if is_literal_zero(n) {
-    crate::emit_message(&format!(
-      "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-      expr_to_string(m),
-      expr_to_string(d)
-    ));
+    mod_indet_message(&[m.clone(), n.clone(), d.clone()]);
     return Ok(id_expr("Indeterminate"));
   }
   // Try exact rational arithmetic
@@ -2883,11 +2896,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
     (try_as_rational(m), try_as_rational(n), try_as_rational(d))
   {
     if nn == 0 && nd != 0 {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        expr_to_string(m),
-        expr_to_string(d)
-      ));
+      mod_indet_message(&[m.clone(), n.clone(), d.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     // m - d = (mn*dd - dn*md) / (md*dd)
@@ -2914,11 +2923,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
       (try_eval_to_f64(m), try_eval_to_f64(n), try_eval_to_f64(d))
   {
     if b == 0.0 {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        expr_to_string(m),
-        expr_to_string(d)
-      ));
+      mod_indet_message(&[m.clone(), n.clone(), d.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     // floor_quot = Floor[(m - d)/n]
@@ -2935,11 +2940,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
     (try_eval_to_f64(m), try_eval_to_f64(n), try_eval_to_f64(d))
   {
     if b == 0.0 {
-      crate::emit_message(&format!(
-        "Mod::indet: Indeterminate expression Mod[{}, 0, {}] encountered.",
-        expr_to_string(m),
-        expr_to_string(d)
-      ));
+      mod_indet_message(&[m.clone(), n.clone(), d.clone()]);
       return Ok(id_expr("Indeterminate"));
     }
     let result = a - b * ((a - c) / b).floor();
@@ -3099,9 +3100,16 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // component-wise (round-half-to-even). This matches wolframscript and
       // the identity Mod[m, n] = m - n*Quotient[m, n]. Building the symbolic
       // Round and evaluating it also normalizes the display to `a + b*I`.
+      // An operand that is no explicit number (`Sqrt[2]`, `2^(1/3)`) floors
+      // instead: `Quotient[1 + I, Sqrt[2]]` is 0, and
+      // `Quotient[Sqrt[2], 1.5 + 2. I]` is -I.
+      let explicit_number =
+        crate::functions::predicate_ast::is_numeric_expr(&args[0])
+          && crate::functions::predicate_ast::is_numeric_expr(&args[1]);
       let quotient = div2(args[0].clone(), args[1].clone());
-      let round_quot = call1("Round", quotient);
-      crate::evaluator::evaluate_expr_to_expr(&round_quot)
+      let rounded =
+        call1(if explicit_number { "Round" } else { "Floor" }, quotient);
+      crate::evaluator::evaluate_expr_to_expr(&rounded)
     } else {
       Ok(unevaluated("Quotient", args))
     }

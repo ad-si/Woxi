@@ -5578,7 +5578,11 @@ fn generate_svg_with_options(
   // padding leaves, and the height follows from the ratio. Deriving it here,
   // before the margins are computed, keeps the frame as wide as the image
   // instead of shrinking it to fit a canvas sized by the default ratio.
+  // An explicit image height (`ImageSize -> {w, h}`) is kept instead: the
+  // plotting area keeps its ratio and is centered in what the padding
+  // leaves (see `padded_margins`).
   if let Some(ar) = opts.aspect_ratio
+    && !opts.image_size_explicit.1
     && let Some([pad_left, pad_right, pad_bottom, pad_top]) = opts.image_padding
   {
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;

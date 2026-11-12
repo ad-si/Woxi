@@ -1664,18 +1664,49 @@ pub fn map_thread_ast(
   // thread over, which wolframscript reports rather than treating as an
   // error.
   let required = level.unwrap_or(1);
-  let mut sublists: Vec<Vec<Expr>> = Vec::new();
+  // Every object needs as many list levels as are threaded over; the first
+  // one short of them is reported with how many it has.
+  let list_depth = |e: &Expr| -> usize {
+    let mut depth = 0;
+    let mut cur = e;
+    while depth < required
+      && let Expr::List(items) = cur
+    {
+      depth += 1;
+      match items.first() {
+        Some(first) => cur = first,
+        // An empty list says nothing about deeper levels; the length
+        // comparison below decides it.
+        None => return required,
+      }
+    }
+    depth
+  };
   for (i, item) in outer_items.iter().enumerate() {
+    let depth = list_depth(item);
+    if depth < required {
+      crate::emit_message(&crate::syntax::format_message_pieces(&[
+        crate::syntax::MessagePiece::Text(
+          "MapThread::mptd: Object ".to_string(),
+        ),
+        crate::syntax::MessagePiece::Expr(item),
+        crate::syntax::MessagePiece::Text(format!(
+          " at position {{2, {}}} in ",
+          i + 1
+        )),
+        crate::syntax::MessagePiece::Expr(&original()),
+        crate::syntax::MessagePiece::Text(format!(
+          " has only {depth} of required {required} dimensions."
+        )),
+      ]));
+      return Ok(original());
+    }
+  }
+  let mut sublists: Vec<Vec<Expr>> = Vec::new();
+  for item in outer_items {
     if let Expr::List(items) = item {
       sublists.push(items.to_vec());
     } else {
-      crate::emit_message(&format!(
-        "MapThread::mptd: Object {} at position {{2, {}}} in {} has only 0 of required {} dimensions.",
-        show(item),
-        i + 1,
-        show(&original()),
-        required
-      ));
       return Ok(original());
     }
   }

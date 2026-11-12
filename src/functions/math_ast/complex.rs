@@ -182,11 +182,44 @@ fn minus_one_rational_power(expr: &Expr) -> Option<Expr> {
   (is_minus_one && rational).then(|| exp.clone())
 }
 
+/// `Re` (`imaginary == false`) or `Im` of an infinity: the matching part of
+/// its direction decides, `0` when that part vanishes and a real infinity
+/// of its sign otherwise (`Re[-Infinity]` is `-Infinity`, `Im[I Infinity]`
+/// is `Infinity`); ComplexInfinity has no parts (`Indeterminate`). `None`
+/// for a finite argument or a direction whose part has no known sign.
+fn infinity_part(e: &Expr, imaginary: bool) -> Option<Expr> {
+  let direction = crate::functions::math_ast::infinity_direction(e)?;
+  let Some(direction) = direction else {
+    return Some(Expr::Identifier("Indeterminate".to_string()));
+  };
+  let part = crate::evaluator::evaluate_function_call_ast(
+    if imaginary { "Im" } else { "Re" },
+    &[direction],
+  )
+  .ok()?;
+  let value = crate::functions::math_ast::try_eval_to_f64(&part)?;
+  Some(if value == 0.0 {
+    Expr::Integer(0)
+  } else if value > 0.0 {
+    Expr::Identifier("Infinity".to_string())
+  } else {
+    crate::evaluator::evaluate_expr_to_expr(&times2(
+      Expr::Integer(-1),
+      Expr::Identifier("Infinity".to_string()),
+    ))
+    .ok()?
+  })
+}
+
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "Re expects exactly 1 argument".into(),
     ));
+  }
+
+  if let Some(part) = infinity_part(&args[0], false) {
+    return Ok(part);
   }
 
   // Re[Conjugate[x]] = Re[x]
@@ -290,6 +323,10 @@ pub fn im_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Im expects exactly 1 argument".into(),
     ));
+  }
+
+  if let Some(part) = infinity_part(&args[0], true) {
+    return Ok(part);
   }
 
   // Im[Conjugate[x]] = -Im[x]
@@ -1064,6 +1101,25 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // ComplexInfinity points every way.
+  if matches!(&args[0], Expr::Identifier(n) if n == "ComplexInfinity")
+    || matches!(&args[0], Expr::FunctionCall { name, args: inner }
+      if name == "DirectedInfinity" && inner.is_empty())
+  {
+    crate::emit_message(
+      "Arg::indet: Indeterminate expression Arg[ComplexInfinity] encountered.",
+    );
+    return Ok(call(
+      "Interval",
+      vec![Expr::List(
+        vec![
+          times2(Expr::Integer(-1), Expr::Identifier("Pi".to_string())),
+          Expr::Identifier("Pi".to_string()),
+        ]
+        .into(),
+      )],
+    ));
+  }
   // Arg[DirectedInfinity[z]] = Arg[z]
   if let Expr::FunctionCall { name, args: inner } = &args[0]
     && name == "DirectedInfinity"

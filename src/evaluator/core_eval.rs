@@ -4305,6 +4305,41 @@ fn evaluate_expr_to_expr_uncached(
         let right = &values[i + 1];
         let op = &operators[i];
 
+        // Ordering a non-real number against another numeric quantity is
+        // rejected with ::nord naming the non-real operand. The segments
+        // before this one already held, so only the remainder comes back,
+        // and wolframscript evaluates that remainder again (reporting it a
+        // second time): `1 < 2 < 1 + I` is `2 < 1 + I` with two messages.
+        if let Some(head) = match op {
+          ComparisonOp::Less => Some("Less"),
+          ComparisonOp::LessEqual => Some("LessEqual"),
+          ComparisonOp::Greater => Some("Greater"),
+          ComparisonOp::GreaterEqual => Some("GreaterEqual"),
+          _ => None,
+        } && crate::functions::predicate_ast::is_numeric_q(left)
+          && crate::functions::predicate_ast::is_numeric_q(right)
+          && let Some(culprit) = [left, right]
+            .into_iter()
+            .find_map(crate::functions::math_ast::unorderable_display)
+        {
+          crate::emit_message(&crate::syntax::format_message_pieces(&[
+            crate::syntax::MessagePiece::Text(format!(
+              "{head}::nord: Invalid comparison with "
+            )),
+            culprit,
+            crate::syntax::MessagePiece::Text(" attempted.".to_string()),
+          ]));
+          let rest = Expr::Comparison {
+            operands: values[i..].to_vec(),
+            operators: operators[i..].to_vec(),
+          };
+          return if i == 0 {
+            Ok(rest)
+          } else {
+            evaluate_expr_to_expr(&rest)
+          };
+        }
+
         // Nothing is known to equal (or differ from) Indeterminate, not even
         // itself, so the whole chain stays unevaluated instead of being
         // decided structurally.

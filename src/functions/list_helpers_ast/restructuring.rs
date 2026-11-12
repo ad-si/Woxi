@@ -938,34 +938,46 @@ pub fn reverse_level_ast(
     ));
     return Ok(call("Reverse", vec![list.clone(), level_spec.clone()]));
   }
-  // Parse level spec: integer n means reverse at level n,
-  // {n1, n2} means reverse at levels n1 through n2
-  let (min_level, max_level) = match level_spec {
-    Expr::Integer(n) => (*n as usize, *n as usize),
-    Expr::List(items) if items.len() == 1 => {
-      let n = expr_to_i128(&items[0]).unwrap_or(1) as usize;
-      (n, n)
-    }
-    Expr::List(items) if items.len() == 2 => {
-      let min = expr_to_i128(&items[0]).unwrap_or(1) as usize;
-      let max = expr_to_i128(&items[1]).unwrap_or(1) as usize;
-      (min, max)
-    }
-    _ => (1, 1),
+  // The levels to reverse: a positive integer, or a list of them (each
+  // level listed is reversed, `{1, 3}` leaves level 2 alone). Anything
+  // else is rejected with ::ilsmp.
+  let positive = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+    _ => None,
   };
+  let levels: Option<Vec<usize>> = match level_spec {
+    Expr::List(items) => items.iter().map(positive).collect(),
+    other => positive(other).map(|n| vec![n]),
+  };
+  let Some(levels) = levels else {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(
+        "Reverse::ilsmp: Single or list of positive machine-sized integers \
+         expected at position 2 of "
+          .to_string(),
+      ),
+      crate::syntax::MessagePiece::Expr(&call(
+        "Reverse",
+        vec![list.clone(), level_spec.clone()],
+      )),
+      crate::syntax::MessagePiece::Text(".".to_string()),
+    ]));
+    return Ok(call("Reverse", vec![list.clone(), level_spec.clone()]));
+  };
+  let max_level = levels.iter().copied().max().unwrap_or(0);
 
   fn reverse_at_levels(
     expr: &Expr,
     current_level: usize,
-    min_level: usize,
+    levels: &[usize],
     max_level: usize,
   ) -> Expr {
     if current_level > max_level {
       return expr.clone();
     }
-    let in_range = current_level >= min_level;
+    let in_range = levels.contains(&current_level);
     let recurse = |item: &Expr| {
-      reverse_at_levels(item, current_level + 1, min_level, max_level)
+      reverse_at_levels(item, current_level + 1, levels, max_level)
     };
     match expr {
       Expr::List(items) => {
@@ -1002,7 +1014,7 @@ pub fn reverse_level_ast(
   }
 
   crate::evaluator::evaluate_expr_to_expr(&reverse_at_levels(
-    list, 1, min_level, max_level,
+    list, 1, &levels, max_level,
   ))
 }
 

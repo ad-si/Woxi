@@ -547,10 +547,12 @@ fn intersection_with_same_test(
   slices: &[&[Expr]],
   test: &Expr,
 ) -> std::vec::Vec<Expr> {
-  let first_items: Vec<Expr> = match slices.first() {
+  // The result comes out in canonical order, as without a SameTest.
+  let mut first_items: Vec<Expr> = match slices.first() {
     Some(items) => items.to_vec(),
     None => return Vec::new(),
   };
+  sort_canonical(&mut first_items);
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
     let call = call(
@@ -932,6 +934,25 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Commonest", args));
   };
 
+  // Asking for more elements than there are distinct ones returns them all
+  // with Commonest::dstlms (an `UpTo` asks for at most that many).
+  if let Some(Expr::Integer(n)) = args.get(1)
+    && *n >= 0
+  {
+    let mut seen = std::collections::HashSet::new();
+    let distinct = items
+      .iter()
+      .filter(|e| seen.insert(expr_to_string(e)))
+      .count();
+    if *n as usize > distinct {
+      crate::emit_message(&format!(
+        "Commonest::dstlms: The requested number of elements {n} is greater \
+         than the number of distinct elements {distinct}. Only {distinct} \
+         elements will be returned."
+      ));
+    }
+  }
+
   if items.is_empty() {
     return Ok(Expr::List(vec![].into()));
   }
@@ -941,7 +962,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tier_mode = false;
   let n = if args.len() == 2 {
     match &args[1] {
-      Expr::Integer(n) if *n >= 1 => *n as usize,
+      Expr::Integer(n) if *n >= 0 => *n as usize,
       // UpTo[n] caps at min(n, distinct_count).
       Expr::FunctionCall { name, args: a }
         if name == "UpTo" && a.len() == 1 =>

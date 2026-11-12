@@ -1444,6 +1444,23 @@ pub(crate) fn inset_object_fraction(
   Some(((ox - x0) / (x1 - x0), 1.0 - (oy - y0) / (y1 - y0)))
 }
 
+/// The explicit `PlotRange` of a two-dimensional picture given as an inset
+/// object, as `((x_min, x_max), (y_min, y_max))`; `None` when the picture
+/// leaves its range to its primitives.
+fn inset_object_frame(object: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  let object = peel_style_wrapper(object);
+  let explicit = graphics_options(object).is_some_and(|opts| {
+    opts
+      .iter()
+      .any(|o| matches!(option_name_value(o), Some((n, _)) if n == "PlotRange"))
+  });
+  if !explicit {
+    return None;
+  }
+  let ((x0, x1), (y0, y1)) = absolute_plot_range(object)?;
+  (x1 > x0 && y1 > y0).then_some(((x0, x1), (y0, y1)))
+}
+
 /// A primitive's anchor in data coordinates, turning a scaled fraction into
 /// the point of the plot range it names.
 fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
@@ -7070,11 +7087,12 @@ fn inset_primitives(
   if bb.is_empty() {
     return None;
   }
-  let (cx, cy) = (
-    f64::midpoint(bb.x_min, bb.x_max),
-    f64::midpoint(bb.y_min, bb.y_max),
-  );
-  let (w, h) = (bb.x_max - bb.x_min, bb.y_max - bb.y_min);
+  // The object's frame: its explicit `PlotRange` (which is what a `size`
+  // box shows), else the extent of its primitives.
+  let ((fx0, fx1), (fy0, fy1)) = inset_object_frame(&args[0])
+    .unwrap_or(((bb.x_min, bb.x_max), (bb.y_min, bb.y_max)));
+  let (cx, cy) = (f64::midpoint(fx0, fx1), f64::midpoint(fy0, fy1));
+  let (w, h) = (fx1 - fx0, fy1 - fy0);
 
   // `size` may be `{w, h}`, a single number (both sides), or Automatic.
   let (target_w, target_h) = parse_inset_target_size(args);
@@ -7112,8 +7130,14 @@ fn inset_primitives(
 
   let pos = args.get(1).and_then(expr_to_point).unwrap_or((0.0, 0.0));
   // `opos` names the point of the object that lands on `pos`, in the
-  // object's own coordinates (Automatic = its center).
-  let (ox, oy) = args.get(2).and_then(expr_to_point).unwrap_or((cx, cy));
+  // object's own coordinates (Automatic = its center). A symbolic corner
+  // (`{Center, Bottom}`) or a `Scaled` fraction is measured across the
+  // object's frame: its explicit `PlotRange`, else its primitives' extent.
+  let (ox, oy) = match args.get(2).and_then(expr_to_anchor) {
+    Some((fx, fy, true)) => (fx0 + fx * w, fy0 + fy * h),
+    Some((x, y, false)) => (x, y),
+    None => (cx, cy),
+  };
 
   let placed = inner
     .iter()
@@ -7362,6 +7386,34 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       source: None,
     });
     return;
+  }
+  // A label whose layout shows a typeset fraction box (`Column[{Row[{
+  // DisplayForm[FractionBox[1, 2]], …}]}]`) is composed to a picture the
+  // same way, so each fraction stacks its numerator over its denominator.
+  if frame_opts.is_empty()
+    && label_holds_displayed_fraction_box(content)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let svg = crate::evaluator::expr_to_svg(&colored_body);
+    if svg.starts_with("<svg")
+      && let Some(dims) = parse_svg_dimensions(&svg)
+    {
+      prims.push(Primitive::InsetGraphic {
+        svg,
+        x,
+        y,
+        w: dims.nat_w,
+        h: dims.nat_h,
+        scaled,
+        size: None,
+        size_scaled: false,
+        source: None,
+      });
+      return;
+    }
   }
   // A label written as a `Row` of styled parts — the `f(x)` a
   // Demonstration writes beside a point — carries its font directives on
@@ -13338,9 +13390,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
-            other if plot_label_layout_svg(other).is_some() => {
-              let (svg, w, h) =
-                plot_label_layout_svg(other).expect("checked by the guard");
+            other
+              if plot_label_graphic_svg(other)
+                .or_else(|| plot_label_layout_svg(other))
+                .is_some() =>
+            {
+              let (svg, w, h) = plot_label_graphic_svg(other)
+                .or_else(|| plot_label_layout_svg(other))
+                .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
               while block_height(lines, TITLE_FONT) < h {
@@ -13939,11 +13996,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let h = (svg_h - margin_bottom - margin_top).max(1.0);
         (h / drawing_aspect, h)
       }
-      // With both `ImageSize -> {w, h}` and `ImagePadding` the padding is
-      // only a minimum: the drawing area keeps its `AspectRatio` inside
-      // what the padding leaves, and the room left over is split evenly
-      // between the two sides of the short axis.
-      Some(r) if size_names_height && image_padding.is_some() => {
+      // Under `ImageSize -> {w, h}` the drawing area keeps its
+      // `AspectRatio` inside what the margins (automatic or `ImagePadding`,
+      // which is then only a minimum) leave, and the room left over is
+      // split evenly between the two sides of the short axis.
+      Some(r) if size_names_height => {
         let avail_h = (svg_h - margin_bottom - margin_top).max(1.0);
         let (pw, ph) = if w * r <= avail_h {
           (w, w * r)
@@ -15575,6 +15632,27 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // OverscriptBox / UnderscriptBox / UnderoverscriptBox — same as super/sub for now
       "OverscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
+        // A bar accent (`_`, or a hyphen/minus typed as the overscript, the
+        // antiquark b̄) is drawn as a rule spanning the base, not as a
+        // raised dash glyph.
+        if is_bar_accent_box(&args[1]) {
+          let sw = (font_size * 0.06).max(0.6);
+          let gap = font_size * 0.12;
+          let line_y = sw;
+          let base_y = line_y + gap;
+          let elements = format!(
+            "<path d=\"M 0.00 {line_y:.2} L {:.2} {line_y:.2}\" fill=\"none\" \
+             stroke=\"currentColor\" stroke-width=\"{sw:.2}\"/>{}",
+            base.width,
+            base.translate(0.0, base_y)
+          );
+          return BoxLayout {
+            width: base.width,
+            height: base_y + base.height,
+            baseline: base_y + base.baseline,
+            elements,
+          };
+        }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
@@ -16136,6 +16214,32 @@ pub fn has_fraction(expr: &Expr) -> bool {
     // FullForm renders as plain text, no stacked fractions
     Expr::FunctionCall { name, args }
       if name == "FullForm" && args.len() == 1 =>
+    {
+      false
+    }
+    // Only the displayed content of a styling or framing wrapper can hold a
+    // fraction: its remaining arguments are directives and options (e.g. the
+    // `RGBColor[0, 2/3, 0]` of `Darker[Green]`) or a tooltip that is never
+    // drawn in place.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Style" | "Framed" | "Pane" | "Panel" | "Item" | "Tooltip"
+      ) && !args.is_empty() =>
+    {
+      has_fraction(&args[0])
+    }
+    // A color directive renders as a swatch, never as a stacked fraction.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "RGBColor"
+          | "GrayLevel"
+          | "Hue"
+          | "CMYKColor"
+          | "LABColor"
+          | "XYZColor"
+      ) =>
     {
       false
     }
@@ -17842,8 +17946,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "Overscript" | "Underscript" if args.len() == 2 => {
           let base_markup = expr_to_svg_markup(&args[0]);
           let accent_markup = expr_to_svg_markup(&args[1]);
-          let is_bar_accent = matches!(&args[1],
-            Expr::String(s) if s == "_" || s == "-" || s == "\u{2013}");
+          let is_bar_accent = is_bar_accent_box(&args[1]);
           if is_bar_accent {
             let deco = if name == "Overscript" {
               "overline"
@@ -18768,6 +18871,11 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // OverscriptBox[base, over] → base with overscript
       "OverscriptBox" if args.len() >= 2 => {
         let base_svg = boxes_to_svg(&args[0]);
+        if is_bar_accent_box(&args[1]) {
+          return format!(
+            "<tspan text-decoration=\"overline\">{base_svg}</tspan>"
+          );
+        }
         let over_svg = boxes_to_svg(&args[1]);
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
@@ -19427,6 +19535,39 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
   }
 }
 
+/// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or
+/// an `Image`): drawn at its own natural size above the graphic instead of
+/// being printed as `Graphics[…]` source text.
+fn plot_label_graphic_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  let svg = match peel_style_wrapper(expr) {
+    Expr::Graphics { svg, is_3d, .. } => {
+      if *is_3d {
+        strip_default_background_plate(svg)
+      } else {
+        svg.clone()
+      }
+    }
+    image @ Expr::Image { .. } => crate::evaluator::expr_to_svg(image),
+    // The option value is held, so it can still be the symbolic call.
+    call @ Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      let svg = crate::evaluator::expr_to_svg(call);
+      if name == "Graphics3D" {
+        strip_default_background_plate(&svg)
+      } else {
+        svg
+      }
+    }
+    _ => return None,
+  };
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, h) = svg_natural_size(&svg)?;
+  (w > 0.0 && h > 0.0).then_some((svg, w, h))
+}
+
 /// A `PlotLabel` that sets a two-dimensional layout inline — a matrix from
 /// `MatrixForm`, or the boxes of `ToString[m . x, TraditionalForm]` in a
 /// `Row` — typeset as a picture with its natural size, the way Wolfram
@@ -19658,9 +19799,31 @@ fn accent_text(base: &str, accent: &str, over: bool) -> String {
   }
 }
 
+/// Whether an over/underscript box is a plain horizontal-bar accent: `_`,
+/// a macron or overline, or a hyphen/minus/en dash typed as the script.
+/// Such a script is drawn as a rule spanning the base (x̄, b̄).
+fn is_bar_accent_box(script: &Expr) -> bool {
+  let Expr::String(s) = script else {
+    return false;
+  };
+  let s = s.trim();
+  let s = s
+    .strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .unwrap_or(s)
+    .trim();
+  matches!(
+    s,
+    "_" | "-" | "\u{2212}" | "\u{2013}" | "\u{00AF}" | "\u{203E}"
+  )
+}
+
 fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
   Some(match (accent, over) {
-    ("_" | "\u{203E}" | "\u{00AF}", true) => ('\u{0305}', true),
+    // A hyphen or minus sign over a base is drawn as a bar, like `_`.
+    ("_" | "-" | "\u{2212}" | "\u{203E}" | "\u{00AF}", true) => {
+      ('\u{0305}', true)
+    }
     ("_" | "\u{203E}" | "\u{00AF}", false) => ('\u{0332}', true),
     (".", true) => ('\u{0307}', false),
     ("..", true) => ('\u{0308}', false),
@@ -28116,9 +28279,10 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   let mut standard = false;
   while let Expr::FunctionCall { name, args } = &current {
     let pass_through = match name.as_str() {
-      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm" => {
-        args.len() == 1
-      }
+      "Text" | "TraditionalForm" | "StandardForm" => args.len() == 1,
+      // `DisplayForm[box]` typesets the box tree: peeling it would leave a
+      // bare `FractionBox[…]` that the layout renderers print as source.
+      "DisplayForm" => args.len() == 1 && !is_box_display_wrapper(name, args),
       // `Deploy[expr]` only makes its content non-selectable; it draws
       // exactly as the content does.
       "Deploy" => args.len() == 1,
@@ -28667,8 +28831,8 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 }
 
 /// A (possibly `Style`d) string whose inline box notation holds a fraction,
-/// typeset through the box layout so the numerator stacks over the
-/// denominator. `None` for any other item, which keeps its text rendering.
+/// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
+/// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   let (content, size) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
@@ -28677,10 +28841,16 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
     }
     other => (other, 14.0),
   };
-  let Expr::String(text) = content else {
-    return None;
+  // The boxes are spelled either as inline `\!\(\*…\)` notation in a
+  // string or as a box tree shown through `DisplayForm`/`RawBoxes`
+  // (`DisplayForm[FractionBox[1, 2]]`).
+  let boxes = match content {
+    Expr::String(text) => inline_box_string_to_box_expr(text)?,
+    Expr::FunctionCall { name, args } if is_box_display_wrapper(name, args) => {
+      args[0].clone()
+    }
+    _ => return None,
   };
-  let boxes = inline_box_string_to_box_expr(text)?;
   if !box_has_fraction(&boxes) {
     return None;
   }
@@ -28690,6 +28860,26 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// Whether `expr` — a label, possibly a `Row`/`Column` layout under `Style`
+/// wrappers — shows a box tree holding a fraction through `DisplayForm` or
+/// `RawBoxes` somewhere among its items. Such a label is typeset as a
+/// picture: flattening it to one text run would spell the fraction's
+/// numerator and denominator side by side.
+fn label_holds_displayed_fraction_box(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if is_box_display_wrapper(name, args) => {
+      box_has_fraction(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) || name == "Row" || name == "Column" =>
+    {
+      args.iter().any(label_holds_displayed_fraction_box)
+    }
+    Expr::List(items) => items.iter().any(label_holds_displayed_fraction_box),
+    _ => false,
+  }
 }
 
 /// A word of a paragraph set from inline `StyleBox` notation.
@@ -30032,7 +30222,9 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
           Expr::List(dims) if dims.len() == 2 => {
             Some((expr_to_f64(&dims[0])?, expr_to_f64(&dims[1])?))
           }
-          other => Some((expr_to_f64(other)?, 14.0 * 1.2)),
+          // A width alone leaves the height to the content, which the
+          // `Pane`'s own renderer wraps and sizes (see `framed_box_to_svg`).
+          _ => None,
         })
         .or_else(|| pane_content_size(&args[0])),
     },
@@ -30042,6 +30234,25 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
       pane_content_size(&args[0])
     }
     _ => None,
+  }
+}
+
+/// Whether `expr` is a `Pane` that sets a width alone (`Pane[e, w]`,
+/// `Pane[e, ImageSize -> w]`), possibly under `Text`/`Style`/`Deploy`/`Item`.
+fn width_only_pane(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  match name.as_str() {
+    "Pane" if !args.is_empty() => {
+      crate::evaluator::dispatch::io_functions::pane_fixed_size(args).is_none()
+        && crate::evaluator::dispatch::io_functions::pane_width_only(args)
+          .is_some()
+    }
+    "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+      width_only_pane(&args[0])
+    }
+    _ => false,
   }
 }
 
@@ -30255,6 +30466,21 @@ fn framed_box_to_svg(
   // is drawn and framed, rather than printed as its own source text.
   let (inner_svg, inner_w, inner_h) = match inner_svg {
     None if crate::evaluator::lays_out_a_graphic(content) => {
+      let svg = crate::evaluator::expr_to_svg(content);
+      if svg.starts_with("<svg") {
+        let (w, h) = parse_svg_wh(&svg);
+        (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
+
+  // A text in a `Pane` of a given width (`Framed[Text@Pane[…, 300]]`) is
+  // wrapped at that width by the pane's own renderer and framed as drawn.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None if width_only_pane(content) => {
       let svg = crate::evaluator::expr_to_svg(content);
       if svg.starts_with("<svg") {
         let (w, h) = parse_svg_wh(&svg);
@@ -30988,6 +31214,26 @@ pub(crate) fn clip_svg_to_pane_box(
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");
+  // The alignment still applies along an axis the content fits in: a table
+  // taller than its Pane stays horizontally centered under
+  // `Alignment -> {Center, Top}`, and only the overflowing axis is pinned
+  // to the Pane's origin.
+  let align = align.unwrap_or((0.0, 0.0));
+  let x = if natural_w < width {
+    (width - natural_w) * align.0
+  } else {
+    0.0
+  };
+  let y = if natural_h < height {
+    (height - natural_h) * align.1
+  } else {
+    0.0
+  };
+  let inner = if x == 0.0 && y == 0.0 {
+    inner.to_string()
+  } else {
+    format!("<g transform=\"translate({x:.1} {y:.1})\">\n{inner}\n</g>")
+  };
   format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
   )
@@ -39564,7 +39810,7 @@ fn marked_subscript_box_runs(
   let base = crate::notebook::render_boxes_text(&expr_to_string(base));
   let script = crate::notebook::render_boxes_text(&expr_to_string(script));
   let script = script.trim();
-  if script.chars().all(drawn_subscript_glyph) {
+  if !picture_subscript_needs_lowering(script) {
     return None;
   }
   Some(vec![
@@ -39740,6 +39986,21 @@ fn with_marked_subscripts<T>(f: impl FnOnce() -> T) -> T {
   out
 }
 
+/// Whether a subscript in a picture label must be lowered with a `<tspan>`
+/// rather than folded into Unicode subscript glyphs. Only the digit and
+/// operator subscripts (`₀`–`₉`, `₊`, `₌`, …) are reliably present in the
+/// fonts an SVG renders with; the letter subscripts Unicode defines (`ₐ`,
+/// `ₘ`, `ₓ`, `ᵦ`, …) are missing from most of them, so a label like
+/// `Subscript["θ", max]` came out with each letter drawn from a different
+/// fallback font at its own size. Wolfram typesets a real lowered, smaller
+/// script, so any subscript carrying a letter (or a character with no
+/// subscript glyph at all) is lowered instead.
+fn picture_subscript_needs_lowering(script: &str) -> bool {
+  script
+    .chars()
+    .any(|c| c.is_alphabetic() || unicode_script_char(c, false).is_none())
+}
+
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
 
@@ -39796,7 +40057,7 @@ fn script_runs(
         }
       }));
     };
-    if mark && !text.chars().all(drawn_subscript_glyph) {
+    if mark && picture_subscript_needs_lowering(&text) {
       restyle(&mut runs, &|t| {
         format!("{SUBSCRIPT_START}{t}{SUBSCRIPT_END}")
       });
@@ -39987,17 +40248,6 @@ pub(crate) fn to_unicode_script_digits(s: &str, superscript: bool) -> String {
       }
     })
     .collect()
-}
-
-/// Whether a subscript character in a picture label is folded into its
-/// Unicode subscript glyph rather than lowered with a `<tspan>`. Only the
-/// digits and signs (U+2080–U+208E) qualify: the Latin and Greek subscript
-/// letters (`ₐ`, `ₓ`, `ᵦ`) live in blocks most text fonts omit, so the
-/// renderer substitutes a fallback font for them (and for the base letter
-/// shaped with them), which makes `lₐ` look unlike a lowered `l_b` next
-/// to it. Lowering every letter keeps all such labels in one font.
-fn drawn_subscript_glyph(c: char) -> bool {
-  !c.is_alphabetic() && unicode_script_char(c, false).is_some()
 }
 
 /// Unicode sub-/superscript for a single character, if one exists.
@@ -47190,7 +47440,13 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
     {
       let mut x_range = None;
       let mut y_range = None;
-      for opt in &args[1..] {
+      // `Graphics[prims, opt -> v, …]` and `Graphics[prims, {opt -> v, …}]`
+      // are the same graphic.
+      let opts = args[1..].iter().flat_map(|a| match a {
+        Expr::List(items) => items.iter().collect::<Vec<_>>(),
+        other => vec![other],
+      });
+      for opt in opts {
         if let Expr::Rule {
           pattern,
           replacement,

@@ -4093,3 +4093,228 @@ mod large_list_arguments {
     );
   }
 }
+
+// Functional-programming edge cases found by differential fuzzing.
+mod functional_fuzz_edge_cases {
+  use super::*;
+
+  // A level specification for Reverse is a positive integer or a list of
+  // them; every level listed is reversed.
+  #[test]
+  fn reverse_level_specifications() {
+    assert_eq!(
+      interpret(
+        "{Reverse[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 3}], \
+          Reverse[{1, 2}, {}], Reverse[{1, 2}, 3], Reverse[f[1, 2], 1]}"
+      )
+      .unwrap(),
+      "{{{{6, 5}, {8, 7}}, {{2, 1}, {4, 3}}}, {1, 2}, {1, 2}, f[2, 1]}"
+    );
+    let r = woxi::interpret_with_stdout("Reverse[{1, 2, 3}, x]").unwrap();
+    assert_eq!(r.result, "Reverse[{1, 2, 3}, x]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Reverse::ilsmp: Single or list of positive machine-sized integers \
+         expected at position 2 of Reverse[{1, 2, 3}, x]."
+      ]
+    );
+    for code in [
+      "Reverse[{1, 2}, 0]",
+      "Reverse[{1, 2}, Infinity]",
+      "Reverse[{1, 2}, 1.]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), code, "{code}");
+    }
+  }
+
+  // Operate[p, expr, 0] is the evaluated application p[expr].
+  #[test]
+  fn operate_at_level_zero_evaluates() {
+    assert_eq!(
+      interpret(
+        "{Operate[Reverse, f[x, y], 0], Operate[First, {1, 2}, 0], \
+          Operate[Sqrt, {1, 2}, 0], Operate[h[#] &, {1, 2}, 0]}"
+      )
+      .unwrap(),
+      "{f[y, x], 1, {1, Sqrt[2]}, h[{1, 2}]}"
+    );
+  }
+
+  // A numbered slot the arguments cannot fill stays, with Function::slotn.
+  #[test]
+  fn unfilled_slot_reports_slotn() {
+    let r = woxi::interpret_with_stdout("(#1 + #2 &)[10]").unwrap();
+    assert_eq!(r.result, "10 + #2");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Function::slotn: Slot number 2 in #1 + #2 &  cannot be filled from \
+         (#1 + #2 & )[10]."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("(#3 + #1 &)[a, b]").unwrap();
+    assert_eq!(r.result, "a + #3");
+    assert_eq!(r.warnings.len(), 1);
+    let r = woxi::interpret_with_stdout("(## + #2 &)[1]").unwrap();
+    assert_eq!(r.result, "1 + #2");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  // Malformed level specifications are rejected by every traversal.
+  #[test]
+  fn malformed_level_specifications() {
+    for (code, head) in [
+      ("Map[f, {{1}}, x]", "Map"),
+      ("Apply[f, {{1}}, x]", "Apply"),
+      ("MapIndexed[f, {{1}}, x]", "MapIndexed"),
+      ("Map[f, {{1}}, {1, 2, 3}]", "Map"),
+      ("Scan[f, {{1}}, x]", "Scan"),
+      ("Replace[{1}, 1 -> 2, x]", "Replace"),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}: {:?}", r.warnings);
+      assert!(
+        r.warnings[0]
+          .starts_with(&format!("{head}::level: Level specification ")),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+    let r = woxi::interpret_with_stdout("Total[-2, 3/4]").unwrap();
+    assert_eq!(r.result, "Total[-2, 3/4]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "                                  3\n\
+         Total::level: Level specification - is not of the form n, {n} or {m, n}.\n\
+         \x20                                 4"
+      ]
+    );
+    // Options in the level slot are not level specifications.
+    assert_eq!(
+      interpret(
+        "{Replace[{1}, 1 -> 2, Heads -> True], Replace[f[1], f -> g, Heads -> True], \
+          Replace[f[1], f -> g, {1}, Heads -> True]}"
+      )
+      .unwrap(),
+      "{{1}, f[1], g[1]}"
+    );
+  }
+
+  // SubsetMap takes its positions with Part, whose messages report what is
+  // missing; the call then stays unevaluated.
+  #[test]
+  fn subset_map_out_of_range_positions() {
+    let r =
+      woxi::interpret_with_stdout("SubsetMap[Reverse, {}, 1 ;; 2]").unwrap();
+    assert_eq!(r.result, "SubsetMap[Reverse, {}, Span[1, 2]]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::take: Cannot take positions 1 through 2 in {}."]
+    );
+    let r =
+      woxi::interpret_with_stdout("SubsetMap[Reverse, {y}, {1, 3}]").unwrap();
+    assert_eq!(r.result, "SubsetMap[Reverse, {y}, {1, 3}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::partw: Part {1, 3} of {y} does not exist."]
+    );
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c}, {1, 3}]").unwrap(),
+      "{c, b, a}"
+    );
+  }
+
+  // An object with fewer list levels than MapThread threads over is
+  // reported with how many it has.
+  #[test]
+  fn map_thread_reports_missing_dimensions() {
+    let r = woxi::interpret_with_stdout(
+      "MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3]"
+    );
+    assert_eq!(
+      r.warnings,
+      vec![
+        "MapThread::mptd: Object {{-3, 1}, {1, 1}} at position {2, 1} in \
+         MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3] has only 2 of \
+         required 3 dimensions."
+      ]
+    );
+  }
+
+  // Thread::tdlen lays the expression out like other messages.
+  #[test]
+  fn tdlen_message_layout() {
+    let r = woxi::interpret_with_stdout("{{}} + {\"s\", 0, 3/4}").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "                                                          3\n\
+         Thread::tdlen: Objects of unequal length in {{}} + {s, 0, -} cannot be combined.\n\
+         \x20                                                         4"
+      ]
+    );
+  }
+
+  // `{}` in the level slot is an empty option list (Level excepted).
+  #[test]
+  fn empty_option_list_in_the_level_slot() {
+    assert_eq!(
+      interpret(
+        "{Map[f, {1}, {}], Total[{1, 2}, {}], Apply[f, {{1}}, {}], Cases[{1}, _, {}]}"
+      )
+      .unwrap(),
+      "{{f[1]}, 3, f[{1}], {1}}"
+    );
+    let r = woxi::interpret_with_stdout("Level[{1}, {}]").unwrap();
+    assert_eq!(r.result, "Level[{1}, {}]");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  // A list holding a non-real number among other elements fails Max on its
+  // own and is reported whole; other lists dissolve into their elements.
+  #[test]
+  fn max_of_lists_with_non_real_numbers() {
+    let r = woxi::interpret_with_stdout("Max[{I, 3}, {1}]").unwrap();
+    assert_eq!(r.result, "Max[{1}, {I, 3}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Max::nord: Invalid comparison with {I, 3} attempted."]
+    );
+    assert_eq!(interpret("Quiet[Max[{f[x]}, I]]").unwrap(), "Max[I, f[x]]");
+    assert_eq!(interpret("Quiet[Max[{I}, {2}]]").unwrap(), "Max[I, 2]");
+  }
+
+  // The contracted dimensions are the last of the first argument and the
+  // first of the second.
+  #[test]
+  fn inner_incommensurate_dimensions() {
+    let r = woxi::interpret_with_stdout(
+      "Inner[Times, {{-1, 4, 1}, {-2, 1, 2}}, {{1, 3}, {-2, 0}}, Plus]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Inner::incom: Length 3 of dimension 2 in {{-1, 4, 1}, {-2, 1, 2}} is \
+         incommensurate with length 2 of dimension 1 in {{1, 3}, {-2, 0}}."
+      ]
+    );
+  }
+
+  // Operate reaches a list's head, List.
+  #[test]
+  fn operate_on_a_list_head() {
+    assert_eq!(
+      interpret("{Operate[#^2 &, {1, 2}, 1], Operate[p, {1, 2}]}").unwrap(),
+      "{(List^2)[1, 2], p[List][1, 2]}"
+    );
+  }
+}

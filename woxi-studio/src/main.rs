@@ -9590,7 +9590,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = instantiate_stored_manipulate(code, "")
       .expect("the ActionMenu Manipulate must build a widget");
     assert!(state.error.is_none(), "render failed: {:?}", state.error);
-    assert_eq!(state.text_output.as_deref(), Some("{0, {0, 0}}"));
+    // A Locator's point binds machine reals from the start (see
+    // `promoted_invisible_locator_binds_machine_reals`).
+    assert_eq!(state.text_output.as_deref(), Some("{0, {0., 0.}}"));
 
     // The menu shows up as one ActionMenu display node carrying both items
     // with their own held action, not a frozen text dump of the source.
@@ -9618,7 +9620,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let cw_action = items[0].1.clone();
     state.apply_button_action(&cw_action);
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    assert_eq!(state.text_output.as_deref(), Some("{1, {0, 0}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{1, {0., 0.}}"));
 
     // A second, different item keeps working against the now-updated state.
     let ccw_action = state
@@ -9631,7 +9633,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .expect("the ActionMenu must still be present after re-render");
     state.apply_button_action(&ccw_action);
     state.apply_button_action(&ccw_action);
-    assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{-1, {0., 0.}}"));
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare

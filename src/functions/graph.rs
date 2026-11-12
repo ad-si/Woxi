@@ -1905,6 +1905,51 @@ pub(crate) enum LayerDirection {
   Right,
 }
 
+/// The value of sub-option `key` in a `GraphLayout` spec given as a list
+/// (`{"LayeredDigraphEmbedding", key -> value, …}`).
+fn layout_suboption<'a>(value: &'a Expr, key: &str) -> Option<&'a Expr> {
+  match value {
+    Expr::List(items) => items.iter().skip(1).find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::String(s) if s == key) => {
+        Some(replacement.as_ref())
+      }
+      _ => None,
+    }),
+    _ => None,
+  }
+}
+
+/// How far from the roots each layer of a layered or radial drawing lies:
+/// `offsets[d]` for depth `d = 0..=layers`. A `LayerSizeFunction -> f`
+/// makes layer `k` (the step from depth `k - 1` to depth `k`) `f[k]`
+/// deep; without one, or where `f[k]` is not a non-negative number,
+/// every layer is one unit deep.
+fn layer_offsets(layer_size: Option<&Expr>, layers: usize) -> Vec<f64> {
+  let mut offsets = Vec::with_capacity(layers + 1);
+  let mut depth = 0.0;
+  offsets.push(depth);
+  for k in 1..=layers {
+    let size = layer_size
+      .and_then(|f| {
+        crate::evaluator::apply_function_to_arg(f, &Expr::Integer(k as i128))
+          .ok()
+      })
+      .and_then(|v| crate::functions::math_ast::try_eval_to_f64(&v))
+      .filter(|s| s.is_finite() && *s >= 0.0)
+      .unwrap_or(1.0);
+    depth += size;
+    offsets.push(depth);
+  }
+  offsets
+}
+
 /// Read a `GraphLayout` option value, returning the layer direction when
 /// it names a layered embedding. Both the bare string form
 /// (`"LayeredDigraphEmbedding"`) and the sub-option form
@@ -2497,6 +2542,7 @@ fn layered_layout(
   dir: LayerDirection,
   root: Option<usize>,
   scale_tree: bool,
+  layer_size: Option<&Expr>,
 ) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
@@ -2527,9 +2573,12 @@ fn layered_layout(
     _ => graph_center(graph),
   });
   if let Some(children) = tree_children(graph, tree_root) {
-    let pts = tidy_tree(&children, tree_root)
+    let tidy = tidy_tree(&children, tree_root);
+    let deepest = tidy.iter().map(|p| p.1 as usize).max().unwrap_or(0);
+    let offsets = layer_offsets(layer_size, deepest);
+    let pts = tidy
       .into_iter()
-      .map(|(along, depth)| orient_layers(along, depth, dir))
+      .map(|(along, depth)| orient_layers(along, offsets[depth as usize], dir))
       .collect();
     return if scale_tree {
       unit_mean_edge(pts, graph)
@@ -2695,7 +2744,8 @@ fn layered_layout(
     .max()
     .unwrap_or(1)
     .saturating_sub(1) as f64;
-  let depth_span = (layers as f64 - 1.0).max(0.0);
+  let offsets = layer_offsets(layer_size, layers - 1);
+  let depth_span = offsets[layers - 1].max(0.0);
   let step = if width > 0.0 && depth_span > 0.0 {
     (INV_GOLDEN * width / depth_span).min(1.0)
   } else {
@@ -2703,7 +2753,7 @@ fn layered_layout(
   };
   shift_to_origin(
     (0..n)
-      .map(|v| orient_layers(slot[v], layer[v] as f64 * step, dir))
+      .map(|v| orient_layers(slot[v], offsets[layer[v]] * step, dir))
       .collect(),
   )
 }
@@ -2718,6 +2768,9 @@ struct LayoutChoice {
   /// `"RootVertex" -> v` in a layered spec: the vertex the layering grows
   /// from, instead of every vertex nothing points at.
   layered_root: Option<Expr>,
+  /// `"LayerSizeFunction" -> f` in a layered spec: layer `k` is `f[k]`
+  /// deep instead of one unit (see [`layer_offsets`]).
+  layer_size: Option<Expr>,
   /// The layered spec is `"LayeredDigraphEmbedding"`, which keeps one unit
   /// between neighbors even in a tree (`"LayeredEmbedding"` scales a
   /// tree to unit mean edge length).
@@ -2769,6 +2822,7 @@ impl LayoutChoice {
       named: parse_named_layout(value),
       layered,
       layered_root,
+      layer_size: layout_suboption(value, "LayerSizeFunction").cloned(),
     }
   }
 
@@ -2786,7 +2840,13 @@ impl LayoutChoice {
         .as_ref()
         .and_then(|r| index_map.get(&vertex_key(r)))
         .map(|idx| idx.index());
-      return layered_layout(graph, dir, root, !self.layered_digraph);
+      return layered_layout(
+        graph,
+        dir,
+        root,
+        !self.layered_digraph,
+        self.layer_size.as_ref(),
+      );
     }
     if self.circular {
       let optimal = !matches!(
@@ -3116,6 +3176,9 @@ enum NamedLayout {
   /// `"RadialEmbedding"`, optionally with `"RootVertex" -> v`.
   Radial {
     root: Option<Expr>,
+    /// `"LayerSizeFunction" -> f`: the ring of depth `k` lies `f[k]`
+    /// beyond the ring before it (see [`layer_offsets`]).
+    layer_size: Option<Expr>,
   },
   /// `"SpringElectricalEmbedding"` / `"SpringEmbedding"`.
   Spring,
@@ -3168,6 +3231,7 @@ fn parse_named_layout(value: &Expr) -> Option<NamedLayout> {
     "SpiralEmbedding" => NamedLayout::SpiralEmbedding,
     "RadialEmbedding" => NamedLayout::Radial {
       root: sub("RootVertex").cloned(),
+      layer_size: sub("LayerSizeFunction").cloned(),
     },
     "SpringElectricalEmbedding" | "SpringEmbedding" => NamedLayout::Spring,
     _ => return None,
@@ -3314,12 +3378,12 @@ fn named_layout_positions(
           .collect(),
       ))
     }
-    NamedLayout::Radial { root } => {
+    NamedLayout::Radial { root, layer_size } => {
       let root = root
         .as_ref()
         .and_then(lookup)
         .unwrap_or_else(|| graph_center(graph));
-      Some(radial_layout(graph, root))
+      Some(radial_layout(graph, root, layer_size.as_ref()))
     }
     NamedLayout::Spring => {
       let components = weakly_connected_components(graph);
@@ -3360,10 +3424,12 @@ fn graph_center(graph: &DiGraph<usize, RenderEdgeData>) -> usize {
 /// concentric circles, depth `d` on the circle of radius `d`; every leaf
 /// gets an equal share of the full turn (counterclockwise, the first leaf
 /// just past the top) and every inner vertex sits at the middle of the
-/// share of its leaves. Scaled so the mean edge length is 1.
+/// share of its leaves. A `LayerSizeFunction` spaces the circles unevenly
+/// (see [`layer_offsets`]). Scaled so the mean edge length is 1.
 fn radial_layout(
   graph: &DiGraph<usize, RenderEdgeData>,
   root: usize,
+  layer_size: Option<&Expr>,
 ) -> Vec<(f64, f64)> {
   let adj = edge_order_adjacency(graph);
   let n = adj.len();
@@ -3400,6 +3466,13 @@ fn radial_layout(
   }
   walk(root, &children, &mut leaves, &mut leaf_range);
   let total = leaves.max(1) as f64;
+  let deepest = depth
+    .iter()
+    .filter(|&&d| d != usize::MAX)
+    .max()
+    .copied()
+    .unwrap_or(0);
+  let offsets = layer_offsets(layer_size, deepest);
   let mut pts = vec![(0.0, 0.0); n];
   for v in 0..n {
     if depth[v] == usize::MAX || v == root {
@@ -3408,7 +3481,7 @@ fn radial_layout(
     let (a, b) = leaf_range[v];
     let mid = (a + b) as f64 / 2.0;
     let angle = PI / 2.0 + 2.0 * PI * mid / total;
-    let r = depth[v] as f64;
+    let r = offsets[depth[v]];
     pts[v] = (r * angle.cos(), r * angle.sin());
   }
   unit_mean_edge(pts, graph)
@@ -4142,6 +4215,41 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
     } => Some((pattern.as_ref().clone(), replacement.as_ref().clone(), true)),
     _ => None,
   }
+}
+
+/// The one vertex that directed edges leave but none enter, in an edge
+/// list or a `Graph[vertices, edges, …]`; `None` when there is no such
+/// vertex or several, or an edge is undirected.
+pub(crate) fn unique_source_vertex(graph: &Expr) -> Option<Expr> {
+  let edges = match graph {
+    Expr::List(edges) => edges,
+    Expr::FunctionCall { name, args } if name == "Graph" => match args.get(1) {
+      Some(Expr::List(edges)) => edges,
+      _ => match args.first() {
+        Some(Expr::List(edges)) => edges,
+        _ => return None,
+      },
+    },
+    _ => return None,
+  };
+  let mut tails: Vec<(String, Expr)> = Vec::new();
+  let mut heads: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  for e in edges {
+    let (u, v, directed) = edge_endpoints(e)?;
+    if !directed {
+      return None;
+    }
+    tails.push((vertex_key(&u), u));
+    heads.insert(vertex_key(&v));
+  }
+  let mut sources: Vec<(String, Expr)> = tails
+    .into_iter()
+    .filter(|(k, _)| !heads.contains(k))
+    .collect();
+  sources.dedup_by(|a, b| a.0 == b.0);
+  let all_same = sources.iter().all(|(k, _)| *k == sources[0].0);
+  (!sources.is_empty() && all_same).then(|| sources.swap_remove(0).1)
 }
 
 /// EdgeBetweennessCentrality: for each edge, the number of shortest paths (over

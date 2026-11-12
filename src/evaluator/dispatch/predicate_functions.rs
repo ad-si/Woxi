@@ -186,6 +186,54 @@ pub fn dispatch_predicate_functions(
           },
         ));
       }
+      // Adjacent numbers are compared: a false pair makes the whole chain
+      // False, and true pairs at either end are dropped
+      // (`Inequality[1, Less, 2, LessEqual, x]` is `2 <= x`), while one in
+      // the middle stays.
+      {
+        let pair_verdict = |k: usize| -> Option<bool> {
+          let (l, op, r) = (&args[2 * k], &args[2 * k + 1], &args[2 * k + 2]);
+          let Expr::Identifier(op_name) = op else {
+            return None;
+          };
+          let op = comparison_op(op_name)?;
+          if crate::functions::math_ast::try_eval_to_f64(l).is_none()
+            || crate::functions::math_ast::try_eval_to_f64(r).is_none()
+          {
+            return None;
+          }
+          match &crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+            operands: vec![l.clone(), r.clone()],
+            operators: vec![op],
+          }) {
+            Ok(Expr::Identifier(b)) if b == "True" => Some(true),
+            Ok(Expr::Identifier(b)) if b == "False" => Some(false),
+            _ => None,
+          }
+        };
+        let pairs = args.len() / 2;
+        let verdicts: Vec<Option<bool>> =
+          (0..pairs).map(pair_verdict).collect();
+        if verdicts.contains(&Some(false)) {
+          return Some(Ok(bool_expr(false)));
+        }
+        let lead = verdicts.iter().take_while(|v| **v == Some(true)).count();
+        let trail = verdicts[lead..]
+          .iter()
+          .rev()
+          .take_while(|v| **v == Some(true))
+          .count();
+        if lead == pairs {
+          return Some(Ok(bool_expr(true)));
+        }
+        if lead > 0 || trail > 0 {
+          let kept = &args[2 * lead..args.len() - 2 * trail];
+          return Some(crate::evaluator::evaluate_function_call_ast(
+            "Inequality",
+            kept,
+          ));
+        }
+      }
       // For mixed-direction chains (e.g. `Greater` with `LessEqual`, or
       // any NotEqual mixed in), split into pairwise `&&` — wolframscript's
       // behavior. Preserves the `Inequality[…]` head in all other cases so
