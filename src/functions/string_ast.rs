@@ -11087,7 +11087,7 @@ fn integer_to_base64_string(n: &Expr) -> Result<String, InterpreterError> {
 /// written as the linear box syntax `\!\(\(\"IX\"\)\&_\)` — keeping in the
 /// plain tail the thousands that `M`, or `V` under the bar, cannot take
 /// over (906915 is overlined CMV, then MCMXV). Bars nest for millions.
-fn integer_to_roman_string(n: i128) -> Option<String> {
+fn integer_to_roman_string(n: i128) -> String {
   let groups = roman_groups(n.unsigned_abs());
   let mut out = String::new();
   for (level, text) in groups {
@@ -11106,7 +11106,7 @@ fn integer_to_roman_string(n: i128) -> Option<String> {
     out.push_str(&boxed);
     out.push(BOX_CLOSE);
   }
-  Some(out)
+  out
 }
 
 /// The Roman numeral of `n` as (number of bars, text) groups, most
@@ -11201,7 +11201,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Base64" => integer_to_base64_string(&args[0])?,
       "Roman" => {
         let Some(s) =
-          expr_to_int(&args[0]).ok().and_then(integer_to_roman_string)
+          expr_to_int(&args[0]).ok().map(integer_to_roman_string)
         else {
           // An integer beyond 128 bits.
           return Ok(unevaluated("IntegerString", args));
