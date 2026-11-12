@@ -52784,3 +52784,39 @@ mod plot_tooltip_list_and_image_size_variable {
     assert!(svg.starts_with("<svg width=\"300\""), "{}", &svg[..80]);
   }
 }
+
+mod overscript_bar_accent {
+  use super::*;
+
+  /// A hyphen typed as an overscript (the antiquark `b̄` in a particle
+  /// physics plot legend, `"b\!\(\*OverscriptBox[\(b\), \(-\)]\)"`) is a bar
+  /// spanning the base, as the FrontEnd draws it — not a raised dash glyph.
+  #[test]
+  fn hyphen_overscript_in_a_label_string_draws_a_rule() {
+    clear_state();
+    let svg = export_svg(
+      r#"Graphics[Text["x\!\(\*OverscriptBox[\(b\), \(-\)]\)", {0, 0}]]"#,
+    );
+    assert!(
+      svg.contains("<path d=\"M 0.00 "),
+      "the bar accent must be drawn as a rule: {svg}"
+    );
+    assert!(
+      !svg.contains(">-</text>"),
+      "the hyphen must not be drawn as a glyph above the base: {svg}"
+    );
+  }
+
+  /// The same box shown through `DisplayForm` reads as the barred letter.
+  #[test]
+  fn hyphen_overscript_box_displays_as_barred_letter() {
+    clear_state();
+    let svg = export_svg(
+      r#"Graphics[Text[DisplayForm[OverscriptBox["b", "-"]], {0, 0}]]"#,
+    );
+    assert!(
+      svg.contains(">b\u{0305}</text>"),
+      "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
+    );
+  }
+}
