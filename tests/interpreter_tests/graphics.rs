@@ -21756,6 +21756,41 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_frame_none_draws_no_frame() {
+      // Regression: `Frame -> None` drew the gray border like the default.
+      let bare = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Frame -> None]");
+      assert!(!bare.contains("#666666"), "{bare}");
+    }
+
+    #[test]
+    fn array_plot_pixel_constrained_uses_whole_pixels_per_cell() {
+      // `PixelConstrained -> True` picks the largest whole number of pixels
+      // per cell that fits the `ImageSize` box, and drops the padding: a
+      // 3x7 grid in a 100x50 box gets 14 pixels per cell (98x42).
+      let svg = export_svg(
+        "ArrayPlot[RandomInteger[1, {3, 7}], ImageSize -> {100, 50}, \
+         PixelConstrained -> True, Frame -> None]",
+      );
+      assert!(
+        svg.starts_with("<svg width=\"98\" height=\"42\""),
+        "unexpected header: {}",
+        svg.lines().next().unwrap_or("")
+      );
+      // Cells start at the picture's edge (render units are 10x pixels).
+      assert!(
+        svg.contains("<rect x=\"0\" y=\"0\" width=\"140\" height=\"140\"")
+      );
+      // An explicit count sets the pixels per cell directly.
+      let fixed =
+        export_svg("ArrayPlot[{{0, 1, 0}, {1, 0, 1}}, PixelConstrained -> 5]");
+      assert!(
+        fixed.starts_with("<svg width=\"15\" height=\"10\""),
+        "unexpected header: {}",
+        fixed.lines().next().unwrap_or("")
+      );
+    }
+
+    #[test]
     fn array_plot_frame_is_half_a_point_wide() {
       // WL draws the frame as a 0.5 pt GrayLevel[0.4] line, centered half a
       // point inside the edge (5 render units at the 10x scale).
