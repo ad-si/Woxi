@@ -4944,11 +4944,17 @@ pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A few heads print differently under ToString than in the bare
   // script-mode echo (`MessageName` is the one that matters); the renderers
   // tell the two apart by this flag.
-  let result = crate::syntax::rendering_for_to_string(|| {
-    to_string_ast_inner(&args[..positional])
-  })?;
   let input_form =
     matches!(args.get(1), Some(Expr::Identifier(f)) if f == "InputForm");
+  let result = crate::syntax::rendering_for_to_string(|| {
+    if input_form {
+      to_string_ast_inner(&args[..positional])
+    } else {
+      crate::syntax::rendering_to_string_output(|| {
+        to_string_ast_inner(&args[..positional])
+      })
+    }
+  })?;
   Ok(match (&result, encoding) {
     (Expr::String(text), Some(encoding)) => {
       Expr::String(encode_to_string_text(text, &encoding, input_form))

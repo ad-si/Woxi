@@ -16,6 +16,15 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `ToString` does not bracket a `!` inside a sum or a difference
+
+wolframscript's OutputForm text brackets a prefix `Not` that is an
+operand of `+` or `-`: `ToString[a + !x]` is `"a + (!x)"`, `ToString[b - !x]`
+is `"b - (!x)"`. Woxi's printed form brackets it (`a + ( !x)`) but its
+`ToString` text gives `"a + !x"`. (`ToString` drops the space before `!` as
+wolframscript does — `ToString[{1, !x}]` is `"{1, !x}"` — while the InputForm
+text keeps it: `ToString[!x, InputForm]` is `" !x"`.)
+
 Woxi and Wolfram usually agree on the *value* and disagree on how it is
 printed. This is by far the largest group.
 

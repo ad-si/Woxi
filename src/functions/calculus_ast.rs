@@ -17209,8 +17209,15 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       let order = match &items[2] {
-        Expr::Integer(n) => *n,
-        _ => {
+        Expr::Integer(n) if i64::try_from(*n).is_ok() => *n,
+        other => {
+          crate::emit_message(&format!(
+            "Series::serlim: Series order specification {} is not a \
+             machine-sized integer.",
+            crate::syntax::rendering_to_string_output(|| {
+              crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+            })
+          ));
           return Ok(unevaluated("Series", args));
         }
       };
@@ -17220,6 +17227,32 @@ fn series_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("Series", args));
     }
   };
+
+  // A Series in the same variable that stayed unevaluated inside the
+  // expression (its own order was unusable, say) is expanded as the
+  // function it is a series of, as wolframscript does — rather than as an
+  // unknown function of x, whose chain rule runs through its iterator and
+  // grows exponentially with the order.
+  let nested_series = |n: &Expr| match n {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Series"
+        && inner.len() >= 2
+        && matches!(&inner[1], Expr::List(spec)
+          if matches!(spec.first(), Some(Expr::Identifier(v)) if *v == var_name)) =>
+    {
+      Some(inner[0].clone())
+    }
+    _ => None,
+  };
+  let flattened =
+    crate::functions::string_ast::map_expr_tree(&args[0], &nested_series);
+  if crate::syntax::expr_to_string(&flattened)
+    != crate::syntax::expr_to_string(&args[0])
+  {
+    let mut inner = args.to_vec();
+    inner[0] = flattened;
+    return series_ast(&inner);
+  }
 
   // A negative order keeps only the principal part up to x^order: expand to
   // order 0 (every pole term is there) and cut the series back to the

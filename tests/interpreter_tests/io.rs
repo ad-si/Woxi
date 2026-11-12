@@ -12232,3 +12232,23 @@ mod export_string_bytes {
     );
   }
 }
+
+mod to_string_not {
+  use super::*;
+
+  // The space before `!` belongs to the printed layout; ToString's text has
+  // none.
+  #[test]
+  fn to_string_writes_not_without_a_leading_space() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToCharacterCode /@ {ToString[!x], ToString[{1, !x}], ToString[f[!x]]}"
+      )
+      .unwrap(),
+      "{{33, 120}, {123, 49, 44, 32, 33, 120, 125}, {102, 91, 33, 120, 93}}"
+    );
+    clear_state();
+    assert_eq!(interpret("{!x, f[!x]}").unwrap(), "{ !x, f[ !x]}");
+  }
+}

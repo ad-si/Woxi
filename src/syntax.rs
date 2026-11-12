@@ -13314,10 +13314,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // So does anything else that binds looser than `!`: ` !(a /. b)`.
         let needs_parens = needs_parens
           || printed_infix_precedence(operand).is_some_and(|p| p < 20);
-        if needs_parens {
-          format!(" !({inner})")
+        // The space is the printed 2D layout's; the text ToString makes
+        // has none: ToString[{1, !x}] is "{1, !x}".
+        let space = if IN_TO_STRING_OUTPUT.with(std::cell::Cell::get) {
+          ""
         } else {
-          format!(" !{inner}")
+          " "
+        };
+        if needs_parens {
+          format!("{space}!({inner})")
+        } else {
+          format!("{space}!{inner}")
         }
       } else {
         // Minus needs parens around Plus, Minus, Times, Divide and around
@@ -14441,6 +14448,12 @@ thread_local! {
   /// apart.
   static IN_TO_STRING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
+  /// True while `ToString` renders its OutputForm text (not InputForm),
+  /// which drops the space the printed layout puts before a prefix `!`:
+  /// `ToString[{1, !x}]` is `"{1, !x}"`, `ToString[!x, InputForm]` is
+  /// `" !x"`.
+  static IN_TO_STRING_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
   /// True while rendering the inner expression of a `FullForm[…]` wrapper.
   /// FullForm reuses `expr_to_input_form` to render its argument, but Span must
   /// stay in head form there (`FullForm[1 ;; 4]` prints `FullForm[Span[1, 4]]`)
@@ -14476,6 +14489,19 @@ pub fn rendering_for_to_string<T>(render: impl FnOnce() -> T) -> T {
   }
   let _guard = Restore(IN_TO_STRING.with(std::cell::Cell::get));
   IN_TO_STRING.with(|f| f.set(true));
+  render()
+}
+
+/// Run `render` as ToString's OutputForm text (see `IN_TO_STRING_OUTPUT`).
+pub fn rendering_to_string_output<T>(render: impl FnOnce() -> T) -> T {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      IN_TO_STRING_OUTPUT.with(|f| f.set(self.0));
+    }
+  }
+  let _guard = Restore(IN_TO_STRING_OUTPUT.with(std::cell::Cell::get));
+  IN_TO_STRING_OUTPUT.with(|f| f.set(true));
   render()
 }
 
