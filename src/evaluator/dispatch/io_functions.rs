@@ -7689,8 +7689,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           ))
         }) || args[1..].iter().any(|opt| {
           matches!(opt, Expr::Rule { pattern, .. }
-            if matches!(pattern.as_ref(), Expr::Identifier(k)
-              if k == "Alignment" || k == "ItemSize"))
+          if matches!(pattern.as_ref(), Expr::Identifier(k)
+            if matches!(
+              k.as_str(),
+              "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
+            )))
         }))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])
