@@ -660,6 +660,11 @@ pub(crate) fn max_slot_index(expr: &Expr) -> usize {
 fn emit_unfilled_slot_message(body: &Expr, args: &[Expr]) {
   fn first_unfilled(e: &Expr, available: usize) -> Option<usize> {
     match e {
+      // A shared inert list (e.g. a large array bound through `With`) holds
+      // no slots; walking it on every call made `/@` over it quadratic.
+      Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+        None
+      }
       Expr::Slot(n) if *n > available => Some(*n),
       Expr::FunctionCall { name, args }
         if name == "Slot" && args.len() == 1 =>
