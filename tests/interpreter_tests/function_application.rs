@@ -4093,3 +4093,113 @@ mod large_list_arguments {
     );
   }
 }
+
+// Functional-programming edge cases found by differential fuzzing.
+mod functional_fuzz_edge_cases {
+  use super::*;
+
+  // A level specification for Reverse is a positive integer or a list of
+  // them; every level listed is reversed.
+  #[test]
+  fn reverse_level_specifications() {
+    assert_eq!(
+      interpret(
+        "{Reverse[{{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}}, {1, 3}], \
+          Reverse[{1, 2}, {}], Reverse[{1, 2}, 3], Reverse[f[1, 2], 1]}"
+      )
+      .unwrap(),
+      "{{{{6, 5}, {8, 7}}, {{2, 1}, {4, 3}}}, {1, 2}, {1, 2}, f[2, 1]}"
+    );
+    let r = woxi::interpret_with_stdout("Reverse[{1, 2, 3}, x]").unwrap();
+    assert_eq!(r.result, "Reverse[{1, 2, 3}, x]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Reverse::ilsmp: Single or list of positive machine-sized integers \
+         expected at position 2 of Reverse[{1, 2, 3}, x]."
+      ]
+    );
+    for code in [
+      "Reverse[{1, 2}, 0]",
+      "Reverse[{1, 2}, Infinity]",
+      "Reverse[{1, 2}, 1.]",
+    ] {
+      assert_eq!(interpret(code).unwrap(), code, "{code}");
+    }
+  }
+
+  // Operate[p, expr, 0] is the evaluated application p[expr].
+  #[test]
+  fn operate_at_level_zero_evaluates() {
+    assert_eq!(
+      interpret(
+        "{Operate[Reverse, f[x, y], 0], Operate[First, {1, 2}, 0], \
+          Operate[Sqrt, {1, 2}, 0], Operate[h[#] &, {1, 2}, 0]}"
+      )
+      .unwrap(),
+      "{f[y, x], 1, {1, Sqrt[2]}, h[{1, 2}]}"
+    );
+  }
+
+  // A numbered slot the arguments cannot fill stays, with Function::slotn.
+  #[test]
+  fn unfilled_slot_reports_slotn() {
+    let r = woxi::interpret_with_stdout("(#1 + #2 &)[10]").unwrap();
+    assert_eq!(r.result, "10 + #2");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Function::slotn: Slot number 2 in #1 + #2 &  cannot be filled from \
+         (#1 + #2 & )[10]."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("(#3 + #1 &)[a, b]").unwrap();
+    assert_eq!(r.result, "a + #3");
+    assert_eq!(r.warnings.len(), 1);
+    let r = woxi::interpret_with_stdout("(## + #2 &)[1]").unwrap();
+    assert_eq!(r.result, "1 + #2");
+    assert_eq!(r.warnings.len(), 1);
+  }
+
+  // Malformed level specifications are rejected by every traversal.
+  #[test]
+  fn malformed_level_specifications() {
+    for (code, head) in [
+      ("Map[f, {{1}}, x]", "Map"),
+      ("Apply[f, {{1}}, x]", "Apply"),
+      ("MapIndexed[f, {{1}}, x]", "MapIndexed"),
+      ("Map[f, {{1}}, {1, 2, 3}]", "Map"),
+      ("Scan[f, {{1}}, x]", "Scan"),
+      ("Replace[{1}, 1 -> 2, x]", "Replace"),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}: {:?}", r.warnings);
+      assert!(
+        r.warnings[0]
+          .starts_with(&format!("{head}::level: Level specification ")),
+        "{code}: {:?}",
+        r.warnings
+      );
+    }
+    let r = woxi::interpret_with_stdout("Total[-2, 3/4]").unwrap();
+    assert_eq!(r.result, "Total[-2, 3/4]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "                                  3\n\
+         Total::level: Level specification - is not of the form n, {n} or {m, n}.\n\
+         \x20                                 4"
+      ]
+    );
+    // Options in the level slot are not level specifications.
+    assert_eq!(
+      interpret(
+        "{Replace[{1}, 1 -> 2, Heads -> True], Replace[f[1], f -> g, Heads -> True], \
+          Replace[f[1], f -> g, {1}, Heads -> True]}"
+      )
+      .unwrap(),
+      "{{1}, f[1], g[1]}"
+    );
+  }
+}

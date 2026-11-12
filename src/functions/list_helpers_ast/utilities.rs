@@ -392,3 +392,41 @@ pub fn is_nothing(e: &Expr) -> bool {
 pub fn is_atom_expr(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))
 }
+
+/// Whether `spec` has the shape of a level specification: `All`, `n`, `{n}`
+/// or `{m, n}`, each bound an integer or a signed `Infinity`.
+pub fn is_level_spec(spec: &Expr) -> bool {
+  if matches!(spec, Expr::Identifier(s) | Expr::Constant(s) if s == "All") {
+    return true;
+  }
+  fn bound(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::Identifier(s) | Expr::Constant(s) => s == "Infinity",
+      Expr::FunctionCall { name, args }
+        if name == "DirectedInfinity" && args.len() == 1 =>
+      {
+        matches!(args[0], Expr::Integer(1 | -1))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Times" && args.len() == 2 =>
+      {
+        matches!(args[0], Expr::Integer(-1))
+          && matches!(&args[1], Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => {
+        matches!(operand.as_ref(), Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+      }
+      _ => false,
+    }
+  }
+  match spec {
+    Expr::List(items) => {
+      matches!(items.len(), 1 | 2) && items.iter().all(bound)
+    }
+    other => bound(other),
+  }
+}

@@ -2142,6 +2142,28 @@ fn evaluate_function_call_ast_inner(
       Expr::List(vec![Expr::Integer(0), id_expr("Infinity")].into());
     return evaluate_function_call_ast(name, &rewritten);
   }
+  // Any other level specification must be `n`, `{n}` or `{m, n}` (an
+  // option such as `Heads -> True`, or a list of options, may stand in its
+  // place).
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  if let Some(position) = level_position
+    && let Some(spec) = args.get(position)
+    && !is_option(spec)
+    && !matches!(spec, Expr::List(items) if !items.is_empty() && items.iter().all(is_option))
+    && !crate::functions::list_helpers_ast::is_level_spec(spec)
+  {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      crate::syntax::MessagePiece::Text(format!(
+        "{name}::level: Level specification "
+      )),
+      crate::syntax::MessagePiece::Expr(spec),
+      crate::syntax::MessagePiece::Text(
+        " is not of the form n, {n} or {m, n}.".to_string(),
+      ),
+    ]));
+    return Ok(crate::helpers::unevaluated(name, args));
+  }
 
   if matches!(name, "Table" | "ParallelTable" | "Do" | "ParallelDo")
     && let Some(rewritten) = crate::evaluator::rename_compound_iterators(args)

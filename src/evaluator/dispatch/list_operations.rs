@@ -5648,17 +5648,19 @@ pub fn dispatch_list_operations(
       } else {
         1
       };
+      // Operate[p, expr, 0] is p[expr], evaluated like any application.
       if n == 0 {
-        return Some(
-          Ok(Expr::FunctionCall {
-            name: String::new(),
+        let application = match p {
+          Expr::Identifier(name) | Expr::Constant(name) => Expr::FunctionCall {
+            name: name.clone(),
             args: vec![expr.clone()].into(),
-          })
-          .map(|_| Expr::FunctionCall {
-            name: expr_to_string(p),
-            args: vec![expr.clone()].into(),
-          }),
-        );
+          },
+          _ => Expr::CurriedCall {
+            func: Box::new(p.clone()),
+            args: vec![expr.clone()],
+          },
+        };
+        return Some(crate::evaluator::evaluate_expr_to_expr(&application));
       }
       // For n >= 1, we need to wrap the head at depth n.
       // For n == 1 (default): f[a, b] -> p[f][a, b]
