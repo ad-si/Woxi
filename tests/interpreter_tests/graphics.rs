@@ -46194,14 +46194,23 @@ fn pane_pads_small_content_to_its_fixed_box() {
 fn pane_shrinks_automatically_sized_picture_to_fit() {
   // Regression: an automatically sized picture bigger than the fixed `Pane`
   // box was cut off at its edges instead of shrinking to fit; only a picture
-  // with an explicit `ImageSize` is clipped.
+  // with an explicit `ImageSize` is clipped. The shrunk picture is redrawn
+  // at the fitted size and still sits in the whole box.
   let graph =
     export_svg("Pane[GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}], {300, 240}]");
-  assert!(graph.contains("height=\"240.0\""), "{graph}");
+  assert!(
+    graph.starts_with("<svg width=\"300\" height=\"240\""),
+    "{graph}"
+  );
+  assert!(
+    graph.contains("height=\"240\" viewBox=\"0 0 274 240\""),
+    "{graph}"
+  );
   assert!(!graph.contains("paneClip"), "{graph}");
   let plain = export_svg("Pane[Graphics[Circle[]], {300, 240}]");
   assert!(
-    plain.contains("<svg width=\"240.0\" height=\"240.0\""),
+    plain.starts_with("<svg width=\"300\" height=\"240\"")
+      && plain.contains("<svg width=\"240\" height=\"240\""),
     "{plain}"
   );
   let sized =
