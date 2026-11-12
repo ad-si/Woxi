@@ -39470,7 +39470,33 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     Expr::String(s) => {
       inline_box_label_runs(s, italic).unwrap_or_else(|| output_run(italic))
     }
-    _ => output_run(italic),
+    // A label is typeset in StandardForm, which draws the named constants
+    // of a number as their glyphs: an angle choice `15 Degree` reads
+    // `15 °` and `Pi/2` reads `π/2`, not their OutputForm names. Only a
+    // label free of strings is rewritten, so text that merely spells a
+    // constant's name (`f["I"]`) keeps it.
+    _ => {
+      if crate::syntax::expr_to_source_form(expr).contains('"') {
+        return output_run(italic);
+      }
+      // `ToString` spaces a product the way the notebook does (`15 Degree`);
+      // a quotient it stacks over several lines keeps the one-line
+      // OutputForm (`Pi/2`) instead.
+      let mut runs = match crate::functions::string_ast::to_string_ast(
+        std::slice::from_ref(expr),
+      ) {
+        Ok(Expr::String(ref s)) if !s.contains('\n') => vec![LabelRun {
+          text: s.clone(),
+          italic,
+          ..Default::default()
+        }],
+        _ => output_run(italic),
+      };
+      for run in &mut runs {
+        run.text = typeset_constants_in_text(&run.text);
+      }
+      runs
+    }
   }
 }
 
@@ -46987,6 +47013,30 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["to the north pole", "south"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// An unlabeled choice that is an angle (`15 Degree`) reads the way a
+  /// notebook typesets it, with the degree sign, not as its InputForm,
+  /// and so do other named constants (`Pi/2` reads `π/2`).
+  #[test]
+  fn choice_labels_typeset_degree_angles() {
+    let control = discrete_control(
+      "Manipulate[a, {{a, 45 Degree, \"angle\"}, \
+        {15 Degree, 45 Degree, Pi/2, 2 Pi}, ControlType -> RadioButton}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        ..
+      } => {
+        assert_eq!(value_labels, &["15 °", "45 °", "π/2", "2 π"]);
+        assert_eq!(values[0], "15*Degree");
+        assert_eq!(*initial_index, 1);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
