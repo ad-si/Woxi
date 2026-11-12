@@ -275,7 +275,7 @@ impl FrameReader {
     let Some(&flags) = self.buf.first() else {
       return Ok(None);
     };
-    let (header, len) = if flags & FLAG_LONG != 0 {
+    let (header, len): (usize, usize) = if flags & FLAG_LONG != 0 {
       let Some(bytes) = self.buf.get(1..9) else {
         return Ok(None);
       };
@@ -287,11 +287,13 @@ impl FrameReader {
       };
       (2, usize::from(len))
     };
-    if self.buf.len() < header + len {
+    // A length no buffer could hold is a broken (or hostile) peer.
+    let end = header.checked_add(len).ok_or(())?;
+    if self.buf.len() < end {
       return Ok(None);
     }
-    let body = self.buf[header..header + len].to_vec();
-    self.buf.drain(..header + len);
+    let body = self.buf[header..end].to_vec();
+    self.buf.drain(..end);
     Ok(Some(Frame {
       more: flags & FLAG_MORE != 0,
       command: flags & FLAG_COMMAND != 0,
@@ -1091,6 +1093,36 @@ mod tests {
     let props = parse_properties(data).unwrap();
     assert_eq!(props[0], ("Socket-Type".to_string(), b"DEALER".to_vec()));
     assert_eq!(props[1], ("Identity".to_string(), b"me".to_vec()));
+  }
+
+  /// Whatever a peer sends, parsing it must not panic: a long frame whose
+  /// announced length would overflow, truncated commands, property lists
+  /// whose lengths run past the end.
+  #[test]
+  fn malformed_peer_input_never_panics() {
+    let mut state = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+      state ^= state << 13;
+      state ^= state >> 7;
+      state ^= state << 17;
+      state
+    };
+    let mut reader = FrameReader {
+      buf: vec![FLAG_LONG, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 1],
+    };
+    assert!(reader.next_frame().is_err());
+    for _ in 0..20_000 {
+      let len = (next() % 40) as usize;
+      let bytes: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+      let mut reader = FrameReader { buf: bytes.clone() };
+      while let Ok(Some(frame)) = reader.next_frame() {
+        if let Some((_, data)) = parse_command(&frame.body) {
+          let _ = parse_properties(data);
+        }
+      }
+      let _ = parse_command(&bytes);
+      let _ = parse_properties(&bytes);
+    }
   }
 
   #[test]
