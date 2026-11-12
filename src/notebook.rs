@@ -2618,13 +2618,11 @@ fn render_text_element(s: &str) -> String {
     return match style.as_deref() {
       Some("InlineMath" | "InlineFormula") => parts
         .first()
-        .map(|c| render_inline_math_content(c.trim()))
-        .unwrap_or_default(),
+        .map_or_default(|c| render_inline_math_content(c.trim())),
       Some("InlineCell" | "InlineCode" | "InlineInput" | "InlineOutput") => {
         parts
           .first()
-          .map(|c| extract_cell_content(c.trim()))
-          .unwrap_or_default()
+          .map_or_default(|c| extract_cell_content(c.trim()))
       }
       // An unstyled wrapper around another cell (`Cell[BoxData[Cell[…]]]`)
       // or around typeset math (`Cell[BoxData[FormBox[…]]]`, as produced for
@@ -2641,8 +2639,7 @@ fn render_text_element(s: &str) -> String {
             .strip_prefix("TextData[")
             .is_some_and(|r| r.trim_start().starts_with("Cell["))
         })
-        .map(|c| render_inline_math_content(c.trim()))
-        .unwrap_or_default(),
+        .map_or_default(|c| render_inline_math_content(c.trim())),
       _ => String::new(),
     };
   }

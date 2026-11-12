@@ -1019,9 +1019,10 @@ fn install_kernel_works_outside_a_source_checkout() {
   );
 
   // The staged copy is a temporary and must not be left behind.
-  let leftovers: Vec<_> = std::fs::read_dir(dir.join("tmp"))
-    .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
-    .unwrap_or_default();
+  let leftovers: Vec<_> =
+    std::fs::read_dir(dir.join("tmp")).map_or_default(|entries| {
+      entries.filter_map(Result::ok).map(|e| e.path()).collect()
+    });
   assert!(
     leftovers.is_empty(),
     "staging directories left behind: {leftovers:?}"

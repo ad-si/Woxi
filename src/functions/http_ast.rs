@@ -151,7 +151,7 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
       Some(Expr::String(u)) => Some(u.as_str()),
       _ => None,
     });
-  let mut parts = base_url.map(parse_url).unwrap_or_default();
+  let mut parts = base_url.map_or_default(parse_url);
   if let Some(pairs) = assoc {
     apply_assoc_overrides(&mut parts, pairs);
   }
