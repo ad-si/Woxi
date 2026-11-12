@@ -2782,8 +2782,10 @@ mod tests {
         "expected about a 1/√3 shrink, got {ratio}: {with:?} vs {without:?}"
       );
 
-      // A flat square, seen face on, fills the frame without the option
-      // and shrinks to its circumradius (a factor of √2) with it.
+      // A flat square, seen face on, fills the frame without the option.
+      // Its box is given the range {-1, 1} along the flat axis (as Wolfram
+      // does), so with the option the frame spans that box's circumsphere
+      // (radius √3 after 2% padding), seen from 3 box sides away.
       let flat = "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, \
                   {-1, 1, 0}}], Boxed -> False, ImageSize -> 200, \
                   ViewPoint -> {0, 0, 3}";
@@ -2791,9 +2793,12 @@ mod tests {
         ink_extent(&svg_of(&format!("{flat}, SphericalRegion -> True]")));
       let without = ink_extent(&svg_of(&format!("{flat}]")));
       let ratio = with.0 / without.0;
+      let r = 1.02 * 3f64.sqrt();
+      let d = 6.0;
+      let expected = 2.0 / (2.0 * r * d / (d * d - r * r).sqrt());
       assert!(
-        (ratio - 1.0 / 2f64.sqrt()).abs() < 0.03,
-        "expected a 1/√2 shrink, got {ratio}: {with:?} vs {without:?}"
+        (ratio - expected).abs() < 0.03,
+        "expected a {expected} shrink, got {ratio}: {with:?} vs {without:?}"
       );
     }
 
