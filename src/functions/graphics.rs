@@ -20924,19 +20924,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Show's arguments reach it held, but Show is not HoldAll in Wolfram
   // Language: a list of graphics evaluates as a list first, so a `Nothing`
   // element (e.g. a variable set to `If[c, g, Nothing]`) is dropped.
-  let evaluated: Vec<Expr>;
-  let args: &[Expr] = if args.iter().any(|a| matches!(a, Expr::List(_))) {
-    evaluated = args
-      .iter()
-      .map(|a| match a {
-        Expr::List(_) => evaluate_expr_to_expr(a),
-        other => Ok(other.clone()),
-      })
-      .collect::<Result<_, _>>()?;
-    &evaluated
-  } else {
-    args
-  };
+  // Options evaluate too: `Lighting -> lights` uses the value of `lights`,
+  // and a symbol holding `Sequence[opt1, opt2]` splices its options in.
+  let mut evaluated: Vec<Expr> = Vec::with_capacity(args.len());
+  for a in args {
+    match a {
+      Expr::List(_) | Expr::Rule { .. } => {
+        evaluated.push(evaluate_expr_to_expr(a)?);
+      }
+      Expr::Identifier(_) => match &evaluate_expr_to_expr(a)? {
+        Expr::FunctionCall { name, args: items } if name == "Sequence" => {
+          evaluated.extend(items.iter().cloned());
+        }
+        _ => evaluated.push(a.clone()),
+      },
+      other => evaluated.push(other.clone()),
+    }
+  }
+  let args: &[Expr] = &evaluated;
   // `Show` of a `Legended` graphic (a plot with `PlotLegends`) shows the
   // graphic inside and keeps its legend on the result, as Wolfram does:
   // `Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`.
