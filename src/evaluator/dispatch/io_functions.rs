@@ -358,8 +358,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let path = env
         .iter()
         .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.as_str());
       let Some(found) = std::env::split_paths(path)
         .map(|dir| dir.join(program))
         .find(|candidate| candidate.is_file())

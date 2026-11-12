@@ -975,8 +975,7 @@ pub fn root_locus_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ev(&call(part, vec![unit.clone()]))
       .ok()
       .and_then(|p| coefficients(&p, s))
-      .map(|c| polynomial_roots(&c))
-      .unwrap_or_default()
+      .map_or_default(|c| polynomial_roots(&c))
   };
   let (poles, zeros) = (roots_of("Denominator"), roots_of("Numerator"));
 

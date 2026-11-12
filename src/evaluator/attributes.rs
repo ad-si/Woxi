@@ -1113,7 +1113,7 @@ pub fn dispatch_attributes(
     "SetAttributes" if args.len() == 2 => {
       let func_names: Vec<String> = match &args[0] {
         Expr::List(items) => items.iter().filter_map(symbol_name).collect(),
-        _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
+        _ => symbol_name(&args[0]).map_or_default(|n| vec![n]),
       };
       let Some(attr) = get_attributes(&args[1]) else {
         return Some(Ok(null_expr()));
@@ -1160,7 +1160,7 @@ pub fn dispatch_attributes(
     "ClearAttributes" if args.len() == 2 => {
       let func_names: Vec<String> = match &args[0] {
         Expr::List(items) => items.iter().filter_map(symbol_name).collect(),
-        _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
+        _ => symbol_name(&args[0]).map_or_default(|n| vec![n]),
       };
       let to_remove: Vec<String> = match &args[1] {
         Expr::Identifier(a) => vec![a.clone()],
