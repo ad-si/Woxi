@@ -949,6 +949,13 @@ pub(crate) fn plot_decorations(
     && !frame
   {
     let measure = |t: &str| {
+      // A stacked-fraction picture is typeset at `LABEL_FONT`.
+      if let Some((w, h)) =
+        crate::functions::graphics::axes_label_picture_size(t)
+      {
+        let k = label_font / LABEL_FONT;
+        return Some((w * k, h * k));
+      }
       (!t.is_empty()).then(|| {
         (
           label_width(t, label_font),

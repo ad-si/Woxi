@@ -19408,6 +19408,12 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
   Some(format!("{head}({})", parts.join(", ")))
 }
 
+/// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
+/// stacked-fraction picture (see [`fraction_label_svg`]).
+pub fn axes_label_entry(e: &Expr) -> Option<String> {
+  fraction_label_svg(e, LABEL_FONT).or_else(|| styled_axis_label(e))
+}
+
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
   if contains_visible_style(e) {
     return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
@@ -28465,7 +28471,59 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 /// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
 /// anything else the usual text markup.
 pub(crate) fn axes_label_markup(expr: &Expr) -> String {
-  inline_fraction_string_svg(expr).unwrap_or_else(|| expr_to_svg_markup(expr))
+  inline_fraction_string_svg(expr)
+    .or_else(|| fraction_label_svg(expr, LABEL_FONT))
+    .unwrap_or_else(|| expr_to_svg_markup(expr))
+}
+
+/// An axis label expression that TraditionalForm typesets as a stacked
+/// fraction — `Subscript[c, p]/Subscript[c, a][0]` reads as c_p over
+/// c_a(0), the way Wolfram labels plot axes — laid out at `size` points
+/// through the box layout as a picture (a nested `<svg>`). `None` for a
+/// string or any expression without a fraction, which keep their text
+/// rendering.
+pub(crate) fn fraction_label_svg(expr: &Expr, size: f64) -> Option<String> {
+  match expr {
+    Expr::String(_) => return None,
+    // `Rotate[label, angle]` shows its label: the angle is no part of it.
+    Expr::FunctionCall { name, args }
+      if name == "Rotate" && !args.is_empty() =>
+    {
+      return fraction_label_svg(&args[0], size);
+    }
+    // Styling and layout wrappers keep their own label rendering.
+    Expr::FunctionCall { name, .. }
+      if is_style_wrapper(name)
+        || matches!(
+          name.as_str(),
+          "Text"
+            | "Row"
+            | "Column"
+            | "Grid"
+            | "Tooltip"
+            | "Annotation"
+            | "Labeled"
+            | "Framed"
+            | "Pane"
+        ) =>
+    {
+      return None;
+    }
+    _ => {}
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      expr,
+    );
+  if !box_has_fraction(&boxes) {
+    return None;
+  }
+  let boxes = crate::strip_number_precision_markers(&boxes);
+  let layout = layout_box(&boxes, size);
+  if layout.width <= 0.0 || layout.height <= 0.0 {
+    return None;
+  }
+  Some(layout_to_svg(&layout, theme().text_primary))
 }
 
 /// Width and height of an axes label that [`axes_label_markup`] typeset as a

@@ -5176,6 +5176,40 @@ mod plot3d {
       assert!(svg.contains(">f[u]<"), "{svg}");
     }
 
+    // An `AxesLabel` expression that TraditionalForm typesets as a fraction
+    // (`Subscript[c, p]/Subscript[c, a][0]`) is drawn as a stacked fraction
+    // picture on every 2-D plot, not flattened to `cp/ca(0)` text.
+    #[test]
+    fn fraction_axes_labels_are_stacked_on_2d_plots() {
+      let labels = "AxesLabel -> {Subscript[c, a]/Subscript[c, a][0], \
+                    Subscript[c, p]/Subscript[c, a][0]}";
+      for code in [
+        format!("Plot[u, {{u, 0, 1}}, {labels}]"),
+        format!("ParametricPlot[{{1 - u, u (1 - u)}}, {{u, 0, 1}}, {labels}]"),
+        format!("ListPlot[{{{{0, 0}}, {{1, 1}}}}, {labels}]"),
+        format!(
+          "Graphics[Line[{{{{0, 0}}, {{1, 1}}}}], Axes -> True, {labels}]"
+        ),
+      ] {
+        let svg = export_svg(&code);
+        // Both labels are typeset as nested <svg> pictures.
+        let pictures = svg.matches("<svg xmlns").count();
+        assert!(pictures >= 2, "{code}: {svg}");
+        assert!(!svg.contains("/ca(0)"), "{code}: {svg}");
+        assert!(!svg.contains("c[a]"), "{code}: {svg}");
+      }
+      // A rotated fraction label typesets the fraction, not the angle.
+      let svg = export_svg(
+        "Plot[u, {u, 0, 1}, AxesLabel -> {None, Rotate[u/w, Pi/2]}]",
+      );
+      assert!(!svg.contains("Rotate"), "{svg}");
+      assert!(svg.contains("<svg xmlns"), "{svg}");
+      // A plain expression label keeps its text rendering.
+      let svg = export_svg("Plot[u, {u, 0, 1}, AxesLabel -> {u, v}]");
+      assert!(svg.contains(">u</text>"), "{svg}");
+      assert!(svg.contains(">v</text>"), "{svg}");
+    }
+
     // A `Rotate`-wrapped expression label typesets its content rather than
     // a `Rotate(…)` call, on 2-D and 3-D plots alike.
     #[test]
