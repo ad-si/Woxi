@@ -272,7 +272,7 @@ pub(crate) fn rule_as_call(e: &Expr) -> Option<Expr> {
       crate::functions::expr_form::ExprForm::Composite { head, children } => {
         Some(call(&head, children))
       }
-      _ => None,
+      crate::functions::expr_form::ExprForm::Atom(_) => None,
     },
     _ => None,
   }
