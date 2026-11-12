@@ -3233,7 +3233,7 @@ fn apply_replace_all_ast_impl(
           opts.push(rule_expr(
             id_expr("AspectRatio"),
             Expr::Real(crate::functions::graphics::plot_source_aspect_ratio(
-              source.image_size,
+              source,
             )),
           ));
         }

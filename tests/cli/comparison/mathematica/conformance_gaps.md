@@ -5140,6 +5140,14 @@ minimum is centered on x = 0 and half of it falls outside the canvas; the
 topmost y label is clipped the same way. Wolfram insets the area far enough for
 both. This is the `Graphics` renderer, not the one `Plot` uses.
 
+### `Graphics` sets tick and axes labels at the default size under `BaseStyle`
+
+A `Graphics` (and the `Show` of a plot, which is one) takes the size and slant
+of `BaseStyle` / `LabelStyle` for its `FrameLabel`s and `PlotLabel` only; its
+tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
+sets all of the graphic's text in the base style. `Plot` and the list plots
+apply it everywhere.
+
 ### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
 
 The `Graphics` renderer draws the x axis at `y = 0` when that is in range and
@@ -5301,9 +5309,11 @@ With the same scene both engines place every primitive identically, but:
     face (local viewer); Woxi's is the same everywhere. A highlight on a large
     flat face can sit a little off (up to a few levels of 255).
   - `"Spot"` lights are implemented from the documentation's form (cone half
-    angle, `cos^s` falloff, default target the scene center) but were not
-    measured against wolframscript; `"Point"` lights are, without
-    attenuation.
+    angle, `cos^s` falloff, default target the scene center, `{c0, c1, c2}`
+    attenuation) but were not measured against wolframscript; `"Point"`
+    lights are, without attenuation. A fifth element that is not a
+    `{c0, c1, c2}` list leaves the spot unattenuated, which matches a
+    Demonstration snapshot's spot brightness.
   - `MeshShading` colors are lit like a `PlotStyle` color; not measured.
   - The 3D charts (`BarChart3D`, `PieChart3D`, …) are lit by `"Neutral"`
     lights from the default view, which matches `PieChart3D`; `BarChart3D`'s
@@ -5336,6 +5346,17 @@ terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
 (a `Show` of a `ParametricPlot3D` and `Graphics3D`) all came out 6–7 % larger
 in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
 per side instead of 2 %. Where the extra margin comes from was not decoded.
+
+A flat scene points the other way. A twisted band of radius 3 around the
+z-axis has a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with
+the default `ViewPoint`, it is about 1.36× *larger* in four Wolfram snapshots
+(78 % of the width) than in Woxi (58 %). Matching that would take a framing
+sphere of radius about 3.4. That is smaller than any sphere around this box
+(the x-y diagonal alone gives 4.24), and only a little larger than the
+contents' own enclosing sphere (radius 3). The cube- and bar-shaped
+calibrations above fit the box sphere, so no single rule tried so far
+(box sphere, contents sphere, longer vs. shorter image side) reproduces
+all of them.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6262,7 +6283,11 @@ internal hash order. Woxi keeps input order.
   1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
-  image, and WL draws long edges as splines through the layers.
+  image, and WL draws long edges as splines through the layers. The
+  automatic layout of a connected directed acyclic graph with several
+  undirected cycles (a Hasse diagram) is layered the same way, with the
+  layers one unit apart; WL centers each layer, Woxi packs it from the
+  left.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
@@ -7187,6 +7212,19 @@ Vertices reuse the small stellated dodecahedron's order and faces are the 20
 outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
+
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+
+Implemented without access to `wolframscript`. `"Dual"` gives the dual's
+entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
+the pyramid/prism/dipyramid families, and `Missing["NotAvailable"]`
+otherwise — including the antiprisms, whose duals (`{"Trapezohedron", n}`)
+are not among the known solids, and the Johnson solids, whose exact Wolfram
+answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
+entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
+`"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
+the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
+styling, layout and lighting of these pictures differ.
 
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 

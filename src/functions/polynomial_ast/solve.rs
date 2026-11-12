@@ -13664,8 +13664,7 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let factors = crate::functions::polynomial_ast::factor_ast(
       std::slice::from_ref(&expanded_poly),
     )
-    .map(|factored| extract_times_factors(&factored))
-    .unwrap_or_default();
+    .map_or_default(|factored| extract_times_factors(&factored));
     let irreducible = factors.is_empty()
       || factors
         .iter()

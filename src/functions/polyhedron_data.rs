@@ -912,12 +912,31 @@ fn net_faces(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
     if (away[0] - pa[0]) * n2[0] + (away[1] - pa[1]) * n2[1] > 0.0 {
       n2 = [-n2[0], -n2[1]];
     }
+    // The in-plane unit direction perpendicular to the edge, pointing to
+    // the face's centroid. Measuring each vertex along it with its sign
+    // (rather than taking the distance from the edge line) keeps
+    // non-convex faces such as pentagrams, whose vertices lie on both
+    // sides of an edge, intact.
+    let k = face.len() as f64;
+    let to_center: Vec<f64> = (0..3)
+      .map(|i| {
+        face.iter().map(|&v| vertices[v][i]).sum::<f64>() / k - vertices[a][i]
+      })
+      .collect();
+    let c_along = dot(&to_center, &u3);
+    let p3: Vec<f64> = to_center
+      .iter()
+      .zip(&u3)
+      .map(|(c, u)| c - c_along * u)
+      .collect();
+    let p_len = dot(&p3, &p3).sqrt().max(f64::MIN_POSITIVE);
+    let p3: Vec<f64> = p3.iter().map(|c| c / p_len).collect();
     face
       .iter()
       .map(|&v| {
         let d = sub(&vertices[v], &vertices[a]);
         let along = dot(&d, &u3);
-        let perp = (dot(&d, &d) - along * along).max(0.0).sqrt();
+        let perp = dot(&d, &p3);
         [
           pa[0] + along * u2[0] + perp * n2[0],
           pa[1] + along * u2[1] + perp * n2[1],
@@ -1136,6 +1155,199 @@ fn polyhedron_graphics(
   crate::evaluator::evaluate_expr_to_expr(&graphics)
 }
 
+/// Dual pairs among the named solids (each pair listed once; the relation
+/// is symmetric). The tetrahedron is self-dual.
+static DUAL_PAIRS: &[(&str, &str)] = &[
+  ("Tetrahedron", "Tetrahedron"),
+  ("Cube", "Octahedron"),
+  ("Dodecahedron", "Icosahedron"),
+  ("GreatDodecahedron", "SmallStellatedDodecahedron"),
+  ("GreatIcosahedron", "GreatStellatedDodecahedron"),
+  ("Cuboctahedron", "RhombicDodecahedron"),
+  ("GreatRhombicosidodecahedron", "DisdyakisTriacontahedron"),
+  ("GreatRhombicuboctahedron", "DisdyakisDodecahedron"),
+  ("Icosidodecahedron", "RhombicTriacontahedron"),
+  ("SmallRhombicosidodecahedron", "DeltoidalHexecontahedron"),
+  ("SmallRhombicuboctahedron", "DeltoidalIcositetrahedron"),
+  ("SnubCube", "PentagonalIcositetrahedron"),
+  ("SnubDodecahedron", "PentagonalHexecontahedron"),
+  ("TruncatedCube", "SmallTriakisOctahedron"),
+  ("TruncatedDodecahedron", "TriakisIcosahedron"),
+  ("TruncatedIcosahedron", "PentakisDodecahedron"),
+  ("TruncatedOctahedron", "TetrakisHexahedron"),
+  ("TruncatedTetrahedron", "TriakisTetrahedron"),
+];
+
+/// `"Dual"`: the entity of the dual solid, or `Missing["NotAvailable"]`
+/// when the dual is not a solid Woxi knows. Pyramids are self-dual, and the
+/// n-gonal prisms and dipyramids and the antiprisms and trapezohedra are
+/// dual to each other.
+fn dual(info: &PolyhedronInfo) -> Expr {
+  let name = info.name;
+  if let Some(other) = DUAL_PAIRS.iter().find_map(|&(a, b)| {
+    if a == name {
+      Some(b)
+    } else if b == name {
+      Some(a)
+    } else {
+      None
+    }
+  }) {
+    return entity_expr(other);
+  }
+  if let Expr::List(spec) = &entity_expr(name)
+    && let [Expr::String(kind), n @ Expr::Integer(_)] = spec.as_slice()
+  {
+    let dual_kind = match kind.as_str() {
+      "Pyramid" => Some("Pyramid"),
+      "Prism" => Some("Dipyramid"),
+      "Dipyramid" => Some("Prism"),
+      "Antiprism" => Some("Trapezohedron"),
+      "Trapezohedron" => Some("Antiprism"),
+      _ => None,
+    };
+    // Only a family member Woxi knows the solid of: a dual it cannot
+    // describe further would break every follow-up query.
+    if let Some(k) = dual_kind
+      && let Expr::Integer(m) = n
+      && let Some(found) = find_polyhedron(&format!("{{\"{k}\", {m}}}"))
+    {
+      return entity_expr(found.name);
+    }
+  }
+  missing("NotAvailable")
+}
+
+fn missing(reason: &str) -> Expr {
+  call1("Missing", str_expr(reason))
+}
+
+/// `"SkeletonImage"`: a planar drawing of the vertex-edge graph. Convex
+/// solids are drawn as a Schlegel diagram (the vertices projected through
+/// a point just outside the largest face onto that face's plane), so no
+/// two edges cross; any other solid falls back to a view down the z axis.
+fn skeleton_image(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let vertices = numeric_vertices(info)?;
+  let faces = numeric_faces(info)?;
+  let dot =
+    |a: &[f64; 3], b: &[f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  let points: Vec<[f64; 2]> = schlegel_points(&vertices, &faces, dot)
+    .unwrap_or_else(|| vertices.iter().map(|v| [v[0], v[1]]).collect());
+  let coords: Vec<Expr> = points
+    .iter()
+    .map(|p| Expr::List(vec![Expr::Real(p[0]), Expr::Real(p[1])].into()))
+    .collect();
+  let edges = edge_indices(info)?;
+  let all_points = Expr::List(
+    (1..=vertices.len() as i128)
+      .map(Expr::Integer)
+      .collect::<Vec<_>>()
+      .into(),
+  );
+  let graphics = call1(
+    "Graphics",
+    call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(coords.into()),
+        Expr::List(
+          vec![
+            call1("Line", edges),
+            call1("PointSize", Expr::Real(0.03)),
+            call1("Point", all_points),
+          ]
+          .into(),
+        ),
+      ],
+    ),
+  );
+  crate::evaluator::evaluate_expr_to_expr(&graphics)
+}
+
+/// The Schlegel projection of a convex solid onto the plane of its largest
+/// face, as 2D coordinates in that plane; `None` when some vertex lies
+/// beyond that plane (the solid is not convex there).
+fn schlegel_points(
+  vertices: &[[f64; 3]],
+  faces: &[Vec<usize>],
+  dot: impl Fn(&[f64; 3], &[f64; 3]) -> f64,
+) -> Option<Vec<[f64; 2]>> {
+  let face = faces.iter().max_by_key(|f| f.len())?;
+  let n = face.len() as f64;
+  let mut c = [0.0; 3];
+  for &i in face {
+    for k in 0..3 {
+      c[k] += vertices[i][k] / n;
+    }
+  }
+  let d = dot(&c, &c).sqrt();
+  if d < 1e-9 {
+    return None;
+  }
+  let normal = [c[0] / d, c[1] / d, c[2] / d];
+  if vertices.iter().any(|v| dot(v, &normal) > d + 1e-9) {
+    return None;
+  }
+  // Viewpoint just outside the face, on its axis.
+  let t = 0.25 * d;
+  let eye = [
+    c[0] + t * normal[0],
+    c[1] + t * normal[1],
+    c[2] + t * normal[2],
+  ];
+  // An orthonormal basis (u, w) of the face plane.
+  let p0 = vertices[face[0]];
+  let mut u = [p0[0] - c[0], p0[1] - c[1], p0[2] - c[2]];
+  let lu = dot(&u, &u).sqrt();
+  if lu < 1e-9 {
+    return None;
+  }
+  u = [u[0] / lu, u[1] / lu, u[2] / lu];
+  let w = [
+    normal[1] * u[2] - normal[2] * u[1],
+    normal[2] * u[0] - normal[0] * u[2],
+    normal[0] * u[1] - normal[1] * u[0],
+  ];
+  vertices
+    .iter()
+    .map(|v| {
+      let dir = [v[0] - eye[0], v[1] - eye[1], v[2] - eye[2]];
+      let denom = dot(&dir, &normal);
+      if denom > -1e-12 {
+        return None;
+      }
+      let s = -t / denom;
+      let x = [
+        eye[0] + s * dir[0] - c[0],
+        eye[1] + s * dir[1] - c[1],
+        eye[2] + s * dir[2] - c[2],
+      ];
+      Some([dot(&x, &u), dot(&x, &w)])
+    })
+    .collect()
+}
+
+/// `"NetImage"`: the unfolded net (see `"NetFaces"`) drawn as filled
+/// polygons with their edges outlined.
+fn net_image(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let net = net_faces(info)?;
+  let graphics = call1(
+    "Graphics",
+    Expr::List(
+      vec![
+        call1("EdgeForm", call1("GrayLevel", Expr::Integer(0))),
+        call(
+          "RGBColor",
+          vec![Expr::Real(1.0), Expr::Real(0.8), Expr::Real(0.4)],
+        ),
+        net,
+      ]
+      .into(),
+    ),
+  );
+  crate::evaluator::evaluate_expr_to_expr(&graphics)
+}
+
 /// Evaluate a stored exact WL value.
 fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
   let parsed = crate::functions::string_ast::parse_program_to_expr(src)?;
@@ -1147,6 +1359,7 @@ fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
 static PROPERTIES: &[&str] = &[
   "Circumradius",
   "Classes",
+  "Dual",
   "EdgeCount",
   "EdgeIndices",
   "Edges",
@@ -1154,6 +1367,7 @@ static PROPERTIES: &[&str] = &[
   "FaceCountRules",
   "FaceIndices",
   "Faces",
+  "Image",
   "Inradius",
   "Insphere",
   "Midradius",
@@ -1161,8 +1375,10 @@ static PROPERTIES: &[&str] = &[
   "NetCoordinates",
   "NetFaceIndices",
   "NetFaces",
+  "NetImage",
   "Skeleton",
   "SkeletonGraph",
+  "SkeletonImage",
   "SurfaceArea",
   "VertexCoordinates",
   "VertexCount",
@@ -1369,9 +1585,21 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "NetFaceIndices" => net_data(info, NetPart::FaceIndices),
         "Insphere" => insphere(info),
         "Skeleton" | "SkeletonGraph" => skeleton_graph(info),
+        "Dual" => Ok(dual(info)),
+        "Image" => polyhedron_graphics(info),
+        "SkeletonImage" => skeleton_image(info),
+        "NetImage" => net_image(info),
         _ => unevaluated(),
       }
     }
+    // `PolyhedronData[name, "Dual", "Name"]`: the dual's standard entity
+    // name (a `Missing[…]` when there is none).
+    3 => match (&args[1], &args[2]) {
+      (Expr::String(p), Expr::String(a)) if p == "Dual" && a == "Name" => {
+        Ok(dual(info))
+      }
+      _ => unevaluated(),
+    },
     _ => unevaluated(),
   }
 }

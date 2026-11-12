@@ -5327,6 +5327,27 @@ fn render_display_node<'a>(
       mutation,
       selected,
       enabled,
+      checkbox: true,
+    } => {
+      // One choice of a CheckboxBar: a checkbox followed by its label,
+      // toggling the value's membership in the bound list variable.
+      let mutation = mutation.clone();
+      let cb = checkbox(*selected).on_toggle_maybe(enabled.then(|| {
+        move |_| Message::ManipulateDisplayToggled(cell_idx, mutation.clone())
+      }));
+      Row::new()
+        .spacing(4)
+        .align_y(Center)
+        .push(cb)
+        .push(render_display_node(cell_idx, label))
+        .into()
+    }
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+      enabled,
+      checkbox: false,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
       // removes its value from the bound list variable. A bar whose
@@ -9590,9 +9611,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = instantiate_stored_manipulate(code, "")
       .expect("the ActionMenu Manipulate must build a widget");
     assert!(state.error.is_none(), "render failed: {:?}", state.error);
-    // A Locator's point binds machine reals from the start (see
-    // `promoted_invisible_locator_binds_machine_reals`).
-    assert_eq!(state.text_output.as_deref(), Some("{0, {0., 0.}}"));
+    // A Locator keeps its exact initial point until it is dragged (see
+    // `promoted_invisible_locator_binds_machine_reals_once_dragged`).
+    assert_eq!(state.text_output.as_deref(), Some("{0, {0, 0}}"));
 
     // The menu shows up as one ActionMenu display node carrying both items
     // with their own held action, not a frozen text dump of the source.
@@ -9620,7 +9641,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let cw_action = items[0].1.clone();
     state.apply_button_action(&cw_action);
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    assert_eq!(state.text_output.as_deref(), Some("{1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{1, {0, 0}}"));
 
     // A second, different item keeps working against the now-updated state.
     let ccw_action = state
@@ -9633,7 +9654,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .expect("the ActionMenu must still be present after re-render");
     state.apply_button_action(&ccw_action);
     state.apply_button_action(&ccw_action);
-    assert_eq!(state.text_output.as_deref(), Some("{-1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -27732,12 +27753,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     );
 
     // Dragging a vertex changes both the outline and the readouts.
-    if let manipulate::ControlState::Slider2D { x, y, .. } =
-      &mut state.controls[0]
-    {
-      *x = 6.0;
-      *y = 7.0;
-    }
+    state.slider2d_change(0, 0, 6.0);
+    state.slider2d_change(0, 1, 7.0);
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     let dragged = render(&state);
@@ -27745,9 +27762,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       labeled, dragged,
       "moving a locator must change the rendered triangle"
     );
+    // A dragged point is a machine-real pair, so `N[…, 6]` of the new
+    // area (|(-1)(-12) - (-8)(-9)| / 2 = 30) stays a machine real.
     assert!(
-      !dragged.contains("31.0000"),
-      "the area readout must follow the moved vertex"
+      dragged.contains(">30.<"),
+      "the area readout must follow the moved vertex as a machine real, \
+       got: {dragged}"
     );
   }
 
@@ -32719,6 +32739,70 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       vec![false, true],
       "only the second choice stays selected after deselecting the first"
     );
+  }
+
+  /// A 3D scene whose extra geometry is switched by a one-choice
+  /// `ControlType -> CheckboxBar` control (beside a `VerticalSlider` driving
+  /// the view point). Wolfram draws a CheckboxBar choice as a checkbox with
+  /// its label, not as the toggle button a `TogglerBar` uses, so the
+  /// display tree must mark the choice as a checkbox; unchecking it must
+  /// remove the value from the bound list and change the picture.
+  #[test]
+  fn checkbox_bar_control_draws_checkboxes_in_a_3d_scene() {
+    use woxi::functions::graphics::DisplayNode;
+    fn choices(nodes: &[DisplayNode]) -> Vec<(String, bool, bool)> {
+      fn walk(node: &DisplayNode, out: &mut Vec<(String, bool, bool)>) {
+        match node {
+          DisplayNode::Toggler {
+            mutation,
+            selected,
+            checkbox,
+            ..
+          } => out.push((mutation.clone(), *selected, *checkbox)),
+          DisplayNode::Row(items) | DisplayNode::Column(items) => {
+            items.iter().for_each(|n| walk(n, out))
+          }
+          DisplayNode::Panel(child) => walk(child, out),
+          _ => {}
+        }
+      }
+      let mut out = Vec::new();
+      nodes.iter().for_each(|n| walk(n, &mut out));
+      out
+    }
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 2}], Gray, If[MemberQ[extras, halo], {Line[Table[{1/2 + Cos[s], 1/2 + Sin[s], 3}, {s, 0, 2 Pi, Pi/8}]]}, Sequence @@ {}]}, Boxed -> False, ViewAngle -> Pi/12, ViewPoint -> {h Cos[w], h Sin[w], 1}], {{w, Pi, "turn"}, 0, 2 Pi}, {{h, 4, "height"}, 2, 6, ControlPlacement -> Left, ControlType -> VerticalSlider}, {{extras, {halo}, ""}, {halo -> "show halo"}, ControlType -> CheckboxBar}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let with_halo = widget.graphics_handle.clone();
+    assert!(with_halo.is_some(), "the scene must draw");
+    assert_eq!(
+      widget.state,
+      vec![("extras".to_string(), "{halo}".to_string())]
+    );
+
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (mutation, selected, checkbox) = found[0].clone();
+    assert!(selected, "the halo starts checked");
+    assert!(checkbox, "a CheckboxBar choice draws as a checkbox");
+
+    widget.apply_display_mutation(&mutation);
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert_eq!(widget.state[0].1, "{}");
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1);
+    assert!(!found[0].1, "unchecking clears the choice");
+    assert!(found[0].2, "it still draws as a checkbox");
   }
 
   /// A multi-select `TogglerBar` control gated by `Enabled -> cond` on

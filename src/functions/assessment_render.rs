@@ -129,9 +129,8 @@ pub fn question_object_to_svg(expr: &Expr) -> Option<String> {
 
   let ch = char_w();
   let t = theme();
-  let question_lines: Vec<String> = question
-    .map(|q| wrap_text(&display_text(q)))
-    .unwrap_or_default();
+  let question_lines: Vec<String> =
+    question.map_or_default(|q| wrap_text(&display_text(q)));
   let area = answer_area(assess);
 
   // ── Measure ────────────────────────────────────────────────────────────

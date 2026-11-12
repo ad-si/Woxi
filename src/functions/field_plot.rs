@@ -3767,6 +3767,7 @@ fn contour_plot_equations(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
@@ -6940,6 +6941,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (`Automatic`) draws it only when there is no mesh, whose outer lines
   // already outline the grid.
   let mut frame_forced = false;
+  // `PixelConstrained -> True` / `n`: every cell covers a whole number of
+  // pixels (`n`, or the largest count that fits in the `ImageSize` box),
+  // and the picture is exactly the grid, without padding.
+  let mut pixel_constrained: Option<Option<u32>> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -7030,8 +7035,22 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Frame" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
-          frame_hidden = matches!(&val, Expr::Identifier(n) if n == "False");
+          frame_hidden = matches!(
+            &val,
+            Expr::Identifier(n) if n == "False" || n == "None"
+          );
           frame_forced = matches!(&val, Expr::Identifier(n) if n == "True");
+        }
+        "PixelConstrained" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          pixel_constrained = match &val {
+            Expr::Identifier(n) if n == "True" => Some(None),
+            Expr::Integer(k) if *k >= 1 => {
+              Some(Some(u32::try_from(*k).unwrap_or(u32::MAX)))
+            }
+            _ => None,
+          };
         }
         "FrameTicksStyle" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -7117,6 +7136,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let longest = n_cols.max(n_rows) as f64;
   let (auto_x, auto_y) = (longest / 48.0, longest / 50.0);
   let ((pad_l, pad_r), (pad_b, pad_t)) = match &range_padding {
+    _ if pixel_constrained.is_some() => ((0.0, 0.0), (0.0, 0.0)),
     Some(spec) => (
       spec.x.resolve(n_cols as f64, auto_x / n_cols as f64),
       spec.y.resolve(n_rows as f64, auto_y / n_rows as f64),
@@ -7130,7 +7150,15 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rows), fitted inside the `ImageSize` box — an explicit `{w, h}` is a
   // bounding box, not the picture's own size.
   let aspect = aspect_ratio.unwrap_or(total_rows / total_cols);
-  let (svg_width, svg_height) = {
+  let (svg_width, svg_height) = if let Some(per_cell) = pixel_constrained {
+    let (cols, rows) = (n_cols as u32, n_rows as u32);
+    let k = per_cell.unwrap_or_else(|| {
+      (svg_width / cols.max(1))
+        .min(svg_height / rows.max(1))
+        .max(1)
+    });
+    (cols.saturating_mul(k).max(1), rows.saturating_mul(k).max(1))
+  } else {
     let (w, h) = (svg_width as f64, svg_height as f64);
     let (fit_w, fit_h) = if h / w <= aspect {
       (h / aspect, h)
@@ -7622,7 +7650,61 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let structure = call("Graphics", structure_args);
+  let buf = match explicit_image_size_box(args, 1) {
+    Some((box_w, box_h)) => letterbox_svg(buf, box_w, box_h),
+    None => buf,
+  };
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`
+/// when both sides are explicit numbers. Such a pair fixes the size of the
+/// whole picture: a plot of another shape is drawn inside it, centered,
+/// rather than shrinking the picture to the plot.
+fn explicit_image_size_box(args: &[Expr], start: usize) -> Option<(u32, u32)> {
+  args.iter().skip(start).find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      match &value {
+        Expr::List(items) if items.len() == 2 => {
+          let w = try_eval_to_f64(&items[0]).filter(|v| *v > 0.0)?;
+          let h = try_eval_to_f64(&items[1]).filter(|v| *v > 0.0)?;
+          Some((w.round() as u32, h.round() as u32))
+        }
+        _ => None,
+      }
+    }
+    _ => None,
+  })
+}
+
+/// Center `svg` in a `box_w` x `box_h` canvas when it is smaller than that
+/// in either dimension (the way the front end places a picture whose
+/// `ImageSize -> {w, h}` box has another shape than its plot).
+fn letterbox_svg(svg: String, box_w: u32, box_h: u32) -> String {
+  let Some(dims) = crate::functions::graphics::parse_svg_dimensions(&svg)
+  else {
+    return svg;
+  };
+  let (w, h) = (dims.nat_w, dims.nat_h);
+  let (bw, bh) = (f64::from(box_w), f64::from(box_h));
+  if w >= bw - 0.5 && h >= bh - 0.5 {
+    return svg;
+  }
+  let (out_w, out_h) = (bw.max(w), bh.max(h));
+  let Some(rest) = svg.strip_prefix("<svg") else {
+    return svg;
+  };
+  format!(
+    "<svg width=\"{out_w}\" height=\"{out_h}\" viewBox=\"0 0 {out_w} {out_h}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n<svg x=\"{}\" y=\"{}\"{rest}</svg>",
+    ((out_w - w) / 2.0).round(),
+    ((out_h - h) / 2.0).round(),
+  )
 }
 
 /// One explicit frame tick: a position in the plot's coordinates, its label
