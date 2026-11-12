@@ -304,13 +304,15 @@ impl FrameReader {
   /// Read whatever the connection has into the buffer. `Ok(false)` when the
   /// read timed out with nothing, `Err` once the peer is gone.
   fn fill(&mut self, stream: &TcpStream) -> Result<bool, ()> {
-    let mut chunk = [0u8; 64 * 1024];
-    match (&*stream).read(&mut chunk) {
+    // Read straight into the buffer's spare capacity rather than through
+    // a 64 KiB array on the stack of every connection thread.
+    let start = self.buf.len();
+    self.buf.resize(start + 64 * 1024, 0);
+    let read = (&*stream).read(&mut self.buf[start..]);
+    self.buf.truncate(start + *read.as_ref().unwrap_or(&0));
+    match read {
       Ok(0) => Err(()),
-      Ok(n) => {
-        self.buf.extend_from_slice(&chunk[..n]);
-        Ok(true)
-      }
+      Ok(_) => Ok(true),
       Err(err)
         if matches!(
           err.kind(),
@@ -600,7 +602,7 @@ impl ZmqSocket {
       return;
     };
     let stream = Arc::new(stream);
-    let Some(id) = self.register(stream.clone(), hello) else {
+    let Some(id) = self.register(&stream, hello) else {
       self.first_attempt_done();
       let _ = stream.shutdown(std::net::Shutdown::Both);
       return;
@@ -635,7 +637,7 @@ impl ZmqSocket {
 
   /// Add a handshaken peer. `None` when this socket takes no more peers
   /// (a PAIR already has its one).
-  fn register(&self, stream: Arc<TcpStream>, hello: PeerHello) -> Option<u64> {
+  fn register(&self, stream: &Arc<TcpStream>, hello: PeerHello) -> Option<u64> {
     let mut inner = self.lock();
     if self.stop.load(Ordering::Relaxed)
       || (self.kind == ZmqType::Pair && !inner.peers.is_empty())
@@ -659,7 +661,7 @@ impl ZmqSocket {
       for topic in &inner.subscriptions {
         out.extend(encode_message(&[subscription_message(true, topic)]));
       }
-      if !out.is_empty() && (&*stream).write_all(&out).is_err() {
+      if !out.is_empty() && (&**stream).write_all(&out).is_err() {
         return None;
       }
     }
@@ -675,7 +677,7 @@ impl ZmqSocket {
       ZmqType::Pair | ZmqType::Push | ZmqType::Dealer | ZmqType::Req
     ) {
       while let Some(message) = inner.outbox.pop_front() {
-        if (&*stream).write_all(&encode_message(&message)).is_err() {
+        if (&**stream).write_all(&encode_message(&message)).is_err() {
           break;
         }
       }
