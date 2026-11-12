@@ -8821,6 +8821,11 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - A `Sum`/`Product` inside a `Column` item sets its limits as scripts (as in
   wolframscript); the same sum at a `Grid` cell or `Row` item level is not
   covered.
+- A TraditionalForm expression drawn in a graphic's text (a polynomial
+  `PlotLabel` such as `x^3 - 2 x^2 - 3 x`) has no space around its infix
+  operators: Woxi draws `x³-2x²-3x`, Wolfram's front end `x³ − 2x² − 3x`.
+  The box-to-SVG renderer is shared with output cells, whose tests expect
+  tight operators, so spacing them only inside graphics needs its own pass.
 
 ## Layout and form wrappers (graphics comparison sweep, 2026-11)
 
