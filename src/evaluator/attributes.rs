@@ -866,6 +866,9 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // And / Or: Flat + HoldAll + OneIdentity + Protected
     "And" | "Or" => A::Flat | A::HoldAll | A::OneIdentity | A::Protected,
     "Xor" => A::Flat | A::OneIdentity | A::Orderless | A::Protected,
+    "Equivalent" | "Majority" | "Xnor" => A::Orderless | A::Protected,
+    // Nand / Nor short-circuit like And / Or, so they hold their arguments.
+    "Nand" | "Nor" => A::HoldAll | A::Protected,
 
     // Flat + OneIdentity + Protected
     "Dot" | "NonCommutativeMultiply" => {

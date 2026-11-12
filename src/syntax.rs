@@ -10070,6 +10070,14 @@ fn comparison_operand_needs_parens(e: &Expr) -> bool {
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
+/// A call to one of the logical connectives with an infix form of their own
+/// (`Xor`, `Nand`, `Nor`, `Xnor`, `Equivalent`), which InputForm brackets as
+/// an operand of `&&` and `||`: `a && (Xor[b, c])`.
+fn is_logical_connective_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Xor" | "Nand" | "Nor" | "Xnor" | "Equivalent"))
+}
+
 /// A named `a_` or any optional `_.` / `a_:v`, which wolframscript wraps
 /// wherever it is an operand of an infix operator — `(a_) + (b_)`,
 /// `(a_)*(b_)`, `(a_) != (b_)`, `(_.) + 1` — so the name cannot run into
@@ -11404,7 +11412,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-              || printed_infix_precedence(arg).is_some_and(|p| p < 15);
+              || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+              || (connective_parens() && is_logical_connective_call(arg));
             if is_and { format!("({s})") } else { s }
           })
           .collect();
@@ -11425,7 +11434,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
               || printed_infix_precedence(arg).is_some_and(|p| p < 18)
-              || is_bare_pattern(arg);
+              || is_bare_pattern(arg)
+              || (connective_parens() && is_logical_connective_call(arg));
             if is_or { format!("({s})") } else { s }
           })
           .collect();
@@ -13055,6 +13065,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 15))
             || is_bare_pattern(e)
+            || (connective_parens() && is_logical_connective_call(e))
         };
         let lf = if is_and_expr(left) {
           format!("({left_str})")
@@ -13082,6 +13093,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 18))
             || is_bare_pattern(e)
+            || (connective_parens() && is_logical_connective_call(e))
         };
         let lf = if is_or_expr(left) {
           format!("({left_str})")
@@ -13350,8 +13362,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         ) || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, .. }
-            if matches!(name.as_str(),
-              "And" | "Or" | "Xor" | "Xnor" | "Nand" | "Nor" | "Not")
+            if matches!(name.as_str(), "And" | "Or" | "Not")
+              || (connective_parens()
+                && matches!(name.as_str(),
+                  "Xor" | "Xnor" | "Nand" | "Nor" | "Equivalent"))
         ) || matches!(
           operand.as_ref(),
           Expr::UnaryOp {
@@ -14520,6 +14534,13 @@ fn in_true_input_form() -> bool {
   IN_TRUE_INPUT_FORM.with(std::cell::Cell::get)
 }
 
+/// Whether a `Xor`/`Nand`/`Nor`/`Xnor`/`Equivalent` operand of `&&`, `||` or
+/// `!` is bracketed: in genuine InputForm only (`a && (Xor[b, c])`), not
+/// inside the displayed `FullForm[…]` wrapper (`FullForm[a || Xor[b, c]]`).
+fn connective_parens() -> bool {
+  in_true_input_form() && !IN_FULL_FORM.with(std::cell::Cell::get)
+}
+
 /// Whether the current render originated from OutputForm (see `IN_OUTPUT_FORM`).
 fn in_output_form() -> bool {
   IN_OUTPUT_FORM.with(std::cell::Cell::get)
@@ -15426,7 +15447,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-            || printed_infix_precedence(arg).is_some_and(|p| p < 15);
+            || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+            || (connective_parens() && is_logical_connective_call(arg));
           if is_and { format!("({s})") } else { s }
         })
         .collect();
@@ -15446,7 +15468,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
             || printed_infix_precedence(arg).is_some_and(|p| p < 18)
-            || is_bare_pattern(arg);
+            || is_bare_pattern(arg)
+            || (connective_parens() && is_logical_connective_call(arg));
           if is_or { format!("({s})") } else { s }
         })
         .collect();

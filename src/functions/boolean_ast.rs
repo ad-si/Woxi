@@ -1823,6 +1823,29 @@ fn simplify_sorted_dnf(expr: &Expr) -> Expr {
   }
   loop {
     let mut changed = false;
+    // A one-literal conjunction l strikes ¬l from every other conjunction:
+    // `!a || (a && b)` is `!a || b`.
+    let units: Vec<(String, bool)> = sets
+      .iter()
+      .filter(|set| set.len() == 1)
+      .flat_map(|set| set.iter().map(|(k, v)| (k.clone(), v.0)))
+      .collect();
+    for set in &mut sets {
+      if set.len() < 2 {
+        continue;
+      }
+      let struck: Vec<String> = set
+        .iter()
+        .filter(|(k, v)| units.iter().any(|(uk, up)| uk == *k && *up != v.0))
+        .map(|(k, _)| k.clone())
+        .collect();
+      if !struck.is_empty() && struck.len() < set.len() {
+        for k in struck {
+          set.remove(&k);
+        }
+        changed = true;
+      }
+    }
     // Absorption: drop a conjunction that contains another.
     let mut i = 0;
     while i < sets.len() {
@@ -2071,6 +2094,34 @@ fn canonicalize_dnf(expr: &Expr) -> Expr {
   let sig = |c: &[(String, bool, Expr)]| -> Vec<(String, bool)> {
     c.iter().map(|(k, p, _)| (k.clone(), *p)).collect()
   };
+
+  // A one-literal conjunction l strikes ¬l from every other conjunction:
+  // `a || (!a && b && c)` is `a || (b && c)`.
+  loop {
+    let units: Vec<(String, bool)> = clauses
+      .iter()
+      .filter(|c| c.len() == 1)
+      .map(|c| (c[0].0.clone(), c[0].1))
+      .collect();
+    let mut changed = false;
+    for clause in &mut clauses {
+      if clause.len() < 2 {
+        continue;
+      }
+      let before = clause.len();
+      let stays = |lit: &(String, bool, Expr)| {
+        !units.iter().any(|(k, p)| *k == lit.0 && *p != lit.1)
+      };
+      if clause.iter().filter(|l| stays(l)).count() == 0 {
+        continue;
+      }
+      clause.retain(|l| stays(l));
+      changed |= clause.len() != before;
+    }
+    if !changed {
+      break;
+    }
+  }
 
   // Dedup identical clauses.
   let mut seen: BTreeSet<Vec<(String, bool)>> = BTreeSet::new();
@@ -3092,6 +3143,46 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
       call("Or", kept)
     };
     reduced.push((keys, rebuilt));
+  }
+  // A one-literal clause l makes ¬l false everywhere, so it is struck from
+  // every other clause: `!a && (a || b)` is `!a && b`.
+  loop {
+    let units: Vec<(bool, String)> = reduced
+      .iter()
+      .filter(|(keys, _)| keys.len() == 1)
+      .map(|(keys, _)| keys[0].clone())
+      .collect();
+    let mut changed = false;
+    for (keys, clause) in &mut reduced {
+      if keys.len() < 2 {
+        continue;
+      }
+      let kept: Vec<usize> = (0..keys.len())
+        .filter(|&i| {
+          let (negated, name) = &keys[i];
+          !units.contains(&(!negated, name.clone()))
+        })
+        .collect();
+      if kept.len() == keys.len() || kept.is_empty() {
+        continue;
+      }
+      let literals: Vec<Expr> = match &*clause {
+        Expr::FunctionCall { args, .. } => args.to_vec(),
+        other => vec![other.clone()],
+      };
+      *keys = kept.iter().map(|&i| keys[i].clone()).collect();
+      let mut lits: Vec<Expr> =
+        kept.iter().map(|&i| literals[i].clone()).collect();
+      *clause = if lits.len() == 1 {
+        lits.remove(0)
+      } else {
+        call("Or", lits)
+      };
+      changed = true;
+    }
+    if !changed {
+      break;
+    }
   }
   // A clause implied by a shorter one carries nothing of its own.
   let mut survivors: Vec<Expr> = Vec::new();

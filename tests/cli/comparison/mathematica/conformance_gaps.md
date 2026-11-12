@@ -3695,6 +3695,19 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### `BooleanConvert[…, "ESOP"]` and non-Boolean variables
+
+Woxi leaves `BooleanConvert[expr, "ESOP"]` unevaluated; wolframscript writes
+the DNF with its terms made mutually exclusive (`Xor[b, !a && !b]` for
+`Implies[a, b]`). `TautologyQ` and `SatisfiableQ` treat a comparison such as
+`x > 1` as one more Boolean variable, where wolframscript reports
+`::boolv` (and `BooleanVariables[x > 1]` is `{x <= 1}` there):
+
+```sh
+wolframscript -code 'SatisfiableQ[x > 1 && a]'   # SatisfiableQ::boolv … unevaluated
+woxi eval 'SatisfiableQ[x > 1 && a]'             # True
+```
+
 ### The parts of a sum with a complex number
 
 Woxi stores `x + 2 + 3 I` as `Plus[2, x, 3 I]`, with the real and the
