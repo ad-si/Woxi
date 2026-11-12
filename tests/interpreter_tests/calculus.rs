@@ -10468,6 +10468,46 @@ mod ndsolve {
     );
   }
 
+  /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
+  /// between two nodes it holds the value of the right node, at a node the
+  /// node's own value, and its derivative is zero.
+  #[test]
+  fn interpolation_order_zero_is_a_step_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}, \
+         InterpolationOrder -> 0]; \
+         {f[0], f[1/2], f[1], f[1.5], f[2.9], f[3], f'[1.5]}"
+      )
+      .unwrap(),
+      "{0, 1, 1, 4., 9., 9, 0}"
+    );
+    assert_eq!(
+      interpret("Interpolation[{2, 3, 5, 7}, InterpolationOrder -> 0][2.5]")
+        .unwrap(),
+      "5."
+    );
+    assert_eq!(
+      interpret(
+        "Interpolation[{{0, 1}, {1, 2}}, InterpolationOrder -> 0]\
+         [\"InterpolationOrder\"]"
+      )
+      .unwrap(),
+      "{0}"
+    );
+    // Irregularly spaced, unsorted nodes: a counting process with jumps at
+    // the nodes.
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{0.7, 2}, {0, 0}, {0.2, 0}, {1, 3}, {0.4, 1}}, \
+         InterpolationOrder -> 0]; Map[g, {0.1, 0.3, 0.5, 0.75, 0.95}]"
+      )
+      .unwrap(),
+      "{0., 1., 2., 3., 3.}"
+    );
+  }
+
   /// A flat `{x, y, z}` list with complex `z` is a complex-valued 2-D grid:
   /// the real and imaginary parts interpolate independently, and the partial
   /// derivatives `Derivative[a, b][f]` act on the local polynomial exactly.

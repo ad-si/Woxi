@@ -10113,9 +10113,9 @@ fn stroke_linejoin_attrs(
     Some((LineJoinKind::Bevel, _)) => ("bevel", String::new()),
     Some((LineJoinKind::Round, _)) | None => ("round", String::new()),
     Some((LineJoinKind::Miter, limit)) => {
-      let miterlimit = limit
-        .map(|l| format!(" stroke-miterlimit=\"{:.2}\"", l.max(1.0)))
-        .unwrap_or_default();
+      let miterlimit = limit.map_or_default(|l| {
+        format!(" stroke-miterlimit=\"{:.2}\"", l.max(1.0))
+      });
       ("miter", miterlimit)
     }
   }
@@ -20096,15 +20096,13 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         "\u{221A}{}",
         args
           .first()
-          .map(|a| box_expr_to_plain_in(a, spaced))
-          .unwrap_or_default()
+          .map_or_default(|a| box_expr_to_plain_in(a, spaced))
       ),
       // The trailing arguments of these are a tag, a form or display
       // options — they are not part of the drawn text.
       "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" => args
         .first()
-        .map(|a| box_expr_to_plain_in(a, spaced))
-        .unwrap_or_default(),
+        .map_or_default(|a| box_expr_to_plain_in(a, spaced)),
       // A grid of boxes (a matrix in `TraditionalForm`) is drawn as lines:
       // one per row, its cells spaced apart.
       "GridBox" if !args.is_empty() => match &args[0] {
@@ -30453,7 +30451,7 @@ pub fn panel_to_svg(args: &[Expr]) -> Option<String> {
       (Expr::List(ls), None) => (ls.to_vec(), Vec::new()),
       (single, pos) => (
         vec![(*single).clone()],
-        pos.map(|p| vec![(*p).clone()]).unwrap_or_default(),
+        pos.map_or_default(|p| vec![(*p).clone()]),
       ),
     };
   let mut above = Vec::new();
@@ -33632,10 +33630,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Kept so a pick list the body draws can be lifted out of it once the
   // control specs say which variable it drives (see `body_popups` below).
   let mut body_expr_kept: Option<Expr> = None;
-  let mut dynamic_labels: Vec<(String, String)> = inner
-    .as_ref()
-    .map(|i| i.dynamic_labels.clone())
-    .unwrap_or_default();
+  let mut dynamic_labels: Vec<(String, String)> =
+    inner.as_ref().map_or_default(|i| i.dynamic_labels.clone());
   let mut module_locals: Vec<String> = Vec::new();
   let (
     body_code,
@@ -39450,8 +39446,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .map(|c| (c.r as f32, c.g as f32, c.b as f32));
         let mut runs = args
           .first()
-          .map(|a| manipulate_label_runs(a, styled))
-          .unwrap_or_default();
+          .map_or_default(|a| manipulate_label_runs(a, styled));
         for run in &mut runs {
           run.bold |= bold;
           if run.color.is_none() {
@@ -39526,8 +39521,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
       | "Framed" | "Dynamic" | "HoldForm" | "Defer" | "Pane" | "Panel" => args
         .first()
-        .map(|a| manipulate_label_runs(a, italic))
-        .unwrap_or_default(),
+        .map_or_default(|a| manipulate_label_runs(a, italic)),
       // `Labeled[content, label, …]` draws its label alongside the content
       // (by default below it); a Demonstration's setter option can pair a
       // picture with a caption this way. Placement specs (a 3rd argument, or
@@ -39535,8 +39529,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Labeled" => {
         let mut runs = args
           .first()
-          .map(|a| manipulate_label_runs(a, italic))
-          .unwrap_or_default();
+          .map_or_default(|a| manipulate_label_runs(a, italic));
         if let Some(label_arg) = args.get(1) {
           let label_runs = manipulate_label_runs(label_arg, italic);
           if !flatten_label_runs(&label_runs).trim().is_empty() {
@@ -40371,16 +40364,13 @@ fn script_runs(
   let marking = MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get);
   let mark = !superscript && marking;
   // A compound base (`(r₁ r₂)^n`) keeps its parentheses.
-  let mut runs = args
-    .first()
-    .map(|a| {
-      if superscript {
-        grouped_label_runs(a, italic)
-      } else {
-        manipulate_label_runs(a, italic)
-      }
-    })
-    .unwrap_or_default();
+  let mut runs = args.first().map_or_default(|a| {
+    if superscript {
+      grouped_label_runs(a, italic)
+    } else {
+      manipulate_label_runs(a, italic)
+    }
+  });
   // Each script keeps its own styled runs, so a `Style["B", Italic]`
   // subscript stays slanted; how the script is set (Unicode script glyphs,
   // a lowered marker, or a caret) is decided from its whole text.
@@ -40433,8 +40423,7 @@ fn script_runs(
 fn overscript_runs(args: &[Expr], italic: bool) -> Vec<LabelRun> {
   let mut runs = args
     .first()
-    .map(|a| manipulate_label_runs(a, italic))
-    .unwrap_or_default();
+    .map_or_default(|a| manipulate_label_runs(a, italic));
   let Some(mark_arg) = args.get(1) else {
     return runs;
   };

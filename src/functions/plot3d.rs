@@ -1732,9 +1732,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the default theme material is used.
-  let plot_styles: Vec<StyleState3D> = plot_style_expr
-    .map(|e| parse_plot_style_3d(e, bodies.len()))
-    .unwrap_or_default();
+  let plot_styles: Vec<StyleState3D> =
+    plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, bodies.len()));
 
   let camera = Camera::default();
   let mut scene = Scene::new(&camera, &args[3..]);
@@ -18064,9 +18063,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the default theme material is used.
-  let plot_styles: Vec<StyleState3D> = plot_style_expr
-    .map(|e| parse_plot_style_3d(e, bodies.len()))
-    .unwrap_or_default();
+  let plot_styles: Vec<StyleState3D> =
+    plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, bodies.len()));
 
   // A texture is sampled once per facet, so it needs finer facets than a
   // plain surface to show any detail.
@@ -19414,8 +19412,7 @@ fn parametric_plot3d_curve_ast(
   // instead of applying the whole list as a single blended directive.
   let per_curve_styles: Vec<Expr> = plot_style
     .as_ref()
-    .map(|ps| plot_style_items(ps, curves.len()))
-    .unwrap_or_default();
+    .map_or_default(|ps| plot_style_items(ps, curves.len()));
 
   // `ColorFunction -> f` colors the curve along its length by
   // `f[x, y, z, t]`. With `ColorFunctionScaling` (the default) x, y and z
@@ -20265,9 +20262,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // `PlotStyle`, one style per surface (cycling); empty means it was not
   // given, so the default theme material is used.
-  let plot_styles: Vec<StyleState3D> = plot_style_expr
-    .map(|e| parse_plot_style_3d(e, surfaces.len()))
-    .unwrap_or_default();
+  let plot_styles: Vec<StyleState3D> =
+    plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, surfaces.len()));
 
   let camera = Camera::default();
   let scene = Scene::new(&camera, args);

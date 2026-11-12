@@ -1154,14 +1154,12 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       if name == "Subsuperscript" && args.len() == 3 =>
     {
       let base = expr_to_label(&args[0])?;
-      let sub = expr_to_label(&args[1])
-        .map(|s| {
-          crate::functions::graphics::to_unicode_script_digits(&s, false)
-        })
-        .unwrap_or_default();
-      let sup = expr_to_label(&args[2])
-        .map(|s| crate::functions::graphics::to_unicode_script_digits(&s, true))
-        .unwrap_or_default();
+      let sub = expr_to_label(&args[1]).map_or_default(|s| {
+        crate::functions::graphics::to_unicode_script_digits(&s, false)
+      });
+      let sup = expr_to_label(&args[2]).map_or_default(|s| {
+        crate::functions::graphics::to_unicode_script_digits(&s, true)
+      });
       Some(format!("{base}{sub}{sup}"))
     }
     // A number written through one of the formatting wrappers reads as
@@ -4772,8 +4770,7 @@ fn labeling_function_label(
         );
         let labels = m
           .label
-          .map(|l| vec![Expr::String(l.to_string())])
-          .unwrap_or_default();
+          .map_or_default(|l| vec![Expr::String(l.to_string())]);
         args.push(pos.clone());
         args.push(Expr::List(vec![pos, Expr::List(labels.into())].into()));
       }

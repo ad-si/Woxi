@@ -597,8 +597,8 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Sort ascending by leading monomial (lex)
   reduced.sort_by(|a, b| {
-    let la = leading(a).map(|(m, _)| m.clone()).unwrap_or_default();
-    let lb = leading(b).map(|(m, _)| m.clone()).unwrap_or_default();
+    let la = leading(a).map_or_default(|(m, _)| m.clone());
+    let lb = leading(b).map_or_default(|(m, _)| m.clone());
     la.cmp(&lb)
   });
 
