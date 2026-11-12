@@ -1167,3 +1167,77 @@ mod base_style {
     }
   }
 }
+
+mod clipped_plot_range_sampling {
+  use super::*;
+
+  /// How many points of the default-colored curve are drawn.
+  fn curve_points(svg: &str) -> usize {
+    polyline_points(svg, "#3D99CC").len()
+  }
+
+  // A curve whose samples span far more than an explicit `PlotRange` must
+  // still be refined within the visible window: a cubic on {x, -10, 10}
+  // clipped to {-10, 10} draws as a smooth curve, not a polygon of the
+  // dozen initial samples that fall inside the window.
+  #[test]
+  fn cubic_refined_inside_clipped_range() {
+    let svg =
+      svg_of("Plot[x^3 - 2 x^2 - 3 x, {x, -10, 10}, PlotRange -> {-10, 10}]");
+    let n = curve_points(&svg);
+    assert!(n >= 35, "only {n} curve points: {svg}");
+  }
+
+  #[test]
+  fn quadratic_refined_inside_clipped_range() {
+    let svg = svg_of("Plot[x^2 + 5, {x, -20, 20}, PlotRange -> {0, 10}]");
+    let n = curve_points(&svg);
+    assert!(n >= 35, "only {n} curve points: {svg}");
+  }
+}
+
+mod traditional_plot_label {
+  use super::*;
+
+  /// The SVG `<text>` element holding the plot title.
+  fn title(svg: &str) -> String {
+    let start = svg.rfind("<text ").unwrap();
+    let end = start + svg[start..].find("</text>").unwrap();
+    let tag = &svg[start..end];
+    // Strip the markup, keep the visible text.
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in tag.chars() {
+      match c {
+        '<' => in_tag = true,
+        '>' => in_tag = false,
+        _ if !in_tag => out.push(c),
+        _ => {}
+      }
+    }
+    out
+  }
+
+  // A graphic's `FormatType` is `TraditionalForm`, so a polynomial in the
+  // label runs from its highest power down.
+  #[test]
+  fn polynomial_label_descending() {
+    let svg = svg_of("Plot[x, {x, 0, 1}, PlotLabel -> x^3 - 2 x^2 - 3 x]");
+    assert_eq!(title(&svg), "x3-2\u{2009}x2-3\u{2009}x");
+  }
+
+  #[test]
+  fn polynomial_inside_row_label_descending() {
+    let svg =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"g = \", 1 + y + y^2}]]");
+    assert_eq!(title(&svg), "g = y2+y+1");
+  }
+
+  #[test]
+  fn polynomial_inside_styled_row_label_descending() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[{\"g = \", x + x^2}], Bold]]",
+    );
+    assert_eq!(title(&svg), "g = x2+x");
+  }
+}

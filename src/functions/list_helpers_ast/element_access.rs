@@ -540,6 +540,50 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 /// Emit the Take::take / Drop::drop message for an invalid position range.
+/// The 0-based positions `{start, end, step}` picks from a list of `len`
+/// elements, as Take and Drop read the spec, or `None` when it does not fit
+/// the list (which they report). Negative endpoints count from the end. A
+/// range whose end sits right before its start (in the step's direction) is
+/// empty; an empty span may
+/// sit one past either end — `Take[list, {n + 1, -1}]` on a list of n
+/// elements is `{}`, which is how a quicksort partition asks for
+/// "everything after the last pivot".
+pub(crate) fn step_range_positions(
+  len: i128,
+  start: i128,
+  end: i128,
+  step: i128,
+) -> Option<Vec<usize>> {
+  if step == 0 {
+    return None;
+  }
+  let real_start = if start < 0 { len + start + 1 } else { start };
+  let real_end = if end < 0 { len + end + 1 } else { end };
+  // Empty when the end sits right before the start in the step's
+  // direction, whatever the step's size: {4, 3, 2} and {5, 6, -2} take
+  // nothing, {4, 2, 2} and {4, 6, -2} do not fit.
+  let adjacent_empty = real_end == real_start - step.signum();
+  let in_range =
+    real_start >= 1 && real_end >= 1 && real_start <= len && real_end <= len;
+  let empty_in_range = real_start >= 1
+    && real_start <= len + 1
+    && real_end >= 0
+    && real_end <= len;
+  let proper = (step > 0 && real_end >= real_start)
+    || (step < 0 && real_end <= real_start);
+  if !((in_range && proper) || (adjacent_empty && (in_range || empty_in_range)))
+  {
+    return None;
+  }
+  let mut positions = Vec::new();
+  let mut i = real_start;
+  while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
+    positions.push((i - 1) as usize);
+    i += step;
+  }
+  Some(positions)
+}
+
 pub(crate) fn take_drop_message(
   fname: &str,
   from: i128,
@@ -718,9 +762,17 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());
   }
-  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form; a take it
+  // refuses keeps the span as it was written.
   if let Some(spec) = span_to_take_spec(n) {
-    return take_ast(list, &spec);
+    let result = take_ast(list, &spec)?;
+    if let Expr::FunctionCall { name, args } = &result
+      && name == "Take"
+      && args.len() == 2
+    {
+      return Ok(call("Take", vec![args[0].clone(), n.clone()]));
+    }
+    return Ok(result);
   }
 
   // Handle associations: Take on values, reconstruct association
@@ -815,36 +867,10 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         } else {
           1
         };
-        let real_start = if start < 0 { len + start + 1 } else { start };
-        let real_end = if end < 0 { len + end + 1 } else { end };
-        // An adjacent reversed range (end == start - step) is an empty
-        // take; anything further reversed or out of range is an error.
-        // An empty span may sit one past either end — `Take[list, {n + 1,
-        // -1}]` on a list of n elements is `{}`, which is how a quicksort
-        // partition asks for "everything after the last pivot".
-        let adjacent_empty = step != 0 && real_end == real_start - step;
-        let in_range = real_start >= 1
-          && real_end >= 1
-          && real_start <= len
-          && real_end <= len;
-        let empty_in_range = real_start >= 1
-          && real_start <= len + 1
-          && real_end >= 0
-          && real_end <= len;
-        let proper = step != 0
-          && ((step > 0 && real_end >= real_start)
-            || (step < 0 && real_end <= real_start));
-        if step != 0
-          && ((in_range && proper)
-            || (adjacent_empty && (in_range || empty_in_range)))
-        {
-          let mut result = Vec::new();
-          let mut i = real_start;
-          while (step > 0 && i <= real_end) || (step < 0 && i >= real_end) {
-            result.push(items[(i - 1) as usize].clone());
-            i += step;
-          }
-          return Ok(wrap(result));
+        if let Some(positions) = step_range_positions(len, start, end, step) {
+          return Ok(wrap(
+            positions.into_iter().map(|i| items[i].clone()).collect(),
+          ));
         }
         if step != 0 {
           take_drop_message("Take", start, end, list);
@@ -896,9 +922,17 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
     return drop_ast(&flat, n);
   }
-  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form; a drop it
+  // refuses keeps the span as it was written.
   if let Some(spec) = span_to_take_spec(n) {
-    return drop_ast(list, &spec);
+    let result = drop_ast(list, &spec)?;
+    if let Expr::FunctionCall { name, args } = &result
+      && name == "Drop"
+      && args.len() == 2
+    {
+      return Ok(call("Drop", vec![args[0].clone(), n.clone()]));
+    }
+    return Ok(result);
   }
   // Handle associations: convert to rules, apply Drop, convert back
   if let Expr::Association(pairs) = list {
@@ -1025,40 +1059,14 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         expr_to_i128(&spec[2]),
       )
     {
-      if step == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Drop: step cannot be zero".into(),
-        ));
-      }
-      let start_idx = if m > 0 { m - 1 } else { len + m };
-      let end_idx = if n_end > 0 { n_end - 1 } else { len + n_end };
-      let mut to_drop = std::collections::HashSet::new();
-      let mut i = start_idx;
-      if step > 0 {
-        while i <= end_idx {
-          if i < 0 || i >= len {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Drop: position {} is out of range for list of length {}",
-              i + 1,
-              len
-            )));
-          }
-          to_drop.insert(i as usize);
-          i += step;
-        }
-      } else {
-        while i >= end_idx {
-          if i < 0 || i >= len {
-            return Err(InterpreterError::EvaluationError(format!(
-              "Drop: position {} is out of range for list of length {}",
-              i + 1,
-              len
-            )));
-          }
-          to_drop.insert(i as usize);
-          i += step;
-        }
-      }
+      // The same positions Take would pick, validated the same way (a zero
+      // step was already reported as ::seqs).
+      let Some(positions) = step_range_positions(len, m, n_end, step) else {
+        take_drop_message("Drop", m, n_end, list);
+        return Ok(call("Drop", vec![list.clone(), n.clone()]));
+      };
+      let to_drop: std::collections::HashSet<usize> =
+        positions.into_iter().collect();
       let result: Vec<Expr> = items
         .iter()
         .enumerate()
@@ -1572,7 +1580,9 @@ enum ExtractComp {
 
 /// Outcome of resolving one path: the part, or which message to emit.
 enum ExtractOutcome {
-  Found(Expr),
+  /// The part, and whether the path went through a delayed association
+  /// entry (`k :> v`), whose value is taken unevaluated.
+  Found(Expr, bool),
   /// Out-of-range index; Extract::partw always reports the *first*
   /// component of the failing path and the original subject.
   Partw,
@@ -1583,8 +1593,22 @@ enum ExtractOutcome {
   Keyw(Expr, Expr),
 }
 
+/// The unevaluated value of a delayed association entry (`k :> v`).
+fn delayed_entry(key: &Expr, value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if crate::syntax::assoc_marker_matches(key, pattern) => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }
+}
+
 fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
   let mut current = subject.clone();
+  let mut delayed = false;
   for comp in path {
     match comp {
       ExtractComp::Idx(0) => {
@@ -1606,9 +1630,13 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
           Expr::List(items) => items.to_vec(),
           Expr::FunctionCall { args, .. } => args.to_vec(),
           Expr::CurriedCall { args, .. } => args.clone(),
-          Expr::Association(pairs) => {
-            pairs.iter().map(|(_, v)| v.clone()).collect()
-          }
+          Expr::Association(pairs) => pairs
+            .iter()
+            .map(|(k, v)| match delayed_entry(k, v) {
+              Some(raw) => raw,
+              None => v.clone(),
+            })
+            .collect(),
           // Operator nodes (Plus, Power, …) decompose to head + children.
           other => match decompose_expr(other) {
             ExprForm::Composite { children, .. } => children,
@@ -1620,6 +1648,10 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         if idx < 0 || idx >= len {
           return ExtractOutcome::Partw;
         }
+        if let Expr::Association(pairs) = &current {
+          let (k, v) = &pairs[idx as usize];
+          delayed |= delayed_entry(k, v).is_some();
+        }
         current = items[idx as usize].clone();
       }
       ExtractComp::Key(key) => {
@@ -1628,9 +1660,14 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         };
         let key_str = expr_to_string(key);
         match pairs.iter().find(|(k, _)| expr_to_string(k) == key_str) {
-          Some((_, v)) => {
-            let value = v.clone();
-            current = value;
+          Some((k, v)) => {
+            current = match delayed_entry(k, v) {
+              Some(raw) => {
+                delayed = true;
+                raw
+              }
+              None => v.clone(),
+            };
           }
           None => {
             return ExtractOutcome::Keyw(key.clone(), current.clone());
@@ -1639,7 +1676,7 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
       }
     }
   }
-  ExtractOutcome::Found(current)
+  ExtractOutcome::Found(current, delayed)
 }
 
 /// Unified Extract: `Extract[expr, pos]`, `Extract[expr, {pos1, …}]`,
@@ -1779,7 +1816,11 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
     match extract_resolve(subject, path) {
-      ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
+      // A delayed value is evaluated only when no head is there to hold it.
+      ExtractOutcome::Found(part, true) if head.is_none() => {
+        Ok(Some(crate::evaluator::evaluate_expr_to_expr(&part)?))
+      }
+      ExtractOutcome::Found(part, _) => Ok(Some(wrap(part)?)),
       ExtractOutcome::Partw => {
         let first = match path.first() {
           Some(ExtractComp::Idx(n)) => Expr::Integer(*n),

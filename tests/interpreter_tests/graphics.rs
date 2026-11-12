@@ -5176,6 +5176,40 @@ mod plot3d {
       assert!(svg.contains(">f[u]<"), "{svg}");
     }
 
+    // An `AxesLabel` expression that TraditionalForm typesets as a fraction
+    // (`Subscript[c, p]/Subscript[c, a][0]`) is drawn as a stacked fraction
+    // picture on every 2-D plot, not flattened to `cp/ca(0)` text.
+    #[test]
+    fn fraction_axes_labels_are_stacked_on_2d_plots() {
+      let labels = "AxesLabel -> {Subscript[c, a]/Subscript[c, a][0], \
+                    Subscript[c, p]/Subscript[c, a][0]}";
+      for code in [
+        format!("Plot[u, {{u, 0, 1}}, {labels}]"),
+        format!("ParametricPlot[{{1 - u, u (1 - u)}}, {{u, 0, 1}}, {labels}]"),
+        format!("ListPlot[{{{{0, 0}}, {{1, 1}}}}, {labels}]"),
+        format!(
+          "Graphics[Line[{{{{0, 0}}, {{1, 1}}}}], Axes -> True, {labels}]"
+        ),
+      ] {
+        let svg = export_svg(&code);
+        // Both labels are typeset as nested <svg> pictures.
+        let pictures = svg.matches("<svg xmlns").count();
+        assert!(pictures >= 2, "{code}: {svg}");
+        assert!(!svg.contains("/ca(0)"), "{code}: {svg}");
+        assert!(!svg.contains("c[a]"), "{code}: {svg}");
+      }
+      // A rotated fraction label typesets the fraction, not the angle.
+      let svg = export_svg(
+        "Plot[u, {u, 0, 1}, AxesLabel -> {None, Rotate[u/w, Pi/2]}]",
+      );
+      assert!(!svg.contains("Rotate"), "{svg}");
+      assert!(svg.contains("<svg xmlns"), "{svg}");
+      // A plain expression label keeps its text rendering.
+      let svg = export_svg("Plot[u, {u, 0, 1}, AxesLabel -> {u, v}]");
+      assert!(svg.contains(">u</text>"), "{svg}");
+      assert!(svg.contains(">v</text>"), "{svg}");
+    }
+
     // A `Rotate`-wrapped expression label typesets its content rather than
     // a `Rotate(…)` call, on 2-D and 3-D plots alike.
     #[test]
@@ -8999,6 +9033,43 @@ mod plot3d {
       assert!(svg.contains("stroke=\"#FF8000\""));
     }
 
+    /// A `Row` plot label typesets its items in TraditionalForm, as a
+    /// graphic's `FormatType` asks: `==` is `=`, a sum puts its constant
+    /// last, `Mod` is the infix `mod`, and relations and arrows are spaced.
+    #[test]
+    fn plot_label_row_items_are_traditional_form() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Style[Row[{Subscript[x, 0] == 5, \
+         \" \", Subscript[x, n + 1] -> Mod[2 Subscript[x, n] + c, m]}], 14]]",
+      );
+      assert!(svg.contains("</tspan> = 5 "), "{svg}");
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">n</tspan>+1</tspan> \u{2192} ("
+        ),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(") mod <tspan font-style=\"italic\">m</tspan>"),
+        "{svg}"
+      );
+      assert!(!svg.contains("Mod["), "{svg}");
+    }
+
+    /// A run of blanks in a plot title (`Row[{a, "    ", b}]`) is kept
+    /// rather than collapsed into a single space by the SVG renderer.
+    #[test]
+    fn plot_label_keeps_a_run_of_blanks() {
+      let svg = export_svg(
+        "ListPlot[{1, 2}, PlotLabel -> Row[{\"left\", \"    \", \"right\"}]]",
+      );
+      let title = svg
+        .split("<text ")
+        .find(|t| t.contains("left    right"))
+        .expect("the plot title");
+      assert!(title.contains("xml:space=\"preserve\""), "{title}");
+    }
+
     /// A title whose first line is blank (`Row[{"\nTitle"}]`) is still drawn.
     #[test]
     fn plot_label_with_leading_newline_is_drawn() {
@@ -10692,8 +10763,8 @@ mod plot3d {
       );
       assert!(
         svg.contains(
-          "α = K(p<tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) \
-           = 0.376953"
+          "α = K(<tspan font-style=\"italic\">p</tspan><tspan \
+           baseline-shift=\"sub\" font-size=\"70%\">0</tspan>) = 0.376953"
         ),
         "PlotLabel not typeset: {svg}"
       );
@@ -52295,5 +52366,252 @@ mod multiline_text_blank_lines {
     let svg = export_svg("Graphics[Text[\"a\\n\\nb\", {0, 0}]]");
     assert!(!svg.contains("\"></tspan>"), "empty tspan: {svg}");
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
+  }
+
+  /// A caption multiplied onto a picture (`"State 1: " Graphics[…]`) is a
+  /// `Times` that typesets as its factors side by side, so the picture is
+  /// drawn inline in a `Column`, `Row`, or `Grid`. Regression: it printed
+  /// `-Graphics-` text in place of the picture.
+  #[test]
+  fn times_of_caption_and_graphic_draws_picture_inline() {
+    for layout in [
+      "Column[{ITEM}]",
+      "Row[{ITEM}]",
+      "Grid[{{ITEM}}]",
+      "Text@Column[{ITEM}]",
+    ] {
+      let item = "\"Label: \" Graphics[Disk[], ImageSize -> 15]";
+      let code =
+        format!("ExportString[{}, \"SVG\"]", layout.replace("ITEM", item));
+      let svg = woxi::interpret(&code).unwrap();
+      assert!(!svg.contains("-Graphics-"), "{layout}: placeholder: {svg}");
+      assert!(svg.contains("Label:"), "{layout}: caption missing: {svg}");
+      assert!(
+        svg.contains("<ellipse") || svg.contains("<circle"),
+        "{layout}: picture missing: {svg}"
+      );
+    }
+  }
+}
+
+mod styled_label_scripts {
+  use super::*;
+
+  #[test]
+  fn italic_subscript_stays_italic() {
+    // Regression: a `Style[…, Italic]` script was flattened into one plain
+    // run, so `t_B` drew its subscript upright.
+    let svg =
+      export_svg("Graphics[Text[Subscript[\"t\", Style[\"B\", Italic]]]]");
+    assert!(
+      svg.contains(
+        ">t<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan></tspan></text>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn italic_superscript_stays_italic() {
+    let svg =
+      export_svg("Graphics[Text[Superscript[\"t\", Style[\"n\", Italic]]]]");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">ⁿ</tspan>"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn italic_script_inside_row_label() {
+    let svg = export_svg(
+      "Graphics[Text[Row[{Style[\"c\", Italic], \" \", \
+       Subscript[Style[\"t\", Italic], Style[\"A\", Italic]]}]]]",
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">c</tspan> \
+         <tspan font-style=\"italic\">t</tspan><tspan font-style=\"italic\">\
+         <tspan baseline-shift=\"sub\" font-size=\"70%\">A</tspan></tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn uniformly_italic_script_label_is_slanted() {
+    // Every run is italic through its own inner `Style`, so the primitive
+    // itself stays upright and the ranges must carry the slant.
+    let svg = export_svg(
+      "Graphics[Text[Subscript[Style[\"t\", Italic], Style[\"B\", Italic]]]]",
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">t</tspan>"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\"><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\">B</tspan></tspan>"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn outer_italic_style_adds_no_extra_tspans() {
+    let svg =
+      export_svg("Graphics[Text[Style[Subscript[\"t\", \"B\"], Italic]]]");
+    assert!(svg.contains("font-style=\"italic\""), "{svg}");
+    assert!(
+      svg.contains(
+        ">t<tspan baseline-shift=\"sub\" font-size=\"70%\">B</tspan></text>"
+      ),
+      "{svg}"
+    );
+  }
+}
+
+mod plot_option_lists_and_merged_contour_styles {
+  use super::*;
+
+  /// Options grouped in a list after the data (`ListPlot[data, {opts}]`)
+  /// are read like separately given options.
+  #[test]
+  fn list_plot_reads_options_given_as_a_list() {
+    let colors = |opts: &str| {
+      interpret(&format!(
+        "Cases[ListPlot[{{{{1, 2}}, {{3, 4}}}}, {opts}], _RGBColor, Infinity]"
+      ))
+      .unwrap()
+    };
+    let listed = colors("{PlotStyle -> Red}");
+    assert_eq!(listed, colors("PlotStyle -> Red"));
+    assert!(listed.contains("RGBColor[1"), "{listed}");
+  }
+
+  /// Nested option lists are spliced too, alongside plain options.
+  #[test]
+  fn plot_reads_nested_option_lists() {
+    assert_eq!(
+      export_svg("Plot[x, {x, 0, 1}, {{PlotStyle -> Red}}, ImageSize -> 200]"),
+      export_svg("Plot[x, {x, 0, 1}, PlotStyle -> Red, ImageSize -> 200]")
+    );
+  }
+
+  /// A dashed equation curve of a ContourPlot stays dashed when `Show`
+  /// merges it with another plot.
+  #[test]
+  fn show_keeps_contour_plot_dashing() {
+    let svg = export_svg(
+      "Show[ContourPlot[y == x^2, {x, -2, 2}, {y, -2, 2}], \
+       ContourPlot[x + y == 1, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> {Purple, Dashed}]]",
+    );
+    assert!(svg.contains("stroke-dasharray"), "no dashed curve: {svg}");
+  }
+}
+
+/// The `Line` of an equation curve in ContourPlot lies on the curve
+/// (it used to come out mirrored in y, hidden by symmetric curves).
+#[test]
+fn contour_plot_equation_line_lies_on_the_curve() {
+  assert_eq!(
+    interpret(
+      "pts = First[Cases[Normal[ContourPlot[x - 2 y == 1, {x, -3, 4}, \
+       {y, -5, 5}]], Line[p_] :> p, Infinity]]; \
+       Max[Abs[(#[[1]] - 2 #[[2]] - 1) & /@ pts]] < 10^-6"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
+mod frame_style_font_size {
+  use super::*;
+
+  fn font_sizes_of(svg: &str, text: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .filter(|t| {
+        t.split_once('>')
+          .is_some_and(|(_, body)| body.trim_start().starts_with(text))
+      })
+      .filter_map(|t| t.split("font-size=\"").nth(1))
+      .map(|t| t.split('"').next().unwrap_or("").to_string())
+      .collect()
+  }
+
+  /// Regression: a bare font size in `FrameStyle` was ignored, so the frame
+  /// labels and tick labels kept their default size.
+  #[test]
+  fn bare_size_sets_frame_label_and_tick_font() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameStyle -> 14, \
+       FrameLabel -> {\"bottomlabel\", \"leftlabel\"}, ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "leftlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "0.4"), vec!["140", "140"], "{svg}");
+  }
+
+  #[test]
+  fn frame_ticks_style_overrides_frame_style_size() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameStyle -> Directive[Black, 14], \
+       FrameTicksStyle -> 10, FrameLabel -> {\"bottomlabel\", None}, \
+       ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "0.4"), vec!["100", "100"], "{svg}");
+  }
+
+  #[test]
+  fn show_option_sets_frame_label_font() {
+    let svg = export_svg(
+      "Show[Plot[x, {x, 0, 1}], Frame -> True, FrameStyle -> 12, \
+       FrameLabel -> {\"bottomlabel\", None}, ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["120"], "{svg}");
+  }
+
+  /// Without a frame, `FrameStyle` has nothing to size.
+  #[test]
+  fn ignored_without_frame() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, FrameStyle -> 14, AxesLabel -> {\"xlabel\", None}, \
+       ImageSize -> 400]",
+    );
+    assert!(
+      font_sizes_of(&svg, "xlabel").iter().all(|s| s != "140"),
+      "{svg}"
+    );
+  }
+}
+
+mod style_box_italic {
+  use super::*;
+
+  /// Regression: `Style[…, Italic]` inside a typeset box (a fraction) lost
+  /// its slant, while `Bold` and colors were kept.
+  #[test]
+  fn italic_string_in_fraction() {
+    let svg = export_svg("Style[\"dK\", Italic]/Style[\"dx\", Italic]");
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn font_slant_option_in_fraction() {
+    let svg = export_svg("Style[\"dK\", FontSlant -> \"Italic\"]/2");
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 1, "{svg}");
+  }
+
+  #[test]
+  fn italic_fraction_in_plot_legend() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLegends -> \
+       {Style[\"dK\", Italic]/Style[\"dx\", Italic]}]",
+    );
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 2, "{svg}");
   }
 }

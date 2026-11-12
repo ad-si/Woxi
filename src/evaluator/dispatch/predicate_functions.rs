@@ -1730,6 +1730,42 @@ pub fn dispatch_predicate_functions(
           Err(e) => return Some(Err(e)),
         },
       };
+      // A socket's options are its properties: Options[sock] lists them all,
+      // Options[sock, name] and Options[sock, {names}] pick some.
+      if let Some(uuid) =
+        crate::functions::socket_ast::socket_object_uuid(&func_arg)
+      {
+        let answer = match args.get(1) {
+          None => crate::functions::socket_ast::socket_all_options(&uuid),
+          Some(Expr::List(names)) => {
+            let names: Vec<Expr> = names.iter().cloned().collect();
+            crate::functions::socket_ast::socket_property_list(&uuid, &names)
+          }
+          Some(Expr::String(name)) => {
+            crate::functions::socket_ast::socket_property(&uuid, name)
+          }
+          Some(_) => None,
+        };
+        if let Some(answer) = answer {
+          return Some(Ok(answer));
+        }
+      }
+      // A listener's options are the SocketListen options it was set up with.
+      if let Expr::FunctionCall { name, args: held } = &func_arg
+        && name == "SocketListener"
+        && let [Expr::Integer(id)] = held.as_slice()
+      {
+        let names: Vec<Expr> = match args.get(1) {
+          None => Vec::new(),
+          Some(Expr::List(names)) => names.iter().cloned().collect(),
+          Some(single) => vec![single.clone()],
+        };
+        if let Some(answer) =
+          crate::functions::socket_ast::listener_property_list(*id, &names)
+        {
+          return Some(Ok(answer));
+        }
+      }
       // An image's options: its color space, display size (when set) and
       // interleaving (None for a single channel), in that sorted order.
       if let Expr::Image {

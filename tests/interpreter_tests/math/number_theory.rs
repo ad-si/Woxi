@@ -4322,15 +4322,40 @@ mod arithmetic_geometric_mean {
     );
   }
 
+  // Machine AGM is plain double iteration, as in wolframscript — including
+  // where that is an ulp off the correctly rounded value.
   #[test]
   fn machine_real_values() {
     assert_eq!(
-      interpret("ArithmeticGeometricMean[1.8, 1.2]").unwrap(),
-      "1.4848082617417826"
+      interpret(
+        "ToString[{ArithmeticGeometricMean[1.8, 1.2], \
+          ArithmeticGeometricMean[3.0, 7.0], ArithmeticGeometricMean[12, 3.9], \
+          ArithmeticGeometricMean[3.9, 9/5], ArithmeticGeometricMean[-2.5, -7.25]}, \
+          InputForm]"
+      )
+      .unwrap(),
+      "{1.4848082617417828, 4.789013583140951, 7.385115155519321, \
+       2.7488502874981866, -4.560944047677555}"
     );
+  }
+
+  #[test]
+  fn an_underflowing_product_gives_zero() {
     assert_eq!(
-      interpret("ArithmeticGeometricMean[3.0, 7.0]").unwrap(),
-      "4.789013583140952"
+      interpret("ArithmeticGeometricMean[1.*^-200, 2.*^-200]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn an_overflowing_product_is_rescaled() {
+    assert_eq!(
+      interpret(
+        "ToString[{ArithmeticGeometricMean[1.*^200, 3.*^200], \
+          ArithmeticGeometricMean[1.*^300, 1.*^308]}, InputForm]"
+      )
+      .unwrap(),
+      "{1.8636167832448965*^200, 7.93052103343453*^306}"
     );
   }
 }
@@ -7115,21 +7140,193 @@ fn agm_rounds_after_convergence_without_intermediate_overflow() {
     ("ArithmeticGeometricMean[3.9,9/5]", "2.7488502874981866"),
     ("ArithmeticGeometricMean[3.9,1.8]", "2.7488502874981866"),
     ("ArithmeticGeometricMean[-3.9,-1.8]", "-2.7488502874981866"),
+    // The product underflows in double iteration, as in wolframscript.
+    ("ArithmeticGeometricMean[1.*^-200,2.*^-200]", "0."),
+    (
+      "ArithmeticGeometricMean[1.*^-100,2.*^-100]",
+      "1.456791031046907*^-100",
+    ),
+    // The product overflows, so the iteration is rescaled.
+    (
+      "ArithmeticGeometricMean[1.*^200,2.*^200]",
+      "1.4567910310469068*^200",
+    ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
-  for exponent in [-200, -100, 200] {
-    let code =
-      format!("ArithmeticGeometricMean[1.*^{exponent},2.*^{exponent}]");
-    let result = interpret(&code)
-      .unwrap()
-      .replace("*^", "e")
-      .parse::<f64>()
-      .unwrap();
-    let expected = 1.4567910310469068 * 10f64.powi(exponent);
-    assert!(
-      (result / expected - 1.0).abs() <= 2.0 * f64::EPSILON,
-      "{code}: {result}"
+}
+
+mod big_fibonacci_and_integer_length {
+  use super::*;
+
+  // Fibonacci and LucasL use fast doubling: F(10^6) used to take 14 s.
+  #[test]
+  fn large_fibonacci_and_lucas_numbers_are_fast() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{Mod[Fibonacci[123457], 1000000007], Mod[LucasL[123457], 1000000007], \
+          IntegerLength[Fibonacci[200000]], Fibonacci[-7], LucasL[-7]}"
+      )
+      .unwrap(),
+      "{121341177, 82023885, 41798, 13, -29}"
     );
+    assert!(start.elapsed() < std::time::Duration::from_secs(10));
+  }
+
+  #[test]
+  fn an_unreachable_index_overflows() {
+    assert_eq!(interpret("Fibonacci[10^20 + 1]").unwrap(), "Overflow[]");
+  }
+
+  // IntegerLength counts digits from the bit length rather than dividing
+  // once per digit (43 s for 3^1000000).
+  #[test]
+  fn integer_length_of_huge_numbers() {
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "{IntegerLength[3^1000000], IntegerLength[10^100], IntegerLength[10^100 - 1], \
+          IntegerLength[2^64, 2], IntegerLength[2^64 - 1, 2], IntegerLength[256, 16]}"
+      )
+      .unwrap(),
+      "{477122, 101, 100, 65, 64, 3}"
+    );
+    assert!(start.elapsed() < std::time::Duration::from_secs(10));
+  }
+}
+
+// Number-theory edge cases found by differential fuzzing.
+mod number_theory_fuzz_edge_cases {
+  use super::*;
+
+  fn warnings(code: &str) -> (String, Vec<String>) {
+    let r = woxi::interpret_with_stdout(code).unwrap();
+    (r.result, r.warnings)
+  }
+
+  // A negative modulus leaves every power but b^0 unevaluated; b^0 is
+  // Mod[1, m].
+  #[test]
+  fn power_mod_with_a_negative_modulus() {
+    assert_eq!(
+      interpret(
+        "{PowerMod[3, 97, -7], PowerMod[3, -1, -7], PowerMod[3, 0, -7], \
+          PowerMod[3, 5, 1], PowerMod[3, -1, 1], PowerMod[2, -1, -1]}"
+      )
+      .unwrap(),
+      "{PowerMod[3, 97, -7], PowerMod[3, -1, -7], -6, 0, 0, PowerMod[2, -1, -1]}"
+    );
+  }
+
+  #[test]
+  fn power_mod_negative_exponent_with_a_big_modulus() {
+    assert_eq!(
+      interpret("PowerMod[3, -5, 10^40 + 3]").unwrap(),
+      "82304526748971193415637860082304526749"
+    );
+  }
+
+  // The ninv message names the base reduced modulo m.
+  #[test]
+  fn power_mod_ninv_names_the_reduced_base() {
+    let (result, w) = warnings("PowerMod[36, -4096, 12]");
+    assert_eq!(result, "PowerMod[36, -4096, 12]");
+    assert_eq!(w, vec!["PowerMod::ninv: 0 is not invertible modulo 12."]);
+    let (_, w) = warnings("PowerMod[-4, -1, 6]");
+    assert_eq!(w, vec!["PowerMod::ninv: 2 is not invertible modulo 6."]);
+  }
+
+  #[test]
+  fn power_mod_root_with_a_negative_modulus_has_no_solution() {
+    let (result, w) = warnings("PowerMod[2, 1/2, -7]");
+    assert_eq!(result, "PowerMod[2, 1/2, -7]");
+    assert_eq!(
+      w,
+      vec![
+        "PowerMod::root: The equation x^2 = 2 (mod -7) has no integer solutions."
+      ]
+    );
+  }
+
+  // Any number other than a positive integer gets Prime::intpp; non-number
+  // arguments stay unevaluated silently.
+  #[test]
+  fn prime_rejects_every_non_positive_integer_number() {
+    let (result, w) = warnings("Prime[1/2]");
+    assert_eq!(result, "Prime[1/2]");
+    assert_eq!(
+      w,
+      vec![
+        "                                                          1\n\
+         Prime::intpp: Positive integer argument expected in Prime[-].\n\
+         \x20                                                         2"
+      ]
+    );
+    let (_, w) = warnings("Prime[2.5 + I]");
+    assert_eq!(
+      w,
+      vec![
+        "Prime::intpp: Positive integer argument expected in Prime[2.5 + 1. I]."
+      ]
+    );
+    let (result, w) = warnings("{Prime[Pi], Prime[Sqrt[2]], Prime[x]}");
+    assert_eq!(result, "{Prime[Pi], Prime[Sqrt[2]], Prime[x]}");
+    assert!(w.is_empty(), "{w:?}");
+  }
+
+  // A non-real n with a negative integer k: Gamma[k + 1] has a pole in the
+  // denominator, so the coefficient is 0.
+  #[test]
+  fn binomial_of_a_complex_number_and_a_negative_integer() {
+    assert_eq!(
+      interpret(
+        "{Binomial[3 + 2 I, -1], Binomial[3 + 2 I, -2], Binomial[2.5 + I, -1], \
+          Binomial[I, -1.], Binomial[x, -1], Binomial[3 + 2 I, 2]}"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, Binomial[x, -1], 1 + 5*I}"
+    );
+  }
+
+  // NextPrime[n, 0] is n for a prime n and unevaluated otherwise.
+  #[test]
+  fn next_prime_with_a_zero_step() {
+    assert_eq!(
+      interpret(
+        "{NextPrime[2, 0], NextPrime[-3, 0], NextPrime[97, 0], NextPrime[10, 0], \
+          NextPrime[1, 0], NextPrime[2.5, 0], NextPrime[x, 0]}"
+      )
+      .unwrap(),
+      "{2, -3, 97, NextPrime[10, 0], NextPrime[1, 0], NextPrime[2.5, 0], NextPrime[x, 0]}"
+    );
+  }
+
+  #[test]
+  fn binomial_with_k_zero_keeps_inexactness() {
+    assert_eq!(
+      interpret(
+        "{Binomial[-2.5, 0], Binomial[2.5 + I, 0], Binomial[x, 0], Binomial[1/2, 0], \
+          Binomial[3, 0.], Binomial[x, 0.]}"
+      )
+      .unwrap(),
+      "{1., 1., 1, 1, 1., 1.}"
+    );
+  }
+
+  // A numeric dividend with a zero divisor gets QuotientRemainder::divz.
+  #[test]
+  fn quotient_remainder_by_zero() {
+    let (result, w) = warnings("QuotientRemainder[3, 0.]");
+    assert_eq!(result, "QuotientRemainder[3, 0.]");
+    assert_eq!(
+      w,
+      vec![
+        "QuotientRemainder::divz: The argument 0. in QuotientRemainder[3, 0.] should be nonzero."
+      ]
+    );
+    let (result, w) = warnings("QuotientRemainder[x, 0]");
+    assert_eq!(result, "QuotientRemainder[x, 0]");
+    assert!(w.is_empty(), "{w:?}");
   }
 }

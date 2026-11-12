@@ -1581,3 +1581,4 @@ script_test!(
 fn script_cli_args() {
   run_script_snapshot_with_args("cli_args.wls", &["5"]);
 }
+script_test!(script_zeromq_sockets, "zeromq_sockets.wls");

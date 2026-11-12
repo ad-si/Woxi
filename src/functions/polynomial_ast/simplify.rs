@@ -5446,11 +5446,104 @@ fn combine_assumption_args(rest: &[Expr]) -> (Expr, bool) {
   (combined, leaf_count_complexity)
 }
 
+/// A list can never equal a single number: an equation between a list and
+/// a scalar numeric quantity (a number, constant or infinity) is `False`, an
+/// inequation `True`. `Equal` itself leaves such a comparison unevaluated
+/// (`{1, 2} == 3`), but Simplify and FullSimplify decide it, wherever it
+/// sits — including in the held condition of an `If`, which then picks its
+/// branch. Returns `None` when there is no such comparison.
+fn decide_list_scalar_equations(expr: &Expr) -> Option<Expr> {
+  fn is_scalar_number(e: &Expr) -> bool {
+    match e {
+      Expr::List(_) => false,
+      Expr::Identifier(n) => {
+        matches!(n.as_str(), "Infinity" | "ComplexInfinity")
+          || crate::functions::predicate_ast::is_numeric_q(e)
+      }
+      Expr::FunctionCall { name, .. } if name == "DirectedInfinity" => true,
+      _ => crate::functions::predicate_ast::is_numeric_q(e),
+    }
+  }
+  fn decide(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::Comparison {
+        operands,
+        operators,
+      } if operands.len() == 2
+        && matches!(
+          operators.as_slice(),
+          [ComparisonOp::Equal | ComparisonOp::NotEqual]
+        )
+        && ((matches!(&operands[0], Expr::List(_))
+          && is_scalar_number(&operands[1]))
+          || (matches!(&operands[1], Expr::List(_))
+            && is_scalar_number(&operands[0]))) =>
+      {
+        let equal = operators[0] == ComparisonOp::Equal;
+        Some(Expr::Identifier(
+          if equal { "False" } else { "True" }.into(),
+        ))
+      }
+      Expr::Comparison {
+        operands,
+        operators,
+      } => {
+        let new = rewrite_all(operands)?;
+        Some(Expr::Comparison {
+          operands: new,
+          operators: operators.clone(),
+        })
+      }
+      Expr::List(items) => Some(Expr::List(rewrite_all(items)?.into())),
+      Expr::FunctionCall { name, args } => Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: rewrite_all(args)?.into(),
+      }),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        let (p, r) = (decide(pattern), decide(replacement));
+        if p.is_none() && r.is_none() {
+          return None;
+        }
+        Some(Expr::Rule {
+          pattern: Box::new(p.unwrap_or_else(|| pattern.as_ref().clone())),
+          replacement: Box::new(
+            r.unwrap_or_else(|| replacement.as_ref().clone()),
+          ),
+        })
+      }
+      _ => None,
+    }
+  }
+  fn rewrite_all(items: &[Expr]) -> Option<Vec<Expr>> {
+    let decided: Vec<Option<Expr>> = items.iter().map(decide).collect();
+    if decided.iter().all(Option::is_none) {
+      return None;
+    }
+    Some(
+      decided
+        .into_iter()
+        .zip(items)
+        .map(|(d, e)| d.unwrap_or_else(|| e.clone()))
+        .collect(),
+    )
+  }
+  let decided = decide(expr)?;
+  Some(crate::evaluator::evaluate_expr_to_expr(&decided).unwrap_or(decided))
+}
+
 pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
       "Simplify expects at least 1 argument".into(),
     ));
+  }
+  if let Some(decided) = decide_list_scalar_equations(&args[0]) {
+    let mut rest = args.to_vec();
+    rest[0] = decided;
+    return simplify_ast(&rest);
   }
   // 2+ args: collect positional assumptions and (optional) `Assumptions
   // -> …` override into a single combined assumption and run the
@@ -7666,6 +7759,11 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "FullSimplify expects at least 1 argument".into(),
     ));
+  }
+  if let Some(decided) = decide_list_scalar_equations(&args[0]) {
+    let mut rest = args.to_vec();
+    rest[0] = decided;
+    return full_simplify_ast(&rest);
   }
   if args.len() >= 2 {
     let (combined, _) = combine_assumption_args(&args[1..]);

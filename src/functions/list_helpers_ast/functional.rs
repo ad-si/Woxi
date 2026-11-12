@@ -676,6 +676,22 @@ pub fn accumulate_ast(list: &Expr) -> Result<Expr, InterpreterError> {
     return Ok(wrap(Vec::new()));
   }
 
+  // Rows of different lengths cannot be added up; wolframscript says so
+  // once, about the whole list, and leaves the call unevaluated.
+  let mut row_lengths = items.iter().filter_map(|item| match item {
+    Expr::List(row) => Some(row.len()),
+    _ => None,
+  });
+  if let Some(first) = row_lengths.next()
+    && row_lengths.any(|len| len != first)
+  {
+    crate::emit_message(&format!(
+      "Accumulate::tdlen: Objects of unequal length in {} cannot be added.",
+      crate::syntax::format_expr(list, crate::syntax::ExprForm::Output)
+    ));
+    return Ok(call1("Accumulate", list.clone()));
+  }
+
   // Accumulate via Plus so each partial sum keeps exact arithmetic and is
   // promoted element-by-element: a prefix summing only integers stays an
   // integer, and a Real (or Rational) only affects the sums it enters —
