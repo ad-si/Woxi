@@ -9318,15 +9318,18 @@ fn format_times_with_denominator(
     format!("({inner})")
   };
 
-  // Format denominator
+  // Format denominator. A quotient (`b/c`, `Rational[1, 3]`) in the
+  // denominator is grouped too: `a/(b/c)`, never `a/b/c`, which reads back
+  // as `(a/b)/c`.
   let needs_parens = |e: &Expr| -> bool {
-    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times" || name == "Rational")
       || matches!(
         e,
         Expr::BinaryOp {
           op: BinaryOperator::Plus
             | BinaryOperator::Minus
-            | BinaryOperator::Times,
+            | BinaryOperator::Times
+            | BinaryOperator::Divide,
           ..
         }
       )

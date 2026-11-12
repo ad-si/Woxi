@@ -4953,7 +4953,8 @@ resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
 WL's `Rasterize` defaults to 144 dpi and tags the image with
 `ImageResolution -> 144.` so it still displays at its point size; Woxi's
 `Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
-An explicit `ImageResolution`, and `Export` to a raster format (default
+The same holds for `ImageSize -> s`: Woxi's raster is `s` pixels wide
+where WL's is `2 s` (both display at `s` points). An explicit `ImageResolution`, and `Export` to a raster format (default
 144 dpi), match WL.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve

@@ -13638,11 +13638,6 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
   }
-  // If input is already an image, return it directly
-  if let Expr::Image { .. } = &args[0] {
-    return Ok(args[0].clone());
-  }
-
   // Parse ImageResolution option. 72 dpi rasterizes one printer point
   // (one SVG unit) to one pixel.
   let mut dpi: f64 = 72.0;
@@ -13660,6 +13655,46 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {}
       }
     }
+  }
+
+  // ImageSize -> w | {w, h} is the displayed size in printer's points; at
+  // the default resolution the raster has that many pixels.
+  let image_size = args[1..].iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let pixels = |e: &Expr| {
+        crate::functions::math_ast::try_eval_to_f64(e)
+          .filter(|v| v.is_finite() && *v > 0.0)
+          .map(|v| ((v * dpi / 72.0).round() as u32).max(1))
+      };
+      match replacement.as_ref() {
+        Expr::List(d) if d.len() == 2 => {
+          Some((pixels(&d[0])?, Some(pixels(&d[1])?)))
+        }
+        Expr::List(_) => None,
+        other => Some((pixels(other)?, None)),
+      }
+    }
+    _ => None,
+  });
+
+  // An image is already raster data: an ImageSize resamples it to that
+  // size, otherwise it is returned unchanged.
+  if let Expr::Image { .. } = &args[0] {
+    return match image_size {
+      Some((w, h)) => {
+        let size = match h {
+          Some(h) => Expr::List(
+            vec![Expr::Integer(w as i128), Expr::Integer(h as i128)].into(),
+          ),
+          None => Expr::Integer(w as i128),
+        };
+        image_resize_ast(&[args[0].clone(), size])
+      }
+      None => Ok(args[0].clone()),
+    };
   }
 
   // Get SVG string from the expression
@@ -13703,7 +13738,27 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => None,
   });
-  rasterize_svg_to(&svg_str, dpi, raster_size)
+  // An explicit RasterSize wins; otherwise an ImageSize box holds the
+  // drawing scaled to fit, centered, without distorting it.
+  match (raster_size, image_size) {
+    (None, Some(size)) => rasterize_svg_fit(&svg_str, dpi, size),
+    _ => rasterize_svg_to(&svg_str, dpi, raster_size),
+  }
+}
+
+/// Rasterize `svg_str` into a `w` x `h` pixel box (`h` following the aspect
+/// ratio when absent), scaling the drawing uniformly to fit and centering
+/// it on the white background.
+#[cfg(not(target_arch = "wasm32"))]
+fn rasterize_svg_fit(
+  svg_str: &str,
+  dpi: f64,
+  (w, h): (u32, Option<u32>),
+) -> Result<Expr, InterpreterError> {
+  let Some(h) = h else {
+    return rasterize_svg_to(svg_str, dpi, Some((w, None)));
+  };
+  rasterize_svg_with(svg_str, dpi, Some((w, Some(h))), true)
 }
 
 /// Rasterize an SVG string to an Expr::Image at the given DPI.
@@ -13723,6 +13778,18 @@ fn rasterize_svg_to(
   svg_str: &str,
   dpi: f64,
   raster_size: Option<(u32, Option<u32>)>,
+) -> Result<Expr, InterpreterError> {
+  rasterize_svg_with(svg_str, dpi, raster_size, false)
+}
+
+/// [`rasterize_svg_to`], where `fit` keeps the drawing's aspect ratio for a
+/// `(w, Some(h))` size: it is scaled to fit inside and centered.
+#[cfg(not(target_arch = "wasm32"))]
+fn rasterize_svg_with(
+  svg_str: &str,
+  dpi: f64,
+  raster_size: Option<(u32, Option<u32>)>,
+  fit: bool,
 ) -> Result<Expr, InterpreterError> {
   use std::sync::Arc as StdArc;
 
@@ -13753,6 +13820,10 @@ fn rasterize_svg_to(
   let scale = dpi / 72.0;
   let (svg_w, svg_h) = (svg_size.width() as f64, svg_size.height() as f64);
   let (pix_w, pix_h, scale_x, scale_y) = match raster_size {
+    Some((w, Some(h))) if fit => {
+      let k = (w as f64 / svg_w).min(h as f64 / svg_h);
+      (w, h, k, k)
+    }
     Some((w, Some(h))) => (w, h, w as f64 / svg_w, h as f64 / svg_h),
     Some((w, None)) => {
       let k = w as f64 / svg_w;
@@ -13782,8 +13853,14 @@ fn rasterize_svg_to(
   pixmap.fill(resvg::tiny_skia::Color::WHITE);
 
   // Render SVG into pixmap
+  // A fitted drawing is centered in the leftover space.
+  let (dx, dy) = (
+    (pix_w as f64 - svg_w * scale_x) / 2.0,
+    (pix_h as f64 - svg_h * scale_y) / 2.0,
+  );
   let transform =
-    resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32);
+    resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32)
+      .post_translate(dx as f32, dy as f32);
   resvg::render(&tree, transform, &mut pixmap.as_mut());
 
   // The drawing sits on an opaque white background, so the alpha channel

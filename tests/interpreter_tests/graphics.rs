@@ -4037,6 +4037,33 @@ mod graphics {
         assert!(!svg.contains("b c/"), "flattened to text: {svg}");
       }
 
+      // A NumberForm in scientific notation inside a Grid cell sets on
+      // one line with a raised exponent, not as its stacked 2-D text run
+      // together (`9 1.320 × 10`).
+      #[test]
+      fn grid_number_form_scientific_raises_the_exponent() {
+        let svg = export_svg(
+          "Grid[{{Text[Row[{\"a = \", \
+           ScientificForm[NumberForm[1.32*10^9, {3, 3}]]}]], \
+           NumberForm[2.4*10^-14, {3, 3}]}}]",
+        );
+        assert!(
+          svg.contains(
+            "a = 1.320 × 10<tspan baseline-shift=\"super\" \
+             font-size=\"70%\">9</tspan>"
+          ),
+          "{svg}"
+        );
+        assert!(
+          svg.contains(
+            ">2.400 × 10<tspan baseline-shift=\"super\" \
+             font-size=\"70%\">-14</tspan>"
+          ),
+          "{svg}"
+        );
+        assert!(!svg.contains("9 1.320"), "flattened 2-D text: {svg}");
+      }
+
       // A framed plot with `AspectRatio -> Full` fills the whole
       // `ImageSize` (less `ImagePadding`) instead of hugging the shape of
       // a tall, narrow plot range.
