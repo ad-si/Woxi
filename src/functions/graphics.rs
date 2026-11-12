@@ -30134,7 +30134,9 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
           Expr::List(dims) if dims.len() == 2 => {
             Some((expr_to_f64(&dims[0])?, expr_to_f64(&dims[1])?))
           }
-          other => Some((expr_to_f64(other)?, 14.0 * 1.2)),
+          // A width alone leaves the height to the content, which the
+          // `Pane`'s own renderer wraps and sizes (see `framed_box_to_svg`).
+          _ => None,
         })
         .or_else(|| pane_content_size(&args[0])),
     },
@@ -30144,6 +30146,25 @@ fn pane_content_size(expr: &Expr) -> Option<(f64, f64)> {
       pane_content_size(&args[0])
     }
     _ => None,
+  }
+}
+
+/// Whether `expr` is a `Pane` that sets a width alone (`Pane[e, w]`,
+/// `Pane[e, ImageSize -> w]`), possibly under `Text`/`Style`/`Deploy`/`Item`.
+fn width_only_pane(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  match name.as_str() {
+    "Pane" if !args.is_empty() => {
+      crate::evaluator::dispatch::io_functions::pane_fixed_size(args).is_none()
+        && crate::evaluator::dispatch::io_functions::pane_width_only(args)
+          .is_some()
+    }
+    "Text" | "Style" | "Deploy" | "Item" if !args.is_empty() => {
+      width_only_pane(&args[0])
+    }
+    _ => false,
   }
 }
 
@@ -30357,6 +30378,21 @@ fn framed_box_to_svg(
   // is drawn and framed, rather than printed as its own source text.
   let (inner_svg, inner_w, inner_h) = match inner_svg {
     None if crate::evaluator::lays_out_a_graphic(content) => {
+      let svg = crate::evaluator::expr_to_svg(content);
+      if svg.starts_with("<svg") {
+        let (w, h) = parse_svg_wh(&svg);
+        (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
+
+  // A text in a `Pane` of a given width (`Framed[Text@Pane[…, 300]]`) is
+  // wrapped at that width by the pane's own renderer and framed as drawn.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None if width_only_pane(content) => {
       let svg = crate::evaluator::expr_to_svg(content);
       if svg.starts_with("<svg") {
         let (w, h) = parse_svg_wh(&svg);
