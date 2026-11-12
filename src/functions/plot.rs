@@ -3883,6 +3883,28 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// The plotting area's height / width when `ImageSize -> {w, h}` fixed
+  /// the image height: the area then keeps its own shape (the
+  /// `AspectRatio`, the data's shape under `AspectRatio -> Automatic`, else
+  /// 1/GoldenRatio) centered in the image, so the image ratio no longer
+  /// tells it. `None` when the image ratio is the area's shape.
+  pub(crate) fn fixed_height_area_aspect(
+    &self,
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+  ) -> Option<f64> {
+    if !self.image_size_explicit.1 || self.aspect_full {
+      return None;
+    }
+    let data_ratio = (y_range.1 - y_range.0) / (x_range.1 - x_range.0);
+    let ratio = match self.aspect_ratio {
+      Some(ar) => ar,
+      None if self.aspect_automatic => data_ratio,
+      None => DEFAULT_ASPECT_RATIO,
+    };
+    (ratio.is_finite() && ratio > 0.0).then_some(ratio)
+  }
+
   /// Whether tick marks and their labels are drawn at all: `Ticks -> None`
   /// removes them everywhere, `FrameTicks -> None` only on a frame.
   pub(crate) fn ticks_visible(&self) -> bool {
@@ -7911,7 +7933,7 @@ pub(crate) fn build_plot_source(
   plot_style: &[SeriesStyle],
   x_range: (f64, f64),
   y_range: (f64, f64),
-  image_size: (u32, u32),
+  opts: &PlotOptions,
   is_scatter: &[bool],
   filling: Filling,
   filling_style: Option<FillStyle>,
@@ -7970,12 +7992,13 @@ pub(crate) fn build_plot_source(
     series,
     x_range,
     y_range,
-    image_size,
+    image_size: (opts.svg_width, opts.svg_height),
     options,
     log_x: false,
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    area_aspect: opts.fixed_height_area_aspect(x_range, y_range),
   }
 }
 
@@ -12046,6 +12069,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    area_aspect: None,
   })
 }
 
@@ -17206,7 +17230,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &plot_opts.plot_style,
       x_display,
       y_display,
-      (plot_opts.svg_width, plot_opts.svg_height),
+      &plot_opts,
       &[false],
       plot_opts.filling,
       plot_opts.filling_style,
@@ -17415,7 +17439,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &plot_opts.plot_style,
     (x_display_min, x_display_max),
     (y_display_min, y_display_max),
-    (plot_opts.svg_width, plot_opts.svg_height),
+    &plot_opts,
     &[false],
     plot_opts.filling,
     plot_opts.filling_style,

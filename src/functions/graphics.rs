@@ -20696,7 +20696,13 @@ pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
 /// `AspectRatio` option, so callers that need the shape after the fact
 /// fall back to this. Falls back to the classic 1/GoldenRatio default when
 /// the recorded size is missing or invalid.
-pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
+pub(crate) fn plot_source_aspect_ratio(ps: &crate::syntax::PlotSource) -> f64 {
+  // An image height fixed by `ImageSize -> {w, h}` says nothing of the
+  // plot's shape: the plotting area kept its own inside it.
+  if let Some(area) = ps.area_aspect {
+    return area;
+  }
+  let image_size = ps.image_size;
   let ratio = image_size.1 as f64 / image_size.0 as f64;
   // The placeholder height a plot records when no height was asked for:
   // its plotting area took the default 1/GoldenRatio.
@@ -21663,6 +21669,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
       data_x_range,
+      area_aspect: first.and_then(|ps| ps.area_aspect),
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
         plot_sources
@@ -21862,7 +21869,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let aspect = plot_sources.first().map_or(
           1.0 / std::f64::consts::GOLDEN_RATIO,
           |ps| {
-            let own = plot_source_aspect_ratio(ps.image_size);
+            let own = plot_source_aspect_ratio(ps);
             // A data-sized plot (`ParametricPlot`, `PolarPlot`) follows the
             // `PlotRange` it is finally shown with, not the extent of the
             // curve it was drawn from: `Show[plot, PlotRange -> 10]` is a

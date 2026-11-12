@@ -178,6 +178,11 @@ pub struct PlotSource {
   /// Sampled x extent used when Show recomputes PlotRange -> All. A
   /// function plot's displayed interval includes unsampled endpoints.
   pub data_x_range: Option<(f64, f64)>,
+  /// The plotting area's own height / width when `ImageSize -> {w, h}`
+  /// fixed the image height, so `image_size` no longer tells the plot's
+  /// shape (the area keeps its `AspectRatio` and is centered in the image).
+  /// `None` when the image ratio is the plot's shape.
+  pub area_aspect: Option<f64>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
