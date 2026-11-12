@@ -5327,6 +5327,27 @@ fn render_display_node<'a>(
       mutation,
       selected,
       enabled,
+      checkbox: true,
+    } => {
+      // One choice of a CheckboxBar: a checkbox followed by its label,
+      // toggling the value's membership in the bound list variable.
+      let mutation = mutation.clone();
+      let cb = checkbox(*selected).on_toggle_maybe(enabled.then(|| {
+        move |_| Message::ManipulateDisplayToggled(cell_idx, mutation.clone())
+      }));
+      Row::new()
+        .spacing(4)
+        .align_y(Center)
+        .push(cb)
+        .push(render_display_node(cell_idx, label))
+        .into()
+    }
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+      enabled,
+      checkbox: false,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
       // removes its value from the bound list variable. A bar whose
@@ -32718,6 +32739,70 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       vec![false, true],
       "only the second choice stays selected after deselecting the first"
     );
+  }
+
+  /// A 3D scene whose extra geometry is switched by a one-choice
+  /// `ControlType -> CheckboxBar` control (beside a `VerticalSlider` driving
+  /// the view point). Wolfram draws a CheckboxBar choice as a checkbox with
+  /// its label, not as the toggle button a `TogglerBar` uses, so the
+  /// display tree must mark the choice as a checkbox; unchecking it must
+  /// remove the value from the bound list and change the picture.
+  #[test]
+  fn checkbox_bar_control_draws_checkboxes_in_a_3d_scene() {
+    use woxi::functions::graphics::DisplayNode;
+    fn choices(nodes: &[DisplayNode]) -> Vec<(String, bool, bool)> {
+      fn walk(node: &DisplayNode, out: &mut Vec<(String, bool, bool)>) {
+        match node {
+          DisplayNode::Toggler {
+            mutation,
+            selected,
+            checkbox,
+            ..
+          } => out.push((mutation.clone(), *selected, *checkbox)),
+          DisplayNode::Row(items) | DisplayNode::Column(items) => {
+            items.iter().for_each(|n| walk(n, out))
+          }
+          DisplayNode::Panel(child) => walk(child, out),
+          _ => {}
+        }
+      }
+      let mut out = Vec::new();
+      nodes.iter().for_each(|n| walk(n, &mut out));
+      out
+    }
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 2}], Gray, If[MemberQ[extras, halo], {Line[Table[{1/2 + Cos[s], 1/2 + Sin[s], 3}, {s, 0, 2 Pi, Pi/8}]]}, Sequence @@ {}]}, Boxed -> False, ViewAngle -> Pi/12, ViewPoint -> {h Cos[w], h Sin[w], 1}], {{w, Pi, "turn"}, 0, 2 Pi}, {{h, 4, "height"}, 2, 6, ControlPlacement -> Left, ControlType -> VerticalSlider}, {{extras, {halo}, ""}, {halo -> "show halo"}, ControlType -> CheckboxBar}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let with_halo = widget.graphics_handle.clone();
+    assert!(with_halo.is_some(), "the scene must draw");
+    assert_eq!(
+      widget.state,
+      vec![("extras".to_string(), "{halo}".to_string())]
+    );
+
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (mutation, selected, checkbox) = found[0].clone();
+    assert!(selected, "the halo starts checked");
+    assert!(checkbox, "a CheckboxBar choice draws as a checkbox");
+
+    widget.apply_display_mutation(&mutation);
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert_eq!(widget.state[0].1, "{}");
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1);
+    assert!(!found[0].1, "unchecking clears the choice");
+    assert!(found[0].2, "it still draws as a checkbox");
   }
 
   /// A multi-select `TogglerBar` control gated by `Enabled -> cond` on

@@ -35999,14 +35999,16 @@ fn contains_body_button(expr: &Expr) -> bool {
   }
 }
 
-/// Replace every `TogglerBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
+/// Replace every `TogglerBar`/`CheckboxBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
 /// …]` in a Manipulate body with `Nothing`, pushing each one's InputForm onto
 /// `displays` so the front-end renders it as a live widget instead of a
 /// static picture.
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if (name == "TogglerBar" || name == "Checkbox")
+      if (name == "TogglerBar"
+        || name == "CheckboxBar"
+        || name == "Checkbox")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: dname, args: dargs })
@@ -41193,8 +41195,11 @@ fn parse_manipulate_control(
     if let Some(cond) = &enabled {
       bar_options.push_str(&format!(", Enabled -> Dynamic[{cond}]"));
     }
+    // Keep the requested head: a `CheckboxBar` draws checkboxes, a
+    // `TogglerBar` toggle buttons.
+    let bar_head = control_type.as_deref().unwrap_or("TogglerBar");
     let bar = format!(
-      "TogglerBar[Dynamic[{name}], {}{bar_options}]",
+      "{bar_head}[Dynamic[{name}], {}{bar_options}]",
       crate::syntax::expr_to_source_form(&choices)
     );
     let display = if label.is_empty() {
@@ -41477,7 +41482,7 @@ fn parse_manipulate_control(
   if let Some(built) = &built
     && let Ok(evaluated) = evaluate_expr_to_expr(built)
     && let Expr::FunctionCall { name: ev_name, .. } = &evaluated
-    && ev_name == "TogglerBar"
+    && (ev_name == "TogglerBar" || ev_name == "CheckboxBar")
   {
     let value = explicit_initial
       .as_ref()
@@ -43325,6 +43330,9 @@ pub enum DisplayNode {
     mutation: String,
     selected: bool,
     enabled: bool,
+    /// The choice belongs to a `CheckboxBar`, which Wolfram draws as a
+    /// checkbox followed by its label rather than as a toggle button.
+    checkbox: bool,
   },
   /// A `Button[label, action]`: pressing it evaluates `action` (InputForm)
   /// against the live bindings, exactly like a `Button` written as a
@@ -43876,8 +43884,9 @@ fn display_expr_to_node(
       }
       // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
       // buttons; clicking one adds/removes its value from the list `var`.
-      "TogglerBar" if args.len() >= 2 => {
-        match togglerbar_node(args, bindings, probes, ons) {
+      "TogglerBar" | "CheckboxBar" if args.len() >= 2 => {
+        let checkbox = name == "CheckboxBar";
+        match togglerbar_node(args, checkbox, bindings, probes, ons) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -44429,6 +44438,7 @@ fn find_unique_assignment_target(expr: &Expr) -> Option<String> {
 /// static rendering (as it does for any other shape it doesn't recognize).
 fn togglerbar_node(
   args: &[Expr],
+  checkbox: bool,
   bindings: &[(String, String)],
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
@@ -44505,6 +44515,7 @@ fn togglerbar_node(
       mutation,
       selected,
       enabled,
+      checkbox,
     });
   }
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
@@ -44591,6 +44602,7 @@ fn setterbar_node(
       mutation,
       selected,
       enabled,
+      checkbox: false,
     });
   }
   // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
@@ -45060,12 +45072,14 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       mutation,
       selected,
       enabled,
+      checkbox,
     } => format!(
-      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{}}}"#,
+      r#"{{"kind":"toggler","label":{},"mutation":"{}","selected":{},"enabled":{},"checkbox":{}}}"#,
       display_node_to_json(label),
       json_escape_manipulate(mutation),
       selected,
       enabled,
+      checkbox,
     ),
     DisplayNode::Button { label, action } => format!(
       r#"{{"kind":"button","label":{},"action":"{}"}}"#,
