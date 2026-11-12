@@ -5552,10 +5552,9 @@ fn generate_svg_with_options(
     let ar = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
     let fixed_h = (opts.image_size_explicit.1 || opts.aspect_full)
       .then_some(svg_height as f64);
-    decorations.solve(svg_width as f64, |w| match fixed_h {
-      Some(h) => {
-        (h - 16.0).min(if opts.aspect_full { f64::MAX } else { w * ar })
-      }
+    decorations.solve(svg_width as f64, |w, pad| match fixed_h {
+      Some(h) => (h - 16.0f64.max(pad.bottom + pad.above()))
+        .min(if opts.aspect_full { f64::MAX } else { w * ar }),
       None => w * ar,
     })
   });

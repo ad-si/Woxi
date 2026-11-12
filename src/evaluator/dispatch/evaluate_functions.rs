@@ -5458,10 +5458,26 @@ fn evaluate_function_call_ast_inner(
           Expr::List(edge_labels.into()),
         ));
       }
+      // `LayerSizeFunction -> f` sizes the layers of the drawing; it
+      // belongs to the layered embedding, not to the Graph.
+      let is_layer_size = |a: &Expr| {
+        matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "LayerSizeFunction"))
+      };
+      let layer_size = args[1..].iter().rev().find_map(|a| match a {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if layered && is_layer_size(a) =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
       forwarded.extend(
         args[1..]
           .iter()
           .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+          .filter(|a| !(layered && is_layer_size(a)))
           .cloned(),
       );
       // `GraphPlot[g, Method -> "CircularEmbedding"]` names the embedding
@@ -5480,10 +5496,29 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
+      // `TreePlot[g, Center]` puts the root in the middle and the deeper
+      // layers on circles around it, the root being the one vertex
+      // nothing points at (else the graph center).
+      let radial = name == "TreePlot"
+        && matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center");
       if layered {
-        let mut spec = vec![str_expr("LayeredDigraphEmbedding")];
-        if let Some(v) = root_vertex {
-          spec.push(rule_expr(str_expr("RootVertex"), v.clone()));
+        let mut spec = vec![str_expr(if radial {
+          "RadialEmbedding"
+        } else {
+          "LayeredDigraphEmbedding"
+        })];
+        let root = root_vertex.cloned().or_else(|| {
+          if radial {
+            crate::functions::graph::unique_source_vertex(&args[0])
+          } else {
+            None
+          }
+        });
+        if let Some(v) = root {
+          spec.push(rule_expr(str_expr("RootVertex"), v));
+        }
+        if let Some(f) = layer_size {
+          spec.push(rule_expr(str_expr("LayerSizeFunction"), f));
         }
         if let Some(dir) = root_pos {
           spec.push(rule_expr(str_expr("Orientation"), id_expr(dir.symbol())));

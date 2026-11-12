@@ -11856,11 +11856,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Include box corners in the projected bounding box — always when the
-  // box is drawn, and also for a fixed PlotRange so the zoom level does
-  // not follow the contents, or when the contents alone project to no
-  // area (a line seen side on). A pinned region is framed by its box
-  // alone: content reaching beyond it (a long axis cylinder, a big
+  // Include box corners in the projected bounding box. Wolfram frames the
+  // picture by the bounding box whether or not it is drawn: with
+  // `Boxed -> False` the box is merely invisible, so a dome or a tall
+  // solid keeps the margins its box corners leave around it instead of
+  // being blown up to touch the edges. A pinned region is framed by its
+  // box alone: content reaching beyond it (a long axis cylinder, a big
   // sphere) is cut off by the picture rather than shrinking it.
   if plot_range.is_some() {
     px_min = f64::INFINITY;
@@ -11868,8 +11869,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  let degenerate = !(px_max - px_min > 1e-9 && py_max - py_min > 1e-9);
-  if show_box || plot_range.is_some() || degenerate {
+  {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
