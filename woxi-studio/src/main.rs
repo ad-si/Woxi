@@ -4256,9 +4256,10 @@ const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
-/// still rendered as a SetterBar. A run of short buttons stays readable well
-/// past five, but not without bound.
-const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
+/// still rendered as a SetterBar. A run of short buttons stays readable past
+/// five, but not without bound: Wolfram draws eight integers (`-3` … `4`) as
+/// a bar and nine (`2` … `10`) as a dropdown.
+const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 8;
 
 /// A choice label this short (in characters) keeps its button narrow enough
 /// to sit in a long SetterBar.
@@ -4301,6 +4302,7 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
+/// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
 /// | 6       | `triangle` … `octagon`              |    44 | PopupMenu  |
 /// | 17      | `Hue`, `BlueGreenYellow`, …         |   183 | PopupMenu  |
@@ -22641,6 +22643,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "TemperatureMap",
       "ThermometerColors",
     ]));
+
+    // Nine short labels are already one too many: a count control whose
+    // choices run `2` … `10` is a dropdown in Wolfram.
+    assert!(!bar(&["2", "3", "4", "5", "6", "7", "8", "9", "10"]));
 
     // Short labels buy a longer bar, not an unbounded one: 33 integers are a
     // dropdown even though every label is two or three characters.
