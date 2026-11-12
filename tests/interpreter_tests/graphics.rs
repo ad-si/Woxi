@@ -52055,3 +52055,42 @@ mod multiline_text_blank_lines {
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
 }
+
+mod plot_option_lists_and_merged_contour_styles {
+  use super::*;
+
+  /// Options grouped in a list after the data (`ListPlot[data, {opts}]`)
+  /// are read like separately given options.
+  #[test]
+  fn list_plot_reads_options_given_as_a_list() {
+    assert_eq!(
+      interpret(
+        "Cases[ListPlot[{{1, 2}, {3, 4}}, {PlotStyle -> Red}], \
+         _RGBColor, Infinity]"
+      )
+      .unwrap(),
+      "{RGBColor[1., 0., 0.]}"
+    );
+  }
+
+  /// Nested option lists are spliced too, alongside plain options.
+  #[test]
+  fn plot_reads_nested_option_lists() {
+    assert_eq!(
+      export_svg("Plot[x, {x, 0, 1}, {{PlotStyle -> Red}}, ImageSize -> 200]"),
+      export_svg("Plot[x, {x, 0, 1}, PlotStyle -> Red, ImageSize -> 200]")
+    );
+  }
+
+  /// A dashed equation curve of a ContourPlot stays dashed when `Show`
+  /// merges it with another plot.
+  #[test]
+  fn show_keeps_contour_plot_dashing() {
+    let svg = export_svg(
+      "Show[ContourPlot[y == x^2, {x, -2, 2}, {y, -2, 2}], \
+       ContourPlot[x + y == 1, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> {Purple, Dashed}]]",
+    );
+    assert!(svg.contains("stroke-dasharray"), "no dashed curve: {svg}");
+  }
+}

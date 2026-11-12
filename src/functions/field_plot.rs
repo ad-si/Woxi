@@ -3651,8 +3651,8 @@ fn contour_plot_equations(
         .collect();
       if points.len() >= 2 {
         // The curve carries its `ContourStyle` into the series too, so a
-        // `Show[{ContourPlot[…], …}]` re-render keeps the color and weight
-        // the standalone picture was drawn with.
+        // `Show[{ContourPlot[…], …}]` re-render keeps the color, weight,
+        // dashing and opacity the standalone picture was drawn with.
         series.push(crate::syntax::PlotSeriesData {
           points,
           color: series_color,
@@ -3665,8 +3665,8 @@ fn contour_plot_equations(
           thickness: series_thickness,
           point_size: None,
           point_size_expr: None,
-          dashing: None,
-          opacity: None,
+          dashing: style.and_then(|s| s.dashing.clone()),
+          opacity: style.and_then(|s| s.opacity).filter(|o| *o < 1.0),
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
         });
