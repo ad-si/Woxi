@@ -1543,6 +1543,27 @@ mod abort {
 mod quiet {
   use super::*;
 
+  // Repetitions are counted inside Quiet, but the General::stop counters
+  // are restored when the block ends: the next three messages still print.
+  #[test]
+  fn quieted_messages_do_not_use_up_the_stop_limit() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Quiet[I > 0; I > 0; I > 0]; I > 0; I > 0; I > 0; I > 0",
+    )
+    .unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Greater::nord: Invalid comparison with I attempted.",
+        "Greater::nord: Invalid comparison with I attempted.",
+        "Greater::nord: Invalid comparison with I attempted.",
+        "General::stop: Further output of Greater::nord will be suppressed \
+         during this calculation."
+      ]
+    );
+  }
+
   #[test]
   fn quiet_basic_no_message() {
     clear_state();

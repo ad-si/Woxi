@@ -4200,6 +4200,81 @@ fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
   }
 }
 
+/// Marks a bare `name : body` term that an operator binding tighter than
+/// `:` follows, until `apply_named_patterns` folds that operator into the
+/// body.
+const NAMED_PATTERN_MARK: &str = "\u{1}NamedPattern";
+
+/// `name : body` takes only the name on its left but extends to the right
+/// over every operator that binds tighter than `:` — `p : _^2 + 1 -> x` is
+/// `Rule[Pattern[p, _^2 + 1], x]` and `a + p : _^2` is
+/// `Plus[a, Pattern[p, _^2]]`. The grammar reads just `p : _` as the term,
+/// so fold the following tighter operators into each marked term's body.
+/// A named pattern closing the run is the chained default of the whole
+/// pattern: `x : a | b : v` is `Optional[Pattern[x, a | b], v]`. Processed
+/// right to left, so a pattern inside another's reach is resolved first.
+fn apply_named_patterns(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
+  let colon = operator_precedence(":");
+  let mut i = terms.len();
+  while i > 0 {
+    i -= 1;
+    let Expr::FunctionCall { name, args } = &terms[i] else {
+      continue;
+    };
+    if name != NAMED_PATTERN_MARK || args.len() != 2 {
+      continue;
+    }
+    let (pattern_name, body) = (args[0].clone(), args[1].clone());
+    let mut j = i;
+    while j < operators.len() && operator_precedence(&operators[j]) > colon {
+      j += 1;
+    }
+    let mut group_terms: Vec<Expr> = terms.drain(i..=j).collect();
+    group_terms[0] = body;
+    let group_ops: Vec<String> = operators.drain(i..j).collect();
+    // The closing `: v` arrives as `Pattern[sym, v]` after a name and as
+    // `Optional[p, v]` after any other pattern (`x : a + _ : c`).
+    let mut default = None;
+    if group_terms.len() > 1
+      && let Some(Expr::FunctionCall { name, args }) = group_terms.last()
+      && args.len() == 2
+      && (name == "Optional"
+        || (name == "Pattern" && matches!(args[0], Expr::Identifier(_))))
+    {
+      let (sym, value) = (args[0].clone(), args[1].clone());
+      *group_terms.last_mut().unwrap() = sym;
+      default = Some(value);
+    } else if group_terms.len() > 1
+      && let Some(Expr::PatternOptional {
+        name,
+        head,
+        default: Some(value),
+      }) = group_terms.last()
+      && name.is_empty()
+    {
+      let value = value.as_ref().clone();
+      let blank = Expr::Pattern {
+        name: String::new(),
+        head: head.clone(),
+        blank_type: 1,
+      };
+      *group_terms.last_mut().unwrap() = blank;
+      default = Some(value);
+    }
+    let pattern = call(
+      "Pattern",
+      vec![pattern_name, build_operator_chain(group_terms, &group_ops)],
+    );
+    terms.insert(
+      i,
+      match default {
+        Some(value) => call("Optional", vec![pattern, value]),
+        None => pattern,
+      },
+    );
+  }
+}
+
 /// The expression a chain of terms joined by infix operators stands for.
 fn build_operator_chain(mut terms: Vec<Expr>, operators: &[String]) -> Expr {
   if terms.len() == 1 {
@@ -4872,7 +4947,19 @@ fn parse_expression_inner(
   let has_multiplicative_operator = inner.iter().any(|item| {
     item.as_rule() == Rule::Operator && matches!(item.as_str(), "*" | "/" | "×")
   });
-  for item in inner {
+  // Bare `name : body` terms directly followed by an operator that binds
+  // tighter than `:` (see `apply_named_patterns`).
+  let colon_prec = operator_precedence(":");
+  let open_named_patterns: Vec<usize> = (0..inner.len())
+    .filter(|&k| {
+      inner[k].as_rule() == Rule::PatternNamed
+        && inner.get(k + 1).is_some_and(|next| {
+          matches!(next.as_rule(), Rule::Operator | Rule::ConditionOp)
+            && operator_precedence(next.as_str().trim()) > colon_prec
+        })
+    })
+    .collect();
+  for (item_index, item) in inner.into_iter().enumerate() {
     match item.as_rule() {
       Rule::LeadingPlus => {
         // Unary plus is a no-op: +expr is just expr. Simply skip.
@@ -5119,6 +5206,17 @@ fn parse_expression_inner(
           is_implicit_times && operators.last().is_some_and(|o| o == "/");
         let parenthesized = item.as_rule() == Rule::Expression;
         let expr = pair_to_expr(item);
+        let expr = match &expr {
+          Expr::FunctionCall { name, args }
+            if open_named_patterns.contains(&item_index)
+              && name == "Pattern"
+              && args.len() == 2
+              && matches!(args[0], Expr::Identifier(_)) =>
+          {
+            call(NAMED_PATTERN_MARK, args.to_vec())
+          }
+          _ => expr,
+        };
         // A parenthesized product is one factor, not part of the outer
         // operator chain. The call form marks that boundary for held forms.
         let expr = if parenthesized
@@ -5194,6 +5292,7 @@ fn parse_expression_inner(
   );
   split_implicit_products(&mut terms, &mut operators, &term_was_implicit_times);
   apply_prefix_nots(&mut terms, &mut operators);
+  apply_named_patterns(&mut terms, &mut operators);
   // How many assignments this chain itself writes (see `in_assignment_rhs`).
   let assign_depth = operators
     .iter()
@@ -6490,69 +6589,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     }
     "<>" => binop(BinaryOperator::StringJoin, left.clone(), right.clone()),
     ":" => build_colon(left, right),
-    "|" => {
-      // `:` (Pattern) binds looser than `|` (Alternatives) in Wolfram, so
-      // `x : a | b` is `Pattern[x, Alternatives[a, b]]`. Woxi's parser
-      // already consumed `x : a` into `Pattern[x, a]` before the `|` op,
-      // so reach back into that Pattern's body and absorb the new
-      // alternative there.
-      if let Expr::FunctionCall { name, args } = left
-        && name == "Pattern"
-        && args.len() == 2
-      {
-        // `x : a | b : v` — the right operand was read as the named pattern
-        // `Pattern[b, v]`, but its colon is the trailing default of the whole
-        // `x : (a | b)` pattern: `Optional[Pattern[x, a | b], v]`.
-        if let Expr::FunctionCall {
-          name: rn,
-          args: rargs,
-        } = right
-          && rn == "Pattern"
-          && rargs.len() == 2
-          && matches!(rargs[0], Expr::Identifier(_))
-        {
-          let alts = match &args[1] {
-            Expr::BinaryOp {
-              op: BinaryOperator::Alternatives,
-              left: l,
-              right: r,
-            } => binop(
-              BinaryOperator::Alternatives,
-              *l.clone(),
-              binop(BinaryOperator::Alternatives, *r.clone(), rargs[0].clone()),
-            ),
-            body => binop(
-              BinaryOperator::Alternatives,
-              body.clone(),
-              rargs[0].clone(),
-            ),
-          };
-          return call(
-            "Optional",
-            vec![
-              call("Pattern", vec![args[0].clone(), alts]),
-              rargs[1].clone(),
-            ],
-          );
-        }
-        let inner_alts = match &args[1] {
-          Expr::BinaryOp {
-            op: BinaryOperator::Alternatives,
-            left: l,
-            right: r,
-          } => binop(
-            BinaryOperator::Alternatives,
-            *l.clone(),
-            binop(BinaryOperator::Alternatives, *r.clone(), right.clone()),
-          ),
-          body => {
-            binop(BinaryOperator::Alternatives, body.clone(), right.clone())
-          }
-        };
-        return call("Pattern", vec![args[0].clone(), inner_alts]);
-      }
-      binop(BinaryOperator::Alternatives, left.clone(), right.clone())
-    }
+    "|" => binop(BinaryOperator::Alternatives, left.clone(), right.clone()),
     "\\[Element]" | "\u{2208}" => {
       call("Element", vec![left.clone(), right.clone()])
     }
@@ -9920,6 +9957,7 @@ fn input_form_infix_forcing(
 fn is_nested_alternatives_call(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
     if name == "Alternatives" && args.len() >= 2)
+    || is_bare_pattern(e)
 }
 
 /// Whether the body of `body &` has to print parenthesized.
@@ -10032,16 +10070,21 @@ fn comparison_operand_needs_parens(e: &Expr) -> bool {
     || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
-/// A bare `a_` / `a_:v` / `a_?t`, which wolframscript wraps wherever it is
-/// an operand of an infix operator — `(a_) + (b_)`, `(a_)*(b_)`,
-/// `(a_) != (b_)` — so the `_` cannot swallow what follows it.
+/// A named `a_` or any optional `_.` / `a_:v`, which wolframscript wraps
+/// wherever it is an operand of an infix operator — `(a_) + (b_)`,
+/// `(a_)*(b_)`, `(a_) != (b_)`, `(_.) + 1` — so the name cannot run into
+/// what follows it. An anonymous `_` and a `_?t` print bare (`_^2`,
+/// `_?f + 1`); a named test brackets only its pattern (`(x_)?f`).
 fn is_bare_pattern(e: &Expr) -> bool {
-  matches!(
-    e,
-    Expr::Pattern { .. }
-      | Expr::PatternOptional { .. }
-      | Expr::PatternTest { .. }
-  )
+  match e {
+    Expr::Pattern { name, .. } => !name.is_empty(),
+    Expr::PatternOptional { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      (name == "Pattern" && args.len() == 2)
+        || (name == "Optional" && (1..=2).contains(&args.len()))
+    }
+    _ => false,
+  }
 }
 
 /// Whether a term of a `Plus`/`Subtract` chain must be
@@ -10598,19 +10641,25 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // — `Repeated[0]` prints as `(0)..`, not `0..`, since `0..`
       // would be lex-ambiguous with the `0.` Real literal).
       let is_pattern_arg = |e: &Expr| -> bool {
-        matches!(
-          e,
-          Expr::Pattern { .. }
-            | Expr::PatternOptional { .. }
-            | Expr::PatternTest { .. }
-            | Expr::Integer(_)
-            | Expr::BigInteger(_)
-            | Expr::Real(_)
-            | Expr::BigFloat(_, _)
-        ) || matches!(
-          e,
-          Expr::FunctionCall { name: pn, .. } if pn == "Pattern"
-        )
+        is_bare_pattern(e)
+          || matches!(
+            e,
+            Expr::Integer(_)
+              | Expr::BigInteger(_)
+              | Expr::Real(_)
+              | Expr::BigFloat(_, _)
+          )
+      };
+      // An anonymous blank keeps a space before the dots (`_ ..`), which
+      // would otherwise read as the optional `_.` followed by `.`.
+      let repeated = |inner: String, dots: &str, e: &Expr| {
+        if is_pattern_arg(e) {
+          format!("({inner}){dots}")
+        } else if inner.ends_with('_') {
+          format!("{inner} {dots}")
+        } else {
+          format!("{inner}{dots}")
+        }
       };
       // Special case: Pattern[name, body] displays as name:body
       // (e.g. `y : 1` → `Pattern[y, 1]` → `y:1`). When `body` is a
@@ -10685,21 +10734,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{}:{}", fmt(&args[0]), body_str);
       }
       if name == "Repeated" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if is_pattern_arg(&args[0]) {
-          format!("({inner})..")
-        } else {
-          format!("{inner}..")
-        };
+        return repeated(fmt(&args[0]), "..", &args[0]);
       }
       // Special case: RepeatedNull[x] displays as x... (mirrors Repeated)
       if name == "RepeatedNull" && args.len() == 1 {
-        let inner = fmt(&args[0]);
-        return if is_pattern_arg(&args[0]) {
-          format!("({inner})...")
-        } else {
-          format!("{inner}...")
-        };
+        return repeated(fmt(&args[0]), "...", &args[0]);
       }
       // Special case: Colon[a, b, ...] displays as a ∶ b ∶ ...
       if name == "Colon" && args.len() >= 2 {
@@ -11385,7 +11424,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
-              || printed_infix_precedence(arg).is_some_and(|p| p < 18);
+              || printed_infix_precedence(arg).is_some_and(|p| p < 18)
+              || is_bare_pattern(arg);
             if is_or { format!("({s})") } else { s }
           })
           .collect();
@@ -11414,6 +11454,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               && inner_name == "Alternatives"
               && inner_args.len() >= 2
             {
+              return format!("({})", fmt(a));
+            }
+            if is_bare_pattern(a) {
               return format!("({})", fmt(a));
             }
             fmt(a)
@@ -12203,8 +12246,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               || (!is_output && matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
                 && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1)))))
-              // Pattern expressions need parens in Times (Wolfram convention)
-              || matches!(a, Expr::Pattern { .. } | Expr::PatternOptional { .. } | Expr::PatternTest { .. })
+              // Named and optional patterns need parens in Times
+              || is_bare_pattern(a)
             {
               format!("({s})")
             } else {
@@ -12220,14 +12263,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // parenthesized in Wolfram (e.g. `B[...] + (a_.)`, never
         // `B[...] + a_.`). The `_` inside the term is otherwise
         // syntactically ambiguous next to an additive operator.
-        let needs_pattern_parens = |a: &Expr| -> bool {
-          matches!(
-            a,
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          )
-        };
+        let needs_pattern_parens = is_bare_pattern;
         // `Condition[expr, test]` — printed with `/;`, which binds looser
         // than `+`. Wrap the whole thing so `p + (1 /; 2 > 1)` doesn't
         // surface as `p + 1 /; 2 > 1` (which would parse as
@@ -12527,12 +12563,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           // A fraction prints as `p/q`, so `(-6/5)^(1/3)` needs its parens.
           || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
           || prints_as_negation(&args[0])
-          || matches!(
-            &args[0],
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ) {
+          || is_bare_pattern(&args[0])
+        {
           format!("({base_str})")
         } else {
           base_str
@@ -12559,12 +12591,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           )
-          || matches!(
-            &args[1],
-            Expr::Pattern { .. }
-              | Expr::PatternOptional { .. }
-              | Expr::PatternTest { .. }
-          ) {
+          || is_bare_pattern(&args[1])
+        {
           format!("({exp_str})")
         } else {
           exp_str
@@ -13026,6 +13054,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 15))
+            || is_bare_pattern(e)
         };
         let lf = if is_and_expr(left) {
           format!("({left_str})")
@@ -13052,6 +13081,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 18))
+            || is_bare_pattern(e)
         };
         let lf = if is_or_expr(left) {
           format!("({left_str})")
@@ -13140,12 +13170,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | BinaryOperator::Times
             | BinaryOperator::Plus
             | BinaryOperator::Minus
-        ) && matches!(
-          left.as_ref(),
-          Expr::Pattern { .. }
-            | Expr::PatternOptional { .. }
-            | Expr::PatternTest { .. }
-        ))
+            | BinaryOperator::Alternatives
+            | BinaryOperator::And
+            | BinaryOperator::Or
+        ) && is_bare_pattern(left))
         // Rule/RuleDelayed/ReplaceAll/ReplaceRepeated have very low
         // precedence (`->`/`:>`/`/.`/`//.`); wrap in parens when they appear
         // inside any binary operator so the printed form re-parses to the
@@ -13233,12 +13261,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | BinaryOperator::Times
             | BinaryOperator::Plus
             | BinaryOperator::Minus
-        ) && matches!(
-          right.as_ref(),
-          Expr::Pattern { .. }
-            | Expr::PatternOptional { .. }
-            | Expr::PatternTest { .. }
-        ))
+            | BinaryOperator::Alternatives
+            | BinaryOperator::And
+            | BinaryOperator::Or
+        ) && is_bare_pattern(right))
         // Plus + Plus (right-nested): preserve grouping in held expressions.
         // The parser produces left-nested chains, so right-nesting only
         // appears via Hold/HoldAll substitution where we want to display
@@ -13335,7 +13361,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         );
         // So does anything else that binds looser than `!`: ` !(a /. b)`.
         let needs_parens = needs_parens
-          || printed_infix_precedence(operand).is_some_and(|p| p < 20);
+          || printed_infix_precedence(operand).is_some_and(|p| p < 20)
+          || is_bare_pattern(operand);
         // The space is the printed 2D layout's; the text ToString makes
         // has none: ToString[{1, !x}] is "{1, !x}".
         let space = if IN_TO_STRING_OUTPUT.with(std::cell::Cell::get) {
@@ -13375,7 +13402,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || is_loose_assignment(operand)
           // Anything printing with an operator looser than unary minus:
           // `-(a /. b)`, `-(a -> b)`, `-(a == b)`, `-(a | b)`.
-          || printed_infix_precedence(operand).is_some_and(|p| p < 39);
+          || printed_infix_precedence(operand).is_some_and(|p| p < 39)
+          || is_bare_pattern(operand);
         if needs_parens {
           format!("-({inner})")
         } else {
@@ -15417,7 +15445,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
-            || printed_infix_precedence(arg).is_some_and(|p| p < 18);
+            || printed_infix_precedence(arg).is_some_and(|p| p < 18)
+            || is_bare_pattern(arg);
           if is_or { format!("({s})") } else { s }
         })
         .collect();

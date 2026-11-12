@@ -325,9 +325,16 @@ fn has_sequence_pattern(expr: &Expr) -> bool {
   match expr {
     Expr::Pattern { blank_type, .. } => *blank_type >= 2,
     Expr::PatternTest { blank_type, .. } => *blank_type >= 2,
+    // An optional element may match nothing, so it varies the length too.
+    Expr::PatternOptional { .. } => true,
     Expr::FunctionCall { name, .. } => matches!(
       name.as_str(),
-      "BlankSequence" | "BlankNullSequence" | "Repeated" | "RepeatedNull"
+      "BlankSequence"
+        | "BlankNullSequence"
+        | "Repeated"
+        | "RepeatedNull"
+        | "Optional"
+        | "PatternSequence"
     ),
     _ => false,
   }

@@ -9433,6 +9433,24 @@ mod cases {
   fn leaf_count_1() {
     assert_case(r#"LeafCount[1 + x + y^a]"#, r#"6"#);
   }
+  // A complex number is the atom-like Complex[re, im], and a sum holds
+  // its numeric part as one complex number.
+  #[test]
+  fn leaf_count_and_full_form_of_complex_numbers() {
+    assert_eq!(
+      woxi::interpret(
+        "{LeafCount[I], LeafCount[2 + 3 I], LeafCount[1 + 2 I, Heads -> False], \
+          LeafCount[x + I], LeafCount[x + 2 + 3 I], LeafCount[f[I]]}"
+      )
+      .unwrap(),
+      "{3, 3, 2, 5, 5, 4}"
+    );
+    assert_eq!(
+      woxi::interpret("ToString[FullForm[{x + 2 + 3 I, x + 1/2 + I/3}]]")
+        .unwrap(),
+      "List[Plus[Complex[2, 3], x], Plus[Complex[Rational[1, 2], Rational[1, 3]], x]]"
+    );
+  }
   #[test]
   fn leaf_count_2() {
     assert_case(r#"LeafCount[1 + x + y^a]; LeafCount[f[x, y]]"#, r#"3"#);

@@ -3702,6 +3702,20 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### The parts of a sum with a complex number
+
+Woxi stores `x + 2 + 3 I` as `Plus[2, x, 3 I]`, with the real and the
+imaginary part of the number as separate terms. `FullForm`, `LeafCount` and
+`Map` see the single `Complex[2, 3]` that wolframscript holds, but `Part`,
+`Level`, `Length` and `Apply` still see three terms:
+
+```sh
+wolframscript -code '{Length[x + 2 + 3 I], List @@ (x + 2 + 3 I)}'  # {2, {2 + 3*I, x}}
+woxi eval '{Length[x + 2 + 3 I], List @@ (x + 2 + 3 I)}'            # {3, {2, x, 3*I}}
+```
+
+Fixing it means storing the number as one term in `Plus`.
+
 ### Endless rewrites stop at `$RecursionLimit`, not `$IterationLimit`
 
 ```sh

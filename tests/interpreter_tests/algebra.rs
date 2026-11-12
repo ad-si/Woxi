@@ -7688,6 +7688,21 @@ mod nsolve_drops_extraneous_radical_solutions {
 mod reduce_univariate_polynomial_inequalities {
   use super::*;
 
+  // An inequality restricts the variable to the reals: complex roots of
+  // the equation are dropped, without ::nord messages.
+  #[test]
+  fn equation_with_an_inequality_drops_complex_roots() {
+    clear_state();
+    let r =
+      woxi::interpret_with_stdout("Reduce[x^4 == 16 && x > 0, x]").unwrap();
+    assert_eq!(r.result, "x == 2");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    let r =
+      woxi::interpret_with_stdout("Solve[x^4 == 16 && x > 0, x]").unwrap();
+    assert_eq!(r.result, "{{x -> 2}}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // Any polynomial in one variable with numeric coefficients: its real
   // roots split the line, and runs of pieces where it holds are joined in
   // Wolfram's interval form.

@@ -397,468 +397,11 @@ fn extract_rule_parts(expr: &Expr) -> (&Expr, Option<&Expr>) {
   }
 }
 
-/// Sequence pattern info for boolean matching.
-struct SeqInfoBool {
-  head: Option<String>,
-  min_count: usize,
-  max_count: Option<usize>,
-  test: Option<Box<Expr>>,
-  /// For Repeated/RepeatedNull: the element pattern to match against each arg.
-  element_pattern: Option<Box<Expr>>,
-}
-
-/// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
-fn get_sequence_info_bool(pattern: &Expr) -> Option<SeqInfoBool> {
-  match pattern {
-    Expr::Pattern {
-      head, blank_type, ..
-    } if *blank_type >= 2 => {
-      let min = usize::from(*blank_type == 2);
-      Some(SeqInfoBool {
-        head: head.clone(),
-        min_count: min,
-        max_count: None,
-        test: None,
-        element_pattern: None,
-      })
-    }
-    Expr::PatternTest {
-      head,
-      blank_type,
-      test,
-      ..
-    } if *blank_type >= 2 => {
-      let min = usize::from(*blank_type == 2);
-      Some(SeqInfoBool {
-        head: head.clone(),
-        min_count: min,
-        max_count: None,
-        test: Some(test.clone()),
-        element_pattern: None,
-      })
-    }
-    Expr::FunctionCall { name, args }
-      if name == "BlankSequence" || name == "BlankNullSequence" =>
-    {
-      let head = if args.len() == 1 {
-        if let Expr::Identifier(h) = &args[0] {
-          Some(h.clone())
-        } else {
-          None
-        }
-      } else {
-        None
-      };
-      let min = usize::from(name == "BlankSequence");
-      Some(SeqInfoBool {
-        head,
-        min_count: min,
-        max_count: None,
-        test: None,
-        element_pattern: None,
-      })
-    }
-    // Repeated[pat] or Repeated[pat, {min, max}] — matches 1+ elements each matching pat
-    // RepeatedNull[pat] or RepeatedNull[pat, {min, max}] — matches 0+ elements
-    Expr::FunctionCall { name, args }
-      if (name == "Repeated" || name == "RepeatedNull")
-        && !args.is_empty()
-        && args.len() <= 2 =>
-    {
-      let is_null = name == "RepeatedNull";
-      let (mut min, mut max): (usize, Option<usize>) =
-        if is_null { (0, None) } else { (1, None) };
-
-      // Parse optional count spec: {n}, {min, max}, or just n
-      if args.len() == 2 {
-        let spec_items: Option<&[Expr]> = match &args[1] {
-          Expr::List(items) => Some(items),
-          Expr::FunctionCall {
-            name: list_name,
-            args: spec,
-          } if list_name == "List" => Some(spec),
-          _ => None,
-        };
-        if let Some(items) = spec_items {
-          match items.len() {
-            1 => {
-              if let Expr::Integer(n) = &items[0] {
-                let n = *n as usize;
-                min = n;
-                max = Some(n);
-              }
-            }
-            2 => {
-              if let Expr::Integer(lo) = &items[0] {
-                min = *lo as usize;
-              }
-              if let Expr::Integer(hi) = &items[1] {
-                max = Some(*hi as usize);
-              }
-            }
-            _ => {}
-          }
-        } else if let Expr::Integer(n) = &args[1] {
-          let n = *n as usize;
-          min = n;
-          max = Some(n);
-        }
-      }
-
-      Some(SeqInfoBool {
-        head: None,
-        min_count: min,
-        max_count: max,
-        test: None,
-        element_pattern: Some(Box::new(args[0].clone())),
-      })
-    }
-    _ => None,
-  }
-}
-
-/// Apply a PatternTest function to an expression.
-fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
-  let test_result = match test {
-    Expr::Identifier(func_name) => {
-      let call = Expr::FunctionCall {
-        name: func_name.clone(),
-        args: vec![elem.clone()].into(),
-      };
-      crate::evaluator::evaluate_expr_to_expr(&call).ok()
-    }
-    Expr::Function { body } => {
-      let substituted =
-        crate::syntax::substitute_slots(body, std::slice::from_ref(elem));
-      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
-    }
-    _ => {
-      let call_str =
-        format!("({})[{}]", expr_to_string(test), expr_to_string(elem));
-      crate::interpret(&call_str).ok().map(|r| {
-        if r == "True" {
-          bool_expr(true)
-        } else {
-          bool_expr(false)
-        }
-      })
-    }
-  };
-  matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
-}
-
-/// Check if expression args match pattern args, handling sequence patterns.
-fn args_match_with_sequences(expr_args: &[Expr], pat_args: &[Expr]) -> bool {
-  if pat_args.is_empty() {
-    return expr_args.is_empty();
-  }
-
-  let pat = &pat_args[0];
-  let rest_pats = &pat_args[1..];
-
-  if let Some(seq) = get_sequence_info_bool(pat) {
-    let rest_min: usize = rest_pats
-      .iter()
-      .map(|p| {
-        if let Some(s) = get_sequence_info_bool(p) {
-          s.min_count
-        } else {
-          1
-        }
-      })
-      .sum();
-    let mut max_count = if expr_args.len() >= rest_min {
-      expr_args.len() - rest_min
-    } else {
-      return false;
-    };
-
-    // Apply explicit max_count from Repeated[pat, {min, max}]
-    if let Some(explicit_max) = seq.max_count
-      && explicit_max < max_count
-    {
-      max_count = explicit_max;
-    }
-
-    if max_count < seq.min_count {
-      return false;
-    }
-
-    for count in seq.min_count..=max_count {
-      let seq_args = &expr_args[..count];
-      // Check head constraints
-      if let Some(ref h) = seq.head
-        && !seq_args.iter().all(|a| get_expr_head_str(a) == h)
-      {
-        continue;
-      }
-      // Check PatternTest for all elements
-      if let Some(ref test) = seq.test
-        && !seq_args.iter().all(|a| apply_test_bool(test, a))
-      {
-        continue;
-      }
-      // Check element pattern for Repeated/RepeatedNull
-      if let Some(ref elem_pat) = seq.element_pattern
-        && !seq_args.iter().all(|a| matches_pattern_ast(a, elem_pat))
-      {
-        continue;
-      }
-      if args_match_with_sequences(&expr_args[count..], rest_pats) {
-        return true;
-      }
-    }
-    false
-  } else {
-    if expr_args.is_empty() {
-      return false;
-    }
-    matches_pattern_ast(&expr_args[0], pat)
-      && args_match_with_sequences(&expr_args[1..], rest_pats)
-  }
-}
-
-/// AST-based pattern matching for expressions.
-/// Supports: Blank (_), named patterns (x_), head patterns (_Integer, _List, etc.),
-/// Except, Alternatives, and literal matching.
+/// Whether `expr` matches `pattern`: the canonical matcher without the
+/// bindings, so repeated names (`{x_, x_}`) and conditions behave as in
+/// `MatchQ`.
 pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
-  match pattern {
-    // Blank pattern: _ matches anything
-    Expr::Pattern {
-      name: _,
-      head: None,
-      ..
-    } => true,
-    // Head-constrained pattern: _Integer, _List, etc.
-    Expr::Pattern {
-      name: _,
-      head: Some(h),
-      ..
-    } => get_expr_head_str(expr) == h,
-    // PatternTest: _?test or x_?test — matches if test[expr] is True
-    Expr::PatternTest { test, .. } => {
-      let test_result = match test.as_ref() {
-        Expr::Identifier(func_name) => {
-          let call = Expr::FunctionCall {
-            name: func_name.clone(),
-            args: vec![expr.clone()].into(),
-          };
-          crate::evaluator::evaluate_expr_to_expr(&call).ok()
-        }
-        Expr::Function { body } => {
-          // Anonymous function: substitute slots in the body (not the Function wrapper)
-          let substituted =
-            crate::syntax::substitute_slots(body, std::slice::from_ref(expr));
-          crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
-        }
-        _ => {
-          // General expression used as function: call (test)[expr]
-          let call_str =
-            format!("({})[{}]", expr_to_string(test), expr_to_string(expr));
-          crate::interpret(&call_str).ok().map(|r| {
-            if r == "True" {
-              bool_expr(true)
-            } else {
-              bool_expr(false)
-            }
-          })
-        }
-      };
-      matches!(test_result, Some(Expr::Identifier(ref s)) if s == "True")
-    }
-    // Blank[] or Blank[h] as FunctionCall (unevaluated form)
-    Expr::FunctionCall { name, args } if name == "Blank" => match args.len() {
-      0 => true,
-      1 => {
-        if let Expr::Identifier(h) = &args[0] {
-          get_expr_head_str(expr) == h
-        } else {
-          false
-        }
-      }
-      _ => false,
-    },
-    // Pattern[name, blank] as FunctionCall (unevaluated form)
-    Expr::FunctionCall { name, args }
-      if name == "Pattern" && args.len() == 2 =>
-    {
-      matches_pattern_ast(expr, &args[1])
-    }
-    // Identifier patterns like "_", "_Integer", "_List", etc.
-    Expr::Identifier(s) if s == "_" => true,
-    Expr::Identifier(s) if s.starts_with('_') => {
-      let head = &s[1..];
-      get_expr_head_str(expr) == head
-    }
-    // HoldPattern[p] matches what p matches; it only keeps p from evaluating
-    Expr::FunctionCall { name, args }
-      if name == "HoldPattern" && args.len() == 1 =>
-    {
-      matches_pattern_ast(expr, &args[0])
-    }
-    // Verbatim[expr] - matches literally, not treating contents as patterns
-    Expr::FunctionCall { name, args }
-      if name == "Verbatim" && args.len() == 1 =>
-    {
-      expr_to_string(expr) == expr_to_string(&args[0])
-    }
-    // Except[c] - matches anything that doesn't match c
-    // Except[c, pattern] - matches pattern but not c
-    Expr::FunctionCall { name, args }
-      if name == "Except" && (args.len() == 1 || args.len() == 2) =>
-    {
-      if args.len() == 2 {
-        // Except[c, pattern] - matches pattern but not c
-        matches_pattern_ast(expr, &args[1])
-          && !matches_pattern_ast(expr, &args[0])
-      } else {
-        !matches_pattern_ast(expr, &args[0])
-      }
-    }
-    // Alternatives: a | b - matches if either side matches
-    Expr::BinaryOp {
-      op: BinaryOperator::Alternatives,
-      left,
-      right,
-    } => matches_pattern_ast(expr, left) || matches_pattern_ast(expr, right),
-    // Alternatives[a, b, ...] as FunctionCall - matches if any alternative matches
-    Expr::FunctionCall {
-      name: pat_name,
-      args: pat_args,
-    } if pat_name == "Alternatives" && !pat_args.is_empty() => {
-      pat_args.iter().any(|alt| matches_pattern_ast(expr, alt))
-    }
-    // Structural matching for lists: {_, _} matches {1, 2}
-    Expr::List(pat_items) => {
-      if let Expr::List(expr_items) = expr {
-        let has_seq = pat_items
-          .iter()
-          .any(|p| get_sequence_info_bool(p).is_some());
-        if has_seq {
-          args_match_with_sequences(expr_items, pat_items)
-        } else {
-          pat_items.len() == expr_items.len()
-            && pat_items
-              .iter()
-              .zip(expr_items.iter())
-              .all(|(p, e)| matches_pattern_ast(e, p))
-        }
-      } else {
-        false
-      }
-    }
-    // Condition[pattern, test] - matches if pattern matches AND test evaluates to True
-    Expr::FunctionCall {
-      name: pat_name,
-      args: pat_args,
-    } if pat_name == "Condition" && pat_args.len() == 2 => {
-      // Delegate to match_pattern which handles bindings and condition evaluation
-      crate::evaluator::pattern_matching::match_pattern(expr, pattern).is_some()
-    }
-    // Structural matching for function calls: f[_
-    Expr::FunctionCall {
-      name: pat_name,
-      args: pat_args,
-    } => {
-      if pat_name == "PatternTest" && pat_args.len() == 2 {
-        // `Except[0]?NumericQ` and friends — any pattern constrained by a
-        // test. Delegate rather than re-deriving the rules here.
-        crate::evaluator::pattern_matching::match_pattern(expr, pattern)
-          .is_some()
-      } else if pat_name == "Except" || pat_name == "PatternTest" {
-        // Already handled above or not a structural match
-        let pattern_str = expr_to_string(pattern);
-        let expr_str = expr_to_string(expr);
-        expr_str == pattern_str
-      } else if let Expr::FunctionCall {
-        name: expr_name,
-        args: expr_args,
-      } = expr
-      {
-        if pat_name != expr_name {
-          return false;
-        }
-        // If any pattern arg is a Condition wrapping a sequence pattern,
-        // delegate to the full match_pattern which handles condition evaluation
-        // with proper sequence bindings.
-        let has_condition_on_seq = pat_args.iter().any(|p| {
-          if let Expr::FunctionCall { name: cn, args: ca } = p
-            && cn == "Condition"
-            && ca.len() == 2
-          {
-            get_sequence_info_bool(&ca[0]).is_some()
-          } else {
-            false
-          }
-        });
-        if has_condition_on_seq {
-          return crate::evaluator::pattern_matching::match_pattern(
-            expr, pattern,
-          )
-          .is_some();
-        }
-        let has_seq =
-          pat_args.iter().any(|p| get_sequence_info_bool(p).is_some());
-        if has_seq {
-          args_match_with_sequences(expr_args, pat_args)
-        } else {
-          pat_args.len() == expr_args.len()
-            && pat_args
-              .iter()
-              .zip(expr_args.iter())
-              .all(|(p, e)| matches_pattern_ast(e, p))
-        }
-      } else {
-        false
-      }
-    }
-    // Structural matching for BinaryOp: x^n_ matches x^2, etc.
-    // (Alternatives BinaryOp is already handled above)
-    Expr::BinaryOp {
-      op: pat_op,
-      left: pat_left,
-      right: pat_right,
-    } => {
-      if let Expr::BinaryOp {
-        op: expr_op,
-        left: expr_left,
-        right: expr_right,
-      } = expr
-      {
-        pat_op == expr_op
-          && matches_pattern_ast(expr_left, pat_left)
-          && matches_pattern_ast(expr_right, pat_right)
-      } else {
-        false
-      }
-    }
-    // Structural matching for UnaryOp
-    Expr::UnaryOp {
-      op: pat_op,
-      operand: pat_operand,
-    } => {
-      if let Expr::UnaryOp {
-        op: expr_op,
-        operand: expr_operand,
-      } = expr
-      {
-        pat_op == expr_op && matches_pattern_ast(expr_operand, pat_operand)
-      } else {
-        false
-      }
-    }
-    // Any other shape holding a pattern (`_ -> 2`, `x_ == y_`, an
-    // association or a curried call with blanks) goes to the full matcher;
-    // without one it is a literal, compared as written.
-    _ if crate::evaluator::pattern_matching::contains_pattern(pattern) => {
-      crate::evaluator::pattern_matching::match_pattern(expr, pattern).is_some()
-    }
-    _ => {
-      let pattern_str = expr_to_string(pattern);
-      let expr_str = expr_to_string(expr);
-      expr_str == pattern_str
-    }
-  }
+  crate::evaluator::pattern_matching::match_pattern(expr, pattern).is_some()
 }
 
 /// AST-based Position: find positions of elements matching a pattern,
@@ -2119,7 +1662,25 @@ pub fn pick_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  pick_recursive(list, sel, pattern)
+  match pick_step(list, sel, pattern)? {
+    PickStep::Keep(result) => Ok(result),
+    // A selector that does not match at the top drops everything.
+    PickStep::Dropped => Ok(call("Sequence", vec![])),
+    PickStep::Incompatible => {
+      crate::emit_message(&crate::syntax::format_message_pieces(&[
+        crate::syntax::MessagePiece::Text(
+          "Pick::incomp: Expressions ".to_string(),
+        ),
+        crate::syntax::MessagePiece::Expr(list),
+        crate::syntax::MessagePiece::Text(" and ".to_string()),
+        crate::syntax::MessagePiece::Expr(sel),
+        crate::syntax::MessagePiece::Text(
+          " have incompatible shapes.".to_string(),
+        ),
+      ]));
+      Ok(unevaluated("Pick", args))
+    }
+  }
 }
 
 /// The element slice of any non-atomic expression. The selector's own head is
@@ -2134,64 +1695,65 @@ fn pick_children(expr: &Expr) -> Option<&[Expr]> {
   }
 }
 
-fn is_container(expr: &Expr) -> bool {
-  matches!(expr, Expr::List(_) | Expr::FunctionCall { .. })
+/// One step of Pick: a selector that matches keeps `list` whole; otherwise
+/// an atomic `list` or selector is dropped, and two expressions of equal
+/// length are picked from element by element (any length mismatch below
+/// makes the shapes incompatible).
+enum PickStep {
+  Keep(Expr),
+  Dropped,
+  Incompatible,
 }
 
-fn pick_recursive(
+fn pick_step(
   list: &Expr,
   sel: &Expr,
   pattern: Option<&Expr>,
-) -> Result<Expr, InterpreterError> {
-  // Pick[assoc, sel] / Pick[assoc, sel, patt] — the selector is parallel to the
-  // association's values; keep the matching key->value pairs as a
-  // sub-association.
-  if let Expr::Association(pairs) = list
-    && let Some(sel_items) = pick_children(sel)
-    && pairs.len() == sel_items.len()
-  {
+) -> Result<PickStep, InterpreterError> {
+  if matches_selector(sel, pattern) {
+    return Ok(PickStep::Keep(list.clone()));
+  }
+  let Some(sel_items) = pick_children(sel) else {
+    return Ok(PickStep::Dropped);
+  };
+  // The selector runs parallel to an association's values; the matching
+  // key -> value pairs are kept.
+  if let Expr::Association(pairs) = list {
+    if pairs.len() != sel_items.len() {
+      return Ok(PickStep::Incompatible);
+    }
     let mut result: Vec<(Expr, Expr)> = Vec::new();
     for ((k, v), s) in pairs.iter().zip(sel_items.iter()) {
-      if matches_selector(s, pattern) {
-        result.push((k.clone(), v.clone()));
+      match pick_step(v, s, pattern)? {
+        PickStep::Keep(v) => result.push((k.clone(), v)),
+        PickStep::Dropped => {}
+        PickStep::Incompatible => return Ok(PickStep::Incompatible),
       }
     }
-    return Ok(Expr::Association(result));
+    return Ok(PickStep::Keep(Expr::Association(result)));
   }
-
-  // General case: `list` is a List or any head[...] and `sel` has the same
-  // length. Elements are matched by position; a nested selector element (itself
-  // a container) recurses, otherwise the element is kept when the selector
-  // matches. The result keeps `list`'s head.
-  if let (Some(list_items), Some(sel_items)) =
-    (pick_children(list), pick_children(sel))
-    && list_items.len() == sel_items.len()
-  {
-    let mut result = Vec::new();
-    for (item, s) in list_items.iter().zip(sel_items.iter()) {
-      if is_container(item) && is_container(s) {
-        result.push(pick_recursive(item, s, pattern)?);
-      } else if matches_selector(s, pattern) {
-        result.push(item.clone());
-      }
+  let Some(list_items) = pick_children(list) else {
+    return Ok(PickStep::Dropped);
+  };
+  if list_items.len() != sel_items.len() {
+    return Ok(PickStep::Incompatible);
+  }
+  let mut result = Vec::new();
+  for (item, s) in list_items.iter().zip(sel_items.iter()) {
+    match pick_step(item, s, pattern)? {
+      PickStep::Keep(e) => result.push(e),
+      PickStep::Dropped => {}
+      PickStep::Incompatible => return Ok(PickStep::Incompatible),
     }
-    return Ok(match list {
-      Expr::FunctionCall { name, .. } => Expr::FunctionCall {
-        name: name.clone(),
-        args: result.into(),
-      },
-      _ => Expr::List(result.into()),
-    });
   }
-
-  Ok(call(
-    "Pick",
-    if let Some(p) = pattern {
-      vec![list.clone(), sel.clone(), p.clone()]
-    } else {
-      vec![list.clone(), sel.clone()]
+  // The result keeps `list`'s head.
+  Ok(PickStep::Keep(match list {
+    Expr::FunctionCall { name, .. } => Expr::FunctionCall {
+      name: name.clone(),
+      args: result.into(),
     },
-  ))
+    _ => Expr::List(result.into()),
+  }))
 }
 
 fn matches_selector(sel: &Expr, pattern: Option<&Expr>) -> bool {

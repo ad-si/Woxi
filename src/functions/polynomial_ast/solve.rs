@@ -7142,10 +7142,15 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Otherwise keep the solution unless an inequality is definitely
           // violated.
           let ineq_false = |ineq: &Expr, replacement: &Expr| -> bool {
+            // Quietly: comparing a complex candidate reports ::nord, but
+            // such a candidate is simply ruled out below.
             let decide = |value: &Expr| -> Option<bool> {
               let subst =
                 crate::syntax::substitute_variable(ineq, &var_name, value);
-              match crate::evaluator::evaluate_expr_to_expr(&subst) {
+              crate::push_quiet();
+              let verdict = crate::evaluator::evaluate_expr_to_expr(&subst);
+              crate::pop_quiet();
+              match verdict {
                 Ok(Expr::Identifier(ref s)) if s == "False" => Some(true),
                 Ok(Expr::Identifier(ref s)) if s == "True" => Some(false),
                 _ => None,
