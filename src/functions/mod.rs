@@ -174,6 +174,8 @@ pub mod wxf_ast;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod xlsx_ast;
 pub mod xml_ast;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod zmtp;
 pub mod ztransform_ast;
 
 // Re-export all function implementations

@@ -2797,6 +2797,14 @@ fn evaluate_expr_to_expr_uncached(
           }
           return Ok(new_val);
         }
+        // AssociateTo on something other than a symbol: a part of a variable
+        // is updated through Part assignment; anything else is reported.
+        if name == "AssociateTo"
+          && args.len() == 2
+          && !matches!(&args[0], Expr::Identifier(_))
+        {
+          return associate_to_non_symbol(&args[0], &args[1]);
+        }
         // Special handling for AssociateTo - x = Append[x, key -> val]
         if name == "AssociateTo"
           && args.len() == 2
@@ -2853,6 +2861,13 @@ fn evaluate_expr_to_expr_uncached(
                   return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
                 }
               }
+            }
+            None => {
+              crate::emit_message(&format!(
+                "AssociateTo::blnoval: The symbol {var_name} at position 1 \
+                 should have an immediate value defined."
+              ));
+              return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
             }
             _ => {
               return Ok(call("AssociateTo", vec![args[0].clone(), rule]));
@@ -6059,4 +6074,72 @@ pub(crate) fn with_local_iterators<T>(
     crate::evaluator::symbol_values::restore_symbol_values(s);
   }
   result
+}
+
+/// `AssociateTo[target, rules]` where `target` is not a symbol. A part of a
+/// variable (`x[[1]]`) is updated as `x[[1]] = Append[x[[1]], rules]`, and the
+/// variable's new value is the result, as in wolframscript. Anything else is
+/// reported the way wolframscript reports it: a number is not a variable, an
+/// expression with a protected head (a list, an assignment) cannot be
+/// written to, and any other expression is not an association.
+fn associate_to_non_symbol(
+  target: &Expr,
+  rules: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let rules = evaluate_expr_to_expr(rules)?;
+  let unevaluated_call =
+    || call("AssociateTo", vec![target.clone(), rules.clone()]);
+  if let Expr::Part { .. } = target {
+    let mut root = target;
+    while let Expr::Part { expr, .. } = root {
+      root = expr;
+    }
+    if let Expr::Identifier(_) = root {
+      let assigned = evaluate_expr_to_expr(&call(
+        "Set",
+        vec![
+          target.clone(),
+          call("Append", vec![target.clone(), rules.clone()]),
+        ],
+      ))?;
+      if matches!(&assigned, Expr::FunctionCall { name, .. } if name == "Set") {
+        return Ok(unevaluated_call());
+      }
+      return evaluate_expr_to_expr(root);
+    }
+  }
+  let show =
+    |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+  let head = match crate::functions::expr_form::decompose_expr(target) {
+    crate::functions::expr_form::ExprForm::Composite { head, .. } => Some(head),
+    crate::functions::expr_form::ExprForm::Atom(_) => None,
+  };
+  match head {
+    None => crate::emit_message(&format!(
+      "AssociateTo::rvalue: {} is not a variable with a value, so its value \
+       cannot be changed.",
+      show(target)
+    )),
+    Some(head) => {
+      let protected = matches!(
+        crate::evaluator::evaluate_function_call_ast(
+          "Attributes",
+          &[Expr::Identifier(head.clone())],
+        ),
+        Ok(Expr::List(ref attrs))
+          if attrs.iter().any(|a| matches!(a, Expr::Identifier(n) if n == "Protected"))
+      );
+      if protected {
+        crate::emit_message(&format!(
+          "AssociateTo::wrsym: Symbol {head} is Protected."
+        ));
+      } else {
+        crate::emit_message(&format!(
+          "AssociateTo::invak: The argument {} is not a valid Association.",
+          show(target)
+        ));
+      }
+    }
+  }
+  Ok(unevaluated_call())
 }

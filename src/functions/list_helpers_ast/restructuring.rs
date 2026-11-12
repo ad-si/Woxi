@@ -1397,7 +1397,8 @@ pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rspec = || {
     crate::emit_message(&format!(
       "Riffle::rspec: The third argument {} should be a positive integer or a list with three integers.",
-      show(&args[2])
+      // The message quotes the argument as text (`5 ;; 3`).
+      crate::syntax::rendering_to_string_output(|| show(&args[2]))
     ));
     Ok(original())
   };

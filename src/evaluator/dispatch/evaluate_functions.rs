@@ -2853,6 +2853,15 @@ fn evaluate_function_call_ast_inner(
     }
     let render =
       |e: &Expr| crate::syntax::format_expr(e, crate::syntax::ExprForm::Output);
+    // SetOptions[sock, name -> value, …] sets socket options. Only loose
+    // rules qualify; a list of them is the generic "not a symbol" case.
+    if let Some(uuid) =
+      crate::functions::socket_ast::socket_object_uuid(&args[0])
+      && let Some(result) =
+        crate::functions::socket_ast::socket_set_options(&uuid, &args[1..])
+    {
+      return Ok(result);
+    }
     let Expr::Identifier(head) = &args[0] else {
       crate::emit_message(&format!(
         "SetOptions::sstm: Argument {} is not a symbol or a stream.",
@@ -11761,6 +11770,26 @@ fn evaluate_function_call_ast_inner(
         return Ok(unevaluated(name, args));
       }
     };
+    // The data must be a vector or a matrix: rows of one length, or no
+    // rows at all.
+    let row_lengths: Vec<Option<usize>> = items
+      .iter()
+      .map(|e| match e {
+        Expr::List(row) => Some(row.len()),
+        _ => None,
+      })
+      .collect();
+    let vector = row_lengths.iter().all(Option::is_none);
+    let matrix = row_lengths.first().is_some_and(Option::is_some)
+      && row_lengths.iter().all(|l| *l == row_lengths[0]);
+    if !vector && !matrix {
+      crate::emit_message(&format!(
+        "MovingAverage::vecmat: Argument {} at position 1 is neither a \
+         nonempty vector nor a nonempty matrix.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+      return Ok(unevaluated(name, args));
+    }
     let r = window.len();
     if r > n {
       crate::emit_message(&format!(

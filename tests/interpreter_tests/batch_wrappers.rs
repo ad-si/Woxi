@@ -12609,3 +12609,23 @@ mod nearest_function_with_options {
     assert_eq!(interpret("Nearest[{1, 5, 9, 12}][6, 2]").unwrap(), "{5, 9}");
   }
 }
+
+mod constant_array_sharing {
+  use super::*;
+
+  // The rows of a constant array share one copy-on-write list; changing one
+  // element must still leave every other row and element as it was.
+  #[test]
+  fn shared_rows_copy_on_write() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "x = ConstantArray[{1, 0, 0}, {300, 300}]; x[[3, 4, 2]] = 7; \
+         y = x; y[[1, 1]] = {9, 9, 9}; \
+         {x[[3, 4]], x[[3, 5]], x[[4, 4]], x[[1, 1]], y[[1, 1]], Total[x, 3]}"
+      )
+      .unwrap(),
+      "{{1, 7, 0}, {1, 0, 0}, {1, 0, 0}, {1, 0, 0}, {9, 9, 9}, 90007}"
+    );
+  }
+}

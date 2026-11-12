@@ -457,14 +457,10 @@ pub fn key_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(p) => sorted.sort_by(|a, b| {
           crate::functions::list_helpers_ast::comparator_cmp(p, &a.0, &b.0)
         }),
+        // Keys in canonical order, as Sort orders them: numbers before
+        // strings before symbols, letters case-insensitively.
         None => sorted.sort_by(|a, b| {
-          let ka = expr_to_string(&a.0);
-          let kb = expr_to_string(&b.0);
-          if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
-            na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
-          } else {
-            ka.cmp(&kb)
-          }
+          crate::functions::list_helpers_ast::sorting::canonical_cmp(&a.0, &b.0)
         }),
       }
       Ok(Expr::Association(sorted))
@@ -605,8 +601,17 @@ pub fn association_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("AssociationThread", args));
   }
 
-  let items: Vec<(Expr, Expr)> = keys.into_iter().zip(values).collect();
-  Ok(Expr::Association(items))
+  // Built as Association[{k -> v, …}], so a repeated key keeps its first
+  // position and its last value, as in any association.
+  let rules: Vec<Expr> = keys
+    .into_iter()
+    .zip(values)
+    .map(|(k, v)| rule_expr(k, v))
+    .collect();
+  crate::evaluator::evaluate_function_call_ast(
+    "Association",
+    &[Expr::List(rules.into())],
+  )
 }
 
 /// Merge[{assoc1, assoc2, ...}, f] - Merges associations, applying f to conflicting values
@@ -773,11 +778,17 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // Keys compare structurally (a string key "a" must not match a symbol a).
-  let keep_keys: Vec<String> = match &args[1] {
+  // Keys compare structurally (a string key "a" must not match a symbol a);
+  // a key asked for twice is taken once, at its last position
+  // (KeyTake[<|a -> 1, b -> 2|>, {b, a, b}] is <|a -> 1, b -> 2|>).
+  let mut keep_keys: Vec<String> = match &args[1] {
     Expr::List(items) => items.iter().map(expr_to_string).collect(),
     other => vec![expr_to_string(other)],
   };
+  let mut seen = std::collections::HashSet::new();
+  keep_keys.reverse();
+  keep_keys.retain(|k| seen.insert(k.clone()));
+  keep_keys.reverse();
 
   match &args[0] {
     Expr::Association(items) => {

@@ -11222,10 +11222,12 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
   }
   let negative = f.is_sign_negative();
   let sign = if negative { "-" } else { "" };
-  // Round to 6 significant figures: `{:.5e}` yields one integer digit plus five
-  // fractional digits (six total), with proper round-half-to-even carrying that
-  // can bump the exponent (`999999.6` → `1.00000e6`).
-  let sci = format!("{:.5e}", f.abs());
+  // Round to 6 significant figures the way wolframscript displays them (half
+  // up on the shortest digits, see `round_shortest_digits`); `{:.5e}` then
+  // writes the rounded value, already carried into the exponent when it
+  // overflowed (`999999.6` → `1.00000e6`).
+  let rounded = crate::functions::string_ast::round_shortest_digits(f.abs(), 6);
+  let sci = format!("{rounded:.5e}");
   let (mantissa_s, exp_s) = sci.split_once('e').unwrap_or((&sci, "0"));
   let exp: i64 = exp_s.parse().unwrap_or(0);
   let digits: String =

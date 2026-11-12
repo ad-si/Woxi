@@ -4322,15 +4322,40 @@ mod arithmetic_geometric_mean {
     );
   }
 
+  // Machine AGM is plain double iteration, as in wolframscript — including
+  // where that is an ulp off the correctly rounded value.
   #[test]
   fn machine_real_values() {
     assert_eq!(
-      interpret("ArithmeticGeometricMean[1.8, 1.2]").unwrap(),
-      "1.4848082617417826"
+      interpret(
+        "ToString[{ArithmeticGeometricMean[1.8, 1.2], \
+          ArithmeticGeometricMean[3.0, 7.0], ArithmeticGeometricMean[12, 3.9], \
+          ArithmeticGeometricMean[3.9, 9/5], ArithmeticGeometricMean[-2.5, -7.25]}, \
+          InputForm]"
+      )
+      .unwrap(),
+      "{1.4848082617417828, 4.789013583140951, 7.385115155519321, \
+       2.7488502874981866, -4.560944047677555}"
     );
+  }
+
+  #[test]
+  fn an_underflowing_product_gives_zero() {
     assert_eq!(
-      interpret("ArithmeticGeometricMean[3.0, 7.0]").unwrap(),
-      "4.789013583140952"
+      interpret("ArithmeticGeometricMean[1.*^-200, 2.*^-200]").unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn an_overflowing_product_is_rescaled() {
+    assert_eq!(
+      interpret(
+        "ToString[{ArithmeticGeometricMean[1.*^200, 3.*^200], \
+          ArithmeticGeometricMean[1.*^300, 1.*^308]}, InputForm]"
+      )
+      .unwrap(),
+      "{1.8636167832448965*^200, 7.93052103343453*^306}"
     );
   }
 }
@@ -7115,21 +7140,18 @@ fn agm_rounds_after_convergence_without_intermediate_overflow() {
     ("ArithmeticGeometricMean[3.9,9/5]", "2.7488502874981866"),
     ("ArithmeticGeometricMean[3.9,1.8]", "2.7488502874981866"),
     ("ArithmeticGeometricMean[-3.9,-1.8]", "-2.7488502874981866"),
+    // The product underflows in double iteration, as in wolframscript.
+    ("ArithmeticGeometricMean[1.*^-200,2.*^-200]", "0."),
+    (
+      "ArithmeticGeometricMean[1.*^-100,2.*^-100]",
+      "1.456791031046907*^-100",
+    ),
+    // The product overflows, so the iteration is rescaled.
+    (
+      "ArithmeticGeometricMean[1.*^200,2.*^200]",
+      "1.4567910310469068*^200",
+    ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
-  }
-  for exponent in [-200, -100, 200] {
-    let code =
-      format!("ArithmeticGeometricMean[1.*^{exponent},2.*^{exponent}]");
-    let result = interpret(&code)
-      .unwrap()
-      .replace("*^", "e")
-      .parse::<f64>()
-      .unwrap();
-    let expected = 1.4567910310469068 * 10f64.powi(exponent);
-    assert!(
-      (result / expected - 1.0).abs() <= 2.0 * f64::EPSILON,
-      "{code}: {result}"
-    );
   }
 }
