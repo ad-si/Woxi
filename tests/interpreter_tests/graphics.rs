@@ -15495,6 +15495,83 @@ mod plot3d {
       );
     }
 
+    // Regression: a curve `ParametricPlot` ignored `RegionFunction` and
+    // drew the whole curve. Only the stretches inside the region are kept,
+    // each its own `Line` ending on the region's boundary.
+    #[test]
+    fn region_function_clips_curve() {
+      assert_eq!(
+        interpret(
+          "Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, x > 0]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{2., 0.}, {0., 2.}}, {{0., -2.}, {2., 0.}}}"
+      );
+    }
+
+    #[test]
+    fn region_function_keeps_only_points_inside() {
+      // Inside a disk and outside a smaller one, as for a Mohr diagram.
+      assert_eq!(
+        interpret(
+          "pts = Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, (x - 3/2)^2 + y^2 <= 25/4 \
+           && (x - 1/2)^2 + y^2 >= 9/4]], Line[p_] :> p, Infinity]; \
+           {Length[pts], AllTrue[Flatten[pts, 1], \
+           (#[[1]] - 3/2)^2 + #[[2]]^2 <= 25/4 + 10^-6 &]}"
+        )
+        .unwrap(),
+        "{2, True}"
+      );
+    }
+
+    // `RegionFunction` is called with the parameter as third argument.
+    #[test]
+    fn region_function_receives_parameter() {
+      assert_eq!(
+        interpret(
+          "Cases[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y, u}, u < Pi]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{1., 0.}, {-1., 0.}}}"
+      );
+    }
+
+    // Regression: the pieces of a plot curve broken by a gap were joined
+    // into one `Line` when the plot was taken apart as an expression.
+    #[test]
+    fn plot_gap_pieces_are_separate_lines() {
+      assert_eq!(
+        interpret(
+          "Cases[Plot[x, {x, -1, 1}, RegionFunction -> \
+           Function[{x, y}, Abs[x] > 1/2]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{-1., -1.}, {-0.5, -0.5}}, {{0.5, 0.5}, {1., 1.}}}"
+      );
+    }
+
+    #[test]
+    fn region_function_curve_in_show() {
+      // The clipped pieces stay separate when merged by `Show`: no chord
+      // is drawn across the gap.
+      assert_eq!(
+        interpret(
+          "StringCount[ExportString[Show[Graphics[Point[{0, 0}]], \
+           ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, x > 0]]], \"SVG\"], \
+           \"<polyline\"]"
+        )
+        .unwrap(),
+        "2"
+      );
+    }
+
     #[test]
     fn parametric_plot_circle() {
       insta::assert_snapshot!(export_svg(
