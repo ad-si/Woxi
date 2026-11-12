@@ -593,9 +593,19 @@ fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
 /// The `RegionFunction -> f` value of a curve plot's options, evaluated
 /// once; `None` when absent or the default `True &`.
 fn curve_region_function(opt_args: &[Expr]) -> Option<Expr> {
+  // Match the name before reading the value: reading a `:>` option
+  // evaluates it, which would fire e.g. an `EvaluationMonitor`.
   let value = opt_args.iter().find_map(|opt| {
-    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
-    (name == "RegionFunction").then(|| value.into_owned())
+    let (Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }) = opt
+    else {
+      return None;
+    };
+    if !matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RegionFunction")
+    {
+      return None;
+    }
+    let (_, value) = crate::functions::graphics::option_name_value(opt)?;
+    Some(value.into_owned())
   })?;
   if matches!(&value, Expr::Function { body }
     if matches!(body.as_ref(), Expr::Identifier(t) if t == "True"))
