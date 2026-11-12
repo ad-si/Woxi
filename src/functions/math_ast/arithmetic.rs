@@ -17351,6 +17351,44 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated("Subtract", args));
   }
+  // Subtract is Listable: lists are threaded over before any arithmetic,
+  // and lists of different lengths leave the call as it is (so it prints
+  // `{1, 2} - {a, b, c}`, unlike the operator form, which becomes a Plus).
+  match (&args[0], &args[1]) {
+    (Expr::List(a), Expr::List(b)) => {
+      if a.len() != b.len() {
+        crate::emit_message(&format!(
+          "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
+          crate::syntax::format_expr(
+            &unevaluated("Subtract", args),
+            crate::syntax::ExprForm::Output
+          )
+        ));
+        return Ok(unevaluated("Subtract", args));
+      }
+      let items = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| subtract_ast(&[x.clone(), y.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(items.into()));
+    }
+    (Expr::List(a), y) => {
+      let items = a
+        .iter()
+        .map(|x| subtract_ast(&[x.clone(), y.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(items.into()));
+    }
+    (x, Expr::List(b)) => {
+      let items = b
+        .iter()
+        .map(|y| subtract_ast(&[x.clone(), y.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(items.into()));
+    }
+    _ => {}
+  }
   // Subtract[a, b] = a + (-1 * b)
   if let Some(result) =
     crate::evaluator::expand_arith_shorthand("Subtract", args)

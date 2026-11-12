@@ -10175,6 +10175,28 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   };
   let is_output = form == ExprForm::Output;
 
+  // ToString's OutputForm text writes a span with its operator (`1 ;; 2`),
+  // although the printed display keeps the head form `Span[1, 2]`.
+  if is_output
+    && IN_TO_STRING_OUTPUT.with(std::cell::Cell::get)
+    && let Expr::FunctionCall { name, args } = expr
+    && name == "Span"
+    && (args.len() == 2 || args.len() == 3)
+  {
+    return args
+      .iter()
+      .map(|a| {
+        let s = fmt(a);
+        if matches!(a, Expr::FunctionCall { name: n, .. } if n == "Span") {
+          format!("({s})")
+        } else {
+          s
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(" ;; ");
+  }
+
   if let Some(rewritten) = operator_call_node(expr) {
     return format_expr(&rewritten, form);
   }

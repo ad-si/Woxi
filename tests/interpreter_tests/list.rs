@@ -26526,3 +26526,108 @@ mod drop_step_ranges {
     );
   }
 }
+
+mod list_edge_specs {
+  use super::*;
+
+  // A range whose end sits right before its start (in the step's
+  // direction) is empty whatever the step; anything else reversed is not.
+  #[test]
+  fn adjacent_reversed_ranges_are_empty() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[{Take[Range[6], {4, 3, 2}], Take[Range[6], {5, 6, -2}], \
+          Take[Range[6], {4, 2, 2}], Take[Range[6], {4, 6, -2}]}]"
+      )
+      .unwrap(),
+      "{{}, {}, Take[{1, 2, 3, 4, 5, 6}, {4, 2, 2}], \
+       Take[{1, 2, 3, 4, 5, 6}, {4, 6, -2}]}"
+    );
+  }
+
+  // TakeDrop reports a spec that does not fit as its own ::iseq.
+  #[test]
+  fn take_drop_reports_its_own_spec() {
+    clear_state();
+    let result = interpret_with_stdout("TakeDrop[{c, x}, 10]").unwrap();
+    assert_eq!(result.result, "TakeDrop[{c, x}, 10]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "TakeDrop::iseq: Invalid sequence specification 10 for an expression \
+         of length 2."
+          .to_string()
+      ]
+    );
+  }
+
+  // A refused Take or Drop keeps a span as it was written.
+  #[test]
+  fn a_refused_span_spec_is_kept() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[ToString[{Take[{{0}}, 1;;-3], Drop[{a}, 1;;5]}, InputForm]]"
+      )
+      .unwrap(),
+      "{Take[{{0}}, 1 ;; -3], Drop[{a}, 1 ;; 5]}"
+    );
+  }
+
+  // Subtract is Listable: lists of different lengths leave it unevaluated.
+  #[test]
+  fn subtract_threads_over_lists() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[{Subtract[{1, 2}, {a, b, c}], Subtract[{1, {2, 3}}, {a, {b}}], \
+        Subtract[3, {a, b}]}]"
+      )
+      .unwrap(),
+      "{{1, 2} - {a, b, c}, {1 - a, {2, 3} - {b}}, {3 - a, 3 - b}}"
+    );
+  }
+
+  // MinimalBy and MaximalBy rank non-numeric keys in canonical order.
+  #[test]
+  fn extremal_by_uses_canonical_order() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{MinimalBy[{f[1], f[1], a, 2, 0}, Head], MaximalBy[{f[1], a, 2}, Head], \
+          MinimalBy[{\"b\", \"a\", \"C\"}, Identity]}"
+      )
+      .unwrap(),
+      "{{f[1], f[1]}, {a}, {a}}"
+    );
+  }
+
+  // Ragged lists: ArrayPad pads them as vectors, Accumulate and
+  // MovingAverage refuse them.
+  #[test]
+  fn ragged_lists() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "{ArrayPad[{{1, 2}, {3}}, 1, x], Accumulate[{{1, 2}, {3}}], \
+        MovingAverage[{{1, 2}, {3}}, 2]}",
+    )
+    .unwrap();
+    assert_eq!(
+      result.result,
+      "{{x, {1, 2}, {3}, x}, Accumulate[{{1, 2}, {3}}], \
+       MovingAverage[{{1, 2}, {3}}, 2]}"
+    );
+    assert_eq!(
+      result.warnings,
+      vec![
+        "Accumulate::tdlen: Objects of unequal length in {{1, 2}, {3}} cannot \
+         be added."
+          .to_string(),
+        "MovingAverage::vecmat: Argument {{1, 2}, {3}} at position 1 is \
+         neither a nonempty vector nor a nonempty matrix."
+          .to_string()
+      ]
+    );
+  }
+}

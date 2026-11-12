@@ -542,8 +542,9 @@ pub fn most_ast(list: &Expr) -> Result<Expr, InterpreterError> {
 /// Emit the Take::take / Drop::drop message for an invalid position range.
 /// The 0-based positions `{start, end, step}` picks from a list of `len`
 /// elements, as Take and Drop read the spec, or `None` when it does not fit
-/// the list (which they report). Negative endpoints count from the end. An
-/// adjacent reversed range (end == start - step) is empty; an empty span may
+/// the list (which they report). Negative endpoints count from the end. A
+/// range whose end sits right before its start (in the step's direction) is
+/// empty; an empty span may
 /// sit one past either end — `Take[list, {n + 1, -1}]` on a list of n
 /// elements is `{}`, which is how a quicksort partition asks for
 /// "everything after the last pivot".
@@ -558,7 +559,10 @@ pub(crate) fn step_range_positions(
   }
   let real_start = if start < 0 { len + start + 1 } else { start };
   let real_end = if end < 0 { len + end + 1 } else { end };
-  let adjacent_empty = real_end == real_start - step;
+  // Empty when the end sits right before the start in the step's
+  // direction, whatever the step's size: {4, 3, 2} and {5, 6, -2} take
+  // nothing, {4, 2, 2} and {4, 6, -2} do not fit.
+  let adjacent_empty = real_end == real_start - step.signum();
   let in_range =
     real_start >= 1 && real_end >= 1 && real_start <= len && real_end <= len;
   let empty_in_range = real_start >= 1
@@ -758,9 +762,17 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(n, Expr::Identifier(name) if name == "All") {
     return Ok(list.clone());
   }
-  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form; a take it
+  // refuses keeps the span as it was written.
   if let Some(spec) = span_to_take_spec(n) {
-    return take_ast(list, &spec);
+    let result = take_ast(list, &spec)?;
+    if let Expr::FunctionCall { name, args } = &result
+      && name == "Take"
+      && args.len() == 2
+    {
+      return Ok(call("Take", vec![args[0].clone(), n.clone()]));
+    }
+    return Ok(result);
   }
 
   // Handle associations: Take on values, reconstruct association
@@ -910,9 +922,17 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if let Some(flat) = crate::evaluator::flatten_alternatives_binop(list) {
     return drop_ast(&flat, n);
   }
-  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form.
+  // A Span spec (i;;j;;k) maps onto the {i, j, k} list form; a drop it
+  // refuses keeps the span as it was written.
   if let Some(spec) = span_to_take_spec(n) {
-    return drop_ast(list, &spec);
+    let result = drop_ast(list, &spec)?;
+    if let Expr::FunctionCall { name, args } = &result
+      && name == "Drop"
+      && args.len() == 2
+    {
+      return Ok(call("Drop", vec![args[0].clone(), n.clone()]));
+    }
+    return Ok(result);
   }
   // Handle associations: convert to rules, apply Drop, convert back
   if let Expr::Association(pairs) = list {

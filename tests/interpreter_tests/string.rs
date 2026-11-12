@@ -16034,3 +16034,19 @@ mod padded_form_scientific {
     );
   }
 }
+
+mod to_string_span {
+  use super::*;
+
+  // ToString's text writes a span with its operator; the display keeps
+  // the head form.
+  #[test]
+  fn to_string_writes_spans_with_the_operator() {
+    clear_state();
+    assert_eq!(
+      interpret("{ToString[{1 ;; 2}], ToString[f[1 ;; -1 ;; 2]], {1 ;; 2}}")
+        .unwrap(),
+      "{{1 ;; 2}, f[1 ;; -1 ;; 2], {Span[1, 2]}}"
+    );
+  }
+}
