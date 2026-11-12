@@ -1209,6 +1209,38 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
       Some(parts.join("\n"))
     }
+    // `Labeled[content, label]` stacks its label below (the default,
+    // `Bottom`) or above (`Top`) the content, like a two-row `Column` —
+    // the same layout `expr_to_svg_markup_lines` gives a `PlotLabel`.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled"
+        && (args.len() == 2 || args.len() == 3)
+        && matches!(args.get(2), None | Some(Expr::Identifier(_))) =>
+    {
+      let on_top = match args.get(2) {
+        None => false,
+        Some(Expr::Identifier(p)) if p == "Bottom" => false,
+        Some(Expr::Identifier(p)) if p == "Top" => true,
+        // Side positions set the label beside the content on one line.
+        Some(Expr::Identifier(p)) if p == "Left" || p == "Right" => {
+          let content = expr_to_label(&args[0]).unwrap_or_default();
+          let label = expr_to_label(&args[1]).unwrap_or_default();
+          return Some(if p == "Left" {
+            format!("{label} {content}")
+          } else {
+            format!("{content} {label}")
+          });
+        }
+        _ => return None,
+      };
+      let content = expr_to_label(&args[0]).unwrap_or_default();
+      let label = expr_to_label(&args[1]).unwrap_or_default();
+      Some(if on_top {
+        format!("{label}\n{content}")
+      } else {
+        format!("{content}\n{label}")
+      })
+    }
     // A mathematical constant is set as its glyph (`π`), the way a graphic's
     // text does.
     Expr::Constant(name) => Some(

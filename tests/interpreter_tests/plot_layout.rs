@@ -1070,6 +1070,104 @@ mod tiny_values {
   }
 }
 
+mod labeled_frame_label {
+  use super::*;
+
+  /// The text of every `<text>` element (and its `<tspan>` lines), in order.
+  fn text_lines(svg: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for chunk in svg.split("<text ").skip(1) {
+      let body =
+        &chunk[chunk.find('>').unwrap() + 1..chunk.find("</text>").unwrap()];
+      for part in body.split('<') {
+        let text = part.rsplit('>').next().unwrap_or(part).trim();
+        if !text.is_empty() && !text.starts_with('/') {
+          out.push(text.to_string());
+        }
+      }
+    }
+    out
+  }
+
+  #[test]
+  fn labeled_stacks_its_label_below_the_content() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"a\", \"b\", \
+       Labeled[NumberForm[88.5321, {5, 1}], \"mileage\"], \"\"}]",
+    );
+    let lines = text_lines(&svg);
+    assert!(!lines.iter().any(|l| l.contains("Labeled")), "{lines:?}");
+    let value = lines.iter().position(|l| l == "88.5").expect("value");
+    assert_eq!(lines.get(value + 1).map(String::as_str), Some("mileage"));
+  }
+
+  #[test]
+  fn labeled_top_stacks_its_label_above_the_content() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, \
+       FrameLabel -> {Labeled[\"t\", \"unit\", Top], \"y\"}]",
+    );
+    let lines = text_lines(&svg);
+    let label = lines.iter().position(|l| l == "unit").expect("label");
+    assert_eq!(lines.get(label + 1).map(String::as_str), Some("t"));
+  }
+
+  #[test]
+  fn labeled_axes_label_stacks_too() {
+    let svg =
+      svg_of("Plot[x, {x, 0, 1}, AxesLabel -> {Labeled[\"t\", \"s\"], \"y\"}]");
+    let lines = text_lines(&svg);
+    assert!(!lines.iter().any(|l| l.contains("Labeled")), "{lines:?}");
+    let content = lines.iter().position(|l| l == "t").expect("content");
+    assert_eq!(lines.get(content + 1).map(String::as_str), Some("s"));
+  }
+}
+
+mod base_style {
+  use super::*;
+
+  fn font_sizes(svg: &str) -> Vec<f64> {
+    svg
+      .split("font-size=\"")
+      .skip(1)
+      .map(|s| s[..s.find('"').unwrap()].parse::<f64>().unwrap())
+      .collect()
+  }
+
+  #[test]
+  fn base_style_font_size_reaches_every_label() {
+    for spec in ["12", "{12}", "{FontSize -> 12}"] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {{\"a\", \"b\"}}, \
+         BaseStyle -> {spec}]"
+      ));
+      let sizes = font_sizes(&svg);
+      assert_ne!(sizes, [] as [f64; 0]);
+      assert!(
+        sizes.iter().all(|s| (s - 120.0).abs() < 1e-6),
+        "{spec}: {sizes:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn label_style_overrides_base_style_whichever_comes_first() {
+    for opts in [
+      "BaseStyle -> 12, LabelStyle -> 14",
+      "LabelStyle -> 14, BaseStyle -> 12",
+    ] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, FrameLabel -> {{\"a\"}}, {opts}]"
+      ));
+      let sizes = font_sizes(&svg);
+      assert!(
+        sizes.iter().all(|s| (s - 140.0).abs() < 1e-6),
+        "{opts}: {sizes:?}"
+      );
+    }
+  }
+}
+
 mod clipped_plot_range_sampling {
   use super::*;
 
