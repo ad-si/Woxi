@@ -491,6 +491,10 @@ pub(crate) struct Decorations {
   pub axis_ticks: (Vec<LabelBox>, Vec<LabelBox>),
   /// The heights of the bottom/left/top/right `FrameLabel`s.
   pub frame_labels: [Option<f64>; 4],
+  /// The lengths of the bottom/left/top/right `FrameLabel`s along their
+  /// edge (the left and right ones run up the edge, rotated). A label
+  /// centered on an edge shorter than itself overhangs both its ends.
+  pub frame_label_lengths: [f64; 4],
   /// Width and height of the x and y `AxesLabel`.
   pub axes_labels: (Option<(f64, f64)>, Option<(f64, f64)>),
   /// Height of the `PlotLabel` band.
@@ -599,6 +603,14 @@ impl Decorations {
         }
         if let Some(lh) = self.frame_labels[edge] {
           room += FRAME_LABEL_GAP + lh;
+          let len = self.frame_label_lengths[edge];
+          if edge % 2 == 0 {
+            reach(L, (len - w) / 2.0);
+            reach(R, (len - w) / 2.0);
+          } else {
+            reach(B, (len - h) / 2.0);
+            reach(T, (len - h) / 2.0);
+          }
         }
         reach(side_of[edge], room);
       }
@@ -657,11 +669,12 @@ impl Decorations {
   }
 
   /// Solve the padding for an image `image_w` points wide whose plotting
-  /// area is `height_of(w)` tall when it is `w` wide.
+  /// area is `height_of(w, pad)` tall when it is `w` wide inside the
+  /// padding `pad`.
   pub(crate) fn solve(
     &self,
     image_w: f64,
-    height_of: impl Fn(f64) -> f64,
+    height_of: impl Fn(f64, &Padding) -> f64,
   ) -> Padding {
     let decorated = self.frame || self.axes.0 || self.axes.1;
     let (min, extra) = if decorated {
@@ -678,7 +691,7 @@ impl Decorations {
     };
     for _ in 0..12 {
       let w = (image_w - pad.left - pad.right).max(1.0);
-      let h = height_of(w).max(1.0);
+      let h = height_of(w, &pad).max(1.0);
       let e = self.extents(w, h);
       let next = Padding {
         left: e[0].max(min),
@@ -726,6 +739,18 @@ impl Decorations {
 /// Lines in a label string (`"a\nb"` has two).
 fn label_lines(text: &str) -> usize {
   text.split('\n').count()
+}
+
+/// The font size SVG label markup sets for all of its text
+/// (`<tspan font-size="12">…</tspan>` from `Style[label, 12]`), if any:
+/// the largest size of its `font-size` attributes.
+pub(crate) fn markup_font_size(markup: &str) -> Option<f64> {
+  markup
+    .split("font-size=\"")
+    .skip(1)
+    .filter_map(|rest| rest.split('"').next()?.parse::<f64>().ok())
+    .filter(|v| v.is_finite() && *v > 0.0)
+    .reduce(f64::max)
 }
 
 /// Width of a label string (box markup allowed) at `size` points.
@@ -908,10 +933,17 @@ pub(crate) fn plot_decorations(
       boxes(&y_ticks.majors, y, sx.then_some(origin.1)),
     );
   }
+  // A `Style[label, size]` label is set at its own size.
+  let font_of = |t: &str| markup_font_size(t).unwrap_or(label_font);
   let text_label = |t: &Option<String>| {
     t.as_ref()
       .filter(|t| !t.is_empty())
-      .map(|t| block_height(label_lines(t), label_font))
+      .map(|t| block_height(label_lines(t), font_of(t)))
+  };
+  let label_length = |t: &Option<String>| {
+    t.as_ref()
+      .filter(|t| !t.is_empty())
+      .map_or(0.0, |t| label_width(t, font_of(t)))
   };
   d.frame_labels = [
     text_label(&opts.frame_label_bottom).map(|h| {
@@ -924,6 +956,12 @@ pub(crate) fn plot_decorations(
     text_label(&opts.frame_label_left),
     text_label(&opts.frame_label_top),
     text_label(&opts.frame_label_right),
+  ];
+  d.frame_label_lengths = [
+    label_length(&opts.frame_label_bottom),
+    label_length(&opts.frame_label_left),
+    label_length(&opts.frame_label_top),
+    label_length(&opts.frame_label_right),
   ];
   if d.frame_labels[0].is_none() && bottom_graphic_h > 0.0 {
     d.frame_labels[0] = Some(bottom_graphic_h);
@@ -1073,7 +1111,7 @@ mod tests {
   #[test]
   fn framed_plot_padding_matches_wolfram() {
     let ar = 1.0 / f64::midpoint(1.0, 5f64.sqrt());
-    let pad = frame_sin().solve(360.0, |w| w * ar);
+    let pad = frame_sin().solve(360.0, |w, _| w * ar);
     // AbsoluteOptions[…, ImagePadding] in WL 15.
     assert!((pad.left - 23.204).abs() < 1e-3, "{pad:?}");
     assert!((pad.right - 1.5).abs() < 1e-9);
@@ -1084,9 +1122,44 @@ mod tests {
   }
 
   #[test]
+  fn frame_label_longer_than_its_edge_overhangs_both_ends() {
+    // A left `FrameLabel` 110 pt long on a frame 80 pt tall reaches 15 pt
+    // past the frame's top and bottom; the right `FrameLabel` the same on
+    // a frame half as wide as a long bottom label.
+    let mut d = frame_sin();
+    d.frame_labels[1] = Some(line_height(LABEL_FONT));
+    d.frame_label_lengths[1] = 110.0;
+    let e = d.extents(200.0, 80.0);
+    assert!((e[3] - 15.0).abs() < 1e-9, "{e:?}");
+    assert!(e[2] >= 15.0, "{e:?}");
+    d.frame_labels[0] = Some(line_height(LABEL_FONT));
+    d.frame_label_lengths[0] = 300.0;
+    let e = d.extents(200.0, 80.0);
+    assert!((e[0] - 50.0).abs() < 1e-9, "{e:?}");
+    assert!((e[1] - 50.0).abs() < 1e-9, "{e:?}");
+    // A label shorter than its edge adds nothing along it.
+    let mut short = frame_sin();
+    short.frame_labels[1] = Some(line_height(LABEL_FONT));
+    short.frame_label_lengths[1] = 40.0;
+    assert_eq!(
+      short.extents(200.0, 80.0)[3],
+      frame_sin().extents(200.0, 80.0)[3]
+    );
+  }
+
+  #[test]
+  fn markup_font_size_reads_the_largest_tspan_size() {
+    assert_eq!(
+      markup_font_size("<tspan font-size=\"12\">force</tspan>"),
+      Some(12.0)
+    );
+    assert_eq!(markup_font_size("plain"), None);
+  }
+
+  #[test]
   fn small_frame_pads_for_overhanging_end_labels() {
     let ar = 1.0 / f64::midpoint(1.0, 5f64.sqrt());
-    let pad = frame_sin().solve(180.0, |w| w * ar);
+    let pad = frame_sin().solve(180.0, |w, _| w * ar);
     assert!((pad.right - 3.496).abs() < 2e-3, "{pad:?}");
     assert!((pad.top - 0.849).abs() < 2e-3, "{pad:?}");
   }
