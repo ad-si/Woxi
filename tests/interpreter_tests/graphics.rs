@@ -8573,10 +8573,9 @@ mod plot3d {
             .split("fill=\"rgb(")
             .nth(1)
             .and_then(|c| c.split(')').next())
-            .map(|c| {
+            .map_or_default(|c| {
               c.split(',').filter_map(|v| v.trim().parse().ok()).collect()
-            })
-            .unwrap_or_default();
+            });
           if channels.len() != 3 {
             continue;
           }
@@ -16631,11 +16630,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "Graphics[{body}, PlotRange -> {{{{-4, 4}}, {{-4, 4}}}}, \
            ImagePadding -> None]"
         ));
-        svg
-          .split("points=\"")
-          .nth(1)
-          .map(|s| s.split('"').next().unwrap_or_default().to_string())
-          .unwrap_or_default()
+        svg.split("points=\"").nth(1).map_or_default(|s| {
+          s.split('"').next().unwrap_or_default().to_string()
+        })
       };
       // Reflection in the line y = x maps (2, 0) to (0, 2).
       assert_eq!(

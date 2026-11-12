@@ -329,7 +329,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         Some(names(&suppress_msgs))
       },
-      enable_spec.as_deref().map(names).unwrap_or_default(),
+      enable_spec.as_deref().map_or_default(names),
     );
   }
 
@@ -353,7 +353,7 @@ pub fn quiet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // from `$MessageList` (entries already there when the block started are
     // kept regardless of the filter).
     let off = names(&suppress_msgs);
-    let on = enable_spec.as_deref().map(names).unwrap_or_default();
+    let on = enable_spec.as_deref().map_or_default(names);
     let silenced = |name: &str| {
       (suppress_all || off.iter().any(|n| n == name))
         && !on.iter().any(|n| n == name)

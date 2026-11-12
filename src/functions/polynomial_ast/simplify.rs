@@ -4938,11 +4938,7 @@ fn is_provably_nonnegative_under_constraints(
   // For a constraint like x^2 + y^2 <= C and expression like
   // x^2 + y^2 - 2x - 4y + 7/2, decompose into quadratic + linear + constant
   // and use Cauchy-Schwarz to bound the linear part.
-  if check_nonneg_via_cauchy_schwarz(&expanded, &constraints) {
-    return true;
-  }
-
-  false
+  check_nonneg_via_cauchy_schwarz(&expanded, &constraints)
 }
 
 /// Use Cauchy-Schwarz inequality to prove an expression is non-negative

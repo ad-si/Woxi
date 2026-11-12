@@ -255,7 +255,6 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 # CityData deserializes bundled JSON in every build, including Python and
 # WASM. Do not rely on CLI dependencies to enable Serde's derive macros.
 serde = { version = "1", features = ["alloc", "derive"] }
-snailquote = "0.3.1"
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["full"], optional = true }
 uuid = { version = "1.29.0", features = ["v4"], optional = true }
