@@ -1543,6 +1543,27 @@ mod abort {
 mod quiet {
   use super::*;
 
+  // Repetitions are counted inside Quiet, but the General::stop counters
+  // are restored when the block ends: the next three messages still print.
+  #[test]
+  fn quieted_messages_do_not_use_up_the_stop_limit() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Quiet[I > 0; I > 0; I > 0]; I > 0; I > 0; I > 0; I > 0",
+    )
+    .unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Greater::nord: Invalid comparison with I attempted.",
+        "Greater::nord: Invalid comparison with I attempted.",
+        "Greater::nord: Invalid comparison with I attempted.",
+        "General::stop: Further output of Greater::nord will be suppressed \
+         during this calculation."
+      ]
+    );
+  }
+
   #[test]
   fn quiet_basic_no_message() {
     clear_state();
@@ -1960,8 +1981,8 @@ mod xor_logical {
     clear_state();
     assert_eq!(interpret("Xor[a, True]").unwrap(), " !a");
     assert_eq!(interpret("Xor[a, False]").unwrap(), "a");
-    assert_eq!(interpret("Xor[a, b, True]").unwrap(), " !(Xor[a, b])");
-    assert_eq!(interpret("Xor[a, b, c, True]").unwrap(), " !(Xor[a, b, c])");
+    assert_eq!(interpret("Xor[a, b, True]").unwrap(), " !Xor[a, b]");
+    assert_eq!(interpret("Xor[a, b, c, True]").unwrap(), " !Xor[a, b, c]");
   }
 
   // Xnor is the negation of Xor and keeps the Xnor head for multi-operand
@@ -1975,11 +1996,8 @@ mod xor_logical {
     assert_eq!(interpret("Xnor[a, True]").unwrap(), "a");
     assert_eq!(interpret("Xnor[a, False]").unwrap(), " !a");
     assert_eq!(interpret("Xnor[b, a]").unwrap(), "Xnor[a, b]");
-    assert_eq!(interpret("Xnor[a, b, True]").unwrap(), " !(Xnor[a, b])");
-    assert_eq!(
-      interpret("Xnor[a, b, c, True]").unwrap(),
-      " !(Xnor[a, b, c])"
-    );
+    assert_eq!(interpret("Xnor[a, b, True]").unwrap(), " !Xnor[a, b]");
+    assert_eq!(interpret("Xnor[a, b, c, True]").unwrap(), " !Xnor[a, b, c]");
   }
 }
 
@@ -5365,6 +5383,136 @@ mod module_keeps_block_variables {
       )
       .unwrap(),
       "1414214"
+    );
+  }
+}
+
+// Boolean and set edge cases found by differential fuzzing.
+mod boolean_fuzz_edge_cases {
+  use super::*;
+
+  // Equivalent, Majority and Xnor are Orderless; Nand and Nor hold their
+  // arguments and short-circuit.
+  #[test]
+  fn logical_connective_attributes() {
+    assert_eq!(
+      interpret(
+        "{Attributes[Equivalent], Attributes[Xnor], Attributes[Majority], \
+          Attributes[Nand], Attributes[Nor]}"
+      )
+      .unwrap(),
+      "{{Orderless, Protected}, {Orderless, Protected}, {Orderless, Protected}, \
+       {HoldAll, Protected}, {HoldAll, Protected}}"
+    );
+    assert_eq!(
+      interpret(
+        "{ToString[Equivalent[Nand[a, b], Implies[a, b]], InputForm], \
+          Nand[False, Print[x]], Nor[True, Print[y]]}"
+      )
+      .unwrap(),
+      "{Equivalent[Implies[a, b], Nand[a, b]], True, False}"
+    );
+  }
+
+  // Not, And and Or sort by head among other compound expressions.
+  #[test]
+  fn logical_expressions_sort_by_head() {
+    assert_eq!(
+      interpret(
+        "Sort[{!a, Implies[a, b], Nor[a, c], a && !a, a && b, Nand[a, b], b}]"
+      )
+      .unwrap(),
+      "{b, a && b, a &&  !a, Implies[a, b], Nand[a, b], Nor[a, c],  !a}"
+    );
+  }
+
+  // InputForm brackets a Xor/Nand/Nor/Xnor/Equivalent operand of &&, || and
+  // !; the printed form does not.
+  #[test]
+  fn connective_operands_in_input_form() {
+    assert_eq!(
+      interpret(
+        "ToString[Hold[a && Nor[b, c], a || Xor[b, c], a && Implies[b, c], \
+          !Xor[a, b], !Equivalent[a, b], !Implies[a, b]], InputForm]"
+      )
+      .unwrap(),
+      "Hold[a && (Nor[b, c]), a || (Xor[b, c]), a && Implies[b, c],  !(Xor[a, b]), \
+       \x20!(Equivalent[a, b]),  !Implies[a, b]]"
+    );
+    assert_eq!(
+      interpret("ToString[a || Xor[b, c]]").unwrap(),
+      "a || Xor[b, c]"
+    );
+    assert_eq!(
+      interpret("FullForm[a || Xor[b, c]]").unwrap(),
+      "FullForm[a || Xor[b, c]]"
+    );
+  }
+
+  // A one-literal clause strikes its complement from the other clauses.
+  #[test]
+  fn unit_literals_simplify_normal_forms() {
+    assert_eq!(
+      interpret(
+        "{BooleanConvert[(a || b) && !a, \"CNF\"], BooleanConvert[a || (!a && b && c)], \
+          LogicalExpand[a || (!a && b && c)], LogicalExpand[(!a || 1) || Equivalent[a, b]], \
+          BooleanConvert[(a || a || b) && (!a && Nand[a, b]), \"NOR\"]}"
+      )
+      .unwrap(),
+      "{ !a && b, a || (b && c), a || (b && c), 1 || b ||  !a, Nor[a,  !b]}"
+    );
+  }
+
+  // Commonest[list, 0] is empty; asking for more than the distinct elements
+  // returns them all with Commonest::dstlms.
+  #[test]
+  fn commonest_counts() {
+    assert_eq!(interpret("Commonest[{3, 3, a}, 0]").unwrap(), "{}");
+    let r = woxi::interpret_with_stdout("Commonest[{b, b}, 2]").unwrap();
+    assert_eq!(r.result, "{b}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Commonest::dstlms: The requested number of elements 2 is greater than \
+         the number of distinct elements 1. Only 1 elements will be returned."
+      ]
+    );
+    assert_eq!(
+      interpret("Commonest[{b, b, c}, UpTo[5]]").unwrap(),
+      "{b, c}"
+    );
+  }
+
+  // Intersection with a SameTest still returns its result in canonical order.
+  #[test]
+  fn intersection_with_same_test_is_sorted() {
+    assert_eq!(
+      interpret(
+        "{Intersection[{2, 2, 1}, {1, 2, a}, SameTest -> Equal], \
+          Intersection[{b, a}, {a, b}, SameTest -> SameQ]}"
+      )
+      .unwrap(),
+      "{{1, 2}, {a, b}}"
+    );
+  }
+
+  // A DNF merges terms differing in one literal, a fully covered DNF is
+  // True, a lone CNF clause loses repeats, CNF clauses order literal by
+  // literal (negated first), and a negated comparison is its complement.
+  #[test]
+  fn normal_form_merging_and_ordering() {
+    assert_eq!(
+      interpret(
+        "{BooleanConvert[(a && b) || (a && !b) || (!a && b)], \
+          BooleanConvert[(a && b && c) || (a && b && !c)], \
+          BooleanConvert[a || a || b || b, \"CNF\"], \
+          BooleanConvert[(c && a) || Xor[a, b], \"CNF\"], \
+          BooleanConvert[x > 1 || Implies[a, b], \"AND\"], \
+          LogicalExpand[Xor[a, b] || Implies[a, b]]}"
+      )
+      .unwrap(),
+      "{a || b, a && b, a || b, ( !a ||  !b || c) && (a || b), \
+       \x20!(a &&  !b && x <= 1), True}"
     );
   }
 }

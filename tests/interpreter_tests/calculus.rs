@@ -7932,6 +7932,53 @@ mod dt {
 mod minimize {
   use super::*;
 
+  // Constraints that are not plain bounds are reduced to the interval they
+  // describe first.
+  #[test]
+  fn nonlinear_constraint_in_one_variable() {
+    assert_eq!(
+      interpret(
+        "{Maximize[{x, x^2 <= 4}, x], Minimize[{x, x^2 <= 4}, x], \
+          Maximize[{x^3 - x, x^2 <= 4}, x], Maximize[{x, x^2 + 2 x <= 3}, x], \
+          Maximize[{Sin[x], x^2 <= 4}, x]}"
+      )
+      .unwrap(),
+      "{{2, {x -> 2}}, {-2, {x -> -2}}, {6, {x -> 2}}, {1, {x -> 1}}, \
+       {1, {x -> Pi/2}}}"
+    );
+  }
+
+  // An optimum on an excluded boundary comes with ::wksol.
+  #[test]
+  fn optimum_on_a_strict_boundary_warns() {
+    let r =
+      woxi::interpret_with_stdout("Maximize[{x, -2 < x < 2}, x]").unwrap();
+    assert_eq!(r.result, "{2, {x -> 2}}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Maximize::wksol: Warning: there is no maximum in the region in which \
+         the objective function is defined and the constraints are satisfied; \
+         a result on the boundary will be returned."
+      ]
+    );
+    let r =
+      woxi::interpret_with_stdout("Minimize[{x^2, 1 < x < 2}, x]").unwrap();
+    assert_eq!(r.result, "{1, {x -> 1}}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Minimize::wksol: Warning: there is no minimum in the region in which \
+         the objective function is defined and the constraints are satisfied; \
+         returning a result on the boundary."
+      ]
+    );
+    let r =
+      woxi::interpret_with_stdout("Maximize[{-x^2, -1 < x < 2}, x]").unwrap();
+    assert_eq!(r.result, "{0, {x -> 0}}");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
   // A coupled convex quadratic is minimized at the joint critical point;
   // Sqrt of it at the same point.
   #[test]

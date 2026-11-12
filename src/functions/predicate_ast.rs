@@ -2629,6 +2629,10 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_atomic_traversal_object(expr) {
       return 1;
     }
+    // A complex number is the atom-like `Complex[re, im]`.
+    if is_complex_number(expr) {
+      return 2 + heads as i128;
+    }
     // A rendered graphic counts the leaves of the symbolic expression it
     // displays as, matching `Part`'s reach into `Graphics3D[primitives,
     // opts…]`.

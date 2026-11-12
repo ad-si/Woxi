@@ -78,6 +78,36 @@ fn flatten_part(expr: &Expr) -> (&Expr, Vec<Expr>) {
 /// Returns either an `Atom` (leaf label) or a `Composite` (head name + children).
 /// This handles all canonical transformations (Minus→Plus, Divide→Times, etc.)
 /// and associative flattening (Plus, Times).
+/// The terms of a sum as its FullForm shows them. Woxi keeps the numeric
+/// terms of `x + 2 + 3 I` apart (`Plus[2, x, 3 I]`), but a sum holds one
+/// complex number, `Plus[Complex[2, 3], x]`, so the numeric terms are merged
+/// and lead when one of them is non-real.
+fn merge_complex_terms(args: &[Expr]) -> Vec<Expr> {
+  use crate::functions::predicate_ast::is_complex_number;
+  let is_number = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      || is_complex_number(e)
+  };
+  let (numbers, rest): (Vec<&Expr>, Vec<&Expr>) =
+    args.iter().partition(|e| is_number(e));
+  if numbers.len() < 2 || !numbers.iter().any(|e| is_complex_number(e)) {
+    return args.to_vec();
+  }
+  let numbers: Vec<Expr> = numbers.into_iter().cloned().collect();
+  let Ok(merged) = crate::functions::math_ast::plus_ast(&numbers) else {
+    return args.to_vec();
+  };
+  std::iter::once(merged)
+    .chain(rest.into_iter().cloned())
+    .collect()
+}
+
 pub fn decompose_expr(expr: &Expr) -> ExprForm {
   match expr {
     // --- Atoms ---
@@ -146,6 +176,12 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head: "List".to_string(),
       children: items.to_vec(),
     },
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      ExprForm::Composite {
+        head: name.clone(),
+        children: merge_complex_terms(args),
+      }
+    }
     Expr::FunctionCall { name, args } => ExprForm::Composite {
       head: name.clone(),
       children: args.to_vec(),

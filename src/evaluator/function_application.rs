@@ -655,7 +655,52 @@ pub(crate) fn max_slot_index(expr: &Expr) -> usize {
 /// Emit Function::slot1 / Function::slota messages for named slots (`#key`)
 /// in an anonymous-function body that cannot be filled from `args`, matching
 /// wolframscript: one message per unfillable named-slot occurrence.
+/// `Function::slotn` for the first numbered slot the arguments cannot fill:
+/// `(#1 + #2 &)[10]` stays `10 + #2` with that message.
+fn emit_unfilled_slot_message(body: &Expr, args: &[Expr]) {
+  fn first_unfilled(e: &Expr, available: usize) -> Option<usize> {
+    match e {
+      Expr::Slot(n) if *n > available => Some(*n),
+      Expr::FunctionCall { name, args }
+        if name == "Slot" && args.len() == 1 =>
+      {
+        match &args[0] {
+          Expr::Integer(n) if *n > 0 && (*n as usize) > available => {
+            Some(*n as usize)
+          }
+          _ => None,
+        }
+      }
+      // A nested pure function's slots are its own.
+      Expr::Function { .. } => None,
+      Expr::FunctionCall { name, .. } if name == "Function" => None,
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .find_map(|c| first_unfilled(c, available)),
+    }
+  }
+  let Some(n) = first_unfilled(body, args.len()) else {
+    return;
+  };
+  let function = Expr::Function {
+    body: Box::new(body.clone()),
+  };
+  let application = Expr::CurriedCall {
+    func: Box::new(function.clone()),
+    args: args.to_vec(),
+  };
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(format!("Function::slotn: Slot number {n} in ")),
+    MessagePiece::Expr(&function),
+    MessagePiece::Text(" cannot be filled from ".to_string()),
+    MessagePiece::Expr(&application),
+    MessagePiece::Text(".".to_string()),
+  ]));
+}
+
 fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
+  emit_unfilled_slot_message(body, args);
   let mut keys = Vec::new();
   crate::syntax::collect_named_slot_keys(body, &mut keys);
   if keys.is_empty() {

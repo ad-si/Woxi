@@ -309,6 +309,58 @@ fn size(svg: &str) -> (f64, f64) {
 mod framing {
   use super::*;
 
+  /// The x range of the drawn `<line>` endpoints in an SVG.
+  fn line_x_extent(svg: &str) -> (f64, f64) {
+    let mut xs = Vec::new();
+    for line in svg.lines().filter(|l| l.starts_with("<line ")) {
+      for key in ["x1=\"", "x2=\""] {
+        if let Some(rest) = line.split(key).nth(1)
+          && let Some(v) = rest.split('"').next()
+          && let Ok(x) = v.parse::<f64>()
+        {
+          xs.push(x);
+        }
+      }
+    }
+    xs.iter()
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &x| {
+        (lo.min(x), hi.max(x))
+      })
+  }
+
+  // `PlotRangePadding` widens the displayed box around an explicit
+  // `PlotRange`; a negative padding narrows it and zooms in. Seen from
+  // straight above, a square of half-width 7 in a range of half-width 10
+  // spans 7/(10 + p) of the picture's half-width.
+  #[test]
+  fn plot_range_padding_scales_the_framing() {
+    let span = |pad: &str| {
+      let s = svg(&format!(
+        "Graphics3D[{{EdgeForm[Black], FaceForm[None], \
+         Cuboid[{{-7, -7, 0}}, {{7, 7, 1}}]}}, \
+         PlotRange -> {{{{-10, 10}}, {{-10, 10}}, {{0, 2}}}}, \
+         Boxed -> False, ViewPoint -> {{0, 0, 100}}, ImageSize -> 400, \
+         PlotRangePadding -> {pad}]"
+      ));
+      let (lo, hi) = line_x_extent(&s);
+      (hi - lo) / 400.0
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 0.01;
+    assert!(close(span("None"), 0.7), "{}", span("None"));
+    assert!(close(span("-2"), 7.0 / 8.0), "{}", span("-2"));
+    assert!(close(span("2"), 7.0 / 12.0), "{}", span("2"));
+    assert!(
+      close(span("Scaled[0.1]"), 7.0 / 12.0),
+      "{}",
+      span("Scaled[0.1]")
+    );
+    assert!(
+      close(span("{{2, 2}, 0, 0}"), 14.0 / 24.0),
+      "{}",
+      span("{{2, 2}, 0, 0}")
+    );
+  }
+
   // wolframscript draws the unit cube 360 x 391: the height follows the
   // box projected in perspective from the default ViewPoint.
   #[test]
@@ -878,6 +930,36 @@ mod edge_form_3d {
       .collect();
     assert!(dashed.len() >= 9, "{s}");
     assert!(dashed.iter().all(|l| l.contains("stroke=\"rgb(255,0,0)\"")));
+  }
+
+  // `FaceForm[None]` leaves the faces unfilled: only the outlines that
+  // `EdgeForm` asks for are drawn.
+  #[test]
+  fn face_form_none_draws_only_the_edges() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[Red], FaceForm[None], Cuboid[]}, \
+       Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 0, "{s}");
+    assert!(s.contains("<line ") && s.contains("stroke=\"rgb(255,0,0)\""));
+    // Lines after it keep their own color and opacity.
+    let s = svg(
+      "Graphics3D[{FaceForm[None], Cuboid[], Blue, \
+       Line[{{0, 0, 0}, {2, 2, 2}}]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 0, "{s}");
+    assert!(s.contains("stroke=\"rgb(0,0,255)\""), "{s}");
+  }
+
+  // A later `FaceForm[color]` fills the faces again.
+  #[test]
+  fn face_form_color_after_none_fills_faces_again() {
+    let s = svg(
+      "Graphics3D[{FaceForm[None], Cuboid[], FaceForm[Red], \
+       Cuboid[{2, 0, 0}]}, Boxed -> False, Lighting -> {{\"Ambient\", White}}]",
+    );
+    assert!(polygon_count(&s) > 0, "{s}");
+    assert!(fills(&s).contains("255,0,0"), "{s}");
   }
 }
 

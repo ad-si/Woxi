@@ -765,6 +765,12 @@ thread_local! {
     // The message buffers' lengths at each `push_quiet`, which the matching
     // `pop_quiet` cuts them back to.
     static QUIET_MARKS: RefCell<Vec<(usize, usize, usize)>> = const { RefCell::new(Vec::new()) };
+    // The `General::stop` counters at each `push_quiet`. wolframscript
+    // counts repetitions inside `Quiet` but restores the counters when the
+    // block ends, so quieted messages do not use up the three that print
+    // afterwards.
+    static QUIET_STOP_COUNTS: RefCell<Vec<std::collections::HashMap<String, usize>>> =
+      const { RefCell::new(Vec::new()) };
 }
 
 /// Clears the captured stdout buffer
@@ -961,6 +967,8 @@ pub fn push_quiet() {
     MESSAGE_LIST.with(|b| b.borrow().len()),
   );
   QUIET_MARKS.with(|m| m.borrow_mut().push(mark));
+  let counts = MESSAGE_STOP_COUNTS.with(|c| c.borrow().clone());
+  QUIET_STOP_COUNTS.with(|s| s.borrow_mut().push(counts));
 }
 
 /// Decrement the quiet level (leave a Quiet[] block), dropping the
@@ -978,6 +986,9 @@ pub fn pop_quiet() {
     UNIMPLEMENTED_CALLS.with(|b| b.borrow_mut().truncate(unimplemented));
     CAPTURED_MESSAGES.with(|b| b.borrow_mut().truncate(messages));
     MESSAGE_LIST.with(|b| b.borrow_mut().truncate(list));
+  }
+  if let Some(counts) = QUIET_STOP_COUNTS.with(|s| s.borrow_mut().pop()) {
+    MESSAGE_STOP_COUNTS.with(|c| *c.borrow_mut() = counts);
   }
 }
 
@@ -1191,6 +1202,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   // calculation went on to generate. The counter runs inside `Quiet` just as
   // it does outside — `Quiet[Do[{{1,2},{3,4}}[[1,1,1]], {10}]; $MessageList]`
   // is the same four entries — so this precedes the `is_quiet` check too.
+  // (`pop_quiet` restores the counters when the block ends.)
   let mut stop_line: Option<String> = None;
   let mut past_the_limit = false;
   // `Off[General::stop]` switches the suppression off along with its

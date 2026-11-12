@@ -3288,6 +3288,52 @@ mod graphics {
       );
     }
 
+    /// A lowercase-letter subscript (`max`, `x`, `ab`) in a picture label is
+    /// lowered with a `<tspan>` like any other script. It used to be folded
+    /// into Unicode letter subscripts (`ₘₐₓ`), which most fonts lack, so
+    /// each letter was drawn from a different fallback font at its own size.
+    /// Digit subscripts keep their well-supported Unicode glyphs.
+    #[test]
+    fn text_lowers_letter_subscripts_instead_of_unicode_glyphs() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{Subscript[\"θ\", max], \" = 1\"}], 24], \
+         {0, 0}], Text[Subscript[\"v\", \"x\"], {1, 0}], \
+         Text[Subscript[\"p\", 12], {2, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          ">θ<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan> = 1<"
+        ),
+        "the θ_max label: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">v<tspan baseline-shift=\"sub\" font-size=\"70%\">x</tspan><"
+        ),
+        "the v_x label: {svg}"
+      );
+      assert!(svg.contains(">p\u{2081}\u{2082}<"), "the p₁₂ label: {svg}");
+      for glyph in ['\u{2098}', '\u{2090}', '\u{2093}'] {
+        assert!(!svg.contains(glyph), "no Unicode letter subscript: {svg}");
+      }
+    }
+
+    /// The same lowering reaches a `Graphics3D` `Epilog` overlay, which is
+    /// drawn as a 2D picture over the scene.
+    #[test]
+    fn graphics3d_epilog_lowers_letter_subscripts() {
+      let svg = export_svg(
+        "Graphics3D[Sphere[], Epilog -> Inset[Text[Style[Row[\
+         {Subscript[\"θ\", max], \" = 2\"}], 24]], Scaled[{0.5, 0.5}]]]",
+      );
+      assert!(
+        svg.contains(
+          ">θ<tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan> = 2<"
+        ),
+        "the θ_max label: {svg}"
+      );
+    }
+
     /// A product or power holding scripted symbols inside a `Text` is set on
     /// one line with the scripts shifted, not as the two-line OutputForm box
     /// that printed `Subscript[t, 1]` literally.
@@ -10018,6 +10064,70 @@ mod plot3d {
       assert_eq!(first_polyline(&svg), "599,50 599,3249", "{svg}");
     }
 
+    /// A `PlotStyle` list applied to a one-element curve group
+    /// (`{{fx, fy}}`, the shape `{x[t], y[t]} /. NDSolve[…]` produces)
+    /// is one combined directive set, as for a lone curve: the curve is
+    /// both thick and purple. It used to take only the first directive.
+    #[test]
+    fn parametric_plot_single_slot_group_combines_plot_style() {
+      let svg = export_svg(
+        "ParametricPlot[{{t, t^2}}, {t, 0, 1}, \
+         PlotStyle -> {Thickness[0.01], RGBColor[1, 0, 1]}]",
+      );
+      assert!(svg.contains("stroke=\"#FF00FF\""), "{svg}");
+      // Two slots keep the per-curve cycle: the first slot is only thick.
+      let svg = export_svg(
+        "ParametricPlot[{{t, t^2}, {t, t^3}}, {t, 0, 1}, \
+         PlotStyle -> {Thickness[0.01], RGBColor[1, 0, 1]}]",
+      );
+      assert_eq!(svg.matches("stroke=\"#FF00FF\"").count(), 1, "{svg}");
+    }
+
+    /// `ImageSize -> {w, h}` with `ImagePadding` keeps the image size
+    /// asked for; an `AspectRatio` shapes the plotting area inside it
+    /// rather than resizing the image.
+    #[test]
+    fn image_size_with_image_padding_keeps_height() {
+      for code in [
+        "ParametricPlot[{t, t^2}, {t, 0, 1}, ImageSize -> {400, 250}, \
+         ImagePadding -> {{70, 70}, {25, 18}}]",
+        "Plot[t, {t, 0, 1}, ImageSize -> {400, 250}, AspectRatio -> 1, \
+         ImagePadding -> 20]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.starts_with("<svg width=\"400\" height=\"250\""),
+          "{code}: {}",
+          &svg[..80]
+        );
+      }
+    }
+
+    /// `Graphics[…, ImageSize -> {w, h}, AspectRatio -> r]` centers a
+    /// drawing area of ratio `r` in the image instead of stretching it to
+    /// the full height and width.
+    #[test]
+    fn graphics_image_size_pair_keeps_aspect_ratio() {
+      let svg = export_svg(
+        "Graphics[Line[{{0, 0}, {1, 1}}], ImageSize -> {400, 200}, \
+         AspectRatio -> 1]",
+      );
+      assert!(svg.starts_with("<svg width=\"400\" height=\"200\""));
+      let pts: Vec<f64> = svg
+        .split_once("points=\"")
+        .unwrap()
+        .1
+        .split('"')
+        .next()
+        .unwrap()
+        .split([',', ' '])
+        .map(|v| v.parse().unwrap())
+        .collect();
+      let (w, h) = ((pts[2] - pts[0]).abs(), (pts[3] - pts[1]).abs());
+      assert!((w - h).abs() < 2.0, "drawing area {w} x {h} is not square");
+      assert!(w < 210.0, "drawing area {w} wide fills the image");
+    }
+
     /// A one-line `PlotLabel` over a top `ImagePadding` too small to hold
     /// it takes its room from the plotting area instead of overlapping
     /// the frame.
@@ -15382,6 +15492,83 @@ mod plot3d {
         interpret("Head[ParametricPlot[{{Re[r E^(I t)], Im[r E^(I t)]}}, {r, 0, 1}, {t, 0, 2 Pi}]]")
           .unwrap(),
         "Graphics"
+      );
+    }
+
+    // Regression: a curve `ParametricPlot` ignored `RegionFunction` and
+    // drew the whole curve. Only the stretches inside the region are kept,
+    // each its own `Line` ending on the region's boundary.
+    #[test]
+    fn region_function_clips_curve() {
+      assert_eq!(
+        interpret(
+          "Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, x > 0]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{2., 0.}, {0., 2.}}, {{0., -2.}, {2., 0.}}}"
+      );
+    }
+
+    #[test]
+    fn region_function_keeps_only_points_inside() {
+      // Inside a disk and outside a smaller one, as for a Mohr diagram.
+      assert_eq!(
+        interpret(
+          "pts = Cases[ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, (x - 3/2)^2 + y^2 <= 25/4 \
+           && (x - 1/2)^2 + y^2 >= 9/4]], Line[p_] :> p, Infinity]; \
+           {Length[pts], AllTrue[Flatten[pts, 1], \
+           (#[[1]] - 3/2)^2 + #[[2]]^2 <= 25/4 + 10^-6 &]}"
+        )
+        .unwrap(),
+        "{2, True}"
+      );
+    }
+
+    // `RegionFunction` is called with the parameter as third argument.
+    #[test]
+    fn region_function_receives_parameter() {
+      assert_eq!(
+        interpret(
+          "Cases[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y, u}, u < Pi]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{1., 0.}, {-1., 0.}}}"
+      );
+    }
+
+    // Regression: the pieces of a plot curve broken by a gap were joined
+    // into one `Line` when the plot was taken apart as an expression.
+    #[test]
+    fn plot_gap_pieces_are_separate_lines() {
+      assert_eq!(
+        interpret(
+          "Cases[Plot[x, {x, -1, 1}, RegionFunction -> \
+           Function[{x, y}, Abs[x] > 1/2]], Line[p_] :> \
+           Round[{First[p], Last[p]}, 0.001], Infinity]"
+        )
+        .unwrap(),
+        "{{{-1., -1.}, {-0.5, -0.5}}, {{0.5, 0.5}, {1., 1.}}}"
+      );
+    }
+
+    #[test]
+    fn region_function_curve_in_show() {
+      // The clipped pieces stay separate when merged by `Show`: no chord
+      // is drawn across the gap.
+      assert_eq!(
+        interpret(
+          "StringCount[ExportString[Show[Graphics[Point[{0, 0}]], \
+           ParametricPlot[{2 Cos[t], 2 Sin[t]}, {t, 0, 2 Pi}, \
+           RegionFunction -> Function[{x, y}, x > 0]]], \"SVG\"], \
+           \"<polyline\"]"
+        )
+        .unwrap(),
+        "2"
       );
     }
 
@@ -34383,9 +34570,10 @@ mod manipulate {
     match &spec.controls[0] {
       ManipulateControl::Discrete { value_labels, .. } => {
         // Both quotient operands are compound, so both are parenthesized;
-        // a sum needs no parentheses around its terms.
+        // a sum needs no parentheses around its terms, and the string term
+        // sorts first (`"rest" + Row[…]` in wolframscript).
         assert_eq!(value_labels[0], "(a1)/(b2)");
-        assert_eq!(value_labels[1], "m\u{2081}+ + rest");
+        assert_eq!(value_labels[1], "rest + m\u{2081}+");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
@@ -44400,7 +44588,14 @@ mod grid_text_in_graphics {
     assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
     let svg3d =
       export_svg("Graphics3D[{Transparent, Sphere[{1, 1, 1}, 0.25]}]");
-    assert!(svg3d.contains("opacity=\"0\""), "{svg3d}");
+    // A fully transparent face is either left out or painted invisibly.
+    assert!(
+      svg3d
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .all(|l| l.contains("opacity=\"0\"")),
+      "{svg3d}"
+    );
   }
 
   #[test]
@@ -52672,5 +52867,120 @@ mod plot_tooltip_list_and_image_size_variable {
     }
     let svg = export_svg("w = 300; Plot[Sin[x], {x, 0, 4}, ImageSize -> w]");
     assert!(svg.starts_with("<svg width=\"300\""), "{}", &svg[..80]);
+  }
+}
+
+mod display_form_fraction_boxes_in_layouts {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The number of stacked fraction bars (`<line …>`) in a picture.
+  fn bars(svg: &str) -> usize {
+    svg.matches("<line ").count()
+  }
+
+  /// Regression: a `Row` of `DisplayForm[FractionBox[…]]` items printed
+  /// each fraction as the one-line text `1/2`, sized from the source text
+  /// of the wrapper (a ~300 pt wide row for two small fractions).
+  #[test]
+  fn row_items_stack_their_fractions() {
+    let svg = svg_of(
+      "Row[{DisplayForm[FractionBox[1, 2]], DisplayForm[FractionBox[3, 4]]}, \
+       Spacer[4]]",
+    );
+    assert_eq!(bars(&svg), 2, "{svg}");
+    assert!(!svg.contains("1/2"), "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+    let width: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(width < 60.0, "row too wide: {width}");
+  }
+
+  #[test]
+  fn column_items_stack_their_fractions() {
+    let svg = svg_of(
+      "Column[{DisplayForm[FractionBox[a, b]], DisplayForm[FractionBox[c, d]]}]",
+    );
+    assert_eq!(bars(&svg), 2, "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+  }
+
+  /// A `Style` around the displayed box sets the size it is typeset at.
+  #[test]
+  fn styled_display_form_fraction_is_stacked_at_its_size() {
+    let svg = svg_of("Style[DisplayForm[FractionBox[1, 2]], 18]");
+    assert_eq!(bars(&svg), 1, "{svg}");
+    assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+    assert!(!svg.contains("1/2"), "{svg}");
+  }
+
+  /// Regression: a `Graphics` `Text` label laid out as a `Column` of `Row`s
+  /// of displayed fraction boxes flattened every fraction to its
+  /// numerator and denominator side by side (`12` for 1/2).
+  #[test]
+  fn graphics_text_label_stacks_displayed_fractions() {
+    let svg = svg_of(
+      "Graphics[Text[Style[Column[{\
+         Row[{DisplayForm[FractionBox[1, 1]]}, Spacer[4]], \
+         Row[{DisplayForm[FractionBox[1, 2]], DisplayForm[FractionBox[2, 1]]}, \
+           Spacer[4]]}, Center], 18]]]",
+    );
+    assert_eq!(bars(&svg), 3, "{svg}");
+    assert!(!svg.contains(">12<"), "{svg}");
+    assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+  }
+
+  /// A box shown through `DisplayForm` without a fraction keeps its
+  /// one-line typesetting in a layout.
+  #[test]
+  fn display_form_subscript_in_row_stays_inline() {
+    let svg = svg_of("Row[{DisplayForm[SubscriptBox[x, 2]], 3}]");
+    assert_eq!(bars(&svg), 0, "{svg}");
+    assert!(svg.contains("baseline-shift=\"sub\""), "{svg}");
+    assert!(!svg.contains("SubscriptBox"), "{svg}");
+  }
+}
+
+mod overscript_bar_accent {
+  use super::*;
+
+  /// A hyphen typed as an overscript (the antiquark `b̄` in a particle
+  /// physics plot legend, `"b\!\(\*OverscriptBox[\(b\), \(-\)]\)"`) is a bar
+  /// spanning the base, as the FrontEnd draws it — not a raised dash glyph.
+  #[test]
+  fn hyphen_overscript_in_a_label_string_draws_a_rule() {
+    clear_state();
+    let svg = export_svg(
+      r#"Graphics[Text["x\!\(\*OverscriptBox[\(b\), \(-\)]\)", {0, 0}]]"#,
+    );
+    assert!(
+      svg.contains("<path d=\"M 0.00 "),
+      "the bar accent must be drawn as a rule: {svg}"
+    );
+    assert!(
+      !svg.contains(">-</text>"),
+      "the hyphen must not be drawn as a glyph above the base: {svg}"
+    );
+  }
+
+  /// The same box shown through `DisplayForm` reads as the barred letter.
+  #[test]
+  fn hyphen_overscript_box_displays_as_barred_letter() {
+    clear_state();
+    let svg = export_svg(
+      r#"Graphics[Text[DisplayForm[OverscriptBox["b", "-"]], {0, 0}]]"#,
+    );
+    assert!(
+      svg.contains(">b\u{0305}</text>"),
+      "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
+    );
   }
 }

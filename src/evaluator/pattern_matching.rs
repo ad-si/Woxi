@@ -35,6 +35,12 @@ thread_local! {
 
 fn push_outer_lhs_condition(cond: Expr, pattern: &Expr) {
   let depth = crate::RECURSION_DEPTH.with(std::cell::Cell::get);
+  let names = condition_variables(&cond, pattern);
+  OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push((cond, depth, names)));
+}
+
+/// The pattern variables of `pattern` that the condition `cond` mentions.
+fn condition_variables(cond: &Expr, pattern: &Expr) -> Vec<String> {
   fn mentions(e: &Expr, name: &str) -> bool {
     match e {
       Expr::Identifier(n) => n == name,
@@ -43,12 +49,22 @@ fn push_outer_lhs_condition(cond: Expr, pattern: &Expr) {
         .any(|c| mentions(c, name)),
     }
   }
-  let names: Vec<String> =
-    crate::evaluator::scoping::pattern_variable_names(pattern)
-      .into_iter()
-      .filter(|n| mentions(&cond, n))
-      .collect();
-  OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push((cond, depth, names)));
+  crate::evaluator::scoping::pattern_variable_names(pattern)
+    .into_iter()
+    .filter(|n| mentions(cond, n))
+    .collect()
+}
+
+/// The bindings of `names`, in the order `bindings` holds them.
+fn bindings_of(
+  bindings: &[(String, Expr)],
+  names: &[String],
+) -> Vec<(String, Expr)> {
+  bindings
+    .iter()
+    .filter(|(b, _)| names.contains(b))
+    .cloned()
+    .collect()
 }
 
 /// Returns `true` when an LHS Condition is active for the current match and
@@ -73,10 +89,45 @@ fn lhs_condition_definitely_fails(bindings: &[(String, Expr)]) -> bool {
   if names.iter().any(|n| !bindings.iter().any(|(b, _)| b == n)) {
     return false;
   }
+  // The same candidate is tested once: wolframscript evaluates the
+  // condition a single time per binding, so its side effects and messages
+  // must not repeat when the final check reaches the same bindings.
+  let relevant = bindings_of(bindings, &names);
+  if condition_known_true(&cond, &relevant) {
+    return false;
+  }
   let Ok(evaluated) = apply_bindings(&cond, bindings) else {
     return false;
   };
+  if matches!(evaluated, Expr::Identifier(ref s) if s == "True") {
+    CONDITION_TRUE_CACHE.with(|c| *c.borrow_mut() = Some((cond, relevant)));
+    return false;
+  }
   matches!(evaluated, Expr::Identifier(ref s) if s == "False")
+}
+
+thread_local! {
+  /// The outer condition and the bindings of its variables that the
+  /// backtracking pre-check last found True.
+  static CONDITION_TRUE_CACHE: RefCell<Option<(Expr, Vec<(String, Expr)>)>> =
+    const { RefCell::new(None) };
+}
+
+/// Whether the pre-check already evaluated `cond` to True for exactly these
+/// bindings of its variables.
+fn condition_known_true(cond: &Expr, relevant: &[(String, Expr)]) -> bool {
+  CONDITION_TRUE_CACHE.with(|c| {
+    c.borrow()
+      .as_ref()
+      .is_some_and(|(cached, cached_bindings)| {
+        expr_equal(cached, cond)
+          && cached_bindings.len() == relevant.len()
+          && cached_bindings
+            .iter()
+            .zip(relevant)
+            .all(|(a, b)| a.0 == b.0 && expr_equal(&a.1, &b.1))
+      })
+  })
 }
 
 pub fn push_match_context(bindings: &[(String, Expr)]) {
@@ -4518,9 +4569,9 @@ fn match_args_driven_by_sequence(
         continue;
       }
       if let Some(ref cond) = seq.condition {
-        let test_expr =
-          apply_bindings(cond, &bindings).unwrap_or(*cond.clone());
-        match evaluate_expr_to_expr(&test_expr) {
+        // `apply_bindings` evaluates the test; evaluating its result again
+        // would repeat the test's messages.
+        match apply_bindings(cond, &bindings) {
           Ok(Expr::Identifier(ref s)) if s == "True" => {}
           _ => continue,
         }
@@ -4816,9 +4867,9 @@ fn match_args_with_sequences(
       }
       // Check Condition if present
       if let Some(ref cond) = seq.condition {
-        let test_expr =
-          apply_bindings(cond, &bindings).unwrap_or(*cond.clone());
-        match evaluate_expr_to_expr(&test_expr) {
+        // `apply_bindings` evaluates the test; evaluating its result again
+        // would repeat the test's messages.
+        match apply_bindings(cond, &bindings) {
           Ok(Expr::Identifier(ref s)) if s == "True" => {}
           _ => continue,
         }
@@ -5878,6 +5929,31 @@ fn match_pattern_impl(
             Expr::List(merged.into()),
           )])
         }
+        // A list of rules, possibly nested and possibly empty, is a set of
+        // options too: `MatchQ[{}, OptionsPattern[]]` is True.
+        Expr::List(_) => {
+          fn collect_rules(e: &Expr, out: &mut Vec<Expr>) -> bool {
+            match e {
+              Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+                out.push(e.clone());
+                true
+              }
+              Expr::List(items) => {
+                items.iter().all(|item| collect_rules(item, out))
+              }
+              _ => false,
+            }
+          }
+          let mut rules = Vec::new();
+          if !collect_rules(expr, &mut rules) {
+            return None;
+          }
+          let merged = merge_option_rules(&opt_defaults, &rules);
+          Some(vec![(
+            "__OptionsPattern__".to_string(),
+            Expr::List(merged.into()),
+          )])
+        }
         _ => None,
       }
     }
@@ -5973,6 +6049,8 @@ fn match_pattern_impl(
         &pat_args[0],
         Expr::FunctionCall { name, .. } if name == "Pattern"
       );
+      // A pre-check verdict only stands for this match.
+      CONDITION_TRUE_CACHE.with(|c| *c.borrow_mut() = None);
       let bindings = {
         if !defers_to_final_check {
           push_outer_lhs_condition(pat_args[1].clone(), &pat_args[0]);
@@ -5995,9 +6073,18 @@ fn match_pattern_impl(
       if let Some(bindings) = bindings {
         // Final outer check: paths that don't go through
         // `match_args_with_sequences` still need a top-level validation.
-        let test_expr = apply_bindings(&pat_args[1], &bindings)
-          .unwrap_or(pat_args[1].clone());
-        match evaluate_expr_to_expr(&test_expr) {
+        // `apply_bindings` evaluates the test; evaluating its result again
+        // would repeat the test's messages (`MatchQ[I, x_ /; x > 1]`), and
+        // so would re-testing bindings the backtracking pre-check already
+        // found True.
+        let names = condition_variables(&pat_args[1], &pat_args[0]);
+        let known =
+          condition_known_true(&pat_args[1], &bindings_of(&bindings, &names));
+        CONDITION_TRUE_CACHE.with(|c| *c.borrow_mut() = None);
+        if known {
+          return Some(bindings);
+        }
+        match apply_bindings(&pat_args[1], &bindings) {
           Ok(Expr::Identifier(ref s)) if s == "True" => Some(bindings),
           _ => None,
         }

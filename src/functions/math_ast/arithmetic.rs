@@ -4060,6 +4060,21 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
   }
+  // A string comes after the numbers but before every symbolic term, as in
+  // `Sort`: `1 + "s"`, `"s" + x`, `"s" + 2*x`, `"s" + f[x]`.
+  let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+  match (a, b) {
+    (Expr::String(_), Expr::String(_)) => {
+      return crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+    }
+    (Expr::String(_), other) if !numeric(other) => {
+      return std::cmp::Ordering::Less;
+    }
+    (other, Expr::String(_)) if !numeric(other) => {
+      return std::cmp::Ordering::Greater;
+    }
+    _ => {}
+  }
   // A product containing a function-valued sum compares through that
   // compound factor, just as Sort does. Looking only for bare call
   // factors misses expressions such as x*(Sin[x] + Sec[x]^2).
@@ -11763,8 +11778,31 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `x*(2. + I)` is left untouched; an all-exact product like `Pi*(2 + I)`
   // lacks an inexact factor and stays symbolic.
   if args.len() >= 2 {
-    let float_parts: Vec<Option<(f64, f64)>> =
-      args.iter().map(try_extract_complex_float).collect();
+    // An exact numeric factor with a complex value (`Log[1 + I]`) beside a
+    // machine number is taken numerically too: `2.5 Log[1 + I]` is
+    // `0.866… + 1.963… I`, as `2.5 Sqrt[2]` is `3.535…`.
+    let inexact_present = args.iter().any(|a| {
+      super::numeric_utils::contains_inexact_real(a)
+        && crate::functions::predicate_ast::is_numeric_q(a)
+    });
+    let float_parts: Vec<Option<(f64, f64)>> = args
+      .iter()
+      .map(|a| {
+        try_extract_complex_float(a).or_else(|| {
+          if !inexact_present
+            || !crate::functions::predicate_ast::is_numeric_q(a)
+          {
+            return None;
+          }
+          let n = crate::evaluator::evaluate_function_call_ast(
+            "N",
+            std::slice::from_ref(a),
+          )
+          .ok()?;
+          try_extract_complex_float(&n)
+        })
+      })
+      .collect();
     if float_parts.iter().all(std::option::Option::is_some) {
       // A machine complex number keeps its imaginary part even when it is
       // `0.` (`-2.2 + 0.*I`), so such a factor still makes the product
@@ -11833,6 +11871,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         });
         if re != 0.0 || explicit_complex {
           return Ok(build_complex_float_expr_keep_real(re, im));
+        }
+        // A machine zero times a complex number is the machine complex
+        // zero: `0. (2 - 3 I)` is `0. + 0.*I`.
+        if im == 0.0 {
+          return Ok(super::numeric_utils::machine_complex_result(re, im));
         }
       }
     }
@@ -13278,10 +13321,11 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
     && re.is_finite()
     && im.is_finite()
   {
-    return Some(plus2(
-      Expr::Real(re / y),
-      times2(Expr::Real(im / y), id_expr("I")),
-    ));
+    // Built through Plus/Times so it lands on the same canonical form as
+    // the operator path (`Divide[I, -2.5]` is `0. - 0.4*I`, not a raw sum
+    // with a negative coefficient).
+    let product = times_ast(&[Expr::Real(im / y), id_expr("I")]).ok()?;
+    return plus_ast(&[Expr::Real(re / y), product]).ok();
   }
   // A machine real over an exact number divides once by the divisor's
   // machine value (`Divide[7., 10]` is `0.7`), where `7./10` multiplies by
@@ -14241,7 +14285,7 @@ fn emit_power_indet(tag: &str, base: &str, exp: &str) {
 /// with that direction (`Infinity` is 1, `-Infinity` is -1), `None` for
 /// `ComplexInfinity` (an infinity of unknown direction), and no result at all
 /// for a finite expression.
-fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
+pub(crate) fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
   if matches!(expr, Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity")
   {
     return Some(Some(Expr::Integer(1)));
@@ -14475,6 +14519,32 @@ fn is_big_zero(e: &Expr) -> bool {
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // Zero to a complex power with a positive real part vanishes: exactly when
+  // everything is exact (`0^(1/2 + I/3)` is 0), else as the machine complex
+  // zero (`0.^(1/2 + I/3)`, `0^(1. + I)` are `0. + 0.*I`).
+  if (matches!(base, Expr::Integer(0))
+    || matches!(base, Expr::Real(z) if *z == 0.0))
+    && let Some((re, im)) =
+      crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(exp)
+    && im != 0.0
+    && re != 0.0
+  {
+    // A negative real part divides by zero.
+    if re < 0.0 {
+      crate::emit_message(&format_power_infy_2d(
+        &expr_to_string(base),
+        &expr_to_string(exp),
+      ));
+      return Ok(id_expr("ComplexInfinity"));
+    }
+    let inexact = matches!(base, Expr::Real(_))
+      || super::numeric_utils::contains_inexact_real(exp);
+    return Ok(if inexact {
+      super::numeric_utils::machine_complex_result(0.0, 0.0)
+    } else {
+      Expr::Integer(0)
+    });
+  }
   if let Some(image) =
     image_arithmetic_rounded(&[base.clone(), exp.clone()], f64::powf, false)
   {
@@ -17276,9 +17346,8 @@ where
     return op(args);
   };
   if lengths.any(|l| l != len) {
-    crate::emit_message(&format!(
-      "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-      expr_to_string(&unevaluated(head, args))
+    crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
+      head, args,
     ));
     let mut sorted = args.to_vec();
     sorted.sort_by(|a, b| {
@@ -17357,12 +17426,8 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match (&args[0], &args[1]) {
     (Expr::List(a), Expr::List(b)) => {
       if a.len() != b.len() {
-        crate::emit_message(&format!(
-          "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-          crate::syntax::format_expr(
-            &unevaluated("Subtract", args),
-            crate::syntax::ExprForm::Output
-          )
+        crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
+          "Subtract", args,
         ));
         return Ok(unevaluated("Subtract", args));
       }
@@ -17490,7 +17555,9 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// one. ComplexInfinity and the non-real DirectedInfinity[z] read as
 /// `ComplexInfinity` / `z Infinity`; other non-real numbers (`I`, `1 + I`,
 /// `I Sqrt[2]`) are shown as expressions.
-fn unorderable_display(e: &Expr) -> Option<crate::syntax::MessagePiece<'_>> {
+pub(crate) fn unorderable_display(
+  e: &Expr,
+) -> Option<crate::syntax::MessagePiece<'_>> {
   use crate::syntax::MessagePiece;
   match e {
     Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
@@ -17597,22 +17664,71 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
 
   // A non-real number (I, 1 + I, I Sqrt[2], DirectedInfinity[I]) cannot be
   // ordered: the whole call stays unevaluated, lists unflattened, with one
-  // ::nord per unorderable item in reverse canonical order
-  // (wolframscript-verified).
+  // ::nord per unorderable item, in canonical order for Max and in reverse
+  // canonical order for Min (wolframscript-verified).
   if items.len() >= 2 {
     let mut sorted: Vec<&Expr> = items.clone();
     sorted.sort_by(|a, b| {
       crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
     });
+    if !is_max {
+      sorted.reverse();
+    }
+    let is_complex = crate::functions::predicate_ast::is_complex_number;
+    // Min over plain arguments that mix a real number with an explicit
+    // complex number reports the explicit numbers as one comparison naming
+    // the whole sorted call (`Min[2, 1 + I]` names `Min[1 + I, 2]`), after
+    // the other non-real items; Max always names each item.
+    let whole_call = !is_max
+      && !args.iter().any(|a| matches!(a, Expr::List(_)))
+      && items.iter().any(|e| {
+        matches!(
+          e,
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(..)
+        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      })
+      && items.iter().any(|e| is_complex(e));
     let unorderable: Vec<crate::syntax::MessagePiece> = sorted
       .iter()
-      .rev()
+      .filter(|e| !(whole_call && is_complex(e)))
       .filter_map(|e| unorderable_display(e))
       .collect();
-    let has_non_real = unorderable.iter().any(|d| {
-      !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
-    });
+    let has_non_real = whole_call
+      || unorderable.iter().any(|d| {
+        !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+      });
+    if has_non_real && args.iter().any(|a| matches!(a, Expr::List(_))) {
+      // Each list is compared within itself first. One that holds a
+      // non-real number among other elements fails there and is reported
+      // whole, and the call stays as written (sorted); otherwise the lists
+      // dissolve into their elements: `Max[{f[x]}, I]` is `Max[I, f[x]]`.
+      let failing: Vec<&Expr> = args
+        .iter()
+        .filter(|a| {
+          matches!(a, Expr::List(_)) && {
+            let inner = flatten_lists(std::slice::from_ref(*a));
+            inner.len() >= 2
+              && inner.iter().any(|e| unorderable_display(e).is_some())
+          }
+        })
+        .collect();
+      if failing.is_empty() {
+        let flat: Vec<Expr> = items.iter().map(|e| (*e).clone()).collect();
+        return extremum_ast(&flat, is_max);
+      }
+      for list in failing {
+        emit_nord(crate::syntax::MessagePiece::Expr(list));
+      }
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
+      return Ok(call(head, kept));
+    }
     if has_non_real {
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
       let mut ci_reported = false;
       for display in unorderable {
         if matches!(&display, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
@@ -17624,8 +17740,40 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
         }
         emit_nord(display);
       }
-      let mut kept = args.to_vec();
-      canonical(&mut kept);
+      if whole_call {
+        let result = call(head, kept);
+        emit_nord(crate::syntax::MessagePiece::Expr(&result));
+        return Ok(result);
+      }
+      // The real numbers still reduce to their extreme one, and the smaller
+      // call is evaluated again, reporting the non-real items a second
+      // time: `Max[I, 1, 2]` is `Max[I, 2]` with two messages.
+      if !args.iter().any(|a| matches!(a, Expr::List(_))) {
+        let reals: Vec<(usize, f64)> = args
+          .iter()
+          .enumerate()
+          .filter_map(|(i, a)| try_eval_to_f64_with_infinity(a).map(|v| (i, v)))
+          .collect();
+        if reals.len() >= 2 {
+          let best = reals
+            .iter()
+            .copied()
+            .reduce(|acc, cur| {
+              let better = if is_max { cur.1 > acc.1 } else { cur.1 < acc.1 };
+              if better { cur } else { acc }
+            })
+            .map(|(i, _)| i);
+          let reduced: Vec<Expr> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+              Some(*i) == best || !reals.iter().any(|(j, _)| j == i)
+            })
+            .map(|(_, a)| a.clone())
+            .collect();
+          return extremum_ast(&reduced, is_max);
+        }
+      }
       return Ok(call(head, kept));
     }
   }

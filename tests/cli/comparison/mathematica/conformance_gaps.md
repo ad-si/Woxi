@@ -554,13 +554,6 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
 
-### A string atom sorts before a product in Plus
-
-`"m" + 2 a` is `m + 2*a` in WL and `2*a + m` in Woxi. For *symbols* Woxi orders
-atom-versus-product correctly; strings live in a different ordering class that
-skips the name comparison. Strings inside `Plus` never fully evaluate, so this
-is pathological input — recorded only so the comparator is not touched for it.
-
 ### `x^2 + (a + b) x` keeps Woxi's order
 
 WL prints `(a + b) x + x^2`. The products-compare-from-the-last-factor rule is
@@ -3702,6 +3695,33 @@ three-argument form's `LinearSolve::npdef` (which Woxi uses for both):
 
 ## Expression structure and evaluation
 
+### `BooleanConvert[…, "ESOP"]` and non-Boolean variables
+
+Woxi leaves `BooleanConvert[expr, "ESOP"]` unevaluated; wolframscript writes
+the DNF with its terms made mutually exclusive (`Xor[b, !a && !b]` for
+`Implies[a, b]`). `TautologyQ` and `SatisfiableQ` treat a comparison such as
+`x > 1` as one more Boolean variable, where wolframscript reports
+`::boolv` (and `BooleanVariables[x > 1]` is `{x <= 1}` there):
+
+```sh
+wolframscript -code 'SatisfiableQ[x > 1 && a]'   # SatisfiableQ::boolv … unevaluated
+woxi eval 'SatisfiableQ[x > 1 && a]'             # True
+```
+
+### The parts of a sum with a complex number
+
+Woxi stores `x + 2 + 3 I` as `Plus[2, x, 3 I]`, with the real and the
+imaginary part of the number as separate terms. `FullForm`, `LeafCount` and
+`Map` see the single `Complex[2, 3]` that wolframscript holds, but `Part`,
+`Level`, `Length` and `Apply` still see three terms:
+
+```sh
+wolframscript -code '{Length[x + 2 + 3 I], List @@ (x + 2 + 3 I)}'  # {2, {2 + 3*I, x}}
+woxi eval '{Length[x + 2 + 3 I], List @@ (x + 2 + 3 I)}'            # {3, {2, x, 3*I}}
+```
+
+Fixing it means storing the number as one term in `Plus`.
+
 ### Endless rewrites stop at `$RecursionLimit`, not `$IterationLimit`
 
 ```sh
@@ -4403,6 +4423,20 @@ the float-noise class above.
 
 
 ## Patterns, strings and parsing
+
+### A whole pattern that is optional gives no `Optional::optloose`
+
+wolframscript warns twice when the entire pattern handed to `MatchQ`,
+`Cases`, `FirstCase` and the like is an `Optional`, since there is no
+enclosing expression to supply the default from. Woxi matches silently:
+
+```sh
+wolframscript -code 'MatchQ[1, x_:0]'
+# Optional::optloose: Optional pattern x_:0 has no enclosing pattern, so no optional value can be matched.
+# (the same line again)
+# True
+woxi eval 'MatchQ[1, x_:0]'   # True
+```
 
 ### A tagged assignment cannot have a curried left-hand side
 

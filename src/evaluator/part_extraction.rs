@@ -655,17 +655,38 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
       .series
       .iter()
       .flat_map(|s| {
-        let points = Expr::List(
-          s.points
-            .iter()
-            .filter(|(x, y)| x.is_finite() && y.is_finite())
-            .map(|(x, y)| {
-              Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
-            })
-            .collect(),
-        );
+        let to_list = |pts: &[(f64, f64)]| {
+          Expr::List(
+            pts
+              .iter()
+              .filter(|(x, y)| x.is_finite() && y.is_finite())
+              .map(|(x, y)| {
+                Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into())
+              })
+              .collect(),
+          )
+        };
         let rgb_expr = crate::functions::plot::rgb_u8_expr;
-        let draw = call1(if s.is_scatter { "Point" } else { "Line" }, points);
+        // A curve broken by gaps (an excluded pole, a `RegionFunction`
+        // cut) is one `Line` per unbroken piece, as in Wolfram; joining
+        // the pieces would draw chords across the gaps.
+        let draws: Vec<Expr> = if s.is_scatter {
+          vec![call1("Point", to_list(&s.points))]
+        } else {
+          let runs: Vec<&[(f64, f64)]> = s
+            .points
+            .split(|(x, y)| !x.is_finite() || !y.is_finite())
+            .filter(|run| !run.is_empty())
+            .collect();
+          if runs.len() <= 1 {
+            vec![call1("Line", to_list(&s.points))]
+          } else {
+            runs
+              .into_iter()
+              .map(|r| call1("Line", to_list(r)))
+              .collect()
+          }
+        };
         let mut style = vec![crate::functions::plot::series_color_expr(s)];
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
@@ -687,7 +708,9 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         } else {
           call("Directive", style)
         };
-        let mut prims = vec![Expr::List(vec![style, draw].into())];
+        let mut group = vec![style];
+        group.extend(draws);
+        let mut prims = vec![Expr::List(group.into())];
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =

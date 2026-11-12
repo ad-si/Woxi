@@ -499,9 +499,11 @@ pub fn dispatch_math_functions(
           // Let Listable attribute handle threading
         }
         _ => {
-          // Real-valued numeric x (Pi, Sqrt[2] - 3, …): decide the sign by its
-          // numeric value. Complex or symbolic x stays unevaluated.
-          if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&args[0])
+          // Real-valued numeric x (Pi, Sqrt[2] - 3, ±Infinity, …): decide the
+          // sign by its numeric value. Complex or symbolic x stays
+          // unevaluated.
+          if let Some(v) =
+            crate::functions::math_ast::try_eval_to_f64_with_infinity(&args[0])
           {
             return Some(Ok(Expr::Integer(if v > 0.0 {
               1
@@ -3247,16 +3249,15 @@ pub fn dispatch_math_functions(
       };
       return Some(Ok(Expr::List(vec![re, im].into())));
     }
+    // AbsArg[z] is {Abs[z], Arg[z]}, each evaluated as a call so the
+    // general rules (Indeterminate, infinities) apply to both.
     "AbsArg" if args.len() == 1 => {
-      let abs_val = match crate::functions::math_ast::abs_ast(args) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      let arg_val = match crate::functions::math_ast::arg_ast(args) {
-        Ok(v) => v,
-        Err(e) => return Some(Err(e)),
-      };
-      return Some(Ok(Expr::List(vec![abs_val, arg_val].into())));
+      let part =
+        |head: &str| crate::evaluator::evaluate_function_call_ast(head, args);
+      return Some(
+        part("Abs")
+          .and_then(|abs| Ok(Expr::List(vec![abs, part("Arg")?].into()))),
+      );
     }
     "Conjugate" if args.len() == 1 => {
       return Some(crate::functions::math_ast::conjugate_ast(args));
