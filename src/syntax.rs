@@ -178,6 +178,11 @@ pub struct PlotSource {
   /// Sampled x extent used when Show recomputes PlotRange -> All. A
   /// function plot's displayed interval includes unsampled endpoints.
   pub data_x_range: Option<(f64, f64)>,
+  /// The height/width ratio of the plotting area the plot was drawn with,
+  /// when it is fixed independently of `ImageSize` (`Plot`'s default
+  /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
+  /// `None` = the ratio follows from `image_size`.
+  pub aspect_ratio: Option<f64>,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging

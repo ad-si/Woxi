@@ -1007,11 +1007,10 @@ enum Primitive {
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
     glyph_map: Option<[[f64; 2]; 2]>,
-    /// Character ranges (`start..end`, counted in `char`s of `text`) a
-    /// nested `Style[…, Italic]` sets in slanted type —
-    /// `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and an
-    /// upright remainder. Empty for a label with no partial styling.
-    italic_ranges: Vec<(usize, usize)>,
+    /// Character ranges a nested `Style` sets in its own slant, weight or
+    /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
+    /// an upright remainder. Empty for a label with no partial styling.
+    styled_ranges: Vec<StyledRange>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -5845,7 +5844,7 @@ fn graphics_text_content(expr: &Expr) -> String {
         || (name == "Subsuperscript" && args.len() == 3) =>
     {
       // Flatten through the styled runs (with unmapped subscripts marked so
-      // the SVG writer lowers them) — the same text `italic_text_ranges`
+      // the SVG writer lowers them) — the same text `styled_text_ranges`
       // measures its italic ranges against.
       let runs = with_marked_subscripts(|| manipulate_label_runs(expr, false));
       let text = flatten_label_runs(&runs);
@@ -7603,11 +7602,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
-  let italic_ranges = if local_style.font_style == "italic" {
-    Vec::new()
-  } else {
-    italic_text_ranges(content, &text)
-  };
+  let styled_ranges = styled_text_ranges(content, &text);
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -7618,7 +7613,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     scaled,
     direction,
     glyph_map: None,
-    italic_ranges,
+    styled_ranges,
     style: local_style,
   });
 }
@@ -9011,7 +9006,7 @@ fn rotate_primitive(
       scaled,
       direction,
       glyph_map,
-      italic_ranges,
+      styled_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
@@ -9033,7 +9028,7 @@ fn rotate_primitive(
           None => None,
         },
         glyph_map: *glyph_map,
-        italic_ranges: italic_ranges.clone(),
+        styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -9268,7 +9263,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled,
       direction,
       glyph_map,
-      italic_ranges,
+      styled_ranges,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
@@ -9280,7 +9275,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled: *scaled,
       direction: *direction,
       glyph_map: *glyph_map,
-      italic_ranges: italic_ranges.clone(),
+      styled_ranges: styled_ranges.clone(),
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -9573,7 +9568,7 @@ fn scale_primitive(
       scaled,
       direction,
       glyph_map,
-      italic_ranges,
+      styled_ranges,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
@@ -9587,7 +9582,7 @@ fn scale_primitive(
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         glyph_map: *glyph_map,
-        italic_ranges: italic_ranges.clone(),
+        styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
     }
@@ -11452,63 +11447,109 @@ pub(crate) fn svg_escape(s: &str) -> String {
   }
 }
 
-/// Character ranges of `text` that `content`'s nested `Style[…, Italic]`
-/// parts set in slanted type. Empty unless the label's styled runs flatten
-/// to exactly `text` (so the ranges are known to line up) and at least one
-/// run is italic. A label whose primitive is already set in slanted type
-/// (`Text[Style[…, Italic]]`) needs no ranges, but runs that are italic only
-/// through their own inner `Style`s (`Subscript[Style["t", Italic],
-/// Style["B", Italic]]`) still get them.
-fn italic_text_ranges(content: &Expr, text: &str) -> Vec<(usize, usize)> {
+/// A character range (`start..end`, counted in `char`s of a label's text)
+/// that a nested `Style` sets apart from the rest of the label: slanted
+/// (`Italic`), heavy (`Bold`) or in its own color.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct StyledRange {
+  start: usize,
+  end: usize,
+  italic: bool,
+  bold: bool,
+  color: Option<(f32, f32, f32)>,
+}
+
+/// Character ranges of `text` that `content`'s nested `Style[…]` parts set
+/// in their own slant, weight or color. Empty unless the label's styled runs
+/// flatten to exactly `text` (so the ranges are known to line up) and at
+/// least one run is styled. A run styled like the whole label
+/// (`Text[Style[…, Italic]]`) is drawn without a `<tspan>` of its own (see
+/// [`svg_escape_with_styles`]), but runs that are italic only through their
+/// own inner `Style`s (`Subscript[Style["t", Italic], Style["B", Italic]]`)
+/// still get one.
+fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
-  if flatten_label_runs(&runs) != text || !runs.iter().any(|r| r.italic) {
+  let styled = |r: &LabelRun| r.italic || r.bold || r.color.is_some();
+  if flatten_label_runs(&runs) != text || !runs.iter().any(styled) {
     return Vec::new();
   }
   let mut ranges = Vec::new();
   let mut pos = 0;
   for r in &runs {
     let len = r.text.chars().count();
-    if r.italic && len > 0 {
-      ranges.push((pos, pos + len));
+    if styled(r) && len > 0 {
+      ranges.push(StyledRange {
+        start: pos,
+        end: pos + len,
+        italic: r.italic,
+        bold: r.bold,
+        color: r.color,
+      });
     }
     pos += len;
   }
   ranges
 }
 
-/// The part of `italic_ranges` (character ranges over a whole multi-line
-/// label) that falls on the line spanning characters `start..end`, shifted
-/// to be relative to that line.
-fn line_italic_ranges(
-  italic_ranges: &[(usize, usize)],
+/// The part of `ranges` (character ranges over a whole multi-line label)
+/// that falls on the line spanning characters `start..end`, shifted to be
+/// relative to that line.
+fn line_styled_ranges(
+  ranges: &[StyledRange],
   start: usize,
   end: usize,
-) -> Vec<(usize, usize)> {
-  italic_ranges
+) -> Vec<StyledRange> {
+  ranges
     .iter()
-    .filter_map(|&(a, b)| {
-      let (a, b) = (a.max(start), b.min(end));
-      (a < b).then(|| (a - start, b - start))
+    .filter_map(|r| {
+      let (a, b) = (r.start.max(start), r.end.min(end));
+      (a < b).then(|| StyledRange {
+        start: a - start,
+        end: b - start,
+        ..*r
+      })
     })
     .collect()
 }
 
 /// [`svg_escape`] a single-line label, wrapping the characters inside
-/// `italic_ranges` in an italic `<tspan>`.
-fn svg_escape_with_italics(
+/// `ranges` in a `<tspan>` that sets whatever of their slant, weight and
+/// color differs from the label's own (`style`, drawn in `fill`).
+fn svg_escape_with_styles(
   text: &str,
-  italic_ranges: &[(usize, usize)],
+  ranges: &[StyledRange],
+  style: &StyleState,
+  fill: &str,
 ) -> String {
-  if italic_ranges.is_empty() {
+  if ranges.is_empty() {
     return svg_escape(text);
   }
   let chars: Vec<char> = text.chars().collect();
   let mut out = String::new();
   let mut pos = 0;
-  for &(start, end) in italic_ranges {
-    let (start, end) = (start.min(chars.len()), end.min(chars.len()));
+  for r in ranges {
+    let (start, end) = (r.start.min(chars.len()), r.end.min(chars.len()));
+    if start < pos {
+      continue;
+    }
+    let mut attrs = String::new();
+    if r.italic && style.font_style != "italic" {
+      attrs.push_str(" font-style=\"italic\"");
+    }
+    if r.bold && style.font_weight != "bold" {
+      attrs.push_str(" font-weight=\"bold\"");
+    }
+    if let Some((cr, cg, cb)) = r.color {
+      let run_fill = Color::new(cr as f64, cg as f64, cb as f64).to_svg_rgb();
+      if run_fill != fill {
+        attrs.push_str(&format!(" fill=\"{run_fill}\""));
+      }
+    }
+    if attrs.is_empty() {
+      continue;
+    }
     out.push_str(&svg_escape(&chars[pos..start].iter().collect::<String>()));
-    out.push_str("<tspan font-style=\"italic\">");
+    out.push_str(&format!("<tspan{attrs}>"));
     out.push_str(&svg_escape(&chars[start..end].iter().collect::<String>()));
     out.push_str("</tspan>");
     pos = end;
@@ -12436,7 +12477,7 @@ fn render_primitive(
       scaled,
       direction,
       glyph_map,
-      italic_ranges,
+      styled_ranges,
       style,
     } => {
       let color = style.effective_color();
@@ -12608,9 +12649,11 @@ fn render_primitive(
         let mut line_start = 0;
         for (i, line) in lines.iter().enumerate() {
           let line_end = line_start + line.chars().count();
-          let markup = svg_escape_with_italics(
+          let markup = svg_escape_with_styles(
             line,
-            &line_italic_ranges(italic_ranges, line_start, line_end),
+            &line_styled_ranges(styled_ranges, line_start, line_end),
+            style,
+            &color.to_svg_rgb(),
           );
           line_start = line_end + 1;
           if i == 0 {
@@ -12642,7 +12685,12 @@ fn render_primitive(
           style.font_weight,
           style.font_style,
           color.opacity_attr(),
-          svg_escape_with_italics(text, italic_ranges),
+          svg_escape_with_styles(
+            text,
+            styled_ranges,
+            style,
+            &color.to_svg_rgb()
+          ),
         ));
       }
     }
@@ -20769,9 +20817,18 @@ pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
 /// rebuilds it into a plain `Graphics[...]` call. `Plot`/`ListPlot` picks
 /// its height from `ImageSize` directly rather than storing an
 /// `AspectRatio` option, so callers that need the shape after the fact
-/// fall back to this. Falls back to the classic 1/GoldenRatio default when
+/// fall back to this. A ratio the plot recorded itself (its default
+/// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}`) wins over the
+/// one the image size implies. Falls back to the classic 1/GoldenRatio default when
 /// the recorded size is missing or invalid.
-pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
+pub(crate) fn plot_source_aspect_ratio(
+  source: &crate::syntax::PlotSource,
+) -> f64 {
+  if let Some(ratio) = source.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0)
+  {
+    return ratio;
+  }
+  let image_size = source.image_size;
   let ratio = image_size.1 as f64 / image_size.0 as f64;
   // The placeholder height a plot records when no height was asked for:
   // its plotting area took the default 1/GoldenRatio.
@@ -21742,6 +21799,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       options: merged_options.clone(),
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
+      aspect_ratio: plot_sources[0].aspect_ratio,
       data_x_range,
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
@@ -21942,7 +22000,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let aspect = plot_sources.first().map_or(
           1.0 / std::f64::consts::GOLDEN_RATIO,
           |ps| {
-            let own = plot_source_aspect_ratio(ps.image_size);
+            let own = plot_source_aspect_ratio(ps);
             // A data-sized plot (`ParametricPlot`, `PolarPlot`) follows the
             // `PlotRange` it is finally shown with, not the extent of the
             // curve it was drawn from: `Show[plot, PlotRange -> 10]` is a

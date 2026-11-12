@@ -7975,7 +7975,21 @@ pub(crate) fn build_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   }
+}
+
+/// The height/width ratio of the plotting area a plot with these options is
+/// drawn with when that ratio does not follow from its image size: an
+/// explicit numeric `AspectRatio`, else the 1/GoldenRatio default (which
+/// `ImageSize -> {w, h}` letterboxes rather than stretches). `None` for
+/// `AspectRatio -> Automatic` or `Full`, whose shape depends on the data or
+/// the frame.
+pub(crate) fn drawn_aspect_ratio(opts: &PlotOptions) -> Option<f64> {
+  if opts.aspect_automatic || opts.aspect_full {
+    return None;
+  }
+  Some(opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO))
 }
 
 /// The option rules a graphics function was called with, verbatim, so
@@ -12045,6 +12059,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   })
 }
 
@@ -17200,7 +17215,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
     // picture and merge it as the layer without curves that it is.
-    let source = build_plot_source(
+    let mut source = build_plot_source(
       &[],
       &plot_opts.plot_style,
       x_display,
@@ -17211,6 +17226,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       plot_opts.filling_style,
       crate::functions::plot::explicit_options(args),
     );
+    source.aspect_ratio = drawn_aspect_ratio(&plot_opts);
     return Ok(crate::graphics_result_with_source(svg, source));
   }
 
@@ -17421,6 +17437,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = plot_opts.unpadded_range;
+  source.aspect_ratio = drawn_aspect_ratio(&plot_opts);
   source.data_x_range = all_points
     .iter()
     .flatten()

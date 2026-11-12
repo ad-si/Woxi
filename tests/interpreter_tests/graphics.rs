@@ -2254,6 +2254,43 @@ mod graphics {
       assert!(!plain.contains("<tspan"), "{plain}");
     }
 
+    /// A nested `Style[…, Bold]` or `Style[…, color]` part of a `Text`
+    /// label sets only its own characters in that weight and color; both
+    /// used to be dropped, drawing the whole label plain.
+    #[test]
+    fn text_label_bolds_and_colors_only_styled_parts() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Style[\"a\", Bold, Red], \" = \", \
+         Style[\"b\", Blue]}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-weight=\"bold\" fill=\"rgb(255,0,0)\">a</tspan> = \
+           <tspan fill=\"rgb(0,0,255)\">b</tspan></text>"
+        ),
+        "{svg}"
+      );
+    }
+
+    /// A part styled like the whole label (an italic run inside an italic
+    /// `Style`, a run in the label's own color) needs no `<tspan>`.
+    #[test]
+    fn text_label_part_styled_like_the_label_stays_plain() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{Style[\"a\", Italic], \" = \", \
+         Style[3, Blue]}], Italic, Blue], {0, 0}]}]",
+      );
+      assert!(svg.contains(">a = 3</text>"), "{svg}");
+      let sized = export_svg(
+        "Graphics[{Text[Style[Row[{Style[\"a\", Italic], \" = \", 8}], 24], \
+         {0, 0}]}]",
+      );
+      assert!(
+        sized.contains("><tspan font-style=\"italic\">a</tspan> = 8</text>"),
+        "{sized}"
+      );
+    }
+
     /// The italic parts of a multi-line `Text` label (a `Column` of `Row`s)
     /// stay slanted on the line they fall on; they used to be dropped
     /// for any label spanning more than one line.
@@ -53498,6 +53535,51 @@ mod overscript_bar_accent {
       svg.contains(">b\u{0305}</text>"),
       "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
     );
+  }
+}
+
+mod show_plot_aspect_with_explicit_image_size {
+  use super::*;
+
+  /// A `Plot` given `ImageSize -> {w, h}` keeps its 1/GoldenRatio plotting
+  /// area (letterboxed into the frame); `Show`ing it together with other
+  /// graphics must keep that shape instead of stretching the plot to the
+  /// frame's own `h/w`.
+  #[test]
+  fn show_keeps_golden_ratio_of_plot_with_width_and_height() {
+    clear_state();
+    for size in ["{550, 400}", "{300, 300}", "{400, 100}"] {
+      let ratio = interpret(&format!(
+        "AspectRatio /. Options[Show[Plot[x^2, {{x, -1, 1}}, \
+         ImageSize -> {size}], Graphics[Line[{{{{0, 0}}, {{1, 1}}}}]]]]"
+      ))
+      .unwrap();
+      assert_eq!(ratio, "0.618033988749895", "ImageSize -> {size}");
+    }
+  }
+
+  /// An explicit `AspectRatio` on the plot is still what `Show` keeps.
+  #[test]
+  fn show_keeps_explicit_plot_aspect_ratio() {
+    clear_state();
+    let ratio = interpret(
+      "AspectRatio /. Options[Show[Plot[x, {x, 0, 1}, AspectRatio -> 1/2, \
+       ImageSize -> {550, 400}], Graphics[Point[{0, 0}]]]]",
+    )
+    .unwrap();
+    assert_eq!(ratio, "1/2");
+  }
+
+  /// A `ListPlot` with `ImageSize -> {w, h}` keeps its default shape too.
+  #[test]
+  fn show_keeps_golden_ratio_of_list_plot_with_width_and_height() {
+    clear_state();
+    let ratio = interpret(
+      "AspectRatio /. Options[Show[ListPlot[{1, 2, 3}, \
+       ImageSize -> {550, 400}], Graphics[Point[{0, 0}]]]]",
+    )
+    .unwrap();
+    assert_eq!(ratio, "0.618033988749895");
   }
 }
 
