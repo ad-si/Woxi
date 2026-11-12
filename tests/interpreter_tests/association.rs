@@ -2610,3 +2610,38 @@ mod association_entry_printing {
     );
   }
 }
+
+mod extract_delayed_entries {
+  use super::*;
+
+  // A delayed entry is extracted unevaluated when a head holds it, and
+  // evaluated otherwise.
+  #[test]
+  fn extract_takes_a_delayed_value_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\"a\" :> 1 + 1, \"b\" -> 2|>; \
+         ToString[{Extract[a, Key[\"a\"], Hold], Extract[a, {1}, Hold], \
+           Extract[a, \"a\"], Extract[a, {{1}, {2}}, Hold], \
+           Extract[{a}, {1, \"a\"}, Hold]}, InputForm]"
+      )
+      .unwrap(),
+      "{Hold[1 + 1], Hold[1 + 1], 2, {Hold[1 + 1], Hold[2]}, Hold[1 + 1]}"
+    );
+  }
+
+  #[test]
+  fn extract_descends_into_a_delayed_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "a = <|\"a\" :> {1 + 1, 3}|>; \
+         ToString[{Extract[a, {\"a\", 1}, Hold], Extract[a, {\"a\", 1}]}, \
+         InputForm]"
+      )
+      .unwrap(),
+      "{Hold[1 + 1], 2}"
+    );
+  }
+}

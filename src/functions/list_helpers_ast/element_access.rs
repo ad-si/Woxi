@@ -1572,7 +1572,9 @@ enum ExtractComp {
 
 /// Outcome of resolving one path: the part, or which message to emit.
 enum ExtractOutcome {
-  Found(Expr),
+  /// The part, and whether the path went through a delayed association
+  /// entry (`k :> v`), whose value is taken unevaluated.
+  Found(Expr, bool),
   /// Out-of-range index; Extract::partw always reports the *first*
   /// component of the failing path and the original subject.
   Partw,
@@ -1583,8 +1585,22 @@ enum ExtractOutcome {
   Keyw(Expr, Expr),
 }
 
+/// The unevaluated value of a delayed association entry (`k :> v`).
+fn delayed_entry(key: &Expr, value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if crate::syntax::assoc_marker_matches(key, pattern) => {
+      Some(replacement.as_ref().clone())
+    }
+    _ => None,
+  }
+}
+
 fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
   let mut current = subject.clone();
+  let mut delayed = false;
   for comp in path {
     match comp {
       ExtractComp::Idx(0) => {
@@ -1606,9 +1622,13 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
           Expr::List(items) => items.to_vec(),
           Expr::FunctionCall { args, .. } => args.to_vec(),
           Expr::CurriedCall { args, .. } => args.clone(),
-          Expr::Association(pairs) => {
-            pairs.iter().map(|(_, v)| v.clone()).collect()
-          }
+          Expr::Association(pairs) => pairs
+            .iter()
+            .map(|(k, v)| match delayed_entry(k, v) {
+              Some(raw) => raw,
+              None => v.clone(),
+            })
+            .collect(),
           // Operator nodes (Plus, Power, …) decompose to head + children.
           other => match decompose_expr(other) {
             ExprForm::Composite { children, .. } => children,
@@ -1620,6 +1640,10 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         if idx < 0 || idx >= len {
           return ExtractOutcome::Partw;
         }
+        if let Expr::Association(pairs) = &current {
+          let (k, v) = &pairs[idx as usize];
+          delayed |= delayed_entry(k, v).is_some();
+        }
         current = items[idx as usize].clone();
       }
       ExtractComp::Key(key) => {
@@ -1628,9 +1652,14 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         };
         let key_str = expr_to_string(key);
         match pairs.iter().find(|(k, _)| expr_to_string(k) == key_str) {
-          Some((_, v)) => {
-            let value = v.clone();
-            current = value;
+          Some((k, v)) => {
+            current = match delayed_entry(k, v) {
+              Some(raw) => {
+                delayed = true;
+                raw
+              }
+              None => v.clone(),
+            };
           }
           None => {
             return ExtractOutcome::Keyw(key.clone(), current.clone());
@@ -1639,7 +1668,7 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
       }
     }
   }
-  ExtractOutcome::Found(current)
+  ExtractOutcome::Found(current, delayed)
 }
 
 /// Unified Extract: `Extract[expr, pos]`, `Extract[expr, {pos1, …}]`,
@@ -1779,7 +1808,11 @@ pub fn extract_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     };
     match extract_resolve(subject, path) {
-      ExtractOutcome::Found(part) => Ok(Some(wrap(part)?)),
+      // A delayed value is evaluated only when no head is there to hold it.
+      ExtractOutcome::Found(part, true) if head.is_none() => {
+        Ok(Some(crate::evaluator::evaluate_expr_to_expr(&part)?))
+      }
+      ExtractOutcome::Found(part, _) => Ok(Some(wrap(part)?)),
       ExtractOutcome::Partw => {
         let first = match path.first() {
           Some(ExtractComp::Idx(n)) => Expr::Integer(*n),
