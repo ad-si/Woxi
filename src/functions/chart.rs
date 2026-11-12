@@ -572,6 +572,37 @@ pub(crate) fn parse_style_directive_args(
   (bold, italic, color, font_size)
 }
 
+/// A label expression with every sum in it (bare, or an item of a `Row`,
+/// `Column` or `Style`) wrapped in `TraditionalForm`. A graphic's
+/// `FormatType` is `TraditionalForm`, so `x^3 - 2 x^2 - 3 x` in a plot
+/// label runs from its highest power down rather than in the canonical
+/// `-3 x - 2 x^2 + x^3` order.
+fn traditional_sums(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Plus" => {
+      call("TraditionalForm", vec![expr.clone()])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args = args.to_vec();
+      if let Expr::List(items) = &args[0] {
+        new_args[0] = Expr::List(items.iter().map(traditional_sums).collect());
+      }
+      call(name, new_args)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = traditional_sums(&args[0]);
+      call(name, new_args)
+    }
+    other => other.clone(),
+  }
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -728,8 +759,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         // rest of the graphic is, so `Subscript[p, 0]` shows as `p₀` and a
         // machine real keeps 6 significant figures.
         other => {
-          let (markup, rest) =
-            markup_and_extra_lines(&traditional_label_layout(other));
+          let (markup, rest) = markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          ));
           extra_lines = rest;
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
@@ -757,7 +789,11 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         match crate::functions::graphics::traditional_application_markup(other)
         {
           Some(markup) => (markup, Vec::new()),
-          None => markup_and_extra_lines(&traditional_label_layout(other)),
+          // A sum reads as `TraditionalForm` sets it, so a polynomial runs
+          // from its highest power down (`x^3 - 2 x^2`).
+          None => markup_and_extra_lines(&traditional_sums(
+            &traditional_label_layout(other),
+          )),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
       // A picture taller than a line of text claims the room of the blank

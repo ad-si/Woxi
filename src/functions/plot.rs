@@ -708,6 +708,7 @@ fn adaptive_sample(
   max_total: usize,
   max_depth: usize,
   monitor: Option<&Expr>,
+  visible_y: Option<(f64, f64)>,
 ) -> Vec<(f64, f64)> {
   // Evaluate one sample, firing the `EvaluationMonitor :> expr` hook (with
   // the plot variable bound to x) first, e.g. so `Sow[{x, f[x]}]` records
@@ -743,7 +744,11 @@ fn adaptive_sample(
   // relative test below alone keeps halving the near-flat stretches around
   // every extremum. The height is the 5th..95th percentile spread of the
   // initial samples, so a pole does not flatten the rest of the curve.
-  let visible_bend = {
+  // An explicit `PlotRange -> {ymin, ymax}` narrower than the curve is the
+  // visible height instead: a cubic on `{x, -10, 10}` clipped to
+  // `{-10, 10}` must bend smoothly within that window, even though its
+  // samples span ±1000.
+  let curve_bend = {
     let mut ys: Vec<f64> = points
       .iter()
       .map(|p| p.1)
@@ -756,6 +761,10 @@ fn adaptive_sample(
     } else {
       0.0
     }
+  };
+  let visible_bend = match visible_y {
+    Some((lo, hi)) => curve_bend.min((hi - lo).abs() * 1e-3),
+    None => curve_bend,
   };
 
   // Adaptive refinement passes, one level of `MaxRecursion` each.
@@ -778,7 +787,15 @@ fn adaptive_sample(
         continue;
       }
 
-      let needs_refine = if !y0.is_finite() || !y1.is_finite() {
+      // A stretch whose ends both lie past the same edge of an explicit
+      // `PlotRange` is clipped away, so refining it only spends samples.
+      let off_screen = visible_y.is_some_and(|(lo, hi)| {
+        let (lo, hi) = (lo.min(hi), lo.max(hi));
+        (y0 > hi && y1 > hi) || (y0 < lo && y1 < lo)
+      });
+      let needs_refine = if off_screen {
+        false
+      } else if !y0.is_finite() || !y1.is_finite() {
         // Refine where the curve starts or stops existing to find the
         // boundary; a stretch with no values at all has nothing to find.
         y0.is_finite() || y1.is_finite()
@@ -17029,6 +17046,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       max_total,
       max_depth,
       monitor.as_ref(),
+      // A y scaling function maps the range too; only a plain one is used.
+      if scaling.1.is_none() {
+        plot_range_y
+      } else {
+        None
+      },
     );
     // `Exclusions -> Automatic` breaks the curve where a step function in
     // it jumps (`Floor[x]` draws separate flat segments, not a staircase).
