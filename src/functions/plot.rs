@@ -14934,11 +14934,17 @@ pub(crate) fn parse_explicit_tick_entries(
         // before it is read as text.
         let label_expr =
           evaluate_expr_to_expr(&pair[1]).unwrap_or_else(|_| pair[1].clone());
-        let label = crate::functions::chart::expr_to_label(&label_expr)
-          .map_or_else(
-            || crate::functions::graphics::svg_escape(&format_tick(pos)),
-            |text| crate::functions::graphics::box_string_to_svg(&text),
-          );
+        // An expression the plain-text label reader has no reading for
+        // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
+        // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
+        // tick "-∞", not with the position.
+        let label = match crate::functions::chart::expr_to_label(&label_expr) {
+          Some(text) => crate::functions::graphics::box_string_to_svg(&text),
+          None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
+            crate::functions::graphics::svg_escape(&format_tick(pos))
+          }
+          None => crate::functions::graphics::expr_to_svg_markup(&label_expr),
+        };
         Some(ExplicitTick {
           pos,
           label,

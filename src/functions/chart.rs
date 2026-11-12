@@ -1033,7 +1033,12 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // the literal text "None". A quoted `"None"` still goes through the
     // `Expr::String` arm above and prints as-is.
     Expr::Identifier(s) if s == "None" => None,
-    Expr::Identifier(s) => Some(s.clone()),
+    // A built-in constant symbol (`Infinity`) is set as its glyph (`∞`), the
+    // same way the `Expr::Constant` arm below does.
+    Expr::Identifier(s) => Some(
+      crate::functions::graphics::typeset_constant_glyph(s)
+        .map_or_else(|| s.clone(), str::to_string),
+    ),
     Expr::Integer(_) | Expr::BigInteger(_) => Some(expr_to_string(e)),
     // A real reads as `ToString` prints it (six significant digits), so a
     // computed `Round[x, 0.1]` labels as `-0.6`, not `-0.6000000000000001`.
