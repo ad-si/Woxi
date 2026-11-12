@@ -7521,4 +7521,51 @@ mod pattern_fuzz_edge_cases {
        (x_)?f + 1, (_.) + 1, (_:1) | 2, (x_) == 1, _ && (x_), -(x_),  !(x_)]"
     );
   }
+
+  // A list of rules, nested or empty, is a set of options.
+  #[test]
+  fn options_pattern_matches_lists_of_rules() {
+    assert_eq!(
+      interpret(
+        "{MatchQ[{}, OptionsPattern[]], MatchQ[{a -> 1}, OptionsPattern[]], \
+          MatchQ[{{a -> 1}}, OptionsPattern[]], MatchQ[a -> 1, OptionsPattern[]], \
+          MatchQ[{1}, OptionsPattern[]]}"
+      )
+      .unwrap(),
+      "{True, True, True, True, False}"
+    );
+  }
+
+  // Rational and complex numbers are atoms to Pick.
+  #[test]
+  fn pick_treats_rationals_as_atoms() {
+    assert_eq!(
+      interpret("Pick[{3/4, {1, 2}}, {f[x], f[x, y]}, Except[_List, _?AtomQ]]")
+        .unwrap(),
+      "{{1, 2}}"
+    );
+    assert_eq!(
+      interpret("Pick[{3/4, h[f[1], 2], {1, 2}}, {f[x], 2.5, Pi}, _String]")
+        .unwrap(),
+      "{}"
+    );
+  }
+
+  // A condition is evaluated once per candidate binding, so its messages
+  // and side effects are not repeated.
+  #[test]
+  fn condition_is_tested_once_per_candidate() {
+    let r = woxi::interpret_with_stdout("MatchQ[I, x_ /; x > 1]").unwrap();
+    assert_eq!(r.result, "False");
+    assert_eq!(
+      r.warnings,
+      vec!["Greater::nord: Invalid comparison with I attempted."]
+    );
+    let r = woxi::interpret_with_stdout(
+      "MatchQ[{1, 2, 1}, {a___, b_, c_, d___} /; (Print[{b, c}]; b > c)]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "True");
+    assert_eq!(r.stdout, "{1, 2}\n{2, 1}\n");
+  }
 }

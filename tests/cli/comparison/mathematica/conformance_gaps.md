@@ -4418,6 +4418,20 @@ the float-noise class above.
 
 ## Patterns, strings and parsing
 
+### A whole pattern that is optional gives no `Optional::optloose`
+
+wolframscript warns twice when the entire pattern handed to `MatchQ`,
+`Cases`, `FirstCase` and the like is an `Optional`, since there is no
+enclosing expression to supply the default from. Woxi matches silently:
+
+```sh
+wolframscript -code 'MatchQ[1, x_:0]'
+# Optional::optloose: Optional pattern x_:0 has no enclosing pattern, so no optional value can be matched.
+# (the same line again)
+# True
+woxi eval 'MatchQ[1, x_:0]'   # True
+```
+
 ### A tagged assignment cannot have a curried left-hand side
 
 ```sh

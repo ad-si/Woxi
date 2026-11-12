@@ -1690,6 +1690,14 @@ pub fn pick_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn pick_children(expr: &Expr) -> Option<&[Expr]> {
   match expr {
     Expr::List(items) => Some(items),
+    // Rational and Complex numbers are atoms.
+    Expr::FunctionCall { name, .. }
+      if name == "Rational"
+        || name == "Complex"
+        || crate::functions::predicate_ast::is_complex_number(expr) =>
+    {
+      None
+    }
     Expr::FunctionCall { args, .. } => Some(args),
     _ => None,
   }
