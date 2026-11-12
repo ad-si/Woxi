@@ -1619,6 +1619,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "FrameTicks"
         | "FrameTicksStyle"
         | "LabelStyle"
+        | "BaseStyle"
         | "Mesh"
         | "MeshFunctions"
         | "MeshShading"

@@ -3847,6 +3847,7 @@ pub(crate) struct LabelStyleSpec {
   pub color: Option<WoxiColor>,
   pub font_size: Option<f64>,
   pub bold: bool,
+  pub italic: bool,
 }
 
 impl LabelStyleSpec {
@@ -3859,12 +3860,13 @@ impl LabelStyleSpec {
       Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
       other => vec![other.clone()],
     };
-    let (bold, _, color, font_size) =
+    let (bold, italic, color, font_size) =
       crate::functions::chart::parse_style_directive_args(&items);
-    (color.is_some() || font_size.is_some() || bold).then_some(Self {
+    (color.is_some() || font_size.is_some() || bold || italic).then_some(Self {
       color,
       font_size,
       bold,
+      italic,
     })
   }
 
@@ -3876,6 +3878,7 @@ impl LabelStyleSpec {
         color: t.color.or(b.color),
         font_size: t.font_size.or(b.font_size),
         bold: t.bold || b.bold,
+        italic: t.italic || b.italic,
       }),
       (b, t) => t.or(b),
     }
@@ -4548,10 +4551,16 @@ pub(crate) fn plot_labels_svg(
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
-  let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
-    " font-weight=\"bold\""
-  } else {
-    ""
+  // `LabelStyle` / `BaseStyle` weight and slant of the labels and title.
+  let label_weight = {
+    let mut attrs = String::new();
+    if opts.label_style.is_some_and(|s| s.bold) {
+      attrs.push_str(" font-weight=\"bold\"");
+    }
+    if opts.label_style.is_some_and(|s| s.italic) {
+      attrs.push_str(" font-style=\"italic\"");
+    }
+    attrs
   };
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
@@ -4772,7 +4781,7 @@ pub(crate) fn plot_labels_svg(
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
     }
-    if sl.italic {
+    if sl.italic || opts.label_style.is_some_and(|s| s.italic) {
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;

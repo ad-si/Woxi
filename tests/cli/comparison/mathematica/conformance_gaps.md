@@ -5139,6 +5139,14 @@ minimum is centered on x = 0 and half of it falls outside the canvas; the
 topmost y label is clipped the same way. Wolfram insets the area far enough for
 both. This is the `Graphics` renderer, not the one `Plot` uses.
 
+### `Graphics` sets tick and axes labels at the default size under `BaseStyle`
+
+A `Graphics` (and the `Show` of a plot, which is one) takes the size and slant
+of `BaseStyle` / `LabelStyle` for its `FrameLabel`s and `PlotLabel` only; its
+tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
+sets all of the graphic's text in the base style. `Plot` and the list plots
+apply it everywhere.
+
 ### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
 
 The `Graphics` renderer draws the x axis at `y = 0` when that is in range and

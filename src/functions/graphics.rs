@@ -10733,6 +10733,62 @@ fn parse_frame_tick_lists(value: &Expr) -> [Option<Vec<(f64, String)>>; 4] {
   }
 }
 
+/// The font size, weight and slant a graphic's `BaseStyle` and then its
+/// `LabelStyle` (which wins on the size) give its frame labels and title.
+#[derive(Clone, Copy, Default)]
+struct GraphicsLabelFont {
+  size: Option<f64>,
+  bold: bool,
+  italic: bool,
+}
+
+impl GraphicsLabelFont {
+  fn from_styles(base: Option<&Expr>, label: Option<&Expr>) -> Self {
+    let mut out = Self::default();
+    for spec in [base, label].into_iter().flatten() {
+      let items: Vec<Expr> = match spec {
+        Expr::List(items) => items.to_vec(),
+        Expr::FunctionCall { name, args } if name == "Directive" => {
+          args.to_vec()
+        }
+        other => vec![other.clone()],
+      };
+      let (bold, italic, _, size) =
+        crate::functions::chart::parse_style_directive_args(&items);
+      out.bold |= bold;
+      out.italic |= italic;
+      if size.is_some() {
+        out.size = size;
+      }
+    }
+    out
+  }
+
+  /// The `font-weight` / `font-style` attributes, each with a leading space.
+  fn attrs(&self) -> String {
+    let mut s = String::new();
+    if self.bold {
+      s.push_str(" font-weight=\"bold\"");
+    }
+    if self.italic {
+      s.push_str(" font-style=\"italic\"");
+    }
+    s
+  }
+}
+
+/// The largest `font-size` an SVG markup fragment sets (a `Style[…, n]`
+/// piece of a title typesets as a sized tspan), if any.
+fn markup_max_font_size(markup: &str) -> Option<f64> {
+  markup
+    .split("font-size=\"")
+    .skip(1)
+    .filter_map(|rest| rest.split('"').next()?.parse::<f64>().ok())
+    .fold(None, |acc: Option<f64>, v| {
+      Some(acc.map_or(v, |a| a.max(v)))
+    })
+}
+
 /// What a `Graphics` draws around its drawing area, for the automatic
 /// `ImagePadding` (see [`crate::functions::plot_padding`]): the frame's or
 /// the axes' tick labels — the same ticks [`render_frame`] and
@@ -10747,6 +10803,8 @@ fn graphics_decorations(
   frame_label: Option<&(String, String, String, String)>,
   axes_label: Option<&(String, String)>,
   title_lines: usize,
+  title_font: f64,
+  frame_label_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
     Decorations, LabelBox, block_height, text_width, tick_label_width,
@@ -10786,7 +10844,7 @@ fn graphics_decorations(
     bb.y_min
   });
   let mut d = Decorations {
-    title: block_height(title_lines, TITLE_FONT),
+    title: block_height(title_lines, title_font),
     ..Default::default()
   };
   if let Some((modes, lists)) = frame {
@@ -10819,7 +10877,7 @@ fn graphics_decorations(
       let text = |s: &String| {
         (!s.is_empty()).then(|| {
           axes_label_picture_size(s)
-            .map_or(block_height(1, LABEL_FONT), |(_, h)| h)
+            .map_or(block_height(1, frame_label_font), |(_, h)| h)
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
@@ -14063,6 +14121,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     frame_tick_lists = parse_frame_tick_lists(&resolved);
   }
+  // `BaseStyle` / `LabelStyle` size, weight and slant of the frame labels
+  // and the title; a title piece styled larger (`Style[…, 18]`) widens the
+  // title band to fit it.
+  let label_font =
+    GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
+  let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
+  let title_font = plot_label
+    .iter()
+    .flatten()
+    .filter_map(|l| markup_max_font_size(l))
+    .fold(label_font.size.unwrap_or(TITLE_FONT), f64::max);
   let decorations = graphics_decorations(
     &bb,
     axes,
@@ -14072,6 +14141,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     frame_label.as_ref(),
     axes_label.as_ref(),
     plot_label.as_ref().map_or(0, Vec::len),
+    title_font,
+    frame_label_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
   // for, unless `ImageSize -> {w, h}` fixed the height outright.
@@ -14367,11 +14438,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .max()
       .unwrap_or(0);
-    let label_font = if widest == 0 {
-      TITLE_FONT
+    let base_title_font = label_font.size.unwrap_or(TITLE_FONT);
+    let title_size = if widest == 0 {
+      base_title_font
     } else {
-      TITLE_FONT.min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
+      base_title_font
+        .min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
     };
+    // The baseline sits one ascent of the title's largest glyphs down.
+    let glyph_size = lines
+      .iter()
+      .filter_map(|l| markup_max_font_size(l))
+      .fold(title_size, f64::max);
+    let title_attrs = label_font.attrs();
     // The band at the top of the picture, above the padding.
     let title_top = match image_padding {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
@@ -14379,9 +14458,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{label_font}\" fill=\"{}\" \
-       xml:space=\"preserve\">",
-      title_top + ascent(label_font),
+       font-family=\"sans-serif\" font-size=\"{title_size}\"{title_attrs} \
+       fill=\"{}\" xml:space=\"preserve\">",
+      title_top + ascent(glyph_size),
       label_color.map_or_else(|| "#333333".to_string(), Color::to_svg_rgb),
     ));
     for (i, line) in lines.iter().enumerate() {
@@ -14390,7 +14469,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         svg.push_str(&format!(
           "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{line}</tspan>",
-          line_pitch(label_font)
+          line_pitch(title_size)
         ));
       }
     }
@@ -14526,40 +14605,42 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // left/right ones rotated along theirs, 6 pt beyond the edge's tick
   // labels.
   if let Some((bottom, left, top, right)) = &frame_label {
+    let flf = frame_label_font;
+    let fl_attrs = label_font.attrs();
     let room =
       |edge: usize| decorations.frame_tick_room(edge, 0.0) + FRAME_LABEL_GAP;
     if !bottom.is_empty() {
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
         svg_w / 2.0,
-        svg_h + room(0) + ascent(LABEL_FONT),
+        svg_h + room(0) + ascent(flf),
         frame_label_fills[0],
       ));
     }
     if !left.is_empty() {
       // Rotated counterclockwise the glyphs rise to the left of the
       // baseline.
-      let lx = -(room(1) + line_height(LABEL_FONT)) + ascent(LABEL_FONT);
+      let lx = -(room(1) + line_height(flf)) + ascent(flf);
       let ly = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
         frame_label_fills[1],
       ));
     }
     if !top.is_empty() {
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
+        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
         svg_w / 2.0,
-        -room(2) - descent(LABEL_FONT),
+        -room(2) - descent(flf),
         frame_label_fills[2],
       ));
     }
     if !right.is_empty() {
       // Reading upwards like the left one.
-      let rx = svg_w + room(3) + ascent(LABEL_FONT);
+      let rx = svg_w + room(3) + ascent(flf);
       let ry = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
         frame_label_fills[3],
       ));
     }
@@ -47847,6 +47928,8 @@ mod review_layout_tests {
       None,
       None,
       0,
+      TITLE_FONT,
+      LABEL_FONT,
     );
     for (label, measured) in labels.iter().zip(&d.axis_ticks.1) {
       let width =
