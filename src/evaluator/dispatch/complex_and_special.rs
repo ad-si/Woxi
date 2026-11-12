@@ -6362,14 +6362,17 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
   order
 }
 
-/// Calls `f` on the exponent of every `SuperscriptBox[eb, e, …]` in a box.
+/// Calls `f` on the exponent of every `SuperscriptBox[base, e, …]` in a box
+/// whose base mentions `eb`: a bare `x^2` as well as a parenthesized
+/// `(x - 1)^2`, so powers of a shifted variable rank by their degree.
 fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
   match b {
     Expr::FunctionCall { name, args } => {
-      if name == "SuperscriptBox"
-        && args.len() >= 2
-        && matches!(&args[0], Expr::String(s) if s == eb)
-      {
+      if name == "SuperscriptBox" && args.len() >= 2 && {
+        let mut found = false;
+        tf_visit_strings(&args[0], &mut |s| found |= s == eb);
+        found
+      } {
         f(&args[1]);
       }
       args.iter().for_each(|a| tf_superscripts_of(a, eb, f));
@@ -7189,7 +7192,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       call(
         "TemplateBox",
-        vec![call("List", elements), str_expr(template)],
+        vec![Expr::List(elements.into()), str_expr(template)],
       )
     }
     // `Column[{a, b, …}]` stacks its items, each typeset on its own line

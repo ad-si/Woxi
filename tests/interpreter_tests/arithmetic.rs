@@ -8320,6 +8320,12 @@ mod cases {
         "x^n + x^2",
         r#"FormBox[RowBox[{SuperscriptBox["x", "n"], "+", SuperscriptBox["x", "2"]}], TraditionalForm]"#,
       ),
+      // Powers of a parenthesized (shifted) variable rank by their
+      // exponent too, as a Taylor expansion about a point is written.
+      (
+        "3 + 12 (x - 1) + 14 (x - 1)^2 + 2 (x - 1)^4",
+        r#"FormBox[RowBox[{RowBox[{"2", " ", SuperscriptBox[RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}], "4"]}], "+", RowBox[{"14", " ", SuperscriptBox[RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}], "2"]}], "+", RowBox[{"12", " ", RowBox[{"(", RowBox[{"x", "-", "1"}], ")"}]}], "+", "3"}], TraditionalForm]"#,
+      ),
       (
         "1 - x",
         r#"FormBox[RowBox[{"1", "-", "x"}], TraditionalForm]"#,
