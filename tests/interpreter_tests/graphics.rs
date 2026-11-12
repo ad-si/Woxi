@@ -45931,6 +45931,52 @@ fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
 }
 
 #[test]
+fn pane_keeps_alignment_on_the_axis_that_still_fits() {
+  // Regression: content taller than a fixed `Pane` lost its horizontal
+  // `Center` alignment and was pinned to the left edge.
+  let svg = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {100, 400}], {300, 200}, \
+     Alignment -> {Center, Top}]",
+  );
+  assert!(svg.contains("paneClip"), "{svg}");
+  assert!(svg.contains("translate(100.0 0.0)"), "{svg}");
+  // Overflowing in both directions keeps the content at the origin.
+  let both = export_svg(
+    "Pane[Graphics[Circle[], ImageSize -> {400, 400}], {300, 200}, \
+     Alignment -> {Center, Center}]",
+  );
+  assert!(both.contains("paneClip"), "{both}");
+  assert!(!both.contains("translate("), "{both}");
+}
+
+#[test]
+fn grid_row_with_exact_rational_color_is_not_taller() {
+  // Regression: the exact `2/3` of `Darker[Green]` (`RGBColor[0, 2/3, 0]`)
+  // in a `Style` cell was mistaken for a stacked fraction in the cell's
+  // content and gave the row extra height.
+  let height = |color: &str| {
+    let svg = export_svg(&format!(
+      "Grid[{{{{\"a\", \"b\"}}, {{Style[\"c\", {color}], 1}}}}, Frame -> True]"
+    ));
+    svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap()
+      .to_string()
+  };
+  assert_eq!(height("Darker[Green]"), height("Blue"));
+  assert_eq!(height("RGBColor[0, 2/3, 0]"), height("Red"));
+  // A fraction in the styled content itself still needs the extra room.
+  let plain = export_svg("Grid[{{\"a\"}, {Style[\"c\", Red]}}, Frame -> True]");
+  let frac = export_svg("Grid[{{\"a\"}, {Style[1/2, Red]}}, Frame -> True]");
+  assert_ne!(
+    plain.split("height=\"").nth(1),
+    frac.split("height=\"").nth(1)
+  );
+}
+
+#[test]
 fn labeled_blank_slot_in_grid_draws_its_caption() {
   // Regression: a control Woxi Studio lifts into its panel leaves `""`
   // behind, and `Labeled["", caption, Left]` then printed as source text
