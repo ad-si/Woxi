@@ -15171,6 +15171,15 @@ fn layout_box_nested(expr: &Expr, font_size: f64) -> BoxLayout {
 
 /// Recursively lay out a box expression into a `BoxLayout`.
 /// This is the main bottom-up tree renderer for the box language.
+/// The elements of a `TemplateBox`: a list, or a `List[…]` call.
+fn template_box_items(e: &Expr) -> Option<&[Expr]> {
+  match e {
+    Expr::List(items) => Some(items),
+    Expr::FunctionCall { name, args } if name == "List" => Some(args),
+    _ => None,
+  }
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -15220,14 +15229,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     Expr::FunctionCall { name, args } => match name.as_str() {
       // `TemplateBox[{…}, "RowDefault"]`, the box text of a `Row`, draws as
       // its parts in a row, a string part as its text.
+      // Its elements may also arrive as a `List[…]` call, the spelling
+      // TraditionalForm box text uses.
       "TemplateBox"
         if args.len() == 2
           && matches!(&args[1], Expr::String(t) if t == "RowDefault")
-          && matches!(&args[0], Expr::List(_)) =>
+          && template_box_items(&args[0]).is_some() =>
       {
-        let Expr::List(items) = &args[0] else {
-          unreachable!("guarded by the match arm")
-        };
+        let items = template_box_items(&args[0]).unwrap();
         let parts: Vec<Expr> = items
           .iter()
           .map(|item| match item {

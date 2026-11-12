@@ -15973,7 +15973,7 @@ mod large_real_digits {
     clear_state();
     let quiet =
       interpret_with_stdout("ToString[AccountingForm[1.234*^15]]").unwrap();
-    assert!(quiet.warnings.is_empty());
+    assert_eq!(quiet.warnings, Vec::<String>::new());
     clear_state();
     let loud = interpret_with_stdout("ToString[DecimalForm[9.9*^15]]").unwrap();
     assert_eq!(
