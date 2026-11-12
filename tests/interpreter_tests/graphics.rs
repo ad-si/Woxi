@@ -52297,3 +52297,92 @@ mod multiline_text_blank_lines {
     assert!(svg.contains(">&#160;</tspan>"), "{svg}");
   }
 }
+
+mod frame_style_font_size {
+  use super::*;
+
+  fn font_sizes_of(svg: &str, text: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .filter(|t| {
+        t.split_once('>')
+          .is_some_and(|(_, body)| body.trim_start().starts_with(text))
+      })
+      .filter_map(|t| t.split("font-size=\"").nth(1))
+      .map(|t| t.split('"').next().unwrap_or("").to_string())
+      .collect()
+  }
+
+  /// Regression: a bare font size in `FrameStyle` was ignored, so the frame
+  /// labels and tick labels kept their default size.
+  #[test]
+  fn bare_size_sets_frame_label_and_tick_font() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameStyle -> 14, \
+       FrameLabel -> {\"bottomlabel\", \"leftlabel\"}, ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "leftlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "0.4"), vec!["140", "140"], "{svg}");
+  }
+
+  #[test]
+  fn frame_ticks_style_overrides_frame_style_size() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameStyle -> Directive[Black, 14], \
+       FrameTicksStyle -> 10, FrameLabel -> {\"bottomlabel\", None}, \
+       ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["140"], "{svg}");
+    assert_eq!(font_sizes_of(&svg, "0.4"), vec!["100", "100"], "{svg}");
+  }
+
+  #[test]
+  fn show_option_sets_frame_label_font() {
+    let svg = export_svg(
+      "Show[Plot[x, {x, 0, 1}], Frame -> True, FrameStyle -> 12, \
+       FrameLabel -> {\"bottomlabel\", None}, ImageSize -> 400]",
+    );
+    assert_eq!(font_sizes_of(&svg, "bottomlabel"), vec!["120"], "{svg}");
+  }
+
+  /// Without a frame, `FrameStyle` has nothing to size.
+  #[test]
+  fn ignored_without_frame() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, FrameStyle -> 14, AxesLabel -> {\"xlabel\", None}, \
+       ImageSize -> 400]",
+    );
+    assert!(
+      font_sizes_of(&svg, "xlabel").iter().all(|s| s != "140"),
+      "{svg}"
+    );
+  }
+}
+
+mod style_box_italic {
+  use super::*;
+
+  /// Regression: `Style[…, Italic]` inside a typeset box (a fraction) lost
+  /// its slant, while `Bold` and colors were kept.
+  #[test]
+  fn italic_string_in_fraction() {
+    let svg = export_svg("Style[\"dK\", Italic]/Style[\"dx\", Italic]");
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 2, "{svg}");
+  }
+
+  #[test]
+  fn font_slant_option_in_fraction() {
+    let svg = export_svg("Style[\"dK\", FontSlant -> \"Italic\"]/2");
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 1, "{svg}");
+  }
+
+  #[test]
+  fn italic_fraction_in_plot_legend() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLegends -> \
+       {Style[\"dK\", Italic]/Style[\"dx\", Italic]}]",
+    );
+    assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 2, "{svg}");
+  }
+}

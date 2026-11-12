@@ -748,6 +748,7 @@ pub(crate) fn plot_tick_font(
   opts
     .tick_label_style
     .and_then(|s| s.font_size)
+    .or(frame_font(opts))
     // `LabelStyle` sizes every label, the tick labels of a frame and of
     // the origin axes included.
     .or(opts.label_style.and_then(|s| s.font_size))
@@ -758,10 +759,14 @@ pub(crate) fn plot_tick_font(
 pub(crate) fn plot_label_font(
   opts: &crate::functions::plot::PlotOptions,
 ) -> f64 {
-  opts
-    .label_style
-    .and_then(|s| s.font_size)
+  frame_font(opts)
+    .or(opts.label_style.and_then(|s| s.font_size))
     .unwrap_or(LABEL_FONT)
+}
+
+/// The font size `FrameStyle` gives a framed plot's labels, if any.
+fn frame_font(opts: &crate::functions::plot::PlotOptions) -> Option<f64> {
+  opts.frame_font_size.filter(|_| opts.frame)
 }
 
 /// The `PlotLabel` font of a plot, in points.

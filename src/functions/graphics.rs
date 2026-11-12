@@ -15644,12 +15644,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       // `AutoDelete -> True`) are display pass-throughs.
       "InterpretationBox" if args.len() >= 2 => layout_box(&args[0], font_size),
 
-      // StyleBox — apply FontSize, FontColor, and Background from options
+      // StyleBox — apply FontSize, FontColor, Background, FontWeight and
+      // FontSlant from options
       "StyleBox" if !args.is_empty() => {
         let mut effective_font_size = font_size;
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
         let mut bold = false;
+        let mut italic = false;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -15677,6 +15679,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               bold = true;
               continue;
             }
+            Expr::Identifier(i) if i == "Italic" => {
+              italic = true;
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 font_color = Some(color);
@@ -15688,6 +15694,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             match k.as_str() {
               "FontWeight" => {
                 bold = matches!(val, Expr::Identifier(w) if w == "Bold");
+              }
+              "FontSlant" => {
+                italic = matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Italic" || v == "Oblique");
               }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
@@ -15725,6 +15735,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
         if bold {
           elements = format!("<g font-weight=\"bold\">{elements}</g>");
+        }
+        if italic {
+          elements = format!("<g font-style=\"italic\">{elements}</g>");
         }
         BoxLayout {
           elements,
@@ -18718,6 +18731,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let mut font_size_attr = String::new();
         let mut color_attr = String::new();
         let mut weight_attr = "";
+        let mut slant_attr = "";
         for opt in &args[1..] {
           let (key, val) = match opt {
             Expr::Rule {
@@ -18741,6 +18755,10 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
               weight_attr = " font-weight=\"bold\"";
               continue;
             }
+            Expr::Identifier(i) if i == "Italic" => {
+              slant_attr = " font-style=\"italic\"";
+              continue;
+            }
             _ => {
               if let Some(color) = parse_color(opt) {
                 color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
@@ -18754,6 +18772,15 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
                 weight_attr = if matches!(val, Expr::Identifier(w) if w == "Bold")
                 {
                   " font-weight=\"bold\""
+                } else {
+                  ""
+                };
+              }
+              "FontSlant" => {
+                slant_attr = if matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Italic" || v == "Oblique")
+                {
+                  " font-style=\"italic\""
                 } else {
                   ""
                 };
@@ -18775,11 +18802,12 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         if font_size_attr.is_empty()
           && color_attr.is_empty()
           && weight_attr.is_empty()
+          && slant_attr.is_empty()
         {
           content
         } else {
           format!(
-            "<tspan{font_size_attr}{color_attr}{weight_attr}>{content}</tspan>"
+            "<tspan{font_size_attr}{color_attr}{weight_attr}{slant_attr}>{content}</tspan>"
           )
         }
       }
