@@ -547,10 +547,12 @@ fn intersection_with_same_test(
   slices: &[&[Expr]],
   test: &Expr,
 ) -> std::vec::Vec<Expr> {
-  let first_items: Vec<Expr> = match slices.first() {
+  // The result comes out in canonical order, as without a SameTest.
+  let mut first_items: Vec<Expr> = match slices.first() {
     Some(items) => items.to_vec(),
     None => return Vec::new(),
   };
+  sort_canonical(&mut first_items);
 
   let test_eq = |a: &Expr, b: &Expr| -> bool {
     let call = call(

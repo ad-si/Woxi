@@ -5482,4 +5482,17 @@ mod boolean_fuzz_edge_cases {
       "{b, c}"
     );
   }
+
+  // Intersection with a SameTest still returns its result in canonical order.
+  #[test]
+  fn intersection_with_same_test_is_sorted() {
+    assert_eq!(
+      interpret(
+        "{Intersection[{2, 2, 1}, {1, 2, a}, SameTest -> Equal], \
+          Intersection[{b, a}, {a, b}, SameTest -> SameQ]}"
+      )
+      .unwrap(),
+      "{{1, 2}, {a, b}}"
+    );
+  }
 }
