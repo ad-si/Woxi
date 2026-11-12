@@ -17721,7 +17721,16 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           match crate::functions::string_ast::number_form_family_to_string(
             name, args,
           ) {
-            Some(s) => svg_escape(s.replace('\n', " ").trim()),
+            // Scientific notation sets on one line with a raised exponent
+            // (`1.320 × 10⁹`), not as the stacked 2-D layout run together.
+            Some(s) => match split_scientific_2d(&s) {
+              Some((base, exp)) => format!(
+                "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+                svg_escape(&base),
+                svg_escape(&exp)
+              ),
+              None => svg_escape(s.replace('\n', " ").trim()),
+            },
             None => expr_to_svg_markup(&args[0]),
           }
         }
@@ -18557,7 +18566,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         match crate::functions::string_ast::number_form_family_to_string(
           name, args,
         ) {
-          Some(s) => s.replace('\n', " ").trim().chars().count() as f64,
+          Some(s) => match split_scientific_2d(&s) {
+            Some((base, exp)) => {
+              base.chars().count() as f64 + exp.chars().count() as f64 * 0.7
+            }
+            None => s.replace('\n', " ").trim().chars().count() as f64,
+          },
           None => estimate_display_width(&args[0]),
         }
       }
