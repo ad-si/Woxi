@@ -7187,6 +7187,19 @@ outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+
+Implemented without access to `wolframscript`. `"Dual"` gives the dual's
+entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
+the pyramid/prism/dipyramid families, and `Missing["NotAvailable"]`
+otherwise — including the antiprisms, whose duals (`{"Trapezohedron", n}`)
+are not among the known solids, and the Johnson solids, whose exact Wolfram
+answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
+entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
+`"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
+the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
+styling, layout and lighting of these pictures differ.
+
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 
 The roots are right but not written the way wolframscript writes them.
