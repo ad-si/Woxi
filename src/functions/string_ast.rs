@@ -10785,12 +10785,17 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     e == "utf8"
   });
 
+  // A known encoding gives the bytes of each character in it (None for
+  // one it lacks); without one the codes are the characters' own.
+  let charset = encoding.as_deref().and_then(ByteCharset::from_name);
   let codes_for = |s: &str| -> Vec<Expr> {
     if is_utf8 {
       s.as_bytes()
         .iter()
         .map(|b| Expr::Integer(*b as i128))
         .collect()
+    } else if let Some(charset) = charset {
+      charset.character_codes(s)
     } else {
       s.chars().map(|c| Expr::Integer(c as i128)).collect()
     }
@@ -16522,33 +16527,51 @@ pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(rules.into()))
 }
 
-/// The Mac OS Roman characters of the bytes 0x80–0xFF.
-const MACINTOSH_ROMAN_HIGH: [char; 128] = [
-  'Ä', 'Å', 'Ç', 'É', 'Ñ', 'Ö', 'Ü', 'á', 'à', 'â', 'ä', 'ã', 'å', 'ç', 'é',
-  'è', 'ê', 'ë', 'í', 'ì', 'î', 'ï', 'ñ', 'ó', 'ò', 'ô', 'ö', 'õ', 'ú', 'ù',
-  'û', 'ü', '†', '°', '¢', '£', '§', '•', '¶', 'ß', '®', '©', '™', '´', '¨',
-  '≠', 'Æ', 'Ø', '∞', '±', '≤', '≥', '¥', 'µ', '∂', '∑', '∏', 'π', '∫', 'ª',
-  'º', 'Ω', 'æ', 'ø', '¿', '¡', '¬', '√', 'ƒ', '≈', '∆', '«', '»', '…',
-  '\u{a0}', 'À', 'Ã', 'Õ', 'Œ', 'œ', '–', '—', '“', '”', '‘', '’', '÷', '◊',
-  'ÿ', 'Ÿ', '⁄', '€', '‹', '›', 'ﬁ', 'ﬂ', '‡', '·', '‚', '„', '‰', 'Â', 'Ê',
-  'Á', 'Ë', 'È', 'Í', 'Î', 'Ï', 'Ì', 'Ó', 'Ô', '\u{f8ff}', 'Ò', 'Ú', 'Û', 'Ù',
-  'ı', 'ˆ', '˜', '¯', '˘', '˙', '˚', '¸', '˝', '˛', 'ˇ',
+/// Where wolframscript puts a byte an encoding gives no character: the
+/// private-use character U+F200 + byte, which encodes back to nothing.
+const UNDEFINED_BYTE_BASE: u32 = 0xF200;
+
+/// The characters of the bytes 0x80–0xFF in MacintoshRoman, as
+/// wolframscript's table has them — the classic Mac OS Roman set, with ¤
+/// rather than € at 0xDB, Greek μ and Δ, ◇ at 0xD7 and U+FDFF for the Apple
+/// logo.
+const MACINTOSH_ROMAN_HIGH: [u32; 128] = [
+  0x00C4, 0x00C5, 0x00C7, 0x00C9, 0x00D1, 0x00D6, 0x00DC, 0x00E1, 0x00E0,
+  0x00E2, 0x00E4, 0x00E3, 0x00E5, 0x00E7, 0x00E9, 0x00E8, 0x00EA, 0x00EB,
+  0x00ED, 0x00EC, 0x00EE, 0x00EF, 0x00F1, 0x00F3, 0x00F2, 0x00F4, 0x00F6,
+  0x00F5, 0x00FA, 0x00F9, 0x00FB, 0x00FC, 0x2020, 0x00B0, 0x00A2, 0x00A3,
+  0x00A7, 0x2022, 0x00B6, 0x00DF, 0x00AE, 0x00A9, 0x2122, 0x00B4, 0x00A8,
+  0x2260, 0x00C6, 0x00D8, 0x221E, 0x00B1, 0x2264, 0x2265, 0x00A5, 0x03BC,
+  0x2202, 0x2211, 0x220F, 0x03C0, 0x222B, 0x00AA, 0x00BA, 0x03A9, 0x00E6,
+  0x00F8, 0x00BF, 0x00A1, 0x00AC, 0x221A, 0x0192, 0x2248, 0x0394, 0x00AB,
+  0x00BB, 0x2026, 0x00A0, 0x00C0, 0x00C3, 0x00D5, 0x0152, 0x0153, 0x2013,
+  0x2014, 0x201C, 0x201D, 0x2018, 0x2019, 0x00F7, 0x25C7, 0x00FF, 0x0178,
+  0x2215, 0x00A4, 0x2039, 0x203A, 0xFB01, 0xFB02, 0x2021, 0x00B7, 0x201A,
+  0x201E, 0x2030, 0x00C2, 0x00CA, 0x00C1, 0x00CB, 0x00C8, 0x00CD, 0x00CE,
+  0x00CF, 0x00CC, 0x00D3, 0x00D4, 0xFDFF, 0x00D2, 0x00DA, 0x00DB, 0x00D9,
+  0x0131, 0x02C6, 0x02DC, 0x00AF, 0x02D8, 0x02D9, 0x02DA, 0x00B8, 0x02DD,
+  0x02DB, 0x02C7,
 ];
 
-/// The Windows-1252 characters of the bytes 0x80–0x9F (the rest of the
-/// code page agrees with ISO Latin-1).
-const WINDOWS_ANSI_C1: [char; 32] = [
-  '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ',
-  '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜',
-  '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
+/// The characters of the bytes 0x80–0x9F in WindowsANSI (code page 1252);
+/// the five bytes it leaves undefined are U+F200 + byte. From 0xA0 on the
+/// code page agrees with ISO Latin-1.
+const WINDOWS_ANSI_C1: [u32; 32] = [
+  0x20AC, 0xF281, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6,
+  0x2030, 0x0160, 0x2039, 0x0152, 0xF28D, 0x017D, 0xF28F, 0xF290, 0x2018,
+  0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014, 0x02DC, 0x2122, 0x0161,
+  0x203A, 0x0153, 0xF29D, 0x017E, 0x0178,
 ];
 
-/// A single-byte character encoding, as named by `CharacterEncoding`.
+/// A character encoding, as named by `CharacterEncoding` or the encoding
+/// argument of `ToCharacterCode`, `FromCharacterCode`, `ByteArrayToString`
+/// and `StringToByteArray`.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ByteCharset {
   Utf8,
   Latin1,
   Ascii,
+  PrintableAscii,
   MacintoshRoman,
   WindowsAnsi,
 }
@@ -16559,38 +16582,79 @@ impl ByteCharset {
     Some(match name {
       "UTF-8" | "UTF8" => Self::Utf8,
       "ISOLatin1" | "ISO8859-1" => Self::Latin1,
-      "ASCII" | "PrintableASCII" => Self::Ascii,
+      "ASCII" => Self::Ascii,
+      "PrintableASCII" => Self::PrintableAscii,
       "MacintoshRoman" => Self::MacintoshRoman,
       "WindowsANSI" => Self::WindowsAnsi,
       _ => return None,
     })
   }
 
-  /// The bytes of `c`, falling back to UTF-8 for a character the encoding
-  /// has no byte for.
-  fn encode_char(self, c: char, out: &mut Vec<u8>) {
-    let code = c as u32;
-    let byte = match self {
-      Self::Utf8 => None,
-      _ if code < 0x80 => Some(code as u8),
-      Self::Latin1 if code < 0x100 => Some(code as u8),
-      Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH
-        .iter()
-        .position(|&m| m == c)
-        .map(|i| 0x80 + i as u8),
-      Self::WindowsAnsi => WINDOWS_ANSI_C1
-        .iter()
-        .position(|&m| m == c)
-        .map(|i| 0x80 + i as u8)
-        .or_else(|| (0xA0..0x100).contains(&code).then_some(code as u8)),
-      _ => None,
-    };
-    if let Some(b) = byte {
-      out.push(b);
-    } else {
-      let mut buf = [0u8; 4];
-      out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+  /// The character code a byte stands for in a single-byte encoding.
+  fn byte_char(self, b: u8) -> u32 {
+    let undefined = UNDEFINED_BYTE_BASE + u32::from(b);
+    match self {
+      Self::Utf8 | Self::Latin1 => u32::from(b),
+      Self::Ascii if b < 0x80 => u32::from(b),
+      Self::PrintableAscii if matches!(b, b'\n' | b'\r' | 0x20..=0x7E) => {
+        u32::from(b)
+      }
+      Self::Ascii | Self::PrintableAscii => undefined,
+      _ if b < 0x80 => u32::from(b),
+      Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH[usize::from(b - 0x80)],
+      Self::WindowsAnsi if b < 0xA0 => WINDOWS_ANSI_C1[usize::from(b - 0x80)],
+      Self::WindowsAnsi => u32::from(b),
     }
+  }
+
+  /// The byte a character is in a single-byte encoding, if it has one.
+  fn char_byte(self, c: char) -> Option<u8> {
+    let code = c as u32;
+    (0..=255u8).find(|&b| {
+      let mapped = self.byte_char(b);
+      mapped == code && mapped != UNDEFINED_BYTE_BASE + u32::from(b)
+    })
+  }
+
+  /// The bytes of `c`, or `None` when the encoding has none for it.
+  fn encode_char(self, c: char) -> Option<Vec<u8>> {
+    match self {
+      Self::Utf8 => {
+        let mut buf = [0u8; 4];
+        Some(c.encode_utf8(&mut buf).as_bytes().to_vec())
+      }
+      _ => self.char_byte(c).map(|b| vec![b]),
+    }
+  }
+
+  /// The character codes `ToCharacterCode[s, encoding]` gives: the bytes of
+  /// each character, `None` for one the encoding cannot represent.
+  pub(crate) fn character_codes(self, s: &str) -> Vec<Expr> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      match self.encode_char(c) {
+        Some(bytes) => {
+          out.extend(bytes.into_iter().map(|b| Expr::Integer(i128::from(b))));
+        }
+        None => out.push(Expr::Identifier("None".to_string())),
+      }
+    }
+    out
+  }
+
+  /// The bytes of `s`, falling back to UTF-8 for a character the encoding
+  /// has no byte for.
+  pub(crate) fn encode(self, s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    for c in s.chars() {
+      if let Some(bytes) = self.encode_char(c) {
+        out.extend(bytes);
+      } else {
+        let mut buf = [0u8; 4];
+        out.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+      }
+    }
+    out
   }
 
   /// The bytes of `s`, or the first character the encoding cannot
@@ -16598,40 +16662,93 @@ impl ByteCharset {
   pub(crate) fn encode_strict(self, s: &str) -> Result<Vec<u8>, char> {
     let mut out = Vec::with_capacity(s.len());
     for c in s.chars() {
-      let before = out.len();
-      self.encode_char(c, &mut out);
-      // A single-byte encoding that wrote more than one byte fell back to
-      // UTF-8: it has no byte for the character.
-      if self != Self::Utf8 && out.len() - before != 1 {
-        return Err(c);
-      }
+      out.extend(self.encode_char(c).ok_or(c)?);
     }
     Ok(out)
   }
 
-  pub(crate) fn encode(self, s: &str) -> Vec<u8> {
-    let mut out = Vec::with_capacity(s.len());
-    for c in s.chars() {
-      self.encode_char(c, &mut out);
-    }
-    out
+  /// Decode bytes quietly.
+  pub(crate) fn decode(self, bytes: &[u8]) -> String {
+    let codes: Vec<u32> = bytes.iter().map(|b| u32::from(*b)).collect();
+    self.decode_codes(&codes, false)
   }
 
-  pub(crate) fn decode(self, bytes: &[u8]) -> String {
-    let high = |b: u8| -> char {
-      match self {
-        Self::MacintoshRoman => MACINTOSH_ROMAN_HIGH[(b - 0x80) as usize],
-        Self::WindowsAnsi if b < 0xA0 => WINDOWS_ANSI_C1[(b - 0x80) as usize],
-        _ => b as char,
-      }
+  /// Decode bytes the way `ByteArrayToString` does, reporting each byte
+  /// sequence that is not UTF-8.
+  pub(crate) fn decode_reporting(self, bytes: &[u8]) -> String {
+    let codes: Vec<u32> = bytes.iter().map(|b| u32::from(*b)).collect();
+    self.decode_codes(&codes, true)
+  }
+
+  /// Decode character codes the way `FromCharacterCode[codes, encoding]`
+  /// does: codes below 256 are bytes in the encoding, larger ones are
+  /// characters already. In UTF-8, a sequence that does not decode is
+  /// reported (when `report`), its first byte kept as the character of that
+  /// code, and decoding resumes right after it. Structurally sound
+  /// sequences decode even when overlong, as in wolframscript.
+  pub(crate) fn decode_codes(self, codes: &[u32], report: bool) -> String {
+    let push = |out: &mut String, code: u32| {
+      out.push(char::from_u32(code).unwrap_or('\u{FFFD}'));
     };
-    match self {
-      Self::Utf8 => String::from_utf8_lossy(bytes).to_string(),
-      _ => bytes
-        .iter()
-        .map(|&b| if b < 0x80 { b as char } else { high(b) })
-        .collect(),
+    let mut out = String::with_capacity(codes.len());
+    if self != Self::Utf8 {
+      for &code in codes {
+        match u8::try_from(code) {
+          Ok(b) => push(&mut out, self.byte_char(b)),
+          Err(_) => push(&mut out, code),
+        }
+      }
+      return out;
     }
+    let continuation = |c: u32| (0x80..=0xBF).contains(&c);
+    let mut i = 0;
+    while i < codes.len() {
+      let lead = codes[i];
+      let (need, initial) = match lead {
+        0..=0x7F | 0x100.. => {
+          push(&mut out, lead);
+          i += 1;
+          continue;
+        }
+        0xC0..=0xDF => (1, lead & 0x1F),
+        0xE0..=0xEF => (2, lead & 0x0F),
+        0xF0..=0xF7 => (3, lead & 0x07),
+        _ => (0, 0),
+      };
+      let mut got = 0;
+      while got < need
+        && i + 1 + got < codes.len()
+        && continuation(codes[i + 1 + got])
+      {
+        got += 1;
+      }
+      if need > 0 && got == need {
+        let code = codes[i + 1..=i + need]
+          .iter()
+          .fold(initial, |acc, c| (acc << 6) | (c & 0x3F));
+        push(&mut out, code);
+        i += need + 1;
+        continue;
+      }
+      if report {
+        // The bytes tried: the lead, its continuations, and the byte that
+        // broke the sequence, if there was one.
+        let end = (i + got + 2).min(codes.len());
+        let end = if need == 0 { i + 1 } else { end };
+        let shown = codes[i..end]
+          .iter()
+          .map(u32::to_string)
+          .collect::<Vec<_>>()
+          .join(", ");
+        crate::emit_message(&format!(
+          "$CharacterEncoding::utf8: The byte sequence {{{shown}}} could not be \
+           interpreted as a character in the UTF-8 character encoding."
+        ));
+      }
+      push(&mut out, lead);
+      i += 1;
+    }
+    out
   }
 }
 
@@ -16782,7 +16899,7 @@ pub fn byte_array_to_string_ast(
       },
       Some(_) => return Ok(unevaluated("ByteArrayToString", args)),
     };
-    return Ok(Expr::String(charset.decode(&bytes)));
+    return Ok(Expr::String(charset.decode_reporting(&bytes)));
   }
   crate::emit_message(&format!(
     "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",

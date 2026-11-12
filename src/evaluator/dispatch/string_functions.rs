@@ -264,40 +264,37 @@ pub fn dispatch_string_functions(
         ));
         return Some(Ok(unevaluated("FromCharacterCode", args)));
       }
-      // With a "UTF8"/"UTF-8" encoding the integers are UTF-8 *bytes*, not
-      // code points: decode the byte sequence into characters. (Other
-      // ASCII-compatible encodings pass through unchanged below.)
+      // With an encoding, codes below 256 are bytes in it (UTF-8 bytes,
+      // say, or MacintoshRoman ones) and larger codes are characters
+      // already; an encoding Woxi does not know passes the codes through.
       if args.len() == 2
         && let Expr::String(enc) = &args[1]
-        && (enc == "UTF8" || enc == "UTF-8")
+        && let Some(charset) =
+          crate::functions::string_ast::ByteCharset::from_name(enc)
       {
-        let bytes: Option<Vec<u8>> = match &args[0] {
-          Expr::Integer(n) if (0..=255).contains(n) => Some(vec![*n as u8]),
-          Expr::List(items) => items
-            .iter()
-            .map(|it| match it {
-              Expr::Integer(n) if (0..=255).contains(n) => Some(*n as u8),
-              _ => None,
-            })
-            .collect(),
-          _ => None,
-        };
-        if let Some(bytes) = bytes {
-          match String::from_utf8(bytes) {
-            Ok(s) => return Some(Ok(Expr::String(s))),
-            Err(_) => {
-              // Invalid byte sequence: wolframscript warns, then falls back
-              // to interpreting the integers as code points.
-              crate::emit_message(&format!(
-                "$CharacterEncoding::utf8: The byte sequence {} could not be \
-                 interpreted as a character in the UTF-8 character encoding.",
-                crate::syntax::format_expr(
-                  &args[0],
-                  crate::syntax::ExprForm::Output
-                )
-              ));
-            }
+        let codes = |e: &Expr| -> Option<Vec<u32>> {
+          match e {
+            Expr::Integer(n) => u32::try_from(*n).ok().map(|c| vec![c]),
+            Expr::List(items) => items
+              .iter()
+              .map(|it| match it {
+                Expr::Integer(n) => u32::try_from(*n).ok(),
+                _ => None,
+              })
+              .collect(),
+            _ => None,
           }
+        };
+        let decode = |c: Vec<u32>| Expr::String(charset.decode_codes(&c, true));
+        if let Some(c) = codes(&args[0]) {
+          return Some(Ok(decode(c)));
+        }
+        if let Expr::List(rows) = &args[0]
+          && let Some(rows) = rows.iter().map(codes).collect::<Option<Vec<_>>>()
+        {
+          return Some(Ok(Expr::List(
+            rows.into_iter().map(decode).collect::<Vec<_>>().into(),
+          )));
         }
       }
       return Some(crate::functions::string_ast::from_character_code_ast(

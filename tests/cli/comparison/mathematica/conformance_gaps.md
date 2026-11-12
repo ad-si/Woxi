@@ -6513,6 +6513,20 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 ## Import, export, units and system
 
+### Character encodings: lone surrogates, and strict JSON imports
+
+`ToCharacterCode`, `FromCharacterCode`, `ByteArrayToString`,
+`StringToByteArray`, `ExportString` and `ImportString` were fuzzed against
+wolframscript on 2026-11-12 (every byte of every 8-bit encoding, and 500
+random string calls; all agree). What still differs:
+
+- A UTF-8 sequence that decodes to a surrogate (`{237, 160, 128}`) gives
+  the character 55296 in wolframscript; a Rust string cannot hold a lone
+  surrogate, so Woxi gives U+FFFD.
+- `ImportString[…, "JSON"]` decodes UTF-8 leniently in Woxi; wolframscript
+  rejects a string holding a character above 255 (`General::
+  jsonoutofrangeunicode`) or an invalid byte sequence and fails.
+
 ### `Read` / `ReadList` messages about text with `\r`, tabs or stray commas
 
 Stream reads were fuzzed against wolframscript on 2026-11-12 (1,050 random

@@ -12095,3 +12095,140 @@ mod stream_reads {
     );
   }
 }
+
+mod character_encodings {
+  use super::*;
+
+  fn run(code: &str) -> String {
+    clear_state();
+    interpret(code).unwrap()
+  }
+
+  // A byte an encoding gives no character is U+F200 + byte.
+  #[test]
+  fn undefined_bytes_decode_to_private_use_characters() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[ByteArrayToString[ByteArray[{65, 246}], \"ASCII\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{0, 10, 127}], \"PrintableASCII\"]], \
+          ToCharacterCode[ByteArrayToString[ByteArray[{128, 129}], \"WindowsANSI\"]]}"
+      ),
+      "{{65, 62198}, {61952, 10, 62079}, {8364, 62081}}"
+    );
+  }
+
+  // wolframscript's MacintoshRoman table is the classic one.
+  #[test]
+  fn macintosh_roman_follows_wolframscripts_table() {
+    assert_eq!(
+      run(
+        "ToCharacterCode[ByteArrayToString[ByteArray[{181, 198, 215, 218, 219, 240}], \
+         \"MacintoshRoman\"]]"
+      ),
+      "{956, 916, 9671, 8725, 164, 65023}"
+    );
+  }
+
+  #[test]
+  fn an_unrepresentable_character_code_is_none() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[FromCharacterCode[{65, 8364, 233}], \"ISOLatin1\"], \
+          ToCharacterCode[FromCharacterCode[{127, 10, 0}], \"PrintableASCII\"], \
+          ToCharacterCode[FromCharacterCode[{8364, 8226}], \"WindowsANSI\"], \
+          ToCharacterCode[FromCharacterCode[62152], \"ASCII\"]}"
+      ),
+      "{{65, None, 233}, {None, 10, None}, {128, 149}, {None}}"
+    );
+  }
+
+  // Codes below 256 are bytes in the encoding; larger ones are characters.
+  #[test]
+  fn from_character_code_decodes_bytes_in_the_encoding() {
+    assert_eq!(
+      run(
+        "{ToCharacterCode[FromCharacterCode[{200, 128, 130}, \"WindowsANSI\"]], \
+          ToCharacterCode[FromCharacterCode[{200, 300}, \"ISOLatin1\"]], \
+          ToCharacterCode[FromCharacterCode[{215}, \"MacintoshRoman\"]], \
+          ToCharacterCode[FromCharacterCode[{195, 169, 300}, \"UTF8\"]]}"
+      ),
+      "{{200, 8364, 8218}, {200, 300}, {9671}, {233, 300}}"
+    );
+  }
+
+  // A byte sequence that is not UTF-8 is reported and its first byte kept;
+  // decoding resumes right after it.
+  #[test]
+  fn invalid_utf8_keeps_the_bytes_and_says_so() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ToCharacterCode[ByteArrayToString[ByteArray[{220, 195, 169, 192, 128}]]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "{220, 233, 0}");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "$CharacterEncoding::utf8: The byte sequence {220, 195} could not be \
+         interpreted as a character in the UTF-8 character encoding."
+          .to_string()
+      ]
+    );
+  }
+}
+
+mod export_string_bytes {
+  use super::*;
+
+  fn run(code: &str) -> String {
+    clear_state();
+    interpret(code).unwrap()
+  }
+
+  // ExportString hands back the UTF-8 bytes of a text format as characters.
+  #[test]
+  fn text_formats_come_back_as_utf8_bytes() {
+    assert_eq!(
+      run(
+        "s = FromCharacterCode[{233, 8364}]; \
+         {ToCharacterCode[ExportString[s, \"Text\"]], \
+          ToCharacterCode[ExportString[{{s}}, \"CSV\"]], \
+          ToCharacterCode[ExportString[s, \"Table\"]]}"
+      ),
+      "{{195, 169, 226, 130, 172}, {34, 195, 169, 226, 130, 172, 34, 10}, \
+       {195, 169, 226, 130, 172}}"
+    );
+  }
+
+  #[test]
+  fn json_escapes_control_characters() {
+    assert_eq!(
+      run("ExportString[FromCharacterCode[{0, 8, 12, 27, 127, 65}], \"JSON\"]"),
+      "\"\\u0000\\b\\f\\u001b\\u007fA\""
+    );
+  }
+
+  // ImportString reads those bytes back, so the two round-trip.
+  #[test]
+  fn import_string_decodes_the_bytes() {
+    assert_eq!(
+      run(
+        "s = FromCharacterCode[{233, 8364, 65}]; \
+         ToCharacterCode /@ {ImportString[ExportString[s, \"JSON\"], \"JSON\"], \
+           ImportString[ExportString[s, \"Text\"], \"Text\"], \
+           ImportString[FromCharacterCode[{195, 169, 233}], \"Text\"], \
+           ImportString[FromCharacterCode[{195, 169}], \"String\"]}"
+      ),
+      "{{233, 8364, 65}, {233, 8364, 65}, {233, 233}, {195, 169}}"
+    );
+  }
+
+  // FullForm writes the control characters InputForm leaves raw in octal.
+  #[test]
+  fn full_form_writes_control_characters_in_octal() {
+    assert_eq!(
+      run("ToString[FullForm[FromCharacterCode[{0, 8, 27, 31, 127}]]]"),
+      "\"\\000\\b\\[RawEscape]\\037\\177\""
+    );
+  }
+}

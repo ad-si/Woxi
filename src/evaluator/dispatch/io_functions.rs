@@ -2395,7 +2395,7 @@ pub fn dispatch_io_functions(
       }
       if format_str == "CSV" || format_str == "TSV" {
         let sep = if format_str == "CSV" { ',' } else { '\t' };
-        return Some(Ok(Expr::String(export_string_csv(
+        return Some(Ok(byte_string(&export_string_csv(
           &args[0], sep, true, true,
         ))));
       }
@@ -2411,7 +2411,7 @@ pub fn dispatch_io_functions(
       // "Table" is tab-separated like TSV but leaves strings unquoted and
       // emits no trailing newline.
       if format_str == "Table" {
-        return Some(Ok(Expr::String(export_string_csv(
+        return Some(Ok(byte_string(&export_string_csv(
           &args[0], '\t', false, false,
         ))));
       }
@@ -2420,7 +2420,7 @@ pub fn dispatch_io_functions(
         // offending part has already been reported); the call does not come
         // back unevaluated.
         return Some(Ok(match export_string_json(&args[0], 0, compact) {
-          Some(json) => Expr::String(json),
+          Some(json) => byte_string(&json),
           None => fail_expr(),
         }));
       }
@@ -2457,7 +2457,7 @@ pub fn dispatch_io_functions(
           }
           other => elem(other),
         };
-        return Some(Ok(Expr::String(s)));
+        return Some(Ok(byte_string(&s)));
       }
       // Return unevaluated for unsupported formats
       return Some(Ok(unevaluated("ExportString", args)));
@@ -4915,6 +4915,13 @@ fn strip_comments(text: &str) -> String {
   out
 }
 
+/// What `ExportString` hands back for a text format: the UTF-8 encoding
+/// of the text as a string of bytes, one character per byte — `"é"` comes
+/// back as `"Ã©"`, the way wolframscript returns it.
+fn byte_string(text: &str) -> Expr {
+  Expr::String(text.bytes().map(char::from).collect())
+}
+
 /// Split an `OpenWrite[…]` / `OpenRead[…]` arg list into the optional
 /// filename argument and the remaining option-Rule arguments. Used so the
 /// `BinaryFormat -> True` option can be passed through alongside (or
@@ -5029,6 +5036,12 @@ fn export_string_json(
         '\n' => out.push_str("\\n"),
         '\t' => out.push_str("\\t"),
         '\r' => out.push_str("\\r"),
+        '\u{8}' => out.push_str("\\b"),
+        '\u{c}' => out.push_str("\\f"),
+        // Every other control character, and DEL, as a \u escape.
+        '\u{0}'..='\u{1f}' | '\u{7f}' => {
+          out.push_str(&format!("\\u{:04x}", c as u32));
+        }
         _ => out.push(c),
       }
     }
