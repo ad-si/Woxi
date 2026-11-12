@@ -3640,12 +3640,14 @@ fn contour_plot_equations(
     let segments =
       marching_squares_segments(&grid, 0.0, 0.0, 0.0, scaled_cell, scaled_cell);
     for chain in chain_segments(&segments) {
+      // The segments come in screen orientation (`v` grows downward from
+      // the top edge at `y_max`), so `v` maps back to `y` from `y_max`.
       let points: Vec<(f64, f64)> = chain
         .iter()
         .map(|&(u, v)| {
           (
             x_min + u / 1000.0 * (x_max - x_min),
-            y_min + v / 1000.0 * (y_max - y_min),
+            y_max - v / 1000.0 * (y_max - y_min),
           )
         })
         .collect();

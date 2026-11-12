@@ -52094,3 +52094,18 @@ mod plot_option_lists_and_merged_contour_styles {
     assert!(svg.contains("stroke-dasharray"), "no dashed curve: {svg}");
   }
 }
+
+/// The `Line` of an equation curve in ContourPlot lies on the curve
+/// (it used to come out mirrored in y, hidden by symmetric curves).
+#[test]
+fn contour_plot_equation_line_lies_on_the_curve() {
+  assert_eq!(
+    interpret(
+      "pts = First[Cases[Normal[ContourPlot[x - 2 y == 1, {x, -3, 4}, \
+       {y, -5, 5}]], Line[p_] :> p, Infinity]]; \
+       Max[Abs[(#[[1]] - 2 #[[2]] - 1) & /@ pts]] < 10^-6"
+    )
+    .unwrap(),
+    "True"
+  );
+}

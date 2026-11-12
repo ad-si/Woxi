@@ -26467,3 +26467,35 @@ fn simplify_extracts_common_radicals_with_negative_unit_cofactors() {
     assert_eq!(interpret(&code).unwrap(), expected, "{code}");
   }
 }
+
+mod simplify_list_scalar_equations {
+  use super::*;
+
+  /// `Equal` leaves a list compared with a number unevaluated, but
+  /// Simplify and FullSimplify decide it: a list never equals a number.
+  #[test]
+  fn list_never_equals_a_number() {
+    assert_eq!(interpret("{1, 2} == 3").unwrap(), "{1, 2} == 3");
+    assert_eq!(interpret("Simplify[{1, 2} == 3]").unwrap(), "False");
+    assert_eq!(interpret("FullSimplify[{a, b} == Pi]").unwrap(), "False");
+    assert_eq!(interpret("Simplify[Infinity == {a}]").unwrap(), "False");
+    assert_eq!(
+      interpret("FullSimplify[{1., 2} != Infinity]").unwrap(),
+      "True"
+    );
+    // A symbol may stand for a list, so this stays undecided.
+    assert_eq!(interpret("Simplify[{a, b} == c]").unwrap(), "{a, b} == c");
+  }
+
+  /// The decided condition of an `If` picks its branch.
+  #[test]
+  fn decides_if_condition() {
+    assert_eq!(
+      interpret(
+        "r = {2.5, 1}; FullSimplify[{If[r == Infinity, 1 == 0, x == r[[1]]]}]"
+      )
+      .unwrap(),
+      "{x == 2.5}"
+    );
+  }
+}
