@@ -11928,6 +11928,26 @@ mod input_form_escapes {
   use super::*;
 
   #[test]
+  fn backspace_and_form_feed_escapes_are_read_back() {
+    clear_state();
+    assert_eq!(
+      interpret("ToCharacterCode[\"a\\bb\\fc\"]").unwrap(),
+      "{97, 8, 98, 12, 99}"
+    );
+    clear_state();
+    // InputForm writes them, so Compress / ToExpression must read them.
+    assert_eq!(
+      interpret(
+        "{ToCharacterCode[Uncompress[Compress[FromCharacterCode[{233, 12, 8}]]]], \
+          ToCharacterCode[ToExpression[ToString[FromCharacterCode[{8, 12}], \
+          InputForm]]]}"
+      )
+      .unwrap(),
+      "{{233, 12, 8}, {8, 12}}"
+    );
+  }
+
+  #[test]
   fn backspace_and_form_feed_are_spelled_out() {
     clear_state();
     assert_eq!(

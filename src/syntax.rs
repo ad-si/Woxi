@@ -16253,6 +16253,15 @@ pub fn decode_string_literal(raw: &str) -> String {
           chars.next();
           result.push('\r');
         }
+        // Backspace and form feed, as InputForm writes them.
+        Some(&'b') => {
+          chars.next();
+          result.push('\u{8}');
+        }
+        Some(&'f') => {
+          chars.next();
+          result.push('\u{c}');
+        }
         Some(&'\\') => {
           chars.next();
           result.push('\\');
