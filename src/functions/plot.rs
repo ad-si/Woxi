@@ -3862,14 +3862,12 @@ impl LabelStyleSpec {
     };
     let (bold, italic, color, font_size) =
       crate::functions::chart::parse_style_directive_args(&items);
-    (color.is_some() || font_size.is_some() || bold || italic).then_some(
-      Self {
-        color,
-        font_size,
-        bold,
-        italic,
-      },
-    )
+    (color.is_some() || font_size.is_some() || bold || italic).then_some(Self {
+      color,
+      font_size,
+      bold,
+      italic,
+    })
   }
 
   /// `top` laid over `base`: each property `top` sets wins, the rest come

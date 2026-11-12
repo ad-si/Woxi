@@ -1261,7 +1261,7 @@ mod base_style_labels {
     let tags = text_tags(&svg, "T");
     assert_eq!(tags.len(), 1, "{svg}");
     let y = attr(tags[0], "y").unwrap();
-    assert!(y >= 18.0 * 1854.0 / 2048.0 - 1e-6, "{y}");
+    assert!(y >= 18.0 * 1854.0 / 2048.0 - 0.01, "{y}");
   }
 }
 

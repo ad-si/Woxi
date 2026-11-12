@@ -10706,7 +10706,9 @@ fn markup_max_font_size(markup: &str) -> Option<f64> {
     .split("font-size=\"")
     .skip(1)
     .filter_map(|rest| rest.split('"').next()?.parse::<f64>().ok())
-    .fold(None, |acc: Option<f64>, v| Some(acc.map_or(v, |a| a.max(v))))
+    .fold(None, |acc: Option<f64>, v| {
+      Some(acc.map_or(v, |a| a.max(v)))
+    })
 }
 
 /// What a `Graphics` draws around its drawing area, for the automatic
