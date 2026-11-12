@@ -3455,6 +3455,79 @@ mod infinity_comparisons {
     assert_eq!(interpret("1 < DirectedInfinity[-1]").unwrap(), "False");
   }
 
+  // Ordering a non-real number against another number gives ::nord naming
+  // the non-real operand; a symbolic partner compares nothing.
+  #[test]
+  fn non_real_order_comparisons_emit_nord() {
+    let run = |code: &str| {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      (r.result, r.warnings)
+    };
+    assert_eq!(
+      run("2 I < 1"),
+      (
+        "2*I < 1".to_string(),
+        vec!["Less::nord: Invalid comparison with 2 I attempted.".to_string()]
+      )
+    );
+    assert_eq!(
+      run("1. I <= 2"),
+      (
+        "0. + 1.*I <= 2".to_string(),
+        vec![
+          "LessEqual::nord: Invalid comparison with 0. + 1. I attempted."
+            .to_string()
+        ]
+      )
+    );
+    assert_eq!(
+      run("Sqrt[-2] > 0").1,
+      vec!["Greater::nord: Invalid comparison with I Sqrt[2] attempted."]
+    );
+    // The held prefix is dropped and the remainder is evaluated again.
+    let (result, w) = run("1 < 2 < 1 + I");
+    assert_eq!(result, "2 < 1 + I");
+    assert_eq!(w.len(), 2, "{w:?}");
+    // No numeric partner, or a contradiction found first: no message.
+    for (code, expected) in [
+      ("x < I", "x < I"),
+      ("I < x < 2", "I < x < 2"),
+      ("1 < I < 0", "False"),
+    ] {
+      let (result, w) = run(code);
+      assert_eq!(result, expected, "{code}");
+      assert!(w.is_empty(), "{code}: {w:?}");
+    }
+  }
+
+  // Max names each non-real argument in canonical order, Min in reverse;
+  // Min over plain arguments without ComplexInfinity names the whole call.
+  #[test]
+  fn min_max_nord_naming_and_order() {
+    let warnings =
+      |code: &str| woxi::interpret_with_stdout(code).unwrap().warnings;
+    assert_eq!(
+      warnings("Max[2 I, I, 1]"),
+      vec![
+        "Max::nord: Invalid comparison with I attempted.",
+        "Max::nord: Invalid comparison with 2 I attempted."
+      ]
+    );
+    assert_eq!(
+      warnings("Min[ComplexInfinity, 2 I, x]"),
+      vec![
+        "Min::nord: Invalid comparison with ComplexInfinity attempted.",
+        "Min::nord: Invalid comparison with 2 I attempted."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("Min[2, 1 + I, x]").unwrap();
+    assert_eq!(r.result, "Min[1 + I, 2, x]");
+    assert_eq!(
+      r.warnings,
+      vec!["Min::nord: Invalid comparison with Min[1 + I, 2, x] attempted."]
+    );
+  }
+
   // Numeric complex constants compare by real and imaginary part; a symbol
   // anywhere keeps the comparison open.
   #[test]

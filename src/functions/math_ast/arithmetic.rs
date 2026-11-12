@@ -17490,7 +17490,9 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// one. ComplexInfinity and the non-real DirectedInfinity[z] read as
 /// `ComplexInfinity` / `z Infinity`; other non-real numbers (`I`, `1 + I`,
 /// `I Sqrt[2]`) are shown as expressions.
-fn unorderable_display(e: &Expr) -> Option<crate::syntax::MessagePiece<'_>> {
+pub(crate) fn unorderable_display(
+  e: &Expr,
+) -> Option<crate::syntax::MessagePiece<'_>> {
   use crate::syntax::MessagePiece;
   match e {
     Expr::Identifier(s) | Expr::Constant(s) if s == "ComplexInfinity" => {
@@ -17597,22 +17599,45 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
 
   // A non-real number (I, 1 + I, I Sqrt[2], DirectedInfinity[I]) cannot be
   // ordered: the whole call stays unevaluated, lists unflattened, with one
-  // ::nord per unorderable item in reverse canonical order
-  // (wolframscript-verified).
+  // ::nord per unorderable item, in canonical order for Max and in reverse
+  // canonical order for Min (wolframscript-verified).
   if items.len() >= 2 {
     let mut sorted: Vec<&Expr> = items.clone();
     sorted.sort_by(|a, b| {
       crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b)
     });
+    if !is_max {
+      sorted.reverse();
+    }
+    let is_complex = crate::functions::predicate_ast::is_complex_number;
+    // Min over plain arguments that mix a real number with an explicit
+    // complex number reports the explicit numbers as one comparison naming
+    // the whole sorted call (`Min[2, 1 + I]` names `Min[1 + I, 2]`), after
+    // the other non-real items; Max always names each item.
+    let whole_call = !is_max
+      && !args.iter().any(|a| matches!(a, Expr::List(_)))
+      && items.iter().any(|e| {
+        matches!(
+          e,
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(..)
+        ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Rational")
+      })
+      && items.iter().any(|e| is_complex(e));
     let unorderable: Vec<crate::syntax::MessagePiece> = sorted
       .iter()
-      .rev()
+      .filter(|e| !(whole_call && is_complex(e)))
       .filter_map(|e| unorderable_display(e))
       .collect();
-    let has_non_real = unorderable.iter().any(|d| {
-      !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
-    });
+    let has_non_real = whole_call
+      || unorderable.iter().any(|d| {
+        !matches!(d, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
+      });
     if has_non_real {
+      let mut kept = args.to_vec();
+      canonical(&mut kept);
       let mut ci_reported = false;
       for display in unorderable {
         if matches!(&display, crate::syntax::MessagePiece::Text(t) if t == "ComplexInfinity")
@@ -17624,9 +17649,11 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
         }
         emit_nord(display);
       }
-      let mut kept = args.to_vec();
-      canonical(&mut kept);
-      return Ok(call(head, kept));
+      let result = call(head, kept);
+      if whole_call {
+        emit_nord(crate::syntax::MessagePiece::Expr(&result));
+      }
+      return Ok(result);
     }
   }
 

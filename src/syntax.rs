@@ -19665,7 +19665,9 @@ pub fn format_message_pieces(pieces: &[MessagePiece]) -> String {
     .iter()
     .map(|p| match p {
       MessagePiece::Text(t) => TextBox::atom(t),
-      MessagePiece::Expr(e) => with_display_names(e, expr_to_textbox),
+      MessagePiece::Expr(e) => {
+        with_display_names(e, |e| with_complex_display(e, expr_to_textbox))
+      }
     })
     .collect();
   TextBox::hconcat(&boxes).to_string()
