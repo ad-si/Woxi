@@ -52437,3 +52437,58 @@ mod styled_label_scripts {
     );
   }
 }
+
+mod plot_option_lists_and_merged_contour_styles {
+  use super::*;
+
+  /// Options grouped in a list after the data (`ListPlot[data, {opts}]`)
+  /// are read like separately given options.
+  #[test]
+  fn list_plot_reads_options_given_as_a_list() {
+    let colors = |opts: &str| {
+      interpret(&format!(
+        "Cases[ListPlot[{{{{1, 2}}, {{3, 4}}}}, {opts}], _RGBColor, Infinity]"
+      ))
+      .unwrap()
+    };
+    let listed = colors("{PlotStyle -> Red}");
+    assert_eq!(listed, colors("PlotStyle -> Red"));
+    assert!(listed.contains("RGBColor[1"), "{listed}");
+  }
+
+  /// Nested option lists are spliced too, alongside plain options.
+  #[test]
+  fn plot_reads_nested_option_lists() {
+    assert_eq!(
+      export_svg("Plot[x, {x, 0, 1}, {{PlotStyle -> Red}}, ImageSize -> 200]"),
+      export_svg("Plot[x, {x, 0, 1}, PlotStyle -> Red, ImageSize -> 200]")
+    );
+  }
+
+  /// A dashed equation curve of a ContourPlot stays dashed when `Show`
+  /// merges it with another plot.
+  #[test]
+  fn show_keeps_contour_plot_dashing() {
+    let svg = export_svg(
+      "Show[ContourPlot[y == x^2, {x, -2, 2}, {y, -2, 2}], \
+       ContourPlot[x + y == 1, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> {Purple, Dashed}]]",
+    );
+    assert!(svg.contains("stroke-dasharray"), "no dashed curve: {svg}");
+  }
+}
+
+/// The `Line` of an equation curve in ContourPlot lies on the curve
+/// (it used to come out mirrored in y, hidden by symmetric curves).
+#[test]
+fn contour_plot_equation_line_lies_on_the_curve() {
+  assert_eq!(
+    interpret(
+      "pts = First[Cases[Normal[ContourPlot[x - 2 y == 1, {x, -3, 4}, \
+       {y, -5, 5}]], Line[p_] :> p, Infinity]]; \
+       Max[Abs[(#[[1]] - 2 #[[2]] - 1) & /@ pts]] < 10^-6"
+    )
+    .unwrap(),
+    "True"
+  );
+}
