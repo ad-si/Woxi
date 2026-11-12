@@ -7704,10 +7704,8 @@ fn store_function_definition(
       Rule::PatternOptionalDefaultSimple => {
         // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
         let mut pat_inner = item.into_inner();
-        let param_name = pat_inner
-          .next()
-          .map(|p| p.as_str().to_owned())
-          .unwrap_or_default();
+        let param_name =
+          pat_inner.next().map_or_default(|p| p.as_str().to_owned());
         let position = params.len() + 1;
         params.push(param_name);
         conditions.push(None);

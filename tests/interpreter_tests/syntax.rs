@@ -502,6 +502,32 @@ mod trailing_semicolon {
 
   /// `ToString[_, InputForm]` is a *second* renderer, and it used to print
   /// the call spellings verbatim while the bare echo printed the operator —
+  /// A quotient raised to `-1` moves to the denominator as a group:
+  /// `a (b/c)^(-1)` is `a/(b/c)`, not `a/b/c` (which reads back as
+  /// `(a/b)/c`, the reciprocal of the factor).
+  #[test]
+  fn reciprocal_of_a_quotient_is_grouped_in_the_denominator() {
+    assert_eq!(interpret("Hold[a (b/c)^(-1)]").unwrap(), "Hold[a/(b/c)]");
+    assert_eq!(interpret("Hold[(b/c)^(-1) d]").unwrap(), "Hold[d/(b/c)]");
+    assert_eq!(
+      interpret("Hold[a (Log[2]/(t 5))^(-1)]").unwrap(),
+      "Hold[a/(Log[2]/(t*5))]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[a (b/c)^(-1)], InputForm]").unwrap(),
+      "Hold[a/(b/c)]"
+    );
+    // The printed form reads back as the same value.
+    assert_eq!(
+      interpret(
+        "ToExpression[ToString[Hold[x (y/z)^(-1)], InputForm]] /. \
+         {x -> 6, y -> 2, z -> 3} // ReleaseHold"
+      )
+      .unwrap(),
+      "9"
+    );
+  }
+
   /// `Hold[Divide[0, 0]]` echoed as `Hold[0/0]` but stringified as
   /// `Hold[Divide[0, 0]]`. Both say the operator, as wolframscript does.
   #[test]

@@ -358,8 +358,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let path = env
         .iter()
         .find(|(key, _)| key == "PATH")
-        .map(|(_, value)| value.as_str())
-        .unwrap_or_default();
+        .map_or_default(|(_, value)| value.as_str());
       let Some(found) = std::env::split_paths(path)
         .map(|dir| dir.join(program))
         .find(|candidate| candidate.is_file())
@@ -7258,6 +7257,23 @@ pub(crate) fn pane_fixed_size(args: &[Expr]) -> Option<Vec<Expr>> {
   })
 }
 
+/// The width of a `Pane[content, w]` or `Pane[content, ImageSize -> w]`
+/// call that sets a width alone (its height follows its content).
+pub(crate) fn pane_width_only(args: &[Expr]) -> Option<f64> {
+  if let Some(w) = args.get(1).and_then(pane_size_component) {
+    return Some(w).filter(|w| *w > 0.0);
+  }
+  args.iter().skip(1).find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "ImageSize") => {
+      pane_size_component(replacement).filter(|w| *w > 0.0)
+    }
+    _ => None,
+  })
+}
+
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
@@ -7373,6 +7389,29 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // `Pane[text, w]` / `Pane[text, ImageSize -> w]`: a width alone sets
+      // the box `w` wide with its text wrapped there, as tall as the lines
+      // it takes. A line that cannot break is cut off at the edge.
+      if name == "Pane"
+        && pane_size.is_none()
+        && let Some(w) = pane_width_only(args)
+        && !lays_out_a_graphic(&args[0])
+      {
+        let wrapped = wrap_pane_text(&args[0], w, 14.0);
+        let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
+        if inner_svg.starts_with("<svg") {
+          let (_, h) = crate::functions::graphics::parse_svg_wh(&inner_svg);
+          return crate::functions::graphics::clip_svg_to_pane_box(
+            &inner_svg,
+            w,
+            h,
+            pane_alignment(&args[1..]),
+            false,
+            pane_shrinks_to_fit(&args[1..]),
+          );
+        }
+        return inner_svg;
+      }
       let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => {
@@ -7655,8 +7694,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           ))
         }) || args[1..].iter().any(|opt| {
           matches!(opt, Expr::Rule { pattern, .. }
-            if matches!(pattern.as_ref(), Expr::Identifier(k)
-              if k == "Alignment" || k == "ItemSize"))
+          if matches!(pattern.as_ref(), Expr::Identifier(k)
+            if matches!(
+              k.as_str(),
+              "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
+            )))
         }))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])

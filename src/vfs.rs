@@ -29,8 +29,7 @@ pub fn current_dir() -> String {
     .with(|s| s.borrow().last().cloned())
     .unwrap_or_else(|| {
       std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default()
+        .map_or_default(|p| p.to_string_lossy().into_owned())
     })
 }
 

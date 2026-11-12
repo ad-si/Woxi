@@ -766,8 +766,7 @@ fn socket_connect(args: &[Expr]) -> Expr {
   };
   let resolved: Vec<SocketAddr> = (endpoint.host.as_str(), endpoint.port)
     .to_socket_addrs()
-    .map(std::iter::Iterator::collect)
-    .unwrap_or_default();
+    .map_or_default(std::iter::Iterator::collect);
   let mut error = None;
   let mut stream = None;
   for addr in &resolved {

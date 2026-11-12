@@ -9,7 +9,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn woxi_bin() -> PathBuf {
-  // Build path: target/<profile>/woxi alongside the test binary.
+  // Cargo hands integration tests the path of each binary it built for
+  // them. Newer Cargo keeps test executables under
+  // `target/<profile>/build/<pkg>/<hash>/out/`, so the binary can no longer
+  // be found next to the test executable.
+  if let Some(path) = option_env!("CARGO_BIN_EXE_woxi") {
+    return PathBuf::from(path);
+  }
+  // Without the `cli` feature the binary isn't built for the tests; fall
+  // back to target/<profile>/woxi alongside the test binary.
   let mut path = std::env::current_exe().unwrap();
   path.pop(); // remove the test executable name
   if path.ends_with("deps") {
@@ -1019,9 +1027,10 @@ fn install_kernel_works_outside_a_source_checkout() {
   );
 
   // The staged copy is a temporary and must not be left behind.
-  let leftovers: Vec<_> = std::fs::read_dir(dir.join("tmp"))
-    .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
-    .unwrap_or_default();
+  let leftovers: Vec<_> =
+    std::fs::read_dir(dir.join("tmp")).map_or_default(|entries| {
+      entries.filter_map(Result::ok).map(|e| e.path()).collect()
+    });
   assert!(
     leftovers.is_empty(),
     "staging directories left behind: {leftovers:?}"

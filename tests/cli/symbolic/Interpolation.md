@@ -39,3 +39,11 @@ $ wo "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}]; {f'[1], f''[1], Head[f']}"
 Interpolation::inhr: Requested order is too high; order has been reduced to {2}.
 {2, 2, InterpolatingFunction}
 ```
+
+`InterpolationOrder -> 0` gives a step function that holds the value of the
+next data point between nodes:
+
+```scrut
+$ wo 'f = Interpolation[{{0, 0}, {1, 1}, {2, 4}}, InterpolationOrder -> 0]; {f[0.5], f[1], f[1.5]}'
+{1., 1, 4.}
+```
