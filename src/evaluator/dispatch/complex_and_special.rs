@@ -7159,6 +7159,23 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
     }
+    // `Invisible[expr]` keeps the room `expr` takes but draws nothing: its
+    // box is the content's, with `ShowContents -> False`.
+    "Invisible" if args.len() == 1 => {
+      let body = if TF_BOX_TEXT.get() {
+        tf(&args[0])
+      } else {
+        tf_display(&args[0])
+      };
+      call(
+        "StyleBox",
+        vec![
+          body,
+          rule_expr(id_expr("ShowContents"), bool_expr(false)),
+          rule_expr(id_expr("StripOnInput"), bool_expr(false)),
+        ],
+      )
+    }
     // In box *text* a `Row` is the FrontEnd's row template: `RowDefault` for
     // the plain form, and one of two separator variants — the plural one
     // carries a string separator twice, as the text it draws and as the

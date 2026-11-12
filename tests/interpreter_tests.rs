@@ -4659,18 +4659,76 @@ mod interpreter_tests {
 
   #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
-    // A `PlotLabel` is one `<text>` line; `MatrixForm[{{…}}]` in it must
-    // typeset its entries rather than print the wrapper's source.
+    // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
+    // picture above the drawing), not printed as the wrapper's source, and
+    // an `Invisible` item keeps its room without painting anything.
     clear_state();
     let svg = interpret(
       "ExportString[Graphics[{}, PlotLabel -> Row[{MatrixForm[{{a, b}, {c, d}}], Invisible[MatrixForm[{{1, 0}, {0, 1}}]]}]], \"SVG\"]",
     )
     .unwrap();
     assert!(
-      !svg.contains("MatrixForm"),
-      "MatrixForm leaked as literal text: {svg}"
+      !svg.contains("MatrixForm") && !svg.contains("Invisible"),
+      "wrapper leaked as literal text: {svg}"
     );
-    assert!(svg.contains("(a b; c d)"), "matrix entries missing: {svg}");
+    for entry in ["a", "b", "c", "d"] {
+      assert!(
+        svg.contains(&format!(">{entry}</text>")),
+        "matrix entry {entry} missing: {svg}"
+      );
+    }
+    assert!(
+      !svg.contains(">1</text>") && !svg.contains(">0</text>"),
+      "invisible matrix was painted: {svg}"
+    );
+  }
+
+  #[test]
+  fn test_plot_label_traditional_form_matrix_product_is_typeset() {
+    // `ToString[m . x, TraditionalForm]` in a `Row` label is the box text of
+    // a matrix times a vector. It is drawn as a two-dimensional matrix, not
+    // as tab-separated rows on two text lines.
+    clear_state();
+    let svg = interpret(
+      "m = {{2, -1}, {3, 5}}; ExportString[Graphics[Line[{{0, 0}, {1, 1}}], \
+       Axes -> True, PlotLabel -> Row[{\"v = \", \
+       ToString[m . v, TraditionalForm]}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains('\t'), "grid flattened to tabbed text: {svg}");
+    assert!(!svg.contains("GridBox"), "box source leaked: {svg}");
+    assert!(svg.contains("v = "), "label prefix missing: {svg}");
+    for entry in ["2", "1", "3", "5"] {
+      assert!(
+        svg.contains(&format!(">{entry}</text>")),
+        "matrix entry {entry} missing: {svg}"
+      );
+    }
+    // The label is a nested picture whose top sits inside the image.
+    let nested = svg.find("<svg x=").expect("label picture missing");
+    assert!(nested > svg.find("</defs>").unwrap());
+  }
+
+  #[test]
+  fn test_plot_label_column_stays_text_lines() {
+    // A title stacked as a `Column` is still set as lines of text.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{}, PlotLabel -> Column[{\"top\", \"bottom\"}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("top"), "{svg}");
+    assert!(svg.contains(">bottom</tspan>"), "{svg}");
+    assert!(!svg.contains("<svg x="), "column became a picture: {svg}");
+  }
+
+  #[test]
+  fn test_invisible_traditional_boxes_hide_contents() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[Invisible[x]]]").unwrap(),
+      "TagBox[FormBox[StyleBox[x, ShowContents -> False, StripOnInput -> False], TraditionalForm], TraditionalForm, Editable -> True]"
+    );
   }
 
   #[test]
