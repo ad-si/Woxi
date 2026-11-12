@@ -2534,14 +2534,16 @@ pub(crate) fn tidy_tree(
 /// every vertex one layer below the longest chain of edges leading to it
 /// (breadth-first from `root` when one is given), vertices ordered within
 /// a layer by the mean position of their neighbors to keep crossings
-/// down, and packed from the left one unit apart. As in Wolfram, the
-/// layers of a wide drawing close up so it is at most 1/φ times as tall
-/// as it is wide.
+/// down, and packed from the left one unit apart. With `close_up`, as in
+/// Wolfram's named layered embeddings, the layers of a wide drawing close
+/// up so it is at most 1/φ times as tall as it is wide; the automatic
+/// layout of a directed acyclic graph keeps its layers one unit apart.
 fn layered_layout(
   graph: &DiGraph<usize, RenderEdgeData>,
   dir: LayerDirection,
   root: Option<usize>,
   scale_tree: bool,
+  close_up: bool,
   layer_size: Option<&Expr>,
 ) -> Vec<(f64, f64)> {
   let n = graph.node_count();
@@ -2746,7 +2748,7 @@ fn layered_layout(
     .saturating_sub(1) as f64;
   let offsets = layer_offsets(layer_size, layers - 1);
   let depth_span = offsets[layers - 1].max(0.0);
-  let step = if width > 0.0 && depth_span > 0.0 {
+  let step = if close_up && width > 0.0 && depth_span > 0.0 {
     (INV_GOLDEN * width / depth_span).min(1.0)
   } else {
     1.0
@@ -2845,6 +2847,7 @@ impl LayoutChoice {
         dir,
         root,
         !self.layered_digraph,
+        true,
         self.layer_size.as_ref(),
       );
     }
@@ -2978,6 +2981,21 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
     // Small paths and single cycles retain their circular arrangement;
     // additional cycles need a spring embedding even with few vertices.
     if n > 8 || graph.edge_count() > n {
+      // A directed acyclic graph (a Hasse diagram, say) is drawn in
+      // layers instead, every vertex below the longest chain of edges
+      // leading to it, as Wolfram's automatic layout does.
+      if graph.edge_references().all(|e| e.weight().directed)
+        && !petgraph::algo::is_cyclic_directed(graph)
+      {
+        return layered_layout(
+          graph,
+          LayerDirection::Top,
+          None,
+          false,
+          false,
+          None,
+        );
+      }
       let comp: Vec<usize> = (0..n).collect();
       return layout_component(graph, &comp);
     }

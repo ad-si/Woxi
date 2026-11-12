@@ -53298,3 +53298,47 @@ mod overscript_bar_accent {
     );
   }
 }
+
+mod text_label_powers_and_wrappers {
+  use super::*;
+
+  /// A power in a `Text` label is set with a raised exponent on one line,
+  /// not as the two-line OutputForm box.
+  #[test]
+  fn power_label_is_a_superscript() {
+    let svg = export_svg("Graphics[Text[x^2, {0, 0}]]");
+    assert!(svg.contains(">x²</text>"), "{svg}");
+    assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
+  #[test]
+  fn power_inside_row_label_is_a_superscript() {
+    let svg = export_svg("Graphics[Text[Row[{\"<\", b^15, \">\"}], {0, 0}]]");
+    assert!(svg.contains(">&lt;b¹⁵&gt;</text>"), "{svg}");
+  }
+
+  /// `Text[Style[x, 16]]` and `Tooltip[…]` only wrap a label, so the inner
+  /// font size still applies — also under an outer `Style[…, 10]`, which
+  /// is how a graph's `VertexLabels` reach the picture.
+  #[test]
+  fn nested_text_and_tooltip_keep_inner_style() {
+    for label in [
+      "Text[Style[\"abc\", 16]]",
+      "Style[Text[Style[\"abc\", 16]], 10]",
+      "Style[Tooltip[Text[Style[\"abc\", 16]], \"tip\"], 10]",
+    ] {
+      let svg = export_svg(&format!("Graphics[Text[{label}, {{0, 0}}]]"));
+      assert!(svg.contains("font-size=\"16\""), "{label}: {svg}");
+      assert!(!svg.contains("tip"), "{label}: {svg}");
+    }
+  }
+
+  #[test]
+  fn graph_vertex_label_keeps_its_font_size() {
+    let svg = export_svg(
+      "Graph[{1 -> 2}, VertexLabels -> {1 -> Tooltip[Text[Style[\"abc\", \
+       16]], \"tip\"]}]",
+    );
+    assert!(svg.contains("font-size=\"16\""), "{svg}");
+  }
+}
