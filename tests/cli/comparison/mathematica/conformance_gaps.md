@@ -554,13 +554,6 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
 
-### A string atom sorts before a product in Plus
-
-`"m" + 2 a` is `m + 2*a` in WL and `2*a + m` in Woxi. For *symbols* Woxi orders
-atom-versus-product correctly; strings live in a different ordering class that
-skips the name comparison. Strings inside `Plus` never fully evaluate, so this
-is pathological input — recorded only so the comparator is not touched for it.
-
 ### `x^2 + (a + b) x` keeps Woxi's order
 
 WL prints `(a + b) x + x^2`. The products-compare-from-the-last-factor rule is

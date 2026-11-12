@@ -3500,6 +3500,36 @@ mod infinity_comparisons {
     }
   }
 
+  // A string term sorts after the numbers and before every symbolic term.
+  #[test]
+  fn strings_in_a_sum() {
+    assert_eq!(
+      interpret(
+        "{\"s\" + x, x + \"s\", \"s\" + 2 x, f[x] + \"s\", 1 + \"s\", \"b\" + x + \"a\" + 1}"
+      )
+      .unwrap(),
+      "{s + x, s + x, s + 2*x, s + f[x], 1 + s, 1 + a + b + x}"
+    );
+  }
+
+  // The real arguments still reduce to their extreme one beside a non-real
+  // number, and the smaller call is evaluated (and reported) again.
+  #[test]
+  fn max_reduces_reals_beside_non_real_numbers() {
+    for (code, result, count) in [
+      ("Max[I, 1]", "Max[I, 1]", 1),
+      ("Max[I, 1, 2]", "Max[I, 2]", 2),
+      ("Max[I, x, 1]", "Max[I, 1, x]", 1),
+      ("Max[ComplexInfinity, 1, 2]", "Max[2, ComplexInfinity]", 2),
+      ("Min[Sqrt[-2], 1, 2]", "Min[1, I*Sqrt[2]]", 2),
+      ("Min[I, 2 I, x, 1, 2]", "Min[I, 2*I, 1, 2, x]", 1),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, result, "{code}");
+      assert_eq!(r.warnings.len(), count, "{code}: {:?}", r.warnings);
+    }
+  }
+
   // Max names each non-real argument in canonical order, Min in reverse;
   // Min over plain arguments without ComplexInfinity names the whole call.
   #[test]

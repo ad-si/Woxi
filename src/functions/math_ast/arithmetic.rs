@@ -4060,6 +4060,21 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (false, true) => return std::cmp::Ordering::Greater,
     _ => {}
   }
+  // A string comes after the numbers but before every symbolic term, as in
+  // `Sort`: `1 + "s"`, `"s" + x`, `"s" + 2*x`, `"s" + f[x]`.
+  let numeric = |e: &Expr| crate::functions::predicate_ast::is_numeric_q(e);
+  match (a, b) {
+    (Expr::String(_), Expr::String(_)) => {
+      return crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+    }
+    (Expr::String(_), other) if !numeric(other) => {
+      return std::cmp::Ordering::Less;
+    }
+    (other, Expr::String(_)) if !numeric(other) => {
+      return std::cmp::Ordering::Greater;
+    }
+    _ => {}
+  }
   // A product containing a function-valued sum compares through that
   // compound factor, just as Sort does. Looking only for bare call
   // factors misses expressions such as x*(Sin[x] + Sec[x]^2).
@@ -17276,9 +17291,8 @@ where
     return op(args);
   };
   if lengths.any(|l| l != len) {
-    crate::emit_message(&format!(
-      "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-      expr_to_string(&unevaluated(head, args))
+    crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
+      head, args,
     ));
     let mut sorted = args.to_vec();
     sorted.sort_by(|a, b| {
@@ -17357,12 +17371,8 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match (&args[0], &args[1]) {
     (Expr::List(a), Expr::List(b)) => {
       if a.len() != b.len() {
-        crate::emit_message(&format!(
-          "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-          crate::syntax::format_expr(
-            &unevaluated("Subtract", args),
-            crate::syntax::ExprForm::Output
-          )
+        crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated(
+          "Subtract", args,
         ));
         return Ok(unevaluated("Subtract", args));
       }
@@ -17649,11 +17659,41 @@ fn extremum_ast(args: &[Expr], is_max: bool) -> Result<Expr, InterpreterError> {
         }
         emit_nord(display);
       }
-      let result = call(head, kept);
       if whole_call {
+        let result = call(head, kept);
         emit_nord(crate::syntax::MessagePiece::Expr(&result));
+        return Ok(result);
       }
-      return Ok(result);
+      // The real numbers still reduce to their extreme one, and the smaller
+      // call is evaluated again, reporting the non-real items a second
+      // time: `Max[I, 1, 2]` is `Max[I, 2]` with two messages.
+      if !args.iter().any(|a| matches!(a, Expr::List(_))) {
+        let reals: Vec<(usize, f64)> = args
+          .iter()
+          .enumerate()
+          .filter_map(|(i, a)| try_eval_to_f64_with_infinity(a).map(|v| (i, v)))
+          .collect();
+        if reals.len() >= 2 {
+          let best = reals
+            .iter()
+            .copied()
+            .reduce(|acc, cur| {
+              let better = if is_max { cur.1 > acc.1 } else { cur.1 < acc.1 };
+              if better { cur } else { acc }
+            })
+            .map(|(i, _)| i);
+          let reduced: Vec<Expr> = args
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+              Some(*i) == best || !reals.iter().any(|(j, _)| j == i)
+            })
+            .map(|(_, a)| a.clone())
+            .collect();
+          return extremum_ast(&reduced, is_max);
+        }
+      }
+      return Ok(call(head, kept));
     }
   }
 

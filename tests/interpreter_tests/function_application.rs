@@ -4202,4 +4202,64 @@ mod functional_fuzz_edge_cases {
       "{{1}, f[1], g[1]}"
     );
   }
+
+  // SubsetMap takes its positions with Part, whose messages report what is
+  // missing; the call then stays unevaluated.
+  #[test]
+  fn subset_map_out_of_range_positions() {
+    let r =
+      woxi::interpret_with_stdout("SubsetMap[Reverse, {}, 1 ;; 2]").unwrap();
+    assert_eq!(r.result, "SubsetMap[Reverse, {}, Span[1, 2]]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::take: Cannot take positions 1 through 2 in {}."]
+    );
+    let r =
+      woxi::interpret_with_stdout("SubsetMap[Reverse, {y}, {1, 3}]").unwrap();
+    assert_eq!(r.result, "SubsetMap[Reverse, {y}, {1, 3}]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::partw: Part {1, 3} of {y} does not exist."]
+    );
+    assert_eq!(
+      interpret("SubsetMap[Reverse, {a, b, c}, {1, 3}]").unwrap(),
+      "{c, b, a}"
+    );
+  }
+
+  // An object with fewer list levels than MapThread threads over is
+  // reported with how many it has.
+  #[test]
+  fn map_thread_reports_missing_dimensions() {
+    let r = woxi::interpret_with_stdout(
+      "MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3]"
+    );
+    assert_eq!(
+      r.warnings,
+      vec![
+        "MapThread::mptd: Object {{-3, 1}, {1, 1}} at position {2, 1} in \
+         MapThread[Sqrt, {{{-3, 1}, {1, 1}}, {{3}, {-2}}}, 3] has only 2 of \
+         required 3 dimensions."
+      ]
+    );
+  }
+
+  // Thread::tdlen lays the expression out like other messages.
+  #[test]
+  fn tdlen_message_layout() {
+    let r = woxi::interpret_with_stdout("{{}} + {\"s\", 0, 3/4}").unwrap();
+    assert_eq!(
+      r.warnings,
+      vec![
+        "                                                          3\n\
+         Thread::tdlen: Objects of unequal length in {{}} + {s, 0, -} cannot be combined.\n\
+         \x20                                                         4"
+      ]
+    );
+  }
 }

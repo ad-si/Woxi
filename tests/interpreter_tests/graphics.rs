@@ -34570,9 +34570,10 @@ mod manipulate {
     match &spec.controls[0] {
       ManipulateControl::Discrete { value_labels, .. } => {
         // Both quotient operands are compound, so both are parenthesized;
-        // a sum needs no parentheses around its terms.
+        // a sum needs no parentheses around its terms, and the string term
+        // sorts first (`"rest" + Row[…]` in wolframscript).
         assert_eq!(value_labels[0], "(a1)/(b2)");
-        assert_eq!(value_labels[1], "m\u{2081}+ + rest");
+        assert_eq!(value_labels[1], "rest + m\u{2081}+");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

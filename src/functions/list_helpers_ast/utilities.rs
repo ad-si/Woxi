@@ -430,3 +430,17 @@ pub fn is_level_spec(spec: &Expr) -> bool {
     other => bound(other),
   }
 }
+
+/// `Thread::tdlen` for a listable combination of lists of unequal length,
+/// with the expression laid out the way messages show it (`3/4` as a 2D
+/// fraction, strings without quotes).
+pub fn emit_thread_tdlen(expr: &Expr) {
+  use crate::syntax::MessagePiece;
+  crate::emit_message(&crate::syntax::format_message_pieces(&[
+    MessagePiece::Text(
+      "Thread::tdlen: Objects of unequal length in ".to_string(),
+    ),
+    MessagePiece::Expr(expr),
+    MessagePiece::Text(" cannot be combined.".to_string()),
+  ]));
+}

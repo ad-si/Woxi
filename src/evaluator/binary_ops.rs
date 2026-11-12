@@ -199,10 +199,7 @@ pub fn thread_binary_op(
         // Emit Thread::tdlen warning and return the expression unevaluated,
         // matching wolframscript behavior.
         let unevaluated = binop(op, left.clone(), right.clone());
-        crate::emit_message(&format!(
-          "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-          expr_to_string(&unevaluated)
-        ));
+        crate::functions::list_helpers_ast::emit_thread_tdlen(&unevaluated);
         return Ok(unevaluated);
       }
       let results: Result<Vec<Expr>, _> = left_items

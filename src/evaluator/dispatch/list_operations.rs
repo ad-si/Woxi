@@ -3096,18 +3096,26 @@ pub fn dispatch_list_operations(
             } else {
               None
             };
-            let call = crate::syntax::format_expr(
-              &unevaluated("MapThread", args),
-              crate::syntax::ExprForm::Output,
-            );
-            match mismatch {
-              Some((i, j, da, db)) => crate::emit_message(&format!(
-                "MapThread::mptc: Incompatible dimensions of objects at positions {{2, {i}}} and {{2, {j}}} of {call}; dimensions are {da} and {db}."
-              )),
-              None => crate::emit_message(&format!(
-                "MapThread::mptc: Incompatible dimensions of objects in {call}."
-              )),
-            }
+            let call = unevaluated("MapThread", args);
+            use crate::syntax::MessagePiece;
+            let (before, after) = match mismatch {
+              Some((i, j, da, db)) => (
+                format!(
+                  "MapThread::mptc: Incompatible dimensions of objects at positions {{2, {i}}} and {{2, {j}}} of "
+                ),
+                format!("; dimensions are {da} and {db}."),
+              ),
+              None => (
+                "MapThread::mptc: Incompatible dimensions of objects in "
+                  .to_string(),
+                ".".to_string(),
+              ),
+            };
+            crate::emit_message(&crate::syntax::format_message_pieces(&[
+              MessagePiece::Text(before),
+              MessagePiece::Expr(&call),
+              MessagePiece::Text(after),
+            ]));
             Ok(unevaluated("MapThread", args))
           }
           other => other,
@@ -4950,10 +4958,7 @@ pub fn dispatch_list_operations(
         Err(InterpreterError::EvaluationError(msg))
           if msg.contains("same length") =>
         {
-          crate::emit_message(&format!(
-            "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-            expr_to_string(&args[0])
-          ));
+          crate::functions::list_helpers_ast::emit_thread_tdlen(&args[0]);
           Ok(args[0].clone())
         }
         other => other,
@@ -4969,10 +4974,7 @@ pub fn dispatch_list_operations(
         Err(InterpreterError::EvaluationError(msg))
           if msg.contains("same length") =>
         {
-          crate::emit_message(&format!(
-            "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-            expr_to_string(&args[0])
-          ));
+          crate::functions::list_helpers_ast::emit_thread_tdlen(&args[0]);
           Ok(args[0].clone())
         }
         other => other,
@@ -5048,10 +5050,7 @@ pub fn dispatch_list_operations(
           Err(InterpreterError::EvaluationError(msg))
             if msg.contains("same length") =>
           {
-            crate::emit_message(&format!(
-              "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-              expr_to_string(&args[0])
-            ));
+            crate::functions::list_helpers_ast::emit_thread_tdlen(&args[0]);
             Ok(args[0].clone())
           }
           other => other,
@@ -8783,6 +8782,28 @@ pub fn dispatch_list_operations(
       if matches!(&args[1], Expr::List(_)) {
         let f = &args[0];
         let subject = &args[1];
+        // A position, span or flat list of positions is taken with Part,
+        // whose messages report what does not exist (`Part::take`,
+        // `Part::partw`); SubsetMap then stays unevaluated.
+        let part_spec = match &args[2] {
+          Expr::Integer(_) => true,
+          Expr::FunctionCall { name, .. } => name == "Span",
+          Expr::List(items) => {
+            items.iter().all(|i| matches!(i, Expr::Integer(_)))
+          }
+          _ => false,
+        };
+        if part_spec {
+          let taken = crate::evaluator::evaluate_function_call_ast(
+            "Part",
+            &[subject.clone(), args[2].clone()],
+          );
+          if matches!(&taken, Ok(Expr::FunctionCall { name, .. }) if name == "Part")
+            || matches!(&taken, Ok(Expr::Part { .. }))
+          {
+            return Some(Ok(unevaluated("SubsetMap", args)));
+          }
+        }
         let paths = subsetmap_positions(subject, &args[2])?;
         // Extract the elements at those positions, in spec order.
         let subset: Vec<Expr> = paths
