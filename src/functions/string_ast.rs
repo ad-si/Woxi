@@ -452,19 +452,24 @@ fn string_take_drop(
         emit_seqs(fname, args);
         return Ok(unevaluated());
       }
-      let real_start = if m >= 0 { m } else { len + m + 1 };
-      let real_end = if n >= 0 { n } else { len + n + 1 };
-      if real_end == real_start - step {
-        return Ok(empty_or_all(true));
-      }
-      let in_range = real_start >= 1
-        && real_end >= 1
-        && real_start <= len
-        && real_end <= len;
-      let proper = (step > 0 && real_end >= real_start)
-        || (step < 0 && real_end <= real_start);
-      if in_range && proper {
-        Ok(take(real_start as usize, real_end as usize, step))
+      // The positions list Take would pick from a list of this length.
+      if let Some(positions) =
+        crate::functions::list_helpers_ast::step_range_positions(
+          len, m, n, step,
+        )
+      {
+        let picked: std::collections::HashSet<usize> =
+          positions.iter().copied().collect();
+        Ok(Expr::String(if is_take {
+          positions.iter().map(|&i| chars[i]).collect()
+        } else {
+          chars
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !picked.contains(i))
+            .map(|(_, c)| c)
+            .collect()
+        }))
       } else {
         string_take_drop_message(fname, m, n, s);
         Ok(unevaluated())
@@ -829,6 +834,11 @@ fn string_split_with_replacement(
   max_parts: Option<usize>,
   ignore_case: bool,
 ) -> Result<Expr, InterpreterError> {
+  // The empty string has no pieces and no delimiters — unless a count (or
+  // All) asks for every piece, empty ones included.
+  if s.is_empty() && max_parts.is_none() {
+    return Ok(Expr::List(Vec::new().into()));
+  }
   let mut compiled: Vec<(WoxiRegex, Option<String>, Option<&Expr>)> =
     Vec::with_capacity(rules.len());
   for (lhs, rhs) in rules {
@@ -946,11 +956,13 @@ pub fn string_split_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Extract max parts (3rd arg if integer) and options from remaining args
+  // `All` keeps every piece, the empty ones at either end included — like
+  // an unlimited count of pieces.
   let (max_parts, option_start) = if args.len() >= 3 {
-    if let Expr::Integer(n) = &args[2] {
-      (Some(*n as usize), 3)
-    } else {
-      (None, 2)
+    match &args[2] {
+      Expr::Integer(n) => (Some(*n as usize), 3),
+      Expr::Identifier(a) if a == "All" => (Some(usize::MAX), 3),
+      _ => (None, 2),
     }
   } else {
     (None, 2)

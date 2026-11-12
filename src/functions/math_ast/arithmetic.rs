@@ -17399,7 +17399,8 @@ pub fn subtract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   plus_ast(&[args[0].clone(), negated_b])
 }
 
-/// Recursively flatten all List arguments for Max/Min
+/// Recursively flatten all List arguments for Max/Min — including lists
+/// held as association values (Max[<|x -> {1, 2}|>] is 2).
 fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
   let mut result = Vec::new();
   for arg in args {
@@ -17407,7 +17408,7 @@ fn flatten_lists(args: &[Expr]) -> Vec<&Expr> {
       Expr::List(items) => result.extend(flatten_lists(items)),
       Expr::Association(pairs) => {
         for (_, v) in pairs {
-          result.push(v);
+          result.extend(flatten_lists(std::slice::from_ref(v)));
         }
       }
       _ => result.push(arg),

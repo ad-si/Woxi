@@ -16050,3 +16050,37 @@ mod to_string_span {
     );
   }
 }
+
+mod string_split_and_take_edges {
+  use super::*;
+
+  // All keeps the empty pieces at either end.
+  #[test]
+  fn string_split_all_keeps_edge_pieces() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[{StringSplit[\",a,,b,\", \",\", All], StringSplit[\",a,,b,\", \",\"], \
+          StringSplit[\"\", \",\" -> \"SEP\"], StringSplit[\"\", \",\" -> \"SEP\", All]}, \
+          InputForm]"
+      )
+      .unwrap(),
+      "{{\"\", \"a\", \"\", \"b\", \"\"}, {\"a\", \"\", \"b\"}, {}, {\"\"}}"
+    );
+  }
+
+  // StringTake and StringDrop read {m, n, s} exactly as Take does.
+  #[test]
+  fn string_take_steps_like_take() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToString[Quiet[{StringTake[\"\", {1, -1, 2}], StringTake[\"abcdef\", {5, 6, -2}], \
+          StringDrop[\"abcdef\", {1, -1, 2}], StringTake[\"abcdef\", {4, 6, -2}]}], \
+          InputForm]"
+      )
+      .unwrap(),
+      "{\"\", \"\", \"bdf\", StringTake[\"abcdef\", {4, 6, -2}]}"
+    );
+  }
+}
