@@ -1226,20 +1226,16 @@ fn try_nsolve_quadratic(
   let expanded = {
     let together = together_expr(&expanded_raw);
     match &together {
-      // The unknown in a denominator: cancel it exactly, so a removable
-      // pole is not reported as a root.
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        right: denominator,
-        ..
-      } if super::eliminate::contains_var(denominator, &var) => {
-        inexact_cleared_numerator(&poly)?
-      }
+      // With the unknown in a denominator, a factor it shares with the
+      // numerator is cancelled exactly, so no root sits beside the pole.
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: numerator,
-        right: _,
-      } => expand_and_combine(numerator),
+        right: denominator,
+      } => super::eliminate::contains_var(denominator, &var)
+        .then(|| inexact_cleared_numerator(&poly, &var))
+        .flatten()
+        .unwrap_or_else(|| expand_and_combine(numerator)),
       _ => expanded_raw,
     }
   };
@@ -6365,9 +6361,16 @@ fn solve_rational_system(
 /// back as spurious solutions beside the pole. The numbers are taken as the
 /// rationals they stand for, the fractions combined and cancelled exactly,
 /// and the numerator brought back to machine numbers.
-fn inexact_cleared_numerator(poly: &Expr) -> Option<Expr> {
+fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::math_ast::numeric_utils::contains_inexact_real;
   if !contains_inexact_real(poly) {
+    return None;
+  }
+  // Only a sum in a denominator can share a factor with the numerator that
+  // machine arithmetic fails to cancel; a power of the unknown cancels as is.
+  let mut sums = Vec::new();
+  collect_denominator_sums(poly, var, &mut sums);
+  if sums.is_empty() {
     return None;
   }
   let exact = crate::evaluator::evaluate_function_call_ast(
@@ -6381,11 +6384,17 @@ fn inexact_cleared_numerator(poly: &Expr) -> Option<Expr> {
   let together = together_expr(&expand_and_combine(&exact));
   let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
   let (numerator, _) = super::together::extract_num_den(&together);
-  let numeric = crate::evaluator::evaluate_expr_to_expr(&call1(
-    "N",
-    expand_and_combine(&numerator),
-  ))
-  .ok()?;
+  let numerator = expand_and_combine(&numerator);
+  // Without a factor cancelled the machine-number numerator is as good.
+  let machine = together_expr(&expand_and_combine(poly));
+  let (machine_numerator, _) = super::together::extract_num_den(&machine);
+  let machine_degree =
+    max_power_int(&expand_and_combine(&machine_numerator), var)?;
+  if max_power_int(&numerator, var)? >= machine_degree {
+    return None;
+  }
+  let numeric =
+    crate::evaluator::evaluate_expr_to_expr(&call1("N", numerator)).ok()?;
   Some(expand_and_combine(&numeric))
 }
 
@@ -7499,7 +7508,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &super::together::extract_num_den(&together).1,
       var,
     )
-    .then(|| inexact_cleared_numerator(&poly))
+    .then(|| inexact_cleared_numerator(&poly, var))
     .flatten()
     {
       numerator
