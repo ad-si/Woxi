@@ -1142,7 +1142,7 @@ mod base_style {
          BaseStyle -> {spec}]"
       ));
       let sizes = font_sizes(&svg);
-      assert!(!sizes.is_empty());
+      assert_ne!(sizes, [] as [f64; 0]);
       assert!(
         sizes.iter().all(|s| (s - 120.0).abs() < 1e-6),
         "{spec}: {sizes:?}"
