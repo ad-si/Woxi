@@ -6360,6 +6360,31 @@ fn solve_rational_system(
 /// rationals they stand for, the fractions combined and cancelled exactly,
 /// and the numerator brought back to machine numbers.
 fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
+  // Exactly combining the rationalized fractions is costly, and eliminating
+  // a system re-solves the same reduced equations many times over, so the
+  // results are memoized (bounded, keyed by the equation's text).
+  thread_local! {
+    static CACHE: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  const CACHE_LIMIT: usize = 512;
+  let key = (crate::syntax::expr_to_string(poly), var.to_string());
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let result = inexact_cleared_numerator_uncached(poly, var);
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= CACHE_LIMIT {
+      c.clear();
+    }
+    c.insert(key, result.clone());
+  });
+  result
+}
+
+fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::math_ast::numeric_utils::contains_inexact_real;
   // Only an equation in `var` alone with real machine coefficients: the
   // exact rationalization is costly, and the eliminations of a system
