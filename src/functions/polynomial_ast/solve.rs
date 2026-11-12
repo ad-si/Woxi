@@ -16596,7 +16596,137 @@ pub fn minimize_ast(
     replay(messages);
     return Ok(unevaluated(func_name, args));
   }
-  minimize_ast_inner(args, maximize)
+  let result = minimize_ast_inner(args, maximize)?;
+  let result = minimize_with_reduced_constraints(args, maximize, &result)?
+    .unwrap_or(result);
+  warn_on_strict_boundary(args, maximize, &result);
+  Ok(result)
+}
+
+/// The optimum of a strictly bounded problem lies on the excluded boundary
+/// (`Maximize[{x, -2 < x < 2}, x]` is `{2, {x -> 2}}`); wolframscript returns
+/// it with a `::wksol` warning. The point satisfies the constraints with
+/// every strict comparison relaxed, but not as written.
+fn warn_on_strict_boundary(args: &[Expr], maximize: bool, result: &Expr) {
+  if !matches!(result, Expr::List(pair) if pair.len() == 2) {
+    return;
+  }
+  let (_, constraints) = minimize_parse_objective(&args[0]);
+  if constraints.is_empty() {
+    return;
+  }
+  fn relax(op: ComparisonOp) -> ComparisonOp {
+    match op {
+      ComparisonOp::Less => ComparisonOp::LessEqual,
+      ComparisonOp::Greater => ComparisonOp::GreaterEqual,
+      other => other,
+    }
+  }
+  let relaxed: Vec<Expr> = constraints
+    .iter()
+    .map(|c| {
+      let chain =
+        crate::functions::polynomial_ast::reduce::inequalities_to_comparisons(
+          c,
+        );
+      match &chain {
+        Expr::Comparison {
+          operands,
+          operators,
+        } => Expr::Comparison {
+          operands: operands.clone(),
+          operators: operators.iter().copied().map(relax).collect(),
+        },
+        _ => chain,
+      }
+    })
+    .collect();
+  crate::push_quiet();
+  let on_boundary = !optimizer_is_feasible(result, &constraints)
+    && optimizer_is_feasible(result, &relaxed);
+  crate::pop_quiet();
+  if on_boundary {
+    crate::emit_message(if maximize {
+      "Maximize::wksol: Warning: there is no maximum in the region in which \
+       the objective function is defined and the constraints are satisfied; \
+       a result on the boundary will be returned."
+    } else {
+      "Minimize::wksol: Warning: there is no minimum in the region in which \
+       the objective function is defined and the constraints are satisfied; \
+       returning a result on the boundary."
+    });
+  }
+}
+
+/// A one-variable problem whose constraints are not plain bounds
+/// (`Maximize[{x, x^2 <= 4}, x]`): `Reduce` turns them into the interval they
+/// describe, and the problem is solved again over that interval.
+fn minimize_with_reduced_constraints(
+  args: &[Expr],
+  maximize: bool,
+  result: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let func_name = if maximize { "Maximize" } else { "Minimize" };
+  if args.len() != 2
+    || !matches!(result, Expr::FunctionCall { name, .. } if name == func_name)
+  {
+    return Ok(None);
+  }
+  let var = match &args[1] {
+    Expr::Identifier(v) => v.clone(),
+    Expr::List(vs) if vs.len() == 1 => match &vs[0] {
+      Expr::Identifier(v) => v.clone(),
+      _ => return Ok(None),
+    },
+    _ => return Ok(None),
+  };
+  let Expr::List(parts) = &args[0] else {
+    return Ok(None);
+  };
+  if parts.len() < 2 {
+    return Ok(None);
+  }
+  let constraint = if parts.len() == 2 {
+    parts[1].clone()
+  } else {
+    crate::functions::boolean_ast::and_ast(&parts[1..])?
+  };
+  crate::push_quiet();
+  let reduced = crate::evaluator::evaluate_function_call_ast(
+    "Reduce",
+    &[constraint.clone(), Expr::Identifier(var), id_expr("Reals")],
+  );
+  crate::pop_quiet();
+  let Ok(reduced) = reduced else {
+    return Ok(None);
+  };
+  // `Inequality[-2, LessEqual, x, LessEqual, 2]` as the chain it stands for.
+  let reduced =
+    crate::functions::polynomial_ast::reduce::inequalities_to_comparisons(
+      &reduced,
+    );
+  // Only a single interval (or one-sided bound) is a plain-bounds problem.
+  let is_interval = match &reduced {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, .. } => name == "Inequality",
+    _ => false,
+  };
+  if !is_interval
+    || crate::evaluator::pattern_matching::expr_equal(&reduced, &constraint)
+  {
+    return Ok(None);
+  }
+  let retried = minimize_ast_inner(
+    &[
+      Expr::List(vec![parts[0].clone(), reduced].into()),
+      args[1].clone(),
+    ],
+    maximize,
+  )?;
+  Ok(match &retried {
+    Expr::FunctionCall { name, .. } if name == func_name => None,
+    _ => Some(retried),
+  })
 }
 
 fn minimize_ast_inner(
