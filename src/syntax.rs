@@ -16956,8 +16956,12 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       if start < values.len() {
         let seq: Vec<Expr> = values[start..].to_vec();
         call("Sequence", seq)
-      } else {
+      } else if start == values.len() {
         call0("Sequence")
+      } else {
+        // `##n` needs at least n - 1 arguments; otherwise it stays as
+        // written (the application site emits `Function::slots`).
+        expr.clone()
       }
     }
     // Shared inert data (a large numeric array) holds no slots: its O(1)
@@ -17001,8 +17005,10 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
         if start < values.len() {
           let seq: Vec<Expr> = values[start..].to_vec();
           call("Sequence", seq)
-        } else {
+        } else if start == values.len() {
           call0("Sequence")
+        } else {
+          expr.clone()
         }
       } else {
         expr.clone()

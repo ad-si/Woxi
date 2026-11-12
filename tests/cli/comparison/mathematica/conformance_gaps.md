@@ -414,6 +414,16 @@ StandardForm. The CLI `eval` InputForm keeps full precision, as
 because it makes the two layers disagree with each other.
 
 
+### A pure function's message prints a one-argument `Plus` as `+x`
+
+```sh
+wolframscript -code 'Plus[##2] &[]'   # Function::slots: SlotSequence[2] in +##2 &  cannot be filled from (+##2 & )[].
+woxi eval 'Plus[##2] &[]'             # Function::slots: SlotSequence[2] in Plus[##2] &  cannot be filled from (Plus[##2] & )[].
+```
+
+The result, `##2`, matches; only the message text differs. Outside a
+message (`Plus[x] &`, `Hold[Plus[x]]`) both engines print `Plus[x]`.
+
 ## Canonical ordering of Plus and Times
 
 ### A rational multiple of a sum is ordered against a product by its own rule
@@ -457,6 +467,21 @@ The `Plus` comparator follows Wolfram for every term led by a function call
 sort after the symbols, powers and products, by head name, then from the
 last factor of a product by that call's arguments, its exponent and the
 remaining factors. What is left are the entries below.
+
+### A symbol sorts before `I*(sum)` and before `1/(E^x*(1 + E^x))` in `Plus`
+
+```sh
+wolframscript -code 'x + I*(a + b)'                # I*(a + b) + x
+woxi eval 'x + I*(a + b)'                          # x + I*(a + b)
+wolframscript -code 'x + 1/(E^x*(1 + E^x))'        # 1/(E^x*(1 + E^x)) + x
+woxi eval 'x + 1/(E^x*(1 + E^x))'                  # x + 1/(E^x*(1 + E^x))
+```
+
+Found by the differential fuzzer (2026-11-12) through `TrigToExp[x + Tan[x]]`,
+which prints its `x` first. `2*(a + b) + x`, `I/(a*b) + x` and
+`1/((a + b)*E^x) + x` conform. `Sort[{x, I*(a + b)}]` agrees with
+wolframscript, so only the `Plus` comparator is off for the first form;
+`Sort[{x, 1/(E^x*(1 + E^x))}]` diverges as well.
 
 ### `Sort` puts a symbol before a sum, and a call before its curried form
 
@@ -811,6 +836,23 @@ combined fractions further than Woxi does (collecting in `x` with factored
 coefficients), so Woxi keeps a sum of quotients where WL prints one fraction —
 `Together` alone matches exactly on the same inputs.
 
+### `Simplify`, `FullSimplify` and `TrigReduce` pick a different form
+
+Found by the differential fuzzer (2026-11-12):
+
+```sh
+wolframscript -code 'Simplify[Tan[2 x] + x - Tan[3 x]]'   # x + Tan[2*x] - Tan[3*x]
+woxi eval 'Simplify[Tan[2 x] + x - Tan[3 x]]'             # x - Sec[2*x]*Sec[3*x]*Sin[x]
+wolframscript -code 'FullSimplify[1 + 5 x + 5 x^3]'       # 1 + 5*(x + x^3)
+woxi eval 'FullSimplify[1 + 5 x + 5 x^3]'                 # 1 + 5*x + 5*x^3
+wolframscript -code 'TrigReduce[1 + Tan[x]^2]'            # Sec[x]^2
+woxi eval 'TrigReduce[1 + Tan[x]^2]'                      # 2/(1 + Cos[2*x])
+```
+
+The values are equal. `TrigReduce[Tan[x]^2]` conforms; WL keeps `Sec[…]^2`
+as a factor once the sum around it reduces to it, and distributes it over
+the reduced terms of a larger sum.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -850,6 +892,17 @@ in WL, which keeps integer coefficients.
 
 
 ## Numeric precision and floating point
+
+### A machine real divided by an exact quotient differs in the last digit
+
+```sh
+wolframscript -code 'Divide[2.9, Divide[Pi + 11/2, Pi]]'   # 1.0542754166531756
+woxi eval 'Divide[2.9, Divide[Pi + 11/2, Pi]]'             # 1.0542754166531754
+```
+
+Found by the differential fuzzer (2026-11-12). The exact quotient
+`(11/2 + Pi)/Pi` is numericized at machine precision as part of the
+division, and the two engines round the intermediate steps differently.
 
 ### Machine Cos/Sin last-bit differences
 

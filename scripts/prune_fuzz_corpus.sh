@@ -42,7 +42,7 @@ max_len=$(grep -o 'data\.len() > [0-9]\+' "$target" | grep -o '[0-9]\+')
 denylist=$(mktemp)
 trap 'rm -f "$denylist"' EXIT
 awk '/_DENYLIST: &\[&str\]/, /\];/' "$target" \
-  | grep -o '"[A-Za-z]\+"' \
+  | grep -o '"[^"]\+"' \
   | tr -d '"' \
   > "$denylist"
 
