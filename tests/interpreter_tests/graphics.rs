@@ -44400,7 +44400,14 @@ mod grid_text_in_graphics {
     assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
     let svg3d =
       export_svg("Graphics3D[{Transparent, Sphere[{1, 1, 1}, 0.25]}]");
-    assert!(svg3d.contains("opacity=\"0\""), "{svg3d}");
+    // A fully transparent face is either left out or painted invisibly.
+    assert!(
+      svg3d
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .all(|l| l.contains("opacity=\"0\"")),
+      "{svg3d}"
+    );
   }
 
   #[test]

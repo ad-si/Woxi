@@ -5601,6 +5601,74 @@ fn disk_triangle_signed_area(a: [f64; 2], b: [f64; 2], radius: f64) -> f64 {
   }
 }
 
+/// One side's `PlotRangePadding`: an absolute length in plot coordinates,
+/// or `Scaled[s]`, a fraction of the axis' range.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum RangePad {
+  Absolute(f64),
+  Scaled(f64),
+}
+
+/// A single `PlotRangePadding` value: a number, `Scaled[s]` or `None`.
+fn parse_range_pad(expr: &Expr) -> Option<RangePad> {
+  match expr {
+    Expr::Identifier(s) if s == "None" => Some(RangePad::Absolute(0.0)),
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      try_eval_to_f64(&args[0])
+        .filter(|s| s.is_finite())
+        .map(RangePad::Scaled)
+    }
+    _ => try_eval_to_f64(expr)
+      .filter(|p| p.is_finite())
+      .map(RangePad::Absolute),
+  }
+}
+
+/// `PlotRangePadding` for a 3D picture, as `(low, high)` per axis: a single
+/// value pads every side alike, `{px, py, pz}` gives one per axis and each
+/// of those may itself be `{low, high}`. `Automatic` (or anything not
+/// understood) is `None`, keeping the default framing.
+fn parse_range_padding_3d(expr: &Expr) -> Option<[(RangePad, RangePad); 3]> {
+  let side_pair = |e: &Expr| match e {
+    Expr::List(items) if items.len() == 2 => {
+      Some((parse_range_pad(&items[0])?, parse_range_pad(&items[1])?))
+    }
+    other => parse_range_pad(other).map(|p| (p, p)),
+  };
+  match expr {
+    Expr::List(items) if items.len() == 3 => {
+      let pads: Vec<_> = items.iter().map(side_pair).collect::<Option<_>>()?;
+      Some([pads[0], pads[1], pads[2]])
+    }
+    Expr::List(_) => None,
+    other => parse_range_pad(other).map(|p| [(p, p); 3]),
+  }
+}
+
+/// `range` widened by `pad_lo` below and `pad_hi` above. A negative
+/// padding that would turn the range inside out leaves it collapsed at
+/// the point where the two sides meet.
+fn padded_axis_range(
+  (lo, hi): (f64, f64),
+  pad_lo: RangePad,
+  pad_hi: RangePad,
+) -> (f64, f64) {
+  let width = hi - lo;
+  let length = |pad: RangePad| match pad {
+    RangePad::Absolute(p) => p,
+    RangePad::Scaled(s) => s * width,
+  };
+  let (new_lo, new_hi) = (lo - length(pad_lo), hi + length(pad_hi));
+  if new_hi >= new_lo {
+    (new_lo, new_hi)
+  } else {
+    let meet = f64::midpoint(new_lo, new_hi);
+    (meet, meet)
+  }
+}
+
 /// A box the unbounded primitives can be clipped to. A scene made only of
 /// them has no bounds of its own, and one lying in a plane has an axis of
 /// no extent — neither can be cut against as it stands, so an empty axis is
@@ -5747,6 +5815,10 @@ struct StyleState3D {
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat color.
   edges: bool,
+  /// Whether faces are filled. `FaceForm[None]` turns them off so only
+  /// the outlines `EdgeForm` asks for are drawn, while lines and points
+  /// that follow keep their own color and opacity.
+  faces: bool,
   /// The color `EdgeForm[color]` asks outlines to be drawn in. `None`
   /// leaves them the renderer's default dark gray. An explicit color also
   /// makes the outline opaque and is what turns a curved primitive's
@@ -5804,6 +5876,7 @@ impl Default for StyleState3D {
       thickness: None,
       capped: true,
       edges: true,
+      faces: true,
       edge_color: None,
       edge_width: None,
       edge_dashing: None,
@@ -5977,10 +6050,16 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     && name == "FaceForm"
     && !args.is_empty()
   {
+    // `FaceForm[None]` draws no faces at all, only their edges.
+    if matches!(&args[0], Expr::Identifier(n) if n == "None") {
+      style.faces = false;
+      return true;
+    }
     let mut front = StyleState3D::default();
     if !apply_3d_directive(&args[0], &mut front) {
       return true;
     }
+    style.faces = true;
     style.color = front.color;
     style.opacity = front.opacity;
     style.back_color = match args.get(1) {
@@ -10689,6 +10768,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Lighting -> spec`: the lights every surface without its own
   // `Lighting` directive is shaded under. `None` is `Automatic`.
   let mut scene_lighting: Option<Lighting> = None;
+  // `PlotRangePadding -> spec`: the margin added around the displayed range
+  // on each side of each axis. `None` here is `Automatic`.
+  let mut range_padding: Option<[(RangePad, RangePad); 3]> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -10801,6 +10883,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ViewCenter" => {
           if let Some(c) = eval_vec3(replacement) {
             view_center = Some(c);
+          }
+        }
+        "PlotRangePadding" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if let Some(pad) = parse_range_padding_3d(&value) {
+            range_padding = Some(pad);
           }
         }
         "PlotRange" => {
@@ -11340,6 +11429,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             thickness: None,
             capped: true,
             edges: true,
+            faces: true,
             edge_color: None,
             edge_width: None,
             edge_dashing: None,
@@ -11356,7 +11446,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         ),
       };
-    let prim_opacity = prim_style.opacity;
+    // `FaceForm[None]` leaves a face unfilled: it is still emitted, fully
+    // transparent, so its outline is drawn where its edges lie.
+    let prim_opacity = if prim_style.faces {
+      prim_style.opacity
+    } else {
+      0.0
+    };
 
     // A polygon with more than three corners was fan-triangulated above:
     // every triangle keeps the polygon edge it sits on, but the cuts back
@@ -11625,15 +11721,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
   // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
-  let pad_x = (x3_max - x3_min) * 0.02;
-  let pad_y = (y3_max - y3_min) * 0.02;
-  let pad_z = (z3_max - z3_min) * 0.02;
-  x3_min -= pad_x;
-  x3_max += pad_x;
-  y3_min -= pad_y;
-  y3_max += pad_y;
-  z3_min -= pad_z;
-  z3_max += pad_z;
+  if range_padding.is_none() {
+    let pad_x = (x3_max - x3_min) * 0.02;
+    let pad_y = (y3_max - y3_min) * 0.02;
+    let pad_z = (z3_max - z3_min) * 0.02;
+    x3_min -= pad_x;
+    x3_max += pad_x;
+    y3_min -= pad_y;
+    y3_max += pad_y;
+    z3_min -= pad_z;
+    z3_max += pad_z;
+  }
 
   // An explicit PlotRange pins the displayed region regardless of the
   // content's extent, keeping the framing stable across re-renders.
@@ -11645,6 +11743,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     z3_min = zl;
     z3_max = zh;
     view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
+  }
+
+  // An explicit `PlotRangePadding` widens (or, when negative, narrows)
+  // the displayed box on each side, whether the range is automatic or
+  // given. A negative padding zooms in on the middle of the range.
+  if let Some(pad) = range_padding {
+    let mut axes = [
+      (&mut x3_min, &mut x3_max),
+      (&mut y3_min, &mut y3_max),
+      (&mut z3_min, &mut z3_max),
+    ];
+    for ((lo, hi), (pad_lo, pad_hi)) in axes.iter_mut().zip(pad) {
+      let (padded_lo, padded_hi) =
+        padded_axis_range((**lo, **hi), pad_lo, pad_hi);
+      **lo = padded_lo;
+      **hi = padded_hi;
+    }
   }
 
   // Build box corners
@@ -12306,9 +12421,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           paint.as_str()
         };
-        svg.push_str(&format!(
-          "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
-        ));
+        // A fully transparent face (`FaceForm[None]`, `Opacity[0]`) paints
+        // nothing; only its outline below is drawn.
+        if tri.opacity > 0.0 {
+          svg.push_str(&format!(
+            "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+          ));
+        }
         let corners = [(x0, y0), (x1, y1), (x2, y2)];
         for (e, on_outline) in tri.boundary.iter().enumerate() {
           if !on_outline {
