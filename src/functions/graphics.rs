@@ -35839,7 +35839,9 @@ fn contains_body_button(expr: &Expr) -> bool {
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if (name == "TogglerBar" || name == "CheckboxBar" || name == "Checkbox")
+      if (name == "TogglerBar"
+        || name == "CheckboxBar"
+        || name == "Checkbox")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: dname, args: dargs })

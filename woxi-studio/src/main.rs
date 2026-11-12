@@ -32786,7 +32786,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Ou
     assert!(widget.error.is_none(), "{:?}", widget.error);
     let with_halo = widget.graphics_handle.clone();
     assert!(with_halo.is_some(), "the scene must draw");
-    assert_eq!(widget.state, vec![("extras".to_string(), "{halo}".to_string())]);
+    assert_eq!(
+      widget.state,
+      vec![("extras".to_string(), "{halo}".to_string())]
+    );
 
     let found = choices(&widget.display_trees);
     assert_eq!(found.len(), 1, "{found:?}");

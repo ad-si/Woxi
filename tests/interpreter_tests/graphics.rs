@@ -35219,7 +35219,11 @@ mod manipulate {
       "{}",
       spec.displays[0]
     );
-    assert!(!spec.body_code.contains("CheckboxBar"), "{}", spec.body_code);
+    assert!(
+      !spec.body_code.contains("CheckboxBar"),
+      "{}",
+      spec.body_code
+    );
   }
 
   /// A `SetterBar[Dynamic[var], choices]` written directly as (part of) an
