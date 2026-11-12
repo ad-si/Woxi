@@ -11200,8 +11200,7 @@ pub fn integer_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let result = match name.as_str() {
       "Base64" => integer_to_base64_string(&args[0])?,
       "Roman" => {
-        let Some(s) =
-          expr_to_int(&args[0]).ok().map(integer_to_roman_string)
+        let Some(s) = expr_to_int(&args[0]).ok().map(integer_to_roman_string)
         else {
           // An integer beyond 128 bits.
           return Ok(unevaluated("IntegerString", args));
