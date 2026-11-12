@@ -17721,7 +17721,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           match crate::functions::string_ast::number_form_family_to_string(
             name, args,
           ) {
-            Some(s) => svg_escape(s.replace('\n', " ").trim()),
+            Some(s) => svg_escape(&number_form_display_line(name, &s)),
             None => expr_to_svg_markup(&args[0]),
           }
         }
@@ -18557,7 +18557,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         match crate::functions::string_ast::number_form_family_to_string(
           name, args,
         ) {
-          Some(s) => s.replace('\n', " ").trim().chars().count() as f64,
+          Some(s) => number_form_display_line(name, &s).chars().count() as f64,
           None => estimate_display_width(&args[0]),
         }
       }
@@ -23314,6 +23314,20 @@ fn item_size_entry_at(
     single => single,
   };
   expr_to_f64(entry).filter(|v| *v > 0.0)
+}
+
+/// The one-line text a formatted `NumberForm`/`PaddedForm`/`AccountingForm`
+/// displays as. Multi-line 2-D forms are flattened and edge whitespace is
+/// trimmed, except the leading padding that is the whole point of a
+/// `PaddedForm`: WL keeps it, so `Row[{"x", PaddedForm[6., {3, 2}]}]`
+/// shows `x  6.00`.
+fn number_form_display_line(name: &str, formatted: &str) -> String {
+  let line = formatted.replace('\n', " ");
+  if name == "PaddedForm" {
+    line.trim_end().to_string()
+  } else {
+    line.trim().to_string()
+  }
 }
 
 fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {

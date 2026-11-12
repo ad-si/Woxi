@@ -28307,6 +28307,28 @@ mod grid_rasterize {
     assert!(!natural.starts_with("<svg width=\"166\""), "{natural}");
   }
 
+  /// Regression: a `PaddedForm` inside a `Row` lost its leading padding,
+  /// so the number sat flush against the text before it.
+  #[test]
+  fn padded_form_in_a_row_keeps_its_leading_padding() {
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Row[{\"weight\", PaddedForm[68., {3, 1}], \", end\"}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Row should draw");
+    assert!(svg.contains("xml:space=\"preserve\"> 68.0</text>"), "{svg}");
+    // NumberForm adds no padding of its own and stays as it was.
+    let svg = woxi::interpret_with_stdout(
+      "Row[{\"weight\", NumberForm[68., {3, 1}], \", end\"}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Row should draw");
+    assert!(svg.contains(">68.0</text>"), "{svg}");
+  }
+
   #[test]
   fn panel_in_a_column_keeps_its_background_option() {
     clear_state();
