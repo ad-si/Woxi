@@ -1178,24 +1178,21 @@ Seed 1794021370602620000 (2026-11-07) found `LogGamma[0.8]`: Woxi
 returns `0.15205967839983756`, Wolfram returns `0.15205967839983753`,
 and `N[N[LogGamma[SetPrecision[0.8,70]],60]]` agrees with Woxi.
 
-### Machine arithmetic-geometric means differ from high-precision rounding
+### Machine arithmetic-geometric means near the largest double
 
-Verified on 2026-11-07 while investigating seed 1794021370602620000.
-AGM now preserves exact input values and uses guard precision throughout the
-iteration, fixing `ArithmeticGeometricMean[3.9,9/5]` and intermediate
-product overflow/underflow. Some Wolfram machine results remain less accurate:
-`ArithmeticGeometricMean[1.8,1.2]` is `1.4848082617417828` in Wolfram,
-versus the high-precision rounded value `1.4848082617417826` in Woxi.
-For `ArithmeticGeometricMean[3.,7.]`, Wolfram returns `4.789013583140951`
-and Woxi returns the correctly rounded `4.789013583140952`.
-`ArithmeticGeometricMean[1.*^-200,2.*^-200]` underflows to zero in Wolfram;
-its high-precision evaluation agrees with Woxi's `1.4567910310469068*^-200`.
-These checks retain machine arguments' exact binary values via `SetPrecision`.
+Machine `ArithmeticGeometricMean` was decoded on 2026-11-12 (305 random
+pairs, all identical): wolframscript iterates `(a + b)/2`, `Sqrt[a b]` in
+plain double precision until the two meet or stop changing — which is why
+`ArithmeticGeometricMean[1.8,1.2]` is `1.4848082617417828`, an ulp above the
+correctly rounded value, and why `ArithmeticGeometricMean[1.*^-200,2.*^-200]`
+underflows to `0.`. A product that overflows is redone on power-of-two
+scaled arguments. Woxi does the same. What still differs: when `a + b`
+itself overflows (`ArithmeticGeometricMean[1.7*^308, 1.*^308]`)
+wolframscript leaves machine arithmetic and returns an arbitrary-precision
+real (`1.32681987170197985785387862205807354459`16.078…*^308`), while Woxi
+returns the machine value.
 
-Seed 1794045270718263000 also finds `ArithmeticGeometricMean[12,3.9]`:
-Woxi gives `7.385115155519322`, matching the rounded 80-digit reference,
-while Wolfram's direct machine result is `7.385115155519321`.
-The same seed finds `LogIntegral[3.]`: Woxi's `2.1635885946671918`
+Seed 1794045270718263000 finds `LogIntegral[3.]`: Woxi's `2.1635885946671918`
 agrees with the rounded 80-digit reference, while Wolfram's direct
 machine result is `2.163588594667192`.
 
