@@ -108,6 +108,9 @@ pub enum ControlState {
     write_callback: Option<String>,
     /// Machine-real pair (see `ManipulateControl::Slider2D::real`).
     real: bool,
+    /// Still the exact initial point of a `real` control: Wolfram binds
+    /// `{-4, 3}` as given until the point is first dragged.
+    exact: bool,
   },
   /// An interval slider binding its variable to a `{low, high}` pair.
   IntervalSlider {
@@ -244,8 +247,10 @@ impl ControlState {
           .cloned()
           .unwrap_or_else(|| "Null".to_string())
       }),
-      ControlState::Slider2D { x, y, real, .. } => {
-        if *real {
+      ControlState::Slider2D {
+        x, y, real, exact, ..
+      } => {
+        if *real && !*exact {
           woxi::functions::graphics::point_list_binding_real(*x, *y)
         } else {
           format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
@@ -1189,7 +1194,10 @@ impl ManipulateState {
       let candidate = if axis == 0 { (value, *y) } else { (*x, value) };
       (candidate, write_callback.clone(), name.clone())
     };
-    let accepted = match callback {
+    // A plain drag yields a machine-real point. A write-back callback
+    // stores whatever it likes instead (`Clip[Round[#], …]` stores an
+    // integer pair), and the variable keeps exactly that value.
+    let (accepted, exact) = match callback {
       Some(cb) => {
         // Bindings still hold the previous point, so the callback's
         // validation (e.g. a degenerate-triangle check) sees the old state.
@@ -1205,16 +1213,22 @@ impl ManipulateState {
           &value_code,
           &name,
         )
-        .and_then(|v| woxi::functions::graphics::parse_manipulate_point(&v))
-        .unwrap_or(candidate)
+        .and_then(|v| {
+          let exact =
+            v.chars().all(|c| c.is_ascii_digit() || "{}, -".contains(c));
+          woxi::functions::graphics::parse_manipulate_point(&v)
+            .map(|p| (p, exact))
+        })
+        .unwrap_or((candidate, false))
       }
-      None => candidate,
+      None => (candidate, false),
     };
-    if let Some(ControlState::Slider2D { x, y, .. }) =
+    if let Some(ControlState::Slider2D { x, y, exact: e, .. }) =
       self.controls.get_mut(ctrl_idx)
     {
       *x = accepted.0;
       *y = accepted.1;
+      *e = exact;
     }
   }
 
@@ -2061,6 +2075,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y_initial,
         write_callback,
         real,
+        exact_initial,
       } => ControlState::Slider2D {
         name: name.clone(),
         label: label.clone(),
@@ -2072,6 +2087,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         y: *y_initial,
         write_callback: write_callback.clone(),
         real: *real,
+        exact: *exact_initial,
       },
       ManipulateControl::IntervalSlider {
         name,
@@ -2593,6 +2609,42 @@ mod tests {
       "surface plot must render, got text {:?}",
       state.text_output
     );
+  }
+
+  /// A slider and a setter row placed side by side with `Row[{Control[…],
+  /// Spacer[…], Control[…]}]` drive one variable, and the body draws a
+  /// pixel-constrained, frameless `ArrayPlot` of cellular-automaton runs.
+  #[test]
+  fn row_controls_share_variable_for_pixel_constrained_array_plot() {
+    let code = r#"Manipulate[
+      SeedRandom[s];
+      ArrayPlot[Transpose[CellularAutomaton[r, #, t] & /@
+          RandomInteger[1, {3, 12}]][[All, 1]],
+        ImageSize -> {200, 100}, PixelConstrained -> True, Frame -> None],
+      Row[{Control[{{r, 30}, 0, 255, 1, Appearance -> "Labeled"}],
+        Spacer[10], Control[{{r, 30}, {30, 90, 110}}]}],
+      Row[{Control[{{t, 20}, 10, 40, 1, Appearance -> "Labeled"}],
+        Spacer[10], Control[{s, 0, 100, 1, Appearance -> "Labeled"}]}]]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "array plot must render, got text {:?}",
+      state.text_output
+    );
+    let value = |name: &str| {
+      state
+        .bindings()
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v)
+    };
+    assert_eq!(value("r").as_deref(), Some("30"));
+    assert_eq!(value("t").as_deref(), Some("20"));
+    assert_eq!(value("s").as_deref(), Some("0"));
   }
 
   /// A hidden `ControlType -> None` variable is bound when Initialization
@@ -6130,24 +6182,27 @@ mod mapped_layout_tests {
     assert_eq!(state.controls[idx].current_code(), "{-5., -5.}");
   }
 
-  /// A promoted invisible `Locator` holds machine reals, so integral
-  /// coordinates bind as `{-12., 11.}`. Binding them as exact integers made
-  /// downstream geometry (distances, circumcenters) pile up unsimplified
-  /// radicals instead of staying numeric.
+  /// A promoted invisible `Locator` keeps its exact initial point, as
+  /// Wolfram does, until it is dragged; from then on it holds machine
+  /// reals, so integral coordinates bind as `{-1., 2.}` and downstream
+  /// geometry (distances, circumcenters) stays numeric.
   #[test]
-  fn promoted_invisible_locator_binds_machine_reals() {
+  fn promoted_invisible_locator_binds_machine_reals_once_dragged() {
     let code = r#"Manipulate[
       Graphics[{Point[p], Text[Norm[p], p]}, PlotRange -> {{-5, 5}, {-5, 5}}],
       {{p, {2, 3}}, {-4, -4}, {4, 4}, Locator, Appearance -> None}]"#;
     let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
-    let state = ManipulateState::from_expr(&expr).expect("build widget");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
     assert_eq!(state.error, None);
-    let c = state
+    let idx = state
       .controls
       .iter()
-      .find(|c| c.name() == "p")
+      .position(|c| c.name() == "p")
       .expect("p control");
-    assert_eq!(c.current_code(), "{2., 3.}");
+    assert_eq!(state.controls[idx].current_code(), "{2, 3}");
+    state.slider2d_change(idx, 0, -1.0);
+    state.slider2d_change(idx, 1, 2.0);
+    assert_eq!(state.controls[idx].current_code(), "{-1., 2.}");
   }
 }
 

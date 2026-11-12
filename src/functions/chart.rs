@@ -3080,10 +3080,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             let fl = crate::functions::plot::parse_frame_label(&val);
             opts.frame_label = Some((fl.bottom, fl.left));
           } else if let Expr::List(items) = &val
-            && items.len() >= 2
+            && !items.is_empty()
           {
+            // `{xlabel}` names the x axis only.
             let x = expr_to_label(&items[0]).unwrap_or_default();
-            let y = expr_to_label(&items[1]).unwrap_or_default();
+            let y = items.get(1).and_then(expr_to_label).unwrap_or_default();
             if name == "FrameLabel" {
               opts.frame_label = Some((x, y));
             } else {
@@ -3829,11 +3830,13 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       "AxesLabel" | "FrameLabel" => {
         if let Expr::List(items) = &value
-          && items.len() == 2
+          && matches!(items.len(), 1 | 2)
           && !items.iter().all(|i| matches!(i, Expr::List(_)))
         {
-          look.axes_label_fonts =
-            [label_font_style(&items[0]).0, label_font_style(&items[1]).0];
+          look.axes_label_fonts = [
+            label_font_style(&items[0]).0,
+            items.get(1).and_then(|y| label_font_style(y).0),
+          ];
         }
       }
       "ImagePadding" => {
