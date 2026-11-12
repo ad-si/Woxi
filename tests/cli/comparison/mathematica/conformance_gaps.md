@@ -2174,6 +2174,35 @@ The values are equal. Products with a `Tan` factor
 (`Integrate[Sin[x y] Tan[x], x]`, a `Hypergeometric2F1` sum in WL) stay
 unevaluated.
 
+### `Decompose` picks the inner polynomial's sign by an undecoded rule
+
+```sh
+wolframscript -code 'Decompose[(x - 2 x^3)^3, x]'   # {-x^3, -x + 2*x^3}
+woxi eval 'Decompose[(x - 2 x^3)^3, x]'             # {x^3, x - 2*x^3}
+```
+
+Found by the differential fuzzer (2026-11-12). With `h = 2 x^3 - x`,
+`Decompose[Expand[g[h]], x]` returns `-x + 2 x^3` as the inner polynomial
+for `g` = `y^3`, `-y^3`, `y + y^3`, `-y - y^3`, `y + 2 y^3`, and
+`x - 2 x^3` for `y^2 + y^3`, `y + y^2`, `y^2 - y`, `y^5 + y^2` — and for
+`2 y + y^3`, which breaks the "only odd powers keep the sign" pattern the
+others suggest. Woxi makes the outer polynomial's highest odd-degree
+coefficient positive, which matches every case with rational inner
+coefficients in the tests but not this one. **Not reproducible** so far.
+
+### `Integrate[1 + Tan[x]^2, x]` is integrated term by term
+
+```sh
+wolframscript -code 'Integrate[1 + Tan[x]^2, x]'   # Tan[x]
+woxi eval 'Integrate[1 + Tan[x]^2, x]'             # x - ArcTan[Tan[x]] + Tan[x]
+```
+
+Found by the differential fuzzer (2026-11-12). WL recognizes `c + c Tan[u]^2`
+(and `1 + Cot[x]^2`, `1 - Tanh[x]^2`) as a derivative, also inside a larger
+sum (`1 + Tan[x]^2 + Cos[x]` gives `Sin[x] + Tan[x]`) — but not next to a
+polynomial term: `x + 1 + Tan[x]^2` gives `x + x^2/2 - ArcTan[Tan[x]] +
+Tan[x]` in both engines.
+
 ### `Integrate[Log[Sin[x]], …]` is unimplemented
 
 ```sh
