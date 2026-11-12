@@ -998,23 +998,20 @@ pub fn lucas_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(n_raw) = expr_to_i128(&args[0]) else {
     return Ok(unevaluated("LucasL", args));
   };
+  // As for Fibonacci, an index this large cannot be computed.
+  if n_raw.unsigned_abs() >= 1 << 36 {
+    return Ok(call("Overflow", vec![]));
+  }
   let negate = n_raw < 0 && n_raw % 2 != 0;
   let n = n_raw.unsigned_abs() as usize;
   // L(0) = 2, L(1) = 1, L(n) = L(n-1) + L(n-2)
   if n == 0 {
     return Ok(Expr::Integer(2));
   }
-  let result = if n == 1 {
-    BigInt::from(1)
-  } else {
-    let mut a = BigInt::from(2);
-    let mut b = BigInt::from(1);
-    for _ in 2..=n {
-      let c = &a + &b;
-      a = b;
-      b = c;
-    }
-    b
+  // L(n) = 2 F(n + 1) - F(n), from the fast-doubling Fibonacci pair.
+  let result: BigInt = {
+    let (f, f_next) = fibonacci_pair(n as u128);
+    (f_next << 1) - f
   };
   Ok(bigint_to_expr(if negate { -result } else { result }))
 }
@@ -2624,28 +2621,22 @@ pub fn prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Prime requires an exact positive integer index. wolframscript rejects
   // every Real argument with Prime::intpp, even an integer-valued one like
   // 3.0, so do NOT coerce Reals to integers here.
-  match expr_to_i128(&args[0]) {
-    Some(n) if n >= 1 => Ok(Expr::Integer(nth_prime(n))),
-    Some(_) => {
-      // Concrete non-positive integer: emit message like wolframscript
-      let arg_str = expr_to_string(&args[0]);
-      crate::emit_message(&format!(
-        "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
-      ));
-      Ok(unevaluated)
-    }
-    None => {
-      // Concrete non-integer numeric (e.g. 1.5): emit message like wolframscript
-      // Symbolic arguments return unevaluated silently
-      if matches!(&args[0], Expr::Real(_) | Expr::BigFloat(_, _)) {
-        let arg_str = expr_to_string(&args[0]);
-        crate::emit_message(&format!(
-          "Prime::intpp: Positive integer argument expected in Prime[{arg_str}]."
-        ));
-      }
-      Ok(unevaluated)
-    }
+  if let Some(n) = expr_to_i128(&args[0])
+    && n >= 1
+  {
+    return Ok(Expr::Integer(nth_prime(n)));
   }
+  // Every other number (non-positive integer, rational, real, complex) is
+  // rejected with Prime::intpp; non-numbers such as Pi, Sqrt[2] or x stay
+  // unevaluated silently.
+  if crate::functions::predicate_ast::is_numeric_expr(&args[0]) {
+    crate::emit_message(&crate::syntax::message_with_expr_2d(
+      "Prime::intpp: Positive integer argument expected in ",
+      &unevaluated,
+      ".",
+    ));
+  }
+  Ok(unevaluated)
 }
 
 /// Fibonacci[n] - Returns the nth Fibonacci number.
@@ -2674,6 +2665,9 @@ pub fn fibonacci_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   match expr_to_i128(&args[0]) {
+    // An index this large has a result of tens of gigabytes; wolframscript
+    // answers Overflow[] for Fibonacci[10^20 + 1] rather than compute it.
+    Some(n) if n.unsigned_abs() >= 1 << 36 => Ok(call("Overflow", vec![])),
     Some(n) => {
       if n < 0 {
         let pos_n = (-n) as u128;
@@ -2756,17 +2750,29 @@ fn fibonacci_polynomial_ast(
 }
 
 fn fibonacci_number_bigint(n: u128) -> BigInt {
-  if n == 0 {
-    return BigInt::from(0);
+  fibonacci_pair(n).0
+}
+
+/// (F(n), F(n + 1)) by fast doubling — F(2k) = F(k) (2 F(k+1) - F(k)),
+/// F(2k+1) = F(k)^2 + F(k+1)^2 — walking the bits of n from the top: a
+/// logarithmic number of multiplications. Adding the terms one by one
+/// took 14 s for F(10^6); this takes a fraction of a second.
+fn fibonacci_pair(n: u128) -> (BigInt, BigInt) {
+  let mut a = BigInt::from(0); // F(k)
+  let mut b = BigInt::from(1); // F(k + 1)
+  for bit in (0..128 - n.leading_zeros()).rev() {
+    let two_b = &b << 1;
+    let c = &a * (&two_b - &a); // F(2k)
+    let d = &a * &a + &b * &b; // F(2k + 1)
+    if (n >> bit) & 1 == 1 {
+      a = d.clone();
+      b = c + d;
+    } else {
+      a = c;
+      b = d;
+    }
   }
-  let mut a = BigInt::from(0);
-  let mut b = BigInt::from(1);
-  for _ in 1..n {
-    let tmp = &a + &b;
-    a = b;
-    b = tmp;
-  }
-  b
+  (a, b)
 }
 
 /// FactorInteger[n] - Returns the prime factorization of n
@@ -4947,6 +4953,10 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(1)
     });
   }
+  // Binomial[n, 0.] is 1. for every n, symbolic or not.
+  if matches!(&args[1], Expr::Real(k) if *k == 0.0) {
+    return Ok(Expr::Real(1.0));
+  }
   match (expr_to_i128(&args[0]), expr_to_i128(&args[1])) {
     (Some(n), Some(k)) => Ok(bigint_to_expr(binomial_coeff_big(n, k))),
     (None, Some(k)) if k >= 0 => {
@@ -4955,7 +4965,17 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Works for Rational n, symbolic n, etc.
       let k = k as usize;
       if k == 0 {
-        return Ok(Expr::Integer(1));
+        // An inexact number n gives an inexact 1 (Binomial[-2.5, 0] is 1.).
+        let inexact =
+          crate::functions::predicate_ast::is_numeric_expr(&args[0])
+            && crate::functions::math_ast::numeric_utils::contains_inexact_real(
+              &args[0],
+            );
+        return Ok(if inexact {
+          Expr::Real(1.0)
+        } else {
+          Expr::Integer(1)
+        });
       }
       // Compute falling factorial: n * (n-1) * ... * (n-k+1)
       let mut numer_factors: Vec<Expr> = Vec::with_capacity(k);
@@ -4973,6 +4993,22 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       divide_ast(&[numer, denom])
     }
     _ => {
+      // A non-real numeric n with a negative integer k puts the pole of
+      // Gamma[k+1] in the denominator while Gamma[n+1] stays finite, so the
+      // coefficient is exactly 0 (Binomial[3 + 2 I, -1] == 0).
+      let k_negative_integer = match &args[1] {
+        Expr::Real(k) => *k < 0.0 && k.fract() == 0.0,
+        other => expr_to_i128(other).is_some_and(|k| k < 0),
+      };
+      if k_negative_integer
+        && crate::functions::predicate_ast::is_numeric_q(&args[0])
+        && crate::functions::list_helpers_ast::sorting::expr_to_complex_parts(
+          &args[0],
+        )
+        .is_some_and(|(_, im)| im != 0.0)
+      {
+        return Ok(Expr::Integer(0));
+      }
       // Try Real evaluation using Gamma function
       let n_f64 = match &args[0] {
         Expr::Real(f) => Some(*f),
@@ -5313,34 +5349,33 @@ pub fn power_mod_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(unevaluated("PowerMod", args));
       }
-      if exp < BigInt::from(0) {
-        // Negative exponent: need modular inverse
-        // Try i128 path for mod_inverse
-        use num_traits::ToPrimitive;
-        match (base.to_i128(), modulus.to_i128()) {
-          (Some(b), Some(m)) => {
-            if let Some(inv) = mod_inverse(b, m) {
-              let pos_exp = (-exp).to_u128().unwrap_or(0);
-              let result =
-                mod_pow_unsigned(inv as u128, pos_exp, m.unsigned_abs());
-              Ok(Expr::Integer(result as i128))
-            } else {
-              crate::emit_message(&format!(
-                "PowerMod::ninv: {} is not invertible modulo {}.",
-                expr_to_string(&args[0]),
-                expr_to_string(&args[2])
-              ));
-              Ok(unevaluated("PowerMod", args))
-            }
-          }
-          _ => Ok(unevaluated("PowerMod", args)),
+      use num_traits::{One, Signed};
+      // b^0 is 1 for every modulus, reduced into the modulus' range, so
+      // PowerMod[3, 0, -7] is Mod[1, -7] == -6.
+      if exp.is_zero() {
+        return Ok(bigint_to_expr(
+          (BigInt::one() % &modulus + &modulus) % &modulus,
+        ));
+      }
+      // Any other power with a negative modulus stays unevaluated.
+      if modulus.is_negative() {
+        return Ok(unevaluated("PowerMod", args));
+      }
+      let reduced = (base % &modulus + &modulus) % &modulus;
+      let base = if exp.is_negative() {
+        if let Some(inv) = reduced.modinv(&modulus) {
+          inv
+        } else {
+          // The message names the base already reduced modulo m.
+          crate::emit_message(&format!(
+            "PowerMod::ninv: {reduced} is not invertible modulo {modulus}."
+          ));
+          return Ok(unevaluated("PowerMod", args));
         }
       } else {
-        let result = base.modpow(&exp, &modulus);
-        // Ensure non-negative result
-        let result = ((result % &modulus) + &modulus) % &modulus;
-        Ok(bigint_to_expr(result))
-      }
+        reduced
+      };
+      Ok(bigint_to_expr(base.modpow(&exp.abs(), &modulus)))
     }
     _ => Ok(unevaluated("PowerMod", args)),
   }
@@ -5445,6 +5480,19 @@ fn power_mod_root_ast(
     ));
     return unevaluated();
   }
+  let no_root = || {
+    crate::emit_message(&format!(
+      "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
+      n,
+      expr_to_string(&args[0]),
+      expr_to_string(&args[2])
+    ));
+    unevaluated()
+  };
+  // wolframscript finds no root for any negative modulus.
+  if m.sign() == num_bigint::Sign::Minus {
+    return no_root();
+  }
   let m_abs = m.magnitude().clone();
   let Some(m_u) = m_abs.to_u128() else {
     return unevaluated();
@@ -5483,15 +5531,7 @@ fn power_mod_root_ast(
   match smallest {
     Some(x) if n == 2 => Ok(Expr::Integer(x as i128)),
     Some(_) => unevaluated(),
-    None => {
-      crate::emit_message(&format!(
-        "PowerMod::root: The equation x^{} = {} (mod {}) has no integer solutions.",
-        n,
-        expr_to_string(&args[0]),
-        expr_to_string(&args[2])
-      ));
-      unevaluated()
-    }
+    None => no_root(),
   }
 }
 
@@ -5733,6 +5773,18 @@ pub fn next_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     1
   };
+
+  // NextPrime[n, 0] is n itself when n is a (possibly negative) prime and
+  // stays unevaluated otherwise.
+  if k == 0 {
+    let prime = expr_to_bigint(&args[0])
+      .is_some_and(|n| is_prime_bigint(&n.magnitude().clone().into()));
+    return Ok(if prime {
+      args[0].clone()
+    } else {
+      unevaluated("NextPrime", args)
+    });
+  }
 
   // Handle BigInteger separately (only supports k=1 / forward)
   if let Expr::BigInteger(n) = &args[0] {

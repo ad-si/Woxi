@@ -868,6 +868,17 @@ OS. glibc rounds `Cos[2.0943951023931953]` (`N[2 Pi/3]`) correctly to
 (`CompleteGraph[3]`, …) show it on Linux. Matching Wolfram everywhere would
 need its own trigonometric kernel.
 
+### Machine `Binomial` of a real with an integer k
+
+Woxi computes `Binomial[x, k]` for a machine real `x` and an integer
+`k >= 0` as the falling factorial over `k!`, so `Binomial[-2.5, 3]` is
+`-6.5625`, the exact value. wolframscript goes through its own Gamma or
+log-Gamma kernel and gives `-6.562499999999997`; likewise
+`Binomial[7.5, 2]` is `24.375000000000036` there, while
+`Binomial[2.5, 3]` is exactly `0.3125`. Neither a plain Gamma ratio nor
+the exponential of log-Gamma differences (computed with libm) reproduces
+all of these, so the kernel is not identified.
+
 ### Machine ArcTanh differs from high-precision rounding
 
 Seed `1794077442250731000` (2026-11-07) found `ArcTanh[-0.7]`:
