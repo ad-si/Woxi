@@ -13905,6 +13905,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && aspect_ratio.is_none()
     && !aspect_ratio_full
     && (axes.0 || axes.1 || frame_edges.iter().any(|&e| e));
+  // The range asked for, before it is widened to any picture's shape: the
+  // drawing area is only settled once the margins are known, and the
+  // range must then be widened from this, not from a range already
+  // widened to the whole picture's shape (that would widen it twice).
+  let requested_bb = bb;
   if !aspect_ratio_full && !fit_frame_to_data {
     // The data's exact shape, not the one a whole-pixel height rounds to.
     let ratio = if aspect_ratio.is_none()
@@ -14050,8 +14055,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // The margins took room from one side only, so the drawing area is no
   // longer the shape the data was fitted to; fit it again or circles come
-  // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`).
+  // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`). The
+  // requested range is widened afresh: widening the range already fitted
+  // to the whole picture would shrink the content twice (e.g. under
+  // `ImageSize -> {450, 230}` with `ImagePadding -> {{0, 0}, {0, 30}}`).
   if !aspect_ratio_full {
+    bb = requested_bb;
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
   let total_width = svg_w + margin_left + margin_right;
