@@ -8817,7 +8817,11 @@ returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
-borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
+borders too short for that scale. `"Flag"` is a 160 px wide `Image` of the
+public-domain Wikimedia Commons flag (via flagcdn.com, see
+`scripts/gen_country_flags.py`), so its pixels and `ImageDimensions` differ
+from WL's own flag images (the Gaza Strip and the West Bank show the flag of
+Palestine).
 
 ### CityData beyond the verified cities
 

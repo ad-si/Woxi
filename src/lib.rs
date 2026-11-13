@@ -288,6 +288,23 @@ thread_local! {
     static VISUAL_MODE: RefCell<bool> = const { RefCell::new(false) };
 }
 
+thread_local! {
+    static MOUSE_POSITION: std::cell::Cell<Option<(f64, f64)>> =
+      const { std::cell::Cell::new(None) };
+}
+
+/// Set (or clear) the pointer position, in graphics coordinates, that
+/// `MousePosition["Graphics"]` reports in visual mode. A live widget sets
+/// it while running the action of a mouse event over a graphic.
+pub fn set_mouse_position(pos: Option<(f64, f64)>) {
+  MOUSE_POSITION.with(|m| m.set(pos));
+}
+
+/// The pointer position set by [`set_mouse_position`].
+pub fn mouse_position() -> Option<(f64, f64)> {
+  MOUSE_POSITION.with(std::cell::Cell::get)
+}
+
 /// Whether the interpreter is in visual (notebook-like) display mode, where
 /// front-end-only behaviors apply (e.g. `Defer[expr]` shows `expr` without
 /// its wrapper). False in plain CLI/script mode, which matches wolframscript.
@@ -4805,7 +4822,32 @@ fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "EventHandler" && !args.is_empty() =>
     {
-      render_visual_display_pipeline(&args[0])
+      // Mouse events a live widget (Woxi Studio) can deliver are recorded
+      // on the rendered picture, together with the drawing area of each
+      // graphic in it, so a press or drag there runs the matching action
+      // with `MousePosition["Graphics"]` at the pointer.
+      let events = functions::graphics::live_mouse_events(&args[1..]);
+      if events.is_empty() {
+        return render_visual_display_pipeline(&args[0]);
+      }
+      let rendered = functions::graphics::with_plot_frame_markers(|| {
+        let shown = render_visual_display_pipeline(&args[0]);
+        // Releasing a `Dynamic` content runs the passes on what it held,
+        // but a layout it holds (`Dynamic[Grid[{{graphic}}]]`) is only
+        // composed by the passes after this one — compose it here, while
+        // its graphics record their drawing areas.
+        if matches!(shown, syntax::Expr::Graphics { .. }) {
+          shown
+        } else {
+          render_visual_display_pipeline(&render_grid_if_needed(shown))
+        }
+      });
+      match &rendered {
+        syntax::Expr::Graphics { svg, .. } => graphics_result(
+          functions::graphics::with_mouse_events_marker(svg.clone(), &events),
+        ),
+        _ => rendered,
+      }
     }
     _ => expr,
   }
@@ -5212,8 +5254,16 @@ pub(crate) fn row_svg_with_rendered_items(
 ) -> Option<String> {
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
-    let new_items: Vec<syntax::Expr> =
-      items.iter().map(render_inline_display_wrapper).collect();
+    // A product with a line-breaking string factor flows into the row
+    // factor by factor, so expand it before its factors are pre-rendered.
+    let new_items: Vec<syntax::Expr> = items
+      .iter()
+      .flat_map(|i| {
+        functions::graphics::times_flow_factors(i)
+          .unwrap_or_else(|| vec![i.clone()])
+      })
+      .map(|i| render_inline_display_wrapper(&i))
+      .collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
   functions::graphics::row_to_svg(&new_args)

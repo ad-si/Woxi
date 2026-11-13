@@ -10875,9 +10875,10 @@ mod cases {
   fn to_boxes_fraction_sum_numerator() {
     // Issue #299: (1+x)/10 rendered as `1 (1+x)` over 10 — the unit factor
     // from Rational[1,10]'s numerator leaked into the box-form numerator.
+    // A rational coefficient of a sum is set in front of it: `1/10 (1 + x)`.
     assert_case(
       r#"ToBoxes[(1 + x)/10]"#,
-      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
     );
   }
   #[test]
@@ -10892,7 +10893,7 @@ mod cases {
   fn to_boxes_fraction_explicit_one_times_sum() {
     assert_case(
       r#"ToBoxes[1 (1 + x)/10]"#,
-      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
     );
   }
   // A negative product inside a sum puts its sign on the operator, with no

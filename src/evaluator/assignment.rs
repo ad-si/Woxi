@@ -3272,6 +3272,32 @@ fn inline_option_defaults(spec: &Expr) -> Option<Vec<Expr>> {
   }
 }
 
+/// The symbol and keys of a chained single-key lookup `a[k1][k2]…[kn]` with
+/// at least two keys.
+fn chained_key_target(lhs: &Expr) -> Option<(&str, Vec<&Expr>)> {
+  let mut keys = Vec::new();
+  let mut current = lhs;
+  while let Expr::CurriedCall { func, args } = current {
+    let [key] = args.as_slice() else {
+      return None;
+    };
+    keys.push(key);
+    current = func.as_ref();
+  }
+  let Expr::FunctionCall { name, args } = current else {
+    return None;
+  };
+  let [key] = args.as_slice() else {
+    return None;
+  };
+  if keys.is_empty() {
+    return None;
+  }
+  keys.push(key);
+  keys.reverse();
+  Some((name.as_str(), keys))
+}
+
 fn assign_part(
   lhs: &Expr,
   rhs: &Expr,
@@ -3626,6 +3652,17 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       crate::set_association_entry(head_name, &key_expr, rhs_value.clone());
       return Ok(rhs_value);
     }
+  }
+
+  // Chained key assignment into nested Associations:
+  //   a[k1][k2]…[kn] = v   when `a` is bound to an Association
+  // is `a[[Key[k1], Key[k2], …, Key[kn]]] = v`.
+  if let Some((root, keys)) = chained_key_target(lhs)
+    && crate::symbol_holds_association(root)
+  {
+    let mut part_args = vec![Expr::Identifier(root.to_string())];
+    part_args.extend(keys.into_iter().map(|k| call("Key", vec![k.clone()])));
+    return assign_part(&call("Part", part_args), rhs, false);
   }
 
   // Handle Part assignment: var[[indices]] = value

@@ -26172,6 +26172,54 @@ mod combinatorica_show_graph {
       "{2, Graphics, True}"
     );
   }
+
+  #[test]
+  fn cycle_is_the_closed_path_on_the_circular_embedding() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = Cycle[5]; \
+         {Edges[g], Length[Vertices[g]], Vertices[g][[5]]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {2, 3}, {3, 4}, {4, 5}, {1, 5}}, 5, {1., 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Combinatorica`Edges[Combinatorica`Cycle[3, Combinatorica`Directed]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}, {3, 1}}"
+    );
+    // Too small for a cycle: left unevaluated.
+    assert_eq!(interpret("Combinatorica`Cycle[2]").unwrap(), "Cycle[2]");
+  }
+
+  #[test]
+  fn show_graph_fits_the_unit_square_and_cycles_a_vertex_color_list() {
+    // The vertices are drawn in the unit square (Combinatorica's
+    // NormalizeVertices), so other graphics placed there line up, and a
+    // list of colors is handed out to the vertices in order, cyclically.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Cases[ShowGraph[Cycle[4], VertexColor -> {Red, Blue, Green}], \
+           {c_, Disk[p_, _]} :> {c, p}, Infinity]"
+      )
+      .unwrap(),
+      "{{RGBColor[1, 0, 0], {0.5, 1.}}, {RGBColor[0, 0, 1], {0., 0.5}}, \
+{RGBColor[0, 1, 0], {0.5, 0.}}, {RGBColor[1, 0, 0], {1., 0.5}}}"
+    );
+    // A single color paints every vertex; `Disk[s]` is the disk's diameter.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Union[Cases[ShowGraph[Cycle[6], VertexColor -> Blue, \
+           VertexStyle -> Disk[0.1]], {c_, Disk[_, r_]} :> {c, r}, Infinity]]"
+      )
+      .unwrap(),
+      "{{RGBColor[0, 0, 1], 0.05}}"
+    );
+  }
 }
 
 mod part_without_index {

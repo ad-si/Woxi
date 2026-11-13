@@ -1621,11 +1621,12 @@ fn evaluate_function_call_ast_inner(
     // defined.)
     "CompleteGraph" | "EmptyGraph" | "GridGraph" | "InduceSubgraph"
     | "ListGraphs" | "CodeToLabeledTree" | "RadialEmbedding" | "ConnectedQ"
-    | "BooleanAlgebra"
+    | "BooleanAlgebra" | "Cycle"
       if combinatorica_active() =>
     {
       match name {
         "CompleteGraph" => "Combinatorica`CompleteGraph",
+        "Cycle" => "Combinatorica`Cycle",
         "EmptyGraph" => "Combinatorica`EmptyGraph",
         "GridGraph" => "Combinatorica`GridGraph",
         "InduceSubgraph" => "Combinatorica`InduceSubgraph",
