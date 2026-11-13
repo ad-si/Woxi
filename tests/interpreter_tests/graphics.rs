@@ -50898,6 +50898,39 @@ mod plot_content_regressions {
     assert_eq!(pieces("Plot[Sin[x] + x, {x, 0, 5}]"), 1);
   }
 
+  /// A conditional (`Which`, `If`, `Piecewise`) that jumps between its
+  /// branches is broken there too — also when it is hidden behind a user
+  /// function, which Wolfram works out with the variable left symbolic.
+  /// A conditional that stays continuous keeps one piece.
+  #[test]
+  fn conditional_jumps_are_excluded() {
+    let pieces = |code: &str| {
+      clear_state();
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(pieces("Plot[Which[x < 1, 1, True, 2], {x, 0, 3}]"), 2);
+    assert_eq!(pieces("Plot[If[x < 2, x, 0], {x, 0, 3}]"), 2);
+    assert_eq!(
+      pieces("Plot[Piecewise[{{1, x < 1}, {3, x < 2}}, 0], {x, 0, 3}]"),
+      3
+    );
+    assert_eq!(
+      pieces(
+        "step[a_, b_, t_] := Which[t < 1 || t > 2, a, 1 <= t <= 2, b]; \
+         Plot[step[0.5, 1.5, t], {t, 0, 3}]"
+      ),
+      3
+    );
+    assert_eq!(pieces("Plot[If[x < 1, x, 2 - x], {x, 0, 2}]"), 1);
+    assert_eq!(
+      pieces("Plot[Which[x < 1, 1, True, 2], {x, 0, 3}, Exclusions -> None]"),
+      1
+    );
+  }
+
   /// `PlotLabels -> Placed[{…}, pos]`, `Callout[{…}, pos]` and per-curve
   /// `Callout`/`Placed` entries label the curves instead of being printed.
   #[test]
