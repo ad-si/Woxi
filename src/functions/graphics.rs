@@ -5358,6 +5358,32 @@ pub(crate) fn split_markup_lines(markup: &str) -> Vec<String> {
 /// The line height of text markup: 1.2 times its largest `font-size`
 /// (a percentage size such as a subscript's does not count), at least the
 /// `base` size.
+/// `markup` moved right by `gap` points (a `Spacer` before it in a `Row`).
+///
+/// Only the first run of characters carries the `dx`: wrapping the whole
+/// markup in one `<tspan dx>` would nest its own spans (a superscript, an
+/// italic letter) inside it, and resvg then raises every character of the
+/// wrapper that precedes a nested `baseline-shift` — `[He]2s²` would draw
+/// its `s` as part of the superscript.
+fn markup_with_leading_gap(markup: &str, gap: f64) -> String {
+  let lead = markup.find('<').unwrap_or(markup.len());
+  if lead > 0 {
+    let (text, rest) = markup.split_at(lead);
+    return format!("<tspan dx=\"{gap:.2}\">{text}</tspan>{rest}");
+  }
+  if let Some(rest) = markup.strip_prefix("<tspan")
+    && rest.starts_with([' ', '>'])
+    && !rest[..rest.find('>').unwrap_or(rest.len())].contains(" dx=")
+  {
+    return format!("<tspan dx=\"{gap:.2}\"{rest}");
+  }
+  format!("<tspan dx=\"{gap:.2}\">{markup}</tspan>")
+}
+
+/// How far a `baseline-shift="super"`/`"sub"` script moves off the
+/// baseline, in ems of the surrounding text (the SVG renderers' default).
+const SCRIPT_SHIFT_EM: f64 = 1.0 / 3.0;
+
 fn markup_line_height(markup: &str, base: f64) -> f64 {
   let mut largest = base;
   for part in markup.split("font-size=\"").skip(1) {
@@ -6750,6 +6776,30 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
   has_span || has_chrome
 }
 
+/// Embedded inset pictures always center on their anchor. To put the point
+/// at fractions `(fx, fy)` (from the left, from the top) of the picture on
+/// the anchor instead, pad the picture to twice that point's distance to
+/// its far sides, so the point becomes the padded picture's center.
+fn pad_inset_to_anchor(
+  svg: &mut String,
+  w: &mut f64,
+  h: &mut f64,
+  size: &mut Option<(f64, f64)>,
+  fx: f64,
+  fy: f64,
+) {
+  let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
+  let (pw, ph) = (*w * kx, *h * ky);
+  let (ox, oy) = (pw / 2.0 - fx * *w, ph / 2.0 - fy * *h);
+  *svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
+     height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
+     <g transform=\"translate({ox:.2},{oy:.2})\">{svg}</g></svg>"
+  );
+  *size = size.map(|(sw, sh)| (sw * kx, sh * ky));
+  (*w, *h) = (pw, ph);
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -6799,6 +6849,12 @@ fn inset_primitives(
   // `Inset[Rotate[g, θ], …]` turns the whole embedded picture by θ
   // (counterclockwise) about its center; the inset then occupies the
   // bounding box of the turned picture, still centered on the anchor.
+  //
+  // The rotated object is no longer a graphic, so an `opos` does not name
+  // a point of `g`'s own coordinates: it is aligned like a `Text` offset,
+  // in the turned box, `{0, 0}` being its center and `{±1, ±1}` its
+  // corners. The inner picture is therefore embedded centered and the
+  // alignment applied to the turned box afterward.
   if let Expr::FunctionCall {
     name: rotate,
     args: rargs,
@@ -6809,10 +6865,32 @@ fn inset_primitives(
   {
     let mut inner_args = args.to_vec();
     inner_args[0] = rargs[0].clone();
+    let rotated_anchor = args.get(2).and_then(|opos| {
+      let (x, y, scaled) = expr_to_anchor(opos)?;
+      Some(if scaled {
+        (x, 1.0 - y)
+      } else {
+        (f64::midpoint(x, 1.0), (1.0 - y) / 2.0)
+      })
+    });
+    if inner_args.len() > 2 {
+      inner_args[2] = Expr::List(
+        vec![
+          Expr::Identifier("Center".to_string()),
+          Expr::Identifier("Center".to_string()),
+        ]
+        .into(),
+      );
+    }
     if let Some(mut prims) = inset_primitives(&inner_args, errors) {
       if let [
         Primitive::InsetGraphic {
-          svg, w, h, size, ..
+          svg,
+          w,
+          h,
+          size,
+          source,
+          ..
         },
       ] = prims.as_mut_slice()
       {
@@ -6831,6 +6909,12 @@ fn inset_primitives(
         );
         *size = size.map(|(sw, sh)| (sw * cos + sh * sin, sw * sin + sh * cos));
         (*w, *h) = (rw, rh);
+        if let Some((fx, fy)) = rotated_anchor
+          .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
+        {
+          pad_inset_to_anchor(svg, w, h, size, fx, fy);
+          *source = None;
+        }
       }
       return Some(prims);
     }
@@ -7043,16 +7127,7 @@ fn inset_primitives(
       x += (0.5 - fx) * sw;
       y += (fy - 0.5) * sh;
     } else if let Some((fx, fy)) = object_anchor {
-      let (kx, ky) = (2.0 * fx.max(1.0 - fx), 2.0 * fy.max(1.0 - fy));
-      let (pw, ph) = (w * kx, h * ky);
-      let (ox, oy) = (pw / 2.0 - fx * w, ph / 2.0 - fy * h);
-      svg = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
-         height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
-         <g transform=\"translate({ox:.2},{oy:.2})\">{svg}</g></svg>"
-      );
-      size = size.map(|(sw, sh)| (sw * kx, sh * ky));
-      (w, h) = (pw, ph);
+      pad_inset_to_anchor(&mut svg, &mut w, &mut h, &mut size, fx, fy);
       source = None;
     }
     return Some(vec![Primitive::InsetGraphic {
@@ -18414,9 +18489,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                 expr_to_svg_markup(part)
               };
               if pending_gap > 0.0 {
-                out.push_str(&format!(
-                  "<tspan dx=\"{pending_gap:.2}\">{markup}</tspan>"
-                ));
+                out.push_str(&markup_with_leading_gap(&markup, pending_gap));
                 pending_gap = 0.0;
               } else {
                 out.push_str(&markup);
@@ -22310,7 +22383,10 @@ fn grid_ast_internal(
   // A grid whose cells are all graphics is a layout of pictures, not of
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
-  if !parens && let Some(rows) = grid_of_graphics_svgs(args) {
+  if !parens
+    && !has_item_alignment(args)
+    && let Some(rows) = grid_of_graphics_svgs(args)
+  {
     // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
     // are honored by the one layout `expr_to_svg` gives a `Grid` holding
     // pictures; the bare composition below would silently drop them.
@@ -22337,6 +22413,30 @@ fn grid_ast_internal(
   }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Whether a cell of `Grid`'s matrix is an `Item[…, Alignment -> …]`: the
+/// picture layout centers every cell, so such a grid takes the full grid
+/// layout, which places each cell by its own alignment.
+pub fn has_item_alignment(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  rows
+    .iter()
+    .flat_map(|row| match row {
+      Expr::List(cells) => cells.iter().collect::<Vec<_>>(),
+      single => vec![single],
+    })
+    .any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Item"
+          && args
+            .iter()
+            .skip(1)
+            .filter_map(option_kv)
+            .any(|(key, _)| key == "Alignment"))
+    })
 }
 
 /// The rendered SVG of every cell, when `Grid`'s first argument is a
@@ -23198,13 +23298,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       return grid_cell_graphic(&unwrap_display_wrappers(cell));
     }
-    // `Labeled[content, label, pos]` around a block layout or picture sets
-    // the label beside it (Bottom by default), centered on the content.
+    // `Labeled[content, label, pos]` sets the label beside its content
+    // (Bottom by default), centered on it. The two form a block whatever
+    // the content is — a picture, a layout or a plain expression such as a
+    // list of rules — so the cell is never the call's source text.
     Expr::FunctionCall { name, args }
-      if name == "Labeled"
-        && (args.len() == 2 || args.len() == 3)
-        && (grid_cell_graphic(&args[0]).is_some()
-          || grid_cell_graphic(&args[1]).is_some()) =>
+      if name == "Labeled" && (args.len() == 2 || args.len() == 3) =>
     {
       let position = match args.get(2) {
         Some(Expr::Identifier(p)) => p.as_str(),
@@ -23350,6 +23449,41 @@ fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
       _ => None,
     },
     _ => None,
+  }
+}
+
+/// Per-row vertical alignments from the row part of a Grid `Alignment`
+/// spec: one symbol for every row, or a list with one entry per row
+/// (a nested list repeats cyclically over the remaining rows).
+fn row_vertical_alignments(
+  spec: &Expr,
+  num_rows: usize,
+) -> Vec<Option<VAlign>> {
+  match spec {
+    Expr::List(items) => {
+      let explicit: Vec<_> = items
+        .iter()
+        .take_while(|it| !matches!(it, Expr::List(_)))
+        .map(vertical_alignment)
+        .collect();
+      let repeating: Vec<_> = items
+        .iter()
+        .find_map(|it| match it {
+          Expr::List(rep) => Some(rep.iter().map(vertical_alignment).collect()),
+          _ => None,
+        })
+        .unwrap_or_default();
+      (0..num_rows)
+        .map(|i| match explicit.get(i) {
+          Some(a) => *a,
+          None if !repeating.is_empty() => {
+            repeating[(i - explicit.len()) % repeating.len()]
+          }
+          None => None,
+        })
+        .collect()
+    }
+    other => vec![vertical_alignment(other); num_rows],
   }
 }
 
@@ -24048,9 +24182,9 @@ fn grid_svg_styled_internal_reporting(
   let mut row_bg_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_bg_has_repeating = false;
   let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
-  // `Alignment -> {h, v}`: where an item sits vertically in its row.
-  let mut alignment_v = VAlign::Center;
   let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
+  // `Alignment -> {h, v}`: where each row's cells sit vertically.
+  let mut row_valigns: Vec<Option<VAlign>> = Vec::new();
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
   let mut col_align_has_repeating = false;
@@ -24306,8 +24440,8 @@ fn grid_svg_styled_internal_reporting(
           Expr::List(items) => {
             // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
-            if let Some(v) = items.get(1).and_then(vertical_alignment) {
-              alignment_v = v;
+            if let Some(row_spec) = items.get(1) {
+              row_valigns = row_vertical_alignments(row_spec, rows.len());
             }
             if let Some(first) = items.first() {
               match first {
@@ -24760,11 +24894,18 @@ fn grid_svg_styled_internal_reporting(
       if grid_cell_graphic(cell).is_none() && !has_fraction(cell) {
         let style = extract_cell_style(cell);
         let markup = expr_to_svg_markup(style.content);
+        let base = style.font_size.unwrap_or(font_size);
         if markup.contains('\n') {
-          let base = style.font_size.unwrap_or(font_size);
           let lines = markup.split('\n').count() as f64;
           cell_h =
             cell_h.max(pad_y + lines * markup_line_height(&markup, base));
+        } else if markup.contains("baseline-shift=\"super\"")
+          || markup.contains("baseline-shift=\"sub\"")
+        {
+          // A raised (or lowered) script reaches past the line's own
+          // glyphs; the text is centered on its row, so the row grows by
+          // the shift on both sides to keep the script inside it.
+          cell_h = cell_h.max(pad_y + base * (1.0 + 2.0 * SCRIPT_SHIFT_EM));
         }
       }
       // A graphic cell keeps its own height.
@@ -25152,14 +25293,16 @@ fn grid_svg_styled_internal_reporting(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
-      // A `Top` or `Bottom` vertical alignment puts an item of height `h`
-      // against that edge of its rows' content area (inside the cell
-      // padding); the result is the item's top edge, or `None` when the
-      // item stays centered.
+      // A `Top` or `Bottom` vertical alignment (on the grid, its row, or
+      // the cell's `Item`) puts an item of height `h` against that edge of
+      // its rows' content area (inside the cell padding); the result is the
+      // item's top edge, or `None` when the item stays centered.
       let v_align = item_v_aligns
         .iter()
         .find(|(pos, _)| *pos == (i, j))
-        .map_or(alignment_v, |(_, a)| *a);
+        .map(|(_, a)| *a)
+        .or_else(|| row_valigns.get(i).copied().flatten())
+        .unwrap_or(VAlign::Center);
       let content_top = content_y_starts[i];
       let content_bottom = content_y_starts[last_row] + row_heights[last_row];
       let aligned_top = |h: f64| -> Option<f64> {
@@ -25346,7 +25489,7 @@ fn grid_svg_styled_internal_reporting(
           let block_h = lines.len() as f64 * lh;
           let top = aligned_top(block_h)
             .map_or(cy - (lines.len() as f64 - 1.0) / 2.0 * lh, |t| {
-              t + lh / 2.0
+              t + lh / 2.0 - 1.0
             });
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
@@ -25359,7 +25502,7 @@ fn grid_svg_styled_internal_reporting(
           (top, body)
         } else {
           let lh = markup_line_height(&markup, fs);
-          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0), markup)
+          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
@@ -28762,7 +28905,21 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     }
     traditional |= name == "TraditionalForm";
     standard |= name == "StandardForm";
-    let inner = args[0].clone();
+    // A width-only `Pane[Grid[…], w]` still breaks the grid's long text
+    // cells at the pane's width when the pane itself is peeled away.
+    let inner = (name == "Pane")
+      .then(|| crate::evaluator::dispatch::io_functions::pane_width_only(args))
+      .flatten()
+      .filter(|_| {
+        crate::evaluator::dispatch::io_functions::pane_fixed_size(args)
+          .is_none()
+      })
+      .and_then(|w| {
+        wrap_wide_grid_text(&args[0], w, &|c| {
+          parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+        })
+      })
+      .unwrap_or_else(|| args[0].clone());
     current = inner;
   }
   // A string is drawn as its text in any form — `TraditionalForm["a = 1"]`
@@ -31425,6 +31582,124 @@ pub(crate) fn fit_tree_to_pane_width(
     return None;
   }
   Some(with_default_image_size(content, width as i128))
+}
+
+/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
+/// the pane — a long list such as the rules of a graph — into lines that
+/// fit, the way the FrontEnd's line breaking does once the pane fixes the
+/// width. Returns the grid with those cells re-flowed, or `None` when no
+/// cell needed it.
+pub(crate) fn wrap_wide_grid_text(
+  grid: &Expr,
+  width: f64,
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let (opts, mut rows) = grid_rows_of(grid)?;
+  // A cell keeps its padding on either side of the text.
+  let line_width = (width - 12.0).max(1.0);
+  let mut changed = false;
+  for row in &mut rows {
+    for cell in row.iter_mut() {
+      if cell_width(cell) > width + 0.5
+        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
+      {
+        *cell = flowed;
+        changed = true;
+      }
+    }
+  }
+  changed.then(|| rebuild_grid(opts, rows))
+}
+
+/// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
+/// and `Style`) into a left-aligned `Column` of lines no wider than
+/// `width`, breaking after the commas between elements. `styles` are the
+/// directives of the enclosing `Style`s, which size the text measured.
+fn wrap_list_text(
+  expr: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let rebuilt = |name: &str, args: &[Expr], first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match expr {
+    // The caption of a `Labeled` is left as it is.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled" && args.len() >= 2 =>
+    {
+      let content = wrap_list_text(&args[0], width, styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      let content = wrap_list_text(&args[0], width, styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      let content = wrap_list_text(&args[0], width, &inner_styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::List(items)
+      if items.len() > 1
+        && items.iter().all(|item| grid_cell_graphic(item).is_none()) =>
+    {
+      let styled = |e: Expr| {
+        if styles.is_empty() {
+          e
+        } else {
+          call(
+            "Style",
+            std::iter::once(e).chain(styles.iter().cloned()).collect(),
+          )
+        }
+      };
+      // Each line is typeset as the boxes of its piece of the list, so it
+      // reads exactly like the unbroken list would.
+      let line_expr = |pieces: &[Expr]| {
+        call1(
+          "DisplayForm",
+          call1("RowBox", Expr::List(pieces.to_vec().into())),
+        )
+      };
+      let measure = |pieces: &[Expr]| cell_width(&styled(line_expr(pieces)));
+      let mut lines: Vec<Vec<Expr>> = vec![vec![str_expr("{")]];
+      for (i, item) in items.iter().enumerate() {
+        let item_boxes =
+          crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+            item,
+          );
+        let line = lines.last_mut()?;
+        if i > 0 {
+          line.push(str_expr(","));
+        }
+        // The element, and the comma that follows it on the same line.
+        let mut candidate = line.clone();
+        candidate.push(item_boxes.clone());
+        candidate.push(str_expr(","));
+        if i > 0 && line.len() > 1 && measure(&candidate) > width {
+          lines.push(Vec::new());
+        }
+        lines.last_mut()?.push(item_boxes);
+      }
+      lines.last_mut()?.push(str_expr("}"));
+      if lines.len() < 2 {
+        return None;
+      }
+      let rows = lines.iter().map(|l| line_expr(l)).collect::<Vec<_>>();
+      Some(call(
+        "Column",
+        vec![Expr::List(rows.into()), id_expr("Left")],
+      ))
+    }
+    _ => None,
+  }
 }
 
 /// Fit `Pane[Grid[rows], {width, _}]`'s content into `width`: when the
@@ -44125,6 +44400,72 @@ fn opener_view_node(
   })
 }
 
+/// Whether a display node holds a control the user can operate.
+fn display_node_is_live(node: &DisplayNode) -> bool {
+  match node {
+    DisplayNode::Panel(inner) => display_node_is_live(inner),
+    DisplayNode::Grid(rows) => rows.iter().flatten().any(display_node_is_live),
+    DisplayNode::Column(items) | DisplayNode::Row(items) => {
+      items.iter().any(display_node_is_live)
+    }
+    DisplayNode::Spacer { .. }
+    | DisplayNode::Text { .. }
+    | DisplayNode::Static { .. } => false,
+    _ => true,
+  }
+}
+
+/// `Overlay[{e1, e2, …}, {i, j, …}, s]` draws only the layers `i, j, …`
+/// (the last one on top) and routes input to layer `s`. A single-node
+/// display can show just one of them: the active layer when it is a control
+/// Woxi can operate (a `Slider` hidden under a gradient strip stays
+/// draggable), otherwise the topmost shown layer — what the viewer sees
+/// (e.g. the color swatch drawn over an inert `ColorSetter`).
+/// Returns `None` when the selection does not name any layer.
+fn overlay_selection_node(
+  layers: &[Expr],
+  rest: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let resolve = |e: &Expr| -> Option<usize> {
+    let Expr::Integer(i) = e else { return None };
+    let n = layers.len() as i128;
+    let i = *i;
+    let idx = if i > 0 { i - 1 } else { n + i };
+    (0..n).contains(&idx).then_some(idx as usize)
+  };
+  let Expr::List(selection) = &rest[0] else {
+    return None;
+  };
+  let shown: Vec<usize> = selection.iter().filter_map(resolve).collect();
+  let active = rest
+    .get(1)
+    .and_then(resolve)
+    .filter(|a| shown.contains(a) && !is_slider2d_call(&layers[*a]));
+  if let Some(a) = active {
+    let mut layer_probes = Vec::new();
+    let mut layer_ons = Vec::new();
+    let node = display_expr_to_node(
+      &layers[a],
+      bindings,
+      &mut layer_probes,
+      &mut layer_ons,
+    );
+    if display_node_is_live(&node) {
+      probes.extend(layer_probes);
+      ons.extend(layer_ons);
+      return Some(node);
+    }
+  }
+  let top = *shown
+    .iter()
+    .rev()
+    .find(|&&i| !is_slider2d_call(&layers[i]))?;
+  Some(display_expr_to_node(&layers[top], bindings, probes, ons))
+}
+
 /// Recursively convert a display expression into a `DisplayNode`. Each
 /// checkbox pushes its value-probe expression to `probes` (and the "on" value
 /// to `ons`) instead of evaluating it inline; `checked` is filled in later
@@ -44152,6 +44493,18 @@ fn display_expr_to_node(
       // (see `collect_display_slider2d_vars`), so what is drawn here is the
       // first remaining layer — e.g. the color strip a 2D slider sits on.
       "Overlay" if !args.is_empty() => match &args[0] {
+        Expr::List(layers)
+          if matches!(args.get(1), Some(Expr::List(_)))
+            && let Some(node) = overlay_selection_node(
+              layers,
+              &args[1..],
+              bindings,
+              probes,
+              ons,
+            ) =>
+        {
+          node
+        }
         Expr::List(layers) => {
           match layers.iter().find(|l| !is_slider2d_call(l)) {
             Some(layer) => display_expr_to_node(layer, bindings, probes, ons),
@@ -45045,9 +45398,15 @@ fn togglerbar_node(
       Some(single) => crate::syntax::expr_to_source_form(single) == value_code,
       None => false,
     };
+    // A bar whose variable does not hold a list yet (e.g. a CheckboxBar
+    // control declared with initial value `0`, meaning "nothing ticked")
+    // starts a fresh selection list rather than `Append`ing to the scalar;
+    // a scalar equal to this choice (drawn ticked above) is unticked.
     let toggled = format!(
-      "If[MemberQ[{getter_code}, {value_code}], DeleteCases[{getter_code}, \
-       {value_code}], Append[{getter_code}, {value_code}]]"
+      "If[ListQ[{getter_code}], If[MemberQ[{getter_code}, {value_code}], \
+       DeleteCases[{getter_code}, {value_code}], Append[{getter_code}, \
+       {value_code}]], If[{getter_code} === {value_code}, {{}}, \
+       {{{value_code}}}]]"
     );
     let mutation = match &setter {
       None => format!("{getter_code} = {toggled}"),

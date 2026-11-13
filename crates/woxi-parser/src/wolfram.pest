@@ -86,7 +86,7 @@ PowGap = _{ (" " | "\t" | "\r" | "\n")* }
 NegLiteralTail = _{
     PowGap ~ (
         "^" ~ !("=" | ":=")
-      | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~"
+      | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~" | "/*" ~ !")"
       | "\\[TensorProduct]" | "\u{F3DA}"
       | "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}"
       | "\\[CircleDot]" | "\u{2299}" | "\\[SmallCircle]" | "\u{2218}"
@@ -413,6 +413,7 @@ Operator = @{
   | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
   | GenericInfixOperator
   | "//@"    // MapAll operator (must be before /@ and the // postfix)
+  | "//="    // ApplyTo (Precedence 75; must be before the // postfix)
   | "/@"     // keep first
   | ";;"     // Span (Wolfram precedence 305: tighter than =, ==, &&, |, ~~ and ->, looser than + and *)
   | "@@@"    // MapApply operator (must be before @@)
@@ -437,11 +438,9 @@ Operator = @{
   | "\\[Rule]" | "\u{F522}" | "->" | "\u{2192}"     // Rule (must be before - and >), →
   | "^:="    // UpSetDelayed (must be before ^= and :=)
   | "^="     // UpSet (must be before ^ and =)
-  // Compound assignment. The `AddTo`/`SubtractFrom`/`TimesBy`/`DivideBy`
-  // terms above only take a symbol or a `[[…]]` part as their target, so a
-  // call target (`state["pos"] += n`) reaches the operator chain instead —
-  // `Term` has already taken `state["pos"]` as a `FunctionCallExtended` by
-  // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
+  // Compound assignment (Precedence 100): the left side is everything that
+  // binds tighter, `a + b += c` is `AddTo[a + b, c]`. Must precede the bare
+  // `+`/`-`/`*`/`/` spellings below.
   | "+=" | "-=" | "*=" | "/="
   | "**"   // NonCommutativeMultiply (must be before *)
   | "+" | "-" | "\u{2212}" | "\\[Minus]" | "*" | "/" | "^"
@@ -505,8 +504,11 @@ UnicodePartScan = _{ ("\u{27E6}" | "\u{301A}") ~ (UnicodePartScan | !("\u{27E7}"
 PartScanGroup = _{ BalancedBrackets | UnicodePartScan }
 PartIncScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "++" }
 PartDecScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "--" }
-Increment = { (&PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
+// A parenthesized expression, a list or a slot takes a postfix `++`/`--`
+// too: `(a + b)++` is Increment[a + b], `{a}--` Decrement[{a}].
+IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot | String | PatternWithHead | PatternSimple }
+Increment = { (&(ParenExtended ~ "++") ~ ParenExtended | &((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "++") ~ IncDecGroup | &PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (&(ParenExtended ~ "--") ~ ParenExtended | &((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "--") ~ IncDecGroup | &PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
@@ -518,8 +520,11 @@ Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue) ~ Decreme
 // operand so `++++a+++++2` parses as `++(++(a++++)) + 2` (Wolfram's
 // greedy reading: the postfix `++++` chain after `a` is inside the
 // innermost PreIncrement, not split by the trailing `+`).
-PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | Identifier | NumericValue) }
-PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | Identifier | NumericValue) }
+// A list or a parenthesized expression is an operand too: wolframscript
+// reads `--(a < b)` as PreDecrement[a < b] and `++{a, b}` as
+// PreIncrement[{a, b}].
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &(BalancedParens ~ (PartOpen | "[")) ~ ParenExtended | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &(BalancedParens ~ (PartOpen | "[")) ~ ParenExtended | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
@@ -539,15 +544,8 @@ Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 // operator precedence (same level as = assignment).
 UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
-// Compound assignment: x += y, x -= y, x *= y, x /= y
-// Same guard as for `++` / `--` above: the compound-assignment forms only
-// parse a `PartExtract` target when one of their operators follows it.
-PartAssignScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ ("//=" | "+=" | "-=" | "*=" | "/=") }
-ApplyToOp = { (&PartAssignScan ~ PartExtract | Identifier) ~ "//=" ~ Expression }
-AddTo = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "+=" ~ Expression }
-SubtractFrom = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "-=" ~ Expression }
-TimesBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "*=" ~ Expression }
-DivideBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "/=" ~ Expression }
+// (`+=`, `-=`, `*=`, `/=` and `//=` are operators of the chain: their left
+// side is everything that binds tighter, `a + b += c` is `AddTo[a + b, c]`.)
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
@@ -731,6 +729,13 @@ DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Cons
 DerivativePrime = @{ "'"+ }
 // DerivativeIdentifier: standalone f' or f'' without brackets → Derivative[n][f]
 DerivativeIdentifier = { Identifier ~ DerivativePrime }
+// A list, string, slot or pattern takes a prime too: `{}'`, `#2'`, `x_'`
+// are Derivative[1][…] in wolframscript.
+DerivativeOther = {
+    &((BalancedBraces | String | Slot | PatternWithHead | PatternSimple) ~ "'") ~ (List | String | Slot | PatternWithHead | PatternSimple) ~ DerivativePrime ~ !"["
+    // `++f'` is Derivative[1][PreIncrement[f]]: the prime binds looser.
+  | &("++" | "--") ~ (PreIncrement | PreDecrement) ~ DerivativePrime ~ !"["
+}
 
 // GetShorthand: `<< filename` → Get["filename"]
 // The path runs to the next whitespace, `]`, `,`, `;`, `)`, `}`, or `&`. We
@@ -822,7 +827,8 @@ BracketingBars = { ("\\[LeftBracketingBar]" | "\u{F603}") ~ Expression ~ ("," ~ 
 DoubleBracketingBars = { ("\\[LeftDoubleBracketingBar]" | "\u{F605}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightDoubleBracketingBar]" | "\u{F606}") ~ BracketArgs* }
 
 Term = _{
-    DisplayedBoxes
+    DerivativeOther
+  | DisplayedBoxes
   | BoxNotation
   | GetShorthand
   | FunctionCallExtended
@@ -839,11 +845,6 @@ Term = _{
   | BracketingBars
   | DoubleBracketingBars
   | Unset
-  | ApplyToOp
-  | AddTo
-  | SubtractFrom
-  | TimesBy
-  | DivideBy
   | Increment
   | Decrement
   | PartExtract
@@ -925,6 +926,7 @@ SimpleTerm = _{
   // `1++2` is `Increment[1] 2`.
     Increment
   | Decrement
+  | DerivativeOther
   | RadicalPrefix
   | DifferentialPrefix
   | TightPrefix
@@ -958,7 +960,8 @@ SimpleTerm = _{
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
-    FunctionCallExtended
+    DerivativeOther
+  | FunctionCallExtended
   | ImplicitTimes
   | PiecewisePrefix
   | FloorBrackets
@@ -967,11 +970,6 @@ TermNoImplicit = _{
   | BracketingBars
   | DoubleBracketingBars
   | Unset
-  | ApplyToOp
-  | AddTo
-  | SubtractFrom
-  | TimesBy
-  | DivideBy
   | Increment
   | Decrement
   | PartExtract

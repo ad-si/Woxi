@@ -1603,6 +1603,46 @@ mod graphics {
       assert!(svg.contains("rotate(-90.0000)"), "{svg}");
     }
 
+    /// A rotated object is not a graphic, so `Inset[Rotate[g, θ], pos,
+    /// opos]` reads `opos` as an offset in the turned box — `{0, 0}` is its
+    /// center — not as a point of `g`'s own coordinates. It used to pad the
+    /// plot for its data point `(0, 0)`, stretching and shifting the turned
+    /// picture off its anchor.
+    #[test]
+    fn a_rotated_plot_inset_aligns_opos_in_the_turned_box() {
+      let inset = |opos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Circle[]}}, Epilog -> Inset[Rotate[Plot[Sin[x], \
+           {{x, 0, 6}}, Axes -> False, PlotRange -> {{-3, 1}}, \
+           ImageSize -> {{80, 20}}], Pi/2], {{0, 0}}{opos}]]"
+        ))
+      };
+      let centered = inset("");
+      assert_eq!(
+        inset(", {0, 0}"),
+        centered,
+        "{{0, 0}} is the turned box's center"
+      );
+      let nested = |svg: &str| {
+        svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .expect("a nested picture")
+          .0
+          .to_string()
+      };
+      // `{-1, -1}` puts the turned box's lower left corner on the anchor:
+      // the picture is padded to twice its size, keeping that corner at the
+      // center.
+      let corner = nested(&inset(", {-1, -1}"));
+      assert!(
+        corner.contains("width=\"40.00\"")
+          && corner.contains("height=\"160.00\""),
+        "{corner}"
+      );
+    }
+
     /// `Inset[Magnify[g, s], pos]` embeds the picture scaled by `s`. It
     /// used to print `Magnify[-Image-, s]` as text.
     #[test]
@@ -7160,6 +7200,143 @@ mod plot3d {
         assert!(!text.contains("italic"), "{svg}");
         assert!(!text.contains("monospace"), "{svg}");
       }
+    }
+
+    /// The displayed picture of `code` (the SVG a notebook front end shows).
+    fn displayed_svg(code: &str) -> String {
+      woxi::interpret_with_stdout(code)
+        .unwrap()
+        .graphics
+        .expect("a displayed picture")
+    }
+
+    /// The `y` of the first nested picture (a graphic cell) in `svg`.
+    fn first_cell_picture_y(svg: &str) -> f64 {
+      svg
+        .split("<svg x=")
+        .nth(1)
+        .and_then(|s| s.split("y=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("a graphic cell")
+    }
+
+    // Regression: a text row holding a superscript was only as tall as its
+    // font, so the raised script was cut off at the top of the grid.
+    #[test]
+    fn grid_text_row_with_superscript_leaves_room_for_the_script() {
+      let row = |text: &str| {
+        displayed_svg(&format!(
+          "Grid[{{{{Style[{text}, 16]}}, {{Graphics[Circle[], \
+           ImageSize -> 50]}}}}]"
+        ))
+      };
+      let plain = first_cell_picture_y(&row("Row[{\"Na\", \"x\"}]"));
+      let svg = row("Row[{\"Na\", Superscript[\"x\", \"+\"]}]");
+      let raised = first_cell_picture_y(&svg);
+      assert!(raised > plain + 5.0, "{plain} vs {raised}: {svg}");
+      // The text is centered on its row (nudged up by 1 for ascenders):
+      // half the row must hold half the line plus the script's shift.
+      let text_y: f64 = svg
+        .split("<text")
+        .nth(1)
+        .and_then(|s| s.split("y=\"").nth(1))
+        .and_then(|s| s.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      assert!(text_y + 1.0 >= 16.0 * (0.5 + 1.0 / 3.0), "{svg}");
+    }
+
+    // Regression: a `Spacer` before a part with its own spans (an italic
+    // letter, a superscript) wrapped the whole part in one `<tspan dx>`;
+    // resvg then raised every character before the nested superscript.
+    #[test]
+    fn row_spacer_gap_does_not_nest_the_following_spans() {
+      let svg = displayed_svg(
+        "Grid[{{Row[{\"Na\", Spacer[8], Row[{\"2\", Style[\"s\", Italic], \
+         Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
+      );
+      assert!(svg.contains("<tspan dx=\"8.00\">2</tspan>"), "{svg}");
+      // A part that starts with a span takes the gap on that span.
+      let svg = displayed_svg(
+        "Grid[{{Row[{\"Na\", Spacer[8], Row[{Style[\"s\", Italic], \
+         Superscript[\"\", 2]}]}]}, {Graphics[Circle[], ImageSize -> 50]}}]",
+      );
+      assert!(
+        svg.contains("<tspan dx=\"8.00\" font-style=\"italic\">s</tspan>"),
+        "{svg}"
+      );
+    }
+
+    /// The `y` of each nested `<svg>` picture in a grid's SVG, in order.
+    fn nested_svg_ys(svg: &str) -> Vec<f64> {
+      svg
+        .split("<svg")
+        .skip(2)
+        .filter_map(|r| r.split("y=\"").nth(1))
+        .filter_map(|r| r.split('"').next())
+        .filter_map(|v| v.parse().ok())
+        .collect()
+    }
+
+    // Regression: the row part of `Alignment -> {h, v}` places a short
+    // picture at the top or bottom of a row made tall by a taller one,
+    // instead of always centering it.
+    #[test]
+    fn grid_vertical_alignment_places_graphics() {
+      let grid = |v: &str| {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+      };
+      let top = nested_svg_ys(&grid("Top"));
+      let center = nested_svg_ys(&grid("Center"));
+      let bottom = nested_svg_ys(&grid("Bottom"));
+      assert_eq!(top.len(), 2);
+      // The tall picture fills the row, so the short one shares its top
+      // edge when top-aligned and its bottom edge when bottom-aligned.
+      assert!((top[1] - top[0]).abs() < 1e-6, "{top:?}");
+      assert!((bottom[1] - (bottom[0] + 40.0)).abs() < 1e-6, "{bottom:?}");
+      assert!((center[1] - (center[0] + 20.0)).abs() < 1e-6, "{center:?}");
+    }
+
+    // A per-row list (and `Item`'s own `Alignment`) aligns rows/cells
+    // individually.
+    #[test]
+    fn grid_vertical_alignment_per_row_and_item() {
+      let per_row = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}, {Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}, Alignment -> {Center, {Top, Bottom}}]",
+      ));
+      assert_eq!(per_row.len(), 4);
+      assert!((per_row[1] - per_row[0]).abs() < 1e-6, "{per_row:?}");
+      assert!(
+        (per_row[3] - (per_row[2] + 40.0)).abs() < 1e-6,
+        "{per_row:?}"
+      );
+      let item = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Item[Graphics[Disk[], ImageSize -> 20], Alignment -> {Center, Bottom}]}}]",
+      ));
+      assert!((item[1] - (item[0] + 40.0)).abs() < 1e-6, "{item:?}");
+    }
+
+    // Top-aligned text in a tall row sits at the row's top edge.
+    #[test]
+    fn grid_vertical_alignment_places_text() {
+      let text_y = |v: &str| -> f64 {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], \"a\"}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+        .split("<text")
+        .nth(1)
+        .and_then(|r| r.split("y=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+      };
+      let (top, center, bottom) =
+        (text_y("Top"), text_y("Center"), text_y("Bottom"));
+      assert!(top < center && center < bottom, "{top} {center} {bottom}");
+      assert!((center - top - (bottom - center)).abs() < 1e-6);
     }
 
     // Regression: a per-cell `Background` rule on a spanning cell paints the
@@ -35749,6 +35926,59 @@ mod manipulate {
     assert_eq!(json.matches("\"checkbox\":true").count(), 3, "{json}");
   }
 
+  /// A multi-choice bar whose variable starts at a non-list value (e.g.
+  /// `{{v, 0, ""}, {1 -> "a", 2 -> "b"}, CheckboxBar}`, "nothing ticked")
+  /// must turn a click into a selection list. The write-back used to
+  /// `Append` to the scalar, leaving `Append[0, 1]` behind so a body
+  /// testing `MemberQ[v, 1]` never saw the tick.
+  #[test]
+  fn spec_checkbox_bar_click_on_non_list_value_starts_a_list() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn mutations(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Toggler { mutation, .. } => out.push(mutation.clone()),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            mutations(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    for control_type in ["CheckboxBar", "TogglerBar"] {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[v, {{{{v, 0, \"\"}}, {{1 -> \"a\", 2 -> \"b\", \
+         3 -> \"c\"}}, {control_type}}}]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("multi-choice bar");
+      assert_eq!(spec.displays.len(), 1, "{control_type}");
+      let bindings = manipulate_initial_bindings(&spec);
+      let node = woxi::with_scoped_globals(&bindings, || {
+        build_manipulate_display(&spec.displays[0], &[])
+      });
+      let mut found = Vec::new();
+      mutations(&node, &mut found);
+      assert_eq!(found.len(), 3, "{control_type}: {node:?}");
+      // Tick the third box, then the first, then untick the third.
+      clear_state();
+      interpret("v = 0").unwrap();
+      interpret(&found[2]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{3}", "{control_type}");
+      interpret(&found[0]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{3, 1}", "{control_type}");
+      interpret(&found[2]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+      // A scalar equal to a choice is drawn ticked; clicking unticks it.
+      interpret("v = 2").unwrap();
+      interpret(&found[1]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{}", "{control_type}");
+      interpret("v = 2").unwrap();
+      interpret(&found[0]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+    }
+  }
+
   /// A `CheckboxBar` control draws a checkbox per choice (as Wolfram does),
   /// while a `TogglerBar` control keeps its toggle buttons; both toggle the
   /// value's membership in the bound list.
@@ -36016,6 +36246,48 @@ mod manipulate {
       })
       .collect();
     assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
+  }
+
+  /// `Overlay[{layers}, {shown…}, active]` in a display: a control layer Woxi
+  /// cannot operate (an inert `ColorSetter`) gives way to the topmost shown
+  /// layer — the swatch drawn over it — instead of printing as source text,
+  /// while an operable active layer (a `Slider` under a gradient picture)
+  /// stays live. Unselected layers are never drawn.
+  #[test]
+  fn display_overlay_selection_picks_active_control_or_top_layer() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let swatch = build_manipulate_display(
+      "Overlay[{ColorSetter[Red, ImageSize -> {19, 19}], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 19]}, {1, 2}, 1]",
+      &[],
+    );
+    match &swatch {
+      DisplayNode::Static { svg: Some(svg), .. } => {
+        assert!(svg.contains("<svg"), "{svg}");
+      }
+      other => panic!("expected the swatch picture, got {other:?}"),
+    }
+
+    let slider = build_manipulate_display(
+      "Overlay[{Slider[Dynamic[c], {0, 1}], \
+       Graphics[{Blue, Rectangle[]}, ImageSize -> 50]}, {1, 2}, 1]",
+      &[("c".to_string(), "0.25".to_string())],
+    );
+    match &slider {
+      DisplayNode::Slider { target, .. } => assert_eq!(target, "c"),
+      other => panic!("expected the live slider, got {other:?}"),
+    }
+
+    // Only layer 1 is shown, so the picture in layer 2 is not drawn.
+    let hidden_top = build_manipulate_display(
+      "Overlay[{\"base\", Graphics[{Rectangle[]}]}, {1}]",
+      &[],
+    );
+    match &hidden_top {
+      DisplayNode::Static { svg: None, text } => assert_eq!(text, "base"),
+      DisplayNode::Text { .. } => {}
+      other => panic!("expected the shown text layer, got {other:?}"),
+    }
   }
 
   /// A bare `None` in the control-type slot after the bounds says the
@@ -42912,7 +43184,7 @@ mod color_data_gradients {
     assert_eq!(
       interpret("ColorData[\"RedBlueTones\", \"ColorFunction\"]").unwrap(),
       "ColorDataFunction[RedBlueTones, Gradients, {0, 1}, \
-       Blend[\"RedBlueTones\", #1] & ]"
+       Blend[RedBlueTones, #1] & ]"
     );
     // Applying it samples the gradient, exactly as ColorData[name] does.
     assert_eq!(
@@ -54056,5 +54328,105 @@ mod quantity_text_labels {
       interpret("ToString[Quantity[286, \"Kelvins\"]]").unwrap(),
       "286 kelvins"
     );
+  }
+}
+
+mod labeled_text_and_pane_wrapping {
+  use super::*;
+
+  /// Width of an SVG's root element.
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// `Labeled` stacks its label under any content, not only a picture:
+  /// exporting one never writes the call out as text.
+  #[test]
+  fn labeled_text_content_is_composed() {
+    let svg = export_svg("Labeled[\"abc\", \"caption\"]");
+    assert!(!svg.contains("Labeled"), "{svg}");
+    assert!(svg.contains(">abc</text>"), "{svg}");
+    assert!(svg.contains(">caption</text>"), "{svg}");
+  }
+
+  #[test]
+  fn labeled_text_cell_in_grid_is_composed() {
+    let svg = export_svg(
+      "Grid[{{Labeled[Text[Style[{1 -> 2, 2 -> 3}, 9]], Text[\"edges\"]]}}]",
+    );
+    assert!(!svg.contains("Labeled"), "{svg}");
+    assert!(svg.contains("{1 → 2, 2 → 3}"), "{svg}");
+    assert!(svg.contains(">edges</text>"), "{svg}");
+  }
+
+  /// The textual form of `Labeled` still matches wolframscript.
+  #[test]
+  fn labeled_text_output_is_unchanged() {
+    assert_eq!(
+      interpret("Labeled[\"abc\", \"x\"]").unwrap(),
+      "Labeled[abc, x]"
+    );
+  }
+
+  /// `Pane[string, w]` breaks a long string into lines at the width.
+  #[test]
+  fn pane_wraps_plain_string() {
+    for content in [
+      "\"aaaa bbbb cccc dddd eeee ffff gggg\"",
+      "Text[\"aaaa bbbb cccc dddd eeee ffff gggg\"]",
+    ] {
+      let svg = export_svg(&format!("Pane[{content}, 120]"));
+      assert_eq!(svg_width(&svg), 120.0, "{content}: {svg}");
+      assert!(svg.matches("<text").count() >= 2, "{content}: {svg}");
+    }
+  }
+
+  /// A long list in a grid inside a width-only `Pane` is broken into lines
+  /// that fit the pane, beside pictures as well.
+  #[test]
+  fn pane_wraps_long_list_cell_of_grid() {
+    let svg = export_svg(
+      "Pane[Grid[{{Graphics[Disk[], ImageSize -> 200], Graphics[Disk[], \
+       ImageSize -> 200]}, {Labeled[Text[Style[Table[i -> i + 1, {i, 40}], \
+       9]], Text[\"edges\"]], SpanFromLeft}}, Dividers -> All], 425]",
+    );
+    assert_eq!(svg_width(&svg), 425.0, "{svg}");
+    assert!(svg.contains(">{1 → 2, 2 → 3,"), "{svg}");
+    assert!(svg.contains("40 → 41}</text>"), "{svg}");
+    assert!(!svg.contains("Labeled"), "{svg}");
+  }
+
+  /// The visual (Studio) pipeline peels the pane but still wraps the cell.
+  #[test]
+  fn pane_wraps_long_list_cell_of_grid_in_visual_mode() {
+    let result = woxi::interpret_with_stdout(
+      "Pane[Grid[{{Graphics[Disk[], ImageSize -> 200], Graphics[Disk[], \
+       ImageSize -> 200]}, {Labeled[Text[Style[Table[i -> i + 1, {i, 40}], \
+       9]], Text[\"edges\"]], SpanFromLeft}}, Dividers -> All], 425]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg_width(&svg) <= 426.0, "{svg}");
+  }
+
+  /// `AspectRatio` sets the shape of a `GraphPlot`/`Graph` picture, also
+  /// against the shape of an explicit `PlotRange`; the first setting wins.
+  #[test]
+  fn graph_plot_honors_aspect_ratio() {
+    let svg = export_svg(
+      "GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}, ImageSize -> 250, AspectRatio -> \
+       1, PlotRange -> {{0, 1}, {-0.65, 1}}, AspectRatio -> 2, \
+       VertexCoordinateRules -> {1 -> {0, 0}, 2 -> {1, 0}, 3 -> {0.5, 1}}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"250\" height=\"250\""),
+      "{svg}"
+    );
+    let svg = export_svg(
+      "Graph[{1 -> 2, 2 -> 3}, ImageSize -> 200, AspectRatio -> 1/2]",
+    );
+    assert!(svg.starts_with("<svg width=\"200\" height=\"10"), "{svg}");
   }
 }

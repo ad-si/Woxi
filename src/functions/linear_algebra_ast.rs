@@ -9543,9 +9543,22 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let Some(matrix) = expr_to_matrix(&args[0]) else {
-    return Ok(unevaluated("LinearSolve", args));
+  let not_a_matrix = || {
+    if is_matsq_subject(&args[0]) {
+      crate::emit_message(&format!(
+        "LinearSolve::matrix: Argument {} at position 1 is not a nonempty rectangular matrix.",
+        crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+      ));
+    }
+    Ok(unevaluated("LinearSolve", args))
   };
+  let Some(matrix) = expr_to_matrix(&args[0]) else {
+    return not_a_matrix();
+  };
+  if matrix.is_empty() || matrix.iter().any(|row| row.len() != matrix[0].len())
+  {
+    return not_a_matrix();
+  }
 
   let b = match &args[1] {
     Expr::List(items) => items.clone(),

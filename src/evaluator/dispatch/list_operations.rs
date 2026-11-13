@@ -3650,6 +3650,32 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::peak_detect_ast(args));
     }
     "SparseArray" if !args.is_empty() => {
+      // A rule whose position cannot lie inside the given dimensions is
+      // reported with SparseArray::posd and the call stays unevaluated.
+      if args.len() >= 2
+        && let Some(bad) = sparse_array_misplaced_rule(&args[0], &args[1])
+      {
+        use crate::syntax::MessagePiece;
+        crate::emit_message(&crate::syntax::format_message_pieces(&[
+          MessagePiece::Text(
+            "SparseArray::posd: The left-hand side of ".into(),
+          ),
+          MessagePiece::Expr(bad),
+          MessagePiece::Text(" in ".into()),
+          MessagePiece::Expr(&args[0]),
+          MessagePiece::Text(
+            " is not a position or a pattern that will match the position \
+             of an element in an array with dimensions "
+              .into(),
+          ),
+          MessagePiece::Expr(&sparse_array_message_dims(bad, &args[1])),
+          MessagePiece::Text(".".into()),
+        ]));
+        return Some(Ok(Expr::FunctionCall {
+          name: "SparseArray".into(),
+          args: args.to_vec().into(),
+        }));
+      }
       // Normalize to canonical form: SparseArray[Automatic, dims, default, rules].
       // Use Normal[] to expand to a dense nested list.
       return Some(list_helpers_ast::sparse_array_normalize_ast(args));
@@ -12070,4 +12096,77 @@ fn gather_take_list_blocks(
     out.push(gather_take_list_blocks(&column, depth - 1, head)?);
   }
   Some(Expr::List(out.into()))
+}
+
+/// The first rule of `SparseArray[rules, dims]` whose left-hand side cannot
+/// match a position of an array with dimensions `dims`: a position list of
+/// the wrong length, or an integer index outside `-d … -1, 1 … d`. Pattern
+/// components (`_`, `i_`) and whole-position patterns are accepted.
+fn sparse_array_misplaced_rule<'a>(
+  rules: &'a Expr,
+  dims: &Expr,
+) -> Option<&'a Expr> {
+  // A scalar dimension applies to every level of the positions:
+  // `SparseArray[{{1, 1, 1} -> 1}, 4]` is 4×4×4.
+  let scalar_dim = match dims {
+    Expr::Integer(d) => Some(*d),
+    _ => None,
+  };
+  let dims: Vec<i128> = match dims {
+    Expr::Integer(d) => vec![*d],
+    Expr::List(ds) => ds
+      .iter()
+      .map(|d| match d {
+        Expr::Integer(d) => Some(*d),
+        _ => None,
+      })
+      .collect::<Option<_>>()?,
+    _ => return None,
+  };
+  let rules: Vec<&Expr> = match rules {
+    Expr::List(items) => items.iter().collect(),
+    rule @ (Expr::Rule { .. } | Expr::RuleDelayed { .. }) => vec![rule],
+    _ => return None,
+  };
+  let index_ok =
+    |i: i128, d: i128| (1..=d).contains(&i) || (-d..=-1).contains(&i);
+  rules.into_iter().find(|rule| {
+    let (Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }) = rule
+    else {
+      return false;
+    };
+    match pattern.as_ref() {
+      Expr::Integer(i) => dims.len() != 1 || !index_ok(*i, dims[0]),
+      Expr::List(position) if let Some(d) = scalar_dim => position
+        .iter()
+        .any(|p| matches!(p, Expr::Integer(i) if !index_ok(*i, d))),
+      Expr::List(position) => {
+        position.len() != dims.len()
+          || position
+            .iter()
+            .zip(&dims)
+            .any(|(p, d)| matches!(p, Expr::Integer(i) if !index_ok(*i, *d)))
+      }
+      _ => false,
+    }
+  })
+}
+
+/// The dimensions `SparseArray::posd` reports for `rule`: a scalar
+/// dimension is spelled out to the rank of the rule's position (`{4, 4}`
+/// for `{5, 1} -> 1` with dimension 4).
+fn sparse_array_message_dims(rule: &Expr, dims: &Expr) -> Expr {
+  let Expr::Integer(_) = dims else {
+    return dims.clone();
+  };
+  let rank = match rule {
+    Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+      match pattern.as_ref() {
+        Expr::List(position) => position.len(),
+        _ => 1,
+      }
+    }
+    _ => 1,
+  };
+  Expr::List(vec![dims.clone(); rank].into())
 }

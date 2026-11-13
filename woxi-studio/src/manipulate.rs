@@ -623,6 +623,11 @@ pub struct ManipulateState {
   /// bindings on every re-evaluation so a slider range can follow another
   /// control (Kepler's time sliders are bounded by the orbital period `P`).
   dynamic_bounds: Vec<woxi::functions::graphics::DynamicBound>,
+  /// The continuous controls whose spec omits the step. Their increment is
+  /// a fraction of the range, so it is recomputed whenever a dynamic bound
+  /// moves the range (a slider from `Dynamic[a]` to `Dynamic[b]` keeps the
+  /// same granularity however far apart `a` and `b` are).
+  default_step_controls: Vec<String>,
   /// Per-control choice lists that follow another control's variable
   /// (InputForm code), re-resolved on every change the way
   /// `dynamic_bounds` are.
@@ -729,6 +734,7 @@ impl ManipulateState {
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;
     let controls = controls_from_spec(&spec);
+    let default_step_controls = default_step_controls(&spec);
     // Line each control up with its `Enabled` condition (if any) by name. A
     // `Button`'s own condition travels on the `ManipulateControl` itself
     // instead: it binds no variable, so `c.name()` is always `""` and a
@@ -809,6 +815,7 @@ impl ManipulateState {
       self_refreshing: false,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
+      default_step_controls,
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
@@ -1890,6 +1897,17 @@ impl ManipulateState {
         std::mem::swap(min, max);
       }
       *current = current.clamp(*min, *max);
+      let (min, max) = (*min, *max);
+      if new_step.is_none()
+        && (new_min.is_some() || new_max.is_some())
+        && self.default_step_controls.iter().any(|n| n == name)
+        && let Some(ControlState::Continuous { step, is_real, .. }) =
+          self.controls.iter_mut().find(|c| {
+            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+          })
+      {
+        *step = default_slider_step(min, max, *is_real);
+      }
     }
   }
 
@@ -1977,6 +1995,47 @@ impl ManipulateState {
 /// `(control name, min, max, step)`.
 type ResolvedBound = (String, Option<f64>, Option<f64>, Option<f64>);
 
+/// A spec's step as the slider uses it: Wolfram treats a negative step
+/// like its magnitude, and a zero step like an omitted one (`None`).
+fn explicit_step(step: Option<f64>) -> Option<f64> {
+  step.map(f64::abs).filter(|s| *s > 0.0)
+}
+
+/// The increment of a slider whose spec gives no step.
+fn default_slider_step(min: f64, max: f64, is_real: bool) -> f64 {
+  let span = (max - min).abs();
+  let integral = min.fract() == 0.0 && max.fract() == 0.0;
+  if !is_real && integral && span >= 100.0 {
+    // A wide all-exact-integer range (one whose continuous granularity
+    // span/100 would reach a whole unit) makes an integer slider; an exact
+    // non-integer bound (`Pi`, `1/2`) keeps it continuous, and so do narrow
+    // integer ranges like `{t, 0, 1}` or `{r, 0, 2}`, which a saved
+    // Manipulate shows stepping through fractional values (r = 1.01).
+    1.0
+  } else if span > 0.0 {
+    span / 100.0
+  } else {
+    1.0
+  }
+}
+
+/// The continuous controls whose spec gives no step, so their increment
+/// is derived from the range and must follow it when the range moves.
+fn default_step_controls(spec: &ManipulateSpec) -> Vec<String> {
+  spec
+    .controls
+    .iter()
+    .filter_map(|c| match c {
+      ManipulateControl::Continuous { name, step, .. }
+        if explicit_step(*step).is_none() =>
+      {
+        Some(name.clone())
+      }
+      _ => None,
+    })
+    .collect()
+}
+
 fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
   spec
     .controls
@@ -1996,24 +2055,8 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
-        let step =
-          step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
-            let span = (*max - *min).abs();
-            let integral = min.fract() == 0.0 && max.fract() == 0.0;
-            if !*is_real && integral && span >= 100.0 {
-              // A wide all-exact-integer range (one whose continuous
-              // granularity span/100 would reach a whole unit) makes an
-              // integer slider; an exact non-integer bound (`Pi`, `1/2`)
-              // keeps it continuous, and so do narrow integer ranges like
-              // `{t, 0, 1}` or `{r, 0, 2}`, which a saved Manipulate shows
-              // stepping through fractional values (r = 1.01).
-              1.0
-            } else if span > 0.0 {
-              span / 100.0
-            } else {
-              1.0
-            }
-          });
+        let step = explicit_step(*step)
+          .unwrap_or_else(|| default_slider_step(*min, *max, *is_real));
         ControlState::Continuous {
           name: name.clone(),
           label: label.clone(),
@@ -5638,6 +5681,64 @@ mod tests {
     assert!(state.select_discrete(big_idx, "True"));
     state.reevaluate();
     assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
+  }
+
+  /// A slider with no step whose range runs between two other controls
+  /// (`{t, a, b}` with `a`, `b` sliders) takes its default increment from
+  /// the *current* range. Regression: the step stayed 1/100 of the range
+  /// the widget was built with, so narrowing the range left only a few
+  /// stops and a wider one stepped in a fraction of its intended size.
+  #[test]
+  fn default_step_follows_dynamic_slider_range() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{a, b, t},
+        {{a, 0}, 0, 50, 1},
+        {{b, 100}, 60, 200, 1},
+        {{t, 0}, a, b}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let t_range = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } if name == "t" => Some((*min, *max, *step)),
+        _ => None,
+      })
+    };
+    let (min, max, step) = t_range(&state).unwrap();
+    assert_eq!((min, max), (0.0, 100.0));
+    assert!((step - 1.0).abs() < 1e-12, "step {step}");
+    let set = |s: &mut ManipulateState, name: &str, v: f64| {
+      if let Some(ControlState::Continuous { current, .. }) =
+        s.controls.iter_mut().find(|c| c.name() == name)
+      {
+        *current = v;
+      }
+    };
+    set(&mut state, "a", 40.0);
+    set(&mut state, "b", 60.0);
+    state.reevaluate();
+    let (min, max, step) = t_range(&state).unwrap();
+    assert_eq!((min, max), (40.0, 60.0));
+    assert!((step - 0.2).abs() < 1e-12, "step {step}");
+    // An explicit step is the author's and stays put.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{a, t}, {{a, 10}, 1, 50, 1}, {{t, 0}, 0, a, 0.5}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    set(&mut state, "a", 30.0);
+    state.reevaluate();
+    let (_, max, step) = t_range(&state).unwrap();
+    assert_eq!((max, step), (30.0, 0.5));
   }
 
   /// A slider whose bounds name *choice-list* controls declared after it

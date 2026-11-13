@@ -3608,7 +3608,13 @@ pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args: sa } = expr else {
     return None;
   };
-  if name != "SparseArray" {
+  // Only the canonical form an evaluated SparseArray takes. Any other form
+  // is a construction that failed (an out-of-range rule, say) and stays
+  // unevaluated; it is not an array.
+  if name != "SparseArray"
+    || sa.len() != 4
+    || !matches!(&sa[0], Expr::Identifier(s) if s == "Automatic")
+  {
     return None;
   }
   let dense = sparse_array_ast(sa).ok()?;
