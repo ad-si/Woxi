@@ -65,6 +65,24 @@ fn main() -> iced::Result {
     .run()
 }
 
+/// Map between a continuous control's value and its slider's track
+/// position. The two coincide for an ordinary `min..max` range; a reversed
+/// range (written high-to-low, stored sorted) mirrors the track so its
+/// first bound sits at the start, as Wolfram draws it. The mapping is its
+/// own inverse, so it converts in both directions. The track's ends map
+/// exactly onto the bounds, free of the rounding `min + max - v` leaves.
+fn slider_track_position(min: f64, max: f64, reversed: bool, v: f64) -> f64 {
+  if !reversed {
+    v
+  } else if v <= min {
+    max
+  } else if v >= max {
+    min
+  } else {
+    (min + max - v).clamp(min, max)
+  }
+}
+
 /// Application id used as the X11 `WM_CLASS` and the Wayland `app_id`.
 /// Matches the basename of `woxi-studio/linux/woxi-studio.desktop`
 /// so desktop environments can associate windows with the launcher.
@@ -4491,10 +4509,15 @@ fn render_manipulate_widget<'a>(
         step,
         current,
         orientation,
+        reversed,
         ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        // A high-to-low range (`{h, -0.05, -0.5}`) runs its track from the
+        // first bound, so the widget shows and reports mirrored positions.
+        let (lo, hi, reversed) = (*min, *max, *reversed);
+        let position = slider_track_position(lo, hi, reversed, *current);
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
@@ -4502,9 +4525,13 @@ fn render_manipulate_widget<'a>(
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
-              iced::widget::vertical_slider(*min..=*max, *current, move |v| {
+              iced::widget::vertical_slider(lo..=hi, position, move |v| {
                 if enabled {
-                  Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+                  Message::ManipulateContinuousChanged(
+                    cell_idx,
+                    ctrl_idx,
+                    slider_track_position(lo, hi, reversed, v),
+                  )
                 } else {
                   Message::Noop
                 }
@@ -4519,9 +4546,13 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s = slider(*min..=*max, *current, move |v| {
+            let mut s = slider(lo..=hi, position, move |v| {
               if enabled {
-                Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
+                Message::ManipulateContinuousChanged(
+                  cell_idx,
+                  ctrl_idx,
+                  slider_track_position(lo, hi, reversed, v),
+                )
               } else {
                 Message::Noop
               }
@@ -13148,6 +13179,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     }
   }
 
+  /// Wolfram draws a slider written high-to-low (`{{h, -0.09}, -0.05,
+  /// -0.5, 0.001}`) from its first bound on the left: the thumb for -0.09
+  /// sits near the left end, and dragging right makes `h` more negative.
+  /// The range is stored sorted, so the control must remember it was
+  /// reversed and the widget must mirror the track position.
+  #[test]
+  fn reversed_range_slider_runs_from_its_first_bound() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[h, {{h, -0.09}, -0.05, -0.5, 0.001}, {{k, 2}, 1, 5}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let (lo, hi, current, reversed) = match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        current,
+        reversed,
+        ..
+      } => (*min, *max, *current, *reversed),
+      other => panic!("unexpected control: {other:?}"),
+    };
+    assert_eq!((lo, hi, current), (-0.5, -0.05, -0.09));
+    assert!(reversed, "a high-to-low range must be flagged as reversed");
+    // The thumb for -0.09 sits close to the track's start (-0.05 end).
+    let pos = slider_track_position(lo, hi, reversed, current);
+    let fraction = (pos - lo) / (hi - lo);
+    assert!((fraction - 0.04 / 0.45).abs() < 1e-9, "fraction {fraction}");
+    // The track's start and end map back to the first and second bounds.
+    assert_eq!(slider_track_position(lo, hi, reversed, lo), hi);
+    assert_eq!(slider_track_position(lo, hi, reversed, hi), lo);
+
+    match &state.controls[1] {
+      manipulate::ControlState::Continuous { reversed, .. } => {
+        assert!(!reversed, "an ascending range is not reversed")
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+    assert_eq!(slider_track_position(1.0, 5.0, false, 2.0), 2.0);
+  }
+
   #[test]
   fn text_cell_holding_graphics_renders_as_stored_graphic() {
     let nb = woxi::notebook::parse_notebook(
@@ -17822,6 +17895,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -17834,6 +17908,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
@@ -17854,6 +17929,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       is_real: false,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
+      reversed: false,
     };
     assert_eq!(c.current_code(), "Complex[0, 1]");
     if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {

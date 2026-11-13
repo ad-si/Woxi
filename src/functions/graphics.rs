@@ -33939,6 +33939,11 @@ pub enum ManipulateControl {
     /// `min`/`max`/`initial` hold the imaginary coefficients, and the
     /// variable binds the complex number `Complex[0, value]`.
     imaginary: bool,
+    /// The spec wrote its range high-to-low (`{h, -0.05, -0.5}`). `min`
+    /// and `max` are stored sorted, but Wolfram draws such a slider from
+    /// its first bound on the left to its second on the right, so the
+    /// widget must mirror the track (dragging right *decreases* the value).
+    reversed: bool,
   },
   Discrete {
     name: String,
@@ -39859,6 +39864,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     is_real: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -40030,6 +40036,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     is_real,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -43436,6 +43443,7 @@ fn parse_manipulate_control(
   // the static one; re-resolving it against the live bindings opens the
   // range up, instead of sorting the unsettled value into the *lower* end.
   let counts_down = step.is_some_and(|s| s < 0.0);
+  let mut reversed = false;
   let (min_code, max_code) = if min > max {
     match (min_code.is_some(), max_code.is_some()) {
       (false, true) if !counts_down => {
@@ -43448,6 +43456,7 @@ fn parse_manipulate_control(
       }
       _ => {
         std::mem::swap(&mut min, &mut max);
+        reversed = true;
         (max_code, min_code)
       }
     }
@@ -43467,6 +43476,7 @@ fn parse_manipulate_control(
       is_real,
       orientation,
       imaginary,
+      reversed,
     },
     enabled,
     min_code,
@@ -43569,7 +43579,8 @@ fn parse_list_element_manipulator(
     .as_ref()
     .and_then(crate::functions::math_ast::try_eval_to_f64)
     .unwrap_or(min);
-  if min > max {
+  let reversed = min > max;
+  if reversed {
     std::mem::swap(&mut min, &mut max);
   }
   let synth_name = format!("{name}\u{2983}{idx}\u{2984}");
@@ -43587,6 +43598,7 @@ fn parse_list_element_manipulator(
       is_real,
       orientation: ControlOrientation::Horizontal,
       imaginary: false,
+      reversed,
     },
   })
 }
