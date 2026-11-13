@@ -3025,6 +3025,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(name)],
       }
     }
+    Rule::DerivativeOther => {
+      // `{}'`, `"s"'`, `#2'`, `x_'` → Derivative[n][operand]
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let operand = pair_to_expr(inner_pairs[0].clone());
+      let order = inner_pairs[1].as_str().len();
+      Expr::CurriedCall {
+        func: Box::new(call("Derivative", vec![Expr::Integer(order as i128)])),
+        args: vec![operand],
+      }
+    }
     Rule::DerivativeNumeric => {
       // 1' → Derivative[1][1], (-1.4)' → Derivative[1][-1.4], etc.
       // The literal becomes the argument of the curried Derivative form.
@@ -10167,7 +10177,11 @@ fn flat_ring_infix(
         || matches!(a, Expr::Real(f) if *f < 0.0)
         || matches!(a, Expr::FunctionCall { name, args }
           if name == "Rational" && args.len() == 2);
-      if needs_parens { format!("({s})") } else { s }
+      if needs_parens && !prints_as_call(&s) {
+        format!("({s})")
+      } else {
+        s
+      }
     })
     .collect::<Vec<_>>()
     .join(sep)
@@ -10181,6 +10195,10 @@ fn flat_ring_infix(
 fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
     || is_factorial_call(base)
+    // `++`/`--` bind looser than `[[…]]`: `(++f)[[3]]`.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "Increment" | "Decrement" | "PreIncrement" | "PreDecrement"))
     // `@*` and `/*` print infix: `(a /* b)[[1]]`.
     || matches!(base, Expr::FunctionCall { name, args }
       if (name == "Composition" || name == "RightComposition")
@@ -10448,6 +10466,23 @@ fn op_assign_lhs(lhs: &Expr, formatted: String) -> String {
     format!("({formatted})")
   } else {
     assignment_lhs(lhs, formatted)
+  }
+}
+
+/// The right side of `+=`, `-=`, `*=`, `/=` (100): bracketed when it binds
+/// looser — an assignment, a `;` sequence or a pure function:
+/// `a += (b ^= c)`.
+fn op_assign_rhs(rhs: &Expr, formatted: String) -> String {
+  // Another `+=`-family operator groups to the right bare: `a += b += c`.
+  let same_level = matches!(rhs, Expr::FunctionCall { name, args }
+    if args.len() == 2
+      && matches!(name.as_str(), "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"));
+  if (is_loose_assignment(rhs) && !same_level)
+    || matches!(rhs, Expr::Function { .. })
+  {
+    format!("({formatted})")
+  } else {
+    formatted
   }
 }
 
@@ -11129,6 +11164,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || is_negative_or_fraction_literal(&args[0])
           || matches!(&args[0], Expr::FunctionCall { name: n, args: a }
             if (n == "Factorial" || n == "Factorial2") && a.len() == 1);
+        let needs_parens = needs_parens && !prints_as_call(&arg_str);
         if needs_parens {
           return format!("({arg_str}){suffix}");
         }
@@ -11234,28 +11270,28 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!(
           "{} += {}",
           op_assign_lhs(&args[0], fmt(&args[0])),
-          fmt(&args[1])
+          op_assign_rhs(&args[1], fmt(&args[1]))
         );
       }
       if name == "SubtractFrom" && args.len() == 2 {
         return format!(
           "{} -= {}",
           op_assign_lhs(&args[0], fmt(&args[0])),
-          fmt(&args[1])
+          op_assign_rhs(&args[1], fmt(&args[1]))
         );
       }
       if name == "TimesBy" && args.len() == 2 {
         return format!(
           "{} *= {}",
           op_assign_lhs(&args[0], fmt(&args[0])),
-          fmt(&args[1])
+          op_assign_rhs(&args[1], fmt(&args[1]))
         );
       }
       if name == "DivideBy" && args.len() == 2 {
         return format!(
           "{} /= {}",
           op_assign_lhs(&args[0], fmt(&args[0])),
-          fmt(&args[1])
+          op_assign_rhs(&args[1], fmt(&args[1]))
         );
       }
       // Chained ++/-- variants follow Wolfram's display convention:
@@ -12960,6 +12996,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           )
           || is_bare_pattern(&args[1])
+          // Any exponent printed with an operator looser than `^`:
+          // `{}^(a . a)`.
+          || (printed_infix_precedence(&args[1]).is_some_and(|p| p < 48)
+            && !prints_as_call(&exp_str))
         {
           format!("({exp_str})")
         } else {
@@ -13142,6 +13182,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           }
           _ => None,
         };
+        // `Divide[-1, n]` (a negated 1 here, see `operator_call_node`)
+        // prints `-1/n`.
+        if let Some(Expr::Integer(1)) = negated_inner {
+          return format!("-1/{}", expr_to_string(right));
+        }
         if let Some(inner) = negated_inner {
           let inner_div = div2(inner.clone(), *right.clone());
           let inner_str = expr_to_string(&inner_div);
@@ -15063,10 +15108,21 @@ fn full_form_inner(expr: &Expr) -> String {
 /// strings print without quotes — wolframscript shows the wrapper's content
 /// in OutputForm, so `FullForm[f["a"]]` prints `FullForm[f[a]]`.
 fn full_form_wrapper_inner(expr: &Expr) -> String {
-  if !contains_string(expr) {
+  // `~~` and `;;` too print in their OutputForm (head) form there:
+  // `FullForm[Hold[x ~~ 0]]` is `FullForm[Hold[StringExpression[x, 0]]]`.
+  if !contains_string(expr) && !contains_head(expr, "StringExpression") {
     return expr_to_input_form(expr);
   }
   expr_to_output(expr)
+}
+
+fn contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == head => true,
+    _ => expr_children(expr)
+      .into_iter()
+      .any(|c| contains_head(c, head)),
+  }
 }
 
 /// RAII guard that restores the previous `IN_OUTPUT_FORM` value on drop.
@@ -15749,8 +15805,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "AddTo" && args.len() == 2 => {
       format!(
         "{} += {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15758,8 +15814,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} -= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15767,8 +15823,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} *= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15776,8 +15832,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} /= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }

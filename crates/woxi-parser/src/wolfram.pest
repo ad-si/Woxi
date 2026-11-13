@@ -506,9 +506,9 @@ PartIncScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanG
 PartDecScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "--" }
 // A parenthesized expression, a list or a slot takes a postfix `++`/`--`
 // too: `(a + b)++` is Increment[a + b], `{a}--` Decrement[{a}].
-IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot | String }
-Increment = { (&PartIncScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot | String) ~ "++") ~ IncDecGroup) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot | String) ~ "--") ~ IncDecGroup) ~ DecrementOp ~ DecrementOp* }
+IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot | String | PatternWithHead | PatternSimple }
+Increment = { (&((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "++") ~ IncDecGroup | &PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (&((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "--") ~ IncDecGroup | &PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
@@ -523,8 +523,8 @@ Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue | &((Balan
 // A list or a parenthesized expression is an operand too: wolframscript
 // reads `--(a < b)` as PreDecrement[a < b] and `++{a, b}` as
 // PreIncrement[{a, b}].
-PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
-PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
@@ -729,6 +729,9 @@ DerivativeNumeric = { (PrecisionReal | Real | IntegerScientific | Integer | Cons
 DerivativePrime = @{ "'"+ }
 // DerivativeIdentifier: standalone f' or f'' without brackets → Derivative[n][f]
 DerivativeIdentifier = { Identifier ~ DerivativePrime }
+// A list, string, slot or pattern takes a prime too: `{}'`, `#2'`, `x_'`
+// are Derivative[1][…] in wolframscript.
+DerivativeOther = { &((BalancedBraces | String | Slot | PatternWithHead | PatternSimple) ~ "'") ~ (List | String | Slot | PatternWithHead | PatternSimple) ~ DerivativePrime ~ !"[" }
 
 // GetShorthand: `<< filename` → Get["filename"]
 // The path runs to the next whitespace, `]`, `,`, `;`, `)`, `}`, or `&`. We
@@ -820,7 +823,8 @@ BracketingBars = { ("\\[LeftBracketingBar]" | "\u{F603}") ~ Expression ~ ("," ~ 
 DoubleBracketingBars = { ("\\[LeftDoubleBracketingBar]" | "\u{F605}") ~ Expression ~ ("," ~ Expression)* ~ ("\\[RightDoubleBracketingBar]" | "\u{F606}") ~ BracketArgs* }
 
 Term = _{
-    DisplayedBoxes
+    DerivativeOther
+  | DisplayedBoxes
   | BoxNotation
   | GetShorthand
   | FunctionCallExtended
@@ -918,6 +922,7 @@ SimpleTerm = _{
   // `1++2` is `Increment[1] 2`.
     Increment
   | Decrement
+  | DerivativeOther
   | RadicalPrefix
   | DifferentialPrefix
   | TightPrefix
@@ -951,7 +956,8 @@ SimpleTerm = _{
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
 // to prevent greedy matching across statement boundaries
 TermNoImplicit = _{
-    FunctionCallExtended
+    DerivativeOther
+  | FunctionCallExtended
   | ImplicitTimes
   | PiecewisePrefix
   | FloorBrackets

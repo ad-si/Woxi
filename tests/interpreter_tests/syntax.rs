@@ -15410,3 +15410,34 @@ fn two_way_rule_negative_operands_and_string_increments() {
     "Hold[Times[-1, RightComposition[2, 0]]]"
   );
 }
+
+// Primes on lists, strings, slots and patterns; ++/-- on patterns; and the
+// operand forms found in the same fuzz round.
+#[test]
+fn primes_pattern_increments_and_round_eleven_operands() {
+  for (input, expected) in [
+    ("Hold[{}']", "Hold[Derivative[1][{}]]"),
+    ("Hold[\"s\"']", "Hold[Derivative[1][s]]"),
+    ("Hold[#2']", "Hold[Derivative[1][#2]]"),
+    ("Hold[x_']", "Hold[Derivative[1][x_]]"),
+    ("Hold[++x_]", "Hold[++(x_)]"),
+    ("Hold[x_--]", "Hold[(x_)--]"),
+    ("Hold[(++f)[[3]]]", "Hold[(++f)[[3]]]"),
+    ("HoldForm[f[Divide[-1, 2]]]", "HoldForm[f[-1/2]]"),
+    (
+      "FullForm[Hold[x ~~ 0]]",
+      "FullForm[Hold[StringExpression[x, 0]]]",
+    ),
+    ("Hold[a += (b ^= c)]", "Hold[a += (b ^= c)]"),
+    ("Hold[a += (b += c)]", "Hold[a += b += c]"),
+    ("Hold[Power[{}, a . a]]", "Hold[{}^(a . a)]"),
+    ("Hold[StringJoin[a, b]!!]", "Hold[StringJoin[a, b]!!]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(
+    interpret("ToString[FullForm[Hold[x_--]]]").unwrap(),
+    "Hold[Decrement[Pattern[x, Blank[]]]]"
+  );
+  assert_eq!(interpret("G3[x_'[t]] := x; G3[y'[t]]").unwrap(), "y");
+}
