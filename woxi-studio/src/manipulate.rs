@@ -1919,13 +1919,20 @@ impl ManipulateState {
       }
       // The same holds when the pane is only the body's *value* — a
       // `Block[{x}, …; Pane[Grid[…], size]]` that computes its table
-      // first. Draw that value rather than re-running the body, which
-      // would repeat its side effects (`SeedRandom`, assignments).
+      // first — and the table holds typeset or nested layouts (a framed
+      // sub-table, `Text@Row[…]` of formulas) that plain text cannot show.
+      // Draw that value rather than re-running the body, which would
+      // repeat its side effects (`SeedRandom`, assignments).
       if let Ok(r) = &render
         && r.graphics.is_none()
         && let Some(woxi::syntax::Expr::FunctionCall { name, args }) = &r.expr
         && matches!(name.as_str(), "Pane" | "Panel" | "Framed")
-        && !args.is_empty()
+        && let Some(woxi::syntax::Expr::FunctionCall {
+          name: layout,
+          args: cells,
+        }) = args.first()
+        && layout == "Grid"
+        && cells.first().is_some_and(holds_typeset_layout)
         && let Ok(table) = woxi::interpret_with_stdout(&format!(
           "Text[{}]",
           woxi::syntax::expr_to_input_form(r.expr.as_ref().unwrap())
@@ -2626,6 +2633,29 @@ fn format_f64(v: f64) -> String {
     format!("{}", v as i64)
   } else {
     format!("{}", v)
+  }
+}
+
+/// Whether `expr` contains a layout or typeset piece (`Text`,
+/// `TraditionalForm`, a nested `Grid`/`Pane`/`Framed`/…) that the plain-text
+/// rendering of a table cannot show.
+fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
+  match expr {
+    woxi::syntax::Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Text"
+          | "TraditionalForm"
+          | "Grid"
+          | "Pane"
+          | "Panel"
+          | "Framed"
+          | "Column"
+          | "Row"
+      ) || args.iter().any(holds_typeset_layout)
+    }
+    woxi::syntax::Expr::List(items) => items.iter().any(holds_typeset_layout),
+    _ => false,
   }
 }
 
