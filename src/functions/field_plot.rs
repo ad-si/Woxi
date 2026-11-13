@@ -3514,8 +3514,28 @@ fn sampled_value_range(
 
 /// The `ContourStyle -> …` option items of a ContourPlot call (a single
 /// directive or a directive list), for embedding into the plot's symbolic
-/// `structure`. Empty when the option is absent.
+/// `structure`. Empty when the option is absent. A per-contour entry that
+/// is itself a list (`{{Opacity[1], Dashed, Gray}}`) becomes one
+/// `Directive[…]`: left as a list it would be a scope of its own in the
+/// `Graphics`, and the lines after it would lose the style once `Show`
+/// draws the plot from its primitives.
 fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
+  fn flatten_into(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten_into(i, out)),
+      other => out.push(other.clone()),
+    }
+  }
+  fn as_directive(e: &Expr) -> Expr {
+    match e {
+      Expr::List(_) => {
+        let mut parts = Vec::new();
+        flatten_into(e, &mut parts);
+        call("Directive", parts)
+      }
+      other => other.clone(),
+    }
+  }
   for arg in args.iter().skip(opts_from) {
     if let Expr::Rule {
       pattern,
@@ -3528,7 +3548,7 @@ fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContourStyle")
     {
       return match replacement.as_ref() {
-        Expr::List(items) => items.iter().cloned().collect(),
+        Expr::List(items) => items.iter().map(as_directive).collect(),
         other => vec![other.clone()],
       };
     }
@@ -3721,9 +3741,21 @@ fn contour_plot_equations(
   };
   let mut last_index = None;
   for ((_, style_index), range) in bodies.iter().zip(&series_per_body) {
-    // A per-contour style precedes just its own function's curves.
+    let lines = series[range.clone()].iter().map(|s| {
+      let points: Vec<Expr> = s
+        .points
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+        .collect();
+      call1("Line", Expr::List(points.into()))
+    });
+    // A per-contour style applies to just its own function's curves, so
+    // they share a scope that keeps it off the next function's.
     if !opts.contour_styles.is_empty() {
-      structure_items.push(directives[style_index % directives.len()].clone());
+      let mut group = vec![directives[style_index % directives.len()].clone()];
+      group.extend(lines);
+      structure_items.push(Expr::List(group.into()));
+      continue;
     } else if directives.is_empty() && last_index != Some(*style_index) {
       // The default style, as WL spells it out.
       structure_items.push(call(
@@ -3735,14 +3767,7 @@ fn contour_plot_equations(
       ));
     }
     last_index = Some(*style_index);
-    for s in &series[range.clone()] {
-      let points: Vec<Expr> = s
-        .points
-        .iter()
-        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-        .collect();
-      structure_items.push(call1("Line", Expr::List(points.into())));
-    }
+    structure_items.extend(lines);
   }
   // A contour plot is framed and has no axes unless asked otherwise, so a
   // `Show` of several of them (`Frame -> False` or not) must not grow the

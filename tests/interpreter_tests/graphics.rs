@@ -54500,6 +54500,78 @@ mod plot_option_lists_and_merged_contour_styles {
     );
     assert!(svg.contains("stroke-dasharray"), "no dashed curve: {svg}");
   }
+
+  /// The polylines of an SVG, as `(stroke, dashed)` pairs.
+  fn polyline_strokes(svg: &str) -> Vec<(String, bool)> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .map(|p| {
+        let tag = p.split('>').next().unwrap_or("");
+        let stroke = tag
+          .split("stroke=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or("")
+          .to_string();
+        (stroke, tag.contains("stroke-dasharray"))
+      })
+      .collect()
+  }
+
+  /// Regression: a per-contour `ContourStyle -> {{dirs…}}` of a scalar
+  /// ContourPlot sat in the plot's primitives as a list of its own, a
+  /// scope that kept the directives off the contour lines, so `Show`
+  /// layering the plot over another drew them solid black.
+  #[test]
+  fn show_keeps_nested_contour_style_of_scalar_contour_plot() {
+    let svg = export_svg(
+      "Show[Plot[0, {x, 0, 4}], ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+       ContourShading -> None, Contours -> {2, 4}, \
+       ContourStyle -> {{Opacity[1], Dashed, Gray}}]]",
+    );
+    let contours: Vec<_> = polyline_strokes(&svg)
+      .into_iter()
+      .filter(|(stroke, _)| stroke == "rgb(128,128,128)")
+      .collect();
+    assert_eq!(contours.len(), 2, "{svg}");
+    assert!(contours.iter().all(|(_, dashed)| *dashed), "{svg}");
+  }
+
+  /// The nested style becomes one `Directive` in the plot's primitives.
+  #[test]
+  fn nested_contour_style_becomes_a_directive() {
+    assert_eq!(
+      interpret(
+        "Cases[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, \
+         ContourStyle -> {{Opacity[0.5], Red}, {Thick, Blue}}][[1]], \
+         _Directive, Infinity]"
+      )
+      .unwrap(),
+      "{Directive[Opacity[0.5], RGBColor[1, 0, 0]], \
+       Directive[Thickness[Large], RGBColor[0, 0, 1]]}"
+    );
+  }
+
+  /// Regression: the dashes of one equation's `ContourStyle` carried over
+  /// to the next equation's solid curve once `Show` merged the plot with
+  /// other graphics.
+  #[test]
+  fn show_does_not_leak_contour_dashing_to_next_equation() {
+    let svg = export_svg(
+      "Show[ContourPlot[{x == 0, y == 0}, {x, -1, 1}, {y, -1, 1}, \
+       ContourStyle -> {{Red, Dashed}, {Blue}}], Graphics[Point[{0, 0}]]]",
+    );
+    let strokes = polyline_strokes(&svg);
+    assert!(
+      strokes.contains(&("rgb(255,0,0)".to_string(), true)),
+      "{strokes:?}"
+    );
+    assert!(
+      strokes.contains(&("rgb(0,0,255)".to_string(), false)),
+      "{strokes:?}"
+    );
+  }
 }
 
 /// The `Line` of an equation curve in ContourPlot lies on the curve
