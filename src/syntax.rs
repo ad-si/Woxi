@@ -9478,6 +9478,12 @@ fn format_percent_form(expr: &Expr, form: ExprForm) -> String {
 }
 
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
+  // An OutputForm render is OutputForm all the way down, including the
+  // operators whose 1D text reuses the InputForm renderer: their strings
+  // print unquoted too (`Hold["a" /. x]` is `Hold[a /. x]`). Genuine
+  // InputForm entered from here keeps its own flag (`in_true_input_form`).
+  let _out_guard = (form == ExprForm::Output)
+    .then(|| OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true))));
   // Grow the stack when running low so formatting a deeply nested expression
   // (e.g. SameQ/UnsameQ on Nest[f, x, 5000], which compares via expr_to_string)
   // doesn't overflow. Mirrors the guard on evaluate_expr_to_expr; the recursion
@@ -14917,7 +14923,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   if let Some(product) = held_product_call(expr) {
     return expr_to_input_form(&product);
   }
-  let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
+  // Reused by an OutputForm render for an operator's 1D text, this is not
+  // genuine InputForm: strings stay unquoted there.
+  let genuine = !in_output_form() || in_true_input_form();
+  let _guard =
+    TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(genuine)));
 
   // The call spellings of the operators (`Divide`, `Subtract`, `List`, …)
   // print as the operator here too — `ToString[Hold[Divide[a, b]], InputForm]`
@@ -15026,6 +15036,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       expr_to_string(expr)
     }
+    // Reused for an OutputForm render's operator text, strings stay
+    // unquoted (see `expr_to_input_form_impl`'s `genuine`).
+    Expr::String(s) if !in_true_input_form() => s.clone(),
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
       format!("\"{escaped}\"")

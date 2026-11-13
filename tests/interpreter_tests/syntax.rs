@@ -14899,6 +14899,24 @@ mod held_syntax_output_form {
     );
   }
 
+  // Operators whose 1D text reuses the InputForm renderer print their
+  // strings unquoted too.
+  #[test]
+  fn operator_operands_unquoted() {
+    assert_eq!(
+      interpret(r#"Hold[{"a" /. x, "b"*c, -"d", "e"**f}]"#).unwrap(),
+      "Hold[{a /. x, b*c, -d, e**f}]"
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold["a" /. x], InputForm]"#).unwrap(),
+      r#"Hold["a" /. x]"#
+    );
+    assert_eq!(
+      interpret(r#"Quantity[2, Sqrt["Meters"]/"Seconds"]"#).unwrap(),
+      "Quantity[2, Sqrt[Meters]/Seconds]"
+    );
+  }
+
   #[test]
   fn application_heads() {
     assert_eq!(interpret(r#"Hold["" // #2]"#).unwrap(), "Hold[#2[]]");
