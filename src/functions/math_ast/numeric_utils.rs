@@ -451,9 +451,10 @@ pub fn bigfloat_digits_are_zero(digits: &str) -> bool {
     .all(|c| c == '0' || c == '.')
 }
 
-/// `|Root[f, k]|` for a non-real root, which has no single real value but
-/// does have a real modulus.
-fn complex_root_modulus(expr: &Expr) -> Option<f64> {
+/// The machine `(re, im)` parts of `Root[f, k]`, real or not: a non-real
+/// root has no single real value, but its real and imaginary parts and its
+/// modulus are real numbers.
+fn root_complex_parts(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
@@ -461,25 +462,12 @@ fn complex_root_modulus(expr: &Expr) -> Option<f64> {
     return None;
   }
   let value = super::numerical::root_n_eval(&args[0], &args[1])?;
-  let Expr::FunctionCall {
-    name: plus,
-    args: terms,
-  } = &value
-  else {
-    return None;
-  };
-  if plus != "Plus" {
-    return None;
-  }
-  let (Some(Expr::Real(re)), Some(Expr::FunctionCall { args: im, .. })) =
-    (terms.first(), terms.get(1))
-  else {
-    return None;
-  };
-  match im.first() {
-    Some(Expr::Real(im)) => Some(re.hypot(*im)),
-    _ => None,
-  }
+  try_extract_complex_float(&value)
+}
+
+/// `|Root[f, k]|` for a non-real root.
+fn complex_root_modulus(expr: &Expr) -> Option<f64> {
+  root_complex_parts(expr).map(|(re, im)| re.hypot(im))
 }
 
 /// The machine value of a numeric expression, or None.
@@ -607,6 +595,15 @@ fn try_eval_to_f64_machine(expr: &Expr) -> Option<f64> {
           Expr::Real(v) => Some(v),
           _ => None,
         }
+      }
+      // `Re`/`Im` of a non-real `Root[f, k]` are real numbers (NumericQ),
+      // so e.g. `Point[ReIm[root]]` has numeric coordinates.
+      "Re" | "Im"
+        if args.len() == 1
+          && matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Root") =>
+      {
+        let (re, im) = root_complex_parts(&args[0])?;
+        Some(if name == "Re" { re } else { im })
       }
       // `ZetaZero[k]` is inherently complex (1/2 + i t_k, with no closed
       // form for t_k), so it can't flow through the generic real-only

@@ -15666,6 +15666,20 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       }
       parts.join("; ")
     }
+    // A pure function's body belongs on this path too. Without an arm here
+    // the whole `body & ` fell through to the OutputForm renderer, whose
+    // `is_output`-gated shortcuts drop display wrappers — `Style[x, 16] & `
+    // printed as `x & `, so a round trip through InputForm (which is how
+    // Woxi Studio rebuilds a notebook's `Manipulate` body) silently lost
+    // every style a pure function applied.
+    Expr::Function { body } => {
+      let body_str = expr_to_input_form(body);
+      if function_body_needs_parens(body) {
+        format!("({body_str}) & ")
+      } else {
+        format!("{body_str} & ")
+      }
+    }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text
     // in every form, InputForm included (as wolframscript does).
     Expr::FunctionCall { name, args }

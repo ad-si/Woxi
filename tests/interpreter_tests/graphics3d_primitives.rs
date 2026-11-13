@@ -461,6 +461,26 @@ mod plot_range_clipping {
     }
   }
 
+  // `Style[…, Bold, Italic]` on a 3D label reaches the drawn text, as it
+  // does in 2D graphics (the slant and weight were dropped).
+  #[test]
+  fn styled_label_keeps_slant_and_weight() {
+    for code in [
+      "Graphics3D[{Inset[Text[Style[\"lbl\", 15, Italic, Bold, Red]], {0, 0, 0}]}]",
+      "Graphics3D[{Text[Style[\"lbl\", Italic, Bold], {0, 0, 0}]}]",
+    ] {
+      let out = svg(code);
+      let tag = out
+        .split("<text ")
+        .find(|t| t.contains(">lbl<"))
+        .unwrap_or_else(|| panic!("no label: {out}"));
+      assert!(tag.contains("font-style=\"italic\""), "{tag}");
+      assert!(tag.contains("font-weight=\"bold\""), "{tag}");
+    }
+    let plain = svg("Graphics3D[{Text[\"lbl\", {0, 0, 0}]}]");
+    assert!(!plain.contains("font-style=\"italic\""), "{plain}");
+  }
+
   // Text and points anchored outside an explicit range are not drawn.
   #[test]
   fn text_and_points_outside_the_range_are_dropped() {

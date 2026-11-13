@@ -1973,10 +1973,8 @@ impl WoxiStudio {
       Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, value) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Continuous { current, .. } = control
+          && state.slide_continuous(ctrl_idx, value)
         {
-          *current = value;
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -4508,6 +4506,7 @@ fn render_manipulate_widget<'a>(
         max,
         step,
         current,
+        is_real,
         orientation,
         reversed,
         ..
@@ -4518,7 +4517,7 @@ fn render_manipulate_widget<'a>(
         // first bound, so the widget shows and reports mirrored positions.
         let (lo, hi, reversed) = (*min, *max, *reversed);
         let position = slider_track_position(lo, hi, reversed, *current);
-        let value_widget = text(format_manipulate_number(*current))
+        let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
           .width(iced::Length::Fixed(64.0));
@@ -5879,6 +5878,18 @@ fn hyperlink_button_style(status: button::Status, alpha: f32) -> button::Style {
 /// Format a slider value for the inline readout. Integers render
 /// without a trailing zero, fractional values get 3 decimal digits of
 /// precision (with trailing zeros trimmed).
+/// The value shown beside a `Continuous` slider. A machine-real binding
+/// keeps Wolfram's trailing dot on a whole number (`-10.`, `2260.`), so the
+/// label tells it apart from the exact integer a slider starts at.
+fn format_slider_value(v: f64, is_real: bool) -> String {
+  let s = format_manipulate_number(v);
+  if is_real && v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+    format!("{s}.")
+  } else {
+    s
+  }
+}
+
 fn format_manipulate_number(v: f64) -> String {
   if !v.is_finite() {
     return format!("{v}");
@@ -8526,6 +8537,18 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A slider's value readout marks a whole-number machine real with a
+  /// trailing dot (`-10.`), as Wolfram's labeled slider does.
+  #[test]
+  fn slider_value_readout_keeps_real_trailing_dot() {
+    use super::format_slider_value;
+    assert_eq!(format_slider_value(-10.0, true), "-10.");
+    assert_eq!(format_slider_value(2260.0, true), "2260.");
+    assert_eq!(format_slider_value(-500.0, false), "-500");
+    assert_eq!(format_slider_value(0.25, true), "0.25");
+    assert_eq!(format_slider_value(0.25, false), "0.25");
+  }
+
   /// A Manipulate's helper variables written with Gothic letters
   /// (`\[GothicE]Lot`, U+F6D0) must parse: those private-use characters
   /// were not accepted in symbol names, so the whole Input cell failed.
@@ -17893,6 +17916,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
       reversed: false,
@@ -17906,6 +17930,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
       reversed: false,
@@ -17927,6 +17952,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.04,
       current: 1.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
       reversed: false,

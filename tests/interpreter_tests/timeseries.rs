@@ -1426,3 +1426,59 @@ mod event_series_queries {
     );
   }
 }
+
+mod quantity_values {
+  use super::*;
+
+  /// The internal form wolframscript saves a series of quantities in: the
+  /// value path is a single `QuantityArray`.
+  const SERIES: &str = r#"TemporalData[TimeSeries, {{QuantityArray[StructuredArray`StructuredData[{3}, {{4, 7.5, 6}, "DegreesCelsius", {{1}}}]]}, {TemporalData`DateSpecification[{2010, 6, 1, 0, 0, 0.}, {2010, 6, 3, 0, 0, 0.}, {1, "Day"}]}, 1, {"Continuous", 1}, {"Discrete", 1}, 1, {ResamplingMethod -> {"Interpolation", InterpolationOrder -> 1}, ValueDimensions -> 1}}, True, 13.2]"#;
+
+  /// Regression: the QuantityArray path became a single time stamp holding
+  /// the whole array.
+  #[test]
+  fn quantity_array_path_expands_to_one_value_per_date() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("ToString[Normal[{SERIES}][[All, 2]], InputForm]"))
+        .unwrap(),
+      r#"{Quantity[4, "DegreesCelsius"], Quantity[7.5, "DegreesCelsius"], Quantity[6, "DegreesCelsius"]}"#
+    );
+    assert_eq!(interpret(&format!("Length[{SERIES}]")).unwrap(), "3");
+  }
+
+  /// Regression: DateListPlot drew nothing for quantity values; they plot
+  /// as their magnitudes.
+  #[test]
+  fn date_list_plot_draws_quantity_magnitudes() {
+    clear_state();
+    let quantities =
+      interpret(&format!("ExportString[DateListPlot[{SERIES}], \"SVG\"]"))
+        .unwrap();
+    let numbers = interpret(
+      "ExportString[DateListPlot[TimeSeries[{4, 7.5, 6}, {{2010, 6, 1}, \
+       Automatic, \"Day\"}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(quantities, numbers);
+  }
+
+  /// Regression: a list of series drew no data at all instead of one
+  /// dataset per series.
+  #[test]
+  fn date_list_plot_of_a_list_of_series() {
+    clear_state();
+    let series = interpret(
+      "ExportString[DateListPlot[{TimeSeries[{{{2010, 1, 1}, 1}, {{2010, 1, \
+       5}, 3}}], TimeSeries[{{{2010, 1, 1}, 2}, {{2010, 1, 5}, 1}}]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    let lists = interpret(
+      "ExportString[DateListPlot[{{{{2010, 1, 1}, 1}, {{2010, 1, 5}, 3}}, \
+       {{{2010, 1, 1}, 2}, {{2010, 1, 5}, 1}}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(series, lists);
+  }
+}

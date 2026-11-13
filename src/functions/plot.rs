@@ -3450,6 +3450,8 @@ pub(crate) enum GridSide {
   None,
   /// Evenly spaced automatic grid lines (default gray, solid).
   Automatic,
+  /// `Full`: a line at every major and minor tick position.
+  Full,
   /// Explicit grid lines at the given positions/styles.
   Explicit(Vec<GridLine>),
 }
@@ -3597,6 +3599,11 @@ pub(crate) struct PlotOptions {
   pub grid_lines_y: bool,
   /// Show evenly spaced vertical grid lines (automatic).
   pub grid_lines_x: bool,
+  /// `GridLines -> Full` on the x axis: the automatic vertical lines sit at
+  /// every minor tick as well as every major one, across the whole frame.
+  pub grid_full_x: bool,
+  /// `GridLines -> Full` on the y axis (see `grid_full_x`).
+  pub grid_full_y: bool,
   /// Explicit vertical grid lines (positions + per-line style). When
   /// non-empty, these replace the automatic `grid_lines_x` lines.
   pub grid_x_lines: Vec<GridLine>,
@@ -3983,6 +3990,8 @@ impl Default for PlotOptions {
       baseline_axis: false,
       grid_lines_y: false,
       grid_lines_x: false,
+      grid_full_x: false,
+      grid_full_y: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
       grid_lines_style: None,
@@ -4198,7 +4207,7 @@ pub(crate) const PLOT_COLORS_RGB: [(f64, f64, f64); 15] = [
 /// Font size of chart labels (`ChartLabels`, axes and frame labels) in the
 /// bar, bubble and histogram renderers,
 /// in display pixels (WL 15: the tick-label size).
-const CHART_LABEL_FONT: f64 = 10.0;
+pub(crate) const CHART_LABEL_FONT: f64 = 10.0;
 /// Font size of a chart's `PlotLabel`, in display pixels (WL 15's
 /// `PlotLabel` size).
 const CHART_TITLE_FONT: f64 = 12.0;
@@ -4367,6 +4376,33 @@ fn render_dash_overlays(
   svg
 }
 
+/// Placeholder stroke color marking where the `k`-th deferred dashed line
+/// belongs in the drawing order (distinct from the `ColorFunction`
+/// gradient placeholders, which start with `0x01`).
+fn dash_overlay_sentinel(k: usize) -> (u8, u8, u8) {
+  (0x02, ((k >> 8) & 0xff) as u8, (k & 0xff) as u8)
+}
+
+/// Swap the placeholder element of the `k`-th deferred dashed line for its
+/// rendered `svg`, or add `svg` on top of the plot content when no
+/// placeholder was written.
+fn replace_dash_overlay_sentinel(buf: &mut String, k: usize, svg: &str) {
+  let (r, g, b) = dash_overlay_sentinel(k);
+  let needle = format!("stroke=\"#{r:02X}{g:02X}{b:02X}\"");
+  if let Some(at) = buf.find(&needle)
+    && let Some(start) = buf[..at].rfind('<')
+    && let Some(end_rel) = buf[at..].find('>')
+  {
+    let mut end = at + end_rel + 1;
+    if buf[end..].starts_with('\n') {
+      end += 1;
+    }
+    buf.replace_range(start..end, svg);
+  } else if let Some(pos) = buf.rfind("</svg>") {
+    buf.insert_str(pos, svg);
+  }
+}
+
 /// Default color for an unstyled dashed grid line. Approximates the flat-gray
 /// look of the solid grid lines (`rgb(102,102,102)` at 50% opacity over a white
 /// background), since dash overlays carry no opacity.
@@ -4411,12 +4447,26 @@ fn resolve_grid_lines(
   }
   let style = inherit(&SeriesStyle::default());
   let mut v = Vec::new();
-  let mut pos = (min / step).ceil() * step;
-  while pos <= max {
-    v.push((pos, style.clone()));
-    pos += step;
+  // Multiply rather than accumulate, so a fine (minor-tick) step does not
+  // drift off the tick grid or lose the last line to rounding.
+  let tol = step * 1e-9;
+  let mut k = ((min - tol) / step).ceil();
+  while k * step <= max + tol {
+    v.push((k * step, style.clone()));
+    k += 1.0;
   }
   v
+}
+
+/// The spacing of the automatic grid lines on an axis whose major ticks are
+/// `major` apart: the major step itself, or the minor tick step for
+/// `GridLines -> Full`, which puts a line at every minor tick too.
+fn full_grid_step(major: f64, full: bool) -> f64 {
+  if full && major > 0.0 && major.is_finite() {
+    minor_tick_step(major)
+  } else {
+    major
+  }
 }
 
 /// The grid lines of one axis spanning `min..max`: [`resolve_grid_lines`]
@@ -5819,6 +5869,24 @@ fn generate_svg_with_options(
   // dash). Skipped for log axes, which keep the per-dash fallback because the
   // coordinate transform is non-linear.
   let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
+  // Defer a dashed line, but hold its place in the drawing order with a
+  // placeholder element (see `dash_overlay_sentinel`) so the line still
+  // stacks where WL draws it: a later solid curve or point covers it.
+  macro_rules! defer_dashed {
+    ($chart:expr, $overlay:expr) => {{
+      let overlay: DashedOverlay = $overlay;
+      let (sr, sg, sb) = dash_overlay_sentinel(dashed_overlays.len());
+      let anchor =
+        vec![overlay.points[0], overlay.points[overlay.points.len() - 1]];
+      dashed_overlays.push(overlay);
+      $chart
+        .draw_series(std::iter::once(PathElement::new(
+          anchor,
+          RGBColor(sr, sg, sb).stroke_width(1),
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }};
+  }
   let mut cf_gradients: Vec<ColorFunctionGradient> = Vec::new();
 
   let mut buf = String::new();
@@ -5993,16 +6061,17 @@ fn generate_svg_with_options(
           opts.grid_lines_y,
           (y_min, y_max),
           log_y,
-          axis_tick_step(y_max - y_min),
+          full_grid_step(axis_tick_step(y_max - y_min), opts.grid_full_y),
           opts.grid_lines_style.as_ref(),
         );
         {
           let tol = (y_max - y_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
+          // `GridLines -> Full` keeps every line across the frame.
           let interior = opts
             .grid_interior
-            .filter(|_| opts.grid_y_lines.is_empty())
+            .filter(|_| opts.grid_y_lines.is_empty() && !opts.grid_full_y)
             .map(|r| r.1);
           for (gy, style) in &y_grid {
             if *gy < y_min - tol || *gy > y_max + tol {
@@ -6017,7 +6086,7 @@ fn generate_svg_with_options(
             let (rgb, stroke_w, dash) = grid_line_props(style);
             let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
-              dashed_overlays.push(DashedOverlay {
+              defer_dashed!(chart, DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
                 opacity: alpha,
                 stroke_w,
@@ -6050,7 +6119,7 @@ fn generate_svg_with_options(
           if date_axis {
             nice_date_step(x_max - x_min)
           } else {
-            axis_tick_step(x_max - x_min)
+            full_grid_step(axis_tick_step(x_max - x_min), opts.grid_full_x)
           },
           opts.grid_lines_style.as_ref(),
         );
@@ -6058,9 +6127,10 @@ fn generate_svg_with_options(
           let tol = (x_max - x_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
+          // `GridLines -> Full` keeps every line across the frame.
           let interior = opts
             .grid_interior
-            .filter(|_| opts.grid_x_lines.is_empty())
+            .filter(|_| opts.grid_x_lines.is_empty() && !opts.grid_full_x)
             .map(|r| r.0);
           for (gx, style) in &x_grid {
             if *gx < x_min - tol || *gx > x_max + tol {
@@ -6075,7 +6145,7 @@ fn generate_svg_with_options(
             let (rgb, stroke_w, dash) = grid_line_props(style);
             let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
-              dashed_overlays.push(DashedOverlay {
+              defer_dashed!(chart, DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
                 opacity: alpha,
                 stroke_w,
@@ -6436,7 +6506,7 @@ fn generate_svg_with_options(
                   .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
                 let line = vec![(from, level), (to, level)];
                 match dashes {
-                  Some(dashes) => dashed_overlays.push(DashedOverlay {
+                  Some(dashes) => defer_dashed!(chart, DashedOverlay {
                     color: (er, eg, eb),
                     opacity,
                     stroke_w: width,
@@ -6592,7 +6662,7 @@ fn generate_svg_with_options(
                 // emitted after the plot is drawn.
                 for segment in segments {
                   if segment.len() >= 2 {
-                    dashed_overlays.push(DashedOverlay {
+                    defer_dashed!(chart, DashedOverlay {
                       color: (r, g, b),
                       opacity: line_opacity,
                       stroke_w,
@@ -6885,8 +6955,8 @@ fn generate_svg_with_options(
   inject_drop_shadows(&mut buf, &opts.plot_style, all_points.len());
   apply_color_function_gradients(&mut buf, &cf_gradients);
 
-  // Emit deferred dashed series as single stroke-dasharray polylines (on top
-  // of the plot content, just before </svg>).
+  // Emit deferred dashed series as single stroke-dasharray polylines, each
+  // in place of the placeholder that kept its position in the drawing order.
   if !dashed_overlays.is_empty() {
     let plot_x0 = margin_left as f64 + y_label_area as f64;
     let plot_y0 = top_margin as f64;
@@ -6898,22 +6968,22 @@ fn generate_svg_with_options(
       - top_margin as f64
       - margin_bottom as f64
       - x_label_area as f64;
-    let series_svg = render_dash_overlays(
-      &dashed_overlays,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      render_width as f64,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      opts.log_x,
-      opts.log_y,
-    );
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &series_svg);
+    for (k, overlay) in dashed_overlays.iter().enumerate() {
+      let series_svg = render_dash_overlays(
+        std::slice::from_ref(overlay),
+        plot_x0,
+        plot_y0,
+        plot_w,
+        plot_h,
+        render_width as f64,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        opts.log_x,
+        opts.log_y,
+      );
+      replace_dash_overlay_sentinel(&mut buf, k, &series_svg);
     }
   }
 
@@ -8794,6 +8864,9 @@ pub(crate) struct BarChartLook {
   pub element: BarElement,
   pub element_function: Option<Expr>,
   pub element_values: Vec<Vec<Expr>>,
+  /// `ChartElements -> {g1, g2, …}`: pictures (`Graphics` or `Image`)
+  /// drawn in place of the bars, cycled like `ChartStyle` colors.
+  pub chart_elements: Vec<Expr>,
   /// Which frame edges `Frame` draws: left, right, bottom, top.
   pub frame_sides: [bool; 4],
   /// Hide the value frame stroke and tick marks while keeping its labels.
@@ -8811,6 +8884,46 @@ pub(crate) struct BarChartLook {
   /// An explicit `ImagePadding` (left, right, bottom, top in points); a
   /// `None` side is automatic.
   pub image_padding: Option<[Option<f64>; 4]>,
+}
+
+/// A `ChartElements` bar: copies of the rendered picture `svg`, each as
+/// wide as the bar and as tall as the picture's aspect ratio makes it,
+/// stacked from the bar's base (`base`, pixel coordinates of one corner)
+/// to its end (`end`, the opposite corner) and clipped there, as WL tiles
+/// a pictorial bar.
+fn pictorial_bar_svg(svg: &str, base: (f64, f64), end: (f64, f64)) -> String {
+  let x = base.0.min(end.0);
+  let w = (end.0 - base.0).abs();
+  let h = (end.1 - base.1).abs();
+  let Some((nat_w, nat_h)) = crate::functions::graphics::svg_natural_size(svg)
+  else {
+    return String::new();
+  };
+  if w <= 0.0 || h <= 0.0 || nat_w <= 0.0 || nat_h <= 0.0 {
+    return String::new();
+  }
+  let tile_h = w * nat_h / nat_w;
+  // Bars grow up from the base (or down, for negative values).
+  let up = end.1 < base.1;
+  let top = base.1.min(end.1);
+  let clip_id = format!("chartElement{x:.0}_{top:.0}_{w:.0}_{h:.0}");
+  let mut out = format!(
+    "<clipPath id=\"{clip_id}\"><rect x=\"{x:.2}\" y=\"{top:.2}\" width=\"{w:.2}\" height=\"{h:.2}\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">\n"
+  );
+  let count = (h / tile_h - 1e-9).ceil().max(1.0) as usize;
+  for k in 0..count {
+    let offset = k as f64 * tile_h;
+    let y = if up {
+      base.1 - offset - tile_h
+    } else {
+      base.1 + offset
+    };
+    out.push_str(&crate::functions::graphics::embed_svg_in_rect(
+      svg, x, y, w, tile_h,
+    ));
+  }
+  out.push_str("</g>\n");
+  out
 }
 
 impl Default for BarChartLook {
@@ -8832,6 +8945,7 @@ impl Default for BarChartLook {
       element: BarElement::Rectangle,
       element_function: None,
       element_values: Vec::new(),
+      chart_elements: Vec::new(),
       frame_sides: [true; 4],
       hide_value_frame: false,
       value_grid: None,
@@ -9385,10 +9499,19 @@ pub(crate) fn generate_bar_svg(
   } else {
     0.0
   };
-  let mut x_label_area = explicit_pad(2)
-    .map_or((5.5 * sf) as u32 + bottom_extra as u32, |b| {
-      b.max(rotated_label_room).round() as u32
-    });
+  // Automatic padding holds the default rotated labels' room, or as much
+  // as a longer one hangs below the axis.
+  let rotated_label_extra = if labels_below && has_rotated_labels {
+    5.0 * chart_label_font_pt * sf
+  } else {
+    0.0
+  };
+  let mut x_label_area = explicit_pad(2).map_or(
+    (5.5 * sf) as u32
+      + (bottom_extra - rotated_label_extra
+        + rotated_label_extra.max(rotated_label_room)) as u32,
+    |b| b.max(rotated_label_room).round() as u32,
+  );
   // The y axis and its ticks, drawn the way an unframed `Plot` draws them
   // (`plot_axes::origin_axes_svg`): marks pointing into the chart, labels
   // right-aligned 3 pt left of the axis.
@@ -9553,6 +9676,7 @@ pub(crate) fn generate_bar_svg(
   let axis_color = look.axes_color.unwrap_or(dark_gray);
 
   let mut custom_elements = Vec::new();
+  let mut pictorial_bars = Vec::new();
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -9602,6 +9726,17 @@ pub(crate) fn generate_bar_svg(
           crate::functions::chart::CHART_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
+        // `ChartElements`: the bar's picture, tiled over it below once the
+        // plotting area's pixel geometry is known.
+        if !look.chart_elements.is_empty() {
+          let k = if k_colors > 1 { bi } else { gi };
+          pictorial_bars.push((
+            (rect.x0, rect.x1, rect.y0, rect.y1),
+            &look.chart_elements[k % look.chart_elements.len()],
+            (br, bg, bb),
+          ));
+          continue;
+        }
         if let Some(function) = &look.element_function {
           let pair =
             |a, b| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
@@ -9750,6 +9885,28 @@ pub(crate) fn generate_bar_svg(
   let plot_h =
     render_height as f64 - margin_top - margin_bottom - x_label_area as f64;
   let axis_y = plot_y0 + plot_h;
+  if !pictorial_bars.is_empty() {
+    let to_px = |x: f64, y: f64| {
+      (
+        plot_x0 + (x - x_min) / (x_max - x_min) * plot_w,
+        plot_y0 + plot_h - (y - y_min) / (y_max - y_min) * plot_h,
+      )
+    };
+    let mut tiles = String::new();
+    for ((x0, x1, y0, y1), element, color) in &pictorial_bars {
+      let (px0, py0) = to_px(*x0, *y0);
+      let (px1, py1) = to_px(*x1, *y1);
+      let Some(svg) =
+        crate::functions::chart::chart_element_svg(element, *color)
+      else {
+        continue;
+      };
+      tiles.push_str(&pictorial_bar_svg(&svg, (px0, py0), (px1, py1)));
+    }
+    if let Some(end) = buf.rfind("</svg>") {
+      buf.insert_str(end, &tiles);
+    }
+  }
   if !custom_elements.is_empty() {
     let fragment = crate::functions::graphics::primitives_svg_fragment(
       &Expr::List(custom_elements.into()),
@@ -14531,6 +14688,7 @@ fn theme_curve_base(opt: &Expr) -> Option<Vec<Expr>> {
 ///
 /// Supported forms:
 /// - `Automatic` / `All` / `True` → automatic lines on both axes
+/// - `Full` → lines at every major and minor tick on both axes
 /// - `None` / `False` → no grid lines
 /// - `{xspec, yspec}` → independent specs per axis, where each spec is
 ///   `Automatic`, `None`, or a list of entries. Each entry is a bare position
@@ -14546,6 +14704,7 @@ pub(crate) fn parse_grid_lines_spec(expr: &Expr) -> (GridSide, GridSide) {
     Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
       (GridSide::Automatic, GridSide::Automatic)
     }
+    Expr::Identifier(s) if s == "Full" => (GridSide::Full, GridSide::Full),
     _ => (GridSide::None, GridSide::None),
   }
 }
@@ -14557,6 +14716,7 @@ fn parse_grid_side(expr: &Expr) -> GridSide {
     Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
       GridSide::Automatic
     }
+    Expr::Identifier(s) if s == "Full" => GridSide::Full,
     Expr::List(items) => GridSide::Explicit(
       items.iter().filter_map(parse_grid_line_entry).collect(),
     ),
@@ -14595,14 +14755,16 @@ fn parse_grid_line_entry(entry: &Expr) -> Option<GridLine> {
 pub(crate) fn apply_grid_side(
   side: GridSide,
   auto_flag: &mut bool,
+  full_flag: &mut bool,
   explicit: &mut Vec<GridLine>,
 ) {
+  *full_flag = matches!(side, GridSide::Full);
   match side {
     GridSide::None => {
       *auto_flag = false;
       explicit.clear();
     }
-    GridSide::Automatic => {
+    GridSide::Automatic | GridSide::Full => {
       *auto_flag = true;
       explicit.clear();
     }
@@ -16050,11 +16212,13 @@ pub(crate) fn apply_common_plot_option(
       apply_grid_side(
         sx,
         &mut plot_opts.grid_lines_x,
+        &mut plot_opts.grid_full_x,
         &mut plot_opts.grid_x_lines,
       );
       apply_grid_side(
         sy,
         &mut plot_opts.grid_lines_y,
+        &mut plot_opts.grid_full_y,
         &mut plot_opts.grid_y_lines,
       );
     }

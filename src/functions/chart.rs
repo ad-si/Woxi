@@ -1530,12 +1530,13 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     && name == "Rotate"
     && args.len() >= 2
   {
-    let text = expr_to_label(&args[0])?;
+    let (font_size, bold) = label_font_style(&args[0]);
+    let text =
+      pane_wrapped_label(&args[0], expr_to_label(&args[0])?, font_size);
     let angle = try_eval_to_f64(
       &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
     )
     .unwrap_or(0.0);
-    let (font_size, bold) = label_font_style(&args[0]);
     return Some(ChartLabel {
       text,
       rotation: angle,
@@ -1553,11 +1554,47 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
   // Plain label
   let (font_size, bold) = label_font_style(e);
   expr_to_label(e).map(|text| ChartLabel {
+    text: pane_wrapped_label(e, text, font_size),
     font_size,
     bold,
     line_styles: column_line_styles(e),
-    ..ChartLabel::plain(text)
+    ..ChartLabel::default()
   })
+}
+
+/// A chart label's `text` broken into lines the way a fixed-width
+/// `Pane[content, w]` (possibly inside `Style`/`Rotate` wrappers) lays it
+/// out: wrapped to `w` points at the label's font size.
+fn pane_wrapped_label(
+  e: &Expr,
+  text: String,
+  font_size: Option<f64>,
+) -> String {
+  fn pane_width(e: &Expr) -> Option<f64> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Pane" => {
+        crate::evaluator::dispatch::io_functions::pane_width_only(args)
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Style" | "Rotate" | "Text")
+          && !args.is_empty() =>
+      {
+        pane_width(&args[0])
+      }
+      _ => None,
+    }
+  }
+  let Some(width) = pane_width(e) else {
+    return text;
+  };
+  let size = font_size.unwrap_or(crate::functions::plot::CHART_LABEL_FONT);
+  text
+    .split('\n')
+    .flat_map(|line| {
+      crate::functions::plot_padding::wrap_label_line(line, width, size)
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Locate a `Placed[labels, position, ...]` spec inside a `ChartLabels` value.
@@ -3090,6 +3127,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             } else {
               opts.axes_label = Some((x, y));
             }
+          } else if name == "AxesLabel"
+            && !matches!(&val, Expr::Identifier(n) if n == "None")
+            && let Some(y) = expr_to_label(&val)
+          {
+            // A lone label names the value (vertical) axis, as in WL.
+            opts.axes_label = Some((String::new(), y));
           }
         }
         "LegendAppearance" => {
@@ -3701,6 +3744,103 @@ pub(crate) fn chart_edge_form(
   Some((color, width, opacity.unwrap_or(0.66)))
 }
 
+/// The rendered SVG of one `ChartElements` picture for a bar styled
+/// `color`. An `Image` is drawn as it is; a `Graphics` is redrawn with the
+/// bar's color (and the chart's default edge) as its base style, so shapes
+/// that set no color of their own take the bar's.
+pub(crate) fn chart_element_svg(
+  element: &Expr,
+  color: (u8, u8, u8),
+) -> Option<String> {
+  match element {
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      display_size,
+      ..
+    } => Some(crate::functions::image_ast::image_to_html_img(
+      *width,
+      *height,
+      *channels,
+      data,
+      *display_size,
+    )),
+    Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } if matches!(&**structure, Expr::FunctionCall { name, .. } if name == "Graphics") => {
+      chart_element_svg(structure, color)
+    }
+    Expr::Graphics {
+      svg, is_3d: false, ..
+    } => Some(svg.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      let channel = |c: u8| Expr::Real(c as f64 / 255.0);
+      let base = vec![
+        Expr::FunctionCall {
+          name: "RGBColor".into(),
+          args: vec![channel(color.0), channel(color.1), channel(color.2)]
+            .into(),
+        },
+        Expr::FunctionCall {
+          name: "EdgeForm".into(),
+          args: vec![Expr::FunctionCall {
+            name: "Directive".into(),
+            args: vec![
+              Expr::Identifier("Black".into()),
+              Expr::FunctionCall {
+                name: "Opacity".into(),
+                args: vec![Expr::Real(0.66)].into(),
+              },
+            ]
+            .into(),
+          }]
+          .into(),
+        },
+        args[0].clone(),
+      ];
+      let restyled: Vec<Expr> = std::iter::once(Expr::List(base.into()))
+        .chain(args[1..].iter().cloned())
+        .collect();
+      match &crate::functions::graphics::graphics_ast(&restyled).ok()? {
+        Expr::Graphics {
+          svg, is_3d: false, ..
+        } => Some(svg.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// The pictures of a `ChartElements` value: one picture `g` stands for
+/// every bar, a list `{g1, g2, …}` gives one per bar (cycled). A
+/// `{g, {w, h}}` spec keeps its picture. `Automatic` and `None` draw the
+/// ordinary bars.
+fn chart_elements_spec(value: &Expr) -> Vec<Expr> {
+  let picture = |e: &Expr| match e {
+    Expr::List(parts)
+      if parts.len() == 2 && matches!(&parts[1], Expr::List(_)) =>
+    {
+      Some(parts[0].clone())
+    }
+    Expr::List(_) => None,
+    Expr::Identifier(n) if n == "Automatic" || n == "None" => None,
+    other => Some(other.clone()),
+  };
+  match value {
+    Expr::List(items) => match picture(value) {
+      Some(g) => vec![g],
+      None => items.iter().filter_map(picture).collect(),
+    },
+    other => picture(other).into_iter().collect(),
+  }
+}
+
 /// The `Axes`, `AxesStyle`, `Frame`, `FrameStyle`, `BarSpacing` and
 /// `AspectRatio` options of a `BarChart` call.
 fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
@@ -3837,6 +3977,8 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
             label_font_style(&items[0]).0,
             items.get(1).and_then(|y| label_font_style(y).0),
           ];
+        } else if name == "AxesLabel" && !matches!(&value, Expr::List(_)) {
+          look.axes_label_fonts = [None, label_font_style(&value).0];
         }
       }
       "ImagePadding" => {
@@ -3850,6 +3992,9 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
         {
           look.edge = Some(edge);
         }
+      }
+      "ChartElements" => {
+        look.chart_elements = chart_elements_spec(&value);
       }
       "ChartElementFunction" => {
         if let Expr::String(s) = &value {
@@ -7779,15 +7924,35 @@ fn date_list_plot_ast_impl(
 ) -> Result<Expr, InterpreterError> {
   let log_y = kind == DateListKind::Log;
   let data = evaluate_expr_to_expr(&args[0])?;
-  // A TimeSeries plots as its {date, value} path.
-  let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
-    Some(pairs) => Expr::List(
+  // A TimeSeries plots as its {date, value} path, and a list of them as one
+  // dataset per series.
+  let path_of = |pairs: Vec<(Expr, Expr)>| {
+    Expr::List(
       pairs
         .into_iter()
         .map(|(d, v)| Expr::List(vec![d, v].into()))
         .collect(),
-    ),
-    None => data,
+    )
+  };
+  let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
+    Some(pairs) => path_of(pairs),
+    None => match &data {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| {
+            crate::functions::timeseries_ast::time_series_pairs(i).is_some()
+          }) =>
+      {
+        Expr::List(
+          items
+            .iter()
+            .filter_map(crate::functions::timeseries_ast::time_series_pairs)
+            .map(path_of)
+            .collect(),
+        )
+      }
+      _ => data,
+    },
   };
   let Expr::List(items) = &data else {
     return Ok(invalid_dataset(kind.head(), args));
@@ -7910,9 +8075,17 @@ fn date_list_plot_ast_impl(
         && pair.len() >= 2
       {
         let x = date_expr_to_absolute_time(&pair[0]);
-        let y = try_eval_to_f64(
-          &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
-        );
+        // Quantity values plot as their magnitudes.
+        let value = evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone());
+        let value = match &value {
+          Expr::FunctionCall { name, args }
+            if name == "Quantity" && args.len() == 2 =>
+          {
+            &args[0]
+          }
+          other => other,
+        };
+        let y = try_eval_to_f64(value);
         if let (Some(x), Some(y)) = (x, y)
           && (!log_y || y > 0.0)
         {

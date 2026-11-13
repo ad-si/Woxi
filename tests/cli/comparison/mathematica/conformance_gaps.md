@@ -5500,7 +5500,10 @@ With the same scene both engines place every primitive identically, but:
   eye `|ViewPoint|` box sides from the box center; a `ViewPoint` with an
   infinite component is orthographic). An explicit `ViewAngle` still sets the
   scale from the orthographic law above, so a wide angle (≳30°) can leave the
-  silhouette a few percent off. The 3D charts (`chart.rs`) keep their own
+  silhouette a few percent off. The surface plots (`Plot3D`,
+  `ParametricPlot3D`, …) apply the same law about the box middle; their
+  `ViewAngle` scale is derived from the `Graphics3D` measurements, not
+  measured on the plots themselves. The 3D charts (`chart.rs`) keep their own
   orthographic camera.
 
 ### `Specularity`
@@ -6161,6 +6164,25 @@ differently (the impulse responses do not agree up to a scale factor), and
 `LaplacianGaussianFilter`'s three-tap response at radius 1 is a scaled second
 difference rather than the second-derivative-of-Gaussian kernel the name
 suggests.
+
+### LaplacianFilter's radius-1 response is weaker than Wolfram's
+
+Woxi builds `LaplacianFilter[img, r]` from second differences of a
+Gaussian with σ = r/2. Its radius-1 impulse response is a 3 x 3 kernel with
+center -1.93, edge taps 0.362, and diagonal taps 0.119:
+
+```sh
+cargo run -- eval 'ImageData[LaplacianFilter[Image[ReplacePart[Table[0., {5}, {5}], {3, 3} -> 1.]], 1]][[2 ;; 4, 2 ;; 4]]'
+```
+
+No wolframscript reference is available yet. A Wolfram front-end snapshot
+of `ImageAdjust[LaplacianFilter[photo, 1], {0.7, 0.6}]` on 75 x 75 Byte RGB
+photos shows edges about 2–3 times stronger. The snapshot fits a
+4-neighbor second difference scaled by roughly 1.6–1.9 far better (mean
+pixel error 0.0014–0.005) than Woxi's kernel (0.049). That scale is close
+to the `1.8418…` factor `LaplacianGaussianFilter` uses at radius 1 (see
+above). The exact taps need a wolframscript probe, such as the impulse
+response above, before the kernel is changed.
 
 ### Color-space tags do not propagate
 

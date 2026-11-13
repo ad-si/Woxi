@@ -2,7 +2,7 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"ListContourPlot[{{0, 0, 1}, {1, 0, 0}, {0, 1, 0}, {1, 1, 1}, {0.5, 0.5, 0.5}}]\")"
 ---
-<svg width="360" height="357" viewBox="0 0 3600 3570" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="357" viewBox="0 0 3600 3570" preserveAspectRatio="xMidYMid meet" data-plot-frame="0 1 0 1 237.320 73.320 3279.360 3279.360" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3570" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="237.3" y="3319.6" width="563.1" height="33.1" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M811.4 3352.7L833.6 3352.7L833.6 3319.6L806.8 3319.6Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>

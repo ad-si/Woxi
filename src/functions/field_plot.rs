@@ -99,7 +99,7 @@ fn split_vector_and_density<'a>(
 fn parse_field_plot_label(
   args: &[Expr],
   start: usize,
-) -> Option<(String, Option<f64>)> {
+) -> Option<FieldPlotLabel> {
   args[start..].iter().find_map(|opt| {
     let (Expr::Rule {
       pattern,
@@ -122,8 +122,20 @@ fn parse_field_plot_label(
     // would emit it in unscaled units and draw the label ten times too
     // small.
     let (inner, size) = peel_label_font_size(&value);
-    Some((crate::functions::graphics::expr_to_svg_markup(inner), size))
+    // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
+    // the same way the generic `Graphics` label pass sets them.
+    let lines = crate::functions::graphics::expr_to_svg_markup_lines(inner);
+    Some((lines, size))
   })
+}
+
+/// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
+/// and the font size of an outermost `Style`, if any.
+type FieldPlotLabel = (Vec<String>, Option<f64>);
+
+/// Whether every line of a parsed `PlotLabel` is blank.
+fn field_plot_label_is_blank(lines: &[String]) -> bool {
+  lines.iter().all(|l| l.trim().is_empty())
 }
 
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
@@ -149,19 +161,25 @@ fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
 fn inject_field_plot_label(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
-  (label, size): &(String, Option<f64>),
+  (lines, size): &FieldPlotLabel,
 ) {
-  if label.trim().is_empty() {
+  if field_plot_label_is_blank(lines) {
     return;
   }
   let sf = f64::from(crate::functions::plot::RESOLUTION_SCALE);
   let font = size.unwrap_or(14.0) * sf;
+  let line_h = font * 1.35;
   let cx = area.plot_x0 + area.plot_w / 2.0;
-  let y = (area.plot_y0 - sf * 8.0).max(font);
-  svg.push_str(&format!(
-    "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
-  ));
+  // The last line sits just above the frame; earlier lines stack upward.
+  let first = (lines.len() - 1) as f64;
+  let y_last = (area.plot_y0 - sf * 8.0).max(font + first * line_h);
+  for (i, label) in lines.iter().enumerate() {
+    let y = y_last - (first - i as f64) * line_h;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+    ));
+  }
 }
 
 fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
@@ -309,7 +327,7 @@ struct DensityContourOptions {
   prolog: Vec<Expr>,
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
-  plot_label: Option<(String, Option<f64>)>,
+  plot_label: Option<FieldPlotLabel>,
   /// `RegionFunction -> f`: keep only grid cells where `f[x, y, z]` (the
   /// plotted value `z`) is `True`; other cells are left blank, matching
   /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
@@ -928,10 +946,9 @@ fn field_frame_layout(
   }
   // A `PlotLabel` sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
-  let title = opts
-    .plot_label
-    .as_ref()
-    .map_or(0.0, |(_, size)| size.unwrap_or(14.0) * 1.35);
+  let title = opts.plot_label.as_ref().map_or(0.0, |(lines, size)| {
+    size.unwrap_or(14.0) * 1.35 * lines.len().max(1) as f64
+  });
   let width = opts.svg_width as f64;
   let aspect = opts.aspect_ratio;
   // The last x label is centered on its tick and the top y label on its own,
@@ -1017,6 +1034,19 @@ fn field_plot_axes(
     opts.full_width,
   );
   let (plot_x0, plot_y0, plot_w, plot_h) = layout.data_rect(sf);
+  // Record where the data range lies on the canvas, so `Show` can draw
+  // primitives given with the plot in the plot's own coordinates even
+  // though the plot itself is only kept as a picture.
+  if let Some(pos) = svg.find(" xmlns=") {
+    svg.insert_str(
+      pos,
+      &crate::functions::graphics::plot_frame_attr(
+        x_range,
+        y_range,
+        (plot_x0, plot_y0, plot_w, plot_h),
+      ),
+    );
+  }
   crate::functions::plot::PlotArea {
     svg,
     plot_x0,
@@ -3501,8 +3531,28 @@ fn sampled_value_range(
 
 /// The `ContourStyle -> …` option items of a ContourPlot call (a single
 /// directive or a directive list), for embedding into the plot's symbolic
-/// `structure`. Empty when the option is absent.
+/// `structure`. Empty when the option is absent. A per-contour entry that
+/// is itself a list (`{{Opacity[1], Dashed, Gray}}`) becomes one
+/// `Directive[…]`: left as a list it would be a scope of its own in the
+/// `Graphics`, and the lines after it would lose the style once `Show`
+/// draws the plot from its primitives.
 fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
+  fn flatten_into(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| flatten_into(i, out)),
+      other => out.push(other.clone()),
+    }
+  }
+  fn as_directive(e: &Expr) -> Expr {
+    match e {
+      Expr::List(_) => {
+        let mut parts = Vec::new();
+        flatten_into(e, &mut parts);
+        call("Directive", parts)
+      }
+      other => other.clone(),
+    }
+  }
   for arg in args.iter().skip(opts_from) {
     if let Expr::Rule {
       pattern,
@@ -3515,7 +3565,7 @@ fn contour_style_directives(args: &[Expr], opts_from: usize) -> Vec<Expr> {
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContourStyle")
     {
       return match replacement.as_ref() {
-        Expr::List(items) => items.iter().cloned().collect(),
+        Expr::List(items) => items.iter().map(as_directive).collect(),
         other => vec![other.clone()],
       };
     }
@@ -3708,9 +3758,21 @@ fn contour_plot_equations(
   };
   let mut last_index = None;
   for ((_, style_index), range) in bodies.iter().zip(&series_per_body) {
-    // A per-contour style precedes just its own function's curves.
+    let lines = series[range.clone()].iter().map(|s| {
+      let points: Vec<Expr> = s
+        .points
+        .iter()
+        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
+        .collect();
+      call1("Line", Expr::List(points.into()))
+    });
+    // A per-contour style applies to just its own function's curves, so
+    // they share a scope that keeps it off the next function's.
     if !opts.contour_styles.is_empty() {
-      structure_items.push(directives[style_index % directives.len()].clone());
+      let mut group = vec![directives[style_index % directives.len()].clone()];
+      group.extend(lines);
+      structure_items.push(Expr::List(group.into()));
+      continue;
     } else if directives.is_empty() && last_index != Some(*style_index) {
       // The default style, as WL spells it out.
       structure_items.push(call(
@@ -3722,14 +3784,7 @@ fn contour_plot_equations(
       ));
     }
     last_index = Some(*style_index);
-    for s in &series[range.clone()] {
-      let points: Vec<Expr> = s
-        .points
-        .iter()
-        .map(|(x, y)| Expr::List(vec![Expr::Real(*x), Expr::Real(*y)].into()))
-        .collect();
-      structure_items.push(call1("Line", Expr::List(points.into())));
-    }
+    structure_items.extend(lines);
   }
   // A contour plot is framed and has no axes unless asked otherwise, so a
   // `Show` of several of them (`Frame -> False` or not) must not grow the
@@ -6496,6 +6551,43 @@ fn parse_matrix_to_grid(
 }
 
 /// Parse {x,y,z} triples into a grid using inverse distance weighting
+/// The `grid[col][row]` of values (row 0 at the bottom) that `{x, y, z}`
+/// samples form when they cover every node of an evenly spaced grid of at
+/// least 2 × 2 nodes exactly once; None for scattered data.
+fn regular_triples_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
+  // The distinct coordinates along one axis, if evenly spaced.
+  let axis = |coord: fn(&(f64, f64, f64)) -> f64| -> Option<Vec<f64>> {
+    let mut vs: Vec<f64> = points.iter().map(coord).collect();
+    vs.sort_by(f64::total_cmp);
+    vs.dedup();
+    if vs.len() < 2 {
+      return None;
+    }
+    let step = (vs[vs.len() - 1] - vs[0]) / (vs.len() - 1) as f64;
+    let tol = step * 1e-6;
+    vs.iter()
+      .enumerate()
+      .all(|(k, v)| (v - (vs[0] + k as f64 * step)).abs() <= tol)
+      .then_some(vs)
+  };
+  let xs = axis(|p| p.0)?;
+  let ys = axis(|p| p.1)?;
+  if xs.len() * ys.len() != points.len() {
+    return None;
+  }
+  let index =
+    |vs: &[f64], v: f64| vs.binary_search_by(|probe| probe.total_cmp(&v)).ok();
+  let mut grid = vec![vec![f64::NAN; ys.len()]; xs.len()];
+  for &(x, y, z) in points {
+    let cell = &mut grid[index(&xs, x)?][index(&ys, y)?];
+    if !cell.is_nan() {
+      return None;
+    }
+    *cell = z;
+  }
+  Some(grid)
+}
+
 fn parse_triples_to_grid(
   rows: &[Expr],
   _func_name: &str,
@@ -6546,6 +6638,17 @@ fn parse_triples_to_grid(
   let y_max = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
   let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
   let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
+
+  // Triples that already sample a regular grid are that grid: shading them
+  // linearly between their own nodes, as Wolfram does, keeps a smooth
+  // surface smooth (inverse-distance weighting would put a spot on every
+  // sample).
+  if !nearest && let Some(grid) = regular_triples_grid(&points) {
+    let (n_cols, n_rows) = (grid.len(), grid[0].len());
+    return (
+      grid, x_min, x_max, y_min, y_max, z_min, z_max, n_rows, n_cols,
+    );
+  }
 
   // Nearest-sample shading needs a finer grid for sharp cell borders.
   let grid_n = if nearest { 256 } else { FIELD_GRID };
@@ -8154,10 +8257,7 @@ fn with_graphic_label_above(svg: &str, label_svg: &str) -> String {
 
 /// Set a `PlotLabel` caption above a finished picture: the picture keeps its
 /// size and is inset into a canvas that is taller by one line of text.
-fn with_plot_label_above(
-  svg: &str,
-  (label, size): &(String, Option<f64>),
-) -> String {
+fn with_plot_label_above(svg: &str, (lines, size): &FieldPlotLabel) -> String {
   let attr = |name: &str| -> Option<f64> {
     let head = &svg[..svg.find('>')?];
     let start = head.find(&format!(" {name}=\""))? + name.len() + 3;
@@ -8167,25 +8267,36 @@ fn with_plot_label_above(
   let (Some(w), Some(h)) = (attr("width"), attr("height")) else {
     return svg.to_string();
   };
-  if label.trim().is_empty() {
+  if field_plot_label_is_blank(lines) {
     return svg.to_string();
   }
   let font = size.unwrap_or(14.0);
-  let gutter = font * 1.8;
+  // One line keeps its 1.8-em strip; each further line of a stacked
+  // `Column` title adds one line height above the picture.
+  let line_h = font * 1.25;
+  let extra = (lines.len() - 1) as f64 * line_h;
+  let gutter = font * 1.8 + extra;
   let total_h = h + gutter;
   let fill = crate::functions::graphics::theme().text_primary;
-  format!(
+  let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{total_h:.0}\" \
      viewBox=\"0 0 {w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
      <svg x=\"0\" y=\"{gutter:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
-     overflow=\"visible\">\n{}\n</svg>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-     dominant-baseline=\"central\" font-family=\"sans-serif\" \
-     font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n</svg>\n",
+     overflow=\"visible\">\n{}\n</svg>\n",
     svg.trim(),
-    w / 2.0,
-    gutter / 2.0,
-  )
+  );
+  let top = (gutter - extra) / 2.0;
+  for (i, label) in lines.iter().enumerate() {
+    out.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+       font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
+      w / 2.0,
+      top + i as f64 * line_h,
+    ));
+  }
+  out.push_str("</svg>\n");
+  out
 }
 
 /// Put a plot's `FrameLabel` text around an already-rendered picture.
