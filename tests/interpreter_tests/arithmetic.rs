@@ -16310,6 +16310,56 @@ mod exact_arithmetic_fuzz_edge_cases {
   }
 }
 
+/// Powers of one base order by exponent, whatever the base: the bases are
+/// compared structurally rather than by their rendered text.
+mod power_base_ordering {
+  use super::*;
+
+  #[test]
+  fn same_base_powers_order_by_exponent() {
+    assert_eq!(
+      interpret(
+        "{Sort[{(a + b)^3, Sqrt[a + b], a + b, 1/(a + b)}], \
+         Sort[{x, Sqrt[x], x^2, 2 x, 3/x, -x, x^(-2)}], \
+         Sort[{Pi, 1/Pi, Pi^2}], Sort[{(-p)^(3/2), p, Sqrt[-p]}], \
+         f[y]^2 f[y]^(1/3) g[y], -3 x^2 Sqrt[y] + 2 x Sqrt[y]^3 - I y^(5/2)}"
+      )
+      .unwrap(),
+      "{{(a + b)^(-1), Sqrt[a + b], a + b, (a + b)^3}, \
+       {x^(-2), 3/x, Sqrt[x], -x, x, 2*x, x^2}, {Pi^(-1), Pi, Pi^2}, \
+       {Sqrt[-p], (-p)^(3/2), p}, f[y]^(7/3)*g[y], \
+       -3*x^2*Sqrt[y] + 2*x*y^(3/2) - I*y^(5/2)}"
+    );
+  }
+
+  /// Substituting into a large symbolic product (a third derivative of a
+  /// sum of Gaussians) one symbol at a time re-sorts many products of
+  /// exponentials; this took seconds while each comparison cloned or
+  /// rendered the factors' bases.
+  #[test]
+  fn partial_substitution_into_a_large_product_is_fast() {
+    clear_state();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "d = t^2 + s^4; \
+         w = (E^(-(x - t)^2 s^2/d) + E^(-(x + t)^2 s^2/d) + \
+           2 E^(-(x^2 + t^2) s^2/d) Cos[2 x t/d])/Sqrt[d]; \
+         h = D[Sqrt[w], {x, 3}]/Sqrt[w] /. t -> 3/10; \
+         Max[Abs[Table[(h /. x -> k/10. /. s -> 5/8) - \
+           (h /. {x -> k/10., s -> 5/8}), {k, 1, 4}]]] < 10^-10"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert!(
+      start.elapsed() < std::time::Duration::from_secs(60),
+      "took {:?}",
+      start.elapsed()
+    );
+  }
+}
+
 mod precision_bounds {
   use woxi::interpret;
 
