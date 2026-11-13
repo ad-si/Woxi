@@ -5434,6 +5434,30 @@ fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
   (ems >= 1.0).then(|| (ems * 2.0).round() as usize)
 }
 
+/// The text a layout item shows when it is plain prose: a string, or a
+/// `Row` of strings and integers (possibly under `Text`/`TraditionalForm`,
+/// which set them the same way), such as `Row[{"b", " = ", 0, ", so …"}]`.
+/// `None` for anything else, which keeps its own typesetting.
+fn plain_text_item(item: &Expr) -> Option<String> {
+  match item {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Integer(n) => Some(n.to_string()),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "TraditionalForm")
+        && args.len() == 1 =>
+    {
+      plain_text_item(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+      let Expr::List(parts) = &args[0] else {
+        return None;
+      };
+      parts.iter().map(plain_text_item).collect()
+    }
+    _ => None,
+  }
+}
+
 /// Break `text` into lines of at most `width` characters at word
 /// boundaries (a longer word keeps its own line); existing line breaks stay.
 fn wrap_text_to_width(text: &str, width: usize) -> String {
@@ -29532,8 +29556,23 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     {
       let mut new_args = args.clone();
       if let Expr::List(items) = &args[0] {
-        new_args[0] =
-          Expr::List(items.iter().map(traditionalize_layout_items).collect());
+        // A row's product with a line-breaking string factor (`"real" *
+        // " roots are \n"`) flows into the row factor by factor, so its
+        // string still breaks the line rather than being typeset inside
+        // one opaque `TraditionalForm[…]` item.
+        let flows = name == "Row" && args.len() == 1;
+        new_args[0] = Expr::List(
+          items
+            .iter()
+            .flat_map(|i| {
+              flows
+                .then(|| times_flow_factors(i))
+                .flatten()
+                .unwrap_or_else(|| vec![i.clone()])
+            })
+            .map(|i| traditionalize_layout_items(&i))
+            .collect(),
+        );
       }
       Expr::FunctionCall {
         name: name.clone(),
@@ -30452,10 +30491,56 @@ fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
   svg
 }
 
+/// A `Column` whose `ItemSize` fixes its width breaks a text item that is
+/// wider than the column onto further lines at word boundaries, as a
+/// one-column `Grid` does; the lines stack as a nested column. The
+/// arguments with those items replaced, or `None` when none needed it.
+pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let width = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ItemSize")
+    .and_then(|(_, v)| match v {
+      Expr::List(dims) if dims.len() == 2 => {
+        item_size_entry_at(Some(&dims[0]), 0, 1)
+      }
+      other => item_size_entry_at(Some(other), 0, 1),
+    })?;
+  // The column sets its text in the monospace face at 14pt.
+  let max_chars =
+    ((width * 14.0) / (14.0 * MONO_ADVANCE)).floor().max(1.0) as usize;
+  let mut changed = false;
+  let new_items: Vec<Expr> = items
+    .iter()
+    .map(|item| match plain_text_item(item) {
+      Some(text) if text.chars().count() > max_chars => {
+        changed = true;
+        let lines = wrap_text_to_width(&text, max_chars)
+          .split('\n')
+          .map(str_expr)
+          .collect::<Vec<_>>();
+        call1("Column", Expr::List(lines.into()))
+      }
+      _ => item.clone(),
+    })
+    .collect();
+  if !changed {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  new_args[0] = Expr::List(new_items.into());
+  Some(new_args)
+}
+
 fn column_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
   }
+  let wrapped = wrap_fixed_width_column_text(args);
+  let args = wrapped.as_deref().unwrap_or(args);
 
   // Extract items from the first argument (must be a List)
   let items = match &args[0] {
@@ -30535,6 +30620,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
   let gap = spacing_ems * font_size;
+
   let frame_all = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
     k == "Frame" && matches!(v, Expr::Identifier(s) if s == "All")
   });

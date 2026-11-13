@@ -4475,6 +4475,16 @@ fn number_form_fixed_to_string(x: &Expr, n: i64, f: i64) -> Option<String> {
   if f < 0 || n < 0 || !val.is_finite() {
     return None;
   }
+  // The digits are those of the magnitude, and a negative value keeps its
+  // sign in front: `NumberForm[-1.17539, {5, 3}]` is -1.175, as under
+  // `ToString` (the rounding below works on the digits alone and would
+  // otherwise drop the sign).
+  // Wolfram has no negative zero: a machine `-0.` shows as 0.000.
+  let val = if val == 0.0 { 0.0 } else { val };
+  if val < 0.0 {
+    return number_form_fixed_to_string(&Expr::Real(-val), n, f)
+      .map(|s| format!("-{s}"));
+  }
   let f = f as usize;
   // Decimal places the significant-digit budget leaves; the rounding may
   // carry into a new leading digit (9.996 → 10.0), which then only has to
