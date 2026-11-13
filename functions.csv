@@ -962,7 +962,7 @@ Depth,"Returns the depth of an expression",✅,pure,1.0,911
 LogLinearPlot,"Plots with logarithmic x-axis",✅,pure,6.0,912
 NumberLinePlot,"Plots values or intervals on a number line",✅,pure,10.0,913
 RuntimeAttributes,"",🚫,,8.0,914
-Notebook,"Requires external services or GUI infrastructure",🚫,io,3.0,915
+Notebook,"A notebook as a symbolic expression of cells (stays symbolic)",✅,unevaluated,3.0,915
 WordCloud,"Creates a word cloud from a list of words",✅,pure,10.1,917
 CellPrint,"Requires external services or GUI infrastructure",🚫,io,3.0,918
 NestWhileList,"Returns intermediate results from NestWhile",✅,pure,4.0,920
