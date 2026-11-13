@@ -17843,6 +17843,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
     };
@@ -17855,6 +17856,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
     };
@@ -17875,6 +17877,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.04,
       current: 1.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
     };

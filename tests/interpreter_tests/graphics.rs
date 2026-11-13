@@ -37471,23 +37471,56 @@ mod manipulate {
   }
 
   // End-to-end: a caption built from `NumberForm[…, {n, f}]` on a real-
-  // valued slider must show the padded fraction even when the slider is at
-  // its exact-integer-looking initial position, matching the real Wolfram
-  // Demonstrations Project rendering this was checked against.
+  // valued slider shows the padded fraction when the slider starts on an
+  // inexact value, even a "round" one.
   #[test]
   fn manipulate_real_slider_number_form_caption_at_zero() {
     let expr = interpret_to_expr(
       "Manipulate[ToString[Row[{\"rq = \", NumberForm[rq, {3, 2}]}]], \
-       {{rq, 0, \"RQ\"}, 0, 1, 0.01}]",
+       {{rq, 0., \"RQ\"}, 0, 1, 0.01}]",
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
     let bindings = manipulate_initial_bindings(&spec);
-    // The slider starts at its min (0), the "round" value the bug hid.
     assert_eq!(bindings, vec![("rq".to_string(), "0.".to_string())]);
     let code = manipulate_block_code(&spec.body_code, &bindings);
     let result = interpret_with_stdout(&code).unwrap();
     assert_eq!(result.result, "rq = 0.00");
+  }
+
+  // The initial value is bound as written: an exact initial value (or the
+  // exact `min` it defaults to) stays exact even when an inexact bound or
+  // step makes the slider real-valued, as in the `DynamicModule[{a$$ = 2},
+  // …]` Wolfram stores for `{{a, 2}, 0.1, 6}`. A caption showing `a^x`
+  // reads `2^x`, not `2.^x`.
+  #[test]
+  fn manipulate_exact_initial_value_binds_exactly_on_real_slider() {
+    let initial_binding = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed manipulate");
+      manipulate_initial_bindings(&spec)[0].1.clone()
+    };
+    assert_eq!(
+      initial_binding("Manipulate[a, {{a, 2, \"a\"}, 0.1, 6}]"),
+      "2"
+    );
+    assert_eq!(initial_binding("Manipulate[a, {{a, 1/2}, 0, 1.}]"), "1/2");
+    assert_eq!(initial_binding("Manipulate[rq, {rq, 0, 1, 0.01}]"), "0");
+    assert_eq!(initial_binding("Manipulate[u, {u, 0., 1}]"), "0.");
+    assert_eq!(initial_binding("Manipulate[u, {{u, 0.5}, 0, 1}]"), "0.5");
+    assert_eq!(initial_binding("Manipulate[u, {{u, 3}, 0, 10}]"), "3");
+
+    let expr = interpret_to_expr(
+      "Manipulate[ToString[a^x, InputForm], {{a, 2, \"base a\"}, 0.1, 6}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let code = manipulate_block_code(
+      &spec.body_code,
+      &manipulate_initial_bindings(&spec),
+    );
+    assert_eq!(interpret_with_stdout(&code).unwrap().result, "2^x");
   }
 
   #[test]
