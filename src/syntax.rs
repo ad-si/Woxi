@@ -6264,8 +6264,49 @@ fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
     return Expr::Raw(String::new());
   }
 
+  // A term that is already a `&&`, `||` or `|` chain came from parentheses
+  // (`(a && b) && c`): spell it as the call it is, so the chain built around
+  // it — itself nested BinaryOps — does not flatten it in. Wolfram keeps such
+  // a group as `And[And[a, b], c]`.
+  let terms: Vec<Expr> = terms
+    .into_iter()
+    .map(|t| match &t {
+      Expr::BinaryOp {
+        op:
+          op @ (BinaryOperator::And
+          | BinaryOperator::Or
+          | BinaryOperator::Alternatives),
+        ..
+      } => {
+        let head = match op {
+          BinaryOperator::And => "And",
+          BinaryOperator::Or => "Or",
+          _ => "Alternatives",
+        };
+        let mut parts = Vec::new();
+        flatten_same_binary_op(&t, *op, &mut parts);
+        call(head, parts)
+      }
+      _ => t,
+    })
+    .collect();
   // Use a precedence climbing algorithm
   build_expr_with_precedence(&terms, operators, 0, 0)
+}
+
+/// The operands of a nested chain of one binary operator, left to right.
+fn flatten_same_binary_op(e: &Expr, op: BinaryOperator, out: &mut Vec<Expr>) {
+  match e {
+    Expr::BinaryOp {
+      op: inner,
+      left,
+      right,
+    } if *inner == op => {
+      flatten_same_binary_op(left, op, out);
+      flatten_same_binary_op(right, op, out);
+    }
+    other => out.push(other.clone()),
+  }
 }
 
 /// Build expression with precedence climbing
@@ -13105,6 +13146,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
       }
 
+      // A held `a + -3` (a negative number literal) prints as `a - 3`.
+      if matches!(op, BinaryOperator::Plus)
+        && in_held_format()
+        && let Some(magnitude) = match right.as_ref() {
+          Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+          Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+          _ => None,
+        }
+      {
+        return format!(
+          "{} - {}",
+          expr_to_string(left),
+          expr_to_string(&magnitude)
+        );
+      }
       // Special case: a + (-b) should display as a - b
       if matches!(op, BinaryOperator::Plus)
         && let Expr::UnaryOp {
@@ -13246,6 +13302,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
+            // A nested `Or` call is an explicit (parenthesized) group.
+            || matches!(e, Expr::FunctionCall { name, args }
+              if name == "Or" && args.len() >= 2)
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 15))
             || is_bare_pattern(e)
@@ -13274,6 +13333,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
+            // A nested `And` call is an explicit (parenthesized) group.
+            || matches!(e, Expr::FunctionCall { name, args }
+              if name == "And" && args.len() >= 2)
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 18))
             || is_bare_pattern(e)
@@ -13301,14 +13363,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         BinaryOperator::Plus | BinaryOperator::Minus => Some(30),
         BinaryOperator::Times | BinaryOperator::Divide => Some(33),
         BinaryOperator::Power => Some(48),
+        BinaryOperator::Alternatives => Some(27),
         _ => None,
       };
-      // (`operand_str` below already brackets an assignment.)
+      // (`operand_str` below already brackets an assignment.) A nested
+      // `Alternatives` call is an explicit group: `(a | b) | c`.
       let looser_operand = |e: &Expr| {
-        !is_loose_assignment(e)
+        (!is_loose_assignment(e)
           && arith_prec.is_some_and(|prec| {
             printed_infix_precedence(e).is_some_and(|p| p < prec.min(30))
-          })
+          }))
+          || (matches!(op, BinaryOperator::Alternatives)
+            && matches!(e, Expr::FunctionCall { name, args }
+              if name == "Alternatives" && args.len() >= 2))
       };
       let left_needs_parens = looser_operand(left)
         || (matches!(op, BinaryOperator::Times)
@@ -13403,7 +13470,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         || (prints_as_not(left.as_ref())
           && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
         // `(-a)*b`: a leading minus reaches past the product without them.
+        // (Held OutputForm prints the operand bare: `Hold[-a*b]`.)
         || (matches!(op, BinaryOperator::Times)
+          && (!in_held_format() || in_true_input_form())
           && matches!(
             left.as_ref(),
             Expr::UnaryOp {
@@ -13529,7 +13598,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         || (prints_as_not(right.as_ref())
           && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
         // `a*(-b)`, `a/(-b)`: the minus would otherwise swallow what follows.
+        // (Held OutputForm prints the operand bare: `Hold[a*-b]`.)
         || (matches!(op, BinaryOperator::Times | BinaryOperator::Divide)
+          && (!in_held_format() || in_true_input_form())
           && matches!(
             right.as_ref(),
             Expr::UnaryOp {
@@ -13623,6 +13694,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           // `-(a /. b)`, `-(a -> b)`, `-(a == b)`, `-(a | b)`.
           || printed_infix_precedence(operand).is_some_and(|p| p < 39)
           || is_bare_pattern(operand);
+        // An operand printed as one whole call needs none: `-StringJoin[a, b]`.
+        let needs_parens = needs_parens && !prints_as_call(&inner);
         if needs_parens {
           format!("-({inner})")
         } else {
@@ -14653,6 +14726,8 @@ fn held_times_factor_needs_parens(expr: &Expr) -> bool {
   if !in_held_format() {
     return false;
   }
+  // A negated factor is bracketed in InputForm (`Hold[(-a)*b]`) but prints
+  // bare in OutputForm (`Hold[-a*b]`), as in wolframscript.
   if matches!(
     expr,
     Expr::UnaryOp {
@@ -14660,7 +14735,7 @@ fn held_times_factor_needs_parens(expr: &Expr) -> bool {
       ..
     }
   ) {
-    return true;
+    return in_true_input_form();
   }
   let factors: Vec<&Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {

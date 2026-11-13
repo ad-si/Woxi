@@ -15059,3 +15059,37 @@ fn held_quotients() {
     "-(x/(2 - 3*x + x^2))"
   );
 }
+
+// Held OutputForm: a negated factor and a negative literal term print the
+// way wolframscript writes them; InputForm keeps the minus bracketed.
+// Explicitly nested `&&`, `||` and `|` groups keep their nesting.
+#[test]
+fn held_minus_and_nested_connectives() {
+  for (input, expected) in [
+    ("Hold[(-a)*b]", "Hold[-a*b]"),
+    ("Hold[a*(-b)]", "Hold[a*-b]"),
+    ("Hold[a/-b]", "Hold[a/-b]"),
+    ("ToString[Hold[(-a)*b], InputForm]", "Hold[(-a)*b]"),
+    ("ToString[Hold[a/-b], InputForm]", "Hold[a/(-b)]"),
+    ("Hold[-StringJoin[a, b]]", "Hold[-StringJoin[a, b]]"),
+    ("Hold[6 + -2 + x]", "Hold[6 - 2 + x]"),
+    ("Hold[a + -3]", "Hold[a - 3]"),
+    ("Hold[(a && b) && c]", "Hold[(a && b) && c]"),
+    ("Hold[a && (b && c)]", "Hold[a && (b && c)]"),
+    ("Hold[a && b && c]", "Hold[a && b && c]"),
+    ("Hold[(a || b) || c]", "Hold[(a || b) || c]"),
+    ("Hold[(a | b) | c]", "Hold[(a | b) | c]"),
+    ("Hold[a | (b | c)]", "Hold[a | (b | c)]"),
+    ("Hold[(c /; x_) | y]", "Hold[(c /; x_) | y]"),
+    ("Hold[x | (7 &)]", "Hold[x | (7 & )]"),
+    (
+      "ToString[FullForm[Hold[(a && b) && c]]]",
+      "Hold[And[And[a, b], c]]",
+    ),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  // Evaluation is unaffected by the nesting.
+  assert_eq!(interpret("(True && x) && y").unwrap(), "x && y");
+  assert_eq!(interpret("MatchQ[2, (1 | 2) | 3]").unwrap(), "True");
+}
