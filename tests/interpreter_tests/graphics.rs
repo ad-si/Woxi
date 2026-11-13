@@ -27783,6 +27783,29 @@ mod graphics_grid {
     );
   }
 
+  /// A named stylesheet style or named size in a Grid/Column cell sets the
+  /// cell's size (and color) the way a numeric size does; explicit
+  /// directives override the named style wherever they are written.
+  #[test]
+  fn grid_cell_named_style_and_named_size() {
+    clear_state();
+    let size_of = |code: &str| {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let start = svg.find("<text").expect("a text element");
+      let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+      let size = tag.split("font-size=\"").nth(1).unwrap();
+      (size[..size.find('"').unwrap()].to_string(), tag.to_string())
+    };
+    assert_eq!(size_of("Grid[{{Style[\"err\", \"Label\"]}}]").0, "9");
+    assert_eq!(size_of("Grid[{{Text[Style[\"err\", \"Label\"]]}}]").0, "9");
+    assert_eq!(size_of("Column[{Style[\"err\", \"Label\"]}]").0, "9");
+    assert_eq!(size_of("Grid[{{Style[\"err\", Small]}}]").0, "9");
+    assert_eq!(size_of("Grid[{{Style[\"err\", 20, \"Label\"]}}]").0, "20");
+    let (size, tag) = size_of("Grid[{{Style[\"err\", \"Section\"]}}]");
+    assert_eq!(size, "28");
+    assert!(tag.contains("fill=\"rgb(202,81,25)\""), "{tag}");
+  }
+
   #[test]
   fn grid_style_bold_and_size() {
     clear_state();

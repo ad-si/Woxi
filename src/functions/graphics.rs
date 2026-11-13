@@ -23117,7 +23117,9 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
     let mut color: Option<Color> = None;
     let mut decoration = TextDecoration::default();
     let mut background: Option<Color> = None;
-    for directive in splice_directives(&args[1..]) {
+    // A named style ("Label", "Section", …) is the base the explicit
+    // directives sit on, wherever it was written.
+    for directive in style_directives_in_application_order(&args[1..]) {
       if decoration.apply(directive) {
         continue;
       }
@@ -23126,6 +23128,25 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
         Expr::Identifier(s) if s == "Italic" => fst = "italic",
         Expr::Integer(n) => fs = Some(*n as f64),
         Expr::Real(f) => fs = Some(*f),
+        // `Style[x, Small]` — a named size, relative ones scaling the
+        // size already set (or the default cell size).
+        Expr::Identifier(s) | Expr::Constant(s)
+          if named_font_size(s, 0.0).is_some() =>
+        {
+          fs = named_font_size(s, fs.unwrap_or(14.0));
+        }
+        // `Style[x, "Label"]` — the stylesheet entry's size and color.
+        Expr::String(name) if named_style_appearance(name).is_some() => {
+          let (size, rgb) = named_style_appearance(name).unwrap();
+          fs = Some(size);
+          if let Some((r, g, b)) = rgb {
+            color = Some(Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+        }
         // The long option spellings, which `StyleForm` cells are written
         // with: `FontWeight -> Bold`, `FontSlant -> Italic`,
         // `FontColor -> GrayLevel[1]`, …
