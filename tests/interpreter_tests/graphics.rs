@@ -7268,6 +7268,77 @@ mod plot3d {
       );
     }
 
+    /// The `y` of each nested `<svg>` picture in a grid's SVG, in order.
+    fn nested_svg_ys(svg: &str) -> Vec<f64> {
+      svg
+        .split("<svg")
+        .skip(2)
+        .filter_map(|r| r.split("y=\"").nth(1))
+        .filter_map(|r| r.split('"').next())
+        .filter_map(|v| v.parse().ok())
+        .collect()
+    }
+
+    // Regression: the row part of `Alignment -> {h, v}` places a short
+    // picture at the top or bottom of a row made tall by a taller one,
+    // instead of always centering it.
+    #[test]
+    fn grid_vertical_alignment_places_graphics() {
+      let grid = |v: &str| {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+      };
+      let top = nested_svg_ys(&grid("Top"));
+      let center = nested_svg_ys(&grid("Center"));
+      let bottom = nested_svg_ys(&grid("Bottom"));
+      assert_eq!(top.len(), 2);
+      // The tall picture fills the row, so the short one shares its top
+      // edge when top-aligned and its bottom edge when bottom-aligned.
+      assert!((top[1] - top[0]).abs() < 1e-6, "{top:?}");
+      assert!((bottom[1] - (bottom[0] + 40.0)).abs() < 1e-6, "{bottom:?}");
+      assert!((center[1] - (center[0] + 20.0)).abs() < 1e-6, "{center:?}");
+    }
+
+    // A per-row list (and `Item`'s own `Alignment`) aligns rows/cells
+    // individually.
+    #[test]
+    fn grid_vertical_alignment_per_row_and_item() {
+      let per_row = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}, {Graphics[Disk[], ImageSize -> 60], Graphics[Disk[], ImageSize -> 20]}}, Alignment -> {Center, {Top, Bottom}}]",
+      ));
+      assert_eq!(per_row.len(), 4);
+      assert!((per_row[1] - per_row[0]).abs() < 1e-6, "{per_row:?}");
+      assert!(
+        (per_row[3] - (per_row[2] + 40.0)).abs() < 1e-6,
+        "{per_row:?}"
+      );
+      let item = nested_svg_ys(&export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], Item[Graphics[Disk[], ImageSize -> 20], Alignment -> {Center, Bottom}]}}]",
+      ));
+      assert!((item[1] - (item[0] + 40.0)).abs() < 1e-6, "{item:?}");
+    }
+
+    // Top-aligned text in a tall row sits at the row's top edge.
+    #[test]
+    fn grid_vertical_alignment_places_text() {
+      let text_y = |v: &str| -> f64 {
+        export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], \"a\"}}}}, Alignment -> {{Center, {v}}}]"
+        ))
+        .split("<text")
+        .nth(1)
+        .and_then(|r| r.split("y=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap()
+      };
+      let (top, center, bottom) =
+        (text_y("Top"), text_y("Center"), text_y("Bottom"));
+      assert!(top < center && center < bottom, "{top} {center} {bottom}");
+      assert!((center - top - (bottom - center)).abs() < 1e-6);
+    }
+
     // Regression: a per-cell `Background` rule on a spanning cell paints the
     // whole merged span, not just its first column.
     #[test]
@@ -13471,6 +13542,34 @@ mod plot3d {
         svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
       };
       assert_eq!(attr("rx"), attr("ry"), "disk must stay round: {svg}");
+    }
+
+    /// The plot range is widened once, to the shape of the area the
+    /// padding leaves, so the content is as large as that area allows.
+    /// Regression: it was first widened to the whole picture's shape and
+    /// then widened again for the padded area, shrinking a 20 × 9 range in
+    /// a 450 × 200 area to 19.57 instead of 22.22 points per unit.
+    #[test]
+    fn image_padding_widens_the_plot_range_only_once() {
+      let svg = export_svg(
+        "Graphics[Disk[], PlotRange -> {{-10, 10}, {-5, 4}}, \
+         ImageSize -> {450, 230}, ImagePadding -> {{0, 0}, {0, 30}}]",
+      );
+      // min(450 / 20, 200 / 9) = 22.22 points per unit; the range's
+      // vertical middle (-1/2) sits halfway down the 200-point area.
+      assert!(
+        svg.contains(r#"cx="225.00" cy="88.89" rx="22.22" ry="22.22""#),
+        "the disk must fill the padded area's height: {svg}"
+      );
+      // The same holds when the padding is on the left and right instead.
+      let svg = export_svg(
+        "Graphics[Disk[], PlotRange -> {{-4, 5}, {-10, 10}}, \
+         ImageSize -> {230, 450}, ImagePadding -> {{30, 0}, {0, 0}}]",
+      );
+      assert!(
+        svg.contains(r#"rx="22.22" ry="22.22""#),
+        "the disk must fill the padded area's width: {svg}"
+      );
     }
 
     /// Every label of a tick set carries the decimals its step needs, so a
@@ -30465,6 +30564,34 @@ mod graphics_complex_normal {
     );
   }
 
+  /// Regression: the end points of a `Cylinder`/`Cone` in a complex stayed
+  /// indices, so a ball-and-stick model drew its atoms but no bonds.
+  #[test]
+  fn cylinder_and_cone_indices_are_resolved() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 2, 0}}, \
+         {Cylinder[{1, 2}, 0.5], Cone[{3, 1}, 1]}]]"
+      )
+      .unwrap(),
+      "{Cylinder[{{0, 0, 0}, {1, 0, 0}}, 0.5], Cone[{{0, 2, 0}, {0, 0, 0}}, 1]}"
+    );
+  }
+
+  #[test]
+  fn indexed_cylinders_draw_like_explicit_ones() {
+    let indexed = export_svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {4, 0, 0}, {0, 3, 1}}, \
+       {Sphere[1, 0.5], Cylinder[{1, 2}, 0.2], Cylinder[{1, 3}, 0.2]}]]",
+    );
+    let explicit = export_svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 0.5], \
+       Cylinder[{{0, 0, 0}, {4, 0, 0}}, 0.2], \
+       Cylinder[{{0, 0, 0}, {0, 3, 1}}, 0.2]}]",
+    );
+    assert_eq!(indexed, explicit);
+  }
+
   #[test]
   fn multi_primitives_are_split() {
     assert_eq!(
@@ -34007,6 +34134,49 @@ mod manipulate {
         );
       }
       other => panic!("expected Slider2D, got {other:?}"),
+    }
+  }
+
+  // A hidden point driven by an in-body `LocatorPane[Dynamic[p, cb], …]` is
+  // promoted to a 2D control; corner bounds referencing another control
+  // (`{-n, -n}`, `{n, 0}`) resolve against that control's initial value.
+  #[test]
+  fn spec_promoted_hidden_locator_bounds_use_other_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[LocatorPane[Dynamic[p, (p = Round[#]) &], \
+       Graphics[Point[p]]], {{n, 5}, 1, 10, 1}, \
+       {{p, {1, -2}}, {-n, -n}, {n, 0}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let slider = spec
+      .controls
+      .iter()
+      .find(|c| matches!(c, ManipulateControl::Slider2D { .. }))
+      .expect("promoted 2D control");
+    match slider {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        write_callback,
+        ..
+      } => {
+        assert_eq!(name, "p");
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (-5.0, 5.0, -5.0, 0.0));
+        assert_eq!((*x_initial, *y_initial), (1.0, -2.0));
+        assert!(
+          write_callback
+            .as_deref()
+            .is_some_and(|cb| cb.contains("Round")),
+          "got {write_callback:?}"
+        );
+      }
+      _ => unreachable!(),
     }
   }
 
@@ -42919,7 +43089,7 @@ mod color_data_gradients {
     assert_eq!(
       interpret("ColorData[\"RedBlueTones\", \"ColorFunction\"]").unwrap(),
       "ColorDataFunction[RedBlueTones, Gradients, {0, 1}, \
-       Blend[\"RedBlueTones\", #1] & ]"
+       Blend[RedBlueTones, #1] & ]"
     );
     // Applying it samples the gradient, exactly as ColorData[name] does.
     assert_eq!(
@@ -46530,6 +46700,65 @@ mod static_dynamic_controls {
     assert!(height < 400.0, "plot must not be stretched: {svg}");
   }
 
+  /// The width / height of the plotting area's clip rectangle.
+  fn clip_area(svg: &str) -> (f64, f64) {
+    let rect = svg
+      .split("<clipPath")
+      .nth(1)
+      .and_then(|r| r.split("<rect").nth(1))
+      .expect("clip rectangle");
+    let attr = |name: &str| -> f64 {
+      rect
+        .split(&format!(" {name}=\""))
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("clip size")
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `Show[ListPlot[…, ImageSize -> {w, h}], g]` keeps the plot's
+  /// 1/GoldenRatio frame centered in the fixed image instead of stretching
+  /// it to the image's own (here square) shape.
+  #[test]
+  fn show_of_plot_with_fixed_image_height_keeps_the_plot_shape() {
+    for (size, plot) in [
+      ("{400, 400}", "ListPlot[{{0, 0}, {17, 1}}, Joined -> True"),
+      ("{300, 500}", "ListPlot[{{0, 0}, {3, 2}, {5, 1}}"),
+      ("{500, 400}", "Plot[Sin[x], {x, 0, 10}"),
+    ] {
+      let svg = export_svg(&format!(
+        "Show[{plot}, ImageSize -> {size}, Frame -> True], \
+         Graphics[{{Opacity[0.25], Rectangle[{{0, 0}}, {{1, 1}}]}}]]"
+      ));
+      assert!(
+        svg.contains(&format!(
+          "width=\"{}\"",
+          size.trim_matches(['{', '}']).split(", ").next().unwrap()
+        )),
+        "keeps the requested image size: {svg}"
+      );
+      let (w, h) = clip_area(&svg);
+      let ratio = h / w;
+      assert!(
+        (ratio - 0.618).abs() < 0.02,
+        "{plot}: frame ratio {ratio} is not 1/GoldenRatio: {svg}"
+      );
+    }
+  }
+
+  /// An explicit `AspectRatio` on the plot still wins inside a fixed image.
+  #[test]
+  fn show_of_plot_with_fixed_image_height_keeps_its_aspect_ratio() {
+    let svg = export_svg(
+      "Show[ListPlot[{{0, 0}, {4, 1}}, ImageSize -> {400, 400}, \
+       AspectRatio -> 1/3, Frame -> True], Graphics[Point[{1, 1}]]]",
+    );
+    let (w, h) = clip_area(&svg);
+    assert!((h / w - 1.0 / 3.0).abs() < 0.02, "ratio {}: {svg}", h / w);
+  }
+
   /// A `NumberForm[x, n]` caption inside a widget shows the formatted
   /// number, not the source of the unevaluated head.
   #[test]
@@ -46828,14 +47057,23 @@ fn pane_pads_small_content_to_its_fixed_box() {
 fn pane_shrinks_automatically_sized_picture_to_fit() {
   // Regression: an automatically sized picture bigger than the fixed `Pane`
   // box was cut off at its edges instead of shrinking to fit; only a picture
-  // with an explicit `ImageSize` is clipped.
+  // with an explicit `ImageSize` is clipped. The shrunk picture is redrawn
+  // at the fitted size and still sits in the whole box.
   let graph =
     export_svg("Pane[GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}], {300, 240}]");
-  assert!(graph.contains("height=\"240.0\""), "{graph}");
+  assert!(
+    graph.starts_with("<svg width=\"300\" height=\"240\""),
+    "{graph}"
+  );
+  assert!(
+    graph.contains("height=\"240\" viewBox=\"0 0 274 240\""),
+    "{graph}"
+  );
   assert!(!graph.contains("paneClip"), "{graph}");
   let plain = export_svg("Pane[Graphics[Circle[]], {300, 240}]");
   assert!(
-    plain.contains("<svg width=\"240.0\" height=\"240.0\""),
+    plain.starts_with("<svg width=\"300\" height=\"240\"")
+      && plain.contains("<svg width=\"240\" height=\"240\""),
     "{plain}"
   );
   let sized =
@@ -53762,6 +54000,98 @@ mod overscript_bar_accent {
     assert!(
       svg.contains(">b\u{0305}</text>"),
       "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
+    );
+  }
+}
+
+mod pane_layout {
+  use super::*;
+
+  fn studio_svg(code: &str) -> String {
+    clear_state();
+    woxi::interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("a rendered picture")
+  }
+
+  /// Regression: a `Column` of fixed-size `Pane`s dropped the panes and set
+  /// each automatically sized graphic at its full default size, so the
+  /// boxes lost their width, height and centering.
+  #[test]
+  fn column_items_keep_their_pane_boxes() {
+    let svg = studio_svg(
+      "Column[{\
+         Pane[Graphics[Text[Style[\"title\", 24], {0, 1}]], \
+           ImageSize -> {600, 75}, Alignment -> Center], \
+         Pane[Graphics[Disk[]], ImageSize -> {600, 300}, Alignment -> Center]}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"600\" height=\"375\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("width=\"600.0\" height=\"75.0\"")
+        && svg.contains("width=\"600.0\" height=\"300.0\""),
+      "each pane keeps its box: {svg}"
+    );
+    // The pictures shrink to fit their boxes and sit centered in them.
+    assert!(
+      svg.contains("<g transform=\"translate(262.5 0.0)\">"),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("<g transform=\"translate(150.0 0.0)\">"),
+      "{svg}"
+    );
+  }
+
+  /// An automatically sized graphic shrunk to fit a `Pane` is redrawn at
+  /// that size, so its text keeps its absolute font size instead of being
+  /// scaled down with the drawing.
+  #[test]
+  fn shrunk_graphic_keeps_its_font_size() {
+    let svg = studio_svg(
+      "Pane[Graphics[Text[Style[\"title\", 24], {0, 1}]], \
+       ImageSize -> {600, 75}, Alignment -> Center]",
+    );
+    assert!(
+      svg.contains("viewBox=\"0 0 75 75\"") && svg.contains("font-size=\"24\""),
+      "{svg}"
+    );
+    // A caption wider than the shrunk picture still shows in the box.
+    assert!(svg.contains("overflow=\"visible\""), "{svg}");
+  }
+
+  /// A lone `Alignment -> Center` centers a `Pane`'s content on both axes.
+  #[test]
+  fn center_alignment_centers_vertically_too() {
+    let svg = studio_svg(
+      "Pane[Graphics[Disk[], ImageSize -> 50], {200, 100}, \
+       Alignment -> Center]",
+    );
+    assert!(svg.contains("translate(75.0 25.0)"), "{svg}");
+  }
+
+  /// Regression: `Style[picture, Magnification -> m]` drew the picture at
+  /// its own size.
+  #[test]
+  fn magnification_scales_pictures() {
+    for picture in [
+      "Graphics[Disk[], ImageSize -> 50]",
+      "Graphics3D[Sphere[], ImageSize -> 50]",
+    ] {
+      let svg = studio_svg(&format!("Style[{picture}, Magnification -> 3]"));
+      assert!(svg.starts_with("<svg width=\"150.0\""), "{picture}: {svg}");
+    }
+    let svg = studio_svg(
+      "Pane[Style[Image[ConstantArray[0.5, {10, 10}], ImageSize -> 40], \
+       Magnification -> 2], ImageSize -> {200, 100}, Alignment -> Center]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"200\" height=\"100\"")
+        && svg.contains("width=\"80.0\" height=\"80.0\""),
+      "{svg}"
     );
   }
 }

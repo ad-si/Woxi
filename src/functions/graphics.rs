@@ -3857,7 +3857,7 @@ fn collect_primitives(
 /// integer contents are `GraphicsComplex` indices rather than data to leave
 /// alone — the set `Normal[GraphicsComplex[…]]` and 3D `GraphicsComplex`
 /// rendering both need to recognize.
-const POINT_TAKING_PRIMITIVES: &[&str] = &[
+pub(crate) const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Point",
   "Line",
   "Polygon",
@@ -3870,6 +3870,13 @@ const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Tube",
   "Sphere",
   "Simplex",
+  "Cylinder",
+  "Cone",
+  "Capsule",
+  "Tetrahedron",
+  "Hexahedron",
+  "Pyramid",
+  "Prism",
 ];
 
 /// `Normal[GraphicsComplex[pts, data, opts]]`: substitute each integer index
@@ -14159,6 +14166,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && aspect_ratio.is_none()
     && !aspect_ratio_full
     && (axes.0 || axes.1 || frame_edges.iter().any(|&e| e));
+  // The range asked for, before it is widened to any picture's shape: the
+  // drawing area is only settled once the margins are known, and the
+  // range must then be widened from this, not from a range already
+  // widened to the whole picture's shape (that would widen it twice).
+  let requested_bb = bb;
   if !aspect_ratio_full && !fit_frame_to_data {
     // The data's exact shape, not the one a whole-pixel height rounds to.
     let ratio = if aspect_ratio.is_none()
@@ -14319,8 +14331,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // The margins took room from one side only, so the drawing area is no
   // longer the shape the data was fitted to; fit it again or circles come
-  // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`).
+  // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`). The
+  // requested range is widened afresh: widening the range already fitted
+  // to the whole picture would shrink the content twice (e.g. under
+  // `ImageSize -> {450, 230}` with `ImagePadding -> {{0, 0}, {0, 30}}`).
   if !aspect_ratio_full {
+    bb = requested_bb;
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
   let total_width = svg_w + margin_left + margin_right;
@@ -22327,7 +22343,10 @@ fn grid_ast_internal(
   // A grid whose cells are all graphics is a layout of pictures, not of
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
-  if !parens && let Some(rows) = grid_of_graphics_svgs(args) {
+  if !parens
+    && !has_item_alignment(args)
+    && let Some(rows) = grid_of_graphics_svgs(args)
+  {
     // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
     // are honored by the one layout `expr_to_svg` gives a `Grid` holding
     // pictures; the bare composition below would silently drop them.
@@ -22354,6 +22373,30 @@ fn grid_ast_internal(
   }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Whether a cell of `Grid`'s matrix is an `Item[…, Alignment -> …]`: the
+/// picture layout centers every cell, so such a grid takes the full grid
+/// layout, which places each cell by its own alignment.
+pub fn has_item_alignment(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  rows
+    .iter()
+    .flat_map(|row| match row {
+      Expr::List(cells) => cells.iter().collect::<Vec<_>>(),
+      single => vec![single],
+    })
+    .any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Item"
+          && args
+            .iter()
+            .skip(1)
+            .filter_map(option_kv)
+            .any(|(key, _)| key == "Alignment"))
+    })
 }
 
 /// The rendered SVG of every cell, when `Grid`'s first argument is a
@@ -23370,6 +23413,41 @@ fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
   }
 }
 
+/// Per-row vertical alignments from the row part of a Grid `Alignment`
+/// spec: one symbol for every row, or a list with one entry per row
+/// (a nested list repeats cyclically over the remaining rows).
+fn row_vertical_alignments(
+  spec: &Expr,
+  num_rows: usize,
+) -> Vec<Option<VAlign>> {
+  match spec {
+    Expr::List(items) => {
+      let explicit: Vec<_> = items
+        .iter()
+        .take_while(|it| !matches!(it, Expr::List(_)))
+        .map(vertical_alignment)
+        .collect();
+      let repeating: Vec<_> = items
+        .iter()
+        .find_map(|it| match it {
+          Expr::List(rep) => Some(rep.iter().map(vertical_alignment).collect()),
+          _ => None,
+        })
+        .unwrap_or_default();
+      (0..num_rows)
+        .map(|i| match explicit.get(i) {
+          Some(a) => *a,
+          None if !repeating.is_empty() => {
+            repeating[(i - explicit.len()) % repeating.len()]
+          }
+          None => None,
+        })
+        .collect()
+    }
+    other => vec![vertical_alignment(other); num_rows],
+  }
+}
+
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
@@ -24065,9 +24143,9 @@ fn grid_svg_styled_internal_reporting(
   let mut row_bg_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_bg_has_repeating = false;
   let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
-  // `Alignment -> {h, v}`: where an item sits vertically in its row.
-  let mut alignment_v = VAlign::Center;
   let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
+  // `Alignment -> {h, v}`: where each row's cells sit vertically.
+  let mut row_valigns: Vec<Option<VAlign>> = Vec::new();
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
   let mut col_align_has_repeating = false;
@@ -24323,8 +24401,8 @@ fn grid_svg_styled_internal_reporting(
           Expr::List(items) => {
             // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
-            if let Some(v) = items.get(1).and_then(vertical_alignment) {
-              alignment_v = v;
+            if let Some(row_spec) = items.get(1) {
+              row_valigns = row_vertical_alignments(row_spec, rows.len());
             }
             if let Some(first) = items.first() {
               match first {
@@ -25176,14 +25254,16 @@ fn grid_svg_styled_internal_reporting(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
-      // A `Top` or `Bottom` vertical alignment puts an item of height `h`
-      // against that edge of its rows' content area (inside the cell
-      // padding); the result is the item's top edge, or `None` when the
-      // item stays centered.
+      // A `Top` or `Bottom` vertical alignment (on the grid, its row, or
+      // the cell's `Item`) puts an item of height `h` against that edge of
+      // its rows' content area (inside the cell padding); the result is the
+      // item's top edge, or `None` when the item stays centered.
       let v_align = item_v_aligns
         .iter()
         .find(|(pos, _)| *pos == (i, j))
-        .map_or(alignment_v, |(_, a)| *a);
+        .map(|(_, a)| *a)
+        .or_else(|| row_valigns.get(i).copied().flatten())
+        .unwrap_or(VAlign::Center);
       let content_top = content_y_starts[i];
       let content_bottom = content_y_starts[last_row] + row_heights[last_row];
       let aligned_top = |h: f64| -> Option<f64> {
@@ -25370,7 +25450,7 @@ fn grid_svg_styled_internal_reporting(
           let block_h = lines.len() as f64 * lh;
           let top = aligned_top(block_h)
             .map_or(cy - (lines.len() as f64 - 1.0) / 2.0 * lh, |t| {
-              t + lh / 2.0
+              t + lh / 2.0 - 1.0
             });
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
@@ -25383,7 +25463,7 @@ fn grid_svg_styled_internal_reporting(
           (top, body)
         } else {
           let lh = markup_line_height(&markup, fs);
-          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0), markup)
+          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
@@ -28664,6 +28744,49 @@ fn render_tabular_svg_grid(
   Some(svg)
 }
 
+/// `Style[picture, opts…, Magnification -> m]` — a `Graphics`,
+/// `Graphics3D` or `Image` shown at `m` times its size, the whole drawing
+/// (text, point sizes, thicknesses) scaled alike, as the FrontEnd
+/// magnifies it. `None` unless every argument after the picture is an
+/// option and one of them is a positive numeric `Magnification`.
+pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style"
+    || args.len() < 2
+    || !args[1..].iter().all(|a| option_kv(a).is_some())
+  {
+    return None;
+  }
+  let m = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "Magnification")
+    .and_then(|(_, v)| expr_to_f64(v))
+    .filter(|m| m.is_finite() && *m > 0.0)?;
+  let svg = match &args[0] {
+    Expr::Graphics { svg, .. } => svg.clone(),
+    Expr::Image { .. } => crate::evaluator::expr_to_svg(&args[0]),
+    _ => return None,
+  };
+  if !svg.contains("<svg") {
+    return None;
+  }
+  let (w, h) = parse_svg_wh(&svg);
+  if w <= 0.0 || h <= 0.0 {
+    return None;
+  }
+  let is_3d = matches!(&args[0], Expr::Graphics { is_3d: true, .. });
+  Some(Expr::Graphics {
+    svg: resize_svg_root(&svg, w * m, h * m),
+    is_3d,
+    source: None,
+    head: None,
+    structure: None,
+  })
+}
+
 /// Resolve a `Column`/`Row` display item for rendering: release a held
 /// `Dynamic[…]` (a static rendering shows its current value; front-ends
 /// re-evaluate the whole display on interaction) and unwrap a top-level
@@ -28719,6 +28842,15 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
           None => false,
         }
       }
+      // `Style[picture, Magnification -> m]` draws the picture `m` times
+      // its size.
+      "Style" => match magnified_picture(&current) {
+        Some(picture) => {
+          current = picture;
+          continue;
+        }
+        None => false,
+      },
       // `PaddedForm[Grid[…], spec]` & co. format the numbers inside the
       // layout; the layout itself is drawn as usual.
       "NumberForm" | "PaddedForm" | "AccountingForm"
@@ -31535,15 +31667,79 @@ pub(crate) fn pane_picture_is_auto_sized(content: &Expr) -> bool {
   }
 }
 
+/// An automatically sized `Graphics`/`Graphics3D` larger than a
+/// `width` x `height` box, redrawn at the largest size (same aspect ratio)
+/// that fits it. Redrawing — rather than scaling the finished drawing down —
+/// keeps font sizes, point sizes and thicknesses absolute, as in the
+/// FrontEnd. `None` when the picture isn't automatically sized, already
+/// fits, or its symbolic form isn't known.
+fn fit_auto_sized_picture_to_box(
+  content: &Expr,
+  width: f64,
+  height: f64,
+) -> Option<Expr> {
+  if !pane_picture_is_auto_sized(content) {
+    return None;
+  }
+  let (name, args, natural_w, natural_h) = match content {
+    Expr::Graphics { svg, structure, .. } => {
+      let Some(Expr::FunctionCall { name, args }) = structure.as_deref() else {
+        return None;
+      };
+      let (w, h) = parse_svg_wh(svg);
+      (name, args, w, h)
+    }
+    Expr::FunctionCall { name, args } => {
+      let captured = crate::captured_graphics_count();
+      let (w, h) = parse_svg_wh(&crate::evaluator::expr_to_svg(content));
+      crate::truncate_captured_graphics(captured);
+      (name, args, w, h)
+    }
+    _ => return None,
+  };
+  if natural_w <= 0.0
+    || natural_h <= 0.0
+    || (natural_w <= width && natural_h <= height)
+  {
+    return None;
+  }
+  let scale = (width / natural_w).min(height / natural_h);
+  let mut new_args = args.to_vec();
+  new_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::List(
+      vec![
+        Expr::Real((natural_w * scale).floor()),
+        Expr::Real((natural_h * scale).floor()),
+      ]
+      .into(),
+    )),
+  });
+  Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: new_args.into(),
+  })
+}
+
 /// A plot sized relative to its container — `ImageSize -> Full` or
 /// `Scaled[s]` — redrawn for a `Pane[…, {width, height}]`: `Full` fills
 /// the box, `Scaled[s]` (or `Scaled[{sx, sy}]`) takes that fraction of its
-/// width (and height). `None` for anything else.
+/// width (and height). An automatically sized picture larger than the box
+/// is redrawn at the largest size that fits it, so its `Text` keeps its
+/// absolute font size the way the FrontEnd sets it, rather than shrinking
+/// along with a scaled-down drawing. `None` for anything else.
 pub(crate) fn size_plot_to_pane(
   content: &Expr,
   width: f64,
   height: f64,
 ) -> Option<Expr> {
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  if let Some(fitted) = fit_auto_sized_picture_to_box(content, width, height) {
+    return Some(fitted);
+  }
   let Expr::Graphics {
     source: Some(source),
     ..
@@ -31560,10 +31756,6 @@ pub(crate) fn size_plot_to_pane(
     }
     _ => None,
   })?;
-  let rule = |name: &str, value: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
-  };
   let mut options = Vec::new();
   match size {
     Expr::Identifier(n) if n == "Full" => {
@@ -31626,9 +31818,26 @@ pub(crate) fn clip_svg_to_pane_box(
     let x = (width - natural_w) * align.0;
     let y = (height - natural_h) * align.1;
     let root = svg.find("<svg").unwrap_or(0);
+    // Text running past the picture's own edges (a wide caption in a
+    // picture shrunk to the box) is still drawn; the box clips it.
+    let picture = &svg[root..];
+    let picture = match picture.find('>') {
+      Some(end) if !picture[..end].contains("overflow=") => {
+        let end = if picture[..end].ends_with('/') {
+          end - 1
+        } else {
+          end
+        };
+        format!(
+          "{} overflow=\"visible\"{}",
+          &picture[..end],
+          &picture[end..]
+        )
+      }
+      _ => picture.to_string(),
+    };
     return format!(
-      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{}\n</g>\n</svg>",
-      &svg[root..]
+      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
     );
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
@@ -34601,12 +34810,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .cloned()
             .chain(std::iter::once(id_expr("Locator")))
             .collect();
+          // Corner bounds may reference other controls (`{-n, -n}` with a
+          // slider `n`), so resolve them against the initial control values
+          // like every other spec rather than in an empty scope.
+          let promoted = Expr::List(promoted.into());
           if let Some(ParsedControl::Visible {
             control: mut c,
             enabled: enabled2,
             ..
-          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
-          {
+          }) = crate::with_scoped_globals(&initial_bindings, || {
+            parse_manipulate_control(&promoted, &sibling_names)
+          }) {
             if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
               write_callback.clone_from(callback);
             }

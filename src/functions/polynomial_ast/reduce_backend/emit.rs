@@ -1141,7 +1141,7 @@ mod tests {
     let formula = Formula::Or(vec![less, odd]).normalized();
     assert_eq!(
       expr_to_string(&formula_expr(&formula)),
-      "x < 0 || Divisible[x + -1, 2]"
+      "x < 0 || Divisible[x - 1, 2]"
     );
   }
 
