@@ -596,6 +596,27 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
 
+### A symbol against a sum with a fractional multiple of it
+
+```sh
+wolframscript -code 'Order[x, 1 + x/2]'                # -1
+woxi eval 'Order[x, 1 + x/2]'                          # 1
+wolframscript -code 'Order[x^2, 1 + x^2/2]'            # 1
+woxi eval 'Order[x^2, 1 + x^2/2]'                      # -1
+wolframscript -code 'Sort[{Pi, 95 + Pi/78}]'           # {95 + Pi/78, Pi}
+woxi eval 'Sort[{Pi, 95 + Pi/78}]'                     # {Pi, 95 + Pi/78}
+wolframscript -code '(95 + Pi/78)/19 - Pi'             # (95 + Pi/78)/19 - Pi
+woxi eval '(95 + Pi/78)/19 - Pi'                       # -Pi + (95 + Pi/78)/19
+```
+
+Found by diff-fuzz seed 9707 (2026-11-13). Wolfram compares `x` with the
+sum's last term `x/2` (so the sum goes first), and `x^2` as a power with the
+sum as a base (`x` before `1 + x^2/2`). `Sort` gets the first two right and
+`Order` does not; making `Order` delegate to `Sort` for a sum against a
+non-sum fixes them but reorders `Times` factors elsewhere (`Pi*r^2*Sqrt[…]`),
+since that comparator serves `Times` too, and `Sort` itself misplaces the
+constant `Pi` against `95 + Pi/78`.
+
 ### `x^2 + (a + b) x` keeps Woxi's order
 
 WL prints `(a + b) x + x^2`. The products-compare-from-the-last-factor rule is
