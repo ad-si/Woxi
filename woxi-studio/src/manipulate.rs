@@ -1943,6 +1943,30 @@ impl ManipulateState {
       {
         render = Ok(table);
       }
+      // The same holds when the pane is only the body's *value* — a
+      // `Block[{x}, …; Pane[Grid[…], size]]` that computes its table
+      // first — and the table holds typeset or nested layouts (a framed
+      // sub-table, `Text@Row[…]` of formulas) that plain text cannot show.
+      // Draw that value rather than re-running the body, which would
+      // repeat its side effects (`SeedRandom`, assignments).
+      if let Ok(r) = &render
+        && r.graphics.is_none()
+        && let Some(woxi::syntax::Expr::FunctionCall { name, args }) = &r.expr
+        && matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && let Some(woxi::syntax::Expr::FunctionCall {
+          name: layout,
+          args: cells,
+        }) = args.first()
+        && layout == "Grid"
+        && cells.first().is_some_and(holds_typeset_layout)
+        && let Ok(table) = woxi::interpret_with_stdout(&format!(
+          "Text[{}]",
+          woxi::syntax::expr_to_input_form(r.expr.as_ref().unwrap())
+        ))
+        && table.graphics.is_some()
+      {
+        render = Ok(table);
+      }
       // A `Pane[text, size, …]` body only sizes and pads its text (the
       // terminal prints it as the `Pane[…]` call); the widget shows the
       // text the pane wraps.
@@ -2638,6 +2662,29 @@ fn format_f64(v: f64) -> String {
   }
 }
 
+/// Whether `expr` contains a layout or typeset piece (`Text`,
+/// `TraditionalForm`, a nested `Grid`/`Pane`/`Framed`/…) that the plain-text
+/// rendering of a table cannot show.
+fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
+  match expr {
+    woxi::syntax::Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Text"
+          | "TraditionalForm"
+          | "Grid"
+          | "Pane"
+          | "Panel"
+          | "Framed"
+          | "Column"
+          | "Row"
+      ) || args.iter().any(holds_typeset_layout)
+    }
+    woxi::syntax::Expr::List(items) => items.iter().any(holds_typeset_layout),
+    _ => false,
+  }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -3266,6 +3313,38 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body that computes its table inside a scoping construct and only
+  /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
+  /// footer rows included — not just a nested framed table measured while
+  /// fitting the grid into the pane.
+  #[test]
+  fn scoped_body_returning_pane_of_grid_draws_the_whole_table() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Block[{x}, SeedRandom[s]; r = RandomInteger[{-5, 5}, 2];
+        Pane[Grid[{
+          {Text@Row[{"head ", TraditionalForm[Expand[(x - r[[1]]) (x - r[[2]])]]}]},
+          {Pane[Grid[{{"inner", 1}, {2, 3}}, Frame -> All]]},
+          {Text@Row[{"foot ", TraditionalForm[(x - r[[1]]) (x - r[[2]])]}]}},
+          Alignment -> Left], ImageSize -> {240, 350}]],
+      {{s, 1, "seed"}, {1, 2, 3}, ControlType -> PopupMenu}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("the table is drawn as a picture");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("graphic should be in-memory SVG data");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    for label in ["head", "inner", "foot"] {
+      assert!(svg.contains(label), "{label} row missing: {svg}");
+    }
   }
 
   /// A body that is `Text@Style[TraditionalForm[Column[…]]]` of held

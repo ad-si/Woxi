@@ -4896,18 +4896,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
     .and_then(|(w, _, _, _)| {
-      functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
-        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
-      })
+      functions::graphics::fit_grid_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // An automatically sized tree wider than the box is squeezed to its width
   // rather than clipped.
   let expr = pane_box
     .and_then(|(w, _, _, _)| {
-      functions::graphics::fit_tree_to_pane_width(&expr, w, &|c| {
-        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
-      })
+      functions::graphics::fit_tree_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
@@ -4973,6 +4969,19 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     }
     _ => result,
   }
+}
+
+/// The width `content` takes up when drawn on its own. Only a measurement:
+/// whatever picture drawing it captured is dropped again, so a cell sized
+/// while fitting a layout into its `Pane` never stands in for the cell's
+/// output (a `Pane[Grid[{…, {Pane[Grid[…, Frame -> All]]}, …}], size]`
+/// otherwise showed just the nested framed table).
+fn measured_width(content: &syntax::Expr) -> f64 {
+  let captured = captured_graphics_count();
+  let width =
+    functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(content)).0;
+  truncate_captured_graphics(captured);
+  width
 }
 
 /// Rewrite `TraditionalForm[Row[…]]` / `TraditionalForm[Column[…]]` (looking

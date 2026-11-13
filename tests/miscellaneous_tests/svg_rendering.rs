@@ -4337,6 +4337,22 @@ mod tests {
       );
     }
 
+    /// Fitting a grid into a sized `Pane` measures its cells by drawing
+    /// them; those measurements must not linger as the cell's picture, or a
+    /// nested framed table stands in for the whole layout.
+    #[test]
+    fn sized_pane_cell_measurement_captures_no_picture() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{"top"}, {Pane[Grid[{{1, 2}}, Frame -> All]]}, {"bottom"}}], ImageSize -> {240, 350}]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        result.graphics.is_none(),
+        "a measured cell is not the output: {:?}",
+        result.graphics
+      );
+    }
+
     /// A layout of plain text is left to the text renderer — composing it
     /// as a picture would be a regression, not an improvement.
     #[test]
