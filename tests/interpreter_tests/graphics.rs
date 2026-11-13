@@ -54007,3 +54007,54 @@ mod text_label_powers_and_wrappers {
     assert!(svg.contains("font-size=\"16\""), "{svg}");
   }
 }
+
+mod quantity_text_labels {
+  use super::*;
+
+  /// A quantity in a graphics label is typeset with its unit abbreviated,
+  /// as a notebook shows it, not spelled out the way `ToString` writes it.
+  #[test]
+  fn bare_quantity_label_abbreviates_its_unit() {
+    for (q, text) in [
+      ("Quantity[286, \"Kelvins\"]", ">286 K</text>"),
+      ("Quantity[13, \"DegreesCelsius\"]", ">13 °C</text>"),
+      ("Quantity[-4, \"DegreesFahrenheit\"]", ">-4 °F</text>"),
+      ("Quantity[3, \"Meters\"]", ">3 m</text>"),
+      (
+        "Quantity[9.8, \"Meters\"/\"Seconds\"^2]",
+        ">9.8 m/s²</text>",
+      ),
+    ] {
+      let svg = export_svg(&format!("Graphics[Text[{q}, {{0, 0}}]]"));
+      assert!(svg.contains(text), "{q}: {svg}");
+    }
+  }
+
+  /// Quantities inside a `Row` label are abbreviated the same way.
+  #[test]
+  fn quantities_in_row_label_abbreviate_their_units() {
+    let svg = export_svg(
+      "Graphics[Text[Row[{\"T = \", Quantity[286, \"Kelvins\"], \" = \", \
+       Quantity[13, \"DegreesCelsius\"]}], {0, 0}]]",
+    );
+    assert!(svg.contains(">T = 286 K = 13 °C</text>"), "{svg}");
+  }
+
+  /// A typeset quantity outside a graphic abbreviates temperatures too.
+  #[test]
+  fn typeset_quantity_abbreviates_temperature_units() {
+    let svg =
+      interpret("ExportString[Quantity[286, \"Kelvins\"], \"SVG\"]").unwrap();
+    assert!(svg.contains(">K</text>"), "{svg}");
+    assert!(!svg.contains("Kelvins"), "{svg}");
+  }
+
+  /// `ToString` still spells the unit out.
+  #[test]
+  fn to_string_still_spells_the_unit_out() {
+    assert_eq!(
+      interpret("ToString[Quantity[286, \"Kelvins\"]]").unwrap(),
+      "286 kelvins"
+    );
+  }
+}
