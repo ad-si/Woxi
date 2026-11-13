@@ -903,6 +903,22 @@ Needs parser-level `Times` flattening.
 in WL, which keeps integer coefficients.
 
 
+### Unevaluated calls are re-evaluated wherever they are copied
+
+```wl
+n = 20; rules = Flatten[Table[{{(i-1) n + j, (i-1) n + j} -> 4.1}, {i, n}, {j, n}]];
+A = SparseArray[rules, {n, n^2}];       (* posd: stays unevaluated *)
+x = LinearSolve[A, N[Range[n^2]]];      (* stays unevaluated *)
+Max[Abs[A . x - N[Range[n^2]]]]
+```
+
+The last line takes 0.0003 s in wolframscript and 4.8 s in Woxi, which
+re-evaluates the unevaluated `SparseArray[…]` and `LinearSolve[…]` in every
+element of the product (and re-emits their messages until `General::stop`).
+Wolfram marks an expression as evaluated and skips it the next time. At
+`n = 60` (found by the crash fuzzer, 2026-11-13) Woxi needs 22 GB. Woxi has
+no evaluated mark yet.
+
 ## Numeric precision and floating point
 
 ### A machine real divided by an exact quotient differs in the last digit

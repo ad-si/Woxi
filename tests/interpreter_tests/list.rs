@@ -26631,3 +26631,92 @@ mod list_edge_specs {
     );
   }
 }
+
+// A rule whose position cannot lie inside the dimensions is reported with
+// SparseArray::posd and the call stays unevaluated — it is not an array, so
+// matrix functions leave it alone too. Found by the crash fuzzer, where an
+// out-of-range SparseArray fed a LinearSolve that then blew up.
+mod sparse_array_misplaced_rules {
+  use super::*;
+
+  #[test]
+  fn out_of_range_rule_reports_posd() {
+    let r = woxi::interpret_with_stdout("SparseArray[{{3, 1} -> 1}, {2, 2}]")
+      .unwrap();
+    assert_eq!(r.result, "SparseArray[{{3, 1} -> 1}, {2, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "SparseArray::posd: The left-hand side of {3, 1} -> 1 in {{3, 1} -> 1} \
+         is not a position or a pattern that will match the position of an \
+         element in an array with dimensions {2, 2}."
+      ]
+    );
+    // Wrong rank, zero index, out-of-range index next to a pattern.
+    for code in [
+      "SparseArray[{{1} -> 1}, {2, 2}]",
+      "SparseArray[{{0, 1} -> 1}, {2, 2}]",
+      "SparseArray[{{3, _} -> 1}, {2, 2}]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}");
+    }
+    // A scalar dimension is spelled out to the position's rank.
+    let r =
+      woxi::interpret_with_stdout("SparseArray[{{5, 1} -> 1}, 4]").unwrap();
+    assert!(r.warnings[0].ends_with("with dimensions {4, 4}."));
+  }
+
+  #[test]
+  fn valid_positions_still_build() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{-1 -> 1}, {2}]]").unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{i_, i_} -> 1}, {2, 2}]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("Dimensions[SparseArray[{{1, 1, 1} -> 1}, 4]]").unwrap(),
+      "{4, 4, 4}"
+    );
+  }
+
+  #[test]
+  fn matrix_functions_leave_it_unevaluated() {
+    let r = woxi::interpret_with_stdout(
+      "LinearSolve[SparseArray[{{3, 1} -> 1}, {2, 2}], {1, 2}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "LinearSolve[SparseArray[{{3, 1} -> 1}, {2, 2}], {1, 2}]"
+    );
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+  }
+}
+
+// LinearSolve rejects a coefficient argument that is not a nonempty
+// rectangular matrix with LinearSolve::matrix.
+mod linear_solve_matrix_message {
+  use super::*;
+
+  #[test]
+  fn non_matrix_argument() {
+    for code in [
+      "LinearSolve[{1, 2}, {1, 2}]",
+      "LinearSolve[{{1, 2}, {3}}, {1, 2}]",
+      "LinearSolve[{}, {}]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}");
+      assert!(r.warnings[0].starts_with("LinearSolve::matrix: Argument "));
+    }
+    // A symbolic argument stays unevaluated silently.
+    let r = woxi::interpret_with_stdout("LinearSolve[f, {1, 2}]").unwrap();
+    assert!(r.warnings.is_empty());
+  }
+}
