@@ -524,12 +524,18 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = expanded;
     return nsolve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return nsolve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return nsolve_ast(&normalized);
+    }
   }
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
@@ -3089,6 +3095,26 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A system with a part that is no equation, inequality or logical
+  // combination — `{x^2 == 2, f[x]}` — is rejected as a whole, as in
+  // Wolfram, instead of solving the equations and ignoring the rest.
+  if let Some(system) = args.first() {
+    let parts = match system {
+      Expr::List(items) => flatten_and_constraints(items),
+      _ => flatten_and_constraints(std::slice::from_ref(system)),
+    };
+    if parts.len() >= 2 && parts.iter().any(|p| !is_relational_expr(p)) {
+      let conjunction = crate::syntax::Expr::FunctionCall {
+        name: "And".into(),
+        args: parts.into(),
+      };
+      crate::emit_message(&format!(
+        "Solve::naqs: {} is not a quantified system of equations and inequalities.",
+        expr_to_string(&conjunction)
+      ));
+      return Ok(unevaluated("Solve", args));
+    }
+  }
   // A quadratic with machine coefficients is solved numerically, exactly as
   // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
   if args.len() == 2
@@ -3317,12 +3343,18 @@ fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = Expr::List(flat.into());
     return solve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return solve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return solve_ast(&normalized);
+    }
   }
   // A system with machine-number exponents that are simple fractions
   // (`l^0.5 k^0.5`, a Cobb-Douglas Lagrangian) is solved with the exact

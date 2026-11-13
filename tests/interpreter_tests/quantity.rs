@@ -1628,7 +1628,7 @@ fn quantity_power_half_compound_unit() {
   // Power[Quantity[4, Meters/Seconds^2], 1/2] → Quantity[2, Sqrt[Meters]/Seconds] (matching wolframscript)
   assert_eq!(
     interpret("Power[Quantity[4, \"Meters\"/\"Seconds\"^2], 1/2]").unwrap(),
-    "Quantity[2, Sqrt[\"Meters\"]/Seconds]"
+    "Quantity[2, Sqrt[Meters]/Seconds]"
   );
 }
 
@@ -2587,8 +2587,8 @@ fn independent_unit_head() {
 #[test]
 fn independent_unit_with_quantity() {
   assert_eq!(
-    interpret("Quantity[3, IndependentUnit[\"Foo\"]]").unwrap(),
-    "Quantity[3, IndependentUnit[\"Foo\"]]"
+    interpret("Quantity[3, IndependentUnit[Foo]]").unwrap(),
+    "Quantity[3, IndependentUnit[Foo]]"
   );
 }
 
@@ -2614,7 +2614,7 @@ fn dated_unit_symbolic() {
 fn dated_unit_with_quantity() {
   assert_eq!(
     interpret(r#"Quantity[100, DatedUnit["USDollars", 1990]]"#).unwrap(),
-    r#"Quantity[100, DatedUnit["USDollars", 1990]]"#
+    "Quantity[100, DatedUnit[USDollars, 1990]]"
   );
 }
 
