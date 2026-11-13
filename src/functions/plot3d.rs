@@ -9216,6 +9216,62 @@ fn split_nested_loops(
   (outer, it.collect())
 }
 
+/// The (unnormalized) Newell normal of a polygon: twice its vector area,
+/// robust for slightly non-planar input.
+fn newell_normal(points: &[Point3D]) -> [f64; 3] {
+  let n = points.len();
+  let mut normal = [0.0f64; 3];
+  for i in 0..n {
+    let a = points[i];
+    let b = points[(i + 1) % n];
+    normal[0] += (a.y - b.y) * (a.z + b.z);
+    normal[1] += (a.z - b.z) * (a.x + b.x);
+    normal[2] += (a.x - b.x) * (a.y + b.y);
+  }
+  normal
+}
+
+/// The unit normal of the plane a polygon lies in. That is its Newell
+/// normal, unless the outline crosses itself so that its lobes cancel out
+/// (a bow tie has no net area); then the plane is spanned by the two
+/// corner directions from the first corner that span the most area.
+/// `None` when every corner lies on one line.
+fn polygon_plane_normal(points: &[Point3D]) -> Option<[f64; 3]> {
+  let unit = |v: [f64; 3]| {
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    (len.is_finite() && len > 0.0).then(|| v.map(|c| c / len))
+  };
+  let newell = newell_normal(points);
+  let extent = points
+    .iter()
+    .flat_map(|p| [p.x.abs(), p.y.abs(), p.z.abs()])
+    .fold(0.0f64, f64::max);
+  let tiny = 1e-12 * extent * extent;
+  if (newell[0].abs() + newell[1].abs() + newell[2].abs()) > tiny {
+    return unit(newell);
+  }
+  let o = *points.first()?;
+  let mut best = [0.0f64; 3];
+  let mut best_len = tiny;
+  for (i, a) in points.iter().enumerate() {
+    for b in &points[i + 1..] {
+      let u = [a.x - o.x, a.y - o.y, a.z - o.z];
+      let v = [b.x - o.x, b.y - o.y, b.z - o.z];
+      let c = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+      ];
+      let len = c[0].abs() + c[1].abs() + c[2].abs();
+      if len > best_len {
+        best = c;
+        best_len = len;
+      }
+    }
+  }
+  if best_len > tiny { unit(best) } else { None }
+}
+
 /// Whether a polygon's corners all turn the same way, and only once
 /// around, so a fan from the first one covers it. Measured about the
 /// polygon's own plane (Newell's normal, which is robust for slightly
@@ -9227,19 +9283,15 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
   if n < 4 {
     return true;
   }
-  let mut normal = [0.0f64; 3];
-  for i in 0..n {
-    let a = points[i];
-    let b = points[(i + 1) % n];
-    normal[0] += (a.y - b.y) * (a.z + b.z);
-    normal[1] += (a.z - b.z) * (a.x + b.x);
-    normal[2] += (a.x - b.x) * (a.y + b.y);
-  }
+  let normal = newell_normal(points);
   let scale =
     (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
       .sqrt();
   if !scale.is_finite() || scale == 0.0 {
-    return true;
+    // No net area: either every corner lies on one line, which a fan
+    // draws as nothing either way, or the outline crosses itself so that
+    // its lobes cancel out (a bow tie), which is anything but convex.
+    return polygon_plane_normal(points).is_none();
   }
   let mut sign = 0i8;
   // The corners' turning angles add up to one full turn for a convex
@@ -9290,27 +9342,13 @@ fn tessellate_polygon_with_holes(
   if outer.len() < 3 {
     return (Vec::new(), Vec::new());
   }
-  // Newell's method: a plane normal that is robust for non-planar input.
-  let mut n = Point3D {
-    x: 0.0,
-    y: 0.0,
-    z: 0.0,
-  };
-  for i in 0..outer.len() {
-    let a = outer[i];
-    let b = outer[(i + 1) % outer.len()];
-    n.x += (a.y - b.y) * (a.z + b.z);
-    n.y += (a.z - b.z) * (a.x + b.x);
-    n.z += (a.x - b.x) * (a.y + b.y);
-  }
-  let len = (n.x * n.x + n.y * n.y + n.z * n.z).sqrt();
-  if !len.is_finite() || len == 0.0 {
+  let Some(n) = polygon_plane_normal(outer) else {
     return (Vec::new(), Vec::new());
-  }
+  };
   let n = Point3D {
-    x: n.x / len,
-    y: n.y / len,
-    z: n.z / len,
+    x: n[0],
+    y: n[1],
+    z: n[2],
   };
   // Any vector not parallel to the normal yields an in-plane basis.
   let helper = if n.x.abs() < 0.9 {

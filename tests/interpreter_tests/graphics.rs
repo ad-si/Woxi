@@ -8586,12 +8586,23 @@ mod plot3d {
       // Each tip is outlined all around, by its own stroke.
       assert_eq!(svg.matches("stroke=\"rgb(64,64,64)\"").count(), 5, "{svg}");
       assert_eq!(svg.matches("<line").count(), 0, "{svg}");
-      // A bow tie is its two triangles.
+      // A bow tie is its two lobes. Its lobes cancel out, so it has no
+      // net area (a zero Newell normal), yet it is no convex quad: a fan
+      // from its first corner would give two triangles sharing an edge,
+      // while the lobes meet only at the crossing point.
       let bow = export_svg(
         "Graphics3D[Polygon[{{0,0,0},{2,2,0},{2,0,0},{0,2,0}}], \
          Boxed -> False]",
       );
-      assert_eq!(bow.matches("<polygon").count(), 2, "{bow}");
+      let corners: Vec<Vec<&str>> = bow
+        .split("<polygon points=\"")
+        .skip(1)
+        .map(|rest| rest[..rest.find('"').unwrap()].split(' ').collect())
+        .collect();
+      assert_eq!(corners.len(), 2, "{bow}");
+      assert!(corners.iter().all(|c| c.len() == 3), "{bow}");
+      let shared = corners[0].iter().filter(|p| corners[1].contains(p)).count();
+      assert_eq!(shared, 1, "{bow}");
       // The star faces of PolyhedronData's star polyhedra go through the
       // same path: every one of the 12 pentagrams contributes 5 tips.
       let ssd = export_svg(
