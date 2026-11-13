@@ -21483,6 +21483,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn stream_scale_sets_the_arrow_length() {
+      clear_state();
+      // Regression: only `StreamScale -> None` was read; a named size or a
+      // number was ignored, so `StreamScale -> Large` drew the same short
+      // arrows as the default. The longest arrow of a uniform flow along
+      // the x axis spans the requested fraction of the unit-wide range.
+      let longest = |scale: &str| {
+        interpret(&format!(
+          "Round[Max[Cases[StreamPlot[{{1, 0}}, {{x, 0, 1}}, {{y, 0, 1}}, \
+             StreamScale -> {scale}], Arrow[p_] :> p[[-1, 1]] - p[[1, 1]], \
+             Infinity]], 0.01]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(longest("Automatic"), "0.08");
+      assert_eq!(longest("Tiny"), "0.02");
+      assert_eq!(longest("Small"), "0.04");
+      assert_eq!(longest("Medium"), "0.08");
+      assert_eq!(longest("Large"), "0.16");
+      assert_eq!(longest("0.25"), "0.25");
+      assert_eq!(longest("{0.3, Automatic}"), "0.3");
+    }
+
+    #[test]
     fn stream_color_function_gets_position_and_velocity() {
       clear_state();
       // Regression: a `StreamColorFunction` function was called with the

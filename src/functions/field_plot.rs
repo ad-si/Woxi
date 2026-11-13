@@ -5419,17 +5419,16 @@ fn stream_primitives(
     Some(Expr::Identifier(s)) if s == "False"
   );
 
-  // Each streamline is drawn as a run of arrows, each 8% of the plot range
-  // long with its head at the end (shorter at a streamline's end, with a
-  // proportionally smaller head). `StreamScale -> None` draws whole
-  // streamlines without heads instead, split into short pieces only so the
-  // color can follow the flow along them.
-  let headless = matches!(
-    option_rule(options, "StreamScale"),
-    Some(Expr::Identifier(s)) if s == "None"
-  );
+  // Each streamline is drawn as a run of arrows with its head at the end
+  // (shorter at a streamline's end, with a proportionally smaller head).
+  // `StreamScale` sets the arrow length: 8% of the plot range by default,
+  // a named size, or a fraction of the range. `StreamScale -> None` draws
+  // whole streamlines without heads instead, split into short pieces only
+  // so the color can follow the flow along them.
+  let scale = option_rule(options, "StreamScale");
+  let headless = matches!(scale, Some(Expr::Identifier(s)) if s == "None");
   let segment = match (headless, uniform_color) {
-    (false, _) => 0.08,
+    (false, _) => stream_segment_length(scale),
     (true, false) => 0.02,
     (true, true) => f64::INFINITY,
   };
@@ -5540,6 +5539,32 @@ fn stream_primitives(
       )
     })
     .collect()
+}
+
+/// The length of each streamline arrow, as a fraction of the plot range,
+/// for a `StreamScale` setting: a named size (`Tiny` … `Large`, doubling
+/// from one to the next with `Medium` the default length), a positive
+/// number, or a list whose first element is either of those. Anything
+/// else (`Automatic`, a missing option) gives the default.
+fn stream_segment_length(scale: Option<&Expr>) -> f64 {
+  const DEFAULT: f64 = 0.08;
+  let named = |s: &str| match s {
+    "Tiny" => Some(DEFAULT / 4.0),
+    "Small" => Some(DEFAULT / 2.0),
+    "Medium" => Some(DEFAULT),
+    "Large" => Some(DEFAULT * 2.0),
+    _ => None,
+  };
+  let length = |e: &Expr| match e {
+    Expr::Identifier(s) => named(s),
+    other => try_eval_to_f64(other).filter(|v| v.is_finite() && *v > 0.0),
+  };
+  match scale {
+    Some(Expr::List(items)) => items.first().and_then(length),
+    Some(e) => length(e),
+    None => None,
+  }
+  .unwrap_or(DEFAULT)
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
