@@ -15386,3 +15386,27 @@ fn increment_decrement_operands() {
   }
   assert_eq!(interpret("x = 5; --x").unwrap(), "4");
 }
+
+// `<->` (125) brackets looser operands on both sides, a negative literal
+// is bracketed as the right operand of /@, @@, @@@, `-2 /* 0` is
+// `-(2 /* 0)`, and ++/-- take a string or slot.
+#[test]
+fn two_way_rule_negative_operands_and_string_increments() {
+  for (input, expected) in [
+    ("Hold[(a <-> b) && c]", "Hold[(a <-> b) && c]"),
+    ("Hold[(a += b) <-> c]", "Hold[(a += b) <-> c]"),
+    ("Hold[(a -> b) <-> c]", "Hold[(a -> b) <-> c]"),
+    ("Hold[(a <-> b) <-> c]", "Hold[(a <-> b) <-> c]"),
+    ("Hold[f @@ -2]", "Hold[f @@ (-2)]"),
+    ("Hold[f /@ -2]", "Hold[f /@ (-2)]"),
+    ("Hold[--\"s\"]", "Hold[--s]"),
+    ("Hold[\"s\"--]", "Hold[s--]"),
+    ("Hold[++#2]", "Hold[++#2]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(
+    interpret("ToString[FullForm[Hold[-2 /* 0]]]").unwrap(),
+    "Hold[Times[-1, RightComposition[2, 0]]]"
+  );
+}

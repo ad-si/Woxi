@@ -86,7 +86,7 @@ PowGap = _{ (" " | "\t" | "\r" | "\n")* }
 NegLiteralTail = _{
     PowGap ~ (
         "^" ~ !("=" | ":=")
-      | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~"
+      | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~" | "/*" ~ !")"
       | "\\[TensorProduct]" | "\u{F3DA}"
       | "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}"
       | "\\[CircleDot]" | "\u{2299}" | "\\[SmallCircle]" | "\u{2218}"
@@ -506,9 +506,9 @@ PartIncScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanG
 PartDecScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ "--" }
 // A parenthesized expression, a list or a slot takes a postfix `++`/`--`
 // too: `(a + b)++` is Increment[a + b], `{a}--` Decrement[{a}].
-IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot }
-Increment = { (&PartIncScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot) ~ "++") ~ IncDecGroup) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot) ~ "--") ~ IncDecGroup) ~ DecrementOp ~ DecrementOp* }
+IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot | String }
+Increment = { (&PartIncScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot | String) ~ "++") ~ IncDecGroup) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue | &((BalancedParens | BalancedBraces | Slot | String) ~ "--") ~ IncDecGroup) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]
@@ -523,8 +523,8 @@ Decrement = { (&PartDecScan ~ PartExtract | Identifier | NumericValue | &((Balan
 // A list or a parenthesized expression is an operand too: wolframscript
 // reads `--(a < b)` as PreDecrement[a < b] and `++{a, b}` as
 // PreIncrement[{a, b}].
-PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | Identifier | NumericValue | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
-PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | Identifier | NumericValue | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }

@@ -10007,7 +10007,8 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "And" if args.len() >= 2 => Some(18),
       "Alternatives" if args.len() >= 2 => Some(15),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
-      "TwoWayRule" if args.len() == 2 => Some(21),
+      // `<->` (125) sits between `->` (120) and `/;` (130).
+      "TwoWayRule" if args.len() == 2 => Some(13),
       // Comparisons and `===`/`=!=` (290) print infix in held forms, below
       // `+` and above `&&`: `(a == b) + c`, `d/(a === b)`.
       "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
@@ -10383,7 +10384,8 @@ fn format_map_apply_shorthand(
   let list_str = format_expr(list, ExprForm::Input);
   let list_display = if (printed_infix_precedence(list)
     .is_some_and(|p| p < prec)
-    || is_factorial_call(list))
+    || is_factorial_call(list)
+    || is_negative_or_fraction_literal(list))
     && !prints_as_call(&list_str)
   {
     format!("({list_str})")
@@ -11136,7 +11138,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "TwoWayRule" && args.len() == 2 {
-        return format!("{} <-> {}", fmt(&args[0]), fmt(&args[1]));
+        // An operand binding as loose or looser is bracketed on either
+        // side — `<->` is not Flat: `(a -> b) <-> c`, `(a <-> b) <-> c`.
+        let operand = |e: &Expr| {
+          let text = fmt(e);
+          if printed_infix_precedence(e).is_some_and(|p| p <= 13)
+            && !prints_as_call(&text)
+          {
+            format!("({text})")
+          } else {
+            text
+          }
+        };
+        return format!("{} <-> {}", operand(&args[0]), operand(&args[1]));
       }
       // Graph edges render as infix with their Wolfram private-use glyphs,
       // matching `wolframscript -code` (which prints U+F3D5/U+F3D4 directly).
