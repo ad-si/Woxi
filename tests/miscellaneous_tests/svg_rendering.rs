@@ -4539,18 +4539,20 @@ mod tests {
         r#"ExportString[Pane[Row[{"one two three four five six", Row[{"= ", 4}] " \n\n  "}], {120, 300}], "SVG"]"#,
       )
       .unwrap();
-      let y_of = |needle: &str| -> f64 {
-        let at = svg.find(needle).unwrap_or_else(|| panic!("{needle}: {svg}"));
-        let svg_tag = svg[..at].rfind("<svg x=").unwrap();
-        svg[svg_tag..]
-          .split("y=\"")
+      let y_after = |s: &str| -> f64 {
+        s.split("y=\"")
           .nth(1)
           .and_then(|v| v.split('"').next())
           .and_then(|v| v.parse::<f64>().ok())
           .unwrap()
       };
-      assert!(svg.contains(">4</text>"), "{svg}");
-      assert!(y_of(">4</text>") > y_of(">six</text>") + 30.0, "{svg}");
+      // The last text line before the break …
+      let six = svg.find(">four five six</text>").expect("wrapped line");
+      let six_y = y_after(&svg[svg[..six].rfind("<text").unwrap()..]);
+      // … and the left-aligned line the row factor moved to.
+      let four = svg.find(">4</text>").expect("row factor drawn");
+      let line_y = y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
+      assert!(line_y > six_y + 30.0, "{svg}");
     }
   }
 
