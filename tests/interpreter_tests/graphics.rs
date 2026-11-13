@@ -36600,6 +36600,56 @@ mod manipulate {
     }
   }
 
+  fn first_continuous_label(code: &str) -> String {
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { label, .. } => label.clone(),
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+  }
+
+  // A Row aligns its text with the middle of a Column beside it, so a
+  // caption padded vertically by a column of spacers sits on the middle
+  // line rather than on top of the blank padding.
+  #[test]
+  fn spec_label_row_centers_text_beside_spacer_column() {
+    let label = first_continuous_label(
+      "Manipulate[s, {{s, 1, Row[{\"speed\", \
+       Column[{Spacer[2], Spacer[2], Spacer[2]}]}]}, 0, 5}]",
+    );
+    assert_eq!(label, " \nspeed \n ");
+  }
+
+  // A shorter part is centered against every taller Column in the Row, and
+  // the lines of two Columns pair up side by side.
+  #[test]
+  fn spec_label_row_merges_column_lines() {
+    let label = first_continuous_label(
+      "Manipulate[s, {{s, 1, Row[{Column[{\"a\", \"b\", \"c\"}], \"=\", \
+       Column[{\"x\", \"y\", \"z\"}]}]}, 0, 5}]",
+    );
+    assert_eq!(label, "ax\nb=y\ncz");
+  }
+
+  // A two-line Column keeps the text next to its first line, and a Row of
+  // single-line parts still reads as one line.
+  #[test]
+  fn spec_label_row_with_two_line_column() {
+    assert_eq!(
+      first_continuous_label(
+        "Manipulate[s, {{s, 1, Row[{\"k: \", Column[{\"top\", \"bottom\"}]}]}, 0, 5}]",
+      ),
+      "k: top\nbottom"
+    );
+    assert_eq!(
+      first_continuous_label(
+        "Manipulate[s, {{s, 1, Row[{\"a\", \"b\", \"c\"}, \", \"]}, 0, 5}]",
+      ),
+      "a, b, c"
+    );
+  }
+
   // A bare color inside a slider label typesets as a swatch in the notebook;
   // the widget label shows it as a solid square in that color, not the
   // source of the `RGBColor[…]` head.
