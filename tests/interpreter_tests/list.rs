@@ -26749,8 +26749,6 @@ mod sparse_array_misplaced_rules {
 // LinearSolve rejects a coefficient argument that is not a nonempty
 // rectangular matrix with LinearSolve::matrix.
 mod linear_solve_matrix_message {
-  use super::*;
-
   #[test]
   fn non_matrix_argument() {
     for code in [
@@ -26765,6 +26763,6 @@ mod linear_solve_matrix_message {
     }
     // A symbolic argument stays unevaluated silently.
     let r = woxi::interpret_with_stdout("LinearSolve[f, {1, 2}]").unwrap();
-    assert!(r.warnings.is_empty());
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
   }
 }
