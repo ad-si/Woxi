@@ -21535,8 +21535,16 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         "AbsoluteThickness",
         Expr::Real(sd.thickness.unwrap_or(1.5)),
       ));
+      // Like the opacity above: once any series is dashed, a solid one
+      // says so, or the previous series' dashes would carry over to it.
       if let Some(dashing) = series_dashing_expr(sd, ps.image_size.0) {
         series_prims.push(dashing);
+      } else if ps
+        .series
+        .iter()
+        .any(|s| !s.is_scatter && s.dashing.is_some())
+      {
+        series_prims.push(call1("Dashing", Expr::List(Vec::new().into())));
       }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
