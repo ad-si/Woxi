@@ -14498,7 +14498,17 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Check for list threading
+  // Threading over lists and associations is Listable's: unequal lengths
+  // report Thread::tdlen and keep the call, an association threads over its
+  // values (`2^<|"a" -> 3|>` is `<|"a" -> 8|>`).
+  if args
+    .iter()
+    .any(|a| matches!(a, Expr::List(_) | Expr::Association(_)))
+    && let Some(threaded) =
+      crate::evaluator::listable::thread_listable("Power", args)?
+  {
+    return Ok(threaded);
+  }
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
   if has_list {
     return thread_binary_over_lists(args, power_two);

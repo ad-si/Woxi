@@ -238,7 +238,7 @@ fn gen_word_str(rng: &mut Rng) -> Expr {
 
 impl Generator {
   pub(super) fn gen_lang(&self, rng: &mut Rng) -> Expr {
-    match rng.below(12) {
+    match rng.below(13) {
       0 => Self::gen_operator_arith(rng, 3),
       1 => gen_application(rng),
       2 => Self::gen_scoping(rng),
@@ -247,6 +247,7 @@ impl Generator {
       6 | 7 => self.gen_rules_and_patterns(rng),
       8 => Self::gen_part_syntax(rng),
       9 => Self::gen_logic_and_strings(rng),
+      10 => gen_association_ops(rng),
       _ => gen_held_syntax(rng),
     }
   }
@@ -893,6 +894,98 @@ fn gen_held_tree(rng: &mut Rng, depth: u32) -> Expr {
       (0..rng.below(3))
         .map(|_| gen_held_tree(rng, depth - 1))
         .collect(),
+    ),
+  }
+}
+
+/// An association literal with distinct string keys from `a`–`d` and small
+/// integer values.
+fn gen_assoc_lit(rng: &mut Rng) -> Expr {
+  let n = 1 + rng.below(4) as usize;
+  let mut keys = vec!["a", "b", "c", "d"];
+  // Shuffle so key order varies.
+  for i in (1..keys.len()).rev() {
+    let j = rng.below(i as u64 + 1) as usize;
+    keys.swap(i, j);
+  }
+  Expr::AssocLit(
+    keys[..n]
+      .iter()
+      .map(|k| {
+        infix(" -> ", vec![Expr::Str((*k).into()), int(rng.range(-5, 5))])
+      })
+      .collect(),
+  )
+}
+
+/// Association construction and manipulation: Merge, GroupBy, Counts,
+/// KeyValueMap, KeySort, Lookup, Map/Select over associations, part
+/// assignment by key, arithmetic on associations.
+fn gen_association_ops(rng: &mut Rng) -> Expr {
+  let key =
+    |rng: &mut Rng| Expr::Str((*rng.pick(&["a", "b", "c", "z"])).into());
+  match rng.below(14) {
+    0 => call(
+      "Merge",
+      vec![
+        Expr::List(vec![gen_assoc_lit(rng), gen_assoc_lit(rng)]),
+        sym(*rng.pick(&["Total", "First", "Last", "Max", "List"])),
+      ],
+    ),
+    1 => call("GroupBy", vec![small_list(rng), gen_fn1(rng)]),
+    2 => call("Counts", vec![gen_int_list(rng, 0, 6, -2, 2)]),
+    3 => call("CountsBy", vec![small_list(rng), gen_pred(rng)]),
+    4 => call(
+      "KeyValueMap",
+      vec![
+        pure(Expr::List(vec![sym("#1"), sym("#2")])),
+        gen_assoc_lit(rng),
+      ],
+    ),
+    5 => call(
+      *rng.pick(&["KeySort", "Keys", "Values", "Normal", "Length"]),
+      vec![gen_assoc_lit(rng)],
+    ),
+    6 => call("Lookup", vec![gen_assoc_lit(rng), key(rng), int(0)]),
+    7 => infix(" /@ ", vec![gen_fn1(rng), gen_assoc_lit(rng)]),
+    8 => call("Select", vec![gen_assoc_lit(rng), gen_pred(rng)]),
+    9 => call(
+      "Module",
+      vec![
+        fixed(Expr::List(vec![infix(
+          " = ",
+          vec![sym("a"), gen_assoc_lit(rng)],
+        )])),
+        Expr::Seq(vec![
+          infix(
+            " = ",
+            vec![
+              Expr::Index(Box::new(sym("a")), vec![key(rng)]),
+              int(rng.range(-9, 9)),
+            ],
+          ),
+          sym("a"),
+        ]),
+      ],
+    ),
+    10 => infix(
+      *rng.pick(&[" + ", " * "]),
+      vec![gen_assoc_lit(rng), int(rng.range(-3, 3))],
+    ),
+    11 => call(
+      *rng.pick(&["KeyDrop", "KeyTake"]),
+      vec![gen_assoc_lit(rng), Expr::List(vec![key(rng)])],
+    ),
+    12 => call(
+      "AssociationMap",
+      vec![gen_fn1(rng), gen_int_list(rng, 1, 3, -3, 3)],
+    ),
+    _ => call(
+      *rng.pick(&["Append", "Prepend"]),
+      vec![
+        gen_assoc_lit(rng),
+        infix(" -> ", vec![key(rng), int(rng.range(-9, 9))]),
+      ],
     ),
   }
 }
