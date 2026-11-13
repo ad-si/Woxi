@@ -2272,6 +2272,77 @@ mod graphics {
       );
     }
 
+    /// An option given to the `Row` (`BaseStyle -> …`) is not a separator:
+    /// taking it for one dropped the styled parts of the label.
+    #[test]
+    fn text_label_row_option_keeps_styled_parts() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Style[\"a\", Bold, Red], \" b\"}, \
+         BaseStyle -> {SingleLetterItalics -> False}], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-weight=\"bold\" fill=\"rgb(255,0,0)\">a</tspan> b</text>"
+        ),
+        "{svg}"
+      );
+    }
+
+    /// A nested `Style[…, size]` part of a label inside a `Style` of
+    /// another size is drawn at its own size.
+    #[test]
+    fn text_label_part_keeps_its_own_font_size() {
+      let svg = export_svg(
+        "Graphics[{Style[Text[Row[{Style[\"a\", 16], \" b\"}], {0, 0}], 12]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-size=\"16\">a</tspan> b</text>"),
+        "{svg}"
+      );
+      let fs = export_svg(
+        "Graphics[{Text[Row[{Style[\"a\", FontSize -> 20], \" b\"}], {0, 0}]}]",
+      );
+      assert!(fs.contains("<tspan font-size=\"20\">a</tspan>"), "{fs}");
+    }
+
+    /// Under `ImageSize -> {w, h}` with an explicit `AspectRatio` the drawing
+    /// area is letterboxed; a label that fits into the spare room beside it
+    /// does not widen the plot range (the range is just the anchors and the
+    /// rectangle, padded by 1/48 of the width on each side).
+    #[test]
+    fn letterboxed_label_spills_into_spare_room() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 0}, {2, 2}], Text[\"abcdef\", {3, 1}]}, \
+         AspectRatio -> 1, ImageSize -> {400, 200}]",
+      );
+      assert!(
+        svg.contains("<rect x=\"3.98\" y=\"5.63\" width=\"127.36\""),
+        "{svg}"
+      );
+    }
+
+    /// A label's inline box notation is measured by the characters it
+    /// draws, not by its `\!\(\*SubscriptBox[…]\)` markup, when the plot
+    /// range grows to fit the label.
+    #[test]
+    fn label_box_notation_is_measured_by_visible_characters() {
+      let rect = |label: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{Rectangle[{{0, 0}}, {{2, 2}}], Text[{label}, {{2, 1}}]}}]"
+        ));
+        svg
+          .split("<rect x=")
+          .nth(2)
+          .and_then(|s| s.split("fill").next())
+          .unwrap_or_default()
+          .to_string()
+      };
+      assert_eq!(
+        rect("\"mol \\!\\(\\*SubscriptBox[\\(N\\), \\(2\\)]\\) per min\""),
+        rect("\"mol N2 per min\"")
+      );
+    }
+
     /// A part styled like the whole label (an italic run inside an italic
     /// `Style`, a run in the label's own color) needs no `<tspan>`.
     #[test]
@@ -11753,8 +11824,10 @@ mod plot3d {
       assert_eq!(attr(&svg, FX, "font-style"), "normal");
       // Parts that agree on slant do carry it.
       assert_eq!(attr(&svg, "ab", "font-size"), "20");
-      // A row with an unstyled part keeps the label's own size.
-      assert_eq!(attr(&svg, "pq", "font-size"), "14");
+      // A row with an unstyled part keeps the label's own size, and the
+      // sized part is drawn at its own size inside it.
+      const PQ: &str = "p<tspan font-size=\"20\">q</tspan>";
+      assert_eq!(attr(&svg, PQ, "font-size"), "14");
     }
 
     /// A `Button` inside a picture draws as the button itself — a rounded

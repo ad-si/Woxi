@@ -11522,6 +11522,7 @@ pub(crate) struct StyledRange {
   italic: bool,
   bold: bool,
   color: Option<(f32, f32, f32)>,
+  size: Option<f64>,
 }
 
 /// Character ranges of `text` that `content`'s nested `Style[…]` parts set
@@ -11534,7 +11535,8 @@ pub(crate) struct StyledRange {
 /// still get one.
 fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
-  let styled = |r: &LabelRun| r.italic || r.bold || r.color.is_some();
+  let styled =
+    |r: &LabelRun| r.italic || r.bold || r.color.is_some() || r.size.is_some();
   if flatten_label_runs(&runs) != text || !runs.iter().any(styled) {
     return Vec::new();
   }
@@ -11549,6 +11551,7 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
         italic: r.italic,
         bold: r.bold,
         color: r.color,
+        size: r.size,
       });
     }
     pos += len;
@@ -11609,6 +11612,11 @@ fn svg_escape_with_styles(
       if run_fill != fill {
         attrs.push_str(&format!(" fill=\"{run_fill}\""));
       }
+    }
+    if let Some(size) = r.size
+      && (size - style.font_size).abs() > 1e-9
+    {
+      attrs.push_str(&format!(" font-size=\"{size}\""));
     }
     if attrs.is_empty() {
       continue;
@@ -13830,10 +13838,23 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A label that sticks out past an automatically-sized range is not cut
   // off in Wolfram: the picture grows to hold it. Its width is only known
   // in pixels, so the range is widened by the label's share of the canvas.
+  //
+  // Under `ImageSize -> {w, h}` with an explicit `AspectRatio` the drawing
+  // area is letterboxed inside the picture: its pixel size is the largest
+  // box of that shape that fits, and a label may spill into the spare room
+  // on either side of it before the range has to grow.
+  let (plot_w, plot_h, slack_x, slack_y) = match aspect_ratio {
+    Some(r) if size_names_height => {
+      let (w, h) = (svg_width as f64, svg_height as f64);
+      let (pw, ph) = if w * r <= h { (w, w * r) } else { (h / r, h) };
+      (pw, ph, (w - pw) / 2.0, (h - ph) / 2.0)
+    }
+    _ => (svg_width as f64, svg_height as f64, 0.0, 0.0),
+  };
   for _ in 0..3 {
-    let kx = svg_width as f64 / bb.width();
+    let kx = plot_w / bb.width();
     let ky = if explicit_height {
-      svg_height as f64 / bb.height()
+      plot_h / bb.height()
     } else {
       kx
     };
@@ -13981,7 +14002,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       }
       let fs = style.font_size;
-      let longest = text.split('\n').map(|l| l.chars().count()).max();
+      let longest = text_visible_line_lengths(text).into_iter().max();
       let text_w = longest.unwrap_or(0) as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       // `Offset[…]` / `Scaled[{dx, dy}, pos]` anchors shift the label off
@@ -13998,13 +14019,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // made to fit by widening the range — its size scales with the
       // canvas, so the growth would diverge and squash every other
       // primitive onto one point. Such a label overflows instead.
+      let (half_w, half_h) = (text_w / 2.0 / kx, text_h / 2.0 / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
       if plot_range_x.is_none() && text_w < svg_width as f64 {
-        grown.x_min = grown.x_min.min(cx - text_w / 2.0 / kx);
-        grown.x_max = grown.x_max.max(cx + text_w / 2.0 / kx);
+        grown.x_min = grown.x_min.min(cx - half_w + room_x);
+        grown.x_max = grown.x_max.max(cx + half_w - room_x);
       }
       if plot_range_y.is_none() && text_h < svg_height as f64 {
-        grown.y_min = grown.y_min.min(cy - text_h / 2.0 / ky);
-        grown.y_max = grown.y_max.max(cy + text_h / 2.0 / ky);
+        grown.y_min = grown.y_min.min(cy - half_h + room_y);
+        grown.y_max = grown.y_max.max(cy + half_h - room_y);
       }
     }
     if grown == bb {
@@ -20185,6 +20208,21 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
     },
     _ => String::new(),
   }
+}
+
+/// The visible character count of each line of a graphics label, with any
+/// inline box notation (`\!\(\*SubscriptBox[…]\)`) counted as the
+/// characters it draws rather than its markup.
+fn text_visible_line_lengths(text: &str) -> Vec<usize> {
+  let plain;
+  let text = match text.strip_prefix(STYLED_LABEL_MARKER) {
+    Some(markup) => {
+      plain = crate::functions::chart::svg_markup_visible_text(markup);
+      plain.as_str()
+    }
+    None => text,
+  };
+  text.split('\n').map(box_string_visible_len).collect()
 }
 
 /// Number of visible characters a box-notation label occupies, ignoring the
@@ -32714,6 +32752,29 @@ pub struct LabelRun {
   pub bold: bool,
   /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one.
   pub color: Option<(f32, f32, f32)>,
+  /// The run's font size in points, when `Style` gave it one
+  /// (`Style["t", 16]` or `FontSize -> 16`).
+  pub size: Option<f64>,
+}
+
+/// The font size a `Style`'s directives set: a bare number or
+/// `FontSize -> n`, the last one winning as in Wolfram.
+fn style_directive_font_size<'a>(
+  directives: impl Iterator<Item = &'a Expr>,
+) -> Option<f64> {
+  directives
+    .filter_map(|d| match d {
+      Expr::Integer(_) | Expr::Real(_) => expr_to_f64(d),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
+        expr_to_f64(replacement)
+      }
+      _ => None,
+    })
+    .filter(|v| v.is_finite() && *v > 0.0)
+    .last()
 }
 
 /// How a [`ManipulateControl::Locator`] turns dragged points into the value
@@ -39656,6 +39717,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .skip(1)
           .find_map(parse_color)
           .map(|c| (c.r as f32, c.g as f32, c.b as f32));
+        let size = style_directive_font_size(args.iter().skip(1));
         let mut runs = args
           .first()
           .map_or_default(|a| manipulate_label_runs(a, styled));
@@ -39663,6 +39725,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           run.bold |= bold;
           if run.color.is_none() {
             run.color = color;
+          }
+          if run.size.is_none() {
+            run.size = size;
           }
         }
         runs
@@ -39788,9 +39853,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `GraphicsRow` lays its items out the same way; its pictures drop out.
       "Row" | "RowBox" | "GraphicsRow" => match layout_parts(args.first()) {
         Some(parts) => {
-          // `Row[{a, b, …}, sep]` puts `sep` between neighboring parts.
+          // `Row[{a, b, …}, sep]` puts `sep` between neighboring parts; a
+          // second argument that is an option (`BaseStyle -> …`) is not one.
           let separator = match (name.as_str(), args.get(1)) {
-            ("Row", Some(sep)) => manipulate_label_runs(sep, italic),
+            ("Row", Some(sep)) if !crate::syntax::is_rule_expr(sep) => {
+              manipulate_label_runs(sep, italic)
+            }
             _ => Vec::new(),
           };
           parts
