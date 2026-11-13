@@ -579,7 +579,19 @@ pub fn dispatch_complex_and_special(
     // notebook the pointer is over nothing yet, which a front end reports
     // as None; without one, wolframscript's notavail and $Failed.
     "MousePosition" if args.len() <= 2 => {
+      // A live widget delivering a mouse event over a graphic sets the
+      // pointer's graphics coordinates for the event's action.
+      let graphics_form =
+        matches!(args.first(), Some(Expr::String(f)) if f == "Graphics");
+      if graphics_form && let Some((x, y)) = crate::mouse_position() {
+        return Some(Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())));
+      }
       if crate::is_visual_mode() {
+        // `MousePosition[form, default]` gives `default` when the
+        // position is not available.
+        if args.len() == 2 {
+          return Some(crate::evaluator::evaluate_expr_to_expr(&args[1]));
+        }
         return Some(Ok(id_expr("None")));
       }
       crate::emit_message(

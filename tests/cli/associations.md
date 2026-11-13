@@ -55,6 +55,13 @@ $ wo 'myHash = <|"Green" -> 2, "Red" -> 1|>; myHash[["Green"]] = 5; myHash'
 <|Green -> 5, Red -> 1|>
 ```
 
+Nested values are updated by chaining the keys:
+
+```scrut
+$ wo 'a = <|"x" -> <|"y" -> 3|>|>; a["x"]["y"] = 4; a'
+<|x -> <|y -> 4|>|>
+```
+
 
 ## Add Values
 
