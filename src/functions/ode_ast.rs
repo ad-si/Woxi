@@ -6605,7 +6605,9 @@ fn ndsolve_system(
   // The residuals as expressions, for a closed-form Jacobian (only when
   // each evaluation is a plain function of the state: no Newton solve).
   let mut residual_exprs: Vec<Expr> = Vec::with_capacity(odes.len());
-  let delay_found = std::cell::Cell::new(false);
+  // The lags of the delayed values the equations read.
+  let delay_found: std::cell::RefCell<Vec<f64>> =
+    std::cell::RefCell::new(Vec::new());
   // The numerically-eliminated unknowns live in extra slots past the
   // placeholders; each residual solves their constraints for those first.
   let implicit_slot = var_names.len();
@@ -6743,7 +6745,7 @@ fn ndsolve_system(
   // initial point those are the (constant) history conditions, afterwards
   // the steps the integrator has accepted so far.
   let _dde_guard = DdeGuard;
-  if delay_found.get() {
+  if !delay_found.borrow().is_empty() {
     if !matches!(kind, ProblemKind::Initial { .. }) || !time_events_empty {
       return Ok(None);
     }
@@ -6753,11 +6755,13 @@ fn ndsolve_system(
         past[1 + state_offset[fi]] = f.ics[0].unwrap_or(0.0);
       }
     }
+    let breaks = dde_breakpoints(x0, x_max_resolved, &delay_found.borrow());
     DDE_HISTORY.with(|h| {
       *h.borrow_mut() = Some(DdeHistory {
         x0,
         past,
         points: Vec::new(),
+        breaks,
       });
     });
   }
@@ -6885,6 +6889,15 @@ fn ndsolve_system(
     }
     None => 1000usize,
   };
+  // A delay equation reads its own past from the steps taken so far, which
+  // interpolation recovers only as accurately as the steps are dense: the
+  // step-doubling control cannot see that error, and a chaotic delay
+  // equation amplifies it, so its grid is finer.
+  let n_steps = if delay_found.borrow().is_empty() {
+    n_steps
+  } else {
+    n_steps.max(DDE_NOMINAL_STEPS)
+  };
   if algebraic_unknowns {
     crate::emit_message(
       "NDSolve::pdord: Some of the functions have zero differential order, \
@@ -6924,7 +6937,7 @@ fn ndsolve_system(
         );
         if let Some(m) = cached_mass_matrix.as_mut()
           && residual_exprs.len() == residuals.len()
-          && !delay_found.get()
+          && delay_found.borrow().is_empty()
         {
           m.jacobian_source = Some((residual_exprs.clone(), var_names.clone()));
         }
@@ -8410,6 +8423,50 @@ fn integrate_leg(
   x_name: &str,
   cached_m: Option<&MassLu>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  // A delay equation's leg is cut at the breakpoints where its solution's
+  // derivatives jump, so that no RK4 step straddles one.
+  if dde_active()
+    && event_fn.is_none()
+    && time_events.is_empty()
+    && state_events.events.is_empty()
+  {
+    let breaks = dde_breaks_between(x_from, x_to);
+    if !breaks.is_empty() {
+      let mut out: Vec<(f64, Vec<f64>)> = Vec::new();
+      let mut start_x = x_from;
+      let mut state = init_state;
+      for end in breaks.into_iter().chain(std::iter::once(x_to)) {
+        let Some(part) = integrate_leg(
+          residuals,
+          funcs,
+          state_offset,
+          state.clone(),
+          start_x,
+          end,
+          h,
+          None,
+          None,
+          &[],
+          state_events,
+          x_name,
+          cached_m,
+        )?
+        else {
+          return Ok(if out.is_empty() { None } else { Some(out) });
+        };
+        let reached = part.last().map(|(px, _)| *px);
+        let skip = usize::from(!out.is_empty());
+        out.extend(part.into_iter().skip(skip));
+        // A leg that stopped short (a singularity) ends the solution.
+        if reached != Some(end) {
+          return Ok(Some(out));
+        }
+        state.clone_from(&out[out.len() - 1].1);
+        start_x = end;
+      }
+      return Ok(Some(out));
+    }
+  }
   // At least one step for a leg of any length: an initial point just inside
   // the domain leaves a backward leg shorter than half a step, which would
   // otherwise round to none and cut the domain short.
@@ -9782,6 +9839,79 @@ struct DdeHistory {
   x0: f64,
   past: Vec<f64>,
   points: Vec<(f64, Vec<f64>)>,
+  /// Where the solution's derivatives jump (see [`dde_breakpoints`]),
+  /// ascending; the integration steps end on each of them and no
+  /// interpolation reaches across one.
+  breaks: Vec<f64>,
+}
+
+/// How many times a derivative jump is followed along the lags: the jump
+/// at the initial point moves one derivative higher with each lag, so past
+/// a few of them the solution is smooth enough for the RK4 steps.
+const DDE_BREAKPOINT_ORDER: usize = 5;
+/// At most this many breakpoints are tracked (many incommensurate lags).
+const MAX_DDE_BREAKPOINTS: usize = 256;
+
+/// The points in `(x0, x_end)` where a delay equation's solution has a
+/// derivative jump: the history meets the solution at `x0` with a kink,
+/// which every lag carries on to `x0 + τ₁ + τ₂ + …`, smoothing it by one
+/// derivative each time.
+fn dde_breakpoints(x0: f64, x_end: f64, lags: &[f64]) -> Vec<f64> {
+  let span = x_end - x0;
+  let mut all: Vec<f64> = Vec::new();
+  if span.is_nan() || span <= 0.0 || lags.is_empty() {
+    return all;
+  }
+  let mut level: Vec<f64> = vec![0.0];
+  for _ in 0..DDE_BREAKPOINT_ORDER {
+    let mut next: Vec<f64> = Vec::new();
+    for s in &level {
+      for lag in lags {
+        let d = s + lag;
+        if d < span * (1.0 - 1e-12)
+          && !next.iter().any(|n| (n - d).abs() <= 1e-12 * span)
+        {
+          next.push(d);
+        }
+      }
+    }
+    if next.is_empty() {
+      break;
+    }
+    all.extend(next.iter().copied());
+    if all.len() > MAX_DDE_BREAKPOINTS {
+      break;
+    }
+    level = next;
+  }
+  all.sort_by(f64::total_cmp);
+  all.dedup_by(|a, b| (*a - *b).abs() <= 1e-12 * span);
+  all.truncate(MAX_DDE_BREAKPOINTS);
+  all.into_iter().map(|d| x0 + d).collect()
+}
+
+/// The breakpoints of the delay equation being integrated that lie
+/// strictly between `a` and `b` (in either direction), in the order the
+/// integration from `a` meets them.
+fn dde_breaks_between(a: f64, b: f64) -> Vec<f64> {
+  DDE_HISTORY.with(|h| {
+    let h = h.borrow();
+    let Some(h) = h.as_ref() else {
+      return Vec::new();
+    };
+    let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+    let tol = 1e-12 * (hi - lo).abs().max(1.0);
+    let mut v: Vec<f64> = h
+      .breaks
+      .iter()
+      .copied()
+      .filter(|x| *x > lo + tol && *x < hi - tol)
+      .collect();
+    if a > b {
+      v.reverse();
+    }
+    v
+  })
 }
 
 thread_local! {
@@ -9791,8 +9921,12 @@ thread_local! {
 
 /// Value of variable `idx` (a slot of the `[x, state…]` vector) at `x`.
 /// Before the initial time it is the history function; afterwards it is
-/// linearly interpolated between accepted steps, and a lookup beyond the
-/// newest step (a lag shorter than the step being taken) uses that step.
+/// the cubic through the four accepted steps around `x` (fewer near the
+/// start), so the delayed values are as accurate as the RK4 steps
+/// themselves — linear interpolation's second-order error grows quickly
+/// in a chaotic delay equation. A lookup beyond the newest step (a lag
+/// shorter than the step being taken) extrapolates the newest steps'
+/// quadratic.
 fn dde_history_value(idx: usize, x: f64) -> f64 {
   DDE_HISTORY.with(|h| {
     let h = h.borrow();
@@ -9803,20 +9937,70 @@ fn dde_history_value(idx: usize, x: f64) -> f64 {
       return h.past.get(idx).copied().unwrap_or(f64::NAN);
     }
     let slot = idx - 1;
-    let i = h.points.partition_point(|(px, _)| *px < x);
-    if i == 0 {
-      return h.points[0].1[slot];
-    }
-    if i >= h.points.len() {
+    // Only the steps between the breakpoints around `x` are interpolated:
+    // a cubic across a derivative jump is no more accurate than a line.
+    let bi = h.breaks.partition_point(|b| *b < x);
+    let seg_lo = if bi == 0 { h.x0 } else { h.breaks[bi - 1] };
+    let seg_hi = h.breaks.get(bi).copied().unwrap_or(f64::INFINITY);
+    let first = h.points.partition_point(|(px, _)| *px < seg_lo);
+    let last = h.points.partition_point(|(px, _)| *px <= seg_hi);
+    let seg = &h.points[first..last];
+    if seg.is_empty() {
       return h.points[h.points.len() - 1].1[slot];
     }
-    let (xa, ya) = (&h.points[i - 1].0, &h.points[i - 1].1);
-    let (xb, yb) = (&h.points[i].0, &h.points[i].1);
-    if xb == xa {
-      return yb[slot];
+    let n = seg.len();
+    let i = seg.partition_point(|(px, _)| *px < x);
+    if i < n && seg[i].0 == x {
+      return seg[i].1[slot];
     }
-    ya[slot] + (yb[slot] - ya[slot]) * (x - xa) / (xb - xa)
+    // The window of nodes: two on each side of `x` inside the steps, the
+    // newest three past them.
+    let (lo, hi) = if i >= n {
+      (n.saturating_sub(3), n)
+    } else {
+      let half = DDE_INTERPOLATION_NODES / 2;
+      let lo = i
+        .saturating_sub(half)
+        .min(n.saturating_sub(DDE_INTERPOLATION_NODES));
+      (lo, (lo + DDE_INTERPOLATION_NODES).min(n))
+    };
+    let nodes = &seg[lo..hi];
+    // Repeated abscissas (an event restart) would divide by zero: the
+    // later of the two is kept.
+    let mut xs: Vec<f64> = Vec::with_capacity(DDE_INTERPOLATION_NODES);
+    let mut ys: Vec<f64> = Vec::with_capacity(DDE_INTERPOLATION_NODES);
+    for (px, py) in nodes {
+      if xs.last() == Some(px) {
+        *ys.last_mut().unwrap() = py[slot];
+      } else {
+        xs.push(*px);
+        ys.push(py[slot]);
+      }
+    }
+    lagrange_value(&xs, &ys, x)
   })
+}
+
+/// The nominal number of steps of a delay equation's grid.
+const DDE_NOMINAL_STEPS: usize = 10_000;
+
+/// How many accepted steps around a delayed point its value is
+/// interpolated from.
+const DDE_INTERPOLATION_NODES: usize = 6;
+
+/// The value at `x` of the polynomial through the points `(xs, ys)`.
+fn lagrange_value(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+  let mut sum = 0.0;
+  for (j, (xj, yj)) in xs.iter().zip(ys).enumerate() {
+    let mut w = *yj;
+    for (k, xk) in xs.iter().enumerate() {
+      if k != j {
+        w *= (x - xk) / (xj - xk);
+      }
+    }
+    sum += w;
+  }
+  sum
 }
 
 fn dde_record(points: &[(f64, Vec<f64>)]) {
@@ -9915,7 +10099,7 @@ fn replace_delayed_values(
   funcs: &[SysFunc],
   state_offset: &[usize],
   x_name: &str,
-  found: &std::cell::Cell<bool>,
+  found: &std::cell::RefCell<Vec<f64>>,
 ) -> Expr {
   if let Expr::FunctionCall { name, args } = expr
     && args.len() == 1
@@ -9941,7 +10125,10 @@ fn replace_delayed_values(
         };
       }
       if lag > 0.0 {
-        found.set(true);
+        let mut lags = found.borrow_mut();
+        if !lags.iter().any(|l| (l - lag).abs() < 1e-12) {
+          lags.push(lag);
+        }
         return Expr::FunctionCall {
           name: DELAYED_HEAD.to_string(),
           args: vec![

@@ -235,6 +235,10 @@ fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
 /// halves the flagged intervals, so six passes shrink a step by 64×.
 const MAX_REFINEMENT_DEPTH: usize = 6;
 
+/// Adaptive refinement adds samples up to this multiple of the initial
+/// grid's.
+const MAX_REFINED_SAMPLES_FACTOR: usize = 8;
+
 /// One sampled parameter value together with the coordinate pair of every
 /// curve there (`None` when the body did not evaluate to coordinates).
 type Sample = (f64, Option<Vec<(f64, f64)>>);
@@ -936,7 +940,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The uniform grid is the starting point; intervals where it would
   // render the curve as a polygon get bisected on top of it.
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
-  let max_total = num_samples.saturating_mul(2);
+  // A long curve that winds many times (a chaotic orbit over a long time
+  // span) needs bends resolved all along it, not just in its first part.
+  let max_total = num_samples.saturating_mul(MAX_REFINED_SAMPLES_FACTOR);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
   let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(curves.len());
   let excluded = exclusion_roots(&args[2..], &var_name, t_min, t_max);
