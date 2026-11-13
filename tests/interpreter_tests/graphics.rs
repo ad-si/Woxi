@@ -9404,7 +9404,7 @@ mod plot3d {
         bordered[0].contains("stroke=\"rgb(0,0,0)\""),
         "{bordered:?}"
       );
-      assert!(rects("\"abc\"").is_empty());
+      assert_eq!(rects("\"abc\""), Vec::<String>::new());
     }
 
     // Explicit `Ticks` pin the 3D axis ticks instead of the automatic ones.
