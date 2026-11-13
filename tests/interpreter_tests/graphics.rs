@@ -4102,6 +4102,26 @@ mod graphics {
         (attr("cx"), attr("cy"))
       }
 
+      // `Plot` takes its padding from `PlotRangePadding` too: `None` on the
+      // x axis ends the frame at the sampled domain, so a tick just past
+      // it (1.0 for a domain ending at 0.99) is not drawn, while the
+      // default `Scaled[0.02]` (or a wider explicit side) reaches it.
+      #[test]
+      fn plot_honors_x_padding() {
+        let has_one = |padding: &str| {
+          export_svg(&format!(
+            "Plot[5 x, {{x, 0, 0.99}}, Frame -> True{padding}]"
+          ))
+          .contains("\n1.0\n")
+        };
+        assert!(has_one(""));
+        assert!(!has_one(", PlotRangePadding -> {None, Automatic}"));
+        assert!(!has_one(", PlotRangePadding -> None"));
+        assert!(has_one(
+          ", PlotRangePadding -> {{None, Scaled[0.1]}, Automatic}"
+        ));
+      }
+
       // With no `PlotRangePadding`, an explicit `PlotRange` is drawn exactly
       // (the existing default), so a point at its corner lands right on the
       // image edge.
@@ -9315,6 +9335,76 @@ mod plot3d {
         "Graphics3D[Sphere[], ImageSize -> 400, AspectRatio -> 1/2]",
       );
       assert!(svg.contains("width=\"400\" height=\"200\""), "{svg}");
+    }
+
+    /// The height-to-width ratio of everything the `<polygon>`s of a 3-D
+    /// picture cover.
+    fn polygon_extent_ratio(svg: &str) -> f64 {
+      let (mut x0, mut x1, mut y0, mut y1) =
+        (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+      for tag in svg.split("<polygon points=\"").skip(1) {
+        let points = tag.split('"').next().unwrap();
+        for pair in points.split_whitespace() {
+          let (x, y) = pair.split_once(',').unwrap();
+          let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+          x0 = x0.min(x);
+          x1 = x1.max(x);
+          y0 = y0.min(y);
+          y1 = y1.max(y);
+        }
+      }
+      (y1 - y0) / (x1 - x0)
+    }
+
+    // An explicit `AspectRatio` stretches the projected scene to the
+    // picture's shape rather than leaving it at its natural proportions in
+    // the middle of a taller (or wider) canvas.
+    #[test]
+    fn graphics3d_aspect_ratio_stretches_scene() {
+      let scene = |opts: &str| {
+        export_svg(&format!(
+          "Graphics3D[Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 3/4], \
+           Boxed -> False, ViewPoint -> Front, ImageSize -> 200{opts}]"
+        ))
+      };
+      let natural = polygon_extent_ratio(&scene(""));
+      let tall = polygon_extent_ratio(&scene(", AspectRatio -> 2"));
+      let flat = polygon_extent_ratio(&scene(", AspectRatio -> 1/4"));
+      assert!(natural < 1.0, "natural={natural}");
+      assert!(tall > 2.0 * natural, "natural={natural} tall={tall}");
+      assert!(flat < natural / 2.0, "natural={natural} flat={flat}");
+    }
+
+    // A `Framed[…]` label in a 3-D scene is drawn on its panel: its
+    // `Background` fills it, and its border is drawn unless
+    // `FrameStyle -> None`.
+    #[test]
+    fn graphics3d_framed_text_panel() {
+      let rects = |label: &str| {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Sphere[], Text[{label}, {{0, 0, 0}}]}}, Boxed -> False]"
+        ));
+        svg
+          .split("<rect ")
+          .skip(1)
+          .filter(|r| !r.starts_with("width="))
+          .map(|r| r.split("/>").next().unwrap().to_string())
+          .collect::<Vec<_>>()
+      };
+      let white = rects(
+        "Framed[Style[\"x = 1\", 18], Background -> White, FrameStyle -> None]",
+      );
+      assert_eq!(white.len(), 1, "{white:?}");
+      assert!(white[0].contains("fill=\"rgb(255,255,255)\""), "{white:?}");
+      assert!(!white[0].contains("stroke="), "{white:?}");
+      let bordered = rects("Framed[\"abc\"]");
+      assert_eq!(bordered.len(), 1, "{bordered:?}");
+      assert!(bordered[0].contains("fill=\"none\""), "{bordered:?}");
+      assert!(
+        bordered[0].contains("stroke=\"rgb(0,0,0)\""),
+        "{bordered:?}"
+      );
+      assert!(rects("\"abc\"").is_empty());
     }
 
     // Explicit `Ticks` pin the 3D axis ticks instead of the automatic ones.
