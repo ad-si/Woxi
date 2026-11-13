@@ -742,6 +742,9 @@ fn graph_render(
   let mut explicit_range: Option<((f64, f64), (f64, f64))> = None;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
+  // `AspectRatio -> r` sets the picture's height-to-width ratio, as it does
+  // for `Graphics`; left out, the drawing's own extent decides.
+  let mut aspect_ratio: Option<Expr> = None;
   let mut background: Option<Expr> = None;
   // `Prolog` / `Epilog`: graphics drawn under / over the graph, written in
   // the caller's own coordinates (the ones `VertexCoordinates` uses).
@@ -937,6 +940,10 @@ fn graph_render(
         }
         "ImageSize" => {
           image_size = Some(replacement.clone());
+        }
+        // Like any option, the first setting given wins.
+        "AspectRatio" if aspect_ratio.is_none() => {
+          aspect_ratio = Some(replacement.clone());
         }
         // `Background -> color` fills the panel behind the drawing, as it
         // does for `Graphics`.
@@ -1793,6 +1800,9 @@ fn graph_render(
   }
   if let Some(range) = shown_range {
     graphics_args.push(range);
+  }
+  if let Some(ratio) = aspect_ratio {
+    graphics_args.push(rule_expr(id_expr("AspectRatio"), ratio));
   }
   graphics_ast(&graphics_args)
 }

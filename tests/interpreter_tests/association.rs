@@ -2718,3 +2718,149 @@ mod association_fuzz_findings {
     );
   }
 }
+
+mod nested_key_assignment {
+  use super::*;
+
+  #[test]
+  fn chained_keys_set_a_nested_value() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> {1}, 2 -> {2}|>|>; n[b][1] = {9}; n")
+        .unwrap(),
+      "<|b -> <|1 -> {9}, 2 -> {2}|>|>"
+    );
+  }
+
+  #[test]
+  fn chained_keys_return_the_value() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> 0|>|>; n[b][1] = 7").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn chained_keys_add_a_missing_last_key() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> 0|>|>; n[b][2] = 3; n").unwrap(),
+      "<|b -> <|1 -> 0, 2 -> 3|>|>"
+    );
+  }
+
+  #[test]
+  fn three_levels_of_string_keys() {
+    assert_eq!(
+      interpret(
+        "n = <|\"x\" -> <|\"y\" -> <|\"z\" -> 0|>|>|>; \
+         n[\"x\"][\"y\"][\"z\"] = 1; n[\"x\"][\"y\"][\"z\"]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  /// The assignment changes only the local copy inside a Module.
+  #[test]
+  fn on_a_module_local_copy() {
+    assert_eq!(
+      interpret(
+        "g = <|a -> 1, b -> <|1 -> {1}|>|>; \
+         f[x_] := Module[{n = x}, n[b][1] = {9}; n]; {f[g], g}"
+      )
+      .unwrap(),
+      "{<|a -> 1, b -> <|1 -> {9}|>|>, <|a -> 1, b -> <|1 -> {1}|>|>}"
+    );
+  }
+
+  /// A curried definition on a symbol that holds no Association stays a
+  /// SubValue.
+  #[test]
+  fn sub_values_are_unaffected() {
+    assert_eq!(
+      interpret("f[1][2] = 3; {f[1][2], f[1][3]}").unwrap(),
+      "{3, f[1][3]}"
+    );
+  }
+
+  #[test]
+  fn part_with_key_replaces_the_entry() {
+    assert_eq!(
+      interpret("n = <|b -> 1|>; n[[Key[b]]] = 2; n").unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn part_with_integer_key_is_not_a_position() {
+    assert_eq!(
+      interpret("n = <|5 -> a, 6 -> b|>; n[[Key[6]]] = c; n[[1]] = d; n")
+        .unwrap(),
+      "<|5 -> d, 6 -> c|>"
+    );
+  }
+
+  #[test]
+  fn part_with_nested_keys() {
+    assert_eq!(
+      interpret(
+        "n = <|b -> <|1 -> {1}|>|>; n[[Key[b], Key[1]]] = {9}; \
+         n[[Key[b], Key[2]]] = 7; n"
+      )
+      .unwrap(),
+      "<|b -> <|1 -> {9}, 2 -> 7|>|>"
+    );
+  }
+}
+
+// Listable functions thread over association values; associations must
+// share their keys in order, and unequal list lengths report
+// Thread::tdlen. Found by the differential fuzzer.
+mod listable_threads_over_associations {
+  use super::*;
+
+  #[test]
+  fn arithmetic_and_listable_functions() {
+    for (input, expected) in [
+      (r#"<|"a" -> 1|> + 3"#, "<|a -> 4|>"),
+      (r#"<|"a" -> 1, "b" -> 2|> * x"#, "<|a -> x, b -> 2*x|>"),
+      (r#"<|"a" -> 1|> + <|"a" -> 2|>"#, "<|a -> 3|>"),
+      (r#"2^<|"a" -> 3|>"#, "<|a -> 8|>"),
+      (r#"Sin[<|"a" -> 0|>]"#, "<|a -> 0|>"),
+      ("<||> + 1", "<||>"),
+      (r#"<|"a" -> 1|> + {1, 2}"#, "{<|a -> 2|>, <|a -> 3|>}"),
+      (r#"Plus[<|"a" -> 1|>, 2, 3]"#, "<|a -> 6|>"),
+      (
+        r#"SetAttributes[g, Listable]; g[<|"a" -> 1|>]"#,
+        "<|a -> g[1]|>",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn incompatible_keys_and_unequal_lengths() {
+    for code in [
+      r#"<|"a" -> 1|> + <|"b" -> 2|>"#,
+      r#"<|"a" -> 1, "b" -> 2|> + <|"b" -> 10, "a" -> 20|>"#,
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.warnings.len(), 1, "{code}");
+      assert!(r.warnings[0].starts_with("Association::incmp: "), "{code}");
+    }
+    let r = woxi::interpret_with_stdout(
+      "SetAttributes[f, Listable]; f[{}, 0, {3, -2}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "f[{}, 0, {3, -2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Thread::tdlen: Objects of unequal length in f[{}, 0, {3, -2}] \
+         cannot be combined."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("Power[{1, 2}, {1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "{1, 2}^{1, 2, 3}");
+  }
+}

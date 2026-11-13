@@ -32,31 +32,11 @@ they intentionally deviate from to provide a better user experience.
 
 ## WolframScript vs Woxi
 
-- **Woxi supports Unicode characters** \
-    For example to calculate the circumference of a circle with radius 4:
-    ```sh
-    woxi eval 'N[2π * 4]'
-    ```
-
-- **Woxi runs `.nb` notebooks directly** \
-    WolframScript can only execute `.wls` / `.m` script files, but Woxi can
-    evaluate the Input/Code cells of a Mathematica `.nb` notebook right from
-    the command line:
-    ```sh
-    woxi run notebook.nb
-    ```
-
-- **Woxi imports [CERN ROOT](https://root.cern/) files** \
-    The Wolfram Language has no importer for the standard container format
-    of particle physics, but Woxi decodes its 1-D and 2-D histograms,
-    strings, and nested directories into an Association, and reads TTree
-    branch data — flat leaves, leaf-count arrays, `std::vector`s, and
-    `TLorentzVector`s — through element paths
-    (see [`Import`](../file_system/Import.md#cern-root-files-woxi-extension)):
-    ```sh
-    woxi eval 'Import["experiment.root"]'
-    woxi eval 'Import["experiment.root", {"ROOT", "events", "energy"}]'
-    ```
+Woxi can do several things WolframScript and the Wolfram Engine can't,
+like running without license checks, being embedded into other software,
+running in the browser, and executing `.nb` notebooks directly.
+See [What Woxi can do that Mathematica can't](mathematica/woxi_only.md)
+for the full list.
 
 
 ## Mathematica vs Woxi Studio

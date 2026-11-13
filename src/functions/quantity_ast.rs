@@ -1326,87 +1326,18 @@ fn simplify_unit_expr(unit: &Expr) -> Option<(Expr, (i128, i128))> {
   Some((components_to_unit_expr(&simplified), conv))
 }
 
-/// Map a full unit name to its standard SI abbreviation.
-/// Returns `None` for unknown units.
+/// Map a full unit name to the abbreviation a notebook typesets for it
+/// (`"Kelvins"` → `K`). Returns `None` for unknown units.
+///
+/// This is the `TextString` table ([`unit_abbreviation`]) plus the few
+/// units that `TextString` spells out but a typeset quantity abbreviates.
 pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
-  Some(match name {
-    // Length
-    "Meters" => "m",
-    "Kilometers" => "km",
-    "Centimeters" => "cm",
-    "Millimeters" => "mm",
-    "Micrometers" => "\u{03bc}m", // μm
-    "Nanometers" => "nm",
-    "NauticalMiles" => "nmi",
-    "Feet" => "ft",
-    "Inches" => "in",
-    "Miles" => "mi",
-    "Yards" => "yd",
-    // Mass
-    "Kilograms" => "kg",
-    "Grams" => "g",
-    "Milligrams" => "mg",
-    "Pounds" => "lb",
-    "MetricTons" => "t",
-    "Ounces" => "oz",
-    // Time
-    "Seconds" => "s",
-    "Milliseconds" => "ms",
-    "Microseconds" => "\u{03bc}s", // μs
-    "Nanoseconds" => "ns",
-    "Minutes" => "min",
-    "Hours" => "h",
-    "Days" => "days",
-    // Volume
-    "Liters" => "L",
-    "Milliliters" => "mL",
-    "Gallons" => "gal",
-    // Electrical / Energy / Power
-    "Amperes" => "A",
-    "Milliamperes" => "mA",
-    "Volts" => "V",
-    "Millivolts" => "mV",
-    "Kilovolts" => "kV",
-    "Joules" => "J",
-    "Millijoules" => "mJ",
-    "Kilojoules" => "kJ",
-    "ThermochemicalCalories" => "cal",
-    "ThermochemicalKilocalories" => "kcal",
-    "Electronvolts" => "eV",
-    "Megaelectronvolts" => "MeV",
-    "Daltons" => "Da",
-    "Watts" => "W",
-    "Milliwatts" => "mW",
-    "Kilowatts" => "kW",
-    "Farads" => "F",
-    "Millifarads" => "mF",
-    "Microfarads" => "\u{03bc}F", // μF
-    "Nanofarads" => "nF",
-    "Picofarads" => "pF",
-    "Coulombs" => "C",
-    "Newtons" => "N",
-    "Pascals" => "Pa",
-    "Kilopascals" => "kPa",
-    "Megapascals" => "MPa",
-    "Gigapascals" => "GPa",
-    "Bars" => "bar",
-    "Atmospheres" => "atm",
-    "Ohms" => "\u{03a9}",     // Ω
-    "Kilohms" => "k\u{03a9}", // kΩ
-    "Megohms" => "M\u{03a9}", // MΩ
-    "WattHours" => "Wh",
-    "KilowattHours" => "kWh",
-    "Henries" => "H",
-    "Millihenries" => "mH",
-    "Hertz" => "Hz",
-    "Kilohertz" => "kHz",
-    "Megahertz" => "MHz",
-    "Gigahertz" => "GHz",
-    "Teslas" => "T",
-    "Milliteslas" => "mT",
-    "Knots" => "kn",
-    "MetricKilotons" => "kt",
-    _ => return None,
+  unit_abbreviation(name).or(match name {
+    "Days" => Some("days"),
+    "MetricKilotons" => Some("kt"),
+    "ThermochemicalCalories" => Some("cal"),
+    "ThermochemicalKilocalories" => Some("kcal"),
+    _ => None,
   })
 }
 

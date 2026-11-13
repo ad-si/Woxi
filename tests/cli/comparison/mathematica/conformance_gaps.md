@@ -414,7 +414,34 @@ StandardForm. The CLI `eval` InputForm keeps full precision, as
 because it makes the two layers disagree with each other.
 
 
+### A pure function's message prints a one-argument `Plus` as `+x`
+
+```sh
+wolframscript -code 'Plus[##2] &[]'   # Function::slots: SlotSequence[2] in +##2 &  cannot be filled from (+##2 & )[].
+woxi eval 'Plus[##2] &[]'             # Function::slots: SlotSequence[2] in Plus[##2] &  cannot be filled from (Plus[##2] & )[].
+```
+
+The result, `##2`, matches; only the message text differs. Outside a
+message (`Plus[x] &`, `Hold[Plus[x]]`) both engines print `Plus[x]`.
+
 ## Canonical ordering of Plus and Times
+
+### Times does not fold a real coefficient into an imaginary one
+
+```sh
+wolframscript -code 'ToString[FullForm[-2 I x]]'
+# Times[Complex[0, -2], x]
+woxi eval 'ToString[FullForm[-2 I x]]'
+# Times[-2, Complex[0, 1], x]
+```
+
+Wolfram multiplies all numeric factors of a product into one coefficient,
+complex ones included; Woxi keeps the real coefficient and the imaginary
+unit apart whenever a symbolic factor is present (`-I` alone is
+`Complex[0, -1]` in both). The printed form agrees, but `Length`, `Part` and
+patterns see three factors instead of two. Held printing compensates: a held
+`Times[-1, I, x]` prints `-I*x` (Wolfram brackets the literal call as
+`-(I*x)`) because in Woxi it is also the evaluated form of `-I x`.
 
 ### A rational multiple of a sum is ordered against a product by its own rule
 
@@ -457,6 +484,21 @@ The `Plus` comparator follows Wolfram for every term led by a function call
 sort after the symbols, powers and products, by head name, then from the
 last factor of a product by that call's arguments, its exponent and the
 remaining factors. What is left are the entries below.
+
+### A symbol sorts before `I*(sum)` and before `1/(E^x*(1 + E^x))` in `Plus`
+
+```sh
+wolframscript -code 'x + I*(a + b)'                # I*(a + b) + x
+woxi eval 'x + I*(a + b)'                          # x + I*(a + b)
+wolframscript -code 'x + 1/(E^x*(1 + E^x))'        # 1/(E^x*(1 + E^x)) + x
+woxi eval 'x + 1/(E^x*(1 + E^x))'                  # x + 1/(E^x*(1 + E^x))
+```
+
+Found by the differential fuzzer (2026-11-12) through `TrigToExp[x + Tan[x]]`,
+which prints its `x` first. `2*(a + b) + x`, `I/(a*b) + x` and
+`1/((a + b)*E^x) + x` conform. `Sort[{x, I*(a + b)}]` agrees with
+wolframscript, so only the `Plus` comparator is off for the first form;
+`Sort[{x, 1/(E^x*(1 + E^x))}]` diverges as well.
 
 ### `Sort` puts a symbol before a sum, and a call before its curried form
 
@@ -553,6 +595,27 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
+
+### A symbol against a sum with a fractional multiple of it
+
+```sh
+wolframscript -code 'Order[x, 1 + x/2]'                # -1
+woxi eval 'Order[x, 1 + x/2]'                          # 1
+wolframscript -code 'Order[x^2, 1 + x^2/2]'            # 1
+woxi eval 'Order[x^2, 1 + x^2/2]'                      # -1
+wolframscript -code 'Sort[{Pi, 95 + Pi/78}]'           # {95 + Pi/78, Pi}
+woxi eval 'Sort[{Pi, 95 + Pi/78}]'                     # {Pi, 95 + Pi/78}
+wolframscript -code '(95 + Pi/78)/19 - Pi'             # (95 + Pi/78)/19 - Pi
+woxi eval '(95 + Pi/78)/19 - Pi'                       # -Pi + (95 + Pi/78)/19
+```
+
+Found by diff-fuzz seed 9707 (2026-11-13). Wolfram compares `x` with the
+sum's last term `x/2` (so the sum goes first), and `x^2` as a power with the
+sum as a base (`x` before `1 + x^2/2`). `Sort` gets the first two right and
+`Order` does not; making `Order` delegate to `Sort` for a sum against a
+non-sum fixes them but reorders `Times` factors elsewhere (`Pi*r^2*Sqrt[…]`),
+since that comparator serves `Times` too, and `Sort` itself misplaces the
+constant `Pi` against `95 + Pi/78`.
 
 ### `x^2 + (a + b) x` keeps Woxi's order
 
@@ -811,6 +874,35 @@ combined fractions further than Woxi does (collecting in `x` with factored
 coefficients), so Woxi keeps a sum of quotients where WL prints one fraction —
 `Together` alone matches exactly on the same inputs.
 
+### `Simplify`, `FullSimplify` and `TrigReduce` pick a different form
+
+Found by the differential fuzzer (2026-11-12):
+
+```sh
+wolframscript -code 'Simplify[Tan[2 x] + x - Tan[3 x]]'   # x + Tan[2*x] - Tan[3*x]
+woxi eval 'Simplify[Tan[2 x] + x - Tan[3 x]]'             # x - Sec[2*x]*Sec[3*x]*Sin[x]
+wolframscript -code 'FullSimplify[1 + 5 x + 5 x^3]'       # 1 + 5*(x + x^3)
+woxi eval 'FullSimplify[1 + 5 x + 5 x^3]'                 # 1 + 5*x + 5*x^3
+wolframscript -code 'TrigReduce[1 + Tan[x]^2]'            # Sec[x]^2
+woxi eval 'TrigReduce[1 + Tan[x]^2]'                      # 2/(1 + Cos[2*x])
+```
+
+The values are equal. `TrigReduce[Tan[x]^2]` conforms; WL keeps `Sec[…]^2`
+as a factor once the sum around it reduces to it, and distributes it over
+the reduced terms of a larger sum.
+
+### `TrigExpand` of a `Tan` sum keeps a constant term apart
+
+```sh
+wolframscript -code 'TrigExpand[1 + Tan[2 x]]'
+# Cos[x]^2/(Cos[x]^2 - Sin[x]^2) + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2) - Sin[x]^2/(Cos[x]^2 - Sin[x]^2)
+woxi eval 'TrigExpand[1 + Tan[2 x]]'
+# 1 + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2)
+```
+
+Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
+the common denominator and splits it by the numerator's monomials.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -849,7 +941,34 @@ Needs parser-level `Times` flattening.
 in WL, which keeps integer coefficients.
 
 
+### Unevaluated calls are re-evaluated wherever they are copied
+
+```wl
+n = 20; rules = Flatten[Table[{{(i-1) n + j, (i-1) n + j} -> 4.1}, {i, n}, {j, n}]];
+A = SparseArray[rules, {n, n^2}];       (* posd: stays unevaluated *)
+x = LinearSolve[A, N[Range[n^2]]];      (* stays unevaluated *)
+Max[Abs[A . x - N[Range[n^2]]]]
+```
+
+The last line takes 0.0003 s in wolframscript and 4.8 s in Woxi, which
+re-evaluates the unevaluated `SparseArray[…]` and `LinearSolve[…]` in every
+element of the product (and re-emits their messages until `General::stop`).
+Wolfram marks an expression as evaluated and skips it the next time. At
+`n = 60` (found by the crash fuzzer, 2026-11-13) Woxi needs 22 GB. Woxi has
+no evaluated mark yet.
+
 ## Numeric precision and floating point
+
+### A machine real divided by an exact quotient differs in the last digit
+
+```sh
+wolframscript -code 'Divide[2.9, Divide[Pi + 11/2, Pi]]'   # 1.0542754166531756
+woxi eval 'Divide[2.9, Divide[Pi + 11/2, Pi]]'             # 1.0542754166531754
+```
+
+Found by the differential fuzzer (2026-11-12). The exact quotient
+`(11/2 + Pi)/Pi` is numericized at machine precision as part of the
+division, and the two engines round the intermediate steps differently.
 
 ### Machine Cos/Sin last-bit differences
 
@@ -2066,6 +2185,11 @@ outer `-2` and Woxi an outer `1/2`, with compensating inner coefficients.
 Wolfram verifies that differentiating either Woxi result recovers its
 integrand exactly.
 
+Diff-fuzz seed 9303 (2026-11-13) shows it with a monomial denominator:
+`Integrate[(5 + 2 x)/(-2 x), x]` is `-x - (5*Log[x])/2` there and
+`(-2*x - 5*Log[x])/2` here, yet both agree on
+`Integrate[(1 + x^2)/(3 x), x]` = `(x^2/2 + Log[x])/3`.
+
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
 ```sh
@@ -2083,6 +2207,60 @@ and not to `Integrate[Sin[2*x + 1], x]`, which it leaves as
 applies to `Integrate[Log[2*x + 3], x]` and `Integrate[ArcTan[2*x + 1], x]`,
 where wolframscript expands the product and drops the resulting constant.
 
+
+### `Integrate[p[x]/(x + b), x]` collects the primitive over a common denominator
+
+```sh
+wolframscript -code 'Integrate[(1 + x^2)/(2 + x), x]'   # -6 - 2*x + x^2/2 + 5*Log[2 + x]
+woxi eval 'Integrate[(1 + x^2)/(2 + x), x]'             # (-12 - 4*x + x^2 + 10*Log[2 + x])/2
+wolframscript -code 'Integrate[(1 + x + x^2)/(1 + x), x]'   # -x + (1 + x)^2/2 + Log[1 + x]
+woxi eval 'Integrate[(1 + x + x^2)/(1 + x), x]'             # (-1 + x^2 + 2*Log[1 + x])/2
+```
+
+Found by the differential fuzzer (2026-11-12). With a monic linear
+denominator WL sometimes expands the substituted primitive and sometimes
+keeps `(1 + x)^2/2`; the rule is not decoded. Non-monic denominators
+(`(1 + x^2)/(2 + 3 x)`) conform.
+
+### `Integrate` of a product of cosines uses the product-to-sum form
+
+```sh
+wolframscript -code 'Integrate[Cos[x y] Cos[x], x]'   # (-(Cos[x*y]*Sin[x]) + y*Cos[x]*Sin[x*y])/(-1 + y^2)
+woxi eval 'Integrate[Cos[x y] Cos[x], x]'             # Sin[x - x*y]/(2*(1 - y)) + Sin[x + x*y]/(2*(1 + y))
+```
+
+The values are equal. Products with a `Tan` factor
+(`Integrate[Sin[x y] Tan[x], x]`, a `Hypergeometric2F1` sum in WL) stay
+unevaluated.
+
+### `Decompose` picks the inner polynomial's sign by an undecoded rule
+
+```sh
+wolframscript -code 'Decompose[(x - 2 x^3)^3, x]'   # {-x^3, -x + 2*x^3}
+woxi eval 'Decompose[(x - 2 x^3)^3, x]'             # {x^3, x - 2*x^3}
+```
+
+Found by the differential fuzzer (2026-11-12). With `h = 2 x^3 - x`,
+`Decompose[Expand[g[h]], x]` returns `-x + 2 x^3` as the inner polynomial
+for `g` = `y^3`, `-y^3`, `y + y^3`, `-y - y^3`, `y + 2 y^3`, and
+`x - 2 x^3` for `y^2 + y^3`, `y + y^2`, `y^2 - y`, `y^5 + y^2` — and for
+`2 y + y^3`, which breaks the "only odd powers keep the sign" pattern the
+others suggest. Woxi makes the outer polynomial's highest odd-degree
+coefficient positive, which matches every case with rational inner
+coefficients in the tests but not this one. **Not reproducible** so far.
+
+### `Integrate[1 + Tan[x]^2, x]` is integrated term by term
+
+```sh
+wolframscript -code 'Integrate[1 + Tan[x]^2, x]'   # Tan[x]
+woxi eval 'Integrate[1 + Tan[x]^2, x]'             # x - ArcTan[Tan[x]] + Tan[x]
+```
+
+Found by the differential fuzzer (2026-11-12). WL recognizes `c + c Tan[u]^2`
+(and `1 + Cot[x]^2`, `1 - Tanh[x]^2`) as a derivative, also inside a larger
+sum (`1 + Tan[x]^2 + Cos[x]` gives `Sin[x] + Tan[x]`) — but not next to a
+polynomial term: `x + 1 + Tan[x]^2` gives `x + x^2/2 - ArcTan[Tan[x]] +
+Tan[x]` in both engines.
 
 ### `Integrate[Log[Sin[x]], …]` is unimplemented
 
@@ -8682,7 +8860,11 @@ returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
-borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
+borders too short for that scale. `"Flag"` is a 160 px wide `Image` of the
+public-domain Wikimedia Commons flag (via flagcdn.com, see
+`scripts/gen_country_flags.py`), so its pixels and `ImageDimensions` differ
+from WL's own flag images (the Gaza Strip and the West Bank show the flag of
+Palestine).
 
 ### CityData beyond the verified cities
 

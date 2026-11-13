@@ -426,6 +426,9 @@ enum Message {
   /// The picture was pressed: run the `ClickPane` handler on the last
   /// pointer position.
   ManipulatePaneClicked(usize),
+  /// The pointer was released over a Manipulate picture holding an
+  /// `EventHandler` with mouse events. (cell_idx)
+  ManipulateMouseReleased(usize),
   /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
   /// its assignment code. (cell_idx, bookmark_idx — indexes
   /// `ManipulateState::bookmarks`, not `controls`)
@@ -1706,6 +1709,15 @@ impl WoxiStudio {
       }
 
       Message::DragEnd => {
+        // A press begun over a widget's `EventHandler` ends wherever the
+        // pointer is released (a release over the picture already ended it).
+        for editor in &mut self.cell_editors {
+          if let Some(state) = editor.manipulate_state.as_mut()
+            && state.mouse_pressed
+          {
+            state.mouse_up();
+          }
+        }
         if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target)
           && src != dst
           && dst <= self.cell_editors.len()
@@ -2158,7 +2170,7 @@ impl WoxiStudio {
           .get_mut(cell_idx)
           .and_then(|e| e.manipulate_state.as_mut())
         {
-          state.pointer = (x, y);
+          state.mouse_moved(x, y);
         }
         Task::none()
       }
@@ -2169,6 +2181,17 @@ impl WoxiStudio {
           .and_then(|e| e.manipulate_state.as_mut())
         {
           state.apply_pane_click();
+          state.mouse_down();
+        }
+        Task::none()
+      }
+      Message::ManipulateMouseReleased(cell_idx) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.mouse_up();
         }
         Task::none()
       }
@@ -4224,7 +4247,9 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
   };
   // An explicitly empty label (`{{fig, 1, ""}}`) claims no width — see
   // `manipulate_label_widget` for why an empty label is never a missing one.
-  label.chars().count()
+  // A label broken over lines (`"vapor pressure\n(inches of Hg)"`) draws
+  // as a stack, so only its longest line claims width.
+  label.lines().map(|l| l.chars().count()).max().unwrap_or(0)
 }
 
 /// Throttle window for Manipulate re-evaluation. A slider drag emits a burst of
@@ -4510,7 +4535,23 @@ fn render_manipulate_widget<'a>(
           if !enabled {
             s = s.style(disabled_slider_style);
           }
-          let control_row = row![label_widget, s].align_y(Center).spacing(8);
+          // Like a continuous slider, show the current choice beside the
+          // track, as Wolfram's labeled `Manipulator` does.
+          let shown = if has_overflow {
+            String::new()
+          } else {
+            value_labels
+              .get(*current_index)
+              .cloned()
+              .unwrap_or_default()
+          };
+          let value_widget = text(shown)
+            .size(11)
+            .font(Font::MONOSPACE)
+            .width(iced::Length::Fixed(64.0));
+          let control_row = row![label_widget, s, value_widget]
+            .align_y(Center)
+            .spacing(8);
           controls_col = controls_col.push(control_row);
           continue;
         }
@@ -5120,15 +5161,18 @@ fn render_manipulate_widget<'a>(
       }
       stack(layers).into()
     };
-    // A `ClickPane` hands its handler the position of each click.
-    let picture: Element<'_, Message> = if state.click_regions.is_empty() {
-      picture
-    } else {
-      mouse_area(picture)
-        .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
-        .on_press(Message::ManipulatePaneClicked(cell_idx))
-        .into()
-    };
+    // A `ClickPane` hands its handler the position of each click; an
+    // `EventHandler` gets the pointer's presses, drags and releases.
+    let picture: Element<'_, Message> =
+      if state.click_regions.is_empty() && state.mouse_region.is_none() {
+        picture
+      } else {
+        mouse_area(picture)
+          .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+          .on_press(Message::ManipulatePaneClicked(cell_idx))
+          .on_release(Message::ManipulateMouseReleased(cell_idx))
+          .into()
+      };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
@@ -8723,6 +8767,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       italic: false,
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
+      size: None,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -12809,6 +12854,38 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`x$$ = 1}, \"…\"]"], "Output"]
   /// `Appearance -> "Labeled"` sliders — the shape of a typical Wolfram
   /// Demonstrations finance/growth calculator. This must open live with
   /// all three sliders recognized and the plot drawn.
+  /// A label broken over two lines sizes the label column by its longest
+  /// line, and a `ControlType -> Manipulator` slider over a list of values
+  /// steps through the choices with the current one shown beside it.
+  #[test]
+  fn multiline_label_and_discrete_manipulator_slider() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[p, \
+       {{p, 0.3, \"pressure\\n(units)\"}, {0.1, 0.2, 0.3, 0.45}, \
+       ControlType -> Manipulator, Appearance -> \"Labeled\"}]",
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the discrete Manipulator should build a ManipulateState");
+    let ctrl = &state.controls[0];
+    let manipulate::ControlState::Discrete {
+      label,
+      value_labels,
+      current_index,
+      slider,
+      ..
+    } = ctrl
+    else {
+      panic!("expected a discrete control, got {ctrl:?}");
+    };
+    assert_eq!(label, "pressure\n(units)");
+    assert!(*slider, "ControlType -> Manipulator draws a slider");
+    assert_eq!(value_labels, &["0.1", "0.2", "0.3", "0.45"]);
+    assert_eq!(value_labels[*current_index], "0.3");
+    // "pressure" is the longest line; the whole string is 16 chars.
+    assert_eq!(manipulate_label_char_count(ctrl), 8);
+  }
+
   #[test]
   fn demonstration_labeled_sliders_drive_multi_series_line_plot() {
     let nb_src = r##"Notebook[{
