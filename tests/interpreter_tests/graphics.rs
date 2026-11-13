@@ -22613,6 +22613,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_column_plot_label_stacks_lines() {
+      // Regression: a `Column[…]` title was printed as its source text
+      // (`Column[{1, {1, 2}}, Center]`) instead of one line per item.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> Column[{1, {1, 2}}, Center]]",
+      );
+      assert!(!svg.contains("Column["), "{svg}");
+      assert!(svg.contains(">1</text>"), "{svg}");
+      assert!(svg.contains(">{1, 2}</text>"), "{svg}");
+      // The first line sits where a one-line caption would; the canvas
+      // grows by one more line height for the second.
+      let first = svg.find(">1</text>").unwrap();
+      let second = svg.find(">{1, 2}</text>").unwrap();
+      assert!(first < second, "{svg}");
+      assert!(
+        svg.starts_with("<svg width=\"360\" height=\"402\""),
+        "{svg}"
+      );
+    }
+
+    #[test]
+    fn density_plot_column_plot_label_stacks_lines() {
+      // The field-plot renderer draws its own title: a `Column` label
+      // stacks its items upward from the frame, each on its own line.
+      let svg = export_svg(
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Column[{\"top\", \"bottom\"}]]",
+      );
+      assert!(!svg.contains("Column["), "{svg}");
+      let y_of = |label: &str| -> f64 {
+        let end = svg.find(&format!(">{label}</text>")).unwrap();
+        let start = svg[..end].rfind("<text").unwrap();
+        let tag = &svg[start..end];
+        let y = tag.find(" y=\"").unwrap() + 4;
+        tag[y..y + tag[y..].find('"').unwrap()].parse().unwrap()
+      };
+      assert!(y_of("top") < y_of("bottom"), "{svg}");
+    }
+
+    #[test]
     fn array_plot_plot_label_keeps_runs_of_spaces() {
       // Regression: SVG collapses whitespace unless told otherwise, which
       // squashed labels that are spaced out with padding.

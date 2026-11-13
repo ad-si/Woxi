@@ -99,7 +99,7 @@ fn split_vector_and_density<'a>(
 fn parse_field_plot_label(
   args: &[Expr],
   start: usize,
-) -> Option<(String, Option<f64>)> {
+) -> Option<FieldPlotLabel> {
   args[start..].iter().find_map(|opt| {
     let (Expr::Rule {
       pattern,
@@ -122,8 +122,20 @@ fn parse_field_plot_label(
     // would emit it in unscaled units and draw the label ten times too
     // small.
     let (inner, size) = peel_label_font_size(&value);
-    Some((crate::functions::graphics::expr_to_svg_markup(inner), size))
+    // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
+    // the same way the generic `Graphics` label pass sets them.
+    let lines = crate::functions::graphics::expr_to_svg_markup_lines(inner);
+    Some((lines, size))
   })
+}
+
+/// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
+/// and the font size of an outermost `Style`, if any.
+type FieldPlotLabel = (Vec<String>, Option<f64>);
+
+/// Whether every line of a parsed `PlotLabel` is blank.
+fn field_plot_label_is_blank(lines: &[String]) -> bool {
+  lines.iter().all(|l| l.trim().is_empty())
 }
 
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
@@ -149,19 +161,25 @@ fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
 fn inject_field_plot_label(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
-  (label, size): &(String, Option<f64>),
+  (lines, size): &FieldPlotLabel,
 ) {
-  if label.trim().is_empty() {
+  if field_plot_label_is_blank(lines) {
     return;
   }
   let sf = f64::from(crate::functions::plot::RESOLUTION_SCALE);
   let font = size.unwrap_or(14.0) * sf;
+  let line_h = font * 1.35;
   let cx = area.plot_x0 + area.plot_w / 2.0;
-  let y = (area.plot_y0 - sf * 8.0).max(font);
-  svg.push_str(&format!(
-    "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
-  ));
+  // The last line sits just above the frame; earlier lines stack upward.
+  let first = (lines.len() - 1) as f64;
+  let y_last = (area.plot_y0 - sf * 8.0).max(font + first * line_h);
+  for (i, label) in lines.iter().enumerate() {
+    let y = y_last - (first - i as f64) * line_h;
+    svg.push_str(&format!(
+      "<text x=\"{cx:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"#333\">{label}</text>\n",
+    ));
+  }
 }
 
 fn parse_field_options(args: &[Expr], start: usize) -> (u32, u32, bool) {
@@ -309,7 +327,7 @@ struct DensityContourOptions {
   prolog: Vec<Expr>,
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
-  plot_label: Option<(String, Option<f64>)>,
+  plot_label: Option<FieldPlotLabel>,
   /// `RegionFunction -> f`: keep only grid cells where `f[x, y, z]` (the
   /// plotted value `z`) is `True`; other cells are left blank, matching
   /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
@@ -928,10 +946,9 @@ fn field_frame_layout(
   }
   // A `PlotLabel` sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
-  let title = opts
-    .plot_label
-    .as_ref()
-    .map_or(0.0, |(_, size)| size.unwrap_or(14.0) * 1.35);
+  let title = opts.plot_label.as_ref().map_or(0.0, |(lines, size)| {
+    size.unwrap_or(14.0) * 1.35 * lines.len().max(1) as f64
+  });
   let width = opts.svg_width as f64;
   let aspect = opts.aspect_ratio;
   // The last x label is centered on its tick and the top y label on its own,
@@ -8240,10 +8257,7 @@ fn with_graphic_label_above(svg: &str, label_svg: &str) -> String {
 
 /// Set a `PlotLabel` caption above a finished picture: the picture keeps its
 /// size and is inset into a canvas that is taller by one line of text.
-fn with_plot_label_above(
-  svg: &str,
-  (label, size): &(String, Option<f64>),
-) -> String {
+fn with_plot_label_above(svg: &str, (lines, size): &FieldPlotLabel) -> String {
   let attr = |name: &str| -> Option<f64> {
     let head = &svg[..svg.find('>')?];
     let start = head.find(&format!(" {name}=\""))? + name.len() + 3;
@@ -8253,25 +8267,36 @@ fn with_plot_label_above(
   let (Some(w), Some(h)) = (attr("width"), attr("height")) else {
     return svg.to_string();
   };
-  if label.trim().is_empty() {
+  if field_plot_label_is_blank(lines) {
     return svg.to_string();
   }
   let font = size.unwrap_or(14.0);
-  let gutter = font * 1.8;
+  // One line keeps its 1.8-em strip; each further line of a stacked
+  // `Column` title adds one line height above the picture.
+  let line_h = font * 1.25;
+  let extra = (lines.len() - 1) as f64 * line_h;
+  let gutter = font * 1.8 + extra;
   let total_h = h + gutter;
   let fill = crate::functions::graphics::theme().text_primary;
-  format!(
+  let mut out = format!(
     "<svg width=\"{w:.0}\" height=\"{total_h:.0}\" \
      viewBox=\"0 0 {w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
      <svg x=\"0\" y=\"{gutter:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
-     overflow=\"visible\">\n{}\n</svg>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-     dominant-baseline=\"central\" font-family=\"sans-serif\" \
-     font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n</svg>\n",
+     overflow=\"visible\">\n{}\n</svg>\n",
     svg.trim(),
-    w / 2.0,
-    gutter / 2.0,
-  )
+  );
+  let top = (gutter - extra) / 2.0;
+  for (i, label) in lines.iter().enumerate() {
+    out.push_str(&format!(
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+       dominant-baseline=\"central\" font-family=\"sans-serif\" \
+       font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
+      w / 2.0,
+      top + i as f64 * line_h,
+    ));
+  }
+  out.push_str("</svg>\n");
+  out
 }
 
 /// Put a plot's `FrameLabel` text around an already-rendered picture.
