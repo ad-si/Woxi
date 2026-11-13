@@ -2429,6 +2429,12 @@ mod tests {
       }
       let svg = svg_of("Grid[{{Style[Grid[{{\"ab\", \"c\"}}], Red]}}]");
       assert!(svg.contains("rgb(255,0,0)"), "red cells: {svg}");
+      // The directives also reach a nested grid's frame, as at top level.
+      let svg = svg_of("Grid[{{Style[Grid[{{a, b}}, Frame -> True], Red]}}]");
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\""),
+        "red frame lines: {svg}"
+      );
     }
 
     #[test]

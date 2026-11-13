@@ -23340,6 +23340,20 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
+      // A styled `Grid` is drawn whole, the way it is at top level, so the
+      // directives also reach its frame and dividers, not only its cells.
+      if args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+          if (n == "Grid" || n == "TextGrid")
+            && matches!(a.first(), Some(Expr::List(_))))
+      {
+        let svg = crate::evaluator::expr_to_svg(cell);
+        if svg.starts_with("<svg")
+          && let Some(d) = parse_svg_dimensions(&svg)
+        {
+          return Some((svg, d.nat_w, d.nat_h));
+        }
+      }
       if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
         return grid_cell_graphic(&inner);
       }
