@@ -4507,6 +4507,54 @@ mod tests {
       assert!(svg.contains(">go</text>"), "{svg}");
       assert!(!svg.contains("SubscriptBox"), "no raw markup: {svg}");
     }
+
+    /// A row mixing prose with items that are no plain text (a power, a
+    /// large number) still breaks at a fixed `Pane`'s width: those items
+    /// are unbreakable units kept as they are, so the power stays typeset
+    /// and the number keeps its digit grouping.
+    #[test]
+    fn pane_text_wraps_around_typeset_items_whole() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four ", x^2, " five six seven eight ", 2147483648, " nine ten"}], {120, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains(">one two three</text>"), "{svg}");
+      assert!(
+        svg.contains("baseline-shift=\"super\""),
+        "the power stays typeset: {svg}"
+      );
+      assert!(
+        svg.contains("<tspan dx=\"0.18em\">147</tspan>"),
+        "the number keeps its digit groups: {svg}"
+      );
+      assert!(svg.contains(">nine ten</text>"), "{svg}");
+    }
+
+    /// The line-breaking string factor of a product (`Row[…] "\n\n  "`, an
+    /// implicit multiplication) breaks re-flowed `Pane` text like a bare
+    /// string: the other factor moves to a line of its own.
+    #[test]
+    fn pane_text_breaks_at_newline_string_factor_of_a_product() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four five six", Row[{"= ", 4}] " \n\n  "}], {120, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      let y_after = |s: &str| -> f64 {
+        s.split("y=\"")
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse::<f64>().ok())
+          .unwrap()
+      };
+      // The last text line before the break …
+      let six = svg.find(">four five six</text>").expect("wrapped line");
+      let six_y = y_after(&svg[svg[..six].rfind("<text").unwrap()..]);
+      // … and the left-aligned line the row factor moved to.
+      let four = svg.find(">4</text>").expect("row factor drawn");
+      let line_y =
+        y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
+      assert!(line_y > six_y + 30.0, "{svg}");
+    }
   }
 
   // ── Display-only wrappers in text markup ──
