@@ -30602,6 +30602,45 @@ fn newline_text(item: &Expr) -> Option<&str> {
   }
 }
 
+/// The factors of a `Times` item with a line-breaking string factor,
+/// interleaved with the single spaces that separate the factors of an
+/// implicit product in display form; `None` for any other item.
+///
+/// A `Style[product, directives…]` item (as a styled row hands its parts
+/// down) flows the same way, each factor and space keeping the directives.
+pub(crate) fn times_flow_factors(item: &Expr) -> Option<Vec<Expr>> {
+  let Expr::FunctionCall { name, args } = item else {
+    return None;
+  };
+  if is_style_wrapper(name) && !args.is_empty() {
+    let factors = times_flow_factors(&args[0])?;
+    return Some(
+      factors
+        .into_iter()
+        .map(|f| {
+          let mut new_args = args.to_vec();
+          new_args[0] = f;
+          Expr::FunctionCall {
+            name: name.clone(),
+            args: new_args.into(),
+          }
+        })
+        .collect(),
+    );
+  }
+  if name != "Times" || !args.iter().any(|a| newline_text(a).is_some()) {
+    return None;
+  }
+  let mut out = Vec::with_capacity(2 * args.len());
+  for (k, factor) in args.iter().enumerate() {
+    if k > 0 {
+      out.push(str_expr(" "));
+    }
+    out.push(factor.clone());
+  }
+  Some(out)
+}
+
 /// Whether a row string breaks the line: it starts or ends with a newline,
 /// or holds a blank line or a line of running prose (a word of three or more
 /// letters) — unlike the one-character-per-line stack of a typeset fraction.
@@ -30634,6 +30673,163 @@ fn with_text(item: &Expr, text: &str) -> Expr {
     }
     _ => str_expr(text),
   }
+}
+
+/// Rewrite one line of text markup with a shifted (`baseline-shift` or
+/// `dx`) `<tspan>` nested inside another `<tspan>` (e.g. a `Subscript` or a
+/// digit-grouped number under a `Style` color) into a flat run of sibling `<tspan>`s, each carrying the
+/// attributes it inherited. resvg (the Studio's renderer) misplaces nested
+/// spans in a centrally aligned line: it drops a script's shift and lifts
+/// the surrounding text off the line. A relative `font-size` is resolved
+/// against its ancestors so the flattened run keeps its size, and a span's
+/// `dx` stays on its first run. Markup without such nesting, or with absolutely
+/// positioned (`x`/`y`/`dy`) spans or other tags, comes back unchanged.
+pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
+  #[derive(Clone)]
+  enum Tok<'a> {
+    Open(Vec<(&'a str, &'a str)>),
+    Close,
+    Text(&'a str),
+  }
+  fn parse_attrs(s: &str) -> Option<Vec<(&str, &str)>> {
+    let mut out = Vec::new();
+    let mut rest = s.trim();
+    while !rest.is_empty() {
+      let eq = rest.find('=')?;
+      let name = rest[..eq].trim();
+      let after = rest[eq + 1..].trim_start();
+      let quote = after.chars().next()?;
+      if quote != '"' && quote != '\'' {
+        return None;
+      }
+      let end = after[1..].find(quote)? + 1;
+      out.push((name, &after[1..end]));
+      rest = after[end + 1..].trim_start();
+    }
+    Some(out)
+  }
+  let mut toks = Vec::new();
+  let mut rest = markup;
+  while !rest.is_empty() {
+    if let Some(after) = rest.strip_prefix("</tspan>") {
+      toks.push(Tok::Close);
+      rest = after;
+    } else if let Some(after) = rest.strip_prefix("<tspan") {
+      let Some(end) = after.find('>') else {
+        return markup.to_string();
+      };
+      if after[..end].ends_with('/') {
+        return markup.to_string();
+      }
+      let Some(attrs) = parse_attrs(&after[..end]) else {
+        return markup.to_string();
+      };
+      if attrs.iter().any(|(k, _)| matches!(*k, "x" | "y" | "dy")) {
+        return markup.to_string();
+      }
+      toks.push(Tok::Open(attrs));
+      rest = &after[end + 1..];
+    } else if rest.starts_with('<') {
+      return markup.to_string();
+    } else {
+      let end = rest.find('<').unwrap_or(rest.len());
+      toks.push(Tok::Text(&rest[..end]));
+      rest = &rest[end..];
+    }
+  }
+  // Only a shifted (`baseline-shift`/`dx`) span below another span needs
+  // the rewrite; plain style nesting renders fine.
+  let mut depth = 0usize;
+  let mut nested = false;
+  for t in &toks {
+    match t {
+      Tok::Open(attrs) => {
+        nested |= depth > 0
+          && attrs
+            .iter()
+            .any(|(k, _)| matches!(*k, "baseline-shift" | "dx"));
+        depth += 1;
+      }
+      Tok::Close => {
+        if depth == 0 {
+          return markup.to_string();
+        }
+        depth -= 1;
+      }
+      Tok::Text(_) => {}
+    }
+  }
+  if !nested || depth != 0 {
+    return markup.to_string();
+  }
+  // Each stack entry is the merged attribute list in effect inside it.
+  let mut stack: Vec<Vec<(String, String)>> = Vec::new();
+  let mut out = String::new();
+  for t in toks {
+    match t {
+      Tok::Open(attrs) => {
+        let mut merged: Vec<(String, String)> =
+          stack.last().map_or_default(|top| {
+            // `baseline-shift` is not inherited: a child sits on its
+            // parent's shifted line, but only the innermost shift is kept.
+            // A parent's `dx` offsets only its own first character.
+            top
+              .iter()
+              .filter(|(k, _)| {
+                k != "dx"
+                  && (k != "baseline-shift"
+                    || !attrs.iter().any(|(a, _)| *a == "baseline-shift"))
+              })
+              .cloned()
+              .collect()
+          });
+        for (k, v) in attrs {
+          let mut value = v.to_string();
+          if k == "font-size"
+            && let Some(pct) = v
+              .strip_suffix('%')
+              .and_then(|p| p.trim().parse::<f64>().ok())
+            && let Some((_, parent)) =
+              merged.iter().find(|(pk, _)| pk == "font-size")
+          {
+            if let Some(pp) = parent
+              .strip_suffix('%')
+              .and_then(|p| p.trim().parse::<f64>().ok())
+            {
+              value = format!("{}%", pp * pct / 100.0);
+            } else if let Ok(abs) = parent.trim().parse::<f64>() {
+              value = format!("{}", abs * pct / 100.0);
+            }
+          }
+          if let Some(slot) = merged.iter_mut().find(|(mk, _)| mk == k) {
+            slot.1 = value;
+          } else {
+            merged.push((k.to_string(), value));
+          }
+        }
+        stack.push(merged);
+      }
+      Tok::Close => {
+        stack.pop();
+      }
+      Tok::Text("") => {}
+      Tok::Text(text) => match stack.last_mut() {
+        Some(attrs) if !attrs.is_empty() => {
+          out.push_str("<tspan");
+          for (k, v) in attrs.iter() {
+            out.push_str(&format!(" {k}=\"{v}\""));
+          }
+          out.push('>');
+          out.push_str(text);
+          out.push_str("</tspan>");
+          // The span's `dx` has been spent on its first run.
+          attrs.retain(|(k, _)| k != "dx");
+        }
+        _ => out.push_str(text),
+      },
+    }
+  }
+  out
 }
 
 /// Characters a one-line SVG text markup draws: tags are skipped and an
@@ -30685,9 +30881,16 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
   // (and every item following it) continues on the next line, as in a
   // notebook's text flow. Lay the lines out as a left-aligned column of
   // sub-rows instead of squeezing a multi-line cell between its neighbors.
-  if args.len() == 1 && items.iter().any(|i| newline_text(i).is_some()) {
+  // A product with such a string factor (e.g. `Row[…] " \n\n  "`, an
+  // implicit multiplication) displays its factors space-separated, so its
+  // string breaks the row just like a bare string item.
+  let flow_items: Vec<Expr> = items
+    .iter()
+    .flat_map(|i| times_flow_factors(i).unwrap_or_else(|| vec![i.clone()]))
+    .collect();
+  if args.len() == 1 && flow_items.iter().any(|i| newline_text(i).is_some()) {
     let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
-    for item in items {
+    for item in &flow_items {
       match newline_text(item) {
         Some(text) => {
           for (k, seg) in text.split('\n').enumerate() {
@@ -31073,9 +31276,21 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           } else {
             ""
           };
-          let markup = pin_nested_tspan_baselines(markup, "central");
+          // A `dx` gap (between the digit groups of a large number) is
+          // part of the cell's measured width, but resvg centers a middle-
+          // anchored line without it, pushing the text past the cell's
+          // right edge. Such a line starts at the cell's left edge instead.
+          let (tx, anchor) = if markup.contains(" dx=\"") {
+            (x, "start")
+          } else {
+            (cx, "middle")
+          };
+          let markup = pin_nested_tspan_baselines(
+            &flatten_nested_shift_tspans(markup),
+            "central",
+          );
           svg.push_str(&format!(
-            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr}{deco_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n"
+            "<text x=\"{tx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr}{deco_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n"
           ));
         }
         x += width;

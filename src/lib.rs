@@ -5254,8 +5254,16 @@ pub(crate) fn row_svg_with_rendered_items(
 ) -> Option<String> {
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
-    let new_items: Vec<syntax::Expr> =
-      items.iter().map(render_inline_display_wrapper).collect();
+    // A product with a line-breaking string factor flows into the row
+    // factor by factor, so expand it before its factors are pre-rendered.
+    let new_items: Vec<syntax::Expr> = items
+      .iter()
+      .flat_map(|i| {
+        functions::graphics::times_flow_factors(i)
+          .unwrap_or_else(|| vec![i.clone()])
+      })
+      .map(|i| render_inline_display_wrapper(&i))
+      .collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
   functions::graphics::row_to_svg(&new_args)
