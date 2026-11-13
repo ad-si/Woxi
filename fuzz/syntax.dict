@@ -1,0 +1,146 @@
+# libFuzzer dictionary of Wolfram Language syntax tokens.
+#
+# `make fuzz-corpus` concatenates this file with the name of every builtin
+# that functions.csv marks implemented into fuzz/woxi.dict, which the fuzz
+# make targets pass as `-dict=`. With it, a mutation can splice in a whole
+# operator or head name in one step instead of having to assemble it byte
+# by byte, so the fuzzer reaches syntax and builtins no seed happens to use.
+#
+# `>>`, `>>>` and `<<` (Put, PutAppend, Get) are deliberately absent: they
+# touch the filesystem, and the interpret target skips inputs containing
+# them anyway (SIDE_EFFECT_DENYLIST in fuzz_targets/interpret.rs).
+
+# Assignment
+"="
+":="
+"^="
+"^:="
+"=."
+"+="
+"-="
+"*="
+"/="
+"++"
+"--"
+
+# Rules and replacement
+"->"
+":>"
+"/."
+"//."
+"/;"
+
+# Application
+"@"
+"@@"
+"@@@"
+"/@"
+"//@"
+"//"
+"~"
+"@*"
+"/*"
+"&"
+"\\[Function]"
+
+# Slots and patterns
+"#"
+"##"
+"#1"
+"#2"
+"#0"
+"_"
+"__"
+"___"
+"_."
+"x_"
+"x__"
+"x_Integer"
+"x_:"
+"?"
+":"
+".."
+"..."
+"|"
+
+# Comparison and logic
+"=="
+"!="
+"==="
+"=!="
+"<="
+">="
+"&&"
+"||"
+"!"
+"\\[And]"
+"\\[Or]"
+"\\[Not]"
+"\\[Implies]"
+"\\[Element]"
+
+# Arithmetic and structural
+"+"
+"-"
+"*"
+"/"
+"^"
+"."
+"**"
+"<>"
+"~~"
+";;"
+";"
+","
+"'"
+"!!"
+
+# Brackets
+"["
+"]"
+"[["
+"]]"
+"{"
+"}"
+"<|"
+"|>"
+"("
+")"
+"\\[LeftDoubleBracket]"
+"\\[RightDoubleBracket]"
+"\\[LeftAssociation]"
+"\\[RightAssociation]"
+
+# Comments, strings and number forms
+"(*"
+"*)"
+"\""
+"\\\""
+"\\n"
+"^^"
+"*^"
+"`"
+"``"
+"16^^"
+"1.5`20"
+
+# Named characters and boxes
+"\\[Alpha]"
+"\\[Pi]"
+"\\[Infinity]"
+"\\[Degree]"
+"\\[Rule]"
+"\\[RuleDelayed]"
+"\\[Equal]"
+"\\[LessEqual]"
+"\\[Times]"
+"\\[Divide]"
+"\\[Sqrt]"
+"\\:03b1"
+"\\("
+"\\)"
+"\\!"
+"\\^"
+"\\/"
+"\\@"
+"\\_"

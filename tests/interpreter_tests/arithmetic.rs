@@ -990,6 +990,28 @@ mod plus_radical_like_terms {
   }
 }
 
+// A quotient over a sum against a power or product with no sum in it
+// orders as `Sort` does.
+mod plus_quotient_over_sum_ordering {
+  use super::*;
+
+  #[test]
+  fn follows_sort_order() {
+    assert_eq!(interpret("y^4 + y^3/(c - y)").unwrap(), "y^3/(c - y) + y^4");
+    assert_eq!(interpret("y^2 + y/(c - y)").unwrap(), "y/(c - y) + y^2");
+    assert_eq!(
+      interpret("y^4 + y^3/(c^2 - y^2)").unwrap(),
+      "y^4 + y^3/(c^2 - y^2)"
+    );
+    assert_eq!(
+      interpret("Sin[x]/(Cos[x]^2 - Sin[x]^2) + Sin[x]^2").unwrap(),
+      "Sin[x]^2 + Sin[x]/(Cos[x]^2 - Sin[x]^2)"
+    );
+    // A bare symbol keeps its own rule.
+    assert_eq!(interpret("x + 1/(a + b)").unwrap(), "(a + b)^(-1) + x");
+  }
+}
+
 mod plus_call_led_ordering {
   use super::*;
 
@@ -16286,4 +16308,97 @@ mod exact_arithmetic_fuzz_edge_cases {
       "{1, -1, -I, -0.5857864376269049 + 1.5*I}"
     );
   }
+}
+
+mod precision_bounds {
+  use woxi::interpret;
+
+  // `Block[{$MinPrecision = p, $MaxPrecision = p}, …]` fixes the working
+  // precision of arbitrary-precision arithmetic: an iteration keeps all `p`
+  // digits instead of losing some at every subtraction.
+  #[test]
+  fn fixed_precision_iteration_keeps_all_digits() {
+    assert_eq!(
+      interpret(
+        "Block[{$MinPrecision = 30, $MaxPrecision = 30}, ToString /@ NestList[(# + 3/#)/2 &, SetPrecision[3, 30], 4]]"
+      )
+      .unwrap(),
+      "{3.00000000000000000000000000000, 2.00000000000000000000000000000, 1.75000000000000000000000000000, 1.73214285714285714285714285714, 1.73205081001472754050073637703}"
+    );
+    assert_eq!(
+      interpret(
+        "Block[{$MinPrecision = 50, $MaxPrecision = 50}, Precision /@ NestList[# - (#^2 - 5)/(2 #) &, SetPrecision[5, 50], 6]]"
+      )
+      .unwrap(),
+      "{50., 50., 50., 50., 50., 50., 50.}"
+    );
+  }
+
+  #[test]
+  fn min_precision_raises_canceling_sums_and_powers() {
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, Precision[N[Pi, 30] - 3]]")
+        .unwrap(),
+      "40."
+    );
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 29}, Precision[N[E, 30]^1000]]")
+        .unwrap(),
+      "29."
+    );
+    // Already above the bound: unchanged.
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 25}, Precision[N[E, 30]^1000]]")
+        .unwrap(),
+      "27."
+    );
+  }
+
+  #[test]
+  fn max_precision_caps_arithmetic_results() {
+    assert_eq!(
+      interpret(
+        "Block[{$MaxPrecision = 20}, Precision /@ {N[Pi, 30] + 1, N[Pi, 30] * 2, N[Pi, 30]^2}]"
+      )
+      .unwrap(),
+      "{20., 20., 20.}"
+    );
+    assert_eq!(
+      interpret("Block[{$MaxPrecision = 20}, ToString[N[Pi, 30]^2]]").unwrap(),
+      "9.8696044010893586188"
+    );
+  }
+
+  #[test]
+  fn bounds_leave_machine_numbers_and_defaults_alone() {
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, Precision[1.5 + 2.5]]").unwrap(),
+      "MachinePrecision"
+    );
+    assert_eq!(
+      interpret("Block[{$MinPrecision = 40}, 1]; Precision[N[Pi, 30] - 3]")
+        .unwrap(),
+      "28.653890848257205"
+    );
+  }
+}
+
+// `x/y/z` is Times[Times[x, y^-1], z^-1]: the inner two-factor product is
+// evaluated first, which distributes a sign (`(a + b)/(-2)` is
+// `(-a - b)/2`). Found by the differential fuzzer.
+#[test]
+fn quotient_of_quotient_evaluates_inner_product_first() {
+  assert_eq!(
+    interpret("ToString[FullForm[(a + b)/(-2)/c]]").unwrap(),
+    "Times[Rational[1, 2], Plus[Times[-1, a], Times[-1, b]], Power[c, -1]]"
+  );
+  assert_eq!(
+    interpret("((1 + y)/(-16)/y)^2").unwrap(),
+    "(-1 - y)^2/(256*y^2)"
+  );
+  assert_eq!(interpret("(a + b)/(-2)/c/d").unwrap(), "(-a - b)/(2*c*d)");
+  // Numeric chains still fold operator by operator.
+  assert_eq!(interpret("N[Pi]/2/3").unwrap(), "0.5235987755982988");
+  assert_eq!(interpret("6/2/3").unwrap(), "1");
+  assert_eq!(interpret("x/2/3").unwrap(), "x/6");
 }
