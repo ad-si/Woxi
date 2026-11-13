@@ -2769,6 +2769,50 @@ mod region_nearest {
   }
 
   #[test]
+  fn infinite_line_with_infinite_line() {
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0, 0}, {1, 1}}], InfiniteLine[{{0, 1}, {1, 0}}]]"
+      )
+      .unwrap(),
+      "Point[{1/2, 1/2}]"
+    );
+    // Inexact input: the single crossing is a plain point, so `[[1]]`
+    // yields its coordinates.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0., 0.}, {2., 4.}}], InfiniteLine[{{3., 1.}, {1., 1.}}]][[1]]"
+      )
+      .unwrap(),
+      "{0.5, 1.}"
+    );
+    // Point-direction form, in 3D.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{0, 0, 0}, {1, 0, 0}], InfiniteLine[{0, 1, 0}, {1, 1, 0}]]"
+      )
+      .unwrap(),
+      "Point[{-1, 0, 0}]"
+    );
+    // Parallel lines never meet.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{{0, 0}, {1, 1}}], InfiniteLine[{{0, 1}, {1, 2}}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[2]"
+    );
+    // Skew lines in 3D never meet.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[InfiniteLine[{1, 2, 3}, {1, 1, 1}], InfiniteLine[{0, 0, 0}, {0, 0, 1}]]"
+      )
+      .unwrap(),
+      "EmptyRegion[3]"
+    );
+  }
+
+  #[test]
   fn unevaluated() {
     assert_eq!(
       interpret("RegionNearest[x, y]").unwrap(),

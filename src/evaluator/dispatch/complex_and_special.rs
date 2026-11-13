@@ -17944,6 +17944,7 @@ fn compute_region_set_op(
       "RegionIntersection" => match region_box_intersection(&acc, next)
         .or_else(|| region_line_intersection(&acc, next))
         .or_else(|| region_flat_line_intersection(&acc, next))
+        .or_else(|| region_infinite_lines_intersection(&acc, next))
         .or_else(|| region_polygon_intersection(&acc, next))
       {
         Some(region) => region,
@@ -19517,6 +19518,94 @@ fn affine_flat_nearest(region: &Expr, point: &Expr) -> Option<Expr> {
     .map(|(o, p)| plus2(o.clone(), p))
     .collect();
   crate::evaluator::evaluate_expr_to_expr(&Expr::List(nearest.into())).ok()
+}
+
+/// `RegionIntersection` of two `InfiniteLine`s in any dimension: the
+/// single crossing as `Point[p]`, or `EmptyRegion[n]` when the lines are
+/// parallel or skew. Coincident lines (and anything symbolic) are left to
+/// `BooleanRegion`.
+fn region_infinite_lines_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let line = |r: &Expr| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    match r {
+      Expr::FunctionCall { name, .. } if name == "InfiniteLine" => {
+        let (origin, mut dirs) = affine_flat(r)?;
+        (dirs.len() == 1).then(|| (origin, dirs.remove(0)))
+      }
+      _ => None,
+    }
+  };
+  let (p, d) = line(a)?;
+  let (q, e) = line(b)?;
+  let dims = p.len();
+  if q.len() != dims {
+    return None;
+  }
+
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let dot = |u: &[Expr], v: &[Expr]| -> Option<Expr> {
+    ev(plus(
+      u.iter()
+        .zip(v)
+        .map(|(x, y)| times2(x.clone(), y.clone()))
+        .collect(),
+    ))
+  };
+  let is_true = |e: Expr| -> Option<bool> {
+    match ev(e)? {
+      Expr::Identifier(ref s) if s == "True" => Some(true),
+      Expr::Identifier(ref s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+  // `Chop` absorbs the rounding noise of inexact input.
+  let is_zero =
+    |e: Expr| is_true(call("Equal", vec![call1("Chop", e), Expr::Integer(0)]));
+
+  let w: Vec<Expr> = q
+    .iter()
+    .zip(&p)
+    .map(|(x, y)| minus2(x.clone(), y.clone()))
+    .collect();
+  let (dd, de, ee) = (dot(&d, &d)?, dot(&d, &e)?, dot(&e, &e)?);
+  let (wd, we) = (dot(&w, &d)?, dot(&w, &e)?);
+  // Normal equations of p + t d == q + s e:
+  //   t (d.d) - s (d.e) == w.d,  t (d.e) - s (e.e) == w.e.
+  let det = ev(minus2(
+    times2(de.clone(), de.clone()),
+    times2(dd.clone(), ee.clone()),
+  ))?;
+  if is_zero(det.clone())? {
+    // Parallel: distinct lines never meet, coincident ones overlap.
+    let wd2 = ev(minus2(
+      times2(dd.clone(), dot(&w, &w)?),
+      times2(wd.clone(), wd.clone()),
+    ))?;
+    if is_zero(wd2)? {
+      return None;
+    }
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  let t = ev(div2(minus2(times2(de, we), times2(ee.clone(), wd)), det))?;
+  let pt: Vec<Expr> = p
+    .iter()
+    .zip(&d)
+    .map(|(x, y)| ev(plus2(x.clone(), times2(t.clone(), y.clone()))))
+    .collect::<Option<_>>()?;
+  // Skew lines (3D and up): the closest point of one is off the other.
+  let off: Vec<Expr> = pt
+    .iter()
+    .zip(&q)
+    .map(|(x, y)| minus2(x.clone(), y.clone()))
+    .collect();
+  let off_e = dot(&off, &e)?;
+  let residual = ev(minus2(
+    times2(ee, dot(&off, &off)?),
+    times2(off_e.clone(), off_e),
+  ))?;
+  if !is_zero(residual)? {
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  Some(call1("Point", Expr::List(pt.into())))
 }
 
 /// `RegionIntersection` of an `InfiniteLine` / `InfinitePlane` with a
