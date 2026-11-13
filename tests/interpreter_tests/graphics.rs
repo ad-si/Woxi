@@ -55318,6 +55318,39 @@ mod labeled_text_and_pane_wrapping {
     assert!(svg.starts_with("<svg width=\"200\" height=\"10"), "{svg}");
   }
 
+  /// `ImageSize -> {Automatic, h}` keeps the height and takes the width
+  /// from the picture's aspect ratio (the data's, or an explicit
+  /// `AspectRatio`) rather than from the default 1/GoldenRatio.
+  #[test]
+  fn image_size_automatic_width_follows_aspect_ratio() {
+    // A square drawing stays square.
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {0, 1}}], Line[{{-1, 2}, {1, 2}}]}, \
+       ImageSize -> {Automatic, 120}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"120\" height=\"120\""),
+      "{svg}"
+    );
+    // A tall drawing is narrower than it is high.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {1, 3}}], ImageSize -> {Automatic, 90}]",
+    );
+    assert!(svg.starts_with("<svg width=\"3"), "{svg}");
+    assert!(svg.contains("height=\"90\""), "{svg}");
+    // A wide one is wider than the 1/GoldenRatio default would make it.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {4, 1}}], ImageSize -> {Automatic, 50}]",
+    );
+    assert!(svg_width(&svg) > 150.0, "{svg}");
+    // An explicit `AspectRatio` sets the width instead of the data.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {4, 1}}], AspectRatio -> 1/2, \
+       ImageSize -> {Automatic, 50}]",
+    );
+    assert!(svg.starts_with("<svg width=\"100\" height=\"50\""), "{svg}");
+  }
+
   /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
   /// the complex roots `Solve` returns) were not taken as numbers, so a
   /// `Point` at such a root was rejected as a bad coordinate.
