@@ -15643,3 +15643,39 @@ fn held_negation_and_sum_chain_forms() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// A held `a - 0` is `Plus[a, 0]` and `-(0)` is `0`: zero has no sign.
+#[test]
+fn held_subtracted_and_negated_zero() {
+  for (input, expected) in [
+    ("Hold[b - 0]", "Hold[b + 0]"),
+    ("Hold[b - 0.]", "Hold[b + 0.]"),
+    ("Hold[b - 0 - 0]", "Hold[b + 0 + 0]"),
+    ("Hold[-(0)]", "Hold[0]"),
+    ("Hold[-(0.)]", "Hold[0.]"),
+    ("Hold[{5, 3}++ @* (b - 0)]", "Hold[{5, 3}++ @* (b + 0)]"),
+    ("ToString[FullForm[Hold[b - 0.]]]", "Hold[Plus[b, 0.`]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Only an unsigned literal takes a parsed minus sign: `-(-2)` stays
+// `Times[-1, -2]`, and a held `Minus[0]` or `Subtract[a, 0]` keeps its sign.
+#[test]
+fn parsed_minus_folds_only_unsigned_literals() {
+  for (input, expected) in [
+    ("ToString[FullForm[Hold[-(-2)]]]", "Hold[Times[-1, -2]]"),
+    (
+      "ToString[FullForm[Hold[a - -2]]]",
+      "Hold[Plus[a, Times[-1, -2]]]",
+    ),
+    ("Hold[-(-2)]", "Hold[-(-2)]"),
+    ("Hold[Minus[0]]", "Hold[-0]"),
+    ("Hold[Minus[-2]]", "Hold[-(-2)]"),
+    ("Hold[Subtract[a, 0]]", "Hold[a - 0]"),
+    ("ToString[FullForm[Hold[a^-(2)]]]", "Hold[Power[a, -2]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

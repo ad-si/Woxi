@@ -58,20 +58,20 @@ fn collect_additive_children(expr: &Expr) -> Vec<Expr> {
 }
 
 /// The term a parsed `-x` stands for: `Times[-1, x]`, except that the parser
-/// folds the sign into a number literal (`a - 2` is `Plus[a, -2]`, `a - 2.5`
-/// is `Plus[a, -2.5]`).
+/// folds the sign into an unsigned number literal (`a - 2` is `Plus[a, -2]`,
+/// `-(0.)` is `0.`). A literal written with its own sign is negated like
+/// anything else: `-(-2)` is `Times[-1, -2]`.
 pub fn negated_term(x: &Expr) -> Expr {
   match x {
-    Expr::Integer(n) if *n != i128::MIN => Expr::Integer(-n),
-    Expr::BigInteger(n) => Expr::BigInteger(-n),
-    Expr::Real(r) => Expr::Real(-r),
-    Expr::BigFloat(digits, prec) => Expr::BigFloat(
-      match digits.strip_prefix('-') {
-        Some(rest) => rest.to_string(),
-        None => format!("-{digits}"),
-      },
-      *prec,
-    ),
+    Expr::Integer(n) if *n >= 0 => Expr::Integer(-n),
+    Expr::BigInteger(n) if n.sign() != num_bigint::Sign::Minus => {
+      Expr::BigInteger(-n)
+    }
+    // Wolfram has no negative zero: `-0.` is `0.`.
+    Expr::Real(r) if *r >= 0.0 => Expr::Real(if *r == 0.0 { 0.0 } else { -r }),
+    Expr::BigFloat(digits, prec) if !digits.starts_with('-') => {
+      Expr::BigFloat(format!("-{digits}"), *prec)
+    }
     other => times2(Expr::Integer(-1), other.clone()),
   }
 }

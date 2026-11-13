@@ -6623,17 +6623,42 @@ fn make_binary_op_owned(left: Expr, op_str: &str, right: Expr) -> Expr {
   }
   match op_str {
     "+" => plus2(left, right),
-    "-" => minus2(left, right),
+    "-" => parsed_subtraction(left, right),
     "*" | "\\[Times]" | "\u{00D7}" => times2(left, right),
     "/" | "\\[Divide]" | "\u{00F7}" => div2(left, right),
     "^" => pow2(left, right),
     "&&" | "\\[And]" | "\u{2227}" => binop(BinaryOperator::And, left, right),
     "||" | "\\[Or]" | "\u{2228}" => binop(BinaryOperator::Or, left, right),
     "<>" => binop(BinaryOperator::StringJoin, left, right),
-    "+_NEG" => plus2(left, neg1(right)),
-    "-_NEG" => minus2(left, neg1(right)),
-    "*_NEG" => times2(left, neg1(right)),
+    "+_NEG" => plus2(left, parsed_negation(right)),
+    "-_NEG" => parsed_subtraction(left, parsed_negation(right)),
+    "*_NEG" => times2(left, parsed_negation(right)),
     _ => make_binary_op(&left, op_str, &right),
+  }
+}
+
+/// The parsed `-x`. Like Wolfram's parser, a number literal takes the sign
+/// (`-(2)` is the number `-2`, `-(0)` is `0`); anything else is negated.
+fn parsed_negation(x: Expr) -> Expr {
+  match crate::functions::expr_form::negated_term(&x) {
+    Expr::BinaryOp { .. } => neg1(x),
+    folded => folded,
+  }
+}
+
+/// The parsed `a - b`. A subtracted zero literal has no sign to fold in, so
+/// `a - 0` is `Plus[a, 0]` (and prints `a + 0`).
+fn parsed_subtraction(left: Expr, right: Expr) -> Expr {
+  if matches!(right, Expr::Integer(0))
+    || matches!(right, Expr::Real(r) if r == 0.0)
+  {
+    let zero = match right {
+      Expr::Real(_) => Expr::Real(0.0),
+      other => other,
+    };
+    plus2(left, zero)
+  } else {
+    minus2(left, right)
   }
 }
 
@@ -6670,11 +6695,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       call1("Unset", left.clone())
     }
     "+" => plus2(left.clone(), right.clone()),
-    "-" => minus2(left.clone(), right.clone()),
+    "-" => parsed_subtraction(left.clone(), right.clone()),
     // A leading minus is parsed with a synthetic `0` on the left so the
     // precedence climb can place it between Times and Power; the node itself
     // is the unary one, so that a held `-x` prints as `-x` and not `0 - x`.
-    "NEGATE" => neg1(right.clone()),
+    "NEGATE" => parsed_negation(right.clone()),
     "*" => times2(left.clone(), right.clone()),
     // `a × b` and `a ÷ b` are `Times`/`Divide` written with their named
     // characters; a Demonstration's typeset formula uses them where it
