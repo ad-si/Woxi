@@ -10462,9 +10462,13 @@ pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
 
 /// The left side of `+=`, `-=`, `*=`, `/=` (Precedence 100): bracketed like
 /// an assignment's, and also when it is a pure function (90), which binds
-/// looser: `(f & ) += 3`.
+/// looser: `(f & ) += 3`. The family groups to the right, so one of them on
+/// the left is bracketed too: `(a += b) += c`.
 fn op_assign_lhs(lhs: &Expr, formatted: String) -> String {
-  if matches!(lhs, Expr::Function { .. }) {
+  let same_level = matches!(lhs, Expr::FunctionCall { name, args }
+    if args.len() == 2
+      && matches!(name.as_str(), "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"));
+  if same_level || matches!(lhs, Expr::Function { .. }) {
     format!("({formatted})")
   } else {
     assignment_lhs(lhs, formatted)
@@ -11839,17 +11843,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args
           .iter()
           .map(|a| {
-            // Wrap nested Alternatives in parentheses
-            if let Expr::FunctionCall {
-              name: inner_name,
-              args: inner_args,
-            } = a
-              && inner_name == "Alternatives"
-              && inner_args.len() >= 2
+            // Wrap nested Alternatives and anything looser (`->`, `/;`,
+            // `=`, …) in parentheses: `(x -> a) | b`.
+            if printed_infix_precedence(a).is_some_and(|p| p <= 15)
+              || is_bare_pattern(a)
             {
-              return format!("({})", fmt(a));
-            }
-            if is_bare_pattern(a) {
               return format!("({})", fmt(a));
             }
             fmt(a)

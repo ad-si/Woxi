@@ -3127,6 +3127,22 @@ pub fn apply_replace_all_ast(
   } else {
     rules
   };
+  // A held `a - b` is `Plus[a, Times[-1, b]]` (in a HoldPattern as well),
+  // so rules see that tree. An expression no rule changed comes back as
+  // written.
+  use crate::functions::expr_form::{
+    canonicalize_subtractions, contains_subtraction,
+  };
+  if contains_subtraction(expr) || contains_subtraction(rules) {
+    let canonical = canonicalize_subtractions(expr);
+    let rules = canonicalize_subtractions(rules);
+    let result = apply_replace_all_ast(&canonical, &rules)?;
+    return Ok(if expr_equal(&result, &canonical) {
+      expr.clone()
+    } else {
+      result
+    });
+  }
   if !contains_interpolating_function(expr)
     && !contains_interpolating_function(rules)
   {

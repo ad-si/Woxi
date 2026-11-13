@@ -3192,6 +3192,10 @@ pub(crate) fn canonical_operator_call(expr: &Expr) -> Expr {
     return expr.clone();
   }
   let ExprForm::Composite { head, children } = decompose_expr(expr) else {
+    // A negated number literal, `-(2)`, is the number `-2`.
+    if let Expr::UnaryOp { operand, .. } = expr {
+      return crate::functions::expr_form::negated_term(operand);
+    }
     return expr.clone();
   };
   // A unary minus merges into its product operand too: results built with
