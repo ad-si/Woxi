@@ -438,6 +438,27 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_draws_tooltip_wrapped_curves() {
+      // Hover-only wrappers around curves draw the curves themselves.
+      let svg = export_svg(
+        "ParametricPlot[{Tooltip[{1, t}, \"a\"], Tooltip[{t, 2}, \"b\"]}, \
+           {t, -3, 3}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 2);
+      let svg = export_svg(
+        "f[k_, t_] := {k t, t^2}; \
+         ParametricPlot[Evaluate[Table[Tooltip[f[k, t], k], {k, 3}]], \
+           {t, -1, 1}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+      let svg = export_svg(
+        "ParametricPlot[{PopupWindow[{Cos[t], Sin[t]}, \"c\"], \
+           {{t, t}, StatusArea[{t, -t}, \"d\"]}}, {t, 0, 1}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+    }
+
+    #[test]
     fn parametric_plot_exclusions_break_curve_at_equation_roots() {
       // `Exclusions -> {t == c}` removes that parameter value, so the line
       // is split there instead of being drawn across the gap.
