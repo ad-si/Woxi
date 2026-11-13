@@ -8461,7 +8461,7 @@ fn integrate_leg(
         if reached != Some(end) {
           return Ok(Some(out));
         }
-        state = out[out.len() - 1].1.clone();
+        state.clone_from(&out[out.len() - 1].1);
         start_x = end;
       }
       return Ok(Some(out));
@@ -9859,7 +9859,7 @@ const MAX_DDE_BREAKPOINTS: usize = 256;
 fn dde_breakpoints(x0: f64, x_end: f64, lags: &[f64]) -> Vec<f64> {
   let span = x_end - x0;
   let mut all: Vec<f64> = Vec::new();
-  if !(span > 0.0) || lags.is_empty() {
+  if span.is_nan() || span <= 0.0 || lags.is_empty() {
     return all;
   }
   let mut level: Vec<f64> = vec![0.0];
