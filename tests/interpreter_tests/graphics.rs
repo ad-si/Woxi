@@ -11127,7 +11127,7 @@ mod plot3d {
           .filter_map(|s| s.split('<').next())
           .collect::<String>()
           .chars()
-          .filter(|c| c.is_ascii_digit())
+          .filter(char::is_ascii_digit)
           .collect();
         (text.matches("<tspan x=").count() + 1, digits)
       };
