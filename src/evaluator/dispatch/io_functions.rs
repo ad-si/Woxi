@@ -7069,28 +7069,24 @@ fn wrap_pane_text_at(
       let mut units: Vec<PaneTextUnit> = Vec::new();
       for item in &items {
         let idx = styles.len();
-        match pane_row_piece(item) {
-          Some((text, directives)) => {
-            styles.push(directives);
-            atoms.push(None);
-            units.extend(
-              pane_text_units(&text)
-                .into_iter()
-                .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
-            );
-          }
-          None => {
-            let cols =
-              crate::functions::graphics::estimate_display_width(item).ceil()
-                as usize;
-            styles.push(None);
-            atoms.push(Some(item.clone()));
-            units.push(PaneTextUnit {
-              text: String::new(),
-              cols: cols.max(1),
-              idx,
-            });
-          }
+        if let Some((text, directives)) = pane_row_piece(item) {
+          styles.push(directives);
+          atoms.push(None);
+          units.extend(
+            pane_text_units(&text)
+              .into_iter()
+              .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
+          );
+        } else {
+          let cols = crate::functions::graphics::estimate_display_width(item)
+            .ceil() as usize;
+          styles.push(None);
+          atoms.push(Some(item.clone()));
+          units.push(PaneTextUnit {
+            text: String::new(),
+            cols: cols.max(1),
+            idx,
+          });
         }
       }
       if atoms.iter().all(Option::is_some) {

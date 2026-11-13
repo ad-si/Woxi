@@ -30086,14 +30086,14 @@ fn with_text(item: &Expr, text: &str) -> Expr {
   }
 }
 
-/// Rewrite one line of text markup with a `<tspan>` nested inside another
-/// `<tspan>` (e.g. a `Subscript` or a digit-grouped number under a `Style`
-/// color) into a flat run of sibling `<tspan>`s, each carrying the
+/// Rewrite one line of text markup with a shifted (`baseline-shift` or
+/// `dx`) `<tspan>` nested inside another `<tspan>` (e.g. a `Subscript` or a
+/// digit-grouped number under a `Style` color) into a flat run of sibling `<tspan>`s, each carrying the
 /// attributes it inherited. resvg (the Studio's renderer) misplaces nested
 /// spans in a centrally aligned line: it drops a script's shift and lifts
 /// the surrounding text off the line. A relative `font-size` is resolved
 /// against its ancestors so the flattened run keeps its size, and a span's
-/// `dx` stays on its first run. Markup without nesting, or with absolutely
+/// `dx` stays on its first run. Markup without such nesting, or with absolutely
 /// positioned (`x`/`y`/`dy`) spans or other tags, comes back unchanged.
 pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
   #[derive(Clone)]
@@ -30135,10 +30135,7 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
       let Some(attrs) = parse_attrs(&after[..end]) else {
         return markup.to_string();
       };
-      if attrs
-        .iter()
-        .any(|(k, _)| matches!(*k, "x" | "y" | "dy"))
-      {
+      if attrs.iter().any(|(k, _)| matches!(*k, "x" | "y" | "dy")) {
         return markup.to_string();
       }
       toks.push(Tok::Open(attrs));
@@ -30151,13 +30148,17 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
       rest = &rest[end..];
     }
   }
-  // Only a span below another span needs the rewrite.
+  // Only a shifted (`baseline-shift`/`dx`) span below another span needs
+  // the rewrite; plain style nesting renders fine.
   let mut depth = 0usize;
   let mut nested = false;
   for t in &toks {
     match t {
-      Tok::Open(_) => {
-        nested |= depth > 0;
+      Tok::Open(attrs) => {
+        nested |= depth > 0
+          && attrs
+            .iter()
+            .any(|(k, _)| matches!(*k, "baseline-shift" | "dx"));
         depth += 1;
       }
       Tok::Close => {
@@ -30178,9 +30179,8 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
   for t in toks {
     match t {
       Tok::Open(attrs) => {
-        let mut merged: Vec<(String, String)> = stack
-          .last()
-          .map(|top| {
+        let mut merged: Vec<(String, String)> =
+          stack.last().map_or_default(|top| {
             // `baseline-shift` is not inherited: a child sits on its
             // parent's shifted line, but only the innermost shift is kept.
             // A parent's `dx` offsets only its own first character.
@@ -30193,13 +30193,13 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
               })
               .cloned()
               .collect()
-          })
-          .unwrap_or_default();
+          });
         for (k, v) in attrs {
           let mut value = v.to_string();
           if k == "font-size"
-            && let Some(pct) =
-              v.strip_suffix('%').and_then(|p| p.trim().parse::<f64>().ok())
+            && let Some(pct) = v
+              .strip_suffix('%')
+              .and_then(|p| p.trim().parse::<f64>().ok())
             && let Some((_, parent)) =
               merged.iter().find(|(pk, _)| pk == "font-size")
           {
