@@ -2839,6 +2839,19 @@ fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
   named.into_iter().chain(explicit).collect()
 }
 
+/// The opacity an `Opacity[a]` text style directive sets, clamped to
+/// `0..=1`; `None` for any other directive (or a symbolic `a`).
+fn text_opacity_directive(d: &Expr) -> Option<f64> {
+  match d {
+    Expr::FunctionCall { name, args }
+      if name == "Opacity" && !args.is_empty() =>
+    {
+      expr_to_f64(&args[0]).map(|a| a.clamp(0.0, 1.0))
+    }
+    _ => None,
+  }
+}
+
 fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
   if style.text_decoration.apply(d) {
     return true;
@@ -16117,6 +16130,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut bold = false;
         let mut show_contents = true;
         let mut italic = false;
+        let mut opacity: Option<f64> = None;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -16149,7 +16163,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               continue;
             }
             _ => {
-              if let Some(color) = parse_color(opt) {
+              if let Some(a) = text_opacity_directive(opt) {
+                opacity = Some(a);
+              } else if let Some(color) = parse_color(opt) {
                 font_color = Some(color);
               }
               continue;
@@ -16215,6 +16231,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         }
         if italic {
           elements = format!("<g font-style=\"italic\">{elements}</g>");
+        }
+        if let Some(a) = opacity.filter(|a| *a < 1.0) {
+          elements = format!("<g opacity=\"{a}\">{elements}</g>");
         }
         BoxLayout {
           elements,
@@ -30135,6 +30154,23 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
             return form_box_svg(&call("Style", styled));
           }
         }
+        // A styled quotient, `Style[a/b, 20]` (a row item once a
+        // `Style[Row[{…}], 20]` is pushed inwards), is typeset with its
+        // fraction stacked, at the style's size and color, rather than
+        // written as the one-line `a/b` text.
+        if name == "Style"
+          && standard_fraction_cell_svg(&args[0], 14.0).is_some()
+        {
+          let boxes =
+            crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+              expr,
+            );
+          let boxes = crate::strip_number_precision_markers(&boxes);
+          let layout = layout_box(&boxes, 14.0);
+          if layout.width > 0.0 && layout.height > 0.0 {
+            return Some(layout_to_svg(&layout, theme().text_primary));
+          }
+        }
         // Not a Row/Column/Grid/TextGrid to push the style into — a
         // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],
         // 18]`) still needs the style honored, which `expr_to_svg` already
@@ -31016,6 +31052,8 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       decoration: TextDecoration,
       /// `Style[…, Background -> c]`: the panel behind the text.
       background: Option<Color>,
+      /// `Style[…, Opacity[a]]`: the text's opacity.
+      opacity: f64,
     },
   }
 
@@ -31028,12 +31066,17 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       Some(inner) => (inner, true),
       None => (item, false),
     };
+    // `Style[…, Opacity[a]]` fades the text, the way the directive fades
+    // a graphics primitive.
+    let mut opacity: f64 = 1.0;
     if let Expr::FunctionCall { name, args: sargs } = item
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
       for d in style_directives_in_application_order(&sargs[1..]) {
-        if let Some(c) = parse_color(d) {
+        if let Some(a) = text_opacity_directive(d) {
+          opacity = a;
+        } else if let Some(c) = parse_color(d) {
           color = Some(c);
         } else {
           apply_text_style_directive(d, &mut st);
@@ -31071,6 +31114,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       family: st.font_family,
       decoration: st.text_decoration,
       background: st.text_background.filter(|_| !hidden),
+      opacity,
     }
   };
 
@@ -31112,6 +31156,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
               family: String::new(),
               decoration: TextDecoration::default(),
               background: None,
+              opacity: 1.0,
             },
             None => make_text_cell(&resolved),
           },
@@ -31211,10 +31256,14 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         family,
         decoration,
         background,
+        opacity,
       } => {
         let cx = x + width / 2.0;
         let cy = cell_top(*height) + height / 2.0;
-        let deco_attr = decoration.svg_attrs();
+        let mut deco_attr = decoration.svg_attrs();
+        if *opacity < 1.0 {
+          deco_attr.push_str(&format!(" opacity=\"{opacity}\""));
+        }
         // `Style[…, Background -> c]` paints a panel just behind the text,
         // one line high.
         if let Some(bg) = background {

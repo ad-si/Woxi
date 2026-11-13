@@ -3807,6 +3807,71 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_styled_row_quotient_stacks_the_fraction_at_its_size() {
+    // Regression: `Style[Row[{a/b, " = ", 3}], 20]` pushes its style into
+    // the row's items, and the resulting `Style[a/b, 20]` item was written
+    // as the one-line `a/b` text instead of a stacked fraction.
+    clear_state();
+    for code in [
+      "ExportString[Style[Row[{a/b, \" = \", 3}], 20], \"SVG\"]",
+      "ExportString[Row[{Style[(p + q)/r, 20], \" = \", 3}], \"SVG\"]",
+      "ExportString[Text[Style[Row[{Style[\"u\", Red]/Style[\"v\", Blue], \" = \", 3}], 20]], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(
+        svg.contains("<line"),
+        "expected a fraction line: {code}\n{svg}"
+      );
+      assert!(
+        svg.contains("font-size=\"20.0\""),
+        "fraction must take the style's size: {code}\n{svg}"
+      );
+      assert!(
+        !svg.contains("a/b<"),
+        "fraction was flattened: {code}\n{svg}"
+      );
+    }
+    let colored = interpret(
+      "ExportString[Style[Row[{Style[\"u\", Red]/Style[\"v\", Blue]}], 20], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      colored.contains("rgb(255,0,0)") && colored.contains("rgb(0,0,255)"),
+      "numerator and denominator keep their colors:\n{colored}"
+    );
+  }
+
+  #[test]
+  fn test_style_opacity_fades_row_text_and_fractions() {
+    // Regression: `Style[…, Opacity[a]]` was ignored for text, so a
+    // readout meant to be hidden with `Opacity[0]` stayed visible.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Row[{Style[\"xy\", Opacity[0.5]], \"z\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("opacity=\"0.5\""), "text must fade:\n{svg}");
+    assert_eq!(
+      svg.matches("opacity=").count(),
+      1,
+      "only the styled item fades:\n{svg}"
+    );
+    let hidden = interpret(
+      "ExportString[Style[Row[{a/b, \" = \", 3}], 20, Opacity[0]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      hidden.contains("<g opacity=\"0\">"),
+      "the stacked fraction must fade:\n{hidden}"
+    );
+    assert_eq!(
+      hidden.matches("opacity=\"0\"").count(),
+      3,
+      "every item of the row must fade:\n{hidden}"
+    );
+  }
+
+  #[test]
   fn test_grid_cell_padded_form_of_grid_draws_the_grid() {
     // Regression: `Text[PaddedForm[Grid[…], spec]]` as a grid cell printed
     // the inner `Grid[…]` source instead of drawing the table with its
