@@ -23086,6 +23086,17 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
     }
     _ => cell,
   };
+  // `Style[31/10, Bold, 20]` is still a stacked fraction, set in the
+  // styled font: typeset the whole `StyleBox` so its size, weight and
+  // color reach the numerator and denominator.
+  let held = match held {
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && args.len() >= 2 =>
+    {
+      &args[0]
+    }
+    _ => held,
+  };
   let arithmetic = matches!(held, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
     || matches!(held, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
