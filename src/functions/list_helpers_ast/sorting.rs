@@ -2462,8 +2462,8 @@ fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
 fn numeric_coeff_and_rest_expr(
   e: &Expr,
 ) -> ((f64, f64), Option<std::borrow::Cow<'_, Expr>>) {
-  use std::borrow::Cow;
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  use std::borrow::Cow;
   let literal = |x: &Expr| -> Option<(f64, f64)> {
     match x {
       Expr::Integer(_)
@@ -2658,13 +2658,14 @@ fn linear_sum_vs_monomial(
 ) -> Option<std::cmp::Ordering> {
   let lead = terms.last()?;
   let ((c, c_im), lead_rest) = numeric_coeff_and_rest_expr(lead);
-  let lead_var = lead_rest.map_or_else(|| lead.clone(), |r| r.into_owned());
+  let lead_var =
+    lead_rest.map_or_else(|| lead.clone(), std::borrow::Cow::into_owned);
   if !matches!(lead_var, Expr::Identifier(_)) {
     return None;
   }
   let ((k, k_im), mono_rest) = numeric_coeff_and_rest_expr(monomial);
   let mono_core =
-    mono_rest.map_or_else(|| monomial.clone(), |r| r.into_owned());
+    mono_rest.map_or_else(|| monomial.clone(), std::borrow::Cow::into_owned);
   let mono_var = match power_parts(&mono_core) {
     Some((base, exp)) => {
       crate::functions::math_ast::try_eval_to_f64(&exp)?;
@@ -2703,7 +2704,7 @@ fn sum_lead_variable_order(
 ) -> Option<std::cmp::Ordering> {
   let symbol_of = |e: &Expr| -> Option<Expr> {
     let (_, rest) = numeric_coeff_and_rest_expr(e);
-    let core = rest.map_or_else(|| e.clone(), |r| r.into_owned());
+    let core = rest.map_or_else(|| e.clone(), std::borrow::Cow::into_owned);
     let base = match power_parts(&core) {
       Some((base, exp)) => {
         crate::functions::math_ast::try_eval_to_f64(&exp)?;
