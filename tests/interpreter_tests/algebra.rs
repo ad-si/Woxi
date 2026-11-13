@@ -26655,3 +26655,85 @@ fn full_simplify_returns_a_canonical_sum() {
     "2 - 5/x - 5*x + 5*x^2"
   );
 }
+
+// Together orients every sum factor of a *product* numerator by its
+// FactorTerms content (the lex-leading term's sign moves out), while a lone
+// sum numerator keeps its form. All wolframscript-verified.
+mod together_product_numerator_orientation {
+  use super::*;
+
+  #[test]
+  fn sum_factors_of_a_product_are_oriented() {
+    for (code, expected) in [
+      ("Together[x (3 - 4 x)/(1 + y)]", "-((x*(-3 + 4*x))/(1 + y))"),
+      ("Together[x (3 - 4 x)]", "-(x*(-3 + 4*x))"),
+      ("Together[(1 - x) (2 - x)]", "(-2 + x)*(-1 + x)"),
+      ("Together[2 (3 - 4 x)/(1 + y)]", "(-2*(-3 + 4*x))/(1 + y)"),
+      ("Together[(1/2 - x) y/z]", "-1/2*((-1 + 2*x)*y)/z"),
+      ("Together[(b - a) (c - d)/e]", "-(((a - b)*(c - d))/e)"),
+      ("Together[(-a - b) c/e]", "-(((a + b)*c)/e)"),
+      (
+        "Together[x (3 - x (4 + 5 x))/y]",
+        "-((x*(-3 + 4*x + 5*x^2))/y)",
+      ),
+      ("Together[a (b (c + d) + 1)/y]", "(a*(1 + b*c + b*d))/y"),
+      ("Together[y (1 - Sin[x])/z]", "-((y*(-1 + Sin[x]))/z)"),
+      ("Together[x (3 - 4 x)/(1 + x)]", "-((x*(-3 + 4*x))/(1 + x))"),
+      (
+        "Together[x (3 - 4 x)/(4 + 2 y)]",
+        "-1/2*(x*(-3 + 4*x))/(2 + y)",
+      ),
+      (
+        "Together[x (3 - 4 x)/(4 + 2 x)]",
+        "-1/2*(x*(-3 + 4*x))/(2 + x)",
+      ),
+      ("Together[x (1 + x)/(4 + 2 x)]", "(x*(1 + x))/(2*(2 + x))"),
+      (
+        "Together[x (3 - 4 x)/(y (1 - y))]",
+        "(x*(-3 + 4*x))/((-1 + y)*y)",
+      ),
+      (
+        "Together[x (3 - x (4 + 5 x))/(-4 + 2 x)]",
+        "-1/2*(x*(-3 + 4*x + 5*x^2))/(-2 + x)",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn lone_sums_and_inexact_or_complex_factors_keep_their_form() {
+    for (code, expected) in [
+      ("Together[(3 - 4 x)/(1 + y)]", "(3 - 4*x)/(1 + y)"),
+      ("Together[(1 - x)/x]", "(1 - x)/x"),
+      ("Together[y (a - Sin[x])/z]", "(y*(a - Sin[x]))/z"),
+      ("Together[(1 - 2 I x) y/z]", "((1 - (2*I)*x)*y)/z"),
+      ("Together[(x (3 - 4 x))^k]", "((3 - 4*x)*x)^k"),
+      ("Together[(1 - x)^k x/y]", "((1 - x)^k*x)/y"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+// FactorTermsList takes its sign from the lex-leading term, with variables
+// in canonical expression order (symbols before Cos[x] before Sin[x]) and a
+// rational exponent counting by value (x outranks Sqrt[x]).
+#[test]
+fn factor_terms_list_sign_follows_canonical_variable_order() {
+  for (code, expected) in [
+    ("FactorTermsList[a - Sin[x]]", "{1, a - Sin[x]}"),
+    ("FactorTermsList[Cos[x] - Sin[x]]", "{1, Cos[x] - Sin[x]}"),
+    ("FactorTermsList[Sin[x] - Cos[x]]", "{-1, Cos[x] - Sin[x]}"),
+    ("FactorTermsList[b - a]", "{-1, a - b}"),
+    ("FactorTermsList[x y - x^2]", "{-1, x^2 - x*y}"),
+    ("FactorTermsList[x - x^2 y]", "{-1, -x + x^2*y}"),
+    ("FactorTermsList[Sqrt[x] - x]", "{-1, -Sqrt[x] + x}"),
+    ("FactorTermsList[1 - Sin[x]]", "{-1, -1 + Sin[x]}"),
+    ("FactorTermsList[-x/2 - y/3]", "{-1/6, 3*x + 2*y}"),
+    ("FactorTermsList[1 - E x]", "{1, 1 - E*x}"),
+    ("FactorTermsList[-Pi + x]", "{1, -Pi + x}"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
