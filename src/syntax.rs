@@ -10011,6 +10011,12 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// `x!` or `x!!`, which print postfix.
+fn is_factorial_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if (name == "Factorial" || name == "Factorial2") && args.len() == 1)
+}
+
 /// A literal that prints with a sign or a slash — a negative number or a
 /// rational — and so needs brackets as the operand of a tight operator.
 fn is_negative_or_fraction_literal(e: &Expr) -> bool {
@@ -10138,6 +10144,7 @@ fn flat_ring_infix(
 /// print as `a /. b :> c[[1]]`.
 fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
+    || is_factorial_call(base)
     // `@*` and `/*` print infix: `(a /* b)[[1]]`.
     || matches!(base, Expr::FunctionCall { name, args }
       if (name == "Composition" || name == "RightComposition")
@@ -10225,6 +10232,39 @@ fn format_part_brackets(
 /// This is the single place the rule lives: both InputForm renderers
 /// (`format_expr` and `expr_to_input_form`) call it for every operand, chained
 /// comparisons included (`Hold[(a_) == (b_) == (c_)]`).
+/// `comparison_operand_needs_parens` for an operand of a comparison chain
+/// with operators `parent`: an operand of `===`/`=!=` that is itself a
+/// numeric comparison prints bare — wolframscript writes `a == b === c` and
+/// `a < b === c` — while a nested `===` and every operand of `==`, `<`, …
+/// keep their brackets: `(a === b) === c`, `(a == b) == c`.
+fn comparison_operand_parens(parent: &[ComparisonOp], e: &Expr) -> bool {
+  let structural = |op: &ComparisonOp| {
+    matches!(op, ComparisonOp::SameQ | ComparisonOp::UnsameQ)
+  };
+  let numeric_comparison = match e {
+    Expr::Comparison { operators, .. } => {
+      !operators.is_empty() && !operators.iter().any(structural)
+    }
+    Expr::FunctionCall { name, args } => {
+      args.len() >= 2
+        && matches!(
+          name.as_str(),
+          "Equal"
+            | "Unequal"
+            | "Less"
+            | "LessEqual"
+            | "Greater"
+            | "GreaterEqual"
+        )
+    }
+    _ => false,
+  };
+  if !parent.is_empty() && parent.iter().all(structural) && numeric_comparison {
+    return false;
+  }
+  comparison_operand_needs_parens(e)
+}
+
 fn comparison_operand_needs_parens(e: &Expr) -> bool {
   is_bare_pattern(e)
     || prints_as_not(e)
@@ -10296,8 +10336,10 @@ fn format_map_apply_shorthand(
   prec: u8,
 ) -> String {
   let func_str = format_expr(func, ExprForm::Input);
+  // `!` (610) binds looser than the shorthands (620): `(x!) @@ a`.
   let func_needs_parens = matches!(func, Expr::NamedFunction { .. })
-    || printed_infix_precedence(func).is_some_and(|p| p <= prec);
+    || printed_infix_precedence(func).is_some_and(|p| p <= prec)
+    || is_factorial_call(func);
   let func_display = if func_needs_parens {
     format!("({func_str})")
   } else {
@@ -10305,6 +10347,7 @@ fn format_map_apply_shorthand(
   };
   let list_str = format_expr(list, ExprForm::Input);
   let list_display = if printed_infix_precedence(list).is_some_and(|p| p < prec)
+    || is_factorial_call(list)
   {
     format!("({list_str})")
   } else {
@@ -13517,6 +13560,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
       let needs_right_parens = looser_operand(right)
+        // An exponent printed with an operator looser than `^` (590):
+        // `a^(b . c)`, `a^(b**c)`.
+        || (matches!(op, BinaryOperator::Power)
+          && !is_loose_assignment(right)
+          && printed_infix_precedence(right).is_some_and(|p| p < 48))
         || (is_multiplicative && is_additive(right))
         // `(±a)^(±b)`: a prefix `±` is bracketed as any arithmetic operand.
         || (matches!(
@@ -13726,7 +13774,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|e| {
               let s = format_expr(e, form);
-              if comparison_operand_needs_parens(e) {
+              if comparison_operand_parens(operators, e) {
                 format!("({s})")
               } else {
                 s
@@ -13757,7 +13805,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       } else {
         let fmt_operand = |e: &Expr| -> String {
           let s = format_expr(e, form);
-          if comparison_operand_needs_parens(e) {
+          if comparison_operand_parens(operators, e) {
             format!("({s})")
           } else {
             s
@@ -16107,7 +16155,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           .iter()
           .map(|e| {
             let s = expr_to_input_form(e);
-            if comparison_operand_needs_parens(e) {
+            if comparison_operand_parens(operators, e) {
               format!("({s})")
             } else {
               s
@@ -16155,7 +16203,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       let fmt_operand = |e: &Expr| -> String {
         let s = expr_to_input_form(e);
-        if comparison_operand_needs_parens(e) {
+        if comparison_operand_parens(operators, e) {
           format!("({s})")
         } else {
           s
@@ -19636,6 +19684,17 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
   match (name.as_str(), args.len()) {
     ("Not", 1) => Some(unary(UnaryOperator::Not)),
     ("Minus", 1) => Some(unary(UnaryOperator::Minus)),
+    // `Divide[-1, 3]` prints `-1/3`, unlike the parsed `-1/3`, which is
+    // `Times[-1, Power[3, -1]]` and prints `-3^(-1)`; a negated `1` keeps
+    // the two apart.
+    ("Divide", 2) if matches!(args[0], Expr::Integer(-1)) => Some(binop(
+      BinaryOperator::Divide,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(Expr::Integer(1)),
+      },
+      args[1].clone(),
+    )),
     ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
     ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
     ("List", _) => Some(Expr::List(args.clone())),

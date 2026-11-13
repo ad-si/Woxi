@@ -15093,3 +15093,25 @@ fn held_minus_and_nested_connectives() {
   assert_eq!(interpret("(True && x) && y").unwrap(), "x && y");
   assert_eq!(interpret("MatchQ[2, (1 | 2) | 3]").unwrap(), "True");
 }
+
+// Comparisons nested in `===`, factorials as shorthand operands and Part
+// bases, exponents printed with `.`, and an explicit Divide[-1, n].
+#[test]
+fn held_comparison_factorial_and_exponent_operands() {
+  for (input, expected) in [
+    ("HoldForm[(a == b) === c]", "HoldForm[a == b === c]"),
+    ("HoldForm[a === (b == c)]", "HoldForm[a === b == c]"),
+    ("HoldForm[(a < b) === c]", "HoldForm[a < b === c]"),
+    ("HoldForm[(a === b) === c]", "HoldForm[(a === b) === c]"),
+    ("HoldForm[(a === b) == c]", "HoldForm[(a === b) == c]"),
+    ("HoldForm[(a == b) == c]", "HoldForm[(a == b) == c]"),
+    ("Hold[a @@ (x!)]", "Hold[a @@ (x!)]"),
+    ("Hold[(x!) @@ a]", "Hold[(x!) @@ a]"),
+    ("Hold[((x_)!)[[2]]]", "Hold[((x_)!)[[2]]]"),
+    ("Hold[_Integer^(c . a)]", "Hold[_Integer^(c . a)]"),
+    ("Hold[Divide[-1, 3]]", "Hold[-1/3]"),
+    ("Hold[-1/3]", "Hold[-3^(-1)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
