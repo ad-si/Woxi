@@ -6069,6 +6069,17 @@ pub fn ends_with_continuing_named_operator(code_tail: &str) -> bool {
 /// Get precedence of an operator (higher = binds tighter).
 /// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u16 {
+  // `~~` (135), `:` (150) and `|` (160) bind looser than the comparisons
+  // (290), `&&`/`||` (215) and the logical arrows, and tighter than `/;`
+  // (130): `a | b == c` is `a | (b == c)`, `a ~~ b == c` is
+  // `a ~~ (b == c)`. They sit between `/;` (120 here) and `\[Implies]`
+  // (130), keeping their own order.
+  match op {
+    "~~" => return 123,
+    ":" => return 125,
+    "|" => return 127,
+    _ => {}
+  }
   // The scale is ten times `base_operator_precedence`, so the generated
   // operators can sit between two of the hand-placed levels.
   if let Some(op) =
@@ -9919,9 +9930,11 @@ fn prints_as_negation(e: &Expr) -> bool {
 fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   match e {
     Expr::BinaryOp { op, .. } => Some(match op {
-      BinaryOperator::Or => 15,
+      // `|` (160) binds looser than `||` and `&&` (215) and the
+      // comparisons (290): `a && b | c` is `(a && b) | c`.
+      BinaryOperator::Alternatives => 15,
+      BinaryOperator::Or => 16,
       BinaryOperator::And => 18,
-      BinaryOperator::Alternatives => 27,
       BinaryOperator::Plus
       | BinaryOperator::Minus
       | BinaryOperator::StringJoin => 30,
@@ -9984,9 +9997,9 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       }
       // Heads that also print infix once evaluated (`a && b` keeps the head
       // `And` but still renders with the operator).
-      "Or" if args.len() >= 2 => Some(15),
+      "Or" if args.len() >= 2 => Some(16),
       "And" if args.len() >= 2 => Some(18),
-      "Alternatives" if args.len() >= 2 => Some(27),
+      "Alternatives" if args.len() >= 2 => Some(15),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
       "TwoWayRule" if args.len() == 2 => Some(21),
       // Comparisons and `===`/`=!=` (290) print infix in held forms, below
@@ -11652,7 +11665,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-              || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+              || printed_infix_precedence(arg).is_some_and(|p| p < 16)
               || (connective_parens() && is_logical_connective_call(arg));
             if is_and { format!("({s})") } else { s }
           })
@@ -13358,7 +13371,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             || matches!(e, Expr::FunctionCall { name, args }
               if name == "Or" && args.len() >= 2)
             || (!is_loose_assignment(e)
-              && printed_infix_precedence(e).is_some_and(|p| p < 15))
+              && printed_infix_precedence(e).is_some_and(|p| p < 16))
             || is_bare_pattern(e)
             || (connective_parens() && is_logical_connective_call(e))
         };
@@ -13415,7 +13428,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         BinaryOperator::Plus | BinaryOperator::Minus => Some(30),
         BinaryOperator::Times | BinaryOperator::Divide => Some(33),
         BinaryOperator::Power => Some(48),
-        BinaryOperator::Alternatives => Some(27),
+        BinaryOperator::Alternatives => Some(15),
         _ => None,
       };
       // (`operand_str` below already brackets an assignment.) A nested
@@ -13737,8 +13750,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ..
           }
         ) ||
-          // `-(-a)`: a second minus needs them or the two run together.
+          // `-(-a)`: a second minus needs them or the two run together —
+          // a negative literal too: `--2` would read back as a decrement.
           prints_as_negation(operand.as_ref())
+          || is_negative_or_fraction_literal(operand.as_ref())
+            && !matches!(operand.as_ref(), Expr::FunctionCall { .. })
         || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
@@ -15801,7 +15817,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-            || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+            || printed_infix_precedence(arg).is_some_and(|p| p < 16)
             || (connective_parens() && is_logical_connective_call(arg));
           if is_and { format!("({s})") } else { s }
         })
@@ -15841,13 +15857,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     } => input_form_infix_forcing(
       &[(**left).clone(), (**right).clone()],
       " | ",
-      27,
+      15,
       is_nested_alternatives_call,
     ),
     Expr::FunctionCall { name, args }
       if name == "Alternatives" && args.len() >= 2 =>
     {
-      input_form_infix_forcing(args, " | ", 27, is_nested_alternatives_call)
+      input_form_infix_forcing(args, " | ", 15, is_nested_alternatives_call)
     }
     // Condition[lhs, rhs] in InputForm: `lhs /; rhs`, again with InputForm
     // children (`ToString[x /; y ;; 3, InputForm]` is "x /; y ;; 3").

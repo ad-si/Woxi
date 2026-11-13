@@ -15134,3 +15134,52 @@ fn held_assignment_operands_and_string_expressions() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// `~~` (135), `:` (150) and `|` (160) bind looser than the comparisons,
+// `&&` and `||`, and tighter than `/;` and `->`.
+#[test]
+fn alternatives_string_expression_and_colon_precedence() {
+  for (input, expected) in [
+    ("Hold[a | b == c]", "Hold[Alternatives[a, Equal[b, c]]]"),
+    ("Hold[a | b && c]", "Hold[Alternatives[a, And[b, c]]]"),
+    ("Hold[a && b | c]", "Hold[Alternatives[And[a, b], c]]"),
+    ("Hold[a | b || c]", "Hold[Alternatives[a, Or[b, c]]]"),
+    ("Hold[a | b -> c]", "Hold[Rule[Alternatives[a, b], c]]"),
+    (
+      "Hold[a ~~ b == c]",
+      "Hold[StringExpression[a, Equal[b, c]]]",
+    ),
+    (
+      "Hold[a ~~ b | c]",
+      "Hold[StringExpression[a, Alternatives[b, c]]]",
+    ),
+    ("Hold[x : a == b]", "Hold[Pattern[x, Equal[a, b]]]"),
+    (
+      "Hold[x : a | b : v]",
+      "Hold[Optional[Pattern[x, Alternatives[a, b]], v]]",
+    ),
+    (
+      "Hold[x_ /; a | b]",
+      "Hold[Condition[Pattern[x, Blank[]], Alternatives[a, b]]]",
+    ),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  // Printing follows the same order.
+  for (input, expected) in [
+    ("Hold[(b -> x_) | (s === y)]", "Hold[(b -> x_) | s === y]"),
+    ("Hold[(a && b) | c]", "Hold[a && b | c]"),
+    ("Hold[a && (b | c)]", "Hold[a && (b | c)]"),
+    ("Hold[a | (x_ -> f)]", "Hold[a | (x_ -> f)]"),
+    ("Hold[(a | b) == c]", "Hold[(a | b) == c]"),
+    ("Hold[a | b | c]", "Hold[a | b | c]"),
+    ("Hold[-(-2)]", "Hold[-(-2)]"),
+    ("Hold[-(-2.5)]", "Hold[-(-2.5)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
