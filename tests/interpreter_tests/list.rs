@@ -26763,6 +26763,6 @@ mod linear_solve_matrix_message {
     }
     // A symbolic argument stays unevaluated silently.
     let r = woxi::interpret_with_stdout("LinearSolve[f, {1, 2}]").unwrap();
-    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert_eq!(r.warnings, Vec::<String>::new());
   }
 }
