@@ -4703,6 +4703,22 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Text[content]` displays `content` in plain text format: a picture
+  // inside is still drawn, but text keeps the wrapper so the layout sets it
+  // in the proportional text face rather than its monospace default.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Text"
+    && args.len() == 1
+  {
+    let inner = render_inline_display_wrapper(&args[0]);
+    return match inner {
+      syntax::Expr::Graphics { .. } => inner,
+      other => syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![other].into(),
+      },
+    };
+  }
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.

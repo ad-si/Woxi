@@ -15149,6 +15149,25 @@ pub struct BoxLayout {
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
 
+/// Average character advance of the proportional (sans-serif) text face, as
+/// a fraction of the font size; used to size plain `Text[…]` items.
+pub(crate) const SANS_ADVANCE: f64 = 0.55;
+
+/// Whether a layout item is a plain-text `Text[expr]` display, possibly
+/// dressed in `Style`/`Invisible` wrappers.
+fn is_text_display_item(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args } if name == "Text" => args.len() == 1,
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "Invisible")
+        && !args.is_empty() =>
+    {
+      is_text_display_item(&args[0])
+    }
+    _ => false,
+  }
+}
+
 /// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
 /// scale factor at which it should be drawn so it reads as a display-size
 /// operator. Returns `None` for ordinary atoms.
@@ -30796,7 +30815,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       width: f64,
       height: f64,
     },
-    Text(Expr),
+    /// The item, and whether it is a plain `Text[…]` display (set in the
+    /// proportional text face rather than the column's monospace default).
+    Text(Expr, bool),
   }
 
   let cells: Vec<Cell> = items
@@ -30835,7 +30856,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
               height: h,
             }
           }
-          None => Cell::Text(resolved),
+          None => Cell::Text(resolved, is_text_display_item(item)),
         },
       }
     })
@@ -30854,9 +30875,17 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .iter()
     .map(|c| match c {
       Cell::Svg { width, .. } => *width,
-      Cell::Text(e) => {
+      Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        estimate_display_width(style.content) * char_width * (fs / font_size)
+        let advance = if *plain && style.font_family.is_none() {
+          SANS_ADVANCE / MONO_ADVANCE
+        } else {
+          1.0
+        };
+        estimate_display_width(style.content)
+          * char_width
+          * advance
+          * (fs / font_size)
           + pad_x
       }
     })
@@ -30872,7 +30901,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .map(|(i, c)| {
       let natural = match c {
         Cell::Svg { height, .. } => *height,
-        Cell::Text(e) => text_style(e, font_size).1 + pad_y,
+        Cell::Text(e, _) => text_style(e, font_size).1 + pad_y,
       };
       item_size_entry_at(item_size_h, i, n_items)
         .map_or(natural, |h| natural.max(h * font_size + pad_y))
@@ -30905,7 +30934,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   for (i, cell) in cells.iter().enumerate() {
     let h = row_heights[i];
     match cell {
-      Cell::Text(expr) => {
+      Cell::Text(expr, plain) => {
         let cy = y_cursor + h / 2.0;
         let (style, fs) = text_style(expr, font_size);
         let (fw, fst) = (style.font_weight, style.font_style);
@@ -30920,12 +30949,18 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             .map_or_else(|| text_fill.to_string(), Color::to_svg_rgb)
         };
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
-        // column keeps its monospace default.
-        let ff = style.font_family.as_deref().unwrap_or("monospace");
+        // column keeps its monospace default, except that a plain
+        // `Text[…]` item is set in the proportional text face.
+        let (ff, advance) = match style.font_family.as_deref() {
+          Some(ff) => (ff, 1.0),
+          None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
+          None => ("monospace", 1.0),
+        };
         // `Style[…, Background -> c]` paints a panel just behind the text.
         if let Some(bg) = style.background.filter(|_| !style.hidden) {
           let tw = estimate_display_width(style.content)
             * char_width
+            * advance
             * (fs / font_size);
           let left = match alignment {
             "middle" => text_x - tw / 2.0,
@@ -31512,22 +31547,36 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           }
           // `Spacer[n]` between items is blank horizontal space, the same
           // as in separator position — not something to print.
-          None => match crate::syntax::spacer_width_pts(&resolved) {
-            Some(width) => Cell::Text {
-              markup: String::new(),
-              width,
-              height: font_size + pad_y,
-              fill: theme().text_primary.to_string(),
-              size: font_size,
-              weight: "normal".to_string(),
-              slant: "normal".to_string(),
-              family: String::new(),
-              decoration: TextDecoration::default(),
-              background: None,
-              opacity: 1.0,
-            },
-            None => make_text_cell(&resolved),
-          },
+          None => {
+            if let Some(width) = crate::syntax::spacer_width_pts(&resolved) {
+              Cell::Text {
+                markup: String::new(),
+                width,
+                height: font_size + pad_y,
+                fill: theme().text_primary.to_string(),
+                size: font_size,
+                weight: "normal".to_string(),
+                slant: "normal".to_string(),
+                family: String::new(),
+                decoration: TextDecoration::default(),
+                background: None,
+                opacity: 1.0,
+              }
+            } else {
+              let mut cell = make_text_cell(&resolved);
+              // `Text[expr]` displays `expr` in plain text format, set in
+              // the proportional text face rather than the row's monospace
+              // default, and so narrower.
+              if let Cell::Text { family, width, .. } = &mut cell
+                && family.is_empty()
+                && is_text_display_item(item)
+              {
+                *family = "sans-serif".to_string();
+                *width *= SANS_ADVANCE / MONO_ADVANCE;
+              }
+              cell
+            }
+          }
         },
       }
     })
