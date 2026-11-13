@@ -54226,3 +54226,103 @@ mod text_label_powers_and_wrappers {
     assert!(svg.contains("font-size=\"16\""), "{svg}");
   }
 }
+
+mod labeled_text_and_pane_wrapping {
+  use super::*;
+
+  /// Width of an SVG's root element.
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// `Labeled` stacks its label under any content, not only a picture:
+  /// exporting one never writes the call out as text.
+  #[test]
+  fn labeled_text_content_is_composed() {
+    let svg = export_svg("Labeled[\"abc\", \"caption\"]");
+    assert!(!svg.contains("Labeled"), "{svg}");
+    assert!(svg.contains(">abc</text>"), "{svg}");
+    assert!(svg.contains(">caption</text>"), "{svg}");
+  }
+
+  #[test]
+  fn labeled_text_cell_in_grid_is_composed() {
+    let svg = export_svg(
+      "Grid[{{Labeled[Text[Style[{1 -> 2, 2 -> 3}, 9]], Text[\"edges\"]]}}]",
+    );
+    assert!(!svg.contains("Labeled"), "{svg}");
+    assert!(svg.contains("{1 → 2, 2 → 3}"), "{svg}");
+    assert!(svg.contains(">edges</text>"), "{svg}");
+  }
+
+  /// The textual form of `Labeled` still matches wolframscript.
+  #[test]
+  fn labeled_text_output_is_unchanged() {
+    assert_eq!(
+      interpret("Labeled[\"abc\", \"x\"]").unwrap(),
+      "Labeled[abc, x]"
+    );
+  }
+
+  /// `Pane[string, w]` breaks a long string into lines at the width.
+  #[test]
+  fn pane_wraps_plain_string() {
+    for content in [
+      "\"aaaa bbbb cccc dddd eeee ffff gggg\"",
+      "Text[\"aaaa bbbb cccc dddd eeee ffff gggg\"]",
+    ] {
+      let svg = export_svg(&format!("Pane[{content}, 120]"));
+      assert_eq!(svg_width(&svg), 120.0, "{content}: {svg}");
+      assert!(svg.matches("<text").count() >= 2, "{content}: {svg}");
+    }
+  }
+
+  /// A long list in a grid inside a width-only `Pane` is broken into lines
+  /// that fit the pane, beside pictures as well.
+  #[test]
+  fn pane_wraps_long_list_cell_of_grid() {
+    let svg = export_svg(
+      "Pane[Grid[{{Graphics[Disk[], ImageSize -> 200], Graphics[Disk[], \
+       ImageSize -> 200]}, {Labeled[Text[Style[Table[i -> i + 1, {i, 40}], \
+       9]], Text[\"edges\"]], SpanFromLeft}}, Dividers -> All], 425]",
+    );
+    assert_eq!(svg_width(&svg), 425.0, "{svg}");
+    assert!(svg.contains(">{1 → 2, 2 → 3,"), "{svg}");
+    assert!(svg.contains("40 → 41}</text>"), "{svg}");
+    assert!(!svg.contains("Labeled"), "{svg}");
+  }
+
+  /// The visual (Studio) pipeline peels the pane but still wraps the cell.
+  #[test]
+  fn pane_wraps_long_list_cell_of_grid_in_visual_mode() {
+    let result = woxi::interpret_with_stdout(
+      "Pane[Grid[{{Graphics[Disk[], ImageSize -> 200], Graphics[Disk[], \
+       ImageSize -> 200]}, {Labeled[Text[Style[Table[i -> i + 1, {i, 40}], \
+       9]], Text[\"edges\"]], SpanFromLeft}}, Dividers -> All], 425]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg_width(&svg) <= 426.0, "{svg}");
+  }
+
+  /// `AspectRatio` sets the shape of a `GraphPlot`/`Graph` picture, also
+  /// against the shape of an explicit `PlotRange`; the first setting wins.
+  #[test]
+  fn graph_plot_honors_aspect_ratio() {
+    let svg = export_svg(
+      "GraphPlot[{1 -> 2, 2 -> 3, 3 -> 1}, ImageSize -> 250, AspectRatio -> \
+       1, PlotRange -> {{0, 1}, {-0.65, 1}}, AspectRatio -> 2, \
+       VertexCoordinateRules -> {1 -> {0, 0}, 2 -> {1, 0}, 3 -> {0.5, 1}}]",
+    );
+    assert!(
+      svg.starts_with("<svg width=\"250\" height=\"250\""),
+      "{svg}"
+    );
+    let svg = export_svg(
+      "Graph[{1 -> 2, 2 -> 3}, ImageSize -> 200, AspectRatio -> 1/2]",
+    );
+    assert!(svg.starts_with("<svg width=\"200\" height=\"10"), "{svg}");
+  }
+}
