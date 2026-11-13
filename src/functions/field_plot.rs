@@ -1020,9 +1020,9 @@ fn field_plot_axes(
   // Record where the data range lies on the canvas, so `Show` can draw
   // primitives given with the plot in the plot's own coordinates even
   // though the plot itself is only kept as a picture.
-  if let Some(pos) = svg.find("<svg ") {
+  if let Some(pos) = svg.find(" xmlns=") {
     svg.insert_str(
-      pos + "<svg ".len(),
+      pos,
       &crate::functions::graphics::plot_frame_attr(
         x_range,
         y_range,
@@ -6533,9 +6533,8 @@ fn regular_triples_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
   if xs.len() * ys.len() != points.len() {
     return None;
   }
-  let index = |vs: &[f64], v: f64| {
-    vs.binary_search_by(|probe| probe.total_cmp(&v)).ok()
-  };
+  let index =
+    |vs: &[f64], v: f64| vs.binary_search_by(|probe| probe.total_cmp(&v)).ok();
   let mut grid = vec![vec![f64::NAN; ys.len()]; xs.len()];
   for &(x, y, z) in points {
     let cell = &mut grid[index(&xs, x)?][index(&ys, y)?];

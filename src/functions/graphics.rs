@@ -26457,7 +26457,7 @@ pub(crate) struct ParsedSvg {
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
 /// Find an attribute's value in `header`, accepting either quote style
 /// (image SVG wrappers use single quotes). Returns the raw value text.
-/// Root-tag attribute (with a trailing space) recording that the data range
+/// Root-tag attribute (with a leading space) recording that the data range
 /// `{x_range, y_range}` of a plot kept only as a picture fills the canvas
 /// rectangle `rect = (x, y, w, h)` (in viewBox units).
 pub(crate) fn plot_frame_attr(
@@ -26466,7 +26466,7 @@ pub(crate) fn plot_frame_attr(
   rect: (f64, f64, f64, f64),
 ) -> String {
   format!(
-    "data-plot-frame=\"{} {} {} {} {:.3} {:.3} {:.3} {:.3}\" ",
+    " data-plot-frame=\"{} {} {} {} {:.3} {:.3} {:.3} {:.3}\"",
     x_range.0, x_range.1, y_range.0, y_range.1, rect.0, rect.1, rect.2, rect.3
   )
 }
@@ -26498,14 +26498,14 @@ fn overlay_primitives_on_plot_frame(
   base_svg: &str,
   primitives: Expr,
 ) -> Option<String> {
-  let ((x0, x1), (y0, y1), (px, py, pw, ph)) =
-    parse_plot_frame_attr(base_svg)?;
+  let ((x0, x1), (y0, y1), (px, py, pw, ph)) = parse_plot_frame_attr(base_svg)?;
   let (nat_w, _) = svg_natural_size(base_svg)?;
   let base = parse_svg_dimensions(base_svg)?;
   let vb_w: f64 = base.view_box.split_whitespace().nth(2)?.parse().ok()?;
   // viewBox units per displayed point.
   let scale = if nat_w > 0.0 { vb_w / nat_w } else { 1.0 };
-  let range = |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let range =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
   let none = || id_expr("None");
   let layer = graphics_ast(&[
     primitives,

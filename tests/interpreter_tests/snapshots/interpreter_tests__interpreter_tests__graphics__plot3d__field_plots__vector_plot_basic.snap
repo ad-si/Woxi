@@ -1,9 +1,8 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 19769
 expression: "export_svg(\"VectorPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]\")"
 ---
-<svg width="360" height="359" viewBox="0 0 3600 3590" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="359" viewBox="0 0 3600 3590" preserveAspectRatio="xMidYMid meet" data-plot-frame="-2 2 -2 2 217.328 73.728 3298.944 3298.944" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3590" opacity="1" fill="#FFFFFF" stroke="none"/>
 <defs><clipPath id="vectorsClip_217_74_3299_3299"><rect x="217.33" y="73.73" width="3298.94" height="3298.94"/></clipPath></defs><g clip-path="url(#vectorsClip_217_74_3299_3299)"><g transform="translate(217.3,73.7) scale(10.0)"><polyline points="3.62,319.22 10.57,325.90" fill="none" stroke="rgb(255,191,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="16.99,332.09 12.00,323.89 11.91,324.19 11.66,324.87 11.50,325.27 11.31,325.66 11.12,325.99 10.93,326.25 10.70,326.43 10.38,326.63 9.99,326.84 9.58,327.03 8.86,327.35 8.55,327.48" fill="rgb(255,191,0)"/>

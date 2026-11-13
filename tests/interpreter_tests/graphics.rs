@@ -22906,8 +22906,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
       // Shuffled triples are the same grid.
       assert_eq!(
-        export_svg("ListDensityPlot[{{1, 1, 4}, {0, 0, 1}, {1, 0, 2}, {0, 1, 3}}]"),
-        export_svg("ListDensityPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}}]")
+        export_svg(
+          "ListDensityPlot[{{1, 1, 4}, {0, 0, 1}, {1, 0, 2}, {0, 1, 3}}]"
+        ),
+        export_svg(
+          "ListDensityPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}}]"
+        )
       );
     }
 
@@ -22917,7 +22921,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn show_primitives_over_density_plot_use_its_coordinates() {
       let attr = |svg: &str, tag_start: usize, name: &str| -> f64 {
-        let tag = &svg[tag_start..tag_start + svg[tag_start..].find('>').unwrap()];
+        let tag =
+          &svg[tag_start..tag_start + svg[tag_start..].find('>').unwrap()];
         let needle = format!(" {name}=\"");
         let s = tag.find(&needle).unwrap() + needle.len();
         tag[s..s + tag[s..].find('"').unwrap()].parse().unwrap()
