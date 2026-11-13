@@ -23142,13 +23142,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       return grid_cell_graphic(&unwrap_display_wrappers(cell));
     }
-    // `Labeled[content, label, pos]` around a block layout or picture sets
-    // the label beside it (Bottom by default), centered on the content.
+    // `Labeled[content, label, pos]` sets the label beside its content
+    // (Bottom by default), centered on it. The two form a block whatever
+    // the content is — a picture, a layout or a plain expression such as a
+    // list of rules — so the cell is never the call's source text.
     Expr::FunctionCall { name, args }
-      if name == "Labeled"
-        && (args.len() == 2 || args.len() == 3)
-        && (grid_cell_graphic(&args[0]).is_some()
-          || grid_cell_graphic(&args[1]).is_some()) =>
+      if name == "Labeled" && (args.len() == 2 || args.len() == 3) =>
     {
       let position = match args.get(2) {
         Some(Expr::Identifier(p)) => p.as_str(),
@@ -28654,7 +28653,21 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
     }
     traditional |= name == "TraditionalForm";
     standard |= name == "StandardForm";
-    let inner = args[0].clone();
+    // A width-only `Pane[Grid[…], w]` still breaks the grid's long text
+    // cells at the pane's width when the pane itself is peeled away.
+    let inner = (name == "Pane")
+      .then(|| crate::evaluator::dispatch::io_functions::pane_width_only(args))
+      .flatten()
+      .filter(|_| {
+        crate::evaluator::dispatch::io_functions::pane_fixed_size(args)
+          .is_none()
+      })
+      .and_then(|w| {
+        wrap_wide_grid_text(&args[0], w, &|c| {
+          parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+        })
+      })
+      .unwrap_or_else(|| args[0].clone());
     current = inner;
   }
   // A string is drawn as its text in any form — `TraditionalForm["a = 1"]`
@@ -31317,6 +31330,124 @@ pub(crate) fn fit_tree_to_pane_width(
     return None;
   }
   Some(with_default_image_size(content, width as i128))
+}
+
+/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
+/// the pane — a long list such as the rules of a graph — into lines that
+/// fit, the way the FrontEnd's line breaking does once the pane fixes the
+/// width. Returns the grid with those cells re-flowed, or `None` when no
+/// cell needed it.
+pub(crate) fn wrap_wide_grid_text(
+  grid: &Expr,
+  width: f64,
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let (opts, mut rows) = grid_rows_of(grid)?;
+  // A cell keeps its padding on either side of the text.
+  let line_width = (width - 12.0).max(1.0);
+  let mut changed = false;
+  for row in &mut rows {
+    for cell in row.iter_mut() {
+      if cell_width(cell) > width + 0.5
+        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
+      {
+        *cell = flowed;
+        changed = true;
+      }
+    }
+  }
+  changed.then(|| rebuild_grid(opts, rows))
+}
+
+/// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
+/// and `Style`) into a left-aligned `Column` of lines no wider than
+/// `width`, breaking after the commas between elements. `styles` are the
+/// directives of the enclosing `Style`s, which size the text measured.
+fn wrap_list_text(
+  expr: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let rebuilt = |name: &str, args: &[Expr], first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match expr {
+    // The caption of a `Labeled` is left as it is.
+    Expr::FunctionCall { name, args }
+      if name == "Labeled" && args.len() >= 2 =>
+    {
+      let content = wrap_list_text(&args[0], width, styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      let content = wrap_list_text(&args[0], width, styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      let content = wrap_list_text(&args[0], width, &inner_styles, cell_width)?;
+      Some(rebuilt(name, args, content))
+    }
+    Expr::List(items)
+      if items.len() > 1
+        && items.iter().all(|item| grid_cell_graphic(item).is_none()) =>
+    {
+      let styled = |e: Expr| {
+        if styles.is_empty() {
+          e
+        } else {
+          call(
+            "Style",
+            std::iter::once(e).chain(styles.iter().cloned()).collect(),
+          )
+        }
+      };
+      // Each line is typeset as the boxes of its piece of the list, so it
+      // reads exactly like the unbroken list would.
+      let line_expr = |pieces: &[Expr]| {
+        call1(
+          "DisplayForm",
+          call1("RowBox", Expr::List(pieces.to_vec().into())),
+        )
+      };
+      let measure = |pieces: &[Expr]| cell_width(&styled(line_expr(pieces)));
+      let mut lines: Vec<Vec<Expr>> = vec![vec![str_expr("{")]];
+      for (i, item) in items.iter().enumerate() {
+        let item_boxes =
+          crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+            item,
+          );
+        let line = lines.last_mut()?;
+        if i > 0 {
+          line.push(str_expr(","));
+        }
+        // The element, and the comma that follows it on the same line.
+        let mut candidate = line.clone();
+        candidate.push(item_boxes.clone());
+        candidate.push(str_expr(","));
+        if i > 0 && line.len() > 1 && measure(&candidate) > width {
+          lines.push(Vec::new());
+        }
+        lines.last_mut()?.push(item_boxes);
+      }
+      lines.last_mut()?.push(str_expr("}"));
+      if lines.len() < 2 {
+        return None;
+      }
+      let rows = lines.iter().map(|l| line_expr(l)).collect::<Vec<_>>();
+      Some(call(
+        "Column",
+        vec![Expr::List(rows.into()), id_expr("Left")],
+      ))
+    }
+    _ => None,
+  }
 }
 
 /// Fit `Pane[Grid[rows], {width, _}]`'s content into `width`: when the

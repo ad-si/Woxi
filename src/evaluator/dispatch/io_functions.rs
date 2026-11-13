@@ -6983,6 +6983,15 @@ fn wrap_pane_text_at(
   font_size: f64,
   whole_words: bool,
 ) -> Option<Expr> {
+  // A bare string re-flows as the one-piece `Row` of it.
+  if let Expr::String(_) = content {
+    return wrap_pane_text_at(
+      &call1("Row", Expr::List(vec![content.clone()].into())),
+      width,
+      font_size,
+      whole_words,
+    );
+  }
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
@@ -7383,6 +7392,20 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // A width alone also breaks the text cells of a grid inside the pane
+      // (a long list next to pictures) into lines that fit it.
+      if name == "Pane"
+        && pane_size.is_none()
+        && let Some(w) = pane_width_only(args)
+        && let Some(grid) =
+          crate::functions::graphics::wrap_wide_grid_text(&args[0], w, &|c| {
+            crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0
+          })
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = grid;
+        return expr_to_svg(&call("Pane", new_args));
+      }
       // `Pane[text, w]` / `Pane[text, ImageSize -> w]`: a width alone sets
       // the box `w` wide with its text wrapped there, as tall as the lines
       // it takes. A line that cannot break is cut off at the edge.
@@ -7556,18 +7579,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       expr_to_svg(&pushed.unwrap_or_else(|| args[0].clone()))
     }
     // `Labeled[content, label]` (and `…, pos]`) puts the label beside the
-    // content — below it by default. With a picture as the content the
-    // FrontEnd stacks the two, so exporting one has to compose them
-    // instead of writing the whole call out as text.
+    // content — below it by default. The FrontEnd stacks the two whatever
+    // the content is (a picture, a string, a list of rules), so exporting
+    // one has to compose them instead of writing the whole call out as
+    // text. Like the label, a string content is shown without its quotes.
     Expr::FunctionCall { name, args }
-      if name == "Labeled"
-        && args.len() >= 2
-        && (is_blank_string(&args[0]) || lays_out_a_graphic(&args[0])) =>
+      if name == "Labeled" && args.len() >= 2 =>
     {
       let content = if is_blank_string(&args[0]) {
         String::new()
       } else {
-        expr_to_svg(&args[0])
+        expr_to_svg(&unquoted_display_string(&args[0]))
       };
       // `Labeled[g, {l1, l2, …}, {p1, p2, …}]` sets each label at its own
       // side; same-side labels stack into one cell of a 3x3 layout.
