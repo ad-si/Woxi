@@ -15115,3 +15115,22 @@ fn held_comparison_factorial_and_exponent_operands() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// Assignment operands and StringExpression inside held operators.
+#[test]
+fn held_assignment_operands_and_string_expressions() {
+  for (input, expected) in [
+    ("Hold[(f &) = 3]", "Hold[f &  = 3]"),
+    ("Hold[(f &) := 3]", "Hold[f &  := 3]"),
+    ("Hold[(x_ = 7) ^= y]", "Hold[(x_ = 7) ^= y]"),
+    ("Hold[(a = b) = c]", "Hold[(a = b) = c]"),
+    ("Hold[(a ~~ b) /. c]", "Hold[StringExpression[a, b] /. c]"),
+    ("Hold[c /. (a ~~ b)]", "Hold[c /. StringExpression[a, b]]"),
+    (
+      "ToString[Hold[(a ~~ b) /. c], InputForm]",
+      "Hold[a~~b /. c]",
+    ),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

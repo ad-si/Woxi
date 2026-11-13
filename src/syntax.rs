@@ -10379,7 +10379,8 @@ pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
 /// right, so `(a := b) := c` printed bare re-reads as `a := (b := c)`.
 pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
   let looser = match lhs {
-    Expr::CompoundExpr(_) | Expr::Function { .. } => true,
+    // A pure function prints bare: wolframscript writes `f &  = 3`.
+    Expr::CompoundExpr(_) => true,
     Expr::FunctionCall { name, args } => {
       matches!(
         name.as_str(),
@@ -11148,7 +11149,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} ^= {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} ^= {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "UpSetDelayed" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -11157,7 +11162,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} ^:= {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} ^:= {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "AddTo" && args.len() == 2 {
         return format!("{} += {}", fmt(&args[0]), fmt(&args[1]));
@@ -15582,7 +15591,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} ^= {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} ^= {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "UpSetDelayed" && args.len() == 2 =>
@@ -15593,7 +15606,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} ^:= {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} ^:= {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     Expr::FunctionCall { name, args } if name == "AddTo" && args.len() == 2 => {
       format!(
@@ -15716,8 +15733,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!("StringExpression[{}]", expr_to_input_form(&args[0]))
     }
+    // InputForm writes `a~~b`; OutputForm, which reuses this renderer for
+    // operator operands, keeps the call form `StringExpression[a, b]`.
     Expr::FunctionCall { name, args }
-      if name == "StringExpression" && !args.is_empty() =>
+      if name == "StringExpression"
+        && !args.is_empty()
+        && in_true_input_form() =>
     {
       // A nested StringExpression (only unflattened when held) and a rule
       // are bracketed, as wolframscript does; Alternatives is not.
