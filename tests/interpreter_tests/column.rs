@@ -495,6 +495,27 @@ mod column_visual_mode {
   }
 
   #[test]
+  fn column_alignment_horizontal_vertical_pair() {
+    clear_state();
+    // `Alignment -> {h, v}` gives the items' horizontal alignment first:
+    // `{Center, Top}` centers them like a bare `Alignment -> Center`, and
+    // `{Right, Top}` right-aligns them.
+    for (spec, anchor) in [("{Center, Top}", "middle"), ("{Right, Top}", "end")]
+    {
+      let result = interpret_with_stdout(&format!(
+        "Column[{{1, 22222, 3}}, Alignment -> {spec}]"
+      ))
+      .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(
+        svg.contains(&format!("text-anchor=\"{anchor}\"")),
+        "{spec}: {svg}"
+      );
+    }
+  }
+
+  #[test]
   fn column_dynamic_item_shows_value() {
     clear_state();
     // In visual mode `Dynamic[expr]` displays the current value of `expr`

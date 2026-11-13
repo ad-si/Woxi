@@ -13764,13 +13764,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Collect primitives. `DefaultBaseStyle` and then `BaseStyle` directives
-  // are in force before any of the drawing's own.
+  // are in force before any of the drawing's own. They act like a `Style`
+  // wrapped round the whole drawing, so text directives (`BaseStyle -> 16`,
+  // `FontSize -> 16`, `Bold`) reach its `Text` labels too.
   let mut style = StyleState::default();
-  if let Some(base) = &default_base_style {
-    apply_directive(base, &mut style);
-  }
-  if let Some(base) = &base_style {
-    apply_directive(base, &mut style);
+  for base in [&default_base_style, &base_style].into_iter().flatten() {
+    for directive in
+      style_directives_in_application_order(std::slice::from_ref(base))
+    {
+      apply_directive(directive, &mut style);
+      apply_text_style_directive(directive, &mut style);
+    }
   }
   let base_collect_style = style.clone();
   let mut primitives = Vec::new();

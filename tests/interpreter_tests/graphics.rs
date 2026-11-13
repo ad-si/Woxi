@@ -27052,6 +27052,38 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"20\""), "{svg}");
   }
 
+  /// A `Graphics`' `BaseStyle` acts like a `Style` round the whole drawing,
+  /// so its text directives size and weight the `Text` labels as well as
+  /// coloring them, while a label's own `Style` still wins.
+  #[test]
+  fn graphics_base_style_sets_text_font() {
+    for (base, expected) in [
+      ("16", "font-size=\"16\""),
+      ("{Red, 20}", "font-size=\"20\""),
+      ("FontSize -> 18", "font-size=\"18\""),
+      ("Directive[Bold, 12]", "font-weight=\"bold\""),
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(&format!(
+        "Graphics[{{Circle[], Text[\"A\", {{0, 0}}]}}, BaseStyle -> {base}]"
+      ))
+      .unwrap()
+      .graphics
+      .unwrap();
+      assert!(svg.contains(expected), "BaseStyle -> {base}: {svg}");
+    }
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Text[\"A\", {0, 0}], Text[Style[\"B\", 30], {1, 0}]}, \
+       BaseStyle -> 16]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("font-size=\"16\""), "{svg}");
+    assert!(svg.contains("font-size=\"30\""), "{svg}");
+  }
+
   #[test]
   fn grid_base_style_single_directive() {
     clear_state();
