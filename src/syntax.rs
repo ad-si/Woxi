@@ -9948,6 +9948,14 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "Alternatives" if args.len() >= 2 => Some(27),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
       "TwoWayRule" if args.len() == 2 => Some(21),
+      // Comparisons and `===`/`=!=` (290) print infix in held forms, below
+      // `+` and above `&&`: `(a == b) + c`, `d/(a === b)`.
+      "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
+      | "GreaterEqual" | "SameQ" | "UnsameQ"
+        if args.len() >= 2 =>
+      {
+        Some(21)
+      }
       // `/;` and `:` print infix and sit just above `->`, so both need
       // parens inside anything tighter: `a == (x_ /; y)`, `a == (b:c)`.
       "Condition" if args.len() == 2 => Some(13),
@@ -13201,7 +13209,24 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
 
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
       // or when the numerator of a division is a product (Wolfram convention)
-      let left_needs_parens = (matches!(op, BinaryOperator::Times)
+      // An operand printed with an operator looser than this arithmetic one
+      // — a comparison, `===`, `&&`, a rule, a pattern, `&`, … — is
+      // bracketed: `(a == b) + c`, `d/(a === b)`, `(a == b)^c`.
+      let arith_prec = match op {
+        BinaryOperator::Plus | BinaryOperator::Minus => Some(30),
+        BinaryOperator::Times | BinaryOperator::Divide => Some(33),
+        BinaryOperator::Power => Some(48),
+        _ => None,
+      };
+      // (`operand_str` below already brackets an assignment.)
+      let looser_operand = |e: &Expr| {
+        !is_loose_assignment(e)
+          && arith_prec.is_some_and(|prec| {
+            printed_infix_precedence(e).is_some_and(|p| p < prec.min(30))
+          })
+      };
+      let left_needs_parens = looser_operand(left)
+        || (matches!(op, BinaryOperator::Times)
         // Held right-nested Times chain on the left of another Times — i.e.
         // the inner Times is `BinaryOp[Times, Integer, BinaryOp[Times, …]]`.
         // This is the shape produced for held derivative chains like
@@ -13334,7 +13359,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(e, Expr::Real(f) if *f < 0.0)
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
-      let needs_right_parens = (is_multiplicative && is_additive(right))
+      let needs_right_parens = looser_operand(right)
+        || (is_multiplicative && is_additive(right))
         // `(±a)^(±b)`: a prefix `±` is bracketed as any arithmetic operand.
         || (matches!(
           op,

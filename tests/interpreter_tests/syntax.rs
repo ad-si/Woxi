@@ -14999,3 +14999,21 @@ mod held_syntax_precedence {
     assert_eq!(interpret("((f @* g) @* h)[x]").unwrap(), "f[g[h[x]]]");
   }
 }
+
+// A held comparison (or `===`) is bracketed as an arithmetic operand.
+#[test]
+fn held_comparison_as_arithmetic_operand() {
+  for (input, expected) in [
+    ("HoldForm[(a == b) + c]", "HoldForm[(a == b) + c]"),
+    ("HoldForm[c + (a == b)]", "HoldForm[c + (a == b)]"),
+    ("HoldForm[(a === b) + c]", "HoldForm[(a === b) + c]"),
+    ("HoldForm[(a < b < c)/d]", "HoldForm[(a < b < c)/d]"),
+    ("HoldForm[d/(a == b)]", "HoldForm[d/(a == b)]"),
+    ("HoldForm[(a == b)^c]", "HoldForm[(a == b)^c]"),
+    ("HoldForm[a + (b >= c) + d]", "HoldForm[a + (b >= c) + d]"),
+    ("HoldForm[(a == b) && c]", "HoldForm[a == b && c]"),
+    ("Hold[x - (h = 2)]", "Hold[x - (h = 2)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
