@@ -1613,6 +1613,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "ColorFunction"
         | "ColorFunctionScaling"
         | "AxesStyle"
+        | "Ticks"
         | "TicksStyle"
         | "FrameStyle"
         | "FrameTicks"
@@ -1699,22 +1700,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         "FrameLabel" => {
           crate::functions::plot::apply_frame_label_option(replacement, opts);
         }
-        // `Ticks -> {xspec, yspec}` marks exactly the positions named,
-        // each optionally with its own `{pos, label}` text.
-        "Ticks" => match replacement {
-          Expr::Identifier(v) if v == "None" => opts.ticks = false,
-          Expr::Identifier(v) if v == "Automatic" || v == "All" => {
-            opts.ticks = true;
-          }
-          Expr::List(items) if (1..=2).contains(&items.len()) => {
-            opts.ticks_x =
-              crate::functions::plot::parse_explicit_ticks(&items[0]);
-            if let Some(y) = items.get(1) {
-              opts.ticks_y = crate::functions::plot::parse_explicit_ticks(y);
-            }
-          }
-          _ => {}
-        },
         "Frame" => {
           crate::functions::plot::apply_frame_option(replacement, opts);
         }
