@@ -1832,7 +1832,7 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
     // the nested `Expr::Part` chain built below still reads as `x[[3, 2]]`
     // only when that is what was written.
     let base = match base {
-      Expr::Part { .. } => part_chain_to_call(base),
+      Expr::Part { .. } => part_chain_to_call(&base),
       other => other,
     };
     return specs.into_iter().fold(base, |acc, idx| Expr::Part {
@@ -1846,9 +1846,9 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
 }
 
 /// `Part[x, i, j, …]` for a nested `Expr::Part` chain `x[[i, j, …]]`.
-fn part_chain_to_call(expr: Expr) -> Expr {
+fn part_chain_to_call(expr: &Expr) -> Expr {
   let mut indices = Vec::new();
-  let mut cur = &expr;
+  let mut cur = expr;
   while let Expr::Part { expr, index } = cur {
     indices.push(index.as_ref().clone());
     cur = expr.as_ref();
