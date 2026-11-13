@@ -2422,7 +2422,7 @@ KernelMixtureDistribution,"Gaussian kernel mixture of univariate data (DataDistr
 WordCounts,"Counts word occurrences in a string (surrounding punctuation stripped); two-arg form counts word n-grams keyed by word lists",✅,None,10.1,2413
 AutoAction,"UI interaction",🚫,None,6.0,2421
 ByteOrdering,"binary data option",🚫,None,5.2,2421
-ChartElements,"chart customization",🚫,None,7.0,2421
+ChartElements,"Draws BarChart bars as tiled copies of given pictures (Graphics or Image), cycled over the bars",✅,none,7.0,2421
 DeleteObject,"Delete a socket listener or other session object",✅,effectful,11.2,2421
 GeoDestination,"Geodesic destination point given distance and azimuth",✅,pure,7.0,2421
 LaplacianGaussianFilter,"image filtering",🚫,None,7.0,2421
