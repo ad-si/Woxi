@@ -22428,6 +22428,37 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Show", args));
   }
 
+  // A plot kept only as a picture that recorded its data frame (a density
+  // plot) under primitives: draw them in that plot's coordinates.
+  if !is_3d
+    && leading_rendered >= 1
+    && let Some(Expr::Graphics { svg: base, .. }) = rendered_graphics.first()
+    && let Some(mut svg) = overlay_primitives_on_plot_frame(
+      base,
+      Expr::List(merged_primitives.clone().into()),
+    )
+  {
+    let image_size = merged_options.iter().find_map(|opt| {
+      option_name_value(opt)
+        .filter(|(name, _)| *name == "ImageSize")
+        .map(|(_, value)| value.into_owned())
+    });
+    if let Some(size) = image_size
+      && let Some(resized) = svg_with_image_size(&svg, &size)
+    {
+      svg = resized;
+    }
+    if rendered_graphics.len() == 1 {
+      return Ok(crate::graphics_result(svg));
+    }
+    let mut layers = vec![crate::graphics_result(svg)];
+    layers.extend(rendered_graphics.iter().skip(1).cloned());
+    if let Some(stacked) = overlay_rendered_graphics_svgs(&layers) {
+      return Ok(crate::graphics_result(stacked));
+    }
+    return Ok(layers.swap_remove(0));
+  }
+
   let content = Expr::List(merged_primitives.into());
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
@@ -26426,6 +26457,85 @@ pub(crate) struct ParsedSvg {
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
 /// Find an attribute's value in `header`, accepting either quote style
 /// (image SVG wrappers use single quotes). Returns the raw value text.
+/// Root-tag attribute (with a trailing space) recording that the data range
+/// `{x_range, y_range}` of a plot kept only as a picture fills the canvas
+/// rectangle `rect = (x, y, w, h)` (in viewBox units).
+pub(crate) fn plot_frame_attr(
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  rect: (f64, f64, f64, f64),
+) -> String {
+  format!(
+    "data-plot-frame=\"{} {} {} {} {:.3} {:.3} {:.3} {:.3}\" ",
+    x_range.0, x_range.1, y_range.0, y_range.1, rect.0, rect.1, rect.2, rect.3
+  )
+}
+
+/// The data range and canvas rectangle recorded by [`plot_frame_attr`].
+type PlotFrame = ((f64, f64), (f64, f64), (f64, f64, f64, f64));
+
+fn parse_plot_frame_attr(svg: &str) -> Option<PlotFrame> {
+  let raw = find_svg_attr(svg_root_header(svg)?, "data-plot-frame")?;
+  let v: Vec<f64> = raw
+    .split_whitespace()
+    .map(|s| s.parse().ok())
+    .collect::<Option<_>>()?;
+  if v.len() != 8 || !v.iter().all(|x| x.is_finite()) {
+    return None;
+  }
+  if v[1] <= v[0] || v[3] <= v[2] || v[6] <= 0.0 || v[7] <= 0.0 {
+    return None;
+  }
+  Some(((v[0], v[1]), (v[2], v[3]), (v[4], v[5], v[6], v[7])))
+}
+
+/// `Show[plot, Graphics[prims], …]` where `plot` is kept only as a picture
+/// that recorded its data frame: draw `prims` against the plot's data range
+/// and place them over the plot's data rectangle, so they line up with its
+/// axes as they do in Wolfram (the shown graphic takes the first graphic's
+/// `PlotRange`).
+fn overlay_primitives_on_plot_frame(
+  base_svg: &str,
+  primitives: Expr,
+) -> Option<String> {
+  let ((x0, x1), (y0, y1), (px, py, pw, ph)) =
+    parse_plot_frame_attr(base_svg)?;
+  let (nat_w, _) = svg_natural_size(base_svg)?;
+  let base = parse_svg_dimensions(base_svg)?;
+  let vb_w: f64 = base.view_box.split_whitespace().nth(2)?.parse().ok()?;
+  // viewBox units per displayed point.
+  let scale = if nat_w > 0.0 { vb_w / nat_w } else { 1.0 };
+  let range = |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let none = || id_expr("None");
+  let layer = graphics_ast(&[
+    primitives,
+    rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![range(x0, x1), range(y0, y1)].into()),
+    ),
+    rule_expr(id_expr("PlotRangePadding"), none()),
+    rule_expr(id_expr("ImagePadding"), none()),
+    rule_expr(id_expr("AspectRatio"), Expr::Real(ph / pw)),
+    rule_expr(id_expr("ImageSize"), Expr::Real(pw / scale)),
+  ])
+  .ok()?;
+  let Expr::Graphics { svg: layer_svg, .. } = &layer else {
+    return None;
+  };
+  let layer = parse_svg_dimensions(layer_svg)?;
+  let end = base_svg.rfind("</svg>")?;
+  let mut out = String::with_capacity(base_svg.len() + layer_svg.len() + 128);
+  out.push_str(&base_svg[..end]);
+  out.push_str(&format!(
+    "<svg x=\"{px:.3}\" y=\"{py:.3}\" width=\"{pw:.3}\" height=\"{ph:.3}\" \
+     viewBox=\"{}\" preserveAspectRatio=\"none\">\n",
+    layer.view_box
+  ));
+  out.push_str(&layer.inner_content);
+  out.push_str("</svg>\n</svg>");
+  Some(out)
+}
+
 fn find_svg_attr<'a>(header: &'a str, attr: &str) -> Option<&'a str> {
   for quote in ['"', '\''] {
     let needle = format!("{attr}={quote}");
