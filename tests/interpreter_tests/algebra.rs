@@ -26645,3 +26645,13 @@ fn solve_rejects_non_relational_system_parts() {
     "{{x -> 1}}"
   );
 }
+
+// FullSimplify's polynomial part plus remainder is returned as one
+// canonical sum. Found by the differential fuzzer.
+#[test]
+fn full_simplify_returns_a_canonical_sum() {
+  assert_eq!(
+    interpret("FullSimplify[(-5 + 2 x - 5 x^2 + 5 x^3)/x]").unwrap(),
+    "2 - 5/x - 5*x + 5*x^2"
+  );
+}

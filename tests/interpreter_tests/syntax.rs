@@ -15441,3 +15441,17 @@ fn primes_pattern_increments_and_round_eleven_operands() {
   );
   assert_eq!(interpret("G3[x_'[t]] := x; G3[y'[t]]").unwrap(), "y");
 }
+
+// A parenthesized `<>` group stays a nested StringJoin, as in wolframscript.
+#[test]
+fn parenthesized_string_join_keeps_nesting() {
+  assert_eq!(
+    interpret(r#"ToString[FullForm[Hold["a" <> ("b" <> "c")]]]"#).unwrap(),
+    r#"Hold[StringJoin["a", StringJoin["b", "c"]]]"#
+  );
+  assert_eq!(
+    interpret(r#"HoldForm["a" <> ("b" <> "c")]"#).unwrap(),
+    "HoldForm[StringJoin[a, StringJoin[b, c]]]"
+  );
+  assert_eq!(interpret(r#""a" <> ("b" <> "c")"#).unwrap(), "abc");
+}

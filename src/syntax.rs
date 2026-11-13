@@ -6273,7 +6273,7 @@ fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
     return Expr::Raw(String::new());
   }
 
-  // A term that is already a `&&`, `||` or `|` chain came from parentheses
+  // A term that is already a `&&`, `||`, `|` or `<>` chain came from parentheses
   // (`(a && b) && c`): spell it as the call it is, so the chain built around
   // it — itself nested BinaryOps — does not flatten it in. Wolfram keeps such
   // a group as `And[And[a, b], c]`.
@@ -6284,12 +6284,14 @@ fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
         op:
           op @ (BinaryOperator::And
           | BinaryOperator::Or
-          | BinaryOperator::Alternatives),
+          | BinaryOperator::Alternatives
+          | BinaryOperator::StringJoin),
         ..
       } => {
         let head = match op {
           BinaryOperator::And => "And",
           BinaryOperator::Or => "Or",
+          BinaryOperator::StringJoin => "StringJoin",
           _ => "Alternatives",
         };
         let mut parts = Vec::new();
