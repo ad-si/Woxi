@@ -38434,7 +38434,9 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // falls back to the bound value so a non-graphical frontend still
       // shows something short and meaningful.
       let svg = discrete_choice_label_svg(label);
-      let runs = if svg.is_some() {
+      // A label typeset as a picture only for its lowered subscript is
+      // still text, so its text column keeps the label's own runs.
+      let runs = if svg.is_some() && !label_has_unmapped_subscript(label) {
         discrete_choice_label_runs(value)
       } else {
         // Keeps a `Style[…, color]`/`Bold` directive on the label (e.g. a
@@ -42534,6 +42536,23 @@ fn is_arithmetic_label(label: &Expr) -> bool {
 /// Unicode subscript form (`q`, capitals, most Greek letters), so a text
 /// rendering would set it at full size on the baseline.
 fn label_has_unmapped_subscript(expr: &Expr) -> bool {
+  // Inline `\!\(…\)` box strings are folded by the text renderer; the box
+  // layout would draw their raw linear syntax.
+  !contains_inline_box_string(expr) && has_unmapped_subscript(expr)
+}
+
+fn contains_inline_box_string(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(s) => s.contains(crate::functions::string_ast::BOX_START),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(contains_inline_box_string)
+    }
+    Expr::List(items) => items.iter().any(contains_inline_box_string),
+    _ => false,
+  }
+}
+
+fn has_unmapped_subscript(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } if name == "Subscript" => {
       args.iter().skip(1).any(|script| {
@@ -42541,7 +42560,7 @@ fn label_has_unmapped_subscript(expr: &Expr) -> bool {
         flatten_label_runs(&runs).chars().any(|c| {
           !c.is_whitespace() && unicode_script_char(c, false).is_none()
         })
-      }) || args.first().is_some_and(label_has_unmapped_subscript)
+      }) || args.first().is_some_and(has_unmapped_subscript)
     }
     // Held code and dynamic content are not typeset text.
     Expr::FunctionCall { name, .. }
@@ -42549,10 +42568,8 @@ fn label_has_unmapped_subscript(expr: &Expr) -> bool {
     {
       false
     }
-    Expr::FunctionCall { args, .. } => {
-      args.iter().any(label_has_unmapped_subscript)
-    }
-    Expr::List(items) => items.iter().any(label_has_unmapped_subscript),
+    Expr::FunctionCall { args, .. } => args.iter().any(has_unmapped_subscript),
+    Expr::List(items) => items.iter().any(has_unmapped_subscript),
     _ => false,
   }
 }
@@ -47572,6 +47589,8 @@ mod manipulate_traditional_form_choice_svg_tests {
           });
           assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
         }
+        // The text column (for a non-graphical frontend) keeps the label.
+        assert_eq!(value_labels[0], "fq(x)");
         assert!(value_label_svgs[2].is_none(), "{value_label_svgs:?}");
         assert_eq!(value_labels[2], "h\u{2081}(x)");
       }
