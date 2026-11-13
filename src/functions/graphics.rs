@@ -22058,7 +22058,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // graphic only: an `AxesLabel` that just one of the later layers
         // carries does not label the merged picture.
         if graphic_count == 1 {
-          for opt in gargs.iter().skip(1) {
+          // An option list (`Graphics[prims, {opts…}]`) is spliced so its
+          // entries merge one by one: kept whole, it would sit ahead of a
+          // later `Show` option and its settings would win.
+          for opt in splice_option_lists(gargs).iter().skip(1) {
             merge_option(&mut merged_options, opt);
           }
         }
@@ -22102,7 +22105,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           merged_primitives.push(gargs[0].clone());
         }
         if graphic_count == 1 {
-          for opt in gargs.iter().skip(1) {
+          // An option list (`Graphics[prims, {opts…}]`) is spliced so its
+          // entries merge one by one: kept whole, it would sit ahead of a
+          // later `Show` option and its settings would win.
+          for opt in splice_option_lists(gargs).iter().skip(1) {
             merge_option(&mut merged_options, opt);
           }
         }

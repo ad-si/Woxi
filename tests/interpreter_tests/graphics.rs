@@ -55220,4 +55220,15 @@ mod repeated_graphics_options {
     assert_eq!(shown, padded);
     assert!(!shown.contains("<rect x=\"0.00\" y=\"0.00\""), "{shown}");
   }
+
+  /// A shown graphic whose options come as a list still yields to the
+  /// options given to `Show` itself.
+  #[test]
+  fn show_option_overrides_a_graphics_option_list() {
+    let svg = export_svg(
+      "Show[Graphics[Disk[], {ImageSize -> 250, AspectRatio -> 1/2}], \
+       ImageSize -> 100]",
+    );
+    assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
 }
