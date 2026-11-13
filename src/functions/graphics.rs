@@ -23528,10 +23528,30 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       });
     }
     Expr::Graphics { svg, .. } => svg.clone(),
-    // A styled graphic is still a graphic.
+    // A styled graphic is still a graphic. A styled nested layout
+    // (`Style[Column[{Grid[…]}], 16]` in a cell) keeps its directives: they
+    // are distributed over the layout's items before it is drawn, just as
+    // for the same `Style` at top level.
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
+      // A styled `Grid` is drawn whole, the way it is at top level, so the
+      // directives also reach its frame and dividers, not only its cells.
+      if args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+          if (n == "Grid" || n == "TextGrid")
+            && matches!(a.first(), Some(Expr::List(_))))
+      {
+        let svg = crate::evaluator::expr_to_svg(cell);
+        if svg.starts_with("<svg")
+          && let Some(d) = parse_svg_dimensions(&svg)
+        {
+          return Some((svg, d.nat_w, d.nat_h));
+        }
+      }
+      if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+        return grid_cell_graphic(&inner);
+      }
       return grid_cell_graphic(&args[0]);
     }
     // `Invisible[graphic]` keeps the picture's footprint but paints
