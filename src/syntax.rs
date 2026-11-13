@@ -10030,6 +10030,26 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   }
 }
 
+/// The operand of `++`/`--` (660), prefix or postfix: bracketed when it
+/// prints with any looser operator — `(a + b)++`, `--(a < b)`, `(-a)++`,
+/// `(a!)++`, `(1/2)++`, `(x_)++` — but not as a call, symbol or part.
+fn inc_dec_operand(e: &Expr, text: String) -> String {
+  let looser = printed_infix_precedence(e).is_some()
+    || prints_as_not(e)
+    || prints_as_negation(e)
+    || is_negative_or_fraction_literal(e)
+    || is_factorial_call(e)
+    || is_bare_pattern(e)
+    || matches!(e, Expr::FunctionCall { name, args }
+      if args.len() >= 2
+        && matches!(name.as_str(), "Composition" | "RightComposition"));
+  if looser && !prints_as_call(&text) {
+    format!("({text})")
+  } else {
+    text
+  }
+}
+
 /// `x!` or `x!!`, which print postfix.
 fn is_factorial_call(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
@@ -11243,17 +11263,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        return format!("{}++", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        return format!("{}--", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
           format!("++({inner})")
         } else {
-          format!("++{inner}")
+          format!("++{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
@@ -11261,7 +11281,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return if needs_inc_parens(&args[0]) {
           format!("--({inner})")
         } else {
-          format!("--{inner}")
+          format!("--{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "Condition" && args.len() == 2 {
@@ -11392,17 +11412,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        return format!("{}++", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        return format!("{}--", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
           format!("++({inner})")
         } else {
-          format!("++{inner}")
+          format!("++{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
@@ -11410,7 +11430,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return if needs_inc_parens(&args[0]) {
           format!("--({inner})")
         } else {
-          format!("--{inner}")
+          format!("--{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "Optional" && args.len() == 1 {
@@ -15749,22 +15769,34 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Increment" && args.len() == 1 =>
     {
-      format!("{}++", expr_to_input_form(&args[0]))
+      format!(
+        "{}++",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "Decrement" && args.len() == 1 =>
     {
-      format!("{}--", expr_to_input_form(&args[0]))
+      format!(
+        "{}--",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "PreIncrement" && args.len() == 1 =>
     {
-      format!("++{}", expr_to_input_form(&args[0]))
+      format!(
+        "++{}",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "PreDecrement" && args.len() == 1 =>
     {
-      format!("--{}", expr_to_input_form(&args[0]))
+      format!(
+        "--{}",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     // Quantity: InputForm quotes string unit names
     Expr::FunctionCall { name, args }

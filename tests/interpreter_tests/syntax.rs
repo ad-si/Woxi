@@ -15348,3 +15348,41 @@ fn held_operand_forms_round_seven() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// Prefix and postfix `++`/`--` take a parenthesized expression, a list or
+// a slot as operand, and bracket an operand printed with a looser operator.
+#[test]
+fn increment_decrement_operands() {
+  for (input, expected) in [
+    ("Hold[--(a < b)]", "Hold[PreDecrement[Less[a, b]]]"),
+    ("Hold[++{a, b}]", "Hold[PreIncrement[List[a, b]]]"),
+    (
+      "Hold[++(a; b)]",
+      "Hold[PreIncrement[CompoundExpression[a, b]]]",
+    ),
+    ("Hold[(a + b)++]", "Hold[Increment[Plus[a, b]]]"),
+    ("Hold[{a}--]", "Hold[Decrement[List[a]]]"),
+    ("Hold[(a++)++]", "Hold[Increment[Increment[a]]]"),
+    ("Hold[#++]", "Hold[Increment[Slot[1]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  for (input, expected) in [
+    ("Hold[--(a < b)]", "Hold[--(a < b)]"),
+    ("Hold[(a + b)++]", "Hold[(a + b)++]"),
+    ("Hold[(-a)++]", "Hold[(-a)++]"),
+    ("Hold[++(a!)]", "Hold[++(a!)]"),
+    ("Hold[(1/2)++]", "Hold[(1/2)++]"),
+    ("Hold[(x_)++]", "Hold[(x_)++]"),
+    ("Hold[++f[x]]", "Hold[++f[x]]"),
+    ("Hold[x[[1]]++]", "Hold[x[[1]]++]"),
+    ("Hold[(a++)++]", "Hold[a++++]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(interpret("x = 5; --x").unwrap(), "4");
+}
