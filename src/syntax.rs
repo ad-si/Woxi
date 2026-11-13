@@ -10097,6 +10097,10 @@ fn flat_ring_infix(
 /// print as `a /. b :> c[[1]]`.
 fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
+    // `@*` and `/*` print infix: `(a /* b)[[1]]`.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if (name == "Composition" || name == "RightComposition")
+        && args.len() >= 2)
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
     // A rational is a `Rational[n, d]` call but prints as the quotient
@@ -10104,6 +10108,50 @@ fn part_base_needs_parens(base: &Expr) -> bool {
     // re-parses as `1/(2[[1]])`.
     || matches!(base, Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2)
+}
+
+/// Whether `text` is one whole call `Name[…]`: an identifier followed by a
+/// bracket group that closes at the very end. A head whose infix form only
+/// applies to some arguments (`StringJoin[a, b]` with non-strings,
+/// `Times[x]` with one factor) prints this way and needs no brackets as an
+/// operand.
+fn prints_as_call(text: &str) -> bool {
+  let Some(open) = text.find('[') else {
+    return false;
+  };
+  let head = &text[..open];
+  if head.is_empty()
+    || !head
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '$' || c == '`')
+    || !head
+      .chars()
+      .next()
+      .is_some_and(|c| c.is_alphabetic() || c == '$')
+  {
+    return false;
+  }
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev = '\0';
+  for (i, c) in text[open..].char_indices() {
+    if in_string {
+      if c == '"' && prev != '\\' {
+        in_string = false;
+      }
+    } else if c == '"' {
+      in_string = true;
+    } else if c == '[' {
+      depth += 1;
+    } else if c == ']' {
+      depth -= 1;
+      if depth == 0 {
+        return open + i + 1 == text.len();
+      }
+    }
+    prev = c;
+  }
+  false
 }
 
 /// Render a Part application as `base[[i,j,…]]`, parenthesizing the base when
@@ -10117,7 +10165,7 @@ fn format_part_brackets(
   indices: &[String],
 ) -> String {
   let joined = indices.join(",");
-  if part_base_needs_parens(base) {
+  if part_base_needs_parens(base) && !prints_as_call(base_str) {
     format!("({base_str})[[{joined}]]")
   } else {
     format!("{base_str}[[{joined}]]")
@@ -12826,6 +12874,39 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     }
     // InputForm BinaryOp handling
     Expr::BinaryOp { op, left, right } => {
+      // A held quotient `a/b` is `Times[a, Power[b, -1]]` and prints the way
+      // Wolfram prints that product: `1/x` as written, `-1/x` as
+      // `-x^(-1)` (a coefficient -1 over a lone reciprocal), and `(-a)/4`
+      // as `-a/4`.
+      if in_held_format()
+        && matches!(op, BinaryOperator::Divide)
+        && matches!(left.as_ref(), Expr::Integer(-1))
+      {
+        let reciprocal = Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        };
+        return format!("-{}", expr_to_string(&reciprocal));
+      }
+      if in_held_format()
+        && matches!(op, BinaryOperator::Divide)
+        && let Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } = left.as_ref()
+        && !matches!(
+          operand.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+      {
+        let quotient = div2(*operand.clone(), *right.clone());
+        let text = expr_to_string(&quotient);
+        return format!("-{text}");
+      }
       // Special case: (-x)/y should display as -(x/y) (Wolfram convention)
       // Only when the numerator is exactly Times[-1, x], not a negative integer coefficient
       if matches!(op, BinaryOperator::Divide) {
@@ -12871,14 +12952,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let inner_str = expr_to_string(&inner_div);
           return format!("-({inner_str})");
         }
-        // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
-        if matches!(left.as_ref(), Expr::Integer(1))
+        // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm
+        // convention for the evaluated Power; a held `1/x` is
+        // `Times[1, Power[x, -1]]` and prints as written)
+        if !in_held_format()
+          && matches!(left.as_ref(), Expr::Integer(1))
           && let Expr::Identifier(s) = right.as_ref()
         {
           return format!("{s}^(-1)");
         }
         // Special case: 1/Plus[...] → (Plus[...])^(-1) (Wolfram InputForm convention)
-        if matches!(left.as_ref(), Expr::Integer(1))
+        if !in_held_format()
+          && matches!(left.as_ref(), Expr::Integer(1))
           && (matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
             || matches!(
               right.as_ref(),
@@ -13326,6 +13411,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ));
+      // Text that prints as one whole call (`Times[1/3]`) is an operand by
+      // itself, whatever its head's infix form would need.
+      let left_needs_parens = left_needs_parens && !prints_as_call(&left_str);
       let left_formatted = if left_needs_parens {
         format!("({left_str})")
       } else {
@@ -13722,17 +13810,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
       let func_str = format_expr(func, form);
       let arg_str = format_expr(arg, form);
-      // Parenthesize func if it's complex (not a simple identifier, call,
-      // slot or part — `#2[x]`, `a[[1]][x]` need none)
-      let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({func_str})"),
-        Expr::Identifier(_)
-        | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. }
-        | Expr::Slot(_)
-        | Expr::SlotSequence(_)
-        | Expr::Part { .. } => func_str,
-        _ => format!("({func_str})"),
+      // `f @ x` prints as `f[x]`, with the head bracketed by the same rule
+      // as any applied head.
+      let func_display = if curried_head_needs_parens(func) {
+        format!("({func_str})")
+      } else {
+        func_str
       };
       format!("{func_display}[{arg_str}]")
     }
@@ -13741,15 +13824,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // semantically `f[x]`, so render as such inside Hold/FullForm output.
       let func_str = format_expr(func, form);
       let arg_str = format_expr(expr, form);
-      let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({func_str})"),
-        Expr::Identifier(_)
-        | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. }
-        | Expr::Slot(_)
-        | Expr::SlotSequence(_)
-        | Expr::Part { .. } => func_str,
-        _ => format!("({func_str})"),
+      let func_display = if curried_head_needs_parens(func) {
+        format!("({func_str})")
+      } else {
+        func_str
       };
       format!("{func_display}[{arg_str}]")
     }
@@ -16766,6 +16844,8 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
   };
   negative_number
     || prints_as_not(func)
+    // Any head printed with an infix operator: `(a . b)[x]`, `(a == b)[x]`.
+    || printed_infix_precedence(func).is_some()
     || matches!(
       func,
       Expr::Function { .. }

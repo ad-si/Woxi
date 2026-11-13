@@ -14792,8 +14792,8 @@ fn held_subtraction_preserves_explicit_sum_operands() {
   for (code, expected) in [
     ("Hold[Subtract[Plus[a,b],c]]", "Hold[(a + b) - c]"),
     ("Hold[Subtract[Plus[0,0],0]]", "Hold[(0 + 0) - 0]"),
-    ("Hold[Subtract[Plus[a],b]]", "Hold[(Plus[a]) - b]"),
-    ("Hold[Subtract[Plus[],b]]", "Hold[(Plus[]) - b]"),
+    ("Hold[Subtract[Plus[a],b]]", "Hold[Plus[a] - b]"),
+    ("Hold[Subtract[Plus[],b]]", "Hold[Plus[] - b]"),
     ("Hold[(a+b)-c]", "Hold[(a + b) - c]"),
     ("Hold[(a-b)-c]", "Hold[(a - b) - c]"),
     ("Hold[(a-b+c)-d]", "Hold[(a - b + c) - d]"),
@@ -15016,4 +15016,46 @@ fn held_comparison_as_arithmetic_operand() {
   ] {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
+}
+
+// Applied heads and Part bases are bracketed by one rule, and a head that
+// prints as a whole call (`StringJoin[a, b]`, `Times[1/3]`) needs none.
+#[test]
+fn held_heads_and_part_bases() {
+  for (input, expected) in [
+    ("Hold[StringJoin[a, b][[1]]]", "Hold[StringJoin[a, b][[1]]]"),
+    ("Hold[Times[1/3]^c]", "Hold[Times[1/3]^c]"),
+    ("Hold[(a /* b)[[1]]]", "Hold[(a /* b)[[1]]]"),
+    ("Hold[(a . b)[x]]", "Hold[(a . b)[x]]"),
+    (r#"Hold["" // 4]"#, "Hold[4[]]"),
+    ("Hold[f // {a, b}]", "Hold[{a, b}[f]]"),
+    ("Hold[(a . b) @ c]", "Hold[(a . b)[c]]"),
+    ("Hold[x // (a == b)]", "Hold[(a == b)[x]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// A held quotient is Times[a, Power[b, -1]]: `1/x` prints as written and a
+// coefficient -1 over a lone reciprocal as `-x^(-1)`.
+#[test]
+fn held_quotients() {
+  for (input, expected) in [
+    ("Hold[1/x]", "Hold[1/x]"),
+    ("Hold[-1/x]", "Hold[-x^(-1)]"),
+    ("Hold[-1/(a + b)]", "Hold[-(a + b)^(-1)]"),
+    ("Hold[-1/4]", "Hold[-4^(-1)]"),
+    ("Hold[-a/4]", "Hold[-a/4]"),
+    ("Hold[-1/(2 x)]", "Hold[-(2*x)^(-1)]"),
+    ("Hold[a - 1/x]", "Hold[a - 1/x]"),
+    ("Hold[-2/x]", "Hold[-2/x]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  // Evaluated quotients keep their own forms.
+  assert_eq!(interpret("-1/x").unwrap(), "-x^(-1)");
+  assert_eq!(
+    interpret("Simplify[x/(-2 + 3 x - x^2)]").unwrap(),
+    "-(x/(2 - 3*x + x^2))"
+  );
 }
