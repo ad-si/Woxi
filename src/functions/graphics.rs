@@ -43937,6 +43937,72 @@ fn opener_view_node(
   })
 }
 
+/// Whether a display node holds a control the user can operate.
+fn display_node_is_live(node: &DisplayNode) -> bool {
+  match node {
+    DisplayNode::Panel(inner) => display_node_is_live(inner),
+    DisplayNode::Grid(rows) => rows.iter().flatten().any(display_node_is_live),
+    DisplayNode::Column(items) | DisplayNode::Row(items) => {
+      items.iter().any(display_node_is_live)
+    }
+    DisplayNode::Spacer { .. }
+    | DisplayNode::Text { .. }
+    | DisplayNode::Static { .. } => false,
+    _ => true,
+  }
+}
+
+/// `Overlay[{e1, e2, …}, {i, j, …}, s]` draws only the layers `i, j, …`
+/// (the last one on top) and routes input to layer `s`. A single-node
+/// display can show just one of them: the active layer when it is a control
+/// Woxi can operate (a `Slider` hidden under a gradient strip stays
+/// draggable), otherwise the topmost shown layer — what the viewer sees
+/// (e.g. the color swatch drawn over an inert `ColorSetter`).
+/// Returns `None` when the selection does not name any layer.
+fn overlay_selection_node(
+  layers: &[Expr],
+  rest: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let resolve = |e: &Expr| -> Option<usize> {
+    let Expr::Integer(i) = e else { return None };
+    let n = layers.len() as i128;
+    let i = *i;
+    let idx = if i > 0 { i - 1 } else { n + i };
+    (0..n).contains(&idx).then_some(idx as usize)
+  };
+  let Expr::List(selection) = &rest[0] else {
+    return None;
+  };
+  let shown: Vec<usize> = selection.iter().filter_map(resolve).collect();
+  let active = rest
+    .get(1)
+    .and_then(resolve)
+    .filter(|a| shown.contains(a) && !is_slider2d_call(&layers[*a]));
+  if let Some(a) = active {
+    let mut layer_probes = Vec::new();
+    let mut layer_ons = Vec::new();
+    let node = display_expr_to_node(
+      &layers[a],
+      bindings,
+      &mut layer_probes,
+      &mut layer_ons,
+    );
+    if display_node_is_live(&node) {
+      probes.extend(layer_probes);
+      ons.extend(layer_ons);
+      return Some(node);
+    }
+  }
+  let top = *shown
+    .iter()
+    .rev()
+    .find(|&&i| !is_slider2d_call(&layers[i]))?;
+  Some(display_expr_to_node(&layers[top], bindings, probes, ons))
+}
+
 /// Recursively convert a display expression into a `DisplayNode`. Each
 /// checkbox pushes its value-probe expression to `probes` (and the "on" value
 /// to `ons`) instead of evaluating it inline; `checked` is filled in later
@@ -43964,6 +44030,18 @@ fn display_expr_to_node(
       // (see `collect_display_slider2d_vars`), so what is drawn here is the
       // first remaining layer — e.g. the color strip a 2D slider sits on.
       "Overlay" if !args.is_empty() => match &args[0] {
+        Expr::List(layers)
+          if matches!(args.get(1), Some(Expr::List(_)))
+            && let Some(node) = overlay_selection_node(
+              layers,
+              &args[1..],
+              bindings,
+              probes,
+              ons,
+            ) =>
+        {
+          node
+        }
         Expr::List(layers) => {
           match layers.iter().find(|l| !is_slider2d_call(l)) {
             Some(layer) => display_expr_to_node(layer, bindings, probes, ons),

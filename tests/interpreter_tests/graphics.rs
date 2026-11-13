@@ -35990,6 +35990,48 @@ mod manipulate {
     assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
   }
 
+  /// `Overlay[{layers}, {shown…}, active]` in a display: a control layer Woxi
+  /// cannot operate (an inert `ColorSetter`) gives way to the topmost shown
+  /// layer — the swatch drawn over it — instead of printing as source text,
+  /// while an operable active layer (a `Slider` under a gradient picture)
+  /// stays live. Unselected layers are never drawn.
+  #[test]
+  fn display_overlay_selection_picks_active_control_or_top_layer() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let swatch = build_manipulate_display(
+      "Overlay[{ColorSetter[Red, ImageSize -> {19, 19}], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 19]}, {1, 2}, 1]",
+      &[],
+    );
+    match &swatch {
+      DisplayNode::Static { svg: Some(svg), .. } => {
+        assert!(svg.contains("<svg"), "{svg}")
+      }
+      other => panic!("expected the swatch picture, got {other:?}"),
+    }
+
+    let slider = build_manipulate_display(
+      "Overlay[{Slider[Dynamic[c], {0, 1}], \
+       Graphics[{Blue, Rectangle[]}, ImageSize -> 50]}, {1, 2}, 1]",
+      &[("c".to_string(), "0.25".to_string())],
+    );
+    match &slider {
+      DisplayNode::Slider { target, .. } => assert_eq!(target, "c"),
+      other => panic!("expected the live slider, got {other:?}"),
+    }
+
+    // Only layer 1 is shown, so the picture in layer 2 is not drawn.
+    let hidden_top = build_manipulate_display(
+      "Overlay[{\"base\", Graphics[{Rectangle[]}]}, {1}]",
+      &[],
+    );
+    match &hidden_top {
+      DisplayNode::Static { svg: None, text } => assert_eq!(text, "base"),
+      DisplayNode::Text { .. } => {}
+      other => panic!("expected the shown text layer, got {other:?}"),
+    }
+  }
+
   /// A bare `None` in the control-type slot after the bounds says the
   /// variable has no widget — how a puzzle Demonstration declares the state
   /// its buttons drive. It used to be read as a bound, so the variable
