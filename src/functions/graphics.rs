@@ -39355,6 +39355,64 @@ fn layout_parts(arg: Option<&Expr>) -> Option<Vec<Expr>> {
   }
 }
 
+/// Splits label runs into lines at every `\n`, keeping each run's style.
+fn split_label_run_lines(runs: Vec<LabelRun>) -> Vec<Vec<LabelRun>> {
+  let mut lines = vec![Vec::new()];
+  for run in runs {
+    let mut segments = run.text.split('\n');
+    if let Some(first) = segments.next() {
+      if !first.is_empty() {
+        lines.last_mut().unwrap().push(LabelRun {
+          text: first.to_string(),
+          ..run.clone()
+        });
+      }
+    }
+    for segment in segments {
+      let mut line = Vec::new();
+      if !segment.is_empty() {
+        line.push(LabelRun {
+          text: segment.to_string(),
+          ..run.clone()
+        });
+      }
+      lines.push(line);
+    }
+  }
+  lines
+}
+
+/// Lays the label runs of a `Row`'s parts side by side. A part spanning
+/// several lines (a `Column`) keeps its lines, and every shorter part is
+/// centered vertically against the tallest one, the way a `Row` aligns its
+/// text with the middle of a `Column` beside it. So
+/// `Row[{"text", Column[{Spacer[1], Spacer[1], Spacer[1]}]}]` (vertical
+/// padding around a slider caption) puts the text on the middle line.
+fn row_label_runs(pieces: Vec<Vec<LabelRun>>, italic: bool) -> Vec<LabelRun> {
+  let pieces: Vec<Vec<Vec<LabelRun>>> =
+    pieces.into_iter().map(split_label_run_lines).collect();
+  let height = pieces.iter().map(Vec::len).max().unwrap_or(1);
+  let mut lines: Vec<Vec<LabelRun>> = vec![Vec::new(); height];
+  for piece in pieces {
+    let offset = (height - piece.len()) / 2;
+    for (i, line) in piece.into_iter().enumerate() {
+      lines[offset + i].extend(line);
+    }
+  }
+  let mut out = Vec::new();
+  for (i, line) in lines.into_iter().enumerate() {
+    if i > 0 {
+      out.push(LabelRun {
+        text: "\n".to_string(),
+        italic,
+        ..Default::default()
+      });
+    }
+    out.extend(line);
+  }
+  out
+}
+
 /// Renders a `Grid`/`TableForm`/`TextGrid` row list as label runs: each
 /// row's non-blank cells joined by a space, rows joined by a newline.
 fn grid_label_runs(rows: &[Expr], italic: bool) -> Vec<LabelRun> {
@@ -39793,15 +39851,14 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
             ("Row", Some(sep)) => manipulate_label_runs(sep, italic),
             _ => Vec::new(),
           };
-          parts
-            .iter()
-            .enumerate()
-            .flat_map(|(i, p)| {
-              let mut runs = if i > 0 { separator.clone() } else { Vec::new() };
-              runs.extend(manipulate_label_runs(p, italic));
-              runs
-            })
-            .collect()
+          let mut pieces = Vec::new();
+          for (i, p) in parts.iter().enumerate() {
+            if i > 0 && !separator.is_empty() {
+              pieces.push(separator.clone());
+            }
+            pieces.push(manipulate_label_runs(p, italic));
+          }
+          row_label_runs(pieces, italic)
         }
         _ => output_run(italic),
       },
