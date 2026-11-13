@@ -2687,26 +2687,26 @@ fn generate_svg(
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
   // box, where `d` is the eye's distance (already in the box's normalized
   // units), instead of being fitted to the box's outline.
-  let (scale, p_cx, p_cy) = match (view_angle_option(options), camera.perspective)
-  {
-    (Some(theta), Some(eye)) => {
-      let span = 2.0 * eye.distance * (theta / 2.0).tan();
-      if span > 0.0 && span.is_finite() {
-        let (bcx, bcy) = project(
-          Point3D {
-            x: eye.center[0],
-            y: eye.center[1],
-            z: eye.center[2],
-          },
-          camera,
-        );
-        (svg_width.min(svg_height) as f64 / span, bcx, bcy)
-      } else {
-        (scale, p_cx, p_cy)
+  let (scale, p_cx, p_cy) =
+    match (view_angle_option(options), camera.perspective) {
+      (Some(theta), Some(eye)) => {
+        let span = 2.0 * eye.distance * (theta / 2.0).tan();
+        if span > 0.0 && span.is_finite() {
+          let (bcx, bcy) = project(
+            Point3D {
+              x: eye.center[0],
+              y: eye.center[1],
+              z: eye.center[2],
+            },
+            camera,
+          );
+          (svg_width.min(svg_height) as f64 / span, bcx, bcy)
+        } else {
+          (scale, p_cx, p_cy)
+        }
       }
-    }
-    _ => (scale, p_cx, p_cy),
-  };
+      _ => (scale, p_cx, p_cy),
+    };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
