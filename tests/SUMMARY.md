@@ -5,6 +5,7 @@
   - [Mathematica](comparison/mathematica.md)
     - [Missing features by release](comparison/mathematica/missing_features.md)
     - [Conformance gaps](comparison/mathematica/conformance_gaps.md)
+    - [What Woxi can do that Mathematica can't](comparison/mathematica/woxi_only.md)
   - [Mathics](comparison/mathics.md)
 - [Syntax](syntax.md)
   - [Basics](basics.md)
