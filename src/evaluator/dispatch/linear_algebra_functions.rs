@@ -164,15 +164,12 @@ pub fn dispatch_linear_algebra_functions(
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
     if args.iter().any(is_sparse) {
+      // Only an evaluated (canonical) SparseArray is an array; a failed
+      // construction such as `SparseArray[{{3, 1} -> 1}, {2, 2}]` stays as
+      // it is and leaves the call unevaluated.
       let densify = |e: &Expr| -> Expr {
-        if let Expr::FunctionCall { name, args: sa } = e
-          && name == "SparseArray"
-        {
-          crate::functions::list_helpers_ast::sparse_array_ast(sa)
-            .unwrap_or_else(|_| e.clone())
-        } else {
-          e.clone()
-        }
+        crate::functions::list_helpers_ast::densify_sparse_array(e)
+          .unwrap_or_else(|| e.clone())
       };
       let dense: Vec<Expr> = args.iter().map(densify).collect();
       // Only retry if densification actually removed every SparseArray, to

@@ -18,6 +18,7 @@ mod math_functions;
 mod music_functions;
 mod plotting;
 mod polynomial_functions;
+mod precedence_table;
 pub mod predicate_functions;
 mod quantity_functions;
 mod string_functions;

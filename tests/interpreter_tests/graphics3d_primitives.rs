@@ -498,6 +498,30 @@ mod outlines {
     assert!(lines(&cone) > 10, "{cone}");
   }
 
+  // A large face pierced by a thin cylinder is ordered against it by
+  // cutting the cylinder's small facets along the face's plane, not by
+  // cutting the face along the plane of every facet near the piercing,
+  // which fanned it into slivers whose seams showed.
+  #[test]
+  fn a_face_pierced_by_a_thin_cylinder_stays_whole() {
+    for (cylinder, face) in [
+      (
+        "Cylinder[{{-0.5, 0, 0.3}, {1.5, 0, 0.3}}, 0.02]",
+        "Polygon[{{0, 0, 1}, {1, -0.7, 0}, {1, 0.7, 0}}]",
+      ),
+      (
+        "Cylinder[{{0, 0, -1}, {0, 0, 2}}, 0.03]",
+        "Polygon[{{0, 0, 0}, {1, -0.7, 0}, {1, 0.7, 0.5}}]",
+      ),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{{cylinder}, {{Black, Glow[Red], {face}}}}}, \
+         Boxed -> False, ViewPoint -> {{3, -4, 1}}]"
+      ));
+      assert_eq!(s.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{face}");
+    }
+  }
+
   // The far side of an opaque closed solid is not drawn, so it cannot be
   // painted over its near side.
   #[test]

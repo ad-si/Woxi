@@ -4161,6 +4161,61 @@ mod functional_fuzz_edge_cases {
     assert_eq!(r.warnings.len(), 1);
   }
 
+  // Every unfillable slot occurrence gets its own message, in order —
+  // repeats included — until General::stop cuts them off.
+  #[test]
+  fn every_unfilled_slot_reports_a_message() {
+    let r = woxi::interpret_with_stdout("{#2, #1, #2} &[]").unwrap();
+    assert_eq!(r.result, "{#2, #1, #2}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Function::slotn: Slot number 2 in {#2, #1, #2} &  cannot be filled \
+         from ({#2, #1, #2} & )[].",
+        "Function::slotn: Slot number 1 in {#2, #1, #2} &  cannot be filled \
+         from ({#2, #1, #2} & )[].",
+        "Function::slotn: Slot number 2 in {#2, #1, #2} &  cannot be filled \
+         from ({#2, #1, #2} & )[].",
+        "General::stop: Further output of Function::slotn will be suppressed \
+         during this calculation.",
+      ]
+    );
+    let r = woxi::interpret_with_stdout("{#1, #2, #3, #4} &[]").unwrap();
+    assert_eq!(r.warnings.len(), 4);
+    assert!(
+      r.warnings[3]
+        .starts_with("General::stop: Further output of Function::slotn")
+    );
+  }
+
+  // `##n` takes the arguments from the n-th on, so it needs at least n - 1
+  // of them. With fewer it stays as written, with Function::slots.
+  #[test]
+  fn unfilled_slot_sequence_reports_slots() {
+    assert_eq!(interpret("{##2} &[1]").unwrap(), "{}");
+    assert_eq!(interpret("{##} &[]").unwrap(), "{}");
+    assert_eq!(interpret("f[##3] &[1, 2, 3, 4]").unwrap(), "f[3, 4]");
+    let r = woxi::interpret_with_stdout("{##3} &[1]").unwrap();
+    assert_eq!(r.result, "{##3}");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Function::slots: SlotSequence[3] in {##3} &  cannot be filled from \
+         ({##3} & )[1]."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("{#3, ##3, #2, ##4} &[]").unwrap();
+    assert_eq!(r.result, "{#3, ##3, #2, ##4}");
+    let heads: Vec<&str> = r
+      .warnings
+      .iter()
+      .map(|w| w.split(':').next().unwrap())
+      .collect();
+    assert_eq!(heads, ["Function", "Function", "Function", "Function"]);
+    assert!(r.warnings[1].starts_with("Function::slots: SlotSequence[3]"));
+    assert!(r.warnings[3].starts_with("Function::slots: SlotSequence[4]"));
+  }
+
   // Malformed level specifications are rejected by every traversal.
   #[test]
   fn malformed_level_specifications() {
