@@ -4042,6 +4042,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       str_expr("\u{F762}"),
     ]);
   }
+  // `RawBoxes[boxes]` is already typeset: wolframscript's
+  // `ToBoxes[RawBoxes["("]]` is the bare `"("` box, so a Demonstration's
+  // `Row[{RawBoxes["("], x, RawBoxes[")"]}]` shows plain parentheses.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "RawBoxes"
+    && args.len() == 1
+  {
+    return args[0].clone();
+  }
   match expr {
     // wolframscript: positive integers render as a single String
     // (`"14"`); negative integers decompose into
@@ -5990,6 +5999,45 @@ impl TfProduct {
 /// a fraction bar, so the evaluated `Times[a, Power[b, -1]]` sets as `a/b`
 /// rather than `a b⁻¹`.
 fn tf_times(expr: &Expr) -> Expr {
+  // A positive rational coefficient of a product holding a sum (or a power
+  // of one) is set as a fraction in front of it, as in StandardForm:
+  // `6/5 (x² - 7x/4)` and `6/5 (x - 7/8)²` rather than one fraction bar
+  // over the whole product. Another divisor keeps the whole product over
+  // the bar.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() >= 2
+    && let Expr::FunctionCall {
+      name: coeff_head,
+      args: coeff,
+    } = &args[0]
+    && coeff_head == "Rational"
+    && let [Expr::Integer(p), Expr::Integer(q)] = coeff.as_slice()
+    && *p > 0
+    && *q > 1
+  {
+    let rest = &args[1..];
+    let sum_like = |f: &Expr| {
+      tf_is_additive(f)
+        || matches!(crate::functions::graphics::as_power(f),
+          Some((base, exp)) if tf_is_additive(base)
+            && matches!(exp, Expr::Integer(n) if *n > 0))
+    };
+    if rest.iter().any(sum_like)
+      && rest.iter().all(|f| tf_reciprocal_factor(f).is_none())
+    {
+      let fraction = tf_box(
+        "FractionBox",
+        vec![tf_string(&p.to_string()), tf_string(&q.to_string())],
+      );
+      let product = if let [only] = rest {
+        tf_factor_boxed(only)
+      } else {
+        tf_times(&unevaluated("Times", rest))
+      };
+      return tf_row(vec![fraction, tf_thin_space(), product]);
+    }
+  }
   let mut product = TfProduct::default();
   product.collect(expr);
   let TfProduct {
@@ -6413,7 +6461,9 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
         | "\u{2148}"
         | "\u{213D}"
     ) && (s.is_empty()
-      || !s.chars().all(|c| "0123456789.`*^-+/() ".contains(c)))
+      || !s
+        .chars()
+        .all(|c| c.is_whitespace() || "0123456789.`*^-+/()".contains(c)))
   };
   // `offsetFunc`: Greek and some private-use letters sort as Latin ones.
   let offset = |c: u32| -> u32 {
@@ -7212,6 +7262,8 @@ fn tf_series_data(args: &[Expr]) -> Option<Expr> {
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
+    // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
+    "RawBoxes" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"

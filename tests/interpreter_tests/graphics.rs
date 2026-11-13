@@ -9567,6 +9567,57 @@ mod plot3d {
       );
     }
 
+    /// Surface plots honor an explicit `ViewAngle` the same way
+    /// `Graphics3D` does, instead of always fitting the box to the frame.
+    /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈
+    /// 3.38 box sides) under an 18° field of view spans about 1.01 / 1.07
+    /// of the frame, and a wider angle shrinks it by the ratio of the
+    /// half-angle tangents.
+    #[test]
+    fn surface_plots_honor_an_explicit_view_angle() {
+      let sphere = |angle: &str| {
+        drawn_extent(&format!(
+          "ParametricPlot3D[{{Cos[u] Cos[v], Sin[u] Cos[v], Sin[v]}}, \
+           {{u, 0, 2 Pi}}, {{v, -Pi/2, Pi/2}}, Mesh -> None, \
+           Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
+        ))
+      };
+      let narrow = sphere(", ViewAngle -> 18 Degree");
+      assert!(
+        (narrow.0 - 378.0).abs() < 8.0 && (narrow.1 - 378.0).abs() < 8.0,
+        "expected the sphere to nearly fill the frame, got {narrow:?}"
+      );
+      let wide = sphere(", ViewAngle -> 36 Degree");
+      let ratio = (9.0_f64.to_radians().tan()) / (18.0_f64.to_radians().tan());
+      assert!(
+        (wide.0 - narrow.0 * ratio).abs() < 3.0,
+        "expected {} px at 36°, got {wide:?}",
+        narrow.0 * ratio
+      );
+      // Without a ViewAngle the box (not the sphere) is fitted to the
+      // frame, so the sphere is smaller than under the narrow angle.
+      let fitted = sphere("");
+      assert!(fitted.0 < narrow.0 - 50.0, "got {fitted:?} vs {narrow:?}");
+      // The same holds for `Plot3D`, which renders through the same
+      // surface pipeline.
+      let plot = |angle: &str| {
+        drawn_extent(&format!(
+          "Plot3D[x y, {{x, -1, 1}}, {{y, -1, 1}}, Mesh -> None, \
+           Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
+        ))
+      };
+      let (p1, p2) = (
+        plot(", ViewAngle -> 20 Degree"),
+        plot(", ViewAngle -> 40 Degree"),
+      );
+      let ratio = (10.0_f64.to_radians().tan()) / (20.0_f64.to_radians().tan());
+      assert!(
+        (p2.0 - p1.0 * ratio).abs() < 3.0,
+        "expected {} px at 40°, got {p2:?}",
+        p1.0 * ratio
+      );
+    }
+
     /// A Manipulate whose body opens with a run of assignments has them
     /// run once to resolve any control bounds they define. That probe
     /// happens before the control variables are bound, so it must stay
@@ -22947,6 +22998,90 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret("SmoothDensityHistogram[{1, 2, 3}]").unwrap(),
         "SmoothDensityHistogram[{1, 2, 3}]"
       );
+    }
+
+    /// Regression: `{x, y, z}` triples sampling a regular grid were shaded
+    /// by inverse-distance weighting, which put a bright or dark spot on
+    /// every sample of a smooth surface (e.g. every `SmoothDensityHistogram`).
+    /// They are the same grid as the matrix with the matching `DataRange`.
+    #[test]
+    fn list_density_plot_gridded_triples_match_matrix() {
+      for f in ["x^2 + y", "Sin[x] Cos[2 y]"] {
+        let triples = export_svg(&format!(
+          "ListDensityPlot[Flatten[Table[{{x, y, {f}}}, {{y, 0, 3}}, \
+           {{x, 0, 2, 1/2}}], 1]]"
+        ));
+        let matrix = export_svg(&format!(
+          "ListDensityPlot[Table[{f}, {{y, 0, 3}}, {{x, 0, 2, 1/2}}], \
+           DataRange -> {{{{0, 2}}, {{0, 3}}}}]"
+        ));
+        assert_eq!(triples, matrix, "{f}");
+      }
+      // Shuffled triples are the same grid.
+      assert_eq!(
+        export_svg(
+          "ListDensityPlot[{{1, 1, 4}, {0, 0, 1}, {1, 0, 2}, {0, 1, 3}}]"
+        ),
+        export_svg(
+          "ListDensityPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}}]"
+        )
+      );
+    }
+
+    /// Regression: `Show[densityPlot, Graphics[prims]]` stretched the
+    /// primitives over the whole picture instead of drawing them in the
+    /// plot's coordinates, so they did not line up with its axes.
+    #[test]
+    fn show_primitives_over_density_plot_use_its_coordinates() {
+      let attr = |svg: &str, tag_start: usize, name: &str| -> f64 {
+        let tag =
+          &svg[tag_start..tag_start + svg[tag_start..].find('>').unwrap()];
+        let needle = format!(" {name}=\"");
+        let s = tag.find(&needle).unwrap() + needle.len();
+        tag[s..s + tag[s..].find('"').unwrap()].parse().unwrap()
+      };
+      for plot in [
+        "ListDensityPlot[Table[x + y, {y, 0, 4}, {x, 0, 8}], \
+         DataRange -> {{-2, 6}, {1, 5}}]",
+        "SmoothDensityHistogram[{{-1, 2}, {3, 4}, {5, 3}}, 0.5, \"PDF\"]",
+      ] {
+        let svg = export_svg(&format!(
+          "Show[{plot}, Graphics[{{Red, Point[{{0, 3}}]}}], ImageSize -> 300]"
+        ));
+        let root = svg.find("<svg").unwrap();
+        let frame = {
+          let s = svg.find("data-plot-frame=\"").unwrap() + 17;
+          svg[s..s + svg[s..].find('"').unwrap()]
+            .split_whitespace()
+            .map(|v| v.parse::<f64>().unwrap())
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(attr(&svg, root, "width"), 300.0, "{plot}");
+        // The primitives' canvas is the plot's data rectangle …
+        let layer = svg.rfind("<svg x=").unwrap();
+        for (k, name) in ["x", "y", "width", "height"].iter().enumerate() {
+          assert!(
+            (attr(&svg, layer, name) - frame[4 + k]).abs() < 0.01,
+            "{plot}: {name}"
+          );
+        }
+        // … spanning the data range, so the point sits where the data
+        // coordinates say.
+        let vb: Vec<f64> = {
+          let tag = &svg[layer..];
+          let s = tag.find("viewBox=\"").unwrap() + 9;
+          tag[s..s + tag[s..].find('"').unwrap()]
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect()
+        };
+        let circle = svg[layer..].find("<circle").unwrap() + layer;
+        let (cx, cy) = (attr(&svg, circle, "cx"), attr(&svg, circle, "cy"));
+        let fx = (0.0 - frame[0]) / (frame[1] - frame[0]);
+        let fy = (frame[3] - 3.0) / (frame[3] - frame[2]);
+        assert!((cx / vb[2] - fx).abs() < 0.01, "{plot}: cx {cx}");
+        assert!((cy / vb[3] - fy).abs() < 0.01, "{plot}: cy {cy}");
+      }
     }
 
     #[test]
@@ -55215,4 +55350,74 @@ mod labeled_text_and_pane_wrapping {
     );
     assert!(svg.starts_with("<svg width=\"100\" height=\"50\""), "{svg}");
   }
+
+  /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
+  /// the complex roots `Solve` returns) were not taken as numbers, so a
+  /// `Point` at such a root was rejected as a bad coordinate.
+  #[test]
+  fn point_at_re_im_of_complex_root() {
+    let exact = export_svg(
+      "Graphics[Point[ReIm[#]] & /@ (x /. Solve[x^5 - x - 1 == 0])]",
+    );
+    let numeric = export_svg(
+      "Graphics[Point[ReIm[#]] & /@ N[x /. Solve[x^5 - x - 1 == 0]]]",
+    );
+    assert!(!exact.contains("should be a pair of numbers"), "{exact}");
+    assert_eq!(exact, numeric);
+  }
+
+  /// `Ticks -> False` turns a ListPlot's ticks off like `Ticks -> None`.
+  #[test]
+  fn list_plot_ticks_false() {
+    let none = export_svg("ListPlot[{1, 3, -2, 4}, Ticks -> None]");
+    let off = export_svg("ListPlot[{1, 3, -2, 4}, Ticks -> False]");
+    assert_eq!(none, off);
+    assert!(x_tick_labels(&off).is_empty(), "{off}");
+    assert!(y_tick_labels(&off).is_empty(), "{off}");
+  }
+}
+
+#[test]
+fn pane_wraps_list_of_pictures_at_its_width() {
+  // Regression: a list of pictures inside a fixed-width `Pane` breaks into
+  // lines at the pane's width (as the front end does), instead of running
+  // on in one line and being cut off at the pane's edge.
+  let pictures = "Table[Image[Table[{1, 0, 0}, 75, 75]], 10]";
+  let svg = export_svg(&format!("Pane[{pictures}, {{500, 200}}]"));
+  assert!(
+    svg.starts_with("<svg width=\"500\" height=\"200\""),
+    "{svg}"
+  );
+  // Five pictures fit in 500 points, so the ten go five and five, the
+  // second line indented past the opening brace.
+  assert!(svg.contains("<svg width=\"442\" height=\"169\""), "{svg}");
+  assert!(svg.contains("<svg x=\"357.72\" y=\"0.00\""), "{svg}");
+  assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
+  assert!(!svg.contains("paneClip"), "{svg}");
+  // A width alone wraps the same way.
+  let width_only = export_svg(&format!("Pane[{pictures}, 300]"));
+  assert!(width_only.contains("y=\"187.50\""), "{width_only}");
+  // Without a pane the list stays on one line of the page.
+  let bare = export_svg(pictures);
+  assert!(!bare.contains("y=\"93.75\""), "{bare}");
+}
+
+#[test]
+fn notebook_pane_wraps_list_of_pictures_at_its_width() {
+  // Regression: a cell (or Manipulate body) showing `Pane[{pictures…},
+  // {w, h}]` set the list on one page-wide line instead of breaking it at
+  // the pane's width and filling the pane's box.
+  clear_state();
+  let result = interpret_with_stdout(
+    "Pane[Table[Image[Table[{0, 0, 1}, 75, 75]], 10], {500, 200}]",
+  )
+  .unwrap();
+  assert_eq!(result.result, "-Graphics-");
+  let svg = result.graphics.unwrap();
+  assert!(
+    svg.starts_with("<svg width=\"500\" height=\"200\""),
+    "{svg}"
+  );
+  assert!(svg.contains("<svg width=\"442\" height=\"169\""), "{svg}");
+  assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
 }

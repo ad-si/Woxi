@@ -1,9 +1,8 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 20143
 expression: "export_svg(\"ListVectorPlot[{{{0, 0}, {1, 0}}, {{1, 1}, {0, 1}}, {{-1, 1}, {-1, 0}}}]\")"
 ---
-<svg width="360" height="357" viewBox="0 0 3600 3570" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="357" viewBox="0 0 3600 3570" preserveAspectRatio="xMidYMid meet" data-plot-frame="-1 1 0 1 237.320 73.320 3279.360 3279.360" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3570" opacity="1" fill="#FFFFFF" stroke="none"/>
 <defs><clipPath id="vectorsClip_237_73_3279_3279"><rect x="237.32" y="73.32" width="3279.36" height="3279.36"/></clipPath></defs><g clip-path="url(#vectorsClip_237_73_3279_3279)"><g transform="translate(237.3,73.3) scale(10.0)"><polyline points="154.77,306.65 164.32,305.94" fill="none" stroke="rgb(255,177,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="173.17,305.28 163.79,303.55 163.94,303.81 164.29,304.45 164.47,304.84 164.64,305.23 164.76,305.59 164.82,305.91 164.81,306.19 164.74,306.57 164.63,306.99 164.51,307.43 164.27,308.17 164.16,308.49" fill="rgb(255,177,0)"/>

@@ -2,7 +2,7 @@
 source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}]\")"
 ---
-<svg width="360" height="351" viewBox="0 0 3600 3510" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="351" viewBox="0 0 3600 3510" preserveAspectRatio="xMidYMid meet" data-plot-frame="-1 1 -1 1 299.060 72.060 3218.880 3218.880" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3510" opacity="1" fill="#FFFFFF" stroke="none"/>
 <rect x="299.1" y="3258.8" width="128.8" height="32.2" fill="rgb(255,249,184)" stroke="rgb(255,249,184)" stroke-width="10.0"/>
 <path d="M460.0 3282.8L460.0 3258.8L433.8 3258.8Z" fill="rgb(255,205,141)" stroke="rgb(255,205,141)" stroke-width="10.0" stroke-linejoin="round"/>
