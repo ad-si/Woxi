@@ -3132,13 +3132,11 @@ fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
   let vanishes = |value: &Expr| {
     denominators.iter().any(|den| {
       let at = crate::syntax::substitute_variable(den, var, value);
-      matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Integer(0))
-      ) || matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Real(r)) if r == 0.0
-      )
+      match crate::evaluator::evaluate_expr_to_expr(&at) {
+        Ok(Expr::Integer(0)) => true,
+        Ok(Expr::Real(r)) => r == 0.0,
+        _ => false,
+      }
     })
   };
   let kept: Vec<Expr> = solutions
@@ -6362,8 +6360,38 @@ fn solve_rational_system(
 /// rationals they stand for, the fractions combined and cancelled exactly,
 /// and the numerator brought back to machine numbers.
 fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
+  // Exactly combining the rationalized fractions is costly, and eliminating
+  // a system re-solves the same reduced equations many times over, so the
+  // results are memoized (bounded, keyed by the equation's text).
+  thread_local! {
+    static CACHE: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  const CACHE_LIMIT: usize = 512;
+  let key = (crate::syntax::expr_to_string(poly), var.to_string());
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let result = inexact_cleared_numerator_uncached(poly, var);
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= CACHE_LIMIT {
+      c.clear();
+    }
+    c.insert(key, result.clone());
+  });
+  result
+}
+
+fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::math_ast::numeric_utils::contains_inexact_real;
-  if !contains_inexact_real(poly) {
+  // Only an equation in `var` alone with real machine coefficients: the
+  // exact rationalization is costly, and the eliminations of a system
+  // produce many branch equations with parameters or complex coefficients.
+  let mut symbols = std::collections::HashSet::new();
+  super::simplify::collect_variables(poly, &mut symbols);
+  if !contains_inexact_real(poly) || symbols.iter().any(|s| s != var) {
     return None;
   }
   // Only a sum in a denominator can share a factor with the numerator that

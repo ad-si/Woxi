@@ -7211,6 +7211,12 @@ pub(crate) fn pane_alignment(options: &[Expr]) -> Option<(f64, f64)> {
         fraction(&pair[0]).unwrap_or(0.0),
         fraction(&pair[1]).unwrap_or(0.0),
       ),
+      // A lone `Center` centers on both axes; `Top`/`Bottom` place
+      // vertically and `Left`/`Right` horizontally.
+      Expr::Identifier(n) if n == "Center" => (0.5, 0.5),
+      Expr::Identifier(n) if n == "Top" || n == "Bottom" => {
+        (0.0, fraction(replacement).unwrap_or(0.0))
+      }
       single => (fraction(single).unwrap_or(0.0), 0.0),
     });
   }
