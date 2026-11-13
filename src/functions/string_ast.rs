@@ -2267,19 +2267,22 @@ pub fn string_position_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::List(positions.into()));
     }
     if let Ok(re) = compile_regex(&pat) {
-      for start_char in 0..s_chars.len() {
-        // Get byte offset for this character position
-        let byte_offset: usize =
-          s_chars[..start_char].iter().map(|c| c.len_utf8()).sum();
-        let substr = &s[byte_offset..];
-        if let Some(caps) = re.captures(substr)
+      // Every start position, the end of the string included, matched in
+      // the context of the whole string (so `WordBoundary` sees the
+      // character before it). An empty match counts too, as in
+      // wolframscript: `StringPosition["ab", StartOfString]` is {{1, 0}}.
+      let mut byte_offset = 0usize;
+      for start_char in 0..=s_chars.len() {
+        if let Some(caps) = re.captures_at(&s, byte_offset)
           && let Some(m) = caps.get(0)
-          && m.start() == 0
-          && !m.as_str().is_empty()
+          && m.start() == byte_offset
           && caps_satisfy_constraints(&caps, &pat_constraints)
         {
           let match_chars = m.as_str().chars().count();
           raw_matches.push((start_char, match_chars));
+        }
+        if let Some(c) = s_chars.get(start_char) {
+          byte_offset += c.len_utf8();
         }
       }
     }
@@ -3018,6 +3021,48 @@ fn find_constraint_spans(
     } else {
       let ch = s[i..].chars().next().unwrap();
       i += ch.len_utf8();
+    }
+  }
+  spans
+}
+
+/// `find_constraint_spans`, also reporting empty matches — at every
+/// position, the end of the string included, and right after a non-empty
+/// match — as wolframscript's StringCount does:
+/// `StringCount[" a", WordBoundary]` is 2, `StringCount["abc", x___]` 2.
+fn find_spans_with_empty(
+  re: &WoxiRegex,
+  constraints: &[(String, String)],
+  s: &str,
+  overlapping: bool,
+) -> Vec<(usize, usize)> {
+  let mut spans = Vec::new();
+  let mut i = 0;
+  loop {
+    let matched = re.captures_at(s, i).and_then(|caps| {
+      let m = caps.get(0)?;
+      (m.start() == i && caps_satisfy_constraints(&caps, constraints))
+        .then(|| (m.start(), m.end()))
+    });
+    let step = s[i..].chars().next().map_or(0, char::len_utf8);
+    if let Some((start, end)) = matched {
+      spans.push((start, end));
+      i = if overlapping || end == start {
+        i + step
+      } else {
+        end
+      };
+      if end == start && step == 0 {
+        break;
+      }
+    } else {
+      if step == 0 {
+        break;
+      }
+      i += step;
+    }
+    if i > s.len() {
+      break;
     }
   }
   spans
@@ -10770,7 +10815,7 @@ pub fn string_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Invalid string pattern: {e}"
         ))
       })?;
-      find_constraint_spans(&re, &constraints, &s, overlaps).len()
+      find_spans_with_empty(&re, &constraints, &s, overlaps).len()
     };
     return Ok(Expr::Integer(count as i128));
   }

@@ -215,6 +215,62 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
     * size
 }
 
+/// Break a line of plain label text (no tags; entities allowed) into lines
+/// at most `width` points wide at `size` points, the way a fixed-width
+/// `Pane` lays out its content. A word that fits on a line of its own moves
+/// to the next line whole; a longer run (a number with many digits) is
+/// broken between its characters. A line that already fits, or one carrying
+/// markup tags, is returned unchanged.
+pub(crate) fn wrap_label_line(
+  line: &str,
+  width: f64,
+  size: f64,
+) -> Vec<String> {
+  if line.contains('<') || width <= 0.0 || text_width(line, size) <= width {
+    return vec![line.to_string()];
+  }
+  let max_em = width / size;
+  let chars = visible_chars(line);
+  let mut lines: Vec<String> = Vec::new();
+  let mut current = String::new();
+  let mut current_em = 0.0;
+  for word in chars.split_inclusive(|c| *c == ' ') {
+    let word_em: f64 = word.iter().copied().map(char_width_em).sum();
+    // Trailing blanks may hang past the edge, so a word is measured
+    // without the blank that ends it.
+    let ink_em: f64 = word
+      .iter()
+      .rev()
+      .skip_while(|c| **c == ' ')
+      .copied()
+      .map(char_width_em)
+      .sum();
+    if current_em + ink_em > max_em && !current.is_empty() && ink_em <= max_em {
+      lines.push(std::mem::take(&mut current));
+      current_em = 0.0;
+    }
+    if current_em + ink_em <= max_em {
+      current.extend(word.iter());
+      current_em += word_em;
+      continue;
+    }
+    for &c in word {
+      let w = char_width_em(c);
+      if current_em + w > max_em && !current.is_empty() && c != ' ' {
+        lines.push(std::mem::take(&mut current));
+        current_em = 0.0;
+      }
+      current.push(c);
+      current_em += w;
+    }
+  }
+  lines.push(current);
+  lines
+    .iter()
+    .map(|l| crate::functions::graphics::svg_escape(l.trim_end()))
+    .collect()
+}
+
 /// Finite LabelingSize uses the front end's Text-style (14 pt) measure.
 /// Keep at least two characters before the three-dot truncation marker,
 /// as TruncateStringToWidth does even for very small positive widths.

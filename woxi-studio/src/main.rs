@@ -4247,7 +4247,9 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
   };
   // An explicitly empty label (`{{fig, 1, ""}}`) claims no width — see
   // `manipulate_label_widget` for why an empty label is never a missing one.
-  label.chars().count()
+  // A label broken over lines (`"vapor pressure\n(inches of Hg)"`) draws
+  // as a stack, so only its longest line claims width.
+  label.lines().map(|l| l.chars().count()).max().unwrap_or(0)
 }
 
 /// Throttle window for Manipulate re-evaluation. A slider drag emits a burst of
@@ -4533,7 +4535,23 @@ fn render_manipulate_widget<'a>(
           if !enabled {
             s = s.style(disabled_slider_style);
           }
-          let control_row = row![label_widget, s].align_y(Center).spacing(8);
+          // Like a continuous slider, show the current choice beside the
+          // track, as Wolfram's labeled `Manipulator` does.
+          let shown = if has_overflow {
+            String::new()
+          } else {
+            value_labels
+              .get(*current_index)
+              .cloned()
+              .unwrap_or_default()
+          };
+          let value_widget = text(shown)
+            .size(11)
+            .font(Font::MONOSPACE)
+            .width(iced::Length::Fixed(64.0));
+          let control_row = row![label_widget, s, value_widget]
+            .align_y(Center)
+            .spacing(8);
           controls_col = controls_col.push(control_row);
           continue;
         }
@@ -8749,6 +8767,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       italic: false,
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
+      size: None,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -12835,6 +12854,38 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`x$$ = 1}, \"…\"]"], "Output"]
   /// `Appearance -> "Labeled"` sliders — the shape of a typical Wolfram
   /// Demonstrations finance/growth calculator. This must open live with
   /// all three sliders recognized and the plot drawn.
+  /// A label broken over two lines sizes the label column by its longest
+  /// line, and a `ControlType -> Manipulator` slider over a list of values
+  /// steps through the choices with the current one shown beside it.
+  #[test]
+  fn multiline_label_and_discrete_manipulator_slider() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[p, \
+       {{p, 0.3, \"pressure\\n(units)\"}, {0.1, 0.2, 0.3, 0.45}, \
+       ControlType -> Manipulator, Appearance -> \"Labeled\"}]",
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the discrete Manipulator should build a ManipulateState");
+    let ctrl = &state.controls[0];
+    let manipulate::ControlState::Discrete {
+      label,
+      value_labels,
+      current_index,
+      slider,
+      ..
+    } = ctrl
+    else {
+      panic!("expected a discrete control, got {ctrl:?}");
+    };
+    assert_eq!(label, "pressure\n(units)");
+    assert!(*slider, "ControlType -> Manipulator draws a slider");
+    assert_eq!(value_labels, &["0.1", "0.2", "0.3", "0.45"]);
+    assert_eq!(value_labels[*current_index], "0.3");
+    // "pressure" is the longest line; the whole string is 16 chars.
+    assert_eq!(manipulate_label_char_count(ctrl), 8);
+  }
+
   #[test]
   fn demonstration_labeled_sliders_drive_multi_series_line_plot() {
     let nb_src = r##"Notebook[{

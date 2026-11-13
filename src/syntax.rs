@@ -1827,6 +1827,14 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
     return base;
   }
   if is_last {
+    // A base that is itself a Part (`(x[[3]])[[2]]`) is a separate Part
+    // call, not more indices of the same one: spell it as `Part[x, 3]` so
+    // the nested `Expr::Part` chain built below still reads as `x[[3, 2]]`
+    // only when that is what was written.
+    let base = match base {
+      Expr::Part { .. } => part_chain_to_call(&base),
+      other => other,
+    };
     return specs.into_iter().fold(base, |acc, idx| Expr::Part {
       expr: Box::new(acc),
       index: Box::new(idx),
@@ -1835,6 +1843,19 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
   let mut args = vec![base];
   args.extend(specs);
   call("Part", args)
+}
+
+/// `Part[x, i, j, …]` for a nested `Expr::Part` chain `x[[i, j, …]]`.
+fn part_chain_to_call(expr: &Expr) -> Expr {
+  let mut indices = Vec::new();
+  let mut cur = expr;
+  while let Expr::Part { expr, index } = cur {
+    indices.push(index.as_ref().clone());
+    cur = expr.as_ref();
+  }
+  indices.push(cur.clone());
+  indices.reverse();
+  call("Part", indices)
 }
 
 /// Apply every bracket group of a `PartIndexSuffix`, in order.
@@ -3004,6 +3025,16 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![Expr::Identifier(name)],
       }
     }
+    Rule::DerivativeOther => {
+      // `{}'`, `"s"'`, `#2'`, `x_'` → Derivative[n][operand]
+      let inner_pairs: Vec<_> = pair.into_inner().collect();
+      let operand = pair_to_expr(inner_pairs[0].clone());
+      let order = inner_pairs[1].as_str().len();
+      Expr::CurriedCall {
+        func: Box::new(call("Derivative", vec![Expr::Integer(order as i128)])),
+        args: vec![operand],
+      }
+    }
     Rule::DerivativeNumeric => {
       // 1' → Derivative[1][1], (-1.4)' → Derivative[1][-1.4], etc.
       // The literal becomes the argument of the curried Derivative form.
@@ -3853,41 +3884,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let inner = pair.into_inner().next().unwrap();
       let var = pair_to_expr(inner);
       call1("Unset", var)
-    }
-    Rule::ApplyToOp => {
-      // x //= f -> ApplyTo[x, f]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let func = pair_to_expr(inner.next().unwrap());
-      call("ApplyTo", vec![var, func])
-    }
-    Rule::AddTo => {
-      // x += y -> AddTo[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("AddTo", vec![var, val])
-    }
-    Rule::SubtractFrom => {
-      // x -= y -> SubtractFrom[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("SubtractFrom", vec![var, val])
-    }
-    Rule::TimesBy => {
-      // x *= y -> TimesBy[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("TimesBy", vec![var, val])
-    }
-    Rule::DivideBy => {
-      // x /= y -> DivideBy[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("DivideBy", vec![var, val])
     }
     Rule::PrefixApplySimple => {
       // f@x within implicit multiplication context → f[x]
@@ -4794,7 +4790,15 @@ fn in_assignment_rhs(
     && let Expr::FunctionCall { name, args } = &mut expr
     && matches!(
       name.as_str(),
-      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+      "Set"
+        | "SetDelayed"
+        | "UpSet"
+        | "UpSetDelayed"
+        | "AddTo"
+        | "SubtractFrom"
+        | "TimesBy"
+        | "DivideBy"
+        | "ApplyTo"
     )
     && args.len() == 2
   {
@@ -5299,6 +5303,19 @@ fn parse_expression_inner(
     .iter()
     .filter(|op| is_assignment_operator(op))
     .count();
+  // `/.` and `//.` (110) also bind tighter than the compound assignments
+  // (100) — `s += a /. b` is `s += (a /. b)` — while `//` (70) does not:
+  // `s += a // f` is `f[s += a]`.
+  let replace_depth = operators
+    .iter()
+    .filter(|op| {
+      is_assignment_operator(op)
+        || matches!(op.as_str(), "+=" | "-=" | "*=" | "/=" | "//=")
+    })
+    .count();
+  // `&` (90) binds tighter than `//=` (75), so `x //= f &` is
+  // `ApplyTo[x, Function[f]]`, unlike `x += 1 &` (`+=` is 100).
+  let wrote_apply_to = operators.iter().any(|op| op == "//=");
 
   let mut result = build_operator_chain(terms, &operators);
 
@@ -5324,7 +5341,7 @@ fn parse_expression_inner(
     };
     // If result is an assignment, push /. inside to the right-hand side.
     result =
-      in_assignment_rhs(result, assign_depth, |rhs| make_replace(rhs, rules));
+      in_assignment_rhs(result, replace_depth, |rhs| make_replace(rhs, rules));
   }
 
   // Apply postfix functions. In Wolfram, `//` (postfix application) has
@@ -5352,12 +5369,14 @@ fn parse_expression_inner(
     // If `result` is a top-level assignment (Set/SetDelayed/UpSet/
     // UpSetDelayed), `&` (precedence 90) binds tighter than the assignment
     // (precedence 40), so we push the Function wrapper into the RHS.
-    let pushed_into_assignment = if assign_depth > 0
-      && let Expr::FunctionCall { name, args } = &mut result
-      && matches!(
-        name.as_str(),
-        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-      )
+    let pushed_into_assignment = if let Expr::FunctionCall { name, args } =
+      &mut result
+      && ((assign_depth > 0
+        && matches!(
+          name.as_str(),
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+        ))
+        || (wrote_apply_to && name == "ApplyTo"))
       && args.len() == 2
     {
       let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
@@ -6048,6 +6067,17 @@ pub fn ends_with_continuing_named_operator(code_tail: &str) -> bool {
 /// Get precedence of an operator (higher = binds tighter).
 /// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u16 {
+  // `~~` (135), `:` (150) and `|` (160) bind looser than the comparisons
+  // (290), `&&`/`||` (215) and the logical arrows, and tighter than `/;`
+  // (130): `a | b == c` is `a | (b == c)`, `a ~~ b == c` is
+  // `a ~~ (b == c)`. They sit between `/;` (120 here) and `\[Implies]`
+  // (130), keeping their own order.
+  match op {
+    "~~" => return 123,
+    ":" => return 125,
+    "|" => return 127,
+    _ => {}
+  }
   // The scale is ten times `base_operator_precedence`, so the generated
   // operators can sit between two of the hand-placed levels.
   if let Some(op) =
@@ -6076,7 +6106,7 @@ fn base_operator_precedence(op: &str) -> u8 {
     "=" | ":=" | "=." => 6, // Assignment / Unset
     // Compound assignment binds like plain assignment (Wolfram gives all of
     // them precedence 70), so `f[x] += a + b` adds the whole sum.
-    "+=" | "-=" | "*=" | "/=" => 6,
+    "+=" | "-=" | "*=" | "/=" | "//=" => 6,
     "^=" | "^:=" => 6, // UpSet/UpSetDelayed (same as assignment)
     // Condition binds *tighter* than Rule/RuleDelayed in Wolfram (130 vs 120),
     // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
@@ -6179,7 +6209,10 @@ fn base_operator_precedence(op: &str) -> u8 {
     // Composition/RightComposition bind tighter than prefix application (so
     // `f @* g @ x` parses as `(f @* g) @ x`) and Map (`Length@*f /@ list`
     // parses as `(Length@*f) /@ list`), but looser than MessageName.
-    "@*" | "/*" => 57,
+    // `@*` (625) binds just tighter than `/*` (624): `a /* b @* c` is
+    // `RightComposition[a, Composition[b, c]]`.
+    "@*" => 58,
+    "/*" => 57,
     "::" => 59, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
@@ -6240,8 +6273,51 @@ fn build_binary_tree(terms: Vec<Expr>, operators: &[String]) -> Expr {
     return Expr::Raw(String::new());
   }
 
+  // A term that is already a `&&`, `||`, `|` or `<>` chain came from parentheses
+  // (`(a && b) && c`): spell it as the call it is, so the chain built around
+  // it — itself nested BinaryOps — does not flatten it in. Wolfram keeps such
+  // a group as `And[And[a, b], c]`.
+  let terms: Vec<Expr> = terms
+    .into_iter()
+    .map(|t| match &t {
+      Expr::BinaryOp {
+        op:
+          op @ (BinaryOperator::And
+          | BinaryOperator::Or
+          | BinaryOperator::Alternatives
+          | BinaryOperator::StringJoin),
+        ..
+      } => {
+        let head = match op {
+          BinaryOperator::And => "And",
+          BinaryOperator::Or => "Or",
+          BinaryOperator::StringJoin => "StringJoin",
+          _ => "Alternatives",
+        };
+        let mut parts = Vec::new();
+        flatten_same_binary_op(&t, *op, &mut parts);
+        call(head, parts)
+      }
+      _ => t,
+    })
+    .collect();
   // Use a precedence climbing algorithm
   build_expr_with_precedence(&terms, operators, 0, 0)
+}
+
+/// The operands of a nested chain of one binary operator, left to right.
+fn flatten_same_binary_op(e: &Expr, op: BinaryOperator, out: &mut Vec<Expr>) {
+  match e {
+    Expr::BinaryOp {
+      op: inner,
+      left,
+      right,
+    } if *inner == op => {
+      flatten_same_binary_op(left, op, out);
+      flatten_same_binary_op(right, op, out);
+    }
+    other => out.push(other.clone()),
+  }
 }
 
 /// Build expression with precedence climbing
@@ -6305,6 +6381,45 @@ fn build_expr_with_precedence(
         }
       }
       result = build_span(parts);
+      in_cross_chain = false;
+      flat_chain_op = None;
+      continue;
+    }
+
+    // A run of `@*` (or `/*`) at this level is one Composition, n-ary like
+    // `;;` above: `a @* b @* c` is `Composition[a, b, c]`, while a
+    // parenthesized `(a @* b) @* c` arrives as a term and stays nested, as
+    // it does in Wolfram's held forms.
+    if op_str == "@*" || op_str == "/*" {
+      let head = if op_str == "@*" {
+        "Composition"
+      } else {
+        "RightComposition"
+      };
+      let run_op = op_str.as_str();
+      let next_min_prec = prec + 1;
+      let mut parts = vec![result];
+      loop {
+        parts.push(build_expr_with_precedence(
+          terms,
+          operators,
+          op_idx + 1,
+          next_min_prec,
+        ));
+        let mut right_terms = 1;
+        let mut i = op_idx + 1;
+        while i < operators.len()
+          && operator_precedence(&operators[i]) >= next_min_prec
+        {
+          right_terms += 1;
+          i += 1;
+        }
+        op_idx += right_terms;
+        if operators.get(op_idx).map(String::as_str) != Some(run_op) {
+          break;
+        }
+      }
+      result = call(head, parts);
       in_cross_chain = false;
       flat_chain_op = None;
       continue;
@@ -6746,40 +6861,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       func: Box::new(left.clone()),
       list: Box::new(right.clone()),
     },
-    "@*" => {
-      // Flatten nested Composition: (f @* g) @* h -> Composition[f, g, h]
-      let mut funcs = Vec::new();
-      match left {
-        Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(left.clone()),
-      }
-      match right {
-        Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(right.clone()),
-      }
-      call("Composition", funcs)
-    }
-    "/*" => {
-      // Flatten nested RightComposition: (f /* g) /* h -> RightComposition[f, g, h]
-      let mut funcs = Vec::new();
-      match left {
-        Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(left.clone()),
-      }
-      match right {
-        Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(right.clone()),
-      }
-      call("RightComposition", funcs)
-    }
+    // Chains are assembled n-ary by the precedence climb; an operand that
+    // is itself a composition came from parentheses and stays nested.
+    "@*" => call("Composition", vec![left.clone(), right.clone()]),
+    "/*" => call("RightComposition", vec![left.clone(), right.clone()]),
     // `f @ x` == `f[x]`. Use the FunctionCall form when the LHS is a plain
     // identifier (matching the Rule::PrefixApplySimple branch) so downstream
     // code that pattern-matches on FunctionCall (e.g. DownValue assignment,
@@ -6810,6 +6895,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     // function call — a symbol or part target is taken by the `AddTo`,
     // `SubtractFrom`, `TimesBy` and `DivideBy` terms in the grammar.
     "+=" => call("AddTo", vec![left.clone(), right.clone()]),
+    "//=" => call("ApplyTo", vec![left.clone(), right.clone()]),
     "-=" => call("SubtractFrom", vec![left.clone(), right.clone()]),
     "*=" => call("TimesBy", vec![left.clone(), right.clone()]),
     "/=" => call("DivideBy", vec![left.clone(), right.clone()]),
@@ -8543,6 +8629,23 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
 /// Works for both BinaryOp{Times} and FunctionCall{Times} forms.
 fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
   match expr {
+    // `(-1*b)*c`, a parsed `-1*b*c`: the coefficient sits in the innermost
+    // left factor of the chain.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(
+      left.as_ref(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    ) =>
+    {
+      let positive_left = negate_leading_negative_in_times(left)?;
+      Some(times2(positive_left, *right.clone()))
+    }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -9287,7 +9390,7 @@ fn format_times_with_denominator(
   // infix products such as Star)
   let fmt_factor = |a: &Expr| -> String {
     let s = formatter(a);
-    if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+    if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
       || matches!(
         a,
         Expr::BinaryOp {
@@ -9478,6 +9581,12 @@ fn format_percent_form(expr: &Expr, form: ExprForm) -> String {
 }
 
 pub fn format_expr(expr: &Expr, form: ExprForm) -> String {
+  // An OutputForm render is OutputForm all the way down, including the
+  // operators whose 1D text reuses the InputForm renderer: their strings
+  // print unquoted too (`Hold["a" /. x]` is `Hold[a /. x]`). Genuine
+  // InputForm entered from here keeps its own flag (`in_true_input_form`).
+  let _out_guard = (form == ExprForm::Output)
+    .then(|| OutputFormGuard(IN_OUTPUT_FORM.with(|c| c.replace(true))));
   // Grow the stack when running low so formatting a deeply nested expression
   // (e.g. SameQ/UnsameQ on Nest[f, x, 5000], which compares via expr_to_string)
   // doesn't overflow. Mirrors the guard on evaluate_expr_to_expr; the recursion
@@ -9839,9 +9948,11 @@ fn prints_as_negation(e: &Expr) -> bool {
 fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   match e {
     Expr::BinaryOp { op, .. } => Some(match op {
-      BinaryOperator::Or => 15,
+      // `|` (160) binds looser than `||` and `&&` (215) and the
+      // comparisons (290): `a && b | c` is `(a && b) | c`.
+      BinaryOperator::Alternatives => 15,
+      BinaryOperator::Or => 16,
       BinaryOperator::And => 18,
-      BinaryOperator::Alternatives => 27,
       BinaryOperator::Plus
       | BinaryOperator::Minus
       | BinaryOperator::StringJoin => 30,
@@ -9855,6 +9966,15 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       None
     }
     Expr::Comparison { .. } => Some(21),
+    // A named pattern is `Pattern[x, _]`, which binds like `:` (150): it is
+    // bracketed inside `|`, `&&`, `+`, `==`, … but not as the side of `->`,
+    // `/;` or `=` — `(x_) + 1`, `x_ -> y`. A bare blank never needs it.
+    Expr::Pattern { name, .. } if !name.is_empty() => Some(14),
+    Expr::PatternOptional {
+      name,
+      default: None,
+      ..
+    } if !name.is_empty() => Some(14),
     Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(12),
     Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => Some(7),
     Expr::CompoundExpr(_) => Some(1),
@@ -9895,11 +10015,20 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       }
       // Heads that also print infix once evaluated (`a && b` keeps the head
       // `And` but still renders with the operator).
-      "Or" if args.len() >= 2 => Some(15),
+      "Or" if args.len() >= 2 => Some(16),
       "And" if args.len() >= 2 => Some(18),
-      "Alternatives" if args.len() >= 2 => Some(27),
+      "Alternatives" if args.len() >= 2 => Some(15),
       "Rule" | "RuleDelayed" if args.len() == 2 => Some(12),
-      "TwoWayRule" if args.len() == 2 => Some(21),
+      // `<->` (125) sits between `->` (120) and `/;` (130).
+      "TwoWayRule" if args.len() == 2 => Some(13),
+      // Comparisons and `===`/`=!=` (290) print infix in held forms, below
+      // `+` and above `&&`: `(a == b) + c`, `d/(a === b)`.
+      "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
+      | "GreaterEqual" | "SameQ" | "UnsameQ"
+        if args.len() >= 2 =>
+      {
+        Some(21)
+      }
       // `/;` and `:` print infix and sit just above `->`, so both need
       // parens inside anything tighter: `a == (x_ /; y)`, `a == (b:c)`.
       "Condition" if args.len() == 2 => Some(13),
@@ -9911,6 +10040,44 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       _ => None,
     },
     _ => None,
+  }
+}
+
+/// The operand of `++`/`--` (660), prefix or postfix: bracketed when it
+/// prints with any looser operator — `(a + b)++`, `--(a < b)`, `(-a)++`,
+/// `(a!)++`, `(1/2)++`, `(x_)++` — but not as a call, symbol or part.
+fn inc_dec_operand(e: &Expr, text: String) -> String {
+  let looser = printed_infix_precedence(e).is_some()
+    || prints_as_not(e)
+    || prints_as_negation(e)
+    || is_negative_or_fraction_literal(e)
+    || is_factorial_call(e)
+    || is_bare_pattern(e)
+    || matches!(e, Expr::FunctionCall { name, args }
+      if args.len() >= 2
+        && matches!(name.as_str(), "Composition" | "RightComposition"));
+  if looser && !prints_as_call(&text) {
+    format!("({text})")
+  } else {
+    text
+  }
+}
+
+/// `x!` or `x!!`, which print postfix.
+fn is_factorial_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+    if (name == "Factorial" || name == "Factorial2") && args.len() == 1)
+}
+
+/// A literal that prints with a sign or a slash — a negative number or a
+/// rational — and so needs brackets as the operand of a tight operator.
+fn is_negative_or_fraction_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n < 0,
+    Expr::BigInteger(n) => n.sign() == num_bigint::Sign::Minus,
+    Expr::Real(x) => *x < 0.0,
+    Expr::FunctionCall { name, args } => name == "Rational" && args.len() == 2,
+    _ => false,
   }
 }
 
@@ -9975,19 +10142,15 @@ fn is_nested_alternatives_call(e: &Expr) -> bool {
 /// builds its lookup tables.
 fn function_body_needs_parens(body: &Expr) -> bool {
   match body {
-    Expr::CompoundExpr(_) => true,
+    // A nested pure function: `(#1 & ) & `.
+    Expr::CompoundExpr(_) | Expr::Function { .. } => true,
+    // The assignments (40) bind looser than `&` (90); `+=` and friends
+    // (100) do not: `a += 1 & ` prints bare.
     Expr::FunctionCall { name, args } => {
       args.len() == 2
         && matches!(
           name.as_str(),
-          "Set"
-            | "SetDelayed"
-            | "UpSet"
-            | "UpSetDelayed"
-            | "AddTo"
-            | "SubtractFrom"
-            | "TimesBy"
-            | "DivideBy"
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
         )
     }
     _ => false,
@@ -10016,7 +10179,11 @@ fn flat_ring_infix(
         || matches!(a, Expr::Real(f) if *f < 0.0)
         || matches!(a, Expr::FunctionCall { name, args }
           if name == "Rational" && args.len() == 2);
-      if needs_parens { format!("({s})") } else { s }
+      if needs_parens && !prints_as_call(&s) {
+        format!("({s})")
+      } else {
+        s
+      }
     })
     .collect::<Vec<_>>()
     .join(sep)
@@ -10029,6 +10196,15 @@ fn flat_ring_infix(
 /// print as `a /. b :> c[[1]]`.
 fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
+    || is_factorial_call(base)
+    // `++`/`--` bind looser than `[[…]]`: `(++f)[[3]]`.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "Increment" | "Decrement" | "PreIncrement" | "PreDecrement"))
+    // `@*` and `/*` print infix: `(a /* b)[[1]]`.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if (name == "Composition" || name == "RightComposition")
+        && args.len() >= 2)
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
     // A rational is a `Rational[n, d]` call but prints as the quotient
@@ -10036,6 +10212,50 @@ fn part_base_needs_parens(base: &Expr) -> bool {
     // re-parses as `1/(2[[1]])`.
     || matches!(base, Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2)
+}
+
+/// Whether `text` is one whole call `Name[…]`: an identifier followed by a
+/// bracket group that closes at the very end. A head whose infix form only
+/// applies to some arguments (`StringJoin[a, b]` with non-strings,
+/// `Times[x]` with one factor) prints this way and needs no brackets as an
+/// operand.
+fn prints_as_call(text: &str) -> bool {
+  let Some(open) = text.find('[') else {
+    return false;
+  };
+  let head = &text[..open];
+  if head.is_empty()
+    || !head
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '$' || c == '`')
+    || !head
+      .chars()
+      .next()
+      .is_some_and(|c| c.is_alphabetic() || c == '$')
+  {
+    return false;
+  }
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev = '\0';
+  for (i, c) in text[open..].char_indices() {
+    if in_string {
+      if c == '"' && prev != '\\' {
+        in_string = false;
+      }
+    } else if c == '"' {
+      in_string = true;
+    } else if c == '[' {
+      depth += 1;
+    } else if c == ']' {
+      depth -= 1;
+      if depth == 0 {
+        return open + i + 1 == text.len();
+      }
+    }
+    prev = c;
+  }
+  false
 }
 
 /// Render a Part application as `base[[i,j,…]]`, parenthesizing the base when
@@ -10049,7 +10269,7 @@ fn format_part_brackets(
   indices: &[String],
 ) -> String {
   let joined = indices.join(",");
-  if part_base_needs_parens(base) {
+  if part_base_needs_parens(base) && !prints_as_call(base_str) {
     format!("({base_str})[[{joined}]]")
   } else {
     format!("{base_str}[[{joined}]]")
@@ -10068,6 +10288,39 @@ fn format_part_brackets(
 /// This is the single place the rule lives: both InputForm renderers
 /// (`format_expr` and `expr_to_input_form`) call it for every operand, chained
 /// comparisons included (`Hold[(a_) == (b_) == (c_)]`).
+/// `comparison_operand_needs_parens` for an operand of a comparison chain
+/// with operators `parent`: an operand of `===`/`=!=` that is itself a
+/// numeric comparison prints bare — wolframscript writes `a == b === c` and
+/// `a < b === c` — while a nested `===` and every operand of `==`, `<`, …
+/// keep their brackets: `(a === b) === c`, `(a == b) == c`.
+fn comparison_operand_parens(parent: &[ComparisonOp], e: &Expr) -> bool {
+  let structural = |op: &ComparisonOp| {
+    matches!(op, ComparisonOp::SameQ | ComparisonOp::UnsameQ)
+  };
+  let numeric_comparison = match e {
+    Expr::Comparison { operators, .. } => {
+      !operators.is_empty() && !operators.iter().any(structural)
+    }
+    Expr::FunctionCall { name, args } => {
+      args.len() >= 2
+        && matches!(
+          name.as_str(),
+          "Equal"
+            | "Unequal"
+            | "Less"
+            | "LessEqual"
+            | "Greater"
+            | "GreaterEqual"
+        )
+    }
+    _ => false,
+  };
+  if !parent.is_empty() && parent.iter().all(structural) && numeric_comparison {
+    return false;
+  }
+  comparison_operand_needs_parens(e)
+}
+
 fn comparison_operand_needs_parens(e: &Expr) -> bool {
   is_bare_pattern(e)
     || prints_as_not(e)
@@ -10139,15 +10392,21 @@ fn format_map_apply_shorthand(
   prec: u8,
 ) -> String {
   let func_str = format_expr(func, ExprForm::Input);
+  // `!` (610) binds looser than the shorthands (620): `(x!) @@ a`.
   let func_needs_parens = matches!(func, Expr::NamedFunction { .. })
-    || printed_infix_precedence(func).is_some_and(|p| p <= prec);
-  let func_display = if func_needs_parens {
+    || printed_infix_precedence(func).is_some_and(|p| p <= prec)
+    || is_factorial_call(func);
+  let func_display = if func_needs_parens && !prints_as_call(&func_str) {
     format!("({func_str})")
   } else {
     func_str
   };
   let list_str = format_expr(list, ExprForm::Input);
-  let list_display = if printed_infix_precedence(list).is_some_and(|p| p < prec)
+  let list_display = if (printed_infix_precedence(list)
+    .is_some_and(|p| p < prec)
+    || is_factorial_call(list)
+    || is_negative_or_fraction_literal(list))
+    && !prints_as_call(&list_str)
   {
     format!("({list_str})")
   } else {
@@ -10179,7 +10438,8 @@ pub(crate) fn assignment_rhs_needs_parens(rhs: &Expr) -> bool {
 /// right, so `(a := b) := c` printed bare re-reads as `a := (b := c)`.
 pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
   let looser = match lhs {
-    Expr::CompoundExpr(_) | Expr::Function { .. } => true,
+    // A pure function prints bare: wolframscript writes `f &  = 3`.
+    Expr::CompoundExpr(_) => true,
     Expr::FunctionCall { name, args } => {
       matches!(
         name.as_str(),
@@ -10194,6 +10454,34 @@ pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
     _ => false,
   };
   if looser {
+    format!("({formatted})")
+  } else {
+    formatted
+  }
+}
+
+/// The left side of `+=`, `-=`, `*=`, `/=` (Precedence 100): bracketed like
+/// an assignment's, and also when it is a pure function (90), which binds
+/// looser: `(f & ) += 3`.
+fn op_assign_lhs(lhs: &Expr, formatted: String) -> String {
+  if matches!(lhs, Expr::Function { .. }) {
+    format!("({formatted})")
+  } else {
+    assignment_lhs(lhs, formatted)
+  }
+}
+
+/// The right side of `+=`, `-=`, `*=`, `/=` (100): bracketed when it binds
+/// looser — an assignment, a `;` sequence or a pure function:
+/// `a += (b ^= c)`.
+fn op_assign_rhs(rhs: &Expr, formatted: String) -> String {
+  // Another `+=`-family operator groups to the right bare: `a += b += c`.
+  let same_level = matches!(rhs, Expr::FunctionCall { name, args }
+    if args.len() == 2
+      && matches!(name.as_str(), "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"));
+  if (is_loose_assignment(rhs) && !same_level)
+    || matches!(rhs, Expr::Function { .. })
+  {
     format!("({formatted})")
   } else {
     formatted
@@ -10869,18 +11157,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if (name == "Factorial" || name == "Factorial2") && args.len() == 1 {
         let suffix = if name == "Factorial2" { "!!" } else { "!" };
         let arg_str = fmt(&args[0]);
-        let needs_parens = match &args[0] {
-          Expr::BinaryOp { op, .. } => !matches!(op, BinaryOperator::Power),
-          Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            ..
-          } => true,
-          other if prints_as_not(other) => true,
-          Expr::FunctionCall { name: n, args: a } => {
-            (n == "Plus" || n == "Times" || n == "Minus") && a.len() >= 2
-          }
-          _ => false,
-        };
+        // `!` (610) binds tighter than every operator but the application
+        // shorthands and compositions: `(a^b)!`, `(a . b)!`, `(-2)!`,
+        // `(2/3)!`, `(a!)!`, `(x_)!`, but `a /@ b!`.
+        let needs_parens = printed_infix_precedence(&args[0])
+          .is_some_and(|p| p < 49)
+          || prints_as_not(&args[0])
+          || is_negative_or_fraction_literal(&args[0])
+          || matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+            if (n == "Factorial" || n == "Factorial2") && a.len() == 1);
+        let needs_parens = needs_parens && !prints_as_call(&arg_str);
         if needs_parens {
           return format!("({arg_str}){suffix}");
         }
@@ -10890,7 +11176,24 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "TwoWayRule" && args.len() == 2 {
-        return format!("{} <-> {}", fmt(&args[0]), fmt(&args[1]));
+        // An operand binding as loose or looser is bracketed — `<->` is not
+        // Flat and groups to the right: `(a -> b) <-> c`, `(a <-> b) <-> c`,
+        // but `a <-> b <-> c` for a right-nested one.
+        let operand = |e: &Expr, right: bool| {
+          let text = fmt(e);
+          let looser = printed_infix_precedence(e)
+            .is_some_and(|p| if right { p < 13 } else { p <= 13 });
+          if looser && !prints_as_call(&text) {
+            format!("({text})")
+          } else {
+            text
+          }
+        };
+        return format!(
+          "{} <-> {}",
+          operand(&args[0], false),
+          operand(&args[1], true)
+        );
       }
       // Graph edges render as infix with their Wolfram private-use glyphs,
       // matching `wolframscript -code` (which prints U+F3D5/U+F3D4 directly).
@@ -10951,7 +11254,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} ^= {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} ^= {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "UpSetDelayed" && args.len() == 2 {
         let rhs = fmt(&args[1]);
@@ -10960,19 +11267,39 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         } else {
           rhs
         };
-        return format!("{} ^:= {}", fmt(&args[0]), rhs);
+        return format!(
+          "{} ^:= {}",
+          assignment_lhs(&args[0], fmt(&args[0])),
+          rhs
+        );
       }
       if name == "AddTo" && args.len() == 2 {
-        return format!("{} += {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} += {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          op_assign_rhs(&args[1], fmt(&args[1]))
+        );
       }
       if name == "SubtractFrom" && args.len() == 2 {
-        return format!("{} -= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} -= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          op_assign_rhs(&args[1], fmt(&args[1]))
+        );
       }
       if name == "TimesBy" && args.len() == 2 {
-        return format!("{} *= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} *= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          op_assign_rhs(&args[1], fmt(&args[1]))
+        );
       }
       if name == "DivideBy" && args.len() == 2 {
-        return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} /= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          op_assign_rhs(&args[1], fmt(&args[1]))
+        );
       }
       // Chained ++/-- variants follow Wolfram's display convention:
       //   * Postfix outers (Increment, Decrement) never parenthesize
@@ -10993,17 +11320,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        return format!("{}++", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        return format!("{}--", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
           format!("++({inner})")
         } else {
-          format!("++{inner}")
+          format!("++{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
@@ -11011,7 +11338,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return if needs_inc_parens(&args[0]) {
           format!("--({inner})")
         } else {
-          format!("--{inner}")
+          format!("--{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "Condition" && args.len() == 2 {
@@ -11082,7 +11409,24 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             return format!("{} /; {}", plus_str, fmt(&args[1]));
           }
         }
-        return format!("{} /; {}", fmt(&args[0]), fmt(&args[1]));
+        // An operand that binds looser than `/;` (130) is bracketed —
+        // `(a -> b) /; c`, `(a = b) /; c` — and so is a `/;` on the right
+        // (`a /; (b /; c)`), the same rule InputForm uses.
+        let condition_operand = |e: &Expr, right: bool| -> String {
+          let text = fmt(e);
+          let looser = printed_infix_precedence(e)
+            .is_some_and(|p| if right { p <= 13 } else { p < 13 });
+          if looser && !prints_as_call(&text) {
+            format!("({text})")
+          } else {
+            text
+          }
+        };
+        return format!(
+          "{} /; {}",
+          condition_operand(&args[0], false),
+          condition_operand(&args[1], true)
+        );
       }
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
@@ -11125,17 +11469,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         )
       };
       if name == "Increment" && args.len() == 1 {
-        return format!("{}++", fmt(&args[0]));
+        return format!("{}++", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "Decrement" && args.len() == 1 {
-        return format!("{}--", fmt(&args[0]));
+        return format!("{}--", inc_dec_operand(&args[0], fmt(&args[0])));
       }
       if name == "PreIncrement" && args.len() == 1 {
         let inner = fmt(&args[0]);
         return if needs_inc_parens(&args[0]) {
           format!("++({inner})")
         } else {
-          format!("++{inner}")
+          format!("++{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "PreDecrement" && args.len() == 1 {
@@ -11143,7 +11487,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return if needs_inc_parens(&args[0]) {
           format!("--({inner})")
         } else {
-          format!("--{inner}")
+          format!("--{}", inc_dec_operand(&args[0], inner))
         };
       }
       if name == "Optional" && args.len() == 1 {
@@ -11226,13 +11570,45 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return format_map_apply_shorthand(&args[0], &args[1], op, 49);
         }
       }
-      if name == "Composition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" @* ");
-      }
-      if name == "RightComposition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" /* ");
+      if (name == "Composition" || name == "RightComposition")
+        && args.len() >= 2
+      {
+        // `@*` (625) and `/*` (624) bind tighter than every other operator,
+        // so any operand printed with one is bracketed — `(a^b) @* f`,
+        // `(a /@ b) @* f`, `(-2) @* f` — and so is a nested composition of
+        // the same kind or (inside `@*`) of the looser `/*`: `(a @* b) @* c`,
+        // `(a /* b) @* c`, but `a @* b /* c`.
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let nested = match a {
+              Expr::FunctionCall { name: n, args: na } if na.len() >= 2 => {
+                n == name || (name == "Composition" && n == "RightComposition")
+              }
+              _ => false,
+            };
+            let text = fmt(a);
+            // Text printed as one whole call needs none:
+            // `StringJoin[a, b] @* x`.
+            if !prints_as_call(&text)
+              && (nested
+                || printed_infix_precedence(a).is_some()
+                || prints_as_not(a)
+                || is_negative_or_fraction_literal(a)
+                || is_factorial_call(a))
+            {
+              format!("({text})")
+            } else {
+              text
+            }
+          })
+          .collect();
+        let op = if name == "Composition" {
+          " @* "
+        } else {
+          " /* "
+        };
+        return parts.join(op);
       }
       // Special case: Therefore[a, b, ...] displays as a ∴ b ∴ ...
       if name == "Therefore" && args.len() >= 2 {
@@ -11416,7 +11792,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-              || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+              || printed_infix_precedence(arg).is_some_and(|p| p < 16)
               || (connective_parens() && is_logical_connective_call(arg));
             if is_and { format!("({s})") } else { s }
           })
@@ -11437,6 +11813,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+              // A nested `And` is an explicit group (only held ones stay).
+              || matches!(arg, Expr::FunctionCall { name, args }
+                if name == "And" && args.len() >= 2)
               || printed_infix_precedence(arg).is_some_and(|p| p < 18)
               || is_bare_pattern(arg)
               || (connective_parens() && is_logical_connective_call(arg));
@@ -11558,6 +11937,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         for a in args {
           if in_held_format()
             && (is_times_expression(a)
+              // A one-factor `Times[f]` stays as written, and so does a
+              // quotient factor: `Hold[2*(f/ab)]` prints `2*f/ab`.
+              || matches!(a, Expr::FunctionCall { name, args }
+                if name == "Times" && args.len() == 1)
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  ..
+                }
+              )
               || matches!(
                 a,
                 Expr::UnaryOp {
@@ -11813,7 +12203,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           let fmt_factor = |a: &Expr| -> String {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -11851,7 +12241,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           let fmt_factor = |a: &Expr| -> String {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -11949,7 +12339,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               .iter()
               .map(|a| {
                 let s = fmt(a);
-                if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                   || matches!(
                     a,
                     Expr::BinaryOp {
@@ -12001,7 +12391,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|a| {
               let s = fmt(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                 || matches!(
                   a,
                   Expr::BinaryOp {
@@ -12158,7 +12548,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   .collect();
                 let fmt_factor = |a: &Expr| -> String {
                   let s = fmt(a);
-                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                  if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                     || matches!(
                       a,
                       Expr::BinaryOp {
@@ -12217,7 +12607,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 .iter()
                 .map(|a| {
                   let s = fmt(a);
-                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                  if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                     || matches!(
                       a,
                       Expr::BinaryOp {
@@ -12246,7 +12636,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           .iter()
           .map(|a| {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -12291,10 +12681,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // Nested Plus inside Plus needs parens to preserve grouping in held
         // expressions: `Plus[1, Plus[1, 1]]` → `1 + (1 + 1)`. Without parens
         // the displayed `1 + 1 + 1` would parse as the flat `Plus[1, 1, 1]`.
+        // (A one-argument `Plus[b]` too: `a + (Plus[b])`.)
         let needs_nested_plus_parens = |a: &Expr| -> bool {
           matches!(
             a,
-            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+            Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty()
           ) || matches!(
             a,
             Expr::BinaryOp {
@@ -12492,6 +12883,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               result.push_str(" + ");
               result.push_str(&fmt_plus_term(arg));
             }
+          } else if let Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } = arg
+            && in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1))
+          {
+            // A held parsed `-1/x` is Times[-1, Power[x, -1]] → `- x^(-1)`.
+            result.push_str(" - ");
+            result.push_str(&fmt(&Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            }));
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
               result.push_str(" - ");
@@ -12578,6 +12984,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
           || prints_as_negation(&args[0])
           || is_bare_pattern(&args[0])
+          // `^` groups to the right, so a power base needs brackets:
+          // `(8^7)^x`. So does any base printed with a looser operator.
+          || matches!(&args[0], Expr::BinaryOp { op: BinaryOperator::Power, .. })
+          || matches!(&args[0], Expr::FunctionCall { name, args: pa }
+            if name == "Power" && pa.len() == 2)
+          || (printed_infix_precedence(&args[0]).is_some_and(|p| p < 48)
+            && !prints_as_call(&base_str))
         {
           format!("({base_str})")
         } else {
@@ -12606,6 +13019,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           )
           || is_bare_pattern(&args[1])
+          // Any exponent printed with an operator looser than `^`:
+          // `{}^(a . a)`.
+          || (printed_infix_precedence(&args[1]).is_some_and(|p| p < 48)
+            && !prints_as_call(&exp_str))
         {
           format!("({exp_str})")
         } else {
@@ -12731,6 +13148,39 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     }
     // InputForm BinaryOp handling
     Expr::BinaryOp { op, left, right } => {
+      // A held quotient `a/b` is `Times[a, Power[b, -1]]` and prints the way
+      // Wolfram prints that product: `1/x` as written, `-1/x` as
+      // `-x^(-1)` (a coefficient -1 over a lone reciprocal), and `(-a)/4`
+      // as `-a/4`.
+      if in_held_format()
+        && matches!(op, BinaryOperator::Divide)
+        && matches!(left.as_ref(), Expr::Integer(-1))
+      {
+        let reciprocal = Expr::BinaryOp {
+          op: BinaryOperator::Power,
+          left: right.clone(),
+          right: Box::new(Expr::Integer(-1)),
+        };
+        return format!("-{}", expr_to_string(&reciprocal));
+      }
+      if in_held_format()
+        && matches!(op, BinaryOperator::Divide)
+        && let Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } = left.as_ref()
+        && !matches!(
+          operand.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        )
+      {
+        let quotient = div2(*operand.clone(), *right.clone());
+        let text = expr_to_string(&quotient);
+        return format!("-{text}");
+      }
       // Special case: (-x)/y should display as -(x/y) (Wolfram convention)
       // Only when the numerator is exactly Times[-1, x], not a negative integer coefficient
       if matches!(op, BinaryOperator::Divide) {
@@ -12755,6 +13205,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           }
           _ => None,
         };
+        // `Divide[-1, n]` (a negated 1 here, see `operator_call_node`)
+        // prints `-1/n`.
+        if let Some(Expr::Integer(1)) = negated_inner {
+          return format!("-1/{}", expr_to_string(right));
+        }
         if let Some(inner) = negated_inner {
           let inner_div = div2(inner.clone(), *right.clone());
           let inner_str = expr_to_string(&inner_div);
@@ -12776,14 +13231,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let inner_str = expr_to_string(&inner_div);
           return format!("-({inner_str})");
         }
-        // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm convention)
-        if matches!(left.as_ref(), Expr::Integer(1))
+        // Special case: 1/identifier → identifier^(-1) (Wolfram InputForm
+        // convention for the evaluated Power; a held `1/x` is
+        // `Times[1, Power[x, -1]]` and prints as written)
+        if !in_held_format()
+          && matches!(left.as_ref(), Expr::Integer(1))
           && let Expr::Identifier(s) = right.as_ref()
         {
           return format!("{s}^(-1)");
         }
         // Special case: 1/Plus[...] → (Plus[...])^(-1) (Wolfram InputForm convention)
-        if matches!(left.as_ref(), Expr::Integer(1))
+        if !in_held_format()
+          && matches!(left.as_ref(), Expr::Integer(1))
           && (matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
             || matches!(
               right.as_ref(),
@@ -12925,6 +13384,37 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
       }
 
+      // An unevaluated `a + -3` (a negative number literal, or a parsed
+      // `-1/x`) prints as `a - 3`, `a - x^(-1)`. Only an unevaluated sum
+      // (held, or inside a held argument such as If's) keeps that shape.
+      if matches!(op, BinaryOperator::Plus)
+        && let Some(magnitude) = match right.as_ref() {
+          Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+          Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } if in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1)) =>
+          {
+            Some(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            })
+          }
+          _ => None,
+        }
+      {
+        let left_text = expr_to_string(left);
+        let left_text = if plus_term_needs_parens(left) {
+          format!("({left_text})")
+        } else {
+          left_text
+        };
+        return format!("{left_text} - {}", expr_to_string(&magnitude));
+      }
       // Special case: a + (-b) should display as a - b
       if matches!(op, BinaryOperator::Plus)
         && let Expr::UnaryOp {
@@ -13066,8 +13556,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "And")
+            // A nested `Or` call is an explicit (parenthesized) group.
+            || matches!(e, Expr::FunctionCall { name, args }
+              if name == "Or" && args.len() >= 2)
             || (!is_loose_assignment(e)
-              && printed_infix_precedence(e).is_some_and(|p| p < 15))
+              && printed_infix_precedence(e).is_some_and(|p| p < 16))
             || is_bare_pattern(e)
             || (connective_parens() && is_logical_connective_call(e))
         };
@@ -13094,6 +13587,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Or")
+            // A nested `And` call is an explicit (parenthesized) group.
+            || matches!(e, Expr::FunctionCall { name, args }
+              if name == "And" && args.len() >= 2)
             || (!is_loose_assignment(e)
               && printed_infix_precedence(e).is_some_and(|p| p < 18))
             || is_bare_pattern(e)
@@ -13114,7 +13610,29 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
 
       // Add parens when a lower-precedence expr is inside a higher-precedence one,
       // or when the numerator of a division is a product (Wolfram convention)
-      let left_needs_parens = (matches!(op, BinaryOperator::Times)
+      // An operand printed with an operator looser than this arithmetic one
+      // — a comparison, `===`, `&&`, a rule, a pattern, `&`, … — is
+      // bracketed: `(a == b) + c`, `d/(a === b)`, `(a == b)^c`.
+      let arith_prec = match op {
+        BinaryOperator::Plus | BinaryOperator::Minus => Some(30),
+        BinaryOperator::Times | BinaryOperator::Divide => Some(33),
+        BinaryOperator::Power => Some(48),
+        BinaryOperator::Alternatives => Some(15),
+        _ => None,
+      };
+      // (`operand_str` below already brackets an assignment.) A nested
+      // `Alternatives` call is an explicit group: `(a | b) | c`.
+      let looser_operand = |e: &Expr| {
+        (!is_loose_assignment(e)
+          && arith_prec.is_some_and(|prec| {
+            printed_infix_precedence(e).is_some_and(|p| p < prec.min(30))
+          }))
+          || (matches!(op, BinaryOperator::Alternatives)
+            && matches!(e, Expr::FunctionCall { name, args }
+              if name == "Alternatives" && args.len() >= 2))
+      };
+      let left_needs_parens = looser_operand(left)
+        || (matches!(op, BinaryOperator::Times)
         // Held right-nested Times chain on the left of another Times — i.e.
         // the inner Times is `BinaryOp[Times, Integer, BinaryOp[Times, …]]`.
         // This is the shape produced for held derivative chains like
@@ -13204,9 +13722,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(left.as_ref())
-          && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
+          && !matches!(
+            op,
+            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Alternatives
+          ))
         // `(-a)*b`: a leading minus reaches past the product without them.
+        // (Held OutputForm prints the operand bare: `Hold[-a*b]`.)
         || (matches!(op, BinaryOperator::Times)
+          && (!in_held_format() || in_true_input_form())
           && matches!(
             left.as_ref(),
             Expr::UnaryOp {
@@ -13214,6 +13737,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ));
+      // Text that prints as one whole call (`Times[1/3]`) is an operand by
+      // itself, whatever its head's infix form would need.
+      let left_needs_parens = left_needs_parens && !prints_as_call(&left_str);
       let left_formatted = if left_needs_parens {
         format!("({left_str})")
       } else {
@@ -13247,7 +13773,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(e, Expr::Real(f) if *f < 0.0)
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
-      let needs_right_parens = (is_multiplicative && is_additive(right))
+      let needs_right_parens = looser_operand(right)
+        // An exponent printed with an operator looser than `^` (590):
+        // `a^(b . c)`, `a^(b**c)`.
+        || (matches!(op, BinaryOperator::Power)
+          && !is_loose_assignment(right)
+          && printed_infix_precedence(right).is_some_and(|p| p < 48))
+        || (is_multiplicative && is_additive(right))
         // `(±a)^(±b)`: a prefix `±` is bracketed as any arithmetic operand.
         || (matches!(
           op,
@@ -13294,7 +13826,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ) || matches!(
             right.as_ref(),
-            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+            Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty()
           )))
         // Minus with an additive right operand: subtraction is left-
         // associative, so a held `a - (b + c)` / `a - (b - c)` must keep
@@ -13326,9 +13858,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(right.as_ref())
-          && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
+          && !matches!(
+            op,
+            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Alternatives
+          ))
         // `a*(-b)`, `a/(-b)`: the minus would otherwise swallow what follows.
+        // (Held OutputForm prints the operand bare: `Hold[a*-b]`.)
         || (matches!(op, BinaryOperator::Times | BinaryOperator::Divide)
+          && (!in_held_format() || in_true_input_form())
           && matches!(
             right.as_ref(),
             Expr::UnaryOp {
@@ -13336,6 +13873,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ));
+      // (A nested sum keeps them even in call form: `a + (Plus[b])`.)
+      let nested_sum = matches!(op, BinaryOperator::Plus)
+        && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
+      let needs_right_parens =
+        needs_right_parens && (nested_sum || !prints_as_call(&right_str));
       let right_formatted = if needs_right_parens {
         format!("({right_str})")
       } else {
@@ -13408,8 +13950,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ..
           }
         ) ||
-          // `-(-a)`: a second minus needs them or the two run together.
+          // `-(-a)`: a second minus needs them or the two run together —
+          // a negative literal too: `--2` would read back as a decrement.
           prints_as_negation(operand.as_ref())
+          || is_negative_or_fraction_literal(operand.as_ref())
+            && !matches!(operand.as_ref(), Expr::FunctionCall { .. })
         || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
@@ -13422,6 +13967,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           // `-(a /. b)`, `-(a -> b)`, `-(a == b)`, `-(a | b)`.
           || printed_infix_precedence(operand).is_some_and(|p| p < 39)
           || is_bare_pattern(operand);
+        // An operand printed as one whole call needs none: `-StringJoin[a, b]`.
+        let needs_parens = needs_parens && !prints_as_call(&inner);
         if needs_parens {
           format!("-({inner})")
         } else {
@@ -13452,7 +13999,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|e| {
               let s = format_expr(e, form);
-              if comparison_operand_needs_parens(e) {
+              if comparison_operand_parens(operators, e) {
                 format!("({s})")
               } else {
                 s
@@ -13483,7 +14030,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       } else {
         let fmt_operand = |e: &Expr| -> String {
           let s = format_expr(e, form);
-          if comparison_operand_needs_parens(e) {
+          if comparison_operand_parens(operators, e) {
             format!("({s})")
           } else {
             s
@@ -13607,30 +14154,29 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
-      let func_str = format_expr(func, ExprForm::Input);
-      let arg_str = format_expr(arg, ExprForm::Input);
-      // Parenthesize func if it's complex (not a simple identifier or function call)
-      let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({func_str})"),
-        Expr::Identifier(_)
-        | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. } => func_str,
-        _ => format!("({func_str})"),
-      };
+      let func_str = format_expr(func, form);
+      let arg_str = format_expr(arg, form);
+      // `f @ x` prints as `f[x]`, with the head bracketed by the same rule
+      // as any applied head.
+      let func_display =
+        if curried_head_needs_parens(func) && !prints_as_call(&func_str) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
       format!("{func_display}[{arg_str}]")
     }
     Expr::Postfix { expr, func } => {
       // Display as function-call form (matching wolframscript): `x // f` is
       // semantically `f[x]`, so render as such inside Hold/FullForm output.
-      let func_str = format_expr(func, ExprForm::Input);
-      let arg_str = format_expr(expr, ExprForm::Input);
-      let func_display = match func.as_ref() {
-        head if prints_as_not(head) => format!("({func_str})"),
-        Expr::Identifier(_)
-        | Expr::FunctionCall { .. }
-        | Expr::CurriedCall { .. } => func_str,
-        _ => format!("({func_str})"),
-      };
+      let func_str = format_expr(func, form);
+      let arg_str = format_expr(expr, form);
+      let func_display =
+        if curried_head_needs_parens(func) && !prints_as_call(&func_str) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
       format!("{func_display}[{arg_str}]")
     }
     Expr::Part { expr, index } => {
@@ -13654,7 +14200,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // a `;` compound — has to be parenthesized, or `(a; b) &` would print
       // as `a; b & ` and re-parse as `CompoundExpression[a, b &]`, which is
       // a different (and, once slots are involved, badly broken) tree.
-      let body_str = format_expr(body, ExprForm::Input);
+      let body_str = format_expr(body, form);
       if function_body_needs_parens(body) {
         format!("({body_str}) & ")
       } else {
@@ -13761,7 +14307,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // prints `(s:A[x])[t]`, not `s:A[x][t]`.
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
-      let needs_parens = curried_head_needs_parens(func.as_ref());
+      // A head printed as one whole call needs none: `StringJoin[a, b][c]`.
+      let needs_parens =
+        curried_head_needs_parens(func.as_ref()) && !prints_as_call(&func_str);
       let func_display = if needs_parens {
         format!("({func_str})")
       } else {
@@ -14280,16 +14828,7 @@ fn flatten_times_recursive(expr: &Expr, out: &mut Vec<Expr>) {
 fn contains_string(expr: &Expr) -> bool {
   match expr {
     Expr::String(_) => true,
-    Expr::List(items) => items.iter().any(contains_string),
-    Expr::FunctionCall { args, .. } => args.iter().any(contains_string),
-    Expr::Association(items) => items
-      .iter()
-      .any(|(k, v)| contains_string(k) || contains_string(v)),
-    Expr::BinaryOp { left, right, .. } => {
-      contains_string(left) || contains_string(right)
-    }
-    Expr::UnaryOp { operand, .. } => contains_string(operand),
-    _ => false,
+    _ => expr_children(expr).into_iter().any(contains_string),
   }
 }
 
@@ -14464,6 +15003,8 @@ fn held_times_factor_needs_parens(expr: &Expr) -> bool {
   if !in_held_format() {
     return false;
   }
+  // A negated factor is bracketed in InputForm (`Hold[(-a)*b]`) but prints
+  // bare in OutputForm (`Hold[-a*b]`), as in wolframscript.
   if matches!(
     expr,
     Expr::UnaryOp {
@@ -14471,7 +15012,7 @@ fn held_times_factor_needs_parens(expr: &Expr) -> bool {
       ..
     }
   ) {
-    return true;
+    return in_true_input_form();
   }
   let factors: Vec<&Expr> = match expr {
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
@@ -14603,6 +15144,27 @@ impl Drop for FullFormGuard {
 fn full_form_inner(expr: &Expr) -> String {
   let _guard = FullFormGuard(IN_FULL_FORM.with(|c| c.replace(true)));
   expr_to_input_form(expr)
+}
+
+/// The inner of a top-level `FullForm[…]` wrapper: InputForm, except that
+/// strings print without quotes — wolframscript shows the wrapper's content
+/// in OutputForm, so `FullForm[f["a"]]` prints `FullForm[f[a]]`.
+fn full_form_wrapper_inner(expr: &Expr) -> String {
+  // `~~` and `;;` too print in their OutputForm (head) form there:
+  // `FullForm[Hold[x ~~ 0]]` is `FullForm[Hold[StringExpression[x, 0]]]`.
+  if !contains_string(expr) && !contains_head(expr, "StringExpression") {
+    return expr_to_input_form(expr);
+  }
+  expr_to_output(expr)
+}
+
+fn contains_head(expr: &Expr, head: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == head => true,
+    _ => expr_children(expr)
+      .into_iter()
+      .any(|c| contains_head(c, head)),
+  }
 }
 
 /// RAII guard that restores the previous `IN_OUTPUT_FORM` value on drop.
@@ -14909,7 +15471,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
   if let Some(product) = held_product_call(expr) {
     return expr_to_input_form(&product);
   }
-  let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
+  // Reused by an OutputForm render for an operator's 1D text, this is not
+  // genuine InputForm: strings stay unquoted there.
+  let genuine = !in_output_form() || in_true_input_form();
+  let _guard =
+    TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(genuine)));
 
   // The call spellings of the operators (`Divide`, `Subtract`, `List`, …)
   // print as the operator here too — `ToString[Hold[Divide[a, b]], InputForm]`
@@ -15018,6 +15584,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       expr_to_string(expr)
     }
+    // Reused for an OutputForm render's operator text, strings stay
+    // unquoted (see `expr_to_input_form_impl`'s `genuine`).
+    Expr::String(s) if !in_true_input_form() => s.clone(),
     Expr::String(s) => {
       let escaped = escape_string_for_input_form(s);
       format!("\"{escaped}\"")
@@ -15116,7 +15685,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Span"
         && (args.len() == 2 || args.len() == 3)
-        && !in_full_form() =>
+        && !in_full_form()
+        && in_true_input_form() =>
     {
       args
         .iter()
@@ -15253,7 +15823,11 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} ^= {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} ^= {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "UpSetDelayed" && args.len() == 2 =>
@@ -15264,13 +15838,17 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       } else {
         rhs
       };
-      format!("{} ^:= {}", expr_to_input_form(&args[0]), rhs)
+      format!(
+        "{} ^:= {}",
+        assignment_lhs(&args[0], expr_to_input_form(&args[0])),
+        rhs
+      )
     }
     Expr::FunctionCall { name, args } if name == "AddTo" && args.len() == 2 => {
       format!(
         "{} += {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15278,8 +15856,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} -= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15287,8 +15865,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} *= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
@@ -15296,29 +15874,41 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!(
         "{} /= {}",
-        expr_to_input_form(&args[0]),
-        expr_to_input_form(&args[1])
+        op_assign_lhs(&args[0], expr_to_input_form(&args[0])),
+        op_assign_rhs(&args[1], expr_to_input_form(&args[1]))
       )
     }
     Expr::FunctionCall { name, args }
       if name == "Increment" && args.len() == 1 =>
     {
-      format!("{}++", expr_to_input_form(&args[0]))
+      format!(
+        "{}++",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "Decrement" && args.len() == 1 =>
     {
-      format!("{}--", expr_to_input_form(&args[0]))
+      format!(
+        "{}--",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "PreIncrement" && args.len() == 1 =>
     {
-      format!("++{}", expr_to_input_form(&args[0]))
+      format!(
+        "++{}",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "PreDecrement" && args.len() == 1 =>
     {
-      format!("--{}", expr_to_input_form(&args[0]))
+      format!(
+        "--{}",
+        inc_dec_operand(&args[0], expr_to_input_form(&args[0]))
+      )
     }
     // Quantity: InputForm quotes string unit names
     Expr::FunctionCall { name, args }
@@ -15387,8 +15977,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     {
       format!("StringExpression[{}]", expr_to_input_form(&args[0]))
     }
+    // InputForm writes `a~~b`; OutputForm, which reuses this renderer for
+    // operator operands, keeps the call form `StringExpression[a, b]`.
     Expr::FunctionCall { name, args }
-      if name == "StringExpression" && !args.is_empty() =>
+      if name == "StringExpression"
+        && !args.is_empty()
+        && in_true_input_form() =>
     {
       // A nested StringExpression (only unflattened when held) and a rule
       // are bracketed, as wolframscript does; Alternatives is not.
@@ -15451,7 +16045,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "And")
-            || printed_infix_precedence(arg).is_some_and(|p| p < 15)
+            || printed_infix_precedence(arg).is_some_and(|p| p < 16)
             || (connective_parens() && is_logical_connective_call(arg));
           if is_and { format!("({s})") } else { s }
         })
@@ -15471,6 +16065,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+            || matches!(arg, Expr::FunctionCall { name, args }
+              if name == "And" && args.len() >= 2)
             || printed_infix_precedence(arg).is_some_and(|p| p < 18)
             || is_bare_pattern(arg)
             || (connective_parens() && is_logical_connective_call(arg));
@@ -15491,13 +16087,13 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     } => input_form_infix_forcing(
       &[(**left).clone(), (**right).clone()],
       " | ",
-      27,
+      15,
       is_nested_alternatives_call,
     ),
     Expr::FunctionCall { name, args }
       if name == "Alternatives" && args.len() >= 2 =>
     {
-      input_form_infix_forcing(args, " | ", 27, is_nested_alternatives_call)
+      input_form_infix_forcing(args, " | ", 15, is_nested_alternatives_call)
     }
     // Condition[lhs, rhs] in InputForm: `lhs /; rhs`, again with InputForm
     // children (`ToString[x /; y ;; 3, InputForm]` is "x /; y ;; 3").
@@ -15826,7 +16422,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
           .iter()
           .map(|e| {
             let s = expr_to_input_form(e);
-            if comparison_operand_needs_parens(e) {
+            if comparison_operand_parens(operators, e) {
               format!("({s})")
             } else {
               s
@@ -15874,7 +16470,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       };
       let fmt_operand = |e: &Expr| -> String {
         let s = expr_to_input_form(e);
-        if comparison_operand_needs_parens(e) {
+        if comparison_operand_parens(operators, e) {
           format!("({s})")
         } else {
           s
@@ -16093,7 +16689,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             .iter()
             .map(|a| {
               let s = expr_to_input_form(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                 || matches!(
                   a,
                   Expr::BinaryOp {
@@ -16113,7 +16709,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         } else {
           let parts: Vec<String> = args.iter().map(|a| {
             let s = expr_to_input_form(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
               || is_looser_than_times_infix(a)
               || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
@@ -16638,6 +17234,8 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
   };
   negative_number
     || prints_as_not(func)
+    // Any head printed with an infix operator: `(a . b)[x]`, `(a == b)[x]`.
+    || printed_infix_precedence(func).is_some()
     || matches!(
       func,
       Expr::Function { .. }
@@ -16956,8 +17554,12 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
       if start < values.len() {
         let seq: Vec<Expr> = values[start..].to_vec();
         call("Sequence", seq)
-      } else {
+      } else if start == values.len() {
         call0("Sequence")
+      } else {
+        // `##n` needs at least n - 1 arguments; otherwise it stays as
+        // written (the application site emits `Function::slots`).
+        expr.clone()
       }
     }
     // Shared inert data (a large numeric array) holds no slots: its O(1)
@@ -17001,8 +17603,10 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
         if start < values.len() {
           let seq: Vec<Expr> = values[start..].to_vec();
           call("Sequence", seq)
-        } else {
+        } else if start == values.len() {
           call0("Sequence")
+        } else {
+          expr.clone()
         }
       } else {
         expr.clone()
@@ -19347,6 +19951,17 @@ fn operator_call_node(expr: &Expr) -> Option<Expr> {
   match (name.as_str(), args.len()) {
     ("Not", 1) => Some(unary(UnaryOperator::Not)),
     ("Minus", 1) => Some(unary(UnaryOperator::Minus)),
+    // `Divide[-1, 3]` prints `-1/3`, unlike the parsed `-1/3`, which is
+    // `Times[-1, Power[3, -1]]` and prints `-3^(-1)`; a negated `1` keeps
+    // the two apart.
+    ("Divide", 2) if matches!(args[0], Expr::Integer(-1)) => Some(binop(
+      BinaryOperator::Divide,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(Expr::Integer(1)),
+      },
+      args[1].clone(),
+    )),
     ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
     ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
     ("List", _) => Some(Expr::List(args.clone())),
@@ -20118,13 +20733,13 @@ pub fn top_level_output(expr: &Expr) -> String {
             | Expr::SlotSequence(_)
         )
       {
-        return format!("FullForm[{}]", expr_to_input_form(&args[0]));
+        return format!("FullForm[{}]", full_form_wrapper_inner(&args[0]));
       }
       // Default: wolframscript always keeps the `FullForm[…]` wrapper at
       // the top level, with the inner expression rendered in InputForm
       // (e.g. `FullForm[Foo[x]]` → `FullForm[Foo[x]]`,
       // `FullForm[a <-> b]` → `FullForm[a <-> b]`). Stick with that.
-      format!("FullForm[{}]", expr_to_input_form(&args[0]))
+      format!("FullForm[{}]", full_form_wrapper_inner(&args[0]))
     }
     // `HoldForm[expr]` at the top level keeps its wrapper —
     // `wolframscript -code 'HoldForm[1 + 2 + 3]'` prints `HoldForm[1 + 2 + 3]`
