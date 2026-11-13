@@ -374,6 +374,77 @@ mod row_visual_mode {
     assert!(fraction < one * 3.0, "one = {one}, fraction = {fraction}");
   }
 
+  /// A product whose string factor carries newlines (an implicit
+  /// multiplication such as `Row[…] "\n\n  "`) displays its factors
+  /// space-separated, so the string breaks the row and the other factor
+  /// is drawn on the following line instead of being swallowed.
+  #[test]
+  fn row_product_with_newline_string_factor_breaks_line() {
+    clear_state();
+    let svg = |code: &str| -> String {
+      interpret_with_stdout(code).unwrap().graphics.unwrap()
+    };
+    let height = |svg: &str| -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap()
+    };
+    let one = svg("Row[{\"ab\", Row[{\"= \", 4}]}]");
+    let product = svg("Row[{\"ab\", Row[{\"= \", 4}] \" \\n\\n  \"}]");
+    // The string's two newlines put the row factor two lines further down.
+    assert!(
+      height(&product) > height(&one) * 2.5,
+      "one = {}, product = {}",
+      height(&one),
+      height(&product)
+    );
+    assert!(product.contains(">4</text>"), "{product}");
+    // A product of plain factors still stays on one line.
+    let flat = svg("Row[{\"ab\", \"c\" x}]");
+    assert!(height(&flat) < height(&one) * 1.5, "{flat}");
+  }
+
+  /// A `Subscript` under a `Style` color sits its script as a nested
+  /// `<tspan>`, which resvg misplaces (lifting the base off the line); the
+  /// row flattens it into sibling spans, each with its inherited style.
+  #[test]
+  fn row_styled_subscript_flattens_nested_shift_tspan() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Row[{x, Style[Subscript[\"log\", 2], Red, 16], y}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let text = svg
+      .split("<text")
+      .find(|t| t.contains("log"))
+      .expect("text with log");
+    let text = &text[..text.find("</text>").unwrap()];
+    // No span opens inside another one.
+    let mut depth = 0;
+    let mut max_depth = 0;
+    for part in text.split('<').skip(1) {
+      if part.starts_with("tspan") {
+        depth += 1;
+        max_depth = max_depth.max(depth);
+      } else if part.starts_with("/tspan") {
+        depth -= 1;
+      }
+    }
+    assert_eq!(max_depth, 1, "{text}");
+    // The shifted script keeps the color and resolves its relative size.
+    let script = text
+      .split("<tspan")
+      .find(|t| t.contains("baseline-shift=\"sub\""))
+      .expect("subscript span");
+    assert!(script.contains("fill=\"rgb(255,0,0)\""), "{script}");
+    assert!(script.contains("font-size=\"11.2\""), "{script}");
+  }
+
   // ToBoxes hands back wolframscript's row template; Woxi's own renderers
   // still stack the lines of a newline string (see the SVG tests above).
   #[test]

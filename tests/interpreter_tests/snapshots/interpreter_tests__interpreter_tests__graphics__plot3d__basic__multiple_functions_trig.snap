@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 5137
 expression: "export_svg(\"Plot3D[{Sin[x y], Cos[x y]}, {x, -3, 3}, {y, -3, 3}]\")"
 ---
 <svg width="360" height="273" viewBox="0 0 360 273" xmlns="http://www.w3.org/2000/svg">
@@ -22451,11 +22452,11 @@ expression: "export_svg(\"Plot3D[{Sin[x y], Cos[x y]}, {x, -3, 3}, {y, -3, 3}]\"
 <line x1="328.4" y1="159.3" x2="330.5" y2="160.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="342.0" y1="138.8" x2="344.1" y2="140.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="348.5" y1="129.1" x2="350.6" y2="130.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="272.5" y1="243.6" x2="275.8" y2="245.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="272.5" y1="243.6" x2="269.1" y2="241.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="277.5" y="246.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
-<line x1="306.1" y1="192.9" x2="309.5" y2="195.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="306.1" y1="192.9" x2="302.8" y2="190.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="311.1" y="196.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="335.3" y1="148.9" x2="338.6" y2="151.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="335.3" y1="148.9" x2="332.0" y2="146.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="340.3" y="152.2" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
 <line x1="36.4" y1="186.2" x2="24.0" y2="107.7" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="35.8" y1="182.6" x2="38.3" y2="182.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>

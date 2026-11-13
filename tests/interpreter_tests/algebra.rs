@@ -26583,3 +26583,75 @@ mod simplify_list_scalar_equations {
     );
   }
 }
+
+// A relation that is not a comparison splits an Inequality chain there.
+// Regression: Solve rewrote such an Inequality into comparisons, got it
+// back unchanged and recursed until the stack overflowed (crash fuzzer).
+mod inequality_with_unknown_relation {
+  use super::*;
+
+  #[test]
+  fn splits_at_unknown_relations() {
+    for (input, expected) in [
+      (
+        "Inequality[0, Less, x, Ldss, 3]",
+        "0 < x && Inequality[x, Ldss, 3]",
+      ),
+      (
+        "Inequality[0, Less, x, Ldss, 3, Less, 5]",
+        "0 < x && Inequality[x, Ldss, 3]",
+      ),
+      ("Inequality[a, Ldss, b]", "Inequality[a, Ldss, b]"),
+      (
+        "Inequality[0, Ldss, x, Foo, 3]",
+        "Inequality[0, Ldss, x] && Inequality[x, Foo, 3]",
+      ),
+      ("Inequality[1, Less, 2, Ldss, x]", "Inequality[2, Ldss, x]"),
+      (
+        "Inequality[0, Less, x, Less, y, Ldss, z]",
+        "Inequality[0, Less, x, Less, y] && Inequality[y, Ldss, z]",
+      ),
+      ("Inequality[5, Less, 3, Ldss, x]", "False"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn solve_does_not_recurse_forever() {
+    let r = woxi::interpret_with_stdout(
+      "Solve[Inequality[0, Ldss, x, LessEqual, 3], x]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Solve[Inequality[0, Ldss, x] && x <= 3, x]");
+    assert_eq!(r.warnings.len(), 1);
+    assert!(r.warnings[0].starts_with("Solve::naqs: "));
+  }
+}
+
+// A system with a part that is no equation or inequality is rejected as a
+// whole with Solve::naqs instead of having that part ignored.
+#[test]
+fn solve_rejects_non_relational_system_parts() {
+  for code in ["Solve[{x == 1, y}, x]", "Solve[x^2 == 2 && f[x], x]"] {
+    let r = woxi::interpret_with_stdout(code).unwrap();
+    assert_eq!(r.result, code, "{code}");
+    assert_eq!(r.warnings.len(), 1, "{code}");
+    assert!(r.warnings[0].starts_with("Solve::naqs: "), "{code}");
+  }
+  assert_eq!(interpret("Solve[{x == 1, True}, x]").unwrap(), "{{x -> 1}}");
+  assert_eq!(
+    interpret("Solve[{x == 1, Element[x, Reals]}, x]").unwrap(),
+    "{{x -> 1}}"
+  );
+}
+
+// FullSimplify's polynomial part plus remainder is returned as one
+// canonical sum. Found by the differential fuzzer.
+#[test]
+fn full_simplify_returns_a_canonical_sum() {
+  assert_eq!(
+    interpret("FullSimplify[(-5 + 2 x - 5 x^2 + 5 x^3)/x]").unwrap(),
+    "2 - 5/x - 5*x + 5*x^2"
+  );
+}

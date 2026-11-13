@@ -426,6 +426,9 @@ enum Message {
   /// The picture was pressed: run the `ClickPane` handler on the last
   /// pointer position.
   ManipulatePaneClicked(usize),
+  /// The pointer was released over a Manipulate picture holding an
+  /// `EventHandler` with mouse events. (cell_idx)
+  ManipulateMouseReleased(usize),
   /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
   /// its assignment code. (cell_idx, bookmark_idx — indexes
   /// `ManipulateState::bookmarks`, not `controls`)
@@ -1706,6 +1709,15 @@ impl WoxiStudio {
       }
 
       Message::DragEnd => {
+        // A press begun over a widget's `EventHandler` ends wherever the
+        // pointer is released (a release over the picture already ended it).
+        for editor in &mut self.cell_editors {
+          if let Some(state) = editor.manipulate_state.as_mut()
+            && state.mouse_pressed
+          {
+            state.mouse_up();
+          }
+        }
         if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target)
           && src != dst
           && dst <= self.cell_editors.len()
@@ -2158,7 +2170,7 @@ impl WoxiStudio {
           .get_mut(cell_idx)
           .and_then(|e| e.manipulate_state.as_mut())
         {
-          state.pointer = (x, y);
+          state.mouse_moved(x, y);
         }
         Task::none()
       }
@@ -2169,6 +2181,17 @@ impl WoxiStudio {
           .and_then(|e| e.manipulate_state.as_mut())
         {
           state.apply_pane_click();
+          state.mouse_down();
+        }
+        Task::none()
+      }
+      Message::ManipulateMouseReleased(cell_idx) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.mouse_up();
         }
         Task::none()
       }
@@ -2383,13 +2406,10 @@ impl WoxiStudio {
             // so their side effects (variable assignments, function
             // definitions, etc.) are available in the current cell.
             woxi::clear_state();
-            for prev in 0..idx {
-              if matches!(
-                self.cell_editors[prev].style,
-                CellStyle::Input | CellStyle::Code
-              ) {
-                let prev_code =
-                  self.cell_editors[prev].content.text().trim().to_string();
+            for prev_editor in &self.cell_editors[..idx] {
+              if matches!(prev_editor.style, CellStyle::Input | CellStyle::Code)
+              {
+                let prev_code = prev_editor.content.text().trim().to_string();
                 if !prev_code.is_empty() {
                   let _ = woxi::interpret_with_stdout(&prev_code);
                 }
@@ -4224,7 +4244,9 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
   };
   // An explicitly empty label (`{{fig, 1, ""}}`) claims no width — see
   // `manipulate_label_widget` for why an empty label is never a missing one.
-  label.chars().count()
+  // A label broken over lines (`"vapor pressure\n(inches of Hg)"`) draws
+  // as a stack, so only its longest line claims width.
+  label.lines().map(|l| l.chars().count()).max().unwrap_or(0)
 }
 
 /// Throttle window for Manipulate re-evaluation. A slider drag emits a burst of
@@ -4363,6 +4385,22 @@ fn manipulate_reeval_task(cell_idx: usize) -> Task<Message> {
   )
 }
 
+const SLOT_TOP: usize = 0;
+const SLOT_BOTTOM: usize = 1;
+const SLOT_LEFT: usize = 2;
+const SLOT_RIGHT: usize = 3;
+
+/// The index of a control-panel side in `render_manipulate_widget`'s
+/// per-side columns.
+fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
+  match placement {
+    manipulate::ControlPlacement::Top => SLOT_TOP,
+    manipulate::ControlPlacement::Bottom => SLOT_BOTTOM,
+    manipulate::ControlPlacement::Left => SLOT_LEFT,
+    manipulate::ControlPlacement::Right => SLOT_RIGHT,
+  }
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4389,7 +4427,39 @@ fn render_manipulate_widget<'a>(
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
+  // A display standing in for a declared control (a `ControlType ->
+  // TogglerBar` bar) is a row of the panel, at the place its spec holds
+  // among the other controls.
+  let panel_trees_at = |slot: usize| {
+    state
+      .panel_displays
+      .iter()
+      .filter(move |(_, at)| *at == slot)
+      .filter_map(|(d, _)| state.display_trees.get(*d))
+  };
+  // One panel column per side of the output (see `placement_slot`). Most
+  // widgets put every row on the widget-level `ControlPlacement` side, but a
+  // control spec's own `ControlPlacement -> Left` moves just that row beside
+  // the picture while the others stay above it. `controls_col` always holds
+  // the column currently being filled, for side `current_slot`; its slot in
+  // `side_cols` holds an empty placeholder until it is swapped back.
+  let main_slot = placement_slot(state.control_placement);
+  let mut side_cols: [Column<'a, Message>; 4] =
+    std::array::from_fn(|_| Column::new().spacing(6).width(Fill));
+  let mut side_used = [false; 4];
+  let mut current_slot = main_slot;
+  let mut switch_slot =
+    |controls_col: &mut Column<'a, Message>, current: &mut usize, to: usize| {
+      if *current != to {
+        std::mem::swap(controls_col, &mut side_cols[*current]);
+        std::mem::swap(controls_col, &mut side_cols[to]);
+        *current = to;
+      }
+    };
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    for tree in panel_trees_at(ctrl_idx) {
+      controls_col = controls_col.push(render_display_node(cell_idx, tree));
+    }
     // A control belonging to a `PaneSelector` pane the selector is not
     // showing is left out of the panel entirely, the way Wolfram swaps one
     // pane's controls for another's.
@@ -4401,6 +4471,9 @@ fn render_manipulate_widget<'a>(
     {
       continue;
     }
+    let slot = placement_slot(state.placement_of(ctrl_idx));
+    switch_slot(&mut controls_col, &mut current_slot, slot);
+    side_used[slot] = true;
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -4510,7 +4583,23 @@ fn render_manipulate_widget<'a>(
           if !enabled {
             s = s.style(disabled_slider_style);
           }
-          let control_row = row![label_widget, s].align_y(Center).spacing(8);
+          // Like a continuous slider, show the current choice beside the
+          // track, as Wolfram's labeled `Manipulator` does.
+          let shown = if has_overflow {
+            String::new()
+          } else {
+            value_labels
+              .get(*current_index)
+              .cloned()
+              .unwrap_or_default()
+          };
+          let value_widget = text(shown)
+            .size(11)
+            .font(Font::MONOSPACE)
+            .width(iced::Length::Fixed(64.0));
+          let control_row = row![label_widget, s, value_widget]
+            .align_y(Center)
+            .spacing(8);
           controls_col = controls_col.push(control_row);
           continue;
         }
@@ -5028,6 +5117,20 @@ fn render_manipulate_widget<'a>(
       }
     }
   }
+  // The widget-level extras (bookmarks, play toggle) join the main panel.
+  switch_slot(&mut controls_col, &mut current_slot, main_slot);
+  // Bars declared after the last control close the panel.
+  if show_controls {
+    for (d, _) in state
+      .panel_displays
+      .iter()
+      .filter(|(_, at)| *at >= visible_controls.len())
+    {
+      if let Some(tree) = state.display_trees.get(*d) {
+        controls_col = controls_col.push(render_display_node(cell_idx, tree));
+      }
+    }
+  }
 
   // A `Bookmarks` menu: a dropdown of named presets that jump the controls
   // to preset values when selected. Indexed by position (not label text) so
@@ -5050,6 +5153,7 @@ fn render_manipulate_widget<'a>(
       .placeholder("Bookmarks")
       .width(iced::Length::Shrink);
     controls_col = controls_col.push(row![picker].align_y(Center));
+    side_used[main_slot] = true;
   }
 
   // An animated widget (Animate / ListAnimate / Animator) gets a play/pause
@@ -5065,7 +5169,9 @@ fn render_manipulate_widget<'a>(
       .padding([3, 10])
       .on_press(Message::ManipulateTogglePlay(cell_idx));
     controls_col = controls_col.push(row![play_btn].align_y(Center));
+    side_used[main_slot] = true;
   }
+  side_cols[main_slot] = controls_col;
 
   let mut output_col = Column::new().spacing(0).width(Fill);
   if let Some(ref err) = state.error {
@@ -5120,15 +5226,18 @@ fn render_manipulate_widget<'a>(
       }
       stack(layers).into()
     };
-    // A `ClickPane` hands its handler the position of each click.
-    let picture: Element<'_, Message> = if state.click_regions.is_empty() {
-      picture
-    } else {
-      mouse_area(picture)
-        .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
-        .on_press(Message::ManipulatePaneClicked(cell_idx))
-        .into()
-    };
+    // A `ClickPane` hands its handler the position of each click; an
+    // `EventHandler` gets the pointer's presses, drags and releases.
+    let picture: Element<'_, Message> =
+      if state.click_regions.is_empty() && state.mouse_region.is_none() {
+        picture
+      } else {
+        mouse_area(picture)
+          .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+          .on_press(Message::ManipulatePaneClicked(cell_idx))
+          .on_release(Message::ManipulateMouseReleased(cell_idx))
+          .into()
+      };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
@@ -5141,45 +5250,45 @@ fn render_manipulate_widget<'a>(
   // Extra display elements (e.g. a Checkbox grid) sit above the rendered
   // body output; each interactive checkbox emits a write-back on toggle.
   let mut body_col = Column::new().spacing(6).width(Fill);
-  for tree in &state.display_trees {
+  for (d, tree) in state.display_trees.iter().enumerate() {
+    // Bars already drawn as panel rows (only when the panel is shown).
+    if show_controls && state.panel_displays.iter().any(|(pd, _)| *pd == d) {
+      continue;
+    }
     body_col = body_col.push(render_display_node(cell_idx, tree));
   }
   body_col = body_col.push(output_col);
 
-  // `ControlPlacement` decides which side the panel sits on. A widget that
-  // ended up with no panel rows at all (`Appearance -> None` with nothing to
-  // play) stacks instead, so a side placement cannot reserve an empty gutter
+  // `ControlPlacement` decides which side each panel column sits on: the
+  // top and bottom columns span the whole widget, the left and right ones run
+  // beside the output. A side with no rows at all (e.g. `Appearance -> None`
+  // with nothing to play) is left out, so it cannot reserve an empty gutter
   // next to the graphic.
-  let panel_is_empty = !show_play_toggle
-    && !visible_controls
-      .iter()
-      .enumerate()
-      .any(|(i, _)| state.control_is_visible.get(i).copied().unwrap_or(true));
-  let placement = if panel_is_empty {
-    manipulate::ControlPlacement::Top
-  } else {
-    state.control_placement
-  };
   let side_width =
     iced::Length::Fixed(label_col_width + SIDE_PANEL_CONTROL_WIDTH);
-  let widget: Element<Message> = match placement {
-    manipulate::ControlPlacement::Top => {
-      column![controls_col, body_col].spacing(6).into()
-    }
-    manipulate::ControlPlacement::Bottom => {
-      column![body_col, controls_col].spacing(6).into()
-    }
-    manipulate::ControlPlacement::Left => {
-      row![controls_col.width(side_width), body_col]
-        .spacing(12)
-        .into()
-    }
-    manipulate::ControlPlacement::Right => {
-      row![body_col, controls_col.width(side_width)]
-        .spacing(12)
-        .into()
-    }
-  };
+  let [top_col, bottom_col, left_col, right_col] = side_cols;
+  let middle: Element<Message> =
+    if side_used[SLOT_LEFT] || side_used[SLOT_RIGHT] {
+      let mut middle = Row::new().spacing(12);
+      if side_used[SLOT_LEFT] {
+        middle = middle.push(left_col.width(side_width));
+      }
+      middle = middle.push(body_col);
+      if side_used[SLOT_RIGHT] {
+        middle = middle.push(right_col.width(side_width));
+      }
+      middle.into()
+    } else {
+      body_col.into()
+    };
+  let mut widget = Column::new().spacing(6);
+  if side_used[SLOT_TOP] {
+    widget = widget.push(top_col);
+  }
+  widget = widget.push(middle);
+  if side_used[SLOT_BOTTOM] {
+    widget = widget.push(bottom_col);
+  }
 
   container(widget).padding(6).width(Fill).into()
 }
@@ -8723,6 +8832,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       italic: false,
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
+      size: None,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -9930,6 +10040,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       svg.matches("<line ").count() >= 3,
       "the three extended edge lines must be drawn: {svg}"
     );
+  }
+
+  /// A Manipulate whose controls ask for different sides one by one: the
+  /// sliders and radio row stay in the widget-level (top) panel, while a
+  /// labeled popup and a boolean checkbox each written with their own
+  /// `ControlPlacement -> Left` sit beside the picture. The body stacks
+  /// rotated and translated copies of a small 3D motif — the general shape
+  /// of a molecular-column Wolfram Demonstrations Project notebook
+  /// (independently written here, not copied from any specific one).
+  /// Regression: a per-control `ControlPlacement` was dropped, so every row
+  /// landed in the top panel.
+  #[test]
+  fn manipulate_per_control_placement_moves_rows_beside_the_output() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nmotif = {{FaceForm[Orange], Sphere[{1, 0, 0}, r]}, Cylinder[{{1, 0, 0}, {1, 0, 0.5}}, r/2]};\nring = Table[Rotate[motif, 2 Pi j/k, {0, 0, 1}], {j, k}];\nGraphics3D[Table[Rotate[Translate[ring, {0, 0, i}], i Pi/k, {0, 0, 1}], {i, layers}], Boxed -> False],\n{{layers, 2, \"layers\"}, 1, 4, 1, ControlType -> RadioButton},\n{{r, 0.1, \"radius\"}, 0.05, 0.3, Appearance -> \"Labeled\"},\n{{k, 6, \"motifs per ring\"}, {3 -> \"3\", 4 -> \"4\", 5 -> \"5\", 6 -> \"6\", 7 -> \"7\", 8 -> \"8\", 9 -> \"9\", 10 -> \"10\", 12 -> \"12\"}, ControlPlacement -> Left},\n{{show, False, \"highlight\"}, {True, False}, ControlPlacement -> Left},\nTrackedSymbols :> {layers, r, k, show}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 0.1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the column must render");
+    assert_eq!(widget.control_placement, manipulate::ControlPlacement::Top);
+    let sides: Vec<(&str, manipulate::ControlPlacement)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| (c.name(), widget.placement_of(i)))
+      .collect();
+    assert_eq!(
+      sides,
+      [
+        ("layers", manipulate::ControlPlacement::Top),
+        ("r", manipulate::ControlPlacement::Top),
+        ("k", manipulate::ControlPlacement::Left),
+        ("show", manipulate::ControlPlacement::Left),
+      ]
+    );
+    // The view builds with rows on two sides.
+    let _ = render_manipulate_widget(0, widget, false);
   }
 
   /// A slider written with a negative step (`{t, 0, Pi, -0.1}`) must step
@@ -12809,6 +12964,38 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`x$$ = 1}, \"…\"]"], "Output"]
   /// `Appearance -> "Labeled"` sliders — the shape of a typical Wolfram
   /// Demonstrations finance/growth calculator. This must open live with
   /// all three sliders recognized and the plot drawn.
+  /// A label broken over two lines sizes the label column by its longest
+  /// line, and a `ControlType -> Manipulator` slider over a list of values
+  /// steps through the choices with the current one shown beside it.
+  #[test]
+  fn multiline_label_and_discrete_manipulator_slider() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[p, \
+       {{p, 0.3, \"pressure\\n(units)\"}, {0.1, 0.2, 0.3, 0.45}, \
+       ControlType -> Manipulator, Appearance -> \"Labeled\"}]",
+    )
+    .expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the discrete Manipulator should build a ManipulateState");
+    let ctrl = &state.controls[0];
+    let manipulate::ControlState::Discrete {
+      label,
+      value_labels,
+      current_index,
+      slider,
+      ..
+    } = ctrl
+    else {
+      panic!("expected a discrete control, got {ctrl:?}");
+    };
+    assert_eq!(label, "pressure\n(units)");
+    assert!(*slider, "ControlType -> Manipulator draws a slider");
+    assert_eq!(value_labels, &["0.1", "0.2", "0.3", "0.45"]);
+    assert_eq!(value_labels[*current_index], "0.3");
+    // "pressure" is the longest line; the whole string is 16 chars.
+    assert_eq!(manipulate_label_char_count(ctrl), 8);
+  }
+
   #[test]
   fn demonstration_labeled_sliders_drive_multi_series_line_plot() {
     let nb_src = r##"Notebook[{
@@ -16685,6 +16872,26 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
+  }
+
+  /// A `ControlType -> TogglerBar` control declared between a slider and a
+  /// checkbox stays between them in the panel: its display row is anchored
+  /// before the checkbox, not appended below the whole panel.
+  #[test]
+  fn toggler_bar_control_is_anchored_at_its_declared_place() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[layers] + r, {{r, 1, \"radius\"}, 0, 2}, \
+       {{layers, {1}, \"layers\"}, {1, 2, 3}, ControlType -> TogglerBar}, \
+       {{grid, False, \"grid\"}, {True, False}}]",
+    )
+    .unwrap();
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("widget must build");
+    assert_eq!(state.controls.len(), 2);
+    assert_eq!(state.controls[1].name(), "grid");
+    assert_eq!(state.panel_displays, vec![(0, 1)]);
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(togglers.len(), 3);
   }
 
   #[test]
@@ -31653,10 +31860,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     }
 
     // Drag all four 1D sliders and confirm the widget keeps rendering.
-    for idx in 0..4 {
-      if let manipulate::ControlState::Continuous { current, .. } =
-        &mut state.controls[idx]
-      {
+    for ctrl in &mut state.controls[..4] {
+      if let manipulate::ControlState::Continuous { current, .. } = ctrl {
         *current += 1.0;
       }
     }

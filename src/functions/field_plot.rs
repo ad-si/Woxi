@@ -1824,9 +1824,15 @@ fn embed_color_image(
   ));
 }
 
-/// Bilinearly resample a node grid (grid[col][row], row 0 = bottom) to
+/// Resample a node grid (grid[col][row], row 0 = bottom) to
 /// out_cols x out_rows samples whose pixel centers span the same area, so
 /// coarse data grids render as smooth shading instead of visible pixels.
+///
+/// Like Wolfram's `ListDensityPlot`, each grid cell is split into two
+/// triangles along the diagonal from its lower-left to its upper-right
+/// node, and the value is interpolated linearly within each triangle.
+/// (A bilinear blend instead turns a checkerboard of values into round
+/// saddle blobs where Wolfram draws straight diagonal bands.)
 fn resample_node_grid(
   grid: &[Vec<f64>],
   out_cols: usize,
@@ -1846,10 +1852,19 @@ fn resample_node_grid(
       let y = (j as f64 + 0.5) / out_rows as f64 * (rows - 1) as f64;
       let j0 = (y.floor() as usize).min(rows - 2);
       let fy = y - j0 as f64;
-      *out_v = grid[i0][j0] * (1.0 - fx) * (1.0 - fy)
-        + grid[i0 + 1][j0] * fx * (1.0 - fy)
-        + grid[i0][j0 + 1] * (1.0 - fx) * fy
-        + grid[i0 + 1][j0 + 1] * fx * fy;
+      let (v00, v10, v01, v11) = (
+        grid[i0][j0],
+        grid[i0 + 1][j0],
+        grid[i0][j0 + 1],
+        grid[i0 + 1][j0 + 1],
+      );
+      *out_v = if fx >= fy {
+        // Lower-right triangle: (0,0), (1,0), (1,1).
+        v00 + fx * (v10 - v00) + fy * (v11 - v10)
+      } else {
+        // Upper-left triangle: (0,0), (0,1), (1,1).
+        v00 + fy * (v01 - v00) + fx * (v11 - v01)
+      };
     }
   }
   out
@@ -5761,12 +5776,16 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Coarse data grids are upsampled in-process so the shading interpolates
   // smoothly between the data points instead of showing blocky pixels.
+  // Every cell gets at least 8 pixels per side (within 256 to 512), so the
+  // sharp bands of the triangle interpolation survive the image's scaling.
   // `InterpolationOrder -> 0` keeps the data's cells as flat blocks.
   let grid = if grid.len() < 64 || grid[0].len() < 64 {
+    let out = |n: usize| (8 * n.saturating_sub(1)).clamp(256, 512);
+    let (out_cols, out_rows) = (out(grid.len()), out(grid[0].len()));
     if nearest {
-      nearest_node_grid(&grid, 256, 256)
+      nearest_node_grid(&grid, out_cols, out_rows)
     } else {
-      resample_node_grid(&grid, 256, 256)
+      resample_node_grid(&grid, out_cols, out_rows)
     }
   } else {
     grid

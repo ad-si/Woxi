@@ -1527,7 +1527,15 @@ pub fn set_part_deep(
   // that key (appending a new entry when the key is absent).
   if let Expr::Association(pairs) = expr {
     use num_traits::ToPrimitive;
-    let pos = match &indices[0] {
+    // `Key[k]` names the key `k` itself, even an integer one.
+    let (key, explicit_key) = match &indices[0] {
+      Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
+        (&args[0], true)
+      }
+      other => (other, false),
+    };
+    let pos = match key {
+      _ if explicit_key => None,
       Expr::Integer(n) => Some(*n as i64),
       Expr::BigInteger(n) => n.to_i64(),
       _ => None,
@@ -1547,7 +1555,7 @@ pub fn set_part_deep(
       );
     }
     // Key-based index: match on the string form (quote-insensitive).
-    let key_cmp = expr_to_string(&indices[0]).trim_matches('"').to_string();
+    let key_cmp = expr_to_string(key).trim_matches('"').to_string();
     if let Some(pair) = pairs
       .iter_mut()
       .find(|(k, _)| expr_to_string(k).trim_matches('"') == key_cmp)
@@ -1557,7 +1565,7 @@ pub fn set_part_deep(
     // Absent key: append it when this is the final index; descending deeper
     // into a key that does not exist is an error (matching wolframscript).
     if indices.len() == 1 {
-      pairs.push((indices[0].clone(), value.clone()));
+      pairs.push((key.clone(), value.clone()));
       return Ok(());
     }
     return Err(InterpreterError::EvaluationError(format!(

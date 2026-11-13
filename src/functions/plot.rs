@@ -1142,6 +1142,34 @@ fn has_step_function(body: &Expr) -> bool {
     .any(has_step_function)
 }
 
+/// Whether `body` holds a conditional (`Piecewise`, `Which`, `If`) whose
+/// branches the curve may jump between. Wolfram works out the plot body
+/// with the variable left symbolic to find such conditionals, so one hidden
+/// behind a user function (`f[x_] := Which[x < 1, a, True, b]`) counts too.
+fn has_conditional_jump(body: &Expr, var: &str) -> bool {
+  fn conditional(e: &Expr) -> bool {
+    if matches!(e, Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Piecewise" | "Which" | "If"))
+    {
+      return true;
+    }
+    crate::syntax::expr_children(e).into_iter().any(conditional)
+  }
+  fn calls_user_function(e: &Expr) -> bool {
+    if let Expr::FunctionCall { name, .. } = e
+      && crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name))
+    {
+      return true;
+    }
+    crate::syntax::expr_children(e)
+      .into_iter()
+      .any(calls_user_function)
+  }
+  conditional(body)
+    || (calls_user_function(body)
+      && conditional(&eval_body_var_symbolic(body, var)))
+}
+
 /// The x positions where the sampled curve `points` of `body` jumps: each
 /// pair of neighboring samples with different values is bisected toward
 /// the larger change, and a gap that stays open once the interval has
@@ -17178,7 +17206,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // So does a branch cut a complex-valued part of it is taken across.
     let mut excluded_here = excluded.clone();
     if auto_exclusions
-      && (has_step_function(func_body) || has_branch_cut(func_body))
+      && (has_step_function(func_body)
+        || has_branch_cut(func_body)
+        || has_conditional_jump(func_body, &var_name))
     {
       excluded_here.extend(jump_points(&points, func_body, &var_name));
     }

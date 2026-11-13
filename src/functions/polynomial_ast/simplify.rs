@@ -7774,7 +7774,40 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
   let simplified = full_simplify_expr_with_together(&args[0]);
-  Ok(apply_active_assumptions(&simplified))
+  Ok(flatten_nested_sum(apply_active_assumptions(&simplified)))
+}
+
+/// A result assembled as `Plus[Plus[…], …]` (a polynomial part plus a
+/// remainder) is not canonical: re-evaluating flattens and orders it, so
+/// `2 - 5 x + 5 x^2 - 5/x` prints `2 - 5/x - 5 x + 5 x^2` as Simplify's does.
+fn flatten_nested_sum(expr: Expr) -> Expr {
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus
+            | crate::syntax::BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  let nested = match &expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().any(is_sum)
+    }
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => is_sum(left) || is_sum(right),
+    _ => false,
+  };
+  if !nested {
+    return expr;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }
 
 /// Full-simplify variant that also tries Together (whole and sub-expression)

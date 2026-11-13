@@ -131,6 +131,87 @@ mod column_visual_mode {
     assert!(!svg.contains("<?xml"));
   }
 
+  /// Count the horizontal rules (`<line … y1 == y2 …>`) in an SVG.
+  fn horizontal_lines(svg: &str) -> Vec<f64> {
+    svg
+      .split("<line ")
+      .skip(1)
+      .filter_map(|l| {
+        let attr = |k: &str| -> Option<f64> {
+          let start = l.find(&format!(" {k}=\""))? + k.len() + 3;
+          l[start..].split('"').next()?.parse().ok()
+        };
+        let (y1, y2) = (attr("y1")?, attr("y2")?);
+        (y1 == y2).then_some(y1)
+      })
+      .collect()
+  }
+
+  // `Dividers` on a `Column` rules lines between its items, the way it
+  // does on a one-column `Grid`; it used to be ignored.
+  #[test]
+  fn column_dividers_per_position_rule_lines() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"a\", \"b\", \"c\", \"d\", \"e\"}, Left, \
+       Dividers -> {None, {False, True, False, True}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let lines = horizontal_lines(&svg);
+    assert_eq!(lines.len(), 2, "{svg}");
+    for item in ["a", "b", "c", "d", "e"] {
+      assert!(svg.contains(&format!(">{item}</text>")), "{svg}");
+    }
+    // Left alignment is kept.
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+  }
+
+  // A fixed-size `Pane` item keeps its box in a ruled column (a `Grid`
+  // layout); it used to be peeled, so a wide picture drew at its own size.
+  #[test]
+  fn ruled_column_keeps_a_fixed_size_pane_box() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Pane[Graphics[Disk[], ImageSize -> 720], \
+       ImageSize -> {500, 35}], \"x\"}, Dividers -> All]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("width=\"500.0\" height=\"35.0\""), "{svg}");
+    assert!(!svg.contains("width=\"720"), "{svg}");
+  }
+
+  #[test]
+  fn grid_cell_keeps_a_fixed_size_pane_box() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Pane[\"abc\", {80, 30}], 1}, {2, 3}}, Frame -> All]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
+  }
+
+  #[test]
+  fn column_dividers_all_rules_every_line() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Dividers -> All]").unwrap();
+    let svg = result.graphics.unwrap();
+    // Above, between and below the three items.
+    assert_eq!(horizontal_lines(&svg).len(), 4, "{svg}");
+  }
+
+  #[test]
+  fn column_dividers_center_rules_inner_lines() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Dividers -> Center]").unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(horizontal_lines(&svg).len(), 2, "{svg}");
+  }
+
   #[test]
   fn column_renders_svg() {
     clear_state();
@@ -492,6 +573,27 @@ mod column_visual_mode {
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
     assert!(svg.contains("text-anchor=\"middle\""));
+  }
+
+  #[test]
+  fn column_alignment_horizontal_vertical_pair() {
+    clear_state();
+    // `Alignment -> {h, v}` gives the items' horizontal alignment first:
+    // `{Center, Top}` centers them like a bare `Alignment -> Center`, and
+    // `{Right, Top}` right-aligns them.
+    for (spec, anchor) in [("{Center, Top}", "middle"), ("{Right, Top}", "end")]
+    {
+      let result = interpret_with_stdout(&format!(
+        "Column[{{1, 22222, 3}}, Alignment -> {spec}]"
+      ))
+      .unwrap();
+      assert_eq!(result.result, "-Graphics-");
+      let svg = result.graphics.unwrap();
+      assert!(
+        svg.contains(&format!("text-anchor=\"{anchor}\"")),
+        "{spec}: {svg}"
+      );
+    }
   }
 
   #[test]
