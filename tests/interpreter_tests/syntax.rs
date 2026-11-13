@@ -15268,3 +15268,37 @@ fn apply_to_precedence_and_targets() {
     "9"
   );
 }
+
+// Precedence comes from wolframscript's own table for every built-in
+// operator symbol, 670 for other symbols and 1000 for non-symbols.
+#[test]
+fn precedence_matches_wolfram_table() {
+  for (head, expected) in [
+    ("Condition", "130."),
+    ("Optional", "140."),
+    ("MapApply", "620."),
+    ("Infix", "630."),
+    ("Unset", "670."),
+    ("TagSet", "670."),
+    ("Inequality", "670."),
+    ("Del", "550."),
+    ("Square", "540."),
+    ("Get", "720."),
+    ("Slot", "740."),
+    ("Complex", "310."),
+    ("RightTee", "190."),
+    ("DoubleRightArrow", "270."),
+    ("UpArrow", "580."),
+    ("VerticalBar", "280."),
+    ("I", "1000."),
+    ("Infinity", "1000."),
+    ("Plus", "310."),
+    ("f", "670."),
+  ] {
+    assert_eq!(
+      interpret(&format!("Precedence[{head}]")).unwrap(),
+      expected,
+      "{head}"
+    );
+  }
+}

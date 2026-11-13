@@ -2388,86 +2388,17 @@ fn make_rule(name: &str, value: Expr) -> Expr {
   rule_expr(id_expr(name), value)
 }
 
-/// Precedence of a symbol or expression — matches Wolfram's `Precedence`.
-/// Returns the parsing precedence: built-in operators get specific values,
-/// unknown symbols default to 670., non-symbol expressions get 1000.
+/// Precedence of a symbol or expression — matches Wolfram's `Precedence`:
+/// the tabulated value of a built-in operator symbol (see
+/// `precedence_table`), 670 for any other symbol, and 1000 for a
+/// non-symbol expression.
 pub(crate) fn precedence_value(expr: &Expr) -> f64 {
   let name = match expr {
     Expr::Identifier(s) | Expr::Constant(s) => s.as_str(),
     Expr::FunctionCall { name, args } if args.is_empty() => name.as_str(),
     _ => return 1000.0,
   };
-  match name {
-    "CompoundExpression" => 10.0,
-    "Put" | "PutAppend" => 30.0,
-    "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" | "TagSet"
-    | "TagSetDelayed" | "TagUnset" | "Unset" => 40.0,
-    "Because" | "Therefore" => 50.0,
-    "VerticalSeparator" => 60.0,
-    "Postfix" => 70.0,
-    "ApplyTo" => 75.0,
-    "Colon" => 80.0,
-    "Function" => 90.0,
-    "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => 100.0,
-    "ReplaceAll" | "ReplaceRepeated" => 110.0,
-    "Rule" | "RuleDelayed" => 120.0,
-    "TwoWayRule" => 125.0,
-    "StringExpression" => 135.0,
-    "Condition" | "Optional" => 140.0,
-    "Pattern" => 150.0,
-    "Alternatives" => 160.0,
-    "Repeated" | "RepeatedNull" => 170.0,
-    "Conditioned" => 195.0,
-    "Implies" => 200.0,
-    "Equivalent" => 205.0,
-    "Or" | "Nor" | "Xor" | "Nand" | "And" => 215.0,
-    "Not" => 230.0,
-    "ForAll" | "Exists" | "NotExists" => 240.0,
-    "Element" | "NotElement" | "ReverseElement" | "Subset" | "SubsetEqual"
-    | "Superset" | "SupersetEqual" | "NotSubset" | "NotSubsetEqual"
-    | "NotSuperset" | "NotSupersetEqual" | "Distributed" => 250.0,
-    "Equal" | "Unequal" | "SameQ" | "UnsameQ" | "Less" | "Greater"
-    | "LessEqual" | "GreaterEqual" | "Inequality" | "TildeTilde" => 290.0,
-    "DirectedEdge" | "UndirectedEdge" => 295.0,
-    "Union" => 300.0,
-    "Span" | "Intersection" => 305.0,
-    "Plus" | "Subtract" | "PlusMinus" | "MinusPlus" => 310.0,
-    "Sum" | "Limit" => 320.0,
-    "Integrate" => 325.0,
-    "CirclePlus" | "CircleMinus" => 330.0,
-    "Product" => 380.0,
-    "Star" => 390.0,
-    "Times" => 400.0,
-    "CenterDot" => 410.0,
-    "CircleTimes" => 420.0,
-    "Vee" => 430.0,
-    "Wedge" => 440.0,
-    "Diamond" => 450.0,
-    "Backslash" => 460.0,
-    "Divide" => 470.0,
-    "Minus" => 480.0,
-    "Dot" => 490.0,
-    "TensorProduct" => 495.0,
-    "Cross" => 500.0,
-    "NonCommutativeMultiply" => 510.0,
-    "CircleDot" => 520.0,
-    "SmallCircle" => 530.0,
-    "D" => 550.0,
-    "Power" => 590.0,
-    "Apply" => 620.0,
-    "Map" | "MapAll" => 620.0,
-    "Factorial" | "Factorial2" => 610.0,
-    "RightComposition" => 648.0,
-    "Composition" => 650.0,
-    "Prefix" => 640.0,
-    "StringJoin" => 600.0,
-    "MessageName" => 750.0,
-    "Blank" | "BlankSequence" | "BlankNullSequence" => 730.0,
-    "Increment" | "Decrement" | "PreIncrement" | "PreDecrement" => 660.0,
-    "PatternTest" => 680.0,
-    // Unknown symbols default to 670
-    _ => 670.0,
-  }
+  super::precedence_table::tabulated_precedence(name).unwrap_or(670.0)
 }
 
 /// Helper to create a RuleDelayed expression: name :> value
