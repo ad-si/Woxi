@@ -5605,6 +5605,12 @@ fn graphics_text_content(expr: &Expr) -> String {
       let (base, exp) = split_scientific_2d(&text).unwrap_or_default();
       format!("{base}{}", to_unicode_script_digits(&exp, true))
     }
+    // A quantity reads with its unit abbreviated: `286 K`.
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      quantity_label_text(args).unwrap_or_default()
+    }
     // A one-argument `Text[label]` nested in a label is just the label.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       graphics_text_content(&args[0])
@@ -16559,21 +16565,45 @@ pub fn has_fraction(expr: &Expr) -> bool {
 /// Convert a Quantity unit expression to its abbreviated SVG form.
 /// E.g. `"Meters"/"Seconds"` → `m/s`, `"Meters"^2` → `m²` (with superscript).
 fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
+  quantity_unit_abbrev(unit, true)
+}
+
+/// The abbreviated unit of a Quantity, the way a notebook typesets it
+/// (`"Meters"/"Seconds"^2` → `m/s²`). With `markup`, the result is SVG
+/// markup (escaped, exponents as raised `<tspan>`s); without it, plain
+/// text with Unicode superscript exponents, for a graphics label.
+fn quantity_unit_abbrev(unit: &Expr, markup: bool) -> String {
   use crate::functions::quantity_ast::unit_to_abbreviation;
+
+  let raised = |exp: String| {
+    if markup {
+      format!("<tspan baseline-shift=\"super\" font-size=\"70%\">{exp}</tspan>")
+    } else {
+      to_unicode_script_digits(&exp, true)
+    }
+  };
+  let fallback = |e: &Expr| {
+    if markup {
+      expr_to_svg_markup(e)
+    } else {
+      graphics_text_content(e)
+    }
+  };
 
   // Handle Power in both BinaryOp and FunctionCall form
   if let Some((base, exp)) = as_power(unit) {
-    let base_str = quantity_unit_to_svg_abbrev(base);
-    let exp_str = expr_to_svg_markup(exp);
-    return format!(
-      "{base_str}<tspan baseline-shift=\"super\" font-size=\"70%\">{exp_str}</tspan>"
-    );
+    let base_str = quantity_unit_abbrev(base, markup);
+    return format!("{base_str}{}", raised(fallback(exp)));
   }
 
   match unit {
     Expr::Identifier(s) | Expr::String(s) => {
       let abbr = unit_to_abbreviation(s).unwrap_or(s.as_str());
-      svg_escape(abbr)
+      if markup {
+        svg_escape(abbr)
+      } else {
+        abbr.to_string()
+      }
     }
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
@@ -16582,8 +16612,8 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
     } => {
       format!(
         "{}/{}",
-        quantity_unit_to_svg_abbrev(left),
-        quantity_unit_to_svg_abbrev(right)
+        quantity_unit_abbrev(left, markup),
+        quantity_unit_abbrev(right, markup)
       )
     }
     Expr::BinaryOp {
@@ -16593,8 +16623,8 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
     } => {
       format!(
         "{}\u{22c5}{}",
-        quantity_unit_to_svg_abbrev(left),
-        quantity_unit_to_svg_abbrev(right)
+        quantity_unit_abbrev(left, markup),
+        quantity_unit_abbrev(right, markup)
       )
     }
     Expr::FunctionCall { name, args } if name == "Times" => {
@@ -16604,18 +16634,15 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
       for a in args {
         if let Some((base, neg_exp)) = crate::syntax::extract_neg_power_info(a)
         {
-          let base_str = quantity_unit_to_svg_abbrev(base);
+          let base_str = quantity_unit_abbrev(base, markup);
           if neg_exp == -1 {
             denom_parts.push(base_str);
           } else {
-            // For SVG, use superscript for the positive exponent
-            denom_parts.push(format!(
-              "{}<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-              base_str, -neg_exp
-            ));
+            denom_parts
+              .push(format!("{base_str}{}", raised((-neg_exp).to_string())));
           }
         } else {
-          numer_parts.push(quantity_unit_to_svg_abbrev(a));
+          numer_parts.push(quantity_unit_abbrev(a, markup));
         }
       }
       if denom_parts.is_empty() {
@@ -16630,8 +16657,21 @@ fn quantity_unit_to_svg_abbrev(unit: &Expr) -> String {
         format!("{numer}/{denom}")
       }
     }
-    _ => expr_to_svg_markup(unit),
+    _ => fallback(unit),
   }
+}
+
+/// A Quantity as a graphics label shows it: the magnitude and the
+/// abbreviated unit (`286 K`, `13 °C`, `9.8 m/s²`), as the notebook
+/// typesets it, not the spelled-out `ToString` form (`286 kelvins`).
+fn quantity_label_text(args: &[Expr]) -> Option<String> {
+  let [magnitude, unit] = args else {
+    return None;
+  };
+  let mag = graphics_text_content(magnitude);
+  let unit = quantity_unit_abbrev(unit, false);
+  let unit = crate::syntax::singularize_unit_if_one(magnitude, &unit);
+  Some(format!("{mag} {unit}"))
 }
 
 /// Group digits of a number string in threes (from the right) with thin spaces
@@ -39784,6 +39824,18 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       ..Default::default()
     });
     return runs;
+  }
+  // A quantity reads with its unit abbreviated (`286 K`), as the notebook
+  // typesets it, not spelled out the way `ToString` writes it.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Quantity"
+    && let Some(text) = quantity_label_text(args)
+  {
+    return vec![LabelRun {
+      text,
+      italic: false,
+      ..Default::default()
+    }];
   }
   // `Infinity`/`-Infinity`/`DirectedInfinity[…]` — a Demonstration's slider
   // range endpoint (e.g. `Subscript[N, DirectedInfinity[1]]`) typesets as
