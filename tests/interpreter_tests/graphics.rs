@@ -36005,7 +36005,7 @@ mod manipulate {
     );
     match &swatch {
       DisplayNode::Static { svg: Some(svg), .. } => {
-        assert!(svg.contains("<svg"), "{svg}")
+        assert!(svg.contains("<svg"), "{svg}");
       }
       other => panic!("expected the swatch picture, got {other:?}"),
     }
