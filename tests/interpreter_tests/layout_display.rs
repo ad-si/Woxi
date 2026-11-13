@@ -445,6 +445,19 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// A string holding inline linear syntax (`\!\(…\)`) in a fixed-width
+  /// `ItemSize` column is a typeset formula: it is not word-wrapped at its
+  /// markup's spaces, which would split the box structure.
+  #[test]
+  fn grid_item_size_keeps_linear_syntax_whole() {
+    let svg = svg_of(
+      "Grid[{{\"\\!\\(TraditionalForm\\`cos \\[Phi]\\)\", \"x\"}}, \
+       ItemSize -> {{8, All}, 2}]",
+    );
+    assert!(svg.contains(">cos \u{3d5}<"), "{svg}");
+    assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
   /// `Highlighted` defaults to Wolfram's yellow and honors `Background`.
   #[test]
   fn highlighted_background_option() {

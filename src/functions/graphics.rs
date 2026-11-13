@@ -25064,12 +25064,16 @@ fn grid_svg_styled_internal_reporting(
   let item_size_at = |spec: &Option<Expr>, pos: usize, n: usize| {
     item_size_entry_at(spec.as_ref(), pos, n)
   };
-  // Text wider than a fixed column wraps onto further lines.
+  // Text wider than a fixed column wraps onto further lines. A string
+  // carrying inline linear syntax (`\!\(…\)`) is a typeset formula: its
+  // markup is far longer than what is shown, and breaking it at a space
+  // would split the box structure, so it is left whole.
   if item_size_w.is_some() {
     for row in &mut rows {
       for (j, cell) in row.iter_mut().enumerate() {
         if let Some(w) = item_size_at(&item_size_w, j, num_cols)
           && let Expr::String(text) = &*cell
+          && !text.contains(crate::functions::string_ast::BOX_START)
         {
           // An average character is about half an em wide.
           let max_chars = (w * 2.0).round().max(1.0) as usize;
