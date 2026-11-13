@@ -7779,15 +7779,35 @@ fn date_list_plot_ast_impl(
 ) -> Result<Expr, InterpreterError> {
   let log_y = kind == DateListKind::Log;
   let data = evaluate_expr_to_expr(&args[0])?;
-  // A TimeSeries plots as its {date, value} path.
-  let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
-    Some(pairs) => Expr::List(
+  // A TimeSeries plots as its {date, value} path, and a list of them as one
+  // dataset per series.
+  let path_of = |pairs: Vec<(Expr, Expr)>| {
+    Expr::List(
       pairs
         .into_iter()
         .map(|(d, v)| Expr::List(vec![d, v].into()))
         .collect(),
-    ),
-    None => data,
+    )
+  };
+  let data = match crate::functions::timeseries_ast::time_series_pairs(&data) {
+    Some(pairs) => path_of(pairs),
+    None => match &data {
+      Expr::List(items)
+        if !items.is_empty()
+          && items.iter().all(|i| {
+            crate::functions::timeseries_ast::time_series_pairs(i).is_some()
+          }) =>
+      {
+        Expr::List(
+          items
+            .iter()
+            .filter_map(crate::functions::timeseries_ast::time_series_pairs)
+            .map(path_of)
+            .collect(),
+        )
+      }
+      _ => data,
+    },
   };
   let Expr::List(items) = &data else {
     return Ok(invalid_dataset(kind.head(), args));
@@ -7910,9 +7930,17 @@ fn date_list_plot_ast_impl(
         && pair.len() >= 2
       {
         let x = date_expr_to_absolute_time(&pair[0]);
-        let y = try_eval_to_f64(
-          &evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone()),
-        );
+        // Quantity values plot as their magnitudes.
+        let value = evaluate_expr_to_expr(&pair[1]).unwrap_or(pair[1].clone());
+        let value = match &value {
+          Expr::FunctionCall { name, args }
+            if name == "Quantity" && args.len() == 2 =>
+          {
+            &args[0]
+          }
+          other => other,
+        };
+        let y = try_eval_to_f64(value);
         if let (Some(x), Some(y)) = (x, y)
           && (!log_y || y > 0.0)
         {
