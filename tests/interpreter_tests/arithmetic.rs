@@ -16402,3 +16402,25 @@ fn quotient_of_quotient_evaluates_inner_product_first() {
   assert_eq!(interpret("6/2/3").unwrap(), "1");
   assert_eq!(interpret("x/2/3").unwrap(), "x/6");
 }
+
+// Wolfram reduces a multiple of Pi/12 in Sec and Csc modulo 2 Pi before
+// using a symmetry, and writes Sec[11 Pi/12] as Sqrt[2]*(1 - Sqrt[3]).
+#[test]
+fn sec_csc_at_twelfths_of_pi() {
+  for (input, expected) in [
+    ("Sec[Pi/12]", "Sqrt[2]*(-1 + Sqrt[3])"),
+    ("Sec[11 Pi/12]", "Sqrt[2]*(1 - Sqrt[3])"),
+    ("Sec[13 Pi/12]", "-(Sqrt[2]*(-1 + Sqrt[3]))"),
+    ("Sec[23 Pi/12]", "-(Sqrt[2]*(1 - Sqrt[3]))"),
+    ("Sec[-Pi/12]", "-(Sqrt[2]*(1 - Sqrt[3]))"),
+    ("Sec[-11 Pi/12]", "-(Sqrt[2]*(-1 + Sqrt[3]))"),
+    ("Sec[-23 Pi/12]", "Sqrt[2]*(-1 + Sqrt[3])"),
+    ("Csc[7 Pi/12]", "-(Sqrt[2]*(1 - Sqrt[3]))"),
+    ("Csc[-5 Pi/12]", "Sqrt[2]*(1 - Sqrt[3])"),
+    ("Csc[-7 Pi/12]", "-(Sqrt[2]*(-1 + Sqrt[3]))"),
+    ("Csc[-Pi/12]", "-(Sqrt[2]*(1 + Sqrt[3]))"),
+    ("Sec[-Pi/8]", "Sec[Pi/8]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

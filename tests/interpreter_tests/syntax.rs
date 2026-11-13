@@ -15679,3 +15679,32 @@ fn parsed_minus_folds_only_unsigned_literals() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// A held quotient is `Times[n, Power[d, -1]]`: inside a sum it subtracts
+// only when `n` is a negative number, and a held Times[-1, …] numerator
+// prints as its own factor.
+#[test]
+fn held_quotient_terms_and_negated_numerators() {
+  for (input, expected) in [
+    ("Hold[c && Plus[9, -2/5/3]]", "Hold[c && 9 + -2/5/3]"),
+    (
+      "Hold[c && Plus[9, (Divide[-2, 5] / 3)]]",
+      "Hold[c && 9 + -2/5/3]",
+    ),
+    (
+      "Hold[Plus[9, (Divide[-2, 5] / Divide[-1, 3])] | c]",
+      "Hold[9 + -2/5/(-1/3) | c]",
+    ),
+    ("Hold[c && Plus[9, -2/x]]", "Hold[c && 9 - 2/x]"),
+    ("Hold[c && Plus[9, -x/3]]", "Hold[c && 9 + -x/3]"),
+    ("Hold[Times[-1, x]/3]", "Hold[-x/3]"),
+    ("Hold[Times[-1, x, y]/3]", "Hold[-(x*y)/3]"),
+    ("Hold[Times[-1, x]/(a+b)]", "Hold[-x/(a + b)]"),
+    ("Hold[Times[-1, x]/y^2]", "Hold[-x/y^2]"),
+    ("Hold[Times[-1, x]/(-3)]", "Hold[-x/-3]"),
+    ("Hold[Times[-1, 6]/3]", "Hold[(-1*6)/3]"),
+    ("Hold[c && Plus[9, Times[-1, x]/3]]", "Hold[c && 9 + -x/3]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

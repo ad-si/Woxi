@@ -12975,7 +12975,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           } else if !is_output {
             // InputForm: Fallback check if the rendered form starts with "-"
             let s = fmt_plus_term(arg);
-            if let Some(rest) = s.strip_prefix('-') {
+            // A held quotient `n/d` is `Times[n, Power[d, -1]]`: it is a
+            // subtraction only when `n` is a negative number itself, so
+            // `9 + -2/5/3` (a quotient of a quotient) keeps its `+`.
+            let held_unsigned_quotient = in_held_format()
+              && matches!(arg, Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left,
+                ..
+              } if !matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+                && !matches!(left.as_ref(), Expr::Real(r) if *r < 0.0));
+            if let Some(rest) = s.strip_prefix('-')
+              && !held_unsigned_quotient
+            {
               result.push_str(" - ");
               result.push_str(rest);
             } else {
@@ -13260,6 +13272,29 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let inner_div = div2(inner.clone(), *right.clone());
           let inner_str = expr_to_string(&inner_div);
           return format!("-({inner_str})");
+        }
+        // A held Times[-1, …] numerator is a factor of its own:
+        // `Hold[Times[-1, x]/3]` prints `-x/3`, `-(x*y)/3`.
+        if in_held_format()
+          && matches!(left.as_ref(), Expr::FunctionCall { name, args }
+            if name == "Times" && args.len() >= 2
+              && matches!(&args[0], Expr::Integer(-1)))
+        {
+          let den = expr_to_string(right);
+          let den = if printed_infix_precedence(right).is_some_and(|p| p <= 33)
+          {
+            format!("({den})")
+          } else {
+            den
+          };
+          // `-1*6` (see the held Times printing) is a product: `(-1*6)/3`.
+          let num = expr_to_string(left);
+          let num = if num.starts_with("-1*") {
+            format!("({num})")
+          } else {
+            num
+          };
+          return format!("{num}/{den}");
         }
         // Handle FunctionCall Times[-1, ...] as numerator
         if let Expr::FunctionCall { name, args } = left.as_ref()
