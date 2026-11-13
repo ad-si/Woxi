@@ -5418,7 +5418,7 @@ fn with_frame_tick_functions(
     let callable = matches!(
       e,
       Expr::Function { .. } | Expr::CurriedCall { .. }
-    ) || matches!(e, Expr::Identifier(s) if !matches!(s.as_str(), "None" | "False" | "Automatic" | "All"));
+    ) || matches!(e, Expr::Identifier(s) if !matches!(s.as_str(), "None" | "False" | "True" | "Automatic" | "All"));
     if !callable {
       return e.clone();
     }
@@ -12722,11 +12722,15 @@ impl FrameEdgeTicks {
 /// as `None | All | Automatic`, `{{l, r}, {b, t}}`, `{b, l, t, r}` or
 /// `{xspec, yspec}` — the last gives the bottom and top edge `xspec` and
 /// the left and right one `yspec`. `Automatic` labels the bottom and left
-/// edge and only marks the top and right one; `All` labels any edge.
+/// edge and only marks the top and right one; `True` labels the bottom and
+/// left edge and draws nothing on the top and right one; `All` labels any
+/// edge.
 pub(crate) fn parse_frame_ticks(value: &Expr) -> [FrameEdgeTicks; 4] {
   let one = |e: &Expr, labeled: bool| match e {
     Expr::Identifier(v) if v == "None" || v == "False" => FrameEdgeTicks::None,
     Expr::Identifier(v) if v == "All" => FrameEdgeTicks::Labeled,
+    // `True` labels the bottom / left edge and leaves the far edge bare.
+    Expr::Identifier(v) if v == "True" && !labeled => FrameEdgeTicks::None,
     Expr::List(_) | Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
       // A spec that still has to be worked out (`Table[{j, …}, {j, 0, 1,
       // .2}]`) is read once evaluated; one that names no ticks keeps the

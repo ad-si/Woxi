@@ -39,7 +39,8 @@ True
   **`Frame`**, **`FrameLabel`**, **`Background`**, **`PlotLabel`**,
   **`Epilog`**, **`Prolog`** — as for `Plot`.
 - **`FrameTicks`** — `False` or `None` keeps the border but drops the tick
-  marks and their labels.
+  marks and their labels. `True` labels the bottom and left edges and leaves
+  the top and right ones bare.
 
 An option may be written with `:>`, which holds its right-hand side until
 the option is used:
@@ -52,4 +53,9 @@ True
 ```scrut
 $ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, FrameTicks -> False], "SVG"], "<text"]'
 False
+```
+
+```scrut
+$ wo 'StringContainsQ[ExportString[Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, FrameTicks -> True], "SVG"], "<text"]'
+True
 ```
