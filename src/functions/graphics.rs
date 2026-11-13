@@ -42530,6 +42530,33 @@ fn is_arithmetic_label(label: &Expr) -> bool {
 /// `"+" -> myIcon[2]` in a Demonstrations crosshair picker) or a
 /// `TraditionalForm[…]`-typeset expression. A held `Graphics[…]` call or a
 /// call producing one is evaluated; anything else text-like yields `None`.
+/// Whether `expr` holds a `Subscript` whose script has a character with no
+/// Unicode subscript form (`q`, capitals, most Greek letters), so a text
+/// rendering would set it at full size on the baseline.
+fn label_has_unmapped_subscript(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Subscript" => {
+      args.iter().skip(1).any(|script| {
+        let runs = manipulate_label_runs(&unquote_box_string(script), false);
+        flatten_label_runs(&runs).chars().any(|c| {
+          !c.is_whitespace() && unicode_script_char(c, false).is_none()
+        })
+      }) || args.first().is_some_and(label_has_unmapped_subscript)
+    }
+    // Held code and dynamic content are not typeset text.
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Hold" | "HoldForm" | "Dynamic") =>
+    {
+      false
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(label_has_unmapped_subscript)
+    }
+    Expr::List(items) => items.iter().any(label_has_unmapped_subscript),
+    _ => false,
+  }
+}
+
 fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
   // An arithmetic label (`-1 -> -Pi/4`) is typeset the way the FrontEnd
   // shows a computed value — a stacked fraction with real `π` — instead of
@@ -42599,6 +42626,12 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     {
       nested_layout_svg(label).filter(|svg| svg.starts_with("<svg"))
     }
+    // A label carrying a subscript Unicode has no glyphs for (the `q` of
+    // `Row[{Subscript["cos", "q"], "(z)"}]`) cannot be written as button
+    // text without the script running into its base ("cosq(z)"), so it is
+    // typeset as a picture with a real lowered script, the way Wolfram
+    // draws it.
+    _ if label_has_unmapped_subscript(label) => form_box_svg(label),
     // Text layout heads never become icons: `Column[{"…", "…"}]` has no
     // graphical meaning, and evaluating it only yields the typeset echo of
     // its own source — which would put the label's InputForm on the button.
@@ -47510,6 +47543,37 @@ mod manipulate_traditional_form_choice_svg_tests {
           .expect("Pane[TraditionalForm[…]] must render an icon");
         assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
         assert!(value_label_svgs[2].is_none());
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A choice label whose subscript has no Unicode subscript glyph (`q`,
+  /// a capital) is typeset as a picture with a lowered script instead of
+  /// running the script into its base as text ("fq(x)"); a subscript that
+  /// maps to Unicode glyphs (`f₁`) stays text.
+  #[test]
+  fn unmapped_subscript_choice_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[v, {{v, f}, \
+       {f -> Row[{Subscript[\"f\", Style[\"q\", Italic]], \"(x)\"}], \
+        g -> Subscript[\"g\", \"N\"], \
+        h -> Row[{Subscript[\"h\", 1], \"(x)\"}]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_labels,
+        value_label_svgs,
+        ..
+      } => {
+        for i in 0..2 {
+          let svg = value_label_svgs[i].as_deref().unwrap_or_else(|| {
+            panic!("label {i} must render an icon: {value_label_svgs:?}")
+          });
+          assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        }
+        assert!(value_label_svgs[2].is_none(), "{value_label_svgs:?}");
+        assert_eq!(value_labels[2], "h\u{2081}(x)");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
