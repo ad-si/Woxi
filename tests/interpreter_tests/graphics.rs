@@ -55447,6 +55447,22 @@ mod rational_coefficient_boxes {
     let svg = export_svg("Row[{\"(\", a + b, \")\"}]/24");
     assert!(!svg.contains("Row["), "{svg}");
   }
+
+  #[test]
+  fn grid_boxes_as_a_tagged_grid_box() {
+    assert_eq!(
+      interpret("ToBoxes[Grid[{{a, \"b\"}, {c, d}}]]").unwrap(),
+      "TagBox[GridBox[{{a, \"b\"}, {c, d}}, AutoDelete -> False, \
+       GridBoxItemSize -> {Columns -> {{Automatic}}, Rows -> {{Automatic}}}], Grid]"
+    );
+    // Nested in a row, the grid keeps its box rather than its source text.
+    assert_eq!(
+      interpret("ToBoxes[Row[{a, Grid[{{n}, {k}}]}]]").unwrap(),
+      "TemplateBox[{a, TagBox[GridBox[{{n}, {k}}, AutoDelete -> False, \
+       GridBoxItemSize -> {Columns -> {{Automatic}}, Rows -> {{Automatic}}}], \
+       Grid]}, RowDefault]"
+    );
+  }
 }
 
 mod svg_text_glyphs {
