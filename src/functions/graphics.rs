@@ -35389,7 +35389,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     }
   }
+  // Like any Wolfram option list, the first of several settings for the same
+  // widget-level option wins: `ControlPlacement -> Left, …,
+  // ControlPlacement -> Top` lays the controls out on the left. Remember
+  // which options were already given so later repeats are skipped below.
+  let mut seen_options: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   for spec in &arg_items {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && !is_initialization_option(pattern, replacement)
+      && !seen_options.insert(name.clone())
+    {
+      continue;
+    }
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
     // the rest rather than failing the whole extraction.
@@ -48658,6 +48678,49 @@ mod manipulate_control_placement_tests {
          ControlPlacement -> {Left}]"
       ),
       ControlPlacement::Left
+    );
+  }
+
+  /// When the same option is given twice, the first setting wins, as for
+  /// any Wolfram option list (`Manipulate` lays the controls out on the left
+  /// for `ControlPlacement -> Left, …, ControlPlacement -> Top`).
+  #[test]
+  fn first_of_repeated_placements_wins() {
+    for (first, second, expected) in [
+      ("Left", "Top", ControlPlacement::Left),
+      ("Top", "Left", ControlPlacement::Top),
+      ("Right", "Bottom", ControlPlacement::Right),
+    ] {
+      let code = format!(
+        "Manipulate[a, {{{{a, 1}}, 1, 5}}, ControlPlacement -> {first}, \
+         ContentSize -> {{390, 250}}, ControlPlacement -> {second}]"
+      );
+      assert_eq!(placement(&code), expected, "{first} then {second}");
+    }
+  }
+
+  /// A repeated option other than the placement is likewise decided by its
+  /// first setting: `AnimationRunning -> False` keeps an `Animate` paused
+  /// even when a later `AnimationRunning -> True` follows.
+  #[test]
+  fn first_of_repeated_options_wins() {
+    let spec = |code: &str| {
+      extract_manipulate_spec(&crate::parse_to_expr(code).expect("parse"))
+        .expect("extract spec")
+    };
+    assert!(
+      !spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> False, \
+         AnimationRunning -> True]"
+      )
+      .animation_running
+    );
+    assert!(
+      spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> True, \
+         AnimationRunning -> False]"
+      )
+      .animation_running
     );
   }
 

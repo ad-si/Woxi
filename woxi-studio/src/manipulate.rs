@@ -6766,3 +6766,49 @@ mod bare_tabview_tests {
     assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
   }
 }
+
+#[cfg(test)]
+mod repeated_option_tests {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a Euclidean-algorithm
+  /// walkthrough in a quadratic integer ring). Its saved widget lists
+  /// `ControlPlacement` twice — the author's `Left` first, then a stray
+  /// `Top` — and the panel has to land on the side the first setting names,
+  /// as it does for any Wolfram option list.
+  #[test]
+  fn first_of_repeated_placements_decides_the_panel_side() {
+    let code = "Manipulate[a + b, \
+       {{a, 1}, -10, 10, 1}, {{b, 2}, -10, 10, 1}, \
+       ControlPlacement -> Left, ContentSize -> {390, 250}, \
+       ControlPlacement -> Top]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.control_placement, ControlPlacement::Left);
+    assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// A style a pure function applies in the body survives the round trip
+  /// through source text that rebuilding the widget performs: the rows of
+  /// the same Demonstration are headed by `Text[Style[#, 16]] &` applied to
+  /// a `Grid`, which used to reach the renderer as a bare `Text[#] &` and so
+  /// drew at the default size instead of the size the author set.
+  #[test]
+  fn a_pure_functions_style_survives_into_the_body() {
+    let code = "Manipulate[\
+       Text[Style[#, 16]] & @ Grid[{{a, b}}, Frame -> All], \
+       {{a, 1}, -10, 10, 1}, {{b, 2}, -10, 10, 1}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.body.contains("Style[#1, 16]"),
+      "the body lost the style it applies: {}",
+      state.body
+    );
+  }
+}
