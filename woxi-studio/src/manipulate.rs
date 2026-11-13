@@ -1550,6 +1550,32 @@ impl ManipulateState {
     }
   }
 
+  /// Move the `Continuous` slider at `ctrl_idx` to `value` (a user drag).
+  /// Returns `true` if such a control was found.
+  ///
+  /// A Wolfram slider whose spec omits the step is continuous: dragging it
+  /// binds a machine real (`-10.`, `2260.`) even when its bounds and initial
+  /// value are exact integers. Only the untouched initial value stays exact.
+  /// So the first drag of a step-less slider marks it real, while its
+  /// increment stays as it was; an explicit step (`{n, 1, 10, 1}`) keeps the
+  /// exact values that step produces.
+  pub fn slide_continuous(&mut self, ctrl_idx: usize, value: f64) -> bool {
+    let Some(ControlState::Continuous {
+      name,
+      current,
+      is_real,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *current = value;
+    if self.default_step_controls.iter().any(|n| n == name) {
+      *is_real = true;
+    }
+    true
+  }
+
   /// Select `choice_label` on the `Discrete` control at `ctrl_idx` (a
   /// SetterBar/RadioButtonBar/PopupMenu/checkbox click sends its choice's
   /// display label). Returns `true` if the control was found and the label
@@ -2614,6 +2640,49 @@ fn format_f64(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+
+  /// Dragging a step-less slider with whole-number bounds binds a machine
+  /// real, as in Wolfram (a caption shows `-10.`, not `-10`), while the
+  /// untouched initial value stays exact.
+  #[test]
+  fn dragging_stepless_integer_slider_binds_machine_real() {
+    let code = r#"Manipulate[{v}, {{v, -50}, -100, 90}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("{-50}"));
+    assert!(state.slide_continuous(0, -10.0));
+    state.reevaluate();
+    assert_eq!(state.controls[0].current_code(), "-10.");
+    assert_eq!(state.text_output.as_deref(), Some("{-10.}"));
+    // A fractional drag position stays real too.
+    assert!(state.slide_continuous(0, 22.5));
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("{22.5}"));
+  }
+
+  /// An explicit step keeps the exact values that step produces.
+  #[test]
+  fn dragging_slider_with_explicit_integer_step_stays_exact() {
+    let code = r#"Manipulate[{n}, {{n, 2}, 1, 10, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.slide_continuous(0, 7.0));
+    state.reevaluate();
+    assert_eq!(state.controls[0].current_code(), "7");
+    assert_eq!(state.text_output.as_deref(), Some("{7}"));
+  }
+
+  /// `slide_continuous` only moves a continuous slider.
+  #[test]
+  fn slide_continuous_ignores_other_controls() {
+    let code = r#"Manipulate[c, {c, {1, 2, 3}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(!state.slide_continuous(0, 2.0));
+  }
 
   /// An Initialization that loads `ComputationalGeometry`` and then uses the
   /// bare `ConvexHull` in a helper (the whole code is one expression) must
