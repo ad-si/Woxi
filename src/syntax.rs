@@ -8617,6 +8617,23 @@ pub fn format_bigfloat(digits: &str, prec: f64) -> String {
 /// Works for both BinaryOp{Times} and FunctionCall{Times} forms.
 fn negate_leading_negative_in_times(expr: &Expr) -> Option<Expr> {
   match expr {
+    // `(-1*b)*c`, a parsed `-1*b*c`: the coefficient sits in the innermost
+    // left factor of the chain.
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } if matches!(
+      left.as_ref(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        ..
+      }
+    ) =>
+    {
+      let positive_left = negate_leading_negative_in_times(left)?;
+      Some(times2(positive_left, *right.clone()))
+    }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,

@@ -15302,3 +15302,17 @@ fn precedence_matches_wolfram_table() {
     );
   }
 }
+
+// A held sum whose term is a parsed `-1*b*c` (the -1 nested in the
+// product chain) prints as a subtraction.
+#[test]
+fn held_sum_with_negated_product_chain() {
+  for (input, expected) in [
+    ("Hold[a + (-1*b*c)]", "Hold[a - b*c]"),
+    ("Hold[a + (-2*b*c)]", "Hold[a - 2*b*c]"),
+    ("Hold[a + (-1*b*c*d)]", "Hold[a - b*c*d]"),
+    (r#"HoldForm[{x_} + (-1 * "s" * f)]"#, "HoldForm[{x_} - s*f]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
