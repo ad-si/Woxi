@@ -579,7 +579,19 @@ pub fn dispatch_complex_and_special(
     // notebook the pointer is over nothing yet, which a front end reports
     // as None; without one, wolframscript's notavail and $Failed.
     "MousePosition" if args.len() <= 2 => {
+      // A live widget delivering a mouse event over a graphic sets the
+      // pointer's graphics coordinates for the event's action.
+      let graphics_form =
+        matches!(args.first(), Some(Expr::String(f)) if f == "Graphics");
+      if graphics_form && let Some((x, y)) = crate::mouse_position() {
+        return Some(Ok(Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())));
+      }
       if crate::is_visual_mode() {
+        // `MousePosition[form, default]` gives `default` when the
+        // position is not available.
+        if args.len() == 2 {
+          return Some(crate::evaluator::evaluate_expr_to_expr(&args[1]));
+        }
         return Some(Ok(id_expr("None")));
       }
       crate::emit_message(
@@ -1133,7 +1145,9 @@ pub fn dispatch_complex_and_special(
       }
       // Try the list-sequence enumerator first. Both `->` (Rule) and `:>`
       // (RuleDelayed) carry the same pattern/replacement shape here; the
-      // replacement is substituted then evaluated either way.
+      // replacement is substituted then evaluated either way. A condition
+      // on the pattern moves onto the replacement, where
+      // `instantiate_replacement` drops the matches that fail it.
       let rule_parts = match &args[1] {
         Expr::Rule {
           pattern,
@@ -1142,12 +1156,12 @@ pub fn dispatch_complex_and_special(
         | Expr::RuleDelayed {
           pattern,
           replacement,
-        } => Some((pattern, replacement)),
+        } => Some(move_pattern_condition(pattern, replacement)),
         _ => None,
       };
       if let Expr::List(expr_elems) = &args[0]
-        && let Some((pattern, replacement)) = rule_parts
-        && let Expr::List(pat_elems) = pattern.as_ref()
+        && let Some((pattern, replacement)) = &rule_parts
+        && let Expr::List(pat_elems) = pattern
         && let Some(all_bindings) =
           enumerate_list_sequence_matches(expr_elems, pat_elems)
       {
@@ -1178,18 +1192,7 @@ pub fn dispatch_complex_and_special(
       // and both the FunctionCall and the parsed BinaryOp forms of the
       // expression / pattern (e.g. `a b c` and `x_ y_` parse as BinaryOp Times,
       // not FunctionCall Times).
-      let flat_rule = match &args[1] {
-        Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => Some((pattern, replacement)),
-        _ => None,
-      };
-      if let Some((pattern, replacement)) = flat_rule {
+      if let Some((pattern, replacement)) = &rule_parts {
         // Normalize FunctionCall and operator-BinaryOp forms to (head, args).
         let head_args = |e: &Expr| -> Option<(String, Vec<Expr>)> {
           match e {
@@ -2400,6 +2403,35 @@ pub fn dispatch_complex_and_special(
 /// to the default safety cap. Returns `None` for any other shape.
 /// `Dispatch[rules]` is a pre-compiled rule table; it applies exactly like
 /// the plain `rules` it wraps.
+/// `pattern /; cond -> rhs` as `pattern -> (rhs /; cond)`: the enumerators
+/// of `ReplaceList` match the bare pattern, and `instantiate_replacement`
+/// skips every match whose condition fails. A condition already on the
+/// replacement joins it, pattern condition first.
+fn move_pattern_condition(pattern: &Expr, replacement: &Expr) -> (Expr, Expr) {
+  let Expr::FunctionCall { name, args } = pattern else {
+    return (pattern.clone(), replacement.clone());
+  };
+  if name != "Condition" || args.len() != 2 {
+    return (pattern.clone(), replacement.clone());
+  }
+  let (inner, cond) = (&args[0], &args[1]);
+  let replacement = match replacement {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      call(
+        "Condition",
+        vec![
+          args[0].clone(),
+          call("And", vec![cond.clone(), args[1].clone()]),
+        ],
+      )
+    }
+    _ => call("Condition", vec![replacement.clone(), cond.clone()]),
+  };
+  move_pattern_condition(inner, &replacement)
+}
+
 fn unwrap_dispatch(rules: &Expr) -> &Expr {
   match rules {
     Expr::FunctionCall { name, args }
@@ -3160,6 +3192,10 @@ pub(crate) fn canonical_operator_call(expr: &Expr) -> Expr {
     return expr.clone();
   }
   let ExprForm::Composite { head, children } = decompose_expr(expr) else {
+    // A negated number literal, `-(2)`, is the number `-2`.
+    if let Expr::UnaryOp { operand, .. } = expr {
+      return crate::functions::expr_form::negated_term(operand);
+    }
     return expr.clone();
   };
   // A unary minus merges into its product operand too: results built with
@@ -4225,6 +4261,64 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // Fraction form: Times[..., Power[den, -1]] → FractionBox. A negative
       // numerator keeps its sign outside the fraction: `-2 x/y` is
       // RowBox[{"-", FractionBox[RowBox[{2, " ", x}], y]}].
+      // A positive rational coefficient of a product holding a sum is set
+      // as a fraction in front of it: `(a + b)/2` is `1/2 (a + b)`,
+      // `3 (a + b) c/4` is `3/4 (a + b) c`. A symbolic denominator
+      // (`(a + b)/(2 c)`) keeps the whole product over it.
+      if let Expr::FunctionCall {
+        name: coeff_head,
+        args: coeff,
+      } = &args[0]
+        && coeff_head == "Rational"
+        && let [Expr::Integer(p), Expr::Integer(q)] = coeff.as_slice()
+        && *p > 0
+        && *q > 1
+      {
+        let rest: Vec<Expr> =
+          args[1..].iter().map(canonical_operator_call).collect();
+        // A `Row` (which may spell out its own parentheses) is set after
+        // the fraction the same way.
+        let has_sum = rest.iter().any(|f| {
+          matches!(f, Expr::FunctionCall { name, args }
+            if (name == "Plus" && args.len() >= 2) || name == "Row")
+        });
+        let divides = rest.iter().any(|f| match f {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            match &args[1] {
+              Expr::Integer(e) => *e < 0,
+              Expr::Real(e) => *e < 0.0,
+              Expr::FunctionCall { name: r, args: ra } if r == "Rational" => {
+                matches!(ra.first(), Some(Expr::Integer(n)) if *n < 0)
+              }
+              Expr::FunctionCall { name: t, args: ta } if t == "Times" => {
+                matches!(ta.first(), Some(Expr::Integer(n)) if *n < 0)
+              }
+              _ => false,
+            }
+          }
+          _ => false,
+        });
+        if has_sum && !divides {
+          let fraction = call(
+            "FractionBox",
+            vec![str_expr(&p.to_string()), str_expr(&q.to_string())],
+          );
+          let product = if rest.len() == 1 {
+            let factor = expr_to_box_form(&rest[0]);
+            if matches!(&rest[0], Expr::FunctionCall { name, .. } if name == "Row")
+            {
+              factor
+            } else {
+              paren_box(factor)
+            }
+          } else {
+            expr_to_box_form(&unevaluated("Times", &rest))
+          };
+          return row_box(vec![fraction, str_expr(" "), product]);
+        }
+      }
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(expr);
       if !matches!(&den, Expr::Integer(1)) {
@@ -4334,6 +4428,25 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       call(
         "SuperscriptBox",
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
+      )
+    }
+    // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
+    // expressions (a string keeps its quotes):
+    // `TemplateBox[{a, "\"(\"", b}, "RowDefault"]`.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      call(
+        "TemplateBox",
+        vec![
+          Expr::List(items.iter().map(expr_to_box_form).collect()),
+          str_expr("RowDefault"),
+        ],
       )
     }
     Expr::FunctionCall { name, args }

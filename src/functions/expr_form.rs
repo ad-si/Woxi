@@ -50,10 +50,76 @@ fn collect_additive_children(expr: &Expr) -> Vec<Expr> {
       right,
     } => {
       let mut parts = collect_additive_children(left);
-      parts.push(times2(Expr::Integer(-1), *right.clone()));
+      parts.push(negated_term(right));
       parts
     }
     _ => vec![expr.clone()],
+  }
+}
+
+/// The term a parsed `-x` stands for: `Times[-1, x]`, except that the parser
+/// folds the sign into an unsigned number literal (`a - 2` is `Plus[a, -2]`,
+/// `-(0.)` is `0.`). A literal written with its own sign is negated like
+/// anything else: `-(-2)` is `Times[-1, -2]`.
+pub fn negated_term(x: &Expr) -> Expr {
+  match x {
+    Expr::Integer(n) if *n >= 0 => Expr::Integer(-n),
+    Expr::BigInteger(n) if n.sign() != num_bigint::Sign::Minus => {
+      Expr::BigInteger(-n)
+    }
+    // Wolfram has no negative zero: `-0.` is `0.`.
+    Expr::Real(r) if *r >= 0.0 => Expr::Real(if *r == 0.0 { 0.0 } else { -r }),
+    Expr::BigFloat(digits, prec) if !digits.starts_with('-') => {
+      Expr::BigFloat(format!("-{digits}"), *prec)
+    }
+    other => times2(Expr::Integer(-1), other.clone()),
+  }
+}
+
+/// Whether `expr` holds a parsed subtraction or negation (`a - b`, `-b`):
+/// only unevaluated (held) code keeps those as operator nodes.
+pub fn contains_subtraction(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      ..
+    }
+    | Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => true,
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(contains_subtraction),
+  }
+}
+
+/// Rewrite every parsed subtraction and negation into the expression it
+/// stands for — `a - b` into `Plus[a, Times[-1, b]]`, `-b` into
+/// `Times[-1, b]` — so structural operations see Wolfram's tree.
+pub fn canonicalize_subtractions(expr: &Expr) -> Expr {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      ..
+    } => crate::helpers::call(
+      "Plus",
+      collect_additive_children(expr)
+        .iter()
+        .map(canonicalize_subtractions)
+        .collect(),
+    ),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => match negated_term(operand) {
+      Expr::BinaryOp { .. } => crate::helpers::call(
+        "Times",
+        vec![Expr::Integer(-1), canonicalize_subtractions(operand)],
+      ),
+      folded => folded,
+    },
+    _ => crate::syntax::map_children(expr, &canonicalize_subtractions),
   }
 }
 
@@ -287,9 +353,12 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
 
     // --- Unary operators ---
     Expr::UnaryOp { op, operand } => match op {
-      UnaryOperator::Minus => ExprForm::Composite {
-        head: "Times".to_string(),
-        children: vec![Expr::Integer(-1), operand.as_ref().clone()],
+      UnaryOperator::Minus => match negated_term(operand) {
+        Expr::BinaryOp { .. } => ExprForm::Composite {
+          head: "Times".to_string(),
+          children: vec![Expr::Integer(-1), operand.as_ref().clone()],
+        },
+        folded => decompose_expr(&folded),
       },
       UnaryOperator::Not => ExprForm::Composite {
         head: "Not".to_string(),

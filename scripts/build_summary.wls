@@ -170,8 +170,11 @@ tomlString[s_String] :=
     {"\\" -> "\\\\", "\"" -> "\\\""}] <> "\"";
 
 (* Zensical does not render markdown in nav titles, so backticks would
-   surface as literal characters in the sidebar. *)
-stripBackticks[label_String] := StringReplace[label, "`" -> ""];
+   surface as literal characters in the sidebar. Only the code-span
+   delimiters are removed: a label like ``` `` Developer`ToPackedArray `` ```
+   keeps the context mark inside the span. *)
+stripBackticks[label_String] :=
+  StringReplace[label, RegularExpression["(`+) ?(.+?) ?\\1"] -> "$2"];
 
 emitNavLines[tree_List, depth_Integer] := Module[
   {pad, lines, target, label, ch, lstr},

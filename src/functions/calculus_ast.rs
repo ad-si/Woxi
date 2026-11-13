@@ -7846,6 +7846,57 @@ fn rational_root_partial_fractions(
   }
 }
 
+/// `c/(a x + b)` in the form Wolfram integrates: divided through by the
+/// integer content of `c`, `a` and `b`, and with a negative `c` moved into a
+/// non-monic denominator. `None` when neither applies.
+fn cancel_constant_over_linear(
+  c: i128,
+  factor: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::{
+    coeffs_to_expr, expand_and_combine, extract_poly_coeffs,
+  };
+  let base = match factor {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(-1)) =>
+    {
+      &args[0]
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => left.as_ref(),
+    _ => return None,
+  };
+  let coeffs = extract_poly_coeffs(&expand_and_combine(base), var)?;
+  if coeffs.len() != 2 || coeffs[1] == 0 {
+    return None;
+  }
+  let g = coeffs.iter().copied().fold(c, gcd_i128).max(1);
+  let (mut c, mut reduced) =
+    (c / g, coeffs.iter().map(|k| k / g).collect::<Vec<i128>>());
+  // A negative numerator over a non-monic linear term with an offset moves
+  // its sign into the denominator: `-1/(3 + 2 x)` integrates to
+  // `-Log[-3 - 2 x]/2`, not `-Log[3 + 2 x]/2`.
+  let flip = c < 0 && reduced[0] != 0 && reduced[1].abs() != 1;
+  if flip {
+    c = -c;
+    reduced = reduced.iter().map(|k| -k).collect();
+  }
+  if g == 1 && !flip {
+    return None;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&div2(
+    Expr::Integer(c),
+    coeffs_to_expr(&reduced, var),
+  ))
+  .ok()
+}
+
 /// Try to integrate a rational function (numerator/denominator where both are polynomials).
 /// Uses polynomial long division + partial fraction decomposition.
 ///
@@ -7876,14 +7927,49 @@ fn try_integrate_rational(
     if nr.iter().chain(dr.iter()).all(|c| *c == 0)
       && den.len() < den_coeffs.len()
     {
-      let num = coeffs_to_expr(&num, var);
-      let denominator = coeffs_to_expr(&den, var);
-      return if den.len() == 1 {
-        integrate(&div2(num, denominator), var)
+      // The reduced quotient goes back through the general integrator:
+      // the rational one alone misses forms the others handle, such as a
+      // linear denominator with a non-integer root (`1/(1 - 2 x)` left from
+      // `x/(x - 2 x^2)`), and integration by parts then took over.
+      // The integer content cancels too, so that `2/(2 - 4 x)` does not
+      // integrate to `Log[2 - 4 x]` where Wolfram, cancelling first, writes
+      // `Log[1 - 2 x]`.
+      let content = num.iter().chain(den.iter()).copied().fold(0, gcd_i128);
+      let (num, den) = if content > 1 {
+        (
+          num.iter().map(|c| c / content).collect::<Vec<_>>(),
+          den.iter().map(|c| c / content).collect::<Vec<_>>(),
+        )
       } else {
-        try_integrate_rational(&num, &denominator, var)
+        (num, den)
       };
+      let quotient = crate::evaluator::evaluate_expr_to_expr(&div2(
+        coeffs_to_expr(&num, var),
+        coeffs_to_expr(&den, var),
+      ))
+      .ok()?;
+      return integrate(&quotient, var);
     }
+  }
+  // An integer content shared by numerator and denominator cancels as
+  // well: Wolfram integrates `2 x/(-2 + 2 x)` as `x/(-1 + x)`.
+  let content = num_coeffs
+    .iter()
+    .chain(den_coeffs.iter())
+    .copied()
+    .fold(0, gcd_i128);
+  if content > 1 && den_coeffs.len() > 1 {
+    let reduce = |coeffs: &[i128]| -> Vec<i128> {
+      coeffs.iter().map(|c| c / content).collect()
+    };
+    // Evaluated, so that a remaining numerator content is pulled out as a
+    // constant factor the way it is for the quotient typed in directly.
+    let quotient = crate::evaluator::evaluate_expr_to_expr(&div2(
+      coeffs_to_expr(&reduce(&num_coeffs), var),
+      coeffs_to_expr(&reduce(&den_coeffs), var),
+    ))
+    .ok()?;
+    return integrate(&quotient, var);
   }
   // A linear denominator with entirely negative coefficients is first
   // made positive, keeping the logarithm on the same branch as Wolfram.
@@ -8024,6 +8110,56 @@ fn try_integrate_rational(
   try_integrate_rational_impl(num_expr, den_expr, var)
 }
 
+/// `∫ num/den` through `Apart`, when the denominator factors over the
+/// rationals into pieces each of degree at most two; `None` otherwise.
+fn integrate_via_partial_fractions(
+  num: &[i128],
+  den: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::coeffs_to_expr;
+  let quotient = div2(coeffs_to_expr(num, var), coeffs_to_expr(den, var));
+  let parts = crate::evaluator::evaluate_function_call_ast(
+    "Apart",
+    &[quotient, id_expr(var)],
+  )
+  .ok()?;
+  let terms = crate::functions::collect_additive_terms(&parts);
+  if terms.len() < 2 {
+    return None;
+  }
+  // Every piece must have a denominator of degree at most two, or the
+  // term-by-term integration would recurse back here.
+  let small = |t: &Expr| {
+    let den = crate::evaluator::evaluate_function_call_ast(
+      "Denominator",
+      std::slice::from_ref(t),
+    )
+    .ok();
+    den
+      .and_then(|d| {
+        crate::functions::polynomial_ast::extract_poly_coeffs(
+          &crate::functions::polynomial_ast::expand_and_combine(&d),
+          var,
+        )
+      })
+      .is_some_and(|c| c.len() <= 3)
+  };
+  if !terms.iter().all(small) {
+    return None;
+  }
+  // Each piece's constant is distributed over its antiderivative, as
+  // wolframscript writes it: `-1/5*ArcTan[x] + Log[1 + x^2]/5`.
+  let integrals = terms
+    .iter()
+    .map(|t| {
+      let primitive = integrate(t, var)?;
+      crate::evaluator::evaluate_function_call_ast("Expand", &[primitive]).ok()
+    })
+    .collect::<Option<Vec<_>>>()?;
+  crate::evaluator::evaluate_expr_to_expr(&plus(integrals)).ok()
+}
+
 fn try_integrate_rational_impl(
   num_expr: &Expr,
   den_expr: &Expr,
@@ -8131,6 +8267,18 @@ fn try_integrate_rational_impl(
   // A single coefficient (zero or not) is a constant, i.e. degree 0.
   let remaining_deg = remaining.len().saturating_sub(1);
   if remaining_deg > 2 {
+    // A cubic or higher factor without an integer root may still split
+    // over the rationals (`-1 - 2 x - x^2 - 2 x^3` is `-(1 + 2 x)(1 + x^2)`):
+    // integrate Apart's partial fractions term by term, and keep RootSum
+    // for a denominator that is irreducible.
+    if let Some(result) =
+      integrate_via_partial_fractions(&proper_num, &den_coeffs, var)
+    {
+      return Some(match quotient_integral {
+        Some(qi) => plus2(qi, result),
+        None => result,
+      });
+    }
     let result = integrate_polynomial_residues(&proper_num, &den_coeffs, var)?;
     return Some(match quotient_integral {
       Some(qi) => plus2(qi, result),
@@ -9553,6 +9701,16 @@ fn try_integrate_reciprocal_quadratic(expr: &Expr, var: &str) -> Option<Expr> {
 }
 
 fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
+  // `c/(a x + b)` with an integer content shared by c, a and b is cancelled
+  // first, as Wolfram does: `2/(6 + 4 x)` integrates to `Log[3 + 2 x]/2`,
+  // while `1/(6 + 4 x)` keeps `Log[6 + 4 x]/4`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && let [Expr::Integer(c), factor] = args.as_slice()
+    && let Some(reduced) = cancel_constant_over_linear(*c, factor, var)
+  {
+    return integrate(&reduced, var);
+  }
   // Polynomial products should integrate coefficient by coefficient before
   // the integration-by-parts fallback can produce an uncollected primitive.
   if (matches!(expr, Expr::FunctionCall { name, .. } if name == "Times")
@@ -10595,24 +10753,31 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 return Some(apply_const(result));
               }
               // Non-monic linear substitution needs the signed numerator
-              // content to choose the logarithm argument consistently.
+              // content to choose the logarithm argument consistently, and
+              // a factor shared with the denominator is cancelled together
+              // with its content: Wolfram reduces `2 x/(2 x - 4 x^2)` to
+              // `1/(1 - 2 x)`, not `2/(2 - 4 x)`.
+              let poly_coeffs = |e: &Expr| {
+                crate::functions::polynomial_ast::extract_poly_coeffs(
+                  &crate::functions::polynomial_ast::expand_and_combine(e),
+                  var,
+                )
+              };
               let include_constants = !const_factors.is_empty()
-                && crate::functions::polynomial_ast::extract_poly_coeffs(
-                  &crate::functions::polynomial_ast::expand_and_combine(
-                    &denominator,
-                  ),
-                  var,
-                )
-                .is_some_and(|coeffs| {
-                  coeffs.len() == 2 && coeffs[1].abs() != 1
+                && poly_coeffs(&denominator).is_some_and(|den| {
+                  (den.len() == 2 && den[1].abs() != 1)
+                    || poly_coeffs(&numerator).is_some_and(|num| {
+                      crate::functions::polynomial_ast::poly_gcd(&num, &den)
+                        .is_some_and(|common| common.len() > 1)
+                    })
+                    || poly_coeffs(&apply_const(numerator.clone())).is_some_and(
+                      |num| {
+                        num.iter().chain(den.iter()).copied().fold(0, gcd_i128)
+                          > 1
+                      },
+                    )
                 })
-                && crate::functions::polynomial_ast::extract_poly_coeffs(
-                  &crate::functions::polynomial_ast::expand_and_combine(
-                    &apply_const(numerator.clone()),
-                  ),
-                  var,
-                )
-                .is_some();
+                && poly_coeffs(&apply_const(numerator.clone())).is_some();
               let rational_numerator = if include_constants {
                 apply_const(numerator.clone())
               } else {

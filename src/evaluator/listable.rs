@@ -303,6 +303,12 @@ pub fn thread_listable(
 ) -> Result<Option<Expr>, InterpreterError> {
   // Check if any argument is a list
   let has_list = args.iter().any(|a| matches!(a, Expr::List(_)));
+  // Without lists, a Listable function threads over the values of its
+  // associations, which must share their keys:
+  // `<|"a" -> 1|> + 3` is `<|"a" -> 4|>`.
+  if !has_list && args.iter().any(|a| matches!(a, Expr::Association(_))) {
+    return thread_over_associations(name, args);
+  }
   if !has_list {
     // Plus, Times and Power have SparseArray arithmetic of their own.
     if !matches!(name, "Plus" | "Times" | "Power") {
@@ -379,8 +385,24 @@ pub fn thread_listable(
       match list_len {
         None => list_len = Some(items.len()),
         Some(n) if n != items.len() => {
-          // Mismatched list lengths — don't thread, let the function handle it
-          return Ok(None);
+          // Mismatched list lengths. Plus and Times report it themselves;
+          // for any other head it is Thread::tdlen and the call stays.
+          if matches!(name, "Plus" | "Times") {
+            return Ok(None);
+          }
+          let call = Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          };
+          use crate::syntax::MessagePiece;
+          crate::emit_message(&crate::syntax::format_message_pieces(&[
+            MessagePiece::Text(
+              "Thread::tdlen: Objects of unequal length in ".into(),
+            ),
+            MessagePiece::Expr(&call),
+            MessagePiece::Text(" cannot be combined.".into()),
+          ]));
+          return Ok(Some(call));
         }
         _ => {}
       }
@@ -418,6 +440,79 @@ pub fn thread_listable(
     ));
   }
   Ok(Some(product))
+}
+
+/// A Listable function applied to associations (and scalars): the function
+/// threaded over their values, key by key. Associations with different key
+/// sets are reported with Association::incmp and the call stays.
+fn thread_over_associations(
+  name: &str,
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let assocs: Vec<&Vec<(Expr, Expr)>> = args
+    .iter()
+    .filter_map(|a| match a {
+      Expr::Association(items) => Some(items),
+      _ => None,
+    })
+    .collect();
+  let keys: Vec<&Expr> = assocs[0].iter().map(|(k, _)| k).collect();
+  // The same keys in the same order: `<|a -> 1, b -> 2|> +
+  // <|b -> 10, a -> 20|>` is incompatible in wolframscript.
+  let same_keys = |items: &Vec<(Expr, Expr)>| {
+    items.len() == keys.len()
+      && items.iter().zip(&keys).all(|((k, _), k0)| {
+        crate::evaluator::pattern_matching::expr_equal(k0, k)
+      })
+  };
+  if !assocs.iter().all(|items| same_keys(items)) {
+    let call = Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    };
+    let mut pieces = vec![crate::syntax::MessagePiece::Text(
+      "Association::incmp: The arguments ".into(),
+    )];
+    let assoc_args: Vec<&Expr> = args
+      .iter()
+      .filter(|a| matches!(a, Expr::Association(_)))
+      .collect();
+    for (i, a) in assoc_args.iter().enumerate() {
+      if i > 0 {
+        pieces.push(crate::syntax::MessagePiece::Text(
+          if i + 1 == assoc_args.len() {
+            " and "
+          } else {
+            ", "
+          }
+          .into(),
+        ));
+      }
+      pieces.push(crate::syntax::MessagePiece::Expr(a));
+    }
+    pieces.push(crate::syntax::MessagePiece::Text(" in ".into()));
+    pieces.push(crate::syntax::MessagePiece::Expr(&call));
+    pieces.push(crate::syntax::MessagePiece::Text(
+      " are incompatible.".into(),
+    ));
+    crate::emit_message(&crate::syntax::format_message_pieces(&pieces));
+    return Ok(Some(call));
+  }
+  let mut result = Vec::with_capacity(keys.len());
+  for key in keys {
+    let threaded: Vec<Expr> = args
+      .iter()
+      .map(|a| match a {
+        Expr::Association(items) => items
+          .iter()
+          .find(|(k, _)| crate::evaluator::pattern_matching::expr_equal(k, key))
+          .map_or_else(|| a.clone(), |(_, v)| v.clone()),
+        other => other.clone(),
+      })
+      .collect();
+    result.push((key.clone(), evaluate_function_call_ast(name, &threaded)?));
+  }
+  Ok(Some(Expr::Association(result)))
 }
 
 /// A Listable function of one canonical `SparseArray` (and otherwise

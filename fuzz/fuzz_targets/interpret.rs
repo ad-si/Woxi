@@ -14,6 +14,14 @@ use libfuzzer_sys::fuzz_target;
 /// containing them are skipped so the fuzzer neither litters the disk nor
 /// mutates toward I/O instead of interpreter logic.
 ///
+/// Entries are matched as substrings: `Write` covers `WriteString`,
+/// `WriteLine` and `BinaryWrite`, `Rename` covers `RenameFile` and
+/// `RenameDirectory`. `>>` and `<<` are the operator spellings of `Put` /
+/// `PutAppend` and `Get`, which the head names alone would let through.
+///
+/// `Quit` and `Exit` end the process, which libFuzzer reports as a crash
+/// ("fuzz target exited") although the interpreter did what it was told.
+///
 /// `Socket` (matched as a substring, so it covers `SocketOpen`,
 /// `SocketListen`, `SocketConnect`, `SocketReadMessage`, …) is here
 /// because a read blocks until the peer writes: a mutation that misspells
@@ -31,8 +39,14 @@ const SIDE_EFFECT_DENYLIST: &[&str] = &[
   "DeleteDirectory",
   "CreateFile",
   "CreateDirectory",
-  "RenameFile",
+  "Rename",
   "CopyFile",
+  "Write",
+  "Save",
+  ">>",
+  "<<",
+  "Quit",
+  "Exit",
   "SetDirectory",
   "Run",
   "URLFetch",

@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 6452
 expression: "export_svg(\"RevolutionPlot3D[{t, t/2, t^2}, {t, 0.5, 2}]\")"
 ---
 <svg width="360" height="291" viewBox="0 0 360 291" xmlns="http://www.w3.org/2000/svg">
@@ -6964,11 +6965,11 @@ expression: "export_svg(\"RevolutionPlot3D[{t, t/2, t^2}, {t, 0.5, 2}]\")"
 <line x1="315.0" y1="183.4" x2="317.1" y2="184.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="325.1" y1="168.2" x2="327.2" y2="169.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="334.7" y1="153.6" x2="336.8" y2="155.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="256.4" y1="271.6" x2="259.8" y2="273.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="256.4" y1="271.6" x2="253.1" y2="269.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="261.4" y="274.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
-<line x1="304.4" y1="199.3" x2="307.7" y2="201.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="304.4" y1="199.3" x2="301.1" y2="197.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="309.4" y="202.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="344.0" y1="139.7" x2="347.3" y2="141.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="344.0" y1="139.7" x2="340.6" y2="137.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="349.0" y="143.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
 <line x1="25.6" y1="192.5" x2="12.8" y2="111.3" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="25.1" y1="189.5" x2="27.6" y2="189.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
