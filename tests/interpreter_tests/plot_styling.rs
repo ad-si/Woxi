@@ -307,6 +307,43 @@ mod styles {
     assert!(svg.contains("stroke-dasharray=\"25.0,45.0\""), "{svg}");
   }
 
+  /// Curves are drawn in list order whether or not they are dashed, so a
+  /// solid curve listed after dashed ones covers them.
+  #[test]
+  fn dashed_curves_keep_their_drawing_order() {
+    let strokes = |code: &str| -> Vec<String> {
+      svg_of(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline"))
+        .filter_map(|l| {
+          let at = l.find(" stroke=\"")? + 9;
+          Some(l[at..at + l[at..].find('"')?].to_string())
+        })
+        .collect()
+    };
+    assert_eq!(
+      strokes(
+        "Plot[{Sin[x], Cos[x], Sin[x] + Cos[x]}, {x, 0, 1}, \
+         PlotStyle -> {Dashed, Dashed, Thick}]"
+      ),
+      ["rgb(61,153,204)", "rgb(242,160,36)", "#74B336"]
+    );
+    assert_eq!(
+      strokes(
+        "Plot[{x, 2 x, 3 x}, {x, 0, 1}, PlotStyle -> {Red, Dashed, Blue}]"
+      ),
+      ["#FF0000", "rgb(242,160,36)", "#0000FF"]
+    );
+    // A dashed grid line lies under the curve.
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, GridLines -> {{0.5}, None}, \
+       GridLinesStyle -> Dashed, PlotStyle -> Red]",
+    );
+    let grid = svg.find("stroke-dasharray").unwrap();
+    let curve = svg.find("stroke=\"#FF0000\"").unwrap();
+    assert!(grid < curve, "{svg}");
+  }
+
   /// `TraditionalForm` sets single-letter symbols in italics; a string
   /// stays upright.
   #[test]
