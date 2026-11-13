@@ -167,6 +167,32 @@ mod column_visual_mode {
     assert!(svg.contains("text-anchor=\"start\""), "{svg}");
   }
 
+  // A fixed-size `Pane` item keeps its box in a ruled column (a `Grid`
+  // layout); it used to be peeled, so a wide picture drew at its own size.
+  #[test]
+  fn ruled_column_keeps_a_fixed_size_pane_box() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{Pane[Graphics[Disk[], ImageSize -> 720], \
+       ImageSize -> {500, 35}], \"x\"}, Dividers -> All]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("width=\"500.0\" height=\"35.0\""), "{svg}");
+    assert!(!svg.contains("width=\"720"), "{svg}");
+  }
+
+  #[test]
+  fn grid_cell_keeps_a_fixed_size_pane_box() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Pane[\"abc\", {80, 30}], 1}, {2, 3}}, Frame -> All]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
+  }
+
   #[test]
   fn column_dividers_all_rules_every_line() {
     clear_state();

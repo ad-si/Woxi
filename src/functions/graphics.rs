@@ -23912,6 +23912,27 @@ fn grid_svg_styled_internal_reporting(
   }
   for row in &mut rows {
     for cell in row.iter_mut() {
+      // A `Pane[content, {w, h}]` cell reserves exactly that box (clipping
+      // what overflows it), so it is drawn by the `Pane` renderer as a
+      // picture of that size; peeled to its content, a wide image row in
+      // a ruled column was drawn at its own, larger size.
+      if let Expr::FunctionCall { name, args } = &*cell
+        && name == "Pane"
+        && crate::evaluator::dispatch::io_functions::pane_fixed_size(args)
+          .is_some()
+      {
+        let svg = crate::evaluator::expr_to_svg(cell);
+        if svg.starts_with("<svg") {
+          *cell = Expr::Graphics {
+            svg,
+            is_3d: false,
+            source: None,
+            head: None,
+            structure: None,
+          };
+          continue;
+        }
+      }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
       // A string with inline box notation is typeset at the grid's size.
