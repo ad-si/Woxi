@@ -15316,3 +15316,35 @@ fn held_sum_with_negated_product_chain() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// Held quotient factors, nested pure functions and `&&` groups, `!` in
+// `|`, Span in operator operands, and call-form operands of `@*`, `/@`,
+// `//`.
+#[test]
+fn held_operand_forms_round_seven() {
+  for (input, expected) in [
+    ("Hold[2*(f/ab)]", "Hold[2*f/ab]"),
+    ("Hold[-2*(f/ab)]", "Hold[-2*f/ab]"),
+    ("Hold[(# &) &]", "Hold[(#1 & ) & ]"),
+    ("Hold[a | !b]", "Hold[a |  !b]"),
+    ("Hold[Span[a, b] //. c]", "Hold[Span[a, b] //. c]"),
+    (
+      "ToString[Hold[Span[a, b] //. c], InputForm]",
+      "Hold[a ;; b //. c]",
+    ),
+    ("Hold[x // Span[a, b]]", "Hold[Span[a, b][x]]"),
+    (
+      "Hold[StringJoin[a == b, c] @* x]",
+      "Hold[StringJoin[a == b, c] @* x]",
+    ),
+    (
+      "Hold[f /@ StringJoin[b &, c]]",
+      "Hold[f /@ StringJoin[b & , c]]",
+    ),
+    ("Hold[((a && b) && c)/d]", "Hold[((a && b) && c)/d]"),
+    ("Hold[(a += b) &]", "Hold[a += b & ]"),
+    ("Hold[(a = b) &]", "Hold[(a = b) & ]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

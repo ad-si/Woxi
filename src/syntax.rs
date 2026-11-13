@@ -10109,19 +10109,15 @@ fn is_nested_alternatives_call(e: &Expr) -> bool {
 /// builds its lookup tables.
 fn function_body_needs_parens(body: &Expr) -> bool {
   match body {
-    Expr::CompoundExpr(_) => true,
+    // A nested pure function: `(#1 & ) & `.
+    Expr::CompoundExpr(_) | Expr::Function { .. } => true,
+    // The assignments (40) bind looser than `&` (90); `+=` and friends
+    // (100) do not: `a += 1 & ` prints bare.
     Expr::FunctionCall { name, args } => {
       args.len() == 2
         && matches!(
           name.as_str(),
-          "Set"
-            | "SetDelayed"
-            | "UpSet"
-            | "UpSetDelayed"
-            | "AddTo"
-            | "SubtractFrom"
-            | "TimesBy"
-            | "DivideBy"
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
         )
     }
     _ => false,
@@ -10359,14 +10355,16 @@ fn format_map_apply_shorthand(
   let func_needs_parens = matches!(func, Expr::NamedFunction { .. })
     || printed_infix_precedence(func).is_some_and(|p| p <= prec)
     || is_factorial_call(func);
-  let func_display = if func_needs_parens {
+  let func_display = if func_needs_parens && !prints_as_call(&func_str) {
     format!("({func_str})")
   } else {
     func_str
   };
   let list_str = format_expr(list, ExprForm::Input);
-  let list_display = if printed_infix_precedence(list).is_some_and(|p| p < prec)
-    || is_factorial_call(list)
+  let list_display = if (printed_infix_precedence(list)
+    .is_some_and(|p| p < prec)
+    || is_factorial_call(list))
+    && !prints_as_call(&list_str)
   {
     format!("({list_str})")
   } else {
@@ -11513,12 +11511,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               _ => false,
             };
             let text = fmt(a);
-            if nested
-              || printed_infix_precedence(a).is_some()
-              || prints_as_not(a)
-              || is_negative_or_fraction_literal(a)
-              || matches!(a, Expr::FunctionCall { name: n, args: na }
-                if (n == "Factorial" || n == "Factorial2") && na.len() == 1)
+            // Text printed as one whole call needs none:
+            // `StringJoin[a, b] @* x`.
+            if !prints_as_call(&text)
+              && (nested
+                || printed_infix_precedence(a).is_some()
+                || prints_as_not(a)
+                || is_negative_or_fraction_literal(a)
+                || is_factorial_call(a))
             {
               format!("({text})")
             } else {
@@ -11736,6 +11736,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 ..
               }
             ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+              // A nested `And` is an explicit group (only held ones stay).
+              || matches!(arg, Expr::FunctionCall { name, args }
+                if name == "And" && args.len() >= 2)
               || printed_infix_precedence(arg).is_some_and(|p| p < 18)
               || is_bare_pattern(arg)
               || (connective_parens() && is_logical_connective_call(arg));
@@ -11857,9 +11860,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         for a in args {
           if in_held_format()
             && (is_times_expression(a)
-              // A one-factor `Times[f]` stays as written.
+              // A one-factor `Times[f]` stays as written, and so does a
+              // quotient factor: `Hold[2*(f/ab)]` prints `2*f/ab`.
               || matches!(a, Expr::FunctionCall { name, args }
                 if name == "Times" && args.len() == 1)
+              || matches!(
+                a,
+                Expr::BinaryOp {
+                  op: BinaryOperator::Divide,
+                  ..
+                }
+              )
               || matches!(
                 a,
                 Expr::UnaryOp {
@@ -13593,7 +13604,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(left.as_ref())
-          && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
+          && !matches!(
+            op,
+            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Alternatives
+          ))
         // `(-a)*b`: a leading minus reaches past the product without them.
         // (Held OutputForm prints the operand bare: `Hold[-a*b]`.)
         || (matches!(op, BinaryOperator::Times)
@@ -13726,7 +13740,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             | Expr::ReplaceRepeated { .. }
         )
         || (prints_as_not(right.as_ref())
-          && !matches!(op, BinaryOperator::And | BinaryOperator::Or))
+          && !matches!(
+            op,
+            BinaryOperator::And | BinaryOperator::Or | BinaryOperator::Alternatives
+          ))
         // `a*(-b)`, `a/(-b)`: the minus would otherwise swallow what follows.
         // (Held OutputForm prints the operand bare: `Hold[a*-b]`.)
         || (matches!(op, BinaryOperator::Times | BinaryOperator::Divide)
@@ -14020,11 +14037,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       let arg_str = format_expr(arg, form);
       // `f @ x` prints as `f[x]`, with the head bracketed by the same rule
       // as any applied head.
-      let func_display = if curried_head_needs_parens(func) {
-        format!("({func_str})")
-      } else {
-        func_str
-      };
+      let func_display =
+        if curried_head_needs_parens(func) && !prints_as_call(&func_str) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
       format!("{func_display}[{arg_str}]")
     }
     Expr::Postfix { expr, func } => {
@@ -14032,11 +14050,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // semantically `f[x]`, so render as such inside Hold/FullForm output.
       let func_str = format_expr(func, form);
       let arg_str = format_expr(expr, form);
-      let func_display = if curried_head_needs_parens(func) {
-        format!("({func_str})")
-      } else {
-        func_str
-      };
+      let func_display =
+        if curried_head_needs_parens(func) && !prints_as_call(&func_str) {
+          format!("({func_str})")
+        } else {
+          func_str
+        };
       format!("{func_display}[{arg_str}]")
     }
     Expr::Part { expr, index } => {
@@ -15534,7 +15553,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Span"
         && (args.len() == 2 || args.len() == 3)
-        && !in_full_form() =>
+        && !in_full_form()
+        && in_true_input_form() =>
     {
       args
         .iter()
@@ -15901,6 +15921,8 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
               ..
             }
           ) || matches!(arg, Expr::FunctionCall { name, .. } if name == "Or")
+            || matches!(arg, Expr::FunctionCall { name, args }
+              if name == "And" && args.len() >= 2)
             || printed_infix_precedence(arg).is_some_and(|p| p < 18)
             || is_bare_pattern(arg)
             || (connective_parens() && is_logical_connective_call(arg));
