@@ -11085,6 +11085,67 @@ mod plot3d {
       assert_ne!(big, merged(""), "the default must not swallow the size");
     }
 
+    /// `PlotLabel -> Pane[content, …]` draws the content, not the
+    /// `Pane[…]` source text, in a running line as well as on its own.
+    #[test]
+    fn plot_label_pane_sets_its_content() {
+      for label in [
+        r#"Pane["abc"]"#,
+        r#"Pane["abc", Scrollbars -> {False, True}]"#,
+        r#"Row[{Pane["abc"], "!"}]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics[Point[{{0, 0}}], PlotLabel -> {label}]"
+        ));
+        assert!(!svg.contains("Pane["), "Pane leaked for {label}: {svg}");
+        assert!(svg.contains(">abc"), "content missing for {label}: {svg}");
+      }
+    }
+
+    /// A fixed-size `Pane` label wraps a line that runs past its width —
+    /// breaking a long number between its digits — and keeps only the
+    /// lines its height holds.
+    #[test]
+    fn plot_label_fixed_size_pane_wraps_and_clips() {
+      let label_lines = |pane_size: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[Point[{{0, 0}}], ImageSize -> 400, PlotLabel -> \
+           Pane[Row[{{x, \" = \", N[Pi, 300]}}], ImageSize -> {pane_size}]]"
+        ));
+        let text = svg
+          .split("<text ")
+          .find(|t| t.contains("x = 3.14159"))
+          .expect("the plot label")
+          .split("</text>")
+          .next()
+          .unwrap()
+          .to_string();
+        // Only the text between tags, not the numbers of the attributes.
+        let digits: String = text
+          .split('>')
+          .skip(1)
+          .filter_map(|s| s.split('<').next())
+          .collect::<String>()
+          .chars()
+          .filter(|c| c.is_ascii_digit())
+          .collect();
+        (text.matches("<tspan x=").count() + 1, digits)
+      };
+      // Wide enough for the whole number in a few lines: every digit kept
+      // and in order, on lines no wider than the pane.
+      let (lines, digits) = label_lines("{400, 1000}");
+      assert!(lines >= 4, "expected the number to wrap: {lines} lines");
+      assert!(digits.starts_with("31415926535897932384626"), "{digits}");
+      assert_eq!(digits.len(), 300, "{digits}");
+      // A pane 50 points high shows three 12-point lines.
+      let (lines, _) = label_lines("{400, 50}");
+      assert_eq!(lines, 3);
+      // A width alone keeps every line.
+      let (lines, digits) = label_lines("200");
+      assert!(lines >= 8, "{lines}");
+      assert_eq!(digits.len(), 300);
+    }
+
     #[test]
     fn plot_label_expression_is_typeset() {
       // A PlotLabel is drawn, not printed: `Subscript[p, 0]` becomes a

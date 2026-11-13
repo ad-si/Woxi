@@ -16868,6 +16868,40 @@ fn is_stacked_block(expr: &Expr) -> bool {
 /// build multi-line plot titles that way — and any line that itself carries
 /// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
 /// further. Everything else is a single line.
+/// The label lines of `Pane[content, size, …]` (see
+/// `expr_to_svg_markup_lines`): the content's lines, wrapped to the pane's
+/// width and cut to the lines its height holds.
+fn pane_markup_lines(args: &[Expr]) -> Vec<String> {
+  use crate::evaluator::dispatch::io_functions::{
+    pane_fixed_size, pane_size_component, pane_width_only,
+  };
+  use crate::functions::plot_padding::{
+    TITLE_FONT, block_height, wrap_label_line,
+  };
+  let lines = expr_to_svg_markup_lines(&args[0]);
+  let (width, height) = match pane_fixed_size(args) {
+    Some(size) => {
+      (pane_size_component(&size[0]), pane_size_component(&size[1]))
+    }
+    None => (pane_width_only(args), None),
+  };
+  let Some(width) = width.filter(|w| *w > 0.0) else {
+    return lines;
+  };
+  let mut wrapped: Vec<String> = lines
+    .iter()
+    .flat_map(|l| wrap_label_line(l, width, TITLE_FONT))
+    .collect();
+  if let Some(height) = height {
+    let mut fit = 1;
+    while fit < wrapped.len() && block_height(fit + 1, TITLE_FONT) <= height {
+      fit += 1;
+    }
+    wrapped.truncate(fit);
+  }
+  wrapped
+}
+
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return expr_to_svg_markup_lines(&styled);
@@ -16887,6 +16921,15 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
     && !args.is_empty()
   {
     return expr_to_svg_markup_lines(&args[0]);
+  }
+  // `Pane[content, …]` sets its content; a pane with a fixed width wraps
+  // each line that runs past it, and a fixed height shows only the lines
+  // that fit (the rest scroll out of view in the front end).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Pane"
+    && !args.is_empty()
+  {
+    return pane_markup_lines(args);
   }
   // `Style[Column[…], directives…]` styles every line of the stacked block
   // it wraps (`PlotLabel -> Style[Column[{…}], 12]` is a common title).
@@ -18213,7 +18256,7 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // frame's border or highlight fill around it, so just typeset the
         // content (matching `Tooltip`, whose hover-only chrome the same
         // static context can't show either).
-        "Framed" | "Highlighted" if !args.is_empty() => {
+        "Framed" | "Highlighted" | "Pane" if !args.is_empty() => {
           expr_to_svg_markup(&args[0])
         }
 
