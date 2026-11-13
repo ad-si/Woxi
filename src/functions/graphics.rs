@@ -22270,7 +22270,10 @@ fn grid_ast_internal(
   // A grid whose cells are all graphics is a layout of pictures, not of
   // text: lay the renderings out side by side at their own sizes, the
   // way `GraphicsGrid` does, instead of printing `-Graphics-` per cell.
-  if !parens && let Some(rows) = grid_of_graphics_svgs(args) {
+  if !parens
+    && !has_item_alignment(args)
+    && let Some(rows) = grid_of_graphics_svgs(args)
+  {
     // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
     // are honored by the one layout `expr_to_svg` gives a `Grid` holding
     // pictures; the bare composition below would silently drop them.
@@ -22297,6 +22300,30 @@ fn grid_ast_internal(
   }
   let svg = grid_svg_internal(args, group_gaps, parens)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// Whether a cell of `Grid`'s matrix is an `Item[…, Alignment -> …]`: the
+/// picture layout centers every cell, so such a grid takes the full grid
+/// layout, which places each cell by its own alignment.
+pub fn has_item_alignment(args: &[Expr]) -> bool {
+  let Some(Expr::List(rows)) = args.first() else {
+    return false;
+  };
+  rows
+    .iter()
+    .flat_map(|row| match row {
+      Expr::List(cells) => cells.iter().collect::<Vec<_>>(),
+      single => vec![single],
+    })
+    .any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Item"
+          && args
+            .iter()
+            .skip(1)
+            .filter_map(option_kv)
+            .any(|(key, _)| key == "Alignment"))
+    })
 }
 
 /// The rendered SVG of every cell, when `Grid`'s first argument is a
@@ -23313,6 +23340,41 @@ fn vertical_alignment(expr: &Expr) -> Option<VAlign> {
   }
 }
 
+/// Per-row vertical alignments from the row part of a Grid `Alignment`
+/// spec: one symbol for every row, or a list with one entry per row
+/// (a nested list repeats cyclically over the remaining rows).
+fn row_vertical_alignments(
+  spec: &Expr,
+  num_rows: usize,
+) -> Vec<Option<VAlign>> {
+  match spec {
+    Expr::List(items) => {
+      let explicit: Vec<_> = items
+        .iter()
+        .take_while(|it| !matches!(it, Expr::List(_)))
+        .map(vertical_alignment)
+        .collect();
+      let repeating: Vec<_> = items
+        .iter()
+        .find_map(|it| match it {
+          Expr::List(rep) => Some(rep.iter().map(vertical_alignment).collect()),
+          _ => None,
+        })
+        .unwrap_or_default();
+      (0..num_rows)
+        .map(|i| match explicit.get(i) {
+          Some(a) => *a,
+          None if !repeating.is_empty() => {
+            repeating[(i - explicit.len()) % repeating.len()]
+          }
+          None => None,
+        })
+        .collect()
+    }
+    other => vec![vertical_alignment(other); num_rows],
+  }
+}
+
 fn alignment_to_anchor(expr: &Expr) -> &'static str {
   match expr {
     Expr::Identifier(val) => match val.as_str() {
@@ -24008,9 +24070,9 @@ fn grid_svg_styled_internal_reporting(
   let mut row_bg_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_bg_has_repeating = false;
   let mut alignment_h: &str = "middle"; // SVG text-anchor value (default)
-  // `Alignment -> {h, v}`: where an item sits vertically in its row.
-  let mut alignment_v = VAlign::Center;
   let mut col_alignments: Vec<&str> = Vec::new(); // per-column alignments
+  // `Alignment -> {h, v}`: where each row's cells sit vertically.
+  let mut row_valigns: Vec<Option<VAlign>> = Vec::new();
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
   let mut col_align_has_repeating = false;
@@ -24266,8 +24328,8 @@ fn grid_svg_styled_internal_reporting(
           Expr::List(items) => {
             // Alignment -> {col_spec} or Alignment -> {col_spec, row_spec}
             // col_spec can be: Left, {Left, Right, {Left}}, etc.
-            if let Some(v) = items.get(1).and_then(vertical_alignment) {
-              alignment_v = v;
+            if let Some(row_spec) = items.get(1) {
+              row_valigns = row_vertical_alignments(row_spec, rows.len());
             }
             if let Some(first) = items.first() {
               match first {
@@ -25112,14 +25174,16 @@ fn grid_svg_styled_internal_reporting(
       // Shift text down slightly to compensate for ascenders being taller
       // than descenders, which makes mathematical centering look top-heavy.
       let cy = f64::midpoint(cell_top, cell_bottom) - 1.0;
-      // A `Top` or `Bottom` vertical alignment puts an item of height `h`
-      // against that edge of its rows' content area (inside the cell
-      // padding); the result is the item's top edge, or `None` when the
-      // item stays centered.
+      // A `Top` or `Bottom` vertical alignment (on the grid, its row, or
+      // the cell's `Item`) puts an item of height `h` against that edge of
+      // its rows' content area (inside the cell padding); the result is the
+      // item's top edge, or `None` when the item stays centered.
       let v_align = item_v_aligns
         .iter()
         .find(|(pos, _)| *pos == (i, j))
-        .map_or(alignment_v, |(_, a)| *a);
+        .map(|(_, a)| *a)
+        .or_else(|| row_valigns.get(i).copied().flatten())
+        .unwrap_or(VAlign::Center);
       let content_top = content_y_starts[i];
       let content_bottom = content_y_starts[last_row] + row_heights[last_row];
       let aligned_top = |h: f64| -> Option<f64> {
@@ -25306,7 +25370,7 @@ fn grid_svg_styled_internal_reporting(
           let block_h = lines.len() as f64 * lh;
           let top = aligned_top(block_h)
             .map_or(cy - (lines.len() as f64 - 1.0) / 2.0 * lh, |t| {
-              t + lh / 2.0
+              t + lh / 2.0 - 1.0
             });
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
@@ -25319,7 +25383,7 @@ fn grid_svg_styled_internal_reporting(
           (top, body)
         } else {
           let lh = markup_line_height(&markup, fs);
-          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0), markup)
+          (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",

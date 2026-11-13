@@ -7682,7 +7682,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // and centers its content across them; the picture compositor below
       // only knows one cell per slot.
       // So does a `Grid` that places or sizes its cells itself
-      // (`Alignment -> Right`, `ItemSize -> {…}`): the compositor centers
+      // (`Alignment -> Right`, `ItemSize -> {…}`, or an `Item` cell's own
+      // `Alignment`): the compositor centers
       // every cell at its natural size and would drop both options, and it
       // would typeset a text cell beside a picture as math rather than as
       // the grid's text.
@@ -7699,7 +7700,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               k.as_str(),
               "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
             )))
-        }))
+        }) || crate::functions::graphics::has_item_alignment(args))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])
       {
