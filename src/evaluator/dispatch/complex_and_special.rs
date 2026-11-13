@@ -4245,6 +4245,64 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // Fraction form: Times[..., Power[den, -1]] → FractionBox. A negative
       // numerator keeps its sign outside the fraction: `-2 x/y` is
       // RowBox[{"-", FractionBox[RowBox[{2, " ", x}], y]}].
+      // A positive rational coefficient of a product holding a sum is set
+      // as a fraction in front of it: `(a + b)/2` is `1/2 (a + b)`,
+      // `3 (a + b) c/4` is `3/4 (a + b) c`. A symbolic denominator
+      // (`(a + b)/(2 c)`) keeps the whole product over it.
+      if let Expr::FunctionCall {
+        name: coeff_head,
+        args: coeff,
+      } = &args[0]
+        && coeff_head == "Rational"
+        && let [Expr::Integer(p), Expr::Integer(q)] = coeff.as_slice()
+        && *p > 0
+        && *q > 1
+      {
+        let rest: Vec<Expr> =
+          args[1..].iter().map(canonical_operator_call).collect();
+        // A `Row` (which may spell out its own parentheses) is set after
+        // the fraction the same way.
+        let has_sum = rest.iter().any(|f| {
+          matches!(f, Expr::FunctionCall { name, args }
+            if (name == "Plus" && args.len() >= 2) || name == "Row")
+        });
+        let divides = rest.iter().any(|f| match f {
+          Expr::FunctionCall { name, args }
+            if name == "Power" && args.len() == 2 =>
+          {
+            match &args[1] {
+              Expr::Integer(e) => *e < 0,
+              Expr::Real(e) => *e < 0.0,
+              Expr::FunctionCall { name: r, args: ra } if r == "Rational" => {
+                matches!(ra.first(), Some(Expr::Integer(n)) if *n < 0)
+              }
+              Expr::FunctionCall { name: t, args: ta } if t == "Times" => {
+                matches!(ta.first(), Some(Expr::Integer(n)) if *n < 0)
+              }
+              _ => false,
+            }
+          }
+          _ => false,
+        });
+        if has_sum && !divides {
+          let fraction = call(
+            "FractionBox",
+            vec![str_expr(&p.to_string()), str_expr(&q.to_string())],
+          );
+          let product = if rest.len() == 1 {
+            let factor = expr_to_box_form(&rest[0]);
+            if matches!(&rest[0], Expr::FunctionCall { name, .. } if name == "Row")
+            {
+              factor
+            } else {
+              paren_box(factor)
+            }
+          } else {
+            expr_to_box_form(&unevaluated("Times", &rest))
+          };
+          return row_box(vec![fraction, str_expr(" "), product]);
+        }
+      }
       let (num, den) =
         crate::functions::polynomial_ast::together::extract_num_den(expr);
       if !matches!(&den, Expr::Integer(1)) {
@@ -4354,6 +4412,25 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       call(
         "SuperscriptBox",
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
+      )
+    }
+    // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
+    // expressions (a string keeps its quotes):
+    // `TemplateBox[{a, "\"(\"", b}, "RowDefault"]`.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      call(
+        "TemplateBox",
+        vec![
+          Expr::List(items.iter().map(expr_to_box_form).collect()),
+          str_expr("RowDefault"),
+        ],
       )
     }
     Expr::FunctionCall { name, args }

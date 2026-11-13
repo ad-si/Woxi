@@ -11574,6 +11574,10 @@ pub(crate) fn svg_escape(s: &str) -> String {
   // `\[ExponentialE]` (U+F74D) would become `ℯ`, which the embedded fonts
   // lack; it is drawn as the double-struck `ⅇ` Wolfram shows.
   let s = s.replace('\u{F74D}', "\u{2147}");
+  // `\[Hyphen]` (U+2010) and the no-break hyphen (U+2011) are missing from
+  // the embedded fonts too, and a renderer falling back to another face
+  // for them switches the whole run's font; they look like an ASCII `-`.
+  let s = s.replace(['\u{2010}', '\u{2011}'], "-");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
   let escaped = s
     .replace('&', "&amp;")
@@ -17489,6 +17493,41 @@ fn wrap_style_tspan(attrs: &str, content: &str) -> String {
   format!("<tspan{merged}{inner_attrs}>{body}</tspan>")
 }
 
+/// Give every `tspan` nested inside another one the text's
+/// `dominant-baseline` explicitly. resvg resets the baseline of a doubly
+/// nested `tspan` (`Style[2 Style[m, Italic] + 1, 18]` nests the italic run
+/// in the sized one), which lifted such a run above the rest of its line.
+fn pin_nested_tspan_baselines(markup: &str, baseline: &str) -> String {
+  let mut out = String::with_capacity(markup.len());
+  let mut depth = 0usize;
+  let mut rest = markup;
+  while let Some(pos) = rest.find('<') {
+    out.push_str(&rest[..pos]);
+    rest = &rest[pos..];
+    let end = rest.find('>').map_or(rest.len(), |e| e + 1);
+    let tag = &rest[..end];
+    if tag.starts_with("</tspan") {
+      depth = depth.saturating_sub(1);
+      out.push_str(tag);
+    } else if tag.starts_with("<tspan") && !tag.ends_with("/>") {
+      if depth >= 1 && !tag.contains("dominant-baseline") {
+        out.push_str("<tspan dominant-baseline=\"");
+        out.push_str(baseline);
+        out.push('"');
+        out.push_str(&tag["<tspan".len()..]);
+      } else {
+        out.push_str(tag);
+      }
+      depth += 1;
+    } else {
+      out.push_str(tag);
+    }
+    rest = &rest[end..];
+  }
+  out.push_str(rest);
+  out
+}
+
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return expr_to_svg_markup(&styled);
@@ -23091,16 +23130,15 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
     _ => cell,
   };
   // `Style[31/10, Bold, 20]` is still a stacked fraction, set in the
-  // styled font: typeset the whole `StyleBox` so its size, weight and
-  // color reach the numerator and denominator.
-  let held = match held {
-    Expr::FunctionCall { name, args }
-      if is_style_wrapper(name) && args.len() >= 2 =>
-    {
-      &args[0]
-    }
-    _ => held,
-  };
+  // styled font: typeset the whole `StyleBox` so its size, weight, slant
+  // and color reach the numerator and denominator.
+  let mut held = held;
+  while let Expr::FunctionCall { name, args } = held
+    && is_style_wrapper(name)
+    && args.len() >= 2
+  {
+    held = &args[0];
+  }
   let arithmetic = matches!(held, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
     || matches!(held, Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
@@ -26667,8 +26705,10 @@ pub fn combine_layout_svgs(
   rows: &[Vec<String>],
   option_args: &[Expr],
   gap: f64,
+  row_align: Vec<f64>,
 ) -> Option<String> {
   let mut opts = parse_layout_options(option_args);
+  opts.row_align = row_align;
   if !opts.spacings_explicit {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
@@ -26776,6 +26816,11 @@ struct LayoutOptions {
   /// vertical gap resolved against the cell width — how `GraphicsGrid`
   /// spaces its cells.
   outer_margin: bool,
+  /// Where each row's cells sit across their column, as a fraction of the
+  /// spare width (0 left, 1/2 centered, 1 right); rows past the end are
+  /// centered. A `Column` sets its items at the left unless an
+  /// `Item[…, Alignment -> …]` says otherwise.
+  row_align: Vec<f64>,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -26949,6 +26994,7 @@ fn compute_grid_layout(
         background: opts.background,
         aspect_full: opts.aspect_full,
         outer_margin: opts.outer_margin,
+        row_align: opts.row_align.clone(),
       };
       &opts_owned
     } else {
@@ -27142,8 +27188,11 @@ fn compute_grid_layout(
   // column and vertically center shorter cells within their row.
   let mut row_layouts: Vec<GridRowLayout> = Vec::new();
 
-  for ((parsed_row, cell_dims), spans) in
-    parsed_rows.iter().zip(scaled_rows.iter()).zip(&extra_cols)
+  for (i, ((parsed_row, cell_dims), spans)) in parsed_rows
+    .iter()
+    .zip(scaled_rows.iter())
+    .zip(&extra_cols)
+    .enumerate()
   {
     if parsed_row.is_empty() {
       row_layouts.push(GridRowLayout {
@@ -27166,7 +27215,8 @@ fn compute_grid_layout(
       let y_off = ((row_h - ch) / 2.0).max(0.0);
       let last = j + spans[j];
       let span_w = col_x[last] + col_w[last] - col_x[j];
-      let x = col_x[j] + (span_w - cw) / 2.0;
+      let frac = opts.row_align.get(i).copied().unwrap_or(0.5);
+      let x = col_x[j] + (span_w - cw) * frac;
       cells.push(LayoutCell {
         x,
         y_off,
@@ -27369,6 +27419,7 @@ fn default_layout_options() -> LayoutOptions {
     background: None,
     aspect_full: false,
     outer_margin: false,
+    row_align: Vec::new(),
   }
 }
 
@@ -30782,6 +30833,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           } else {
             ""
           };
+          let markup = pin_nested_tspan_baselines(markup, "central");
           svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr}{deco_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n"
           ));

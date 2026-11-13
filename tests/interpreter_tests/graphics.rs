@@ -171,12 +171,20 @@ fn axes_crossing(svg: &str) -> (f64, f64) {
 /// single-letter symbols in unwrapped, so a test can match a label's text
 /// (`sin(x)`) whatever its font style.
 pub(crate) fn without_italics(svg: &str) -> String {
-  const OPEN: &str = "<tspan font-style=\"italic\">";
+  // A run nested in another `tspan` also pins the line's baseline.
+  const OPENS: [&str; 2] = [
+    "<tspan font-style=\"italic\">",
+    "<tspan dominant-baseline=\"central\" font-style=\"italic\">",
+  ];
   let mut out = String::with_capacity(svg.len());
   let mut rest = svg;
-  while let Some(start) = rest.find(OPEN) {
+  while let Some((start, open)) = OPENS
+    .iter()
+    .filter_map(|o| rest.find(o).map(|i| (i, *o)))
+    .min_by_key(|(i, _)| *i)
+  {
     out.push_str(&rest[..start]);
-    let inner = &rest[start + OPEN.len()..];
+    let inner = &rest[start + open.len()..];
     let Some(end) = inner.find("</tspan>") else {
       out.push_str(&rest[start..]);
       return out;
@@ -54390,6 +54398,136 @@ mod text_label_powers_and_wrappers {
        16]], \"tip\"]}]",
     );
     assert!(svg.contains("font-size=\"16\""), "{svg}");
+  }
+}
+
+mod styled_math_typesetting {
+  use super::*;
+
+  #[test]
+  fn styled_fraction_is_typeset_in_the_style_size() {
+    // `Style[(1 + m)/12, 18]` stacks 1 over 12 with a fraction bar, set at
+    // size 18, instead of spelling the quotient out as `(1 + m)/12`.
+    let svg = export_svg("Style[(1 + m)/12, 18]");
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+    assert!(!svg.contains(")/12"), "{svg}");
+  }
+
+  #[test]
+  fn styled_radical_is_typeset() {
+    let svg = export_svg("Row[{Style[Sqrt[x], 18], \" y\"}]");
+    assert!(!svg.contains("\u{221A}<tspan"), "{svg}");
+  }
+
+  #[test]
+  fn nested_style_runs_keep_the_line_baseline() {
+    // resvg resets the baseline of a doubly nested tspan, so the inner
+    // italic run carries the text's central baseline itself.
+    let svg = export_svg("Style[2 Style[m, Italic] + 1, 18]");
+    assert!(
+      svg.contains(
+        "<tspan dominant-baseline=\"central\" font-style=\"italic\">m</tspan>"
+      ),
+      "{svg}"
+    );
+  }
+}
+
+mod rational_coefficient_boxes {
+  use super::*;
+
+  #[test]
+  fn rational_coefficient_of_a_sum_is_a_leading_fraction() {
+    assert_eq!(
+      interpret("ToBoxes[(a + b)/12]").unwrap(),
+      "RowBox[{FractionBox[1, 12],  , RowBox[{(, RowBox[{a, +, b}], )}]}]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[3 (a + b) c/4]").unwrap(),
+      "RowBox[{FractionBox[3, 4],  , RowBox[{RowBox[{(, RowBox[{a, +, b}], )}],  , c}]}]"
+    );
+    // A symbolic denominator or a plain product stays one fraction.
+    assert_eq!(
+      interpret("ToBoxes[(a + b)/(2 c)]").unwrap(),
+      "FractionBox[RowBox[{a, +, b}], RowBox[{2,  , c}]]"
+    );
+    assert_eq!(interpret("ToBoxes[x/2]").unwrap(), "FractionBox[x, 2]");
+  }
+
+  #[test]
+  fn rational_coefficient_of_a_row_is_a_leading_fraction() {
+    assert_eq!(
+      interpret("ToBoxes[Row[{\"(\", a + b, \")\"}]/24]").unwrap(),
+      "RowBox[{FractionBox[1, 24],  , TemplateBox[{\"(\", RowBox[{a, +, b}], \")\"}, RowDefault]}]"
+    );
+  }
+
+  #[test]
+  fn row_boxes_as_the_row_template() {
+    assert_eq!(
+      interpret("ToBoxes[Row[{a, \"(\", b}]]").unwrap(),
+      "TemplateBox[{a, \"(\", b}, RowDefault]"
+    );
+    // Typeset inside a fraction, the row draws its parts, not its source.
+    let svg = export_svg("Row[{\"(\", a + b, \")\"}]/24");
+    assert!(!svg.contains("Row["), "{svg}");
+  }
+}
+
+mod svg_text_glyphs {
+  use super::*;
+
+  #[test]
+  fn typographic_hyphen_is_drawn_as_an_ascii_hyphen() {
+    // The embedded fonts lack U+2010, and a renderer falling back to
+    // another face for it switches the font of the whole run.
+    let svg = export_svg("Row[{12, \"\\[Hyphen]bead\"}]");
+    assert!(svg.contains("-bead"), "{svg}");
+    assert!(!svg.contains('\u{2010}'), "{svg}");
+  }
+}
+
+mod column_picture_alignment {
+  use super::*;
+
+  fn nested_svg_x(svg: &str) -> Vec<f64> {
+    svg
+      .match_indices("<svg x=\"")
+      .map(|(i, m)| {
+        svg[i + m.len()..]
+          .split('"')
+          .next()
+          .unwrap()
+          .parse::<f64>()
+          .unwrap()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn column_sets_a_narrow_picture_at_the_left() {
+    // `Column`'s default `Alignment` is `Left`: a picture above a wider
+    // item starts at the left edge instead of being centered.
+    let svg = export_svg(
+      "Column[{Graphics[Disk[], ImageSize -> {40, 40}], \
+        Graphics[Rectangle[{0, 0}, {4, 1}], ImageSize -> {200, 50}]}]",
+    );
+    let xs = nested_svg_x(&svg);
+    assert_eq!(xs.len(), 2, "{svg}");
+    assert!(xs.iter().all(|x| *x == 0.0), "{xs:?} {svg}");
+  }
+
+  #[test]
+  fn column_item_alignment_centers_its_picture() {
+    let svg = export_svg(
+      "Column[{Item[Graphics[Disk[], ImageSize -> {40, 40}], \
+        Alignment -> Center], \
+        Graphics[Rectangle[{0, 0}, {4, 1}], ImageSize -> {200, 50}]}]",
+    );
+    let xs = nested_svg_x(&svg);
+    assert_eq!(xs.len(), 2, "{svg}");
+    assert!(xs[0] > 50.0 && xs[1] == 0.0, "{xs:?} {svg}");
   }
 }
 

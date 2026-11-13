@@ -6682,6 +6682,36 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
   }
 }
 
+/// Where a `Column` item sits across the column, as a fraction of the
+/// spare width: at the left, unless it is an `Item[…, Alignment -> Center]`
+/// (or `Right`, or `{h, v}`).
+fn item_horizontal_alignment(item: &Expr) -> f64 {
+  let Expr::FunctionCall { name, args } = item else {
+    return 0.0;
+  };
+  if name != "Item" {
+    return 0.0;
+  }
+  let spec = args[1..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Alignment") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  });
+  let horizontal = match spec {
+    Some(Expr::List(pair)) => pair.first(),
+    other => other,
+  };
+  match horizontal {
+    Some(Expr::Identifier(h)) if h == "Center" => 0.5,
+    Some(Expr::Identifier(h)) if h == "Right" => 1.0,
+    _ => 0.0,
+  }
+}
+
 /// `"\n" * cell` (a newline typed into a layout) draws as `cell`: the
 /// blank-string factors only add invisible space.
 fn strip_blank_times(cell: &Expr) -> Expr {
@@ -7776,13 +7806,29 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         // or `Column`'s cells a fixed distance apart, about 5.5 points —
         // kept to whole points so the cells stay on the pixel grid.
         let gap = if name == "Row" { 0.0 } else { 6.0 };
-        crate::functions::graphics::combine_layout_svgs(&rows, option_args, gap)
-          .map_or_else(
-            || expr_text_svg(expr),
-            |svg| {
-              crate::functions::graphics::with_grid_background(svg, option_args)
-            },
-          )
+        // A `Column` sets its items at the left (its default `Alignment`),
+        // or where an `Item[…, Alignment -> …]` asks; a `Grid` centers each
+        // cell in its column.
+        let row_align: Vec<f64> = if name == "Column" {
+          layout_rows(name, args)
+            .iter()
+            .map(|cells| cells.first().map_or(0.0, item_horizontal_alignment))
+            .collect()
+        } else {
+          Vec::new()
+        };
+        crate::functions::graphics::combine_layout_svgs(
+          &rows,
+          option_args,
+          gap,
+          row_align,
+        )
+        .map_or_else(
+          || expr_text_svg(expr),
+          |svg| {
+            crate::functions::graphics::with_grid_background(svg, option_args)
+          },
+        )
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
