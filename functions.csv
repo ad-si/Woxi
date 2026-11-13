@@ -649,7 +649,7 @@ PlotLabels,"Option for labeling plot curves",✅,none,10.4,597
 Scale,"Scales a graphics object",✅,pure,6.0,597
 Log10,"Returns the base-10 logarithm of a number",✅,pure,7.0,598
 EndPackage,"Ends a package and puts its context on $ContextPath so its exports become visible",✅,effectful,1.0,599
-PolyhedronData,"Properties of named polyhedra (PolyhedronData[] and PolyhedronData[n] or PolyhedronData[i;;j] list entities) including the vertex-edge skeleton graph and the unfolded planar net (NetFaces; NetCoordinates and NetFaceIndices) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids (including the cuboctahedron) and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; the gyroelongated square dipyramid; MathematicaSpikey also named Spikey; and the stella octangula; the right n-gonal prisms and uniform n-gonal antiprisms; the unit-edge square and pentagonal pyramids; and the triangular or square or pentagonal dipyramids)",🚧,pure,6.0,601
+PolyhedronData,"Properties of named polyhedra (PolyhedronData[] and PolyhedronData[n] or PolyhedronData[i;;j] list entities) including the vertex-edge skeleton graph and the unfolded planar net (NetFaces; NetCoordinates and NetFaceIndices) and the dual solid (Dual) and pictures (Image; SkeletonImage; NetImage) (Platonic solids; the golden rhombohedra and rhombic icosahedron; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids (including the cuboctahedron) and their duals; the great and small stellated dodecahedra and rhombic hexecontahedron stellations; the triangular orthobicupola; the gyroelongated square dipyramid; MathematicaSpikey also named Spikey; and the stella octangula; the right n-gonal prisms and uniform n-gonal antiprisms; the unit-edge square and pentagonal pyramids; and the triangular or square or pentagonal dipyramids)",🚧,pure,6.0,601
 PolyhedronOperations`Truncate,"Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first",✅,pure,3.0,
 PolyhedronOperations`Stellate,"Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first",✅,pure,3.0,
 Nearest,"Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1",✅,pure,6.0,602
@@ -6361,10 +6361,10 @@ $MachineEpsilon,"",,stateful,2.0,
 $MachinePrecision,"The precision of machine-precision numbers",✅,stateful,2.0,
 $MaxMachineNumber,"",,stateful,2.0,
 $MaxNumber,"",🚫,stateful,3.0,
-$MaxPrecision,"",,stateful,3.0,
+$MaxPrecision,"Maximum precision allowed in arbitrary-precision numbers",✅,stateful,3.0,
 $MinMachineNumber,"",,stateful,2.0,
 $MinNumber,"",🚫,stateful,3.0,
-$MinPrecision,"",,stateful,3.0,
+$MinPrecision,"Minimum precision allowed in arbitrary-precision numbers",✅,stateful,3.0,
 $Messages,"",🚫,stateful,1.0,
 $Output,"",🚫,stateful,1.0,
 $Path,"The list of directories to search",✅,stateful,1.0,

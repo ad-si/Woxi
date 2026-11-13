@@ -471,6 +471,35 @@ mod layout_display {
     assert!(x < 40.0, "text should sit at the left: {svg}");
   }
 
+  /// `Pane[text, w]` / `Pane[text, ImageSize -> w]` sets a width alone:
+  /// the box is exactly `w` wide, its text wraps there, and the height
+  /// follows the lines. Regression: a framed width-only pane was one line
+  /// high and its text ran past the edge, cut off.
+  #[test]
+  fn pane_width_only_wraps_text() {
+    let long = "Column[{Row[{12.5, \" units of the first kind in the sample\"}], Row[{7, \" units of the second kind left over at the end\"}]}]";
+    for pane in [
+      format!("Pane[{long}, 200]"),
+      format!("Pane[{long}, ImageSize -> 200]"),
+      format!("Text@Pane[{long}, ImageSize -> 200]"),
+    ] {
+      let svg = svg_of(&pane);
+      assert!(svg.starts_with("<svg width=\"200\""), "{pane}: {svg}");
+      // Four lines of text, not the two unwrapped ones.
+      assert!(texts(&svg).len() >= 6, "{pane}: {svg}");
+      let framed = svg_of(&format!("Framed[{pane}]"));
+      assert!(framed.contains("width=\"210\""), "{pane}: {framed}");
+      let i = framed.find("height=\"").unwrap() + 8;
+      let h: f64 = framed[i..i + framed[i..].find('"').unwrap()]
+        .parse()
+        .unwrap();
+      assert!(h > 4.0 * 14.0, "framed pane too short: {framed}");
+    }
+    // Short text keeps one line in a box of the full width.
+    let svg = svg_of("Pane[\"abc\", 100]");
+    assert!(svg.starts_with("<svg width=\"100\" height=\"15\""), "{svg}");
+  }
+
   /// `Panel[expr, "Title"]` draws its title above the box, and a panel is
   /// the light-gray box at the top level too.
   #[test]

@@ -8359,10 +8359,7 @@ fn is_primitive_root(g: u64, n: u64, phi: u64) -> bool {
     }
     p += 1;
   }
-  if temp_phi > 1 && pow_mod(g, phi / temp_phi, n) == 1 {
-    return false;
-  }
-  true
+  !(temp_phi > 1 && pow_mod(g, phi / temp_phi, n) == 1)
 }
 
 fn pow_mod(mut base: u64, mut exp: u64, modulus: u64) -> u64 {

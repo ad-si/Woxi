@@ -115,7 +115,8 @@ mod image_core {
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], {100, 80}, \
          Alignment -> Center]",
-        "translate(40.0 0.0)",
+        // A lone `Center` centers on both axes.
+        "translate(40.0 25.0)",
       ),
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], ImageSize -> {100, 80}, \
@@ -8614,7 +8615,7 @@ mod color_data_gradients {
         .unwrap(),
       "InputForm[ColorDataFunction[WL14DefaultDensityGradient, \
        ThemeGradients, {0, 1}, \
-       Blend[\"WL14DefaultDensityGradient\", #1] & ]]"
+       Blend[WL14DefaultDensityGradient, #1] & ]]"
     );
     assert_eq!(
       interpret(
@@ -9749,6 +9750,49 @@ mod rasterize_any_expression {
       )
       .unwrap(),
       "{20, 30}"
+    );
+  }
+
+  // `ImageSize` is the displayed size in printer's points, so at the
+  // default resolution it sets the raster's pixel dimensions; an image
+  // argument used to come back at its own size regardless.
+  #[test]
+  fn image_size_sets_the_raster_dimensions() {
+    let dims = |src: &str| {
+      interpret(&format!("ImageDimensions[Rasterize[{src}]]")).unwrap()
+    };
+    let img = "Image[ConstantArray[0.5, {100, 80}]]";
+    assert_eq!(dims(img), "{80, 100}");
+    assert_eq!(dims(&format!("{img}, ImageSize -> {{50, 50}}")), "{50, 50}");
+    assert_eq!(dims(&format!("{img}, ImageSize -> 40")), "{40, 50}");
+    assert_eq!(dims("Graphics[Disk[]], ImageSize -> {50, 50}"), "{50, 50}");
+    assert_eq!(
+      dims("Graphics[Disk[]], ImageSize -> {100, 50}"),
+      "{100, 50}"
+    );
+    assert_eq!(dims("Graphics[Disk[]], ImageSize -> 80"), "{80, 80}");
+    assert_eq!(
+      dims("Graphics[Disk[]], ImageSize -> 80, ImageResolution -> 144"),
+      "{160, 160}"
+    );
+    // An explicit RasterSize wins over the ImageSize.
+    assert_eq!(
+      dims("Graphics[Disk[]], ImageSize -> 80, RasterSize -> 20"),
+      "{20, 20}"
+    );
+  }
+
+  // A drawing fitted into a wider ImageSize box keeps its aspect ratio
+  // and is centered: the disk's left and right edges stay white.
+  #[test]
+  fn image_size_box_fits_the_drawing_without_stretching() {
+    assert_eq!(
+      interpret(
+        "d = ImageData[Rasterize[Graphics[Disk[]], ImageSize -> {100, 50}]]; \
+         {d[[25, 3]], d[[25, 50]]}"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, {0., 0., 0.}}"
     );
   }
 

@@ -10468,6 +10468,46 @@ mod ndsolve {
     );
   }
 
+  /// `InterpolationOrder -> 0` gives a piecewise-constant step function:
+  /// between two nodes it holds the value of the right node, at a node the
+  /// node's own value, and its derivative is zero.
+  #[test]
+  fn interpolation_order_zero_is_a_step_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0}, {1, 1}, {2, 4}, {3, 9}}, \
+         InterpolationOrder -> 0]; \
+         {f[0], f[1/2], f[1], f[1.5], f[2.9], f[3], f'[1.5]}"
+      )
+      .unwrap(),
+      "{0, 1, 1, 4., 9., 9, 0}"
+    );
+    assert_eq!(
+      interpret("Interpolation[{2, 3, 5, 7}, InterpolationOrder -> 0][2.5]")
+        .unwrap(),
+      "5."
+    );
+    assert_eq!(
+      interpret(
+        "Interpolation[{{0, 1}, {1, 2}}, InterpolationOrder -> 0]\
+         [\"InterpolationOrder\"]"
+      )
+      .unwrap(),
+      "{0}"
+    );
+    // Irregularly spaced, unsorted nodes: a counting process with jumps at
+    // the nodes.
+    assert_eq!(
+      interpret(
+        "g = Interpolation[{{0.7, 2}, {0, 0}, {0.2, 0}, {1, 3}, {0.4, 1}}, \
+         InterpolationOrder -> 0]; Map[g, {0.1, 0.3, 0.5, 0.75, 0.95}]"
+      )
+      .unwrap(),
+      "{0., 1., 2., 3., 3.}"
+    );
+  }
+
   /// A flat `{x, y, z}` list with complex `z` is a complex-valued 2-D grid:
   /// the real and imaginary parts interpolate independently, and the partial
   /// derivatives `Derivative[a, b][f]` act on the local polynomial exactly.
@@ -27968,5 +28008,115 @@ mod series_unusable_order {
       "{result}"
     );
     assert!(start.elapsed() < std::time::Duration::from_secs(20));
+  }
+}
+
+// A rational integrand is cancelled the way Wolfram's `Cancel` does it —
+// common polynomial factor and integer content — before it is integrated.
+mod integrate_cancels_rational_integrands {
+  use super::*;
+
+  // Regression: the factor `x` cancelled, but the rest went back through
+  // the rational integrator only, which cannot do `1/(1 - 2 x)`, and
+  // integration by parts produced a non-canonical primitive.
+  #[test]
+  fn common_factor_with_non_monic_remainder() {
+    assert_eq!(
+      interpret("Integrate[x/(x - 2 x^2), x]").unwrap(),
+      "-1/2*Log[1 - 2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[(2 x)/(2 x - 4 x^2), x]").unwrap(),
+      "-1/2*Log[1 - 2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[(-2 x)/(2 x - 4 x^2), x]").unwrap(),
+      "Log[-1 + 2*x]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[x/(4 x - 2 x^2), x]").unwrap(),
+      "-1/2*Log[4 - 2*x]"
+    );
+  }
+
+  #[test]
+  fn shared_integer_content() {
+    assert_eq!(
+      interpret("Integrate[(2 x)/(-2 + 2 x), x]").unwrap(),
+      "x + Log[-1 + x]"
+    );
+    assert_eq!(
+      interpret("Integrate[(4 x)/(2 x^2 + 6 x - 2), x]").unwrap(),
+      "2*((3*ArcTanh[(3 + 2*x)/Sqrt[13]])/Sqrt[13] + Log[1 - 3*x - x^2]/2)"
+    );
+    assert_eq!(
+      interpret("Integrate[2/(4 x + 6), x]").unwrap(),
+      "Log[3 + 2*x]/2"
+    );
+    // No shared content: nothing cancels.
+    assert_eq!(
+      interpret("Integrate[1/(2 - 4 x), x]").unwrap(),
+      "-1/4*Log[2 - 4*x]"
+    );
+  }
+
+  // A negative constant over a non-monic linear term with an offset moves
+  // its sign into the denominator.
+  #[test]
+  fn negative_constant_over_non_monic_linear() {
+    assert_eq!(
+      interpret("Integrate[-1/(3 + 2 x), x]").unwrap(),
+      "-1/2*Log[-3 - 2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[-1/(2 - 4 x), x]").unwrap(),
+      "Log[-2 + 4*x]/4"
+    );
+    assert_eq!(
+      interpret("Integrate[-3/(2 + x), x]").unwrap(),
+      "-3*Log[2 + x]"
+    );
+    assert_eq!(
+      interpret("Integrate[-2/(3 x), x]").unwrap(),
+      "(-2*Log[x])/3"
+    );
+  }
+}
+
+// A denominator whose linear factors have rational, non-integer roots
+// splits through Apart instead of falling back to RootSum. Found by the
+// differential fuzzer.
+mod integrate_rational_roots {
+  use super::*;
+
+  #[test]
+  fn factors_over_the_rationals() {
+    for (input, expected) in [
+      (
+        "Integrate[1/(-1 - 2 x - x^2 - 2 x^3), x]",
+        "-1/5*ArcTan[x] - (2*Log[1 + 2*x])/5 + Log[1 + x^2]/5",
+      ),
+      (
+        "Integrate[1/((1 + 2 x) (1 + x^2)), x]",
+        "ArcTan[x]/5 + (2*Log[1 + 2*x])/5 - Log[1 + x^2]/5",
+      ),
+      (
+        "Integrate[1/((3 x + 1) (x^2 + x + 1)), x]",
+        "-1/7*ArcTan[(1 + 2*x)/Sqrt[3]]/Sqrt[3] + (3*Log[1 + 3*x])/7 - \
+         (3*Log[1 + x + x^2])/14",
+      ),
+      (
+        "Integrate[x^2/(6 x^3 + 11 x^2 + 6 x + 1), x]",
+        "Log[1 + x]/2 - Log[1 + 2*x]/2 + Log[1 + 3*x]/6",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    // An irreducible quartic keeps its RootSum.
+    assert!(
+      interpret("Integrate[1/(1 + x + x^2 + x^3 + x^4), x]")
+        .unwrap()
+        .starts_with("RootSum[")
+    );
   }
 }
