@@ -54992,4 +54992,29 @@ mod labeled_text_and_pane_wrapping {
     );
     assert!(svg.starts_with("<svg width=\"200\" height=\"10"), "{svg}");
   }
+
+  /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
+  /// the complex roots `Solve` returns) were not taken as numbers, so a
+  /// `Point` at such a root was rejected as a bad coordinate.
+  #[test]
+  fn point_at_re_im_of_complex_root() {
+    let exact = export_svg(
+      "Graphics[Point[ReIm[#]] & /@ (x /. Solve[x^5 - x - 1 == 0])]",
+    );
+    let numeric = export_svg(
+      "Graphics[Point[ReIm[#]] & /@ N[x /. Solve[x^5 - x - 1 == 0]]]",
+    );
+    assert!(!exact.contains("should be a pair of numbers"), "{exact}");
+    assert_eq!(exact, numeric);
+  }
+
+  /// `Ticks -> False` turns a ListPlot's ticks off like `Ticks -> None`.
+  #[test]
+  fn list_plot_ticks_false() {
+    let none = export_svg("ListPlot[{1, 3, -2, 4}, Ticks -> None]");
+    let off = export_svg("ListPlot[{1, 3, -2, 4}, Ticks -> False]");
+    assert_eq!(none, off);
+    assert!(x_tick_labels(&off).is_empty(), "{off}");
+    assert!(y_tick_labels(&off).is_empty(), "{off}");
+  }
 }
