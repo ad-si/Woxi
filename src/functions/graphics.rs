@@ -7381,6 +7381,50 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
   }
 }
 
+/// Whether a `Text` label is, or has among the items of a `Row`, a
+/// `TraditionalForm` matrix — a list of equally long rows, possibly under a
+/// number-display form (`TraditionalForm[NumberForm[m, {3, 2}]]`) — which
+/// typesets as a parenthesized grid.
+fn label_holds_traditional_matrix(expr: &Expr) -> bool {
+  fn is_matrix(e: &Expr) -> bool {
+    match e {
+      Expr::List(rows) => {
+        let mut cols = None;
+        !rows.is_empty()
+          && rows.iter().all(|r| {
+            matches!(r, Expr::List(cells)
+              if !cells.is_empty()
+                && *cols.get_or_insert(cells.len()) == cells.len())
+          })
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(
+          name.as_str(),
+          "NumberForm" | "ScientificForm" | "EngineeringForm"
+        ) =>
+      {
+        args.first().is_some_and(is_matrix)
+      }
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      is_matrix(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => {
+      matches!(args.first(), Some(Expr::List(items))
+        if items.iter().any(label_holds_traditional_matrix))
+    }
+    Expr::FunctionCall { name, args } if is_style_wrapper(name) => {
+      args.first().is_some_and(label_holds_traditional_matrix)
+    }
+    _ => false,
+  }
+}
+
 /// Whether `expr` is a `Row`/`Column`/`TableForm` (possibly under a `Style`) that has a
 /// `Grid` somewhere among its items.
 fn layout_holds_grid(expr: &Expr) -> bool {
@@ -7569,6 +7613,39 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       source: None,
     });
     return;
+  }
+  // A label that shows a matrix in `TraditionalForm` (`Row[{"A = ",
+  // TraditionalForm[NumberForm[m, {3, 2}]]}]`) sets it as a parenthesized
+  // grid beside the rest of the row, so it is typeset as a picture.
+  if frame_opts.is_empty()
+    && label_holds_traditional_matrix(content)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let boxes = crate::strip_number_precision_markers(
+      &crate::evaluator::dispatch::complex_and_special::
+        expr_to_box_form_traditional(content),
+    );
+    let layout = layout_box(&boxes, local_style.font_size);
+    if layout.width > 0.0 && layout.height > 0.0 {
+      prims.push(Primitive::InsetGraphic {
+        svg: layout_to_svg(
+          &layout,
+          &local_style.effective_color().to_svg_rgb(),
+        ),
+        x,
+        y,
+        w: layout.width.ceil().max(1.0),
+        h: layout.height.ceil().max(1.0),
+        scaled,
+        size: None,
+        size_scaled: false,
+        source: None,
+      });
+      return;
+    }
   }
   // A label whose layout shows a typeset fraction box (`Column[{Row[{
   // DisplayForm[FractionBox[1, 2]], …}]}]`) is composed to a picture the

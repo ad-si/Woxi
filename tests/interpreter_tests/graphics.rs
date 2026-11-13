@@ -50460,6 +50460,56 @@ mod generalized_bar_chart {
     );
   }
 
+  /// `TraditionalForm[NumberForm[m, {3, 2}]]` of a matrix typesets the
+  /// matrix the way `TraditionalForm[m]` does — a parenthesized grid — with
+  /// each entry formatted by the number form, not as nested braces.
+  #[test]
+  fn traditional_form_number_form_matrix_boxes_are_a_grid() {
+    let boxes = interpret(
+      "ToBoxes[TraditionalForm[NumberForm[{{1., 2.123}, {3., -4.}}, {3, 2}]]]",
+    )
+    .unwrap();
+    assert!(boxes.contains("RowBox[{(, GridBox[{{"), "{boxes}");
+    assert!(boxes.contains("}}], )}], NumberForm]"), "{boxes}");
+    assert!(boxes.contains("StyleBox[2.12, "), "{boxes}");
+    assert!(boxes.contains("StyleBox[-4.00, "), "{boxes}");
+    assert!(!boxes.contains("RowBox[{{"), "{boxes}");
+    // `ScientificForm` threads into the grid the same way.
+    let sci = interpret(
+      "ToBoxes[TraditionalForm[ScientificForm[{{1500., 2.}, {3., 4.}}, 2]]]",
+    )
+    .unwrap();
+    assert!(sci.contains("RowBox[{(, GridBox[{{"), "{sci}");
+    assert!(sci.contains("ScientificForm]"), "{sci}");
+  }
+
+  /// A `Text` label `Row[{"A = ", TraditionalForm[NumberForm[m, {3, 2}]]}]`
+  /// sets the matrix as a two-row grid beside the prefix (an embedded
+  /// picture), not as one line of nested braces.
+  #[test]
+  fn text_label_sets_traditional_form_matrix_as_grid() {
+    let svg = export_svg(
+      r#"Graphics[{Red, Style[Text[Row[{"A = ", TraditionalForm[NumberForm[{{1., 2.123}, {3., -4.}}, {3, 2}]]}], {0, 0}], 14]}]"#,
+    );
+    assert!(
+      !svg.contains("{{"),
+      "matrix printed as nested braces: {svg}"
+    );
+    assert!(svg.contains(">A = </text>"), "{svg}");
+    for entry in ["1.00", "2.12", "3.00", "-4.00"] {
+      assert!(
+        svg.contains(&format!(">{entry}</text>")),
+        "entry {entry} is not its own grid cell: {svg}"
+      );
+    }
+    assert!(svg.contains("rgb(255,0,0)"), "label color lost: {svg}");
+    // A plain matrix and a list of numbers keep their earlier rendering.
+    let plain = export_svg(
+      r#"Graphics[Text[Row[{"v = ", TraditionalForm[NumberForm[{1., 2.123}, {3, 2}]]}], {0, 0}]]"#,
+    );
+    assert!(plain.contains("v = {1.00,2.12}"), "{plain}");
+  }
+
   /// `Epilog` primitives are drawn over a `Histogram`, in its data
   /// coordinates (a fitted density curve over the bars).
   #[test]
