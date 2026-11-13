@@ -23826,6 +23826,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A textual `Appearance` — a `Style`d string per locator — is centered
+    // on each locator as a label, in its own color and size, instead of
+    // being dropped as a non-primitive.
+    #[test]
+    fn locator_pane_draws_a_styled_string_appearance_at_each_point() {
+      let svg = export_svg(
+        "LocatorPane[{{1, 1}, {-1, 2}}, \
+         Graphics[{}, PlotRange -> 3, ImageSize -> 300], \
+         Appearance -> {Style[\"\\[FilledSquare]\", 20, Red], \
+         Style[\"\\[FilledSquare]\", 20, Blue]}]",
+      );
+      assert_eq!(
+        svg.matches(">\u{25A0}</text>").count(),
+        2,
+        "each locator must draw its label: {svg}"
+      );
+      assert!(svg.contains("rgb(255,0,0)"), "first marker is red: {svg}");
+      assert!(svg.contains("rgb(0,0,255)"), "second marker is blue: {svg}");
+      assert!(
+        svg.contains("font-size=\"20\""),
+        "the Style size is kept: {svg}"
+      );
+      assert!(
+        !svg.contains("<ellipse"),
+        "a custom appearance replaces the default crosshair: {svg}"
+      );
+    }
+
+    // A single textual `Appearance` marks every locator.
+    #[test]
+    fn locator_pane_draws_a_single_string_appearance_for_every_locator() {
+      let svg = export_svg(
+        "LocatorPane[{{0.2, 0.2}, {0.8, 0.5}, {0.4, 0.9}}, \
+         Graphics[{}, PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200], \
+         Appearance -> \"x\"]",
+      );
+      assert_eq!(
+        svg.matches(">x</text>").count(),
+        3,
+        "every locator must draw the label: {svg}"
+      );
+    }
+
     // `Appearance -> None` asks for no marker at all.
     #[test]
     fn locator_pane_appearance_none_draws_nothing() {
