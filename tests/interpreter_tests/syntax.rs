@@ -15183,3 +15183,52 @@ fn alternatives_string_expression_and_colon_precedence() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// `+=`, `-=`, `*=`, `/=` (Precedence 100) take everything that binds
+// tighter as their left side, and `/.` (110) goes into their right side
+// while `//` (70) wraps them.
+#[test]
+fn compound_assignment_precedence() {
+  for (input, expected) in [
+    ("Hold[a + b += c]", "Hold[AddTo[Plus[a, b], c]]"),
+    ("Hold[a == b += c]", "Hold[AddTo[Equal[a, b], c]]"),
+    ("Hold[a -> b += c]", "Hold[AddTo[Rule[a, b], c]]"),
+    ("Hold[x += 1]", "Hold[AddTo[x, 1]]"),
+    ("Hold[a[[1]] -= 2]", "Hold[SubtractFrom[Part[a, 1], 2]]"),
+    ("Hold[s += a /. b]", "Hold[AddTo[s, ReplaceAll[a, b]]]"),
+    ("Hold[(s += a) /. b]", "Hold[ReplaceAll[AddTo[s, a], b]]"),
+    ("Hold[s += a // f]", "Hold[f[AddTo[s, a]]]"),
+    (
+      "Hold[x = s += a /. b]",
+      "Hold[Set[x, AddTo[s, ReplaceAll[a, b]]]]",
+    ),
+    ("Hold[x += 1 &]", "Hold[Function[AddTo[x, 1]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(
+    interpret("Module[{s = 1}, s += x /. x -> 2; s]").unwrap(),
+    "3"
+  );
+  assert_eq!(
+    interpret("Module[{a = {1, 2}}, a[[1]] *= 5; a]").unwrap(),
+    "{5, 2}"
+  );
+  // Printing: `/;` brackets looser operands, `+=` a pure function target.
+  for (input, expected) in [
+    ("Hold[(a :> b) /; c]", "Hold[(a :> b) /; c]"),
+    ("Hold[(a += b) /; c]", "Hold[(a += b) /; c]"),
+    ("Hold[a /; (b /; c)]", "Hold[a /; (b /; c)]"),
+    ("Hold[(f &) += 3]", "Hold[(f & ) += 3]"),
+    ("Hold[a/Times[Rule[2]]]", "Hold[a/Times[Rule[2]]]"),
+    ("Hold[StringJoin[a, b][c]]", "Hold[StringJoin[a, b][c]]"),
+    ("Hold[Power[8^7, x]]", "Hold[(8^7)^x]"),
+    ("Hold[a*Times[f]]", "Hold[a*Times[f]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

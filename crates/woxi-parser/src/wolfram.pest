@@ -437,11 +437,9 @@ Operator = @{
   | "\\[Rule]" | "\u{F522}" | "->" | "\u{2192}"     // Rule (must be before - and >), →
   | "^:="    // UpSetDelayed (must be before ^= and :=)
   | "^="     // UpSet (must be before ^ and =)
-  // Compound assignment. The `AddTo`/`SubtractFrom`/`TimesBy`/`DivideBy`
-  // terms above only take a symbol or a `[[…]]` part as their target, so a
-  // call target (`state["pos"] += n`) reaches the operator chain instead —
-  // `Term` has already taken `state["pos"]` as a `FunctionCallExtended` by
-  // then. Must precede the bare `+`/`-`/`*`/`/` spellings below.
+  // Compound assignment (Precedence 100): the left side is everything that
+  // binds tighter, `a + b += c` is `AddTo[a + b, c]`. Must precede the bare
+  // `+`/`-`/`*`/`/` spellings below.
   | "+=" | "-=" | "*=" | "/="
   | "**"   // NonCommutativeMultiply (must be before *)
   | "+" | "-" | "\u{2212}" | "\\[Minus]" | "*" | "/" | "^"
@@ -539,15 +537,12 @@ Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 // operator precedence (same level as = assignment).
 UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
-// Compound assignment: x += y, x -= y, x *= y, x /= y
-// Same guard as for `++` / `--` above: the compound-assignment forms only
-// parse a `PartExtract` target when one of their operators follows it.
+// `x //= f`. Same guard as for `++` / `--` above: the form only parses a
+// `PartExtract` target when its operator follows it. (`+=`, `-=`, `*=`
+// and `/=` are operators of the chain: their left side is everything that
+// binds tighter, `a + b += c` is `AddTo[a + b, c]`.)
 PartAssignScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ ("//=" | "+=" | "-=" | "*=" | "/=") }
 ApplyToOp = { (&PartAssignScan ~ PartExtract | Identifier) ~ "//=" ~ Expression }
-AddTo = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "+=" ~ Expression }
-SubtractFrom = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "-=" ~ Expression }
-TimesBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "*=" ~ Expression }
-DivideBy = { (&PartAssignScan ~ PartExtract | Identifier | NumericValue) ~ "/=" ~ Expression }
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
@@ -840,10 +835,6 @@ Term = _{
   | DoubleBracketingBars
   | Unset
   | ApplyToOp
-  | AddTo
-  | SubtractFrom
-  | TimesBy
-  | DivideBy
   | Increment
   | Decrement
   | PartExtract
@@ -968,10 +959,6 @@ TermNoImplicit = _{
   | DoubleBracketingBars
   | Unset
   | ApplyToOp
-  | AddTo
-  | SubtractFrom
-  | TimesBy
-  | DivideBy
   | Increment
   | Decrement
   | PartExtract

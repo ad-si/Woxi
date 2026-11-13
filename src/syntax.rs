@@ -3882,34 +3882,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let func = pair_to_expr(inner.next().unwrap());
       call("ApplyTo", vec![var, func])
     }
-    Rule::AddTo => {
-      // x += y -> AddTo[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("AddTo", vec![var, val])
-    }
-    Rule::SubtractFrom => {
-      // x -= y -> SubtractFrom[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("SubtractFrom", vec![var, val])
-    }
-    Rule::TimesBy => {
-      // x *= y -> TimesBy[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("TimesBy", vec![var, val])
-    }
-    Rule::DivideBy => {
-      // x /= y -> DivideBy[x, y]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let val = pair_to_expr(inner.next().unwrap());
-      call("DivideBy", vec![var, val])
-    }
     Rule::PrefixApplySimple => {
       // f@x within implicit multiplication context → f[x]
       let mut inner = pair.into_inner();
@@ -4815,7 +4787,14 @@ fn in_assignment_rhs(
     && let Expr::FunctionCall { name, args } = &mut expr
     && matches!(
       name.as_str(),
-      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+      "Set"
+        | "SetDelayed"
+        | "UpSet"
+        | "UpSetDelayed"
+        | "AddTo"
+        | "SubtractFrom"
+        | "TimesBy"
+        | "DivideBy"
     )
     && args.len() == 2
   {
@@ -5320,6 +5299,16 @@ fn parse_expression_inner(
     .iter()
     .filter(|op| is_assignment_operator(op))
     .count();
+  // `/.` and `//.` (110) also bind tighter than the compound assignments
+  // (100) — `s += a /. b` is `s += (a /. b)` — while `//` (70) does not:
+  // `s += a // f` is `f[s += a]`.
+  let replace_depth = operators
+    .iter()
+    .filter(|op| {
+      is_assignment_operator(op)
+        || matches!(op.as_str(), "+=" | "-=" | "*=" | "/=")
+    })
+    .count();
 
   let mut result = build_operator_chain(terms, &operators);
 
@@ -5345,7 +5334,7 @@ fn parse_expression_inner(
     };
     // If result is an assignment, push /. inside to the right-hand side.
     result =
-      in_assignment_rhs(result, assign_depth, |rhs| make_replace(rhs, rules));
+      in_assignment_rhs(result, replace_depth, |rhs| make_replace(rhs, rules));
   }
 
   // Apply postfix functions. In Wolfram, `//` (postfix application) has
@@ -10414,6 +10403,17 @@ pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
   }
 }
 
+/// The left side of `+=`, `-=`, `*=`, `/=` (Precedence 100): bracketed like
+/// an assignment's, and also when it is a pure function (90), which binds
+/// looser: `(f & ) += 3`.
+fn op_assign_lhs(lhs: &Expr, formatted: String) -> String {
+  if matches!(lhs, Expr::Function { .. }) {
+    format!("({formatted})")
+  } else {
+    assignment_lhs(lhs, formatted)
+  }
+}
+
 /// The rule an association entry stands for: `key :> value` for an entry
 /// marked as delayed (see `assoc_marker_matches`), `key -> value` otherwise.
 fn association_entry_rule(key: &Expr, value: &Expr) -> Expr {
@@ -11182,16 +11182,32 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         );
       }
       if name == "AddTo" && args.len() == 2 {
-        return format!("{} += {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} += {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          fmt(&args[1])
+        );
       }
       if name == "SubtractFrom" && args.len() == 2 {
-        return format!("{} -= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} -= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          fmt(&args[1])
+        );
       }
       if name == "TimesBy" && args.len() == 2 {
-        return format!("{} *= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} *= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          fmt(&args[1])
+        );
       }
       if name == "DivideBy" && args.len() == 2 {
-        return format!("{} /= {}", fmt(&args[0]), fmt(&args[1]));
+        return format!(
+          "{} /= {}",
+          op_assign_lhs(&args[0], fmt(&args[0])),
+          fmt(&args[1])
+        );
       }
       // Chained ++/-- variants follow Wolfram's display convention:
       //   * Postfix outers (Increment, Decrement) never parenthesize
@@ -11301,7 +11317,24 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             return format!("{} /; {}", plus_str, fmt(&args[1]));
           }
         }
-        return format!("{} /; {}", fmt(&args[0]), fmt(&args[1]));
+        // An operand that binds looser than `/;` (130) is bracketed —
+        // `(a -> b) /; c`, `(a = b) /; c` — and so is a `/;` on the right
+        // (`a /; (b /; c)`), the same rule InputForm uses.
+        let condition_operand = |e: &Expr, right: bool| -> String {
+          let text = fmt(e);
+          let looser = printed_infix_precedence(e)
+            .is_some_and(|p| if right { p <= 13 } else { p < 13 });
+          if looser && !prints_as_call(&text) {
+            format!("({text})")
+          } else {
+            text
+          }
+        };
+        return format!(
+          "{} /; {}",
+          condition_operand(&args[0], false),
+          condition_operand(&args[1], true)
+        );
       }
       if name == "PatternTest" && args.len() == 2 {
         let pat = fmt(&args[0]);
@@ -11807,6 +11840,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         for a in args {
           if in_held_format()
             && (is_times_expression(a)
+              // A one-factor `Times[f]` stays as written.
+              || matches!(a, Expr::FunctionCall { name, args }
+                if name == "Times" && args.len() == 1)
               || matches!(
                 a,
                 Expr::UnaryOp {
@@ -12827,6 +12863,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Rational")
           || prints_as_negation(&args[0])
           || is_bare_pattern(&args[0])
+          // `^` groups to the right, so a power base needs brackets:
+          // `(8^7)^x`. So does any base printed with a looser operator.
+          || matches!(&args[0], Expr::BinaryOp { op: BinaryOperator::Power, .. })
+          || matches!(&args[0], Expr::FunctionCall { name, args: pa }
+            if name == "Power" && pa.len() == 2)
+          || (printed_infix_precedence(&args[0]).is_some_and(|p| p < 48)
+            && !prints_as_call(&base_str))
         {
           format!("({base_str})")
         } else {
@@ -13678,6 +13721,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ));
+      let needs_right_parens =
+        needs_right_parens && !prints_as_call(&right_str);
       let right_formatted = if needs_right_parens {
         format!("({right_str})")
       } else {
@@ -14105,7 +14150,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // prints `(s:A[x])[t]`, not `s:A[x][t]`.
       let args_str: Vec<String> = args.iter().map(&fmt).collect();
       let func_str = fmt(func);
-      let needs_parens = curried_head_needs_parens(func.as_ref());
+      // A head printed as one whole call needs none: `StringJoin[a, b][c]`.
+      let needs_parens =
+        curried_head_needs_parens(func.as_ref()) && !prints_as_call(&func_str);
       let func_display = if needs_parens {
         format!("({func_str})")
       } else {
