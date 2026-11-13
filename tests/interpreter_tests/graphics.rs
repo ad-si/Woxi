@@ -27709,6 +27709,51 @@ mod graphics_grid {
     );
   }
 
+  /// `Text[expr]` displays `expr` in plain text format, so in a `Row` or
+  /// `Column` it is set in the proportional text face (and measured as
+  /// such), while bare strings keep the layout's monospace default.
+  #[test]
+  fn text_items_in_row_and_column_use_text_face() {
+    clear_state();
+    let text_tag = |svg: &str, word: &str| -> String {
+      let end = svg.find(word).unwrap_or_else(|| panic!("{word}: {svg}"));
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end].to_string()
+    };
+    for code in [
+      "Row[{Text[Style[\"alpha\", Black, 12]], \"   \", \"beta\"}]",
+      "Row[{Style[Text[\"alpha\"], Red], \"beta\"}]",
+      "Column[{Text[\"alpha\"], \"beta\"}]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert!(
+        text_tag(&svg, "alpha").contains("sans-serif"),
+        "Text item in {code} should use the text face, got: {svg}"
+      );
+      assert!(
+        text_tag(&svg, "beta").contains("monospace"),
+        "plain string in {code} should stay monospace, got: {svg}"
+      );
+    }
+    // The proportional face is narrower, so the row shrinks to fit it.
+    let width = |code: &str| -> f64 {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let w = svg.split("width=\"").nth(1).unwrap();
+      w[..w.find('"').unwrap()].parse().unwrap()
+    };
+    assert!(
+      width("Row[{Text[\"abcdefghij\"]}]") < width("Row[{\"abcdefghij\"}]")
+    );
+    // An explicit FontFamily still wins.
+    let svg = interpret_with_stdout(
+      "Row[{Text[Style[\"alpha\", FontFamily -> \"Times\"]], \"beta\"}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(text_tag(&svg, "alpha").contains("Times"), "{svg}");
+  }
+
   /// A sound in a layout draws the sound box a notebook shows for it — a
   /// play button and the waveform — instead of the `Play[…]` source text.
   #[test]
