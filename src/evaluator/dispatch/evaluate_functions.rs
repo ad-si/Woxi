@@ -13296,6 +13296,10 @@ fn evaluate_function_call_ast_inner(
         // A display wrapper for quantities; wolframscript's script mode
         // prints it as written (`QuantityForm[Quantity[3, Meters], …]`).
         | "QuantityForm"
+        // A geographic styling directive: like `RGBColor` it stays as
+        // written and only a renderer reads it (e.g. the `GeoBackground`
+        // recorded in a saved GeoGraphics' options).
+        | "GeoStyling"
     )
   {
     let args_str = args

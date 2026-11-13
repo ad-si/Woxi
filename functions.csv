@@ -1463,7 +1463,7 @@ MinimalPolynomial,"Computes the minimal polynomial of an algebraic number over t
 SynchronousInitialization,"Notebook synchronous initialization",🚫,io,6.0,1429
 GeoBackground,"Background for geographic plots",✅,pure,10.0,1430
 ItemStyle,"Style specification for items (text colors of Grid rows and columns)",✅,pure,6.0,1431
-GeoStyling,"Styling for geographic regions",🚫,pure,10.0,1432
+GeoStyling,"Inert geographic styling directive (kept as written, e.g. in a saved GeoGraphics GeoBackground)",✅,pure,10.0,1432
 CharacterEncoding,"Character encoding specification",🚫,io,3.0,1434
 InfinitePlane,"Infinite plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range",✅,unevaluated,10.0,1434
 ProgressIndicator,"Progress indicator control (stays symbolic in script mode)",✅,unevaluated,6.0,1435
@@ -2197,7 +2197,7 @@ NotebookLocate,"Locates and selects a cell or object in an open notebook",🚫,N
 SunPosition,"Azimuth/altitude of the Sun for a location and time (equatorial via CelestialSystem option)",✅,contextual,10.0,2179
 MAProcess,"Moving-average time series process",✅,unevaluated,9.0,2181
 QRDecomposition,"Computes the QR decomposition of a matrix",✅,None,2.0,2181
-QuantityArray,"Represents an array of quantities with units",🚫,None,10.1,2184
+QuantityArray,"Represents an array of quantities with units; the canonical single-unit structured form supports Normal, Length and TimeSeries values",🚧,pure,10.1,2184
 SetStreamPosition,"Sets the current position in an open stream",✅,io,2.0,2184
 VertexShape,"Option specifying the shape used to render graph vertices",✅,none,8.0,2184
 DawsonF,"Returns the Dawson integral exp(-x^2) times integral of exp(t^2)",✅,pure,7.0,2187

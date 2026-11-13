@@ -2420,6 +2420,12 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => Ok(Expr::Integer(0)),
     };
   }
+  // A QuantityArray counts the elements of the array it stands for.
+  if let Some((dims, _, _)) =
+    crate::functions::quantity_ast::quantity_array_parts(stripped)
+  {
+    return Ok(Expr::Integer(dims[0] as i128));
+  }
   // SparseArray[Automatic, dims, default, rules]: Length is its first
   // dimension, like a dense array (not the count of canonical-form parts).
   if let Expr::FunctionCall { name, args: sa } = &stripped
