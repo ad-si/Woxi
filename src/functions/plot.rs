@@ -4376,6 +4376,33 @@ fn render_dash_overlays(
   svg
 }
 
+/// Placeholder stroke color marking where the `k`-th deferred dashed line
+/// belongs in the drawing order (distinct from the `ColorFunction`
+/// gradient placeholders, which start with `0x01`).
+fn dash_overlay_sentinel(k: usize) -> (u8, u8, u8) {
+  (0x02, ((k >> 8) & 0xff) as u8, (k & 0xff) as u8)
+}
+
+/// Swap the placeholder element of the `k`-th deferred dashed line for its
+/// rendered `svg`, or add `svg` on top of the plot content when no
+/// placeholder was written.
+fn replace_dash_overlay_sentinel(buf: &mut String, k: usize, svg: &str) {
+  let (r, g, b) = dash_overlay_sentinel(k);
+  let needle = format!("stroke=\"#{r:02X}{g:02X}{b:02X}\"");
+  if let Some(at) = buf.find(&needle)
+    && let Some(start) = buf[..at].rfind('<')
+    && let Some(end_rel) = buf[at..].find('>')
+  {
+    let mut end = at + end_rel + 1;
+    if buf[end..].starts_with('\n') {
+      end += 1;
+    }
+    buf.replace_range(start..end, svg);
+  } else if let Some(pos) = buf.rfind("</svg>") {
+    buf.insert_str(pos, svg);
+  }
+}
+
 /// Default color for an unstyled dashed grid line. Approximates the flat-gray
 /// look of the solid grid lines (`rgb(102,102,102)` at 50% opacity over a white
 /// background), since dash overlays carry no opacity.
@@ -5842,6 +5869,24 @@ fn generate_svg_with_options(
   // dash). Skipped for log axes, which keep the per-dash fallback because the
   // coordinate transform is non-linear.
   let mut dashed_overlays: Vec<DashedOverlay> = Vec::new();
+  // Defer a dashed line, but hold its place in the drawing order with a
+  // placeholder element (see `dash_overlay_sentinel`) so the line still
+  // stacks where WL draws it: a later solid curve or point covers it.
+  macro_rules! defer_dashed {
+    ($chart:expr, $overlay:expr) => {{
+      let overlay: DashedOverlay = $overlay;
+      let (sr, sg, sb) = dash_overlay_sentinel(dashed_overlays.len());
+      let anchor =
+        vec![overlay.points[0], overlay.points[overlay.points.len() - 1]];
+      dashed_overlays.push(overlay);
+      $chart
+        .draw_series(std::iter::once(PathElement::new(
+          anchor,
+          RGBColor(sr, sg, sb).stroke_width(1),
+        )))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }};
+  }
   let mut cf_gradients: Vec<ColorFunctionGradient> = Vec::new();
 
   let mut buf = String::new();
@@ -6041,7 +6086,7 @@ fn generate_svg_with_options(
             let (rgb, stroke_w, dash) = grid_line_props(style);
             let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
-              dashed_overlays.push(DashedOverlay {
+              defer_dashed!(chart, DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
                 opacity: alpha,
                 stroke_w,
@@ -6100,7 +6145,7 @@ fn generate_svg_with_options(
             let (rgb, stroke_w, dash) = grid_line_props(style);
             let alpha = style.opacity.unwrap_or(grid_alpha(rgb));
             if let Some(dashes) = dash {
-              dashed_overlays.push(DashedOverlay {
+              defer_dashed!(chart, DashedOverlay {
                 color: rgb.unwrap_or(DEFAULT_GRID_DASH_RGB),
                 opacity: alpha,
                 stroke_w,
@@ -6461,7 +6506,7 @@ fn generate_svg_with_options(
                   .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
                 let line = vec![(from, level), (to, level)];
                 match dashes {
-                  Some(dashes) => dashed_overlays.push(DashedOverlay {
+                  Some(dashes) => defer_dashed!(chart, DashedOverlay {
                     color: (er, eg, eb),
                     opacity,
                     stroke_w: width,
@@ -6617,7 +6662,7 @@ fn generate_svg_with_options(
                 // emitted after the plot is drawn.
                 for segment in segments {
                   if segment.len() >= 2 {
-                    dashed_overlays.push(DashedOverlay {
+                    defer_dashed!(chart, DashedOverlay {
                       color: (r, g, b),
                       opacity: line_opacity,
                       stroke_w,
@@ -6910,8 +6955,8 @@ fn generate_svg_with_options(
   inject_drop_shadows(&mut buf, &opts.plot_style, all_points.len());
   apply_color_function_gradients(&mut buf, &cf_gradients);
 
-  // Emit deferred dashed series as single stroke-dasharray polylines (on top
-  // of the plot content, just before </svg>).
+  // Emit deferred dashed series as single stroke-dasharray polylines, each
+  // in place of the placeholder that kept its position in the drawing order.
   if !dashed_overlays.is_empty() {
     let plot_x0 = margin_left as f64 + y_label_area as f64;
     let plot_y0 = top_margin as f64;
@@ -6923,22 +6968,22 @@ fn generate_svg_with_options(
       - top_margin as f64
       - margin_bottom as f64
       - x_label_area as f64;
-    let series_svg = render_dash_overlays(
-      &dashed_overlays,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      render_width as f64,
-      x_min,
-      x_max,
-      y_min,
-      y_max,
-      opts.log_x,
-      opts.log_y,
-    );
-    if let Some(pos) = buf.rfind("</svg>") {
-      buf.insert_str(pos, &series_svg);
+    for (k, overlay) in dashed_overlays.iter().enumerate() {
+      let series_svg = render_dash_overlays(
+        std::slice::from_ref(overlay),
+        plot_x0,
+        plot_y0,
+        plot_w,
+        plot_h,
+        render_width as f64,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        opts.log_x,
+        opts.log_y,
+      );
+      replace_dash_overlay_sentinel(&mut buf, k, &series_svg);
     }
   }
 
