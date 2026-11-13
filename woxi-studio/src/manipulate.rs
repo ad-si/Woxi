@@ -1917,6 +1917,23 @@ impl ManipulateState {
       {
         render = Ok(table);
       }
+      // The same holds when the pane is only the body's *value* — a
+      // `Block[{x}, …; Pane[Grid[…], size]]` that computes its table
+      // first. Draw that value rather than re-running the body, which
+      // would repeat its side effects (`SeedRandom`, assignments).
+      if let Ok(r) = &render
+        && r.graphics.is_none()
+        && let Some(woxi::syntax::Expr::FunctionCall { name, args }) = &r.expr
+        && matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && !args.is_empty()
+        && let Ok(table) = woxi::interpret_with_stdout(&format!(
+          "Text[{}]",
+          woxi::syntax::expr_to_input_form(r.expr.as_ref().unwrap())
+        ))
+        && table.graphics.is_some()
+      {
+        render = Ok(table);
+      }
       // A `Pane[text, size, …]` body only sizes and pads its text (the
       // terminal prints it as the `Pane[…]` call); the widget shows the
       // text the pane wraps.
@@ -3197,6 +3214,38 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body that computes its table inside a scoping construct and only
+  /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
+  /// footer rows included — not just a nested framed table measured while
+  /// fitting the grid into the pane.
+  #[test]
+  fn scoped_body_returning_pane_of_grid_draws_the_whole_table() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Block[{x}, SeedRandom[s]; r = RandomInteger[{-5, 5}, 2];
+        Pane[Grid[{
+          {Text@Row[{"head ", TraditionalForm[Expand[(x - r[[1]]) (x - r[[2]])]]}]},
+          {Pane[Grid[{{"inner", 1}, {2, 3}}, Frame -> All]]},
+          {Text@Row[{"foot ", TraditionalForm[(x - r[[1]]) (x - r[[2]])]}]}},
+          Alignment -> Left], ImageSize -> {240, 350}]],
+      {{s, 1, "seed"}, {1, 2, 3}, ControlType -> PopupMenu}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("the table is drawn as a picture");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("graphic should be in-memory SVG data");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    for label in ["head", "inner", "foot"] {
+      assert!(svg.contains(label), "{label} row missing: {svg}");
+    }
   }
 
   /// A body that is `Text@Style[TraditionalForm[Column[…]]]` of held
