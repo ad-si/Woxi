@@ -15384,7 +15384,19 @@ impl BoxLayout {
     // room.
     let zero_width =
       |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
-    let w = s.chars().filter(|c| !zero_width(c)).count() as f64 * ch;
+    let family = BOX_TEXT_FAMILY.with(|f| f.borrow().clone());
+    let w = match &family {
+      // A proportional face advances each glyph by its own width.
+      Some(_) => {
+        let visible: String = s.chars().filter(|c| !zero_width(c)).collect();
+        crate::functions::plot_padding::text_width(&visible, font_size)
+      }
+      None => s.chars().filter(|c| !zero_width(c)).count() as f64 * ch,
+    };
+    let family_attr = family.as_deref().map_or_else(
+      || "monospace".to_string(),
+      svg_escape,
+    );
     let escaped = svg_escape(s);
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
@@ -15403,7 +15415,7 @@ impl BoxLayout {
       // their allocated width rather than the glyph sticking to the previous
       // token. The width above already counts those spaces.
       elements: format!(
-        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"{family_attr}\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
       ),
     }
   }
@@ -15415,6 +15427,26 @@ impl BoxLayout {
       self.elements
     )
   }
+}
+
+thread_local! {
+  /// The proportional face (`FontFamily -> "Times"`) the box layout sets
+  /// its text in, measured by its own glyph widths; `None` for the default
+  /// monospace face. See [`with_box_text_family`].
+  static BOX_TEXT_FAMILY: std::cell::RefCell<Option<String>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` (which lays out boxes) with its text set in `family`, measured
+/// with that face's proportional advances rather than monospace ones, so a
+/// label laid out next to a formula does not leave a gap where a narrower
+/// face ends early. The text is drawn in that face too.
+fn with_box_text_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
+  let previous =
+    BOX_TEXT_FAMILY.with(|cur| cur.replace(family.map(str::to_string)));
+  let result = f();
+  BOX_TEXT_FAMILY.with(|cur| *cur.borrow_mut() = previous);
+  result
 }
 
 thread_local! {
@@ -22822,6 +22854,8 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
 fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let mut content = cell;
   let mut size = 14.0;
+  // The face a `FontFamily -> "…"` directive picks; the innermost wins.
+  let mut family: Option<String> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
@@ -22832,11 +22866,34 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
         let style = extract_cell_style(content);
         size = style.font_size.unwrap_or(size);
+        family = style.font_family.or(family);
         content = style.content;
       }
       _ => break,
     }
   }
+  let svg = with_box_text_family(family.as_deref(), || {
+    typeset_box_cell_svg(content, size)
+  })?;
+  Some(match family {
+    Some(family) => box_layout_svg_in_family(&svg, &family),
+    None => svg,
+  })
+}
+
+/// A box-layout SVG (whose text is set in the generic `monospace` face)
+/// with its text set in `family` instead, as a `FontFamily -> "…"`
+/// directive around the typeset expression asks.
+fn box_layout_svg_in_family(svg: &str, family: &str) -> String {
+  let attr = format!("font-family=\"{}\"", svg_escape(family));
+  svg
+    .replace("font-family=\"monospace\"", &attr)
+    .replace("font-family=\"Atkinson Hyperlegible Mono, monospace\"", &attr)
+}
+
+/// The box-layout typesetting behind [`traditional_inline_box_cell_svg`]
+/// for a cell's unwrapped `content` at `size`.
+fn typeset_box_cell_svg(content: &Expr, size: f64) -> Option<String> {
   // A plain string holding inline `\!\(\*…\)` box notation is typeset the
   // same way: `"\!\(\*FractionBox[\(a\), \(b\)]\)"` is a fraction, not its
   // linear `a/b` reading, which loses the grouping of nested fractions.
@@ -23930,12 +23987,24 @@ fn grid_svg_styled_internal_reporting(
     for cell in row.iter_mut() {
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
-      // A string with inline box notation is typeset at the grid's size.
-      if let Expr::String(text) = &*cell
-        && let Some(size) = default_style.font_size
-        && has_stacked_inline_box(text)
+      // A cell typeset through the box layout — a string with inline box
+      // notation, a `Row` holding a stacked fraction, a `TraditionalForm`
+      // formula — is set in the grid's size and face, like its text cells.
+      if (default_style.font_size.is_some()
+        || default_style.font_family.is_some())
+        && traditional_inline_box_cell_svg(cell).is_some()
       {
-        *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
+        let mut style_args = vec![cell.clone()];
+        if let Some(size) = default_style.font_size {
+          style_args.push(Expr::Real(size));
+        }
+        if let Some(family) = &default_style.font_family {
+          style_args.push(rule_expr(
+            id_expr("FontFamily"),
+            Expr::String(family.clone()),
+          ));
+        }
+        *cell = call("Style", style_args);
       }
     }
   }
@@ -30949,8 +31018,9 @@ fn framed_box_to_svg(
       crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
         style.content,
       );
-    let layout =
-      layout_box(&crate::strip_number_precision_markers(&boxes), size);
+    let layout = with_box_text_family(style.font_family.as_deref(), || {
+      layout_box(&crate::strip_number_precision_markers(&boxes), size)
+    });
     let fill = style
       .color
       .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
@@ -30965,8 +31035,7 @@ fn framed_box_to_svg(
       1,
     );
     if let Some(family) = &style.font_family {
-      svg = svg
-        .replace("Atkinson Hyperlegible Mono, monospace", &svg_escape(family));
+      svg = box_layout_svg_in_family(&svg, family);
     }
     (svg, layout.width, layout.height)
   };

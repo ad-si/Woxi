@@ -27052,6 +27052,42 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"20\""), "{svg}");
   }
 
+  /// A cell typeset through the box layout — a `Row` holding a stacked
+  /// `TraditionalForm` fraction — takes the grid's `BaseStyle` size and face
+  /// like the text cells, instead of the 14-point monospace default.
+  #[test]
+  fn grid_base_style_reaches_typeset_fraction_cells() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Row[{\"rate: \", TraditionalForm[HoldForm[a/(b c)]]}], 1}}, \
+       BaseStyle -> {FontFamily -> \"Times\", 10}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(!svg.contains("font-family=\"monospace\""), "{svg}");
+    assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+    // The label, the fraction's three letters and the plain cell.
+    assert!(svg.matches("font-family=\"Times\"").count() >= 5, "{svg}");
+    assert!(svg.contains("font-size=\"10.0\""), "{svg}");
+  }
+
+  /// A `FontFamily` directive around a typeset fraction sets its text in
+  /// that face, both as a styled grid cell and inside `Framed`.
+  #[test]
+  fn font_family_applies_to_typeset_fraction() {
+    clear_state();
+    for code in [
+      "Grid[{{Style[Row[{\"q \", TraditionalForm[HoldForm[x/y]]}], \
+       FontFamily -> \"Georgia\"]}}]",
+      "Framed[Style[x/y, FontFamily -> \"Georgia\"]]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert!(!svg.contains("font-family=\"monospace\""), "{code}: {svg}");
+      assert!(svg.contains("font-family=\"Georgia\""), "{code}: {svg}");
+    }
+  }
+
   #[test]
   fn grid_base_style_single_directive() {
     clear_state();
