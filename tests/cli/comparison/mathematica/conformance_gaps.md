@@ -7491,12 +7491,13 @@ The `All Real Roots of a Nonlinear System of Equations` Demonstration relies
 on this to mark its roots: the contour curves render, but the red root points
 and the root table are missing.
 
-### `InverseLaplaceTransform` of a product of symbolic-pole factors
+### `InverseLaplaceTransform` of machine-precision rational functions
 
-`InverseLaplaceTransform` of a product of many `1/(s - pole)` factors with
-numeric complex poles returns unevaluated, so the time-response plot in the
-`Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
-(its pole/zero plane renders fine).
+When the exact rules don't apply directly to machine-precision input (e.g. a
+product of `1./(s - pole)` factors with numeric complex poles), Woxi inverts
+the `Rationalize`d expression exactly and applies `N` to the result. The
+values agree with WL, but the form follows Woxi's exact answer (real
+`Cos`/`Sin` damping terms) where WL may return a sum of complex exponentials.
 
 
 ### `ReplaceAll` of many call sites by a large `InterpolatingFunction`

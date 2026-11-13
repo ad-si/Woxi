@@ -14191,6 +14191,37 @@ mod recurrence_table {
 mod inverse_laplace_transform {
   use super::*;
 
+  /// Machine-precision complex poles (as a product of `1./(s - pole)`
+  /// factors) used to stay unevaluated; they invert numerically now.
+  #[test]
+  fn machine_complex_pole_product() {
+    let f = "InverseLaplaceTransform[1.*(1./(s - -1. - I*1.))*\
+      (1./(s - -1. - I*(-1.)))*(1./(s - -2. - I*0.)), s, t]";
+    assert_eq!(
+      interpret(&format!("FreeQ[{f}, InverseLaplaceTransform]")).unwrap(),
+      "True"
+    );
+    // (E^(-2 t) - E^(-t) Cos[t] + E^(-t) Sin[t])/2 at t = 1.3
+    assert_eq!(
+      interpret(&format!("Round[10^8 Re[{f} /. t -> 1.3]]")).unwrap(),
+      "13198594"
+    );
+  }
+
+  #[test]
+  fn machine_poles_and_zeros_with_step_and_sine_inputs() {
+    let f = "Times @@ (1./(s - {-1 + I, -1 - I, -2, -0.74 + 0.3 I, \
+      -0.74 - 0.3 I})) * Times @@ (s - {0.41 + 0.5 I, 0.41 - 0.5 I, -0.16})";
+    assert_eq!(
+      interpret(&format!(
+        "Table[Round[10^8 Re[InverseLaplaceTransform[in {f}, s, t] \
+          /. t -> 1.3]], {{in, {{1., 1./s, 1./(s^2 + 1.)}}}}]"
+      ))
+      .unwrap(),
+      "{-9439865, 906229, 3030957}"
+    );
+  }
+
   #[test]
   fn shifted_inverse_square_root() {
     assert_eq!(
