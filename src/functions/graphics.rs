@@ -44993,9 +44993,15 @@ fn togglerbar_node(
       Some(single) => crate::syntax::expr_to_source_form(single) == value_code,
       None => false,
     };
+    // A bar whose variable does not hold a list yet (e.g. a CheckboxBar
+    // control declared with initial value `0`, meaning "nothing ticked")
+    // starts a fresh selection list rather than `Append`ing to the scalar;
+    // a scalar equal to this choice (drawn ticked above) is unticked.
     let toggled = format!(
-      "If[MemberQ[{getter_code}, {value_code}], DeleteCases[{getter_code}, \
-       {value_code}], Append[{getter_code}, {value_code}]]"
+      "If[ListQ[{getter_code}], If[MemberQ[{getter_code}, {value_code}], \
+       DeleteCases[{getter_code}, {value_code}], Append[{getter_code}, \
+       {value_code}]], If[{getter_code} === {value_code}, {{}}, \
+       {{{value_code}}}]]"
     );
     let mutation = match &setter {
       None => format!("{getter_code} = {toggled}"),

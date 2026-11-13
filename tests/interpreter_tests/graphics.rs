@@ -35749,6 +35749,59 @@ mod manipulate {
     assert_eq!(json.matches("\"checkbox\":true").count(), 3, "{json}");
   }
 
+  /// A multi-choice bar whose variable starts at a non-list value (e.g.
+  /// `{{v, 0, ""}, {1 -> "a", 2 -> "b"}, CheckboxBar}`, "nothing ticked")
+  /// must turn a click into a selection list. The write-back used to
+  /// `Append` to the scalar, leaving `Append[0, 1]` behind so a body
+  /// testing `MemberQ[v, 1]` never saw the tick.
+  #[test]
+  fn spec_checkbox_bar_click_on_non_list_value_starts_a_list() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn mutations(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Toggler { mutation, .. } => out.push(mutation.clone()),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            mutations(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    for control_type in ["CheckboxBar", "TogglerBar"] {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[v, {{{{v, 0, \"\"}}, {{1 -> \"a\", 2 -> \"b\", \
+         3 -> \"c\"}}, {control_type}}}]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("multi-choice bar");
+      assert_eq!(spec.displays.len(), 1, "{control_type}");
+      let bindings = manipulate_initial_bindings(&spec);
+      let node = woxi::with_scoped_globals(&bindings, || {
+        build_manipulate_display(&spec.displays[0], &[])
+      });
+      let mut found = Vec::new();
+      mutations(&node, &mut found);
+      assert_eq!(found.len(), 3, "{control_type}: {node:?}");
+      // Tick the third box, then the first, then untick the third.
+      clear_state();
+      interpret("v = 0").unwrap();
+      interpret(&found[2]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{3}", "{control_type}");
+      interpret(&found[0]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{3, 1}", "{control_type}");
+      interpret(&found[2]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+      // A scalar equal to a choice is drawn ticked; clicking unticks it.
+      interpret("v = 2").unwrap();
+      interpret(&found[1]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{}", "{control_type}");
+      interpret("v = 2").unwrap();
+      interpret(&found[0]).unwrap();
+      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+    }
+  }
+
   /// A `CheckboxBar` control draws a checkbox per choice (as Wolfram does),
   /// while a `TogglerBar` control keeps its toggle buttons; both toggle the
   /// value's membership in the bound list.
