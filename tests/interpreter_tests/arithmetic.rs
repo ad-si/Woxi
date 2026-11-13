@@ -16309,3 +16309,23 @@ mod exact_arithmetic_fuzz_edge_cases {
     );
   }
 }
+
+// `x/y/z` is Times[Times[x, y^-1], z^-1]: the inner two-factor product is
+// evaluated first, which distributes a sign (`(a + b)/(-2)` is
+// `(-a - b)/2`). Found by the differential fuzzer.
+#[test]
+fn quotient_of_quotient_evaluates_inner_product_first() {
+  assert_eq!(
+    interpret("ToString[FullForm[(a + b)/(-2)/c]]").unwrap(),
+    "Times[Rational[1, 2], Plus[Times[-1, a], Times[-1, b]], Power[c, -1]]"
+  );
+  assert_eq!(
+    interpret("((1 + y)/(-16)/y)^2").unwrap(),
+    "(-1 - y)^2/(256*y^2)"
+  );
+  assert_eq!(interpret("(a + b)/(-2)/c/d").unwrap(), "(-a - b)/(2*c*d)");
+  // Numeric chains still fold operator by operator.
+  assert_eq!(interpret("N[Pi]/2/3").unwrap(), "0.5235987755982988");
+  assert_eq!(interpret("6/2/3").unwrap(), "1");
+  assert_eq!(interpret("x/2/3").unwrap(), "x/6");
+}

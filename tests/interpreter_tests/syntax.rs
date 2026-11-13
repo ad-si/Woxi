@@ -15455,3 +15455,27 @@ fn parenthesized_string_join_keeps_nesting() {
   );
   assert_eq!(interpret(r#""a" <> ("b" <> "c")"#).unwrap(), "abc");
 }
+
+// `++(x)[[3]]` is PreIncrement[Part[x, 3]], `++f'` is
+// Derivative[1][PreIncrement[f]], and a held `(f =!= g) + -1` keeps its
+// brackets as a subtraction.
+#[test]
+fn prefix_increment_suffixes_and_held_subtraction_operand() {
+  for (input, expected) in [
+    ("Hold[++(x)[[3]]]", "Hold[PreIncrement[Part[x, 3]]]"),
+    ("Hold[++(x)[y]]", "Hold[PreIncrement[x[y]]]"),
+    ("Hold[++f']", "Hold[Derivative[1][PreIncrement[f]]]"),
+    ("Hold[++(f)']", "Hold[Derivative[1][PreIncrement[f]]]"),
+    ("Hold[--x'']", "Hold[Derivative[2][PreDecrement[x]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(
+    interpret("Hold[(f =!= g) + -1]").unwrap(),
+    "Hold[(f =!= g) - 1]"
+  );
+}

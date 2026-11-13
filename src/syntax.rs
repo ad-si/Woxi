@@ -13372,11 +13372,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           _ => None,
         }
       {
-        return format!(
-          "{} - {}",
-          expr_to_string(left),
-          expr_to_string(&magnitude)
-        );
+        let left_text = expr_to_string(left);
+        let left_text = if plus_term_needs_parens(left) {
+          format!("({left_text})")
+        } else {
+          left_text
+        };
+        return format!("{left_text} - {}", expr_to_string(&magnitude));
       }
       // Special case: a + (-b) should display as a - b
       if matches!(op, BinaryOperator::Plus)

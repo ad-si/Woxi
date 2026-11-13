@@ -523,8 +523,8 @@ Decrement = { (&((BalancedParens | BalancedBraces | Slot | String | PatternWithH
 // A list or a parenthesized expression is an operand too: wolframscript
 // reads `--(a < b)` as PreDecrement[a < b] and `++{a, b}` as
 // PreIncrement[{a, b}].
-PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
-PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreIncrement = { "++" ~ (PreIncrement | Increment | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &(BalancedParens ~ (PartOpen | "[")) ~ ParenExtended | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
+PreDecrement = { "--" ~ (PreDecrement | Decrement | PartExtract | FunctionCall | PatternWithHead | PatternSimple | Identifier | NumericValue | String | Slot | List | &(BalancedParens ~ (PartOpen | "[")) ~ ParenExtended | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")") }
 
 // InformationQuery: ?symbol or ?pattern* shorthand for Information[symbol]
 InformationQuery = { "?" ~ !"?" ~ InformationPattern }
@@ -731,7 +731,11 @@ DerivativePrime = @{ "'"+ }
 DerivativeIdentifier = { Identifier ~ DerivativePrime }
 // A list, string, slot or pattern takes a prime too: `{}'`, `#2'`, `x_'`
 // are Derivative[1][…] in wolframscript.
-DerivativeOther = { &((BalancedBraces | String | Slot | PatternWithHead | PatternSimple) ~ "'") ~ (List | String | Slot | PatternWithHead | PatternSimple) ~ DerivativePrime ~ !"[" }
+DerivativeOther = {
+    &((BalancedBraces | String | Slot | PatternWithHead | PatternSimple) ~ "'") ~ (List | String | Slot | PatternWithHead | PatternSimple) ~ DerivativePrime ~ !"["
+    // `++f'` is Derivative[1][PreIncrement[f]]: the prime binds looser.
+  | &("++" | "--") ~ (PreIncrement | PreDecrement) ~ DerivativePrime ~ !"["
+}
 
 // GetShorthand: `<< filename` → Get["filename"]
 // The path runs to the next whitespace, `]`, `,`, `;`, `)`, `}`, or `&`. We
