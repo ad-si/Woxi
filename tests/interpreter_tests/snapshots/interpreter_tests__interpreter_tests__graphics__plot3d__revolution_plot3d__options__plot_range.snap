@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 6495
 expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, PlotRange -> {0, 1.5}]\")"
 ---
 <svg width="360" height="288" viewBox="0 0 360 288" xmlns="http://www.w3.org/2000/svg">
@@ -6980,15 +6981,15 @@ expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, PlotRange -> {0,
 <line x1="333.8" y1="151.9" x2="335.9" y2="153.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="338.9" y1="144.2" x2="341.0" y2="145.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="343.9" y1="136.7" x2="346.0" y2="138.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="253.7" y1="272.6" x2="257.0" y2="274.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="253.7" y1="272.6" x2="250.4" y2="270.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="258.7" y="275.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-4</text>
-<line x1="281.5" y1="230.7" x2="284.8" y2="232.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="281.5" y1="230.7" x2="278.2" y2="228.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="286.5" y="234.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-2</text>
-<line x1="306.3" y1="193.3" x2="309.6" y2="195.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="306.3" y1="193.3" x2="303.0" y2="191.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="311.3" y="196.6" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="328.6" y1="159.7" x2="331.9" y2="161.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="328.6" y1="159.7" x2="325.3" y2="157.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="333.6" y="163.0" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">2</text>
-<line x1="348.7" y1="129.4" x2="352.1" y2="131.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="348.7" y1="129.4" x2="345.4" y2="127.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="353.7" y="132.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">4</text>
 <line x1="36.1" y1="186.7" x2="23.7" y2="108.0" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="35.4" y1="181.8" x2="37.8" y2="181.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>

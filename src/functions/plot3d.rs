@@ -3184,6 +3184,65 @@ fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
   out
 }
 
+/// The automatic `AxesEdge` of each axis of the box `lo`..`hi`: among the
+/// four edges parallel to the axis, the silhouette edges (one adjacent
+/// face turned toward the viewer, the other away) are the exposed ones,
+/// and the axis goes on the one nearest the viewer. `None` when the view
+/// leaves no such edge (looking straight at a face).
+fn automatic_axes_edges(
+  camera: &Camera,
+  lo: [f64; 3],
+  hi: [f64; 3],
+) -> AxesEdges {
+  let center = [
+    f64::midpoint(lo[0], hi[0]),
+    f64::midpoint(lo[1], hi[1]),
+    f64::midpoint(lo[2], hi[2]),
+  ];
+  let pt = |p: [f64; 3]| Point3D {
+    x: p[0],
+    y: p[1],
+    z: p[2],
+  };
+  let side_value = |d: usize, side: f64| if side > 0.0 { hi[d] } else { lo[d] };
+  // Whether the face of dimension `d` on `side` faces the viewer.
+  let face_visible = |d: usize, side: f64| {
+    let mut c = center;
+    c[d] = side_value(d, side);
+    side * camera.toward_viewer(pt(c))[d] > 1e-9
+  };
+  let mut out: AxesEdges = [None, None, None];
+  for (k, slot) in out.iter_mut().enumerate() {
+    let others: Vec<usize> = (0..3).filter(|&d| d != k).collect();
+    let (i, j) = (others[0], others[1]);
+    let mut best: Option<([f64; 2], f64)> = None;
+    for a in [-1.0, 1.0] {
+      for b in [-1.0, 1.0] {
+        if face_visible(i, a) == face_visible(j, b) {
+          continue;
+        }
+        let mut mid = center;
+        mid[i] = side_value(i, a);
+        mid[j] = side_value(j, b);
+        let t = camera.toward_viewer(pt(mid));
+        // Distance to the eye (or along the view for an orthographic
+        // camera, where `toward_viewer` is constant: nearer is a larger
+        // projection onto it, so negate).
+        let dist = if camera.perspective.is_some() {
+          (t[0] * t[0] + t[1] * t[1] + t[2] * t[2]).sqrt()
+        } else {
+          -(mid[0] * t[0] + mid[1] * t[1] + mid[2] * t[2])
+        };
+        if best.is_none_or(|(_, d)| dist < d - 1e-9) {
+          best = Some(([a, b], dist));
+        }
+      }
+    }
+    *slot = best.map(|(sides, _)| sides);
+  }
+  out
+}
+
 /// `draw_axes_on_box` with per-axis explicit tick positions (`Ticks`).
 #[allow(clippy::too_many_arguments)]
 fn draw_axes_on_box_with_ticks(
@@ -3349,15 +3408,19 @@ fn draw_axes_on_box_with_ticks(
     None => axes,
   };
   // `AxesEdge` names the box edge of an axis: the sides (-1 low, 1 high)
-  // of the other two coordinates, in order.
+  // of the other two coordinates, in order. `Automatic` (the default, or
+  // per axis) puts it on the exposed box edge nearest the viewer, as
+  // Wolfram does; the corner-based choice above is only the fallback for
+  // a view straight at a face.
   let mut axes = axes;
-  if crossing.is_none()
-    && let Some(edges) = edges
-  {
+  if crossing.is_none() {
     let lo = [box_x_lo, box_y_lo, box_z_lo];
     let hi = [box_x_hi, box_y_hi, box_z_hi];
+    let auto = automatic_axes_edges(camera, lo, hi);
+    let chosen: AxesEdges =
+      std::array::from_fn(|k| edges.and_then(|e| e[k]).or(auto[k]));
     let ranges = [x_range, y_range, z_range];
-    for (k, edge) in edges.iter().enumerate() {
+    for (k, edge) in chosen.iter().enumerate() {
       let Some(sides) = edge else { continue };
       let mut a = [0.0; 3];
       let mut o = 0;
@@ -3376,7 +3439,12 @@ fn draw_axes_on_box_with_ticks(
         y: p[1],
         z: p[2],
       };
-      axes[k] = (pt(p0), pt(p1), ranges[k], false);
+      // An x or y axis runs from its end nearer the viewer.
+      if k < 2 && depth(pt(p1), camera) < depth(pt(p0), camera) {
+        axes[k] = (pt(p1), pt(p0), ranges[k], true);
+      } else {
+        axes[k] = (pt(p0), pt(p1), ranges[k], false);
+      }
     }
   }
 
@@ -3540,12 +3608,9 @@ fn draw_axes_on_box_with_ticks(
         let perpx = -dy / len * 4.0;
         let perpy = dx / len * 4.0;
 
-        svg.push_str(&format!(
-                    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
-                    tx, ty, tx + perpx, ty + perpy, tick_color
-                ));
-
-        // Place label on the outward side (away from box center)
+        // The label goes on the outward side (away from the box center);
+        // the tick mark points into the box, whichever way the axis line
+        // runs.
         let mid_x = f64::midpoint(sx0, sx1);
         let mid_y = f64::midpoint(sy0, sy1);
         let to_center_x = cx - mid_x;
@@ -3555,6 +3620,11 @@ fn draw_axes_on_box_with_ticks(
         } else {
           1.0
         };
+
+        svg.push_str(&format!(
+                    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
+                    tx, ty, tx - perpx * sign, ty - perpy * sign, tick_color
+                ));
 
         // A label pushed sideways is aligned on its near end, so it grows
         // away from the axis instead of straddling its anchor (Wolfram
