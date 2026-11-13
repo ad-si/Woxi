@@ -10322,3 +10322,74 @@ mod automatic_layout_of_dags {
     assert_eq!(interpret(code).unwrap(), "4");
   }
 }
+
+/// `LayeredGraphPlot` of digraphs with several sources and of graphs in
+/// several pieces.
+mod layered_plot_components {
+  use super::*;
+
+  /// Several vertices pointing at one sink are the top layer, the sink
+  /// one layer below them under the right one of their middle two —
+  /// not a tree hanging upward from the sink.
+  #[test]
+  fn sources_sit_above_their_common_sink() {
+    assert_eq!(
+      interpret(
+        "Cases[LayeredGraphPlot[{1 -> 5, 2 -> 5, 3 -> 5, 4 -> 5}], \
+         Disk[p_, ___] :> p, Infinity]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {2., 0.}, {1., 1.}, {2., 1.}, {3., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[LayeredGraphPlot[{1 -> 4, 2 -> 4, 3 -> 4}], \
+         Disk[p_, ___] :> p, Infinity]"
+      )
+      .unwrap(),
+      "{{0., 1.}, {1., 0.}, {1., 1.}, {2., 1.}}"
+    );
+  }
+
+  /// Each piece of a disconnected graph is layered on its own and the
+  /// pieces are packed apart instead of sharing one long top row.
+  #[test]
+  fn disconnected_pieces_are_layered_and_packed_apart() {
+    let pts = "pts = Cases[LayeredGraphPlot[Table[i -> x[Mod[i, 7]], \
+               {i, 0, 26}]], Disk[p_, ___] :> p, Infinity]; \
+               vs = DeleteDuplicates[Flatten[Table[{i, x[Mod[i, 7]]}, \
+               {i, 0, 26}]]]; pos = AssociationThread[vs, pts];";
+    // Every sink sits exactly one unit below each of its sources.
+    assert_eq!(
+      interpret(&format!(
+        "{pts} Union[Table[Round[pos[i][[2]] - pos[x[Mod[i, 7]]][[2]], \
+         10.^-9], {{i, 0, 26}}]]"
+      ))
+      .unwrap(),
+      "{1.}"
+    );
+    // The pieces fill a block about as tall as it is wide.
+    assert_eq!(
+      interpret(&format!(
+        "{pts} w = Max[pts[[All, 1]]] - Min[pts[[All, 1]]]; \
+         h = Max[pts[[All, 2]]] - Min[pts[[All, 2]]]; 1/2 < w/h < 2"
+      ))
+      .unwrap(),
+      "True"
+    );
+    // No two pieces' bounding boxes overlap.
+    assert_eq!(
+      interpret(&format!(
+        "{pts} boxes = Table[With[{{c = Append[Select[Range[0, 26], \
+         Mod[#, 7] == k &], x[k]]}}, CoordinateBounds[pos /@ c]], \
+         {{k, 0, 6}}]; \
+         overlap[{{{{a1_, a2_}}, {{b1_, b2_}}}}, {{{{c1_, c2_}}, \
+         {{d1_, d2_}}}}] := a1 <= c2 && c1 <= a2 && b1 <= d2 && d1 <= b2; \
+         Or @@ Flatten[Table[overlap[boxes[[i]], boxes[[j]]], \
+         {{i, 7}}, {{j, i + 1, 7}}]]"
+      ))
+      .unwrap(),
+      "False"
+    );
+  }
+}

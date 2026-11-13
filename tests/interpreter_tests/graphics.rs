@@ -54621,9 +54621,29 @@ mod overscript_bar_accent {
       r#"Graphics[Text[DisplayForm[OverscriptBox["b", "-"]], {0, 0}]]"#,
     );
     assert!(
-      svg.contains(">b\u{0305}</text>"),
+      svg.contains("<tspan text-decoration=\"overline\">b</tspan></text>"),
       "OverscriptBox[\"b\", \"-\"] must read as b̄: {svg}"
     );
+  }
+
+  /// A barred label is drawn with an overline decoration, not with the
+  /// combining overline U+0305, which the embedded fonts lack (a
+  /// renderer falling back to another face misplaces the bar).
+  #[test]
+  fn bar_accent_label_is_an_overline_decoration() {
+    clear_state();
+    let svg = export_svg(
+      r#"Graphics[{Text[Overscript[12, "_"], {0, 0}], Text[Row[{a, OverBar[b], c}], {1, 1}]}]"#,
+    );
+    assert!(
+      svg.contains("<tspan text-decoration=\"overline\">12</tspan>"),
+      "both digits share one bar: {svg}"
+    );
+    assert!(
+      svg.contains("a<tspan text-decoration=\"overline\">b</tspan>c"),
+      "only the barred letter is decorated: {svg}"
+    );
+    assert!(!svg.contains('\u{0305}'), "no combining overline: {svg}");
   }
 }
 

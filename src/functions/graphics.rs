@@ -11598,6 +11598,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('>', "&gt;")
     .replace('"', "&quot;");
   let escaped = render_math_letterlike_glyphs(&escaped);
+  let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) {
     escaped
       .replace(
@@ -11803,6 +11804,42 @@ fn render_math_letterlike_glyphs(s: &str) -> String {
     match letter_for_double_struck_glyph(c) {
       Some(letter) => out.push_str(&double_struck_tspan(letter)),
       None => out.push(c),
+    }
+  }
+  out
+}
+
+/// Draw the characters a combining overline (U+0305) bars — an accent
+/// `Overscript[x, "_"]` or `OverBar[x]` in a label — under one rule, as a
+/// `<tspan>` with an overline decoration. The embedded fonts lack the
+/// combining mark, and a renderer falling back to another face for it
+/// draws the whole run in that face with the bar misplaced. Safe to run
+/// after XML-escaping: a barred character is never part of an entity.
+fn render_combining_overlines(s: &str) -> String {
+  const BAR: char = '\u{0305}';
+  if !s.contains(BAR) {
+    return s.to_string();
+  }
+  let chars: Vec<char> = s.chars().collect();
+  let barred = |i: usize| chars[i] != BAR && chars.get(i + 1) == Some(&BAR);
+  let mut out = String::with_capacity(s.len() + 48);
+  let mut i = 0;
+  while i < chars.len() {
+    if barred(i) {
+      out.push_str("<tspan text-decoration=\"overline\">");
+      while i < chars.len() && barred(i) {
+        out.push(chars[i]);
+        i += 1;
+        while chars.get(i) == Some(&BAR) {
+          i += 1;
+        }
+      }
+      out.push_str("</tspan>");
+    } else {
+      if chars[i] != BAR {
+        out.push(chars[i]);
+      }
+      i += 1;
     }
   }
   out
