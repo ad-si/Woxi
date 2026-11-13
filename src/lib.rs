@@ -4673,6 +4673,18 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       args: new_args.into(),
     });
   }
+  // A fixed-size `Pane[content, {w, h}]` item reserves exactly that box:
+  // compose it as the picture the full display pipeline clips to the box,
+  // rather than peeling it to content drawn at its own (larger) size.
+  if let syntax::Expr::FunctionCall { name, .. } = expr
+    && name == "Pane"
+    && pane_fixed_size(expr).is_some()
+  {
+    let rendered = render_visual_display_pipeline(expr);
+    if matches!(rendered, syntax::Expr::Graphics { .. }) {
+      return rendered;
+    }
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

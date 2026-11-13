@@ -29656,7 +29656,7 @@ fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
           Expr::List(
             vec![Expr::Identifier("Automatic".to_string()), v.clone()].into(),
           ),
-        ))
+        ));
       }
       _ => grid_args.push(opt.clone()),
     }
