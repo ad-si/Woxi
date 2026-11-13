@@ -30223,7 +30223,7 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
       Tok::Close => {
         stack.pop();
       }
-      Tok::Text(text) if text.is_empty() => {}
+      Tok::Text("") => {}
       Tok::Text(text) => match stack.last_mut() {
         Some(attrs) if !attrs.is_empty() => {
           out.push_str("<tspan");
