@@ -1771,11 +1771,13 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           crate::functions::plot::apply_grid_side(
             sx,
             &mut opts.grid_lines_x,
+            &mut opts.grid_full_x,
             &mut opts.grid_x_lines,
           );
           crate::functions::plot::apply_grid_side(
             sy,
             &mut opts.grid_lines_y,
+            &mut opts.grid_full_y,
             &mut opts.grid_y_lines,
           );
         }

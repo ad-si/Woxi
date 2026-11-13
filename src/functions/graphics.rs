@@ -11258,6 +11258,8 @@ enum GridSpec {
   None,
   /// Automatic tick positions.
   Automatic,
+  /// `Full`: every major and minor tick position.
+  Full,
   /// Explicit positions (each with an optional style).
   Explicit(Vec<GridLine>),
 }
@@ -11276,6 +11278,7 @@ fn parse_grid_spec(expr: &Expr) -> GridSpec {
     Expr::Identifier(s) if s == "Automatic" || s == "All" => {
       GridSpec::Automatic
     }
+    Expr::Identifier(s) if s == "Full" => GridSpec::Full,
     Expr::List(entries) => {
       GridSpec::Explicit(entries.iter().filter_map(parse_grid_line).collect())
     }
@@ -11307,12 +11310,22 @@ fn parse_grid_line(entry: &Expr) -> Option<GridLine> {
 fn grid_positions(
   spec: &GridSpec,
   ticks: &[f64],
+  (min, max): (f64, f64),
   default_style: &StyleState,
 ) -> Vec<(f64, StyleState)> {
   match spec {
     GridSpec::None => Vec::new(),
     GridSpec::Automatic => {
       ticks.iter().map(|&p| (p, default_style.clone())).collect()
+    }
+    GridSpec::Full => {
+      let mut all = ticks.to_vec();
+      all.extend(axis_minor_ticks(&TickSpec::Automatic, min, max));
+      all.sort_by(f64::total_cmp);
+      all
+        .into_iter()
+        .map(|p| (p, default_style.clone()))
+        .collect()
     }
     GridSpec::Explicit(lines) => lines
       .iter()
@@ -11344,7 +11357,9 @@ fn render_grid_lines(
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
-  for (pos, style) in grid_positions(grid_x, &x_ticks, default_style) {
+  for (pos, style) in
+    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_style)
+  {
     let x = coord_x(pos, bb, svg_w);
     if !x.is_finite() {
       continue;
@@ -11359,7 +11374,9 @@ fn render_grid_lines(
       dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
   }
-  for (pos, style) in grid_positions(grid_y, &y_ticks, default_style) {
+  for (pos, style) in
+    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_style)
+  {
     let y = coord_y(pos, bb, svg_h);
     if !y.is_finite() {
       continue;
@@ -13921,6 +13938,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(s) if s == "None" || s == "False" => {
             grid_x = GridSpec::None;
             grid_y = GridSpec::None;
+          }
+          Expr::Identifier(s) if s == "Full" => {
+            grid_x = GridSpec::Full;
+            grid_y = GridSpec::Full;
           }
           // {xspec, yspec}: each side is Automatic, None, or an explicit list
           // of positions (a position may be `{pos, style}` for a per-line

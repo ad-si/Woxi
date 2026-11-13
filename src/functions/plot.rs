@@ -3450,6 +3450,8 @@ pub(crate) enum GridSide {
   None,
   /// Evenly spaced automatic grid lines (default gray, solid).
   Automatic,
+  /// `Full`: a line at every major and minor tick position.
+  Full,
   /// Explicit grid lines at the given positions/styles.
   Explicit(Vec<GridLine>),
 }
@@ -3597,6 +3599,11 @@ pub(crate) struct PlotOptions {
   pub grid_lines_y: bool,
   /// Show evenly spaced vertical grid lines (automatic).
   pub grid_lines_x: bool,
+  /// `GridLines -> Full` on the x axis: the automatic vertical lines sit at
+  /// every minor tick as well as every major one, across the whole frame.
+  pub grid_full_x: bool,
+  /// `GridLines -> Full` on the y axis (see `grid_full_x`).
+  pub grid_full_y: bool,
   /// Explicit vertical grid lines (positions + per-line style). When
   /// non-empty, these replace the automatic `grid_lines_x` lines.
   pub grid_x_lines: Vec<GridLine>,
@@ -3983,6 +3990,8 @@ impl Default for PlotOptions {
       baseline_axis: false,
       grid_lines_y: false,
       grid_lines_x: false,
+      grid_full_x: false,
+      grid_full_y: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
       grid_lines_style: None,
@@ -4411,12 +4420,26 @@ fn resolve_grid_lines(
   }
   let style = inherit(&SeriesStyle::default());
   let mut v = Vec::new();
-  let mut pos = (min / step).ceil() * step;
-  while pos <= max {
-    v.push((pos, style.clone()));
-    pos += step;
+  // Multiply rather than accumulate, so a fine (minor-tick) step does not
+  // drift off the tick grid or lose the last line to rounding.
+  let tol = step * 1e-9;
+  let mut k = ((min - tol) / step).ceil();
+  while k * step <= max + tol {
+    v.push((k * step, style.clone()));
+    k += 1.0;
   }
   v
+}
+
+/// The spacing of the automatic grid lines on an axis whose major ticks are
+/// `major` apart: the major step itself, or the minor tick step for
+/// `GridLines -> Full`, which puts a line at every minor tick too.
+fn full_grid_step(major: f64, full: bool) -> f64 {
+  if full && major > 0.0 && major.is_finite() {
+    minor_tick_step(major)
+  } else {
+    major
+  }
 }
 
 /// The grid lines of one axis spanning `min..max`: [`resolve_grid_lines`]
@@ -5993,16 +6016,17 @@ fn generate_svg_with_options(
           opts.grid_lines_y,
           (y_min, y_max),
           log_y,
-          axis_tick_step(y_max - y_min),
+          full_grid_step(axis_tick_step(y_max - y_min), opts.grid_full_y),
           opts.grid_lines_style.as_ref(),
         );
         {
           let tol = (y_max - y_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
+          // `GridLines -> Full` keeps every line across the frame.
           let interior = opts
             .grid_interior
-            .filter(|_| opts.grid_y_lines.is_empty())
+            .filter(|_| opts.grid_y_lines.is_empty() && !opts.grid_full_y)
             .map(|r| r.1);
           for (gy, style) in &y_grid {
             if *gy < y_min - tol || *gy > y_max + tol {
@@ -6050,7 +6074,7 @@ fn generate_svg_with_options(
           if date_axis {
             nice_date_step(x_max - x_min)
           } else {
-            axis_tick_step(x_max - x_min)
+            full_grid_step(axis_tick_step(x_max - x_min), opts.grid_full_x)
           },
           opts.grid_lines_style.as_ref(),
         );
@@ -6058,9 +6082,10 @@ fn generate_svg_with_options(
           let tol = (x_max - x_min).abs() * 1e-9;
           // Automatic lines of a list plot keep off the ends of its
           // unpadded range (`GridLines -> Automatic` in WL 15).
+          // `GridLines -> Full` keeps every line across the frame.
           let interior = opts
             .grid_interior
-            .filter(|_| opts.grid_x_lines.is_empty())
+            .filter(|_| opts.grid_x_lines.is_empty() && !opts.grid_full_x)
             .map(|r| r.0);
           for (gx, style) in &x_grid {
             if *gx < x_min - tol || *gx > x_max + tol {
@@ -14531,6 +14556,7 @@ fn theme_curve_base(opt: &Expr) -> Option<Vec<Expr>> {
 ///
 /// Supported forms:
 /// - `Automatic` / `All` / `True` → automatic lines on both axes
+/// - `Full` → lines at every major and minor tick on both axes
 /// - `None` / `False` → no grid lines
 /// - `{xspec, yspec}` → independent specs per axis, where each spec is
 ///   `Automatic`, `None`, or a list of entries. Each entry is a bare position
@@ -14546,6 +14572,7 @@ pub(crate) fn parse_grid_lines_spec(expr: &Expr) -> (GridSide, GridSide) {
     Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
       (GridSide::Automatic, GridSide::Automatic)
     }
+    Expr::Identifier(s) if s == "Full" => (GridSide::Full, GridSide::Full),
     _ => (GridSide::None, GridSide::None),
   }
 }
@@ -14557,6 +14584,7 @@ fn parse_grid_side(expr: &Expr) -> GridSide {
     Expr::Identifier(s) if s == "Automatic" || s == "All" || s == "True" => {
       GridSide::Automatic
     }
+    Expr::Identifier(s) if s == "Full" => GridSide::Full,
     Expr::List(items) => GridSide::Explicit(
       items.iter().filter_map(parse_grid_line_entry).collect(),
     ),
@@ -14595,14 +14623,16 @@ fn parse_grid_line_entry(entry: &Expr) -> Option<GridLine> {
 pub(crate) fn apply_grid_side(
   side: GridSide,
   auto_flag: &mut bool,
+  full_flag: &mut bool,
   explicit: &mut Vec<GridLine>,
 ) {
+  *full_flag = matches!(side, GridSide::Full);
   match side {
     GridSide::None => {
       *auto_flag = false;
       explicit.clear();
     }
-    GridSide::Automatic => {
+    GridSide::Automatic | GridSide::Full => {
       *auto_flag = true;
       explicit.clear();
     }
@@ -16050,11 +16080,13 @@ pub(crate) fn apply_common_plot_option(
       apply_grid_side(
         sx,
         &mut plot_opts.grid_lines_x,
+        &mut plot_opts.grid_full_x,
         &mut plot_opts.grid_x_lines,
       );
       apply_grid_side(
         sy,
         &mut plot_opts.grid_lines_y,
+        &mut plot_opts.grid_full_y,
         &mut plot_opts.grid_y_lines,
       );
     }

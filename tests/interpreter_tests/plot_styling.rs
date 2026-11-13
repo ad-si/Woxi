@@ -286,6 +286,61 @@ mod sampling {
 mod styles {
   use super::*;
 
+  /// The `(vertical, horizontal)` counts of default-styled grid lines.
+  fn grid_line_counts(svg: &str) -> (usize, usize) {
+    let mut counts = (0, 0);
+    for (i, _) in svg.match_indices("stroke=\"#808080\" stroke-width=\"2\"") {
+      let rest = &svg[i..];
+      let start = rest.find("points=\"").unwrap() + 8;
+      let pts: Vec<(&str, &str)> = rest
+        [start..start + rest[start..].find('"').unwrap()]
+        .split_whitespace()
+        .map(|p| p.split_once(',').unwrap())
+        .collect();
+      if pts[0].0 == pts[1].0 {
+        counts.0 += 1;
+      } else if pts[0].1 == pts[1].1 {
+        counts.1 += 1;
+      }
+    }
+    counts
+  }
+
+  /// `GridLines -> Full` draws a line at every major and minor tick, out
+  /// to the frame edges, instead of only at the interior major ticks.
+  #[test]
+  fn full_grid_lines_at_major_and_minor_ticks() {
+    let plot = |grid: &str| {
+      svg_of(&format!(
+        "ListPlot[Table[{{t, 200000 - 6000 t}}, {{t, 0, 30}}], \
+         Frame -> True, GridLines -> {grid}]"
+      ))
+    };
+    // x: majors every 5 on 0..30, minors every 1 → 31 lines.
+    // y: majors every 50000, minors every 10000 on 20000..200000 → 19.
+    assert_eq!(grid_line_counts(&plot("Full")).0, 31);
+    assert!(grid_line_counts(&plot("Full")).1 >= 19);
+    // Automatic: only the interior majors 5, 10, …, 25.
+    assert_eq!(grid_line_counts(&plot("Automatic")).0, 5);
+    // Per axis: `{Full, None}` keeps the dense vertical lines only.
+    assert_eq!(grid_line_counts(&plot("{Full, None}")), (31, 0));
+  }
+
+  /// `Full` grid lines of a `Graphics` sit at its minor ticks too.
+  #[test]
+  fn full_grid_lines_in_graphics() {
+    let lines = |grid: &str| {
+      svg_of(&format!(
+        "Graphics[Line[{{{{0, 0}}, {{10, 10}}}}], GridLines -> {grid}]"
+      ))
+      .matches("<line")
+      .count()
+    };
+    // Majors every 2 on 0..10 (6 per axis), minors every 0.5 (21 per axis).
+    assert_eq!(lines("Automatic"), 12);
+    assert_eq!(lines("Full"), 42);
+  }
+
   /// A grid line given its own color keeps the default grid opacity.
   #[test]
   fn styled_grid_line_keeps_default_opacity() {
