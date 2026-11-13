@@ -29725,14 +29725,21 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
 
   // Parse optional alignment: positional (`Column[{…}, Center]`) or the
   // option form (`Column[{…}, Alignment -> Center]`). Default: Left.
-  let mut alignment = if args.len() >= 2 {
-    match &args[1] {
+  // Either may be a `{horizontal, vertical}` pair (`{Center, Top}`), whose
+  // first entry sets the items' horizontal alignment.
+  fn column_text_anchor(spec: &Expr) -> &'static str {
+    match spec {
       Expr::Identifier(s) if s == "Center" => "middle",
       Expr::Identifier(s) if s == "Right" => "end",
+      Expr::List(parts) if !parts.is_empty() => column_text_anchor(&parts[0]),
       _ => "start", // Left or anything else
     }
-  } else {
-    "start"
+  }
+  let mut alignment = match args.get(1) {
+    Some(spec @ (Expr::Identifier(_) | Expr::List(_))) => {
+      column_text_anchor(spec)
+    }
+    _ => "start",
   };
   for arg in &args[1..] {
     if let Expr::Rule {
@@ -29740,13 +29747,8 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       replacement,
     } = arg
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment")
-      && let Expr::Identifier(spec) = replacement.as_ref()
     {
-      alignment = match spec.as_str() {
-        "Center" => "middle",
-        "Right" => "end",
-        _ => "start",
-      };
+      alignment = column_text_anchor(replacement);
     }
   }
 
