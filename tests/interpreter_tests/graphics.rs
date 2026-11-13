@@ -23330,6 +23330,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: matrix cells were blended bilinearly, so a checkerboard
+    /// of values became round saddle blobs. Wolfram splits each cell along
+    /// the diagonal from its lower-left to its upper-right node and shades
+    /// each triangle linearly, so that whole diagonal takes the value its
+    /// two end nodes share.
+    #[test]
+    fn list_density_plot_interpolates_over_triangles() {
+      use base64::Engine as _;
+      let pixels = |code: &str| {
+        let svg = export_svg(code);
+        let b64 = svg
+          .split("data:image/png;base64,")
+          .nth(1)
+          .expect("embedded image")
+          .split('"')
+          .next()
+          .unwrap()
+          .to_string();
+        let bytes = base64::engine::general_purpose::STANDARD
+          .decode(b64)
+          .unwrap();
+        ::image::load_from_memory(&bytes).unwrap().to_rgb8()
+      };
+      for (code, diagonal_bright) in [
+        ("ListDensityPlot[{{0, 1}, {1, 0}}]", false),
+        ("ListDensityPlot[{{1, 0}, {0, 1}}]", true),
+      ] {
+        let img = pixels(code);
+        let (w, h) = img.dimensions();
+        // Corners: lower left (diagonal node) and lower right (off it).
+        let on = img.get_pixel(0, h - 1).0;
+        let off = img.get_pixel(w - 1, h - 1).0;
+        assert_eq!(on[1] > 200, diagonal_bright, "{code}: {on:?}");
+        assert_eq!(off[1] > 200, !diagonal_bright, "{code}: {off:?}");
+        // Points along the lower-left to upper-right diagonal, the center
+        // included, keep the shared value of its end nodes.
+        for t in [0.25, 0.5, 0.75] {
+          let x = (t * w as f64) as u32;
+          let y = ((1.0 - t) * h as f64) as u32;
+          let p = img.get_pixel(x.min(w - 1), y.min(h - 1)).0;
+          for (got, want) in p.iter().zip(on) {
+            assert!(got.abs_diff(want) <= 12, "{code} at {t}: {p:?} vs {on:?}");
+          }
+        }
+        // Off the diagonal, toward the other corners, the shading changes.
+        let q = img.get_pixel(w * 9 / 10, h * 9 / 10).0;
+        assert!(q[1].abs_diff(on[1]) > 60, "{code}: {q:?} vs {on:?}");
+      }
+    }
+
+    /// Each data cell gets at least 8 pixels per side, so a 49 x 49 grid
+    /// is not squeezed into 256 pixels and blurred when scaled up.
+    #[test]
+    fn list_density_plot_raster_resolution() {
+      use base64::Engine as _;
+      let svg =
+        export_svg("ListDensityPlot[Table[Mod[i j, 7], {i, 49}, {j, 49}]]");
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap();
+      assert_eq!((img.width(), img.height()), (384, 384));
+    }
+
     /// `InterpolationOrder -> 0` shades scattered data by the nearest
     /// sample, giving flat Voronoi cells with sharp borders.
     #[test]
