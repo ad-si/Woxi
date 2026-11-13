@@ -2136,7 +2136,26 @@ pub fn dispatch_io_functions(
         let Expr::String(text) = &rendered else {
           return Some(Ok(fail_expr()));
         };
-        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), text)
+        // These formats come back from `ExportString` as their UTF-8 bytes,
+        // one character per byte; writing that string as UTF-8 again would
+        // encode non-ASCII text twice.
+        let bytes: Vec<u8> = if matches!(
+          text_format,
+          "CSV"
+            | "TSV"
+            | "JSON"
+            | "RawJSON"
+            | "Text"
+            | "Table"
+            | "List"
+            | "Lines"
+        ) && text.chars().all(|c| (c as u32) < 256)
+        {
+          text.chars().map(|c| c as u8).collect()
+        } else {
+          text.clone().into_bytes()
+        };
+        if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), bytes)
           .map_err(|e| {
             InterpreterError::EvaluationError(format!("Export: {e}"))
           })

@@ -956,7 +956,7 @@ Log2,"Returns the base-2 logarithm of a number",✅,pure,7.0,904
 ProductLog,"Lambert W function; principal branch and the real branch k=-1 (two-argument form)",✅,pure,3.0,905
 KnotData,"Knots of the Rolfsen table by {n k} or standard name and torus knots by winding numbers {p q}: CrossingNumber / AlexanderBriggsList / AlexanderBriggsNotation / StandardName / Name; SpaceCurve / Image / ImageData for the trefoil and torus knots only",🚧,pure,6.0,906
 Invisible,"Displays as blank space with the same size as its content",✅,unevaluated,6.0,907
-StyleData,"",🚫,,3.0,908
+StyleData,"Style definition cell content of a notebook stylesheet (stays symbolic)",✅,unevaluated,3.0,908
 NestWhile,"Applies a function repeatedly while a condition holds",✅,pure,4.0,909
 Depth,"Returns the depth of an expression",✅,pure,1.0,911
 LogLinearPlot,"Plots with logarithmic x-axis",✅,pure,6.0,912
@@ -1033,7 +1033,7 @@ ViewVertical,"Option for 3D up direction on screen",✅,pure,2.0,986
 StyleDefinitions,"",🚫,,3.0,987
 RoundingRadius,"",🚫,,7.0,988
 Ball,"Geometric primitive representing a ball (filled sphere); drawn in Graphics and Graphics3D; a list of centers draws one ball per center",✅,none,10.0,989
-FormBox,"",🚫,,3.0,991
+FormBox,"Low-level box tagging content with a form such as TraditionalForm (stays symbolic)",✅,unevaluated,3.0,991
 RegionDifference,"Region left after removing one region from another",✅,pure,10.0,991
 UpSetDelayed,"Assign delayed upvalues to symbols appearing in the LHS",✅,side_effect,1.0,992
 Hypergeometric1F1,"Kummer confluent hypergeometric function 1F1(a; b; z)",✅,pure,1.0,993
@@ -1348,7 +1348,7 @@ SinhIntegral,"Hyperbolic sine integral Shi(z)",✅,pure,3.0,1309
 KelvinKer,"Kelvin ker function (real part of e^(-Pi I/2) BesselK on a rotated argument)",✅,pure,6.0,1310
 ComplexPlot3D,"Plot the modulus of a complex function as a 3D surface over the complex plane",✅,pure,12.0,1311
 ControlActive,"Represents an object displayed differently while a control is actively manipulated",✅,pure,6.0,1312
-ButtonBox,"",🚫,,3.0,1313
+ButtonBox,"Low-level box construct for a button (stays symbolic)",✅,unevaluated,3.0,1313
 RegionDistance,"Shortest distance from a point to a region (Point/Line/Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon; numeric ImplicitRegion)",✅,pure,10.0,1314
 FirstPosition,"First position Position reports for a pattern; the head of an expression sits at position {0}",✅,pure,10.0,1317
 FourierSeries,"",🚫,,7.0,1317
@@ -1657,7 +1657,7 @@ DiscreteDelta,"Discrete delta function",✅,computation,4.0,1632
 LinearRecurrence,"Generates a linear recurrence sequence",✅,pure,7.0,1632
 WindowMargins,"Window margin specification",,unevaluated,3.0,1632
 AffineTransform,"Build a TransformationFunction for an affine map x -> m.x + v",✅,none,6.0,1633
-CellGroupData,"",🚫,,3.0,1635
+CellGroupData,"Group of notebook cells (stays symbolic)",✅,unevaluated,3.0,1635
 RadioButton,"Radio button control (stays symbolic in script mode)",✅,unevaluated,6.0,1635
 LegendMarkers,"Legend marker specification",,unevaluated,9.0,1637
 PowersRepresentations,"Gives all representations of n as a sum of k non-negative p-th powers",✅,pure,6.0,1637
@@ -2568,7 +2568,7 @@ CellFrameLabels,"",🚫,,4.0,2565
 DeleteContents,"option for DeleteDirectory",✅,Symbolic,2.0,2565
 PaletteNotebook,"",🚫,,6.0,2565
 ValueDimensions,"Option symbol specifying the number of value dimensions in temporal data",✅,pure,10.0,2565
-AdjustmentBox,"",🚫,,3.0,2570
+AdjustmentBox,"Low-level box construct for adjusted spacing (stays symbolic)",✅,unevaluated,3.0,2570
 ButtonBar,"Row of buttons with held actions (stays symbolic in script mode)",✅,unevaluated,7.0,2570
 ColumnSpacings,"option for column spacing in grids",✅,Symbolic,3.0,2570
 DiagonalizableMatrixQ,"Test whether a matrix is diagonalizable",✅,none,10.0,2570
@@ -3105,7 +3105,7 @@ CurvatureFlowFilter,"",🚫,,8.0,3121
 CyclicGroup,"Symbolic cyclic group of order n; consumed by GroupOrder/GroupGenerators/GroupElements/CycleIndexPolynomial",✅,unevaluated,8.0,3121
 DimensionReduce,"",🚫,,10.1,3121
 Dithering,"",🚫,,8.0,3121
-DynamicModuleBox,"",🚫,,6.0,3121
+DynamicModuleBox,"Low-level box form of a DynamicModule (stays symbolic)",✅,unevaluated,6.0,3121
 FARIMAProcess,"",🚫,,9.0,3121
 ImageLevels,"Counts the pixel values of each channel of an image",✅,pure,8.0,3121
 InverseFourierSinTransform,"Inverse Fourier sine transform (the sine transform is an involution)",✅,pure,4.0,3121

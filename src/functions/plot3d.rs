@@ -5978,6 +5978,9 @@ enum Primitive3D {
     /// picture rather than a text run: its SVG and natural size, drawn
     /// centered on the label's anchor.
     picture: Option<(String, f64, f64)>,
+    /// `Style[…, Bold]` / `Style[…, Italic]` on the label.
+    bold: bool,
+    italic: bool,
     style: StyleState3D,
   },
   /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
@@ -7766,11 +7769,16 @@ fn push_text3d_label(
       font_size: 12.0,
       width_chars: 0,
       picture: Some(picture),
+      bold: false,
+      italic: false,
       style: style.clone(),
     });
     return;
   }
   let styled = crate::functions::chart::parse_styled_label(label_expr);
+  let (bold, italic) = styled
+    .as_ref()
+    .map_or((false, false), |s| (s.bold, s.italic));
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       // A stacked label keeps its lines apart by newlines; the renderer
@@ -7803,6 +7811,8 @@ fn push_text3d_label(
     font_size,
     width_chars,
     picture: None,
+    bold,
+    italic,
     style: text_style,
   });
 }
@@ -10501,6 +10511,8 @@ fn perspective_warp(
         font_size,
         width_chars,
         picture,
+        bold,
+        italic,
         style,
       } => {
         if let Some(pos) = warp(&pos) {
@@ -10511,6 +10523,8 @@ fn perspective_warp(
             font_size,
             width_chars,
             picture,
+            bold,
+            italic,
             style,
           });
         }
@@ -12590,6 +12604,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         font_size,
         width_chars,
         picture,
+        bold,
+        italic,
         style,
       } => {
         let fill_color = if let Some((r, g, b)) = style.color {
@@ -12633,10 +12649,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        let mut style_attrs = String::new();
+        if *bold {
+          style_attrs.push_str(" font-weight=\"bold\"");
+        }
+        if *italic {
+          style_attrs.push_str(" font-style=\"italic\"");
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\">{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
