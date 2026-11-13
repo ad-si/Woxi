@@ -151,6 +151,57 @@ pub fn dispatch_predicate_functions(
           &[lhs.clone(), rhs.clone()],
         ));
       }
+      // A relation that is not a comparison splits the chain there:
+      // `Inequality[0, Less, x, Ldss, 3]` is `0 < x && Inequality[x, Ldss,
+      // 3]`. Each unknown relation keeps its own three-argument
+      // `Inequality`, the runs of comparisons between them evaluate as
+      // chains of their own, and `And` joins (and simplifies) the pieces.
+      let is_relation = |e: &Expr| {
+        matches!(e, Expr::Identifier(op) if matches!(
+          op.as_str(),
+          "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+            | "Unequal" | "SameQ" | "UnsameQ"
+        ))
+      };
+      if args.len() >= 5
+        && args.iter().skip(1).step_by(2).any(|op| !is_relation(op))
+      {
+        let mut pieces: Vec<Expr> = Vec::new();
+        let mut run: Vec<Expr> = vec![args[0].clone()];
+        for k in (1..args.len()).step_by(2) {
+          let (op, rhs) = (&args[k], &args[k + 1]);
+          if is_relation(op) {
+            run.push(op.clone());
+            run.push(rhs.clone());
+            continue;
+          }
+          let lhs = run.last().cloned().unwrap_or_else(|| args[k - 1].clone());
+          if run.len() >= 3 {
+            match crate::evaluator::evaluate_function_call_ast(
+              "Inequality",
+              &run,
+            ) {
+              Ok(piece) => pieces.push(piece),
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          pieces.push(Expr::FunctionCall {
+            name: "Inequality".into(),
+            args: vec![lhs, op.clone(), rhs.clone()].into(),
+          });
+          run = vec![rhs.clone()];
+        }
+        if run.len() >= 3 {
+          match crate::evaluator::evaluate_function_call_ast("Inequality", &run)
+          {
+            Ok(piece) => pieces.push(piece),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "And", &pieces,
+        ));
+      }
       let comparison_op = |op_name: &str| -> Option<ComparisonOp> {
         match op_name {
           "Less" => Some(ComparisonOp::Less),
