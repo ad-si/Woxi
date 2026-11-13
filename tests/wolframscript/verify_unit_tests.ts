@@ -137,7 +137,7 @@ function extractRustString(
  * between two interpret() calls, the second one starts fresh.
  * Otherwise, the prior expression(s) become setup code.
  */
-function extractTestCases(filePath: string): TestCase[] {
+export function extractTestCases(filePath: string): TestCase[] {
   const content = readFileSync(filePath, "utf-8");
   const cases: TestCase[] = [];
   const relPath = filePath.replace(ROOT + "/", "");
@@ -421,7 +421,7 @@ function splitTopLevelSemicolons(s: string): string[] {
  * with `TerminatedEvaluation[RecursionLimit]` instead of a result, which the
  * batch runner sees as a missing DONE sentinel.
  */
-function joinStatements(parts: string[]): string {
+export function joinStatements(parts: string[]): string {
   return parts
     .map((p, i) =>
       // The final part keeps its trailing `;` — that is what makes the whole
@@ -745,7 +745,7 @@ export function buildWolframScript(
   return escapeNonAscii(lines.join(";\n"));
 }
 
-function listRustFiles(dir: string): string[] {
+export function listRustFiles(dir: string): string[] {
   const files: string[] = [];
 
   for (const entry of readdirSync(dir)) {

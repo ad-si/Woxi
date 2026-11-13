@@ -2430,6 +2430,36 @@ fn evaluate_expr_to_expr_uncached(
             });
             return Ok(new_val);
           }
+          // A part (`a[[2]] //= Sqrt`) or a call that already has a value
+          // (`counts[x] //= f`) is read, transformed and written back, as
+          // AddTo does for its targets.
+          let is_part = matches!(&args[0], Expr::Part { .. })
+            || matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Part");
+          if is_part
+            || matches!(
+              &args[0],
+              Expr::FunctionCall { .. } | Expr::CurriedCall { .. }
+            )
+          {
+            let target = if is_part {
+              args[0].clone()
+            } else {
+              evaluated_call_target(&args[0])?
+            };
+            let current_val = evaluate_expr_to_expr(&target)?;
+            let unset = !is_part
+              && expr_to_string(&current_val) == expr_to_string(&target);
+            if !unset {
+              let func = evaluate_expr_to_expr(&args[1])?;
+              let new_val =
+                crate::evaluator::function_application::apply_function_to_arg(
+                  &func,
+                  &current_val,
+                )?;
+              crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+              return Ok(new_val);
+            }
+          }
           crate::emit_message(&format!(
             "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
             expr_to_string(&args[0])
@@ -5427,8 +5457,48 @@ fn evaluate_flat_chain(
   // left-deep for a parsed chain, so walk it with an explicit stack rather
   // than recursion.
   let mut operands: Vec<(&Expr, bool)> = Vec::new();
-  let mut work: Vec<(&Expr, bool)> =
-    vec![(root_right, root_op == inverse), (root_left, false)];
+  // The dividend of a quotient that is itself a quotient (`x/y/z`) is
+  // `Times[Times[x, y^-1], z^-1]`: its inner product is evaluated on its own
+  // first, as in Wolfram, which matters when that two-factor product
+  // distributes a sign: `(a + b)/(-2)/c` is `(-a - b)/(2 c)`. Times being
+  // Flat, every other grouping evaluates the same flattened.
+  // (A purely numeric dividend folds pairwise below, leaf by leaf, and is
+  // never grouped: no sign distributes into a number.)
+  fn numeric_tree(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => true,
+      Expr::FunctionCall { name, args } => {
+        (name == "Rational" || name == "Complex") && args.len() == 2
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        numeric_tree(left) && numeric_tree(right)
+      }
+      Expr::UnaryOp { operand, .. } => numeric_tree(operand),
+      _ => false,
+    }
+  }
+  let quotient_of_quotient = |op: BinaryOperator, left: &Expr| {
+    op == BinaryOperator::Divide
+      && matches!(
+        left,
+        Expr::BinaryOp {
+          op: BinaryOperator::Divide,
+          ..
+        }
+      )
+      && !numeric_tree(left)
+  };
+  let mut grouped = false;
+  let mut work: Vec<(&Expr, bool)> = vec![(root_right, root_op == inverse)];
+  if quotient_of_quotient(root_op, root_left) {
+    operands.push((root_left, false));
+    grouped = true;
+  } else {
+    work.push((root_left, false));
+  }
   while let Some((e, inverted)) = work.pop() {
     match e {
       // An inverted `(a + b)` / `(a b)` stays one operand, inverted whole.
@@ -5436,7 +5506,14 @@ fn evaluate_flat_chain(
         if !inverted && (*op == plain || *op == inverse) =>
       {
         work.push((right, *op == inverse));
-        work.push((left, false));
+        if quotient_of_quotient(*op, left) {
+          // Evaluated as a unit (see above); keeps left-to-right order since
+          // `left` would be popped next anyway.
+          operands.push((left, false));
+          grouped = true;
+        } else {
+          work.push((left, false));
+        }
       }
       _ => operands.push((e, inverted)),
     }
@@ -5464,6 +5541,20 @@ fn evaluate_flat_chain(
     }
     _ => false,
   };
+  // A grouped dividend is the leftmost subtree, so folding the values left
+  // to right applies the operators in the same order the tree does.
+  if grouped && values.iter().all(|(v, _)| is_number(v)) {
+    let mut values = values.into_iter();
+    let (mut acc, _) = values.next().expect("chain: no operand");
+    for (v, inverted) in values {
+      acc = evaluate_binary_op_pair(
+        if inverted { inverse } else { plain },
+        acc,
+        v,
+      )?;
+    }
+    return Ok(acc);
+  }
   if values.iter().all(|(v, _)| is_number(v)) {
     return fold_chain_pairwise(
       root_op,

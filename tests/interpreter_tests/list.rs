@@ -26172,6 +26172,54 @@ mod combinatorica_show_graph {
       "{2, Graphics, True}"
     );
   }
+
+  #[test]
+  fn cycle_is_the_closed_path_on_the_circular_embedding() {
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; g = Cycle[5]; \
+         {Edges[g], Length[Vertices[g]], Vertices[g][[5]]}"
+      )
+      .unwrap(),
+      "{{{1, 2}, {2, 3}, {3, 4}, {4, 5}, {1, 5}}, 5, {1., 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "Combinatorica`Edges[Combinatorica`Cycle[3, Combinatorica`Directed]]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}, {3, 1}}"
+    );
+    // Too small for a cycle: left unevaluated.
+    assert_eq!(interpret("Combinatorica`Cycle[2]").unwrap(), "Cycle[2]");
+  }
+
+  #[test]
+  fn show_graph_fits_the_unit_square_and_cycles_a_vertex_color_list() {
+    // The vertices are drawn in the unit square (Combinatorica's
+    // NormalizeVertices), so other graphics placed there line up, and a
+    // list of colors is handed out to the vertices in order, cyclically.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Cases[ShowGraph[Cycle[4], VertexColor -> {Red, Blue, Green}], \
+           {c_, Disk[p_, _]} :> {c, p}, Infinity]"
+      )
+      .unwrap(),
+      "{{RGBColor[1, 0, 0], {0.5, 1.}}, {RGBColor[0, 0, 1], {0., 0.5}}, \
+{RGBColor[0, 1, 0], {0.5, 0.}}, {RGBColor[1, 0, 0], {1., 0.5}}}"
+    );
+    // A single color paints every vertex; `Disk[s]` is the disk's diameter.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         Union[Cases[ShowGraph[Cycle[6], VertexColor -> Blue, \
+           VertexStyle -> Disk[0.1]], {c_, Disk[_, r_]} :> {c, r}, Infinity]]"
+      )
+      .unwrap(),
+      "{{RGBColor[0, 0, 1], 0.05}}"
+    );
+  }
 }
 
 mod part_without_index {
@@ -26629,5 +26677,94 @@ mod list_edge_specs {
           .to_string()
       ]
     );
+  }
+}
+
+// A rule whose position cannot lie inside the dimensions is reported with
+// SparseArray::posd and the call stays unevaluated — it is not an array, so
+// matrix functions leave it alone too. Found by the crash fuzzer, where an
+// out-of-range SparseArray fed a LinearSolve that then blew up.
+mod sparse_array_misplaced_rules {
+  use super::*;
+
+  #[test]
+  fn out_of_range_rule_reports_posd() {
+    let r = woxi::interpret_with_stdout("SparseArray[{{3, 1} -> 1}, {2, 2}]")
+      .unwrap();
+    assert_eq!(r.result, "SparseArray[{{3, 1} -> 1}, {2, 2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "SparseArray::posd: The left-hand side of {3, 1} -> 1 in {{3, 1} -> 1} \
+         is not a position or a pattern that will match the position of an \
+         element in an array with dimensions {2, 2}."
+      ]
+    );
+    // Wrong rank, zero index, out-of-range index next to a pattern.
+    for code in [
+      "SparseArray[{{1} -> 1}, {2, 2}]",
+      "SparseArray[{{0, 1} -> 1}, {2, 2}]",
+      "SparseArray[{{3, _} -> 1}, {2, 2}]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}");
+    }
+    // A scalar dimension is spelled out to the position's rank.
+    let r =
+      woxi::interpret_with_stdout("SparseArray[{{5, 1} -> 1}, 4]").unwrap();
+    assert!(r.warnings[0].ends_with("with dimensions {4, 4}."));
+  }
+
+  #[test]
+  fn valid_positions_still_build() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{-1 -> 1}, {2}]]").unwrap(),
+      "{0, 1}"
+    );
+    assert_eq!(
+      interpret("Normal[SparseArray[{{i_, i_} -> 1}, {2, 2}]]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+    assert_eq!(
+      interpret("Dimensions[SparseArray[{{1, 1, 1} -> 1}, 4]]").unwrap(),
+      "{4, 4, 4}"
+    );
+  }
+
+  #[test]
+  fn matrix_functions_leave_it_unevaluated() {
+    let r = woxi::interpret_with_stdout(
+      "LinearSolve[SparseArray[{{3, 1} -> 1}, {2, 2}], {1, 2}]",
+    )
+    .unwrap();
+    assert_eq!(
+      r.result,
+      "LinearSolve[SparseArray[{{3, 1} -> 1}, {2, 2}], {1, 2}]"
+    );
+    assert_eq!(r.warnings.len(), 1, "{:?}", r.warnings);
+  }
+}
+
+// LinearSolve rejects a coefficient argument that is not a nonempty
+// rectangular matrix with LinearSolve::matrix.
+mod linear_solve_matrix_message {
+  use super::*;
+
+  #[test]
+  fn non_matrix_argument() {
+    for code in [
+      "LinearSolve[{1, 2}, {1, 2}]",
+      "LinearSolve[{{1, 2}, {3}}, {1, 2}]",
+      "LinearSolve[{}, {}]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "{code}");
+      assert_eq!(r.warnings.len(), 1, "{code}");
+      assert!(r.warnings[0].starts_with("LinearSolve::matrix: Argument "));
+    }
+    // A symbolic argument stays unevaluated silently.
+    let r = woxi::interpret_with_stdout("LinearSolve[f, {1, 2}]").unwrap();
+    assert!(r.warnings.is_empty());
   }
 }
