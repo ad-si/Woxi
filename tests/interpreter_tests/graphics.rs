@@ -54007,3 +54007,51 @@ mod text_label_powers_and_wrappers {
     assert!(svg.contains("font-size=\"16\""), "{svg}");
   }
 }
+
+/// `AxesEdge -> Automatic` puts each 3-D axis on the exposed (silhouette)
+/// box edge nearest the viewer. For a cube seen from the default
+/// `ViewPoint` that is the upper-left edge for the y axis; for a flat box
+/// it is the lower-right one.
+mod automatic_axes_edge_3d {
+  use super::*;
+
+  fn cube(extra: &str) -> String {
+    export_svg(&format!(
+      "Graphics3D[Cuboid[], Axes -> True, \
+       PlotRange -> {{{{-2, 2}}, {{-2, 2}}, {{-2, 2}}}}{extra}]"
+    ))
+  }
+
+  #[test]
+  fn cube_uses_nearest_exposed_edges() {
+    assert_eq!(
+      cube(""),
+      cube(", AxesEdge -> {{-1, -1}, {-1, 1}, {-1, -1}}")
+    );
+    assert_ne!(
+      cube(""),
+      cube(", AxesEdge -> {{-1, -1}, {1, -1}, {-1, -1}}")
+    );
+  }
+
+  #[test]
+  fn flat_box_keeps_y_axis_on_lower_right_edge() {
+    let flat = |extra: &str| {
+      export_svg(&format!(
+        "Graphics3D[Cuboid[{{0, 0, 0}}, {{1, 1, 0.4}}], Axes -> True{extra}]"
+      ))
+    };
+    assert_eq!(
+      flat(""),
+      flat(", AxesEdge -> {{-1, -1}, {1, -1}, {-1, -1}}")
+    );
+  }
+
+  #[test]
+  fn automatic_entries_mix_with_explicit_ones() {
+    assert_eq!(
+      cube(", AxesEdge -> {Automatic, {1, 1}, Automatic}"),
+      cube(", AxesEdge -> {{-1, -1}, {1, 1}, {-1, -1}}")
+    );
+  }
+}
