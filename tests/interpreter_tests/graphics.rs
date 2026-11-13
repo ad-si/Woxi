@@ -54007,3 +54007,50 @@ mod text_label_powers_and_wrappers {
     assert!(svg.contains("font-size=\"16\""), "{svg}");
   }
 }
+
+mod column_text_label_fractions {
+  use super::*;
+
+  fn svg_of(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The number of fraction bars (`<line …>`) in a picture without axes.
+  fn bars(svg: &str) -> usize {
+    svg.matches("<line ").count()
+  }
+
+  /// Regression: a `Text` label laid out as a `Column` of values with
+  /// fractions among them drew every fraction as three text lines, its
+  /// bar spelled with dashes (`π`, `--`, `4`), instead of stacking it.
+  #[test]
+  fn column_of_quotients_stacks_each_fraction() {
+    let svg = svg_of("Graphics[Text[Column[{0, Pi/4, 3 Pi/2}], {0, 0}]]");
+    assert_eq!(bars(&svg), 2, "{svg}");
+    assert!(!svg.contains(">--<"), "{svg}");
+    assert!(!svg.contains(">----<"), "{svg}");
+    assert!(svg.contains(">3 π<"), "{svg}");
+    assert!(svg.contains(">0<"), "{svg}");
+  }
+
+  /// The same holds for rational numbers and symbolic quotients mixed with
+  /// plain lines, for any number of items.
+  #[test]
+  fn mixed_column_items_keep_plain_lines() {
+    let svg =
+      svg_of("Graphics[Text[Column[{a, 1/2, x/y, \"text\", 7/3}], {0, 0}]]");
+    assert_eq!(bars(&svg), 3, "{svg}");
+    assert!(svg.contains(">text<"), "{svg}");
+    assert!(svg.contains(">a<"), "{svg}");
+    assert!(!svg.contains(">-<"), "{svg}");
+  }
+
+  /// A column without fractions still prints its items as plain lines.
+  #[test]
+  fn column_without_fractions_is_unchanged() {
+    let svg = svg_of("Graphics[Text[Column[{1, 2, 3, 4}], {0, 0}]]");
+    assert_eq!(bars(&svg), 0, "{svg}");
+    assert!(svg.contains("<tspan"), "{svg}");
+  }
+}
