@@ -9216,10 +9216,12 @@ fn split_nested_loops(
   (outer, it.collect())
 }
 
-/// Whether a polygon's corners all turn the same way, so a fan from the
-/// first one covers it. Measured about the polygon's own plane (Newell's
-/// normal, which is robust for slightly non-planar input); a straight
-/// corner turns neither way and says nothing either way.
+/// Whether a polygon's corners all turn the same way, and only once
+/// around, so a fan from the first one covers it. Measured about the
+/// polygon's own plane (Newell's normal, which is robust for slightly
+/// non-planar input); a straight corner turns neither way and says nothing
+/// either way. A pentagram turns the same way at every corner too, but
+/// winds around twice, so it is not convex.
 fn is_convex_polygon3d(points: &[Point3D]) -> bool {
   let n = points.len();
   if n < 4 {
@@ -9240,6 +9242,9 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
     return true;
   }
   let mut sign = 0i8;
+  // The corners' turning angles add up to one full turn for a convex
+  // polygon and to two for a pentagram.
+  let mut total_turn = 0.0f64;
   for i in 0..n {
     let a = points[i];
     let b = points[(i + 1) % n];
@@ -9249,6 +9254,8 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
     let turn = (u[1] * v[2] - u[2] * v[1]) * normal[0]
       + (u[2] * v[0] - u[0] * v[2]) * normal[1]
       + (u[0] * v[1] - u[1] * v[0]) * normal[2];
+    let along = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+    total_turn += (turn / scale).atan2(along);
     // Scaled by the polygon's own size so the tolerance means the same
     // thing whatever the coordinates are.
     let this = if turn > 1e-9 * scale {
@@ -9265,7 +9272,7 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
       sign = this;
     }
   }
-  true
+  total_turn.abs() < 3.0 * std::f64::consts::PI
 }
 
 /// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
@@ -9354,6 +9361,44 @@ fn tessellate_polygon_with_holes(
     hole_idx.push((start..verts3.len()).collect());
   }
   let verts2: Vec<(f64, f64)> = verts3.iter().map(flatten).collect();
+
+  // An outline that crosses itself (a pentagram face of a star
+  // polyhedron) is filled by the even-odd rule, as `Graphics` fills it:
+  // each region it encloses an odd number of times is triangulated alone.
+  if holes.is_empty()
+    && let Some((arrangement, regions)) =
+      crate::functions::polygon_holes::even_odd_regions(&verts2)
+  {
+    let pts2: Vec<(f64, f64)> = arrangement.iter().map(|(p, _)| *p).collect();
+    let pts3: Vec<Point3D> = arrangement
+      .iter()
+      .map(|(_, at)| {
+        let a = outer[at.edge];
+        let b = outer[(at.edge + 1) % outer.len()];
+        Point3D {
+          x: a.x + at.t * (b.x - a.x),
+          y: a.y + at.t * (b.y - a.y),
+          z: a.z + at.t * (b.z - a.z),
+        }
+      })
+      .collect();
+    let mut tris = Vec::new();
+    let mut flags = Vec::new();
+    for region in &regions {
+      let result = triangulate_with_holes(&pts2, region, &[]);
+      for t in &result.triangles {
+        tris.push((pts3[t[0]], pts3[t[1]], pts3[t[2]]));
+        // Every side of a region lies along one of the polygon's own
+        // edges, so only the triangulation's diagonals go unstroked.
+        flags.push([
+          result.is_boundary(t[0], t[1]),
+          result.is_boundary(t[1], t[2]),
+          result.is_boundary(t[2], t[0]),
+        ]);
+      }
+    }
+    return (tris, flags);
+  }
 
   let result = triangulate_with_holes(&verts2, &outer_idx, &hole_idx);
   let tris = result

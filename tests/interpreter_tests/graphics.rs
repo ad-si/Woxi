@@ -8572,6 +8572,38 @@ mod plot3d {
       assert_eq!(solid.matches("<polygon").count(), 2, "{solid}");
     }
 
+    /// A self-intersecting face is filled by the even-odd rule, as
+    /// `Graphics` fills it. A pentagram turns the same way at every
+    /// corner, yet a fan from its first corner would fill the whole convex
+    /// pentagon around it; instead it draws its five tips, each outlined
+    /// along its three sides (the parts of the chords it lies on).
+    #[test]
+    fn graphics3d_self_intersecting_polygon_fills_even_odd() {
+      let star = "Polygon[Table[{Cos[Pi/2 + 4 Pi k/5], \
+                  Sin[Pi/2 + 4 Pi k/5], 0}, {k, 0, 4}]]";
+      let svg = export_svg(&format!("Graphics3D[{star}, Boxed -> False]"));
+      assert_eq!(svg.matches("<polygon").count(), 5, "{svg}");
+      // Each tip is outlined all around, by its own stroke.
+      assert_eq!(svg.matches("stroke=\"rgb(64,64,64)\"").count(), 5, "{svg}");
+      assert_eq!(svg.matches("<line").count(), 0, "{svg}");
+      // A bow tie is its two triangles.
+      let bow = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{2,2,0},{2,0,0},{0,2,0}}], \
+         Boxed -> False]",
+      );
+      assert_eq!(bow.matches("<polygon").count(), 2, "{bow}");
+      // The star faces of PolyhedronData's star polyhedra go through the
+      // same path: every one of the 12 pentagrams contributes 5 tips.
+      let ssd = export_svg(
+        "Graphics3D[GraphicsComplex[\
+         PolyhedronData[\"SmallStellatedDodecahedron\", \
+         \"VertexCoordinates\"], Polygon[PolyhedronData[\
+         \"SmallStellatedDodecahedron\", \"FaceIndices\"]]], \
+         Boxed -> False]",
+      );
+      assert!(ssd.matches("<polygon").count() >= 60, "{ssd}");
+    }
+
     /// A hole boundary rides along with the transforms wrapping its
     /// polygon; if it did not, the face would come back solid.
     #[test]
