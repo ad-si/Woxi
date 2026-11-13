@@ -6392,6 +6392,7 @@ GraphUtilities`HamiltonianCycles,"Up to n (or All) Hamiltonian cycles of a rule 
 MultivariateStatistics`EllipsoidQuantile,"Ellipsoid holding probability p of a multinormal distribution as Ellipsoid[mean; c Covariance]",✅,pure,8.0,
 Combinatorica`FromUnorderedPairs,"Builds a Combinatorica graph with one edge per (sorted) vertex pair on a circular embedding",✅,pure,6.0,
 Combinatorica`FromOrderedPairs,"Builds a directed Combinatorica graph with one edge per ordered vertex pair on a circular embedding",✅,pure,6.0,
+Combinatorica`Cycle,"The n-cycle (or with Directed the directed n-cycle) as a Combinatorica graph on a circular embedding",✅,pure,6.0,
 Combinatorica`SetGraphOptions,"Sets options on vertices or edges or the whole of a Combinatorica graph",✅,pure,6.0,
 Combinatorica`StableMarriage,"Man-optimal stable matching from men's and women's preference lists (Gale-Shapley)",✅,pure,6.0,
 Combinatorica`NextPermutation,"The permutation following a list in lexicographic order (the last wraps to the sorted list)",✅,pure,6.0,

@@ -688,6 +688,24 @@ fn complete_graph(args: &[Expr]) -> Option<Expr> {
   }
 }
 
+/// `Cycle[n]` / `Cycle[n, Directed]`: the `n`-cycle `1 - 2 - … - n - 1`
+/// (`n >= 3`) on the circular embedding. Undirected edges are stored as
+/// sorted pairs, so the closing edge is `{1, n}`; the directed cycle closes
+/// with `{n, 1}`.
+fn cycle_graph(args: &[Expr]) -> Option<Expr> {
+  let (n, directed) = match args {
+    [Expr::Integer(n)] => (*n, false),
+    [Expr::Integer(n), d] if symbol_is(d, "Directed") => (*n, true),
+    _ => return None,
+  };
+  if !(3..=100_000).contains(&n) {
+    return None;
+  }
+  let mut edges: Vec<(i128, i128)> = (1..n).map(|i| (i, i + 1)).collect();
+  edges.push(if directed { (n, 1) } else { (1, n) });
+  Some(circular_graph(n, edges, directed))
+}
+
 /// `EmptyGraph[n]` / `EmptyGraph[n, True]`: the edgeless (undirected, or
 /// directed) graph on `n` vertices placed on the circular embedding.
 fn empty_graph(args: &[Expr]) -> Option<Expr> {
@@ -1222,6 +1240,9 @@ fn evaluate(name: &str, args: &[Expr]) -> Option<Expr> {
   if name == "Combinatorica`CompleteGraph" {
     return complete_graph(args);
   }
+  if name == "Combinatorica`Cycle" {
+    return cycle_graph(args);
+  }
   if name == "Combinatorica`EmptyGraph" {
     return empty_graph(args);
   }
@@ -1565,6 +1586,22 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
       real_pair(parts.first()?)
     })
     .collect::<Option<Vec<_>>>()?;
+  // Combinatorica's `NormalizeVertices`: shift every coordinate by the
+  // smallest one (over x and y alike) and scale by the largest shifted one,
+  // so the drawing fits the unit square and lines up with other graphics
+  // placed in it.
+  let low = coords
+    .iter()
+    .flat_map(|&(x, y)| [x, y])
+    .fold(f64::INFINITY, f64::min);
+  let high = coords
+    .iter()
+    .flat_map(|&(x, y)| [x - low, y - low])
+    .fold(0.01, f64::max);
+  let coords: Vec<(f64, f64)> = coords
+    .iter()
+    .map(|&(x, y)| ((x - low) / high, (y - low) / high))
+    .collect();
   let (mut x0, mut x1, mut y0, mut y1) =
     (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
   for &(x, y) in &coords {
@@ -1612,7 +1649,8 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
   let radius = match option(gopts, "VertexStyle") {
     Some(Expr::FunctionCall { name, args }) if name == "Disk" => {
       match args.as_slice() {
-        [r] => crate::functions::math_ast::try_eval_to_f64(r)? * span,
+        // The size is the disk's diameter.
+        [r] => crate::functions::math_ast::try_eval_to_f64(r)? * span / 2.0,
         _ => 0.03 * span,
       }
     }
@@ -1624,10 +1662,21 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
     .and_then(real_pair)
     .unwrap_or((0.0, 0.0));
   let label_color = option(gopts, "VertexNumberColor").cloned();
+  // A graph-wide `VertexColor` is one color for every vertex, or a list
+  // of colors handed out to the vertices in order (cyclically).
+  let vertex_colors: Vec<Expr> = match option(gopts, "VertexColor") {
+    Some(Expr::List(colors)) => colors.to_vec(),
+    Some(color) => vec![color.clone()],
+    None => vec![],
+  };
   for (i, (v, &(x, y))) in vertices.iter().zip(&coords).enumerate() {
     let Expr::List(parts) = v else { return None };
     let disk = crate::helpers::call("Disk", vec![pt(x, y), Expr::Real(radius)]);
-    match option(&parts[1..], "VertexColor") {
+    let own_color = option(&parts[1..], "VertexColor").or_else(|| {
+      (!vertex_colors.is_empty())
+        .then(|| &vertex_colors[i % vertex_colors.len()])
+    });
+    match own_color {
       Some(color) => prims.push(Expr::List(vec![color.clone(), disk].into())),
       None => prims.push(disk),
     }
