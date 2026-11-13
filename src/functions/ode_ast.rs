@@ -11557,6 +11557,37 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   compile_numeric_real(expr, var_names)
 }
 
+thread_local! {
+  /// How many symbol values [`compile_stored_value`] is compiling inside
+  /// each other, to stop at a value that refers back to its own symbol.
+  static STORED_VALUE_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// A symbol whose value is an expression in the variables (`r` after
+/// `r = Sqrt[1 - u^2]`, used in a held plot body) compiled as that value:
+/// each sample evaluates the symbol to it with the variables bound, so the
+/// compiled value gives the same numbers without evaluating every sample
+/// symbolically.
+fn compile_stored_value(name: &str, var_names: &[String]) -> Option<NExpr> {
+  let Some(crate::StoredValue::ExprVal(value)) =
+    crate::evaluator::stored_value_for_lookup(name)
+  else {
+    return None;
+  };
+  if matches!(&value, Expr::Identifier(n) if n == name) {
+    return None;
+  }
+  let depth = STORED_VALUE_DEPTH.with(|d| d.get());
+  if depth >= 64 {
+    return None;
+  }
+  STORED_VALUE_DEPTH.with(|d| d.set(depth + 1));
+  let compiled = compile_numeric(&value, var_names);
+  STORED_VALUE_DEPTH.with(|d| d.set(depth));
+  compiled
+}
+
 fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   let comp = |e: &Expr| compile_numeric(e, var_names);
   match expr {
@@ -11578,7 +11609,8 @@ fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
           .ok()
           .filter(|v| !matches!(v, Expr::Identifier(_)))
           .and_then(|v| crate::functions::math_ast::try_eval_to_f64(&v))
-          .map(NExpr::Const),
+          .map(NExpr::Const)
+          .or_else(|| compile_stored_value(name, var_names)),
       }
     }
     Expr::BinaryOp { op, left, right } => {
