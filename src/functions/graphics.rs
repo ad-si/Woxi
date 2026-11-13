@@ -11678,6 +11678,62 @@ fn line_styled_ranges(
     .collect()
 }
 
+/// One row of a multi-line label: a plain line (with the character offset
+/// where it starts in the whole label), or a fraction stacked from the
+/// numerator and denominator lines its 2D text form spells.
+#[derive(Debug, PartialEq)]
+enum LabelRow<'a> {
+  Line(&'a str, usize),
+  Fraction(&'a str, &'a str),
+}
+
+/// Split a multi-line label into rows, recognizing the fractions in it: a
+/// line made only of dashes, at least as wide as the non-empty lines just
+/// above and below it, is the bar of a fraction those lines are the
+/// numerator and denominator of — the form a `Column` item like `Pi/4`
+/// flattens to. `None` when the label holds no such fraction (or is a lone
+/// fraction, which is drawn on its own).
+fn stacked_label_rows(text: &str) -> Option<Vec<LabelRow<'_>>> {
+  let lines: Vec<&str> = text.split('\n').collect();
+  if lines.len() <= 3 {
+    return None;
+  }
+  let width = |l: &str| l.trim().chars().count();
+  let is_bar = |l: &str| {
+    let t = l.trim();
+    !t.is_empty() && t.chars().all(|c| c == '-')
+  };
+  let mut starts = Vec::with_capacity(lines.len());
+  let mut offset = 0;
+  for line in &lines {
+    starts.push(offset);
+    offset += line.chars().count() + 1;
+  }
+  let mut rows = Vec::new();
+  let mut any_fraction = false;
+  let mut i = 0;
+  while i < lines.len() {
+    if i + 2 < lines.len() {
+      let (num, bar, den) = (lines[i], lines[i + 1], lines[i + 2]);
+      if is_bar(bar)
+        && !is_bar(num)
+        && !is_bar(den)
+        && width(num) > 0
+        && width(den) > 0
+        && width(bar) >= width(num).max(width(den))
+      {
+        rows.push(LabelRow::Fraction(num.trim(), den.trim()));
+        any_fraction = true;
+        i += 3;
+        continue;
+      }
+    }
+    rows.push(LabelRow::Line(lines[i], starts[i]));
+    i += 1;
+  }
+  any_fraction.then_some(rows)
+}
+
 /// [`svg_escape`] a single-line label, wrapping the characters inside
 /// `ranges` in a `<tspan>` that sets whatever of their slant, weight and
 /// color differs from the label's own (`style`, drawn in `fill`).
@@ -12774,30 +12830,95 @@ fn render_primitive(
           && !lines[2].trim().is_empty())
         .then_some(lines)
       };
-      if let Some(lines) = fraction_lines {
-        // A stacked fraction is typeset compactly: numerator and
-        // denominator close to a bar, not three full text lines apart.
-        let (num, den) = (lines[0].trim(), lines[2].trim());
+      // Draws `<text>` at the center `(x, y)` in the label's font, with
+      // the given (already escaped) markup.
+      let text_at = |x: f64, y: f64, anchor: &str, markup: &str| {
+        format!(
+          "<text x=\"{x:.2}\" y=\"{y:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{}>{markup}</text>",
+          color.to_svg_rgb(),
+          style.font_weight,
+          style.font_style,
+          color.opacity_attr(),
+        )
+      };
+      // A stacked fraction is typeset compactly: numerator and denominator
+      // close to a bar centered on `(cx, cy)`, not three full text lines
+      // apart.
+      let gap = fs * 0.6;
+      let fraction_bar_half = |num: &str, den: &str| {
         let widest = num.chars().count().max(den.chars().count()) as f64;
-        let bar_half = widest * fs * 0.55 / 2.0 + fs * 0.15;
-        let gap = fs * 0.6;
-        let fill = color.to_svg_rgb();
-        out.push_str(&format!("<g{rotate_attr}>"));
-        for (line, y) in [(num, sy - gap), (den, sy + gap)] {
-          out.push_str(&format!(
-            "<text x=\"{sx:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}>{}</text>",
-            style.font_weight,
-            style.font_style,
-            color.opacity_attr(),
-            svg_escape(line),
-          ));
+        widest * fs * 0.55 / 2.0 + fs * 0.15
+      };
+      let stacked_fraction = |cx: f64, cy: f64, num: &str, den: &str| {
+        let bar_half = fraction_bar_half(num, den);
+        let mut svg = String::new();
+        for (line, y) in [(num, cy - gap), (den, cy + gap)] {
+          svg.push_str(&text_at(cx, y, "middle", &svg_escape(line)));
         }
-        out.push_str(&format!(
-          "<line x1=\"{:.2}\" y1=\"{sy:.2}\" x2=\"{:.2}\" y2=\"{sy:.2}\" stroke=\"{fill}\" stroke-width=\"{:.2}\"/></g>\n",
-          sx - bar_half,
-          sx + bar_half,
+        svg.push_str(&format!(
+          "<line x1=\"{:.2}\" y1=\"{cy:.2}\" x2=\"{:.2}\" y2=\"{cy:.2}\" stroke=\"{}\" stroke-width=\"{:.2}\"/>",
+          cx - bar_half,
+          cx + bar_half,
+          color.to_svg_rgb(),
           (fs / 18.0).max(0.5),
         ));
+        svg
+      };
+      let label_rows = if fraction_lines.is_none() {
+        stacked_label_rows(text)
+      } else {
+        None
+      };
+      if let Some(lines) = fraction_lines {
+        let (num, den) = (lines[0].trim(), lines[2].trim());
+        out.push_str(&format!(
+          "<g{rotate_attr}>{}</g>\n",
+          stacked_fraction(sx, sy, num, den)
+        ));
+      } else if let Some(rows) = label_rows {
+        // A multi-line label whose items include fractions (`Column[{0,
+        // Pi/4, …}]`): plain lines are one line high, each fraction stacks
+        // compactly in its own row, and the block is centered on the anchor.
+        let row_height = |row: &LabelRow| match row {
+          LabelRow::Line(..) => fs,
+          LabelRow::Fraction(..) => 2.0 * gap + fs,
+        };
+        let total: f64 = rows.iter().map(row_height).sum();
+        let half_width = longest as f64 * fs * 0.5 / 2.0;
+        let mut y = sy - total / 2.0;
+        out.push_str(&format!("<g{rotate_attr}>"));
+        for row in &rows {
+          let h = row_height(row);
+          let cy = y + h / 2.0;
+          match row {
+            LabelRow::Line(line, start) => {
+              let end = start + line.chars().count();
+              let markup = svg_escape_with_styles(
+                line,
+                &line_styled_ranges(styled_ranges, *start, end),
+                style,
+                &color.to_svg_rgb(),
+              );
+              let (anchor, x) = match style.text_line_anchor {
+                Some("start") => ("start", sx - half_width),
+                Some(_) => ("end", sx + half_width),
+                None => ("middle", sx),
+              };
+              out.push_str(&text_at(x, cy, anchor, tspan_line(&markup)));
+            }
+            LabelRow::Fraction(num, den) => {
+              let bar_half = fraction_bar_half(num, den);
+              let cx = match style.text_line_anchor {
+                Some("start") => sx - half_width + bar_half,
+                Some(_) => sx + half_width - bar_half,
+                None => sx,
+              };
+              out.push_str(&stacked_fraction(cx, cy, num, den));
+            }
+          }
+          y += h;
+        }
+        out.push_str("</g>\n");
       } else if text.contains('\n') {
         // Multi-line text with tspan
         let lines: Vec<&str> = text.split('\n').collect();
