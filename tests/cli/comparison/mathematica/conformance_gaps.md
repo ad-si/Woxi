@@ -2147,6 +2147,11 @@ outer `-2` and Woxi an outer `1/2`, with compensating inner coefficients.
 Wolfram verifies that differentiating either Woxi result recovers its
 integrand exactly.
 
+Diff-fuzz seed 9303 (2026-11-13) shows it with a monomial denominator:
+`Integrate[(5 + 2 x)/(-2 x), x]` is `-x - (5*Log[x])/2` there and
+`(-2*x - 5*Log[x])/2` here, yet both agree on
+`Integrate[(1 + x^2)/(3 x), x]` = `(x^2/2 + Log[x])/3`.
+
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
 ```sh
