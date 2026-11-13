@@ -1827,6 +1827,14 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
     return base;
   }
   if is_last {
+    // A base that is itself a Part (`(x[[3]])[[2]]`) is a separate Part
+    // call, not more indices of the same one: spell it as `Part[x, 3]` so
+    // the nested `Expr::Part` chain built below still reads as `x[[3, 2]]`
+    // only when that is what was written.
+    let base = match base {
+      Expr::Part { .. } => part_chain_to_call(base),
+      other => other,
+    };
     return specs.into_iter().fold(base, |acc, idx| Expr::Part {
       expr: Box::new(acc),
       index: Box::new(idx),
@@ -1835,6 +1843,19 @@ fn apply_part_group(base: Expr, group: Pair<Rule>, is_last: bool) -> Expr {
   let mut args = vec![base];
   args.extend(specs);
   call("Part", args)
+}
+
+/// `Part[x, i, j, …]` for a nested `Expr::Part` chain `x[[i, j, …]]`.
+fn part_chain_to_call(expr: Expr) -> Expr {
+  let mut indices = Vec::new();
+  let mut cur = &expr;
+  while let Expr::Part { expr, index } = cur {
+    indices.push(index.as_ref().clone());
+    cur = expr.as_ref();
+  }
+  indices.push(cur.clone());
+  indices.reverse();
+  call("Part", indices)
 }
 
 /// Apply every bracket group of a `PartIndexSuffix`, in order.
@@ -6179,7 +6200,10 @@ fn base_operator_precedence(op: &str) -> u8 {
     // Composition/RightComposition bind tighter than prefix application (so
     // `f @* g @ x` parses as `(f @* g) @ x`) and Map (`Length@*f /@ list`
     // parses as `(Length@*f) /@ list`), but looser than MessageName.
-    "@*" | "/*" => 57,
+    // `@*` (625) binds just tighter than `/*` (624): `a /* b @* c` is
+    // `RightComposition[a, Composition[b, c]]`.
+    "@*" => 58,
+    "/*" => 57,
     "::" => 59, // MessageName (highest — a::b binds tighter than everything)
     _ => 0,
   }
@@ -6305,6 +6329,45 @@ fn build_expr_with_precedence(
         }
       }
       result = build_span(parts);
+      in_cross_chain = false;
+      flat_chain_op = None;
+      continue;
+    }
+
+    // A run of `@*` (or `/*`) at this level is one Composition, n-ary like
+    // `;;` above: `a @* b @* c` is `Composition[a, b, c]`, while a
+    // parenthesized `(a @* b) @* c` arrives as a term and stays nested, as
+    // it does in Wolfram's held forms.
+    if op_str == "@*" || op_str == "/*" {
+      let head = if op_str == "@*" {
+        "Composition"
+      } else {
+        "RightComposition"
+      };
+      let run_op = op_str.as_str();
+      let next_min_prec = prec + 1;
+      let mut parts = vec![result];
+      loop {
+        parts.push(build_expr_with_precedence(
+          terms,
+          operators,
+          op_idx + 1,
+          next_min_prec,
+        ));
+        let mut right_terms = 1;
+        let mut i = op_idx + 1;
+        while i < operators.len()
+          && operator_precedence(&operators[i]) >= next_min_prec
+        {
+          right_terms += 1;
+          i += 1;
+        }
+        op_idx += right_terms;
+        if operators.get(op_idx).map(String::as_str) != Some(run_op) {
+          break;
+        }
+      }
+      result = call(head, parts);
       in_cross_chain = false;
       flat_chain_op = None;
       continue;
@@ -6746,40 +6809,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       func: Box::new(left.clone()),
       list: Box::new(right.clone()),
     },
-    "@*" => {
-      // Flatten nested Composition: (f @* g) @* h -> Composition[f, g, h]
-      let mut funcs = Vec::new();
-      match left {
-        Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(left.clone()),
-      }
-      match right {
-        Expr::FunctionCall { name, args } if name == "Composition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(right.clone()),
-      }
-      call("Composition", funcs)
-    }
-    "/*" => {
-      // Flatten nested RightComposition: (f /* g) /* h -> RightComposition[f, g, h]
-      let mut funcs = Vec::new();
-      match left {
-        Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(left.clone()),
-      }
-      match right {
-        Expr::FunctionCall { name, args } if name == "RightComposition" => {
-          funcs.extend(args.clone());
-        }
-        _ => funcs.push(right.clone()),
-      }
-      call("RightComposition", funcs)
-    }
+    // Chains are assembled n-ary by the precedence climb; an operand that
+    // is itself a composition came from parentheses and stays nested.
+    "@*" => call("Composition", vec![left.clone(), right.clone()]),
+    "/*" => call("RightComposition", vec![left.clone(), right.clone()]),
     // `f @ x` == `f[x]`. Use the FunctionCall form when the LHS is a plain
     // identifier (matching the Rule::PrefixApplySimple branch) so downstream
     // code that pattern-matches on FunctionCall (e.g. DownValue assignment,
@@ -9861,6 +9894,15 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       None
     }
     Expr::Comparison { .. } => Some(21),
+    // A named pattern is `Pattern[x, _]`, which binds like `:` (150): it is
+    // bracketed inside `|`, `&&`, `+`, `==`, … but not as the side of `->`,
+    // `/;` or `=` — `(x_) + 1`, `x_ -> y`. A bare blank never needs it.
+    Expr::Pattern { name, .. } if !name.is_empty() => Some(14),
+    Expr::PatternOptional {
+      name,
+      default: None,
+      ..
+    } if !name.is_empty() => Some(14),
     Expr::Rule { .. } | Expr::RuleDelayed { .. } => Some(12),
     Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. } => Some(7),
     Expr::CompoundExpr(_) => Some(1),
@@ -9917,6 +9959,18 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       _ => None,
     },
     _ => None,
+  }
+}
+
+/// A literal that prints with a sign or a slash — a negative number or a
+/// rational — and so needs brackets as the operand of a tight operator.
+fn is_negative_or_fraction_literal(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(n) => *n < 0,
+    Expr::BigInteger(n) => n.sign() == num_bigint::Sign::Minus,
+    Expr::Real(x) => *x < 0.0,
+    Expr::FunctionCall { name, args } => name == "Rational" && args.len() == 2,
+    _ => false,
   }
 }
 
@@ -10875,18 +10929,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if (name == "Factorial" || name == "Factorial2") && args.len() == 1 {
         let suffix = if name == "Factorial2" { "!!" } else { "!" };
         let arg_str = fmt(&args[0]);
-        let needs_parens = match &args[0] {
-          Expr::BinaryOp { op, .. } => !matches!(op, BinaryOperator::Power),
-          Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            ..
-          } => true,
-          other if prints_as_not(other) => true,
-          Expr::FunctionCall { name: n, args: a } => {
-            (n == "Plus" || n == "Times" || n == "Minus") && a.len() >= 2
-          }
-          _ => false,
-        };
+        // `!` (610) binds tighter than every operator but the application
+        // shorthands and compositions: `(a^b)!`, `(a . b)!`, `(-2)!`,
+        // `(2/3)!`, `(a!)!`, `(x_)!`, but `a /@ b!`.
+        let needs_parens = printed_infix_precedence(&args[0])
+          .is_some_and(|p| p < 49)
+          || prints_as_not(&args[0])
+          || is_negative_or_fraction_literal(&args[0])
+          || matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+            if (n == "Factorial" || n == "Factorial2") && a.len() == 1);
         if needs_parens {
           return format!("({arg_str}){suffix}");
         }
@@ -11232,13 +11283,43 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           return format_map_apply_shorthand(&args[0], &args[1], op, 49);
         }
       }
-      if name == "Composition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" @* ");
-      }
-      if name == "RightComposition" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
-        return parts.join(" /* ");
+      if (name == "Composition" || name == "RightComposition")
+        && args.len() >= 2
+      {
+        // `@*` (625) and `/*` (624) bind tighter than every other operator,
+        // so any operand printed with one is bracketed — `(a^b) @* f`,
+        // `(a /@ b) @* f`, `(-2) @* f` — and so is a nested composition of
+        // the same kind or (inside `@*`) of the looser `/*`: `(a @* b) @* c`,
+        // `(a /* b) @* c`, but `a @* b /* c`.
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let nested = match a {
+              Expr::FunctionCall { name: n, args: na } if na.len() >= 2 => {
+                n == name || (name == "Composition" && n == "RightComposition")
+              }
+              _ => false,
+            };
+            let text = fmt(a);
+            if nested
+              || printed_infix_precedence(a).is_some()
+              || prints_as_not(a)
+              || is_negative_or_fraction_literal(a)
+              || matches!(a, Expr::FunctionCall { name: n, args: na }
+                if (n == "Factorial" || n == "Factorial2") && na.len() == 1)
+            {
+              format!("({text})")
+            } else {
+              text
+            }
+          })
+          .collect();
+        let op = if name == "Composition" {
+          " @* "
+        } else {
+          " /* "
+        };
+        return parts.join(op);
       }
       // Special case: Therefore[a, b, ...] displays as a ∴ b ∴ ...
       if name == "Therefore" && args.len() >= 2 {

@@ -14925,3 +14925,77 @@ mod held_syntax_output_form {
     assert_eq!(interpret("Hold[(a + b) @ c]").unwrap(), "Hold[(a + b)[c]]");
   }
 }
+
+// Precedence-aware printing and parsing of held operator trees, found by
+// the differential fuzzer's held-syntax mode.
+mod held_syntax_precedence {
+  use super::*;
+
+  // `(x[[3]])[[2]]` is Part[Part[x, 3], 2], not Part[x, 3, 2].
+  #[test]
+  fn parenthesized_part_of_a_part() {
+    assert_eq!(
+      interpret("Hold[(x[[3]])[[2]]]").unwrap(),
+      "Hold[x[[3]][[2]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(x[[3]])[[2]]]]]").unwrap(),
+      "Hold[Part[Part[x, 3], 2]]"
+    );
+    assert_eq!(interpret("Hold[x[[3, 2]]]").unwrap(), "Hold[x[[3,2]]]");
+    assert_eq!(
+      interpret("Module[{a = {{1, 2}, {3, 4}}}, (a[[2]])[[1]] = 9; a]")
+        .unwrap(),
+      "{{1, 2}, {9, 4}}"
+    );
+  }
+
+  // A named pattern binds like `:` (150).
+  #[test]
+  fn named_pattern_operands() {
+    for (input, expected) in [
+      ("HoldForm[x_ | y]", "HoldForm[(x_) | y]"),
+      ("HoldForm[x_ && y]", "HoldForm[(x_) && y]"),
+      ("HoldForm[x_ + 1]", "HoldForm[(x_) + 1]"),
+      ("HoldForm[x_. + 1]", "HoldForm[(x_.) + 1]"),
+      ("HoldForm[(x_)[[1]]]", "HoldForm[(x_)[[1]]]"),
+      ("HoldForm[x_!]", "HoldForm[(x_)!]"),
+      ("HoldForm[x_ -> y]", "HoldForm[x_ -> y]"),
+      ("HoldForm[x_ /; c]", "HoldForm[x_ /; c]"),
+      ("HoldForm[x_ = 1]", "HoldForm[x_ = 1]"),
+      ("HoldForm[_ + 1]", "HoldForm[_ + 1]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // `!` (610) brackets every looser operand; `@*`/`/*` (625/624) bracket
+  // everything but tighter forms, and nested compositions stay nested.
+  #[test]
+  fn factorial_and_composition_operands() {
+    for (input, expected) in [
+      ("HoldForm[(a^b)!]", "HoldForm[(a^b)!]"),
+      ("HoldForm[(a . b)!]", "HoldForm[(a . b)!]"),
+      ("HoldForm[(-2)!]", "HoldForm[(-2)!]"),
+      ("HoldForm[(a!)!]", "HoldForm[(a!)!]"),
+      ("HoldForm[(a /@ b)!]", "HoldForm[a /@ b!]"),
+      ("HoldForm[(a^b) @* f]", "HoldForm[(a^b) @* f]"),
+      ("HoldForm[(a /@ b) @* f]", "HoldForm[(a /@ b) @* f]"),
+      ("HoldForm[(-2) @* f]", "HoldForm[(-2) @* f]"),
+      ("HoldForm[(a!) @* f]", "HoldForm[(a!) @* f]"),
+      ("HoldForm[(c . b) @* b]", "HoldForm[(c . b) @* b]"),
+      ("HoldForm[(a @* b) @* c]", "HoldForm[(a @* b) @* c]"),
+      ("HoldForm[a @* (b @* c)]", "HoldForm[a @* (b @* c)]"),
+      ("HoldForm[(a /* b) @* c]", "HoldForm[(a /* b) @* c]"),
+      ("HoldForm[a @* b /* c]", "HoldForm[a @* b /* c]"),
+      ("HoldForm[a @* b @* c]", "HoldForm[a @* b @* c]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /* b @* c]]]").unwrap(),
+      "Hold[RightComposition[a, Composition[b, c]]]"
+    );
+    assert_eq!(interpret("((f @* g) @* h)[x]").unwrap(), "f[g[h[x]]]");
+  }
+}
