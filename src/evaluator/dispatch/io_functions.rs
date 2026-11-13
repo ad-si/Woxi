@@ -6863,14 +6863,13 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
 }
 
 /// The text of one `Row` item that `wrap_pane_text` can re-flow — a string,
-/// a number, or either under `Style` — with the `Style` directives to put
-/// back around the pieces of it.
+/// possibly under `Style` — with the `Style` directives to put back around
+/// the pieces of it. A number is no such text: it cannot break, and it is
+/// kept whole so it is drawn as a number (a large one with its digits
+/// grouped).
 fn pane_row_piece(item: &Expr) -> Option<(String, Option<Vec<Expr>>)> {
   match item {
     Expr::String(s) => Some((s.clone(), None)),
-    Expr::Integer(_) | Expr::Real(_) => {
-      Some((crate::syntax::expr_to_string(item), None))
-    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -7051,17 +7050,51 @@ fn wrap_pane_text_at(
       // Every unit of text (a character, or a whole embedded `\!\(…\)`
       // box, which must not be split) remembers which item (and so which
       // `Style`) it came from, so the styling survives the re-flow.
+      //
+      // An item that is no plain text (a `Superscript`, a nested `Row`, …)
+      // is one unbreakable unit as wide as it displays, kept as it is. A
+      // product with a line-breaking string factor flows factor by factor,
+      // and `Null` shows nothing. A row of nothing but such items has no
+      // text to re-flow.
+      let items: Vec<Expr> = items
+        .iter()
+        .flat_map(|i| {
+          crate::functions::graphics::times_flow_factors(i)
+            .unwrap_or_else(|| vec![i.clone()])
+        })
+        .filter(|i| !matches!(i, Expr::Identifier(n) if n == "Null"))
+        .collect();
       let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
+      let mut atoms: Vec<Option<Expr>> = Vec::new();
       let mut units: Vec<PaneTextUnit> = Vec::new();
-      for item in items {
-        let (text, directives) = pane_row_piece(item)?;
+      for item in &items {
         let idx = styles.len();
-        styles.push(directives);
-        units.extend(
-          pane_text_units(&text)
-            .into_iter()
-            .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
-        );
+        match pane_row_piece(item) {
+          Some((text, directives)) => {
+            styles.push(directives);
+            atoms.push(None);
+            units.extend(
+              pane_text_units(&text)
+                .into_iter()
+                .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
+            );
+          }
+          None => {
+            let cols =
+              crate::functions::graphics::estimate_display_width(item).ceil()
+                as usize;
+            styles.push(None);
+            atoms.push(Some(item.clone()));
+            units.push(PaneTextUnit {
+              text: String::new(),
+              cols: cols.max(1),
+              idx,
+            });
+          }
+        }
+      }
+      if atoms.iter().all(Option::is_some) {
+        return None;
       }
       // The line holds as many glyphs as fit at its largest font size
       // (a piece's own `Style` size, else the surrounding one).
@@ -7126,6 +7159,10 @@ fn wrap_pane_text_at(
             let run: Vec<&PaneTextUnit> =
               line[i..].iter().take_while(|u| u.idx == idx).collect();
             i += run.len();
+            if let Some(atom) = &atoms[idx] {
+              pieces.push(atom.clone());
+              continue;
+            }
             let text =
               Expr::String(run.iter().map(|u| u.text.as_str()).collect());
             pieces.push(match &styles[idx] {
