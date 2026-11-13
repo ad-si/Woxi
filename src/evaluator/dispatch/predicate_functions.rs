@@ -151,6 +151,57 @@ pub fn dispatch_predicate_functions(
           &[lhs.clone(), rhs.clone()],
         ));
       }
+      // A relation that is not a comparison splits the chain there:
+      // `Inequality[0, Less, x, Ldss, 3]` is `0 < x && Inequality[x, Ldss,
+      // 3]`. Each unknown relation keeps its own three-argument
+      // `Inequality`, the runs of comparisons between them evaluate as
+      // chains of their own, and `And` joins (and simplifies) the pieces.
+      let is_relation = |e: &Expr| {
+        matches!(e, Expr::Identifier(op) if matches!(
+          op.as_str(),
+          "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+            | "Unequal" | "SameQ" | "UnsameQ"
+        ))
+      };
+      if args.len() >= 5
+        && args.iter().skip(1).step_by(2).any(|op| !is_relation(op))
+      {
+        let mut pieces: Vec<Expr> = Vec::new();
+        let mut run: Vec<Expr> = vec![args[0].clone()];
+        for k in (1..args.len()).step_by(2) {
+          let (op, rhs) = (&args[k], &args[k + 1]);
+          if is_relation(op) {
+            run.push(op.clone());
+            run.push(rhs.clone());
+            continue;
+          }
+          let lhs = run.last().cloned().unwrap_or_else(|| args[k - 1].clone());
+          if run.len() >= 3 {
+            match crate::evaluator::evaluate_function_call_ast(
+              "Inequality",
+              &run,
+            ) {
+              Ok(piece) => pieces.push(piece),
+              Err(e) => return Some(Err(e)),
+            }
+          }
+          pieces.push(Expr::FunctionCall {
+            name: "Inequality".into(),
+            args: vec![lhs, op.clone(), rhs.clone()].into(),
+          });
+          run = vec![rhs.clone()];
+        }
+        if run.len() >= 3 {
+          match crate::evaluator::evaluate_function_call_ast("Inequality", &run)
+          {
+            Ok(piece) => pieces.push(piece),
+            Err(e) => return Some(Err(e)),
+          }
+        }
+        return Some(crate::evaluator::evaluate_function_call_ast(
+          "And", &pieces,
+        ));
+      }
       let comparison_op = |op_name: &str| -> Option<ComparisonOp> {
         match op_name {
           "Less" => Some(ComparisonOp::Less),
@@ -1205,20 +1256,14 @@ pub fn dispatch_predicate_functions(
         _ => return Some(Ok(Expr::List(vec![].into()))),
       };
       let rules: Vec<Expr> = crate::evaluator::assignment::N_VALUES.with(|m| {
-        m.borrow()
-          .get(&head)
-          .map(|entries| {
-            entries
-              .iter()
-              .map(|(lhs, rhs)| {
-                rule_delayed_expr(
-                  call1("HoldPattern", lhs.clone()),
-                  rhs.clone(),
-                )
-              })
-              .collect()
-          })
-          .unwrap_or_default()
+        m.borrow().get(&head).map_or_default(|entries| {
+          entries
+            .iter()
+            .map(|(lhs, rhs)| {
+              rule_delayed_expr(call1("HoldPattern", lhs.clone()), rhs.clone())
+            })
+            .collect()
+        })
       });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1229,20 +1274,17 @@ pub fn dispatch_predicate_functions(
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::SUB_VALUES.with(|m| {
-          m.borrow()
-            .get(&head)
-            .map(|entries| {
-              entries
-                .iter()
-                .map(|(lhs, rhs)| {
-                  rule_delayed_expr(
-                    call1("HoldPattern", lhs.clone()),
-                    rhs.clone(),
-                  )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+          m.borrow().get(&head).map_or_default(|entries| {
+            entries
+              .iter()
+              .map(|(lhs, rhs)| {
+                rule_delayed_expr(
+                  call1("HoldPattern", lhs.clone()),
+                  rhs.clone(),
+                )
+              })
+              .collect()
+          })
         });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1253,31 +1295,28 @@ pub fn dispatch_predicate_functions(
       };
       let rules: Vec<Expr> =
         crate::evaluator::assignment::FORMAT_VALUES.with(|m| {
-          m.borrow()
-            .get(&head)
-            .map(|entries| {
-              entries
-                .iter()
-                .map(|(form, lhs, rhs)| {
-                  // OutputForm rules use the LHS pattern verbatim;
-                  // box-form rules wrap the LHS in
-                  // `MakeBoxes[lhs, FORM]` (Wolfram's canonical form).
-                  let pattern_inner = if form == "OutputForm" {
-                    lhs.clone()
-                  } else {
-                    call(
-                      "MakeBoxes",
-                      vec![lhs.clone(), Expr::Identifier(form.clone())],
-                    )
-                  };
-                  rule_delayed_expr(
-                    call1("HoldPattern", pattern_inner),
-                    rhs.clone(),
+          m.borrow().get(&head).map_or_default(|entries| {
+            entries
+              .iter()
+              .map(|(form, lhs, rhs)| {
+                // OutputForm rules use the LHS pattern verbatim;
+                // box-form rules wrap the LHS in
+                // `MakeBoxes[lhs, FORM]` (Wolfram's canonical form).
+                let pattern_inner = if form == "OutputForm" {
+                  lhs.clone()
+                } else {
+                  call(
+                    "MakeBoxes",
+                    vec![lhs.clone(), Expr::Identifier(form.clone())],
                   )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+                };
+                rule_delayed_expr(
+                  call1("HoldPattern", pattern_inner),
+                  rhs.clone(),
+                )
+              })
+              .collect()
+          })
         });
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1361,29 +1400,26 @@ pub fn dispatch_predicate_functions(
         // FUNC_DEFS) are reconstructed here as HoldPattern[f[args]] :> value
         // rules so DownValues still reports them.
         let memo_rules: Vec<Expr> = crate::MEMO_VALUES.with(|m| {
-          m.borrow()
-            .get(sym)
-            .map(|cache| {
-              // In canonical order of the left-hand sides, as Wolfram lists
-              // its hashed literal definitions.
-              let mut entries: Vec<_> = cache.values().collect();
-              entries.sort_by(|(a, _), (b, _)| {
-                crate::functions::list_helpers_ast::sorting::canonical_cmp(
-                  &call(sym.as_str(), a.clone()),
-                  &call(sym.as_str(), b.clone()),
+          m.borrow().get(sym).map_or_default(|cache| {
+            // In canonical order of the left-hand sides, as Wolfram lists
+            // its hashed literal definitions.
+            let mut entries: Vec<_> = cache.values().collect();
+            entries.sort_by(|(a, _), (b, _)| {
+              crate::functions::list_helpers_ast::sorting::canonical_cmp(
+                &call(sym.as_str(), a.clone()),
+                &call(sym.as_str(), b.clone()),
+              )
+            });
+            entries
+              .into_iter()
+              .map(|(arg_exprs, value)| {
+                rule_delayed_expr(
+                  call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
+                  value.clone(),
                 )
-              });
-              entries
-                .into_iter()
-                .map(|(arg_exprs, value)| {
-                  rule_delayed_expr(
-                    call1("HoldPattern", call(sym.as_str(), arg_exprs.clone())),
-                    value.clone(),
-                  )
-                })
-                .collect()
-            })
-            .unwrap_or_default()
+              })
+              .collect()
+          })
         });
         if func_defs.is_empty() && memo_rules.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
@@ -2352,85 +2388,17 @@ fn make_rule(name: &str, value: Expr) -> Expr {
   rule_expr(id_expr(name), value)
 }
 
-/// Precedence of a symbol or expression — matches Wolfram's `Precedence`.
-/// Returns the parsing precedence: built-in operators get specific values,
-/// unknown symbols default to 670., non-symbol expressions get 1000.
+/// Precedence of a symbol or expression — matches Wolfram's `Precedence`:
+/// the tabulated value of a built-in operator symbol (see
+/// `precedence_table`), 670 for any other symbol, and 1000 for a
+/// non-symbol expression.
 pub(crate) fn precedence_value(expr: &Expr) -> f64 {
   let name = match expr {
     Expr::Identifier(s) | Expr::Constant(s) => s.as_str(),
     Expr::FunctionCall { name, args } if args.is_empty() => name.as_str(),
     _ => return 1000.0,
   };
-  match name {
-    "CompoundExpression" => 10.0,
-    "Put" | "PutAppend" => 30.0,
-    "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed" | "TagSet"
-    | "TagSetDelayed" | "TagUnset" | "Unset" => 40.0,
-    "Because" | "Therefore" => 50.0,
-    "VerticalSeparator" => 60.0,
-    "Postfix" => 70.0,
-    "Colon" => 80.0,
-    "Function" => 90.0,
-    "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => 100.0,
-    "ReplaceAll" | "ReplaceRepeated" => 110.0,
-    "Rule" | "RuleDelayed" => 120.0,
-    "TwoWayRule" => 125.0,
-    "StringExpression" => 135.0,
-    "Condition" | "Optional" => 140.0,
-    "Pattern" => 150.0,
-    "Alternatives" => 160.0,
-    "Repeated" | "RepeatedNull" => 170.0,
-    "Conditioned" => 195.0,
-    "Implies" => 200.0,
-    "Equivalent" => 205.0,
-    "Or" | "Nor" | "Xor" | "Nand" | "And" => 215.0,
-    "Not" => 230.0,
-    "ForAll" | "Exists" | "NotExists" => 240.0,
-    "Element" | "NotElement" | "ReverseElement" | "Subset" | "SubsetEqual"
-    | "Superset" | "SupersetEqual" | "NotSubset" | "NotSubsetEqual"
-    | "NotSuperset" | "NotSupersetEqual" | "Distributed" => 250.0,
-    "Equal" | "Unequal" | "SameQ" | "UnsameQ" | "Less" | "Greater"
-    | "LessEqual" | "GreaterEqual" | "Inequality" | "TildeTilde" => 290.0,
-    "DirectedEdge" | "UndirectedEdge" => 295.0,
-    "Union" => 300.0,
-    "Span" | "Intersection" => 305.0,
-    "Plus" | "Subtract" | "PlusMinus" | "MinusPlus" => 310.0,
-    "Sum" | "Limit" => 320.0,
-    "Integrate" => 325.0,
-    "CirclePlus" | "CircleMinus" => 330.0,
-    "Product" => 380.0,
-    "Star" => 390.0,
-    "Times" => 400.0,
-    "CenterDot" => 410.0,
-    "CircleTimes" => 420.0,
-    "Vee" => 430.0,
-    "Wedge" => 440.0,
-    "Diamond" => 450.0,
-    "Backslash" => 460.0,
-    "Divide" => 470.0,
-    "Minus" => 480.0,
-    "Dot" => 490.0,
-    "TensorProduct" => 495.0,
-    "Cross" => 500.0,
-    "NonCommutativeMultiply" => 510.0,
-    "CircleDot" => 520.0,
-    "SmallCircle" => 530.0,
-    "D" => 550.0,
-    "Power" => 590.0,
-    "Apply" => 620.0,
-    "Map" | "MapAll" => 620.0,
-    "Factorial" | "Factorial2" => 610.0,
-    "RightComposition" => 648.0,
-    "Composition" => 650.0,
-    "Prefix" => 640.0,
-    "StringJoin" => 600.0,
-    "MessageName" => 750.0,
-    "Blank" | "BlankSequence" | "BlankNullSequence" => 730.0,
-    "Increment" | "Decrement" | "PreIncrement" | "PreDecrement" => 660.0,
-    "PatternTest" => 680.0,
-    // Unknown symbols default to 670
-    _ => 670.0,
-  }
+  super::precedence_table::tabulated_precedence(name).unwrap_or(670.0)
 }
 
 /// Helper to create a RuleDelayed expression: name :> value

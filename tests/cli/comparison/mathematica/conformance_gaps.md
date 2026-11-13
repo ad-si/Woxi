@@ -414,6 +414,16 @@ StandardForm. The CLI `eval` InputForm keeps full precision, as
 because it makes the two layers disagree with each other.
 
 
+### A pure function's message prints a one-argument `Plus` as `+x`
+
+```sh
+wolframscript -code 'Plus[##2] &[]'   # Function::slots: SlotSequence[2] in +##2 &  cannot be filled from (+##2 & )[].
+woxi eval 'Plus[##2] &[]'             # Function::slots: SlotSequence[2] in Plus[##2] &  cannot be filled from (Plus[##2] & )[].
+```
+
+The result, `##2`, matches; only the message text differs. Outside a
+message (`Plus[x] &`, `Hold[Plus[x]]`) both engines print `Plus[x]`.
+
 ## Canonical ordering of Plus and Times
 
 ### A rational multiple of a sum is ordered against a product by its own rule
@@ -457,6 +467,21 @@ The `Plus` comparator follows Wolfram for every term led by a function call
 sort after the symbols, powers and products, by head name, then from the
 last factor of a product by that call's arguments, its exponent and the
 remaining factors. What is left are the entries below.
+
+### A symbol sorts before `I*(sum)` and before `1/(E^x*(1 + E^x))` in `Plus`
+
+```sh
+wolframscript -code 'x + I*(a + b)'                # I*(a + b) + x
+woxi eval 'x + I*(a + b)'                          # x + I*(a + b)
+wolframscript -code 'x + 1/(E^x*(1 + E^x))'        # 1/(E^x*(1 + E^x)) + x
+woxi eval 'x + 1/(E^x*(1 + E^x))'                  # x + 1/(E^x*(1 + E^x))
+```
+
+Found by the differential fuzzer (2026-11-12) through `TrigToExp[x + Tan[x]]`,
+which prints its `x` first. `2*(a + b) + x`, `I/(a*b) + x` and
+`1/((a + b)*E^x) + x` conform. `Sort[{x, I*(a + b)}]` agrees with
+wolframscript, so only the `Plus` comparator is off for the first form;
+`Sort[{x, 1/(E^x*(1 + E^x))}]` diverges as well.
 
 ### `Sort` puts a symbol before a sum, and a call before its curried form
 
@@ -811,6 +836,35 @@ combined fractions further than Woxi does (collecting in `x` with factored
 coefficients), so Woxi keeps a sum of quotients where WL prints one fraction —
 `Together` alone matches exactly on the same inputs.
 
+### `Simplify`, `FullSimplify` and `TrigReduce` pick a different form
+
+Found by the differential fuzzer (2026-11-12):
+
+```sh
+wolframscript -code 'Simplify[Tan[2 x] + x - Tan[3 x]]'   # x + Tan[2*x] - Tan[3*x]
+woxi eval 'Simplify[Tan[2 x] + x - Tan[3 x]]'             # x - Sec[2*x]*Sec[3*x]*Sin[x]
+wolframscript -code 'FullSimplify[1 + 5 x + 5 x^3]'       # 1 + 5*(x + x^3)
+woxi eval 'FullSimplify[1 + 5 x + 5 x^3]'                 # 1 + 5*x + 5*x^3
+wolframscript -code 'TrigReduce[1 + Tan[x]^2]'            # Sec[x]^2
+woxi eval 'TrigReduce[1 + Tan[x]^2]'                      # 2/(1 + Cos[2*x])
+```
+
+The values are equal. `TrigReduce[Tan[x]^2]` conforms; WL keeps `Sec[…]^2`
+as a factor once the sum around it reduces to it, and distributes it over
+the reduced terms of a larger sum.
+
+### `TrigExpand` of a `Tan` sum keeps a constant term apart
+
+```sh
+wolframscript -code 'TrigExpand[1 + Tan[2 x]]'
+# Cos[x]^2/(Cos[x]^2 - Sin[x]^2) + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2) - Sin[x]^2/(Cos[x]^2 - Sin[x]^2)
+woxi eval 'TrigExpand[1 + Tan[2 x]]'
+# 1 + (2*Cos[x]*Sin[x])/(Cos[x]^2 - Sin[x]^2)
+```
+
+Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
+the common denominator and splits it by the numerator's monomials.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -849,7 +903,34 @@ Needs parser-level `Times` flattening.
 in WL, which keeps integer coefficients.
 
 
+### Unevaluated calls are re-evaluated wherever they are copied
+
+```wl
+n = 20; rules = Flatten[Table[{{(i-1) n + j, (i-1) n + j} -> 4.1}, {i, n}, {j, n}]];
+A = SparseArray[rules, {n, n^2}];       (* posd: stays unevaluated *)
+x = LinearSolve[A, N[Range[n^2]]];      (* stays unevaluated *)
+Max[Abs[A . x - N[Range[n^2]]]]
+```
+
+The last line takes 0.0003 s in wolframscript and 4.8 s in Woxi, which
+re-evaluates the unevaluated `SparseArray[…]` and `LinearSolve[…]` in every
+element of the product (and re-emits their messages until `General::stop`).
+Wolfram marks an expression as evaluated and skips it the next time. At
+`n = 60` (found by the crash fuzzer, 2026-11-13) Woxi needs 22 GB. Woxi has
+no evaluated mark yet.
+
 ## Numeric precision and floating point
+
+### A machine real divided by an exact quotient differs in the last digit
+
+```sh
+wolframscript -code 'Divide[2.9, Divide[Pi + 11/2, Pi]]'   # 1.0542754166531756
+woxi eval 'Divide[2.9, Divide[Pi + 11/2, Pi]]'             # 1.0542754166531754
+```
+
+Found by the differential fuzzer (2026-11-12). The exact quotient
+`(11/2 + Pi)/Pi` is numericized at machine precision as part of the
+division, and the two engines round the intermediate steps differently.
 
 ### Machine Cos/Sin last-bit differences
 
@@ -2083,6 +2164,60 @@ and not to `Integrate[Sin[2*x + 1], x]`, which it leaves as
 applies to `Integrate[Log[2*x + 3], x]` and `Integrate[ArcTan[2*x + 1], x]`,
 where wolframscript expands the product and drops the resulting constant.
 
+
+### `Integrate[p[x]/(x + b), x]` collects the primitive over a common denominator
+
+```sh
+wolframscript -code 'Integrate[(1 + x^2)/(2 + x), x]'   # -6 - 2*x + x^2/2 + 5*Log[2 + x]
+woxi eval 'Integrate[(1 + x^2)/(2 + x), x]'             # (-12 - 4*x + x^2 + 10*Log[2 + x])/2
+wolframscript -code 'Integrate[(1 + x + x^2)/(1 + x), x]'   # -x + (1 + x)^2/2 + Log[1 + x]
+woxi eval 'Integrate[(1 + x + x^2)/(1 + x), x]'             # (-1 + x^2 + 2*Log[1 + x])/2
+```
+
+Found by the differential fuzzer (2026-11-12). With a monic linear
+denominator WL sometimes expands the substituted primitive and sometimes
+keeps `(1 + x)^2/2`; the rule is not decoded. Non-monic denominators
+(`(1 + x^2)/(2 + 3 x)`) conform.
+
+### `Integrate` of a product of cosines uses the product-to-sum form
+
+```sh
+wolframscript -code 'Integrate[Cos[x y] Cos[x], x]'   # (-(Cos[x*y]*Sin[x]) + y*Cos[x]*Sin[x*y])/(-1 + y^2)
+woxi eval 'Integrate[Cos[x y] Cos[x], x]'             # Sin[x - x*y]/(2*(1 - y)) + Sin[x + x*y]/(2*(1 + y))
+```
+
+The values are equal. Products with a `Tan` factor
+(`Integrate[Sin[x y] Tan[x], x]`, a `Hypergeometric2F1` sum in WL) stay
+unevaluated.
+
+### `Decompose` picks the inner polynomial's sign by an undecoded rule
+
+```sh
+wolframscript -code 'Decompose[(x - 2 x^3)^3, x]'   # {-x^3, -x + 2*x^3}
+woxi eval 'Decompose[(x - 2 x^3)^3, x]'             # {x^3, x - 2*x^3}
+```
+
+Found by the differential fuzzer (2026-11-12). With `h = 2 x^3 - x`,
+`Decompose[Expand[g[h]], x]` returns `-x + 2 x^3` as the inner polynomial
+for `g` = `y^3`, `-y^3`, `y + y^3`, `-y - y^3`, `y + 2 y^3`, and
+`x - 2 x^3` for `y^2 + y^3`, `y + y^2`, `y^2 - y`, `y^5 + y^2` — and for
+`2 y + y^3`, which breaks the "only odd powers keep the sign" pattern the
+others suggest. Woxi makes the outer polynomial's highest odd-degree
+coefficient positive, which matches every case with rational inner
+coefficients in the tests but not this one. **Not reproducible** so far.
+
+### `Integrate[1 + Tan[x]^2, x]` is integrated term by term
+
+```sh
+wolframscript -code 'Integrate[1 + Tan[x]^2, x]'   # Tan[x]
+woxi eval 'Integrate[1 + Tan[x]^2, x]'             # x - ArcTan[Tan[x]] + Tan[x]
+```
+
+Found by the differential fuzzer (2026-11-12). WL recognizes `c + c Tan[u]^2`
+(and `1 + Cot[x]^2`, `1 - Tanh[x]^2`) as a derivative, also inside a larger
+sum (`1 + Tan[x]^2 + Cos[x]` gives `Sin[x] + Tan[x]`) — but not next to a
+polynomial term: `x + 1 + Tan[x]^2` gives `x + x^2/2 - ArcTan[Tan[x]] +
+Tan[x]` in both engines.
 
 ### `Integrate[Log[Sin[x]], …]` is unimplemented
 
@@ -4953,7 +5088,8 @@ resolution (`{720, 719}` for `Graphics[Disk[]]`); Woxi rasterizes at 1x.
 WL's `Rasterize` defaults to 144 dpi and tags the image with
 `ImageResolution -> 144.` so it still displays at its point size; Woxi's
 `Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
-An explicit `ImageResolution`, and `Export` to a raster format (default
+The same holds for `ImageSize -> s`: Woxi's raster is `s` pixels wide
+where WL's is `2 s` (both display at `s` points). An explicit `ImageResolution`, and `Export` to a raster format (default
 144 dpi), match WL.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve
@@ -5138,6 +5274,14 @@ from x = 0 with only a right-hand margin, so the tick label at the range
 minimum is centered on x = 0 and half of it falls outside the canvas; the
 topmost y label is clipped the same way. Wolfram insets the area far enough for
 both. This is the `Graphics` renderer, not the one `Plot` uses.
+
+### `Graphics` sets tick and axes labels at the default size under `BaseStyle`
+
+A `Graphics` (and the `Show` of a plot, which is one) takes the size and slant
+of `BaseStyle` / `LabelStyle` for its `FrameLabel`s and `PlotLabel` only; its
+tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
+sets all of the graphic's text in the base style. `Plot` and the list plots
+apply it everywhere.
 
 ### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
 
@@ -5337,6 +5481,17 @@ terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
 (a `Show` of a `ParametricPlot3D` and `Graphics3D`) all came out 6–7 % larger
 in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
 per side instead of 2 %. Where the extra margin comes from was not decoded.
+
+A flat scene points the other way. A twisted band of radius 3 around the
+z-axis has a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with
+the default `ViewPoint`, it is about 1.36× *larger* in four Wolfram snapshots
+(78 % of the width) than in Woxi (58 %). Matching that would take a framing
+sphere of radius about 3.4. That is smaller than any sphere around this box
+(the x-y diagonal alone gives 4.24), and only a little larger than the
+contents' own enclosing sphere (radius 3). The cube- and bar-shaped
+calibrations above fit the box sphere, so no single rule tried so far
+(box sphere, contents sphere, longer vs. shorter image side) reproduces
+all of them.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6263,7 +6418,11 @@ internal hash order. Woxi keeps input order.
   1, 1 -> 3}]` is `{1, 3, 2, 4}` against Woxi's `{1, 4, 3, 2}`.
 - **`"LayeredDigraphEmbedding"`** of a non-tree: longest-path layers and
   barycentric ordering; WL's crossing minimization can pick the mirror
-  image, and WL draws long edges as splines through the layers.
+  image, and WL draws long edges as splines through the layers. The
+  automatic layout of a connected directed acyclic graph with several
+  undirected cycles (a Hasse diagram) is layered the same way, with the
+  layers one unit apart; WL centers each layer, Woxi packs it from the
+  left.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
@@ -7188,6 +7347,19 @@ Vertices reuse the small stellated dodecahedron's order and faces are the 20
 outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
+
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+
+Implemented without access to `wolframscript`. `"Dual"` gives the dual's
+entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
+the pyramid/prism/dipyramid families, and `Missing["NotAvailable"]`
+otherwise — including the antiprisms, whose duals (`{"Trapezohedron", n}`)
+are not among the known solids, and the Johnson solids, whose exact Wolfram
+answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
+entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
+`"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
+the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
+styling, layout and lighting of these pictures differ.
 
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 

@@ -524,12 +524,18 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = expanded;
     return nsolve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return nsolve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return nsolve_ast(&normalized);
+    }
   }
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
@@ -1226,11 +1232,16 @@ fn try_nsolve_quadratic(
   let expanded = {
     let together = together_expr(&expanded_raw);
     match &together {
+      // With the unknown in a denominator, a factor it shares with the
+      // numerator is cancelled exactly, so no root sits beside the pole.
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: numerator,
-        right: _,
-      } => expand_and_combine(numerator),
+        right: denominator,
+      } => super::eliminate::contains_var(denominator, &var)
+        .then(|| inexact_cleared_numerator(&poly, &var))
+        .flatten()
+        .unwrap_or_else(|| expand_and_combine(numerator)),
       _ => expanded_raw,
     }
   };
@@ -3084,16 +3095,98 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A system with a part that is no equation, inequality or logical
+  // combination — `{x^2 == 2, f[x]}` — is rejected as a whole, as in
+  // Wolfram, instead of solving the equations and ignoring the rest.
+  if let Some(system) = args.first() {
+    let parts = match system {
+      Expr::List(items) => flatten_and_constraints(items),
+      _ => flatten_and_constraints(std::slice::from_ref(system)),
+    };
+    if parts.len() >= 2 && parts.iter().any(|p| !is_relational_expr(p)) {
+      let conjunction = crate::syntax::Expr::FunctionCall {
+        name: "And".into(),
+        args: parts.into(),
+      };
+      crate::emit_message(&format!(
+        "Solve::naqs: {} is not a quantified system of equations and inequalities.",
+        expr_to_string(&conjunction)
+      ));
+      return Ok(unevaluated("Solve", args));
+    }
+  }
   // A quadratic with machine coefficients is solved numerically, exactly as
   // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
   if args.len() == 2
     && crate::functions::math_ast::contains_inexact_real(&args[0])
     && let Some(result) = try_nsolve_quadratic(args)
   {
-    return result;
+    return Ok(drop_removable_poles(args, result?));
   }
   let result = solve_ast_core(args)?;
+  let result = drop_removable_poles(args, result);
   Ok(split_radicand_content(result))
+}
+
+/// Drop the solutions of a single equation in one unknown that make one of
+/// its denominators vanish: `(x^2 - 1)/(x - 1) == 2` is undefined at
+/// `x == 1`, which only the cancelled numerator `x + 1 - 2` has as a root.
+fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
+  let (Some(eq), Some(Expr::Identifier(var))) = (args.first(), args.get(1))
+  else {
+    return result;
+  };
+  let sides = match eq {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators == &[ComparisonOp::Equal] => {
+      [&operands[0], &operands[1]]
+    }
+    _ => return result,
+  };
+  let mut denominators = Vec::new();
+  for side in sides {
+    collect_denominator_sums(side, var, &mut denominators);
+  }
+  let Expr::List(solutions) = &result else {
+    return result;
+  };
+  if denominators.is_empty() {
+    return result;
+  }
+  let vanishes = |value: &Expr| {
+    denominators.iter().any(|den| {
+      let at = crate::syntax::substitute_variable(den, var, value);
+      match crate::evaluator::evaluate_expr_to_expr(&at) {
+        Ok(Expr::Integer(0)) => true,
+        Ok(Expr::Real(r)) => r == 0.0,
+        _ => false,
+      }
+    })
+  };
+  let kept: Vec<Expr> = solutions
+    .iter()
+    .filter(|sol| match sol {
+      Expr::List(rules) => !rules.iter().any(|r| match r {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } => {
+          matches!(pattern.as_ref(), Expr::Identifier(n) if n == var)
+            && vanishes(replacement)
+        }
+        _ => false,
+      }),
+      _ => true,
+    })
+    .cloned()
+    .collect();
+  if kept.len() == solutions.len() {
+    result
+  } else {
+    Expr::List(kept.into())
+  }
 }
 
 /// The integer content of a sum under a square root comes out of it in a
@@ -3250,12 +3343,18 @@ fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = Expr::List(flat.into());
     return solve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return solve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return solve_ast(&normalized);
+    }
   }
   // A system with machine-number exponents that are simple fractions
   // (`l^0.5 k^0.5`, a Cobb-Douglas Lagrangian) is solved with the exact
@@ -6285,6 +6384,80 @@ fn solve_rational_system(
   Ok(Some(Expr::List(kept.into())))
 }
 
+/// The numerator left after clearing the denominators of `poly`, an equation
+/// with machine-number coefficients and `var` in a denominator. Combining
+/// the fractions in machine arithmetic leaves a factor of the denominator in
+/// the numerator only approximately, so it never cancels and its roots come
+/// back as spurious solutions beside the pole. The numbers are taken as the
+/// rationals they stand for, the fractions combined and cancelled exactly,
+/// and the numerator brought back to machine numbers.
+fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
+  // Exactly combining the rationalized fractions is costly, and eliminating
+  // a system re-solves the same reduced equations many times over, so the
+  // results are memoized (bounded, keyed by the equation's text).
+  thread_local! {
+    static CACHE: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  const CACHE_LIMIT: usize = 512;
+  let key = (crate::syntax::expr_to_string(poly), var.to_string());
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let result = inexact_cleared_numerator_uncached(poly, var);
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= CACHE_LIMIT {
+      c.clear();
+    }
+    c.insert(key, result.clone());
+  });
+  result
+}
+
+fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
+  use crate::functions::math_ast::numeric_utils::contains_inexact_real;
+  // Only an equation in `var` alone with real machine coefficients: the
+  // exact rationalization is costly, and the eliminations of a system
+  // produce many branch equations with parameters or complex coefficients.
+  let mut symbols = std::collections::HashSet::new();
+  super::simplify::collect_variables(poly, &mut symbols);
+  if !contains_inexact_real(poly) || symbols.iter().any(|s| s != var) {
+    return None;
+  }
+  // Only a sum in a denominator can share a factor with the numerator that
+  // machine arithmetic fails to cancel; a power of the unknown cancels as is.
+  let mut sums = Vec::new();
+  collect_denominator_sums(poly, var, &mut sums);
+  if sums.is_empty() {
+    return None;
+  }
+  let exact = crate::evaluator::evaluate_function_call_ast(
+    "Rationalize",
+    &[poly.clone(), Expr::Integer(0)],
+  )
+  .ok()?;
+  if contains_inexact_real(&exact) {
+    return None;
+  }
+  let together = together_expr(&expand_and_combine(&exact));
+  let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
+  let (numerator, _) = super::together::extract_num_den(&together);
+  let numerator = expand_and_combine(&numerator);
+  // Without a factor cancelled the machine-number numerator is as good.
+  let machine = together_expr(&expand_and_combine(poly));
+  let (machine_numerator, _) = super::together::extract_num_den(&machine);
+  let machine_degree =
+    max_power_int(&expand_and_combine(&machine_numerator), var)?;
+  if max_power_int(&numerator, var)? >= machine_degree {
+    return None;
+  }
+  let numeric =
+    crate::evaluator::evaluate_expr_to_expr(&call1("N", numerator)).ok()?;
+  Some(expand_and_combine(&numeric))
+}
+
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
@@ -7391,11 +7564,26 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     if let Some(numerator) = plain_numerator {
       numerator
+    } else if let Some(numerator) = super::eliminate::contains_var(
+      &super::together::extract_num_den(&together).1,
+      var,
+    )
+    .then(|| inexact_cleared_numerator(&poly, var))
+    .flatten()
+    {
+      numerator
     } else {
       let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
       let (numerator, denominator) =
         super::together::extract_num_den(&together);
-      if super::eliminate::contains_var(&denominator, var) {
+      // A denominator the cancellation took away entirely (`(x^2 - 1)/(x -
+      // 1)`) also leaves the numerator to solve: the raw form still divides
+      // by the removable pole.
+      let mut raw_denominators = Vec::new();
+      collect_denominator_sums(&expanded_raw, var, &mut raw_denominators);
+      if super::eliminate::contains_var(&denominator, var)
+        || !raw_denominators.is_empty()
+      {
         expand_and_combine(&numerator)
       } else {
         expanded_raw
@@ -13664,8 +13852,7 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let factors = crate::functions::polynomial_ast::factor_ast(
       std::slice::from_ref(&expanded_poly),
     )
-    .map(|factored| extract_times_factors(&factored))
-    .unwrap_or_default();
+    .map_or_default(|factored| extract_times_factors(&factored));
     let irreducible = factors.is_empty()
       || factors
         .iter()

@@ -573,8 +573,7 @@ impl Renderer<'_> {
           state.dash = o
             .first()
             .and_then(|a| a.as_array().ok())
-            .map(|a| numbers(a))
-            .unwrap_or_default();
+            .map_or_default(|a| numbers(a));
         }
         "gs" => {
           if let Some(name) = o.first().and_then(|n| n.as_name().ok())
@@ -975,8 +974,7 @@ impl Renderer<'_> {
       .get(b"BaseFont")
       .ok()
       .and_then(|b| b.as_name().ok())
-      .map(|b| String::from_utf8_lossy(b).into_owned())
-      .unwrap_or_default();
+      .map_or_default(|b| String::from_utf8_lossy(b).into_owned());
     // `ABCDEF+Times-BoldItalic` → family `Times`, bold, italic.
     let name = base.split_once('+').map_or(base.as_str(), |(_, n)| n);
     let lower = name.to_ascii_lowercase();
@@ -1020,7 +1018,7 @@ impl Renderer<'_> {
       .ok()
       .and_then(|w| self.doc.dereference(w).ok())
       .and_then(|(_, w)| w.as_array().ok())
-      .map(|w| {
+      .map_or_default(|w| {
         w.iter()
           .map(|x| {
             self
@@ -1031,8 +1029,7 @@ impl Renderer<'_> {
               .unwrap_or(0.0)
           })
           .collect()
-      })
-      .unwrap_or_default();
+      });
     Some(Font {
       family,
       weight,

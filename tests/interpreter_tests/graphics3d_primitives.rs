@@ -460,6 +460,26 @@ mod plot_range_clipping {
       }
     }
   }
+
+  // Text and points anchored outside an explicit range are not drawn.
+  #[test]
+  fn text_and_points_outside_the_range_are_dropped() {
+    let clipped = svg(
+      "Graphics3D[{Text[\"far\", {0, 0, 5}], Text[\"near\", {0, 0, 0}], \
+       Point[{0, 0, 0}], Point[{3, 3, 3}]}, PlotRange -> 1]",
+    );
+    assert!(clipped.contains("near"), "{clipped}");
+    assert!(!clipped.contains("far"), "{clipped}");
+    let shown = svg(
+      "Graphics3D[{Text[\"far\", {0, 0, 5}], Point[{0, 0, 0}]}, \
+       PlotRange -> 6]",
+    );
+    assert!(shown.contains("far"), "{shown}");
+    let one = svg("Graphics3D[{Point[{0, 0, 0}]}, PlotRange -> 1]");
+    let two =
+      svg("Graphics3D[{Point[{0, 0, 0}], Point[{3, 3, 3}]}, PlotRange -> 1]");
+    assert_eq!(one, two);
+  }
 }
 
 mod outlines {

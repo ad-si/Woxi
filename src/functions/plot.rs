@@ -1468,17 +1468,13 @@ fn render_exclusion_marks(
         if lo <= hi {
           let (r, g, b) = rgb(style);
           let width = style.thickness.unwrap_or(1.0) * scale;
-          let dash = style
-            .dashing
-            .as_ref()
-            .map(|d| {
-              let lens: Vec<String> = d
-                .iter()
-                .map(|&l| format!("{:.1}", dash_len(l, render_w, scale)))
-                .collect();
-              format!(" stroke-dasharray=\"{}\"", lens.join(","))
-            })
-            .unwrap_or_default();
+          let dash = style.dashing.as_ref().map_or_default(|d| {
+            let lens: Vec<String> = d
+              .iter()
+              .map(|&l| format!("{:.1}", dash_len(l, render_w, scale)))
+              .collect();
+            format!(" stroke-dasharray=\"{}\"", lens.join(","))
+          });
           if (py(hi) - py(lo)).abs() < 0.5 {
             // The zero-length line WL strokes with square caps: a square
             // as wide as the line.
@@ -2670,7 +2666,7 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
       FrameEdgeTicks::None => continue,
       spec @ (FrameEdgeTicks::Marks | FrameEdgeTicks::Labeled) => {
         let axis = if horizontal { l.auto[0] } else { l.auto[1] };
-        for (frac, major) in axis.map(auto_ticks).unwrap_or_default() {
+        for (frac, major) in axis.map_or_default(auto_ticks) {
           let len = if major { major_len } else { minor_len };
           ticks.push((frac, len, 0.0, paint.mark, paint.mark_width, None));
         }
@@ -3847,6 +3843,7 @@ pub(crate) struct LabelStyleSpec {
   pub color: Option<WoxiColor>,
   pub font_size: Option<f64>,
   pub bold: bool,
+  pub italic: bool,
 }
 
 impl LabelStyleSpec {
@@ -3859,12 +3856,13 @@ impl LabelStyleSpec {
       Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
       other => vec![other.clone()],
     };
-    let (bold, _, color, font_size) =
+    let (bold, italic, color, font_size) =
       crate::functions::chart::parse_style_directive_args(&items);
-    (color.is_some() || font_size.is_some() || bold).then_some(Self {
+    (color.is_some() || font_size.is_some() || bold || italic).then_some(Self {
       color,
       font_size,
       bold,
+      italic,
     })
   }
 
@@ -3876,6 +3874,7 @@ impl LabelStyleSpec {
         color: t.color.or(b.color),
         font_size: t.font_size.or(b.font_size),
         bold: t.bold || b.bold,
+        italic: t.italic || b.italic,
       }),
       (b, t) => t.or(b),
     }
@@ -3883,6 +3882,28 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// The plotting area's height / width when `ImageSize -> {w, h}` fixed
+  /// the image height: the area then keeps its own shape (the
+  /// `AspectRatio`, the data's shape under `AspectRatio -> Automatic`, else
+  /// 1/GoldenRatio) centered in the image, so the image ratio no longer
+  /// tells it. `None` when the image ratio is the area's shape.
+  pub(crate) fn fixed_height_area_aspect(
+    &self,
+    x_range: (f64, f64),
+    y_range: (f64, f64),
+  ) -> Option<f64> {
+    if !self.image_size_explicit.1 || self.aspect_full {
+      return None;
+    }
+    let data_ratio = (y_range.1 - y_range.0) / (x_range.1 - x_range.0);
+    let ratio = match self.aspect_ratio {
+      Some(ar) => ar,
+      None if self.aspect_automatic => data_ratio,
+      None => DEFAULT_ASPECT_RATIO,
+    };
+    (ratio.is_finite() && ratio > 0.0).then_some(ratio)
+  }
+
   /// Whether tick marks and their labels are drawn at all: `Ticks -> None`
   /// removes them everywhere, `FrameTicks -> None` only on a frame.
   pub(crate) fn ticks_visible(&self) -> bool {
@@ -4548,10 +4569,16 @@ pub(crate) fn plot_labels_svg(
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let label_fill = label_fill_owned.as_deref().unwrap_or(label_fill);
-  let label_weight = if opts.label_style.is_some_and(|s| s.bold) {
-    " font-weight=\"bold\""
-  } else {
-    ""
+  // `LabelStyle` / `BaseStyle` weight and slant of the labels and title.
+  let label_weight = {
+    let mut attrs = String::new();
+    if opts.label_style.is_some_and(|s| s.bold) {
+      attrs.push_str(" font-weight=\"bold\"");
+    }
+    if opts.label_style.is_some_and(|s| s.italic) {
+      attrs.push_str(" font-style=\"italic\"");
+    }
+    attrs
   };
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
@@ -4772,7 +4799,7 @@ pub(crate) fn plot_labels_svg(
     if sl.bold {
       style_attrs.push_str(" font-weight=\"bold\"");
     }
-    if sl.italic {
+    if sl.italic || opts.label_style.is_some_and(|s| s.italic) {
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;
@@ -7910,7 +7937,7 @@ pub(crate) fn build_plot_source(
   plot_style: &[SeriesStyle],
   x_range: (f64, f64),
   y_range: (f64, f64),
-  image_size: (u32, u32),
+  opts: &PlotOptions,
   is_scatter: &[bool],
   filling: Filling,
   filling_style: Option<FillStyle>,
@@ -7969,13 +7996,27 @@ pub(crate) fn build_plot_source(
     series,
     x_range,
     y_range,
-    image_size,
+    image_size: (opts.svg_width, opts.svg_height),
     options,
     log_x: false,
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
   }
+}
+
+/// The height/width ratio of the plotting area a plot with these options is
+/// drawn with when that ratio does not follow from its image size: an
+/// explicit numeric `AspectRatio`, else the 1/GoldenRatio default (which
+/// `ImageSize -> {w, h}` letterboxes rather than stretches). `None` for
+/// `AspectRatio -> Automatic` or `Full`, whose shape depends on the data or
+/// the frame.
+pub(crate) fn drawn_aspect_ratio(opts: &PlotOptions) -> Option<f64> {
+  if opts.aspect_automatic || opts.aspect_full {
+    return None;
+  }
+  Some(opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO))
 }
 
 /// The option rules a graphics function was called with, verbatim, so
@@ -8259,13 +8300,12 @@ fn apply_color_function_gradients(
         .split("points=\"")
         .nth(1)
         .and_then(|rest| rest.split('"').next())
-        .map(|pts| {
+        .map_or_default(|pts| {
           pts
             .split_whitespace()
             .filter_map(|xy| xy.split(',').next()?.parse::<f64>().ok())
             .collect()
-        })
-        .unwrap_or_default();
+        });
       let (x1, x2) = xs
         .iter()
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &x| {
@@ -9989,8 +10029,7 @@ pub(crate) fn generate_bar_svg(
             };
             let fill_attr = line_fill
               .as_ref()
-              .map(|f| format!(" fill=\"{f}\""))
-              .unwrap_or_default();
+              .map_or_default(|f| format!(" fill=\"{f}\""));
             out.push_str(&format!(
               "<tspan x=\"{cx:.1}\" y=\"{ty:.1}\" font-size=\"{size_px:.0}\"{fill_attr}>{}</tspan>",
               crate::functions::graphics::box_string_to_svg(text)
@@ -12045,6 +12084,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    aspect_ratio: None,
   })
 }
 
@@ -13321,8 +13361,7 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
             .map(|d| -d.abs().max(0.1))
             .collect(),
           other => try_eval_to_f64(other)
-            .map(|d| vec![-d.abs().max(0.1); 2])
-            .unwrap_or_default(),
+            .map_or_default(|d| vec![-d.abs().max(0.1); 2]),
         };
         if !dashes.is_empty() {
           style.dashing = Some(dashes);
@@ -13933,10 +13972,11 @@ where
   let stem_dashes = fill_style.and_then(|fs| fs.dashing);
   let stem_targets: Vec<((f64, f64), f64)> =
     match series_fill_target(opts, series_idx) {
-      FillTarget::Level(level) => level
-        .reference_y(y_min, y_max)
-        .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
-        .unwrap_or_default(),
+      FillTarget::Level(level) => {
+        level.reference_y(y_min, y_max).map_or_default(|ref_y| {
+          finite_pts.iter().map(|&p| (p, ref_y)).collect()
+        })
+      }
       FillTarget::Series(target_idx) => {
         if target_idx != series_idx
           && let Some(target) = all_series.get(target_idx)
@@ -15692,8 +15732,7 @@ fn parse_plot_label_entries(value: &Expr) -> Vec<Option<PlotLabelEntry>> {
     Expr::Association(pairs) => pairs
       .iter()
       .find(|(k, _)| matches!(k, Expr::String(s) if s == "Lists"))
-      .map(|(_, v)| parse_plot_label_entries(v))
-      .unwrap_or_default(),
+      .map_or_default(|(_, v)| parse_plot_label_entries(v)),
     // Filled in from the curves' expressions by the plot itself.
     Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
     Expr::String(s) if s == "Expressions" => Vec::new(),
@@ -17200,17 +17239,20 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
     // picture and merge it as the layer without curves that it is.
-    let source = build_plot_source(
+    let mut source = build_plot_source(
       &[],
       &plot_opts.plot_style,
       x_display,
       y_display,
-      (plot_opts.svg_width, plot_opts.svg_height),
+      &plot_opts,
       &[false],
       plot_opts.filling,
       plot_opts.filling_style,
       crate::functions::plot::explicit_options(args),
     );
+    source.aspect_ratio = source
+      .aspect_ratio
+      .or_else(|| drawn_aspect_ratio(&plot_opts));
     return Ok(crate::graphics_result_with_source(svg, source));
   }
 
@@ -17414,13 +17456,16 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &plot_opts.plot_style,
     (x_display_min, x_display_max),
     (y_display_min, y_display_max),
-    (plot_opts.svg_width, plot_opts.svg_height),
+    &plot_opts,
     &[false],
     plot_opts.filling,
     plot_opts.filling_style,
     crate::functions::plot::explicit_options(args),
   );
   source.plot_range = plot_opts.unpadded_range;
+  source.aspect_ratio = source
+    .aspect_ratio
+    .or_else(|| drawn_aspect_ratio(&plot_opts));
   source.data_x_range = all_points
     .iter()
     .flatten()

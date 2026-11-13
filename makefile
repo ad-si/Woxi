@@ -200,27 +200,54 @@ test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wo
 
 # --- Fuzzing (see fuzz/README.md) -----------------------------------------
 
-# Seed the libFuzzer corpora from the existing test scripts (plus generated
-# expressions for the interpret target) so the fuzzer starts from valid
-# Wolfram Language programs instead of random bytes.
+# Seed the libFuzzer corpora from the test suite so the fuzzer starts from
+# valid Wolfram Language programs instead of random bytes: the test scripts,
+# every snippet the unit tests and doc tests evaluate (fuzz/seeds_from_tests.ts),
+# and generated programs for the interpret target.
 #
-# Parsing any script is fast, so the parse corpus keeps all of them.
-# Evaluating one is not: `tests/scripts/` holds programs that compute for
-# seconds to minutes (and a few that never terminate by design), which the
-# interpret target's libFuzzer -timeout hang detector reports as crashes.
-# Every interpret seed is therefore timed and the slow ones are dropped —
-# measured rather than listed, so a newly added heavy script cannot break
-# the nightly fuzz run. FUZZ_SEED_BUDGET is the wall-clock second(s) a seed
-# may take in a release build; ASan makes that ~27× slower (measured), which
-# has to stay well inside the -timeout below.
+# libFuzzer runs every seed once under ASan before it starts mutating, and
+# the ~40k test-suite snippets take longer than a nightly session's budget:
+# measured locally, ~100 s for the parse target and ~11 min for interpret,
+# while the parse target keeps only ~3k of them as adding coverage. Each
+# corpus therefore gets a pseudo-random subset (FUZZ_PARSE_SEEDS and
+# FUZZ_INTERPRET_SEEDS of them), a different one for each FUZZ_SAMPLE_SEED —
+# by default the date, so nightly runs rotate through the whole suite.
+#
+# Evaluating has a second problem:
+#
+# - `tests/scripts/` holds programs that compute for seconds to minutes (and
+#   a few that never terminate by design), which the interpret target's
+#   libFuzzer -timeout hang detector reports as crashes. Every interpret seed
+#   is therefore timed and the slow ones are dropped — measured rather than
+#   listed, so a newly added heavy script cannot break the nightly fuzz run.
+#   FUZZ_SEED_BUDGET is the wall-clock second(s) a seed may take in a release
+#   build; ASan makes that ~27× slower (measured), which has to stay well
+#   inside the -timeout below.
+#
+# fuzz/woxi.dict is the libFuzzer dictionary: the syntax tokens of
+# fuzz/syntax.dict plus the name of every implemented builtin, so a
+# mutation can splice in any of them in one step.
 FUZZ_SEED_BUDGET ?= 1
+FUZZ_PARSE_SEEDS ?= 15000
+FUZZ_INTERPRET_SEEDS ?= 4000
+FUZZ_SAMPLE_SEED ?= $(shell date +%Y%m%d)
+FUZZ_DICT := $(CURDIR)/fuzz/woxi.dict
 
 .PHONY: fuzz-corpus
 fuzz-corpus:
 	mkdir -p fuzz/corpus/parse fuzz/corpus/interpret
+	{ cat fuzz/syntax.dict; \
+		grep ',✅,' functions.csv | cut -d, -f1 | sed 's/.*/"&"/'; \
+		} > $(FUZZ_DICT)
 	cp tests/scripts/*.wls fuzz/corpus/parse/
 	cp tests/scripts/*.wls fuzz/corpus/interpret/
-	cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --print-cases --cases 200 --seed 0 \
+	node fuzz/seeds_from_tests.ts \
+		--sample $(FUZZ_PARSE_SEEDS) --sample-seed $(FUZZ_SAMPLE_SEED) \
+		fuzz/corpus/parse
+	node fuzz/seeds_from_tests.ts \
+		--sample $(FUZZ_INTERPRET_SEEDS) --sample-seed $(FUZZ_SAMPLE_SEED) \
+		fuzz/corpus/interpret
+	cargo run --features diff-fuzz --bin woxi-diff-fuzz -- --print-cases --cases 500 --seed 0 \
 		| split -l 1 - fuzz/corpus/interpret/gen-
 	cargo build --release --bin woxi
 	scripts/prune_fuzz_corpus.sh fuzz/corpus/interpret $(FUZZ_SEED_BUDGET)
@@ -232,14 +259,16 @@ fuzz-parse: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	RUSTUP_TOOLCHAIN=nightly cargo fuzz run parse -- -timeout=10 -max_len=4096
+	RUSTUP_TOOLCHAIN=nightly cargo fuzz run parse -- \
+		-dict=$(FUZZ_DICT) -timeout=10 -max_len=4096
 
 .PHONY: fuzz-interpret
 fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	RUSTUP_TOOLCHAIN=nightly cargo fuzz run interpret -- -timeout=1200 -max_len=2048 -rss_limit_mb=8192
+	RUSTUP_TOOLCHAIN=nightly cargo fuzz run interpret -- \
+		-dict=$(FUZZ_DICT) -timeout=1200 -max_len=2048 -rss_limit_mb=8192
 
 # Differential fuzzing against wolframscript (local binary or the
 # cmd-server.js Docker bridge — auto-detected). Reports and shrinks any

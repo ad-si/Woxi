@@ -990,6 +990,28 @@ mod plus_radical_like_terms {
   }
 }
 
+// A quotient over a sum against a power or product with no sum in it
+// orders as `Sort` does.
+mod plus_quotient_over_sum_ordering {
+  use super::*;
+
+  #[test]
+  fn follows_sort_order() {
+    assert_eq!(interpret("y^4 + y^3/(c - y)").unwrap(), "y^3/(c - y) + y^4");
+    assert_eq!(interpret("y^2 + y/(c - y)").unwrap(), "y/(c - y) + y^2");
+    assert_eq!(
+      interpret("y^4 + y^3/(c^2 - y^2)").unwrap(),
+      "y^4 + y^3/(c^2 - y^2)"
+    );
+    assert_eq!(
+      interpret("Sin[x]/(Cos[x]^2 - Sin[x]^2) + Sin[x]^2").unwrap(),
+      "Sin[x]^2 + Sin[x]/(Cos[x]^2 - Sin[x]^2)"
+    );
+    // A bare symbol keeps its own rule.
+    assert_eq!(interpret("x + 1/(a + b)").unwrap(), "(a + b)^(-1) + x");
+  }
+}
+
 mod plus_call_led_ordering {
   use super::*;
 
@@ -16359,4 +16381,24 @@ mod precision_bounds {
       "28.653890848257205"
     );
   }
+}
+
+// `x/y/z` is Times[Times[x, y^-1], z^-1]: the inner two-factor product is
+// evaluated first, which distributes a sign (`(a + b)/(-2)` is
+// `(-a - b)/2`). Found by the differential fuzzer.
+#[test]
+fn quotient_of_quotient_evaluates_inner_product_first() {
+  assert_eq!(
+    interpret("ToString[FullForm[(a + b)/(-2)/c]]").unwrap(),
+    "Times[Rational[1, 2], Plus[Times[-1, a], Times[-1, b]], Power[c, -1]]"
+  );
+  assert_eq!(
+    interpret("((1 + y)/(-16)/y)^2").unwrap(),
+    "(-1 - y)^2/(256*y^2)"
+  );
+  assert_eq!(interpret("(a + b)/(-2)/c/d").unwrap(), "(-a - b)/(2*c*d)");
+  // Numeric chains still fold operator by operator.
+  assert_eq!(interpret("N[Pi]/2/3").unwrap(), "0.5235987755982988");
+  assert_eq!(interpret("6/2/3").unwrap(), "1");
+  assert_eq!(interpret("x/2/3").unwrap(), "x/6");
 }

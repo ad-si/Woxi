@@ -4573,14 +4573,12 @@ pub fn date_object_panel_svg(expr: &Expr) -> Option<String> {
   // label rides along as a tspan so it always starts right after the date
   // glyphs, whatever monospace face the host actually resolves.
   let tx = pad_x + icon_w + gap;
-  let tz_span = tz_label
-    .map(|tz| {
-      format!(
-        "<tspan dx=\"5\" font-size=\"{tz_font_size}\" fill=\"{}\">{}</tspan>",
-        theme.text_muted, tz,
-      )
-    })
-    .unwrap_or_default();
+  let tz_span = tz_label.map_or_default(|tz| {
+    format!(
+      "<tspan dx=\"5\" font-size=\"{tz_font_size}\" fill=\"{}\">{}</tspan>",
+      theme.text_muted, tz,
+    )
+  });
   svg.push_str(&format!(
     "<text x=\"{tx:.1}\" y=\"{ty:.1}\" font-family=\"monospace\" \
      font-size=\"{font_size}\" fill=\"{}\" xml:space=\"preserve\">{}{}</text>",

@@ -16084,3 +16084,36 @@ mod string_split_and_take_edges {
     );
   }
 }
+
+// StringCount and StringPosition count empty matches — at every position,
+// the end included — and match in the context of the whole string, so
+// WordBoundary sees the preceding character. Found by the differential
+// fuzzer.
+#[test]
+fn string_count_and_position_with_empty_matches() {
+  for (input, expected) in [
+    (r#"StringCount[" a", WordBoundary]"#, "2"),
+    (r#"StringCount[" aa 1", WordBoundary]"#, "4"),
+    (r#"StringCount["ab", StartOfString]"#, "1"),
+    (r#"StringCount["abc", EndOfString]"#, "1"),
+    (r#"StringCount["abc", x___]"#, "2"),
+    (r#"StringCount["abc", RegularExpression["b*"]]"#, "4"),
+    (r#"StringCount["aaaa", "aa"]"#, "2"),
+    (r#"StringCount["aaaa", "aa", Overlaps -> True]"#, "3"),
+    (
+      r#"StringPosition[" aa 1", WordBoundary]"#,
+      "{{2, 1}, {4, 3}, {5, 4}, {6, 5}}",
+    ),
+    (r#"StringPosition["ab", StartOfString]"#, "{{1, 0}}"),
+    (
+      r#"StringPosition["abc", RegularExpression["b*"]]"#,
+      "{{1, 0}, {2, 2}, {3, 2}, {4, 3}}",
+    ),
+    (
+      r#"StringPosition["abc", x___]"#,
+      "{{1, 3}, {2, 3}, {3, 3}, {4, 3}}",
+    ),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

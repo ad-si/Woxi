@@ -4938,11 +4938,7 @@ fn is_provably_nonnegative_under_constraints(
   // For a constraint like x^2 + y^2 <= C and expression like
   // x^2 + y^2 - 2x - 4y + 7/2, decompose into quadratic + linear + constant
   // and use Cauchy-Schwarz to bound the linear part.
-  if check_nonneg_via_cauchy_schwarz(&expanded, &constraints) {
-    return true;
-  }
-
-  false
+  check_nonneg_via_cauchy_schwarz(&expanded, &constraints)
 }
 
 /// Use Cauchy-Schwarz inequality to prove an expression is non-negative
@@ -7778,7 +7774,40 @@ pub fn full_simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results.into()));
   }
   let simplified = full_simplify_expr_with_together(&args[0]);
-  Ok(apply_active_assumptions(&simplified))
+  Ok(flatten_nested_sum(apply_active_assumptions(&simplified)))
+}
+
+/// A result assembled as `Plus[Plus[…], …]` (a polynomial part plus a
+/// remainder) is not canonical: re-evaluating flattens and orders it, so
+/// `2 - 5 x + 5 x^2 - 5/x` prints `2 - 5/x - 5 x + 5 x^2` as Simplify's does.
+fn flatten_nested_sum(expr: Expr) -> Expr {
+  let is_sum = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        e,
+        Expr::BinaryOp {
+          op: crate::syntax::BinaryOperator::Plus
+            | crate::syntax::BinaryOperator::Minus,
+          ..
+        }
+      )
+  };
+  let nested = match &expr {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      args.iter().any(is_sum)
+    }
+    Expr::BinaryOp {
+      op:
+        crate::syntax::BinaryOperator::Plus | crate::syntax::BinaryOperator::Minus,
+      left,
+      right,
+    } => is_sum(left) || is_sum(right),
+    _ => false,
+  };
+  if !nested {
+    return expr;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&expr).unwrap_or(expr)
 }
 
 /// Full-simplify variant that also tries Together (whole and sub-expression)

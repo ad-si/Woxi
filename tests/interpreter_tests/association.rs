@@ -2718,3 +2718,56 @@ mod association_fuzz_findings {
     );
   }
 }
+
+// Listable functions thread over association values; associations must
+// share their keys in order, and unequal list lengths report
+// Thread::tdlen. Found by the differential fuzzer.
+mod listable_threads_over_associations {
+  use super::*;
+
+  #[test]
+  fn arithmetic_and_listable_functions() {
+    for (input, expected) in [
+      (r#"<|"a" -> 1|> + 3"#, "<|a -> 4|>"),
+      (r#"<|"a" -> 1, "b" -> 2|> * x"#, "<|a -> x, b -> 2*x|>"),
+      (r#"<|"a" -> 1|> + <|"a" -> 2|>"#, "<|a -> 3|>"),
+      (r#"2^<|"a" -> 3|>"#, "<|a -> 8|>"),
+      (r#"Sin[<|"a" -> 0|>]"#, "<|a -> 0|>"),
+      ("<||> + 1", "<||>"),
+      (r#"<|"a" -> 1|> + {1, 2}"#, "{<|a -> 2|>, <|a -> 3|>}"),
+      (r#"Plus[<|"a" -> 1|>, 2, 3]"#, "<|a -> 6|>"),
+      (
+        r#"SetAttributes[g, Listable]; g[<|"a" -> 1|>]"#,
+        "<|a -> g[1]|>",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn incompatible_keys_and_unequal_lengths() {
+    for code in [
+      r#"<|"a" -> 1|> + <|"b" -> 2|>"#,
+      r#"<|"a" -> 1, "b" -> 2|> + <|"b" -> 10, "a" -> 20|>"#,
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.warnings.len(), 1, "{code}");
+      assert!(r.warnings[0].starts_with("Association::incmp: "), "{code}");
+    }
+    let r = woxi::interpret_with_stdout(
+      "SetAttributes[f, Listable]; f[{}, 0, {3, -2}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "f[{}, 0, {3, -2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "Thread::tdlen: Objects of unequal length in f[{}, 0, {3, -2}] \
+         cannot be combined."
+      ]
+    );
+    let r = woxi::interpret_with_stdout("Power[{1, 2}, {1, 2, 3}]").unwrap();
+    assert_eq!(r.result, "{1, 2}^{1, 2, 3}");
+  }
+}
