@@ -7486,6 +7486,29 @@ mod plot3d {
       assert!((center - top - (bottom - center)).abs() < 1e-6);
     }
 
+    // A lone vertical value, `Alignment -> Top` (or `Bottom`), places the
+    // cells as `Alignment -> {Center, Top}` does. It used to be read as a
+    // horizontal value, so the cells stayed vertically centered.
+    #[test]
+    fn grid_lone_vertical_alignment_matches_center_pair() {
+      for v in ["Top", "Bottom"] {
+        let lone = export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], \"a\"}}}}, Alignment -> {v}]"
+        ));
+        let pair = export_svg(&format!(
+          "Grid[{{{{Graphics[Disk[], ImageSize -> 60], \"a\"}}}}, Alignment -> {{Center, {v}}}]"
+        ));
+        assert_eq!(lone, pair, "Alignment -> {v}");
+      }
+      let centered = export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], \"a\"}}, Alignment -> Center]",
+      );
+      let top = export_svg(
+        "Grid[{{Graphics[Disk[], ImageSize -> 60], \"a\"}}, Alignment -> Top]",
+      );
+      assert_ne!(centered, top, "Top must move the text off the center");
+    }
+
     // Regression: a per-cell `Background` rule on a spanning cell paints the
     // whole merged span, not just its first column.
     #[test]
@@ -10169,6 +10192,54 @@ mod plot3d {
       assert!(svg.contains(">peak</text>"), "missing Epilog text");
       assert!(svg.contains("<ellipse"), "missing Epilog disk");
       assert!(svg.contains("<polygon"), "missing Epilog arrowhead");
+    }
+
+    /// The radii of the `<circle>` elements in an SVG, in document order.
+    fn circle_radii(svg: &str) -> Vec<f64> {
+      svg
+        .split("<circle ")
+        .skip(1)
+        .filter_map(|c| c.split_once(" r=\""))
+        .filter_map(|(_, r)| r.split_once('"'))
+        .filter_map(|(v, _)| v.parse().ok())
+        .collect()
+    }
+
+    /// A named `PointSize[Tiny|Small|Medium|Large]` and an
+    /// `AbsolutePointSize[n]` in a Plot's Epilog are absolute sizes, the
+    /// same as in `Graphics`: the dot keeps its pixel size at every
+    /// `ImageSize`. The Epilog renderer used to drop a named size (falling
+    /// back to the tiny default dot) and turned an absolute size into a
+    /// fraction of a 360-pixel width.
+    #[test]
+    fn plot_epilog_named_and_absolute_point_sizes() {
+      let epilog = "Epilog -> {PointSize[Small], Point[{0.1, 0.1}], \
+                    PointSize[Medium], Point[{0.3, 0.3}], \
+                    PointSize[Large], Point[{0.5, 0.5}], \
+                    AbsolutePointSize[10], Point[{0.7, 0.7}], \
+                    PointSize[0.05], Point[{0.9, 0.9}]}";
+      let small =
+        circle_radii(&export_svg(&format!("Plot[x, {{x, 0, 1}}, {epilog}]")));
+      let big = circle_radii(&export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, ImageSize -> 720, {epilog}]"
+      )));
+      assert_eq!(small.len(), 5, "{small:?}");
+      assert_eq!(big.len(), 5, "{big:?}");
+      // Small < Medium < Large < AbsolutePointSize[10], in proportion
+      // to the 2 : 4.5 : 7 : 10 point diameters `Graphics` uses.
+      for (a, b) in [(0, 1), (1, 2), (2, 3)] {
+        assert!(small[a] < small[b], "{small:?}");
+      }
+      for (i, d) in [(0, 2.0), (1, 4.5), (2, 7.0), (3, 10.0)] {
+        assert!(
+          (small[i] / small[3] - d / 10.0).abs() < 0.01,
+          "size {i} out of proportion: {small:?}"
+        );
+        // Absolute sizes do not grow with the image.
+        assert!((small[i] - big[i]).abs() < 0.01, "{small:?} vs {big:?}");
+      }
+      // A numeric `PointSize` is a fraction of the width, so it does.
+      assert!(big[4] > 1.5 * small[4], "{small:?} vs {big:?}");
     }
 
     // A Prolog/Epilog primitive placed outside the plot's data range used

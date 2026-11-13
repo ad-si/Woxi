@@ -54,7 +54,9 @@ struct EpilogStyle {
   thickness: f64,
   /// Dash pattern as fractions of the plot width; `None` = solid.
   dashing: Option<Vec<f64>>,
-  /// Point diameter as a fraction of the plot width.
+  /// Point diameter as a fraction of the plot width, or — stored
+  /// negative — an absolute diameter in display pixels (`PointSize[Large]`,
+  /// `AbsolutePointSize[n]`), as `graphics::point_radius` reads it.
   point_size: f64,
   opacity: f64,
   /// Preserve the complete Arrowheads specification for Graphics' collector.
@@ -465,14 +467,19 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
         };
       }
       "PointSize" if args.len() == 1 => {
-        if let Some(p) = try_eval_to_f64(&args[0]) {
+        if let Some(p) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+            .or_else(|| try_eval_to_f64(&args[0]))
+        {
           style.point_size = p;
         }
       }
       "AbsolutePointSize" if args.len() == 1 => {
-        if let Some(p) = try_eval_to_f64(&args[0]) {
-          // Absolute size is in display pixels; store as width fraction.
-          style.point_size = p / 360.0;
+        if let Some(p) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+            .or_else(|| try_eval_to_f64(&args[0]).map(|p| -p))
+        {
+          style.point_size = p;
         }
       }
       _ => return false,
@@ -738,7 +745,12 @@ fn render_item(
             _ => Vec::new(),
           },
         };
-        let r = (style.point_size * area.w / 2.0).max(0.5);
+        let r = if style.point_size < 0.0 {
+          -style.point_size * 0.5 * area.scale
+        } else {
+          style.point_size * area.w / 2.0
+        }
+        .max(0.5);
         for (x, y) in points {
           out.push_str(&format!(
             "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.1}\" {}/>\n",
