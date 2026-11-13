@@ -8132,22 +8132,24 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   // A power of `-s` against a power of the symbol `s` orders by the bases,
   // as `Order` does, and `-s` comes first: `(-p)^(3/2)*p`, `Sqrt[-p]*p`.
   {
-    let base_of = |e: &Expr| -> Expr {
+    // Borrowed: cloning both bases on every comparison made sorting the
+    // factors of a large product slow.
+    fn base_of(e: &Expr) -> &Expr {
       match e {
         Expr::FunctionCall { name, args }
           if (name == "Power" && args.len() == 2)
             || (name == "Sqrt" && args.len() == 1) =>
         {
-          args[0].clone()
+          &args[0]
         }
         Expr::BinaryOp {
           op: BinaryOperator::Power,
           left,
           ..
-        } => *left.clone(),
-        other => other.clone(),
+        } => left,
+        other => other,
       }
-    };
+    }
     let negated_symbol = |e: &Expr| -> Option<String> {
       match e {
         Expr::FunctionCall { name, args }
@@ -8175,14 +8177,14 @@ pub(super) fn times_factor_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     };
     let (ba, bb) = (base_of(a), base_of(b));
     if is_power(a)
-      && let Some(s) = negated_symbol(&ba)
-      && matches!(&bb, Expr::Identifier(t) if *t == s)
+      && let Some(s) = negated_symbol(ba)
+      && matches!(bb, Expr::Identifier(t) if *t == s)
     {
       return std::cmp::Ordering::Less;
     }
     if is_power(b)
-      && let Some(s) = negated_symbol(&bb)
-      && matches!(&ba, Expr::Identifier(t) if *t == s)
+      && let Some(s) = negated_symbol(bb)
+      && matches!(ba, Expr::Identifier(t) if *t == s)
     {
       return std::cmp::Ordering::Greater;
     }

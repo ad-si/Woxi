@@ -404,8 +404,10 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let (ca, ra) = numeric_coeff_and_rest_expr(a);
         let (cb, rb) = numeric_coeff_and_rest_expr(b);
         if ra.is_some() || rb.is_some() {
-          let ord =
-            canonical_cmp(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+          let ord = canonical_cmp(
+            ra.as_deref().unwrap_or(a),
+            rb.as_deref().unwrap_or(b),
+          );
           if ord != std::cmp::Ordering::Equal {
             return ord;
           }
@@ -520,20 +522,26 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       // Same-base powers (or a power against its bare base) compare by
       // exponent, ascending: Sort[{Pi, 1/Pi}] = {Pi^(-1), Pi},
       // Sort[{x, Sqrt[x], x^2}] = {Sqrt[x], x, x^2} (wolframscript-verified).
+      // The bases are compared structurally, in place: rendering them (or
+      // cloning them) for every comparison made sorting the factors of a
+      // large product slow.
       {
-        let base_exp = |e: &Expr| -> Option<(String, f64)> {
-          if let Some((base, exp)) = power_parts(e) {
-            let v = crate::functions::math_ast::try_eval_to_f64(&exp)?;
-            Some((expr_to_string(&base), v))
+        let (ba, bb) = (power_base_ref(a), power_base_ref(b));
+        let exponent = |e: &Expr, is_pow: bool| -> Option<f64> {
+          if is_pow {
+            let (_, exp) = power_parts(e)?;
+            crate::functions::math_ast::try_eval_to_f64(&exp)
           } else {
-            Some((expr_to_string(e), 1.0))
+            Some(1.0)
           }
         };
-        let a_is_pow = power_parts(a).is_some();
-        let b_is_pow = power_parts(b).is_some();
-        if (a_is_pow || b_is_pow)
-          && let (Some((sa, ea)), Some((sb, eb))) = (base_exp(a), base_exp(b))
-          && sa == sb
+        if (ba.is_some() || bb.is_some())
+          && crate::evaluator::pattern_matching::expr_equal(
+            ba.unwrap_or(a),
+            bb.unwrap_or(b),
+          )
+          && let (Some(ea), Some(eb)) =
+            (exponent(a, ba.is_some()), exponent(b, bb.is_some()))
           && ea != eb
         {
           return if ea < eb {
@@ -1990,7 +1998,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     let (cb, rb) = numeric_coeff_and_rest_expr(b);
     if ra.is_some() || rb.is_some() {
       let ord =
-        compare_exprs(ra.as_ref().unwrap_or(a), rb.as_ref().unwrap_or(b));
+        compare_exprs(ra.as_deref().unwrap_or(a), rb.as_deref().unwrap_or(b));
       if ord != 0 {
         return ord;
       }
@@ -2406,6 +2414,24 @@ fn number_base_power(e: &Expr) -> Option<(Expr, Expr)> {
   })
 }
 
+/// The base of a power (`Power[b, e]`, `b^e`, `Sqrt[b]`), borrowed.
+fn power_base_ref(e: &Expr) -> Option<&Expr> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if (name == "Sqrt" && args.len() == 1)
+        || (name == "Power" && args.len() == 2) =>
+    {
+      Some(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => Some(left),
+    _ => None,
+  }
+}
+
 fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
   match e {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
@@ -2433,7 +2459,10 @@ fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
 /// callers can tell `x` (nothing stripped) apart from `1.0*x`. Imaginary
 /// coefficients count as literals so that `-I x` sorts between `-x` and
 /// `I x` the way number literals themselves do.
-fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
+fn numeric_coeff_and_rest_expr(
+  e: &Expr,
+) -> ((f64, f64), Option<std::borrow::Cow<'_, Expr>>) {
+  use std::borrow::Cow;
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
   let literal = |x: &Expr| -> Option<(f64, f64)> {
     match x {
@@ -2466,28 +2495,31 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
       operand,
     } => {
       let ((cr, ci), r) = numeric_coeff_and_rest_expr(operand);
-      ((-cr, -ci), Some(r.unwrap_or_else(|| (**operand).clone())))
+      ((-cr, -ci), Some(r.unwrap_or(Cow::Borrowed(&**operand))))
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       // Every literal factor joins the coefficient, so `-I x` compares as
       // coefficient -I against `x` rather than leaving `I x` in the
       // symbolic part.
+      // The symbolic factors are only borrowed: a lone one is the rest
+      // itself, and only several are cloned into a new product.
       let mut coeff = (1.0, 0.0);
-      let mut rest: Vec<Expr> = Vec::new();
+      let mut rest: Vec<&Expr> = Vec::new();
       let mut stripped = false;
       for arg in args {
         if let Some((r, i)) = literal(arg) {
           coeff = (coeff.0 * r - coeff.1 * i, coeff.0 * i + coeff.1 * r);
           stripped = true;
         } else {
-          rest.push(arg.clone());
+          rest.push(arg);
         }
       }
       if stripped && !rest.is_empty() {
-        let rest = if rest.len() == 1 {
-          rest.remove(0)
+        let rest = if let [only] = rest.as_slice() {
+          Cow::Borrowed(*only)
         } else {
-          unevaluated("Times", &rest)
+          let owned: Vec<Expr> = rest.into_iter().cloned().collect();
+          Cow::Owned(unevaluated("Times", &owned))
         };
         (coeff, Some(rest))
       } else {
@@ -2503,7 +2535,7 @@ fn numeric_coeff_and_rest_expr(e: &Expr) -> ((f64, f64), Option<Expr>) {
         let ((rr, ri), r) = numeric_coeff_and_rest_expr(right);
         (
           (lr * rr - li * ri, lr * ri + li * rr),
-          Some(r.unwrap_or_else(|| (**right).clone())),
+          Some(r.unwrap_or(Cow::Borrowed(&**right))),
         )
       } else {
         ((1.0, 0.0), None)
@@ -2565,7 +2597,7 @@ fn sum_terms_list(e: &Expr) -> Option<Vec<Expr>> {
 /// exponent is not numeric (e.g. `2^x`).
 fn term_exponent(t: &Expr) -> Option<f64> {
   let (_, r) = numeric_coeff_and_rest_expr(t);
-  let rest = r.as_ref().unwrap_or(t);
+  let rest = r.as_deref().unwrap_or(t);
   if let Some(factors) = times_factors_for_order(rest) {
     // A product of variables is not linear merely because its outer head
     // is Times. Use its total degree for the early/late sum class.
@@ -2626,12 +2658,13 @@ fn linear_sum_vs_monomial(
 ) -> Option<std::cmp::Ordering> {
   let lead = terms.last()?;
   let ((c, c_im), lead_rest) = numeric_coeff_and_rest_expr(lead);
-  let lead_var = lead_rest.unwrap_or_else(|| lead.clone());
+  let lead_var = lead_rest.map_or_else(|| lead.clone(), |r| r.into_owned());
   if !matches!(lead_var, Expr::Identifier(_)) {
     return None;
   }
   let ((k, k_im), mono_rest) = numeric_coeff_and_rest_expr(monomial);
-  let mono_core = mono_rest.unwrap_or_else(|| monomial.clone());
+  let mono_core =
+    mono_rest.map_or_else(|| monomial.clone(), |r| r.into_owned());
   let mono_var = match power_parts(&mono_core) {
     Some((base, exp)) => {
       crate::functions::math_ast::try_eval_to_f64(&exp)?;
@@ -2670,7 +2703,7 @@ fn sum_lead_variable_order(
 ) -> Option<std::cmp::Ordering> {
   let symbol_of = |e: &Expr| -> Option<Expr> {
     let (_, rest) = numeric_coeff_and_rest_expr(e);
-    let core = rest.unwrap_or_else(|| e.clone());
+    let core = rest.map_or_else(|| e.clone(), |r| r.into_owned());
     let base = match power_parts(&core) {
       Some((base, exp)) => {
         crate::functions::math_ast::try_eval_to_f64(&exp)?;
