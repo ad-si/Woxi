@@ -11112,6 +11112,52 @@ mod plot3d {
       );
     }
 
+    // `FrameTicks -> True` is `Automatic` for the bottom and left edge and
+    // leaves the top and right one bare, rather than meaning a tick function
+    // (which would have dropped every tick) or no ticks at all.
+    #[test]
+    fn frame_ticks_true_labels_the_bottom_and_left_edges() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 6}, Frame -> True, FrameTicks -> True]",
+      );
+      assert_eq!(x_tick_labels(&svg), ["0", "1", "2", "3", "4", "5", "6"]);
+      assert_eq!(y_tick_labels(&svg), ["1.0", "0.5", "0.0", "-0.5", "-1.0"]);
+      assert_eq!(
+        svg,
+        export_svg(
+          "Plot[Sin[x], {x, 0, 6}, Frame -> True, \
+           FrameTicks -> {{Automatic, None}, {Automatic, None}}]"
+        ),
+        "True must render as the near edges automatic, the far ones bare"
+      );
+    }
+
+    // A per-axis `True` / `False` labels that axis' near edge or drops it:
+    // `{True, False}` keeps the x ticks and hides the y ones.
+    #[test]
+    fn frame_ticks_true_and_false_per_axis() {
+      let x_only = export_svg(
+        "Plot[Sin[x], {x, 0, 6}, Frame -> True, FrameTicks -> {True, False}]",
+      );
+      assert_eq!(x_tick_labels(&x_only), ["0", "1", "2", "3", "4", "5", "6"]);
+      assert!(y_tick_labels(&x_only).is_empty(), "{x_only}");
+      let y_only = export_svg(
+        "Plot[Sin[x], {x, 0, 6}, Frame -> True, FrameTicks -> {False, True}]",
+      );
+      assert!(x_tick_labels(&y_only).is_empty(), "{y_only}");
+      assert_eq!(
+        y_tick_labels(&y_only),
+        ["1.0", "0.5", "0.0", "-0.5", "-1.0"]
+      );
+      // The four-edge form reads `True` the same way, edge by edge.
+      let edges = export_svg(
+        "Plot[Sin[x], {x, 0, 6}, Frame -> True, \
+         FrameTicks -> {True, True, False, False}]",
+      );
+      assert_eq!(x_tick_labels(&edges), ["0", "1", "2", "3", "4", "5", "6"]);
+      assert_eq!(y_tick_labels(&edges), ["1.0", "0.5", "0.0", "-0.5", "-1.0"]);
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]
