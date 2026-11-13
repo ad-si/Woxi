@@ -7528,7 +7528,22 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         }
         return inner_svg;
       }
-      let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
+      // A list of pictures breaks into lines at the pane's width rather
+      // than the page's.
+      let pane_width = match (name.as_str(), pane_size.as_ref()) {
+        ("Pane", Some(size)) => pane_size_component(&size[0]),
+        ("Pane", None) => pane_width_only(args),
+        _ => None,
+      }
+      .filter(|_| wrapped.is_none() && is_graphics_list(&args[0]));
+      let inner_svg = match pane_width {
+        Some(w) => {
+          crate::functions::container_layout::with_line_width_limit(w, || {
+            expr_to_svg(&args[0])
+          })
+        }
+        None => expr_to_svg(wrapped.as_ref().unwrap_or(&args[0])),
+      };
       match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => {
           match (pane_size_component(&size[0]), pane_size_component(&size[1])) {

@@ -4922,6 +4922,19 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     ));
     return helpers::id_expr("-Image-");
   }
+  // A list of pictures in the pane breaks into lines at the pane's width,
+  // not the page's, and then fills the pane's box like any other picture.
+  if let Some((w, h, align, shrink)) = pane_box
+    && let Some(svg) =
+      functions::container_layout::with_line_width_limit(w, || {
+        evaluator::graphics_list_layout_svg(&expr)
+      })
+  {
+    clear_captured_graphics();
+    return graphics_result(functions::graphics::clip_svg_to_pane_box(
+      &svg, w, h, align, false, shrink,
+    ));
+  }
   let expr = render_image_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);
