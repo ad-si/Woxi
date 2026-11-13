@@ -892,8 +892,7 @@ const AUDIO_EXTENSIONS: &[&str] = &[
 fn audio_mime_for_path(path: &str) -> &'static str {
   let ext = std::path::Path::new(path)
     .extension()
-    .map(|e| e.to_string_lossy().to_lowercase())
-    .unwrap_or_default();
+    .map_or_default(|e| e.to_string_lossy().to_lowercase());
   match ext.as_str() {
     "flac" => "audio/flac",
     "wav" | "wave" => "audio/wav",
@@ -919,8 +918,7 @@ pub(crate) fn audio_file_source(arg: &Expr) -> Option<String> {
     Expr::String(s) => {
       let ext = std::path::Path::new(s.as_str())
         .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+        .map_or_default(|e| e.to_string_lossy().to_lowercase());
       AUDIO_EXTENSIONS.contains(&ext.as_str()).then(|| s.clone())
     }
     _ => None,
@@ -996,9 +994,10 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
 
   if let Some(path) = audio_file_source(&args[0]) {
     let mime = audio_mime_for_path(&path).to_string();
-    let base64 = std::fs::read(crate::vfs::resolve(&path))
-      .map(|bytes| base64::engine::general_purpose::STANDARD.encode(&bytes))
-      .unwrap_or_default();
+    let base64 =
+      std::fs::read(crate::vfs::resolve(&path)).map_or_default(|bytes| {
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+      });
     let label = std::path::Path::new(&path)
       .file_name()
       .map_or_else(|| path.clone(), |f| f.to_string_lossy().into_owned());

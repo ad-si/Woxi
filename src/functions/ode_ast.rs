@@ -14783,8 +14783,9 @@ pub fn interpolation_ast(
 
   // Clamp order to valid range. A single data point is allowed: the order is
   // reduced to 0 (with inhr) and the result is a constant interpolation,
-  // matching wolframscript.
-  let mut order = interp_order.max(1) as usize;
+  // matching wolframscript. `InterpolationOrder -> 0` is kept: it makes a
+  // piecewise-constant (step) function.
+  let mut order = interp_order.max(0) as usize;
   if order >= n {
     let reduced = n - 1;
     crate::emit_message(&format!(
@@ -16633,6 +16634,34 @@ fn evaluate_interpolating_function_values(
     }
     let (_, y) = extract_point(&data_points[0])?;
     return Ok(real_or_integer(y));
+  }
+
+  // `InterpolationOrder -> 0`: a step function. On `(x[i-1], x[i]]` it takes
+  // the value `y[i]` (at and below the first node, `y[1]`; past the last
+  // node, `y[n]`), so it is flat between nodes with derivative zero.
+  if order == 0 {
+    if derivative_order > 0 {
+      return Ok(Expr::Integer(0));
+    }
+    let mut idx = n - 1;
+    for (i, pt) in data_points.iter().enumerate() {
+      let (xp, _) = extract_point(pt)?;
+      if x_val <= xp {
+        idx = i;
+        break;
+      }
+    }
+    let value = match &data_points[idx] {
+      Expr::List(pair) if pair.len() == 2 => pair[1].clone(),
+      pt => real_or_integer(extract_point(pt)?.1),
+    };
+    // A machine query point gives a machine value, as at the grid points.
+    if crate::functions::math_ast::contains_inexact_real(&x_val_expr)
+      && !crate::functions::math_ast::contains_inexact_real(&value)
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&call1("N", value));
+    }
+    return Ok(value);
   }
 
   // Extract all points for interpolation

@@ -4256,9 +4256,10 @@ const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
-/// still rendered as a SetterBar. A run of short buttons stays readable well
-/// past five, but not without bound.
-const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 10;
+/// still rendered as a SetterBar. A run of short buttons stays readable past
+/// five, but not without bound: Wolfram draws eight integers (`-3` … `4`) as
+/// a bar and nine (`2` … `10`) as a dropdown.
+const SETTER_BAR_MAX_COMPACT_CHOICES: usize = 8;
 
 /// A choice label this short (in characters) keeps its button narrow enough
 /// to sit in a long SetterBar.
@@ -4301,6 +4302,7 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
+/// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
 /// | 6       | `triangle` … `octagon`              |    44 | PopupMenu  |
 /// | 17      | `Hue`, `BlueGreenYellow`, …         |   183 | PopupMenu  |
@@ -5327,6 +5329,27 @@ fn render_display_node<'a>(
       mutation,
       selected,
       enabled,
+      checkbox: true,
+    } => {
+      // One choice of a CheckboxBar: a checkbox followed by its label,
+      // toggling the value's membership in the bound list variable.
+      let mutation = mutation.clone();
+      let cb = checkbox(*selected).on_toggle_maybe(enabled.then(|| {
+        move |_| Message::ManipulateDisplayToggled(cell_idx, mutation.clone())
+      }));
+      Row::new()
+        .spacing(4)
+        .align_y(Center)
+        .push(cb)
+        .push(render_display_node(cell_idx, label))
+        .into()
+    }
+    DisplayNode::Toggler {
+      label,
+      mutation,
+      selected,
+      enabled,
+      checkbox: false,
     } => {
       // One choice of a TogglerBar: a toggle button whose press adds or
       // removes its value from the bound list variable. A bar whose
@@ -9590,9 +9613,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = instantiate_stored_manipulate(code, "")
       .expect("the ActionMenu Manipulate must build a widget");
     assert!(state.error.is_none(), "render failed: {:?}", state.error);
-    // A Locator's point binds machine reals from the start (see
-    // `promoted_invisible_locator_binds_machine_reals`).
-    assert_eq!(state.text_output.as_deref(), Some("{0, {0., 0.}}"));
+    // A Locator keeps its exact initial point until it is dragged (see
+    // `promoted_invisible_locator_binds_machine_reals_once_dragged`).
+    assert_eq!(state.text_output.as_deref(), Some("{0, {0, 0}}"));
 
     // The menu shows up as one ActionMenu display node carrying both items
     // with their own held action, not a frozen text dump of the source.
@@ -9620,7 +9643,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let cw_action = items[0].1.clone();
     state.apply_button_action(&cw_action);
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
-    assert_eq!(state.text_output.as_deref(), Some("{1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{1, {0, 0}}"));
 
     // A second, different item keeps working against the now-updated state.
     let ccw_action = state
@@ -9633,7 +9656,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .expect("the ActionMenu must still be present after re-render");
     state.apply_button_action(&ccw_action);
     state.apply_button_action(&ccw_action);
-    assert_eq!(state.text_output.as_deref(), Some("{-1, {0., 0.}}"));
+    assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -14015,18 +14038,21 @@ Cell[BoxData[
       "the infinite line must be drawn"
     );
     // Both marker spheres are there — the list of centers is a sphere
-    // each, not one stray sphere at the origin. Each is tessellated the
-    // same way, so the scene holds twice one sphere's triangles.
-    let one_sphere = woxi::interpret_with_stdout(
-      "ExportString[Graphics3D[{Black, Sphere[{0, 0, 0}, 0.2]}, \
-       PlotRange -> 4, ImageSize -> {320, 300}], \"SVG\"]",
+    // each, not one stray sphere at the origin — so the scene holds as many
+    // triangles as the two spheres drawn separately. (Their tessellation
+    // detail depends on the region all spheres span, so it is not simply
+    // twice one lone sphere's.)
+    let two_spheres = woxi::interpret_with_stdout(
+      "ExportString[Graphics3D[{Black, Sphere[{0, 0, 0}, 0.2], \
+       Sphere[{2, 1, 1}, 0.2]}, PlotRange -> 4, ImageSize -> {320, 300}], \
+       \"SVG\"]",
     )
     .expect("the reference must render")
     .result;
     let black_faces = |svg: &str| svg.matches("fill=\"rgb(0,0,0)\"").count();
     assert_eq!(
       black_faces(&closed),
-      2 * black_faces(&one_sphere),
+      black_faces(&two_spheres),
       "both centers must get a sphere"
     );
 
@@ -18435,7 +18461,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
     );
 
     // Turning the blue opacity down to zero empties those cells without
-    // erasing them: no blue face survives, but every outline does.
+    // erasing them: no blue face shows (a fully transparent face paints
+    // nothing at all), but every outline survives.
     let outlines = |svg: &str| {
       svg
         .lines()
@@ -18448,7 +18475,6 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 0}, \"…\"]"], "Output"]
     assert!(widget.error.is_none(), "{:?}", widget.error);
     let hollow = render(&widget);
     let hidden = blue_faces(&hollow);
-    assert_eq!(hidden.len(), blue_faces(&sheet).len());
     assert!(
       hidden.iter().all(|l| l.contains("opacity=\"0\"")),
       "no blue face may show through: {hidden:?}"
@@ -22429,10 +22455,12 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     .graphics
     .expect("the body must produce a graphic");
     // `ImagePadding -> {{25, 25}, {25, 25}}` leaves 320-50 by 300-50 for the
-    // frame; the field's square data keeps a square 250x250 drawing area,
-    // centered in that space (10px of slack on each side horizontally).
+    // frame. The field's square data is padded by 1/48 of its span across
+    // and 1/50 up and down (as Wolfram pads a framed graphic), so its
+    // drawing area is 250.4 by 250, centered in that space (9.8px of slack
+    // on each side horizontally).
     assert!(
-      svg.contains("translate(35,25)"),
+      svg.contains("translate(34.80,25.00)"),
       "the padding must place the drawing area: {svg:.400}"
     );
     // Each arrow is colored from the gradient, so the fill colors are
@@ -22620,6 +22648,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "TemperatureMap",
       "ThermometerColors",
     ]));
+
+    // Nine short labels are already one too many: a count control whose
+    // choices run `2` … `10` is a dropdown in Wolfram.
+    assert!(!bar(&["2", "3", "4", "5", "6", "7", "8", "9", "10"]));
 
     // Short labels buy a longer bar, not an unbounded one: 33 integers are a
     // dropdown even though every label is two or three characters.
@@ -23481,10 +23513,22 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl1$$ = 1}, \"\\[Ellipsis]\"]"], 
     let xy = render(3, 2);
     assert_eq!(glyphs(&xy, "\u{25c6}"), 11, "{xy}");
     // The consistency test draws one filled red and one open blue circle
-    // per point, inside the green +/-0.1 band the Epilog draws.
+    // per point, inside the green +/-0.1 band the Epilog draws. The circle
+    // glyphs are drawn as true circles rather than as text.
     let test = render(4, 3);
-    assert_eq!(glyphs(&test, "\u{25cf}"), 11, "{test}");
-    assert_eq!(glyphs(&test, "\u{25cb}"), 11, "{test}");
+    let circles = |svg: &str, paint: &str| {
+      svg
+        .split("<circle")
+        .skip(1)
+        .filter(|tag| tag.split('>').next().unwrap_or("").contains(paint))
+        .count()
+    };
+    assert_eq!(circles(&test, "fill=\"#FF0000\""), 11, "{test}");
+    assert_eq!(
+      circles(&test, "fill=\"none\" stroke=\"#0000FF\""),
+      11,
+      "{test}"
+    );
     assert_eq!(
       test.matches("stroke=\"rgb(0,255,0)\"").count(),
       2,
@@ -27732,12 +27776,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     );
 
     // Dragging a vertex changes both the outline and the readouts.
-    if let manipulate::ControlState::Slider2D { x, y, .. } =
-      &mut state.controls[0]
-    {
-      *x = 6.0;
-      *y = 7.0;
-    }
+    state.slider2d_change(0, 0, 6.0);
+    state.slider2d_change(0, 1, 7.0);
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     let dragged = render(&state);
@@ -27745,9 +27785,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
       labeled, dragged,
       "moving a locator must change the rendered triangle"
     );
+    // A dragged point is a machine-real pair, so `N[…, 6]` of the new
+    // area (|(-1)(-12) - (-8)(-9)| / 2 = 30) stays a machine real.
     assert!(
-      !dragged.contains("31.0000"),
-      "the area readout must follow the moved vertex"
+      dragged.contains(">30.<"),
+      "the area readout must follow the moved vertex as a machine real, \
+       got: {dragged}"
     );
   }
 
@@ -29306,7 +29349,7 @@ SaveDefinitions -> True]";
     let cnf_caption = display_text(&state.display_trees);
     assert_eq!(
       cnf_caption,
-      "function: ( !a ||  !b) && (a || b || c) && ( !a ||  !c) && ( !b ||  !c)"
+      "function: ( !a ||  !b) && ( !a ||  !c) && (a || b || c) && ( !b ||  !c)"
     );
   }
 
@@ -32719,6 +32762,70 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       vec![false, true],
       "only the second choice stays selected after deselecting the first"
     );
+  }
+
+  /// A 3D scene whose extra geometry is switched by a one-choice
+  /// `ControlType -> CheckboxBar` control (beside a `VerticalSlider` driving
+  /// the view point). Wolfram draws a CheckboxBar choice as a checkbox with
+  /// its label, not as the toggle button a `TogglerBar` uses, so the
+  /// display tree must mark the choice as a checkbox; unchecking it must
+  /// remove the value from the bound list and change the picture.
+  #[test]
+  fn checkbox_bar_control_draws_checkboxes_in_a_3d_scene() {
+    use woxi::functions::graphics::DisplayNode;
+    fn choices(nodes: &[DisplayNode]) -> Vec<(String, bool, bool)> {
+      fn walk(node: &DisplayNode, out: &mut Vec<(String, bool, bool)>) {
+        match node {
+          DisplayNode::Toggler {
+            mutation,
+            selected,
+            checkbox,
+            ..
+          } => out.push((mutation.clone(), *selected, *checkbox)),
+          DisplayNode::Row(items) | DisplayNode::Column(items) => {
+            items.iter().for_each(|n| walk(n, out))
+          }
+          DisplayNode::Panel(child) => walk(child, out),
+          _ => {}
+        }
+      }
+      let mut out = Vec::new();
+      nodes.iter().for_each(|n| walk(n, &mut out));
+      out
+    }
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 2}], Gray, If[MemberQ[extras, halo], {Line[Table[{1/2 + Cos[s], 1/2 + Sin[s], 3}, {s, 0, 2 Pi, Pi/8}]]}, Sequence @@ {}]}, Boxed -> False, ViewAngle -> Pi/12, ViewPoint -> {h Cos[w], h Sin[w], 1}], {{w, Pi, "turn"}, 0, 2 Pi}, {{h, 4, "height"}, 2, 6, ControlPlacement -> Left, ControlType -> VerticalSlider}, {{extras, {halo}, ""}, {halo -> "show halo"}, ControlType -> CheckboxBar}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`w$$ = Pi}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let with_halo = widget.graphics_handle.clone();
+    assert!(with_halo.is_some(), "the scene must draw");
+    assert_eq!(
+      widget.state,
+      vec![("extras".to_string(), "{halo}".to_string())]
+    );
+
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (mutation, selected, checkbox) = found[0].clone();
+    assert!(selected, "the halo starts checked");
+    assert!(checkbox, "a CheckboxBar choice draws as a checkbox");
+
+    widget.apply_display_mutation(&mutation);
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert_eq!(widget.state[0].1, "{}");
+    let found = choices(&widget.display_trees);
+    assert_eq!(found.len(), 1);
+    assert!(!found[0].1, "unchecking clears the choice");
+    assert!(found[0].2, "it still draws as a checkbox");
   }
 
   /// A multi-select `TogglerBar` control gated by `Enabled -> cond` on

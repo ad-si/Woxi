@@ -1778,6 +1778,53 @@ pub(crate) fn recursion_limit() -> usize {
   text.parse::<usize>().unwrap_or(DEFAULT_RECURSION_LIMIT)
 }
 
+/// The active `{$MinPrecision, $MaxPrecision}` bounds on the precision of
+/// arbitrary-precision numbers produced by arithmetic. Defaults to
+/// `{0, Infinity}`, i.e. no clamping. Read live from the environment, so
+/// `Block[{$MinPrecision = p, $MaxPrecision = p}, …]` fixes the working
+/// precision of every arbitrary-precision operation inside the block.
+pub(crate) fn precision_bounds() -> (f64, f64) {
+  fn read(name: &str, default: f64) -> f64 {
+    let stored = ENV.with(|e| e.borrow().get(name).cloned());
+    let text = match stored {
+      Some(StoredValue::Raw(s)) => s,
+      Some(StoredValue::ExprVal(expr)) => match &expr {
+        syntax::Expr::Integer(n) => return *n as f64,
+        syntax::Expr::Real(f) => return *f,
+        syntax::Expr::BigFloat(d, _) => d.clone(),
+        other => syntax::format_expr(other, syntax::ExprForm::Input),
+      },
+      _ => return default,
+    };
+    let text = text.trim();
+    if text == "Infinity" {
+      return f64::INFINITY;
+    }
+    text
+      .split('`')
+      .next()
+      .and_then(|t| t.parse::<f64>().ok())
+      .unwrap_or(default)
+  }
+  (
+    read("$MinPrecision", 0.0),
+    read("$MaxPrecision", f64::INFINITY),
+  )
+}
+
+/// Clamp the precision of an arbitrary-precision arithmetic result to the
+/// active `$MinPrecision`/`$MaxPrecision` bounds.
+pub(crate) fn clamp_to_precision_bounds(prec: f64) -> f64 {
+  let (lo, hi) = precision_bounds();
+  if prec < lo {
+    lo
+  } else if prec > hi {
+    hi
+  } else {
+    prec
+  }
+}
+
 /// Report a `$RecursionLimit` overrun the way wolframscript does and raise
 /// the signal that unwinds the evaluation.
 ///
@@ -4672,6 +4719,15 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       name: name.clone(),
       args: new_args.into(),
     });
+  }
+  // A `Pane[picture, {width, height}]` item reserves its whole box in the
+  // layout, the picture placed in it by the Pane's `Alignment` — peeling
+  // the Pane off would set the bare picture at its own size instead.
+  if pane_fixed_size(expr).is_some() && evaluator::lays_out_a_graphic(expr) {
+    let rendered = render_visual_display_pipeline(expr);
+    if matches!(rendered, syntax::Expr::Graphics { .. }) {
+      return rendered;
+    }
   }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
@@ -7695,10 +7751,8 @@ fn store_function_definition(
       Rule::PatternOptionalDefaultSimple => {
         // PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." }
         let mut pat_inner = item.into_inner();
-        let param_name = pat_inner
-          .next()
-          .map(|p| p.as_str().to_owned())
-          .unwrap_or_default();
+        let param_name =
+          pat_inner.next().map_or_default(|p| p.as_str().to_owned());
         let position = params.len() + 1;
         params.push(param_name);
         conditions.push(None);

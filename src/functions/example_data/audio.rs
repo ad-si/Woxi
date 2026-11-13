@@ -347,10 +347,7 @@ fn synthesize(entry: &Entry, rate: f64, frames: usize, ch: usize) -> Vec<f64> {
 /// quantized to 16 bits like the files they stand in for.
 fn channels(entry: &Entry) -> Option<(f64, Vec<Vec<f64>>, String)> {
   let (rate, n_ch, frames, ty) = shape(entry)?;
-  let stats = entry
-    .stat("@Stats")
-    .map(|s| numbers(&s))
-    .unwrap_or_default();
+  let stats = entry.stat("@Stats").map_or_default(|s| numbers(&s));
   let (rms, peak) = (
     stats.first().copied().unwrap_or(0.1),
     stats.get(1).copied().unwrap_or(0.9),
