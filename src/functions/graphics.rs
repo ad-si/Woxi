@@ -14778,6 +14778,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str("</g>\n");
   }
 
+  svg.push_str(&plot_frame_marker(
+    &bb,
+    margin_left,
+    margin_top,
+    svg_w,
+    svg_h,
+  ));
   svg.push_str("</svg>");
 
   // Generate and store GraphicsBox expression for .nb export
@@ -28039,6 +28046,158 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
   ));
   out.push_str(&svg[close..]);
   out
+}
+
+/// Prefix of the `id` on the invisible rectangle that marks the drawing area
+/// of a rendered `Graphics` (see [`with_plot_frame_markers`]). The rest of the
+/// id is the hex-encoded text `xmin ymin xmax ymax`: the coordinates at the
+/// rectangle's left, bottom, right and top edges.
+pub const PLOT_FRAME_ID_PREFIX: &str = "woxi-frame-";
+
+/// Prefix of the `id` on the invisible rectangle covering the content of an
+/// `EventHandler[content, {"MouseDown" :> …, …}]`. The rest of the id is the
+/// hex-encoded list of its mouse events, one `name\taction` line each.
+pub const MOUSE_EVENTS_ID_PREFIX: &str = "woxi-mouse-";
+
+/// The mouse events a live widget can deliver to an `EventHandler`.
+const LIVE_MOUSE_EVENTS: [&str; 5] = [
+  "MouseDown",
+  "MouseDragged",
+  "MouseUp",
+  "MouseClicked",
+  "MouseMoved",
+];
+
+thread_local! {
+  static MARK_PLOT_FRAMES: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// Run `f` with every `Graphics` rendered meanwhile recording its drawing
+/// area and coordinate range in its SVG, so a live widget can map a pointer
+/// position over the picture to graphics coordinates
+/// (`MousePosition["Graphics"]`).
+pub fn with_plot_frame_markers<T>(f: impl FnOnce() -> T) -> T {
+  MARK_PLOT_FRAMES.with(|m| m.set(m.get() + 1));
+  let out = f();
+  MARK_PLOT_FRAMES.with(|m| m.set(m.get() - 1));
+  out
+}
+
+fn hex_encode(text: &str) -> String {
+  use std::fmt::Write;
+  text.bytes().fold(String::new(), |mut s, b| {
+    let _ = write!(s, "{b:02x}");
+    s
+  })
+}
+
+/// The marker rectangle for a drawing area at `(left, top)` of size
+/// `w`×`h` showing the coordinate box `bb`, when markers are requested.
+fn plot_frame_marker(bb: &BBox, left: f64, top: f64, w: f64, h: f64) -> String {
+  if MARK_PLOT_FRAMES.with(std::cell::Cell::get) == 0 {
+    return String::new();
+  }
+  let range = format!("{} {} {} {}", bb.x_min, bb.y_min, bb.x_max, bb.y_max);
+  format!(
+    "<rect id=\"{PLOT_FRAME_ID_PREFIX}{}\" x=\"{left}\" y=\"{top}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0\"/>\n",
+    hex_encode(&range)
+  )
+}
+
+/// A decoded [`PLOT_FRAME_ID_PREFIX`] id: `(xmin, ymin, xmax, ymax)`.
+pub fn plot_frame_from_id(id: &str) -> Option<(f64, f64, f64, f64)> {
+  let text = decode_hit_id_hex(id.strip_prefix(PLOT_FRAME_ID_PREFIX)?)?;
+  let nums: Vec<f64> = text.split(' ').filter_map(|v| v.parse().ok()).collect();
+  match nums[..] {
+    [x_min, y_min, x_max, y_max] => Some((x_min, y_min, x_max, y_max)),
+    _ => None,
+  }
+}
+
+/// The mouse events of `EventHandler[content, events…]` (each `events` a
+/// rule or a list of rules) a live widget can deliver, as
+/// `(name, action code)` pairs in the order given. A later rule for the
+/// same event is ignored, as the front end only runs the first.
+pub fn live_mouse_events(events: &[Expr]) -> Vec<(String, String)> {
+  let mut rules: Vec<&Expr> = Vec::new();
+  for ev in events {
+    match ev {
+      Expr::List(items) => rules.extend(items.iter()),
+      other => rules.push(other),
+    }
+  }
+  let mut out: Vec<(String, String)> = Vec::new();
+  for rule in rules {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = rule
+      && let Expr::String(name) = pattern.as_ref()
+      && LIVE_MOUSE_EVENTS.contains(&name.as_str())
+      && !out.iter().any(|(n, _)| n == name)
+    {
+      out.push((
+        name.clone(),
+        crate::syntax::expr_to_source_form(replacement),
+      ));
+    }
+  }
+  out
+}
+
+/// Cover the picture `svg` an `EventHandler` displays with an invisible
+/// rectangle recording its mouse `events` (see [`MOUSE_EVENTS_ID_PREFIX`]).
+pub fn with_mouse_events_marker(
+  svg: String,
+  events: &[(String, String)],
+) -> String {
+  if events.is_empty() {
+    return svg;
+  }
+  let Some(dims) = parse_svg_dimensions(&svg) else {
+    return svg;
+  };
+  let vb: Vec<f64> = dims
+    .view_box
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+    return svg;
+  };
+  let Some(close) = svg.rfind("</svg>") else {
+    return svg;
+  };
+  let text: Vec<String> = events
+    .iter()
+    .map(|(name, action)| format!("{name}\t{action}"))
+    .collect();
+  let mut out = svg[..close].to_string();
+  out.push_str(&format!(
+    "<rect id=\"{MOUSE_EVENTS_ID_PREFIX}{}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0\"/>",
+    hex_encode(&text.join("\n"))
+  ));
+  out.push_str(&svg[close..]);
+  out
+}
+
+/// Decode the id of a [`MOUSE_EVENTS_ID_PREFIX`] rectangle.
+pub fn mouse_events_from_id(id: &str) -> Option<Vec<(String, String)>> {
+  let text = decode_hit_id_hex(id.strip_prefix(MOUSE_EVENTS_ID_PREFIX)?)?;
+  Some(
+    text
+      .lines()
+      .filter_map(|line| {
+        let (name, action) = line.split_once('\t')?;
+        Some((name.to_string(), action.to_string()))
+      })
+      .collect(),
+  )
 }
 
 /// Marks the empty SVG standing in for a `SpanFromLeft` cell, so the grid

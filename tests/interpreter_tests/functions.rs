@@ -7521,4 +7521,91 @@ mod mouse_position {
       interpret_with_stdout("MousePosition[\"Graphics\"] === None").unwrap();
     assert_eq!(r.result, "True");
   }
+
+  #[test]
+  fn in_a_notebook_an_unavailable_position_gives_the_default() {
+    let r =
+      interpret_with_stdout("MousePosition[\"Graphics\", {0, 0}]").unwrap();
+    assert_eq!(r.result, "{0, 0}");
+  }
+
+  /// A live widget running a mouse event's action sets the pointer's
+  /// graphics coordinates.
+  #[test]
+  fn reports_the_position_a_live_widget_set() {
+    woxi::set_mouse_position(Some((1.5, -2.25)));
+    let graphics = interpret("Floor[MousePosition[\"Graphics\"]]");
+    let with_default = interpret("MousePosition[\"Graphics\", None]");
+    woxi::set_mouse_position(None);
+    assert_eq!(graphics.unwrap(), "{1, -3}");
+    assert_eq!(with_default.unwrap(), "{1.5, -2.25}");
+    assert_eq!(interpret("MousePosition[\"Graphics\"]").unwrap(), "$Failed");
+  }
+}
+
+mod event_handler_mouse_markers {
+  use super::*;
+  use woxi::functions::graphics::{
+    MOUSE_EVENTS_ID_PREFIX, PLOT_FRAME_ID_PREFIX, mouse_events_from_id,
+    plot_frame_from_id,
+  };
+
+  fn marker_ids<'a>(svg: &'a str, prefix: &str) -> Vec<&'a str> {
+    svg
+      .match_indices(&format!("id=\"{prefix}"))
+      .map(|(i, _)| {
+        let start = i + 4;
+        let end = start + svg[start..].find('"').unwrap();
+        &svg[start..end]
+      })
+      .collect()
+  }
+
+  /// In a notebook, an `EventHandler` with mouse events records them on
+  /// its picture, together with the drawing area and coordinate range of
+  /// each graphic inside it.
+  #[test]
+  fn records_mouse_events_and_plot_frames() {
+    let r = interpret_with_stdout(
+      "EventHandler[Dynamic[Grid[{{Graphics[Rectangle[{0, 0}, {4, 2}], \
+       PlotRange -> {{0, 4}, {0, 2}}]}}]], \
+       {\"MouseDown\" :> (p = MousePosition[\"Graphics\"]), \
+        \"KeyDown\" :> Null, \"MouseUp\" :> (q = 1)}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("a picture");
+    let events: Vec<_> = marker_ids(&svg, MOUSE_EVENTS_ID_PREFIX)
+      .into_iter()
+      .filter_map(mouse_events_from_id)
+      .collect();
+    assert_eq!(
+      events,
+      vec![vec![
+        (
+          "MouseDown".to_string(),
+          "p = MousePosition[\"Graphics\"]".to_string()
+        ),
+        ("MouseUp".to_string(), "q = 1".to_string()),
+      ]]
+    );
+    let frames: Vec<_> = marker_ids(&svg, PLOT_FRAME_ID_PREFIX)
+      .into_iter()
+      .filter_map(plot_frame_from_id)
+      .collect();
+    assert_eq!(frames, vec![(0.0, 0.0, 4.0, 2.0)]);
+  }
+
+  /// Without mouse events, or outside an `EventHandler`, a picture carries
+  /// no markers.
+  #[test]
+  fn plain_pictures_carry_no_markers() {
+    for code in [
+      "Graphics[Disk[]]",
+      "EventHandler[Graphics[Disk[]], {\"KeyDown\" :> Null}]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert!(!svg.contains(MOUSE_EVENTS_ID_PREFIX), "{code}");
+      assert!(!svg.contains(PLOT_FRAME_ID_PREFIX), "{code}");
+    }
+  }
 }

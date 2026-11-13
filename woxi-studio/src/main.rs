@@ -426,6 +426,9 @@ enum Message {
   /// The picture was pressed: run the `ClickPane` handler on the last
   /// pointer position.
   ManipulatePaneClicked(usize),
+  /// The pointer was released over a Manipulate picture holding an
+  /// `EventHandler` with mouse events. (cell_idx)
+  ManipulateMouseReleased(usize),
   /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
   /// its assignment code. (cell_idx, bookmark_idx — indexes
   /// `ManipulateState::bookmarks`, not `controls`)
@@ -1706,6 +1709,15 @@ impl WoxiStudio {
       }
 
       Message::DragEnd => {
+        // A press begun over a widget's `EventHandler` ends wherever the
+        // pointer is released (a release over the picture already ended it).
+        for editor in &mut self.cell_editors {
+          if let Some(state) = editor.manipulate_state.as_mut()
+            && state.mouse_pressed
+          {
+            state.mouse_up();
+          }
+        }
         if let (Some(src), Some(dst)) = (self.dragging_cell, self.drop_target)
           && src != dst
           && dst <= self.cell_editors.len()
@@ -2158,7 +2170,7 @@ impl WoxiStudio {
           .get_mut(cell_idx)
           .and_then(|e| e.manipulate_state.as_mut())
         {
-          state.pointer = (x, y);
+          state.mouse_moved(x, y);
         }
         Task::none()
       }
@@ -2169,6 +2181,17 @@ impl WoxiStudio {
           .and_then(|e| e.manipulate_state.as_mut())
         {
           state.apply_pane_click();
+          state.mouse_down();
+        }
+        Task::none()
+      }
+      Message::ManipulateMouseReleased(cell_idx) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.mouse_up();
         }
         Task::none()
       }
@@ -5138,15 +5161,18 @@ fn render_manipulate_widget<'a>(
       }
       stack(layers).into()
     };
-    // A `ClickPane` hands its handler the position of each click.
-    let picture: Element<'_, Message> = if state.click_regions.is_empty() {
-      picture
-    } else {
-      mouse_area(picture)
-        .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
-        .on_press(Message::ManipulatePaneClicked(cell_idx))
-        .into()
-    };
+    // A `ClickPane` hands its handler the position of each click; an
+    // `EventHandler` gets the pointer's presses, drags and releases.
+    let picture: Element<'_, Message> =
+      if state.click_regions.is_empty() && state.mouse_region.is_none() {
+        picture
+      } else {
+        mouse_area(picture)
+          .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+          .on_press(Message::ManipulatePaneClicked(cell_idx))
+          .on_release(Message::ManipulateMouseReleased(cell_idx))
+          .into()
+      };
     output_col = output_col.push(container(picture).padding(4));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);

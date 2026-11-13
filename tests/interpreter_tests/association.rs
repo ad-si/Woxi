@@ -2719,6 +2719,99 @@ mod association_fuzz_findings {
   }
 }
 
+mod nested_key_assignment {
+  use super::*;
+
+  #[test]
+  fn chained_keys_set_a_nested_value() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> {1}, 2 -> {2}|>|>; n[b][1] = {9}; n")
+        .unwrap(),
+      "<|b -> <|1 -> {9}, 2 -> {2}|>|>"
+    );
+  }
+
+  #[test]
+  fn chained_keys_return_the_value() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> 0|>|>; n[b][1] = 7").unwrap(),
+      "7"
+    );
+  }
+
+  #[test]
+  fn chained_keys_add_a_missing_last_key() {
+    assert_eq!(
+      interpret("n = <|b -> <|1 -> 0|>|>; n[b][2] = 3; n").unwrap(),
+      "<|b -> <|1 -> 0, 2 -> 3|>|>"
+    );
+  }
+
+  #[test]
+  fn three_levels_of_string_keys() {
+    assert_eq!(
+      interpret(
+        "n = <|\"x\" -> <|\"y\" -> <|\"z\" -> 0|>|>|>; \
+         n[\"x\"][\"y\"][\"z\"] = 1; n[\"x\"][\"y\"][\"z\"]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  /// The assignment changes only the local copy inside a Module.
+  #[test]
+  fn on_a_module_local_copy() {
+    assert_eq!(
+      interpret(
+        "g = <|a -> 1, b -> <|1 -> {1}|>|>; \
+         f[x_] := Module[{n = x}, n[b][1] = {9}; n]; {f[g], g}"
+      )
+      .unwrap(),
+      "{<|a -> 1, b -> <|1 -> {9}|>|>, <|a -> 1, b -> <|1 -> {1}|>|>}"
+    );
+  }
+
+  /// A curried definition on a symbol that holds no Association stays a
+  /// SubValue.
+  #[test]
+  fn sub_values_are_unaffected() {
+    assert_eq!(
+      interpret("f[1][2] = 3; {f[1][2], f[1][3]}").unwrap(),
+      "{3, f[1][3]}"
+    );
+  }
+
+  #[test]
+  fn part_with_key_replaces_the_entry() {
+    assert_eq!(
+      interpret("n = <|b -> 1|>; n[[Key[b]]] = 2; n").unwrap(),
+      "<|b -> 2|>"
+    );
+  }
+
+  #[test]
+  fn part_with_integer_key_is_not_a_position() {
+    assert_eq!(
+      interpret("n = <|5 -> a, 6 -> b|>; n[[Key[6]]] = c; n[[1]] = d; n")
+        .unwrap(),
+      "<|5 -> d, 6 -> c|>"
+    );
+  }
+
+  #[test]
+  fn part_with_nested_keys() {
+    assert_eq!(
+      interpret(
+        "n = <|b -> <|1 -> {1}|>|>; n[[Key[b], Key[1]]] = {9}; \
+         n[[Key[b], Key[2]]] = 7; n"
+      )
+      .unwrap(),
+      "<|b -> <|1 -> {9}, 2 -> 7|>|>"
+    );
+  }
+}
+
 // Listable functions thread over association values; associations must
 // share their keys in order, and unequal list lengths report
 // Thread::tdlen. Found by the differential fuzzer.
