@@ -4490,10 +4490,30 @@ fn render_manipulate_widget<'a>(
         current,
         is_real,
         orientation,
+        reversed,
         ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
+        // `min`; the widget itself only takes an ascending range, so the
+        // thumb position and the reported value are mirrored.
+        let (min, max, step, reversed) = (*min, *max, *step, *reversed);
+        let position =
+          manipulate::slider_rail_position(min, max, reversed, *current);
+        let on_slide = move |v: f64| {
+          if enabled {
+            Message::ManipulateContinuousChanged(
+              cell_idx,
+              ctrl_idx,
+              manipulate::slider_value_at_rail_position(
+                min, max, step, reversed, v,
+              ),
+            )
+          } else {
+            Message::Noop
+          }
+        };
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
@@ -4501,16 +4521,10 @@ fn render_manipulate_widget<'a>(
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
-              iced::widget::vertical_slider(*min..=*max, *current, move |v| {
-                if enabled {
-                  Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
-                } else {
-                  Message::Noop
-                }
-              })
-              .step(*step)
-              // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
-              .height(120.0);
+              iced::widget::vertical_slider(min..=max, position, on_slide)
+                .step(step)
+                // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
+                .height(120.0);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -4518,15 +4532,8 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s = slider(*min..=*max, *current, move |v| {
-              if enabled {
-                Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
-              } else {
-                Message::Noop
-              }
-            })
-            .step(*step)
-            .width(Fill);
+            let mut s =
+              slider(min..=max, position, on_slide).step(step).width(Fill);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -17846,6 +17853,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -17859,6 +17867,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
@@ -17880,6 +17889,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
+      reversed: false,
     };
     assert_eq!(c.current_code(), "Complex[0, 1]");
     if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {

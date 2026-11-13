@@ -34332,6 +34332,10 @@ pub enum ManipulateControl {
     /// `min`/`max`/`initial` hold the imaginary coefficients, and the
     /// variable binds the complex number `Complex[0, value]`.
     imaginary: bool,
+    /// The spec wrote its range high-to-low (`{u, 2, 0}`). `min`/`max` are
+    /// still sorted, but the slider runs from `max` at its start (left /
+    /// bottom) to `min` at its end, the way Wolfram draws such a control.
+    reversed: bool,
   },
   Discrete {
     name: String,
@@ -40273,6 +40277,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -40445,6 +40450,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -43862,6 +43868,7 @@ fn parse_manipulate_control(
   // the static one; re-resolving it against the live bindings opens the
   // range up, instead of sorting the unsettled value into the *lower* end.
   let counts_down = step.is_some_and(|s| s < 0.0);
+  let mut reversed = false;
   let (min_code, max_code) = if min > max {
     match (min_code.is_some(), max_code.is_some()) {
       (false, true) if !counts_down => {
@@ -43874,6 +43881,7 @@ fn parse_manipulate_control(
       }
       _ => {
         std::mem::swap(&mut min, &mut max);
+        reversed = true;
         (max_code, min_code)
       }
     }
@@ -43894,6 +43902,7 @@ fn parse_manipulate_control(
       exact_initial,
       orientation,
       imaginary,
+      reversed,
     },
     enabled,
     min_code,
@@ -44015,6 +44024,7 @@ fn parse_list_element_manipulator(
       exact_initial: false,
       orientation: ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     },
   })
 }
@@ -48941,6 +48951,28 @@ mod manipulate_reversed_range_tests {
         .iter()
         .any(|(n, _, max, _)| n == "m" && max.is_some())
     );
+  }
+
+  /// The sorted pair remembers that the spec ran high-to-low, so the
+  /// slider can still be drawn from the written start (`2`, left) to the
+  /// written end (`0`, right) as Wolfram does; an ascending range and a
+  /// single dynamic bound that has not settled yet are not reversed.
+  #[test]
+  fn reversed_bounds_mark_the_control_reversed() {
+    let reversed = |code: &str| {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      match spec.controls.first() {
+        Some(ManipulateControl::Continuous { reversed, .. }) => *reversed,
+        other => panic!("expected a continuous control, got {other:?}"),
+      }
+    };
+    assert!(reversed(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#));
+    assert!(reversed(r#"Manipulate[u, {u, 5, -5, 0.5}]"#));
+    assert!(!reversed(r#"Manipulate[w, {{w, 0, "push"}, 0, 2}]"#));
+    assert!(!reversed(
+      r#"Manipulate[{n, total}, {{n, 1}, 1, Dynamic[total], 1}, {{total, 0}, None}]"#
+    ));
   }
 
   /// The ordinary (already increasing) case is unaffected by the sort.
