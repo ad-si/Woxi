@@ -13637,8 +13637,43 @@ pub fn splice_option_lists(args: &[Expr]) -> Vec<Expr> {
   out
 }
 
+/// The arguments of a `Graphics`/`Graphics3D` with option lists spliced in
+/// and every repeated option after its first occurrence dropped. As
+/// everywhere in Wolfram, the first setting of an option is the one in
+/// force: `Show[g, PlotRange -> All]` yields
+/// `Graphics[…, {PlotRange -> All, PlotRange -> {…}}]`, whose range is
+/// `All`, not the shown graphic's own range listed after it.
+pub fn graphics_option_args(args: &[Expr]) -> Vec<Expr> {
+  let mut seen: Vec<String> = Vec::new();
+  splice_option_lists(args)
+    .into_iter()
+    .enumerate()
+    .filter(|(i, arg)| {
+      if *i == 0 {
+        return true;
+      }
+      let name = match arg {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          match pattern.as_ref() {
+            Expr::Identifier(n) | Expr::Constant(n) => n,
+            _ => return true,
+          }
+        }
+        _ => return true,
+      };
+      if seen.iter().any(|s| s == name) {
+        false
+      } else {
+        seen.push(name.clone());
+        true
+      }
+    })
+    .map(|(_, arg)| arg)
+    .collect()
+}
+
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let args = &splice_option_lists(args)[..];
+  let args = &graphics_option_args(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
   // Remaining args are options as Rule expressions
