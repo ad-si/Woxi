@@ -7038,6 +7038,9 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
     (Expr::Real(x), Expr::Real(y)) => {
       x.partial_cmp(y).unwrap_or(Ordering::Equal)
     }
+    (Expr::String(x), Expr::String(y)) => {
+      crate::functions::list_helpers_ast::text_string_cmp(x, y)
+    }
     (Expr::Identifier(x), Expr::Identifier(y)) => {
       let ord = crate::functions::list_helpers_ast::wolfram_string_order(x, y);
       if ord > 0 {

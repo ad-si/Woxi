@@ -5107,8 +5107,12 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
-  let mut new_args: Vec<syntax::Expr> = args.to_vec();
-  if let syntax::Expr::List(items) = &args[0] {
+  // Text too wide for a fixed-width column is broken into lines before
+  // the items are pre-rendered (which would freeze it as one long line).
+  let mut new_args: Vec<syntax::Expr> =
+    functions::graphics::wrap_fixed_width_column_text(args)
+      .unwrap_or_else(|| args.to_vec());
+  if let syntax::Expr::List(items) = &new_args[0] {
     let new_items: Vec<syntax::Expr> =
       items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());

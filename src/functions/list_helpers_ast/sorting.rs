@@ -768,6 +768,13 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         _ => {}
       }
 
+      // Two strings: whitespace is ignored at the first comparison level
+      // and only breaks ties, so a product of strings keeps
+      // `"complex" " roots are\n"` in that order (the snapshot of a
+      // Demonstration shows "The complex roots are").
+      if let (Expr::String(sa), Expr::String(sb)) = (a, b) {
+        return text_string_cmp(sa, sb);
+      }
       // Atomic non-numeric: string/symbol comparison
       let sa = expr_to_string(a);
       let sb = expr_to_string(b);
@@ -2919,6 +2926,17 @@ pub fn expr_sort_key(e: &Expr) -> String {
       }
     }
     _ => expr_to_string(e),
+  }
+}
+
+/// Canonical order of two string atoms: compared first with their
+/// whitespace left out, then (on a tie) as they are written.
+pub fn text_string_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  let squeeze =
+    |s: &str| -> String { s.chars().filter(|c| !c.is_whitespace()).collect() };
+  match wolfram_string_cmp(&squeeze(a), &squeeze(b)) {
+    std::cmp::Ordering::Equal => wolfram_string_cmp(a, b),
+    ord => ord,
   }
 }
 
