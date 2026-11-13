@@ -15496,3 +15496,21 @@ fn two_way_rule_grouping_single_plus_and_paren_part_decrement() {
   }
   assert_eq!(interpret("x = {1, 2}; (x)[[1]]++; x").unwrap(), "{2, 2}");
 }
+
+// An unevaluated sum with a negative literal or a parsed `-1/x` term prints
+// it as a subtraction, whether it is held by Hold or by If's held branches.
+#[test]
+fn unevaluated_sum_with_negative_literal_term() {
+  for (input, expected) in [
+    ("If[x, {0, 1} + -2, 1]", "If[x, {0, 1} - 2, 1]"),
+    ("Hold[a + -3]", "Hold[a - 3]"),
+    ("Hold[Plus[a, -1/2]]", "Hold[a - 2^(-1)]"),
+    ("Hold[Plus[a, -1/x, b]]", "Hold[a - x^(-1) + b]"),
+    ("Hold[a + -1/x + b]", "Hold[a - x^(-1) + b]"),
+    ("Hold[Plus[-1/x, b]]", "Hold[-x^(-1) + b]"),
+    ("Hold[Plus[a, -x/2]]", "Hold[a + -x/2]"),
+    ("f[a + -3]", "f[-3 + a]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

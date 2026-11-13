@@ -12883,6 +12883,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               result.push_str(" + ");
               result.push_str(&fmt_plus_term(arg));
             }
+          } else if let Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } = arg
+            && in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1))
+          {
+            // A held parsed `-1/x` is Times[-1, Power[x, -1]] → `- x^(-1)`.
+            result.push_str(" - ");
+            result.push_str(&fmt(&Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            }));
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
               result.push_str(" - ");
@@ -13369,12 +13384,26 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
       }
 
-      // A held `a + -3` (a negative number literal) prints as `a - 3`.
+      // An unevaluated `a + -3` (a negative number literal, or a parsed
+      // `-1/x`) prints as `a - 3`, `a - x^(-1)`. Only an unevaluated sum
+      // (held, or inside a held argument such as If's) keeps that shape.
       if matches!(op, BinaryOperator::Plus)
-        && in_held_format()
         && let Some(magnitude) = match right.as_ref() {
           Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
           Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } if in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1)) =>
+          {
+            Some(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            })
+          }
           _ => None,
         }
       {
