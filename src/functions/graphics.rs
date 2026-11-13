@@ -13676,6 +13676,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Whether `ImageSize -> {w, h}` named the height itself (as opposed to an
   // `AspectRatio` implying it).
   let mut size_names_height = false;
+  // Whether `ImageSize -> {Automatic, h}` left the width to the aspect
+  // ratio.
+  let mut auto_width = false;
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
@@ -13759,6 +13762,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             explicit_height = true;
             size_names_height = true;
+            // `{Automatic, h}`: the width follows from the picture's own
+            // aspect ratio, worked out once that is known.
+            auto_width =
+              matches!(&items[0], Expr::Identifier(n) if n == "Automatic");
+          } else {
+            auto_width = false;
           }
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -13988,6 +13997,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     svg_height = ((svg_width as f64 * r).round() as u32).max(1);
     explicit_height = true;
+  }
+  // `ImageSize -> {Automatic, h}` with an explicit `AspectRatio -> r` is
+  // h / r wide.
+  if auto_width && let Some(r) = aspect_ratio {
+    svg_width = ((svg_height as f64 / r).round() as u32).max(1);
+    auto_width = false;
   }
 
   // Collect primitives. `DefaultBaseStyle` and then `BaseStyle` directives
@@ -14286,6 +14301,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The data's own shape, before the drawing size rounds it.
   let data_aspect_exact = bb.height() / bb.width();
+  // `ImageSize -> {Automatic, h}` under an automatic aspect ratio: the
+  // height stays and the width follows the data's shape.
+  if auto_width && !aspect_ratio_full {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      svg_width = ((svg_height as f64 / data_aspect).round() as u32).max(1);
+    }
+  }
   // Adjust aspect ratio to match data unless explicitly set via ImageSize -> {w, h}
   if !explicit_height {
     let data_aspect = bb.height() / bb.width();
