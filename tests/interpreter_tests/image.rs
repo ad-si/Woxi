@@ -115,7 +115,8 @@ mod image_core {
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], {100, 80}, \
          Alignment -> Center]",
-        "translate(40.0 0.0)",
+        // A lone `Center` centers on both axes.
+        "translate(40.0 25.0)",
       ),
       (
         "Pane[Image[ConstantArray[0.5, {30, 20}]], ImageSize -> {100, 80}, \
@@ -8614,7 +8615,7 @@ mod color_data_gradients {
         .unwrap(),
       "InputForm[ColorDataFunction[WL14DefaultDensityGradient, \
        ThemeGradients, {0, 1}, \
-       Blend[\"WL14DefaultDensityGradient\", #1] & ]]"
+       Blend[WL14DefaultDensityGradient, #1] & ]]"
     );
     assert_eq!(
       interpret(

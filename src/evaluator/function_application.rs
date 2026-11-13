@@ -655,38 +655,61 @@ pub(crate) fn max_slot_index(expr: &Expr) -> usize {
 /// Emit Function::slot1 / Function::slota messages for named slots (`#key`)
 /// in an anonymous-function body that cannot be filled from `args`, matching
 /// wolframscript: one message per unfillable named-slot occurrence.
-/// `Function::slotn` for the first numbered slot the arguments cannot fill:
-/// `(#1 + #2 &)[10]` stays `10 + #2` with that message.
+/// `Function::slotn` for every numbered slot the arguments cannot fill, in
+/// the order they appear: `(#1 + #2 &)[10]` stays `10 + #2` with that
+/// message. A slot sequence `##n` takes the arguments from the n-th on, so
+/// it needs at least n - 1 of them; `({##3} &)[1]` stays `{##3}` with
+/// `Function::slots`. Each occurrence gets its own message, repeated slots
+/// included, until `General::stop` cuts them off.
 fn emit_unfilled_slot_message(body: &Expr, args: &[Expr]) {
-  fn first_unfilled(e: &Expr, available: usize) -> Option<usize> {
+  enum Unfilled {
+    Slot(usize),
+    Sequence(usize),
+  }
+  fn collect_unfilled(e: &Expr, available: usize, out: &mut Vec<Unfilled>) {
     match e {
       // A shared inert list (e.g. a large array bound through `With`) holds
       // no slots; walking it on every call made `/@` over it quadratic.
-      Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
-        None
+      Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
+      Expr::Slot(n) => {
+        if *n > available {
+          out.push(Unfilled::Slot(*n));
+        }
       }
-      Expr::Slot(n) if *n > available => Some(*n),
+      Expr::SlotSequence(n) => {
+        if *n > available + 1 {
+          out.push(Unfilled::Sequence(*n));
+        }
+      }
       Expr::FunctionCall { name, args }
-        if name == "Slot" && args.len() == 1 =>
+        if (name == "Slot" || name == "SlotSequence") && args.len() == 1 =>
       {
-        match &args[0] {
-          Expr::Integer(n) if *n > 0 && (*n as usize) > available => {
-            Some(*n as usize)
+        if let Expr::Integer(n) = &args[0]
+          && *n > 0
+        {
+          let n = *n as usize;
+          if name == "Slot" && n > available {
+            out.push(Unfilled::Slot(n));
+          } else if name == "SlotSequence" && n > available + 1 {
+            out.push(Unfilled::Sequence(n));
           }
-          _ => None,
         }
       }
       // A nested pure function's slots are its own.
-      Expr::Function { .. } => None,
-      Expr::FunctionCall { name, .. } if name == "Function" => None,
-      _ => crate::syntax::expr_children(e)
-        .into_iter()
-        .find_map(|c| first_unfilled(c, available)),
+      Expr::Function { .. } => {}
+      Expr::FunctionCall { name, .. } if name == "Function" => {}
+      _ => {
+        for c in crate::syntax::expr_children(e) {
+          collect_unfilled(c, available, out);
+        }
+      }
     }
   }
-  let Some(n) = first_unfilled(body, args.len()) else {
+  let mut unfilled = Vec::new();
+  collect_unfilled(body, args.len(), &mut unfilled);
+  if unfilled.is_empty() {
     return;
-  };
+  }
   let function = Expr::Function {
     body: Box::new(body.clone()),
   };
@@ -695,13 +718,20 @@ fn emit_unfilled_slot_message(body: &Expr, args: &[Expr]) {
     args: args.to_vec(),
   };
   use crate::syntax::MessagePiece;
-  crate::emit_message(&crate::syntax::format_message_pieces(&[
-    MessagePiece::Text(format!("Function::slotn: Slot number {n} in ")),
-    MessagePiece::Expr(&function),
-    MessagePiece::Text(" cannot be filled from ".to_string()),
-    MessagePiece::Expr(&application),
-    MessagePiece::Text(".".to_string()),
-  ]));
+  for slot in unfilled {
+    crate::emit_message(&crate::syntax::format_message_pieces(&[
+      MessagePiece::Text(match slot {
+        Unfilled::Slot(n) => format!("Function::slotn: Slot number {n} in "),
+        Unfilled::Sequence(n) => {
+          format!("Function::slots: SlotSequence[{n}] in ")
+        }
+      }),
+      MessagePiece::Expr(&function),
+      MessagePiece::Text(" cannot be filled from ".to_string()),
+      MessagePiece::Expr(&application),
+      MessagePiece::Text(".".to_string()),
+    ]));
+  }
 }
 
 fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {

@@ -7650,8 +7650,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let structure = call("Graphics", structure_args);
-  // A `PixelConstrained` picture is exactly its grid of whole-pixel cells,
-  // so the `ImageSize` box only bounds it and adds no padding.
+  // `PixelConstrained` sizes the picture to whole pixels per cell, so the
+  // `ImageSize` box only bounds it and is not kept around the plot.
   let buf = match explicit_image_size_box(args, 1) {
     Some((box_w, box_h)) if pixel_constrained.is_none() => {
       letterbox_svg(buf, box_w, box_h)

@@ -524,12 +524,18 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = expanded;
     return nsolve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return nsolve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return nsolve_ast(&normalized);
+    }
   }
   let _head = IfunHead::new("NSolve");
   let _nsolve = NSolveScope::new();
@@ -3089,6 +3095,26 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A system with a part that is no equation, inequality or logical
+  // combination — `{x^2 == 2, f[x]}` — is rejected as a whole, as in
+  // Wolfram, instead of solving the equations and ignoring the rest.
+  if let Some(system) = args.first() {
+    let parts = match system {
+      Expr::List(items) => flatten_and_constraints(items),
+      _ => flatten_and_constraints(std::slice::from_ref(system)),
+    };
+    if parts.len() >= 2 && parts.iter().any(|p| !is_relational_expr(p)) {
+      let conjunction = crate::syntax::Expr::FunctionCall {
+        name: "And".into(),
+        args: parts.into(),
+      };
+      crate::emit_message(&format!(
+        "Solve::naqs: {} is not a quantified system of equations and inequalities.",
+        expr_to_string(&conjunction)
+      ));
+      return Ok(unevaluated("Solve", args));
+    }
+  }
   // A quadratic with machine coefficients is solved numerically, exactly as
   // NSolve does (wolframscript's Solve of an inexact polynomial is NSolve).
   if args.len() == 2
@@ -3132,13 +3158,11 @@ fn drop_removable_poles(args: &[Expr], result: Expr) -> Expr {
   let vanishes = |value: &Expr| {
     denominators.iter().any(|den| {
       let at = crate::syntax::substitute_variable(den, var, value);
-      matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Integer(0))
-      ) || matches!(
-        crate::evaluator::evaluate_expr_to_expr(&at),
-        Ok(Expr::Real(r)) if r == 0.0
-      )
+      match crate::evaluator::evaluate_expr_to_expr(&at) {
+        Ok(Expr::Integer(0)) => true,
+        Ok(Expr::Real(r)) => r == 0.0,
+        _ => false,
+      }
     })
   };
   let kept: Vec<Expr> = solutions
@@ -3319,12 +3343,18 @@ fn solve_ast_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalized[0] = Expr::List(flat.into());
     return solve_ast(&normalized);
   }
+  // Rewrite `Inequality[…]` into comparisons — unless it has nothing to
+  // rewrite (an unknown relation such as `Inequality[0, Ldss, x]` stays),
+  // which would recurse forever.
   if let Some(first) = args.first()
     && contains_inequality_call(first)
   {
-    let mut normalized = args.to_vec();
-    normalized[0] = super::reduce::inequalities_to_comparisons(first);
-    return solve_ast(&normalized);
+    let rewritten = super::reduce::inequalities_to_comparisons(first);
+    if !crate::evaluator::pattern_matching::expr_equal(&rewritten, first) {
+      let mut normalized = args.to_vec();
+      normalized[0] = rewritten;
+      return solve_ast(&normalized);
+    }
   }
   // A system with machine-number exponents that are simple fractions
   // (`l^0.5 k^0.5`, a Cobb-Douglas Lagrangian) is solved with the exact
@@ -6362,8 +6392,38 @@ fn solve_rational_system(
 /// rationals they stand for, the fractions combined and cancelled exactly,
 /// and the numerator brought back to machine numbers.
 fn inexact_cleared_numerator(poly: &Expr, var: &str) -> Option<Expr> {
+  // Exactly combining the rationalized fractions is costly, and eliminating
+  // a system re-solves the same reduced equations many times over, so the
+  // results are memoized (bounded, keyed by the equation's text).
+  thread_local! {
+    static CACHE: std::cell::RefCell<
+      std::collections::HashMap<(String, String), Option<Expr>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  const CACHE_LIMIT: usize = 512;
+  let key = (crate::syntax::expr_to_string(poly), var.to_string());
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(&key).cloned()) {
+    return hit;
+  }
+  let result = inexact_cleared_numerator_uncached(poly, var);
+  CACHE.with(|c| {
+    let mut c = c.borrow_mut();
+    if c.len() >= CACHE_LIMIT {
+      c.clear();
+    }
+    c.insert(key, result.clone());
+  });
+  result
+}
+
+fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
   use crate::functions::math_ast::numeric_utils::contains_inexact_real;
-  if !contains_inexact_real(poly) {
+  // Only an equation in `var` alone with real machine coefficients: the
+  // exact rationalization is costly, and the eliminations of a system
+  // produce many branch equations with parameters or complex coefficients.
+  let mut symbols = std::collections::HashSet::new();
+  super::simplify::collect_variables(poly, &mut symbols);
+  if !contains_inexact_real(poly) || symbols.iter().any(|s| s != var) {
     return None;
   }
   // Only a sum in a denominator can share a factor with the numerator that

@@ -1133,7 +1133,9 @@ pub fn dispatch_complex_and_special(
       }
       // Try the list-sequence enumerator first. Both `->` (Rule) and `:>`
       // (RuleDelayed) carry the same pattern/replacement shape here; the
-      // replacement is substituted then evaluated either way.
+      // replacement is substituted then evaluated either way. A condition
+      // on the pattern moves onto the replacement, where
+      // `instantiate_replacement` drops the matches that fail it.
       let rule_parts = match &args[1] {
         Expr::Rule {
           pattern,
@@ -1142,12 +1144,12 @@ pub fn dispatch_complex_and_special(
         | Expr::RuleDelayed {
           pattern,
           replacement,
-        } => Some((pattern, replacement)),
+        } => Some(move_pattern_condition(pattern, replacement)),
         _ => None,
       };
       if let Expr::List(expr_elems) = &args[0]
-        && let Some((pattern, replacement)) = rule_parts
-        && let Expr::List(pat_elems) = pattern.as_ref()
+        && let Some((pattern, replacement)) = &rule_parts
+        && let Expr::List(pat_elems) = pattern
         && let Some(all_bindings) =
           enumerate_list_sequence_matches(expr_elems, pat_elems)
       {
@@ -1178,18 +1180,7 @@ pub fn dispatch_complex_and_special(
       // and both the FunctionCall and the parsed BinaryOp forms of the
       // expression / pattern (e.g. `a b c` and `x_ y_` parse as BinaryOp Times,
       // not FunctionCall Times).
-      let flat_rule = match &args[1] {
-        Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => Some((pattern, replacement)),
-        _ => None,
-      };
-      if let Some((pattern, replacement)) = flat_rule {
+      if let Some((pattern, replacement)) = &rule_parts {
         // Normalize FunctionCall and operator-BinaryOp forms to (head, args).
         let head_args = |e: &Expr| -> Option<(String, Vec<Expr>)> {
           match e {
@@ -2400,6 +2391,35 @@ pub fn dispatch_complex_and_special(
 /// to the default safety cap. Returns `None` for any other shape.
 /// `Dispatch[rules]` is a pre-compiled rule table; it applies exactly like
 /// the plain `rules` it wraps.
+/// `pattern /; cond -> rhs` as `pattern -> (rhs /; cond)`: the enumerators
+/// of `ReplaceList` match the bare pattern, and `instantiate_replacement`
+/// skips every match whose condition fails. A condition already on the
+/// replacement joins it, pattern condition first.
+fn move_pattern_condition(pattern: &Expr, replacement: &Expr) -> (Expr, Expr) {
+  let Expr::FunctionCall { name, args } = pattern else {
+    return (pattern.clone(), replacement.clone());
+  };
+  if name != "Condition" || args.len() != 2 {
+    return (pattern.clone(), replacement.clone());
+  }
+  let (inner, cond) = (&args[0], &args[1]);
+  let replacement = match replacement {
+    Expr::FunctionCall { name, args }
+      if name == "Condition" && args.len() == 2 =>
+    {
+      call(
+        "Condition",
+        vec![
+          args[0].clone(),
+          call("And", vec![cond.clone(), args[1].clone()]),
+        ],
+      )
+    }
+    _ => call("Condition", vec![replacement.clone(), cond.clone()]),
+  };
+  move_pattern_condition(inner, &replacement)
+}
+
 fn unwrap_dispatch(rules: &Expr) -> &Expr {
   match rules {
     Expr::FunctionCall { name, args }

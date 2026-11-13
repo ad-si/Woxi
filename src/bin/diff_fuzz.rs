@@ -4,7 +4,10 @@
 //! from functions that `functions.csv` marks as implemented, evaluates each
 //! through `woxi eval` and through an oracle (`wolframscript -code`), and
 //! reports every output divergence — the project's contract is that the two
-//! must match byte for byte.
+//! must match byte for byte. A third of the cases are instead small
+//! programs built from language constructs — operator syntax, pure
+//! functions, scoping, definitions, control flow, rules, Part syntax (see
+//! `diff_fuzz/lang.rs`).
 //!
 //! Strategy:
 //!  1. Cases are pre-filtered in batches: one program per batch containing
@@ -34,6 +37,9 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 
+#[path = "diff_fuzz/lang.rs"]
+mod lang;
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -59,6 +65,12 @@ struct Cli {
   /// Maximum expression nesting depth
   #[arg(long, default_value_t = 4)]
   max_depth: u32,
+
+  /// Which cases to generate: "all" (the default mix), "lang" (only
+  /// language-construct programs) or "held" (only held syntax trees, which
+  /// test parsing and printing)
+  #[arg(long, default_value = "all")]
+  kind: String,
 
   /// Oracle: "auto", "wolframscript", or "woxi" (self-check)
   #[arg(long, default_value = "auto")]
@@ -148,6 +160,29 @@ enum Expr {
   Raw(&'static str),
   List(Vec<Expr>),
   Call(&'static str, Vec<Expr>),
+
+  // --- Surface syntax (see `lang.rs`) ---------------------------------
+  /// Operator chain `(a op b op …)`; `op` carries its own spacing, e.g.
+  /// `" + "`, `" /@ "`, `" := "`. Always parenthesized, so precedence
+  /// never depends on the context the chain is printed in.
+  Infix(&'static str, Vec<Expr>),
+  /// `(pre e post)` — prefix and postfix operators: `!b`, `-e`, `body &`,
+  /// `n!`.
+  Unary(&'static str, Box<Expr>, &'static str),
+  /// Compound expression `(a; b; c)`.
+  Seq(Vec<Expr>),
+  /// Part syntax `(e)[[i, j]]`.
+  Index(Box<Expr>, Vec<Expr>),
+  /// Call with a computed head, `(head)[args]` — `(#^2 &)[3]`.
+  Apply(Box<Expr>, Vec<Expr>),
+  /// Association literal `<|k -> v, …|>`.
+  AssocLit(Vec<Expr>),
+  /// Printed as its content, but opaque to the shrinker. Wraps the parts
+  /// of a program that keep it terminating and its output deterministic —
+  /// a recursion's decreasing step, a Module variable's initial value — so
+  /// shrinking a real divergence cannot walk into an infinite recursion or
+  /// into printing a `$ModuleNumber`-dependent local symbol instead.
+  Fixed(Box<Expr>),
 }
 
 impl Expr {
@@ -170,6 +205,28 @@ impl Expr {
         let inner: Vec<String> = args.iter().map(Expr::to_code).collect();
         format!("{head}[{}]", inner.join(", "))
       }
+      Expr::Infix(op, args) => {
+        let inner: Vec<String> = args.iter().map(Expr::to_code).collect();
+        format!("({})", inner.join(op))
+      }
+      Expr::Unary(pre, e, post) => format!("({pre}{}{post})", e.to_code()),
+      Expr::Seq(xs) => {
+        let inner: Vec<String> = xs.iter().map(Expr::to_code).collect();
+        format!("({})", inner.join("; "))
+      }
+      Expr::Index(e, idx) => {
+        let inner: Vec<String> = idx.iter().map(Expr::to_code).collect();
+        format!("({})[[{}]]", e.to_code(), inner.join(", "))
+      }
+      Expr::Apply(head, args) => {
+        let inner: Vec<String> = args.iter().map(Expr::to_code).collect();
+        format!("({})[{}]", head.to_code(), inner.join(", "))
+      }
+      Expr::AssocLit(xs) => {
+        let inner: Vec<String> = xs.iter().map(Expr::to_code).collect();
+        format!("<|{}|>", inner.join(", "))
+      }
+      Expr::Fixed(e) => e.to_code(),
     }
   }
 
@@ -180,9 +237,16 @@ impl Expr {
       Expr::Rational(a, b) => 2 + a.unsigned_abs() + b.unsigned_abs(),
       Expr::RealTenths(t) => 2 + t.unsigned_abs(),
       Expr::Str(s) => 1 + s.len() as u64,
-      Expr::Sym(_) | Expr::Raw(_) => 1,
-      Expr::List(xs) => 2 + xs.iter().map(Expr::size).sum::<u64>(),
-      Expr::Call(_, args) => 2 + args.iter().map(Expr::size).sum::<u64>(),
+      Expr::Sym(_) | Expr::Raw(_) | Expr::Fixed(_) => 1,
+      Expr::List(xs)
+      | Expr::Call(_, xs)
+      | Expr::Infix(_, xs)
+      | Expr::Seq(xs)
+      | Expr::AssocLit(xs) => 2 + xs.iter().map(Expr::size).sum::<u64>(),
+      Expr::Unary(_, e, _) => 2 + e.size(),
+      Expr::Index(e, xs) | Expr::Apply(e, xs) => {
+        2 + e.size() + xs.iter().map(Expr::size).sum::<u64>()
+      }
     }
   }
 }
@@ -909,6 +973,15 @@ const ASSOC_KEYS: &[&str] = &["a", "b", "c", "d"];
 struct Generator {
   specs: Vec<&'static FnSpec>,
   max_depth: u32,
+  kind: CaseKind,
+}
+
+/// The `--kind` of cases to generate.
+#[derive(Clone, Copy, PartialEq)]
+enum CaseKind {
+  All,
+  Lang,
+  Held,
 }
 
 impl Generator {
@@ -923,18 +996,27 @@ impl Generator {
         spec.name
       );
     }
-    Generator { specs, max_depth }
+    Generator {
+      specs,
+      max_depth,
+      kind: CaseKind::All,
+    }
   }
 
   fn gen_case(&self, rng: &mut Rng) -> Expr {
-    // Mostly spec-driven calls; occasionally bare data or a bounded
-    // Part/Take (which need index/list coupling a static spec can't say).
-    // The special cases stay rare: they are three shapes competing with
-    // several hundred table entries for the same budget.
+    // Mostly spec-driven calls; a third language-construct programs (see
+    // `lang.rs`); occasionally bare data or a bounded Part/Take (which
+    // need index/list coupling a static spec can't say).
+    match self.kind {
+      CaseKind::Lang => return self.gen_lang(rng),
+      CaseKind::Held => return lang::gen_held_syntax(rng),
+      CaseKind::All => {}
+    }
     match rng.below(20) {
-      0 => self.gen_part(rng),
-      1 => self.gen_take(rng),
-      2 => self.gen_num(rng, self.max_depth),
+      0 => Self::gen_part(rng),
+      1 => Self::gen_take(rng),
+      2 => Self::gen_num(rng, self.max_depth),
+      3..=8 => self.gen_lang(rng),
       _ => self.gen_spec_call(rng, self.max_depth),
     }
   }
@@ -952,12 +1034,12 @@ impl Generator {
   fn gen_arg(&self, rng: &mut Rng, arg: Arg, depth: u32) -> Expr {
     match arg {
       Arg::Any => self.gen_any(rng, depth),
-      Arg::Num => self.gen_num(rng, depth),
-      Arg::Bool => self.gen_bool(rng, depth),
+      Arg::Num => Self::gen_num(rng, depth),
+      Arg::Bool => Self::gen_bool(rng, depth),
       Arg::Str => gen_str(rng),
-      Arg::ListNum => self.gen_list_num(rng, depth, 0),
-      Arg::ListNum1 => self.gen_list_num(rng, depth, 1),
-      Arg::ListAny => self.gen_list_any(rng, depth),
+      Arg::ListNum => Self::gen_list_num(rng, depth, 0),
+      Arg::ListNum1 => Self::gen_list_num(rng, depth, 1),
+      Arg::ListAny => Self::gen_list_any(rng, depth),
       Arg::Nat(max) => Expr::Int(rng.range(0, max)),
       Arg::IntIn(lo, hi) => Expr::Int(rng.range(lo, hi)),
       Arg::Poly => gen_poly(rng),
@@ -1051,8 +1133,8 @@ impl Generator {
   fn gen_any(&self, rng: &mut Rng, depth: u32) -> Expr {
     match rng.below(9) {
       0 => gen_str(rng),
-      1 => self.gen_bool(rng, depth),
-      2 => self.gen_list_num(rng, depth, 0),
+      1 => Self::gen_bool(rng, depth),
+      2 => Self::gen_list_num(rng, depth, 0),
       // The generic heads (Head, Depth, ToString, SameQ, …) are the ones
       // most likely to mishandle an unusual argument, so feed them
       // associations, matrices and complex numbers too.
@@ -1060,36 +1142,36 @@ impl Generator {
       4 => gen_matrix(rng, 2),
       5 => gen_complex(rng),
       _ if depth > 0 && rng.chance(1, 3) => self.gen_spec_call(rng, depth),
-      _ => self.gen_num(rng, depth),
+      _ => Self::gen_num(rng, depth),
     }
   }
 
-  fn gen_num(&self, rng: &mut Rng, depth: u32) -> Expr {
+  fn gen_num(rng: &mut Rng, depth: u32) -> Expr {
     if depth == 0 || rng.chance(1, 2) {
       return gen_num_leaf(rng);
     }
     let head = *rng.pick(&["Plus", "Times", "Subtract", "Divide"]);
-    let a = self.gen_num(rng, depth - 1);
-    let b = self.gen_num(rng, depth - 1);
+    let a = Self::gen_num(rng, depth - 1);
+    let b = Self::gen_num(rng, depth - 1);
     Expr::Call(head, vec![a, b])
   }
 
-  fn gen_bool(&self, rng: &mut Rng, depth: u32) -> Expr {
+  fn gen_bool(rng: &mut Rng, depth: u32) -> Expr {
     if depth == 0 || rng.chance(1, 3) {
       return Expr::Sym(if rng.chance(1, 2) { "True" } else { "False" });
     }
     let head = *rng.pick(&["Less", "Greater", "Equal", "LessEqual"]);
-    let a = self.gen_num(rng, depth - 1);
-    let b = self.gen_num(rng, depth - 1);
+    let a = Self::gen_num(rng, depth - 1);
+    let b = Self::gen_num(rng, depth - 1);
     Expr::Call(head, vec![a, b])
   }
 
-  fn gen_list_num(&self, rng: &mut Rng, depth: u32, min_len: u64) -> Expr {
+  fn gen_list_num(rng: &mut Rng, depth: u32, min_len: u64) -> Expr {
     let len = min_len + rng.below(5);
     let xs = (0..len)
       .map(|_| {
         if depth > 0 && rng.chance(1, 4) {
-          self.gen_num(rng, depth - 1)
+          Self::gen_num(rng, depth - 1)
         } else {
           gen_num_leaf(rng)
         }
@@ -1098,12 +1180,12 @@ impl Generator {
     Expr::List(xs)
   }
 
-  fn gen_list_any(&self, rng: &mut Rng, depth: u32) -> Expr {
+  fn gen_list_any(rng: &mut Rng, depth: u32) -> Expr {
     let len = rng.below(5);
     let xs = (0..len)
       .map(|_| match rng.below(5) {
         0 => gen_str(rng),
-        1 if depth > 0 => self.gen_list_num(rng, depth - 1, 0),
+        1 if depth > 0 => Self::gen_list_num(rng, depth - 1, 0),
         _ => gen_num_leaf(rng),
       })
       .collect();
@@ -1112,8 +1194,8 @@ impl Generator {
 
   /// Part with an in-bounds index (out-of-bounds behavior is exercised
   /// rarely enough by shrinking; a static spec would flood messages).
-  fn gen_part(&self, rng: &mut Rng) -> Expr {
-    let list = self.gen_list_num(rng, 1, 1);
+  fn gen_part(rng: &mut Rng) -> Expr {
+    let list = Self::gen_list_num(rng, 1, 1);
     let len = match &list {
       Expr::List(xs) => xs.len() as i64,
       _ => unreachable!(),
@@ -1122,8 +1204,8 @@ impl Generator {
     Expr::Call("Part", vec![list, Expr::Int(idx)])
   }
 
-  fn gen_take(&self, rng: &mut Rng) -> Expr {
-    let list = self.gen_list_num(rng, 1, 1);
+  fn gen_take(rng: &mut Rng) -> Expr {
+    let list = Self::gen_list_num(rng, 1, 1);
     let len = match &list {
       Expr::List(xs) => xs.len() as i64,
       _ => unreachable!(),
@@ -1715,18 +1797,43 @@ fn shrink_candidates(expr: &Expr) -> Vec<Expr> {
         out.push(Expr::Str(shorter));
       }
     }
-    Expr::Sym(_) | Expr::Raw(_) => {}
-    Expr::List(xs) => {
-      for i in 0..xs.len() {
-        let mut fewer = xs.clone();
-        fewer.remove(i);
-        out.push(Expr::List(fewer));
+    Expr::Sym(_) | Expr::Raw(_) | Expr::Fixed(_) => {}
+    Expr::List(xs) => shrink_elements(xs, 0, Expr::List, &mut out),
+    Expr::AssocLit(xs) => shrink_elements(xs, 0, Expr::AssocLit, &mut out),
+    Expr::Seq(xs) => {
+      // Hoist each statement, then drop or shrink them in place. A Seq
+      // keeps at least one statement: `()` is not an expression.
+      out.extend(xs.iter().cloned());
+      shrink_elements(xs, 1, Expr::Seq, &mut out);
+    }
+    Expr::Infix(op, xs) => {
+      // Hoist each operand. Operand lists only shrink while at least two
+      // remain — `(a)` alone would print a different operator chain.
+      out.extend(xs.iter().cloned());
+      shrink_elements(xs, 2, |ys| Expr::Infix(op, ys), &mut out);
+    }
+    Expr::Unary(pre, e, post) => {
+      out.push((**e).clone());
+      for cand in shrink_candidates(e) {
+        out.push(Expr::Unary(pre, Box::new(cand), post));
       }
-      for (i, x) in xs.iter().enumerate() {
-        for cand in shrink_candidates(x) {
-          let mut ys = xs.clone();
-          ys[i] = cand;
-          out.push(Expr::List(ys));
+    }
+    Expr::Index(e, idx) => {
+      out.push((**e).clone());
+      for cand in shrink_candidates(e) {
+        out.push(Expr::Index(Box::new(cand), idx.clone()));
+      }
+    }
+    Expr::Apply(head, args) => {
+      out.extend(args.iter().cloned());
+      for cand in shrink_candidates(head) {
+        out.push(Expr::Apply(Box::new(cand), args.clone()));
+      }
+      for (i, a) in args.iter().enumerate() {
+        for cand in shrink_candidates(a) {
+          let mut bs = args.clone();
+          bs[i] = cand;
+          out.push(Expr::Apply(head.clone(), bs));
         }
       }
     }
@@ -1744,6 +1851,30 @@ fn shrink_candidates(expr: &Expr) -> Vec<Expr> {
   }
   debug_assert!(out.iter().all(|c| c.size() < expr.size()));
   out
+}
+
+/// Shrink candidates of an element sequence: drop one element (while more
+/// than `min_len` remain), or shrink one in place.
+fn shrink_elements(
+  xs: &[Expr],
+  min_len: usize,
+  rebuild: impl Fn(Vec<Expr>) -> Expr,
+  out: &mut Vec<Expr>,
+) {
+  if xs.len() > min_len {
+    for i in 0..xs.len() {
+      let mut fewer = xs.to_vec();
+      fewer.remove(i);
+      out.push(rebuild(fewer));
+    }
+  }
+  for (i, x) in xs.iter().enumerate() {
+    for cand in shrink_candidates(x) {
+      let mut ys = xs.to_vec();
+      ys[i] = cand;
+      out.push(rebuild(ys));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1828,7 +1959,7 @@ fn load_implemented(csv_path: &std::path::Path) -> HashSet<String> {
     .collect()
 }
 
-fn resolve_woxi(cli_woxi: &Option<PathBuf>) -> Result<PathBuf, String> {
+fn resolve_woxi(cli_woxi: Option<&PathBuf>) -> Result<PathBuf, String> {
   if let Some(path) = cli_woxi {
     return Ok(path.clone());
   }
@@ -1904,7 +2035,16 @@ fn main() {
   let csv_path =
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("functions.csv");
   let implemented = load_implemented(&csv_path);
-  let generator = Generator::new(&implemented, cli.max_depth);
+  let mut generator = Generator::new(&implemented, cli.max_depth);
+  generator.kind = match cli.kind.as_str() {
+    "all" => CaseKind::All,
+    "lang" => CaseKind::Lang,
+    "held" => CaseKind::Held,
+    other => {
+      eprintln!("unknown --kind '{other}' (expected all|lang|held)");
+      std::process::exit(2);
+    }
+  };
   if generator.specs.is_empty() {
     eprintln!("error: no usable functions left after the functions.csv check");
     std::process::exit(2);
@@ -1913,8 +2053,7 @@ fn main() {
   let master_seed = cli.seed.unwrap_or_else(|| {
     std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
-      .map(|d| d.as_nanos() as u64)
-      .unwrap_or(0x00DE_FA17)
+      .map_or(0x00DE_FA17, |d| d.as_nanos() as u64)
   });
 
   // Case seeds derive from the master seed by index, so any single case
@@ -1935,7 +2074,7 @@ fn main() {
     return;
   }
 
-  let woxi = match resolve_woxi(&cli.woxi) {
+  let woxi = match resolve_woxi(cli.woxi.as_ref()) {
     Ok(p) => p,
     Err(e) => {
       eprintln!("error: {e}");

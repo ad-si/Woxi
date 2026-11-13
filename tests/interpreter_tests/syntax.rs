@@ -8349,7 +8349,7 @@ mod tilde_infix {
     // ~~ (StringExpression) should still work
     assert_eq!(
       interpret(r#"FullForm[Hold["a" ~~ "b"]]"#).unwrap(),
-      r#"FullForm[Hold["a"~~"b"]]"#
+      r#"FullForm[Hold[StringExpression[a, b]]]"#
     );
   }
 
@@ -14793,8 +14793,8 @@ fn held_subtraction_preserves_explicit_sum_operands() {
   for (code, expected) in [
     ("Hold[Subtract[Plus[a,b],c]]", "Hold[(a + b) - c]"),
     ("Hold[Subtract[Plus[0,0],0]]", "Hold[(0 + 0) - 0]"),
-    ("Hold[Subtract[Plus[a],b]]", "Hold[(Plus[a]) - b]"),
-    ("Hold[Subtract[Plus[],b]]", "Hold[(Plus[]) - b]"),
+    ("Hold[Subtract[Plus[a],b]]", "Hold[Plus[a] - b]"),
+    ("Hold[Subtract[Plus[],b]]", "Hold[Plus[] - b]"),
     ("Hold[(a+b)-c]", "Hold[(a + b) - c]"),
     ("Hold[(a-b)-c]", "Hold[(a - b) - c]"),
     ("Hold[(a-b+c)-d]", "Hold[(a - b + c) - d]"),
@@ -14867,5 +14867,651 @@ fn held_plus_preserves_leading_subtract_call_formatting() {
     ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// Held syntax prints in OutputForm: strings lose their quotes everywhere,
+// also inside a pure function's body, a `FullForm[…]` wrapper and `@`/`//`
+// applications, whose slot and part heads need no parentheses. Found by the
+// differential fuzzer's held-syntax mode.
+mod held_syntax_output_form {
+  use super::*;
+
+  #[test]
+  fn strings_unquoted() {
+    assert_eq!(interpret(r#"Hold["ab" &]"#).unwrap(), "Hold[ab & ]");
+    assert_eq!(
+      interpret(r#"InputForm[{"a" &}]"#).unwrap(),
+      "InputForm[{a & }]"
+    );
+    assert_eq!(interpret(r#"FullForm["a"]"#).unwrap(), "FullForm[a]");
+    assert_eq!(
+      interpret(r#"FullForm[Hold[f["a"]]]"#).unwrap(),
+      "FullForm[Hold[f[a]]]"
+    );
+    assert_eq!(
+      interpret(r#"FullForm["a" + b]"#).unwrap(),
+      "FullForm[a + b]"
+    );
+    // ToString[…, InputForm] keeps the quotes.
+    assert_eq!(
+      interpret(r#"ToString[Hold["ab" &], InputForm]"#).unwrap(),
+      r#"Hold["ab" & ]"#
+    );
+  }
+
+  // Operators whose 1D text reuses the InputForm renderer print their
+  // strings unquoted too.
+  #[test]
+  fn operator_operands_unquoted() {
+    assert_eq!(
+      interpret(r#"Hold[{"a" /. x, "b"*c, -"d", "e"**f}]"#).unwrap(),
+      "Hold[{a /. x, b*c, -d, e**f}]"
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold["a" /. x], InputForm]"#).unwrap(),
+      r#"Hold["a" /. x]"#
+    );
+    assert_eq!(
+      interpret(r#"Quantity[2, Sqrt["Meters"]/"Seconds"]"#).unwrap(),
+      "Quantity[2, Sqrt[Meters]/Seconds]"
+    );
+  }
+
+  #[test]
+  fn application_heads() {
+    assert_eq!(interpret(r#"Hold["" // #2]"#).unwrap(), "Hold[#2[]]");
+    assert_eq!(interpret("Hold[a // #[[3]]]").unwrap(), "Hold[#1[[3]][a]]");
+    assert_eq!(interpret(r#"Hold[#2 @ "s"]"#).unwrap(), "Hold[#2[s]]");
+    assert_eq!(interpret("Hold[(a + b) @ c]").unwrap(), "Hold[(a + b)[c]]");
+  }
+}
+
+// Precedence-aware printing and parsing of held operator trees, found by
+// the differential fuzzer's held-syntax mode.
+mod held_syntax_precedence {
+  use super::*;
+
+  // `(x[[3]])[[2]]` is Part[Part[x, 3], 2], not Part[x, 3, 2].
+  #[test]
+  fn parenthesized_part_of_a_part() {
+    assert_eq!(
+      interpret("Hold[(x[[3]])[[2]]]").unwrap(),
+      "Hold[x[[3]][[2]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(x[[3]])[[2]]]]]").unwrap(),
+      "Hold[Part[Part[x, 3], 2]]"
+    );
+    assert_eq!(interpret("Hold[x[[3, 2]]]").unwrap(), "Hold[x[[3,2]]]");
+    assert_eq!(
+      interpret("Module[{a = {{1, 2}, {3, 4}}}, (a[[2]])[[1]] = 9; a]")
+        .unwrap(),
+      "{{1, 2}, {9, 4}}"
+    );
+  }
+
+  // A named pattern binds like `:` (150).
+  #[test]
+  fn named_pattern_operands() {
+    for (input, expected) in [
+      ("HoldForm[x_ | y]", "HoldForm[(x_) | y]"),
+      ("HoldForm[x_ && y]", "HoldForm[(x_) && y]"),
+      ("HoldForm[x_ + 1]", "HoldForm[(x_) + 1]"),
+      ("HoldForm[x_. + 1]", "HoldForm[(x_.) + 1]"),
+      ("HoldForm[(x_)[[1]]]", "HoldForm[(x_)[[1]]]"),
+      ("HoldForm[x_!]", "HoldForm[(x_)!]"),
+      ("HoldForm[x_ -> y]", "HoldForm[x_ -> y]"),
+      ("HoldForm[x_ /; c]", "HoldForm[x_ /; c]"),
+      ("HoldForm[x_ = 1]", "HoldForm[x_ = 1]"),
+      ("HoldForm[_ + 1]", "HoldForm[_ + 1]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  // `!` (610) brackets every looser operand; `@*`/`/*` (625/624) bracket
+  // everything but tighter forms, and nested compositions stay nested.
+  #[test]
+  fn factorial_and_composition_operands() {
+    for (input, expected) in [
+      ("HoldForm[(a^b)!]", "HoldForm[(a^b)!]"),
+      ("HoldForm[(a . b)!]", "HoldForm[(a . b)!]"),
+      ("HoldForm[(-2)!]", "HoldForm[(-2)!]"),
+      ("HoldForm[(a!)!]", "HoldForm[(a!)!]"),
+      ("HoldForm[(a /@ b)!]", "HoldForm[a /@ b!]"),
+      ("HoldForm[(a^b) @* f]", "HoldForm[(a^b) @* f]"),
+      ("HoldForm[(a /@ b) @* f]", "HoldForm[(a /@ b) @* f]"),
+      ("HoldForm[(-2) @* f]", "HoldForm[(-2) @* f]"),
+      ("HoldForm[(a!) @* f]", "HoldForm[(a!) @* f]"),
+      ("HoldForm[(c . b) @* b]", "HoldForm[(c . b) @* b]"),
+      ("HoldForm[(a @* b) @* c]", "HoldForm[(a @* b) @* c]"),
+      ("HoldForm[a @* (b @* c)]", "HoldForm[a @* (b @* c)]"),
+      ("HoldForm[(a /* b) @* c]", "HoldForm[(a /* b) @* c]"),
+      ("HoldForm[a @* b /* c]", "HoldForm[a @* b /* c]"),
+      ("HoldForm[a @* b @* c]", "HoldForm[a @* b @* c]"),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /* b @* c]]]").unwrap(),
+      "Hold[RightComposition[a, Composition[b, c]]]"
+    );
+    assert_eq!(interpret("((f @* g) @* h)[x]").unwrap(), "f[g[h[x]]]");
+  }
+}
+
+// A held comparison (or `===`) is bracketed as an arithmetic operand.
+#[test]
+fn held_comparison_as_arithmetic_operand() {
+  for (input, expected) in [
+    ("HoldForm[(a == b) + c]", "HoldForm[(a == b) + c]"),
+    ("HoldForm[c + (a == b)]", "HoldForm[c + (a == b)]"),
+    ("HoldForm[(a === b) + c]", "HoldForm[(a === b) + c]"),
+    ("HoldForm[(a < b < c)/d]", "HoldForm[(a < b < c)/d]"),
+    ("HoldForm[d/(a == b)]", "HoldForm[d/(a == b)]"),
+    ("HoldForm[(a == b)^c]", "HoldForm[(a == b)^c]"),
+    ("HoldForm[a + (b >= c) + d]", "HoldForm[a + (b >= c) + d]"),
+    ("HoldForm[(a == b) && c]", "HoldForm[a == b && c]"),
+    ("Hold[x - (h = 2)]", "Hold[x - (h = 2)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Applied heads and Part bases are bracketed by one rule, and a head that
+// prints as a whole call (`StringJoin[a, b]`, `Times[1/3]`) needs none.
+#[test]
+fn held_heads_and_part_bases() {
+  for (input, expected) in [
+    ("Hold[StringJoin[a, b][[1]]]", "Hold[StringJoin[a, b][[1]]]"),
+    ("Hold[Times[1/3]^c]", "Hold[Times[1/3]^c]"),
+    ("Hold[(a /* b)[[1]]]", "Hold[(a /* b)[[1]]]"),
+    ("Hold[(a . b)[x]]", "Hold[(a . b)[x]]"),
+    (r#"Hold["" // 4]"#, "Hold[4[]]"),
+    ("Hold[f // {a, b}]", "Hold[{a, b}[f]]"),
+    ("Hold[(a . b) @ c]", "Hold[(a . b)[c]]"),
+    ("Hold[x // (a == b)]", "Hold[(a == b)[x]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// A held quotient is Times[a, Power[b, -1]]: `1/x` prints as written and a
+// coefficient -1 over a lone reciprocal as `-x^(-1)`.
+#[test]
+fn held_quotients() {
+  for (input, expected) in [
+    ("Hold[1/x]", "Hold[1/x]"),
+    ("Hold[-1/x]", "Hold[-x^(-1)]"),
+    ("Hold[-1/(a + b)]", "Hold[-(a + b)^(-1)]"),
+    ("Hold[-1/4]", "Hold[-4^(-1)]"),
+    ("Hold[-a/4]", "Hold[-a/4]"),
+    ("Hold[-1/(2 x)]", "Hold[-(2*x)^(-1)]"),
+    ("Hold[a - 1/x]", "Hold[a - 1/x]"),
+    ("Hold[-2/x]", "Hold[-2/x]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  // Evaluated quotients keep their own forms.
+  assert_eq!(interpret("-1/x").unwrap(), "-x^(-1)");
+  assert_eq!(
+    interpret("Simplify[x/(-2 + 3 x - x^2)]").unwrap(),
+    "-(x/(2 - 3*x + x^2))"
+  );
+}
+
+// Held OutputForm: a negated factor and a negative literal term print the
+// way wolframscript writes them; InputForm keeps the minus bracketed.
+// Explicitly nested `&&`, `||` and `|` groups keep their nesting.
+#[test]
+fn held_minus_and_nested_connectives() {
+  for (input, expected) in [
+    ("Hold[(-a)*b]", "Hold[-a*b]"),
+    ("Hold[a*(-b)]", "Hold[a*-b]"),
+    ("Hold[a/-b]", "Hold[a/-b]"),
+    ("ToString[Hold[(-a)*b], InputForm]", "Hold[(-a)*b]"),
+    ("ToString[Hold[a/-b], InputForm]", "Hold[a/(-b)]"),
+    ("Hold[-StringJoin[a, b]]", "Hold[-StringJoin[a, b]]"),
+    ("Hold[6 + -2 + x]", "Hold[6 - 2 + x]"),
+    ("Hold[a + -3]", "Hold[a - 3]"),
+    ("Hold[(a && b) && c]", "Hold[(a && b) && c]"),
+    ("Hold[a && (b && c)]", "Hold[a && (b && c)]"),
+    ("Hold[a && b && c]", "Hold[a && b && c]"),
+    ("Hold[(a || b) || c]", "Hold[(a || b) || c]"),
+    ("Hold[(a | b) | c]", "Hold[(a | b) | c]"),
+    ("Hold[a | (b | c)]", "Hold[a | (b | c)]"),
+    ("Hold[(c /; x_) | y]", "Hold[(c /; x_) | y]"),
+    ("Hold[x | (7 &)]", "Hold[x | (7 & )]"),
+    (
+      "ToString[FullForm[Hold[(a && b) && c]]]",
+      "Hold[And[And[a, b], c]]",
+    ),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  // Evaluation is unaffected by the nesting.
+  assert_eq!(interpret("(True && x) && y").unwrap(), "x && y");
+  assert_eq!(interpret("MatchQ[2, (1 | 2) | 3]").unwrap(), "True");
+}
+
+// Comparisons nested in `===`, factorials as shorthand operands and Part
+// bases, exponents printed with `.`, and an explicit Divide[-1, n].
+#[test]
+fn held_comparison_factorial_and_exponent_operands() {
+  for (input, expected) in [
+    ("HoldForm[(a == b) === c]", "HoldForm[a == b === c]"),
+    ("HoldForm[a === (b == c)]", "HoldForm[a === b == c]"),
+    ("HoldForm[(a < b) === c]", "HoldForm[a < b === c]"),
+    ("HoldForm[(a === b) === c]", "HoldForm[(a === b) === c]"),
+    ("HoldForm[(a === b) == c]", "HoldForm[(a === b) == c]"),
+    ("HoldForm[(a == b) == c]", "HoldForm[(a == b) == c]"),
+    ("Hold[a @@ (x!)]", "Hold[a @@ (x!)]"),
+    ("Hold[(x!) @@ a]", "Hold[(x!) @@ a]"),
+    ("Hold[((x_)!)[[2]]]", "Hold[((x_)!)[[2]]]"),
+    ("Hold[_Integer^(c . a)]", "Hold[_Integer^(c . a)]"),
+    ("Hold[Divide[-1, 3]]", "Hold[-1/3]"),
+    ("Hold[-1/3]", "Hold[-3^(-1)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Assignment operands and StringExpression inside held operators.
+#[test]
+fn held_assignment_operands_and_string_expressions() {
+  for (input, expected) in [
+    ("Hold[(f &) = 3]", "Hold[f &  = 3]"),
+    ("Hold[(f &) := 3]", "Hold[f &  := 3]"),
+    ("Hold[(x_ = 7) ^= y]", "Hold[(x_ = 7) ^= y]"),
+    ("Hold[(a = b) = c]", "Hold[(a = b) = c]"),
+    ("Hold[(a ~~ b) /. c]", "Hold[StringExpression[a, b] /. c]"),
+    ("Hold[c /. (a ~~ b)]", "Hold[c /. StringExpression[a, b]]"),
+    (
+      "ToString[Hold[(a ~~ b) /. c], InputForm]",
+      "Hold[a~~b /. c]",
+    ),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// `~~` (135), `:` (150) and `|` (160) bind looser than the comparisons,
+// `&&` and `||`, and tighter than `/;` and `->`.
+#[test]
+fn alternatives_string_expression_and_colon_precedence() {
+  for (input, expected) in [
+    ("Hold[a | b == c]", "Hold[Alternatives[a, Equal[b, c]]]"),
+    ("Hold[a | b && c]", "Hold[Alternatives[a, And[b, c]]]"),
+    ("Hold[a && b | c]", "Hold[Alternatives[And[a, b], c]]"),
+    ("Hold[a | b || c]", "Hold[Alternatives[a, Or[b, c]]]"),
+    ("Hold[a | b -> c]", "Hold[Rule[Alternatives[a, b], c]]"),
+    (
+      "Hold[a ~~ b == c]",
+      "Hold[StringExpression[a, Equal[b, c]]]",
+    ),
+    (
+      "Hold[a ~~ b | c]",
+      "Hold[StringExpression[a, Alternatives[b, c]]]",
+    ),
+    ("Hold[x : a == b]", "Hold[Pattern[x, Equal[a, b]]]"),
+    (
+      "Hold[x : a | b : v]",
+      "Hold[Optional[Pattern[x, Alternatives[a, b]], v]]",
+    ),
+    (
+      "Hold[x_ /; a | b]",
+      "Hold[Condition[Pattern[x, Blank[]], Alternatives[a, b]]]",
+    ),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  // Printing follows the same order.
+  for (input, expected) in [
+    ("Hold[(b -> x_) | (s === y)]", "Hold[(b -> x_) | s === y]"),
+    ("Hold[(a && b) | c]", "Hold[a && b | c]"),
+    ("Hold[a && (b | c)]", "Hold[a && (b | c)]"),
+    ("Hold[a | (x_ -> f)]", "Hold[a | (x_ -> f)]"),
+    ("Hold[(a | b) == c]", "Hold[(a | b) == c]"),
+    ("Hold[a | b | c]", "Hold[a | b | c]"),
+    ("Hold[-(-2)]", "Hold[-(-2)]"),
+    ("Hold[-(-2.5)]", "Hold[-(-2.5)]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// `+=`, `-=`, `*=`, `/=` (Precedence 100) take everything that binds
+// tighter as their left side, and `/.` (110) goes into their right side
+// while `//` (70) wraps them.
+#[test]
+fn compound_assignment_precedence() {
+  for (input, expected) in [
+    ("Hold[a + b += c]", "Hold[AddTo[Plus[a, b], c]]"),
+    ("Hold[a == b += c]", "Hold[AddTo[Equal[a, b], c]]"),
+    ("Hold[a -> b += c]", "Hold[AddTo[Rule[a, b], c]]"),
+    ("Hold[x += 1]", "Hold[AddTo[x, 1]]"),
+    ("Hold[a[[1]] -= 2]", "Hold[SubtractFrom[Part[a, 1], 2]]"),
+    ("Hold[s += a /. b]", "Hold[AddTo[s, ReplaceAll[a, b]]]"),
+    ("Hold[(s += a) /. b]", "Hold[ReplaceAll[AddTo[s, a], b]]"),
+    ("Hold[s += a // f]", "Hold[f[AddTo[s, a]]]"),
+    (
+      "Hold[x = s += a /. b]",
+      "Hold[Set[x, AddTo[s, ReplaceAll[a, b]]]]",
+    ),
+    ("Hold[x += 1 &]", "Hold[Function[AddTo[x, 1]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(
+    interpret("Module[{s = 1}, s += x /. x -> 2; s]").unwrap(),
+    "3"
+  );
+  assert_eq!(
+    interpret("Module[{a = {1, 2}}, a[[1]] *= 5; a]").unwrap(),
+    "{5, 2}"
+  );
+  // Printing: `/;` brackets looser operands, `+=` a pure function target.
+  for (input, expected) in [
+    ("Hold[(a :> b) /; c]", "Hold[(a :> b) /; c]"),
+    ("Hold[(a += b) /; c]", "Hold[(a += b) /; c]"),
+    ("Hold[a /; (b /; c)]", "Hold[a /; (b /; c)]"),
+    ("Hold[(f &) += 3]", "Hold[(f & ) += 3]"),
+    ("Hold[a/Times[Rule[2]]]", "Hold[a/Times[Rule[2]]]"),
+    ("Hold[StringJoin[a, b][c]]", "Hold[StringJoin[a, b][c]]"),
+    ("Hold[Power[8^7, x]]", "Hold[(8^7)^x]"),
+    ("Hold[a*Times[f]]", "Hold[a*Times[f]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// `//=` (ApplyTo, Precedence 75) is a chain operator like `+=`: its left
+// side is everything that binds tighter, and `&` (90) goes into its right
+// side. A part or a call with a value is a valid target.
+#[test]
+fn apply_to_precedence_and_targets() {
+  for (input, expected) in [
+    ("Hold[a + b //= f]", "Hold[ApplyTo[Plus[a, b], f]]"),
+    ("Hold[a == b //= f]", "Hold[ApplyTo[Equal[a, b], f]]"),
+    ("Hold[s //= a /. b]", "Hold[ApplyTo[s, ReplaceAll[a, b]]]"),
+    ("Hold[s //= a // f]", "Hold[f[ApplyTo[s, a]]]"),
+    ("Hold[x //= f &]", "Hold[ApplyTo[x, Function[f]]]"),
+    ("Hold[(x //= f) &]", "Hold[Function[ApplyTo[x, f]]]"),
+    ("Hold[a[[1]] //= f]", "Hold[ApplyTo[Part[a, 1], f]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(interpret("Precedence[ApplyTo]").unwrap(), "75.");
+  assert_eq!(interpret("Module[{x = 4}, x //= Sqrt; x]").unwrap(), "2");
+  assert_eq!(
+    interpret("Module[{a = {4, 9}}, a[[2]] //= Sqrt; a]").unwrap(),
+    "{4, 3}"
+  );
+  assert_eq!(
+    interpret("m = {{1, 2}, {3, 4}}; m[[2, 1]] //= Minus; m").unwrap(),
+    "{{1, 2}, {-3, 4}}"
+  );
+  assert_eq!(
+    interpret(r#"c["x"] = 3; c["x"] //= (#^2 &); c["x"]"#).unwrap(),
+    "9"
+  );
+}
+
+// Precedence comes from wolframscript's own table for every built-in
+// operator symbol, 670 for other symbols and 1000 for non-symbols.
+#[test]
+fn precedence_matches_wolfram_table() {
+  for (head, expected) in [
+    ("Condition", "130."),
+    ("Optional", "140."),
+    ("MapApply", "620."),
+    ("Infix", "630."),
+    ("Unset", "670."),
+    ("TagSet", "670."),
+    ("Inequality", "670."),
+    ("Del", "550."),
+    ("Square", "540."),
+    ("Get", "720."),
+    ("Slot", "740."),
+    ("Complex", "310."),
+    ("RightTee", "190."),
+    ("DoubleRightArrow", "270."),
+    ("UpArrow", "580."),
+    ("VerticalBar", "280."),
+    ("I", "1000."),
+    ("Infinity", "1000."),
+    ("Plus", "310."),
+    ("f", "670."),
+  ] {
+    assert_eq!(
+      interpret(&format!("Precedence[{head}]")).unwrap(),
+      expected,
+      "{head}"
+    );
+  }
+}
+
+// A held sum whose term is a parsed `-1*b*c` (the -1 nested in the
+// product chain) prints as a subtraction.
+#[test]
+fn held_sum_with_negated_product_chain() {
+  for (input, expected) in [
+    ("Hold[a + (-1*b*c)]", "Hold[a - b*c]"),
+    ("Hold[a + (-2*b*c)]", "Hold[a - 2*b*c]"),
+    ("Hold[a + (-1*b*c*d)]", "Hold[a - b*c*d]"),
+    (r#"HoldForm[{x_} + (-1 * "s" * f)]"#, "HoldForm[{x_} - s*f]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Held quotient factors, nested pure functions and `&&` groups, `!` in
+// `|`, Span in operator operands, and call-form operands of `@*`, `/@`,
+// `//`.
+#[test]
+fn held_operand_forms_round_seven() {
+  for (input, expected) in [
+    ("Hold[2*(f/ab)]", "Hold[2*f/ab]"),
+    ("Hold[-2*(f/ab)]", "Hold[-2*f/ab]"),
+    ("Hold[(# &) &]", "Hold[(#1 & ) & ]"),
+    ("Hold[a | !b]", "Hold[a |  !b]"),
+    ("Hold[Span[a, b] //. c]", "Hold[Span[a, b] //. c]"),
+    (
+      "ToString[Hold[Span[a, b] //. c], InputForm]",
+      "Hold[a ;; b //. c]",
+    ),
+    ("Hold[x // Span[a, b]]", "Hold[Span[a, b][x]]"),
+    (
+      "Hold[StringJoin[a == b, c] @* x]",
+      "Hold[StringJoin[a == b, c] @* x]",
+    ),
+    (
+      "Hold[f /@ StringJoin[b &, c]]",
+      "Hold[f /@ StringJoin[b & , c]]",
+    ),
+    ("Hold[((a && b) && c)/d]", "Hold[((a && b) && c)/d]"),
+    ("Hold[(a += b) &]", "Hold[a += b & ]"),
+    ("Hold[(a = b) &]", "Hold[(a = b) & ]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Prefix and postfix `++`/`--` take a parenthesized expression, a list or
+// a slot as operand, and bracket an operand printed with a looser operator.
+#[test]
+fn increment_decrement_operands() {
+  for (input, expected) in [
+    ("Hold[--(a < b)]", "Hold[PreDecrement[Less[a, b]]]"),
+    ("Hold[++{a, b}]", "Hold[PreIncrement[List[a, b]]]"),
+    (
+      "Hold[++(a; b)]",
+      "Hold[PreIncrement[CompoundExpression[a, b]]]",
+    ),
+    ("Hold[(a + b)++]", "Hold[Increment[Plus[a, b]]]"),
+    ("Hold[{a}--]", "Hold[Decrement[List[a]]]"),
+    ("Hold[(a++)++]", "Hold[Increment[Increment[a]]]"),
+    ("Hold[#++]", "Hold[Increment[Slot[1]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  for (input, expected) in [
+    ("Hold[--(a < b)]", "Hold[--(a < b)]"),
+    ("Hold[(a + b)++]", "Hold[(a + b)++]"),
+    ("Hold[(-a)++]", "Hold[(-a)++]"),
+    ("Hold[++(a!)]", "Hold[++(a!)]"),
+    ("Hold[(1/2)++]", "Hold[(1/2)++]"),
+    ("Hold[(x_)++]", "Hold[(x_)++]"),
+    ("Hold[++f[x]]", "Hold[++f[x]]"),
+    ("Hold[x[[1]]++]", "Hold[x[[1]]++]"),
+    ("Hold[(a++)++]", "Hold[a++++]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(interpret("x = 5; --x").unwrap(), "4");
+}
+
+// `<->` (125) brackets looser operands on both sides, a negative literal
+// is bracketed as the right operand of /@, @@, @@@, `-2 /* 0` is
+// `-(2 /* 0)`, and ++/-- take a string or slot.
+#[test]
+fn two_way_rule_negative_operands_and_string_increments() {
+  for (input, expected) in [
+    ("Hold[(a <-> b) && c]", "Hold[(a <-> b) && c]"),
+    ("Hold[(a += b) <-> c]", "Hold[(a += b) <-> c]"),
+    ("Hold[(a -> b) <-> c]", "Hold[(a -> b) <-> c]"),
+    ("Hold[(a <-> b) <-> c]", "Hold[(a <-> b) <-> c]"),
+    ("Hold[f @@ -2]", "Hold[f @@ (-2)]"),
+    ("Hold[f /@ -2]", "Hold[f /@ (-2)]"),
+    ("Hold[--\"s\"]", "Hold[--s]"),
+    ("Hold[\"s\"--]", "Hold[s--]"),
+    ("Hold[++#2]", "Hold[++#2]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(
+    interpret("ToString[FullForm[Hold[-2 /* 0]]]").unwrap(),
+    "Hold[Times[-1, RightComposition[2, 0]]]"
+  );
+}
+
+// Primes on lists, strings, slots and patterns; ++/-- on patterns; and the
+// operand forms found in the same fuzz round.
+#[test]
+fn primes_pattern_increments_and_round_eleven_operands() {
+  for (input, expected) in [
+    ("Hold[{}']", "Hold[Derivative[1][{}]]"),
+    ("Hold[\"s\"']", "Hold[Derivative[1][s]]"),
+    ("Hold[#2']", "Hold[Derivative[1][#2]]"),
+    ("Hold[x_']", "Hold[Derivative[1][x_]]"),
+    ("Hold[++x_]", "Hold[++(x_)]"),
+    ("Hold[x_--]", "Hold[(x_)--]"),
+    ("Hold[(++f)[[3]]]", "Hold[(++f)[[3]]]"),
+    ("HoldForm[f[Divide[-1, 2]]]", "HoldForm[f[-1/2]]"),
+    (
+      "FullForm[Hold[x ~~ 0]]",
+      "FullForm[Hold[StringExpression[x, 0]]]",
+    ),
+    ("Hold[a += (b ^= c)]", "Hold[a += (b ^= c)]"),
+    ("Hold[a += (b += c)]", "Hold[a += b += c]"),
+    ("Hold[Power[{}, a . a]]", "Hold[{}^(a . a)]"),
+    ("Hold[StringJoin[a, b]!!]", "Hold[StringJoin[a, b]!!]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(
+    interpret("ToString[FullForm[Hold[x_--]]]").unwrap(),
+    "Hold[Decrement[Pattern[x, Blank[]]]]"
+  );
+  assert_eq!(interpret("G3[x_'[t]] := x; G3[y'[t]]").unwrap(), "y");
+}
+
+// A parenthesized `<>` group stays a nested StringJoin, as in wolframscript.
+#[test]
+fn parenthesized_string_join_keeps_nesting() {
+  assert_eq!(
+    interpret(r#"ToString[FullForm[Hold["a" <> ("b" <> "c")]]]"#).unwrap(),
+    r#"Hold[StringJoin["a", StringJoin["b", "c"]]]"#
+  );
+  assert_eq!(
+    interpret(r#"HoldForm["a" <> ("b" <> "c")]"#).unwrap(),
+    "HoldForm[StringJoin[a, StringJoin[b, c]]]"
+  );
+  assert_eq!(interpret(r#""a" <> ("b" <> "c")"#).unwrap(), "abc");
+}
+
+// `++(x)[[3]]` is PreIncrement[Part[x, 3]], `++f'` is
+// Derivative[1][PreIncrement[f]], and a held `(f =!= g) + -1` keeps its
+// brackets as a subtraction.
+#[test]
+fn prefix_increment_suffixes_and_held_subtraction_operand() {
+  for (input, expected) in [
+    ("Hold[++(x)[[3]]]", "Hold[PreIncrement[Part[x, 3]]]"),
+    ("Hold[++(x)[y]]", "Hold[PreIncrement[x[y]]]"),
+    ("Hold[++f']", "Hold[Derivative[1][PreIncrement[f]]]"),
+    ("Hold[++(f)']", "Hold[Derivative[1][PreIncrement[f]]]"),
+    ("Hold[--x'']", "Hold[Derivative[2][PreDecrement[x]]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(
+    interpret("Hold[(f =!= g) + -1]").unwrap(),
+    "Hold[(f =!= g) - 1]"
+  );
+}
+
+// `<->` groups to the right, a one-argument Plus prints bare as a product
+// factor but bracketed inside a sum, and `(x)[[i]]--` parses.
+#[test]
+fn two_way_rule_grouping_single_plus_and_paren_part_decrement() {
+  for (input, expected) in [
+    ("Hold[a <-> (b <-> c)]", "Hold[a <-> b <-> c]"),
+    ("Hold[(a <-> b) <-> c]", "Hold[(a <-> b) <-> c]"),
+    ("Hold[a*Plus[b]]", "Hold[a*Plus[b]]"),
+    ("Hold[Times[a, Plus[b], c]]", "Hold[a*Plus[b]*c]"),
+    ("Hold[a + Plus[b]]", "Hold[a + (Plus[b])]"),
+    ("Hold[(4)[[3]]--]", "Hold[4[[3]]--]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(interpret("x = {1, 2}; (x)[[1]]++; x").unwrap(), "{2, 2}");
+}
+
+// An unevaluated sum with a negative literal or a parsed `-1/x` term prints
+// it as a subtraction, whether it is held by Hold or by If's held branches.
+#[test]
+fn unevaluated_sum_with_negative_literal_term() {
+  for (input, expected) in [
+    ("If[x, {0, 1} + -2, 1]", "If[x, {0, 1} - 2, 1]"),
+    ("Hold[a + -3]", "Hold[a - 3]"),
+    ("Hold[Plus[a, -1/2]]", "Hold[a - 2^(-1)]"),
+    ("Hold[Plus[a, -1/x, b]]", "Hold[a - x^(-1) + b]"),
+    ("Hold[a + -1/x + b]", "Hold[a - x^(-1) + b]"),
+    ("Hold[Plus[-1/x, b]]", "Hold[-x^(-1) + b]"),
+    ("Hold[Plus[a, -x/2]]", "Hold[a + -x/2]"),
+    ("f[a + -3]", "f[-3 + a]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }

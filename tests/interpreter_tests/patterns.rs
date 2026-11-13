@@ -2384,6 +2384,40 @@ mod replace_list {
     );
   }
 
+  // A condition on the pattern is checked for every match, not only the
+  // first one.
+  #[test]
+  fn pattern_condition_filters_each_match() {
+    for arrow in ["->", ":>"] {
+      assert_eq!(
+        interpret(&format!(
+          "ReplaceList[{{1, 2, 3, 4}}, {{u__, v__}} /; Length[{{u}}] > 1 {arrow} {{v}}]"
+        ))
+        .unwrap(),
+        "{{3, 4}, {4}}"
+      );
+    }
+    // Conditions on both the pattern and the replacement.
+    assert_eq!(
+      interpret(
+        "ReplaceList[{1, 2, 3, 4}, ({u__, v__} /; Length[{u}] > 1) :> \
+         ({v} /; Length[{v}] > 1)]"
+      )
+      .unwrap(),
+      "{{3, 4}}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[{1, 2, 3}, {___, u_, ___} /; OddQ[u] :> u]")
+        .unwrap(),
+      "{1, 3}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[a + b + c, x_ + y_ /; x =!= a :> {x, y}]")
+        .unwrap(),
+      "{{b, a + c}, {c, a + b}, {a + b, c}, {a + c, b}, {b + c, a}}"
+    );
+  }
+
   #[test]
   fn honors_n_limit() {
     assert_eq!(
