@@ -15479,3 +15479,20 @@ fn prefix_increment_suffixes_and_held_subtraction_operand() {
     "Hold[(f =!= g) - 1]"
   );
 }
+
+// `<->` groups to the right, a one-argument Plus prints bare as a product
+// factor but bracketed inside a sum, and `(x)[[i]]--` parses.
+#[test]
+fn two_way_rule_grouping_single_plus_and_paren_part_decrement() {
+  for (input, expected) in [
+    ("Hold[a <-> (b <-> c)]", "Hold[a <-> b <-> c]"),
+    ("Hold[(a <-> b) <-> c]", "Hold[(a <-> b) <-> c]"),
+    ("Hold[a*Plus[b]]", "Hold[a*Plus[b]]"),
+    ("Hold[Times[a, Plus[b], c]]", "Hold[a*Plus[b]*c]"),
+    ("Hold[a + Plus[b]]", "Hold[a + (Plus[b])]"),
+    ("Hold[(4)[[3]]--]", "Hold[4[[3]]--]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+  assert_eq!(interpret("x = {1, 2}; (x)[[1]]++; x").unwrap(), "{2, 2}");
+}

@@ -507,8 +507,8 @@ PartDecScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanG
 // A parenthesized expression, a list or a slot takes a postfix `++`/`--`
 // too: `(a + b)++` is Increment[a + b], `{a}--` Decrement[{a}].
 IncDecGroup = _{ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" | List | Slot | String | PatternWithHead | PatternSimple }
-Increment = { (&((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "++") ~ IncDecGroup | &PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
-Decrement = { (&((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "--") ~ IncDecGroup | &PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
+Increment = { (&(ParenExtended ~ "++") ~ ParenExtended | &((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "++") ~ IncDecGroup | &PartIncScan ~ PartExtract | Identifier | NumericValue) ~ IncrementOp ~ IncrementOp* }
+Decrement = { (&(ParenExtended ~ "--") ~ ParenExtended | &((BalancedParens | BalancedBraces | Slot | String | PatternWithHead | PatternSimple) ~ "--") ~ IncDecGroup | &PartDecScan ~ PartExtract | Identifier | NumericValue) ~ DecrementOp ~ DecrementOp* }
 
 // PreIncrement/PreDecrement: ++x or --x (prefix operators)
 // Also supports Part extraction: ++x[[i]] or --x[[i]]

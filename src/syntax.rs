@@ -9390,7 +9390,7 @@ fn format_times_with_denominator(
   // infix products such as Star)
   let fmt_factor = |a: &Expr| -> String {
     let s = formatter(a);
-    if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+    if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
       || matches!(
         a,
         Expr::BinaryOp {
@@ -11176,19 +11176,24 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         return format!("{} -> {}", fmt(&args[0]), fmt(&args[1]));
       }
       if name == "TwoWayRule" && args.len() == 2 {
-        // An operand binding as loose or looser is bracketed on either
-        // side — `<->` is not Flat: `(a -> b) <-> c`, `(a <-> b) <-> c`.
-        let operand = |e: &Expr| {
+        // An operand binding as loose or looser is bracketed — `<->` is not
+        // Flat and groups to the right: `(a -> b) <-> c`, `(a <-> b) <-> c`,
+        // but `a <-> b <-> c` for a right-nested one.
+        let operand = |e: &Expr, right: bool| {
           let text = fmt(e);
-          if printed_infix_precedence(e).is_some_and(|p| p <= 13)
-            && !prints_as_call(&text)
-          {
+          let looser = printed_infix_precedence(e)
+            .is_some_and(|p| if right { p < 13 } else { p <= 13 });
+          if looser && !prints_as_call(&text) {
             format!("({text})")
           } else {
             text
           }
         };
-        return format!("{} <-> {}", operand(&args[0]), operand(&args[1]));
+        return format!(
+          "{} <-> {}",
+          operand(&args[0], false),
+          operand(&args[1], true)
+        );
       }
       // Graph edges render as infix with their Wolfram private-use glyphs,
       // matching `wolframscript -code` (which prints U+F3D5/U+F3D4 directly).
@@ -12198,7 +12203,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           let fmt_factor = |a: &Expr| -> String {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -12236,7 +12241,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         {
           let fmt_factor = |a: &Expr| -> String {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -12334,7 +12339,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               .iter()
               .map(|a| {
                 let s = fmt(a);
-                if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                   || matches!(
                     a,
                     Expr::BinaryOp {
@@ -12386,7 +12391,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             .iter()
             .map(|a| {
               let s = fmt(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                 || matches!(
                   a,
                   Expr::BinaryOp {
@@ -12543,7 +12548,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   .collect();
                 let fmt_factor = |a: &Expr| -> String {
                   let s = fmt(a);
-                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                  if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                     || matches!(
                       a,
                       Expr::BinaryOp {
@@ -12602,7 +12607,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 .iter()
                 .map(|a| {
                   let s = fmt(a);
-                  if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+                  if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                     || matches!(
                       a,
                       Expr::BinaryOp {
@@ -12631,7 +12636,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           .iter()
           .map(|a| {
             let s = fmt(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(
                 a,
                 Expr::BinaryOp {
@@ -12676,10 +12681,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // Nested Plus inside Plus needs parens to preserve grouping in held
         // expressions: `Plus[1, Plus[1, 1]]` → `1 + (1 + 1)`. Without parens
         // the displayed `1 + 1 + 1` would parse as the flat `Plus[1, 1, 1]`.
+        // (A one-argument `Plus[b]` too: `a + (Plus[b])`.)
         let needs_nested_plus_parens = |a: &Expr| -> bool {
           matches!(
             a,
-            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+            Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty()
           ) || matches!(
             a,
             Expr::BinaryOp {
@@ -13791,7 +13797,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ) || matches!(
             right.as_ref(),
-            Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2
+            Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty()
           )))
         // Minus with an additive right operand: subtraction is left-
         // associative, so a held `a - (b + c)` / `a - (b - c)` must keep
@@ -13838,8 +13844,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               ..
             }
           ));
+      // (A nested sum keeps them even in call form: `a + (Plus[b])`.)
+      let nested_sum = matches!(op, BinaryOperator::Plus)
+        && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
       let needs_right_parens =
-        needs_right_parens && !prints_as_call(&right_str);
+        needs_right_parens && (nested_sum || !prints_as_call(&right_str));
       let right_formatted = if needs_right_parens {
         format!("({right_str})")
       } else {
@@ -16651,7 +16660,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             .iter()
             .map(|a| {
               let s = expr_to_input_form(a);
-              if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+              if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
                 || matches!(
                   a,
                   Expr::BinaryOp {
@@ -16671,7 +16680,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
         } else {
           let parts: Vec<String> = args.iter().map(|a| {
             let s = expr_to_input_form(a);
-            if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
+            if matches!(a, Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2)
               || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
               || is_looser_than_times_infix(a)
               || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
