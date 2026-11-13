@@ -22824,14 +22824,17 @@ fn grid_ast_internal(
     && !has_item_alignment(args)
     && let Some(rows) = grid_of_graphics_svgs(args)
   {
-    // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
-    // are honored by the one layout `expr_to_svg` gives a `Grid` holding
-    // pictures; the bare composition below would silently drop them.
-    if args.len() > 1 {
-      let grid = Expr::FunctionCall {
-        name: "Grid".to_string(),
-        args: args.to_vec().into(),
-      };
+    // `expr_to_svg` gives a `Grid` holding pictures its one layout: it
+    // honors options (`Frame -> All`, `Spacings`, `Alignment`, …) and
+    // spaces the cells the way the front end spaces a table. The bare
+    // composition below is `GraphicsGrid`'s (a tenth of a cell apart), so
+    // it is only a fallback — also for a grid that layout does not take
+    // as one of pictures (it would hand that back here).
+    let grid = Expr::FunctionCall {
+      name: "Grid".to_string(),
+      args: args.to_vec().into(),
+    };
+    if crate::evaluator::lays_out_a_graphic(&grid) {
       let svg = crate::evaluator::expr_to_svg(&grid);
       if !svg.is_empty() {
         crate::clear_captured_graphics();

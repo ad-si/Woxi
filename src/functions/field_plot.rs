@@ -7231,7 +7231,13 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .unwrap_or(Expr::Real(max_abs));
 
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  let (svg_width, mut svg_height, full_width) = parse_field_options(args, 1);
+  // A single `ImageSize -> w` is the picture's width, as for any graphics:
+  // a tall array grows downward from it instead of shrinking into a
+  // `w` x `w` square.
+  if image_size_is_single_width(args, 1) {
+    svg_height = u32::MAX;
+  }
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
@@ -7764,6 +7770,29 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => buf,
   };
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// Whether the `ImageSize` option among `args[start..]` is a single width
+/// (a number or a named size), which fixes only the picture's width.
+fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
+  args.iter().skip(start).any(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      match &value {
+        Expr::Identifier(n) => {
+          matches!(n.as_str(), "Tiny" | "Small" | "Medium" | "Large")
+        }
+        Expr::List(_) => false,
+        Expr::FunctionCall { .. } => false,
+        other => try_eval_to_f64(other).is_some_and(|v| v > 0.0),
+      }
+    }
+    _ => false,
+  })
 }
 
 /// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`
