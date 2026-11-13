@@ -14841,10 +14841,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // edge) must spill past the box rather than be cut off.
   let has_explicit_range = plot_range_x.is_some() || plot_range_y.is_some();
   // Wolfram's default (`PlotRangeClipping -> False`) cuts primitives off
-  // only at the image's edge: past a frame or axes they spill into the
-  // margins.
+  // only at the image's edge: past a frame or axes, or into an explicit
+  // `ImagePadding`, they spill into the margins.
+  let has_explicit_padding =
+    image_padding.is_some_and(|p| p.iter().any(|&m| m > 0.0));
   let clip_primitives = clip_primitives
-    && (clipping_requested || !(frame || axes.0 || axes.1))
+    && (clipping_requested
+      || !(frame || axes.0 || axes.1 || has_explicit_padding))
     && (has_explicit_range
       || !primitives
         .iter()

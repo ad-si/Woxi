@@ -4043,6 +4043,38 @@ mod graphics {
       );
     }
 
+    // Under the default `PlotRangeClipping -> False`, a bare picture with
+    // an explicit `ImagePadding` draws primitives past its `PlotRange` into
+    // that padding; only the image edge cuts them off. Woxi used to clip
+    // them at the drawing area, hiding labels Wolfram shows in the margin.
+    #[test]
+    fn primitive_beyond_plot_range_spills_into_explicit_image_padding() {
+      let code = |extra: &str| {
+        format!(
+          "Graphics[{{Text[\"a\", {{0, 0}}], Text[\"b\", {{1.2, 0}}]}}, \
+           PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, ImagePadding -> 40{extra}]"
+        )
+      };
+      let padded = export_svg(&code(""));
+      assert!(
+        !padded.contains("clip-path=\"url("),
+        "primitives must spill into the padding: {padded}"
+      );
+      // x = 1.2 lies 0.2 units (28 px) past the 280 px drawing area.
+      assert!(padded.contains("x=\"308.00\""), "{padded}");
+
+      // Clipping asked for outright still cuts at the drawing area.
+      let clipped = export_svg(&code(", PlotRangeClipping -> True"));
+      assert!(clipped.contains("clip-path=\"url("), "{clipped}");
+
+      // Without padding the drawing area is the image, so it still clips.
+      let bare = export_svg(
+        "Graphics[{Text[\"a\", {0, 0}], Text[\"b\", {1.2, 0}]}, \
+         PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(bare.contains("clip-path=\"url("), "{bare}");
+    }
+
     // `PlotRangePadding` was silently ignored (it wasn't parsed at all), so
     // an explicit `PlotRange` always rendered with zero padding around it —
     // found via a Demonstration's logo-shaped `Graphics` that relied on
@@ -48739,13 +48771,15 @@ mod grid_repeating_decimal_alignment {
     assert!(framed.contains("<text"), "{framed}");
   }
 
-  /// `PlotRangeClipping -> False` lets a primitive past the plot range be
-  /// drawn into the margins; by default it is cut off at the frame edge.
+  /// `PlotRangeClipping -> False` (the default) lets a primitive past the
+  /// plot range be drawn into the margins; `PlotRangeClipping -> True`
+  /// cuts it off at the frame edge.
   #[test]
   fn plot_range_clipping_false_leaves_primitives_unclipped() {
     let clipped = export_svg(
       "Graphics[{Text[\"edge\", {1.05, 0.5}, {-1, 0}]}, \
-       PlotRange -> {{0, 1}, {0, 1}}, ImagePadding -> {{50, 50}, {20, 20}}]",
+       PlotRange -> {{0, 1}, {0, 1}}, ImagePadding -> {{50, 50}, {20, 20}}, \
+       PlotRangeClipping -> True]",
     );
     assert!(clipped.contains("<g clip-path="), "{clipped}");
     let unclipped = export_svg(
