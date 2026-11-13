@@ -55234,3 +55234,48 @@ mod labeled_text_and_pane_wrapping {
     assert!(svg.starts_with("<svg width=\"200\" height=\"10"), "{svg}");
   }
 }
+
+#[test]
+fn pane_wraps_list_of_pictures_at_its_width() {
+  // Regression: a list of pictures inside a fixed-width `Pane` breaks into
+  // lines at the pane's width (as the front end does), instead of running
+  // on in one line and being cut off at the pane's edge.
+  let pictures = "Table[Image[Table[{1, 0, 0}, 75, 75]], 10]";
+  let svg = export_svg(&format!("Pane[{pictures}, {{500, 200}}]"));
+  assert!(
+    svg.starts_with("<svg width=\"500\" height=\"200\""),
+    "{svg}"
+  );
+  // Five pictures fit in 500 points, so the ten go five and five, the
+  // second line indented past the opening brace.
+  assert!(svg.contains("<svg width=\"442\" height=\"169\""), "{svg}");
+  assert!(svg.contains("<svg x=\"357.72\" y=\"0.00\""), "{svg}");
+  assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
+  assert!(!svg.contains("paneClip"), "{svg}");
+  // A width alone wraps the same way.
+  let width_only = export_svg(&format!("Pane[{pictures}, 300]"));
+  assert!(width_only.contains("y=\"187.50\""), "{width_only}");
+  // Without a pane the list stays on one line of the page.
+  let bare = export_svg(pictures);
+  assert!(!bare.contains("y=\"93.75\""), "{bare}");
+}
+
+#[test]
+fn notebook_pane_wraps_list_of_pictures_at_its_width() {
+  // Regression: a cell (or Manipulate body) showing `Pane[{pictures…},
+  // {w, h}]` set the list on one page-wide line instead of breaking it at
+  // the pane's width and filling the pane's box.
+  clear_state();
+  let result = interpret_with_stdout(
+    "Pane[Table[Image[Table[{0, 0, 1}, 75, 75]], 10], {500, 200}]",
+  )
+  .unwrap();
+  assert_eq!(result.result, "-Graphics-");
+  let svg = result.graphics.unwrap();
+  assert!(
+    svg.starts_with("<svg width=\"500\" height=\"200\""),
+    "{svg}"
+  );
+  assert!(svg.contains("<svg width=\"442\" height=\"169\""), "{svg}");
+  assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
+}
