@@ -39360,13 +39360,13 @@ fn split_label_run_lines(runs: Vec<LabelRun>) -> Vec<Vec<LabelRun>> {
   let mut lines = vec![Vec::new()];
   for run in runs {
     let mut segments = run.text.split('\n');
-    if let Some(first) = segments.next() {
-      if !first.is_empty() {
-        lines.last_mut().unwrap().push(LabelRun {
-          text: first.to_string(),
-          ..run.clone()
-        });
-      }
+    if let Some(first) = segments.next()
+      && !first.is_empty()
+    {
+      lines.last_mut().unwrap().push(LabelRun {
+        text: first.to_string(),
+        ..run.clone()
+      });
     }
     for segment in segments {
       let mut line = Vec::new();
