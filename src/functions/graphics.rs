@@ -33120,6 +33120,14 @@ pub struct ManipulateSpec {
   /// against the live bindings after every change (see
   /// [`manipulate_eval_label_code`]).
   pub dynamic_labels: Vec<(String, String)>,
+  /// Per-control `ControlPlacement -> Top | Bottom | Left | Right`, as
+  /// `(control name, side)`: `{{n, 3, "sides"}, {3, 4, 5}, ControlPlacement
+  /// -> Left}` moves just that control beside the output while the rest of
+  /// the panel stays where the widget-level [`Self::control_placement`]
+  /// puts it. Controls without the option do not appear here; the numeric
+  /// form (`ControlPlacement -> n`, for a `Place[n]` layout template) is
+  /// not a side and is ignored.
+  pub control_placements: Vec<(String, ControlPlacement)>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -33191,9 +33199,9 @@ pub struct ManipulateSpec {
 }
 
 /// Where a Manipulate's control panel sits relative to its output, from the
-/// widget-level `ControlPlacement` option. A `ControlPlacement` given inside
-/// an individual control spec places just that control in Wolfram; Woxi keeps
-/// one panel, so those are ignored and only the widget-level option applies.
+/// widget-level `ControlPlacement` option, or — for a single control — from a
+/// `ControlPlacement` given inside that control's spec (see
+/// [`ManipulateSpec::control_placements`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ControlPlacement {
   #[default]
@@ -33839,6 +33847,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut body_expr_kept: Option<Expr> = None;
   let mut dynamic_labels: Vec<(String, String)> =
     inner.as_ref().map_or_default(|i| i.dynamic_labels.clone());
+  let mut control_placements: Vec<(String, ControlPlacement)> = inner
+    .as_ref()
+    .map_or_default(|i| i.control_placements.clone());
   let mut module_locals: Vec<String> = Vec::new();
   let (
     body_code,
@@ -34595,6 +34606,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = dynamic_label_code(&spec) {
           dynamic_labels.push((c.name().to_string(), code));
         }
+        if let Some(side) = per_control_placement(&spec) {
+          control_placements.push((c.name().to_string(), side));
+        }
         // A compiled widget dump lists every module variable as a hidden
         // `{var, ControlType -> None}` entry ahead of the visible control
         // that redeclares it; the later visible control owns the value, so
@@ -35160,6 +35174,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds,
     dynamic_values,
     dynamic_labels,
+    control_placements,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -38496,6 +38511,27 @@ fn dynamic_button_label_code(label: &Expr) -> Option<String> {
   }
 }
 
+/// The side a single control spec asks to sit on with its own
+/// `ControlPlacement -> Top | Bottom | Left | Right` option (bare or as a
+/// singleton list). `None` when the spec states no side.
+fn per_control_placement(spec: &Expr) -> Option<ControlPlacement> {
+  let Expr::List(items) = spec else { return None };
+  items.iter().skip(1).find_map(|item| match item {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement") => {
+      bare_or_singleton_list_symbol(replacement)
+        .and_then(ControlPlacement::from_symbol)
+    }
+    _ => None,
+  })
+}
+
 /// The caption code of a control spec `{{var, init, Dynamic[caption]}, …}`
 /// whose label follows other control variables, or `None` for a static one.
 fn dynamic_label_code(spec: &Expr) -> Option<String> {
@@ -38706,6 +38742,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -38783,6 +38820,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -38873,6 +38911,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -39073,6 +39112,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -39133,6 +39173,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -39203,6 +39244,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
+    control_placements: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
@@ -47216,8 +47258,9 @@ mod manipulate_control_placement_tests {
   }
 
   /// `ControlPlacement` written inside a single control spec is Wolfram's
-  /// per-control form. Woxi keeps one panel, so that spec is still a
-  /// perfectly good slider and the widget keeps the default placement.
+  /// per-control form: that spec is still a perfectly good slider, the
+  /// widget keeps the default placement, and the side is recorded for just
+  /// that control.
   #[test]
   fn per_control_placement_leaves_the_widget_default() {
     let expr = crate::parse_to_expr(
@@ -47235,6 +47278,36 @@ mod manipulate_control_placement_tests {
       vec!["a"]
     );
     assert_eq!(spec.control_placement, ControlPlacement::Top);
+    assert_eq!(
+      spec.control_placements,
+      vec![("a".to_string(), ControlPlacement::Bottom)]
+    );
+  }
+
+  /// Per-control sides are recorded per control, in either written form
+  /// (`Left` or `{Left}`), alongside a widget-level placement; controls
+  /// without the option and the numeric `Place[n]` form record nothing.
+  #[test]
+  fn per_control_placement_records_each_side() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Graphics3D[If[c, Cuboid[], Sphere[{0, 0, 0}, r]]], \
+       {{r, 1, \"radius\"}, 0.5, 2}, \
+       {{k, 4, \"count\"}, {3, 4, 5, 6, 7, 8, 9, 10, 11}, \
+         ControlPlacement -> Left}, \
+       {{c, False, \"cube\"}, {True, False}, ControlPlacement -> {Right}}, \
+       {{t, 0, \"t\"}, 0, 1, ControlPlacement -> 2}, \
+       ControlPlacement -> Bottom]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.control_placement, ControlPlacement::Bottom);
+    assert_eq!(
+      spec.control_placements,
+      vec![
+        ("k".to_string(), ControlPlacement::Left),
+        ("c".to_string(), ControlPlacement::Right),
+      ]
+    );
   }
 
   /// A custom layout template (`Column[{Row[{Place[1], …}], Grid[{…}]}]`)

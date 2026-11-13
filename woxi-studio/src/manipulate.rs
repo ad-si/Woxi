@@ -603,6 +603,9 @@ pub struct ManipulateState {
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
   pub control_placement: ControlPlacement,
+  /// Per-control `ControlPlacement -> side` overrides, as `(control name,
+  /// side)` (see `ManipulateSpec::control_placements`).
+  control_placements: Vec<(String, ControlPlacement)>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -712,6 +715,24 @@ thread_local! {
 }
 
 impl ManipulateState {
+  /// Which side of the output the control at `ctrl_idx` sits on: its own
+  /// `ControlPlacement -> side` option when it states one, otherwise the
+  /// widget-level placement shared by the rest of the panel.
+  pub fn placement_of(&self, ctrl_idx: usize) -> ControlPlacement {
+    self
+      .controls
+      .get(ctrl_idx)
+      .filter(|ctrl| !ctrl.name().is_empty())
+      .and_then(|ctrl| {
+        self
+          .control_placements
+          .iter()
+          .find(|(name, _)| name == ctrl.name())
+          .map(|(_, side)| *side)
+      })
+      .unwrap_or(self.control_placement)
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -803,6 +824,7 @@ impl ManipulateState {
       playing: spec.animated && spec.animation_running,
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
+      control_placements: spec.control_placements,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
