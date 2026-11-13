@@ -2383,13 +2383,10 @@ impl WoxiStudio {
             // so their side effects (variable assignments, function
             // definitions, etc.) are available in the current cell.
             woxi::clear_state();
-            for prev in 0..idx {
-              if matches!(
-                self.cell_editors[prev].style,
-                CellStyle::Input | CellStyle::Code
-              ) {
-                let prev_code =
-                  self.cell_editors[prev].content.text().trim().to_string();
+            for prev_editor in &self.cell_editors[..idx] {
+              if matches!(prev_editor.style, CellStyle::Input | CellStyle::Code)
+              {
+                let prev_code = prev_editor.content.text().trim().to_string();
                 if !prev_code.is_empty() {
                   let _ = woxi::interpret_with_stdout(&prev_code);
                 }
@@ -31737,10 +31734,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     }
 
     // Drag all four 1D sliders and confirm the widget keeps rendering.
-    for idx in 0..4 {
-      if let manipulate::ControlState::Continuous { current, .. } =
-        &mut state.controls[idx]
-      {
+    for ctrl in &mut state.controls[..4] {
+      if let manipulate::ControlState::Continuous { current, .. } = ctrl {
         *current += 1.0;
       }
     }
