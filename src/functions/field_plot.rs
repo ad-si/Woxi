@@ -1017,6 +1017,19 @@ fn field_plot_axes(
     opts.full_width,
   );
   let (plot_x0, plot_y0, plot_w, plot_h) = layout.data_rect(sf);
+  // Record where the data range lies on the canvas, so `Show` can draw
+  // primitives given with the plot in the plot's own coordinates even
+  // though the plot itself is only kept as a picture.
+  if let Some(pos) = svg.find(" xmlns=") {
+    svg.insert_str(
+      pos,
+      &crate::functions::graphics::plot_frame_attr(
+        x_range,
+        y_range,
+        (plot_x0, plot_y0, plot_w, plot_h),
+      ),
+    );
+  }
   crate::functions::plot::PlotArea {
     svg,
     plot_x0,
@@ -6496,6 +6509,43 @@ fn parse_matrix_to_grid(
 }
 
 /// Parse {x,y,z} triples into a grid using inverse distance weighting
+/// The `grid[col][row]` of values (row 0 at the bottom) that `{x, y, z}`
+/// samples form when they cover every node of an evenly spaced grid of at
+/// least 2 × 2 nodes exactly once; None for scattered data.
+fn regular_triples_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
+  // The distinct coordinates along one axis, if evenly spaced.
+  let axis = |coord: fn(&(f64, f64, f64)) -> f64| -> Option<Vec<f64>> {
+    let mut vs: Vec<f64> = points.iter().map(coord).collect();
+    vs.sort_by(f64::total_cmp);
+    vs.dedup();
+    if vs.len() < 2 {
+      return None;
+    }
+    let step = (vs[vs.len() - 1] - vs[0]) / (vs.len() - 1) as f64;
+    let tol = step * 1e-6;
+    vs.iter()
+      .enumerate()
+      .all(|(k, v)| (v - (vs[0] + k as f64 * step)).abs() <= tol)
+      .then_some(vs)
+  };
+  let xs = axis(|p| p.0)?;
+  let ys = axis(|p| p.1)?;
+  if xs.len() * ys.len() != points.len() {
+    return None;
+  }
+  let index =
+    |vs: &[f64], v: f64| vs.binary_search_by(|probe| probe.total_cmp(&v)).ok();
+  let mut grid = vec![vec![f64::NAN; ys.len()]; xs.len()];
+  for &(x, y, z) in points {
+    let cell = &mut grid[index(&xs, x)?][index(&ys, y)?];
+    if !cell.is_nan() {
+      return None;
+    }
+    *cell = z;
+  }
+  Some(grid)
+}
+
 fn parse_triples_to_grid(
   rows: &[Expr],
   _func_name: &str,
@@ -6546,6 +6596,17 @@ fn parse_triples_to_grid(
   let y_max = points.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
   let z_min = points.iter().map(|p| p.2).fold(f64::INFINITY, f64::min);
   let z_max = points.iter().map(|p| p.2).fold(f64::NEG_INFINITY, f64::max);
+
+  // Triples that already sample a regular grid are that grid: shading them
+  // linearly between their own nodes, as Wolfram does, keeps a smooth
+  // surface smooth (inverse-distance weighting would put a spot on every
+  // sample).
+  if !nearest && let Some(grid) = regular_triples_grid(&points) {
+    let (n_cols, n_rows) = (grid.len(), grid[0].len());
+    return (
+      grid, x_min, x_max, y_min, y_max, z_min, z_max, n_rows, n_cols,
+    );
+  }
 
   // Nearest-sample shading needs a finer grid for sharp cell borders.
   let grid_n = if nearest { 256 } else { FIELD_GRID };

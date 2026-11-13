@@ -1,9 +1,8 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 20303
 expression: "export_svg(\"StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]\")"
 ---
-<svg width="360" height="359" viewBox="0 0 3600 3590" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<svg width="360" height="359" viewBox="0 0 3600 3590" preserveAspectRatio="xMidYMid meet" data-plot-frame="-2 2 -2 2 320.420 176.820 3092.760 3092.760" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="3590" opacity="1" fill="#FFFFFF" stroke="none"/>
 <defs><clipPath id="streamsClip_320_177_3093_3093"><rect x="320.42" y="176.82" width="3092.76" height="3092.76"/></clipPath></defs><g clip-path="url(#streamsClip_320_177_3093_3093)"><g transform="translate(320.4,176.8) scale(10.0)"><polyline points="0.24,295.13 1.19,296.16 2.14,297.19 3.11,298.22 4.08,299.23 5.05,300.25 6.04,301.25 7.03,302.25 8.03,303.24 9.03,304.22 10.04,305.20 10.52,305.65" fill="none" stroke="rgb(255,191,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="round"/>
 <polygon points="14.15,309.04 11.40,304.76 11.35,304.92 11.23,305.28 11.15,305.50 11.05,305.71 10.96,305.89 10.86,306.02 10.74,306.12 10.57,306.23 10.37,306.35 10.15,306.46 9.78,306.64 9.61,306.71" fill="rgb(255,191,0)"/>

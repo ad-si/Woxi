@@ -23000,6 +23000,90 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: `{x, y, z}` triples sampling a regular grid were shaded
+    /// by inverse-distance weighting, which put a bright or dark spot on
+    /// every sample of a smooth surface (e.g. every `SmoothDensityHistogram`).
+    /// They are the same grid as the matrix with the matching `DataRange`.
+    #[test]
+    fn list_density_plot_gridded_triples_match_matrix() {
+      for f in ["x^2 + y", "Sin[x] Cos[2 y]"] {
+        let triples = export_svg(&format!(
+          "ListDensityPlot[Flatten[Table[{{x, y, {f}}}, {{y, 0, 3}}, \
+           {{x, 0, 2, 1/2}}], 1]]"
+        ));
+        let matrix = export_svg(&format!(
+          "ListDensityPlot[Table[{f}, {{y, 0, 3}}, {{x, 0, 2, 1/2}}], \
+           DataRange -> {{{{0, 2}}, {{0, 3}}}}]"
+        ));
+        assert_eq!(triples, matrix, "{f}");
+      }
+      // Shuffled triples are the same grid.
+      assert_eq!(
+        export_svg(
+          "ListDensityPlot[{{1, 1, 4}, {0, 0, 1}, {1, 0, 2}, {0, 1, 3}}]"
+        ),
+        export_svg(
+          "ListDensityPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}}]"
+        )
+      );
+    }
+
+    /// Regression: `Show[densityPlot, Graphics[prims]]` stretched the
+    /// primitives over the whole picture instead of drawing them in the
+    /// plot's coordinates, so they did not line up with its axes.
+    #[test]
+    fn show_primitives_over_density_plot_use_its_coordinates() {
+      let attr = |svg: &str, tag_start: usize, name: &str| -> f64 {
+        let tag =
+          &svg[tag_start..tag_start + svg[tag_start..].find('>').unwrap()];
+        let needle = format!(" {name}=\"");
+        let s = tag.find(&needle).unwrap() + needle.len();
+        tag[s..s + tag[s..].find('"').unwrap()].parse().unwrap()
+      };
+      for plot in [
+        "ListDensityPlot[Table[x + y, {y, 0, 4}, {x, 0, 8}], \
+         DataRange -> {{-2, 6}, {1, 5}}]",
+        "SmoothDensityHistogram[{{-1, 2}, {3, 4}, {5, 3}}, 0.5, \"PDF\"]",
+      ] {
+        let svg = export_svg(&format!(
+          "Show[{plot}, Graphics[{{Red, Point[{{0, 3}}]}}], ImageSize -> 300]"
+        ));
+        let root = svg.find("<svg").unwrap();
+        let frame = {
+          let s = svg.find("data-plot-frame=\"").unwrap() + 17;
+          svg[s..s + svg[s..].find('"').unwrap()]
+            .split_whitespace()
+            .map(|v| v.parse::<f64>().unwrap())
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(attr(&svg, root, "width"), 300.0, "{plot}");
+        // The primitives' canvas is the plot's data rectangle …
+        let layer = svg.rfind("<svg x=").unwrap();
+        for (k, name) in ["x", "y", "width", "height"].iter().enumerate() {
+          assert!(
+            (attr(&svg, layer, name) - frame[4 + k]).abs() < 0.01,
+            "{plot}: {name}"
+          );
+        }
+        // … spanning the data range, so the point sits where the data
+        // coordinates say.
+        let vb: Vec<f64> = {
+          let tag = &svg[layer..];
+          let s = tag.find("viewBox=\"").unwrap() + 9;
+          tag[s..s + tag[s..].find('"').unwrap()]
+            .split_whitespace()
+            .map(|v| v.parse().unwrap())
+            .collect()
+        };
+        let circle = svg[layer..].find("<circle").unwrap() + layer;
+        let (cx, cy) = (attr(&svg, circle, "cx"), attr(&svg, circle, "cy"));
+        let fx = (0.0 - frame[0]) / (frame[1] - frame[0]);
+        let fy = (frame[3] - 3.0) / (frame[3] - frame[2]);
+        assert!((cx / vb[2] - fx).abs() < 0.01, "{plot}: cx {cx}");
+        assert!((cy / vb[3] - fy).abs() < 0.01, "{plot}: cy {cy}");
+      }
+    }
+
     #[test]
     fn list_density_plot_matrix() {
       insta::assert_snapshot!(export_svg(
