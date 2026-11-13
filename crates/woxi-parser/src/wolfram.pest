@@ -413,6 +413,7 @@ Operator = @{
   | "\\[Function]" | "\u{F4A1}" | "|->" // Function-arrow operator: x \[Function] body / x |-> body → Function[x, body]
   | GenericInfixOperator
   | "//@"    // MapAll operator (must be before /@ and the // postfix)
+  | "//="    // ApplyTo (Precedence 75; must be before the // postfix)
   | "/@"     // keep first
   | ";;"     // Span (Wolfram precedence 305: tighter than =, ==, &&, |, ~~ and ->, looser than + and *)
   | "@@@"    // MapApply operator (must be before @@)
@@ -537,12 +538,8 @@ Unset = { Identifier ~ "=" ~ "." ~ !ASCII_DIGIT }
 // operator precedence (same level as = assignment).
 UnsetSuffix = { "=" ~ "." ~ !ASCII_DIGIT }
 
-// `x //= f`. Same guard as for `++` / `--` above: the form only parses a
-// `PartExtract` target when its operator follows it. (`+=`, `-=`, `*=`
-// and `/=` are operators of the chain: their left side is everything that
-// binds tighter, `a + b += c` is `AddTo[a + b, c]`.)
-PartAssignScan = _{ (Slot | Identifier | UnsignedNumericValue | String) ~ PartScanGroup+ ~ (DerivativePrime? ~ PartScanGroup+)* ~ ("//=" | "+=" | "-=" | "*=" | "/=") }
-ApplyToOp = { (&PartAssignScan ~ PartExtract | Identifier) ~ "//=" ~ Expression }
+// (`+=`, `-=`, `*=`, `/=` and `//=` are operators of the chain: their left
+// side is everything that binds tighter, `a + b += c` is `AddTo[a + b, c]`.)
 
 // ImplicitTimes handles implicit multiplication (e.g., "x y z" or "2 x")
 // Each factor can have a Part suffix ([[...]]) and/or power suffix so that
@@ -834,7 +831,6 @@ Term = _{
   | BracketingBars
   | DoubleBracketingBars
   | Unset
-  | ApplyToOp
   | Increment
   | Decrement
   | PartExtract
@@ -958,7 +954,6 @@ TermNoImplicit = _{
   | BracketingBars
   | DoubleBracketingBars
   | Unset
-  | ApplyToOp
   | Increment
   | Decrement
   | PartExtract

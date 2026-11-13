@@ -2405,6 +2405,7 @@ pub(crate) fn precedence_value(expr: &Expr) -> f64 {
     "Because" | "Therefore" => 50.0,
     "VerticalSeparator" => 60.0,
     "Postfix" => 70.0,
+    "ApplyTo" => 75.0,
     "Colon" => 80.0,
     "Function" => 90.0,
     "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy" => 100.0,

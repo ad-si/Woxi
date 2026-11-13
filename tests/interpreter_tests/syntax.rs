@@ -15232,3 +15232,39 @@ fn compound_assignment_precedence() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// `//=` (ApplyTo, Precedence 75) is a chain operator like `+=`: its left
+// side is everything that binds tighter, and `&` (90) goes into its right
+// side. A part or a call with a value is a valid target.
+#[test]
+fn apply_to_precedence_and_targets() {
+  for (input, expected) in [
+    ("Hold[a + b //= f]", "Hold[ApplyTo[Plus[a, b], f]]"),
+    ("Hold[a == b //= f]", "Hold[ApplyTo[Equal[a, b], f]]"),
+    ("Hold[s //= a /. b]", "Hold[ApplyTo[s, ReplaceAll[a, b]]]"),
+    ("Hold[s //= a // f]", "Hold[f[ApplyTo[s, a]]]"),
+    ("Hold[x //= f &]", "Hold[ApplyTo[x, Function[f]]]"),
+    ("Hold[(x //= f) &]", "Hold[Function[ApplyTo[x, f]]]"),
+    ("Hold[a[[1]] //= f]", "Hold[ApplyTo[Part[a, 1], f]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(interpret("Precedence[ApplyTo]").unwrap(), "75.");
+  assert_eq!(interpret("Module[{x = 4}, x //= Sqrt; x]").unwrap(), "2");
+  assert_eq!(
+    interpret("Module[{a = {4, 9}}, a[[2]] //= Sqrt; a]").unwrap(),
+    "{4, 3}"
+  );
+  assert_eq!(
+    interpret("m = {{1, 2}, {3, 4}}; m[[2, 1]] //= Minus; m").unwrap(),
+    "{{1, 2}, {-3, 4}}"
+  );
+  assert_eq!(
+    interpret(r#"c["x"] = 3; c["x"] //= (#^2 &); c["x"]"#).unwrap(),
+    "9"
+  );
+}

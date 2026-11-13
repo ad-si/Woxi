@@ -3875,13 +3875,6 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let var = pair_to_expr(inner);
       call1("Unset", var)
     }
-    Rule::ApplyToOp => {
-      // x //= f -> ApplyTo[x, f]
-      let mut inner = pair.into_inner();
-      let var = pair_to_expr(inner.next().unwrap());
-      let func = pair_to_expr(inner.next().unwrap());
-      call("ApplyTo", vec![var, func])
-    }
     Rule::PrefixApplySimple => {
       // f@x within implicit multiplication context → f[x]
       let mut inner = pair.into_inner();
@@ -4795,6 +4788,7 @@ fn in_assignment_rhs(
         | "SubtractFrom"
         | "TimesBy"
         | "DivideBy"
+        | "ApplyTo"
     )
     && args.len() == 2
   {
@@ -5306,9 +5300,12 @@ fn parse_expression_inner(
     .iter()
     .filter(|op| {
       is_assignment_operator(op)
-        || matches!(op.as_str(), "+=" | "-=" | "*=" | "/=")
+        || matches!(op.as_str(), "+=" | "-=" | "*=" | "/=" | "//=")
     })
     .count();
+  // `&` (90) binds tighter than `//=` (75), so `x //= f &` is
+  // `ApplyTo[x, Function[f]]`, unlike `x += 1 &` (`+=` is 100).
+  let wrote_apply_to = operators.iter().any(|op| op == "//=");
 
   let mut result = build_operator_chain(terms, &operators);
 
@@ -5362,12 +5359,14 @@ fn parse_expression_inner(
     // If `result` is a top-level assignment (Set/SetDelayed/UpSet/
     // UpSetDelayed), `&` (precedence 90) binds tighter than the assignment
     // (precedence 40), so we push the Function wrapper into the RHS.
-    let pushed_into_assignment = if assign_depth > 0
-      && let Expr::FunctionCall { name, args } = &mut result
-      && matches!(
-        name.as_str(),
-        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-      )
+    let pushed_into_assignment = if let Expr::FunctionCall { name, args } =
+      &mut result
+      && ((assign_depth > 0
+        && matches!(
+          name.as_str(),
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+        ))
+        || (wrote_apply_to && name == "ApplyTo"))
       && args.len() == 2
     {
       let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
@@ -6097,7 +6096,7 @@ fn base_operator_precedence(op: &str) -> u8 {
     "=" | ":=" | "=." => 6, // Assignment / Unset
     // Compound assignment binds like plain assignment (Wolfram gives all of
     // them precedence 70), so `f[x] += a + b` adds the whole sum.
-    "+=" | "-=" | "*=" | "/=" => 6,
+    "+=" | "-=" | "*=" | "/=" | "//=" => 6,
     "^=" | "^:=" => 6, // UpSet/UpSetDelayed (same as assignment)
     // Condition binds *tighter* than Rule/RuleDelayed in Wolfram (130 vs 120),
     // so `lhs /; test :> rhs` is `RuleDelayed[Condition[lhs, test], rhs]` and
@@ -6884,6 +6883,7 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     // function call — a symbol or part target is taken by the `AddTo`,
     // `SubtractFrom`, `TimesBy` and `DivideBy` terms in the grammar.
     "+=" => call("AddTo", vec![left.clone(), right.clone()]),
+    "//=" => call("ApplyTo", vec![left.clone(), right.clone()]),
     "-=" => call("SubtractFrom", vec![left.clone(), right.clone()]),
     "*=" => call("TimesBy", vec![left.clone(), right.clone()]),
     "/=" => call("DivideBy", vec![left.clone(), right.clone()]),

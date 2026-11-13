@@ -2430,6 +2430,36 @@ fn evaluate_expr_to_expr_uncached(
             });
             return Ok(new_val);
           }
+          // A part (`a[[2]] //= Sqrt`) or a call that already has a value
+          // (`counts[x] //= f`) is read, transformed and written back, as
+          // AddTo does for its targets.
+          let is_part = matches!(&args[0], Expr::Part { .. })
+            || matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Part");
+          if is_part
+            || matches!(
+              &args[0],
+              Expr::FunctionCall { .. } | Expr::CurriedCall { .. }
+            )
+          {
+            let target = if is_part {
+              args[0].clone()
+            } else {
+              evaluated_call_target(&args[0])?
+            };
+            let current_val = evaluate_expr_to_expr(&target)?;
+            let unset = !is_part
+              && expr_to_string(&current_val) == expr_to_string(&target);
+            if !unset {
+              let func = evaluate_expr_to_expr(&args[1])?;
+              let new_val =
+                crate::evaluator::function_application::apply_function_to_arg(
+                  &func,
+                  &current_val,
+                )?;
+              crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+              return Ok(new_val);
+            }
+          }
           crate::emit_message(&format!(
             "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
             expr_to_string(&args[0])
