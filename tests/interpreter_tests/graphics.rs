@@ -446,6 +446,22 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_refines_a_long_winding_curve_all_along() {
+      // The refinement budget must reach the end of a curve that winds
+      // many times, not run out in its first stretch and leave the rest
+      // polygonal: no two consecutive segments turn by more than ~15°.
+      assert_eq!(
+        interpret(
+          "l = First[Cases[ParametricPlot[{Sin[7 t], Cos[3 t]}, \
+             {t, 0, 50}], Line[l_] :> l, Infinity]]; d = Differences[l]; \
+           Max[MapThread[VectorAngle, {Most[d], Rest[d]}]] < 0.27"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
     fn parametric_plot_draws_tooltip_wrapped_curves() {
       // Hover-only wrappers around curves draw the curves themselves.
       let svg = export_svg(

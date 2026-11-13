@@ -23282,6 +23282,36 @@ mod ndsolve_delay_equations {
       "{{{0., 5.}}, {1, 5/4, 3/2, 1/2, -5833/10000}}"
     );
   }
+
+  /// A chaotic delay equation (the delayed logistic map, Mackey–Glass
+  /// type) amplifies every error in the delayed values it reads, so the
+  /// history has to be interpolated to the integrator's accuracy and the
+  /// steps must not straddle the derivative jumps at t == 1, 2, ….
+  /// Reference values from a fine-step method-of-steps RK4 solve.
+  #[test]
+  fn chaotic_delayed_logistic_equation_stays_accurate() {
+    let code = "s = NDSolve[{0.2 x'[t] + x[t] == 4 x[t - 1] (1 - x[t - 1]),        x[t /; t < 0] == 0.8}, x, {t, 0, 30}];        {x[2], x[10], x[20], x[30]} /. First[s]";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    let expected = [0.9129873, 0.4099981, 0.8287493, 0.954719];
+    for (got, want) in nums.iter().zip(expected) {
+      assert!((got - want).abs() < 2e-5, "{result}");
+    }
+  }
+
+  /// A lag that is no multiple of the grid's step still lands steps on
+  /// the breakpoints t == τ, 2τ, …: `x'[t] == -x[t - 37/100]` with history
+  /// 1 has the method-of-steps solution 1 - t + (t-τ)^2/2 - (t-2τ)^3/6 on
+  /// [2τ, 3τ].
+  #[test]
+  fn delay_off_the_grid_matches_method_of_steps() {
+    let code = "s = NDSolve[{x'[t] == -x[t - 37/100], x[t /; t <= 0] == 1},        x, {t, 0, 2}]; Round[{x[0.7], x[1.]} /. First[s], 10^-7]";
+    assert_eq!(interpret(code).unwrap(), "{7089/20000, 1955207/10000000}");
+  }
 }
 
 mod integrate_piecewise_disjunction {
