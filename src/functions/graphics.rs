@@ -34070,6 +34070,13 @@ pub struct ManipulateSpec {
   /// frontend can re-render them (via `render_manipulate_display`) on every
   /// state change. Empty when the Manipulate has no extra display.
   pub displays: Vec<String>,
+  /// Displays that stand in for one of the declared controls (a
+  /// `ControlType -> TogglerBar`/`CheckboxBar` spec draws its bar as a
+  /// display), as `(index into displays, index into controls)`: the bar
+  /// belongs in the control panel just before that control (or after the
+  /// last one when the index equals `controls.len()`), keeping the order
+  /// in which Wolfram lists the specs. Every other display trails the panel.
+  pub panel_displays: Vec<(usize, usize)>,
   /// Initialization code from `Initialization :> …`. Runs once before the
   /// first evaluation of the body so that helper definitions (e.g.
   /// `d[t_] := …`) are in scope. `None` when the Manipulate has no
@@ -34851,6 +34858,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut controls,
     mut state,
     mut displays,
+    mut panel_displays,
     mut initialization,
     mut control_enabled,
     mut control_visible,
@@ -34868,6 +34876,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.controls,
       inner.state,
       inner.displays,
+      inner.panel_displays,
       inner.initialization,
       inner.control_enabled,
       inner.control_visible,
@@ -34911,6 +34920,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::with_capacity(args.len() - 1),
       dynamic_module_state,
       body_displays,
+      Vec::new(),
       (!module_initializations.is_empty())
         .then(|| module_initializations.join(";\n")),
       Vec::new(),
@@ -35641,6 +35651,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           renames.push((orig_form.clone(), synth.clone()));
         }
         state.push((name, value));
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(display);
       }
       ParsedControl::State { name, value } => {
@@ -36163,6 +36174,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls,
     state,
     displays,
+    panel_displays,
     initialization,
     control_enabled,
     control_visible,
@@ -39733,6 +39745,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -39811,6 +39824,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -39902,6 +39916,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -40103,6 +40118,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -40164,6 +40180,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled: Vec::new(),
     control_visible: Vec::new(),
@@ -40235,6 +40252,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     controls: vec![control],
     state: Vec::new(),
     displays: Vec::new(),
+    panel_displays: Vec::new(),
     initialization: None,
     control_enabled,
     control_visible: Vec::new(),
@@ -48543,6 +48561,40 @@ mod manipulate_control_placement_tests {
       "the layout template must not become a third, blank-labeled control: {:?}",
       spec.controls
     );
+  }
+
+  /// A `ControlType -> TogglerBar` spec is drawn as a display, but it is
+  /// still one of the declared controls: it records where it sits among
+  /// them, so a front end can keep Wolfram's order (here the bar comes
+  /// after the slider and before the checkbox).
+  #[test]
+  fn toggler_bar_control_keeps_its_place_among_the_controls() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{r, layers, grid}, {{r, 1, \"radius\"}, 0, 2}, \
+       {{layers, {1}, \"layers\"}, {1, 2, 3}, ControlType -> TogglerBar}, \
+       {{grid, False, \"grid\"}, {True, False}}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["r", "grid"]);
+    assert_eq!(spec.displays.len(), 1, "{:?}", spec.displays);
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+  }
+
+  /// A bar declared after every other control closes the panel; a display
+  /// that is no control spec (a trailing `Dynamic[…]`) is not a panel row.
+  #[test]
+  fn trailing_toggler_bar_closes_the_panel() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{r, layers}, {{r, 1, \"radius\"}, 0, 2}, \
+       {{layers, {}, \"layers\"}, {1, 2}, ControlType -> CheckboxBar}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.controls.len(), 1);
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 }
 
