@@ -3470,6 +3470,37 @@ mod graphics {
         "FrameStyle -> None leaves only the panel: {rect}"
       );
     }
+
+    /// Regression: a styled rational was printed as the flat text `31/10`
+    /// instead of a stacked fraction set in the styled font.
+    #[test]
+    fn styled_rational_is_a_stacked_fraction() {
+      let svg = export_svg("Style[31/10, Bold, 20]");
+      assert!(!svg.contains("31/10"), "not flat text: {svg}");
+      assert!(svg.contains("<line "), "fraction bar: {svg}");
+      assert!(svg.contains(">31<") && svg.contains(">10<"), "{svg}");
+      assert!(svg.contains("font-size=\"20"), "styled size: {svg}");
+      assert!(svg.contains("bold"), "styled weight: {svg}");
+    }
+
+    /// Regression: the directives of `Style[Row[{…, p/q, …}], …]` are
+    /// pushed into the row's items, and the rational item then lost its
+    /// stacked layout.
+    #[test]
+    fn styled_row_keeps_its_rational_stacked() {
+      let svg = export_svg("Style[Row[{\"x = \", 7/3, \" y\"}], Bold, 18]");
+      assert!(!svg.contains("7/3"), "not flat text: {svg}");
+      assert!(svg.contains("<line "), "fraction bar: {svg}");
+      assert!(svg.contains(">7<") && svg.contains(">3<"), "{svg}");
+    }
+
+    /// A styled expression without a fraction stays inline text.
+    #[test]
+    fn styled_power_stays_inline_text() {
+      let svg = export_svg("Style[x^2, 20]");
+      assert!(svg.contains("baseline-shift=\"super\""), "{svg}");
+      assert!(!svg.contains("<line "), "{svg}");
+    }
   }
 
   mod options {
