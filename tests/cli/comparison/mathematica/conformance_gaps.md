@@ -426,6 +426,23 @@ message (`Plus[x] &`, `Hold[Plus[x]]`) both engines print `Plus[x]`.
 
 ## Canonical ordering of Plus and Times
 
+### Times does not fold a real coefficient into an imaginary one
+
+```sh
+wolframscript -code 'ToString[FullForm[-2 I x]]'
+# Times[Complex[0, -2], x]
+woxi eval 'ToString[FullForm[-2 I x]]'
+# Times[-2, Complex[0, 1], x]
+```
+
+Wolfram multiplies all numeric factors of a product into one coefficient,
+complex ones included; Woxi keeps the real coefficient and the imaginary
+unit apart whenever a symbolic factor is present (`-I` alone is
+`Complex[0, -1]` in both). The printed form agrees, but `Length`, `Part` and
+patterns see three factors instead of two. Held printing compensates: a held
+`Times[-1, I, x]` prints `-I*x` (Wolfram brackets the literal call as
+`-(I*x)`) because in Woxi it is also the evaluated form of `-I x`.
+
 ### A rational multiple of a sum is ordered against a product by its own rule
 
 `Rescale[x, {-1, 1}, {a, b}]` is `((-a + b)*x)/2 + (a + b)/2` in Woxi and

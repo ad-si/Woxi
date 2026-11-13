@@ -15615,3 +15615,31 @@ fn alternatives_operand_and_op_assign_lhs_brackets() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// A held Times[-1, …] keeps a lone literal factor apart (`-1*6`), brackets
+// a product of several factors and a negated negative, and a sum chain ending
+// in a negative literal prints bare.
+#[test]
+fn held_negation_and_sum_chain_forms() {
+  for (input, expected) in [
+    ("Hold[Times[-1, 6]]", "Hold[-1*6]"),
+    ("Hold[-1 * 6]", "Hold[-1*6]"),
+    ("Hold[Times[-1, 2.5]]", "Hold[-1*2.5]"),
+    ("Hold[Times[-1, 6]^2]", "Hold[(-1*6)^2]"),
+    ("Hold[b ^:= (-1 * 6)]", "Hold[b ^:= -1*6]"),
+    ("Hold[Times[-1, 6, x]]", "Hold[-(6*x)]"),
+    ("Hold[Times[-1, -x]]", "Hold[-(-x)]"),
+    ("Hold[Times[-1, -6.5]]", "Hold[-(-6.5)]"),
+    ("Hold[-x y]", "Hold[-x*y]"),
+    ("Hold[a + Times[-1, 6]]", "Hold[a - 6]"),
+    ("Hold[a + b + -3]", "Hold[a + b - 3]"),
+    ("Hold[(a + b) + -3]", "Hold[(a + b) - 3]"),
+    (
+      "Hold[(b + 9) + (x @* y) + -3]",
+      "Hold[(b + 9) + x @* y - 3]",
+    ),
+    ("Hold[a - Plus[s] + 1]", "Hold[a - (Plus[s]) + 1]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}

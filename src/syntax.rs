@@ -12360,6 +12360,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               format!("{rest_str}*-Infinity")
             };
           }
+          // A held `-1*6` keeps its literal factors apart: printing `-6`
+          // would read back as the number -6.
+          if in_held_format()
+            && args.len() == 2
+            && match &args[1] {
+              Expr::Integer(n) => *n >= 0,
+              Expr::BigInteger(n) => n.sign() != Sign::Minus,
+              Expr::Real(r) => *r >= 0.0,
+              _ => false,
+            }
+          {
+            return format!("-1*{}", fmt(&args[1]));
+          }
           // If the rest is a single Power[symbolic_base, negative_int], use -base^(-n)
           // notation instead of -(1/base^n), matching wolframscript output
           let is_single_symbolic_neg_power =
@@ -12434,6 +12447,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 || matches!(&args[1], Expr::Function { .. })))
             // A lone factor looser than `*` is parenthesized already.
             && !(args.len() == 2 && is_looser_than_times_infix(&args[1]));
+          // A held product of several factors is always bracketed
+          // (`-(6*x)`), and a negated negative is too: `--x` would read
+          // back as a decrement. (Not one with an `I` factor: Woxi's Times
+          // keeps `-I*x` as `Times[-1, I, x]` where Wolfram folds it into
+          // `Times[Complex[0, -1], x]`, which prints `-I*x`.)
+          let needs_neg_parens = needs_neg_parens
+            || (in_held_format()
+              && rest_factors.len() >= 2
+              && !rest_factors.iter().any(is_i_unit_factor))
+            || rest.starts_with('-');
           if needs_neg_parens {
             return format!("-({rest})");
           }
@@ -13406,7 +13429,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         }
       {
         let left_text = expr_to_string(left);
-        let left_text = if plus_term_needs_parens(left) {
+        // The sum the chain continues (`a + b + -3`) prints bare.
+        let continues_chain = matches!(
+          left.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        );
+        let left_text = if plus_term_needs_parens(left) && !continues_chain {
           format!("({left_text})")
         } else {
           left_text
@@ -13872,8 +13903,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ));
       // (A nested sum keeps them even in call form: `a + (Plus[b])`.)
-      let nested_sum = matches!(op, BinaryOperator::Plus)
-        && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
+      let nested_sum = matches!(
+        op,
+        BinaryOperator::Plus | BinaryOperator::Minus
+      ) && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
       let needs_right_parens =
         needs_right_parens && (nested_sum || !prints_as_call(&right_str));
       let right_formatted = if needs_right_parens {
