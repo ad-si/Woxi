@@ -11578,7 +11578,7 @@ fn compile_stored_value(name: &str, var_names: &[String]) -> Option<NExpr> {
   if matches!(&value, Expr::Identifier(n) if n == name) {
     return None;
   }
-  let depth = STORED_VALUE_DEPTH.with(|d| d.get());
+  let depth = STORED_VALUE_DEPTH.with(std::cell::Cell::get);
   if depth >= 64 {
     return None;
   }
