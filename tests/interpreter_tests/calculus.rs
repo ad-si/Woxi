@@ -28150,3 +28150,40 @@ mod integrate_rational_roots {
     );
   }
 }
+
+// D[f] is f (no variables, derivative of order zero), and a variable D
+// rejects stops the whole chain unevaluated instead of differentiating its
+// own unevaluated form against the rest (wolframscript-verified).
+mod d_variable_list_edges {
+  use super::*;
+
+  #[test]
+  fn no_variables() {
+    assert_eq!(interpret("D[a]").unwrap(), "a");
+    assert_eq!(interpret("D[{a, b}]").unwrap(), "{a, b}");
+    assert_eq!(interpret("D[f, NonConstants -> {x}]").unwrap(), "f");
+    clear_state();
+    let r = interpret_with_stdout("D[]").unwrap();
+    assert_eq!(r.result, "D[]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "D::argm: D called with 0 arguments; 1 or more arguments are expected."
+      ]
+    );
+  }
+
+  #[test]
+  fn invalid_variable_stops_the_chain() {
+    clear_state();
+    let r = interpret_with_stdout("D[x^2, 2, x]").unwrap();
+    assert_eq!(r.result, "D[x^2, 2, x]");
+    assert_eq!(r.warnings, vec!["D::ivar: 2 is not a valid variable."]);
+    clear_state();
+    let r = interpret_with_stdout("D[m a'[] a'[t], D[a]^2, a'[t]]").unwrap();
+    assert_eq!(
+      r.result,
+      "D[m*Derivative[1][a][]*Derivative[1][a][t], a^2, Derivative[1][a][t]]"
+    );
+  }
+}

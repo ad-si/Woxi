@@ -326,7 +326,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "Curl" => Some((2, 3)),
     "CycleIndexPolynomial" => Some((2, 3)),
     "Cyclotomic" => Some((2, 2)),
-    "D" => Some((2, usize::MAX)),
+    "D" => Some((1, usize::MAX)),
     "DateDifference" => Some((2, usize::MAX)),
     "DateInterval" => Some((1, 4)),
     "DateObjectQ" => Some((1, 1)),

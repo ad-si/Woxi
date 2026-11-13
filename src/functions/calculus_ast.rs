@@ -144,8 +144,10 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => diff_vars.push(a.clone()),
       }
     }
+    // No variables left once the options are set aside: like D[f], the
+    // derivative of order zero (D[f, NonConstants -> {x}] is f).
     if diff_vars.is_empty() {
-      return Ok(unevaluated());
+      return Ok(expr.clone());
     }
     // Differentiate against the real variables, treating every NonConstants
     // symbol as dependent on the differentiation variable. Its derivative is
@@ -169,6 +171,12 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() > 2 {
     // First differentiate with respect to the last variable
     let inner = d_ast(&[args[0].clone(), args[1].clone()])?;
+    // A variable D rejected (`D[x^2, 2, x]`, D::ivar) stops the chain: the
+    // whole call stays unevaluated rather than differentiating its own
+    // unevaluated form against the remaining variables.
+    if matches!(&inner, Expr::FunctionCall { name, .. } if name == "D") {
+      return Ok(unevaluated("D", args));
+    }
     // Then differentiate the result with respect to remaining variables
     let mut remaining = vec![inner];
     remaining.extend_from_slice(&args[2..]);
