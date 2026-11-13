@@ -2414,6 +2414,24 @@ mod tests {
     }
 
     #[test]
+    fn styled_nested_layout_in_a_grid_cell_keeps_its_style() {
+      // A `Style` around a nested `Grid` or `Column` sitting in a grid cell
+      // (a readout panel above a picture) reaches the nested cells: the
+      // wrapper used to be dropped, setting them at the default size.
+      for code in [
+        "Grid[{{Style[Grid[{{\"ab\", \"c\"}}], 16]}}]",
+        "Grid[{{Style[Column[{Grid[{{\"ab\", \"c\"}}]}], 16]}}]",
+        "Grid[{{Style[Column[{\"ab\", \"c\"}], 16]}, {Graphics[Disk[]]}}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"16\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      }
+      let svg = svg_of("Grid[{{Style[Grid[{{\"ab\", \"c\"}}], Red]}}]");
+      assert!(svg.contains("rgb(255,0,0)"), "red cells: {svg}");
+    }
+
+    #[test]
     fn grid_spans_a_picture_across_its_columns() {
       // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
