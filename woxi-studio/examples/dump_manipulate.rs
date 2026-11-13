@@ -203,7 +203,7 @@ fn main() {
           .collect();
         bindings.extend(state.state.iter().cloned());
         if let Ok(ov) = std::env::var("OVERRIDE") {
-          for kv in ov.split(',') {
+          for kv in split_top_level_commas(&ov) {
             if let Some((k, v)) = kv.split_once('=') {
               bindings.retain(|(n, _)| n != k);
               bindings.push((k.to_string(), v.to_string()));
@@ -252,4 +252,25 @@ fn main() {
     }
   }
   println!("Interactive widgets built: {widget_count}");
+}
+
+/// Split an `OVERRIDE` list on the commas that are not nested inside
+/// brackets, so list values such as `step={1,2,3}` stay whole.
+fn split_top_level_commas(s: &str) -> Vec<&str> {
+  let mut parts = Vec::new();
+  let mut depth = 0i32;
+  let mut start = 0;
+  for (i, ch) in s.char_indices() {
+    match ch {
+      '{' | '[' | '(' => depth += 1,
+      '}' | ']' | ')' => depth -= 1,
+      ',' if depth == 0 => {
+        parts.push(&s[start..i]);
+        start = i + 1;
+      }
+      _ => {}
+    }
+  }
+  parts.push(&s[start..]);
+  parts
 }

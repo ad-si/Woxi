@@ -4389,7 +4389,20 @@ fn render_manipulate_widget<'a>(
   let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
+  // A display standing in for a declared control (a `ControlType ->
+  // TogglerBar` bar) is a row of the panel, at the place its spec holds
+  // among the other controls.
+  let panel_trees_at = |slot: usize| {
+    state
+      .panel_displays
+      .iter()
+      .filter(move |(_, at)| *at == slot)
+      .filter_map(|(d, _)| state.display_trees.get(*d))
+  };
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    for tree in panel_trees_at(ctrl_idx) {
+      controls_col = controls_col.push(render_display_node(cell_idx, tree));
+    }
     // A control belonging to a `PaneSelector` pane the selector is not
     // showing is left out of the panel entirely, the way Wolfram swaps one
     // pane's controls for another's.
@@ -5028,6 +5041,18 @@ fn render_manipulate_widget<'a>(
       }
     }
   }
+  // Bars declared after the last control close the panel.
+  if show_controls {
+    for (d, _) in state
+      .panel_displays
+      .iter()
+      .filter(|(_, at)| *at >= visible_controls.len())
+    {
+      if let Some(tree) = state.display_trees.get(*d) {
+        controls_col = controls_col.push(render_display_node(cell_idx, tree));
+      }
+    }
+  }
 
   // A `Bookmarks` menu: a dropdown of named presets that jump the controls
   // to preset values when selected. Indexed by position (not label text) so
@@ -5141,7 +5166,11 @@ fn render_manipulate_widget<'a>(
   // Extra display elements (e.g. a Checkbox grid) sit above the rendered
   // body output; each interactive checkbox emits a write-back on toggle.
   let mut body_col = Column::new().spacing(6).width(Fill);
-  for tree in &state.display_trees {
+  for (d, tree) in state.display_trees.iter().enumerate() {
+    // Bars already drawn as panel rows (only when the panel is shown).
+    if show_controls && state.panel_displays.iter().any(|(pd, _)| *pd == d) {
+      continue;
+    }
     body_col = body_col.push(render_display_node(cell_idx, tree));
   }
   body_col = body_col.push(output_col);
@@ -16685,6 +16714,26 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
+  }
+
+  /// A `ControlType -> TogglerBar` control declared between a slider and a
+  /// checkbox stays between them in the panel: its display row is anchored
+  /// before the checkbox, not appended below the whole panel.
+  #[test]
+  fn toggler_bar_control_is_anchored_at_its_declared_place() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[layers] + r, {{r, 1, \"radius\"}, 0, 2}, \
+       {{layers, {1}, \"layers\"}, {1, 2, 3}, ControlType -> TogglerBar}, \
+       {{grid, False, \"grid\"}, {True, False}}]",
+    )
+    .unwrap();
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("widget must build");
+    assert_eq!(state.controls.len(), 2);
+    assert_eq!(state.controls[1].name(), "grid");
+    assert_eq!(state.panel_displays, vec![(0, 1)]);
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(togglers.len(), 3);
   }
 
   #[test]

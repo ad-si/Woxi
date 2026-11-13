@@ -565,6 +565,11 @@ pub struct ManipulateState {
   /// Extra display expressions (InputForm), e.g. a `Dynamic[Panel[Grid[…]]]`
   /// of checkboxes, rebuilt into `display_trees` on every re-evaluation.
   pub displays: Vec<String>,
+  /// `(display index, control index)` for each display that stands in for
+  /// a declared control (a `ControlType -> TogglerBar` bar): the panel draws
+  /// it just before that control so the specs keep their declared order.
+  /// See `ManipulateSpec::panel_displays`.
+  pub panel_displays: Vec<(usize, usize)>,
   /// The rendered widget tree for each display element.
   pub display_trees: Vec<DisplayNode>,
   pub graphics_handle: Option<svg::Handle>,
@@ -788,6 +793,7 @@ impl ManipulateState {
       controls,
       state: spec.state,
       displays: spec.displays,
+      panel_displays: spec.panel_displays,
       display_trees: Vec::new(),
       graphics_handle: None,
       button_regions: Vec::new(),
