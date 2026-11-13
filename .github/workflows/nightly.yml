@@ -91,7 +91,14 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-fuzz
-    - name: Seed corpora from the test scripts
+    # fuzz/seeds_from_tests.ts extracts the unit- and doc-test snippets;
+    # Node runs the TypeScript directly.
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '24'
+    # Each corpus gets a different sample of the test-suite
+    # snippets each night (FUZZ_SAMPLE_SEED defaults to the date).
+    - name: Seed corpora from the test suite
       run: make fuzz-corpus
     # The prebuilt cargo-fuzz binary is a static musl build and defaults to
     # its own compile-time triple (x86_64-unknown-linux-musl), which cannot
@@ -101,7 +108,7 @@ jobs:
       run: |
         echo "HOST_TARGET=$(rustc -vV | sed -n 's/host: //p')" >> "$GITHUB_ENV"
     - name: Fuzz the parser
-      run: cargo fuzz run parse --target "$HOST_TARGET" -- -timeout=10 -max_len=4096 -max_total_time=300
+      run: cargo fuzz run parse --target "$HOST_TARGET" -- -dict="$GITHUB_WORKSPACE/fuzz/woxi.dict" -timeout=10 -max_len=4096 -max_total_time=300
     - name: Fuzz the interpreter
       # Runs even when the parse target already found a crash, so one
       # night reports both.
@@ -135,7 +142,7 @@ jobs:
       # ending it; if a night is lost to a terminating input again, prefer
       # denylisting its head (see fuzz_targets/interpret.rs) over raising
       # this further.
-      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=1200 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
+      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -dict="$GITHUB_WORKSPACE/fuzz/woxi.dict" -timeout=1200 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()
       uses: actions/upload-artifact@v7

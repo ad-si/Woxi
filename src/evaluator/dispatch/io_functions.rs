@@ -6682,6 +6682,36 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
   }
 }
 
+/// Where a `Column` item sits across the column, as a fraction of the
+/// spare width: at the left, unless it is an `Item[…, Alignment -> Center]`
+/// (or `Right`, or `{h, v}`).
+fn item_horizontal_alignment(item: &Expr) -> f64 {
+  let Expr::FunctionCall { name, args } = item else {
+    return 0.0;
+  };
+  if name != "Item" {
+    return 0.0;
+  }
+  let spec = args[1..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Alignment") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  });
+  let horizontal = match spec {
+    Some(Expr::List(pair)) => pair.first(),
+    other => other,
+  };
+  match horizontal {
+    Some(Expr::Identifier(h)) if h == "Center" => 0.5,
+    Some(Expr::Identifier(h)) if h == "Right" => 1.0,
+    _ => 0.0,
+  }
+}
+
 /// `"\n" * cell` (a newline typed into a layout) draws as `cell`: the
 /// blank-string factors only add invisible space.
 fn strip_blank_times(cell: &Expr) -> Expr {
@@ -6982,6 +7012,15 @@ fn wrap_pane_text_at(
   font_size: f64,
   whole_words: bool,
 ) -> Option<Expr> {
+  // A bare string re-flows as the one-piece `Row` of it.
+  if let Expr::String(_) = content {
+    return wrap_pane_text_at(
+      &call1("Row", Expr::List(vec![content.clone()].into())),
+      width,
+      font_size,
+      whole_words,
+    );
+  }
   let Expr::FunctionCall { name, args } = content else {
     return None;
   };
@@ -7422,6 +7461,20 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           }
           _ => None,
         });
+      // A width alone also breaks the text cells of a grid inside the pane
+      // (a long list next to pictures) into lines that fit it.
+      if name == "Pane"
+        && pane_size.is_none()
+        && let Some(w) = pane_width_only(args)
+        && let Some(grid) =
+          crate::functions::graphics::wrap_wide_grid_text(&args[0], w, &|c| {
+            crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0
+          })
+      {
+        let mut new_args = args.to_vec();
+        new_args[0] = grid;
+        return expr_to_svg(&call("Pane", new_args));
+      }
       // `Pane[text, w]` / `Pane[text, ImageSize -> w]`: a width alone sets
       // the box `w` wide with its text wrapped there, as tall as the lines
       // it takes. A line that cannot break is cut off at the edge.
@@ -7595,18 +7648,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       expr_to_svg(&pushed.unwrap_or_else(|| args[0].clone()))
     }
     // `Labeled[content, label]` (and `…, pos]`) puts the label beside the
-    // content — below it by default. With a picture as the content the
-    // FrontEnd stacks the two, so exporting one has to compose them
-    // instead of writing the whole call out as text.
+    // content — below it by default. The FrontEnd stacks the two whatever
+    // the content is (a picture, a string, a list of rules), so exporting
+    // one has to compose them instead of writing the whole call out as
+    // text. Like the label, a string content is shown without its quotes.
     Expr::FunctionCall { name, args }
-      if name == "Labeled"
-        && args.len() >= 2
-        && (is_blank_string(&args[0]) || lays_out_a_graphic(&args[0])) =>
+      if name == "Labeled" && args.len() >= 2 =>
     {
       let content = if is_blank_string(&args[0]) {
         String::new()
       } else {
-        expr_to_svg(&args[0])
+        expr_to_svg(&unquoted_display_string(&args[0]))
       };
       // `Labeled[g, {l1, l2, …}, {p1, p2, …}]` sets each label at its own
       // side; same-side labels stack into one cell of a 3x3 layout.
@@ -7715,7 +7767,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // and centers its content across them; the picture compositor below
       // only knows one cell per slot.
       // So does a `Grid` that places or sizes its cells itself
-      // (`Alignment -> Right`, `ItemSize -> {…}`): the compositor centers
+      // (`Alignment -> Right`, `ItemSize -> {…}`, or an `Item` cell's own
+      // `Alignment`): the compositor centers
       // every cell at its natural size and would drop both options, and it
       // would typeset a text cell beside a picture as math rather than as
       // the grid's text.
@@ -7732,7 +7785,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               k.as_str(),
               "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
             )))
-        }))
+        }) || crate::functions::graphics::has_item_alignment(args))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])
       {
@@ -7786,13 +7839,29 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         // or `Column`'s cells a fixed distance apart, about 5.5 points —
         // kept to whole points so the cells stay on the pixel grid.
         let gap = if name == "Row" { 0.0 } else { 6.0 };
-        crate::functions::graphics::combine_layout_svgs(&rows, option_args, gap)
-          .map_or_else(
-            || expr_text_svg(expr),
-            |svg| {
-              crate::functions::graphics::with_grid_background(svg, option_args)
-            },
-          )
+        // A `Column` sets its items at the left (its default `Alignment`),
+        // or where an `Item[…, Alignment -> …]` asks; a `Grid` centers each
+        // cell in its column.
+        let row_align: Vec<f64> = if name == "Column" {
+          layout_rows(name, args)
+            .iter()
+            .map(|cells| cells.first().map_or(0.0, item_horizontal_alignment))
+            .collect()
+        } else {
+          Vec::new()
+        };
+        crate::functions::graphics::combine_layout_svgs(
+          &rows,
+          option_args,
+          gap,
+          row_align,
+        )
+        .map_or_else(
+          || expr_text_svg(expr),
+          |svg| {
+            crate::functions::graphics::with_grid_background(svg, option_args)
+          },
+        )
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn

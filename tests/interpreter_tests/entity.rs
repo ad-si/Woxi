@@ -804,6 +804,57 @@ mod country_data_tests {
       "True"
     );
   }
+
+  #[test]
+  fn country_data_flag_is_an_image_for_every_country() {
+    clear_state();
+    assert_eq!(
+      interpret("Union[Head /@ CountryData[All, \"Flag\"]]").unwrap(),
+      "{Image}"
+    );
+    // Also reachable through the entity and its continent class.
+    assert_eq!(
+      interpret("Head[Entity[\"Country\", \"Japan\"][\"Flag\"]]").unwrap(),
+      "Image"
+    );
+    assert_eq!(
+      interpret("Union[ImageQ /@ CountryData[\"Europe\", \"Flag\"]]").unwrap(),
+      "{True}"
+    );
+  }
+
+  #[test]
+  fn country_data_flags_have_their_own_shape_and_colors() {
+    clear_state();
+    // Flags keep their proportions: the US flag is wider than tall,
+    // Nepal's pennant taller than wide.
+    assert_eq!(
+      interpret(
+        "{Greater @@ ImageDimensions[CountryData[\"UnitedStates\", \"Flag\"]], \
+         Less @@ ImageDimensions[CountryData[\"Nepal\", \"Flag\"]]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    // The center of Japan's flag is red, its corner white.
+    assert_eq!(
+      interpret(
+        "With[{d = ImageData[CountryData[\"Japan\", \"Flag\"], \"Byte\"]}, \
+         {d[[Ceiling[Length[d]/2], 80, 1]] > 150 && d[[Ceiling[Length[d]/2], 80, 2]] < 100, \
+          Min[d[[1, 1]]] > 200}]"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    // Different countries have different flags.
+    assert_eq!(
+      interpret(
+        "CountryData[\"France\", \"Flag\"] =!= CountryData[\"Italy\", \"Flag\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod interpreter_scalar_tests {

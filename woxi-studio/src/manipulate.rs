@@ -546,6 +546,165 @@ pub fn click_regions_of(svg: &str) -> Vec<ClickRegion> {
   regions
 }
 
+/// The drawing area of one graphic in a rendered picture (in the picture's
+/// pixel coordinates) and the graphics coordinates at its edges.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlotFrame {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub x_min: f64,
+  pub y_min: f64,
+  pub x_max: f64,
+  pub y_max: f64,
+}
+
+impl PlotFrame {
+  fn contains(&self, px: f32, py: f32) -> bool {
+    px >= self.x
+      && px <= self.x + self.width
+      && py >= self.y
+      && py <= self.y + self.height
+  }
+
+  /// Graphics coordinates of the picture pixel `(px, py)` (the y axis
+  /// points up in graphics coordinates). A pointer outside the frame maps
+  /// past its edges, as the front end reports it.
+  pub fn graphics_position(&self, px: f32, py: f32) -> (f64, f64) {
+    let fx = f64::from((px - self.x) / self.width.max(f32::EPSILON));
+    let fy = f64::from((py - self.y) / self.height.max(f32::EPSILON));
+    (
+      self.x_min + fx * (self.x_max - self.x_min),
+      self.y_max - fy * (self.y_max - self.y_min),
+    )
+  }
+}
+
+/// An `EventHandler` with mouse events drawn in a rendered picture: its
+/// rectangle in the picture's pixel coordinates, its `(event, action)`
+/// pairs and the drawing areas of the graphics inside it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MouseRegion {
+  pub x: f32,
+  pub y: f32,
+  pub width: f32,
+  pub height: f32,
+  pub events: Vec<(String, String)>,
+  pub frames: Vec<PlotFrame>,
+}
+
+impl MouseRegion {
+  fn contains(&self, px: f32, py: f32) -> bool {
+    px >= self.x
+      && px <= self.x + self.width
+      && py >= self.y
+      && py <= self.y + self.height
+  }
+
+  fn action(&self, event: &str) -> Option<&str> {
+    self
+      .events
+      .iter()
+      .find(|(name, _)| name == event)
+      .map(|(_, action)| action.as_str())
+  }
+
+  /// Graphics coordinates of the pointer at picture pixel `(px, py)`: in
+  /// the graphic under it, or else the first graphic of the region.
+  pub fn graphics_position(&self, px: f32, py: f32) -> Option<(f64, f64)> {
+    self
+      .frames
+      .iter()
+      .find(|f| f.contains(px, py))
+      .or_else(|| self.frames.first())
+      .map(|f| f.graphics_position(px, py))
+  }
+}
+
+/// Find the outermost `EventHandler` with mouse events the renderer marked
+/// in `svg` (see `woxi::functions::graphics::MOUSE_EVENTS_ID_PREFIX`), with
+/// the graphics drawn in it.
+pub fn mouse_region_of(svg: &str) -> Option<MouseRegion> {
+  use resvg::usvg;
+  use woxi::functions::graphics::{
+    MOUSE_EVENTS_ID_PREFIX, mouse_events_from_id, plot_frame_from_id,
+  };
+  if !svg.contains(MOUSE_EVENTS_ID_PREFIX) {
+    return None;
+  }
+  let tree = usvg::Tree::from_str(svg, &usvg::Options::default()).ok()?;
+  fn walk(
+    group: &usvg::Group,
+    regions: &mut Vec<MouseRegion>,
+    frames: &mut Vec<PlotFrame>,
+  ) {
+    for node in group.children() {
+      match node {
+        usvg::Node::Group(g) => walk(g, regions, frames),
+        usvg::Node::Path(p) => {
+          let r = p.abs_bounding_box();
+          if let Some(events) = mouse_events_from_id(p.id()) {
+            regions.push(MouseRegion {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              events,
+              frames: Vec::new(),
+            });
+          } else if let Some((x_min, y_min, x_max, y_max)) =
+            plot_frame_from_id(p.id())
+          {
+            frames.push(PlotFrame {
+              x: r.x(),
+              y: r.y(),
+              width: r.width(),
+              height: r.height(),
+              x_min,
+              y_min,
+              x_max,
+              y_max,
+            });
+          }
+        }
+        _ => {}
+      }
+    }
+  }
+  let mut regions = Vec::new();
+  let mut frames = Vec::new();
+  walk(tree.root(), &mut regions, &mut frames);
+  // The marker is drawn last, over the content it covers, so the last one
+  // found belongs to the outermost handler.
+  let mut region = regions.pop()?;
+  region.frames = frames
+    .into_iter()
+    .filter(|f| region.contains(f.x + f.width / 2.0, f.y + f.height / 2.0))
+    .collect();
+  Some(region)
+}
+
+/// The last statement of a compound Manipulate `body` when it is an
+/// `EventHandler[Dynamic[…], …]`, as source code.
+fn event_handler_statement(body: &str) -> Option<String> {
+  use woxi::syntax::Expr;
+  let parsed = woxi::syntax::string_to_expr(body).ok()?;
+  let Expr::CompoundExpr(items) = &parsed else {
+    return None;
+  };
+  match items.last()? {
+    last @ Expr::FunctionCall { name, args }
+      if name == "EventHandler"
+        && matches!(args.first(), Some(Expr::FunctionCall { name, .. })
+          if name == "Dynamic") =>
+    {
+      Some(woxi::syntax::expr_to_source_form(last))
+    }
+    _ => None,
+  }
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -575,6 +734,12 @@ pub struct ManipulateState {
   /// `ClickPane`s drawn in the picture; a click inside one runs its handler
   /// on the click position.
   pub click_regions: Vec<ClickRegion>,
+  /// An `EventHandler` with mouse events in the picture; pressing,
+  /// dragging and releasing the pointer over it runs its actions.
+  pub mouse_region: Option<MouseRegion>,
+  /// Whether the pointer was pressed over `mouse_region` and not yet
+  /// released.
+  pub mouse_pressed: bool,
   /// Last cursor position over the picture, in its pixel coordinates.
   pub pointer: (f32, f32),
   pub text_output: Option<String>,
@@ -623,6 +788,11 @@ pub struct ManipulateState {
   /// bindings on every re-evaluation so a slider range can follow another
   /// control (Kepler's time sliders are bounded by the orbital period `P`).
   dynamic_bounds: Vec<woxi::functions::graphics::DynamicBound>,
+  /// The continuous controls whose spec omits the step. Their increment is
+  /// a fraction of the range, so it is recomputed whenever a dynamic bound
+  /// moves the range (a slider from `Dynamic[a]` to `Dynamic[b]` keeps the
+  /// same granularity however far apart `a` and `b` are).
+  default_step_controls: Vec<String>,
   /// Per-control choice lists that follow another control's variable
   /// (InputForm code), re-resolved on every change the way
   /// `dynamic_bounds` are.
@@ -729,6 +899,7 @@ impl ManipulateState {
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;
     let controls = controls_from_spec(&spec);
+    let default_step_controls = default_step_controls(&spec);
     // Line each control up with its `Enabled` condition (if any) by name. A
     // `Button`'s own condition travels on the `ManipulateControl` itself
     // instead: it binds no variable, so `c.name()` is always `""` and a
@@ -792,6 +963,8 @@ impl ManipulateState {
       graphics_handle: None,
       button_regions: Vec::new(),
       click_regions: Vec::new(),
+      mouse_region: None,
+      mouse_pressed: false,
       pointer: (0.0, 0.0),
       text_output: None,
       error: None,
@@ -809,6 +982,7 @@ impl ManipulateState {
       self_refreshing: false,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
+      default_step_controls,
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
@@ -1010,6 +1184,105 @@ impl ManipulateState {
       .map(|r| r.click_action(px, py));
     if let Some(action) = action {
       self.apply_button_action(&action);
+    }
+  }
+
+  /// The pointer was pressed at the last pointer position: over the
+  /// picture's `EventHandler`, run its `"MouseDown"` action.
+  pub fn mouse_down(&mut self) {
+    let (px, py) = self.pointer;
+    if !self
+      .mouse_region
+      .as_ref()
+      .is_some_and(|r| r.contains(px, py))
+    {
+      return;
+    }
+    self.mouse_pressed = true;
+    self.apply_mouse_events(&["MouseDown"]);
+  }
+
+  /// The pointer moved to `(px, py)`: run the `EventHandler`'s
+  /// `"MouseDragged"` action while it is pressed, else `"MouseMoved"` over
+  /// it.
+  pub fn mouse_moved(&mut self, px: f32, py: f32) {
+    self.pointer = (px, py);
+    if self.mouse_pressed {
+      self.apply_mouse_events(&["MouseDragged"]);
+    } else if self
+      .mouse_region
+      .as_ref()
+      .is_some_and(|r| r.contains(px, py))
+    {
+      self.apply_mouse_events(&["MouseMoved"]);
+    }
+  }
+
+  /// The pointer was released: end a press begun over the `EventHandler`
+  /// with its `"MouseUp"` and then `"MouseClicked"` actions.
+  pub fn mouse_up(&mut self) {
+    if !std::mem::take(&mut self.mouse_pressed) {
+      return;
+    }
+    self.apply_mouse_events(&["MouseUp", "MouseClicked"]);
+  }
+
+  /// Run the `EventHandler` actions for `events` (in order) with
+  /// `MousePosition["Graphics"]` at the pointer, then re-render when they
+  /// changed any of the widget's variables.
+  fn apply_mouse_events(&mut self, events: &[&str]) {
+    let Some(region) = self.mouse_region.clone() else {
+      return;
+    };
+    let actions: Vec<&str> =
+      events.iter().filter_map(|e| region.action(e)).collect();
+    if actions.is_empty() {
+      return;
+    }
+    let (px, py) = self.pointer;
+    woxi::set_mouse_position(region.graphics_position(px, py));
+    let mut changed = false;
+    for action in actions {
+      let updated = woxi::functions::graphics::apply_manipulate_button_action(
+        &self.bindings(),
+        action,
+      );
+      for (name, value) in updated {
+        if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
+          if slot.1 != value {
+            slot.1 = value;
+            changed = true;
+          }
+          continue;
+        }
+        for ctrl in &mut self.controls {
+          if ctrl.name() == name && ctrl.current_code() != value {
+            ctrl.set_current_from_code(&value);
+            changed = true;
+          }
+        }
+      }
+    }
+    woxi::set_mouse_position(None);
+    if changed {
+      self.reevaluate_event_handler();
+    }
+  }
+
+  /// Re-render after an `EventHandler` action changed the widget's state.
+  /// When the body ends in `EventHandler[Dynamic[…], …]`, only that
+  /// `Dynamic` content depends on what the action changed: the front end
+  /// refreshes it alone, without re-running the statements before it (a
+  /// body that opens with `state = initial; …` would otherwise undo every
+  /// move).
+  fn reevaluate_event_handler(&mut self) {
+    match event_handler_statement(&self.body) {
+      Some(code) => {
+        let body = std::mem::replace(&mut self.body, code);
+        self.reevaluate();
+        self.body = body;
+      }
+      None => self.reevaluate(),
     }
   }
 
@@ -1812,6 +2085,7 @@ impl ManipulateState {
           let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
           self.button_regions = button_regions_of(&svg);
           self.click_regions = click_regions_of(&svg);
+          self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
           self.error = None;
@@ -1821,6 +2095,7 @@ impl ManipulateState {
           self.graphics_handle = None;
           self.button_regions.clear();
           self.click_regions.clear();
+          self.mouse_region = None;
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -1835,6 +2110,7 @@ impl ManipulateState {
         self.graphics_handle = None;
         self.button_regions.clear();
         self.click_regions.clear();
+        self.mouse_region = None;
         self.text_output = None;
         self.error = Some(format!("{e}"));
       }
@@ -1890,6 +2166,17 @@ impl ManipulateState {
         std::mem::swap(min, max);
       }
       *current = current.clamp(*min, *max);
+      let (min, max) = (*min, *max);
+      if new_step.is_none()
+        && (new_min.is_some() || new_max.is_some())
+        && self.default_step_controls.iter().any(|n| n == name)
+        && let Some(ControlState::Continuous { step, is_real, .. }) =
+          self.controls.iter_mut().find(|c| {
+            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+          })
+      {
+        *step = default_slider_step(min, max, *is_real);
+      }
     }
   }
 
@@ -1977,6 +2264,47 @@ impl ManipulateState {
 /// `(control name, min, max, step)`.
 type ResolvedBound = (String, Option<f64>, Option<f64>, Option<f64>);
 
+/// A spec's step as the slider uses it: Wolfram treats a negative step
+/// like its magnitude, and a zero step like an omitted one (`None`).
+fn explicit_step(step: Option<f64>) -> Option<f64> {
+  step.map(f64::abs).filter(|s| *s > 0.0)
+}
+
+/// The increment of a slider whose spec gives no step.
+fn default_slider_step(min: f64, max: f64, is_real: bool) -> f64 {
+  let span = (max - min).abs();
+  let integral = min.fract() == 0.0 && max.fract() == 0.0;
+  if !is_real && integral && span >= 100.0 {
+    // A wide all-exact-integer range (one whose continuous granularity
+    // span/100 would reach a whole unit) makes an integer slider; an exact
+    // non-integer bound (`Pi`, `1/2`) keeps it continuous, and so do narrow
+    // integer ranges like `{t, 0, 1}` or `{r, 0, 2}`, which a saved
+    // Manipulate shows stepping through fractional values (r = 1.01).
+    1.0
+  } else if span > 0.0 {
+    span / 100.0
+  } else {
+    1.0
+  }
+}
+
+/// The continuous controls whose spec gives no step, so their increment
+/// is derived from the range and must follow it when the range moves.
+fn default_step_controls(spec: &ManipulateSpec) -> Vec<String> {
+  spec
+    .controls
+    .iter()
+    .filter_map(|c| match c {
+      ManipulateControl::Continuous { name, step, .. }
+        if explicit_step(*step).is_none() =>
+      {
+        Some(name.clone())
+      }
+      _ => None,
+    })
+    .collect()
+}
+
 fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
   spec
     .controls
@@ -1996,24 +2324,8 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
-        let step =
-          step.map(f64::abs).filter(|s| *s > 0.0).unwrap_or_else(|| {
-            let span = (*max - *min).abs();
-            let integral = min.fract() == 0.0 && max.fract() == 0.0;
-            if !*is_real && integral && span >= 100.0 {
-              // A wide all-exact-integer range (one whose continuous
-              // granularity span/100 would reach a whole unit) makes an
-              // integer slider; an exact non-integer bound (`Pi`, `1/2`)
-              // keeps it continuous, and so do narrow integer ranges like
-              // `{t, 0, 1}` or `{r, 0, 2}`, which a saved Manipulate shows
-              // stepping through fractional values (r = 1.01).
-              1.0
-            } else if span > 0.0 {
-              span / 100.0
-            } else {
-              1.0
-            }
-          });
+        let step = explicit_step(*step)
+          .unwrap_or_else(|| default_slider_step(*min, *max, *is_real));
         ControlState::Continuous {
           name: name.clone(),
           label: label.clone(),
@@ -5426,6 +5738,86 @@ mod tests {
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
   }
 
+  /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
+  /// graphic.
+  fn pixel_of(region: &MouseRegion, gx: f64, gy: f64) -> (f32, f32) {
+    let f = &region.frames[0];
+    let fx = (gx - f.x_min) / (f.x_max - f.x_min);
+    let fy = (f.y_max - gy) / (f.y_max - f.y_min);
+    (f.x + f.width * fx as f32, f.y + f.height * fy as f32)
+  }
+
+  /// An `EventHandler[Dynamic[…], {"MouseDown" :> …, "MouseDragged" :> …}]`
+  /// body (a sliding-token board): pressing and dragging over the picture
+  /// must run the actions with `MousePosition["Graphics"]` at the pointer,
+  /// and redraw only the `Dynamic` content — the body's leading
+  /// `pos = start` must not undo the move.
+  #[test]
+  fn event_handler_mouse_drag_moves_a_token() {
+    let code = r#"Manipulate[
+      pos = start;
+      EventHandler[
+        Dynamic@Grid[{{Graphics[{Gray, Rectangle[{0, 0}, {5, 3}], Red, Rectangle[pos]},
+          PlotRange -> {{0, 5}, {0, 3}}, ImageSize -> 300]}}],
+        {"MouseDown" :> (grab = Floor[MousePosition["Graphics"]]),
+         "MouseDragged" :> (to = Floor[MousePosition["Graphics"]];
+           If[grab == pos && Total[Abs[to - grab]] == 1, pos = to; grab = to]),
+         "MouseUp" :> (ups = ups + 1)}],
+      {{start, {1, 1}}, {{1, 1}, {3, 2}}},
+      {{pos, {1, 1}}, ControlType -> None},
+      {{grab, {0, 0}}, ControlType -> None},
+      {{to, {0, 0}}, ControlType -> None},
+      {{ups, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let region = state.mouse_region.clone().expect("a mouse region");
+    assert_eq!(region.frames.len(), 1, "the graphic's drawing area");
+    let names: Vec<&str> =
+      region.events.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["MouseDown", "MouseDragged", "MouseUp"]);
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let svg_before = state.current_svg().unwrap().to_string();
+
+    // Press on the token (the cell {1, 1}) and drag it right twice.
+    state.pointer = pixel_of(&region, 1.5, 1.5);
+    state.mouse_down();
+    assert_eq!(var(&state, "grab"), "{1, 1}");
+    let (px, py) = pixel_of(&region, 2.5, 1.5);
+    state.mouse_moved(px, py);
+    let (px, py) = pixel_of(&region, 3.5, 1.5);
+    state.mouse_moved(px, py);
+    assert!(state.error.is_none(), "drag failed: {:?}", state.error);
+    assert_eq!(var(&state, "pos"), "{3, 1}");
+    assert_ne!(state.current_svg().unwrap(), svg_before, "redrawn");
+    state.mouse_up();
+    assert_eq!(var(&state, "ups"), "1");
+    // A release without a press runs nothing.
+    state.mouse_up();
+    assert_eq!(var(&state, "ups"), "1");
+    // Moving without a press runs no drag action.
+    let (px, py) = pixel_of(&region, 4.5, 1.5);
+    state.mouse_moved(px, py);
+    assert_eq!(var(&state, "pos"), "{3, 1}");
+    // A press outside the picture's handler does nothing.
+    state.pointer = (-50.0, -50.0);
+    state.mouse_down();
+    assert!(!state.mouse_pressed);
+    // Picking another start re-runs the whole body, resetting the token.
+    state.controls[0].set_current_from_code("{3, 2}");
+    state.reevaluate();
+    assert_eq!(var(&state, "pos"), "{3, 2}");
+  }
+
   /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style
   /// Demonstration): every enabled cell must be a pressable region of the
   /// picture, pressing one runs that cell's own action on the widget state,
@@ -5638,6 +6030,64 @@ mod tests {
     assert!(state.select_discrete(big_idx, "True"));
     state.reevaluate();
     assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
+  }
+
+  /// A slider with no step whose range runs between two other controls
+  /// (`{t, a, b}` with `a`, `b` sliders) takes its default increment from
+  /// the *current* range. Regression: the step stayed 1/100 of the range
+  /// the widget was built with, so narrowing the range left only a few
+  /// stops and a wider one stepped in a fraction of its intended size.
+  #[test]
+  fn default_step_follows_dynamic_slider_range() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{a, b, t},
+        {{a, 0}, 0, 50, 1},
+        {{b, 100}, 60, 200, 1},
+        {{t, 0}, a, b}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let t_range = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } if name == "t" => Some((*min, *max, *step)),
+        _ => None,
+      })
+    };
+    let (min, max, step) = t_range(&state).unwrap();
+    assert_eq!((min, max), (0.0, 100.0));
+    assert!((step - 1.0).abs() < 1e-12, "step {step}");
+    let set = |s: &mut ManipulateState, name: &str, v: f64| {
+      if let Some(ControlState::Continuous { current, .. }) =
+        s.controls.iter_mut().find(|c| c.name() == name)
+      {
+        *current = v;
+      }
+    };
+    set(&mut state, "a", 40.0);
+    set(&mut state, "b", 60.0);
+    state.reevaluate();
+    let (min, max, step) = t_range(&state).unwrap();
+    assert_eq!((min, max), (40.0, 60.0));
+    assert!((step - 0.2).abs() < 1e-12, "step {step}");
+    // An explicit step is the author's and stays put.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{a, t}, {{a, 10}, 1, 50, 1}, {{t, 0}, 0, a, 0.5}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    set(&mut state, "a", 30.0);
+    state.reevaluate();
+    let (_, max, step) = t_range(&state).unwrap();
+    assert_eq!((max, step), (30.0, 0.5));
   }
 
   /// A slider whose bounds name *choice-list* controls declared after it
