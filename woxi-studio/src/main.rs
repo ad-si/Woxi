@@ -1956,9 +1956,15 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
           && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Continuous { current, .. } = control
+          && let manipulate::ControlState::Continuous {
+            current,
+            exact_value,
+            ..
+          } = control
         {
           *current = value;
+          // A moved slider binds machine reals from now on.
+          *exact_value = None;
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -17820,6 +17826,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
     };
@@ -17832,6 +17839,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.1,
       current: 0.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
     };
@@ -17852,6 +17860,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       step: 0.04,
       current: 1.0,
       is_real: false,
+      exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
     };

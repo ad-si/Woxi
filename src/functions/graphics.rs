@@ -33932,6 +33932,11 @@ pub enum ManipulateControl {
     /// integer unchanged. A control whose whole spec is exact integers
     /// (`{{n, 5, "n"}, 1, 10, 1}`) keeps binding exact integers throughout.
     is_real: bool,
+    /// The initial value was written exactly (`{{a, 2}, 0.1, 6}`, or an
+    /// exact `min` standing in for an omitted initial value). Wolfram binds
+    /// such a value as given (`a = 2`, not `2.`) until the slider is first
+    /// moved, even when `is_real` makes every later position machine-real.
+    exact_initial: bool,
     /// `ControlType -> VerticalSlider`: draw the slider running bottom-to-top
     /// instead of Wolfram's default left-to-right rail.
     orientation: ControlOrientation,
@@ -39857,6 +39862,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ..Default::default()
     }],
     is_real: false,
+    exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
   };
@@ -40028,6 +40034,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ..Default::default()
     }],
     is_real,
+    exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
   };
@@ -43396,6 +43403,17 @@ fn parse_manipulate_control(
     || explicit_initial
       .as_ref()
       .is_some_and(manipulate_bound_is_inexact);
+  // The initial value itself is bound as written: exact unless it (or the
+  // `min` it defaults to) is inexact.
+  let exact_initial = initial.is_finite()
+    && match explicit_initial.as_ref() {
+      Some(init) => !manipulate_bound_is_inexact(init),
+      None => {
+        eval_manipulate_axis_bound(bounds[0])
+          .is_some_and(|(v, _, _)| v.is_finite())
+          && !manipulate_bound_is_inexact(bounds[0])
+      }
+    };
 
   // A `Trigger`/`Animator` control is a play button sweeping its variable
   // over the range: the widget animates that variable (a Trigger starts
@@ -43465,6 +43483,7 @@ fn parse_manipulate_control(
       label,
       label_runs,
       is_real,
+      exact_initial,
       orientation,
       imaginary,
     },
@@ -43585,6 +43604,7 @@ fn parse_list_element_manipulator(
       label: label.to_string(),
       label_runs: label_runs.to_vec(),
       is_real,
+      exact_initial: false,
       orientation: ControlOrientation::Horizontal,
       imaginary: false,
     },
@@ -43943,11 +43963,16 @@ pub fn manipulate_initial_bindings(
         name,
         initial,
         is_real,
+        exact_initial,
         imaginary,
         ..
       } => Some((
         name.clone(),
-        continuous_binding_code(*initial, *is_real, *imaginary),
+        continuous_binding_code(
+          *initial,
+          *is_real && !*exact_initial,
+          *imaginary,
+        ),
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
         Some((name.clone(), format_f64_input(*initial)))

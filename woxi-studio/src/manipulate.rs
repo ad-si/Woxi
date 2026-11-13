@@ -38,6 +38,11 @@ pub enum ControlState {
     /// rather than the exact integer, matching Wolfram — which matters for
     /// a caption that formats it with `NumberForm[…, {n, f}]`.
     is_real: bool,
+    /// The exactly written initial value while the slider still sits on it
+    /// (see `ManipulateControl::Continuous::exact_initial`): it binds as the
+    /// exact number (`2`, not `2.`) even on an `is_real` slider. Cleared once
+    /// the user moves the slider.
+    exact_value: Option<f64>,
     /// `ControlType -> VerticalSlider`: rendered with `vertical_slider`
     /// instead of the default horizontal `slider`.
     orientation: ControlOrientation,
@@ -230,10 +235,13 @@ impl ControlState {
       ControlState::Continuous {
         current,
         is_real,
+        exact_value,
         imaginary,
         ..
       } => woxi::functions::graphics::continuous_binding_code(
-        *current, *is_real, *imaginary,
+        *current,
+        *is_real && *exact_value != Some(*current),
+        *imaginary,
       ),
       ControlState::Trigger { current, .. } => format_f64(*current),
       ControlState::Discrete {
@@ -2347,6 +2355,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         step,
         initial,
         is_real,
+        exact_initial,
         orientation,
         imaginary,
       } => {
@@ -2363,6 +2372,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           step,
           current: *initial,
           is_real: *is_real,
+          exact_value: exact_initial.then_some(*initial),
           orientation: *orientation,
           imaginary: *imaginary,
         }
@@ -3274,6 +3284,40 @@ mod tests {
       "{:?}",
       state.display_trees
     );
+  }
+
+  /// A slider whose range is inexact (`0.1`) but whose initial value is
+  /// written exactly (`2`) binds that exact value until it is moved, as
+  /// Wolfram does: a caption showing `a^x` reads `2^x`, not `2.^x`. Once
+  /// moved, the slider binds machine reals, even back on a round value.
+  #[test]
+  fn exact_initial_value_on_real_slider_binds_exactly_until_moved() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ToString[a^x, InputForm], {{a, 2, \"base a\"}, 0.1, 6}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("2^x"),
+      "{:?}",
+      state.error
+    );
+    assert_eq!(state.controls[0].current_code(), "2");
+    if let ControlState::Continuous { current, .. } = &mut state.controls[0] {
+      *current = 2.5;
+    }
+    assert_eq!(state.controls[0].current_code(), "2.5");
+    if let ControlState::Continuous {
+      current,
+      exact_value,
+      ..
+    } = &mut state.controls[0]
+    {
+      *exact_value = None;
+      *current = 2.0;
+    }
+    assert_eq!(state.controls[0].current_code(), "2.");
   }
 
   #[test]
