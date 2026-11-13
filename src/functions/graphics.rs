@@ -35173,6 +35173,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // it so the panes' controls are visible to everything below.
     let spliced_spec = splice_sequence_applies(spec);
     let spec = &spliced_spec;
+    // `Row[{confirm, reset}]` where `confirm = Button[…]` was assigned
+    // beforehand: the symbols stand for the buttons they hold.
+    let resolved_spec = resolve_layout_button_symbols(spec);
+    let spec = &resolved_spec;
     // `If[cond, Identity, Invisible][Control[…]]`: the control itself is the
     // spec, shown only under `cond`.
     let switched = visibility_switched_control(spec);
@@ -38223,6 +38227,53 @@ fn split_implicit_product(e: &Expr) -> Vec<Expr> {
 /// Button[…]}]`). Returns `None` when the argument contains no
 /// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
 /// expressions keep flowing to the display path.
+/// Replace each bare symbol inside a `Row`/`Column`/`Grid` control-layout
+/// argument whose value is a button (`Button[…]` or `ButtonBar[…]`) by
+/// that value. Demonstrations often build their buttons up front
+/// (`go = Button["go", …]`) and list only the names in the panel
+/// (`Row[{go, reset}]`); Wolfram evaluates the layout, so the buttons are
+/// what it shows. Symbols holding anything else are left alone.
+fn resolve_layout_button_symbols(spec: &Expr) -> Expr {
+  fn resolve(e: &Expr) -> Expr {
+    match e {
+      Expr::Identifier(name) => {
+        let value = crate::ENV.with(|env| env.borrow().get(name).cloned());
+        match value {
+          Some(crate::StoredValue::ExprVal(v))
+            if matches!(&v, Expr::FunctionCall { name: h, .. }
+              if h == "Button" || h == "ButtonBar") =>
+          {
+            v
+          }
+          _ => e.clone(),
+        }
+      }
+      Expr::List(items) => Expr::List(items.iter().map(resolve).collect()),
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Row" | "Column" | "Grid" | "Item") =>
+      {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| if i == 0 { resolve(a) } else { a.clone() })
+            .collect(),
+        }
+      }
+      _ => e.clone(),
+    }
+  }
+  match spec {
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Row" | "Column" | "Grid") =>
+    {
+      resolve(spec)
+    }
+    _ => spec.clone(),
+  }
+}
+
 fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let spec = strip_empty_string_factor(spec);
   fn contains_control(e: &Expr) -> bool {
@@ -49739,5 +49790,58 @@ mod review_layout_tests {
     assert!(cells.len() >= 2);
     assert!(cells[0].starts_with("<svg x=\"0.0\""), "{}", cells[0]);
     assert!(cells[1].starts_with("<svg x=\"0.0\""), "{}", cells[1]);
+  }
+}
+
+#[cfg(test)]
+mod manipulate_layout_button_symbol_tests {
+  use super::*;
+
+  fn spec(code: &str) -> ManipulateSpec {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr).expect("extract spec")
+  }
+
+  /// Buttons assigned to symbols beforehand and listed by name in a
+  /// `Row[{…}]` panel argument are the buttons they hold, not a static
+  /// heading made of the symbol names.
+  #[test]
+  fn row_of_button_symbols_becomes_buttons() {
+    crate::interpret(
+      r#"goBtn = Button["go on", n = n + 1]; resetBtn = Button["reset", n = 0]; other = 7;"#,
+    )
+    .unwrap();
+    let s = spec(
+      r#"Manipulate[n, Row[{goBtn, resetBtn}], {{n, 0}, ControlType -> None}]"#,
+    );
+    let buttons: Vec<(&str, &str)> = s
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button { label, action, .. } => {
+          Some((label.as_str(), action.as_str()))
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons, vec![("go on", "n = n + 1"), ("reset", "n = 0")]);
+    assert!(
+      !s.controls
+        .iter()
+        .any(|c| matches!(c, ManipulateControl::Heading { .. }))
+    );
+  }
+
+  /// A symbol in the row that holds something other than a button is
+  /// not replaced.
+  #[test]
+  fn non_button_symbol_in_row_is_kept() {
+    crate::interpret("someValue = 7;").unwrap();
+    let s = spec(r#"Manipulate[n, Row[{"a", someValue}], {n, 0, 1}]"#);
+    assert!(
+      s.controls
+        .iter()
+        .all(|c| !matches!(c, ManipulateControl::Button { .. }))
+    );
   }
 }
