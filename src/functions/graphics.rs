@@ -24737,6 +24737,12 @@ fn grid_svg_styled_internal_reporting(
           Expr::Identifier(val) => match val.as_str() {
             "Left" => alignment_h = "start",
             "Right" => alignment_h = "end",
+            // A lone vertical value (`Alignment -> Top`) places every
+            // row's cells vertically and keeps the centered columns.
+            "Top" | "Bottom" => {
+              row_valigns =
+                row_vertical_alignments(replacement.as_ref(), rows.len());
+            }
             _ => alignment_h = "middle",
           },
           Expr::List(items) => {
