@@ -6224,13 +6224,23 @@ fn locator_marker(
     }
     other => other.clone(),
   };
+  // A textual `Appearance` — a string, or a `Style`d / `Row` of strings,
+  // such as `Style["\[FilledCircle]", 24, Green]` — is not a graphics
+  // primitive, so `Translate` cannot draw it. Wolfram centers that label on
+  // the locator, the same as `Text[label, point]` does.
+  let marker = |g: &Expr| {
+    if is_textual_appearance(g) {
+      call("Text", vec![g.clone(), point.clone()])
+    } else {
+      sized(g, primitives(g))
+    }
+  };
   match appearance {
     Some(Expr::Identifier(n)) if n == "None" => None,
     Some(Expr::List(items)) if !items.is_empty() => {
-      let g = &items[index % items.len()];
-      Some(sized(g, primitives(g)))
+      Some(marker(&items[index % items.len()]))
     }
-    Some(single) => Some(sized(single, primitives(single))),
+    Some(single) => Some(marker(single)),
     None => {
       let r = span * 0.015;
       let arm = span * 0.03;
@@ -6246,6 +6256,26 @@ fn locator_marker(
         .into(),
       )))
     }
+  }
+}
+
+/// Whether a locator `Appearance` is a label rather than a picture: a
+/// string or number, or a `Style` / `Row` / `Framed` built from such labels.
+fn is_textual_appearance(g: &Expr) -> bool {
+  match g {
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => true,
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Framed") && !args.is_empty() =>
+    {
+      is_textual_appearance(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      match &args[0] {
+        Expr::List(items) => items.iter().all(is_textual_appearance),
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
